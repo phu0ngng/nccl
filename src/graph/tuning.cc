@@ -199,6 +199,9 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         else if (a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) ratio = 5.0/6.0;
         else ratio = .5;
         comm->bandwidths[coll][a][p] = busBw * ratio;
+        /* Ring bandwidth backup */
+        if (a == NCCL_ALGO_RING)
+          comm->ringbdw[coll][p] = comm->bandwidths[coll][NCCL_ALGO_RING][p];
 
         comm->latencies[coll][a][p] = baseLat[a][p];
         float intraLat = hwLat[intraHw[a]][a][p];
@@ -295,9 +298,23 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       }
     }
     if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
-    // Never disable ring for non-allreduce operations. That allows to run real apps with NCCL_ALGO=TREE.
-    if (a == NCCL_ALGO_RING && c != ncclFuncAllReduce) continue;
     if (algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
+  }
+
+  for (int c = 0; c < NCCL_NUM_FUNCTIONS; c++) {
+    bool available = false;
+    for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
+      for (int p = 0; p < NCCL_NUM_PROTOCOLS; p++)
+        if (comm->bandwidths[c][a][p] != 0) {
+          available = true;
+          goto check_avail;
+        }
+  check_avail:
+    if (available == false) {
+      /* at least set ring algo available */
+      for (int p = 0; p < NCCL_NUM_PROTOCOLS; p++)
+        comm->bandwidths[c][NCCL_ALGO_RING][p] = comm->ringbdw[c][p];
+    }
   }
 
   if (comm->rank == 0) {
