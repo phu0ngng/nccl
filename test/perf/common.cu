@@ -1531,7 +1531,7 @@ char* splitMaskEnv = NULL;
       if (datacheck) CUDACHECK(cudaFree(expected[id][i]));
     }
   }
-  
+
   if (!parallel_init) {
     for (int id = 0; id < commNum; ++id) {
       for(int i=0; i<nGpus*nThreads; ++i)

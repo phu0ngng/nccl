@@ -172,6 +172,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && p != NCCL_PROTO_SIMPLE) continue;
         int collnet = (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) ? 1 : 0;
         float bw = nNodes <= 2 || collnet ? graphs[a]->bwIntra : graphs[a]->bwInter;
+        if (a == NCCL_ALGO_NVLS) bw = std::min(graphs[a]->bwIntra, graphs[a]->bwInter);
+        if (a == NCCL_ALGO_NVLS_TREE) bw = std::min(graphs[a]->bwIntra, nNodes <= 2 ? graphs[a]->bwInter : graphs[a]->bwInter/2);
         float busBw = graphs[a]->nChannels * bw;
 
         // Various model refinements
@@ -194,8 +196,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         // Convert bus BW to algorithm BW
         float ratio;
         if (a == NCCL_ALGO_RING) ratio = (1.0 * nRanks) / nsteps;
-        else if (a == NCCL_ALGO_NVLS) ratio = 5.0/6.0;
-        else if (a == NCCL_ALGO_NVLS_TREE) ratio = .70 * nNodes / (2*(nNodes-1));
+        else if (a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) ratio = 5.0/6.0;
         else ratio = .5;
         comm->bandwidths[coll][a][p] = busBw * ratio;
 

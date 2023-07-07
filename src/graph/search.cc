@@ -342,6 +342,7 @@ ncclResult_t ncclTopoCompareGraphs(struct ncclTopoSystem* system, struct ncclTop
 
   if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) { // NVLS channels correspond to GPUs pulling from NVLS. So the more the better.
     if (graph->nChannels > refGraph->nChannels && graph->nChannels <= system->nodes[GPU].count) *copy = 1;
+    if (graph->nChannels*graph->bwInter > refGraph->nChannels*refGraph->bwInter) *copy = 1;
     return ncclSuccess;
   }
   // 2. Try to get better bandwidth
@@ -828,6 +829,8 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   int ccMin;
   NCCLCHECK(ncclTopoGetCompCap(system, &ccMin, NULL));
   if (graph->pattern == NCCL_TOPO_PATTERN_NVLS && (system->nodes[NVS].count == 0 || ccMin < 90)) return ncclSuccess;
+  // NVLS search must have ngpus heads at most.
+  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) graph->maxChannels = system->nodes[GPU].count;
 
   if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
@@ -946,10 +949,24 @@ done:
 
   // 3. See if we can increase bwIntra for trees (2 nodes or collnet)
   if (pass == 2) {
-    if (time != 0 && graph->pattern != NCCL_TOPO_PATTERN_RING &&
+    if (time != 0 && graph->pattern != NCCL_TOPO_PATTERN_RING && graph->pattern != NCCL_TOPO_PATTERN_NVLS &&
         tmpGraph.bwIntra == graph->bwIntra && tmpGraph.bwIntra < tmpGraph.bwInter*2 &&
         speedIndex > 0) {
       tmpGraph.bwIntra = speedArray[--speedIndex];
+      goto search;
+    }
+    time = -1;
+    memcpy(&tmpGraph, graph, sizeof(tmpGraph));
+    pass = 3;
+  }
+
+  // 4. See if we can increase bwInter for nvls+tree
+  if (pass == 3) {
+    if (time != 0 && graph->pattern == NCCL_TOPO_PATTERN_NVLS &&
+        tmpGraph.bwInter == graph->bwInter && tmpGraph.bwInter < tmpGraph.bwIntra*2 &&
+        speedIndex > 0) {
+      tmpGraph.minChannels = tmpGraph.maxChannels = graph->nChannels;
+      tmpGraph.bwInter = speedArray[--speedIndex];
       goto search;
     }
     time = -1;
