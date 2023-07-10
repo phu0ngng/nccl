@@ -15,6 +15,7 @@ range="-b 8 -e $max -f 2"
 enable_ft="-B 0 -F 1"
 enable_split_test="-S 1 -P 1"
 split_range="-b 8 -e 1G -f 2"
+enable_local_register="-R 1"
 
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
 failure_count=0
@@ -73,6 +74,14 @@ for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gathe
   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $split_range $opts $enable_split_test
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (split share all sizes): ${func}_perf $split_range $opts $enable_split_test")
 done
+
+export NCCL_ALGO=NVLS
+for func in all_reduce reduce_scatter all_gather; do
+  echo "=============================== $func (local registration all sizes) - $(date +\"%T\") =========================="
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (split share all sizes): ${func}_perf $split_range $opts $enable_local_register")
+done
+unset NCCL_ALGO
 
 export NCCL_DEBUG="" # disable WARN information
 echo "=============================== all_reduce (FT tests) - $(date +\"%T\") ================================="

@@ -96,6 +96,7 @@ static size_t tbytes = SIZE_MAX;
 static int split_share = NCCL_CONFIG_UNDEF_INT;
 static int split_comm = 0;
 static int commNum = 1;
+static int local_register = 0;
 
 static char* replay_file = NULL;
 
@@ -900,14 +901,15 @@ testResult_t threadLaunch(struct testThread* thread) {
   return testSuccess;
 }
 
-testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes) {
+testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, size_t *allocBytes) {
     nbytes += 8*unalign; // pad with size of max datatype in case all datatypes selected
-    TESTCHECK(testMemAlloc(sendbuff, nbytes));
-    TESTCHECK(testMemAlloc(recvbuff, nbytes));
-    if (datacheck) TESTCHECK(testMemAlloc(expected, recvBytes));
+    NCCLCHECK(ncclMemAlloc(sendbuff, nbytes));
+    NCCLCHECK(ncclMemAlloc(recvbuff, nbytes));
+    if (datacheck) NCCLCHECK(ncclMemAlloc(expected, recvBytes));
     CUDACHECK(cudaMemset(*sendbuff, 0, nbytes));
     CUDACHECK(cudaMemset(*recvbuff, 0, nbytes));
     if (datacheck) CUDACHECK(cudaMemset(*expected, 0, recvBytes));
+    *allocBytes = nbytes;
     return testSuccess;
 }
 
@@ -971,13 +973,14 @@ int main(int argc, char* argv[]) {
     {"tbytes", required_argument, 0, 's'},
     {"split_share", required_argument, 0, 'S'},
     {"split_comm", required_argument, 0, 'P'},
+    {"local_register", required_argument, 0, 'R'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1096,6 +1099,9 @@ int main(int argc, char* argv[]) {
       case 'P':
         split_comm = (int)strtol(optarg, NULL, 0);
         break;
+      case 'R':
+        local_register = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1135,7 +1141,8 @@ int main(int argc, char* argv[]) {
             "[-L,--ft_list <init/allreduce/alltoall/finalize/split/all> only enable specified fault tolerance test (default: all)] \n\t"
             "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
             "[-S,--split_share <0/1> enable shared resources during communicator split (default: 0)] \n\t"
-            "[-P,--split_comm <0/1> enable communicator split (default: 0)] \n\t"
+            "[-P,--split_comm <0/1/2> enable communicator split (default: 0 disable; 1 dup global comm; 2 three split patterns)] \n\t"
+            "[-R,--local_register <0/1> enable local buffer registration (default: 0 disable)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1274,6 +1281,8 @@ char* splitMaskEnv = NULL;
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* globalComms = NULL;
   ncclComm_t comms[commNum][nThreads*nGpus];
+  void* sendRegHandles[commNum][nThreads*nGpus];
+  void* recvRegHandles[commNum][nThreads*nGpus];
   int nranks = totalProcs * nThreads * nGpus;
   if (proc == 0) {
       NCCLCHECK(ncclGetUniqueId(&ncclId));
@@ -1369,10 +1378,16 @@ char* splitMaskEnv = NULL;
   for (int id = 0; id < commNum; ++id) {
     for (int i = 0; i < nGpus * nThreads; i++) {
       int nranks;
+      size_t allocBytes;
       NCCLCHECK(ncclCommCount(comms[id][i], &nranks));
       ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
       CUDACHECK(cudaSetDevice(gpus[i]));
-      TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes));
+      TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
+      if (local_register) {
+        const int regAlign = 2097152;
+        NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes < regAlign ? regAlign : allocBytes, &sendRegHandles[id][i]));
+        NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes < regAlign ? regAlign : allocBytes, &recvRegHandles[id][i]));
+      }
     }
   }
 
@@ -1505,21 +1520,25 @@ char* splitMaskEnv = NULL;
   MPI_Allreduce(MPI_IN_PLACE, &errors[0], 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
 
+  // Free off CUDA allocated memory
+  for (int id = 0; id < commNum; ++id) {
+    for (int i=0; i<nGpus*nThreads; i++) {
+      if (local_register) {
+        NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
+        NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
+      }
+      if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
+      if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
+      if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
+    }
+  }
+
   if (!parallel_init) {
     for (int id = 0; id < commNum; ++id) {
       for(int i=0; i<nGpus*nThreads; ++i)
         NCCLCHECK(ncclCommDestroy(comms[id][i]));
     }
     free(globalComms);
-  }
-
-  // Free off CUDA allocated memory
-  for (int id = 0; id < commNum; ++id) {
-    for (int i=0; i<nGpus*nThreads; i++) {
-      if (sendbuffs[id][i]) TESTCHECK(testMemFree(sendbuffs[id][i]));
-      if (recvbuffs[id][i]) TESTCHECK(testMemFree(recvbuffs[id][i]));
-      if (datacheck) TESTCHECK(testMemFree(expected[id][i]));
-    }
   }
   
   CUDACHECK(cudaFreeHost(delta));
