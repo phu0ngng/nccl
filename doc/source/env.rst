@@ -271,13 +271,9 @@ The ``NCCL_IB_HCA`` variable specifies which RDMA interfaces to use for communic
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Define to be a list of prefixes to filter interfaces to be used by NCCL.
-
-Using the ``^`` symbol, NCCL will exclude interfaces starting with any prefix in that list.
-
-Specific ports can also be specified using ``:``.
-
-To match (or not) an exact interface name instead of a prefix, prefix the string with the ``=`` character.
+Define to filter IB Verbs interfaces to be used by NCCL. The list is comma-separated; port numbers can be specified using
+the ``:`` symbol. An optional prefix ``^`` indicates the list is an exclude list. A second optional prefix ``=`` indicates
+that the tokens are exact names, otherwise by default NCCL would treat each token as a prefix.
 
 Examples:
 
@@ -285,7 +281,7 @@ Examples:
 
 ``=mlx5_0:1,mlx5_1:1`` : Use ports 1 of cards ``mlx5_0`` and ``mlx5_1``.
 
-``^=mlx5_1`` : Do not use card ``mlx5_1``.
+``^=mlx5_1,mlx5_4`` : Do not use cards ``mlx5_1`` and ``mlx5_4``.
 
 Note: using ``mlx5_1`` without a preceding ``=`` will select ``mlx5_1`` as well as ``mlx5_10`` to ``mlx5_19``, if they exist.
 It is therefore always recommended to add the ``=`` prefix to ensure an exact match.

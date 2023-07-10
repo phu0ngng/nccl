@@ -365,7 +365,7 @@
       <gpu dev="7"/>
     </channel>
   </graph>
-  <graph id="3" pattern="5" crossnic="0" nchannels="8" speedintra="40" speedinter="40" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
+  <graph id="3" pattern="5" crossnic="0" nchannels="8" speedintra="40" speedinter="60" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
     <channel>
       <gpu dev="0"/>
       <gpu dev="0"/>

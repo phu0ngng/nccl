@@ -10,6 +10,7 @@
 #include "collectives.h"
 #include "device.h"
 #include "op128.h"
+#include "network/unpack/unpack_defs.h"
 
 #define COLL_UNROLL (ncclCollUnroll())
 
@@ -21,6 +22,9 @@ struct ncclShmemGroup {
   ncclConnInfo *sendConns[NCCL_MAX_NVLS_ARITY];
   void* srcs[NCCL_MAX_NVLS_ARITY+1];
   void* dsts[NCCL_MAX_NVLS_ARITY+1];
+  union {
+    unpackGroupShmem unpack;
+  } devicePlugin;
 };
 
 struct ncclShmemData {
@@ -31,6 +35,9 @@ struct ncclShmemData {
   alignas(16) struct ncclDevComm comm;
   alignas(16) struct ncclDevChannel channel;
   alignas(16) struct ncclWork work;
+  alignas(16) union {
+    unpackShmem unpack;
+  } devicePlugin;
 };
 static_assert(offsetof(struct ncclShmemData, work)%16 == 0, "shmem.work needs to be 16B aligned");
 

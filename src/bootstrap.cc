@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include "proxy.h"
+#include "param.h"
 
 struct bootstrapRootArgs {
   struct ncclSocket* listenSock;
@@ -28,7 +29,7 @@ ncclResult_t bootstrapNetInit() {
   if (bootstrapNetInitDone == 0) {
     pthread_mutex_lock(&bootstrapNetLock);
     if (bootstrapNetInitDone == 0) {
-      char* env = getenv("NCCL_COMM_ID");
+      const char* env = ncclGetEnv("NCCL_COMM_ID");
       if (env) {
         union ncclSocketAddress remoteAddr;
         if (ncclSocketGetAddrFromString(&remoteAddr, env) != ncclSuccess) {
@@ -189,7 +190,7 @@ ncclResult_t bootstrapGetUniqueId(struct ncclBootstrapHandle* handle) {
   memset(handle, 0, sizeof(ncclBootstrapHandle));
   NCCLCHECK(getRandomData(&handle->magic, sizeof(handle->magic)));
 
-  char* env = getenv("NCCL_COMM_ID");
+  const char* env = ncclGetEnv("NCCL_COMM_ID");
   if (env) {
     INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
     if (ncclSocketGetAddrFromString(&handle->addr, env) != ncclSuccess) {

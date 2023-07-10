@@ -33,6 +33,8 @@ extern const char* ncclProtoStr[NCCL_NUM_PROTOCOLS];
 #define NCCL_MAX_OPS 2048
 #define NCCL_STEPS 8
 
+#include "net_device.h"
+
 enum ncclDevRedOp_t {
   ncclDevSum, ncclDevProd, ncclDevMinMax,
   ncclDevPreMulSum, ncclDevSumPostDiv,
@@ -109,6 +111,7 @@ struct ncclConnInfo {
 
   uint64_t step;      // Keep where we are
   uint64_t llLastCleaning;
+  struct ncclNetDeviceHandle netDeviceHandle;
 };
 
 struct ncclProxyConnector {
@@ -116,6 +119,7 @@ struct ncclProxyConnector {
   int tpLocalRank;
   int sameProcess;
   struct ncclProxyConnection* connection;
+  ncclResult_t (*proxyProgress)(struct ncclProxyState* proxyState, struct ncclProxyArgs*); // Copied from transport if necessary
 };
 
 struct ncclConnector {
@@ -303,6 +307,7 @@ struct ncclDevComm {
   int rank;
   int nRanks;
   int buffSizes[NCCL_NUM_PROTOCOLS];
+  int p2pChunkSize;
 
   // Operation list for aggregation
   int workFifoDepth;
