@@ -195,6 +195,7 @@ struct ncclProxyState {
   int buffSizes[NCCL_NUM_PROTOCOLS];
   bool allocP2pNetLLBuffers;
   bool dmaBufSupport;
+  volatile bool readyFree;
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
   volatile uint32_t* abortFlag;
@@ -281,5 +282,6 @@ ncclResult_t ncclProxyClientConvertFdBlocking(struct ncclComm* comm, struct nccl
 
 ncclResult_t ncclProxyStop(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
-ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
+ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState);
+ncclResult_t ncclProxyDetach(struct ncclProxyState *proxyState);
 #endif
