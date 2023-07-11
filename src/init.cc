@@ -507,7 +507,6 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
 #define DEFAULT_LL_BUFFSIZE (NCCL_LL_LINES_PER_THREAD*NCCL_LL_MAX_NTHREADS*NCCL_STEPS*sizeof(union ncclLLFifoLine))
 #define DEFAULT_LL128_BUFFSIZE (NCCL_LL128_ELEMS_PER_THREAD*NCCL_LL128_MAX_NTHREADS*NCCL_STEPS*sizeof(uint64_t))
 #define DEFAULT_BUFFSIZE (1 << 22) /* 4MiB */
-#define DEFAULT_BUFFSIZE_ARM (1 << 20) /* 1MiB */
 NCCL_PARAM(BuffSize, "BUFFSIZE", -2);
 NCCL_PARAM(LlBuffSize, "LL_BUFFSIZE", -2);
 NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
@@ -523,8 +522,6 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   int64_t envs[NCCL_NUM_PROTOCOLS] = { ncclParamLlBuffSize(), ncclParamLl128BuffSize(), ncclParamBuffSize() };
   int defaults[NCCL_NUM_PROTOCOLS] = { DEFAULT_LL_BUFFSIZE, DEFAULT_LL128_BUFFSIZE, DEFAULT_BUFFSIZE };
 
-  if (cpuArch == NCCL_TOPO_CPU_ARCH_ARM) defaults[NCCL_PROTO_SIMPLE] = DEFAULT_BUFFSIZE_ARM;
-
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
@@ -532,6 +529,10 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
   else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
+
+  // Make sure P2P chunksize is not larger than coll chunksize.
+  if (comm->p2pChunkSize * NCCL_STEPS > comm->buffSizes[NCCL_PROTO_SIMPLE]) comm->p2pChunkSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
+
   if (comm->sharedRes->owner != comm) {
     /* make sure split comm p2pChunkSize won't exceed shared p2pChunkSize. */
     comm->p2pChunkSize = std::min(comm->p2pChunkSize, comm->sharedRes->tpP2pChunkSize);
