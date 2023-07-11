@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NET_DEVICE_H_
-#define NET_DEVICE_H_
+#ifndef NCCL_NET_DEVICE_H_
+#define NCCL_NET_DEVICE_H_
 
 #define NCCL_NET_DEVICE_INVALID_VERSION      0x0
 #define NCCL_NET_MTU_SIZE                    4096

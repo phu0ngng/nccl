@@ -463,8 +463,8 @@ fallback:
   return result;
 }
 
-static ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport);
-static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps);
+static ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetSupport);
+static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetSupport, int nvlsSupport, int numPipeOps);
 
 static ncclResult_t scheduleCollTasksToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget
@@ -503,6 +503,7 @@ static ncclResult_t scheduleCollTasksToPlan(
     int nAggChannels = 0;
     int nAggOps = 1;
     struct ncclTaskColl* aggEnd = head->next;
+    int nvlsSupport = comm->nvlsSupport && ncclNvlsSupported(aggInfo.opFull.op, aggInfo.datatype);
     int collNetSupport = 0;
     NCCLCHECK(getCollNetSupport(&aggInfo, &collNetSupport));
 
@@ -523,7 +524,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       NCCLCHECK(ncclInfoSetDerived(&aggInfo, comm->nRanks));
       aggInfo.nChannels = std::min(comm->nChannels, nAggChannels);
       int opPerChannel = DIVUP(nAggChannels, aggInfo.nChannels);
-      NCCLCHECK(getAlgoInfo(&aggInfo, collNetSupport, opPerChannel));
+      NCCLCHECK(getAlgoInfo(&aggInfo, collNetSupport, nvlsSupport, opPerChannel));
     }
 
     while (head != aggEnd) {
@@ -555,7 +556,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       // Check whether algo and proto have been preset (as in aggregation case)
       // If so, skip the calculation
       if (info.nChannels <= 0 || info.nThreads <= 0) {
-        NCCLCHECK(getAlgoInfo(&info, collNetSupport, 1));
+        NCCLCHECK(getAlgoInfo(&info, collNetSupport, nvlsSupport, 1));
       }
 
       if (*nWorkBudget < info.nChannels) return ncclSuccess; // Ensure room for addCollToPlan()
@@ -1138,37 +1139,37 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
 /* Enqueueing system : computation of kernel and proxy operations parameters */
 /*****************************************************************************/
 
-static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport) {
+static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetSupport) {
   // Translate ncclAvg and PreMulSum
   ncclRedOp_t netOp = info->op == ncclAvg || info->op >= ncclNumOps ? ncclSum : info->op;
-  *collNetTypeSupport = info->comm->collNetSupportMatrix[netOp][info->datatype];
+  *collNetSupport = info->comm->collNetSupport && info->comm->collNetSupportMatrix[netOp][info->datatype];
   return ncclSuccess;
 }
 
 // numPipeOps: number of pipelined ops. Can be greater than 1 in aggregation mode. Used to adjust latency.
-static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps) {
+static ncclResult_t topoGetAlgoInfo(struct ncclInfo* info, int collNetSupport, int nvlsSupport, int numPipeOps) {
   struct ncclComm* comm = info->comm;
   if (comm->nRanks == 1) {
     info->algorithm = NCCL_ALGO_RING;
     info->protocol = NCCL_PROTO_SIMPLE;
   }
-  else {
+  else if (info->algorithm == NCCL_ALGO_UNDEF || info->protocol == NCCL_PROTO_UNDEF) {
     float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
     float backupMinTime = 3600000000.0;
     bool backup = false;
-    int backupAlgo = -1; // back up algo and proto if no algo/proto is picked up.
-    int backupProto = -1;
+    int backupAlgo = NCCL_ALGO_UNDEF; // back up algo and proto if no algo/proto is picked up.
+    int backupProto = NCCL_PROTO_UNDEF;
     // Find algorithm / protocol.
     info->algorithm = -1;
     info->protocol = -1;
     int nAlgos = NCCL_NUM_ALGORITHMS;
     for (int a=0; a<nAlgos; a++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetTypeSupport != 1) continue;
-      if (a == NCCL_ALGO_NVLS && !ncclNvlsSupported(info->opFull.op, info->datatype) && info->coll != ncclFuncAllGather) continue;
-      if (a == NCCL_ALGO_NVLS && collNetTypeSupport != 1 && comm->nNodes > 1) continue;
+      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetSupport != 1) continue;
+      if (a == NCCL_ALGO_NVLS && nvlsSupport != 1 && info->coll != ncclFuncAllGather) continue;
+      if (a == NCCL_ALGO_NVLS && collNetSupport != 1 && comm->nNodes > 1) continue;
       /* now we only support single-node NVLS allgather and reducescatter */
       if (a == NCCL_ALGO_NVLS && (info->coll == ncclFuncAllGather || info->coll == ncclFuncReduceScatter) && comm->nNodes > 1) continue;
-      if (a == NCCL_ALGO_NVLS_TREE && !ncclNvlsSupported(info->opFull.op, info->datatype)) continue;
+      if (a == NCCL_ALGO_NVLS_TREE && nvlsSupport != 1) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
@@ -1189,8 +1190,8 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
       }
     }
 
-    if (info->algorithm == -1 || info->protocol == -1) {
-      if (backupAlgo == -1 || backupProto == -1) {
+    if (info->algorithm == NCCL_ALGO_UNDEF || info->protocol == NCCL_PROTO_UNDEF) {
+      if (backupAlgo == NCCL_ALGO_UNDEF || backupProto == NCCL_PROTO_UNDEF) {
         WARN("Error : no algorithm/protocol available");
         return ncclInternalError;
       }
@@ -1234,6 +1235,25 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
   info->nChannels = nc;
   info->nThreads = nt;
+  return ncclSuccess;
+}
+
+// Use the default topo-based tuner if tuner plugin is not successful.
+// Call the plugin first. Let it set algo+proto, and/or nChannels.
+// Then, topoGetAlgoInfo will set algo/proto if not set, then nChannels and nThreads based on algo/proto.
+// Finally, nChannels will be overriden by the plugin setting.
+static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetSupport, int nvlsSupport, int numPipeOps) {
+  info->algorithm = NCCL_ALGO_UNDEF;
+  info->protocol = NCCL_PROTO_UNDEF;
+  int nChannels = 0;
+  if (info->comm->tuner != NULL) {
+    NCCLCHECK(info->comm->tuner->getCollInfo(
+          info->coll, info->nBytes,
+          collNetSupport, nvlsSupport, numPipeOps,
+          &info->algorithm, &info->protocol, &nChannels));
+  }
+  NCCLCHECK(topoGetAlgoInfo(info, collNetSupport, nvlsSupport, numPipeOps));
+  if (nChannels) info->nChannels = nChannels; // Set by plugin; override default.
   return ncclSuccess;
 }
 

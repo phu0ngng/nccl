@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #include "net.h"
 #include "bootstrap.h"
 #include "checks.h"
