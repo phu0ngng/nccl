@@ -428,7 +428,7 @@ static ncclResult_t sendFree(struct ncclConnector* send) {
       // Our own GPU, so it wasn't mapped in
       free(map);
       return ncclSuccess;
-}
+    }
     if (!map->sameProcess || ncclCuMemEnable()) {
       if (!map->sameProcess) NCCLCHECK(ncclShmClose(map->mems[NCCL_NET_MAP_HOSTMEM].attachHandle));
       if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
