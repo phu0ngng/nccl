@@ -159,11 +159,12 @@ struct ncclProxyProgressState {
 
 // Expected proxy response fifo
 struct ncclExpectedProxyResponse {
-  void*    opId;
-  int      respSize;
-  bool     done;
-  void*    respBuff;
-  struct   ncclExpectedProxyResponse* next;
+  void*                             opId;
+  int                               respSize;
+  bool                              done;
+  void*                             respBuff;
+  ncclResult_t                      res;
+  struct ncclExpectedProxyResponse* next;
 };
 
 struct ncclProxyAsyncOp {
@@ -181,6 +182,14 @@ struct ncclProxyLocalPeer {
   int tpLocalRank;
   ncclProxyAsyncOp* asyncOps;
   int asyncOpCounter;
+};
+
+// Common response header for all proxyOps
+// We pack this into a struct to reduce the number of blocking send and recv calls
+struct ncclProxyRpcResponseHeader {
+  void* opId;
+  ncclResult_t res;
+  int respSize;
 };
 
 struct ncclProxyState {
