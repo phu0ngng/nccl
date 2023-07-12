@@ -392,7 +392,7 @@ perftest-DGX-1V:
     NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 2G
+    - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 2G
   interruptible: true
 
 perftest-DGX-2:
