@@ -279,6 +279,7 @@ int main(int argc, const char* argv[]) {
     RUN_MULTI4("Scout");
     RUN("PCI-H100-NV");
 #endif
+    RUN("CG4");
     RUN("P9-6V");
     RUN("P9-4V");
     RUN("HP-ARM-V100");

@@ -49,10 +49,10 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   return ncclSuccess;
 }
 
-static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode* node2, struct ncclTopoLink** revLink) {
+static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode* node2, int type, struct ncclTopoLink** revLink) {
   for (int l=0; l<node2->nlinks; l++) {
     struct ncclTopoLink* link = node2->links+l;
-    if (link->remNode == node1) {
+    if (link->remNode == node1 && link->type == type) {
       *revLink = link;
       return ncclSuccess;
     }
@@ -85,11 +85,11 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
     float fwBw = link->type == LINK_PCI ? pciBw : bw;
     float revBw = 0;
     if (link->remNode->type == GPU && link->remNode->gpu.cudaCompCap < 80 && start->type != GPU) {
-      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, link->type, &revLink));
       revBw += fwBw/8;
     }
-    if (link->remNode->type == CPU && link->type == LINK_NVL) {
-      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+    if (link->remNode->type == CPU && link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER && link->type == LINK_NVL) {
+      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, link->type, &revLink));
       revBw += fwBw;
     }
     if (link->bw < fwBw || (revBw && revLink->bw < revBw)) { *steps = step; return ncclSuccess; }

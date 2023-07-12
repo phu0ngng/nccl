@@ -159,11 +159,12 @@ struct ncclProxyProgressState {
 
 // Expected proxy response fifo
 struct ncclExpectedProxyResponse {
-  void*    opId;
-  int      respSize;
-  bool     done;
-  void*    respBuff;
-  struct   ncclExpectedProxyResponse* next;
+  void*                             opId;
+  int                               respSize;
+  bool                              done;
+  void*                             respBuff;
+  ncclResult_t                      res;
+  struct ncclExpectedProxyResponse* next;
 };
 
 struct ncclProxyAsyncOp {
@@ -183,6 +184,14 @@ struct ncclProxyLocalPeer {
   int asyncOpCounter;
 };
 
+// Common response header for all proxyOps
+// We pack this into a struct to reduce the number of blocking send and recv calls
+struct ncclProxyRpcResponseHeader {
+  void* opId;
+  ncclResult_t res;
+  int respSize;
+};
+
 struct ncclProxyState {
   int refCount;
   int tpRank;
@@ -195,6 +204,7 @@ struct ncclProxyState {
   int buffSizes[NCCL_NUM_PROTOCOLS];
   bool allocP2pNetLLBuffers;
   bool dmaBufSupport;
+  volatile bool readyFree;
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
   volatile uint32_t* abortFlag;
@@ -281,5 +291,6 @@ ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, struct ncclProx
 
 ncclResult_t ncclProxyStop(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
-ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
+ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState);
+ncclResult_t ncclProxyDetach(struct ncclProxyState *proxyState);
 #endif
