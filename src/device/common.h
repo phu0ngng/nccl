@@ -171,7 +171,7 @@ __device__ void ncclKernelMain(struct ncclDevComm* comm, uint64_t channelMask, s
       bytes = 0;
       break;
     }
-    copyToShmem16(tid%WARP_SIZE, dst, src, bytes);
+    if (bytes) copyToShmem16(tid%WARP_SIZE, dst, src, bytes);
   }
   __syncthreads(); // publish ncclShmem
 
