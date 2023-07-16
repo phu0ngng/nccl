@@ -75,7 +75,7 @@ ncclResult_t nvlsGroupCreate(struct ncclComm *comm, struct ncclNvlsSharedRes* re
   INFO(NCCL_NVLS, "NVLS Creating Multicast group nranks %d size %zi on rank %d", nranks, size, rank);
   CUCHECK(cuMulticastCreate(&resources->mcHandle, prop));
 
-  if (NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) {
+  if ((NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) && (NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR)) {
     // Get a handle to pass to other ranks
     CUCHECK(cuMemExportToShareableHandle(shareableHandle, resources->mcHandle, NVLS_CU_MEM_HANDLE_TYPE, 0));
   }
@@ -102,16 +102,16 @@ ncclResult_t nvlsGroupConnect(struct ncclComm *comm, struct ncclNvlsSharedRes* r
   // Import and map the remote memory descriptor to the local GPU
   if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
     // cuMem UDS support
-    int fd = *(int *)shareableHandle;
-    TRACE(NCCL_NVLS, "NVLS rank %d Importing shareable handle from rank %d fd %d", comm->localRank, rank, fd);
+    int fd = -1;
+    TRACE(NCCL_NVLS, "NVLS rank %d Importing shareable handle %p from rank %d", comm->localRank, shareableHandle, rank);
     struct ncclProxyConnector proxyConn;
     int tpProxyRank = comm->topParentRanks[rank];
     NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, tpProxyRank, &proxyConn));
-    TRACE(NCCL_NVLS, "NVLS rank %d request conversion of fd %d from rank %d", comm->localRank, fd, rank);
-    NCCLCHECK(ncclProxyClientConvertFdBlocking(comm, &proxyConn, fd, (int *)shareableHandle));
-    fd = *(int *)shareableHandle;
+    TRACE(NCCL_NVLS, "NVLS rank %d request conversion of handle 0x%lx from rank %d", comm->localRank, *(uint64_t*)shareableHandle, rank);
+    NCCLCHECK(ncclProxyClientGetFdBlocking(comm, &proxyConn, shareableHandle, &fd));
     TRACE(NCCL_NVLS, "NVLS rank %d received converted fd %d from rank %d", comm->localRank, fd, rank);
     CUCHECK(cuMemImportFromShareableHandle(&resources->mcHandle, (void *)(uintptr_t)fd, type));
+    (void) close(fd);
   } else {
     if (NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) {
       CUCHECK(cuMemImportFromShareableHandle(&resources->mcHandle, (void *)shareableHandle, type));
@@ -123,15 +123,6 @@ ncclResult_t nvlsGroupConnect(struct ncclComm *comm, struct ncclNvlsSharedRes* r
 }
 
 ncclResult_t nvlsGroupDisconnect(struct ncclComm *comm, struct ncclNvlsSharedRes* resources) {
-  CUmemAllocationHandleType type = NVLS_CU_MEM_HANDLE_TYPE;
-
-  // Import and map the remote memory descriptor to the local GPU
-  if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
-    // cuMem UDS support
-    int fd = *(int *)resources->shareableHandle;
-    (void) close(fd);
-  }
-
   return ncclSuccess;
 }
 

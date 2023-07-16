@@ -242,6 +242,7 @@ apitest-DGX-A100:
   variables:
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
     NCCL_SOCKET_IFNAME: "ibp12s0"
+    NCCL_CUMEM_ENABLE: "1"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - srun -n 1 --account=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:20:00 ./test/scripts/gitlab-runner-apitest.sh
@@ -391,7 +392,7 @@ perftest-DGX-1V:
     NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 2G
+    - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 2G
   interruptible: true
 
 perftest-DGX-2:
@@ -411,7 +412,7 @@ perftest-DGX-2:
     NGPUS: 16
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - salloc -N 1 --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 1G
+    - salloc -N 1 --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} --account=sw_gpucomms_nvshmem --nv-meta ml-model.nccl-perf -p $PARTITION_LIST -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 1G
   interruptible: true
 
 perftest-DGX-A100:
@@ -427,6 +428,7 @@ perftest-DGX-A100:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
+    NCCL_CUMEM_ENABLE: "1"
     NNODES: 1
     NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
@@ -549,6 +551,7 @@ perftest-multi-selene:
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
+    NCCL_CUMEM_ENABLE: "1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:15:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
@@ -574,6 +577,7 @@ perftest-sharp-selene:
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
+    NCCL_CUMEM_ENABLE: "1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=nccl -pluna --network=sharp --constraint=nccl -J "nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SHARP_MULTI_JOB_TIME ./test/scripts/gitlab-runner-perftest-sharp.sh 4G 0
@@ -593,6 +597,7 @@ perf-regression-single-DGX-A100:
     MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
     NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
+    NCCL_CUMEM_ENABLE: "1"
     GPU_APPLICATION_CLOCK: 1410
   script:
     - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
@@ -626,6 +631,7 @@ perf-regression-multi-DGX-A100:
     CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
     NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
     NCCL_IB_SL: "1"
+    NCCL_CUMEM_ENABLE: "1"
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     GPU_APPLICATION_CLOCK: 1410

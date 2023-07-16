@@ -12,7 +12,7 @@
 #include <dlfcn.h>
 
 // This env var (NCCL_CUMEM_ENABLE) toggles cuMem API usage
-NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", 0);
+NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", -2);
 
 static int ncclCuMemSupported = 0;
 
@@ -43,7 +43,9 @@ error:
 }
 
 int ncclCuMemEnable() {
-  return ((ncclParamCuMemEnable() == -2 && ncclCuMemSupported) || ncclParamCuMemEnable());
+  // NCCL_CUMEM_ENABLE=-2 means auto-detect CUMEM support
+  int param = ncclParamCuMemEnable();
+  return  param >= 0 ? param : (param == -2 && ncclCuMemSupported);
 }
 
 #define DECLARE_CUDA_PFN(symbol,version) PFN_##symbol##_v##version pfn_##symbol = nullptr
