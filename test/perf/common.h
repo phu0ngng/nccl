@@ -16,9 +16,24 @@
 #include <pthread.h>
 #include "nccl1_compat.h"
 #include "timer.h"
+#include <cuda.h>
 
 // For nccl.h < 2.13 since we define a weak fallback
 extern "C" char const* ncclGetLastError(ncclComm_t comm);
+
+#define CUCHECK(cmd) do {                           \
+  CUresult err = cmd;                               \
+  if( err != CUDA_SUCCESS ) {                       \
+    char hostname[1024];                            \
+    const char *errStr;                             \
+    cuGetErrorString(err, &errStr);                 \
+    getHostName(hostname, 1024);                    \
+    printf("%s: Test CU failure %s:%d '%s'\n",      \
+         hostname,                                  \
+        __FILE__,__LINE__,errStr);                  \
+    return testCudaError;                           \
+  }                                                 \
+} while(0)
 
 #define CUDACHECK(cmd) do {                         \
   cudaError_t err = cmd;                            \
@@ -372,5 +387,79 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
 
 testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank, const char* ft_list);
 testResult_t threadLaunch(struct testThread* thread);
+
+#define ALIGN_SIZE(size, align) \
+  size = ((size + (align) - 1) / (align)) * (align);
+
+static testResult_t testMemAlloc(void **ptr, size_t size) {
+#if CUDART_VERSION >= 12010
+  size_t granularity = 0;
+  size_t nvlsGran = 0;
+  size_t memGran = 0;
+  int ndev;
+  CUdevice currentDev;
+  CUmemAllocationProp memProp = {};
+  CUmemAccessDesc accessDesc = {};
+  CUmemGenericAllocationHandle handle;
+  int cudaDev;
+  int flag = 0;
+
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  CUDACHECK(cudaGetDeviceCount(&ndev));
+  CUCHECK(cuDeviceGet(&currentDev, cudaDev));
+
+  memProp.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+  memProp.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  memProp.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR; // So it can be exported
+  memProp.location.id = currentDev;
+  // Query device to see if RDMA support is available
+  CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED, currentDev));
+  if (flag) memProp.allocFlags.gpuDirectRDMACapable = 1;
+  CUCHECK(cuMemGetAllocationGranularity(&memGran, &memProp, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
+
+  CUmulticastObjectProp nvlsProp = {};
+  nvlsProp.size = size;
+  nvlsProp.numDevices = ndev;
+  nvlsProp.handleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
+  nvlsProp.flags = 0;
+  CUCHECK(cuMulticastGetGranularity(&nvlsGran, &nvlsProp, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+
+  granularity = memGran > nvlsGran ? memGran : nvlsGran;
+  
+  ALIGN_SIZE(size, granularity);
+  /* Allocate the physical memory on the device */
+  CUCHECK(cuMemCreate(&handle, size, &memProp, 0));
+  /* Reserve a virtual address range */
+  CUCHECK(cuMemAddressReserve((CUdeviceptr *)ptr, size, granularity, 0, 0));
+  /* Map the virtual address range to the physical allocation */
+  CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
+  /* Now allow RW access to the newly mapped memory */
+  accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  accessDesc.location.id = currentDev;
+  accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+  CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+#else
+  CUDACHECK(cudaMalloc(ptr, size));
+#endif
+  return testSuccess;
+}
+
+static testResult_t testMemFree(void *ptr) {
+#if CUDART_VERSION >= 12010
+  if (ptr == NULL) return testSuccess;
+  CUmemGenericAllocationHandle handle;
+  size_t size = 0;
+
+  CUCHECK(cuMemRetainAllocationHandle(&handle, ptr));
+  CUCHECK(cuMemRelease(handle));
+  CUCHECK(cuMemGetAddressRange(NULL, &size, (CUdeviceptr)ptr));
+  CUCHECK(cuMemUnmap((CUdeviceptr)ptr, size));
+  CUCHECK(cuMemRelease(handle));
+  CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, size));
+#else
+  cudaFree(ptr);
+#endif
+  return testSuccess;
+}
 
 #endif
