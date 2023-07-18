@@ -23,8 +23,10 @@ NCCL network device plugins are a new feature which allow both internal and exte
 <h3>ncclNetPlugin_v7 new APIs</h3>
 The follow network plugin APIs are introduced in ncclNetPlugin_v7 with this feature, including most importantly a new API exposing a network device handle object:
 <pre>
-    // Get handle for device offload
-    ncclResult_t (*getDeviceHandle)(void* netComm, int tag, ncclNetDeviceHandle* handle, int* needsProxyProgress);
+    // Accept an optional ncclNetDeviceHandle_t object
+    // If *sendDevComm or *recvDevComm point to a valid object, then NCCL is requesting device offload for this connection
+    ncclResult_t (*connect)(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm);
+    ncclResult_t (*accept)(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** recvDevComm);
 
     // Copy the given mhandle to a dptr in a format usable by this plugin's device code
     ncclResult_t (*getDeviceMr)(void* comm, void* mhandle, void** dptr_mhandle);
@@ -36,12 +38,41 @@ The follow network plugin APIs are introduced in ncclNetPlugin_v7 with this feat
 <h3>The Network Device Handle Object</h3>
 The device handle is the primary piece of data for this whole feature, handed down from the plugin to the device kernel. It is a wrapper around an opaque piece of memory that must be defined in both the plugin CPU code as well as GPU code.  The ncclNetDeviceType enum lets the plugin tell NCCL which device offload path to choose (each officially integrated plugin will be assigned it's own enum value.) Version is used to ensure a matching NCCL build is being used with a given handle object.
 <pre>
-struct ncclNetDeviceHandle {
-  ncclNetDeviceType netDeviceType; // Network offload type
-  int netDeviceVersion;            // Version number for network offload
-  void* handle;
-  size_t size;
-};
+  typedef struct {
+    ncclNetDeviceType netDeviceType; // Network offload type
+    int netDeviceVersion;            // Version number for network offload
+    void* handle;
+    size_t size;
+    int needsProxyProgress;
+  } ncclNetDeviceHandle_v7_t;
+</pre>
+
+<h3>Determing if a device handle should be requested or not</h3>
+NCCL invokes ncclNetGetDeviceHandle() with several relevant pieces of metadata regarding a connection as well the capability advertised by the plugin.
+This determines, within sendProxyConnect() / recvProxyConnect(), if a deviceHandle should be allocated or not.
+
+<pre>
+// This function embeds plugin-specific rules given the current versions
+static ncclResult_t ncclNetGetDeviceHandle(ncclNetDeviceType type, int version, int p2p, bool isRecv, ncclNetDeviceHandle_t** handle) {
+  bool needsDeviceHandle  = false;
+
+  if (type == NCCL_NET_DEVICE_UNPACK) {
+    if (version == NCCL_NET_DEVICE_UNPACK_VERSION && isRecv) {
+      needsDeviceHandle  = true;
+    }
+  }
+
+  // Don't re-alloc netDeviceHandles
+  if (needsDeviceHandle && (*handle == NULL)) {
+    NCCLCHECK(ncclCalloc(handle, 1));
+    (*handle)->netDeviceType = type;
+    (*handle)->netDeviceVersion = version;
+  } else if (!needsDeviceHandle) {
+    *handle = NULL;
+  }
+
+  return ncclSuccess;
+}
 </pre>
 
 <h3>Plumbing the handle from the plugin to NCCL</h3>
@@ -54,7 +85,7 @@ The ncclConnInfo structure now stores a deviceHandle like so:
 <pre>
 struct ncclConnInfo {
   ...
-  struct ncclNetDeviceHandle netDeviceHandle;
+  struct ncclNetDeviceHandle_t netDeviceHandle;
 };
 </pre>
 
@@ -78,7 +109,6 @@ struct ncclShmemData {
   ...
   alignas(16) union {
     unpackShmem    unpack;
-    ibdgaShmem     ibgda;
     myPluginShmem  myPlugin;
     ...
   } devicePlugin;
