@@ -169,7 +169,7 @@ class Primitives<
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
       }
       if ((flags & (AnyNetDeviceUnpack)) && (flags & (Recv*RoleWaitRecv))) {
-        ncclShmem.groups[group].devicePlugin.unpack.head = step / StepPerSlice;
+        ncclNetDeviceIncrementHead(group);
       }
       step += StepPerSlice;
     }
@@ -241,7 +241,7 @@ class Primitives<
          * to 0 to avoid unnecessary workload. */
         int workSize = ncclShmem.aborted ? 0 : sliceSize;
         if (flags & AnyNetDeviceUnpack) {
-          ncclNetDeviceUnpack<Recv>(tid, nworkers, group, ncclShmem.groups[group].devicePlugin.unpack.unpackNetDeviceIndexMask, Src, workSize);
+          ncclNetDeviceUnpack<Recv>(tid, tidInBlock, nworkers, group, ncclShmem.groups[group].devicePlugin.unpack.unpackNetDeviceIndexMask, Src, workSize);
           // Sync here to make sure all workers are reading from the updated srcs)
           subBarrier();
         }
@@ -529,6 +529,10 @@ class Primitives<
     if (flags & (RolePostSend|RolePostRecv)) {
       auto *conns = (flags & RolePostSend) ? ncclShmem.groups[group].sendConns : ncclShmem.groups[group].recvConns;
       conns[index]->step = step;
+    }
+    
+    if ((flags & (AnyNetDeviceUnpack)) && (flags & (RoleWaitRecv))) {
+      ncclNetDeviceSaveHead(netDeviceHandle, group);
     }
     barrier();
   }

@@ -98,6 +98,7 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 struct ncclConnInfo {
   // Regular comm mechanism
   char *buffs[NCCL_NUM_PROTOCOLS]; // Local for recv, remote for send
+  void* mhandles[NCCL_NUM_PROTOCOLS];
   uint64_t *tail;     // Local for recv, remote for send
   uint64_t *head;     // Local for send, remote for recv
 
@@ -111,7 +112,7 @@ struct ncclConnInfo {
 
   uint64_t step;      // Keep where we are
   uint64_t llLastCleaning;
-  struct ncclNetDeviceHandle netDeviceHandle;
+  ncclNetDeviceHandle_t netDeviceHandle;
 };
 
 struct ncclProxyConnector {

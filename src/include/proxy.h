@@ -245,7 +245,7 @@ struct ncclProxyConnection {
   struct ncclProxyArgs *proxyAppend;
   struct ncclProxyArgs **proxyAppendPtr;
   void* transportResources;
-  ncclNetDeviceHandle* netDeviceHandle; // dev_ptr
+  ncclNetDeviceHandle_t* netDeviceHandle;
   void* mhandles[NCCL_NUM_PROTOCOLS];
   proxyConnectState state;
   struct ncclCollNetSharedRes* collNet;
