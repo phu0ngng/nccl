@@ -23,6 +23,12 @@ enum ncclRegBufferType {
   NCCL_REG_BUFFER_NUM = 3
 };
 
+enum ncclRegBufferMode {
+  NCCL_LOCAL_REGISTER = 0,
+  NCCL_GRAPH_REGISTER = 1,
+  NCCL_REGISTER_MODE_NUM = 2
+};
+
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFuncIndex, struct ncclWorkElem* work, struct ncclProxyOp* proxyOp /* output */);
 
 NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
@@ -356,6 +362,7 @@ static void finishPlan(struct ncclKernelPlan* plan) {
 
 static ncclResult_t registerIntraNodeBuffers(
     struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclInfo* info,
+    ncclRegBufferMode regMode,
     void* outRegBufSend[NCCL_MAX_LOCAL_RANKS],
     void* outRegBufRecv[NCCL_MAX_LOCAL_RANKS],
     ncclRegBufferType *outRegBufType
@@ -366,29 +373,22 @@ static ncclResult_t registerIntraNodeBuffers(
 #if CUDART_VERSION >= 11030
   if ((info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) && comm->nvlsRegSupport) {
     bool regBufUsed = false;
-    size_t sendbuffSize;
-    size_t recvbuffSize;
     const void *sendbuff = info->sendbuff;
     void *recvbuff = info->recvbuff;
-
-    /* compute buffer size for NVLS buffer registration */
-    if (info->coll == ncclFuncAllGather) {
-      sendbuffSize = info->count * ncclTypeSize(info->datatype);
-      recvbuffSize = sendbuffSize * comm->nRanks;
-    } else if (info->coll == ncclFuncReduceScatter) {
-      recvbuffSize = info->count * ncclTypeSize(info->datatype);
-      sendbuffSize = recvbuffSize * comm->nRanks;
-    } else {
-      sendbuffSize = recvbuffSize = info->count * ncclTypeSize(info->datatype);
-    }
 
     if (info->coll == ncclFuncAllGather) 
       sendbuff = NULL;
     else if (info->coll == ncclFuncReduceScatter) 
       recvbuff = NULL;
-
-    NCCLCHECKGOTO(ncclNvlsRegisterBuffer(comm, plan, sendbuff, recvbuff, sendbuffSize, recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv), result, fallback);
-
+      
+    if (regMode == NCCL_LOCAL_REGISTER) {
+      NCCLCHECKGOTO(ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv), result, fallback);
+    } else if (regMode == NCCL_GRAPH_REGISTER) {
+      NCCLCHECKGOTO(ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv), result, fallback);
+    } else {
+      goto fallback;
+    }
+    
     if (regBufUsed) {
       /* tweak NVLS channels usage; for registered NVLS buffer, we only need 4/5 channels to 
        * saturate bandwidth. */
@@ -550,14 +550,37 @@ static ncclResult_t scheduleCollTasksToPlan(
 
       /* if possible, start registration  */
       ncclRegBufferType regBufType = NCCL_REGULAR_BUFFER;
+      ncclRegBufferMode regMode;
       void* regBufSend[NCCL_MAX_LOCAL_RANKS];
       void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
-      if (plan->persistent && ncclParamGraphRegister()) {
+      struct ncclRegRequest *req = ncclIntruQueueHead(&comm->regRequestQueue);
+      bool canSendReg = false;
+      bool canRecvReg = false;
+      bool needReg = false;
+
+      while (req && (!canSendReg || !canRecvReg)) {
+        if ((uintptr_t)req->buff <= (uintptr_t)info.sendbuff && (uintptr_t)req->buff + req->size >= (uintptr_t)info.sendbuff + info.sendbuffSize)
+          canSendReg = true;
+        if ((uintptr_t)req->buff <= (uintptr_t)info.recvbuff && (uintptr_t)req->buff + req->size >= (uintptr_t)info.recvbuff + info.recvbuffSize)
+          canRecvReg = true;
+        req = req->next;
+      }
+ 
+      if ((canSendReg || info.coll == ncclFuncAllGather) && (canRecvReg || info.coll == ncclFuncReduceScatter)) {
+        regMode = NCCL_LOCAL_REGISTER;
+        needReg = true;
+      } else if (plan->persistent && ncclParamGraphRegister()) {
+        regMode = NCCL_GRAPH_REGISTER;
+        needReg = true;
+      }
+
+      if (needReg) {
         cudaPointerAttributes sattr, rattr;
         CUDACHECK(cudaPointerGetAttributes(&sattr, info.sendbuff));
         CUDACHECK(cudaPointerGetAttributes(&rattr, info.recvbuff));
-        if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice)
-          registerIntraNodeBuffers(comm, plan, &info, regBufSend, regBufRecv, &regBufType);
+        if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice) {
+          registerIntraNodeBuffers(comm, plan, &info, regMode, regBufSend, regBufRecv, &regBufType);
+        }
       }
 
       NCCLCHECK(computeColl(&info, &workFuncIndex, &workElem, &proxyOp));
