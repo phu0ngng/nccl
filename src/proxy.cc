@@ -1605,8 +1605,8 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclProxyStop(struct ncclComm* comm) {
-  if (comm->sharedRes && comm->sharedRes->proxyState) {
-    struct ncclProxyState* sharedProxyState = comm->sharedRes->proxyState;
+  if (comm->proxyState) {
+    struct ncclProxyState* sharedProxyState = comm->proxyState;
 
     if ((comm->proxyRefCountOld = ncclAtomicRefCountDecrement(&sharedProxyState->refCount)) == 0) {
       if (sharedProxyState->peerAddresses) {
