@@ -21,7 +21,7 @@ union alignas(16) loadMeta {
     uint64_t dst_off;
   };
 };
-static_assert(sizeof(union loadMeta) == 16);
+static_assert(sizeof(union loadMeta) == 16, "Must be 16-byte aligned");
 
 /****** global memory ******/
 
