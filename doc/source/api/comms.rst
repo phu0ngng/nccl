@@ -157,3 +157,34 @@ ncclCommUserRank
 .. c:function:: ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank)
 
 Returns in *rank* the rank of the NCCL communicator *comm*.
+
+ncclCommRegister
+----------------
+
+.. c:function:: ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle)
+
+Register buffer with *size* under communicator *comm* for zero-copy communication, and *handle* is
+returned for future unregistration. See *buff* and *size* requirements (:ref: `user_buffer_reg`).
+
+ncclCommDeregister
+------------------
+
+.. c:function:: ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle)
+
+Deregister buffer represented by *handle* under communicator *comm*.
+
+ncclMemAlloc
+------------
+
+.. c:function:: ncclResult_t ncclMemAlloc(void **ptr, size_t size)
+
+Allocate a GPU buffer with *size*. Allocated buffer head address will be returned by *ptr*,
+and the actual allocated size can be larger than requested because of the buffer granularity 
+requirements from all types of NCCL optimizations.
+
+ncclMemFree
+-----------
+
+.. c:function:: ncclResult_t ncclMemFree(void *ptr)
+
+Free memory allocated by *ncclMemAlloc()*.

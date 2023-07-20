@@ -9,8 +9,9 @@
 #ifndef NCCL_P2P_H_
 #define NCCL_P2P_H_
 
-#ifdef MNNVL_SUPPORT
 #include <cuda.h>
+
+#ifdef MNNVL_SUPPORT
 #if CUDART_VERSION < 12030
 #include "wizlet.h"
 #endif
@@ -20,7 +21,7 @@
 #endif
 
 typedef union {
-  int data; // fd based descriptor
+  uint64_t data; // Needs to hold a CUmemGenericAllocationHandle for UDS fd support
   CUmemGenericAllocationHandle handle;
 } ncclCuDesc;
 

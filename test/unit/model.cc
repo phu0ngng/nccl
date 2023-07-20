@@ -67,6 +67,12 @@ int stats[RESET] = { 0, 0, 0, 0 };
   printf(str, v); \
 }while(0);
 
+int algoProtoSupported(int a, int p, struct ncclTopoGraph** graphs) {
+  if (graphs[a]->nChannels == 0) return 0;
+  if (a >= NCCL_ALGO_COLLNET_DIRECT && p != NCCL_PROTO_SIMPLE) return 0;
+  return 1;
+}
+
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   int ngpus = nGpus;
   struct ncclXml* xmlSystem;
@@ -128,7 +134,9 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   nvlsGraph.id = 3;
   nvlsGraph.pattern = NCCL_TOPO_PATTERN_NVLS;
   nvlsGraph.crossNic = 2;
-  nvlsGraph.collNet = 1;
+  nvlsGraph.collNet = 0;
+  nvlsGraph.minChannels = 1;
+  nvlsGraph.maxChannels = MAXCHANNELS;
 
   /* Compute */
   CHECK(ncclTopoCompute(system, &ringGraph));
@@ -143,41 +151,31 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     CHECK(ncclTopoCompute(system, &cNetGraph));
     CHECK(ncclTopoPrintGraph(system, &cNetGraph));
   }
+  CHECK(ncclTopoCompute(system, &nvlsGraph));
+  CHECK(ncclTopoPrintGraph(system, &nvlsGraph));
 
   treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
 
   int collNetSupport = (cNetGraph.nChannels == 0) ? 0 : 1;
-  int num_algorithms = NCCL_NUM_ALGORITHMS;
-  int num_protocols = NCCL_NUM_PROTOCOLS;
-  int first_algo = NCCL_ALGO_TREE;
-  int first_proto = NCCL_PROTO_LL;
-  if (!collNetSupport) {
-    num_algorithms = 2; // TREE/RING
-  } else {
-    num_algorithms = 4; // TREE/RING/COLLNETx2
-  }
-  int last_algo = first_algo+num_algorithms;
-  int last_proto = first_proto+num_protocols;
 
   // Last column is used for min/best/default.
-  const int m = num_algorithms*num_protocols;
   const int M = NCCL_NUM_ALGORITHMS*NCCL_NUM_PROTOCOLS;
 
   int fds[M+1];
   char path[1024];
   for (int i=0; i<M+1; i++) fds[i] = -1;
-  for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-    int i = (a-first_algo)*num_protocols+(p-first_proto);
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+    int i = a*NCCL_NUM_PROTOCOLS+p;
     sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function], ncclAlgoStr[a], ncclProtoStr[p]);
     fds[i] = open(path, O_RDONLY);
   }
   sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[function]);
-  fds[m] = open(path, O_RDONLY);
+  fds[M] = open(path, O_RDONLY);
   float score = 0.0;
   int npoints = 0;
   if (compactMode) {
     int nfds = 0;
-    for (int i=0; i<=m; i++) if (fds[i] != -1) nfds++;
+    for (int i=0; i<=M; i++) if (fds[i] != -1) nfds++;
     if (nfds == 0 || ngpus*nnodes == 1) {
       ncclTopoFree(system);
       return;
@@ -205,14 +203,14 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   if (!compactMode) {
     printf("%s/%dx%d, %s\n", platform, nnodes, ngpus, ncclFuncStr[function]);
     printf("-----------+");
-    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (algoProtoSupported(a, p, graphs) == 0) continue;
       printf("---------------------+");
     }
     printf("-------------------------------+"); printf("\n");
     printf("     Size  |");
-    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (algoProtoSupported(a, p, graphs) == 0) continue;
       if (strlen(ncclAlgoStr[a]) <= 12)
         printf(" %12s/%-6s |", ncclAlgoStr[a], ncclProtoStr[p]);
       else
@@ -220,16 +218,16 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     }
     printf("%19s            |\n", "Default");
     printf("           |");
-    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
-      int i = (a-first_algo)*num_protocols+(p-first_proto);
-      printf("%9s  %9s |", "data", (i == m) ? "best" : "model");
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (algoProtoSupported(a, p, graphs) == 0) continue;
+      int i = a*NCCL_NUM_PROTOCOLS+p;
+      printf("%9s  %9s |", "data", (i == M) ? "best" : "model");
     }
     printf("%9s  %9s %9s |", "best", "dryrun", "data");
     printf("\n");
     printf("-----------+");
-    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (algoProtoSupported(a, p, graphs) == 0) continue;
       printf("---------------------+");
     }
     printf("-------------------------------+"); printf("\n");
@@ -241,13 +239,13 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     float model[M];
     float data[M+1];
     info.nBytes = size;
-    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
-      int i = (a-first_algo)*num_protocols+(p-first_proto);
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (algoProtoSupported(a, p, graphs) == 0) continue;
+      int i = a*NCCL_NUM_PROTOCOLS+p;
       CHECK(ncclTopoGetAlgoTime(&info, a, p, 1, model+i));
     }
 
-    for (int i=0; i<m+1; i++) {
+    for (int i=0; i<M+1; i++) {
       char valueStr[128];
       data[i] = -1.0;
       if (fds[i] != -1) {
@@ -269,9 +267,9 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     float dryrun = -1.0;
     float bestdata = -1.0;
     float bestmodel = -1.0;
-    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
-      int i = (a-first_algo)*num_protocols+(p-first_proto);
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (algoProtoSupported(a, p, graphs) == 0) continue;
+      int i = a*NCCL_NUM_PROTOCOLS+p;
       // Find best data
       if (data[i] > 0 && (bestdata < 0 || data[i] < bestdata)) bestdata = data[i];
 
@@ -285,9 +283,9 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     // Display each protocol/algorithm
     if (!compactMode) {
       printf("%10ld |", size);
-      for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-        if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
-        int i = (a-first_algo)*num_protocols+(p-first_proto);
+      for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        if (algoProtoSupported(a, p, graphs) == 0) continue;
+        int i = a*NCCL_NUM_PROTOCOLS+p;
         float ref = data[i];
         float value = model[i];
         int bold = value == bestmodel ? 7 : 0;
@@ -330,18 +328,18 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
         PRINT_MODE("%9.1f ", bestdata);
         printf(" %c%s", 0x1b, colorCodes[c]);
         PRINT_MODE("%9.1f", dryrun);
-        s = bestdata/data[m];
+        s = bestdata/data[M];
         c = GET_COLOR(s);
         printf(" %c%s", 0x1b, colorCodes[c]);
-        PRINT_MODE("%9.1f", data[m]);
+        PRINT_MODE("%9.1f", data[M]);
         printf("%c%s |\n", 0x1b, colorCodes[RESET]);
       }
     }
   }
   if (!compactMode) {
     printf("-----------+");
-    for (int a=first_algo; a<last_algo; a++) for (int p=first_proto; p<last_proto; p++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && p != NCCL_PROTO_SIMPLE) continue;
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (algoProtoSupported(a, p, graphs) == 0) continue;
       printf("---------------------+");
     }
     printf("-------------------------------+"); printf("\n");

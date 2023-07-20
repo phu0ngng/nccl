@@ -55,16 +55,31 @@ using std::uint32_t;
 using std::uint64_t;
 using std::uintptr_t;
 
+std::string getCurrentTimestamp(std::chrono::high_resolution_clock::time_point& tp) {
+  char buffer[80];
+  auto transformed = tp.time_since_epoch().count() / 1000000;
+  auto millis = transformed % 1000;
+  std::time_t tt;
+  tt = std::chrono::system_clock::to_time_t(tp);
+  auto timeinfo = localtime (&tt);
+  strftime (buffer,80,"%H:%M:%S",timeinfo);
+  sprintf(buffer, "%s:%03d",buffer,(int)millis);
+  return std::string(buffer);
+}
+
 // physical host count, my index
 int phost_n = 0, phost_me = -1;
 // mpi process count, my index
 int mpi_rank_n = 0, mpi_rank_me = -1;
 
 bool opt_verbose = false;
-bool opt_progress_thread = false;
+bool opt_disable_progress_thread = false;
 bool opt_force_fit = false;
 bool opt_force_size_one = false;
-bool opt_disable_check = false;
+bool opt_disable_check_failure = false;
+bool opt_check_only = false;
+bool opt_measure_performance = false;
+bool opt_dump_raw_perf_data = false;
 
 // map physical host to list of mpi ranks it owns
 std::unique_ptr<std::vector<int>[]> phost_ranks;
@@ -73,6 +88,14 @@ std::unique_ptr<std::vector<int>[]> phost_ranks;
 std::promise<void> signal_exit;
 std::atomic<size_t> global_ops_submitted{0};
 std::atomic<size_t> global_ops_completed{0};
+
+// Flag signalling end of preCheck phase, beginning of data phase
+std::promise<void> signal_precheck;
+std::atomic<size_t> parsedLineNumber{0};
+std::atomic<size_t> parsedLinesSkipped{0};
+std::atomic<size_t> precheckedDataOps{0};
+std::atomic<size_t> failedPrecheckDataOps{0};
+
 std::thread progress_thread;
 
 // How many data ops will this process submit for this trace?
@@ -294,17 +317,6 @@ T& SharedTable<T>::emplace(uint64_t key, Arg ...arg) {
   }
 }
 
-// Progress thread
-void progressThread(std::future<void> exit_future) {
-  while (exit_future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
-    fprintf(stderr, "[%u] rank 0 data_ops progress: [%lu posted / %lu completed / %lu total]\n",
-      getpid(), global_ops_submitted.load(), global_ops_completed.load(), data_op_call_count);
-  }
-
-  fprintf(stderr, "[%u] rank 0 signalled: [%lu posted / %lu completed / %lu total]\n",
-    getpid(), global_ops_submitted.load(), global_ops_completed.load(), data_op_call_count);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 struct CudaException: public std::runtime_error {
@@ -399,6 +411,7 @@ namespace CudaHelp {
   struct DeviceState {
     std::map<uintptr_t/*lo*/, ArenaState> arenas;
     std::mutex alloc_mutex;
+    std::mutex timer_mutex;
     char *blob;
     int anon_next=0;
     int64_t alloc_counter=0;
@@ -564,13 +577,13 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
 
     if (arena_size > dev->total_memory) {
       // Assert that this is impossible to replay
-      std::fprintf(stderr, "[%u] INVALID MEMORY SIZE. id=%u Attempting to alloc arena_size=0x%lx, dev->total_memory=0x%lx dev->free_memory=0x%lx. Make sure that the trace is being played back on a system with equivalent memory.\n",
+      std::fprintf(stderr, "[%u] INVALID MEMORY SIZE. id=%u Attempting to alloc arena_size=0x%lx, dev->total_memory=0x%lx dev->free_memory=0x%lx. Make sure that the trace is being played back on a system with equivalent GPU memory.\n",
         getpid(), op_id, arena_size, dev->total_memory, dev->free_memory);
       std::terminate();
     } else if (arena_size > dev->free_memory) {
       // If we don't have enough free space, and we can't allocate this size because of arena allocation fragmentation
       if (size > max_arena_size) {
-        std::fprintf(stderr, "[%u] ERROR - Insufficient GPU Memory. Arena fragmentation makes this impossible to alloc. id=%u Attempting to alloc arena_size=0x%lx, dev->free_memory=0x%lx dev->total_memory=0x%lx buffer_size=0x%lx num_arenas=%zu, total_allocated_arena_capacity=0x%lx, wasted_arena_capacity=0x%lx. Make sure there aren't any replay zombie processes (nvidia-smi). Make sure that the trace is being played back on a system with equivalent memory.\n",
+        std::fprintf(stderr, "[%u] ERROR - Insufficient GPU Memory. Arena fragmentation makes this impossible to alloc. id=%u Attempting to alloc arena_size=0x%lx, dev->free_memory=0x%lx dev->total_memory=0x%lx buffer_size=0x%lx num_arenas=%zu, total_allocated_arena_capacity=0x%lx, wasted_arena_capacity=0x%lx. Make sure there aren't any replay zombie processes (nvidia-smi). Make sure that the trace is being played back on a system with equivalent GPU memory.\n",
           getpid(), op_id, arena_size, dev->free_memory, dev->total_memory, size, dev->arenas.size(), total_allocated_arena_capacity, wasted_arena_capacity);
 
         arena_counter = 0;
@@ -1037,7 +1050,7 @@ void wrap_ncclGroupEnd(size_t line_number) {
     after_group_fns.clear();
   } else if (inside_nccl_group < 0) {
     fprintf(stderr, "[%u] ncclGroupEnd() was invoked without an associated ncclGroupStart(). line_number=%zu. Make sure there is a new line between every collective trace (this sometimes happens when catting two logs together.)\n", getpid(), line_number);
-    std::terminate();
+    exit(EPERM);
   }
 }
 
@@ -1083,6 +1096,157 @@ struct CallNcclGroupEnd {
 struct CallNcclGroupStart {
   int group_seq;
 };
+
+// These are used to measure the time and BusBW of a given op
+struct OpTimer {
+  int opId;
+	std::chrono::time_point<std::chrono::high_resolution_clock> start;
+	std::chrono::time_point<std::chrono::high_resolution_clock> end;
+  CallCode code;
+  int64_t elt_n;
+  ncclDataType_t elt_ty;
+  double busBw;
+  double algoBw;
+  bool finished;
+};
+
+struct OpTimerCircularBuffer {
+  std::atomic<int> head;
+  std::atomic<int> tail;
+  int length;
+  OpTimer* data;
+};
+
+// Global buffer used to calculate a moving average of BusBW per-second
+OpTimerCircularBuffer opTimerCircularBuffer;
+
+// Helper to translate callcodes to strings
+std::string callCodeToString(CallCode code) {
+  if (code == CallCode::allgather)
+    return "AllGather";
+  if (code == CallCode::allreduce)
+    return "AllReduce";
+  if (code == CallCode::broadcast)
+    return "Broadcast";
+  if (code == CallCode::reduce)
+    return "Reduce";
+  if (code == CallCode::reduce_scatter)
+    return "ReduceScatter";
+  if (code == CallCode::send)
+    return "Send";
+  if (code == CallCode::recv)
+    return "Recv";
+
+  return "Unknown CallCode";
+}
+
+// Progress thread
+void progressThread(std::future<void> exit_future, std::future<void> precheck_future) {
+  // Precheck phase
+  while (precheck_future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+    fprintf(stderr, "[%u] rank 0 preCheck progress: [%lu parsed lines / %lu lines skipped / %lu calls pre-checked / %lu prechecks failed]\n",
+      getpid(), parsedLineNumber.load(), parsedLinesSkipped.load(), precheckedDataOps.load(), failedPrecheckDataOps.load());
+
+      // Respect the exit signal in this loop as well
+      if (exit_future.wait_for(std::chrono::microseconds(1)) != std::future_status::timeout)
+        break;
+  }
+
+  fprintf(stderr, "[%u] rank 0 preCheck complete: [%lu parsed lines / %lu lines skipped / %lu calls pre-checked / %lu prechecks failed]\n",
+      getpid(), parsedLineNumber.load(), parsedLinesSkipped.load(), precheckedDataOps.load(), failedPrecheckDataOps.load());
+
+  // Data phase
+  // progressThreadTimes is an expanding/shrinking list of progressThread time points for measuring busBW
+  // Once all operations that started within a time point complete, that period's BusBW can be correctly measured and removed from the list
+  std::chrono::high_resolution_clock::time_point tNow = std::chrono::high_resolution_clock::now();
+  std::vector<std::chrono::high_resolution_clock::time_point> progressThreadTimes({tNow});
+  std::vector<double> aggBusBws;
+
+  // I will also need to cache posted and completed ops so I can correctly print those snapshots in time in correlation with busBW
+  std::vector<uint64_t> postedOps;
+  std::vector<uint64_t> completedOps;
+
+  while (exit_future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+    if (opTimerCircularBuffer.length > 0) {
+      // Grab the current time and push to the back of the list
+      progressThreadTimes.push_back(std::chrono::high_resolution_clock::now());
+      postedOps.push_back(global_ops_submitted.load());
+      completedOps.push_back(global_ops_completed.load());
+      aggBusBws.push_back(0);
+
+      // There should always be at least 2 time points in this series
+      std::chrono::duration<uint64_t, std::nano> progressThreadDuration = progressThreadTimes[1] - progressThreadTimes[0];
+
+      // Loop over completed operations
+      bool allOpsFinished = true;
+      int head = opTimerCircularBuffer.head % opTimerCircularBuffer.length;
+      while (opTimerCircularBuffer.data[head].start < progressThreadTimes[1] && 
+             head != opTimerCircularBuffer.tail) {
+
+        OpTimer* opTimer = opTimerCircularBuffer.data + head;
+        if (opTimer->finished) {
+          std::chrono::duration<uint64_t, std::nano> duration = opTimer->end - opTimer->start;
+
+          // Get scaled BusBW for this last period of time
+          // tStart is the more recent of: the starting point of this op, or progressThreadTimes[i] (the start of this period)
+          std::chrono::high_resolution_clock::time_point tStart = progressThreadTimes[0];
+          if (opTimer->start > tStart)
+            tStart = opTimer->start;
+
+          // tEnd is least recent of: the ending point of this op, or progressThreadTimes[i + 1] (the start of this period)
+          std::chrono::high_resolution_clock::time_point tEnd = opTimer->end;
+          if (progressThreadTimes[1] < tEnd) {
+            tEnd = progressThreadTimes[1]; 
+          }
+  
+          std::chrono::duration<uint64_t, std::nano> thisTimePeriodDuration = tEnd - tStart;
+          double scaledBusBw = opTimer->busBw * ((double) thisTimePeriodDuration.count() / progressThreadDuration.count());
+          aggBusBws[0] += scaledBusBw;
+
+          // Account for spillover into the next set of time periods
+          int j = 1;
+          while (progressThreadTimes[j] < opTimer->end) {
+            tStart = progressThreadTimes[j];
+            tEnd   = opTimer->end;
+            if (tEnd > progressThreadTimes[j + 1]) {
+              tEnd = progressThreadTimes[j + 1];
+            }
+
+            thisTimePeriodDuration = tEnd - tStart;
+            progressThreadDuration = progressThreadTimes[j + 1] - progressThreadTimes[j];
+            scaledBusBw = opTimer->busBw * ((double) thisTimePeriodDuration.count() / progressThreadDuration.count());
+            aggBusBws[j] += scaledBusBw;
+
+            j++;
+          }
+        } else {
+          allOpsFinished = false;
+        }
+        head = (head + 1) % opTimerCircularBuffer.length;
+      }
+
+      if (allOpsFinished) {
+        // Update the head 
+        opTimerCircularBuffer.head = head;
+        fprintf(stderr, "[%u] %s rank 0 data_ops progress: [ %lu posted / %lu completed / %lu total / %lf busBw ]\n",
+          getpid(), getCurrentTimestamp(progressThreadTimes[1]).c_str(), postedOps[0], completedOps[0], data_op_call_count, aggBusBws[0]);
+        postedOps.erase(postedOps.begin());
+        completedOps.erase(completedOps.begin());
+        progressThreadTimes.erase(progressThreadTimes.begin());
+        aggBusBws.erase(aggBusBws.begin());
+      } else {
+        // Let the user know nothing has hung but we're waiting for ops to complete to get a complete snapshot of this duration
+        fprintf(stderr, ".");
+      }
+    } else {
+      fprintf(stderr, "[%u] rank 0 data_ops progress: [ %lu posted / %lu completed / %lu total ]\n",
+        getpid(), global_ops_submitted.load(), global_ops_completed.load(), data_op_call_count);
+    }
+  }
+
+  fprintf(stderr, "[%u] rank 0 signalled: [%lu posted / %lu completed / %lu total]\n",
+    getpid(), global_ops_submitted.load(), global_ops_completed.load(), data_op_call_count);
+}
 
 struct CallCommSplit {
   uint64_t vcomm_src;
@@ -1144,7 +1308,7 @@ void invokeCall(CallHeader const &hdr, CallGetUniqueId const &body) {
   NCCL_CHECK(ncclGetUniqueId(&uid));
   main_mailbox.post([=]() {
     if (opt_verbose) {
-      fprintf(stderr, "[%u] CallGetUniqueId src_line_number=%lu vunique=0x%lx\n",
+      fprintf(stderr, "[%u] CallGetUniqueId trace_line_number=%lu vunique=0x%lx\n",
         getpid(), hdr.line_number, body.vunique);
     }
 
@@ -1161,7 +1325,7 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
         uid = vuid_table[body.vunique];
 
         if (opt_verbose) {
-          fprintf(stderr, "[%u] CallCommInitRank found UniqueId vunique=0x%lx src_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+          fprintf(stderr, "[%u] CallCommInitRank found UniqueId vunique=0x%lx trace_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
             getpid(), body.vunique, hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
         }
 
@@ -1169,7 +1333,7 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
       }
 
       if (opt_verbose) {
-        fprintf(stderr, "[%u] CallCommInitRank waiting for UniqueId src_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+        fprintf(stderr, "[%u] CallCommInitRank waiting for UniqueId trace_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
           getpid(), hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
       }
 
@@ -1180,7 +1344,7 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
   uint32_t my_op_id = ++op_id;
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u CallCommInitRank src_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+    fprintf(stderr, "[%u] id=%u CallCommInitRank trace_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
       getpid(), my_op_id, hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
   }
 
@@ -1190,7 +1354,7 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
 
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u CallCommInitRank completed src_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+    fprintf(stderr, "[%u] id=%u CallCommInitRank completed trace_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
       getpid(), my_op_id, hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
   }
 
@@ -1206,6 +1370,92 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
   });
 }
 
+size_t ncclDataTypeToSizeBytes(ncclDataType_t t) {
+  switch (t) {
+    case ncclInt8:
+      return sizeof(int8_t);
+    case ncclUint8:
+      return sizeof(uint8_t);
+    case ncclInt32:
+      return sizeof(int32_t);
+    case ncclUint32:
+      return sizeof(uint32_t);
+    case ncclInt64:
+      return sizeof(int64_t);
+    case ncclUint64:
+      return sizeof(uint64_t);
+    case ncclFloat16:
+      return sizeof(half);
+    case ncclFloat32:
+      return sizeof(float);
+    case ncclFloat64:
+      return sizeof(double);
+    default:
+      return 0;
+  }
+}
+
+std::string ncclDataTypeToString(ncclDataType_t t) {
+  switch (t) {
+    case ncclInt8:
+      return std::string("ncclInt8/ncclChar");
+    case ncclUint8:
+      return std::string("ncclUint8");
+    case ncclInt32:
+      return std::string("ncclInt32/ncclInt");
+    case ncclUint32:
+      return std::string("ncclUint32");
+    case ncclInt64:
+      return std::string("ncclInt64");
+    case ncclUint64:
+      return std::string("ncclUint64");
+    case ncclFloat16:
+      return std::string("ncclFloat16/ncclHalf");
+    case ncclFloat32:
+      return std::string("ncclFloat32/ncclFloat");
+    case ncclFloat64:
+      return std::string("ncclFloat64/ncclDouble");
+    default:
+      return std::string("Unknown nccl datatype");
+  }
+}
+
+void calculateBw(OpTimer* opTimer, int nranks) {
+  std::chrono::duration<double> sec = opTimer->end - opTimer->start;
+  size_t typeSize = ncclDataTypeToSizeBytes(opTimer->elt_ty);
+
+  switch (opTimer->code) {
+    case CallCode::allreduce:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw * ((double)(2*(nranks - 1)))/((double)nranks);
+      break;
+    // TODO - Shouldn't broadcast busBw = totalBytes * nranks * 2?
+    case CallCode::broadcast:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw;
+      break;
+    case CallCode::allgather:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize * nranks) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw * ((double)(nranks - 1))/((double)nranks);
+      break;
+    case CallCode::recv:
+    case CallCode::send:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw;
+      break;
+    case CallCode::reduce:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw;
+      break;
+    case CallCode::reduce_scatter:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize * nranks) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw * ((double)(nranks - 1))/((double)nranks);
+      break;
+    default:
+      fprintf(stderr, "calculateBw: Unknown callCode %u\n", (uint32_t) opTimer->code);
+  }
+}
+
 void invokeCall(CallHeader const &hdr, CallCommSplit const &body) {
   // Wait for my sequence in the src communicator's flow
   // This can't be invoked until the corresponding commInitRank has completed
@@ -1215,7 +1465,7 @@ void invokeCall(CallHeader const &hdr, CallCommSplit const &body) {
   uint32_t my_op_id = ++op_id;
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u CallCommSplit src_line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
+    fprintf(stderr, "[%u] id=%u CallCommSplit trace_line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
       getpid(), my_op_id, hdr.line_number, body.vcomm_src, body.vcomm_new, body.color, body.key, body.comm_rank_n, body.comm_rank_me);
   }
 
@@ -1227,7 +1477,7 @@ void invokeCall(CallHeader const &hdr, CallCommSplit const &body) {
 
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u CallCommSplit completed src_line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
+    fprintf(stderr, "[%u] id=%u CallCommSplit completed trace_line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
       getpid(), my_op_id, hdr.line_number, body.vcomm_src, body.vcomm_new, body.color, body.key, body.comm_rank_n, body.comm_rank_me);
   }
 
@@ -1320,7 +1570,7 @@ void invokeCall(CallHeader const &hdr, CallRedOpCreatePreMulSum const &body) {
   uint32_t my_op_id = ++op_id;
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u invokeCall: Posted ncclRedOpCreatePreMulSum. ops_in_flight=%u src_line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
+    fprintf(stderr, "[%u] id=%u invokeCall: Posted ncclRedOpCreatePreMulSum. ops_in_flight=%u trace_line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
       getpid(), my_op_id, vc->nccl_ops_in_flight.load(std::memory_order_relaxed), hdr.line_number, body.vcomm, body.vcomm_seq);
   }
 }
@@ -1336,7 +1586,7 @@ void invokeCall(CallHeader const &hdr, CallRedOpDestroy const &body) {
   uint32_t my_op_id = ++op_id;
   if (opt_verbose)
   {
-    fprintf(stdout, "[%u] id=%u invokeCall: Posted ncclRedOpDestroy. ops_in_flight=%u src_line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
+    fprintf(stdout, "[%u] id=%u invokeCall: Posted ncclRedOpDestroy. ops_in_flight=%u trace_line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
       getpid(), my_op_id, vc->nccl_ops_in_flight.load(std::memory_order_relaxed), hdr.line_number, body.vcomm, body.vcomm_seq);
   }
 }
@@ -1508,7 +1758,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u fifo_idx=%u invokeCall: Posted nccl%s. device=%d ops_in_flight=%u src_line_number=%lu vcomm=0x%lx vcomm_seq=%d verify_elt_ix0=%lu\n",
+    fprintf(stderr, "[%u] id=%u fifo_idx=%u invokeCall: Posted nccl%s. device=%d ops_in_flight=%u trace_line_number=%lu vcomm=0x%lx vcomm_seq=%d verify_elt_ix0=%lu\n",
       getpid(), my_op_id, fifo_idx, call_name, device, vc->nccl_ops_in_flight.load(std::memory_order_relaxed), hdr.line_number, body.vcomm, body.vcomm_seq, verify_elt_ix0);
   }
 
@@ -1520,6 +1770,18 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     my_ops->fetch_add(1);
     global_ops_submitted.fetch_add(1);
 
+    // Get time
+    int tail;
+    if (opTimerCircularBuffer.length > 0) {
+      tail = opTimerCircularBuffer.tail.fetch_add(1) % opTimerCircularBuffer.length;
+      opTimerCircularBuffer.data[tail].opId   = my_op_id;
+      opTimerCircularBuffer.data[tail].start  = std::chrono::high_resolution_clock::now();
+      opTimerCircularBuffer.data[tail].code   = hdr.code;
+      opTimerCircularBuffer.data[tail].elt_n  = body.elt_n;
+      opTimerCircularBuffer.data[tail].elt_ty = body.elt_ty;
+      opTimerCircularBuffer.data[tail].finished  = false;
+    }
+
     if (opt_verbose)
     {
       fprintf(stderr, "[%u] id=%u fifo_idx=%u nccl%s after_ncclGroup 1. ops_in_flight=%u\n",
@@ -1530,6 +1792,16 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     CudaHelp::streamCallback(device, stream_nccl, [=]() {
       my_ops->fetch_add(-1);
       global_ops_completed.fetch_add(1);
+
+      // Time end = end()
+      // Calculate BusBw()
+      // Get time
+      if (opTimerCircularBuffer.length > 0) {
+        opTimerCircularBuffer.data[tail].opId   = my_op_id;
+        opTimerCircularBuffer.data[tail].end  = std::chrono::high_resolution_clock::now();
+        calculateBw(&opTimerCircularBuffer.data[tail], rank_n);
+        opTimerCircularBuffer.data[tail].finished  = true;
+      }
 
       if (opt_verbose)
       {
@@ -1672,11 +1944,6 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
 
   VirtualThreads vthreads;
   ByteBuffer::Cursor cur(trace);
-
-  // This is a quick way of seeing how much forward progress is being made
-  if (opt_progress_thread && mpi_rank_me == 0) {
-    progress_thread = std::thread(&progressThread, std::move(signal_exit.get_future()));
-  }
 
   while(true) {
     int batch = 512;
@@ -1824,21 +2091,45 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
   *duration = std::chrono::steady_clock::now() - start;
 }
 
-// Helper to translate callcodes to strings
-std::string callCodeToString(CallCode code) {
-  if (code == CallCode::allgather)
-    return "AllGather";
-  if (code == CallCode::allreduce)
-    return "AllReduce";
-  if (code == CallCode::broadcast)
-    return "Broadcast";
-  if (code == CallCode::reduce)
-    return "Reduce";
-  if (code == CallCode::reduce_scatter)
-    return "ReduceScatter";
+//
+// Types needed for printing trace stats
+//
+struct CallCodeSize {
+  bool operator==(const CallCodeSize& rhs) const
+  {
+     return (code == rhs.code)
+     && (elt_n == rhs.elt_n)
+     && (elt_ty == rhs.elt_ty);
+  }
 
-  return "Unknown CallCode";
-}
+  CallCode code;
+  int64_t elt_n;
+  ncclDataType_t elt_ty;
+};
+
+// The specialized hash function for `unordered_map` keys
+struct CallCodeSizeHashFn
+{
+    std::size_t operator() (const CallCodeSize &c) const
+    {
+        std::size_t h1 = std::hash<int>()((int) c.code);
+        std::size_t h2 = std::hash<int>()(c.elt_n);
+        std::size_t h3 = std::hash<int>()(c.elt_ty);
+ 
+        return h1 ^ h2 ^ h3;
+    }
+};
+
+// Key = CallCodeSize Value = count
+typedef std::unordered_map<CallCodeSize, size_t, CallCodeSizeHashFn> CollStatsMap;
+
+typedef std::unordered_map<size_t, size_t> SizeStatsMap;
+
+// Key = rank, value = CollStatsMap
+typedef std::unordered_map<int, CollStatsMap> RankCollStatsMap;
+
+// Key = rank, value = SizeStatsMap
+typedef std::unordered_map<int, SizeStatsMap> RankSizeStatsMap;
 
 //
 // Types needed for pre-checking the trace
@@ -1852,10 +2143,24 @@ struct GlobalCommMap {
   std::unordered_map<uint32_t, std::unordered_set<uint64_t>> vredops;
 };
 
-void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuniqueToGlobalMap) {
+void terminatePrecheck() {
+  fprintf(stderr, "Precheck for trace file failed. If you want to try running it anyways, run using -d flag ()\n");
+  exit(EPERM);
+}
+
+void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuniqueToGlobalMap,
+  std::unordered_set<uint64_t>& vuniqueSet) {
   // 1. For each vunique (vcomm group in the original trace)
   auto globalMapIt = vuniqueToGlobalMap.begin();
   while (globalMapIt != vuniqueToGlobalMap.end()) {
+    uint64_t vunique = globalMapIt->first;
+    if (vuniqueSet.find(vunique) == vuniqueSet.end()) {
+      fprintf(stderr, "TRACE PREPROCESSING ERROR - Trace references uniqueId=0x%lx which was never created via a ncclGetUniqueId() call. This is guarunteed to cause a hang in replay.  This may be caused by accidental inclusion of trace files from different runs.\n",
+        vunique);
+      if (!opt_disable_check_failure)
+        terminatePrecheck();
+    }
+
     std::shared_ptr<GlobalCommMap> globalMap = globalMapIt->second;
 
     // Skip checking if this communicator group only has 1 rank
@@ -1880,7 +2185,9 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
       if (it->second.size() != collective_count) {
         fprintf(stderr, "TRACE PREPROCESSING ERROR - Missing collectives. rank %u has %zu collectives. rank %u has %zu collectives.\n",
           first_rank, collective_count, it->first, it->second.size());
-          std::terminate();
+
+        if (!opt_disable_check_failure)
+          terminatePrecheck();
       }
 
       data_ops_it_vector.push_back(it->second.begin());
@@ -1890,6 +2197,10 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
     // 3. Inspect the next sequential data op in each iterator and compare it
     // Terminate we've exhausted our baseline rank
     it = globalMap->data_ops_map.begin();
+    size_t op_counter = 0;
+    bool failed_op_check;
+
+    std::vector<uint32_t> log_ranks(data_ops_it_vector.size());
     while (data_ops_it_vector[0] != it->second.end()) {
       // Take the first data op as the baseline comparison
       std::pair<CallHeader, CallDataOp> baselineDataOp = *data_ops_it_vector[0];
@@ -1899,12 +2210,16 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
       CallHeader& hdr = baselineDataOp.first;
       CallDataOp& op = baselineDataOp.second;
 
+      // Flag to print out all participants in a mismatched collective
+      failed_op_check = false;
+
       for (size_t i = 1; i < data_ops_it_vector.size(); i++)
       {
         // If we haven't run off the edge (we don't expect to)
         if (data_ops_it_vector[i] != it->second.end()) {
           std::pair<CallHeader, CallDataOp> comparisonDataOp = *data_ops_it_vector[i];
           uint32_t temp_rank = it->first;
+          log_ranks[i] = temp_rank;
           ++data_ops_it_vector[i];
           ++it;
 
@@ -1929,42 +2244,196 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
             }
           }
 
-          if (op.elt_n != temp_op.elt_n ||
-              op.elt_ty != temp_op.elt_ty ||
-              op.root != temp_op.root ||
-              !matching_redops ||
-              hdr.code != temp_hdr.code) {
-
+          bool fieldsMismatched = (op.elt_n != temp_op.elt_n || op.elt_ty != temp_op.elt_ty || op.root != temp_op.root || !matching_redops || hdr.code != temp_hdr.code);
+          // Print this out if this op's fields are mismatched or if an op before this failed
+          if (fieldsMismatched || failed_op_check) {
             // Human-readable coll_names
             std::string coll_name = callCodeToString(hdr.code);
             std::string temp_coll_name = callCodeToString(temp_hdr.code);
 
-            fprintf(stderr, "TRACE PREPROCESSING ERROR - Mismatch\n");
-            fprintf(stderr, "Collective 1:\n");
-            fprintf(stderr, "  nccl%s. i=%zu rank=%u src_line_number=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
-                coll_name.c_str(), 0L, first_rank, hdr.line_number, op.elt_n, op.elt_ty, op.red_op, op.root, (uint32_t) hdr.code);
+            // Print collective calls before this failing point
+            if (!failed_op_check) {
+              failed_op_check = true;
+              fprintf(stderr, "TRACE PREPROCESSING ERROR - Mismatch. Baseline (Arbitrary):\n");
+              fprintf(stderr, "  nccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
+                  coll_name.c_str(), first_rank, hdr.line_number, op_counter, op.elt_n, op.elt_ty, op.red_op, op.root, (uint32_t) hdr.code);
 
-            fprintf(stderr, "Collective 2:\n");
-            fprintf(stderr, "  nccl%s. i=%zu rank=%u src_line_number=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
-                temp_coll_name.c_str(), i, temp_rank, temp_hdr.line_number, temp_op.elt_n, temp_op.elt_ty, temp_op.red_op, temp_op.root, (uint32_t) temp_hdr.code);
-            std::terminate();
+              fprintf(stderr, "Other:\n");
+              // Working backwards, print out the already seen collectives
+              for (size_t j = i-1; j > 0; j--) {
+                data_ops_it_vector[j]--;
+                std::pair<CallHeader, CallDataOp> logDataOp = *data_ops_it_vector[j];
+                CallDataOp& log_op  = logDataOp.second;
+                CallHeader& log_hdr = logDataOp.first;
+                uint32_t log_rank   = log_ranks[j];
+                std::string log_coll_name = callCodeToString(log_hdr.code);
+
+                // These ops should have all passed the checks
+                fprintf(stderr, "    nccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
+                      log_coll_name.c_str(), log_rank, log_hdr.line_number, op_counter, log_op.elt_n, log_op.elt_ty, log_op.red_op, log_op.root, (uint32_t) log_hdr.code);
+              }
+
+              // Move the iterators back to where they currently should be
+              for (size_t j = i-1; j > 0; j--) {
+                ++data_ops_it_vector[j];
+              }
+            }
+
+            char buffer[5];
+            if (fieldsMismatched)
+              snprintf(buffer, 5, "!!! ");
+            else 
+              snprintf(buffer, 5, "    ");
+
+            fprintf(stderr, "%snccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
+                buffer, temp_coll_name.c_str(), temp_rank, temp_hdr.line_number, op_counter, temp_op.elt_n, temp_op.elt_ty, temp_op.red_op, temp_op.root, (uint32_t) temp_hdr.code);
+
+            failedPrecheckDataOps.fetch_add(1);
           }
         } else {
-            fprintf(stderr, "TRACE PREPROCESSING ERROR - Missing collectives. Ran out of data ops entries\n");
-            std::string coll_name = callCodeToString(hdr.code);
-            fprintf(stderr, "Collective 1:\n");
-            fprintf(stderr, "  nccl%s. i=%zu src_line_number=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
-                coll_name.c_str(), 0L, hdr.line_number, op.elt_n, op.elt_ty, op.red_op, op.root, (uint32_t) hdr.code);
-            fprintf(stderr, "Expected %zu more nccl%s collectives.\n", globalMap->data_ops_map.size() - i, coll_name.c_str());
-            std::terminate();
+          // When a rank runs out of collectives early, print the baseline/prior collectives once
+          std::string coll_name = callCodeToString(hdr.code);
+          if (!failed_op_check) {
+            failed_op_check = true;
+            fprintf(stderr, "TRACE PREPROCESSING ERROR - Missing collectives. Baseline (Arbitrary):\n");
+            fprintf(stderr, "  nccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
+                coll_name.c_str(), first_rank, hdr.line_number, op_counter, op.elt_n, op.elt_ty, op.red_op, op.root, (uint32_t) hdr.code);
+
+            fprintf(stderr, "Other:\n");
+            // Working backwards, print out the already seen collectives
+            for (size_t j = i-1; j > 0; j--) {
+              data_ops_it_vector[j]--;
+              std::pair<CallHeader, CallDataOp> logDataOp = *data_ops_it_vector[j];
+              CallDataOp& log_op  = logDataOp.second;
+              CallHeader& log_hdr = logDataOp.first;
+              uint32_t log_rank   = log_ranks[j];
+              std::string log_coll_name = callCodeToString(log_hdr.code);
+
+              // These ops should have all passed the checks
+              fprintf(stderr, "    nccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
+                    log_coll_name.c_str(), log_rank, log_hdr.line_number, op_counter, log_op.elt_n, log_op.elt_ty, log_op.red_op, log_op.root, (uint32_t) log_hdr.code);
+            }
+
+            fprintf(stderr, "!!! Expected %zu more matching nccl%s collectives.\n", globalMap->data_ops_map.size() - i, coll_name.c_str());
+
+            // Move the iterators back to where they currently should be
+            for (size_t j = i-1; j > 0; j--) {
+              ++data_ops_it_vector[j];
+            }
+          }
+
+          failedPrecheckDataOps.fetch_add(1);
         }
       }
 
+      precheckedDataOps.fetch_add(1);
+
+      // If prechecking a collective failed and we aren't skipping failures, exit with error code here
+      if (failed_op_check && !opt_disable_check_failure) {
+        terminatePrecheck();
+      }
+      
       // Reset this iterator to check running over bounds
       it = globalMap->data_ops_map.begin();
+      op_counter++;
+
     }
 
     ++globalMapIt;
+  }
+}
+
+void printStats(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuniqueToGlobalMap, size_t nhosts) {
+  // 1. For each vunique (vcomm group in the original trace)
+  auto globalMapIt = vuniqueToGlobalMap.begin();
+  while (globalMapIt != vuniqueToGlobalMap.end()) {
+    std::shared_ptr<GlobalCommMap> globalMap = globalMapIt->second;
+
+    RankCollStatsMap rankCollMap;
+    RankSizeStatsMap rankSizeMap;
+    size_t rankZeroCollectives = 0;
+    size_t totalCollectiveCalls = 0;
+    
+    auto it = globalMap->data_ops_map.begin();
+    while (it != globalMap->data_ops_map.end()) {
+      int rank = it->first;
+      auto dataOps = it->second;
+      auto dataOpsIt = dataOps.begin();
+      while (dataOpsIt != dataOps.end()) {
+
+        CallCodeSize callCodeSize;
+        callCodeSize.code = dataOpsIt->first.code;
+        callCodeSize.elt_n = dataOpsIt->second.elt_n;
+        callCodeSize.elt_ty = dataOpsIt->second.elt_ty;
+
+        // Increase this callCodeSize count by 1
+        rankCollMap[rank][callCodeSize]++;
+
+        // Increase rank -1 by 1 (my global counter)
+        rankCollMap[-1][callCodeSize]++;
+
+        // Give an overview of collectives by size as well
+        size_t bytes_n = callCodeSize.elt_n * ncclDataTypeToSizeBytes(callCodeSize.elt_ty);
+        rankSizeMap[-1][bytes_n]++;
+        rankSizeMap[rank][bytes_n]++;
+
+        totalCollectiveCalls++;
+
+        if (rank == 0) {
+          rankZeroCollectives++;
+        }
+
+        ++dataOpsIt;
+      }
+
+      ++it;
+    }
+
+    printf("Trace call stats for virtual UniqueId=0x%lx\n", globalMapIt->first);
+    // Overall
+    printf("Overall - Total number of Number of data op calls=%zu Number of ranks=%zu Number of hosts=%zu\n",
+      totalCollectiveCalls, rankCollMap.size() - 1, nhosts);
+
+    // Rank -1 (Overall)
+    typedef std::unordered_map<CallCodeSize, size_t> CollStatsMap;
+    auto callCodeSizeIt = rankCollMap[-1].begin();
+    while (callCodeSizeIt != rankCollMap[-1].end()) {
+      std::string coll_name = callCodeToString(callCodeSizeIt->first.code);
+      printf("  nccl%s elt_n=%ld elt_ty=%s (%d) bytes_n=%zu count=%zu pct=%2.2f%%\n",
+        coll_name.c_str(), callCodeSizeIt->first.elt_n, ncclDataTypeToString(callCodeSizeIt->first.elt_ty).c_str(),
+        callCodeSizeIt->first.elt_ty, callCodeSizeIt->first.elt_n * ncclDataTypeToSizeBytes(callCodeSizeIt->first.elt_ty),
+        callCodeSizeIt->second, (float) callCodeSizeIt->second*100.0f/totalCollectiveCalls);
+      callCodeSizeIt++;
+    }
+    printf("Sizes\n");
+    auto sizeIt = rankSizeMap[-1].begin();
+    while (sizeIt != rankSizeMap[-1].end()) {
+      printf("  bytes_n=%zu count=%zu pct=%2.2f%%\n",
+        sizeIt->first, sizeIt->second, (float) sizeIt->second*100.0f/totalCollectiveCalls);
+      sizeIt++;
+    }
+
+    // Rank 0
+    printf("Rank 0 - Number of Collectives=%zu\n",
+      rankZeroCollectives);
+    callCodeSizeIt = rankCollMap[0].begin();
+    while (callCodeSizeIt != rankCollMap[0].end()) {
+      std::string coll_name = callCodeToString(callCodeSizeIt->first.code);
+      printf(" nccl%s elt_n=%ld elt_ty=%s (%d) bytes_n=%zu count=%zu pct=%2.2f%%\n",
+        coll_name.c_str(), callCodeSizeIt->first.elt_n, ncclDataTypeToString(callCodeSizeIt->first.elt_ty).c_str(),
+        callCodeSizeIt->first.elt_ty, callCodeSizeIt->first.elt_n * ncclDataTypeToSizeBytes(callCodeSizeIt->first.elt_ty),
+        callCodeSizeIt->second, (float) callCodeSizeIt->second*100.0f/rankZeroCollectives);
+      callCodeSizeIt++;
+    }
+    printf("Rank 0 - Sizes\n");
+    sizeIt = rankSizeMap[0].begin();
+    while (sizeIt != rankSizeMap[0].end()) {
+      printf("  bytes_n=%zu count=%zu pct=%2.2f%%\n",
+        sizeIt->first, sizeIt->second, (float) sizeIt->second*100.0f/rankZeroCollectives);
+      sizeIt++;
+    }
+
+    globalMapIt++;
   }
 }
 
@@ -1999,6 +2468,8 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
 
     std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>> vuniqueToGlobalMap;
     std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>> vcommToGlobalMap;
+    // Set of vuniques seen in the trace. Confirming that all referenced vuniques were in fact created.
+    std::unordered_set<uint64_t> vuniqueSet;
 
     std::unique_ptr<int[]> phost_popn(new int[phost_n]{/*zeros*/});
 
@@ -2008,7 +2479,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       file.open(path);
       if(!file.good()) {
         std::cerr<<"Invalid path to trace file: "<<path<<std::endl;
-        std::terminate();
+        exit(ENOENT);
       }
       input = &file;
     }
@@ -2021,6 +2492,8 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
     // Parse the rest of the file
     while(std::getline(*input, line)) {
       line_counter++;
+      parsedLineNumber.fetch_add(1);
+
       char vhost_name[512];
       int vpid, vtid;
       int got = -1;
@@ -2031,6 +2504,9 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
         if (opt_verbose && line_ptr[0] != '#') {
           fprintf(stderr, "Couldn't parse line: %s\n", line_ptr);
         }
+
+        parsedLinesSkipped.fetch_add(1);
+
         continue;
       }
       line_ptr += got;
@@ -2046,7 +2522,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           } else {
             fprintf(stderr, "Not enough physical hosts (%d) to accommodate virtual host %s.\n", phost_n, vhost_name);
             std::cerr << "line " << line_counter << ": " << line << std::endl;
-            std::terminate();
+            exit(EPERM);
           }
         } else {
           // Create new vhost struct
@@ -2061,7 +2537,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       if(vhost_st.vpid_to_rank.count(vpid) == 0) {
         if(phost_popn[vhost_st.phost] == phost_ranks[vhost_st.phost].size()) {
           fprintf(stderr, "Not enough physical processes (%d) on host to accommodate virtual processes.\n", (int)phost_ranks[vhost_st.phost].size());
-          std::terminate();
+          exit(EPERM);
         }
         rank = phost_ranks[vhost_st.phost][phost_popn[vhost_st.phost]++];
         vhost_st.vpid_to_rank[vpid] = rank;
@@ -2080,6 +2556,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           hdr.code = CallCode::get_unique_id;
           rank_bufs[rank].append(hdr);
           rank_bufs[rank].append(call);
+          vuniqueSet.emplace(call.vunique);
           continue;
         }
       }
@@ -2153,7 +2630,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           if (it == vcommToGlobalMap.end()) {
             fprintf(stderr, "Splitting comm_src=0x%lx which hasn't yet been initialized. line_number=%zu vhost=%lu vpid=%d vtid=%d\n",
               call.vcomm_src, hdr.line_number, hdr.vhost, hdr.vpid, hdr.vtid);
-              std::terminate();
+              exit(EPERM);
           } else {
             globalCommMap = it->second;
           }
@@ -2288,43 +2765,57 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
     }
 
     //
+    // Print stats of this trace
+    //
+    printStats(vuniqueToGlobalMap, vhosts.size());
+
+    //
     // PRE-CHECK
     //
-    if (!opt_disable_check) {
-      preCheck(vuniqueToGlobalMap);
-    }
+    preCheck(vuniqueToGlobalMap, vuniqueSet);
 
-    printf("[%u] Rank %d done pre-processing trace. Dispersing to %d ranks on %zu physical hosts\n",
-      getpid(), mpi_rank_me, mpi_rank_n, vhosts.size());
+    signal_precheck.set_value();
 
-    std::unique_ptr<long long[]> log_sizes(new long long[mpi_rank_n]);
-    for(int r=0; r < mpi_rank_n; r++)
-      log_sizes[r] = rank_bufs[r].size();
-    long long dummy;
-    MPI_Scatter(&log_sizes[0], 1, MPI_LONG_LONG, &dummy, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+    printf("[%u] Rank %d done pre-processing trace.\n", getpid(), mpi_rank_me);
+    
+    if (!opt_check_only) {
+      printf("[%u] Dispersing to %d ranks on %zu physical hosts\n",
+        getpid(), mpi_rank_n, vhosts.size());
 
-    MPI_Request reqs[32];
-    for(int i=0; i < 32; i++) reqs[i] = MPI_REQUEST_NULL;
-    for(int r=1; r < mpi_rank_n; r++) {
-      if(reqs[r%32] != MPI_REQUEST_NULL)
-        MPI_Wait(&reqs[r%32], MPI_STATUS_IGNORE);
-      MPI_Isend(rank_bufs[r].bytes(), rank_bufs[r].size(), MPI_BYTE, r, 0, MPI_COMM_WORLD, &reqs[r%32]);
-    }
-    for(int i=0; i < 32; i++) {
-      if(reqs[i] != MPI_REQUEST_NULL)
-        MPI_Wait(&reqs[i], MPI_STATUS_IGNORE);
+      std::unique_ptr<long long[]> log_sizes(new long long[mpi_rank_n]);
+      for(int r=0; r < mpi_rank_n; r++)
+        log_sizes[r] = rank_bufs[r].size();
+      long long dummy;
+      MPI_Scatter(&log_sizes[0], 1, MPI_LONG_LONG, &dummy, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+
+      MPI_Request reqs[32];
+      for(int i=0; i < 32; i++) reqs[i] = MPI_REQUEST_NULL;
+      for(int r=1; r < mpi_rank_n; r++) {
+        if(reqs[r%32] != MPI_REQUEST_NULL)
+          MPI_Wait(&reqs[r%32], MPI_STATUS_IGNORE);
+        MPI_Isend(rank_bufs[r].bytes(), rank_bufs[r].size(), MPI_BYTE, r, 0, MPI_COMM_WORLD, &reqs[r%32]);
+      }
+      for(int i=0; i < 32; i++) {
+        if(reqs[i] != MPI_REQUEST_NULL)
+          MPI_Wait(&reqs[i], MPI_STATUS_IGNORE);
+      }
     }
 
     return std::move(rank_bufs[0]);
   }
   else {
-    long long recs_size;
-    MPI_Scatter(nullptr, 1, MPI_LONG_LONG, &recs_size, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
     ByteBuffer recs;
-    recs.reserve(recs_size);
-    MPI_Recv(recs.bytes(), recs_size, MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    printf("[%u] Rank %d received %llu bytes of call traces.\n",
-      getpid(), mpi_rank_me, recs_size);
+    if (opt_check_only) {
+      recs.reserve(0);
+      return recs;
+    } else {
+      long long recs_size;
+      MPI_Scatter(nullptr, 1, MPI_LONG_LONG, &recs_size, 1, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
+      recs.reserve(recs_size);
+      MPI_Recv(recs.bytes(), recs_size, MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      printf("[%u] Rank %d received %llu bytes of call traces.\n",
+        getpid(), mpi_rank_me, recs_size);
+    }
     return recs;
   }
 }
@@ -2335,27 +2826,6 @@ int main(int arg_n, char **args) {
   // register signal SIGINT and signal handler
   signal(SIGSEGV, signalHandler);
 
-  MPI_Init(&arg_n, &args);
-  MPI_Comm_size(MPI_COMM_WORLD, &mpi_rank_n);
-  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank_me);
-
-  MPI_Barrier(MPI_COMM_WORLD);
-
-  CudaHelp::initialize();
-
-  if(false) {
-  shutdown:
-    CudaHelp::finalize();
-    MPI_Finalize();
-
-    if (opt_progress_thread && mpi_rank_me == 0)
-    {
-      signal_exit.set_value();
-      progress_thread.join();
-    }
-    return 0;
-  }
-
   bool opt_viable = false;
   bool opt_help = false;
   std::string opt_trace_path;
@@ -2365,12 +2835,19 @@ int main(int arg_n, char **args) {
       opt_help = true;
     else if (arg == "-v") {
       opt_verbose = true;
-    } else if (arg == "-p") {
-      opt_progress_thread = true;
+    } else if (arg == "-s") {
+      opt_disable_progress_thread = true;
     } else if (arg == "-f") {
       opt_force_size_one = true;
     } else if (arg == "-d") {
-      opt_disable_check = true;
+      opt_disable_check_failure = true;
+    } else if (arg == "-b") {
+      opt_measure_performance = true;
+    } else if (arg == "-r") {
+      opt_dump_raw_perf_data = true;
+      opt_measure_performance = true;
+    } else if (arg == "-c") {
+      opt_check_only = true;
     } else if (arg == "-x") {
       opt_force_fit = true;
     }  else {
@@ -2380,30 +2857,54 @@ int main(int arg_n, char **args) {
   }
 
   if(!opt_viable || opt_help) {
-    if(mpi_rank_me == 0) {
       std::cout<<
         "usage: replay [-h|--help] (<path>|-)\n"
         "  -h, --help   This help message.\n"
-        "  -v           Run verbose mode.\n"
-        "  -p           Print progress on rank 0 thread.\n"
-        "  -d           Disable pre-checking of trace. Allows running of malformed traces\n"
+        "  -v           Run verbose mode (warning - very verbose, mainly used to debug the replay tool itself.)\n"
+        "  -s           Disable progress thread.\n"
+        "  -d           Disable exit when pre-checking trace fails. Allows running of malformed traces. WARNING - May result in hangs or crashes.\n"
+        "  -b           Collect and print bandwidth/performance information about completed NCCL operations.\n"
+        "  -r           Dump raw perf data (force enables -b).\n"
         "  -f           Force all data operations to replay with element count of 1.\n"
+        "  -c           Check-only. Load and check the contents of the trace without the need for MPI or matching job dimensions.\n"
         "  -x           Force fit the replay traffic into the physical host and rank count.\n"
         "               This is useful for reproducing performance issues from very large jobs without having to handcraft a minimal trace.\n"
         "               -x will apply the following filters to the replay log:\n"
         "                 Only traces from the first N hosts in the log will be replayed, where N is the physical host count of the replay job.\n"
         "                 The virtual rank specified in ncclCommInitRank() will be mapped to the physical mpi rank of a given process\n"
         "                 The root of collective operations will either be 0 if originally 0, or assigned to the mapped physical rank\n"
-        "                 This may produce unreliable results for peer-to-peer (ncclSend and ncclRecv)"
+        "                 This may produce unreliable results for peer-to-peer (ncclSend and ncclRecv)\n"
+        "                 This can't currently reduce a multi-node trace into a single-node run\n"
         "  <path>, -    Path to file containing NCCL log. If NCCL log is split over\n"
-        "               multiple files then you must concatenate them manually.\n"
-        "               \"-\" indicates stdin.\n"
-        "\n"
-        "It is your responsibility to ensure that the number of MPI hosts and\n"
-        "processes launched matches the number of hosts and processes recorded\n"
-        "in the trace.\n";
-    }
+        "               multiple files then you must concatenate them manually.\n\n"
+        "               To generate a log files, run your application with NCCL_DEBUG=TRACE NCCL_DEBUG_SUBSYS=CALL NCCL_DEBUG_FILE=/path/to/logs/filename.%h.%p.\n"
+        "               \"-\" indicates stdin.\n\n"
+        "It is your responsibility to ensure the number of MPI hosts and\n"
+        "processes launched is valid.\n\n";
     goto shutdown;
+  }
+
+  if (!opt_check_only) {
+    MPI_Init(&arg_n, &args);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_rank_n);
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank_me);
+    MPI_Barrier(MPI_COMM_WORLD);
+    CudaHelp::initialize();
+  }
+
+  if(false) {
+  shutdown:
+    if (!opt_check_only && !opt_help && opt_viable) {
+      CudaHelp::finalize();
+      MPI_Finalize();
+    }
+
+    if (!opt_disable_progress_thread && mpi_rank_me == 0)
+    {
+      signal_exit.set_value();
+      progress_thread.join();
+    }
+    return 0;
   }
 
   struct shm_state {
@@ -2412,34 +2913,46 @@ int main(int arg_n, char **args) {
   char shm_name[512];
   std::snprintf(shm_name, sizeof(shm_name), "/nccl-test-replay-%lld", osEnv<long long>("OMPI_MCA_ess_base_jobid", 0));
 
-  shm_unlink(shm_name);
-  MPI_Barrier(MPI_COMM_WORLD);
-  int shm_fd = shm_open(shm_name, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
-  int phost_leader = shm_fd != -1;
-  if(shm_fd != -1) {
-    if(ftruncate(shm_fd, sizeof(shm_state))) {/*ignored*/};
-  } else {
-    shm_fd = shm_open(shm_name, O_RDWR, S_IRUSR|S_IWUSR);
-    assert(shm_fd != -1);
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
-  if(phost_leader) shm_unlink(shm_name);
-  shm_state *shm = (shm_state*)mmap(nullptr, sizeof(shm_state), PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
-  assert(shm != nullptr);
-  close(shm_fd);
-
-  phost_n = phost_leader;
-  MPI_Allreduce(MPI_IN_PLACE, &phost_n, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  phost_me = phost_leader;
-  MPI_Exscan(MPI_IN_PLACE, &phost_me, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  if(mpi_rank_me == 0) phost_me = 0;
-  if(phost_leader) shm->phost_me = phost_me;
-  MPI_Barrier(MPI_COMM_WORLD);
-  if(!phost_leader) phost_me = shm->phost_me;
-
   std::unique_ptr<int[]> rank_to_phost;
-  if(mpi_rank_me == 0) rank_to_phost.reset(new int[mpi_rank_n]);
-  MPI_Gather(&phost_me, 1, MPI_INT, rank_to_phost.get(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if (opt_check_only) {
+    phost_n = 1024*1024; // Arbitrarily huge number of hosts
+    mpi_rank_n = phost_n * 16; // Arbitrarily large number of gpus/host
+    mpi_rank_me = 0;
+    phost_me = 0;
+    rank_to_phost.reset(new int[mpi_rank_n]);
+    
+    // Make up mappings to say ranks 0-15 are on phost 0, ranks 16-31 are on phost 1, etc.
+    for(int r=0; r < mpi_rank_n; r++)
+      rank_to_phost[r] = r / 16;
+  } else {
+    shm_unlink(shm_name);
+    MPI_Barrier(MPI_COMM_WORLD);
+    int shm_fd = shm_open(shm_name, O_RDWR|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
+    int phost_leader = shm_fd != -1;
+    if(shm_fd != -1) {
+      if(ftruncate(shm_fd, sizeof(shm_state))) {/*ignored*/};
+    } else {
+      shm_fd = shm_open(shm_name, O_RDWR, S_IRUSR|S_IWUSR);
+      assert(shm_fd != -1);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(phost_leader) shm_unlink(shm_name);
+    shm_state *shm = (shm_state*)mmap(nullptr, sizeof(shm_state), PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    assert(shm != nullptr);
+    close(shm_fd);
+
+    phost_n = phost_leader;
+    MPI_Allreduce(MPI_IN_PLACE, &phost_n, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    phost_me = phost_leader;
+    MPI_Exscan(MPI_IN_PLACE, &phost_me, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    if(mpi_rank_me == 0) phost_me = 0;
+    if(phost_leader) shm->phost_me = phost_me;
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(!phost_leader) phost_me = shm->phost_me;
+
+    if(mpi_rank_me == 0) rank_to_phost.reset(new int[mpi_rank_n]);
+    MPI_Gather(&phost_me, 1, MPI_INT, rank_to_phost.get(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+  }
 
   if(mpi_rank_me == 0) {
     phost_ranks.reset(new std::vector<int>[phost_n]);
@@ -2449,32 +2962,68 @@ int main(int arg_n, char **args) {
       assert(phost_ranks[0].size() == phost_ranks[h].size());
   }
 
+  // This is a quick way of seeing how much forward progress is being made
+  if (mpi_rank_me == 0) {
+    if (opt_measure_performance) {
+      opTimerCircularBuffer.length = 1024 * 1024;
+      opTimerCircularBuffer.data = new OpTimer[opTimerCircularBuffer.length];
+    }
+
+    if (!opt_disable_progress_thread) {
+      progress_thread = std::thread(&progressThread, std::move(signal_exit.get_future()), std::move(signal_precheck.get_future()));
+    }
+  }
+
   ByteBuffer trace = loadDebugCallTrace(opt_trace_path);
   if (trace.size() == 0) {
     fprintf(stderr, "trace size is 0. Please provide a valid trace file with at least one NCCL trace.\n");
     failure.store(1);
   }
 
-  std::chrono::duration<double> duration;
-  playTrace(trace, &duration);
+  if (opt_check_only) {
+    std::cout << "NCCL replay trace checking completed" << std::endl;
+  } else {
+    if(mpi_rank_me == 0) {
+      if (opt_measure_performance) {
+        fprintf(stderr, "WARNING - Replay performance measurement (-b) is experimental and won't equal the raw performance from NCCL's microbenchmarks.  This is due to noise and overhead from bookkeeping, including CUDA host callbacks and synchronizations. Not to mention noise of single operations vs. taking the average of many iterations like our microbenchmarks do. That being said, this data is useful as a relative measurement between environments and NCCL versions.\n");
+      }
+    }
 
-  // Get end time
-  // Gather elapsed time and call counts from all ranks to rank 0
-  std::vector<std::chrono::duration<double>> durations(mpi_rank_n);
-  std::vector<size_t> call_counts(mpi_rank_n);
+    std::chrono::duration<double> duration;
+    playTrace(trace, &duration);
 
-  // If we're waiting on the rank 0 progress thread to join, don't proceed
-  MPI_Barrier(MPI_COMM_WORLD);
-  MPI_Gather(&duration, sizeof(duration), MPI_CHAR, &durations[0], sizeof(duration), MPI_CHAR, 0, MPI_COMM_WORLD);
-  MPI_Gather(&data_op_call_count, sizeof(data_op_call_count), MPI_CHAR, &call_counts[0], sizeof(data_op_call_count), MPI_CHAR, 0, MPI_COMM_WORLD);
+    // Get end time
+    // Gather elapsed time and call counts from all ranks to rank 0
+    std::vector<std::chrono::duration<double>> durations(mpi_rank_n);
+    std::vector<size_t> call_counts(mpi_rank_n);
 
-  // Gather op count from all ranks to rank 0
-  if(mpi_rank_me == 0) {
-    std::cout<<(failure.load() ? "FAILURE" : "SUCCESS") <<std::endl;
-    for (size_t i = 0; i < durations.size(); i++)
-    {
-      std::cout << "[" << i << "] Time elapsed: " << durations[i].count() << " s" << std::endl;
-      std::cout << "[" << i << "] NCCL Collective Calls: "   << call_counts[i] << std::endl;
+    // If we're waiting on the rank 0 progress thread to join, don't proceed
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Gather(&duration, sizeof(duration), MPI_CHAR, &durations[0], sizeof(duration), MPI_CHAR, 0, MPI_COMM_WORLD);
+    MPI_Gather(&data_op_call_count, sizeof(data_op_call_count), MPI_CHAR, &call_counts[0], sizeof(data_op_call_count), MPI_CHAR, 0, MPI_COMM_WORLD);
+
+    // Gather op count from all ranks to rank 0
+    if(mpi_rank_me == 0) {
+      if (opTimerCircularBuffer.length > 0) {
+        if (opt_dump_raw_perf_data) {
+          for (size_t i = 0; i < opTimerCircularBuffer.tail; i++)
+          {
+            size_t index = i % opTimerCircularBuffer.length;
+            OpTimer* opTimer = opTimerCircularBuffer.data + index;
+            std::chrono::duration<uint64_t, std::nano> duration = opTimer->end - opTimer->start;
+            printf("[%zu] finished=%u nccl%s opId=%d elt_n=%ld elt_ty=%u busBw=%lf algoBw=%lf latency=%lu us start=%s end=%s\n",
+              i, opTimer->finished, callCodeToString(opTimer->code).c_str(), opTimer->opId, opTimer->elt_n, opTimer->elt_ty, opTimer->busBw, opTimer->algoBw, duration.count()/1000,
+              getCurrentTimestamp(opTimer->start).c_str(), getCurrentTimestamp(opTimer->end).c_str());
+          }
+        }
+      }
+
+      std::cout<<(failure.load() ? "FAILURE" : "SUCCESS") <<std::endl;
+      for (size_t i = 0; i < durations.size(); i++)
+      {
+        std::cout << "[" << i << "] Time elapsed: " << durations[i].count() << " s" << std::endl;
+        std::cout << "[" << i << "] NCCL Collective Calls: "   << call_counts[i] << std::endl;
+      }
     }
   }
 

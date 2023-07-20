@@ -809,7 +809,6 @@ __host__ __device__ T genOutput(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if !SELF_TEST
 namespace {
 template<typename T, typename ReduceFn>
 __global__ void __launch_bounds__(512, 1) prepareInput2(
@@ -887,11 +886,9 @@ cudaError_t ncclVerifiablePrepareInput(
   }
   #undef CASE_OP
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if !SELF_TEST
 namespace {
 template<typename T, typename ReduceFn>
 __global__ void __launch_bounds__(512, 1) prepareExpected2(
@@ -968,7 +965,6 @@ cudaError_t ncclVerifiablePrepareExpected(
   }
   #undef CASE_OP
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1030,7 +1026,6 @@ __host__ __device__  uint64_t calcDelta(T a, T b) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if !SELF_TEST
 namespace {
 template<typename T>
 __global__ void __launch_bounds__(512, 1) verifyPrepared(
@@ -1193,13 +1188,10 @@ cudaError_t ncclVerifiableVerify(
   }
   #undef CASE_TY
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if SELF_TEST
-#include <iostream>
-
+namespace {
 template<typename T, typename Op>
 __device__ void sweep2(int ty, char const *tyname, Op op, char const *opname, int rank_n) {
   //if(!std::is_same<T,half>::value) return;
@@ -1257,12 +1249,8 @@ __global__ void __launch_bounds__(512, 1) sweep() {
   sweep1<float>(ncclFloat32, "float");
   sweep1<double>(ncclFloat64, "double");
 }
-
-int main(int arg_n, char **args) {
-  std::cerr<<"You are hoping to see no output beyond this line."<<std::endl;
-  cudaSetDevice(0);
-  sweep<<<1,512>>>();
-  cudaDeviceSynchronize();
-  return 0;
 }
-#endif
+
+void ncclVerifiableLaunchSelfTest() {
+  sweep<<<1,512>>>();
+}

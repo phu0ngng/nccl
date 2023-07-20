@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-20 : Network Device Plugins : Design</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-20 : Network Device Plugins<br>Design</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Proposed Design</h2>
+NCCL network device plugins are a new feature which allow both internal and external partner teams to introduce communication steps, custom computation, or full network offload within the NCCL kernel from an external network plugin. The design encompasses five major changes to NCCL:
+
+<ol>
+<li> Addition of several new network plugin APIs introduced in ncclNetPlugin_v7, including most importantly a new API exposing a network device handle object</li>
+<li> Plumbing of this device handle down to the kernel through the proxy and network connection layers</li>
+<li> Making the proxy thread now optional on network connections</li>
+<li> Code organization (hardcoding) within the NCCL kernel to handle the different types of supported device plugins at proper points in the data pipeline</li>
+<li> Compatibility checking of the device plugin type and version before loading</li>
+</ol>
+
+<h3>ncclNetPlugin_v7 new APIs</h3>
+The follow network plugin APIs are introduced in ncclNetPlugin_v7 with this feature, including most importantly a new API exposing a network device handle object:
+<pre>
+    // Accept an optional ncclNetDeviceHandle_t object
+    // If *sendDevComm or *recvDevComm point to a valid object, then NCCL is requesting device offload for this connection
+    ncclResult_t (*connect)(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm);
+    ncclResult_t (*accept)(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** recvDevComm);
+
+    // Copy the given mhandle to a dptr in a format usable by this plugin's device code
+    ncclResult_t (*getDeviceMr)(void* comm, void* mhandle, void** dptr_mhandle);
+
+    // Notify the plugin that a recv has completed by the device
+    ncclResult_t (*irecvConsumed)(void* recvComm, int n, void* request);
+</pre>
+
+<h3>The Network Device Handle Object</h3>
+The device handle is the primary piece of data for this whole feature, handed down from the plugin to the device kernel. It is a wrapper around an opaque piece of memory that must be defined in both the plugin CPU code as well as GPU code.  The ncclNetDeviceType enum lets the plugin tell NCCL which device offload path to choose (each officially integrated plugin will be assigned it's own enum value.) Version is used to ensure a matching NCCL build is being used with a given handle object.
+<pre>
+  typedef struct {
+    ncclNetDeviceType netDeviceType; // Network offload type
+    int netDeviceVersion;            // Version number for network offload
+    void* handle;
+    size_t size;
+    int needsProxyProgress;
+  } ncclNetDeviceHandle_v7_t;
+</pre>
+
+<h3>Determing if a device handle should be requested or not</h3>
+NCCL invokes ncclNetGetDeviceHandle() with several relevant pieces of metadata regarding a connection as well the capability advertised by the plugin.
+This determines, within sendProxyConnect() / recvProxyConnect(), if a deviceHandle should be allocated or not.
+
+<pre>
+// This function embeds plugin-specific rules given the current versions
+static ncclResult_t ncclNetGetDeviceHandle(ncclNetDeviceType type, int version, int p2p, bool isRecv, ncclNetDeviceHandle_t** handle) {
+  bool needsDeviceHandle  = false;
+
+  if (type == NCCL_NET_DEVICE_UNPACK) {
+    if (version == NCCL_NET_DEVICE_UNPACK_VERSION && isRecv) {
+      needsDeviceHandle  = true;
+    }
+  }
+
+  // Don't re-alloc netDeviceHandles
+  if (needsDeviceHandle && (*handle == NULL)) {
+    NCCLCHECK(ncclCalloc(handle, 1));
+    (*handle)->netDeviceType = type;
+    (*handle)->netDeviceVersion = version;
+  } else if (!needsDeviceHandle) {
+    *handle = NULL;
+  }
+
+  return ncclSuccess;
+}
+</pre>
+
+<h3>Plumbing the handle from the plugin to NCCL</h3>
+ncclNet->getDeviceHandle(...) is invoked within sendProxyConnect() and stored within the ncclProxyConnection object. This handle will ultimately be stored within a ncclConnInfo object, which is already being copied down to NCCL kernel-accessible memory. One device handle is associated with a single connection.
+
+<p><img src="images/deviceHandlePlumbing.png">
+
+The ncclConnInfo structure now stores a deviceHandle like so:
+
+<pre>
+struct ncclConnInfo {
+  ...
+  struct ncclNetDeviceHandle_t netDeviceHandle;
+};
+</pre>
+
+<h3>Kernel-side usage of the device handle</h3>
+The device handle is initially presented to the kernel via the ncclDevChannelPeer->ncclConnInfo structure that was copied into in the prior step.  The correct device handle is acquired by the kernel like so:
+<pre>
+    void loadRecvConn(ncclDevChannelPeer *peer, int connIndex, struct ncclWorkElem* e) {
+    ...
+    auto *conn = &peer->recv[connIndex];
+      if (conn->netDeviceHandle.netDeviceType == NCCL_NET_DEVICE_UNPACK) {
+        // handle must be a device ptr
+        netDeviceHandle = conn->netDeviceHandle.handle;
+        ncclNetDeviceUnpackSetup(netDeviceHandle, group, index);
+        ...
+      }
+</pre>
+
+Any relevant properties from the handle can be copied into ncclShmemData, which is a global shared memory data structure accessible to the NCCL kernel. This is going to be faster for frequently accessed fields within the plugin than going to global device memory. Currently, each type of device plugin is accessed within a union like so:
+<pre>
+struct ncclShmemData {
+  ...
+  alignas(16) union {
+    unpackShmem    unpack;
+    myPluginShmem  myPlugin;
+    ...
+  } devicePlugin;
+};
+</pre>
+
+Additionally, any per-group storage is defined within a second union inside ncclShmemGroup, like so:
+
+<pre>
+struct ncclShmemGroup {
+  ...
+  union {
+    unpackGroupShmem unpack;
+  } devicePlugin;
+};
+</pre>
+
+The kernel then sets flags denoting that this particular plugin is active, and then proceeds as normal, calling into plugin-specific codepaths:
+<pre>
+// Inside prims_simple genericOp(), on every iteration of data
+if (flags & AnyNetDeviceUnpack) {
+    int mask = ncclShmem.groups[group].devicePlugin.unpack.unpackNetDeviceIndexMask;
+
+    while (mask != 0) {
+        int ix = __ffs(mask)-1; // Get the first set bit of the mask (this should correlate to a peer index)
+        mask &= mask-1; // Drop the first set bit of the mask
+
+        // Pack data from the internal iovec to the supplied flat srcs buffer using all the threads
+        // + Src is necessary in the case of accessing the user buffer directly
+        ncclNetDeviceUnpack<Recv>(tid, nworkers, group /* in case they need to use split warps shared memory partitioning*/,
+            ix, ncclShmem.groups[group].srcs[ix + Src], workSize, ncclShmem.groups[group].devicePlugin.unpack.head);
+    }
+}
+</pre>
+
+<h3>Device Handle Version Checking</h3>
+The version numbers and handle structs are all currenly defined within nccl_net.h. The benefit of all these being within nccl_net is that this is exported when NCCL is built and can be easily consumed by an external network plugin's build flow. Each plugin must expose its device type as well as device version number with its implementation of getProperties(). NCCL will compare the device type and version number with its own compatibility list inside net.cc::ncclNetCheckDeviceVersion() 
+<pre>
+ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, int dev) {
+  ncclNetProperties_t props;
+
+  NCCLCHECK(net->getProperties(dev, &props));
+  ncclNetDeviceType type = props.netDeviceType;
+  if (type) switch (type) {
+    case NCCL_NET_DEVICE_UNPACK:
+      if (props.netDeviceVersion == NCCL_NET_DEVICE_UNPACK_VERSION) {
+        INFO(NCCL_INIT, "Using NCCL_NET_DEVICE_UNPACK net plugin version %d",
+          props.netDeviceVersion);
+        return ncclSuccess;
+      } else {
+        WARN("NCCL_DEVICE_UNPACK plugin has incompatible version %d, this NCCL build is compatible with %d, not using it",
+          props.netDeviceVersion, NCCL_NET_DEVICE_UNPACK_VERSION);
+        return ncclInternalError;
+      }
+    default:
+      WARN("Unknown device code index");
+      return ncclInternalError;
+  }
+
+  INFO(NCCL_INIT, "Using non-device net plugin version %d",
+    props.netDeviceVersion);
+  return ncclSuccess;
+}
+</pre>
+
+<h3>Code organization and integration of partner device plugins</h3>
+We want to be careful in incorporating external code into NCCL core. If we have multiple plugins all being actively contributed to, it could quickly turn to spaghetti. While NCCL core simply treats netDeviceHandles as opaque blobs, at a certain point the implementation must be loaded and ran. It is important to clearly define what definitions are necessary to co-develop both the host side network plugin as well as device functionality, and keep both in lock-step. We can then define an organization and workflow to efficiently manage changes.
+
+The definitions that must be kept synchronized are:
+1. Each netDeviceType's most updated version number
+2. Each netDeviceType's handle struct
+3. Each netDeviceType's CUDA functions and supporting definitions
+
+
+For device-only code, the functions themselves and supporting headers, each device plugin should create a subdirectory within nccl/src/device/network. This directory should contain everything the device code needs to use the plugin. It's recommended to have one file with implementations of all device functions for this plugin, and another can with supporting definitions, like so:
+
+<ul>
+    <li>nccl/src/device/network/unpack/unpack.h</li>
+    <li>nccl/src/device/network/unpack/unpack_defs.h</li>
+</ul>
+
+These files can then be imported within prims_simple, or any other device code location that needs to invoke them.
+
+<h3>irecvConsumed() API</h3>
+There is an additional network API introduced with this change, not directly relevant to device plugins in general. This API has the proxyProgress thread notify the network plugin that all sub-operations of a proxyOp have completed, and all outstanding resources of that operation can be freed.  This API is necessary for good performance for our very first device plugin, Google Unpack, because resources for each operation are NIC-allocated, not user-allocated like in the InfiniBand transport. Because of this, a lazy-freeing page scheme like in the infiniband transport results in worse perfomance. If this API is null, it is skipped over by the proxy for practically zero overhead.
+
+<h3>Option for full offload of the proxyProgress thread for network connections</h3>
+With this new feature, it's possible a network connection doesn't require a proxyProgress thread (it's fully offloaded to the GPU.) If this is the case, NCCL won't create this thread and will skip over proxyOp enqueueing. NCCL formerly checked if the transportComm object had a proxyProgress defined, which can be thought of as a static property for all transports of a certain type. NCCL now checks if the ncclProxyConnector object has a proxyProgress defined, which is based off each individual connection. This is set within net.cc::sendConnect()/recvConnect() based on the results of sendProxyConnect()/recvProxyConnect().
+<pre>
+// sendProxyConnect()
+...
+// If the network plugin supports device-initiated communication, get the netDeviceHandle here
+// netDeviceHandle->handle must be a device ptr!
+if (resources->netDeviceType != NCCL_NET_DEVICE_HOST) {
+  NCCLCHECK(ncclCalloc(&connection->netDeviceHandle, 1));
+  NCCLCHECK(proxyState->ncclNet->getDeviceHandle(resources->netSendComm, resources->tpRemoteRank, connection->netDeviceHandle, &connection->needsProxyProgress));
+} else {
+  connection->needsProxyProgress = 1;
+}
+</pre>
+<pre>
+// sendConnect(), after sendProxyConnect() has completed
+...
+if (send->proxyConn.connection->needsProxyProgress) {
+  send->proxyConn.proxyProgress = sendProxyProgress;
+} else {
+  send->proxyConn.proxyProgress = NULL;
+}
+</pre>
+<pre>
+  // Inside SaveProxy(), checking if proxyConn has proxyProgress defined before enqueueing a proxyOp
+  if (connector->proxyConn.proxyProgress == NULL) return ncclSuccess;
+</pre>
+<pre>
+  // Inside proxyConnInit(), checking if *connection has needsProxyProgress set to 1 before starting the progress thread
+  (*connection)->tcomm = (*connection)->send ? &ncclTransports[(*connection)->transport]->send : &ncclTransports[(*connection)->transport]->recv;
+  // If we need proxy progress, let's allocate ops and start the thread
+  if ((*connection)->tcomm->proxyProgress && (*connection)->needsProxyProgress) {
+    NCCLCHECK(proxyProgressInit(proxyState));
+    ...
+  }
+</pre>
+
+<h3>Compatibility checking of the device handle</h3>
+Every device handle object comes with a type enum and a version number.  The type and version number must match the NCCL build's internal numbers to load. It is expected that NCCL's external partners provide an updated version number with each change to device functionality or structure layout. This is checked within ncclNetCheckDeviceVersion() during network initialization, and allows for failing back to a different network.
+
+<h3>Pros and Cons of the current design</h3>
+<p>The biggest drawback of the current implementation is the need to hardcode every case of each device plugin within the NCCL kernel. This results in an increase in kernel binary size as well as ever-increasing complexity of the kernel state machine. This is primarily because runtime loading of CUDA functions isn't officially supported nor is it performant, and therefore continues to be a non-viable option. In the future this may change. The upside is an ease of use by NCCL's customers - NCCL comes built with support for their plugin and repeatable high performance. In the future, I plan to implement a further abstraction layer between the core NCCL kernel and plugin functionality as a greater diversity of use cases present themseves.</p>
+
+<h3>Using an old plugin with the new v7 API</h3>
+If NCCL detects a plugin with v6 or older API, it will automatically set the net device type to HOST and the net device version to INVALID. This prevents NCCL from using any of the new fields or invoking any of the new plugin API's for this feature.  NCCL will additionally call into the network compatibility layer.
+
+<h2>Interface Architecture</h2>
+
+<h2>System KPIs & Metrics</h2>
+
+<h2>Data Architecture</h2>
+N/A
+<h2>Security Design</h2>
+N/A
+<h2>Debugging & Troubleshooting</h2>
+None.
+<h2>Logging and Instrumentation</h2>
+None.
+<h2>Operational Considerations</h2>
+None.
+
+<h2>Signoff list</h2>
+<p><!-- Author : First Last -->
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->

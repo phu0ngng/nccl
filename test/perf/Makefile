@@ -14,7 +14,8 @@ NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
 LIBRARIES += nccl
-NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
+NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%) -lcuda
+RPATHS = $$ORIGIN
 
 # Setting MEMLEAK=1 enables simply memory leak detection using clang++
 ifeq ($(MEMLEAK),1)
@@ -43,7 +44,12 @@ TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/test/verifiable
 include ../verifiable/verifiable.mk
 
-COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o ${DST_DIR}/ft_test.o $(TEST_VERIFIABLE_OBJS)
+COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o ${DST_DIR}/ft_test.o
+
+NVLDFLAGS += -L$(TEST_VERIFIABLE_BUILDDIR) -lverifiable
+RPATHS := $(RPATHS):$$ORIGIN/../verifiable
+
+NVLDFLAGS += -Xlinker -rpath='$(RPATHS)'
 
 ifneq (clean,${MAKECMDGOALS})
 -include $(DEP_FILES)
@@ -79,17 +85,17 @@ ${DST_DIR}/nccl_mpi_collnet.o: ../../share/nccl_mpi_collnet.c
 	@mkdir -p ${DST_DIR}
 	mpicc -std=c99 $(CXXFLAGS) -I$(NCCLDIR)/include/ -o $@ -c $<
 
-${DST_DIR}/%_perf:${DST_DIR}/%.o ${COMMON_OBJS}
+${DST_DIR}/%_perf:${DST_DIR}/%.o $(COMMON_OBJS) $(TEST_VERIFIABLE_LIBSO)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ $(NVLDFLAGS)
 
-${DST_DIR}/replay-coll: ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS}
+${DST_DIR}/replay-coll: ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(TEST_VERIFIABLE_LIBSO)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(NVLDFLAGS)
 
 ${DST_DIR}/%_perf_mpi_collnet: ${DST_DIR}/%.o ${DST_DIR}/common_mpi_collnet.o ${DST_DIR}/nccl_mpi_collnet.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ $(NVLDFLAGS)

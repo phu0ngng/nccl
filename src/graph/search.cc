@@ -49,10 +49,10 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   return ncclSuccess;
 }
 
-static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode* node2, struct ncclTopoLink** revLink) {
+static ncclResult_t findRevLink(struct ncclTopoNode* node1, struct ncclTopoNode* node2, int type, struct ncclTopoLink** revLink) {
   for (int l=0; l<node2->nlinks; l++) {
     struct ncclTopoLink* link = node2->links+l;
-    if (link->remNode == node1) {
+    if (link->remNode == node1 && link->type == type) {
       *revLink = link;
       return ncclSuccess;
     }
@@ -85,11 +85,11 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
     float fwBw = link->type == LINK_PCI ? pciBw : bw;
     float revBw = 0;
     if (link->remNode->type == GPU && link->remNode->gpu.cudaCompCap < 80 && start->type != GPU) {
-      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, link->type, &revLink));
       revBw += fwBw/8;
     }
-    if (link->remNode->type == CPU && link->type == LINK_NVL) {
-      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, &revLink));
+    if (link->remNode->type == CPU && link->remNode->cpu.arch == NCCL_TOPO_CPU_ARCH_POWER && link->type == LINK_NVL) {
+      if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, link->type, &revLink));
       revBw += fwBw;
     }
     if (link->bw < fwBw || (revBw && revLink->bw < revBw)) { *steps = step; return ncclSuccess; }
@@ -342,6 +342,7 @@ ncclResult_t ncclTopoCompareGraphs(struct ncclTopoSystem* system, struct ncclTop
 
   if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) { // NVLS channels correspond to GPUs pulling from NVLS. So the more the better.
     if (graph->nChannels > refGraph->nChannels && graph->nChannels <= system->nodes[GPU].count) *copy = 1;
+    if (graph->nChannels*graph->bwInter > refGraph->nChannels*refGraph->bwInter) *copy = 1;
     return ncclSuccess;
   }
   // 2. Try to get better bandwidth
@@ -791,7 +792,7 @@ float speedArrayInter[] = { 48.0, 30.0, 28.0, 24.0, 20.0, 18.0, 15.0, 12.0, 10.0
 #define NSPEEDSINTRA (sizeof(speedArrayIntra)/sizeof(float))
 #define NSPEEDSINTER (sizeof(speedArrayInter)/sizeof(float))
 
-float sm90SpeedArrayIntra[] = { 60.0, 40.0, 30.0, 24.0, 20.0, 15.0, 12.0, 6.0, 3.0 };
+float sm90SpeedArrayIntra[] = { 60.0, 50.0, 40.0, 30.0, 24.0, 20.0, 15.0, 12.0, 6.0, 3.0 };
 float sm90SpeedArrayInter[] = { 48.0, 45.0, 42.0, 40.0, 30.0, 24.0, 20.0, 17.5, 15.0, 12.0, 6.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
 #define NSPEEDSINTRA_SM90 (sizeof(sm90SpeedArrayIntra)/sizeof(float))
 #define NSPEEDSINTER_SM90 (sizeof(sm90SpeedArrayInter)/sizeof(float))
@@ -812,7 +813,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   int trySameChannels = graph->pattern == NCCL_TOPO_PATTERN_NVLS ? 0 : 1;
   graph->sameChannels = trySameChannels;
 
-  char* str = getenv("NCCL_GRAPH_FILE");
+  const char* str = ncclGetEnv("NCCL_GRAPH_FILE");
   if (str) {
     INFO(NCCL_ENV, "NCCL_GRAPH_FILE set by environment to %s", str);
     struct ncclXml* xml;
@@ -828,6 +829,8 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   int ccMin;
   NCCLCHECK(ncclTopoGetCompCap(system, &ccMin, NULL));
   if (graph->pattern == NCCL_TOPO_PATTERN_NVLS && (system->nodes[NVS].count == 0 || ccMin < 90)) return ncclSuccess;
+  // NVLS search must have ngpus heads at most.
+  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) graph->maxChannels = system->nodes[GPU].count;
 
   if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
@@ -946,10 +949,24 @@ done:
 
   // 3. See if we can increase bwIntra for trees (2 nodes or collnet)
   if (pass == 2) {
-    if (time != 0 && graph->pattern != NCCL_TOPO_PATTERN_RING &&
+    if (time != 0 && graph->pattern != NCCL_TOPO_PATTERN_RING && graph->pattern != NCCL_TOPO_PATTERN_NVLS &&
         tmpGraph.bwIntra == graph->bwIntra && tmpGraph.bwIntra < tmpGraph.bwInter*2 &&
         speedIndex > 0) {
       tmpGraph.bwIntra = speedArray[--speedIndex];
+      goto search;
+    }
+    time = -1;
+    memcpy(&tmpGraph, graph, sizeof(tmpGraph));
+    pass = 3;
+  }
+
+  // 4. See if we can increase bwInter for nvls+tree
+  if (pass == 3) {
+    if (time != 0 && graph->pattern == NCCL_TOPO_PATTERN_NVLS &&
+        tmpGraph.bwInter == graph->bwInter && tmpGraph.bwInter < tmpGraph.bwIntra*2 &&
+        speedIndex > 0) {
+      tmpGraph.minChannels = tmpGraph.maxChannels = graph->nChannels;
+      tmpGraph.bwInter = speedArray[--speedIndex];
       goto search;
     }
     time = -1;
@@ -1005,7 +1022,7 @@ ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGr
 }
 
 ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs) {
-  char* str = getenv("NCCL_GRAPH_DUMP_FILE");
+  const char* str = ncclGetEnv("NCCL_GRAPH_DUMP_FILE");
   if (str) {
     INFO(NCCL_ENV, "NCCL_GRAPH_DUMP_FILE set by environment to %s", str);
     struct ncclXml* xml;

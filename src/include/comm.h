@@ -12,6 +12,7 @@
 #include "collectives.h"
 #include "proxy.h"
 #include "strongstream.h"
+#include "nccl_net.h"
 
 #include <cuda.h>
 #include <cudaTypedefs.h>
@@ -156,6 +157,14 @@ struct ncclPointerList {
   void *ptr;
 };
 
+struct ncclNvlsMcHandleList {
+  struct ncclNvlsMcHandleList *next;
+  CUmemGenericAllocationHandle mcHandle;
+  CUdeviceptr ptr;
+  int dev;
+  size_t size;
+};
+
 struct ncclKernelPlan {
   // A kernel plan is also a callback that reclaims itself. Hence this must
   // be the first member.
@@ -179,6 +188,7 @@ struct ncclKernelPlan {
   int collOpCount; // zero based for this plan
 
   struct ncclIntruQueue<struct ncclPointerList, &ncclPointerList::next> ipcMemQueue;
+  struct ncclIntruQueue<struct ncclNvlsMcHandleList, &ncclNvlsMcHandleList::next> nvlsMcHandleQueue;
 
   struct Channel {
     int nWork;
@@ -190,6 +200,23 @@ struct ncclKernelPlan {
     struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> workQueue;
     struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
   } channels[MAXCHANNELS];
+};
+
+struct ncclRegRequest {
+  uintptr_t buff;
+  size_t size;
+  struct ncclRegRequest *next;
+};
+
+struct ncclRegRecord {
+  uintptr_t buff;
+  size_t size;
+  CUdeviceptr regAddr;
+  size_t regSize;
+  int dev;
+  CUmemGenericAllocationHandle mcHandle;
+  uintptr_t *addrs; /* use to check if NVLS buffers match among intra-node ranks */
+  struct ncclRegRecord *next;
 };
 
 struct ncclComm {
@@ -263,6 +290,7 @@ struct ncclComm {
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float latencies[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float bandwidths[NCCL_NUM_FUNCTIONS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+  float ringbdw[NCCL_NUM_FUNCTIONS][NCCL_NUM_PROTOCOLS];
   int maxThreads[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
 
   /* This attribute can indicate the states of communicators and return code of
@@ -312,8 +340,11 @@ struct ncclComm {
 
   // NVLink SHARP (NVLS) support
   int nvlsSupport;
+  int nvlsRegSupport;
   /* sharable NVLS resource. */
   struct ncclNvlsSharedRes* nvlsResources;
+  struct ncclShmemCollBuff nvlsShmem;
+  void *nvlsShmemHandle;
 
   size_t channelSize; // User requested work size (bytes) for channel partitions
 
@@ -321,6 +352,7 @@ struct ncclComm {
   struct ncclMemoryPool memPool_ncclProxyOp;
   struct ncclMemoryPool memPool_ncclKernelPlan;
   struct ncclMemoryPool memPool_ncclPointerList;
+  struct ncclMemoryPool memPool_ncclNvlsHandleList;
   // Next comm in this thread's active ncclGroup[Start|End](). Holds "0x1" when
   // this comm is not yet in a group.
   struct ncclComm* groupNext;
@@ -348,6 +380,13 @@ struct ncclComm {
   bool finalizeCalled;
   // shared structures for finalization
   int finalizeRankCnt;
+  // group job to support multi-thread FT
+  struct ncclGroupJob *groupJob;
+
+  /* store to buffer register request */
+  struct ncclIntruQueue<struct ncclRegRequest, &ncclRegRequest::next> regRequestQueue;
+  /* store registered buffer */
+  struct ncclIntruQueue<struct ncclRegRecord, &ncclRegRecord::next> regRecordQueue;
 };
 
 enum ncclLaunchMode {
