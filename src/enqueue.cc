@@ -1170,6 +1170,10 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
   }
   else {
     float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
+    float backupMinTime = 3600000000.0;
+    bool backup = false;
+    int backupAlgo = -1; // back up algo and proto if no algo/proto is picked up.
+    int backupProto = -1;
     // Find algorithm / protocol.
     info->algorithm = -1;
     info->protocol = -1;
@@ -1184,17 +1188,30 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
-        NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time));
-        if (time >= 0 && time < minTime) {
-          info->algorithm = a;
-          info->protocol = p;
-          minTime = time;
+        NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time, &backup));
+        if (!backup) {
+          if (time >= 0 && time < minTime) {
+            info->algorithm = a;
+            info->protocol = p;
+            minTime = time;
+          }
+        } else {
+          if (time >= 0 && time < backupMinTime) {
+            backupAlgo = a;
+            backupProto = p;
+            backupMinTime = time;
+          }
         }
       }
     }
+    
     if (info->algorithm == -1 || info->protocol == -1) {
-      WARN("Error : no algorithm/protocol available");
-      return ncclInternalError;
+      if (backupAlgo == -1 || backupProto == -1) {
+        WARN("Error : no algorithm/protocol available");
+        return ncclInternalError;
+      }
+      info->algorithm = backupAlgo;
+      info->protocol = backupProto;
     }
     //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
     TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
