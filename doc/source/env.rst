@@ -740,7 +740,17 @@ The user buffers will be automatically de-registered when the CUDA Graphs are de
 
 Value accepted
 ^^^^^^^^^^^^^^
-0 or 1. Default value is 0.
+0 or 1. Default value is 1 (Enabled).
+
+NCCL_LOCAL_REGISTER
+-------------------
+(since 2.19)
+
+Enable user local buffer registration when users explicitly call *ncclCommRegister*.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 1 (Enabled).
 
 NCCL_SET_STACK_SIZE
 -------------------

@@ -2167,6 +2167,8 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
   return ncclSuccess;
 }
 
+NCCL_PARAM(LocalRegister, "LOCAL_REGISTER", 1);
+
 NCCL_API(ncclResult_t, ncclCommRegister, const ncclComm_t comm, void* buff, size_t size, void** handle);
 ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
@@ -2174,23 +2176,25 @@ ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, vo
 
 #if CUDART_VERSION >= 12010
   size_t granularity;
-  if (comm == NCCL_COMM_NULL || buff == NULL || handle == NULL || size == 0) {
-    WARN("Invalid arguments comm %p, buff %p, size %ld, handle %p", comm, buff, size, handle);
-    ret = ncclInvalidArgument;
-  } else if (comm->nvlsSupport) {
-    CUmulticastObjectProp prop = comm->nvlsResources->properties;
-    prop.size = size;
-    CUCHECK(cuMulticastGetGranularity(&granularity, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
-    if ((uintptr_t)buff % granularity == 0 && size % granularity == 0) {
-      struct ncclRegRequest* req;
-      NCCLCHECK(ncclCalloc(&req, 1));
-      req->buff = (uintptr_t)buff;
-      req->size = size;
-      ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
-      *handle = (void*)req;
-    } else {
-      WARN("Alignment requirement %ld, not aligned buffer (%p) or size (%ld) for registration", granularity, buff, size);
+  if (ncclParamLocalRegister()) {
+    if (comm == NCCL_COMM_NULL || buff == NULL || handle == NULL || size == 0) {
+      WARN("Invalid arguments comm %p, buff %p, size %ld, handle %p", comm, buff, size, handle);
       ret = ncclInvalidArgument;
+    } else if (comm->nvlsSupport) {
+      CUmulticastObjectProp prop = comm->nvlsResources->properties;
+      prop.size = size;
+      CUCHECK(cuMulticastGetGranularity(&granularity, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+      if ((uintptr_t)buff % granularity == 0 && size % granularity == 0) {
+        struct ncclRegRequest* req;
+        NCCLCHECK(ncclCalloc(&req, 1));
+        req->buff = (uintptr_t)buff;
+        req->size = size;
+        ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
+        *handle = (void*)req;
+      } else {
+        WARN("Alignment requirement %ld, not aligned buffer (%p) or size (%ld) for registration", granularity, buff, size);
+        ret = ncclInvalidArgument;
+      }
     }
   }
 #endif
@@ -2204,30 +2208,32 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
 
 #if CUDART_VERSION >= 12010
   struct ncclRegRequest* dreq = (struct ncclRegRequest*)handle;
-  if (comm == NCCL_COMM_NULL || handle == NULL) {
-    WARN("Invalid arguments comm %p, handle %p", comm, handle);
-    ret = ncclInvalidArgument;
-  } else {
-    struct ncclRegRecord *rec;
-
-    /* first release register record */
-    rec = ncclIntruQueueHead(&comm->regRecordQueue);
-    
-    while (rec) {
-      if (rec->buff == dreq->buff && rec->size == dreq->size) {
-        NCCLCHECK(ncclNvlsDeregBuffer(&rec->mcHandle, rec->regAddr, rec->dev, rec->regSize));
-        ncclIntruQueueDelete(&comm->regRecordQueue, rec);
-        free(rec->addrs);
-        free(rec);
-        break;
-      }
-      rec = rec->next;
-    }
-
-    /* then free register request */
-    if (ncclIntruQueueDelete(&comm->regRequestQueue, dreq) == false) {
-      WARN("Invalid handle %p", handle);
+  if (ncclParamLocalRegister()) {
+    if (comm == NCCL_COMM_NULL || handle == NULL) {
+      WARN("Invalid arguments comm %p, handle %p", comm, handle);
       ret = ncclInvalidArgument;
+    } else {
+      struct ncclRegRecord* rec;
+
+      /* first release register record */
+      rec = ncclIntruQueueHead(&comm->regRecordQueue);
+
+      while (rec) {
+        if (rec->buff == dreq->buff && rec->size == dreq->size) {
+          NCCLCHECK(ncclNvlsDeregBuffer(&rec->mcHandle, rec->regAddr, rec->dev, rec->regSize));
+          ncclIntruQueueDelete(&comm->regRecordQueue, rec);
+          free(rec->addrs);
+          free(rec);
+          break;
+        }
+        rec = rec->next;
+      }
+
+      /* then free register request */
+      if (ncclIntruQueueDelete(&comm->regRequestQueue, dreq) == false) {
+        WARN("Invalid handle %p", handle);
+        ret = ncclInvalidArgument;
+      }
     }
   }
 #endif
