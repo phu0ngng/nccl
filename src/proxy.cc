@@ -854,7 +854,7 @@ void* ncclProxyProgress(void *proxyState_) {
    * frequency of calling ncclProxyGetPostedOps() and reduce the perf impact. */
   int proxyOpAppendCounter = 0;
   struct ncclProxyArgs profArgs; // Only used for profiling purposes
-  while ((state->stop == false || (state->stop == true && state->active)) && *proxyState->abortFlag == 0) {
+  while ((state->stop == 0 || (state->stop == 1 && state->active)) && *proxyState->abortFlag == 0) {
     int idle = 1;
     ncclResult_t ret = progressOps(proxyState, state, state->active, &idle);
     if (ret != ncclSuccess) {
@@ -867,7 +867,7 @@ void* ncclProxyProgress(void *proxyState_) {
       int added = 0;
       proxyOpAppendCounter = 0;
       TIME_START(3);
-      if (state->stop == false)
+      if (state->stop == 0)
         ret = ncclProxyGetPostedOps(proxyState, &added);
       if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
       if (ret != ncclSuccess) {
@@ -878,6 +878,11 @@ void* ncclProxyProgress(void *proxyState_) {
       }
     }
     lastIdle = idle;
+  }
+  
+  if (*proxyState->abortFlag) {
+    /* progress serive thread should be waiting for me, I need to notify it. */
+    __atomic_store_n(&state->stop, 2, __ATOMIC_RELEASE);
   }
   return NULL;
 }
@@ -913,13 +918,20 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
   // Request the proxy to stop and then wake it
   if (state->opsPool) {
     pthread_mutex_lock(&state->opsPool->mutex);
-    state->stop = true;
+    state->stop = 1;
     pthread_cond_signal(&state->opsPool->cond);
     pthread_mutex_unlock(&state->opsPool->mutex);
     /* join the progress thread only in the non-abort case; otherwise, 
      * it will be detached by the main thread. */
-    if (*proxyState->abortFlag == 0)
+    if (*proxyState->abortFlag == 0) {
       pthread_join(state->thread, NULL);
+    } else {
+      /* wait until progress thread exits first */
+      uint64_t t0 = clockNano();
+      while (__atomic_load_n(&state->stop, __ATOMIC_ACQUIRE) != 2) {
+        if (clockNano() - t0 >= 5 * 1000) sched_yield();
+      }
+    }
   }
 
   // Free off any memory allocated for the proxy arg pools

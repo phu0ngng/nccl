@@ -148,7 +148,7 @@ struct ncclProxyProgressState {
   char opsPoolShmSuffix[6];
 
   pthread_t thread;
-  bool stop;
+  volatile int stop;
   struct ncclProxyPeer** localPeers;
   struct ncclSharedNetComms* netComms[NCCL_MAX_NETDEVS];
   struct ncclProxyArgs* active;
