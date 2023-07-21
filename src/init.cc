@@ -2327,24 +2327,32 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 NCCL_API(ncclResult_t, ncclMemFree, void *ptr);
 ncclResult_t  ncclMemFree(void *ptr) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+  ncclResult_t ret = ncclSuccess;
+  int saveDevice;
 
+  CUDACHECK(cudaGetDevice(&saveDevice));
 #if CUDART_VERSION >= 12010
   CUdevice ptrDev = 0;
   int mcSupport = 0;
 
   ncclCudaLibraryInit();
-  CUCHECK(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr));
+  CUCHECKGOTO(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr), ret, fail);
   if (CUPFN(cuMulticastCreate) != NULL)
-    CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev));
+    CUCHECKGOTO(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev), ret, fail);
 
+  CUDACHECKGOTO(cudaSetDevice((int)ptrDev), ret, fail);
   if (mcSupport) {
-    NCCLCHECK(ncclCuMemFree(ptr));
+    NCCLCHECKGOTO(ncclCuMemFree(ptr), ret, fail);
   } else {
-    CUDACHECK(cudaFree(ptr));
+    CUDACHECKGOTO(cudaFree(ptr), ret, fail);
   }
 #else
-  CUDACHECK(cudaFree(ptr));
+  CUDACHECKGOTO(cudaFree(ptr), ret, fail);
 #endif
 
-  return ncclSuccess;
+exit:
+  cudaSetDevice(saveDevice);
+  return ret;
+fail:
+  goto exit;
 }
