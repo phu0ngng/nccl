@@ -2182,9 +2182,12 @@ ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, vo
       ret = ncclInvalidArgument;
     } else if (comm->nvlsSupport) {
       CUmulticastObjectProp prop = comm->nvlsResources->properties;
+
       prop.size = size;
       CUCHECK(cuMulticastGetGranularity(&granularity, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
-      if ((uintptr_t)buff % granularity == 0 && size % granularity == 0) {
+
+      if ((uintptr_t)buff % comm->nvlsResources->ucGran == 0 && size % granularity == 0) {
+        /* we can direct register what user provide */
         struct ncclRegRequest* req;
         NCCLCHECK(ncclCalloc(&req, 1));
         req->buff = (uintptr_t)buff;
@@ -2192,8 +2195,23 @@ ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, vo
         ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
         *handle = (void*)req;
       } else {
-        WARN("Alignment requirement %ld, not aligned buffer (%p) or size (%ld) for registration", granularity, buff, size);
-        ret = ncclInvalidArgument;
+        void* base;
+        size_t baseSize;
+        /* Since we don't provide actually allocated buffer size for users by ncclMemAlloc,
+         * therefore, we need to get the full range of the buffer by cuMemGetAddressRange to
+         * register buffers. */
+        CUCHECK(cuMemGetAddressRange((CUdeviceptr*)&base, &baseSize, (CUdeviceptr)buff));
+        if ((uintptr_t)base % comm->nvlsResources->ucGran == 0 && baseSize % granularity == 0) {
+          struct ncclRegRequest* req;
+          NCCLCHECK(ncclCalloc(&req, 1));
+          req->buff = (uintptr_t)base;
+          req->size = baseSize;
+          ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
+          *handle = (void*)req;
+        } else {
+          WARN("register fails, buffer %p (aligned %s, granularity %ld) and size %ld (aligned %s, granularity %ld) for registration", buff, (uintptr_t)buff % comm->nvlsResources->ucGran == 0 ? "TRUE" : "FALSE", comm->nvlsResources->ucGran, size, size % granularity == 0 ? "TRUE" : "FALSE", granularity);
+          ret = ncclInvalidArgument;
+        }
       }
     }
   }
@@ -2248,7 +2266,6 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 #if CUDART_VERSION >= 12010
   size_t memGran = 0;
   size_t mcGran = 0;
-  size_t granularity = 0;
   CUdevice currentDev;
   CUmemAllocationProp memprop = {};
   CUmulticastObjectProp mcprop = {};
@@ -2278,17 +2295,18 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     /* mc property */
     CUDACHECK(cudaGetDeviceCount(&dcnt));
     mcprop.size = size;
+    /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
     mcprop.numDevices = dcnt;
     mcprop.handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
     mcprop.flags = 0;
     CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
 
-    granularity = mcGran > memGran ? mcGran : memGran; // 512MB for multicast registration
-    ALIGN_SIZE(size, granularity);
+    /* only size needs to be aligned to mcGran */
+    ALIGN_SIZE(size, mcGran);
     /* Allocate the physical memory on the device */
     CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
     /* Reserve a virtual address range */
-    CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, granularity, 0, 0));
+    CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, memGran, 0, 0));
     /* Map the virtual address range to the physical allocation */
     CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
     /* Now allow RW access to the newly mapped memory */

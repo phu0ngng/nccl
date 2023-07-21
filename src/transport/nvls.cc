@@ -145,6 +145,7 @@ ncclResult_t nvlsGroupBindMem(struct ncclComm *comm, struct ncclNvlsSharedRes* r
   prop.location.id = resources->dev;
   prop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
   CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
+  resources->ucGran = granularity;
 
   // Map a VA for UC memory
   CUCHECK(cuMemAddressReserve(&ptr, size, granularity, 0U, 0));

@@ -65,6 +65,7 @@ struct ncclNvlsSharedRes {
   CUmemGenericAllocationHandle ucHandle; // Unicast Handle for NVLS buffer
   char* ucBuff; // Unicast NVLS buffer address
   char shareableHandle[NVLS_HANDLE_SIZE];
+  size_t ucGran;
   int nChannels;
 };
 
