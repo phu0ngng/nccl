@@ -2251,40 +2251,48 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   int cudaDev;
   int flag = 0;
   int dcnt;
+  int mcSupport = 0;
 
+  ncclCudaLibraryInit();
   CUDACHECK(cudaGetDevice(&cudaDev));
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
+  if (CUPFN(cuMulticastCreate) != NULL)
+    CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
 
-  memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
-  memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  memprop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
-  memprop.location.id = currentDev;
-  // Query device to see if RDMA support is available
-  CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED, currentDev));
-  if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
-  CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
-  
-  /* mc property */
-  CUDACHECK(cudaGetDeviceCount(&dcnt));
-  mcprop.size = size;
-  mcprop.numDevices = dcnt;
-  mcprop.handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
-  mcprop.flags = 0;
-  CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+  if (mcSupport) {
+    memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+    memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    memprop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+    memprop.location.id = currentDev;
+    // Query device to see if RDMA support is available
+    CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED, currentDev));
+    if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
+    CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
 
-  granularity = mcGran > memGran ? mcGran : memGran; // 512MB for multicast registration
-  ALIGN_SIZE(size, granularity);
-  /* Allocate the physical memory on the device */
-  CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
-  /* Reserve a virtual address range */
-  CUCHECK(cuMemAddressReserve((CUdeviceptr *)ptr, size, granularity, 0, 0));
-  /* Map the virtual address range to the physical allocation */
-  CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
-  /* Now allow RW access to the newly mapped memory */
-  accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  accessDesc.location.id = currentDev;
-  accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-  CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+    /* mc property */
+    CUDACHECK(cudaGetDeviceCount(&dcnt));
+    mcprop.size = size;
+    mcprop.numDevices = dcnt;
+    mcprop.handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+    mcprop.flags = 0;
+    CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+
+    granularity = mcGran > memGran ? mcGran : memGran; // 512MB for multicast registration
+    ALIGN_SIZE(size, granularity);
+    /* Allocate the physical memory on the device */
+    CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+    /* Reserve a virtual address range */
+    CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, granularity, 0, 0));
+    /* Map the virtual address range to the physical allocation */
+    CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
+    /* Now allow RW access to the newly mapped memory */
+    accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    accessDesc.location.id = currentDev;
+    accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+    CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+  } else {
+    CUDACHECK(cudaMalloc(ptr, size));
+  }
 #else
   CUDACHECK(cudaMalloc(ptr, size));
 #endif
@@ -2297,7 +2305,19 @@ ncclResult_t  ncclMemFree(void *ptr) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
 
 #if CUDART_VERSION >= 12010
-  NCCLCHECK(ncclCuMemFree(ptr));
+  CUdevice ptrDev = 0;
+  int mcSupport = 0;
+
+  ncclCudaLibraryInit();
+  CUCHECK(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr));
+  if (CUPFN(cuMulticastCreate) != NULL)
+    CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev));
+
+  if (mcSupport) {
+    NCCLCHECK(ncclCuMemFree(ptr));
+  } else {
+    CUDACHECK(cudaFree(ptr));
+  }
 #else
   CUDACHECK(cudaFree(ptr));
 #endif
