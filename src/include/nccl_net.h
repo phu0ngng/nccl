@@ -19,7 +19,7 @@
 #define NCCL_PTR_DMABUF 0x4
 
 // Maximum number of requests per comm object
-#define NCCL_NET_MAX_REQUESTS 8
+#define NCCL_NET_MAX_REQUESTS 32
 
 typedef enum {NCCL_LOG_NONE=0, NCCL_LOG_VERSION=1, NCCL_LOG_WARN=2, NCCL_LOG_INFO=3, NCCL_LOG_ABORT=4, NCCL_LOG_TRACE=5} ncclDebugLogLevel;
 typedef enum {NCCL_INIT=1, NCCL_COLL=2, NCCL_P2P=4, NCCL_SHM=8, NCCL_NET=16, NCCL_GRAPH=32, NCCL_TUNING=64, NCCL_ENV=128, NCCL_ALLOC=256, NCCL_CALL=512, NCCL_PROXY=1024, NCCL_NVLS=2048, NCCL_ALL=~0} ncclDebugLogSubSys;
@@ -103,6 +103,8 @@ typedef ncclNet_v7_t ncclNet_t;
 #define NCCL_PLUGIN_SYMBOL ncclNetPlugin_v7
 
 #define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v7
+
+#define NCCL_NET_MAX_REQUESTS_V6 8
 
 // v6 struct for backwards compatibility
 typedef struct {
