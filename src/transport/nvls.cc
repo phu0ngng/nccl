@@ -442,17 +442,11 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, struct localRequestData *r
 
   /* check whether we find the register request for every local rank */
   for (int i = 0; i < comm->localRanks; ++i) {
-    if (reqData[i].reqBuff == 0) {
-      WARN("local peer %d request buffer is not valid", i);
-      goto fail;
-    }
+    if (reqData[i].reqBuff == 0) goto fail;
   }
   /* check whether all buffer offsets are identical */
   for (int i = 0; i < comm->localRanks - 1; ++i) {
-    if (reqData[i].reqOffset != reqData[i + 1].reqOffset) {
-      WARN("peer %d (offset %ld) and %d (offset %ld) do not have same offset", i, reqData[i].reqOffset, i + 1, reqData[i + 1].reqOffset);
-      goto fail;
-    }
+    if (reqData[i].reqOffset != reqData[i + 1].reqOffset) goto fail;
   }
   /* get minimal size of nvls buffers */
   minSize = reqData[0].reqSize;
