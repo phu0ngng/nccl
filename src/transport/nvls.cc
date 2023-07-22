@@ -440,14 +440,6 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, struct localRequestData *r
   size_t minSize;
   bool localRegBufUsed = false;
 
-  /* check whether we find the register request for every local rank */
-  for (int i = 0; i < comm->localRanks; ++i) {
-    if (reqData[i].reqBuff == 0) goto fail;
-  }
-  /* check whether all buffer offsets are identical */
-  for (int i = 0; i < comm->localRanks - 1; ++i) {
-    if (reqData[i].reqOffset != reqData[i + 1].reqOffset) goto fail;
-  }
   /* get minimal size of nvls buffers */
   minSize = reqData[0].reqSize;
   for (int i = 1; i < comm->localRanks; ++i) {
@@ -609,7 +601,9 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
   NCCLCHECKGOTO(ncclCalloc(&reqData, comm->localRanks), ret, fail);
   if (sendNeedReg && sendbuff != NULL) {
     /* copy request data got from previous shmem AG */
+    intptr_t offset = regData[0].reqSendOffset;
     for (int i = 0; i < comm->localRanks; ++i) {
+      if (regData[i].reqSendbuff == 0 || offset != regData[i].reqSendOffset) goto fail;
       reqData[i].reqBuff = regData[i].reqSendbuff;
       reqData[i].reqSize = regData[i].reqSendSize;
       reqData[i].reqOffset = regData[i].reqSendOffset;
@@ -619,8 +613,9 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
   }
 
   if (recvNeedReg && recvbuff != NULL) {
-    /* copy request data got from previous shmem AG */
+    intptr_t offset = regData[0].reqRecvOffset;
     for (int i = 0; i < comm->localRanks; ++i) {
+      if (regData[i].reqRecvbuff == 0 || offset != regData[i].reqRecvOffset) goto fail;
       reqData[i].reqBuff = regData[i].reqRecvbuff;
       reqData[i].reqSize = regData[i].reqRecvSize;
       reqData[i].reqOffset = regData[i].reqRecvOffset;
