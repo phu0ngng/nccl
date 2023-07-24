@@ -23,12 +23,6 @@ enum ncclRegBufferType {
   NCCL_REG_BUFFER_NUM = 3
 };
 
-enum ncclRegBufferMode {
-  NCCL_LOCAL_REGISTER = 0,
-  NCCL_GRAPH_REGISTER = 1,
-  NCCL_REGISTER_MODE_NUM = 2
-};
-
 static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFuncIndex, struct ncclWorkElem* work, struct ncclProxyOp* proxyOp /* output */);
 
 NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
@@ -360,9 +354,11 @@ static void finishPlan(struct ncclKernelPlan* plan) {
   plan->threadPerBlock = std::max(plan->threadPerBlock, 3*WARP_SIZE);
 }
 
+int64_t ncclParamLocalRegister();
+NCCL_PARAM(GraphRegister, "GRAPH_REGISTER", 1);
+
 static ncclResult_t registerIntraNodeBuffers(
     struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclInfo* info,
-    ncclRegBufferMode regMode,
     void* outRegBufSend[NCCL_MAX_LOCAL_RANKS],
     void* outRegBufRecv[NCCL_MAX_LOCAL_RANKS],
     ncclRegBufferType *outRegBufType
@@ -376,21 +372,22 @@ static ncclResult_t registerIntraNodeBuffers(
     const void *sendbuff = info->sendbuff;
     void *recvbuff = info->recvbuff;
 
-    if (info->coll == ncclFuncAllGather) 
+    if (info->coll == ncclFuncAllGather)
       sendbuff = NULL;
-    else if (info->coll == ncclFuncReduceScatter) 
+    else if (info->coll == ncclFuncReduceScatter)
       recvbuff = NULL;
-      
-    if (regMode == NCCL_LOCAL_REGISTER) {
-      NCCLCHECKGOTO(ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv), result, fallback);
-    } else if (regMode == NCCL_GRAPH_REGISTER) {
-      NCCLCHECKGOTO(ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv), result, fallback);
-    } else {
-      goto fallback;
+
+    /* first try local registration. */
+    if (ncclParamLocalRegister()) {
+      ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
-    
+
+    if (regBufUsed == false && plan->persistent && ncclParamGraphRegister()) {
+      ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
+    }
+
     if (regBufUsed) {
-      /* tweak NVLS channels usage; for registered NVLS buffer, we only need 4/5 channels to 
+      /* tweak NVLS channels usage; for registered NVLS buffer, we only need 4/5 channels to
        * saturate bandwidth. */
       if (info->coll == ncclFuncReduceScatter)
         info->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 5));
@@ -400,7 +397,8 @@ static ncclResult_t registerIntraNodeBuffers(
     }
   } else if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT &&   // limited to CollNetDirect for now
     comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
-    comm->intraRanks < comm->localRanks) { // only with inter-process & intra-node peers
+    comm->intraRanks < comm->localRanks &&  // only with inter-process & intra-node peers
+    plan->persistent && ncclParamGraphRegister()) {
     int localRank = comm->localRank;
 
     if (CUPFN(cuMemGetAddressRange) == nullptr) return ncclSuccess;
@@ -448,8 +446,6 @@ fallback:
 #endif
   return result;
 }
-
-NCCL_PARAM(GraphRegister, "GRAPH_REGISTER", 1);
 
 static ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetTypeSupport);
 static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, int numPipeOps);
@@ -550,37 +546,14 @@ static ncclResult_t scheduleCollTasksToPlan(
 
       /* if possible, start registration  */
       ncclRegBufferType regBufType = NCCL_REGULAR_BUFFER;
-      ncclRegBufferMode regMode;
       void* regBufSend[NCCL_MAX_LOCAL_RANKS];
       void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
-      struct ncclRegRequest *req = ncclIntruQueueHead(&comm->regRequestQueue);
-      bool canSendReg = false;
-      bool canRecvReg = false;
-      bool needReg = false;
 
-      while (req && (!canSendReg || !canRecvReg)) {
-        if ((uintptr_t)req->buff <= (uintptr_t)info.sendbuff && (uintptr_t)req->buff + req->size >= (uintptr_t)info.sendbuff + info.sendbuffSize)
-          canSendReg = true;
-        if ((uintptr_t)req->buff <= (uintptr_t)info.recvbuff && (uintptr_t)req->buff + req->size >= (uintptr_t)info.recvbuff + info.recvbuffSize)
-          canRecvReg = true;
-        req = req->next;
-      }
- 
-      if ((canSendReg || info.coll == ncclFuncAllGather) && (canRecvReg || info.coll == ncclFuncReduceScatter)) {
-        regMode = NCCL_LOCAL_REGISTER;
-        needReg = true;
-      } else if (plan->persistent && ncclParamGraphRegister()) {
-        regMode = NCCL_GRAPH_REGISTER;
-        needReg = true;
-      }
-
-      if (needReg) {
-        cudaPointerAttributes sattr, rattr;
-        CUDACHECK(cudaPointerGetAttributes(&sattr, info.sendbuff));
-        CUDACHECK(cudaPointerGetAttributes(&rattr, info.recvbuff));
-        if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice) {
-          registerIntraNodeBuffers(comm, plan, &info, regMode, regBufSend, regBufRecv, &regBufType);
-        }
+      cudaPointerAttributes sattr, rattr;
+      CUDACHECK(cudaPointerGetAttributes(&sattr, info.sendbuff));
+      CUDACHECK(cudaPointerGetAttributes(&rattr, info.recvbuff));
+      if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice) {
+        registerIntraNodeBuffers(comm, plan, &info, regBufSend, regBufRecv, &regBufType);
       }
 
       NCCLCHECK(computeColl(&info, &workFuncIndex, &workElem, &proxyOp));
@@ -1170,6 +1143,10 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
   }
   else {
     float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
+    float backupMinTime = 3600000000.0;
+    bool backup = false;
+    int backupAlgo = -1; // back up algo and proto if no algo/proto is picked up.
+    int backupProto = -1;
     // Find algorithm / protocol.
     info->algorithm = -1;
     info->protocol = -1;
@@ -1184,17 +1161,30 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         float time;
-        NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time));
-        if (time >= 0 && time < minTime) {
-          info->algorithm = a;
-          info->protocol = p;
-          minTime = time;
+        NCCLCHECK(ncclTopoGetAlgoTime(info, a, p, numPipeOps, &time, &backup));
+        if (!backup) {
+          if (time >= 0 && time < minTime) {
+            info->algorithm = a;
+            info->protocol = p;
+            minTime = time;
+          }
+        } else {
+          if (time >= 0 && time < backupMinTime) {
+            backupAlgo = a;
+            backupProto = p;
+            backupMinTime = time;
+          }
         }
       }
     }
+
     if (info->algorithm == -1 || info->protocol == -1) {
-      WARN("Error : no algorithm/protocol available");
-      return ncclInternalError;
+      if (backupAlgo == -1 || backupProto == -1) {
+        WARN("Error : no algorithm/protocol available");
+        return ncclInternalError;
+      }
+      info->algorithm = backupAlgo;
+      info->protocol = backupProto;
     }
     //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
     TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);

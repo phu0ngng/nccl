@@ -399,9 +399,19 @@ static float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][23] = {
   {  .9,  .9,  .9,  .9,  .9,  .9,  .9,  .8,  .7,  .6,  .6,  .5,  .5,  .5,  .5,  .6,  .7,  .8,  .7,  .7,  .8,  .9,  .9 }
 };
 
-ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, int numPipeOps, float* time) {
-  float bw = info->comm->bandwidths[info->coll][algorithm][protocol];
+ncclResult_t ncclTopoGetAlgoTime(struct ncclInfo* info, int algorithm, int protocol, int numPipeOps, float* time, bool* backup) {
+  float bw = info->comm->bandwidths[info->coll][algorithm][protocol]; 
   float lat = info->comm->latencies[info->coll][algorithm][protocol];
+  
+  if (backup) {
+    *backup = false;
+    if (algorithm == NCCL_ALGO_RING && bw == 0.0f) {
+      /* try back up RING algorithm */
+      bw = info->comm->ringbdw[info->coll][protocol];
+      *backup = true;
+    }
+  }
+
   if (bw == 0) {
     *time = -1.0; return ncclSuccess;
   }

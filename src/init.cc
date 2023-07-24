@@ -185,7 +185,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
       /* detach thread due to abort */
       ncclProxyDetach(comm->proxyState);
     }
-    
+
   }
 
   delete[] comm->userRedOps;
@@ -220,7 +220,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->deviceStream));
       /* The main thread should free proxy resources only in a normal exit;
-       * otherwise, proxy threads are detached and they will free resources 
+       * otherwise, proxy threads are detached and they will free resources
        * themselves. */
       if (*comm->abortFlag == 0)
         NCCLCHECK(ncclProxyDestroy(comm->sharedRes->proxyState));
@@ -891,7 +891,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
     for (int i = 0; i < nranks; i++) comm->minCompCap = std::min(comm->minCompCap, comm->peerInfo[rank].cudaCompCap);
     for (int i = 0; i < nranks; i++) comm->maxCompCap = std::max(comm->maxCompCap, comm->peerInfo[rank].cudaCompCap);
-    
+
     comm->nvlsRegSupport = 1;
     for (int i = 0; i < nranks; i++) {
       if ((comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash)
@@ -2217,6 +2217,8 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
   return ncclSuccess;
 }
 
+NCCL_PARAM(LocalRegister, "LOCAL_REGISTER", 1);
+
 NCCL_API(ncclResult_t, ncclCommRegister, const ncclComm_t comm, void* buff, size_t size, void** handle);
 ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
@@ -2224,23 +2226,43 @@ ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, vo
 
 #if CUDART_VERSION >= 12010
   size_t granularity;
-  if (comm == NCCL_COMM_NULL || buff == NULL || handle == NULL || size == 0) {
-    WARN("Invalid arguments comm %p, buff %p, size %ld, handle %p", comm, buff, size, handle);
-    ret = ncclInvalidArgument;
-  } else if (comm->nvlsSupport) {
-    CUmulticastObjectProp prop = comm->nvlsResources->properties;
-    prop.size = size;
-    CUCHECK(cuMulticastGetGranularity(&granularity, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
-    if ((uintptr_t)buff % granularity == 0 && size % granularity == 0) {
-      struct ncclRegRequest* req;
-      NCCLCHECK(ncclCalloc(&req, 1));
-      req->buff = (uintptr_t)buff;
-      req->size = size;
-      ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
-      *handle = (void*)req;
-    } else {
-      WARN("Alignment requirement %ld, not aligned buffer (%p) or size (%ld) for registration", granularity, buff, size);
+  if (ncclParamLocalRegister()) {
+    if (comm == NCCL_COMM_NULL || buff == NULL || handle == NULL || size == 0) {
+      WARN("Invalid arguments comm %p, buff %p, size %ld, handle %p", comm, buff, size, handle);
       ret = ncclInvalidArgument;
+    } else if (comm->nvlsSupport) {
+      CUmulticastObjectProp prop = comm->nvlsResources->properties;
+
+      prop.size = size;
+      CUCHECK(cuMulticastGetGranularity(&granularity, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+
+      if ((uintptr_t)buff % comm->nvlsResources->ucGran == 0 && size % granularity == 0) {
+        /* we can direct register what user provide */
+        struct ncclRegRequest* req;
+        NCCLCHECK(ncclCalloc(&req, 1));
+        req->buff = (uintptr_t)buff;
+        req->size = size;
+        ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
+        *handle = (void*)req;
+      } else {
+        void* base;
+        size_t baseSize;
+        /* Since we don't provide actually allocated buffer size for users by ncclMemAlloc,
+         * therefore, we need to get the full range of the buffer by cuMemGetAddressRange to
+         * register buffers. */
+        CUCHECK(cuMemGetAddressRange((CUdeviceptr*)&base, &baseSize, (CUdeviceptr)buff));
+        if ((uintptr_t)base % comm->nvlsResources->ucGran == 0 && baseSize % granularity == 0) {
+          struct ncclRegRequest* req;
+          NCCLCHECK(ncclCalloc(&req, 1));
+          req->buff = (uintptr_t)base;
+          req->size = baseSize;
+          ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
+          *handle = (void*)req;
+        } else {
+          WARN("register fails, buffer %p (aligned %s, granularity %ld) and size %ld (aligned %s, granularity %ld) for registration", buff, (uintptr_t)buff % comm->nvlsResources->ucGran == 0 ? "TRUE" : "FALSE", comm->nvlsResources->ucGran, size, size % granularity == 0 ? "TRUE" : "FALSE", granularity);
+          ret = ncclInvalidArgument;
+        }
+      }
     }
   }
 #endif
@@ -2254,30 +2276,32 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
 
 #if CUDART_VERSION >= 12010
   struct ncclRegRequest* dreq = (struct ncclRegRequest*)handle;
-  if (comm == NCCL_COMM_NULL || handle == NULL) {
-    WARN("Invalid arguments comm %p, handle %p", comm, handle);
-    ret = ncclInvalidArgument;
-  } else {
-    struct ncclRegRecord *rec;
-
-    /* first release register record */
-    rec = ncclIntruQueueHead(&comm->regRecordQueue);
-    
-    while (rec) {
-      if (rec->buff == dreq->buff && rec->size == dreq->size) {
-        NCCLCHECK(ncclNvlsDeregBuffer(&rec->mcHandle, rec->regAddr, rec->dev, rec->regSize));
-        ncclIntruQueueDelete(&comm->regRecordQueue, rec);
-        free(rec->addrs);
-        free(rec);
-        break;
-      }
-      rec = rec->next;
-    }
-
-    /* then free register request */
-    if (ncclIntruQueueDelete(&comm->regRequestQueue, dreq) == false) {
-      WARN("Invalid handle %p", handle);
+  if (ncclParamLocalRegister()) {
+    if (comm == NCCL_COMM_NULL || handle == NULL) {
+      WARN("Invalid arguments comm %p, handle %p", comm, handle);
       ret = ncclInvalidArgument;
+    } else {
+      struct ncclRegRecord* rec;
+
+      /* first release register record */
+      rec = ncclIntruQueueHead(&comm->regRecordQueue);
+
+      while (rec) {
+        if (rec->buff == dreq->buff && rec->size == dreq->size) {
+          NCCLCHECK(ncclNvlsDeregBuffer(&rec->mcHandle, rec->regAddr, rec->dev, rec->regSize));
+          ncclIntruQueueDelete(&comm->regRecordQueue, rec);
+          free(rec->addrs);
+          free(rec);
+          break;
+        }
+        rec = rec->next;
+      }
+
+      /* then free register request */
+      if (ncclIntruQueueDelete(&comm->regRequestQueue, dreq) == false) {
+        WARN("Invalid handle %p", handle);
+        ret = ncclInvalidArgument;
+      }
     }
   }
 #endif
@@ -2292,7 +2316,6 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 #if CUDART_VERSION >= 12010
   size_t memGran = 0;
   size_t mcGran = 0;
-  size_t granularity = 0;
   CUdevice currentDev;
   CUmemAllocationProp memprop = {};
   CUmulticastObjectProp mcprop = {};
@@ -2301,56 +2324,90 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   int cudaDev;
   int flag = 0;
   int dcnt;
+  int mcSupport = 0;
 
+  if (ptr == NULL || size == 0) goto fallback;
+
+  ncclCudaLibraryInit();
   CUDACHECK(cudaGetDevice(&cudaDev));
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
+  if (CUPFN(cuMulticastCreate) != NULL)
+    CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
 
-  memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
-  memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  memprop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
-  memprop.location.id = currentDev;
-  // Query device to see if RDMA support is available
-  CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED, currentDev));
-  if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
-  CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
-  
-  /* mc property */
-  CUDACHECK(cudaGetDeviceCount(&dcnt));
-  mcprop.size = size;
-  mcprop.numDevices = dcnt;
-  mcprop.handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
-  mcprop.flags = 0;
-  CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+  if (mcSupport) {
+    memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+    memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    memprop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+    memprop.location.id = currentDev;
+    // Query device to see if RDMA support is available
+    CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED, currentDev));
+    if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
+    CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
 
-  granularity = mcGran > memGran ? mcGran : memGran; // 512MB for multicast registration
-  ALIGN_SIZE(size, granularity);
-  /* Allocate the physical memory on the device */
-  CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
-  /* Reserve a virtual address range */
-  CUCHECK(cuMemAddressReserve((CUdeviceptr *)ptr, size, granularity, 0, 0));
-  /* Map the virtual address range to the physical allocation */
-  CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
-  /* Now allow RW access to the newly mapped memory */
-  accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  accessDesc.location.id = currentDev;
-  accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-  CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
-#else
-  CUDACHECK(cudaMalloc(ptr, size));
+    /* mc property */
+    CUDACHECK(cudaGetDeviceCount(&dcnt));
+    mcprop.size = size;
+    /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
+    mcprop.numDevices = dcnt;
+    mcprop.handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+    mcprop.flags = 0;
+    CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+
+    /* only size needs to be aligned to mcGran */
+    ALIGN_SIZE(size, mcGran);
+    /* Allocate the physical memory on the device */
+    CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+    /* Reserve a virtual address range */
+    CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, memGran, 0, 0));
+    /* Map the virtual address range to the physical allocation */
+    CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
+    /* Now allow RW access to the newly mapped memory */
+    accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    accessDesc.location.id = currentDev;
+    accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+    CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+    goto exit;
+  }
+
+fallback:
 #endif
+  CUDACHECK(cudaMalloc(ptr, size));
 
+exit:
   return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclMemFree, void *ptr);
 ncclResult_t  ncclMemFree(void *ptr) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+  ncclResult_t ret = ncclSuccess;
+  int saveDevice;
 
+  CUDACHECK(cudaGetDevice(&saveDevice));
 #if CUDART_VERSION >= 12010
-  NCCLCHECK(ncclCuMemFree(ptr));
-#else
-  CUDACHECK(cudaFree(ptr));
-#endif
+  CUdevice ptrDev = 0;
+  int mcSupport = 0;
 
-  return ncclSuccess;
+  if (ptr == NULL) goto fallback;
+
+  ncclCudaLibraryInit();
+  CUCHECKGOTO(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr), ret, fail);
+  if (CUPFN(cuMulticastCreate) != NULL)
+    CUCHECKGOTO(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev), ret, fail);
+
+  CUDACHECKGOTO(cudaSetDevice((int)ptrDev), ret, fail);
+  if (mcSupport) {
+    NCCLCHECKGOTO(ncclCuMemFree(ptr), ret, fail);
+    goto exit;
+  }
+
+fallback:
+#endif
+  CUDACHECKGOTO(cudaFree(ptr), ret, fail);
+
+exit:
+  cudaSetDevice(saveDevice);
+  return ret;
+fail:
+  goto exit;
 }

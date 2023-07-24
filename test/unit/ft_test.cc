@@ -66,8 +66,8 @@ static void initBufferStream(void **sendbuffDptr, void **recvbuffDptr, char **bu
     bufHostPtr[i] = (char*) malloc(size);
     assert(bufHostPtr[i] != NULL);
     memset(bufHostPtr[i], 0, size);
-    CUDACHECK(cudaMalloc((void**)&sendbuffDptr[i], size));
-    CUDACHECK(cudaMalloc((void**)&recvbuffDptr[i], size));
+    NCCLCHECK(ncclMemAlloc((void**)&sendbuffDptr[i], size));
+    NCCLCHECK(ncclMemAlloc((void**)&recvbuffDptr[i], size));
     CUDACHECK(cudaMemset(sendbuffDptr[i], 1, size));
     CUDACHECK(cudaMemset(recvbuffDptr[i], 0, size));
     CUDACHECK(cudaStreamCreate(&sa[i]));
@@ -80,8 +80,8 @@ static void initBufferStream(void **sendbuffDptr, void **recvbuffDptr, char **bu
 static void finalizeBufferStream(void **sendbuffDptr, void **recvbuffDptr, char **bufHostPtr, cudaStream_t* sa, int nVis) {
   for (int i = 0; i < nVis; ++i) {
     CUDACHECK(cudaSetDevice(i));
-    cudaFree(sendbuffDptr[i]);
-    cudaFree(recvbuffDptr[i]);
+    ncclMemFree(sendbuffDptr[i]);
+    ncclMemFree(recvbuffDptr[i]);
     free(bufHostPtr[i]);
     cudaStreamDestroy(sa[i]);
   }
