@@ -879,7 +879,7 @@ void* ncclProxyProgress(void *proxyState_) {
     }
     lastIdle = idle;
   }
-  
+
   if (*proxyState->abortFlag) {
     /* progress serive thread should be waiting for me, I need to notify it. */
     __atomic_store_n(&state->stop, 2, __ATOMIC_RELEASE);
@@ -921,7 +921,7 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
     state->stop = 1;
     pthread_cond_signal(&state->opsPool->cond);
     pthread_mutex_unlock(&state->opsPool->mutex);
-    /* join the progress thread only in the non-abort case; otherwise, 
+    /* join the progress thread only in the non-abort case; otherwise,
      * it will be detached by the main thread. */
     if (*proxyState->abortFlag == 0) {
       pthread_join(state->thread, NULL);

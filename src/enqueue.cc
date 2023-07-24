@@ -372,22 +372,22 @@ static ncclResult_t registerIntraNodeBuffers(
     const void *sendbuff = info->sendbuff;
     void *recvbuff = info->recvbuff;
 
-    if (info->coll == ncclFuncAllGather) 
+    if (info->coll == ncclFuncAllGather)
       sendbuff = NULL;
-    else if (info->coll == ncclFuncReduceScatter) 
+    else if (info->coll == ncclFuncReduceScatter)
       recvbuff = NULL;
-      
+
     /* first try local registration. */
     if (ncclParamLocalRegister()) {
       ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
-    
+
     if (regBufUsed == false && plan->persistent && ncclParamGraphRegister()) {
       ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
-    
+
     if (regBufUsed) {
-      /* tweak NVLS channels usage; for registered NVLS buffer, we only need 4/5 channels to 
+      /* tweak NVLS channels usage; for registered NVLS buffer, we only need 4/5 channels to
        * saturate bandwidth. */
       if (info->coll == ncclFuncReduceScatter)
         info->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 5));
@@ -1177,7 +1177,7 @@ static ncclResult_t getAlgoInfo(struct ncclInfo* info, int collNetTypeSupport, i
         }
       }
     }
-    
+
     if (info->algorithm == -1 || info->protocol == -1) {
       if (backupAlgo == -1 || backupProto == -1) {
         WARN("Error : no algorithm/protocol available");

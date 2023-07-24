@@ -483,7 +483,7 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, struct localRequestData *r
   ncclIntruQueueEnqueue(&comm->regRecordQueue, regRecord);
 
   localRegBufUsed = true;
-  
+
 exit:
   if (localRegBufUsed)
     *regAddr = (uintptr_t)regPtr + userBuff - myReqData->reqBuff;
@@ -552,7 +552,7 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
     }
     regRequestHead = regRequestHead->next;
   }
- 
+
   NCCLCHECKGOTO(ncclShmemAllgather(comm, &comm->nvlsShmem, regData + comm->localRank, regData, sizeof(struct localRegData)), ret, fail);
 
   /* first check whether all local ranks find their registered buffer */
@@ -560,7 +560,7 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
     if (regData[i].recSendbuff == 0 || sendRegRecord->addrs[i] != regData[i].recSendbuff) {
       sendNeedReg = true;
     }
-    
+
     if (regData[i].recRecvbuff == 0 || recvRegRecord->addrs[i] != regData[i].recRecvbuff) {
       recvNeedReg = true;
     }
@@ -596,7 +596,7 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
     goto exit;
   }
 
-  /* Start Registration. Not found registered buffers, then check whether both send and recv buffer locate 
+  /* Start Registration. Not found registered buffers, then check whether both send and recv buffer locate
    * in register request cache. */
   NCCLCHECKGOTO(ncclCalloc(&reqData, comm->localRanks), ret, fail);
   if (sendNeedReg && sendbuff != NULL) {
@@ -623,7 +623,7 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
     tryRegisterBuffer(comm, reqData, (uintptr_t)recvbuff, recvbuffSize, &regRecvPtr, &localRegBufUsed);
     if (localRegBufUsed == false) goto fail;
   }
-  
+
   INFO(NCCL_NVLS, "rank %d successfully local-registered sendbuff %p, recvbuff %p, sendbuff size %ld, recvbuff size %ld, reg sendbuff %p, reg recvbuff %p", comm->rank, sendbuff, recvbuff, sendbuffSize, recvbuffSize, (void*)regSendPtr, (void*)regRecvPtr);
 
 exit:
@@ -687,7 +687,7 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(struct ncclComm *comm, struct ncclKerne
       NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, rdata, sizeof(struct graphRegData)), ret, fail);
       baseSendSize = rdata[0].size;
       for (int i = 1; i < comm->localRanks; ++i) {
-        if (rdata[0].offset != rdata[i].offset) goto fail; 
+        if (rdata[0].offset != rdata[i].offset) goto fail;
         if (baseSendSize > rdata[i].size) baseSendSize = rdata[i].size;
       }
       if (baseSendSize % sendGran != 0) goto fail;
@@ -725,7 +725,7 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(struct ncclComm *comm, struct ncclKerne
       NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, rdata, sizeof(struct graphRegData)), ret, fail);
       baseRecvSize = rdata[0].size;
       for (int i = 1; i < comm->localRanks; ++i) {
-        if (rdata[0].offset != rdata[i].offset) goto fail; 
+        if (rdata[0].offset != rdata[i].offset) goto fail;
         if (baseRecvSize > rdata[i].size) baseRecvSize = rdata[i].size;
       }
       if (baseRecvSize % recvGran != 0) goto fail;
@@ -764,7 +764,7 @@ exit:
       ncclNvlsDeregBuffer(&sendRecord->mcHandle, sendRecord->ptr, sendRecord->dev, sendRecord->size);
       ncclMemoryPoolFree(&comm->memPool_ncclNvlsHandleList, sendRecord);
     }
-    
+
     if (recvRecord) {
       ncclNvlsDeregBuffer(&recvRecord->mcHandle, recvRecord->ptr, recvRecord->dev, recvRecord->size);
       ncclMemoryPoolFree(&comm->memPool_ncclNvlsHandleList, recvRecord);
@@ -776,7 +776,7 @@ exit:
       *outRegBufSend = (void*)((uintptr_t)regSendPtr + (uintptr_t)sendbuff - (uintptr_t)baseSend);
       ncclIntruQueueEnqueue(&plan->nvlsMcHandleQueue, sendRecord);
     }
-      
+
     if (recvRecord) {
       *outRegBufRecv = (void*)((uintptr_t)regRecvPtr + (uintptr_t)recvbuff - (uintptr_t)baseRecv);
       ncclIntruQueueEnqueue(&plan->nvlsMcHandleQueue, recvRecord);
@@ -784,7 +784,7 @@ exit:
 
     INFO(NCCL_NVLS, "rank %d successfully graph-registered sendbuff %p, recvbuff %p, sendbuff size %ld (register size %ld, sendGran %ld), recvbuff size %ld (register size %ld, recvGran %ld), reg sendbuff %p, reg recvbuff %p", comm->rank, sendbuff, recvbuff, sendbuffSize, baseSendSize, sendGran, recvbuffSize, baseRecvSize, recvGran, (void*)regSendPtr, (void*)regRecvPtr);
   }
-  
+
   *outRegBufUsed = localRegBufUsed;
   free(regBufFlags);
   free(rdata);

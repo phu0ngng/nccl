@@ -185,7 +185,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
       /* detach thread due to abort */
       ncclProxyDetach(comm->proxyState);
     }
-    
+
   }
 
   delete[] comm->userRedOps;
@@ -220,7 +220,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->deviceStream));
       /* The main thread should free proxy resources only in a normal exit;
-       * otherwise, proxy threads are detached and they will free resources 
+       * otherwise, proxy threads are detached and they will free resources
        * themselves. */
       if (*comm->abortFlag == 0)
         NCCLCHECK(ncclProxyDestroy(comm->sharedRes->proxyState));
@@ -844,7 +844,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int intraProcRank0 = -1, intraProcRank = -1, intraProcRanks = 0;
     for (int i = 0; i < nranks; i++) comm->minCompCap = std::min(comm->minCompCap, comm->peerInfo[rank].cudaCompCap);
     for (int i = 0; i < nranks; i++) comm->maxCompCap = std::max(comm->maxCompCap, comm->peerInfo[rank].cudaCompCap);
-    
+
     comm->nvlsRegSupport = 1;
     for (int i = 0; i < nranks; i++) {
       if ((comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash)

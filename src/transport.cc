@@ -183,8 +183,8 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   }
 
   /* We need to sync ranks here since some ranks might run too fast after connection setup
-   * and start to destroy the connection after returning from this function; however, the 
-   * others might still be trying to connect and import the buffer. No sync can lead to invalid 
+   * and start to destroy the connection after returning from this function; however, the
+   * others might still be trying to connect and import the buffer. No sync can lead to invalid
    * shmem/cuda buffer. In addition, we also clear all connect masks and free each connectInfo array */
   for (int i = 1; i < comm->nRanks; i++) {
     int bootstrapTag = (i << 8) + (graph ? graph->id + 1 : 0);
