@@ -2276,6 +2276,8 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   int dcnt;
   int mcSupport = 0;
 
+  if (ptr == NULL || size == 0) goto fallback;
+
   ncclCudaLibraryInit();
   CUDACHECK(cudaGetDevice(&cudaDev));
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
@@ -2314,13 +2316,14 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     accessDesc.location.id = currentDev;
     accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
     CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
-  } else {
-    CUDACHECK(cudaMalloc(ptr, size));
+    goto exit;
   }
-#else
-  CUDACHECK(cudaMalloc(ptr, size));
-#endif
 
+fallback:
+#endif
+  CUDACHECK(cudaMalloc(ptr, size));
+
+exit:
   return ncclSuccess;
 }
 
@@ -2335,6 +2338,8 @@ ncclResult_t  ncclMemFree(void *ptr) {
   CUdevice ptrDev = 0;
   int mcSupport = 0;
 
+  if (ptr == NULL) goto fallback;
+
   ncclCudaLibraryInit();
   CUCHECKGOTO(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr), ret, fail);
   if (CUPFN(cuMulticastCreate) != NULL)
@@ -2343,12 +2348,12 @@ ncclResult_t  ncclMemFree(void *ptr) {
   CUDACHECKGOTO(cudaSetDevice((int)ptrDev), ret, fail);
   if (mcSupport) {
     NCCLCHECKGOTO(ncclCuMemFree(ptr), ret, fail);
-  } else {
-    CUDACHECKGOTO(cudaFree(ptr), ret, fail);
+    goto exit;
   }
-#else
-  CUDACHECKGOTO(cudaFree(ptr), ret, fail);
+
+fallback:
 #endif
+  CUDACHECKGOTO(cudaFree(ptr), ret, fail);
 
 exit:
   cudaSetDevice(saveDevice);
