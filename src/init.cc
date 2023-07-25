@@ -2313,10 +2313,12 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     /* Map the virtual address range to the physical allocation */
     CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
     /* Now allow RW access to the newly mapped memory */
-    accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    accessDesc.location.id = currentDev;
-    accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-    CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+    for (int i = 0; i < dcnt; ++i) {
+      accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+      accessDesc.location.id = i;
+      accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+      CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+    }
     goto exit;
   }
 
