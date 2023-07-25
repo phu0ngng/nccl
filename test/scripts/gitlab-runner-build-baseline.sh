@@ -16,19 +16,14 @@ echo "REGRESSION_BASELINE=$REGRESSION_BASELINE"
 echo "ref=$ref"
 echo "baseline_build_dir=$baseline_build_dir"
 
-# Build the baseline version if necessary. We manually check since the makefile
-# will use file mtime's which will have been just updated by the preceding
-# `git checkout` so will always conclude to rebuild.
-if [[ ! -e "$baseline_build_dir"/test/perf/all_reduce_perf ]]; then
-  echo "Checking out $ref (originally at $orig_branch)"
-  git checkout "$ref"
-  rm -rf $baseline_build_dir
-  srun -N 1 --exclusive -p luna,interactive -A nccl -J nccl-build:baseline -t 00:20:00 make -j test.build BUILDDIR="$baseline_build_dir"
-  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Compiling $ref")
-  echo "Checking out $orig_branch"
-  git checkout "$orig_branch"
-  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Checkout $orig_branch")
-fi
+echo "Checking out $ref (originally at $orig_branch)"
+git checkout "$ref"
+rm -rf $baseline_build_dir
+srun -N 1 --exclusive -p luna,interactive -A nccl -J nccl-build:baseline -t 00:20:00 make -j test.build BUILDDIR="$baseline_build_dir"
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Compiling $ref")
+echo "Checking out $orig_branch"
+git checkout "$orig_branch"
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Checkout $orig_branch")
 
 for str in "${failure_names[@]}"
 do
