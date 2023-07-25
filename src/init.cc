@@ -2262,6 +2262,7 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
 NCCL_API(ncclResult_t, ncclMemAlloc, void **ptr, size_t size);
 ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+  ncclResult_t ret = ncclSuccess;
 
 #if CUDART_VERSION >= 12010
   size_t memGran = 0;
@@ -2321,10 +2322,12 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
 fallback:
 #endif
-  CUDACHECK(cudaMalloc(ptr, size));
+  CUDACHECKGOTO(cudaMalloc(ptr, size), ret, fail);
 
 exit:
-  return ncclSuccess;
+  return ret;
+fail:
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclMemFree, void *ptr);
