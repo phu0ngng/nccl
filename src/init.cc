@@ -185,7 +185,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
       /* detach thread due to abort */
       ncclProxyDetach(comm->proxyState);
     }
-
   }
 
   delete[] comm->userRedOps;
@@ -240,14 +239,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memPermanent);
 
   if (ncclAtomicRefCountDecrement(comm->abortFlagRefCount) == 0) {
-    if (*comm->abortFlag == 0) {
-      NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
-    } else if (comm->proxyState) {
-      /* at last, main thread has freed almost everything, so just
-       * notify proxy thread to free the rest of resources. */
-      __atomic_store_n(&comm->proxyState->readyFree, true, __ATOMIC_RELEASE);
-    }
-    free(comm->abortFlagRefCount);
+    NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
+    free((void*)comm->abortFlagRefCount);
   }
   free((void*)comm->config.netName);
 
@@ -1651,7 +1644,7 @@ exit:
 fail:
   if (comm) {
     if (comm->abortFlag) ncclCudaHostFree((void *)comm->abortFlag);
-    if (comm->abortFlagRefCount) free(comm->abortFlagRefCount);
+    if (comm->abortFlagRefCount) free((void*)comm->abortFlagRefCount);
     free(comm);
   }
   if (newcomm) *newcomm = NULL;
@@ -2087,7 +2080,7 @@ fail:
   if (childComm) {
     if (comm && !comm->config.splitShare) {
       if (childComm->abortFlag) ncclCudaHostFree((void*)childComm->abortFlag);
-      if (childComm->abortFlagRefCount) free(childComm->abortFlagRefCount);
+      if (childComm->abortFlagRefCount) free((void*)childComm->abortFlagRefCount);
     }
     free(childComm);
   }
