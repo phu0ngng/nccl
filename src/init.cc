@@ -2279,7 +2279,8 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
   if (ptr == NULL || size == 0) goto fallback;
 
-  ncclCudaLibraryInit();
+  if (ncclCudaLibraryInit() != ncclSuccess) goto fallback;
+
   CUDACHECK(cudaGetDevice(&cudaDev));
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
   if (CUPFN(cuMulticastCreate) != NULL)
@@ -2345,7 +2346,8 @@ ncclResult_t  ncclMemFree(void *ptr) {
 
   if (ptr == NULL) goto fallback;
 
-  ncclCudaLibraryInit();
+  if (ncclCudaLibraryInit() != ncclSuccess) goto fallback;
+
   CUCHECKGOTO(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr), ret, fail);
   if (CUPFN(cuMulticastCreate) != NULL)
     CUCHECKGOTO(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev), ret, fail);
