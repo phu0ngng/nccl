@@ -93,6 +93,15 @@ static ncclResult_t ncclNet_v6_as_v7_getProperties(int dev, ncclNetProperties_v7
   ncclNetProperties_v6_t p6;
   ncclResult_t ans = ncclNet_v6->getProperties(dev, &p6);
   if (ans != ncclSuccess) return ans;
+  props->name = p6.name;
+  props->pciPath = p6.pciPath;
+  props->guid = p6.guid;
+  props->ptrSupport = p6.ptrSupport;
+  props->speed = p6.speed;
+  props->port = p6.port;
+  props->maxComms = p6.maxComms;
+  props->maxRecvs = p6.maxRecvs;
+  props->latency = p6.latency;
   props->netDeviceType = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
