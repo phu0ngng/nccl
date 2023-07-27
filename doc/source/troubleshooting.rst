@@ -2,7 +2,7 @@
 Troubleshooting
 ###############
 
-Ensure you are familiar with the following known issues and useful debugging strategies. 
+Ensure you are familiar with the following known issues and useful debugging strategies.
 
 ******
 Errors
@@ -15,7 +15,7 @@ Errors are grouped into different categories.
 * ncclUnhandledCudaError and ncclSystemError indicate that a call to an external library failed.
 * ncclInvalidArgument and ncclInvalidUsage indicates there was a programming error in the application using NCCL.
 
-In either case, refer to the NCCL warning message to understand how to resolve the problem. 
+In either case, refer to the NCCL warning message to understand how to resolve the problem.
 
 **********
 GPU Direct
@@ -45,7 +45,7 @@ GPU-to-NIC communication
 ------------------------
 
 GPUs can also communicate directly with a network card using GPU Direct RDMA. This requires to have a compatible
-network card and driver and load an extra kernel module. For Mellanox Infiniband/RoCE cards, the module is
+network card and driver and load an extra kernel module. For Mellanox InfiniBand/RoCE cards, the module is
 called nv_peer_mem and can be found at https://github.com/Mellanox/nv_peer_memory.
 
 Refer to your vendor's documentation for information on how to install and configure GPU Direct RDMA.
@@ -90,7 +90,7 @@ Topology detection
 
 NCCL relies on /sys to discover the PCI topology of GPUs and network cards. When running inside a virtual
 machine or container, make sure /sys is properly mounted. Having /sys expose a virtual PCI topology can
-result in suboptimal performance.
+result in sub-optimal performance.
 
 *************
 Shared memory
@@ -111,10 +111,10 @@ arguments to the docker launch command line:
 
  --shm-size=1g --ulimit memlock=-1
 
-SLURM
------
+Systemd
+-------
 
-On systems running SLURM together with systemd, systemd may remove files in shared memory when it detects that the
+When running jobs using mpirun or SLURM, systemd may remove files in shared memory when it detects that the
 corresponding user is not logged in, in an attempt to clean up old temporary files. This can cause NCCL to crash
 during init with an error like:
 
@@ -122,13 +122,19 @@ during init with an error like:
 
  NCCL WARN unlink shared memory /dev/shm/nccl-d5rTd0 failed, error: No such file or directory
 
-Given SLURM jobs can run on the node without the user being seen as logged in by systemd, system administrators need
-to disable that clean-up mechanism, which can be performed by SLURM epilog scripts instead. To do this, the following
+Given mpirun and SLURM jobs can run on the node without the user being seen as logged in by systemd, system administrators need
+to disable that clean-up mechanism, which can be performed by SLURM epilogue scripts instead. To do this, the following
 line needs to be set in /etc/systemd/logind.conf:
 
 .. code::
 
- "RemoveIPC=no"
+ RemoveIPC=no
+
+Once updated, the daemons should be restarted with:
+
+.. code::
+
+ sudo systemctl restart systemd-logind
 
 *****************
 Networking issues
@@ -145,7 +151,7 @@ IP Ports
 --------
 
 NCCL opens TCP ports to connect processes together and exchange connection information. To restrict the range of ports used by NCCL, one can set the net.ipv4.ip_local_port_range property of the
-linux kernel.
+Linux kernel.
 
 This example shows how to restrict NCCL ports to 50000-51000:
 
