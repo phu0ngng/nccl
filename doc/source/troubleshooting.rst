@@ -41,14 +41,20 @@ samples.
 
 The test should run to completion and report good performance between GPUs.
 
+Another tool for checking GPU-to-GPU performance is called ``nvbandwidth``.
+This can be downloaded and built from the code and instructions found here: https://github.com/NVIDIA/nvbandwidth
+
 GPU-to-NIC communication
 ------------------------
 
-GPUs can also communicate directly with a network card using GPU Direct RDMA. This requires to have a compatible
-network card and driver and load an extra kernel module. For Mellanox InfiniBand/RoCE cards, the module is
-called nv_peer_mem and can be found at https://github.com/Mellanox/nv_peer_memory.
+GPUs can also communicate directly with network cards using GPU Direct RDMA. This requires having a compatible
+network cards and drivers, plus loading an extra kernel module called ``nvidia-peermem``.
+The ``nvidia-peermem`` module is now supplied with the CUDA drivers, however it must be loaded on each node boot with:
 
-Refer to your vendor's documentation for information on how to install and configure GPU Direct RDMA.
+.. code::
+
+ sudo modprobe nvidia-peermem
+
 
 PCI Access Control Services (ACS)
 ---------------------------------
