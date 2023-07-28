@@ -208,6 +208,7 @@ struct ncclProxyState {
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
   volatile uint32_t* abortFlag;
+  volatile uint32_t* abortFlagRefCount;
   // Service thread
   pthread_t thread;
   struct ncclSocket* listenSock;
