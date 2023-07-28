@@ -15,6 +15,8 @@
 
 #include <sys/syscall.h>
 #include <assert.h>
+#include <unistd.h>
+#include <sys/time.h>
 
 #define PROGRESS_RUNNING 0
 #define PROGRESS_REQUEST_STOP 1
@@ -1090,7 +1092,8 @@ ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, struct ncclProx
   ncclResult_t ret = ncclSuccess;
   ncclResult_t res = ncclInProgress;
   struct ncclIpcSocket ipcSock = { 0 };
-  void* opId = malloc(1);
+  void *opId = (void*)((((uintptr_t)random()) << 32) | random());
+
   // Create a UDS socket to receive the converted fd
   NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->topParentLocalRanks[comm->localRank], (uint64_t)opId, comm->abortFlag));
 
@@ -1107,12 +1110,10 @@ ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, struct ncclProx
     res = ncclPollProxyResponse(comm, proxyConn, NULL, opId);
   }
 
-  free(opId);
   return ret;
 
 error:
   NCCLCHECK(ncclIpcSocketClose(&ipcSock));
-  free(opId);
   WARN("ncclProxyClientGetFd call to rank %d handle 0x%lx failed : %d", proxyConn->tpRank, *(uint64_t*)handle, ret);
   return ret;
 }
@@ -1599,6 +1600,12 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
   comm->proxyState->refCount = 1;
   comm->proxyState->listenSock = sock;
   comm->proxyState->peerAddresses = peerAddresses;
+  // Seed the random number generator for UDS filename generation
+  struct timeval time;
+  gettimeofday(&time,NULL);
+  unsigned int seed = time.tv_sec*time.tv_usec;
+  seed ^= getpid();
+  srandom(seed);
   return ncclSuccess;
 }
 
