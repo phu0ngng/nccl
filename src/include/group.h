@@ -55,7 +55,6 @@ struct ncclGroupJob {
   volatile bool *abortFlagPtr;
   int *groupBlockingPtr;
   struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsPtr;
-  bool doneFlag;
   bool initialized;
 };
 
