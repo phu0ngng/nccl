@@ -1381,7 +1381,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
   proxyOp->protocol = info->protocol;
   proxyOp->dtype = info->datatype;
   proxyOp->redOp = info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
-                     info->op;
+                     info->opFull.proxyOp;
   proxyOp->pattern = info->pattern;
   proxyOp->root = info->root;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
@@ -1410,6 +1410,7 @@ static ncclResult_t hostToDevRedOp(
   };
   u64 = 0;
   opFull->scalarArgIsPtr = false;
+  opFull->proxyOp = op;
 
   int nbits = 8*ncclTypeSize(datatype);
   uint64_t allBits = uint64_t(-1)>>(64-nbits);

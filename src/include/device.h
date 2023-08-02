@@ -42,6 +42,7 @@ enum ncclDevRedOp_t {
 };
 struct ncclDevRedOpFull {
   ncclDevRedOp_t op;
+  ncclRedOp_t proxyOp;
   bool scalarArgIsPtr;
   uint64_t scalarArg;
 };
