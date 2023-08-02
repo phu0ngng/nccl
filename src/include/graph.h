@@ -56,6 +56,7 @@ ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* arch, int* vend
 ncclResult_t ncclTopoGetGpuCount(struct ncclTopoSystem* system, int* count);
 ncclResult_t ncclTopoGetNvsCount(struct ncclTopoSystem* system, int* count);
 ncclResult_t ncclTopoGetNvsCount(struct ncclTopoSystem* system, int* count);
+ncclResult_t ncclTopoGetLocal(struct ncclTopoSystem* system, int type, int index, int resultType, int** locals, int* localCount, int* pathType);
 ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int channelId, int* id);
 ncclResult_t ncclTopoGetLocalGpu(struct ncclTopoSystem* system, int net, int* gpuIndex);
 
