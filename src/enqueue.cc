@@ -543,9 +543,15 @@ static ncclResult_t scheduleCollTasksToPlan(
       info.sliceSteps = head->sliceSteps;
       NCCLCHECK(ncclInfoSetDerived(&info, comm->nRanks));
       if (nAggOps > 1) {
-        int maxChannels = aggInfo.algorithm == NCCL_ALGO_NVLS || aggInfo.algorithm == NCCL_ALGO_NVLS_TREE ? comm->nvlsChannels : comm->nChannels;
-        info.nChannels = DIVUP(info.nBytes, bytePerChannel[collNetSupport]);
-        info.nChannels = std::max(1, std::min(info.nChannels, maxChannels));
+        int a = aggInfo.algorithm;
+        if (a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) {
+          info.nChannels = comm->nvlsChannels;
+        } else if (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) {
+          info.nChannels = comm->nChannels;
+        } else {
+          info.nChannels = DIVUP(info.nBytes, bytePerChannel[collNetSupport]);
+          info.nChannels = std::max(1, std::min(info.nChannels, comm->nChannels));
+        }
         info.algorithm = aggInfo.algorithm;
         info.protocol = aggInfo.protocol;
         info.nThreads = aggInfo.nThreads;
@@ -825,6 +831,7 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
   uint64_t collOpCount = comm->sharedRes->collOpCount;
   // Advance comm's collOpCount by number of colls in this plan.
   comm->sharedRes->collOpCount += plan->collOpCount;
+  struct ncclProxyOp* opList = NULL;
   for (int c=0; c < plan->channelUbound; c++) {
     struct ncclProxyOp* q = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
     uint64_t p2pOpCount = comm->sharedRes->p2pOpCount[c];
@@ -839,18 +846,35 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
         nextP2pOpCount = p2pOpCount + (q->opCount>>1);
         nextP2pOpCount += 1; // +1 to ensure next plan doesn't collide
         q->opCount = (p2pOpCount<<1) + q->opCount;
+        NCCLCHECK(ncclProxySaveOp(comm, q, nullptr));
+        if (!plan->persistent) {
+          // Non-persistent kernels have their memory reclaimed after upload.
+          ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, q);
+        }
       } else { // coll
         q->opCount = (collOpCount<<1) + q->opCount;
-      }
-      NCCLCHECK(ncclProxySaveOp(comm, q, nullptr)); // May overwrite enqNext.
-      if (!plan->persistent) {
-        // Non-persistent kernels have their memory reclaimed after upload.
-        ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, q);
+        // Insert q in opList, sort by opCount to allow for collnet aggregation.
+        if (opList == NULL || q->opCount < opList->opCount) {
+          q->enqNext = opList;
+          opList = q;
+        } else {
+          struct ncclProxyOp* o = opList;
+          while (o->enqNext && o->enqNext->opCount <= q->opCount) o = o->enqNext;
+          q->enqNext = o->enqNext;
+          o->enqNext = q;
+        }
       }
       q = qNext;
     }
     // Advance channel's p2pOpCount by number of p2p's in this plan channel.
     comm->sharedRes->p2pOpCount[c] = nextP2pOpCount;
+  }
+  for (struct ncclProxyOp* o=opList; o; o=o->enqNext) {
+    NCCLCHECK(ncclProxySaveOp(comm, o, nullptr));
+    if (!plan->persistent) {
+      // Non-persistent kernels have their memory reclaimed after upload.
+      ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, o);
+    }
   }
   return ncclSuccess;
 }
