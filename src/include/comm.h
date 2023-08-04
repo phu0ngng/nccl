@@ -342,7 +342,7 @@ struct ncclComm {
   struct ncclShmemCollBuff nvlsShmem;
   void *nvlsShmemHandle;
 
-  size_t channelSize; // User requested work size (bytes) for channel partitions
+  ssize_t channelSize; // User requested work size (bytes) for channel partitions
 
   // pools backed by comm->memPermanent
   struct ncclMemoryPool memPool_ncclProxyOp;
