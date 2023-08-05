@@ -23,6 +23,9 @@
 #define PROGRESS_ABORT 2
 #define PROGRESS_COMPLETE 3
 
+#define SERVICE_RUNNING 0
+#define SERVICE_COMPLETE 1
+
 enum { proxyRecv=0, proxySend=1 };
 
 static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
@@ -1459,7 +1462,6 @@ void* ncclProxyService(void* _args) {
   int npeers = 0;
   int stop = 0;
   int asyncOpCount = 0;
-  int abortFlag = 0;
   while (stop == 0 || (stop == 1 && npeers > 0)) {
     /* Even if local comm aborts, we cannot let proxy thread exit if we still have peer
      * connections. Need to wait until all other related comms call abort and safely exit
@@ -1579,17 +1581,18 @@ void* ncclProxyService(void* _args) {
   free(proxyState->listenSock);
   proxyOpsFree(proxyState);
 
-  abortFlag = *proxyState->abortFlag;
+  if (*proxyState->abortFlag) {
+    /* abort happened, need to notify main thread I am done. */
+    __atomic_store_n(&proxyState->stop, SERVICE_COMPLETE, __ATOMIC_RELEASE);
+  }
+
   if (ncclAtomicRefCountDecrement(proxyState->abortFlagRefCount) == 0) {
     ncclCudaHostFree((void *)proxyState->abortFlag);
     free((void*)proxyState->abortFlagRefCount);
   }
 
-  if (abortFlag) {
-    while (__atomic_load_n(&proxyState->readyFree, __ATOMIC_ACQUIRE) == false) usleep(1);
-    ncclProxyDestroy(proxyState);
-  }
-  
+  /* proxy itself holds one internal ref count, needs to call ncclProxyDestroy */
+  ncclProxyDestroy(proxyState);
   return NULL;
 }
 
@@ -1598,6 +1601,8 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
   NCCLCHECK(ncclCalloc(&comm->sharedRes->proxyState, 1));
   comm->proxyState = comm->sharedRes->proxyState;
   comm->proxyState->refCount = 1;
+  /* ref count for communicator and proxy service thread. */
+  comm->proxyState->internalRefCount = 2;
   comm->proxyState->listenSock = sock;
   comm->proxyState->peerAddresses = peerAddresses;
   // Seed the random number generator for UDS filename generation
@@ -1680,8 +1685,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState) {
-  if (proxyState) {
-    assert(proxyState->refCount == 0);
+  if (__atomic_sub_fetch(&proxyState->internalRefCount, 1, __ATOMIC_ACQ_REL) == 0) {
     free(proxyState->peerAddresses);
     free(proxyState->peerSocks);
     free(proxyState->proxyOps);
@@ -1693,11 +1697,28 @@ ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState) {
 }
 
 /* detach all proxy threads in case of abort */
-ncclResult_t ncclProxyDetach(struct ncclProxyState *proxyState) {
+ncclResult_t ncclProxyTryDetach(struct ncclProxyState *proxyState) {
   if (proxyState && proxyState->thread) {
-    pthread_detach(proxyState->thread);
-    /* notify proxy thread to free the rest of resources. */
-    __atomic_store_n(&proxyState->readyFree, true, __ATOMIC_RELEASE);
+    /* proxy service thread can call cudaFreeHost to free pinned host mem, but
+     * it can cause a hang if main thread is issuing other cuda calls. To solution
+     * should be allocate/free pinned host mem using cuMem* driver API, this waiting
+     * 5 secs is just a workaround for now. */
+    bool join = false;
+    struct timespec start, now;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    do {
+      clock_gettime(CLOCK_MONOTONIC, &now);
+      if (__atomic_load_n(&proxyState->stop, __ATOMIC_ACQUIRE) == SERVICE_COMPLETE) {
+        /* proxy thread is done, join it. */
+        pthread_join(proxyState->thread, NULL);
+        join = true;
+        break;
+      }
+    } while(now.tv_sec - start.tv_sec < 5);
+    
+    if (join == false) {
+      pthread_detach(proxyState->thread);
+    }
   }
   return ncclSuccess;
 }

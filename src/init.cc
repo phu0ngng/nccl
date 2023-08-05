@@ -182,8 +182,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
       /* regular thread join */
       pthread_join(comm->proxyState->thread, nullptr);
     } else {
-      /* detach thread due to abort */
-      ncclProxyDetach(comm->proxyState);
+      /* try to detach thread due to abort */
+      ncclProxyTryDetach(comm->proxyState);
     }
   }
 
@@ -218,11 +218,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
       free(comm->sharedRes->tpRankToLocalRank);
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->deviceStream));
-      /* The main thread should free proxy resources only in a normal exit;
-       * otherwise, proxy threads are detached and they will free resources
-       * themselves. */
-      if (*comm->abortFlag == 0)
-        NCCLCHECK(ncclProxyDestroy(comm->sharedRes->proxyState));
+      NCCLCHECK(ncclProxyDestroy(comm->sharedRes->proxyState));
       free(comm->sharedRes);
     }
   }
