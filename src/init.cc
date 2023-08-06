@@ -182,10 +182,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
       /* regular thread join */
       pthread_join(comm->proxyState->thread, nullptr);
     } else {
-      /* detach thread due to abort */
-      ncclProxyDetach(comm->proxyState);
+      /* try to detach thread due to abort */
+      ncclProxyTryDetach(comm->proxyState);
     }
-
   }
 
   delete[] comm->userRedOps;
@@ -219,11 +218,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
       free(comm->sharedRes->tpRankToLocalRank);
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->deviceStream));
-      /* The main thread should free proxy resources only in a normal exit;
-       * otherwise, proxy threads are detached and they will free resources
-       * themselves. */
-      if (*comm->abortFlag == 0)
-        NCCLCHECK(ncclProxyDestroy(comm->sharedRes->proxyState));
+      NCCLCHECK(ncclProxyDestroy(comm->sharedRes->proxyState));
       free(comm->sharedRes);
     }
   }
@@ -240,14 +235,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memPermanent);
 
   if (ncclAtomicRefCountDecrement(comm->abortFlagRefCount) == 0) {
-    if (*comm->abortFlag == 0) {
-      NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
-    } else if (comm->proxyState) {
-      /* at last, main thread has freed almost everything, so just
-       * notify proxy thread to free the rest of resources. */
-      __atomic_store_n(&comm->proxyState->readyFree, true, __ATOMIC_RELEASE);
-    }
-    free(comm->abortFlagRefCount);
+    NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
+    free((void*)comm->abortFlagRefCount);
   }
   free((void*)comm->config.netName);
 
@@ -1697,7 +1686,7 @@ exit:
 fail:
   if (comm) {
     if (comm->abortFlag) ncclCudaHostFree((void *)comm->abortFlag);
-    if (comm->abortFlagRefCount) free(comm->abortFlagRefCount);
+    if (comm->abortFlagRefCount) free((void*)comm->abortFlagRefCount);
     free(comm);
   }
   if (newcomm) *newcomm = NULL;
@@ -2133,7 +2122,7 @@ fail:
   if (childComm) {
     if (comm && !comm->config.splitShare) {
       if (childComm->abortFlag) ncclCudaHostFree((void*)childComm->abortFlag);
-      if (childComm->abortFlagRefCount) free(childComm->abortFlagRefCount);
+      if (childComm->abortFlagRefCount) free((void*)childComm->abortFlagRefCount);
     }
     free(childComm);
   }
@@ -2308,6 +2297,7 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
 NCCL_API(ncclResult_t, ncclMemAlloc, void **ptr, size_t size);
 ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
+  ncclResult_t ret = ncclSuccess;
 
 #if CUDART_VERSION >= 12010
   size_t memGran = 0;
@@ -2324,7 +2314,8 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
   if (ptr == NULL || size == 0) goto fallback;
 
-  ncclCudaLibraryInit();
+  if (ncclCudaLibraryInit() != ncclSuccess) goto fallback;
+
   CUDACHECK(cudaGetDevice(&cudaDev));
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
   if (CUPFN(cuMulticastCreate) != NULL)
@@ -2358,19 +2349,26 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     /* Map the virtual address range to the physical allocation */
     CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
     /* Now allow RW access to the newly mapped memory */
-    accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    accessDesc.location.id = currentDev;
-    accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-    CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+    for (int i = 0; i < dcnt; ++i) {
+      int p2p = 0;
+      if (i == cudaDev || ((cudaDeviceCanAccessPeer(&p2p, cudaDev, i) == cudaSuccess) && p2p)) {
+        accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+        accessDesc.location.id = i;
+        accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+        CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+      }
+    }
     goto exit;
   }
 
 fallback:
 #endif
-  CUDACHECK(cudaMalloc(ptr, size));
+  CUDACHECKGOTO(cudaMalloc(ptr, size), ret, fail);
 
 exit:
-  return ncclSuccess;
+  return ret;
+fail:
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclMemFree, void *ptr);
@@ -2386,7 +2384,8 @@ ncclResult_t  ncclMemFree(void *ptr) {
 
   if (ptr == NULL) goto fallback;
 
-  ncclCudaLibraryInit();
+  if (ncclCudaLibraryInit() != ncclSuccess) goto fallback;
+
   CUCHECKGOTO(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr), ret, fail);
   if (CUPFN(cuMulticastCreate) != NULL)
     CUCHECKGOTO(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev), ret, fail);

@@ -193,6 +193,7 @@ struct ncclProxyRpcResponseHeader {
 };
 
 struct ncclProxyState {
+  int internalRefCount;
   int refCount;
   int tpRank;
   int tpnRanks;
@@ -204,14 +205,14 @@ struct ncclProxyState {
   int buffSizes[NCCL_NUM_PROTOCOLS];
   bool allocP2pNetLLBuffers;
   bool dmaBufSupport;
-  volatile bool readyFree;
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
   volatile uint32_t* abortFlag;
+  volatile uint32_t* abortFlagRefCount;
   // Service thread
   pthread_t thread;
   struct ncclSocket* listenSock;
-  int stop;
+  volatile int stop;
   CUcontext cudaCtx;
 
   // Used by main thread
@@ -292,5 +293,5 @@ ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, struct ncclProx
 ncclResult_t ncclProxyStop(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
 ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState);
-ncclResult_t ncclProxyDetach(struct ncclProxyState *proxyState);
+ncclResult_t ncclProxyTryDetach(struct ncclProxyState *proxyState);
 #endif

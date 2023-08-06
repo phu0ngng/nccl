@@ -774,8 +774,6 @@ exit:
       ncclNvlsDeregBuffer(&recvRecord->mcHandle, recvRecord->ptr, recvRecord->dev, recvRecord->size);
       ncclMemoryPoolFree(&comm->memPool_ncclNvlsHandleList, recvRecord);
     }
-
-    WARN("rank %d fails to register buffer for NVLS, sendbuff %p recvbuff %p sendbuff size %ld, recvbuff size %ld", comm->rank, sendbuff, recvbuff, sendbuffSize, recvbuffSize);
   } else {
     if (sendRecord) {
       *outRegBufSend = (void*)((uintptr_t)regSendPtr + (uintptr_t)sendbuff - (uintptr_t)baseSend);

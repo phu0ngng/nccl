@@ -371,7 +371,9 @@ static ncclResult_t registerIntraNodeBuffers(
     bool regBufUsed = false;
     const void *sendbuff = info->sendbuff;
     void *recvbuff = info->recvbuff;
-
+    cudaPointerAttributes sattr, rattr;
+    bool query = false;
+    
     if (info->coll == ncclFuncAllGather)
       sendbuff = NULL;
     else if (info->coll == ncclFuncReduceScatter)
@@ -379,11 +381,20 @@ static ncclResult_t registerIntraNodeBuffers(
 
     /* first try local registration. */
     if (ncclParamLocalRegister()) {
-      ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
+      CUDACHECK(cudaPointerGetAttributes(&sattr, info->sendbuff));
+      CUDACHECK(cudaPointerGetAttributes(&rattr, info->recvbuff));
+      query = true;
+      if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice)
+        ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
 
     if (regBufUsed == false && plan->persistent && ncclParamGraphRegister()) {
-      ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
+      if (!query) {
+        CUDACHECK(cudaPointerGetAttributes(&sattr, info->sendbuff));
+        CUDACHECK(cudaPointerGetAttributes(&rattr, info->recvbuff));
+      }
+      if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice)
+        ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
 
     if (regBufUsed) {
@@ -400,6 +411,11 @@ static ncclResult_t registerIntraNodeBuffers(
     comm->intraRanks < comm->localRanks &&  // only with inter-process & intra-node peers
     plan->persistent && ncclParamGraphRegister()) {
     int localRank = comm->localRank;
+    cudaPointerAttributes sattr, rattr;
+
+    CUDACHECK(cudaPointerGetAttributes(&sattr, info->sendbuff));
+    CUDACHECK(cudaPointerGetAttributes(&rattr, info->recvbuff));
+    if (sattr.type != cudaMemoryTypeDevice || rattr.type != cudaMemoryTypeDevice) return ncclSuccess;
 
     if (CUPFN(cuMemGetAddressRange) == nullptr) return ncclSuccess;
 
@@ -549,12 +565,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       void* regBufSend[NCCL_MAX_LOCAL_RANKS];
       void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
 
-      cudaPointerAttributes sattr, rattr;
-      CUDACHECK(cudaPointerGetAttributes(&sattr, info.sendbuff));
-      CUDACHECK(cudaPointerGetAttributes(&rattr, info.recvbuff));
-      if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice) {
-        registerIntraNodeBuffers(comm, plan, &info, regBufSend, regBufRecv, &regBufType);
-      }
+      registerIntraNodeBuffers(comm, plan, &info, regBufSend, regBufRecv, &regBufType);
 
       NCCLCHECK(computeColl(&info, &workFuncIndex, &workElem, &proxyOp));
 
@@ -1370,7 +1381,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
   proxyOp->protocol = info->protocol;
   proxyOp->dtype = info->datatype;
   proxyOp->redOp = info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
-                     info->op;
+                     info->opFull.proxyOp;
   proxyOp->pattern = info->pattern;
   proxyOp->root = info->root;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
@@ -1399,6 +1410,7 @@ static ncclResult_t hostToDevRedOp(
   };
   u64 = 0;
   opFull->scalarArgIsPtr = false;
+  opFull->proxyOp = op;
 
   int nbits = 8*ncclTypeSize(datatype);
   uint64_t allBits = uint64_t(-1)>>(64-nbits);

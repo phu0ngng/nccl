@@ -2,7 +2,7 @@
 Troubleshooting
 ###############
 
-Ensure you are familiar with the following known issues and useful debugging strategies. 
+Ensure you are familiar with the following known issues and useful debugging strategies.
 
 ******
 Errors
@@ -15,7 +15,7 @@ Errors are grouped into different categories.
 * ncclUnhandledCudaError and ncclSystemError indicate that a call to an external library failed.
 * ncclInvalidArgument and ncclInvalidUsage indicates there was a programming error in the application using NCCL.
 
-In either case, refer to the NCCL warning message to understand how to resolve the problem. 
+In either case, refer to the NCCL warning message to understand how to resolve the problem.
 
 **********
 GPU Direct
@@ -41,14 +41,20 @@ samples.
 
 The test should run to completion and report good performance between GPUs.
 
+Another tool for checking GPU-to-GPU performance is called ``nvbandwidth``.
+This can be downloaded and built from the code and instructions found here: https://github.com/NVIDIA/nvbandwidth
+
 GPU-to-NIC communication
 ------------------------
 
-GPUs can also communicate directly with a network card using GPU Direct RDMA. This requires to have a compatible
-network card and driver and load an extra kernel module. For Mellanox Infiniband/RoCE cards, the module is
-called nv_peer_mem and can be found at https://github.com/Mellanox/nv_peer_memory.
+GPUs can also communicate directly with network cards using GPU Direct RDMA. This requires having a compatible
+network cards and drivers, plus loading an extra kernel module called ``nvidia-peermem``.
+The ``nvidia-peermem`` module is now supplied with the CUDA drivers, however it must be loaded on each node boot with:
 
-Refer to your vendor's documentation for information on how to install and configure GPU Direct RDMA.
+.. code::
+
+ sudo modprobe nvidia-peermem
+
 
 PCI Access Control Services (ACS)
 ---------------------------------
@@ -90,7 +96,7 @@ Topology detection
 
 NCCL relies on /sys to discover the PCI topology of GPUs and network cards. When running inside a virtual
 machine or container, make sure /sys is properly mounted. Having /sys expose a virtual PCI topology can
-result in suboptimal performance.
+result in sub-optimal performance.
 
 *************
 Shared memory
@@ -111,10 +117,10 @@ arguments to the docker launch command line:
 
  --shm-size=1g --ulimit memlock=-1
 
-SLURM
------
+Systemd
+-------
 
-On systems running SLURM together with systemd, systemd may remove files in shared memory when it detects that the
+When running jobs using mpirun or SLURM, systemd may remove files in shared memory when it detects that the
 corresponding user is not logged in, in an attempt to clean up old temporary files. This can cause NCCL to crash
 during init with an error like:
 
@@ -122,13 +128,19 @@ during init with an error like:
 
  NCCL WARN unlink shared memory /dev/shm/nccl-d5rTd0 failed, error: No such file or directory
 
-Given SLURM jobs can run on the node without the user being seen as logged in by systemd, system administrators need
-to disable that clean-up mechanism, which can be performed by SLURM epilog scripts instead. To do this, the following
+Given mpirun and SLURM jobs can run on the node without the user being seen as logged in by systemd, system administrators need
+to disable that clean-up mechanism, which can be performed by SLURM epilogue scripts instead. To do this, the following
 line needs to be set in /etc/systemd/logind.conf:
 
 .. code::
 
- "RemoveIPC=no"
+ RemoveIPC=no
+
+Once updated, the daemons should be restarted with:
+
+.. code::
+
+ sudo systemctl restart systemd-logind
 
 *****************
 Networking issues
@@ -145,7 +157,7 @@ IP Ports
 --------
 
 NCCL opens TCP ports to connect processes together and exchange connection information. To restrict the range of ports used by NCCL, one can set the net.ipv4.ip_local_port_range property of the
-linux kernel.
+Linux kernel.
 
 This example shows how to restrict NCCL ports to 50000-51000:
 

@@ -15,6 +15,16 @@
 
 #include <sys/syscall.h>
 #include <assert.h>
+#include <unistd.h>
+#include <sys/time.h>
+
+#define PROGRESS_RUNNING 0
+#define PROGRESS_REQUEST_STOP 1
+#define PROGRESS_ABORT 2
+#define PROGRESS_COMPLETE 3
+
+#define SERVICE_RUNNING 0
+#define SERVICE_COMPLETE 1
 
 enum { proxyRecv=0, proxySend=1 };
 
@@ -710,13 +720,13 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyState* proxyState, int
 
   if (state->active == NULL) {
     pthread_mutex_lock(&pool->mutex);
-    while (pool->nextOps == -1 && !state->stop) {
+    while (pool->nextOps == -1 && state->stop == PROGRESS_RUNNING) {
       struct ncclProxyArgs profArgs; // Only used for profiling purposes
       ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileSleep);
       pthread_cond_wait(&pool->cond, &pool->mutex);
       ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileWakeup);
     }
-    if (state->stop) { // We might have been woken up to stop.
+    if (state->stop != PROGRESS_RUNNING) { // We might have been woken up to stop.
       pthread_mutex_unlock(&pool->mutex);
       return ncclSuccess;
     }
@@ -854,12 +864,12 @@ void* ncclProxyProgress(void *proxyState_) {
    * frequency of calling ncclProxyGetPostedOps() and reduce the perf impact. */
   int proxyOpAppendCounter = 0;
   struct ncclProxyArgs profArgs; // Only used for profiling purposes
-  while ((state->stop == 0 || (state->stop == 1 && state->active)) && *proxyState->abortFlag == 0) {
+  while (state->stop == PROGRESS_RUNNING || (state->stop == PROGRESS_REQUEST_STOP && state->active)) {
     int idle = 1;
     ncclResult_t ret = progressOps(proxyState, state, state->active, &idle);
     if (ret != ncclSuccess) {
       INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
-      return NULL;
+      continue;
     }
     if (lastIdle == 0 && idle == 1) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileIdle);
     if (lastIdle == 1 && idle == 0) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileActive);
@@ -867,7 +877,7 @@ void* ncclProxyProgress(void *proxyState_) {
       int added = 0;
       proxyOpAppendCounter = 0;
       TIME_START(3);
-      if (state->stop == 0)
+      if (state->stop == PROGRESS_RUNNING)
         ret = ncclProxyGetPostedOps(proxyState, &added);
       if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
       if (ret != ncclSuccess) {
@@ -880,10 +890,8 @@ void* ncclProxyProgress(void *proxyState_) {
     lastIdle = idle;
   }
 
-  if (*proxyState->abortFlag) {
-    /* progress serive thread should be waiting for me, I need to notify it. */
-    __atomic_store_n(&state->stop, 2, __ATOMIC_RELEASE);
-  }
+  /* progress serive thread should be waiting for me, I need to notify it. */
+  __atomic_store_n(&state->stop, PROGRESS_COMPLETE, __ATOMIC_RELEASE);
   return NULL;
 }
 
@@ -906,7 +914,11 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
 static ncclResult_t ncclProxyProgressCreate(struct ncclProxyState* proxyState) {
   struct ncclProxyProgressState* state = &proxyState->progressState;
   if (!state->thread) {
-    pthread_create(&state->thread, NULL, ncclProxyProgress, proxyState);
+    pthread_attr_t attr;
+    SYSCHECK(pthread_attr_init(&attr), "pthread_attr_init");
+    SYSCHECK(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED), "pthread_attr_setdetachstate");
+    SYSCHECK(pthread_create(&state->thread, &attr, ncclProxyProgress, proxyState), "pthread_create");
+    SYSCHECK(pthread_attr_destroy(&attr), "pthread_attr_destroy");
     ncclSetThreadName(state->thread, "NCCL Progress%2d", proxyState->tpLocalnRanks);
   }
   return ncclSuccess;
@@ -918,19 +930,16 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
   // Request the proxy to stop and then wake it
   if (state->opsPool) {
     pthread_mutex_lock(&state->opsPool->mutex);
-    state->stop = 1;
+    if (*proxyState->abortFlag == 0) 
+      state->stop = PROGRESS_REQUEST_STOP;
+    else
+      state->stop = PROGRESS_ABORT;
     pthread_cond_signal(&state->opsPool->cond);
     pthread_mutex_unlock(&state->opsPool->mutex);
-    /* join the progress thread only in the non-abort case; otherwise,
-     * it will be detached by the main thread. */
-    if (*proxyState->abortFlag == 0) {
-      pthread_join(state->thread, NULL);
-    } else {
-      /* wait until progress thread exits first */
-      uint64_t t0 = clockNano();
-      while (__atomic_load_n(&state->stop, __ATOMIC_ACQUIRE) != 2) {
-        if (clockNano() - t0 >= 5 * 1000) sched_yield();
-      }
+    /* progress thread is always detached, wait for it to exit. */
+    uint64_t t0 = clockNano();
+    while (__atomic_load_n(&state->stop, __ATOMIC_ACQUIRE) != PROGRESS_COMPLETE) {
+      if (clockNano() - t0 >= 1000) sched_yield();
     }
   }
 
@@ -1086,7 +1095,8 @@ ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, struct ncclProx
   ncclResult_t ret = ncclSuccess;
   ncclResult_t res = ncclInProgress;
   struct ncclIpcSocket ipcSock = { 0 };
-  void* opId = malloc(1);
+  void *opId = (void*)((((uintptr_t)random()) << 32) | random());
+
   // Create a UDS socket to receive the converted fd
   NCCLCHECK(ncclIpcSocketInit(&ipcSock, comm->topParentLocalRanks[comm->localRank], (uint64_t)opId, comm->abortFlag));
 
@@ -1103,12 +1113,10 @@ ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, struct ncclProx
     res = ncclPollProxyResponse(comm, proxyConn, NULL, opId);
   }
 
-  free(opId);
   return ret;
 
 error:
   NCCLCHECK(ncclIpcSocketClose(&ipcSock));
-  free(opId);
   WARN("ncclProxyClientGetFd call to rank %d handle 0x%lx failed : %d", proxyConn->tpRank, *(uint64_t*)handle, ret);
   return ret;
 }
@@ -1572,11 +1580,19 @@ void* ncclProxyService(void* _args) {
   ncclSocketClose(proxyState->listenSock);
   free(proxyState->listenSock);
   proxyOpsFree(proxyState);
+
   if (*proxyState->abortFlag) {
-    while (__atomic_load_n(&proxyState->readyFree, __ATOMIC_ACQUIRE) == false) usleep(1);
-    ncclCudaHostFree((void *)proxyState->abortFlag);
-    ncclProxyDestroy(proxyState);
+    /* abort happened, need to notify main thread I am done. */
+    __atomic_store_n(&proxyState->stop, SERVICE_COMPLETE, __ATOMIC_RELEASE);
   }
+
+  if (ncclAtomicRefCountDecrement(proxyState->abortFlagRefCount) == 0) {
+    ncclCudaHostFree((void *)proxyState->abortFlag);
+    free((void*)proxyState->abortFlagRefCount);
+  }
+
+  /* proxy itself holds one internal ref count, needs to call ncclProxyDestroy */
+  ncclProxyDestroy(proxyState);
   return NULL;
 }
 
@@ -1585,8 +1601,16 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
   NCCLCHECK(ncclCalloc(&comm->sharedRes->proxyState, 1));
   comm->proxyState = comm->sharedRes->proxyState;
   comm->proxyState->refCount = 1;
+  /* ref count for communicator and proxy service thread. */
+  comm->proxyState->internalRefCount = 2;
   comm->proxyState->listenSock = sock;
   comm->proxyState->peerAddresses = peerAddresses;
+  // Seed the random number generator for UDS filename generation
+  struct timeval time;
+  gettimeofday(&time,NULL);
+  unsigned int seed = time.tv_sec*time.tv_usec;
+  seed ^= getpid();
+  srandom(seed);
   return ncclSuccess;
 }
 
@@ -1601,6 +1625,8 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     proxyState->tpLocalnRanks = comm->localRanks;
     proxyState->cudaDev = comm->cudaDev;
     proxyState->abortFlag = comm->abortFlag;
+    proxyState->abortFlagRefCount = comm->abortFlagRefCount;
+    ncclAtomicRefCountIncrement(comm->abortFlagRefCount);
     proxyState->p2pnChannels = comm->p2pnChannels;
     proxyState->p2pChunkSize = comm->p2pChunkSize;
     proxyState->nChannels = comm->nChannels;
@@ -1659,8 +1685,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState) {
-  if (proxyState) {
-    assert(proxyState->refCount == 0);
+  if (__atomic_sub_fetch(&proxyState->internalRefCount, 1, __ATOMIC_ACQ_REL) == 0) {
     free(proxyState->peerAddresses);
     free(proxyState->peerSocks);
     free(proxyState->proxyOps);
@@ -1672,11 +1697,27 @@ ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState) {
 }
 
 /* detach all proxy threads in case of abort */
-ncclResult_t ncclProxyDetach(struct ncclProxyState *proxyState) {
+ncclResult_t ncclProxyTryDetach(struct ncclProxyState *proxyState) {
   if (proxyState && proxyState->thread) {
-    pthread_detach(proxyState->thread);
-    if (proxyState->progressState.thread) {
-      pthread_detach(proxyState->progressState.thread);
+    /* proxy service thread can call cudaFreeHost to free pinned host mem, but
+     * it can cause a hang if main thread is issuing other cuda calls. To solution
+     * should be allocate/free pinned host mem using cuMem* driver API, this waiting
+     * 5 secs is just a workaround for now. */
+    bool join = false;
+    struct timespec start, now;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    do {
+      clock_gettime(CLOCK_MONOTONIC, &now);
+      if (__atomic_load_n(&proxyState->stop, __ATOMIC_ACQUIRE) == SERVICE_COMPLETE) {
+        /* proxy thread is done, join it. */
+        pthread_join(proxyState->thread, NULL);
+        join = true;
+        break;
+      }
+    } while(now.tv_sec - start.tv_sec < 5);
+    
+    if (join == false) {
+      pthread_detach(proxyState->thread);
     }
   }
   return ncclSuccess;

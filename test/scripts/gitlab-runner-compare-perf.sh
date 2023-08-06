@@ -53,7 +53,7 @@ if [[ $failure_count -eq 0 ]]; then
   export OPAL_PREFIX=$MPI_HOME
   LD_LIBRARY_PATH_BASE=$MPI_HOME/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
   LD_LIBRARY_NEW=$PWD/build/lib:$LD_LIBRARY_PATH_BASE
-  LD_LIBRARY_OLD=$baseline_build_dir/lib:$LD_LIBRARY_PATH_BASE
+  LD_LIBRARY_OLD=$baseline_build_dir/lib:$baseline_build_dir/test/verifiable:$LD_LIBRARY_PATH_BASE
 
   # Environment setup
   echo "=============================== Environment Setup ================================="

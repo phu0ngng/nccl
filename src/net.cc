@@ -85,6 +85,7 @@ static ncclResult_t ncclNet_v4_as_v7_init(ncclDebugLogger_t logfn) {
   ncclNet_v4_as_v7.closeRecv = ncclNet_v4->closeRecv;
   ncclNet_v4_as_v7.closeListen = ncclNet_v4->closeListen;
   ncclNet_v4_as_v7.getDeviceMr = NULL;
+  ncclNet_v4_as_v7.irecvConsumed = NULL;
   return ncclSuccess;
 }
 
@@ -92,6 +93,15 @@ static ncclResult_t ncclNet_v6_as_v7_getProperties(int dev, ncclNetProperties_v7
   ncclNetProperties_v6_t p6;
   ncclResult_t ans = ncclNet_v6->getProperties(dev, &p6);
   if (ans != ncclSuccess) return ans;
+  props->name = p6.name;
+  props->pciPath = p6.pciPath;
+  props->guid = p6.guid;
+  props->ptrSupport = p6.ptrSupport;
+  props->speed = p6.speed;
+  props->port = p6.port;
+  props->maxComms = p6.maxComms;
+  props->maxRecvs = p6.maxRecvs;
+  props->latency = p6.latency;
   props->netDeviceType = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
@@ -114,7 +124,7 @@ static ncclResult_t ncclNet_v6_as_v7_init(ncclDebugLogger_t logfn) {
   ncclNet_v6_as_v7.connect = ncclNet_v6_as_v7_connect;
   ncclNet_v6_as_v7.accept =  ncclNet_v6_as_v7_accept;
   ncclNet_v6_as_v7.regMr = ncclNet_v6->regMr;
-  ncclNet_v6_as_v7.regMrDmaBuf = NULL;
+  ncclNet_v6_as_v7.regMrDmaBuf = ncclNet_v6->regMrDmaBuf;
   ncclNet_v6_as_v7.deregMr = ncclNet_v6->deregMr;
   ncclNet_v6_as_v7.isend = ncclNet_v6->isend;
   ncclNet_v6_as_v7.irecv = ncclNet_v6->irecv;
@@ -286,7 +296,7 @@ static ncclResult_t ncclCollNet_v6_as_v7_init(ncclDebugLogger_t logfn) {
   ncclCollNet_v6_as_v7.connect = ncclCollNet_v6->connect;
   ncclCollNet_v6_as_v7.reduceSupport = ncclCollNet_v6->reduceSupport;
   ncclCollNet_v6_as_v7.regMr = ncclCollNet_v6->regMr;
-  ncclCollNet_v6_as_v7.regMrDmaBuf = NULL;
+  ncclCollNet_v6_as_v7.regMrDmaBuf = ncclCollNet_v6->regMrDmaBuf;
   ncclCollNet_v6_as_v7.deregMr = ncclCollNet_v6->deregMr;
   ncclCollNet_v6_as_v7.iallreduce = ncclCollNet_v6->iallreduce;
   ncclCollNet_v6_as_v7.iflush = ncclCollNet_v6->iflush;

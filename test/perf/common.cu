@@ -254,7 +254,7 @@ testResult_t CheckData(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       int rank, nranks;
-      
+
       CUDACHECK(cudaSetDevice(args->gpus[i]));
       NCCLCHECK(ncclCommUserRank(args->comms[id][i], &rank));
       NCCLCHECK(ncclCommCount(args->comms[id][i], &nranks));
@@ -430,7 +430,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
     if (args->nGpus > 1 || commblocking == 0) NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), args->comms[id], args->nGpus);
   }
-  
+
   if (blocking_coll) {
     // Complete op before returning
     TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms, args->commNum));
@@ -811,7 +811,7 @@ testResult_t threadInit(struct threadArgs* args) {
     for (int i = 0; i < args->nGpus; ++i)
       NCCLCHECK(ncclCommDestroy(globalComms[i]));
   }
-  
+
   TESTCHECK(threadRunTests(args));
 
   for (int id = 0; id < args->commNum; ++id) {
@@ -819,7 +819,7 @@ testResult_t threadInit(struct threadArgs* args) {
       NCCLCHECK(ncclCommDestroy(args->comms[id][i]));
     }
   }
-  
+
   return testSuccess;
 }
 
@@ -903,9 +903,15 @@ testResult_t threadLaunch(struct testThread* thread) {
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, size_t *allocBytes) {
     nbytes += 8*unalign; // pad with size of max datatype in case all datatypes selected
-    NCCLCHECK(ncclMemAlloc(sendbuff, nbytes));
-    NCCLCHECK(ncclMemAlloc(recvbuff, nbytes));
-    if (datacheck) NCCLCHECK(ncclMemAlloc(expected, recvBytes));
+    if (local_register) {
+      NCCLCHECK(ncclMemAlloc(sendbuff, nbytes));
+      NCCLCHECK(ncclMemAlloc(recvbuff, nbytes));
+      if (datacheck) NCCLCHECK(ncclMemAlloc(expected, recvBytes));
+    } else {
+      CUDACHECK(cudaMalloc(sendbuff, nbytes));
+      CUDACHECK(cudaMalloc(recvbuff, nbytes));
+      if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
+    }
     CUDACHECK(cudaMemset(*sendbuff, 0, nbytes));
     CUDACHECK(cudaMemset(*recvbuff, 0, nbytes));
     if (datacheck) CUDACHECK(cudaMemset(*expected, 0, recvBytes));
@@ -1236,7 +1242,7 @@ char* splitMaskEnv = NULL;
   /* Now we support 3 split pattern when split_comm is enabled:
    * (1) keep all ranks in a group but in reversed order;
    * (2) split ranks into 2 groups based odd and even rank;
-   * (3) split ranks into 2 groups with 3:1 ratio. 
+   * (3) split ranks into 2 groups with 3:1 ratio.
    * If NCCL_TESTS_SPLIT_MASK is set, we only split based on split mask. */
   if (splitMaskEnv == NULL && split_comm == 2) {
     commNum = 3;
@@ -1527,9 +1533,15 @@ char* splitMaskEnv = NULL;
         NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
         NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       }
-      if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
-      if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
-      if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
+      if (local_register) {
+        if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
+        if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
+        if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
+      } else {
+        if (sendbuffs[id][i]) CUDACHECK(cudaFree((char*)sendbuffs[id][i]));
+        if (recvbuffs[id][i]) CUDACHECK(cudaFree((char*)recvbuffs[id][i]));
+        if (datacheck) CUDACHECK(cudaFree(expected[id][i]));
+      }
     }
   }
 
@@ -1540,7 +1552,7 @@ char* splitMaskEnv = NULL;
     }
     free(globalComms);
   }
-  
+
   CUDACHECK(cudaFreeHost(delta));
 
   envstr = getenv("NCCL_TESTS_MIN_BW");

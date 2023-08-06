@@ -300,7 +300,7 @@ struct ncclComm {
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;
   volatile uint32_t *childAbortFlag;
-  uint32_t *abortFlagRefCount;
+  volatile uint32_t *abortFlagRefCount;
 
   // Device side of the communicator (for cudaFree's)
   struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm
@@ -346,7 +346,7 @@ struct ncclComm {
   struct ncclShmemCollBuff nvlsShmem;
   void *nvlsShmemHandle;
 
-  size_t channelSize; // User requested work size (bytes) for channel partitions
+  ssize_t channelSize; // User requested work size (bytes) for channel partitions
 
   // pools backed by comm->memPermanent
   struct ncclMemoryPool memPool_ncclProxyOp;
