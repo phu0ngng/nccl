@@ -635,7 +635,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
       if (share) {
         if (myinfo->isMaster) {
           comm->collNetSharedRes = parent->collNetSharedRes;
-          comm->collNetChannels = std::min(std::max(comm->nChannels, comm->nvlsChannels), parent->collNetSharedRes->nChannels);
+          comm->collNetChannels = std::min(comm->nChannels, parent->collNetSharedRes->nChannels);
           for (int c = 0; c < comm->collNetChannels; ++c)
             NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, true), ret, fail);
         }
@@ -654,8 +654,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   } else {
     /* this allocated buffer will be freed on proxy side */
     NCCLCHECK(ncclCalloc(&comm->collNetSharedRes, 1));
-    /* TODO: min or max? */
-    comm->collNetChannels = comm->collNetSharedRes->nChannels = std::max(comm->nChannels, comm->nvlsChannels);
+    comm->collNetChannels = comm->collNetSharedRes->nChannels = comm->nChannels;
     comm->collNetSharedRes->buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
     for (int c = 0; c < comm->collNetChannels; c++) {
       struct ncclChannel* channel = comm->channels + c;
