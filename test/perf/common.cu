@@ -903,7 +903,7 @@ testResult_t threadLaunch(struct testThread* thread) {
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, size_t *allocBytes) {
     nbytes += 8*unalign; // pad with size of max datatype in case all datatypes selected
-    if (local_register) {
+    if (local_register || cudaGraphLaunches) {
       NCCLCHECK(ncclMemAlloc(sendbuff, nbytes));
       NCCLCHECK(ncclMemAlloc(recvbuff, nbytes));
       if (datacheck) NCCLCHECK(ncclMemAlloc(expected, recvBytes));
@@ -1533,7 +1533,7 @@ char* splitMaskEnv = NULL;
         NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
         NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       }
-      if (local_register) {
+      if (local_register || cudaGraphLaunches) {
         if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
         if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
         if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
