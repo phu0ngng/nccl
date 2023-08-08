@@ -252,6 +252,7 @@ int main(int argc, const char* argv[]) {
     RUN("SKL-V100");
     RUN("MS-1G-2N");
     RUN("T4");
+    RUN("A10-PCI");
 #ifdef __x86_64__
     RUN("DGX-1P");
     RUN("DGX-1P-4G");
