@@ -1,5 +1,6 @@
 stages:
   - build
+  - health
   - unit_tests
   - api_tests
   - perf_tests_single
@@ -47,27 +48,104 @@ build:
     expire_in: 1 day
   interruptible: true
 
-unit_tests-A100:
-  stage: unit_tests
+health-P100:
+  stage: health
   rules:
     - when: always
-  needs: [build]
+  needs: []
   tags:
-    - build
+    - p100
   variables:
-    NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    GIT_STRATEGY: none # SKIP GIT clone
   script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-unit.sh
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP100 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+  interruptible: true
+
+health-P40:
+  stage: health
+  rules:
+    - when: always
+  needs: []
+  tags:
+    - p40
+  variables:
+    GIT_STRATEGY: none # SKIP GIT clone
+  script:
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP40 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+  interruptible: true
+
+health-GP100:
+  stage: health
+  rules:
+    - when: always
+  needs: []
+  tags:
+    - gp100
+  variables:
+    GIT_STRATEGY: none # SKIP GIT clone
+  script:
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pGP100 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+  interruptible: true
+
+health-M40:
+  stage: health
+  rules:
+    - when: always
+  needs: []
+  tags:
+    - m40
+  variables:
+    GIT_STRATEGY: none # SKIP GIT clone
+  script:
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pM40 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+  interruptible: true
+
+health-K40:
+  stage: health
+  rules:
+    - when: always
+  needs: []
+  tags:
+    - k40
+  variables:
+    GIT_STRATEGY: none # SKIP GIT clone
+  script:
+    - srun --exclusive -t 00:02:00 -n 1 -c 4 -pK40 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+  interruptible: true
+
+health-K80:
+  stage: health
+  rules:
+    - when: always
+  needs: []
+  tags:
+    - k80
+  variables:
+    GIT_STRATEGY: none # SKIP GIT clone
+  script:
+    - srun --exclusive -t 00:02:00 -n 1 -c 16 -pK80 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+  interruptible: true
+
+health-A100:
+  stage: health
+  rules:
+    - when: always
+  needs: []
+  tags:
+    - a100pci
+  variables:
+    GIT_STRATEGY: none # SKIP GIT clone
+  script:
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pA100 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
   interruptible: true
 
 unit_tests-P100:
   stage: unit_tests
   rules:
     - when: always
-  needs: [build]
+  needs: ["build","health-P100"]
   tags:
-    - build
+    - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
@@ -75,13 +153,41 @@ unit_tests-P100:
     - srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100 ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
+unit_tests-P40:
+  stage: unit_tests
+  rules:
+    - when: always
+  needs: ["build","health-P100"]
+  tags:
+    - p40
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40 ./test/scripts/gitlab-runner-unit.sh
+  interruptible: true
+
+unit_tests-GP100:
+  stage: unit_tests
+  rules:
+    - when: always
+  needs: ["build","health-GP100"]
+  tags:
+    - gp100
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-unit.sh
+  interruptible: true
+
 unit_tests-M40:
   stage: unit_tests
   rules:
     - when: always
-  needs: [build]
+  needs: ["build","health-M40"]
   tags:
-    - build
+    - m40
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
@@ -89,24 +195,53 @@ unit_tests-M40:
     - srun --exclusive -t 00:10:00 -n 1 -c 8 -pM40 ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
-unit_tests-K80:
+unit_tests-K40:
   stage: unit_tests
   rules:
     - when: always
-  needs: [build]
+  needs: ["build","health-K40"]
   tags:
-    - build
+    - k40
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pK80 ./test/scripts/gitlab-runner-unit.sh
+    - srun --exclusive -t 00:10:00 -n 1 -c 4 -pK40 ./test/scripts/gitlab-runner-unit.sh
+  interruptible: true
+
+unit_tests-K80:
+  stage: unit_tests
+  rules:
+    - when: always
+  needs: ["build","health-K80"]
+  tags:
+    - k80
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - srun --exclusive -t 00:10:00 -n 1 -c 16 -pK80 ./test/scripts/gitlab-runner-unit.sh
+  interruptible: true
+
+unit_tests-A100:
+  stage: unit_tests
+  rules:
+    - when: always
+  needs: ["build","health-A100"]
+  tags:
+    - a100pci
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
 apitest-P100:
   stage: api_tests
   rules:
     - when: always
+  needs: ["build", "unit_tests-P100"]
   tags:
     - p100
   variables:
@@ -121,6 +256,7 @@ apitest-P40:
   stage: api_tests
   rules:
     - when: always
+  needs: ["build", "unit_tests-P40"]
   tags:
     - p40
   variables:
@@ -135,6 +271,7 @@ apitest-GP100:
   stage: api_tests
   rules:
     - when: always
+  needs: ["build", "unit_tests-GP100"]
   tags:
     - gp100
   variables:
@@ -148,6 +285,7 @@ apitest-M40:
   stage: api_tests
   rules:
     - when: always
+  needs: ["build", "unit_tests-M40"]
   tags:
     - m40
   variables:
@@ -161,6 +299,7 @@ apitest-K40:
   stage: api_tests
   rules:
     - when: always
+  needs: ["build", "unit_tests-K40"]
   tags:
     - k40
   variables:
@@ -175,6 +314,7 @@ apitest-K80:
   rules:
     - if: $CUDA_VERSION == '10.2' || $CUDA_VERSION == '11.3'
       when: always
+  needs: ["build", "unit_tests-K80"]
   tags:
     - k80
   variables:
@@ -188,6 +328,7 @@ apitest-A100:
   stage: api_tests
   rules:
     - when: always
+  needs: ["build", "unit_tests-A100"]
   tags:
     - a100pci
   variables:
