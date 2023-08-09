@@ -375,14 +375,14 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
   int netCount = 0;
   int localNetCount;
   int* localNets;
-  NCCLCHECK(ncclCalloc(&localNets, system->nodes[NET].count));
+  NCCLCHECK(ncclCalloc(&localNets, MAXCHANNELS));
 
   // First add the preferred NICs
   for (int g=0; g<system->nodes[GPU].count; g++) {
     if (gpu != -1 && gpu != g) continue;
     localNetCount = 0;
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
-    for (int c = 0;; c++) {
+    for (int c = 0; c<MAXCHANNELS; c++) {
       int netId;
       NCCLCHECK(ncclTopoGetLocalNet(system, gpu->gpu.rank, c, &netId));
       NCCLCHECK(ncclTopoIdToIndex(system, NET, netId, localNets+localNetCount));

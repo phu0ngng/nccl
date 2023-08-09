@@ -15,11 +15,11 @@ endif
 # We need private functions. Include and link with src
 SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph
 # Use static library since all the internal symbols are there
+DLIB = ${BUILDDIR}/lib/libnccl.so
+DLIBFLAGS = $(NVLDFLAGS) -L$(BUILDDIR)/lib -lnccl -lcudart
 LIBRARIES += nccl_static
 STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
-DLIB = ${BUILDDIR}/lib/libnccl.so
-DLIBFLAGS = -L$(BUILDDIR)/lib -lnccl -lcudart
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu ft_test.cu #kernel_test.cu
