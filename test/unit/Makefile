@@ -7,7 +7,7 @@ MPI_HOME ?= $(realpath $(dir $(or \
 	$(realpath /usr/include/mpi.h),\
 	$(realpath /usr/lib/openmpi/include/mpi.h)))..)
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
-NVCUFLAGS += -I$(MPI_HOME)/include
+NVCUFLAGS += -g -I$(MPI_HOME)/include
 endif
 ifeq ($(MPI_IBM),1)
 NVLDFLAGS += -lmpi_ibm
@@ -113,7 +113,7 @@ ${DST_DIR}/comm_leak_test: ${DST_DIR}/comm_leak_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	@if [ "$(LSB_RELEASE)" = "Ubuntu" ]; then\
-		$(NVCC) -o $@ $(NVCUFLAGS) --compiler-options="-fsanitize=leak" $^ ${NVLDFLAGS};\
+		$(NVCC) -o $@ $(NVCUFLAGS) --compiler-options="-fsanitize=address" $^ ${NVLDFLAGS};\
 	else\
 		$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS};\
 	fi

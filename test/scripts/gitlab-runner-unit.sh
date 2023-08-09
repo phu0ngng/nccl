@@ -12,17 +12,17 @@ echo "=============================== GRAPH TESTS Default - $(date +\"%T\") ====
 echo -e "\n\n"
 
 echo "=============================== Single-Process Mem Leak TESTS Default - $(date +\"%T\") ================================="
-./comm_leak_test
+ASAN_OPTIONS=protect_shadow_gap=0 ./comm_leak_test
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Single-Process Mem Leak TESTS Default")
 echo -e "\n\n"
 
 echo "=============================== Single-Process Mem Leak TESTS NO P2P - $(date +\"%T\") ================================="
-NCCL_P2P_DISABLE=1 ./comm_leak_test
+ASAN_OPTIONS=protect_shadow_gap=0 NCCL_P2P_DISABLE=1 ./comm_leak_test
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Single-Process Mem Leak TESTS NO P2P")
 echo -e "\n\n"
 
 echo "=============================== Single-Process Mem Leak TESTS Network - $(date +\"%T\") ================================="
-NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 ./comm_leak_test
+ASAN_OPTIONS=protect_shadow_gap=0 NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 ./comm_leak_test
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Single-Process Mem Leak TESTS Network")
 echo -e "\n\n"
 
