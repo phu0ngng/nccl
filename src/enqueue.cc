@@ -373,7 +373,7 @@ static ncclResult_t registerIntraNodeBuffers(
     void *recvbuff = info->recvbuff;
     cudaPointerAttributes sattr, rattr;
     bool query = false;
-    
+
     if (info->coll == ncclFuncAllGather)
       sendbuff = NULL;
     else if (info->coll == ncclFuncReduceScatter)
@@ -831,50 +831,55 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
   uint64_t collOpCount = comm->sharedRes->collOpCount;
   // Advance comm's collOpCount by number of colls in this plan.
   comm->sharedRes->collOpCount += plan->collOpCount;
-  struct ncclProxyOp* opList = NULL;
+
+  uint64_t p2pOpBump[MAXCHANNELS];
+  struct ncclProxyOp* heads[MAXCHANNELS];
+  int nHeads = 0;
   for (int c=0; c < plan->channelUbound; c++) {
-    struct ncclProxyOp* q = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
-    uint64_t p2pOpCount = comm->sharedRes->p2pOpCount[c];
-    uint64_t nextP2pOpCount = p2pOpCount;
-    while (q != nullptr) {
-      struct ncclProxyOp* qNext = q->enqNext;
-      // Ignoring the bottom tag bit, opCount's are zero-based within plan so
-      // translate them to the tip of the comm's history.
-      if (q->opCount & 1) { // p2p
-        // p2pOpCount is monotonic increasing within a plan's channel so just
-        // remember last value to compute max.
-        nextP2pOpCount = p2pOpCount + (q->opCount>>1);
-        nextP2pOpCount += 1; // +1 to ensure next plan doesn't collide
-        q->opCount = (p2pOpCount<<1) + q->opCount;
-        NCCLCHECK(ncclProxySaveOp(comm, q, nullptr));
-        if (!plan->persistent) {
-          // Non-persistent kernels have their memory reclaimed after upload.
-          ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, q);
-        }
-      } else { // coll
-        q->opCount = (collOpCount<<1) + q->opCount;
-        // Insert q in opList, sort by opCount to allow for collnet aggregation.
-        if (opList == NULL || q->opCount < opList->opCount) {
-          q->enqNext = opList;
-          opList = q;
-        } else {
-          struct ncclProxyOp* o = opList;
-          while (o->enqNext && o->enqNext->opCount <= q->opCount) o = o->enqNext;
-          q->enqNext = o->enqNext;
-          o->enqNext = q;
-        }
-      }
-      q = qNext;
-    }
-    // Advance channel's p2pOpCount by number of p2p's in this plan channel.
-    comm->sharedRes->p2pOpCount[c] = nextP2pOpCount;
+    p2pOpBump[c] = 0;
+    heads[c] = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
+    nHeads += (heads[c] != nullptr) ? 1 : 0;
   }
-  for (struct ncclProxyOp* o=opList; o; o=o->enqNext) {
-    NCCLCHECK(ncclProxySaveOp(comm, o, nullptr));
-    if (!plan->persistent) {
-      // Non-persistent kernels have their memory reclaimed after upload.
-      ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, o);
+
+  while (nHeads != 0) {
+    int minChan = -1;
+    uint64_t minOp = uint64_t(-1);
+    for (int c=0; c < plan->channelUbound; c++) {
+      if (heads[c] == nullptr) continue;
+      uint64_t op = heads[c]->opCount;
+      op = (op>>1 | op<<63); // Move tag bit to order collectives before p2p's
+      if (op < minOp) { minChan = c; minOp = op; }
     }
+
+    struct ncclProxyOp* q = heads[minChan];
+    heads[minChan] = q->enqNext;
+    if (heads[minChan] == nullptr) nHeads -= 1;
+
+    uint64_t oldOpCount = q->opCount;
+    // Ignoring the bottom tag bit, opCount's are zero-based within plan so
+    // translate them to the tip of the comm's history.
+    if (q->opCount & 1) { // p2p
+      // opCount is monotonic increasing within a plan's channel so just
+      // remember last value to compute max.
+      p2pOpBump[minChan] = (q->opCount>>1) + 1; // +1 to ensure next plan doesn't collide
+      q->opCount = (comm->sharedRes->p2pOpCount[minChan]<<1) + q->opCount;
+    } else { // coll
+      q->opCount = (collOpCount<<1) + q->opCount;
+    }
+
+    NCCLCHECK(ncclProxySaveOp(comm, q, nullptr));
+    q->opCount = oldOpCount; // Restore for next uploadProxyOps()
+    if (!plan->persistent) {
+      // Non-persistent kernels upload ops only once so can be free'd here.
+      ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
+    }
+  }
+
+  for (int c=0; c < plan->channelUbound; c++) {
+    // Erase proxyOpQueue since all ops were free'd back to mempool.
+    if (!plan->persistent) ncclIntruQueueConstruct(&plan->channels[c].proxyOpQueue);
+    // Advance channel's p2pOpCount by number of p2p's in this plan channel.
+    comm->sharedRes->p2pOpCount[c] += p2pOpBump[c];
   }
   return ncclSuccess;
 }
@@ -903,6 +908,12 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
   if (plan->persistent) {
     comm->persistentRefs -= 1;
     NCCLCHECK(ncclCudaFree(plan->workHead));
+    for (int c=0; c < plan->channelUbound; c++) {
+      while (!ncclIntruQueueEmpty(&plan->channels[c].proxyOpQueue)) {
+        struct ncclProxyOp* q = ncclIntruQueueDequeue(&plan->channels[c].proxyOpQueue);
+        ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
+      }
+    }
     while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
       struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
       CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
@@ -916,7 +927,6 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
       ncclMemoryPoolFree(&comm->memPool_ncclNvlsHandleList, obj);
     }
   }
-  ncclMemoryPoolTakeAll(&comm->memPool_ncclProxyOp, &plan->memPool_ncclProxyOp);
   ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
   return ncclSuccess;
 }
