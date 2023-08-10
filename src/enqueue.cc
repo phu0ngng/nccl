@@ -834,41 +834,46 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
 
   uint64_t p2pOpBump[MAXCHANNELS];
   struct ncclProxyOp* heads[MAXCHANNELS];
+  uint64_t headIds[MAXCHANNELS];
   int nHeads = 0;
   for (int c=0; c < plan->channelUbound; c++) {
     p2pOpBump[c] = 0;
     heads[c] = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
     nHeads += (heads[c] != nullptr) ? 1 : 0;
+    headIds[c] = (heads[c] != nullptr) ? heads[c]->opCount : uint64_t(-1);
   }
 
   while (nHeads != 0) {
     int minChan = -1;
-    uint64_t minOp = uint64_t(-1);
+    uint64_t minId = uint64_t(-1);
+    // We store the heads[c]->opCount in headIds[c] specifically to remove indirect
+    // loads from this loop which speeds it up considerably.
     for (int c=0; c < plan->channelUbound; c++) {
-      if (heads[c] == nullptr) continue;
-      uint64_t op = heads[c]->opCount;
-      op = (op>>1 | op<<63); // Move tag bit to order collectives before p2p's
-      if (op < minOp) { minChan = c; minOp = op; }
+      uint64_t id = headIds[c];
+      id = (id>>1 | id<<63); // Move tag bit to order collectives before p2p's
+      if (id < minId) { minChan = c; minId = id; }
     }
 
     struct ncclProxyOp* q = heads[minChan];
+    uint64_t oldId = headIds[minChan]; // same as q->opCount
+    // Advance heads[c]
     heads[minChan] = q->enqNext;
-    if (heads[minChan] == nullptr) nHeads -= 1;
+    if (q->enqNext == nullptr) nHeads -= 1;
+    headIds[minChan] = (q->enqNext != nullptr) ? q->enqNext->opCount : uint64_t(-1);
 
-    uint64_t oldOpCount = q->opCount;
     // Ignoring the bottom tag bit, opCount's are zero-based within plan so
     // translate them to the tip of the comm's history.
-    if (q->opCount & 1) { // p2p
+    if (oldId & 1) { // p2p
       // opCount is monotonic increasing within a plan's channel so just
       // remember last value to compute max.
-      p2pOpBump[minChan] = (q->opCount>>1) + 1; // +1 to ensure next plan doesn't collide
-      q->opCount = (comm->sharedRes->p2pOpCount[minChan]<<1) + q->opCount;
+      p2pOpBump[minChan] = (oldId>>1) + 1; // +1 to ensure next plan doesn't collide
+      q->opCount = (comm->sharedRes->p2pOpCount[minChan]<<1) + oldId;
     } else { // coll
-      q->opCount = (collOpCount<<1) + q->opCount;
+      q->opCount = (collOpCount<<1) + oldId;
     }
 
     NCCLCHECK(ncclProxySaveOp(comm, q, nullptr));
-    q->opCount = oldOpCount; // Restore for next uploadProxyOps()
+    q->opCount = oldId; // Restore for next uploadProxyOps()
     if (!plan->persistent) {
       // Non-persistent kernels upload ops only once so can be free'd here.
       ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
