@@ -403,7 +403,7 @@ static ncclResult_t registerIntraNodeBuffers(
       if (info->coll == ncclFuncReduceScatter)
         info->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 5));
       else
-        info->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 4));;
+        info->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 4));
       *outRegBufType = NCCL_NVLS_REG_BUFFER;
     }
   } else if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT &&   // limited to CollNetDirect for now
