@@ -546,7 +546,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
     if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) {
       if (graph->nChannels < netcount) {
         int gpu;
-        NCCLCHECK(ncclTopoGetLocalGpu(system, nets[graph->nChannels], &gpu));
+        NCCLCHECK(ncclTopoGetLocalGpu(system, system->nodes[NET].nodes[nets[graph->nChannels]].id, &gpu));
         if (gpu != -1) NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, gpu));
       }
     } else {
