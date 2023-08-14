@@ -198,8 +198,10 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr) {
   if (ncclCuMemEnable()) {
 #if CUDART_VERSION >= 11030
+    CUmemAllocationHandleType type;
+    NCCLCHECK(ncclP2pHandleType(&type));
+
     // cuMem API support
-    CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
     CUmemGenericAllocationHandle handle;
     NCCLCHECK(ncclCuMemAlloc(ptr, &handle, size));
     /* Allow RW access to the newly allocated memory from all directly connected GPUs */
@@ -212,7 +214,7 @@ ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, v
       CUDACHECK(cudaGetDeviceCount(&dcnt));
       prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
       prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-      prop.requestedHandleTypes = NCCL_P2P_HANDLE_TYPE;
+      prop.requestedHandleTypes = type;
       prop.location.id = cudaDev;
       CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM));
       ALIGN_SIZE(size, granularity);
@@ -265,9 +267,11 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
 #if CUDART_VERSION >= 11030
     // cuMem API support
     CUdeviceptr dptr = 0;
-    CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
+    CUmemAllocationHandleType type;
     CUmemGenericAllocationHandle handle;
     ncclCuDesc *cuDesc = &ipcDesc->cuDesc;
+
+    NCCLCHECK(ncclP2pHandleType(&type));
 
     // Import and map the remote memory descriptor to the local GPU
     if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
