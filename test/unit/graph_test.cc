@@ -88,6 +88,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     return;
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
+  free(xmlSystem);
   if (inter == 0) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       CHECK(ncclTopoRemoveNode(system, NET, n));
@@ -182,6 +183,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     compareGraphs(&refCNetGraph, &cNetGraph, ngpus, inter, &err, &warn);
     compareGraphs(&refNvlsGraph, &nvlsGraph, ngpus, inter, &err, &warn);
   }
+  free(xmlGraph);
 
   printf(" %15s/%2d/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, ngpus, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.bwIntra, ringGraph.bwInter,
@@ -203,6 +205,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     printf("   SLOW %5ld ms\n", computeTime/1000);
     warn++;
   } else printf("     OK %5ld ms\n", computeTime/1000);
+  ncclTopoFree(system);
   *errors += err;
   *warnings += warn;
 }
@@ -252,6 +255,7 @@ int main(int argc, const char* argv[]) {
     RUN("SKL-V100");
     RUN("MS-1G-2N");
     RUN("T4");
+    RUN("A10-PCI");
 #ifdef __x86_64__
     RUN("DGX-1P");
     RUN("DGX-1P-4G");

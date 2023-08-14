@@ -345,7 +345,7 @@ class Primitives<
           ssize_t pOffset = index*peerOffset;
           if (skip >= 0 && index >= skip) pOffset += peerElem;
           // Adjust remote index with peer offset in case we are directly pulling from peer's output buffer
-          waitPeer<DirectRecv, 0, 1, 0, 0, 1>(outIx, outIx+pOffset, offset, realSize);
+          waitPeer<DirectRecv, 0, 1, 0, 0, 1>(outIx+pOffset, outIx+pOffset, offset, realSize);
           subBarrier();
           #pragma unroll
           for (int j=0; j<fan.nrecv(); j++) {

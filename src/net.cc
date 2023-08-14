@@ -9,85 +9,14 @@
 //#include <sys/stat.h>
 //#include <unistd.h>
 
-static ncclNet_v7_t ncclNet_v4_as_v7;
 static ncclNet_v7_t ncclNet_v5_as_v7;
 static ncclNet_v7_t ncclNet_v6_as_v7;
-static ncclNet_v4_t *ncclNet_v4;
 static ncclNet_v5_t *ncclNet_v5;
 static ncclNet_v6_t *ncclNet_v6;
-static ncclCollNet_v7_t ncclCollNet_v4_as_v7;
 static ncclCollNet_v7_t ncclCollNet_v5_as_v7;
 static ncclCollNet_v7_t ncclCollNet_v6_as_v7;
-static ncclCollNet_v4_t *ncclCollNet_v4;
 static ncclCollNet_v5_t *ncclCollNet_v5;
 static ncclCollNet_v6_t *ncclCollNet_v6;
-
-static ncclResult_t ncclNet_v4_as_v7_getProperties(int dev, ncclNetProperties_v7_t* props) {
-  ncclNetProperties_v4_t p4;
-  ncclResult_t ans = ncclNet_v4->getProperties(dev, &p4);
-  if (ans != ncclSuccess) return ans;
-  props->name = p4.name;
-  props->pciPath = p4.pciPath;
-  props->guid = p4.guid;
-  props->ptrSupport = p4.ptrSupport;
-  props->speed = p4.speed;
-  props->port = p4.port;
-  props->maxComms = p4.maxComms;
-  props->maxRecvs = 1;
-  props->latency = 0;
-  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
-  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
-  return ncclSuccess;
-}
-
-static ncclResult_t ncclNet_v4_as_v7_isend(void* sendComm, void* data, int size, int tag, void* mhandle, void** request) {
-  return ncclNet_v4->isend(sendComm, data, size, mhandle, request);
-}
-
-static ncclResult_t ncclNet_v4_as_v7_irecv(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request) {
-  if (n == 0) return ncclSuccess;
-  if (n != 1) return ncclInvalidArgument;
-  return ncclNet_v4->irecv(recvComm, data[0], sizes[0], mhandles[0], request);
-}
-
-static ncclResult_t ncclNet_v4_as_v7_iflush(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request) {
-  if (n == 0) return ncclSuccess;
-  if (n != 1) return ncclInvalidArgument;
-  return ncclNet_v4->iflush(recvComm, data[0], sizes[0], mhandles[0], request);
-}
-
-static ncclResult_t ncclNet_v4_as_v7_connect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
-  return ncclNet_v4->connect(dev, handle, sendComm);
-}
-
-static ncclResult_t ncclNet_v4_as_v7_accept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** /*recvDevComm*/) {
-  return ncclNet_v4->accept(listenComm, recvComm);
-}
-
-// We use a wrapper around the v4 init to copy over the struct contents
-// post-init since they may not be initialized before hand.
-static ncclResult_t ncclNet_v4_as_v7_init(ncclDebugLogger_t logfn) {
-  NCCLCHECK(ncclNet_v4->init(logfn));
-  ncclNet_v4_as_v7.name = ncclNet_v4->name;
-  ncclNet_v4_as_v7.devices = ncclNet_v4->devices;
-  ncclNet_v4_as_v7.getProperties = ncclNet_v4_as_v7_getProperties;
-  ncclNet_v4_as_v7.listen = ncclNet_v4->listen;
-  ncclNet_v4_as_v7.connect = ncclNet_v4_as_v7_connect;
-  ncclNet_v4_as_v7.accept  = ncclNet_v4_as_v7_accept;
-  ncclNet_v4_as_v7.regMr = ncclNet_v4->regMr;
-  ncclNet_v4_as_v7.regMrDmaBuf = NULL;
-  ncclNet_v4_as_v7.deregMr = ncclNet_v4->deregMr;
-  ncclNet_v4_as_v7.isend = ncclNet_v4_as_v7_isend;
-  ncclNet_v4_as_v7.irecv = ncclNet_v4_as_v7_irecv;
-  ncclNet_v4_as_v7.iflush = ncclNet_v4_as_v7_iflush;
-  ncclNet_v4_as_v7.test = ncclNet_v4->test;
-  ncclNet_v4_as_v7.closeSend = ncclNet_v4->closeSend;
-  ncclNet_v4_as_v7.closeRecv = ncclNet_v4->closeRecv;
-  ncclNet_v4_as_v7.closeListen = ncclNet_v4->closeListen;
-  ncclNet_v4_as_v7.getDeviceMr = NULL;
-  ncclNet_v4_as_v7.irecvConsumed = NULL;
-  return ncclSuccess;
-}
 
 static ncclResult_t ncclNet_v6_as_v7_getProperties(int dev, ncclNetProperties_v7_t* props) {
   ncclNetProperties_v6_t p6;
@@ -186,45 +115,6 @@ static ncclResult_t ncclNet_v5_as_v7_init(ncclDebugLogger_t logfn) {
   ncclNet_v5_as_v7.closeListen = ncclNet_v5->closeListen;
   ncclNet_v5_as_v7.getDeviceMr = NULL;
   ncclNet_v5_as_v7.irecvConsumed = NULL;
-  return ncclSuccess;
-}
-
-static ncclResult_t ncclCollNet_v4_as_v7_getProperties(int dev, ncclNetProperties_v7_t* props) {
-  ncclNetProperties_v4_t p4;
-  ncclResult_t ans = ncclCollNet_v4->getProperties(dev, &p4);
-  if (ans != ncclSuccess) return ans;
-  props->name = p4.name;
-  props->pciPath = p4.pciPath;
-  props->guid = p4.guid;
-  props->ptrSupport = p4.ptrSupport;
-  props->speed = p4.speed;
-  props->port = p4.port;
-  props->maxComms = p4.maxComms;
-  props->maxRecvs = 1;
-  props->latency = 0;
-  props->netDeviceType    = NCCL_NET_DEVICE_HOST;
-  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
-  return ncclSuccess;
-}
-
-// We use a wrapper around the v4 init to copy over the struct contents
-// post-init since they may not be initialized before hand.
-static ncclResult_t ncclCollNet_v4_as_v7_init(ncclDebugLogger_t logfn) {
-  NCCLCHECK(ncclCollNet_v4->init(logfn));
-  ncclCollNet_v4_as_v7.name = ncclCollNet_v4->name;
-  ncclCollNet_v4_as_v7.devices = ncclCollNet_v4->devices;
-  ncclCollNet_v4_as_v7.getProperties = ncclCollNet_v4_as_v7_getProperties;
-  ncclCollNet_v4_as_v7.listen = ncclCollNet_v4->listen;
-  ncclCollNet_v4_as_v7.connect = ncclCollNet_v4->connect;
-  ncclCollNet_v4_as_v7.reduceSupport = ncclCollNet_v4->reduceSupport;
-  ncclCollNet_v4_as_v7.regMr = ncclCollNet_v4->regMr;
-  ncclCollNet_v4_as_v7.regMrDmaBuf = NULL;
-  ncclCollNet_v4_as_v7.deregMr = ncclCollNet_v4->deregMr;
-  ncclCollNet_v4_as_v7.iallreduce = ncclCollNet_v4->iallreduce;
-  ncclCollNet_v4_as_v7.iflush = ncclCollNet_v4->iflush;
-  ncclCollNet_v4_as_v7.test = ncclCollNet_v4->test;
-  ncclCollNet_v4_as_v7.closeColl = ncclCollNet_v4->closeColl;
-  ncclCollNet_v4_as_v7.closeListen = ncclCollNet_v4->closeListen;
   return ncclSuccess;
 }
 
@@ -349,18 +239,9 @@ ncclResult_t ncclNetPluginInit() {
       // Try v5 plugin
       ncclNet_v5 = (ncclNet_v5_t*)dlsym(netPluginLib, "ncclNetPlugin_v5");
       if (ncclNet_v5 == nullptr) {
-        // Try v4 plugin
-        ncclNet_v4 = (ncclNet_v4_t*)dlsym(netPluginLib, "ncclNetPlugin_v4");
-        if (ncclNet_v4 == nullptr) {
-          INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin symbol (v4 or v5).");
-          if (netPluginLib != nullptr) dlclose(netPluginLib);
-          return ncclSuccess;
-        }
-        ncclNets[0] = &ncclNet_v4_as_v7;
-        ncclNet_v4_as_v7.init = ncclNet_v4_as_v7_init;
-        // Set the name right away to allow for NCCL_NET=... to work
-        ncclNet_v4_as_v7.name = ncclNet_v4->name;
-        INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded net plugin %s (v4)", ncclNets[0]->name);
+        INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin symbol (>= v5). ncclNetPlugin symbols v4 and lower are not supported.");
+        if (netPluginLib != nullptr) dlclose(netPluginLib);
+        return ncclSuccess;
       } else {
         ncclNets[0] = &ncclNet_v5_as_v7;
         ncclNet_v5_as_v7.init = ncclNet_v5_as_v7_init;
@@ -385,15 +266,7 @@ ncclResult_t ncclNetPluginInit() {
     if (ncclCollNet_v6 == nullptr) {
       ncclCollNet_v5 = (ncclCollNet_v5_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v5");
       if (ncclCollNet_v5 == nullptr) {
-        ncclCollNet_v4 = (ncclCollNet_v4_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v4");
-        if (ncclCollNet_v4 == nullptr) {
-          INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin symbol (v4 or v5).");
-        } else {
-          ncclCollNets[0] = &ncclCollNet_v4_as_v7;
-          ncclCollNet_v4_as_v7.init = ncclCollNet_v4_as_v7_init;
-          ncclCollNet_v4_as_v7.name = ncclCollNet_v4->name;
-          INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded coll plugin %s (v4)", ncclCollNets[0]->name);
-        }
+        INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin symbol (>= v5). ncclCollNetPlugin symbols v4 and lower are not supported.");
       } else {
         ncclCollNets[0] = &ncclCollNet_v5_as_v7;
         ncclCollNet_v5_as_v7.init = ncclCollNet_v5_as_v7_init;
@@ -574,9 +447,7 @@ cleanup1:
 }
 
 int ncclNetVersion(struct ncclComm* comm) {
-  if (comm->ncclNet == &ncclNet_v4_as_v7) {
-    return 4;
-  } else if (comm->ncclNet == &ncclNet_v5_as_v7) {
+  if (comm->ncclNet == &ncclNet_v5_as_v7) {
     return 5;
   } else if (comm->ncclNet == &ncclNet_v6_as_v7) {
     return 6;

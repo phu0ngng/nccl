@@ -375,8 +375,30 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
   int netCount = 0;
   int localNetCount;
   int* localNets;
-  NCCLCHECK(ncclCalloc(&localNets, system->nodes[NET].count));
+  NCCLCHECK(ncclCalloc(&localNets, MAXCHANNELS));
 
+  // First add the preferred NICs
+  for (int g=0; g<system->nodes[GPU].count; g++) {
+    if (gpu != -1 && gpu != g) continue;
+    localNetCount = 0;
+    struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
+    for (int c = 0; c<MAXCHANNELS; c++) {
+      int netId;
+      NCCLCHECK(ncclTopoGetLocalNet(system, gpu->gpu.rank, c, &netId));
+      NCCLCHECK(ncclTopoIdToIndex(system, NET, netId, localNets+localNetCount));
+      if (localNetCount > 0 && localNets[localNetCount] == localNets[0]) break;
+      localNetCount++;
+    }
+    // Append NICs to list
+    for (int i=0; i<localNetCount; i++) {
+      int n = localNets[i];
+      int found = 0;
+      while (nets[found] != n && found<netCount) found++;
+      if (found == netCount) nets[netCount++] = n;
+    }
+  }
+
+  // Then add others satisfying typeInter
   for (int t=0; t <= typeInter; t++) {
     for (int g=0; g<system->nodes[GPU].count; g++) {
       if (gpu != -1 && gpu != g) continue;
@@ -385,14 +407,6 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
       struct ncclTopoLinkList* paths = gpu->paths[NET];
       for (int n=0; n<system->nodes[NET].count; n++) {
         if (paths[n].type == t) localNets[localNetCount++] = n;
-      }
-      if (localNetCount == 0) continue;
-      // Shuffle by gpu NVML device number so that GPUs on the same PCI switch
-      // with multiple NICs don't use the same one as first choice.
-      for (int r=0; r<system->nodes[GPU].nodes[g].gpu.dev % localNetCount; r++) {
-        int net0 = localNets[0];
-        for (int i=0; i<localNetCount-1; i++) localNets[i] = localNets[i+1];
-        localNets[localNetCount-1] = net0;
       }
       // Append NICs to list
       for (int i=0; i<localNetCount; i++) {
@@ -533,7 +547,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
     if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) {
       if (graph->nChannels < netCount) {
         int gpu;
-        NCCLCHECK(ncclTopoGetLocalGpu(system, nets[graph->nChannels], &gpu));
+        NCCLCHECK(ncclTopoGetLocalGpu(system, system->nodes[NET].nodes[nets[graph->nChannels]].id, &gpu));
         if (gpu != -1) NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, gpu));
       }
     } else {
@@ -817,6 +831,9 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   int trySameChannels = graph->pattern == NCCL_TOPO_PATTERN_NVLS ? 0 : 1;
   graph->sameChannels = trySameChannels;
 
+  int cpuArch, cpuVendor, cpuModel;
+  NCCLCHECK(ncclTopoCpuType(system, &cpuArch, &cpuVendor, &cpuModel));
+
   const char* str = ncclGetEnv("NCCL_GRAPH_FILE");
   if (str) {
     INFO(NCCL_ENV, "NCCL_GRAPH_FILE set by environment to %s", str);
@@ -890,8 +907,9 @@ search:
   if (pass == 1) {
     // First pass, we don't have a solution yet ; try other options
 
-    // Try having different channels
-    if (tmpGraph.sameChannels == 1) {
+    // Try having different channels (except when going through AMD CPUs)
+    if (tmpGraph.sameChannels == 1 &&
+        !(cpuArch == NCCL_TOPO_CPU_ARCH_X86 && cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD && tmpGraph.typeIntra == PATH_SYS)) {
       tmpGraph.sameChannels = 0;
       goto search;
     }
