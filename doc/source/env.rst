@@ -388,18 +388,19 @@ NCCL_IB_QPS_PER_CONNECTION
 (since 2.10)
 
 Number of IB queue pairs to use for each connection between two ranks. This can be useful on multi-level fabrics which need multiple queue pairs to have good routing entropy.
-Each message, regardless of its size, will be split in N parts and sent on each queue pair. Therefore, increasing this number can cause a latency increase as well as a bandwidth reduction.
+See ``NCCL_IB_SPLIT_DATA_ON_QPS`` for different ways to split data on multiple QPs, as it can affect performance.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
+Number between 1 and 128, default is 1.
 
 NCCL_IB_SPLIT_DATA_ON_QPS
 -------------------------
 (since 2.18)
 
-This parameter controls how we use the queue pairs when we create more than one. Set to 1, each message will be split evenly on each queue pair. Set to 0, queue pairs will be
-used in round-robin mode for each message we send.
+This parameter controls how we use the queue pairs when we create more than one.
+Set to 1 (split mode, default), each message will be split evenly on each queue pair. This may cause a visible latency degradation if we use many QPs.
+Set to 0 (round-robin mode), queue pairs will be used in round-robin mode for each message we send. Operations which do not send multiple messages will not use all QPs.
 
 Values accepted
 ^^^^^^^^^^^^^^^
