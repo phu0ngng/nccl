@@ -194,6 +194,8 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
     TRACE(P2P,"IPC: %016lx %016lx %016lx %016lx", devIpc[4], devIpc[5], devIpc[6], devIpc[7]); \
   } while (0)
 
+NCCL_PARAM(P2pDirectDisable, "P2P_DIRECT_DISABLE", 0);
+
 // cuMem API support
 ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr) {
   if (ncclCuMemEnable()) {
@@ -205,7 +207,7 @@ ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, v
     CUmemGenericAllocationHandle handle;
     NCCLCHECK(ncclCuMemAlloc(ptr, &handle, size));
     /* Allow RW access to the newly allocated memory from all directly connected GPUs */
-    {
+    if (ncclParamP2pDirectDisable() == 0) {
       int cudaDev;
       int dcnt;
       size_t granularity = 0;
@@ -316,7 +318,6 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
 
 // Setting this to non zero causes P2P to use Reads rather than Writes
 NCCL_PARAM(P2pReadEnable, "P2P_READ_ENABLE", -2);
-NCCL_PARAM(P2pDirectDisable, "P2P_DIRECT_DISABLE", 0);
 
 static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* read, int* intermediateRank) {
   int p2p;

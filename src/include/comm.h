@@ -10,6 +10,7 @@
 #include "transport.h"
 #include "p2p.h"
 #include "collectives.h"
+#include "nccl_tuner.h"
 #include "proxy.h"
 #include "strongstream.h"
 #include "nccl_net.h"
@@ -387,6 +388,9 @@ struct ncclComm {
   struct ncclIntruQueue<struct ncclRegRequest, &ncclRegRequest::next> regRequestQueue;
   /* store registered buffer */
   struct ncclIntruQueue<struct ncclRegRecord, &ncclRegRecord::next> regRecordQueue;
+
+  // Tuning plugin
+  ncclTuner_t* tuner;
 };
 
 enum ncclLaunchMode {

@@ -11,6 +11,7 @@
 #include "info.h"
 #include "socket.h"
 #include "ipcsocket.h"
+#include "nccl_net.h"
 #include <pthread.h>
 #include "shm.h"
 #include "p2p.h"
