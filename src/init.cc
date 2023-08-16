@@ -513,15 +513,17 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     ncclResult_t res;
     NCCLCHECK(int64ToBusId(info->busId, busId));
     NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
+    ((long *)&info->fabricInfo.clusterUuid)[0] = ((long *)&info->fabricInfo.clusterUuid)[1] = 0;
     if ((res = ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo)) == ncclSuccess) {
       INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx partition 0x%x",
            info->busId,
            ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1], info->fabricInfo.partitionId);
-    } else {
+    }
+    if ((((long *)&info->fabricInfo.clusterUuid)[0]|((long *)&info->fabricInfo.clusterUuid)[1]) == 0) {
       // MNNVL fabric info not available
       ((long *)&info->fabricInfo.clusterUuid)[0] = getHostHash();
       ((long *)&info->fabricInfo.clusterUuid)[1] = commHash;
-      info->fabricInfo.partitionId = comm->rank;
+      info->fabricInfo.partitionId = 0;
     }
   }
 #endif
