@@ -409,7 +409,8 @@ static ncclResult_t registerIntraNodeBuffers(
   } else if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT &&   // limited to CollNetDirect for now
     comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
     comm->intraRanks < comm->localRanks &&  // only with inter-process & intra-node peers
-    plan->persistent && ncclParamGraphRegister()) {
+    plan->persistent && 0) {
+    /* Disable CollnetDirect registration since it does not support cuMem* allocated memory. */
     int localRank = comm->localRank;
     cudaPointerAttributes sattr, rattr;
 
