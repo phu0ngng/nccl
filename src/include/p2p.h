@@ -11,10 +11,14 @@
 
 #include <cuda.h>
 
-#ifdef MNNVL_SUPPORT
 #if CUDART_VERSION < 12030
-#include "wizlet.h"
-#endif
+// MNNVL: FABRIC handle support lifted from CUDA 12.3
+#define CU_MEM_HANDLE_TYPE_FABRIC ((CUmemAllocationHandleType)0x8ULL)
+#define CU_IPC_HANDLE_SIZE 64
+typedef struct CUmemFabricHandle_st {
+    unsigned char data[CU_IPC_HANDLE_SIZE];
+} CUmemFabricHandle_v1;
+typedef CUmemFabricHandle_v1 CUmemFabricHandle;
 #endif
 
 typedef union {

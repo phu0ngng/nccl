@@ -506,7 +506,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->comm = comm;
   info->cudaCompCap = comm->minCompCap = comm->maxCompCap = comm->compCap;
 
-#ifdef MNNVL_SUPPORT
+  // MNNVL support
   {
     // MNNVL: Request the fabric UUID and partition info
     char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
@@ -527,7 +527,6 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
       info->fabricInfo.partitionId = 0;
     }
   }
-#endif
 
   return ncclSuccess;
 }
@@ -572,6 +571,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
 
+  // MNNVL support
   if (!comm->MNNVL && comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
   else if (comm->MNNVL || ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
@@ -855,7 +855,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
   // AllGather1 - end
 
-#ifdef MNNVL_SUPPORT
+  // MNNVL support
   {
     int cliqueSize = 0;
     comm->MNNVL = 0;
@@ -870,8 +870,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
     // Determine whether this is a MNNVL system
     comm->MNNVL = ncclParamMNNVL() < 0 ? cliqueSize == comm->nRanks : ncclParamMNNVL();
+    // MNNVL requires cuMem to be enabled
+    if (!ncclCuMemEnable()) comm->MNNVL = 0;
   }
-#endif
 
   do {
     // Compute intra-process ranks

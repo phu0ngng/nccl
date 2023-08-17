@@ -101,13 +101,11 @@ static void initCeOperation();
 
 /* Determine if two peers can communicate through p2p */
 ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
-
   initCeOperation();
 
-#ifdef MNNVL_SUPPORT
+  // MNNVL support
   NCCLCHECK(ncclTopoCheckMNNVL(topo, info1, info2, ret));
-  if (ret) return ncclSuccess;
-#endif
+  if (*ret) return ncclSuccess;
 
   // Rule out different nodes / isolated containers
   if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {

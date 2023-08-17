@@ -239,12 +239,7 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, struct ncclNvlsSharedRes* 
 
 #define NVLS_MEM_ALIGN_SIZE (1 << 21)
 
-#ifdef MNNVL_SUPPORT
-// NVLS not supported on MNNVL yet
-NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 0);
-#else
 NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
-#endif
 NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", 16);
 
 ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
@@ -253,6 +248,7 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
 
   int gpuCount;
   NCCLCHECK(ncclTopoGetGpuCount(comm->topo, &gpuCount));
+  // NVLS is not supported on MNNVL yet
   if (!ncclParamNvlsEnable() || gpuCount <= 2 || comm->nNodes > 1 || comm->MNNVL) return ncclSuccess;
 
   CUdevice dev;

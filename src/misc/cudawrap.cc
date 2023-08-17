@@ -11,15 +11,8 @@
 
 #include <dlfcn.h>
 
-#ifdef MNNVL_SUPPORT
-// MNNVL requires the cuMem APIs
-#define CUMEM_ENABLE 1
-#else
-#define CUMEM_ENABLE 0
-#endif
-
 // This env var (NCCL_CUMEM_ENABLE) toggles cuMem API usage
-NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", CUMEM_ENABLE);
+NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", -2);
 
 static int ncclCuMemSupported = 0;
 

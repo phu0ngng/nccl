@@ -36,15 +36,6 @@
     }                              \
 } while(false)
 
-// Check CUDA device calls
-#define CUDACHECK_DEV(cmd) do {                                 \
-    CUresult e = cmd;                                           \
-    if( e != CUDA_SUCCESS ) {                                   \
-      WARN("Cuda dev failure %d", e);                           \
-      return ncclUnhandledCudaError;                            \
-    }                                                           \
-} while(false)
-
 #include <errno.h>
 // Check system calls
 #define SYSCHECK(call, name) do { \
