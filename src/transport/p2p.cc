@@ -146,13 +146,11 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 
   // Check that CUDA can do P2P
   int p2p;
-  if (info1->busId != info2->busId) { // MNNVL why do we need this?
-    if (cudaDeviceCanAccessPeer(&p2p, cudaDev1, cudaDev2) != cudaSuccess) {
-      INFO(NCCL_INIT|NCCL_P2P,"peer query failed between dev %d(=%lx) and dev %d(=%lx)",
-           cudaDev1, info1->busId, cudaDev2, info2->busId);
-      *ret = 0;
-      return ncclSuccess;
-    }
+  if (cudaDeviceCanAccessPeer(&p2p, cudaDev1, cudaDev2) != cudaSuccess) {
+    INFO(NCCL_INIT|NCCL_P2P,"peer query failed between dev %d(=%lx) and dev %d(=%lx)",
+         cudaDev1, info1->busId, cudaDev2, info2->busId);
+    *ret = 0;
+    return ncclSuccess;
   }
 
   // This will always fail when using NCCL_CUMEM_ENABLE=1
