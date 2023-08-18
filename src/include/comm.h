@@ -260,6 +260,7 @@ struct ncclComm {
   int* localRankToRank;
   // localRanks and localRanktoRank for all nodes
   struct ncclNodeRanks* nodeRanks;
+  int MNNVL; // MNNVL: Multi-Node NVLink
 
   bool checkPointers;
   bool dmaBufSupport;

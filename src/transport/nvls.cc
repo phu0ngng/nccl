@@ -248,7 +248,8 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
 
   int gpuCount;
   NCCLCHECK(ncclTopoGetGpuCount(comm->topo, &gpuCount));
-  if (!ncclParamNvlsEnable() || gpuCount <= 2) return ncclSuccess;
+  // NVLS is not supported on MNNVL yet
+  if (!ncclParamNvlsEnable() || gpuCount <= 2 || comm->nNodes > 1 || comm->MNNVL) return ncclSuccess;
 
   CUdevice dev;
   int driverVersion;

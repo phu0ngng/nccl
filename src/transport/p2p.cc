@@ -103,6 +103,10 @@ static void initCeOperation();
 ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   initCeOperation();
 
+  // MNNVL support
+  NCCLCHECK(ncclTopoCheckMNNVL(topo, info1, info2, ret));
+  if (*ret) return ncclSuccess;
+
   // Rule out different nodes / isolated containers
   if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {
     *ret = 0;
@@ -192,8 +196,10 @@ NCCL_PARAM(P2pDirectDisable, "P2P_DIRECT_DISABLE", 0);
 ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr) {
   if (ncclCuMemEnable()) {
 #if CUDART_VERSION >= 11030
+    CUmemAllocationHandleType type;
+    NCCLCHECK(ncclP2pHandleType(&type));
+
     // cuMem API support
-    CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
     CUmemGenericAllocationHandle handle;
     NCCLCHECK(ncclCuMemAlloc(ptr, &handle, size));
     /* Allow RW access to the newly allocated memory from all directly connected GPUs */
@@ -206,7 +212,7 @@ ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, v
       CUDACHECK(cudaGetDeviceCount(&dcnt));
       prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
       prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-      prop.requestedHandleTypes = NCCL_P2P_HANDLE_TYPE;
+      prop.requestedHandleTypes = type;
       prop.location.id = cudaDev;
       CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM));
       ALIGN_SIZE(size, granularity);
@@ -259,9 +265,11 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
 #if CUDART_VERSION >= 11030
     // cuMem API support
     CUdeviceptr dptr = 0;
-    CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
+    CUmemAllocationHandleType type;
     CUmemGenericAllocationHandle handle;
     ncclCuDesc *cuDesc = &ipcDesc->cuDesc;
+
+    NCCLCHECK(ncclP2pHandleType(&type));
 
     // Import and map the remote memory descriptor to the local GPU
     if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
@@ -382,8 +390,9 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
       // cuMem API support
       if (ncclCuMemEnable()) {
         resources->type = P2P_CUMEM;
-        INFO(NCCL_INIT|NCCL_P2P,"Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/CUMEM%s%s",
-             channelId, connIndex, myInfo->rank, myInfo->nvmlDev, peerInfo->rank, peerInfo->nvmlDev, useReadStr, useMemcpy ? "/CE" : "");;
+        const char *MNNVL = (myInfo->hostHash != peerInfo->hostHash) ? "MNNVL" : "CUMEM";
+        INFO(NCCL_INIT|NCCL_P2P,"Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/%s%s%s",
+             channelId, connIndex, myInfo->rank, myInfo->nvmlDev, peerInfo->rank, peerInfo->nvmlDev, MNNVL, useReadStr, useMemcpy ? "/CE" : "");;
       } else {
         // Legacy CUDA IPC
         resources->type = P2P_IPC;
