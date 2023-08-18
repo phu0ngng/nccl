@@ -903,15 +903,9 @@ testResult_t threadLaunch(struct testThread* thread) {
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, size_t *allocBytes) {
     nbytes += 8*unalign; // pad with size of max datatype in case all datatypes selected
-    if (local_register) {
-      NCCLCHECK(ncclMemAlloc(sendbuff, nbytes));
-      NCCLCHECK(ncclMemAlloc(recvbuff, nbytes));
-      if (datacheck) NCCLCHECK(ncclMemAlloc(expected, recvBytes));
-    } else {
-      CUDACHECK(cudaMalloc(sendbuff, nbytes));
-      CUDACHECK(cudaMalloc(recvbuff, nbytes));
-      if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
-    }
+    NCCLCHECK(ncclMemAlloc(sendbuff, nbytes));
+    NCCLCHECK(ncclMemAlloc(recvbuff, nbytes));
+    if (datacheck) NCCLCHECK(ncclMemAlloc(expected, recvBytes));
     CUDACHECK(cudaMemset(*sendbuff, 0, nbytes));
     CUDACHECK(cudaMemset(*recvbuff, 0, nbytes));
     if (datacheck) CUDACHECK(cudaMemset(*expected, 0, recvBytes));
@@ -1390,9 +1384,8 @@ char* splitMaskEnv = NULL;
       CUDACHECK(cudaSetDevice(gpus[i]));
       TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
       if (local_register) {
-        const int regAlign = 2097152;
-        NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes < regAlign ? regAlign : allocBytes, &sendRegHandles[id][i]));
-        NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes < regAlign ? regAlign : allocBytes, &recvRegHandles[id][i]));
+        NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
+        NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
       }
     }
   }
@@ -1533,15 +1526,9 @@ char* splitMaskEnv = NULL;
         NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
         NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       }
-      if (local_register) {
-        if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
-        if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
-        if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
-      } else {
-        if (sendbuffs[id][i]) CUDACHECK(cudaFree((char*)sendbuffs[id][i]));
-        if (recvbuffs[id][i]) CUDACHECK(cudaFree((char*)recvbuffs[id][i]));
-        if (datacheck) CUDACHECK(cudaFree(expected[id][i]));
-      }
+      if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
+      if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
+      if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
     }
   }
 

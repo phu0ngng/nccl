@@ -392,7 +392,7 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
     INFO(NCCL_PROXY, "recvConnect ncclProxyCallAsync opId=%p &recv->proxyConn=%p connectInfo=%p",
        opId, &recv->proxyConn, connectInfo);
     netRecvConnectArgs args = {0};
-    args.proxyRank = (int) *connectInfo->data;
+    args.proxyRank = *((int*)connectInfo);
     NCCLCHECK(ncclProxyCallAsync(comm, &recv->proxyConn, ncclProxyMsgConnect, &args, sizeof(netRecvConnectArgs), sizeof(struct connectMap), opId));
   } else {
     opId = recv;
