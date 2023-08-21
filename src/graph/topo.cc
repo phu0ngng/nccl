@@ -692,7 +692,7 @@ ncclResult_t ncclTopoGetLocal(struct ncclTopoSystem* system, int type, int index
       if (pathType) *pathType = minType;
       count = 0;
     }
-    if (paths[i].bw == maxBw && paths[i].type == minType) (*locals)[count++] = system->nodes[resultType].nodes[i].id;
+    if (paths[i].bw == maxBw && paths[i].type == minType) (*locals)[count++] = i;
   }
   *localCount = count;
   return ncclSuccess;
@@ -704,11 +704,15 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int ch
   int* localNets;
   int localNetCount;
   NCCLCHECK(ncclTopoGetLocal(system, GPU, gpu, NET, &localNets, &localNetCount, NULL));
+  int* localGpus;
+  int localGpuCount;
+  NCCLCHECK(ncclTopoGetLocal(system, NET, localNets[0], GPU, &localGpus, &localGpuCount, NULL));
   int net = system->nodes[GPU].nodes[gpu].gpu.dev;
   if (isPow2(localNetCount)) net = mirrorBits(net, localNetCount);
-  net += channelId;
-  *id = localNets[net%localNetCount];
+  net += channelId%(DIVUP(localNetCount,localGpuCount));
+  *id = system->nodes[NET].nodes[localNets[net%localNetCount]].id;
   free(localNets);
+  free(localGpus);
   return ncclSuccess;
 }
 
