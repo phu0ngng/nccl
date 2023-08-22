@@ -215,6 +215,7 @@ struct ncclProxyState {
   struct ncclSocket* listenSock;
   volatile int stop;
   CUcontext cudaCtx;
+  ncclResult_t asyncResult;
 
   // Used by main thread
   union ncclSocketAddress* peerAddresses;
