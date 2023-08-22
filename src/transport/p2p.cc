@@ -104,8 +104,10 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
   initCeOperation();
 
   // MNNVL support
-  NCCLCHECK(ncclTopoCheckMNNVL(topo, info1, info2, ret));
-  if (*ret) return ncclSuccess;
+  if (info1->hostHash != info2->hostHash) {
+    NCCLCHECK(ncclTopoCheckMNNVL(topo, info1, info2, ret));
+    if (*ret) return ncclSuccess;
+  }
 
   // Rule out different nodes / isolated containers
   if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {
