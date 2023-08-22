@@ -315,6 +315,8 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
 // Setting this to non zero causes P2P to use Reads rather than Writes
 NCCL_PARAM(P2pReadEnable, "P2P_READ_ENABLE", -2);
 
+#define P2P_SAME_PID(MYINFO, PEERINFO) ((MYINFO->hostHash == PEERINFO->hostHash) && (MYINFO->pidHash == PEERINFO->pidHash))
+
 static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* read, int* intermediateRank) {
   int p2p;
   // Queries the topology to see if the GPUs are Ampere and
@@ -327,7 +329,7 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
 }
 
 static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* proxyConn, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclP2pBuff* p2pBuff, void** devMem, void** ipcPtr) {
-  if (myInfo->pidHash == peerInfo->pidHash) {
+  if (P2P_SAME_PID(myInfo, peerInfo)) {
     if (peerInfo->cudaDev != myInfo->cudaDev) {
       // Same PID different GPUs, enable P2P access
       // Legacy CUDA IPC
@@ -343,15 +345,9 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
     *devMem = p2pBuff->directPtr;
     *ipcPtr = NULL;
   } else {
-    if ((myInfo->pidHash == peerInfo->pidHash) && (peerInfo->cudaDev == myInfo->cudaDev)) {
-      // Same PID and GPU
-      *devMem = p2pBuff->directPtr;
-      *ipcPtr = NULL;
-    } else {
-      // Different PID or different GPU
-      NCCLCHECK(ncclP2pImportShareableBuffer(comm, comm->topParentRanks[peerInfo->rank], p2pBuff->size, &p2pBuff->ipcDesc, devMem));
-      *ipcPtr = *devMem;
-    }
+    // Different PID
+    NCCLCHECK(ncclP2pImportShareableBuffer(comm, comm->topParentRanks[peerInfo->rank], p2pBuff->size, &p2pBuff->ipcDesc, devMem));
+    *ipcPtr = *devMem;
   }
   return ncclSuccess;
 }
@@ -381,7 +377,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
-    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
+    if (P2P_SAME_PID(myInfo, peerInfo) && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
       resources->type = P2P_DIRECT;
       send->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/direct pointer%s",
@@ -446,7 +442,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
-    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
+    if (P2P_SAME_PID(myInfo, peerInfo) && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
       resources->type = P2P_DIRECT;
       recv->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
     } else {
