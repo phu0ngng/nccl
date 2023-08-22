@@ -511,20 +511,15 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     // MNNVL: Request the fabric UUID and partition info
     char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
     nvmlDevice_t nvmlDev;
-    ncclResult_t res;
     NCCLCHECK(int64ToBusId(info->busId, busId));
     NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
     ((long *)&info->fabricInfo.clusterUuid)[0] = ((long *)&info->fabricInfo.clusterUuid)[1] = 0;
-    if ((res = ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo)) == ncclSuccess) {
+    (void) ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo);
+    // A non-zero UUID means we have MNNVL fabric info
+    if ((((long *)&info->fabricInfo.clusterUuid)[0]|((long *)&info->fabricInfo.clusterUuid)[1])) {
       INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx partition 0x%x",
            info->busId,
            ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1], info->fabricInfo.partitionId);
-    }
-    if ((((long *)&info->fabricInfo.clusterUuid)[0]|((long *)&info->fabricInfo.clusterUuid)[1]) == 0) {
-      // MNNVL fabric info not available
-      ((long *)&info->fabricInfo.clusterUuid)[0] = getHostHash();
-      ((long *)&info->fabricInfo.clusterUuid)[1] = commHash;
-      info->fabricInfo.partitionId = 0;
     }
   }
 
@@ -863,6 +858,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     for (int i = 0; i < nranks; i++) {
       nvmlGpuFabricInfo_t *fabricInfo1 = &comm->peerInfo[rank].fabricInfo;
       nvmlGpuFabricInfo_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
+      // A non-zero UUID means we have MNNVL fabric info
+      if ((((long *)&fabricInfo1->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) continue;
       if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
           (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
         cliqueSize++;
