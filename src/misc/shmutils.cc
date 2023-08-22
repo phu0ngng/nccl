@@ -68,7 +68,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
       SYSCHECKGOTO(fd = open(shmPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR), ret, fail);
     }
 
-    if (ftruncate(fd, realShmSize) != 0) {
+    if (fallocate(fd, 0, 0, realShmSize) != 0) {
       WARN("Error: failed to extend %s to %ld bytes", shmPath, realShmSize);
       ret = ncclSystemError;
       goto fail;
@@ -173,7 +173,7 @@ ncclResult_t ncclShmemAllgather(struct ncclComm *comm, struct ncclShmemCollBuff 
     ret = ncclInvalidArgument;
     goto exit;
   }
-  
+
   memcpy((char*)shmem->ptr[curRound] + comm->localRank * typeSize, sendbuff, typeSize);
   /* sync among local ranks */
   mycnt = __atomic_add_fetch(shmem->cnt[curRound], 1, __ATOMIC_ACQ_REL);
