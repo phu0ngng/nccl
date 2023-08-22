@@ -868,7 +868,8 @@ void* ncclProxyProgress(void *proxyState_) {
     int idle = 1;
     ncclResult_t ret = progressOps(proxyState, state, state->active, &idle);
     if (ret != ncclSuccess) {
-      INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
+      __atomic_store_n(&proxyState->asyncResult, ret, __ATOMIC_RELEASE);
+      INFO(NCCL_ALL,"%s:%d -> %d [Progress Thread]", __FILE__, __LINE__, ret);
       continue;
     }
     if (lastIdle == 0 && idle == 1) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileIdle);
@@ -881,7 +882,8 @@ void* ncclProxyProgress(void *proxyState_) {
         ret = ncclProxyGetPostedOps(proxyState, &added);
       if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
       if (ret != ncclSuccess) {
-        INFO(NCCL_ALL,"%s:%d -> %d [Proxy Thread]", __FILE__, __LINE__, ret);
+        __atomic_store_n(&proxyState->asyncResult, ret, __ATOMIC_RELEASE);
+        INFO(NCCL_ALL,"%s:%d -> %d [Progress Thread]", __FILE__, __LINE__, ret);
       }
       if (added == 0) {
         sched_yield(); // No request progressed. Let others run.
