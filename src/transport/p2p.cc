@@ -103,6 +103,12 @@ static void initCeOperation();
 ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   initCeOperation();
 
+  // MNNVL support
+  if (info1->hostHash != info2->hostHash) {
+    NCCLCHECK(ncclTopoCheckMNNVL(topo, info1, info2, ret));
+    if (*ret) return ncclSuccess;
+  }
+
   // Rule out different nodes / isolated containers
   if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {
     *ret = 0;
@@ -192,8 +198,10 @@ NCCL_PARAM(P2pDirectDisable, "P2P_DIRECT_DISABLE", 0);
 ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr) {
   if (ncclCuMemEnable()) {
 #if CUDART_VERSION >= 11030
+    CUmemAllocationHandleType type;
+    NCCLCHECK(ncclP2pHandleType(&type));
+
     // cuMem API support
-    CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
     CUmemGenericAllocationHandle handle;
     NCCLCHECK(ncclCuMemAlloc(ptr, &handle, size));
     /* Allow RW access to the newly allocated memory from all directly connected GPUs */
@@ -206,7 +214,7 @@ ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, v
       CUDACHECK(cudaGetDeviceCount(&dcnt));
       prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
       prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-      prop.requestedHandleTypes = NCCL_P2P_HANDLE_TYPE;
+      prop.requestedHandleTypes = type;
       prop.location.id = cudaDev;
       CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM));
       ALIGN_SIZE(size, granularity);
@@ -259,9 +267,11 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
 #if CUDART_VERSION >= 11030
     // cuMem API support
     CUdeviceptr dptr = 0;
-    CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
+    CUmemAllocationHandleType type;
     CUmemGenericAllocationHandle handle;
     ncclCuDesc *cuDesc = &ipcDesc->cuDesc;
+
+    NCCLCHECK(ncclP2pHandleType(&type));
 
     // Import and map the remote memory descriptor to the local GPU
     if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
@@ -307,6 +317,8 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
 // Setting this to non zero causes P2P to use Reads rather than Writes
 NCCL_PARAM(P2pReadEnable, "P2P_READ_ENABLE", -2);
 
+#define P2P_SAME_PID(MYINFO, PEERINFO) ((MYINFO->hostHash == PEERINFO->hostHash) && (MYINFO->pidHash == PEERINFO->pidHash))
+
 static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* read, int* intermediateRank) {
   int p2p;
   // Queries the topology to see if the GPUs are Ampere and
@@ -319,7 +331,7 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
 }
 
 static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* proxyConn, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclP2pBuff* p2pBuff, void** devMem, void** ipcPtr) {
-  if (myInfo->pidHash == peerInfo->pidHash) {
+  if (P2P_SAME_PID(myInfo, peerInfo)) {
     if (peerInfo->cudaDev != myInfo->cudaDev) {
       // Same PID different GPUs, enable P2P access
       // Legacy CUDA IPC
@@ -335,15 +347,9 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
     *devMem = p2pBuff->directPtr;
     *ipcPtr = NULL;
   } else {
-    if ((myInfo->pidHash == peerInfo->pidHash) && (peerInfo->cudaDev == myInfo->cudaDev)) {
-      // Same PID and GPU
-      *devMem = p2pBuff->directPtr;
-      *ipcPtr = NULL;
-    } else {
-      // Different PID or different GPU
-      NCCLCHECK(ncclP2pImportShareableBuffer(comm, comm->topParentRanks[peerInfo->rank], p2pBuff->size, &p2pBuff->ipcDesc, devMem));
-      *ipcPtr = *devMem;
-    }
+    // Different PID
+    NCCLCHECK(ncclP2pImportShareableBuffer(comm, comm->topParentRanks[peerInfo->rank], p2pBuff->size, &p2pBuff->ipcDesc, devMem));
+    *ipcPtr = *devMem;
   }
   return ncclSuccess;
 }
@@ -373,7 +379,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
-    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
+    if (P2P_SAME_PID(myInfo, peerInfo) && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
       resources->type = P2P_DIRECT;
       send->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/direct pointer%s",
@@ -382,8 +388,9 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
       // cuMem API support
       if (ncclCuMemEnable()) {
         resources->type = P2P_CUMEM;
-        INFO(NCCL_INIT|NCCL_P2P,"Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/CUMEM%s%s",
-             channelId, connIndex, myInfo->rank, myInfo->nvmlDev, peerInfo->rank, peerInfo->nvmlDev, useReadStr, useMemcpy ? "/CE" : "");;
+        const char *MNNVL = comm->MNNVL ? "MNNVL" : "CUMEM";
+        INFO(NCCL_INIT|NCCL_P2P,"Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/%s%s%s",
+             channelId, connIndex, myInfo->rank, myInfo->nvmlDev, peerInfo->rank, peerInfo->nvmlDev, MNNVL, useReadStr, useMemcpy ? "/CE" : "");;
       } else {
         // Legacy CUDA IPC
         resources->type = P2P_IPC;
@@ -437,7 +444,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
-    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
+    if (P2P_SAME_PID(myInfo, peerInfo) && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
       resources->type = P2P_DIRECT;
       recv->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
     } else {

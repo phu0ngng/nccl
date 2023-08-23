@@ -505,6 +505,24 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   NCCLCHECK(ncclGpuGdrSupport(comm, &info->gdrSupport));
   info->comm = comm;
   info->cudaCompCap = comm->minCompCap = comm->maxCompCap = comm->compCap;
+
+  // MNNVL support
+  {
+    // MNNVL: Request the fabric UUID and partition info
+    char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+    nvmlDevice_t nvmlDev;
+    NCCLCHECK(int64ToBusId(info->busId, busId));
+    NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
+    ((long *)&info->fabricInfo.clusterUuid)[0] = ((long *)&info->fabricInfo.clusterUuid)[1] = 0;
+    (void) ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo);
+    // A non-zero UUID means we have MNNVL fabric info
+    if ((((long *)&info->fabricInfo.clusterUuid)[0]|((long *)&info->fabricInfo.clusterUuid)[1])) {
+      INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx partition 0x%x",
+           info->busId,
+           ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1], info->fabricInfo.partitionId);
+    }
+  }
+
   return ncclSuccess;
 }
 
@@ -548,8 +566,9 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
 
-  if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
-  else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
+  // MNNVL support
+  if (!comm->MNNVL && comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
+  else if (comm->MNNVL || ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
 
   // Make sure P2P chunksize is not larger than coll chunksize.
@@ -774,6 +793,9 @@ fail:
   goto exit;
 }
 
+// MNNVL: Flag to indicate whether to enable Multi-Node NVLink
+NCCL_PARAM(MNNVL, "MNNVL", -2);
+
 static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* parent = NULL) {
   // We use 2 AllGathers
   // 1. { peerInfo, comm, compCap}
@@ -827,6 +849,27 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   }
   // AllGather1 - end
+
+  // MNNVL support
+  {
+    int cliqueSize = 0;
+    comm->MNNVL = 0;
+    // Determine the size of the MNNVL domain/clique
+    for (int i = 0; i < nranks; i++) {
+      nvmlGpuFabricInfo_t *fabricInfo1 = &comm->peerInfo[rank].fabricInfo;
+      nvmlGpuFabricInfo_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
+      // A non-zero UUID means we have MNNVL fabric info
+      if ((((long *)&fabricInfo1->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) continue;
+      if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
+          (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
+        cliqueSize++;
+      }
+    }
+    // Determine whether this is a MNNVL system
+    comm->MNNVL = ncclParamMNNVL() < 0 ? cliqueSize == comm->nRanks : ncclParamMNNVL();
+    // MNNVL requires cuMem to be enabled
+    if (!ncclCuMemEnable()) comm->MNNVL = 0;
+  }
 
   do {
     // Compute intra-process ranks
@@ -1024,6 +1067,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     ret = ncclInternalError;
     goto fail;
   }
+
+  INFO(NCCL_INIT, "comm %p rank %d nRanks %d nNodes %d localRanks %d localRank %d MNNVL %d",
+       comm, rank, comm->nRanks, comm->nNodes, comm->localRanks, comm->localRank, comm->MNNVL);
 
   nChannelsOrig = comm->nChannels;
   NCCLCHECKGOTO(ncclCalloc(&allTopoRanks, comm->nRanks), ret, fail);
