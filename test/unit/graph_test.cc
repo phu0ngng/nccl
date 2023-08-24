@@ -263,6 +263,7 @@ int main(int argc, const char* argv[]) {
     RUN("ZionEX");
     RUN("FB-V100");
     RUN("DGX-H800");
+    RUN("DGX-H800-4NIC");
     RUN("Viking");
     RUN("Viking-SHARP");
     RUN("Viking-SHARP-4PPN");
