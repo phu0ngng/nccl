@@ -523,6 +523,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
   int netcount;
   NCCLCHECK(ncclTopoSelectNets(system, graph->typeInter, -1, nets, &netcount));
   for (int i=0; i<netcount; i++) {
+    if (graph->pattern == NCCL_TOPO_PATTERN_NVLS && i>0) continue;
     int n = nets[(graph->nChannels+i)%netcount];
     struct ncclTopoNode* net = system->nodes[NET].nodes+n;
     struct ncclTopoNode* gpu;
@@ -539,12 +540,12 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
       }
     }
 
-    // NVLS needs to balance on all NICs
     if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) {
+      // NVLS search only tries to find NIC:GPU combinations to compute the heads.
       if (graph->nChannels < netcount) {
         int gpu;
-        NCCLCHECK(ncclTopoGetLocalGpu(system, system->nodes[NET].nodes[nets[graph->nChannels]].id, &gpu));
-        if (gpu != -1) NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, -1, -1, gpu));
+        NCCLCHECK(ncclTopoGetLocalGpu(system, net->id, &gpu));
+        if (gpu != -1) NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, gpu));
       }
     } else {
       if (graph->nChannels > 0) {
