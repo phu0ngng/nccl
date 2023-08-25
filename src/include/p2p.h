@@ -23,7 +23,7 @@ typedef CUmemFabricHandle_v1 CUmemFabricHandle;
 
 typedef union {
   uint64_t data; // Needs to hold a CUmemGenericAllocationHandle for UDS fd support
-  CUmemGenericAllocationHandle handle;
+  CUmemFabricHandle handle;
 } ncclCuDesc;
 
 typedef union {
