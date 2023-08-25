@@ -1,0 +1,24 @@
+<system version="1">
+  <cpu numaid="-1" arch="x86_64" vendor="GenuineIntel" familyid="6" modelid="134">
+    <pci busid="0000:00:0a.0" class="0x030200" vendor="0x10de" device="0x20b0" subsystem_vendor="0x10de" subsystem_device="0x134f" link_speed="" link_width="0">
+      <gpu dev="0" sm="80" rank="0" gdr="1">
+        <nvlink target="0000:00:13.0" count="2" tclass="0x068000"/>
+        <nvlink target="0000:00:16.0" count="2" tclass="0x068000"/>
+        <nvlink target="0000:00:14.0" count="2" tclass="0x068000"/>
+        <nvlink target="0000:00:15.0" count="2" tclass="0x068000"/>
+        <nvlink target="0000:00:12.0" count="2" tclass="0x068000"/>
+        <nvlink target="0000:00:17.0" count="2" tclass="0x068000"/>
+      </gpu>
+    </pci>
+    <pci busid="0000:00:00.0" class="0x060000" vendor="0x8086" device="0x1237" subsystem_vendor="0x1af4" subsystem_device="0x1100" link_speed="" link_width="0">
+      <nic>
+        <net name="mlx5_0" dev="0" speed="200000" port="1" latency="0.000000" guid="0x1ea5370003f6ceb8" maxconn="131072" gdr="1"/>
+      </nic>
+    </pci>
+    <pci busid="0000:00:10.0" class="0x030200" vendor="0x10de" device="0x20b0" subsystem_vendor="0x10de" subsystem_device="0x134f" link_speed="" link_width="0">
+      <nic>
+        <net name="mlx5_1" dev="1" speed="200000" port="1" latency="0.000000" guid="0x969c370003f6ceb8" maxconn="131072" gdr="1"/>
+      </nic>
+    </pci>
+  </cpu>
+</system>
