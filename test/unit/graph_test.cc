@@ -139,8 +139,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   treeGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &treeGraph));
   CHECK(ncclTopoPrintGraph(system, &treeGraph));
-  cNetGraph.minChannels = 1;
-  cNetGraph.maxChannels = ringGraph.nChannels;
+  cNetGraph.minChannels = cNetGraph.maxChannels = ringGraph.nChannels;
   CHECK(ncclTopoCompute(system, &cNetGraph));
   CHECK(ncclTopoPrintGraph(system, &cNetGraph));
   nvlsGraph.minChannels = 1;
