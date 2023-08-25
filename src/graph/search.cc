@@ -523,7 +523,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
   int netcount;
   NCCLCHECK(ncclTopoSelectNets(system, graph->typeInter, -1, nets, &netcount));
   for (int i=0; i<netcount; i++) {
-    int n = nets[i];
+    int n = nets[(graph->nChannels+i)%netcount];
     struct ncclTopoNode* net = system->nodes[NET].nodes+n;
     struct ncclTopoNode* gpu;
     if (graph->collNet && net->net.collSupport == 0) continue;
