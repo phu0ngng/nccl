@@ -194,36 +194,6 @@ ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, v
     CUmemAllocationHandleType type = NCCL_P2P_HANDLE_TYPE;
     CUmemGenericAllocationHandle handle;
     NCCLCHECK(ncclCuMemAlloc(ptr, &handle, size));
-    /* Allow RW access to the newly allocated memory from all directly connected GPUs */
-    {
-      int cudaDev;
-      int dcnt;
-      size_t granularity = 0;
-      CUmemAllocationProp prop = {};
-      CUDACHECK(cudaGetDevice(&cudaDev));
-      CUDACHECK(cudaGetDeviceCount(&dcnt));
-      prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
-      prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-      prop.requestedHandleTypes = NCCL_P2P_HANDLE_TYPE;
-      prop.location.id = cudaDev;
-      CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM));
-      ALIGN_SIZE(size, granularity);
-      for (int d=0; d < dcnt; d++) {
-        int p2p;
-        p2p = 0;
-        if (d == cudaDev) continue;
-        /* Also allow access from any directly connected GPUs
-         * Needed for P2P_DIRECT support
-         */
-        if ((cudaDeviceCanAccessPeer(&p2p, cudaDev, d) == cudaSuccess) && p2p) {
-          CUmemAccessDesc accessDesc = {};
-          accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-          accessDesc.location.id = d;
-          accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-          CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
-        }
-      }
-    }
     if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
       // Return the native cuMem handle for later Export/Import via UDS
       memcpy(&ipcDesc->cuDesc.data, &handle, sizeof(handle));
@@ -318,7 +288,7 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
 }
 
 static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* proxyConn, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclP2pBuff* p2pBuff, void** devMem, void** ipcPtr) {
-  if (myInfo->pidHash == peerInfo->pidHash) {
+  if (!ncclCuMemEnable() && myInfo->pidHash == peerInfo->pidHash) {
     if (peerInfo->cudaDev != myInfo->cudaDev) {
       // Same PID different GPUs, enable P2P access
       // Legacy CUDA IPC
@@ -372,7 +342,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
-    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
+    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0 && !ncclCuMemEnable()) {
       resources->type = P2P_DIRECT;
       send->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/direct pointer%s",
@@ -436,7 +406,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 
   if (intermediateRank == -1) {
     info->rank = myInfo->rank;
-    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
+    if (myInfo->pidHash == peerInfo->pidHash && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0 && !ncclCuMemEnable()) {
       resources->type = P2P_DIRECT;
       recv->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
     } else {
