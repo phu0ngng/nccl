@@ -24,6 +24,13 @@ typedef ncclResult_t (*proxyProgressFunc_t)(struct ncclProxyState*, struct ncclP
 #define NCCL_PROXY_MAX_SUBS MAXCHANNELS
 static_assert(NCCL_MAX_WORK_ELEMENTS <= MAXCHANNELS, "Not enough sub space for max work elements");
 
+union ncclProxyOpSpecifics {
+  struct {
+    size_t sizePerRank;
+    int nNodes, node;
+  } collnetDirect;
+};
+
 struct ncclProxyOp {
   struct ncclProxyConnection* connection;
   int channelId;
@@ -33,21 +40,19 @@ struct ncclProxyOp {
   int next;
 
   uint64_t opCount;
-  int sliceSteps;
-  int chunkSteps;
   int chunkSize;
+  uint8_t sliceSteps;
+  uint8_t chunkSteps;
   uint8_t /*ncclDataType_t*/ dtype;
   uint8_t /*ncclDevRedOp_t*/ redOp;
   uint8_t /*ncclPattern_t*/ pattern;
+  uint8_t /*ncclFunc_t*/ coll;
   uint8_t protocol;
 
-  union {
-    uint64_t unused;
-    // For use by enqueue.cc
-    struct ncclProxyOp *enqNext;
-  };
+  union ncclProxyOpSpecifics specifics;
+
+  struct ncclProxyOp *enqNext;
 };
-static_assert(sizeof(struct ncclProxyOp) == 64, "Keep ProxyOp aligned with cache lines for effective prefetch");
 
 struct ncclProxySubArgs {
   struct ncclProxyConnection* connection;
@@ -82,6 +87,7 @@ struct ncclProxyArgs {
   uint8_t /*ncclDataType_t*/ dtype;
   uint8_t /*ncclDevRedOp_t*/ redOp;
   uint8_t /*ncclPattern_t*/ pattern;
+  uint8_t /*ncclFunc_t*/ coll;
   uint8_t protocol;
   int state;
   char* sharedBuff[NCCL_STEPS];
@@ -93,6 +99,8 @@ struct ncclProxyArgs {
   struct ncclProxyArgs* next;
   struct ncclProxyArgs* nextPeer;
   struct ncclProxyArgs** proxyAppendPtr;
+
+  union ncclProxyOpSpecifics specifics;
 };
 #define NCCL_MAX_NETDEVS 128
 

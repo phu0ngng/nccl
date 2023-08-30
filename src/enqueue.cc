@@ -1243,7 +1243,7 @@ static ncclResult_t topoGetAlgoInfo(struct ncclInfo* info, int collNetSupport, i
       info->algorithm = backupAlgo;
       info->protocol = backupProto;
     }
-    //if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
+    if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
     TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", info->nBytes, info->algorithm, info->protocol, minTime);
   }
 
@@ -1310,9 +1310,7 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
       info->pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUp : ncclPatternPipelineTo; break;
     case ncclFuncReduceScatter:
     case ncclFuncAllGather:
-      info->pattern =
-        info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
-        ncclPatternRing; break;
+      info->pattern = info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect : ncclPatternRing; break;
     case ncclFuncAllReduce:
       info->pattern =
         info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
@@ -1450,11 +1448,20 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
   proxyOp->redOp = info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
                      info->opFull.proxyOp;
   proxyOp->pattern = info->pattern;
+  proxyOp->coll = info->coll;
   proxyOp->root = info->root;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
   // because some protocols need to transmit more than the total size, plus they sometimes
   // round up
   proxyOp->nbytes = stepSize*proxyOp->sliceSteps;
+
+  if (info->pattern == ncclPatternCollnetDirect) {
+    proxyOp->specifics.collnetDirect.nNodes = info->comm->nNodes;
+    proxyOp->specifics.collnetDirect.node = info->comm->node;
+    if (info->coll == ncclFuncAllGather || info->coll == ncclFuncReduceScatter) {
+      proxyOp->specifics.collnetDirect.sizePerRank = info->count*ncclTypeSize(info->datatype);
+    }
+  }
 
   TRACE(NCCL_COLL,"opCount %lx slicesteps %d spl %d cpl %d nbytes %zi -> protocol %d nchannels %d nthreads %d, nloops %d nsteps %d chunksize %d comm %p",
       proxyOp->opCount, sliceSteps, info->nstepsPerLoop, info->nchunksPerLoop, info->nBytes, info->protocol, info->nChannels, info->nThreads,

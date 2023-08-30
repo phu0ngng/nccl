@@ -31,6 +31,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
     channel->collnetDirect.headRank = -1;
     channel->collnetDirect.nHeads = 0;
     channel->collnetDirect.shift = 0;
+    for (int i=0; i<NCCL_MAX_DIRECT_ARITY+1; i++) channel->collnetDirect.heads[i] = -1;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->collnetDirect.up[i] = -1;
     for (int i=0; i<NCCL_MAX_DIRECT_ARITY; i++) channel->collnetDirect.down[i] = -1;
 
@@ -224,6 +225,15 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
       if (rank == heads[h]) continue;
       channel->collnetDirect.up[nUp++] = heads[h];
       sprintf(line+strlen(line), " %d ", heads[h]);
+    }
+    sprintf(line+strlen(line), "heads ");
+    { // heads[] is the list of heads ordered in head order startubg with self
+      int h0 = (channel->collnetDirect.headRank == -1) ? 0 : channel->collnetDirect.headRank;
+      for (int h1=0; h1 < nHeads; h1++) {
+        int h = (h0+h1)%nHeads;
+        channel->collnetDirect.heads[h1] = heads[h];
+        sprintf(line+strlen(line), " %d ", heads[h]);
+      }
     }
     channel->collnetDirect.nHeads = nHeads;
     channel->collnetDirect.shift = (rank%localRanks)%nHeads; // Shift by intraRank so that leaves don't send to same head simultaneously

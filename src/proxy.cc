@@ -353,7 +353,6 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
     WARN("Proxy append out of bounds");
     return ncclInternalError;
   }
-
   //memset(sub, 0, sizeof(struct ncclProxySubArgs));
   sub->connection = op->connection;
   sub->channelId = op->channelId;
@@ -366,7 +365,8 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
         (args->chunkSteps != op->chunkSteps) ||
         (args->protocol != op->protocol) ||
         (args->dtype != op->dtype) ||
-        (args->redOp != op->redOp)) {
+        (args->redOp != op->redOp) ||
+        (args->coll != op->coll)) {
       WARN("Proxy append mismatch");
       return ncclInternalError;
     }
@@ -386,6 +386,8 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   args->redOp = op->redOp;
   args->pattern = op->pattern;
   args->protocol = op->protocol;
+  args->coll = op->coll;
+  args->specifics = op->specifics;
   args->state = ncclProxyOpReady;
   args->progress = op->connection->tcomm->proxyProgress;
   args->proxyAppendPtr = op->connection->proxyAppendPtr;
@@ -567,6 +569,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       NCCLCHECK(SaveProxy(comm, channel, proxySend, channel->collnetDirect.out, op, 1, justInquire));
       NCCLCHECK(SaveProxy(comm, channel, proxyRecv, channel->collnetDirect.out, op, 0, justInquire));
     } break;
+  case ncclPatternNvlsRsAg:
   case ncclPatternNvls: {
       NCCLCHECK(SaveProxy(comm, channel, proxySend, channel->nvls.out, op, 1, justInquire));
       NCCLCHECK(SaveProxy(comm, channel, proxyRecv, channel->nvls.out, op, 0, justInquire));

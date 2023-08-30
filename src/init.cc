@@ -415,6 +415,8 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   comm->devComm = &devCommAndChans->comm;
   tmpCommAndChans.comm.rank = comm->rank;
   tmpCommAndChans.comm.nRanks = nRanks;
+  tmpCommAndChans.comm.node = comm->node;
+  tmpCommAndChans.comm.nNodes = comm->nNodes;
   tmpCommAndChans.comm.abortFlag = comm->abortFlag;
   for (int p=0; p < NCCL_NUM_PROTOCOLS; p++) {
     tmpCommAndChans.comm.buffSizes[p] = comm->buffSizes[p];
@@ -446,6 +448,12 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   ncclCommPushCudaHostFree(comm, comm->workFifoDone);
   comm->workFifoSent = 0;
   comm->workFifoAckdMin = 0;
+
+  if (comm->collNetDenseToUserRank != nullptr) {
+    NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.collNetDenseToUserRank, nRanks, comm->sharedRes->deviceStream.cudaStream), ret, fail);
+    ncclCommPushCudaFree(comm, tmpCommAndChans.comm.collNetDenseToUserRank);
+    NCCLCHECKGOTO(ncclCudaMemcpyAsync(tmpCommAndChans.comm.collNetDenseToUserRank, comm->collNetDenseToUserRank, nRanks, comm->sharedRes->deviceStream.cudaStream), ret, fail);
+  }
 
   for (int c=0; c < MAXCHANNELS; c++) {
     tmpCommAndChans.channels[c].peers = comm->channels[c].devPeers;
@@ -577,6 +585,8 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   int highestTypes[NCCL_MAX_LOCAL_RANKS] = { TRANSPORT_P2P };
   // Find all head ranks
   int nHeads = collNetGraph->nChannels;
+  int nHeadsUnique = 0;
+  int headsUnique[NCCL_MAX_LOCAL_RANKS];
   int highestTransportType0, highestTransportType1;
   char line[1024];
   bool share;
@@ -588,9 +598,15 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   struct collnetShareInfo* infos = NULL;
 
   NCCLCHECKGOTO(ncclCalloc(&heads, nHeads), ret, fail);
-  // Head GPU index is always 0
-  for (int c = 0; c < nHeads; c++) {
-    heads[c] = collNetGraph->intra[c * comm->localRanks + 0];
+  { uint64_t mask = 0;
+    // Head GPU index is always 0
+    for (int c = 0; c < nHeads; c++) {
+      heads[c] = collNetGraph->intra[c * comm->localRanks + 0];
+      assert(comm->rankToNode[heads[c]] == comm->node);
+      uint64_t mask0 = mask;
+      mask |= 1ull<<comm->rankToLocalRank[heads[c]];
+      if (mask != mask0) headsUnique[nHeadsUnique++] = heads[c];
+    }
   }
 
   comm->collNetHeads = heads;
@@ -655,6 +671,26 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
     NCCLCHECK(ncclCalloc(&comm->collNetSharedRes, 1));
     comm->collNetChannels = comm->collNetSharedRes->nChannels = comm->nChannels;
     comm->collNetSharedRes->buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
+
+    comm->collNetDenseToUserRank = ncclMemoryStackAlloc<int>(&comm->memPermanent, comm->nRanks);
+    comm->collNetUserToDenseRank = ncclMemoryStackAlloc<int>(&comm->memPermanent, comm->nRanks);
+    { // initialize collNetUserToDenseRank[rank]
+      uint64_t nonHeadMask = (1ull<<comm->localRanks)-1;
+      comm->collNetUserToDenseRank[rank] = -1;
+      for (int h=0; h < nHeadsUnique; h++) {
+        nonHeadMask ^= 1ull<<comm->rankToLocalRank[headsUnique[h]];
+        if (headsUnique[h] == rank) { comm->collNetUserToDenseRank[rank] = h; break; }
+      }
+      if (comm->collNetUserToDenseRank[rank] == -1) {
+        comm->collNetUserToDenseRank[rank] = __builtin_popcountll(nonHeadMask & ((1ull<<comm->localRank)-1));
+      }
+      comm->collNetUserToDenseRank[rank] += comm->node*comm->localRanks;
+    }
+    NCCLCHECK(bootstrapAllGather(comm->bootstrap, comm->collNetUserToDenseRank, sizeof(int)));
+    for (int r=0; r < comm->nRanks; r++) {
+      comm->collNetDenseToUserRank[comm->collNetUserToDenseRank[r]] = r;
+    }
+
     for (int c = 0; c < comm->collNetChannels; c++) {
       struct ncclChannel* channel = comm->channels + c;
       NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, false), ret, fail);

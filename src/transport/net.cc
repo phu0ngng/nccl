@@ -752,7 +752,8 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   resources->recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, cpu, recvMem);
 
   // Don't give credits yet in shared mode.
-  resources->sendMem->head = map->shared ? -NCCL_STEPS : 0;
+  (resources->gdcSync ? *resources->gdcSync : resources->sendMem->head) =
+    (map->shared ? -NCCL_STEPS : 0);
   for (int i=0; i<NCCL_STEPS; i++) resources->recvMem->sizesFifo[i] = -1;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
