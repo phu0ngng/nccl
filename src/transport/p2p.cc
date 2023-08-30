@@ -300,7 +300,7 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
 }
 
 static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* proxyConn, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclP2pBuff* p2pBuff, void** devMem, void** ipcPtr) {
-  if (P2P_SAME_PID(myInfo, peerInfo)) {
+  if (!ncclCuMemEnable() && P2P_SAME_PID(myInfo, peerInfo)) {
     if (peerInfo->cudaDev != myInfo->cudaDev) {
       // Same PID different GPUs, enable P2P access
       // Legacy CUDA IPC
@@ -316,7 +316,7 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
     *devMem = p2pBuff->directPtr;
     *ipcPtr = NULL;
   } else {
-    // Different PID
+    // Different PID or CUMEM enabled
     NCCLCHECK(ncclP2pImportShareableBuffer(comm, comm->topParentRanks[peerInfo->rank], p2pBuff->size, &p2pBuff->ipcDesc, devMem));
     *ipcPtr = *devMem;
   }
