@@ -17,10 +17,15 @@ static int tunerPluginRefCount;
 static void* tunerPluginLib = nullptr;
 ncclTuner_t* tunerSymbol = nullptr;
 
-static void* tryOpenDynamicLib(const char* name) {
+static void* tryOpenLib(const char* name) {
   if (nullptr == name || strlen(name) == 0) {
     return nullptr;
   }
+
+  if (strncasecmp(name, "STATIC_PLUGIN", strlen(name)) == 0) {
+    name = nullptr;
+  }
+
   void *handle = dlopen(name, RTLD_LAZY | RTLD_LOCAL);
   if (nullptr == handle) {
     if (ENOENT == errno) {
@@ -63,7 +68,7 @@ static void* openTunerPluginLib(void) {
   if (envTunerPluginName && strlen(envTunerPluginName)) {
     INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: NCCL_TUNER_PLUGIN set to %s", envTunerPluginName);
     snprintf(tunerPluginLibName, PATH_MAX, "%s", envTunerPluginName);
-    pluginLib = tryOpenDynamicLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName);
     if (pluginLib) {
       INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
       return pluginLib;
@@ -72,7 +77,7 @@ static void* openTunerPluginLib(void) {
     snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
 
     snprintf(tunerPluginLibName, PATH_MAX, "libnccl-tuner-%s.so", envTunerPluginName);
-    pluginLib = tryOpenDynamicLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName);
     if (pluginLib) {
       INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
       return pluginLib;
@@ -81,7 +86,7 @@ static void* openTunerPluginLib(void) {
     snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
   } else {
     snprintf(tunerPluginLibName, PATH_MAX, "libnccl-tuner.so");
-    pluginLib = tryOpenDynamicLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName);
     if (pluginLib) {
       return pluginLib;
     }
@@ -93,7 +98,7 @@ static void* openTunerPluginLib(void) {
   if (envNetPluginName && strlen(envNetPluginName)) {
     // Users are allowed to pack tuner into the net plugin
     snprintf(tunerPluginLibName, PATH_MAX, "%s", envNetPluginName);
-    pluginLib = tryOpenDynamicLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName);
     if (pluginLib) {
       INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
       return pluginLib;
@@ -102,7 +107,7 @@ static void* openTunerPluginLib(void) {
     snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
 
     snprintf(tunerPluginLibName, PATH_MAX, "libnccl-net-%s.so", envNetPluginName);
-    pluginLib = tryOpenDynamicLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName);
     if (pluginLib) {
       INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
       return pluginLib;
@@ -111,7 +116,7 @@ static void* openTunerPluginLib(void) {
     snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
   } else {
     snprintf(tunerPluginLibName, PATH_MAX, "libnccl-net.so");
-    pluginLib = tryOpenDynamicLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName);
     if (pluginLib) {
       return pluginLib;
     }
