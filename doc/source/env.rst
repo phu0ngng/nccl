@@ -94,6 +94,16 @@ Examples:
 
 Note: By default, the loopback interface (``lo``) and docker interfaces (``docker*``) would not be selected unless there are no other interfaces available. If you prefer to use ``lo`` or ``docker*`` over other interfaces, you would need to explicitly select them using ``NCCL_SOCKET_IFNAME``. The default algorithm will also favor interfaces starting with ``ib`` over others. Setting ``NCCL_SOCKET_IFNAME`` will bypass the automatic interface selection algorithm and may use all interfaces matching the manual selection.
 
+NCCL_SOCKET_FAMILY
+------------------
+
+The ``NCCL_SOCKET_FAMILY`` variable allows users to force NCCL to use only IPv4 or IPv6 interface.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Set to ``AF_INET`` to force the use of IPv4, or ``AF_INET6`` to force IPv6 usage.
+
 NCCL_SOCKET_NTHREADS
 --------------------
 (since 2.4.8)
