@@ -821,13 +821,28 @@ ncclResult_t ncclTopoGetXmlFromGraphs(int ngraphs, struct ncclTopoGraph** graphs
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoDupChannels(struct ncclTopoGraph* graph, int ccMin, int ngpus) {
+  if (graph->nChannels == 0) return ncclSuccess;
+  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) return ncclSuccess;
+  if (graph->bwIntra < 25.0) return ncclSuccess;
+  if (ccMin > 80 && graph->bwIntra < 50.0 && graph->nChannels > 4) return ncclSuccess;
+
+  int dupChannels = std::min(graph->nChannels*2, graph->maxChannels);
+  memcpy(graph->intra+graph->nChannels*ngpus, graph->intra, (dupChannels-graph->nChannels)*ngpus*sizeof(int));
+  memcpy(graph->inter+graph->nChannels*2,graph->inter, (dupChannels-graph->nChannels)*2*sizeof(int));
+  graph->bwIntra /= DIVUP(dupChannels, graph->nChannels);
+  graph->bwInter /= DIVUP(dupChannels, graph->nChannels);
+  graph->nChannels = dupChannels;
+  return ncclSuccess;
+}
+
 float speedArrayIntra[] = { 40.0, 30.0, 20.0, 18.0, 15.0, 12.0, 10.0, 9.0, 7.0, 6.0, 5.0, 4.0, 3.0 };
 float speedArrayInter[] = { 48.0, 30.0, 28.0, 24.0, 20.0, 18.0, 15.0, 12.0, 10.0, 9.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
 #define NSPEEDSINTRA (sizeof(speedArrayIntra)/sizeof(float))
 #define NSPEEDSINTER (sizeof(speedArrayInter)/sizeof(float))
 
 float sm90SpeedArrayIntra[] = { 60.0, 40.0, 30.0, 24.0, 20.0, 15.0, 12.0, 6.0, 3.0 };
-float sm90SpeedArrayInter[] = { 48.0, 45.0, 42.0, 40.0, 30.0, 24.0, 20.0, 17.5, 15.0, 12.0, 6.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
+float sm90SpeedArrayInter[] = { 48.0, 45.0, 42.0, 40.0, 30.0, 24.0, 22.0, 20.0, 17.5, 15.0, 12.0, 6.0, 3.0, 2.4, 1.2, 0.24, 0.12 };
 #define NSPEEDSINTRA_SM90 (sizeof(sm90SpeedArrayIntra)/sizeof(float))
 #define NSPEEDSINTER_SM90 (sizeof(sm90SpeedArrayInter)/sizeof(float))
 
@@ -971,6 +986,7 @@ done:
   // We have a solution. Start from that solution and move to pass 2.
   if (pass == 1) {
     time = -1;
+    NCCLCHECK(ncclTopoDupChannels(graph, ccMin, ngpus));
     memcpy(&tmpGraph, graph, sizeof(tmpGraph));
     speedIndex = 0;
     while (speedArray[speedIndex] > graph->bwInter && speedIndex < nspeeds-1) speedIndex++;
@@ -979,13 +995,18 @@ done:
     pass = 2;
   }
 
-  // 3. See if we can increase bwIntra for trees (2 nodes or collnet)
   if (pass == 2) {
-    if (time != 0 && graph->pattern != NCCL_TOPO_PATTERN_RING &&
-        tmpGraph.bwIntra == graph->bwIntra && tmpGraph.bwIntra < tmpGraph.bwInter*2 &&
-        speedIndex > 0) {
-      tmpGraph.bwIntra = speedArray[--speedIndex];
-      goto search;
+  // See if we can increase bw
+    if (time != 0 && speedIndex > 0) {
+      if (graph->pattern == NCCL_TOPO_PATTERN_RING) {
+        // increase bw for Ring
+        tmpGraph.bwIntra = tmpGraph.bwInter = speedArray[--speedIndex];
+        goto search;
+      } else if (tmpGraph.bwIntra == graph->bwIntra && tmpGraph.bwIntra < tmpGraph.bwInter*2) {
+        // increase bwIntra for trees (2 nodes or collnet)
+        tmpGraph.bwIntra = speedArray[--speedIndex];
+        goto search;
+      }
     }
     time = -1;
     memcpy(&tmpGraph, graph, sizeof(tmpGraph));
@@ -999,18 +1020,6 @@ done:
     graph->typeIntra = graph->typeInter = PATH_SYS;
     graph->nChannels = 1;
   }
-
-  if (graph->nChannels == 0) return ncclSuccess;
-  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) return ncclSuccess;
-  if (graph->bwIntra < 25.0) return ncclSuccess;
-  if (ccMin > 80 && graph->bwIntra < 50.0 && graph->nChannels > 4) return ncclSuccess;
-
-  int dupChannels = std::min(graph->nChannels*2, graph->maxChannels);
-  memcpy(graph->intra+graph->nChannels*ngpus, graph->intra, (dupChannels-graph->nChannels)*ngpus*sizeof(int));
-  memcpy(graph->inter+graph->nChannels*2,graph->inter, (dupChannels-graph->nChannels)*2*sizeof(int));
-  graph->bwIntra /= DIVUP(dupChannels, graph->nChannels);
-  graph->bwInter /= DIVUP(dupChannels, graph->nChannels);
-  graph->nChannels = dupChannels;
   return ncclSuccess;
 }
 
