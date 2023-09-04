@@ -848,14 +848,13 @@ float sm90SpeedArrayInter[] = { 48.0, 45.0, 42.0, 40.0, 30.0, 24.0, 22.0, 20.0, 
 
 ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
-  graph->crossNic = ncclParamCrossNic();
-  int crossNic = (system->nodes[NET].count > 1) && graph->crossNic &&
+  int crossNic = (system->nodes[NET].count > 1) &&
 	 (graph->pattern == NCCL_TOPO_PATTERN_RING ||
-	  graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE ||
-	  graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) ? 1 : 0;
+          graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE ||
+          graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE) ? ncclParamCrossNic() : 0;
+  graph->crossNic = crossNic == 1 ? 1 : 0;
   graph->bwIntra = graph->bwInter = 0;
   graph->latencyInter = 0;
-  if (graph->crossNic == 2) graph->crossNic = 0;
   graph->typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
   graph->typeInter = PATH_PIX;
   graph->nChannels = 0;
@@ -964,12 +963,12 @@ search:
     }
     tmpGraph.typeInter = PATH_PIX;
 
-    if (crossNic && tmpGraph.crossNic == 0) {
+    if (crossNic == 2 && tmpGraph.crossNic == 0) {
       // Try again with crossNic if permitted
-      tmpGraph.crossNic = crossNic;
+      tmpGraph.crossNic = 1;
       goto search;
     }
-    tmpGraph.crossNic = 0;
+    tmpGraph.crossNic = crossNic == 1 ? 1 : 0;
 
     // Decrease bw until we find a solution
     if ((speedIndex < nspeeds-1) && (graph->nChannels == 0 || (speedArray[speedIndex+1]/graph->bwInter > .49))) {
@@ -996,7 +995,7 @@ done:
   }
 
   if (pass == 2) {
-  // See if we can increase bw
+    // See if we can increase bw
     if (time != 0 && speedIndex > 0) {
       if (graph->pattern == NCCL_TOPO_PATTERN_RING) {
         // increase bw for Ring
