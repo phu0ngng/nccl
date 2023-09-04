@@ -260,6 +260,32 @@ ncclResult_t ncclTopoSearchNextGpuSort(struct ncclTopoSystem* system, struct ncc
   } else {
     for (int i=0; i<count; i++) next[i] = scores[i].g;
   }
+
+  if (system->nodes[NVS].count) {
+    // NVSwitches prefer when we talk to a limited set of peers. Try to use neighbors first.
+    int index = gpu-system->nodes[GPU].nodes;
+    int i;
+    int prevGpu = (index-1+ngpus)%ngpus;
+    int nextGpu = (index+1)%ngpus;
+    int firstGpus[2];
+    int firstGpuCount = 0;
+    if (graph->pattern == NCCL_TOPO_PATTERN_RING) {
+      firstGpus[0] = nextGpu; firstGpus[1] = prevGpu; firstGpuCount = 2;
+    } else if (graph->pattern == NCCL_TOPO_PATTERN_SPLIT_TREE ||
+        graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) {
+      firstGpus[0] = prevGpu; firstGpus[1] = nextGpu; firstGpuCount = 2;
+    } else {
+      firstGpus[0] = nextGpu; firstGpuCount = 1;
+    }
+    for (int g=0; g<firstGpuCount; g++) {
+      for (i=0; i<count && next[i] != firstGpus[g]; i++);
+      if (i<count) {
+        for (; i>0; i--) next[i] = next[i-1];
+        next[0] = firstGpus[g];
+      }
+    }
+  }
+
   *countPtr = count;
   return ncclSuccess;
 }
@@ -555,7 +581,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
         NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_REPLAY, time, NET, n, g));
       }
       if (graph->nChannels == 0 || graph->sameChannels == 0) {
-        if (graph->nChannels == 0) {
+        if (graph->nChannels == 0 && system->nodes[NVS].count == 0) {
           // Always try the PCI order first to set a reference, but don't count in the timeout nor let it run for long
           int t = 1 << 10;
           NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_PCI, &t, NET, n, 0));
