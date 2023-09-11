@@ -298,6 +298,7 @@ struct ncclDevComm {
   int nRanks;
   int buffSizes[NCCL_NUM_PROTOCOLS];
   int p2pChunkSize;
+  int nvlsChunkSize;
 
   // Operation list for aggregation
   int workFifoDepth;
