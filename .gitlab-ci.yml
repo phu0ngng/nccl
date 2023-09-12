@@ -574,7 +574,7 @@ perftest-DGX-A100:
     NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
-    - salloc -N ${NNODES} -n ${NGPUS} --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+    - salloc -N ${NNODES} -n ${NGPUS} --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 16G
   interruptible: true
 
 perftest-multi-gc:
