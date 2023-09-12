@@ -401,9 +401,9 @@ static ncclResult_t registerIntraNodeBuffers(
       /* tweak NVLS channels usage; for registered NVLS buffer, we only need 4/5 channels to
        * saturate bandwidth. */
       if (info->coll == ncclFuncReduceScatter)
-        info->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 5));
+        info->nChannels = std::min(5, comm->nvlsChannels);
       else
-        info->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 4));
+        info->nChannels = std::min(4, comm->nvlsChannels);
       *outRegBufType = NCCL_NVLS_REG_BUFFER;
     }
   } else if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT &&   // limited to CollNetDirect for now
