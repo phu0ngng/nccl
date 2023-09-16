@@ -58,6 +58,7 @@ int main(int argc, char** argv)
     size_t reps = 3;
     size_t warmup = 1;
     int abort = 0;
+    int use = 0;
 
     // Make sure everyline is flushed so that we see the progress of the test
     setlinebuf(stdout);
@@ -66,11 +67,12 @@ int main(int argc, char** argv)
     if (argc > 2) num_gpus = atoi(argv[2]);
     if (argc > 3) warmup = atoi(argv[3]);
     if (argc > 4) abort = atoi(argv[4]);
+    if (argc > 5) use = atoi(argv[5]);
 
-    if (num_gpus == 0)
+    if (num_gpus <= 0)
       CUDA_TRY(cudaGetDeviceCount(&num_gpus));
 
-    printf("Starting test on %d gpus reps %zi warmup %zi abort %d\n", num_gpus, reps, warmup, abort);
+    printf("Starting test on %d gpus reps %zi warmup %zi abort %d use %d\n", num_gpus, reps, warmup, abort, use);
 
     int dev_list[MAX_GPUS];
     for (int i = 0; i < num_gpus; i++) {
@@ -109,8 +111,10 @@ int main(int argc, char** argv)
         printf("Doing iteration %zi elapsed time %gs\n", i, elapsed);
       }
       NCCL_TRY(ncclCommInitAll(nccl_comm, num_gpus, dev_list));
-      for (int g = 0; g < num_gpus; g++)
-        NCCL_TRY(abort ? ncclCommAbort(nccl_comm[g]) : ncclCommDestroy(nccl_comm[g]));
+      if (use == 0) {
+        for (int g = 0; g < num_gpus; g++)
+          NCCL_TRY(abort ? ncclCommAbort(nccl_comm[g]) : ncclCommDestroy(nccl_comm[g]));
+      }
     }
 
     gettimeofday(&end, NULL);
@@ -130,6 +134,11 @@ int main(int argc, char** argv)
 
     cudaDeviceReset();
 
+    if (use) {
+      printf("GPU Memory used %zi bytes (%zi MiB) CUDA memory (%zi MiB) per GPU\n", leaked, leaked/(reps*1024*1024), leaked/(reps*1024*1024*num_gpus));
+      exit (EXIT_SUCCESS);
+    }
+
     // Only report leaks of > 1 CUDA page
     if (leaked > (2*1024*1024)) {
       printf("ERROR: GPU Memory leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
@@ -143,5 +152,6 @@ int main(int argc, char** argv)
     }
 
     printf("SUCCESS: Completed test of %zi iterations on %d gpus - no CUDA memory leaks detected\n", reps, num_gpus);
+
     exit (EXIT_SUCCESS);
 }
