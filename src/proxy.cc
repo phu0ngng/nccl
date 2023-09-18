@@ -932,7 +932,7 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
   // Request the proxy to stop and then wake it
   if (state->opsPool) {
     pthread_mutex_lock(&state->opsPool->mutex);
-    if (*proxyState->abortFlag == 0) 
+    if (__atomic_load_n(proxyState->abortFlag, __ATOMIC_RELAXED) == 0) 
       state->stop = PROGRESS_REQUEST_STOP;
     else
       state->stop = PROGRESS_ABORT;
@@ -1154,7 +1154,7 @@ error:
 ncclResult_t ncclPollProxyResponse(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, void* respBuff, void* opId) {
   struct ncclProxyState* sharedProxyState = comm->proxyState;
   // Receive the connection pointer from the Proxy
-  if (*comm->abortFlag) {
+  if (__atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED)) {
     WARN("Comm %p is in abort state", comm);
     return ncclInternalError;
   }
@@ -1382,7 +1382,7 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
     (*asyncOpCount)--;
     return ncclSuccess;
 
-  } else if (*proxyState->abortFlag != 0) {
+  } else if (__atomic_load_n(proxyState->abortFlag, __ATOMIC_RELAXED) != 0) {
     return ncclInternalError;
   }
 
@@ -1468,7 +1468,7 @@ void* ncclProxyService(void* _args) {
     /* Even if local comm aborts, we cannot let proxy thread exit if we still have peer
      * connections. Need to wait until all other related comms call abort and safely exit
      * together, or we could face segmentation fault. */
-    if (*proxyState->abortFlag != 0) stop = 1;
+    if (__atomic_load_n(proxyState->abortFlag, __ATOMIC_RELAXED) != 0) stop = 1;
     /* never let proxy service thread blocks in poll, or it cannot receive abortFlag. */
     int ret;
     do {
@@ -1583,7 +1583,7 @@ void* ncclProxyService(void* _args) {
   free(proxyState->listenSock);
   proxyOpsFree(proxyState);
 
-  if (*proxyState->abortFlag) {
+  if (__atomic_load_n(proxyState->abortFlag, __ATOMIC_RELAXED)) {
     /* abort happened, need to notify main thread I am done. */
     __atomic_store_n(&proxyState->stop, SERVICE_COMPLETE, __ATOMIC_RELEASE);
   }
@@ -1650,7 +1650,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
 
     if ((comm->proxyRefCountOld = ncclAtomicRefCountDecrement(&sharedProxyState->refCount)) == 0) {
       if (sharedProxyState->peerAddresses) {
-        if (*comm->abortFlag == 0) {
+        if (__atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED) == 0) {
           struct ncclSocket sock;
           int type = ncclProxyMsgStop;
           NCCLCHECK(ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag));
@@ -1675,7 +1675,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
               }
             }
             int type = ncclProxyMsgClose;
-            if (*comm->abortFlag == 0) NCCLCHECK(ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int)));
+            if (__atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED) == 0) NCCLCHECK(ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int)));
             NCCLCHECK(ncclSocketClose(sharedProxyState->peerSocks + i));
           }
         }
