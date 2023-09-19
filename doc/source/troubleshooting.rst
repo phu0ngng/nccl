@@ -106,6 +106,13 @@ To communicate between processes and even between threads of a process, NCCL cre
 in /dev/shm. The operating system’s limits on these resources may need to be increased accordingly. Please see your
 system’s documentation for details.
 
+If insufficient shared memory is available, NCCL will fail to initialize. Running with NCCL_DEBUG=WARN
+will show a message similar to this:
+
+.. code::
+
+ NCCL WARN Error: failed to extend /dev/shm/nccl-03v824 to 4194660 bytes
+
 Docker
 ------
 
