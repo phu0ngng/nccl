@@ -300,6 +300,8 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
             peerInfo->cudaDev, peerInfo->busId, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
+#if CUDART_VERSION >= 11030
+      // cuMem API support
       if (ncclCuMemEnable()) {
         // Allow direct access to the remote buffer from the local GPU
         CUmemAccessDesc accessDesc = {};
@@ -310,6 +312,7 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
         CUCHECK(cuMemSetAccess((CUdeviceptr) p2pBuff->directPtr, p2pBuff->size, &accessDesc, 1));
       }
     }
+#endif
     *devMem = p2pBuff->directPtr;
     *ipcPtr = NULL;
   } else {
