@@ -13,10 +13,10 @@
     <channel>
       <net dev="1"/>
       <gpu dev="1"/>
-      <gpu dev="5"/>
-      <gpu dev="4"/>
-      <gpu dev="3"/>
       <gpu dev="2"/>
+      <gpu dev="3"/>
+      <gpu dev="4"/>
+      <gpu dev="5"/>
       <gpu dev="0"/>
       <net dev="1"/>
     </channel>
@@ -33,10 +33,10 @@
     <channel>
       <net dev="3"/>
       <gpu dev="3"/>
-      <gpu dev="1"/>
-      <gpu dev="0"/>
-      <gpu dev="5"/>
       <gpu dev="4"/>
+      <gpu dev="5"/>
+      <gpu dev="0"/>
+      <gpu dev="1"/>
       <gpu dev="2"/>
       <net dev="3"/>
     </channel>
@@ -53,15 +53,15 @@
     <channel>
       <net dev="5"/>
       <gpu dev="5"/>
-      <gpu dev="3"/>
-      <gpu dev="2"/>
-      <gpu dev="1"/>
       <gpu dev="0"/>
+      <gpu dev="1"/>
+      <gpu dev="2"/>
+      <gpu dev="3"/>
       <gpu dev="4"/>
       <net dev="5"/>
     </channel>
   </graph>
-  <graph id="1" pattern="1" crossnic="0" nchannels="6" speedintra="30" speedinter="24" latencyinter="0" typeintra="NVL" typeinter="PXB" samechannels="0">
+  <graph id="1" pattern="1" crossnic="0" nchannels="6" speedintra="48" speedinter="24" latencyinter="0" typeintra="NVL" typeinter="PXB" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
@@ -76,10 +76,10 @@
       <net dev="1"/>
       <gpu dev="1"/>
       <gpu dev="0"/>
-      <gpu dev="2"/>
-      <gpu dev="3"/>
-      <gpu dev="4"/>
       <gpu dev="5"/>
+      <gpu dev="4"/>
+      <gpu dev="3"/>
+      <gpu dev="2"/>
       <net dev="1"/>
     </channel>
     <channel>
@@ -96,10 +96,10 @@
       <net dev="3"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
-      <gpu dev="4"/>
-      <gpu dev="5"/>
-      <gpu dev="0"/>
       <gpu dev="1"/>
+      <gpu dev="0"/>
+      <gpu dev="5"/>
+      <gpu dev="4"/>
       <net dev="3"/>
     </channel>
     <channel>
@@ -116,10 +116,10 @@
       <net dev="5"/>
       <gpu dev="5"/>
       <gpu dev="4"/>
-      <gpu dev="0"/>
-      <gpu dev="1"/>
-      <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="2"/>
+      <gpu dev="1"/>
+      <gpu dev="0"/>
       <net dev="5"/>
     </channel>
   </graph>
