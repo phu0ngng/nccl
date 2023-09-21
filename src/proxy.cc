@@ -925,17 +925,7 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
     state->stop = 1;
     pthread_cond_signal(&state->opsPool->cond);
     pthread_mutex_unlock(&state->opsPool->mutex);
-    /* join the progress thread only in the non-abort case; otherwise,
-     * it will be detached by the main thread. */
-    if (*proxyState->abortFlag == 0) {
-      pthread_join(state->thread, NULL);
-    } else {
-      /* wait until progress thread exits first */
-      uint64_t t0 = clockNano();
-      while (__atomic_load_n(&state->stop, __ATOMIC_ACQUIRE) != 2) {
-        if (clockNano() - t0 >= 5 * 1000) sched_yield();
-      }
-    }
+    pthread_join(state->thread, NULL);
   }
 
   // Free off any memory allocated for the proxy arg pools
@@ -1575,11 +1565,6 @@ void* ncclProxyService(void* _args) {
   ncclSocketClose(proxyState->listenSock);
   free(proxyState->listenSock);
   proxyOpsFree(proxyState);
-  if (*proxyState->abortFlag) {
-    while (__atomic_load_n(&proxyState->readyFree, __ATOMIC_ACQUIRE) == false) usleep(1);
-    ncclCudaHostFree((void *)proxyState->abortFlag);
-    ncclProxyDestroy(proxyState);
-  }
   return NULL;
 }
 
@@ -1667,26 +1652,15 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState) {
-  if (proxyState) {
-    assert(proxyState->refCount == 0);
-    free(proxyState->peerAddresses);
-    free(proxyState->peerSocks);
-    free(proxyState->proxyOps);
-    free(proxyState->sharedDevMems);
-    expectedProxyResponseFree(proxyState);
-    free(proxyState);
-  }
-  return ncclSuccess;
-}
+ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
+  struct ncclProxyState* sharedProxyState = comm->sharedRes->proxyState;
 
-/* detach all proxy threads in case of abort */
-ncclResult_t ncclProxyDetach(struct ncclProxyState *proxyState) {
-  if (proxyState && proxyState->thread) {
-    pthread_detach(proxyState->thread);
-    if (proxyState->progressState.thread) {
-      pthread_detach(proxyState->progressState.thread);
-    }
-  }
+  assert(sharedProxyState->refCount == 0);
+  free(sharedProxyState->peerAddresses);
+  free(sharedProxyState->peerSocks);
+  free(sharedProxyState->proxyOps);
+  free(sharedProxyState->sharedDevMems);
+  expectedProxyResponseFree(sharedProxyState);
+  free(sharedProxyState);
   return ncclSuccess;
 }

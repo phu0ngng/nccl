@@ -179,14 +179,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
   if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
-    if (*comm->abortFlag == 0) {
-      /* regular thread join */
-      pthread_join(comm->proxyState->thread, nullptr);
-    } else {
-      /* detach thread due to abort */
-      ncclProxyDetach(comm->proxyState);
-    }
-
+    pthread_join(comm->proxyState->thread, nullptr);
   }
 
   delete[] comm->userRedOps;
@@ -220,11 +213,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
       free(comm->sharedRes->tpRankToLocalRank);
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->deviceStream));
-      /* The main thread should free proxy resources only in a normal exit;
-       * otherwise, proxy threads are detached and they will free resources
-       * themselves. */
-      if (*comm->abortFlag == 0)
-        NCCLCHECK(ncclProxyDestroy(comm->sharedRes->proxyState));
+      NCCLCHECK(ncclProxyDestroy(comm));
       free(comm->sharedRes);
     }
   }
@@ -241,13 +230,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memPermanent);
 
   if (ncclAtomicRefCountDecrement(comm->abortFlagRefCount) == 0) {
-    if (*comm->abortFlag == 0) {
-      NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
-    } else if (comm->proxyState) {
-      /* at last, main thread has freed almost everything, so just
-       * notify proxy thread to free the rest of resources. */
-      __atomic_store_n(&comm->proxyState->readyFree, true, __ATOMIC_RELEASE);
-    }
+    NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
     free(comm->abortFlagRefCount);
   }
   free((void*)comm->config.netName);
