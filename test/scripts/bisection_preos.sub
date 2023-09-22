@@ -1,0 +1,48 @@
+#!/bin/bash
+
+#SBATCH -p viking
+#SBATCH -A Gcomm
+#SBATCH -N 8                      # number of nodes
+#SBATCH -t 01:00:00               # wall time
+#SBATCH -J "Gcomm-bisection:8x8"  # job name
+##SBATCH --exclusive              # exclusive node access
+#SBATCH --mem=0                   # all mem avail
+##SBATCH --mail-type=FAIL         # only send email on failure
+#SBATCH --ntasks-per-node=8       # max 8 tasks per machine (one task per gpu) - Exception for pytorch // srun launch with -n1
+##SBATCH --threads-per-core=2     # HT is on
+#SBATCH --output=%x_%j.out
+#SBATCH --comment=sysctl-sys.kernel.numa_balancing=0,transparent_hugepage_defrag=never,transparent_hugepage=never
+
+# This script is an example of using preos to test a bisection to find a perf regressoin
+
+set +e
+
+# Env
+export CUDA_HOME=/home/daddison/toolkits/cuda-12.1
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90"
+export MPI_HOME=/usr/mpi/gcc/openmpi-4.1.5rc2/
+export LD_LIBRARY_PATH=$MPI_HOME/lib:$LD_LIBRARY_PATH
+export PATH=$MPI_HOME/bin:$PATH
+export NCCL_IB_SL="1"
+export OMPI_MCA_btl="^openib"
+export OMPI_MCA_btl_tcp_if_include="eth3"
+export NCCL_DEBUG=WARN
+
+# Change these as you like
+REPRO="alltoall_perf -d half -b4M -e4M -w5 -n20 -f2"
+final_commit="v2.18.3-1"
+initial_commit="v2.17.1-1"
+iterations=5
+threshold=25
+# Set this to speed up bisection builds by a lot, if you know what you're going to test
+ONLY_FUNCS="SendRecv"
+
+# Set to 1 if you are resuming a cancelled bisection
+load_checkpoint=0
+
+NCCL_TMP_DIR=/lustre/fsw/gcomm/bewilliams
+NCCL_SRC_DIR=~/nccl
+
+~/nccl/test/scripts/bisection.sh $initial_commit $final_commit "$REPRO" $threshold "$ONLY_FUNCS" $iterations $NCCL_TMP_DIR $NCCL_SRC_DIR $load_checkpoint

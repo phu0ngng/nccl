@@ -55,7 +55,7 @@ def compare_times(placeness, bads, wins, neutrals, new_times, old_times, rmad_th
       # t1 and t0 are arrays of times (in microseconds) that should be of equal length
       if len(t0) != len(t1):
         print("Mismatched number of runs. len(baselines): " + str(len(t0)) + " != len(new): " + str(len(t1)))
-        exit_code = 1
+        exit_code = 2
         return
 
       # Store stats for comparison
@@ -184,16 +184,20 @@ if verbose:
   print("Num wins (dt <= -%.2f%%): "%threshold, len(wins))
   print("Num fails (dt >= +%.2f%%): "%threshold, len(bads))
 
-if len(bads) > 0:
-  print()
-  print("Fail cases, where median time increased >= %.2f%%:"%threshold)
-  for placeness,gain,size,dtype,redop,t0_stats,t1_stats in bads:
-    gain = '+%.2f%%'%gain if type(gain) in (int,float) else gain
-    line = '{:>6} {:>6}  {:>12} {:>6} : {:>6} (old: {:>6}) (new: {:>6})'.format(format_bytes(size),dtype,placeness,redop,gain,format_float(t0_stats["median"]),format_float(t1_stats["median"]))
-    print(line)
-    print_stats(t0_stats, t1_stats)
-  if exit_code == 0:
-    exit_code = 1
+try:
+  if len(bads) > 0:
+    print()
+    print("Fail cases, where median time increased >= %.2f%%:"%threshold)
+    for placeness,gain,size,dtype,redop,t0_stats,t1_stats in bads:
+      gain = '+%.2f%%'%gain if type(gain) in (int,float) else gain
+      line = '{:>6} {:>6}  {:>12} {:>6} : {:>6} (old: {:>6}) (new: {:>6})'.format(format_bytes(size),dtype,placeness,redop,gain,format_float(t0_stats["median"]),format_float(t1_stats["median"]))
+      print(line)
+      print_stats(t0_stats, t1_stats)
+    if exit_code == 0:
+      exit_code = 1
+except:
+  print("An exception occured - KeyValue exception in parsing test output")
+  exit(3)
 
 if len(wins) > 0:
   print()
