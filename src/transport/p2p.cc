@@ -311,8 +311,8 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
         INFO(NCCL_P2P, "Set Access for buffer %p size %zi on dev %d", p2pBuff->directPtr, p2pBuff->size, peerInfo->cudaDev);
         CUCHECK(cuMemSetAccess((CUdeviceptr) p2pBuff->directPtr, p2pBuff->size, &accessDesc, 1));
       }
-    }
 #endif
+    }
     *devMem = p2pBuff->directPtr;
     *ipcPtr = NULL;
   } else {
