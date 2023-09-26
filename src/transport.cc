@@ -65,6 +65,8 @@ void dumpData(struct ncclConnect* data, int ndata) {
   }
 }
 
+NCCL_PARAM(ConnectRoundSize, "CONNECT_ROUND_SIZE", 128);
+
 ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, int connIndex, int* highestTransportType/*=NULL*/) {
   // Stream used during transport setup; need for P2P pre-connect + CUDA Graph
   ncclResult_t ret = ncclSuccess;
@@ -72,6 +74,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   struct ncclConnect** data = (ncclConnect**) malloc(sizeof(ncclConnect*) * comm->nRanks); // Store intermediate send/recvData structs for connect
   struct ncclConnect** recvData = (ncclConnect**) malloc(sizeof(ncclConnect*) * comm->nRanks); // Points to entries inside data for given recv connection within a channel
   struct ncclConnect** sendData = (ncclConnect**) malloc(sizeof(ncclConnect*) * comm->nRanks); // Points to entries inside data for given send connection within a channel
+  int done = 0;
 
   NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->hostStream), ret, fail);
   // First time initialization
@@ -124,57 +127,60 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
       if (recvChannels) NCCLCHECKGOTO(bootstrapRecv(comm->bootstrap, recvPeer, bootstrapTag, recvData[i], sizeof(struct ncclConnect)*recvChannels), ret, fail);
     }
     TIME_STOP(2);
-  }
 
-  // Loop until all channels with all ranks have been connected
-  bool allChannelsConnected;
-  allChannelsConnected = false;
-  while (!allChannelsConnected) {
-    allChannelsConnected = true;
-    for (int i=1; i<comm->nRanks; i++) {
-      int recvPeer = (comm->rank - i + comm->nRanks) % comm->nRanks;
-      int sendPeer = (comm->rank + i) % comm->nRanks;
-      uint64_t recvMask = comm->connectRecv[recvPeer];
-      uint64_t sendMask = comm->connectSend[sendPeer];
+    if (i-done >= ncclParamConnectRoundSize() || i == comm->nRanks-1) {
+      // Loop until all channels with all ranks have been connected
+      bool allChannelsConnected;
+      allChannelsConnected = false;
+      while (!allChannelsConnected) {
+        allChannelsConnected = true;
+        for (int j=done+1; j<=i; j++) {
+          int recvPeer = (comm->rank - j + comm->nRanks) % comm->nRanks;
+          int sendPeer = (comm->rank + j) % comm->nRanks;
+          uint64_t recvMask = comm->connectRecv[recvPeer];
+          uint64_t sendMask = comm->connectSend[sendPeer];
 
-      int sendDataOffset = 0;
-      int recvDataOffset = 0;
-      for (int c=0; c<MAXCHANNELS; c++) {
-          TIME_START(3);
-          if (sendMask & (1UL<<c)) {
-            struct ncclConnector* conn = comm->channels[c].peers[sendPeer]->send + connIndex;
-            // This connector hasn't completed connection yet
-            if (conn->connected == 0) {
-              NCCLCHECKGOTO(conn->transportComm->connect(comm, sendData[i] + sendDataOffset++, 1, comm->rank, conn), ret, fail);
-              if (ret == ncclSuccess) {
-                conn->connected = 1;
-                /* comm->channels[c].devPeers[sendPeer]->send[connIndex] is a device memory access. */
-                CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[sendPeer]->send[connIndex], &conn->conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), ret, fail);
-              } else if (ret == ncclInProgress) {
-                allChannelsConnected = false;
+          int sendDataOffset = 0;
+          int recvDataOffset = 0;
+          for (int c=0; c<MAXCHANNELS; c++) {
+            TIME_START(3);
+            if (sendMask & (1UL<<c)) {
+              struct ncclConnector* conn = comm->channels[c].peers[sendPeer]->send + connIndex;
+              // This connector hasn't completed connection yet
+              if (conn->connected == 0) {
+                NCCLCHECKGOTO(conn->transportComm->connect(comm, sendData[j] + sendDataOffset++, 1, comm->rank, conn), ret, fail);
+                if (ret == ncclSuccess) {
+                  conn->connected = 1;
+                  /* comm->channels[c].devPeers[sendPeer]->send[connIndex] is a device memory access. */
+                  CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[sendPeer]->send[connIndex], &conn->conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), ret, fail);
+                } else if (ret == ncclInProgress) {
+                  allChannelsConnected = false;
+                }
               }
             }
-          }
-          TIME_STOP(3);
+            TIME_STOP(3);
 
-          // Start with recv channels
-          TIME_START(4);
-          if (recvMask & (1UL<<c)) {
-            struct ncclConnector* conn = comm->channels[c].peers[recvPeer]->recv + connIndex;
-            // This connector hasn't completed connection yet
-            if (conn->connected == 0) {
-              NCCLCHECKGOTO(conn->transportComm->connect(comm, recvData[i] + recvDataOffset++, 1, comm->rank, conn), ret, fail);
-              if (ret == ncclSuccess) {
-                conn->connected = 1;
-                /* comm->channels[c].devPeers[recvPeer]->recv[connIndex] is a device memory access. */
-                CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[recvPeer]->recv[connIndex], &conn->conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), ret, fail);
-              } else if (ret == ncclInProgress) {
-                allChannelsConnected = false;
+            // Start with recv channels
+            TIME_START(4);
+            if (recvMask & (1UL<<c)) {
+              struct ncclConnector* conn = comm->channels[c].peers[recvPeer]->recv + connIndex;
+              // This connector hasn't completed connection yet
+              if (conn->connected == 0) {
+                NCCLCHECKGOTO(conn->transportComm->connect(comm, recvData[j] + recvDataOffset++, 1, comm->rank, conn), ret, fail);
+                if (ret == ncclSuccess) {
+                  conn->connected = 1;
+                  /* comm->channels[c].devPeers[recvPeer]->recv[connIndex] is a device memory access. */
+                  CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[recvPeer]->recv[connIndex], &conn->conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), ret, fail);
+                } else if (ret == ncclInProgress) {
+                  allChannelsConnected = false;
+                }
               }
             }
+            TIME_STOP(4);
           }
-          TIME_STOP(4);
+        }
       }
+      done = i;
     }
   }
 
