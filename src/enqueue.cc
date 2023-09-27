@@ -879,6 +879,14 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
   if (plan->persistent) {
     comm->persistentRefs -= 1;
     NCCLCHECK(ncclCudaFree(plan->workHead));
+    for (int c=0; c < plan->channelUbound; c++) {
+      struct ncclProxyOp* q = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
+      while (q != nullptr) {
+        struct ncclProxyOp* q1 = q->enqNext;
+        ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, q);
+        q = q1;
+      }
+    }
     while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
       struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
       CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
@@ -1093,9 +1101,16 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   if (!(plan->persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking)) {
-    // If this isn't being captured and there aren't any CUDA graphs alive
-    // then we don't need to do our proxyOp pushing on the host stream.
+    // We are not using the host stream for proxy ops and reclaimation submission.
     NCCLCHECK(hostStreamPlanTask(comm, plan));
+  } else {
+    // We are using the host stream for proxy ops and reclaimation submission.
+    // Only plans with proxy ops have a callback pushed by ncclLaunchPrepare.
+    // Since non-persistent plans also require reclaimation, we have to do it
+    // here.
+    if (!plan->persistent && !plan->hasProxyOps) {
+      ncclIntruQueueMpscEnqueue(&comm->callbackQueue, &plan->reclaimer);
+    }
   }
   return ncclSuccess;
 }
