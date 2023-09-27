@@ -66,6 +66,8 @@ void dumpData(struct ncclConnect* data, int ndata) {
 }
 
 NCCL_PARAM(ConnectRoundMaxPeers, "CONNECT_ROUND_MAX_PEERS", 128);
+NCCL_PARAM(ReportConnectProgress, "REPORT_CONNECT_PROGRESS", 0);
+#include <sys/time.h>
 
 ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, int connIndex, int* highestTransportType/*=NULL*/) {
   // Stream used during transport setup; need for P2P pre-connect + CUDA Graph
@@ -80,6 +82,11 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   NCCLCHECK(ncclCalloc(&data, maxPeers));
   NCCLCHECK(ncclCalloc(&recvData, maxPeers));
   NCCLCHECK(ncclCalloc(&sendData, maxPeers));
+
+  struct timeval timeStart, timeLast;
+  gettimeofday(&timeStart, NULL);
+  timeLast = timeStart; // struct copy
+  bool timeReported = false;
 
   NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->hostStream), ret, fail);
   // First time initialization
@@ -190,9 +197,31 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
             data[p] = NULL;
           }
         }
+	if (ncclParamReportConnectProgress() && comm->rank == 0) {
+          struct timeval now;
+          gettimeofday(&now, NULL);
+          if (((now.tv_sec - timeLast.tv_sec)*1.0 + (now.tv_usec-timeLast.tv_usec)*1e-6) > 1) {
+            float elapsed = (now.tv_sec - timeStart.tv_sec)*1.0 + (now.tv_usec-timeStart.tv_usec)*1e-6;
+	    float remaining = elapsed*(comm->nRanks-done)/done;
+            printf("%sP2p connect: %g%% Elapsed %d:%02d Remaining %d:%02d                                       ",
+                timeReported ? "\r" : "", done*100.0/comm->nRanks, ((int)elapsed)/60, ((int)elapsed)%60, ((int)remaining)/60, ((int)remaining)%60);
+            fflush(stdout);
+            timeReported = true;
+	    timeLast = now; // struct copy;
+          }
+        }
       }
       done = i;
     }
+  }
+
+  if (timeReported) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    float elapsed = (now.tv_sec - timeStart.tv_sec)*1.0 + (now.tv_usec-timeStart.tv_usec)*1e-6;
+    printf("\rP2p connect done in %d:%02d                                                                       \n",
+        ((int)elapsed)/60, ((int)elapsed)%60);
+    fflush(stdout);
   }
 
   /* We need to sync ranks here since some ranks might run too fast after connection setup
