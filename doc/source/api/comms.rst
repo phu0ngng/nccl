@@ -111,6 +111,7 @@ If *ncclCommFinalize* is called by users, users should guarantee that the state 
 calling *ncclCommDestroy*. 
 In all cases, the communicators should no longer be accessed after ncclCommDestroy returns. It is recommended that 
 user call *ncclCommFinalize* and then *ncclCommDestroy*.
+This function is an intra-node collective call, which all ranks on the same node should call to avoid hang.
 
 ncclCommAbort
 -------------
@@ -118,7 +119,8 @@ ncclCommAbort
 .. c:function:: ncclResult_t ncclCommAbort(ncclComm_t comm)
 
 Frees resources that are allocated to a communicator object *comm*. Will abort any uncompleted
-operations before destroying the communicator.
+operations before destroying the communicator. This function is an intra-node collective call,
+which all ranks on the same node should call to avoid hang.
 
 ncclCommGetAsyncError
 ---------------------
