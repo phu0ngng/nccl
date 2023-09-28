@@ -179,7 +179,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
   if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
-    if (*comm->abortFlag == 0) {
+    if (__atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED) == 0) {
       /* regular thread join */
       pthread_join(comm->proxyState->thread, nullptr);
     } else {
@@ -294,7 +294,7 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
   /* comm must be ready, or error will be reported */
   ncclResult_t ret = ncclSuccess;
 
-  if (*comm->abortFlag) {
+  if (__atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED)) {
     ncclGroupJobAbort(comm->groupJob);
   } else {
     NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
@@ -1892,7 +1892,7 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
 
   NCCLCHECKGOTO(ncclCommGetAsyncError(comm, &state), ret, fail);
   TRACE(NCCL_INIT, "commReclaim: reclaim comm %p rank %d state %d", comm, comm->rank, state);
-  if (state == ncclSuccess && *comm->abortFlag == 0 && comm->finalizeCalled == false) {
+  if (state == ncclSuccess && __atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED) == 0 && comm->finalizeCalled == false) {
     /* user does not call ncclCommFinalize and this is a normal comm destroy. ncclCommDestroy
      * should be nonblocking until last call of ncclCommDestroy. */
     NCCLCHECKGOTO(commFinalize(comm, false), ret, fail);
@@ -2017,9 +2017,9 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   // Ask anything that might still be running on the device to quit
   childAbortFlag = __atomic_load_n(&comm->childAbortFlag, __ATOMIC_ACQUIRE);
   if (childAbortFlag != NULL) {
-    *childAbortFlag = 1;
+    __atomic_store_n(childAbortFlag, 1, __ATOMIC_RELAXED);
   }
-  *comm->abortFlag = 1;
+  __atomic_store_n(comm->abortFlag, 1, __ATOMIC_RELAXED);
   /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
   ncclCommEnsureReady(comm);
