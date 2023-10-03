@@ -29,6 +29,7 @@ static ncclCollNet_v6_t *ncclCollNet_v6;
 static ncclCollNet_v7_t *ncclCollNet_v7;
 
 ncclResult_t ncclNet_v7_as_v8_init(ncclDebugLogger_t logfn) {
+  NCCLCHECK(ncclNet_v7->init(logfn));
   // Because ncclNet_v7_t == ncclNet_v8_t
   ncclNet_v7_as_v8 = *ncclNet_v7;
   return ncclSuccess;
@@ -512,7 +513,9 @@ int ncclNetVersion(struct ncclComm* comm) {
     return 5;
   } else if (comm->ncclNet == &ncclNet_v6_as_v8) {
     return 6;
-  } else {
+  } else if (comm->ncclNet == &ncclNet_v7_as_v8) {
     return 7;
+  } else {
+    return 8;
   }
 }
