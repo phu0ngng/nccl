@@ -3,9 +3,9 @@
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
-      <gpu dev="1"/>
-      <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="2"/>
+      <gpu dev="1"/>
       <net dev="0"/>
     </channel>
     <channel>
@@ -35,9 +35,9 @@
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
-      <gpu dev="1"/>
-      <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="2"/>
+      <gpu dev="1"/>
       <net dev="0"/>
     </channel>
     <channel>
@@ -75,36 +75,12 @@
       <net dev="0"/>
     </channel>
     <channel>
-      <net dev="0"/>
-      <gpu dev="0"/>
-      <gpu dev="1"/>
-      <gpu dev="2"/>
-      <gpu dev="3"/>
-      <net dev="0"/>
-    </channel>
-    <channel>
       <net dev="1"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
       <gpu dev="0"/>
       <net dev="1"/>
-    </channel>
-    <channel>
-      <net dev="1"/>
-      <gpu dev="1"/>
-      <gpu dev="2"/>
-      <gpu dev="3"/>
-      <gpu dev="0"/>
-      <net dev="1"/>
-    </channel>
-    <channel>
-      <net dev="2"/>
-      <gpu dev="2"/>
-      <gpu dev="3"/>
-      <gpu dev="0"/>
-      <gpu dev="1"/>
-      <net dev="2"/>
     </channel>
     <channel>
       <net dev="2"/>
@@ -121,6 +97,30 @@
       <gpu dev="1"/>
       <gpu dev="2"/>
       <net dev="3"/>
+    </channel>
+    <channel>
+      <net dev="0"/>
+      <gpu dev="0"/>
+      <gpu dev="1"/>
+      <gpu dev="2"/>
+      <gpu dev="3"/>
+      <net dev="0"/>
+    </channel>
+    <channel>
+      <net dev="1"/>
+      <gpu dev="1"/>
+      <gpu dev="2"/>
+      <gpu dev="3"/>
+      <gpu dev="0"/>
+      <net dev="1"/>
+    </channel>
+    <channel>
+      <net dev="2"/>
+      <gpu dev="2"/>
+      <gpu dev="3"/>
+      <gpu dev="0"/>
+      <gpu dev="1"/>
+      <net dev="2"/>
     </channel>
     <channel>
       <net dev="3"/>

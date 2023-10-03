@@ -254,9 +254,13 @@ ncclResult_t ncclTopoXmlLoadNvlink(FILE* file, struct ncclXml* xml, struct ncclX
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoXmlLoadC2c(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
+  NCCLCHECK(xmlLoadSub(file, xml, head, NULL, 0));
+  return ncclSuccess;
+}
 ncclResult_t ncclTopoXmlLoadGpu(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
-  struct xmlHandler handlers[] = { { "nvlink", ncclTopoXmlLoadNvlink } };
-  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 1));
+  struct xmlHandler handlers[] = { { "nvlink", ncclTopoXmlLoadNvlink }, { "c2c", ncclTopoXmlLoadC2c } };
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 2));
   return ncclSuccess;
 }
 
@@ -576,7 +580,18 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
       }
     }
     pciNode->parent = parent;
-    parent->subs[parent->nSubs++] = pciNode;
+    // Keep PCI sub devices ordered by PCI Bus ID (Issue #820)
+    int subIndex = parent->nSubs;
+    const char* newBusId;
+    NCCLCHECK(xmlGetAttrStr(pciNode, "busid", &newBusId));
+    for (int s=0; s<parent->nSubs; s++) {
+      const char* busId;
+      NCCLCHECK(xmlGetAttrStr(parent->subs[s], "busid", &busId));
+      if (strcmp(newBusId, busId) < 0) { subIndex = s; break; }
+    }
+    for (int s = parent->nSubs; s > subIndex; s--) parent->subs[s] = parent->subs[s-1];
+    parent->subs[subIndex] = pciNode;
+    parent->nSubs++;
   }
   if (strcmp(parent->name, "pci") == 0) {
     NCCLCHECK(ncclTopoGetXmlFromSys(parent, xml));
@@ -676,6 +691,41 @@ ncclResult_t ncclTopoGetXmlFromGpu(struct ncclXmlNode* pciNode, nvmlDevice_t nvm
       }
     }
   }
+#if CUDART_VERSION >= 11080
+  struct ncclXmlNode* c2cNode = NULL;
+  NCCLCHECK(xmlGetSub(gpuNode, "c2c", &c2cNode));
+  if (c2cNode == NULL) {
+      if (sm >= 90) {
+        int c2cLinksCount = 0;
+        nvmlFieldValue_t fv;
+        fv.fieldId = NVML_FI_DEV_C2C_LINK_COUNT;
+        if ((ncclNvmlDeviceGetFieldValues(nvmlDev, 1, &fv) == ncclSuccess) && (fv.nvmlReturn == NVML_SUCCESS)) {
+          c2cLinksCount = fv.value.uiVal;
+          int bw = 0;
+	  int count = 0;
+          for (int l=0; l<c2cLinksCount; l++) {
+            nvmlFieldValue_t fvs[2];
+            fvs[0].fieldId = NVML_FI_DEV_C2C_LINK_GET_STATUS;
+            fvs[0].scopeId = l;
+            fvs[1].fieldId = NVML_FI_DEV_C2C_LINK_GET_MAX_BW;
+            fvs[1].scopeId = l;
+            if ((ncclNvmlDeviceGetFieldValues(nvmlDev, 2, fvs) == ncclSuccess) &&
+                (fvs[0].nvmlReturn == NVML_SUCCESS) &&
+                (fvs[0].value.uiVal == 1) &&
+                (fvs[1].nvmlReturn == NVML_SUCCESS)) {
+              bw = fvs[1].value.uiVal;
+	      count++;
+            }
+          }
+          if (count > 0) {
+            NCCLCHECK(xmlAddNode(xml, gpuNode, "c2c", &c2cNode));
+            NCCLCHECK(xmlSetAttrInt(c2cNode, "bw", bw));
+            NCCLCHECK(xmlSetAttrInt(c2cNode, "count", count));
+          }
+        }
+      }
+  }
+#endif
   // Fill target classes
   for (int s=0; s<gpuNode->nSubs; s++) {
     struct ncclXmlNode* sub = gpuNode->subs[s];

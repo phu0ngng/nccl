@@ -66,7 +66,7 @@ struct userIbDev {
   uint16_t port_en;
 };
 
-#define MAX_IB_DEVS 16
+#define MAX_IB_DEVS 32
 struct ncclIbDev ncclIbDevs[MAX_IB_DEVS];
 struct userIbDev userIbDevs[MAX_IB_DEVS];
 pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
@@ -628,7 +628,7 @@ ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm) {
+ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   struct ncclIbCommStage* stage = &handle->stage;
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)stage->comm;
@@ -689,15 +689,20 @@ ib_connect_check:
   // RoCE support
   qpInfo.lid = portAttr.lid;
   qpInfo.link_layer = comm->gidInfo.link_layer = portAttr.link_layer;
-  if (qpInfo.link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
-    for (int q=0; q<comm->nqps; q++)
-      INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ib_port, qpInfo.qpn[q], qpInfo.mtu, qpInfo.lid);
-  } else { // RoCE
-    NCCLCHECK(wrap_ibv_query_gid(ctx, ib_port, ncclParamIbGidIndex(), &comm->gidInfo.localGid));
+  if (qpInfo.link_layer == IBV_LINK_LAYER_ETHERNET) {
+    NCCLCHECK(wrap_ibv_query_gid(ncclIbDevs[dev].context, ncclIbDevs[dev].port, ncclParamIbGidIndex(), &comm->gidInfo.localGid));
     qpInfo.spn = comm->gidInfo.localGid.global.subnet_prefix;
     qpInfo.iid = comm->gidInfo.localGid.global.interface_id;
+  }
+
+  if (qpInfo.link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
     for (int q=0; q<comm->nqps; q++)
-      INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX)", dev, ib_port, qpInfo.qpn[q], qpInfo.mtu, ncclParamIbGidIndex(), qpInfo.spn, qpInfo.iid);
+      INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d LID %d", dev, ncclIbDevs[dev].port, qpInfo.qpn[q], qpInfo.mtu, qpInfo.lid);
+  } else { // RoCE
+    for (int q=0; q<comm->nqps; q++)
+      INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d mtu %d query_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x} GID %ld (%lX/%lX)",
+        dev, ncclIbDevs[dev].port, qpInfo.qpn[q], qpInfo.mtu, qpInfo.ece_supported[q], qpInfo.ece[q].vendor_id, qpInfo.ece[q].options, qpInfo.ece[q].comp_mask, ncclParamIbGidIndex(),
+        qpInfo.spn, qpInfo.iid);
   }
 
   stage->state = ncclIbCommStateSend;
@@ -738,6 +743,12 @@ ib_connect:
   NCCLCHECK(wrap_ibv_reg_mr(&comm->remSizesFifo.mr, comm->verbs.pd, &comm->remSizesFifo.elems, sizeof(int)*MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ));
   comm->remSizesFifo.sge.lkey = comm->remSizesFifo.mr->lkey;
 
+  if (qpInfo.link_layer == IBV_LINK_LAYER_ETHERNET ) { // RoCE
+    for (int q=0; q<comm->nqps; q++)
+      INFO(NCCL_NET,"NET/IB: Dev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
+        dev, ncclIbDevs[dev].port, qpInfo.qpn[q], remQpInfo.ece_supported[q], remQpInfo.ece[q].vendor_id, remQpInfo.ece[q].options, remQpInfo.ece[q].comp_mask);
+  }
+
   comm->ready = 1;
   stage->state = ncclIbCommStateConnected;
   stage->offset = 0;
@@ -755,7 +766,7 @@ ib_send_ready:
 
 NCCL_PARAM(IbGdrFlushDisable, "GDR_FLUSH_DISABLE", 0);
 
-ncclResult_t ncclIbAccept(void* listenComm, void** recvComm) {
+ncclResult_t ncclIbAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** /*recvDevComm*/) {
   struct ncclIbListenComm* lComm = (struct ncclIbListenComm*)listenComm;
   struct ncclIbCommStage* stage = &lComm->stage;
   struct ncclIbRecvComm* rComm = (struct ncclIbRecvComm*)stage->comm;
@@ -1419,7 +1430,6 @@ ncclNet_t ncclNetIb = {
   ncclIbInit,
   ncclIbDevices,
   ncclIbGetProperties,
-  NULL /* getDeviceHandle */,
   ncclIbListen,
   ncclIbConnect,
   ncclIbAccept,

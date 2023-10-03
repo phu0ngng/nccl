@@ -94,6 +94,16 @@ Examples:
 
 Note: By default, the loopback interface (``lo``) and docker interfaces (``docker*``) would not be selected unless there are no other interfaces available. If you prefer to use ``lo`` or ``docker*`` over other interfaces, you would need to explicitly select them using ``NCCL_SOCKET_IFNAME``. The default algorithm will also favor interfaces starting with ``ib`` over others. Setting ``NCCL_SOCKET_IFNAME`` will bypass the automatic interface selection algorithm and may use all interfaces matching the manual selection.
 
+NCCL_SOCKET_FAMILY
+------------------
+
+The ``NCCL_SOCKET_FAMILY`` variable allows users to force NCCL to use only IPv4 or IPv6 interface.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Set to ``AF_INET`` to force the use of IPv4, or ``AF_INET6`` to force IPv6 usage.
+
 NCCL_SOCKET_NTHREADS
 --------------------
 (since 2.4.8)
@@ -271,13 +281,9 @@ The ``NCCL_IB_HCA`` variable specifies which RDMA interfaces to use for communic
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Define to be a list of prefixes to filter interfaces to be used by NCCL.
-
-Using the ``^`` symbol, NCCL will exclude interfaces starting with any prefix in that list.
-
-Specific ports can also be specified using ``:``.
-
-To match (or not) an exact interface name instead of a prefix, prefix the string with the ``=`` character.
+Define to filter IB Verbs interfaces to be used by NCCL. The list is comma-separated; port numbers can be specified using
+the ``:`` symbol. An optional prefix ``^`` indicates the list is an exclude list. A second optional prefix ``=`` indicates
+that the tokens are exact names, otherwise by default NCCL would treat each token as a prefix.
 
 Examples:
 
@@ -285,7 +291,7 @@ Examples:
 
 ``=mlx5_0:1,mlx5_1:1`` : Use ports 1 of cards ``mlx5_0`` and ``mlx5_1``.
 
-``^=mlx5_1`` : Do not use card ``mlx5_1``.
+``^=mlx5_1,mlx5_4`` : Do not use cards ``mlx5_1`` and ``mlx5_4``.
 
 Note: using ``mlx5_1`` without a preceding ``=`` will select ``mlx5_1`` as well as ``mlx5_10`` to ``mlx5_19``, if they exist.
 It is therefore always recommended to add the ``=`` prefix to ensure an exact match.
@@ -392,18 +398,19 @@ NCCL_IB_QPS_PER_CONNECTION
 (since 2.10)
 
 Number of IB queue pairs to use for each connection between two ranks. This can be useful on multi-level fabrics which need multiple queue pairs to have good routing entropy.
-Each message, regardless of its size, will be split in N parts and sent on each queue pair. Therefore, increasing this number can cause a latency increase as well as a bandwidth reduction.
+See ``NCCL_IB_SPLIT_DATA_ON_QPS`` for different ways to split data on multiple QPs, as it can affect performance.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Number between 1 and 128, default is 1. Values beyond 8 usually cause degraded bandwidth.
+Number between 1 and 128, default is 1.
 
 NCCL_IB_SPLIT_DATA_ON_QPS
 -------------------------
 (since 2.18)
 
-This parameter controls how we use the queue pairs when we create more than one. Set to 1, each message will be split evenly on each queue pair. Set to 0, queue pairs will be
-used in round-robin mode for each message we send.
+This parameter controls how we use the queue pairs when we create more than one.
+Set to 1 (split mode, default), each message will be split evenly on each queue pair. This may cause a visible latency degradation if we use many QPs.
+Set to 0 (round-robin mode), queue pairs will be used in round-robin mode for each message we send. Operations which do not send multiple messages will not use all QPs.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -744,7 +751,17 @@ The user buffers will be automatically de-registered when the CUDA Graphs are de
 
 Value accepted
 ^^^^^^^^^^^^^^
-0 or 1. Default value is 0.
+0 or 1. Default value is 1 (Enabled).
+
+NCCL_LOCAL_REGISTER
+-------------------
+(since 2.19)
+
+Enable user local buffer registration when users explicitly call *ncclCommRegister*.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 1 (Enabled).
 
 NCCL_SET_STACK_SIZE
 -------------------

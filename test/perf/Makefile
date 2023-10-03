@@ -14,7 +14,7 @@ NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
 LIBRARIES += nccl
-NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%)
+NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%) -lcuda
 RPATHS = $$ORIGIN
 
 # Setting MEMLEAK=1 enables simply memory leak detection using clang++

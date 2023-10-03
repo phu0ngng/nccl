@@ -8,26 +8,14 @@
 #define NCCL_DEVICE_H_
 
 #include "nccl.h"
+#include "nccl_common.h"
 #include "align.h"
 #include <stdint.h>
 
-#define NCCL_NUM_FUNCTIONS 5 // Send/Recv not included for now
-typedef enum { ncclFuncBroadcast, ncclFuncReduce, ncclFuncAllGather, ncclFuncReduceScatter, ncclFuncAllReduce, ncclFuncSendRecv, ncclFuncSend, ncclFuncRecv, ncclNumFuncs} ncclFunc_t;
 extern const char* ncclFuncStr[NCCL_NUM_FUNCTIONS];
 
-#define NCCL_NUM_ALGORITHMS 6 // Tree/Ring/CollNet*
-#define NCCL_ALGO_TREE 0
-#define NCCL_ALGO_RING 1
-#define NCCL_ALGO_COLLNET_DIRECT 2
-#define NCCL_ALGO_COLLNET_CHAIN 3
-#define NCCL_ALGO_NVLS 4
-#define NCCL_ALGO_NVLS_TREE 5
 extern const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS];
 
-#define NCCL_NUM_PROTOCOLS 3 // Simple/LL/LL128
-#define NCCL_PROTO_LL 0
-#define NCCL_PROTO_LL128 1
-#define NCCL_PROTO_SIMPLE 2
 extern const char* ncclProtoStr[NCCL_NUM_PROTOCOLS];
 
 #define NCCL_MAX_OPS 2048
@@ -42,6 +30,7 @@ enum ncclDevRedOp_t {
 };
 struct ncclDevRedOpFull {
   ncclDevRedOp_t op;
+  ncclRedOp_t proxyOp;
   bool scalarArgIsPtr;
   uint64_t scalarArg;
 };
@@ -98,6 +87,7 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 struct ncclConnInfo {
   // Regular comm mechanism
   char *buffs[NCCL_NUM_PROTOCOLS]; // Local for recv, remote for send
+  void* mhandles[NCCL_NUM_PROTOCOLS];
   uint64_t *tail;     // Local for recv, remote for send
   uint64_t *head;     // Local for send, remote for recv
 
@@ -110,7 +100,7 @@ struct ncclConnInfo {
 
   uint64_t step;      // Keep where we are
   uint64_t llLastCleaning;
-  struct ncclNetDeviceHandle netDeviceHandle;
+  ncclNetDeviceHandle_t netDeviceHandle;
 };
 
 struct ncclProxyConnector {

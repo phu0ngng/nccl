@@ -16,9 +16,24 @@
 #include <pthread.h>
 #include "nccl1_compat.h"
 #include "timer.h"
+#include <cuda.h>
 
 // For nccl.h < 2.13 since we define a weak fallback
 extern "C" char const* ncclGetLastError(ncclComm_t comm);
+
+#define CUCHECK(cmd) do {                           \
+  CUresult err = cmd;                               \
+  if( err != CUDA_SUCCESS ) {                       \
+    char hostname[1024];                            \
+    const char *errStr;                             \
+    cuGetErrorString(err, &errStr);                 \
+    getHostName(hostname, 1024);                    \
+    printf("%s: Test CU failure %s:%d '%s'\n",      \
+         hostname,                                  \
+        __FILE__,__LINE__,errStr);                  \
+    return testCudaError;                           \
+  }                                                 \
+} while(0)
 
 #define CUDACHECK(cmd) do {                         \
   cudaError_t err = cmd;                            \

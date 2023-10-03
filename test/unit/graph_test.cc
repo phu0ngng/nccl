@@ -88,6 +88,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     return;
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
+  free(xmlSystem);
   if (inter == 0) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       CHECK(ncclTopoRemoveNode(system, NET, n));
@@ -136,22 +137,29 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   nvlsGraph.collNet = 0;
 
   /* Compute */
-  uint64_t computeTime = getTime();
+  uint64_t computeTime[5];
+  computeTime[0] = getTime();
   CHECK(ncclTopoCompute(system, &ringGraph));
+  computeTime[0] = getTime() - computeTime[0];
   CHECK(ncclTopoPrintGraph(system, &ringGraph));
   treeGraph.minChannels = ringGraph.nChannels;
   treeGraph.maxChannels = ringGraph.nChannels;
+  computeTime[1] = getTime();
   CHECK(ncclTopoCompute(system, &treeGraph));
+  computeTime[1] = getTime() - computeTime[1];
   CHECK(ncclTopoPrintGraph(system, &treeGraph));
-  cNetGraph.minChannels = 1;
-  cNetGraph.maxChannels = ringGraph.nChannels;
+  cNetGraph.minChannels = cNetGraph.maxChannels = ringGraph.nChannels;
+  computeTime[2] = getTime();
   CHECK(ncclTopoCompute(system, &cNetGraph));
+  computeTime[2] = getTime() - computeTime[2];
   CHECK(ncclTopoPrintGraph(system, &cNetGraph));
   nvlsGraph.minChannels = 1;
   nvlsGraph.maxChannels = MAXCHANNELS;
+  computeTime[3] = getTime();
   CHECK(ncclTopoCompute(system, &nvlsGraph));
+  computeTime[3] = getTime() - computeTime[3];
   CHECK(ncclTopoPrintGraph(system, &nvlsGraph));
-  computeTime = getTime() - computeTime;
+  computeTime[5] = computeTime[0]+computeTime[1]+computeTime[2]+computeTime[3];
 
   int err = 0, warn = 0, incompleteRef = 0;
 
@@ -179,9 +187,10 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     /* Compare */
     compareGraphs(&refRingGraph, &ringGraph, ngpus, inter, &err, &warn);
     compareGraphs(&refTreeGraph, &treeGraph, ngpus, inter, &err, &warn);
-    compareGraphs(&refCNetGraph, &cNetGraph, ngpus, inter, &err, &warn);
+    if (inter) compareGraphs(&refCNetGraph, &cNetGraph, ngpus, inter, &err, &warn);
     compareGraphs(&refNvlsGraph, &nvlsGraph, ngpus, inter, &err, &warn);
   }
+  free(xmlGraph);
 
   printf(" %15s/%2d/%s  %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f | %2dx%4.1f/%4.1f", platform, ngpus, inter ? "Inter":"Intra",
       ringGraph.nChannels, ringGraph.bwIntra, ringGraph.bwInter,
@@ -198,11 +207,13 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     CHECK(ncclTopoGetXmlFromGraphs(4, graphs, system, xml));
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));
     free(xml);
-    printf(" %s %5ld ms\n", err ? "FAILED" : "  WARN", computeTime/1000);
-  } else if (computeTime > 1000000) {
-    printf("   SLOW %5ld ms\n", computeTime/1000);
+    printf(" %s %5ld ms\n", err ? "FAILED" : "  WARN", computeTime[5]/1000);
+  } else if (computeTime[5] > 1000000) {
+    printf("   SLOW %5ld ms [%ld+%ld+%ld+%ld]\n", computeTime[5]/1000,
+        computeTime[0]/1000, computeTime[1]/1000, computeTime[2]/1000, computeTime[3]/1000);
     warn++;
-  } else printf("     OK %5ld ms\n", computeTime/1000);
+  } else printf("     OK %5ld ms\n", computeTime[5]/1000);
+  ncclTopoFree(system);
   *errors += err;
   *warnings += warn;
 }
@@ -252,6 +263,7 @@ int main(int argc, const char* argv[]) {
     RUN("SKL-V100");
     RUN("MS-1G-2N");
     RUN("T4");
+    RUN("A10-PCI");
 #ifdef __x86_64__
     RUN("DGX-1P");
     RUN("DGX-1P-4G");
@@ -274,11 +286,13 @@ int main(int argc, const char* argv[]) {
     RUN("ZionEX");
     RUN("FB-V100");
     RUN_MULTI8("DGX-H800");
+    RUN_MULTI8("DGX-H800-4NIC");
     RUN_MULTI8("Viking");
     RUN_MULTI8("Viking-SHARP");
     RUN_MULTI4("Scout");
     RUN("PCI-H100-NV");
 #endif
+    RUN("CG4");
     RUN("P9-6V");
     RUN("P9-4V");
     RUN("HP-ARM-V100");

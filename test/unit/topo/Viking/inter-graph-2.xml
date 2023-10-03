@@ -33,16 +33,16 @@
       <net dev="0"/>
     </channel>
     <channel>
-      <net dev="0"/>
-      <gpu dev="0"/>
+      <net dev="1"/>
       <gpu dev="1"/>
-      <net dev="0"/>
+      <gpu dev="0"/>
+      <net dev="1"/>
     </channel>
     <channel>
-      <net dev="1"/>
-      <gpu dev="1"/>
+      <net dev="0"/>
       <gpu dev="0"/>
-      <net dev="1"/>
+      <gpu dev="1"/>
+      <net dev="0"/>
     </channel>
     <channel>
       <net dev="1"/>

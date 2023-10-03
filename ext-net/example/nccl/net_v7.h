@@ -5,6 +5,8 @@
 #ifndef NCCL_NET_V7_H_
 #define NCCL_NET_V7_H_
 
+#include "net_device.h"
+
 typedef struct {
   char* name;                      // Used mostly for logging.
   char* pciPath;                   // Path to the PCI device in /sys.
@@ -31,8 +33,6 @@ typedef struct {
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
   ncclResult_t (*getProperties)(int dev, ncclNetProperties_v7_t* props);
-  // Get handle for device offload
-  ncclResult_t (*getDeviceHandle)(void* netComm, int tag, ncclNetDeviceHandle* handle, int* needsProxyProgress);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create a connection.
@@ -41,12 +41,12 @@ typedef struct {
   // This call must not block for the connection to be established, and instead
   // should return successfully with sendComm == NULL with the expectation that
   // it will be called again until sendComm != NULL.
-  ncclResult_t (*connect)(int dev, void* handle, void** sendComm);
+  ncclResult_t (*connect)(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_v7_t** sendDevComm);
   // Finalize connection establishment after remote peer has called connect.
   // This call must not block for the connection to be established, and instead
   // should return successfully with recvComm == NULL with the expectation that
   // it will be called again until recvComm != NULL.
-  ncclResult_t (*accept)(void* listenComm, void** recvComm);
+  ncclResult_t (*accept)(void* listenComm, void** recvComm, ncclNetDeviceHandle_v7_t** recvDevComm);
   // Register/Deregister memory. Comm can be either a sendComm or a recvComm.
   // Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
   ncclResult_t (*regMr)(void* comm, void* data, int size, int type, void** mhandle);

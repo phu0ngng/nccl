@@ -386,10 +386,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasOut = nvls->out != -1;
-    const int reduceWarps = hasOut ? 3 : nranks <= 6 ? 7 : 5;
-    const int bcastWarps = hasOut ? 2 : 0;
-    const int scatterWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps + 1)/2;
-    const int gatherWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps)/2;
+    const int totalWarps = NCCL_MAX_NTHREADS/WARP_SIZE;
+    const int bcastWarps = hasOut ? (args->regUsed ? ((totalWarps - 2) >> 1) - 1 : 2) : 0;
+    const int reduceWarps = args->regUsed ? (totalWarps - bcastWarps - 2) : (hasOut ? 3 : nranks <= 6 ? 7 : 5);
+    const int scatterWarps = args->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps + 1) >> 1;
+    const int gatherWarps = args->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps) >> 1;
 
     const int nThreadsScatter = scatterWarps*WARP_SIZE;
     const int nThreadsGather  = gatherWarps*WARP_SIZE;
@@ -405,57 +406,57 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
       Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
         prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL,
-           args->redOpArg, 0*Proto::MaxGroupWidth, 1, 1);
+          args->redOpArg, 0 * Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + bid*nvls->nHeads*chunkSize;
-        int nelem = min(nvls->nHeads*chunkSize, size-offset);
+        ssize_t offset = gridOffset + bid * nvls->nHeads * chunkSize;
+        int nelem = args->regUsed ? 0 : min(nvls->nHeads * chunkSize, size - offset);
         prims.scatter(offset, nelem, chunkSize, chunkSize, -1, 0);
       }
     } else if (tid < tidEndGather) {
       // Gather
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
-           args->redOpArg, 1*Proto::MaxGroupWidth, 1, 1);
+        prims(tid - tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
+          args->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + bid*nvls->nHeads*chunkSize;
-        int nelem = min(nvls->nHeads*chunkSize, size-offset);
+        ssize_t offset = gridOffset + bid * nvls->nHeads * chunkSize;
+        int nelem = args->regUsed ? 0 :min(nvls->nHeads * chunkSize, size - offset);
         prims.gather(offset, nelem, chunkSize, chunkSize, -1, 0);
       }
     } else if (tid < tidEndReduce && nvls->headRank != -1) {
       if (!hasOut) {
         // Reduce, broadcast through NVLS
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 1>;
-        Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
-          prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, NULL, NULL,
-             args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
+        Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
+          prims(tid - tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, NULL, NULL,
+            args->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          prims.recvSend(nelem);
+          ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
+          int nelem = min(chunkSize, size - offset);
+          prims.directRecvDirectSend(offset, offset, nelem);
         }
       } else {
         // Reduce, send to network
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
-        Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
-          prims(tid-tidEndGather, nThreadsReduce, &nvls->down, &nvls->out, NULL, NULL,
-             args->redOpArg, 2*Proto::MaxGroupWidth, 0, 1);
+        Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
+          prims(tid - tidEndGather, nThreadsReduce, &nvls->down, &nvls->out, NULL, NULL,
+            args->redOpArg, 2 * Proto::MaxGroupWidth, 0, 1, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          prims.recvSend(nelem);
+          ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
+          int nelem = min(chunkSize, size - offset);
+          prims.directRecvDirectSend(offset, offset, nelem);
         }
       }
     } else if (tid < tidEndBcast && nvls->headRank != -1) {
       // Recv from network, broadcast
       using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
-      Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndReduce, nThreadsBcast, &nvls->out, &nvls->down, NULL, NULL,
-           args->redOpArg, 3*Proto::MaxGroupWidth, 0, 0);
+      Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
+        prims(tid - tidEndReduce, nThreadsBcast, &nvls->out, &nvls->down, NULL, NULL,
+          args->redOpArg, 3 * Proto::MaxGroupWidth, 0, 0, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        prims.recvSend(nelem);
+        ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
+        int nelem = min(chunkSize, size - offset);
+        prims.directRecvDirectSend(offset, offset, nelem);
       }
     }
   }
@@ -475,10 +476,11 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PRO
     const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasUp = treeUp != -1;
-    const int reduceWarps = hasUp ? 5 : nranks <= 6 ? 7 : 5;
-    const int bcastWarps = hasUp ? 4 : 0;
-    const int scatterWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps + 1)/2;
-    const int gatherWarps = ((NCCL_MAX_NTHREADS/WARP_SIZE) - reduceWarps - bcastWarps)/2;
+    const int totalWarps = NCCL_MAX_NTHREADS/WARP_SIZE;
+    const int bcastWarps = hasUp ? (args->regUsed ? ((totalWarps - 2) >> 1) - 1 : 4) : 0;
+    const int reduceWarps = args->regUsed ? (totalWarps - bcastWarps - 2) : (hasUp ? 5 : nranks <= 6 ? 7 : 5);
+    const int scatterWarps = args->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps + 1) >> 1;
+    const int gatherWarps = args->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps) >> 1;
 
     const int nThreadsScatter = scatterWarps*WARP_SIZE;
     const int nThreadsGather  = gatherWarps*WARP_SIZE;
@@ -494,57 +496,57 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PRO
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
       Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
         prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL,
-           args->redOpArg, 0*Proto::MaxGroupWidth, 1, 1);
+          args->redOpArg, 0 * Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + bid*nvls->nHeads*chunkSize;
-        int nelem = min(nvls->nHeads*chunkSize, size-offset);
+        ssize_t offset = gridOffset + bid * nvls->nHeads * chunkSize;
+        int nelem = args->regUsed ? 0 : min(nvls->nHeads * chunkSize, size - offset);
         prims.scatter(offset, nelem, chunkSize, chunkSize, -1, 0);
       }
     } else if (tid < tidEndGather) {
       // Gather
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
-           args->redOpArg, 1*Proto::MaxGroupWidth, 1, 1);
+        prims(tid - tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
+          args->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + bid*nvls->nHeads*chunkSize;
-        int nelem = min(nvls->nHeads*chunkSize, size-offset);
+        ssize_t offset = gridOffset + bid * nvls->nHeads * chunkSize;
+        int nelem = args->regUsed ? 0 : min(nvls->nHeads * chunkSize, size - offset);
         prims.gather(offset, nelem, chunkSize, chunkSize, -1, 0);
       }
     } else if (tid < tidEndReduce && nvls->headRank != -1) {
       if (!hasUp) {
         // Reduce and Broadcast
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 1>;
-        Primitives<T, RedOp, FanSymmetric<3>, /*Direct=*/0, Proto, 0>
-          prims(tid-tidEndGather, nThreadsReduce, treeDown, treeDown, NULL, NULL,
-             args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
+        Primitives<T, RedOp, FanSymmetric<3>, /*Direct=*/1, Proto, 0>
+          prims(tid - tidEndGather, nThreadsReduce, treeDown, treeDown, NULL, NULL,
+            args->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          prims.recvSend(nelem);
+          ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
+          int nelem = min(chunkSize, size - offset);
+          prims.directRecvDirectSend(offset, offset, nelem);
         }
       } else {
         // Reduce, send to network
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
-        Primitives<T, RedOp, FanAsymmetric<3, 1>, /*Direct=*/0, Proto, 0>
-          prims(tid-tidEndGather, nThreadsReduce, treeDown, &treeUp, NULL, NULL,
-              args->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
+        Primitives<T, RedOp, FanAsymmetric<3, 1>, /*Direct=*/1, Proto, 0>
+          prims(tid - tidEndGather, nThreadsReduce, treeDown, &treeUp, NULL, NULL,
+            args->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-          ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
-          int nelem = min(chunkSize, size-offset);
-          prims.recvSend(nelem);
+          ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
+          int nelem = min(chunkSize, size - offset);
+          prims.directRecvDirectSend(offset, offset, nelem);
         }
       }
     } else if (tid < tidEndBcast && nvls->headRank != -1) {
       // Recv from network, broadcast
       using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
-      Primitives<T, RedOp, FanAsymmetric<1, 3>, /*Direct=*/0, Proto, 0>
-        prims(tid-tidEndReduce, nThreadsBcast, &treeUp, treeDown, NULL, NULL,
-           args->redOpArg, 3*Proto::MaxGroupWidth, 0, 0);
+      Primitives<T, RedOp, FanAsymmetric<1, 3>, /*Direct=*/1, Proto, 0>
+        prims(tid - tidEndReduce, nThreadsBcast, &treeUp, treeDown, NULL, NULL,
+          args->redOpArg, 3 * Proto::MaxGroupWidth, 0, 0, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
-        ssize_t offset = gridOffset + (bid*nvls->nHeads+nvls->headRank)*chunkSize;
-        int nelem = min(chunkSize, size-offset);
-        prims.recvSend(nelem);
+        ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
+        int nelem = min(chunkSize, size - offset);
+        prims.directRecvDirectSend(offset, offset, nelem);
       }
     }
   }
