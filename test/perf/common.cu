@@ -690,7 +690,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
       int actualIters;
-      TESTCHECK(getIteration(args->nbytes[0][0], &actualIters));
+      TESTCHECK(getIteration(size, &actualIters));
       char rootName[100];
       sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes[0][0], args->expectedBytes[0][0]), args->nbytes[0][0] / wordSize(type), typeName, opName, rootName);
