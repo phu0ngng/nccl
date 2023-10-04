@@ -529,6 +529,8 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
     sock->state = ncclSocketStateConnecting;
   } else if (ret != EINPROGRESS) {
     sock->state = ncclSocketStateError;
+    char line[SOCKET_NAME_MAXLEN+1];
+    WARN("socketPollConnect: Connect to %s returned %d(%s) errno %d(%s)", ncclSocketToString(&sock->addr, line), ret, strerror(ret), errno, strerror(errno));
     return ncclSystemError;
   }
   return ncclSuccess;
