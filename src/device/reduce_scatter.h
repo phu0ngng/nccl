@@ -212,12 +212,6 @@ struct RunWorkElement<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT,
           int delta = min(railAllEnd, railOneEnd) - (railAllBeg+railAllOffset);
           int rank = ncclShmem.comm.collNetDenseToUserRank[node*nRails + rail];
           ssize_t userOneBeg = rank*sizePerRank + railOneOffset;
-          if (0 && tid==0) {
-            printf("r=%d inp %e dst %p\n", ncclShmem.comm.rank, *((float*)inbuf + userOneBeg), (T*)dstPtrs[dst]+railAllOffset);
-            for (int src=0; src < nSrcs; src++) {
-              printf("r=%d src=%d val=%e\n", ncclShmem.comm.rank, src, *(float*)srcPtrs[0]);
-            }
-          }
           reduceCopy<ncclCollUnroll(), RedOp, T,
                      /*MultimemSrcs=*/0, 1+MinSrcs, 1+MaxSrcs,
                      /*MultimemDsts,MinDsts,MaxDsts=*/0,1,1,
