@@ -611,6 +611,7 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
 
   comm->collNetHeads = heads;
   comm->collNetHeadsNum = nHeads;
+  comm->collNetHeadsUniqueNum = nHeadsUnique;
   if (parent && parent->collNetSupport && parent->config.splitShare && parent->nNodes == comm->nNodes) {
     NCCLCHECKGOTO(ncclCalloc(&infos, comm->nRanks), ret, fail);
     /* check whether child can share collnet resources of parent. Since parent builds each collnet communicator

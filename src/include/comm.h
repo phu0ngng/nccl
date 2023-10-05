@@ -333,6 +333,7 @@ struct ncclComm {
   int intraHighestTransportType;
   int* collNetHeads;
   int collNetHeadsNum;
+  int collNetHeadsUniqueNum;
   int* collNetDenseToUserRank;
   int* collNetUserToDenseRank;
   /* sharable collNet proxy progress resource. */
