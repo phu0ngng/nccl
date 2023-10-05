@@ -42,8 +42,8 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
       if (ringIntra[i] == rank) {
         topoRanks->ringRecv[c] = ringIntra[0];
         topoRanks->ringSend[c] = ringIntra[localRanks-1];
-        channel->ring.prev = (i == 0) ? -1 : ringIntra[i-1];
-        channel->ring.next = (i == localRanks-1) ? -1 : ringIntra[i+1];
+        topoRanks->ringPrev[c] = (i == 0) ? -1 : ringIntra[i-1];
+        topoRanks->ringNext[c] = (i == localRanks-1) ? -1 : ringIntra[i+1];
       }
       if (treeIntra[i] == rank) {
         int parentIndex = 0;
@@ -61,11 +61,9 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
         channel->collnetChain.down[0] = i == localRanks-1 ? -1 : collNetIntra[i+1];
       }
     }
-    topoRanks->ringPrev[c] = channel->ring.prev;
-    topoRanks->ringNext[c] = channel->ring.next;
     topoRanks->nvlsHeads[c] = nvlsIntra[0];
   }
-  // Duplicate channels rings/trees
+  // Duplicate channels trees
   struct ncclChannel* channel0 = comm->channels;
   struct ncclChannel* channel1 = channel0+nChannels;
   memcpy(channel1, channel0, nChannels*sizeof(struct ncclChannel));
@@ -80,23 +78,13 @@ static ncclResult_t connectRings(struct ncclComm* comm, int* ringRecv, int* ring
     int* send = ringSend+c*comm->nNodes;
     int* prev = ringPrev+c*comm->nRanks;
     int* next = ringNext+c*comm->nRanks;
-    struct ncclChannel* channel0 = comm->channels+c;
-    struct ncclChannel* channel1 = channel0+nChannels;
     for (int n=0; n<nNodes; n++) {
       int recvRank = recv[n];
       int prevSendRank = send[(n-1+nNodes)%nNodes];
       prev[recvRank] = prevSendRank;
-      if (comm->rank == recvRank) {
-        channel0->ring.prev = prevSendRank;
-        channel1->ring.prev = prevSendRank;
-      }
       int sendRank = send[n];
       int nextRecvRank = recv[(n+1)%nNodes];
       next[sendRank] = nextRecvRank;
-      if (comm->rank == sendRank) {
-        channel0->ring.next = nextRecvRank;
-        channel1->ring.next = nextRecvRank;
-      }
     }
     TRACE(NCCL_GRAPH, "Ring %d : %d -> %d -> %d", c, channel0->ring.prev, comm->rank, channel0->ring.next);
     TRACE(NCCL_GRAPH, "Ring %d : %d -> %d -> %d", c+nChannels, channel1->ring.prev, comm->rank, channel1->ring.next);
@@ -348,6 +336,12 @@ static int copyChannels(struct ncclComm* comm, int start, int end, int* ringPrev
   return c;
 }
 
+void exchangeValues(int* v0, int* v1) {
+  int tmp = *v1;
+  *v1 = *v0;
+  *v0 = tmp;
+}
+
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeToParent, *treeToChild0, *treeToChild1, *nvlsHeads;
@@ -362,6 +356,22 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   NCCLCHECK(ncclCalloc(&treeToChild0, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&treeToChild1, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&nvlsHeads, nNodes*MAXCHANNELS));
+
+  // Alternate rings to avoid crossing rails
+  if (graphs[NCCL_ALGO_RING]->crossNic && (comm->nNodes % 2) == 0 && (nChannels % 2) == 0) {
+    for (int r=0; r<comm->nRanks; r++) {
+      if (comm->rankToNode[r] % 2 == 1) {
+        // Exchange rings
+        for (int c=0; c<nChannels; c+=2) {
+          exchangeValues(allTopoRanks[r]->ringRecv+c, allTopoRanks[r]->ringRecv+(c^1));
+          exchangeValues(allTopoRanks[r]->ringSend+c, allTopoRanks[r]->ringSend+(c^1));
+          exchangeValues(allTopoRanks[r]->ringPrev+c, allTopoRanks[r]->ringPrev+(c^1));
+          exchangeValues(allTopoRanks[r]->ringNext+c, allTopoRanks[r]->ringNext+(c^1));
+        }
+      }
+    }
+  }
+
   for (int c=0; c<nChannels;c++) {
     for (int n=0; n<nNodes; n++) {
       int r = firstRanks[n];
@@ -391,6 +401,14 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   // Duplicate ringPrev/ringNext for ncclBuildRing
   memcpy(ringPrev+nChannels*nranks, ringPrev, nChannels*nranks*sizeof(int));
   memcpy(ringNext+nChannels*nranks, ringNext, nChannels*nranks*sizeof(int));
+
+  // Set ring prev/next for my rank
+  for (int c=0; c<nChannels; c++) {
+    struct ncclChannel* channel0 = comm->channels+c;
+    struct ncclChannel* channel1 = channel0+nChannels;
+    channel0->ring.prev = channel1->ring.prev = ringPrev[c*nranks+comm->rank];
+    channel0->ring.next = channel1->ring.next = ringNext[c*nranks+comm->rank];
+  }
 
   // Duplication should be complete now
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
