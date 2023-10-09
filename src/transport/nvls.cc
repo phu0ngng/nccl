@@ -281,14 +281,14 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   if (nvlsShare) {
     /* reuse NVLS resources */
     comm->nvlsChannels = std::min(comm->nvlsChannels, parent->nvlsResources->nChannels);
-    for (int c = 0; c < comm->nvlsChannels; c++) {
+    for (int c = 0; c < comm->nChannels; c++) {
       NCCLCHECKGOTO(initNvlsChannel(comm, c, parent, true), res, cleanup);
     }
 
     comm->nvlsResources = parent->nvlsResources;
     ncclAtomicRefCountIncrement(&parent->nvlsResources->refCount);
   } else {
-    int nChannels;
+    int nChannels = comm->nChannels;
     struct ncclNvlsSharedRes* resources;
 
     NCCLCHECK(ncclCalloc(&resources, 1));
@@ -301,7 +301,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
       comm->nvlsChannels = std::min(comm->nvlsChannels, parent->nvlsResources->nChannels);
     }
 
-    nChannels = resources->nChannels = comm->nvlsChannels;
+    resources->nChannels = comm->nvlsChannels;
     for (int c = 0; c < nChannels; c++) {
       NCCLCHECK(initNvlsChannel(comm, c, parent, false));
     }

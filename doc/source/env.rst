@@ -596,7 +596,7 @@ Comma-separated list of algorithms (not case sensitive) among: Tree, Ring, Colln
 NVLS (2.17+) is the algorithm used to enable NVLink SHARP offload.
 To specify algorithms to exclude (instead of include), start the list with ^.
 
-The default is ``Tree,Ring,CollnetDirect,CollnetChain,NVLS``.
+The default is ``Tree,Ring,CollnetDirect,CollnetChain,NVLS,NVLSTree``.
 
 NCCL_PROTO
 ----------

@@ -235,9 +235,9 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
     // Reset comm->tasks to empty.
     comm->tasks.nTasksColl = 0;
     comm->tasks.nTasksP2p = 0;
+    comm->tasks.workBytesTotal = 0;
     comm->tasks.streams = nullptr;
     ncclIntruQueueConstruct(&comm->tasks.collQueue);
-    comm->tasks.collBytesTotal = 0;
     for (int i = 0; i < comm->nRanks; i++) {
       ncclIntruQueueConstruct(&comm->tasks.peers[i].sendQueue);
       ncclIntruQueueConstruct(&comm->tasks.peers[i].recvQueue);

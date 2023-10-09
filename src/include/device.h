@@ -217,21 +217,28 @@ struct ncclWorkElem {
   union {
     uint8_t flagBits;
     struct {
-      uint8_t isUsed:1, redOpArgIsPtr:1, regUsed:1;
+      uint8_t isUsed:1, redOpArgIsPtr:1, regUsed:1, oneNode:1;
     };
   };
   uint8_t nWarps;
   uint8_t direct;
-
-  const void * sendbuff;
-  void * recvbuff;
+  uint32_t root;
+  const void *sendbuff;
+  void *recvbuff;
 
   size_t count;
-  size_t lastChunkSize;
-  uint32_t root;
-  uint8_t bid;
-  uint8_t nChannels;
   uint64_t redOpArg;
+  uint64_t chunkCount:25, workCount:39;
+  union {
+    struct {
+      uint64_t lastChunkCount:25;
+      uint64_t workOffset:39;
+    };
+    struct {
+      uint64_t bid:32;
+      uint64_t nChannels:32;
+    };
+  };
 };
 
 #define NCCL_MAX_WORK_ELEMENTS ((NCCL_WORK_SIZE - alignUp(sizeof(ncclWorkHeader), alignof(ncclWorkElem)))/sizeof(ncclWorkElem))
