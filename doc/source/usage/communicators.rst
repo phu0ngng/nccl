@@ -304,6 +304,9 @@ node failure, or process failure. When such an error happens, the application sh
 on the communicator to free all resources, then recreate a new communicator to continue.
 All NCCL calls can be non-blocking to ensure ncclCommAbort can be called at any point, during initialization,
 communication or when finalizing the communicator.
+
+To correctly abort, when any rank in a communicator fails (e.g., due to segmentation fault), all other ranks need to 
+call *ncclCommAbort* to abort their own NCCL communicator.
 Users can implement methods to decide when and whether to abort the communicators and restart the NCCL operation.
 Here is an example showing how to initialize and split a communicator in a non-blocking manner, allowing for abort at any point:
 
@@ -320,11 +323,11 @@ Here is an example showing how to initialize and split a communicator in a non-b
 
   if (checkTimeout() == true || state != ncclSuccess) abortFlag = true;
 
-  /* sync global error. */
+  /* sync abortFlag among all healthy ranks. */
   reportErrorGlobally(abortFlag, &globalFlag);
 
   if (globalFlag) {
-    /* time is out or initialization fails, just abort and restart. */
+    /* time is out or initialization fails, every rank need to abort and restart. */
     ncclCommAbort(comm);
     /* restart NCCL; this is a user implemented function, it might include
      * resource clean and ncclCommInitRankConfig() to create new communicators. */
@@ -339,7 +342,7 @@ Here is an example showing how to initialize and split a communicator in a non-b
 
   if (checkTimeout() == true || state != ncclSuccess) abortFlag = true;
 
-  /* sync global error. */
+  /* sync abortFlag among all healthy ranks. */
   reportErrorGlobally(abortFlag, &globalFlag);
 
   if (globalFlag) {
