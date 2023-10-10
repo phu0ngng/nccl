@@ -13,7 +13,7 @@
 #include "ipcsocket.h"
 #include "nccl_net.h"
 #include <pthread.h>
-#include "shm.h"
+#include "shmutils.h"
 #include "p2p.h"
 
 typedef enum : uint8_t {

@@ -677,6 +677,16 @@ Values accepted
 ^^^^^^^^^^^^^^^
 0 or 1. Default is 0 in 2.18 (disabled); since 2.19 this feature is auto-enabled by default if the system supports it (NCCL_CUMEM_ENABLE can still be used to override the autodetection).
 
+NCCL_CUMEM_HOST_ENABLE
+----------------------
+(since 2.23)
+
+Use CUDA cuMem* functions to allocate host memory in NCCL.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default is 1.
+
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
 (since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL was renamed to NCCL_NET_GDR_LEVEL)

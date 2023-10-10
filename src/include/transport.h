@@ -51,7 +51,7 @@ struct ncclPeerInfo {
   int version;
 };
 
-#define CONNECT_SIZE 128
+#define CONNECT_SIZE 256
 struct ncclConnect {
   char data[CONNECT_SIZE];
 };

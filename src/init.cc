@@ -153,7 +153,7 @@ void ncclCommPushCudaFree(struct ncclComm* comm, void* obj) {
 }
 
 static ncclResult_t ncclDestructorFnCudaHostFree(struct ncclDestructor* dtor) {
-  CUDACHECK(cudaFreeHost(dtor->obj));
+  NCCLCHECK(ncclCudaHostFree(dtor->obj));
   return ncclSuccess;
 }
 void ncclCommPushCudaHostFree(struct ncclComm* comm, void* obj) {
@@ -1777,6 +1777,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   int totalnDev;
   int *gpuFlags = NULL;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  int oldDev = 0;
 
   constexpr nvtxPayloadSchemaEntry_t CommInitAllSchema[] = {
     {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "No. of devices"}
@@ -1786,6 +1787,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   // Load the CUDA driver and dlsym hooks (can fail on old drivers)
   (void)ncclCudaLibraryInit();
 
+  CUDACHECK(cudaGetDevice(&oldDev));
   NCCLCHECKGOTO(PtrCheck(comms, "CommInitAll", "comms"), ret, fail);
   if (ndev < 0) {
     WARN("Invalid device count requested : %d", ndev);
@@ -1821,13 +1823,18 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECKGOTO(ncclGroupStart(), ret, fail);
   for (int i=0; i<ndev; i++) {
     // Ignore return codes .. we need to call ncclGroupEnd to clean up anyway
-    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, &config, __func__);
+    int dev = devlist ? devlist[i] : i;
+    CUDACHECKGOTO(cudaSetDevice(dev), ret, fail);
+    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, dev, &config, __func__);
   }
   NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
 
-fail:
+exit:
+  cudaSetDevice(oldDev);
   free(gpuFlags);
   return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState) {
@@ -2107,12 +2114,15 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   struct ncclCommInitRankAsyncJob *job = NULL;
   struct ncclComm* childComm = NCCL_COMM_NULL;
   ncclResult_t res = ncclSuccess;
+  int oldDev;
 
+  CUDACHECK(cudaGetDevice(&oldDev));
   NCCLCHECK(ncclGroupStartInternal());
   NCCLCHECKGOTO(CommCheck(comm, "CommSplit", "comm"), res, fail);
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommSplit", "newcomm"), res, fail);
   NCCLCHECKGOTO(ncclCommEnsureReady(comm), res, fail);
 
+  CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), res, fail);
   /* *newcomm should be NCCL_COMM_NULL until comm split fully complete. */
   *newcomm = NCCL_COMM_NULL;
   if (color == NCCL_SPLIT_NOCOLOR) {
@@ -2156,6 +2166,7 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
+  cudaSetDevice(oldDev);
   (void)ncclGroupErrCheck(res);
   NCCLCHECK(ncclGroupEndInternal());
   return res;
