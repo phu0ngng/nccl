@@ -633,7 +633,6 @@ static ncclResult_t scheduleP2pTasksToPlan(
     for (int i=0; i < tasks->p2pOrderSteps; i++) {
       int sendPeer = sendOrder[i];
       int recvPeer = recvOrder[i];
-      if ((i % (NCCL_MAX_WORK_ELEMENTS_P2P/2)) == 0) fuseOk = false;
       struct ncclTaskP2p* send = sendPeer != -1 ? ncclIntruQueueHead(&peers[sendPeer].sendQueue) : NULL;
       struct ncclTaskP2p* recv = recvPeer != -1 ? ncclIntruQueueHead(&peers[recvPeer].recvQueue) : NULL;
       if (sendPeer == comm->rank) {
@@ -669,6 +668,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
         if (send) sendBytes -= send->chunk*sendChunkBytesMax;
 
         do {
+          if ((i % (NCCL_MAX_WORK_ELEMENTS_P2P/2)) == 0) fuseOk = false;
           ssize_t recvChunkBytes = std::min(recvBytes, recvChunkBytesMax); // -1 preserved
           ssize_t sendChunkBytes = std::min(sendBytes, sendChunkBytesMax);
           if (recvChunkBytes != 0) {
