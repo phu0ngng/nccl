@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <float.h>
 #include "core.h"
 #include "nvmlwrap.h"
 #include "xml.h"

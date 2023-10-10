@@ -627,7 +627,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
     while (nChannelsMax*nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
   }
 
-  bool fuseOk;
+  bool fuseOk = false;
   // We can perform 8 send/recv per round per CTA. Make sure we jump between fused blocks at node boundaries.
   while (tasks->nTasksP2p != 0) {
     for (int i=0; i < tasks->p2pOrderSteps; i++) {
