@@ -342,8 +342,6 @@ struct ncclComm {
   int nvlsRegSupport;
   /* sharable NVLS resource. */
   struct ncclNvlsSharedRes* nvlsResources;
-  struct ncclShmemCollBuff nvlsShmem;
-  void *nvlsShmemHandle;
 
   ssize_t channelSize; // User requested work size (bytes) for channel partitions
 
