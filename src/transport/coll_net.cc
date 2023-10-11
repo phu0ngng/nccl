@@ -817,7 +817,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
                   sendMhandle, sub->requests+buffSlot));
               } else {
                 ncclNetSGE_v8_t sendParts;
-                sendParts.mhandle = recvMhandle;
+                sendParts.mhandle = sendMhandle;
                 sendParts.address = region + sendBeg;
                 sendParts.size = allEnd - allBeg;
                 NCCLCHECK(proxyState->ncclCollNet->ireducescatter(
