@@ -146,8 +146,14 @@ class Primitives<
 
       void **ptrs = isSendNotRecv ? (ncclShmem.groups[group].dsts + Dst)
                                   : (ncclShmem.groups[group].srcs + Src);
-      if (flags & OffsFifoEnabled)
-        ptrs[index] = connEltsFifo + loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T);
+      if (flags & OffsFifoEnabled) {
+        int offset = -1;
+        int spins = 0;
+        while ((offset = loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T)) == -1) {
+          if (checkAbort(spins)) break;
+        }
+        ptrs[index] = connEltsFifo + offset;
+      }
       else if (isSendNotRecv && DirectSend) {
         if (flags & (DirectWrite | NvlsDirectWrite)) {
           ptrs[index] = directBuff + dstIx + offset;

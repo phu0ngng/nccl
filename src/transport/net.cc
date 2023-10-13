@@ -174,7 +174,7 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   struct setupReq req = { 0 };
   int tpProxyRank;
 
-  send->conn.shared = req.shared = graph ? 0 : ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : 1;
+  send->conn.shared = req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 0 : 1;
   req.channelId = channelId;
   req.connIndex = connIndex;
 
@@ -210,7 +210,7 @@ NCCL_PARAM(GdrCopyFlushEnable, "GDRCOPY_FLUSH_ENABLE", 0);
 static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId, int connIndex) {
   struct setupReq req = { 0 };
 
-  recv->conn.shared = req.shared = graph ? 0 : ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : 1;
+  recv->conn.shared = req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 0 : 1;
   req.channelId = channelId;
   req.connIndex = connIndex;
 
@@ -751,8 +751,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   resources->sendMem = (struct ncclSendMem*) NCCL_NET_MAP_GET_POINTER(map, cpu, sendMem);
   resources->recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, cpu, recvMem);
 
-  // Don't give credits yet in shared mode.
-  resources->sendMem->head = map->shared ? -NCCL_STEPS : 0;
+  resources->sendMem->head = 0;
   for (int i=0; i<NCCL_STEPS; i++) resources->recvMem->sizesFifo[i] = -1;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
@@ -1048,10 +1047,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           int offset;
           NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset));
           resources->recvMem->offsFifo[buffSlot] = offset;
-          __sync_synchronize();
-          volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
           sub->posted += args->sliceSteps;
-          *sendHead = sub->base + sub->posted - NCCL_STEPS;
           if (resources->gdcSync) wc_store_fence(); // Flush out WC write
         } else sub->posted += args->sliceSteps;
         for (uint64_t step=sub->posted-args->sliceSteps; step<sub->posted; step++) {
@@ -1064,12 +1060,13 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       if (sub->transmitted < sub->posted && sub->transmitted < sub->done + NCCL_STEPS) {
         int buffSlot = (sub->base+sub->transmitted)%NCCL_STEPS;
         volatile int* sizesFifo = resources->recvMem->sizesFifo;
+        volatile int* offsFifo = resources->recvMem->offsFifo;
         volatile uint64_t* recvTail = &resources->recvMem->tail;
         if (sizesFifo[buffSlot] != -1 && ((*recvTail > (sub->base+sub->transmitted)) || p == NCCL_PROTO_LL)) {
           // We have something to receive, let's check if it's completely ready.
           int size = sizesFifo[buffSlot];
           bool shared = (p == NCCL_PROTO_SIMPLE) && resources->shared;
-          char* buff = shared ? localBuff+resources->recvMem->offsFifo[buffSlot] : localBuff+buffSlot*stepSize;
+          char* buff = shared ? localBuff+offsFifo[buffSlot] : localBuff+buffSlot*stepSize;
           int ready = 1;
           if (p == NCCL_PROTO_LL128) {
             ready = resources->useGdr;
@@ -1100,6 +1097,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p", sub->transmitted, buffSlot, sub->requests[buffSlot]);
               sizesFifo[buffSlot] = -1;
+              if (shared) offsFifo[buffSlot] = -1;
               // Make sure size is reset to zero before we update the head.
               __sync_synchronize();
               sub->transmitted += args->sliceSteps;
@@ -1120,11 +1118,9 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           sub->done += args->sliceSteps;
           for (uint64_t step=sub->done-args->sliceSteps; step<sub->done; step++) ncclProfilingRecord(args, s, step, ncclProxyProfileEnd);
 
-          if (resources->shared == 0) {
-            volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
-            *sendHead = sub->base + sub->done;
-            if (resources->gdcSync) wc_store_fence(); // Flush out WC write
-          }
+          volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
+          *sendHead = sub->base + sub->done;
+          if (resources->gdcSync) wc_store_fence(); // Flush out WC write
           args->idle = 0;
           if (sub->done == sub->nsteps) {
             resources->step = sub->base + sub->nsteps;
