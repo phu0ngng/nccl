@@ -1187,7 +1187,16 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
 static inline ncclResult_t getCollNetSupport(struct ncclInfo* info, int* collNetSupport) {
   // Translate ncclAvg and PreMulSum
   ncclRedOp_t netOp = info->op == ncclAvg || info->op >= ncclNumOps ? ncclSum : info->op;
-  *collNetSupport = info->comm->collNetSupport && info->comm->collNetSupportMatrix[netOp][info->datatype];
+  *collNetSupport = info->comm->collNetSupport;
+  switch (info->coll) {
+  case ncclFuncAllReduce:
+  case ncclFuncReduce:
+  case ncclFuncReduceScatter:
+    *collNetSupport &= info->comm->collNetSupportMatrix[netOp][info->datatype];
+    break;
+  default:
+    break;
+  }
   return ncclSuccess;
 }
 
