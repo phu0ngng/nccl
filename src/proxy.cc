@@ -1630,7 +1630,8 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     proxyState->abortFlagRefCount = comm->abortFlagRefCount;
     ncclAtomicRefCountIncrement(comm->abortFlagRefCount);
     proxyState->p2pnChannels = comm->p2pnChannels;
-    proxyState->p2pChunkSize = comm->p2pChunkSize;
+    proxyState->sharedBuffer.slotSize = comm->p2pChunkSize;
+    proxyState->sharedBuffer.nslots = comm->buffSizes[NCCL_PROTO_SIMPLE] / comm->p2pChunkSize;
     proxyState->nChannels = comm->nChannels;
     proxyState->allocP2pNetLLBuffers = comm->allocP2pNetLLBuffers;
     proxyState->dmaBufSupport = comm->dmaBufSupport;

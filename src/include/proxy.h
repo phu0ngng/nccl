@@ -193,6 +193,11 @@ struct ncclProxyRpcResponseHeader {
   int respSize;
 };
 
+struct ncclProxyStateSharedBuffer {
+  int nslots;
+  int slotSize;
+};
+
 struct ncclProxyState {
   int internalRefCount;
   int refCount;
@@ -201,7 +206,7 @@ struct ncclProxyState {
   int tpLocalnRanks;
   int cudaDev;
   int p2pnChannels;
-  int p2pChunkSize;
+  struct ncclProxyStateSharedBuffer sharedBuffer;
   int nChannels;
   int buffSizes[NCCL_NUM_PROTOCOLS];
   bool allocP2pNetLLBuffers;
