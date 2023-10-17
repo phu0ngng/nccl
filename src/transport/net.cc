@@ -510,6 +510,7 @@ static ncclResult_t sharedNetBuffersInit(struct ncclProxyState* proxyState, int 
 }
 
 static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int channel, int slot, int* offset) {
+  if (slot > proxyState->sharedBuffer.nslots) return ncclInternalError;
   // Use different pools for different channels and also separate send/recv.
   int globalSlot = (channel*proxyState->sharedBuffer.nslots)+slot;
   *offset = proxyState->sharedBuffer.slotSize * globalSlot;
@@ -661,9 +662,10 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
         NCCLCHECK(ncclCalloc(progressState->netComms + resources->netDev, proxyState->tpnRanks));
       }
       struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev] + resources->tpRemoteRank;
-      if (comms->sendComm[resources->channelId] == NULL) ret = proxyState->ncclNet->connect(resources->netDev, req->handle, comms->sendComm + resources->channelId, &resources->netDeviceHandle);
-      resources->netSendComm = comms->sendComm[resources->channelId];
-      if (comms->sendComm[resources->channelId]) comms->sendRefCount[resources->channelId]++;
+      int c = resources->channelId, i = resources->connIndex;
+      if (comms->sendComm[c][i] == NULL) ret = proxyState->ncclNet->connect(resources->netDev, req->handle, comms->sendComm[c]+i, &resources->netDeviceHandle);
+      resources->netSendComm = comms->sendComm[c][i];
+      if (comms->sendComm[c][i]) comms->sendRefCount[c][i]++;
     } else {
       ret = proxyState->ncclNet->connect(resources->netDev, req->handle, &resources->netSendComm, &resources->netDeviceHandle);
     }
@@ -804,9 +806,10 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
         NCCLCHECK(ncclCalloc(progressState->netComms + resources->netDev, proxyState->tpnRanks));
       }
       struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev] + resources->tpRemoteProxyRank;
-      if (comms->recvComm[resources->channelId] == NULL) ret = proxyState->ncclNet->accept(resources->netListenComm, comms->recvComm+resources->channelId, &resources->netDeviceHandle);
-      resources->netRecvComm = comms->recvComm[resources->channelId];
-      if (comms->recvComm[resources->channelId]) comms->recvRefCount[resources->channelId]++;
+      int c = resources->channelId, i = resources->connIndex;
+      if (comms->recvComm[c][i] == NULL) ret = proxyState->ncclNet->accept(resources->netListenComm, comms->recvComm[c]+i, &resources->netDeviceHandle);
+      resources->netRecvComm = comms->recvComm[c][i];
+      if (comms->recvComm[c][i]) comms->recvRefCount[c][i]++;
     } else {
       ret = proxyState->ncclNet->accept(resources->netListenComm, &resources->netRecvComm, &resources->netDeviceHandle);
     }
@@ -947,8 +950,8 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
       NCCLCHECK(sharedNetBuffersDestroy(proxyState, resources->tpLocalRank, 0, connection));
       if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
         struct ncclSharedNetComms* comms = proxyState->progressState.netComms[resources->netDev]+resources->tpRemoteRank;
-        comms->sendRefCount[resources->channelId]--;
-        if (comms->sendRefCount[resources->channelId] == 0) NCCLCHECK(proxyState->ncclNet->closeSend(comms->sendComm[resources->channelId]));
+        int c = resources->channelId, i = resources->connIndex;
+        if (--comms->sendRefCount[c][i] == 0) NCCLCHECK(proxyState->ncclNet->closeSend(comms->sendComm[c][i]));
       } else {
         NCCLCHECK(proxyState->ncclNet->closeSend(resources->netSendComm));
       }
@@ -988,8 +991,8 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
       NCCLCHECK(sharedNetBuffersDestroy(proxyState, resources->tpLocalRank, 1, connection));
       if (resources->maxRecvs > 1 && ncclParamNetSharedComms()) {
         struct ncclSharedNetComms* comms = proxyState->progressState.netComms[resources->netDev] + resources->tpRemoteProxyRank;
-        comms->recvRefCount[resources->channelId]--;
-        if (comms->recvRefCount[resources->channelId] == 0) NCCLCHECK(proxyState->ncclNet->closeRecv(comms->recvComm[resources->channelId]));
+        int c = resources->channelId, i = resources->connIndex;
+        if (--comms->recvRefCount[c][i] == 0) NCCLCHECK(proxyState->ncclNet->closeRecv(comms->recvComm[c][i]));
       } else {
         NCCLCHECK(proxyState->ncclNet->closeRecv(resources->netRecvComm));
       }
@@ -1023,7 +1026,8 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       struct ncclProxySubArgs* sub = args->subs+s;
       if (sub->done == sub->nsteps) continue;
       struct sendNetResources* resources = (struct sendNetResources*) (sub->connection->transportResources);
-      int maxDepth = std::min(NCCL_STEPS, proxyState->sharedBuffer.nslots/args->nsubs);
+      int maxDepth = NCCL_STEPS;
+      while (maxDepth * args->nsubs > proxyState->sharedBuffer.nslots) maxDepth /= 2;
       void* mhandle = resources->mhandles[p];
       int stepSize = resources->buffSizes[p] / NCCL_STEPS;
       char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
@@ -1033,10 +1037,10 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       if (sub->posted < sub->nsteps && sub->posted < sub->done + maxDepth) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         if (resources->shared) {
-          int slotsPerChunk = proxyState->sharedBuffer.nslots / (maxDepth*args->nsubs);
-          int sharedBuffSlot = (sub->posted%maxDepth) * slotsPerChunk;
+          int slotsPerChunk = args->sliceSteps * proxyState->sharedBuffer.nslots / (maxDepth*args->nsubs);
+          int sharedBuffSlot = (sub->posted%maxDepth)/args->sliceSteps;
           int offset;
-          NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset));
+          NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, (sharedBuffSlot*args->nsubs+s)*slotsPerChunk, &offset));
           resources->recvMem->offsFifo[buffSlot] = offset;
           sub->posted += args->sliceSteps;
           if (resources->gdcSync) wc_store_fence(); // Flush out WC write
@@ -1179,23 +1183,25 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         struct ncclProxySubArgs* sub = subGroup + i;
         if (sub->posted < sub->nsteps) {
           struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
-          int maxDepth = std::min(NCCL_STEPS, proxyState->sharedBuffer.nslots/args->nsubs);
+          int maxDepth = NCCL_STEPS;
+          while (maxDepth * args->nsubs > proxyState->sharedBuffer.nslots) maxDepth /= 2;
           if (sub->posted >= sub->done + maxDepth) { subCount = 0; break; }
           int stepSize = resources->buffSizes[p] / NCCL_STEPS;
           char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
           int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
+          sizes[subCount] = stepSize*args->sliceSteps;
           if (p == NCCL_PROTO_SIMPLE && resources->shared) {
-            int slotsPerChunk = proxyState->sharedBuffer.nslots / (maxDepth*args->nsubs);
-            int sharedBuffSlot = (sub->posted%maxDepth) * slotsPerChunk;
+            int slotsPerChunk = args->sliceSteps * proxyState->sharedBuffer.nslots / (maxDepth*args->nsubs);
+            int sharedBuffSlot = (sub->posted%maxDepth)/args->sliceSteps;
             int offset;
-            NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s+i, &offset));
+            NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, (sharedBuffSlot*args->nsubs+s+i)*slotsPerChunk, &offset));
+            sizes[subCount] = slotsPerChunk * proxyState->sharedBuffer.slotSize;
             volatile int* offsFifo = (volatile int*)resources->recvMem->offsFifo;
             offsFifo[buffSlot] = offset;
             ptrs[subCount] = localBuff+offset;
           } else {
             ptrs[subCount] = localBuff+buffSlot*stepSize;
           }
-          sizes[subCount] = stepSize*args->sliceSteps;
           if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
           tags[subCount] = resources->tpRemoteRank;
           mhandles[subCount] = resources->mhandles[p];

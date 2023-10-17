@@ -554,17 +554,21 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
   case ncclPatternTreeUpDown: {
       if (op->pattern != ncclPatternTreeDown) { // Tree up
         struct ncclTree* tree = &channel->tree;
-        for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
-          NCCLCHECK(SaveProxy(comm, channel, proxyRecv, tree->down[i], op, 0, justInquire));
+        for (int t=0; t<2; t++) {
+          for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
+            NCCLCHECK(SaveProxy(comm, channel, proxyRecv, tree->down[t][i], op, t, justInquire));
+          }
+          NCCLCHECK(SaveProxy(comm, channel, proxySend, tree->up[t], op, t, justInquire));
         }
-        NCCLCHECK(SaveProxy(comm, channel, proxySend, tree->up, op, 0, justInquire));
       }
       if (op->pattern != ncclPatternTreeUp) { // Tree down
         struct ncclTree* tree = &channel->tree;
-        for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) {
-          NCCLCHECK(SaveProxy(comm, channel, proxySend, tree->down[i], op, 0, justInquire));
+        for (int t=0; t<2; t++) {
+          for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
+            NCCLCHECK(SaveProxy(comm, channel, proxySend, tree->down[t][i], op, t, justInquire));
+          }
+          NCCLCHECK(SaveProxy(comm, channel, proxyRecv, tree->up[t], op, t, justInquire));
         }
-        NCCLCHECK(SaveProxy(comm, channel, proxyRecv, tree->up, op, 0, justInquire));
       }
     } break;
   case ncclPatternCollnetChain: {

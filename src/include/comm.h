@@ -131,8 +131,7 @@ struct ncclChannel {
   struct ncclRing ring;
   int* devRingUserRanks;
   struct ncclTree tree;
-
-  struct ncclTree collnetChain;
+  struct ncclChain collnetChain;
   struct ncclDirect collnetDirect;
 
   struct ncclNvls nvls;

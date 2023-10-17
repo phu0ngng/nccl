@@ -140,8 +140,15 @@ struct ncclRing {
 #define NCCL_MAX_TREE_ARITY 3
 struct ncclTree {
   int depth;
+  int up[2];
+  int down[2][NCCL_MAX_TREE_ARITY];
+  int downTree; // 0 or 1
+};
+
+struct ncclChain {
+  int depth;
   int up;
-  int down[NCCL_MAX_TREE_ARITY];
+  int down;
 };
 
 #define NCCL_MAX_DIRECT_ARITY 7
@@ -287,7 +294,7 @@ struct alignas(16) ncclDevChannel {
   struct ncclDevChannelPeer** peers;
   struct ncclRing ring;
   struct ncclTree tree;
-  struct ncclTree collnetChain;
+  struct ncclChain collnetChain;
   struct ncclDirect collnetDirect;
   struct ncclNvls nvls;
   uint32_t* workFifoDone; // Location of done counter, device writes index+1 of last work processed
