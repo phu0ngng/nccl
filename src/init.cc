@@ -869,6 +869,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     comm->MNNVL = ncclParamMNNVL() < 0 ? cliqueSize == comm->nRanks : ncclParamMNNVL();
     // MNNVL requires cuMem to be enabled
     if (!ncclCuMemEnable()) comm->MNNVL = 0;
+    if (comm->MNNVL) {
+      // MNNVL also requires FABRIC handle support
+      CUmemAllocationHandleType type = CU_MEM_HANDLE_TYPE_NONE;
+      (void) ncclP2pHandleType(&type);
+      if (type != CU_MEM_HANDLE_TYPE_FABRIC) comm->MNNVL = 0;
+    }
+    if (ncclParamMNNVL() == 1 && !comm->MNNVL) {
+      WARN("MNNVL is not supported on this system");
+      ret = ncclSystemError;
+      goto fail;
+    }
   }
 
   do {

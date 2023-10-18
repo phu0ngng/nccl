@@ -13,6 +13,7 @@
 
 #if CUDART_VERSION < 12030
 // MNNVL: FABRIC handle support lifted from CUDA 12.3
+#define CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED ((CUdevice_attribute)128)
 #define CU_MEM_HANDLE_TYPE_FABRIC ((CUmemAllocationHandleType)0x8ULL)
 #define CU_IPC_HANDLE_SIZE 64
 typedef struct CUmemFabricHandle_st {
@@ -43,7 +44,6 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
 #include "cudawrap.h"
 
 static ncclResult_t ncclP2pHandleType(CUmemAllocationHandleType *type) {
-#if CUDART_VERSION >= 12030
   int cudaDev;
   int flag = 0;
   CUdevice currentDev;
@@ -53,10 +53,6 @@ static ncclResult_t ncclP2pHandleType(CUmemAllocationHandleType *type) {
   (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));;
   *type = flag ? CU_MEM_HANDLE_TYPE_FABRIC : CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
   return ncclSuccess;
-#else
-  *type = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
-  return ncclSuccess;
-#endif // CUDART_VERSION >= 12030
 }
 #endif // CUDART_VERSION >= 11030
 
