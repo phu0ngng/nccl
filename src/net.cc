@@ -562,7 +562,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
     while (!connected) {
 
       // If we're aborting now, skip to cleanup
-      if (__atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED)) {
+      if (__atomic_load_n(comm->abortFlag, __ATOMIC_ACQUIRE)) {
         goto cleanup2;
       }
 

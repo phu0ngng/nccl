@@ -8,6 +8,7 @@
 #define NCCL_GDRWRAP_H_
 
 #include "nccl.h"
+#include "alloc.h"
 #include <stdint.h> // for standard [u]intX_t types
 #include <stdio.h>
 #include <stdlib.h>
@@ -194,7 +195,7 @@ static ncclResult_t ncclGdrCudaCalloc(T** ptr, T** devPtr, size_t nelem, void** 
   char *devMem;
   void *gdrMap;
 
-  mapSize = sizeof(T)*nelem;
+  mapSize = ncclSizeOfT<T>()*nelem;
 
   // GDRCOPY Pinned buffer has to be a minimum of a GPU_PAGE_SIZE
   ALIGN_SIZE(mapSize, GPU_PAGE_SIZE);
@@ -235,7 +236,7 @@ static ncclResult_t ncclGdrCudaCalloc(T** ptr, T** devPtr, size_t nelem, void** 
 template <typename T>
 static ncclResult_t ncclGdrCudaCopy(void *gdrHandle, T* dst, T* src, size_t nelem) {
   gdr_mem_desc_t *md = (gdr_mem_desc_t*)gdrHandle;
-  NCCLCHECK(wrap_gdr_copy_to_mapping(md->gdrMh, dst, src, nelem*sizeof(T)));
+  NCCLCHECK(wrap_gdr_copy_to_mapping(md->gdrMh, dst, src, nelem*ncclSizeOfT<T>()));
   return ncclSuccess;
 }
 

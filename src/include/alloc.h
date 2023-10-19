@@ -9,7 +9,7 @@
 
 #include "nccl.h"
 #include "checks.h"
-#include "align.h"
+#include "bitops.h"
 #include "utils.h"
 #include "p2p.h"
 #include <sys/mman.h>
@@ -19,18 +19,23 @@
 
 uint64_t clockNano(); // from utils.h with which we have a circular dependency
 
+template<typename T>
+constexpr size_t ncclSizeOfT() { return sizeof(T); }
+template<>
+constexpr size_t ncclSizeOfT<void>() { return 1; }
+
 template <typename T>
 ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   *ptr = nullptr;
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  CUDACHECKGOTO(cudaHostAlloc(ptr, nelem*sizeof(T), cudaHostAllocMapped), result, finish);
-  memset(*ptr, 0, nelem*sizeof(T));
+  CUDACHECKGOTO(cudaHostAlloc(ptr, nelem*ncclSizeOfT<T>(), cudaHostAllocMapped), result, finish);
+  memset(*ptr, 0, nelem*ncclSizeOfT<T>());
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  if (*ptr == nullptr) WARN("Failed to CUDA host alloc %ld bytes", nelem*sizeof(T));
-  INFO(NCCL_ALLOC, "%s:%d Cuda Host Alloc Size %ld pointer %p", filefunc, line, nelem*sizeof(T), *ptr);
+  if (*ptr == nullptr) WARN("Failed to CUDA host alloc %ld bytes", nelem*ncclSizeOfT<T>());
+  INFO(NCCL_ALLOC, "%s:%d Cuda Host Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
   return result;
 }
 #define ncclCudaHostCalloc(...) ncclCudaHostCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
@@ -42,13 +47,13 @@ inline ncclResult_t ncclCudaHostFree(void* ptr) {
 
 template <typename T>
 ncclResult_t ncclCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
-  void* p = malloc(nelem*sizeof(T));
+  void* p = malloc(nelem*ncclSizeOfT<T>());
   if (p == NULL) {
-    WARN("Failed to malloc %ld bytes", nelem*sizeof(T));
+    WARN("Failed to malloc %ld bytes", nelem*ncclSizeOfT<T>());
     return ncclSystemError;
   }
-  //INFO(NCCL_ALLOC, "%s:%d malloc Size %ld pointer %p", filefunc, line, nelem*sizeof(T), p);
-  memset(p, 0, nelem*sizeof(T));
+  //INFO(NCCL_ALLOC, "%s:%d malloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), p);
+  memset(p, 0, nelem*ncclSizeOfT<T>());
   *ptr = (T*)p;
   return ncclSuccess;
 }
@@ -60,16 +65,16 @@ ncclResult_t ncclRealloc(T** ptr, size_t oldNelem, size_t nelem) {
   if (nelem == oldNelem) return ncclSuccess;
 
   T* oldp = *ptr;
-  T* p = (T*)malloc(nelem*sizeof(T));
+  T* p = (T*)malloc(nelem*ncclSizeOfT<T>());
   if (p == NULL) {
-    WARN("Failed to malloc %ld bytes", nelem*sizeof(T));
+    WARN("Failed to malloc %ld bytes", nelem*ncclSizeOfT<T>());
     return ncclSystemError;
   }
-  memcpy(p, oldp, oldNelem*sizeof(T));
+  memcpy(p, oldp, oldNelem*ncclSizeOfT<T>());
   free(oldp);
-  memset(p+oldNelem, 0, (nelem-oldNelem)*sizeof(T));
+  memset(p+oldNelem, 0, (nelem-oldNelem)*ncclSizeOfT<T>());
   *ptr = (T*)p;
-  INFO(NCCL_ALLOC, "Mem Realloc old size %ld, new size %ld pointer %p", oldNelem*sizeof(T), nelem*sizeof(T), *ptr);
+  INFO(NCCL_ALLOC, "Mem Realloc old size %ld, new size %ld pointer %p", oldNelem*ncclSizeOfT<T>(), nelem*ncclSizeOfT<T>(), *ptr);
   return ncclSuccess;
 }
 
@@ -152,14 +157,14 @@ ncclResult_t ncclCudaMallocDebug(T** ptr, size_t nelem, const char *filefunc, in
   *ptr = nullptr;
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (ncclCuMemEnable()) {
-    NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, nelem*sizeof(T)), result, finish);
+    NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, nelem*ncclSizeOfT<T>()), result, finish);
   } else {
-    CUDACHECKGOTO(cudaMalloc(ptr, nelem*sizeof(T)), result, finish);
+    CUDACHECKGOTO(cudaMalloc(ptr, nelem*ncclSizeOfT<T>()), result, finish);
   }
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  if (*ptr == nullptr) WARN("Failed to CUDA malloc %ld bytes", nelem*sizeof(T));
-  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*sizeof(T), *ptr);
+  if (*ptr == nullptr) WARN("Failed to CUDA malloc %ld bytes", nelem*ncclSizeOfT<T>());
+  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
   return result;
 }
 #define ncclCudaMalloc(...) ncclCudaMallocDebug(__VA_ARGS__, __FILE__, __LINE__)
@@ -174,17 +179,17 @@ ncclResult_t ncclCudaCallocDebug(T** ptr, size_t nelem, const char *filefunc, in
   cudaStream_t stream;
   CUDACHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
   if (ncclCuMemEnable()) {
-    NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, nelem*sizeof(T)), result, finish);
+    NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, nelem*ncclSizeOfT<T>()), result, finish);
   } else {
-    CUDACHECKGOTO(cudaMalloc(ptr, nelem*sizeof(T)), result, finish);
+    CUDACHECKGOTO(cudaMalloc(ptr, nelem*ncclSizeOfT<T>()), result, finish);
   }
-  CUDACHECKGOTO(cudaMemsetAsync(*ptr, 0, nelem*sizeof(T), stream), result, finish);
+  CUDACHECKGOTO(cudaMemsetAsync(*ptr, 0, nelem*ncclSizeOfT<T>(), stream), result, finish);
   CUDACHECKGOTO(cudaStreamSynchronize(stream), result, finish);
   CUDACHECKGOTO(cudaStreamDestroy(stream), result, finish);
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  if (*ptr == nullptr) WARN("Failed to CUDA calloc %ld bytes", nelem*sizeof(T));
-  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*sizeof(T), *ptr);
+  if (*ptr == nullptr) WARN("Failed to CUDA calloc %ld bytes", nelem*ncclSizeOfT<T>());
+  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
   return result;
 }
 #define ncclCudaCalloc(...) ncclCudaCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
@@ -196,15 +201,15 @@ ncclResult_t ncclCudaCallocAsyncDebug(T** ptr, size_t nelem, cudaStream_t stream
   *ptr = nullptr;
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (ncclCuMemEnable()) {
-    NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, nelem*sizeof(T)), result, finish);
+    NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, nelem*ncclSizeOfT<T>()), result, finish);
   } else {
-    CUDACHECKGOTO(cudaMalloc(ptr, nelem*sizeof(T)), result, finish);
+    CUDACHECKGOTO(cudaMalloc(ptr, nelem*ncclSizeOfT<T>()), result, finish);
   }
-  CUDACHECKGOTO(cudaMemsetAsync(*ptr, 0, nelem*sizeof(T), stream), result, finish);
+  CUDACHECKGOTO(cudaMemsetAsync(*ptr, 0, nelem*ncclSizeOfT<T>(), stream), result, finish);
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  if (*ptr == nullptr) WARN("Failed to CUDA calloc async %ld bytes", nelem*sizeof(T));
-  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*sizeof(T), *ptr);
+  if (*ptr == nullptr) WARN("Failed to CUDA calloc async %ld bytes", nelem*ncclSizeOfT<T>());
+  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
   return result;
 }
 #define ncclCudaCallocAsync(...) ncclCudaCallocAsyncDebug(__VA_ARGS__, __FILE__, __LINE__)
@@ -230,7 +235,7 @@ ncclResult_t ncclCudaMemcpyAsync(T* dst, T* src, size_t nelem, cudaStream_t stre
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  CUDACHECKGOTO(cudaMemcpyAsync(dst, src, nelem*sizeof(T), cudaMemcpyDefault, stream), result, finish);
+  CUDACHECKGOTO(cudaMemcpyAsync(dst, src, nelem*ncclSizeOfT<T>(), cudaMemcpyDefault, stream), result, finish);
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   return result;

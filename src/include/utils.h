@@ -9,12 +9,14 @@
 
 #include "nccl.h"
 #include "alloc.h"
+#include "bitops.h"
 #include "checks.h"
 #include <stdint.h>
 #include <time.h>
 #include <sched.h>
 #include <algorithm>
 #include <new>
+#include <type_traits>
 
 int ncclCudaCompCap();
 
@@ -30,11 +32,6 @@ uint64_t getHostHash();
 uint64_t getPidHash();
 ncclResult_t getRandomData(void* buffer, size_t bytes);
 
-const char* ncclOpToString(ncclRedOp_t op);
-const char* ncclDatatypeToString(ncclDataType_t type);
-const char* ncclAlgoToString(int algo);
-const char* ncclProtoToString(int proto);
-
 struct netIf {
   char prefix[64];
   int port;
@@ -44,9 +41,7 @@ int parseStringList(const char* string, struct netIf* ifList, int maxList);
 bool matchIfList(const char* string, int port, struct netIf* ifList, int listSize, bool matchExact);
 
 static long log2i(long n) {
- long l = 0;
- while (n>>=1) l++;
- return l;
+  return log2Down(n);
 }
 
 inline uint64_t clockNano() {
@@ -96,8 +91,11 @@ void ncclMemoryStackConstruct(struct ncclMemoryStack* me);
 void ncclMemoryStackDestruct(struct ncclMemoryStack* me);
 void ncclMemoryStackPush(struct ncclMemoryStack* me);
 void ncclMemoryStackPop(struct ncclMemoryStack* me);
+void* ncclMemoryStackAlloc(struct ncclMemoryStack* me, size_t size, size_t align);
 template<typename T>
 T* ncclMemoryStackAlloc(struct ncclMemoryStack* me, size_t n=1);
+template<typename Header, typename Element>
+inline Header* ncclMemoryStackAllocInlineArray(struct ncclMemoryStack* me, size_t nElt);
 
 ////////////////////////////////////////////////////////////////////////////////
 /* ncclMemoryPool: A free-list of same-sized allocations. It is an invalid for
@@ -139,6 +137,8 @@ template<typename T, T *T::*next>
 T* ncclIntruQueueHead(ncclIntruQueue<T,next> *me);
 template<typename T, T *T::*next>
 void ncclIntruQueueEnqueue(ncclIntruQueue<T,next> *me, T *x);
+template<typename T, T *T::*next>
+void ncclIntruQueueEnqueueFront(ncclIntruQueue<T,next> *me, T *x);
 template<typename T, T *T::*next>
 T* ncclIntruQueueDequeue(ncclIntruQueue<T,next> *me);
 template<typename T, T *T::*next>
@@ -233,11 +233,28 @@ inline void* ncclMemoryStack::allocate(struct ncclMemoryStack* me, size_t size, 
   return obj;
 }
 
+inline void* ncclMemoryStackAlloc(struct ncclMemoryStack* me, size_t size, size_t align) {
+  void *obj = ncclMemoryStack::allocate(me, size, align);
+  memset(obj, 0, size);
+  return obj;
+}
+
 template<typename T>
 inline T* ncclMemoryStackAlloc(struct ncclMemoryStack* me, size_t n) {
   void *obj = ncclMemoryStack::allocate(me, n*sizeof(T), alignof(T));
   memset(obj, 0, n*sizeof(T));
   return (T*)obj;
+}
+
+template<typename Header, typename Element>
+inline Header* ncclMemoryStackAllocInlineArray(struct ncclMemoryStack* me, size_t nElt) {
+  size_t size = sizeof(Header);
+  size = (size + alignof(Element)-1) & -alignof(Element);
+  size += nElt*sizeof(Element);
+  size_t align = alignof(Header) < alignof(Element) ? alignof(Element) : alignof(Header);
+  void *obj = ncclMemoryStack::allocate(me, size, align);
+  memset(obj, 0, size);
+  return (Header*)obj;
 }
 
 inline void ncclMemoryStackPush(struct ncclMemoryStack* me) {
@@ -341,6 +358,13 @@ inline void ncclIntruQueueEnqueue(ncclIntruQueue<T,next> *me, T *x) {
   x->*next = nullptr;
   (me->head ? me->tail->*next : me->head) = x;
   me->tail = x;
+}
+
+template<typename T, T *T::*next>
+inline void ncclIntruQueueEnqueueFront(ncclIntruQueue<T,next> *me, T *x) {
+  if (me->head == nullptr) me->tail = x;
+  x->*next = me->head;
+  me->head = x;
 }
 
 template<typename T, T *T::*next>

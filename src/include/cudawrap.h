@@ -24,6 +24,7 @@ extern CUmemAllocationHandleType ncclCuMemHandleType;
 typedef CUresult (CUDAAPI *PFN_cuInit_v2000)(unsigned int Flags);
 typedef CUresult (CUDAAPI *PFN_cuDriverGetVersion_v2020)(int *driverVersion);
 typedef CUresult (CUDAAPI *PFN_cuGetProcAddress_v11030)(const char *symbol, void **pfn, int driverVersion, cuuint64_t flags);
+typedef CUresult (CUDAAPI *PFN_cuLaunchKernel_v7000_ptsz)(CUfunction f, unsigned int gridDimX, unsigned int gridDimY, unsigned int gridDimZ, unsigned int blockDimX, unsigned int blockDimY, unsigned int blockDimZ, unsigned int sharedMemBytes, CUstream hStream, void **kernelParams, void **extra);
 #endif
 
 #define CUPFN(symbol) pfn_##symbol
@@ -84,6 +85,9 @@ DECLARE_CUDA_PFN_EXTERN(cuCtxGetCurrent, 4000);
 DECLARE_CUDA_PFN_EXTERN(cuCtxSetCurrent, 4000);
 DECLARE_CUDA_PFN_EXTERN(cuCtxGetDevice, 2000);
 DECLARE_CUDA_PFN_EXTERN(cuPointerGetAttribute, 4000);
+#if CUDART_VERSION >= 11080
+DECLARE_CUDA_PFN_EXTERN(cuLaunchKernelEx, 11060);
+#endif
 // cuMem API support
 DECLARE_CUDA_PFN_EXTERN(cuMemAddressReserve, 10020);
 DECLARE_CUDA_PFN_EXTERN(cuMemAddressFree, 10020);
@@ -114,7 +118,7 @@ DECLARE_CUDA_PFN_EXTERN(cuMulticastUnbind, 12010);
 DECLARE_CUDA_PFN_EXTERN(cuInit, 2000);
 DECLARE_CUDA_PFN_EXTERN(cuDriverGetVersion, 2020);
 DECLARE_CUDA_PFN_EXTERN(cuGetProcAddress, 11030);
-
+extern PFN_cuLaunchKernel_v4000 pfn_cuLaunchKernel;
 
 ncclResult_t ncclCudaLibraryInit(void);
 

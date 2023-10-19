@@ -61,6 +61,9 @@ DECLARE_CUDA_PFN(cuGetErrorString, 6000);
 DECLARE_CUDA_PFN(cuGetErrorName, 6000);
 /* enqueue.cc */
 DECLARE_CUDA_PFN(cuMemGetAddressRange, 3020);
+#if CUDA_VERSION >= 11080
+DECLARE_CUDA_PFN(cuLaunchKernelEx, 11060);
+#endif
 /* proxy.cc */
 DECLARE_CUDA_PFN(cuCtxCreate, 3020);
 DECLARE_CUDA_PFN(cuCtxDestroy, 4000);
@@ -100,6 +103,7 @@ DECLARE_CUDA_PFN(cuMulticastUnbind, 12010);
 DECLARE_CUDA_PFN(cuInit, 2000);
 DECLARE_CUDA_PFN(cuDriverGetVersion, 2020);
 DECLARE_CUDA_PFN(cuGetProcAddress, 11030);
+PFN_cuLaunchKernel_v7000_ptsz pfn_cuLaunchKernel = nullptr;
 
 #define CUDA_DRIVER_MIN_VERSION 11030
 
@@ -132,6 +136,10 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuCtxGetCurrent, 4000, 1);
   LOAD_SYM(cuCtxSetCurrent, 4000, 1);
   LOAD_SYM(cuCtxGetDevice, 2000, 1);
+  LOAD_SYM(cuLaunchKernel, 4000, 0);
+#if CUDA_VERSION >= 11080
+  LOAD_SYM(cuLaunchKernelEx, 11060, 0);
+#endif
 /* cuMem API support */
   LOAD_SYM(cuMemAddressReserve, 10020, 1);
   LOAD_SYM(cuMemAddressFree, 10020, 1);
@@ -213,6 +221,12 @@ static void initOnceFunc() {
   }
 
   INFO(NCCL_INIT, "cudaDriverVersion %d", driverVersion);
+
+  pfn_cuLaunchKernel = (PFN_cuLaunchKernel_v4000)dlsym(cudaLib, "cuLaunchKernel");
+  if (pfn_cuLaunchKernel == NULL) {
+    WARN("Failed to load CUDA missing symbol cuLaunchKernel");
+    goto error;
+  }
 
   if (driverVersion < CUDA_DRIVER_MIN_VERSION) {
     // WARN("CUDA Driver version found is %d. Minimum requirement is %d", driverVersion, CUDA_DRIVER_MIN_VERSION);
