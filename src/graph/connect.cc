@@ -425,9 +425,9 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
     NCCLCHECK(connectCollNet(comm, collNetGraph));
   }
 
-  // Use 4 compute channels per search channel to reach peak BW on <8 PPN
-  if (comm->minCompCap == 90 && comm->nNodes > 1 && graphs[NCCL_ALGO_RING]->bwIntra > 45.0 && 2*nChannels <= MAXCHANNELS) {
-     nChannels = comm->nChannels = copyChannels(comm, nChannels, 2*nChannels, ringPrev, ringNext);
+  // Use 3 compute channels per search channel to reach 48 GB/s per search channel
+  if (comm->minCompCap == 90 && comm->nNodes > 1 && graphs[NCCL_ALGO_RING]->bwIntra > 45.0 && 3*nChannels/2 <= MAXCHANNELS) {
+     nChannels = comm->nChannels = copyChannels(comm, nChannels, 3*nChannels/2, ringPrev, ringNext);
   }
 
   // Honor NCCL_MIN_NRINGS/NCCL_MAX_NRINGS.
