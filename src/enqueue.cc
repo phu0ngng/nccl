@@ -1218,10 +1218,10 @@ static ncclResult_t topoGetAlgoInfo(struct ncclInfo* info, int collNetSupport, i
       ncSwitch /= 2;
     }
   } else if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) {
-    // NVLS should not need more than 16 channels to get peak BW.
     nc = comm->nvlsChannels;
   } else {
-    // Ring/Tree channel tuning
+    // Make sure we use more than 16 channels only for large sizes as the overhead is significant
+    if (nc > 16 && info->nBytes < nc*nt*threadThreshold*64) nc = 16;
     while (info->nBytes < nc*nt*threadThreshold) {
       if (nc >= 2) nc--;
       else if ((nt % 128) == 0) nt/=2;
@@ -1230,8 +1230,6 @@ static ncclResult_t topoGetAlgoInfo(struct ncclInfo* info, int collNetSupport, i
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) {
     if (info->algorithm == NCCL_ALGO_RING) nt += WARP_SIZE; // Extra warp for sync
-    // More threads or sync warps needed due to split thread model
-    if (info->algorithm == NCCL_ALGO_TREE) nt += 4*WARP_SIZE;
   }
   if (info->algorithm == NCCL_ALGO_TREE) nt = NCCL_MAX_NTHREADS;
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
@@ -1372,6 +1370,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_TREE) {
     if (info->protocol == NCCL_PROTO_SIMPLE) chunkSize /= 2;
+    int baseChunkSize = chunkSize;
+    chunkSize /= 32;
+    while (info->nBytes / (info->nChannels*chunkSize) > info->comm->channels[0].tree.depth/2 && chunkSize < baseChunkSize) chunkSize *= 2;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->protocol == NCCL_PROTO_LL) {
     const ssize_t loopSize = info->nChannels*info->nchunksPerLoop*(ssize_t)chunkSize;
