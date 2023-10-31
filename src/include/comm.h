@@ -169,7 +169,6 @@ struct ncclKernelPlan {
   // A kernel plan is also a callback that reclaims itself. Hence this must
   // be the first member.
   struct ncclCommCallback reclaimer;
-  struct ncclMemoryPool memPool_ncclProxyOp; // memory to return to comm in cleanup
 
   struct ncclComm* comm;
   struct ncclKernelPlan* next;
