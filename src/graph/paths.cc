@@ -341,18 +341,18 @@ compare:
   return ncclSuccess;
 }
 
-// MNNVL: Check whether peers are in the same fabric cluster and partition
+// MNNVL: Check whether peers are in the same fabric cluster and clique
 ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* ret) {
   *ret = 0;
 
-  nvmlGpuFabricInfo_t *fabricInfo1 = &info1->fabricInfo;
-  nvmlGpuFabricInfo_t *fabricInfo2 = &info2->fabricInfo;
+  nvmlGpuFabricInfoV_t *fabricInfo1 = &info1->fabricInfo;
+  nvmlGpuFabricInfoV_t *fabricInfo2 = &info2->fabricInfo;
   // A zero UUID means we don't have MNNVL fabric info
   if ((((long *)&fabricInfo1->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) return ncclSuccess;
   if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
-      (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
-    INFO(NCCL_NET, "MNNVL matching peer 0x%lx UUID %lx.%lx partition 0x%x",
-         info2->busId, ((long *)fabricInfo2->clusterUuid)[0], ((long *)fabricInfo2->clusterUuid)[1], fabricInfo2->partitionId);
+      (fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
+    INFO(NCCL_NET, "MNNVL matching peer 0x%lx UUID %lx.%lx cliqueId 0x%x",
+         info2->busId, ((long *)fabricInfo2->clusterUuid)[0], ((long *)fabricInfo2->clusterUuid)[1], fabricInfo2->cliqueId);
     *ret = 1;
   }
   return ncclSuccess;

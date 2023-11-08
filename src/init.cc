@@ -514,12 +514,13 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     NCCLCHECK(int64ToBusId(info->busId, busId));
     NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
     ((long *)&info->fabricInfo.clusterUuid)[0] = ((long *)&info->fabricInfo.clusterUuid)[1] = 0;
-    (void) ncclNvmlDeviceGetGpuFabricInfo(nvmlDev, &info->fabricInfo);
+    (void) ncclNvmlDeviceGetGpuFabricInfoV(nvmlDev, &info->fabricInfo);
     // A non-zero UUID means we have MNNVL fabric info
     if ((((long *)&info->fabricInfo.clusterUuid)[0]|((long *)&info->fabricInfo.clusterUuid)[1])) {
-      INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx partition 0x%x",
+      INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx cliqueId 0x%x state %d healthMask 0x%x",
            info->busId,
-           ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1], info->fabricInfo.partitionId);
+           ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1],
+           info->fabricInfo.cliqueId, info->fabricInfo.state, info->fabricInfo.healthMask);
     }
   }
 
@@ -856,12 +857,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     comm->MNNVL = 0;
     // Determine the size of the MNNVL domain/clique
     for (int i = 0; i < nranks; i++) {
-      nvmlGpuFabricInfo_t *fabricInfo1 = &comm->peerInfo[rank].fabricInfo;
-      nvmlGpuFabricInfo_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
+      nvmlGpuFabricInfoV_t *fabricInfo1 = &comm->peerInfo[rank].fabricInfo;
+      nvmlGpuFabricInfoV_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
       // A non-zero UUID means we have MNNVL fabric info
       if ((((long *)&fabricInfo1->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) continue;
       if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
-          (fabricInfo1->partitionId == fabricInfo2->partitionId)) {
+          (fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
         cliqueSize++;
       }
     }

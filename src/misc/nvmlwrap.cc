@@ -40,7 +40,7 @@ namespace {
   NCCL_NVML_FN(nvmlDeviceGetP2PStatus, nvmlReturn_t, (nvmlDevice_t device1, nvmlDevice_t device2, nvmlGpuP2PCapsIndex_t p2pIndex, nvmlGpuP2PStatus_t* p2pStatus))
   NCCL_NVML_FN(nvmlDeviceGetFieldValues, nvmlReturn_t, (nvmlDevice_t device, int valuesCount, nvmlFieldValue_t *values))
   // MNNVL support
-  NCCL_NVML_FN(nvmlDeviceGetGpuFabricInfo, nvmlReturn_t, (nvmlDevice_t device, nvmlGpuFabricInfo_t *gpuFabricInfo))
+  NCCL_NVML_FN(nvmlDeviceGetGpuFabricInfoV, nvmlReturn_t, (nvmlDevice_t device, nvmlGpuFabricInfoV_t *gpuFabricInfo))
 
   std::mutex lock; // NVML has had some thread safety bugs
   bool initialized = false;
@@ -86,7 +86,7 @@ ncclResult_t ncclNvmlEnsureInitialized() {
       {(void**)&pfn_nvmlDeviceGetP2PStatus, "nvmlDeviceGetP2PStatus"},
       {(void**)&pfn_nvmlDeviceGetFieldValues, "nvmlDeviceGetFieldValues"},
       // MNNVL support
-      {(void**)&pfn_nvmlDeviceGetGpuFabricInfo, "nvmlDeviceGetGpuFabricInfo"},
+      {(void**)&pfn_nvmlDeviceGetGpuFabricInfoV, "nvmlDeviceGetGpuFabricInfoV"},
     };
     for(Symbol sym: symbols) {
       *sym.ppfn = dlsym(libhandle, sym.name);
@@ -275,9 +275,10 @@ ncclResult_t ncclNvmlDeviceGetFieldValues(nvmlDevice_t device, int valuesCount, 
 }
 
 // MNNVL support
-ncclResult_t ncclNvmlDeviceGetGpuFabricInfo(nvmlDevice_t device, nvmlGpuFabricInfo_t *gpuFabricInfo) {
+ncclResult_t ncclNvmlDeviceGetGpuFabricInfoV(nvmlDevice_t device, nvmlGpuFabricInfoV_t *gpuFabricInfo) {
   NCCLCHECK(ncclNvmlEnsureInitialized());
   std::lock_guard<std::mutex> locked(lock);
-  NVMLTRY(nvmlDeviceGetGpuFabricInfo, device, gpuFabricInfo);
+  gpuFabricInfo->version = nvmlGpuFabricInfo_v2;
+  NVMLTRY(nvmlDeviceGetGpuFabricInfoV, device, gpuFabricInfo);
   return ncclSuccess;
 }
