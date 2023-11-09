@@ -690,14 +690,14 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclTopoSystem* system, int g /*
     // Remote rank, use network
     int nNetChannels = ncclParamNChannelsPerNetPeer();
     if (nNetChannels == -1) {
-       //start from 4 channels per NIC and reduce with scale
-       nNetChannels = 4;
+       //start from 2 channels per NIC and reduce with scale
+       nNetChannels = 2;
 
        // check if we need to use more than one NIC, hence more than one channel
        int netCountByBw = 1, nChannelsMax = nNetChannels;
        NCCLCHECK(getLocalNetCountByBw(system, g, &netCountByBw));
        // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
-       while (nChannelsMax*nRanks > p2pnChannels*8 && nChannelsMax > 1) nChannelsMax /= 2;
+       while (nChannelsMax*nRanks > p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
 
        //allow upto channels requires to drive the NICs
        nNetChannels = std::max(netCountByBw, nChannelsMax);
