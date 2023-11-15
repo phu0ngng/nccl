@@ -513,10 +513,9 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     nvmlDevice_t nvmlDev;
     NCCLCHECK(int64ToBusId(info->busId, busId));
     NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
-    ((long *)&info->fabricInfo.clusterUuid)[0] = ((long *)&info->fabricInfo.clusterUuid)[1] = 0;
+    info->fabricInfo.state = NVML_GPU_FABRIC_STATE_NOT_SUPPORTED;
     (void) ncclNvmlDeviceGetGpuFabricInfoV(nvmlDev, &info->fabricInfo);
-    // A non-zero UUID means we have MNNVL fabric info
-    if ((((long *)&info->fabricInfo.clusterUuid)[0]|((long *)&info->fabricInfo.clusterUuid)[1])) {
+    if (info->fabricInfo.state != NVML_GPU_FABRIC_STATE_NOT_SUPPORTED) {
       INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx cliqueId 0x%x state %d healthMask 0x%x",
            info->busId,
            ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1],
@@ -859,8 +858,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     for (int i = 0; i < nranks; i++) {
       nvmlGpuFabricInfoV_t *fabricInfo1 = &comm->peerInfo[rank].fabricInfo;
       nvmlGpuFabricInfoV_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
-      // A non-zero UUID means we have MNNVL fabric info
-      if ((((long *)&fabricInfo1->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) continue;
+      // Check that the Fabric state is fully initialized
+      if (fabricInfo2->state != NVML_GPU_FABRIC_STATE_COMPLETED) continue;
+      // Check that the cluster UUID and cliqueId match in each rank
       if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
           (fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
         cliqueSize++;
