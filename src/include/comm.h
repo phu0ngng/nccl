@@ -298,7 +298,7 @@ struct ncclComm {
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;
   volatile uint32_t *childAbortFlag;
-  volatile uint32_t *abortFlagRefCount;
+  uint32_t *abortFlagRefCount;
 
   // Device side of the communicator (for cudaFree's)
   struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm
@@ -341,8 +341,6 @@ struct ncclComm {
   int nvlsRegSupport;
   /* sharable NVLS resource. */
   struct ncclNvlsSharedRes* nvlsResources;
-  struct ncclShmemCollBuff nvlsShmem;
-  void *nvlsShmemHandle;
 
   ssize_t channelSize; // User requested work size (bytes) for channel partitions
 
