@@ -917,7 +917,7 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
       struct ncclProxyOp* q = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
       while (q != nullptr) {
         struct ncclProxyOp* q1 = q->enqNext;
-        ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, q);
+        ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
         q = q1;
       }
     }
