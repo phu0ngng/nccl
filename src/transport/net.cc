@@ -174,7 +174,7 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   struct setupReq req = { 0 };
   int tpProxyRank;
 
-  send->conn.shared = req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 2 : 1;
+  req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 2 : 1;
   req.channelId = channelId;
   req.connIndex = connIndex;
 
@@ -210,7 +210,7 @@ NCCL_PARAM(GdrCopyFlushEnable, "GDRCOPY_FLUSH_ENABLE", 0);
 static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId, int connIndex) {
   struct setupReq req = { 0 };
 
-  recv->conn.shared = req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 2 : 1;
+  req.shared = ncclParamNetSharedBuffers() != -2 ? ncclParamNetSharedBuffers() : graph ? 2 : 1;
   req.channelId = channelId;
   req.connIndex = connIndex;
 
@@ -348,8 +348,8 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
   struct ncclRecvMem *recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, gpu, recvMem);
   send->conn.tail = &recvMem->tail;
   send->conn.sizesFifo = recvMem->sizesFifo;
-  // Only fuse P2P buffers, continue to allocate dedicated buffers for ring/tree
   send->conn.offsFifo = map->shared ? recvMem->offsFifo : NULL;
+  if (comm->allocP2pNetLLBuffers) send->conn.flags |= NCCL_SENDRECV_USE_LL;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
     send->conn.buffs[p] = NCCL_NET_MAP_GET_POINTER(map, gpu, buffs[p]);
@@ -410,8 +410,8 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
   void* gdcMem = map->mems[NCCL_NET_MAP_GDCMEM].gpuPtr;
   recv->conn.tail = gdcMem ? (uint64_t*)gdcMem : &recvMem->tail;
   recv->conn.sizesFifo = recvMem->sizesFifo;
-  // Only fuse P2P buffers, continue to allocate dedicated buffers for ring/tree
   recv->conn.offsFifo = map->shared ? recvMem->offsFifo : NULL;
+  if (comm->allocP2pNetLLBuffers) recv->conn.flags |= NCCL_SENDRECV_USE_LL;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
     recv->conn.buffs[p] = NCCL_NET_MAP_GET_POINTER(map, gpu, buffs[p]);
