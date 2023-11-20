@@ -304,8 +304,7 @@ The timeout is computed as 4.096 µs * 2 ^ *timeout*, and the correct value is d
 Increasing that value can help on very large networks, for example, if NCCL is failing on a call to *ibv_poll_cq* with
 error 12.
 
-For more information, see section 12.7.34 of the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download) (Local Ack Timeout).
+For more information, see section 12.7.34 of the InfiniBand specification Volume 1 (Local Ack Timeout).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -319,8 +318,7 @@ NCCL_IB_RETRY_CNT
 
 The ``NCCL_IB_RETRY_CNT`` variable controls the InfiniBand retry count.
 
-For more information, see section 12.7.38 of the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download).
+For more information, see section 12.7.38 of the InfiniBand specification Volume 1.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -334,7 +332,7 @@ The ``NCCL_IB_GID_INDEX`` variable defines the Global ID index used in RoCE mode
 See the InfiniBand *show_gids* command in order to set this value.
 
 For more information, see the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
+or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -347,7 +345,7 @@ NCCL_IB_SL
 Defines the InfiniBand Service Level.
 
 For more information, see the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
+or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -360,7 +358,7 @@ NCCL_IB_TC
 Defines the InfiniBand traffic class field.
 
 For more information, see the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
+or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
