@@ -14,6 +14,7 @@
 #include "proxy.h"
 #include "strongstream.h"
 #include "nccl_net.h"
+#include "register.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -387,6 +388,8 @@ struct ncclComm {
 
   // Tuning plugin
   ncclTuner_t* tuner;
+  // buffer registration cache
+  struct ncclRegCache regCache;
 };
 
 enum ncclLaunchMode {
