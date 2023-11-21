@@ -462,6 +462,7 @@ int main(int argc, char* argv[])
   int size = 32 * 1024 * 1024;
   int nVis, errors = 0;
   ncclComm_t* comms;
+  setlinebuf(stdout);
   
   CUDACHECK(cudaGetDeviceCount(&nVis));
   comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis);
