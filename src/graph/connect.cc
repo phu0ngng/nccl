@@ -120,7 +120,11 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* 
     downTree = 0;
   }
   if (t1d0 != -1 || t1d1 != -1) { 
-    if (downTree == 0) return ncclInternalError;
+    if (downTree == 0) {
+      WARN("Internal error: rank %d/%d has ranks down on both trees: T0 %d/%d T1 %d/%d",
+          comm->rank, comm->nRanks, t0d0, t0d1, t1d0, t1d1);
+      return ncclInternalError;
+    }
     downTree = 1;
   }
 
