@@ -381,11 +381,6 @@ struct ncclComm {
   // group job to support multi-thread FT
   struct ncclGroupJob *groupJob;
 
-  /* store to buffer register request */
-  struct ncclIntruQueue<struct ncclRegRequest, &ncclRegRequest::next> regRequestQueue;
-  /* store registered buffer */
-  struct ncclIntruQueue<struct ncclRegRecord, &ncclRegRecord::next> regRecordQueue;
-
   // Tuning plugin
   ncclTuner_t* tuner;
   // buffer registration cache

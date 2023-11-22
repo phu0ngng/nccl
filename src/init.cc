@@ -238,17 +238,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->topParentRanks);
   free(comm->topParentLocalRanks);
 
-  while (!ncclIntruQueueEmpty(&comm->regRecordQueue)) {
-    struct ncclRegRecord* rec = ncclIntruQueueDequeue(&comm->regRecordQueue);
-    NCCLCHECK(ncclNvlsDeregBuffer(&rec->mcHandle, rec->regAddr, rec->dev, rec->regSize));
-    free(rec->addrs);
-    free(rec);
-  }
-
-  while (!ncclIntruQueueEmpty(&comm->regRequestQueue)) {
-    struct ncclRegRequest* req = ncclIntruQueueDequeue(&comm->regRequestQueue);
-    free(req);
-  }
+  NCCLCHECK(ncclRegCleanup(comm));
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   free(comm);
@@ -393,9 +383,9 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
       comm->topParentRanks[i] = i;
   }
 
-  ncclIntruQueueConstruct(&comm->regRequestQueue);
-  ncclIntruQueueConstruct(&comm->regRecordQueue);
   ncclIntruQueueMpscConstruct(&comm->callbackQueue);
+
+  comm->regCache.pageSize = sysconf(_SC_PAGESIZE);
   return ncclSuccess;
 }
 
@@ -2162,98 +2152,6 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
 
   *rank = comm->rank;
   return ncclSuccess;
-}
-
-NCCL_PARAM(LocalRegister, "LOCAL_REGISTER", 1);
-
-NCCL_API(ncclResult_t, ncclCommRegister, const ncclComm_t comm, void* buff, size_t size, void** handle);
-ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
-  ncclResult_t ret = ncclSuccess;
-
-#if CUDART_VERSION >= 12010
-  size_t granularity;
-  if (ncclParamLocalRegister()) {
-    if (comm == NCCL_COMM_NULL || buff == NULL || handle == NULL || size == 0) {
-      WARN("Invalid arguments comm %p, buff %p, size %ld, handle %p", comm, buff, size, handle);
-      ret = ncclInvalidArgument;
-    } else if (comm->nvlsSupport) {
-      CUmulticastObjectProp prop = comm->nvlsResources->properties;
-
-      prop.size = size;
-      CUCHECK(cuMulticastGetGranularity(&granularity, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
-
-      if ((uintptr_t)buff % comm->nvlsResources->ucGran == 0 && size % granularity == 0) {
-        /* we can direct register what user provide */
-        struct ncclRegRequest* req;
-        NCCLCHECK(ncclCalloc(&req, 1));
-        req->buff = (uintptr_t)buff;
-        req->size = size;
-        ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
-        *handle = (void*)req;
-      } else {
-        void* base;
-        size_t baseSize;
-        /* Since we don't provide actually allocated buffer size for users by ncclMemAlloc,
-         * therefore, we need to get the full range of the buffer by cuMemGetAddressRange to
-         * register buffers. */
-        CUCHECK(cuMemGetAddressRange((CUdeviceptr*)&base, &baseSize, (CUdeviceptr)buff));
-        if ((uintptr_t)base % comm->nvlsResources->ucGran == 0 && baseSize % granularity == 0) {
-          struct ncclRegRequest* req;
-          NCCLCHECK(ncclCalloc(&req, 1));
-          req->buff = (uintptr_t)base;
-          req->size = baseSize;
-          ncclIntruQueueEnqueue(&comm->regRequestQueue, req);
-          *handle = (void*)req;
-        } else {
-          WARN("register fails, buffer %p (aligned %s, granularity %ld) and size %ld (aligned %s, granularity %ld) for registration", buff, (uintptr_t)buff % comm->nvlsResources->ucGran == 0 ? "TRUE" : "FALSE", comm->nvlsResources->ucGran, size, size % granularity == 0 ? "TRUE" : "FALSE", granularity);
-          ret = ncclInvalidArgument;
-        }
-      }
-    }
-  }
-#endif
-
-  return ret;
-}
-
-NCCL_API(ncclResult_t, ncclCommDeregister, const ncclComm_t comm, void* handle);
-ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
-  ncclResult_t ret = ncclSuccess;
-
-#if CUDART_VERSION >= 12010
-  struct ncclRegRequest* dreq = (struct ncclRegRequest*)handle;
-  if (ncclParamLocalRegister()) {
-    if (comm == NCCL_COMM_NULL || handle == NULL) {
-      WARN("Invalid arguments comm %p, handle %p", comm, handle);
-      ret = ncclInvalidArgument;
-    } else {
-      struct ncclRegRecord* rec;
-
-      /* first release register record */
-      rec = ncclIntruQueueHead(&comm->regRecordQueue);
-
-      while (rec) {
-        if (rec->buff == dreq->buff && rec->size == dreq->size) {
-          NCCLCHECK(ncclNvlsDeregBuffer(&rec->mcHandle, rec->regAddr, rec->dev, rec->regSize));
-          ncclIntruQueueDelete(&comm->regRecordQueue, rec);
-          free(rec->addrs);
-          free(rec);
-          break;
-        }
-        rec = rec->next;
-      }
-
-      /* then free register request */
-      if (ncclIntruQueueDelete(&comm->regRequestQueue, dreq) == false) {
-        WARN("Invalid handle %p", handle);
-        ret = ncclInvalidArgument;
-      }
-    }
-  }
-#endif
-
-  return ret;
 }
 
 NCCL_API(ncclResult_t, ncclMemAlloc, void **ptr, size_t size);

@@ -371,8 +371,6 @@ static ncclResult_t registerIntraNodeBuffers(
     bool regBufUsed = false;
     const void *sendbuff = info->sendbuff;
     void *recvbuff = info->recvbuff;
-    cudaPointerAttributes sattr, rattr;
-    bool query = false;
 
     if (info->coll == ncclFuncAllGather)
       sendbuff = NULL;
@@ -381,20 +379,11 @@ static ncclResult_t registerIntraNodeBuffers(
 
     /* first try local registration. */
     if (ncclParamLocalRegister()) {
-      CUDACHECK(cudaPointerGetAttributes(&sattr, info->sendbuff));
-      CUDACHECK(cudaPointerGetAttributes(&rattr, info->recvbuff));
-      query = true;
-      if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice)
-        ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
+      ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
 
     if (regBufUsed == false && plan->persistent && ncclParamGraphRegister()) {
-      if (!query) {
-        CUDACHECK(cudaPointerGetAttributes(&sattr, info->sendbuff));
-        CUDACHECK(cudaPointerGetAttributes(&rattr, info->recvbuff));
-      }
-      if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice)
-        ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
+      ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
 
     if (regBufUsed) {

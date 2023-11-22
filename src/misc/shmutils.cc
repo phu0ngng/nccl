@@ -169,7 +169,7 @@ ncclResult_t ncclShmemAllgather(struct ncclComm *comm, struct ncclShmemCollBuff 
   int curRound = shmem->round;
   size_t mycnt;
 
-  if (comm == NULL || shmem == NULL || sendbuff == NULL || recvbuff == NULL) {
+  if (comm == NULL || shmem == NULL || sendbuff == NULL || recvbuff == NULL || shmem->maxTypeSize < typeSize) {
     ret = ncclInvalidArgument;
     goto exit;
   }
