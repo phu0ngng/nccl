@@ -1056,15 +1056,14 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       // Post buffers to the GPU
       if (sub->posted < sub->nsteps && sub->posted < sub->done + maxDepth) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
-        if (resources->shared) {
+        if (p == NCCL_PROTO_SIMPLE && resources->shared) {
           int slotsPerChunk = args->sliceSteps * proxyState->sharedBuffer.nslots / (maxDepth*args->nsubs);
           int sharedBuffSlot = (sub->posted%maxDepth)/args->sliceSteps;
           int offset;
           NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, (sharedBuffSlot*args->nsubs+s)*slotsPerChunk, &offset));
           resources->recvMem->offsFifo[buffSlot] = offset;
-          sub->posted += args->sliceSteps;
-          if (resources->gdcSync) wc_store_fence(); // Flush out WC write
-        } else sub->posted += args->sliceSteps;
+        }
+        sub->posted += args->sliceSteps;
         for (uint64_t step=sub->posted-args->sliceSteps; step<sub->posted; step++) {
           ncclProfilingRecord(args, s, step, ncclProxyProfileSendGPUWait);
         }
