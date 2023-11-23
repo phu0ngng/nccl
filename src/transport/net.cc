@@ -412,7 +412,6 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
   recv->conn.tail = gdcMem ? (uint64_t*)gdcMem : &recvMem->tail;
   recv->conn.sizesFifo = recvMem->sizesFifo;
   recv->conn.offsFifo = map->shared ? recvMem->offsFifo : NULL;
-  if (recv->conn.offsFifo) for (int i=0; i<NCCL_STEPS; i++) recv->conn.offsFifo[i] = -1;
   if (comm->allocP2pNetLLBuffers) recv->conn.flags |= NCCL_SENDRECV_USE_LL;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
@@ -1291,7 +1290,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
                   struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
                   int stepSize = resources->buffSizes[p] / NCCL_STEPS;
                   char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
-                  int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
+                  int buffSlot = (sub->base+sub->received-args->sliceSteps)%NCCL_STEPS;
                   ptrs[subCount] = resources->shared ? localBuff+resources->recvMem->offsFifo[buffSlot] : localBuff+buffSlot*stepSize;
                   mhandles[subCount] = resources->mhandles[p];
                   subCount++;
