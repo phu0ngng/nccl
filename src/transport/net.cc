@@ -921,6 +921,23 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   return ncclSuccess;
 }
 
+void cleanupNetComms(struct ncclProxyState* proxyState, int netDev) {
+  struct ncclSharedNetComms* netComms = proxyState->progressState.netComms[netDev];
+  int refCount = 0;
+  for (int r=0; r<proxyState->tpnRanks; r++) {
+    for (int c=0; c<MAXCHANNELS; c++) {
+      for (int i=0; i<NCCL_MAX_CONNS; i++) {
+        refCount += netComms[r].sendRefCount[c][i];
+        refCount += netComms[r].recvRefCount[c][i];
+      }
+    }
+  }
+  if (refCount == 0) {
+    proxyState->progressState.netComms[netDev] = NULL;
+    free(netComms);
+  }
+}
+
 static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState) {
   struct sendNetResources* resources = (struct sendNetResources*)(connection->transportResources);
   if (connection->state == connSharedInitialized) { // NVB Preconnect
@@ -954,6 +971,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
         struct ncclSharedNetComms* comms = proxyState->progressState.netComms[resources->netDev]+resources->tpRemoteRank;
         int c = resources->channelId, i = resources->connIndex;
         if (--comms->sendRefCount[c][i] == 0) NCCLCHECK(proxyState->ncclNet->closeSend(comms->sendComm[c][i]));
+        cleanupNetComms(proxyState, resources->netDev);
       } else {
         NCCLCHECK(proxyState->ncclNet->closeSend(resources->netSendComm));
       }
@@ -995,6 +1013,7 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
         struct ncclSharedNetComms* comms = proxyState->progressState.netComms[resources->netDev] + resources->tpRemoteProxyRank;
         int c = resources->channelId, i = resources->connIndex;
         if (--comms->recvRefCount[c][i] == 0) NCCLCHECK(proxyState->ncclNet->closeRecv(comms->recvComm[c][i]));
+        cleanupNetComms(proxyState, resources->netDev);
       } else {
         NCCLCHECK(proxyState->ncclNet->closeRecv(resources->netRecvComm));
       }
