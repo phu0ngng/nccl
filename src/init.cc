@@ -179,13 +179,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
   if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
-    if (*comm->abortFlag == 0) {
-      /* regular thread join */
-      pthread_join(comm->proxyState->thread, nullptr);
-    } else {
-      /* try to detach thread due to abort */
-      ncclProxyTryDetach(comm->proxyState);
-    }
+    pthread_join(comm->proxyState->thread, nullptr);
   }
 
   delete[] comm->userRedOps;
@@ -219,7 +213,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
       free(comm->sharedRes->tpRankToLocalRank);
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->deviceStream));
-      NCCLCHECK(ncclProxyDestroy(comm->sharedRes->proxyState));
+      NCCLCHECK(ncclProxyDestroy(comm));
       free(comm->sharedRes);
     }
   }
@@ -237,7 +231,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   if (ncclAtomicRefCountDecrement(comm->abortFlagRefCount) == 0) {
     NCCLCHECK(ncclCudaHostFree((void *)comm->abortFlag));
-    free((void*)comm->abortFlagRefCount);
+    free(comm->abortFlagRefCount);
   }
   free((void*)comm->config.netName);
 
@@ -245,18 +239,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->topParentLocalRanks);
 
   NCCLCHECK(ncclRegCleanup(comm));
-
-  while (!ncclIntruQueueEmpty(&comm->regRecordQueue)) {
-    struct ncclRegRecord* rec = ncclIntruQueueDequeue(&comm->regRecordQueue);
-    NCCLCHECK(ncclNvlsDeregBuffer(&rec->mcHandle, rec->regAddr, rec->dev, rec->regSize));
-    free(rec->addrs);
-    free(rec);
-  }
-
-  while (!ncclIntruQueueEmpty(&comm->regRequestQueue)) {
-    struct ncclRegRequest* req = ncclIntruQueueDequeue(&comm->regRequestQueue);
-    free(req);
-  }
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   free(comm);
@@ -296,7 +278,7 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
   /* comm must be ready, or error will be reported */
   ncclResult_t ret = ncclSuccess;
 
-  if (*comm->abortFlag) {
+  if (__atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED)) {
     ncclGroupJobAbort(comm->groupJob);
   } else {
     NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
@@ -401,9 +383,9 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
       comm->topParentRanks[i] = i;
   }
 
-  ncclIntruQueueConstruct(&comm->regRequestQueue);
-  ncclIntruQueueConstruct(&comm->regRecordQueue);
   ncclIntruQueueMpscConstruct(&comm->callbackQueue);
+
+  comm->regCache.pageSize = sysconf(_SC_PAGESIZE);
   return ncclSuccess;
 }
 
@@ -424,6 +406,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     tmpCommAndChans.comm.buffSizes[p] = comm->buffSizes[p];
   }
   tmpCommAndChans.comm.p2pChunkSize = comm->p2pChunkSize;
+  tmpCommAndChans.comm.nvlsChunkSize = comm->nvlsChunkSize;
   tmpCommAndChans.comm.channels = &devCommAndChans->channels[0];
 
   comm->workFifoDepth = ncclParamWorkFifoDepth();
@@ -538,6 +521,7 @@ NCCL_PARAM(Ll128BuffSize, "LL128_BUFFSIZE", -2);
 NCCL_PARAM(P2pNetChunkSize, "P2P_NET_CHUNKSIZE", (1 << 17)); /* 128 kB */
 NCCL_PARAM(P2pPciChunkSize, "P2P_PCI_CHUNKSIZE", (1 << 17)); /* 128 kB */
 NCCL_PARAM(P2pNvlChunkSize, "P2P_NVL_CHUNKSIZE", (1 << 19)); /* 512 kB */
+NCCL_PARAM(NvlsChunkSize, "NVLS_CHUNKSIZE", (1 << 17)); /* 128 kB */
 
 static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   int cpuArch, cpuVendor, cpuModel;
@@ -549,6 +533,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
+  comm->nvlsChunkSize = ncclParamNvlsChunkSize();
 
   if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
   else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
@@ -1647,7 +1632,7 @@ exit:
 fail:
   if (comm) {
     if (comm->abortFlag) ncclCudaHostFree((void *)comm->abortFlag);
-    if (comm->abortFlagRefCount) free((void*)comm->abortFlagRefCount);
+    if (comm->abortFlagRefCount) free(comm->abortFlagRefCount);
     free(comm);
   }
   if (newcomm) *newcomm = NULL;
@@ -1894,7 +1879,7 @@ static ncclResult_t commReclaim(ncclComm_t comm) {
 
   NCCLCHECKGOTO(ncclCommGetAsyncError(comm, &state), ret, fail);
   TRACE(NCCL_INIT, "commReclaim: reclaim comm %p rank %d state %d", comm, comm->rank, state);
-  if (state == ncclSuccess && *comm->abortFlag == 0 && comm->finalizeCalled == false) {
+  if (state == ncclSuccess && __atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED) == 0 && comm->finalizeCalled == false) {
     /* user does not call ncclCommFinalize and this is a normal comm destroy. ncclCommDestroy
      * should be nonblocking until last call of ncclCommDestroy. */
     NCCLCHECKGOTO(commFinalize(comm, false), ret, fail);
@@ -2019,9 +2004,9 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   // Ask anything that might still be running on the device to quit
   childAbortFlag = __atomic_load_n(&comm->childAbortFlag, __ATOMIC_ACQUIRE);
   if (childAbortFlag != NULL) {
-    *childAbortFlag = 1;
+    __atomic_store_n(childAbortFlag, 1, __ATOMIC_RELAXED);
   }
-  *comm->abortFlag = 1;
+  __atomic_store_n(comm->abortFlag, 1, __ATOMIC_RELAXED);
   /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
   ncclCommEnsureReady(comm);
@@ -2088,7 +2073,7 @@ fail:
   if (childComm) {
     if (comm && !comm->config.splitShare) {
       if (childComm->abortFlag) ncclCudaHostFree((void*)childComm->abortFlag);
-      if (childComm->abortFlagRefCount) free((void*)childComm->abortFlagRefCount);
+      if (childComm->abortFlagRefCount) free(childComm->abortFlagRefCount);
     }
     free(childComm);
   }
@@ -2167,4 +2152,117 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
 
   *rank = comm->rank;
   return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclMemAlloc, void **ptr, size_t size);
+ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  ncclResult_t ret = ncclSuccess;
+
+#if CUDART_VERSION >= 12010
+  size_t memGran = 0;
+  size_t mcGran = 0;
+  CUdevice currentDev;
+  CUmemAllocationProp memprop = {};
+  CUmulticastObjectProp mcprop = {};
+  CUmemAccessDesc accessDesc = {};
+  CUmemGenericAllocationHandle handle;
+  int cudaDev;
+  int flag = 0;
+  int dcnt;
+  int mcSupport = 0;
+
+  if (ptr == NULL || size == 0) goto fallback;
+
+  if (ncclCudaLibraryInit() != ncclSuccess) goto fallback;
+
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  CUCHECK(cuDeviceGet(&currentDev, cudaDev));
+  if (CUPFN(cuMulticastCreate) != NULL)
+    CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
+
+  if (mcSupport) {
+    memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+    memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    memprop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+    memprop.location.id = currentDev;
+    // Query device to see if RDMA support is available
+    CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED, currentDev));
+    if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
+    CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
+
+    /* mc property */
+    CUDACHECK(cudaGetDeviceCount(&dcnt));
+    mcprop.size = size;
+    /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
+    mcprop.numDevices = dcnt;
+    mcprop.handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+    mcprop.flags = 0;
+    CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+
+    /* only size needs to be aligned to mcGran */
+    ALIGN_SIZE(size, mcGran);
+    /* Allocate the physical memory on the device */
+    CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+    /* Reserve a virtual address range */
+    CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, memGran, 0, 0));
+    /* Map the virtual address range to the physical allocation */
+    CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
+    /* Now allow RW access to the newly mapped memory */
+    for (int i = 0; i < dcnt; ++i) {
+      int p2p = 0;
+      if (i == cudaDev || ((cudaDeviceCanAccessPeer(&p2p, cudaDev, i) == cudaSuccess) && p2p)) {
+        accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+        accessDesc.location.id = i;
+        accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+        CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+      }
+    }
+    goto exit;
+  }
+
+fallback:
+#endif
+  CUDACHECKGOTO(cudaMalloc(ptr, size), ret, fail);
+
+exit:
+  return ret;
+fail:
+  goto exit;
+}
+
+NCCL_API(ncclResult_t, ncclMemFree, void *ptr);
+ncclResult_t  ncclMemFree(void *ptr) {
+  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  ncclResult_t ret = ncclSuccess;
+  int saveDevice;
+
+  CUDACHECK(cudaGetDevice(&saveDevice));
+#if CUDART_VERSION >= 12010
+  CUdevice ptrDev = 0;
+  int mcSupport = 0;
+
+  if (ptr == NULL) goto fallback;
+
+  if (ncclCudaLibraryInit() != ncclSuccess) goto fallback;
+
+  CUCHECKGOTO(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr), ret, fail);
+  if (CUPFN(cuMulticastCreate) != NULL)
+    CUCHECKGOTO(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev), ret, fail);
+
+  CUDACHECKGOTO(cudaSetDevice((int)ptrDev), ret, fail);
+  if (mcSupport) {
+    NCCLCHECKGOTO(ncclCuMemFree(ptr), ret, fail);
+    goto exit;
+  }
+
+fallback:
+#endif
+  CUDACHECKGOTO(cudaFree(ptr), ret, fail);
+
+exit:
+  cudaSetDevice(saveDevice);
+  return ret;
+fail:
+  goto exit;
 }

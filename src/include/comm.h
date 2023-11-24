@@ -14,6 +14,7 @@
 #include "proxy.h"
 #include "strongstream.h"
 #include "nccl_net.h"
+#include "register.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -168,7 +169,6 @@ struct ncclKernelPlan {
   // A kernel plan is also a callback that reclaims itself. Hence this must
   // be the first member.
   struct ncclCommCallback reclaimer;
-  struct ncclMemoryPool memPool_ncclProxyOp; // memory to return to comm in cleanup
 
   struct ncclComm* comm;
   struct ncclKernelPlan* next;
@@ -199,30 +199,6 @@ struct ncclKernelPlan {
     struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> workQueue;
     struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
   } channels[MAXCHANNELS];
-};
-
-struct ncclRegCache {
-  struct ncclReg **slots;
-  int capacity, population;
-};
-ncclResult_t ncclRegCleanup(struct ncclComm* comm);
-ncclResult_t ncclRegFind(struct ncclComm* comm, void* data, size_t size, int* found);
-
-struct ncclRegRequest {
-  uintptr_t buff;
-  size_t size;
-  struct ncclRegRequest *next;
-};
-
-struct ncclRegRecord {
-  uintptr_t buff;
-  size_t size;
-  CUdeviceptr regAddr;
-  size_t regSize;
-  int dev;
-  CUmemGenericAllocationHandle mcHandle;
-  uintptr_t *addrs; /* use to check if NVLS buffers match among intra-node ranks */
-  struct ncclRegRecord *next;
 };
 
 struct ncclComm {
@@ -290,6 +266,7 @@ struct ncclComm {
   // Buffer sizes
   int buffSizes[NCCL_NUM_PROTOCOLS];
   int p2pChunkSize;
+  int nvlsChunkSize;
 
   // Algorithm/Protocols thresholds
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
@@ -305,7 +282,7 @@ struct ncclComm {
   // Flag to ask NCCL kernels to abort
   volatile uint32_t *abortFlag;
   volatile uint32_t *childAbortFlag;
-  volatile uint32_t *abortFlagRefCount;
+  uint32_t *abortFlagRefCount;
 
   // Device side of the communicator (for cudaFree's)
   struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm
@@ -348,8 +325,6 @@ struct ncclComm {
   int nvlsRegSupport;
   /* sharable NVLS resource. */
   struct ncclNvlsSharedRes* nvlsResources;
-  struct ncclShmemCollBuff nvlsShmem;
-  void *nvlsShmemHandle;
 
   ssize_t channelSize; // User requested work size (bytes) for channel partitions
 
@@ -387,16 +362,11 @@ struct ncclComm {
   int finalizeRankCnt;
   // group job to support multi-thread FT
   struct ncclGroupJob *groupJob;
-  // buffer registration cache
-  struct ncclRegCache regCache;
-
-  /* store to buffer register request */
-  struct ncclIntruQueue<struct ncclRegRequest, &ncclRegRequest::next> regRequestQueue;
-  /* store registered buffer */
-  struct ncclIntruQueue<struct ncclRegRecord, &ncclRegRecord::next> regRecordQueue;
 
   // Tuning plugin
   ncclTuner_t* tuner;
+  // buffer registration cache
+  struct ncclRegCache regCache;
 };
 
 enum ncclLaunchMode {

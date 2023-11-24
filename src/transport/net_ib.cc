@@ -85,14 +85,14 @@ NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
 
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
-  struct ibv_context* context = (struct ibv_context*)args;
+  struct ncclIbDev* dev = (struct ncclIbDev*)args;
   while (1) {
     struct ibv_async_event event;
-    if (ncclSuccess != wrap_ibv_get_async_event(context, &event)) { break; }
+    if (ncclSuccess != wrap_ibv_get_async_event(dev->context, &event)) { break; }
     char *str;
     if (ncclSuccess != wrap_ibv_event_type_str(&str, event.event_type)) { break; }
     if (event.event_type != IBV_EVENT_COMM_EST)
-      WARN("NET/IB : Got async event : %s", str);
+      WARN("NET/IB : %s:%d Got async event : %s", dev->devName, dev->port, str);
     if (ncclSuccess != wrap_ibv_ack_async_event(&event)) { break; }
   }
   return NULL;
@@ -238,7 +238,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           ncclIbDevs[ncclNIbDevs].ar = (portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND) ? 1 : 0;
           if (ncclParamIbAdaptiveRouting() != -2) ncclIbDevs[ncclNIbDevs].ar = ncclParamIbAdaptiveRouting();
 
-          pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, context);
+          pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, ncclIbDevs + ncclNIbDevs);
           ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
           pthread_detach(ncclIbAsyncThread); // will not be pthread_join()'d
           ncclNIbDevs++;

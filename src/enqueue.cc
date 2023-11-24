@@ -306,7 +306,9 @@ static ncclResult_t addP2pToPlan(
 
   int reg = 0;
   if (info.protocol == NCCL_PROTO_SIMPLE) {
-    NCCLCHECK(ncclRegFind(comm, addr, bytes, &reg));
+    struct ncclReg* regRecord;
+    NCCLCHECK(ncclRegFind(comm, addr, bytes, &regRecord));
+    reg = regRecord && regRecord->nComms ? 1 : 0;
   }
 
   struct ncclProxyOp proxyOp = {};
@@ -376,9 +378,7 @@ static ncclResult_t registerIntraNodeBuffers(
     bool regBufUsed = false;
     const void *sendbuff = info->sendbuff;
     void *recvbuff = info->recvbuff;
-    cudaPointerAttributes sattr, rattr;
-    bool query = false;
-    
+
     if (info->coll == ncclFuncAllGather)
       sendbuff = NULL;
     else if (info->coll == ncclFuncReduceScatter)
@@ -386,20 +386,11 @@ static ncclResult_t registerIntraNodeBuffers(
 
     /* first try local registration. */
     if (ncclParamLocalRegister()) {
-      CUDACHECK(cudaPointerGetAttributes(&sattr, info->sendbuff));
-      CUDACHECK(cudaPointerGetAttributes(&rattr, info->recvbuff));
-      query = true;
-      if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice)
-        ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
+      ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
 
     if (regBufUsed == false && plan->persistent && ncclParamGraphRegister()) {
-      if (!query) {
-        CUDACHECK(cudaPointerGetAttributes(&sattr, info->sendbuff));
-        CUDACHECK(cudaPointerGetAttributes(&rattr, info->recvbuff));
-      }
-      if (sattr.type == cudaMemoryTypeDevice && rattr.type == cudaMemoryTypeDevice)
-        ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
+      ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, info->sendbuffSize, info->recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
 
     if (regBufUsed) {
@@ -548,9 +539,15 @@ static ncclResult_t scheduleCollTasksToPlan(
       info.sliceSteps = head->sliceSteps;
       NCCLCHECK(ncclInfoSetDerived(&info, comm->nRanks));
       if (nAggOps > 1) {
-        int maxChannels = aggInfo.algorithm == NCCL_ALGO_NVLS || aggInfo.algorithm == NCCL_ALGO_NVLS_TREE ? comm->nvlsChannels : comm->nChannels;
-        info.nChannels = DIVUP(info.nBytes, bytePerChannel[collNetSupport]);
-        info.nChannels = std::max(1, std::min(info.nChannels, maxChannels));
+        int a = aggInfo.algorithm;
+        if (a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) {
+          info.nChannels = comm->nvlsChannels;
+        } else if (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) {
+          info.nChannels = comm->nChannels;
+        } else {
+          info.nChannels = DIVUP(info.nBytes, bytePerChannel[collNetSupport]);
+          info.nChannels = std::max(1, std::min(info.nChannels, comm->nChannels));
+        }
         info.algorithm = aggInfo.algorithm;
         info.protocol = aggInfo.protocol;
         info.nThreads = aggInfo.nThreads;
@@ -670,6 +667,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
         sendBytes = send && sendBytes == 0 ? -1 : sendBytes;
         int chunk = 0;
         do {
+          if ((i % (NCCL_MAX_WORK_ELEMENTS_P2P/2)) == 0) fuseOk = false;
           ssize_t recvChunkBytes = std::min(recvBytes, recvChunkBytesMax); // -1 preserved
           ssize_t sendChunkBytes = std::min(sendBytes, sendChunkBytesMax);
 
@@ -835,32 +833,60 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
   uint64_t collOpCount = comm->sharedRes->collOpCount;
   // Advance comm's collOpCount by number of colls in this plan.
   comm->sharedRes->collOpCount += plan->collOpCount;
+
+  uint64_t p2pOpBump[MAXCHANNELS];
+  struct ncclProxyOp* heads[MAXCHANNELS];
+  uint64_t headIds[MAXCHANNELS];
+  int nHeads = 0;
   for (int c=0; c < plan->channelUbound; c++) {
-    struct ncclProxyOp* q = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
-    uint64_t p2pOpCount = comm->sharedRes->p2pOpCount[c];
-    uint64_t nextP2pOpCount = p2pOpCount;
-    while (q != nullptr) {
-      struct ncclProxyOp* qNext = q->enqNext;
-      // Ignoring the bottom tag bit, opCount's are zero-based within plan so
-      // translate them to the tip of the comm's history.
-      if (q->opCount & 1) { // p2p
-        // p2pOpCount is monotonic increasing within a plan's channel so just
-        // remember last value to compute max.
-        nextP2pOpCount = p2pOpCount + (q->opCount>>1);
-        nextP2pOpCount += 1; // +1 to ensure next plan doesn't collide
-        q->opCount = (p2pOpCount<<1) + q->opCount;
-      } else { // coll
-        q->opCount = (collOpCount<<1) + q->opCount;
-      }
-      NCCLCHECK(ncclProxySaveOp(comm, q, nullptr)); // May overwrite enqNext.
-      if (!plan->persistent) {
-        // Non-persistent kernels have their memory reclaimed after upload.
-        ncclMemoryPoolFree(&plan->memPool_ncclProxyOp, q);
-      }
-      q = qNext;
+    p2pOpBump[c] = 0;
+    heads[c] = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
+    nHeads += (heads[c] != nullptr) ? 1 : 0;
+    headIds[c] = (heads[c] != nullptr) ? heads[c]->opCount : uint64_t(-1);
+  }
+
+  while (nHeads != 0) {
+    int minChan = -1;
+    uint64_t minId = uint64_t(-1);
+    // We store the heads[c]->opCount in headIds[c] specifically to remove indirect
+    // loads from this loop which speeds it up considerably.
+    for (int c=0; c < plan->channelUbound; c++) {
+      uint64_t id = headIds[c];
+      id = (id>>1 | id<<63); // Move tag bit to order collectives before p2p's
+      if (id < minId) { minChan = c; minId = id; }
     }
+
+    struct ncclProxyOp* q = heads[minChan];
+    uint64_t oldId = headIds[minChan]; // same as q->opCount
+    // Advance heads[c]
+    heads[minChan] = q->enqNext;
+    if (q->enqNext == nullptr) nHeads -= 1;
+    headIds[minChan] = (q->enqNext != nullptr) ? q->enqNext->opCount : uint64_t(-1);
+
+    // Ignoring the bottom tag bit, opCount's are zero-based within plan so
+    // translate them to the tip of the comm's history.
+    if (oldId & 1) { // p2p
+      // opCount is monotonic increasing within a plan's channel so just
+      // remember last value to compute max.
+      p2pOpBump[minChan] = (oldId>>1) + 1; // +1 to ensure next plan doesn't collide
+      q->opCount = (comm->sharedRes->p2pOpCount[minChan]<<1) + oldId;
+    } else { // coll
+      q->opCount = (collOpCount<<1) + oldId;
+    }
+
+    NCCLCHECK(ncclProxySaveOp(comm, q, nullptr));
+    q->opCount = oldId; // Restore for next uploadProxyOps()
+    if (!plan->persistent) {
+      // Non-persistent kernels upload ops only once so can be free'd here.
+      ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
+    }
+  }
+
+  for (int c=0; c < plan->channelUbound; c++) {
+    // Erase proxyOpQueue since all ops were free'd back to mempool.
+    if (!plan->persistent) ncclIntruQueueConstruct(&plan->channels[c].proxyOpQueue);
     // Advance channel's p2pOpCount by number of p2p's in this plan channel.
-    comm->sharedRes->p2pOpCount[c] = nextP2pOpCount;
+    comm->sharedRes->p2pOpCount[c] += p2pOpBump[c];
   }
   return ncclSuccess;
 }
@@ -889,6 +915,14 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
   if (plan->persistent) {
     comm->persistentRefs -= 1;
     NCCLCHECK(ncclCudaFree(plan->workHead));
+    for (int c=0; c < plan->channelUbound; c++) {
+      struct ncclProxyOp* q = ncclIntruQueueHead(&plan->channels[c].proxyOpQueue);
+      while (q != nullptr) {
+        struct ncclProxyOp* q1 = q->enqNext;
+        ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
+        q = q1;
+      }
+    }
     while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
       struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
       CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
@@ -902,7 +936,6 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
       ncclMemoryPoolFree(&comm->memPool_ncclNvlsHandleList, obj);
     }
   }
-  ncclMemoryPoolTakeAll(&comm->memPool_ncclProxyOp, &plan->memPool_ncclProxyOp);
   ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
   return ncclSuccess;
 }
@@ -1103,9 +1136,16 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   if (!(plan->persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking)) {
-    // If this isn't being captured and there aren't any CUDA graphs alive
-    // then we don't need to do our proxyOp pushing on the host stream.
+    // We are not using the host stream for proxy ops and reclaimation submission.
     NCCLCHECK(hostStreamPlanTask(comm, plan));
+  } else {
+    // We are using the host stream for proxy ops and reclaimation submission.
+    // Only plans with proxy ops have a callback pushed by ncclLaunchPrepare.
+    // Since non-persistent plans also require reclaimation, we have to do it
+    // here.
+    if (!plan->persistent && !plan->hasProxyOps) {
+      ncclIntruQueueMpscEnqueue(&comm->callbackQueue, &plan->reclaimer);
+    }
   }
   return ncclSuccess;
 }
@@ -1367,9 +1407,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_NVLS) {
-    int maxChunkSize = 131072;
-    if (info->comm->nNodes > 1 && info->comm->bandwidths[ncclFuncAllReduce][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] < 150) maxChunkSize = 32768;
-    if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
+    chunkSize = info->comm->nvlsChunkSize;
+    if (info->comm->nNodes > 1 && info->comm->bandwidths[ncclFuncAllReduce][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] < 150)
+      chunkSize = std::min(chunkSize, 32768);
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
     if ((info->nBytes < (64 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
@@ -1379,7 +1419,8 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
   } else if (info->algorithm == NCCL_ALGO_NVLS_TREE) {
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
-    if (info->comm->nNodes >= 4) chunkSize = 65536;
+    chunkSize = info->comm->nvlsChunkSize;
+    if (info->comm->nNodes >= 4) chunkSize = std::min(chunkSize, 65536);
     if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
     if ((info->nBytes < (16 * (concurrentOps*chunkSize))) && (chunkSize > 131072)) chunkSize = 131072;
     if ((info->nBytes < (4 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
