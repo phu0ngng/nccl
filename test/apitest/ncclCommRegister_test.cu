@@ -15,6 +15,7 @@ class ncclCommRegister_test : public ::testing::Test {
 TEST_F(ncclCommRegister_test, basic) {
     const int size = 1024;
     void* buff = nullptr;
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
     ASSERT_EQ(cudaSuccess, cudaMalloc(&buff, size));
     ASSERT_NE(nullptr, buff);
     void* handle;
@@ -25,6 +26,7 @@ TEST_F(ncclCommRegister_test, basic) {
 TEST_F(ncclCommRegister_test, null_comm) {
     const int size = 1024;
     void* buff = nullptr;
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
     ASSERT_EQ(cudaSuccess, cudaMalloc(&buff, size));
     ASSERT_NE(nullptr, buff);
     void* handle;
@@ -50,6 +52,7 @@ TEST_F(ncclCommRegister_test, many) {
     ASSERT_NE(buffs = (void**)malloc(sizeof(void*)*n), nullptr);
     void** handles = nullptr;
     ASSERT_NE(handles = (void**)malloc(sizeof(void*)*n), nullptr);
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
     for (int i=0; i<n; i++) {
       ASSERT_EQ(cudaSuccess, cudaMalloc(buffs+i, size));
       ASSERT_NE(nullptr, buffs[i]);
@@ -66,6 +69,7 @@ TEST_F(ncclCommRegister_test, nested) {
     void** handles = nullptr;
     ASSERT_NE(handles = (void**)malloc(sizeof(void*)*8), nullptr);
     int end = 16*1024*1024; // Keep 1M margin
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
     ASSERT_EQ(cudaSuccess, cudaMalloc(&buff, size));
     ASSERT_NE(nullptr, buff);
     ASSERT_EQ(ncclSuccess, ncclCommRegister(comms[0], buff, end, handles+0)); // #1 Covers most of the buffer
