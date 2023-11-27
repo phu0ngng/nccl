@@ -11,20 +11,26 @@ ncclGetLastError
 
 Returns a human-readable string of the last error that occurred in NCCL.
 Note: The error is not cleared by calling this function.
-The *comm* argument is currently unused and can be set to NULL.
+Please note that the log from ncclGetLastError could be unrelated to the current call
+and can be a result of a previously launched asynchronous operations, if any.
 
+ncclGetErrorString
+------------------
+
+.. c:function:: const char* ncclGetErrorString(ncclResult_t result)
+
+Returns a string for each error code.
 
 ncclGetVersion
 --------------
 
-.. c:function:: ncclResult_t  ncclGetVersion(int* version)
+.. c:function:: ncclResult_t ncclGetVersion(int* version)
 
 The ncclGetVersion function returns the version number of the currently linked NCCL library.
 The NCCL version number is returned in *version* and encoded as an integer which includes the
 :c:macro:`NCCL_MAJOR`, :c:macro:`NCCL_MINOR` and :c:macro:`NCCL_PATCH` levels.
 The version number returned will be the same as the :c:macro:`NCCL_VERSION_CODE` defined in *nccl.h*.
 NCCL version numbers can be compared using the supplied macro; :c:macro:`NCCL_VERSION(MAJOR,MINOR,PATCH)`
-
 
 ncclGetUniqueId
 ---------------
