@@ -172,7 +172,7 @@ namespace {
       int* down = tree->down[treeIndex];
       if (tid < *nthreadsPtr) {
         if (up == -1) {
-          treeTop<T, RedOp, Proto, NCCL_MAX_TREE_ARITY_TOP>(args, tid, bid, *nthreadsPtr, down, loopSize, chunkSize, size, treeIndex);
+          treeTop<T, RedOp, Proto, NCCL_MAX_TREE_ARITY>(args, tid, bid, *nthreadsPtr, down, loopSize, chunkSize, size, treeIndex);
         } else {
           if (treeIndex == tree->downTree) {
             treeReduce<T, RedOp, Proto, NCCL_MAX_TREE_ARITY, 1>(args, tid, bid, *nthreadsPtr, down, &up, loopSize, chunkSize, size, treeIndex);

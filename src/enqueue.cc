@@ -1231,8 +1231,8 @@ static ncclResult_t topoGetAlgoInfo(struct ncclInfo* info, int collNetSupport, i
   if (info->protocol == NCCL_PROTO_SIMPLE) {
     if (info->algorithm == NCCL_ALGO_RING) nt += WARP_SIZE; // Extra warp for sync
   }
-  if (info->algorithm == NCCL_ALGO_TREE) nt = NCCL_MAX_NTHREADS;
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
+  if (info->algorithm == NCCL_ALGO_TREE) nt = NCCL_MAX_NTHREADS; // Tree now uses all threads always.
   info->nChannels = nc;
   info->nThreads = nt;
   return ncclSuccess;
