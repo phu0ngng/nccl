@@ -27,7 +27,7 @@
  */
 
 int getRankUp(int rank, int level) {
-  return rank + (1<<level) & ~(1<<(level+1));
+  return (rank + (1<<level)) & ~(1<<(level+1));
 }
 
 #include <stdio.h>
