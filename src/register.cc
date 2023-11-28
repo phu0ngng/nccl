@@ -26,71 +26,74 @@ ncclResult_t ncclNetDeregister(struct ncclComm* comm, struct ncclReg* reg) {
   return ncclSuccess;
 }
 
-// ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, struct ncclReg* reg) {
-//   int netDevs;
-//   NCCLCHECK(comm->ncclNet->devices(&netDevs));
+ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, struct ncclReg* reg) {
+  int netDevs;
+  NCCLCHECK(comm->ncclNet->devices(&netDevs));
 
-//   int localNetDevCount = 0;
-//   int* localNetDevs;
-//   void *lComm = NULL;
-//   ncclResult_t ret = ncclSuccess;
+  int localNetDevCount = 0;
+  int* localNetDevs;
+  void *lComm = NULL;
+  ncclResult_t ret = ncclSuccess;
 
-//   NCCLCHECK(ncclCalloc(&localNetDevs, comm->p2pnChannels));
+  NCCLCHECK(ncclCalloc(&localNetDevs, comm->p2pnChannels));
 
-//   // Find local devices for p2p operations
-//   for (int c=0; c<comm->p2pnChannels; c++) {
-//     int dev;
-//     if (ncclTopoGetLocalNet(comm->topo, comm->rank, c, &dev) != ncclSuccess) goto end; // No local net
-//     ncclNetProperties_t props;
-//     NCCLCHECKGOTO(comm->ncclNet->getProperties(dev, &props), ret, end);
-//     if (props.regIsGlobal == 0) { // We need to be sure all NICs support global registration.
-//       localNetDevCount = 0;
-//       break;
-//     }
-//     localNetDevs[localNetDevCount++] = dev;
-//   }
+  // Find local devices for p2p operations
+  for (int c=0; c<comm->p2pnChannels; c++) {
+    int dev;
+    if (ncclTopoGetLocalNet(comm->topo, comm->rank, c, &dev) != ncclSuccess) goto end; // No local net
+    ncclNetProperties_t props;
+    NCCLCHECKGOTO(comm->ncclNet->getProperties(dev, &props), ret, end);
+    if (props.regIsGlobal == 0) { // We need to be sure all NICs support global registration.
+      localNetDevCount = 0;
+      break;
+    }
+    localNetDevs[localNetDevCount++] = dev;
+  }
 
-//   NCCLCHECKGOTO(ncclCalloc(&reg->sComms, localNetDevCount), ret, end);
-//   NCCLCHECKGOTO(ncclCalloc(&reg->rComms, localNetDevCount), ret, end);
-//   NCCLCHECKGOTO(ncclCalloc(&reg->handles, localNetDevCount), ret, end);
-//   reg->nComms = localNetDevCount;
+  NCCLCHECKGOTO(ncclCalloc(&reg->sComms, localNetDevCount), ret, end);
+  NCCLCHECKGOTO(ncclCalloc(&reg->rComms, localNetDevCount), ret, end);
+  NCCLCHECKGOTO(ncclCalloc(&reg->handles, localNetDevCount), ret, end);
+  reg->nComms = localNetDevCount;
 
-//   ncclDebugNoWarn = NCCL_NET;
-//   for (int d=0; d<localNetDevCount; d++) {
-//     int dev = localNetDevs[d];
-//     reg->handles[d] = reg->sComms[d] = reg->rComms[d] = NULL;
+  ncclDebugNoWarn = NCCL_NET;
+  for (int d=0; d<localNetDevCount; d++) {
+    int dev = localNetDevs[d];
+    reg->handles[d] = reg->sComms[d] = reg->rComms[d] = NULL;
 
-//     ncclNetHandle_t netHandle;
-//     NCCLCHECKGOTO(comm->ncclNet->listen(dev, &netHandle, &lComm), ret, end);
+    ncclNetHandle_t netHandle;
+    NCCLCHECKGOTO(comm->ncclNet->listen(dev, &netHandle, &lComm), ret, end);
 
-//     bool connected;
-//     connected = false;
-//     while (!connected) {
-//       if (*comm->abortFlag) {
-//         goto end;
-//       }
+    bool connected;
+    connected = false;
+    printf("Connecting for reg buffer %p/%ld\n", addr, size);
+    while (!connected) {
+      if (*comm->abortFlag) {
+        goto end;
+      }
 
-//       if (reg->sComms[d] == NULL)
-//         NCCLCHECKGOTO(comm->ncclNet->connect(dev, &netHandle, reg->sComms+d), ret, end);
+      if (reg->sComms[d] == NULL)
+        NCCLCHECKGOTO(comm->ncclNet->connect(dev, &netHandle, reg->sComms+d, NULL), ret, end);
 
-//       if (reg->rComms[d] == NULL)
-//         NCCLCHECKGOTO(comm->ncclNet->accept(lComm, reg->rComms+d), ret, end);
+      if (reg->rComms[d] == NULL)
+        NCCLCHECKGOTO(comm->ncclNet->accept(lComm, reg->rComms+d, NULL), ret, end);
 
-//       connected = (reg->rComms[d] != NULL) && (reg->sComms[d] != NULL);
-//     }
-//     NCCLCHECK(comm->ncclNet->closeListen(lComm));
-//     lComm = NULL;
+      connected = (reg->rComms[d] != NULL) && (reg->sComms[d] != NULL);
+    }
+    NCCLCHECK(comm->ncclNet->closeListen(lComm));
+    lComm = NULL;
 
-//     if (comm->ncclNet->regMr(reg->sComms[d], addr, size, NCCL_PTR_CUDA, reg->handles+d) != ncclSuccess) {
-//       reg->handles[d] = NULL;
-//     }
-//   }
-// end:
-//   ncclDebugNoWarn = 0;
-//   if (ret != ncclSuccess) NCCLCHECK(ncclNetDeregister(comm, reg));
-//   free(localNetDevs);
-//   return ret;
-// }
+    if (comm->ncclNet->regMr(reg->sComms[d], addr, size, NCCL_PTR_CUDA, reg->handles+d) != ncclSuccess) {
+      reg->handles[d] = NULL;
+    }
+
+    printf("Done reg buffer %p/%ld\n", addr, size);
+  }
+end:
+  ncclDebugNoWarn = 0;
+  if (ret != ncclSuccess) NCCLCHECK(ncclNetDeregister(comm, reg));
+  free(localNetDevs);
+  return ret;
+}
 
 ncclResult_t ncclRegFind(struct ncclComm* comm, const void* data, size_t size, struct ncclReg** reg) {
   struct ncclRegCache* cache = &comm->regCache;
@@ -108,7 +111,6 @@ ncclResult_t ncclRegFind(struct ncclComm* comm, const void* data, size_t size, s
     }
   }
 }
-// NCCL_PARAM(RegDisable, "REGISTER_DISABLE", 0);
 NCCL_PARAM(LocalRegister, "LOCAL_REGISTER", 1);
 
 ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, void** handle) {
@@ -129,7 +131,7 @@ ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, void**
       regSlot->addr = addr;
       regSlot->pages = pages;
       regSlot->refs = 1;
-      // NCCLCHECK(ncclNetRegister(comm, (void*)addr, pages*pageSize, regSlot));
+      NCCLCHECK(ncclNetRegister(comm, (void*)addr, pages*pageSize, regSlot));
       regSlot->state |= NET_REG_COMPLETE;
       cache->population += 1;
       *handle = regSlot;
@@ -147,7 +149,7 @@ ncclResult_t ncclRegCleanup(struct ncclComm* comm) {
   struct ncclRegCache* cache = &comm->regCache;
   for (int i=0; i<cache->population; i++) {
     INFO(NCCL_INIT, "Cleanup buffer %p pages %lx", (void*)cache->slots[i]->addr, cache->slots[i]->pages);
-    // NCCLCHECK(ncclNetDeregister(comm, cache->slots[i]));
+    NCCLCHECK(ncclNetDeregister(comm, cache->slots[i]));
     NCCLCHECK(ncclNvlsDeregBuffer(&cache->slots[i]->mcHandle, cache->slots[i]->regAddr, cache->slots[i]->dev, cache->slots[i]->regSize));
     free(cache->slots[i]);
   }
