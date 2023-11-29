@@ -96,6 +96,8 @@ static size_t tbytes = SIZE_MAX;
 static int split_share = NCCL_CONFIG_UNDEF_INT;
 static int split_comm = 0;
 static int commNum = 1;
+#define LOCAL_REGISTER_SEND 0x1
+#define LOCAL_REGISTER_RECV 0x2
 static int local_register = 0;
 
 static char* replay_file = NULL;
@@ -1100,7 +1102,9 @@ int main(int argc, char* argv[]) {
         split_comm = (int)strtol(optarg, NULL, 0);
         break;
       case 'R':
-        local_register = (int)strtol(optarg, NULL, 0);
+        if (optarg[0] == 's') local_register = LOCAL_REGISTER_SEND;
+        else if (optarg[0] == 'r') local_register = LOCAL_REGISTER_RECV;
+        else if ((optarg[0] == 'a') || ((int)strtol(optarg, NULL, 0))) local_register = LOCAL_REGISTER_SEND|LOCAL_REGISTER_RECV;
         break;
       case 'h':
       default:
@@ -1142,7 +1146,7 @@ int main(int argc, char* argv[]) {
             "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
             "[-S,--split_share <0/1> enable shared resources during communicator split (default: 0)] \n\t"
             "[-P,--split_comm <0/1/2> enable communicator split (default: 0 disable; 1 dup global comm; 2 three split patterns)] \n\t"
-            "[-R,--local_register <0/1> enable local buffer registration (default: 0 disable)] \n\t"
+            "[-R,--local_register <s/r/a> enable local buffer registration on send buffers/recv buffers/all buffers (default: disable)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1383,10 +1387,8 @@ char* splitMaskEnv = NULL;
       ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
       CUDACHECK(cudaSetDevice(gpus[i]));
       TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
-      if (local_register) {
-        NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
-        NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
-      }
+      if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
+      if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
     }
   }
 
@@ -1522,10 +1524,8 @@ char* splitMaskEnv = NULL;
   // Free off CUDA allocated memory
   for (int id = 0; id < commNum; ++id) {
     for (int i=0; i<nGpus*nThreads; i++) {
-      if (local_register) {
-        NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
-        NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
-      }
+      if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
+      if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
       if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
       if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
