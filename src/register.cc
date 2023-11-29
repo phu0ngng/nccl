@@ -65,7 +65,6 @@ ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, str
 
     bool connected;
     connected = false;
-    printf("Connecting for reg buffer %p/%ld\n", addr, size);
     while (!connected) {
       if (*comm->abortFlag) {
         goto end;
@@ -85,8 +84,6 @@ ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, str
     if (comm->ncclNet->regMr(reg->sComms[d], addr, size, NCCL_PTR_CUDA, reg->handles+d) != ncclSuccess) {
       reg->handles[d] = NULL;
     }
-
-    printf("Done reg buffer %p/%ld\n", addr, size);
   }
 end:
   ncclDebugNoWarn = 0;
