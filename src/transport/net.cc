@@ -1160,7 +1160,12 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           for (uint64_t step=sub->done-args->sliceSteps; step<sub->done; step++) ncclProfilingRecord(args, s, step, ncclProxyProfileEnd);
 
           volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
-          *sendHead = sub->base + sub->done;
+          if (sub->reg) {
+            // We may have added more net steps, but reg operations only have a single step w.r.t. the GPU.
+            if (sub->done == sub->nsteps) *sendHead = sub->base + args->sliceSteps;
+          } else {
+            *sendHead = sub->base + sub->done;
+          }
           if (resources->gdcSync) wc_store_fence(); // Flush out WC write
           args->idle = 0;
           if (sub->done == sub->nsteps) {
@@ -1425,10 +1430,6 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
               struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
               if (sub->reg && sub->nbytes > 0) {
                 NCCLCHECK(proxyState->ncclNet->deregMr(resources->netRecvComm, sub->mhandle));
-                // We may have added more net steps, but reg operations only have a single step w.r.t. the GPU.
-                resources->step = sub->base + args->sliceSteps;
-              } else {
-                resources->step = sub->base + sub->nsteps;
               }
               args->done++;
               break;
