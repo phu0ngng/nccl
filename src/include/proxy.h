@@ -139,10 +139,10 @@ struct ncclProxyPeer {
 };
 
 struct ncclSharedNetComms {
-  void* sendComm[MAXCHANNELS];
-  void* recvComm[MAXCHANNELS];
-  int sendRefCount[MAXCHANNELS];
-  int recvRefCount[MAXCHANNELS];
+  void* sendComm[MAXCHANNELS][NCCL_MAX_CONNS];
+  void* recvComm[MAXCHANNELS][NCCL_MAX_CONNS];
+  int sendRefCount[MAXCHANNELS][NCCL_MAX_CONNS];
+  int recvRefCount[MAXCHANNELS][NCCL_MAX_CONNS];
 };
 
 struct ncclProxyPool;
@@ -197,6 +197,11 @@ struct ncclProxyRpcResponseHeader {
   int respSize;
 };
 
+struct ncclProxyStateSharedBuffer {
+  int nslots;
+  int slotSize;
+};
+
 struct ncclProxyState {
   int refCount;
   int tpRank;
@@ -204,7 +209,7 @@ struct ncclProxyState {
   int tpLocalnRanks;
   int cudaDev;
   int p2pnChannels;
-  int p2pChunkSize;
+  struct ncclProxyStateSharedBuffer sharedBuffer;
   int nChannels;
   int buffSizes[NCCL_NUM_PROTOCOLS];
   bool allocP2pNetLLBuffers;

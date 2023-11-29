@@ -8,82 +8,82 @@
 
 #define RANK_TO_INDEX(r) (rank > root ? rank-1 : rank)
 
-/* Btree which alternates leaves and nodes.
- * Assumes root is 0, which conveniently builds a tree on powers of two,
- * (because we have pow2-1 ranks) which lets us manipulate bits.
- * Find first non-zero bit, then :
- * Find the parent :
- *   xx01[0] -> xx10[0] (1,5,9 below) or xx00[0] if xx10[0] is out of bounds (13 below)
- *   xx11[0] -> xx10[0] (3,7,11 below)
- * Find the children :
- *   xx10[0] -> xx01[0] (2,4,6,8,10,12) or -1 (1,3,5,7,9,11,13)
- *   xx10[0] -> xx11[0] (2,4,6,8,10) or xx101[0] (12) or xx1001[0] ... or -1 (1,3,5,7,9,11,13)
+/* Btree which alternates leaves and nodes, while trying to minimize distance between connected ranks.
+ *
+ * Algorithm:
+ * 1. Find our level in the tree
+ * 2. Find ranks down. Should be rank +/- 2^(level-1)
+ * 3. Find our rank up. Needs a bit more bit manipulations, to clear bit (level+1) and set bit (level).
+ * 4. In the case where the tree is not complete, make sure we re-attach correctly ranks .
  *
  * Illustration :
- * 0---------------8
+ *                 7
  *          ______/ \______
- *         4               12
- *       /   \            /  \
- *     2       6       10     \
- *    / \     / \     /  \     \
- *   1   3   5   7   9   11    13
+ *         3               11
+ *       /   \           /   \
+ *     1       5       9      \
+ *    / \     / \     / \      \
+ *   0   2   4   6   8  10     12
  */
+
+int getRankUp(int rank, int level) {
+  return (rank + (1<<level)) & ~(1<<(level+1));
+}
+
+#include <stdio.h>
 ncclResult_t ncclGetBtree(int nranks, int rank, int* u, int* d0, int* d1, int* parentChildType) {
-  int up, down0, down1;
-  int bit;
-  for (bit=1; bit<nranks; bit<<=1) {
-    if (bit & rank) break;
+  int level = 0;
+  for (int bit=1; bit<nranks && (bit&rank); bit<<=1) level++;
+
+  // Find rank down: should be rank +/- 2^level.
+  if (level == 0) *d0 = *d1 = -1;
+  else {
+    int l = level - 1;
+    *d0 = rank - (1<<l);
+    if (rank == nranks-1) {
+      *d1 = -1;
+    } else {
+      *d1 = rank + (1<<l);
+      // If d1 is out of bounds, go down until we are within 0..nranks-1
+      l--;
+      while (*d1 >= nranks) *d1 = *d1 - (1<<(l--));
+    }
   }
 
-  if (rank == 0) {
-    *u = -1;
-    *d0 = -1;
-    // Child rank is > 0 so it has to be our child 1, not 0.
-    *d1 = nranks > 1 ? bit >> 1 : -1;
-    return ncclSuccess;
+  // Find rank up.
+  // The most ranks we can have with N levels is 2^(N+1)-1.
+  if (nranks < 1<<(level+1)) {
+    *u = -1; // I'm the top rank
+  } else {
+    int up = rank, l = level;
+    // If the up rank is out of bounds, continue to go up until we're within 0..nranks-1.
+    do up = getRankUp(up, l++); while (up >= nranks);
+    *u = up;
+    *parentChildType = rank > up ? 1 : 0;
   }
-
-  up = (rank ^ bit) | (bit << 1);
-  // if smaller than the parent, we are his first child, otherwise we're his second
-  if (up >= nranks) up = (rank ^ bit);
-  *parentChildType = (rank < up) ? 0 : 1;
-  *u = up;
-
-  int lowbit = bit >> 1;
-  // down0 is always within bounds
-  down0 = lowbit == 0 ? -1 : rank-lowbit;
-
-  down1 = lowbit == 0 ? -1 : rank+lowbit;
-  // Make sure down1 is within bounds
-  while (down1 >= nranks) {
-    down1 = lowbit == 0 ? -1 : rank+lowbit;
-    lowbit >>= 1;
-  }
-  *d0 = down0; *d1 = down1;
-
   return ncclSuccess;
 }
 
 /* Build a double binary tree. Take the previous tree for the first tree.
  * For the second tree, we use a mirror tree (if nranks is even)
  *
- * 0---------------8                   3----------------11
+ *                 7                   2
  *          ______/ \                 / \______
- *         4         \               /         7
+ *         3         \               /         6
  *       /   \        \             /        /   \
- *     2       6       10         1        5      9
- *    / \     / \     /  \       / \      / \    / \
- *   1   3   5   7   9   11     0   2    4   6  8   10
+ *     1       5       9           0        4      8
+ *    / \     / \     /             \      / \    / \
+ *   0   2   4   6   8               1    3   5  7   9
  *
  * or shift it by one rank (if nranks is odd).
  *
- * 0---------------8            1---------------9
- *          ______/ \______              ______/ \______
- *         4               12           5                0
- *       /   \            /           /   \            /
- *     2       6       10           3       7       11
- *    / \     / \     /  \         / \     / \     /  \
- *   1   3   5   7   9   11       2   4   6   8  10   12
+ *                 7                            8
+ *          ______/ \                    ______/ \
+ *         3         \                  4         \
+ *       /   \        \               /   \        \
+ *     1       5       9            2       6       10
+ *    / \     / \     / \          / \     / \     / \
+ *   0   2   4   6   8  10        1   3   5   7   9   0
  */
 ncclResult_t ncclGetDtree(int nranks, int rank, int* s0, int* d0_0, int* d0_1, int* parentChildType0, int* s1, int* d1_0, int* d1_1, int* parentChildType1) {
   // First tree ... use a btree

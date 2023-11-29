@@ -77,6 +77,7 @@ static ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   struct shmSendResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
+  send->conn.flags |= NCCL_SENDRECV_USE_LL;
 
   static_assert(sizeof(struct shmConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Info is too big");
   struct shmConnectInfo* info = (struct shmConnectInfo*)connectInfo;
@@ -100,6 +101,7 @@ static ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   struct shmRecvResources* resources;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
+  recv->conn.flags |= NCCL_SENDRECV_USE_LL;
 
   static_assert(sizeof(struct shmConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Info is too big");
   struct shmConnectInfo* info = (struct shmConnectInfo*)connectInfo;

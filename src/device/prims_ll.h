@@ -259,13 +259,13 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
       }
       if (RECV) {
         data = !SRC ? peerData : applyReduce(redOp, peerData, data);
-        #pragma unroll MaxRecv
+        static constexpr int MaxRecvUnroll = MaxRecv > 2 ? 2 : MaxRecv;
+        #pragma unroll MaxRecvUnroll
         for (int i=1; i < MaxRecv && i < fan.nrecv(); i++) {
           peerData = readLLFinish(offset, line, i);
           data = applyReduce(redOp, peerData, data);
         }
       }
-
       if (postOp) data = applyPostOp(redOp, data);
 
       // Send : inter-node, then intra-node, then local
@@ -329,7 +329,6 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
     tid(tid), nthreads(nthreads), wid(tid%WARP_SIZE), group(group),
     stepLines(ncclShmem.comm.buffSizes[NCCL_PROTO_LL]/NCCL_STEPS/sizeof(ncclLLFifoLine)) {
     auto *channel = &ncclShmem.channel;
-    // If we are going to support oneshot collNet + LL, then we would need to add connector index here
     int nrecv=0, nsend=0;
     // We compare with Fan::MaxRecv here because this->MaxRecv is always at least 1
     while (nrecv < Fan::MaxRecv && recvPeers[nrecv] >= 0) {
