@@ -96,7 +96,6 @@ namespace {
 
   template<typename T, typename RedOp, typename Proto, int DownArity>
   __device__ __forceinline__ void treeTop(ncclWorkElem *args, int tid, int bid, int nthreads, int* down, ssize_t loopSize, ssize_t chunkSize, ssize_t size, int connIndex) {
-    // Reduce and broadcast. Max number of recv is 2, max number of send is 2
     Primitives<T, RedOp, FanSymmetric<DownArity>, /*Direct=*/1, Proto, 0>
       prims(tid, nthreads, down, down, args->sendbuff, args->recvbuff, args->redOpArg, 2*connIndex*Proto::MaxGroupWidth, connIndex, connIndex);
     for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
