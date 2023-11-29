@@ -27,8 +27,9 @@ ncclResult_t ncclNetDeregister(struct ncclComm* comm, struct ncclReg* reg) {
 }
 
 ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, struct ncclReg* reg) {
-  int netDevs;
-  NCCLCHECK(comm->ncclNet->devices(&netDevs));
+  int netCount;
+  NCCLCHECK(ncclTopoGetNetCount(comm->topo, &netCount));
+  if (netCount == 0) return ncclSuccess;
 
   int localNetDevCount = 0;
   int* localNetDevs;
