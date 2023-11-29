@@ -16,11 +16,11 @@ $SRUN ./build/test/apitest/apitest
 
 if [ "$1" == "minimal" ]; then exit $failure_count; fi
 
-echo "=============================== API TESTS No P2P- $(date +\"%T\")  ================================="
+echo "=============================== API TESTS No P2P - $(date +\"%T\")  ================================="
 NCCL_P2P_DISABLE=1 $SRUN ./build/test/apitest/apitest
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("API TESTS No P2P")
 
-echo "=============================== API TESTS Network- $(date +\"%T\") ================================="
+echo "=============================== API TESTS Network - $(date +\"%T\") ================================="
 NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 $SRUN ./build/test/apitest/apitest
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("API TESTS Network")
 
