@@ -259,13 +259,13 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
       }
       if (RECV) {
         data = !SRC ? peerData : applyReduce(redOp, peerData, data);
-        #pragma unroll MaxRecv
+        static constexpr int MaxRecvUnroll = MaxRecv > 2 ? 2 : MaxRecv;
+        #pragma unroll MaxRecvUnroll
         for (int i=1; i < MaxRecv && i < fan.nrecv(); i++) {
           peerData = readLLFinish(offset, line, i);
           data = applyReduce(redOp, peerData, data);
         }
       }
-
       if (postOp) data = applyPostOp(redOp, data);
 
       // Send : inter-node, then intra-node, then local
