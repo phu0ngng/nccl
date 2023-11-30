@@ -234,11 +234,9 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
     // Import and map the remote memory descriptor to the local GPU
     if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
       // UDS fd support
-      struct ncclProxyConnector proxyConn;
       int fd = -1;
       // Send cuMem handle to remote for conversion to an fd
-      NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, tpPeer, &proxyConn));
-      NCCLCHECK(ncclProxyClientGetFdBlocking(comm, &proxyConn, &cuDesc->data, &fd));
+      NCCLCHECK(ncclProxyClientGetFdBlocking(comm, tpPeer, &cuDesc->data, &fd));
       INFO(NCCL_P2P, "UDS converted handle 0x%lx to fd %d on remote peer %d", *(uint64_t*)&cuDesc->data, fd, tpPeer);
       CUCHECK(cuMemImportFromShareableHandle(&handle, (void *)(uintptr_t)fd, type));
       (void) close(fd);
