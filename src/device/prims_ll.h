@@ -259,8 +259,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
       }
       if (RECV) {
         data = !SRC ? peerData : applyReduce(redOp, peerData, data);
-        static constexpr int MaxRecvUnroll = MaxRecv > 2 ? 2 : MaxRecv;
-        #pragma unroll MaxRecvUnroll
+        #pragma unroll 1 //MaxRecv Workaround for crash in Tree/LL with ARITY 3
         for (int i=1; i < MaxRecv && i < fan.nrecv(); i++) {
           peerData = readLLFinish(offset, line, i);
           data = applyReduce(redOp, peerData, data);
