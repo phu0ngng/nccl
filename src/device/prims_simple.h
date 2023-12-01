@@ -149,10 +149,10 @@ class Primitives<
       if (flags & OffsFifoEnabled) {
         int offset = -1;
         int spins = 0;
-        while ((offset = loadInt(connOffsFifoPtr + (step%NCCL_STEPS))/sizeof(T)) == -1) {
+        while ((offset = loadInt(connOffsFifoPtr + (step%NCCL_STEPS))) == -1) {
           if (checkAbort(spins)) break;
         }
-        ptrs[index] = connEltsFifo + offset;
+        ptrs[index] = connEltsFifo + offset/sizeof(T);
       }
       else if (isSendNotRecv && DirectSend) {
         if (flags & (DirectWrite | NvlsDirectWrite)) {
