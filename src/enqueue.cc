@@ -288,7 +288,7 @@ NCCL_PARAM(P2pLLThreshold, "P2P_LL_THRESHOLD", 16384);
 // ensure *nWorkBudget >= 1 upon entry.
 static ncclResult_t addP2pToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int* nWorkBudget,
-    bool isSendNotRecv, int peer, int channelId, void *addr, size_t bytes, bool fuseOk
+    bool isSendNotRecv, int peer, int chunk, void *addr, size_t bytes, bool fuseOk
   ) {
   struct ncclInfo info = {
     isSendNotRecv ? ncclFuncSend : ncclFuncRecv,
@@ -297,6 +297,8 @@ static ncclResult_t addP2pToPlan(
     /*Args*/1, 1
   };
 
+  int channelId;
+  NCCLCHECK(ncclChannelCompute(comm, peer, chunk%comm->p2pnChannelsPerPeer, info.coll, &channelId));
   info.channelId = channelId;
 
   // 1 is connIndex
@@ -630,8 +632,6 @@ static ncclResult_t scheduleP2pTasksToPlan(
   }
 
   bool fuseOk = false;
-  uint8_t* opsPerChannel = NULL;
-  NCCLCHECK(ncclCalloc(&opsPerChannel, comm->p2pnChannels));
   // We can perform 8 send/recv per round per CTA. Make sure we jump between fused blocks at node boundaries.
   while (tasks->nTasksP2p != 0) {
     for (int i=0; i < tasks->p2pOrderSteps; i++) {
@@ -665,27 +665,24 @@ static ncclResult_t scheduleP2pTasksToPlan(
         // Zero size send/recv are syncs, encode here with -1.
         recvBytes = recv && recvBytes == 0 ? -1 : recvBytes;
         sendBytes = send && sendBytes == 0 ? -1 : sendBytes;
-        int chunk = 0;
+        // Advance to current chunk. Syncs will always have chunk=0 so no effect on the -1.
+        if (recv) recvPtr   += recv->chunk*recvChunkBytesMax;
+        if (recv) recvBytes -= recv->chunk*recvChunkBytesMax;
+        if (send) sendPtr   += send->chunk*sendChunkBytesMax;
+        if (send) sendBytes -= send->chunk*sendChunkBytesMax;
+
         do {
           if ((i % (NCCL_MAX_WORK_ELEMENTS_P2P/2)) == 0) fuseOk = false;
           ssize_t recvChunkBytes = std::min(recvBytes, recvChunkBytesMax); // -1 preserved
           ssize_t sendChunkBytes = std::min(sendBytes, sendChunkBytesMax);
-
-          int channelIdSend, channelIdRecv;
-          NCCLCHECK(ncclChannelCompute(comm, recvPeer, chunk%comm->p2pnChannelsPerPeer, ncclFuncRecv, &channelIdRecv));
-          NCCLCHECK(ncclChannelCompute(comm, sendPeer, chunk%comm->p2pnChannelsPerPeer, ncclFuncSend, &channelIdSend));
-          if (channelIdSend != channelIdRecv) return ncclInternalError;
-          if ((opsPerChannel[channelIdSend] % NCCL_MAX_WORK_ELEMENTS_P2P) == 0) fuseOk = false;
-          opsPerChannel[channelIdRecv]++;
-          opsPerChannel[channelIdSend]++;
-
           if (recvChunkBytes != 0) {
             if (recvChunkBytes == -1) recvChunkBytes = 0;
             if (*nWorkBudget < 1) return ncclSuccess; // ensure room in budget
-            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/false, recvPeer, channelIdRecv, recvPtr, recvChunkBytes, fuseOk));
+            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/false, recvPeer, recv->chunk, recvPtr, recvChunkBytes, fuseOk));
             fuseOk = true;
             recvPtr += recvChunkBytes;
             recvBytes -= recvChunkBytes;
+            recv->chunk += 1;
             if (recvBytes <= 0) {
               recvBytes = 0; // in case still -1
               ncclIntruQueueDequeue(&peers[recvPeer].recvQueue);
@@ -695,22 +692,21 @@ static ncclResult_t scheduleP2pTasksToPlan(
           if (sendChunkBytes != 0) {
             if (sendChunkBytes == -1) sendChunkBytes = 0;
             if (*nWorkBudget < 1) return ncclSuccess; // ensure room in budget
-            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, channelIdSend, sendPtr, sendChunkBytes, fuseOk));
+            NCCLCHECK(addP2pToPlan(comm, plan, nWorkBudget, /*isSendNotRecv=*/true, sendPeer, send->chunk, sendPtr, sendChunkBytes, fuseOk));
             fuseOk = true;
             sendPtr += sendChunkBytes;
             sendBytes -= sendChunkBytes;
+            send->chunk += 1;
             if (sendBytes <= 0) {
               sendBytes = 0; // in case still -1
               ncclIntruQueueDequeue(&peers[sendPeer].sendQueue);
               tasks->nTasksP2p -= 1;
             }
           }
-          chunk += 1;
         } while (sendBytes != 0 || recvBytes != 0);
       }
     }
   }
-  free(opsPerChannel);
   return ncclSuccess;
 }
 
@@ -1549,6 +1545,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo const* inf
     struct ncclTaskP2p* p2p = ncclMemoryStackAlloc<struct ncclTaskP2p>(&comm->memScoped);
     p2p->buff = (void*)info->recvbuff;
     p2p->bytes = nBytes;
+    p2p->chunk = 0;
     ncclIntruQueueEnqueue(
       isSendNotRecv ? &tasks->peers[peer].sendQueue : &tasks->peers[peer].recvQueue,
       p2p);
