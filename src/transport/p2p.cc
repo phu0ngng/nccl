@@ -244,11 +244,9 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
     // Import and map the remote memory descriptor to the local GPU
     if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
       // UDS fd support
-      struct ncclProxyConnector proxyConn;
       int fd = -1;
       // Send cuMem handle to remote for conversion to an fd
-      NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, tpPeer, &proxyConn));
-      NCCLCHECK(ncclProxyClientGetFdBlocking(comm, &proxyConn, &cuDesc->data, &fd));
+      NCCLCHECK(ncclProxyClientGetFdBlocking(comm, tpPeer, &cuDesc->data, &fd));
       INFO(NCCL_P2P, "UDS converted handle 0x%lx to fd %d on remote peer %d", *(uint64_t*)&cuDesc->data, fd, tpPeer);
       CUCHECK(cuMemImportFromShareableHandle(&handle, (void *)(uintptr_t)fd, type));
       (void) close(fd);
@@ -266,7 +264,7 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
     accessDesc.location.id = comm->cudaDev;
     accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
     CUCHECK(cuMemSetAccess(dptr, size, &accessDesc, 1));
-    TRACE(NCCL_P2P, "Set Access for %p size %zi dev %d", (void*)dptr, size, accessDesc.location.id);
+    TRACE(NCCL_P2P, "Set Access for %p size %zi on dev %d", (void*)dptr, size, accessDesc.location.id);
 
     *devMemPtr = (void *)dptr;
 #else
@@ -312,6 +310,18 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
             peerInfo->cudaDev, peerInfo->busId, err, cudaGetErrorString(err));
         return ncclInternalError;
       }
+#if CUDART_VERSION >= 11030
+      // cuMem API support
+      if (ncclCuMemEnable()) {
+        // Allow direct access to the remote buffer from the local GPU
+        CUmemAccessDesc accessDesc = {};
+        accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+        accessDesc.location.id = myInfo->cudaDev;
+        accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+        INFO(NCCL_P2P, "Set Access for buffer %p size %zi on dev %d", p2pBuff->directPtr, p2pBuff->size, peerInfo->cudaDev);
+        CUCHECK(cuMemSetAccess((CUdeviceptr) p2pBuff->directPtr, p2pBuff->size, &accessDesc, 1));
+      }
+#endif
     }
     *devMem = p2pBuff->directPtr;
     *ipcPtr = NULL;

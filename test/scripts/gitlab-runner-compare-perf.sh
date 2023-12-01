@@ -1,5 +1,25 @@
 #!/bin/bash
 
+# This script replicates QA's bandwidth, latency and CPU overhead tests
+# It can be run on any MPI setup with a little bit of parameterization. It will store the results
+# in subfolders + perform analysis on which message sizes / tests regressed between the current and prior.
+# First of all, this primarily works with the gitlab version of NCCL as it relies on that directory layout of our build.
+# If you want to use github NCCL + nccl-tests, you'll need to form the same directory structure
+
+# Instructions for running:
+# 1. Have the current version of nccl present in build/
+# 2. export REGRESSION_BASELINE=<git reference to baseline branch, aka v2.18.5-1>
+# 3. Have the baseline version of nccl present in build-$REGRESSION_BASELINE/
+# 4. Don't include either NCCL lib in your LD_LIBRARY_PATH when running this script
+# 5. Set MPI_HOME, CUDA_HOME
+# 6. Decide on the following parameters which the script has:
+# threshold = %perf difference to claim a regression, default 10. This can be negative to test for perf improvements instead of regressions.
+# iterations = Number of iterations to run one test case (not nccl-test iterations), default 5
+# check_cpu_overhead = Set to 1 to test CPU overhead suite (threshold will be multiplied by two)
+# These variables must be supplied to the script in order - look at the arg parsing code below to see how it's taken in.
+# ref - baseline ref to look for build artifacts
+# 6. Run the script within an sbatch or salloc session, but not within mpirun (the script calls mpirun). The script should take ~30 minutes to run on a single node, and maybe 50% longer on multinode, all depending on num iterations and check cpu overhead flags. 
+# 6. salloc -N <4> --ntasks-per-node=8 --account=<coreai_libraries_nccl> -p <luna> -J <coreai_libraries_nccl:perf-regression> -t <60> ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA
 
 threshold=$1
 if [ "$threshold" == "" ]; then threshold=10; fi

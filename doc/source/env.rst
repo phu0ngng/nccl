@@ -94,6 +94,16 @@ Examples:
 
 Note: By default, the loopback interface (``lo``) and docker interfaces (``docker*``) would not be selected unless there are no other interfaces available. If you prefer to use ``lo`` or ``docker*`` over other interfaces, you would need to explicitly select them using ``NCCL_SOCKET_IFNAME``. The default algorithm will also favor interfaces starting with ``ib`` over others. Setting ``NCCL_SOCKET_IFNAME`` will bypass the automatic interface selection algorithm and may use all interfaces matching the manual selection.
 
+NCCL_SOCKET_FAMILY
+------------------
+
+The ``NCCL_SOCKET_FAMILY`` variable allows users to force NCCL to use only IPv4 or IPv6 interface.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Set to ``AF_INET`` to force the use of IPv4, or ``AF_INET6`` to force IPv6 usage.
+
 NCCL_SOCKET_NTHREADS
 --------------------
 (since 2.4.8)
@@ -294,8 +304,7 @@ The timeout is computed as 4.096 µs * 2 ^ *timeout*, and the correct value is d
 Increasing that value can help on very large networks, for example, if NCCL is failing on a call to *ibv_poll_cq* with
 error 12.
 
-For more information, see section 12.7.34 of the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download) (Local Ack Timeout).
+For more information, see section 12.7.34 of the InfiniBand specification Volume 1 (Local Ack Timeout).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -309,8 +318,7 @@ NCCL_IB_RETRY_CNT
 
 The ``NCCL_IB_RETRY_CNT`` variable controls the InfiniBand retry count.
 
-For more information, see section 12.7.38 of the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download).
+For more information, see section 12.7.38 of the InfiniBand specification Volume 1.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -324,7 +332,7 @@ The ``NCCL_IB_GID_INDEX`` variable defines the Global ID index used in RoCE mode
 See the InfiniBand *show_gids* command in order to set this value.
 
 For more information, see the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
+or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -337,7 +345,7 @@ NCCL_IB_SL
 Defines the InfiniBand Service Level.
 
 For more information, see the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
+or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -350,7 +358,7 @@ NCCL_IB_TC
 Defines the InfiniBand traffic class field.
 
 For more information, see the InfiniBand specification Volume 1
-(https://www.infinibandta.org/ibta-specifications-download) or vendor documentation.
+or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^

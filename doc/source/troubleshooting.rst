@@ -88,7 +88,20 @@ Next, use setpci to disable ACS with the command below, replacing 03:00.0 by the
 
 .. code::
 
-  sudo setpci -s 03:00.0 f2a.w=0000
+  sudo setpci -s 03:00.0 ECAP_ACS+0x6.w=0000
+
+Or you can use a script similar to this:
+
+.. code::
+
+  for BDF in `lspci -d "*:*:*" | awk '{print $1}'`; do
+    # skip if it doesn't support ACS
+    sudo setpci -v -s ${BDF} ECAP_ACS+0x6.w > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+      continue
+    fi
+    sudo setpci -v -s ${BDF} ECAP_ACS+0x6.w=0000
+  done
 
 ******************
 Topology detection
@@ -105,6 +118,13 @@ Shared memory
 To communicate between processes and even between threads of a process, NCCL creates shared memory segments
 in /dev/shm. The operating system’s limits on these resources may need to be increased accordingly. Please see your
 system’s documentation for details.
+
+If insufficient shared memory is available, NCCL will fail to initialize. Running with NCCL_DEBUG=WARN
+will show a message similar to this:
+
+.. code::
+
+ NCCL WARN Error: failed to extend /dev/shm/nccl-03v824 to 4194660 bytes
 
 Docker
 ------
