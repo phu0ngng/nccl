@@ -146,7 +146,6 @@ namespace {
   template<typename T, typename RedOp, typename Proto>
   __device__ __forceinline__ void runTreeSplit(ncclWorkElem *args) {
     int tid = threadIdx.x;
-    const int nthreads = args->nWarps*WARP_SIZE;
     const int bid = args->bid;
     const int nChannels = args->nChannels;
     ncclTree *tree = &ncclShmem.channel.tree;
