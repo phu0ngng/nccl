@@ -149,13 +149,18 @@ struct threadArgs {
   ncclUniqueId ncclId;
   ncclComm_t** comms;
   cudaStream_t* streams;
-
+  cudaEvent_t* events;
+  float* ms;
+ 
   void*** expected;
   size_t** expectedBytes;
   int* errors;
   double* bw;
   int* bw_count;
 
+  double meanTime;
+  double meanAlgBw;
+  double meanBusBw;
   int reportErrors;
 
   int compThreadStop;
