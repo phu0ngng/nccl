@@ -97,6 +97,7 @@ static int split_share = NCCL_CONFIG_UNDEF_INT;
 static int split_comm = 0;
 static int commNum = 1;
 static int local_register = 0;
+static int per_coll_perf = 0;
 
 static char* replay_file = NULL;
 
@@ -458,7 +459,52 @@ static testResult_t getIteration(size_t nbytes, int* itersPtr) {
   return testSuccess;
 }
 
-testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int actualIters) {
+testResult_t getElapsedTimes(struct threadArgs* args, int eventIters, int aggIters) {
+  args->ms = (float*) malloc(sizeof(float)*args->nGpus*eventIters);
+  // Get timings
+  for (int i = 0; i < args->nGpus; i++) {
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
+    for (int j = 0; j < eventIters; j++) {
+      CUDACHECK(cudaEventElapsedTime(&args->ms[i*(eventIters) + j], args->events[i*(eventIters+1) + j], args->events[i*(eventIters+1) + j+1]));
+
+      // This elapsed time is for iterations equal to agg_iters.
+      // We need to divide by aggIters
+      args->ms[i*(eventIters)+j] /= aggIters;
+    }
+  }
+  return testSuccess;
+}
+
+testResult_t recordEvents(struct threadArgs* args, int iterations, int iteration) {
+  for(int i = 0; i < args->nGpus; i++) {
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
+    CUDACHECK(cudaEventRecord(args->events[i*(iterations+1) + iteration], args->streams[i]));
+  }
+  return testSuccess;
+}
+
+testResult_t initEvents(struct threadArgs* args, int eventIters) {
+  // Creating (iterations + 1) events and then calculate the time between two events.
+  args->events = (cudaEvent_t*) malloc(sizeof(cudaEvent_t)*args->nGpus*(eventIters + 1));
+  for (int i = 0; i < args->nGpus; i++) {
+    CUDACHECK(cudaSetDevice(args->gpus[i]));
+    for (int j = 0; j < eventIters + 1; j++) {
+      CUDACHECK(cudaEventCreate(&args->events[(i*(eventIters+1) + j)]));
+    }
+  }
+  return testSuccess;
+}
+
+testResult_t destroyEvents(struct threadArgs* args, int eventIters) {
+  for (int i = 0; i < args->nGpus; i++) {
+    for (int j = 0; j < eventIters + 1; j++)
+      CUDACHECK(cudaEventDestroy(args->events[i*(eventIters+1)+j]));
+  }
+  free(args->events);
+  return testSuccess;
+}
+
+testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int in_place, int actualIters, int record) {
   size_t count = args->nbytes[0][0] / wordSize(type);
   if (datacheck) {
     // Initialize sendbuffs, recvbuffs and expected
@@ -472,6 +518,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   TESTCHECK(completeColl(args));
 
   Barrier(args);
+  if (record) TESTCHECK(initEvents(args, actualIters));
   args->compThreadCountLast = *(args->compThreadCount);
 
 #if CUDART_VERSION >= 11030
@@ -493,11 +540,16 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   timer tim;
   for (int iter = 0; iter < actualIters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
+
+    if (record) TESTCHECK(recordEvents(args, actualIters, iter));
+
     for (int aiter = 0; aiter < agg_iters; aiter++) {
       TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
     }
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
+
+  if (record) TESTCHECK(recordEvents(args, actualIters, actualIters));
 
 #if CUDART_VERSION >= 11030
   if (cudaGraphLaunches >= 1) {
@@ -522,6 +574,11 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   double cputimeSec = tim.elapsed()/(actualIters*agg_iters);
   TESTCHECK(completeColl(args));
+
+  if (record) {
+    TESTCHECK(getElapsedTimes(args, actualIters, agg_iters));
+    TESTCHECK(destroyEvents(args, actualIters));
+  }
 
   int compThreadCount = (*(args->compThreadCount)) - args->compThreadCountLast;
   double deltaSec = tim.elapsed();
@@ -624,6 +681,13 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
        PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
      }
   }
+
+  if (record) {
+    args->meanTime = timeUsec;
+    args->meanAlgBw = algBw;
+    args->meanBusBw = busBw;
+  }
+
   if (dump_file) {
     /* only dump first split and communicator */
     size_t nBytes = max(args->sendBytes[0][0], args->expectedBytes[0][0]);
@@ -660,6 +724,42 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
   }
 }
 
+void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int actualIters, int per_coll_perf) {
+  double varianceTime = 0, varianceAlgBw = 0, varianceBusBw = 0;
+  size_t count = args->nbytes[0][0] / wordSize(type);
+  double algBw, busBw;
+  char timeStr[100];
+  for (int i = 0; i < args->nGpus; i++) {
+    for (int j = 0; j < actualIters; j++) {
+      double timeSec = args->ms[i*(actualIters)+j] / 1.0E3;
+      double timeUsec = timeSec*1.0E6;
+      if (timeUsec >= 10000.0) {
+        sprintf(timeStr, "%7.0f", timeUsec);
+      } else if (timeUsec >= 100.0) {
+        sprintf(timeStr, "%7.1f", timeUsec);
+      } else {
+        sprintf(timeStr, "%7.2f", timeUsec);
+      }
+      args->collTest->getBw(count, wordSize(type), timeSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
+      varianceTime += pow((args->meanTime - timeUsec), 2);
+      varianceAlgBw += pow((args->meanAlgBw - algBw), 2);
+      varianceBusBw += pow((args->meanBusBw - busBw), 2);
+
+      if (per_coll_perf == 1)
+      {
+        PRINT("\n%35sGpu%2d Coll%3d %4s %7s  %6.2f  %6.2f  %5s\n",
+          " ", args->gpus[i], j, " ", timeStr, algBw, busBw, "N/A");
+      }
+    }
+  }
+
+  varianceTime /= actualIters;
+  varianceAlgBw /= actualIters;
+  varianceBusBw /= actualIters;
+
+  PRINT("\n%24sCoefficient of variation %5s %1.4f  %1.4f  %1.4f\n", " ", " ", sqrt(varianceTime)/args->meanTime, sqrt(varianceAlgBw)/args->meanAlgBw, sqrt(varianceBusBw)/args->meanBusBw);
+}
+
 testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
   // Sync to avoid first-call timeout
   Barrier(args);
@@ -690,16 +790,17 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
       setupArgs(size, type, args);
       int actualIters;
-      TESTCHECK(getIteration(args->nbytes[0][0], &actualIters));
+      TESTCHECK(getIteration(size, &actualIters));
       char rootName[100];
       sprintf(rootName, "%6i", root);
       PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes[0][0], args->expectedBytes[0][0]), args->nbytes[0][0] / wordSize(type), typeName, opName, rootName);
       if (args->replayFile != NULL || !out_of_place) {
         PRINT("                                ");  // only do in-place for trace replay
       } else {
-        TESTCHECK(BenchTime(args, type, op, root, 0, actualIters));
+        TESTCHECK(BenchTime(args, type, op, root, 0, actualIters, per_coll_perf));
       }
-      TESTCHECK(BenchTime(args, type, op, root, 1, actualIters));
+      TESTCHECK(BenchTime(args, type, op, root, 1, actualIters, 0));
+      if (per_coll_perf) printPerCollPerf(args, type, op, root, actualIters, per_coll_perf);
       PRINT("  %5d", actualIters);
       PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
   }
@@ -974,13 +1075,14 @@ int main(int argc, char* argv[]) {
     {"split_share", required_argument, 0, 'S'},
     {"split_comm", required_argument, 0, 'P'},
     {"local_register", required_argument, 0, 'R'},
+    {"per_coll_perf", required_argument, 0, 'A'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1102,6 +1204,9 @@ int main(int argc, char* argv[]) {
       case 'R':
         local_register = (int)strtol(optarg, NULL, 0);
         break;
+      case 'A':
+        per_coll_perf = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1143,6 +1248,7 @@ int main(int argc, char* argv[]) {
             "[-S,--split_share <0/1> enable shared resources during communicator split (default: 0)] \n\t"
             "[-P,--split_comm <0/1/2> enable communicator split (default: 0 disable; 1 dup global comm; 2 three split patterns)] \n\t"
             "[-R,--local_register <0/1> enable local buffer registration (default: 0 disable)] \n\t"
+            "[-A,--per_coll_perf <0/1/2> Report performance per-collective (default: 0 disable; 1 report per-collective performance and std deviation; 2: report only std deviation)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;

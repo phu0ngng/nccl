@@ -88,7 +88,20 @@ Next, use setpci to disable ACS with the command below, replacing 03:00.0 by the
 
 .. code::
 
-  sudo setpci -s 03:00.0 f2a.w=0000
+  sudo setpci -s 03:00.0 ECAP_ACS+0x6.w=0000
+
+Or you can use a script similar to this:
+
+.. code::
+
+  for BDF in `lspci -d "*:*:*" | awk '{print $1}'`; do
+    # skip if it doesn't support ACS
+    sudo setpci -v -s ${BDF} ECAP_ACS+0x6.w > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+      continue
+    fi
+    sudo setpci -v -s ${BDF} ECAP_ACS+0x6.w=0000
+  done
 
 ******************
 Topology detection

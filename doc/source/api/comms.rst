@@ -11,20 +11,26 @@ ncclGetLastError
 
 Returns a human-readable string of the last error that occurred in NCCL.
 Note: The error is not cleared by calling this function.
-The *comm* argument is currently unused and can be set to NULL.
+Please note that the log from ncclGetLastError could be unrelated to the current call
+and can be a result of a previously launched asynchronous operations, if any.
 
+ncclGetErrorString
+------------------
+
+.. c:function:: const char* ncclGetErrorString(ncclResult_t result)
+
+Returns a string for each error code.
 
 ncclGetVersion
 --------------
 
-.. c:function:: ncclResult_t  ncclGetVersion(int* version)
+.. c:function:: ncclResult_t ncclGetVersion(int* version)
 
 The ncclGetVersion function returns the version number of the currently linked NCCL library.
 The NCCL version number is returned in *version* and encoded as an integer which includes the
 :c:macro:`NCCL_MAJOR`, :c:macro:`NCCL_MINOR` and :c:macro:`NCCL_PATCH` levels.
 The version number returned will be the same as the :c:macro:`NCCL_VERSION_CODE` defined in *nccl.h*.
 NCCL version numbers can be compared using the supplied macro; :c:macro:`NCCL_VERSION(MAJOR,MINOR,PATCH)`
-
 
 ncclGetUniqueId
 ---------------
@@ -111,6 +117,7 @@ If *ncclCommFinalize* is called by users, users should guarantee that the state 
 calling *ncclCommDestroy*. 
 In all cases, the communicators should no longer be accessed after ncclCommDestroy returns. It is recommended that 
 user call *ncclCommFinalize* and then *ncclCommDestroy*.
+This function is an intra-node collective call, which all ranks on the same node should call to avoid hang.
 
 ncclCommAbort
 -------------
@@ -118,7 +125,8 @@ ncclCommAbort
 .. c:function:: ncclResult_t ncclCommAbort(ncclComm_t comm)
 
 Frees resources that are allocated to a communicator object *comm*. Will abort any uncompleted
-operations before destroying the communicator.
+operations before destroying the communicator. This function is an intra-node collective call,
+which all ranks on the same node should call to avoid hang.
 
 ncclCommGetAsyncError
 ---------------------

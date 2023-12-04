@@ -198,8 +198,17 @@ struct ncclProxyStateSharedBuffer {
   int slotSize;
 };
 
+// UDS support
+struct ncclIpcHdr {
+  int type;
+  int rank;
+  int reqSize;
+  int respSize;
+  void *opId;
+  uint64_t data[16]; // 128-bytes
+};
+
 struct ncclProxyState {
-  int internalRefCount;
   int refCount;
   int tpRank;
   int tpnRanks;
@@ -214,11 +223,12 @@ struct ncclProxyState {
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
   volatile uint32_t* abortFlag;
-  volatile uint32_t* abortFlagRefCount;
-  // Service thread
+  // Service threads
   pthread_t thread;
+  pthread_t threadUDS;
   struct ncclSocket* listenSock;
-  volatile int stop;
+  struct ncclIpcSocket ipcSock;
+  int stop;
   CUcontext cudaCtx;
   ncclResult_t asyncResult;
 
@@ -228,6 +238,7 @@ struct ncclProxyState {
   struct ncclProxyOps* proxyOps;
   void** sharedDevMems;
   struct ncclIpcSocket peerIpcSock; // cuMEM API support (UDS)
+  uint64_t *peerAddressesUDS; // cuMem API support (UDS)
 
   // Progress thread
   struct ncclProxyProgressState progressState;
@@ -271,7 +282,7 @@ enum proxyMode {
 ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* proxyOp, bool *justInquire);
 ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* proxyOp);
 ncclResult_t ncclProxyStart(struct ncclComm* comm);
-ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses);
+ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union ncclSocketAddress* peerAddresses, uint64_t *peerAddressesUDS);
 ncclResult_t ncclProxyCreate(struct ncclComm* comm);
 ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, int proxyRank, struct ncclProxyConnector* proxyConn);
 enum ncclProxyMsgType {
@@ -295,10 +306,10 @@ ncclResult_t ncclProxyCallAsync(struct ncclComm* comm, struct ncclProxyConnector
 ncclResult_t ncclProxyCallBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, int type, void* reqBuff, int reqSize, void* respBuff, int respSize);
 ncclResult_t ncclPollProxyResponse(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, void* respBuff, void* opId);
 
-ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, void *handle, int* convertedFd);
+// UDS support
+ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, int rank, void *handle, int* convertedFd);
 
 ncclResult_t ncclProxyStop(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);
-ncclResult_t ncclProxyDestroy(struct ncclProxyState *proxyState);
-ncclResult_t ncclProxyTryDetach(struct ncclProxyState *proxyState);
+ncclResult_t ncclProxyDestroy(struct ncclComm* comm);
 #endif
