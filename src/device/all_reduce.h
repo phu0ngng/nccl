@@ -382,7 +382,6 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
     const int nChannels = args->nChannels;
     struct ncclNvls* nvls = &ncclShmem.channel.nvls;
     const ssize_t chunkSize = int(args->lastChunkSize);
-    const int stepSize = ncclShmem.comm.nvlsChunkSize/sizeof(T);
     const ssize_t size = args->count;
     const ssize_t loopSize = nChannels*nvls->nHeads*chunkSize;
     const int nranks = ncclShmem.comm.nRanks;
@@ -407,7 +406,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
       Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_NVLS_ARITY>, /*Direct=*/0, Proto, 0>
         prims(tid, nThreadsScatter, NULL, nvls->up, args->sendbuff, NULL,
-          args->redOpArg, 0 * Proto::MaxGroupWidth, 1, 1, nullptr, stepSize);
+          args->redOpArg, 0 * Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid * nvls->nHeads * chunkSize;
         int nelem = args->regUsed ? 0 : min(nvls->nHeads * chunkSize, size - offset);
@@ -418,7 +417,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
       using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_NVLS_ARITY, 0>, /*Direct=*/0, Proto, 0>
         prims(tid - tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, args->recvbuff,
-          args->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1, nullptr, stepSize);
+          args->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + bid * nvls->nHeads * chunkSize;
         int nelem = args->regUsed ? 0 :min(nvls->nHeads * chunkSize, size - offset);
@@ -430,7 +429,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 1>;
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
           prims(tid - tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, NULL, NULL,
-            args->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, args, stepSize);
+            args->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
           int nelem = min(chunkSize, size - offset);
@@ -441,7 +440,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
           prims(tid - tidEndGather, nThreadsReduce, &nvls->down, &nvls->out, NULL, NULL,
-            args->redOpArg, 2 * Proto::MaxGroupWidth, 0, 1, args, stepSize);
+            args->redOpArg, 2 * Proto::MaxGroupWidth, 0, 1, args);
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
           int nelem = min(chunkSize, size - offset);
@@ -453,7 +452,7 @@ struct RunWorkElement<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SI
       using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
       Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
         prims(tid - tidEndReduce, nThreadsBcast, &nvls->out, &nvls->down, NULL, NULL,
-          args->redOpArg, 3 * Proto::MaxGroupWidth, 0, 0, args, stepSize);
+          args->redOpArg, 3 * Proto::MaxGroupWidth, 0, 0, args);
       for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
         ssize_t offset = gridOffset + (bid * nvls->nHeads + nvls->headRank) * chunkSize;
         int nelem = min(chunkSize, size - offset);
