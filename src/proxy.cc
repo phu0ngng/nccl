@@ -617,7 +617,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
     op->pattern = ncclPatternSend;
     if (op->root != info->comm->rank && peer->send[1].transportComm == &netTransport.send) {
       // Tune chunk size for the network
-      if (info->count < stepSize) info->chunkSize /= 4;
+      if (info->protocol == NCCL_PROTO_SIMPLE && info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
       if (info->protocol == NCCL_PROTO_SIMPLE && peer->send[1].proxyConn.sameProcess) op->reg = reg;
     }
@@ -625,7 +625,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
     op->pattern = ncclPatternRecv;
     if (op->root != info->comm->rank && peer->recv[1].transportComm == &netTransport.recv) {
       // Tune chunk size for the network
-      if (info->count < stepSize) info->chunkSize /= 4;
+      if (info->protocol == NCCL_PROTO_SIMPLE && info->count < stepSize) info->chunkSize /= 4;
       else if (info->count < 8*stepSize) info->chunkSize /= 2;
       if (info->protocol == NCCL_PROTO_SIMPLE && peer->recv[1].proxyConn.sameProcess) op->reg = reg;
     }
@@ -645,6 +645,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
   if (op->protocol == NCCL_PROTO_LL) {
     chunkEffectiveSize /= 2;
     op->nbytes *= 2;
+    op->nbytes = DIVUP(op->nbytes, sizeof(union ncclLLFifoLine)) * sizeof(union ncclLLFifoLine);
   }
 
   if (!op->reg) op->nbytes = std::min(op->nbytes, (ssize_t)info->chunkSize);
