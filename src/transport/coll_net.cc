@@ -658,62 +658,6 @@ static int calcRegionOffset(
 #define LAST_OF_GROUP(args, s) \
   ((s)%COLLNET_GROUP_NSUBS == COLLNET_GROUP_NSUBS-1 || (s) == (args)->nsubs-1)
 
-#define TRACK_MEMORY 0
-#if TRACK_MEMORY
-#include "assert.h"
-#endif
-namespace {
-#if TRACK_MEMORY
-struct memspan {
-  char rw;
-  uintptr_t lo, hi;
-  void *handle;
-  char *str;
-};
-int nspans=0;
-memspan spans[10000];
-#endif
-
-template<typename... T>
-void rw_begin(char rw, void *addr, size_t size, void *handle, char const *fmt, T... args) {
-#if TRACK_MEMORY
-  uintptr_t lo = uintptr_t(addr);
-  uintptr_t hi = lo + size;
-  char *str = new char[64];
-  sprintf(str, fmt, args...);
-  for (int i=0; i < nspans; i++) {
-    if (lo < spans[i].hi && spans[i].lo < hi) {
-      if (rw == 'r') {
-        assert(spans[i].rw == 'r');
-      } else {
-        fprintf(stderr, "pid=%d VIOLATION have {%c,[%lx,%lx),%s} writing {[%lx,%lx),%s}\n", getpid(), spans[i].rw, (long)spans[i].lo, (long)spans[i].hi, spans[i].str, (long)lo, (long)hi, str);
-        assert(0);
-      }
-    }
-  }
-  //fprintf(stderr, "%d reading [%lx,%lx)\n", getpid(), (long)lo, (long)hi);
-  spans[nspans++] = {rw, lo, hi, handle, str};
-#endif
-}
-
-void rw_complete(char rw, void *handle) {
-#if TRACK_MEMORY
-  int r=0, w=0;
-  while (r < nspans) {
-    if (handle == spans[r].handle) {
-      assert(spans[r].rw == rw);
-      delete[] spans[r].str;
-      r++;
-    } else {
-      spans[w++] = spans[r++];
-    };
-  }
-  assert(w+1 == r);
-  nspans = w;
-#endif
-}
-} // namespace <anonymous>
-
 static constexpr int calcStepsPerGroup(int nGroups) {
   //return NCCL_STEPS/nGroups;
   return NCCL_STEPS;
@@ -748,12 +692,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       if (sub->posted < sub->nsteps && sub->posted < sub->done + NCCL_STEPS) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         resources->recvMem->offsFifo[buffSlot] = calcRegionOffset(args, 0, s, sub->posted, 0);
-        rw_begin('w',
-          region + calcRegionOffset(args, 0, s, sub->posted, 0),
-          calcRegionOffset(args, 0, s, sub->posted, 1) -
-          calcRegionOffset(args, 0, s, sub->posted, 0),
-          resources->recvMem->offsFifo+buffSlot,
-          "s=%d step=%ld", s, (long)sub->posted);
         __sync_synchronize();
         volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
         TRACE(NCCL_NET, "sendProxy [%ld/%d/%d] posted offset %d @ %p signal %ld->%ld", long(sub->posted), group, buffSlot, resources->recvMem->offsFifo[buffSlot], &resources->recvMem->offsFifo[buffSlot], long(*sendHead), long(sub->base + sub->posted + args->sliceSteps - NCCL_STEPS));
@@ -766,7 +704,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         volatile int* sizesFifo = resources->recvMem->sizesFifo;
         volatile uint64_t* recvTail = &resources->recvMem->tail;
         if (sizesFifo[buffSlot] != -1 && ((*recvTail > (sub->base+sub->received)))) {
-          rw_complete('w', resources->recvMem->offsFifo+buffSlot);
           if (args->coll != ncclFuncAllReduce) {
             int sendBeg = calcRegionOffset(args, 0, s, sub->received, 0);
             int sendEnd = calcRegionOffset(args, 0, s, sub->received, 1);
@@ -828,7 +765,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
               }
             }
             if (sub->requests[buffSlot] == nullptr) continue;
-            rw_begin('r', region+sendBeg, sendEnd-sendBeg, sub->requests[buffSlot], "s=%d step=%ld", s, (long)sub->transmitted);
 
             if (args->coll == ncclFuncAllReduce) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d/%d] Iallreduce posted, size %d req %p", (long)sub->transmitted, group, buffSlot, int(sendEnd-sendBeg), sub->requests[buffSlot]);
@@ -850,7 +786,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         done = 1;
         if (sub->requests[buffSlot]) NCCLCHECK(proxyState->ncclCollNet->test((void*)(sub->requests[buffSlot]), &done, &size));
         if (done) {
-          if (sub->requests[buffSlot]) rw_complete('r', sub->requests[buffSlot]);
           TRACE(NCCL_NET, "sendProxy [%ld/%d/%d] request %p done, size %d", (long)sub->done, group, buffSlot, sub->requests[buffSlot], size);
           sub->requests[buffSlot] = nullptr;
           reqFifo[group][buffSlot].turnIsSendNotRecv = false; // Notify recvProxy
