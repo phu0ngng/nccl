@@ -1396,9 +1396,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
     while (info->nBytes / (info->nChannels*chunkSize) < info->comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
     work->lastChunkSize = chunkSize / ncclTypeSize(info->datatype);
   } else if (info->algorithm == NCCL_ALGO_NVLS) {
-    chunkSize = info->comm->nvlsChunkSize;
-    if (info->comm->nNodes > 1 && info->comm->bandwidths[ncclFuncAllReduce][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] < 150)
-      chunkSize = std::min(chunkSize, 32768);
+    int maxChunkSize = 131072;
+    if (info->comm->nNodes > 1 && info->comm->bandwidths[ncclFuncAllReduce][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] < 150) maxChunkSize = 32768;
+    if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
     if ((info->nBytes < (64 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
@@ -1408,8 +1408,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
   } else if (info->algorithm == NCCL_ALGO_NVLS_TREE) {
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = info->nChannels*info->comm->channels[0].nvls.nHeads;
-    chunkSize = info->comm->nvlsChunkSize;
-    if (info->comm->nNodes >= 4) chunkSize = std::min(chunkSize, 65536);
+    if (info->comm->nNodes >= 4) chunkSize = 65536;
     if ((info->nBytes < (32 * (concurrentOps*chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
     if ((info->nBytes < (16 * (concurrentOps*chunkSize))) && (chunkSize > 131072)) chunkSize = 131072;
     if ((info->nBytes < (4 * (concurrentOps*chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;

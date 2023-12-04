@@ -36,7 +36,6 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
     int* ringIntra = graphs[NCCL_ALGO_RING]->intra+c*localRanks;
     int* treeIntra = graphs[NCCL_ALGO_TREE]->intra+c*localRanks;
     int* collNetIntra = graphs[NCCL_ALGO_COLLNET_CHAIN]->intra+c*localRanks;
-    int* nvlsIntra = graphs[NCCL_ALGO_NVLS]->intra+c*localRanks;
 
     for (int i=0; i<localRanks; i++) {
       if (ringIntra[i] == rank) {
@@ -63,6 +62,11 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
     }
     topoRanks->nvlsHeads[c] = nvlsIntra[0];
   }
+
+  for (int c = 0; c < graphs[NCCL_ALGO_NVLS]->nChannels; ++c) {
+    topoRanks->nvlsHeads[c] = graphs[NCCL_ALGO_NVLS]->intra[c * localRanks];
+  }
+
   return ncclSuccess;
 }
 
