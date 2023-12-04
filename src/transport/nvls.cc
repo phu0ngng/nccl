@@ -106,11 +106,9 @@ ncclResult_t nvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int 
     // cuMem UDS support
     int fd = -1;
     TRACE(NCCL_NVLS, "NVLS rank %d Importing shareable handle %p from rank %d", comm->localRank, shareableHandle, rank);
-    struct ncclProxyConnector proxyConn;
     int tpProxyRank = comm->topParentRanks[rank];
-    NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, tpProxyRank, &proxyConn));
     TRACE(NCCL_NVLS, "NVLS rank %d request conversion of handle 0x%lx from rank %d", comm->localRank, *(uint64_t*)shareableHandle, rank);
-    NCCLCHECK(ncclProxyClientGetFdBlocking(comm, &proxyConn, shareableHandle, &fd));
+    NCCLCHECK(ncclProxyClientGetFdBlocking(comm, tpProxyRank, shareableHandle, &fd));
     TRACE(NCCL_NVLS, "NVLS rank %d received converted fd %d from rank %d", comm->localRank, fd, rank);
     CUCHECK(cuMemImportFromShareableHandle(mcHandle, (void *)(uintptr_t)fd, type));
     (void) close(fd);
@@ -307,8 +305,8 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
       NCCLCHECK(initNvlsChannel(comm, c, parent, false));
     }
 
-    size_t buffSize = comm->nvlsChunkSize * NCCL_STEPS;
-    size_t memSize = 2*sizeof(uint64_t);
+    size_t buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
+    size_t memSize = NVLS_MEM_ALIGN_SIZE;
     size_t nvlsPerRankSize = nChannels * 2 * (buffSize + memSize);
     size_t nvlsTotalSize = nvlsPerRankSize * nHeads;
 
@@ -339,33 +337,29 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
         struct ncclChannelPeer* peer = channel->peers[nvlsPeer];
 
         // Reduce UC -> MC
-        mem = resources->ucBuff + (h * 2 * nChannels + c) * buffSize;
+        mem = resources->ucBuff + (h * 2 * nChannels + c) * (buffSize + memSize);
         peer->send[1].transportComm = &nvlsTransport.send;
         peer->send[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-        mem = resources->ucBuff + (nHeads * 2 * nChannels) * buffSize + (h * 2 * nChannels + c) * memSize;
-        peer->send[1].conn.head = (uint64_t*)(mem);
-        peer->send[1].conn.tail = (uint64_t*)(mem)+1;
-        mem = resources->mcBuff + (h * 2 * nChannels + c) * buffSize;
+        peer->send[1].conn.head = (uint64_t*)(mem + buffSize);
+        peer->send[1].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
+        mem = resources->mcBuff + (h * 2 * nChannels + c) * (buffSize + memSize);
         peer->recv[0].transportComm = &nvlsTransport.recv;
         peer->recv[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-        mem = resources->mcBuff + (nHeads * 2 * nChannels) * buffSize + (h * 2 * nChannels + c) * memSize;
-        peer->recv[0].conn.head = (uint64_t*)(mem);
-        peer->recv[0].conn.tail = (uint64_t*)(mem)+1;
+        peer->recv[0].conn.head = (uint64_t*)(mem + buffSize);
+        peer->recv[0].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
         peer->recv[0].conn.flags |= NCCL_NVLS_MIN_POLL;
 
         // Broadcast MC -> UC
-        mem = resources->ucBuff + ((h * 2 + 1) * nChannels + c) * buffSize;
+        mem = resources->ucBuff + ((h * 2 + 1) * nChannels + c) * (buffSize + memSize);
         peer->recv[1].transportComm = &nvlsTransport.recv;
         peer->recv[1].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-        mem = resources->ucBuff + (nHeads * 2 * nChannels) * buffSize + ((h * 2 + 1) * nChannels + c) * memSize;
-        peer->recv[1].conn.head = (uint64_t*)(mem);
-        peer->recv[1].conn.tail = (uint64_t*)(mem)+1;
-        mem = resources->mcBuff + ((h * 2 + 1) * nChannels + c) * buffSize;
+        peer->recv[1].conn.head = (uint64_t*)(mem + buffSize);
+        peer->recv[1].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
+        mem = resources->mcBuff + ((h * 2 + 1) * nChannels + c) * (buffSize + memSize);
         peer->send[0].transportComm = &nvlsTransport.send;
         peer->send[0].conn.buffs[NCCL_PROTO_SIMPLE] = mem;
-        mem = resources->mcBuff + (nHeads * 2 * nChannels) * buffSize + ((h * 2 + 1) * nChannels + c) * memSize;
-        peer->send[0].conn.head = (uint64_t*)(mem);
-        peer->send[0].conn.tail = (uint64_t*)(mem)+1;
+        peer->send[0].conn.head = (uint64_t*)(mem + buffSize);
+        peer->send[0].conn.tail = (uint64_t*)(mem + buffSize + memSize / 2);
         peer->send[0].conn.flags |= NCCL_NVLS_MIN_POLL;
 
         CUDACHECKGOTO(cudaMemcpyAsync(&comm->channels[c].devPeersHostPtr[nvlsPeer]->send[0], &peer->send[0].conn, sizeof(struct ncclConnInfo), cudaMemcpyHostToDevice, comm->sharedRes->hostStream.cudaStream), res, cleanup);
