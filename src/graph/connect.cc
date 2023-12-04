@@ -60,7 +60,6 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
         channel->collnetChain.down = i == localRanks-1 ? -1 : collNetIntra[i+1];
       }
     }
-    topoRanks->nvlsHeads[c] = nvlsIntra[0];
   }
 
   for (int c = 0; c < graphs[NCCL_ALGO_NVLS]->nChannels; ++c) {
