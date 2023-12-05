@@ -102,6 +102,7 @@ struct ncclTopoRanks {
   int treeToChild0[MAXCHANNELS];
   int treeToChild1[MAXCHANNELS];
   int nvlsHeads[MAXCHANNELS];
+  int nvlsHeadNum;
 };
 
 ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs, struct ncclTopoRanks* topoRanks);
