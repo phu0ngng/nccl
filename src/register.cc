@@ -175,8 +175,11 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
     return ncclInvalidUsage;
   }
   if (--reg->refs) return ncclSuccess;
-  // NCCLCHECK(ncclNetDeregister(comm, reg));
-  NCCLCHECK(ncclNvlsDeregBuffer(&reg->mcHandle, reg->regAddr, reg->dev, reg->regSize));
+  NCCLCHECK(ncclNetDeregister(comm, reg));
+  if (reg->regAddr) {
+    NCCLCHECK(ncclNvlsDeregBuffer(&reg->mcHandle, reg->regAddr, reg->dev, reg->regSize));
+    reg->regAddr = (CUdeviceptr)NULL;
+  }
   free(reg);
   memmove(cache->slots+slot, cache->slots+slot+1, (cache->population-slot-1)*sizeof(struct ncclReg*));
   cache->population -= 1;
