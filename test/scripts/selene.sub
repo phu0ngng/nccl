@@ -1,0 +1,49 @@
+#!/bin/bash
+
+#SBATCH -p luna
+#SBATCH -A coreai_libraries_nccl
+##SBATCH --network=sharp         # Uncomment for sharp
+#SBATCH -N 2                     # number of nodes
+#SBATCH -t 00:5:00               # wall time
+#SBATCH -J "coreai_libraries_nccl-job-name:2x8"  # job name
+#SBATCH --mem=0                   # all mem avail
+#SBATCH --ntasks-per-node=8       # max 8 tasks per machine (one task per gpu) - Exception for pytorch // srun launch with -n1
+#SBATCH --output=%x_%j.out
+#SBATCH --comment=sysctl-sys.kernel.numa_balancing=0,transparent_hugepage_defrag=never,transparent_hugepage=never
+
+set +e
+
+# Env
+export CUDA_HOME=/project/nccl/toolkits/cuda-11.8
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export NVCC_GENCODE="-gencode=arch=compute_80,code=sm_80"
+export MPI_HOME=/usr/mpi/gcc/openmpi-4.1.2a1
+export LD_LIBRARY_PATH=$MPI_HOME/lib:$LD_LIBRARY_PATH
+export PATH=$MPI_HOME/bin:$PATH
+export NCCL_IB_SL="1"
+export OMPI_MCA_btl="^openib"
+export OMPI_MCA_btl_tcp_if_include="enp97s0f1"
+export NCCL_DEBUG=WARN
+
+date
+
+squeue -u $USER
+
+export NCCL_HOME=~/nccl/build
+export LD_LIBRARY_PATH=$NCCL_HOME/lib:$LD_LIBRARY_PATH
+#pushd ~/nccl
+#make clean
+#make -j test.build MPI=1 TRACE=1
+#popd
+
+echo "CASE: 1 mpirun baremetal"
+mpirun -output-filename ~/output-files --bind-to numa $NCCL_HOME/test/perf/alltoall_perf -b8 -e1G -f2
+
+# TODO - update your enroot credentials
+# Define which container you want to run here
+# You can build a container off your branch from https://gitlab-master.nvidia.com/nccl/nccl-container
+# Defining a container mount is good if you need to export large outputs from this container, like an NVTX trace
+export CONT_NVTX_PROXY="gitlab-master.nvidia.com/nccl/nccl-container/pytorch:master-py3-devel-nccl-2.19.1-1-proxy-nvtx-66a4db23"
+echo "CASE: 2 container"
+srun --mpi=pmix --container-image="${CONT_NVTX_PROXY}" --container-mounts="/lustre/fsw/nccl/bewilliams/proxy-traces:/workspace/proxy-traces2" --container-name="nccl-container" sh -c "nsys profile -o /workspace/proxy-traces2/%h.%p.trace --force-overwrite true -t cuda,nvtx alltoall_perf_mpi -b 1K -e 8K -f 2 -d half"
