@@ -1228,7 +1228,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Connect to local net proxy
   tpProxyRank = comm->topParentRanks[comm->rank];
   NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
-  NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
+  NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, NULL, 0, NULL, 0), ret, fail);
 
   // Then to remote ones when using PXN
   if (ncclPxnDisable(comm) == 0) {
@@ -1237,7 +1237,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     for (int r=0; r<nranks; r++) {
       tpProxyRank = comm->topParentRanks[pxnPeers[r]];
       NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
-      NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
+      NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, NULL, 0, NULL, 0), ret, fail);
     }
   }
 

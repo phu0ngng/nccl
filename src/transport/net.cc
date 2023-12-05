@@ -472,7 +472,7 @@ static ncclResult_t recvFree(struct ncclConnector* recv) {
 }
 
 static ncclResult_t sharedNetBuffersInit(struct ncclProxyState* proxyState, int cuda, int tpLocalRank, int type, int sameProcess,
-    int nChannels, char** gpuPtr, char** cpuPtr, int* size, ncclIpcDesc *ipcDesc) {
+    char** gpuPtr, char** cpuPtr, int* size, ncclIpcDesc *ipcDesc) {
   if (cuda == 0 && sameProcess == 0) {
       WARN("PXN should not use host buffers for data");
       return ncclInternalError;
@@ -489,7 +489,7 @@ static ncclResult_t sharedNetBuffersInit(struct ncclProxyState* proxyState, int 
   struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
   state->refcount++;
   if (state->size == 0) {
-    state->size = nChannels * proxyState->sharedBuffer.nslots * proxyState->sharedBuffer.slotSize;
+    state->size = proxyState->nChannels * proxyState->sharedBuffer.nslots * proxyState->sharedBuffer.slotSize;
   }
 
   if (size) *size = state->size;
@@ -547,8 +547,8 @@ static ncclResult_t sharedNetBuffersDestroy(struct ncclProxyState* proxyState, i
   return ncclSuccess;
 }
 
-static ncclResult_t proxySharedInit(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, int nChannels) {
-  NCCLCHECK(sharedNetBuffersInit(proxyState, 1, connection->tpLocalRank, 0, connection->sameProcess, nChannels, NULL, NULL, NULL, NULL));
+static ncclResult_t proxySharedInit(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState) {
+  NCCLCHECK(sharedNetBuffersInit(proxyState, 1, connection->tpLocalRank, 0, connection->sameProcess, NULL, NULL, NULL, NULL));
   return ncclSuccess;
 }
 
@@ -706,7 +706,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
       int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
       struct connectMapMem* mapMem = map->mems+bank;
       NCCLCHECK(sharedNetBuffersInit(
-            proxyState, resources->useGdr, resources->tpLocalRank, 0, map->sameProcess, proxyState->p2pnChannels,
+            proxyState, resources->useGdr, resources->tpLocalRank, 0, map->sameProcess,
             &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size, &mapMem->ipcDesc));
       size = mapMem->size;
       shared = 1;
@@ -852,7 +852,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
       int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
       struct connectMapMem* mapMem = map->mems+bank;
       NCCLCHECK(sharedNetBuffersInit(
-            proxyState, resources->useGdr, resources->tpLocalRank, 1, 1, proxyState->p2pnChannels,
+            proxyState, resources->useGdr, resources->tpLocalRank, 1, 1,
             &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size, NULL));
       size = mapMem->size;
       shared = 1;
