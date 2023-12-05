@@ -1359,9 +1359,8 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
     TRACE(NCCL_PROXY, "proxyProgressAsync::proxyConnect() opId=%p op.reqBuff=%p", op->opId, op->reqBuff);
     res = op->connection->tcomm->proxyConnect(op->connection, proxyState, op->reqBuff, op->reqSize, op->respBuff, op->respSize, &done);
   } else if (op->type == ncclProxyMsgSharedInit) {
-    int nChannels = (int) *op->reqBuff;
-    TRACE(NCCL_PROXY, "proxyProgressAsync::ncclProxyMsgSharedInit opId=%p op.reqBuff=%p nChannels=%d", op->opId, op->reqBuff, nChannels);
-    if (op->connection->tcomm->proxySharedInit) res = op->connection->tcomm->proxySharedInit(op->connection, proxyState, nChannels);
+    TRACE(NCCL_PROXY, "proxyProgressAsync::ncclProxyMsgSharedInit opId=%p", op->opId);
+    if (op->connection->tcomm->proxySharedInit) res = op->connection->tcomm->proxySharedInit(op->connection, proxyState);
     __atomic_store_n(&op->connection->state, connSharedInitialized, __ATOMIC_RELEASE);
   }
   else if (op->type == ncclProxyMsgInit) {
@@ -1682,10 +1681,9 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     proxyState->tpLocalnRanks = comm->localRanks;
     proxyState->cudaDev = comm->cudaDev;
     proxyState->abortFlag = comm->abortFlag;
-    proxyState->p2pnChannels = comm->p2pnChannels;
+    proxyState->nChannels = std::max(std::max(comm->nChannels, comm->p2pnChannels), comm->nvlsChannels);
     proxyState->sharedBuffer.slotSize = comm->p2pChunkSize;
     proxyState->sharedBuffer.nslots = comm->buffSizes[NCCL_PROTO_SIMPLE] / comm->p2pChunkSize;
-    proxyState->nChannels = comm->nChannels;
     proxyState->allocP2pNetLLBuffers = comm->allocP2pNetLLBuffers;
     proxyState->dmaBufSupport = comm->dmaBufSupport;
     proxyState->ncclNet = comm->ncclNet;

@@ -218,7 +218,6 @@ struct ncclProxyState {
   int tpnRanks;
   int tpLocalnRanks;
   int cudaDev;
-  int p2pnChannels;
   struct ncclProxyStateSharedBuffer sharedBuffer;
   int nChannels;
   int buffSizes[NCCL_NUM_PROTOCOLS];
