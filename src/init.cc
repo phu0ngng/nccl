@@ -799,6 +799,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   struct allGatherInfo {
     struct graphInfo graphInfo[NCCL_NUM_ALGORITHMS];
     struct ncclTopoRanks topoRanks;
+    int nvlsChannels;
   };
 
   int nChannelsOrig;
@@ -967,6 +968,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     allGather3Data[rank].graphInfo[a].typeIntra = graphs[a]->typeIntra;
     allGather3Data[rank].graphInfo[a].typeInter = graphs[a]->typeInter;
   }
+  // The NVLS graph nChannels is the number of heads, not the number of NVLS channels.
+  // Make sure we have a consistent number of NVLS channels between all ranks.
+  allGather3Data[rank].nvlsChannels = comm->nvlsChannels;
 
   comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
@@ -1037,8 +1041,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       graphs[a]->typeInter = std::max(allGather3Data[i].graphInfo[a].typeInter, graphs[a]->typeInter);
     }
     if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->collNetSupport = 0;
-    if (graphs[NCCL_ALGO_NVLS]->nChannels == 0) comm->nvlsSupport = 0;
+    comm->nvlsChannels = std::min(allGather3Data[i].nvlsChannels, comm->nvlsChannels);
   }
+  if (comm->nvlsChannels == 0) comm->nvlsSupport = 0;
 
   comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   if (comm->nChannels < nChannelsOrig) {
