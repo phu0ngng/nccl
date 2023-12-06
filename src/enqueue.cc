@@ -1375,10 +1375,9 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
   int stepSize   = info->comm->buffSizes[info->protocol]/NCCL_STEPS;
   int chunkSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->chunkSteps : 1;
   int sliceSteps = (info->protocol == NCCL_PROTO_SIMPLE && info->algorithm == NCCL_ALGO_RING) ? info->sliceSteps : 1;
-  int chunkBufferSize  = stepSize*chunkSteps;
-  int chunkSize = chunkBufferSize;
+  int chunkSize = stepSize*chunkSteps;
   if (info->protocol == NCCL_PROTO_LL) chunkSize /= 2;
-  if (info->protocol == NCCL_PROTO_LL128) chunkSize = (chunkBufferSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
+  if (info->protocol == NCCL_PROTO_LL128) chunkSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
 
   // Compute lastChunkSize
   if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) {
@@ -1435,7 +1434,7 @@ static ncclResult_t computeColl(struct ncclInfo* info /* input */, int* workFunc
   proxyOp->nsteps = info->nstepsPerLoop * nLoops * chunkSteps;
   proxyOp->sliceSteps = sliceSteps;
   proxyOp->chunkSteps = chunkSteps;
-  proxyOp->chunkSize = chunkBufferSize;
+  proxyOp->chunkSize = chunkSize;
   proxyOp->protocol = info->protocol;
   proxyOp->dtype = info->datatype;
   proxyOp->redOp = info->opFull.op==ncclDevPreMulSum || info->opFull.op==ncclDevSumPostDiv ? ncclSum : // Network sees avg as sum
