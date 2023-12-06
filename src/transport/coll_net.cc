@@ -273,6 +273,7 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
   struct ncclRecvMem *recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, gpu, recvMem);
   void* gdcMem = map->mems[NCCL_NET_MAP_GDCMEM].gpuPtr;
   recv->conn.tail = gdcMem ? (uint64_t*)gdcMem : &recvMem->tail;
+  recv->conn.connFifo = recvMem->connFifo;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     recv->conn.buffs[p] = NCCL_NET_MAP_GET_POINTER(map, gpu, buffs[p]);
@@ -648,6 +649,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         int offset;
         NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 0, sharedBuffSlot, 0, &offset));
         resources->recvMem->connFifo[buffSlot].offset = offset + s*args->chunkSize;
+	resources->recvMem->connFifo[buffSlot].mode = NCCL_MODE_OFFSET;
         __sync_synchronize();
         volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
         sub->posted += args->sliceSteps;
@@ -822,6 +824,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         NCCLCHECK(sharedBuffersGet(sub->connection->collNet, 1, sharedBuffSlot, startChannel, &offset));
         volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
         connFifo[buffSlot].offset = offset + (s%COLLNET_GROUP_NSUBS)*args->chunkSize;
+	connFifo[buffSlot].mode = NCCL_MODE_OFFSET;
         __sync_synchronize();
         volatile uint64_t* recvTail = resources->gdcSync ? resources->gdcSync : &resources->recvMem->tail;
         *recvTail = sub->base + sub->flushed;
