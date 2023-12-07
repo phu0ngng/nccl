@@ -737,6 +737,30 @@ ncclResult_t ncclTopoGetLocal(struct ncclTopoSystem* system, int type, int index
   return ncclSuccess;
 }
 
+ncclResult_t getLocalNetCountByBw(struct ncclTopoSystem* system, int gpu, int *count) {
+  int localNetCount = 0, netCountByBw = 0;
+  int* localNets;
+  float totalNetBw = 0, gpuBw = 0;
+
+  for (int l=0; l<system->nodes[GPU].nodes[gpu].nlinks; l++) {
+    //assuming BW to CPU reflects the GPU bandwidth via P2P or C2C
+    //caveat, this could be wrong if there is a PCIe switch,
+    //and a narrower link to the CPU
+    if (system->nodes[GPU].nodes[gpu].links[l].remNode->type == CPU) {
+       gpuBw = system->nodes[GPU].nodes[gpu].links[l].bw;
+    }
+  }
+
+  NCCLCHECK(ncclTopoGetLocal(system, GPU, gpu, NET, &localNets, &localNetCount, NULL));
+  for (int l=0; (l < localNetCount) && (totalNetBw < gpuBw); l++, netCountByBw++) {
+     totalNetBw += system->nodes[GPU].nodes[gpu].paths[NET][localNets[l]].bw;
+  }
+  *count = netCountByBw;
+
+  free(localNets);
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int channelId, int* id) {
   int gpu;
   NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpu));
