@@ -183,7 +183,9 @@ class Primitives<
   inline __device__ void postPeer(bool dataStored) {
     if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
       step += StepPerSlice;
-      if (Send && (flags & RolePostSend) && dataStored) fence_acq_rel_sys();
+      if (Send && (flags & RolePostSend) && (dataStored||(flags&ConnFifoEnabled))) {
+        fence_acq_rel_sys();
+      }
       st_relaxed_sys_global(connStepPtr, step);
     }
   }
@@ -305,6 +307,55 @@ class Primitives<
     }
   }
 
+public:
+  template<int Recv, int Send, typename Fn>
+  __device__ __forceinline__ void process(Fn &&fn) {
+    #pragma unroll 1
+    for (int slice=0; slice < SlicePerChunk; slice++) {
+      if (tid < nworkers) {
+        if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
+          bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
+          int spins = 0;
+          while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
+            connStepCache = loadStepValue(connStepPtr);
+            if (checkAbort(spins)) break;
+          }
+          void **ptrs = isSendNotRecv ? ncclShmem.groups[group].dsts
+                                      : ncclShmem.groups[group].srcs;
+          if ((flags & ConnFifoEnabled) && connFifo[step%NCCL_STEPS].mode == NCCL_MODE_OFFSET) {
+            int offset = loadInt(&connFifo[step%NCCL_STEPS].offset);
+            ptrs[index] = connEltsFifo + offset/sizeof(T);
+          } else {
+            ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
+          }
+        }
+        subBarrier();
+        fn.template operator()<SlicePerChunk, 0, Recv*MaxRecv, 0, Send*MaxSend>
+          (tid, nworkers, slice, stepSize*StepPerSlice,
+           fan.nrecv(), ncclShmem.groups[group].srcs,
+           fan.nsend(), ncclShmem.groups[group].dsts, ncclShmem.groups[group].dstSizes);
+      }
+      barrier();
+      int32_t dstSize = 0;
+      if (flags & Send*RolePostSend) {
+        dstSize = ncclShmem.groups[group].dstSizes[index];
+        ncclShmem.groups[group].dstSizes[index] = 0;
+        if (flags & ConnFifoEnabled) connFifo[step%NCCL_STEPS].size = dstSize*sizeof(T);
+      }
+      barrier();
+      if (flags & (Recv*(RoleWaitRecv|RolePostRecv) | Send*(RoleWaitSend|RolePostSend))) {
+        step += StepPerSlice;
+      }
+      if (flags & (Recv*RolePostRecv | Send*RolePostSend)) {
+        if (Send && (!Recv || (flags & RolePostSend)) && (dstSize!=0 || (flags&ConnFifoEnabled))) {
+          fence_acq_rel_sys();
+        }
+        st_relaxed_sys_global(connStepPtr, step);
+      }
+    }
+  }
+
+private:
   // Scatter/Gather generic op
   // skip: my own rank order in the buffer chunks
   // shift: peer offset to avoid all ranks sending to or receiving from same peer
@@ -425,6 +476,10 @@ class Primitives<
       auto *conn = &peer->send[connIndex];
       step = conn->step;
       step = roundUp(step, SlicePerChunk*StepPerSlice);
+
+      connFifo = conn->connFifo;
+      if (connFifo != nullptr) flags |= ConnFifoEnabled;
+
       if (flags & RolePostSend) {
         connStepPtr = conn->tail;
         connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
@@ -435,10 +490,7 @@ class Primitives<
         connStepPtr = conn->head;
         connStepCache = loadStepValue(connStepPtr);
         connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
-        if (conn->connFifo != nullptr) {
-          flags |= ConnFifoEnabled;
-          connFifo = conn->connFifo;
-        } else if (Direct) {
+        if (connFifo == nullptr && Direct) {
           // User buffers have been registered
           if ((conn->flags & (NCCL_IPC_READ|NCCL_IPC_WRITE)) && e != nullptr && e->regUsed) {
             if (connIndex == 1) {

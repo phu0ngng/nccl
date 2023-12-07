@@ -99,6 +99,12 @@ typedef ncclNet_v8_t ncclNet_t;
 #define NCCL_NET_PLUGIN_SYMBOL ncclNetPlugin_v8
 
 typedef struct {
+  void* mhandle;
+  void* address;
+  uint32_t size;
+} ncclNetSGE_v8_t;
+
+typedef struct {
   // Name of the collective network (mainly for logs)
   const char* name;
   // Initialize the collective network.
@@ -127,6 +133,13 @@ typedef struct {
   // May return request == NULL if the call cannot be performed (or would block).
   ncclResult_t (*iallreduce)(void* collComm, void* sendData, void* recvData, int count,
       ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request);
+  ncclResult_t (*iallgather)(void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v8_t* recvParts,
+                             size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
+                             void* sendMhandle, void** request);
+  ncclResult_t (*ireducescatter)(void* collComm, int nSendParts, ncclNetSGE_v8_t* sendParts, void* recvData,
+                                 size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
+                                 ncclDataType_t dataType, ncclRedOp_t redOp,
+                                 void* recvMhandle, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
   // visible to the GPU
   ncclResult_t (*iflush)(void* collComm, void* data, int size, void* mhandle, void** request);

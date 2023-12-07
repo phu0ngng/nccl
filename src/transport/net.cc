@@ -753,7 +753,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   resources->sendMem = (struct ncclSendMem*) NCCL_NET_MAP_GET_POINTER(map, cpu, sendMem);
   resources->recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, cpu, recvMem);
 
-  resources->sendMem->head = 0;
+  (resources->gdcSync ? *resources->gdcSync : resources->sendMem->head) = 0;
   for (int i=0; i<NCCL_STEPS; i++) resources->recvMem->connFifo[i].size = -1;
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {

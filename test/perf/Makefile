@@ -85,9 +85,13 @@ ${DST_DIR}/nccl_mpi_collnet.o: ../../share/nccl_mpi_collnet.c
 	@mkdir -p ${DST_DIR}
 	mpicc -std=c99 $(CXXFLAGS) -I$(NCCLDIR)/include/ -o $@ -c $<
 
-${DST_DIR}/%_perf:${DST_DIR}/%.o $(COMMON_OBJS) $(TEST_VERIFIABLE_LIBSO)
+$(DST_DIR)/libverifiable.so: $(TEST_VERIFIABLE_LIBSO)
+	ln -sfn ../verifiable/libverifiable.so $@
+
+${DST_DIR}/%_perf:${DST_DIR}/%.o $(COMMON_OBJS) $(DST_DIR)/libverifiable.so
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
+	@ln -sfn $(DST_DIR)/../verifiable/libverifiable.so $(DST_DIR)/libverifiable.so
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ $(NVLDFLAGS)
 
 ${DST_DIR}/replay-coll: ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(TEST_VERIFIABLE_LIBSO)

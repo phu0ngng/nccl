@@ -225,6 +225,8 @@ static ncclResult_t ncclCollNet_v5_as_v8_init(ncclDebugLogger_t logfn) {
   ncclCollNet_v5_as_v8.regMrDmaBuf = NULL;
   ncclCollNet_v5_as_v8.deregMr = ncclCollNet_v5->deregMr;
   ncclCollNet_v5_as_v8.iallreduce = ncclCollNet_v5->iallreduce;
+  ncclCollNet_v5_as_v8.iallgather = nullptr;
+  ncclCollNet_v5_as_v8.ireducescatter = nullptr;
   ncclCollNet_v5_as_v8.iflush = ncclCollNet_v5->iflush;
   ncclCollNet_v5_as_v8.test = ncclCollNet_v5->test;
   ncclCollNet_v5_as_v8.closeColl = ncclCollNet_v5->closeColl;
@@ -270,6 +272,8 @@ static ncclResult_t ncclCollNet_v6_as_v8_init(ncclDebugLogger_t logfn) {
   ncclCollNet_v6_as_v8.regMrDmaBuf = ncclCollNet_v6->regMrDmaBuf;
   ncclCollNet_v6_as_v8.deregMr = ncclCollNet_v6->deregMr;
   ncclCollNet_v6_as_v8.iallreduce = ncclCollNet_v6->iallreduce;
+  ncclCollNet_v6_as_v8.iallgather = nullptr;
+  ncclCollNet_v6_as_v8.ireducescatter = nullptr;
   ncclCollNet_v6_as_v8.iflush = ncclCollNet_v6->iflush;
   ncclCollNet_v6_as_v8.test = ncclCollNet_v6->test;
   ncclCollNet_v6_as_v8.closeColl = ncclCollNet_v6->closeColl;
@@ -315,6 +319,8 @@ static ncclResult_t ncclCollNet_v7_as_v8_init(ncclDebugLogger_t logfn) {
   ncclCollNet_v7_as_v8.regMrDmaBuf = ncclCollNet_v7->regMrDmaBuf;
   ncclCollNet_v7_as_v8.deregMr = ncclCollNet_v7->deregMr;
   ncclCollNet_v7_as_v8.iallreduce = ncclCollNet_v7->iallreduce;
+  ncclCollNet_v7_as_v8.iallgather = nullptr;
+  ncclCollNet_v7_as_v8.ireducescatter = nullptr;
   ncclCollNet_v7_as_v8.iflush = ncclCollNet_v7->iflush;
   ncclCollNet_v7_as_v8.test = ncclCollNet_v7->test;
   ncclCollNet_v7_as_v8.closeColl = ncclCollNet_v7->closeColl;
@@ -467,6 +473,7 @@ static ncclResult_t netGetState(int i, enum ncclNetState* state) {
 }
 
 static ncclResult_t collNetGetState(int i, enum ncclNetState* state) {
+  pthread_mutex_lock(&netLock);
   if (ncclCollNetStates[i] == ncclNetStateInit) {
     int ndev;
     if (ncclCollNets[i]->init(ncclDebugLog) != ncclSuccess) ncclCollNetStates[i] = ncclNetStateDisabled;
@@ -474,6 +481,7 @@ static ncclResult_t collNetGetState(int i, enum ncclNetState* state) {
     else ncclCollNetStates[i] = ncclNetStateEnabled;
   }
   *state = ncclCollNetStates[i];
+  pthread_mutex_unlock(&netLock);
   return ncclSuccess;
 }
 
