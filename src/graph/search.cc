@@ -1072,16 +1072,29 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
 
 #include "comm.h"
 // NVLS channels aren't compute channels. Find which NIC corresponds to our rank being the head
-ncclResult_t getNvlsNetDev(struct ncclComm* comm, struct ncclTopoGraph* graph, int* dev) {
+ncclResult_t getNvlsNetDev(struct ncclComm* comm, struct ncclTopoGraph* graph, int channelId, int* dev) {
+  ncclResult_t ret = ncclSuccess;
   int localRanks = comm->topo->nodes[GPU].count;
-  for (int c=0; c<graph->nChannels; c++) {
-    if (graph->intra[c*localRanks] == comm->rank) {
-      *dev = graph->inter[c*2];
-      return ncclSuccess;
+  int netNum = 0;
+  int net[MAXCHANNELS];
+  
+  for (int c = 0; c < graph->nChannels; c++) {
+    if (graph->intra[c * localRanks] == comm->rank) {
+      net[netNum++] = graph->inter[c * 2];
     }
   }
+  if (netNum) {
+    *dev = net[channelId % netNum];
+  } else {
+    ret = ncclInternalError;
+    goto fail;
+  }
+
+exit:
+  return ret;
+fail:
   WARN("Could not find NIC for rank %d in NVLS graph\n", comm->rank);
-  return ncclInternalError;
+  goto exit;
 }
 
 // 0: don't use PXN for P2P, 1: use PXN if needed, 2: use PXN as much as possible to maximize aggregation
@@ -1096,7 +1109,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
     if (graph->pattern != NCCL_TOPO_PATTERN_NVLS) {
       *dev = graph->inter[channel*2+index];
     } else {
-      NCCLCHECK(getNvlsNetDev(comm, graph, dev));
+      NCCLCHECK(getNvlsNetDev(comm, graph, channelId, dev));
     }
     NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, rank, *dev, proxyRank));
   } else if (peerRank == -1) {
