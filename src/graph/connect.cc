@@ -102,8 +102,6 @@ static ncclResult_t connectRings(struct ncclComm* comm, int* ringRecv, int* ring
       int nextRecvRank = recv[(n+1)%nNodes];
       next[sendRank] = nextRecvRank;
     }
-    TRACE(NCCL_GRAPH, "Ring %d : %d -> %d -> %d", c, channel0->ring.prev, comm->rank, channel0->ring.next);
-    TRACE(NCCL_GRAPH, "Ring %d : %d -> %d -> %d", c+nChannels, channel1->ring.prev, comm->rank, channel1->ring.next);
   }
   return ncclSuccess;
 }
