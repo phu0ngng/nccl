@@ -52,7 +52,7 @@ build:
 build-trace:
   stage: build
   rules:
-    - if: $BUILD_TRACE == 1 || $CI_PIPELINE_SOURCE == 1
+    - if: $BUILD_TRACE == 1 || $CI_PIPELINE_SOURCE == 'schedule'
       when: always
     - when: never
   tags:
