@@ -29,6 +29,7 @@ variables:
   SINGLE_REGRESSION_SALLOC_TIME: 30 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
   SHARP_MULTI_JOB_TIME:  10
   RUN_ON_SELENE_SHARP: "0"
+  BUILD_TRACE: 0
 
 build:
   stage: build
@@ -47,6 +48,23 @@ build:
       - build
     expire_in: 1 day
   interruptible: true
+
+build-trace:
+  stage: build
+  rules:
+    - if: $BUILD_TRACE == 1 || $CI_PIPELINE_SOURCE == 1
+      when: always
+    - when: never
+  tags:
+    - build
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
+    - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
+  interruptible: true
+
 
 health-P100:
   stage: health
