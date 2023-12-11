@@ -908,3 +908,13 @@ Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in third-genera
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 1, define and set to 0 to disable use of NVLink SHARP. NVLS will be disabled automatically on systems which do not support the feature.
+
+NCCL_IB_MERGE_NICS
+------------------
+(since 2.20)
+
+Enable NCCL to combine dual-port IB NICs into a single logical network device. This allows NCCL to more easily aggregate dual-port NIC bandwidth.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1, define and set to 0 to disable NIC merging
