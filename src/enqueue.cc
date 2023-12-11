@@ -1316,7 +1316,10 @@ static ncclResult_t getPatternInfo(struct ncclInfo* info) {
       info->pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUp : ncclPatternPipelineTo; break;
     case ncclFuncReduceScatter:
     case ncclFuncAllGather:
-      info->pattern = info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect : ncclPatternRing; break;
+      info->pattern =
+        info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
+        info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
+        ncclPatternRing; break;
     case ncclFuncAllReduce:
       info->pattern =
         info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
