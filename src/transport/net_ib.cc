@@ -632,7 +632,7 @@ struct ncclIbRecvComm {
 };
 static_assert((offsetof(struct ncclIbRecvComm, remFifo) % 32) == 0, "ncclIbRecvComm fifo must be 32-byte aligned");
 
-NCCL_PARAM(IbQpsPerConn, "IB_QPS_PER_CONNECTION", 1);
+NCCL_PARAM(IbQpsPerConn, "IB_QPS_PER_CONNECTION", 2);
 
 static void ncclIbAddEvent(struct ncclIbRequest* req, int devIndex, struct ncclIbNetCommDevBase* base) {
   req->events[devIndex]++;
@@ -1298,7 +1298,7 @@ ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
   return ncclSuccess;
 }
 
-NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 1);
+NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 0);
 
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
