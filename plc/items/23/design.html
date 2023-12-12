@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-23 : Rings and Tree rework for DGX H100 : Design</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-23 : Rings and Tree rework for DGX H100<br>Design</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Design</h2>
+<!-- Provide a high-level description of the architecture and include block diagram(s) if applicable -->
+<!-- Describe key assumptions and limitations (if any) of the architecture -->
+<h3>Alternate cross-nic rings</h3>
+<p>To avoid the final PXN step to close the rings, we can exit directly from the last GPU using its local NIC.
+The problem with that design is that it causes cross-rail traffic. For example, say we enter the node through
+NIC A, then go to GPU A, around all GPUs, and finish with GPU B, then exit through NIC B. When we connect nodes
+together, we would send from NIC B to the NIC A of the next node.
+<p>The solution is to "reverse" the ring on every other node, i.e. send to the NIC B of the next node, which
+will exit from NIC A, and use the normal order on the 3rd node, and so on.
+<p>In practice, during the graph search, we will allow ourselves to exit from a different NIC than we entered
+the node with, as long as there is a corresponding ring with opposite NIC direction. With that, we build pairs
+of rings, one entering on NIC A and exiting on NIC B, and the other entering on NIC B and exiting on NIC A.
+<p>This also only works with an even number of nodes. If we have an odd number of nodes, we may still want to
+use that algorithm, as the rail crossing would only occur once, and not upon every node transition, which is
+still a significant win.
+
+<h3>Channel tuning</h3>
+<p>Now that we have removed the NVLink bottleneck by avoiding the extra PXN step, we can reach higher performance.
+Unfortunately, on DGX H100, we cannot reach 390 GB/s with only 16 channels.
+<p>One problem is that the tree algorithm needs an even number of channels per tree, so we would need to bump
+the number of channels to 4 per ring/tree, which would be 32 channels. That is because the tree algorithm relies
+on a double binary tree, and each channel only implements one of the two binary trees.
+
+<h3>Send/Recv and Coll harmonization</h3>
+<p>To be able to use only 3 channels per ring/tree, we need to re-architect the Tree algorithm to implement
+both trees in each channel. This is doable since we now have two connections within each channel (connIndex 0
+and connIndex 1). The problem is that connIndex 0 and connIndex 1 are not used in the same way, so we cannnot
+share a connIndex 1 connection between collectives and send/recv operations. In previous versions, connIndex
+0 was used by most collective operations, and connIndex 1 was used by send/receive operations, plus intra-node
+by NVLS and Direct algorithms.
+<p>But the problem is on the network side as connections on connIndex 1 use shared buffers which work
+differently w.r.t. the head counter, and which is incompatible with LL/LL128 operation.
+<p>So if we want to be able to use connIndex 1 for the tree algorithm, we need to harmonize how shared buffers
+work (so that they're compatible with LL/LL128 head operation), and also use shared buffers for both send/recv
+and collective operations, when using the simple protocol.
+<p>The first step was to harmonize the use of the head counter. In shared buffer mode, we used to only give
+gredits through the head counter when we would post buffers in the offset FIFO. So solve that problem, we
+now use the head counter as for non-shared buffers, but set the offsets to -1 to indicate they are not ready
+to consume. The CUDA kernel will poll on that value until the proxy sets it, and the proxy will reset it to
+-1 after it has been consumed.
+<p>The second step is to allocate and use a shared buffer for all network operations on connIndex 0. For
+send/recv operations, the shared buffers have been allocating 16 128KB chunks. The ring algorithm, on the
+other hand, needs 4 slots of 1MB. To allow for both usage, the proxy will allocate 32 chunks of 128KB, and
+then allocate it either by 1 chunk for p2p, or by larger contiguous sets of chunks for ring.
+<p>Once that was done, the tree algorithm has been modified to use both connIndexes, implementing one tree
+on each. Each SM is cut into 4 sets of threads, to manage both directions (up and down) on both trees. This
+is better for performance as it balances the workload better on channels. Previously, one channel would have
+a lot of reductions to perform (as it would be a node in the tree), which the other would have nothing to do
+(as it would be a leaf in the tree).
+
+<h2>Signoff list</h2>
+<p>Author : Sylvain Jeaugey
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-23 : Rings and Tree rework for DGX H100 : Requirements</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-23 : Rings and Tree rework for DGX H100<br>Requirements</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Introduction</h2>
+
+<h3>Overview</h3>
+<p>NCCL aims at providing the best performance for DGX systems, so that our users can
+have the best possible experience when moving from their development setup to a DGX,
+potentially in the cloud.
+<p>Since the beginning of NCCL and DGX systems, allreduce operations have heavily
+relied on the ring algorithm. One specificity of DGX H100 is that each network adapter
+is connected directly through a PCI switch to only one GPU (instead of 2 so far).
+This prevents NCCL from closing the rings, which should enter from one NIC and go to
+a local GPU, then exit from another GPU to that same NIC.
+<p>To solve that problem, NCCL added the PXN feature. The problem is that on DGX H100,
+we are limited by the NVLink bandwidth, especially when using PXN since PXN adds an
+extra NVLink step to go back to the first GPU before leaving the node.
+<p>This means that the ring allreduce algorithm only runs at 300-330 GB/s instead of
+390GB/s.
+
+<h3>Assumptions</h3>
+None.
+
+<h3>Constraints</h3>
+None.
+
+<h3>Dependencies</h3>
+None.
+
+<h3>References</h3>
+<p><a href="https://jirasw.nvidia.com/browse/NCCL-1554">Jira NCCL-1554</a>
+
+<h2>Use cases</h2>
+<h3>Allreduce</h3>
+Allreduce performance on multiple nodes.
+
+<h2>Requirements</h2>
+<!-- Table of requirements -->
+<!-- Requirement types: Functional/Non-Functional/KPI/Interface/Safety/Platform/
+     Legal/Telemetry/Backwards Compat/Virtualization/Automatability -->
+<h3>REQ-1 - KPI - Allreduce SOL on DGX H100</h3>
+Dual node ring allreduce on DGX H100 should work at SOL, i.e. 390GB/s.
+
+<h2>Signoff list</h2>
+<p>Author : Sylvain Jeaugey
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last  -->
+<p><!-- Product Manager : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->
