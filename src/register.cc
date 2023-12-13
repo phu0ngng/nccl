@@ -11,32 +11,25 @@
 #include "register.h"
 
 ncclResult_t ncclNetDeregister(struct ncclComm* comm, struct ncclReg* reg) {
+  struct ncclRegCache* cache = &comm->regCache;
   ncclDebugNoWarn = NCCL_NET;
-  for (int d=0; d<reg->nComms; d++) {
-    if (reg->handles[d] != NULL) NCCLCHECK(comm->ncclNet->deregMr(reg->sComms[d], reg->handles[d]));
-    if (reg->sComms[d]) NCCLCHECK(comm->ncclNet->closeSend(reg->sComms[d]));
-    if (reg->rComms[d]) NCCLCHECK(comm->ncclNet->closeRecv(reg->rComms[d]));
+  for (int d=0; d<reg->nDevs; d++) {
+    if (reg->handles[d] != NULL) NCCLCHECK(comm->ncclNet->deregMr(cache->sComms[reg->devs[d]], reg->handles[d]));
   }
-  reg->nComms = 0;
-  free(reg->sComms);
-  free(reg->rComms);
+  reg->nDevs = 0;
   free(reg->handles);
-  reg->sComms = reg->rComms = reg->handles = NULL;
+  reg->handles = NULL;
   ncclDebugNoWarn = 0;
   return ncclSuccess;
 }
 
 ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, struct ncclReg* reg) {
+  struct ncclRegCache* cache = &comm->regCache;
   int netCount;
   NCCLCHECK(ncclTopoGetNetCount(comm->topo, &netCount));
   if (netCount == 0) return ncclSuccess;
 
-  int localNetDevCount = 0;
-  int* localNetDevs;
-  void *lComm = NULL;
   ncclResult_t ret = ncclSuccess;
-
-  NCCLCHECK(ncclCalloc(&localNetDevs, comm->p2pnChannels));
 
   // Find local devices for p2p operations
   for (int c=0; c<comm->p2pnChannels; c++) {
@@ -45,51 +38,49 @@ ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, str
     ncclNetProperties_t props;
     NCCLCHECKGOTO(comm->ncclNet->getProperties(dev, &props), ret, end);
     if (props.regIsGlobal == 0) { // We need to be sure all NICs support global registration.
-      localNetDevCount = 0;
+      reg->nDevs = 0;
       break;
     }
-    localNetDevs[localNetDevCount++] = dev;
+    int found = 0;
+    for (int d=0; d<reg->nDevs; d++) if (reg->devs[d] == dev) found = 1;
+    if (!found) reg->devs[reg->nDevs++] = dev;
   }
 
-  NCCLCHECKGOTO(ncclCalloc(&reg->sComms, localNetDevCount), ret, end);
-  NCCLCHECKGOTO(ncclCalloc(&reg->rComms, localNetDevCount), ret, end);
-  NCCLCHECKGOTO(ncclCalloc(&reg->handles, localNetDevCount), ret, end);
-  reg->nComms = localNetDevCount;
+  NCCLCHECKGOTO(ncclCalloc(&reg->handles, reg->nDevs), ret, end);
 
   ncclDebugNoWarn = NCCL_NET;
-  for (int d=0; d<localNetDevCount; d++) {
-    int dev = localNetDevs[d];
-    reg->handles[d] = reg->sComms[d] = reg->rComms[d] = NULL;
+  for (int d=0; d<reg->nDevs; d++) {
+    int dev = reg->devs[d];
+    reg->handles[d] = NULL;
 
-    ncclNetHandle_t netHandle;
-    NCCLCHECKGOTO(comm->ncclNet->listen(dev, &netHandle, &lComm), ret, end);
-
-    bool connected;
-    connected = false;
-    while (!connected) {
-      if (*comm->abortFlag) {
-        goto end;
+    if (cache->sComms[dev] == NULL) {
+      // Create a loopback network comm object for that device to register the buffers.
+      void *lComm = NULL;
+      ncclNetHandle_t netHandle;
+      bool connected = false;
+      NCCLCHECKGOTO(comm->ncclNet->listen(dev, &netHandle, &lComm), ret, end);
+      while (!connected) {
+        if (*comm->abortFlag) {
+          goto end;
+        }
+        if (cache->sComms[dev] == NULL)
+          NCCLCHECKGOTO(comm->ncclNet->connect(dev, &netHandle, cache->sComms+dev, NULL), ret, end);
+        if (cache->rComms[dev] == NULL)
+          NCCLCHECKGOTO(comm->ncclNet->accept(lComm, cache->rComms+dev, NULL), ret, end);
+        connected = (cache->rComms[dev] != NULL) && (cache->sComms[dev] != NULL);
       }
-
-      if (reg->sComms[d] == NULL)
-        NCCLCHECKGOTO(comm->ncclNet->connect(dev, &netHandle, reg->sComms+d, NULL), ret, end);
-
-      if (reg->rComms[d] == NULL)
-        NCCLCHECKGOTO(comm->ncclNet->accept(lComm, reg->rComms+d, NULL), ret, end);
-
-      connected = (reg->rComms[d] != NULL) && (reg->sComms[d] != NULL);
+      NCCLCHECK(comm->ncclNet->closeListen(lComm));
     }
-    NCCLCHECK(comm->ncclNet->closeListen(lComm));
-    lComm = NULL;
-
-    if (comm->ncclNet->regMr(reg->sComms[d], addr, size, NCCL_PTR_CUDA, reg->handles+d) != ncclSuccess) {
+    if (comm->ncclNet->regMr(cache->sComms[dev], addr, size, NCCL_PTR_CUDA, reg->handles+d) != ncclSuccess) {
       reg->handles[d] = NULL;
+      NCCLCHECK(ncclNetDeregister(comm, reg));
+      reg->nDevs = 0;
+      goto end;
     }
   }
 end:
   ncclDebugNoWarn = 0;
   if (ret != ncclSuccess) NCCLCHECK(ncclNetDeregister(comm, reg));
-  free(localNetDevs);
   return ret;
 }
 
@@ -152,6 +143,10 @@ ncclResult_t ncclRegCleanup(struct ncclComm* comm) {
     free(cache->slots[i]);
   }
   free(cache->slots);
+  for (int d=0; d<MAXCHANNELS; d++) {
+    if (cache->sComms[d]) NCCLCHECK(comm->ncclNet->closeSend(cache->sComms[d]));
+    if (cache->rComms[d]) NCCLCHECK(comm->ncclNet->closeRecv(cache->rComms[d]));
+  }
   return ncclSuccess;
 }
 

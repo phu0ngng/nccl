@@ -15,9 +15,8 @@ struct ncclReg {
   uintptr_t addr;
   uint32_t state;
   // net reg
-  int nComms;
-  void** sComms;
-  void** rComms;
+  int nDevs;
+  int devs[MAXCHANNELS];
   void** handles;
   // nvls reg
   uintptr_t baseAddr;
@@ -33,6 +32,8 @@ struct ncclRegCache {
   struct ncclReg **slots;
   int capacity, population;
   uintptr_t pageSize;
+  void* sComms[MAXCHANNELS];
+  void* rComms[MAXCHANNELS];
 };
 
 ncclResult_t ncclRegCleanup(struct ncclComm* comm);

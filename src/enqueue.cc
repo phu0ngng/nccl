@@ -310,7 +310,7 @@ static ncclResult_t addP2pToPlan(
   if (info.protocol == NCCL_PROTO_SIMPLE) {
     struct ncclReg* regRecord;
     NCCLCHECK(ncclRegFind(comm, addr, bytes, &regRecord));
-    reg = regRecord && regRecord->nComms ? 1 : 0;
+    reg = regRecord && regRecord->nDevs ? 1 : 0;
   }
 
   struct ncclProxyOp proxyOp = {};
