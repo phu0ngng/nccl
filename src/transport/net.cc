@@ -1121,7 +1121,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             // Data is ready, try to send.
             NCCLCHECK(proxyState->ncclNet->isend(resources->netSendComm, buff, size, resources->tpRank, sub->mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
-              TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p", sub->transmitted, buffSlot, sub->requests[buffSlot]);
+              TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p, size %d, proto %d, myRank %d, channelId %d", sub->transmitted, buffSlot, sub->requests[buffSlot], size, p, proxyState->tpRank, sub->channelId);
               connFifo[buffSlot].size = -1;
               if (shared) connFifo[buffSlot].offset = -1;
               // Make sure size is reset to -1 before we update the head.

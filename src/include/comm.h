@@ -198,6 +198,7 @@ struct ncclKernelPlan {
     struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> workQueue;
     struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
   } channels[MAXCHANNELS];
+  size_t maxBytesPerChannel;
 };
 
 struct ncclComm {
@@ -252,8 +253,9 @@ struct ncclComm {
   uint64_t opCount;
 
   // Channels for collectives
-  int nChannels;
-  int nvlsChannels;
+  int nChannels; // connection nChannels
+  int collChannels; // enqueue nChannels
+  int nvlsChannels; // enqueue nChannels
   int collNetChannels;
   // Channels (per peer) for p2p
   int p2pnChannels;
