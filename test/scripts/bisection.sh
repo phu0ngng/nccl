@@ -11,7 +11,7 @@ Usage:
 
 Required Params:
     <initial_commit> - Git ref
-    <final_commit>   - Git ref 
+    <final_commit>   - Git ref
     <repro>          - A string encapsulating the perftest command to test. It's advised to reduce this to as small of a set of message sizes as possible to reduce false negatives
 
 Optional Params:
@@ -197,7 +197,7 @@ while [ $commit_num_low -ne $commit_num_high ]; do
     do
         NCCL_HOME=$d \
         LD_LIBRARY_PATH=$NCCL_HOME/lib:$LD_LIBRARY_PATH \
-        $MPI_HOME/bin/mpirun -q --bind-to numa $TEST_HOME/$repro >> "$d/$repro.txt" 
+        $MPI_HOME/bin/mpirun -q --bind-to numa $TEST_HOME/$repro >> "$d/$repro.txt"
     done
 
     ./test/scripts/perf_regression.py old="build-0-$initial_commit/$repro.txt" new="$d/$repro.txt" threshold=$threshold rmad_threshold=0.2

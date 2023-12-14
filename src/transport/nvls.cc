@@ -605,7 +605,7 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
     tryRegisterBuffer(comm, (uintptr_t)sendbuff, sendbuffSize, &regSendPtr, &localRegBufUsed);
     if (localRegBufUsed == false) goto fail;
   }
-  
+
   if (recvNeedReg && recvbuff) {
     tryRegisterBuffer(comm, (uintptr_t)recvbuff, recvbuffSize, &regRecvPtr, &localRegBufUsed);
     if (localRegBufUsed == false) goto fail;
