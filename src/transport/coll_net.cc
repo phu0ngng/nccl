@@ -244,7 +244,10 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
   struct ncclRecvMem *recvMem = (struct ncclRecvMem*) NCCL_NET_MAP_GET_POINTER(map, gpu, recvMem);
   send->conn.tail = &recvMem->tail;
   send->conn.connFifo = recvMem->connFifo;
-  for (int i=0; i<NCCL_STEPS; i++) send->conn.connFifo[i].size = -1;
+  for (int i=0; i<NCCL_STEPS; i++) {
+    send->conn.connFifo[i].size = -1;
+    send->conn.connFifo[i].size = NCCL_MODE_OFFSET;
+  }
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
     send->conn.buffs[p] = NCCL_NET_MAP_GET_POINTER(map, gpu, buffs[p]);
@@ -274,6 +277,9 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
   void* gdcMem = map->mems[NCCL_NET_MAP_GDCMEM].gpuPtr;
   recv->conn.tail = gdcMem ? (uint64_t*)gdcMem : &recvMem->tail;
   recv->conn.connFifo = recvMem->connFifo;
+  for (int i=0; i<NCCL_STEPS; i++) {
+    recv->conn.connFifo[i].size = NCCL_MODE_OFFSET;
+  }
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     recv->conn.buffs[p] = NCCL_NET_MAP_GET_POINTER(map, gpu, buffs[p]);
@@ -691,7 +697,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       if (sub->posted < sub->nsteps && sub->posted < sub->done + NCCL_STEPS) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         resources->recvMem->connFifo[buffSlot].offset = calcRegionOffset(args, 0, s, sub->posted, 0);
-        resources->recvMem->connFifo[buffSlot].mode = NCCL_MODE_OFFSET;
         __sync_synchronize();
         volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
         TRACE(NCCL_NET, "sendProxy [%ld/%d/%d] posted offset %d @ %p signal %ld->%ld", long(sub->posted), group, buffSlot, resources->recvMem->connFifo[buffSlot].offset, &resources->recvMem->connFifo[buffSlot].offset, long(*sendHead), long(sub->base + sub->posted + args->sliceSteps - NCCL_STEPS));
@@ -884,7 +889,6 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         int buffSlot = (sub->base + sub->transmitted)%NCCL_STEPS;
         volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
         connFifo[buffSlot].offset = calcRegionOffset(args, 1, s, sub->transmitted, 0);
-        connFifo[buffSlot].mode = NCCL_MODE_OFFSET;
         __sync_synchronize();
         volatile uint64_t* recvTail = resources->gdcSync ? resources->gdcSync : &resources->recvMem->tail;
         *recvTail = sub->base + sub->flushed;
