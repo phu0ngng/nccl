@@ -1687,6 +1687,8 @@ static ncclResult_t computeCollChunkInfo(struct ncclInfo* collInfo, size_t nByte
   if (collInfo->protocol == NCCL_PROTO_LL128) chunkSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
 
   if (collInfo->algorithm == NCCL_ALGO_TREE && collInfo->protocol == NCCL_PROTO_SIMPLE) {
+    // We have up to 3 peers to send or recv to per channel so we need to fit within the shared buffer
+    if (collInfo->comm->nNodes >= 4) chunkSize /= 4;
     if (collInfo->pattern == ncclPatternTreeUpDown) {
       // Optimize chunkSize / nSteps
       while (nBytes / (nChannels * chunkSize) < collInfo->comm->channels[0].tree.depth * 8 && chunkSize > 131072) chunkSize /= 2;
