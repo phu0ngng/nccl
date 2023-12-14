@@ -1195,7 +1195,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   comm->topParentLocalRanks = topParentLocalRanks;
 
   // Launch proxy service thread, after this, the proxy calls can be used.
-  NCCLCHECKGOTO(ncclProxyCreate(comm), ret, fail);
+  if (parent && parent->config.splitShare) {
+    comm->proxyState = parent->sharedRes->proxyState;
+    ncclAtomicRefCountIncrement(&parent->sharedRes->proxyState->refCount);
+  } else {
+    NCCLCHECKGOTO(ncclProxyCreate(comm), ret, fail);
+  }
 
   // Connect with prev/next for each ring
   for (int c=0; c<comm->nChannels; c++) {
