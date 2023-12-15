@@ -360,8 +360,6 @@ ncclResult_t bootstrapSplit(struct ncclBootstrapHandle* handle, struct ncclComm*
     for (int i = 0; i < nranks; ++i) {
       comm->topParentRanks[i] = parent->topParentRanks[parentRanks[i]];
     }
-    comm->proxyState = parent->sharedRes->proxyState;
-    ncclAtomicRefCountIncrement(&parent->sharedRes->proxyState->refCount);
   } else {
     // Create the service proxy
     NCCLCHECKGOTO(ncclCalloc(&state->peerProxyAddresses, nranks), ret, fail);
