@@ -246,7 +246,7 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
   send->conn.connFifo = recvMem->connFifo;
   for (int i=0; i<NCCL_STEPS; i++) {
     send->conn.connFifo[i].size = -1;
-    send->conn.connFifo[i].size = NCCL_MODE_OFFSET;
+    send->conn.connFifo[i].mode = NCCL_MODE_OFFSET;
   }
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++)
@@ -278,7 +278,7 @@ static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* conne
   recv->conn.tail = gdcMem ? (uint64_t*)gdcMem : &recvMem->tail;
   recv->conn.connFifo = recvMem->connFifo;
   for (int i=0; i<NCCL_STEPS; i++) {
-    recv->conn.connFifo[i].size = NCCL_MODE_OFFSET;
+    recv->conn.connFifo[i].mode = NCCL_MODE_OFFSET;
   }
 
   for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
