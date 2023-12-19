@@ -876,6 +876,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
   // AllGather1 - end
 
+#if CUDART_VERSION >= 11030
   // MNNVL support
   {
     int cliqueSize = 0;
@@ -908,6 +909,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       goto fail;
     }
   }
+#endif
 
   do {
     // Compute intra-process ranks
