@@ -45,6 +45,7 @@ The following code depicts a complete working example with a single process that
 
 .. code:: C
 
+ #include <stdlib.h>
  #include <stdio.h>
  #include "cuda_runtime.h"
  #include "nccl.h"
@@ -88,8 +89,8 @@ The following code depicts a complete working example with a single process that
 
    for (int i = 0; i < nDev; ++i) {
      CUDACHECK(cudaSetDevice(i));
-     CUDACHECK(cudaMalloc(sendbuff + i, size * sizeof(float)));
-     CUDACHECK(cudaMalloc(recvbuff + i, size * sizeof(float)));
+     CUDACHECK(cudaMalloc((void**)sendbuff + i, size * sizeof(float)));
+     CUDACHECK(cudaMalloc((void**)recvbuff + i, size * sizeof(float)));
      CUDACHECK(cudaMemset(sendbuff[i], 1, size * sizeof(float)));
      CUDACHECK(cudaMemset(recvbuff[i], 0, size * sizeof(float)));
      CUDACHECK(cudaStreamCreate(s+i));
