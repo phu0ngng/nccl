@@ -139,7 +139,7 @@ ncclResult_t ncclRegCleanup(struct ncclComm* comm) {
   for (int i=0; i<cache->population; i++) {
     INFO(NCCL_INIT, "Cleanup buffer %p pages %lx", (void*)cache->slots[i]->addr, cache->slots[i]->pages);
     NCCLCHECK(ncclNetDeregister(comm, cache->slots[i]));
-    NCCLCHECK(ncclNvlsDeregBuffer(&cache->slots[i]->mcHandle, cache->slots[i]->regAddr, cache->slots[i]->dev, cache->slots[i]->regSize));
+    if (cache->slots[i]->state & NVLS_REG_COMPLETE) NCCLCHECK(ncclNvlsDeregBuffer(&cache->slots[i]->mcHandle, cache->slots[i]->regAddr, cache->slots[i]->dev, cache->slots[i]->regSize));
     free(cache->slots[i]);
   }
   free(cache->slots);
@@ -171,7 +171,7 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
   }
   if (--reg->refs) return ncclSuccess;
   NCCLCHECK(ncclNetDeregister(comm, reg));
-  if (reg->regAddr) {
+  if (reg->state & NVLS_REG_COMPLETE) {
     NCCLCHECK(ncclNvlsDeregBuffer(&reg->mcHandle, reg->regAddr, reg->dev, reg->regSize));
     reg->regAddr = (CUdeviceptr)NULL;
   }
