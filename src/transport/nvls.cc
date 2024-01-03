@@ -634,7 +634,7 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(struct ncclComm *comm, struct ncclKerne
   CUmulticastObjectProp prop;
   char shareableHandle[NVLS_HANDLE_SIZE];
   CUmemGenericAllocationHandle sendMcHandle, recvMcHandle;
-  size_t sendGran, recvGran;
+  size_t sendGran = 0, recvGran = 0;
   bool *regBufFlags = NULL;
   struct graphRegData *rdata = NULL;
   const void *baseSend = NULL;
@@ -654,19 +654,17 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(struct ncclComm *comm, struct ncclKerne
     if (recvbuff != NULL)
       CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&baseRecv, &baseRecvSize, (CUdeviceptr)recvbuff), ret, fail);
 
-    memcpy(&prop, &comm->nvlsResources->properties, sizeof(CUmulticastObjectProp));
-    prop.size = baseSendSize;
-    CUCHECKGOTO(cuMulticastGetGranularity(&sendGran, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED), ret, fail);
-    prop.size = baseRecvSize;
-    CUCHECKGOTO(cuMulticastGetGranularity(&recvGran, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED), ret, fail);
-
-    localRegBufUsed = ((uint64_t)baseSend % sendGran != 0 || (uint64_t)baseRecv % recvGran != 0) ? false : true;
+    localRegBufUsed = ((uint64_t)baseSend % comm->nvlsResources->ucGran != 0 || (uint64_t)baseRecv % comm->nvlsResources->ucGran != 0) ? false : true;
     regBufFlags[comm->localRank] = localRegBufUsed;
     NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, regBufFlags, sizeof(bool)), ret, fail);
     for (int i = 0; i < comm->localRanks; ++i)
       if (regBufFlags[i] == false) goto fail;
 
+    memcpy(&prop, &comm->nvlsResources->properties, sizeof(CUmulticastObjectProp));
     if (sendbuff != NULL) {
+      prop.size = baseSendSize;
+      CUCHECKGOTO(cuMulticastGetGranularity(&sendGran, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED), ret, fail);
+
       /* check send buffer offset and size */
       rdata[comm->localRank].offset = (uintptr_t)sendbuff - (uintptr_t)baseSend;
       rdata[comm->localRank].size = baseSendSize;
@@ -706,6 +704,9 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(struct ncclComm *comm, struct ncclKerne
     }
 
     if (recvbuff != NULL) {
+      prop.size = baseRecvSize;
+      CUCHECKGOTO(cuMulticastGetGranularity(&recvGran, &prop, CU_MULTICAST_GRANULARITY_RECOMMENDED), ret, fail);
+
       rdata[comm->localRank].offset = (uintptr_t)recvbuff - (uintptr_t)baseRecv;
       rdata[comm->localRank].size = baseRecvSize;
       NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, rdata, sizeof(struct graphRegData)), ret, fail);
