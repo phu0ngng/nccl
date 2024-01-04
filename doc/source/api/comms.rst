@@ -89,7 +89,7 @@ The value of key will determine the rank order, and the smaller key means the sm
 If keys are equal between ranks, then the rank in the original communicator will be used to order ranks.
 If the new communicator needs to have a special configuration, it can be passed as *config*, otherwise setting
 config to NULL will make the new communicator inherit the original communicator's configuration.
-When split, there should not be any outstanding NCCL opereations on the *comm*. Otherwise, it might cause 
+When split, there should not be any outstanding NCCL operations on the *comm*. Otherwise, it might cause 
 deadlock.
 
 
