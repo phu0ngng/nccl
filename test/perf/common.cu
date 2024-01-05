@@ -1399,6 +1399,7 @@ char* splitMaskEnv = NULL;
     }
 #ifdef MPI_SUPPORT
     MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD); // Ensure Bcast is complete for HCOLL
 #endif
   if (!parallel_init) {
     globalComms = (ncclComm_t*)malloc(sizeof(ncclComm_t) * nThreads * nGpus);
