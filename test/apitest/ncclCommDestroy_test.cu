@@ -6,7 +6,6 @@ class ncclCommDestroy_test : public ::testing::Test {
     int expectMask;
     void SetUp() {
         register_segv_handler();
-        ncclCommon_destroysrComms();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
         expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));

@@ -27,6 +27,10 @@ ncclComm_t* ncclCommon_getSocketsComms(int nGpus);
 // Persistent NCCL send/recv communicators
 ncclComm_t* ncclCommon_getsrComms(int* nGpus);
 void ncclCommon_destroysrComms();
+void ncclCommon_destroySplitComms();
+void ncclCommon_destroyComms();
+void ncclCommon_destroyIBComms();
+void ncclCommon_destroySocketComms();
 void register_segv_handler();
 
 void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_host, void*** recvbuffs_host, void*** sendbuffs_pinned, void*** recvbuffs_pinned, void*** sendbuffs_pinned_device, void*** recvbuffs_pinned_device, cudaStream_t** streams);
@@ -125,8 +129,23 @@ void ncclCommon_test<DT>::SetUpTestCase() {
         (void***)&recvbuffs_pinned_device,
         &streams);
 };
+
+static int commClean = -1;
+
 template <typename DT>
 void ncclCommon_test<DT>::TearDownTestCase() {
+    if (commClean == -1) {
+      char* str = getenv("NCCL_APITEST_COMM_CLEANUP");
+      commClean = str ? atoi(str) : 0;
+    }
+    if (commClean) {
+      ncclCommon_destroyComms();
+      ncclCommon_destroyIBComms();
+      ncclCommon_destroySocketComms();
+      ncclCommon_destroySplitComms();
+    }
+    // Always clean those up, we don't use them everywhere
+    ncclCommon_destroysrComms();
 };
 typedef ::testing::Types<char, int, half, float, double, long long,
                          unsigned long long>

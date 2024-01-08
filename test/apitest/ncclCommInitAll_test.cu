@@ -6,7 +6,6 @@ class ncclCommInitAll_test : public ::testing::Test {
     int nVis = 0;
     virtual void SetUp() {
         register_segv_handler();
-        ncclCommon_destroysrComms();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommInitAll)
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
         comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));

@@ -20,10 +20,20 @@ ncclComm_t* splitCommsArray = NULL;
 ncclComm_t* commsIBArray = NULL;
 ncclComm_t* commsSocketsArray = NULL;
 ncclComm_t* srCommsArray = NULL;
-bool srCommsInit = false;
 bool initialized = false;
 bool handleRegistered = false;
 bool segvLogPrinted = false;
+
+static void destroyComms(ncclComm_t** array) {
+  ncclComm_t* a = *array;
+  if (a != NULL) {
+    for (int i = 0; i < totalGpus; ++i) {
+      EXPECT_EQ(ncclSuccess, ncclCommDestroy(a[i]));
+    }
+    free(a);
+    *array = NULL;
+  }
+}
 
 ncclComm_t* ncclCommon_getSplitShareComms() {
   if (splitCommsArray == NULL) {
@@ -42,6 +52,8 @@ ncclComm_t* ncclCommon_getSplitShareComms() {
   }
   return splitCommsArray;
 }
+
+void ncclCommon_destroySplitComms() { destroyComms(&splitCommsArray); }
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -79,9 +91,11 @@ ncclComm_t* ncclCommon_getComms(int* nGpus) {
   return commsArray;
 }
 
+
+void ncclCommon_destroyComms() { destroyComms(&commsArray); }
+
 ncclComm_t* ncclCommon_getsrComms(int* nGpus) {
-  if (srCommsArray == NULL && !srCommsInit) {
-    srCommsInit = true;
+  if (srCommsArray == NULL) {
     EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&totalGpus));
     EXPECT_NE(nullptr, srCommsArray = (ncclComm_t*)calloc(sizeof(ncclComm_t), totalGpus));
     EXPECT_EQ(ncclSuccess, ncclCommInitAll(srCommsArray, totalGpus, NULL));
@@ -90,16 +104,7 @@ ncclComm_t* ncclCommon_getsrComms(int* nGpus) {
   return srCommsArray;
 }
 
-void ncclCommon_destroysrComms() {
-  if (srCommsArray != NULL) {
-    for (int i = 0; i < totalGpus; ++i) {
-      EXPECT_EQ(ncclSuccess, ncclCommDestroy(srCommsArray[i]));  
-    }
-    free(srCommsArray);
-    srCommsArray = NULL;
-  }
-  return;
-}
+void ncclCommon_destroysrComms() { destroyComms(&srCommsArray); }
 
 ncclComm_t* ncclCommon_getIBComms(int nGpus) {
   if (commsIBArray == NULL && !initialized) {
@@ -118,6 +123,8 @@ ncclComm_t* ncclCommon_getIBComms(int nGpus) {
   return commsIBArray;
 }
 
+void ncclCommon_destroyIBComms() { destroyComms(&commsIBArray); }
+
 ncclComm_t* ncclCommon_getSocketsComms(int nGpus) {
   if (commsSocketsArray == NULL) {
     EXPECT_NE(nullptr, commsSocketsArray = (ncclComm_t*)calloc(sizeof(ncclComm_t), nGpus));
@@ -128,6 +135,8 @@ ncclComm_t* ncclCommon_getSocketsComms(int nGpus) {
   (void) unsetenv("NCCL_NET");
   return commsSocketsArray;
 }
+
+void ncclCommon_destroySocketComms() { destroyComms(&commsSocketsArray); }
 
 void** sbuffs = NULL;
 void** rbuffs;

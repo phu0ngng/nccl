@@ -10,8 +10,13 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
     int expectMask;
 
     virtual void SetUp() {
+        // Some CTA tests use lots of memory. Clean up everything we can before we start
+        ncclCommon_destroyComms();
+        ncclCommon_destroyIBComms();
+        ncclCommon_destroySocketComms();
+        ncclCommon_destroySplitComms();
+
         register_segv_handler();
-        ncclCommon_destroysrComms();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
         expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);
         EXPECT_EQ(cudaSuccess, cudaGetDeviceCount(&ndev));
