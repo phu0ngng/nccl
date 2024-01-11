@@ -397,6 +397,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   int nRanks = comm->nRanks;
   struct ncclDevCommAndChannels tmpCommAndChans;
   struct ncclDevCommAndChannels *devCommAndChans = NULL;
+  struct ncclNvmlCCStatus ccStatus;
 
   NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->deviceStream), ret, fail);
   NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, comm->sharedRes->deviceStream.cudaStream), ret, fail);
@@ -413,12 +414,24 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   tmpCommAndChans.comm.p2pChunkSize = comm->p2pChunkSize;
   tmpCommAndChans.comm.channels = &devCommAndChans->channels[0];
 
-  comm->workFifoBytes = ncclParamWorkFifoBytes();
-  if (0 != (comm->workFifoBytes & (comm->workFifoBytes-1))) {
-    WARN("NCCL_WORK_FIFO_BYTES=%d is being ignored because it is not a power of 2.", comm->workFifoBytes);
-    comm->workFifoBytes = NCCL_WORK_FIFO_BYTES_DEFAULT;
+  NCCLCHECKGOTO(ncclNvmlGetCCStatus(&ccStatus), ret, fail);
+  if (ccStatus.CCEnabled) {
+    comm->workFifoBytes = 0;
+    if (ccStatus.multiGpuCCEnabled == false && comm->rank == 0) {
+      WARN("CC On, Multi-GPU CC Off (No inter-GPU communication protection)");
+    }
+  } else {
+    comm->workFifoBytes = ncclParamWorkFifoBytes();
+    if (0 != (comm->workFifoBytes & (comm->workFifoBytes-1))) {
+      WARN("NCCL_WORK_FIFO_BYTES=%d is being ignored because it is not a power of 2.", comm->workFifoBytes);
+      comm->workFifoBytes = NCCL_WORK_FIFO_BYTES_DEFAULT;
+    }
+    comm->workFifoBytes = std::min(comm->workFifoBytes, 1u<<30);
   }
-  comm->workFifoBytes = std::min(comm->workFifoBytes, 1u<<30);
+
+  if (comm->rank == 0) {
+    INFO(NCCL_INIT, "CC %s, Multi-GPU CC %s, workFifoBytes %d\n", ccStatus.CCEnabled ? "On" : "Off", ccStatus.multiGpuCCEnabled ? "On" : "Off", comm->workFifoBytes);
+  }
 
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable() == 1) {
     // The workFifoBuf lives in GDR mapped CUDA memory.
