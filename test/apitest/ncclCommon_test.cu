@@ -151,6 +151,7 @@ cudaStream_t* cuda_streams;
 static int maxsize = 4 * 1024 * 1024 * sizeof(uint64_t);
 
 void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_host, void*** recvbuffs_host, void*** sendbuffs_pinned, void*** recvbuffs_pinned, void*** sendbuffs_pinned_device, void*** recvbuffs_pinned_device, cudaStream_t** streams) {
+  static bool alloc_pinned_buf = true;
   if (sbuffs == NULL) {
     cuda_streams = (cudaStream_t*)calloc(totalGpus, sizeof(cudaStream_t));
     sbuffs = (void**)calloc(totalGpus, sizeof(void*));
@@ -171,27 +172,44 @@ void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_
         sbuffs_host[i] = calloc(1, maxsize);
         rbuffs_host[i] = calloc(1, maxsize);
         sbuffs_pinned[i] = calloc(1, maxsize);
-        ASSERT_EQ(cudaSuccess,
-                  cudaHostRegister(sbuffs_pinned[i], maxsize,
-                                   cudaHostRegisterDefault));
-        ASSERT_EQ(cudaSuccess, cudaHostGetDevicePointer(&sbuffs_pinned_device[i], 
-				   sbuffs_pinned[i], 0));
+        if (alloc_pinned_buf && cudaHostRegister(sbuffs_pinned[i], maxsize, cudaHostRegisterDefault) != cudaSuccess || cudaHostGetDevicePointer(&sbuffs_pinned_device[i], sbuffs_pinned[i], 0) != cudaSuccess) {
+          free(sbuffs_pinned[i]);
+          sbuffs_pinned[i] = NULL;
+          alloc_pinned_buf = false;
+        }
+
         rbuffs_pinned[i] = calloc(1, maxsize);
-        ASSERT_EQ(cudaSuccess,
-                  cudaHostRegister(rbuffs_pinned[i], maxsize,
-                                   cudaHostRegisterDefault));
-        ASSERT_EQ(cudaSuccess, cudaHostGetDevicePointer(&rbuffs_pinned_device[i], 
-				   rbuffs_pinned[i], 0));
+        if (alloc_pinned_buf && cudaHostRegister(rbuffs_pinned[i], maxsize, cudaHostRegisterDefault) != cudaSuccess || cudaHostGetDevicePointer(&rbuffs_pinned_device[i], rbuffs_pinned[i], 0) != cudaSuccess) {
+          free(rbuffs_pinned[i]);
+          rbuffs_pinned[i] = NULL;
+          alloc_pinned_buf = false;
+        }
     }
   }
   *sendbuffs = sbuffs;
   *recvbuffs = rbuffs;
   *sendbuffs_host = sbuffs_host;
   *recvbuffs_host = rbuffs_host;
-  *sendbuffs_pinned = sbuffs_pinned;
-  *recvbuffs_pinned = rbuffs_pinned;
-  *sendbuffs_pinned_device = sbuffs_pinned_device;
-  *recvbuffs_pinned_device = rbuffs_pinned_device;
+  if (alloc_pinned_buf) {
+    *sendbuffs_pinned = sbuffs_pinned;
+    *recvbuffs_pinned = rbuffs_pinned;
+    *sendbuffs_pinned_device = sbuffs_pinned_device;
+    *recvbuffs_pinned_device = rbuffs_pinned_device;
+  } else {
+    *sendbuffs_pinned = NULL;
+    *recvbuffs_pinned = NULL;
+    *sendbuffs_pinned_device = NULL;
+    *recvbuffs_pinned_device = NULL;
+    free(sbuffs_pinned);
+    free(rbuffs_pinned);
+    free(sbuffs_pinned_device);
+    free(rbuffs_pinned_device);
+    sbuffs_pinned = NULL;
+    rbuffs_pinned = NULL;
+    sbuffs_pinned_device = NULL;
+    rbuffs_pinned_device = NULL;
+  }
+  
   *streams = cuda_streams;
 }
 

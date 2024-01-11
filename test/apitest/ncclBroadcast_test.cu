@@ -35,19 +35,21 @@ TYPED_TEST(ncclBroadcast_test, host_mem) {
     }
 };
 TYPED_TEST(ncclBroadcast_test, pinned_mem) {
-    for (int root = 0; root < this->nVis; ++root) {
-        ASSERT_EQ(ncclSuccess, ncclGroupStart());
-        for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(ncclSuccess,
-                      ncclBroadcast(this->sendbuffs_pinned_device[i],
-                                    this->recvbuffs_pinned_device[i],
-                                    std::min(this->N, 1024 * 1024),
-                                    this->DataType(), root,
-                                    this->comms[i], this->streams[i]))
-                << "root: " << root << ", "
-                << "i" << i << ", " << std::endl;
+    if (this->sendbuffs_pinned_device && this->recvbuffs_pinned_device) {
+        for (int root = 0; root < this->nVis; ++root) {
+            ASSERT_EQ(ncclSuccess, ncclGroupStart());
+            for (int i = 0; i < this->nVis; ++i) {
+                ASSERT_EQ(ncclSuccess,
+                        ncclBroadcast(this->sendbuffs_pinned_device[i],
+                                        this->recvbuffs_pinned_device[i],
+                                        std::min(this->N, 1024 * 1024),
+                                        this->DataType(), root,
+                                        this->comms[i], this->streams[i]))
+                    << "root: " << root << ", "
+                    << "i" << i << ", " << std::endl;
+            }
+            ASSERT_EQ(ncclSuccess, ncclGroupEnd());
         }
-        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
 };
 TYPED_TEST(ncclBroadcast_test, stream_null) {
