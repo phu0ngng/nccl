@@ -22,7 +22,7 @@ ncclBroadcast
 
 .. c:function:: ncclResult_t  ncclBroadcast(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream)
  
- Copies ``count`` elements from ``sendbuff`` on the ``root` rank to all ranks' ``recvbuff``.
+ Copies ``count`` elements from ``sendbuff`` on the ``root`` rank to all ranks' ``recvbuff``.
  ``sendbuff`` is only used on rank ``root`` and ignored for other ranks.
  
  In-place operation will happen if ``sendbuff == recvbuff``.

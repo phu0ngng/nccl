@@ -17,7 +17,6 @@ class ncclCommFinalize_test : public ::testing::Test {
     int expectMask;
     virtual void SetUp() {
         register_segv_handler();
-        ncclCommon_destroysrComms();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
         iteration = 1;
         expectMask = (1 << ncclSuccess) | (1 << ncclInProgress);

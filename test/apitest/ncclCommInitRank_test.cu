@@ -8,7 +8,6 @@ class ncclCommInitRank_test : public ::testing::Test {
     int rank = 0;
     virtual void SetUp() {
         register_segv_handler();
-        ncclCommon_destroysrComms();
         (void) setenv("NCCL_CHECK_POINTERS", "1", 0); // API tests expect this behaviour (ncclCommInitRank)
         (void) setenv("NCCL_SET_THREAD_NAME", "1", 0); // Test that this doesn't break things
         comm = NCCL_COMM_NULL;

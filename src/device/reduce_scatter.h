@@ -203,7 +203,7 @@ struct RunWorkElement<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT,
           reduceCopy<ncclCollUnroll(), RedOp, T,
                      /*MultimemSrcs=*/0, 1+MinSrcs, 1+MaxSrcs,
                      /*MultimemDsts,MinDsts,MaxDsts=*/0,1,1,
-                     /*PreOpSrcs=*/(ReduceSendNotRecv ? 1 : 0)>
+                     /*PreOpSrcs=*/1>
             (tid, tn, args->redOpArg, &args->redOpArg, false,
              /*nSrcs=*/1+nSrcs, [=]__device__(int s) {
                return s==0 ? (T*)inbuf + userOneBeg
@@ -265,7 +265,7 @@ struct RunWorkElement<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT,
       // Phase 2: Reduce from peers + local input -> send to network
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/0, Proto, 0>
         prims(tid, tn, direct->heads+1, &direct->out, nullptr, nullptr,
-              /*redOpArg=*/0, 1*Proto::MaxGroupWidth, 1, 1);
+              args->redOpArg, 1*Proto::MaxGroupWidth, 1, 1);
       for (ssize_t railGridOffset=0; railGridOffset < nNodes*sizePerRank; railGridOffset += nChannels*chunkSize) {
         Scatterer</*ReduceSendNotRecv=*/false> scat;
         scat.args = args;
