@@ -42,8 +42,8 @@ static ncclResult_t ncclNet_v7_as_v8_getProperties(int dev, ncclNetProperties_v8
   props->maxComms = p7.maxComms;
   props->maxRecvs = p7.maxRecvs;
   props->latency = p7.latency;
-  props->netDeviceType = NCCL_NET_DEVICE_HOST;
-  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
+  props->netDeviceType = p7.netDeviceType;
+  props->netDeviceVersion = p7.netDeviceVersion;
   return ncclSuccess;
 }
 
@@ -70,8 +70,8 @@ static ncclResult_t ncclNet_v7_as_v8_init(ncclDebugLogger_t logfn) {
   ncclNet_v7_as_v8.closeSend = ncclNet_v7->closeSend;
   ncclNet_v7_as_v8.closeRecv = ncclNet_v7->closeRecv;
   ncclNet_v7_as_v8.closeListen = ncclNet_v7->closeListen;
-  ncclNet_v7_as_v8.getDeviceMr = NULL;
-  ncclNet_v7_as_v8.irecvConsumed = NULL;
+  ncclNet_v7_as_v8.getDeviceMr = ncclNet_v7->getDeviceMr;
+  ncclNet_v7_as_v8.irecvConsumed = ncclNet_v7->irecvConsumed;
   return ncclSuccess;
 }
 
