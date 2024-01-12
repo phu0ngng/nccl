@@ -1866,7 +1866,7 @@ static int collCmp(struct ncclInfo *a, struct ncclInfo *b) {
 static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
   ncclTasks *tasks = &comm->tasks;
 
-  if (info->count == 0) return ncclSuccess;
+  if (info->count == 0 && info->coll != ncclFuncSend && info->coll != ncclFuncRecv) return ncclSuccess;
   if (info->coll == ncclFuncSend || info->coll == ncclFuncRecv) {
     int peer = info->root;
     ssize_t nBytes = info->count*ncclTypeSize(info->datatype);
