@@ -330,8 +330,6 @@ struct ncclComm {
   /* sharable NVLS resource. */
   struct ncclNvlsSharedRes* nvlsResources;
 
-  ssize_t channelSize; // User requested work size (bytes) for channel partitions
-
   // pools backed by comm->memPermanent
   struct ncclMemoryPool memPool_ncclProxyOp;
   struct ncclMemoryPool memPool_ncclKernelPlan;
