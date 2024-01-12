@@ -1685,23 +1685,17 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             union ncclSocketAddress addr;
             ncclSocketGetAddr(r->sock, &addr);
             char localGidString[INET6_ADDRSTRLEN] = "";
-            char remoteGidString[INET6_ADDRSTRLEN*NCCL_IB_MAX_DEVS_PER_NIC] = "";
-            const char* localGidStr = NULL, *remoteGidStrTmp = NULL;
+            char remoteGidString[INET6_ADDRSTRLEN] = "";
+            const char* localGidStr = NULL, *remoteGidStr = NULL;
             if (r->devBases[i]->gidInfo.link_layer == IBV_LINK_LAYER_ETHERNET) {
               localGidStr = inet_ntop(AF_INET6, &r->devBases[i]->gidInfo.localGid, localGidString, sizeof(localGidString));
-
-              size_t offset = 0;
-              for (int j = 0; j < r->base->nRemDevs; j++) {
-                remoteGidStrTmp = inet_ntop(AF_INET6, &r->base->remDevs[j].remoteGid, remoteGidString, INET6_ADDRSTRLEN);
-                strncpy(remoteGidString + offset, remoteGidStrTmp, strlen(remoteGidStrTmp));
-                offset += strlen(remoteGidStrTmp);
-              }
+              remoteGidStr = inet_ntop(AF_INET6, &r->base->remDevs[i].remoteGid, remoteGidString, sizeof(remoteGidString));
             }
 
             char line[SOCKET_NAME_MAXLEN+1];
-            WARN("NET/IB : Got completion from peer %s with status=%d opcode=%d len=%d, vendor err %d (%s)%s%s%s%s",
+            WARN("NET/IB : Got completion from peer %s with status=%d opcode=%d len=%d vendor err %d (%s)%s%s%s%s",
                 ncclSocketToString(&addr, line), wc->status, wc->opcode, wc->byte_len, wc->vendor_err, reqTypeStr[r->type],
-                localGidStr ?  " localGid ":"", localGidString, remoteGidStrTmp ? " remoteGids ":"", remoteGidString);
+                localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString);
             return ncclRemoteError;
           }
 
