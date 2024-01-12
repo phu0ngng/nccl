@@ -1,0 +1,6 @@
+# Accessing and running on GCP A3 Slurm Instances
+1. Install the gcloud cli
+2. gcloud auth login
+3. gcloud compute ssh --zone "us-east4-a" "slurm0-controller" --tunnel-through-iap --project "nv-dgxclouddev-20231205"
+4. Select which container you'd like to run with, then edit and run ./import_container.sh
+5. Run ./run_nccl_tests.sh
