@@ -1122,10 +1122,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             NCCLCHECK(proxyState->ncclNet->isend(resources->netSendComm, buff, size, resources->tpRank, sub->mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p, size %d, proto %d, myRank %d, channelId %d", sub->transmitted, buffSlot, sub->requests[buffSlot], size, p, proxyState->tpRank, sub->channelId);
-              connFifo[buffSlot].size = -1;
               if (shared) connFifo[buffSlot].offset = -1;
-              // Make sure size is reset to -1 before we update the head.
-              __sync_synchronize();
               sub->transmitted += args->sliceSteps;
               for (uint64_t step=sub->transmitted-args->sliceSteps; step<sub->transmitted; step++) ncclProfilingRecord(args, s, step, ncclProxyProfileSendWait);
               args->idle = 0;
@@ -1152,7 +1149,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
               connFifo[sub->base%NCCL_STEPS].size = -1;
             }
           }
-          // Make sure size is reset to zero before we update the head.
+          // Make sure size is reset to -1 before we update the head.
           if (sub->reg == 0) connFifo[buffSlot].size = -1;
           __sync_synchronize();
           TRACE(NCCL_NET, "sendProxy [%ld/%d] request %p done", sub->done, buffSlot, sub->requests[buffSlot]);

@@ -591,7 +591,9 @@ private:
       // Make sure we wait until the proxy has sent data before we return.
       // We don't want the next CUDA kernel to overwrite the send buffer which
       // was accessed directly.
-      while (connFifo[step%NCCL_STEPS].size != -1);
+      uint64_t prevStep = step - StepPerSlice;
+      volatile ssize_t* ptr = &(connFifo[prevStep%NCCL_STEPS].size);
+      while (*ptr != -1);
     }
 
     if ((flags & (AnyNetDeviceUnpack)) && (flags & (RoleWaitRecv))) {
