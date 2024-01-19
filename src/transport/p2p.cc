@@ -340,8 +340,6 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   int tpProxyRank;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
-  send->conn.flags |= NCCL_SENDRECV_USE_LL;
-
   int useRead, intermediateRank;
   NCCLCHECK(p2pGetInfo(comm->topo, myInfo, peerInfo, &useRead, &intermediateRank));
   if (useMemcpy) useRead = 0;
@@ -409,7 +407,6 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   int tpProxyRank;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
-  recv->conn.flags |= NCCL_SENDRECV_USE_LL;
   int useRead, intermediateRank;
   NCCLCHECK(p2pGetInfo(comm->topo, myInfo, peerInfo, &useRead, &intermediateRank));
 

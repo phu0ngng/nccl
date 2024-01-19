@@ -83,7 +83,6 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_IPC_WRITE    0x08
 #define NCCL_IPC_READ     0x10
 #define NCCL_NVLS_MIN_POLL 0x20
-#define NCCL_SENDRECV_USE_LL 0x40
 
 struct ncclConnInfo {
   // Regular comm mechanism
@@ -93,6 +92,7 @@ struct ncclConnInfo {
   uint64_t *head;     // Local for send, remote for recv
 
   int flags;          // Direct communication / other flags
+  int shared;         // Buffers are shared
   void **ptrExchange; // Pointer exchange for direct communication
   uint64_t* redOpArgExchange; // PreOp scaler exchange for direct pull case
 
@@ -133,19 +133,14 @@ struct ncclRing {
 };
 
 
+// The root of each tree only has one node down (+1 intra-node).
+#define NCCL_MAX_TREE_ARITY_TOP 2
 // Nodes inside the binary tree can have to two nodes down (+1 intra-node).
 #define NCCL_MAX_TREE_ARITY 3
 struct ncclTree {
   int depth;
-  int up[2];
-  int down[2][NCCL_MAX_TREE_ARITY];
-  int downTree; // 0 or 1
-};
-
-struct ncclChain {
-  int depth;
   int up;
-  int down;
+  int down[NCCL_MAX_TREE_ARITY];
 };
 
 #define NCCL_MAX_DIRECT_ARITY 7
@@ -302,7 +297,7 @@ struct alignas(16) ncclDevChannel {
   struct ncclDevChannelPeer** peers;
   struct ncclRing ring;
   struct ncclTree tree;
-  struct ncclChain collnetChain;
+  struct ncclTree collnetChain;
   struct ncclDirect collnetDirect;
   struct ncclNvls nvls;
   uint32_t* workFifoDone; // Location of done counter, device writes index+1 of last work processed

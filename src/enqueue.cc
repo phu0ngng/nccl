@@ -526,7 +526,7 @@ static ncclResult_t addP2pToPlan(
   // 1 is connIndex
   struct ncclConnInfo* conn = isSendNotRecv ?
     &comm->channels[channelId].peers[peer]->send[1].conn : &comm->channels[channelId].peers[peer]->recv[1].conn;
-  info.protocol = ((conn->flags & NCCL_SENDRECV_USE_LL) && bytes <= ncclParamP2pLLThreshold()) ? NCCL_PROTO_LL : NCCL_PROTO_SIMPLE;
+  info.protocol = ((conn->buffs[NCCL_PROTO_LL] != nullptr) && bytes <= ncclParamP2pLLThreshold()) ? NCCL_PROTO_LL : NCCL_PROTO_SIMPLE;
 
   int reg = 0;
   if (info.protocol == NCCL_PROTO_SIMPLE) {
@@ -1547,10 +1547,10 @@ static ncclResult_t getChannnelThreadInfo(struct ncclInfo* collInfo) {
         ncSwitch /= 2;
       }
     } else if (collInfo->algorithm == NCCL_ALGO_NVLS || collInfo->algorithm == NCCL_ALGO_NVLS_TREE) {
+      // NVLS should not need more than 16 channels to get peak BW.
       nc = comm->nvlsChannels;
     } else {
-      // Make sure we use more than 16 channels only for large sizes as the overhead is significant
-      if (nc > 16 && collInfo->nBytes < nc * nt * threadThreshold * 64) nc = 16;
+      // Ring/Tree channel tuning
       while (collInfo->nBytes < nc * nt * threadThreshold) {
         if (nc >= 2) nc--;
         else break;
@@ -1572,9 +1572,10 @@ static ncclResult_t getChannnelThreadInfo(struct ncclInfo* collInfo) {
 
     if (collInfo->protocol == NCCL_PROTO_SIMPLE) {
       if (collInfo->algorithm == NCCL_ALGO_RING) nt += WARP_SIZE; // Extra warp for sync
+      // More threads or sync warps needed due to split thread model
+      if (collInfo->algorithm == NCCL_ALGO_TREE) nt += 4*WARP_SIZE;
     }
     nt = nt / WARP_SIZE < 3 ? 3 * WARP_SIZE : nt;
-    if (collInfo->algorithm == NCCL_ALGO_TREE) nt = NCCL_MAX_NTHREADS; // Tree now uses all threads always.
     collInfo->nThreads = nt;
   }
 
@@ -1686,16 +1687,7 @@ static ncclResult_t computeCollChunkInfo(struct ncclInfo* collInfo, size_t nByte
   if (collInfo->protocol == NCCL_PROTO_LL) chunkSize /= 2;
   if (collInfo->protocol == NCCL_PROTO_LL128) chunkSize = (chunkSize / NCCL_LL128_LINEELEMS) * NCCL_LL128_DATAELEMS;
 
-  if (collInfo->algorithm == NCCL_ALGO_TREE && collInfo->protocol == NCCL_PROTO_SIMPLE) {
-    // We have up to 3 peers to send or recv to per channel so we need to fit within the shared buffer
-    if (collInfo->comm->nNodes >= 4) chunkSize /= 4;
-    if (collInfo->pattern == ncclPatternTreeUpDown) {
-      // Optimize chunkSize / nSteps
-      while (nBytes / (nChannels * chunkSize) < collInfo->comm->channels[0].tree.depth * 8 && chunkSize > 131072) chunkSize /= 2;
-      while (nBytes / (nChannels * chunkSize) < collInfo->comm->channels[0].tree.depth * 4 && chunkSize > 65536) chunkSize /= 2;
-      while (nBytes / (nChannels * chunkSize) < collInfo->comm->channels[0].tree.depth && chunkSize > 32768) chunkSize /= 2;
-    }
-  } else if (collInfo->algorithm == NCCL_ALGO_COLLNET_DIRECT) {
+  if (collInfo->algorithm == NCCL_ALGO_COLLNET_DIRECT) {
     // Optimize chunkSize / nSteps
     while (nBytes / (nChannels * collInfo->comm->channels[0].collnetDirect.nHeads * chunkSize) < collInfo->comm->channels[0].collnetDirect.depth * 64 && chunkSize > 131072) chunkSize /= 2;
     while (nBytes / (nChannels * collInfo->comm->channels[0].collnetDirect.nHeads * chunkSize) < collInfo->comm->channels[0].collnetDirect.depth * 8 && chunkSize > 65536) chunkSize /= 2;
@@ -1718,17 +1710,17 @@ static ncclResult_t computeCollChunkInfo(struct ncclInfo* collInfo, size_t nByte
   } else if (collInfo->algorithm == NCCL_ALGO_NVLS_TREE) {
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = nChannels * collInfo->comm->channels[0].nvls.nHeads;
-    // We have up to 3 peers to send or recv to per channel so we need to fit within the shared buffer
-    if (collInfo->comm->nNodes >= 4) chunkSize /= 4;
+    if (collInfo->comm->nNodes >= 4) chunkSize = 65536;
     if ((nBytes < (32 * (concurrentOps * chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
     if ((nBytes < (16 * (concurrentOps * chunkSize))) && (chunkSize > 131072)) chunkSize = 131072;
     if ((nBytes < (4 * (concurrentOps * chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
     if ((nBytes < (1 * (concurrentOps * chunkSize))) && (chunkSize > 32768)) chunkSize = 32768;
-  } else if (collInfo->algorithm == NCCL_ALGO_TREE) {
-    if (collInfo->protocol == NCCL_PROTO_SIMPLE) chunkSize /= 2;
-    int baseChunkSize = chunkSize;
-    chunkSize /= 32;
-    while (nBytes / (nChannels * chunkSize) > collInfo->comm->channels[0].tree.depth / 2 && chunkSize < baseChunkSize) chunkSize *= 2;
+  } else if (collInfo->algorithm == NCCL_ALGO_TREE && collInfo->protocol == NCCL_PROTO_LL128) {
+    int nNodes = collInfo->comm->nNodes;
+    float ppn = collInfo->comm->nRanks / (float)nNodes;
+    float nstepsLL128 = 1+log2i(nNodes) + 0.1*ppn;
+    while (nBytes / (nChannels*chunkSize) < nstepsLL128*64/ppn && chunkSize > 131072) chunkSize /= 2;
+    while (nBytes / (nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
   }
 
   collInfo->chunkSize = chunkSize;

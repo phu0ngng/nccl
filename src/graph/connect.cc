@@ -23,10 +23,10 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->ring.prev = channel->ring.next = -1;
-    channel->tree.up[0] = channel->tree.up[1] = -1;
+    channel->tree.up = -1;
     channel->collnetChain.up = -1;
-    for (int t=0; t<2; t++) for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->tree.down[t][i] = -1;
-    channel->collnetChain.down = -1;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->tree.down[i] = -1;
+    for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) channel->collnetChain.down[i] = -1;
     channel->collnetDirect.out = -1;
     channel->collnetDirect.headRank = -1;
     channel->collnetDirect.nHeads = 0;
@@ -54,18 +54,19 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
         topoRanks->treeToParent[c] = treeIntra[parentIndex];
         topoRanks->treeToChild0[c] = treeIntra[child0Index];
         topoRanks->treeToChild1[c] = treeIntra[child1Index];
-        channel->tree.up[0] = channel->tree.up[1] = i == 0 ? -1 : treeIntra[i-1];
-        channel->tree.down[0][0] = channel->tree.down[1][0] = i == localRanks-1 ? -1 : treeIntra[i+1];
+        channel->tree.up         = i == 0 ? -1 : treeIntra[i-1];
+        channel->tree.down[0]    = i == localRanks-1 ? -1 : treeIntra[i+1];
       }
       if (collNetIntra[i] == rank) {
-        channel->collnetChain.up   = i == 0 ? comm->nRanks : collNetIntra[i-1];
-        channel->collnetChain.down = i == localRanks-1 ? -1 : collNetIntra[i+1];
+        channel->collnetChain.up      = i == 0 ? comm->nRanks : collNetIntra[i-1];
+        channel->collnetChain.down[0] = i == localRanks-1 ? -1 : collNetIntra[i+1];
       }
     }
-    // Duplicate collnet info, struct copies
-    (channel+nChannels)->collnetChain = channel->collnetChain;
-    (channel+nChannels)->collnetDirect = channel->collnetDirect;
   }
+  // Duplicate channels trees
+  struct ncclChannel* channel0 = comm->channels;
+  struct ncclChannel* channel1 = channel0+nChannels;
+  memcpy(channel1, channel0, nChannels*sizeof(struct ncclChannel));
 
   // Get nvls heads and the number of heads. Duplicate head is not allowed.
   for (int c = 0; c < graphs[NCCL_ALGO_NVLS]->nChannels; ++c) {
@@ -111,15 +112,21 @@ static ncclResult_t getIndexes(int* ranks, int* indexes, int nNodes) {
  return ncclSuccess;
 }
 
-static ncclResult_t setTreeDown(int* down, int* indexes, int d) {
+static ncclResult_t setTreeUp(struct ncclTree* tree, int* indexes, int u) {
+  if (u == -1) return ncclSuccess;
+  tree->up = indexes[u];
+  return ncclSuccess;
+}
+
+static ncclResult_t setTreeDown(struct ncclTree* tree, int* indexes, int d) {
   if (d == -1) return ncclSuccess;
   int x = 0;
-  while (x < NCCL_MAX_TREE_ARITY && down[x] >= 0) x++;
+  while (x < NCCL_MAX_TREE_ARITY && tree->down[x] >= 0) x++;
   if (x == NCCL_MAX_TREE_ARITY) {
-    WARN("Internal error : tree already has %d children (%d %d %d)", x, down[0], down[1], down[2]);
+    WARN("Internal error : tree already has %d children (%d %d %d)", x, tree->down[0], tree->down[1], tree->down[2]);
     return ncclInternalError;
   }
-  down[x] = indexes[d];
+  tree->down[x] = indexes[d];
   return ncclSuccess;
 }
 
@@ -133,46 +140,31 @@ static ncclResult_t connectTrees(struct ncclComm* comm, int* treeToParent, int* 
   int t0u, t0d0, t0d1, t0ChildType, t1u, t1d0, t1d1, t1ChildType;
   int* ttp, *ttc0, *ttc1;
   NCCLCHECK(ncclGetDtree(nNodes, node, &t0u, &t0d0, &t0d1, &t0ChildType, &t1u, &t1d0, &t1d1, &t1ChildType));
-  int downTree = -1;
-  if (t0d0 != -1 || t0d1 != -1) {
-    downTree = 0;
-  }
-  if (t1d0 != -1 || t1d1 != -1) {
-    if (downTree == 0) {
-      WARN("Internal error: rank %d/%d has ranks down on both trees: T0 %d/%d T1 %d/%d",
-          comm->rank, comm->nRanks, t0d0, t0d1, t1d0, t1d1);
-      return ncclInternalError;
-    }
-    downTree = 1;
-  }
-
   for (int c=0; c<nChannels; c++) {
-     struct ncclChannel* channel = comm->channels+c;
-     channel->tree.downTree = downTree;
+     struct ncclChannel* channel0 = comm->channels+c;
+     struct ncclChannel* channel1 = channel0+nChannels;
      ttp = treeToParent+c*comm->nNodes;
      ttc0 = treeToChild0+c*comm->nNodes;
      ttc1 = treeToChild1+c*comm->nNodes;
      if (comm->rank == ttp[node]) {
-       if (t0u != -1) channel->tree.up[0] = t0ChildType == 0 ? ttc0[t0u] : ttc1[t0u];
-       if (t1u != -1) channel->tree.up[1] = t1ChildType == 0 ? ttc0[t1u] : ttc1[t1u];
+       NCCLCHECK(setTreeUp(&channel0->tree, t0ChildType == 0 ? ttc0 : ttc1, t0u));
+       NCCLCHECK(setTreeUp(&channel1->tree, t1ChildType == 0 ? ttc0 : ttc1, t1u));
      }
      if (comm->rank == ttc0[node]) {
-       NCCLCHECK(setTreeDown(channel->tree.down[0], ttp, t0d0));
-       NCCLCHECK(setTreeDown(channel->tree.down[1], ttp, t1d0));
+       NCCLCHECK(setTreeDown(&channel0->tree, ttp, t0d0));
+       NCCLCHECK(setTreeDown(&channel1->tree, ttp, t1d0));
      }
      if (comm->rank == ttc1[node]) {
-       NCCLCHECK(setTreeDown(channel->tree.down[0], ttp, t0d1));
-       NCCLCHECK(setTreeDown(channel->tree.down[1], ttp, t1d1));
+       NCCLCHECK(setTreeDown(&channel0->tree, ttp, t0d1));
+       NCCLCHECK(setTreeDown(&channel1->tree, ttp, t1d1));
      }
      if (comm->rank == ttp[node] ||
          comm->rank == ttc0[node] ||
          comm->rank == ttc1[node]) {
-       INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d | %d -> %d -> %d/%d/%d", c,
-         channel->tree.up[0], comm->rank, channel->tree.down[0][0], channel->tree.down[0][1], channel->tree.down[0][2],
-         channel->tree.up[1], comm->rank, channel->tree.down[1][0], channel->tree.down[1][1], channel->tree.down[1][2]);
+       INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d", c,           channel0->tree.up, comm->rank, channel0->tree.down[0], channel0->tree.down[1], channel0->tree.down[2]);
+       INFO(NCCL_GRAPH, "Tree %d : %d -> %d -> %d/%d/%d", c+nChannels, channel1->tree.up, comm->rank, channel1->tree.down[0], channel1->tree.down[1], channel1->tree.down[2]);
      }
-     channel->tree.depth = depth;
-     (channel+nChannels)->tree = channel->tree; // duplicate channel; struct copy
+     channel0->tree.depth = channel1->tree.depth = depth;
   }
   return ncclSuccess;
 }
@@ -460,9 +452,9 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
     NCCLCHECK(connectCollNet(comm, collNetGraph));
   }
 
-  // Use 3 compute channels per search channel to reach 48 GB/s per search channel
-  if (comm->minCompCap == 90 && comm->nNodes > 1 && graphs[NCCL_ALGO_RING]->bwIntra > 45.0 && 3*nChannels/2 <= MAXCHANNELS) {
-     nChannels = comm->nChannels = copyChannels(comm, nChannels, 3*nChannels/2, ringPrev, ringNext);
+  // Use 4 compute channels per search channel to reach peak BW on <8 PPN
+  if (comm->minCompCap == 90 && comm->nNodes > 1 && graphs[NCCL_ALGO_RING]->bwIntra > 45.0 && 2*nChannels <= MAXCHANNELS) {
+     nChannels = comm->nChannels = copyChannels(comm, nChannels, 2*nChannels, ringPrev, ringNext);
   }
 
   // Honor NCCL_MIN_NRINGS/NCCL_MAX_NRINGS.

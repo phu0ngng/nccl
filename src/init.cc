@@ -760,9 +760,9 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
 
   line[0] = '\0';
   for (int c = 0; c < comm->nChannels; c++) {
-    struct ncclChain* chain = &comm->channels[c].collnetChain;
+    struct ncclTree* chain = &comm->channels[c].collnetChain;
     snprintf(line + strlen(line), 1023 - strlen(line), " [%d] %d->%d->%d",
-      c, chain->down, rank, chain->up);
+      c, chain->down[0], rank, chain->up);
   }
   line[1023] = '\0';
 
@@ -770,12 +770,12 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
   // Connect Collnet + chain
   for (int c = 0; c < comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels + c;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->collnetChain.up, 1, &channel->collnetChain.down, 0), ret, fail);
+    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->collnetChain.up, 1, channel->collnetChain.down, 0), ret, fail);
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, collNetGraph, 0), ret, fail);
   for (int c = 0; c < comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels + c;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->collnetChain.down, 1, &channel->collnetChain.up, 1), ret, fail);
+    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, channel->collnetChain.down, 1, &channel->collnetChain.up, 1), ret, fail);
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, collNetGraph, 1), ret, fail);
   INFO(NCCL_INIT, "Connected collnet + chain");
@@ -846,7 +846,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   struct allGatherInfo {
     struct graphInfo graphInfo[NCCL_NUM_ALGORITHMS];
     struct ncclTopoRanks topoRanks;
-    int nvlsChannels;
   };
 
   int nChannelsOrig;
@@ -1050,9 +1049,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     allGather3Data[rank].graphInfo[a].typeIntra = graphs[a]->typeIntra;
     allGather3Data[rank].graphInfo[a].typeInter = graphs[a]->typeInter;
   }
-  // The NVLS graph nChannels is the number of heads, not the number of NVLS channels.
-  // Make sure we have a consistent number of NVLS channels between all ranks.
-  allGather3Data[rank].nvlsChannels = comm->nvlsChannels;
 
   comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
@@ -1126,9 +1122,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       graphs[a]->typeInter = std::max(allGather3Data[i].graphInfo[a].typeInter, graphs[a]->typeInter);
     }
     if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->collNetSupport = 0;
-    comm->nvlsChannels = std::min(allGather3Data[i].nvlsChannels, comm->nvlsChannels);
+    if (graphs[NCCL_ALGO_NVLS]->nChannels == 0) comm->nvlsSupport = 0;
   }
-  if (comm->nvlsChannels == 0) comm->nvlsSupport = 0;
 
   comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   if (comm->nChannels < nChannelsOrig) {
@@ -1164,9 +1159,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclTree* tree = &comm->channels[c].tree;
     snprintf(line+strlen(line), 1023-strlen(line), " [%d] %d/%d/%d->%d->%d",
-        c, tree->down[0][0], tree->down[0][1], tree->down[0][2], rank, tree->up[0]);
-    snprintf(line+strlen(line), 1023-strlen(line), " %d/%d/%d->%d->%d",
-        tree->down[1][0], tree->down[1][1], tree->down[1][2], rank, tree->up[1]);
+        c, tree->down[0], tree->down[1], tree->down[2], rank, tree->up);
     INFO(NCCL_GRAPH, "Ring %02d : %d -> %d -> %d", c, comm->channels[c].ring.prev, comm->rank, comm->channels[c].ring.next);
   }
   line[1023] = '\0';
@@ -1216,17 +1209,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   for (int c=0; c<comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     if (comm->nRanks == 1) continue;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_TREE_ARITY, channel->tree.down[0], 1, &channel->tree.up[0], 0), ret, fail);
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->tree.up[0], NCCL_MAX_TREE_ARITY, channel->tree.down[0], 0), ret, fail);
+    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up, 0), ret, fail);
+    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down, 0), ret, fail);
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, 0), ret, fail);
-  for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    if (comm->nRanks == 1) continue;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_TREE_ARITY, channel->tree.down[1], 1, &channel->tree.up[1], 1), ret, fail);
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->tree.up[1], NCCL_MAX_TREE_ARITY, channel->tree.down[1], 1), ret, fail);
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, 1), ret, fail);
   INFO(NCCL_INIT, "Connected all trees");
 
   // Setup NVLS
@@ -1323,7 +1309,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Connect to local net proxy
   tpProxyRank = comm->topParentRanks[comm->rank];
   NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
-  NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, NULL, 0, NULL, 0), ret, fail);
+  NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
 
   // Then to remote ones when using PXN
   if (ncclPxnDisable(comm) == 0) {
@@ -1332,7 +1318,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     for (int r=0; r<nranks; r++) {
       tpProxyRank = comm->topParentRanks[pxnPeers[r]];
       NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
-      NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, NULL, 0, NULL, 0), ret, fail);
+      NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
     }
   }
 

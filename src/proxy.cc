@@ -550,21 +550,17 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
   case ncclPatternTreeUpDown: {
       if (op->pattern != ncclPatternTreeDown) { // Tree up
         struct ncclTree* tree = &channel->tree;
-        for (int t=0; t<2; t++) {
-          for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
-            NCCLCHECK(SaveProxy(comm, channel, proxyRecv, tree->down[t][i], op, t, justInquire));
-          }
-          NCCLCHECK(SaveProxy(comm, channel, proxySend, tree->up[t], op, t, justInquire));
+        for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
+          NCCLCHECK(SaveProxy(comm, channel, proxyRecv, tree->down[i], op, 0, justInquire));
         }
+        NCCLCHECK(SaveProxy(comm, channel, proxySend, tree->up, op, 0, justInquire));
       }
       if (op->pattern != ncclPatternTreeUp) { // Tree down
         struct ncclTree* tree = &channel->tree;
-        for (int t=0; t<2; t++) {
-          for (int i=0; i<NCCL_MAX_TREE_ARITY; i++) {
-            NCCLCHECK(SaveProxy(comm, channel, proxySend, tree->down[t][i], op, t, justInquire));
-          }
-          NCCLCHECK(SaveProxy(comm, channel, proxyRecv, tree->up[t], op, t, justInquire));
+        for (int i=0; i< NCCL_MAX_TREE_ARITY; i++) {
+          NCCLCHECK(SaveProxy(comm, channel, proxySend, tree->down[i], op, 0, justInquire));
         }
+        NCCLCHECK(SaveProxy(comm, channel, proxyRecv, tree->up, op, 0, justInquire));
       }
     } break;
   case ncclPatternCollnetChain: {
@@ -1361,8 +1357,9 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
     TRACE(NCCL_PROXY, "proxyProgressAsync::proxyConnect() opId=%p op.reqBuff=%p", op->opId, op->reqBuff);
     res = op->connection->tcomm->proxyConnect(op->connection, proxyState, op->reqBuff, op->reqSize, op->respBuff, op->respSize, &done);
   } else if (op->type == ncclProxyMsgSharedInit) {
-    TRACE(NCCL_PROXY, "proxyProgressAsync::ncclProxyMsgSharedInit opId=%p", op->opId);
-    if (op->connection->tcomm->proxySharedInit) res = op->connection->tcomm->proxySharedInit(op->connection, proxyState);
+    int nChannels = (int) *op->reqBuff;
+    TRACE(NCCL_PROXY, "proxyProgressAsync::ncclProxyMsgSharedInit opId=%p op.reqBuff=%p nChannels=%d", op->opId, op->reqBuff, nChannels);
+    if (op->connection->tcomm->proxySharedInit) res = op->connection->tcomm->proxySharedInit(op->connection, proxyState, nChannels);
     __atomic_store_n(&op->connection->state, connSharedInitialized, __ATOMIC_RELEASE);
   }
   else if (op->type == ncclProxyMsgInit) {
@@ -1683,9 +1680,9 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     proxyState->tpLocalnRanks = comm->localRanks;
     proxyState->cudaDev = comm->cudaDev;
     proxyState->abortFlag = comm->abortFlag;
-    proxyState->nChannels = std::max(std::max(comm->nChannels, comm->p2pnChannels), comm->nvlsChannels);
-    proxyState->sharedBuffer.slotSize = comm->p2pChunkSize;
-    proxyState->sharedBuffer.nslots = comm->buffSizes[NCCL_PROTO_SIMPLE] / comm->p2pChunkSize;
+    proxyState->p2pnChannels = comm->p2pnChannels;
+    proxyState->p2pChunkSize = comm->p2pChunkSize;
+    proxyState->nChannels = comm->nChannels;
     proxyState->allocP2pNetLLBuffers = comm->allocP2pNetLLBuffers;
     proxyState->dmaBufSupport = comm->dmaBufSupport;
     proxyState->ncclNet = comm->ncclNet;
