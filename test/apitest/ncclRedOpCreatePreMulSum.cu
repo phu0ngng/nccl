@@ -23,6 +23,7 @@ TEST_F(ncclRedOpCreatePreMulSum_test, everything) {
   std::unique_ptr<float*[]> buf(new float*[ndev]);
   float hostScalar;
 
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i=0; i < ndev; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     ASSERT_EQ(cudaSuccess, cudaMalloc(&buf[i], 4*sizeof(float)));
@@ -43,6 +44,7 @@ TEST_F(ncclRedOpCreatePreMulSum_test, everything) {
     ASSERT_EQ(ncclSuccess, ncclAllReduce(buf[i]+0, buf[i]+2, 1, ncclFloat, devOp[i], comms[i], streams[i]));
     ASSERT_EQ(ncclSuccess, ncclAllReduce(buf[i]+0, buf[i]+3, 1, ncclFloat, hostOp[i], comms[i], streams[i]));
   }
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
   for (int i=0; i < ndev; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
