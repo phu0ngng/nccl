@@ -1848,9 +1848,9 @@ static int collCmp(struct ncclInfo *a, struct ncclInfo *b) {
     return 1;
   else if (a->coll == b->coll && a->datatype > b->datatype)
     return 1;
-  else if (a->coll == b->coll && a->datatype == b->datatype && a->op > b->op)
+  else if (a->coll == b->coll && a->datatype == b->datatype && a->opFull.op > b->opFull.op)
     return 1;
-  else if (a->coll == b->coll && a->datatype == b->datatype && a->op == b->op && a->count > b->count)
+  else if (a->coll == b->coll && a->datatype == b->datatype && a->opFull.op == b->opFull.op && a->count > b->count)
     return 1;
   else
     return -1;
