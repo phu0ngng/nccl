@@ -1056,7 +1056,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       // Post buffers to the GPU
       if (sub->posted < sub->nsteps && sub->posted < sub->done + maxDepth) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
-        if (p == NCCL_PROTO_SIMPLE && resources->shared) {
+        if (resources->shared) {
           if (!sub->reg) {
             int sharedBuffSlot = sub->posted%maxDepth;
             int offset;
