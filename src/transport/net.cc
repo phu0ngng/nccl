@@ -515,10 +515,11 @@ static ncclResult_t sharedNetBuffersInit(struct ncclProxyState* proxyState, int 
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int channel, int slot, int* offset) {
+static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int channel, int slot, int* offset, int* size) {
   // Use different pools for different channels and also separate send/recv.
   int globalSlot = (channel*NCCL_SHARED_STEPS)+slot;
   *offset = proxyState->p2pChunkSize * globalSlot;
+  if (size) *size = proxyState->p2pChunkSize;
   return ncclSuccess;
 }
 
@@ -1055,15 +1056,18 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       // Post buffers to the GPU
       if (sub->posted < sub->nsteps && sub->posted < sub->done + maxDepth) {
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
-        if (p == NCCL_PROTO_SIMPLE && resources->shared && !sub->reg) {
-          int sharedBuffSlot = sub->posted%maxDepth;
-          int offset;
-          NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset));
-          resources->recvMem->connFifo[buffSlot].offset = offset;
-          __sync_synchronize();
+        if (p == NCCL_PROTO_SIMPLE && resources->shared) {
+          if (!sub->reg) {
+            int sharedBuffSlot = sub->posted%maxDepth;
+            int offset;
+            NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset, NULL));
+            resources->recvMem->connFifo[buffSlot].offset = offset;
+            __sync_synchronize();
+          }
           volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
           sub->posted += args->sliceSteps;
-          *sendHead = sub->base + sub->posted - NCCL_STEPS;
+          // Only post one credit for registered buffer
+          if (sub->reg == 0 || sub->posted == args->sliceSteps) *sendHead = sub->base + sub->posted - NCCL_STEPS;
           if (resources->gdcSync) wc_store_fence(); // Flush out WC write
         } else sub->posted += args->sliceSteps;
         for (uint64_t step=sub->posted-args->sliceSteps; step<sub->posted; step++) {
@@ -1248,10 +1252,9 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
             } else {
               int sharedBuffSlot = sub->posted%maxDepth;
               int offset;
-              NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s+i, &offset));
+              NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s+i, &offset, sizes+subCount));
               connFifo[buffSlot].offset = offset;
               ptrs[subCount] = localBuff+offset;
-              sizes[subCount] = stepSize*args->sliceSteps;
             }
           } else {
             ptrs[subCount] = localBuff+buffSlot*stepSize;
