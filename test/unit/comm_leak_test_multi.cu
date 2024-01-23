@@ -1,5 +1,7 @@
 // Multi process/node reproducer for https://nvbugs/3363300
 
+// comm_leak_test_multi <reps> <num gpus> <warmup> <abort> <mem usage>
+
 #include <nccl.h>
 #include <mpi.h>
 
@@ -75,24 +77,27 @@ int main(int argc, char** argv)
     MPI_Comm_size(lcomm, &local_size);
     MPI_Comm_free(&lcomm);
 
-    int num_gpus = 1, phys_num_gpus = 0;
+    int num_gpus = 1, phys_num_gpus = 0, num_gpus_per_node = 0;
     size_t reps = 3;
     size_t warmup = 2;
     int abort = 0;
+    int use = 0;
 
     if (argc > 1) reps = atoi(argv[1]);
     if (argc > 2) num_gpus = atoi(argv[2]);
     if (argc > 3) warmup = atoi(argv[3]);
     if (argc > 4) abort = atoi(argv[4]);
+    if (argc > 5) use = atoi(argv[5]);
 
     CUDA_TRY(cudaGetDeviceCount(&phys_num_gpus));
 
-    if (num_gpus == 0) num_gpus = phys_num_gpus;
+    if (num_gpus <= 0) num_gpus = phys_num_gpus;
     assert(num_gpus <= phys_num_gpus);
     assert(local_size*num_gpus <= phys_num_gpus);
+    num_gpus_per_node = local_size * num_gpus;
 
-    if (comm_rank == 0) printf("Starting test on %d ranks (local %d) gpus %d reps %zi warmup %zi abort %d\n",
-                               comm_size, local_size, num_gpus, reps, warmup, abort);
+    if (comm_rank == 0) printf("Starting test on %d ranks (nodes %d local %d) gpus %d reps %zi warmup %zi abort %d use %d\n",
+                               comm_size, comm_size/local_size, local_size, num_gpus, reps, warmup, abort, use);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -156,8 +161,10 @@ int main(int argc, char** argv)
         NCCL_TRY(ncclCommInitRank(&nccl_comm[g], comm_size*num_gpus, nccl_unique_id, (comm_rank*num_gpus)+g));
       }
       NCCL_TRY(ncclGroupEnd());
-      for (int g = 0; g < num_gpus; g++) {
-        NCCL_TRY(abort ? ncclCommAbort(nccl_comm[g]) :ncclCommDestroy(nccl_comm[g]));
+      if (use == 0) {
+        for (int g = 0; g < num_gpus; g++) {
+          NCCL_TRY(abort ? ncclCommAbort(nccl_comm[g]) :ncclCommDestroy(nccl_comm[g]));
+        }
       }
     }
 
@@ -180,20 +187,30 @@ int main(int argc, char** argv)
 
     MPI_TRY(MPI_Allreduce(MPI_IN_PLACE, &leaked, sizeof(leaked), MPI_LONG, MPI_SUM, MPI_COMM_WORLD));
 
+    leaked /= comm_size;
+
+    if (use) {
+      if (comm_rank == 0) printf("GPU Memory used %zi bytes (%zi MiB) CUDA memory per NODE %zi MiB per GPU\n", leaked*num_gpus_per_node, (leaked*num_gpus_per_node)/(reps*1024*1024), leaked/(reps*1024*1024));
+      MPI_TRY(MPI_Finalize());
+      exit (EXIT_SUCCESS);
+    }
+
     // Only report leaks of > 1 CUDA page
     if (leaked > (2*1024*1024)) {
-      printf("ERROR: rank %d leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", comm_rank, leaked, leaked/(1024*1024), reps, num_gpus);
-      exit(EXIT_FAILURE);
+      if (comm_rank == 0) printf("ERROR: leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked*num_gpus_per_node, (leaked*num_gpus_per_node)/(1024*1024), reps, comm_size);
+      MPI_TRY(MPI_Finalize());
+      exit (EXIT_FAILURE);
     }
 
     int endOpenFds = count_open_fds();
     if ((endOpenFds-startOpenFds) > 0) {
-      printf("ERROR: leaked %d open fds over %zi iterations on %d gpus\n", endOpenFds-startOpenFds, reps, num_gpus);
-      exit(EXIT_FAILURE);
+      printf("ERROR: rank %d leaked %d open fds over %zi iterations on %d gpus\n", comm_rank, endOpenFds-startOpenFds, reps, num_gpus_per_node);
+      MPI_TRY(MPI_Finalize());
+      exit (EXIT_FAILURE);
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
     MPI_TRY(MPI_Finalize());
-    cudaDeviceReset();
 
     if (comm_rank == 0) printf("SUCCESS: Completed test on %d ranks of %zi iterations on %d gpus per node - no CUDA memory leaks detected\n", comm_size, reps, local_size*num_gpus);
     exit (EXIT_SUCCESS);
