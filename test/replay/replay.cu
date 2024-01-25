@@ -25,6 +25,7 @@
 #include <vector>
 #include <future>
 
+#include <sys/syscall.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sched.h>
@@ -62,7 +63,7 @@ std::string getCurrentTimestamp(std::chrono::high_resolution_clock::time_point& 
   std::time_t tt;
   tt = std::chrono::system_clock::to_time_t(tp);
   auto timeinfo = localtime (&tt);
-  strftime (buffer,80,"%H:%M:%S",timeinfo);
+  strftime (buffer, 80,"%H:%M:%S",timeinfo);
   sprintf(buffer, "%s:%03d",buffer,(int)millis);
   return std::string(buffer);
 }
@@ -80,6 +81,7 @@ bool opt_disable_check_failure = false;
 bool opt_check_only = false;
 bool opt_measure_performance = false;
 bool opt_dump_raw_perf_data = false;
+bool opt_verbose_stats = false;
 
 // map physical host to list of mpi ranks it owns
 std::unique_ptr<std::vector<int>[]> phost_ranks;
@@ -89,12 +91,18 @@ std::promise<void> signal_exit;
 std::atomic<size_t> global_ops_submitted{0};
 std::atomic<size_t> global_ops_completed{0};
 
-// Flag signalling end of preCheck phase, beginning of data phase
+// Flags signalling end of preCheck phase, beginning of data phase
+std::promise<void> signal_parsing;
 std::promise<void> signal_precheck;
+
+// Flag signalling end of preCheck progressLogging, beginning of data phase
+std::promise<void> signal_precheck_logging;
+
 std::atomic<size_t> parsedLineNumber{0};
 std::atomic<size_t> parsedLinesSkipped{0};
 std::atomic<size_t> precheckedDataOps{0};
 std::atomic<size_t> failedPrecheckDataOps{0};
+
 
 std::thread progress_thread;
 
@@ -319,6 +327,20 @@ T& SharedTable<T>::emplace(uint64_t key, Arg ...arg) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+struct VHostState {
+  int phost = -1;
+  int vpids = 0;
+  std::string vhost_name;
+  std::unordered_map<int, int> vpid_to_rank;
+
+  // Store a sequence number of accesses to a device on a host
+  // This is relevant if 2 communicators use the same device
+  std::unordered_map<int, int> dev_seq_map;
+  std::unordered_map<uint64_t, int> vcomm_to_dev;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 struct CudaException: public std::runtime_error {
   static std::string Message(char const *file, int line, char const *expr, cudaError_t error) {
     char m[1024];
@@ -524,6 +546,12 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
       uintptr_t free_lo = arena_lo;
       size_t allocated_arena_size_pre = objs.back().hi - arena_lo;
 
+      // Re-alloc the same memory for perf
+      if (opt_measure_performance) {
+        uintptr_t lo = free_lo + (align_like - free_lo)%16;
+        return reinterpret_cast<void*>(lo);
+      }
+
       uintptr_t free_hi;
       for(auto o = objs.begin(); o != objs.end(); ++o) {
         free_hi = o->lo;
@@ -548,6 +576,7 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
       uintptr_t lo = free_lo + (align_like - free_lo)%16;
       if(lo + size <= free_hi) {
         objs.push_back({lo, lo+size});
+
         size_t allocated_arena_size_post = objs.back().hi - arena_lo;
 
         if (opt_verbose)
@@ -567,7 +596,11 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
     CUDA_CHECK(cudaSetDevice(device));
     CUDA_CHECK(cudaMemGetInfo(&dev->free_memory, &dev->total_memory));
 
-    size_t arena_size = (size + 16 + (256<<20)-1) & -size_t(256<<20);
+    // Allocate +1G size arenas for performance mode, +256MB size arena for standard.
+    // We won't experience much, if any fragmentation for perf mode as all ops try to target the same
+    int arena_shift = opt_measure_performance ? 22 : 20;
+
+    size_t arena_size = (size + 16 + (256<<arena_shift)-1) & -size_t(256<<arena_shift);
 
     if (opt_verbose)
     {
@@ -604,8 +637,12 @@ void* CudaHelp::allocate(int device, size_t size, uintptr_t align_like, uint32_t
         }
 
         std::terminate();
-      } else {
+      } else if (!opt_measure_performance) {
         dev->dealloc_cvar.wait(locked);
+      } else {
+        std::fprintf(stderr, "[%u] ERROR2 - Insufficient GPU Memory. Arena fragmentation makes this impossible to alloc. id=%u Attempting to alloc arena_size=0x%lx, dev->free_memory=0x%lx dev->total_memory=0x%lx buffer_size=0x%lx num_arenas=%zu, total_allocated_arena_capacity=0x%lx, wasted_arena_capacity=0x%lx. Make sure there aren't any replay zombie processes (nvidia-smi). Make sure that the trace is being played back on a system with equivalent GPU memory.\n",
+          getpid(), op_id, arena_size, dev->free_memory, dev->total_memory, size, dev->arenas.size(), total_allocated_arena_capacity, wasted_arena_capacity);
+        exit(-1);
       }
     } else {
       // Attempt to cudaMalloc for this new arena
@@ -1141,10 +1178,14 @@ std::string callCodeToString(CallCode code) {
 }
 
 // Progress thread
-void progressThread(std::future<void> exit_future, std::future<void> precheck_future) {
-  // Precheck phase
-  while (precheck_future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
-    fprintf(stderr, "[%u] rank 0 preCheck progress: [%lu parsed lines / %lu lines skipped / %lu calls pre-checked / %lu prechecks failed]\n",
+void progressThread(std::future<void> exit_future, std::future<void> parsing_future, std::future<void> precheck_future) {
+  if (opt_verbose) {
+    fprintf(stderr, "[%u] progressThread tid=%ld\n", getpid(), syscall(__NR_gettid));
+  }
+
+  // Parsing phase
+  while (parsing_future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+    fprintf(stderr, "[%u] rank 0 parsing progress: [%lu parsed lines / %lu lines skipped / %lu calls pre-checked / %lu prechecks failed]\n",
       getpid(), parsedLineNumber.load(), parsedLinesSkipped.load(), precheckedDataOps.load(), failedPrecheckDataOps.load());
 
       // Respect the exit signal in this loop as well
@@ -1152,8 +1193,20 @@ void progressThread(std::future<void> exit_future, std::future<void> precheck_fu
         break;
   }
 
-  fprintf(stderr, "[%u] rank 0 preCheck complete: [%lu parsed lines / %lu lines skipped / %lu calls pre-checked / %lu prechecks failed]\n",
-      getpid(), parsedLineNumber.load(), parsedLinesSkipped.load(), precheckedDataOps.load(), failedPrecheckDataOps.load());
+  fprintf(stderr, "[%u] rank 0 parsing complete: [%lu parsed lines / %lu lines skipped]\n",
+    getpid(),parsedLineNumber.load(), parsedLinesSkipped.load());
+
+  signal_precheck_logging.set_value();
+
+  // Precheck phase
+  while (precheck_future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+      // Respect the exit signal in this loop as well
+      if (exit_future.wait_for(std::chrono::microseconds(1)) != std::future_status::timeout)
+        break;
+  }
+
+  fprintf(stderr, "[%u] rank 0 precheck complete: [%lu calls pre-checked / %lu prechecks failed]\n",
+    getpid(), precheckedDataOps.load(), failedPrecheckDataOps.load());
 
   // Data phase
   // progressThreadTimes is an expanding/shrinking list of progressThread time points for measuring busBW
@@ -1308,7 +1361,7 @@ void invokeCall(CallHeader const &hdr, CallGetUniqueId const &body) {
   NCCL_CHECK(ncclGetUniqueId(&uid));
   main_mailbox.post([=]() {
     if (opt_verbose) {
-      fprintf(stderr, "[%u] CallGetUniqueId trace_line_number=%lu vunique=0x%lx\n",
+      fprintf(stderr, "[%u] CallGetUniqueId line_number=%lu vunique=0x%lx\n",
         getpid(), hdr.line_number, body.vunique);
     }
 
@@ -1325,7 +1378,7 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
         uid = vuid_table[body.vunique];
 
         if (opt_verbose) {
-          fprintf(stderr, "[%u] CallCommInitRank found UniqueId vunique=0x%lx trace_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+          fprintf(stderr, "[%u] CallCommInitRank found UniqueId vunique=0x%lx line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
             getpid(), body.vunique, hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
         }
 
@@ -1333,7 +1386,7 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
       }
 
       if (opt_verbose) {
-        fprintf(stderr, "[%u] CallCommInitRank waiting for UniqueId trace_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+        fprintf(stderr, "[%u] CallCommInitRank waiting for UniqueId line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
           getpid(), hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
       }
 
@@ -1344,7 +1397,7 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
   uint32_t my_op_id = ++op_id;
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u CallCommInitRank trace_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+    fprintf(stderr, "[%u] id=%u CallCommInitRank line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
       getpid(), my_op_id, hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
   }
 
@@ -1354,7 +1407,7 @@ void invokeCall(CallHeader const &hdr, CallCommInitRank const &body) {
 
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u CallCommInitRank completed trace_line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
+    fprintf(stderr, "[%u] id=%u CallCommInitRank completed line_number=%lu comm_rank_n=%u comm_rank_me=%u vcomm=0x%lx\n",
       getpid(), my_op_id, hdr.line_number, body.comm_rank_n, body.comm_rank_me, body.vcomm);
   }
 
@@ -1465,7 +1518,7 @@ void invokeCall(CallHeader const &hdr, CallCommSplit const &body) {
   uint32_t my_op_id = ++op_id;
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u CallCommSplit trace_line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
+    fprintf(stderr, "[%u] id=%u CallCommSplit line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
       getpid(), my_op_id, hdr.line_number, body.vcomm_src, body.vcomm_new, body.color, body.key, body.comm_rank_n, body.comm_rank_me);
   }
 
@@ -1473,11 +1526,13 @@ void invokeCall(CallHeader const &hdr, CallCommSplit const &body) {
   VirtualComm *vc_src = &vcomm_table[body.vcomm_src];
   /* Config is NULL for now*/
   CUDA_CHECK(cudaSetDevice(vc_src->device));
+  #if NCCL_VERSION_CODE >= NCCL_VERSION(2,18,1)
   NCCL_CHECK(ncclCommSplit(vc_src->comm, body.color, body.key, &(vc_new->comm), NULL));
+  #endif
 
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u CallCommSplit completed trace_line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
+    fprintf(stderr, "[%u] id=%u CallCommSplit completed line_number=%lu vcomm_src=0x%lx vcomm_new=0x%lx color=%d key=%d comm_rank_n=%u comm_rank_me=%u \n",
       getpid(), my_op_id, hdr.line_number, body.vcomm_src, body.vcomm_new, body.color, body.key, body.comm_rank_n, body.comm_rank_me);
   }
 
@@ -1501,13 +1556,17 @@ void invokeCall(CallHeader const &hdr, CallCommSplit const &body) {
 
 void invokeCall(CallHeader const &hdr, CallNcclGroupStart const &body) {
   if (opt_verbose) fprintf(stderr, "[%u] Waiting to unlock groupStart for mpi_rank_me=%d group_seq=%d\n", getpid(), mpi_rank_me, body.group_seq);
+
   std::unique_lock<std::mutex> vc_locked = rank_group_seq_table[mpi_rank_me].lock(body.group_seq);
+
   wrap_ncclGroupStart(hdr.line_number);
 }
 
 void invokeCall(CallHeader const &hdr, CallNcclGroupEnd const &body) {
   if (opt_verbose) fprintf(stderr, "[%u] Waiting to unlock groupEnd for mpi_rank_me=%d group_seq=%d\n", getpid(), mpi_rank_me, body.group_seq);
+  
   std::unique_lock<std::mutex> vc_locked = rank_group_seq_table[mpi_rank_me].lock(body.group_seq);
+  
   wrap_ncclGroupEnd(hdr.line_number);
 }
 
@@ -1570,7 +1629,7 @@ void invokeCall(CallHeader const &hdr, CallRedOpCreatePreMulSum const &body) {
   uint32_t my_op_id = ++op_id;
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u invokeCall: Posted ncclRedOpCreatePreMulSum. ops_in_flight=%u trace_line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
+    fprintf(stderr, "[%u] id=%u invokeCall: Posted ncclRedOpCreatePreMulSum. ops_in_flight=%u line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
       getpid(), my_op_id, vc->nccl_ops_in_flight.load(std::memory_order_relaxed), hdr.line_number, body.vcomm, body.vcomm_seq);
   }
 }
@@ -1586,7 +1645,7 @@ void invokeCall(CallHeader const &hdr, CallRedOpDestroy const &body) {
   uint32_t my_op_id = ++op_id;
   if (opt_verbose)
   {
-    fprintf(stdout, "[%u] id=%u invokeCall: Posted ncclRedOpDestroy. ops_in_flight=%u trace_line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
+    fprintf(stdout, "[%u] id=%u invokeCall: Posted ncclRedOpDestroy. ops_in_flight=%u line_number=%lu vcomm=0x%lx vcomm_seq=%d\n",
       getpid(), my_op_id, vc->nccl_ops_in_flight.load(std::memory_order_relaxed), hdr.line_number, body.vcomm, body.vcomm_seq);
   }
 }
@@ -1642,11 +1701,13 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     sptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.sptr, my_op_id);
     dptr = CudaHelp::allocate(device, rank_n*body.elt_n*elt_sz, body.dptr, my_op_id);
 
-    ncclVerifiablePrepareInput(
-     sptr, body.elt_n, body.elt_ty, red_op, /*rank_n=*/1, /*rank_me=*/0,
-     seed, /*elt_ix0=*/ rank_me*body.elt_n, stream_prepare
-    );
-    CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    if (!opt_measure_performance) {
+      ncclVerifiablePrepareInput(
+      sptr, body.elt_n, body.elt_ty, red_op, /*rank_n=*/1, /*rank_me=*/0,
+      seed, /*elt_ix0=*/ rank_me*body.elt_n, stream_prepare
+      );
+      CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    }
     NCCL_CHECK(ncclAllGather(sptr, dptr, body.elt_n, (ncclDataType_t)body.elt_ty, vc->comm, stream_nccl));
     verify_elt_ix0 = 0;
     verify_elt_n = body.elt_n * rank_n;
@@ -1659,8 +1720,10 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     sptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.sptr, my_op_id);
     dptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.dptr, my_op_id);
 
-    ncclVerifiablePrepareInput(sptr, body.elt_n, body.elt_ty, red_op, rank_n, rank_me, seed, /*elt_ix0=*/0, stream_prepare);
-    CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    if (!opt_measure_performance) {
+      ncclVerifiablePrepareInput(sptr, body.elt_n, body.elt_ty, red_op, rank_n, rank_me, seed, /*elt_ix0=*/0, stream_prepare);
+      CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    }
     NCCL_CHECK(ncclAllReduce(sptr, dptr, body.elt_n, (ncclDataType_t)body.elt_ty, red_op, vc->comm, stream_nccl));
     verify_elt_ix0 = 0;
     verify_elt_n = body.elt_n;
@@ -1670,9 +1733,11 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     call_name = "Broadcast";
     seed = hashOf(vc->vunique, vc->coll_seq++);
     if(rank_me == body.root) {
-      sptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.sptr, my_op_id);
-      ncclVerifiablePrepareInput(sptr, body.elt_n, body.elt_ty, red_op, /*rank_n=*/1, /*rank_me=*/0, seed, /*elt_ix0=*/0, stream_prepare);
-      CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+      if (!opt_measure_performance) {
+        sptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.sptr, my_op_id);
+        ncclVerifiablePrepareInput(sptr, body.elt_n, body.elt_ty, red_op, /*rank_n=*/1, /*rank_me=*/0, seed, /*elt_ix0=*/0, stream_prepare);
+        CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+      }
     }
 
     dptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.dptr, my_op_id);
@@ -1689,8 +1754,10 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     sptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.sptr, my_op_id);
     dptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.dptr, my_op_id);
 
-    ncclVerifiablePrepareInput(sptr, body.elt_n, body.elt_ty, red_op, rank_n, rank_me, seed, /*elt_ix=*/0, stream_prepare);
-    CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    if (!opt_measure_performance) {
+      ncclVerifiablePrepareInput(sptr, body.elt_n, body.elt_ty, red_op, rank_n, rank_me, seed, /*elt_ix=*/0, stream_prepare);
+      CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    }
     NCCL_CHECK(ncclReduce(sptr, dptr, body.elt_n, (ncclDataType_t)body.elt_ty, red_op, body.root, vc->comm, stream_nccl));
     verify_elt_ix0 = 0;
     verify_elt_n = rank_me == body.root ? body.elt_n : 0;
@@ -1703,8 +1770,10 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     sptr = CudaHelp::allocate(device, rank_n*body.elt_n*elt_sz, body.sptr, my_op_id);
     dptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.dptr, my_op_id);
 
-    ncclVerifiablePrepareInput(sptr, rank_n*body.elt_n, body.elt_ty, red_op, rank_n, rank_me, seed, /*elt_ix0=*/0, stream_prepare);
-    CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    if (!opt_measure_performance) {
+      ncclVerifiablePrepareInput(sptr, rank_n*body.elt_n, body.elt_ty, red_op, rank_n, rank_me, seed, /*elt_ix0=*/0, stream_prepare);
+      CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    }
     NCCL_CHECK(ncclReduceScatter(
       sptr,
       dptr,
@@ -1725,11 +1794,13 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
     sptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.sptr, my_op_id);
 
-    ncclVerifiablePrepareInput(
-     sptr, body.elt_n, body.elt_ty, red_op, /*rank_n=*/1, /*rank_me=*/0,
-     seed, /*elt_ix0=*/vc->p2p_send_seqs[body.root], stream_prepare
-    );
-    CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    if (!opt_measure_performance) {
+      ncclVerifiablePrepareInput(
+      sptr, body.elt_n, body.elt_ty, red_op, /*rank_n=*/1, /*rank_me=*/0,
+      seed, /*elt_ix0=*/vc->p2p_send_seqs[body.root], stream_prepare
+      );
+      CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    }
     NCCL_CHECK(ncclSend(
       sptr,
       body.elt_n,
@@ -1758,7 +1829,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
   if (opt_verbose)
   {
-    fprintf(stderr, "[%u] id=%u fifo_idx=%u invokeCall: Posted nccl%s. device=%d ops_in_flight=%u trace_line_number=%lu vcomm=0x%lx vcomm_seq=%d verify_elt_ix0=%lu\n",
+    fprintf(stderr, "[%u] id=%u fifo_idx=%u invokeCall: Posted nccl%s. device=%d ops_in_flight=%u line_number=%lu vcomm=0x%lx vcomm_seq=%d verify_elt_ix0=%lu\n",
       getpid(), my_op_id, fifo_idx, call_name, device, vc->nccl_ops_in_flight.load(std::memory_order_relaxed), hdr.line_number, body.vcomm, body.vcomm_seq, verify_elt_ix0);
   }
 
@@ -1809,18 +1880,19 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
           getpid(), call_name, my_op_id, fifo_idx, my_ops->load(std::memory_order_relaxed), (intptr_t) sptr, (intptr_t) dptr);
       }
 
-      if(sptr != nullptr) {
+      if(sptr != nullptr && !opt_measure_performance) {
         CudaHelp::deallocate(device, sptr, my_op_id);
 
-          if (opt_verbose)
-          {
-            fprintf(stderr, "[%u] nccl%s after_ncclGroup 3 id=%u fifo_idx=%u. deallocated sptr\n",
-              getpid(), call_name, my_op_id, fifo_idx);
-          }
+        if (opt_verbose)
+        {
+          fprintf(stderr, "[%u] nccl%s after_ncclGroup 3 id=%u fifo_idx=%u. deallocated sptr\n",
+            getpid(), call_name, my_op_id, fifo_idx);
         }
+      }
     });
 
-    if(dptr != nullptr) {
+    // If there's a dptr and we're not doing a perf measurement
+    if (dptr != nullptr && !opt_measure_performance) {
       cudaStream_t stream_verify = CudaHelp::pickAnonStream(device);
 
       if (opt_verbose)
@@ -1855,7 +1927,6 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
           );
           failure.store(1);
         }
-
         CudaHelp::deallocate(device, dptr, my_op_id);
 
         if (opt_verbose)
@@ -2102,6 +2173,13 @@ struct CallCodeSize {
      && (elt_ty == rhs.elt_ty);
   }
 
+  bool operator < (const CallCodeSize& rhs) const
+  {
+     return (code < rhs.code)
+     && (elt_n < rhs.elt_n)
+     && (elt_ty < rhs.elt_ty);
+  }
+
   CallCode code;
   int64_t elt_n;
   ncclDataType_t elt_ty;
@@ -2131,20 +2209,41 @@ typedef std::unordered_map<int, CollStatsMap> RankCollStatsMap;
 // Key = rank, value = SizeStatsMap
 typedef std::unordered_map<int, SizeStatsMap> RankSizeStatsMap;
 
+struct P2pOpInfo {
+  CallHeader hdr;
+  CallDataOp op;
+  int        prank;
+};
+
 //
 // Types needed for pre-checking the trace
 //
 typedef std::vector<std::pair<CallHeader, CallDataOp>> DataOpsVector;
 struct GlobalCommMap {
   uint64_t vunique;
-  // Map of data ops by rank
+  // Map of collectives by rank
   std::unordered_map<uint32_t, DataOpsVector> data_ops_map;
+  // Map of p2p ops by rank
+  std::vector<P2pOpInfo> p2p_ops_list;
   // Map of custom redops by rank
   std::unordered_map<uint32_t, std::unordered_set<uint64_t>> vredops;
+  // Map of data ops by rank
+  std::unordered_map<uint32_t, uint32_t> prank_to_vrank_map;
+};
+
+struct CommHostInfo {
+  uint64_t vcomm;
+  char vhost_name[512];
+  int vpid;
+  int vtid;
+  int device;
+  int rank_me;
 };
 
 void terminatePrecheck() {
   fprintf(stderr, "Precheck for trace file failed. If you want to try running it anyways, run using -d flag ()\n");
+  signal_precheck.set_value();
+  signal_exit.set_value();
   exit(EPERM);
 }
 
@@ -2173,7 +2272,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
     std::vector<DataOpsVector::iterator> data_ops_it_vector;
     auto it = globalMap->data_ops_map.begin();
     size_t collective_count = it->second.size();
-    uint32_t first_rank = it->first;
+    uint32_t first_rank = globalMap->prank_to_vrank_map[it->first];
 
     // If there are 0 collectives, don't go through with any of this
     if (collective_count == 0) {
@@ -2198,7 +2297,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
     // Terminate we've exhausted our baseline rank
     it = globalMap->data_ops_map.begin();
     size_t op_counter = 0;
-    bool failed_op_check;
+    bool failed_op_check = false;
 
     std::vector<uint32_t> log_ranks(data_ops_it_vector.size());
     while (data_ops_it_vector[0] != it->second.end()) {
@@ -2211,14 +2310,12 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
       CallDataOp& op = baselineDataOp.second;
 
       // Flag to print out all participants in a mismatched collective
-      failed_op_check = false;
-
       for (size_t i = 1; i < data_ops_it_vector.size(); i++)
       {
         // If we haven't run off the edge (we don't expect to)
         if (data_ops_it_vector[i] != it->second.end()) {
           std::pair<CallHeader, CallDataOp> comparisonDataOp = *data_ops_it_vector[i];
-          uint32_t temp_rank = it->first;
+          uint32_t temp_rank = globalMap->prank_to_vrank_map[it->first];
           log_ranks[i] = temp_rank;
           ++data_ops_it_vector[i];
           ++it;
@@ -2254,9 +2351,12 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
             // Print collective calls before this failing point
             if (!failed_op_check) {
               failed_op_check = true;
-              fprintf(stderr, "TRACE PREPROCESSING ERROR - Mismatch. Baseline (Arbitrary):\n");
-              fprintf(stderr, "  nccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
-                  coll_name.c_str(), first_rank, hdr.line_number, op_counter, op.elt_n, op.elt_ty, op.red_op, op.root, (uint32_t) hdr.code);
+
+              if (fieldsMismatched) {
+                fprintf(stderr, "TRACE PREPROCESSING ERROR - Mismatch. Baseline (Arbitrary):\n");
+              }
+              fprintf(stderr, "  nccl%s. rank=%u line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u\n",
+                  coll_name.c_str(), first_rank, hdr.line_number, op_counter, op.elt_n, op.elt_ty, op.red_op, op.root);
 
               fprintf(stderr, "Other:\n");
               // Working backwards, print out the already seen collectives
@@ -2269,8 +2369,8 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
                 std::string log_coll_name = callCodeToString(log_hdr.code);
 
                 // These ops should have all passed the checks
-                fprintf(stderr, "    nccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
-                      log_coll_name.c_str(), log_rank, log_hdr.line_number, op_counter, log_op.elt_n, log_op.elt_ty, log_op.red_op, log_op.root, (uint32_t) log_hdr.code);
+                fprintf(stderr, "    nccl%s. rank=%u line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u\n",
+                      log_coll_name.c_str(), log_rank, log_hdr.line_number, op_counter, log_op.elt_n, log_op.elt_ty, log_op.red_op, log_op.root);
               }
 
               // Move the iterators back to where they currently should be
@@ -2285,8 +2385,8 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
             else 
               snprintf(buffer, 5, "    ");
 
-            fprintf(stderr, "%snccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
-                buffer, temp_coll_name.c_str(), temp_rank, temp_hdr.line_number, op_counter, temp_op.elt_n, temp_op.elt_ty, temp_op.red_op, temp_op.root, (uint32_t) temp_hdr.code);
+            fprintf(stderr, "%snccl%s. rank=%u line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u\n",
+                buffer, temp_coll_name.c_str(), temp_rank, temp_hdr.line_number, op_counter, temp_op.elt_n, temp_op.elt_ty, temp_op.red_op, temp_op.root);
 
             failedPrecheckDataOps.fetch_add(1);
           }
@@ -2296,8 +2396,8 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
           if (!failed_op_check) {
             failed_op_check = true;
             fprintf(stderr, "TRACE PREPROCESSING ERROR - Missing collectives. Baseline (Arbitrary):\n");
-            fprintf(stderr, "  nccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
-                coll_name.c_str(), first_rank, hdr.line_number, op_counter, op.elt_n, op.elt_ty, op.red_op, op.root, (uint32_t) hdr.code);
+            fprintf(stderr, "  nccl%s. rank=%u line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u\n",
+                coll_name.c_str(), first_rank, hdr.line_number, op_counter, op.elt_n, op.elt_ty, op.red_op, op.root);
 
             fprintf(stderr, "Other:\n");
             // Working backwards, print out the already seen collectives
@@ -2310,7 +2410,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
               std::string log_coll_name = callCodeToString(log_hdr.code);
 
               // These ops should have all passed the checks
-              fprintf(stderr, "    nccl%s. rank=%u trace_line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
+              fprintf(stderr, "    nccl%s. rank=%u line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u code=%u\n",
                     log_coll_name.c_str(), log_rank, log_hdr.line_number, op_counter, log_op.elt_n, log_op.elt_ty, log_op.red_op, log_op.root, (uint32_t) log_hdr.code);
             }
 
@@ -2336,15 +2436,115 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
       // Reset this iterator to check running over bounds
       it = globalMap->data_ops_map.begin();
       op_counter++;
-
     }
 
     ++globalMapIt;
   }
 }
 
-void printStats(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuniqueToGlobalMap, size_t nhosts) {
+bool compareHostListEntry(const CommHostInfo &a, const CommHostInfo &b)
+{
+  int nameDiff = strncmp(a.vhost_name, b.vhost_name, 512);
+  if (nameDiff == 0) {
+    return a.rank_me < b.rank_me;
+  } else {
+    return nameDiff < 0;
+  }
+}
+
+bool comparedCollStats(const std::pair<CallCodeSize, size_t> &a, const std::pair<CallCodeSize, size_t> &b)
+{
+  if (a.second != b.second) {
+    return a.second > b.second;
+  } else {
+    return a.first.elt_n > b.first.elt_n;
+  }
+}
+
+bool compareSizeEntry(const std::pair<size_t, size_t> &a, const std::pair<size_t, size_t> &b)
+{
+  return a.first > b.first;
+}
+
+
+void printCollStatsMap(
+  size_t totalCollectiveCalls,
+  size_t rankZeroCollectives,
+  RankCollStatsMap& rankCollMap,
+  RankSizeStatsMap& rankSizeMap,
+  size_t nhosts,
+  std::vector<CommHostInfo>& hostList,
+  bool isGlobal) {
+
+  // Overall
+  if (isGlobal) {
+    printf("nhosts=%zu ncalls=%zu raw_ncalls=%zu\n",
+      nhosts, rankZeroCollectives, totalCollectiveCalls);
+  } else {
+    size_t nranks = rankCollMap.size() - 1;
+    printf("nranks=%zu nhosts=%zu ncalls=%zu raw_ncalls=%zu\n",
+      nranks, nhosts, rankZeroCollectives, totalCollectiveCalls);
+  }
+
+  // 1. Print out which hosts and devices are used
+  std::sort(hostList.begin(), hostList.end(), compareHostListEntry);
+  for (int i = 0; i < hostList.size(); i++) {
+    // Overall
+    printf("  host %-20s rank %-5d device %-2d pid=%-7u tid=%-7d vcomm 0x%lx\n",
+      hostList[i].vhost_name, hostList[i].rank_me, hostList[i].device, hostList[i].vpid, hostList[i].vtid, hostList[i].vcomm);
+  }
+
+  // Rank -1 (Overall)
+  typedef std::unordered_map<CallCodeSize, size_t> CollStatsMap;
+
+  // Build list and sort it for nice presentation
+  std::vector<std::pair<CallCodeSize, size_t>> sortedCollStatsList;
+  auto it = rankCollMap[0].begin();
+  while (it != rankCollMap[0].end()) {
+    sortedCollStatsList.push_back({it->first, it->second});
+    it++;
+  }
+  std::sort(sortedCollStatsList.begin(), sortedCollStatsList.end(), comparedCollStats);
+
+  printf("Calls\n");
+  auto callCodeSizeIt = sortedCollStatsList.begin();
+  while (callCodeSizeIt != sortedCollStatsList.end()) {
+    std::string coll_name = callCodeToString(callCodeSizeIt->first.code);
+    printf("  nccl%s pct=%-5.2f%% count=%-5zu bytes_n=%-11zu elt_n=%-11ld elt_ty=%-20s (%d)\n",
+      coll_name.c_str(), (float) callCodeSizeIt->second*100.0f/rankZeroCollectives, callCodeSizeIt->second,
+      callCodeSizeIt->first.elt_n * ncclDataTypeToSizeBytes(callCodeSizeIt->first.elt_ty),
+      callCodeSizeIt->first.elt_n, ncclDataTypeToString(callCodeSizeIt->first.elt_ty).c_str(),
+      callCodeSizeIt->first.elt_ty);
+    callCodeSizeIt++;
+  }
+  std::vector<std::pair<size_t, size_t>> sortedSizeList;
+  auto it2 = rankSizeMap[0].begin();
+  while (it2 != rankSizeMap[0].end()) {
+    sortedSizeList.push_back({it2->first, it2->second});
+    it2++;
+  }
+  std::sort(sortedSizeList.begin(), sortedSizeList.end(), compareSizeEntry);
+
+  printf("Sizes\n");
+  auto sizeIt = sortedSizeList.begin();
+  while (sizeIt != sortedSizeList.end()) {
+    printf("  bytes_n=%-11zu pct=%-5.2f%% count=%zu\n",
+      sizeIt->first, (float) sizeIt->second*100.0f/rankZeroCollectives, sizeIt->second);
+    sizeIt++;
+  }
+
+  printf("\n");
+  // TODO - Print all colls or do something interesting
+}
+
+void printStats(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuniqueToGlobalMap, std::unordered_map<uint64_t, std::vector<CommHostInfo>>& vuniqueToHostListMap,
+std::unordered_map<uint64_t, std::unordered_set<uint64_t>>& vuniqueToHostHashMap, size_t nhosts) {
   // 1. For each vunique (vcomm group in the original trace)
+  RankCollStatsMap globalRankCollMap;
+  RankSizeStatsMap globalRankSizeMap;
+  size_t totalGlobalCollectiveCalls = 0;
+  size_t globalRankZeroCollectiveCalls = 0;
+
   auto globalMapIt = vuniqueToGlobalMap.begin();
   while (globalMapIt != vuniqueToGlobalMap.end()) {
     std::shared_ptr<GlobalCommMap> globalMap = globalMapIt->second;
@@ -2369,17 +2569,29 @@ void printStats(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vu
         // Increase this callCodeSize count by 1
         rankCollMap[rank][callCodeSize]++;
 
-        // Increase rank -1 by 1 (my global counter)
+        // Increase rank -1 by 1 (this uniqueId's global counter)
         rankCollMap[-1][callCodeSize]++;
+
+        // Increase global counter by 1
+        globalRankCollMap[-1][callCodeSize]++;
 
         // Give an overview of collectives by size as well
         size_t bytes_n = callCodeSize.elt_n * ncclDataTypeToSizeBytes(callCodeSize.elt_ty);
+
+        // Increase rank -1 by 1 (this uniqueId's global counter)
         rankSizeMap[-1][bytes_n]++;
         rankSizeMap[rank][bytes_n]++;
 
+        // Increase global counter by 1
+        globalRankSizeMap[-1][bytes_n]++;
+
         totalCollectiveCalls++;
+        totalGlobalCollectiveCalls++;
 
         if (rank == 0) {
+          globalRankCollMap[0][callCodeSize]++;
+          globalRankSizeMap[0][bytes_n]++;
+          globalRankZeroCollectiveCalls++;
           rankZeroCollectives++;
         }
 
@@ -2389,52 +2601,58 @@ void printStats(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vu
       ++it;
     }
 
-    printf("Trace call stats for virtual UniqueId=0x%lx\n", globalMapIt->first);
-    // Overall
-    printf("Overall - Total number of Number of data op calls=%zu Number of ranks=%zu Number of hosts=%zu\n",
-      totalCollectiveCalls, rankCollMap.size() - 1, nhosts);
+    // Get stats for p2p ops
+    auto p2pIt = globalMap->p2p_ops_list.begin();
+    while (p2pIt != globalMap->p2p_ops_list.end()) {
+      CallHeader& hdr = p2pIt->hdr;
+      CallDataOp& op = p2pIt->op;
+      int rank      = p2pIt->prank;
 
-    // Rank -1 (Overall)
-    typedef std::unordered_map<CallCodeSize, size_t> CollStatsMap;
-    auto callCodeSizeIt = rankCollMap[-1].begin();
-    while (callCodeSizeIt != rankCollMap[-1].end()) {
-      std::string coll_name = callCodeToString(callCodeSizeIt->first.code);
-      printf("  nccl%s elt_n=%ld elt_ty=%s (%d) bytes_n=%zu count=%zu pct=%2.2f%%\n",
-        coll_name.c_str(), callCodeSizeIt->first.elt_n, ncclDataTypeToString(callCodeSizeIt->first.elt_ty).c_str(),
-        callCodeSizeIt->first.elt_ty, callCodeSizeIt->first.elt_n * ncclDataTypeToSizeBytes(callCodeSizeIt->first.elt_ty),
-        callCodeSizeIt->second, (float) callCodeSizeIt->second*100.0f/totalCollectiveCalls);
-      callCodeSizeIt++;
-    }
-    printf("Sizes\n");
-    auto sizeIt = rankSizeMap[-1].begin();
-    while (sizeIt != rankSizeMap[-1].end()) {
-      printf("  bytes_n=%zu count=%zu pct=%2.2f%%\n",
-        sizeIt->first, sizeIt->second, (float) sizeIt->second*100.0f/totalCollectiveCalls);
-      sizeIt++;
+        CallCodeSize callCodeSize;
+        callCodeSize.code   = hdr.code;
+        callCodeSize.elt_n  = op.elt_n;
+        callCodeSize.elt_ty = op.elt_ty;
+
+        // Increase this callCodeSize count by 1
+        rankCollMap[rank][callCodeSize]++;
+
+        // Increase rank -1 by 1 (this uniqueId's global counter)
+        rankCollMap[-1][callCodeSize]++;
+
+        // Increase global counter by 1
+        globalRankCollMap[-1][callCodeSize]++;
+
+        // Give an overview of collectives by size as well
+        size_t bytes_n = callCodeSize.elt_n * ncclDataTypeToSizeBytes(callCodeSize.elt_ty);
+
+        // Increase rank -1 by 1 (this uniqueId's global counter)
+        rankSizeMap[-1][bytes_n]++;
+        rankSizeMap[rank][bytes_n]++;
+
+        // Increase global counter by 1
+        globalRankSizeMap[-1][bytes_n]++;
+
+        totalCollectiveCalls++;
+        totalGlobalCollectiveCalls++;
+
+        if (rank == 0) {
+          globalRankCollMap[0][callCodeSize]++;
+          globalRankSizeMap[0][bytes_n]++;
+          globalRankZeroCollectiveCalls++;
+          rankZeroCollectives++;
+        }
+
+      ++p2pIt;
     }
 
-    // Rank 0
-    printf("Rank 0 - Number of Collectives=%zu\n",
-      rankZeroCollectives);
-    callCodeSizeIt = rankCollMap[0].begin();
-    while (callCodeSizeIt != rankCollMap[0].end()) {
-      std::string coll_name = callCodeToString(callCodeSizeIt->first.code);
-      printf(" nccl%s elt_n=%ld elt_ty=%s (%d) bytes_n=%zu count=%zu pct=%2.2f%%\n",
-        coll_name.c_str(), callCodeSizeIt->first.elt_n, ncclDataTypeToString(callCodeSizeIt->first.elt_ty).c_str(),
-        callCodeSizeIt->first.elt_ty, callCodeSizeIt->first.elt_n * ncclDataTypeToSizeBytes(callCodeSizeIt->first.elt_ty),
-        callCodeSizeIt->second, (float) callCodeSizeIt->second*100.0f/rankZeroCollectives);
-      callCodeSizeIt++;
-    }
-    printf("Rank 0 - Sizes\n");
-    sizeIt = rankSizeMap[0].begin();
-    while (sizeIt != rankSizeMap[0].end()) {
-      printf("  bytes_n=%zu count=%zu pct=%2.2f%%\n",
-        sizeIt->first, sizeIt->second, (float) sizeIt->second*100.0f/rankZeroCollectives);
-      sizeIt++;
-    }
+    printf("Stats for UniqueId=0x%lx\n", globalMapIt->first);
+    printCollStatsMap(totalCollectiveCalls, rankZeroCollectives, rankCollMap, rankSizeMap, vuniqueToHostHashMap[globalMapIt->first].size(), vuniqueToHostListMap[globalMapIt->first], false);
 
     globalMapIt++;
   }
+
+  printf("Overall trace call stats.\n");
+  printCollStatsMap(totalGlobalCollectiveCalls, globalRankZeroCollectiveCalls, globalRankCollMap, globalRankSizeMap, nhosts, vuniqueToHostListMap[0], true);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2453,21 +2671,12 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
     // This is a map for mapping virtual rank to physical rank in a force-fit run
     std::unordered_map<int, int> force_fit_rank_map;
 
-    struct VHostState {
-      int phost = -1;
-      int vpids = 0;
-      std::string vhost_name;
-      std::unordered_map<int, int> vpid_to_rank;
-
-      // Store a sequence number of accesses to a device on a host
-      // This is relevant if 2 communicators use the same device
-      std::unordered_map<int, int> dev_seq_map;
-      std::unordered_map<uint64_t, int> vcomm_to_dev;
-    };
+    // TODO - maybe combine all of this in a more sensible way someday
     std::unordered_map<uint64_t, VHostState> vhosts;
-
     std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>> vuniqueToGlobalMap;
     std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>> vcommToGlobalMap;
+    std::unordered_map<uint64_t, std::vector<CommHostInfo>>      vuniqueToHostListMap;
+    std::unordered_map<uint64_t, std::unordered_set<uint64_t>>   vuniqueToHostHashMap;
     // Set of vuniques seen in the trace. Confirming that all referenced vuniques were in fact created.
     std::unordered_set<uint64_t> vuniqueSet;
 
@@ -2536,7 +2745,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       int rank;
       if(vhost_st.vpid_to_rank.count(vpid) == 0) {
         if(phost_popn[vhost_st.phost] == phost_ranks[vhost_st.phost].size()) {
-          fprintf(stderr, "Not enough physical processes (%d) on host to accommodate virtual processes.\n", (int)phost_ranks[vhost_st.phost].size());
+          fprintf(stderr, "Not enough physical processes (%d) on host to accommodate virtual processes\n", (int)phost_ranks[vhost_st.phost].size());
           exit(EPERM);
         }
         rank = phost_ranks[vhost_st.phost][phost_popn[vhost_st.phost]++];
@@ -2594,8 +2803,21 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
             globalCommMap = it->second;
           }
 
+          globalCommMap->prank_to_vrank_map.emplace(rank, call.comm_rank_me);
+
           // Track our new vcomm
           vcommToGlobalMap.emplace(call.vcomm, globalCommMap);
+
+          // I really don't want to make another disparate tracking map but I think it's the easiest option for now
+          CommHostInfo info;
+          info.vcomm = call.vcomm;
+          strncpy(info.vhost_name, vhost_name, 512);
+          info.vpid = vpid;
+          info.vtid = vtid;
+          info.device = call.device;
+          info.rank_me = call.comm_rank_me;
+          vuniqueToHostListMap[call.vunique].push_back(info);
+          vuniqueToHostHashMap[call.vunique].insert(vhost);
 
           // Map this vcomm to this device.
           vhost_st.vcomm_to_dev[call.vcomm] = call.device;
@@ -2724,7 +2946,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           call.elt_n = 1;
         }
 
-        if(matched == 9) {
+        if(matched >= 9) {
           if(0 == std::strcmp(coll_name, "AllGather"))
             hdr.code = CallCode::allgather;
           else if(0 == std::strcmp(coll_name, "AllReduce"))
@@ -2747,15 +2969,16 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           call.dev_seq = vhost_st.dev_seq_map[device]++;
 
           // Map this call per-global communicator / rank for trace pre-checking
-          // Don't check sends and receives for now
-          if (hdr.code != CallCode::send && hdr.code != CallCode::recv) {
-            auto it = vcommToGlobalMap.find(call.vcomm);
-            if (it == vcommToGlobalMap.end()) {
-              fprintf(stderr, "ERROR: Couldn't find entry for call.vcomm=0x%" PRIx64 " in vcommToGlobalMap\nMake sure your application has called ncclCommInitRank() on this communicator before using it in a collective\n", call.vcomm);
-              assert(0);
-            }
-            vcommToGlobalMap.at(call.vcomm)->data_ops_map[rank].push_back({hdr, call});
+          // This is for collectives (non-sendrecv)
+          auto it = vcommToGlobalMap.find(call.vcomm);
+          if (it == vcommToGlobalMap.end()) {
+            fprintf(stderr, "ERROR: Couldn't find entry for call.vcomm=0x%" PRIx64 " in vcommToGlobalMap\nMake sure your application has called ncclCommInitRank() on this communicator before using it in a collective\n", call.vcomm);
+            assert(0);
           }
+          if (hdr.code != CallCode::send && hdr.code != CallCode::recv)
+            vcommToGlobalMap.at(call.vcomm)->data_ops_map[rank].push_back({hdr, call});
+          else
+            vcommToGlobalMap.at(call.vcomm)->p2p_ops_list.push_back({hdr, call, rank});
 
           rank_bufs[rank].append(hdr);
           rank_bufs[rank].append(call);
@@ -2764,10 +2987,18 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       }
     }
 
+    signal_parsing.set_value();
+
+    // Wait for the progressThread to finish printing before printing out stats
+    if (!opt_disable_progress_thread) {
+      auto future = signal_precheck_logging.get_future();
+      future.wait();
+    }
+
     //
     // Print stats of this trace
     //
-    printStats(vuniqueToGlobalMap, vhosts.size());
+    printStats(vuniqueToGlobalMap, vuniqueToHostListMap, vuniqueToHostHashMap, vhosts.size());
 
     //
     // PRE-CHECK
@@ -2824,7 +3055,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
 int main(int arg_n, char **args) {
 
   // register signal SIGINT and signal handler
-  signal(SIGSEGV, signalHandler);
+  // signal(SIGSEGV, signalHandler);
 
   bool opt_viable = false;
   bool opt_help = false;
@@ -2850,7 +3081,9 @@ int main(int arg_n, char **args) {
       opt_check_only = true;
     } else if (arg == "-x") {
       opt_force_fit = true;
-    }  else {
+    } else if (arg == "-a") {
+      opt_verbose_stats = true;
+    } else {
       opt_viable = true;
       opt_trace_path = arg;
     }
@@ -2861,6 +3094,7 @@ int main(int arg_n, char **args) {
         "usage: replay [-h|--help] (<path>|-)\n"
         "  -h, --help   This help message.\n"
         "  -v           Run verbose mode (warning - very verbose, mainly used to debug the replay tool itself.)\n"
+        "  -a           Print out verbose stats (per-UniqueId)\n"
         "  -s           Disable progress thread.\n"
         "  -d           Disable exit when pre-checking trace fails. Allows running of malformed traces. WARNING - May result in hangs or crashes.\n"
         "  -b           Collect and print bandwidth/performance information about completed NCCL operations.\n"
@@ -2879,8 +3113,7 @@ int main(int arg_n, char **args) {
         "               multiple files then you must concatenate them manually.\n\n"
         "               To generate a log files, run your application with NCCL_DEBUG=TRACE NCCL_DEBUG_SUBSYS=CALL NCCL_DEBUG_FILE=/path/to/logs/filename.%h.%p.\n"
         "               \"-\" indicates stdin.\n\n"
-        "It is your responsibility to ensure the number of MPI hosts and\n"
-        "processes launched is valid.\n\n";
+        "It is your responsibility to ensure the number of MPI hosts and processes launched is valid.\n\n";
     goto shutdown;
   }
 
@@ -2970,13 +3203,13 @@ int main(int arg_n, char **args) {
     }
 
     if (!opt_disable_progress_thread) {
-      progress_thread = std::thread(&progressThread, std::move(signal_exit.get_future()), std::move(signal_precheck.get_future()));
+      progress_thread = std::thread(&progressThread, std::move(signal_exit.get_future()), std::move(signal_parsing.get_future()), std::move(signal_precheck.get_future()));
     }
   }
 
   ByteBuffer trace = loadDebugCallTrace(opt_trace_path);
   if (trace.size() == 0) {
-    fprintf(stderr, "trace size is 0. Please provide a valid trace file with at least one NCCL trace.\n");
+    fprintf(stderr, "trace size is 0. Please provide a valid trace file with at least one NCCL trace. Make sure each NCCL TRACE line starts with EXACTLY hostname:pid:tid NCCL CALL\n");
     failure.store(1);
   }
 
