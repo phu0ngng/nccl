@@ -121,6 +121,23 @@ static ncclResult_t xmlFindTag(struct ncclXml* xml, const char* tagName, struct 
   return ncclSuccess;
 }
 
+static ncclResult_t xmlFindNextTag(struct ncclXml* xml, const char* tagName, struct ncclXmlNode* prev, struct ncclXmlNode** node) {
+  *node = NULL;
+  int pastPrev = 0;
+  for (int i=0; i<xml->maxIndex; i++) {
+    struct ncclXmlNode* n = xml->nodes+i;
+    if (strcmp(n->name, tagName) == 0) {
+      if (n == prev) {
+        pastPrev = 1;
+      } else if (pastPrev) {
+        *node = n;
+        return ncclSuccess;
+      }
+    }
+  }
+  return ncclSuccess;
+}
+
 static ncclResult_t xmlFindTagKv(struct ncclXml* xml, const char* tagName, struct ncclXmlNode** node, const char* attrName, const char* attrValue) {
   *node = NULL;
   for (int i=0; i<xml->maxIndex; i++) {

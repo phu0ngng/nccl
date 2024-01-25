@@ -452,11 +452,12 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
 struct kvDict kvDictCpuArch[] = { { "x86_64", NCCL_TOPO_CPU_ARCH_X86 }, { "arm64", NCCL_TOPO_CPU_ARCH_ARM }, { "ppc64", NCCL_TOPO_CPU_ARCH_POWER }, { NULL, 0 } };
 struct kvDict kvDictCpuVendor[] = { { "GenuineIntel", NCCL_TOPO_CPU_VENDOR_INTEL }, { "AuthenticAMD", NCCL_TOPO_CPU_VENDOR_AMD }, { "CentaurHauls", NCCL_TOPO_CPU_VENDOR_ZHAOXIN }, { "  Shanghai  ", NCCL_TOPO_CPU_VENDOR_ZHAOXIN }, { NULL, 0 } };
 
-ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* system) {
+ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* system, struct ncclTopoNode** cpuNode) {
   int numaId;
   NCCLCHECK(xmlGetAttrInt(xmlCpu, "numaid", &numaId));
   struct ncclTopoNode* cpu;
   NCCLCHECK(ncclTopoCreateNode(system, &cpu, CPU, numaId));
+  *cpuNode = cpu;
   const char* str;
   NCCLCHECK(xmlGetAttr(xmlCpu, "affinity", &str));
   if (str != NULL) {
@@ -582,17 +583,27 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
   NCCLCHECK(ncclCalloc(topoSystem, 1));
   struct ncclXmlNode* topNode;
   NCCLCHECK(xmlFindTag(xml, "system", &topNode));
-  for (int s=0; s<topNode->nSubs; s++) {
-    struct ncclXmlNode* node = topNode->subs[s];
-    if (strcmp(node->name, "cpu") == 0) NCCLCHECK(ncclTopoAddCpu(node, *topoSystem));
-  }
-  NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, NULL));
-  NCCLCHECK(ncclTopoAddC2c(topNode, *topoSystem, NULL));
+  do {
+    struct ncclTopoNode* cpus[NCCL_TOPO_MAX_NODES];
+    int ncpus = 0;
+    for (int s=0; s<topNode->nSubs; s++) {
+      struct ncclXmlNode* node = topNode->subs[s];
+      if (strcmp(node->name, "cpu") == 0) NCCLCHECK(ncclTopoAddCpu(node, *topoSystem, cpus+ncpus));
+      float bw;
+      NCCLCHECK(ncclTopoGetInterCpuBw(cpus[ncpus], &bw));
+      for (int c=0; c<ncpus; c++) {
+        NCCLCHECK(ncclTopoConnectNodes(cpus[ncpus], cpus[c], LINK_SYS, bw));
+        NCCLCHECK(ncclTopoConnectNodes(cpus[c], cpus[ncpus], LINK_SYS, bw));
+      }
+      ncpus++;
+    }
+    NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, NULL));
+    NCCLCHECK(ncclTopoAddC2c(topNode, *topoSystem, NULL));
+    NCCLCHECK(ncclTopoFlattenBcmSwitches(*topoSystem));
+    NCCLCHECK(ncclTopoSortSystem(*topoSystem));
 
-  NCCLCHECK(ncclTopoFlattenBcmSwitches(*topoSystem));
-  NCCLCHECK(ncclTopoConnectCpus(*topoSystem));
-  NCCLCHECK(ncclTopoSortSystem(*topoSystem));
-
+    NCCLCHECK(xmlFindNextTag(xml, "system", topNode, &topNode));
+  } while (topNode);
   return ncclSuccess;
 }
 
