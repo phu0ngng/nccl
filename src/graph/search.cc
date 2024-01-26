@@ -707,7 +707,9 @@ ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, st
   for (int s=0; s<xmlChannel->nSubs; s++) {
     struct ncclXmlNode* sub = xmlChannel->subs[s];
     int64_t dev;
-    NCCLCHECK(xmlGetAttrLong(sub, "dev", &dev));
+    const char* str;
+    NCCLCHECK(xmlGetAttrStr(sub, "dev", &str));
+    dev = strtol(str, NULL, 16);
     if (strcmp(sub->name, "net") == 0) {
       inter[n++] = dev;
     } else if (strcmp(sub->name, "gpu") == 0) {
