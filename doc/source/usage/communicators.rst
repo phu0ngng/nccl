@@ -295,6 +295,8 @@ Related links:
  * :c:func:`ncclCommGetAsyncError`
  * :c:func:`ncclCommAbort`
 
+.. _ft:
+
 ***************
 Fault Tolerance 
 ***************

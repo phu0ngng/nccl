@@ -528,6 +528,39 @@ The following code depicts a complete working example with multiple MPI processe
    return 0;
  }
 
+.. _Ex4:
+
+Example 4: Multiple communicators per device
+--------------------------------------------
+
+NCCL allows users to create multiple communicators per device. The following code shows an example with multiple MPI processes, one device per process, and multiple communicators per device:
+
+.. code:: C
+
+  // blocking communicators
+  CUDACHECK(cudaSetDevice(localRank));
+  for (int i = 0; i < commNum; ++i) {
+    if (myRank == 0) ncclGetUniqueId(&id);
+    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));    
+    NCCLCHECK(ncclCommInitRank(&blockingComms[i], nRanks, id, myRank));
+  }
+
+  // non-blocking communicators
+  CUDACHECK(cudaSetDevice(localRank));
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  config.blocking = 0;
+  for (int i = 0; i < commNum; ++i) {
+    if (myRank == 0) ncclGetUniqueId(&id);
+    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));    
+    NCCLCHECK(ncclCommInitRankConfig(&nonblockingComms[i], nRanks, id, myRank, &config));
+    do {
+      NCCLCHECK(ncclCommGetAsyncError(nonblockingComms[i], &state));
+    } while(state == ncclInProgress && checkTimeout() != true);
+  }
+
+`checkTimeout()` should be a user-defined function. For more nonblocking communicator usage, please check :ref:`ft`.
+In addition, if you want to split communicators instead of creating a new one, please check :c:func:`ncclCommSplit`.
+
 **********************
 Communication Examples
 **********************
