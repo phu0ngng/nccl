@@ -115,7 +115,6 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
     WARN("No path computed to go from %s/%d to %s/%d", topoNodeTypeStr[type1], index1, topoNodeTypeStr[type2], index2);
     return ncclInternalError;
   }
-  if (path->count == 0 ) return ncclSuccess;
 
   // Now check link type
   *node = NULL;
