@@ -613,6 +613,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
           // Only use PXN for NIC n if remote GPU p ...
           if (peerNode->paths[NET][n].type <= PATH_PXB && // Is connected to the NIC through PCI
               peerNode->paths[GPU][g].type <= PATH_NVL && // Is connected to us through NVLink
+              NCCL_TOPO_ID_SYSTEM_ID(peerNode->id) == NCCL_TOPO_ID_SYSTEM_ID(gpu->id) && // Is on the same node as us
               (peerNode->paths[NET][n].bw > gpu->paths[NET][n].bw || // Has either higher BW to that NIC
                gpu->paths[NET][n].type > PATH_PXB))                  // or avoids going through a CPU
           // We can use that GPU as relay to communicate with that NIC.
