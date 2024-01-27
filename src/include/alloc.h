@@ -85,14 +85,13 @@ static inline ncclResult_t ncclCuMemAlloc(void **ptr, CUmemGenericAllocationHand
   CUmemAllocationProp prop = {};
   CUmemAccessDesc accessDesc = {};
   CUmemGenericAllocationHandle handle;
-  CUmemAllocationHandleType type;
+  CUmemAllocationHandleType type = ncclCuMemHandleType;
   int cudaDev;
   int flag = 0;
   CUDACHECK(cudaGetDevice(&cudaDev));
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
   prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
   prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  NCCLCHECK(ncclP2pHandleType(&type));
   prop.requestedHandleTypes = type;
   prop.location.id = currentDev;
   // Query device to see if RDMA support is available

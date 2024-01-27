@@ -874,6 +874,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // AllGather1 - end
 
 #if CUDART_VERSION >= 11030
+
+#include <cuda.h>
+#include "cudawrap.h"
+
   // MNNVL support
   {
     int cliqueSize = 0;
@@ -896,9 +900,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     if (!ncclCuMemEnable()) comm->MNNVL = 0;
     if (comm->MNNVL) {
       // MNNVL also requires FABRIC handle support
-      CUmemAllocationHandleType type = CU_MEM_HANDLE_TYPE_NONE;
-      (void) ncclP2pHandleType(&type);
-      if (type != CU_MEM_HANDLE_TYPE_FABRIC) comm->MNNVL = 0;
+      int cudaDev;
+      int flag = 0;
+      CUdevice currentDev;
+      CUDACHECK(cudaGetDevice(&cudaDev));
+      CUCHECK(cuDeviceGet(&currentDev, cudaDev));
+      // Ignore error if CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED is not supported
+      (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));;
+      if (!flag)
+        comm->MNNVL = 0;
+      else
+        // Force the handle type to be FABRIC for MNNVL
+        ncclCuMemHandleType = CU_MEM_HANDLE_TYPE_FABRIC;
     }
     if (ncclParamMNNVL() == 1 && !comm->MNNVL) {
       WARN("MNNVL is not supported on this system");
