@@ -622,15 +622,17 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
           NCCLCHECK(addInterStep(system, GPU, localGpuIndex, GPU, g, NET, n));
         }
       }
-      // Update path when we dont want to / can't use GPU Direct RDMA.
-      int gdr;
-      NCCLCHECK(ncclTopoCheckGdr(system, system->nodes[GPU].nodes[g].id, netNode->id, 0, &gdr));
-      if (gdr == 0) {
-        // We cannot use GPU Direct RDMA, divert all traffic through the CPU local to the GPU
-        int localCpu;
-        NCCLCHECK(getLocalCpu(system, g, &localCpu));
-        NCCLCHECK(addInterStep(system, CPU, localCpu, NET, n, GPU, g));
-        NCCLCHECK(addInterStep(system, CPU, localCpu, GPU, g, NET, n));
+      if (gpu->paths[NET][n].type < PATH_PHB) {
+        // Update path when we dont want to / can't use GPU Direct RDMA.
+        int gdr;
+        NCCLCHECK(ncclTopoCheckGdr(system, system->nodes[GPU].nodes[g].id, netNode->id, 0, &gdr));
+        if (gdr == 0) {
+          // We cannot use GPU Direct RDMA, divert all traffic through the CPU local to the GPU
+          int localCpu;
+          NCCLCHECK(getLocalCpu(system, g, &localCpu));
+          NCCLCHECK(addInterStep(system, CPU, localCpu, NET, n, GPU, g));
+          NCCLCHECK(addInterStep(system, CPU, localCpu, GPU, g, NET, n));
+        }
       }
     }
   }
