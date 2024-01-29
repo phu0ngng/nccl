@@ -38,22 +38,4 @@ ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, v
 ncclResult_t ncclP2pFreeShareableBuffer(ncclIpcDesc *ipcDesc);
 ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, size_t size, ncclIpcDesc *ipcDesc, void **devMemPtr);
 
-#if CUDART_VERSION >= 11030
-
-#include <cuda.h>
-#include "cudawrap.h"
-
-static ncclResult_t ncclP2pHandleType(CUmemAllocationHandleType *type) {
-  int cudaDev;
-  int flag = 0;
-  CUdevice currentDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  CUCHECK(cuDeviceGet(&currentDev, cudaDev));
-  // Ignore error if CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED is not supported
-  (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));;
-  *type = flag ? CU_MEM_HANDLE_TYPE_FABRIC : CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
-  return ncclSuccess;
-}
-#endif // CUDART_VERSION >= 11030
-
 #endif

@@ -196,8 +196,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr) {
   if (ncclCuMemEnable()) {
 #if CUDART_VERSION >= 11030
-    CUmemAllocationHandleType type;
-    NCCLCHECK(ncclP2pHandleType(&type));
+    CUmemAllocationHandleType type = ncclCuMemHandleType;
 
     // cuMem API support
     CUmemGenericAllocationHandle handle;
@@ -235,11 +234,9 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int tpPeer, siz
 #if CUDART_VERSION >= 11030
     // cuMem API support
     CUdeviceptr dptr = 0;
-    CUmemAllocationHandleType type;
+    CUmemAllocationHandleType type = ncclCuMemHandleType;
     CUmemGenericAllocationHandle handle;
     ncclCuDesc *cuDesc = &ipcDesc->cuDesc;
-
-    NCCLCHECK(ncclP2pHandleType(&type));
 
     // Import and map the remote memory descriptor to the local GPU
     if (type == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
