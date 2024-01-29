@@ -260,6 +260,8 @@ ncclResult_t ncclTopoSearchNextGpuSort(struct ncclTopoSystem* system, struct ncc
     for (int i=0; i<count; i++) next[i] = scores[i].g;
   }
 
+  *countPtr = count;
+
   if (system->nodes[NVS].count) {
     // NVSwitches prefer when we talk to a limited set of peers. Try to use neighbors first.
     int index = gpu-system->nodes[GPU].nodes;
@@ -276,16 +278,18 @@ ncclResult_t ncclTopoSearchNextGpuSort(struct ncclTopoSystem* system, struct ncc
     } else {
       firstGpus[0] = nextGpu; firstGpuCount = 1;
     }
+    if (nextGpu == prevGpu && firstGpuCount == 2) firstGpuCount = 1;
+    int firstGpuRealCount = 0;
     for (int g=0; g<firstGpuCount; g++) {
       for (i=0; i<count && next[i] != firstGpus[g]; i++);
       if (i<count) {
         for (; i>0; i--) next[i] = next[i-1];
         next[0] = firstGpus[g];
+        firstGpuRealCount++;
       }
     }
+    *countPtr = firstGpuRealCount;
   }
-
-  *countPtr = count;
   return ncclSuccess;
 }
 
