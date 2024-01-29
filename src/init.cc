@@ -1506,7 +1506,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
 
   NCCLCHECKGOTO(initTransportsRank(comm, job->parent), res, fail);
 
-  NCCLCHECKGOTO(ncclLoadTunerPlugin(&comm->tuner), res, fail);
+  NCCLCHECKGOTO(ncclTunerPluginLoad(&comm->tuner), res, fail);
   if (comm->tuner) {
     NCCLCHECK(comm->tuner->init(comm->nRanks, comm->nNodes, ncclDebugLog));
   }
@@ -1939,7 +1939,7 @@ static ncclResult_t commCleanup(ncclComm_t comm) {
 
   if (comm->tuner != NULL) {
     NCCLCHECK(comm->tuner->destroy());
-    NCCLCHECK(ncclCloseTunerPlugin(&comm->tuner));
+    NCCLCHECK(ncclTunerPluginUnload(&comm->tuner));
   }
 
   NCCLCHECK(commFree(comm));
