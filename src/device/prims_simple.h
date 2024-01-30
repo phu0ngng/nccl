@@ -47,6 +47,7 @@ class Primitives<
   T *directBuff;
   uint64_t *connStepPtr;
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
+  int      connStepSize; // Connection step size
   void*    mhandle;
   void*    netDeviceHandle;
 
@@ -153,7 +154,7 @@ class Primitives<
         } else if (flags & DirectRead) {  // empty send
           ptrs[index] = nullptr;
         } else {
-          ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
+          ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*connStepSize;
         }
       } else if (!isSendNotRecv && DirectRecv) {
         if (flags & (DirectRead | NvlsDirectRead)) {
@@ -161,11 +162,11 @@ class Primitives<
         } else if (flags & DirectWrite) {
           ptrs[index] = directBuff + dstIx + offset;  // send to next from my output buffer
         } else {
-          ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
+          ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*connStepSize;
         }
       }
       else {
-        ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*stepSize;
+        ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*connStepSize;
       }
       if ((flags & (AnyNetDeviceUnpack)) && (flags & (Recv*RoleWaitRecv))) {
         ncclNetDeviceIncrementHead(group);
@@ -436,6 +437,7 @@ private:
         flags |= (conn->flags & NCCL_NVLS_MIN_POLL) ? NvlsMinPolling : 0;
         connStepPtr = conn->tail;
         connStepCache = loadStepValue(connStepPtr);
+        connStepSize = conn->stepSize/sizeof(T);
         connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
         if (conn->connFifo != nullptr) {
           flags |= ConnFifoEnabled;
@@ -484,6 +486,7 @@ private:
         flags |= (conn->flags & NCCL_NVLS_MIN_POLL) ? NvlsMinPolling : 0;
         connStepPtr = conn->head;
         connStepCache = loadStepValue(connStepPtr);
+        connStepSize = conn->stepSize/sizeof(T);
         connEltsFifo = (T*)conn->buffs[NCCL_PROTO_SIMPLE];
         if (connFifo == nullptr && Direct) {
           // User buffers have been registered
