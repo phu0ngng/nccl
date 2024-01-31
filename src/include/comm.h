@@ -383,6 +383,7 @@ struct ncclComm {
   struct ncclPeerInfo* peerInfo;
   struct ncclTopoSystem* topo;
 
+  int netPluginLoaded;
   ncclNet_t* ncclNet;
   ncclNetDeviceType netDeviceType;
   ncclCollNet_t* ncclCollNet;

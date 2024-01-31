@@ -406,18 +406,40 @@ static void* openNetPluginLib(char* couldNotFindNames, int len) {
   return nullptr;
 }
 
+static pthread_mutex_t netPluginLock = PTHREAD_MUTEX_INITIALIZER;
+static int netPluginRefCount;
+static void* netPluginLib;
+
+enum {
+  netPluginLoadFailed  = -1,
+  netPluginLoadReady   =  0,
+  netPluginLoadSuccess =  1,
+};
+
+static int netPluginStatus = netPluginLoadReady;
+
 #define MAX_PLUGIN_LOAD 2
 
-ncclResult_t ncclNetPluginInit() {
+ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   char couldNotFindNames[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
-  void* netPluginLib = openNetPluginLib(couldNotFindNames, MAX_PLUGIN_LOAD * PATH_MAX);
+  if (netPluginLoadFailed == netPluginStatus) {
+    return ncclSuccess;
+  }
+
+  pthread_mutex_lock(&netPluginLock);
+  if (netPluginLoadSuccess == netPluginStatus) {
+    ++netPluginRefCount;
+    goto exit;
+  }
+
+  netPluginLib = openNetPluginLib(couldNotFindNames, MAX_PLUGIN_LOAD * PATH_MAX);
   if (netPluginLib == nullptr) {
     if (strlen(couldNotFindNames)) {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Could not find:%s. Using internal network plugin.", couldNotFindNames);
     } else {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Using internal network plugin.");
     }
-    return ncclSuccess;
+    goto fail;
   }
 
   ncclNets[0] = (ncclNet_v8_t*)dlsym(netPluginLib, "ncclNetPlugin_v8");
@@ -433,8 +455,7 @@ ncclResult_t ncclNetPluginInit() {
         ncclNet_v5 = (ncclNet_v5_t*)dlsym(netPluginLib, "ncclNetPlugin_v5");
         if (ncclNet_v5 == nullptr) {
           INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin symbol (>= v5). ncclNetPlugin symbols v4 and lower are not supported.");
-          if (netPluginLib != nullptr) dlclose(netPluginLib);
-          return ncclSuccess;
+          goto fail;
         } else {
           ncclNets[0] = &ncclNet_v5_as_v8;
           ncclNet_v5_as_v8.init = ncclNet_v5_as_v8_init;
@@ -473,21 +494,52 @@ ncclResult_t ncclNetPluginInit() {
           ncclCollNets[0] = &ncclCollNet_v5_as_v8;
           ncclCollNet_v5_as_v8.init = ncclCollNet_v5_as_v8_init;
           ncclCollNet_v5_as_v8.name = ncclCollNet_v5->name;
-          INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded coll plugin %s (v5)", ncclCollNets[0]->name);
+          INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v5)", ncclCollNets[0]->name);
         }
       } else {
         ncclCollNets[0] = &ncclCollNet_v6_as_v8;
         ncclCollNet_v6_as_v8.init = ncclCollNet_v6_as_v8_init;
         ncclCollNet_v6_as_v8.name = ncclCollNet_v6->name;
-        INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded coll plugin %s (v6)", ncclCollNets[0]->name);
+        INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v6)", ncclCollNets[0]->name);
       }
     } else {
       ncclCollNets[0] = &ncclCollNet_v7_as_v8;
       ncclCollNet_v7_as_v8.init = ncclCollNet_v7_as_v8_init;
       ncclCollNet_v7_as_v8.name = ncclCollNet_v7->name;
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded coll plugin %s (v7)", ncclCollNets[0]->name);
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v7)", ncclCollNets[0]->name);
     }
   }
+
+  ++netPluginRefCount;
+  netPluginStatus = netPluginLoadSuccess;
+  comm->netPluginLoaded = 1;
+
+exit:
+  pthread_mutex_unlock(&netPluginLock);
+  return ncclSuccess;
+fail:
+  if (netPluginLib) dlclose(netPluginLib);
+  netPluginStatus = netPluginLoadFailed;
+  goto exit;
+}
+
+ncclResult_t ncclNetPluginUnload(struct ncclComm* comm) {
+  pthread_mutex_lock(&netPluginLock);
+  if (comm->netPluginLoaded && 0 == (--netPluginRefCount)) {
+    if (ncclNets[0]) {
+      INFO(NCCL_NET, "NET/Plugin: Closing net plugin '%s'", ncclNets[0]->name);
+    }
+    if (ncclCollNets[0]) {
+      INFO(NCCL_NET, "NET/Plugin: Closing collnet plugin '%s'", ncclCollNets[0]->name);
+    }
+    dlclose(netPluginLib);
+    netPluginLib = nullptr;
+    ncclNets[0] = nullptr;
+    ncclCollNets[0] = nullptr;
+    netPluginStatus = netPluginLoadReady;
+    comm->netPluginLoaded = 0;
+  }
+  pthread_mutex_unlock(&netPluginLock);
   return ncclSuccess;
 }
 
@@ -574,6 +626,12 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
     WARN("Error: network %s not found.", netName ? netName : "");
     return ncclInvalidUsage;
   }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
+  comm->ncclNet = nullptr;
+  comm->ncclCollNet = nullptr;
   return ncclSuccess;
 }
 

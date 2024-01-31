@@ -80,7 +80,6 @@ static void initOnceFunc() {
   initGdrCopy();
   // Always initialize bootstrap network
   NCCLCHECKGOTO(bootstrapNetInit(), initResult, exit);
-  NCCLCHECKGOTO(ncclNetPluginInit(), initResult, exit);
 
   initNvtxRegisteredEnums();
 exit:;
@@ -251,6 +250,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - %s COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, abort ? "Abort" : "Destroy");
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
+  NCCLCHECK(ncclNetFinalize(comm));
+  NCCLCHECK(ncclNetPluginUnload(comm));
   free(comm);
 
   return ncclSuccess;
@@ -325,6 +326,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   comm->rank = rank;
   comm->nRanks = ndev;
 
+  NCCLCHECK(ncclNetPluginLoad(comm));
   NCCLCHECK(ncclNetInit(comm));
   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 
