@@ -354,7 +354,7 @@ ncclResult_t ncclNetPluginInit() {
     // string, so checking errno doesn't hurt to try to provide a better
     // error message
     if (errno == ENOENT) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : dlerror=%s No plugin found (%s), using internal implementation", dlerror(), ncclNetPluginName);
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Using internal network plugin", ncclNetPluginName);
       // exit(-1);
     } else {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin : Plugin load returned %d : %s.", errno, dlerror());
