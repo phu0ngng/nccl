@@ -1508,7 +1508,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
 
   NCCLCHECKGOTO(ncclTunerPluginLoad(&comm->tuner), res, fail);
   if (comm->tuner) {
-    NCCLCHECK(comm->tuner->init(comm->nRanks, comm->nNodes, ncclDebugLog));
+    NCCLCHECK(comm->tuner->init(comm->nRanks, comm->nNodes, ncclDebugLog, &comm->tunerContext));
   }
 
   // update communicator state
@@ -1938,7 +1938,7 @@ static ncclResult_t commCleanup(ncclComm_t comm) {
   }
 
   if (comm->tuner != NULL) {
-    NCCLCHECK(comm->tuner->destroy());
+    NCCLCHECK(comm->tuner->destroy(comm->tunerContext));
     NCCLCHECK(ncclTunerPluginUnload(&comm->tuner));
   }
 

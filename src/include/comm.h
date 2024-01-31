@@ -372,6 +372,7 @@ struct ncclComm {
 
   // Tuning plugin
   ncclTuner_t* tuner;
+  void *tunerContext;
   // buffer registration cache
   struct ncclRegCache regCache;
   uint64_t endMagic;

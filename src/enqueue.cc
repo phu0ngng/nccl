@@ -1512,7 +1512,7 @@ static ncclResult_t getTunerInfo(struct ncclInfo* collInfo, int collNetSupport, 
   collInfo->nChannels = 0;
   if (collInfo->comm->tuner != NULL) {
     NCCLCHECK(collInfo->comm->tuner->getCollInfo(
-          collInfo->coll, collInfo->nBytes,
+          collInfo->comm->tunerContext, collInfo->coll, collInfo->nBytes,
           collNetSupport, nvlsSupport, numPipeOps,
           &collInfo->algorithm, &collInfo->protocol, &collInfo->nChannels));
   }
