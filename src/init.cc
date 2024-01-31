@@ -889,6 +889,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       // Check that the Fabric state is fully initialized
       if (fabricInfo2->state != NVML_GPU_FABRIC_STATE_COMPLETED) continue;
       // Check that the cluster UUID and cliqueId match in each rank
+      // A zero UUID means we don't have MNNVL fabric info - disable MNNVL
+      if ((((long *)&fabricInfo2->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) continue;
       if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
           (fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
         cliqueSize++;

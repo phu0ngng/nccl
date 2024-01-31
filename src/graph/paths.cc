@@ -348,7 +348,7 @@ ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerIn
   nvmlGpuFabricInfoV_t *fabricInfo1 = &info1->fabricInfo;
   nvmlGpuFabricInfoV_t *fabricInfo2 = &info2->fabricInfo;
   // A zero UUID means we don't have MNNVL fabric info
-  if ((((long *)&fabricInfo1->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) return ncclSuccess;
+  if ((((long *)&fabricInfo2->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) return ncclSuccess;
   if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
       (fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
     INFO(NCCL_NET, "MNNVL matching peer 0x%lx UUID %lx.%lx cliqueId 0x%x",
