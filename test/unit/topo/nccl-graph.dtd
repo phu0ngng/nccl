@@ -1,0 +1,20 @@
+<!-- This document describes NCCL graph files. Graph files are XML documents describing the rings, trees and other algorithms NCCL will use -->
+
+<!ELEMENT graphs (graph*)>                       <!-- All graphs -->
+<!ELEMENT graph (channel*)>                      <!-- Graph for one class of algorithms -->
+<!ELEMENT channel (net*,gpu+)>                   <!-- Channel within one algorithm -->
+
+<!ATTLIST graphs version CDATA #IMPLIED>         <!-- Always "1" for now -->
+
+<!ATTLIST graph id CDATA #REQUIRED>              <!-- ID 0 is rings, ID 1 is trees, ID 2 is collnet, ID 3 is NVLink SHARP -->
+<!ATTLIST graph pattern CDATA #REQUIRED>         <!-- ncclPattern_t -- ring is 4, tree can be 3, 2 or 1, collnet and NVLS are always 3 -->
+<!ATTLIST graph nchannels CDATA #REQUIRED>       <!-- number of channels, must be consistent with the number of <channel> tags inside -->
+<!ATTLIST graph speedintra CDATA #REQUIRED>      <!-- bandwidth of each channel in GB/s, intra-node. -->
+<!ATTLIST graph speedinter CDATA #REQUIRED>      <!-- bandwidth of each channel in GB/s, inter-node. -->
+<!ATTLIST graph latencyinter CDATA #IMPLIED>     <!-- latency of inter-node communication. 0 means default -->
+<!ATTLIST graph typeintra CDATA #REQUIRED>       <!-- intra-node path type (determines which protocols can be used, e.g. LL128) -->
+<!ATTLIST graph typeinter CDATA #REQUIRED>       <!-- inter-node path type (determines which protocols can be used, e.g. LL128) -->
+<!ATTLIST graph samechannels CDATA #REQUIRED>    <!-- whether all channels are identical or not. "0" or "1" -->
+
+<!ATTLIST net dev CDATA #REQUIRED>               <!-- network device index in the network plugin -->
+<!ATTLIST gpu dev CDATA #REQUIRED>               <!-- gpu NVML device index -->
