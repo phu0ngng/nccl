@@ -2,7 +2,7 @@
 #include "xml.h"
 
 int main(int argc, char* argv[]) {
-  struct ncclXml xml;
+  static struct ncclXml xml;
   if (argc < 2) {
     printf("Usage %s <XML file>\n", argv[0]);
     exit(1);
