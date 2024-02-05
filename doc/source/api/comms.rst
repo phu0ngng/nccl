@@ -124,9 +124,9 @@ ncclCommAbort
 
 .. c:function:: ncclResult_t ncclCommAbort(ncclComm_t comm)
 
-Frees resources that are allocated to a communicator object *comm*. Will abort any uncompleted
-operations before destroying the communicator. This function is an intra-node collective call,
-which all ranks on the same node should call to avoid hang.
+*ncclCommAbort* frees resources that are allocated to a communicator object *comm* and aborts any uncompleted
+operations before destroying the communicator. All active ranks are required to call this function in order to
+abort the NCCL communicator successfully. For more use cases, please check :ref:`ft`.
 
 ncclCommGetAsyncError
 ---------------------
