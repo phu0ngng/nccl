@@ -904,10 +904,11 @@ NCCL_NVLS_ENABLE
 (since 2.17)
 
 Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in third-generation NVSwitch systems (NVLink4) with Hopper and later GPU architectures, allowing collectives such as ``ncclAllReduce`` to be offloaded to the NVSwitch domain.
+NVLS will be disabled automatically on systems which do not support the feature.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 1, define and set to 0 to disable use of NVLink SHARP. NVLS will be disabled automatically on systems which do not support the feature.
+Default is automatic detection, define and set to 0 to disable use of NVLink SHARP.
 
 NCCL_IB_MERGE_NICS
 ------------------
@@ -918,3 +919,14 @@ Enable NCCL to combine dual-port IB NICs into a single logical network device. T
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 1, define and set to 0 to disable NIC merging
+
+NCCL_MNNVL_ENABLE
+-----------------
+(since 2.20)
+
+Enable NCCL to use Multi-Node NVLink (MNNVL) when available. If the system or driver are not Multi-Node NVLink capable then MNNVL will automatically be disabled. This feature also requires NCCL CUMEM support (``NCCL_CUMEM_ENABLE``) to be enabled.
+MNNVL requires a fully configured and operational IMEX domain for all the nodes that form the NVLink domain. See the CUDA documentation for more details on IMEX domains.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is automatic detection, define and set to 0 to disable MNNVL support.
