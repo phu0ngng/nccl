@@ -55,6 +55,9 @@ ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const cha
 /* Remove unneeded parts */
 ncclResult_t ncclTopoTrimXml(struct ncclXml* xml);
 
+/* Fuse multiple system XMLs into one, skipping duplicate CPUs */
+ncclResult_t ncclTopoFuseXmls(struct ncclXml* dst, struct ncclXml* srcs, int nSrcs);
+
 /**************/
 /* XML Struct */
 /* Functions  */
@@ -130,16 +133,11 @@ static ncclResult_t xmlFindTag(struct ncclXml* xml, const char* tagName, struct 
 
 static ncclResult_t xmlFindNextTag(struct ncclXml* xml, const char* tagName, struct ncclXmlNode* prev, struct ncclXmlNode** node) {
   *node = NULL;
-  int pastPrev = 0;
-  for (int i=0; i<xml->maxIndex; i++) {
+  for (int i=prev-xml->nodes+1; i<xml->maxIndex; i++) {
     struct ncclXmlNode* n = xml->nodes+i;
     if (strcmp(n->name, tagName) == 0) {
-      if (n == prev) {
-        pastPrev = 1;
-      } else if (pastPrev) {
-        *node = n;
-        return ncclSuccess;
-      }
+      *node = n;
+      return ncclSuccess;
     }
   }
   return ncclSuccess;
@@ -298,6 +296,24 @@ static ncclResult_t xmlRemoveNode(struct ncclXmlNode* node) {
   parent->nSubs--;
   return ncclSuccess;
 }
+
+static ncclResult_t xmlAddTree(struct ncclXml* dst, struct ncclXmlNode* parent, struct ncclXmlNode* srcNode) {
+  if (dst->maxIndex == MAX_NODES) {
+    WARN("Error : too many XML nodes (max %d)", MAX_NODES);
+    return ncclInternalError;
+  }
+  struct ncclXmlNode* dstNode = dst->nodes+dst->maxIndex++;
+  *dstNode = *srcNode;
+  dstNode->parent = parent;
+  if (parent)
+    parent->subs[parent->nSubs++] = dstNode;
+  dstNode->nSubs = 0;
+  // Recursively copy the subtree(s)
+  for (int i=0; i<srcNode->nSubs; i++)
+    NCCLCHECK(xmlAddTree(dst, dstNode, srcNode->subs[i]));
+  return ncclSuccess;
+}
+
 
 // Dictionary for STR -> INT conversions. No dictionary size information,
 // there needs to be a last element with str == NULL.

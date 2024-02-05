@@ -249,6 +249,63 @@ ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml)
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoFuseXmls(struct ncclXml* dst, struct ncclXml* srcs, int nSrcs) {
+  if (nSrcs == 0) return ncclSuccess;
+
+  // Copy the first XML verbatim
+  *dst = srcs[0];
+
+  struct ncclXmlNode* topNode;
+  NCCLCHECK(xmlFindTag(dst, "system", &topNode));
+
+  // For the subsequent XMLs, fuse the CPUs with the first XML
+  for (int i=1; i<nSrcs; i++) {
+    struct ncclXml* src=srcs+i;
+    struct ncclXmlNode* srcCpu;
+    NCCLCHECK(xmlFindTag(src, "cpu", &srcCpu));
+    while (srcCpu) {
+      const char* srcNumaId;
+      const char* srcHostHash;
+      NCCLCHECK(xmlGetAttr(srcCpu, "numaid", &srcNumaId));
+      if (srcNumaId == NULL) {
+        WARN("TopoFuseXmls : could not find CPU numa ID.");
+        return ncclInternalError;
+      }
+      xmlGetAttr(srcCpu, "host_hash", &srcHostHash);
+      if (srcHostHash == NULL)
+        srcHostHash = "0";
+
+      // Search through the destination for a duplicate.  Note that
+      // this makes the complexity of this whole function O(n^2), but n
+      // is expected to be small.
+      struct ncclXmlNode* dstCpu;
+      NCCLCHECK(xmlFindTag(dst, "cpu", &dstCpu));
+      while (dstCpu) {
+        const char* dstNumaId;
+        const char* dstHostHash;
+        NCCLCHECK(xmlGetAttr(dstCpu, "numaid", &dstNumaId));
+        if (dstNumaId == NULL) {
+          WARN("TopoFuseXmls : could not find CPU numa ID.");
+          return ncclInternalError;
+        }
+        xmlGetAttr(dstCpu, "host_hash", &dstHostHash);
+        if (dstHostHash == NULL)
+          dstHostHash = "0";
+        if (strcmp(srcNumaId, dstNumaId) == 0 && strcmp(srcHostHash, dstHostHash) == 0)
+          break;
+
+        NCCLCHECK(xmlFindNextTag(dst, "cpu", dstCpu, &dstCpu));
+      }
+      // Only add the CPU if no duplicate was found
+      if (dstCpu == NULL)
+        NCCLCHECK(xmlAddTree(dst, topNode, srcCpu));
+      NCCLCHECK(xmlFindNextTag(src, "cpu", srcCpu, &srcCpu));
+    }
+  }
+  return ncclSuccess;
+}
+
+
 /****************************************/
 /* Parser rules for our specific format */
 /****************************************/
@@ -556,6 +613,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
             NCCLCHECK(xmlGetSubKv(topNode, "cpu", &parent, "numaid", numaIdStr));
             if (parent == NULL) {
               NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
+              NCCLCHECK(xmlSetAttrLong(parent, "host_hash", getHostHash()));
               NCCLCHECK(xmlSetAttr(parent, "numaid", numaIdStr));
             }
           } else if (slashCount == 2) {
@@ -581,6 +639,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
         struct ncclXmlNode* topNode;
         NCCLCHECK(xmlFindTag(xml, "system", &topNode));
         NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
+        NCCLCHECK(xmlSetAttrLong(parent, "host_hash", getHostHash()));
         NCCLCHECK(xmlSetAttr(parent, "numaid", "-1"));
         NCCLCHECK(ncclTopoGetXmlFromCpu(parent, xml));
       }
