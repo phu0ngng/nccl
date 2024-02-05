@@ -5,11 +5,17 @@ User Buffer Registration
 ************************
 
 User Buffer Registration is a feature that allows NCCL to directly send/receive/operate data through the user buffer without extra internal copy (zero-copy).
-It can accelerate collectives and greatly reduce the resource usage (e.g. #channel usage).
+It can accelerate collectives and greatly reduce the resource usage (e.g. #channel usage). NCCL provides two ways to register user buffers; one is *CUDA Graph*
+registration, and the other is *Local* registration. NCCL requires that for all NCCL communication function calls (e.g., allreduce, sendrecv, and so on), if any 
+rank in a communicator passes registered buffers to a NCCL communication function, all other ranks in the same communicator must pass their registered buffers;
+otherwise, mixing registered and non-registered buffers can result in undefined behavior.
 
-NCCL 2.19.x now supports user buffer registration for NVLink Sharp (NVLS); any NCCL collectives (e.g., allreduce) that support NVLS algorithm can utilize this feature.
+NVLink Sharp Buffer Registration
+--------------------------------
 
-To enable the *CUDA Graph* based buffer registration, users have to comply with several requirements:
+Since 2.19.x, NCCL supports user buffer registration for NVLink Sharp (NVLS); any NCCL collectives (e.g., allreduce) that support NVLS algorithm can utilize this feature.
+
+To enable the *CUDA Graph* based buffer registration for NVLS, users have to comply with several requirements:
 
  * The buffer is allocated through :c:func:`ncclMemAlloc` or qualified allocator (see :ref:`mem_allocator`).
  * The NCCL operation is launched on a stream captured by a CUDA graph for each rank.
@@ -42,7 +48,7 @@ Registered buffers will be deregistered when CUDA graph is destroyed. Here is a 
   CHECK(ncclMemFree(sendbuff));
   CHECK(ncclMemFree(recvbuff));
 
-On the other hand, to enable the *Local* based buffer registration, users have to comply with the following requirements:
+On the other hand, to enable the *Local* based buffer registration for NVLS, users have to comply with the following requirements:
 
  * The buffer is allocated through :c:func:`ncclMemAlloc` or qualified allocator (see :ref:`mem_allocator`).
  * Register buffer with :c:func:`ncclCommRegister` before calling collectives for each rank.
@@ -107,7 +113,7 @@ example shows a use case:
 Memory Allocator
 ----------------
 
-For convenience, NCCL provides `ncclMemAlloc` function to help users to allocate registration buffers through VMM API. For advanced users, if you want to create your own memory allocator for NVLS buffer registration, the allocator needs to satisfy the following requirements:
+For convenience, NCCL provides `ncclMemAlloc` function to help users to allocate buffers through VMM API. For advanced users, if you want to create your own memory allocator for NVLS buffer registration, the allocator needs to satisfy the following requirements:
 
  * Allocate buffer with shared flag `CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR`
  * Buffer size is multiple of multicast recommended granularity (i.e. cuMulticastGetGranularity(..., `CU_MULTICAST_GRANULARITY_RECOMMENDED`))

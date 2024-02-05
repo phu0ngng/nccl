@@ -172,7 +172,7 @@ ncclCommRegister
 .. c:function:: ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle)
 
 Register buffer with *size* under communicator *comm* for zero-copy communication, and *handle* is
-returned for future deregistration. See *buff* and *size* requirements (:ref:`user_buffer_reg`).
+returned for future deregistration. See *buff* and *size* requirements and more instructions in :ref:`user_buffer_reg`.
 
 ncclCommDeregister
 ------------------
