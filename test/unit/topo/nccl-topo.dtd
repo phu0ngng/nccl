@@ -11,6 +11,7 @@
 <!ATTLIST system version CDATA #IMPLIED>           <!-- for now version is always 1 -->
 
 <!ATTLIST cpu numaid CDATA #REQUIRED>              <!-- cpu tags are in fact NUMA domains -->
+<!ATTLIST cpu host_hash CDATA #IMPLIED>            <!-- CPU host hash in hex -->
 <!ATTLIST cpu affinity CDATA #IMPLIED>             <!-- hex bitmask providing the list of CPUs in that NUMA domain. E.g. "0003ff,f0003fff" as in /sys/devices/system/node/nodeX/cpumap -->
 <!ATTLIST cpu arch CDATA #IMPLIED>                 <!-- CPU arch (ppc64, arm64, or x86_64) -->
 <!ATTLIST cpu vendor CDATA #IMPLIED>               <!-- CPU vendor ID as reported by the CPUID x86 call. -->
