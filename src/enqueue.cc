@@ -1958,7 +1958,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   ncclResult_t ret = ncclSuccess;
   int devOld = -1;
 
-  NCCLCHECKGOTO(PtrCheck(info->comm, info->opName, "comm"), ret, fail);
+  NCCLCHECKGOTO(CommCheck(info->comm, info->opName, "comm"), ret, fail);
   // Check whether communicator is ready to communicate
   NCCLCHECKGOTO(ncclCommEnsureReady(info->comm), ret, fail);
 
@@ -1990,7 +1990,7 @@ fail:
 
 NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
 ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm) {
-  NCCLCHECK(PtrCheck(comm, "ncclRedOpCreatePreMulSum", "comm"));
+  NCCLCHECK(CommCheck(comm, "ncclRedOpCreatePreMulSum", "comm"));
   /* join init thread before creating PreMulSum op. */
   NCCLCHECK(ncclCommEnsureReady(comm));
 
