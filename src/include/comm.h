@@ -87,6 +87,12 @@ struct ncclNodeRanks {
   int* localRankToRank;
 };
 
+struct cliqueInfo {
+  int id;
+  int size;
+  int *ranks;
+};
+
 struct ncclDestructor {
   struct ncclDestructor* next;
   void* obj;
@@ -245,7 +251,10 @@ struct ncclComm {
   int* localRankToRank;
   // localRanks and localRanktoRank for all nodes
   struct ncclNodeRanks* nodeRanks;
-  int MNNVL; // MNNVL: Multi-Node NVLink
+  // MNNVL: Multi-Node NVLink
+  int MNNVL; // true when MNNVL is available
+  struct cliqueInfo clique; // Our MNNVL clique information
+  int cliqueRank; // Our rank within the MNNVL clique
 
   bool checkPointers;
   bool dmaBufSupport;
