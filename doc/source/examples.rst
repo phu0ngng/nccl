@@ -541,7 +541,7 @@ NCCL allows users to create multiple communicators per device. The following cod
   CUDACHECK(cudaSetDevice(localRank));
   for (int i = 0; i < commNum; ++i) {
     if (myRank == 0) ncclGetUniqueId(&id);
-    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));    
+    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
     NCCLCHECK(ncclCommInitRank(&blockingComms[i], nRanks, id, myRank));
   }
 
@@ -551,7 +551,7 @@ NCCL allows users to create multiple communicators per device. The following cod
   config.blocking = 0;
   for (int i = 0; i < commNum; ++i) {
     if (myRank == 0) ncclGetUniqueId(&id);
-    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));    
+    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
     NCCLCHECK(ncclCommInitRankConfig(&nonblockingComms[i], nRanks, id, myRank, &config));
     do {
       NCCLCHECK(ncclCommGetAsyncError(nonblockingComms[i], &state));
