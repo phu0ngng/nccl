@@ -124,9 +124,9 @@ ncclCommAbort
 
 .. c:function:: ncclResult_t ncclCommAbort(ncclComm_t comm)
 
-Frees resources that are allocated to a communicator object *comm*. Will abort any uncompleted
-operations before destroying the communicator. This function is an intra-node collective call,
-which all ranks on the same node should call to avoid hang.
+*ncclCommAbort* frees resources that are allocated to a communicator object *comm* and aborts any uncompleted
+operations before destroying the communicator. All active ranks are required to call this function in order to
+abort the NCCL communicator successfully. For more use cases, please check :ref:`ft`.
 
 ncclCommGetAsyncError
 ---------------------
@@ -172,7 +172,7 @@ ncclCommRegister
 .. c:function:: ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle)
 
 Register buffer with *size* under communicator *comm* for zero-copy communication, and *handle* is
-returned for future deregistration. See *buff* and *size* requirements (:ref:`user_buffer_reg`).
+returned for future deregistration. See *buff* and *size* requirements and more instructions in :ref:`user_buffer_reg`.
 
 ncclCommDeregister
 ------------------
