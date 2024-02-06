@@ -41,7 +41,7 @@ build:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
     - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
-    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
+    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME NVCC_GENCODE="-gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_80,code=sm_80"
   artifacts:
     paths:
       - build
@@ -55,10 +55,8 @@ health-P100:
   needs: []
   tags:
     - p100
-  variables:
-    GIT_STRATEGY: none # SKIP GIT clone
   script:
-    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP100 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP100 ./test/scripts/gitlab-runner-health-check.sh
   interruptible: true
 
 health-P40:
@@ -68,10 +66,8 @@ health-P40:
   needs: []
   tags:
     - p40
-  variables:
-    GIT_STRATEGY: none # SKIP GIT clone
   script:
-    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP40 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP40 ./test/scripts/gitlab-runner-health-check.sh
   interruptible: true
 
 health-GP100:
@@ -81,49 +77,19 @@ health-GP100:
   needs: []
   tags:
     - gp100
-  variables:
-    GIT_STRATEGY: none # SKIP GIT clone
   script:
-    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pGP100 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-health-check.sh
   interruptible: true
 
-health-M40:
+health-A40:
   stage: health
   rules:
     - when: always
   needs: []
   tags:
-    - m40
-  variables:
-    GIT_STRATEGY: none # SKIP GIT clone
+    - a40
   script:
-    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pM40 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
-  interruptible: true
-
-health-K40:
-  stage: health
-  rules:
-    - when: always
-  needs: []
-  tags:
-    - k40
-  variables:
-    GIT_STRATEGY: none # SKIP GIT clone
-  script:
-    - srun --exclusive -t 00:02:00 -n 1 -c 4 -pK40 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
-  interruptible: true
-
-health-K80:
-  stage: health
-  rules:
-    - when: always
-  needs: []
-  tags:
-    - k80
-  variables:
-    GIT_STRATEGY: none # SKIP GIT clone
-  script:
-    - srun --exclusive -t 00:02:00 -n 1 -c 16 -pK80 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+    - srun --exclusive -t 00:02:00 -N 3 -c 2 -pA40 ./test/scripts/gitlab-runner-health-check.sh
   interruptible: true
 
 health-A100:
@@ -133,10 +99,8 @@ health-A100:
   needs: []
   tags:
     - a100pci
-  variables:
-    GIT_STRATEGY: none # SKIP GIT clone
   script:
-    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pA100 nvidia-smi --format=csv,noheader --query-gpu=persistence_mode | grep Enabled
+    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-health-check.sh
   interruptible: true
 
 unit_tests-P100:
@@ -181,46 +145,19 @@ unit_tests-GP100:
     - srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
-unit_tests-M40:
+unit_tests-A40:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build","health-M40"]
+  needs: ["build","health-A40"]
   tags:
-    - m40
+    - a40
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pM40 ./test/scripts/gitlab-runner-unit.sh
-  interruptible: true
-
-unit_tests-K40:
-  stage: unit_tests
-  rules:
-    - when: always
-  needs: ["build","health-K40"]
-  tags:
-    - k40
-  variables:
-    NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-  script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 4 -pK40 ./test/scripts/gitlab-runner-unit.sh
-  interruptible: true
-
-unit_tests-K80:
-  stage: unit_tests
-  rules:
-    - when: always
-  needs: ["build","health-K80"]
-  tags:
-    - k80
-  variables:
-    NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-  script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 16 -pK80 ./test/scripts/gitlab-runner-unit.sh
+    - srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40 ./test/scripts/gitlab-runner-unit.sh
+    - srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40 ./test/scripts/gitlab-runner-unit.sh # Also test single GPU
   interruptible: true
 
 unit_tests-A100:
@@ -281,47 +218,18 @@ apitest-GP100:
     - ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
  
-apitest-M40:
+apitest-A40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build", "unit_tests-M40"]
+  needs: ["build", "unit_tests-A40"]
   tags:
-    - m40
+    - a40
   variables:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 4 -pM40"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
-  interruptible: true
-
-apitest-K40:
-  stage: api_tests
-  rules:
-    - when: always
-  needs: ["build", "unit_tests-K40"]
-  tags:
-    - k40
-  variables:
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pK40"
-  script:
-    - ./test/scripts/gitlab-runner-apitest.sh
-  interruptible: true
-
-apitest-K80:
-  stage: api_tests
-  rules:
-    - if: $CUDA_VERSION == '10.2' || $CUDA_VERSION == '11.3'
-      when: always
-  needs: ["build", "unit_tests-K80"]
-  tags:
-    - k80
-  variables:
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 16 -pK80"
-  script:
-    - ./test/scripts/gitlab-runner-apitest.sh minimal
   interruptible: true
 
 apitest-A100:
@@ -443,57 +351,20 @@ perftest-GP100:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 2
   interruptible: true
 
-perftest-M40:
+perftest-A40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build, apitest-M40]
+  needs: [build, apitest-A40]
   tags:
-    - m40
+    - a40
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NNODES: 1
-    NGPUS: 4
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pM40"
-  script:
-    - ./test/scripts/gitlab-runner-perftest.sh 1G 0
-  interruptible: true
-
-perftest-K80:
-  stage: perf_tests_single
-  rules:
-    - if: $CUDA_VERSION == '10.2' || $CUDA_VERSION == '11.3'
-      when: always
-  needs: [build, apitest-K80]
-  tags:
-    - k80
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NNODES: 1
-    NGPUS: 16
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pK80"
-  script:
-    - ./test/scripts/gitlab-runner-perftest.sh 256M 0
-  interruptible: true
-
-perftest-K40:
-  stage: perf_tests_single
-  rules:
-    - when: always
-  needs: [build, apitest-K40]
-  tags:
-    - k40
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NNODES: 1
-    NGPUS: 4
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pK40"
+    NNODES: 3
+    NGPUS: 2
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   interruptible: true
@@ -590,10 +461,10 @@ perftest-multi-gc:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NCCL_ALLOC_P2P_NET_LL_BUFFERS: "1" # Add coverage of dedicated P2P LL buffers on constrained rank count
-    NNODES: 3
+    NNODES: 2
     NGPUS: 8
     SKIP_MULTI_GPU: 1
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02,05]"
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0
   interruptible: true
@@ -612,9 +483,9 @@ perftest-sharp-gc:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SHARP_HOME: "/opt/hpcx/v2.7/sharp"
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
-    NNODES: 3
+    NNODES: 2
     NGPUS: 8
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02,05]"
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   interruptible: true
