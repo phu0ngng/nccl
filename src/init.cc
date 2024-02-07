@@ -826,6 +826,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   ncclResult_t ret = ncclSuccess;
   int rank = comm->rank;
   int nranks = comm->nRanks;
+  int nNodes = 1;
   cpu_set_t affinitySave;
   struct ncclTopoGraph ringGraph;
   struct ncclTopoGraph treeGraph;
@@ -865,6 +866,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, comm->peerInfo, sizeof(struct ncclPeerInfo)), ret, fail);
 
   for (int i = 0; i < nranks; i++) {
+    if (comm->peerInfo[i].hostHash != comm->peerInfo[rank].hostHash) nNodes++;
     if ((i != rank) && (comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash) && (comm->peerInfo[i].busId == comm->peerInfo[rank].busId)) {
       WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %lx", rank, i, comm->peerInfo[rank].busId);
       ret = ncclInvalidUsage;
@@ -879,7 +881,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 #include "cudawrap.h"
 
   // MNNVL support
-  {
+  if (nNodes > 1) {
     int cliqueSize = 0;
     comm->MNNVL = 0;
     // Determine the size of the MNNVL domain/clique
