@@ -363,6 +363,8 @@ void exchangeValues(int* v0, int* v1) {
   *v0 = tmp;
 }
 
+NCCL_PARAM(UnpackDoubleChannels, "UNPACK_DOUBLE_CHANNELS", 1);
+
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeToParent, *treeToChild0, *treeToChild1, *nvlsHeads;
@@ -457,9 +459,9 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
      nChannels = comm->nChannels = copyChannels(comm, nChannels, 2*nChannels, ringPrev, ringNext);
   }
 
-  // Double the number of channels, if they are less than 16 when using unpack. We need to double channels to get peak performance.
+  // Double the number of channels when using unpack beyond 4 nodes.
   // We won't automatically double past 16 channels, users can specify 32 if they want
-  if (comm->netDeviceType == NCCL_NET_DEVICE_UNPACK && comm->nNodes > 1 && nChannels < 16) {
+  if (comm->netDeviceType == NCCL_NET_DEVICE_UNPACK && comm->nNodes > 4 && nChannels < 16 && ncclParamUnpackDoubleChannels()) {
      nChannels = comm->nChannels = copyChannels(comm, nChannels, 2*nChannels, ringPrev, ringNext);
   }
 
