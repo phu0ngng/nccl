@@ -221,6 +221,8 @@ ncclResult_t xmlLoadSub(FILE* file, struct ncclXml* xml, struct ncclXmlNode* hea
 ncclResult_t ncclTopoConvertXml(struct ncclXml* xml, uintptr_t base, int exp) {
   for (int n = 0; n < xml->maxIndex; n++) {
     struct ncclXmlNode *node = &xml->nodes[n];
+    if (node->parent != NULL)
+      node->parent = (struct ncclXmlNode *) (exp ? ((uintptr_t)node->parent - base) : (base + (uintptr_t)node->parent));
     for (int s = 0; s < node->nSubs; s++) {
       node->subs[s] = (struct ncclXmlNode *) (exp ? ((uintptr_t)node->subs[s] - base) : (base + (uintptr_t)node->subs[s]));
     }
