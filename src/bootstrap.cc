@@ -80,6 +80,16 @@ static ncclResult_t bootstrapNetRecv(struct ncclSocket* sock, void* data, int si
   NCCLCHECK(ncclSocketRecv(sock, data, std::min(recvSize, size)));
   return ncclSuccess;
 }
+static ncclResult_t bootstrapNetSendRecv(struct ncclSocket* sendSock, void* sendData, int sendSize, struct ncclSocket* recvSock, void* recvData, int recvSize) {
+  int senderRecvSize;
+  NCCLCHECK(ncclSocketSendRecv(sendSock, &sendSize, sizeof(int), recvSock, &senderRecvSize, sizeof(int)));
+  if (senderRecvSize > recvSize) {
+    WARN("Message truncated : received %d bytes instead of %d", senderRecvSize, recvSize);
+    return ncclInternalError;
+  }
+  NCCLCHECK(ncclSocketSendRecv(sendSock, sendData, sendSize, recvSock, recvData, recvSize));
+  return ncclSuccess;
+}
 
 struct extInfo {
   int rank;
@@ -384,27 +394,28 @@ fail:
   goto exit;
 }
 
-ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
-  struct bootstrapState* state = (struct bootstrapState*)commState;
-  char* data = (char*)allData;
-  int rank = state->rank;
-  int nranks = state->nranks;
-
-  TRACE(NCCL_INIT, "rank %d nranks %d size %d", rank, nranks, size);
-
+ncclResult_t bootstrapRingAllGather(struct ncclSocket* prevSocket, struct ncclSocket* nextSocket, int rank, int nranks, char* data, int size) {
   /* Simple ring based AllGather
-   * At each step i receive data from (rank-i-1) from left
-   * and send previous step's data from (rank-i) to right
+   * At each step i receive data from (rank-i-1) from prev
+   * and send previous step's data from (rank-i) to next
    */
   for (int i=0; i<nranks-1; i++) {
     size_t rslice = (rank - i - 1 + nranks) % nranks;
     size_t sslice = (rank - i + nranks) % nranks;
 
-    // Send slice to the right
-    NCCLCHECK(bootstrapNetSend(&state->ringSendSocket, data+sslice*size, size));
-    // Recv slice from the left
-    NCCLCHECK(bootstrapNetRecv(&state->ringRecvSocket, data+rslice*size, size));
+    // Send slice to the right, recv slice from the left
+    NCCLCHECK(bootstrapNetSendRecv(nextSocket, data+sslice*size, size, prevSocket, data+rslice*size, size));
   }
+  return ncclSuccess;
+}
+ncclResult_t bootstrapAllGather(void* commState, void* allData, int size) {
+  struct bootstrapState* state = (struct bootstrapState*)commState;
+  int rank = state->rank;
+  int nranks = state->nranks;
+
+  TRACE(NCCL_INIT, "rank %d nranks %d size %d", rank, nranks, size);
+
+  NCCLCHECK(bootstrapRingAllGather(&state->ringRecvSocket, &state->ringSendSocket, rank, nranks, (char*)allData, size));
 
   TRACE(NCCL_INIT, "rank %d nranks %d size %d - DONE", rank, nranks, size);
   return ncclSuccess;
@@ -451,15 +462,20 @@ ncclResult_t bootstrapBarrier(void* commState, int *ranks, int rank, int nranks,
 
 ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, int nranks, void* allData, int size) {
   if (nranks == 1) return ncclSuccess;
-  char* data = (char*)allData;
   TRACE(NCCL_INIT, "rank %d nranks %d size %d - ENTER", rank, nranks, size);
+  struct bootstrapState* state = (struct bootstrapState*)commState;
 
-  for (int i=1; i<nranks; i++) {
-    int src = (rank - i + nranks) % nranks;
-    int dst = (rank + i) % nranks;
-    NCCLCHECK(bootstrapSend(commState, ranks[dst], /*tag=*/i, data+rank*size, size));
-    NCCLCHECK(bootstrapRecv(commState, ranks[src], /*tag=*/i, data+src*size, size));
-  }
+  int nextRank = ranks[(rank + 1) % nranks];
+  struct ncclSocket prevSocket, nextSocket;
+  NCCLCHECK(ncclSocketInit(&nextSocket, state->peerCommAddresses+nextRank, state->magic, ncclSocketTypeBootstrap));
+  NCCLCHECK(ncclSocketConnect(&nextSocket));
+  NCCLCHECK(ncclSocketInit(&prevSocket));
+  NCCLCHECK(ncclSocketAccept(&nextSocket, &state->listenSock));
+
+  NCCLCHECK(bootstrapRingAllGather(&prevSocket, &nextSocket, rank, nranks, (char*)allData, size));
+
+  NCCLCHECK(ncclSocketClose(&nextSocket));
+  NCCLCHECK(ncclSocketClose(&prevSocket));
 
   TRACE(NCCL_INIT, "rank %d nranks %d size %d - DONE", rank, nranks, size);
   return ncclSuccess;
