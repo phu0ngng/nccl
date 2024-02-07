@@ -470,7 +470,7 @@ ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, 
   NCCLCHECK(ncclSocketInit(&nextSocket, state->peerCommAddresses+nextRank, state->magic, ncclSocketTypeBootstrap));
   NCCLCHECK(ncclSocketConnect(&nextSocket));
   NCCLCHECK(ncclSocketInit(&prevSocket));
-  NCCLCHECK(ncclSocketAccept(&nextSocket, &state->listenSock));
+  NCCLCHECK(ncclSocketAccept(&prevSocket, &state->listenSock));
 
   NCCLCHECK(bootstrapRingAllGather(&prevSocket, &nextSocket, rank, nranks, (char*)allData, size));
 
