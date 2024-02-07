@@ -732,14 +732,17 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   // Remove XML branches which don't have a node with keep="1" (typically when importing a topology)
   NCCLCHECK(ncclTopoTrimXml(xml));
 
-  // MNNVL clique support
-  struct ncclXml* cliqueXml;
-  NCCLCHECK(ncclCalloc(&cliqueXml, comm->clique.size));
-  memcpy(&cliqueXml[comm->cliqueRank], xml, sizeof(*xml));
-  NCCLCHECK(ncclTopoConvertXml(&cliqueXml[comm->cliqueRank], (uintptr_t)&xml->nodes[0], 1));
-  NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->clique.ranks, comm->cliqueRank, comm->clique.size, cliqueXml, sizeof(ncclXml)));
-  for (int i = 0; i < comm->clique.size; i++) {
-    NCCLCHECK(ncclTopoConvertXml(&cliqueXml[i], (uintptr_t)&cliqueXml[i].nodes[0], 0));
+  if (comm->MNNVL) {
+    // MNNVL clique support
+    struct ncclXml* cliqueXml;
+    NCCLCHECK(ncclCalloc(&cliqueXml, comm->clique.size));
+    memcpy(&cliqueXml[comm->cliqueRank], xml, sizeof(*xml));
+    NCCLCHECK(ncclTopoConvertXml(&cliqueXml[comm->cliqueRank], (uintptr_t)&xml->nodes[0], 1));
+    NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->clique.ranks, comm->cliqueRank, comm->clique.size, cliqueXml, sizeof(ncclXml)));
+    for (int i = 0; i < comm->clique.size; i++) {
+      NCCLCHECK(ncclTopoConvertXml(&cliqueXml[i], (uintptr_t)&cliqueXml[i].nodes[0], 0));
+    }
+    free(cliqueXml);
   }
 
   xmlTopoFile = ncclGetEnv("NCCL_TOPO_DUMP_FILE");
@@ -749,7 +752,6 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   }
 
   NCCLCHECK(ncclTopoGetSystemFromXml(xml, system, comm->peerInfo[comm->rank].hostHash));
-  free(cliqueXml);
   free(xml);
   return ncclSuccess;
 }
