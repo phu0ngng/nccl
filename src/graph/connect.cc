@@ -363,7 +363,7 @@ void exchangeValues(int* v0, int* v1) {
   *v0 = tmp;
 }
 
-NCCL_PARAM(UnpackDoubleChannels, "UNPACK_DOUBLE_CHANNELS", 1);
+NCCL_PARAM(UnpackDoubleChannels, "UNPACK_DOUBLE_NCHANNELS", 1);
 
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs) {
   // Gather data from all ranks
