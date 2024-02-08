@@ -2688,6 +2688,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
       file.open(path);
       if(!file.good()) {
         std::cerr<<"Invalid path to trace file: "<<path<<std::endl;
+        fflush(stderr);
         exit(ENOENT);
       }
       input = &file;
