@@ -806,7 +806,7 @@ static ncclResult_t scheduleCollTasksToPlan(
   while (!ncclIntruQueueEmpty(&tasks->collCBDQueue)) {
     // Get nChannels and peek whether the budget allows before we enqueue
     collInfo = ncclIntruQueueHead(&tasks->collCBDQueue);
-    collInfo->nChannels = DIVUP(collInfo->aggnBytes * tasks->usableChannels, totalCBDBytes);
+    collInfo->nChannels = DIVUP(collInfo->workBytes * tasks->usableChannels, totalCBDBytes);
     // Haven't got nChannels info yet, relax the budget boundary a bit.
     if (*nWorkBudget < collInfo->nChannels) return ncclSuccess;
 
