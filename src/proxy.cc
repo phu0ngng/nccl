@@ -1693,7 +1693,7 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     ncclSetThreadName(comm->proxyState->thread, "NCCL Service %2d", comm->cudaDev);
 
     // UDS support
-    INFO(NCCL_PROXY, "UDS: Creating service thread comm %p rank %d pidHash %lx", comm, comm->rank, comm->peerInfo[comm->rank].pidHash);
+    INFO(NCCL_INIT|NCCL_PROXY, "UDS: Creating service thread comm %p rank %d pidHash %lx", comm, comm->rank, comm->peerInfo[comm->rank].pidHash);
     NCCLCHECK(ncclIpcSocketInit(&comm->proxyState->ipcSock, comm->rank, comm->peerInfo[comm->rank].pidHash, comm->abortFlag));
     pthread_create(&comm->proxyState->threadUDS, NULL, ncclProxyServiceUDS, comm->proxyState);
     ncclSetThreadName(comm->proxyState->threadUDS, "NCCL UDS Service %2d", comm->cudaDev);

@@ -1485,7 +1485,10 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     NCCLCHECKGOTO(commGetSplitInfo(comm, job->parent, job->color, job->key, &job->nranks, &job->myrank, parentRanks), res, fail);
     // Negative color does not create a new comm object. We needed to take part in the allgather, but we're done now.
     if (job->color == NCCL_SPLIT_NOCOLOR) goto exit;
-    snprintf((char*)&job->commId, sizeof(job->commId), "%016lx-%d", job->parent->commHash, job->color);
+    // Make sure the new communicator has a unique commId/commHash
+    uint64_t randId;
+    NCCLCHECKGOTO(getRandomData(&randId, sizeof(randId)), res, fail);
+    snprintf((char*)&job->commId, sizeof(job->commId), "%016lx-%016lx", job->parent->commHash, randId);
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
     comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES); // Needed for UDS support
     NCCLCHECKGOTO(bootstrapSplit((struct ncclBootstrapHandle*)&job->commId, comm, job->parent, job->color, job->key, parentRanks), res, fail);
