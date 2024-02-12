@@ -742,6 +742,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     for (int i = 0; i < comm->clique.size; i++) {
       NCCLCHECK(ncclTopoConvertXml(&cliqueXml[i], (uintptr_t)&cliqueXml[i].nodes[0], 0));
     }
+    NCCLCHECK(ncclTopoFuseXmls(xml, cliqueXml, comm->clique.size));
     free(cliqueXml);
   }
 
