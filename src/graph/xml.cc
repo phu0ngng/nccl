@@ -218,11 +218,16 @@ ncclResult_t xmlLoadSub(FILE* file, struct ncclXml* xml, struct ncclXmlNode* hea
 /* XML Writer */
 /**************/
 
+// exp == 1 -- serialize; exp == 0 -- deserialize
 ncclResult_t ncclTopoConvertXml(struct ncclXml* xml, uintptr_t base, int exp) {
   for (int n = 0; n < xml->maxIndex; n++) {
     struct ncclXmlNode *node = &xml->nodes[n];
-    if (node->parent != NULL)
-      node->parent = (struct ncclXmlNode *) (exp ? ((uintptr_t)node->parent - base) : (base + (uintptr_t)node->parent));
+
+    // For "parent", we shift the base by 1 so that we can distinguish actual
+    // NULL pointers from pointers pointing to the first node.
+    if (node->parent)
+      node->parent = (struct ncclXmlNode *) (exp ? ((uintptr_t)node->parent - base + 1) : (base - 1 + (uintptr_t)node->parent));
+
     for (int s = 0; s < node->nSubs; s++) {
       node->subs[s] = (struct ncclXmlNode *) (exp ? ((uintptr_t)node->subs[s] - base) : (base + (uintptr_t)node->subs[s]));
     }
@@ -264,8 +269,10 @@ ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml)
 ncclResult_t ncclTopoFuseXmls(struct ncclXml* dst, struct ncclXml* srcs, int nSrcs) {
   if (nSrcs == 0) return ncclSuccess;
 
-  // Copy the first XML verbatim
+  // Copy the first XML verbatim (but relocate the pointers).
   *dst = srcs[0];
+  NCCLCHECK(ncclTopoConvertXml(dst, (uintptr_t)&srcs[0].nodes[0], 1));
+  NCCLCHECK(ncclTopoConvertXml(dst, (uintptr_t)&dst->nodes[0], 0));
 
   struct ncclXmlNode* topNode;
   NCCLCHECK(xmlFindTag(dst, "system", &topNode));

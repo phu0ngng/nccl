@@ -45,7 +45,6 @@ struct ncclXml {
 #define NCCL_TOPO_XML_VERSION 1
 ncclResult_t ncclTopoGetXmlFromFile(const char* xmlTopoFile, struct ncclXml* xml, int warn);
 ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml);
-ncclResult_t ncclTopoConvertXml(struct ncclXml* xml, uintptr_t base, int exp);
 #define NCCL_GRAPH_XML_VERSION 1
 ncclResult_t ncclTopoGetXmlGraphFromFile(const char* xmlGraphFile, struct ncclXml* xml);
 
@@ -58,6 +57,8 @@ ncclResult_t ncclTopoTrimXml(struct ncclXml* xml);
 
 /* Fuse multiple system XMLs into one, skipping duplicate CPUs */
 ncclResult_t ncclTopoFuseXmls(struct ncclXml* dst, struct ncclXml* srcs, int nSrcs);
+/* Relocate pointers in XML to (de-)serialize the structure */
+ncclResult_t ncclTopoConvertXml(struct ncclXml* xml, uintptr_t base, int exp);
 
 /**************/
 /* XML Struct */
