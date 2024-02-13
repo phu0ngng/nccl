@@ -244,11 +244,13 @@ ncclResult_t ncclTopoFlattenBcmSwitches(struct ncclTopoSystem* system) {
 ncclResult_t ncclTopoConnectCpus(struct ncclTopoSystem* system) {
   // And connect all CPU nodes together
   for (int n=0; n<system->nodes[CPU].count; n++) {
+    struct ncclTopoNode* cpu1 = system->nodes[CPU].nodes+n;
     for (int p=0; p<system->nodes[CPU].count; p++) {
-      if (n == p) continue;
+      struct ncclTopoNode* cpu2 = system->nodes[CPU].nodes+p;
+      if (n == p || (NCCL_TOPO_ID_SYSTEM_ID(cpu1->id) != NCCL_TOPO_ID_SYSTEM_ID(cpu2->id))) continue;
       float bw;
-      NCCLCHECK(ncclTopoGetInterCpuBw(system->nodes[CPU].nodes+n, &bw));
-      NCCLCHECK(ncclTopoConnectNodes(system->nodes[CPU].nodes+n, system->nodes[CPU].nodes+p, LINK_SYS, bw));
+      NCCLCHECK(ncclTopoGetInterCpuBw(cpu1, &bw));
+      NCCLCHECK(ncclTopoConnectNodes(cpu1, cpu2, LINK_SYS, bw));
     }
   }
   return ncclSuccess;
@@ -455,12 +457,25 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
 struct kvDict kvDictCpuArch[] = { { "x86_64", NCCL_TOPO_CPU_ARCH_X86 }, { "arm64", NCCL_TOPO_CPU_ARCH_ARM }, { "ppc64", NCCL_TOPO_CPU_ARCH_POWER }, { NULL, 0 } };
 struct kvDict kvDictCpuVendor[] = { { "GenuineIntel", NCCL_TOPO_CPU_VENDOR_INTEL }, { "AuthenticAMD", NCCL_TOPO_CPU_VENDOR_AMD }, { "CentaurHauls", NCCL_TOPO_CPU_VENDOR_ZHAOXIN }, { "  Shanghai  ", NCCL_TOPO_CPU_VENDOR_ZHAOXIN }, { NULL, 0 } };
 
-ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* system, struct ncclTopoNode** cpuNode, int systemId) {
+ncclResult_t ncclGetSystemId(struct ncclTopoSystem* system, struct ncclXmlNode* xmlCpu, int* systemIdPtr) {
+  const char* hostHashStr;
+  NCCLCHECK(xmlGetAttr(xmlCpu, "host_hash", &hostHashStr));
+  uint64_t hostHash = hostHashStr ? strtol(hostHashStr, NULL, 0) : 0;
+  int systemId;
+  for (systemId=0; systemId<system->nHosts; systemId++) if (system->hostHashes[systemId] == hostHash) break;
+  if (systemId == system->nHosts) system->hostHashes[system->nHosts++] = hostHash;
+  *systemIdPtr = systemId;
+  return ncclSuccess;
+}
+
+
+ncclResult_t ncclTopoAddCpu(struct ncclXmlNode* xmlCpu, struct ncclTopoSystem* system) {
   int numaId;
   NCCLCHECK(xmlGetAttrInt(xmlCpu, "numaid", &numaId));
+  int systemId;
+  NCCLCHECK(ncclGetSystemId(system, xmlCpu, &systemId));
   struct ncclTopoNode* cpu;
   NCCLCHECK(ncclTopoCreateNode(system, &cpu, CPU, NCCL_TOPO_ID(systemId, numaId)));
-  *cpuNode = cpu;
   const char* str;
   NCCLCHECK(xmlGetAttr(xmlCpu, "affinity", &str));
   if (str != NULL) {
@@ -543,6 +558,9 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
       }
     }
   } else {
+    if (strcmp(node->name, "cpu") == 0) {
+      NCCLCHECK(ncclGetSystemId(system, node, &systemId));
+    }
     const char* busId;
     NCCLCHECK(xmlGetAttr(node, "busid", &busId));
     for (int s=0; s<node->nSubs; s++) {
@@ -552,7 +570,7 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoAddC2c(struct ncclXmlNode* node, struct ncclTopoSystem* system, const char* parentBusId) {
+ncclResult_t ncclTopoAddC2c(struct ncclXmlNode* node, struct ncclTopoSystem* system, const char* parentBusId, int systemId) {
   if (strcmp(node->name, "c2c") == 0) {
     struct ncclTopoNode* gpu = NULL;
     int64_t pBusId;
@@ -573,50 +591,35 @@ ncclResult_t ncclTopoAddC2c(struct ncclXmlNode* node, struct ncclTopoSystem* sys
     NCCLCHECK(ncclTopoConnectNodes(gpu, cpu, LINK_NVL, c2cBw));
     NCCLCHECK(ncclTopoConnectNodes(cpu, gpu, LINK_NVL, c2cBw));
   } else {
+    if (strcmp(node->name, "cpu") == 0) {
+      NCCLCHECK(ncclGetSystemId(system, node, &systemId));
+    }
     const char* busId;
     NCCLCHECK(xmlGetAttr(node, "busid", &busId));
     for (int s=0; s<node->nSubs; s++) {
-      NCCLCHECK(ncclTopoAddC2c(node->subs[s], system, busId ? busId : parentBusId));
+      NCCLCHECK(ncclTopoAddC2c(node->subs[s], system, busId ? busId : parentBusId, systemId));
     }
   }
   return ncclSuccess;
 }
 
-NCCL_PARAM(SystemIdStart, "SYSTEMID_START", 0);
 ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem** topoSystem, const uint64_t localHostHash) {
   NCCLCHECK(ncclCalloc(topoSystem, 1));
   struct ncclTopoSystem* system = *topoSystem;
   struct ncclXmlNode* topNode;
   NCCLCHECK(xmlFindTag(xml, "system", &topNode));
-  int systemId = ncclParamSystemIdStart();
-  if (localHostHash == 0) system->systemId = systemId;
-  do {
-    if (localHostHash != 0) {
-      const char* hostHashStr;
-      NCCLCHECK(xmlGetAttr(topNode, "host_hash", &hostHashStr));
-      if ((hostHashStr && strtol(hostHashStr, NULL, 0) == localHostHash)) system->systemId = systemId;
-    }
-    struct ncclTopoNode* cpus[NCCL_TOPO_MAX_NODES];
-    int ncpus = 0;
-    for (int s=0; s<topNode->nSubs; s++) {
-      struct ncclXmlNode* node = topNode->subs[s];
-      if (strcmp(node->name, "cpu") == 0) NCCLCHECK(ncclTopoAddCpu(node, system, cpus+ncpus, systemId));
-      float bw;
-      NCCLCHECK(ncclTopoGetInterCpuBw(cpus[ncpus], &bw));
-      for (int c=0; c<ncpus; c++) {
-        NCCLCHECK(ncclTopoConnectNodes(cpus[ncpus], cpus[c], LINK_SYS, bw));
-        NCCLCHECK(ncclTopoConnectNodes(cpus[c], cpus[ncpus], LINK_SYS, bw));
-      }
-      ncpus++;
-    }
-    NCCLCHECK(ncclTopoAddNvLinks(topNode, system, NULL, systemId));
-    NCCLCHECK(ncclTopoAddC2c(topNode, system, NULL));
-    NCCLCHECK(ncclTopoFlattenBcmSwitches(system));
-    NCCLCHECK(ncclTopoSortSystem(system));
+  for (int s=0; s<topNode->nSubs; s++) {
+    struct ncclXmlNode* node = topNode->subs[s];
+    if (strcmp(node->name, "cpu") == 0) NCCLCHECK(ncclTopoAddCpu(node, *topoSystem));
+  }
+  for (int systemId=0; systemId<system->nHosts; systemId++) if (system->hostHashes[systemId] == localHostHash) system->systemId = systemId;
 
-    NCCLCHECK(xmlFindNextTag(xml, "system", topNode, &topNode));
-    systemId++;
-  } while (topNode);
+  NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, NULL, 0));
+  NCCLCHECK(ncclTopoAddC2c(topNode, *topoSystem, NULL, 0));
+
+  NCCLCHECK(ncclTopoFlattenBcmSwitches(*topoSystem));
+  NCCLCHECK(ncclTopoConnectCpus(*topoSystem));
+  NCCLCHECK(ncclTopoSortSystem(*topoSystem));
 
   return ncclSuccess;
 }

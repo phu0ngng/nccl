@@ -153,6 +153,8 @@ struct ncclTopoNodeSet {
 
 struct ncclTopoSystem {
   int systemId;
+  uint64_t hostHashes[NCCL_TOPO_MAX_NODES];
+  int nHosts;
   struct ncclTopoNodeSet nodes[NCCL_TOPO_NODE_TYPES];
   float maxBw;
   float totalBw;
