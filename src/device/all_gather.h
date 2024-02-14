@@ -289,7 +289,7 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
           scat.work = work;
           scat.chunkSize = chunkSize;
           scat.railGridOffset = railGridOffset;
-          prims.process</*Recv=*/1, /*Send=*/1>(scat);
+          prims.template process</*Recv=*/1, /*Send=*/1>(scat);
         }
       }
       return;
@@ -307,7 +307,7 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
         scat.work = work;
         scat.chunkSize = chunkSize;
         scat.railGridOffset = railGridOffset;
-        prims.process</*Recv=*/1, /*Send=*/0>(scat);
+        prims.template process</*Recv=*/1, /*Send=*/0>(scat);
       }
       return;
     }
