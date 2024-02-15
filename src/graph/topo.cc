@@ -460,7 +460,7 @@ struct kvDict kvDictCpuVendor[] = { { "GenuineIntel", NCCL_TOPO_CPU_VENDOR_INTEL
 ncclResult_t ncclGetSystemId(struct ncclTopoSystem* system, struct ncclXmlNode* xmlCpu, int* systemIdPtr) {
   const char* hostHashStr;
   NCCLCHECK(xmlGetAttr(xmlCpu, "host_hash", &hostHashStr));
-  uint64_t hostHash = hostHashStr ? strtol(hostHashStr, NULL, 0) : 0;
+  uint64_t hostHash = hostHashStr ? strtoull(hostHashStr, NULL, 16) : 0;
   int systemId;
   for (systemId=0; systemId<system->nHosts; systemId++) if (system->hostHashes[systemId] == hostHash) break;
   if (systemId == system->nHosts) system->hostHashes[system->nHosts++] = hostHash;
@@ -521,7 +521,8 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
     struct ncclTopoNode* gpu = NULL;
     int64_t pBusId;
     NCCLCHECK(busIdToInt64(parentBusId, &pBusId));
-    NCCLCHECK(ncclTopoGetNode(system, &gpu, GPU, NCCL_TOPO_ID(systemId, pBusId)));
+    pBusId = NCCL_TOPO_ID(systemId, pBusId);
+    NCCLCHECK(ncclTopoGetNode(system, &gpu, GPU, pBusId));
     if (gpu == NULL) {
       WARN("Add NVLink error : could not find GPU %lx", pBusId);
       return ncclInternalError;
@@ -575,6 +576,7 @@ ncclResult_t ncclTopoAddC2c(struct ncclXmlNode* node, struct ncclTopoSystem* sys
     struct ncclTopoNode* gpu = NULL;
     int64_t pBusId;
     NCCLCHECK(busIdToInt64(parentBusId, &pBusId));
+    pBusId = NCCL_TOPO_ID(systemId, pBusId);
     NCCLCHECK(ncclTopoGetNode(system, &gpu, GPU, pBusId));
     if (gpu == NULL) {
       WARN("Add NVLink error : could not find GPU %lx", pBusId);
