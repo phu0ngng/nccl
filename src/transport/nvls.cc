@@ -51,7 +51,7 @@ ncclResult_t nvlsGetProperties(struct ncclComm *comm, struct ncclNvlsSharedRes* 
   memset(prop, 0, sizeof(*prop));
   prop->size = size;
   prop->numDevices = nranks;
-  prop->handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+  prop->handleTypes = ncclCuMemHandleType;
   prop->flags = 0;
 
   // Could be changed to CU_MULTICAST_GRANULARITY_MINIMUM when 3418538 resolved
@@ -77,9 +77,9 @@ ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop,
   INFO(NCCL_NVLS, "NVLS Creating Multicast group nranks %d size %zi on rank %d", nranks, size, rank);
   CUCHECK(cuMulticastCreate(mcHandle, prop));
 
-  if ((NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) && (NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR)) {
+  if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_FABRIC) {
     // Get a handle to pass to other ranks
-    CUCHECK(cuMemExportToShareableHandle(shareableHandle, *mcHandle, NVLS_CU_MEM_HANDLE_TYPE, 0));
+    CUCHECK(cuMemExportToShareableHandle(shareableHandle, *mcHandle, ncclCuMemHandleType, 0));
   }
   else {
     memcpy(shareableHandle, mcHandle, sizeof(CUmemGenericAllocationHandle));
@@ -97,7 +97,7 @@ ncclResult_t nvlsGroupAddDevice(struct ncclComm *comm, struct ncclNvlsSharedRes*
 }
 
 ncclResult_t nvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int rank, CUmemGenericAllocationHandle *mcHandle) {
-  CUmemAllocationHandleType type = NVLS_CU_MEM_HANDLE_TYPE;
+  CUmemAllocationHandleType type = ncclCuMemHandleType;
 
   INFO(NCCL_NVLS, "NVLS importing shareableHandle %p from rank %d", shareableHandle, rank);
 
@@ -113,7 +113,7 @@ ncclResult_t nvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int 
     CUCHECK(cuMemImportFromShareableHandle(mcHandle, (void *)(uintptr_t)fd, type));
     (void) close(fd);
   } else {
-    if (NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) {
+    if (type == CU_MEM_HANDLE_TYPE_FABRIC) {
       CUCHECK(cuMemImportFromShareableHandle(mcHandle, (void *)shareableHandle, type));
     } else {
       memcpy(mcHandle, shareableHandle, sizeof(CUmemGenericAllocationHandle));
@@ -136,7 +136,7 @@ ncclResult_t nvlsGroupBindMem(struct ncclComm *comm, struct ncclNvlsSharedRes* r
   prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
   prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   prop.location.id = resources->dev;
-  prop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+  prop.requestedHandleTypes = ncclCuMemHandleType;
   CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
   resources->ucGran = granularity;
 

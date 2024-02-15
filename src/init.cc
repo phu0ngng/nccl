@@ -2326,7 +2326,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   if (mcSupport) {
     memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
     memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    memprop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+    memprop.requestedHandleTypes = ncclCuMemHandleType;
     memprop.location.id = currentDev;
     // Query device to see if RDMA support is available
     CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED, currentDev));
@@ -2338,7 +2338,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     mcprop.size = size;
     /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
     mcprop.numDevices = dcnt;
-    mcprop.handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+    mcprop.handleTypes = ncclCuMemHandleType;
     mcprop.flags = 0;
     CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
 
