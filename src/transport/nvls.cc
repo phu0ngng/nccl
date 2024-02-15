@@ -327,7 +327,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
     NCCLCHECKGOTO(nvlsGroupAddDevice(comm, resources), res, cleanup);
     NCCLCHECKGOTO(nvlsGroupBindMem(comm, resources), res, cleanup);
     // Local intra-node barrier to ensure everyone has bound their memory to the group
-    NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
+    NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
     NCCLCHECKGOTO(nvlsGroupMapMem(comm, resources), res, cleanup);
 
     for (int h = 0; h < nHeads; h++) {

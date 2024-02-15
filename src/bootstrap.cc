@@ -439,11 +439,11 @@ fail:
   goto exit;
 }
 
-ncclResult_t bootstrapBarrier(void* commState, int *ranks, int rank, int nranks, int tag) {
+ncclResult_t bootstrapIntraNodeBarrier(void* commState, int *ranks, int rank, int nranks, int tag) {
   if (nranks == 1) return ncclSuccess;
   TRACE(NCCL_INIT, "rank %d nranks %d tag %x - ENTER", rank, nranks, tag);
 
-  /* Simple intra process barrier
+  /* Simple [intra] process barrier
    *
    * Based on the dissemination algorithm by Debra Hensgen, Raphael Finkel, and Udi Manbet,
    * "Two Algorithms for Barrier Synchronization," International Journal of Parallel Programming, 17(1):1-17, 1988"
@@ -452,12 +452,16 @@ ncclResult_t bootstrapBarrier(void* commState, int *ranks, int rank, int nranks,
   for (int mask=1; mask<nranks; mask<<=1) {
     int src = (rank - mask + nranks) % nranks;
     int dst = (rank + mask) % nranks;
-    NCCLCHECK(bootstrapSend(commState, ranks[dst], tag, data, sizeof(data)));
-    NCCLCHECK(bootstrapRecv(commState, ranks[src], tag, data, sizeof(data)));
+    NCCLCHECK(bootstrapSend(commState, ranks ? ranks[dst] : dst, tag, data, sizeof(data)));
+    NCCLCHECK(bootstrapRecv(commState, ranks ? ranks[src] : src, tag, data, sizeof(data)));
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d tag %x - DONE", rank, nranks, tag);
   return ncclSuccess;
+}
+
+ncclResult_t bootstrapBarrier(void* commState, int rank, int nranks, int tag) {
+  return bootstrapIntraNodeBarrier(commState, NULL, rank, nranks, tag);
 }
 
 ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, int nranks, void* allData, int size) {
@@ -481,22 +485,26 @@ ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, 
   return ncclSuccess;
 }
 
-// IntraNode in-place Broadcast
+// [IntraNode] in-place Broadcast
 ncclResult_t bootstrapIntraNodeBroadcast(void* commState, int *ranks, int rank, int nranks, int root, void* bcastData, int size) {
   if (nranks == 1) return ncclSuccess;
   TRACE(NCCL_INIT, "rank %d nranks %d root %d size %d - ENTER", rank, nranks, root, size);
 
   if (rank == root) {
     for (int i=0; i<nranks; i++) {
-      if (i != root) NCCLCHECK(bootstrapSend(commState, ranks[i], /*tag=*/ranks[i], bcastData, size));
+      if (i != root) NCCLCHECK(bootstrapSend(commState, ranks ? ranks[i] : i, /*tag=*/ranks ? ranks[i] : i, bcastData, size));
     }
   }
   else {
-    NCCLCHECK(bootstrapRecv(commState, ranks[root], /*tag=*/ranks[rank], bcastData, size));
+    NCCLCHECK(bootstrapRecv(commState, ranks ? ranks[root] : root, /*tag=*/ranks ? ranks[rank] : rank, bcastData, size));
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d root %d size %d - DONE", rank, nranks, root, size);
   return ncclSuccess;
+}
+
+ncclResult_t bootstrapBroadcast(void* commState, int rank, int nranks, int root, void* bcastData, int size) {
+  return bootstrapIntraNodeBroadcast(commState, NULL, rank, nranks, root, bcastData, size);
 }
 
 ncclResult_t unexpectedEnqueue(struct bootstrapState* state, int peer, int tag, struct ncclSocket* sock) {
