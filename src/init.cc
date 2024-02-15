@@ -891,6 +891,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   ncclResult_t ret = ncclSuccess;
   int rank = comm->rank;
   int nranks = comm->nRanks;
+  int nNodes = 1;
   cpu_set_t affinitySave;
   struct ncclTopoGraph ringGraph;
   struct ncclTopoGraph treeGraph;
@@ -930,6 +931,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, comm->peerInfo, sizeof(struct ncclPeerInfo)), ret, fail);
 
   for (int i = 0; i < nranks; i++) {
+    if (comm->peerInfo[i].hostHash != comm->peerInfo[rank].hostHash) nNodes++;
     if ((i != rank) && (comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash) && (comm->peerInfo[i].busId == comm->peerInfo[rank].busId)) {
       WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %lx", rank, i, comm->peerInfo[rank].busId);
       ret = ncclInvalidUsage;
@@ -939,7 +941,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // AllGather1 - end
 
   // MNNVL support
-  if (!checkMNNVL(comm) && ncclParamMNNVL() == 1) {
+  if (nNodes >1 && !checkMNNVL(comm) && ncclParamMNNVL() == 1) {
     // Return an error if the user specifically requested MNNVL support
     WARN("MNNVL is not supported on this system");
     ret = ncclSystemError;
