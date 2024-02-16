@@ -1366,7 +1366,7 @@ char* splitMaskEnv = NULL;
     commNum = 1;
   }
   // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 2G for the rest.
-  size_t memMaxBytes = ((maxMem - (2LL<<30)) / (datacheck ? 3 : 2)) / commNum;
+  size_t memMaxBytes = ((maxMem - (4LL<<30) * (commNum + 1)) / (datacheck ? 3 : 2)) / commNum;
   if (maxBytes > memMaxBytes) {
     maxBytes = memMaxBytes;
     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
