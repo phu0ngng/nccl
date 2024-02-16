@@ -1464,7 +1464,7 @@ static ncclResult_t topoGetAlgoInfo(struct ncclInfo* collInfo, int collNetSuppor
     for (int a=0; a<nAlgos; a++) {
       if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetSupport != 1) continue;
       if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && nvlsSupport != 1) continue;
-      if (a == NCCL_ALGO_NVLS && collNetSupport != 1 && comm->nNodes > 1) continue;
+      if (a == NCCL_ALGO_NVLS && collNetSupport != 1 && comm->MNNVL != 1 && comm->nNodes > 1) continue;
       /* now we only support single-node NVLS allgather and reducescatter */
       if (a == NCCL_ALGO_NVLS && (collInfo->coll == ncclFuncAllGather || collInfo->coll == ncclFuncReduceScatter) && comm->nNodes > 1) continue;
 
@@ -1486,6 +1486,11 @@ static ncclResult_t topoGetAlgoInfo(struct ncclInfo* collInfo, int collNetSuppor
         }
       }
     }
+
+    // MNNVL hack
+    INFO(NCCL_TUNING, "XXXX HACK FORCING ALGO %d PROTO %d to NVLS %d /SIMPLE %d", collInfo->algorithm, collInfo->protocol, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPLE);
+    collInfo->algorithm = NCCL_ALGO_NVLS;
+    collInfo->protocol = NCCL_PROTO_SIMPLE;
 
     if (collInfo->algorithm == NCCL_ALGO_UNDEF || collInfo->protocol == NCCL_PROTO_UNDEF) {
       if (backupAlgo == NCCL_ALGO_UNDEF || backupProto == NCCL_PROTO_UNDEF) {

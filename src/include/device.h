@@ -157,7 +157,7 @@ struct ncclDirect {
   int down[NCCL_MAX_DIRECT_ARITY];
 };
 
-#define NCCL_MAX_NVLS_ARITY 8
+#define NCCL_MAX_NVLS_ARITY 32
 #define NCCL_MAX_NVLS_TREE_ARITY 3
 struct ncclNvls {
   int out;

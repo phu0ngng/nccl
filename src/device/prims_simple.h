@@ -528,7 +528,7 @@ private:
     while (nsend < MaxSend && sendPeers[nsend] != -1) nsend++;
     this->fan = Fan(nrecv, nsend);
 
-    constexpr int ThreadPerSync = 8;
+    constexpr int ThreadPerSync = 32;
     static_assert(MaxSend <= ThreadPerSync && MaxRecv <= ThreadPerSync, "Not enough threads to cover all peers");
 
     int g = tid / ThreadPerSync;
@@ -560,13 +560,9 @@ private:
       flags |= AnyNetDeviceUnpack;
       // g == 0 is the first ThreadPerSync # of threads of this warp
       // g == 0 is also the RoleWaitRecv threads of this group, thus the thread ID will correlate to the peer index
-      if (g == 0) {
-        uint32_t mask = __ballot_sync((1U << ThreadPerSync) - 1, (flags & NetDeviceUnpack) ? 1 : 0);
-
-        // We only want to update the shared memory variable with a single thread
-        if (tid == 0) {
-          ncclShmem.groups[this->group].devicePlugin.unpack.unpackNetDeviceIndexMask = mask;
-        }
+      uint32_t mask = __ballot_sync(~0u, (flags & NetDeviceUnpack) ? 1 : 0);
+      if (g == 0 && tid == 0) {
+        ncclShmem.groups[this->group].devicePlugin.unpack.unpackNetDeviceIndexMask = mask;
       }
     }
 

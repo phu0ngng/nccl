@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "comm.h"
 #include "core.h"
 #include "graph.h"
 #include "topo.h"
@@ -855,7 +856,7 @@ float sm90SpeedArrayInter[] = { 48.0, 45.0, 42.0, 40.0, 30.0, 24.0, 22.0, 20.0, 
 #define NSPEEDSINTRA_SM90 (sizeof(sm90SpeedArrayIntra)/sizeof(float))
 #define NSPEEDSINTER_SM90 (sizeof(sm90SpeedArrayInter)/sizeof(float))
 
-ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph) {
+ncclResult_t ncclTopoCompute(struct ncclComm* comm, ncclTopoSystem* system, struct ncclTopoGraph* graph) {
   int ngpus = system->nodes[GPU].count;
   int crossNic = (system->nodes[NET].count > 1) &&
 	 (graph->pattern == NCCL_TOPO_PATTERN_RING ||
@@ -890,7 +891,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   NCCLCHECK(ncclTopoGetCompCap(system, &ccMin, NULL));
   if (graph->pattern == NCCL_TOPO_PATTERN_NVLS && (system->nodes[NVS].count == 0 || ccMin < 90)) return ncclSuccess;
   // NVLS search must have ngpus heads at most.
-  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) graph->maxChannels = system->nodes[GPU].count;
+  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) graph->maxChannels = comm->MNNVL ? comm->clique.size : system->nodes[GPU].count;
 
   if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
@@ -1083,7 +1084,7 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
 // NVLS channels aren't compute channels. Find which NIC corresponds to our rank being the head
 ncclResult_t getNvlsNetDev(struct ncclComm* comm, struct ncclTopoGraph* graph, int channelId, int* dev) {
   ncclResult_t ret = ncclSuccess;
-  int localRanks = comm->topo->nodes[GPU].count;
+  int localRanks = comm->MNNVL ? comm->clique.size : comm->topo->nodes[GPU].count;
   int netNum = 0;
   int net[MAXCHANNELS];
 

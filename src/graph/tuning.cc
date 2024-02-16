@@ -282,15 +282,15 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
   }
 
-  // MNNVL: NVLS not yet supported
+  // MNNVL: NVLSTREE not yet supported
   if (comm->nNodes == 1 || comm->MNNVL) algoEnable[NCCL_ALGO_NVLS_TREE] = 0;
 
   // Disable CollNet if it is not supported
   if (comm->collNetSupport == 0) {
     algoEnable[NCCL_ALGO_COLLNET_DIRECT] = 0;
     algoEnable[NCCL_ALGO_COLLNET_CHAIN] = 0;
-    // MNNVL: NVLS not yet supported
-    if (comm->nNodes > 1 || comm->MNNVL) algoEnable[NCCL_ALGO_NVLS] = 0;
+    // NB: MNNVL is treated as a single node
+    if (nNodes > 1) algoEnable[NCCL_ALGO_NVLS] = 0;
     // If user has hard set NCCL_ALGO=COLLNET, ignore it
     if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0 &&
         algoEnable[NCCL_ALGO_NVLS] == 0 && algoEnable[NCCL_ALGO_NVLS_TREE] == 0) {

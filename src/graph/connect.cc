@@ -17,6 +17,7 @@
 ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs, struct ncclTopoRanks* topoRanks) {
   int rank = comm->rank;
   int localRanks = comm->topo->nodes[GPU].count;
+  int nvlsRanks = comm->MNNVL ? comm->clique.size : localRanks;
   int nChannels = comm->nChannels;
 
   topoRanks->nvlsHeadNum = 0;
@@ -71,7 +72,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
   // Get nvls heads and the number of heads. Duplicate head is not allowed.
   for (int c = 0; c < graphs[NCCL_ALGO_NVLS]->nChannels; ++c) {
     bool addHead = true;
-    int* nvlsIntra = graphs[NCCL_ALGO_NVLS]->intra + c * localRanks;
+    int* nvlsIntra = graphs[NCCL_ALGO_NVLS]->intra + c * nvlsRanks;
 
     for (int dup = 0; dup < topoRanks->nvlsHeadNum; dup++) {
       if (topoRanks->nvlsHeads[dup] == nvlsIntra[0]) {
