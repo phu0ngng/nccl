@@ -430,7 +430,7 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
       localNetCount = 0;
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
       struct ncclTopoLinkList* paths = gpu->paths[NET];
-      for (int n=0; n<system->nodes[NET].count; n++) {
+      for (int n=0; n<system->nodes[NET].count && n<MAXCHANNELS; n++) {
         if (paths[n].type == t) localNets[localNetCount++] = n;
       }
       // Append NICs to list
@@ -791,6 +791,7 @@ ncclResult_t ncclTopoGetXmlFromChannel(struct ncclTopoGraph* graph, int c, struc
       return ncclInternalError;
     }
     NCCLCHECK(xmlSetAttrLong(node, "dev", dev));
+    if (graph->id == 3) break; // NVLS graphs only use the first GPU
   }
   if (system->nodes[NET].count) {
     NCCLCHECK(xmlAddNode(xml, xmlChannel, "net", &node));
