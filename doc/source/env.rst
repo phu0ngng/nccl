@@ -789,20 +789,13 @@ NCCL_GRAPH_MIXING_SUPPORT
 -------------------------
 (since 2.13)
 
-Enable/disable support for co-occurring outstanding NCCL launches from multiple
-CUDA graphs or a CUDA graph and non-captured NCCL calls. With support disabled,
-correctness is only guaranteed if the communicator always avoids both of the
-following cases:
+Enable/disable support for multiple outstanding NCCL calls from parallel CUDA graphs or a CUDA graph and non-captured NCCL calls. NCCL calls are considered outstanding starting from their host-side launch (e.g., a call to `ncclAllreduce()` for non-captured calls or `cudaGraphLaunch()` for captured calls) and ending when the device kernel execution completes. With graph mixing support disabled, the following use cases are NOT supported:
 
-1. Has outstanding parallel graph launches, where parallel means on different
-streams without dependencies that would otherwise serialize their execution.
+1. Using a NCCL communicator (or split-shared communicators) from parallel graph launches, where parallel means on different streams without dependencies that would serialize their execution.
 
-2. An outstanding graph launch followed by a non-captured launch. Stream
-dependencies are irrelevant.
+2. Launching a non-captured NCCL collective during an outstanding graph launch that uses the same communicator (or split-shared communicators), regardless of stream ordering.
 
-The ability to disable support is motivated by observed hangs in the CUDA
-launches when support is enabled and multiple ranks have work launched via
-cudaGraphLaunch from the same thread.
+The ability to disable support is motivated by observed hangs in the CUDA launches when support is enabled and multiple ranks have work launched via cudaGraphLaunch from the same thread.
 
 Value accepted
 ^^^^^^^^^^^^^^
