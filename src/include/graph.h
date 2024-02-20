@@ -90,7 +90,7 @@ struct ncclTopoGraph {
   int intra[MAXCHANNELS*NCCL_TOPO_MAX_NODES];
   int64_t inter[MAXCHANNELS*2];
 };
-ncclResult_t ncclTopoCompute(struct ncclComm *comm, struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
+ncclResult_t ncclTopoCompute(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 
 ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGraph* graph);
 ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, struct ncclTopoGraph** graphs);

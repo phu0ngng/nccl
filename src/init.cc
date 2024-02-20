@@ -1042,7 +1042,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
   ringGraph.minChannels = 1;
   ringGraph.maxChannels = MAXCHANNELS/2;
-  NCCLCHECKGOTO(ncclTopoCompute(comm, comm->topo, &ringGraph), ret, fail);
+  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &ringGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &ringGraph), ret, fail);
 
   memset(&treeGraph, 0, sizeof(struct ncclTopoGraph));
@@ -1050,7 +1050,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
   treeGraph.minChannels = ringGraph.nChannels;
   treeGraph.maxChannels = ringGraph.nChannels;
-  NCCLCHECKGOTO(ncclTopoCompute(comm, comm->topo, &treeGraph), ret, fail);
+  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &treeGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &treeGraph), ret, fail);
 
   memset(&collNetGraph, 0, sizeof(struct ncclTopoGraph));
@@ -1059,7 +1059,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   collNetGraph.collNet = 1;
   collNetGraph.minChannels = collNetGraph.maxChannels = ringGraph.nChannels;
   if (comm->collNetSupport) {
-    NCCLCHECKGOTO(ncclTopoCompute(comm, comm->topo, &collNetGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &collNetGraph), ret, fail);
     NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &collNetGraph), ret, fail);
   }
 
@@ -1069,7 +1069,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   nvlsGraph.minChannels = 1;
   nvlsGraph.maxChannels = MAXCHANNELS;
   if (comm->nvlsSupport) {
-    NCCLCHECKGOTO(ncclTopoCompute(comm, comm->topo, &nvlsGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &nvlsGraph), ret, fail);
     NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &nvlsGraph), ret, fail);
   }
 
