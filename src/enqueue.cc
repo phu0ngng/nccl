@@ -1487,11 +1487,6 @@ static ncclResult_t topoGetAlgoInfo(struct ncclInfo* collInfo, int collNetSuppor
       }
     }
 
-    // MNNVL hack
-    INFO(NCCL_TUNING, "XXXX HACK FORCING ALGO %d PROTO %d to NVLS %d /SIMPLE %d", collInfo->algorithm, collInfo->protocol, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPLE);
-    collInfo->algorithm = NCCL_ALGO_NVLS;
-    collInfo->protocol = NCCL_PROTO_SIMPLE;
-
     if (collInfo->algorithm == NCCL_ALGO_UNDEF || collInfo->protocol == NCCL_PROTO_UNDEF) {
       if (backupAlgo == NCCL_ALGO_UNDEF || backupProto == NCCL_PROTO_UNDEF) {
         WARN("Error : no algorithm/protocol available");
