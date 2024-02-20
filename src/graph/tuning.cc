@@ -289,7 +289,6 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   if (comm->collNetSupport == 0) {
     algoEnable[NCCL_ALGO_COLLNET_DIRECT] = 0;
     algoEnable[NCCL_ALGO_COLLNET_CHAIN] = 0;
-    // NB: MNNVL is treated as a single node
     if (nNodes > 1) algoEnable[NCCL_ALGO_NVLS] = 0;
     // If user has hard set NCCL_ALGO=COLLNET, ignore it
     if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0 &&

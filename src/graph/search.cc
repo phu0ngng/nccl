@@ -1085,7 +1085,7 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
 // NVLS channels aren't compute channels. Find which NIC corresponds to our rank being the head
 ncclResult_t getNvlsNetDev(struct ncclComm* comm, struct ncclTopoGraph* graph, int channelId, int* dev) {
   ncclResult_t ret = ncclSuccess;
-  int localRanks = comm->MNNVL ? comm->clique.size : comm->topo->nodes[GPU].count;
+  int localRanks = comm->topo->nodes[GPU].count;
   int netNum = 0;
   int net[MAXCHANNELS];
 
