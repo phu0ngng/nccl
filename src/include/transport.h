@@ -19,6 +19,7 @@
 #define TRANSPORT_COLLNET 3
 
 #include "proxy.h"
+#include "comm.h"
 
 extern struct ncclTransport p2pTransport;
 extern struct ncclTransport shmTransport;
@@ -118,7 +119,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
 
 ncclResult_t ncclNvlsInit(struct ncclComm* comm);
 ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent);
-ncclResult_t ncclNvlsGraphRegisterBuffer(struct ncclComm *comm, struct ncclKernelPlan *plan, const void *sendbuff, void *recvbuff, size_t sendbuffSize, size_t recvbuffSize, bool *outRegBufUsed, void **outRegBufSend, void **outRegBufRecv);
+ncclResult_t ncclNvlsGraphRegisterBuffer(struct ncclComm *comm, const void *sendbuff, void *recvbuff, size_t sendbuffSize, size_t recvbuffSize, bool *outRegBufUsed, void **outRegBufSend, void **outRegBufRecv, struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue, int* nCleanupQueueElts);
 ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *sendbuff, void *recvbuff, size_t sendbuffSize, size_t recvbuffSize, bool *outRegBufUsed, void **outRegBufSend, void **outRegBufRecv);
 ncclResult_t ncclNvlsDeregBuffer(CUmemGenericAllocationHandle *mcHandler, CUdeviceptr ptr, int dev, size_t size);
 ncclResult_t ncclNvlsFree(struct ncclComm* comm);

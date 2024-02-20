@@ -9,6 +9,7 @@
 #include "utils.h"
 #include "shm.h"
 #include "p2p.h"
+#include "transport.h"
 
 enum p2pType { P2P_DIRECT, P2P_INTERMEDIATE, P2P_IPC, P2P_CUMEM };
 

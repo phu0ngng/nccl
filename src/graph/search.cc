@@ -7,6 +7,7 @@
 #include "core.h"
 #include "graph.h"
 #include "topo.h"
+#include "transport.h"
 #include "xml.h"
 #include <math.h>
 

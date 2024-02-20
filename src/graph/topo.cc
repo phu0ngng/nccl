@@ -11,6 +11,7 @@
 #include "nvmlwrap.h"
 #include "net.h"
 #include "coll_net.h"
+#include "transport.h"
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "xml.h"

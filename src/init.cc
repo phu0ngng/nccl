@@ -350,8 +350,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
 
   ncclMemoryPoolConstruct(&comm->memPool_ncclKernelPlan);
   ncclMemoryPoolConstruct(&comm->memPool_ncclProxyOp);
-  ncclMemoryPoolConstruct(&comm->memPool_ncclPointerList);
-  ncclMemoryPoolConstruct(&comm->memPool_ncclNvlsHandleList);
 
   comm->groupNext = reinterpret_cast<struct ncclComm*>(0x1);
   comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);

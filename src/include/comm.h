@@ -7,7 +7,7 @@
 #ifndef NCCL_COMM_H_
 #define NCCL_COMM_H_
 
-#include "transport.h"
+//#include "transport.h"
 #include "p2p.h"
 #include "collectives.h"
 #include "nccl_tuner.h"
@@ -158,19 +158,6 @@ struct alignas(16) ncclWorkList {
   // ncclDevWorkColl, ncclDevWorkColLReg, ncclDevWorkP2p[]...
 };
 
-struct ncclPointerList {
-  struct ncclPointerList* next;
-  void *ptr;
-};
-
-struct ncclNvlsMcHandleList {
-  struct ncclNvlsMcHandleList *next;
-  CUmemGenericAllocationHandle mcHandle;
-  CUdeviceptr ptr;
-  int dev;
-  size_t size;
-};
-
 struct ncclKernelPlan {
   // A kernel plan is also a callback that reclaims itself. Hence this must
   // be the first member.
@@ -194,8 +181,7 @@ struct ncclKernelPlan {
   int nWorkBatches;
   size_t workBytes;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> workQueue;
-  struct ncclIntruQueue<struct ncclPointerList, &ncclPointerList::next> ipcMemQueue;
-  struct ncclIntruQueue<struct ncclNvlsMcHandleList, &ncclNvlsMcHandleList::next> nvlsMcHandleQueue;
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> cleanupQueue;
   void* workBufPersistent;
 
   struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
@@ -220,6 +206,8 @@ struct ncclTaskColl {
   int32_t algorithm:8, protocol:8;
   uint32_t isCollnet:1, isNvls:1;
   uint32_t devFuncId:30;
+  // number of elements in planner->ipcMemQueue associated with this collective
+  int nCleanupQueueElts;
 };
 struct ncclTaskP2p {
   struct ncclTaskP2p* next;
@@ -314,6 +302,7 @@ struct ncclKernelPlanner {
   struct ncclTaskCollSorter collSorter;
   struct Peer* peers/*[nRanks]*/;
   int nTasksColl, nTasksP2p;
+  bool persistent;
 
   // The list of user streams aggregated over all tasks present.
   struct ncclCudaStreamList* streams;
@@ -326,17 +315,21 @@ struct ncclKernelPlanner {
   struct ncclCudaGraph capturingGraph;
 
   //////////////////////////////////////////////////////////////////////////////
-  // Lists of tasks to be assembled into plans:
+  // Lists of tasks to be assembled into plans categorized by scheduling
+  // constraints:
   //////////////////////////////////////////////////////////////////////////////
 
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueueCollnet;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueueCollnet;
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueueCollnet;
 
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueueNvls;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueueNvls;
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueueNvls;
 
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueueStandard;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueueStandard;
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueueStandard;
 
   //////////////////////////////////////////////////////////////////////////////
   // State for building current (Work-In-Progress) plan:
@@ -499,8 +492,6 @@ struct ncclComm {
   // pools backed by comm->memPermanent
   struct ncclMemoryPool memPool_ncclProxyOp;
   struct ncclMemoryPool memPool_ncclKernelPlan;
-  struct ncclMemoryPool memPool_ncclPointerList;
-  struct ncclMemoryPool memPool_ncclNvlsHandleList;
   // Next comm in this thread's active ncclGroup[Start|End](). Holds "0x1" when
   // this comm is not yet in a group.
   struct ncclComm* groupNext;

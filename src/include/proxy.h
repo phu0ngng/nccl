@@ -16,6 +16,22 @@
 #include "shm.h"
 #include "p2p.h"
 
+typedef enum : uint8_t {
+  ncclPatternRing,
+  ncclPatternRingTwice,
+  ncclPatternPipelineFrom,
+  ncclPatternPipelineTo,
+  ncclPatternTreeUp,
+  ncclPatternTreeDown,
+  ncclPatternTreeUpDown,
+  ncclPatternCollnetChain,
+  ncclPatternCollnetDirect,
+  ncclPatternNvls,
+  ncclPatternNvlsTree,
+  ncclPatternSend,
+  ncclPatternRecv
+} ncclPattern_t;
+
 enum ncclProxyOpState { ncclProxyOpNone, ncclProxyOpReady, ncclProxyOpProgress };
 
 struct ncclProxyArgs;
@@ -112,7 +128,6 @@ struct ncclProxyArgs {
 // Make sure we have enough to store two full rounds of operations on all channels.
 // Otherwise we'd be unable to post half of them to free new elements.
 #define MAX_OPS_PER_PEER (2*MAXCHANNELS*NCCL_MAX_DEV_WORK_P2P_PER_BATCH)
-#define NCCL_MAX_LOCAL_RANKS 64
 
 struct ncclProxyOpsPool {
   struct ncclProxyOp ops[MAX_OPS_PER_PEER*NCCL_MAX_LOCAL_RANKS];

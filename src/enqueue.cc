@@ -58,6 +58,27 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, size_t* maxStackSize) {
   return result;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Data movement metrics.
+
+static inline int ncclFuncTrafficPerElement(ncclFunc_t func, int nRanks) {
+  switch (func) {
+  case ncclFuncAllReduce: return 2;
+  case ncclFuncAllGather: return nRanks;
+  case ncclFuncReduceScatter: return nRanks;
+  default: return 1;
+  }
+}
+static inline size_t ncclFuncSendCount(ncclFunc_t func, int nRanks, size_t count) {
+  return func == ncclFuncReduceScatter ? nRanks*count : count;
+}
+static inline size_t ncclFuncRecvCount(ncclFunc_t func, int nRanks, size_t count) {
+  return func == ncclFuncAllGather ? nRanks*count : count;
+}
+static inline size_t ncclFuncMaxSendRecvCount(ncclFunc_t func, int nRanks, size_t count) {
+  return func == ncclFuncAllGather || func == ncclFuncReduceScatter ? nRanks*count : count;
+}
+
 /*****************************************************************************/
 /*       Launch system : synchronization and CUDA kernel launch              */
 /*****************************************************************************/
@@ -205,11 +226,23 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
 int64_t ncclParamLocalRegister();
 NCCL_PARAM(GraphRegister, "GRAPH_REGISTER", 1);
 
+struct ncclIpcCleanupCallback {
+  struct ncclCommCallback base;
+  void* ptr;
+};
+static ncclResult_t cleanupIpc(struct ncclComm* comm, struct ncclCommCallback* cb) {
+  struct ncclIpcCleanupCallback* me = (struct ncclIpcCleanupCallback*)cb;
+  CUDACHECKIGNORE(cudaIpcCloseMemHandle(me->ptr));
+  free(me);
+  return ncclSuccess;
+}
+
 static ncclResult_t registerIntraNodeBuffers(
-    struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclTaskColl* info,
+    struct ncclComm* comm, struct ncclTaskColl* info,
     void* outRegBufSend[NCCL_MAX_LOCAL_RANKS],
     void* outRegBufRecv[NCCL_MAX_LOCAL_RANKS],
-    ncclRegBufferType *outRegBufType
+    ncclRegBufferType *outRegBufType,
+    struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue
   ) {
   ncclResult_t result = ncclSuccess;
 
@@ -230,8 +263,8 @@ static ncclResult_t registerIntraNodeBuffers(
       ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, sendbuffSize, recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
     }
 
-    if (regBufUsed == false && plan->persistent && ncclParamGraphRegister()) {
-      ncclNvlsGraphRegisterBuffer(comm, plan, sendbuff, recvbuff, sendbuffSize, recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv);
+    if (regBufUsed == false && comm->planner.persistent && ncclParamGraphRegister()) {
+      ncclNvlsGraphRegisterBuffer(comm, sendbuff, recvbuff, sendbuffSize, recvbuffSize, &regBufUsed, outRegBufSend, outRegBufRecv, cleanupQueue, &info->nCleanupQueueElts);
     }
 
     if (regBufUsed) {
@@ -250,7 +283,7 @@ static ncclResult_t registerIntraNodeBuffers(
   } else if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT &&   // limited to CollNetDirect for now
     comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
     comm->intraRanks < comm->localRanks &&  // only with inter-process & intra-node peers
-    plan->persistent && 0) {
+    comm->planner.persistent && 0) {
     /* Disable CollnetDirect registration since it does not support cuMem* allocated memory. */
     int localRank = comm->localRank;
     cudaPointerAttributes sattr, rattr;
@@ -292,9 +325,11 @@ static ncclResult_t registerIntraNodeBuffers(
           // Get real buffer address by adding offset in the mapping
           (sr == 0 ? outRegBufSend : outRegBufRecv)[i] = (char*)base + handles[i].offset[sr];
           // Enqueue reminder to close memory handle
-          struct ncclPointerList* q = ncclMemoryPoolAlloc<struct ncclPointerList>(&comm->memPool_ncclPointerList, &comm->memPermanent);
-          q->ptr = base;
-          ncclIntruQueueEnqueue(&plan->ipcMemQueue, q);
+          struct ncclIpcCleanupCallback* cb = (struct ncclIpcCleanupCallback*)malloc(sizeof(struct ncclIpcCleanupCallback));
+          cb->base.fn = cleanupIpc;
+          cb->ptr = base;
+          ncclIntruQueueEnqueue(cleanupQueue, &cb->base);
+          info->nCleanupQueueElts += 1;
         }
       }
     }
@@ -327,169 +362,10 @@ static bool testBudget(
   return ok;
 }
 
-static ncclResult_t scheduleCollTasksToPlan(
-    struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclKernelPlanBudget* budget
-  ) {
+// Called once per ncclGroup to organize the user submitted tasks in
+// comm->planner so that they can be peeled off into plans.
+static ncclResult_t prepareTasks(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
-
-  // Build planner->collQueue*** if this is the first time here for the ncclGroupEnd()
-  if (planner->nTasksColl != 0 && !ncclTaskCollSorterEmpty(&planner->collSorter)) {
-    // Tasks from the sorter come out ordered size descending.
-    struct ncclTaskColl* task = ncclTaskCollSorterDequeueAll(&planner->collSorter);
-    // Tasks are assembled by (fn,op,ty) size ascending (since they are LIFOs).
-    struct ncclTaskColl* tasksByFnOpTy[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
-    memset(tasksByFnOpTy, 0, sizeof(tasksByFnOpTy));
-    int fnOpTyIndices[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
-    int fnOpTyCount = 0;
-
-    // Walk the size sorted tasks, binning them by function (fn), op, and datatype (ty).
-    while (task != nullptr) {
-      struct ncclTaskColl* next = task->next;
-      int index = ((int)task->func*ncclNumDevRedOps + (int)task->op.op)*ncclNumTypes + (int)task->datatype;
-      // Add to set of (fn,op,ty) indices on first occurrence
-      if (tasksByFnOpTy[index] == nullptr) fnOpTyIndices[fnOpTyCount++] = index;
-      // Add to LIFO for this (fn,op,ty)
-      task->next = tasksByFnOpTy[index];
-      tasksByFnOpTy[index] = task;
-      // Next task
-      task = next;
-    }
-
-    // Walk (fn,op,ty) bins, compute algo and proto etc.
-    for (int cursor=0; cursor < fnOpTyCount; cursor++) {
-      struct ncclTaskColl* aggBeg = tasksByFnOpTy[fnOpTyIndices[cursor]];
-      int collNetSupport = 0;
-      NCCLCHECK(getCollNetSupport(comm, aggBeg, &collNetSupport));
-      int nvlsSupport = comm->nvlsSupport && ncclNvlsSupported(aggBeg->op.op, aggBeg->datatype);
-      do {
-        struct ncclTaskColl* aggEnd = aggBeg->next;
-        struct ncclTaskColl agg = *aggBeg;
-        int nAggs = 1;
-        // We aggregate operations that are within 4X size of each other.
-        while (aggEnd != nullptr && aggEnd->trafficBytes < 4*aggBeg->trafficBytes) {
-          nAggs += 1;
-          agg.trafficBytes += aggEnd->trafficBytes;
-          aggEnd = aggEnd->next;
-        }
-        NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nAggs));
-        agg.devFuncId = ncclDevFuncId(agg.func, agg.op.op, agg.datatype, agg.algorithm, agg.protocol);
-        bool isCollnet=false, isNvls=false;
-        switch (aggBeg->algorithm) {
-        case NCCL_ALGO_NVLS:
-        case NCCL_ALGO_NVLS_TREE:
-          isNvls = true;
-          isCollnet = aggBeg->algorithm == NCCL_ALGO_NVLS && comm->nNodes > 1;
-          break;
-        case NCCL_ALGO_COLLNET_CHAIN:
-        case NCCL_ALGO_COLLNET_DIRECT:
-          isCollnet = true;
-          break;
-        }
-        // Update the aggregated tasks with the computed values.
-        do {
-          struct ncclTaskColl* next = aggBeg->next;
-          aggBeg->algorithm = agg.algorithm;
-          aggBeg->protocol = agg.protocol;
-          aggBeg->nMaxChannels = agg.nMaxChannels;
-          aggBeg->nWarps = agg.nWarps;
-          aggBeg->devFuncId = agg.devFuncId;
-          aggBeg->isCollnet = isCollnet;
-          aggBeg->isNvls = isNvls;
-          aggBeg = next;
-        } while (aggBeg != aggEnd);
-      } while (aggBeg != nullptr);
-    }
-
-    // Walk (fn,op,ty) bins again to:
-    // 1. Possibly register buffers.
-    // 2. Build ncclDevWorkColl structs.
-    // 3. Bin the work structs according to the number of valid channels they
-    //    may be assigned to {collnet, nvls, standard}
-    for (int cursor=0; cursor < fnOpTyCount; cursor++) {
-      task = tasksByFnOpTy[fnOpTyIndices[cursor]];
-      do {
-        // Build a ncclDevWorkColl[Reg?] struct for each task.
-        ncclRegBufferType regBufType = NCCL_REGULAR_BUFFER;
-        void* regBufSend[NCCL_MAX_LOCAL_RANKS];
-        void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
-        registerIntraNodeBuffers(comm, plan, task, regBufSend, regBufRecv, &regBufType);
-
-        struct ncclDevWorkColl devWork = {};
-        devWork.sendbuff = (void*)task->sendbuff;
-        devWork.recvbuff = (void*)task->recvbuff;
-        devWork.root = task->root;
-        devWork.nWarps = task->nWarps;
-        devWork.redOpArg = task->op.scalarArg;
-        devWork.redOpArgIsPtr = task->op.scalarArgIsPtr;
-        devWork.oneNode = (comm->nNodes == 1);
-        devWork.regUsed = 0;
-
-        struct ncclWorkList* workNode;
-        switch (regBufType) {
-        case NCCL_REGULAR_BUFFER:
-          { workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkColl>(&comm->memScoped, 1);
-            workNode->workType = ncclDevWorkTypeColl;
-            workNode->size = sizeof(struct ncclDevWorkColl);
-            memcpy((void*)(workNode+1), (void*)&devWork, workNode->size);
-          } break;
-        case NCCL_IPC_REG_BUFFER:
-          { struct ncclDevWorkCollReg workReg = {};
-            workReg.coll = devWork;
-            workReg.coll.regUsed = 1;
-            struct ncclChannel *channel0 = &comm->channels[0];
-            for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
-              int peer = channel0->collnetDirect.down[i];
-              if (peer == -1) break;
-              int j = comm->rankToLocalRank[peer]; // Get intra-node slot
-              workReg.dnInputs[i] = regBufSend[j]; // Input buffer of leaf peer
-              workReg.dnOutputs[i] = regBufRecv[j]; // Output buffer of leaf peer
-            }
-            for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
-              int peer = channel0->collnetDirect.up[i];
-              if (peer == -1) break;
-              int j = comm->rankToLocalRank[peer];
-              // Output buffer of root peer
-              workReg.upOutputs[i] = regBufRecv[j];
-            }
-            workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
-            workNode->workType = ncclDevWorkTypeCollReg;
-            workNode->size = sizeof(struct ncclDevWorkCollReg);
-            memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
-          } break;
-        case NCCL_NVLS_REG_BUFFER:
-          { struct ncclDevWorkCollReg workReg = {};
-            workReg.coll = devWork; // C++ struct assignment
-            workReg.coll.regUsed = 1;
-            /* NVLS only has one send and recv buffer registered */
-            workReg.dnInputs[0] = regBufSend[0];
-            workReg.dnOutputs[0] = regBufRecv[0];
-            workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
-            workNode->workType = ncclDevWorkTypeCollReg;
-            workNode->size = sizeof(struct ncclDevWorkCollReg);
-            memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
-          } break;
-        default:
-          /* impossible value */
-          WARN("Invalid regBufType %d\n", regBufType);
-          return ncclInvalidArgument;
-        }
-
-        struct ncclTaskColl* task1 = task->next;
-        if (task->isCollnet) {
-          ncclIntruQueueEnqueue(&planner->collTaskQueueCollnet, task);
-          ncclIntruQueueEnqueue(&planner->collWorkQueueCollnet, workNode);
-        } else if (task->isNvls) {
-          ncclIntruQueueEnqueue(&planner->collTaskQueueNvls, task);
-          ncclIntruQueueEnqueue(&planner->collWorkQueueNvls, workNode);
-        } else {
-          ncclIntruQueueEnqueue(&planner->collTaskQueueStandard, task);
-          ncclIntruQueueEnqueue(&planner->collWorkQueueStandard, workNode);
-        }
-        task = task1;
-      } while (task != nullptr);
-    }
-  } // End of first-call-for-this-ncclGroup initialization
-
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next>* collTaskQueues[3] = {
     &planner->collTaskQueueCollnet,
     &planner->collTaskQueueNvls,
@@ -500,8 +376,185 @@ static ncclResult_t scheduleCollTasksToPlan(
     &planner->collWorkQueueNvls,
     &planner->collWorkQueueStandard
   };
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* collCleanupQueues[3] = {
+    &planner->collCleanupQueueCollnet,
+    &planner->collCleanupQueueNvls,
+    &planner->collCleanupQueueStandard
+  };
 
-  // Estimate number of tasks that will fit in a plan.
+  // Tasks from the sorter come out ordered size descending.
+  struct ncclTaskColl* task = ncclTaskCollSorterDequeueAll(&planner->collSorter);
+  // Tasks are assembled by (fn,op,ty) size ascending.
+  struct ncclTaskColl* tasksByFnOpTy[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
+  memset(tasksByFnOpTy, 0, sizeof(tasksByFnOpTy));
+  int fnOpTyIndices[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
+  int fnOpTyCount = 0;
+
+  // Walk the size sorted tasks, binning them by (fn,op,ty).
+  while (task != nullptr) {
+    struct ncclTaskColl* next = task->next;
+    int index = ((int)task->func*ncclNumDevRedOps + (int)task->op.op)*ncclNumTypes + (int)task->datatype;
+    // Add to set of (fn,op,ty) indices on first occurrence
+    if (tasksByFnOpTy[index] == nullptr) fnOpTyIndices[fnOpTyCount++] = index;
+    // Add to LIFO for this (fn,op,ty)
+    task->next = tasksByFnOpTy[index];
+    tasksByFnOpTy[index] = task;
+    // Next task
+    task = next;
+  }
+
+  // Walk (fn,op,ty) bins, compute algo and proto etc.
+  for (int cursor=0; cursor < fnOpTyCount; cursor++) {
+    struct ncclTaskColl* aggBeg = tasksByFnOpTy[fnOpTyIndices[cursor]];
+    int collNetSupport = 0;
+    NCCLCHECK(getCollNetSupport(comm, aggBeg, &collNetSupport));
+    int nvlsSupport = comm->nvlsSupport && ncclNvlsSupported(aggBeg->op.op, aggBeg->datatype);
+    do {
+      struct ncclTaskColl* aggEnd = aggBeg->next;
+      struct ncclTaskColl agg = *aggBeg;
+      int nAggs = 1;
+      // We aggregate operations that are within 4X size of each other.
+      while (aggEnd != nullptr && aggEnd->trafficBytes < 4*aggBeg->trafficBytes) {
+        nAggs += 1;
+        agg.trafficBytes += aggEnd->trafficBytes;
+        aggEnd = aggEnd->next;
+      }
+
+      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nAggs));
+      agg.devFuncId = ncclDevFuncId(agg.func, agg.op.op, agg.datatype, agg.algorithm, agg.protocol);
+
+      bool isCollnet=false, isNvls=false;
+      switch (aggBeg->algorithm) {
+      case NCCL_ALGO_NVLS:
+      case NCCL_ALGO_NVLS_TREE:
+        isNvls = true;
+        isCollnet = aggBeg->algorithm == NCCL_ALGO_NVLS && comm->nNodes > 1;
+        break;
+      case NCCL_ALGO_COLLNET_CHAIN:
+      case NCCL_ALGO_COLLNET_DIRECT:
+        isCollnet = true;
+        break;
+      }
+      // Update the aggregated tasks with the computed values.
+      do {
+        struct ncclTaskColl* next = aggBeg->next;
+        aggBeg->algorithm = agg.algorithm;
+        aggBeg->protocol = agg.protocol;
+        aggBeg->nMaxChannels = agg.nMaxChannels;
+        aggBeg->nWarps = agg.nWarps;
+        aggBeg->devFuncId = agg.devFuncId;
+        aggBeg->isCollnet = isCollnet;
+        aggBeg->isNvls = isNvls;
+        aggBeg = next;
+      } while (aggBeg != aggEnd);
+    } while (aggBeg != nullptr);
+  }
+
+  // Walk (fn,op,ty) bins again to:
+  // 1. Possibly register buffers.
+  // 2. Build ncclDevWorkColl structs.
+  // 3. Bin the work structs according to the number of valid channels they
+  //    may be assigned to {collnet, nvls, standard}
+  for (int cursor=0; cursor < fnOpTyCount; cursor++) {
+    task = tasksByFnOpTy[fnOpTyIndices[cursor]];
+    do {
+      // Build a ncclDevWorkColl[Reg?] struct for each task.
+      ncclRegBufferType regBufType = NCCL_REGULAR_BUFFER;
+      void* regBufSend[NCCL_MAX_LOCAL_RANKS];
+      void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
+      int q = task->isCollnet ? 0 : task->isNvls ? 1 : 2;
+      registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &regBufType, collCleanupQueues[q]);
+
+      struct ncclDevWorkColl devWork = {};
+      devWork.sendbuff = (void*)task->sendbuff;
+      devWork.recvbuff = (void*)task->recvbuff;
+      devWork.root = task->root;
+      devWork.nWarps = task->nWarps;
+      devWork.redOpArg = task->op.scalarArg;
+      devWork.redOpArgIsPtr = task->op.scalarArgIsPtr;
+      devWork.oneNode = (comm->nNodes == 1);
+      devWork.regUsed = 0;
+
+      struct ncclWorkList* workNode;
+      switch (regBufType) {
+      case NCCL_REGULAR_BUFFER:
+        { workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkColl>(&comm->memScoped, 1);
+          workNode->workType = ncclDevWorkTypeColl;
+          workNode->size = sizeof(struct ncclDevWorkColl);
+          memcpy((void*)(workNode+1), (void*)&devWork, workNode->size);
+        } break;
+      case NCCL_IPC_REG_BUFFER:
+        { struct ncclDevWorkCollReg workReg = {};
+          workReg.coll = devWork;
+          workReg.coll.regUsed = 1;
+          struct ncclChannel *channel0 = &comm->channels[0];
+          for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
+            int peer = channel0->collnetDirect.down[i];
+            if (peer == -1) break;
+            int j = comm->rankToLocalRank[peer]; // Get intra-node slot
+            workReg.dnInputs[i] = regBufSend[j]; // Input buffer of leaf peer
+            workReg.dnOutputs[i] = regBufRecv[j]; // Output buffer of leaf peer
+          }
+          for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
+            int peer = channel0->collnetDirect.up[i];
+            if (peer == -1) break;
+            int j = comm->rankToLocalRank[peer];
+            // Output buffer of root peer
+            workReg.upOutputs[i] = regBufRecv[j];
+          }
+          workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
+          workNode->workType = ncclDevWorkTypeCollReg;
+          workNode->size = sizeof(struct ncclDevWorkCollReg);
+          memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
+        } break;
+      case NCCL_NVLS_REG_BUFFER:
+        { struct ncclDevWorkCollReg workReg = {};
+          workReg.coll = devWork; // C++ struct assignment
+          workReg.coll.regUsed = 1;
+          /* NVLS only has one send and recv buffer registered */
+          workReg.dnInputs[0] = regBufSend[0];
+          workReg.dnOutputs[0] = regBufRecv[0];
+          workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
+          workNode->workType = ncclDevWorkTypeCollReg;
+          workNode->size = sizeof(struct ncclDevWorkCollReg);
+          memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
+        } break;
+      default:
+        /* impossible value */
+        WARN("Invalid regBufType %d\n", regBufType);
+        return ncclInvalidArgument;
+      }
+      struct ncclTaskColl* task1 = task->next;
+      ncclIntruQueueEnqueue(collTaskQueues[q], task);
+      ncclIntruQueueEnqueue(collWorkQueues[q], workNode);
+      task = task1;
+    } while (task != nullptr);
+  }
+
+  return ncclSuccess;
+}
+
+static ncclResult_t scheduleCollTasksToPlan(
+    struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclKernelPlanBudget* budget
+  ) {
+  struct ncclKernelPlanner* planner = &comm->planner;
+  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next>* collTaskQueues[3] = {
+    &planner->collTaskQueueCollnet,
+    &planner->collTaskQueueNvls,
+    &planner->collTaskQueueStandard
+  };
+  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next>* collWorkQueues[3] = {
+    &planner->collWorkQueueCollnet,
+    &planner->collWorkQueueNvls,
+    &planner->collWorkQueueStandard
+  };
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* collCleanupQueues[3] = {
+    &planner->collCleanupQueueCollnet,
+    &planner->collCleanupQueueNvls,
+    &planner->collCleanupQueueStandard
+  };
+
+  // Estimate number of tasks that will fit in this plan.
   int nPlanColls = 0;
   size_t trafficBytes[3] = {0, 0, 0}; // {collnet, nvls, standard}
   int nChannels[3] = {0, 0, 0}; // {collnet, nvls, standard}
@@ -690,6 +743,9 @@ static ncclResult_t scheduleCollTasksToPlan(
         }
       }
 
+      for (int i=0; i < task->nCleanupQueueElts; i++) {
+        ncclIntruQueueEnqueue(&plan->cleanupQueue, ncclIntruQueueDequeue(collCleanupQueues[q]));
+      }
       ncclIntruQueueDequeue(collTaskQueues[q]);
       ncclIntruQueueDequeue(collWorkQueues[q]);
       nPlanColls -= 1;
@@ -1148,18 +1204,13 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
       ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
       q = q1;
     }
-    while (!ncclIntruQueueEmpty(&plan->ipcMemQueue)) {
-      struct ncclPointerList* q = ncclIntruQueueDequeue(&plan->ipcMemQueue);
-      CUDACHECKIGNORE(cudaIpcCloseMemHandle(q->ptr));
-      ncclMemoryPoolFree(&comm->memPool_ncclPointerList, q);
+    ncclResult_t result = ncclSuccess;
+    while (!ncclIntruQueueEmpty(&plan->cleanupQueue)) {
+      struct ncclCommCallback* cb = ncclIntruQueueDequeue(&plan->cleanupQueue);
+      ncclResult_t res1 = cb->fn(comm, cb); // Expect to reclaim memory of cb
+      if (res1 != ncclSuccess) result = res1;
     }
-    /* free mcHandle */
-    while (!ncclIntruQueueEmpty(&plan->nvlsMcHandleQueue)) {
-      struct ncclNvlsMcHandleList* obj = ncclIntruQueueDequeue(&plan->nvlsMcHandleQueue);
-      NCCLCHECK(ncclNvlsDeregBuffer(&obj->mcHandle, obj->ptr, obj->dev, obj->size));
-      INFO(NCCL_NVLS, "rank %d - deregistered buffer %p on device %d, size %ld", comm->rank, (void*)obj->ptr, obj->dev, obj->size);
-      ncclMemoryPoolFree(&comm->memPool_ncclNvlsHandleList, obj);
-    }
+    NCCLCHECK(result);
   }
   ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
   return ncclSuccess;
@@ -1179,6 +1230,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   ncclResult_t result = ncclSuccess;
   struct ncclKernelPlanner* planner = &comm->planner;
   bool persistent = ncclCudaGraphValid(planner->capturingGraph);
+  planner->persistent = persistent;
   int nPlans = 0;
 
   // Poll for callbacks sent to us from other threads. Typically these free
@@ -1189,6 +1241,9 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   // are about to schedule). Now push an additional frame for allocating
   // work structs (see appendWorkElem() variants all use scoped allocation).
   ncclMemoryStackPush(&comm->memScoped);
+
+  // Prepare tasks for scheduling.
+  NCCLCHECKGOTO(prepareTasks(comm), result, failure);
 
   if (planner->nTasksColl + planner->nTasksP2p != 0) {
     do {

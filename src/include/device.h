@@ -60,6 +60,7 @@ union ncclLLFifoLine {
 
 #define WARP_SIZE 32
 #define MAXCHANNELS 32
+#define NCCL_MAX_LOCAL_RANKS 64
 #define NCCL_MAX_NTHREADS 640
 #define NCCL_MIN_NTHREADS (4*WARP_SIZE)
 #define NCCL_SIMPLE_MAX_NTHREADS 512
@@ -237,6 +238,8 @@ inline __device__ int ncclP2pChannelToPart(int nP2pChannels, int base, int chann
 }
 
 struct alignas(16) ncclDevWorkColl {
+  // Running on channels [channelLo..channelHi], hi is inclusive.
+  //   nChannels == (channelHi - channelLo) + 1
   uint32_t channelLo:8, channelHi:8;
   uint32_t nWarps:8;
   uint32_t redOpArgIsPtr:1, regUsed:1, oneNode:1;
@@ -245,12 +248,16 @@ struct alignas(16) ncclDevWorkColl {
   void* recvbuff;
   void* sendbuff;
   union {
+    // Continuous-byte-distribution scheduling. The lo and hi channels are of
+    // different size than the channels in the middle.
     struct {
       size_t countLo, countMid, countHi;
+      // Chunk counts where units are 1024 elements (type=T)
       uint64_t chunkCountLo_1K:20, chunkCountMid_1K:20, chunkCountHi_1K:20;
     } cbd;
+    // Collnet scheduling. All channels divide work evenly.
     struct {
-      size_t count;
+      size_t count; // Total size, not divided per channel.
       uint32_t chunkCount;
     } collnet;
   };

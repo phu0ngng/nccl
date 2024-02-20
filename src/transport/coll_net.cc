@@ -9,6 +9,7 @@
 #include "graph.h"
 #include "proxy.h"
 #include "gdrwrap.h"
+#include "transport.h"
 
 int64_t ncclParamGdrCopySyncEnable();
 int64_t ncclParamGdrCopyFlushEnable();

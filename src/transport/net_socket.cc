@@ -9,6 +9,7 @@
 #include "socket.h"
 #include "net.h"
 #include "param.h"
+#include "transport.h"
 
 #include <pthread.h>
 #include <stdlib.h>

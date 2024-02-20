@@ -7,6 +7,7 @@
 #include "channel.h"
 #include "param.h"
 #include "gdrwrap.h"
+#include "transport.h"
 
 ncclResult_t initChannel(struct ncclComm* comm, int channelId) {
   struct ncclChannel* channel = &comm->channels[channelId];
