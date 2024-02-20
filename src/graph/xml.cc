@@ -198,7 +198,13 @@ ncclResult_t xmlLoadSub(FILE* file, struct ncclXml* xml, struct ncclXmlNode* hea
     int found = 0;
     for (int h=0; h<nHandlers; h++) {
       if (strcmp(node->name, handlers[h].name) == 0) {
-        if (head) head->subs[head->nSubs++] = node;
+        if (head) {
+          if (head->nSubs == MAX_SUBS) {
+            WARN("Error : XML parser is limited to %d subnodes", MAX_SUBS);
+            return ncclInternalError;
+          }
+          head->subs[head->nSubs++] = node;
+        }
         node->parent = head;
         node->nSubs = 0;
         xml->maxIndex++;
@@ -667,6 +673,10 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
       const char* busId;
       NCCLCHECK(xmlGetAttr(parent->subs[s], "busid", &busId));
       if (busId != NULL && strcmp(newBusId, busId) < 0) { subIndex = s; break; }
+    }
+    if (parent->nSubs == MAX_SUBS) {
+      WARN("Error : XML parser is limited to %d subnodes", MAX_SUBS);
+      return ncclInternalError;
     }
     for (int s = parent->nSubs; s > subIndex; s--) parent->subs[s] = parent->subs[s-1];
     parent->subs[subIndex] = pciNode;

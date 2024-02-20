@@ -291,7 +291,13 @@ static ncclResult_t xmlAddNode(struct ncclXml* xml, struct ncclXmlNode* parent, 
   s->nAttrs = 0;
   *sub = s;
   s->parent = parent;
-  if (parent) parent->subs[parent->nSubs++] = s;
+  if (parent) {
+    if (parent->nSubs == MAX_SUBS) {
+      WARN("Error : too many XML subnodes (max %d)", MAX_SUBS);
+      return ncclInternalError;
+    }
+    parent->subs[parent->nSubs++] = s;
+  }
   strncpy(s->name, subName, MAX_STR_LEN);
   s->name[MAX_STR_LEN] = '\0';
   return ncclSuccess;
@@ -318,8 +324,13 @@ static ncclResult_t xmlAddTree(struct ncclXml* dst, struct ncclXmlNode* parent, 
   struct ncclXmlNode* dstNode = dst->nodes+dst->maxIndex++;
   *dstNode = *srcNode;
   dstNode->parent = parent;
-  if (parent)
+  if (parent) {
+    if (parent->nSubs == MAX_SUBS) {
+      WARN("Error : too many XML subnodes (max %d)", MAX_SUBS);
+      return ncclInternalError;
+    }
     parent->subs[parent->nSubs++] = dstNode;
+  }
   dstNode->nSubs = 0;
   // Recursively copy the subtree(s)
   for (int i=0; i<srcNode->nSubs; i++)
