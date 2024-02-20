@@ -752,8 +752,8 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       NCCLCHECK(ncclTopoConvertXml(peerXml, (uintptr_t)peerXml->nodes, 0));
       NCCLCHECK(ncclTopoFuseXml(cliqueXml, peerXml));
     }
-    xml = cliqueXml;
     free(xml);
+    xml = cliqueXml;
   }
 
   xmlTopoFile = ncclGetEnv("NCCL_TOPO_DUMP_FILE");
