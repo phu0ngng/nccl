@@ -431,7 +431,7 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
       localNetCount = 0;
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
       struct ncclTopoLinkList* paths = gpu->paths[NET];
-      for (int n=0; n<system->nodes[NET].count; n++) {
+      for (int n=0; n<system->nodes[NET].count && n<MAXCHANNELS; n++) {
         if (paths[n].type == t) localNets[localNetCount++] = n;
       }
       // Append NICs to list
@@ -792,6 +792,7 @@ ncclResult_t ncclTopoGetXmlFromChannel(struct ncclTopoGraph* graph, int c, struc
       return ncclInternalError;
     }
     NCCLCHECK(xmlSetAttrLong(node, "dev", dev));
+    if (graph->id == 3) break; // NVLS graphs only use the first GPU
   }
   if (system->nodes[NET].count) {
     NCCLCHECK(xmlAddNode(xml, xmlChannel, "net", &node));
@@ -878,7 +879,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   if (str) {
     INFO(NCCL_ENV, "NCCL_GRAPH_FILE set by environment to %s", str);
     struct ncclXml* xml;
-    NCCLCHECK(ncclCalloc(&xml, 1));
+    NCCLCHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
     NCCLCHECK(ncclTopoGetXmlGraphFromFile(str, xml));
     int nChannels;
     NCCLCHECK(ncclTopoGetGraphFromXml(xml->nodes, system, graph, &nChannels));
@@ -1072,7 +1073,7 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
   if (str) {
     INFO(NCCL_ENV, "NCCL_GRAPH_DUMP_FILE set by environment to %s", str);
     struct ncclXml* xml;
-    NCCLCHECK(ncclCalloc(&xml, 1));
+    NCCLCHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
     NCCLCHECK(ncclTopoGetXmlFromGraphs(ngraphs, graphs, system, xml));
     NCCLCHECK(ncclTopoDumpXmlToFile(str, xml));
     free(xml);
