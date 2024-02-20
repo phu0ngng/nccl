@@ -231,7 +231,7 @@ static ncclResult_t xmlSetAttrLong(struct ncclXmlNode* node, const char* attrNam
     strncpy(node->attrs[index].key, attrName, MAX_STR_LEN);
     node->attrs[index].key[MAX_STR_LEN] = '\0';
   }
-  snprintf(node->attrs[index].value, MAX_STR_LEN, "%lx", value);
+  snprintf(node->attrs[index].value, MAX_STR_LEN, "%#lx", value);
   node->attrs[index].value[MAX_STR_LEN] = '\0';
   return ncclSuccess;
 }
