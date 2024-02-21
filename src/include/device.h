@@ -198,10 +198,11 @@ struct alignas(16) ncclDevWorkP2p {
   void *sendAddr, *recvAddr;
   size_t sendBytes, recvBytes;
   int sendRank, recvRank;
-  uint8_t nP2pChannels;
-  uint8_t channelBase;
-  // Either nSendChannels or nRecvChannels will equal popcount(channelMask),
-  // the other will be less/equal. Zero indicates no work in that direction.
+  // From the part index, nP2pChannels, and channelBase the device code can
+  // calculate which part of the transfer a channel is responsible for.
+  uint8_t nP2pChannels; // Always equal to comm->p2pnChannels
+  uint8_t channelBase; // Channel owning first part.
+  // Zero channels indicates no work in that direction.
   uint8_t nSendChannels, nRecvChannels;
   // Chunk size stored in 8 bits via u32fp8Encode/Decode.
   uint8_t sendChunkSize_u32fp8, recvChunkSize_u32fp8;
@@ -210,6 +211,7 @@ struct alignas(16) ncclDevWorkP2p {
   uint8_t sendRegistered:1, recvRegistered:1;
 };
 
+// Compute the subset of the data transfer corresponding to the given part index.
 inline __host__ __device__ void ncclP2pPartBounds(int nParts, int part, size_t bytes, size_t* partBeg, size_t* partEnd) {
   size_t partBytes = alignUp(divUp(bytes, nParts), 4<<10);
   #if __CUDA_ARCH__
@@ -227,11 +229,13 @@ inline __host__ uint8_t ncclP2pChannelBaseForRound(struct ncclComm* comm, int p2
 // ncclP2pChannelToPart and ncclP2pChannelForPart are inverses. The device code
 // uses ncclP2pChannelToPart to determine which part "this" channel is responsible for.
 inline __host__ int ncclP2pChannelForPart(int nP2pChannels, int base, int part) {
+  // Only works because nP2pChannels is pow2
   int nChannelsLog2 = countOneBits(nP2pChannels-1);
   int delta = reverseBits(part, nChannelsLog2);
   return (base + delta) & (nP2pChannels-1);
 }
 inline __device__ int ncclP2pChannelToPart(int nP2pChannels, int base, int channel) {
+  // Only works because nP2pChannels is pow2
   int nChannelsLog2 = countOneBits(nP2pChannels-1);
   int delta = (channel-base) & (nP2pChannels-1);
   return reverseBits(delta, nChannelsLog2);
@@ -317,7 +321,7 @@ struct alignas(16) ncclDevWorkBatch {
       // nextJump=0: end of this channel's batch list
       // nextJump>0: batches[thisIndex+nextJump] is next batch in this list
       uint32_t nextJump:14, nextExtends:1;
-      uint32_t workType:2, workSize16:2, funcId:13;
+      uint32_t workType:2, funcId:15;
     };
     // Unioning bitfields with underlying type hints compiler to emit the best
     // SASS LD/ST accesses.

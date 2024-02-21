@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "network/unpack/unpack.h"
-#include <cassert>
 
 template<typename T, typename RedOp, typename Fan, int Direct,
          int SlicePerChunk, int StepPerSlice, int Unroll, int P2p, int MultimemSrcs, int MultimemDsts>

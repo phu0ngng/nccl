@@ -754,7 +754,8 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
     }
   }
 
-  // Round to next pow2 nChannelsPerPeer and nChannels
+  // Make nChannelsPerPeer and nChannels powers of 2. This is relied on when
+  // mapping p2p peers to channels.
   comm->p2pnChannelsPerPeer = pow2Up(minChannels);
   comm->p2pnChannels = pow2Up(comm->p2pnChannels);
 

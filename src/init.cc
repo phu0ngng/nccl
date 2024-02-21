@@ -1277,10 +1277,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     for (int node=0; node < nNodes; node++) {
       if (nodeRanks[node].localRanks != nLocals) {
         flat = true;
-        nNodes = 1;
-        node = 0;
-        nLocals = nRanks;
-        local = rank;
+        nNodes = 1; node = 0;
+        nLocals = nRanks; local = rank;
         break;
       }
     }
@@ -1291,16 +1289,18 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     uint32_t nodeRound = 0;
     uint32_t nodeDelta = 0;
     int round = 0;
-    // When enumerating peer deltas we use the quadratic formula (x*x+x)/2 mod N
+    // When enumerating peer deltas we use the quadratic formula (x*x+x)/2 mod N.
+    // Since that formula only produces valid permutations when N is a pow of 2,
+    // we let N = pow2Up(n) and filter out results greater-eq to n.
     // Example sequence for 16 ranks: 0, 1, 3, 6, 10, 15, 5, 12, 4, 13, 7, 2, 14, 11, 9, 8
     do {
-      if (nodeDelta < nNodes) {
+      if (nodeDelta < nNodes) { // Filter nonsensical node deltas
         int sendNode = (node + nodeDelta)%nNodes;
         int recvNode = (node - nodeDelta + nNodes)%nNodes;
         uint32_t localRound = 0;
         uint32_t localDelta = 0;
         do {
-          if (localDelta < nLocals) {
+          if (localDelta < nLocals) { // Filter nonsensical node-local deltas
             int sendLocal = (local + localDelta)%nLocals;
             int recvLocal = (local - localDelta + nLocals)%nLocals;
             comm->p2pSchedule[round].sendRank = flat ? sendLocal : nodeRanks[sendNode].localRankToRank[sendLocal];

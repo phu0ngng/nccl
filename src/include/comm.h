@@ -176,10 +176,9 @@ struct ncclKernelPlan {
   bool hasProxyOps; // does any channel have a non-empty proxyOpQueue
   int threadPerBlock;
 
-  int collOpCount; // zero based for this plan
-
-  int nWorkBatches;
-  size_t workBytes;
+  int collOpCount; // Number of collectives in this plan.
+  int nWorkBatches; // Number of work batches.
+  size_t workBytes; // Sum size of all work (in the fifo) in bytes.
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> workQueue;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> cleanupQueue;
   void* workBufPersistent;
@@ -338,11 +337,11 @@ struct ncclKernelPlanner {
   struct WipPlan {
     struct Channel {
       struct {
-        int workBytes;
-        int nP2ps;
-        int p2pRounds[NCCL_MAX_DEV_WORK_P2P_PER_BATCH];
-      } wipBatch; // work-in-progress batch which is tail of workBatchQueue
-      int nWorkBatchesP2p;
+        int workBytes; // Sum size of work metadata referenced by this batch.
+        int nP2ps; // Number of p2p works in this batch
+        int p2pRounds[NCCL_MAX_DEV_WORK_P2P_PER_BATCH]; // which rounds are present in this batch.
+      } wipBatch; // work-in-progress batch which will be next tail of workBatchQueue
+      int nWorkBatchesP2p; // number of p2p batches for this channel.
       struct ncclIntruQueue<struct ncclWorkBatchList, &ncclWorkBatchList::next> workBatchQueue;
       struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
     } channels[MAXCHANNELS];
