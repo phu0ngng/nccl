@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NCCL-24 : Dynamic GID Detection in IB/RoCE networks : Requirements</title>
+<link rel="stylesheet" type="text/css" href="../../html/css/doc.css">
+</head>
+<body>
+<center><h1>NCCL-24 : Dynamic GID Detection in IB/RoCE networks<br>Requirements</h1></center>
+<!-- table of contents, auto-generated -->
+$CONTENTS
+<!-- end of table of contents -->
+<h2>Introduction</h2>
+None.
+
+<h3>Overview</h3>
+None.
+
+<h3>Assumptions</h3>
+NCCL is used with IB/RoCE networks.
+
+<h3>Constraints</h3>
+None.
+
+<h3>Dependencies</h3>
+None.
+
+<h3>References</h3>
+<p><a href="https://nvbugspro.nvidia.com/bug/4170289">NVBug NCCL-4170289</a>
+
+<h2>Use cases</h2>
+Users need NCCL to dynamically configure RoCE interfaces for fast inter-node communication between GPUs,
+even when the user has not specified any GID index (through the NCCL_IB_GID_INDEX variable) to be used by NCCL.
+This might happen, for example, when it is not possible to specify a valid GID index for all the nodes using a
+single variable (if candidate GIDs have different indices across nodes).
+
+<h2>Requirements</h2>
+In the absence of a user defined GID index (NCCL_IB_GID_INDEX unset), NCCL should try to determine, among the
+available HCA ports, a valid GID index to use for creating network end-points. In order to do this NCCL should
+allow the user to filter GIDs based on their address family (AF_INET vs AF_INET6), RoCE version (RoCE v1 vs RoCE v2),
+and address range (last resort).
+
+<h2>System Requirements</h2>
+Clusters with RoCE HCAs.
+
+<h2>Signoff list</h2>
+<p>Author : Giuseppe Congiu
+<p><!-- Reviewer : First Last -->
+<p><!-- Reviewer : First Last  -->
+<p><!-- Product Manager : First Last -->
+
+<!-- do not end body and html, bottom will be auto-generated -->
