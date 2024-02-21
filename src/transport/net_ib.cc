@@ -11,7 +11,6 @@
 #include "graph.h"
 #include "utils.h"
 #include "param.h"
-#include "transport.h"
 
 #include <assert.h>
 #include <pthread.h>
