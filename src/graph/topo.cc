@@ -157,8 +157,12 @@ ncclResult_t ncclTopoRemoveNode(struct ncclTopoSystem* system, int type, int ind
 ncclResult_t ncclTopoConnectNodes(struct ncclTopoNode* node, struct ncclTopoNode* remNode, int type, float bw) {
   // Aggregate links into higher bw for NVLink
   struct ncclTopoLink* link;
-  for (link = node->links; link->remNode; link++) {
+  for (link = node->links; link - node->links != NCCL_TOPO_MAX_LINKS && link->remNode; link++) {
     if (link->remNode == remNode && link->type == type) break;
+  }
+  if (link - node->links == NCCL_TOPO_MAX_LINKS) {
+    WARN("Error : too many Topo links (max %d)", NCCL_TOPO_MAX_LINKS);
+    return ncclInternalError;
   }
   if (link->remNode == NULL) node->nlinks++;
   link->type = type;
@@ -219,6 +223,10 @@ ncclResult_t ncclTopoFlattenBcmSwitches(struct ncclTopoSystem* system) {
           struct ncclTopoNode* remNode = sub->links[l].remNode;
           if (remNode == pciSwitch) continue;
           // Add link from parent PCI switch -> PCI device
+          if (pciSwitch->nlinks == NCCL_TOPO_MAX_LINKS) {
+            WARN("Error : too many Topo links (max %d)", NCCL_TOPO_MAX_LINKS);
+            return ncclInternalError;
+          }
           memcpy(pciSwitch->links+pciSwitch->nlinks, sub->links+l, sizeof(struct ncclTopoLink));
           pciSwitch->nlinks++;
           // Update link from PCI device -> parent PCI switch
