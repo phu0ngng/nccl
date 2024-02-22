@@ -886,6 +886,16 @@ testResult_t threadInit(struct threadArgs* args) {
           NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
           break;
         }
+        case 3: {
+          /* duplicate communicator but in reversed rank (again) */
+          NCCLCHECK(ncclGroupStart());
+          for (int i = 0; i < args->nGpus; ++i) {
+            int myrank = args->globalProc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
+            NCCLCHECK(ncclCommSplit(globalComms[i], 0, nranks - myrank, &args->comms[splitCase][i], &config));
+          }
+          NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
+          break;
+        }
               /* we can add more to split pattern */
         default:
           return testInternalError;
@@ -1343,19 +1353,20 @@ char* splitMaskEnv = NULL;
   PRINT("%s", line);
 #endif
 
-  /* Now we support 3 split pattern when split_comm is enabled:
+  /* Now we support 4 split pattern when split_comm is enabled:
    * (1) keep all ranks in a group but in reversed order;
    * (2) split ranks into 2 groups based odd and even rank;
    * (3) split ranks into 2 groups with 3:1 ratio.
+   * (4) keep all ranks in a group but in reversed order (duplicate)
    * If NCCL_TESTS_SPLIT_MASK is set, we only split based on split mask. */
   if (splitMaskEnv == NULL && split_comm == 2) {
-    commNum = 3;
+    commNum = 4;
     agg_iters = 1; /* we cannot aggregate coll on multiple split communicators. */
   } else if (split_comm == 1) {
     commNum = 1;
   }
   // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 2G for the rest.
-  size_t memMaxBytes = ((maxMem - (2LL<<30)) / (datacheck ? 3 : 2)) / commNum;
+  size_t memMaxBytes = ((maxMem - (4LL<<30) * (commNum + 1)) / (datacheck ? 3 : 2)) / commNum;
   if (maxBytes > memMaxBytes) {
     maxBytes = memMaxBytes;
     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
@@ -1451,6 +1462,16 @@ char* splitMaskEnv = NULL;
             for (int i = 0; i < nGpus * nThreads; ++i) {
               int myrank = proc * nThreads * nGpus + i;
               NCCLCHECK(ncclCommSplit(globalComms[i], 4 * (myrank + 1) <= 3 * nranks, myrank, &comms[splitCase][i], &config));
+            }
+            NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
+            break;
+          }
+          case 3: {
+            /* duplicate communicator but in reversed rank (again) */
+            NCCLCHECK(ncclGroupStart());
+            for (int i = 0; i < nGpus * nThreads; ++i) {
+              int myrank = proc * nThreads * nGpus + i;
+              NCCLCHECK(ncclCommSplit(globalComms[i], 0, nranks - myrank, &comms[splitCase][i], &config));
             }
             NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
             break;

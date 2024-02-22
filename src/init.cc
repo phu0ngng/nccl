@@ -1487,15 +1487,14 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     if (job->color == NCCL_SPLIT_NOCOLOR) goto exit;
     snprintf((char*)&job->commId, sizeof(job->commId), "%016lx-%d", job->parent->commHash, job->color);
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
-    comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES); // Needed for UDS support
     NCCLCHECKGOTO(bootstrapSplit((struct ncclBootstrapHandle*)&job->commId, comm, job->parent, job->color, job->key, parentRanks), res, fail);
   } else {
     NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
-    comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES); // Needed for UDS support
     NCCLCHECKGOTO(bootstrapInit((struct ncclBootstrapHandle*)&job->commId, comm), res, fail);
   }
 
   comm->cudaArch = cudaArch;
+  comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES);
 
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
 
