@@ -171,6 +171,12 @@ struct ncclNvls {
   int nNodes;
 };
 
+#if __CUDA_ARCH__ >= 900
+#define NCCL_MAX_ARITY NCCL_MAX_NVLS_ARITY
+#else
+#define NCCL_MAX_ARITY NCCL_MAX_DIRECT_ARITY
+#endif
+
 #define NCCL_MAX_CONNS 2
 struct ncclChannelPeer {
   struct ncclConnector send[NCCL_MAX_CONNS];
