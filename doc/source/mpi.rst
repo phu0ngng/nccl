@@ -10,7 +10,7 @@ The NCCL API and usage is similar to MPI but there are many minor differences.  
 
 Using multiple devices per process
 ----------------------------------
-Similarly to the concept of MPI endpoints, NCCL does not require ranks to be mapped 1:1 to MPI ranks. A NCCL communicator may have many ranks associated to a single process (hence MPI rank if used with MPI).
+Similarly to the concept of MPI endpoints, NCCL does not require ranks to be mapped 1:1 to processes. A NCCL communicator may have many ranks (and, thus, multiple devices) associated to a single process. Hence, if used with MPI, a single MPI rank (a NCCL process) may have multiple devices associated with it.
 
 ReduceScatter operation
 -----------------------
@@ -20,7 +20,7 @@ Send and Receive counts
 -----------------------
 In many collective operations, MPI allows for different send and receive counts and types, as long as sendcount*sizeof(sendtype) == recvcount*sizeof(recvtype). NCCL does not allow that, defining a single count and a single data-type.
 
-For AllGather and ReduceScatter operations, the count is equal to the per-rank size, which is the smallest size; the other count being equal to nranks*count. The function prototype clearly shows which count is provided. ncclAllgather has a sendcount as argument, while ncclReduceScatter has a recvcount as argument.
+For AllGather and ReduceScatter operations, the count is equal to the per-rank size, which is the smallest size; the other count being equal to nranks*count. The function prototype clearly shows which count is provided. ncclAllGather has a sendcount as argument, while ncclReduceScatter has a recvcount as argument.
 
 Note: When performing or comparing AllReduce operations using a combination of ReduceScatter and AllGather, define the sendcount and recvcount as the total count divided by the number of ranks, with the correct count rounding-up, if it is not a perfect multiple of the number of ranks.
 
@@ -30,6 +30,8 @@ Other collectives and point-to-point operations
 NCCL does not define specific verbs for sendrecv, gather, gatherv, scatter, scatterv, alltoall, alltoallv, alltoallw,
 nor neighbor collectives. All those operations can be simply expressed using a combination of ncclSend, ncclRecv, and
 ncclGroupStart/ncclGroupEnd, similarly to how they can be expressed with MPI_Isend, MPI_Irecv and MPI_Waitall.
+
+ncclRecv does not support the equivalent of MPI_ANY_SOURCE; a specific source rank must always be provided. Similarly, the provided receive count must match the send count. Further, there is no concept of message tags.
 
 In-place operations
 -------------------
@@ -52,7 +54,7 @@ MPI defines a notion of progress which means that MPI operations need the progra
 
 In some implementations, progress on one rank may need MPI to be called on another rank. While this is usually bad for performance, it can be argued that this is a valid MPI implementation.
 
-As a result, blocking in a NCCL collective operations, for example calling cudaStreamSynchronize, may create a deadlock in some cases because not calling MPI will not make other ranks progress, hence reach the NCCL call, hence unblock the NCCL operation.
+As a result, blocking on a NCCL collective operation, for example calling cudaStreamSynchronize, may create a deadlock in some cases because not calling MPI on one rank could block other ranks, preventing them from reaching the NCCL call that would unblock the NCCL collective on the first rank.
 
 In that case, the cudaStreamSynchronize call should be replaced by a loop like the following:
 

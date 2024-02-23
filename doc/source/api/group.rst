@@ -13,7 +13,7 @@ ncclGroupStart
  
  Start a group call. 
  
- All subsequent calls to NCCL may not block due to inter-CPU synchronization.
+ All subsequent calls to NCCL until ncclGroupEnd will not block due to inter-CPU synchronization.
 
 ncclGroupEnd
 ------------
@@ -22,7 +22,7 @@ ncclGroupEnd
  
  End a group call. 
  
- Returns when all operations since ncclGroupStart have been processed. This means communication primitives
- have been enqueued to the provided streams, but are not necessary complete. 
+ Returns when all operations since ncclGroupStart have been processed. This means the communication primitives
+ have been enqueued to the provided streams, but are not necessarily complete. 
  
  When used with the ncclCommInitRank call, the ncclGroupEnd call waits for all communicators to be initialized.

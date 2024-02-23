@@ -51,7 +51,7 @@ Integer values are discouraged due to breaking changes in path types - the liter
 - PHB : 3
 - SYS : 4
 
-Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy level ints.
+Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy integer values.
 
 NCCL_P2P_DIRECT_DISABLE
 -----------------------
@@ -63,7 +63,7 @@ Define and set to 1 to disable direct user buffer access across GPUs.
 
 NCCL_SHM_DISABLE
 ----------------
-The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL will use network (i.e. InfiniBand or IP sockets) to communicate between the CPU sockets when SHM is disabled.
+The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL will use the network (i.e. InfiniBand or IP sockets) to communicate between the CPU sockets when SHM is disabled.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -72,21 +72,25 @@ Define and set to 1 to disable communication through shared memory (SHM).
 NCCL_SOCKET_IFNAME
 ------------------
 
-The ``NCCL_SOCKET_IFNAME`` variable specifies which IP interface to use for communication.
+The ``NCCL_SOCKET_IFNAME`` variable specifies which IP interfaces to use for communication.
 
 Values accepted
 ^^^^^^^^^^^^^^^
 Define to a list of prefixes to filter interfaces to be used by NCCL.
 
+Multiple prefixes can be provided, separated by the ``,`` symbol.
+
 Using the ``^`` symbol, NCCL will exclude interfaces starting with any prefix in that list.
 
-To match (or not) an exact interface name instead of a prefix, prefix the string with the ``=`` character.
+To match (or not) an exact interface name, begin the prefix string with the ``=`` character.
 
 Examples:
 
 ``eth`` : Use all interfaces starting with ``eth``, e.g. ``eth0``, ``eth1``, ...
 
 ``=eth0`` : Use only interface ``eth0``
+
+``=eth0,eth1`` : Use only interfaces ``eth0`` and ``eth1``
 
 ``^docker`` : Do not use any interface starting with ``docker``
 
@@ -108,7 +112,7 @@ NCCL_SOCKET_NTHREADS
 --------------------
 (since 2.4.8)
 
-The ``NCCL_SOCKET_NTHREADS`` variable specifies the number of CPU helper threads used per network connection for socket transport. Increasing this value may increase the socket transport performance, at the cost of higher CPU usage.
+The ``NCCL_SOCKET_NTHREADS`` variable specifies the number of CPU helper threads used per network connection for socket transport. Increasing this value may increase the socket transport performance, at the cost of a higher CPU usage.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -206,11 +210,12 @@ NCCL_CROSS_NIC
 The ``NCCL_CROSS_NIC`` variable controls whether NCCL should allow rings/trees to use different NICs,
 causing inter-node communication to use different NICs on different nodes.
 
-To maximize inter-node communication performance when using multiple NICs, NCCL tries to communicate
-between same NICs between nodes, to allow for network design where each NIC from each node connects to
+To maximize inter-node communication performance when using multiple NICs, NCCL tries to use the
+same NICs when communicating
+between nodes, to allow for a network design where each NIC on a node connects to
 a different network switch (network rail), and avoid any risk of traffic flow interference.
 The ``NCCL_CROSS_NIC`` setting is therefore dependent on the network topology, and in particular
-depending on whether the network fabric is rail-optimized or not.
+on whether the network fabric is rail-optimized or not.
 
 This has no effect on systems with only one NIC.
 
@@ -220,12 +225,12 @@ Values accepted
 with per NIC switches (rails), with a slow inter-rail connection. Note that if the communicator does not 
 contain the same GPUs on each node, NCCL may still need to communicate across NICs.
 
-1: Do not attempt to use the same NIC for the same ring/tree. This is suited for networks where all NICs
+1: Allow the use of different NICs for the same ring/tree. This is suited for networks where all NICs
 from a node are connected to the same switch, hence trying to communicate across the same NICs does not
 help avoiding flow collisions.
 
-2: (Default) Try to use the same NIC for the same ring/tree, but still allow for it if it would result
-in better performance.
+2: (Default) Try to use the same NIC for the same ring/tree, but still allow for the use of different NICs
+if it would result in a better performance.
 
 NCCL_CHECKS_DISABLE
 -------------------
@@ -268,7 +273,7 @@ This is deprecated in 2.9 and may be removed in future versions.
 NCCL_IB_DISABLE
 ---------------
 
-The ``NCCL_IB_DISABLE`` variable disables the IB/RoCE transport that is to be used by NCCL. Instead, NCCL will fallback to
+The ``NCCL_IB_DISABLE`` variable prevents the IB/RoCE transport from being used by NCCL. Instead, NCCL will fall back to
 using IP sockets.
 
 Values accepted
@@ -308,7 +313,7 @@ For more information, see section 12.7.34 of the InfiniBand specification Volume
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value used by NCCL is 18 (since 2.14, it was 14 in previous versions).
+The default value used by NCCL is 18, i.e. just over 1 second (since 2.14; it was 14 in earlier versions).
 
 Values can be 1-22.
 
@@ -406,7 +411,7 @@ NCCL_IB_AR_THRESHOLD
 --------------------
 (since 2.6)
 
-Threshold after which we send InfiniBand data in a separate message which can
+Threshold above which we send InfiniBand data in a separate message which can
 leverage adaptive routing.
 
 Values accepted
@@ -420,7 +425,7 @@ NCCL_IB_CUDA_SUPPORT
 (removed in 2.4.0, see NCCL_NET_GDR_LEVEL)
 
 The ``NCCL_IB_CUDA_SUPPORT`` variable is used to force or disable the usage of GPU Direct RDMA.
-By default, NCCL enables GPU Direct RDMA, if the topology permits it. This variable can disable this behavior or force
+By default, NCCL enables GPU Direct RDMA if the topology permits it. This variable can disable this behavior or force
 the usage of GPU Direct RDMA in all cases.
 
 Values accepted
@@ -456,17 +461,17 @@ NCCL_IB_PCI_RELAXED_ORDERING
 ----------------------------
 (since 2.12)
 
-Enable use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of InfiniBand networks in virtualized environments.
+Enable the use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of InfiniBand networks in virtualized environments.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Set to 2 to automatically use Relaxed Ordering if available. Set to 1 to force use of Relaxed Ordering and fail if not available. Set to 0 to disable use of Relaxed Ordering. Default is 2.
+Set to 2 to automatically use Relaxed Ordering if available. Set to 1 to force the use of Relaxed Ordering and fail if not available. Set to 0 to disable the use of Relaxed Ordering. Default is 2.
 
 NCCL_IB_ADAPTIVE_ROUTING
 ------------------------
 (since 2.16)
 
-Enable use of Adaptive Routing capable data transfers for the IB Verbs transport. Adaptive routing can improve the performance of communications at scale. A system defined Adaptive Routing enabled SL has to be selected accordingly (cf. ``NCCL_IB_SL``).
+Enable the use of Adaptive Routing capable data transfers for the IB Verbs transport. Adaptive routing can improve the performance of communications at scale. A system defined Adaptive Routing enabled SL has to be selected accordingly (cf. ``NCCL_IB_SL``).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -491,7 +496,7 @@ Use CUDA cuMem* functions to allocate memory in NCCL.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 or 1. Default is 0.
+0 or 1. Default is 0 in 2.18 (disabled); since 2.19 this feature is auto-enabled by default if the system supports it (NCCL_CUMEM_ENABLE can still be used to override the autodetection).
 
 NCCL_NET
 --------
@@ -507,7 +512,7 @@ NCCL_NET_PLUGIN
 ---------------
 (since 2.11)
 
-Set it to a suffix string to choose among multiple NCCL net plugins. This setting will cause NCCL to look for file “libnccl-net-<suffix>.so” instead of the default "libnccl-net.so".
+Set it to a suffix string to choose among multiple NCCL net plugins. This setting will cause NCCL to look for the file “libnccl-net-<suffix>.so” instead of the default "libnccl-net.so".
 
 For example, setting ``NCCL_NET_PLUGIN=aws`` will cause NCCL to use libnccl-net-aws.so (provided that it exists on the system).  Setting ``NCCL_NET_PLUGIN=none`` will cause NCCL not to use any plugin.
 
@@ -518,7 +523,7 @@ Suffix string of the plugin file name, or "none".
 
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
-(since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL is renamed NCCL_NET_GDR_LEVEL)
+(since 2.3.4. In 2.4.0, NCCL_IB_GDR_LEVEL was renamed to NCCL_NET_GDR_LEVEL)
 
 The ``NCCL_NET_GDR_LEVEL`` variable allows the user to finely control when to use GPU Direct RDMA between a NIC and a GPU.
 The level defines the maximum distance between the NIC and the GPU. A string representing the path type should be used to specify the topographical cutoff for GpuDirect.
@@ -528,11 +533,11 @@ If this isn't specified, NCCL will attempt to optimally select a value based on 
 Values accepted
 ^^^^^^^^^^^^^^^
 
-- LOC  : Never use GPU Direct RDMA. (always disabled)
+- LOC  : Never use GPU Direct RDMA (always disabled).
 - PIX  : Use GPU Direct RDMA when GPU and NIC are on the same PCI switch.
 - PXB  : Use GPU Direct RDMA when GPU and NIC are connected through PCI switches (potentially multiple hops).
 - PHB  : Use GPU Direct RDMA when GPU and NIC are on the same NUMA node. Traffic will go through the CPU.
-- SYS  : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI). (always enabled)
+- SYS  : Use GPU Direct RDMA even across the SMP interconnect between NUMA nodes (e.g., QPI/UPI) (always enabled).
 
 Integer Values (Legacy)
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -648,6 +653,7 @@ Comma-separated list of protocols (not case sensitive) among: LL, LL128, Simple.
 
 The default is ``LL,LL128,Simple`` on platforms which support LL128, ``LL,Simple`` otherwise.
 
+Users are discouraged from setting this variable, with the exception of disabling a specific protocol in case a bug in NCCL is suspected. In particular, enabling LL128 on platforms that don't support it can lead to data corruption.
 
 NCCL_IGNORE_CPU_AFFINITY
 ------------------------
@@ -681,7 +687,7 @@ NCCL_DEBUG_SUBSYS
 (since 2.3.4)
 
 The ``NCCL_DEBUG_SUBSYS`` variable allows the user to filter the ``NCCL_DEBUG=INFO`` output based on subsystems.
-A comma separated list of the subsystems to include in the NCCL debug log traces.
+The value should be a comma separated list of the subsystems to include in the NCCL debug log traces.
 
 Prefixing the subsystem name with ‘^’ will disable the logging for that subsystem.
 
@@ -697,7 +703,7 @@ NCCL_COLLNET_ENABLE
 -------------------
 (since 2.6)
 
-Enable the use of CollNet plugin.
+Enable the use of the CollNet plugin.
 
 Value accepted
 ^^^^^^^^^^^^^^
@@ -707,7 +713,7 @@ NCCL_COLLNET_NODE_THRESHOLD
 ---------------------------
 (since 2.9.9)
 
-A threshold for number of nodes below which CollNet will not be enabled.
+A threshold for the number of nodes below which CollNet will not be enabled.
 
 Value accepted
 ^^^^^^^^^^^^^^
@@ -727,7 +733,7 @@ NCCL_TOPO_DUMP_FILE
 -------------------
 (since 2.6)
 
-Path to an XML file to dump the topology after detection.
+Path to a file to dump the XML topology to after detection.
 
 Value accepted
 ^^^^^^^^^^^^^^
@@ -741,7 +747,7 @@ Disable intra-node communication through NVLink via an intermediate GPU.
 
 Value accepted
 ^^^^^^^^^^^^^^
-Default is 0, set to 1 to disable that mechanism.
+Default is 0, set to 1 to disable this mechanism.
 
 NCCL_PXN_DISABLE
 ----------------
@@ -752,7 +758,7 @@ an intermediate GPU.
 
 Value accepted
 ^^^^^^^^^^^^^^
-Default is 0, set to 1 to disable that mechanism.
+Default is 0, set to 1 to disable this mechanism.
 
 NCCL_P2P_PXN_LEVEL
 ------------------
@@ -763,11 +769,10 @@ Control in which cases PXN is used for send/receive operations.
 Value accepted
 ^^^^^^^^^^^^^^
 
-A value of 0 will never use PXN for send/receive. A value of 1 will use PXN
+A value of 0 will disable the use of PXN for send/receive. A value of 1 will enable the use of PXN
 when the NIC preferred by the destination is not directly accessible. A value
-of 2 (default) will always use PXN even if the NIC is directly accessible,
-storing data on the same intermediate GPU as other GPUs in the node to maximize
-aggregation.
+of 2 (default) will cause PXN to always be used, even if the NIC is directly accessible,
+storing data from all GPUs within the node on an intermediate GPU to maximize aggregation.
 
 .. _NCCL_GRAPH_REGISTER:
 
@@ -787,7 +792,7 @@ The user buffers will be automatically de-registered when the CUDA Graphs are de
 
 Value accepted
 ^^^^^^^^^^^^^^
-0 or 1. Default value is 1 (Enabled).
+0 or 1. Default value is 1 (enabled).
 
 NCCL_LOCAL_REGISTER
 -------------------
@@ -797,7 +802,7 @@ Enable user local buffer registration when users explicitly call *ncclCommRegist
 
 Value accepted
 ^^^^^^^^^^^^^^
-0 or 1. Default value is 1 (Enabled).
+0 or 1. Default value is 1 (enabled).
 
 NCCL_SET_STACK_SIZE
 -------------------
@@ -809,17 +814,17 @@ It may avoid a CUDA memory reconfiguration on load. Set to 1 if you experience h
 
 Value accepted
 ^^^^^^^^^^^^^^
-0 or 1. Default value is 0.
+0 or 1. Default value is 0 (disabled).
 
 NCCL_SET_THREAD_NAME
 --------------------
 (since 2.12)
 
-Change the name of NCCL threads to ease debugging and analysis.
+Give more meaningful names to NCCL CPU threads to ease debugging and analysis.
 
 Value accepted
 ^^^^^^^^^^^^^^
-0 or 1. Default is 0.
+0 or 1. Default is 0 (disabled).
 
 .. _NCCL_GRAPH_MIXING_SUPPORT:
 
@@ -837,20 +842,19 @@ The ability to disable support is motivated by observed hangs in the CUDA launch
 
 Value accepted
 ^^^^^^^^^^^^^^
-0 or 1. Default is 1.
+0 or 1. Default is 1 (enabled).
 
 NCCL_DMABUF_ENABLE
 ------------------
 (since 2.13)
 
-Enable GPU Direct RDMA buffer registration using the Linux dma-buf subsystem
+Enable GPU Direct RDMA buffer registration using the Linux dma-buf subsystem.
 
 The Linux dma-buf subsystem allows GPU Direct RDMA capable NICs to read and write CUDA buffers directly without CPU involvement.
-This feature is enabled by default, but will be disabled if the Linux kernel or CUDA/NIC driver do not support it.
 
 Value accepted
 ^^^^^^^^^^^^^^
-0 or 1. Default value is 1.
+0 or 1. Default value is 1 (enabled), but the feature is automatically disabled if the Linux kernel or the CUDA/NIC driver do not support it.
 
 NCCL_P2P_NET_CHUNKSIZE
 ----------------------
@@ -868,7 +872,7 @@ NCCL_P2P_LL_THRESHOLD
 ---------------------
 (since 2.14)
 
-The ``NCCL_P2P_LL_THRESHOLD`` is the maximum message size that NCCL will use LL for P2P operations.
+The ``NCCL_P2P_LL_THRESHOLD`` is the maximum message size that NCCL will use the LL protocol for P2P operations.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -878,12 +882,12 @@ NCCL_ALLOC_P2P_NET_LL_BUFFERS
 -----------------------------
 (since 2.14)
 
-``NCCL_ALLOC_P2P_NET_LL_BUFFERS`` instructs communicators to allocate dedicated LL buffers for all P2P network connections.  This enables all ranks to use LL for latency-bound send and receive operations below ``NCCL_P2P_LL_THRESHOLD`` sizes.
+``NCCL_ALLOC_P2P_NET_LL_BUFFERS`` instructs communicators to allocate dedicated LL buffers for all P2P network connections.  This enables all ranks to use the LL protocol for latency-bound send and receive operations below ``NCCL_P2P_LL_THRESHOLD`` sizes.
 Intranode P2P transfers always have dedicated LL buffers allocated.  If running all-to-all workloads with high numbers of ranks, this will result in a high scaling memory overhead.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 or 1. Default value is 0.
+0 or 1. Default value is 0 (disabled).
 
 NCCL_COMM_BLOCKING
 ------------------
@@ -949,11 +953,11 @@ Enable NCCL to combine dual-port IB NICs into a single logical network device. T
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 1, define and set to 0 to disable NIC merging
+Default is 1 (enabled), define and set to 0 to disable NIC merging
 
 NCCL_MNNVL_ENABLE
 -----------------
-(since 2.20)
+(since 2.21)
 
 Enable NCCL to use Multi-Node NVLink (MNNVL) when available. If the system or driver are not Multi-Node NVLink capable then MNNVL will automatically be disabled. This feature also requires NCCL CUMEM support (``NCCL_CUMEM_ENABLE``) to be enabled.
 MNNVL requires a fully configured and operational IMEX domain for all the nodes that form the NVLink domain. See the CUDA documentation for more details on IMEX domains.

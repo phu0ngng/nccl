@@ -10,7 +10,7 @@ ncclAllReduce
 
 .. c:function:: ncclResult_t  ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm, cudaStream_t stream)
  
- Reduce data arrays of length ``count`` in ``sendbuff`` using ``op`` operation and leaves identical copies of the result on each ``recvbuff``.
+ Reduces data arrays of length ``count`` in ``sendbuff`` using the ``op`` operation and leaves identical copies of the result in each ``recvbuff``.
  
  In-place operation will happen if ``sendbuff == recvbuff``.
 
@@ -57,7 +57,7 @@ ncclAllGather
 
 .. c:function:: ncclResult_t  ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount, ncclDataType_t datatype, ncclComm_t comm, cudaStream_t stream)
  
- Gather ``sendcount`` values from all GPUs into ``recvbuff``, receiving data from rank ``i`` at offset ``i*sendcount``. 
+ Gathers ``sendcount`` values from all GPUs and leaves identical copies of the result in each ``recvbuff``, receiving data from rank ``i`` at offset ``i*sendcount``.
  
  Note: This assumes the receive count is equal to ``nranks*sendcount``, which means that ``recvbuff`` should have a size of at least ``nranks*sendcount`` elements.
  

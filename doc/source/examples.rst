@@ -31,7 +31,7 @@ In the specific case of a single process, ncclCommInitAll can be used. Here is a
  int devs[4] = { 0, 1, 2, 3 };
  ncclCommInitAll(comms, 4, devs);
 
-Next, you can call NCCL collective operations using a single thread, and group calls, or multiple threads, each provided with a comm object.
+Next, you can call NCCL collective operations using a single thread and group calls, or multiple threads, each provided with a comm object.
 
 
 At the end of the program, all of the communicator objects are destroyed:
@@ -356,7 +356,7 @@ Then, we create our ngpus communicator objects, which are part of a larger group
  }
  ncclGroupEnd();
 
-Next, we call NCCL collective operations using a single thread, and group calls, or multiple threads, each provided with a comm object.
+Next, we call NCCL collective operations using a single thread and group calls, or multiple threads, each provided with a comm object.
 
 At the end of the program, we destroy all communicators objects:
 
@@ -572,7 +572,7 @@ Example 1: One Device per Process or Thread
 -------------------------------------------
 
 
-If you have a thread or process per device, then each thread calls the collective operation for its device,for example, AllReduce:
+If you have a thread or process per device, then each thread calls the collective operation for its device, for example, AllReduce:
 
 .. code:: C
 
