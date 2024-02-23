@@ -314,21 +314,12 @@ struct ncclKernelPlanner {
   struct ncclCudaGraph capturingGraph;
 
   //////////////////////////////////////////////////////////////////////////////
-  // Lists of tasks to be assembled into plans categorized by scheduling
-  // constraints:
+  // Lists of tasks to be assembled into plans.
   //////////////////////////////////////////////////////////////////////////////
 
-  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueueCollnet;
-  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueueCollnet;
-  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueueCollnet;
-
-  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueueNvls;
-  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueueNvls;
-  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueueNvls;
-
-  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueueStandard;
-  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueueStandard;
-  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueueStandard;
+  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueue;
+  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueue;
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueue;
 
   //////////////////////////////////////////////////////////////////////////////
   // State for building current (Work-In-Progress) plan:

@@ -18,7 +18,7 @@ namespace {
     size_t gridOffset;
     size_t channelCount;
     size_t chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, &count, &gridOffset, &channelCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), &count, &gridOffset, &channelCount, &chunkCount);
     size_t offset;
     size_t dataOffset;
     uint32_t nelem;
@@ -82,7 +82,7 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_S
     size_t gridOffset;
     size_t channelCount;
     size_t chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, &count, &gridOffset, &channelCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), &count, &gridOffset, &channelCount, &chunkCount);
     const int rank = ncclShmem.comm.rank;
     const int nranks = ncclShmem.comm.nRanks;
     size_t offset;

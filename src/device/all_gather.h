@@ -15,7 +15,7 @@ namespace {
     const int *ringRanks = ring->userRanks;
     const int nranks = ncclShmem.comm.nRanks;
     size_t count, partOffset, partCount, chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, &count, &partOffset, &partCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), &count, &partOffset, &partCount, &chunkCount);
     size_t offset;
     size_t dataOffset;
     int nelem;
@@ -88,7 +88,7 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
     const ssize_t rank = ncclShmem.comm.rank;
     size_t count, gridOffset, channelCount;
     size_t chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, &count, &gridOffset, &channelCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), &count, &gridOffset, &channelCount, &chunkCount);
     size_t offset;
     int nelem;
 

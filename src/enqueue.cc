@@ -61,7 +61,7 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, size_t* maxStackSize) {
 ////////////////////////////////////////////////////////////////////////////////
 // Data movement metrics.
 
-static inline int ncclFuncTrafficPerElement(ncclFunc_t func, int nRanks) {
+static inline int ncclFuncTrafficPerByte(ncclFunc_t func, int nRanks) {
   switch (func) {
   case ncclFuncAllReduce: return 2;
   case ncclFuncAllGather: return nRanks;
@@ -344,7 +344,7 @@ static ncclResult_t getCollNetSupport(struct ncclComm* comm, struct ncclTaskColl
 static ncclResult_t getAlgoInfo(struct ncclComm* comm, struct ncclTaskColl* task, int collNetSupport, int nvlsSupport, int numPipeOps);
 static ncclResult_t calcCollChunking(
   struct ncclComm* comm, struct ncclTaskColl* task, int nChannels, size_t nBytes,
-  /*outputs*/uint32_t* outChunkSize, uint32_t* directFlags, struct ncclProxyOp* proxyOp
+  /*outputs*/uint32_t* outChunkSize, uint32_t* outDirectFlags, struct ncclProxyOp* proxyOp
 );
 
 struct ncclKernelPlanBudget {
@@ -366,22 +366,6 @@ static bool testBudget(
 // comm->planner so that they can be peeled off into plans.
 static ncclResult_t prepareTasks(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
-  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next>* collTaskQueues[3] = {
-    &planner->collTaskQueueCollnet,
-    &planner->collTaskQueueNvls,
-    &planner->collTaskQueueStandard
-  };
-  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next>* collWorkQueues[3] = {
-    &planner->collWorkQueueCollnet,
-    &planner->collWorkQueueNvls,
-    &planner->collWorkQueueStandard
-  };
-  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* collCleanupQueues[3] = {
-    &planner->collCleanupQueueCollnet,
-    &planner->collCleanupQueueNvls,
-    &planner->collCleanupQueueStandard
-  };
-
   // Tasks from the sorter come out ordered size descending.
   struct ncclTaskColl* task = ncclTaskCollSorterDequeueAll(&planner->collSorter);
   // Tasks are assembled by (fn,op,ty) size ascending.
@@ -403,7 +387,9 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
     task = next;
   }
 
-  // Walk (fn,op,ty) bins, compute algo and proto etc.
+  // Walk (fn,op,ty) bins, compute algo and proto etc. Then bin them by their
+  // scheduling constraints (collnet x nvls).
+  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collBins[2][2] = {};
   for (int cursor=0; cursor < fnOpTyCount; cursor++) {
     struct ncclTaskColl* aggBeg = tasksByFnOpTy[fnOpTyIndices[cursor]];
     int collNetSupport = 0;
@@ -423,16 +409,16 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
       NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nAggs));
       agg.devFuncId = ncclDevFuncId(agg.func, agg.op.op, agg.datatype, agg.algorithm, agg.protocol);
 
-      bool isCollnet=false, isNvls=false;
+      int isCollnet=0, isNvls=0;
       switch (aggBeg->algorithm) {
       case NCCL_ALGO_NVLS:
       case NCCL_ALGO_NVLS_TREE:
-        isNvls = true;
+        isNvls = 1;
         isCollnet = aggBeg->algorithm == NCCL_ALGO_NVLS && comm->nNodes > 1;
         break;
       case NCCL_ALGO_COLLNET_CHAIN:
       case NCCL_ALGO_COLLNET_DIRECT:
-        isCollnet = true;
+        isCollnet = 1;
         break;
       }
       // Update the aggregated tasks with the computed values.
@@ -445,90 +431,96 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
         aggBeg->devFuncId = agg.devFuncId;
         aggBeg->isCollnet = isCollnet;
         aggBeg->isNvls = isNvls;
+        ncclIntruQueueEnqueue(&collBins[isCollnet][isNvls], aggBeg);
         aggBeg = next;
       } while (aggBeg != aggEnd);
     } while (aggBeg != nullptr);
   }
 
-  // Walk (fn,op,ty) bins again to:
+  // Concatenate `collBins[*][*]` together into final list `planner->collTaskQueue`.
+  // Collnet is the outer dimension since that affects whether how divide over the
+  // channels.
+  for (int isCollnet=0; isCollnet <= 1; isCollnet++) {
+    for (int isNvls=0; isNvls <= 1; isNvls++) {
+      ncclIntruQueueTransfer(&planner->collTaskQueue, &collBins[isCollnet][isNvls]);
+    }
+  }
+
+  // Walk tasks again to:
   // 1. Possibly register buffers.
   // 2. Build ncclDevWorkColl structs.
   // 3. Bin the work structs according to the number of valid channels they
   //    may be assigned to {collnet, nvls, standard}
-  for (int cursor=0; cursor < fnOpTyCount; cursor++) {
-    task = tasksByFnOpTy[fnOpTyIndices[cursor]];
-    do {
-      // Build a ncclDevWorkColl[Reg?] struct for each task.
-      ncclRegBufferType regBufType = NCCL_REGULAR_BUFFER;
-      void* regBufSend[NCCL_MAX_LOCAL_RANKS];
-      void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
-      int q = task->isCollnet ? 0 : task->isNvls ? 1 : 2;
-      registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &regBufType, collCleanupQueues[q]);
+  task = ncclIntruQueueHead(&planner->collTaskQueue);
+  while (task != nullptr) {
+    // Build a ncclDevWorkColl[Reg?] struct for each task.
+    ncclRegBufferType regBufType = NCCL_REGULAR_BUFFER;
+    void* regBufSend[NCCL_MAX_LOCAL_RANKS];
+    void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
+    registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &regBufType, &planner->collCleanupQueue);
 
-      struct ncclDevWorkColl devWork = {};
-      devWork.sendbuff = (void*)task->sendbuff;
-      devWork.recvbuff = (void*)task->recvbuff;
-      devWork.root = task->root;
-      devWork.nWarps = task->nWarps;
-      devWork.redOpArg = task->op.scalarArg;
-      devWork.redOpArgIsPtr = task->op.scalarArgIsPtr;
-      devWork.oneNode = (comm->nNodes == 1);
-      devWork.regUsed = 0;
+    struct ncclDevWorkColl devWork = {};
+    devWork.sendbuff = (void*)task->sendbuff;
+    devWork.recvbuff = (void*)task->recvbuff;
+    devWork.root = task->root;
+    devWork.nWarps = task->nWarps;
+    devWork.redOpArg = task->op.scalarArg;
+    devWork.redOpArgIsPtr = task->op.scalarArgIsPtr;
+    devWork.oneNode = (comm->nNodes == 1);
+    devWork.regUsed = 0;
 
-      struct ncclWorkList* workNode;
-      switch (regBufType) {
-      case NCCL_REGULAR_BUFFER:
-        { workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkColl>(&comm->memScoped, 1);
-          workNode->workType = ncclDevWorkTypeColl;
-          workNode->size = sizeof(struct ncclDevWorkColl);
-          memcpy((void*)(workNode+1), (void*)&devWork, workNode->size);
-        } break;
-      case NCCL_IPC_REG_BUFFER:
-        { struct ncclDevWorkCollReg workReg = {};
-          workReg.coll = devWork;
-          workReg.coll.regUsed = 1;
-          struct ncclChannel *channel0 = &comm->channels[0];
-          for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
-            int peer = channel0->collnetDirect.down[i];
-            if (peer == -1) break;
-            int j = comm->rankToLocalRank[peer]; // Get intra-node slot
-            workReg.dnInputs[i] = regBufSend[j]; // Input buffer of leaf peer
-            workReg.dnOutputs[i] = regBufRecv[j]; // Output buffer of leaf peer
-          }
-          for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
-            int peer = channel0->collnetDirect.up[i];
-            if (peer == -1) break;
-            int j = comm->rankToLocalRank[peer];
-            // Output buffer of root peer
-            workReg.upOutputs[i] = regBufRecv[j];
-          }
-          workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
-          workNode->workType = ncclDevWorkTypeCollReg;
-          workNode->size = sizeof(struct ncclDevWorkCollReg);
-          memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
-        } break;
-      case NCCL_NVLS_REG_BUFFER:
-        { struct ncclDevWorkCollReg workReg = {};
-          workReg.coll = devWork; // C++ struct assignment
-          workReg.coll.regUsed = 1;
-          /* NVLS only has one send and recv buffer registered */
-          workReg.dnInputs[0] = regBufSend[0];
-          workReg.dnOutputs[0] = regBufRecv[0];
-          workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
-          workNode->workType = ncclDevWorkTypeCollReg;
-          workNode->size = sizeof(struct ncclDevWorkCollReg);
-          memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
-        } break;
-      default:
-        /* impossible value */
-        WARN("Invalid regBufType %d\n", regBufType);
-        return ncclInvalidArgument;
-      }
-      struct ncclTaskColl* task1 = task->next;
-      ncclIntruQueueEnqueue(collTaskQueues[q], task);
-      ncclIntruQueueEnqueue(collWorkQueues[q], workNode);
-      task = task1;
-    } while (task != nullptr);
+    struct ncclWorkList* workNode;
+    switch (regBufType) {
+    case NCCL_REGULAR_BUFFER:
+      { workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkColl>(&comm->memScoped, 1);
+        workNode->workType = ncclDevWorkTypeColl;
+        workNode->size = sizeof(struct ncclDevWorkColl);
+        memcpy((void*)(workNode+1), (void*)&devWork, workNode->size);
+      } break;
+    case NCCL_IPC_REG_BUFFER:
+      { struct ncclDevWorkCollReg workReg = {};
+        workReg.coll = devWork;
+        workReg.coll.regUsed = 1;
+        struct ncclChannel *channel0 = &comm->channels[0];
+        for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
+          int peer = channel0->collnetDirect.down[i];
+          if (peer == -1) break;
+          int j = comm->rankToLocalRank[peer]; // Get intra-node slot
+          workReg.dnInputs[i] = regBufSend[j]; // Input buffer of leaf peer
+          workReg.dnOutputs[i] = regBufRecv[j]; // Output buffer of leaf peer
+        }
+        for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
+          int peer = channel0->collnetDirect.up[i];
+          if (peer == -1) break;
+          int j = comm->rankToLocalRank[peer];
+          // Output buffer of root peer
+          workReg.upOutputs[i] = regBufRecv[j];
+        }
+        workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
+        workNode->workType = ncclDevWorkTypeCollReg;
+        workNode->size = sizeof(struct ncclDevWorkCollReg);
+        memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
+      } break;
+    case NCCL_NVLS_REG_BUFFER:
+      { struct ncclDevWorkCollReg workReg = {};
+        workReg.coll = devWork; // C++ struct assignment
+        workReg.coll.regUsed = 1;
+        /* NVLS only has one send and recv buffer registered */
+        workReg.dnInputs[0] = regBufSend[0];
+        workReg.dnOutputs[0] = regBufRecv[0];
+        workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
+        workNode->workType = ncclDevWorkTypeCollReg;
+        workNode->size = sizeof(struct ncclDevWorkCollReg);
+        memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
+      } break;
+    default:
+      /* impossible value */
+      WARN("Invalid regBufType %d\n", regBufType);
+      return ncclInvalidArgument;
+    }
+
+    ncclIntruQueueEnqueue(&planner->collWorkQueue, workNode);
+    task = task->next;
   }
 
   return ncclSuccess;
@@ -538,221 +530,209 @@ static ncclResult_t scheduleCollTasksToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclKernelPlanBudget* budget
   ) {
   struct ncclKernelPlanner* planner = &comm->planner;
-  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next>* collTaskQueues[3] = {
-    &planner->collTaskQueueCollnet,
-    &planner->collTaskQueueNvls,
-    &planner->collTaskQueueStandard
-  };
-  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next>* collWorkQueues[3] = {
-    &planner->collWorkQueueCollnet,
-    &planner->collWorkQueueNvls,
-    &planner->collWorkQueueStandard
-  };
-  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* collCleanupQueues[3] = {
-    &planner->collCleanupQueueCollnet,
-    &planner->collCleanupQueueNvls,
-    &planner->collCleanupQueueStandard
-  };
-
   // Estimate number of tasks that will fit in this plan.
   int nPlanColls = 0;
-  size_t trafficBytes[3] = {0, 0, 0}; // {collnet, nvls, standard}
-  int nChannels[3] = {0, 0, 0}; // {collnet, nvls, standard}
-  int const nMaxChannels[3] = {comm->collNetChannels, comm->nvlsChannels, comm->nChannels};
+  size_t trafficBytes[2*2] = {0, 0, 0, 0}; // [collnet][nvls]
+  int nChannels[2*2] = {0, 0, 0, 0}; // [collnet][nvls]
+  int const nMaxChannels[2*2] = {comm->nChannels, comm->nvlsChannels, // [collnet][nvls]
+                                 comm->nChannels, comm->nvlsChannels};
   do {
     size_t workBytes = 0;
-    for (int q=0; q < 3; q++) { // collnet, nvls, standard
-      struct ncclTaskColl* task = ncclIntruQueueHead(collTaskQueues[q]);
-      struct ncclWorkList* workNode = ncclIntruQueueHead(collWorkQueues[q]);
-      while (task != nullptr) {
-        int nBatches = divUp(nPlanColls, 4); // Rough guess: 4 colls per batch.
-        if (!testBudget(budget, nBatches, workBytes + workNode->size)) goto plan_full;
+    struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
+    struct ncclWorkList* workNode = ncclIntruQueueHead(&planner->collWorkQueue);
+    while (task != nullptr) {
+      int nBatches = divUp(nPlanColls, 4); // Rough guess: 4 colls per batch.
+      if (!testBudget(budget, nBatches, workBytes + workNode->size)) goto plan_full;
 
-        nPlanColls += 1;
-        workBytes += workNode->size;
-        trafficBytes[q] += task->trafficBytes;
-        nChannels[q] += task->nMaxChannels;
-        nChannels[q] = std::min(nChannels[q], nMaxChannels[q]);
-        task = task->next;
-        workNode = workNode->next;
-      }
+      nPlanColls += 1;
+      workBytes += workNode->size;
+      int kind = 2*task->isCollnet + task->isNvls;
+      trafficBytes[kind] += task->trafficBytes;
+      nChannels[kind] += task->nMaxChannels;
+      nChannels[kind] = std::min(nChannels[kind], nMaxChannels[kind]);
+      task = task->next;
+      workNode = workNode->next;
     }
   plan_full:;
   } while (0);
 
-  for (int q=0; q < 3; q++) { // collnet, nvls, standard
-    if (nPlanColls==0 || ncclIntruQueueEmpty(collTaskQueues[q])) continue;
+  int kindPrev = -1;
+  constexpr size_t MinTrafficPerChannel = 512;
+  size_t trafficPerChannel = 0;
+  int channelId = 0;
+  size_t currentTraffic = 0;
+  while (nPlanColls!=0 && !ncclIntruQueueEmpty(&planner->collTaskQueue)) {
+    struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
+    struct ncclWorkList* workNode = ncclIntruQueueHead(&planner->collWorkQueue);
+    struct ncclDevWorkColl* devWork = (struct ncclDevWorkColl*)(workNode+1);
+    size_t elementSize = ncclTypeSize(task->datatype);
 
-    constexpr size_t MinTrafficPerChannel = 512;
-    size_t trafficPerChannel = std::max<size_t>(MinTrafficPerChannel, trafficBytes[q]/nChannels[q]);
-    int channelId = 0;
-    size_t currentTraffic = 0;
-    do { // while (nPlanColls!=0 && !ncclIntruQueueEmpty(collTaskQueues[q]))
-      struct ncclTaskColl* task = ncclIntruQueueHead(collTaskQueues[q]);
-      struct ncclWorkList* workNode = ncclIntruQueueHead(collWorkQueues[q]);
-      struct ncclDevWorkColl* devWork = (struct ncclDevWorkColl*)(workNode+1);
-      size_t elementSize = ncclTypeSize(task->datatype);
+    int kind = 2*task->isCollnet + task->isNvls;
+    if (kind != kindPrev) {
+      trafficPerChannel = std::max<size_t>(MinTrafficPerChannel, trafficBytes[kind]/nChannels[kind]);
+      kindPrev = kind;
+      channelId = 0;
+      currentTraffic = 0;
+    }
 
-      if (q == /*collnet*/0) {
-        int nChannels = task->nMaxChannels;
-        // Ensure room for worst case of one new batch per channel
-        if (!testBudget(budget, plan->nWorkBatches + nChannels, plan->workBytes + workNode->size)) {
-          return ncclSuccess;
-        }
+    if (task->isCollnet) {
+      int nChannels = task->nMaxChannels;
+      // Ensure room for worst case of one new batch per channel
+      if (!testBudget(budget, plan->nWorkBatches + nChannels, plan->workBytes + workNode->size)) {
+        return ncclSuccess;
+      }
 
-        size_t globalBytesPerElement = elementSize*ncclFuncMaxSendRecvCount(task->func, comm->nRanks, 1);
-        struct ncclProxyOp proxyOp;
-        uint32_t chunkCount, directFlags=0;
-        NCCLCHECK(calcCollChunking(comm, task, nChannels, globalBytesPerElement*task->count, &chunkCount, &directFlags, &proxyOp));
-        devWork->channelLo = 0;
-        devWork->channelHi = nChannels-1;
-        devWork->collnet.count = task->count;
-        devWork->collnet.chunkCount = chunkCount;
-        devWork->direct = directFlags;
+      size_t globalBytesPerElement = elementSize*ncclFuncMaxSendRecvCount(task->func, comm->nRanks, 1);
+      struct ncclProxyOp proxyOp;
+      uint32_t chunkSize, directFlags=0;
+      NCCLCHECK(calcCollChunking(comm, task, nChannels, globalBytesPerElement*task->count, &chunkSize, &directFlags, &proxyOp));
+      devWork->channelLo = 0;
+      devWork->channelHi = nChannels-1;
+      devWork->collnet.count = task->count;
+      devWork->collnet.chunkCount = chunkSize/ncclTypeSize(task->datatype);
+      devWork->direct = directFlags;
 
-        uint64_t proxyOpId = uint64_t(plan->collOpCount++)<<1 | 0;
-        for (int c=devWork->channelLo; c <= (int)devWork->channelHi; c++) {
-          proxyOp.channelId = c;
-          proxyOp.opCount = proxyOpId;
-          addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
-          NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOp));
-        }
-      } else { // q==nvls || q==standard
-        // Amount of traffic each assignable element incurs.
-        size_t trafficPerElement = elementSize*ncclFuncTrafficPerElement(task->func, comm->nRanks);
-        // Compute desired elements per channel based off traffic budget.
-        size_t elementPerChannel = alignUp(divUp(trafficPerChannel, trafficPerElement), 16/elementSize);
-        // Try not to assign fewer than minCount elements to a channel.
-        size_t minCount = std::min<size_t>(MinTrafficPerChannel/trafficPerElement, task->count);
-        size_t countLo; // Number of elements on least channel
-        if (channelId+1 == nMaxChannels[q]) {
-          // The greatest channel must take all remaining work.
-          countLo = task->count;
+      uint64_t proxyOpId = uint64_t(plan->collOpCount++)<<1 | 0;
+      for (int c=devWork->channelLo; c <= (int)devWork->channelHi; c++) {
+        proxyOp.channelId = c;
+        proxyOp.opCount = proxyOpId;
+        addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
+        NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOp));
+      }
+    } else { // not task->isCollnet
+      constexpr size_t cellSize = 16;
+      int elementsPerCell = cellSize/elementSize;
+      size_t cells = divUp(task->count*elementSize, cellSize);
+      int trafficPerByte = ncclFuncTrafficPerByte(task->func, comm->nRanks);
+      size_t trafficPerElement = elementSize*trafficPerByte;
+      size_t trafficPerCell = cellSize*trafficPerByte;
+      size_t cellsPerChannel = std::min(cells, divUp(trafficPerChannel, trafficPerCell));
+      size_t cellsLo;
+      if (channelId+1 == nMaxChannels[kind]) { // On last channel everything goes to "lo"
+        cellsLo = cells;
+      } else {
+        cellsLo = std::min(cells, (trafficPerChannel-currentTraffic)/trafficPerCell);
+      }
+      int nMidChannels = (cells-cellsLo)/cellsPerChannel;
+      size_t cellsHi = (cells-cellsLo)%cellsPerChannel;
+      int nChannels = (cellsLo!=0 ? 1 : 0) + nMidChannels + (cellsHi!=0 ? 1 : 0);
+      if (nMaxChannels[kind] < channelId + nChannels) { // Overflowed available channels
+        nMidChannels = nMaxChannels[kind] - channelId - 2;
+        cellsPerChannel = (cells-cellsLo)/(nMidChannels+1);
+        cellsHi = cellsPerChannel + (cells-cellsLo)%(nMidChannels+1);
+      }
+      if (cellsHi == 0 && nMidChannels != 0) {
+        cellsHi = cellsPerChannel;
+        nMidChannels -= 1;
+      }
+      if (cellsLo == 0) { // Least channel skipped. Make the next channel the new least.
+        channelId += 1;
+        if (nMidChannels == 0) { cellsLo = cellsHi; cellsHi = 0; }
+        else { cellsLo = cellsPerChannel; nMidChannels -= 1; }
+      }
+      size_t countMid = nMidChannels!=0 ? cellsPerChannel*elementsPerCell : 0;
+      size_t countLo = cellsLo*elementsPerCell;
+      size_t countHi = cellsHi*elementsPerCell;
+      (countHi != 0 ? countHi : countLo) -= cells*elementsPerCell - task->count;
+
+      nChannels = (countLo!=0 ? 1 : 0) + nMidChannels + (cellsHi!=0 ? 1 : 0);
+      // Ensure room for worst case of one new batch per channel
+      if (!testBudget(budget, plan->nWorkBatches + nChannels, plan->workBytes + workNode->size)) {
+        return ncclSuccess;
+      }
+
+      devWork->channelLo = channelId;
+      devWork->channelHi = channelId + nChannels-1;
+      devWork->cbd.countLo = countLo;
+      devWork->cbd.countMid = countMid;
+      devWork->cbd.countHi = countHi;
+
+      // calcCollChunking() uses global bytes instead of traffic which differs
+      // in that allreduce isn't multipled by 2.
+      size_t globalBytesPerElement = elementSize*ncclFuncMaxSendRecvCount(task->func, comm->nRanks, 1);
+      struct ncclProxyOp proxyOpLo, proxyOpMid, proxyOpHi;
+
+      uint32_t chunkSize, directFlags=0;
+      size_t grainSize = ncclProtoGrainSize(task->protocol);
+      if (countLo != 0) {
+        NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countLo, &chunkSize, &directFlags, &proxyOpLo));
+        devWork->cbd.chunkGrainsLo = chunkSize/grainSize;
+      }
+      if (countHi != 0) {
+        NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countHi, &chunkSize, &directFlags, &proxyOpHi));
+        devWork->cbd.chunkGrainsHi = chunkSize/grainSize;
+      }
+      if (nMidChannels != 0) {
+        NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countMid, &chunkSize, &directFlags, &proxyOpMid));
+        devWork->cbd.chunkGrainsMid = chunkSize/grainSize;
+      }
+      devWork->direct = directFlags;
+
+      // Update the current channel and vacant traffic budget.
+      if (countHi*trafficPerElement >= trafficPerChannel) {
+        currentTraffic = 0;
+        channelId = devWork->channelHi+1;
+      } else if (countHi != 0) {
+        currentTraffic = devWork->cbd.countHi*trafficPerElement;
+        channelId = devWork->channelHi;
+      } else {
+        currentTraffic += countLo*trafficPerElement;
+      }
+
+      uint64_t proxyOpId = uint64_t(plan->collOpCount++)<<1 | 0;
+      for (int c=devWork->channelLo; c <= (int)devWork->channelHi; c++) {
+        struct ncclProxyOp* proxyOp;
+        if (c == (int)devWork->channelLo) {
+          proxyOp = &proxyOpLo;
+        } else if (c == (int)devWork->channelHi) {
+          proxyOp = &proxyOpHi;
         } else {
-          // Number of elements this channel can accept before exceeding traffic budget.
-          size_t vacancy = (trafficPerChannel - currentTraffic)/trafficPerElement;
-          vacancy -= vacancy%(16/elementSize); // Don't ruin the alignment of greater channels.
-          countLo = std::min<size_t>(task->count, vacancy);
-          // Not enough elements, let greater channels absorb the work.
-          if (countLo < minCount) countLo = 0;
+          proxyOp = &proxyOpMid;
         }
-        // Number of channels between the least and greatest, exclusive.
-        int nMidChannels = (task->count - countLo)/elementPerChannel;
-        // Number of elements to put on the greatest channel.
-        size_t countHi = (task->count - countLo)%elementPerChannel;
-        if (countHi < minCount) { // Too few on greatest channel.
-          if (nMidChannels != 0) { // Promote greatest mid channel to the new greatest channel.
-            nMidChannels -= 1;
-            countHi += elementPerChannel;
-          } else if (countLo != 0) { // Absorb into least if it wasn't absorbed already.
-            countLo += countHi;
-            countHi = 0;
-          }
-        }
-        if (countLo == 0) { // Least channel skipped. Make the next channel the new least.
-          channelId += 1;
-          if (nMidChannels == 0) { countLo = countHi; countHi = 0; }
-          else { countLo = elementPerChannel; nMidChannels -= 1; }
-        }
-
-        int nChannels = (countLo!=0 ? 1 : 0) + nMidChannels + (countHi!=0 ? 1 : 0);
-        // Ensure room for worst case of one new batch per channel
-        if (!testBudget(budget, plan->nWorkBatches + nChannels, plan->workBytes + workNode->size)) {
-          return ncclSuccess;
-        }
-
-        devWork->channelLo = channelId;
-        devWork->channelHi = channelId + nChannels-1;
-        devWork->cbd.countLo = countLo;
-        devWork->cbd.countMid = nMidChannels!=0 ? elementPerChannel : 0;
-        devWork->cbd.countHi = countHi;
-
-        // calcCollChunking() uses global bytes instead of traffic which differs
-        // in that allreduce isn't multipled by 2.
-        size_t globalBytesPerElement = elementSize*ncclFuncMaxSendRecvCount(task->func, comm->nRanks, 1);
-        struct ncclProxyOp proxyOpLo, proxyOpMid, proxyOpHi;
-
-        uint32_t chunkCount, directFlags=0;
-        if (countLo != 0) {
-          NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countLo, &chunkCount, &directFlags, &proxyOpLo));
-          devWork->cbd.chunkCountLo_1K = divUp(chunkCount, 1024*elementSize);
-        }
-        if (countHi != 0) {
-          NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*countHi, &chunkCount, &directFlags, &proxyOpHi));
-          devWork->cbd.chunkCountHi_1K = divUp(chunkCount, 1024*elementSize);
-        }
-        if (nMidChannels != 0) {
-          NCCLCHECK(calcCollChunking(comm, task, /*nChannels=*/1, globalBytesPerElement*elementPerChannel, &chunkCount, &directFlags, &proxyOpMid));
-          devWork->cbd.chunkCountMid_1K = divUp(chunkCount, 1024*elementSize);
-        }
-        devWork->direct = directFlags;
-
-        // Update the current channel and vacant traffic budget.
-        if (countHi >= elementPerChannel) {
-          currentTraffic = 0;
-          channelId = devWork->channelHi+1;
-        } else if (countHi != 0) {
-          currentTraffic = countHi*trafficPerElement;
-          channelId = devWork->channelHi;
-        } else {
-          currentTraffic += countLo*trafficPerElement;
-        }
-
-        uint64_t proxyOpId = uint64_t(plan->collOpCount++)<<1 | 0;
-        for (int c=devWork->channelLo; c <= (int)devWork->channelHi; c++) {
-          struct ncclProxyOp* proxyOp;
-          if (c == (int)devWork->channelLo) {
-            proxyOp = &proxyOpLo;
-          } else if (c == (int)devWork->channelHi) {
-            proxyOp = &proxyOpHi;
-          } else {
-            proxyOp = &proxyOpMid;
-          }
-          proxyOp->channelId = c;
-          proxyOp->opCount = proxyOpId;
-          addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
-          NCCLCHECK(addProxyOpIfNeeded(comm, plan, proxyOp));
-        }
+        proxyOp->channelId = c;
+        proxyOp->opCount = proxyOpId;
+        addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
+        NCCLCHECK(addProxyOpIfNeeded(comm, plan, proxyOp));
       }
+    }
 
-      plan->channelMask |= (2ull<<devWork->channelHi) - (1ull<<devWork->channelLo);
-      plan->threadPerBlock = std::max(plan->threadPerBlock, task->nWarps*WARP_SIZE);
-      if (!plan->kernelSpecialized) {
-        plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
-        plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
-      }
+    plan->channelMask |= (2ull<<devWork->channelHi) - (1ull<<devWork->channelLo);
+    plan->threadPerBlock = std::max(plan->threadPerBlock, task->nWarps*WARP_SIZE);
+    if (!plan->kernelSpecialized) {
+      plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
+      plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
+    }
 
-      if (comm->rank == 0) {
-        if (q == 0) {
-          TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count=%ld chunkCount=%d\n",
-            ncclFuncToString(task->func), ncclDevRedOpToString(task->op.op),
-            ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
-            ncclProtoToString(task->protocol),
-            (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
-            (long)devWork->collnet.count, devWork->collnet.chunkCount);
-        } else {
-          TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkCount{Lo,Mid,Hi}={%d,%d,%d}\n",
-            ncclFuncToString(task->func), ncclDevRedOpToString(task->op.op),
-            ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
-            ncclProtoToString(task->protocol),
-            (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
-            (long)devWork->cbd.countLo, (long)devWork->cbd.countMid, (long)devWork->cbd.countHi,
-            int(devWork->cbd.chunkCountLo_1K*1024*elementSize),
-            int(devWork->cbd.chunkCountMid_1K*1024*elementSize),
-            int(devWork->cbd.chunkCountHi_1K*1024*elementSize));
-        }
+    if (comm->rank == 0) {
+      if (task->isCollnet) {
+        TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count=%ld chunkCount=%d\n",
+          ncclFuncToString(task->func), ncclDevRedOpToString(task->op.op),
+          ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
+          ncclProtoToString(task->protocol),
+          (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
+          (long)devWork->collnet.count, devWork->collnet.chunkCount);
+      } else {
+        TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkCount{Lo,Mid,Hi}={%d,%d,%d}\n",
+          ncclFuncToString(task->func), ncclDevRedOpToString(task->op.op),
+          ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
+          ncclProtoToString(task->protocol),
+          (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
+          (long)devWork->cbd.countLo, (long)devWork->cbd.countMid, (long)devWork->cbd.countHi,
+          int(devWork->cbd.chunkCountLo_1K*1024*elementSize),
+          int(devWork->cbd.chunkCountMid_1K*1024*elementSize),
+          int(devWork->cbd.chunkCountHi_1K*1024*elementSize));
       }
+    }
 
-      for (int i=0; i < task->nCleanupQueueElts; i++) {
-        ncclIntruQueueEnqueue(&plan->cleanupQueue, ncclIntruQueueDequeue(collCleanupQueues[q]));
-      }
-      ncclIntruQueueDequeue(collTaskQueues[q]);
-      ncclIntruQueueDequeue(collWorkQueues[q]);
-      nPlanColls -= 1;
-      planner->nTasksColl -= 1;
-      ncclIntruQueueEnqueue(&plan->workQueue, workNode);
-      plan->workBytes += workNode->size;
-    } while (nPlanColls!=0 && !ncclIntruQueueEmpty(collTaskQueues[q]));
+    for (int i=0; i < task->nCleanupQueueElts; i++) {
+      ncclIntruQueueEnqueue(&plan->cleanupQueue, ncclIntruQueueDequeue(&planner->collCleanupQueue));
+    }
+    ncclIntruQueueDequeue(&planner->collTaskQueue);
+    ncclIntruQueueDequeue(&planner->collWorkQueue);
+    nPlanColls -= 1;
+    planner->nTasksColl -= 1;
+    ncclIntruQueueEnqueue(&plan->workQueue, workNode);
+    plan->workBytes += workNode->size;
   }
   return ncclSuccess;
 }
@@ -1628,7 +1608,7 @@ NCCL_PARAM(NvlsTreeChunkSize, "NVLSTREE_MAX_CHUNKSIZE", -2);
 
 static ncclResult_t calcCollChunking(
     struct ncclComm* comm, struct ncclTaskColl* info, int nChannels, size_t nBytes,
-    /*outputs*/uint32_t* outChunkSize, uint32_t* directFlags, struct ncclProxyOp* proxyOp
+    /*outputs*/uint32_t* outChunkSize, uint32_t* outDirectFlags, struct ncclProxyOp* proxyOp
   ) {
   ncclPattern_t pattern;
   switch (info->func) {
@@ -1732,6 +1712,14 @@ static ncclResult_t calcCollChunking(
     float nstepsLL128 = 1+log2i(nNodes) + 0.1*ppn;
     while (nBytes / (nChannels*chunkSize) < nstepsLL128*64/ppn && chunkSize > 131072) chunkSize /= 2;
     while (nBytes / (nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
+  }
+
+  // Compute directFlags of work struct.
+  if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) {
+    // Set direct direction for broadcast-gather (read or write)
+    *outDirectFlags = (nBytes/nChannels <= 1024*1024) ? NCCL_DIRECT_WRITE : NCCL_DIRECT_READ;
+  } else {
+    *outDirectFlags = 0;
   }
 
   // Compute nSteps for proxies
@@ -1923,7 +1911,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
         t->datatype = ncclInt8;
         elementSize = 1;
       }
-      t->trafficBytes = t->count*elementSize*ncclFuncTrafficPerElement(t->func, comm->nRanks);
+      t->trafficBytes = t->count*elementSize*ncclFuncTrafficPerByte(t->func, comm->nRanks);
       t->op = opFull; // C++ struct assignment
       t->chunkSteps = info->chunkSteps;
       t->sliceSteps = info->sliceSteps;

@@ -144,7 +144,8 @@ T* ncclIntruQueueDequeue(ncclIntruQueue<T,next> *me);
 template<typename T, T *T::*next>
 T* ncclIntruQueueTryDequeue(ncclIntruQueue<T,next> *me);
 template<typename T, T *T::*next>
-void ncclIntruQueueFreeAll(ncclIntruQueue<T,next> *me, ncclMemoryPool *memPool);
+void ncclIntruQueueTransfer(ncclIntruQueue<T,next> *dst, ncclIntruQueue<T,next> *src);
+
 
 ////////////////////////////////////////////////////////////////////////////////
 /* ncclThreadSignal: Couples a pthread mutex and cond together. The "mutex"
@@ -412,15 +413,11 @@ inline T* ncclIntruQueueTryDequeue(ncclIntruQueue<T,next> *me) {
 }
 
 template<typename T, T *T::*next>
-void ncclIntruQueueFreeAll(ncclIntruQueue<T,next> *me, ncclMemoryPool *pool) {
-  T *head = me->head;
-  me->head = nullptr;
-  me->tail = nullptr;
-  while (head != nullptr) {
-    T *tmp = head->*next;
-    ncclMemoryPoolFree(pool, tmp);
-    head = tmp;
-  }
+void ncclIntruQueueTransfer(ncclIntruQueue<T,next> *dst, ncclIntruQueue<T,next> *src) {
+  (dst->tail ? dst->tail->next : dst->head) = src->head;
+  if (src->tail) dst->tail = src->tail;
+  src->head = nullptr;
+  src->tail = nullptr;
 }
 
 /* cmp function determines the sequence of objects in the queue. If cmp returns value >= 0, it means a > b,

@@ -19,7 +19,7 @@ namespace {
     size_t chunkCount;
     size_t channelCount;
     size_t gridOffset;
-    ncclCollCbdPart(work, ncclShmem.channelId, (size_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), (size_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
     size_t offset;
     int nelem;
 

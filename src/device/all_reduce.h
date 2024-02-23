@@ -17,7 +17,7 @@ namespace {
     ssize_t gridOffset;
     ssize_t channelCount;
     ssize_t chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
     const ssize_t loopCount = nranks * chunkCount;
     ssize_t offset;
     int nelem;
@@ -85,7 +85,7 @@ namespace {
     size_t gridOffset;
     size_t channelCount;
     size_t chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, (size_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), (size_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
     size_t offset;
     int nelem;
 
@@ -148,7 +148,7 @@ namespace {
     size_t gridOffset;
     size_t channelCount;
     size_t chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, (size_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), (size_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
     size_t offset;
     int nelem;
     int nthreadsSplit;
@@ -361,7 +361,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
 
     if (work->oneNode) {
       ssize_t gridOffset, channelCount, chunkSize;
-      ncclCollCbdPart(work, ncclShmem.channelId, (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkSize);
+      ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkSize);
       const ssize_t loopCount = nvls->nHeads * chunkSize;
       ssize_t offset;
       int nelem;
@@ -481,7 +481,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
     const int treeUp = nvls->treeUp;
     const int* treeDown = nvls->treeDown;
     ssize_t gridOffset, channelCount, chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
+    ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
     const ssize_t loopCount = nvls->nHeads * chunkCount;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasUp = treeUp != -1;
@@ -577,7 +577,6 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
 template<typename T, typename RedOp>
 struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
-  #if 0
     const int bid = ncclShmem.channelId - work->channelLo;
     const int nChannels = work->channelHi - work->channelLo + 1;
     ncclTree *tree = &ncclShmem.channel.collnetChain;
@@ -660,7 +659,6 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
         }
       }
     }
-  #endif
   }
 };
 

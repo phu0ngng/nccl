@@ -256,8 +256,8 @@ struct alignas(16) ncclDevWorkColl {
     // different size than the channels in the middle.
     struct {
       size_t countLo, countMid, countHi;
-      // Chunk counts where units are 1024 elements (type=T)
-      uint64_t chunkCountLo_1K:20, chunkCountMid_1K:20, chunkCountHi_1K:20;
+      // Chunk counts where units are ncclProtoGrainSize(protocol) bytes
+      uint64_t chunkGrainsLo:21, chunkGrainsMid:21, chunkGrainsHi:21;
     } cbd;
     // Collnet scheduling. All channels divide work evenly.
     struct {
@@ -268,28 +268,39 @@ struct alignas(16) ncclDevWorkColl {
   uint64_t redOpArg;
 };
 
+
+__host__ __device__ constexpr int ncclProtoGrainSize(int proto) {
+  return proto == NCCL_PROTO_LL ? 16 :
+         proto == NCCL_PROTO_LL128 ? WARP_SIZE*NCCL_LL128_SHMEM_ELEMS_PER_THREAD/NCCL_LL128_LINEELEMS*NCCL_LL128_DATAELEMS*sizeof(uint64_t) :
+         proto == NCCL_PROTO_SIMPLE ? 512 :
+         -1;
+}
+
 template<typename Int>
 __host__ __device__ inline void ncclCollCbdPart(
-    struct ncclDevWorkColl* work, uint32_t channelId,
+    struct ncclDevWorkColl* work, uint32_t channelId, int proto, int eltSize,
     Int* count, Int* partOffset, Int* partCount, Int* chunkCount
   ) {
+  int eltPerGrain = ncclProtoGrainSize(proto)/eltSize;
   int nMidChannels = work->channelHi - work->channelLo - 1;
+  // We can assum that nMidChannels<0 implies countMid==0, which let's us assume
+  // that countMid*nMidChannels == 0.
   if (count != nullptr) {
     *count = work->cbd.countLo + work->cbd.countMid*nMidChannels + work->cbd.countHi;
   }
   if (channelId == work->channelLo) {
     *partOffset = 0;
     *partCount = work->cbd.countLo;
-    *chunkCount = work->cbd.chunkCountLo_1K<<10;
+    *chunkCount = work->cbd.chunkGrainsLo*eltPerGrain;
   } else if (channelId == work->channelHi) {
     *partOffset = work->cbd.countLo + nMidChannels*work->cbd.countMid;
     *partCount = work->cbd.countHi;
-    *chunkCount = work->cbd.chunkCountHi_1K<<10;
+    *chunkCount = work->cbd.chunkGrainsHi*eltPerGrain;
   } else {
     int mid = channelId - work->channelLo - 1;
     *partOffset = work->cbd.countLo + mid*work->cbd.countMid;
     *partCount = work->cbd.countMid;
-    *chunkCount = work->cbd.chunkCountMid_1K<<10;
+    *chunkCount = work->cbd.chunkGrainsMid*eltPerGrain;
   }
 }
 

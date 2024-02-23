@@ -148,26 +148,6 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
       }
     }
 
-    #if 0
-    int nGroups = !isSend ? 1 : subtn >= nSendWarpsForExtraGroup*WARP_SIZE ? 2 : 1;
-    if (subtid==0) printf("r=%d c=%d b=%d warps=[%d,%d) work=%d groups=[%d,%d) %s to %d size=%d chsz=%d LL=%d sm=%x rm=%x\n", ncclShmem.comm.rank, ncclShmem.channelId, ncclShmem.batchIx,
-    tid/32, (tid+subtn)/32, workIx, group,group+nGroups, isCopy?"copy":isSend?"send":"recv", isSend?work->sendRank:work->recvRank, int(isSend?work->sendBytes:work->recvBytes), u32fp8Decode(isSend?work->sendChunkSize_u32fp8:work->recvChunkSize_u32fp8), isSend?work->sendProtoLL:work->recvProtoLL, shared->workSendMask, shared->workRecvMask);
-
-    if (1) for (int i=0; i < 1000; i++) {
-      if (!isCopy && isSend && nGroups == 2) {
-        if (subtid >= 32) {
-          //#error "THIS CRASHES"
-          //if (tid%32==0) printf("%d: barrier_sync(%d, %d)\n", tid/32, 15-group-1, (subtn-32)/32);
-          barrier_sync(15-group-1, subtn-32);
-        }
-      }
-
-      //if ( tid%32==0) printf("%d: barrier_sync(%d, %d)\n", tid/32, 15-group, subtn/32);
-      barrier_sync(15-group, subtn);
-    }
-    return;
-    #endif
-
     if (isCopy) {
       reduceCopy<COLL_UNROLL, RedOp, T, 0,1,1, 0,1,1, /*PreOpSrcs=*/0>
         (subtid, subtn, 0, nullptr, false, 1, &work->sendAddr, 1, &work->recvAddr, (ssize_t)work->sendBytes);
