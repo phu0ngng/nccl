@@ -4,7 +4,7 @@
 NCCL API 
 ########
 
-The following sections describe the collective communications methods and operations.
+The following sections describe the NCCL methods and operations.
 
 .. toctree::
 

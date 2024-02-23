@@ -17,11 +17,11 @@ Since 2.19.x, NCCL supports user buffer registration for NVLink Sharp (NVLS); an
 
 To enable the *CUDA Graph* based buffer registration for NVLS, users have to comply with several requirements:
 
- * The buffer is allocated through :c:func:`ncclMemAlloc` or qualified allocator (see :ref:`mem_allocator`).
+ * The buffer is allocated through :c:func:`ncclMemAlloc` or a qualified allocator (see :ref:`mem_allocator`).
  * The NCCL operation is launched on a stream captured by a CUDA graph for each rank.
- * Offset to the head address of the buffer is same in collectives for each rank.
+ * Offset to the head address of the buffer is the same in collectives for each rank.
 
-Registered buffers will be deregistered when CUDA graph is destroyed. Here is a CUDA graph based buffer registration example:
+Registered buffers will be deregistered when the CUDA graph is destroyed. Here is a CUDA graph based buffer registration example:
 
 .. code:: C
 
@@ -50,9 +50,9 @@ Registered buffers will be deregistered when CUDA graph is destroyed. Here is a 
 
 On the other hand, to enable the *Local* based buffer registration for NVLS, users have to comply with the following requirements:
 
- * The buffer is allocated through :c:func:`ncclMemAlloc` or qualified allocator (see :ref:`mem_allocator`).
+ * The buffer is allocated through :c:func:`ncclMemAlloc` or a qualified allocator (see :ref:`mem_allocator`).
  * Register buffer with :c:func:`ncclCommRegister` before calling collectives for each rank.
- * Call NCCL collectives as usual but similarly keep the offset to the head address of the buffer same for each rank.
+ * Call NCCL collectives as usual but similarly keep the offset to the head address of the buffer the same for each rank.
 
 Registered buffers will be deregistered when users explicitly call :c:func:`ncclCommDeregister`. Here is a local based buffer registration example:
 

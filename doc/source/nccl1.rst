@@ -8,7 +8,7 @@ all of the collectives that NCCL 1.x supports, but with slight modifications to 
 In addition, NCCL 2.x also requires the usage of the “Group API” when a single thread manages NCCL calls for multiple
 GPUs.
 
-The following list summarizes the changes that may be required in usage of NCCL API when using an application has a
+The following list summarizes the changes that may be required in usage of NCCL API when using an application that has a
 single thread that manages NCCL calls for multiple GPUs, and is ported from NCCL 1.x to 2.x:
 
 Initialization 
@@ -17,7 +17,7 @@ Initialization
 In versions 1.x, NCCL had to be initialized using ncclCommInitAll at a single thread or having one thread per GPU
 concurrently call ncclCommInitRank. NCCL 2.x retains these two modes of initialization. It adds a new mode with the
 Group API where ncclCommInitRank can be called in a loop, like a communication call, as shown below. The loop has to be
-guarded by the Group start and stop API.
+guarded by the Group start and end API.
 
 .. code:: C
 
@@ -41,11 +41,11 @@ runtime internally selects the device associated with the NCCL communicator hand
 
  ncclGroupStart();
  for (int i=0; i<nLocalDevs; i++) {
-   ncclAllReduce(..., comm[i], stream[i];
+   ncclAllReduce(..., comm[i], stream[i]);
  }
  ncclGroupEnd();
 
-When using only one device per thread or one device per process, the general usage of API remains unchanged from NCCL
+When using only one device per thread or one device per process, the general usage of the API remains unchanged from NCCL
 1.x to 2.x. The usage of the group API is not required in this case.
 
 Counts

@@ -13,7 +13,7 @@ type.
 Multiple calls to :c:func:`ncclSend` and :c:func:`ncclRecv` targeting different peers
 can be fused together with :c:func:`ncclGroupStart` and :c:func:`ncclGroupEnd` to form more
 complex communication patterns such as one-to-all (scatter), all-to-one (gather),
-all-to-all or communication with neighbors in a N-dimensional space.
+all-to-all or communication with neighbors in an N-dimensional space.
 
 Point-to-point calls within a group will be blocking until that group of calls completes,
 but calls within a group can be seen as progressing independently, hence should never block
