@@ -100,21 +100,32 @@ int ncclCudaDriverVersionCache = -1;
 bool ncclCudaLaunchBlocking = false;
 
 #if CUDART_VERSION >= 11030
-/*
-  Load the CUDA symbols
- */
-static ncclResult_t cudaPfnFuncLoader(void) {
 
-  cudaError_t res;
-  cudaDriverEntryPointQueryResult driverStatus;
-
+#if CUDART_VERSION >= 12000
 #define LOAD_SYM(symbol, ignore) do {                                   \
+    cudaDriverEntryPointQueryResult driverStatus;                       \
     res = cudaGetDriverEntryPoint(#symbol, (void **) (&pfn_##symbol), cudaEnableDefault, &driverStatus); \
     if (res != cudaSuccess || driverStatus != cudaDriverEntryPointSuccess) { \
       if (!ignore) {                                                    \
         WARN("Retrieve %s failed with %d status %d", #symbol, res, driverStatus); \
         return ncclSystemError; }                                       \
     } } while(0)
+#else
+#define LOAD_SYM(symbol, ignore) do {                                   \
+    res = cudaGetDriverEntryPoint(#symbol, (void **) (&pfn_##symbol), cudaEnableDefault); \
+    if (res != cudaSuccess) { \
+      if (!ignore) {                                                    \
+        WARN("Retrieve %s failed with %d", #symbol, res);               \
+        return ncclSystemError; }                                       \
+    } } while(0)
+#endif
+
+/*
+  Load the CUDA symbols
+ */
+static ncclResult_t cudaPfnFuncLoader(void) {
+
+  cudaError_t res;
 
   LOAD_SYM(cuGetErrorString, 0);
   LOAD_SYM(cuGetErrorName, 0);
