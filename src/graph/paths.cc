@@ -675,11 +675,11 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     NCCLCHECK(ncclTopoRemoveNode(system, GPU, g));
   }
 
-  // MNNVL: Remove network nodes as they are connected via NVLink
-  if (system->nodes[GPU].count == comm->nRanks || comm->MNNVL) {
+  if (system->nodes[GPU].count == comm->nRanks) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
   }
+
   free(domains);
   free(ids);
   return ncclSuccess;
@@ -710,11 +710,6 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclComm* comm, int g /*local gp
     } else {
       *nChannels = 2;
     }
-  } else if (comm->MNNVL) {
-    // MNNVL assume all GPUs are connected via NVLink
-    path = system->nodes[GPU].nodes[g].paths[GPU]+((g+1)%system->nodes[GPU].count);
-    float nvlBw = ncclTopoNVLinkBw(system->nodes[GPU].nodes[g].gpu.cudaCompCap);
-    *nChannels = 2*std::max(1, (int)(path->bw / nvlBw));
   } else {
     // Remote rank, use network
     int nNetChannels = ncclParamNChannelsPerNetPeer();
