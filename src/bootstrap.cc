@@ -421,11 +421,15 @@ ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int s
   struct bootstrapState* state = (struct bootstrapState*)commState;
   struct ncclSocket sock;
 
+  TRACE(NCCL_BOOTSTRAP, "Sending to peer=%d tag=%d size=%d", peer, tag, size);
+
   NCCLCHECKGOTO(ncclSocketInit(&sock, state->peerCommAddresses+peer, state->magic, ncclSocketTypeBootstrap), ret, fail);
   NCCLCHECKGOTO(ncclSocketConnect(&sock), ret, fail);
   NCCLCHECKGOTO(bootstrapNetSend(&sock, &state->rank, sizeof(int)), ret, fail);
   NCCLCHECKGOTO(bootstrapNetSend(&sock, &tag, sizeof(int)), ret, fail);
   NCCLCHECKGOTO(bootstrapNetSend(&sock, data, size), ret, fail);
+
+  TRACE(NCCL_BOOTSTRAP, "Sent to peer=%d tag=%d size=%d", peer, tag, size);
 
 exit:
   NCCLCHECK(ncclSocketClose(&sock));
@@ -553,6 +557,8 @@ ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int s
   int found;
   NCCLCHECK(unexpectedDequeue(state, peer, tag, &sock, &found));
   if (found) {
+    TRACE(NCCL_BOOTSTRAP, "Receiving queued tag=%d peer=%d size=%d",
+      tag, peer, size);
     NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, fail);
     goto exit;
   }
@@ -564,10 +570,13 @@ ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int s
     NCCLCHECKGOTO(bootstrapNetRecv(&sock, &newPeer, sizeof(int)), ret, fail);
     NCCLCHECKGOTO(bootstrapNetRecv(&sock, &newTag, sizeof(int)), ret, fail);
     if (newPeer == peer && newTag == tag) {
+      TRACE(NCCL_BOOTSTRAP, "Received my tag=%d from peer=%d size=%d", tag, peer, size);
       NCCLCHECKGOTO(bootstrapNetRecv(&sock, ((char*)data), size), ret, fail);
       goto exit;
     }
     // Unexpected connection. Save for later.
+    TRACE(NCCL_BOOTSTRAP, "Received unexpected tag=%d peer=%d when polling for tag=%d peer=%d size=%d",
+      newTag, newPeer, tag, peer, size);
     NCCLCHECKGOTO(unexpectedEnqueue(state, newPeer, newTag, &sock), ret, fail);
   }
 exit:
