@@ -84,6 +84,15 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 #define NCCL_IPC_READ     0x10
 #define NCCL_NVLS_MIN_POLL 0x20
 
+#define NCCL_MAX_COLLNET_SIZE (1L << 29)
+
+enum ncclRegBufferType {
+  NCCL_REGULAR_BUFFER = 0,
+  NCCL_IPC_REG_BUFFER = 1,
+  NCCL_NVLS_REG_BUFFER = 2,
+  NCCL_COLLNET_REG_BUFFER = 3
+};
+
 struct ncclConnInfo {
   // Regular comm mechanism
   char *buffs[NCCL_NUM_PROTOCOLS]; // Local for recv, remote for send
@@ -219,9 +228,10 @@ struct ncclWorkElem {
   union {
     uint8_t flagBits;
     struct {
-      uint8_t isUsed:1, redOpArgIsPtr:1, regUsed:1, oneNode:1;
+      uint8_t isUsed:1, redOpArgIsPtr:1, oneNode:1;
     };
   };
+  uint8_t regUsed;
   uint8_t nWarps;
   uint8_t direct;
   uint32_t root;

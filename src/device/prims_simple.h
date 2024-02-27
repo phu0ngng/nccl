@@ -304,6 +304,28 @@ class Primitives<
   }
 
 public:
+  static inline __device__ void sendPeerNotify(int peer, int connIndex, int steps) {
+    ncclDevChannelPeer* peerPtr = ncclShmem.channel.peers[peer];
+    peerPtr->send[connIndex].step += steps;
+    st_relaxed_sys_global(peerPtr->send[connIndex].tail, peerPtr->send[connIndex].step);
+  }
+
+  static inline __device__ void recvPeerNotify(int peer, int connIndex, int steps) {
+    int spins = 0;
+    ncclDevChannelPeer* peerPtr = ncclShmem.channel.peers[peer];
+    peerPtr->recv[connIndex].step += steps;
+    st_relaxed_sys_global(peerPtr->recv[connIndex].head, peerPtr->recv[connIndex].step);
+    while (ld_volatile_global(peerPtr->recv[connIndex].tail) < peerPtr->recv[connIndex].step) {
+      if (spins++ == NCCL_SPINS_BEFORE_CHECK_ABORT) {
+        if (*ncclShmem.comm.abortFlag) {
+          ncclShmem.aborted = 1;
+          break;
+        }
+        spins = 0;
+      }
+    }
+  }
+
   template<int Recv, int Send, typename Fn>
   __device__ __forceinline__ void process(Fn &&fn) {
     #pragma unroll 1

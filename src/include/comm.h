@@ -171,6 +171,14 @@ struct ncclNvlsMcHandleList {
   size_t size;
 };
 
+struct ncclCollnetHandleList {
+  struct ncclCollnetHandleList *next;
+  void* collnetHandle;
+  size_t size;
+  const void* buffer;
+  struct ncclProxyConnector* proxyconn;
+};
+
 struct ncclKernelPlan {
   // A kernel plan is also a callback that reclaims itself. Hence this must
   // be the first member.
@@ -194,6 +202,7 @@ struct ncclKernelPlan {
 
   struct ncclIntruQueue<struct ncclPointerList, &ncclPointerList::next> ipcMemQueue;
   struct ncclIntruQueue<struct ncclNvlsMcHandleList, &ncclNvlsMcHandleList::next> nvlsMcHandleQueue;
+  struct ncclIntruQueue<struct ncclCollnetHandleList, &ncclCollnetHandleList::next> collnetHandleQueue;
 
   struct Channel {
     int nWork;
@@ -327,6 +336,7 @@ struct ncclComm {
   int proxyRefCountOld; /* store proxy post-atomic-sub refcount */
   // Whether this communicator uses collNet
   int collNetSupport;
+  bool collNetRegSupport;
   uint8_t collNetSupportMatrix[4/*sum,prod,min,max*/][ncclNumTypes];
   int intraHighestTransportType;
   int* collNetHeads;
@@ -347,6 +357,7 @@ struct ncclComm {
   struct ncclMemoryPool memPool_ncclKernelPlan;
   struct ncclMemoryPool memPool_ncclPointerList;
   struct ncclMemoryPool memPool_ncclNvlsHandleList;
+  struct ncclMemoryPool memPool_ncclCollnetHandleList;
   // Next comm in this thread's active ncclGroup[Start|End](). Holds "0x1" when
   // this comm is not yet in a group.
   struct ncclComm* groupNext;
