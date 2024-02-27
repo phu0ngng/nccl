@@ -336,7 +336,45 @@ or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is 0.
+The default value is -1.
+
+NCCL_IB_ADDR_FAMILY
+-------------------
+(since 2.21)
+
+The ``NCCL_IB_ADDR_FAMILY`` variable defines the IP address family associated to
+the infiniband GID dynamically selected by NCCL when ``NCCL_IB_GID_INDEX`` is left
+unset.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is "AF_INET".
+
+NCCL_IB_ADDR_RANGE
+------------------
+(since 2.21)
+
+The ``NCCL_IB_ADDR_RANGE`` variable defines the range of valid GIDs dynamically
+selected by NCCL when ``NCCL_IB_GID_INDEX`` is left unset.
+
+Values accepted
+^^^^^^^^^^^^^^^
+By default, ignored if unset.
+
+GID ranges can be defined using the Classless Inter-Domain Routing (CIDR)
+format for IPv4 and IPv6 families.
+
+NCCL_IB_ROCE_VERSION_NUM
+------------------------
+(since 2.21)
+
+The ``NCCL_IB_ROCE_VERSION_NUM`` variable defines the RoCE version associated to
+the infiniband GID dynamically selected by NCCL when ``NCCL_IB_GID_INDEX`` is left
+unset.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 2.
 
 NCCL_IB_SL
 ----------
