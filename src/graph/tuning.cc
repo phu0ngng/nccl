@@ -190,7 +190,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
           if (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter) {
             busBw = ppn * bw;
             // AllGather/ReduceScatter requires 1:1 GPU:NIC
-            int nicPerNode = comm->collNetHeadsUniqueNum;
+            int nicPerNode = comm->collNetHeadsNum;
             if (coll == ncclFuncAllGather && comm->nNodes > 1) {
               if (!comm->ncclCollNet || !comm->ncclCollNet->iallgather || ppn > nicPerNode) busBw = 0;
             }

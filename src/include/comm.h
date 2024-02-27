@@ -269,7 +269,6 @@ struct ncclComm {
   int nChannels; // connection nChannels
   int collChannels; // enqueue nChannels
   int nvlsChannels; // enqueue nChannels
-  int collNetChannels;
   // Channels (per peer) for p2p
   int p2pnChannels;
   int p2pnChannelsPerPeer;
@@ -332,7 +331,6 @@ struct ncclComm {
   int intraHighestTransportType;
   int* collNetHeads;
   int collNetHeadsNum;
-  int collNetHeadsUniqueNum;
   int* collNetDenseToUserRank;
   int* collNetUserToDenseRank;
   /* sharable collNet proxy progress resource. */
