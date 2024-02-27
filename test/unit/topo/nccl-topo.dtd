@@ -1,0 +1,47 @@
+<!-- This document describes NCCL topology files. Topology files are XML documents describing the hierarchical HW topology of a hardware platform -->
+
+<!ELEMENT system (cpu*)>                           <!-- The hardware platform -->
+<!ELEMENT cpu (pci*,nic*)>                         <!-- One NUMA domain. Can include NICs directly attached to the CPU (virtual NICs, USB NICs, ..). -->
+<!ELEMENT pci (pci*,nic*,gpu*)>                    <!-- PCI device: GPU, NIC, or a PCI switch -->
+<!ELEMENT nic (net+)>                              <!-- NIC (no properties) -->
+<!ELEMENT net EMPTY>                               <!-- Network interface properties -->
+<!ELEMENT gpu (nvlink*)>                           <!-- GPU with its properties -->
+<!ELEMENT nvlink EMPTY>                            <!-- NVLinks to connect GPUs -->
+
+<!ATTLIST system version CDATA #IMPLIED>           <!-- for now version is always 1 -->
+
+<!ATTLIST cpu numaid CDATA #REQUIRED>              <!-- cpu tags are in fact NUMA domains -->
+<!ATTLIST cpu host_hash CDATA #IMPLIED>            <!-- CPU host hash in hex -->
+<!ATTLIST cpu affinity CDATA #IMPLIED>             <!-- hex bitmask providing the list of CPUs in that NUMA domain. E.g. "0003ff,f0003fff" as in /sys/devices/system/node/nodeX/cpumap -->
+<!ATTLIST cpu arch CDATA #IMPLIED>                 <!-- CPU arch (ppc64, arm64, or x86_64) -->
+<!ATTLIST cpu vendor CDATA #IMPLIED>               <!-- CPU vendor ID as reported by the CPUID x86 call. -->
+<!ATTLIST cpu familyid CDATA #IMPLIED>             <!-- CPU familiy ID as reported by the CPUID x86 call. -->
+<!ATTLIST cpu modelid CDATA #IMPLIED>              <!-- CPU model ID as reported by the CPUID x86 call. -->
+
+<!ATTLIST pci busid CDATA #REQUIRED>               <!-- PCI device BDF (Bus:Device:Function), e.g. "0000:03:00.0" -->
+<!ATTLIST pci class CDATA #IMPLIED>                <!-- PCI class in hex, e.g. "0x030300" -->
+<!ATTLIST pci vendor CDATA #IMPLIED>               <!-- PCI vendor id in hex, e.g. "0x10de" -->
+<!ATTLIST pci device CDATA #IMPLIED>               <!-- PCI device id in hex, e.g. "0x15f8" --> 
+<!ATTLIST pci subsystem_vendor CDATA #IMPLIED>     <!-- PCI subsystem vendor id in hex -->
+<!ATTLIST pci subsystem_device CDATA #IMPLIED>     <!-- PCI subsystem device id in hex --> 
+<!ATTLIST pci link_speed CDATA #IMPLIED>           <!-- PCI link speed as reported in /sys/devices/pciBBBB:DD/BBBB:DD:FF.f/max_link_speed, e.g. "32.0 GT/s PCIe" -->
+<!ATTLIST pci link_width CDATA #IMPLIED>           <!-- PCI link speed as reported in /sys/devices/pciBBBB:DD/BBBB:DD:FF.f/max_link_width, e.g. "16" -->
+
+<!ATTLIST net name CDATA #REQUIRED>                <!-- Network interface name, e.g. "eth0" or "mlx5_0" -->
+<!ATTLIST net dev CDATA #REQUIRED>                 <!-- Network interface index (provided by the network plugin) -->
+<!ATTLIST net speed CDATA #IMPLIED>                <!-- Network interface speed in mbps -->
+<!ATTLIST net port CDATA #IMPLIED>                 <!-- Network interface port number (used in conjunction with guid to detect NICs with multiple PCI attachments) -->
+<!ATTLIST net guid CDATA #IMPLIED>                 <!-- Network interface global unique ID (used in conjunction with guid to detect NICs with multiple PCI attachments) -->
+<!ATTLIST net maxconn CDATA #IMPLIED>              <!-- Max number of connections this interface supports -->
+<!ATTLIST net gdr CDATA #IMPLIED>                  <!-- Support for GPU Direct RDMA -->
+<!ATTLIST net coll CDATA #IMPLIED>                 <!-- Support for in-network collective operations -->
+
+<!ATTLIST gpu dev CDATA #REQUIRED>                 <!-- GPU NVML device number -->
+<!ATTLIST gpu cmode CDATA #IMPLIED>                <!-- GPU compute mode as reported by NVML -->
+<!ATTLIST gpu sm CDATA #IMPLIED>                   <!-- GPU architecture e.g. "80" for Ampere, "90" for Hopper, etc. -->
+<!ATTLIST gpu rank CDATA #IMPLIED>                 <!-- GPU rank. Do not specify, will be filled by NCCL -->
+<!ATTLIST gpu gdr CDATA #IMPLIED>                  <!-- GPU support for GDR. "0" or "1" -->
+
+<!ATTLIST nvlink target CDATA #REQUIRED>           <!-- PCI Bus ID (BDF) of the device on the other side of the NVLink. E.g. "0000:03:00.0" -->
+<!ATTLIST nvlink count CDATA #REQUIRED>            <!-- Number of NVLinks connecting those two entities -->
+<!ATTLIST nvlink tclass CDATA #REQUIRED>           <!-- PCI class of the device on the other side. -->

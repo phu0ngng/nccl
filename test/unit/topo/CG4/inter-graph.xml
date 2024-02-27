@@ -6,10 +6,10 @@
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
-      <net dev="10"/>
+      <net dev="a"/>
     </channel>
     <channel>
-      <net dev="10"/>
+      <net dev="a"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
       <gpu dev="1"/>
@@ -115,12 +115,12 @@
       <net dev="8"/>
     </channel>
     <channel>
-      <net dev="10"/>
+      <net dev="a"/>
       <gpu dev="3"/>
       <gpu dev="2"/>
       <gpu dev="1"/>
       <gpu dev="0"/>
-      <net dev="10"/>
+      <net dev="a"/>
     </channel>
     <channel>
       <net dev="9"/>

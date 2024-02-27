@@ -46,12 +46,12 @@ struct ncclTransport nvlsTransport = {
   { NULL, NULL, nvlsRecvFree, NULL, NULL, NULL, NULL, NULL }
 };
 
-ncclResult_t nvlsGetProperties(struct ncclComm *comm, struct ncclNvlsSharedRes* resources, int dev, int nranks, size_t size) {
+ncclResult_t nvlsGetProperties(struct ncclComm *comm, struct ncclNvlsSharedRes* resources, int dev, size_t size) {
   CUmulticastObjectProp* prop = &resources->properties;
   memset(prop, 0, sizeof(*prop));
   prop->size = size;
-  prop->numDevices = nranks;
-  prop->handleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+  prop->numDevices = comm->MNNVL ? comm->clique.size : comm->localRanks;
+  prop->handleTypes = ncclCuMemHandleType;
   prop->flags = 0;
 
   // Could be changed to CU_MULTICAST_GRANULARITY_MINIMUM when 3418538 resolved
@@ -70,6 +70,7 @@ ncclResult_t nvlsGetProperties(struct ncclComm *comm, struct ncclNvlsSharedRes* 
 }
 
 ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop, int rank, unsigned int nranks, CUmemGenericAllocationHandle *mcHandle, char *shareableHandle) {
+  CUmemAllocationHandleType type = ncclCuMemHandleType;
   size_t size = prop->size;
 
   // Create a Multicast group
@@ -77,9 +78,9 @@ ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop,
   INFO(NCCL_NVLS, "NVLS Creating Multicast group nranks %d size %zi on rank %d", nranks, size, rank);
   CUCHECK(cuMulticastCreate(mcHandle, prop));
 
-  if ((NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) && (NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR)) {
+  if (type == CU_MEM_HANDLE_TYPE_FABRIC) {
     // Get a handle to pass to other ranks
-    CUCHECK(cuMemExportToShareableHandle(shareableHandle, *mcHandle, NVLS_CU_MEM_HANDLE_TYPE, 0));
+    CUCHECK(cuMemExportToShareableHandle(shareableHandle, *mcHandle, ncclCuMemHandleType, 0));
   }
   else {
     memcpy(shareableHandle, mcHandle, sizeof(CUmemGenericAllocationHandle));
@@ -97,7 +98,7 @@ ncclResult_t nvlsGroupAddDevice(struct ncclComm *comm, struct ncclNvlsSharedRes*
 }
 
 ncclResult_t nvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int rank, CUmemGenericAllocationHandle *mcHandle) {
-  CUmemAllocationHandleType type = NVLS_CU_MEM_HANDLE_TYPE;
+  CUmemAllocationHandleType type = ncclCuMemHandleType;
 
   INFO(NCCL_NVLS, "NVLS importing shareableHandle %p from rank %d", shareableHandle, rank);
 
@@ -113,7 +114,7 @@ ncclResult_t nvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int 
     CUCHECK(cuMemImportFromShareableHandle(mcHandle, (void *)(uintptr_t)fd, type));
     (void) close(fd);
   } else {
-    if (NVLS_CU_MEM_HANDLE_TYPE != CU_MEM_HANDLE_TYPE_NONE) {
+    if (type == CU_MEM_HANDLE_TYPE_FABRIC) {
       CUCHECK(cuMemImportFromShareableHandle(mcHandle, (void *)shareableHandle, type));
     } else {
       memcpy(mcHandle, shareableHandle, sizeof(CUmemGenericAllocationHandle));
@@ -136,7 +137,7 @@ ncclResult_t nvlsGroupBindMem(struct ncclComm *comm, struct ncclNvlsSharedRes* r
   prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
   prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   prop.location.id = resources->dev;
-  prop.requestedHandleTypes = NVLS_CU_MEM_HANDLE_TYPE;
+  prop.requestedHandleTypes = ncclCuMemHandleType;
   CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
   resources->ucGran = granularity;
 
@@ -237,8 +238,7 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
 
   int gpuCount;
   NCCLCHECK(ncclTopoGetGpuCount(comm->topo, &gpuCount));
-  // NVLS is not supported on MNNVL yet
-  if (!ncclParamNvlsEnable() || gpuCount <= 2 || comm->MNNVL) return ncclSuccess;
+  if (!ncclParamNvlsEnable() || ((!comm->MNNVL && gpuCount <= 2) || (comm->MNNVL && comm->clique.size <= 2))) return ncclSuccess;
 
   CUdevice dev;
   int driverVersion;
@@ -317,7 +317,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
       comm, headRank, nHeads, buffSize, memSize, nvlsPerRankSize, nvlsTotalSize);
 
     char* shareableHandle = resources->shareableHandle;
-    NCCLCHECKGOTO(nvlsGetProperties(comm, resources, dev, comm->localRanks, nvlsTotalSize), res, cleanup);
+    NCCLCHECKGOTO(nvlsGetProperties(comm, resources, dev, nvlsTotalSize), res, cleanup);
     if (comm->localRank == 0) {
       NCCLCHECKGOTO(nvlsGroupCreate(comm, &resources->properties, comm->localRank, comm->localRanks, &resources->mcHandle, shareableHandle), res, cleanup);
       NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), res, cleanup);
@@ -328,8 +328,14 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
 
     NCCLCHECKGOTO(nvlsGroupAddDevice(comm, resources), res, cleanup);
     NCCLCHECKGOTO(nvlsGroupBindMem(comm, resources), res, cleanup);
-    // Local intra-node barrier to ensure everyone has bound their memory to the group
-    NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
+    if (comm->localRanks > 1) {
+      // Local intra-node barrier to ensure everyone has bound their memory to the group
+      NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, cleanup);
+    }
+    if (comm->MNNVL) {
+      // MNNVL: Clique wide barrier to ensure everyone has bound their memory to the group
+      NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->clique.ranks, comm->cliqueRank, comm->clique.size, comm->clique.ranks[0]), res, cleanup);
+    }
     NCCLCHECKGOTO(nvlsGroupMapMem(comm, resources), res, cleanup);
 
     for (int h = 0; h < nHeads; h++) {
@@ -383,6 +389,9 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
       }
     }
   }
+
+  // MNNVL does not support NVLS buffer registration
+  if (comm->MNNVL) return res;
 
   /* create shared memory for fast NVLS buffer registration */
   typeSize = sizeof(struct localRegData) << 1;

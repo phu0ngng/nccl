@@ -49,7 +49,7 @@
       <gpu dev="3"/>
     </channel>
   </graph>
-  <graph id="1" pattern="1" crossnic="0" nchannels="8" speedintra="20" speedinter="20" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="1">
+  <graph id="1" pattern="3" crossnic="0" nchannels="8" speedintra="24" speedinter="24" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
     <channel>
       <gpu dev="0"/>
       <gpu dev="1"/>
@@ -63,66 +63,48 @@
       <gpu dev="3"/>
     </channel>
     <channel>
-      <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="0"/>
     </channel>
     <channel>
-      <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="0"/>
     </channel>
     <channel>
-      <gpu dev="0"/>
-      <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="0"/>
+      <gpu dev="1"/>
     </channel>
     <channel>
-      <gpu dev="0"/>
-      <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
+      <gpu dev="0"/>
+      <gpu dev="1"/>
     </channel>
     <channel>
+      <gpu dev="3"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
-      <gpu dev="3"/>
     </channel>
     <channel>
+      <gpu dev="3"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
-      <gpu dev="3"/>
     </channel>
   </graph>
-  <graph id="2" pattern="3" crossnic="0" nchannels="8" speedintra="25" speedinter="25" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
+  <graph id="2" pattern="3" crossnic="0" nchannels="8" speedintra="24" speedinter="24" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
     <channel>
       <gpu dev="0"/>
       <gpu dev="1"/>
       <gpu dev="2"/>
       <gpu dev="3"/>
-    </channel>
-    <channel>
-      <gpu dev="1"/>
-      <gpu dev="2"/>
-      <gpu dev="3"/>
-      <gpu dev="0"/>
-    </channel>
-    <channel>
-      <gpu dev="2"/>
-      <gpu dev="3"/>
-      <gpu dev="0"/>
-      <gpu dev="1"/>
-    </channel>
-    <channel>
-      <gpu dev="3"/>
-      <gpu dev="0"/>
-      <gpu dev="1"/>
-      <gpu dev="2"/>
     </channel>
     <channel>
       <gpu dev="0"/>
@@ -137,10 +119,28 @@
       <gpu dev="0"/>
     </channel>
     <channel>
+      <gpu dev="1"/>
+      <gpu dev="2"/>
+      <gpu dev="3"/>
+      <gpu dev="0"/>
+    </channel>
+    <channel>
       <gpu dev="2"/>
       <gpu dev="3"/>
       <gpu dev="0"/>
       <gpu dev="1"/>
+    </channel>
+    <channel>
+      <gpu dev="2"/>
+      <gpu dev="3"/>
+      <gpu dev="0"/>
+      <gpu dev="1"/>
+    </channel>
+    <channel>
+      <gpu dev="3"/>
+      <gpu dev="0"/>
+      <gpu dev="1"/>
+      <gpu dev="2"/>
     </channel>
     <channel>
       <gpu dev="3"/>

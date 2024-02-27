@@ -158,7 +158,7 @@ struct ncclDirect {
   int down[NCCL_MAX_DIRECT_ARITY];
 };
 
-#define NCCL_MAX_NVLS_ARITY 8
+#define NCCL_MAX_NVLS_ARITY 32
 #define NCCL_MAX_NVLS_TREE_ARITY 3
 struct ncclNvls {
   int out;
@@ -171,6 +171,12 @@ struct ncclNvls {
   int node;
   int nNodes;
 };
+
+#if __CUDA_ARCH__ >= 900
+#define NCCL_MAX_ARITY NCCL_MAX_NVLS_ARITY
+#else
+#define NCCL_MAX_ARITY NCCL_MAX_DIRECT_ARITY
+#endif
 
 #define NCCL_MAX_CONNS 2
 struct ncclChannelPeer {

@@ -85,7 +85,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     free(xmlSystem);
     return;
   }
-  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
+  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
   free(xmlSystem);
 
   CHECK(ncclTopoComputePaths(system, NULL));
