@@ -1940,7 +1940,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
                 return ncclInternalError;
               }
               if (req->nreqs == 1) {
-                req->recv.sizes[0] += wc->imm_data;
+                req->recv.sizes[0] = wc->imm_data;
               }
             }
             req->events[i]--;
