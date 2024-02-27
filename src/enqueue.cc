@@ -680,6 +680,36 @@ static ncclResult_t registerIntraNodeBuffers(
       }
     }
     info->regBufType = NCCL_IPC_REG_BUFFER;
+  } else if ((info->algorithm == NCCL_ALGO_COLLNET_DIRECT || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) && comm->collNetRegSupport && info->opFull.op != ncclDevPreMulSum && info->opFull.op != ncclDevSumPostDiv) {
+    int sendRegBufFlag = 0;
+    int recvRegBufFlag = 0;
+    void *sendHandle, *recvHandle;
+
+    if (ncclParamLocalRegister()) {
+      ncclCollnetLocalRegisterBuffer(comm, info->sendbuff, info->sendbuffSize, collNetSend, &sendRegBufFlag, &sendHandle);
+      info->sendMhandle = sendHandle;
+      if (sendRegBufFlag) {
+        ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, info->recvbuffSize, collNetRecv, &recvRegBufFlag, &recvHandle);
+        info->recvMhandle = recvHandle;
+      }
+    }
+
+    if ((sendRegBufFlag == 0 || recvRegBufFlag == 0) && plan->persistent && ncclParamGraphRegister()) {
+      ncclCollnetGraphRegisterBuffer(comm, plan, info->sendbuff, info->sendbuffSize, collNetSend, &sendRegBufFlag, &sendHandle);
+      info->sendMhandle = sendHandle;
+      if (sendRegBufFlag) {
+        ncclCollnetGraphRegisterBuffer(comm, plan, info->recvbuff, info->recvbuffSize, collNetRecv, &recvRegBufFlag, &recvHandle);
+        info->recvMhandle = recvHandle;
+      }
+    }
+
+    if (sendRegBufFlag && recvRegBufFlag) {
+      info->nChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 1));
+      info->regBufType = NCCL_COLLNET_REG_BUFFER;
+      if (sendRegBufFlag == 1 && recvRegBufFlag == 1) {
+        INFO(NCCL_REG, "rank %d successfully registered collNet sendbuff %p (handle %p), sendbuff size %ld, recvbuff %p (handle %p), recvbuff size %ld", comm->rank, info->sendbuff, sendHandle, info->sendbuffSize, info->recvbuff, recvHandle, info->recvbuffSize);
+      }
+    }
   }
 fallback:
 #endif
@@ -1173,6 +1203,12 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
       INFO(NCCL_NVLS, "rank %d - deregistered buffer %p on device %d, size %ld", comm->rank, (void*)obj->ptr, obj->dev, obj->size);
       ncclMemoryPoolFree(&comm->memPool_ncclNvlsHandleList, obj);
     }
+    while (!ncclIntruQueueEmpty(&plan->collnetHandleQueue)) {
+      struct ncclCollnetHandleList* obj = ncclIntruQueueDequeue(&plan->collnetHandleQueue);
+      NCCLCHECK(ncclCollnetDeregBuffer(comm, obj->proxyconn, obj->collnetHandle));
+      INFO(NCCL_REG, "rank %d - deregistered collnet buffer handle %p, size %ld, buff %p", comm->rank, obj->collnetHandle, obj->size, obj->buffer);
+      ncclMemoryPoolFree(&comm->memPool_ncclCollnetHandleList, obj);
+    }
   }
   ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
   return ncclSuccess;
@@ -1649,7 +1685,7 @@ static ncclResult_t setCollWorkElem(uint64_t workCount, uint64_t workOffset, siz
 static ncclResult_t initCollWorkElemReg(struct ncclComm* comm, struct ncclWorkElem* work, struct ncclChannel* channel, ncclRegBufferType regBufType, void* regBufSend[], void* regBufRecv[], struct ncclWorkElemReg* workElemReg) {
   if (regBufType == NCCL_IPC_REG_BUFFER) {
     workElemReg->elem = *work;
-    workElemReg->elem.regUsed = 1;
+    workElemReg->elem.regUsed = NCCL_IPC_REG_BUFFER;
     for (int i = 0; i < NCCL_MAX_DIRECT_ARITY; i++) {
       int peer = channel->collnetDirect.down[i];
       if (peer == -1) break;
@@ -1666,10 +1702,13 @@ static ncclResult_t initCollWorkElemReg(struct ncclComm* comm, struct ncclWorkEl
     }
   } else if (regBufType == NCCL_NVLS_REG_BUFFER) {
     workElemReg->elem = *work;
-    workElemReg->elem.regUsed = 1;
+    workElemReg->elem.regUsed = NCCL_NVLS_REG_BUFFER;
     /* NVLS only has one send and recv buffer registered */
     workElemReg->dnInputs[0] = regBufSend[0];
     workElemReg->dnOutputs[0] = regBufRecv[0];
+  } else if (regBufType == NCCL_COLLNET_REG_BUFFER) {
+    workElemReg->elem = *work;
+    workElemReg->elem.regUsed = NCCL_COLLNET_REG_BUFFER;
   } else {
     /* impossible value */
     WARN("Invalid regBufType %d\n", regBufType);
@@ -1747,11 +1786,22 @@ static ncclResult_t initCollProxyOp(struct ncclInfo* collInfo, int channelId, ui
   proxyOp->pattern = collInfo->pattern;
   proxyOp->coll = collInfo->coll;
   proxyOp->root = collInfo->root;
-  proxyOp->reg = 0;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
   // because some protocols need to transmit more than the total size, plus they sometimes
   // round up
   proxyOp->nbytes = collInfo->stepSize * proxyOp->sliceSteps;
+  if (collInfo->regBufType == NCCL_COLLNET_REG_BUFFER) {
+    proxyOp->reg = 1;
+    proxyOp->nsteps = DIVUP(collInfo->nBytes, NCCL_MAX_COLLNET_SIZE);
+    proxyOp->sendMhandle = collInfo->sendMhandle;
+    proxyOp->recvMhandle = collInfo->recvMhandle;
+    proxyOp->sendbuff = (uint8_t*)collInfo->sendbuff;
+    proxyOp->recvbuff = (uint8_t*)collInfo->recvbuff;
+    proxyOp->nbytes = collInfo->nBytes;
+  } else {
+    proxyOp->reg = 0;
+  }
+
   proxyOp->channelId = channelId;
   proxyOp->opCount = opCount;
 

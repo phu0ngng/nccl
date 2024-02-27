@@ -49,6 +49,11 @@ struct ncclProxyOp {
   uint8_t /*ncclPattern_t*/ pattern;
   uint8_t protocol;
   uint8_t reg;
+  // collnet buffer reg handles
+  void* sendMhandle;
+  void* recvMhandle;
+  uint8_t* sendbuff;
+  uint8_t* recvbuff;
 
   union ncclProxyOpSpecifics specifics;
 
@@ -59,7 +64,14 @@ struct ncclProxySubArgs {
   struct ncclProxyConnection* connection;
   int reg;
   void* buffer;
+  // p2p mhandle
   void* mhandle;
+  // collnet handles
+  void* sendMhandle;
+  void* recvMhandle;
+  uint8_t* sendbuff;
+  uint8_t* recvbuff;
+  size_t offset;
   int channelId;
   int nsteps;
   ssize_t nbytes;
@@ -88,6 +100,10 @@ struct ncclProxyArgs {
   int sliceSteps;
   int chunkSteps;
   int chunkSize;
+  size_t totalSendSize;
+  size_t totalRecvSize;
+  size_t sendSizePerRound;
+  size_t recvSizePerRound;
   uint8_t /*ncclDataType_t*/ dtype;
   uint8_t /*ncclDevRedOp_t*/ redOp;
   uint8_t /*ncclPattern_t*/ pattern;
@@ -302,6 +318,8 @@ enum ncclProxyMsgType {
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8,
   ncclProxyMsgGetFd = 9, // cuMem API support (UDS)
+  ncclProxyMsgRegister = 10,
+  ncclProxyMsgDeregister = 11
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types

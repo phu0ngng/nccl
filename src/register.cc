@@ -175,6 +175,9 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
     NCCLCHECK(ncclNvlsDeregBuffer(&reg->mcHandle, reg->regAddr, reg->dev, reg->regSize));
     reg->regAddr = (CUdeviceptr)NULL;
   }
+  if (reg->state & COLLNET_REG_COMPLETE) {
+    NCCLCHECK(ncclCollnetDeregBuffer(comm, reg->proxyconn, reg->collnetHandle));
+  }
   free(reg);
   memmove(cache->slots+slot, cache->slots+slot+1, (cache->population-slot-1)*sizeof(struct ncclReg*));
   cache->population -= 1;

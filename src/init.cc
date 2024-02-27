@@ -351,6 +351,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   ncclMemoryPoolConstruct(&comm->memPool_ncclProxyOp);
   ncclMemoryPoolConstruct(&comm->memPool_ncclPointerList);
   ncclMemoryPoolConstruct(&comm->memPool_ncclNvlsHandleList);
+  ncclMemoryPoolConstruct(&comm->memPool_ncclCollnetHandleList);
 
   comm->groupNext = reinterpret_cast<struct ncclComm*>(0x1);
   comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
@@ -1188,11 +1189,16 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       INFO(NCCL_INIT, "Communicator has %d nodes which is less than CollNet node threshold %d, disabling CollNet", comm->nNodes, collNetNodeThreshold);
       comm->collNetSupport = 0;
     }
+    comm->collNetRegSupport = true;
     for (int n=0; n<comm->nNodes; n++) {
       if (comm->nodeRanks[n].localRanks > NCCL_MAX_DIRECT_ARITY+1) {
         WARN("CollNet currently only supports up to %d GPUs per node, disabling CollNet", NCCL_MAX_DIRECT_ARITY+1);
         comm->collNetSupport = 0;
         break;
+      }
+      if (comm->nodeRanks[n].localRanks > 1) {
+        // As long as there is more than 1 rank on any node, we need to disable collnet reg
+        comm->collNetRegSupport = false;
       }
     }
   }

@@ -415,8 +415,8 @@ static ncclResult_t shmRecvProxyProgress(struct ncclProxyState* proxyState, stru
 struct ncclTransport shmTransport = {
   "SHM",
   shmCanConnect,
-  { shmSendSetup, shmSendConnect, shmSendFree, NULL, NULL, NULL, NULL, NULL },
-  { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL, NULL, NULL, NULL, NULL }
+  { shmSendSetup, shmSendConnect, shmSendFree, NULL, NULL, NULL, NULL, NULL, NULL },
+  { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 static void initCeOperation() {

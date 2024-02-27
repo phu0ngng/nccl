@@ -81,6 +81,8 @@ void ncclDebugInit() {
         mask = NCCL_NVLS;
       } else if (strcasecmp(subsys, "BOOTSTRAP") == 0) {
         mask = NCCL_BOOTSTRAP;
+      } else if (strcasecmp(subsys, "REG") == 0) {
+        mask = NCCL_REG;
       } else if (strcasecmp(subsys, "ALL") == 0) {
         mask = NCCL_ALL;
       }
