@@ -679,7 +679,6 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
   }
-
   free(domains);
   free(ids);
   return ncclSuccess;

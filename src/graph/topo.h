@@ -223,7 +223,6 @@ static ncclResult_t ncclTopoIdToNetDev(struct ncclTopoSystem* system, int64_t id
   return ncclInternalError;
 }
 
-
 // Returns NVLink bw in GB/s
 static float ncclTopoNVLinkBw(int cudaCompCap) {
   return
