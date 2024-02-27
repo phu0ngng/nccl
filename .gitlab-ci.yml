@@ -381,7 +381,7 @@ perftest-A40:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 2
-    NGPUS: 4
+    NGPUS: 2
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
