@@ -32,7 +32,7 @@ endif
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%) $(CC_FILES:%.cc=${DST_DIR}/%)
 KEXE_FILES:= $(KCU_FILES:%.cu=${DST_DIR}/%)
-DEP_FILES:= $(OBJ_FILES:%.o=${DST_DIR}/%.d)
+DEP_FILES:= $(OBJ_FILES:%.o=%.d)
 
 LSB_RELEASE=$(shell lsb_release -is)
 #

@@ -336,7 +336,45 @@ or vendor documentation.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is 0.
+The default value is -1.
+
+NCCL_IB_ADDR_FAMILY
+-------------------
+(since 2.21)
+
+The ``NCCL_IB_ADDR_FAMILY`` variable defines the IP address family associated to
+the infiniband GID dynamically selected by NCCL when ``NCCL_IB_GID_INDEX`` is left
+unset.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is "AF_INET".
+
+NCCL_IB_ADDR_RANGE
+------------------
+(since 2.21)
+
+The ``NCCL_IB_ADDR_RANGE`` variable defines the range of valid GIDs dynamically
+selected by NCCL when ``NCCL_IB_GID_INDEX`` is left unset.
+
+Values accepted
+^^^^^^^^^^^^^^^
+By default, ignored if unset.
+
+GID ranges can be defined using the Classless Inter-Domain Routing (CIDR)
+format for IPv4 and IPv6 families.
+
+NCCL_IB_ROCE_VERSION_NUM
+------------------------
+(since 2.21)
+
+The ``NCCL_IB_ROCE_VERSION_NUM`` variable defines the RoCE version associated to
+the infiniband GID dynamically selected by NCCL when ``NCCL_IB_GID_INDEX`` is left
+unset.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 2.
 
 NCCL_IB_SL
 ----------
@@ -789,20 +827,13 @@ NCCL_GRAPH_MIXING_SUPPORT
 -------------------------
 (since 2.13)
 
-Enable/disable support for co-occurring outstanding NCCL launches from multiple
-CUDA graphs or a CUDA graph and non-captured NCCL calls. With support disabled,
-correctness is only guaranteed if the communicator always avoids both of the
-following cases:
+Enable/disable support for multiple outstanding NCCL calls from parallel CUDA graphs or a CUDA graph and non-captured NCCL calls. NCCL calls are considered outstanding starting from their host-side launch (e.g., a call to `ncclAllreduce()` for non-captured calls or `cudaGraphLaunch()` for captured calls) and ending when the device kernel execution completes. With graph mixing support disabled, the following use cases are NOT supported:
 
-1. Has outstanding parallel graph launches, where parallel means on different
-streams without dependencies that would otherwise serialize their execution.
+1. Using a NCCL communicator (or split-shared communicators) from parallel graph launches, where parallel means on different streams without dependencies that would serialize their execution.
 
-2. An outstanding graph launch followed by a non-captured launch. Stream
-dependencies are irrelevant.
+2. Launching a non-captured NCCL collective during an outstanding graph launch that uses the same communicator (or split-shared communicators), regardless of stream ordering.
 
-The ability to disable support is motivated by observed hangs in the CUDA
-launches when support is enabled and multiple ranks have work launched via
-cudaGraphLaunch from the same thread.
+The ability to disable support is motivated by observed hangs in the CUDA launches when support is enabled and multiple ranks have work launched via cudaGraphLaunch from the same thread.
 
 Value accepted
 ^^^^^^^^^^^^^^

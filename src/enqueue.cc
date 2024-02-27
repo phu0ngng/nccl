@@ -1512,7 +1512,7 @@ static ncclResult_t getTunerInfo(struct ncclInfo* collInfo, int collNetSupport, 
   collInfo->nChannels = 0;
   if (collInfo->comm->tuner != NULL) {
     NCCLCHECK(collInfo->comm->tuner->getCollInfo(
-          collInfo->coll, collInfo->nBytes,
+          collInfo->comm->tunerContext, collInfo->coll, collInfo->nBytes,
           collNetSupport, nvlsSupport, numPipeOps,
           &collInfo->algorithm, &collInfo->protocol, &collInfo->nChannels));
   }
@@ -1701,7 +1701,7 @@ static ncclResult_t computeCollChunkInfo(struct ncclInfo* collInfo, size_t nByte
     while (nBytes / (nChannels * chunkSize) < collInfo->comm->channels[0].collnetChain.depth * 8 && chunkSize > 65536) chunkSize /= 2;
     while (nBytes / (nChannels * chunkSize) < collInfo->comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
   } else if (collInfo->algorithm == NCCL_ALGO_NVLS) {
-    int maxChunkSize = 131072;
+    int maxChunkSize = collInfo->comm->nvlsChunkSize;
     if (collInfo->comm->nNodes > 1 && collInfo->comm->bandwidths[ncclFuncAllReduce][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] < 150) maxChunkSize = 32768;
     if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
@@ -1712,7 +1712,7 @@ static ncclResult_t computeCollChunkInfo(struct ncclInfo* collInfo, size_t nByte
   } else if (collInfo->algorithm == NCCL_ALGO_NVLS_TREE) {
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = nChannels * collInfo->comm->channels[0].nvls.nHeads;
-    int maxChunkSize = ncclParamNvlsTreeChunkSize();
+    int maxChunkSize = std::max(collInfo->comm->nvlsChunkSize, (int)ncclParamNvlsTreeChunkSize());
     if (maxChunkSize == -2) maxChunkSize = collInfo->comm->nNodes >= 4 ? 65536 : chunkSize;
     chunkSize = std::min(chunkSize, maxChunkSize);
     if ((nBytes < (32 * (concurrentOps * chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
@@ -1958,7 +1958,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   ncclResult_t ret = ncclSuccess;
   int devOld = -1;
 
-  NCCLCHECKGOTO(PtrCheck(info->comm, info->opName, "comm"), ret, fail);
+  NCCLCHECKGOTO(CommCheck(info->comm, info->opName, "comm"), ret, fail);
   // Check whether communicator is ready to communicate
   NCCLCHECKGOTO(ncclCommEnsureReady(info->comm), ret, fail);
 
@@ -1990,7 +1990,7 @@ fail:
 
 NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
 ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm) {
-  NCCLCHECK(PtrCheck(comm, "ncclRedOpCreatePreMulSum", "comm"));
+  NCCLCHECK(CommCheck(comm, "ncclRedOpCreatePreMulSum", "comm"));
   /* join init thread before creating PreMulSum op. */
   NCCLCHECK(ncclCommEnsureReady(comm));
 

@@ -208,7 +208,10 @@ struct ncclKernelPlan {
   size_t maxBytesPerChannel;
 };
 
+#define NCCL_MAGIC 0x0280028002800280 // Nickel atomic number is 28.
+
 struct ncclComm {
+  uint64_t startMagic;
   struct ncclMemoryStack memPermanent, memScoped;
   // List of destructors to run when comm is destructed
   struct ncclDestructor* destructorHead;
@@ -278,6 +281,7 @@ struct ncclComm {
   // Buffer sizes
   int buffSizes[NCCL_NUM_PROTOCOLS];
   int p2pChunkSize;
+  int nvlsChunkSize;
 
   // Algorithm/Protocols thresholds
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
@@ -377,8 +381,10 @@ struct ncclComm {
 
   // Tuning plugin
   ncclTuner_t* tuner;
+  void *tunerContext;
   // buffer registration cache
   struct ncclRegCache regCache;
+  uint64_t endMagic;
 };
 
 enum ncclLaunchMode {

@@ -152,7 +152,7 @@ ncclResult_t ncclRegCleanup(struct ncclComm* comm) {
 
 NCCL_API(ncclResult_t, ncclCommRegister, const ncclComm_t comm, void* buff, size_t size, void** handle);
 ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle) {
-  NCCLCHECK(PtrCheck(comm, "ncclCommRegister", "comm"));
+  NCCLCHECK(CommCheck(comm, "ncclCommRegister", "comm"));
   if (comm->checkPointers) NCCLCHECK(CudaPtrCheck(buff, comm, "buff", "ncclCommRegister"));
   NCCLCHECK(ncclRegister(comm, buff, size, handle));
   return ncclSuccess;
@@ -160,7 +160,7 @@ ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, vo
 
 NCCL_API(ncclResult_t, ncclCommDeregister, const ncclComm_t comm, void* handle);
 ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
-  NCCLCHECK(PtrCheck(comm, "ncclCommRegister", "comm"));
+  NCCLCHECK(CommCheck(comm, "ncclCommRegister", "comm"));
   struct ncclReg* reg = (struct ncclReg*)handle;
   struct ncclRegCache* cache = &comm->regCache;
   int slot;

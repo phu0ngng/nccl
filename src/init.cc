@@ -117,6 +117,7 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
 void NCCL_NO_OPTIMIZE commPoison(ncclComm_t comm) {
   // Important that this does not trash intraComm0.
   comm->rank = comm->cudaDev = comm->busId = comm->nRanks = -1;
+  comm->startMagic = comm->endMagic = 0;
 }
 
 #undef NCCL_NO_OPTIMIZE
@@ -280,7 +281,6 @@ static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
 ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
   /* comm must be ready, or error will be reported */
   ncclResult_t ret = ncclSuccess;
-
   if (__atomic_load_n(comm->abortFlag, __ATOMIC_RELAXED)) {
     ncclGroupJobAbort(comm->groupJob);
   } else {
@@ -1165,9 +1165,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       graphs[a]->typeIntra = std::max(allGather3Data[i].graphInfo[a].typeIntra, graphs[a]->typeIntra);
       graphs[a]->typeInter = std::max(allGather3Data[i].graphInfo[a].typeInter, graphs[a]->typeInter);
     }
-    if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->collNetSupport = 0;
-    if (graphs[NCCL_ALGO_NVLS]->nChannels == 0) comm->nvlsSupport = 0;
   }
+  if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->collNetSupport = 0;
+  if (graphs[NCCL_ALGO_NVLS]->nChannels == 0) comm->nvlsSupport = comm->nvlsChannels = 0;
 
   comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
   if (comm->nChannels < nChannelsOrig) {
@@ -1514,23 +1514,28 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     if (job->color == NCCL_SPLIT_NOCOLOR) goto exit;
     snprintf((char*)&job->commId, sizeof(job->commId), "%016lx-%d", job->parent->commHash, job->color);
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
-    comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES); // Needed for UDS support
     NCCLCHECKGOTO(bootstrapSplit((struct ncclBootstrapHandle*)&job->commId, comm, job->parent, job->color, job->key, parentRanks), res, fail);
   } else {
     NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
-    comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES); // Needed for UDS support
     NCCLCHECKGOTO(bootstrapInit((struct ncclBootstrapHandle*)&job->commId, comm), res, fail);
   }
 
   comm->cudaArch = cudaArch;
+  comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES);
 
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
+  if (job->parent) {
+    INFO(NCCL_INIT,"ncclCommSplit comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d commId 0x%llx - Init START",
+    comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key, (unsigned long long)hashUniqueId(job->commId));
+  } else {
+    INFO(NCCL_INIT,"ncclCommInitRank comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START",
+    comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
+  }
 
   NCCLCHECKGOTO(initTransportsRank(comm, job->parent), res, fail);
 
-  NCCLCHECKGOTO(ncclLoadTunerPlugin(&comm->tuner), res, fail);
+  NCCLCHECKGOTO(ncclTunerPluginLoad(&comm->tuner), res, fail);
   if (comm->tuner) {
-    NCCLCHECK(comm->tuner->init(comm->nRanks, comm->nNodes, ncclDebugLog));
+    NCCLCHECK(comm->tuner->init(comm->nRanks, comm->nNodes, ncclDebugLog, &comm->tunerContext));
   }
 
   // update communicator state
@@ -1547,8 +1552,13 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
                 comm, comm->nRanks, (unsigned long long)hashUniqueId(job->commId), comm->rank, comm->cudaDev);
   }
 
-
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
+  if (job->parent) {
+    INFO(NCCL_INIT,"ncclCommSplit comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d commId 0x%llx - Init COMPLETE",
+    comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key, (unsigned long long)hashUniqueId(job->commId));
+  } else {
+    INFO(NCCL_INIT,"ncclCommInitRank comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init COMPLETE",
+    comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
+  }
 exit:
   if (job->newcomm) {
     /* assign it to user pointer. */
@@ -1757,6 +1767,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   }
 
   NCCLCHECKGOTO(ncclCalloc(&comm, 1), res, fail);
+  comm->startMagic = comm->endMagic = NCCL_MAGIC; // Used to detect comm corruption.
   NCCLCHECKGOTO(ncclCudaHostCalloc((uint32_t**)&comm->abortFlag, 1), res, fail);
   NCCLCHECKGOTO(ncclCalloc((uint32_t**)&comm->abortFlagRefCount, 1), res, fail);
   *comm->abortFlagRefCount = 1;
@@ -1954,8 +1965,8 @@ static ncclResult_t commCleanup(ncclComm_t comm) {
   }
 
   if (comm->tuner != NULL) {
-    NCCLCHECK(comm->tuner->destroy());
-    NCCLCHECK(ncclCloseTunerPlugin(&comm->tuner));
+    NCCLCHECK(comm->tuner->destroy(comm->tunerContext));
+    NCCLCHECK(ncclTunerPluginUnload(&comm->tuner));
   }
 
   NCCLCHECK(commFree(comm));
@@ -2170,7 +2181,7 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   ncclResult_t res = ncclSuccess;
 
   NCCLCHECK(ncclGroupStartInternal());
-  NCCLCHECKGOTO(PtrCheck(comm, "CommSplit", "comm"), res, fail);
+  NCCLCHECKGOTO(CommCheck(comm, "CommSplit", "comm"), res, fail);
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommSplit", "newcomm"), res, fail);
   NCCLCHECKGOTO(ncclCommEnsureReady(comm), res, fail);
 
@@ -2180,6 +2191,7 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
     INFO(NCCL_INIT, "Rank %d has color with NCCL_SPLIT_NOCOLOR, not creating a new communicator", comm->rank);
   } else {
     NCCLCHECKGOTO(ncclCalloc(&childComm, 1), res, fail);
+    childComm->startMagic = childComm->endMagic = NCCL_MAGIC;
     if (comm->config.splitShare) {
       childComm->abortFlag = comm->abortFlag;
       childComm->abortFlagRefCount = comm->abortFlagRefCount;
@@ -2252,7 +2264,7 @@ const char* ncclGetLastError(ncclComm_t comm) {
 
 NCCL_API(ncclResult_t, ncclCommGetAsyncError, ncclComm_t comm, ncclResult_t *asyncError);
 ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
-  NCCLCHECK(PtrCheck(comm, "ncclGetAsyncError", "comm"));
+  NCCLCHECK(CommCheck(comm, "ncclGetAsyncError", "comm"));
   NCCLCHECK(PtrCheck(asyncError, "ncclGetAsyncError", "asyncError"));
 
   *asyncError = __atomic_load_n(&comm->asyncResult, __ATOMIC_ACQUIRE);
@@ -2264,7 +2276,7 @@ NCCL_API(ncclResult_t, ncclCommCount, const ncclComm_t comm, int* count);
 ncclResult_t ncclCommCount(const ncclComm_t comm, int* count) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
 
-  NCCLCHECK(PtrCheck(comm, "CommCount", "comm"));
+  NCCLCHECK(CommCheck(comm, "CommCount", "comm"));
   NCCLCHECK(PtrCheck(count, "CommCount", "count"));
 
   /* init thread must be joined before we access the attributes of comm. */
@@ -2278,7 +2290,7 @@ NCCL_API(ncclResult_t, ncclCommCuDevice, const ncclComm_t comm, int* devid);
 ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int* devid) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
 
-  NCCLCHECK(PtrCheck(comm, "CommCuDevice", "comm"));
+  NCCLCHECK(CommCheck(comm, "CommCuDevice", "comm"));
   NCCLCHECK(PtrCheck(devid, "CommCuDevice", "devid"));
 
   NCCLCHECK(ncclCommEnsureReady(comm));
@@ -2291,7 +2303,7 @@ NCCL_API(ncclResult_t, ncclCommUserRank, const ncclComm_t comm, int* rank);
 ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
 
-  NCCLCHECK(PtrCheck(comm, "CommUserRank", "comm"));
+  NCCLCHECK(CommCheck(comm, "CommUserRank", "comm"));
   NCCLCHECK(PtrCheck(rank, "CommUserRank", "rank"));
 
   NCCLCHECK(ncclCommEnsureReady(comm));
