@@ -363,13 +363,14 @@ void exchangeValues(int* v0, int* v1) {
   *v0 = tmp;
 }
 
-ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs) {
+ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs, struct ncclComm* parent) {
   // Gather data from all ranks
   int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeToParent, *treeToChild0, *treeToChild1, *nvlsHeads;
   int nranks = comm->nRanks;
   int nNodes = comm->nNodes;
   int nChannels = comm->nChannels;
   int minHeadNum = INT_MAX;
+  int shared = parent && parent->nvlsSupport  && parent->config.splitShare;
   NCCLCHECK(ncclCalloc(&ringRecv, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&ringSend, nNodes*MAXCHANNELS));
   NCCLCHECK(ncclCalloc(&ringPrev, nranks*MAXCHANNELS));
@@ -469,11 +470,20 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   }
 
   comm->collChannels = comm->nChannels;
+#if CUDART_VERSION >= 12010
   // Support maximal channel usage for aggregation
+  if (shared && comm->nvlsChannels > parent->nvlsResources->nChannels) {
+    comm->nvlsChannels = parent->nvlsResources->nChannels;
+  }
   if (comm->nChannels < comm->nvlsChannels) {
     nChannels = comm->nChannels = copyChannels(comm, comm->nChannels, comm->nvlsChannels, ringPrev, ringNext);
   }
   NCCLCHECK(connectNvls(comm, nvlsHeads, minHeadNum));
+#endif
+  if (shared && comm->nChannels > parent->sharedRes->tpNChannels) {
+    nChannels = comm->nChannels = parent->sharedRes->tpNChannels;
+    comm->collChannels = std::min(comm->collChannels, comm->nChannels);
+  }
 
   // Create rings array and check all is fine
   NCCLCHECK(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext));
