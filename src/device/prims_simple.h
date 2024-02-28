@@ -612,7 +612,8 @@ private:
       // was accessed directly.
       uint64_t prevStep = step - StepPerSlice;
       volatile ssize_t* ptr = &(connFifo[prevStep%NCCL_STEPS].size);
-      while (*ptr != -1);
+      int spins = 0;
+      while (*ptr != -1) if (checkAbort(spins)) break;
     }
 
     if ((flags & (AnyNetDeviceUnpack)) && (flags & (RoleWaitRecv))) {
