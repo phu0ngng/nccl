@@ -184,6 +184,7 @@ static ncclResult_t ncclTopoIdToIndex(struct ncclTopoSystem* system, int type, i
       return ncclSuccess;
     }
   }
+  printf("Could not find node type %d with id %lx\n", type, id);
   return ncclInternalError;
 }
 

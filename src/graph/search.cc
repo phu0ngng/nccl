@@ -1083,11 +1083,11 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
 
 #include "comm.h"
 // NVLS channels aren't compute channels. Find which NIC corresponds to our rank being the head
-ncclResult_t getNvlsNetDev(struct ncclComm* comm, struct ncclTopoGraph* graph, int channelId, int* dev) {
+ncclResult_t getNvlsNetDev(struct ncclComm* comm, struct ncclTopoGraph* graph, int channelId, int64_t* netId) {
   ncclResult_t ret = ncclSuccess;
   int localRanks = comm->topo->nodes[GPU].count;
   int netNum = 0;
-  int net[MAXCHANNELS];
+  int64_t net[MAXCHANNELS];
 
   for (int c = 0; c < graph->nChannels; c++) {
     if (graph->intra[c * localRanks] == comm->rank) {
@@ -1095,7 +1095,7 @@ ncclResult_t getNvlsNetDev(struct ncclComm* comm, struct ncclTopoGraph* graph, i
     }
   }
   if (netNum) {
-    *dev = net[channelId % netNum];
+    *netId = net[channelId % netNum];
   } else {
     ret = ncclInternalError;
     goto fail;
@@ -1121,12 +1121,12 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
     int index = graph->intra[channel*ngpus] == rank ? 0 : 1;
     if (graph->pattern != NCCL_TOPO_PATTERN_NVLS) {
       netId = graph->inter[channel*2+index];
-      NCCLCHECK(ncclTopoIdToNetDev(comm->topo, netId, &netDev));
-      if (dev) *dev = netDev;
-      if (id) *id = netId;
     } else {
-      NCCLCHECK(getNvlsNetDev(comm, graph, channelId, dev));
+      NCCLCHECK(getNvlsNetDev(comm, graph, channelId, &netId));
     }
+    NCCLCHECK(ncclTopoIdToNetDev(comm->topo, netId, &netDev));
+    if (dev) *dev = netDev;
+    if (id) *id = netId;
     NCCLCHECK(ncclTopoGetIntermediateRank(comm->topo, rank, netId, proxyRank));
   } else if (peerRank == -1) {
     return ncclInternalError;
