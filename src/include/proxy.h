@@ -33,7 +33,6 @@ union ncclProxyOpSpecifics {
 
 struct ncclProxyOp {
   struct ncclProxyConnection* connection;
-  void* buffer;
   ssize_t nbytes;
   uint64_t opCount;
   int root;
@@ -63,7 +62,6 @@ struct ncclProxyOp {
 struct ncclProxySubArgs {
   struct ncclProxyConnection* connection;
   int reg;
-  void* buffer;
   // p2p mhandle
   void* mhandle;
   // collnet handles

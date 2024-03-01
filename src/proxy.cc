@@ -638,7 +638,7 @@ ncclResult_t ncclProxyComputeP2p(struct ncclInfo* info, struct ncclProxyOp* op, 
   if (ncclParamChunkSize() != 0) {
     info->chunkSize = ncclParamChunkSize();
   }
-  op->buffer = op->reg ? info->recvbuff : NULL;
+  op->recvbuff = op->reg ? (uint8_t*)info->recvbuff : NULL;
   op->chunkSize = info->chunkSize;
   op->nbytes = info->count;
 
