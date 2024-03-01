@@ -477,7 +477,7 @@ ncclResult_t bootstrapBarrier(void* commState, int rank, int nranks, int tag) {
 ncclResult_t bootstrapIntraNodeAllGather(void* commState, int *ranks, int rank, int nranks, void* allData, int size) {
   if (nranks == 1) return ncclSuccess;
   TRACE(NCCL_INIT, "rank %d nranks %d size %d - ENTER", rank, nranks, size);
-#if 0
+#if 1
   // This currently breaks collnet operation where we perform a send to ourselves, then an allgather, then a recv from
   // ourselves; the accept below would accept the send to ourselves.
   struct bootstrapState* state = (struct bootstrapState*)commState;

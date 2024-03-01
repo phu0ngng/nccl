@@ -710,8 +710,9 @@ static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct n
       NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, false), ret, fail);
       for (int h = 0; h < nHeadsUnique; h++) {
         const int head = headsUnique[h];
-        collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetRecv);
-        if (!collNetSetupFail) collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetSend);
+        ncclConnect connect;
+        collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetRecv, &connect);
+        if (!collNetSetupFail) collNetSetupFail |= ncclTransportCollNetSetup(comm, collNetGraph, channel, head, head, h, collNetSend, &connect);
       }
       // Verify CollNet setup across ranks after trying the first channel
       if (c == 0) {
