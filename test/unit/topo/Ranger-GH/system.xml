@@ -1,0 +1,590 @@
+<system version="1">
+  <cpu host_hash="0x5af62703aea1da20" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="0" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enxe2da50719755" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x6d0a2fdb7d26cc38" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="1" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xf16ae6a7fa84e01" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="2" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enx768f6e34517f" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xb5d5d64b71115542" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="3" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enxda280e77e2fa" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xdea15f849216fbb8" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="4" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x53e303ee59e42c7c" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="5" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x1416b6ec168efd41" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="6" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x401ec16592f9653d" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="7" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enx669221d6a0d6" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x6ffb05df8e38ad84" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="8" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xc688695a60e35f9a" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="9" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enx86ba6b756775" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xa3b2a8f3e4a0521b" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="10" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x44d87f6572495e22" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="11" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xcaea56392f1f83e1" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="12" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enx660d5e0bd007" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x9fddc68e30ce28b2" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="13" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x59c9d68a7509ac1f" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="14" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x654da3f60ee84e0b" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="15" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x17d4e97c6a46dd04" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="16" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x458e966df0fe6ea4" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="17" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enx4a5d9489951e" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xb3960ec2e225d6df" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="18" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enxd6385238295f" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x520ee4b6fdbc870b" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="19" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xeb425f9df45f68fb" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="20" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xa4137f65dcba6c3a" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="21" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x7bb710a72e0f38b8" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="22" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x5d4324359a4e83b4" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="23" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enx8ae2447169ac" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xf22d36784a524823" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="24" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xdbefd8339e1887a7" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="25" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enxfa586714e8c1" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x281160eb07d67da1" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="26" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enx866f61fe2ceb" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xd58fd0f8e0068f2c" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="27" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xe049d4b535ed1e1b" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="28" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xa1fc11f162313bbe" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="29" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0x534e3e458dd511a4" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="30" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+      <net name="enxf638c6bce4f6" dev="2" speed="425" port="0" latency="0.000000" guid="0x2" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+  <cpu host_hash="0xab42acc002d0e9db" numaid="0" affinity="ff,ffffffff,ffffffff" arch="arm64">
+    <pci busid="0004:01:00.0" class="0x060400" vendor="0x11f8" device="0x4136" subsystem_vendor="0x10de" subsystem_device="0x1808" link_speed="16.0 GT/s PCIe" link_width="16">
+      <pci busid="0004:03:00.1" class="0x020000" vendor="0x8086" device="0x15ff" subsystem_vendor="0x8086" subsystem_device="0x0000" link_speed="8.0 GT/s PCIe" link_width="8">
+        <nic>
+          <net name="enP4s1f1" dev="0" speed="1000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+        </nic>
+      </pci>
+    </pci>
+    <pci busid="0009:01:00.0" class="0x030200" vendor="0x10de" device="0x2342" subsystem_vendor="0x10de" subsystem_device="0x16ed" link_speed="16.0 GT/s PCIe" link_width="1">
+      <gpu dev="0" sm="90" rank="31" gdr="1">
+        <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
+        <c2c bw="44712" count="10"/>
+      </gpu>
+    </pci>
+    <nic>
+      <net name="virbr0" dev="1" speed="10000" port="0" latency="0.000000" guid="0x1" maxconn="65536" gdr="0"/>
+    </nic>
+  </cpu>
+</system>
