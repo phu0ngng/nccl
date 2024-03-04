@@ -73,11 +73,13 @@ int algoProtoSupported(int a, int p, struct ncclTopoGraph** graphs) {
   return 1;
 }
 
+#define MAX_MNNVL_NODES 64
+
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   int ngpus = nGpus;
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
-  CHECK(ncclCalloc(&xmlSystem, 1));
+  CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES*NCCL_TOPO_XML_MAX_NODES));
   CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
   struct ncclTopoSystem* system;
   if (xmlSystem->maxIndex == 0) {
