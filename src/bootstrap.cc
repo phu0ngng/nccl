@@ -411,8 +411,6 @@ ncclResult_t bootstrapConnect(void* commState, int peer, int tag, struct ncclSoc
   ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
 
-  TRACE(NCCL_BOOTSTRAP, "Sending to peer=%d tag=%d size=%d", peer, tag, size);
-
   NCCLCHECKGOTO(ncclSocketInit(sock, state->peerCommAddresses+peer, state->magic, ncclSocketTypeBootstrap), ret, fail);
   NCCLCHECKGOTO(ncclSocketConnect(sock), ret, fail);
   NCCLCHECKGOTO(bootstrapNetSend(sock, &state->rank, sizeof(int)), ret, fail);
