@@ -561,9 +561,8 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
 
-  // MNNVL support
-  if (!comm->MNNVL && comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
-  else if (comm->MNNVL || ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
+  if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
+  else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
 
   // Make sure P2P chunksize is not larger than coll chunksize.
