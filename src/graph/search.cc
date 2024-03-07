@@ -376,7 +376,6 @@ ncclResult_t ncclTopoCompareGraphs(struct ncclTopoSystem* system, struct ncclTop
     return ncclSuccess;
   }
   // 2. Try to get better bandwidth
-  // Give a 5% perf bonus to paths not crossing nics
   if (graph->nChannels*graph->bwIntra > refGraph->nChannels*refGraph->bwIntra) {
     *copy = 1;
     return ncclSuccess;

@@ -914,6 +914,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     float bwInter;
     int typeIntra;
     int typeInter;
+    int crossNic;
   };
 
   struct allGatherInfo {
@@ -1099,6 +1100,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     allGather3Data[rank].graphInfo[a].bwInter = graphs[a]->bwInter;
     allGather3Data[rank].graphInfo[a].typeIntra = graphs[a]->typeIntra;
     allGather3Data[rank].graphInfo[a].typeInter = graphs[a]->typeInter;
+    allGather3Data[rank].graphInfo[a].crossNic = graphs[a]->crossNic;
   }
 
   comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
@@ -1171,6 +1173,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       graphs[a]->bwInter = std::min(allGather3Data[i].graphInfo[a].bwInter, graphs[a]->bwInter);
       graphs[a]->typeIntra = std::max(allGather3Data[i].graphInfo[a].typeIntra, graphs[a]->typeIntra);
       graphs[a]->typeInter = std::max(allGather3Data[i].graphInfo[a].typeInter, graphs[a]->typeInter);
+      graphs[a]->crossNic = std::max(allGather3Data[i].graphInfo[a].crossNic, graphs[a]->crossNic);
     }
   }
   if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->collNetSupport = 0;
