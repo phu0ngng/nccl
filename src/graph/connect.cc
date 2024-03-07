@@ -258,8 +258,7 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, int nHead
     channel->nvls.nNodes = comm->nNodes;
     if (comm->collNetSupport && channel->nvls.headRank != -1) channel->nvls.out = comm->nRanks;
   }
-  // MNNVL: NVLS not yet supported
-  if (comm->nNodes == 1 || comm->MNNVL) return ncclSuccess;
+  if (comm->nNodes == 1) return ncclSuccess;
 
   // Connect Trees
   int tree0Parent, tree0Child0, tree0Child1, tree1Parent, tree1Child0, tree1Child1;
