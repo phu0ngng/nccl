@@ -96,9 +96,11 @@ static size_t tbytes = SIZE_MAX;
 static int split_share = NCCL_CONFIG_UNDEF_INT;
 static int split_comm = 0;
 static int commNum = 1;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 #define LOCAL_REGISTER_SEND 0x1
 #define LOCAL_REGISTER_RECV 0x2
 static int local_register = 0;
+#endif
 static int per_coll_perf = 0;
 
 static char* replay_file = NULL;
@@ -1016,9 +1018,15 @@ testResult_t threadLaunch(struct testThread* thread) {
 
 testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, size_t *allocBytes) {
     nbytes += 8*unalign; // pad with size of max datatype in case all datatypes selected
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
     NCCLCHECK(ncclMemAlloc(sendbuff, nbytes));
     NCCLCHECK(ncclMemAlloc(recvbuff, nbytes));
     if (datacheck) NCCLCHECK(ncclMemAlloc(expected, recvBytes));
+#else
+    CUDACHECK(cudaMalloc(sendbuff, nbytes));
+    CUDACHECK(cudaMalloc(recvbuff, nbytes));
+    if (datacheck) NCCLCHECK(cudaMalloc(expected, recvBytes));
+#endif
     CUDACHECK(cudaMemset(*sendbuff, 0, nbytes));
     CUDACHECK(cudaMemset(*recvbuff, 0, nbytes));
     if (datacheck) CUDACHECK(cudaMemset(*expected, 0, recvBytes));
@@ -1214,9 +1222,13 @@ int main(int argc, char* argv[]) {
         split_comm = (int)strtol(optarg, NULL, 0);
         break;
       case 'R':
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
         if (optarg[0] == 's') local_register = LOCAL_REGISTER_SEND;
         else if (optarg[0] == 'r') local_register = LOCAL_REGISTER_RECV;
         else if ((optarg[0] == 'a') || ((int)strtol(optarg, NULL, 0))) local_register = LOCAL_REGISTER_SEND|LOCAL_REGISTER_RECV;
+#else
+        printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
+#endif
         break;
       case 'A':
         per_coll_perf = (int)strtol(optarg, NULL, 0);
@@ -1402,8 +1414,10 @@ char* splitMaskEnv = NULL;
   //if parallel init is not selected, use main thread to initialize NCCL
   ncclComm_t* globalComms = NULL;
   ncclComm_t comms[commNum][nThreads*nGpus];
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
   void* sendRegHandles[commNum][nThreads*nGpus];
   void* recvRegHandles[commNum][nThreads*nGpus];
+#endif
   int nranks = totalProcs * nThreads * nGpus;
   if (proc == 0) {
       NCCLCHECK(ncclGetUniqueId(&ncclId));
@@ -1515,8 +1529,10 @@ char* splitMaskEnv = NULL;
       ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
       CUDACHECK(cudaSetDevice(gpus[i]));
       TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
       if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
       if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
+#endif
     }
   }
 
@@ -1652,11 +1668,17 @@ char* splitMaskEnv = NULL;
   // Free off CUDA allocated memory
   for (int id = 0; id < commNum; ++id) {
     for (int i=0; i<nGpus*nThreads; i++) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
       if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
       if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
       if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
       if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
+#else
+      if (sendbuffs[id][i]) CUDACHECK(cudaFree(sendbuffs[id][i]));
+      if (recvbuffs[id][i]) CUDACHECK(cudaFree(recvbuffs[id][i]));
+      if (datacheck) NCCLCHECK(cudaFree(expected[id][i]));
+#endif
     }
   }
 
