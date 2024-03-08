@@ -40,13 +40,14 @@ build:
   variables:
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    GIT_CLONE_PATH: "$CI_BUILDS_DIR/$CI_COMMIT_SHA"
   script:
     - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
     - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME NVCC_GENCODE="-gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_80,code=sm_80"
   artifacts:
     paths:
       - build
-    expire_in: 1 day
+    expire_in: 4 hrs
   interruptible: true
 
 build-trace:
@@ -70,7 +71,6 @@ health-P100:
   stage: health
   rules:
     - when: always
-  needs: []
   tags:
     - p100
   script:
@@ -81,7 +81,6 @@ health-P40:
   stage: health
   rules:
     - when: always
-  needs: []
   tags:
     - p40
   script:
@@ -92,7 +91,6 @@ health-GP100:
   stage: health
   rules:
     - when: always
-  needs: []
   tags:
     - gp100
   script:
@@ -103,7 +101,6 @@ health-A40:
   stage: health
   rules:
     - when: always
-  needs: []
   tags:
     - a40
   script:
@@ -114,7 +111,6 @@ health-A100:
   stage: health
   rules:
     - when: always
-  needs: []
   tags:
     - a100pci
   script:
@@ -139,7 +135,7 @@ unit_tests-P40:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build","health-P100"]
+  needs: ["build","health-P40"]
   tags:
     - p40
   variables:
@@ -270,6 +266,7 @@ apitest-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
+  needs: [build]
   tags:
     - dgx-1v
   variables:
@@ -287,6 +284,7 @@ apitest-DGX-2:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
+  needs: [build]
   tags:
     - dgx-2
   variables:
@@ -304,6 +302,7 @@ apitest-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
+  needs: [build]
   tags:
     - dgx-a100
   variables:
@@ -411,6 +410,7 @@ perftest-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
+  needs: [build, apitest-DGX-1V]
   tags:
     - dgx-1v
   variables:
@@ -431,6 +431,7 @@ perftest-DGX-2:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
+  needs: [build, apitest-DGX-2]
   tags:
     - dgx-2
   variables:
@@ -593,6 +594,7 @@ perftest-sharp-selene:
     - if: $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
+  needs: [build, perftest-DGX-A100]
   tags:
     - dgx-a100
   variables:
