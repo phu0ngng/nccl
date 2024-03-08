@@ -310,9 +310,9 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, int nHead
 
   struct ncclNvls* nvls0 = &comm->channels[0].nvls;
   struct ncclNvls* nvls1 = &comm->channels[1].nvls;
-  INFO(NCCL_GRAPH, "NVLS Trees : %d/%d->%d->%d %d/%d->%d->%d",
-      nvls0->treeDown[0], nvls0->treeDown[1], comm->rank, nvls0->treeUp,
-      nvls1->treeDown[0], nvls1->treeDown[1], comm->rank, nvls1->treeUp);
+  INFO(NCCL_GRAPH, "NVLS Trees : %d/%d/%d->%d->%d %d/%d/%d->%d->%d",
+      nvls0->treeDown[0], nvls0->treeDown[1], nvls0->treeDown[2], comm->rank, nvls0->treeUp,
+      nvls1->treeDown[0], nvls1->treeDown[1], nvls1->treeDown[2], comm->rank, nvls1->treeUp);
   return ncclSuccess;
 }
 
