@@ -381,7 +381,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   NCCLCHECK(ncclCalloc(&nvlsHeads, nNodes*MAXCHANNELS));
 
   // Alternate rings to avoid crossing rails
-  if (graphs[NCCL_ALGO_RING]->crossNic && (comm->nNodes % 2) == 0 && (nChannels % 2) == 0) {
+  if (graphs[NCCL_ALGO_RING]->crossNic && (nChannels % 2) == 0) {
     for (int r=0; r<comm->nRanks; r++) {
       if (comm->rankToNode[r] % 2 == 1) {
         // Exchange rings
