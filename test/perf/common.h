@@ -315,7 +315,6 @@ static int ncclstringtoop (char *str) {
 
 extern int is_main_proc;
 extern thread_local int is_main_thread;
-#define PRINT if (is_main_thread) printf
 
 /* If NCCL version is not smaller than 2.14.0, we support nonblocking
  * communicator where the state of a communicator can be ncclInProgress.

@@ -8,6 +8,7 @@
  ************************************************************************/
 
 #include "common.h"
+#define PRINT if (is_main_thread) printf
 
 #define NCOLLS 5
 struct testColl testColls[NCOLLS] = {
@@ -79,3 +80,5 @@ struct testEngine ncclTestEngine {
   ReplayGetBuffSize,
   ReplayRunTest
 };
+
+#undef PRINT
