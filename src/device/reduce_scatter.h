@@ -172,11 +172,11 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NC
       struct ncclDirect* direct = &ncclShmem.channel.collnetDirect;
       int nNodes = ncclShmem.comm.nNodes;
       int nRails = direct->nHeads;
-      int bid = ncclShmem.channelId - work->channelLo;
+      int part = ncclShmem.channelId - work->channelLo;
       void* inbuf = (void*)work->sendbuff;
       ssize_t sizePerRank = work->collnet.count;
 
-      ssize_t railAllBeg = min(railGridOffset + bid*chunkSize, nNodes*sizePerRank);
+      ssize_t railAllBeg = min(railGridOffset + part*chunkSize, nNodes*sizePerRank);
       ssize_t railAllEnd = min(railAllBeg + chunkSize, nNodes*sizePerRank);
       int railAllSize = railAllEnd - railAllBeg;
       if (tid < nDsts) dstSizes[tid] = railAllSize;
@@ -223,7 +223,7 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NC
   };
 
   __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
-    const int bid = ncclShmem.channelId - work->channelLo;
+    const int part = ncclShmem.channelId - work->channelLo;
     const int nChannels = work->channelHi - work->channelLo + 1;
     struct ncclDirect* direct = &ncclShmem.channel.collnetDirect;
     int const &nNodes = ncclShmem.comm.nNodes;
@@ -261,16 +261,24 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NC
 
     tn = nWarps2*WARP_SIZE;
     if (tid < tn) {
-      // Phase 2: Reduce from peers + local input -> send to network
-      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/0, Proto, 0>
-        prims(tid, tn, direct->heads+1, &direct->out, nullptr, nullptr,
-              work->redOpArg, 1*Proto::MaxGroupWidth, 1, 1);
-      for (ssize_t railGridOffset=0; railGridOffset < nNodes*sizePerRank; railGridOffset += nChannels*chunkSize) {
-        Scatterer</*ReduceSendNotRecv=*/false> scat;
-        scat.work = work;
-        scat.chunkSize = chunkSize;
-        scat.railGridOffset = railGridOffset;
-        prims.process</*Recv=*/1, /*Send=*/1>(scat);
+      if (work->regUsed == NCCL_COLLNET_REG_BUFFER) {
+        if (tid == 0) {
+          int steps = (int)divUp(nNodes * sizePerRank * sizeof(T), NCCL_MAX_COLLNET_SIZE);
+          Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/0, Proto, 0>::sendPeerNotify(direct->out, 1, steps);
+        }
+        __syncwarp();
+      } else {
+        // Phase 2: Reduce from peers + local input -> send to network
+        Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/0, Proto, 0>
+          prims(tid, tn, direct->heads + 1, &direct->out, nullptr, nullptr,
+            work->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1);
+        for (ssize_t railGridOffset = 0; railGridOffset < nNodes * sizePerRank; railGridOffset += nChannels * chunkSize) {
+          Scatterer</*ReduceSendNotRecv=*/false> scat;
+          scat.work = work;
+          scat.chunkSize = chunkSize;
+          scat.railGridOffset = railGridOffset;
+          prims.process</*Recv=*/1, /*Send=*/1>(scat);
+        }
       }
       return;
     }
@@ -278,18 +286,26 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NC
 
     tn = nWarps3*WARP_SIZE;
     if (tid < tn) {
-      // Phase 3: recv from network
-      Primitives<T, RedOp, FanAsymmetric<1, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid, tn, &direct->out, nullptr, nullptr, work->recvbuff,
-              work->redOpArg, 2*Proto::MaxGroupWidth, 0, 0);
-      for (ssize_t railGridOffset=0; railGridOffset < nNodes*sizePerRank; railGridOffset += nChannels*chunkSize) {
-        ssize_t railAllBeg = railGridOffset + bid*chunkSize;
-        ssize_t railAllEnd = min(railAllBeg + chunkSize, nNodes*sizePerRank);
-        ssize_t railOneBeg = ncclShmem.comm.node*sizePerRank;
-        ssize_t railOneEnd = railOneBeg + sizePerRank;
-        ssize_t beg = max(railAllBeg, railOneBeg);
-        ssize_t end = min(railAllEnd, railOneEnd);
-        prims.recv(beg-railOneBeg, max(ssize_t(0), end-beg), /*postOp=*/true);
+      if (work->regUsed == NCCL_COLLNET_REG_BUFFER) {
+        if (tid == 0) {
+          int steps = (int)divUp(nNodes * sizePerRank * sizeof(T), NCCL_MAX_COLLNET_SIZE);
+          Primitives<T, RedOp, FanAsymmetric<1, 0>, /*Direct=*/0, Proto, 0>::recvPeerNotify(direct->out, 0, steps);
+        }
+        __syncwarp();
+      } else {
+        // Phase 3: recv from network
+        Primitives<T, RedOp, FanAsymmetric<1, 0>, /*Direct=*/0, Proto, 0>
+          prims(tid, tn, &direct->out, nullptr, nullptr, work->recvbuff,
+            work->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0);
+        for (ssize_t railGridOffset = 0; railGridOffset < nNodes * sizePerRank; railGridOffset += nChannels * chunkSize) {
+          ssize_t railAllBeg = railGridOffset + part * chunkSize;
+          ssize_t railAllEnd = min(railAllBeg + chunkSize, nNodes * sizePerRank);
+          ssize_t railOneBeg = ncclShmem.comm.node * sizePerRank;
+          ssize_t railOneEnd = railOneBeg + sizePerRank;
+          ssize_t beg = max(railAllBeg, railOneBeg);
+          ssize_t end = min(railAllEnd, railOneEnd);
+          prims.recv(beg - railOneBeg, max(ssize_t(0), end - beg), /*postOp=*/true);
+        }
       }
       return;
     }

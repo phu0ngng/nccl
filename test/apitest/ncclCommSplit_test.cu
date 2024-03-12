@@ -4,6 +4,7 @@ class ncclCommSplit_test : public ::testing::Test {
   protected:
     ncclComm_t* comms = NULL;
     ncclComm_t* comms2 = NULL;
+    ncclComm_t* comms3 = NULL;
     int nVis = 0;
     virtual void SetUp() {
         register_segv_handler();
@@ -11,6 +12,7 @@ class ncclCommSplit_test : public ::testing::Test {
         ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
         comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
         comms2 = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
+        comms3 = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
     };
     virtual void TearDown() {
         if (NULL != comms) {
@@ -28,10 +30,18 @@ class ncclCommSplit_test : public ::testing::Test {
                     comms2[i] = NULL;
                 }
             }
-            free(comms);
             free(comms2);
-            comms = NULL;
             comms2 = NULL;
+        }
+        if (NULL != comms3) {
+            for (int i = 0; i < nVis; ++i) {
+                if (comms3[i]) {
+                    ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms3[i]));
+                    comms3[i] = NULL;
+                }
+            }
+            free(comms3);
+            comms3 = NULL;
         }
     };
 
@@ -60,6 +70,21 @@ TEST_F(ncclCommSplit_test, comm_dup) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     for (int i=0; i<nVis; i++) ASSERT_NE((long)comms2[i], NULL);
+}
+TEST_F(ncclCommSplit_test, comm_dup_dup) {
+    ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i=0; i<nVis; i++) {
+        ASSERT_EQ(ncclSuccess, ncclCommSplit(comms[i], 0, i, &comms2[i], NULL));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    for (int i=0; i<nVis; i++) ASSERT_NE((long)comms2[i], NULL);
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i=0; i<nVis; i++) {
+        ASSERT_EQ(ncclSuccess, ncclCommSplit(comms[i], 0, i, &comms3[i], NULL));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+    for (int i=0; i<nVis; i++) ASSERT_NE((long)comms3[i], NULL);
 }
 TEST_F(ncclCommSplit_test, same_key) {
     ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
@@ -136,7 +161,7 @@ TEST_F(ncclCommSplit_test, abort) {
             ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], 0, nVis - i, &childComms[i], NULL));
         }
         ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
-        
+
         if (s == NUM_SLEEP_CASES) {
             waitCommsReady(localComms, nVis);
             for (int i = 0; i < nVis; ++i) {
@@ -155,7 +180,7 @@ TEST_F(ncclCommSplit_test, abort) {
             }
         }
     }
-    
+
     free(localComms);
     free(childComms);
 }
@@ -189,7 +214,7 @@ TEST_F(ncclCommSplit_test, abort_res_share_env) {
             ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], 0, nVis - i, &childComms[i], NULL));
         }
         ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
-        
+
         if (s == NUM_SLEEP_CASES) {
             waitCommsReady(localComms, nVis);
             for (int i = 0; i < nVis; ++i) {
@@ -208,7 +233,7 @@ TEST_F(ncclCommSplit_test, abort_res_share_env) {
             }
         }
     }
-    
+
     free(localComms);
     free(childComms);
     (void) setenv("NCCL_COMM_SPLIT_SHARE_RESOURCES", "0", 1);

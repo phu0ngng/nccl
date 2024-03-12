@@ -87,6 +87,12 @@ struct ncclNodeRanks {
   int* localRankToRank;
 };
 
+struct cliqueInfo {
+  int id;
+  int size;
+  int *ranks;
+};
+
 struct ncclDestructor {
   struct ncclDestructor* next;
   void* obj;
@@ -158,6 +164,14 @@ struct alignas(16) ncclWorkList {
   // ncclDevWorkColl, ncclDevWorkColLReg, ncclDevWorkP2p[]...
 };
 
+struct ncclCollnetHandleList {
+  struct ncclCollnetHandleList *next;
+  void* collnetHandle;
+  size_t size;
+  const void* buffer;
+  struct ncclProxyConnector* proxyconn;
+};
+
 struct ncclKernelPlan {
   // A kernel plan is also a callback that reclaims itself. Hence this must
   // be the first member.
@@ -205,8 +219,12 @@ struct ncclTaskColl {
   int32_t algorithm:8, protocol:8;
   uint32_t isCollnet:1, isNvls:1;
   uint32_t devFuncId:30;
+  enum ncclRegBufferType regBufType;
   // number of elements in planner->ipcMemQueue associated with this collective
   int nCleanupQueueElts;
+
+  void* sendMhandle;
+  void* recvMhandle;
 };
 struct ncclTaskP2p {
   struct ncclTaskP2p* next;
@@ -348,7 +366,10 @@ struct ncclKernelPlanner {
   struct ncclKernelPlan* unlaunchedPlansHead;
 };
 
+#define NCCL_MAGIC 0x0280028002800280 // Nickel atomic number is 28.
+
 struct ncclComm {
+  uint64_t startMagic;
   struct ncclMemoryStack memPermanent, memScoped;
   // List of destructors to run when comm is destructed
   struct ncclDestructor* destructorHead;
@@ -391,7 +412,10 @@ struct ncclComm {
   int* localRankToRank;
   // localRanks and localRanktoRank for all nodes
   struct ncclNodeRanks* nodeRanks;
-  int MNNVL; // MNNVL: Multi-Node NVLink
+  // MNNVL: Multi-Node NVLink
+  int MNNVL; // true when MNNVL is available
+  struct cliqueInfo clique; // Our MNNVL clique information
+  int cliqueRank; // Our rank within the MNNVL clique
 
   bool checkPointers;
   bool dmaBufSupport;
@@ -403,7 +427,6 @@ struct ncclComm {
   int nChannels; // connection nChannels
   int collChannels; // enqueue nChannels
   int nvlsChannels; // enqueue nChannels
-  int collNetChannels;
   // Channels (per peer) for p2p
   int p2pnChannels;
   int p2pnChannelsPerPeer;
@@ -414,6 +437,7 @@ struct ncclComm {
   // Buffer sizes
   int buffSizes[NCCL_NUM_PROTOCOLS];
   int p2pChunkSize;
+  int nvlsChunkSize;
 
   // Algorithm/Protocols thresholds
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
@@ -463,11 +487,11 @@ struct ncclComm {
   int proxyRefCountOld; /* store proxy post-atomic-sub refcount */
   // Whether this communicator uses collNet
   int collNetSupport;
+  bool collNetRegSupport;
   uint8_t collNetSupportMatrix[4/*sum,prod,min,max*/][ncclNumTypes];
   int intraHighestTransportType;
   int* collNetHeads;
   int collNetHeadsNum;
-  int collNetHeadsUniqueNum;
   int* collNetDenseToUserRank;
   int* collNetUserToDenseRank;
   /* sharable collNet proxy progress resource. */
@@ -482,6 +506,7 @@ struct ncclComm {
   // pools backed by comm->memPermanent
   struct ncclMemoryPool memPool_ncclProxyOp;
   struct ncclMemoryPool memPool_ncclKernelPlan;
+
   // Next comm in this thread's active ncclGroup[Start|End](). Holds "0x1" when
   // this comm is not yet in a group.
   struct ncclComm* groupNext;
@@ -511,8 +536,10 @@ struct ncclComm {
 
   // Tuning plugin
   ncclTuner_t* tuner;
+  void *tunerContext;
   // buffer registration cache
   struct ncclRegCache regCache;
+  uint64_t endMagic;
 };
 
 enum ncclLaunchMode {

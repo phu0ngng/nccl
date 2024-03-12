@@ -107,7 +107,7 @@ health-A40:
   tags:
     - a40
   script:
-    - srun --exclusive -t 00:02:00 -N 3 -c 2 -pA40 ./test/scripts/gitlab-runner-health-check.sh
+    - srun --exclusive -t 00:02:00 -N 2 -c 2 -pA40 ./test/scripts/gitlab-runner-health-check.sh
   interruptible: true
 
 health-A100:
@@ -380,7 +380,7 @@ perftest-A40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    NNODES: 3
+    NNODES: 2
     NGPUS: 2
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
   script:

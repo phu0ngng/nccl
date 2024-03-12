@@ -12,7 +12,7 @@
 #include "core.h"
 #include "utils.h"
 
-// Used to pass NCCL call information from API to enqueue module.
+// Used to pass NCCL call information between functions
 struct ncclInfo {
   ncclFunc_t coll;
   const char* opName;

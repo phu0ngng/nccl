@@ -27,14 +27,16 @@ typedef void(*ncclDevFuncPtr_t)();
 extern __device__ ncclDevFuncPtr_t const ncclDevFuncTable[];
 
 struct ncclShmemGroup {
-  ncclConnInfo *recvConns[NCCL_MAX_NVLS_ARITY];
-  ncclConnInfo *sendConns[NCCL_MAX_NVLS_ARITY];
-  void* srcs[NCCL_MAX_NVLS_ARITY+1];
-  void* dsts[NCCL_MAX_NVLS_ARITY+1];
+  ncclConnInfo *recvConns[NCCL_MAX_ARITY];
+  ncclConnInfo *sendConns[NCCL_MAX_ARITY];
+  void* userInput;
+  void* userOutput;
+  void* srcs[NCCL_MAX_ARITY+1];
+  void* dsts[NCCL_MAX_ARITY+1];
   union {
     unpackGroupShmem unpack;
   } devicePlugin;
-  int32_t dstSizes[NCCL_MAX_NVLS_ARITY+1];
+  int32_t dstSizes[NCCL_MAX_ARITY+1];
 };
 
 struct ncclShmemData {

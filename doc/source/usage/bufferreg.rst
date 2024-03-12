@@ -108,6 +108,24 @@ example shows a use case:
 
   CHECK(ncclMemFree(sendbuff));
 
+IB Sharp Buffer Registration
+----------------------------
+
+NCCL 2.21.x supports IB Sharp buffer registration, any NCCL collectives that support IB Sharp algorithm can benefit from the feature such as allreduce,
+reducescatter, and allgather. Currently, NCCL only supports IB Sharp buffer registration for the communicators which contain 1 rank per node, and the
+registration can reduce the number of NCCL SM usage down to 1.
+
+To enable IB Sharp buffer registration by CUDA graph:
+
+ * Allocate send and recv buffer with any CUDA allcator (e.g., cudaMalloc/ncclMemAlloc)
+ * Launch NCCL collectives with CUDA graph
+
+To enable IB Sharp buffer registration by local registration:
+
+ * Allocate send and recv buffer with any CUDA allcator (e.g., cudaMalloc/ncclMemAlloc)
+ * Register send and recv buffer for each rank in the communicator with `ncclCommRegister`
+ * Launch NCCL collectives
+
 .. _mem_allocator:
 
 Memory Allocator

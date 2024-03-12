@@ -98,6 +98,15 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 // Number of named barriers supported by CUDA
 #define NCCL_MAX_GROUPS 16
 
+#define NCCL_MAX_COLLNET_SIZE (1L << 29)
+
+enum ncclRegBufferType {
+  NCCL_REGULAR_BUFFER = 0,
+  NCCL_IPC_REG_BUFFER = 1,
+  NCCL_NVLS_REG_BUFFER = 2,
+  NCCL_COLLNET_REG_BUFFER = 3
+};
+
 struct ncclConnInfo {
   // Regular comm mechanism
   char *buffs[NCCL_NUM_PROTOCOLS]; // Local for recv, remote for send
@@ -107,6 +116,7 @@ struct ncclConnInfo {
 
   int flags;          // Direct communication / other flags
   int shared;         // Buffers are shared
+  int stepSize;       // Step size for the SIMPLE buffer
   void **ptrExchange; // Pointer exchange for direct communication
   uint64_t* redOpArgExchange; // PreOp scaler exchange for direct pull case
 
@@ -171,7 +181,7 @@ struct ncclDirect {
   int down[NCCL_MAX_DIRECT_ARITY];
 };
 
-#define NCCL_MAX_NVLS_ARITY 8
+#define NCCL_MAX_NVLS_ARITY 32
 #define NCCL_MAX_NVLS_TREE_ARITY 3
 struct ncclNvls {
   int out;
@@ -184,6 +194,12 @@ struct ncclNvls {
   int node;
   int nNodes;
 };
+
+#if __CUDA_ARCH__ >= 900
+#define NCCL_MAX_ARITY NCCL_MAX_NVLS_ARITY
+#else
+#define NCCL_MAX_ARITY NCCL_MAX_DIRECT_ARITY
+#endif
 
 #define NCCL_MAX_CONNS 2
 struct ncclChannelPeer {
@@ -246,8 +262,7 @@ struct alignas(16) ncclDevWorkColl {
   //   nChannels == (channelHi - channelLo) + 1
   uint32_t channelLo:8, channelHi:8;
   uint32_t nWarps:8;
-  uint32_t redOpArgIsPtr:1, regUsed:1, oneNode:1;
-  uint32_t direct:4;
+  uint32_t redOpArgIsPtr:1, regUsed:2, oneNode:1, direct:4;
   uint32_t root;
   void* recvbuff;
   void* sendbuff;

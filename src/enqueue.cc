@@ -16,13 +16,6 @@
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
 
-enum ncclRegBufferType {
-  NCCL_REGULAR_BUFFER = 0,
-  NCCL_IPC_REG_BUFFER = 1,
-  NCCL_NVLS_REG_BUFFER = 2,
-  NCCL_REG_BUFFER_NUM = 3
-};
-
 NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
 
 // Returns maximum kernel stack size of all CUDA kernels
@@ -241,12 +234,11 @@ static ncclResult_t registerIntraNodeBuffers(
     struct ncclComm* comm, struct ncclTaskColl* info,
     void* outRegBufSend[NCCL_MAX_LOCAL_RANKS],
     void* outRegBufRecv[NCCL_MAX_LOCAL_RANKS],
-    ncclRegBufferType *outRegBufType,
     struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue
   ) {
   ncclResult_t result = ncclSuccess;
 
-  *outRegBufType = NCCL_REGULAR_BUFFER;
+  info->regBufType = NCCL_REGULAR_BUFFER;
 #if CUDART_VERSION >= 11030
   if ((info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) && comm->nvlsRegSupport) {
     bool regBufUsed = false;
@@ -278,7 +270,7 @@ static ncclResult_t registerIntraNodeBuffers(
       } else {
         info->nMaxChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 6));
       }
-      *outRegBufType = NCCL_NVLS_REG_BUFFER;
+      info->regBufType = NCCL_NVLS_REG_BUFFER;
     }
   } else if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT &&   // limited to CollNetDirect for now
     comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
@@ -333,7 +325,40 @@ static ncclResult_t registerIntraNodeBuffers(
         }
       }
     }
-    *outRegBufType = NCCL_IPC_REG_BUFFER;
+    info->regBufType = NCCL_IPC_REG_BUFFER;
+  } else if ((info->algorithm == NCCL_ALGO_COLLNET_DIRECT || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) && comm->collNetRegSupport && info->op.op != ncclDevPreMulSum && info->op.op != ncclDevSumPostDiv) {
+    size_t elementSize = ncclTypeSize(info->datatype);
+    size_t sendbuffSize = elementSize*ncclFuncSendCount(info->func, comm->nRanks, info->count);
+    size_t recvbuffSize = elementSize*ncclFuncRecvCount(info->func, comm->nRanks, info->count);
+    int sendRegBufFlag = 0;
+    int recvRegBufFlag = 0;
+    void *sendHandle, *recvHandle;
+
+    if (ncclParamLocalRegister()) {
+      ncclCollnetLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &sendRegBufFlag, &sendHandle);
+      info->sendMhandle = sendHandle;
+      if (sendRegBufFlag) {
+        ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &recvRegBufFlag, &recvHandle);
+        info->recvMhandle = recvHandle;
+      }
+    }
+
+    if ((sendRegBufFlag == 0 || recvRegBufFlag == 0) && comm->planner.persistent && ncclParamGraphRegister()) {
+      ncclCollnetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &sendRegBufFlag, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
+      info->sendMhandle = sendHandle;
+      if (sendRegBufFlag) {
+        ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &recvRegBufFlag, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
+        info->recvMhandle = recvHandle;
+      }
+    }
+
+    if (sendRegBufFlag && recvRegBufFlag) {
+      info->nMaxChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 1));
+      info->regBufType = NCCL_COLLNET_REG_BUFFER;
+      if (sendRegBufFlag == 1 && recvRegBufFlag == 1) {
+        INFO(NCCL_REG, "rank %d successfully registered collNet sendbuff %p (handle %p), sendbuff size %ld, recvbuff %p (handle %p), recvbuff size %ld", comm->rank, info->sendbuff, sendHandle, sendbuffSize, info->recvbuff, recvHandle, recvbuffSize);
+      }
+    }
   }
 fallback:
 #endif
@@ -454,10 +479,9 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
   task = ncclIntruQueueHead(&planner->collTaskQueue);
   while (task != nullptr) {
     // Build a ncclDevWorkColl[Reg?] struct for each task.
-    ncclRegBufferType regBufType = NCCL_REGULAR_BUFFER;
     void* regBufSend[NCCL_MAX_LOCAL_RANKS];
     void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
-    registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &regBufType, &planner->collCleanupQueue);
+    registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &planner->collCleanupQueue);
 
     struct ncclDevWorkColl devWork = {};
     devWork.sendbuff = (void*)task->sendbuff;
@@ -467,11 +491,12 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
     devWork.redOpArg = task->op.scalarArg;
     devWork.redOpArgIsPtr = task->op.scalarArgIsPtr;
     devWork.oneNode = (comm->nNodes == 1);
-    devWork.regUsed = 0;
+    devWork.regUsed = task->regBufType;
 
     struct ncclWorkList* workNode;
-    switch (regBufType) {
+    switch (task->regBufType) {
     case NCCL_REGULAR_BUFFER:
+    case NCCL_COLLNET_REG_BUFFER:
       { workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkColl>(&comm->memScoped, 1);
         workNode->workType = ncclDevWorkTypeColl;
         workNode->size = sizeof(struct ncclDevWorkColl);
@@ -480,7 +505,6 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
     case NCCL_IPC_REG_BUFFER:
       { struct ncclDevWorkCollReg workReg = {};
         workReg.coll = devWork;
-        workReg.coll.regUsed = 1;
         struct ncclChannel *channel0 = &comm->channels[0];
         for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
           int peer = channel0->collnetDirect.down[i];
@@ -504,7 +528,6 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
     case NCCL_NVLS_REG_BUFFER:
       { struct ncclDevWorkCollReg workReg = {};
         workReg.coll = devWork; // C++ struct assignment
-        workReg.coll.regUsed = 1;
         /* NVLS only has one send and recv buffer registered */
         workReg.dnInputs[0] = regBufSend[0];
         workReg.dnOutputs[0] = regBufRecv[0];
@@ -515,7 +538,7 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
       } break;
     default:
       /* impossible value */
-      WARN("Invalid regBufType %d\n", regBufType);
+      WARN("Invalid regBufType %d\n", task->regBufType);
       return ncclInvalidArgument;
     }
 
@@ -883,7 +906,7 @@ static ncclResult_t addP2pToPlan(
       void* addr = dir ? work->sendAddr : work->recvAddr;
       size_t bytes = dir ? work->sendBytes : work->recvBytes;
 
-      proxyOps[dir].buffer = nullptr;
+      proxyOps[dir].recvbuff = nullptr;
       if (nParts <= part) {
         proxyOps[dir].nsteps = 0;
       } else if (bytes == 0) {
@@ -895,7 +918,7 @@ static ncclResult_t addP2pToPlan(
         ncclP2pPartBounds(nParts, part, bytes, &partBeg, &partEnd);
         if (proxyOps[dir].reg) {
           proxyOps[dir].nsteps = 1;
-          proxyOps[dir].buffer = (char*)addr+partBeg;
+          proxyOps[dir].recvbuff = (uint8_t*)addr+partBeg;
           proxyOps[dir].nbytes = partEnd-partBeg;
         } else {
           proxyOps[dir].nsteps = divUp(partEnd-partBeg, chunkDataSize);
@@ -1557,18 +1580,27 @@ static ncclResult_t topoGetAlgoInfo(
       ncSwitch /= 2;
     }
   } else if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) {
+    // NVLS should not need more than 16 channels to get peak BW.
     nc = comm->nvlsChannels;
   } else {
-    // Make sure we use more than 16 channels only for large sizes as the overhead is significant
-    if (nc > 16 && nBytes < nc*nt*threadThreshold*64) nc = 16;
-    while (nBytes < nc*nt*threadThreshold) {
+    // Ring/Tree channel tuning
+    while (nBytes < nc * nt * threadThreshold) {
       if (nc >= 2) nc--;
-      else if ((nt % 128) == 0) nt/=2;
+      else break;
+    }
+  }
+
+  if (info->algorithm != NCCL_ALGO_NVLS && info->algorithm != NCCL_ALGO_NVLS_TREE &&
+    info->algorithm != NCCL_ALGO_COLLNET_DIRECT) {
+    while (nBytes < nc * nt * threadThreshold) {
+      if (nt % 128 == 0) nt /= 2;
       else break;
     }
   }
   if (info->protocol == NCCL_PROTO_SIMPLE) {
     if (info->algorithm == NCCL_ALGO_RING) nt += WARP_SIZE; // Extra warp for sync
+    // More threads or sync warps needed due to split thread model
+    if (info->algorithm == NCCL_ALGO_TREE) nt += 4*WARP_SIZE;
   }
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
   if (info->algorithm == NCCL_ALGO_TREE) nt = NCCL_MAX_NTHREADS; // Tree now uses all threads always.
@@ -1593,7 +1625,7 @@ static ncclResult_t getAlgoInfo(
     int algorithm = NCCL_ALGO_UNDEF;
     int protocol = NCCL_PROTO_UNDEF;
     NCCLCHECK(comm->tuner->getCollInfo(
-          info->func, nBytes,
+          comm->tunerContext, info->func, nBytes,
           collNetSupport, nvlsSupport, numPipeOps,
           &algorithm, &protocol, &nMaxChannels));
     info->algorithm = algorithm;
@@ -1688,7 +1720,7 @@ static ncclResult_t calcCollChunking(
     while (nBytes / (nChannels * chunkSize) < comm->channels[0].collnetChain.depth * 8 && chunkSize > 65536) chunkSize /= 2;
     while (nBytes / (nChannels * chunkSize) < comm->channels[0].collnetChain.depth && chunkSize > 32768) chunkSize /= 2;
   } else if (info->algorithm == NCCL_ALGO_NVLS) {
-    int maxChunkSize = 131072;
+    int maxChunkSize = comm->nvlsChunkSize;
     if (comm->nNodes > 1 && comm->bandwidths[ncclFuncAllReduce][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] < 150) maxChunkSize = 32768;
     if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
@@ -1699,7 +1731,7 @@ static ncclResult_t calcCollChunking(
   } else if (info->algorithm == NCCL_ALGO_NVLS_TREE) {
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = nChannels * comm->channels[0].nvls.nHeads;
-    int maxChunkSize = ncclParamNvlsTreeChunkSize();
+    int maxChunkSize = std::max(comm->nvlsChunkSize, (int)ncclParamNvlsTreeChunkSize());
     if (maxChunkSize == -2) maxChunkSize = comm->nNodes >= 4 ? 65536 : chunkSize;
     chunkSize = std::min(chunkSize, maxChunkSize);
     if ((nBytes < (32 * (concurrentOps * chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
@@ -1740,11 +1772,22 @@ static ncclResult_t calcCollChunking(
   proxyOp->pattern = pattern;
   proxyOp->coll = info->func;
   proxyOp->root = info->root;
-  proxyOp->reg = 0;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
   // because some protocols need to transmit more than the total size, plus they sometimes
   // round up
   proxyOp->nbytes = stepSize*sliceSteps;
+
+  if (info->regBufType == NCCL_COLLNET_REG_BUFFER) {
+    proxyOp->reg = 1;
+    proxyOp->nsteps = DIVUP(nBytes, NCCL_MAX_COLLNET_SIZE);
+    proxyOp->sendMhandle = info->sendMhandle;
+    proxyOp->recvMhandle = info->recvMhandle;
+    proxyOp->sendbuff = (uint8_t*)info->sendbuff;
+    proxyOp->recvbuff = (uint8_t*)info->recvbuff;
+    proxyOp->nbytes = nBytes;
+  } else {
+    proxyOp->reg = 0;
+  }
 
   if (pattern == ncclPatternCollnetDirect) {
     proxyOp->specifics.collnetDirect.nNodes = comm->nNodes;
@@ -1953,7 +1996,7 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   ncclResult_t ret = ncclSuccess;
   int devOld = -1;
 
-  NCCLCHECKGOTO(PtrCheck(info->comm, info->opName, "comm"), ret, fail);
+  NCCLCHECKGOTO(CommCheck(info->comm, info->opName, "comm"), ret, fail);
   // Check whether communicator is ready to communicate
   NCCLCHECKGOTO(ncclCommEnsureReady(info->comm), ret, fail);
 
@@ -1985,7 +2028,7 @@ fail:
 
 NCCL_API(ncclResult_t, ncclRedOpCreatePreMulSum, ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm);
 ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm) {
-  NCCLCHECK(PtrCheck(comm, "ncclRedOpCreatePreMulSum", "comm"));
+  NCCLCHECK(CommCheck(comm, "ncclRedOpCreatePreMulSum", "comm"));
   /* join init thread before creating PreMulSum op. */
   NCCLCHECK(ncclCommEnsureReady(comm));
 
