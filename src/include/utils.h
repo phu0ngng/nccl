@@ -420,36 +420,6 @@ void ncclIntruQueueTransfer(ncclIntruQueue<T,next> *dst, ncclIntruQueue<T,next> 
   src->tail = nullptr;
 }
 
-/* cmp function determines the sequence of objects in the queue. If cmp returns value >= 0, it means a > b,
- * and we should put a before b; otherwise, b should be put ahead of a. */
-template<typename T, T *T::*next>
-inline void ncclIntruQueueSortEnqueue(ncclIntruQueue<T,next> *me, T *x, int (*cmp)(T *a, T *b)) {
-  T *cur = me->head;
-  T *prev = NULL;
-
-  if (cur == NULL) {
-    x->*next = nullptr;
-    me->tail = me->head = x;
-  } else {
-    while (cur) {
-      if (cmp(cur, x) > 0) {
-        prev = cur;
-        cur = cur->next;
-      } else {
-        break;
-      }
-    }
-
-    x->*next = cur;
-    if (prev) {
-      prev->*next = x;
-      if (cur == NULL) me->tail = x;
-    } else {
-      me->head = x;
-    }
-  }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 
 constexpr ncclThreadSignal ncclThreadSignalStaticInitializer() {
