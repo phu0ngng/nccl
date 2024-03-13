@@ -256,6 +256,7 @@ NCCL_PARAM(DisableGraphHelper, "GRAPH_HELPER_DISABLE", 0);
 NCCL_PARAM(GdrCopyFifoEnable, "GDRCOPY_FIFO_ENABLE", 1);
 #define NCCL_WORK_FIFO_BYTES_DEFAULT (1<<20)
 NCCL_PARAM(WorkFifoBytes, "WORK_FIFO_BYTES", NCCL_WORK_FIFO_BYTES_DEFAULT);
+NCCL_PARAM(WorkArgsBytes, "WORK_ARGS_BYTES", INT64_MAX);
 enum ncclLaunchMode ncclParamLaunchMode;
 
 NCCL_PARAM(DmaBufEnable, "DMABUF_ENABLE", 1);
@@ -411,6 +412,8 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   }
   tmpCommAndChans.comm.p2pChunkSize = comm->p2pChunkSize;
   tmpCommAndChans.comm.channels = &devCommAndChans->channels[0];
+
+  comm->workArgsBytes = std::min<size_t>(ncclParamWorkArgsBytes(), ncclMaxKernelArgsSize(comm->cudaArch));
 
   NCCLCHECKGOTO(ncclNvmlGetCCStatus(&ccStatus), ret, fail);
   if (ccStatus.CCEnabled) {

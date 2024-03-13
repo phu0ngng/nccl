@@ -6,6 +6,16 @@ failure_count=0
 failure_names=()
 cd build/test/unit
 
+echo "=============================== ENQUEUE TESTS ARGS - $(date +\"%T\") ================================="
+NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=512 ./enqueue_test 2>&1
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("ENQUEUE TESTS ARGS")
+echo -e "\n\n"
+
+echo "=============================== ENQUEUE TESTS FIFO - $(date +\"%T\") ================================="
+NCCL_WORK_FIFO_BYTES=1024 ./enqueue_test 2>&1
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("ENQUEUE TESTS FIFO")
+echo -e "\n\n"
+
 echo "=============================== GRAPH TESTS Default - $(date +\"%T\") ================================="
 ./graph_test
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("GRAPH TESTS Default")

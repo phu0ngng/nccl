@@ -460,6 +460,7 @@ struct ncclComm {
   // Device side of the communicator (for cudaFree's)
   struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm
 
+  uint32_t workArgsBytes; // max size of kernel args
   uint32_t workFifoBytes; // size of workFifoBuf, power of 2
   void* workFifoBuf;
   void* workFifoBufDev;

@@ -149,7 +149,7 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MIN_NTHREADS);
 
   // If we can fit everything into the kernel args we do so.
-  if (sizeof(ncclDevKernelArgs) + batchBytes + workBytes <= ncclMaxKernelArgsSize(comm->cudaArch)) {
+  if (sizeof(ncclDevKernelArgs) + batchBytes + workBytes <= comm->workArgsBytes) {
     plan->workStorageType = ncclDevWorkStorageTypeArgs;
   }
   plan->kernelArgsSize = sizeof(struct ncclDevKernelArgs) + batchBytes;
@@ -1261,7 +1261,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
                                          : ncclDevWorkStorageTypeFifo;
 
       struct ncclKernelPlanBudget budget;
-      budget.inArgsBytes = ncclMaxKernelArgsSize(comm->cudaArch) - sizeof(ncclDevKernelArgs);
+      budget.inArgsBytes = comm->workArgsBytes - sizeof(struct ncclDevKernelArgs);
       // Non-persistent kernels fill up at most half of our fifo per kernel.
       budget.outArgsBytes = plan->persistent ? (1<<30) : comm->workFifoBytes/2;
 
