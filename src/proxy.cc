@@ -1028,7 +1028,8 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
 ncclResult_t ncclProxyCallBlockingUDS(struct ncclComm* comm, int tpRank, int type, void* reqBuff, int reqSize, void* respBuff, int respSize, int *respFd) {
   ncclResult_t res = ncclSuccess;
   struct ncclIpcSocket ipcSock = { 0 };
-  void *opId = (void*)((((uintptr_t)random()) << 32) | random());
+  void *opId;
+  NCCLCHECK(getRandomData(&opId, sizeof(opId)));
 
   int rank = comm->topParentLocalRanks[comm->localRank];
   struct ncclProxyState* sharedProxyState = comm->proxyState;
@@ -1616,12 +1617,6 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
 
   // UDS support
   NCCLCHECK(ncclIpcSocketInit(&comm->proxyState->ipcSock, comm->rank, peerAddressesUDS[comm->rank], comm->abortFlag));
-  // Seed the random number generator for UDS filename generation
-  struct timeval time;
-  gettimeofday(&time,NULL);
-  unsigned int seed = time.tv_sec*time.tv_usec;
-  seed ^= getpid();
-  srandom(seed);
   return ncclSuccess;
 }
 

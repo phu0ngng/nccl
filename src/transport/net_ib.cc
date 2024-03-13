@@ -451,6 +451,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
           pthread_mutex_init(&ncclIbDevs[ncclNIbDevs].lock, NULL);
           ncclIbDevs[ncclNIbDevs].device = d;
           ncclIbDevs[ncclNIbDevs].guid = devAttr.sys_image_guid;
+          ncclIbDevs[ncclNIbDevs].portAttr = portAttr;
           ncclIbDevs[ncclNIbDevs].portNum = port_num;
           ncclIbDevs[ncclNIbDevs].link = portAttr.link_layer;
           ncclIbDevs[ncclNIbDevs].speed = ncclIbSpeed(portAttr.active_speed) * ncclIbWidth(portAttr.active_width);
@@ -1029,9 +1030,6 @@ ib_connect_check:
   for (int i = 0; i < comm->base.ndevs; i++) {
     ncclIbSendCommDev* commDev = comm->devs + i;
     ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
-    // Send my QP Info to receiver through the socket. Hope this won't block.
-    // TODO - I thought I queried this in init?
-    NCCLCHECK(wrap_ibv_query_port(ibDev->context, ibDev->portNum, &ibDev->portAttr));
 
     // Write to the metadata struct via this pointer
     ncclIbDevInfo* devInfo = meta.devs + i;
@@ -1239,7 +1237,6 @@ ib_recv:
     ibDevN = mergedDev->devs[i];
     NCCLCHECK(ncclIbInitCommDevBase(ibDevN, &rCommDev->base));
     ibDev = ncclIbDevs + ibDevN;
-    NCCLCHECK(wrap_ibv_query_port(ibDev->context, ibDev->portNum, &ibDev->portAttr));
     NCCLCHECK(ncclIbGetGidIndex(ibDev->context, ibDev->portNum, ibDev->portAttr.gid_tbl_len, &rCommDev->base.gidInfo.localGidIndex));
     NCCLCHECK(wrap_ibv_query_gid(ibDev->context, ibDev->portNum, rCommDev->base.gidInfo.localGidIndex, &rCommDev->base.gidInfo.localGid));
   }
