@@ -512,14 +512,35 @@ NCCL_NET_PLUGIN
 ---------------
 (since 2.11)
 
-Set it to a suffix string to choose among multiple NCCL net plugins. This setting will cause NCCL to look for the file “libnccl-net-<suffix>.so” instead of the default "libnccl-net.so".
+Set it to either a suffix string or to a library name to choose among multiple NCCL net plugins. This setting will cause NCCL to look for the net plugin library using the following strategy:
+ - If NCCL_NET_PLUGIN is set, attempt loading the library with name specified by NCCL_NET_PLUGIN;
+ - If NCCL_NET_PLUGIN is set and previous failed, attempt loading libnccl-net-<NCCL_NET_PLUGIN>.so;
+ - If NCCL_NET_PLUGIN is not set, attempt loading libnccl-net.so;
+ - If no plugin was found (neither user defined nor default), use internal network plugin.
 
-For example, setting ``NCCL_NET_PLUGIN=aws`` will cause NCCL to use libnccl-net-aws.so (provided that it exists on the system).  Setting ``NCCL_NET_PLUGIN=none`` will cause NCCL not to use any plugin.
+For example, setting ``NCCL_NET_PLUGIN=aws`` will cause NCCL to try load aws and, if aws cannot be found, libnccl-net-aws.so (provided that it exists on the system). Setting ``NCCL_NET_PLUGIN=none`` will cause NCCL not to use any plugin.
 
 Values accepted
 ^^^^^^^^^^^^^^^
 
-Suffix string of the plugin file name, or "none".
+Plugin suffix, plugin file name, or "none".
+
+NCCL_TUNER_PLUGIN
+---------------
+
+Set it to either a suffix string or to a library name to choose among multiple NCCL tuner plugins. This setting will cause NCCL to look for the tuner plugin library using the following strategy:
+ - If NCCL_TUNER_PLUGIN is set, attempt loading the library with name specified by NCCL_TUNER_PLUGIN;
+ - If NCCL_TUNER_PLUGIN is set and previous failed, attempt loading libnccl-net-<NCCL_TUNER_PLUGIN>.so;
+ - If NCCL_TUNER_PLUGIN is not set, attempt loading libnccl-tuner.so;
+ - If no plugin was found look for the tuner symbols in the net plugin (refer to ``NCCL_NET_PLUGIN``);
+ - If no plugin was found (neither through NCCL_TUNER_PLUGIN nor NCCL_NET_PLUGIN), use internal tuner plugin.
+
+For example, setting ``NCCL_TUNER_PLUGIN=aws`` will cause NCCL to try load aws and, if aws cannot be found, libnccl-tuner-aws.so (provided that it exists on the system). Setting ``NCCL_TUNER_PLUGIN=none`` will cause NCCL not to use any plugin.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Plugin suffix, plugin file name, or "none".
 
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
