@@ -272,56 +272,34 @@ ncclResult_t ncclTopoDumpXmlToFile(const char* xmlTopoFile, struct ncclXml* xml)
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoFuseXml(struct ncclXml* dst, struct ncclXml* src) {
-  struct ncclXmlNode* topNode;
-  NCCLCHECK(xmlFindTag(dst, "system", &topNode));
+static ncclResult_t xmlTopoFuseXmlRecursive(struct ncclXml* dst, struct ncclXmlNode* dstParent, struct ncclXmlNode* srcParent) {
+  for (int i = 0; i < srcParent->nSubs; i++) {
+    struct ncclXmlNode* srcNode = srcParent->subs[i];
+    struct ncclXmlNode* dstNode;
+    NCCLCHECK(xmlFindNode(dstParent, srcNode, &dstNode));
+    if (dstNode == NULL) {
+      NCCLCHECK(xmlAddTree(dst, dstParent, srcNode));
+    } else {
+      NCCLCHECK(xmlTopoFuseXmlRecursive(dst, dstNode, srcNode));
+    }
+  }
+  return ncclSuccess;
+}
 
-  if (topNode == NULL) {
+ncclResult_t ncclTopoFuseXml(struct ncclXml* dst, struct ncclXml* src) {
+  struct ncclXmlNode* topNodeDst;
+  NCCLCHECK(xmlFindTag(dst, "system", &topNodeDst));
+
+  if (topNodeDst == NULL) {
     xmlAddTree(dst, NULL, src->nodes);
     return ncclSuccess;
   }
 
-  // Fuse the CPUs with the first XML
-  struct ncclXmlNode* srcCpu;
-  NCCLCHECK(xmlFindTag(src, "cpu", &srcCpu));
-  while (srcCpu) {
-    const char* srcNumaId;
-    const char* srcHostHash;
-    NCCLCHECK(xmlGetAttr(srcCpu, "numaid", &srcNumaId));
-    if (srcNumaId == NULL) {
-      WARN("TopoFuseXmls : could not find CPU numa ID.");
-      return ncclInternalError;
-    }
-    xmlGetAttr(srcCpu, "host_hash", &srcHostHash);
-    if (srcHostHash == NULL)
-      srcHostHash = "0";
+  struct ncclXmlNode* topNodeSrc;
+  NCCLCHECK(xmlFindTag(src, "system", &topNodeSrc));
 
-    // Search through the destination for a duplicate.  Note that
-    // this makes the complexity of this whole function O(n^2), but n
-    // is expected to be small.
-    struct ncclXmlNode* dstCpu;
-    NCCLCHECK(xmlFindTag(dst, "cpu", &dstCpu));
-    while (dstCpu) {
-      const char* dstNumaId;
-      const char* dstHostHash;
-      NCCLCHECK(xmlGetAttr(dstCpu, "numaid", &dstNumaId));
-      if (dstNumaId == NULL) {
-        WARN("TopoFuseXmls : could not find CPU numa ID.");
-        return ncclInternalError;
-      }
-      xmlGetAttr(dstCpu, "host_hash", &dstHostHash);
-      if (dstHostHash == NULL)
-        dstHostHash = "0";
-      if (strcmp(srcNumaId, dstNumaId) == 0 && strcmp(srcHostHash, dstHostHash) == 0)
-        break;
+  NCCLCHECK(xmlTopoFuseXmlRecursive(dst, topNodeDst, topNodeSrc));
 
-      NCCLCHECK(xmlFindNextTag(dst, "cpu", dstCpu, &dstCpu));
-    }
-    // Only add the CPU if no duplicate was found
-    if (dstCpu == NULL)
-      NCCLCHECK(xmlAddTree(dst, topNode, srcCpu));
-    NCCLCHECK(xmlFindNextTag(src, "cpu", srcCpu, &srcCpu));
-  }
   return ncclSuccess;
 }
 
