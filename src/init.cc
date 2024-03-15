@@ -823,7 +823,7 @@ fail:
 }
 
 // MNNVL: Flag to indicate whether to enable Multi-Node NVLink
-NCCL_PARAM(MNNVL, "MNNVL", -2);
+NCCL_PARAM(MNNVLEnable, "MNNVL_ENABLE", 2);
 
 #if CUDART_VERSION >= 11030
 
@@ -868,8 +868,8 @@ static int checkMNNVL(struct ncclComm* comm) {
       comm->clique.ranks[comm->clique.size++] = i;
     }
   }
-  // Determine whether this is a MNNVL system
-  comm->MNNVL = ncclParamMNNVL() < 0 ? comm->clique.size > 1 : ncclParamMNNVL();
+  // Determine whether to enable MNNVL or not
+  comm->MNNVL = ncclParamMNNVLEnable() == 2 ? comm->clique.size > 1 : ncclParamMNNVLEnable();
   INFO(NCCL_INIT, "MNNVL %d cliqueId %x cliqueSize %d cliqueRank %d ", comm->MNNVL, comm->clique.id, comm->clique.size, comm->cliqueRank);
 
   if (comm->MNNVL) {
@@ -948,7 +948,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // AllGather1 - end
 
   // MNNVL support
-  if (nNodes > 1 && !checkMNNVL(comm) && ncclParamMNNVL() == 1) {
+  if (nNodes > 1 && !checkMNNVL(comm) && ncclParamMNNVLEnable() == 1) {
     // Return an error if the user specifically requested MNNVL support
     WARN("MNNVL is not supported on this system");
     ret = ncclSystemError;

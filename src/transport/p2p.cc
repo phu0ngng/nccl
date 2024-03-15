@@ -100,14 +100,14 @@ static int useMemcpy = 0;
 static void initCeOperation();
 
 
-extern int64_t ncclParamMNNVL();
+extern int64_t ncclParamMNNVLEnable();
 
 /* Determine if two peers can communicate through p2p */
 ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   initCeOperation();
 
   // MNNVL support
-  if (ncclParamMNNVL() != 0 && info1->hostHash != info2->hostHash) {
+  if (ncclParamMNNVLEnable() != 0 && info1->hostHash != info2->hostHash) {
     NCCLCHECK(ncclTopoCheckMNNVL(topo, info1, info2, ret));
     if (*ret) return ncclSuccess;
   }
