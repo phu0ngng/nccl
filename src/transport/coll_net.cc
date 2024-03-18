@@ -9,6 +9,7 @@
 #include "graph.h"
 #include "proxy.h"
 #include "gdrwrap.h"
+#include "transport.h"
 #include "assert.h"
 
 int64_t ncclParamGdrCopySyncEnable();
@@ -1052,7 +1053,23 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, struct ncclKernelPlan *plan, const void* userbuff, size_t buffSize, int type, int* outRegBufFlag, void** outHandle) {
+struct ncclCollnetCleanupCallback {
+  struct ncclCommCallback base;
+  struct ncclProxyConnector* proxyConn;
+  void* buffer;
+  size_t size;
+  void* mhandle;
+};
+
+static ncclResult_t cleanupCollnet(struct ncclComm* comm, struct ncclCommCallback* cb) {
+  struct ncclCollnetCleanupCallback* obj = (struct ncclCollnetCleanupCallback*)cb;
+  NCCLCHECK(ncclCollnetDeregBuffer(comm, obj->proxyConn, obj->mhandle));
+  INFO(NCCL_REG, "rank %d - deregistered collnet buffer handle %p, size %ld, buff %p", comm->rank, obj->mhandle, obj->size, obj->buffer);
+  free(obj);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* userbuff, size_t buffSize, int type, int* outRegBufFlag, void** outHandle, struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue, int* nCleanupQueueElts) {
   ncclResult_t ret = ncclSuccess;
   void* handle = NULL;
   struct ncclRegCache* cache = &comm->regCache;
@@ -1060,18 +1077,19 @@ ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, struct ncclKe
   uintptr_t addr = (uintptr_t)userbuff & -pageSize;
   size_t size = DIVUP((uintptr_t)userbuff - addr + buffSize, pageSize) * pageSize;
   collnetRegInfo info = {addr, size};
-  struct ncclCollnetHandleList* record = NULL;
+  struct ncclCollnetCleanupCallback* record = NULL;
   struct ncclProxyConnector* proxyConn = (type == collNetRecv) ? &comm->channels[0].peers[comm->nRanks]->recv[type].proxyConn : &comm->channels[0].peers[comm->nRanks]->send[type].proxyConn;
 
   *outRegBufFlag = 0;
   NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyConn, ncclProxyMsgRegister, &info, sizeof(struct collnetRegInfo), &handle, sizeof(void*)), ret, fail);
-  record = ncclMemoryPoolAlloc<struct ncclCollnetHandleList>(&comm->memPool_ncclCollnetHandleList, &comm->memPermanent);
-  record->proxyconn = proxyConn;
-  record->buffer = userbuff;
+  record = (struct ncclCollnetCleanupCallback*)malloc(sizeof(struct ncclCollnetCleanupCallback));
+  record->proxyConn = proxyConn;
+  record->buffer = (void*)userbuff;
   record->size = buffSize;
-  *outHandle = record->collnetHandle = handle;
+  *outHandle = record->mhandle = handle;
   *outRegBufFlag = 1;
-  ncclIntruQueueEnqueue(&plan->collnetHandleQueue, record);
+  ncclIntruQueueEnqueue(cleanupQueue, &record->base);
+  *nCleanupQueueElts += 1;
 
 exit:
   return ret;

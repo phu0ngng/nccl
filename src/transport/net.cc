@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "p2p.h"
 #include "profiler.h"
+#include "transport.h"
 
 static_assert(sizeof(ncclNetHandle_t) <= CONNECT_SIZE, "NET Connect info is too large");
 

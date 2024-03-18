@@ -7,6 +7,7 @@
 #include "channel.h"
 #include "param.h"
 #include "gdrwrap.h"
+#include "transport.h"
 
 ncclResult_t initChannel(struct ncclComm* comm, int channelId) {
   struct ncclChannel* channel = &comm->channels[channelId];
@@ -16,7 +17,7 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelId) {
   int nvlsRanks = comm->MNNVL ? comm->clique.size : comm->localRanks;
   int nPeers = nRanks + 1 /* Collnet */ + nvlsRanks /* NVLS */;
   channel->id = channelId;
-  channel->workFifoSent = 0;
+  channel->workFifoProduced = 0;
 
   struct ncclSharedResources* sharedRes = comm->sharedRes;
 

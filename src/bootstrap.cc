@@ -626,7 +626,7 @@ ncclResult_t bootstrapClose(void* commState) {
   struct bootstrapState* state = (struct bootstrapState*)commState;
   if (state->unexpectedConnections != NULL) {
     unexpectedFree(state);
-    if (__atomic_load_n(state->abortFlag, __ATOMIC_RELAXED) == 0) {
+    if (__atomic_load_n(state->abortFlag, __ATOMIC_ACQUIRE) == 0) {
       WARN("Unexpected connections are not empty");
       return ncclInternalError;
     }

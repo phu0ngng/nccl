@@ -50,6 +50,7 @@ TEST_F(ncclGroup_test, aggregation_mixed_bag) {
   int32_t init32[ops];
   int64_t init64[ops];
 
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i=0; i < ndev; i++) {
     for(int op=0; op < ops; op++) {
       init32[op] = op;
@@ -62,7 +63,6 @@ TEST_F(ncclGroup_test, aggregation_mixed_bag) {
     ASSERT_EQ(cudaSuccess, cudaMemcpy(buf32[i], init32, ops*sizeof(int32_t), cudaMemcpyHostToDevice));
     ASSERT_EQ(cudaSuccess, cudaMemcpy(buf64[i], init64, ops*sizeof(int64_t), cudaMemcpyHostToDevice));
 
-    ASSERT_EQ(ncclSuccess, ncclGroupStart());
     int j=0, k=0;
     while (j < 2*ops) {
       int op = k/2;
@@ -77,8 +77,8 @@ TEST_F(ncclGroup_test, aggregation_mixed_bag) {
       // over an even number of channels.
       k = (k + j)%(2*ops);
     }
-    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
   }
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
   for (int i=0; i < ndev; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));

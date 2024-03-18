@@ -9,6 +9,7 @@
 #include "bootstrap.h"
 #define ENABLE_TIMER 0
 #include "timer.h"
+#include "transport.h"
 
 struct ncclTransport* ncclTransports[NTRANSPORTS] = {
   &p2pTransport,

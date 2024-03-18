@@ -9,6 +9,7 @@
 #include "comm.h"
 #include "net.h"
 #include "register.h"
+#include "transport.h"
 
 ncclResult_t ncclNetDeregister(struct ncclComm* comm, struct ncclReg* reg) {
   struct ncclRegCache* cache = &comm->regCache;

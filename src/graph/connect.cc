@@ -6,6 +6,7 @@
 
 #include "comm.h"
 #include "graph.h"
+#include "transport.h"
 #include "trees.h"
 #include "rings.h"
 #include "topo.h"

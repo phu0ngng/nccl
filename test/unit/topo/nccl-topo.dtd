@@ -21,9 +21,9 @@
 <!ATTLIST pci busid CDATA #REQUIRED>               <!-- PCI device BDF (Bus:Device:Function), e.g. "0000:03:00.0" -->
 <!ATTLIST pci class CDATA #IMPLIED>                <!-- PCI class in hex, e.g. "0x030300" -->
 <!ATTLIST pci vendor CDATA #IMPLIED>               <!-- PCI vendor id in hex, e.g. "0x10de" -->
-<!ATTLIST pci device CDATA #IMPLIED>               <!-- PCI device id in hex, e.g. "0x15f8" --> 
+<!ATTLIST pci device CDATA #IMPLIED>               <!-- PCI device id in hex, e.g. "0x15f8" -->
 <!ATTLIST pci subsystem_vendor CDATA #IMPLIED>     <!-- PCI subsystem vendor id in hex -->
-<!ATTLIST pci subsystem_device CDATA #IMPLIED>     <!-- PCI subsystem device id in hex --> 
+<!ATTLIST pci subsystem_device CDATA #IMPLIED>     <!-- PCI subsystem device id in hex -->
 <!ATTLIST pci link_speed CDATA #IMPLIED>           <!-- PCI link speed as reported in /sys/devices/pciBBBB:DD/BBBB:DD:FF.f/max_link_speed, e.g. "32.0 GT/s PCIe" -->
 <!ATTLIST pci link_width CDATA #IMPLIED>           <!-- PCI link speed as reported in /sys/devices/pciBBBB:DD/BBBB:DD:FF.f/max_link_width, e.g. "16" -->
 

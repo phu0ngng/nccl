@@ -10,7 +10,7 @@
 #include "unpack_defs.h"
 
 #include "op128.h"
-#include "align.h"
+#include "bitops.h"
 #include "device.h"
 #include "common.h"
 

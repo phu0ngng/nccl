@@ -112,7 +112,7 @@ IB Sharp Buffer Registration
 ----------------------------
 
 NCCL 2.21.x supports IB Sharp buffer registration, any NCCL collectives that support IB Sharp algorithm can benefit from the feature such as allreduce,
-reducescatter, and allgather. Currently, NCCL only supports IB Sharp buffer registration for the communicators which contain 1 rank per node, and the 
+reducescatter, and allgather. Currently, NCCL only supports IB Sharp buffer registration for the communicators which contain 1 rank per node, and the
 registration can reduce the number of NCCL SM usage down to 1.
 
 To enable IB Sharp buffer registration by CUDA graph:
