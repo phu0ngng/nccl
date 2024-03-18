@@ -164,7 +164,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   CHECK(ncclTopoCompute(system, &nvlsGraph));
   computeTime[3] = getTime() - computeTime[3];
   CHECK(ncclTopoPrintGraph(system, &nvlsGraph));
-  computeTime[5] = computeTime[0]+computeTime[1]+computeTime[2]+computeTime[3];
+  computeTime[4] = computeTime[0]+computeTime[1]+computeTime[2]+computeTime[3];
 
   int err = 0, warn = 0, incompleteRef = 0;
 
@@ -212,12 +212,12 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     CHECK(ncclTopoGetXmlFromGraphs(4, graphs, system, xml));
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));
     free(xml);
-    printf(" %s %5ld ms\n", err ? "FAILED" : "  WARN", computeTime[5]/1000);
-  } else if (computeTime[5] > 1000000) {
-    printf("   SLOW %5ld ms [%ld+%ld+%ld+%ld]\n", computeTime[5]/1000,
+    printf(" %s %5ld ms\n", err ? "FAILED" : "  WARN", computeTime[4]/1000);
+  } else if (computeTime[4] > 1000000) {
+    printf("   SLOW %5ld ms [%ld+%ld+%ld+%ld]\n", computeTime[4]/1000,
         computeTime[0]/1000, computeTime[1]/1000, computeTime[2]/1000, computeTime[3]/1000);
     warn++;
-  } else printf("     OK %5ld ms\n", computeTime[5]/1000);
+  } else printf("     OK %5ld ms\n", computeTime[4]/1000);
   ncclTopoFree(system);
   *errors += err;
   *warnings += warn;
