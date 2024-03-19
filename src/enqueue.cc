@@ -1664,12 +1664,11 @@ static ncclResult_t getAlgoInfo(
   initCollCostTable((float **)collCostTable);
   NCCLCHECK(updateCollCostTable(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps, (float **)collCostTable, &backupAlgo, &backupProto, &backupTime));
   if (comm->tuner != NULL) {
-    int algorithm = NCCL_ALGO_UNDEF;
-    int protocol = NCCL_PROTO_UNDEF;
     NCCLCHECK(comm->tuner->getCollInfo(
           comm->tunerContext, info->func, nBytes,
           collNetSupport, nvlsSupport, numPipeOps,
-          &algorithm, &protocol, &nMaxChannels));
+          (float **)collCostTable, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
+          &nMaxChannels));
   }
   NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, backupAlgo, backupProto, backupTime, estimatedTime));
   info->nMaxChannels = nMaxChannels == 0 ? info->nMaxChannels : nMaxChannels;
