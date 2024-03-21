@@ -627,11 +627,13 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
 }
 
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
-  int *domains;
-  int64_t *ids;
-  NCCLCHECK(ncclCalloc(&domains, system->nodes[GPU].count));
-  NCCLCHECK(ncclCalloc(&ids, system->nodes[GPU].count));
+  ncclResult_t ret = ncclSuccess;
+  int *domains = NULL;
+  int64_t *ids = NULL;
   int myDomain = 0;
+  int ngpus = system->nodes[GPU].count;
+  NCCLCHECK(ncclCalloc(&domains, system->nodes[GPU].count));
+  NCCLCHECKGOTO(ncclCalloc(&ids, system->nodes[GPU].count), ret, fail);
   for (int g=0; g<system->nodes[GPU].count; g++) {
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
     domains[g] = g;
@@ -644,7 +646,6 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     if (gpu->gpu.rank == comm->rank) myDomain = domains[g];
   }
 
-  int ngpus = system->nodes[GPU].count;
   for (int i=0; i<ngpus; i++) {
     if (domains[i] == myDomain) continue;
     struct ncclTopoNode* gpu = NULL;
@@ -655,20 +656,24 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     }
     if (gpu == NULL) {
       WARN("Could not find id %lx", ids[i]);
-      free(domains);
-      free(ids);
-      return ncclInternalError;
+      ret = ncclInternalError;
+      goto fail;
     }
-    NCCLCHECK(ncclTopoRemoveNode(system, GPU, g));
+    NCCLCHECKGOTO(ncclTopoRemoveNode(system, GPU, g), ret, fail);
   }
 
   if (system->nodes[GPU].count == comm->nRanks) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
-      NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
+      NCCLCHECKGOTO(ncclTopoRemoveNode(system, NET, n), ret, fail);
   }
   free(domains);
   free(ids);
-  return ncclSuccess;
+exit:
+  return ret;
+fail:
+  if (domains) free(domains);
+  if (ids) free(ids);
+  goto exit;
 }
 
 void ncclTopoFree(struct ncclTopoSystem* system) {
