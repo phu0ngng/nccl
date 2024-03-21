@@ -540,7 +540,7 @@ static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int chan
 static ncclResult_t sharedNetBuffersDestroy(struct ncclProxyState* proxyState, int tpLocalRank, int type, struct ncclProxyConnection* connection) {
   if (proxyState->progressState.localPeers == NULL) NCCLCHECK(ncclInternalError);
   struct ncclProxyPeer* peer = proxyState->progressState.localPeers[tpLocalRank];
-  if (peer == NULL) NCCLCHECK(ncclInternalError;)
+  if (peer == NULL) NCCLCHECK(ncclInternalError);
   struct ncclProxySharedP2p* state = type == 0 ? &peer->send : &peer->recv;
   if (state->size == 0) NCCLCHECK(ncclInternalError);
   if (ncclAtomicRefCountDecrement(&state->refcount) == 0) {

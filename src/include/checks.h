@@ -67,7 +67,7 @@
     INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, RES, strerror(errno));    \
     goto label; \
   } \
-} while (0);
+} while (0)
 
 #define NEQCHECK(statement, value) do {   \
   if ((statement) != value) {             \
@@ -75,7 +75,7 @@
     INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, ncclSystemError, strerror(errno));    \
     return ncclSystemError;     \
   }                             \
-} while (0);
+} while (0)
 
 #define NEQCHECKGOTO(statement, value, RES, label) do { \
   if ((statement) != value) { \
@@ -84,7 +84,7 @@
     INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, RES, strerror(errno));    \
     goto label; \
   } \
-} while (0);
+} while (0)
 
 #define EQCHECK(statement, value) do {    \
   if ((statement) == value) {             \
@@ -92,7 +92,7 @@
     INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, ncclSystemError, strerror(errno));    \
     return ncclSystemError;     \
   }                             \
-} while (0);
+} while (0)
 
 #define EQCHECKGOTO(statement, value, RES, label) do { \
   if ((statement) == value) { \
@@ -101,7 +101,7 @@
     INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, RES, strerror(errno));    \
     goto label; \
   } \
-} while (0);
+} while (0)
 
 // Propagate errors up
 #define NCCLCHECK(call) do { \
@@ -111,7 +111,7 @@
     if (ncclDebugNoWarn == 0) INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, RES);    \
     return RES; \
   } \
-} while (0);
+} while (0)
 
 #define NCCLCHECKGOTO(call, RES, label) do { \
   RES = call; \
@@ -120,7 +120,7 @@
     if (ncclDebugNoWarn == 0) INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, RES);    \
     goto label; \
   } \
-} while (0);
+} while (0)
 
 #define NCCLWAIT(call, cond, abortFlagPtr) do {         \
   uint32_t* tmpAbortFlag = (abortFlagPtr);     \
@@ -130,7 +130,7 @@
     return ncclInternalError;             \
   }                                       \
   if (__atomic_load(tmpAbortFlag, __ATOMIC_ACQUIRE)) NEQCHECK(*tmpAbortFlag, 0); \
-} while (!(cond));
+} while (!(cond))
 
 #define NCCLWAITGOTO(call, cond, abortFlagPtr, RES, label) do { \
   uint32_t* tmpAbortFlag = (abortFlagPtr);             \
@@ -140,7 +140,7 @@
     goto label;                           \
   }                                       \
   if (__atomic_load(tmpAbortFlag, __ATOMIC_ACQUIRE)) NEQCHECKGOTO(*tmpAbortFlag, 0, RES, label); \
-} while (!(cond));
+} while (!(cond))
 
 #define NCCLCHECKTHREAD(a, args) do { \
   if (((args)->ret = (a)) != ncclSuccess && (args)->ret != ncclInProgress) { \
