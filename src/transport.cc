@@ -101,20 +101,21 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   // Stream used during transport setup; need for P2P pre-connect + CUDA Graph
   ncclResult_t ret = ncclSuccess;
   int highestType = TRANSPORT_UNDEFINED;  // track highest transport type
-  struct ncclConnect** data; // Store intermediate send/recvData structs for connect
-  struct ncclConnect** recvData; // Points to entries inside data for given recv connection within a channel
-  struct ncclConnect** sendData; // Points to entries inside data for given send connection within a channel
+  struct ncclConnect** data = NULL; // Store intermediate send/recvData structs for connect
+  struct ncclConnect** recvData = NULL; // Points to entries inside data for given recv connection within a channel
+  struct ncclConnect** sendData = NULL; // Points to entries inside data for given send connection within a channel
   int done = 0;
 
   int maxPeers = ncclParamConnectRoundMaxPeers();
-  NCCLCHECK(ncclCalloc(&data, maxPeers));
-  NCCLCHECK(ncclCalloc(&recvData, maxPeers));
-  NCCLCHECK(ncclCalloc(&sendData, maxPeers));
 
   struct timeval timeStart, timeLast;
   gettimeofday(&timeStart, NULL);
   timeLast = timeStart; // struct copy
   bool timeReported = false;
+
+  NCCLCHECKGOTO(ncclCalloc(&data, maxPeers), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&recvData, maxPeers), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&sendData, maxPeers), ret, fail);
 
   NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->hostStream), ret, fail);
   // First time initialization
@@ -131,7 +132,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     // The next M entries contain sendData, connection information for send connections
     // It's not guaranteed that each entry of data has the same number of total or send/recv specific connections
     int p = i-(done+1);
-    if (recvMask || sendMask) NCCLCHECK(ncclCalloc(data+p, 2*MAXCHANNELS));
+    if (recvMask || sendMask) NCCLCHECKGOTO(ncclCalloc(data+p, 2*MAXCHANNELS), ret, fail);
     recvData[p] = data[p];
     int sendChannels = 0, recvChannels = 0;
     int type;
@@ -284,13 +285,13 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     comm->connectRecv[recvPeer] = comm->connectSend[sendPeer] = 0UL;
   }
 
+  if (highestTransportType != NULL) *highestTransportType = highestType;
+  TIME_PRINT("P2P Setup/Connect");
+exit:
   free(data);
   free(sendData);
   free(recvData);
 
-  if (highestTransportType != NULL) *highestTransportType = highestType;
-  TIME_PRINT("P2P Setup/Connect");
-exit:
   NCCLCHECK(ncclStrongStreamWaitStream(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, &comm->sharedRes->hostStream));
   NCCLCHECK(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream));
   return ret;
