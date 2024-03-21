@@ -181,22 +181,28 @@ out:
 }
 
 ncclResult_t bootstrapCreateRoot(struct ncclBootstrapHandle* handle, bool idFromEnv) {
-  struct ncclSocket* listenSock;
-  struct bootstrapRootArgs* args;
+  ncclResult_t ret = ncclSuccess;
+  struct ncclSocket* listenSock = NULL;
+  struct bootstrapRootArgs* args = NULL;
   pthread_t thread;
 
   NCCLCHECK(ncclCalloc(&listenSock, 1));
-  NCCLCHECK(ncclSocketInit(listenSock, &handle->addr, handle->magic, ncclSocketTypeBootstrap, NULL, 0));
-  NCCLCHECK(ncclSocketListen(listenSock));
-  NCCLCHECK(ncclSocketGetAddr(listenSock, &handle->addr));
+  NCCLCHECKGOTO(ncclSocketInit(listenSock, &handle->addr, handle->magic, ncclSocketTypeBootstrap, NULL, 0), ret, fail);
+  NCCLCHECKGOTO(ncclSocketListen(listenSock), ret, fail);
+  NCCLCHECKGOTO(ncclSocketGetAddr(listenSock, &handle->addr), ret, fail);
 
-  NCCLCHECK(ncclCalloc(&args, 1));
+  NCCLCHECKGOTO(ncclCalloc(&args, 1), ret, fail);
   args->listenSock = listenSock;
   args->magic = handle->magic;
-  NEQCHECK(pthread_create(&thread, NULL, bootstrapRoot, (void*)args), 0);
+  NEQCHECKGOTO(pthread_create(&thread, NULL, bootstrapRoot, (void*)args), 0, ret, fail);
   ncclSetThreadName(thread, "NCCL BootstrapR");
-  NEQCHECK(pthread_detach(thread), 0); // will not be pthread_join()'d
-  return ncclSuccess;
+  NEQCHECKGOTO(pthread_detach(thread), 0, ret, fail); // will not be pthread_join()'d
+exit:
+  return ret;
+fail:
+  if (listenSock) free(listenSock);
+  if (args) free(args);
+  goto exit;
 }
 
 ncclResult_t bootstrapGetUniqueId(struct ncclBootstrapHandle* handle) {
