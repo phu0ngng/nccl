@@ -214,11 +214,11 @@ static void* envIbAddrRange(sa_family_t af, int* mask) {
   char addrString[128] = { 0 };
   snprintf(addrString, 128, "%s", env);
   char *addrStrPtr = addrString;
-  char *maskStrPtr = strstr(addrString, "/") + 1;
+  char *maskStrPtr = strstr(addrString, "/");
   if (NULL == maskStrPtr) {
     return NULL;
   }
-  *(maskStrPtr - 1) = '\0';
+  *(maskStrPtr++) = '\0';
 
   if (inet_pton(af, addrStrPtr, ret) == 0) {
     WARN("NET/IB: Ip address '%s' is invalid for family %s, ignoring address", addrStrPtr, (af == AF_INET) ? "AF_INET" : "AF_INET6");
