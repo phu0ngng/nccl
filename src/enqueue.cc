@@ -2068,6 +2068,7 @@ static ncclResult_t hostToDevRedOp(
   opFull->proxyOp = op;
 
   int nbits = 8*ncclTypeSize(datatype);
+  if (nbits < 0) return ncclInvalidArgument;
   uint64_t allBits = uint64_t(-1)>>(64-nbits);
   uint64_t signBit = allBits^(allBits>>1);
 
