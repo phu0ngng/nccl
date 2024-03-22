@@ -435,11 +435,11 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
       agg.devFuncId = ncclDevFuncId(agg.func, agg.op.op, agg.datatype, agg.algorithm, agg.protocol);
 
       int isCollnet=0, isNvls=0;
-      switch (aggBeg->algorithm) {
+      switch (agg.algorithm) {
       case NCCL_ALGO_NVLS:
       case NCCL_ALGO_NVLS_TREE:
         isNvls = 1;
-        isCollnet = aggBeg->algorithm == NCCL_ALGO_NVLS && comm->nNodes > 1;
+        isCollnet = agg.algorithm == NCCL_ALGO_NVLS && comm->nNodes > 1;
         break;
       case NCCL_ALGO_COLLNET_CHAIN:
       case NCCL_ALGO_COLLNET_DIRECT:
