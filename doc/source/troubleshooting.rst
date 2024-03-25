@@ -59,7 +59,7 @@ The ``nvidia-peermem`` module is now supplied with the CUDA drivers, however it 
 PCI Access Control Services (ACS)
 ---------------------------------
 
-IO virtualization (also known as, VT-d or IOMMU) can interfere with GPU Direct by redirecting all PCI point-to-point
+IO virtualization (also known as VT-d or IOMMU) can interfere with GPU Direct by redirecting all PCI point-to-point
 traffic to the CPU root complex, causing a significant performance reduction or even a hang. You can check
 whether ACS is enabled on PCI bridges by running:
 
@@ -169,9 +169,9 @@ Networking issues
 IP Network Interfaces
 ---------------------
 
-NCCL auto-detects which network interfaces to use for inter-node communication. If some interfaces are in state up, however are not able to communicate between nodes, NCCL may try to use them anyway and therefore fail during the init functions or even hang.
+NCCL auto-detects which network interfaces to use for inter-node communication. If some interfaces are in the UP state but are not able to communicate between nodes, NCCL may try to use them anyway and therefore fail during the init functions or even hang.
 
-For information about how to specify which interfaces to use, see NCCL Knobs section, particularly the NCCL_SOCKET_IFNAME knob.
+For information about how to specify which interfaces to use, see the Environment Variables section, particularly the NCCL_SOCKET_IFNAME knob.
 
 IP Ports
 --------
@@ -185,7 +185,7 @@ This example shows how to restrict NCCL ports to 50000-51000:
 
  echo 50000 51000 > /proc/sys/net/ipv4/ip_local_port_range
 
-Or to make this permanent, add a line to /set/sysctl.conf:
+Or to make this permanent, add a line to /etc/sysctl.conf:
 
 .. code:: shell
 
@@ -200,7 +200,7 @@ Restricting the port range can be useful to open a corresponding range in the fi
 InfiniBand
 ----------
 
-Before running NCCL on InfiniBand, running low-level InfiniBand tests (and in particular the ib_write_bw test) can help verify which nodes are able to communicate properly.
+Before running NCCL on InfiniBand, running low-level InfiniBand tests (and in particular the ib_write_bw test) can help verify whether the nodes are able to communicate properly.
 
 A common issue seen with InfiniBand is the library not being able to register sufficient pinned memory. In such cases you may see an error like:
 

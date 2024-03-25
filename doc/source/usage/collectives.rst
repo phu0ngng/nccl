@@ -9,10 +9,10 @@ Collective operations have to be called for each rank (hence CUDA device) to for
 AllReduce
 ---------
 
-The AllReduce operation is performing reductions on data (for example, sum, min, max) across devices and writing the result in the receive buffers of every rank.
+The AllReduce operation performs reductions on data (for example, sum, min, max) across devices and stores the result in the receive buffer of every rank.
 
-In an allreduce operation between k ranks and performing a sum, each rank will provide an array Vk of N values, and receive an identical arrays S of N values,
-where S[i] = V0[i]+V1[i]+…+Vk-1[i].
+In a *sum* allreduce operation between *k* ranks, each rank will provide an array in of N values, and receive identical results in array out of N values,
+where out[i] = in0[i]+in1[i]+…+in(k-1)[i].
 
 .. figure:: images/allreduce.png
  :align: center
@@ -26,7 +26,7 @@ Related links: :c:func:`ncclAllReduce`.
 Broadcast
 ---------
 
-The Broadcast operation copies an N-element buffer on the root rank to all ranks.
+The Broadcast operation copies an N-element buffer from the root rank to all the ranks.
 
 .. figure:: images/broadcast.png
  :align: center
@@ -42,14 +42,14 @@ Related links: :c:func:`ncclBroadcast`.
 Reduce
 ------
 
-The Reduce operation is performing the same operation as AllReduce, but writes the result only in the receive buffers of a specified root rank.
+The Reduce operation performs the same operation as AllReduce, but stores the result only in the receive buffer of a specified root rank.
 
 .. figure:: images/reduce.png
  :align: center
  
- Reduce operation : one rank receives the reduction of input values across ranks.
+ Reduce operation: one rank receives the reduction of input values across ranks.
 
-Important note : The root argument is one of the ranks (not a device number), and is therefore impacted by a different rank to device mapping.
+Important note: The root argument is one of the ranks (not a device number), and is therefore impacted by a different rank to device mapping.
 
 Note: A Reduce, followed by a Broadcast, is equivalent to the AllReduce operation.
 
@@ -60,9 +60,9 @@ Related links: :c:func:`ncclReduce`.
 AllGather
 ---------
 
-The AllGather operation gathers N values from k ranks into an output of size k*N, and distributes that result to all ranks.
+The AllGather operation gathers N values from k ranks into an output buffer of size k*N, and distributes that result to all ranks.
 
-The output is ordered by rank index. The AllGather operation is therefore impacted by a different rank or device mapping.
+The output is ordered by the rank index. The AllGather operation is therefore impacted by a different rank to device mapping.
 
 .. figure:: images/allgather.png
  :align: center
@@ -78,10 +78,10 @@ Related links: :c:func:`ncclAllGather`.
 ReduceScatter
 -------------
 
-The ReduceScatter operation performs the same operation as the Reduce operation, except the result is scattered in equal blocks between ranks,
+The ReduceScatter operation performs the same operation as Reduce, except that the result is scattered in equal-sized blocks between ranks,
 each rank getting a chunk of data based on its rank index.
 
-The ReduceScatter operation is impacted by a different rank or device mapping since the ranks determine the data layout.
+The ReduceScatter operation is impacted by a different rank to device mapping since the ranks determine the data layout.
 
 .. figure:: images/reducescatter.png
  :align: center
