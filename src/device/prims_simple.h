@@ -578,7 +578,7 @@ private:
       flags |= AnyNetDeviceUnpack;
       // RoleWaitRecv starts at tid=0, so this creates the bitmask of which recv peers
       // have NetDeviceUnpack.
-      uint32_t mask = __ballot_sync(~0u, (flags & NetDeviceUnpack) ? 1 : 0);
+      uint32_t mask = __ballot_sync(~0u, ((flags & RoleWaitRecv) && (flags & NetDeviceUnpack)) ? 1 : 0);
       if (tid == 0) {
         ncclShmem.groups[this->group].devicePlugin.unpack.unpackNetDeviceIndexMask = mask;
       }
