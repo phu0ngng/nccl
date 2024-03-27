@@ -1735,7 +1735,7 @@ exit:
 fail:
   if (comm) {
     free(comm->abortFlag);
-    if (comm->abortFlagDev) ncclCudaHostFree((void*)comm->abortFlagDev);
+    if (comm->abortFlagDev) (void)ncclCudaHostFree((void*)comm->abortFlagDev);
     free(comm->abortFlagRefCount);
     free(comm);
   }
