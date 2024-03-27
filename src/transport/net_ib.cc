@@ -2081,7 +2081,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
           TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%d wr_id=%ld r=%p type=%d events={%d,%d}, i=%d",
               ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], i);
           #endif
-          if (req->type == NCCL_NET_IB_REQ_SEND) {
+          if (req && req->type == NCCL_NET_IB_REQ_SEND) {
             for (int j = 0; j < req->nreqs; j++) {
               struct ncclIbRequest* sendReq = r->base->reqs+((wc->wr_id >> (j*8)) & 0xff);
               if ((sendReq->events[i] <= 0)) {
