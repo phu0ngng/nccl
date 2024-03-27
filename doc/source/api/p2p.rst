@@ -13,7 +13,7 @@ ncclSend
  
  Send data from ``sendbuff`` to rank ``peer``.
  
- Rank ``peer`` needs to call ncclRecv with the same ``datatype`` and the same ``count`` from this rank.
+ Rank ``peer`` needs to call ncclRecv with the same ``datatype`` and the same ``count`` as this rank.
  
  This operation is blocking for the GPU. If multiple :c:func:`ncclSend` and :c:func:`ncclRecv` operations
  need to progress concurrently to complete, they must be fused within a :c:func:`ncclGroupStart`/
@@ -28,7 +28,7 @@ ncclRecv
  
  Receive data from rank ``peer`` into ``recvbuff``.
  
- Rank ``peer`` needs to call ncclSend with the same ``datatype`` and the same ``count`` to this rank.
+ Rank ``peer`` needs to call ncclSend with the same ``datatype`` and the same ``count`` as this rank.
  
  This operation is blocking for the GPU. If multiple :c:func:`ncclSend` and :c:func:`ncclRecv` operations
  need to progress concurrently to complete, they must be fused within a :c:func:`ncclGroupStart`/

@@ -17,11 +17,11 @@ Since 2.19.x, NCCL supports user buffer registration for NVLink Sharp (NVLS); an
 
 To enable the *CUDA Graph* based buffer registration for NVLS, users have to comply with several requirements:
 
- * The buffer is allocated through :c:func:`ncclMemAlloc` or qualified allocator (see :ref:`mem_allocator`).
+ * The buffer is allocated through :c:func:`ncclMemAlloc` or a qualified allocator (see :ref:`mem_allocator`).
  * The NCCL operation is launched on a stream captured by a CUDA graph for each rank.
- * Offset to the head address of the buffer is same in collectives for each rank.
+ * Offset to the head address of the buffer is the same in collectives for each rank.
 
-Registered buffers will be deregistered when CUDA graph is destroyed. Here is a CUDA graph based buffer registration example:
+Registered buffers will be deregistered when the CUDA graph is destroyed. Here is a CUDA graph based buffer registration example:
 
 .. code:: C
 
@@ -50,9 +50,9 @@ Registered buffers will be deregistered when CUDA graph is destroyed. Here is a 
 
 On the other hand, to enable the *Local* based buffer registration for NVLS, users have to comply with the following requirements:
 
- * The buffer is allocated through :c:func:`ncclMemAlloc` or qualified allocator (see :ref:`mem_allocator`).
+ * The buffer is allocated through :c:func:`ncclMemAlloc` or a qualified allocator (see :ref:`mem_allocator`).
  * Register buffer with :c:func:`ncclCommRegister` before calling collectives for each rank.
- * Call NCCL collectives as usual but similarly keep the offset to the head address of the buffer same for each rank.
+ * Call NCCL collectives as usual but similarly keep the offset to the head address of the buffer the same for each rank.
 
 Registered buffers will be deregistered when users explicitly call :c:func:`ncclCommDeregister`. Here is a local based buffer registration example:
 
@@ -108,12 +108,30 @@ example shows a use case:
 
   CHECK(ncclMemFree(sendbuff));
 
+IB Sharp Buffer Registration
+----------------------------
+
+NCCL 2.21.x supports IB Sharp buffer registration, any NCCL collectives that support IB Sharp algorithm can benefit from the feature such as allreduce,
+reducescatter, and allgather. Currently, NCCL only supports IB Sharp buffer registration for the communicators which contain 1 rank per node, and the
+registration can reduce the number of NCCL SM usage down to 1.
+
+To enable IB Sharp buffer registration by CUDA graph:
+
+ * Allocate send and recv buffer with any CUDA allcator (e.g., cudaMalloc/ncclMemAlloc)
+ * Launch NCCL collectives with CUDA graph
+
+To enable IB Sharp buffer registration by local registration:
+
+ * Allocate send and recv buffer with any CUDA allcator (e.g., cudaMalloc/ncclMemAlloc)
+ * Register send and recv buffer for each rank in the communicator with `ncclCommRegister`
+ * Launch NCCL collectives
+
 .. _mem_allocator:
 
 Memory Allocator
 ----------------
 
-For convenience, NCCL provides `ncclMemAlloc` function to help users to allocate buffers through VMM API. For advanced users, if you want to create your own memory allocator for NVLS buffer registration, the allocator needs to satisfy the following requirements:
+For convenience, NCCL provides `ncclMemAlloc` function to help users to allocate buffers through VMM API, which can be used for NCCL registration later. It is only designed for NCCL so that it is not recommended to use `ncclMemAlloc` allocated buffers everywhere in the applications. For advanced users, if you want to create your own memory allocator for NVLS buffer registration, the allocator needs to satisfy the following requirements:
 
  * Allocate buffer with shared flag `CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR`
  * Buffer size is multiple of multicast recommended granularity (i.e. cuMulticastGetGranularity(..., `CU_MULTICAST_GRANULARITY_RECOMMENDED`))

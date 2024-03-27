@@ -23,7 +23,7 @@ NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu ft_test.cu #kernel_test.cu
-CC_FILES += graph_test.cc model.cc data.cc xml_test.cc comm_leak_test.cc channel_test.cc
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc
 KCU_FILES := align_test.cu #kernel_test.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
@@ -32,7 +32,7 @@ endif
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%) $(CC_FILES:%.cc=${DST_DIR}/%)
 KEXE_FILES:= $(KCU_FILES:%.cu=${DST_DIR}/%)
-DEP_FILES:= $(OBJ_FILES:%.o=${DST_DIR}/%.d)
+DEP_FILES:= $(OBJ_FILES:%.o=%.d)
 
 LSB_RELEASE=$(shell lsb_release -is)
 #
@@ -99,6 +99,11 @@ ${DST_DIR}/xml_test: ${DST_DIR}/xml_test.o ${STATICLIB}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 #
+${DST_DIR}/xml_fuse_test: ${DST_DIR}/xml_fuse_test.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+#
 ${DST_DIR}/ncclNet_test: ${DST_DIR}/ncclNet_test.o ${LIBOBJS}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
@@ -132,3 +137,8 @@ ${DST_DIR}/channel_test: ${DST_DIR}/channel_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl
+
+${DST_DIR}/enqueue_test: ${DST_DIR}/enqueue_test.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -lcudart

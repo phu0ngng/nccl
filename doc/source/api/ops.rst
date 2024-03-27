@@ -11,7 +11,8 @@ ncclRedOpCreatePreMulSum
 .. c:function:: ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t* op, void* scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm)
 
 Creates a new reduction operator which pre-multiplies input values by a given
-scalar locally before reducing them with peer values via summation. For use
+scalar locally before reducing them with peer values via summation. Both the
+input values and the scalar are of type *datatype*. For use
 only with collectives launched against *comm* and *datatype*. The
 *residence* argument indicates whether the memory pointed to by *scalar* should be
 dereferenced immediately by the host before this function returns

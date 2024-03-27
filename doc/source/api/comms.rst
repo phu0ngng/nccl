@@ -9,17 +9,17 @@ ncclGetLastError
 
 .. c:function:: const char* ncclGetLastError(ncclComm_t comm)
 
-Returns a human-readable string of the last error that occurred in NCCL.
+Returns a human-readable string corresponding to the last error that occurred in NCCL.
 Note: The error is not cleared by calling this function.
-Please note that the log from ncclGetLastError could be unrelated to the current call
-and can be a result of a previously launched asynchronous operations, if any.
+Please note that the string returned by ncclGetLastError could be unrelated to the current call
+and can be a result of previously launched asynchronous operations, if any.
 
 ncclGetErrorString
 ------------------
 
 .. c:function:: const char* ncclGetErrorString(ncclResult_t result)
 
-Returns a string for each error code.
+Returns a human-readable string corresponding to the passed error code.
 
 ncclGetVersion
 --------------
@@ -51,7 +51,7 @@ Creates a new communicator (multi thread/process version).
 Each rank is associated to a CUDA device, which has to be set before calling
 ncclCommInitRank.
 ncclCommInitRank implicitly synchronizes with other ranks, hence it must be
-called by different threads/processes or use ncclGroupStart/ncclGroupEnd.
+called by different threads/processes or used within ncclGroupStart/ncclGroupEnd.
 
 ncclCommInitAll
 ---------------
@@ -81,8 +81,8 @@ ncclCommSplit
 
 .. c:function:: ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t* newcomm, ncclConfig_t* config)
 
-The *ncclCommSplit* function creates a set of new communicators from an existing one. Ranks which are passed
-the same *color* value will be part of the same group, and a color must be a non-negative value. If it is 
+The *ncclCommSplit* function creates a set of new communicators from an existing one. Ranks which pass
+the same *color* value will be part of the same group; color must be a non-negative value. If it is 
 passed as *NCCL_SPLIT_NOCOLOR*, it means that the rank will not be part of any group, therefore returning NULL 
 as newcomm.
 The value of key will determine the rank order, and the smaller key means the smaller rank in new communicator.
@@ -90,7 +90,7 @@ If keys are equal between ranks, then the rank in the original communicator will
 If the new communicator needs to have a special configuration, it can be passed as *config*, otherwise setting
 config to NULL will make the new communicator inherit the original communicator's configuration.
 When split, there should not be any outstanding NCCL operations on the *comm*. Otherwise, it might cause 
-deadlock.
+a deadlock.
 
 
 ncclCommFinalize
@@ -113,11 +113,11 @@ ncclCommDestroy
 Destroy a communicator object *comm*.
 *ncclCommDestroy* only frees the local resources that are allocated to the communicator object *comm* if *ncclCommFinalize* 
 was previously called on the communicator; otherwise, *ncclCommDestroy* will call ncclCommFinalize internally. 
-If *ncclCommFinalize* is called by users, users should guarantee that the state of the communicator become *ncclSuccess* before 
+If *ncclCommFinalize* is called by users, users should guarantee that the state of the communicator becomes *ncclSuccess* before 
 calling *ncclCommDestroy*. 
-In all cases, the communicators should no longer be accessed after ncclCommDestroy returns. It is recommended that 
-user call *ncclCommFinalize* and then *ncclCommDestroy*.
-This function is an intra-node collective call, which all ranks on the same node should call to avoid hang.
+In all cases, the communicator should no longer be accessed after ncclCommDestroy returns. It is recommended that 
+users call *ncclCommFinalize* and then *ncclCommDestroy*.
+This function is an intra-node collective call, which all ranks on the same node should call to avoid a hang.
 
 ncclCommAbort
 -------------
@@ -137,9 +137,9 @@ Queries the progress and potential errors of asynchronous NCCL operations.
 Operations which do not require a stream argument (e.g. ncclCommFinalize) can be considered complete as soon
 as the function returns *ncclSuccess*; operations with a stream argument (e.g. ncclAllReduce) will return
 *ncclSuccess* as soon as the operation is posted on the stream but may also report errors through
-ncclCommGetAsyncError() until they are completed. If return code of any NCCL functions is *ncclInProgress*,
+ncclCommGetAsyncError() until they are completed. If the return code of any NCCL function is *ncclInProgress*,
 it means the operation is in the process of being enqueued in the background, and users must query the states
-of the communicators until the all states become *ncclSuccess* before calling next NCCL function. Before the
+of the communicators until all the states become *ncclSuccess* before calling another NCCL function. Before the
 states change into *ncclSuccess*, users are not allowed to issue CUDA kernel to the streams being used by NCCL.
 If there has been an error on the communicator, user should destroy the communicator with :c:func:`ncclCommAbort`.
 If an error occurs on the communicator, nothing can be assumed about the completion or correctness of operations
@@ -164,14 +164,14 @@ ncclCommUserRank
 
 .. c:function:: ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank)
 
-Returns in *rank* the rank of the NCCL communicator *comm*.
+Returns in *rank* the rank of the caller in the NCCL communicator *comm*.
 
 ncclCommRegister
 ----------------
 
 .. c:function:: ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle)
 
-Register buffer with *size* under communicator *comm* for zero-copy communication, and *handle* is
+Registers the buffer *buff* with *size* under communicator *comm* for zero-copy communication; *handle* is
 returned for future deregistration. See *buff* and *size* requirements and more instructions in :ref:`user_buffer_reg`.
 
 ncclCommDeregister

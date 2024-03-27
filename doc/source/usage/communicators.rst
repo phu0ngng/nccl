@@ -77,9 +77,9 @@ Related link: :c:func:`ncclCommGetAsyncError`
 Creating more communicators
 ---------------------------
 
-The ncclCommSplit function can be used to create a communicators based on existing one. This allows to split an existing
+The ncclCommSplit function can be used to create communicators based on an existing one. This allows to split an existing
 communicator into multiple sub-partitions, duplicate an existing communicator, or even create a single communicator with
-less ranks.
+fewer ranks.
 
 The ncclCommSplit function needs to be called by all ranks in the original communicator. If some ranks will not be part
 of any sub-group, they still need to call ncclCommSplit with color being NCCL_SPLIT_NOCOLOR.
@@ -154,10 +154,10 @@ Destroying a communicator
 
 Once a communicator has been finalized, the next step is to free all resources, including the communicator itself.
 Local resources associated to a communicator can be destroyed with ncclCommDestroy. If the state of a communicator 
-become *ncclSuccess* before calling ncclCommDestroy, ncclCommDestroy call will guarantee nonblocking; on the contrary, 
-ncclCommDestroy might be blocked. 
-In all cases, ncclCommDestroy call will free resources of the communicator and return, and
-the communicator should not longer be accessed after ncclCommDestroy returns. 
+is *ncclSuccess* when calling ncclCommDestroy, the call is guaranteed to be nonblocking; otherwise
+ncclCommDestroy might block.
+In all cases, ncclCommDestroy call will free the resources of the communicator and return, and
+the communicator should no longer be accessed after ncclCommDestroy returns.
 
 Related link: :c:func:`ncclCommDestroy`
 
@@ -166,8 +166,9 @@ Error handling and communicator abort
 *************************************
 
 All NCCL calls return a NCCL error code which is sumarized in the table below. If a NCCL call returns an error code
-different from ncclSuccess and ncclInternalError, NCCL will print a human-readable message explaining what happened
-if NCCL_DEBUG is set to WARN. If NCCL_DEBUG is set to INFO, it will also print the call stack which lead to the error.
+different from ncclSuccess and ncclInternalError, and if NCCL_DEBUG is set to WARN, NCCL will print a human-readable
+message explaining what happened.
+If NCCL_DEBUG is set to INFO, NCCL will also print the call stack which led to the error.
 This message is intended to help the user fix the problem.
 
 The table below summarizes how different errors should be understood and handled. Each case is explained in details
@@ -224,9 +225,9 @@ which caused the NCCL operation to fail. The error message should explain which 
 at and try to fix, potentially with the help of the administrators of the system.
 
 (2) ncclInternalError denotes a NCCL bug. It might not report a message with NCCL_DEBUG=WARN since it requires a
-fix in the NCCL source code. NCCL_DEBUG=INFO will print the back trace which lead to the error.
+fix in the NCCL source code. NCCL_DEBUG=INFO will print the back trace which led to the error.
 
-(3) ncclInvalidArgument indicates an argument value is incorrect, like a NULL pointer, or an out-of-bounds value.
+(3) ncclInvalidArgument indicates an argument value is incorrect, like a NULL pointer or an out-of-bounds value.
 When this error is returned, the NCCL call had no effect. The group state remains unchanged, the communicator is
 still functioning normally. The application can call ncclCommAbort or continue as if the call did not happen.
 This error will be returned immediately for a call happening within a group and applies to that specific NCCL
@@ -281,7 +282,7 @@ cudaStreamSynchronize.
       ncclErr = ncclCommAbort(comm);
       if (ncclErr != ncclSuccess)
         printf("NCCL Error : ncclCommDestroy returned %d\n", ncclErr);
-      // Caller may abort or try to re-create a new communicator.
+      // Caller may abort or try to create a new communicator.
       return 2;
     }
 
@@ -301,16 +302,16 @@ Related links:
 Fault Tolerance 
 ***************
 
-NCCL provides a set of features to allow applications to recover from fatal errors such as network failure,
-node failure, or process failure. When such an error happens, the application should be able to call ncclCommAbort
-on the communicator to free all resources, then recreate a new communicator to continue.
+NCCL provides a set of features to allow applications to recover from fatal errors such as a network failure,
+a node failure, or a process failure. When such an error happens, the application should be able to call ncclCommAbort
+on the communicator to free all resources, then create a new communicator to continue.
 All NCCL calls can be non-blocking to ensure ncclCommAbort can be called at any point, during initialization,
 communication or when finalizing the communicator.
 
-To correctly abort, when any rank in a communicator fails (e.g., due to segmentation fault), all other ranks need to 
+To correctly abort, when any rank in a communicator fails (e.g., due to a segmentation fault), all other ranks need to
 call *ncclCommAbort* to abort their own NCCL communicator.
 Users can implement methods to decide when and whether to abort the communicators and restart the NCCL operation.
-Here is an example showing how to initialize and split a communicator in a non-blocking manner, allowing for abort at any point:
+Here is an example showing how to initialize and split a communicator in a non-blocking manner, allowing for an abort at any point:
 
 .. code:: C
 
@@ -329,10 +330,10 @@ Here is an example showing how to initialize and split a communicator in a non-b
   reportErrorGlobally(abortFlag, &globalFlag);
 
   if (globalFlag) {
-    /* time is out or initialization fails, every rank need to abort and restart. */
+    /* time is out or initialization failed: every rank needs to abort and restart. */
     ncclCommAbort(comm);
     /* restart NCCL; this is a user implemented function, it might include
-     * resource clean and ncclCommInitRankConfig() to create new communicators. */
+     * resource cleanup and ncclCommInitRankConfig() to create new communicators. */
     restartNCCL(&comm);
   }
 
@@ -350,12 +351,12 @@ Here is an example showing how to initialize and split a communicator in a non-b
   if (globalFlag) {
     ncclCommAbort(comm);
     /* if chilComm is not NCCL_COMM_NULL, user should abort child communicator 
-     * here as well for resource reclaimation. */
+     * here as well for resource reclamation. */
     if (childComm != NCCL_COMM_NULL) ncclCommAbort(childComm);
     restartNCCL(&comm);
   }
   /* application workload */
 
-*checkTimeout* function is just an example and provided by users to determine what is the longest time the application should wait for
-NCCL initialization; likewise, users can apply other methods to detect errors besides timeout function. Similar methods can be applied 
+The *checkTimeout* function needs to be provided by users to determine what is the longest time the application should wait for
+NCCL initialization; likewise, users can apply other methods to detect errors besides a timeout function. Similar methods can be applied
 to NCCL finalization as well. 

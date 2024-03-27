@@ -40,7 +40,9 @@ ncclResult_t ncclAsyncLaunch(
     job->undo = undo;
     job->destructor = destructor;
     job->abortFlag = comm->abortFlag;
+    job->abortFlagDev = comm->abortFlagDev;
     job->childAbortFlag = comm->childAbortFlag;
+    job->childAbortFlagDev = comm->childAbortFlagDev;
     job->state = ncclGroupJobRunning;
     job->comm = comm;
     /* check if there are blocking and nonblocking comms at the same time in group. */
@@ -124,7 +126,7 @@ static ncclResult_t doLaunches(struct ncclComm* head) {
     struct ncclComm* comm = cliqueHead;
     bool capturingYes = false, capturingNo = false;
     do {
-      (ncclCudaGraphValid(comm->tasks.capturingGraph) ? capturingYes : capturingNo) = true;
+      (ncclCudaGraphValid(comm->planner.capturingGraph) ? capturingYes : capturingNo) = true;
       CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), result, failure);
       NCCLCHECKGOTO(ncclLaunchPrepare(comm), result, failure);
       if (useBarrier) ncclCommIntraBarrierIn(comm, 1);
@@ -142,7 +144,7 @@ static ncclResult_t doLaunches(struct ncclComm* head) {
     }
 
     while (true) { // Iterate rounds of launches for clique.
-      bool moreRounds;
+      bool moreRounds = false;
       comm = cliqueHead;
       do { // Iterate clique members.
         struct ncclComm* next = comm->groupNext;
@@ -150,19 +152,19 @@ static ncclResult_t doLaunches(struct ncclComm* head) {
           // Barrier reduction result tells us if this was the final round.
           moreRounds = 0 != ncclCommIntraBarrierOut(comm);
         } else {
-          moreRounds = comm->unlaunchedPlansHead != nullptr;
+          moreRounds |= comm->planner.unlaunchedPlansHead != nullptr;
         }
         if (moreRounds) {
           // Pop next unlaunched kernel
-          struct ncclKernelPlan* plan = comm->unlaunchedPlansHead;
+          struct ncclKernelPlan* plan = comm->planner.unlaunchedPlansHead;
           if (plan != nullptr) {
-            comm->unlaunchedPlansHead = plan->next;
+            comm->planner.unlaunchedPlansHead = plan->next;
             CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), result, failure);
             NCCLCHECKGOTO(ncclLaunchKernelBefore_NoUncapturedCuda(comm, plan), result, failure);
             NCCLCHECKGOTO(ncclLaunchKernel(comm, plan), result, failure);
           }
           // Barrier reduction input indicates if we require further rounds.
-          if (useBarrier) ncclCommIntraBarrierIn(comm, comm->unlaunchedPlansHead != nullptr ? 1 : 0);
+          if (useBarrier) ncclCommIntraBarrierIn(comm, comm->planner.unlaunchedPlansHead != nullptr ? 1 : 0);
           if (plan != nullptr) {
             NCCLCHECKGOTO(ncclLaunchKernelAfter_NoCuda(comm, plan), result, failure);
           }
@@ -210,37 +212,29 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
     // is needed.
     comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
     for (int i = 0; i < comm->nRanks; i++) {
-      comm->tasks.peers[i].sendSeen = false;
-      comm->tasks.peers[i].recvSeen = false;
       comm->connectSend[i] = 0UL;
       comm->connectRecv[i] = 0UL;
     }
-    comm->unlaunchedPlansHead = nullptr;
     // Reclaim abandoned kernel plan memory. Note ncclWork structs were already
     // reclaimed by a `ncclMemoryStackPop(&comm->memScoped)` during `ncclGroupCommLeave()`.
-    while (!ncclIntruQueueEmpty(&comm->planQueue)) {
-      struct ncclKernelPlan* plan = ncclIntruQueueDequeue(&comm->planQueue);
+    while (!ncclIntruQueueEmpty(&comm->planner.planQueue)) {
+      struct ncclKernelPlan* plan = ncclIntruQueueDequeue(&comm->planner.planQueue);
       // Persistent plans will be reclaimed via the callbackQueue when the
       // graph drops its UserObject reference.
       if (!plan->persistent) {
-        for (int c = 0; c < MAXCHANNELS; c++) {
-          while (!ncclIntruQueueEmpty(&plan->channels[c].proxyOpQueue)) {
-            struct ncclProxyOp* pxop = ncclIntruQueueDequeue(&plan->channels[c].proxyOpQueue);
-            ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, pxop);
-          }
+        while (!ncclIntruQueueEmpty(&plan->proxyOpQueue)) {
+          struct ncclProxyOp* pxop = ncclIntruQueueDequeue(&plan->proxyOpQueue);
+          ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, pxop);
         }
         ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
       }
     }
-    // Reset comm->tasks to empty.
-    comm->tasks.nTasksColl = 0;
-    comm->tasks.nTasksP2p = 0;
-    comm->tasks.workBytesTotal = 0;
-    comm->tasks.streams = nullptr;
-    ncclIntruQueueConstruct(&comm->tasks.collQueue);
-    for (int i = 0; i < comm->nRanks; i++) {
-      ncclIntruQueueConstruct(&comm->tasks.peers[i].sendQueue);
-      ncclIntruQueueConstruct(&comm->tasks.peers[i].recvQueue);
+
+    { // Reset comm->planner to empty.
+      ncclKernelPlanner::Peer* tmp = comm->planner.peers;
+      memset(&comm->planner, 0, sizeof(comm->planner));
+      comm->planner.peers = tmp;
+      memset(comm->planner.peers, 0, comm->nRanks*sizeof(comm->planner.peers[0]));
     }
 
     if (!comm->config.blocking)
@@ -269,7 +263,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
   struct ncclComm *groupCommHeadMain = *gjob->groupCommHeadPtr;
   struct ncclComm *groupCommPreconnectHeadMain = *gjob->groupCommPreconnectHeadPtr;
   struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain = gjob->asyncJobsPtr;
-  volatile bool *groupAbortFlag = gjob->abortFlagPtr;
+  bool *groupAbortFlag = gjob->abortFlagPtr;
 
   CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
 
@@ -283,6 +277,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
       job->base.destructor = free;
       job->base.state = ncclGroupJobRunning;
       job->base.abortFlag = comm->abortFlag;
+      job->base.abortFlagDev = comm->abortFlagDev;
       job->comm = comm;
       ncclIntruQueueEnqueue(asyncJobsMain, &job->base);
 
@@ -321,9 +316,13 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_) {
           assert(state == ncclGroupJobJoined);
         }
 
-        if (__atomic_load_n(groupAbortFlag, __ATOMIC_RELAXED) || errorJobAbortFlag == true) {
-          __atomic_store_n(job->abortFlag, 1, __ATOMIC_RELAXED);
-          if (job->childAbortFlag) __atomic_store_n(job->childAbortFlag, 1, __ATOMIC_RELAXED);
+        if (__atomic_load_n(groupAbortFlag, __ATOMIC_ACQUIRE) || errorJobAbortFlag == true) {
+          __atomic_store_n(job->abortFlag, 1, __ATOMIC_RELEASE);
+          __atomic_store_n(job->abortFlagDev, 1, __ATOMIC_RELEASE);
+          if (job->childAbortFlag) {
+            __atomic_store_n(job->childAbortFlag, 1, __ATOMIC_RELEASE);
+            __atomic_store_n(job->childAbortFlagDev, 1, __ATOMIC_RELEASE);
+          }
         }
 
         job = job->next;
@@ -438,7 +437,7 @@ ncclResult_t ncclGroupJobComplete(struct ncclGroupJob* groupJob) {
 
 ncclResult_t ncclGroupJobAbort(struct ncclGroupJob* groupJob) {
   if (groupJob && groupJob->initialized) {
-    __atomic_store_n(groupJob->abortFlagPtr, true, __ATOMIC_RELAXED);
+    __atomic_store_n(groupJob->abortFlagPtr, true, __ATOMIC_RELEASE);
     NCCLCHECK(ncclGroupJobComplete(groupJob));
   }
   return ncclSuccess;

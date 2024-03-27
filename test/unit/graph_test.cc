@@ -62,12 +62,16 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
         sprintf(line, "                        Channel %2d : ", i);
         while (strlen(line) < margin) sprintf(line+strlen(line), " ");
         if (i < ref->nChannels) {
-          if (inter) sprintf(line+strlen(line), "[%2d %2d] ", ref->inter[i*2], ref->inter[i*2+1]);
+          if (inter) sprintf(line+strlen(line), "[%2lx-%2lx %2lx-%2lx] ",
+              NCCL_TOPO_ID_SYSTEM_ID(ref->inter[i*2]), NCCL_TOPO_ID_LOCAL_ID(ref->inter[i*2]),
+              NCCL_TOPO_ID_SYSTEM_ID(ref->inter[i*2+1]), NCCL_TOPO_ID_LOCAL_ID(ref->inter[i*2+1]));
           for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", ref->intra[i*ngpus+g]);
         }
         while (strlen(line) < margin+width) sprintf(line+strlen(line), " ");
         if (i < out->nChannels) {
-          if (inter) sprintf(line+strlen(line), "[%2d %2d] ", out->inter[i*2], out->inter[i*2+1]);
+          if (inter) sprintf(line+strlen(line), "[%2lx-%2lx %2lx-%2lx] ",
+              NCCL_TOPO_ID_SYSTEM_ID(out->inter[i*2]), NCCL_TOPO_ID_LOCAL_ID(out->inter[i*2]),
+              NCCL_TOPO_ID_SYSTEM_ID(out->inter[i*2+1]), NCCL_TOPO_ID_LOCAL_ID(out->inter[i*2+1]));
           for (int g=0; g<ngpus; g++) sprintf(line+strlen(line), "%2d ", out->intra[i*ngpus+g]);
         }
         printf("%s\n", line);
@@ -75,11 +79,12 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
     }
   }
 }
+#define MAX_MNNVL_NODES 64
 
 void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter, int ngpus, int* errors, int* warnings) {
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
-  CHECK(ncclCalloc(&xmlSystem, 1));
+  CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES*NCCL_TOPO_XML_MAX_NODES));
   CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
   struct ncclTopoSystem* system;
   if (xmlSystem->maxIndex == 0) {
@@ -87,7 +92,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     (*errors)++;
     return;
   }
-  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
+  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
   free(xmlSystem);
   if (inter == 0) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
@@ -165,7 +170,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
 
   /* Get reference graphs from XML */
   struct ncclXml* xmlGraph;
-  CHECK(ncclCalloc(&xmlGraph, 1));
+  CHECK(xmlAlloc(&xmlGraph, NCCL_GRAPH_XML_MAX_NODES));
   if (ncclTopoGetXmlGraphFromFile(xmlGraphFile, xmlGraph) != ncclSuccess) {
     warn = 1; incompleteRef = 1;
   } else {
@@ -202,7 +207,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     char dumpFile[PATH_MAX];
     sprintf(dumpFile, "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
-    CHECK(ncclCalloc(&xml, 1));
+    CHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
     struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &cNetGraph, &nvlsGraph };
     CHECK(ncclTopoGetXmlFromGraphs(4, graphs, system, xml));
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));

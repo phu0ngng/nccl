@@ -37,7 +37,7 @@
       <net dev="3"/>
     </channel>
     <channel>
-      <net dev="10"/>
+      <net dev="a"/>
       <gpu dev="6"/>
       <gpu dev="5"/>
       <gpu dev="4"/>
@@ -46,7 +46,7 @@
       <gpu dev="1"/>
       <gpu dev="0"/>
       <gpu dev="7"/>
-      <net dev="10"/>
+      <net dev="a"/>
     </channel>
   </graph>
   <graph id="1" pattern="1" crossnic="0" nchannels="4" speedintra="24" speedinter="12" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
@@ -87,7 +87,7 @@
       <net dev="3"/>
     </channel>
     <channel>
-      <net dev="10"/>
+      <net dev="a"/>
       <gpu dev="6"/>
       <gpu dev="7"/>
       <gpu dev="0"/>
@@ -96,7 +96,7 @@
       <gpu dev="3"/>
       <gpu dev="4"/>
       <gpu dev="5"/>
-      <net dev="10"/>
+      <net dev="a"/>
     </channel>
   </graph>
   <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="1"/>

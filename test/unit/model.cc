@@ -73,11 +73,13 @@ int algoProtoSupported(int a, int p, struct ncclTopoGraph** graphs) {
   return 1;
 }
 
+#define MAX_MNNVL_NODES 64
+
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   int ngpus = nGpus;
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
-  CHECK(ncclCalloc(&xmlSystem, 1));
+  CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES*NCCL_TOPO_XML_MAX_NODES));
   CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
   struct ncclTopoSystem* system;
   if (xmlSystem->maxIndex == 0) {
@@ -85,7 +87,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     free(xmlSystem);
     return;
   }
-  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system));
+  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
   free(xmlSystem);
 
   CHECK(ncclTopoComputePaths(system, NULL));
@@ -194,11 +196,6 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.minCompCap = compCap;
   struct ncclTopoGraph* graphs[6] = { &treeGraph, &ringGraph, &cNetGraph, &cNetGraph, &nvlsGraph, &nvlsGraph };
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, graphs));
-  struct ncclInfo info;
-  info.comm = &comm;
-  info.coll = function;
-  info.chunkSteps = ALLREDUCE_CHUNKSTEPS;
-  info.sliceSteps = ALLREDUCE_SLICESTEPS;
 
   if (!compactMode) {
     printf("%s/%dx%d, %s\n", platform, nnodes, ngpus, ncclFuncStr[function]);
@@ -238,11 +235,10 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
     float model[M];
     float data[M+1];
-    info.nBytes = size;
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       if (algoProtoSupported(a, p, graphs) == 0) continue;
       int i = a*NCCL_NUM_PROTOCOLS+p;
-      CHECK(ncclTopoGetAlgoTime(&info, a, p, 1, model+i));
+      CHECK(ncclTopoGetAlgoTime(&comm, function, a, p, size, 1, model+i));
     }
 
     for (int i=0; i<M+1; i++) {

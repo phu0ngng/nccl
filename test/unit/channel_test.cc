@@ -55,17 +55,11 @@ int main(int argc, char* argv[]) {
     comm->rankToLocalRank[r] = r%8;
   }
 
-  for (int c=0; c<comm->p2pnChannels; c++) {
-    int mirror = 0;
-    for (int b=1, mb=(comm->p2pnChannels>>1); b<comm->p2pnChannels; b<<=1, mb>>=1) if (c & b) mirror |= mb;
-    comm->p2pChannels[c] = mirror;
-  }
-
   for (int r=0; r<nranks; r++) {
     printf("[%3d]", r);
     for (int i=0; i<4; i++) {
-      int channelId;
-      NCCLCHECK(ncclChannelCompute(comm, r, i, ncclFuncSend, &channelId));
+      int base = ncclP2pChannelBaseForRound(comm, r);
+      int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, i);
       printf(" %2d", channelId);
     }
     printf("\n");

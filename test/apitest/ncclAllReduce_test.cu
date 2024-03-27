@@ -35,20 +35,22 @@ TYPED_TEST(ncclAllReduce_test, host_mem) {
     }
 };
 TYPED_TEST(ncclAllReduce_test, pinned_mem) {
-    for (ncclRedOp_t op : this->RedOps) {
-        ASSERT_EQ(ncclSuccess, ncclGroupStart());
-        for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(ncclSuccess,
-                      ncclAllReduce(
-                          this->sendbuffs_pinned_device[i],
-                          this->recvbuffs_pinned_device[i],
-                          std::min(this->N, 1024 * 1024),
-                          this->DataType(), op,
-                          this->comms[i], this->streams[i]))
-                << "op: " << op << ", "
-                << "i" << i << ", " << std::endl;
+    if (this->sendbuffs_pinned_device && this->recvbuffs_pinned_device) {
+        for (ncclRedOp_t op : this->RedOps) {
+            ASSERT_EQ(ncclSuccess, ncclGroupStart());
+            for (int i = 0; i < this->nVis; ++i) {
+                ASSERT_EQ(ncclSuccess,
+                        ncclAllReduce(
+                            this->sendbuffs_pinned_device[i],
+                            this->recvbuffs_pinned_device[i],
+                            std::min(this->N, 1024 * 1024),
+                            this->DataType(), op,
+                            this->comms[i], this->streams[i]))
+                    << "op: " << op << ", "
+                    << "i" << i << ", " << std::endl;
+            }
+            ASSERT_EQ(ncclSuccess, ncclGroupEnd());
         }
-        ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
 };
 TYPED_TEST(ncclAllReduce_test, stream_null) {

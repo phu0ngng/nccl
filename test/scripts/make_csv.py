@@ -28,9 +28,9 @@ kwargs = {x[:x.index('=')]:x[x.index('=')+1:] for x in sys.argv[1:] if '=' in x 
 
 if 'file' not in kwargs: help()
 file = kwargs['file']
-csv_file = file.replace(":","_") + ".csv" # Replace : with _ for Windows filename compatability (: requried for selene job name)
-verbose = bool(kwargs.get('verbose', False))
 capture = kwargs.get('capture', 'latency')
+csv_file = file.replace(":","_") + "." + capture + ".csv" # Replace : with _ for Windows filename compatability (: requried for selene job name)
+verbose = bool(kwargs.get('verbose', False))
 inp_field_index=9 # Time (latency)
 oop_field_index=5 # Time (latency)
 if capture == 'bw':
