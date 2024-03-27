@@ -182,14 +182,15 @@ ncclResult_t ncclShmUnlink(ncclShmHandle_t handle) {
 
 ncclResult_t ncclShmemAllgather(struct ncclComm *comm, struct ncclShmemCollBuff *shmem, void *sendbuff, void *recvbuff, size_t typeSize) {
   ncclResult_t ret = ncclSuccess;
+  int curRound;
+  size_t mycnt;
 
   if (comm == NULL || shmem == NULL || sendbuff == NULL || recvbuff == NULL || shmem->maxTypeSize < typeSize) {
     ret = ncclInvalidArgument;
     goto exit;
   }
 
-  int curRound = shmem->round;
-  size_t mycnt;
+  curRound = shmem->round;
   memcpy((char*)shmem->ptr[curRound] + comm->localRank * typeSize, sendbuff, typeSize);
   /* sync among local ranks */
   mycnt = __atomic_add_fetch(shmem->cnt[curRound], 1, __ATOMIC_ACQ_REL);
