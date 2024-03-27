@@ -284,6 +284,7 @@ ncclResult_t ncclSocketGetAddrFromString(union ncclSocketAddress* ua, const char
       sin6.sin6_scope_id = 0;                          // should be global scope, set to 0
     } else {
       WARN("Net : unsupported IP family");
+      freeaddrinfo(p);
       return ncclInvalidArgument;
     }
 
