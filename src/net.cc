@@ -339,10 +339,15 @@ enum ncclNetState {
 enum ncclNetState ncclNetStates[3] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 enum ncclNetState ncclCollNetStates[3] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 
-static void* tryOpenDynamicLib(char* name) {
+static void* tryOpenLib(char* name) {
   if (nullptr == name || strlen(name) == 0) {
     return nullptr;
   }
+
+  if (strncasecmp(name, "STATIC_PLUGIN", strlen(name)) == 0) {
+    name = nullptr;
+  }
+
   void *handle = dlopen(name, RTLD_NOW | RTLD_LOCAL);
   if (nullptr == handle) {
     if (ENOENT == errno) {
@@ -386,7 +391,7 @@ static void* openNetPluginLib(void) {
   const char *envNetPluginName = getenv("NCCL_NET_PLUGIN");
   if (envNetPluginName && strlen(envNetPluginName)) {
     snprintf(netPluginLibName, PATH_MAX, "%s", envNetPluginName);
-    pluginLib = tryOpenDynamicLib(netPluginLibName);
+    pluginLib = tryOpenLib(netPluginLibName);
     if (pluginLib) {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin name set by env to %s", netPluginLibName);
       return pluginLib;
@@ -395,7 +400,7 @@ static void* openNetPluginLib(void) {
     snprintf(ptr + strlen(ptr), len + 1, "%s ", netPluginLibName);
 
     snprintf(netPluginLibName, PATH_MAX, "libnccl-net-%s.so", envNetPluginName);
-    pluginLib = tryOpenDynamicLib(netPluginLibName);
+    pluginLib = tryOpenLib(netPluginLibName);
     if (pluginLib) {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin name set by env to %s", netPluginLibName);
       return pluginLib;
@@ -404,7 +409,7 @@ static void* openNetPluginLib(void) {
     snprintf(ptr + strlen(ptr), len + 1, "%s ", netPluginLibName);
   } else {
     snprintf(netPluginLibName, PATH_MAX, "libnccl-net.so");
-    pluginLib = tryOpenDynamicLib(netPluginLibName);
+    pluginLib = tryOpenLib(netPluginLibName);
     if (pluginLib) {
       return pluginLib;
     }
