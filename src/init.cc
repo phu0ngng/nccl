@@ -2350,7 +2350,7 @@ fallback:
   CUDACHECKGOTO(cudaFree(ptr), ret, fail);
 
 exit:
-  cudaSetDevice(saveDevice);
+  CUDACHECK(cudaSetDevice(saveDevice));
   return ret;
 fail:
   goto exit;
