@@ -408,7 +408,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       job->base.abortFlag = comm->abortFlag;
       job->base.abortFlagDev = comm->abortFlagDev;
       job->comm = comm;
-      ncclIntruQueueEnqueue(asyncJobsMain, &job->base);
+      ncclIntruQueueEnqueue(asyncJobsMain,  (struct ncclAsyncJob*)job);
 
       struct ncclComm* next = comm->preconnectNext;
       comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
