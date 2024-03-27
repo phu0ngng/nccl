@@ -38,21 +38,17 @@
 
 #include <errno.h>
 // Check system calls
-#define SYSCHECK(call, name) do { \
+#define SYSCHECK(statement, name) do { \
   int retval; \
-  SYSCHECKVAL(call, name, retval); \
-} while (false)
-
-#define SYSCHECKVAL(call, name, retval) do { \
-  SYSCHECKSYNC(call, name, retval); \
+  SYSCHECKSYNC((statement), name, retval); \
   if (retval == -1) { \
-    WARN("Call to " name " failed : %s", strerror(errno)); \
+    WARN("Call to " name " failed: %s", strerror(errno)); \
     return ncclSystemError; \
   } \
 } while (false)
 
-#define SYSCHECKSYNC(call, name, retval) do { \
-  retval = call; \
+#define SYSCHECKSYNC(statement, name, retval) do { \
+  retval = (statement); \
   if (retval == -1 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)) { \
     INFO(NCCL_ALL,"Call to " name " returned %s, retrying", strerror(errno)); \
   } else { \
@@ -60,8 +56,10 @@
   } \
 } while(true)
 
-#define SYSCHECKGOTO(statement, RES, label) do { \
-  if ((statement) == -1) {    \
+#define SYSCHECKGOTO(statement, name, RES, label) do { \
+  int retval; \
+  SYSCHECKSYNC((statement), name, retval); \
+  if (retval == -1) { \
     /* Print the back trace*/ \
     RES = ncclSystemError;    \
     INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, RES, strerror(errno));    \

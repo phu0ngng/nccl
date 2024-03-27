@@ -66,7 +66,7 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
   // Mark socket as non-blocking
   if (handle->abortFlag) {
     int flags;
-    EQCHECK(flags = fcntl(fd, F_GETFL), -1);
+    SYSCHECK(flags = fcntl(fd, F_GETFL), "fcntl");
     SYSCHECK(fcntl(fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
   }
 
