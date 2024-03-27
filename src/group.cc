@@ -80,7 +80,7 @@ void* ncclAsyncJobMain(void* arg) {
 
 ncclResult_t ncclAsyncJobComplete(struct ncclAsyncJob* job) {
   ncclResult_t ret;
-  SYSCHECK(pthread_join(job->thread, NULL), "pthread_join");
+  NEQCHECK(pthread_join(job->thread, NULL), 0);
   if (job->result != ncclSuccess) {
     WARN("ncclAsyncJobComplete: job %p failed, job error %d", job, job->result);
   }
@@ -334,7 +334,7 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
   if (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueHead(asyncJobsMain);
     do {
-      SYSCHECKGOTO(pthread_create(&job->thread, nullptr, ncclAsyncJobMain, job), ret, fail);
+      NEQCHECKGOTO(pthread_create(&job->thread, nullptr, ncclAsyncJobMain, job), 0, ret, fail);
       job = job->next;
     } while (job != nullptr);
 
@@ -551,7 +551,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       }
 
       ncclGroupJobMainPtr->base.func = groupLaunchNonBlocking;
-      SYSCHECKGOTO(pthread_create(&ncclGroupJobMainPtr->base.thread, NULL, ncclAsyncJobMain, (void*)&ncclGroupJobMainPtr->base), ret, fail);
+      NEQCHECKGOTO(pthread_create(&ncclGroupJobMainPtr->base.thread, NULL, ncclAsyncJobMain, (void*)&ncclGroupJobMainPtr->base), 0, ret, fail);
       ret = ncclInProgress;
     } else {
       /* blocking group */
