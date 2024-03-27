@@ -722,6 +722,10 @@ process_nextops:
     if (freeOp[i] == -1) continue;
     int newFree = freeOp[i];
     int oldFree = pool->freeOps[i];
+    // Coverity gets confused by the complex code structure here.  The previous "for" loop ensures that freeOpEnd[i]
+    // is initialized so long as freeOp[i] is initialized (is not -1).  In the current loop we filter out uninitialized
+    // freeOp[i], hence ensuring that freeOpEnd[i] is also initialized.
+    // coverity[uninit_use:FALSE]
     pool->ops[freeOpEnd[i]].next = oldFree;
     if (oldFree == -1) {
       // Nothing for the main thread to consume, we can set it.
@@ -1389,30 +1393,37 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
 }
 
 static ncclResult_t proxyServiceInitOp(int type, struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclProxyState* proxyState, int* asyncOpCount) {
+  ncclResult_t ret = ncclSuccess;
   struct ncclSocket* sock = &peer->sock;
   struct ncclProxyAsyncOp* asyncOp;
   NCCLCHECK(ncclCalloc(&asyncOp, 1));
 
   asyncOp->type = type;
-  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->connection, sizeof(void*)));
+  NCCLCHECKGOTO(ncclSocketRecv(sock, &asyncOp->connection, sizeof(void*)), ret, fail);
 
-  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->reqSize, sizeof(int)));
-  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->respSize, sizeof(int)));
+  NCCLCHECKGOTO(ncclSocketRecv(sock, &asyncOp->reqSize, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(ncclSocketRecv(sock, &asyncOp->respSize, sizeof(int)), ret, fail);
   if (asyncOp->reqSize) {
-    NCCLCHECK(ncclCalloc(&asyncOp->reqBuff, asyncOp->reqSize));
-    NCCLCHECK(ncclSocketRecv(sock, asyncOp->reqBuff, asyncOp->reqSize));
+    NCCLCHECKGOTO(ncclCalloc(&asyncOp->reqBuff, asyncOp->reqSize), ret, fail);
+    NCCLCHECKGOTO(ncclSocketRecv(sock, asyncOp->reqBuff, asyncOp->reqSize), ret, fail);
   }
 
   // Store opId for completion response
-  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->opId, sizeof(asyncOp->opId)));
+  NCCLCHECKGOTO(ncclSocketRecv(sock, &asyncOp->opId, sizeof(asyncOp->opId)), ret, fail);
 
-  if (asyncOp->respSize) NCCLCHECK(ncclCalloc(&asyncOp->respBuff, asyncOp->respSize));
+  if (asyncOp->respSize) NCCLCHECKGOTO(ncclCalloc(&asyncOp->respBuff, asyncOp->respSize), ret, fail);
 
   asyncProxyOpEnqueue(peer, asyncOp);
 
   (*asyncOpCount)++;
   NCCLCHECK(proxyProgressAsync(asyncOp, proxyState, asyncOpCount, peer, connectionPool));
-  return ncclSuccess;
+exit:
+  return ret;
+fail:
+  free(asyncOp->reqBuff);
+  free(asyncOp->respBuff);
+  free(asyncOp);
+  goto exit;
 }
 
 #include <poll.h>
@@ -1515,6 +1526,9 @@ void* ncclProxyService(void* _args) {
       while (op != nullptr) {
         ncclProxyAsyncOp* opnext = op->next; /* in case op is freed in proxyProgressAsync */
         type = op->type;
+        // Coverity gets confused here by complex code structure.  Yes, connectionPool.pools gets dereferenced, and
+        // while calling proxyProgressAsync() connectionPool.pools is NULL, but that changes before it's dereferenced.
+        // coverity[var_deref_model:FALSE]
         res = proxyProgressAsync(op, proxyState, &asyncOpCount, peer, &connectionPool);
         if (res == ncclSuccess || res == ncclInProgress) {
           op = opnext;
@@ -1562,7 +1576,7 @@ void* ncclProxyService(void* _args) {
       }
 
       if (closeConn) {
-        ncclSocketClose(sock);
+        (void)ncclSocketClose(sock);
 
         if (op != nullptr) {
           asyncProxyOpDequeue(peer, op);
@@ -1579,10 +1593,10 @@ void* ncclProxyService(void* _args) {
     WARN("[Proxy Service] proxyDestroy failed");
   }
   for (int s=0; s<maxnpeers; s++) {
-    ncclSocketClose(&peers[s].sock);
+    (void)ncclSocketClose(&peers[s].sock);
   }
   ncclProxyFreeConnections(&connectionPool, proxyState);
-  ncclSocketClose(proxyState->listenSock);
+  (void)ncclSocketClose(proxyState->listenSock);
   free(proxyState->listenSock);
   proxyOpsFree(proxyState);
   return NULL;
