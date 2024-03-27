@@ -104,6 +104,9 @@ static ncclResult_t followPath(struct ncclTopoLinkList* path, struct ncclTopoNod
       if (revLink == NULL) NCCLCHECK(findRevLink(node, link->remNode, link->type, &revLink));
       revBw += fwBw;
     }
+    // Coverity thinks that revLink could be NULL below.  However, we access it only if revBw is non-0, and the
+    // logic of the code is that revBw can become non-0 only if revLink is non-NULL (see the "if" statement right above).
+    // coverity[var_deref_op]
     if (link->bw < fwBw || (revBw && revLink->bw < revBw)) { *steps = step; return ncclSuccess; }
     SUB_ROUND(link->bw, fwBw);
     if (revBw) SUB_ROUND(revLink->bw, revBw);
