@@ -102,6 +102,10 @@ ncclResult_t ncclNvmlEnsureInitialized() {
     for(Symbol sym: symbols) {
       *sym.ppfn = dlsym(libhandle, sym.name);
     }
+    // Coverity rightly reports that we leak memory by not dlclose'ing
+    // libhandle, but that's deliberate in this case since we want
+    // the looked up function pointers to remain valid.
+    // coverity[leaked_storage]
   }
   #endif
 
