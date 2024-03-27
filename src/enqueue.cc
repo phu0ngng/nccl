@@ -1751,7 +1751,8 @@ static ncclResult_t computeCollChunkInfo(struct ncclInfo* collInfo, size_t nByte
   } else if (collInfo->algorithm == NCCL_ALGO_NVLS_TREE) {
     // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
     uint64_t concurrentOps = nChannels * collInfo->comm->channels[0].nvls.nHeads;
-    int maxChunkSize = std::min(collInfo->comm->nvlsChunkSize, (int)ncclParamNvlsTreeMaxChunkSize());
+    chunkSize = collInfo->comm->nvlsChunkSize;
+    int maxChunkSize = (int)ncclParamNvlsTreeMaxChunkSize();
     if (maxChunkSize == -2) maxChunkSize = collInfo->comm->nNodes >= 4 ? 65536 : chunkSize;
     chunkSize = std::min(chunkSize, maxChunkSize);
     if ((nBytes < (32 * (concurrentOps * chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
