@@ -448,6 +448,10 @@ __host__ __device__ constexpr T max_constexpr(T a, T b, Ts ...c) {
   return max_constexpr<T>((a > b ? a : b), c...);
 }
 
+constexpr int ncclDevMaxChannelsForArgsBytes(size_t argsBytes) {
+  return min_constexpr<size_t>(MAXCHANNELS, (argsBytes - sizeof(struct ncclDevKernelArgs))/sizeof(struct ncclDevWorkBatch));
+}
+
 // Calculate the unroll factor given:
 // * bytePerPack: number of bytes accessed per instruction
 // * insns: max permissible unroll value

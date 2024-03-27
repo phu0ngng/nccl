@@ -33,10 +33,15 @@ uint64_t rng() {
   return rngState[0];
 }
 
+long envget(char const *name, long deft) {
+  char const *s = getenv(name);
+  long ans = deft;
+  sscanf((s?s:""), "%ld", &ans);
+  return ans;
+}
+
 int main() {
-  long bufSize = 1<<20;
-  char const *bufSizeStr = getenv("BUF_SIZE");
-  sscanf(bufSizeStr ? bufSizeStr : "", "%ld", &bufSize);
+  long bufSize = envget("BUF_SIZE", 1<<20);
   bufSize = (bufSize + 16-1) & -16;
 
   // initialize ////////////////////////////////////////////////////////////////
