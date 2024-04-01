@@ -1971,6 +1971,7 @@ exit:
   if (comm && !comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)); }
   return ret;
 fail:
+  free(job);
   if (comm && !comm->config.blocking) (void) ncclCommSetAsyncError(comm, ret);
   goto exit;
 }
