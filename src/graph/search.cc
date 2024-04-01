@@ -41,6 +41,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system) {
   int inter = system->nodes[NET].count;
   if (inter == 0 && system->nodes[GPU].count == 1) {
     system->maxBw = LOC_BW;
+    system->totalBw = LOC_BW;
     return ncclSuccess;
   }
   for (int g=0; g<system->nodes[GPU].count; g++) {
@@ -918,7 +919,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   int speedIndex = 0;
   float maxBw = system->maxBw;
   float totalBw = system->totalBw;
-  if (ngpus == 1 || graph->pattern != NCCL_TOPO_PATTERN_RING) totalBw *= ngpus*1.0/(ngpus-1);
+  if (ngpus > 1 && graph->pattern != NCCL_TOPO_PATTERN_RING) totalBw *= ngpus*1.0/(ngpus-1);
   while ((speedArray[speedIndex] > maxBw || speedArray[speedIndex]*graph->minChannels > totalBw) && speedIndex < nspeeds-1) speedIndex++;
   tmpGraph.bwIntra = tmpGraph.bwInter = speedArray[speedIndex];
   int64_t globalTimeout = NCCL_SEARCH_GLOBAL_TIMEOUT;
