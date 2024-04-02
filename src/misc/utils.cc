@@ -94,8 +94,8 @@ uint64_t getHostHash(void) {
         strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
         free(p);
       }
+      fclose(file);
     }
-    fclose(file);
   }
 
   // Make sure the string is terminated
