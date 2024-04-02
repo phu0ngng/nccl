@@ -2313,6 +2313,8 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
 fallback:
 #endif
+  // Coverity wrongly complains about ptr being NULL, saying cudaMalloc dereferences it
+  // coverity[var_deref_model]
   CUDACHECKGOTO(cudaMalloc(ptr, size), ret, fail);
 
 exit:
