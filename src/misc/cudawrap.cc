@@ -108,7 +108,7 @@ bool ncclCudaLaunchBlocking = false;
 
 #if CUDART_VERSION >= 12000
 #define LOAD_SYM(symbol, ignore) do {                                   \
-    cudaDriverEntryPointQueryResult driverStatus;                       \
+    cudaDriverEntryPointQueryResult driverStatus = cudaDriverEntryPointSuccess; \
     res = cudaGetDriverEntryPoint(#symbol, (void **) (&pfn_##symbol), cudaEnableDefault, &driverStatus); \
     if (res != cudaSuccess || driverStatus != cudaDriverEntryPointSuccess) { \
       if (!ignore) {                                                    \
