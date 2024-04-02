@@ -325,7 +325,7 @@ int ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collN
   struct ncclTransportComm* transportComm = (type == collNetRecv) ? &(collNetTransport.recv) : &(collNetTransport.send);
   conn->transportComm = transportComm;
   // setup
-  struct ncclConnect myConnect;
+  struct ncclConnect myConnect = { 0 };
   struct {
     int isMaster;
     ncclConnect connect;
