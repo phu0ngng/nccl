@@ -735,15 +735,15 @@ static ncclResult_t scheduleCollTasksToPlan(
           (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
           (long)devWork->collnet.count, devWork->collnet.chunkCount);
       } else {
-        TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkCount{Lo,Mid,Hi}={%d,%d,%d}\n",
+        TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkBytes{Lo,Mid,Hi}={%d,%d,%d}\n",
           ncclFuncToString(task->func), ncclDevRedOpToString(task->op.op),
           ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
           ncclProtoToString(task->protocol),
           (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
           (long)devWork->cbd.countLo, (long)devWork->cbd.countMid, (long)devWork->cbd.countHi,
-          int(devWork->cbd.chunkCountLo_1K*1024*elementSize),
-          int(devWork->cbd.chunkCountMid_1K*1024*elementSize),
-          int(devWork->cbd.chunkCountHi_1K*1024*elementSize));
+          int(devWork->cbd.chunkGrainsLo*ncclProtoGrainSize(task->protocol)),
+          int(devWork->cbd.chunkGrainsMid*ncclProtoGrainSize(task->protocol)),
+          int(devWork->cbd.chunkGrainsHi*ncclProtoGrainSize(task->protocol)));
       }
     }
 
