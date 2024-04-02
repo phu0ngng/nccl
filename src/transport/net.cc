@@ -524,7 +524,7 @@ static ncclResult_t sharedNetBuffersInit(struct ncclProxyState* proxyState, int 
     NCCLCHECK(ncclCudaHostCalloc(&state->hostBuff, state->size));
   }
   if (cpuPtr) *cpuPtr = cuda ? state->cudaBuff : state->hostBuff;
-  if (gpuPtr) *gpuPtr = sameProcess ? *cpuPtr : NULL;
+  if (gpuPtr) *gpuPtr = cpuPtr && sameProcess ? *cpuPtr : NULL;
   if (ipcDesc) memcpy(ipcDesc, &state->ipcDesc, sizeof(state->ipcDesc));
   return ncclSuccess;
 }
