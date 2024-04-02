@@ -40,9 +40,8 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
 
   // breadth-first search to set all paths to that node in the system
   struct ncclTopoNodeList nodeList;
-  struct ncclTopoNodeList nextNodeList;
+  struct ncclTopoNodeList nextNodeList = { { 0 }, 0 };
   nodeList.count = 1; nodeList.list[0] = baseNode;
-  nextNodeList.count = 0;
   struct ncclTopoLinkList* basePath;
   NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &basePath));
   basePath->count = 0;
