@@ -8,15 +8,6 @@ stages:
   - perf_regression
   - replay_tests
 
-# Run our CI on:
-# - Every commit to master
-# - Every commit to a merge request
-# - Schedules (nightlies and weeklies)
-# - Merge requests without "Draft:" in the title
-workflow:
-  rules:
-    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable")
-
 variables:
   RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
   MULTI_PERFTEST_NODE_COUNT: 4
@@ -30,6 +21,15 @@ variables:
   SHARP_MULTI_JOB_TIME:  10
   RUN_ON_SELENE_SHARP: "0"
   BUILD_TRACE: "0"
+
+# Run our CI on:
+# - Every commit to master
+# - Every commit to a merge request
+# - Schedules (nightlies and weeklies)
+# - Merge requests without "Draft:" in the title
+workflow:
+  rules:
+    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == "$v2.22")
 
 build:
   stage: build
