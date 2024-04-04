@@ -150,7 +150,7 @@ class Primitives<
       else {
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*connStepSize;
       }
-      if ((flags & (AnyNetDeviceUnpack)) && (flags & (Recv*RoleWaitRecv))) {
+      if (flags & NetDeviceUnpack) {
         ncclNetDeviceIncrementHead(group);
       }
       step += StepPerSlice;
@@ -591,7 +591,7 @@ private:
       while (*ptr != -1) if (checkAbort(spins)) break;
     }
 
-    if ((flags & (AnyNetDeviceUnpack)) && (flags & (RoleWaitRecv))) {
+    if (flags & NetDeviceUnpack) {
       ncclNetDeviceSaveHead(netDeviceHandle, group);
     }
 
