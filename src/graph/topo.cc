@@ -52,7 +52,12 @@ static ncclResult_t findLocalCpu(struct ncclTopoNode* node, struct ncclTopoNode*
     return ncclSuccess;
   }
   for (int l=0; l<node->nlinks; l++) {
-    if (node->links[l].type == LINK_PCI) NCCLCHECK(findLocalCpu(node->links[l].remNode, cpu));
+    // Go up the PCI tree to find the CPU. Follow only PCI switches.
+    if (node->links[l].type == LINK_PCI
+	&& (node->links[l].remNode->type == PCI
+	    || node->links[l].remNode->type == CPU)) {
+      NCCLCHECK(findLocalCpu(node->links[l].remNode, cpu));
+    }
     if (*cpu != NULL) return ncclSuccess;
   }
   return ncclSuccess;
