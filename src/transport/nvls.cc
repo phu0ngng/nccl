@@ -51,7 +51,7 @@ ncclResult_t nvlsGetProperties(struct ncclComm *comm, struct ncclNvlsSharedRes* 
   CUmulticastObjectProp* prop = &resources->properties;
   memset(prop, 0, sizeof(*prop));
   prop->size = size;
-  prop->numDevices = comm->MNNVL ? comm->clique.size : comm->localRanks;
+  prop->numDevices = comm->localRanks;
   prop->handleTypes = ncclCuMemHandleType;
   prop->flags = 0;
 

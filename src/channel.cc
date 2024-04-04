@@ -14,7 +14,7 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelId) {
   if (channel->id != -1) return ncclSuccess;
 
   int nRanks = comm->nRanks;
-  int nvlsRanks = comm->MNNVL ? comm->clique.size : comm->localRanks;
+  int nvlsRanks = comm->localRanks;
   int nPeers = nRanks + 1 /* Collnet */ + nvlsRanks /* NVLS */;
   channel->id = channelId;
   channel->workFifoProduced = 0;
@@ -75,7 +75,8 @@ ncclResult_t initNvlsChannel(struct ncclComm* comm, int channelId, struct ncclCo
 
   NCCLCHECK(ncclStrongStreamAcquireUncaptured(&sharedRes->deviceStream));
 
-  int nvlsRanks = comm->MNNVL ? comm->clique.size : comm->localRanks;
+  int nvlsRanks = comm->localRanks;
+
   if (share) {
     channel->nvlsPeers = parent->channels[channelId].nvlsPeers;
     channel->nvlsDevPeers = parent->channels[channelId].nvlsDevPeers;
