@@ -274,12 +274,28 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   CUCHECK(cuCtxGetDevice(&dev));
 
   ncclResult_t res = ncclSuccess;
-  bool nvlsShare = true;
-  if (parent && parent->nvlsSupport && parent->config.splitShare && parent->localRanks == comm->localRanks)
+  bool nvlsShare = parent && parent->nvlsSupport && parent->config.splitShare;
+  if (nvlsShare && parent->channels[0].nvls.nHeads == nHeads) {
+    for (int ch = 0; ch < nHeads; ++ch) {
+      bool find = false;
+      for (int h = 0; h < parent->channels[0].nvls.nHeads; ++h) {
+        if (comm->nvlsHeads[ch] == parent->nvlsHeads[h]) {
+          // find the head
+          find = true;
+          break;
+        }
+      }
+      if (find == false) {
+        nvlsShare = false;
+        goto setup;
+      }
+    }
     nvlsShare = true;
-  else
+  } else {
     nvlsShare = false;
+  }
 
+setup:
   if (nvlsShare) {
     /* reuse NVLS resources */
     comm->nvlsChannels = std::min(comm->nvlsChannels, parent->nvlsResources->nChannels);
