@@ -53,6 +53,11 @@ NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1 ./ft_test
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("FT TESTS Network")
 echo "=============================== FT TESTS Network DONE - $(date +\"%T\") ============================"
 
+echo "=============================== PLUGIN TESTS Net/Tuner - $(date +\"%T\") ==========================="
+make -C ../../../ext-mixed/example test
+[ $? -ne 0 ] && let failure_count=$failer_count+1 && failure_names+=("PLUGIN TESTS Net/Tuner")
+echo "=============================== PLUGIN TESTS Net/Tuner DONE - $(date +\"%T\") ======================"
+
 for str in "${failure_names[@]}"
 do
   echo "Failed Step: $str"
