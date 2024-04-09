@@ -153,6 +153,7 @@ unit_tests-GP100:
   tags:
     - gp100
   variables:
+    NCCL_CUMEM_ENABLE: "0"
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
   script:
@@ -226,6 +227,7 @@ apitest-GP100:
   tags:
     - gp100
   variables:
+    NCCL_CUMEM_ENABLE: "0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
@@ -358,6 +360,7 @@ perftest-GP100:
   tags:
     - gp100
   variables:
+    NCCL_CUMEM_ENABLE: "0"
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
