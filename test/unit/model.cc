@@ -418,7 +418,7 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if (compactMode == -1) compactMode = nGpus == -1 || nNodes == -1 || platform == NULL || function == -1 ? 1 : 0;
+  if (compactMode == -1) compactMode = nGpus == -1 || nNodes == -1 || platform == NULL || function == (ncclFunc_t)-1 ? 1 : 0;
 
   if (compactMode) {
     COMPACT_SEPARATOR;
