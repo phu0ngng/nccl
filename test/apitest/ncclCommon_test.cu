@@ -1,4 +1,5 @@
 #include "ncclCommon_test.cuh"
+#include <cstdint>
 #include <execinfo.h>
 #include <stdint.h>
 // these are Template specialization
