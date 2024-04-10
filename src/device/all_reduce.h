@@ -376,11 +376,13 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
     const int tidEndBcast = tidEndReduce + nThreadsBcast;
 
     if (work->oneNode) {
-      ssize_t gridOffset, channelCount, chunkSize;
-      ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkSize);
+      ssize_t totalCount, gridOffset, channelCount, chunkSize;
+      ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), &totalCount, &gridOffset, &channelCount, &chunkSize);
       const ssize_t loopCount = nvls->nHeads * chunkSize;
       ssize_t offset;
       int nelem;
+      int remCount = totalCount%(nvls->nHeads*chunkSize);
+      int lastChunkSize = alignUp(divUp(remCount, nvls->nHeads), 16/sizeof(T));
 
       if (tid < tidEndScatter) {
         // Scatter
@@ -389,7 +391,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
           prims(tid, nThreadsScatter, NULL, nvls->up, work->sendbuff, NULL,
             work->redOpArg, 0 * Proto::MaxGroupWidth, 1, 1);
         for (ssize_t elemOffset = 0; elemOffset < channelCount; elemOffset += loopCount) {
-          if (channelCount - elemOffset < loopCount) chunkSize = alignUp((channelCount-elemOffset)/nvls->nHeads, 16/sizeof(T));
+          if (channelCount - elemOffset < loopCount) chunkSize = lastChunkSize;
           offset = gridOffset + elemOffset;
           nelem = work->regUsed ? 0 : min(loopCount, channelCount - elemOffset);
           prims.scatter(offset, nelem, chunkSize, chunkSize, -1, 0);
@@ -401,7 +403,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
           prims(tid - tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, work->recvbuff,
             work->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1);
         for (ssize_t elemOffset = 0; elemOffset < channelCount; elemOffset += loopCount) {
-          if (channelCount - elemOffset < loopCount) chunkSize = alignUp((channelCount-elemOffset)/nvls->nHeads, 16/sizeof(T));
+          if (channelCount - elemOffset < loopCount) chunkSize = lastChunkSize;
           offset = gridOffset + elemOffset;
           nelem = work->regUsed ? 0 : min(loopCount, channelCount - elemOffset);
           prims.gather(offset, nelem, chunkSize, chunkSize, -1, 0);
@@ -414,7 +416,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
             work->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, work);
         for (ssize_t elemOffset = 0; elemOffset < channelCount; elemOffset += loopCount) {
           ssize_t chunkOffset;
-          if (channelCount - elemOffset < loopCount) chunkSize = alignUp((channelCount-elemOffset)/nvls->nHeads, 16/sizeof(T));
+          if (channelCount - elemOffset < loopCount) chunkSize = lastChunkSize;
           chunkOffset = elemOffset + nvls->headRank * chunkSize;
           offset = gridOffset + chunkOffset;
           nelem = min(chunkSize, channelCount - chunkOffset);
@@ -496,8 +498,8 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
     struct ncclNvls* nvls = &ncclShmem.channel.nvls;
     const int treeUp = nvls->treeUp;
     const int* treeDown = nvls->treeDown;
-    ssize_t gridOffset, channelCount, chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
+    ssize_t totalCount, gridOffset, channelCount, chunkCount;
+    ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), &totalCount, &gridOffset, &channelCount, &chunkCount);
     const ssize_t loopCount = nvls->nHeads * chunkCount;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasUp = treeUp != -1;
@@ -508,6 +510,8 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
     const int gatherWarps = work->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps) >> 1;
     ssize_t offset;
     int nelem;
+    int remCount = totalCount%(nvls->nHeads*chunkCount);
+    int lastChunkCount = alignUp(divUp(remCount, nvls->nHeads), 16/sizeof(T));
 
     const int nThreadsScatter = scatterWarps*WARP_SIZE;
     const int nThreadsGather  = gatherWarps*WARP_SIZE;
@@ -525,7 +529,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
         prims(tid, nThreadsScatter, NULL, nvls->up, work->sendbuff, NULL,
           work->redOpArg, 0 * Proto::MaxGroupWidth, 1, 1);
       for (ssize_t elemOffset = 0; elemOffset < channelCount; elemOffset += loopCount) {
-        if (channelCount - elemOffset < loopCount) chunkCount = alignUp((channelCount-elemOffset)/nvls->nHeads, 16/sizeof(T));
+        if (channelCount - elemOffset < loopCount) chunkCount = lastChunkCount;
         offset = gridOffset + elemOffset;
         nelem = work->regUsed ? 0 : min(loopCount, channelCount - elemOffset);
         prims.scatter(offset, nelem, chunkCount, chunkCount, -1, 0);
@@ -537,7 +541,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
         prims(tid - tidEndScatter, nThreadsGather, nvls->up, NULL, NULL, work->recvbuff,
           work->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1);
       for (ssize_t elemOffset = 0; elemOffset < channelCount; elemOffset += loopCount) {
-        if (channelCount - elemOffset < loopCount) chunkCount = alignUp((channelCount-elemOffset)/nvls->nHeads, 16/sizeof(T));
+        if (channelCount - elemOffset < loopCount) chunkCount = lastChunkCount;
         offset = gridOffset + elemOffset;
         nelem = work->regUsed ? 0 : min(loopCount, channelCount - elemOffset);
         prims.gather(offset, nelem, chunkCount, chunkCount, -1, 0);
@@ -551,7 +555,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
             work->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, work);
         for (ssize_t elemOffset = 0; elemOffset < channelCount; elemOffset += loopCount) {
           ssize_t chunkOffset;
-          if (channelCount - elemOffset < loopCount) chunkCount = alignUp((channelCount-elemOffset)/nvls->nHeads, 16/sizeof(T));
+          if (channelCount - elemOffset < loopCount) chunkCount = lastChunkCount;
           chunkOffset = elemOffset + nvls->headRank * chunkCount;
           offset = gridOffset + chunkOffset;
           nelem = min(chunkCount, channelCount - chunkOffset);
@@ -565,7 +569,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
             work->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, work);
         for (ssize_t elemOffset = 0; elemOffset < channelCount; elemOffset += loopCount) {
           ssize_t chunkOffset;
-          if (channelCount - elemOffset < loopCount) chunkCount = alignUp((channelCount-elemOffset)/nvls->nHeads, 16/sizeof(T));
+          if (channelCount - elemOffset < loopCount) chunkCount = lastChunkCount;
           chunkOffset = elemOffset + nvls->headRank * chunkCount;
           offset = gridOffset + chunkOffset;
           nelem = min(chunkCount, channelCount - chunkOffset);
@@ -580,7 +584,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
           work->redOpArg, 3 * Proto::MaxGroupWidth, 0, 0, work);
       for (ssize_t elemOffset = 0; elemOffset < channelCount; elemOffset += loopCount) {
         ssize_t chunkOffset;
-        if (channelCount - elemOffset < loopCount) chunkCount = alignUp((channelCount-elemOffset)/nvls->nHeads, 16/sizeof(T));
+        if (channelCount - elemOffset < loopCount) chunkCount = lastChunkCount;
         chunkOffset = elemOffset + nvls->headRank * chunkCount;
         offset = gridOffset + chunkOffset;
         nelem = min(chunkCount, channelCount - chunkOffset);

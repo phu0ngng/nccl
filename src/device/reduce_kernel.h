@@ -699,7 +699,7 @@ struct Apply_LoadMultimem {
     static constexpr bool IsFloat = IsFloatingPoint<T>::value;
     static constexpr int BigPackSize =
       IsFloat && IsSum && sizeof(T) < 8 ? 16 :
-      IsFloat && IsSum ? 8 :
+      IsFloat && IsSum ? sizeof(T) :
       IsFloat && IsMinMax && sizeof(T)==2 ? 16 :
       !IsFloat && (IsSum||IsMinMax) && sizeof(T)>=4 ? sizeof(T) :
       /*multimem.ld_reduce not supported:*/ 0;
