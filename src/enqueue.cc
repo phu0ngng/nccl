@@ -692,14 +692,19 @@ static ncclResult_t scheduleCollTasksToPlan(
       devWork->direct = directFlags;
 
       // Update the current channel and vacant traffic budget.
-      if (countHi*trafficPerElement >= trafficPerChannel) {
+      if (countHi != 0) {
+        channelId += nChannels-1;
+        currentTraffic = countHi*trafficPerElement;
+      } else if (nMidChannels != 0) {
+        channelId += nChannels;
         currentTraffic = 0;
-        channelId = devWork->channelHi+1;
-      } else if (countHi != 0) {
-        currentTraffic = devWork->cbd.countHi*trafficPerElement;
-        channelId = devWork->channelHi;
       } else {
         currentTraffic += countLo*trafficPerElement;
+      }
+
+      if (currentTraffic >= trafficPerChannel && channelId+1 != nMaxChannels[kind]) {
+        channelId += 1;
+        currentTraffic = 0;
       }
 
       uint64_t proxyOpId = uint64_t(plan->collOpCount++)<<1 | 0;
