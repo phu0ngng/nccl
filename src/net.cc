@@ -339,7 +339,10 @@ enum ncclNetState {
 enum ncclNetState ncclNetStates[3] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 enum ncclNetState ncclCollNetStates[3] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 
-static void* tryOpenLib(char* name) {
+#define MAX_STR_LEN 255
+
+static void* tryOpenLib(char* name, int* err, char* errStr) {
+  *err = 0;
   if (nullptr == name || strlen(name) == 0) {
     return nullptr;
   }
@@ -350,81 +353,70 @@ static void* tryOpenLib(char* name) {
 
   void *handle = dlopen(name, RTLD_NOW | RTLD_LOCAL);
   if (nullptr == handle) {
-    if (ENOENT == errno) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: No plugin found (%s)", name);
-    } else {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin load returned %d : %s when loading %s", errno, dlerror(), name);
+    strncpy(errStr, dlerror(), MAX_STR_LEN);
+    errStr[MAX_STR_LEN] = '\0';
+    if (strstr(errStr, name) && strstr(errStr, "No such file or directory")) {
+      *err = ENOENT;
     }
   }
   return handle;
 }
 
-static void summarizeOpenNetPluginErrors(char* pluginNames) {
-  const char *separator = " ";
-  int len = strlen(pluginNames);
-  // remove tail separator
-  pluginNames[len - 1] = '\0';
-
-  // remove last plugin name
-  while (len > 0 && pluginNames[--len] != *separator);
-  if (len > 0) {
-    pluginNames[len] = '\0';
+static char* tryOpenLibCheck(int openErr, char* openErrStr, char* nameList, int *nameListLen, char* name) {
+  if (openErr == ENOENT) {
+    snprintf(nameList, *nameListLen, " %s", name);
+    nameList += strlen(name) + 1;
+    *nameListLen -= strlen(name) + 1;
+    return nameList;
   }
-
-  // distinguish between one load attempt and multiple attempts
-  if (strstr(pluginNames, separator)) {
-    INFO(NCCL_ENV|NCCL_TUNING, "NET/Plugin: Most recent plugin load returned %d : %s. All attempts to load '%s' also failed.", errno, dlerror(), pluginNames);
-  } else {
-    INFO(NCCL_ENV|NCCL_TUNING, "NET/Plugin: Plugin load returned %d : %s : when loading %s", errno, dlerror(), pluginNames);
-  }
+  INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: %s", openErrStr);
+  return nameList;
 }
 
-static void* openNetPluginLib(void) {
+static void* openNetPluginLib(char* couldNotFindNames, int len) {
+  int openErr;
   void *pluginLib;
-
-#define MAX_PLUGIN_LOAD 2
-
-  int len;
-  char netPluginLibNameTried[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
-  char *ptr = netPluginLibNameTried;
   char netPluginLibName[PATH_MAX];
+  char openErrStr[MAX_STR_LEN + 1] = { 0 };
   const char *envNetPluginName = getenv("NCCL_NET_PLUGIN");
   if (envNetPluginName && strlen(envNetPluginName)) {
     snprintf(netPluginLibName, PATH_MAX, "%s", envNetPluginName);
-    pluginLib = tryOpenLib(netPluginLibName);
+    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin name set by env to %s", netPluginLibName);
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", netPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
 
     snprintf(netPluginLibName, PATH_MAX, "libnccl-net-%s.so", envNetPluginName);
-    pluginLib = tryOpenLib(netPluginLibName);
+    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin name set by env to %s", netPluginLibName);
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", netPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
   } else {
     snprintf(netPluginLibName, PATH_MAX, "libnccl-net.so");
-    pluginLib = tryOpenLib(netPluginLibName);
+    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", netPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
   }
-  summarizeOpenNetPluginErrors(ptr);
-
   return nullptr;
 }
 
+#define MAX_PLUGIN_LOAD 2
+
 ncclResult_t ncclNetPluginInit() {
-  void* netPluginLib = openNetPluginLib();
+  char couldNotFindNames[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
+  void* netPluginLib = openNetPluginLib(couldNotFindNames, MAX_PLUGIN_LOAD * PATH_MAX);
   if (netPluginLib == nullptr) {
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Using internal network plugin.");
+    if (strlen(couldNotFindNames)) {
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Could not find:%s. Using internal network plugin.", couldNotFindNames);
+    } else {
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Using internal network plugin.");
+    }
     return ncclSuccess;
   }
 
