@@ -1637,7 +1637,7 @@ static ncclResult_t getAlgoInfo(
     info->protocol = protocol;
   }
   NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps));
-  info->nMaxChannels = nMaxChannels == 0 ? MAXCHANNELS : nMaxChannels;
+  info->nMaxChannels = nMaxChannels == 0 ? info->nMaxChannels : nMaxChannels;
   return ncclSuccess;
 }
 
