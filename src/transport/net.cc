@@ -1264,7 +1264,6 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
             ptrs[subCount] = localBuff+buffSlot*stepSize;
             sizes[subCount] = stepSize*args->sliceSteps;
           }
-          sizes[subCount] = stepSize*args->sliceSteps;
           if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
           tags[subCount] = resources->tpRemoteRank;
           mhandles[subCount] = sub->mhandle;
