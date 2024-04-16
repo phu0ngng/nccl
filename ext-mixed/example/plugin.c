@@ -314,11 +314,19 @@ __hidden ncclResult_t tunerPluginInit(size_t nRanks, size_t nNodes, ncclDebugLog
 
 __hidden ncclResult_t tunerPluginGetCollInfo(void* context, ncclFunc_t collType, size_t nBytes,
                               int collNetSupport, int nvlsSupport, int numPipeOps,
-                              int *algorithm, int *protocol, int* nChannels) { *algorithm = NCCL_ALGO_RING; *protocol = NCCL_PROTO_SIMPLE; return ncclSuccess; }
+                              float** collCostTable, int numAlgo, int numProto,
+                              int* nChannels) {
+  // Update NCCL core generated cost table. Updated table will be evaluated by NCCL to pick the best algo/proto combo
+  if (collCostTable[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] != NCCL_ALGO_PROTO_IGNORE) {
+    collCostTable[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 0.0;
+  }
+  *nChannels = 1;
+  return ncclSuccess;
+}
 
 __hidden ncclResult_t tunerPluginDestroy(void* context) { return ncclSuccess; }
 
-const ncclTuner_v2_t ncclTunerPlugin_v2 = {
+const ncclTuner_v3_t ncclTunerPlugin_v3 = {
   .name = PLUGIN_NAME,
   .init = tunerPluginInit,
   .getCollInfo = tunerPluginGetCollInfo,
