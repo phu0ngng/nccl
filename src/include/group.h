@@ -61,7 +61,7 @@ struct ncclGroupJob {
 };
 
 ncclResult_t ncclGroupStartInternal();
-ncclResult_t ncclGroupEndInternal();
+ncclResult_t ncclGroupEndInternal(float* time = NULL);
 ncclResult_t ncclAsyncJobComplete(struct ncclAsyncJob* job);
 
 ////////////////////////////////////////////////////////////////////////////////

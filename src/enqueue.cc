@@ -366,7 +366,7 @@ fallback:
 }
 
 static ncclResult_t getCollNetSupport(struct ncclComm* comm, struct ncclTaskColl* task, int* collNetSupport);
-static ncclResult_t getAlgoInfo(struct ncclComm* comm, struct ncclTaskColl* task, int collNetSupport, int nvlsSupport, int numPipeOps);
+static ncclResult_t getAlgoInfo(struct ncclComm* comm, struct ncclTaskColl* task, int collNetSupport, int nvlsSupport, int numPipeOps, float* estimatedTime = NULL);
 static ncclResult_t calcCollChunking(
   struct ncclComm* comm, struct ncclTaskColl* task, int nChannels, size_t nBytes,
   /*outputs*/uint32_t* outChunkSize, uint32_t* outDirectFlags, struct ncclProxyOp* proxyOp
@@ -389,7 +389,7 @@ static bool testBudget(
 
 // Called once per ncclGroup to organize the user submitted tasks in
 // comm->planner so that they can be peeled off into plans.
-static ncclResult_t prepareTasks(struct ncclComm* comm) {
+static ncclResult_t prepareTasks(struct ncclComm* comm, float* estimatedTime) {
   struct ncclKernelPlanner* planner = &comm->planner;
   // Tasks from the sorter come out ordered size descending.
   struct ncclTaskColl* task = ncclTaskCollSorterDequeueAll(&planner->collSorter);
@@ -431,7 +431,7 @@ static ncclResult_t prepareTasks(struct ncclComm* comm) {
         aggEnd = aggEnd->next;
       }
 
-      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nAggs));
+      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nAggs, estimatedTime));
       agg.devFuncId = ncclDevFuncId(agg.func, agg.op.op, agg.datatype, agg.algorithm, agg.protocol);
 
       int isCollnet=0, isNvls=0;
@@ -1234,7 +1234,7 @@ static void persistentDestructor(void* plans_) {
   }
 }
 
-ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
+ncclResult_t ncclLaunchPrepare(struct ncclComm* comm, float* estimatedTime) {
   ncclResult_t result = ncclSuccess;
   struct ncclKernelPlanner* planner = &comm->planner;
   bool persistent = ncclCudaGraphValid(planner->capturingGraph);
@@ -1251,7 +1251,10 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   ncclMemoryStackPush(&comm->memScoped);
 
   // Prepare tasks for scheduling.
-  NCCLCHECKGOTO(prepareTasks(comm), result, failure);
+  NCCLCHECKGOTO(prepareTasks(comm, estimatedTime), result, failure);
+
+  // Don't schedule colls to plan in simulate mode.
+  if (estimatedTime) return ncclSuccess;
 
   if (planner->nTasksColl + planner->nTasksP2p != 0) {
     do {
@@ -1516,7 +1519,7 @@ static inline ncclResult_t getCollNetSupport(
 // numPipeOps: number of pipelined ops. Can be greater than 1 in aggregation mode. Used to adjust latency.
 static ncclResult_t topoGetAlgoInfo(
     struct ncclComm* comm, struct ncclTaskColl* info, size_t nBytes,
-    int collNetSupport, int nvlsSupport, int numPipeOps
+    int collNetSupport, int nvlsSupport, int numPipeOps, float* timeInSec = NULL
   ) {
   if (comm->nRanks == 1) {
     info->algorithm = NCCL_ALGO_RING;
@@ -1567,6 +1570,7 @@ static ncclResult_t topoGetAlgoInfo(
       info->protocol = backupProto;
     }
     if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, minTime);
+    if (timeInSec) *timeInSec = (minTime < backupMinTime) ? minTime : backupMinTime;
     TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, minTime);
   }
 
@@ -1620,7 +1624,7 @@ static ncclResult_t topoGetAlgoInfo(
 // Finally, nChannels will be overriden by the plugin setting.
 static ncclResult_t getAlgoInfo(
     struct ncclComm* comm, struct ncclTaskColl* info,
-    int collNetSupport, int nvlsSupport, int numPipeOps
+    int collNetSupport, int nvlsSupport, int numPipeOps, float* estimatedTime/* = NULL*/
   ) {
   size_t nBytes = ncclTypeSize(info->datatype)*ncclFuncMaxSendRecvCount(info->func, comm->nRanks, info->count);
   info->algorithm = NCCL_ALGO_UNDEF;
@@ -1636,7 +1640,7 @@ static ncclResult_t getAlgoInfo(
     info->algorithm = algorithm;
     info->protocol = protocol;
   }
-  NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps));
+  NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps, estimatedTime));
   info->nMaxChannels = nMaxChannels == 0 ? info->nMaxChannels : nMaxChannels;
   return ncclSuccess;
 }

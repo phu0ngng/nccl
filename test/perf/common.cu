@@ -102,6 +102,7 @@ static int commNum = 1;
 static int local_register = 0;
 #endif
 static int per_coll_perf = 0;
+static int simulate = 0;
 
 static char* replay_file = NULL;
 
@@ -663,6 +664,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   double timeUsec = (report_cputime ? cputimeSec : deltaSec)*1.0E6;
   char timeStr[100];
+  char estTimeStr[100] = "";
   if (timeUsec >= 10000.0) {
     sprintf(timeStr, "%7.0f", timeUsec);
   } else if (timeUsec >= 100.0) {
@@ -670,19 +672,43 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   } else {
     sprintf(timeStr, "%7.2f", timeUsec);
   }
+
+  float estimatedTime = 0.0;
+  if (simulate) {
+    for (int iter = 0; iter < actualIters; iter++) {
+
+      NCCLCHECK(ncclGroupStart());
+
+      for (int aiter = 0; aiter < agg_iters; aiter++)
+        TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
+
+      float time = 0.0;
+      NCCLCHECK(ncclGroupSimulateEnd(&time));
+      estimatedTime += time;
+    }
+    estimatedTime /= (actualIters*agg_iters);
+  }
+  if (estimatedTime >= 10000.0) {
+    sprintf(estTimeStr, "%7.0f", estimatedTime);
+  } else if (estimatedTime >= 100.0) {
+    sprintf(estTimeStr, "%7.1f", estimatedTime);
+  } else {
+    sprintf(estTimeStr, "%7.2f", estimatedTime);
+  }
+
   double sideBw = ((double)compThreadCount)*COMP_SIZE*NUM_BLOCKS/(1000*timeUsec);
 
   if (args->reportErrors) {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f  %5g %6.2f", timeStr, algBw, busBw, (double)wrongElts, sideBw);
+       PRINT("  %7s  %6.2f  %6.2f  %6g %6.2f %9s", timeStr, algBw, busBw, (double)wrongElts, sideBw, estTimeStr);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f  %5g", timeStr, algBw, busBw, (double)wrongElts);
+       PRINT("  %7s  %6.2f  %6.2f  %6g %9s", timeStr, algBw, busBw, (double)wrongElts, estTimeStr);
      }
   } else {
      if (side_comp == 1) {
-       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f", timeStr, algBw, busBw, sideBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f %9s", timeStr, algBw, busBw, sideBw, estTimeStr);
      } else {
-       PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
+       PRINT("  %7s  %6.2f  %6.2f    N/A %9s", timeStr, algBw, busBw, estTimeStr);
      }
   }
 
@@ -805,7 +831,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
       }
       TESTCHECK(BenchTime(args, type, op, root, 1, actualIters, 0));
       if (per_coll_perf) printPerCollPerf(args, type, op, root, actualIters, per_coll_perf);
-      PRINT("  %5d", actualIters);
+      PRINT("  %6d", actualIters);
       PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
   }
 
@@ -1096,13 +1122,14 @@ int main(int argc, char* argv[]) {
     {"split_comm", required_argument, 0, 'P'},
     {"local_register", required_argument, 0, 'R'},
     {"per_coll_perf", required_argument, 0, 'A'},
+    {"simulate", required_argument, 0, 'E'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1232,6 +1259,9 @@ int main(int argc, char* argv[]) {
         break;
       case 'A':
         per_coll_perf = (int)strtol(optarg, NULL, 0);
+        break;
+      case 'E':
+        simulate = (int)strtol(optarg, NULL, 0);
         break;
       case 'h':
       default:
@@ -1548,12 +1578,11 @@ char* splitMaskEnv = NULL;
 
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
-  PRINT("# %10s  %12s  %8s  %6s  %6s           out-of-place                       in-place          \n", "", "", "", "", "");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s %6s  %7s  %6s  %6s %6s %6s\n", "size", "count", "type", "redop", "root",
-      timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong", "#iters");
-  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %5s  %7s  %6s  %6s  %5s  %5s\n", "(B)", "(elements)", "", "", "",
-      "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "", "");
-
+  PRINT("# %10s  %12s  %8s  %6s  %6s                out-of-place                                 in-place          \n", "", "", "", "", "");
+  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %8s  %7s  %6s  %6s  %6s  %8s  %5s\n", "size", "count", "type", "redop", "root",
+      timeStr, "algbw", "busbw", "#wrong", "esttime", timeStr, "algbw", "busbw", "#wrong", "esttime", "#iters");
+  PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %8s  %7s  %6s  %6s  %6s  %8s  %5s\n", "(B)", "(elements)", "", "", "",
+      "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(us)", "(GB/s)", "(GB/s)", "", "(us)", "");
   struct testThread threads[nThreads];
   struct testThread compThreads[nThreads];
   memset(threads, 0, sizeof(struct testThread)*nThreads);

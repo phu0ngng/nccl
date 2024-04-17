@@ -18,6 +18,22 @@ TYPED_TEST(ncclAllReduce_test, basic) {
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
 };
+TYPED_TEST(ncclAllReduce_test, basic_simulate) {
+    float time = 0.0;
+    for (ncclRedOp_t op : this->RedOps) {
+        ASSERT_EQ(ncclSuccess, ncclGroupStart());
+        for (int i = 0; i < this->nVis; ++i) {
+            ASSERT_EQ(ncclSuccess,
+                      ncclAllReduce(this->sendbuffs[i], this->recvbuffs[i],
+                                    std::min(this->N, 1024 * 1024),
+                                    this->DataType(), op,
+                                    this->comms[i], this->streams[i]))
+                << "op: " << op << ", "
+                << "i" << i << ", " << std::endl;
+        }
+        ASSERT_EQ(ncclSuccess, ncclGroupSimulateEnd(&time));
+    }
+};
 TYPED_TEST(ncclAllReduce_test, host_mem) {
     for (ncclRedOp_t op : this->RedOps) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
