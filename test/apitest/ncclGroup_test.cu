@@ -30,6 +30,14 @@ TEST_F(ncclGroup_test, no_start) {
     ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
   }
 }
+TEST_F(ncclGroup_test, basic_simulate) {
+  float time = 0.0;
+  for (int i=0; i < ndev; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    ASSERT_EQ(ncclSuccess, ncclGroupSimulateEnd(&time));
+  }
+}
 #if 0
 // NCCL doesn't test for that
 TEST_F(ncclGroup_test, DISABLED_different_stream) {

@@ -31,11 +31,14 @@ file = kwargs['file']
 capture = kwargs.get('capture', 'latency')
 csv_file = file.replace(":","_") + "." + capture + ".csv" # Replace : with _ for Windows filename compatability (: requried for selene job name)
 verbose = bool(kwargs.get('verbose', False))
-inp_field_index=9 # Time (latency)
+inp_field_index=10 # Time (latency)
 oop_field_index=5 # Time (latency)
 if capture == 'bw':
-    inp_field_index=11 # Bus BW
+    inp_field_index=12 # Bus BW
     oop_field_index=7  # Bus BW
+elif capture == "estTime" :
+    inp_field_index=14 # Estimated time
+    oop_field_index=9  # Estimated time
 
 exit_code = 0
 keys = {}

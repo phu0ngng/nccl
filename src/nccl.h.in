@@ -432,6 +432,14 @@ ncclResult_t pncclGroupStart();
 ncclResult_t  ncclGroupEnd();
 ncclResult_t pncclGroupEnd();
 
+/*
+ * Group Simulate End
+ *
+ * Simulate a ncclGroupEnd() call and return NCCL's estimated runTime as a float.
+ */
+ncclResult_t  ncclGroupSimulateEnd(float* time);
+ncclResult_t pncclGroupSimulateEnd(float* time);
+
 #ifdef __cplusplus
 } // end extern "C"
 #endif
