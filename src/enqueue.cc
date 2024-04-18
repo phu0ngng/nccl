@@ -1445,7 +1445,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
   if (driverVersion >= 11080) {
     int compCap = comm->compCap;
-    unsigned int clusterSize = (compCap == 90) ? comm->config.cgaClusterSize : 0;
+    unsigned int clusterSize = (compCap >= 90) ? comm->config.cgaClusterSize : 0;
 
     CUlaunchConfig launchConfig = {0};
     CUlaunchAttribute launchAttrs[3];

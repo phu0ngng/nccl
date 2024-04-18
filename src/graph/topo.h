@@ -16,6 +16,7 @@
 #define SM80_NVLINK_BW 20.0
 #define SM90_NVLINK_BW 20.6
 #define SM86_NVLINK_BW 12.0
+#define SM100_NVLINK_BW 40.0
 #define PCI_BW 12.0           // PCI Gen3 x16
 #define QPI_BW 6.0
 #define AMD_BW 16.0
@@ -230,6 +231,7 @@ static ncclResult_t ncclTopoIdToNetDev(struct ncclTopoSystem* system, int64_t id
 // Returns NVLink bw in GB/s
 static float ncclTopoNVLinkBw(int cudaCompCap) {
   return
+    cudaCompCap >= 100 ? SM100_NVLINK_BW :
     cudaCompCap >= 90 ? SM90_NVLINK_BW :
     cudaCompCap == 86 ? SM86_NVLINK_BW :
     cudaCompCap >= 80 ? SM80_NVLINK_BW :
