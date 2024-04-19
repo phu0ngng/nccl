@@ -1652,6 +1652,8 @@ static ncclResult_t calcCollChunking(
     /*outputs*/uint32_t* outChunkSize, uint32_t* outDirectFlags, struct ncclProxyOp* proxyOp
   ) {
   ncclPattern_t pattern;
+  size_t grainSize = ncclProtoGrainSize(info->protocol);
+
   switch (info->func) {
   case ncclFuncBroadcast:
     pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeDown : ncclPatternPipelineFrom;
@@ -1766,6 +1768,7 @@ static ncclResult_t calcCollChunking(
 
   // Compute nSteps for proxies
   //if (comm->rank == 0) printf("Coll %d, size %ld -> %dx%d, chunkSize %d (algo %d proto%d)\n", info->func, info->nBytes, info->nChannels, info->nThreads, chunkSize, info->algorithm, info->protocol);
+  chunkSize = chunkSize / grainSize * grainSize; // align chunkSize to multiple grainSize
   int nLoops = (int)DIVUP(nBytes, size_t(nChannels)*nchunksPerLoop*chunkSize);
   memset(proxyOp, 0, sizeof(*proxyOp));
   proxyOp->nsteps = nstepsPerLoop * nLoops * chunkSteps;
