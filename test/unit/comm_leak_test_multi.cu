@@ -95,7 +95,7 @@ int main(int argc, char** argv)
     assert(num_gpus <= phys_num_gpus);
     assert(local_size*num_gpus <= phys_num_gpus);
 
-    if (comm_rank == 0) printf("Starting test on %d ranks (nodes %d local %d) gpus %d reps %zi warmup %zi abort %d use %d\n",
+    if (comm_rank == 0) printf("Starting test on %d ranks (nodes %d local %d) gpus %d reps %zu warmup %zu abort %d use %d\n",
                                comm_size, comm_size/local_size, local_size, num_gpus, reps, warmup, abort, use);
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -151,7 +151,7 @@ int main(int argc, char** argv)
         double elapsed;
         gettimeofday(&now, NULL);
         elapsed = (now.tv_sec-start.tv_sec)*1.0 + (now.tv_usec-start.tv_usec)*1.0E-6;
-        printf("Doing iteration %zi elapsed time %gs\n", i, elapsed);
+        printf("Doing iteration %zu elapsed time %gs\n", i, elapsed);
       }
 
       NCCL_TRY(ncclGroupStart());
@@ -170,7 +170,7 @@ int main(int argc, char** argv)
     gettimeofday(&end, NULL);
 
     double time = (end.tv_sec-start.tv_sec)*1.0 + (end.tv_usec-start.tv_usec)*1.0E-6;
-    if (comm_rank == 0) printf("%d gpus %zi reps took %gs time per rep %gs\n", num_gpus, reps, time, time/reps);
+    if (comm_rank == 0) printf("%d gpus %zu reps took %gs time per rep %gs\n", num_gpus, reps, time, time/reps);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -180,7 +180,7 @@ int main(int argc, char** argv)
     for (int g = 0; g < num_gpus; g++) {
       CUDA_TRY(cudaSetDevice((local_rank*num_gpus)+g));
       CUDA_TRY(cudaMemGetInfo(&free2[g], &total));
-      //printf("rank %d GPU %d free %zi free2 %zi leaked %zi\n", comm_rank, g, free1[g], free2[g], free1[g]-free2[g]);
+      //printf("rank %d GPU %d free %zu free2 %zu leaked %zu\n", comm_rank, g, free1[g], free2[g], free1[g]-free2[g]);
       if (free2[g] < free1[g]) leaked += free1[g]-free2[g];
     }
 
@@ -189,22 +189,22 @@ int main(int argc, char** argv)
     MPI_TRY(MPI_Allreduce(MPI_IN_PLACE, &max_leaked, sizeof(max_leaked), MPI_LONG, MPI_MAX, MPI_COMM_WORLD));
 
     if (use) {
-      if (comm_rank == 0) printf("GPU Memory used %zi bytes (%zi MiB) CUDA memory per process, used max %zi MiB per GPU\n", leaked, leaked/(reps*1024*1024), max_leaked/(reps*1024*1024));
+      if (comm_rank == 0) printf("GPU Memory used %zu bytes (%zu MiB) CUDA memory per process, used max %zu MiB per GPU\n", leaked, leaked/(reps*1024*1024), max_leaked/(reps*1024*1024));
       MPI_TRY(MPI_Finalize());
       exit (EXIT_SUCCESS);
     }
 
     // Only report leaks of > 1 CUDA page
     if (leaked > (2*1024*1024)) {
-      printf("ERROR: rank %d leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", comm_rank, leaked, leaked/(1024*1024), reps, num_gpus);
-      if (comm_rank == 0) printf("ERROR: Leaked max %zi MiB per GPU over %zi iterations\n", max_leaked/(reps*1024*1024), reps);
+      printf("ERROR: rank %d leaked %zu bytes (%zu MiB) CUDA memory over %zu iterations on %d gpus\n", comm_rank, leaked, leaked/(1024*1024), reps, num_gpus);
+      if (comm_rank == 0) printf("ERROR: Leaked max %zu MiB per GPU over %zu iterations\n", max_leaked/(reps*1024*1024), reps);
       MPI_TRY(MPI_Finalize());
       exit (EXIT_FAILURE);
     }
 
     int endOpenFds = count_open_fds();
     if ((endOpenFds-startOpenFds) > 0) {
-      printf("ERROR: rank %d leaked %d open fds over %zi iterations on %d gpus\n", comm_rank, endOpenFds-startOpenFds, reps, num_gpus);
+      printf("ERROR: rank %d leaked %d open fds over %zu iterations on %d gpus\n", comm_rank, endOpenFds-startOpenFds, reps, num_gpus);
       MPI_TRY(MPI_Finalize());
       exit (EXIT_FAILURE);
     }
@@ -212,6 +212,6 @@ int main(int argc, char** argv)
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_TRY(MPI_Finalize());
 
-    if (comm_rank == 0) printf("SUCCESS: Completed test on %d ranks of %zi iterations with %d gpus per node - no CUDA memory leaks detected\n", comm_size, reps, local_size*num_gpus);
+    if (comm_rank == 0) printf("SUCCESS: Completed test on %d ranks of %zu iterations with %d gpus per node - no CUDA memory leaks detected\n", comm_size, reps, local_size*num_gpus);
     exit (EXIT_SUCCESS);
 }

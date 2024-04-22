@@ -72,7 +72,7 @@ int main(int argc, char** argv)
     if (num_gpus <= 0)
       CUDA_TRY(cudaGetDeviceCount(&num_gpus));
 
-    printf("Starting test on %d gpus reps %zi warmup %zi abort %d use %d\n", num_gpus, reps, warmup, abort, use);
+    printf("Starting test on %d gpus reps %zu warmup %zu abort %d use %d\n", num_gpus, reps, warmup, abort, use);
 
     int dev_list[MAX_GPUS];
     for (int i = 0; i < num_gpus; i++) {
@@ -108,7 +108,7 @@ int main(int argc, char** argv)
         double elapsed;
         gettimeofday(&now, NULL);
         elapsed = (now.tv_sec-start.tv_sec)*1.0 + (now.tv_usec-start.tv_usec)*1.0E-6;
-        printf("Doing iteration %zi elapsed time %gs\n", i, elapsed);
+        printf("Doing iteration %zu elapsed time %gs\n", i, elapsed);
       }
       NCCL_TRY(ncclCommInitAll(nccl_comm, num_gpus, dev_list));
       if (use == 0) {
@@ -120,7 +120,7 @@ int main(int argc, char** argv)
     gettimeofday(&end, NULL);
 
     double time = (end.tv_sec-start.tv_sec)*1.0 + (end.tv_usec-start.tv_usec)*1.0E-6;
-    printf("%d gpus %zi reps took %gs time per rep %gs\n", num_gpus, reps, time, time/reps);
+    printf("%d gpus %zu reps took %gs time per rep %gs\n", num_gpus, reps, time, time/reps);
 
     // Sample the amount of free CUDA memory on all devices
     size_t leaked{0};
@@ -128,30 +128,30 @@ int main(int argc, char** argv)
     for (int i = 0; i < num_gpus; i++) {
       CUDA_TRY(cudaSetDevice(i));
       CUDA_TRY(cudaMemGetInfo(&free2[i], &total));
-      //printf("GPU %d free1 %zi free2 %zi leaked %zi\n", i, free1[i], free2[i], free1[i]-free2[i]);
+      //printf("GPU %d free1 %zu free2 %zu leaked %zu\n", i, free1[i], free2[i], free1[i]-free2[i]);
       if (free2[i] < free1[i]) leaked += free1[i]-free2[i];
     }
 
     cudaDeviceReset();
 
     if (use) {
-      printf("GPU Memory used %zi bytes (%zi MiB) CUDA memory (%zi MiB) per GPU\n", leaked, leaked/(reps*1024*1024), leaked/(reps*1024*1024*num_gpus));
+      printf("GPU Memory used %zu bytes (%zu MiB) CUDA memory (%zu MiB) per GPU\n", leaked, leaked/(reps*1024*1024), leaked/(reps*1024*1024*num_gpus));
       exit (EXIT_SUCCESS);
     }
 
     // Only report leaks of > 1 CUDA page
     if (leaked > (2*1024*1024)) {
-      printf("ERROR: GPU Memory leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
+      printf("ERROR: GPU Memory leaked %zu bytes (%zu MiB) CUDA memory over %zu iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
       exit(EXIT_FAILURE);
     }
 
     int endOpenFds = count_open_fds();
     if ((endOpenFds-startOpenFds) > 0) {
-      printf("ERROR: File Descriptor leaked %d open fds over %zi iterations on %d gpus\n", endOpenFds-startOpenFds, reps, num_gpus);
+      printf("ERROR: File Descriptor leaked %d open fds over %zu iterations on %d gpus\n", endOpenFds-startOpenFds, reps, num_gpus);
       exit(EXIT_FAILURE);
     }
 
-    printf("SUCCESS: Completed test of %zi iterations on %d gpus - no CUDA memory leaks detected\n", reps, num_gpus);
+    printf("SUCCESS: Completed test of %zu iterations on %d gpus - no CUDA memory leaks detected\n", reps, num_gpus);
 
     exit (EXIT_SUCCESS);
 }

@@ -286,14 +286,14 @@ int main(int argc, char *argv[]) {
     ncclNet_t *net = nets[i]; 
     if(!rank) INFO(INIT,"ncclNet %s selected ", net->name);
     for(size_t bytes=1; bytes<=MAX_SIZE; bytes*=32){
-      if(!rank) INFO(INIT,"Send/Recv %zi bytes", bytes);
+      if(!rank) INFO(INIT,"Send/Recv %zu bytes", bytes);
       size_t duration=0;
       struct timeval start, end;
       gettimeofday(&start, NULL);
       failed = testers[i](net, data, bytes, &duration, 0, rank, nranks, MPI_COMM_WORLD);
       gettimeofday(&end, NULL);
       size_t tot_duration = (end.tv_sec - start.tv_sec)*1000000 + (end.tv_usec - start.tv_usec);
-      if(!rank) INFO(INIT,"Duration (total) %zi us duration (data transfer) %zi us Bandwidth %zi MB/s", tot_duration, duration, bytes/duration);
+      if(!rank) INFO(INIT,"Duration (total) %zu us duration (data transfer) %zu us Bandwidth %zu MB/s", tot_duration, duration, bytes/duration);
       if (failed) goto out;
     }
   }

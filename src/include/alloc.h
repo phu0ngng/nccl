@@ -122,7 +122,7 @@ static inline ncclResult_t ncclCuMemAlloc(void **ptr, CUmemGenericAllocationHand
   accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
   CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
   if (handlep) *handlep = handle;
-  TRACE(NCCL_ALLOC, "CuMem Alloc Size %zi pointer %p handle %llx", size, *ptr, handle);
+  TRACE(NCCL_ALLOC, "CuMem Alloc Size %zu pointer %p handle %llx", size, *ptr, handle);
   return result;
 }
 
@@ -134,7 +134,7 @@ static inline ncclResult_t ncclCuMemFree(void *ptr) {
   CUCHECK(cuMemRetainAllocationHandle(&handle, ptr));
   CUCHECK(cuMemRelease(handle));
   CUCHECK(cuMemGetAddressRange(NULL, &size, (CUdeviceptr)ptr));
-  TRACE(NCCL_ALLOC, "CuMem Free Size %zi pointer %p handle 0x%llx", size, ptr, handle);
+  TRACE(NCCL_ALLOC, "CuMem Free Size %zu pointer %p handle 0x%llx", size, ptr, handle);
   CUCHECK(cuMemUnmap((CUdeviceptr)ptr, size));
   CUCHECK(cuMemRelease(handle));
   CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, size));

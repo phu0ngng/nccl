@@ -151,7 +151,7 @@ int main(int argc, char** argv)
     assert(num_gpus <= phys_num_gpus);
     assert(local_size*num_gpus <= phys_num_gpus);
 
-    if (comm_rank == 0) printf("Starting test on %d ranks (local %d) gpus %d reps %zi warmup %zi coll_reps %zi abort %d alltoall %d\n",
+    if (comm_rank == 0) printf("Starting test on %d ranks (local %d) gpus %d reps %zu warmup %zu coll_reps %zu abort %d alltoall %d\n",
                                comm_size, local_size, num_gpus, reps, warmup, coll_reps, abort, alltoall);
 
     for (int g = 0; g < num_gpus; g++) {
@@ -184,7 +184,7 @@ int main(int argc, char** argv)
     gettimeofday(&start, NULL);
 
     for (size_t i = 0; i < reps; ++i) {
-      if (comm_rank == 0) printf("Starting rep %zi/%zi\n", i, reps);
+      if (comm_rank == 0) printf("Starting rep %zu/%zu\n", i, reps);
       do_test(comm_rank, local_rank, comm_size, num_gpus, size, coll_reps, abort, alltoall);
 
       MPI_Barrier(MPI_COMM_WORLD);
@@ -193,7 +193,7 @@ int main(int argc, char** argv)
     gettimeofday(&end, NULL);
 
     double time = (end.tv_sec-start.tv_sec)*1.0 + (end.tv_usec-start.tv_usec)*1.0E-6;
-    if (comm_rank == 0) printf("%d gpus %zi reps took %gs time per rep %gs\n", num_gpus, reps, time, time/reps);
+    if (comm_rank == 0) printf("%d gpus %zu reps took %gs time per rep %gs\n", num_gpus, reps, time, time/reps);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -203,7 +203,7 @@ int main(int argc, char** argv)
     for (int g = 0; g < num_gpus; g++) {
       CUDA_TRY(cudaSetDevice((local_rank*num_gpus)+g));
       CUDA_TRY(cudaMemGetInfo(&free2[g], &total));
-      //printf("rank %d GPU %d free1 %zi free2 %zi leaked %zi\n", comm_rank, g, free1[g], free2[g], free1[g]-free2[g]);
+      //printf("rank %d GPU %d free1 %zu free2 %zu leaked %zu\n", comm_rank, g, free1[g], free2[g], free1[g]-free2[g]);
       // Only record leaks of > 1 CUDA page
       if ((free1[g] - free2[g]) > (2*1024*1024)) leaked += free1[g]-free2[g];
     }
@@ -211,7 +211,7 @@ int main(int argc, char** argv)
     MPI_TRY(MPI_Allreduce(MPI_IN_PLACE, &leaked, sizeof(leaked), MPI_LONG, MPI_SUM, MPI_COMM_WORLD));
 
     if (leaked) {
-      if (comm_rank == 0) printf("ERROR: total leaked %zi bytes (%zi MiB) CUDA memory over %zi iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
+      if (comm_rank == 0) printf("ERROR: total leaked %zu bytes (%zu MiB) CUDA memory over %zu iterations on %d gpus\n", leaked, leaked/(1024*1024), reps, num_gpus);
       exit(EXIT_FAILURE);
     }
 
@@ -224,6 +224,6 @@ int main(int argc, char** argv)
     MPI_TRY(MPI_Finalize());
     cudaDeviceReset();
 
-    if (comm_rank == 0) printf("SUCCESS: Completed test on %d ranks of %zi iterations on %d gpus per node - no CUDA memory leaks detected\n", comm_size, reps, local_size*num_gpus);
+    if (comm_rank == 0) printf("SUCCESS: Completed test on %d ranks of %zu iterations on %d gpus per node - no CUDA memory leaks detected\n", comm_size, reps, local_size*num_gpus);
     exit (EXIT_SUCCESS);
 }

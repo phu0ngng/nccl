@@ -80,7 +80,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
 
   hptr = (char*)mmap(NULL, realShmSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (hptr == MAP_FAILED) {
-    WARN("Could not map %s size %zi, error: %s", shmPath, realShmSize, strerror(errno));
+    WARN("Could not map %s size %zu, error: %s", shmPath, realShmSize, strerror(errno));
     ret = ncclSystemError;
     hptr = NULL;
     goto fail;

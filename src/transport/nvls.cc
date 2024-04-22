@@ -76,7 +76,7 @@ ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop,
 
   // Create a Multicast group
 
-  INFO(NCCL_NVLS, "NVLS Creating Multicast group nranks %d size %zi on rank %d", nranks, size, rank);
+  INFO(NCCL_NVLS, "NVLS Creating Multicast group nranks %d size %zu on rank %d", nranks, size, rank);
   CUCHECK(cuMulticastCreate(mcHandle, prop));
 
   if (type == CU_MEM_HANDLE_TYPE_FABRIC) {
@@ -87,7 +87,7 @@ ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop,
     memcpy(shareableHandle, mcHandle, sizeof(CUmemGenericAllocationHandle));
   }
 
-  INFO(NCCL_NVLS, "NVLS Created Multicast group %llx nranks %d size %zi on rank %d", *mcHandle, nranks, size, rank);
+  INFO(NCCL_NVLS, "NVLS Created Multicast group %llx nranks %d size %zu on rank %d", *mcHandle, nranks, size, rank);
 
   return ncclSuccess;
 }
@@ -151,11 +151,11 @@ ncclResult_t nvlsGroupBindMem(struct ncclComm *comm, struct ncclNvlsSharedRes* r
   CUCHECK(cuMemSetAccess(ptr, size, &resources->accessDesc, 1));
   CUDACHECK(cudaMemset((void*)ptr, 0, size));
   resources->ucBuff = (char*)ptr;
-  INFO(NCCL_NVLS, "NVLS Mapped UC at %p size %zi", resources->ucBuff, size);
+  INFO(NCCL_NVLS, "NVLS Mapped UC at %p size %zu", resources->ucBuff, size);
 
   // Bind physical memory to the Multicast group
   // NB: It will block until all ranks have been added to the Group
-  INFO(NCCL_NVLS, "NVLS Bind mem %p UC handle 0x%llx MC handle 0x%llx size %zi", (void*)ptr, resources->ucHandle, resources->mcHandle, size);
+  INFO(NCCL_NVLS, "NVLS Bind mem %p UC handle 0x%llx MC handle 0x%llx size %zu", (void*)ptr, resources->ucHandle, resources->mcHandle, size);
   CUCHECK(cuMulticastBindMem(resources->mcHandle, 0/*mcOffset*/, resources->ucHandle, 0/*memOffset*/, size, 0/*flags*/));
 
   return ncclSuccess;
@@ -164,7 +164,7 @@ ncclResult_t nvlsGroupBindMem(struct ncclComm *comm, struct ncclNvlsSharedRes* r
 ncclResult_t nvlsGroupUnbind(struct ncclComm *comm, struct ncclNvlsSharedRes* resources) {
   int dev = resources->dev;
   size_t size = resources->size;
-  INFO(NCCL_NVLS, "NVLS Unbind MC handle %llx size %zi dev %d", resources->mcHandle, size, dev);
+  INFO(NCCL_NVLS, "NVLS Unbind MC handle %llx size %zu dev %d", resources->mcHandle, size, dev);
 
   // Unbind physical memory from group for the given device
   CUCHECK(cuMulticastUnbind(resources->mcHandle, dev, 0/*mcOffset*/, size));
@@ -192,7 +192,7 @@ ncclResult_t nvlsGroupMapMem(struct ncclComm *comm, struct ncclNvlsSharedRes* re
   // Map the VA locally
   CUCHECK(cuMemMap(ptr, size, 0, resources->mcHandle, 0));
   resources->mcBuff = (char*)ptr;
-  INFO(NCCL_NVLS, "NVLS Mapped MC buffer at %p size %zi", resources->mcBuff, size);
+  INFO(NCCL_NVLS, "NVLS Mapped MC buffer at %p size %zu", resources->mcBuff, size);
 
   // Having completed the BindMem we can now call SetAccess
   // NB: It will block until all ranks have bound to the Group
@@ -330,7 +330,7 @@ setup:
     size_t nvlsPerRankSize = nChannels * 2 * (buffSize + memSize);
     size_t nvlsTotalSize = nvlsPerRankSize * nHeads;
 
-    INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d buffSize %zi memSize %zi nvlsPerRankSize %zi nvlsTotalSize %zi",
+    INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d buffSize %zu memSize %zu nvlsPerRankSize %zu nvlsTotalSize %zu",
       comm, headRank, nHeads, buffSize, memSize, nvlsPerRankSize, nvlsTotalSize);
 
     char* shareableHandle = resources->shareableHandle;
