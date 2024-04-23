@@ -1,5 +1,6 @@
 #include "ncclCommon_test.cuh"
 #include <memory>
+#include "nccl.h"
 
 class ncclGroup_test : public ::testing::Test {
   protected:
@@ -31,11 +32,19 @@ TEST_F(ncclGroup_test, no_start) {
   }
 }
 TEST_F(ncclGroup_test, basic_simulate) {
-  float time = 0.0;
+  ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
   for (int i=0; i < ndev; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
-    ASSERT_EQ(ncclSuccess, ncclGroupSimulateEnd(&time));
+    ASSERT_EQ(ncclSuccess, ncclGroupSimulateEnd(&simInfo));
+  }
+}
+TEST_F(ncclGroup_test, basic_simulate_invalid_arg) {
+  ncclSimInfo_t simInfo;
+  for (int i=0; i < ndev; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    ASSERT_EQ(ncclInvalidArgument, ncclGroupSimulateEnd(&simInfo));
   }
 }
 #if 0

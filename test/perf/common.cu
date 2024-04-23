@@ -675,7 +675,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     sprintf(timeStr, "%7.2f", timeUsec);
   }
 
-  float estimatedTime = 0.0;
+  float totalTime = 0.0;
   if (simulate) {
     for (int iter = 0; iter < actualIters; iter++) {
 
@@ -684,18 +684,18 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       for (int aiter = 0; aiter < agg_iters; aiter++)
         TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
 
-      float time = 0.0;
-      NCCLCHECK(ncclGroupSimulateEnd(&time));
-      estimatedTime += time;
+      ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
+      NCCLCHECK(ncclGroupSimulateEnd(&simInfo));
+      totalTime += simInfo.estimatedTime;
     }
-    estimatedTime /= (actualIters*agg_iters);
+    totalTime /= (actualIters*agg_iters);
   }
-  if (estimatedTime >= 10000.0) {
-    sprintf(estTimeStr, "%7.0f", estimatedTime);
-  } else if (estimatedTime >= 100.0) {
-    sprintf(estTimeStr, "%7.1f", estimatedTime);
+  if (totalTime >= 10000.0) {
+    sprintf(estTimeStr, "%7.0f", totalTime);
+  } else if (totalTime >= 100.0) {
+    sprintf(estTimeStr, "%7.1f", totalTime);
   } else {
-    sprintf(estTimeStr, "%7.2f", estimatedTime);
+    sprintf(estTimeStr, "%7.2f", totalTime);
   }
 
   double sideBw = ((double)compThreadCount)*COMP_SIZE*NUM_BLOCKS/(1000*timeUsec);
