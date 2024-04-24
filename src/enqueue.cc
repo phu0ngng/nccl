@@ -1516,63 +1516,90 @@ static inline ncclResult_t getCollNetSupport(
   return ncclSuccess;
 }
 
-// numPipeOps: number of pipelined ops. Can be greater than 1 in aggregation mode. Used to adjust latency.
-static ncclResult_t topoGetAlgoInfo(
-    struct ncclComm* comm, struct ncclTaskColl* info, size_t nBytes,
-    int collNetSupport, int nvlsSupport, int numPipeOps, float* timeInSec = NULL
-  ) {
-  if (comm->nRanks == 1) {
-    info->algorithm = NCCL_ALGO_RING;
-    info->protocol = NCCL_PROTO_SIMPLE;
+static void initCollCostTable(float** collCostTable) {
+  float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
+  for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++) {
+    for (int p = 0; p < NCCL_NUM_PROTOCOLS; p++) {
+      table[a][p] = NCCL_ALGO_PROTO_IGNORE;
+    }
   }
-  else if (info->algorithm == NCCL_ALGO_UNDEF || info->protocol == NCCL_PROTO_UNDEF) {
-    float minTime = 3600000000.0; // Hopefully no operation will take an hour to complete.
-    float backupMinTime = 3600000000.0;
-    bool backup = false;
-    int backupAlgo = NCCL_ALGO_UNDEF; // back up algo and proto if no algo/proto is picked up.
-    int backupProto = NCCL_PROTO_UNDEF;
-    // Find algorithm / protocol.
-    info->algorithm = NCCL_ALGO_UNDEF;
-    info->protocol = NCCL_PROTO_UNDEF;
-    int nAlgos = NCCL_NUM_ALGORITHMS;
-    for (int a=0; a<nAlgos; a++) {
-      if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetSupport != 1) continue;
-      if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && nvlsSupport != 1 && info->func != ncclFuncAllGather) continue;
-      if (a == NCCL_ALGO_NVLS && collNetSupport != 1 && comm->nNodes > 1) continue;
-      /* now we only support single-node NVLS allgather and reducescatter */
-      if (a == NCCL_ALGO_NVLS && (info->func == ncclFuncAllGather || info->func == ncclFuncReduceScatter) && comm->nNodes > 1) continue;
+}
 
-      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        float time;
-        NCCLCHECK(ncclTopoGetAlgoTime(comm, info->func, a, p, nBytes, numPipeOps, &time, &backup));
-        if (!backup) {
-          if (time >= 0 && time < minTime) {
-            info->algorithm = a;
-            info->protocol = p;
-            minTime = time;
-          }
-        } else {
-          if (time >= 0 && time < backupMinTime) {
-            backupAlgo = a;
-            backupProto = p;
-            backupMinTime = time;
-          }
+// numPipeOps: number of pipelined ops. Can be greater than 1 in aggregation mode. Used to adjust latency.
+static ncclResult_t updateCollCostTable(
+    struct ncclComm* comm, struct ncclTaskColl* info, size_t nBytes,
+    int collNetSupport, int nvlsSupport, int numPipeOps,
+    float** collCostTable, int* backupAlgo, int* backupProto, float* backupTime
+  ) {
+  float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
+
+  if (comm->nRanks == 1) {
+    table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 0.0;
+    return ncclSuccess;
+  }
+
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetSupport != 1) continue;
+    if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && nvlsSupport != 1 && info->func != ncclFuncAllGather) continue;
+    if (a == NCCL_ALGO_NVLS && collNetSupport != 1 && comm->nNodes > 1) continue;
+    /* now we only support single-node NVLS allgather and reducescatter */
+    if (a == NCCL_ALGO_NVLS && (info->func == ncclFuncAllGather || info->func == ncclFuncReduceScatter) && comm->nNodes > 1) continue;
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      bool backup;
+      float time;
+      NCCLCHECK(ncclTopoGetAlgoTime(comm, info->func, a, p, nBytes, numPipeOps, &time, &backup));
+      if (!backup) {
+        table[a][p] = time;
+      } else {
+        if (time >= 0.0 && time < *backupTime) {
+          *backupAlgo = a;
+          *backupProto = p;
+          *backupTime = time;
         }
       }
     }
-
-    if (info->algorithm == NCCL_ALGO_UNDEF || info->protocol == NCCL_PROTO_UNDEF) {
-      if (backupAlgo == NCCL_ALGO_UNDEF || backupProto == NCCL_PROTO_UNDEF) {
-        WARN("Error : no algorithm/protocol available");
-        return ncclInternalError;
-      }
-      info->algorithm = backupAlgo;
-      info->protocol = backupProto;
-    }
-    if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, minTime);
-    if (timeInSec) *timeInSec = (minTime < backupMinTime) ? minTime : backupMinTime;
-    TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, minTime);
   }
+
+  return ncclSuccess;
+}
+
+static ncclResult_t topoGetAlgoInfo(
+    struct ncclComm* comm, struct ncclTaskColl* info, size_t nBytes,
+    float** collCostTable, int backupAlgo, int backupProto, float backupTime,
+    float* timeInSec
+  ) {
+  float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
+
+  float minTime = 3600000000.0;
+  int algorithm = info->algorithm = NCCL_ALGO_UNDEF;
+  int protocol = info->protocol = NCCL_PROTO_UNDEF;
+  for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      if (table[a][p] == NCCL_ALGO_PROTO_IGNORE) continue;
+      if (table[a][p] >= 0.0 && table[a][p] < minTime) {
+        algorithm = a;
+        protocol = p;
+        minTime = table[a][p];
+      }
+    }
+  }
+
+  info->algorithm = algorithm;
+  info->protocol = protocol;
+  float time = minTime;
+
+  if (info->algorithm == NCCL_ALGO_UNDEF || info->protocol == NCCL_PROTO_UNDEF) {
+    if (backupAlgo == NCCL_ALGO_UNDEF || backupProto == NCCL_PROTO_UNDEF) {
+      WARN("Error : no algorithm/protocol available");
+      return ncclInternalError;
+    }
+    info->algorithm = backupAlgo;
+    info->protocol = backupProto;
+    time = backupTime;
+  }
+  if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
+  if (timeInSec) *timeInSec = time;
+  TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
 
   int nc = comm->nChannels;
   int nt = comm->maxThreads[info->algorithm][info->protocol];
@@ -1630,17 +1657,20 @@ static ncclResult_t getAlgoInfo(
   info->algorithm = NCCL_ALGO_UNDEF;
   info->protocol = NCCL_PROTO_UNDEF;
   int nMaxChannels = 0;
+  int backupAlgo = NCCL_ALGO_UNDEF;
+  int backupProto = NCCL_PROTO_UNDEF;
+  float backupTime = 3600000000.0;
+  float collCostTable[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
+  initCollCostTable((float **)collCostTable);
+  NCCLCHECK(updateCollCostTable(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps, (float **)collCostTable, &backupAlgo, &backupProto, &backupTime));
   if (comm->tuner != NULL) {
-    int algorithm = NCCL_ALGO_UNDEF;
-    int protocol = NCCL_PROTO_UNDEF;
     NCCLCHECK(comm->tuner->getCollInfo(
           comm->tunerContext, info->func, nBytes,
           collNetSupport, nvlsSupport, numPipeOps,
-          &algorithm, &protocol, &nMaxChannels));
-    info->algorithm = algorithm;
-    info->protocol = protocol;
+          (float **)collCostTable, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
+          &nMaxChannels));
   }
-  NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps, estimatedTime));
+  NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, backupAlgo, backupProto, backupTime, estimatedTime));
   info->nMaxChannels = nMaxChannels == 0 ? info->nMaxChannels : nMaxChannels;
   return ncclSuccess;
 }
