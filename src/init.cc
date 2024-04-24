@@ -171,6 +171,7 @@ void ncclCommPushCudaGdrFree(struct ncclComm* comm, void* handle) {
 }
 
 static ncclResult_t commFree(ncclComm_t comm) {
+  int abort = 0;
   /* commFree() should not involve any sync among ranks. */
   if (comm == NULL)
     return ncclSuccess;
@@ -233,6 +234,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   ncclMemoryStackDestruct(&comm->memScoped);
   ncclMemoryStackDestruct(&comm->memPermanent);
 
+  abort = *comm->abortFlag;
   if (ncclAtomicRefCountDecrement(comm->abortFlagRefCount) == 0) {
     free(comm->abortFlag);
     NCCLCHECK(ncclCudaHostFree((void*)comm->abortFlagDev));
@@ -244,6 +246,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->topParentLocalRanks);
 
   NCCLCHECK(ncclRegCleanup(comm));
+
+  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - %s COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, abort ? "Abort" : "Destroy");
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   free(comm);
@@ -2120,7 +2124,9 @@ fail:
   goto exit;
 }
 
-static ncclResult_t commReclaim(ncclComm_t comm) {
+static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
+  struct ncclCommFinalizeAsyncJob* job = (struct ncclCommFinalizeAsyncJob*) job_;
+  ncclComm_t comm = job->comm;
   ncclResult_t ret = ncclSuccess;
   ncclResult_t state;
   int curRank; /* Debug info */
@@ -2212,25 +2218,31 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   }
 
   int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+  struct ncclCommFinalizeAsyncJob *job = NULL;
+  ncclResult_t res = ncclSuccess;
 
   NvtxParamsCommInitRank payload{rank, nranks, cudaDev};
   NVTX3_FUNC_WITH_PARAMS(CommDestroy, CommInitRankSchema, payload)
 
-  int64_t busId = comm->busId;
-  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
   // Try and prevent a double free of the comm struct (user error)
   if (comm->rank == -1 || comm->nRanks == -1 || comm->cudaDev == -1 || comm->busId == -1) {
     WARN("comm %p has already been destroyed", comm);
     return ncclInvalidArgument;
   }
 
+  comm->destroyFlag = 1;
   /* init thread must be joined before we destroy the comm. */
   NCCLCHECK(ncclCommEnsureReady(comm));
+  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  job->comm = comm;
+  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, commReclaim, NULL, free, comm), res, fail);
 
-  NCCLCHECK(commReclaim(comm));
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Destroy COMPLETE", comm, rank, nranks, cudaDev, busId);
-
-  return ncclSuccess;
+exit:
+  return res;
+fail:
+  free(job);
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclCommAbort, ncclComm_t comm);
@@ -2241,12 +2253,13 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   }
 
   int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+  struct ncclCommFinalizeAsyncJob *job = NULL;
+  ncclResult_t res = ncclSuccess;
 
   NvtxParamsCommInitRank payload{rank, nranks, cudaDev};
   NVTX3_FUNC_WITH_PARAMS(CommAbort, CommInitRankSchema, payload)
 
-  int64_t busId = comm->busId;
-  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, busId);
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
 
   // Ask anything that might still be running on the device to quit
   if (comm->childAbortFlag != nullptr) {
@@ -2255,14 +2268,20 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   }
   __atomic_store_n(comm->abortFlag, 1, __ATOMIC_RELEASE);
   __atomic_store_n(comm->abortFlagDev, 1, __ATOMIC_RELEASE);
+  comm->destroyFlag = 1;
   /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
   ncclCommEnsureReady(comm);
 
-  (void) commReclaim(comm);
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - Abort COMPLETE", comm, rank, nranks, cudaDev, busId);
+  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  job->comm = comm;
+  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, commReclaim, NULL, free, comm), res, fail);
 
+exit:
   return ncclSuccess;
+fail:
+  free(job);
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclCommSplit, ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config);
