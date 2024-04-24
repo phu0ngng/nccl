@@ -181,8 +181,12 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
 
   if (sleepId < NUM_SLEEP_CASES) {
     usleep(sleepTimes[sleepId]);
-    for (int j = 0; j < nGpus; ++j) ncclCommAbort(comms[j]);
-    for (int j = 0; j < nGpus; ++j) ncclCommAbort(splitComms[j]);
+    NCCLCHECK(ncclGroupStart());
+    for (int j = 0; j < nGpus; ++j) {
+      ncclCommAbort(comms[j]);
+      ncclCommAbort(splitComms[j]);
+    }
+    NCCLCHECK(ncclGroupEnd());
     goto exit;
   } else {
     TESTCHECK(checkCommsState(comms, nGpus, ncclInProgress, ncclSuccess));

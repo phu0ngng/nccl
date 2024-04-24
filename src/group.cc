@@ -31,6 +31,7 @@ ncclResult_t ncclAsyncLaunch(
   ) {
   ncclResult_t ret = ncclSuccess;
 
+  job->destroyFlag = comm->destroyFlag;
   if (ncclGroupDepth == 0) {
     ret = func(job);
     if (ret != ncclSuccess && undo) undo(job);
@@ -46,7 +47,9 @@ ncclResult_t ncclAsyncLaunch(
     job->state = ncclGroupJobRunning;
     job->comm = comm;
     /* check if there are blocking and nonblocking comms at the same time in group. */
-    if (ncclGroupBlocking == -1) {
+    if (comm->destroyFlag) {
+      ncclGroupBlocking = 1;
+    } else if (ncclGroupBlocking == -1) {
       /* first met communicator */
       ncclGroupBlocking = comm->config.blocking;
     } else if (ncclGroupBlocking != comm->config.blocking) {
@@ -333,7 +336,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime 
           assert(state == ncclGroupJobJoined);
         }
 
-        if (__atomic_load_n(groupAbortFlag, __ATOMIC_ACQUIRE) || errorJobAbortFlag == true) {
+        if (!job->destroyFlag && (__atomic_load_n(groupAbortFlag, __ATOMIC_ACQUIRE) || errorJobAbortFlag == true)) {
           __atomic_store_n(job->abortFlag, 1, __ATOMIC_RELEASE);
           __atomic_store_n(job->abortFlagDev, 1, __ATOMIC_RELEASE);
           if (job->childAbortFlag) {
@@ -358,7 +361,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime 
   if (estimatedTime) assert(ncclIntruQueueEmpty(asyncJobsMain));
   while (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsMain);
-    if (job->comm && !job->comm->config.blocking)
+    if (!job->destroyFlag && job->comm && !job->comm->config.blocking)
       (void) ncclCommSetAsyncError(job->comm, ret);
     if (job->destructor) job->destructor((void*)job);
   }

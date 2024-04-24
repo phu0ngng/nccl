@@ -459,6 +459,7 @@ struct ncclComm {
   int* abortFlagRefCount;
   uint32_t* childAbortFlag;
   uint32_t* childAbortFlagDev;
+  uint32_t destroyFlag;
 
   // Device side of the communicator (for cudaFree's)
   struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm
