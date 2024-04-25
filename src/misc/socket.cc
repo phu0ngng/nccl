@@ -409,7 +409,7 @@ ncclResult_t ncclSocketGetAddr(struct ncclSocket* sock, union ncclSocketAddress*
 
 static ncclResult_t socketTryAccept(struct ncclSocket* sock) {
   socklen_t socklen = sizeof(union ncclSocketAddress);
-  sock->fd = accept(sock->acceptFd, &sock->addr.sa, &socklen);
+  sock->fd = accept(sock->acceptFd, (struct sockaddr*)&sock->addr, &socklen);
   if (sock->fd != -1) {
     sock->state = ncclSocketStateAccepted;
   } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
