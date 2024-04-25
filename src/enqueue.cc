@@ -234,11 +234,13 @@ static ncclResult_t registerIntraNodeBuffers(
     struct ncclComm* comm, struct ncclTaskColl* info,
     void* outRegBufSend[NCCL_MAX_LOCAL_RANKS],
     void* outRegBufRecv[NCCL_MAX_LOCAL_RANKS],
-    struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue
+    struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue,
+    bool* regNeedConnect
   ) {
   ncclResult_t result = ncclSuccess;
 
   info->regBufType = NCCL_REGULAR_BUFFER;
+  *regNeedConnect = true;
 #if CUDART_VERSION >= 11030
   if ((info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) && comm->nvlsRegSupport) {
     bool regBufUsed = false;
@@ -260,6 +262,7 @@ static ncclResult_t registerIntraNodeBuffers(
     }
 
     if (regBufUsed) {
+      *regNeedConnect = false;
       /* tweak NVLS channels usage; for registered NVLS buffer, we only need 4/5 channels to
        * saturate bandwidth. */
       if (comm->nNodes == 1) {
@@ -389,7 +392,7 @@ static bool testBudget(
 
 // Called once per ncclGroup to organize the user submitted tasks in
 // comm->planner so that they can be peeled off into plans.
-static ncclResult_t prepareTasks(struct ncclComm* comm, float* estimatedTime) {
+ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool* needConnect, float* estimatedTime) {
   struct ncclKernelPlanner* planner = &comm->planner;
   // Tasks from the sorter come out ordered size descending.
   struct ncclTaskColl* task = ncclTaskCollSorterDequeueAll(&planner->collSorter);
@@ -419,7 +422,7 @@ static ncclResult_t prepareTasks(struct ncclComm* comm, float* estimatedTime) {
     struct ncclTaskColl* aggBeg = tasksByFnOpTy[fnOpTyIndices[cursor]];
     int collNetSupport = 0;
     NCCLCHECK(getCollNetSupport(comm, aggBeg, &collNetSupport));
-    int nvlsSupport = comm->nvlsSupport && ncclNvlsSupported(aggBeg->op.op, aggBeg->datatype);
+    int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(aggBeg->op.op, aggBeg->datatype) || aggBeg->func == ncclFuncAllGather);
     do {
       struct ncclTaskColl* aggEnd = aggBeg->next;
       struct ncclTaskColl agg = *aggBeg;
@@ -481,7 +484,20 @@ static ncclResult_t prepareTasks(struct ncclComm* comm, float* estimatedTime) {
     // Build a ncclDevWorkColl[Reg?] struct for each task.
     void* regBufSend[NCCL_MAX_LOCAL_RANKS];
     void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
-    registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &planner->collCleanupQueue);
+    bool regNeedConnect = true;
+    registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &planner->collCleanupQueue, &regNeedConnect);
+
+    if (ncclCuMemEnable() && comm->initAlgoChannels[task->algorithm] == false) {
+      if (task->algorithm == NCCL_ALGO_NVLS_TREE && comm->initAlgoChannels[NCCL_ALGO_NVLS] == false && regNeedConnect == true) {
+        comm->initAlgoChannels[NCCL_ALGO_NVLS] = true;
+        algoNeedConnect[NCCL_ALGO_NVLS] = true;
+      }
+      if (task->algorithm != NCCL_ALGO_NVLS || regNeedConnect == true) {
+        comm->initAlgoChannels[task->algorithm] = true;
+        algoNeedConnect[task->algorithm] = true;
+        *needConnect = true;
+      }
+    }
 
     struct ncclDevWorkColl devWork = {};
     devWork.sendbuff = (void*)task->sendbuff;
@@ -1244,14 +1260,6 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm, float* estimatedTime) {
   // Poll for callbacks sent to us from other threads. Typically these free
   // resources from to our memory pools.
   NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
-
-  // We already have one frame present which holds all of our tasks (which we
-  // are about to schedule). Now push an additional frame for allocating
-  // work structs (see appendWorkElem() variants all use scoped allocation).
-  ncclMemoryStackPush(&comm->memScoped);
-
-  // Prepare tasks for scheduling.
-  NCCLCHECKGOTO(prepareTasks(comm, estimatedTime), result, failure);
 
   // Don't schedule colls to plan in simulate mode.
   if (estimatedTime) return ncclSuccess;

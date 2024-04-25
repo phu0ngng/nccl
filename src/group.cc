@@ -10,6 +10,7 @@
 #include "transport.h"
 #include "channel.h"
 #include <assert.h>
+#include "bootstrap.h"
 
 __thread int ncclGroupDepth = 0; // depth of ncclGroupStart nesting
 __thread ncclResult_t ncclGroupError = ncclSuccess;
@@ -116,14 +117,67 @@ exit:
 struct ncclPreconnectJob {
   struct ncclAsyncJob base;
   struct ncclComm* comm;
+  bool* algoNeedConnect;
 };
-ncclResult_t ncclPreconnectFunc(struct ncclAsyncJob* job_) {
+
+ncclResult_t ncclP2PPreconnectFunc(struct ncclAsyncJob* job_) {
   struct ncclPreconnectJob* job = (struct ncclPreconnectJob*)job_;
   struct ncclComm* comm = job->comm;
   CUDACHECK(cudaSetDevice(comm->cudaDev));
   if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
   NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 1));
   return ncclSuccess;
+}
+
+ncclResult_t ncclCollPreconnectFunc(struct ncclAsyncJob* job_) {
+  struct ncclPreconnectJob* job = (struct ncclPreconnectJob*)job_;
+  struct ncclComm* comm = job->comm;
+  ncclResult_t ret = ncclSuccess;
+
+  CUDACHECK(cudaSetDevice(comm->cudaDev));
+  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  for (int i = 0; i < NCCL_NUM_ALGORITHMS; ++i) {
+    if (job->algoNeedConnect[i]) {
+      switch (i) {
+        case NCCL_ALGO_RING: {
+          NCCLCHECKGOTO(ncclTransportRingConnect(comm), ret, fail);
+          break;
+        }
+        case NCCL_ALGO_TREE: {
+          NCCLCHECKGOTO(ncclTransportTreeConnect(comm), ret, fail);
+          break;
+        }
+        case NCCL_ALGO_NVLS: {
+          /* If we are using NVLS_TREE algo, we must mark NVLS algo to set up
+           * NVLS intra-node buffer */
+          NCCLCHECKGOTO(ncclNvlsBufferSetup(comm), ret, fail);
+          break;
+        }
+        case NCCL_ALGO_NVLS_TREE: {
+          NCCLCHECKGOTO(ncclNvlsTreeConnect(comm), ret, fail);
+          break;
+        }
+        case NCCL_ALGO_COLLNET_CHAIN: {
+          NCCLCHECKGOTO(ncclCollNetChainBufferSetup(comm), ret, fail);
+          break;
+        }
+        case NCCL_ALGO_COLLNET_DIRECT: {
+          NCCLCHECKGOTO(ncclCollNetDirectBufferSetup(comm), ret, fail);
+          break;
+        }
+        default: {
+          ret = ncclInternalError;
+          goto fail;
+        }
+      }
+    }
+  }
+
+exit:
+  free(job->algoNeedConnect);
+  return ret;
+fail:
+  goto exit;
 }
 
 static ncclResult_t doLaunches(struct ncclComm* head, float* totalTime = NULL) {
@@ -273,39 +327,10 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
   return;
 }
 
-static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime = NULL) {
-  int savedDev;
+static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain, volatile bool *groupAbortFlag) {
   ncclResult_t ret = ncclSuccess;
   bool jobsDone = false;
   bool errorJobAbortFlag = false;
-  struct ncclGroupJob *gjob = (struct ncclGroupJob*) job_;
-  struct ncclComm *groupCommHeadMain = *gjob->groupCommHeadPtr;
-  struct ncclComm *groupCommPreconnectHeadMain = *gjob->groupCommPreconnectHeadPtr;
-  struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain = gjob->asyncJobsPtr;
-  bool *groupAbortFlag = gjob->abortFlagPtr;
-
-  CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
-
-  // Skip pre-connect in simulate mode
-  if ((!estimatedTime) && (groupCommPreconnectHeadMain != nullptr)) {
-    struct ncclComm* comm = groupCommPreconnectHeadMain;
-    do {
-      struct ncclPreconnectJob* job;
-      NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
-      job->base.func = ncclPreconnectFunc;
-      job->base.undo = nullptr;
-      job->base.destructor = free;
-      job->base.state = ncclGroupJobRunning;
-      job->base.abortFlag = comm->abortFlag;
-      job->base.abortFlagDev = comm->abortFlagDev;
-      job->comm = comm;
-      ncclIntruQueueEnqueue(asyncJobsMain, &job->base);
-
-      struct ncclComm* next = comm->preconnectNext;
-      comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
-      comm = next;
-    } while (comm != nullptr);
-  }
 
   if (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueHead(asyncJobsMain);
@@ -354,16 +379,87 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime 
     if (ret != ncclSuccess) goto fail;
   }
 
-  if (groupCommHeadMain != nullptr) {
-    NCCLCHECKGOTO(doLaunches(groupCommHeadMain, estimatedTime), ret, fail);
-  }
-
-  if (estimatedTime) assert(ncclIntruQueueEmpty(asyncJobsMain));
   while (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsMain);
     if (!job->destroyFlag && job->comm && !job->comm->config.blocking)
       (void) ncclCommSetAsyncError(job->comm, ret);
     if (job->destructor) job->destructor((void*)job);
+  }
+
+exit:
+  return ret;
+fail:
+  goto exit;
+}
+
+static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime = NULL) {
+  int savedDev;
+  ncclResult_t ret = ncclSuccess;
+  struct ncclGroupJob *gjob = (struct ncclGroupJob*) job_;
+  struct ncclComm *groupCommHeadMain = *gjob->groupCommHeadPtr;
+  struct ncclComm *groupCommPreconnectHeadMain = *gjob->groupCommPreconnectHeadPtr;
+  struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain = gjob->asyncJobsPtr;
+  bool *groupAbortFlag = gjob->abortFlagPtr;
+
+  CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
+
+  if (!estimatedTime && groupCommPreconnectHeadMain != nullptr) {
+    struct ncclComm* comm = groupCommPreconnectHeadMain;
+    do {
+      struct ncclPreconnectJob* job;
+      NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
+      job->base.func = ncclP2PPreconnectFunc;
+      job->base.undo = nullptr;
+      job->base.destructor = free;
+      job->base.state = ncclGroupJobRunning;
+      job->base.abortFlag = comm->abortFlag;
+      job->base.abortFlagDev = comm->abortFlagDev;
+      job->comm = comm;
+      ncclIntruQueueEnqueue(asyncJobsMain, &job->base);
+
+      struct ncclComm* next = comm->preconnectNext;
+      comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
+      comm = next;
+    } while (comm != nullptr);
+  }
+
+  NCCLCHECKGOTO(asyncJobLaunch(asyncJobsMain, groupAbortFlag), ret, fail);
+
+  /* Connect channels at runtime if cumem is supported */
+  if (groupCommHeadMain != nullptr) {
+    struct ncclComm* comm = groupCommHeadMain;
+
+    do {
+      bool needConnect = false;
+      bool algoNeedConnect[NCCL_NUM_ALGORITHMS];
+      memset(algoNeedConnect, 0, sizeof(bool) * NCCL_NUM_ALGORITHMS);
+      // We already have one frame present which holds all of our tasks (which we
+      // are about to schedule). Now push an additional frame for allocating
+      // work structs (see appendWorkElem() variants all use scoped allocation).
+      ncclMemoryStackPush(&comm->memScoped);
+      NCCLCHECKGOTO(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, estimatedTime), ret, fail);
+
+      if (ncclCuMemEnable() && needConnect) {
+        struct ncclPreconnectJob* job;
+        NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
+        job->base.func = ncclCollPreconnectFunc;
+        job->base.undo = nullptr;
+        job->base.destructor = free;
+        job->base.state = ncclGroupJobRunning;
+        job->base.abortFlag = comm->abortFlag;
+        job->comm = comm;
+        NCCLCHECKGOTO(ncclCalloc(&job->algoNeedConnect, NCCL_NUM_ALGORITHMS), ret, fail);
+        memcpy(job->algoNeedConnect, algoNeedConnect, sizeof(bool) * NCCL_NUM_ALGORITHMS);
+        ncclIntruQueueEnqueue(asyncJobsMain, &job->base);
+      }
+      comm = comm->groupNext;
+    } while (comm);
+
+    NCCLCHECKGOTO(asyncJobLaunch(asyncJobsMain, groupAbortFlag), ret, fail);
+  }
+
+  if (groupCommHeadMain != nullptr) {
+    NCCLCHECKGOTO(doLaunches(groupCommHeadMain, estimatedTime), ret, fail);
   }
 
   while (groupCommHeadMain != nullptr) {
