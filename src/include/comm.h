@@ -15,6 +15,7 @@
 #include "strongstream.h"
 #include "nccl_net.h"
 #include "register.h"
+#include "graph.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -389,6 +390,8 @@ struct ncclComm {
   // Bitmasks for ncclTransportP2pSetup
   uint64_t* connectSend;
   uint64_t* connectRecv;
+  struct ncclTopoGraph graphs[NCCL_NUM_ALGORITHMS];
+  bool initAlgoChannels[NCCL_NUM_ALGORITHMS];
 
   uint64_t magic; // Magic number for all network communication. Not a security key -- only goal is to detect mismatches.
 

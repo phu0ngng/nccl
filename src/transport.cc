@@ -73,7 +73,7 @@ NCCL_PARAM(ReportConnectProgress, "REPORT_CONNECT_PROGRESS", 0);
 ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, int connIndex, int* highestTransportType/*=NULL*/) {
   // Stream used during transport setup; need for P2P pre-connect + CUDA Graph
   ncclResult_t ret = ncclSuccess;
-  int highestType = TRANSPORT_P2P;  // track highest transport type
+  int highestType = TRANSPORT_UNDEFINED;  // track highest transport type
   struct ncclConnect** data; // Store intermediate send/recvData structs for connect
   struct ncclConnect** recvData; // Points to entries inside data for given recv connection within a channel
   struct ncclConnect** sendData; // Points to entries inside data for given send connection within a channel

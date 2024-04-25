@@ -601,250 +601,6 @@ NCCL_PARAM(CollNetNodeThreshold, "COLLNET_NODE_THRESHOLD", 2);
 NCCL_PARAM(NvbPreconnect, "NVB_PRECONNECT", 1);
 NCCL_PARAM(AllocP2pNetLLBuffers, "ALLOC_P2P_NET_LL_BUFFERS", 0);
 
-static ncclResult_t collNetInitRailRankMap(ncclComm_t comm) {
-  int rank = comm->rank;
-  uint64_t nonHeadMask = (1ull << comm->localRanks) - 1;
-
-  comm->collNetDenseToUserRank = ncclMemoryStackAlloc<int>(&comm->memPermanent, comm->nRanks);
-  comm->collNetUserToDenseRank = ncclMemoryStackAlloc<int>(&comm->memPermanent, comm->nRanks);
-  // initialize collNetUserToDenseRank[rank]
-  comm->collNetUserToDenseRank[rank] = -1;
-  for (int h = 0; h < comm->collNetHeadsNum; h++) {
-    nonHeadMask ^= 1ull << comm->rankToLocalRank[comm->collNetHeads[h]];
-    if (comm->collNetHeads[h] == rank) { comm->collNetUserToDenseRank[rank] = h; break; }
-  }
-  if (comm->collNetUserToDenseRank[rank] == -1) {
-    comm->collNetUserToDenseRank[rank] = __builtin_popcountll(nonHeadMask & ((1ull << comm->localRank) - 1));
-  }
-  comm->collNetUserToDenseRank[rank] += comm->node * comm->localRanks;
-
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, comm->collNetUserToDenseRank, sizeof(int)));
-  for (int r = 0; r < comm->nRanks; r++) {
-    comm->collNetDenseToUserRank[comm->collNetUserToDenseRank[r]] = r;
-  }
-  return ncclSuccess;
-}
-
-static ncclResult_t collNetTrySetup(ncclComm_t comm, ncclComm_t parent, struct ncclTopoGraph* graphs[]) {
-  ncclResult_t ret = ncclSuccess;
-  int rank = comm->rank;
-  int collNetSetupFail = 0;
-  int highestTypes[NCCL_MAX_LOCAL_RANKS] = { TRANSPORT_P2P };
-  // Find all head ranks
-  int nHeadsUnique = 0;
-  int* headsUnique = NULL;
-  int highestTransportType0, highestTransportType1;
-  char line[1024];
-  bool share;
-  struct ncclTopoGraph* chainGraph = graphs[NCCL_ALGO_COLLNET_CHAIN];
-  struct ncclTopoGraph* directGraph = graphs[NCCL_ALGO_COLLNET_DIRECT];
-
-  struct collnetShareInfo {
-    int headPosition;
-    int isMaster;
-  };
-  struct collnetShareInfo* infos = NULL;
-
-  NCCLCHECKGOTO(ncclCalloc(&headsUnique, directGraph->nChannels), ret, fail);
-  { uint64_t mask = 0;
-    // Head GPU index is always 0
-    for (int c = 0; c < directGraph->nChannels; c++) {
-      int head = directGraph->intra[c * comm->localRanks + 0];
-      assert(comm->rankToNode[head] == comm->node);
-      uint64_t mask0 = mask;
-      mask |= 1ull<<comm->rankToLocalRank[head];
-      if (mask != mask0) headsUnique[nHeadsUnique++] = head;
-    }
-  }
-
-  comm->collNetHeads = headsUnique;
-  comm->collNetHeadsNum = nHeadsUnique;
-  if (parent && parent->collNetSupport && parent->nNodes == comm->nNodes) {
-    if (!parent->config.splitShare) {
-      collNetSetupFail = 1;
-      goto fail;
-    }
-    NCCLCHECKGOTO(ncclCalloc(&infos, comm->nRanks), ret, fail);
-    /* check whether child can share collnet resources of parent. Since parent builds each collnet communicator
-     * based on heads with the same head position in each node, as long as the collnet heads of child comm
-     * can match parent's heads, we can let child communicator share parent's collnet resources. */
-    for (int h = 0; h < nHeadsUnique; ++h) {
-      int prev = INT_MIN;
-      struct collnetShareInfo* myinfo;
-
-      share = true;
-      myinfo = infos + comm->rank;
-      memset(myinfo, 0, sizeof(struct collnetShareInfo));
-      /* find the child head position in parent collnet heads. */
-      if (headsUnique[h] == comm->rank) {
-        myinfo->headPosition = -1;
-        myinfo->isMaster = 1;
-        for (int th = 0; th < parent->collNetHeadsNum; ++th)
-          if (parent->topParentRanks[parent->collNetHeads[th]] == comm->topParentRanks[comm->rank]) {
-            myinfo->headPosition = th;
-            break;
-          }
-      }
-
-      NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, infos, sizeof(struct collnetShareInfo)), ret, fail);
-      for (int i = 0; i < comm->nRanks; ++i) {
-        if (infos[i].isMaster) {
-          if (prev == INT_MIN)
-            prev = infos[i].headPosition;
-
-          if (infos[i].headPosition == -1 || prev != infos[i].headPosition) {
-            share = false;
-            break;
-          }
-        }
-      }
-
-      if (share) {
-        if (myinfo->isMaster) {
-          comm->collNetSharedRes = parent->collNetSharedRes;
-          for (int c = 0; c < comm->nChannels; ++c)
-            NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, true), ret, fail);
-        }
-
-        NCCLCHECKGOTO(collNetInitRailRankMap(comm), ret, fail);
-      } else {
-        /* TODO: CX-6 and CX-7 both do not support multiple sharp resources per process, if child comm cannot
-         * share the sharp resource from parent, we cannot use sharp in this case. This restriction might be
-         * lifted by sharp plugin/IB hardware in the future. */
-        collNetSetupFail = 1;
-        if (comm->rank == 0) {
-          WARN("Child comms (nRanks %d) fails to share parent comms (nRanks %d) sharp resources", comm->nRanks, parent->nRanks);
-        }
-        goto fail;
-      }
-    }
-    share = true;
-  } else {
-    /* this allocated buffer will be freed on proxy side */
-    NCCLCHECK(ncclCalloc(&comm->collNetSharedRes, 1));
-    comm->collNetSharedRes->nChannels = comm->nChannels;
-    comm->collNetSharedRes->buffSize = comm->buffSizes[NCCL_PROTO_SIMPLE];
-
-    NCCLCHECKGOTO(collNetInitRailRankMap(comm), ret, fail);
-
-    for (int c = 0; c < comm->nChannels; c++) {
-      struct ncclChannel* channel = comm->channels + c;
-      NCCLCHECKGOTO(initCollnetChannel(comm, c, parent, false), ret, fail);
-      for (int h = 0; h < nHeadsUnique; h++) {
-        const int head = headsUnique[h];
-        ncclConnect connect;
-        collNetSetupFail |= ncclTransportCollNetSetup(comm, directGraph, channel, head, head, h, collNetRecv, &connect);
-        if (!collNetSetupFail) collNetSetupFail |= ncclTransportCollNetSetup(comm, directGraph, channel, head, head, h, collNetSend, &connect);
-      }
-      // Verify CollNet setup across ranks after trying the first channel
-      if (c == 0) {
-        NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, fail);
-      }
-    }
-    share = false;
-  }
-
-  if (share) {
-    memcpy(comm->collNetSupportMatrix, parent->collNetSupportMatrix, sizeof(comm->collNetSupportMatrix));
-  } else {
-    do {
-      /* Initialize all entries in collNetSupportMatrix[redop][type]. Since some
-      ranks don't connect to sharp we enable a (redop,type) if any rank claims
-      support. */
-      const ncclRedOp_t redops[] = {ncclSum, ncclProd, ncclMin, ncclMax};
-      uint8_t(*matrix)[4][ncclNumTypes];
-      bool isHead = false;
-      matrix = nullptr;
-      NCCLCHECKGOTO(ncclCalloc(&matrix, comm->nRanks), ret, matrix_end);
-      for (int h = 0; h < nHeadsUnique; h++) isHead |= (headsUnique[h] == comm->rank);
-      if (isHead) {
-        for (int ty=0; ty < ncclNumTypes; ty++) {
-          for (int i=0; i < 4; i++) {
-            int support = 0;
-            NCCLCHECKGOTO(collNetReduceSupport(comm, (ncclDataType_t)ty, redops[i], &support), ret, matrix_end);
-            // bit 0 = not supported, bit 1 = supported
-            matrix[rank][redops[i]][ty] = 1<<(support ? 1 : 0);
-          }
-        }
-      }
-      NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, matrix, sizeof(*matrix)), ret, matrix_end);
-      for (int ty=0; ty < ncclNumTypes; ty++) {
-        for (int i=0; i < 4; i++) {
-          int op = redops[i];
-          uint8_t accum = 0;
-          for (int r=0; r < comm->nRanks; r++) accum |= matrix[r][op][ty];
-          // We support (redop, type) if some rank supports it and no rank doesn't support it
-          comm->collNetSupportMatrix[op][ty] = (accum == (1<<1));
-        }
-      }
-    matrix_end:
-      free(matrix);
-      if (ret != ncclSuccess) goto fail;
-    } while (0);
-  }
-
-  // Verify CollNet setup across ranks after trying all channels
-  NCCLCHECKGOTO(ncclTransportCollNetCheck(comm, collNetSetupFail), ret, fail);
-  TRACE(NCCL_INIT, "rank %d Connected inter-node CollNet", rank);
-
-  line[0] = '\0';
-  for (int c = 0; c < comm->nChannels; c++) {
-    struct ncclTree* chain = &comm->channels[c].collnetChain;
-    snprintf(line + strlen(line), 1023 - strlen(line), " [%d] %d->%d->%d",
-      c, chain->down[0], rank, chain->up);
-  }
-  line[1023] = '\0';
-
-  INFO(NCCL_INIT, "Collnet Chains %s", line);
-  // Connect Collnet + chain
-  for (int c = 0; c < comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels + c;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->collnetChain.up, 1, channel->collnetChain.down, 0), ret, fail);
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, chainGraph, 0), ret, fail);
-  for (int c = 0; c < comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels + c;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, channel->collnetChain.down, 1, &channel->collnetChain.up, 1), ret, fail);
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, chainGraph, 1), ret, fail);
-  INFO(NCCL_INIT, "Connected collnet + chain");
-
-  // Connect intra-node CollNet + Direct
-  for (int c = 0; c < comm->nChannels; c++) {
-    struct ncclChannel* channelRecv = comm->channels + c;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.up, NCCL_MAX_DIRECT_ARITY, channelRecv->collnetDirect.down, 0), ret, fail);
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, directGraph, 0, &highestTransportType0), ret, fail);
-
-  for (int c = 0; c < comm->nChannels; c++) {
-    struct ncclChannel* channelSend = comm->channels + c;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.down, NCCL_MAX_DIRECT_ARITY, channelSend->collnetDirect.up, 1), ret, fail);
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, directGraph, 1, &highestTransportType1), ret, fail);
-
-  // Exchange highest intra-node transport type among ranks
-  // because we need to know whether all ranks can p2p each other to determine whether we can directly read/write registered user buffer
-  comm->intraHighestTransportType = highestTypes[comm->localRank] = highestTransportType0 > highestTransportType1 ? highestTransportType0 : highestTransportType1;
-  if (share) {
-    comm->intraHighestTransportType = std::max(comm->intraHighestTransportType, parent->intraHighestTransportType);
-  }
-  NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, highestTypes, sizeof(int)), ret, fail);
-  for (int i = 0; i < comm->localRanks; i++) {
-    if (highestTypes[i] > comm->intraHighestTransportType)
-      comm->intraHighestTransportType = highestTypes[i];
-  }
-
-  INFO(NCCL_INIT, "rank %d Connected CollNet", rank);
-
-exit:
-  free(infos);
-  return ret;
-fail:
-  ncclTransportCollNetFree(comm);
-  comm->collNetSupport = 0;
-  goto exit;
-}
-
 // MNNVL: Flag to indicate whether to enable Multi-Node NVLink
 NCCL_PARAM(MNNVLEnable, "MNNVL_ENABLE", 2);
 
@@ -931,12 +687,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   int nranks = comm->nRanks;
   int nNodes = 1;
   cpu_set_t affinitySave;
-  struct ncclTopoGraph ringGraph;
-  struct ncclTopoGraph treeGraph;
-  struct ncclTopoGraph collNetChainGraph;
-  struct ncclTopoGraph collNetDirectGraph;
-  struct ncclTopoGraph nvlsGraph;
-  struct ncclTopoGraph* graphs[] = { &treeGraph, &ringGraph, &collNetDirectGraph, &collNetChainGraph, &nvlsGraph, &nvlsGraph };
+  struct ncclTopoGraph* ringGraph = &comm->graphs[NCCL_ALGO_RING];
+  struct ncclTopoGraph* treeGraph = &comm->graphs[NCCL_ALGO_TREE];
+  struct ncclTopoGraph* collNetChainGraph = &comm->graphs[NCCL_ALGO_COLLNET_CHAIN];
+  struct ncclTopoGraph* collNetDirectGraph = &comm->graphs[NCCL_ALGO_COLLNET_DIRECT];
+  struct ncclTopoGraph* nvlsGraph = &comm->graphs[NCCL_ALGO_NVLS];
+  struct ncclTopoGraph* graphs[] = { treeGraph, ringGraph, collNetDirectGraph, collNetChainGraph, nvlsGraph, nvlsGraph };
 
   struct graphInfo {
     int pattern;
@@ -1082,50 +838,50 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   timers[TIMER_INIT_GRAPHS] = clockNano();
   // Get rings and trees
-  memset(&ringGraph, 0, sizeof(struct ncclTopoGraph));
-  ringGraph.id = 0;
-  ringGraph.pattern = NCCL_TOPO_PATTERN_RING;
-  ringGraph.minChannels = 1;
-  ringGraph.maxChannels = MAXCHANNELS/2;
-  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &ringGraph), ret, fail);
-  NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &ringGraph), ret, fail);
+  memset(ringGraph, 0, sizeof(struct ncclTopoGraph));
+  ringGraph->id = 0;
+  ringGraph->pattern = NCCL_TOPO_PATTERN_RING;
+  ringGraph->minChannels = 1;
+  ringGraph->maxChannels = MAXCHANNELS/2;
+  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, ringGraph), ret, fail);
+  NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, ringGraph), ret, fail);
 
-  memset(&treeGraph, 0, sizeof(struct ncclTopoGraph));
-  treeGraph.id = 1;
-  treeGraph.pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
-  treeGraph.minChannels = ringGraph.nChannels;
-  treeGraph.maxChannels = ringGraph.nChannels;
-  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &treeGraph), ret, fail);
-  NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &treeGraph), ret, fail);
+  memset(treeGraph, 0, sizeof(struct ncclTopoGraph));
+  treeGraph->id = 1;
+  treeGraph->pattern = NCCL_TOPO_PATTERN_BALANCED_TREE;
+  treeGraph->minChannels = ringGraph->nChannels;
+  treeGraph->maxChannels = ringGraph->nChannels;
+  NCCLCHECKGOTO(ncclTopoCompute(comm->topo, treeGraph), ret, fail);
+  NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, treeGraph), ret, fail);
 
-  memset(&collNetChainGraph, 0, sizeof(struct ncclTopoGraph));
-  collNetChainGraph.id = 2;
-  collNetChainGraph.pattern = NCCL_TOPO_PATTERN_TREE;
-  collNetChainGraph.collNet = 1;
-  collNetChainGraph.minChannels = ringGraph.nChannels;
-  collNetChainGraph.maxChannels = ringGraph.nChannels;
+  memset(collNetChainGraph, 0, sizeof(struct ncclTopoGraph));
+  collNetChainGraph->id = 2;
+  collNetChainGraph->pattern = NCCL_TOPO_PATTERN_TREE;
+  collNetChainGraph->collNet = 1;
+  collNetChainGraph->minChannels = ringGraph->nChannels;
+  collNetChainGraph->maxChannels = ringGraph->nChannels;
 
-  memset(&collNetDirectGraph, 0, sizeof(struct ncclTopoGraph));
-  collNetDirectGraph.id = 2;
-  collNetDirectGraph.pattern = NCCL_TOPO_PATTERN_COLLNET_DIRECT;
-  collNetDirectGraph.collNet = 1;
-  collNetDirectGraph.minChannels = 1;
-  collNetDirectGraph.maxChannels = MAXCHANNELS;
+  memset(collNetDirectGraph, 0, sizeof(struct ncclTopoGraph));
+  collNetDirectGraph->id = 2;
+  collNetDirectGraph->pattern = NCCL_TOPO_PATTERN_COLLNET_DIRECT;
+  collNetDirectGraph->collNet = 1;
+  collNetDirectGraph->minChannels = 1;
+  collNetDirectGraph->maxChannels = MAXCHANNELS;
   if (comm->collNetSupport) {
-    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &collNetChainGraph), ret, fail);
-    NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &collNetChainGraph), ret, fail);
-    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &collNetDirectGraph), ret, fail);
-    NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &collNetDirectGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, collNetChainGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, collNetChainGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, collNetDirectGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, collNetDirectGraph), ret, fail);
   }
 
-  memset(&nvlsGraph, 0, sizeof(struct ncclTopoGraph));
-  nvlsGraph.id = 3;
-  nvlsGraph.pattern = NCCL_TOPO_PATTERN_NVLS;
-  nvlsGraph.minChannels = 1;
-  nvlsGraph.maxChannels = MAXCHANNELS;
+  memset(nvlsGraph, 0, sizeof(struct ncclTopoGraph));
+  nvlsGraph->id = 3;
+  nvlsGraph->pattern = NCCL_TOPO_PATTERN_NVLS;
+  nvlsGraph->minChannels = 1;
+  nvlsGraph->maxChannels = MAXCHANNELS;
   if (comm->nvlsSupport) {
-    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, &nvlsGraph), ret, fail);
-    NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, &nvlsGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, nvlsGraph), ret, fail);
+    NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, nvlsGraph), ret, fail);
   }
   timers[TIMER_INIT_GRAPHS] = clockNano() - timers[TIMER_INIT_GRAPHS];
 
@@ -1133,7 +889,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   comm->allocP2pNetLLBuffers = ncclParamAllocP2pNetLLBuffers() == 1;
 
   if (comm->rank == ncclParamGraphDumpFileRank()) {
-    struct ncclTopoGraph* dumpGraphs[5] = { &ringGraph, &treeGraph, &collNetDirectGraph, &collNetChainGraph, &nvlsGraph };
+    struct ncclTopoGraph* dumpGraphs[5] = { ringGraph, treeGraph, collNetDirectGraph, collNetChainGraph, nvlsGraph };
     NCCLCHECKGOTO(ncclTopoDumpGraphs(comm->topo, 5, dumpGraphs), ret, fail);
   }
 
@@ -1154,7 +910,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     allGather3Data[rank].graphInfo[a].crossNic = graphs[a]->crossNic;
   }
 
-  comm->nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
+  comm->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
 
   NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allGather3Data, sizeof(*allGather3Data)), ret, fail);
@@ -1230,7 +986,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->collNetSupport = 0;
   if (graphs[NCCL_ALGO_NVLS]->nChannels == 0) comm->nvlsSupport = comm->nvlsChannels = 0;
 
-  comm->nChannels = treeGraph.nChannels = ringGraph.nChannels = std::min(treeGraph.nChannels, ringGraph.nChannels);
+  comm->nChannels = treeGraph->nChannels = ringGraph->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   if (comm->nChannels < nChannelsOrig) {
     // We started duplicating channels during Preset(), so we need to move the
     // duplicated channels since we have removed some.
@@ -1305,51 +1061,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   } else {
     NCCLCHECKGOTO(ncclProxyCreate(comm), ret, fail);
   }
-
+  
   timers[TIMER_INIT_CONNECT] = clockNano();
-  // Connect with prev/next for each ring
-  for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, rings+c*nranks), ret, fail);
-    if (comm->nRanks == 1) continue;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->ring.prev, 1, &channel->ring.next, 0), ret, fail);
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &ringGraph, 0), ret, fail);
-  INFO(NCCL_INIT, "Connected all rings");
-
-  // Connect Trees
-  for (int c=0; c<comm->nChannels; c++) {
-    struct ncclChannel* channel = comm->channels+c;
-    if (comm->nRanks == 1) continue;
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_TREE_ARITY, channel->tree.down, 1, &channel->tree.up, 0), ret, fail);
-    NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->tree.up, NCCL_MAX_TREE_ARITY, channel->tree.down, 0), ret, fail);
-  }
-  NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &treeGraph, 0), ret, fail);
-  INFO(NCCL_INIT, "Connected all trees");
-
-  // Setup NVLS
-  NCCLCHECKGOTO(ncclNvlsSetup(comm, parent), ret, fail);
-  // And NVLS trees if needed
-  if (comm->nvlsSupport && comm->nNodes > 1) {
-    for (int c=0; c<comm->nChannels; c++) {
-      struct ncclChannel* channel = comm->channels+c;
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_NVLS_TREE_ARITY, channel->nvls.treeDown, 1, &channel->nvls.treeUp, 0), ret, fail);
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->nvls.treeUp, NCCL_MAX_NVLS_TREE_ARITY, channel->nvls.treeDown, 0), ret, fail);
-    }
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &nvlsGraph, 0), ret, fail);
-    INFO(NCCL_INIT, "Connected NVLS tree");
-  }
-
-  // Check if we can setup CollNet
-  if (comm->collNetSupport > 0) collNetTrySetup(comm, parent, graphs);
-
-  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
-
-  // Compute time models for algorithm and protocol combinations
-  NCCLCHECKGOTO(ncclTopoTuneModel(comm, comm->minCompCap, comm->maxCompCap, graphs), ret, fail);
-
-  INFO(NCCL_INIT, "%d coll channels, %d collnet channels, %d nvls channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->nChannels, comm->nvlsChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
-
   do { // Build p2p schedule
     int node = comm->node;
     int nNodes = comm->nNodes;
@@ -1358,7 +1071,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int nLocals = comm->maxLocalRanks;
     struct ncclNodeRanks* nodeRanks = comm->nodeRanks;
     bool flat = false;
-    for (int node=0; node < nNodes; node++) {
+    for (int node = 0; node < nNodes; node++) {
       if (nodeRanks[node].localRanks != nLocals) {
         flat = true;
         nNodes = 1; node = 0;
@@ -1379,24 +1092,24 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     // Example sequence for 16 ranks: 0, 1, 3, 6, 10, 15, 5, 12, 4, 13, 7, 2, 14, 11, 9, 8
     do {
       if (nodeDelta < nNodes) { // Filter nonsensical node deltas
-        int sendNode = (node + nodeDelta)%nNodes;
-        int recvNode = (node - nodeDelta + nNodes)%nNodes;
+        int sendNode = (node + nodeDelta) % nNodes;
+        int recvNode = (node - nodeDelta + nNodes) % nNodes;
         uint32_t localRound = 0;
         uint32_t localDelta = 0;
         do {
           if (localDelta < nLocals) { // Filter nonsensical node-local deltas
-            int sendLocal = (local + localDelta)%nLocals;
-            int recvLocal = (local - localDelta + nLocals)%nLocals;
+            int sendLocal = (local + localDelta) % nLocals;
+            int recvLocal = (local - localDelta + nLocals) % nLocals;
             comm->p2pSchedule[round].sendRank = flat ? sendLocal : nodeRanks[sendNode].localRankToRank[sendLocal];
             comm->p2pSchedule[round].recvRank = flat ? recvLocal : nodeRanks[recvNode].localRankToRank[recvLocal];
             round += 1;
           }
           localRound += 1;
-          localDelta = (localDelta + localRound) & (nLocalsPow2-1); // Quadratic update
+          localDelta = (localDelta + localRound) & (nLocalsPow2 - 1); // Quadratic update
         } while (localRound != nLocalsPow2);
       }
       nodeRound += 1;
-      nodeDelta = (nodeDelta + nodeRound) & (nNodesPow2-1); // Quadratic update
+      nodeDelta = (nodeDelta + nodeRound) & (nNodesPow2 - 1); // Quadratic update
     } while (nodeRound != nNodesPow2);
 
     if (round != nRanks) {
@@ -1406,48 +1119,87 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   } while (0);
 
-  if (ncclParamNvbPreconnect()) {
-    // Connect p2p when using NVB path
-    int nvbNpeers;
-    NCCLCHECKGOTO(ncclTopoGetNvbGpus(comm->topo, comm->rank, &nvbNpeers, &nvbPeers), ret, fail);
-    for (int r=0; r<nvbNpeers; r++) {
-      int peer = nvbPeers[r];
-      int sendRound=0, recvRound=0;
-      while (comm->p2pSchedule[sendRound].sendRank != peer) sendRound++;
-      while (comm->p2pSchedule[recvRound].recvRank != peer) recvRound++;
-      uint8_t sendBase = ncclP2pChannelBaseForRound(comm, sendRound);
-      uint8_t recvBase = ncclP2pChannelBaseForRound(comm, recvRound);
-      for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
-        int channelId;
-        channelId = ncclP2pChannelForPart(comm->p2pnChannels, sendBase, c);
-        if (comm->channels[channelId].peers[peer]->send[1].connected == 0) {
-          comm->connectSend[peer] |= (1UL<<channelId);
-        }
-        channelId = ncclP2pChannelForPart(comm->p2pnChannels, recvBase, c);
-        if (comm->channels[channelId].peers[peer]->recv[1].connected == 0) {
-          comm->connectRecv[peer] |= (1UL<<channelId);
-        }
+  if (ncclCuMemEnable()) {
+    for (int c=0; c<comm->nChannels; c++) {
+      NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, rings+c*nranks), ret, fail);
+    }
+    // Setup NVLS
+    NCCLCHECKGOTO(ncclNvlsSetup(comm, parent), ret, fail);
+    // Check if we can setup CollNet
+    if (comm->collNetSupport > 0) ncclCollNetSetup(comm, parent, graphs);
+  } else {
+    for (int c=0; c<comm->nChannels; c++) {
+      NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, rings+c*nranks), ret, fail);
+    }
+    NCCLCHECKGOTO(ncclTransportRingConnect(comm), ret, fail);
+
+    // Connect Trees
+    NCCLCHECKGOTO(ncclTransportTreeConnect(comm), ret, fail);
+
+    // Setup NVLS
+    NCCLCHECKGOTO(ncclNvlsSetup(comm, parent), ret, fail);
+    NCCLCHECKGOTO(ncclNvlsBufferSetup(comm), ret, fail);
+
+    // And NVLS trees if needed
+    NCCLCHECKGOTO(ncclNvlsTreeConnect(comm), ret, fail);
+
+    // Check if we can setup CollNet
+    if (comm->collNetSupport > 0) {
+      ncclCollNetSetup(comm, parent, graphs);
+      NCCLCHECKGOTO(ncclCollNetChainBufferSetup(comm), ret, fail);
+      NCCLCHECKGOTO(ncclCollNetDirectBufferSetup(comm), ret, fail);
+    }
+
+    // Connect to local net proxy
+    tpProxyRank = comm->topParentRanks[comm->rank];
+    NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
+    NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
+
+    // Then to remote ones when using PXN
+    if (ncclPxnDisable(comm) == 0) {
+      int nranks;
+      NCCLCHECKGOTO(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks), ret, fail);
+      for (int r=0; r<nranks; r++) {
+        tpProxyRank = comm->topParentRanks[pxnPeers[r]];
+        NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
+        NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
       }
     }
 
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, NULL, 1), ret, fail);
-  }
+    if (ncclParamNvbPreconnect()) {
+      // Connect p2p when using NVB path
+      int nvbNpeers;
+      NCCLCHECKGOTO(ncclTopoGetNvbGpus(comm->topo, comm->rank, &nvbNpeers, &nvbPeers), ret, fail);
+      for (int r=0; r<nvbNpeers; r++) {
+        int peer = nvbPeers[r];
+        int sendRound=0, recvRound=0;
+        while (comm->p2pSchedule[sendRound].sendRank != peer) sendRound++;
+        while (comm->p2pSchedule[recvRound].recvRank != peer) recvRound++;
+        uint8_t sendBase = ncclP2pChannelBaseForRound(comm, sendRound);
+        uint8_t recvBase = ncclP2pChannelBaseForRound(comm, recvRound);
+        for (int c=0; c<comm->p2pnChannelsPerPeer; c++) {
+          int channelId;
+          channelId = ncclP2pChannelForPart(comm->p2pnChannels, sendBase, c);
+          if (comm->channels[channelId].peers[peer]->send[1].connected == 0) {
+            comm->connectSend[peer] |= (1UL<<channelId);
+          }
+          channelId = ncclP2pChannelForPart(comm->p2pnChannels, recvBase, c);
+          if (comm->channels[channelId].peers[peer]->recv[1].connected == 0) {
+            comm->connectRecv[peer] |= (1UL<<channelId);
+          }
+        }
+      }
 
-  // Connect to local net proxy
-  tpProxyRank = comm->topParentRanks[comm->rank];
-  NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
-  NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
-
-  // Then to remote ones when using PXN
-  if (ncclPxnDisable(comm) == 0) {
-    int nranks;
-    NCCLCHECKGOTO(ncclTopoGetPxnRanks(comm, &pxnPeers, &nranks), ret, fail);
-    for (int r=0; r<nranks; r++) {
-      tpProxyRank = comm->topParentRanks[pxnPeers[r]];
-      NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_NET, 1, tpProxyRank, &proxyConn), ret, fail);
-      NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &proxyConn, ncclProxyMsgSharedInit, &comm->p2pnChannels, sizeof(int), NULL, 0), ret, fail);
+      NCCLCHECKGOTO(ncclTransportP2pSetup(comm, NULL, 1), ret, fail);
     }
   }
+
+  TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
+
+  // Compute time models for algorithm and protocol combinations
+  NCCLCHECKGOTO(ncclTopoTuneModel(comm, comm->minCompCap, comm->maxCompCap, graphs), ret, fail);
+
+  INFO(NCCL_INIT, "%d coll channels, %d collnet channels, %d nvls channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->nChannels, comm->nvlsChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
 
   if (comm->intraRank == 0) { // Load ncclParamLaunchMode
     const char* str = ncclGetEnv("NCCL_LAUNCH_MODE");
@@ -1482,7 +1234,7 @@ exit:
   /* If split resource is shared, we are not able to unlink the proxy ops pool here since the child comm can
    * attach the proxy ops pool of parent at any time; otherwise, unlink it here to make sure the pool will be
    * properly cleaned up. */
-  if (comm->sharedRes->owner == comm && !comm->config.splitShare && ret == ncclSuccess) ncclProxyShmUnlink(comm);
+  if (comm->sharedRes->owner == comm && !comm->config.splitShare && ret == ncclSuccess && !ncclCuMemEnable()) ncclProxyShmUnlink(comm);
   free(allTopoRanks);
   free(nodesTreePatterns);
   free(nodesFirstRank);
