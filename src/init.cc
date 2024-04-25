@@ -2032,18 +2032,21 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
   if (comm->initState == ncclSuccess) {
     NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->sharedRes->hostStream), ret, fail);
     NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->sharedRes->deviceStream), ret, fail);
+    NCCLCHECKGOTO(ncclCommPollCallbacks(comm, false), ret, fail);
+    // And keep polling until all graphs referencing us die.
+    while (comm->persistentRefs != 0) {
+      NCCLCHECKGOTO(ncclCommPollCallbacks(comm, /*waitSome=*/true), ret, fail);
+    }  
   }
-  NCCLCHECKGOTO(ncclCommPollCallbacks(comm, false), ret, fail);
-  // And keep polling until all graphs referencing us die.
-  while (comm->persistentRefs != 0) {
-    NCCLCHECKGOTO(ncclCommPollCallbacks(comm, /*waitSome=*/true), ret, fail);
+
+  if ((ret = ncclProxyStop(comm)) != ncclSuccess) {
+    WARN("ncclProxyStop: comm %p (rank = %d) destroys proxy resource error %d", comm, comm->rank, ret);
   }
 
   if (savedDevice != commDevice) {
     CUDACHECKGOTO(cudaSetDevice(savedDevice), ret, fail);
   }
 
-  comm->finalizeCalled = true;
 exit:
   return ret;
 fail:
@@ -2073,31 +2076,11 @@ static ncclResult_t commCleanup(ncclComm_t comm) {
   return ncclSuccess;
 }
 
-static ncclResult_t commFinalize(ncclComm_t comm, bool userCalled) {
-  ncclResult_t ret = ncclSuccess;
-  struct ncclCommFinalizeAsyncJob *job = NULL;
-
-  /* launch async thread to finalize comm. */
-  NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
-  job->comm = comm;
-
-  if (userCalled) {
-    NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, commDestroySync, NULL, free, comm), ret, fail);
-  } else {
-    NCCLCHECKGOTO(commDestroySync(&job->base), ret, fail);
-    free(job);
-  }
-
-exit:
-  return ncclGroupErrCheck(ret);
-fail:
-  goto exit;
-}
-
 NCCL_API(ncclResult_t, ncclCommFinalize, ncclComm_t comm);
 ncclResult_t ncclCommFinalize(ncclComm_t comm) {
   NVTX3_FUNC_RANGE_IN(nccl_domain);
   ncclResult_t ret = ncclSuccess;
+  struct ncclCommFinalizeAsyncJob *job = NULL;
 
   NCCLCHECK(ncclGroupStartInternal());
   if (comm == NULL) goto exit;
@@ -2111,8 +2094,11 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
     goto fail;
   }
 
-  /* finalize comm. */
-  ret = commFinalize(comm, true);
+  comm->finalizeCalled = true;
+  /* launch async thread to finalize comm. */
+  NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
+  job->comm = comm;
+  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, commDestroySync, NULL, free, comm), ret, fail);
 
 exit:
   ncclGroupErrCheck(ret);
@@ -2128,19 +2114,10 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
   struct ncclCommFinalizeAsyncJob* job = (struct ncclCommFinalizeAsyncJob*) job_;
   ncclComm_t comm = job->comm;
   ncclResult_t ret = ncclSuccess;
-  ncclResult_t state;
-  int curRank; /* Debug info */
-
-  NCCLCHECKGOTO(ncclCommGetAsyncError(comm, &state), ret, fail);
-  TRACE(NCCL_INIT, "commReclaim: reclaim comm %p rank %d state %d", comm, comm->rank, state);
-  if (state == ncclSuccess && __atomic_load_n(comm->abortFlag, __ATOMIC_ACQUIRE) == 0 && comm->finalizeCalled == false) {
-    /* user does not call ncclCommFinalize and this is a normal comm destroy. ncclCommDestroy
-     * should be nonblocking until last call of ncclCommDestroy. */
-    NCCLCHECKGOTO(commFinalize(comm, false), ret, fail);
-  }
 
   if (comm->intraComm0 != NULL) {
     int curRankCnt;
+    int curRank; /* Debug info */
     int intraRanks = comm->intraRanks;
     ncclComm_t intracomm0 = comm->intraComm0;
     int *finalizeRankCnt = &intracomm0->finalizeRankCnt;
@@ -2163,30 +2140,7 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
           job.comm = curIntraComm;
           /* every comm aborts, commDestroySync should not be blocked. */
           if ((ret = commDestroySync((struct ncclAsyncJob*) &job)) != ncclSuccess)
-            WARN("commReclaim: comm %p (rank = %d) in abort, error %d", curIntraComm, curRank, ret);
-        }
-      }
-
-      /* ncclProxyStop() loop must be put after commDestroySync() loop. Namely, you cannot do:
-       *  while(...) {
-       *     commDestroySync(...);
-       *     ncclProxyStop(...);
-       *  }
-       * Considering one process multi-gpu case, we must guarantee all kernels are complete before
-       * we free proxy resources; otherwise, we will face invalid memory issues where proxy connection
-       * and related intermediate memory from one rank are freed but other ranks are still using it.
-       * This is not a problem for multi-process case, since intermediate memory is opened by CUDA IPC
-       * or mmap where memory free is guarded by CUDA driver and operating system, so we will not have
-       * invalid memory access issue. */
-      nextIntraComm = intracomm0;
-      while (nextIntraComm) {
-        curIntraComm = nextIntraComm;
-        curRank = curIntraComm->rank;
-        nextIntraComm = nextIntraComm->intraNext;
-
-        /* free intraprocess proxy resources. */
-        if ((ret = ncclProxyStop(curIntraComm)) != ncclSuccess) {
-          WARN("commReclaim: comm %p (rank = %d) destroys proxy resource error %d", curIntraComm, curRank, ret);
+            WARN("commReclaim: comm %p (rank = %d) in commDestroySync, error %d", curIntraComm, curRank, ret);
         }
       }
 
@@ -2204,10 +2158,7 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
     }
   }
 
-exit:
   return ret;
-fail:
-  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
