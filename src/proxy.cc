@@ -1662,14 +1662,13 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
       }
 
       if (sharedProxyState->peerAddresses) {
-        if (__atomic_load_n(comm->abortFlag, __ATOMIC_ACQUIRE) == 0) {
-          struct ncclSocket sock;
-          int type = ncclProxyMsgStop;
-          NCCLCHECK(ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag));
-          NCCLCHECK(ncclSocketConnect(&sock));
-          NCCLCHECK(ncclSocketSend(&sock, &type, sizeof(int)));
-          NCCLCHECK(ncclSocketClose(&sock));
+        struct ncclSocket sock;
+        int type = ncclProxyMsgStop;
+        ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag);
+        if (ncclSocketConnect(&sock) == ncclSuccess) {
+          ncclSocketSend(&sock, &type, sizeof(int));
         }
+        ncclSocketClose(&sock);
       }
 
       if (sharedProxyState->peerSocks) {
@@ -1687,7 +1686,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
               }
             }
             int type = ncclProxyMsgClose;
-            if (__atomic_load_n(comm->abortFlag, __ATOMIC_ACQUIRE) == 0) NCCLCHECK(ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int)));
+            ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int));
             NCCLCHECK(ncclSocketClose(sharedProxyState->peerSocks + i));
           }
         }

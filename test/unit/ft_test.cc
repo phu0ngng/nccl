@@ -225,7 +225,7 @@ int faultToleranceAllreduceTest(ncclComm_t* comms, int nVis, int size) {
     usleep(sleepTimes[i]);
     if (i != NUM_SLEEP_CASES - 1) {
       for (int j = 0; j < nVis; ++j) ncclCommAbort(comms[j]);
-      printf("FT-NCCL:\tSleep %dus, group ret %s, abort %d communicators at ncclAllReduce, \t[SUCCESS]\n", sleepTimes[i], ncclGetErrorString(ret), nVis);
+      printf("FT-NCCL:\tSleep %dus, group ret %s, abort %d communicators at ncclAllReduce \t[SUCCESS]\n", sleepTimes[i], ncclGetErrorString(ret), nVis);
       continue;
     } else {
       errors += checkCommsState(comms, nVis, ncclInProgress, ncclSuccess);
@@ -317,7 +317,7 @@ int faultToleranceAlltoAllTest(ncclComm_t* comms, int nVis, int size) {
     usleep(sleepTimes[i]);
     if (i != NUM_SLEEP_CASES - 1) {
       for (int j = 0; j < nVis; ++j) ncclCommAbort(comms[j]);
-      printf("FT-NCCL:\tSleep %dus, group ret %s, abort %d communicators at NCCL alltoall, \t[SUCCESS]\n", sleepTimes[i], ncclGetErrorString(ret), nVis);
+      printf("FT-NCCL:\tSleep %dus, group ret %s, abort %d communicators at NCCL alltoall \t[SUCCESS]\n", sleepTimes[i], ncclGetErrorString(ret), nVis);
       continue;
     } else {
       errors += checkCommsState(comms, nVis, ncclInProgress, ncclSuccess);
