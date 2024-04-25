@@ -4,3 +4,5 @@
 /ext-net/example/*.so
 *.gcov
 /coverage/
+tags
+*.swp

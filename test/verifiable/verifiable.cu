@@ -632,11 +632,12 @@ __host__ __device__ void genOutput(
 ////////////////////////////////////////////////////////////////////////////////
 // Nil reduction (byte copy functions). Optimized to assume rank_n=1
 
+// genInput specialization for integer ReduceNil.
 namespace {
-template<typename T, bool IsIntegral>
+template<typename T>
 __host__ __device__ void genInput(
     T &ans, ReduceNil, int rank_n, int rank_me, uint64_t seed, intptr_t index,
-    std::integral_constant<bool, IsIntegral>
+    std::true_type /*integral*/
   ) {
   (void)rank_n, (void)rank_me; // silence unused warnings
   union { uint64_t bits; T tmp; };
@@ -644,6 +645,24 @@ __host__ __device__ void genInput(
   bits >>= 64 - 8*sizeof(T);
   bits &= uint64_t(-1)>>(64 - 8*sizeof(T));
   ans = tmp;
+}
+
+// genInput specialization for floating point ReduceNil.
+template<typename T>
+__host__ __device__ void genInput(
+    T &ans, ReduceNil, int rank_n, int rank_me, uint64_t seed, intptr_t index,
+    std::false_type /*integral*/
+  ) {
+  (void)rank_n; // silence unused warnings
+  constexpr uint64_t mant_mask = (uint64_t(1) << FloatLayout<T>::mantissa_bits)-1;
+  uint64_t rng = hashOf(index ^ index<<16 ^ rank_me, seed);
+  int sign = rng & 1;
+  rng ^= rng>>1;
+  int exp = rng & ((1<<(FloatLayout<T>::exponent_bits-1))-1);
+  exp += 1<<(FloatLayout<T>::exponent_bits-2);
+  rng ^= rng >> FloatLayout<T>::exponent_bits;
+  uint64_t mant = rng & mant_mask;
+  ans = makeFloat<T>(sign, exp, mant);
 }
 
 template<typename T, typename ReduceFn, bool IsIntegral>
