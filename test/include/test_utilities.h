@@ -11,6 +11,7 @@
 #include <curand.h>
 #include <cerrno>
 #include <string>
+#include <stdint.h>
 
 #define CUDACHECK(cmd) do {                         \
   cudaError_t e = cmd;                              \

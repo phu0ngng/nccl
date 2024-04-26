@@ -1,5 +1,6 @@
 #include "ncclCommon_test.cuh"
 #include <execinfo.h>
+#include <stdint.h>
 // these are Template specialization
 #define GEN_DATATYPE(X, Y)                                                     \
     template <>                                                                \
