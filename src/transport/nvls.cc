@@ -284,8 +284,8 @@ ncclResult_t ncclNvlsBufferSetup(struct ncclComm* comm) {
 
   if (comm->nvlsSupport == 0 || comm->nvlsResources->inited) return ncclSuccess;
 
-  INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d buffSize %zu memSize %zu nvlsPerRankSize %zu nvlsTotalSize %zu",
-    comm->rank, headRank, nHeads, buffSize, nvlsPerRankSize, nvlsTotalSize);
+  INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d buffSize %zu nvlsPerRankSize %zu nvlsTotalSize %zu",
+       comm, headRank, nHeads, buffSize, nvlsPerRankSize, nvlsTotalSize);
 
   NCCLCHECKGOTO(nvlsAllocateMem(comm, CU_MULTICAST_GRANULARITY_RECOMMENDED, &resources->accessDesc, &nvlsTotalSize, &resources->ucBuffHandle, &resources->mcBuffHandle, (void**)&resources->ucBuff, (void**)&resources->mcBuff), res, fail);
   resources->buffSize = nvlsTotalSize;
