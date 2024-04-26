@@ -8,7 +8,10 @@
 #include "nccl_net.h"
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
+#include <strings.h>
 #include <sys/syscall.h>
+#include <chrono>
 #include "param.h"
 
 int ncclDebugLevel = -1;
@@ -16,14 +19,15 @@ static int pid = -1;
 static char hostname[1024];
 thread_local int ncclDebugNoWarn = 0;
 char ncclLastError[1024] = ""; // Global string for the last error in human readable form
-uint64_t ncclDebugMask = NCCL_INIT|NCCL_ENV; // Default debug sub-system mask is INIT and ENV
+static uint64_t ncclDebugMask = NCCL_INIT|NCCL_ENV; // Default debug sub-system mask is INIT and ENV
 FILE *ncclDebugFile = stdout;
-pthread_mutex_t ncclDebugLock = PTHREAD_MUTEX_INITIALIZER;
-std::chrono::steady_clock::time_point ncclEpoch;
+static pthread_mutex_t ncclDebugLock = PTHREAD_MUTEX_INITIALIZER;
+static std::chrono::steady_clock::time_point ncclEpoch;
+static bool ncclWarnSetDebugInfo = false;
 
 static __thread int tid = -1;
 
-void ncclDebugInit() {
+static void ncclDebugInit() {
   pthread_mutex_lock(&ncclDebugLock);
   if (ncclDebugLevel != -1) { pthread_mutex_unlock(&ncclDebugLock); return; }
   const char* nccl_debug = ncclGetEnv("NCCL_DEBUG");
@@ -94,6 +98,15 @@ void ncclDebugInit() {
     free(ncclDebugSubsys);
   }
 
+  const char* ncclWarnSetDebugInfoEnv = ncclGetEnv("NCCL_WARN_ENABLE_DEBUG_INFO");
+  if (ncclWarnSetDebugInfoEnv != NULL && strlen(ncclWarnSetDebugInfoEnv) > 0) {
+    int64_t value;
+    errno = 0;
+    value = strtoll(ncclWarnSetDebugInfoEnv, NULL, 0);
+    if (!errno)
+      ncclWarnSetDebugInfo = value;
+  }
+
   // Cache pid and hostname
   getHostName(hostname, 1024, '.');
   pid = getpid();
@@ -143,8 +156,6 @@ void ncclDebugInit() {
   pthread_mutex_unlock(&ncclDebugLock);
 }
 
-NCCL_PARAM(WarnSetDebugInfo, "WARN_ENABLE_DEBUG_INFO", 0);
-
 /* Common logging function used by the INFO, WARN and TRACE macros
  * Also exported to the dynamically loadable Net transport modules so
  * they can share the debugging mechanisms and output files
@@ -178,7 +189,7 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   if (level == NCCL_LOG_WARN) {
     len = snprintf(buffer, sizeof(buffer), "\n%s:%d:%d [%d] %s:%d NCCL WARN ",
                    hostname, pid, tid, cudaDev, filefunc, line);
-    if (ncclParamWarnSetDebugInfo()) ncclDebugLevel = NCCL_LOG_INFO;
+    if (ncclWarnSetDebugInfo) ncclDebugLevel = NCCL_LOG_INFO;
   } else if (level == NCCL_LOG_INFO) {
     len = snprintf(buffer, sizeof(buffer), "%s:%d:%d [%d] NCCL INFO ", hostname, pid, tid, cudaDev);
   } else if (level == NCCL_LOG_TRACE && flags == NCCL_CALL) {
