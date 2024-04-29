@@ -47,29 +47,6 @@ struct ncclTransport nvlsTransport = {
   { NULL, NULL, nvlsRecvFree, NULL, NULL, NULL, NULL, NULL }
 };
 
-// ncclResult_t nvlsGetProperties(struct ncclComm *comm, struct ncclNvlsSharedRes* resources, int dev, size_t size) {
-//   CUmulticastObjectProp* prop = &resources->properties;
-//   memset(prop, 0, sizeof(*prop));
-//   prop->size = size;
-//   prop->numDevices = comm->MNNVL ? comm->clique.size : comm->localRanks;
-//   prop->handleTypes = ncclCuMemHandleType;
-//   prop->flags = 0;
-
-//   // Could be changed to CU_MULTICAST_GRANULARITY_MINIMUM when 3418538 resolved
-//   CUCHECK(cuMulticastGetGranularity(&resources->granularity, prop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
-
-//   ALIGN_SIZE(size, resources->granularity);
-//   prop->size = resources->size = size;
-
-//   memset(&resources->accessDesc, 0, sizeof(resources->accessDesc));
-//   resources->accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-//   resources->accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-//   resources->accessDesc.location.id = dev;
-//   resources->dev = dev;
-
-//   return ncclSuccess;
-// }
-
 ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop, int rank, unsigned int nranks, CUmemGenericAllocationHandle *mcHandle, char *shareableHandle) {
   CUmemAllocationHandleType type = ncclCuMemHandleType;
   size_t size = prop->size;
@@ -91,12 +68,6 @@ ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop,
 
   return ncclSuccess;
 }
-
-// ncclResult_t nvlsGroupAddDevice(struct ncclComm *comm, struct ncclNvlsSharedRes* resources) {
-//   INFO(NCCL_NVLS, "NVLS group %llx adding dev %d", resources->mcHandle, resources->dev);
-//   CUCHECK(cuMulticastAddDevice(resources->mcHandle, resources->dev));
-//   return ncclSuccess;
-// }
 
 ncclResult_t nvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int rank, CUmemGenericAllocationHandle *mcHandle) {
   CUmemAllocationHandleType type = ncclCuMemHandleType;
