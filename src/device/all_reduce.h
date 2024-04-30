@@ -376,12 +376,12 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
     const int tidEndBcast = tidEndReduce + nThreadsBcast;
 
     if (work->oneNode) {
-      ssize_t totalCount, gridOffset, channelCount, chunkSize;
-      ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), &totalCount, &gridOffset, &channelCount, &chunkSize);
+      ssize_t gridOffset, channelCount, chunkSize;
+      ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkSize);
       const ssize_t loopCount = nvls->nHeads * chunkSize;
       ssize_t offset;
       int nelem;
-      int remCount = totalCount%(nvls->nHeads*chunkSize);
+      int remCount = channelCount%(nvls->nHeads*chunkSize);
       int lastChunkSize = alignUp(divUp(remCount, nvls->nHeads), 16/sizeof(T));
 
       if (tid < tidEndScatter) {
@@ -498,8 +498,8 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
     struct ncclNvls* nvls = &ncclShmem.channel.nvls;
     const int treeUp = nvls->treeUp;
     const int* treeDown = nvls->treeDown;
-    ssize_t totalCount, gridOffset, channelCount, chunkCount;
-    ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), &totalCount, &gridOffset, &channelCount, &chunkCount);
+    ssize_t gridOffset, channelCount, chunkCount;
+    ncclCollCbdPart(work, ncclShmem.channelId, NCCL_PROTO_SIMPLE, sizeof(T), (ssize_t*)nullptr, &gridOffset, &channelCount, &chunkCount);
     const ssize_t loopCount = nvls->nHeads * chunkCount;
     const int nranks = ncclShmem.comm.nRanks;
     const bool hasUp = treeUp != -1;
@@ -510,7 +510,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
     const int gatherWarps = work->regUsed ? 1 : (totalWarps - reduceWarps - bcastWarps) >> 1;
     ssize_t offset;
     int nelem;
-    int remCount = totalCount%(nvls->nHeads*chunkCount);
+    int remCount = channelCount%(nvls->nHeads*chunkCount);
     int lastChunkCount = alignUp(divUp(remCount, nvls->nHeads), 16/sizeof(T));
 
     const int nThreadsScatter = scatterWarps*WARP_SIZE;
