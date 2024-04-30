@@ -488,10 +488,10 @@ fail:
 // Pre-process the string so that running "strings" on the lib can quickly reveal the version.
 #define VERSION_STRING "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR)
 static void showVersion() {
-  static int shown = 0;
-  if (shown == 0) {
+  if (ncclDebugLevel == NCCL_LOG_VERSION) {
     VERSION("%s", VERSION_STRING);
-    shown = 1;
+  } else {
+    INFO(NCCL_ALL,"%s", VERSION_STRING);
   }
 }
 
@@ -1596,7 +1596,10 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   }
 
   NCCLCHECKGOTO(ncclInit(), res, fail);
-  if (myrank == 0) showVersion();
+  if (ncclDebugLevel > NCCL_LOG_VERSION || (ncclDebugLevel == NCCL_LOG_VERSION && myrank == 0)) {
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    pthread_once(&once, showVersion);
+  }
   // Make sure the CUDA runtime is initialized.
   CUDACHECKGOTO(cudaFree(NULL), res, fail);
 
