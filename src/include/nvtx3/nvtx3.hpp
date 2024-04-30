@@ -641,6 +641,7 @@
 #define NVTX3_CPP_DEFINITIONS_V1_0
 
 #include "nvToolsExt.h"
+#include "nvToolsExtPayload.h"
 
 #include <memory>
 #include <string>
@@ -2005,6 +2006,22 @@ class event_attributes {
   {
     attributes_.message     = m.get_value();
     attributes_.messageType = m.get_type();
+  }
+
+  /**
+   * @brief Variadic constructor where the first argument is an extended payload.
+   *
+   * Sets the `ullValue` of the `EventAttribute`s payload and forwards
+   * the remaining variadic parameter pack to the next constructor.
+   *
+   */
+  template <typename... Args>
+  NVTX3_CONSTEXPR_IF_CPP14 explicit event_attributes(nvtxPayloadData_t const* p, Args const&... args) noexcept
+    : event_attributes(args...)
+  {
+    attributes_.payloadType = NVTX_PAYLOAD_TYPE_EXT;
+    attributes_.reserved0 = 1; // NCCL uses only a single binary payload per event.
+    attributes_.payload.ullValue = NVTX_POINTER_AS_PAYLOAD_ULLVALUE(p);
   }
 
   ~event_attributes() = default;
