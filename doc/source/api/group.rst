@@ -26,3 +26,10 @@ ncclGroupEnd
  have been enqueued to the provided streams, but are not necessarily complete. 
  
  When used with the ncclCommInitRank call, the ncclGroupEnd call waits for all communicators to be initialized.
+
+ncclGroupSimulateEnd
+------------
+
+.. c:function:: ncclResult_t ncclGroupSimulateEnd(ncclSimInfo_t* simInfo)
+
+ Simulate a ncclGroupEnd() call and return NCCL's simulation info in a structure passed as an argument.
