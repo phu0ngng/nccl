@@ -95,6 +95,7 @@ static char* ft_list = NULL;
 static size_t tbytes = SIZE_MAX;
 static int split_share = NCCL_CONFIG_UNDEF_INT;
 static int split_comm = 0;
+static char* splitMaskEnv = NULL;
 static int commNum = 1;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 #define LOCAL_REGISTER_SEND 0x1
@@ -856,7 +857,6 @@ testResult_t threadRunTests(struct threadArgs* args) {
 
 testResult_t threadInit(struct threadArgs* args) {
   int nranks = args->totalProcs * args->nThreads * args->nGpus;
-  char* splitMaskEnv = getenv("NCCL_TESTS_SPLIT_MASK");
   ncclComm_t globalComms[args->nGpus];
 
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
@@ -864,12 +864,12 @@ testResult_t threadInit(struct threadArgs* args) {
   config.splitShare = split_share;
 
   NCCLCHECK(ncclGroupStart());
-  for (int i = 0; i < nGpus; ++i) {
+  for (int i = 0; i < args->nGpus; ++i) {
     int rank = args->globalProc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
     CUDACHECK(cudaSetDevice(args->gpus[i]));
     NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, args->ncclId, rank, &config));
   }
-  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus);
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
   /* split comm if required. */
   if (splitMaskEnv) {
     /* split based on split mask */
@@ -882,7 +882,7 @@ testResult_t threadInit(struct threadArgs* args) {
     NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
   } else if (split_comm == 2) {
     /* create split comm with predefined split pattern. */
-    for (int splitCase = 0; splitCase < commNum; ++splitCase) {
+    for (int splitCase = 0; splitCase < args->commNum; ++splitCase) {
       switch (splitCase) {
         case 0: {
           /* duplicate communicator but in reversed rank */
@@ -907,7 +907,7 @@ testResult_t threadInit(struct threadArgs* args) {
         case 2: {
           /* 3:1 split */
           NCCLCHECK(ncclGroupStart());
-          for (int i = 0; i < nGpus; ++i) {
+          for (int i = 0; i < args->nGpus; ++i) {
             int myrank = args->globalProc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
             NCCLCHECK(ncclCommSplit(globalComms[i], 4 * (myrank + 1) <= 3 * nranks, myrank, &args->comms[splitCase][i], &config));
           }
@@ -953,13 +953,24 @@ testResult_t threadInit(struct threadArgs* args) {
       NCCLCHECK(ncclCommDestroy(globalComms[i]));
   }
 
-  TESTCHECK(threadRunTests(args));
-
+  /* allocate buffer for each split comm. */
   for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
-      NCCLCHECK(ncclCommDestroy(args->comms[id][i]));
+      int nranks;
+      size_t sendBytes, recvBytes;
+      size_t allocBytes;
+      NCCLCHECK(ncclCommCount(args->comms[id][i], &nranks));
+      ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
+      CUDACHECK(cudaSetDevice(args->gpus[i]));
+      TESTCHECK(AllocateBuffs(args->sendbuffs[id] + i, sendBytes, args->recvbuffs[id] + i, recvBytes, args->expected[id] + i, (size_t)maxBytes, &allocBytes));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+      if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, &args->sendRegHandles[id][i]));
+      if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, &args->recvRegHandles[id][i]));
+#endif
     }
   }
+
+  TESTCHECK(threadRunTests(args));
 
   return testSuccess;
 }
@@ -1331,7 +1342,6 @@ testResult_t run() {
   char hostname[1024];
   getHostName(hostname, 1024);
 
-char* splitMaskEnv = NULL;
 #ifdef MPI_SUPPORT
   MPI_Comm_size(MPI_COMM_WORLD, &totalProcs);
   MPI_Comm_rank(MPI_COMM_WORLD, &proc);
@@ -1419,6 +1429,9 @@ char* splitMaskEnv = NULL;
   void* sendbuffs[commNum][nGpus*nThreads];
   void* recvbuffs[commNum][nGpus*nThreads];
   void* expected[commNum][nGpus*nThreads];
+  memset(sendbuffs, 0, sizeof(sendbuffs));
+  memset(recvbuffs, 0, sizeof(recvbuffs));
+  memset(expected, 0, sizeof(expected));
   size_t sendBytes, recvBytes;
 
   /* only when communicators are nonblocking and ft test is enabled, we
@@ -1441,23 +1454,26 @@ char* splitMaskEnv = NULL;
 
   ncclUniqueId ncclId;
 
-  //if parallel init is not selected, use main thread to initialize NCCL
-  ncclComm_t* globalComms = NULL;
+  ncclComm_t globalComms[nThreads*nGpus];
   ncclComm_t comms[commNum][nThreads*nGpus];
+  memset(globalComms, 0, sizeof(globalComms));
+  memset(comms, 0, sizeof(comms));
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
   void* sendRegHandles[commNum][nThreads*nGpus];
   void* recvRegHandles[commNum][nThreads*nGpus];
+  memset(sendRegHandles, 0, sizeof(sendRegHandles));
+  memset(recvRegHandles, 0, sizeof(recvRegHandles));
 #endif
   int nranks = totalProcs * nThreads * nGpus;
   if (proc == 0) {
-      NCCLCHECK(ncclGetUniqueId(&ncclId));
-    }
+    NCCLCHECK(ncclGetUniqueId(&ncclId));
+  }
 #ifdef MPI_SUPPORT
-    MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD); // Ensure Bcast is complete for HCOLL
+  MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
+  MPI_Barrier(MPI_COMM_WORLD); // Ensure Bcast is complete for HCOLL
 #endif
   if (!parallel_init) {
-    globalComms = (ncclComm_t*)malloc(sizeof(ncclComm_t) * nThreads * nGpus);
+    //if parallel init is not selected, use main thread to initialize NCCL
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = commblocking;
     config.splitShare = split_share;
@@ -1548,21 +1564,21 @@ char* splitMaskEnv = NULL;
       for (int i = 0; i < nGpus * nThreads; ++i)
         NCCLCHECK(ncclCommDestroy(globalComms[i]));
     }
-  }
 
-  /* allocate buffer for each split comm. */
-  for (int id = 0; id < commNum; ++id) {
-    for (int i = 0; i < nGpus * nThreads; i++) {
-      int nranks;
-      size_t allocBytes;
-      NCCLCHECK(ncclCommCount(comms[id][i], &nranks));
-      ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
-      CUDACHECK(cudaSetDevice(gpus[i]));
-      TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
+    /* allocate buffer for each split comm. */
+    for (int id = 0; id < commNum; ++id) {
+      for (int i = 0; i < nGpus * nThreads; i++) {
+        int nranks;
+        size_t allocBytes;
+        NCCLCHECK(ncclCommCount(comms[id][i], &nranks));
+        ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
+        CUDACHECK(cudaSetDevice(gpus[i]));
+        TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-      if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
-      if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
+        if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
+        if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
 #endif
+      }
     }
   }
 
@@ -1619,6 +1635,10 @@ char* splitMaskEnv = NULL;
     threads[t].args.sendInplaceOffset = (size_t**)malloc(sizeof(size_t*) * commNum);
     threads[t].args.recvInplaceOffset = (size_t**)malloc(sizeof(size_t*) * commNum);
     threads[t].args.nbytes = (size_t**)malloc(sizeof(size_t*) * commNum);
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+    threads[t].args.sendRegHandles = (void***)malloc(sizeof(threads[t].args.sendRegHandles[0]) * commNum);
+    threads[t].args.recvRegHandles = (void***)malloc(sizeof(threads[t].args.recvRegHandles[0]) * commNum);
+#endif
     for (int id = 0; id < commNum; ++id) {
       threads[t].args.sendbuffs[id] = sendbuffs[id]+t*nGpus;
       threads[t].args.recvbuffs[id] = recvbuffs[id]+t*nGpus;
@@ -1629,6 +1649,10 @@ char* splitMaskEnv = NULL;
       threads[t].args.sendInplaceOffset[id] = (size_t*)malloc(sizeof(size_t) * nGpus);
       threads[t].args.recvInplaceOffset[id] = (size_t*)malloc(sizeof(size_t) * nGpus);
       threads[t].args.nbytes[id] = (size_t*)malloc(sizeof(size_t) * nGpus);
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+      threads[t].args.sendRegHandles[id] = sendRegHandles[id]+t*nGpus;
+      threads[t].args.recvRegHandles[id] = recvRegHandles[id]+t*nGpus;
+#endif
     }
 
     threads[t].args.commNum = commNum;
@@ -1688,6 +1712,10 @@ char* splitMaskEnv = NULL;
     free(threads[t].args.sendInplaceOffset);
     free(threads[t].args.recvInplaceOffset);
     free(threads[t].args.nbytes);
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+    free(threads[t].args.sendRegHandles);
+    free(threads[t].args.recvRegHandles);
+#endif
   }
 
 #ifdef MPI_SUPPORT
@@ -1708,15 +1736,8 @@ char* splitMaskEnv = NULL;
       if (recvbuffs[id][i]) CUDACHECK(cudaFree(recvbuffs[id][i]));
       if (datacheck) NCCLCHECK(cudaFree(expected[id][i]));
 #endif
+      NCCLCHECK(ncclCommDestroy(comms[id][i]));
     }
-  }
-
-  if (!parallel_init) {
-    for (int id = 0; id < commNum; ++id) {
-      for(int i=0; i<nGpus*nThreads; ++i)
-        NCCLCHECK(ncclCommDestroy(comms[id][i]));
-    }
-    free(globalComms);
   }
 
   CUDACHECK(cudaFreeHost(delta));
