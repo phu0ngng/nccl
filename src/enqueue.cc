@@ -102,6 +102,10 @@ static void addWorkBatchToPlan(
     // All of the conditions that prevent us from appending to current batch.
     newBatch |= batch->workType != (uint8_t)workType;
     newBatch |= batch->funcId != devFuncId;
+    // The following ensure the device can handle a batch this large. They have to
+    // account for all extension batches being fused together which is why
+    // wipBatch.workBytes and wipBatch.nP2ps aren't reset to 0 for a new extension
+    // batch further down.
     newBatch |= NCCL_MAX_DEV_WORK_BATCH_BYTES < chan->wipBatch.workBytes + workSize;
     if (workType == ncclDevWorkTypeP2p) {
       newBatch |= chan->wipBatch.nP2ps == NCCL_MAX_DEV_WORK_P2P_PER_BATCH;
@@ -125,18 +129,22 @@ static void addWorkBatchToPlan(
     batch->offsetBase = workOffset;
     batch->offsetBitset = 0;
     offset = 0;
-    chan->wipBatch.workBytes = 0;
-    chan->wipBatch.nP2ps = 0;
+    if (newBatch) { // implies !extendBatch due to encompassing (newBatch || extendBatch)
+      // Since extension batches are fused together on the device we don't reset
+      // this accounting since it enforces those device side constraints.
+      chan->wipBatch.workBytes = 0;
+      chan->wipBatch.nP2ps = 0;
+      // We don't count extension batches since this is used to derive a proxyOpCount,
+      // and we wan't all ops which are fused together to have the same value.
+      chan->nWorkBatchesP2p += (workType == ncclDevWorkTypeP2p ? 1 : 0);
+    }
     plan->nWorkBatches += 1;
-    chan->nWorkBatchesP2p += (workType == ncclDevWorkTypeP2p ? 1 : 0);
   }
   batch->offsetBitset |= 1ull<<(offset/workSize);
   chan->wipBatch.workBytes += workSize;
   if (workType == ncclDevWorkTypeP2p) {
     // We need to ensure that a single batch doesn't have multiple p2p's
-    // of the same round since they would use the same connections. We just
-    // remember sendRank since that's 1:1 with the round. recvRank would
-    // work just as well.
+    // of the same round since they would use the same connections.
     chan->wipBatch.p2pRounds[chan->wipBatch.nP2ps++] = p2pRound;
   }
 }
