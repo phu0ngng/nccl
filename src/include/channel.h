@@ -21,7 +21,7 @@ inline uint8_t ncclP2pChannelBaseForRound(struct ncclComm* comm, int p2pRound) {
     int nodeDelta = p2pRound/comm->maxLocalRanks;
     int localDelta = p2pRound%comm->maxLocalRanks;
     int base = nodeDelta*divUp(comm->maxLocalRanks, NCCL_MAX_DEV_WORK_P2P_PER_BATCH);
-    base += localDelta;
+    base += localDelta/NCCL_MAX_DEV_WORK_P2P_PER_BATCH;
     return base & 0xff;
   } else {
     return p2pRound & 0xff;
