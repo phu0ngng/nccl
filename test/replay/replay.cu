@@ -157,6 +157,7 @@ size_t elementSize(ncclDataType_t elt_ty) {
   case ncclUint64:
   case ncclFloat64:
     return 8;
+  default: break; // Just to silence clang
   }
   return 0;
 }
@@ -2059,6 +2060,8 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
         { CallDataOp const &body = cur.template pop<CallDataOp>();
           vthreads.postBatch(hdr.vtid, [=]() { invokeCall(hdr, body); });
         } break;
+      default:
+        assert(0);
       }
     }
     vthreads.submitBatch();
