@@ -129,9 +129,10 @@ static void addWorkBatchToPlan(
     batch->offsetBase = workOffset;
     batch->offsetBitset = 0;
     offset = 0;
-    if (newBatch) { // implies !extendBatch due to encompassing (newBatch || extendBatch)
-      // Since extension batches are fused together on the device we don't reset
-      // this accounting since it enforces those device side constraints.
+    if (newBatch) {
+      // Since extension batches are fused together on the device, and these values
+      // account for constraints on the fused batch, we only reset the values on
+      // a new batch
       chan->wipBatch.workBytes = 0;
       chan->wipBatch.nP2ps = 0;
       // We don't count extension batches since this is used to derive a proxyOpCount,
