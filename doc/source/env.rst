@@ -315,7 +315,7 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value used by NCCL is 18, i.e. just over 1 second (since 2.14; it was 14 in earlier versions).
 
-Values can be 1-22.
+Values can be 1-31.
 
 NCCL_IB_RETRY_CNT
 -----------------
