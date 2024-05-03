@@ -121,21 +121,21 @@ int main(int argc, char* argv[]) {
   int n_max;
   int delta;
   int gpu;
-  int mpiTransport;
+  //int mpiTransport;
 
   if (argc < 5) {
     showUsage(argv[0]);
     exit(EXIT_FAILURE);
   }
 
-  if (strcmp("mpi", argv[1]) == 0) {
+/*  if (strcmp("mpi", argv[1]) == 0) {
     mpiTransport = 1;
   } else if (strcmp("socket", argv[1]) == 0) {
     mpiTransport = 0;
   } else {
     printf("Invalid transport '%s'\n", argv[1]);
     exit(EXIT_FAILURE);
-  }
+  } */
 
   type = strToType(argv[2]);
   if (type == ncclNumTypes) {
