@@ -216,13 +216,16 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     }
   }
 
-  if (timeReported) {
+  {
     struct timeval now;
     gettimeofday(&now, NULL);
     float elapsed = (now.tv_sec - timeStart.tv_sec)*1.0 + (now.tv_usec-timeStart.tv_usec)*1e-6;
-    printf("\rP2p connect done in %d:%02d                                                                       \n",
-        ((int)elapsed)/60, ((int)elapsed)%60);
-    fflush(stdout);
+    if (comm->rank == 0) INFO(NCCL_PROFILE, "timings: nranks %d P2p connect done in %d:%02d", comm->nRanks, ((int)elapsed)/60, ((int)elapsed)%60);
+    if (timeReported) {
+      printf("\rP2p connect done in %d:%02d                                                                       \n",
+             ((int)elapsed)/60, ((int)elapsed)%60);
+      fflush(stdout);
+    }
   }
 
   /* We need to sync ranks here since some ranks might run too fast after connection setup
