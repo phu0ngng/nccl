@@ -16,6 +16,7 @@ enable_ft="-B 0 -F 1"
 enable_split_test="-S 1 -P 1"
 split_range="-b 8 -e 1G -f 2"
 enable_local_register="-R 1"
+enable_parallel_init="-p 1"
 
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
 failure_count=0
@@ -47,9 +48,9 @@ then
     let nthreads=$NGPUS/2
     if [ $nthreads -gt 0 ]
     then
-      echo "=============================== $func 2-GPU (all sizes) - $(date +\"%T\") ================================="
-      $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -np $np --map-by ppr:1:node ./build/test/perf/$func $range $opts -t $nthreads -g2
-      [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func 2-GPU (all sizes): $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -np $np --map-by ppr:1:node $func $range $opts -t $nthreads -g2")
+      echo "=============================== $func 2-GPU (parallel init all sizes) - $(date +\"%T\") ==================="
+      $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -np $np --map-by ppr:1:node ./build/test/perf/$func $range $opts -t $nthreads -g2 $enable_parallel_init
+      [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func 2-GPU (parallel init all sizes): $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -np $np --map-by ppr:1:node $func $range $opts -t $nthreads -g2 $enable_parallel_init")
     fi
 
     let nthreads=$NGPUS/4
