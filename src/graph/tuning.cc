@@ -110,11 +110,9 @@ NCCL_PARAM(NetOverhead, "NET_OVERHEAD", -2);
 
 static float getNetOverhead(struct ncclComm* comm) {
   if (ncclParamNetOverhead() != -2) return ncclParamNetOverhead() * .001;
-  int cpuArch, cpuVendor, cpuModel;
-  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
-  if (cpuArch == NCCL_TOPO_CPU_ARCH_X86 && cpuVendor == NCCL_TOPO_CPU_VENDOR_INTEL) return 1.0;
-  if (cpuArch == NCCL_TOPO_CPU_ARCH_X86 && cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD) return 2.0;
-  else return 1.0;
+  if (comm->cpuArch == NCCL_TOPO_CPU_ARCH_X86 && comm->cpuVendor == NCCL_TOPO_CPU_VENDOR_INTEL) return 1.0;
+  if (comm->cpuArch == NCCL_TOPO_CPU_ARCH_X86 && comm->cpuVendor == NCCL_TOPO_CPU_VENDOR_AMD) return 2.0;
+  return 1.0;
 }
 
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph** graphs) {
