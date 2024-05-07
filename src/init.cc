@@ -101,9 +101,15 @@ NCCL_API(ncclResult_t, ncclGetUniqueId, ncclUniqueId* out);
 ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   NCCLCHECK(ncclInit());
   NCCLCHECK(PtrCheck(out, "GetUniqueId", "out"));
-  ncclResult_t res = bootstrapGetUniqueId((struct ncclBootstrapHandle*)out);
+  struct ncclBootstrapHandle handle;
+  NCCLCHECK(bootstrapGetUniqueId(&handle));
+  // ncclUniqueId and bootstrapHandle don't have the same size and alignment
+  // reset to 0 to avoid undefined data
+  memset(out, 0, sizeof(*out));
+  // copy to avoid alignment mismatch
+  memcpy(out, &handle, sizeof(handle));
   TRACE_CALL("ncclGetUniqueId(0x%llx)", (unsigned long long)hashUniqueId(*out));
-  return res;
+  return ncclSuccess;
 }
 
 // Prevent compiler from optimizing out these operations
@@ -1321,7 +1327,13 @@ struct ncclCommInitRankAsyncJob {
   int cudaDev;
   // For ncclCommInitRank
   int nranks, myrank;
-  ncclUniqueId commId;
+  // the anonymous union forces the same alignment for ncclUniqueId and ncclBootstrapHandle.
+  // it avoids alignment issues when casting a ncclUniqueId* into a ncclBootstrapHandle*
+  // both can then be used interchangeably
+  union {
+    ncclUniqueId commId;
+    struct ncclBootstrapHandle bootstrapHandle;
+  };
   // for ncclCommSplit
   struct ncclComm* parent;
   int color, key;
@@ -1420,14 +1432,14 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
-    NCCLCHECKGOTO(bootstrapSplit((struct ncclBootstrapHandle*)&job->commId, comm, job->parent, job->color, job->key, parentRanks), res, fail);
+    NCCLCHECKGOTO(bootstrapSplit(&job->bootstrapHandle, comm, job->parent, job->color, job->key, parentRanks), res, fail);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano() - timers[TIMER_INIT_BOOTSTRAP];
   } else {
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
-    NCCLCHECKGOTO(bootstrapInit((struct ncclBootstrapHandle*)&job->commId, comm), res, fail);
+    NCCLCHECKGOTO(bootstrapInit(&job->bootstrapHandle, comm), res, fail);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano() - timers[TIMER_INIT_BOOTSTRAP];
   }
 
@@ -1670,10 +1682,6 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   ncclComm_t comm = NULL;
   struct ncclCommInitRankAsyncJob *job = NULL;
   const char* env = ncclGetEnv("NCCL_COMM_ID");
-  if (env && myrank == 0) {
-    INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
-    NCCLCHECKGOTO(bootstrapCreateRoot((struct ncclBootstrapHandle*)&commId, true), res, fail);
-  }
 
   NCCLCHECKGOTO(ncclInit(), res, fail);
   if (ncclDebugLevel > NCCL_LOG_WARN || (ncclDebugLevel != NCCL_LOG_NONE && myrank == 0)) {
@@ -1705,10 +1713,15 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->comm = comm;
   job->nranks = nranks;
-  job->commId = commId; // C++ struct assignment
+  memcpy(&job->commId, &commId, sizeof(job->commId));
   job->myrank = myrank;
   job->cudaDev = cudaDev;
   snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", funcName);
+  if (env && myrank == 0) {
+    // start the bootstrap root before bootstrapping
+    INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
+    NCCLCHECKGOTO(bootstrapCreateRoot(&job->bootstrapHandle, true), res, fail);
+  }
   NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
