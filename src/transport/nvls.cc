@@ -243,17 +243,26 @@ fail:
 }
 
 ncclResult_t ncclNvlsBufferSetup(struct ncclComm* comm) {
-  int nHeads = comm->channels[0].nvls.nHeads;
-  int headRank = comm->channels[0].nvls.headRank;
+  int nHeads = -1;
+  int headRank = -1;
   ncclResult_t res = ncclSuccess;
-  struct ncclNvlsSharedRes* resources = comm->nvlsResources;
-  int nChannels = comm->nvlsResources->nChannels;
-  int nvlsStepSize = comm->nvlsChunkSize;
-  size_t buffSize = nvlsStepSize * NCCL_STEPS;
-  size_t nvlsPerRankSize = nChannels * 2 * buffSize;
-  size_t nvlsTotalSize = nvlsPerRankSize * nHeads;
+  int nvlsStepSize = -1;
+  size_t buffSize = 0;
+  size_t nvlsPerRankSize = 0;
+  size_t nvlsTotalSize = 0;
+  struct ncclNvlsSharedRes* resources = NULL;
+  int nChannels = -1;
 
   if (comm->nvlsSupport == 0 || comm->nvlsResources->inited) return ncclSuccess;
+  // initialize after checking comm->nvlsSupport
+  nHeads = comm->channels[0].nvls.nHeads;
+  headRank = comm->channels[0].nvls.headRank;
+  resources = comm->nvlsResources;
+  nChannels = comm->nvlsResources->nChannels;
+  nvlsStepSize = comm->nvlsChunkSize;
+  buffSize = nvlsStepSize * NCCL_STEPS;
+  nvlsPerRankSize = nChannels * 2 * buffSize;
+  nvlsTotalSize = nvlsPerRankSize * nHeads;
 
   INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d buffSize %zu nvlsPerRankSize %zu nvlsTotalSize %zu",
        comm, headRank, nHeads, buffSize, nvlsPerRankSize, nvlsTotalSize);
