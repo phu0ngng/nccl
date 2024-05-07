@@ -220,7 +220,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     struct timeval now;
     gettimeofday(&now, NULL);
     float elapsed = (now.tv_sec - timeStart.tv_sec)*1.0 + (now.tv_usec-timeStart.tv_usec)*1e-6;
-    if (comm->rank == 0) INFO(NCCL_PROFILE, "timings: nranks %d P2p connect done in %d:%02d", comm->nRanks, ((int)elapsed)/60, ((int)elapsed)%60);
+    if (elapsed > 1.0) INFO(NCCL_PROFILE, "timings: rank %d nranks %d P2p connect done in %.2f", comm->rank, comm->nRanks, elapsed);
     if (timeReported) {
       printf("\rP2p connect done in %d:%02d                                                                       \n",
              ((int)elapsed)/60, ((int)elapsed)%60);

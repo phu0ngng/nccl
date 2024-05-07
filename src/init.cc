@@ -1427,7 +1427,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     INFO(NCCL_INIT,"ncclCommInitRank comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init COMPLETE",
     comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
   }
-  if (comm->rank == 0) INFO(NCCL_INIT|NCCL_PROFILE,"Init timings: nranks %d total %.2f (kernels %.2f, bootstrap %.2f, allgathers %.2f, topo %.2f, graphs %.2f, connections %.2f, rest %.2f)\n", comm->nRanks, timers[TIMER_INIT_TOTAL]/1e9,
+  INFO(NCCL_INIT|NCCL_PROFILE,"Init timings: rank %d nranks %d total %.2f (kernels %.2f, bootstrap %.2f, allgathers %.2f, topo %.2f, graphs %.2f, connections %.2f, rest %.2f)\n", comm->rank, comm->nRanks, timers[TIMER_INIT_TOTAL]/1e9,
     timers[TIMER_INIT_KERNELS]/1e9, timers[TIMER_INIT_BOOTSTRAP]/1e9, timers[TIMER_INIT_ALLGATHER]/1e9, timers[TIMER_INIT_TOPO]/1e9, timers[TIMER_INIT_GRAPHS]/1e9, timers[TIMER_INIT_CONNECT]/1e9,
     (timers[TIMER_INIT_TOTAL]-timers[TIMER_INIT_KERNELS]-timers[TIMER_INIT_BOOTSTRAP]-timers[TIMER_INIT_ALLGATHER]-timers[TIMER_INIT_TOPO]-timers[TIMER_INIT_GRAPHS]-timers[TIMER_INIT_CONNECT])/1e9);
 exit:
