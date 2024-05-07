@@ -30,8 +30,6 @@ typedef struct {
   //   - context: tuner context object
   //   - collType: collective type , e.g., allreduce, allgather…
   //   - nBytes: collective size in bytes
-  //   - collNetTypeSupport: whether collnet supports this type
-  //   - nvlsTypeSupport: whether nvlink sharp supports this time
   //   - numPipeOps: number of operations in the group
   //   - numAlgo: number of algorithms in collCostTable
   //   - numProto: number of protocols in collCostTable
@@ -49,8 +47,7 @@ typedef struct {
   // algorithm and protocol, but not only the algorithm or only the protocol.
   // Unset fields will be set automatically by NCCL.
   ncclResult_t (*getCollInfo)(void* context, ncclFunc_t collType, size_t nBytes,
-                              int collNetSupport, int nvlsSupport, int numPipeOps,
-                              float** collCostTable, int numAlgo, int numProto,
+                              int numPipeOps, float** collCostTable, int numAlgo, int numProto,
                               int* nChannels);
 
   // Terminates the plugin and cleans up any resources that the plugin allocated.
