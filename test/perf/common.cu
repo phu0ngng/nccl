@@ -119,7 +119,7 @@ static double parsesize(const char *value) {
     double size;
     char size_lit;
 
-    int count = sscanf(value, "%lf %1s", &size, &size_lit);
+    int count = sscanf(value, "%lf %c", &size, &size_lit);
 
     switch (count) {
     case 2:
@@ -419,6 +419,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 #if defined(__CUDA_BF16_TYPES_EXIST__)
           case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<__nv_bfloat16>(rank); break;
 #endif
+          default: break; // Just to silence clang
         }
         NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[id][i]));
       }

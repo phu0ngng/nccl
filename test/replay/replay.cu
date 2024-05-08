@@ -63,8 +63,8 @@ std::string getCurrentTimestamp(std::chrono::high_resolution_clock::time_point& 
   std::time_t tt;
   tt = std::chrono::system_clock::to_time_t(tp);
   auto timeinfo = localtime (&tt);
-  strftime (buffer, 80,"%H:%M:%S",timeinfo);
-  sprintf(buffer, "%s:%03d",buffer,(int)millis);
+  strftime(buffer, sizeof(buffer), "%H:%M:%S",timeinfo);
+  snprintf(buffer+strlen(buffer), sizeof(buffer)-strlen(buffer), ":%03d", (int)millis);
   return std::string(buffer);
 }
 
@@ -157,6 +157,7 @@ size_t elementSize(ncclDataType_t elt_ty) {
   case ncclUint64:
   case ncclFloat64:
     return 8;
+  default: break; // Just to silence clang
   }
   return 0;
 }
@@ -2059,6 +2060,8 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
         { CallDataOp const &body = cur.template pop<CallDataOp>();
           vthreads.postBatch(hdr.vtid, [=]() { invokeCall(hdr, body); });
         } break;
+      default:
+        assert(0);
       }
     }
     vthreads.submitBatch();

@@ -93,7 +93,8 @@ uint64_t getHostHash(void) {
 
   if ((hostId = ncclGetEnv("NCCL_HOSTID")) != NULL) {
     INFO(NCCL_ENV, "NCCL_HOSTID set by environment to %s", hostId);
-    strncpy(hostHash, hostId, sizeof(hostHash));
+    strncpy(hostHash, hostId, sizeof(hostHash)-1);
+    hostHash[sizeof(hostHash)-1] = '\0';
   } else {
     FILE *file = fopen(HOSTID_FILE, "r");
     if (file != NULL) {

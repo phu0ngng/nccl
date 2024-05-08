@@ -94,6 +94,11 @@ ${DST_DIR}/model: ${DST_DIR}/model.o ${STATICLIB}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 #
+${DST_DIR}/data: ${DST_DIR}/data.o ${STATICLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+#
 ${DST_DIR}/xml_test: ${DST_DIR}/xml_test.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}

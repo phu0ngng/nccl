@@ -36,7 +36,16 @@ void ncclCudaGraph_test<DT>::SetUp() {
     graphExec[0] = (cudaGraphExec_t*)calloc(this->nVis, sizeof(cudaGraphExec_t));
     graphExec[1] = (cudaGraphExec_t*)calloc(this->nVis, sizeof(cudaGraphExec_t));
     for (int g=0; g < 2; g++) {
+#pragma GCC diagnostic push
+#ifdef __has_warning // clang
+#  if __has_warning("-Walloc-size-larger-than=")
+#    pragma GCC diagnostic ignored "-Walloc-size-larger-than="
+#  endif
+#else // gcc
+#  pragma GCC diagnostic ignored "-Walloc-size-larger-than="
+#endif
         graphStreams[g] = (cudaStream_t*)calloc(this->nVis, sizeof(cudaStream_t));
+#pragma GCC diagnostic pop
         for (int s=0; s < this->nVis; s++) {
             if (g == 0) graphStreams[g][s] = this->streams[s];
             else {

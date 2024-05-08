@@ -34,11 +34,16 @@ test: ${DST_DIR}/apitest
 	/bin/bash -c "LD_LIBRARY_PATH+=:$(LIBDIR) $^"
 
 ${DST_DIR}/apitest:${OBJ_FILES}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
 	${NVCC} -o $@ ${NVCUFLAGS} ${NVLDFLAGS} $^ -lnccl
 
 ${DST_DIR}/apitest_static:${OBJ_FILES}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
 	${NVCC} -o $@ ${NVCUFLAGS} ${NVLDFLAGS} $^ -lnccl_static
 
 ${DST_DIR}/%.o: %.cu
+	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ ${NVCUFLAGS} --compile $<

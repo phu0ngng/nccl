@@ -49,6 +49,7 @@ double DeltaMaxValue(ncclDataType_t type) {
     case ncclHalf: return 1e-2;
     case ncclFloat: return 1e-5;
     case ncclDouble: return 1e-12;
+    case ncclChar:
     case ncclInt:
 #if NCCL_MAJOR >= 2
     case ncclUint8:
@@ -57,6 +58,7 @@ double DeltaMaxValue(ncclDataType_t type) {
 #endif
     case ncclInt64:
     case ncclUint64: return 1e-200;
+    default: return 1e-200; // Just to silence clang
   }
   return 1e-200;
 }
@@ -135,6 +137,7 @@ testResult_t CheckDelta(void* results, void* expected, size_t count, ncclDataTyp
     case ncclInt64:
     case ncclUint64:
       deltaKern<uint64_t, 512><<<NUM_BLOCKS, 512>>>(results, expected, count, devmax); break;
+    default: break; // Just to silence clang
   }
   CUDACHECK(cudaDeviceSynchronize());
   for (int i=1; i<NUM_BLOCKS; i++) devmax[0] = std::max(devmax[0], devmax[i]);
