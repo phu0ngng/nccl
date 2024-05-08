@@ -69,7 +69,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
     }
 
     if (fallocate(fd, 0, 0, realShmSize) != 0) {
-      WARN("Error: failed to extend %s to %ld bytes", shmPath, realShmSize);
+      WARN("Error: failed to extend %s to %ld bytes, error: %s", shmPath, realShmSize, strerror(errno));
       ret = ncclSystemError;
       goto fail;
     }
@@ -80,7 +80,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
 
   hptr = (char*)mmap(NULL, realShmSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (hptr == MAP_FAILED) {
-    WARN("Could not map %s size %zu, error: %s", shmPath, realShmSize, strerror(errno));
+    WARN("Error: Could not map %s size %zu, error: %s", shmPath, realShmSize, strerror(errno));
     ret = ncclSystemError;
     hptr = NULL;
     goto fail;
@@ -93,7 +93,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
     if (remref == 0) {
       /* the last peer has completed attachment, it should unlink the shm mem file. */
       if (unlink(shmPath) != 0) {
-        WARN("unlink shared memory %s failed, error: %s", shmPath, strerror(errno));
+        WARN("Error: unlink shared memory %s failed, error: %s", shmPath, strerror(errno));
       }
     }
   }
@@ -110,7 +110,7 @@ exit:
   *handle = (ncclShmHandle_t)tmphandle;
   return ret;
 fail:
-  WARN("Error while %s shared memory segment %s (size %ld)", create ? "creating" : "attaching to", shmPath, shmSize);
+  WARN("Error while %s shared memory segment %s (size %ld), error: %s", create ? "creating" : "attaching to", shmPath, shmSize, strerror(errno));
   if (tmphandle) {
     shmHandleInit(fd, shmPath, shmSize, realShmSize, hptr, dptr, create, tmphandle);
     ncclShmClose((ncclShmHandle_t)tmphandle);
