@@ -171,13 +171,12 @@ IP Network Interfaces
 
 NCCL auto-detects which network interfaces to use for inter-node communication. If some interfaces are in the UP state but are not able to communicate between nodes, NCCL may try to use them anyway and therefore fail during the init functions or even hang.
 
-For information about how to specify which interfaces to use, see the Environment Variables section, particularly the NCCL_SOCKET_IFNAME knob.
+For information about how to specify which interfaces to use, see the Environment Variables section, particularly the ``NCCL_SOCKET_IFNAME`` environment variable.
 
 IP Ports
 --------
 
-NCCL opens TCP ports to connect processes together and exchange connection information. To restrict the range of ports used by NCCL, one can set the net.ipv4.ip_local_port_range property of the
-Linux kernel.
+NCCL opens TCP ports to connect processes together and exchange connection information. To restrict the range of ports used by NCCL, one can set the ``net.ipv4.ip_local_port_range`` property of the Linux kernel.
 
 This example shows how to restrict NCCL ports to 50000-51000:
 
@@ -221,4 +220,29 @@ The solution is to remove the user limits on registering pinned memory. This can
  * soft memlock unlimited
  * hard memlock unlimited
 
-To the /etc/security/limits.conf configuration file or equivalent on your Linux distribution.
+To the ``/etc/security/limits.conf`` configuration file or equivalent on your Linux distribution.
+
+
+RDMA over Converged Ethernet (RoCE)
+-----------------------------------
+
+Before running NCCL on RoCE, running low-level RDMA tests (and in particular the ``ib_write_bw`` test) can help verify whether the nodes are able to communicate properly.
+
+A common issue seen with RoCE is the incorrect GID Index being selected for the RoCE v2 NICs. This can result in the following error:
+
+.. code:: shell
+
+ NCCL WARN Call to ibv_modify_qp failed with error Invalid argument
+
+
+With NCCL 2.21 and later the GID index is dynamically selected, but with prior versions the user would need to run:
+
+.. code:: shell
+
+ show_gids
+
+
+And then set ``NCCL_IB_GID_INDEX`` to the GID INDEX for the RoCE v2 VER GID.
+With NCCL 2.21 and later releases, this environment variable should *not* be set.
+
+Users may also need to set ``NCL_IB_TC`` when using RoCE based networks. Refer to your vendor's documentation for the values this should be set to.
