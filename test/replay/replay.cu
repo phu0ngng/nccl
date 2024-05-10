@@ -235,7 +235,8 @@ void ByteBuffer::reserve(size_t n) {
   if(n > cap) {
     size_t cap1 = std::max(n, 2*cap);
     char *buf1 = (char*)::operator new(cap1);
-    std::memcpy(buf1, buf, len);
+    if (len > 0)
+      std::memcpy(buf1, buf, len);
     ::operator delete(buf);
     buf = buf1;
     cap = cap1;

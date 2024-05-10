@@ -2141,7 +2141,8 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataTyp
     int cap = 2*comm->userRedOpCapacity;
     if (cap < 4) cap = 4;
     ncclUserRedOp *ops = new ncclUserRedOp[cap];
-    std::memcpy(ops, comm->userRedOps, comm->userRedOpCapacity*sizeof(ncclUserRedOp));
+    if (comm->userRedOpCapacity > 0)
+      std::memcpy(ops, comm->userRedOps, comm->userRedOpCapacity*sizeof(ncclUserRedOp));
     for(int ix=comm->userRedOpCapacity; ix < cap; ix++)
       ops[ix].freeNext = ix + 1;
     delete[] comm->userRedOps;
