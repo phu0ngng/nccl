@@ -684,6 +684,16 @@ perf-regression-multi-DGX-A100:
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
   interruptible: true
 
+QA-team-ci:
+  stage: perf_regression
+  rules:
+    - when: always
+  tags:
+    - tracy's_host_runner
+  script:
+    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
+  interruptible: true
+
 replay-multi-gc:
   stage: replay_tests
   rules:
