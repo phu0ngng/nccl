@@ -44,6 +44,7 @@ NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 NCCL_PARAM(CommBlocking, "COMM_BLOCKING", NCCL_CONFIG_UNDEF_INT);
+NCCL_PARAM(RuntimeConnect, "RUNTIME_CONNECT", 1);
 
 static ncclResult_t commReclaim(ncclComm_t comm);
 
@@ -1144,7 +1145,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   } while (0);
 
-  if (ncclCuMemEnable()) {
+  comm->runtimeConn = ncclCuMemEnable() && ncclParamRuntimeConnect();
+  if (comm->runtimeConn) {
     for (int c=0; c<comm->nChannels; c++) {
       NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, rings+c*nranks), ret, fail);
     }

@@ -496,7 +496,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     bool regNeedConnect = true;
     registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &planner->collCleanupQueue, &regNeedConnect);
 
-    if (ncclCuMemEnable() && comm->initAlgoChannels[task->algorithm] == false) {
+    if (comm->runtimeConn && comm->initAlgoChannels[task->algorithm] == false) {
       if (task->algorithm == NCCL_ALGO_NVLS_TREE && comm->initAlgoChannels[NCCL_ALGO_NVLS] == false && regNeedConnect == true) {
         comm->initAlgoChannels[NCCL_ALGO_NVLS] = true;
         algoNeedConnect[NCCL_ALGO_NVLS] = true;
