@@ -36,7 +36,10 @@ static ncclResult_t ncclTuner_v2_as_v3_init(size_t nRanks, size_t nNodes, ncclDe
   return ncclSuccess;
 }
 
-static void* tryOpenLib(const char* name) {
+#define MAX_STR_LEN 255
+
+static void* tryOpenLib(const char* name, int* err, char* errStr) {
+  *err = 0;
   if (nullptr == name || strlen(name) == 0) {
     return nullptr;
   }
@@ -47,103 +50,84 @@ static void* tryOpenLib(const char* name) {
 
   void *handle = dlopen(name, RTLD_LAZY | RTLD_LOCAL);
   if (nullptr == handle) {
-    if (ENOENT == errno) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: No plugin found (%s)", name);
+    strncpy(errStr, dlerror(), MAX_STR_LEN);
+    errStr[MAX_STR_LEN] = '\0';
+    if (strstr(errStr, name) && strstr(errStr, "No such file or directory")) {
+      *err = ENOENT;
     }
   }
   return handle;
 }
 
-static void summarizeOpenTunerPluginLibErrors(char* pluginNames) {
-  const char *separator = " ";
-  int len = strlen(pluginNames);
-  // remove tail separator
-  pluginNames[len - 1] = '\0';
-
-  // remove last plugin name
-  while (len > 0 && pluginNames[--len] != *separator);
-  if (len > 0) {
-    pluginNames[len] = '\0';
+static char* tryOpenLibCheck(int openErr, char* openErrStr, char* nameList, int *nameListLen, char* name) {
+  if (openErr == ENOENT) {
+    snprintf(nameList, *nameListLen, " %s", name);
+    nameList += strlen(name) + 1;
+    *nameListLen -= strlen(name) + 1;
+    return nameList;
   }
-
-  // distinguish between one load attempt and multiple attempts
-  if (strstr(pluginNames, separator)) {
-    INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Most recent plugin load returned %d : %s. All attempts to load '%s' also failed.", errno, dlerror(), pluginNames);
-  } else {
-    INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin load returned %d : %s : when loading %s", errno, dlerror(), pluginNames);
-  }
+  INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: %s", openErrStr);
+  return nameList;
 }
 
-static void* openTunerPluginLib(void) {
+static void* openTunerPluginLib(char* couldNotFindNames, int len) {
+  int openErr;
   void *pluginLib;
-
-#define MAX_PLUGIN_LOAD 4
-
-  int len;
-  char tunerPluginLibNameTried[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
-  char *ptr = tunerPluginLibNameTried;
   char tunerPluginLibName[PATH_MAX];
+  char openErrStr[MAX_STR_LEN + 1] = { 0 };
   const char *envTunerPluginName = getenv("NCCL_TUNER_PLUGIN");
   if (envTunerPluginName && strlen(envTunerPluginName)) {
     INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: NCCL_TUNER_PLUGIN set to %s", envTunerPluginName);
     snprintf(tunerPluginLibName, PATH_MAX, "%s", envTunerPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
 
     snprintf(tunerPluginLibName, PATH_MAX, "libnccl-tuner-%s.so", envTunerPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
   } else {
     snprintf(tunerPluginLibName, PATH_MAX, "libnccl-tuner.so");
-    pluginLib = tryOpenLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
   }
 
   const char *envNetPluginName = getenv("NCCL_NET_PLUGIN");
   if (envNetPluginName && strlen(envNetPluginName)) {
     // Users are allowed to pack tuner into the net plugin
     snprintf(tunerPluginLibName, PATH_MAX, "%s", envNetPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
 
     snprintf(tunerPluginLibName, PATH_MAX, "libnccl-net-%s.so", envNetPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
   } else {
     snprintf(tunerPluginLibName, PATH_MAX, "libnccl-net.so");
-    pluginLib = tryOpenLib(tunerPluginLibName);
+    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
     if (pluginLib) {
       return pluginLib;
     }
-    len = PATH_MAX - strlen(ptr);
-    snprintf(ptr + strlen(ptr), len + 1, "%s ", tunerPluginLibName);
+    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
   }
-  summarizeOpenTunerPluginLibErrors(ptr);
-
   tunerPluginLibName[0] = '\0';
   return nullptr;
 }
@@ -154,8 +138,11 @@ enum {
   tunerPluginLoadSuccess =  1,
 };
 
+#define MAX_PLUGIN_LOAD 4
+
 ncclResult_t ncclTunerPluginLoad(ncclTuner_t** tuner) {
   // Initialize to nullptr by default if plugin tuner cannot be loaded.
+  char couldNotFindNames[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
   *tuner = nullptr;
   static int status = tunerPluginLoadReady;
   if (tunerPluginLoadFailed == status) {
@@ -173,9 +160,13 @@ ncclResult_t ncclTunerPluginLoad(ncclTuner_t** tuner) {
     goto exit;
   }
 
-  tunerPluginLib = openTunerPluginLib();
+  tunerPluginLib = openTunerPluginLib(couldNotFindNames, MAX_PLUGIN_LOAD * PATH_MAX);
   if (nullptr == tunerPluginLib) {
-    INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Using internal tuner plugin.");
+    if (strlen(couldNotFindNames)) {
+      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Could not find:%s. Using internal tuner plugin.", couldNotFindNames);
+    } else {
+      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Using internal tuner plugin.");
+    }
     goto fail;
   }
 
