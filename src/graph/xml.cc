@@ -313,6 +313,11 @@ ncclResult_t ncclTopoXmlLoadNvlink(FILE* file, struct ncclXml* xml, struct ncclX
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoXmlLoadPciLink(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
+  NCCLCHECK(xmlLoadSub(file, xml, head, NULL, 0));
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoXmlLoadC2c(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
   NCCLCHECK(xmlLoadSub(file, xml, head, NULL, 0));
   return ncclSuccess;
@@ -335,8 +340,8 @@ ncclResult_t ncclTopoXmlLoadNic(FILE* file, struct ncclXml* xml, struct ncclXmlN
 }
 
 ncclResult_t ncclTopoXmlLoadPci(FILE* file, struct ncclXml* xml, struct ncclXmlNode* head) {
-  struct xmlHandler handlers[] = { { "pci", ncclTopoXmlLoadPci }, { "gpu", ncclTopoXmlLoadGpu }, { "nic", ncclTopoXmlLoadNic} };
-  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 3));
+  struct xmlHandler handlers[] = { { "pci", ncclTopoXmlLoadPci }, { "gpu", ncclTopoXmlLoadGpu }, { "nic", ncclTopoXmlLoadNic}, { "pcilink", ncclTopoXmlLoadPciLink} };
+  NCCLCHECK(xmlLoadSub(file, xml, head, handlers, 4));
   return ncclSuccess;
 }
 
@@ -397,6 +402,28 @@ static ncclResult_t getPciPath(const char* busId, char** path) {
   if (*path == NULL) {
     WARN("Could not find real path of %s", busPath);
     return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+#include <dirent.h>
+static ncclResult_t getBcmLinks(const char* busId, int* nlinks, char** peers) {
+  *nlinks = 0;
+  *peers = NULL;
+  char dirPath[] = "/sys/kernel/pci_switch_link/virtual_switch_links/0000:00:00.0";
+  memcpylower(dirPath+sizeof("/sys/kernel/pci_switch_link/virtual_switch_links/")-1, busId, BUSID_SIZE-1);
+  DIR *dir = opendir(dirPath);
+  if (dir) {
+    struct dirent* file;
+    while ((file = readdir(dir)) != NULL) {
+      if (strlen(file->d_name) != BUSID_SIZE-1) continue;
+      char* path;
+      if (getPciPath(file->d_name, &path) == ncclSystemError) continue;
+      free(path);
+      NCCLCHECK(ncclRealloc(peers, (*nlinks)*BUSID_SIZE, ((*nlinks)+1)*BUSID_SIZE));
+      memcpy((*peers)+BUSID_SIZE*(*nlinks)++, file->d_name, BUSID_SIZE);
+    }
+    closedir(dir);
   }
   return ncclSuccess;
 }
@@ -587,6 +614,24 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
       NCCLCHECK(xmlSetAttr(pciNode, "link_width", ""));
     }
   }
+
+  const char* vendor;
+  NCCLCHECK(xmlGetAttr(pciNode, "vendor", &vendor));
+  if (strcmp(vendor, "0x1000") == 0) { // BCM switch, look for P2P connections
+    int nlinks;
+    char* peers;
+    NCCLCHECK(getBcmLinks(busId, &nlinks, &peers));
+    for (int l=0; l<nlinks; l++) {
+      char* target = peers+l*BUSID_SIZE;
+      struct ncclXmlNode* linkNode;
+      NCCLCHECK(xmlGetSubKv(pciNode, "pcilink", &linkNode, "target", target));
+      if (linkNode == NULL) {
+        NCCLCHECK(xmlAddNode(xml, pciNode, "pcilink", &linkNode));
+        NCCLCHECK(xmlSetAttr(linkNode, "target", target));
+      }
+    }
+  }
+
   struct ncclXmlNode* parent = pciNode->parent;
   if (parent == NULL) {
     if (path) {
@@ -890,25 +935,33 @@ ncclResult_t ncclTopoFillNet(struct ncclXml* xml, const char* pciPath, const cha
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoTrimXmlRec(struct ncclXmlNode* node) {
+ncclResult_t ncclTopoTrimXmlRec(struct ncclXmlNode* node, int* keep) {
   const char* str;
   NCCLCHECK(xmlGetAttr(node, "keep", &str));
   if (str && strcmp(str, "1") == 0) {
     NCCLCHECK(xmlUnsetAttr(node, "keep"));
+    *keep = 1;
   } else {
     // Copy nSubs and subs as they could change as we trim recursively.
     struct ncclXmlNode* subs[MAX_SUBS];
     int nSubs = node->nSubs;
     memcpy(subs, node->subs, node->nSubs*sizeof(struct ncclXmlNode*));
+    *keep = 0;
     for (int s=0; s<nSubs; s++) {
-      NCCLCHECK(ncclTopoTrimXmlRec(subs[s]));
+      int k = 0;
+      NCCLCHECK(ncclTopoTrimXmlRec(subs[s], &k));
+      keep += k;
     }
-    if (node->nSubs == 0) NCCLCHECK(xmlRemoveNode(node));
+    if (keep == 0 && // Trim PCI switches or CPU with no used GPU/NIC under them.
+        (strcmp(node->name, "pci") == 0 || strcmp(node->name, "cpu") == 0)) {
+      NCCLCHECK(xmlRemoveNode(node));
+    }
   }
   return ncclSuccess;
 }
 ncclResult_t ncclTopoTrimXml(struct ncclXml* xml) {
-  NCCLCHECK(ncclTopoTrimXmlRec(xml->nodes));
+  int keep = 0;
+  NCCLCHECK(ncclTopoTrimXmlRec(xml->nodes, &keep));
   return ncclSuccess;
 }
 

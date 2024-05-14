@@ -115,11 +115,6 @@ ncclResult_t ncclTopoCreateNode(struct ncclTopoSystem* system, struct ncclTopoNo
   n->type = type;
   n->id = id;
   if (type == GPU) {
-    // Create link to itself (used in some corner cases)
-    n->nlinks=1;
-    n->links[0].type = LINK_LOC;
-    n->links[0].remNode = n;
-    n->links[0].bw = LOC_BW;
     n->gpu.dev = NCCL_TOPO_UNDEF;
     n->gpu.rank = NCCL_TOPO_UNDEF;
     n->gpu.cudaCompCap = NCCL_TOPO_UNDEF;
@@ -285,8 +280,10 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
 
   for (int l=0; l<node->nlinks; l++) {
     struct ncclTopoLink* link = node->links+l;
-    if (link->type == LINK_LOC) continue;
-    if (link->type != LINK_PCI || link->remNode != prevNode) {
+    if (link->type == LINK_LOC) {
+      sprintf(line+offset, "+ %s[%2.1f] - %s/%lX", topoLinkTypeStr[link->type], link->bw, topoNodeTypeStr[link->remNode->type], link->remNode->id);
+      INFO(NCCL_GRAPH, "%s", line);
+    } else if (link->type != LINK_PCI || link->remNode != prevNode) {
       sprintf(line+offset, "+ %s[%2.1f] - ", topoLinkTypeStr[link->type], link->bw);
       int nextOffset = strlen(line);
       if (link->type == LINK_PCI) {
@@ -449,7 +446,9 @@ ncclResult_t ncclTopoAddPci(struct ncclXmlNode* xmlPci, struct ncclTopoSystem* s
 
     for (int s=0; s<xmlPci->nSubs; s++) {
       struct ncclXmlNode* xmlSubPci = xmlPci->subs[s];
-      NCCLCHECK(ncclTopoAddPci(xmlSubPci, system, node, systemId));
+      if (strcmp(xmlSubPci->name, "pcilink") != 0) { // PCI links will be added later
+        NCCLCHECK(ncclTopoAddPci(xmlSubPci, system, node, systemId));
+      }
     }
   }
 
@@ -585,6 +584,38 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoAddPciLinks(struct ncclXmlNode* node, struct ncclTopoSystem* system, const char* parentBusId, int systemId) {
+  if (strcmp(node->name, "pcilink") == 0) {
+    struct ncclTopoNode* pci = NULL;
+    int64_t pBusId;
+    NCCLCHECK(busIdToInt64(parentBusId, &pBusId));
+    pBusId = NCCL_TOPO_ID(systemId, pBusId);
+    NCCLCHECK(ncclTopoGetNode(system, &pci, PCI, pBusId));
+    if (pci == NULL) {
+      WARN("Add PCI Link error : could not find PCI SW %lx", pBusId);
+      return ncclInternalError;
+    }
+    struct ncclTopoNode* remote = NULL;
+    const char* target;
+    NCCLCHECK(xmlGetAttrStr(node, "target", &target));
+    int64_t busId;
+    NCCLCHECK(busIdToInt64(target, &busId));
+    NCCLCHECK(ncclTopoGetNode(system, &remote, PCI, NCCL_TOPO_ID(systemId, busId)));
+    if (remote) NCCLCHECK(ncclTopoConnectNodes(pci, remote, LINK_LOC, LOC_BW));
+  } else {
+    if (strcmp(node->name, "cpu") == 0) {
+      NCCLCHECK(ncclGetSystemId(system, node, &systemId));
+    }
+    const char* busId;
+    NCCLCHECK(xmlGetAttr(node, "busid", &busId));
+    for (int s=0; s<node->nSubs; s++) {
+      NCCLCHECK(ncclTopoAddPciLinks(node->subs[s], system, busId ? busId : parentBusId, systemId));
+    }
+  }
+  return ncclSuccess;
+}
+
+
 ncclResult_t ncclTopoAddC2c(struct ncclXmlNode* node, struct ncclTopoSystem* system, const char* parentBusId, int systemId) {
   if (strcmp(node->name, "c2c") == 0) {
     struct ncclTopoNode* gpu = NULL;
@@ -632,6 +663,7 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
 
   NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, NULL, 0));
   NCCLCHECK(ncclTopoAddC2c(topNode, *topoSystem, NULL, 0));
+  NCCLCHECK(ncclTopoAddPciLinks(topNode, *topoSystem, NULL, 0));
 
   NCCLCHECK(ncclTopoFlattenBcmSwitches(*topoSystem));
   NCCLCHECK(ncclTopoConnectCpus(*topoSystem));
@@ -674,6 +706,18 @@ static ncclResult_t xmlInitAttrFloat(struct ncclXmlNode* node, const char* attrN
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoRefreshBcmP2pLinks(void) {
+  //refresh the switch topology by reading the link below
+  FILE *fp = fopen("/sys/kernel/pci_switch_link/refresh_switch_toplogy", "r");
+  if (fp != NULL) {
+    int tmp;
+    size_t r = fread(&tmp, sizeof(tmp), 1, fp);
+    if (r != 1)
+      INFO(NCCL_GRAPH, "Failed to read refresh_switch_toplogy");
+    fclose(fp);
+  }
+  return ncclSuccess;
+}
 
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system) {
   struct ncclXml* xml;
@@ -692,6 +736,9 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     NCCLCHECK(xmlAddNode(xml, NULL, "system", &top));
     NCCLCHECK(xmlSetAttrInt(top, "version", NCCL_TOPO_XML_VERSION));
   }
+
+  NCCLCHECK(ncclTopoRefreshBcmP2pLinks());
+
   // Detect only the GPU managed by this process.  We'll get any others through XML fusion.
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   NCCLCHECK(int64ToBusId(comm->peerInfo[comm->rank].busId, busId));
