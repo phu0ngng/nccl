@@ -548,6 +548,7 @@ struct ncclComm {
   struct ncclGroupJob *groupJob;
 
   // Tuning plugin
+  int tunerPluginLoaded;
   ncclTuner_t* tuner;
   void *tunerContext;
   // buffer registration cache
