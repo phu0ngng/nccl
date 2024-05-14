@@ -104,11 +104,11 @@ exit:
   return ret;
 }
 
-NCCL_API(ncclResult_t, ncclGroupSimulateEnd, float* estimatedTime);
-ncclResult_t ncclGroupSimulateEnd(float* estimatedTime) {
+NCCL_API(ncclResult_t, ncclGroupSimulateEnd, ncclSimInfo_t* simInfo);
+ncclResult_t ncclGroupSimulateEnd(ncclSimInfo_t* simInfo) {
   ncclResult_t ret = ncclSuccess;
   NVTX3_FUNC_RANGE_IN(nccl_domain);
-  NCCLCHECKGOTO(ncclGroupEndInternal(estimatedTime), ret, exit);
+  NCCLCHECKGOTO(ncclGroupEndInternal(simInfo), ret, exit);
   TRACE_CALL("ncclGroupSimulateEnd()");
 exit:
   return ret;
@@ -180,7 +180,7 @@ fail:
   goto exit;
 }
 
-static ncclResult_t doLaunches(struct ncclComm* head, float* totalTime = NULL) {
+static ncclResult_t doLaunches(struct ncclComm* head) {
   ncclResult_t result = ncclSuccess;
   struct ncclComm* cliqueComm0 = head->intraComm0;
   struct ncclComm* cliqueHead = head;
@@ -195,13 +195,7 @@ static ncclResult_t doLaunches(struct ncclComm* head, float* totalTime = NULL) {
     do {
       (ncclCudaGraphValid(comm->planner.capturingGraph) ? capturingYes : capturingNo) = true;
       CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), result, failure);
-      if (totalTime) {
-        float time = 0.0;
-        NCCLCHECKGOTO(ncclLaunchPrepare(comm, &time), result, failure);
-        *totalTime += time;
-      }
-      else
-        NCCLCHECKGOTO(ncclLaunchPrepare(comm), result, failure);
+      NCCLCHECKGOTO(ncclLaunchPrepare(comm), result, failure);
       if (useBarrier) ncclCommIntraBarrierIn(comm, 1);
       comm = comm->groupNext;
     } while (comm != nullptr && comm->intraComm0 == cliqueComm0);
@@ -392,7 +386,7 @@ fail:
   goto exit;
 }
 
-static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime = NULL) {
+static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInfo = NULL) {
   int savedDev;
   ncclResult_t ret = ncclSuccess;
   struct ncclGroupJob *gjob = (struct ncclGroupJob*) job_;
@@ -403,7 +397,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime 
 
   CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
 
-  if (!estimatedTime && groupCommPreconnectHeadMain != nullptr) {
+  if (!simInfo && groupCommPreconnectHeadMain != nullptr) {
     struct ncclComm* comm = groupCommPreconnectHeadMain;
     do {
       struct ncclPreconnectJob* job;
@@ -437,7 +431,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime 
       // are about to schedule). Now push an additional frame for allocating
       // work structs (see appendWorkElem() variants all use scoped allocation).
       ncclMemoryStackPush(&comm->memScoped);
-      NCCLCHECKGOTO(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, estimatedTime), ret, fail);
+      NCCLCHECKGOTO(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, simInfo), ret, fail);
 
       if (ncclCuMemEnable() && needConnect) {
         struct ncclPreconnectJob* job;
@@ -458,8 +452,8 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, float* estimatedTime 
     NCCLCHECKGOTO(asyncJobLaunch(asyncJobsMain, groupAbortFlag), ret, fail);
   }
 
-  if (groupCommHeadMain != nullptr) {
-    NCCLCHECKGOTO(doLaunches(groupCommHeadMain, estimatedTime), ret, fail);
+  if ((!simInfo) && (groupCommHeadMain != nullptr)) {
+    NCCLCHECKGOTO(doLaunches(groupCommHeadMain), ret, fail);
   }
 
   while (groupCommHeadMain != nullptr) {
@@ -482,11 +476,14 @@ fail:
 }
 
 static ncclResult_t groupLaunchNonBlocking(struct ncclAsyncJob *job_) {
-  return groupLaunch(job_);
+  return groupLaunch(job_ /* estimatedTime = NULL */);
 }
 
-ncclResult_t ncclGroupEndInternal(float* estimatedTime) {
+ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
   ncclResult_t ret = ncclSuccess;
+  ncclSimInfo_t internalSimInfo = NCCL_SIM_INFO_INITIALIZER;
+  ncclSimInfo_t* internalSimInfoPtr = NULL;
+  size_t realSize;
 
   if (ncclGroupDepth == 0) {
     WARN("ncclGroupEnd: not in a group call.");
@@ -497,6 +494,18 @@ ncclResult_t ncclGroupEndInternal(float* estimatedTime) {
   if ((--ncclGroupDepth) > 0) goto exit;
 
   if ((ret = ncclGroupError) != ncclSuccess) goto fail;
+
+  if (simInfo) {
+    memcpy((void*)&realSize, (void*)&simInfo->size, sizeof(size_t));
+    realSize = realSize > sizeof(ncclSimInfo_t) ? sizeof(ncclSimInfo_t) : realSize;
+    memcpy((void*)&internalSimInfo, (void*)simInfo, realSize);
+    if (internalSimInfo.magic != 0x74685283) {
+      WARN("ncclSimInfo_t argument not initialized via NCCL_SIM_INFO_INITIALIZER");
+      ret = ncclInvalidArgument;
+      goto fail;
+    }
+    internalSimInfoPtr = &internalSimInfo;
+  }
 
   if (ncclGroupCommHead != nullptr || !ncclIntruQueueEmpty(&ncclAsyncJobs) || ncclGroupCommPreconnectHead != nullptr) {
     ncclGroupJobMain.groupCommHeadPtr = &ncclGroupCommHead;
@@ -535,7 +544,8 @@ ncclResult_t ncclGroupEndInternal(float* estimatedTime) {
       ret = ncclInProgress;
     } else {
       /* blocking group */
-      NCCLCHECKGOTO(groupLaunch(&ncclGroupJobMainPtr->base, estimatedTime), ret, fail);
+      NCCLCHECKGOTO(groupLaunch(&ncclGroupJobMainPtr->base, internalSimInfoPtr), ret, fail);
+      if (simInfo) memcpy((void*)simInfo, (void*)internalSimInfoPtr, realSize);
       groupResetJobState(ncclGroupJobMainPtr);
     }
   }

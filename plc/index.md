@@ -11,6 +11,7 @@
 <!------------------------------------->
 ## version 2.22
 
+- [Cost Estimation API](items/id_21915875/Cost_Estimation_API.md)
 <!-- V2_22_DO_NOT_MOVE -->
 
 <!------------------------------------->

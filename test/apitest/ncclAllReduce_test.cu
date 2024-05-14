@@ -1,4 +1,5 @@
 #include "ncclCommon_test.cuh"
+#include "nccl.h"
 template <typename DT>
 class ncclAllReduce_test : public ncclCommon_test<DT> {};
 TYPED_TEST_CASE(ncclAllReduce_test, testDataTypes);
@@ -19,7 +20,7 @@ TYPED_TEST(ncclAllReduce_test, basic) {
     }
 };
 TYPED_TEST(ncclAllReduce_test, basic_simulate) {
-    float time = 0.0;
+    ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
     for (ncclRedOp_t op : this->RedOps) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
@@ -31,7 +32,7 @@ TYPED_TEST(ncclAllReduce_test, basic_simulate) {
                 << "op: " << op << ", "
                 << "i" << i << ", " << std::endl;
         }
-        ASSERT_EQ(ncclSuccess, ncclGroupSimulateEnd(&time));
+        ASSERT_EQ(ncclSuccess, ncclGroupSimulateEnd(&simInfo));
     }
 };
 TYPED_TEST(ncclAllReduce_test, host_mem) {

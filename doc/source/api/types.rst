@@ -224,3 +224,21 @@ ncclConfig_t
   are in the same family. When resources are shared, aborting any communicator can result in
   other communicators in the same family becoming unusable. Irrespective of whether sharing resources or not, users should
   always abort/destroy all no longer needed communicators to free up resources.
+
+.. _ncclsiminfo:
+
+ncclSimInfo_t
+---------------------
+
+.. c:type:: ncclSimInfo_t
+
+ This struct will be used by ncclGroupSimulateEnd() to return information about the calls.
+
+ .. c:macro:: NCCL_SIM_INFO_INITIALIZER
+
+ NCCL_SIM_INFO_INITIALIZER is a configuration macro initializer which must be assigned
+ to a newly created ncclSimInfo_t struct.
+
+ .. c:macro:: estimatedTime
+
+ Estimated time for the operation(s) in the group call will be returned in this attribute.
