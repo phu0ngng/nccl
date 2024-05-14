@@ -313,8 +313,7 @@ const ncclNet_v2_t ncclNetPlugin_v2 = {
 __hidden ncclResult_t tunerPluginInit(size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, void **context) { return ncclSuccess; }
 
 __hidden ncclResult_t tunerPluginGetCollInfo(void* context, ncclFunc_t collType, size_t nBytes,
-                              int collNetSupport, int nvlsSupport, int numPipeOps,
-                              float** collCostTable, int numAlgo, int numProto,
+                              int numPipeOps, float** collCostTable, int numAlgo, int numProto,
                               int* nChannels) {
   // Update NCCL core generated cost table. Updated table will be evaluated by NCCL to pick the best algo/proto combo
   if (collCostTable[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] != NCCL_ALGO_PROTO_IGNORE) {

@@ -1682,8 +1682,7 @@ static ncclResult_t getAlgoInfo(
   if (comm->tuner != NULL) {
     NCCLCHECK(comm->tuner->getCollInfo(
           comm->tunerContext, info->func, nBytes,
-          collNetSupport, nvlsSupport, numPipeOps,
-          (float **)collCostTable, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
+          numPipeOps, (float **)collCostTable, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
           &nMaxChannels));
   }
   NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, backupAlgo, backupProto, backupTime, simInfo));
