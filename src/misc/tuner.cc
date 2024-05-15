@@ -11,7 +11,7 @@
 
 #include "checks.h"
 #include "debug.h"
-#include "nccl_tuner.h"
+#include "tuner.h"
 
 pthread_mutex_t tunerPluginLock = PTHREAD_MUTEX_INITIALIZER;
 static int tunerPluginRefCount;
@@ -159,11 +159,12 @@ enum {
 
 #define MAX_PLUGIN_LOAD 4
 
-ncclResult_t ncclTunerPluginLoad(ncclTuner_t** tuner) {
+static int status = tunerPluginLoadReady;
+
+ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
   // Initialize to nullptr by default if plugin tuner cannot be loaded.
   char couldNotFindNames[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
-  *tuner = nullptr;
-  static int status = tunerPluginLoadReady;
+  comm->tuner = nullptr;
   if (tunerPluginLoadFailed == status) {
     return ncclSuccess;
   }
@@ -174,7 +175,7 @@ ncclResult_t ncclTunerPluginLoad(ncclTuner_t** tuner) {
   }
 
   if (tunerPluginLoadSuccess == status) {
-    *tuner = tunerSymbol;
+    comm->tuner = tunerSymbol;
     ++tunerPluginRefCount;
     goto exit;
   }
@@ -205,9 +206,10 @@ ncclResult_t ncclTunerPluginLoad(ncclTuner_t** tuner) {
   }
 
   INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Using tuner plugin %s", tunerSymbol->name);
-  *tuner = tunerSymbol;
+  comm->tuner = tunerSymbol;
   ++tunerPluginRefCount;
   status = tunerPluginLoadSuccess;
+  comm->tunerPluginLoaded = 1;
 
 exit:
   pthread_mutex_unlock(&tunerPluginLock);
@@ -218,15 +220,16 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclTunerPluginUnload(ncclTuner_t** tuner) {
-  if (*tuner == nullptr) return ncclSuccess;
+ncclResult_t ncclTunerPluginUnload(struct ncclComm* comm) {
   pthread_mutex_lock(&tunerPluginLock);
-  if (0 == (--tunerPluginRefCount)) {
+  if (comm->tunerPluginLoaded && 0 == (--tunerPluginRefCount)) {
     INFO(NCCL_TUNING, "TUNER/Plugin: Closing tuner: '%s'", tunerSymbol->name);
     dlclose(tunerPluginLib);
     tunerPluginLib = nullptr;
     tunerSymbol = nullptr;
-    *tuner = nullptr;
+    comm->tuner = nullptr;
+    status = tunerPluginLoadReady;
+    comm->tunerPluginLoaded = 0;
   }
   pthread_mutex_unlock(&tunerPluginLock);
   return ncclSuccess;

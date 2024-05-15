@@ -80,7 +80,6 @@ static void initOnceFunc() {
   initGdrCopy();
   // Always initialize bootstrap network
   NCCLCHECKGOTO(bootstrapNetInit(), initResult, exit);
-  NCCLCHECKGOTO(ncclNetPluginInit(), initResult, exit);
 
   initNvtxRegisteredEnums();
 exit:;
@@ -251,6 +250,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - %s COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, abort ? "Abort" : "Destroy");
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
+  NCCLCHECK(ncclNetFinalize(comm));
+  NCCLCHECK(ncclNetPluginUnload(comm));
   free(comm);
 
   return ncclSuccess;
@@ -325,6 +326,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   comm->rank = rank;
   comm->nRanks = ndev;
 
+  NCCLCHECK(ncclNetPluginLoad(comm));
   NCCLCHECK(ncclNetInit(comm));
   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 
@@ -1402,7 +1404,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
 
   NCCLCHECKGOTO(initTransportsRank(comm, job->parent, timers), res, fail);
 
-  NCCLCHECKGOTO(ncclTunerPluginLoad(&comm->tuner), res, fail);
+  NCCLCHECKGOTO(ncclTunerPluginLoad(comm), res, fail);
   if (comm->tuner) {
     NCCLCHECK(comm->tuner->init(comm->nRanks, comm->nNodes, ncclDebugLog, &comm->tunerContext));
   }
@@ -1846,7 +1848,7 @@ static ncclResult_t commCleanup(ncclComm_t comm) {
 
   if (comm->tuner != NULL) {
     NCCLCHECK(comm->tuner->destroy(comm->tunerContext));
-    NCCLCHECK(ncclTunerPluginUnload(&comm->tuner));
+    NCCLCHECK(ncclTunerPluginUnload(comm));
   }
 
   NCCLCHECK(commFree(comm));
