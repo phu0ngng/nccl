@@ -81,8 +81,8 @@ ncclCommSplit
 
 .. c:function:: ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t* newcomm, ncclConfig_t* config)
 
-The *ncclCommSplit* function creates a set of new communicators from an existing one. Ranks which pass
-the same *color* value will be part of the same group; color must be a non-negative value. If it is 
+The *ncclCommSplit* is a collective function and creates a set of new communicators from an existing one. Ranks which 
+pass the same *color* value will be part of the same group; color must be a non-negative value. If it is 
 passed as *NCCL_SPLIT_NOCOLOR*, it means that the rank will not be part of any group, therefore returning NULL 
 as newcomm.
 The value of key will determine the rank order, and the smaller key means the smaller rank in new communicator.
