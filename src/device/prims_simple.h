@@ -151,7 +151,7 @@ class Primitives<
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*connStepSize;
       }
       if (flags & NetDeviceUnpack) {
-        ncclNetDeviceIncrementHead(group);
+        ncclNetDeviceIncrementHead(group, index);
       }
       step += StepPerSlice;
     }
@@ -592,7 +592,7 @@ private:
     }
 
     if (flags & NetDeviceUnpack) {
-      ncclNetDeviceSaveHead(netDeviceHandle, group);
+      ncclNetDeviceSaveHead(netDeviceHandle, group, index);
     }
 
     // Make sure all threads are done writing back conn->step and done using
