@@ -612,8 +612,8 @@ ncclResult_t ncclIbGdrSupport() {
   if (moduleLoaded == -1) {
     // Check for the nv_peer_mem module being loaded
     moduleLoaded = ((access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) &&
-                    // Also support the new nvidia-peermem module
-                    (access("/sys/kernel/mm/memory_peers/nvidia-peermem/version", F_OK) == -1)) ? 0 : 1;
+                    // Also support the new nv_mem_nc module
+                    (access("/sys/kernel/mm/memory_peers/nv_mem_nc/version", F_OK) == -1)) ? 0 : 1;
   }
   if (moduleLoaded == 0) return ncclSystemError;
   return ncclSuccess;
