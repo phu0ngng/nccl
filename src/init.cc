@@ -422,8 +422,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 
   comm->workArgsBytes = std::min<size_t>(ncclParamWorkArgsBytes(), ncclMaxKernelArgsSize(comm->cudaArch));
 
-  NCCLCHECKGOTO(ncclNvmlGetCCStatus(&ccStatus), ret, fail);
-  if (ccStatus.CCEnabled) {
+  if (ncclNvmlGetCCStatus(&ccStatus) == ncclSuccess && ccStatus.CCEnabled) {
     comm->workFifoBytes = 0;
     if (ccStatus.multiGpuCCEnabled == false && comm->rank == 0) {
       WARN("CC On, Multi-GPU CC Off (No inter-GPU communication protection)");

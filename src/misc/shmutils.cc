@@ -158,7 +158,7 @@ ncclResult_t ncclShmUnlink(ncclShmHandle_t handle) {
   ncclResult_t ret = ncclSuccess;
   struct shmHandleInternal* tmphandle = (struct shmHandleInternal*)handle;
   if (tmphandle) {
-    if (tmphandle->shmPath != NULL) {
+    if (tmphandle->shmPath != NULL && tmphandle->refcount != NULL && *tmphandle->refcount > 0) {
       if (unlink(tmphandle->shmPath) != 0) {
         WARN("unlink shared memory %s failed, error: %s (%d)", tmphandle->shmPath, strerror(errno), errno);
         ret = ncclSystemError;

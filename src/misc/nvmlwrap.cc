@@ -300,7 +300,7 @@ ncclResult_t ncclNvmlGetCCStatus(struct ncclNvmlCCStatus *status) {
   nvmlCCInfoInternal ccInfo;
   if (pfn_nvmlSystemGetConfComputeSettings != NULL) {
     ccInfo.settingV12040.version = nvmlSystemConfComputeSettings_v1;
-    NVMLCHECK(nvmlSystemGetConfComputeSettings, &ccInfo.settingV12040);
+    NVMLTRY(nvmlSystemGetConfComputeSettings, &ccInfo.settingV12040);
     if (ccInfo.settingV12040.ccFeature == NVML_CC_SYSTEM_FEATURE_ENABLED)
       status->CCEnabled = true;
     else
@@ -311,7 +311,7 @@ ncclResult_t ncclNvmlGetCCStatus(struct ncclNvmlCCStatus *status) {
     else
       status->multiGpuCCEnabled = false;
   } else if (pfn_nvmlSystemGetConfComputeState != NULL) {
-    NVMLCHECK(nvmlSystemGetConfComputeState, &ccInfo.settingV12020);
+    NVMLTRY(nvmlSystemGetConfComputeState, &ccInfo.settingV12020);
     if (ccInfo.settingV12020.ccFeature == NVML_CC_SYSTEM_FEATURE_ENABLED)
       status->CCEnabled = true;
     else

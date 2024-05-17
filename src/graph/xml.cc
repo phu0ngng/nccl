@@ -617,7 +617,7 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
 
   const char* vendor;
   NCCLCHECK(xmlGetAttr(pciNode, "vendor", &vendor));
-  if (strcmp(vendor, "0x1000") == 0) { // BCM switch, look for P2P connections
+  if (vendor != NULL && strcmp(vendor, "0x1000") == 0) { // BCM switch, look for P2P connections
     int nlinks;
     char* peers;
     NCCLCHECK(getBcmLinks(busId, &nlinks, &peers));
