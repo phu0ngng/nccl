@@ -75,6 +75,7 @@ static int datacheck = 1;
 static int warmup_iters = 20;
 static int iters = 20;
 static int agg_iters = 1;
+static int run_cycles = 1;
 static int ncclop = ncclSum;
 static int nccltype = ncclFloat;
 static int ncclroot = 0;
@@ -835,23 +836,25 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   TESTCHECK(completeColl(args));
 
   // Benchmark
-  for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
-      setupArgs(size, type, args);
-      int actualIters;
-      TESTCHECK(getIteration(size, &actualIters));
-      char rootName[100];
-      sprintf(rootName, "%6i", root);
-      PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes[0][0], args->expectedBytes[0][0]), args->nbytes[0][0] / wordSize(type), typeName, opName, rootName);
-      if (args->replayFile != NULL || !out_of_place) {
-        PRINT("                                ");  // only do in-place for trace replay
-      } else {
-        TESTCHECK(BenchTime(args, type, op, root, 0, actualIters, per_coll_perf));
-      }
-      TESTCHECK(BenchTime(args, type, op, root, 1, actualIters, 0));
-      if (per_coll_perf) printPerCollPerf(args, type, op, root, actualIters, per_coll_perf);
-      PRINT("  %6d", actualIters);
-      PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
-  }
+  do {
+    for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
+        setupArgs(size, type, args);
+        int actualIters;
+        TESTCHECK(getIteration(size, &actualIters));
+        char rootName[100];
+        sprintf(rootName, "%6i", root);
+        PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes[0][0], args->expectedBytes[0][0]), args->nbytes[0][0] / wordSize(type), typeName, opName, rootName);
+        if (args->replayFile != NULL || !out_of_place) {
+          PRINT("                                ");  // only do in-place for trace replay
+        } else {
+          TESTCHECK(BenchTime(args, type, op, root, 0, actualIters, per_coll_perf));
+        }
+        TESTCHECK(BenchTime(args, type, op, root, 1, actualIters, 0));
+        if (per_coll_perf) printPerCollPerf(args, type, op, root, actualIters, per_coll_perf);
+        PRINT("  %6d", actualIters);
+        PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
+    }
+  } while (--run_cycles);
 
   // Revert forced misalignment
   for (int id = 0; id < args->commNum; ++id) {
@@ -1127,6 +1130,7 @@ int main(int argc, char* argv[]) {
     {"iters", required_argument, 0, 'n'},
     {"agg_iters", required_argument, 0, 'm'},
     {"warmup_iters", required_argument, 0, 'w'},
+    {"run_cycles", required_argument, 0, 'N'},
     {"parallel_init", required_argument, 0, 'p'},
     {"check", required_argument, 0, 'c'},
     {"op", required_argument, 0, 'o'},
@@ -1157,7 +1161,7 @@ int main(int argc, char* argv[]) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1203,6 +1207,9 @@ int main(int argc, char* argv[]) {
         break;
       case 'w':
         warmup_iters = (int)strtol(optarg, NULL, 0);
+        break;
+      case 'N':
+        run_cycles = (int)strtol(optarg, NULL, 0);
         break;
       case 'c':
         datacheck = (int)strtol(optarg, NULL, 0);
@@ -1304,6 +1311,7 @@ int main(int argc, char* argv[]) {
             "[-n,--iters <iteration count>] \n\t"
             "[-m,--agg_iters <aggregated iteration count>] \n\t"
             "[-w,--warmup_iters <warmup iteration count>] \n\t"
+            "[-N,--run_cycles <cycle count> run & print each cycle (default: 1; 0=infinite)] \n\t"
             "[-p,--parallel_init <0/1>] \n\t"
             "[-c,--check <0/1>] \n\t"
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0)
