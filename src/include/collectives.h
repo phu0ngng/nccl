@@ -49,7 +49,7 @@ inline int ncclTypeSize(ncclDataType_t type) {
   case ncclFloat64:
     return 8;
   default:
-    return -1;
+    return 0;
   }
 }
 
