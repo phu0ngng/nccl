@@ -1539,6 +1539,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   ncclConfig_t *internalConfigPtr;
   size_t realSize;
 
+  internalConfig.magic = 0;
   internalConfigPtr = &internalConfig;
   if (config) {
     memcpy((void*)&realSize, (void*)config, sizeof(size_t));

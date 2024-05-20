@@ -151,6 +151,49 @@ TEST_F(ncclCommInitRankConfig_test, config_null) {
     free(comms);
 }
 
+TEST_F(ncclCommInitRankConfig_test, invalid_config_size_0) {
+    ncclUniqueId id;
+    ncclComm_t comm;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    config.size = 0;
+
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comm, 1, id, 0, &config));
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(comm));
+}
+
+TEST_F(ncclCommInitRankConfig_test, invalid_config_size_large) {
+    ncclUniqueId id;
+    ncclComm_t* comms;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    config.size = SIZE_MAX;
+
+    comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i)
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+}
+
+TEST_F(ncclCommInitRankConfig_test, invalid_config_magic) {
+    ncclUniqueId id;
+    ncclComm_t comm;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    config.magic = 0;
+
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comm, 1, id, 0, &config));
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(comm));
+}
+
 TEST_F(ncclCommInitRankConfig_test, cta_basic) {
     ncclUniqueId id;
     ncclComm_t* comms;
