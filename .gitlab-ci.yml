@@ -689,7 +689,7 @@ QA-team-ci:
   rules:
     - when: always
   tags:
-    - tracy's_host_runner
+    - cqa_host_runner
   script:
     - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
   interruptible: true
