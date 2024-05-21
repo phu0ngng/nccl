@@ -435,18 +435,21 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     int collNetSupport = 0;
     NCCLCHECK(getCollNetSupport(comm, aggBeg, &collNetSupport));
     int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(aggBeg->op.op, aggBeg->datatype) || aggBeg->func == ncclFuncAllGather);
+    // Crudely estimate number of tasks per channel. This is using the wrong number
+    // of channels for NVLS algos, but knowing the algo requires having this value,
+    // so either be crude our iterate until fixed point, we chose the former.
+    int nTasksPerChannel = divUp(comm->planner.nTasksColl, comm->nChannels);
     do {
       struct ncclTaskColl* aggEnd = aggBeg->next;
       struct ncclTaskColl agg = *aggBeg;
-      int nAggs = 1;
       // We aggregate operations that are within 4X size of each other.
       while (aggEnd != nullptr && aggEnd->trafficBytes < 4*aggBeg->trafficBytes) {
-        nAggs += 1;
+        agg.count += aggEnd->count;
         agg.trafficBytes += aggEnd->trafficBytes;
         aggEnd = aggEnd->next;
       }
 
-      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nAggs, simInfo));
+      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nTasksPerChannel, simInfo));
       agg.devFuncId = ncclDevFuncId(agg.func, agg.op.op, agg.datatype, agg.algorithm, agg.protocol);
 
       int isCollnet=0, isNvls=0;
@@ -478,7 +481,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   }
 
   // Concatenate `collBins[*][*]` together into final list `planner->collTaskQueue`.
-  // Collnet is the outer dimension since that affects whether how divide over the
+  // Collnet is the outer dimension since that affects how we divide over the
   // channels.
   for (int isCollnet=0; isCollnet <= 1; isCollnet++) {
     for (int isNvls=0; isNvls <= 1; isNvls++) {
@@ -699,7 +702,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       devWork->cbd.countHi = countHi;
 
       // calcCollChunking() uses global bytes instead of traffic which differs
-      // in that allreduce isn't multipled by 2.
+      // in that allreduce isn't multiplied by 2.
       size_t globalBytesPerElement = elementSize*ncclFuncMaxSendRecvCount(task->func, comm->nRanks, 1);
       struct ncclProxyOp proxyOpLo, proxyOpMid, proxyOpHi;
 
