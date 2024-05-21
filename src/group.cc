@@ -485,6 +485,8 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
   ncclSimInfo_t* internalSimInfoPtr = NULL;
   size_t realSize;
 
+  internalSimInfo.magic = 0;
+
   if (ncclGroupDepth == 0) {
     WARN("ncclGroupEnd: not in a group call.");
     ret = ncclInvalidUsage;

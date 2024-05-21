@@ -39,8 +39,26 @@ TEST_F(ncclGroup_test, basic_simulate) {
     ASSERT_EQ(ncclSuccess, ncclGroupSimulateEnd(&simInfo));
   }
 }
-TEST_F(ncclGroup_test, basic_simulate_invalid_arg) {
-  ncclSimInfo_t simInfo;
+TEST_F(ncclGroup_test, basic_simulate_invalid_arg_size_0) {
+  ncclSimInfo_t simInfo = { 0 };
+  for (int i=0; i < ndev; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    ASSERT_EQ(ncclInvalidArgument, ncclGroupSimulateEnd(&simInfo));
+  }
+}
+TEST_F(ncclGroup_test, basic_simulate_invalid_arg_size_large) {
+  ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
+  simInfo.size = SIZE_MAX;
+  for (int i=0; i < ndev; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    ASSERT_EQ(ncclSuccess, ncclGroupSimulateEnd(&simInfo));
+  }
+}
+TEST_F(ncclGroup_test, basic_simulate_invalid_arg_magic) {
+  ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
+  simInfo.magic = 0;
   for (int i=0; i < ndev; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
