@@ -4,70 +4,21 @@ Environment Variables
 
 NCCL has an extensive set of environment variables to tune for specific usage.
 
-They can also be set statically in /etc/nccl.conf (for an administrator to set system-wide values) or in ~/.nccl.conf (for users). For example, those files could contain :
+Environment variables can also be set statically in /etc/nccl.conf (for an administrator to set system-wide values) or in ~/.nccl.conf (for users). For example, those files could contain :
 
 .. code:: C
 
  NCCL_DEBUG=WARN
  NCCL_SOCKET_IFNAME==ens1f0
 
-NCCL_P2P_DISABLE
-----------------
+There are two categories of environment variables. Some are needed to make NCCL follow system-specific configuration,
+and can be kept in scripts and system configuration. 
+Other parameters listed in the "Debugging" section should not be used in production nor retained in scripts, or only
+as workaround, and removed as soon as the issue is resolved. Keeping them set may result in sub-optimal behavior,
+crashes, or hangs.
 
-The ``NCCL_P2P_DISABLE`` variable disables the peer to peer (P2P) transport, which uses CUDA direct access between GPUs, using NVLink or PCI.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Define and set to 1 to disable direct GPU-to-GPU (P2P) communication.
-
-NCCL_P2P_LEVEL
---------------
-(since 2.3.4)
-
-The ``NCCL_P2P_LEVEL`` variable allows the user to finely control when to use the peer to peer (P2P) transport between GPUs.
-The level defines the maximum distance between GPUs where NCCL will use the P2P transport.  A short string representing
-the path type should be used to specify the topographical cutoff for using the P2P transport.
-
-If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in. 
-
-Values accepted
-^^^^^^^^^^^^^^^
-- LOC : Never use P2P (always disabled)
-- NVL : Use P2P when GPUs are connected through NVLink
-- PIX : Use P2P when GPUs are on the same PCI switch.
-- PXB : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
-- PHB : Use P2P when GPUs are on the same NUMA node. Traffic will go through the CPU.
-- SYS : Use P2P between NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
-
-Integer Values (Legacy)
-^^^^^^^^^^^^^^^^^^^^^^^
-There is also the option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
-
-Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
-
-- LOC : 0
-- PIX : 1
-- PXB : 2
-- PHB : 3
-- SYS : 4
-
-Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy integer values.
-
-NCCL_P2P_DIRECT_DISABLE
------------------------
-The ``NCCL_P2P_DIRECT_DISABLE`` variable forbids NCCL to directly access user buffers through P2P between GPUs of the same process. This is useful when user buffers are allocated with APIs which do not automatically make them accessible to other GPUs managed by the same process and with P2P access.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Define and set to 1 to disable direct user buffer access across GPUs.
-
-NCCL_SHM_DISABLE
-----------------
-The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL will use the network (i.e. InfiniBand or IP sockets) to communicate between the CPU sockets when SHM is disabled.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Define and set to 1 to disable communication through shared memory (SHM).
+System configuration
+====================
 
 .. _NCCL_SOCKET_IFNAME:
 
@@ -134,79 +85,6 @@ On AWS, the default value is 8; in other cases, the default value is 1.
 
 For generic 100G networks, this value can be manually set to 4. However, the product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot exceed 64. See also ``NCCL_SOCKET_NTHREADS``.
 
-.. _NCCL_DEBUG:
-
-NCCL_DEBUG
-----------
-
-The ``NCCL_DEBUG`` variable controls the debug information that is displayed from NCCL. This variable is commonly used for debugging.
-
-Values accepted
-^^^^^^^^^^^^^^^
-VERSION - Prints the NCCL version at the start of the program.
-
-WARN - Prints an explicit error message whenever any NCCL call errors out.
-
-INFO - Prints debug information
-
-TRACE - Prints replayable trace information on every call.
-
-NCCL_BUFFSIZE
--------------
-The ``NCCL_BUFFSIZE`` variable controls the size of the buffer used by NCCL when communicating data between pairs of GPUs.
-
-Use this variable if you encounter memory constraint issues when using NCCL or you think that a different buffer size would improve performance.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default is 4194304 (4 MB).
-
-Values are integers, in bytes. The recommendation is to use powers of 2. For example,  1024 will give a 1K buffer.
-
-
-NCCL_NTHREADS
--------------
-The ``NCCL_NTHREADS`` variable sets the number of CUDA threads per CUDA block. NCCL will launch one CUDA block per communication channel.
-
-Use this variable if you think your GPU clocks are low and you want to increase the number of threads.
-
-You can also use this variable to reduce the number of threads to decrease the GPU workload.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default is 512 for recent generation GPUs, and 256 for some older generations.
-
-The values allowed are 64, 128, 256 and 512.
-
-NCCL_MAX_NCHANNELS
-------------------
-(NCCL_MAX_NRINGS since 2.0.5, NCCL_MAX_NCHANNELS since 2.5.0)
-
-The ``NCCL_MAX_NCHANNELS`` variable limits the number of channels NCCL can use. Reducing the number of channels also reduces the
-number of CUDA blocks used for communication, hence the impact on GPU computing resources.
-
-The old ``NCCL_MAX_NRINGS`` variable (used until 2.4) still works as an alias in newer versions but is ignored if ``NCCL_MAX_NCHANNELS`` is set.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Any value above or equal to 1.
-
-NCCL_MIN_NCHANNELS
-------------------
-(NCCL_MIN_NRINGS since 2.2.0, NCCL_MIN_NCHANNELS since 2.5.0)
-
-The ``NCCL_MIN_NCHANNELS`` variable controls the minimum number of channels you want NCCL to use.
-Increasing the number of channels also increases the number of
-CUDA blocks NCCL uses, which may be useful to improve performance; however, it uses more CUDA compute resources.
-
-This is especially useful when using aggregated collectives on platforms where NCCL would usually only create one channel.
-
-The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in newer versions, but is ignored if ``NCCL_MIN_NCHANNELS`` is set.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default is platform dependent. Set to an integer value, up to 12 (up to 2.2), 16 (2.3 and 2.4) or 32 (2.5 and later).
-
 NCCL_CROSS_NIC
 --------------
 The ``NCCL_CROSS_NIC`` variable controls whether NCCL should allow rings/trees to use different NICs,
@@ -233,54 +111,6 @@ help avoiding flow collisions.
 
 2: (Default) Try to use the same NIC for the same ring/tree, but still allow for the use of different NICs
 if it would result in a better performance.
-
-NCCL_CHECKS_DISABLE
--------------------
-(since 2.0.5, deprecated in 2.2.12)
-
-The ``NCCL_CHECKS_DISABLE`` variable can be used to disable argument checks on each collective call.
-Checks are useful during development but can increase the latency. They can be disabled to
-improve performance in production.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default is 0, set to 1 to disable checks.
-
-NCCL_CHECK_POINTERS
--------------------
-(since 2.2.12)
-
-The ``NCCL_CHECK_POINTERS`` variable enables checking of the CUDA memory pointers on each collective call.
-Checks are useful during development but can increase the latency.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default is 0, set to 1 to enable checking.
-
-Setting to 1 restores the original behavior of NCCL prior to 2.2.12.
-
-NCCL_LAUNCH_MODE
-----------------
-(since 2.1.0)
-
-The ``NCCL_LAUNCH_MODE`` variable controls how NCCL launches CUDA kernels.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default value is PARALLEL.
-
-Setting is to GROUP will use cooperative groups (CUDA 9.0 and later) for processes managing more than one GPU.
-This is deprecated in 2.9 and may be removed in future versions.
-
-NCCL_IB_DISABLE
----------------
-
-The ``NCCL_IB_DISABLE`` variable prevents the IB/RoCE transport from being used by NCCL. Instead, NCCL will fall back to
-using IP sockets.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Define and set to 1 to disable the use of InfiniBand Verbs for communication (and force another method, e.g. IP sockets).
 
 NCCL_IB_HCA
 -----------
@@ -409,97 +239,6 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 0.
 
-NCCL_IB_AR_THRESHOLD
---------------------
-(since 2.6)
-
-Threshold above which we send InfiniBand data in a separate message which can
-leverage adaptive routing.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Size in bytes, the default value is 8192.
-
-Setting it above NCCL_BUFFSIZE will disable the use of adaptive routing completely.
-
-NCCL_IB_CUDA_SUPPORT
---------------------
-(removed in 2.4.0, see NCCL_NET_GDR_LEVEL)
-
-The ``NCCL_IB_CUDA_SUPPORT`` variable is used to force or disable the usage of GPU Direct RDMA.
-By default, NCCL enables GPU Direct RDMA if the topology permits it. This variable can disable this behavior or force
-the usage of GPU Direct RDMA in all cases.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Define and set to 0 to disable GPU Direct RDMA.
-
-Define and set to 1 to force the usage of GPU Direct RDMA.
-
-NCCL_IB_QPS_PER_CONNECTION
---------------------------
-(since 2.10)
-
-Number of IB queue pairs to use for each connection between two ranks. This can be useful on multi-level fabrics which need multiple queue pairs to have good routing entropy.
-See ``NCCL_IB_SPLIT_DATA_ON_QPS`` for different ways to split data on multiple QPs, as it can affect performance.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Number between 1 and 128, default is 1.
-
-NCCL_IB_SPLIT_DATA_ON_QPS
--------------------------
-(since 2.18)
-
-This parameter controls how we use the queue pairs when we create more than one.
-Set to 1 (split mode, default), each message will be split evenly on each queue pair. This may cause a visible latency degradation if we use many QPs.
-Set to 0 (round-robin mode), queue pairs will be used in round-robin mode for each message we send. Operations which do not send multiple messages will not use all QPs.
-
-Values accepted
-^^^^^^^^^^^^^^^
-0 or 1. Default is 1. Setting it to 0 will switch to round-robin mode.
-
-NCCL_IB_PCI_RELAXED_ORDERING
-----------------------------
-(since 2.12)
-
-Enable the use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of InfiniBand networks in virtualized environments.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Set to 2 to automatically use Relaxed Ordering if available. Set to 1 to force the use of Relaxed Ordering and fail if not available. Set to 0 to disable the use of Relaxed Ordering. Default is 2.
-
-NCCL_IB_ADAPTIVE_ROUTING
-------------------------
-(since 2.16)
-
-Enable the use of Adaptive Routing capable data transfers for the IB Verbs transport. Adaptive routing can improve the performance of communications at scale. A system defined Adaptive Routing enabled SL has to be selected accordingly (cf. ``NCCL_IB_SL``).
-
-Values accepted
-^^^^^^^^^^^^^^^
-Enabled (1) by default on IB networks. Disabled (0) by default on RoCE networks. Set to 1 to force use of Adaptive Routing capable data transmission.
-
-
-NCCL_MEM_SYNC_DOMAIN
---------------------
-(since 2.16)
-
-Sets the default Memory Sync Domain for NCCL kernels (CUDA 12.0 & sm90 and later). Memory Sync Domains can help eliminate interference between the NCCL kernels and the application compute kernels, when they use different domains.
-
-Values accepted
-^^^^^^^^^^^^^^^
-Default value is ``cudaLaunchMemSyncDomainRemote`` (1). Currently supported values are 0 and 1.
-
-NCCL_CUMEM_ENABLE
------------------
-(since 2.18)
-
-Use CUDA cuMem* functions to allocate memory in NCCL.
-
-Values accepted
-^^^^^^^^^^^^^^^
-0 or 1. Default is 0 in 2.18 (disabled); since 2.19 this feature is auto-enabled by default if the system supports it (NCCL_CUMEM_ENABLE can still be used to override the autodetection).
-
 NCCL_NET
 --------
 (since 2.10)
@@ -543,6 +282,377 @@ Values accepted
 ^^^^^^^^^^^^^^^
 
 Plugin suffix, plugin file name, or "none".
+
+NCCL_IGNORE_CPU_AFFINITY
+------------------------
+(since 2.4.6)
+
+The ``NCCL_IGNORE_CPU_AFFINITY`` variable can be used to cause NCCL to ignore the job's supplied CPU affinity and instead use the GPU affinity only.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default is 0, set to 1 to cause NCCL to ignore the job's supplied CPU affinity.
+
+.. _NCCL_DEBUG:
+
+NCCL_DEBUG
+----------
+
+The ``NCCL_DEBUG`` variable controls the debug information that is displayed from NCCL. This variable is commonly used for debugging.
+
+Values accepted
+^^^^^^^^^^^^^^^
+VERSION - Prints the NCCL version at the start of the program.
+
+WARN - Prints an explicit error message whenever any NCCL call errors out.
+
+INFO - Prints debug information
+
+TRACE - Prints replayable trace information on every call.
+
+NCCL_DEBUG_FILE
+---------------
+(since 2.2.12)
+
+The ``NCCL_DEBUG_FILE`` variable directs the NCCL debug logging output to a file.
+The filename format can be set to *filename.%h.%p* where *%h* is replaced with the
+hostname and *%p* is replaced with the process PID. This does not accept the ``~`` character as part of the path, please convert to a relative or absolute path first.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default output file is *stdout* unless this environment variable is set.
+
+Setting ``NCCL_DEBUG_FILE`` will cause NCCL to create and overwrite any previous files of that name.
+
+Note: If the filename is not unique across all the job processes, then the output may be lost or corrupted.
+
+NCCL_DEBUG_SUBSYS
+-----------------
+(since 2.3.4)
+
+The ``NCCL_DEBUG_SUBSYS`` variable allows the user to filter the ``NCCL_DEBUG=INFO`` output based on subsystems.
+The value should be a comma separated list of the subsystems to include in the NCCL debug log traces.
+
+Prefixing the subsystem name with ‘^’ will disable the logging for that subsystem.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is INIT.
+
+Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
+peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
+and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), ALLOC (stands for memory allocations), and ALL (includes every subsystem).
+
+NCCL_COLLNET_ENABLE
+-------------------
+(since 2.6)
+
+Enable the use of the CollNet plugin.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 0, define and set to 1 to use the CollNet plugin.
+
+NCCL_COLLNET_NODE_THRESHOLD
+---------------------------
+(since 2.9.9)
+
+A threshold for the number of nodes below which CollNet will not be enabled.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 2, define and set to an integer.
+
+NCCL_TOPO_FILE
+--------------
+(since 2.6)
+
+Path to an XML file to load before detecting the topology. By default, NCCL will load ``/var/run/nvidia-topologyd/virtualTopology.xml`` if present.
+
+Value accepted
+^^^^^^^^^^^^^^
+A path to an accessible file describing part or all of the topology.
+
+NCCL_TOPO_DUMP_FILE
+-------------------
+(since 2.6)
+
+Path to a file to dump the XML topology to after detection.
+
+Value accepted
+^^^^^^^^^^^^^^
+A path to a file which will be created or overwritten.
+
+NCCL_SET_THREAD_NAME
+--------------------
+(since 2.12)
+
+Give more meaningful names to NCCL CPU threads to ease debugging and analysis.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default is 0 (disabled).
+
+Debugging
+=========
+
+These environment variables should be used with caution. New versions of NCCL could work differently and forcing them to a particular value
+will prevent NCCL from selecting the best setting automatically. They can therefore cause performance problems in the long term, or even
+break some functionality.
+
+They are fine to use for experiments, or to debug a problem, but should generally not be set for production code.
+
+NCCL_P2P_DISABLE
+----------------
+
+The ``NCCL_P2P_DISABLE`` variable disables the peer to peer (P2P) transport, which uses CUDA direct access between GPUs, using NVLink or PCI.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define and set to 1 to disable direct GPU-to-GPU (P2P) communication.
+
+NCCL_P2P_LEVEL
+--------------
+(since 2.3.4)
+
+The ``NCCL_P2P_LEVEL`` variable allows the user to finely control when to use the peer to peer (P2P) transport between GPUs.
+The level defines the maximum distance between GPUs where NCCL will use the P2P transport.  A short string representing
+the path type should be used to specify the topographical cutoff for using the P2P transport.
+
+If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in. 
+
+Values accepted
+^^^^^^^^^^^^^^^
+- LOC : Never use P2P (always disabled)
+- NVL : Use P2P when GPUs are connected through NVLink
+- PIX : Use P2P when GPUs are on the same PCI switch.
+- PXB : Use P2P when GPUs are connected through PCI switches (potentially multiple hops).
+- PHB : Use P2P when GPUs are on the same NUMA node. Traffic will go through the CPU.
+- SYS : Use P2P between NUMA nodes, potentially crossing the SMP interconnect (e.g. QPI/UPI).
+
+Integer Values (Legacy)
+^^^^^^^^^^^^^^^^^^^^^^^
+There is also the option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
+
+Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
+
+- LOC : 0
+- PIX : 1
+- PXB : 2
+- PHB : 3
+- SYS : 4
+
+Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy integer values.
+
+NCCL_P2P_DIRECT_DISABLE
+-----------------------
+The ``NCCL_P2P_DIRECT_DISABLE`` variable forbids NCCL to directly access user buffers through P2P between GPUs of the same process. This is useful when user buffers are allocated with APIs which do not automatically make them accessible to other GPUs managed by the same process and with P2P access.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define and set to 1 to disable direct user buffer access across GPUs.
+
+NCCL_SHM_DISABLE
+----------------
+The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL will use the network (i.e. InfiniBand or IP sockets) to communicate between the CPU sockets when SHM is disabled.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define and set to 1 to disable communication through shared memory (SHM).
+
+NCCL_BUFFSIZE
+-------------
+The ``NCCL_BUFFSIZE`` variable controls the size of the buffer used by NCCL when communicating data between pairs of GPUs.
+
+Use this variable if you encounter memory constraint issues when using NCCL or you think that a different buffer size would improve performance.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default is 4194304 (4 MB).
+
+Values are integers, in bytes. The recommendation is to use powers of 2. For example,  1024 will give a 1K buffer.
+
+
+NCCL_NTHREADS
+-------------
+The ``NCCL_NTHREADS`` variable sets the number of CUDA threads per CUDA block. NCCL will launch one CUDA block per communication channel.
+
+Use this variable if you think your GPU clocks are low and you want to increase the number of threads.
+
+You can also use this variable to reduce the number of threads to decrease the GPU workload.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default is 512 for recent generation GPUs, and 256 for some older generations.
+
+The values allowed are 64, 128, 256 and 512.
+
+NCCL_MAX_NCHANNELS
+------------------
+(NCCL_MAX_NRINGS since 2.0.5, NCCL_MAX_NCHANNELS since 2.5.0)
+
+The ``NCCL_MAX_NCHANNELS`` variable limits the number of channels NCCL can use. Reducing the number of channels also reduces the
+number of CUDA blocks used for communication, hence the impact on GPU computing resources.
+
+The old ``NCCL_MAX_NRINGS`` variable (used until 2.4) still works as an alias in newer versions but is ignored if ``NCCL_MAX_NCHANNELS`` is set.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Any value above or equal to 1.
+
+NCCL_MIN_NCHANNELS
+------------------
+(NCCL_MIN_NRINGS since 2.2.0, NCCL_MIN_NCHANNELS since 2.5.0)
+
+The ``NCCL_MIN_NCHANNELS`` variable controls the minimum number of channels you want NCCL to use.
+Increasing the number of channels also increases the number of
+CUDA blocks NCCL uses, which may be useful to improve performance; however, it uses more CUDA compute resources.
+
+This is especially useful when using aggregated collectives on platforms where NCCL would usually only create one channel.
+
+The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in newer versions, but is ignored if ``NCCL_MIN_NCHANNELS`` is set.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default is platform dependent. Set to an integer value, up to 12 (up to 2.2), 16 (2.3 and 2.4) or 32 (2.5 and later).
+
+NCCL_CHECKS_DISABLE
+-------------------
+(since 2.0.5, deprecated in 2.2.12)
+
+The ``NCCL_CHECKS_DISABLE`` variable can be used to disable argument checks on each collective call.
+Checks are useful during development but can increase the latency. They can be disabled to
+improve performance in production.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default is 0, set to 1 to disable checks.
+
+NCCL_CHECK_POINTERS
+-------------------
+(since 2.2.12)
+
+The ``NCCL_CHECK_POINTERS`` variable enables checking of the CUDA memory pointers on each collective call.
+Checks are useful during development but can increase the latency.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default is 0, set to 1 to enable checking.
+
+Setting to 1 restores the original behavior of NCCL prior to 2.2.12.
+
+NCCL_LAUNCH_MODE
+----------------
+(since 2.1.0)
+
+The ``NCCL_LAUNCH_MODE`` variable controls how NCCL launches CUDA kernels.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is PARALLEL.
+
+Setting is to GROUP will use cooperative groups (CUDA 9.0 and later) for processes managing more than one GPU.
+This is deprecated in 2.9 and may be removed in future versions.
+
+NCCL_IB_DISABLE
+---------------
+
+The ``NCCL_IB_DISABLE`` variable prevents the IB/RoCE transport from being used by NCCL. Instead, NCCL will fall back to
+using IP sockets.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define and set to 1 to disable the use of InfiniBand Verbs for communication (and force another method, e.g. IP sockets).
+
+NCCL_IB_AR_THRESHOLD
+--------------------
+(since 2.6)
+
+Threshold above which we send InfiniBand data in a separate message which can
+leverage adaptive routing.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Size in bytes, the default value is 8192.
+
+Setting it above NCCL_BUFFSIZE will disable the use of adaptive routing completely.
+
+NCCL_IB_QPS_PER_CONNECTION
+--------------------------
+(since 2.10)
+
+Number of IB queue pairs to use for each connection between two ranks. This can be useful on multi-level fabrics which need multiple queue pairs to have good routing entropy.
+See ``NCCL_IB_SPLIT_DATA_ON_QPS`` for different ways to split data on multiple QPs, as it can affect performance.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Number between 1 and 128, default is 1.
+
+NCCL_IB_SPLIT_DATA_ON_QPS
+-------------------------
+(since 2.18)
+
+This parameter controls how we use the queue pairs when we create more than one.
+Set to 1 (split mode, default), each message will be split evenly on each queue pair. This may cause a visible latency degradation if we use many QPs.
+Set to 0 (round-robin mode), queue pairs will be used in round-robin mode for each message we send. Operations which do not send multiple messages will not use all QPs.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default is 1. Setting it to 0 will switch to round-robin mode.
+
+NCCL_IB_CUDA_SUPPORT
+--------------------
+(removed in 2.4.0, see NCCL_NET_GDR_LEVEL)
+
+The ``NCCL_IB_CUDA_SUPPORT`` variable is used to force or disable the usage of GPU Direct RDMA.
+By default, NCCL enables GPU Direct RDMA if the topology permits it. This variable can disable this behavior or force
+the usage of GPU Direct RDMA in all cases.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define and set to 0 to disable GPU Direct RDMA.
+
+Define and set to 1 to force the usage of GPU Direct RDMA.
+
+NCCL_IB_PCI_RELAXED_ORDERING
+----------------------------
+(since 2.12)
+
+Enable the use of Relaxed Ordering for the IB Verbs transport. Relaxed Ordering can greatly help the performance of InfiniBand networks in virtualized environments.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Set to 2 to automatically use Relaxed Ordering if available. Set to 1 to force the use of Relaxed Ordering and fail if not available. Set to 0 to disable the use of Relaxed Ordering. Default is 2.
+
+NCCL_IB_ADAPTIVE_ROUTING
+------------------------
+(since 2.16)
+
+Enable the use of Adaptive Routing capable data transfers for the IB Verbs transport. Adaptive routing can improve the performance of communications at scale. A system defined Adaptive Routing enabled SL has to be selected accordingly (cf. ``NCCL_IB_SL``).
+
+Values accepted
+^^^^^^^^^^^^^^^
+Enabled (1) by default on IB networks. Disabled (0) by default on RoCE networks. Set to 1 to force use of Adaptive Routing capable data transmission.
+
+NCCL_MEM_SYNC_DOMAIN
+--------------------
+(since 2.16)
+
+Sets the default Memory Sync Domain for NCCL kernels (CUDA 12.0 & sm90 and later). Memory Sync Domains can help eliminate interference between the NCCL kernels and the application compute kernels, when they use different domains.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default value is ``cudaLaunchMemSyncDomainRemote`` (1). Currently supported values are 0 and 1.
+
+NCCL_CUMEM_ENABLE
+-----------------
+(since 2.18)
+
+Use CUDA cuMem* functions to allocate memory in NCCL.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default is 0 in 2.18 (disabled); since 2.19 this feature is auto-enabled by default if the system supports it (NCCL_CUMEM_ENABLE can still be used to override the autodetection).
 
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
@@ -678,90 +788,6 @@ The default is ``LL,LL128,Simple`` on platforms which support LL128, ``LL,Simple
 
 Users are discouraged from setting this variable, with the exception of disabling a specific protocol in case a bug in NCCL is suspected. In particular, enabling LL128 on platforms that don't support it can lead to data corruption.
 
-NCCL_IGNORE_CPU_AFFINITY
-------------------------
-(since 2.4.6)
-
-The ``NCCL_IGNORE_CPU_AFFINITY`` variable can be used to cause NCCL to ignore the job's supplied CPU affinity and instead use the GPU affinity only.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default is 0, set to 1 to cause NCCL to ignore the job's supplied CPU affinity.
-
-
-NCCL_DEBUG_FILE
----------------
-(since 2.2.12)
-
-The ``NCCL_DEBUG_FILE`` variable directs the NCCL debug logging output to a file.
-The filename format can be set to *filename.%h.%p* where *%h* is replaced with the
-hostname and *%p* is replaced with the process PID. This does not accept the ``~`` character as part of the path, please convert to a relative or absolute path first.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default output file is *stdout* unless this environment variable is set.
-
-Setting ``NCCL_DEBUG_FILE`` will cause NCCL to create and overwrite any previous files of that name.
-
-Note: If the filename is not unique across all the job processes, then the output may be lost or corrupted.
-
-NCCL_DEBUG_SUBSYS
------------------
-(since 2.3.4)
-
-The ``NCCL_DEBUG_SUBSYS`` variable allows the user to filter the ``NCCL_DEBUG=INFO`` output based on subsystems.
-The value should be a comma separated list of the subsystems to include in the NCCL debug log traces.
-
-Prefixing the subsystem name with ‘^’ will disable the logging for that subsystem.
-
-Values accepted
-^^^^^^^^^^^^^^^
-The default value is INIT.
-
-Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
-peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
-and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), ALLOC (stands for memory allocations), and ALL (includes every subsystem).
-
-NCCL_COLLNET_ENABLE
--------------------
-(since 2.6)
-
-Enable the use of the CollNet plugin.
-
-Value accepted
-^^^^^^^^^^^^^^
-Default is 0, define and set to 1 to use the CollNet plugin.
-
-NCCL_COLLNET_NODE_THRESHOLD
----------------------------
-(since 2.9.9)
-
-A threshold for the number of nodes below which CollNet will not be enabled.
-
-Value accepted
-^^^^^^^^^^^^^^
-Default is 2, define and set to an integer.
-
-NCCL_TOPO_FILE
---------------
-(since 2.6)
-
-Path to an XML file to load before detecting the topology. By default, NCCL will load ``/var/run/nvidia-topologyd/virtualTopology.xml`` if present.
-
-Value accepted
-^^^^^^^^^^^^^^
-A path to an accessible file describing part or all of the topology.
-
-NCCL_TOPO_DUMP_FILE
--------------------
-(since 2.6)
-
-Path to a file to dump the XML topology to after detection.
-
-Value accepted
-^^^^^^^^^^^^^^
-A path to a file which will be created or overwritten.
-
 NCCL_NVB_DISABLE
 ----------------
 (since 2.11)
@@ -838,16 +864,6 @@ It may avoid a CUDA memory reconfiguration on load. Set to 1 if you experience h
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 0 (disabled).
-
-NCCL_SET_THREAD_NAME
---------------------
-(since 2.12)
-
-Give more meaningful names to NCCL CPU threads to ease debugging and analysis.
-
-Value accepted
-^^^^^^^^^^^^^^
-0 or 1. Default is 0 (disabled).
 
 .. _NCCL_GRAPH_MIXING_SUPPORT:
 
