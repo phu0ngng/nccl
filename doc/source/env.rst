@@ -526,7 +526,7 @@ Values accepted
 Plugin suffix, plugin file name, or "none".
 
 NCCL_TUNER_PLUGIN
----------------
+-----------------
 
 Set it to either a suffix string or to a library name to choose among multiple NCCL tuner plugins. This setting will cause NCCL to look for the tuner plugin library using the following strategy:
  - If NCCL_TUNER_PLUGIN is set, attempt loading the library with name specified by NCCL_TUNER_PLUGIN;

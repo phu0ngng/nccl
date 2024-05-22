@@ -28,7 +28,7 @@ ncclGroupEnd
  When used with the ncclCommInitRank call, the ncclGroupEnd call waits for all communicators to be initialized.
 
 ncclGroupSimulateEnd
-------------
+--------------------
 
 .. c:function:: ncclResult_t ncclGroupSimulateEnd(ncclSimInfo_t* simInfo)
 
