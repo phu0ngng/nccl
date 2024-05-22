@@ -69,6 +69,8 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Define and set to 1 to disable communication through shared memory (SHM).
 
+.. _NCCL_SOCKET_IFNAME:
+
 NCCL_SOCKET_IFNAME
 ------------------
 
