@@ -30,20 +30,26 @@ static int hasNvlsSupport(float** collCostTable) {
   // - Collnet* inter-node: collNetSupport
   //
   // nvlsSupport = 1 if either NVLS or NVLS_TREE entries in the cost table are not -1
-  return (collCostTable[NCCL_ALGO_NVLS][0] != NCCL_ALGO_PROTO_IGNORE || collCostTable[NCCL_ALGO_NVLS_TREE][0] != NCCL_ALGO_PROTO_IGNORE) ? 1 : 0;
+  float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
+  return (table[NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] != NCCL_ALGO_PROTO_IGNORE || table[NCCL_ALGO_NVLS_TREE][NCCL_PROTO_SIMPLE] != NCCL_ALGO_PROTO_IGNORE) ? 1 : 0;
 }
 
 static int hasCollNetSupport(float** collCostTable) {
-  return (collCostTable[NCCL_ALGO_COLLNET_CHAIN][0] == NCCL_ALGO_PROTO_IGNORE) ? 0 : 1;
+  float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
+  return (table[NCCL_ALGO_COLLNET_CHAIN][NCCL_PROTO_SIMPLE] == NCCL_ALGO_PROTO_IGNORE) ? 0 : 1;
 }
 
 static ncclResult_t ncclTuner_v2_as_v3_getCollInfo(void* context, ncclFunc_t collType, size_t nBytes, int numPipeOps, float** collCostTable, int numAlgo __attribute__((unused)), int numProto __attribute__((unused)), int* nChannels) {
-  int algorithm, protocol;
+  int algorithm = NCCL_ALGO_UNDEF;
+  int protocol = NCCL_PROTO_UNDEF;
   int nvlsSupport = hasNvlsSupport(collCostTable);
   int collNetSupport = hasCollNetSupport(collCostTable);
-  NCCLCHECK(ncclTuner_v2->getCollInfo(context, collType, nBytes, nvlsSupport, collNetSupport, numPipeOps, &algorithm, &protocol, nChannels));
+  NCCLCHECK(ncclTuner_v2->getCollInfo(context, collType, nBytes, collNetSupport, nvlsSupport, numPipeOps, &algorithm, &protocol, nChannels));
   // set time to 0 below to make sure this algorithm/protocol is selected later on
-  collCostTable[algorithm][protocol] = 0.0;
+  if (algorithm >= 0 && algorithm < NCCL_NUM_ALGORITHMS && protocol >= 0 && protocol < NCCL_NUM_PROTOCOLS) {
+    float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
+    if (table[algorithm][protocol] != NCCL_ALGO_PROTO_IGNORE) table[algorithm][protocol] = 0.0;
+  }
   return ncclSuccess;
 }
 
