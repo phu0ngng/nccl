@@ -836,6 +836,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   TESTCHECK(completeColl(args));
 
   // Benchmark
+  long repeat = run_cycles;
   do {
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
         setupArgs(size, type, args);
@@ -854,7 +855,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
         PRINT("  %6d", actualIters);
         PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
     }
-  } while (--run_cycles);
+  } while (--repeat);
 
   // Revert forced misalignment
   for (int id = 0; id < args->commNum; ++id) {
