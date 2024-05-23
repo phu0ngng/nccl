@@ -338,7 +338,7 @@ static ncclResult_t registerIntraNodeBuffers(
       }
     }
     info->regBufType = NCCL_IPC_REG_BUFFER;
-  } else if ((info->algorithm == NCCL_ALGO_COLLNET_DIRECT || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) && comm->collNetRegSupport && info->op.op != ncclDevPreMulSum && info->op.op != ncclDevSumPostDiv) {
+  } else if ((info->algorithm == NCCL_ALGO_COLLNET_DIRECT || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) && comm->collNetRegSupport && info->opDev.op != ncclDevPreMulSum && info->opDev.op != ncclDevSumPostDiv) {
     size_t elementSize = ncclTypeSize(info->datatype);
     size_t sendbuffSize = elementSize*ncclFuncSendCount(info->func, comm->nRanks, info->count);
     size_t recvbuffSize = elementSize*ncclFuncRecvCount(info->func, comm->nRanks, info->count);
@@ -417,7 +417,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   // Walk the size sorted tasks, binning them by (fn,op,ty).
   while (task != nullptr) {
     struct ncclTaskColl* next = task->next;
-    int index = ((int)task->func*ncclNumDevRedOps + (int)task->op.op)*ncclNumTypes + (int)task->datatype;
+    int index = ((int)task->func*ncclNumDevRedOps + (int)task->opDev.op)*ncclNumTypes + (int)task->datatype;
     // Add to set of (fn,op,ty) indices on first occurrence
     if (tasksByFnOpTy[index] == nullptr) fnOpTyIndices[fnOpTyCount++] = index;
     // Add to LIFO for this (fn,op,ty)
@@ -434,20 +434,23 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     struct ncclTaskColl* aggBeg = tasksByFnOpTy[fnOpTyIndices[cursor]];
     int collNetSupport = 0;
     NCCLCHECK(getCollNetSupport(comm, aggBeg, &collNetSupport));
-    int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(aggBeg->op.op, aggBeg->datatype) || aggBeg->func == ncclFuncAllGather);
+    int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(aggBeg->opDev.op, aggBeg->datatype) || aggBeg->func == ncclFuncAllGather);
+    // Crudely estimate number of tasks per channel. This is using the wrong number
+    // of channels for NVLS algos, but knowing the algo requires having this value,
+    // so either be crude our iterate until fixed point, we chose the former.
+    int nTasksPerChannel = divUp(comm->planner.nTasksColl, comm->nChannels);
     do {
       struct ncclTaskColl* aggEnd = aggBeg->next;
       struct ncclTaskColl agg = *aggBeg;
-      int nAggs = 1;
       // We aggregate operations that are within 4X size of each other.
       while (aggEnd != nullptr && aggEnd->trafficBytes < 4*aggBeg->trafficBytes) {
-        nAggs += 1;
+        agg.count += aggEnd->count;
         agg.trafficBytes += aggEnd->trafficBytes;
         aggEnd = aggEnd->next;
       }
 
-      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nAggs, simInfo));
-      agg.devFuncId = ncclDevFuncId(agg.func, agg.op.op, agg.datatype, agg.algorithm, agg.protocol);
+      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nTasksPerChannel, simInfo));
+      agg.devFuncId = ncclDevFuncId(agg.func, agg.opDev.op, agg.datatype, agg.algorithm, agg.protocol);
 
       int isCollnet=0, isNvls=0;
       switch (agg.algorithm) {
@@ -478,7 +481,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   }
 
   // Concatenate `collBins[*][*]` together into final list `planner->collTaskQueue`.
-  // Collnet is the outer dimension since that affects whether how divide over the
+  // Collnet is the outer dimension since that affects how we divide over the
   // channels.
   for (int isCollnet=0; isCollnet <= 1; isCollnet++) {
     for (int isNvls=0; isNvls <= 1; isNvls++) {
@@ -516,8 +519,8 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     devWork.recvbuff = (void*)task->recvbuff;
     devWork.root = task->root;
     devWork.nWarps = task->nWarps;
-    devWork.redOpArg = task->op.scalarArg;
-    devWork.redOpArgIsPtr = task->op.scalarArgIsPtr;
+    devWork.redOpArg = task->opDev.scalarArg;
+    devWork.redOpArgIsPtr = task->opDev.scalarArgIsPtr;
     devWork.oneNode = (comm->nNodes == 1);
     devWork.regUsed = task->regBufType;
 
@@ -699,7 +702,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       devWork->cbd.countHi = countHi;
 
       // calcCollChunking() uses global bytes instead of traffic which differs
-      // in that allreduce isn't multipled by 2.
+      // in that allreduce isn't multiplied by 2.
       size_t globalBytesPerElement = elementSize*ncclFuncMaxSendRecvCount(task->func, comm->nRanks, 1);
       struct ncclProxyOp proxyOpLo, proxyOpMid, proxyOpHi;
 
@@ -1516,9 +1519,9 @@ static inline ncclResult_t getCollNetSupport(
     struct ncclComm* comm, struct ncclTaskColl* info, int* collNetSupport
   ) {
   // Translate ncclAvg and PreMulSum
-  ncclDevRedOp_t netOp = info->op.op;
-  if (info->op.op == ncclDevPreMulSum || info->op.op == ncclDevSumPostDiv) {
-    netOp = ncclDevSum;
+  ncclRedOp_t netOp = info->opHost;
+  if (info->opDev.op == ncclDevPreMulSum || info->opDev.op == ncclDevSumPostDiv) {
+    netOp = ncclSum;
   }
   *collNetSupport = comm->collNetSupport;
   switch (info->func) {
@@ -1822,10 +1825,10 @@ static ncclResult_t calcCollChunking(
   proxyOp->chunkSize = chunkSize;
   proxyOp->protocol = info->protocol;
   proxyOp->dtype = info->datatype;
-  if (info->op.op == ncclDevPreMulSum || info->op.op == ncclDevSumPostDiv) {
+  if (info->opDev.op == ncclDevPreMulSum || info->opDev.op == ncclDevSumPostDiv) {
     proxyOp->redOp = ncclSum; // Network sees avg as sum
   } else {
-    proxyOp->redOp = info->op.op;
+    proxyOp->redOp = info->opHost;
   }
   proxyOp->pattern = pattern;
   proxyOp->coll = info->func;
@@ -1990,11 +1993,11 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
 
     // Copy reduction op state from op handle into info struct here since the
     // op handle may be destroyed before ncclGroupEnd().
-    struct ncclDevRedOpFull opFull;
-    NCCLCHECK(hostToDevRedOp(&opFull, info->op, info->datatype, comm));
+    struct ncclDevRedOpFull opDev;
+    NCCLCHECK(hostToDevRedOp(&opDev, info->op, info->datatype, comm));
 
     if (comm->nRanks == 1) {
-      NCCLCHECK(ncclLaunchOneRank(info->recvbuff, info->sendbuff, info->count, opFull, info->datatype, info->stream));
+      NCCLCHECK(ncclLaunchOneRank(info->recvbuff, info->sendbuff, info->count, opDev, info->datatype, info->stream));
       return ncclSuccess;
     } else {
       // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
@@ -2013,7 +2016,8 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
         elementSize = 1;
       }
       t->trafficBytes = t->count*elementSize*ncclFuncTrafficPerByte(t->func, comm->nRanks);
-      t->op = opFull; // C++ struct assignment
+      t->opHost = info->op;
+      t->opDev = opDev; // C++ struct assignment
       t->chunkSteps = info->chunkSteps;
       t->sliceSteps = info->sliceSteps;
 

@@ -211,7 +211,8 @@ struct ncclTaskColl {
   size_t count;
   int root;
   ncclDataType_t datatype;
-  struct ncclDevRedOpFull op;
+  ncclRedOp_t opHost;
+  struct ncclDevRedOpFull opDev;
   int chunkSteps, sliceSteps;
   // Computed later:
   size_t trafficBytes;
@@ -501,7 +502,7 @@ struct ncclComm {
   // Whether this communicator uses collNet
   int collNetSupport;
   bool collNetRegSupport;
-  uint8_t collNetSupportMatrix[4/*sum,prod,min,max*/][ncclNumTypes];
+  uint8_t collNetSupportMatrix[4/*sum,prod,max,min*/][ncclNumTypes];
   int intraHighestTransportType;
   int* collNetHeads;
   int collNetHeadsNum;

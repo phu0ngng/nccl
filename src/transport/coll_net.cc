@@ -811,6 +811,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
                   } else {
                     recvbuff = sub->recvbuff;
                   }
+                  fprintf(stderr, "ireducescatter op=%d\n", args->redOp);
                   NCCLCHECK(proxyState->ncclCollNet->ireducescatter(
                     resources->collNetComm, 1, &sendParts, recvbuff,
                     sizePerRank, sub->offset, nBytes,
@@ -1384,7 +1385,6 @@ ncclResult_t ncclCollNetSetup(ncclComm_t comm, ncclComm_t parent, struct ncclTop
       /* Initialize all entries in collNetSupportMatrix[redop][type]. Since some
       ranks don't connect to sharp we enable a (redop,type) if any rank claims
       support. */
-      const ncclRedOp_t redops[] = {ncclSum, ncclProd, ncclMin, ncclMax};
       uint8_t(*matrix)[4][ncclNumTypes];
       bool isHead = false;
       matrix = nullptr;
@@ -1392,18 +1392,17 @@ ncclResult_t ncclCollNetSetup(ncclComm_t comm, ncclComm_t parent, struct ncclTop
       for (int h = 0; h < nHeadsUnique; h++) isHead |= (headsUnique[h] == comm->rank);
       if (isHead) {
         for (int ty=0; ty < ncclNumTypes; ty++) {
-          for (int i=0; i < 4; i++) {
+          for (int op=0; op < 4; op++) {
             int support = 0;
-            NCCLCHECKGOTO(collNetReduceSupport(comm, (ncclDataType_t)ty, redops[i], &support), ret, matrix_end);
+            NCCLCHECKGOTO(collNetReduceSupport(comm, (ncclDataType_t)ty, (ncclRedOp_t)op, &support), ret, matrix_end);
             // bit 0 = not supported, bit 1 = supported
-            matrix[rank][redops[i]][ty] = 1<<(support ? 1 : 0);
+            matrix[rank][op][ty] = 1<<(support ? 1 : 0);
           }
         }
       }
       NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, matrix, sizeof(*matrix)), ret, matrix_end);
       for (int ty=0; ty < ncclNumTypes; ty++) {
-        for (int i=0; i < 4; i++) {
-          int op = redops[i];
+        for (int op=0; op < 4; op++) {
           uint8_t accum = 0;
           for (int r=0; r < comm->nRanks; r++) accum |= matrix[r][op][ty];
           // We support (redop, type) if some rank supports it and no rank doesn't support it
