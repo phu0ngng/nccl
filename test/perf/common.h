@@ -146,7 +146,8 @@ struct threadArgs {
   size_t** sendInplaceOffset;
   void*** recvbuffs;
   size_t** recvInplaceOffset;
-  ncclUniqueId ncclId;
+  int nIds;
+  ncclUniqueId* ncclId;
   ncclComm_t** comms;
   cudaStream_t* streams;
   cudaEvent_t* events;

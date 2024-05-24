@@ -101,7 +101,7 @@ static testResult_t distributeFTInitTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   ret = ncclGroupEnd();
   assert(ret == ncclSuccess || ret == ncclInProgress);
@@ -170,7 +170,7 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
@@ -255,7 +255,7 @@ static testResult_t distributeFTAllreduceTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
@@ -325,7 +325,7 @@ static testResult_t distributeFTAlltoAllTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 #ifdef MPI_SUPPORT
@@ -397,7 +397,7 @@ static testResult_t distributeFTFinalizeTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
@@ -445,7 +445,7 @@ testResult_t commAbortHangTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRank(&comms[j], totalGpus, args->ncclId, rank));
+    NCCLCHECK(ncclCommInitRank(&comms[j], totalGpus, *args->ncclId, rank));
   }
   count = size / totalGpus;
   NCCLCHECK(ncclGroupStart());
@@ -571,7 +571,8 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
         MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
 #endif
         for (int t = nThreads - 1; t >= 0; t--) {
-          threads[t].args.ncclId = ncclId;
+          threads[t].args.nIds = 1;
+          threads[t].args.ncclId = &ncclId;
           threads[t].args.sleepId = i;
           threads[t].func = testFuncs[ft_id];
           if (t)

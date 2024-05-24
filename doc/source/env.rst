@@ -251,6 +251,54 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 1, set to 0 to disable
 
+NCCL_OOB_NET_ENABLE
+-------------------
+(since 2.23)
+The variable ``NCCL_OOB_NET_ENABLE`` enables the use of NCCL net for out-of-band communcations.
+Enabling the usage of NCCL net will change the implementation of the allgather performed during the communicator initialization.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Set the variable to 0 to disable, and to 1 to enable.
+
+NCCL_OOB_NET_IFNAME
+-------------------
+(since 2.23)
+If NCCL net is enabled for out-of-band communication (see ``NCCL_OOB_NET_ENABLE``), the ``NCCL_OOB_NET_IFNAME`` variable specifies which network interfaces to use.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define to filter interfaces to be used by NCCL for out-of-band communications.
+The accepted values follow the same logic as NCCL_SOCKET_IFNAME and NCCL_IB_HCA, see above.
+
+Note: if multiple devices are specified, NCCL will select the first matching device in the list.
+
+NCCL_UID_STAGGER_THRESHOLD
+-----------
+(since 2.23)
+The ``NCCL_UID_STAGGER_THRESHOLD`` variable is used to trigger staggering of communications between NCCL ranks and the ncclUniqueId in order to avoid overflowing the ncclUniqueId.
+If the number of NCCL ranks communicating exceeds the specified threshold, the communications are staggered using the rank value (see NCCL_UID_STAGGER_RATE below).
+If the number of NCCL ranks per ncclUniqueId is smaller or equal to the threshold, no staggering is performed.
+
+For example, if we have 128 NCCL ranks, 1 ncclUniqueId, and a threshold at 64, staggering is performed.
+However, if 2 ncclUniqueIds are used with 128 NCCL ranks and a threshold at 64, no staggering is done.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The value of ``NCCL_UID_STAGGER_THRESHOLD`` must be a strictly positive integer.
+If unspecified, the default value is 256.
+
+NCCL_UID_STAGGER_RATE
+-----------
+(since 2.23)
+The ``NCCL_UID_STAGGER_RATE`` variable is used to define the message rate targeted when staggering the communications between NCCL ranks and the ncclUniqueId.
+If staggering is used (see NCCL_UID_STAGGER_THRESHOLD above), the message rate is used to compute the time a given NCCL rank has to wait.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The value of ``NCCL_UID_STAGGER_RATE`` must be a strictly positive integer, expressed in messages/second.
+If unspecified, the default value is 7000.
+
 NCCL_NET
 --------
 (since 2.10)
