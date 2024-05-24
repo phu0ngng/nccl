@@ -1086,6 +1086,7 @@ ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* u
   *outRegBufFlag = 0;
   NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyConn, ncclProxyMsgRegister, &info, sizeof(struct collnetRegInfo), &handle, sizeof(void*)), ret, fail);
   record = (struct ncclCollnetCleanupCallback*)malloc(sizeof(struct ncclCollnetCleanupCallback));
+  record->base.fn = cleanupCollnet;
   record->proxyConn = proxyConn;
   record->buffer = (void*)userbuff;
   record->size = buffSize;
