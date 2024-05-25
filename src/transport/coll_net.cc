@@ -811,7 +811,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
                   } else {
                     recvbuff = sub->recvbuff;
                   }
-                  fprintf(stderr, "ireducescatter op=%d\n", args->redOp);
                   NCCLCHECK(proxyState->ncclCollNet->ireducescatter(
                     resources->collNetComm, 1, &sendParts, recvbuff,
                     sizePerRank, sub->offset, nBytes,
