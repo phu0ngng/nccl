@@ -130,7 +130,7 @@ int benchCollective(int collective, int rank, int nranks, int* ddata, int* hdata
     // Check results
     CUDACHECK(cudaMemcpy(hdata, (ddata+MAXSIZE), nbytes, cudaMemcpyDeviceToHost));
     errors = checkOp(collective, rank, nranks, hdata, realSize);
-    MPI_Allreduce(MPI_IN_PLACE, &errors, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &errors, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
     if (rank == 0) {
       printf(" %15ld %15.2f %15.2f %15.2f %15d\n",
         nbytes,
