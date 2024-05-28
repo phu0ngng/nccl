@@ -315,6 +315,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     }
     if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
     if (algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
+    if (a == NCCL_ALGO_RING && pEnable == 0) comm->ringbdw[c][p] = 0;
   }
 
   for (int c = 0; c < NCCL_NUM_FUNCTIONS; c++) {
