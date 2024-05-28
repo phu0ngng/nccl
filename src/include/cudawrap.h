@@ -24,6 +24,8 @@ extern CUmemAllocationHandleType ncclCuMemHandleType;
 
 #define CUPFN(symbol) pfn_##symbol
 
+#if CUDART_VERSION >= 11030
+
 // Check CUDA PFN driver calls
 #define CUCHECK(cmd) do {				      \
     CUresult err = pfn_##cmd;				      \
@@ -64,6 +66,57 @@ extern CUmemAllocationHandleType ncclCuMemHandleType;
       return args;							\
     }									\
 } while(0)
+
+#else
+
+// Don't check cuda PFN driver calls
+#define CUCHECK(cmd) do {				      \
+    CUresult err = cmd;				      \
+    if( err != CUDA_SUCCESS ) {				      \
+      const char *errStr;				      \
+      cudaError_t err2;             \
+      err2 = cudaGetLastError(); \
+      errStr = cudaGetErrorString(err2);			\
+      WARN("Cuda failure %d '%s'", err, errStr);	      \
+      return ncclUnhandledCudaError;			      \
+    }							      \
+} while(false)
+
+#define CUCHECKGOTO(cmd, res, label) do {		      \
+    CUresult err = cmd;				      \
+    if( err != CUDA_SUCCESS ) {				      \
+      const char *errStr;				      \
+      cudaError_t err2;             \
+      err2 = cudaGetLastError(); \
+      errStr = cudaGetErrorString(err2);			\
+      WARN("Cuda failure %d '%s'", err, errStr);	      \
+      res = ncclUnhandledCudaError;			      \
+      goto label;					      \
+    }							      \
+} while(false)
+
+// Report failure but clear error and continue
+#define CUCHECKIGNORE(cmd) do {						\
+    CUresult err = cmd;						\
+    if( err != CUDA_SUCCESS ) {						\
+      const char *errStr;						\
+      cudaError_t err2;             \
+      err2 = cudaGetLastError(); \
+      errStr = cudaGetErrorString(err2);			\
+      INFO(NCCL_ALL,"%s:%d Cuda failure %d '%s'", __FILE__, __LINE__, err, errStr); \
+    }									\
+} while(false)
+
+#define CUCHECKTHREAD(cmd, args) do {					\
+    CUresult err = cmd;						\
+    if (err != CUDA_SUCCESS) {						\
+      INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, err); \
+      args->ret = ncclUnhandledCudaError;				\
+      return args;							\
+    }									\
+} while(0)
+
+#endif
 
 #define DECLARE_CUDA_PFN_EXTERN(symbol) extern PFN_##symbol pfn_##symbol
 
