@@ -765,14 +765,14 @@ static ncclResult_t scheduleCollTasksToPlan(
     if (comm->rank == 0) {
       if (task->isCollnet) {
         TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count=%ld chunkCount=%d\n",
-          ncclFuncToString(task->func), ncclDevRedOpToString(task->op.op),
+          ncclFuncToString(task->func), ncclDevRedOpToString(task->opDev.op),
           ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
           ncclProtoToString(task->protocol),
           (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
           (long)devWork->collnet.count, devWork->collnet.chunkCount);
       } else {
         TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count{Lo,Mid,Hi}={%ld,%ld,%ld} chunkBytes{Lo,Mid,Hi}={%d,%d,%d}\n",
-          ncclFuncToString(task->func), ncclDevRedOpToString(task->op.op),
+          ncclFuncToString(task->func), ncclDevRedOpToString(task->opDev.op),
           ncclDatatypeToString(task->datatype), ncclAlgoToString(task->algorithm),
           ncclProtoToString(task->protocol),
           (long)task->count, task->devFuncId, devWork->channelLo, devWork->channelHi,
