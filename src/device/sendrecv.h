@@ -25,7 +25,7 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
       int n = min(size_t(chunkSize), bytes-cursor);
       prims.directSend(cursor, cursor, n);
       cursor += n;
-    } while (cursor < bytes);
+    } while (cursor < bytes && work->sendRegistered == 0);
   }
 
   template<typename Proto>
@@ -41,7 +41,7 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
       int n = min(size_t(chunkSize), bytes-cursor);
       prims.directRecv(cursor, n);
       cursor += n;
-    } while (cursor < bytes);
+    } while (cursor < bytes && work->recvRegistered == 0);
   }
 
   __device__ __forceinline__ void run() {
