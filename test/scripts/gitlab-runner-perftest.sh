@@ -77,7 +77,7 @@ for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gathe
 done
 
 export NCCL_ALGO=NVLS
-for func in all_reduce reduce_scatter all_gather; do
+for func in all_reduce reduce_scatter all_gather sendrecv alltoall; do
   echo "=============================== $func (local registration all sizes) - $(date +\"%T\") =========================="
   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (split share all sizes): ${func}_perf $split_range $opts $enable_local_register")
