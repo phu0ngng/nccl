@@ -431,7 +431,7 @@ ncclResult_t ncclTopoGetAlgoTime(struct ncclComm* comm, int coll, int algorithm,
     *time = -1.0; return ncclSuccess;
   }
   int logSize = log2i(nBytes>>6);
-  if (algorithm == NCCL_ALGO_TREE && logSize < 23) bw *= treeCorrectionFactor[protocol][logSize];
+  if (algorithm == NCCL_ALGO_TREE && logSize >= 0 && logSize < 23) bw *= treeCorrectionFactor[protocol][logSize];
   if (algorithm == NCCL_ALGO_RING && protocol == NCCL_PROTO_SIMPLE && comm->nNodes > 1
       && coll == ncclFuncAllReduce && nBytes/(comm->nChannels*comm->nRanks) >= 64) {
     lat *= comm->minCompCap < 80 ? 1.9 : 1.4; // Plateau effect of ring
