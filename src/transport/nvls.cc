@@ -294,6 +294,8 @@ ncclResult_t ncclNvlsBufferSetup(struct ncclComm* comm) {
 
   NCCLCHECKGOTO(ncclStrongStreamWaitStream(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, &comm->sharedRes->hostStream), res, fail);
   NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream), res, fail);
+  // For now, the barrier is a must that guarantees all buffers are mc-mapped before accessing peer's buffer
+  NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), res, fail);
   comm->nvlsResources->inited = true;
 
 exit:
