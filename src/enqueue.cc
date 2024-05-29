@@ -867,7 +867,7 @@ static ncclResult_t addP2pToPlan(
     if (protocol[dir] == NCCL_PROTO_LL) chunkSize[dir] *= 2;
 
     registered[dir] = false;
-    if (network[dir] && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE) {
+    if (bytes[dir] > 0 && network[dir] && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE) {
       struct ncclReg* regRecord;
       NCCLCHECK(ncclRegFind(comm, addrs[dir], bytes[dir], &regRecord));
       registered[dir] = (regRecord && regRecord->nDevs);
