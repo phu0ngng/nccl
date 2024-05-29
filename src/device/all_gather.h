@@ -203,6 +203,7 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
           int rank = ncclShmem.comm.collNetDenseToUserRank[node*nRails + rail];
           ssize_t userOneBeg = rank*sizePerRank + railOneOffset;
           int outIsDst = (inPlace && rank == ncclShmem.comm.rank) ? 0 : 1;
+          uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
           reduceCopy<ncclCollUnroll(), RedOp, T,
                      /*MultimemSrcs,MinSrcs,MaxSrcs=*/0,1,1,
                      /*MultimemDsts=*/0, 0+MinDsts, 1+MaxDsts,
@@ -215,7 +216,7 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
                return d < outIsDst ? outbuf + userOneBeg
                                    : (char*)dstPtrs[d-outIsDst] + railAllOffset;
              },
-             delta);
+             delta, scratch);
           railAllOffset += delta;
           node += 1;
         }
