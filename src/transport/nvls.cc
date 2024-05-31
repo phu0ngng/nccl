@@ -880,13 +880,13 @@ exit:
   } else {
     if (sendRecord) {
       *outRegBufSend = (void*)((uintptr_t)regSendPtr + (uintptr_t)sendbuff - (uintptr_t)baseSend);
-      ncclIntruQueueEnqueue(cleanupQueue, &sendRecord->base);
+      ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)sendRecord);
       *nCleanupQueueEltsAdded += 1;
     }
 
     if (recvRecord) {
       *outRegBufRecv = (void*)((uintptr_t)regRecvPtr + (uintptr_t)recvbuff - (uintptr_t)baseRecv);
-      ncclIntruQueueEnqueue(cleanupQueue, &recvRecord->base);
+      ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)recvRecord);
       *nCleanupQueueEltsAdded += 1;
     }
 
