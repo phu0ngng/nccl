@@ -876,6 +876,9 @@ static ncclResult_t scheduleCollTasksToPlan(
         proxyOp->channelId = c;
         proxyOp->opCount = proxyOpId;
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
+        // Coverity reports "proxyOp->connection" as being possible uninitialized.  It's hard to
+        // determine if that's actually true but it's also not clear if that would be an issue.
+        // coverity[uninit_use_in_call]:FALSE
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, proxyOp));
       }
     }
