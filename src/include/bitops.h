@@ -185,6 +185,8 @@ inline __host__ __device__ Int pow2Up(Int x) {
 
 template<typename Int>
 inline __host__ __device__ Int pow2Down(Int x) {
+  // True, log2Down can return -1, but we don't normally pass 0 as an argument...
+  // coverity[negative_shift]
   return Int(1)<<log2Down(x);
 }
 
