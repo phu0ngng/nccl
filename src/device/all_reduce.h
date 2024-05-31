@@ -276,6 +276,10 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
           prims.scatter(offset, nelem, chunkSize, chunkSize, direct->headRank, direct->shift);
         }
       }
+      // Coverity complains about a possible overrun inside the prims destructor, but that's actually
+      // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
+      // so we need to do it one-by-one at each use.
+      // coverity[overrun-call]:FALSE
     } else if (tid >= tidStartReduce && direct->out != -1) {
       if (hasDn) {
         // Reduce, send to network
@@ -323,6 +327,10 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
     } else if (tid >= tidStartBcast && tid < tidStartScatter && direct->out != -1) {
       if (hasDn) {
         // Recv from network, broadcast
+        // Coverity complains about a possible overrun inside the class below, but that's actually
+        // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
+        // so we need to do it one-by-one at each use.
+        // coverity[identity_transfer]:FALSE
         Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto, 0>
           prims(tid-tidStartBcast, nThreadsBcast, &direct->out, direct->down, work->sendbuff, work->recvbuff,
              work->redOpArg, 1*Proto::MaxGroupWidth, 0, 0, work);
@@ -456,6 +464,10 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
         if (!hasOut) {
           // Reduce, broadcast through NVLS
           using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 1>;
+          // Coverity complains about a possible overrun inside the class below, but that's actually
+          // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
+          // so we need to do it one-by-one at each use.
+          // coverity[identity_transfer]:FALSE
           Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
             prims(tid - tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, NULL, NULL,
               work->redOpArg, 2 * Proto::MaxGroupWidth, 0, 0, work);
@@ -467,6 +479,10 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
         } else {
           // Reduce, send to network
           using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
+          // Coverity complains about a possible overrun inside the class below, but that's actually
+          // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
+          // so we need to do it one-by-one at each use.
+          // coverity[identity_transfer]:FALSE
           Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
             prims(tid - tidEndGather, nThreadsReduce, &nvls->down, &nvls->out, NULL, NULL,
               work->redOpArg, 2 * Proto::MaxGroupWidth, 0, 1, work);
@@ -479,6 +495,10 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
       } else if (tid < tidEndBcast && nvls->headRank != -1) {
         // Recv from network, broadcast
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
+        // Coverity complains about a possible overrun inside the class below, but that's actually
+        // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
+        // so we need to do it one-by-one at each use.
+        // coverity[identity_transfer]:FALSE
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
           prims(tid - tidEndReduce, nThreadsBcast, &nvls->out, &nvls->down, NULL, NULL,
             work->redOpArg, 3 * Proto::MaxGroupWidth, 0, 0, work);

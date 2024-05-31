@@ -584,6 +584,10 @@ private:
     index = -1;
     flags = 0;
     assert(2*(nrecv+nsend) <= nthreads); // Ensure no thread is assigned more than one role.
+    // Coverity assumes that index will equal tid based on the line below, but it doesn't consider the setting
+    // of flags.  This results in multiple false positive overruns being reported here and in all_reduce.h.
+    // Unfortunately, we've been unsuccessful in trying to silence them with a single directive.
+    // coverity[assignment:FALSE]
     if      (tid < nrecv)                 { flags |= RoleWaitRecv; index = tid; }
     else if (tid < nrecv+nsend)           { flags |= RoleWaitSend; index = tid-nrecv; }
     else if (nthreads-nsend <= tid)       { flags |= RolePostSend; index = tid-(nthreads-nsend); }
