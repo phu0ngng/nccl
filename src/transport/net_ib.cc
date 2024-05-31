@@ -109,7 +109,7 @@ static void* ncclIbAsyncThreadMain(void* args) {
       case IBV_EVENT_PATH_MIG_ERR:
       case IBV_EVENT_SRQ_ERR:
         // the above are fatal errors we need to signal
-        __atomic_fetch_add(&dev->IbFatalEvent, 1, __ATOMIC_RELAXED);
+        dev->IbFatalEvent++;
         WARN("NET/IB : %s:%d Got async error unrecoverable event: %s", dev->devName, dev->portNum, str);
         break;
       case IBV_EVENT_PORT_ERR:
@@ -1997,13 +1997,6 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
       TIME_START(3);
       // If we expect any completions from this device's CQ
       if (r->events[i]) {
-        // No need for atomic fetch since we do not require strict syncronization
-        if (ncclIbDevs[r->devBases[i]->ibDevN].IbFatalEvent) {
-          WARN("NET/IB: Fatal async event reported by device %s", HCA_NAME(r,i));
-          // Reset the error counter to avoid warn log polution
-          __atomic_fetch_sub(&ncclIbDevs[r->devBases[i]->ibDevN].IbFatalEvent, 1, __ATOMIC_RELAXED);
-          return ncclSystemError;
-        }
         NCCLCHECK(wrap_ibv_poll_cq(r->devBases[i]->cq, 4, wcs, &wrDone));
         totalWrDone += wrDone;
         if (wrDone == 0) { TIME_CANCEL(3); } else { TIME_STOP(3); }
@@ -2060,6 +2053,10 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             req->events[i]--;
           }
         }
+      }
+      // No need for atomic fetch since we do not require strict syncronization
+      if (ncclIbDevs[r->devBases[i]->ibDevN].IbFatalEvent) {
+        return ncclSystemError;
       }
     }
 
