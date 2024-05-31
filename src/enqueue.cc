@@ -2328,6 +2328,8 @@ ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
     WARN("ncclRedOpDestroy : operator is a NCCL builtin.");
     return ncclInvalidArgument;
   }
+  // Yes, we expect int(ncclMaxRedOp) < int(op) to always be false...
+  // coverity[result_independent_of_operands]
   if (int(op) < 0 || int(ncclMaxRedOp) < int(op)) {
     WARN("ncclRedOpDestroy :  operator is garbage.");
     return ncclInvalidArgument;
