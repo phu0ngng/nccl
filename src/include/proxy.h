@@ -140,8 +140,9 @@ struct ncclProxyArgs {
 
 // ProxyOps are used to communicate between main thread and service thread
 // Make sure we have enough to store two full rounds of operations on all channels.
-// Otherwise we'd be unable to post half of them to free new elements.
-#define MAX_OPS_PER_PEER (2*MAXCHANNELS*NCCL_MAX_DEV_WORK_P2P_PER_BATCH)
+// Otherwise we'd be unable to post half of them to free new elements. Each
+// p2p work contains a send and recv proxy op hence the 2x before it.
+#define MAX_OPS_PER_PEER (2*MAXCHANNELS*2*NCCL_MAX_DEV_WORK_P2P_PER_BATCH)
 
 struct ncclProxyOpsPool {
   struct ncclProxyOp ops[MAX_OPS_PER_PEER*NCCL_MAX_LOCAL_RANKS];
