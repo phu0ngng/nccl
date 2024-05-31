@@ -226,6 +226,8 @@ inline __device__ void ncclNetDeviceUnpackInner(
 
   int PPW = ppw(nbytes, nw);
 
+  // PPW is tiny; no need to store it in uint64_t.
+  // coverity[overflow_before_widen]
   for (uint64_t meta_s = w * PPW; meta_s < meta_cnt; meta_s += nw * PPW) {
 
     uint64_t iter_meta_cnt = meta_cnt - meta_s;
