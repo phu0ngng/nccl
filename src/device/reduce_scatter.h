@@ -146,7 +146,7 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_S
           // Coverity complains about a possible overrun inside the method invoked below, but that's actually
           // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
           // so we need to do it one-by-one at each use.
-          // coverity[overrun-call]:FALSE
+          // coverity[overrun-call:FALSE]
           prims.directRecvCopy(inpOffset, outOffset, nelem);
         }
 
