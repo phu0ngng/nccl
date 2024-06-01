@@ -597,7 +597,10 @@ private:
     if (flags & (RoleWaitRecv|RolePostRecv)) peer = recvPeers[index];
     if (flags & (RoleWaitSend|RolePostSend)) peer = sendPeers[index];
 
+    // Coverity thinks that index could be -1 here but that's not actually the case.
+    // coverity[negative_returns:FALSE]
     loadRecvConn(ncclShmem.channel.peers[peer], connIndexRecv, e ? e->direct : 0, e ? e->regUsed : ipcReg);
+    // coverity[negative_returns:FALSE]
     loadSendConn(ncclShmem.channel.peers[peer], connIndexSend, e ? e->direct : 0, e ? e->regUsed : ipcReg);
 
     if (netReg) flags |= NetRegMode;
@@ -612,8 +615,8 @@ private:
       }
     }
 
+    // coverity[negative_returns:FALSE]
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclDevWorkCollReg*)e, (uint8_t)(e ? e->regUsed : ipcReg), peer);
-  }
 
   __device__ ~Primitives() {
     // Ensure ncclShmem.groups[].send/recvConns are available

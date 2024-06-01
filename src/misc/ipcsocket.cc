@@ -31,7 +31,6 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
   handle->socketName[0] = '\0';
   if ((fd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) {
     WARN("UDS: Socket creation error : %s (%d)", strerror(errno), errno);
-    close(fd);
     return ncclSystemError;
   }
 

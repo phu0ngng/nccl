@@ -317,7 +317,8 @@ finish:
 // and if they are shared, that could cause a crash in a child process
 inline ncclResult_t ncclIbMallocDebug(void** ptr, size_t size, const char *filefunc, int line) {
   if (size > 0) {
-    size_t page_size = sysconf(_SC_PAGESIZE);
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size < 0) return ncclSystemError;
     void* p;
     int size_aligned = ROUNDUP(size, page_size);
     int ret = posix_memalign(&p, page_size, size_aligned);
