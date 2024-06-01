@@ -483,7 +483,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
   ncclResult_t ret = ncclSuccess;
   ncclSimInfo_t internalSimInfo = NCCL_SIM_INFO_INITIALIZER;
   ncclSimInfo_t* internalSimInfoPtr = NULL;
-  size_t realSize;
+  size_t realSize = 0;
 
   internalSimInfo.magic = 0;
 
