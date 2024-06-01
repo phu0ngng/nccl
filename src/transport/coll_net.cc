@@ -754,6 +754,8 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             if (args->coll == ncclFuncAllReduce) {
               if (sub->reg) {
                 size_t nBytes = std::min(sub->nbytes, NCCL_MAX_COLLNET_SIZE);
+                // eltSize can't be 0 for any valid input.
+                // coverity[divide_by_zero]
                 int count = (int)(nBytes / eltSize);
                 NCCLCHECK(proxyState->ncclCollNet->iallreduce(resources->collNetComm, sub->sendbuff, sub->recvbuff, count, (ncclDataType_t)args->dtype, (ncclRedOp_t)args->redOp, sub->sendMhandle, sub->recvMhandle, sub->requests + buffSlot));
                 if (sub->requests[buffSlot]) {
@@ -762,6 +764,8 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
                   sub->recvbuff += nBytes;
                 }
               } else {
+                // eltSize can't be 0 for any valid input.
+                // coverity[divide_by_zero]
                 int count = (sendEnd - sendBeg) / eltSize;
                 NCCLCHECK(proxyState->ncclCollNet->iallreduce(resources->collNetComm, region + sendBeg, region + recvBeg, count, (ncclDataType_t)args->dtype, (ncclRedOp_t)args->redOp, sendMhandle, recvMhandle, sub->requests + buffSlot));
               }

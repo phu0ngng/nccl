@@ -768,6 +768,8 @@ static ncclResult_t scheduleCollTasksToPlan(
       devWork->channelLo = 0;
       devWork->channelHi = nChannels-1;
       devWork->collnet.count = task->count;
+      // ncclTypeSize returns 0 for invalid input only.
+      // coverity[divide_by_zero]
       devWork->collnet.chunkCount = chunkSize/ncclTypeSize(task->datatype);
       devWork->direct = directFlags;
 
@@ -780,6 +782,8 @@ static ncclResult_t scheduleCollTasksToPlan(
       }
     } else { // not task->isCollnet
       constexpr size_t cellSize = 16;
+      // elementSize can't be 0 for any valid input.
+      // coverity[divide_by_zero]
       int elementsPerCell = cellSize/elementSize;
       size_t cells = divUp(task->count*elementSize, cellSize);
       int trafficPerByte = ncclFuncTrafficPerByte(task->func, comm->nRanks);
@@ -878,7 +882,7 @@ static ncclResult_t scheduleCollTasksToPlan(
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
         // Coverity reports "proxyOp->connection" as being possible uninitialized.  It's hard to
         // determine if that's actually true but it's also not clear if that would be an issue.
-        // coverity[uninit_use_in_call]:FALSE
+        // coverity[uninit_use_in_call:FALSE]
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, proxyOp));
       }
     }
