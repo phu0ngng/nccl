@@ -246,7 +246,7 @@ exit:
   return ret;
 fail:
   if (proxyInfo->ceRecvMem) ncclCudaHostFree(proxyInfo->ceRecvMem);
-  if (proxyInfo->devFifo) ncclCudaFree(proxyInfo->devFifo);
+  if (proxyInfo->devFifo) (void)ncclCudaFree(proxyInfo->devFifo);
   free(proxyInfo);
   goto exit;
 }
@@ -270,7 +270,7 @@ exit:
   return ret;
 fail:
   if (proxyInfo->ceRecvMem) ncclCudaHostFree(proxyInfo->ceRecvMem);
-  if (proxyInfo->devFifo) ncclCudaFree(proxyInfo->devFifo);
+  if (proxyInfo->devFifo) (void)ncclCudaFree(proxyInfo->devFifo);
   free(proxyInfo);
   goto exit;
 }

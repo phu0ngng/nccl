@@ -313,7 +313,7 @@ ncclResult_t ncclNetSocketListen(int dev, void* opaqueHandle, void** listenComm)
 exit:
   return ret;
 fail:
-  ncclSocketClose(&comm->sock);
+  (void)ncclSocketClose(&comm->sock);
   free(comm);
   goto exit;
 }

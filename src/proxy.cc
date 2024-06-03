@@ -1724,9 +1724,9 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
         int type = ncclProxyMsgStop;
         ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag);
         if (ncclSocketConnect(&sock) == ncclSuccess) {
-          ncclSocketSend(&sock, &type, sizeof(int));
+          (void)ncclSocketSend(&sock, &type, sizeof(int));
         }
-        ncclSocketClose(&sock);
+        (void)ncclSocketClose(&sock);
       }
 
       if (sharedProxyState->peerSocks) {
@@ -1744,7 +1744,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
               }
             }
             int type = ncclProxyMsgClose;
-            ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int));
+            (void)ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int));
             NCCLCHECK(ncclSocketClose(sharedProxyState->peerSocks + i));
           }
         }

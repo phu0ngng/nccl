@@ -129,7 +129,7 @@ fail:
        shmPath, shmSize, strerror(errno), errno);
   if (tmphandle) {
     shmHandleInit(fd, shmPath, shmSize, realShmSize, hptr, dptr, create, tmphandle);
-    ncclShmClose((ncclShmHandle_t)tmphandle);
+    (void)ncclShmClose((ncclShmHandle_t)tmphandle);
     tmphandle = NULL;
   }
   hptr = NULL;

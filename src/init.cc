@@ -2089,7 +2089,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   comm->destroyFlag = 1;
   /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
-  ncclCommEnsureReady(comm);
+  (void)ncclCommEnsureReady(comm);
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->comm = comm;

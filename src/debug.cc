@@ -189,9 +189,9 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
     tid = syscall(SYS_gettid);
   }
 
-  int cudaDev;
+  int cudaDev = 0;
   if (!(level == NCCL_LOG_TRACE && flags == NCCL_CALL)) {
-    cudaGetDevice(&cudaDev);
+    (void)cudaGetDevice(&cudaDev);
   }
 
   char buffer[1024];
