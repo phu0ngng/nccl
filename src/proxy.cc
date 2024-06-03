@@ -1116,7 +1116,6 @@ ncclResult_t ncclProxyCallAsync(struct ncclComm* comm, struct ncclProxyConnector
   if (sharedProxyState->peerSocks == NULL) return ncclInternalError;
 
   sock = sharedProxyState->peerSocks + proxyConn->tpLocalRank;
-  if (sock == NULL) return ncclInternalError;
 
   NCCLCHECKGOTO(ncclSocketSend(sock, &type, sizeof(int)), ret, error);
   NCCLCHECKGOTO(ncclSocketSend(sock, &proxyConn->connection, sizeof(void*)), ret, error);
