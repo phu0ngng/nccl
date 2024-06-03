@@ -463,6 +463,8 @@ struct ncclComm {
 
   // Counter for tracking CUDA launches (P2P and collectives included)
   uint64_t opCount;
+  // Collective operation counter
+  uint64_t collOpCount;
 
   // Channels for collectives
   int nChannels; // connection nChannels

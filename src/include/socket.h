@@ -36,9 +36,10 @@ enum ncclSocketState {
   ncclSocketStateConnectPolling = 5,
   ncclSocketStateConnected = 6,
   ncclSocketStateReady = 7,
-  ncclSocketStateClosed = 8,
-  ncclSocketStateError = 9,
-  ncclSocketStateNum = 10
+  ncclSocketStateTerminating = 8,
+  ncclSocketStateClosed = 9,
+  ncclSocketStateError = 10,
+  ncclSocketStateNum = 11
 };
 
 enum ncclSocketType {
@@ -46,7 +47,8 @@ enum ncclSocketType {
   ncclSocketTypeBootstrap = 1,
   ncclSocketTypeProxy = 2,
   ncclSocketTypeNetSocket = 3,
-  ncclSocketTypeNetIb = 4
+  ncclSocketTypeNetIb = 4,
+  ncclSocketTypeRasNetwork = 5
 };
 
 struct ncclSocket {
@@ -60,15 +62,18 @@ struct ncclSocket {
   int salen;
   uint64_t magic;
   enum ncclSocketType type;
+  int customRetry;
+  int finalizeCounter; // Used to keep track of initial handshake for async sockets.
+  char finalizeBuffer[sizeof(uint64_t)]; // Used to keep track of initial handshake for async sockets.
 };
 
-const char *ncclSocketToString(union ncclSocketAddress *addr, char *buf, const int numericHostForm = 1);
+const char *ncclSocketToString(const union ncclSocketAddress *addr, char *buf, const int numericHostForm = 1);
 ncclResult_t ncclSocketGetAddrFromString(union ncclSocketAddress* ua, const char* ip_port_pair);
 int ncclFindInterfaceMatchSubnet(char* ifNames, union ncclSocketAddress* localAddrs, union ncclSocketAddress* remoteAddr, int ifNameMaxSize, int maxIfs);
 int ncclFindInterfaces(char* ifNames, union ncclSocketAddress *ifAddrs, int ifNameMaxSize, int maxIfs);
 
 // Initialize a socket
-ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* addr = NULL, uint64_t magic = NCCL_SOCKET_MAGIC, enum ncclSocketType type = ncclSocketTypeUnknown, volatile uint32_t* abortFlag = NULL, int asyncFlag = 0);
+ncclResult_t ncclSocketInit(struct ncclSocket* sock, const union ncclSocketAddress* addr = NULL, uint64_t magic = NCCL_SOCKET_MAGIC, enum ncclSocketType type = ncclSocketTypeUnknown, volatile uint32_t* abortFlag = NULL, int asyncFlag = 0, int customRetry = 0);
 // Create a listening socket. sock->addr can be pre-filled with IP & port info. sock->fd is set after a successful call
 ncclResult_t ncclSocketListen(struct ncclSocket* sock);
 ncclResult_t ncclSocketGetAddr(struct ncclSocket* sock, union ncclSocketAddress* addr);
@@ -84,11 +89,12 @@ ncclResult_t ncclSocketSetFd(int fd, struct ncclSocket* sock);
 #define NCCL_SOCKET_SEND 0
 #define NCCL_SOCKET_RECV 1
 
-ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int size, int* offset);
+ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int size, int* offset, int* closed = NULL);
 ncclResult_t ncclSocketWait(int op, struct ncclSocket* sock, void* ptr, int size, int* offset);
 ncclResult_t ncclSocketSend(struct ncclSocket* sock, void* ptr, int size);
 ncclResult_t ncclSocketRecv(struct ncclSocket* sock, void* ptr, int size);
 ncclResult_t ncclSocketSendRecv(struct ncclSocket* sendSock, void* sendPtr, int sendSize, struct ncclSocket* recvSock, void* recvPtr, int recvSize);
 ncclResult_t ncclSocketTryRecv(struct ncclSocket* sock, void* ptr, int size, int* closed, bool blocking);
+ncclResult_t ncclSocketShutdown(struct ncclSocket* sock, int how);
 ncclResult_t ncclSocketClose(struct ncclSocket* sock);
 #endif
