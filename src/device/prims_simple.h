@@ -744,6 +744,9 @@ private:
           *argSlot0 = 0; *argSlot1 = 0;
           *slot = nullptr;
         } else {
+          // We can't rule out "work" being NULL just based on the code here but presumably the callers
+          // make sure that that's not the case.
+          // coverity[var_deref_op]
           directBuff = (T*)work->dnInputs[index];
         }
       }

@@ -121,6 +121,10 @@ static void addWorkBatchToPlan(
   if (newBatch || extendBatch) {
     if (!newBatch) batch->nextExtends = extendBatch; // Extending the previous batch.
     struct ncclWorkBatchList* batchNode = ncclMemoryStackAlloc<ncclWorkBatchList>(&comm->memScoped);
+    // Coverity thinks that ncclIntruQueueEnqueue will access chan->workBatchQueue->tail, which might
+    // be NULL.  But that code is guarded by chan->workBatchQueue->head not being NULL, in which
+    // case tail won't be NULL either.
+    // coverity[var_deref_model:FALSE]
     ncclIntruQueueEnqueue(&chan->workBatchQueue, batchNode);
     batch = &batchNode->batch;
     batch->nextExtends = 0;
