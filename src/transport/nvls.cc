@@ -874,6 +874,8 @@ exit:
     }
 
     if (recvRecord) {
+      // Yes, it's a dead code.  That's fine...
+      // coverity[dead_error_begin]
       ncclNvlsDeregBuffer(&recvRecord->mcHandle, recvRecord->ptr, recvRecord->dev, recvRecord->size);
       free(recvRecord);
     }

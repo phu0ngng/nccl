@@ -170,6 +170,8 @@ ncclResult_t ncclCollPreconnectFunc(struct ncclAsyncJob* job_) {
           NCCLCHECKGOTO(ncclCollNetDirectBufferSetup(comm), ret, fail);
           break;
         }
+        // Yes, it's a dead code.  That's fine...
+        // coverity[dead_error_begin]
         default: {
           ret = ncclInternalError;
           goto fail;

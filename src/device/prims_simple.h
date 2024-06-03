@@ -111,6 +111,8 @@ class Primitives<
     const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
     const bool noRecvWait = DirectRecv && Src && (flags & (DirectRead | IpcRead));        // no wait when directly reading from remote input
     const bool noSendWait = DirectSend && (flags & (DirectRead|DirectWrite)); // no wait in empty send (e.g. directScatter) or direct remote write
+    // Yes, for some template arguments this code will be unreachable.  That's fine.
+    // coverity[dead_error_line]
     if (((flags & (Recv*RoleWaitRecv)) && !noRecvWait) ||
         ((flags & (Send*RoleWaitSend)) && !noSendWait)) {
       int spins = 0;
@@ -149,6 +151,8 @@ class Primitives<
         }
       }
       else {
+        // Yes, for some template arguments this code will be unreachable.  That's fine.
+        // coverity[dead_error_line]
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*connStepSize;
       }
       if (flags & NetDeviceUnpack) {
@@ -268,6 +272,8 @@ class Primitives<
         postPeer<Recv, Send>(0 < sliceSize);
         offset += sliceSize;
         slice += 1;
+        // Yes, most of the time SlicePerChunk==1 and the condition will be false then.  That's fine.
+        // coverity[dead_error_line]
       } while (slice < SlicePerChunk && offset < nelem);
     }
 
@@ -319,7 +325,7 @@ public:
       if (tid < nworkers) {
         int nsend, nrecv;
         if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
-          bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
+          const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
           int spins = 0;
           while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
             connStepCache = loadStepValue(connStepPtr);
@@ -375,6 +381,8 @@ public:
       barrier();
       int32_t dstSize = 0;
       if (flags & Send*RolePostSend) {
+        // Yes, for some template arguments this code will be unreachable.  That's fine.
+        // coverity[dead_error_begin]
         dstSize = ncclShmem.groups[group].dstSizes[index];
         ncclShmem.groups[group].dstSizes[index] = 0;
         if (flags & ConnFifoEnabled) connFifo[step%NCCL_STEPS].size = dstSize*sizeof(T);
@@ -571,7 +579,10 @@ private:
     this->nworkers = nthreads - (MaxSend > 0 && nthreads >= NCCL_SIMPLE_EXTRA_GROUP_IF_NTHREADS_GE ? WARP_SIZE : 0);
 
     int nrecv=0, nsend=0;
+    // Yes, MaxRecv or MaxSend can be 0 and the condition will be false then.  That's fine.
+    // coverity[dead_error_line]
     while (nrecv < MaxRecv && recvPeers[nrecv] != -1) nrecv++;
+    // coverity[dead_error_line]
     while (nsend < MaxSend && sendPeers[nsend] != -1) nsend++;
     this->fan = Fan(nrecv, nsend);
 
@@ -589,6 +600,8 @@ private:
     // Unfortunately, we've been unsuccessful in trying to silence them with a single directive.
     // coverity[assignment:FALSE]
     if      (tid < nrecv)                 { flags |= RoleWaitRecv; index = tid; }
+    // Yes, for some values of MaxRecv and MaxSend the condition will be false.  That's fine.
+    // coverity[dead_error_begin]
     else if (tid < nrecv+nsend)           { flags |= RoleWaitSend; index = tid-nrecv; }
     else if (nthreads-nsend <= tid)       { flags |= RolePostSend; index = tid-(nthreads-nsend); }
     else if (nthreads-nrecv-nsend <= tid) { flags |= RolePostRecv; index = tid-(nthreads-nrecv-nsend); }
