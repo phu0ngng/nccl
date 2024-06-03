@@ -16,6 +16,7 @@
 #include "nccl_net.h"
 #include "register.h"
 #include "graph.h"
+#include "profiler.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -178,36 +179,6 @@ struct ncclCollnetHandleList {
   struct ncclProxyConnector* proxyconn;
 };
 
-struct ncclKernelPlan {
-  // A kernel plan is also a callback that reclaims itself. Hence this must
-  // be the first member.
-  struct ncclCommCallback reclaimer;
-
-  struct ncclComm* comm;
-  struct ncclKernelPlan* next;
-
-  bool persistent; // aka captured in a graph
-  enum ncclDevWorkStorageType workStorageType;
-  bool kernelSpecialized;
-  void *kernelFn;
-  struct ncclDevKernelArgs* kernelArgs;
-  size_t kernelArgsSize;
-  uint64_t channelMask; // bitset of which channels are present
-  bool hasProxyOps; // does any channel have a non-empty proxyOpQueue
-  int threadPerBlock;
-
-  int collOpCount; // Number of collectives in this plan.
-  int nWorkBatches; // Number of work batches.
-  size_t workBytes; // Sum size of all work (in the fifo) in bytes.
-  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> workQueue;
-  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> cleanupQueue;
-  void* workBufPersistent;
-
-  struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-
 struct ncclTaskColl {
   struct ncclTaskColl* next;
   ncclFunc_t func;
@@ -237,11 +208,56 @@ struct ncclTaskColl {
   uintptr_t recvbuffOffset;
   uintptr_t* sendbuffRmtAddrs;
   uintptr_t* recvbuffRmtAddrs;
+
+  // Profiler plugin
+  int eActivationMask;
+  void* eventHandle;
 };
 struct ncclTaskP2p {
   struct ncclTaskP2p* next;
+  ncclFunc_t func;
   void* buff;
+  size_t count;
+  ncclDataType_t datatype;
+  int root;
   size_t bytes;
+
+  // Profiler plugin
+  int eActivationMask;
+  void* eventHandle;
+};
+
+struct ncclKernelPlan {
+  // A kernel plan is also a callback that reclaims itself. Hence this must
+  // be the first member.
+  struct ncclCommCallback reclaimer;
+
+  struct ncclComm* comm;
+  struct ncclKernelPlan* next;
+
+  bool persistent; // aka captured in a graph
+  enum ncclDevWorkStorageType workStorageType;
+  bool kernelSpecialized;
+  void *kernelFn;
+  struct ncclDevKernelArgs* kernelArgs;
+  size_t kernelArgsSize;
+  uint64_t channelMask; // bitset of which channels are present
+  bool hasProxyOps; // does any channel have a non-empty proxyOpQueue
+  int threadPerBlock;
+
+  int collOpCount; // Number of collectives in this plan.
+  int nWorkBatches; // Number of work batches.
+  size_t workBytes; // Sum size of all work (in the fifo) in bytes.
+  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> workQueue;
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> cleanupQueue;
+  void* workBufPersistent;
+
+  struct ncclIntruQueue<struct ncclTaskP2p, &ncclTaskP2p::next> p2pTaskQueue;
+  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueue;
+  struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
+
+  // Profiler plugin
+  void* groupEventHandle;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -412,6 +428,7 @@ struct ncclComm {
 
   uint64_t magic; // Magic number for all network communication. Not a security key -- only goal is to detect mismatches.
 
+  const char* commName;
   uint64_t commHash;
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
@@ -532,6 +549,8 @@ struct ncclComm {
   struct ncclNvlsSharedRes* nvlsResources;
 
   // pools backed by comm->memPermanent
+  struct ncclMemoryPool memPool_ncclTaskColl;
+  struct ncclMemoryPool memPool_ncclTaskP2p;
   struct ncclMemoryPool memPool_ncclProxyOp;
   struct ncclMemoryPool memPool_ncclKernelPlan;
 
@@ -573,6 +592,11 @@ struct ncclComm {
   int tunerPluginLoaded;
   ncclTuner_t* tuner;
   void *tunerContext;
+
+  // Profiler plugin
+  void* profilerContext;
+  uint64_t seqNumber[NCCL_NUM_FUNCTIONS];
+
   // buffer registration cache
   struct ncclRegCache regCache;
   uint64_t endMagic;

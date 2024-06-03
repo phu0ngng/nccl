@@ -11,6 +11,7 @@
 #include "bootstrap.h"
 #include "channel.h"
 #include "cudawrap.h"
+#include "profiler.h"
 #include "transport.h"
 
 #include <cstring> // std::memcpy
@@ -779,6 +780,8 @@ static ncclResult_t scheduleCollTasksToPlan(
       for (int c=devWork->channelLo; c <= (int)devWork->channelHi; c++) {
         proxyOp.channelId = c;
         proxyOp.opCount = proxyOpId;
+        proxyOp.task.coll = task;
+        proxyOp.rank = comm->rank;
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOp));
       }
@@ -879,6 +882,8 @@ static ncclResult_t scheduleCollTasksToPlan(
         }
         proxyOp->channelId = c;
         proxyOp->opCount = proxyOpId;
+        proxyOp->task.coll = task;
+        proxyOp->rank = comm->rank;
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
         // Coverity reports "proxyOp->connection" as being possibly uninitialized.  It's hard to
         // determine if that's actually true but it's also not clear if that would be an issue.
@@ -922,6 +927,7 @@ static ncclResult_t scheduleCollTasksToPlan(
     ncclIntruQueueDequeue(&planner->collWorkQueue);
     nPlanColls -= 1;
     planner->nTasksColl -= 1;
+    ncclIntruQueueEnqueue(&plan->collTaskQueue, task);
     ncclIntruQueueEnqueue(&plan->workQueue, workNode);
     plan->workBytes += workNode->size;
   }
@@ -939,7 +945,8 @@ static ncclResult_t addP2pToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan,
     int nChannelsMin, int nChannelsMax, int p2pRound,
     int sendRank, void* sendAddr, ssize_t sendBytes,
-    int recvRank, void* recvAddr, ssize_t recvBytes
+    int recvRank, void* recvAddr, ssize_t recvBytes,
+    struct ncclTaskP2p** p2pTasks
   ) {
   constexpr int connIndex = 1;
   bool selfSend = (sendRank == comm->rank);
@@ -1078,6 +1085,9 @@ static ncclResult_t addP2pToPlan(
     op->pattern = dir ? ncclPatternSend : ncclPatternRecv;
     op->chunkSize = chunkSize[dir];
     op->reg = registered[dir];
+    op->coll = p2pTasks[dir] ? p2pTasks[dir]->func : 0;
+    op->task.p2p = p2pTasks[dir];
+    op->rank = comm->rank;
     // The following are modified per channel part in addWorkToChannels():
     // op->buffer, op->nbytes, op->nsteps = ...;
   }
@@ -1194,13 +1204,16 @@ static ncclResult_t scheduleP2pTasksToPlan(
         if (!testBudget(budget, plan->nWorkBatches+nChannelsMax, plan->workBytes + sizeof(struct ncclDevWorkP2p))) {
           return ncclSuccess;
         }
-        NCCLCHECK(addP2pToPlan(comm, plan, nChannelsMin, nChannelsMax, round, sendRank, sendBuff, sendBytes, recvRank, recvBuff, recvBytes));
+        struct ncclTaskP2p* p2pTasks[2] = { recv, send };
+        NCCLCHECK(addP2pToPlan(comm, plan, nChannelsMin, nChannelsMax, round, sendRank, sendBuff, sendBytes, recvRank, recvBuff, recvBytes, p2pTasks));
         if (send != nullptr) {
           ncclIntruQueueDequeue(&peers[sendRank].sendQueue);
+          ncclIntruQueueEnqueue(&plan->p2pTaskQueue, send);
           comm->planner.nTasksP2p -= 1;
         }
         if (recv != nullptr) {
           ncclIntruQueueDequeue(&peers[recvRank].recvQueue);
+          ncclIntruQueueEnqueue(&plan->p2pTaskQueue, recv);
           comm->planner.nTasksP2p -= 1;
         }
       }
@@ -1378,6 +1391,11 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
 
   struct ncclProxyOp* op = ncclIntruQueueHead(&plan->proxyOpQueue);
   while (op != nullptr) {
+    op->profilerContext = comm->profilerContext;
+    op->eActivationMask = op->coll <= ncclFuncAllReduce ? op->task.coll->eActivationMask : op->task.p2p->eActivationMask;
+    op->taskEventHandle = op->coll <= ncclFuncAllReduce ? op->task.coll->eventHandle : op->task.p2p->eventHandle;
+    ncclProfilerAddPidToProxyOp(op);
+
     uint64_t oldId = op->opCount;
     // Ignoring the bottom tag bit, opCount's are zero-based within plan so
     // translate them to the tip of the comm's history.
@@ -1412,8 +1430,12 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
 }
 
 static ncclResult_t hostStreamPlanTask(struct ncclComm* comm, struct ncclKernelPlan* plan) {
+  NCCLCHECK(ncclProfilerStartGroupEvent(plan));
+  NCCLCHECK(ncclProfilerStartTaskEvents(plan));
   NCCLCHECK(uploadProxyOps(comm, plan));
   NCCLCHECK(ncclProxyStart(comm));
+  NCCLCHECK(ncclProfilerStopTaskEvents(plan));
+  NCCLCHECK(ncclProfilerStopGroupEvent(plan));
   if (!plan->persistent) {
     // Notify main thread of our reclaiming. This will reclaim plan concurrently.
     ncclIntruQueueMpscEnqueue(&comm->callbackQueue, &plan->reclaimer);
@@ -1445,6 +1467,18 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
       struct ncclProxyOp* q1 = q->enqNext;
       ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
       q = q1;
+    }
+    struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
+    while (ct != nullptr) {
+      struct ncclTaskColl* ct1 = ct->next;
+      ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, ct);
+      ct = ct1;
+    }
+    struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
+    while (pt != nullptr) {
+      struct ncclTaskP2p* pt1 = pt->next;
+      ncclMemoryPoolFree(&comm->memPool_ncclTaskP2p, pt);
+      pt = pt1;
     }
     ncclResult_t result = ncclSuccess;
     while (!ncclIntruQueueEmpty(&plan->cleanupQueue)) {
@@ -2178,8 +2212,12 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
 
     // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
     ncclGroupCommJoin(info->comm);
-    struct ncclTaskP2p* p2p = ncclMemoryStackAlloc<struct ncclTaskP2p>(&comm->memScoped);
+    struct ncclTaskP2p* p2p = ncclMemoryPoolAlloc<struct ncclTaskP2p>(&comm->memPool_ncclTaskP2p, &comm->memPermanent);
+    p2p->func = info->coll;
     p2p->buff = (void*)info->recvbuff;
+    p2p->count = info->count;
+    p2p->datatype = info->datatype;
+    p2p->root = info->root;
     p2p->bytes = nBytes;
     ncclIntruQueueEnqueue(
       isSendNotRecv ? &planner->peers[peer].sendQueue : &planner->peers[peer].recvQueue,
@@ -2227,7 +2265,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     } else {
       // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
       ncclGroupCommJoin(info->comm);
-      struct ncclTaskColl* t = ncclMemoryStackAlloc<struct ncclTaskColl>(&comm->memScoped);
+      struct ncclTaskColl* t = ncclMemoryPoolAlloc<struct ncclTaskColl>(&comm->memPool_ncclTaskColl, &comm->memPermanent);
       t->func = info->coll;
       t->sendbuff = info->sendbuff;
       t->recvbuff = info->recvbuff;

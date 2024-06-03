@@ -259,6 +259,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - %s COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, abort ? "Abort" : "Destroy");
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
+  NCCLCHECK(ncclProfilerPluginFinalize(comm));
   NCCLCHECK(ncclNetFinalize(comm));
   NCCLCHECK(ncclNetPluginUnload(comm));
   free(comm);
@@ -337,6 +338,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
 
   NCCLCHECK(ncclNetPluginLoad(comm));
   NCCLCHECK(ncclNetInit(comm));
+  NCCLCHECK(ncclProfilerPluginInit(comm));
   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 
   if (parent && parent->config.splitShare) {

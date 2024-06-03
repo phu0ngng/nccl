@@ -295,6 +295,23 @@ Values accepted
 
 Plugin suffix, plugin file name, or "none".
 
+NCCL_PROFILER_PLUGIN
+--------------------
+
+Set it to either a suffix string or to a library name to choose among multiple NCCL profiler plugins. This setting will cause NCCL to look for the profiler plugin library using the following strategy:
+ - If NCCL_PROFILER_PLUGIN is set, attempt loading the library with name specified by NCCL_PROFILER_PLUGIN;
+ - If NCCL_PROFILER_PLUGIN is set and previous failed, attempt loading libnccl-profiler-<NCCL_PROFILER_PLUGIN>.so;
+ - If NCCL_PROFILER_PLUGIN is not set, attempt loading libnccl-profiler.so;
+ - If no plugin was found (neither user defined nor default), do not enable profiling.
+ - If NCCL_PROFILER_PLUGIN is set to ``STATIC_PLUGIN``, the plugin symbols are searched in the program binary.
+
+For example, setting ``NCCL_PROFILER_PLUGIN=aws`` will cause NCCL to try load aws and, if aws cannot be found, libnccl-profiler-aws.so (provided that it exists on the system). Setting ``NCCL_PROFILER_PLUGIN=none`` will cause NCCL not to use any plugin.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Plugin suffix, plugin file name, or "none".
+
 NCCL_IGNORE_CPU_AFFINITY
 ------------------------
 (since 2.4.6)
