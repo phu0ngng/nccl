@@ -69,6 +69,8 @@ __device__ __forceinline__ void reduceCopyPacks(
     minSrcs[s] = cvta_to_global(srcPtrFn(s)) + threadBytesBehind;
   #pragma unroll
   for (int d=0; d < MinDsts; d++)
+    // Yes, for some template arguments this code will be unreachable.  That's fine.
+    // coverity[dead_error_line]
     minDsts[d] = cvta_to_global(dstPtrFn(d)) + threadBytesBehind;
 
   // We dictate loop termination condition according to whether partial hunks
@@ -93,6 +95,8 @@ __device__ __forceinline__ void reduceCopyPacks(
 
     #pragma unroll (MinSrcs-1 + !(MinSrcs-1))
     for (int s=1; s < MinSrcs; s++) {
+      // Yes, for some template arguments this code will be unreachable.  That's fine.
+      // coverity[dead_error_begin]
       BytePack<BytePerPack> tmp[Unroll];
       RedFn preFn(s < PreOpSrcs ? preOpArgs[s] : 0);
       #pragma unroll Unroll
@@ -116,6 +120,8 @@ __device__ __forceinline__ void reduceCopyPacks(
     for (int s=MinSrcs; (MinSrcs < MaxSrcs) && (s < MaxSrcs) && (s < nSrcs); s++) {
       uintptr_t src = cvta_to_global(srcPtrFn(s)) + threadBytesBehind;
       BytePack<BytePerPack> tmp[Unroll];
+      // Yes, for some template arguments this code will be unreachable.  That's fine.
+      // coverity[dead_error_line]
       RedFn preFn(s < PreOpSrcs ? preOpArgs[s] : 0);
       #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
@@ -125,6 +131,8 @@ __device__ __forceinline__ void reduceCopyPacks(
       }
       #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
+        // Yes, for some template arguments this code will be unreachable.  That's fine.
+        // coverity[dead_error_line]
         if (s < PreOpSrcs) tmp[u] = applyPreOp(preFn, tmp[u]);
         acc[u] = applyReduce(redFn, acc[u], tmp[u]);
       }
@@ -139,6 +147,8 @@ __device__ __forceinline__ void reduceCopyPacks(
     #pragma unroll (MinDsts + !MinDsts)
     for (int d=0; d < MinDsts; d++) {
       #pragma unroll Unroll
+      // Yes, for some template arguments this code will be unreachable.  That's fine.
+      // coverity[dead_error_begin]
       for (int u=0; u < Unroll; u++) {
         if (d < MultimemDsts) {
           multimem_st_global(minDsts[d], acc[u]);
@@ -161,6 +171,8 @@ __device__ __forceinline__ void reduceCopyPacks(
     #pragma unroll
     for (int s=0; s < MinSrcs; s++) minSrcs[s] += (nWarps-1)*BytePerHunk;
     #pragma unroll
+    // Yes, for some template arguments this code will be unreachable.  That's fine.
+    // coverity[dead_error_line]
     for (int d=0; d < MinDsts; d++) minDsts[d] += (nWarps-1)*BytePerHunk;
     threadBytesBehind += nWarps*BytePerHunk;
     threadBytesAhead -= nWarps*BytePerHunk;

@@ -234,6 +234,8 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
         }
       }
 
+      // Yes, for some template arguments this code will be unreachable.  That's fine.
+      // coverity[dead_error_line]
       for (int i=1; i<MaxRecv && i<fan.nrecv(); i++) {
         uint64_t flag = recvFlag(i);
         uint64_t* ptr = recvPtr(i)+ll128Offset;
@@ -272,6 +274,8 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL128, P2p>:
 
     /************************ Send **************************/
     if (SEND) {
+      // Yes, for some template arguments this code will be unreachable.  That's fine.
+      // coverity[dead_error_line]
       for (int i=1; i<MaxSend && i<fan.nsend(); i++) {
         uint64_t flag = sendFlag(i);
         uint64_t* ptr = sendPtr(i)+ll128Offset;
