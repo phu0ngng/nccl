@@ -1211,7 +1211,7 @@ ib_connect:
     ncclIbSendCommDev* commDev = comm->devs + devIndex;
 
     struct ibv_qp* qp = comm->base.qps[q].qp;
-    if (remQpInfo->ece_supported && remQpInfo->ece_supported)
+    if (remQpInfo->ece_supported)
       NCCLCHECK(wrap_ibv_set_ece(qp, &remQpInfo->ece, &remQpInfo->ece_supported));
 
     NCCLCHECK(ncclIbRtrQp(qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false));
