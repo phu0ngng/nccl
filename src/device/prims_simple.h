@@ -44,7 +44,6 @@ class Primitives<
   uint64_t *connStepPtr;
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
   int      connStepSize; // Connection step size
-  void*    mhandle;
   void*    netDeviceHandle;
 
   // Don't use barrier 0 as it's used by the final sync
