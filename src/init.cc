@@ -504,6 +504,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->nvmlDev = comm->nvmlDev;
   info->hostHash=getHostHash()+commHash;
   info->pidHash=getPidHash()+commHash;
+  info->cuMemSupport = ncclCuMemEnable();
 
   // Get the device MAJOR:MINOR of /dev/shm so we can use that
   // information to decide whether we can use SHM for inter-process
@@ -729,8 +730,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(fillInfo(comm, comm->peerInfo+rank, comm->commHash), ret, fail);
   NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, comm->peerInfo, sizeof(struct ncclPeerInfo)), ret, fail);
 
+  comm->cuMemSupport = 1;
   for (int i = 0; i < nranks; i++) {
     if (comm->peerInfo[i].hostHash != comm->peerInfo[rank].hostHash) nNodes++;
+    if (!comm->peerInfo[i].cuMemSupport) comm->cuMemSupport = 0;
     if ((i != rank) && (comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash) && (comm->peerInfo[i].busId == comm->peerInfo[rank].busId)) {
       WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %lx", rank, i, comm->peerInfo[rank].busId);
       ret = ncclInvalidUsage;
@@ -1147,7 +1150,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   } while (0);
 
-  comm->runtimeConn = ncclCuMemEnable() && ncclParamRuntimeConnect();
+  comm->runtimeConn = comm->cuMemSupport && ncclParamRuntimeConnect();
   if (comm->runtimeConn) {
     for (int c=0; c<comm->nChannels; c++) {
       NCCLCHECKGOTO(setupChannel(comm, c, rank, nranks, rings+c*nranks), ret, fail);
