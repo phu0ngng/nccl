@@ -202,6 +202,11 @@ apitest-P100:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 apitest-P40:
@@ -217,6 +222,11 @@ apitest-P40:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 apitest-GP100:
@@ -232,6 +242,11 @@ apitest-GP100:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
  
 apitest-A40:
@@ -246,6 +261,11 @@ apitest-A40:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 apitest-A100:
@@ -260,6 +280,11 @@ apitest-A100:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-apitest.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 apitest-DGX-1V:
@@ -278,6 +303,11 @@ apitest-DGX-1V:
     SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
   script:
     - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 apitest-DGX-2:
@@ -296,6 +326,11 @@ apitest-DGX-2:
     SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
   script:
     - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 apitest-DGX-A100:
@@ -314,6 +349,11 @@ apitest-DGX-A100:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - srun -n 1 --account=coreai_libraries_nccl -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:30:00 ./test/scripts/gitlab-runner-apitest.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-P100:
@@ -332,6 +372,11 @@ perftest-P100:
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-P40:
@@ -350,6 +395,11 @@ perftest-P40:
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-GP100:
@@ -369,6 +419,11 @@ perftest-GP100:
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pGP100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 2
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-A40:
@@ -387,6 +442,11 @@ perftest-A40:
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-A100:
@@ -405,6 +465,11 @@ perftest-A100:
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA100"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-DGX-1V:
@@ -426,6 +491,11 @@ perftest-DGX-1V:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=coreai_libraries_nccl --nv-meta ml-model.nccl -p $PARTITION_LIST -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 2G
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-DGX-2:
@@ -447,6 +517,11 @@ perftest-DGX-2:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - salloc -N 1 --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} --account=coreai_libraries_nccl --nv-meta ml-model.nccl -p $PARTITION_LIST -t 00:35:00 ./test/scripts/gitlab-runner-perftest.sh 1G
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-DGX-A100:
@@ -468,6 +543,11 @@ perftest-DGX-A100:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - salloc -N ${NNODES} -n ${NGPUS} --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:30:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-multi-gc:
@@ -489,6 +569,11 @@ perftest-multi-gc:
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-sharp-gc:
@@ -510,6 +595,11 @@ perftest-sharp-gc:
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 perftest-multi-DGX-1V:
@@ -538,6 +628,11 @@ perftest-multi-DGX-1V:
     DRACO_SALLOC: "--exclusive --gpus-per-node=8 --ntasks-per-node=8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl --exclusive -t 00:25:00"
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 # Disabled - Allocation timeouts cause too much noise
@@ -712,4 +807,9 @@ replay-multi-gc:
   script:
     - SALLOC=$SALLOC_RESNET ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
     - ./test/scripts/gitlab-runner-replay-self-test.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
