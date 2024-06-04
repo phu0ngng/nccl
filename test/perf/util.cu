@@ -330,7 +330,7 @@ void init_json_output(const char *in_path,
 
   json_start_object(); // will be closed finalize_json_output
 
-  json_key("start time");
+  json_key("start_time");
   {
     char timebuffer[128];
     format_now(timebuffer, sizeof(timebuffer));
@@ -358,7 +358,7 @@ void init_json_output(const char *in_path,
 void finalize_json_output() {
   if(write_json) {
 
-    json_key("end time");
+    json_key("end_time");
     char timebuffer[128];
     format_now(timebuffer, sizeof(timebuffer));
     json_str(timebuffer);
@@ -409,8 +409,8 @@ static void json_rankinfo(const rankinfo_t *ri) {
   json_key("pid");         json_int(ri->pid);
   json_key("hostname");    json_str(ri->hostname);
   json_key("device");      json_int(ri->device);
-  json_key("device hex");  json_str(ri->device_hex);
-  json_key("device info"); json_str(ri->devinfo);
+  json_key("device_hex");  json_str(ri->device_hex);
+  json_key("device_info"); json_str(ri->devinfo);
   json_finish_object();
 }
 
@@ -436,8 +436,8 @@ void write_benchmark_line_terminator(int actualIters, const char *name) {
   PRINT("  %5d", actualIters);
   PRINT("    %s\n", name);
   if(write_json && is_main_thread) {
-    json_key("actual iterations"); json_int(actualIters);
-    json_key("experiment name");   json_str(name);
+    json_key("actual_iterations"); json_int(actualIters);
+    json_key("experiment_name");   json_str(name);
     json_finish_object();
   }
 }
@@ -446,7 +446,7 @@ void write_benchmark_line_terminator(int actualIters, const char *name) {
 void write_benchmark_line_null_body() {
   PRINT("                                ");  // only do in-place for trace replay
   if(write_json && is_main_thread) {
-    json_key("out of place"); json_null();
+    json_key("out_of_place"); json_null();
   }
 }
 
@@ -457,7 +457,7 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
   char timeStr[100];
 
   if(write_json && is_main_thread) {
-    json_key("per-collective perf"); json_start_object();
+    json_key("per_collective_perf"); json_start_object();
     if (per_coll_perf == 1) {
       json_key("gpus"); json_start_list();
     }
@@ -492,8 +492,8 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
         json_start_object();
         json_key("iteration"); json_int(j);
         json_key("time");      json_double(timeSec);
-        json_key("alg. bw.");  json_double(algBw);
-        json_key("bus bw.");   json_double(busBw);
+        json_key("alg_bw");  json_double(algBw);
+        json_key("bus_bw");   json_double(busBw);
         json_finish_object();
       }
     }
@@ -517,9 +517,9 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
   PRINT("\n%24sCoefficient of variation %5s %1.4f  %1.4f  %1.4f\n", " ", " ", coeffVarTime, coeffVarAlgBw, coeffVarBusBw);
 
   if (write_json && is_main_thread && per_coll_perf == 1) {
-    json_key("coeff. variance time");     json_double(coeffVarTime);
-    json_key("coeff. variance alg. bw."); json_double(coeffVarAlgBw);
-    json_key("coeff variance bus bw.");   json_double(coeffVarBusBw);
+    json_key("coeff_variance_time");     json_double(coeffVarTime);
+    json_key("coeff_variance_alg_bw"); json_double(coeffVarAlgBw);
+    json_key("coeff_variance_bus_bw");   json_double(coeffVarBusBw);
     json_finish_object();// close per-coll
   }
 }
@@ -580,14 +580,14 @@ void write_benchmark_line_body(double timeUsec, double totalTime, double algBw, 
   }
 
   if(write_json && is_main_thread) {
-    json_key(out_of_place ? "out of place" : "in place");
+    json_key(out_of_place ? "out_of_place" : "in_place");
     json_start_object();
-    json_key(report_cputime ? "cpu time" : "time"); json_double(timeUsec);
-    json_key("alg. bw");                            json_double(algBw);
-    json_key("bus bw");                             json_double(busBw);
+    json_key(report_cputime ? "cpu_time" : "time"); json_double(timeUsec);
+    json_key("alg_bw");                            json_double(algBw);
+    json_key("bus_bw");                             json_double(busBw);
     json_key("nwrong");                             (reportErrors ? json_double((double)wrongElts) : json_null());
-    json_key("side comp bw");                       (side_comp == 1 ? json_double(sideBw) : json_null());
-    json_key("estimated time");                     (simulate ? json_double(totalTime) : json_null());
+    json_key("side_comp_bw");                       (side_comp == 1 ? json_double(sideBw) : json_null());
+    json_key("estimated_time");                     (simulate ? json_double(totalTime) : json_null());
     json_finish_object();
   }
 }
@@ -616,22 +616,22 @@ testResult_t write_device_report(size_t *maxMem, int localRank, int proc, int to
     json_start_object();
     json_key("nthreads");      json_int(nThreads);
     json_key("ngpus");         json_int(nGpus);
-    json_key("minimum bytes"); json_size_t(minBytes);
-    json_key("maximum bytes"); json_size_t(maxBytes);
+    json_key("minimum_bytes"); json_size_t(minBytes);
+    json_key("maximum_bytes"); json_size_t(maxBytes);
     if(stepFactor > 1) {
-      json_key("step factor");   json_int(stepFactor);
+      json_key("step_factor");   json_int(stepFactor);
     }
     else {
-      json_key("step bytes");  json_size_t(stepBytes);
+      json_key("step_bytes");  json_size_t(stepBytes);
     }
 
-    json_key("warmup iters");          json_int(warmup_iters);
+    json_key("warmup_iters");          json_int(warmup_iters);
     json_key("iterations");            json_int(iters);
-    json_key("aggregated iterations"); json_int(agg_iters);
+    json_key("aggregated_iterations"); json_int(agg_iters);
     json_key("validation");            json_int(datacheck);
     json_key("graph");                 json_int(cudaGraphLaunches);
-    json_key("blocking collectives");  json_bool(blocking_coll);
-    json_key("parallel init");         json_bool(parallel_init);
+    json_key("blocking_collectives");  json_bool(blocking_coll);
+    json_key("parallel_init");         json_bool(parallel_init);
   }
 
   PRINT("# Using devices\n");
@@ -728,15 +728,15 @@ void write_result_footer(const int errors[], const double bw[], double check_avg
   PRINT("#\n");
 
   if(write_json && is_main_thread) {
-    json_key("out of bounds");
+    json_key("out_of_bounds");
     json_start_object();
     json_key("count");      json_int(errors[0]);
-    json_key("okay");       json_str(errors[0] ? "false" : "true");
+    json_key("okay");       json_bool(errors[0] == 0);
     json_finish_object();
-    json_key("average bus bandwidith");
+    json_key("average_bus_bandwidith");
     json_start_object();
     json_key("bandwidith"); json_double(bw[0]);
-    json_key("okay");       json_str(check_avg_bw == -1 ? "unchecked" : (bw[0] < check_avg_bw*(0.9) ? "false" : "true"));
+    json_key("okay");       check_avg_bw == -1 ? json_str("unchecked") : json_bool(bw[0] >= check_avg_bw*(0.9));
     json_finish_object();
   }
 }
