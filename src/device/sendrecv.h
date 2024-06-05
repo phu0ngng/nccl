@@ -80,6 +80,9 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
           (isSend ? work->sendBytes : work->recvBytes) = partEnd - partBeg;
         }
       }
+      // Coverity reports a possible thread divergence due to not all threads participating in the collective.
+      // However, the code ensures that the participation is on a per-warp basis.
+      // coverity[device_thread_diverged:FALSE]
       uint32_t mask = __ballot_sync(~0u, hasWork);
       if (lane == 0) {
         shared->workSendMask = mask>>16;
