@@ -1434,6 +1434,9 @@ ib_recv:
 
     // Set the ece (enhanced connection establishment) on this QP before RTR
     if (remMeta.qpInfo[q].ece_supported) {
+      // Coverity suspects a copy-paste error below due to the use of remMeta in one argument and meta in another.
+      // However, this has been confirmed to be intentional.
+      // coverity[copy_paste_error]
       NCCLCHECKGOTO(wrap_ibv_set_ece(qp->qp, &remMeta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
 
       // Query the reduced ece for this QP (matching enhancements between the requestor and the responder)
