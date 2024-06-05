@@ -47,6 +47,7 @@ struct ncclPeerInfo {
   int cudaCompCap;
   // MNNVL support
   nvmlGpuFabricInfoV_t fabricInfo;
+  int cuMemSupport;
 };
 
 #define CONNECT_SIZE 128
