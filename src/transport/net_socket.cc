@@ -496,7 +496,7 @@ ncclResult_t ncclNetSocketTest(void* request, int* done, int* size) {
     if (r->op == NCCL_SOCKET_RECV && data > r->size) {
       char line[SOCKET_NAME_MAXLEN+1];
       union ncclSocketAddress addr;
-      ncclSocketGetAddr(r->ctrlSock, &addr);
+      NCCLCHECK(ncclSocketGetAddr(r->ctrlSock, &addr));
       WARN("NET/Socket : peer %s message truncated : receiving %d bytes instead of %d. If you believe your socket network is in healthy state, \
           there may be a mismatch in collective sizes or environment settings (e.g. NCCL_PROTO, NCCL_ALGO) between ranks",
           ncclSocketToString(&addr, line), data, r->size);
