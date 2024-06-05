@@ -290,7 +290,6 @@ void init_json_output(const char *in_path,
                       int argc, char **argv,
                       char **envp) {
   if(in_path == nullptr) {
-    printf("# skipping json output\n");
     return;
   }
 
