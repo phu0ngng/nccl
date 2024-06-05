@@ -98,11 +98,13 @@ __device__ __forceinline__ void reduceCopyPacks(
       // Yes, for some template arguments this code will be unreachable.  That's fine.
       // coverity[dead_error_begin]
       BytePack<BytePerPack> tmp[Unroll];
+      // coverity[dead_error_line]
       RedFn preFn(s < PreOpSrcs ? preOpArgs[s] : 0);
       #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
         if (s < MultimemSrcs) {
           // applyLoadMultimem uses relaxed semantics for same reason we use volatile below.
+          // coverity[dead_error_line]
           tmp[u] = applyLoadMultimem<RedFn, BytePerPack>(redFn, minSrcs[s]);
         } else {
           // Use volatile loads in case credits are polled for with volatile (instead of acquire).
@@ -112,6 +114,7 @@ __device__ __forceinline__ void reduceCopyPacks(
       }
       #pragma unroll Unroll
       for (int u=0; u < Unroll; u++) {
+        // coverity[dead_error_line]
         if (s < PreOpSrcs) tmp[u] = applyPreOp(preFn, tmp[u]);
         acc[u] = applyReduce(redFn, acc[u], tmp[u]);
       }
@@ -150,6 +153,7 @@ __device__ __forceinline__ void reduceCopyPacks(
       // Yes, for some template arguments this code will be unreachable.  That's fine.
       // coverity[dead_error_begin]
       for (int u=0; u < Unroll; u++) {
+        // coverity[dead_error_condition]
         if (d < MultimemDsts) {
           multimem_st_global(minDsts[d], acc[u]);
         } else {
