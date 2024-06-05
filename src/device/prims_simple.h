@@ -42,7 +42,7 @@ class Primitives<
   uint64_t step;
   struct ncclConnFifo* connFifo = NULL;
   T* connEltsFifo;
-  T* directBuff;
+  T* directBuff = NULL;
   uint64_t *connStepPtr;
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
   int      connStepSize; // Connection step size
