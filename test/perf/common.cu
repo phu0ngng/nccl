@@ -1280,7 +1280,6 @@ int main(int argc, char* argv[], char **envp) {
     return -1;
   }
 
-
 #ifdef MPI_SUPPORT
   int provide;
   MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provide);
