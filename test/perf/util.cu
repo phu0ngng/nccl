@@ -31,9 +31,8 @@ extern int blocking_coll;
 extern int side_comp;
 extern int cudaGraphLaunches;
 
-
-extern FILE *json_report_fp;
-extern bool write_json;
+static FILE *json_report_fp;
+static bool write_json;
 
 typedef enum {
   JSON_NONE, // A pseudo-state meaning that the document is empty
@@ -271,13 +270,6 @@ void formatNow(char *buff, int len) {
   strftime(buff, len, "%Y-%m-%d %H:%M:%S", timeinfo);
 }
 
-// Try to set up JSON file output.
-// If 'in_path' is NULL, we stop.
-// Otherwise, We borrow 'in_path' and try to open it as a new file.
-// If it already exists, we probe for new files by appending integers
-// until we succeed.
-// Then we write argv and envp to the output, santizing them. We also
-// write the nccl version.
 // We provide some status line to stdout.
 // The JSON stream is left with a trailing comma and the top-level
 // object open for the next set of top-level items (config and
@@ -285,7 +277,7 @@ void formatNow(char *buff, int len) {
 
 // This uses unguarded 'printf' rather than the PRINT() macro because
 // is_main_thread is not set up at this point.
-void initJsonOutput(const char *in_path,
+void jsonOutputInit(const char *in_path,
                     int argc, char **argv,
                     char **envp) {
   if(in_path == nullptr) {
@@ -347,9 +339,13 @@ void initJsonOutput(const char *in_path,
   jsonKey("nccl_version"); jsonInt(test_ncclVersion);
 }
 
+void jsonIdentifyWriter(bool is_writer) {
+  write_json &= is_writer;
+}
+
 // This cleans up the json output, finishing the object and closing the file.
 // If we were not writing json output, we don't do anything.
-void finalizeJsonOutput() {
+void jsonOutputFinalize() {
   if(write_json) {
 
     jsonKey("end_time");
@@ -416,7 +412,7 @@ void writeBenchmarkLinePreamble(size_t nBytes, size_t nElem, const char typeName
   sprintf(rootName, "%6i", root);
   PRINT("%12li  %12li  %8s  %6s  %6s", nBytes, nElem, typeName, opName, rootName);
 
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonStartObject();
     jsonKey("size");  jsonInt(nBytes);
     jsonKey("count"); jsonInt(nElem);
@@ -430,7 +426,7 @@ void writeBenchmarkLinePreamble(size_t nBytes, size_t nElem, const char typeName
 void writeBenchmarkLineTerminator(int actualIters, const char *name) {
   PRINT("  %6d", actualIters);
   PRINT("    %s\n", name);
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonKey("actual_iterations"); jsonInt(actualIters);
     jsonKey("experiment_name");   jsonStr(name);
     jsonFinishObject();
@@ -440,7 +436,7 @@ void writeBenchmarkLineTerminator(int actualIters, const char *name) {
 // Handle a cases where we don't write out of place results
 void writeBenchMarkLineNullBody() {
   PRINT("                                ");  // only do in-place for trace replay
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonKey("out_of_place"); jsonNull();
   }
 }
@@ -451,7 +447,7 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
   double algBw, busBw;
   char timeStr[100];
 
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonKey("per_collective_perf"); jsonStartObject();
     if (per_coll_perf == 1) {
       jsonKey("gpus"); jsonStartList();
@@ -459,7 +455,7 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
   }
 
   for (int i = 0; i < args->nGpus; i++) {
-    if (write_json && is_main_thread && per_coll_perf == 1) {
+    if (write_json && per_coll_perf == 1) {
       jsonStartObject();
       jsonKey("gpu");        jsonInt(i);
       jsonKey("iterations"); jsonStartList();
@@ -484,7 +480,7 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
         PRINT("\n%35sGpu%2d Coll%3d %4s %7s  %6.2f  %6.2f  %5s\n",
           " ", args->gpus[i], j, " ", timeStr, algBw, busBw, "N/A");
 
-        if (write_json && is_main_thread) {
+        if (write_json) {
           jsonStartObject();
           jsonKey("iteration"); jsonInt(j);
           jsonKey("time");      jsonDouble(timeSec);
@@ -494,12 +490,12 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
         }
       }
     }
-    if (write_json && is_main_thread && per_coll_perf == 1) {
+    if (write_json && per_coll_perf == 1) {
       jsonFinishList(); jsonFinishObject();
     }
   }
 
-  if (write_json && is_main_thread && per_coll_perf == 1) {
+  if (write_json && per_coll_perf == 1) {
     jsonFinishList(); // close all gpus records
   }
 
@@ -512,7 +508,7 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
   const double coeffVarBusBw = sqrt(varianceBusBw)/args->meanBusBw;
   PRINT("\n%24sCoefficient of variation %5s %1.4f  %1.4f  %1.4f\n", " ", " ", coeffVarTime, coeffVarAlgBw, coeffVarBusBw);
 
-  if (write_json && is_main_thread && per_coll_perf == 1) {
+  if (write_json && per_coll_perf == 1) {
     jsonKey("coeff_of_variation_time");     jsonDouble(coeffVarTime);
     jsonKey("coeff_of_variation_alg_bw"); jsonDouble(coeffVarAlgBw);
     jsonKey("coeff_of_variation_bus_bw");   jsonDouble(coeffVarBusBw);
@@ -575,7 +571,7 @@ void writeBenchmarkLineBody(double timeUsec, double totalTime, double algBw, dou
     }
   }
 
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonKey(out_of_place ? "out_of_place" : "in_place");
     jsonStartObject();
     jsonKey(report_cputime ? "cpu_time" : "time"); jsonDouble(timeUsec);
@@ -607,7 +603,7 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
   if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n");
   PRINT("#\n");
 
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonKey("config");
     jsonStartObject();
     jsonKey("nthreads");      jsonInt(nThreads);
@@ -651,19 +647,19 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
   // Gather all output in rank order to root (0)
   MPI_Gather(line, MAX_LINE, MPI_BYTE, lines, MAX_LINE, MPI_BYTE, 0, MPI_COMM_WORLD);
   if (proc == 0) {
-    if(write_json && is_main_thread) {
+    if(write_json) {
       jsonKey("devices");
       jsonStartList();
     }
     for (int p = 0; p < totalProcs; p++) {
       PRINT("%s", lines+MAX_LINE*p);
-      if(write_json && is_main_thread) {
+      if(write_json) {
         rankInfo_t rankinfo;
         parseRankInfo(&rankinfo, lines + MAX_LINE*p);
         jsonRankInfo(&rankinfo);
       }
     }
-    if(write_json && is_main_thread) {
+    if(write_json) {
       jsonFinishList();
     }
     free(lines);
@@ -671,7 +667,7 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
   MPI_Allreduce(MPI_IN_PLACE, maxMem, 1, MPI_LONG, MPI_MIN, MPI_COMM_WORLD);
 #else
   PRINT("%s", line);
-  if(write_json && is_main_thread) {
+  if(write_json) {
     rankInfo_t rankinfo;
     parseRankInfo(&rankinfo, line);
     jsonKey("devices");
@@ -680,7 +676,7 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
     jsonFinishList();
   }
 #endif
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonFinishObject();
   }
 
@@ -705,7 +701,7 @@ void writeResultHeader(bool report_cputime, bool simulate) {
           "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "", "");
   }
 
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonKey("results"); jsonStartList();
   }
 }
@@ -715,7 +711,7 @@ void writeResultHeader(bool report_cputime, bool simulate) {
 // Results object is left open for errors.
 void writeResultFooter(const int errors[], const double bw[], double check_avg_bw) {
 
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonFinishList();
   }
 
@@ -723,7 +719,7 @@ void writeResultFooter(const int errors[], const double bw[], double check_avg_b
   PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
   PRINT("#\n");
 
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonKey("out_of_bounds");
     jsonStartObject();
     jsonKey("count");      jsonInt(errors[0]);
@@ -743,7 +739,7 @@ void writeErrors() {
   if(error && strlen(error) > 0) {
     PRINT("# error: %s\n", error);
   }
-  if(write_json && is_main_thread) {
+  if(write_json) {
     jsonKey("errors");
     jsonStartList();
     if(error) {

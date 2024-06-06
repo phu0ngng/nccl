@@ -89,9 +89,6 @@ static int report_cputime = 0;
 static int out_of_place = 1;
 static int unalign = 0;
 
-FILE *json_report_fp = nullptr;
-bool write_json = false;
-
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
 static int commblocking = NCCL_CONFIG_UNDEF_INT;
@@ -1286,7 +1283,7 @@ int main(int argc, char* argv[], char **envp) {
   assert(provide >= MPI_THREAD_SERIALIZED);
 #endif
 
-  initJsonOutput(json_report_path, argc, argv, envp);
+  jsonOutputInit(json_report_path, argc, argv, envp);
   if(json_report_path) {
     free(json_report_path);
     json_report_path = nullptr;
@@ -1294,7 +1291,7 @@ int main(int argc, char* argv[], char **envp) {
 
   testResult_t result = run();
 
-  finalizeJsonOutput();
+  jsonOutputFinalize();
 
   TESTCHECK(result);
 
@@ -1327,6 +1324,8 @@ testResult_t run() {
   MPI_Comm_rank(mpi_comm, &ncclProc);
 #endif
   is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
+
+  jsonIdentifyWriter(is_main_thread);
 
   char* envstr = getenv("NCCL_TESTS_DUMP_FILE");
   if (envstr && is_main_proc) dump_file = fopen(envstr, "w");

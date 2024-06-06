@@ -2,8 +2,22 @@
 
 #include "common.h"
 
-void initJsonOutput(const char *path, int argc, char **argv, char **envp);
-void finalizeJsonOutput();
+// Try to set up JSON file output. If MPI is used, only rank 0 will proceed.
+// This should be called by only a single thread.
+// If 'in_path' is NULL, we stop.
+// Otherwise, we borrow 'in_path' and try to open it as a new file.
+// If it already exists, we probe for new files by appending integers
+// until we succeed.
+// Then we write argv and envp to the json output, santizing them. We also
+// write the nccl version.
+// The top-level object remains open for the rest of the output.
+void jsonOutputInit(const char *path, int argc, char **argv, char **envp);
+
+// Should be called to identify main thread after threads are started to ensure we don't duplicate output
+void jsonIdentifyWriter(bool is_writer);
+
+// Write end time and close top-level object. Reset json state and close output file.
+void jsonOutputFinalize();
 
 void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int actualIters, int per_coll_perf);
 void writeBenchmarkLinePreamble(size_t nBytes, size_t nElem, const char typeName[], const char opName[], int root);
