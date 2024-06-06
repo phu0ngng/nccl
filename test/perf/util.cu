@@ -428,7 +428,7 @@ void writeBenchmarkLinePreamble(size_t nBytes, size_t nElem, const char typeName
 
 // Finish a result record we were writing to stdout/json
 void writeBenchmarkLineTerminator(int actualIters, const char *name) {
-  PRINT("  %5d", actualIters);
+  PRINT("  %6d", actualIters);
   PRINT("    %s\n", name);
   if(write_json && is_main_thread) {
     jsonKey("actual_iterations"); jsonInt(actualIters);
@@ -480,16 +480,18 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
       varianceAlgBw += pow((args->meanAlgBw - algBw), 2);
       varianceBusBw += pow((args->meanBusBw - busBw), 2);
 
-      if (write_json && is_main_thread && per_coll_perf == 1) {
+      if(per_coll_perf == 1) {
         PRINT("\n%35sGpu%2d Coll%3d %4s %7s  %6.2f  %6.2f  %5s\n",
           " ", args->gpus[i], j, " ", timeStr, algBw, busBw, "N/A");
 
-        jsonStartObject();
-        jsonKey("iteration"); jsonInt(j);
-        jsonKey("time");      jsonDouble(timeSec);
-        jsonKey("alg_bw");  jsonDouble(algBw);
-        jsonKey("bus_bw");   jsonDouble(busBw);
-        jsonFinishObject();
+        if (write_json && is_main_thread) {
+          jsonStartObject();
+          jsonKey("iteration"); jsonInt(j);
+          jsonKey("time");      jsonDouble(timeSec);
+          jsonKey("alg_bw");  jsonDouble(algBw);
+          jsonKey("bus_bw");   jsonDouble(busBw);
+          jsonFinishObject();
+        }
       }
     }
     if (write_json && is_main_thread && per_coll_perf == 1) {
@@ -499,7 +501,6 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
 
   if (write_json && is_main_thread && per_coll_perf == 1) {
     jsonFinishList(); // close all gpus records
-
   }
 
   varianceTime /= actualIters;
