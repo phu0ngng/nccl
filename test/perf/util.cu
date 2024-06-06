@@ -323,10 +323,6 @@ void initJsonOutput(const char *in_path,
 
   write_json = true;
 
-  state_cap = 16;
-  states = (json_state_t*) malloc(sizeof(json_state_t) * state_cap);
-  assert(states);
-
   jsonStartObject(); // will be closed finalize_json_output
 
   jsonKey("start_time");
@@ -366,6 +362,7 @@ void finalizeJsonOutput() {
 
     assert(jsonCurrState() == JSON_NONE);
     free(states);
+    states = nullptr;
     state_n = 0;
     state_cap = 0;
 
