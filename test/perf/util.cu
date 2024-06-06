@@ -14,7 +14,6 @@
 #include <assert.h>
 #include <errno.h>
 
-#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
 #define PRINT if (is_main_thread) printf
 
 extern int nThreads;
@@ -107,7 +106,7 @@ static void jsonPushState(json_state_t state) {
   assert(state != JSON_NONE);
   if(state_cap <= (state_n+1)) {
     state_cap = max((size_t)16, state_cap*2);
-    states = (json_state_t *)realloc(&states, sizeof(json_state_t)*state_cap);
+    states = (json_state_t *)realloc(states, sizeof(json_state_t)*state_cap);
     assert(states);
   }
   states[state_n++] = state;
