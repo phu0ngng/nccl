@@ -2053,10 +2053,10 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             req->events[i]--;
           }
         }
-      }
-      // No need for atomic fetch since we do not require strict syncronization
-      if (ncclIbDevs[r->devBases[i]->ibDevN].IbFatalEvent) {
-        return ncclSystemError;
+        // No need for atomic fetch since we do not require strict syncronization
+        if (ncclIbDevs[r->devBases[i]->ibDevN].IbFatalEvent) {
+          return ncclSystemError;
+        }
       }
     }
 
