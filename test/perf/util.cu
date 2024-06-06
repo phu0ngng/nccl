@@ -513,9 +513,9 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
   PRINT("\n%24sCoefficient of variation %5s %1.4f  %1.4f  %1.4f\n", " ", " ", coeffVarTime, coeffVarAlgBw, coeffVarBusBw);
 
   if (write_json && is_main_thread && per_coll_perf == 1) {
-    jsonKey("coeff_variance_time");     jsonDouble(coeffVarTime);
-    jsonKey("coeff_variance_alg_bw"); jsonDouble(coeffVarAlgBw);
-    jsonKey("coeff_variance_bus_bw");   jsonDouble(coeffVarBusBw);
+    jsonKey("coeff_of_variation_time");     jsonDouble(coeffVarTime);
+    jsonKey("coeff_of_variation_alg_bw"); jsonDouble(coeffVarAlgBw);
+    jsonKey("coeff_of_variation_bus_bw");   jsonDouble(coeffVarBusBw);
     jsonFinishObject();// close per-coll
   }
 }
