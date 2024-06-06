@@ -205,7 +205,7 @@ static void jsonStartList() {
 }
 
 // Close a list
-static void json_finish_list() {
+static void jsonFinishList() {
   switch(jsonPopState()) {
   case JSON_LIST_EMPTY:
   case JSON_LIST_SOME:
@@ -337,14 +337,14 @@ void initJsonOutput(const char *in_path,
   for(int i = 0; i < argc; i++) {
     jsonStr(argv[i]);
   }
-  json_finish_list();
+  jsonFinishList();
 
   jsonKey("env");
   jsonStartList();
   for(char **e = envp; *e; e++) {
     jsonStr(*e);
   }
-  json_finish_list();
+  jsonFinishList();
   jsonKey("nccl_version"); jsonInt(test_ncclVersion);
 }
 
@@ -494,12 +494,12 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
       }
     }
     if (write_json && is_main_thread && per_coll_perf == 1) {
-      json_finish_list(); jsonFinishObject();
+      jsonFinishList(); jsonFinishObject();
     }
   }
 
   if (write_json && is_main_thread && per_coll_perf == 1) {
-    json_finish_list(); // close all gpus records
+    jsonFinishList(); // close all gpus records
 
   }
 
@@ -652,19 +652,19 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
   MPI_Gather(line, MAX_LINE, MPI_BYTE, lines, MAX_LINE, MPI_BYTE, 0, MPI_COMM_WORLD);
   if (proc == 0) {
     if(write_json && is_main_thread) {
-      json_key("devices");
-      json_start_list();
+      jsonKey("devices");
+      jsonStartList();
     }
     for (int p = 0; p < totalProcs; p++) {
       PRINT("%s", lines+MAX_LINE*p);
       if(write_json && is_main_thread) {
-        rankinfo_t rankinfo;
-        parse_rankinfo(&rankinfo, lines + MAX_LINE*p);
-        json_rankinfo(&rankinfo);
+        rankInfo_t rankinfo;
+        parseRankInfo(&rankinfo, lines + MAX_LINE*p);
+        jsonRankInfo(&rankinfo);
       }
     }
     if(write_json && is_main_thread) {
-      json_finish_list();
+      jsonFinishList();
     }
     free(lines);
   }
@@ -677,7 +677,7 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
     jsonKey("devices");
     jsonStartList();
     jsonRankInfo(&rankinfo);
-    json_finish_list();
+    jsonFinishList();
   }
 #endif
   if(write_json && is_main_thread) {
@@ -716,7 +716,7 @@ void writeResultHeader(bool report_cputime, bool simulate) {
 void writeResultFooter(const int errors[], const double bw[], double check_avg_bw) {
 
   if(write_json && is_main_thread) {
-    json_finish_list();
+    jsonFinishList();
   }
 
   PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
@@ -749,6 +749,6 @@ void writeErrors() {
     if(error) {
       jsonStr(error);
     }
-    json_finish_list();
+    jsonFinishList();
   }
 }
