@@ -687,7 +687,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     totalTime /= (actualIters*agg_iters);
   }
   double sideBw = ((double)compThreadCount)*COMP_SIZE*NUM_BLOCKS/(1000*timeUsec);
-  write_benchmark_line_body(timeUsec, totalTime, algBw, busBw, sideBw, args->reportErrors, wrongElts, report_cputime, in_place==0, simulate);
+  writeBenchmarkLineBody(timeUsec, totalTime, algBw, busBw, sideBw, args->reportErrors, wrongElts, report_cputime, in_place==0, simulate);
 
   if (record) {
     args->meanTime = timeUsec;
@@ -764,15 +764,15 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
         setupArgs(size, type, args);
         int actualIters;
         TESTCHECK(getIteration(size, &actualIters));
-        write_benchmark_line_preamble(max(args->sendBytes[0][0], args->expectedBytes[0][0]), args->nbytes[0][0] / wordSize(type), typeName, opName, root);
+        writeBenchmarkLinePreamble(max(args->sendBytes[0][0], args->expectedBytes[0][0]), args->nbytes[0][0] / wordSize(type), typeName, opName, root);
         if (args->replayFile != NULL || !out_of_place) {
-          write_benchmark_line_null_body();  // only do in-place for trace replay
+          writeBenchMarkLineNullBody();  // only do in-place for trace replay
         } else {
           TESTCHECK(BenchTime(args, type, op, root, 0, actualIters, per_coll_perf));
         }
         TESTCHECK(BenchTime(args, type, op, root, 1, actualIters, 0));
         if (per_coll_perf) printPerCollPerf(args, type, op, root, actualIters, per_coll_perf);
-        write_benchmark_line_terminator(actualIters, args->replayFile == NULL ? "" : args->collTest->name);
+        writeBenchmarkLineTerminator(actualIters, args->replayFile == NULL ? "" : args->collTest->name);
     }
   } while (--repeat);
 
@@ -1287,7 +1287,7 @@ int main(int argc, char* argv[], char **envp) {
   assert(provide >= MPI_THREAD_SERIALIZED);
 #endif
 
-  init_json_output(json_report_path, argc, argv, envp);
+  initJsonOutput(json_report_path, argc, argv, envp);
   if(json_report_path) {
     free(json_report_path);
     json_report_path = nullptr;
@@ -1295,7 +1295,7 @@ int main(int argc, char* argv[], char **envp) {
 
   testResult_t result = run();
 
-  finalize_json_output();
+  finalizeJsonOutput();
 
   TESTCHECK(result);
 
@@ -1333,7 +1333,7 @@ testResult_t run() {
   if (envstr && is_main_proc) dump_file = fopen(envstr, "w");
 
   size_t maxMem = ~0;
-  testResult_t report_result = write_device_report(&maxMem, localRank, proc, totalProcs, color, hostname);
+  testResult_t report_result = writeDeviceReport(&maxMem, localRank, proc, totalProcs, color, hostname);
   if(report_result != testSuccess) {
     return report_result;
   }
@@ -1525,7 +1525,7 @@ testResult_t run() {
     errors[t] = bw_count[t] = 0;
   }
 
-  write_result_header(report_cputime, simulate);
+  writeResultHeader(report_cputime, simulate);
 
   struct testThread threads[nThreads];
   struct testThread compThreads[nThreads];
@@ -1674,7 +1674,7 @@ testResult_t run() {
   const double check_avg_bw = envstr ? atof(envstr) : -1;
   bw[0] /= bw_count[0];
 
-  write_result_footer(errors, bw, check_avg_bw);
+  writeResultFooter(errors, bw, check_avg_bw);
 
 #ifdef MPI_SUPPORT
   MPI_Comm_free(&mpi_comm);
@@ -1688,7 +1688,7 @@ testResult_t run() {
     fclose(dump_file);
   }
 
-  write_errors();
+  writeErrors();
 
   // 'cuda-memcheck --leak-check full' requires this
   cudaDeviceReset();
