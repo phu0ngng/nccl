@@ -373,13 +373,6 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
     if (ret != ncclSuccess) goto fail;
   }
 
-  while (!ncclIntruQueueEmpty(asyncJobsMain)) {
-    struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsMain);
-    if (!job->destroyFlag && job->comm && !job->comm->config.blocking)
-      (void) ncclCommSetAsyncError(job->comm, ret);
-    if (job->destructor) job->destructor((void*)job);
-  }
-
 exit:
   return ret;
 fail:
@@ -393,6 +386,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
   struct ncclComm *groupCommHeadMain = *gjob->groupCommHeadPtr;
   struct ncclComm *groupCommPreconnectHeadMain = *gjob->groupCommPreconnectHeadPtr;
   struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain = gjob->asyncJobsPtr;
+
   bool *groupAbortFlag = gjob->abortFlagPtr;
 
   CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
@@ -422,7 +416,8 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
   /* Connect channels at runtime if cumem is supported */
   if (groupCommHeadMain != nullptr) {
     struct ncclComm* comm = groupCommHeadMain;
-
+    struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> asyncCollJobs;
+    ncclIntruQueueConstruct(&asyncCollJobs);
     do {
       bool needConnect = false;
       bool algoNeedConnect[NCCL_NUM_ALGORITHMS];
@@ -441,16 +436,27 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
         job->comm = comm;
         NCCLCHECKGOTO(ncclCalloc(&job->algoNeedConnect, NCCL_NUM_ALGORITHMS), ret, fail);
         memcpy(job->algoNeedConnect, algoNeedConnect, sizeof(bool) * NCCL_NUM_ALGORITHMS);
-        ncclIntruQueueEnqueue(asyncJobsMain, &job->base);
+        ncclIntruQueueEnqueue(&asyncCollJobs, &job->base);
       }
       comm = comm->groupNext;
     } while (comm);
 
-    NCCLCHECKGOTO(asyncJobLaunch(asyncJobsMain, groupAbortFlag), ret, fail);
+    NCCLCHECKGOTO(asyncJobLaunch(&asyncCollJobs, groupAbortFlag), ret, fail);
+    while (!ncclIntruQueueEmpty(&asyncCollJobs)) {
+      struct ncclAsyncJob* job = ncclIntruQueueDequeue(&asyncCollJobs);
+      if (job->destructor) job->destructor((void*)job);
+    }
   }
 
   if ((!simInfo) && (groupCommHeadMain != nullptr)) {
     NCCLCHECKGOTO(doLaunches(groupCommHeadMain), ret, fail);
+  }
+
+  while (!ncclIntruQueueEmpty(asyncJobsMain)) {
+    struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsMain);
+    if (!job->destroyFlag && job->comm && !job->comm->config.blocking)
+      (void) ncclCommSetAsyncError(job->comm, ret);
+    if (job->destructor) job->destructor((void*)job);
   }
 
   while (groupCommHeadMain != nullptr) {
