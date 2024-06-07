@@ -433,7 +433,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       ncclMemoryStackPush(&comm->memScoped);
       NCCLCHECKGOTO(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, simInfo), ret, fail);
 
-      if (ncclCuMemEnable() && needConnect) {
+      if (comm->cuMemSupport && needConnect) {
         struct ncclPreconnectJob* job;
         NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
         job->base.func = ncclCollPreconnectFunc;
