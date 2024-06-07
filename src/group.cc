@@ -427,10 +427,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       bool needConnect = false;
       bool algoNeedConnect[NCCL_NUM_ALGORITHMS];
       memset(algoNeedConnect, 0, sizeof(bool) * NCCL_NUM_ALGORITHMS);
-      // We already have one frame present which holds all of our tasks (which we
-      // are about to schedule). Now push an additional frame for allocating
-      // work structs (see appendWorkElem() variants all use scoped allocation).
-      ncclMemoryStackPush(&comm->memScoped);
+
       NCCLCHECKGOTO(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, simInfo), ret, fail);
 
       if (comm->cuMemSupport && needConnect) {

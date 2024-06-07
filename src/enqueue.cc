@@ -1121,6 +1121,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     plan->kernelArgs->workBuf = comm->workFifoBufDev;
     break;
   case ncclDevWorkStorageTypePersistent:
+    ncclMemoryStackPush(&comm->memScoped);
     fifoBuf = ncclMemoryStackAlloc(&comm->memScoped, workBytes, /*align=*/16);
     fifoCursor = 0;
     fifoMask = ~0u;
@@ -1166,6 +1167,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     NCCLCHECK(ncclCudaMalloc(&plan->workBufPersistent, workBytes));
     plan->kernelArgs->workBuf = plan->workBufPersistent;
     NCCLCHECK(ncclCudaMemcpy(plan->workBufPersistent, fifoBuf, workBytes));
+    ncclMemoryStackPop(&comm->memScoped);
     break;
   default: break;
   }
@@ -1365,11 +1367,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       NCCLCHECKGOTO(ncclCudaGraphAddDestructor(planner->capturingGraph, persistentDestructor, (void*)planHead), result, failure);
     }
   }
-
-  if (false) {
-  failure:
-    ncclMemoryStackPop(&comm->memScoped); // deallocate ncclWork's
-  }
+failure:
   return result;
 }
 
@@ -1479,10 +1477,6 @@ ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKern
 ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
   ncclResult_t result = ncclSuccess;
   struct ncclKernelPlanner* planner = &comm->planner;
-
-  // Deallocate ncclWork's. This frame exists so long as ncclLaunchPrepare
-  // succeeded, and if it ncclLaunchPrepare didn't succeed we wouldn't be here.
-  ncclMemoryStackPop(&comm->memScoped);
 
   if (!ncclIntruQueueEmpty(&planner->planQueue)) {
     // Reset queue to empty without destroying plans since those will be sent
