@@ -1,4 +1,5 @@
 #include "ncclCommon_test.cuh"
+#include <cstdint>
 
 class ncclCommInitRankConfig_test : public ::testing::Test {
   protected:

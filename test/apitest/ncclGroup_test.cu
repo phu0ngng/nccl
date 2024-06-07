@@ -1,5 +1,6 @@
 #include "ncclCommon_test.cuh"
 #include <memory>
+#include <cstdint>
 #include "nccl.h"
 
 class ncclGroup_test : public ::testing::Test {
