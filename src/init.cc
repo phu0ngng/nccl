@@ -1998,7 +1998,6 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
 exit:
   return res;
 fail:
-  free(job);
   goto exit;
 }
 
@@ -2037,7 +2036,6 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
 exit:
   return ncclSuccess;
 fail:
-  free(job);
   goto exit;
 }
 

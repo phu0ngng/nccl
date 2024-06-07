@@ -57,7 +57,12 @@ ncclResult_t ncclAsyncLaunch(
       WARN("Blocking and nonblocking communicators are not allowed in the same group.");
       ret = ncclInvalidArgument;
     }
-    ncclIntruQueueEnqueue(&ncclAsyncJobs, job);
+    if (ret == ncclSuccess) {
+      ncclIntruQueueEnqueue(&ncclAsyncJobs, job);
+    } else {
+      // no need to undo, the job hasn't run
+      if (destructor) destructor(job);
+    }
   }
 
   return ret;
