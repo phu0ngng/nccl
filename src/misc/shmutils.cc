@@ -73,8 +73,10 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
       SYSCHECKGOTO(fd = open(shmPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR), ret, fail);
     }
 
+  retry:
     if (fallocate(fd, 0, 0, realShmSize) != 0) {
       WARN("Error: failed to extend %s to %ld bytes, error: %s (%d)", shmPath, realShmSize, strerror(errno), errno);
+      if (errno == EINTR) goto retry;
       ret = ncclSystemError;
       goto fail;
     }
