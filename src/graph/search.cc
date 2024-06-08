@@ -1164,7 +1164,7 @@ ncclResult_t getNvlsNetDev(struct ncclComm* comm, struct ncclTopoGraph* graph, i
 exit:
   return ret;
 fail:
-  WARN("Could not find NIC for rank %d in NVLS graph\n", comm->rank);
+  WARN("Could not find NIC for rank %d in NVLS graph", comm->rank);
   goto exit;
 }
 
