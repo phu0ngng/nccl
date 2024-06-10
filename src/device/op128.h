@@ -146,6 +146,9 @@ struct BytePackOf<BytePack<0>> {
 template<typename T>
 __device__ __forceinline__ typename BytePackOf<T>::Pack toPack(T value)  {
   union { typename BytePackOf<T>::Pack p; T v; };
+  // Coverity recommends the use of std::move here but, given that T is a POD
+  // scalar, a plain copy should be just as effective.
+  // coverity[copy_assignment_call]
   v = value;
   return p;
 }
