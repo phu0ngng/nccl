@@ -410,6 +410,8 @@ struct FuncPreMulSum {
 };
 
 template<>
+// Coverity recommends the users of this type to use std::move in certain cases but,
+// given that half is a scalar, a plain copy should be just as effective.
 // coverity[moveable_type]
 struct FuncPreMulSum<half> {
   using EltType = half;
@@ -433,6 +435,9 @@ struct FuncPreMulSum<half> {
 
 #if defined(__CUDA_BF16_TYPES_EXIST__)
   template<>
+  // Coverity recommends the users of this type to use std::move in certain cases but,
+  // given that __nv_bfloat16 is a scalar, a plain copy should be just as effective.
+  // coverity[moveable_type]
   struct FuncPreMulSum<__nv_bfloat16> {
     using EltType = __nv_bfloat16;
   #if __CUDA_ARCH__ >= 800
