@@ -63,8 +63,13 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
      * goes down to 0, unlink should be called in order to delete shared memory file. */
     if (shmPath[0] == '\0') {
       sprintf(shmPath, "/dev/shm/nccl-XXXXXX");
+    retry_mkstemp:
       fd = mkstemp(shmPath);
       if (fd < 0) {
+        if (errno == EINTR) {
+          INFO(NCCL_ALL, "mkstemp: Failed to create %s, error: %s (%d) - retrying", shmPath, strerror(errno), errno);
+          goto retry_mkstemp;
+        }
         WARN("Error: failed to create shared memory file %p, error %s (%d)", shmPath, strerror(errno), errno);
         ret = ncclSystemError;
         goto fail;
@@ -73,10 +78,13 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
       SYSCHECKGOTO(fd = open(shmPath, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR), ret, fail);
     }
 
-  retry:
+  retry_fallocate:
     if (fallocate(fd, 0, 0, realShmSize) != 0) {
+      if (errno == EINTR) {
+        INFO(NCCL_ALL, "fallocate: Failed to extend %s to %ld bytes, error: %s (%d) - retrying", shmPath, realShmSize, strerror(errno), errno);
+        goto retry_fallocate;
+      }
       WARN("Error: failed to extend %s to %ld bytes, error: %s (%d)", shmPath, realShmSize, strerror(errno), errno);
-      if (errno == EINTR) goto retry;
       ret = ncclSystemError;
       goto fail;
     }
@@ -100,7 +108,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmSize, void** shmPtr, void** de
     if (remref == 0) {
       /* the last peer has completed attachment, it should unlink the shm mem file. */
       if (unlink(shmPath) != 0) {
-        WARN("Error: unlink shared memory %s failed, error: %s (%d)", shmPath, strerror(errno), errno);
+        INFO(NCCL_ALLOC, "unlink shared memory %s failed, error: %s (%d)", shmPath, strerror(errno), errno);
       }
     }
   }
