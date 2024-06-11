@@ -1092,7 +1092,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   } else {
     NCCLCHECKGOTO(ncclProxyCreate(comm), ret, fail);
   }
-  
+
   timers[TIMER_INIT_CONNECT] = clockNano();
   do { // Build p2p schedule
     int node = comm->node;
@@ -1824,7 +1824,7 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
     // And keep polling until all graphs referencing us die.
     while (comm->persistentRefs != 0) {
       NCCLCHECKGOTO(ncclCommPollCallbacks(comm, /*waitSome=*/true), ret, fail);
-    }  
+    }
   }
 
   if ((ret = ncclProxyStop(comm)) != ncclSuccess) {

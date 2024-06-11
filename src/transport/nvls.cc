@@ -353,7 +353,7 @@ setup:
     size_t memSize = 16;
     size_t creditSize = nChannels * 2 * memSize * nHeads;
     int nvlsStepSize = comm->nvlsChunkSize;
-  
+
     NCCLCHECKGOTO(ncclCalloc(&comm->nvlsResources, 1), res, fail);
     comm->nvlsResources->inited = false;
     comm->nvlsResources->refCount = 1;
