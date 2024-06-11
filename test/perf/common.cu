@@ -112,6 +112,74 @@ static char* replay_file = NULL;
 static FILE* dump_file = NULL;
 static double dump_values[30]; // 8 to 4G
 
+enum output_file_type_t {
+  JSON_FILE_OUTPUT,
+  UNSPECIFIED_FILE_OUTPUT
+};
+
+// Return pointer to extension in `path` if one is found An extension
+// is the last `.` in the `path`, if there is no `/` following the `.`
+// and there are characters after `.`.
+//
+// Therefore: returns 0 if no meaningful extension was found, or returns offset
+// into string where extension begins
+static const char *getExtension(const char *path) {
+  int last_dot = -1;
+  int last_slash = -1;
+
+  int pos;
+  for (pos = 0; path[pos] != '\0'; ++pos) {
+    switch (path[pos]) {
+    case '.':
+      last_dot = pos;
+      break;
+    case '/':
+      last_slash = pos;
+      break;
+    default:
+      break;
+    }
+  }
+
+  if (last_dot > last_slash && last_dot + 1 != pos) {
+    return path + last_dot + 1;
+  }
+
+  return nullptr;
+}
+
+static output_file_type_t classifyOutputFile(const char *filename) {
+  const char *extension = getExtension(filename);
+  if (extension != nullptr && strcasecmp(extension, "json") == 0) {
+    return JSON_FILE_OUTPUT;
+  }
+
+  return UNSPECIFIED_FILE_OUTPUT;
+}
+
+static void outputFileInit(output_file_type_t output_file_type,
+                           const char *output_file, char argc, char **argv, char **envp) {
+  switch (output_file_type) {
+  case JSON_FILE_OUTPUT:
+    jsonOutputInit(output_file, argc, argv, envp);
+    break;
+  case UNSPECIFIED_FILE_OUTPUT:
+  default:
+    break;
+  }
+}
+
+static void outputFileFinalize(output_file_type_t output_file_type) {
+  switch (output_file_type) {
+  case JSON_FILE_OUTPUT:
+    jsonOutputFinalize();
+    break;
+  case UNSPECIFIED_FILE_OUTPUT:
+  default:
+    break;
+  }
+}
+
 // Side computation constants
 #define COMP_SIZE (1 << 22)
 #define NUM_BLOCKS 32
@@ -1037,7 +1105,7 @@ int main(int argc, char* argv[], char **envp) {
   // Parse args
   double parsed;
   int longindex;
-  char *json_report_path = nullptr;
+  char *output_file = nullptr;
 
   static struct option longopts[] = {
     {"nthreads", required_argument, 0, 't'},
@@ -1064,7 +1132,7 @@ int main(int argc, char* argv[], char **envp) {
     {"report_cputime", required_argument, 0, 'C'},
     {"out_of_place", required_argument, 0, 'O'},
     {"unalign", required_argument, 0, 'u'},
-    {"json_report_path", required_argument, 0, 'J'},
+    {"output_file", required_argument, 0, 'J'},
     {"average", required_argument, 0, 'a'},
     {"commblocking", required_argument, 0, 'B'},
     {"ft_test", required_argument, 0, 'F'},
@@ -1179,7 +1247,7 @@ int main(int argc, char* argv[], char **envp) {
         unalign = (int)strtol(optarg, NULL, 0);
         break;
       case 'J':
-        json_report_path = strdup(optarg);
+        output_file = strdup(optarg);
         break;
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
@@ -1255,7 +1323,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-C,--report_cputime <0/1>] \n\t"
             "[-O,--out_of_place <0/1>] \n\t"
             "[-u,--unalign <index of first element>] \n\t"
-            "[-J,--json_report_path <file.json> write structured output to filepath, if accessible] \n\t"
+            "[-J,--output_file <file> write output to filepath, if accessible. Infer type from suffix (only json supported presently.)] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-B,--commblocking <0/1> enable blocking communicator (default: 1)] \n\t"
             "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
@@ -1283,15 +1351,17 @@ int main(int argc, char* argv[], char **envp) {
   assert(provide >= MPI_THREAD_SERIALIZED);
 #endif
 
-  jsonOutputInit(json_report_path, argc, argv, envp);
-  if(json_report_path) {
-    free(json_report_path);
-    json_report_path = nullptr;
+  const output_file_type_t output_file_type = classifyOutputFile(output_file);
+  outputFileInit(output_file_type, output_file, argc, argv, envp);
+
+  if(output_file) {
+    free(output_file);
+    output_file = nullptr;
   }
 
   testResult_t result = run();
 
-  jsonOutputFinalize();
+  outputFileFinalize(output_file_type);
 
   TESTCHECK(result);
 
