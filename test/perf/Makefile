@@ -13,7 +13,7 @@ ifeq ($(MPI_IBM),1)
 NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
-LIBRARIES += nccl
+LIBRARIES += nccl m stdc++
 NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%) -lcuda
 RPATHS = $$ORIGIN
 
@@ -44,12 +44,12 @@ TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/test/verifiable
 include ../verifiable/verifiable.mk
 
-COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/timer.o ${DST_DIR}/ft_test.o
+COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/util.o ${DST_DIR}/timer.o ${DST_DIR}/ft_test.o
 
 NVLDFLAGS += -L$(TEST_VERIFIABLE_BUILDDIR) -lverifiable
 RPATHS := $(RPATHS):$$ORIGIN/../verifiable
 
-NVLDFLAGS += -Xlinker -rpath='$(RPATHS)'
+NVLDFLAGS += -Xlinker -rpath='$(RPATHS)' -lm -lstdc++
 
 ifneq (clean,${MAKECMDGOALS})
 -include $(DEP_FILES)
@@ -60,7 +60,7 @@ ${DST_DIR}/%.dep: %.cu
 	> $@
 endif
 
-${DST_DIR}/%.o: %.cu $(TEST_VERIFIABLE_HDRS)
+${DST_DIR}/%.o: %.cu common.h util.h $(TEST_VERIFIABLE_HDRS)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) -c $<

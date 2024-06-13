@@ -17,6 +17,8 @@ enum {
   FT_TEST_NUM = 5,
 };
 
+#define PRINT if (is_main_thread) printf
+
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
 #define NUM_SLEEP_CASES 5
 int sleepTimes[NUM_SLEEP_CASES] = { 10, 100, 10000, 1000000, 2000000}; /* sleep in us */
@@ -565,3 +567,4 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
 }
 
 #endif
+#undef PRINT

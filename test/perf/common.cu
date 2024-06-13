@@ -12,9 +12,9 @@
 #include <getopt.h>
 #include <signal.h>
 #include <libgen.h>
-#include "cuda.h"
-#include <limits.h>
 #include <assert.h>
+#include "cuda.h"
+#include "util.h"
 
 #include "../verifiable/verifiable.h"
 
@@ -65,29 +65,30 @@ thread_local int is_main_thread = 0;
 pthread_mutex_t mpiLock = PTHREAD_MUTEX_INITIALIZER;
 
 // Command line parameter defaults
-static int nThreads = 1;
-static int nGpus = 1;
-static size_t minBytes = 32*1024*1024;
-static size_t maxBytes = 32*1024*1024;
-static size_t stepBytes = 1*1024*1024;
-static size_t stepFactor = 1;
-static int datacheck = 1;
-static int warmup_iters = 20;
-static int iters = 20;
-static int agg_iters = 1;
+int nThreads = 1;
+int nGpus = 1;
+size_t minBytes = 32*1024*1024;
+size_t maxBytes = 32*1024*1024;
+size_t stepBytes = 1*1024*1024;
+size_t stepFactor = 1;
+int datacheck = 1;
+int warmup_iters = 20;
+int iters = 20;
+int agg_iters = 1;
 static int run_cycles = 1;
 static int ncclop = ncclSum;
 static int nccltype = ncclFloat;
 static int ncclroot = 0;
-static int parallel_init = 0;
-static int blocking_coll = 0;
+int parallel_init = 0;
+int blocking_coll = 0;
 static int streamnull = 0;
-static int side_comp = 0;
+int side_comp = 0;
 static int timeout = 60;
-static int cudaGraphLaunches = 0;
+int cudaGraphLaunches = 0;
 static int report_cputime = 0;
 static int out_of_place = 1;
 static int unalign = 0;
+
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
 static int commblocking = NCCL_CONFIG_UNDEF_INT;
@@ -110,6 +111,74 @@ static char* replay_file = NULL;
 
 static FILE* dump_file = NULL;
 static double dump_values[30]; // 8 to 4G
+
+enum output_file_type_t {
+  JSON_FILE_OUTPUT,
+  UNSPECIFIED_FILE_OUTPUT
+};
+
+// Return pointer to extension in `path` if one is found An extension
+// is the last `.` in the `path`, if there is no `/` following the `.`
+// and there are characters after `.`.
+//
+// Therefore: returns 0 if no meaningful extension was found, or returns offset
+// into string where extension begins
+static const char *getExtension(const char *path) {
+  int last_dot = -1;
+  int last_slash = -1;
+
+  int pos;
+  for (pos = 0; path[pos] != '\0'; ++pos) {
+    switch (path[pos]) {
+    case '.':
+      last_dot = pos;
+      break;
+    case '/':
+      last_slash = pos;
+      break;
+    default:
+      break;
+    }
+  }
+
+  if (last_dot > last_slash && last_dot + 1 != pos) {
+    return path + last_dot + 1;
+  }
+
+  return nullptr;
+}
+
+static output_file_type_t classifyOutputFile(const char *filename) {
+  const char *extension = getExtension(filename);
+  if (extension != nullptr && strcasecmp(extension, "json") == 0) {
+    return JSON_FILE_OUTPUT;
+  }
+
+  return UNSPECIFIED_FILE_OUTPUT;
+}
+
+static void outputFileInit(output_file_type_t output_file_type,
+                           const char *output_file, char argc, char **argv, char **envp) {
+  switch (output_file_type) {
+  case JSON_FILE_OUTPUT:
+    jsonOutputInit(output_file, argc, argv, envp);
+    break;
+  case UNSPECIFIED_FILE_OUTPUT:
+  default:
+    break;
+  }
+}
+
+static void outputFileFinalize(output_file_type_t output_file_type) {
+  switch (output_file_type) {
+  case JSON_FILE_OUTPUT:
+    jsonOutputFinalize();
+    break;
+  case UNSPECIFIED_FILE_OUTPUT:
+  default:
+    break;
+  }
+}
 
 // Side computation constants
 #define COMP_SIZE (1 << 22)
@@ -666,15 +735,6 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   }
 
   double timeUsec = (report_cputime ? cputimeSec : deltaSec)*1.0E6;
-  char timeStr[100];
-  char estTimeStr[100] = "";
-  if (timeUsec >= 10000.0) {
-    sprintf(timeStr, "%7.0f", timeUsec);
-  } else if (timeUsec >= 100.0) {
-    sprintf(timeStr, "%7.1f", timeUsec);
-  } else {
-    sprintf(timeStr, "%7.2f", timeUsec);
-  }
 
   float totalTime = 0.0;
   if (simulate) {
@@ -691,45 +751,8 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     }
     totalTime /= (actualIters*agg_iters);
   }
-  if (totalTime >= 10000.0) {
-    sprintf(estTimeStr, "%7.0f", totalTime);
-  } else if (totalTime >= 100.0) {
-    sprintf(estTimeStr, "%7.1f", totalTime);
-  } else {
-    sprintf(estTimeStr, "%7.2f", totalTime);
-  }
-
   double sideBw = ((double)compThreadCount)*COMP_SIZE*NUM_BLOCKS/(1000*timeUsec);
-
-  if (args->reportErrors) {
-    if (simulate) {
-      if (side_comp == 1) {
-        PRINT("  %7s  %6.2f  %6.2f  %6g %6.2f %9s", timeStr, algBw, busBw, (double)wrongElts, sideBw, estTimeStr);
-      } else {
-        PRINT("  %7s  %6.2f  %6.2f  %6g %9s", timeStr, algBw, busBw, (double)wrongElts, estTimeStr);
-      }
-    } else {
-      if (side_comp == 1) {
-        PRINT("  %7s  %6.2f  %6.2f  %6g %6.2f", timeStr, algBw, busBw, (double)wrongElts, sideBw);
-      } else {
-        PRINT("  %7s  %6.2f  %6.2f  %6g", timeStr, algBw, busBw, (double)wrongElts);
-      }      
-    }
-  } else {
-    if (simulate) {
-      if (side_comp == 1) {
-        PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f %9s", timeStr, algBw, busBw, sideBw, estTimeStr);
-      } else {
-        PRINT("  %7s  %6.2f  %6.2f    N/A %9s", timeStr, algBw, busBw, estTimeStr);
-      }
-    } else {
-      if (side_comp == 1) {
-        PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f", timeStr, algBw, busBw, sideBw);
-      } else {
-        PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
-      }
-    }
-  }
+  writeBenchmarkLineBody(timeUsec, totalTime, algBw, busBw, sideBw, args->reportErrors, wrongElts, report_cputime, in_place==0, simulate);
 
   if (record) {
     args->meanTime = timeUsec;
@@ -773,42 +796,6 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
   }
 }
 
-void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t op, int root, int actualIters, int per_coll_perf) {
-  double varianceTime = 0, varianceAlgBw = 0, varianceBusBw = 0;
-  size_t count = args->nbytes[0][0] / wordSize(type);
-  double algBw, busBw;
-  char timeStr[100];
-  for (int i = 0; i < args->nGpus; i++) {
-    for (int j = 0; j < actualIters; j++) {
-      double timeSec = args->ms[i*(actualIters)+j] / 1.0E3;
-      double timeUsec = timeSec*1.0E6;
-      if (timeUsec >= 10000.0) {
-        sprintf(timeStr, "%7.0f", timeUsec);
-      } else if (timeUsec >= 100.0) {
-        sprintf(timeStr, "%7.1f", timeUsec);
-      } else {
-        sprintf(timeStr, "%7.2f", timeUsec);
-      }
-      args->collTest->getBw(count, wordSize(type), timeSec, &algBw, &busBw, args->nProcs*args->nThreads*args->nGpus);
-      varianceTime += pow((args->meanTime - timeUsec), 2);
-      varianceAlgBw += pow((args->meanAlgBw - algBw), 2);
-      varianceBusBw += pow((args->meanBusBw - busBw), 2);
-
-      if (per_coll_perf == 1)
-      {
-        PRINT("\n%35sGpu%2d Coll%3d %4s %7s  %6.2f  %6.2f  %5s\n",
-          " ", args->gpus[i], j, " ", timeStr, algBw, busBw, "N/A");
-      }
-    }
-  }
-
-  varianceTime /= actualIters;
-  varianceAlgBw /= actualIters;
-  varianceBusBw /= actualIters;
-
-  PRINT("\n%24sCoefficient of variation %5s %1.4f  %1.4f  %1.4f\n", " ", " ", sqrt(varianceTime)/args->meanTime, sqrt(varianceAlgBw)/args->meanAlgBw, sqrt(varianceBusBw)/args->meanBusBw);
-}
-
 testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName, int root) {
   // Sync to avoid first-call timeout
   Barrier(args);
@@ -842,18 +829,15 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
         setupArgs(size, type, args);
         int actualIters;
         TESTCHECK(getIteration(size, &actualIters));
-        char rootName[100];
-        sprintf(rootName, "%6i", root);
-        PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes[0][0], args->expectedBytes[0][0]), args->nbytes[0][0] / wordSize(type), typeName, opName, rootName);
+        writeBenchmarkLinePreamble(max(args->sendBytes[0][0], args->expectedBytes[0][0]), args->nbytes[0][0] / wordSize(type), typeName, opName, root);
         if (args->replayFile != NULL || !out_of_place) {
-          PRINT("                                ");  // only do in-place for trace replay
+          writeBenchMarkLineNullBody();  // only do in-place for trace replay
         } else {
           TESTCHECK(BenchTime(args, type, op, root, 0, actualIters, per_coll_perf));
         }
         TESTCHECK(BenchTime(args, type, op, root, 1, actualIters, 0));
         if (per_coll_perf) printPerCollPerf(args, type, op, root, actualIters, per_coll_perf);
-        PRINT("  %6d", actualIters);
-        PRINT("    %s\n", args->replayFile == NULL ? "" : args->collTest->name);
+        writeBenchmarkLineTerminator(actualIters, args->replayFile == NULL ? "" : args->collTest->name);
     }
   } while (--repeat);
 
@@ -1094,7 +1078,7 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
 
 testResult_t run(); // Main function
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[], char **envp) {
   // Make sure everyline is flushed so that we see the progress of the test
   setlinebuf(stdout);
 
@@ -1121,6 +1105,8 @@ int main(int argc, char* argv[]) {
   // Parse args
   double parsed;
   int longindex;
+  char *output_file = nullptr;
+
   static struct option longopts[] = {
     {"nthreads", required_argument, 0, 't'},
     {"ngpus", required_argument, 0, 'g'},
@@ -1146,6 +1132,7 @@ int main(int argc, char* argv[]) {
     {"report_cputime", required_argument, 0, 'C'},
     {"out_of_place", required_argument, 0, 'O'},
     {"unalign", required_argument, 0, 'u'},
+    {"output_file", required_argument, 0, 'J'},
     {"average", required_argument, 0, 'a'},
     {"commblocking", required_argument, 0, 'B'},
     {"ft_test", required_argument, 0, 'F'},
@@ -1162,7 +1149,7 @@ int main(int argc, char* argv[]) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1259,6 +1246,9 @@ int main(int argc, char* argv[]) {
       case 'u':
         unalign = (int)strtol(optarg, NULL, 0);
         break;
+      case 'J':
+        output_file = strdup(optarg);
+        break;
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
         break;
@@ -1333,6 +1323,7 @@ int main(int argc, char* argv[]) {
             "[-C,--report_cputime <0/1>] \n\t"
             "[-O,--out_of_place <0/1>] \n\t"
             "[-u,--unalign <index of first element>] \n\t"
+            "[-J,--output_file <file> write output to filepath, if accessible. Infer type from suffix (only json supported presently.)] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
             "[-B,--commblocking <0/1> enable blocking communicator (default: 1)] \n\t"
             "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
@@ -1353,12 +1344,27 @@ int main(int argc, char* argv[]) {
            (unsigned long long)maxBytes);
     return -1;
   }
+
 #ifdef MPI_SUPPORT
   int provide;
   MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provide);
   assert(provide >= MPI_THREAD_SERIALIZED);
 #endif
-  TESTCHECK(run());
+
+  const output_file_type_t output_file_type = classifyOutputFile(output_file);
+  outputFileInit(output_file_type, output_file, argc, argv, envp);
+
+  if(output_file) {
+    free(output_file);
+    output_file = nullptr;
+  }
+
+  testResult_t result = run();
+
+  outputFileFinalize(output_file_type);
+
+  TESTCHECK(result);
+
   return 0;
 }
 
@@ -1389,47 +1395,16 @@ testResult_t run() {
 #endif
   is_main_thread = is_main_proc = (proc == 0) ? 1 : 0;
 
+  jsonIdentifyWriter(is_main_thread);
+
   char* envstr = getenv("NCCL_TESTS_DUMP_FILE");
   if (envstr && is_main_proc) dump_file = fopen(envstr, "w");
 
-  PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
-        nThreads, nGpus, minBytes, maxBytes,
-        (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
-        warmup_iters, iters, agg_iters, datacheck, cudaGraphLaunches);
-  if (blocking_coll) PRINT("# Blocking Enabled: wait for completion and barrier after each collective \n");
-  if (parallel_init) PRINT("# Parallel Init Enabled: threads call into NcclInitRank concurrently \n");
-  PRINT("#\n");
-
-  PRINT("# Using devices\n");
-#define MAX_LINE 2048
-  char line[MAX_LINE];
-  int len = 0;
   size_t maxMem = ~0;
-  envstr = getenv("NCCL_TESTS_DEVICE");
-  int gpu0 = envstr ? atoi(envstr) : -1;
-  for (int i=0; i<nThreads*nGpus; i++) {
-    int cudaDev = (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i;
-    int rank = proc*nThreads*nGpus+i;
-    cudaDeviceProp prop;
-    CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
-    len += snprintf(line+len, MAX_LINE-len, "#  Rank %2d Group %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
-                    rank, color, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
-    maxMem = std::min(maxMem, prop.totalGlobalMem);
+  testResult_t report_result = writeDeviceReport(&maxMem, localRank, proc, totalProcs, color, hostname);
+  if(report_result != testSuccess) {
+    return report_result;
   }
-
-#if MPI_SUPPORT
-  char *lines = (proc == 0) ? (char *)malloc(totalProcs*MAX_LINE) : NULL;
-  // Gather all output in rank order to root (0)
-  MPI_Gather(line, MAX_LINE, MPI_BYTE, lines, MAX_LINE, MPI_BYTE, 0, MPI_COMM_WORLD);
-  if (proc == 0) {
-    for (int p = 0; p < totalProcs; p++)
-      PRINT("%s", lines+MAX_LINE*p);
-    free(lines);
-  }
-  MPI_Allreduce(MPI_IN_PLACE, &maxMem, 1, MPI_LONG, MPI_MIN, MPI_COMM_WORLD);
-#else
-  PRINT("%s", line);
-#endif
 
   /* Now we support 4 split pattern when split_comm is enabled:
    * (1) keep all ranks in a group but in reversed order;
@@ -1467,7 +1442,7 @@ testResult_t run() {
   }
 
   envstr = getenv("NCCL_TESTS_DEVICE");
-  gpu0 = envstr ? atoi(envstr) : -1;
+  int gpu0 = envstr ? atoi(envstr) : -1;
   for (int i = 0; i < nGpus * nThreads; ++i) {
     gpus[i] = (gpu0 != -1 ? gpu0 : localRank * nThreads * nGpus) + i;
     CUDACHECK(cudaSetDevice(gpus[i]));
@@ -1618,20 +1593,8 @@ testResult_t run() {
     errors[t] = bw_count[t] = 0;
   }
 
-  const char* timeStr = report_cputime ? "cputime" : "time";
-  PRINT("#\n");
-  PRINT("# %10s  %12s  %8s  %6s  %6s                out-of-place                                 in-place          \n", "", "", "", "", "");
-  if (simulate) {
-    PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %8s  %7s  %6s  %6s  %6s  %8s  %5s\n", "size", "count", "type", "redop", "root",
-        timeStr, "algbw", "busbw", "#wrong", "esttime", timeStr, "algbw", "busbw", "#wrong", "esttime", "#iters");
-    PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %8s  %7s  %6s  %6s  %6s  %8s  %5s\n", "(B)", "(elements)", "", "", "",
-        "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(us)", "(GB/s)", "(GB/s)", "", "(us)", "");
-  } else {
-    PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %7s  %6s  %6s  %6s  %5s\n", "size", "count", "type", "redop", "root",
-        timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong", "#iters");
-    PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %7s  %6s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-        "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "", "");
-  }
+  writeResultHeader(report_cputime, simulate);
+
   struct testThread threads[nThreads];
   struct testThread compThreads[nThreads];
   memset(threads, 0, sizeof(struct testThread)*nThreads);
@@ -1776,12 +1739,11 @@ testResult_t run() {
   CUDACHECK(cudaFreeHost(delta));
 
   envstr = getenv("NCCL_TESTS_MIN_BW");
-  double check_avg_bw = envstr ? atof(envstr) : -1;
+  const double check_avg_bw = envstr ? atof(envstr) : -1;
   bw[0] /= bw_count[0];
 
-  PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
-  PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
-  PRINT("#\n");
+  writeResultFooter(errors, bw, check_avg_bw);
+
 #ifdef MPI_SUPPORT
   MPI_Comm_free(&mpi_comm);
   MPI_Finalize();
@@ -1794,13 +1756,13 @@ testResult_t run() {
     fclose(dump_file);
   }
 
-  PRINT("%s\n", ncclGetLastError(NULL));
+  writeErrors();
 
   // 'cuda-memcheck --leak-check full' requires this
   cudaDeviceReset();
 
   if (errors[0] || bw[0] < check_avg_bw*(0.9))
-    exit(EXIT_FAILURE);
+    return testNumResults;
   else
-    exit(EXIT_SUCCESS);
+    return testSuccess;
 }
