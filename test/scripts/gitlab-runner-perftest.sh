@@ -84,6 +84,11 @@ for func in all_reduce reduce_scatter all_gather sendrecv alltoall; do
 done
 unset NCCL_ALGO
 
+export NCCL_DEBUG=""
+echo "=============================== all_reduce (Output File) - $(date +\"%T\") ================================="
+$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf -b8 -e8 -w0 -n1 -J test_out.json
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce (Output File): all_reduce_perf -b8 -e8 -w0 -n1 -J test_out.json")
+
 export NCCL_DEBUG="" # disable WARN information
 echo "=============================== all_reduce (FT tests) - $(date +\"%T\") ================================="
 $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
