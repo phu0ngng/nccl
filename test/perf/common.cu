@@ -124,6 +124,7 @@ enum output_file_type_t {
 // Therefore: returns 0 if no meaningful extension was found, or returns offset
 // into string where extension begins
 static const char *getExtension(const char *path) {
+  if (path == nullptr) return nullptr;
   int last_dot = -1;
   int last_slash = -1;
 
