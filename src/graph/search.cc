@@ -606,7 +606,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
   int graphFound = 0;
   NCCLCHECK(ncclTopoSelectNets(system, graph->typeInter, -1, nets, &netCount));
   for (int i=0; i<netCount; i++) {
-    if ((graph->pattern == NCCL_TOPO_PATTERN_NVLS || graph->pattern == NCCL_TOPO_PATTERN_COLLNET_DIRECT) && graphFound) continue;
+    if ((graph->pattern == NCCL_TOPO_PATTERN_NVLS || graph->pattern == NCCL_TOPO_PATTERN_COLLNET_DIRECT) && graphFound) break;
     int n = nets[(graph->nChannels+i)%netCount];
     struct ncclTopoNode* net = system->nodes[NET].nodes+n;
     if (graph->collNet && net->net.collSupport == 0) continue;
@@ -628,18 +628,21 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
       // NVLS search only tries to find NIC:GPU combinations to compute the heads.
       if (graph->nChannels < netCount) {
         int gpu;
-        int duplicate = 0;
         NCCLCHECK(ncclTopoGetLocalGpu(system, net->id, &gpu));
-        // check whether there is duplicate head when one GPU connects with multiple NICs
-        for (int gc = 0; gc < graph->nChannels; gc++) {
-          if (graph->intra[gc * system->nodes[GPU].count] == system->nodes[GPU].nodes[gpu].gpu.rank) {
-            duplicate = 1;
-            break;
+        if (gpu != -1) {
+          int duplicate = 0;
+          // check whether there is duplicate head when one GPU connects with multiple NICs
+          for (int gc = 0; gc < graph->nChannels; gc++) {
+            if (graph->intra[gc * system->nodes[GPU].count] == system->nodes[GPU].nodes[gpu].gpu.rank) {
+              duplicate = 1;
+              break;
+            }
+          }
+          if (!duplicate) {
+            NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, gpu));
+            graphFound = 1;
           }
         }
-        if (duplicate) continue;
-        if (gpu != -1) NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, gpu));
-        graphFound = 1;
       }
     } else {
       if (graph->nChannels > 0) {
