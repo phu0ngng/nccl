@@ -853,6 +853,7 @@ ncclResult_t ncclTopoGetLocal(struct ncclTopoSystem* system, int type, int index
   int count = 0;
   NCCLCHECK(ncclCalloc(locals, system->nodes[resultType].count));
   struct ncclTopoLinkList* paths = system->nodes[type].nodes[index].paths[resultType];
+  if (paths == NULL) { *localCount = 0; return ncclSuccess; }
   for (int i=0; i<system->nodes[resultType].count; i++) {
     if (paths[i].bw > maxBw || (paths[i].bw == maxBw && paths[i].type < minType)) {
       maxBw = paths[i].bw;
