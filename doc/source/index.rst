@@ -7,6 +7,7 @@ Contents:
 .. toctree::
 
  overview
+ setup
  usage
  api
  nccl1
