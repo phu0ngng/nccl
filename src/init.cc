@@ -873,7 +873,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   collNetChainGraph->maxChannels = ringGraph->nChannels;
 
   memset(collNetDirectGraph, 0, sizeof(struct ncclTopoGraph));
-  collNetDirectGraph->id = 2;
+  collNetDirectGraph->id = 4;
   collNetDirectGraph->pattern = NCCL_TOPO_PATTERN_COLLNET_DIRECT;
   collNetDirectGraph->collNet = 1;
   collNetDirectGraph->minChannels = 1;
