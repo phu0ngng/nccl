@@ -252,16 +252,16 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
 NCCL_PARAM(IgnoreDisabledP2p, "IGNORE_DISABLED_P2P", 0);
 
 int ncclTopoUserP2pLevel = -1;
-ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* p2p, int *read, int* intermediateRank) {
+ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int rank1, int rank2, int* p2p, int *read, int* intermediateRank) {
   *p2p = 0;
   if (read) *read = 0;
   if (intermediateRank) *intermediateRank = -1;
 
   // Get GPUs from topology
   int g1, g2;
-  NCCLCHECK(ncclTopoIdToIndex(system, GPU, id1, &g1));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank1, &g1));
   struct ncclTopoNode* gpu1 = system->nodes[GPU].nodes+g1;
-  if (ncclTopoIdToIndex(system, GPU, id2, &g2) == ncclInternalError) {
+  if (ncclTopoRankToIndex(system, rank2, &g2) == ncclInternalError) {
     // GPU not found, we can't use p2p.
     return ncclSuccess;
   }
@@ -438,7 +438,7 @@ ncclResult_t ncclTopoNeedFlush(struct ncclTopoSystem* system, int64_t busId, int
 NCCL_PARAM(NetDisableIntra, "NET_DISABLE_INTRA", 0);
 
 // Check whether going through the network would be faster than going through P2P/SHM.
-ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int64_t id1, int64_t id2, int* net) {
+ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int rank1, int rank2, int* net) {
   if (ncclParamNetDisableIntra() == 1) {
     *net = 0;
     return ncclSuccess;
@@ -446,8 +446,8 @@ ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int64_t id1, int64_
   *net = 1;
   // First check the current GPU-to-GPU speed.
   int g1, g2;
-  if (ncclTopoIdToIndex(system, GPU, id1, &g1) != ncclSuccess ||
-      ncclTopoIdToIndex(system, GPU, id2, &g2) != ncclSuccess) {
+  if (ncclTopoRankToIndex(system, rank1, &g1) != ncclSuccess ||
+      ncclTopoRankToIndex(system, rank2, &g2) != ncclSuccess) {
     return ncclSuccess;
   }
 
@@ -571,7 +571,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
   for (int g=0; g<system->nodes[GPU].count; g++) {
     for (int p=0; p<system->nodes[GPU].count; p++) {
       int p2p;
-      NCCLCHECK(ncclTopoCheckP2p(system, system->nodes[GPU].nodes[p].id, system->nodes[GPU].nodes[g].id, &p2p, NULL, NULL));
+      NCCLCHECK(ncclTopoCheckP2p(system, system->nodes[GPU].nodes[p].gpu.rank, system->nodes[GPU].nodes[g].gpu.rank, &p2p, NULL, NULL));
       if (p2p == 0) {
         // Divert all traffic through the CPU
         int cpu;

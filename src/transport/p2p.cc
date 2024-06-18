@@ -121,7 +121,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 
   // Check topology / p2p level.
   int intermediateRank;
-  NCCLCHECK(ncclTopoCheckP2p(topo, info1->busId, info2->busId, ret, NULL, &intermediateRank));
+  NCCLCHECK(ncclTopoCheckP2p(topo, info1->rank, info2->rank, ret, NULL, &intermediateRank));
   if (*ret == 0) return ncclSuccess;
   if (intermediateRank != -1) {
     if (useMemcpy) *ret = 0;
@@ -130,7 +130,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
 
   // Check if NET would work better
   int useNet = 0;
-  NCCLCHECK(ncclTopoCheckNet(topo, info1->busId, info2->busId, &useNet));
+  NCCLCHECK(ncclTopoCheckNet(topo, info1->rank, info2->rank, &useNet));
   if (useNet) {
     *ret = 0;
     return ncclSuccess;
@@ -291,7 +291,7 @@ static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo*
   int p2p;
   // Queries the topology to see if the GPUs are Ampere and
   // connected via NVLink, if so we enable P2P Read by default
-  NCCLCHECK(ncclTopoCheckP2p(topo, info1->busId, info2->busId, &p2p, read, intermediateRank));
+  NCCLCHECK(ncclTopoCheckP2p(topo, info1->rank, info2->rank, &p2p, read, intermediateRank));
 
   int readEnable = ncclParamP2pReadEnable();
   if (readEnable != -2) *read = readEnable;

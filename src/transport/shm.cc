@@ -55,7 +55,7 @@ static ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct 
   if (ncclParamShmDisable() == 1) return ncclSuccess;
 
   int useNet = 0;
-  NCCLCHECK(ncclTopoCheckNet(topo, info1->busId, info2->busId, &useNet));
+  NCCLCHECK(ncclTopoCheckNet(topo, info1->rank, info2->rank, &useNet));
   if (useNet) return ncclSuccess;
 
   // Same host?

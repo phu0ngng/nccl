@@ -146,7 +146,7 @@ static ncclResult_t canConnect(int* ret, struct ncclTopoSystem* topo, struct ncc
   *ret = 1;
   if (info1->hostHash == info2->hostHash) {
     // If on the same host, check intra-node net is not disabled.
-    NCCLCHECK(ncclTopoCheckNet(topo, info1->busId, info2->busId, ret));
+    NCCLCHECK(ncclTopoCheckNet(topo, info1->rank, info2->rank, ret));
   }
   return ncclSuccess;
 }
