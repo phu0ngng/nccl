@@ -193,20 +193,15 @@ static ncclResult_t addInterStep(struct ncclTopoSystem* system, int tx, int ix, 
   return ncclSuccess;
 }
 
-// Remove/free paths for a given type
-static void ncclTopoRemovePathType(struct ncclTopoSystem* system, int nodeType) {
-  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
-    // Remove links _to_ the given type
-    for (int n=0; n<system->nodes[t].count; n++) {
-      struct ncclTopoNode* node = system->nodes[t].nodes+n;
-      free(node->paths[nodeType]);
-      node->paths[nodeType] = NULL;
-    }
-    // Remove links _from_ the given type
-    for (int n=0; n<system->nodes[nodeType].count; n++) {
-      struct ncclTopoNode* node = system->nodes[nodeType].nodes+n;
-      free(node->paths[t]);
-      node->paths[t] = NULL;
+// Remove/free all paths
+static void ncclTopoRemovePaths(struct ncclTopoSystem* system) {
+  for (int t1=0; t1<NCCL_TOPO_NODE_TYPES; t1++) {
+    for (int n=0; n<system->nodes[t1].count; n++) {
+      struct ncclTopoNode* node = system->nodes[t1].nodes+n;
+      for (int t2=0; t2<NCCL_TOPO_NODE_TYPES; t2++) {
+        if (node->paths[t2]) free(node->paths[t2]);
+        node->paths[t2] = NULL;
+      }
     }
   }
 }
@@ -545,7 +540,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
   // Precompute paths between GPUs/NICs.
 
   // Remove everything in case we're re-computing
-  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
+  ncclTopoRemovePaths(system);
 
   // Set direct paths to CPUs. We need them in many cases.
   for (int c=0; c<system->nodes[CPU].count; c++) {
@@ -687,7 +682,7 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
 }
 
 void ncclTopoFree(struct ncclTopoSystem* system) {
-  for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) ncclTopoRemovePathType(system, t);
+  ncclTopoRemovePaths(system);
   free(system);
 }
 
