@@ -498,6 +498,8 @@ static void showVersion() {
   }
 }
 
+NCCL_PARAM(MNNVLCliqueId, "MNNVL_CLIQUE_ID", -1);
+
 static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, uint64_t commHash) {
   info->rank = comm->rank;
   info->cudaDev = comm->cudaDev;
@@ -534,6 +536,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
            ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1],
            info->fabricInfo.cliqueId, info->fabricInfo.state, info->fabricInfo.healthMask);
     }
+    if (ncclParamMNNVLCliqueId() != -1) info->fabricInfo.cliqueId = ncclParamMNNVLCliqueId();
   }
 
   return ncclSuccess;
