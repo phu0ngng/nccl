@@ -68,7 +68,7 @@ struct alignas(64) ncclIbDev {
   int maxQp;
   struct ncclIbMrCache mrCache;
   int ar; // ADAPTIVE_ROUTING
-  int IbFatalEvent;
+  int ibFatalEvent;
   struct ibv_port_attr portAttr;
 };
 
@@ -109,7 +109,7 @@ static void* ncclIbAsyncThreadMain(void* args) {
       case IBV_EVENT_PATH_MIG_ERR:
       case IBV_EVENT_SRQ_ERR:
         // the above are fatal errors we need to signal
-        dev->IbFatalEvent++;
+        dev->ibFatalEvent++;
         WARN("NET/IB : %s:%d Got async error unrecoverable event: %s", dev->devName, dev->portNum, str);
         break;
       case IBV_EVENT_PORT_ERR:
@@ -132,7 +132,6 @@ static void* ncclIbAsyncThreadMain(void* args) {
         break;
     }
     if (ncclSuccess != wrap_ibv_ack_async_event(&event)) { break; }
-
   }
 
   return NULL;
@@ -533,7 +532,7 @@ build_ib_list:
           ncclIbDevs[ncclNIbDevs].mrCache.capacity = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.slots = NULL;
-          ncclIbDevs[ncclNIbDevs].IbFatalEvent = 0;
+          ncclIbDevs[ncclNIbDevs].ibFatalEvent = 0;
 
           // Enable ADAPTIVE_ROUTING by default on IB networks
           // But allow it to be overloaded by an env parameter
@@ -2015,10 +2014,10 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             }
 
             char line[SOCKET_NAME_MAXLEN+1];
+            char *hcaName = r->devBases[i]->pd->context->device->name;
             WARN("NET/IB: Got completion from peer %s with status=%d opcode=%d len=%d vendor err %d (%s)%s%s%s%s hca %s",
                 ncclSocketToString(&addr, line), wc->status, wc->opcode, wc->byte_len, wc->vendor_err, reqTypeStr[r->type],
-                localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString,
-                HCA_NAME(r, i));
+                localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString, hcaName);
             return ncclRemoteError;
           }
 
@@ -2053,8 +2052,10 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             req->events[i]--;
           }
         }
-        // No need for atomic fetch since we do not require strict syncronization
-        if (ncclIbDevs[r->devBases[i]->ibDevN].IbFatalEvent) {
+        // No need for atomic fetch since we do not require strict synchronization.
+        // Once the IB fatal event is reported in the async thread, we want to propagate this error
+        // to communicator and prevent further polling to reduce error pollution.
+        if (ncclIbDevs[r->devBases[i]->ibDevN].ibFatalEvent) {
           return ncclSystemError;
         }
       }
