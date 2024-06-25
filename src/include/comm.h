@@ -104,6 +104,11 @@ struct ncclCommCallback {
   struct ncclCommCallback* next;
   ncclResult_t(*fn)(struct ncclComm* comm, struct ncclCommCallback* cb);
 };
+struct ncclCommEventCallback {
+  struct ncclCommEventCallback* next;
+  cudaEvent_t event;
+  ncclResult_t(*fn)(struct ncclComm* comm, struct ncclCommEventCallback* cb);
+};
 
 struct ncclSharedResources {
   int refCount;
@@ -532,6 +537,13 @@ struct ncclComm {
 
   struct ncclKernelPlanner planner;
 
+  cudaMemPool_t memPool;
+  // Queue of events and associated callbacks for cleaning up asynchronous work.
+  // Using this is preferable to using CUDA host callbacks because host callbacks
+  // won't allow the work following the callback to run until the callback completes,
+  // which comes at expense to perf.
+  struct ncclIntruQueue<struct ncclCommEventCallback, &ncclCommEventCallback::next> eventCallbackQueue;
+
   // user-created reduction ops
   int userRedOpCapacity, userRedOpFreeHead;
   ncclUserRedOp *userRedOps;
@@ -580,6 +592,27 @@ inline ncclResult_t ncclCommPollCallbacks(struct ncclComm* comm, bool waitSome) 
     cb = next;
   }
   NCCLCHECK(result);
+  return ncclSuccess;
+}
+
+inline ncclResult_t ncclCommPollEventCallbacks(struct ncclComm *comm) {
+  ncclResult_t result = ncclSuccess;
+  cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
+  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+  while (true) {
+    struct ncclCommEventCallback* cb = ncclIntruQueueHead(&comm->eventCallbackQueue);
+    if (cb == nullptr) break;
+    cudaError_t ok = cudaEventSynchronize(cb->event);
+    if (ok == cudaErrorNotReady) break;
+    ncclIntruQueueDequeue(&comm->eventCallbackQueue);
+    if (ok == cudaSuccess) {
+      NCCLCHECKGOTO(cb->fn(comm, cb), result, finish);
+    } else {
+      CUDACHECKGOTO(ok, result, finish);
+    }
+  }
+finish:
+  cudaThreadExchangeStreamCaptureMode(&mode);
   return ncclSuccess;
 }
 
