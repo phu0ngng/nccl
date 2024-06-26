@@ -76,7 +76,7 @@ ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 #define NCCL_TOPO_PATTERN_COLLNET_DIRECT 6  // Collnet Direct
 struct ncclTopoGraph {
   // Input / output
-  int id; // ring : 0, tree : 1, collnet : 2
+  int id; // ring : 0, tree : 1, collnet : 2, nvls : 3, collnetDirect : 4
   int pattern;
   int crossNic;
   int collNet;
