@@ -534,7 +534,7 @@ ncclResult_t ncclShmAllocateShareableBuffer(int tpProxyRank, size_t size, bool l
   } else {
     char shmPath[SHM_PATH_MAX] = { '\0' };
     desc->shmli.shmSize = size;
-    NCCLCHECK(ncclShmOpen(shmPath, size, hptr, dptr, 1, &desc->shmli.handle));
+    NCCLCHECK(ncclShmOpen(shmPath, sizeof(shmPath), size, hptr, dptr, 1, &desc->shmli.handle));
     memcpy(desc->shmli.shmSuffix, shmPath + sizeof("/dev/shm/nccl-") - 1, sizeof(desc->shmli.shmSuffix));
     desc->legacy = true;
     INFO(NCCL_SHM, "MMAP allocated shareable host buffer %s size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
@@ -542,7 +542,7 @@ ncclResult_t ncclShmAllocateShareableBuffer(int tpProxyRank, size_t size, bool l
 #else /* CUDART_VERSION >= 12020 */
   char shmPath[SHM_PATH_MAX] = { '\0' };
   desc->shmli.shmSize = size;
-  NCCLCHECK(ncclShmOpen(shmPath, size, hptr, dptr, 1, &desc->shmli.handle));
+  NCCLCHECK(ncclShmOpen(shmPath, sizeof(shmPath), size, hptr, dptr, 1, &desc->shmli.handle));
   memcpy(desc->shmli.shmSuffix, shmPath + sizeof("/dev/shm/nccl-") - 1, sizeof(desc->shmli.shmSuffix));
   desc->legacy = true;
   INFO(NCCL_SHM, "MMAP allocated shareable host buffer %s size %zi ptr %p", shmPath, size, *hptr);
@@ -619,14 +619,14 @@ ncclResult_t ncclShmImportShareableBuffer(struct ncclComm *comm, ncclShmIpcDesc_
   } else {
     char shmPath[SHM_PATH_MAX];
     sprintf(shmPath, "/dev/shm/nccl-%s", desc->shmli.shmSuffix);
-    NCCLCHECK(ncclShmOpen(shmPath, desc->shmli.shmSize, hptr, dptr, -1, &descOut->shmli.handle));
+    NCCLCHECK(ncclShmOpen(shmPath, sizeof(shmPath), desc->shmli.shmSize, hptr, dptr, -1, &descOut->shmli.handle));
     descOut->legacy = true;
     INFO(NCCL_SHM, "MMAP imported shareable host buffer %s size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
   }
 #else /* CUDART_VERSION >= 12020 */
   char shmPath[SHM_PATH_MAX];
   sprintf(shmPath, "/dev/shm/nccl-%s", desc->shmli.shmSuffix);
-  NCCLCHECK(ncclShmOpen(shmPath, desc->shmli.shmSize, hptr, dptr, -1, &descOut->shmli.handle));
+  NCCLCHECK(ncclShmOpen(shmPath, sizeof(shmPath), desc->shmli.shmSize, hptr, dptr, -1, &descOut->shmli.handle));
   descOut->legacy = true;
   INFO(NCCL_SHM, "MMAP imported shareable host buffer %s size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
 #endif
