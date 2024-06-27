@@ -7,10 +7,20 @@
 #include "core.h"
 
 void dumpLine(int* values, int nranks, const char* prefix) {
-  char line[128];
-  int n = snprintf(line, sizeof(line), "%s", prefix);
-  for (int i = 0; i < nranks && sizeof(line) > n; i++) {
-    n += snprintf(line + n, sizeof(line) - n, " %3d", values[i]);
+  constexpr int line_length = 128;
+  char line[line_length];
+  int num_width = snprintf(nullptr, 0, "%d", nranks-1);  // safe as per "man snprintf"
+  int n = snprintf(line, line_length, "%s", prefix);
+  for (int i = 0; i < nranks && n < line_length-1; i++) {
+    n += snprintf(line + n, line_length - n, " %*d", num_width, values[i]);
+    // At this point n may be more than line_length-1, so don't use it
+    // for indexing into "line".
+  }
+  if (n >= line_length) {
+    // Sprintf wanted to write more than would fit in the buffer. Assume
+    // line_length is at least 4 and replace the end with "..." to
+    // indicate that it was truncated.
+    snprintf(line+line_length-4, 4, "...");
   }
   INFO(NCCL_INIT, "%s", line);
 }
