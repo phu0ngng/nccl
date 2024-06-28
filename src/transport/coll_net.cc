@@ -18,15 +18,15 @@ int64_t ncclParamGdrCopySyncEnable();
 int64_t ncclParamGdrCopyFlushEnable();
 
 struct collNetRecvConnectInfo {
-  int rank;
-  int nranks;
   collNetHandle_t collNetHandle;
 };
+static_assert(sizeof(collNetRecvConnectInfo) <= CONNECT_SIZE, "Collnet Recv Connect info is too large");
 
 struct collNetSendConnectInfo {
   void* mhandles[NCCL_NUM_PROTOCOLS];
   void* reqFifo;
 };
+static_assert(sizeof(collNetSendConnectInfo) <= CONNECT_SIZE, "Collnet Send Connect info is too large");
 
 #define COLLNET_GROUP_NSUBS 8
 #define COLLNET_MAX_GROUPS (NCCL_PROXY_MAX_SUBS/COLLNET_GROUP_NSUBS)
@@ -186,6 +186,7 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   recv->proxyConn.tpLocalRank = comm->topParentLocalRanks[comm->localRank];
   tpProxyRank = comm->topParentRanks[myInfo->rank];
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 0, tpProxyRank, &recv->proxyConn));
+  static_assert(sizeof(collNetRecvConnectInfo) <= sizeof(struct ncclConnect), "Collnet Recv Connect info is too big");
   struct collNetRecvConnectInfo* info = (struct collNetRecvConnectInfo*) connectInfo;
   ncclAtomicRefCountIncrement(&comm->collNetSharedRes->refCount);
   req.collNet = comm->collNetSharedRes;
@@ -442,6 +443,7 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
 static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   if (reqSize != sizeof(struct collNetConnectArgs)) { WARN("sendProxyConnect: reqSize is %d != %ld", reqSize, sizeof(struct collNetConnectArgs)); return ncclInternalError; }
   struct collNetConnectArgs* args = (struct collNetConnectArgs*)reqBuff;
+  static_assert(sizeof(collNetSendConnectInfo) <= sizeof(struct ncclConnect), "Collnet Send Connect info is too big");
   struct collNetSendConnectInfo* info = (struct collNetSendConnectInfo*)(args->connectInfos+args->rank);
 
   struct sendResources* resources = (struct sendResources*)(connection->transportResources);
