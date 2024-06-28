@@ -127,8 +127,9 @@ unit_tests-P100:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100 ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
 unit_tests-P40:
@@ -141,8 +142,9 @@ unit_tests-P40:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40 ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
 unit_tests-GP100:
@@ -156,11 +158,12 @@ unit_tests-GP100:
     NCCL_CUMEM_ENABLE: "0"
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
-unit_tests-A40:
+unit_tests-A40-single:
   stage: unit_tests
   rules:
     - when: always
@@ -170,9 +173,24 @@ unit_tests-A40:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40"
   script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40 ./test/scripts/gitlab-runner-unit.sh
-    - srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40 ./test/scripts/gitlab-runner-unit.sh # Also test single GPU
+    - ./test/scripts/gitlab-runner-unit.sh
+  interruptible: true
+
+unit_tests-A40-dual:
+  stage: unit_tests
+  rules:
+    - when: always
+  needs: ["build","health-A40"]
+  tags:
+    - a40
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
+  script:
+    - ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
 unit_tests-A100:
@@ -185,8 +203,9 @@ unit_tests-A100:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
-    - srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
 
 apitest-P100:
@@ -253,7 +272,7 @@ apitest-A40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build", "unit_tests-A40"]
+  needs: ["build", "unit_tests-A40-single", "unit_tests-A40-dual"]
   tags:
     - a40
   variables:
