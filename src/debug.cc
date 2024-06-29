@@ -122,7 +122,7 @@ static void ncclDebugInit() {
     int c = 0;
     char debugFn[PATH_MAX+1] = "";
     char *dfn = debugFn;
-    while (ncclDebugFileEnv[c] != '\0' && c < PATH_MAX) {
+    while (ncclDebugFileEnv[c] != '\0' && (dfn - debugFn) < PATH_MAX) {
       if (ncclDebugFileEnv[c++] != '%') {
         *dfn++ = ncclDebugFileEnv[c-1];
         continue;
@@ -132,15 +132,23 @@ static void ncclDebugInit() {
           *dfn++ = '%';
           break;
         case 'h': // %h = hostname
-          dfn += snprintf(dfn, PATH_MAX, "%s", hostname);
+          dfn += snprintf(dfn, PATH_MAX + 1 - (dfn - debugFn), "%s", hostname);
           break;
         case 'p': // %p = pid
-          dfn += snprintf(dfn, PATH_MAX, "%d", pid);
+          dfn += snprintf(dfn, PATH_MAX + 1 - (dfn - debugFn), "%d", pid);
           break;
         default: // Echo everything we don't understand
           *dfn++ = '%';
-          *dfn++ = ncclDebugFileEnv[c-1];
+          if ((dfn - debugFn) < PATH_MAX) {
+            *dfn++ = ncclDebugFileEnv[c-1];
+          }
           break;
+      }
+      if ((dfn - debugFn) > PATH_MAX) {
+        // snprintf wanted to overfill the buffer: set dfn to the end
+        // of the buffer (for null char) and it will naturally exit
+        // the loop.
+        dfn = debugFn + PATH_MAX;
       }
     }
     *dfn = '\0';
