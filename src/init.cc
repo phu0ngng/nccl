@@ -504,6 +504,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->rank = comm->rank;
   info->cudaDev = comm->cudaDev;
   info->nvmlDev = comm->nvmlDev;
+  NCCLCHECK(ncclGetVersion(&info->version));
   info->hostHash=getHostHash()+commHash;
   info->pidHash=getPidHash()+commHash;
   info->cuMemSupport = ncclCuMemEnable();
@@ -736,6 +737,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   comm->cuMemSupport = 1;
   for (int i = 0; i < nranks; i++) {
+    if (comm->peerInfo[i].version != comm->peerInfo[rank].version) {
+      WARN("Mismatched NCCL version detected : rank %d version %d rank %d version %d",
+           i, comm->peerInfo[i].version, rank, comm->peerInfo[rank].version);
+      ret = ncclInvalidUsage;
+      goto fail;
+    }
     if (comm->peerInfo[i].hostHash != comm->peerInfo[rank].hostHash) nNodes++;
     if (!comm->peerInfo[i].cuMemSupport) comm->cuMemSupport = 0;
     if ((i != rank) && (comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash) && (comm->peerInfo[i].busId == comm->peerInfo[rank].busId)) {
