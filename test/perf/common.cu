@@ -1150,7 +1150,7 @@ int main(int argc, char* argv[], char **envp) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:s:p:c:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:", longopts, &longindex);
 
     if (c == -1)
       break;
