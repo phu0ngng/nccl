@@ -637,9 +637,14 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
     const int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
-    len += snprintf(line+len, MAX_LINE-len, "#  Rank %2d Group %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
-                    rank, color, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
+    if (len < MAX_LINE) {
+      len += snprintf(line+len, MAX_LINE-len, "#  Rank %2d Group %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
+                      rank, color, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
+    }
     *maxMem = std::min(*maxMem, prop.totalGlobalMem);
+  }
+  if (len >= MAX_LINE) {
+    strcpy(line+MAX_LINE-5, "...\n");
   }
 
 #if MPI_SUPPORT
