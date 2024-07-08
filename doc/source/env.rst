@@ -827,7 +827,7 @@ NCCL_RUNTIME_CONNECT
 --------------------
 (since 2.22)
 
-Dynamically connect peers during runtime (e.g. calling `ncclAllreduce()`) instead of init stage.
+Dynamically connect peers during runtime (e.g., calling `ncclAllreduce()`) instead of init stage.
 
 Value accepted
 ^^^^^^^^^^^^^^
