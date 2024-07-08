@@ -186,10 +186,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
   if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
-    pthread_join(comm->proxyState->thread, nullptr);
+    PTHREADCHECK(pthread_join(comm->proxyState->thread, nullptr), "pthread_join");
     if (comm->proxyState->threadUDS) {
       // UDS support
-      pthread_join(comm->proxyState->threadUDS, nullptr);;
+      PTHREADCHECK(pthread_join(comm->proxyState->threadUDS, nullptr), "pthread_join");
     }
   }
 
@@ -2313,7 +2313,8 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
 fallback:
 #endif
-  // Coverity wrongly complains about ptr being NULL, saying cudaMalloc dereferences it
+  // Coverity is right to complain that we may pass a NULL ptr to cudaMalloc.  That's deliberate though:
+  // we want CUDA to return an error to the caller.
   // coverity[var_deref_model]
   CUDACHECKGOTO(cudaMalloc(ptr, size), ret, fail);
 

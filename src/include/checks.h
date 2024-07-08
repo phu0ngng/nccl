@@ -60,9 +60,26 @@
   int retval; \
   SYSCHECKSYNC((statement), name, retval); \
   if (retval == -1) { \
-    /* Print the back trace*/ \
-    RES = ncclSystemError;    \
-    INFO(NCCL_ALL,"%s:%d -> %d (%s)", __FILE__, __LINE__, RES, strerror(errno));    \
+    WARN("Call to " name " failed: %s", strerror(errno)); \
+    RES = ncclSystemError; \
+    goto label; \
+  } \
+} while (0)
+
+// Pthread calls don't set errno and never return EINTR.
+#define PTHREADCHECK(statement, name) do { \
+  int retval = (statement); \
+  if (retval != 0) { \
+    WARN("Call to " name " failed: %s", strerror(retval)); \
+    return ncclSystemError; \
+  } \
+} while (0)
+
+#define PTHREADCHECKGOTO(statement, name, RES, label) do { \
+  int retval = (statement); \
+  if (retval != 0) { \
+    WARN("Call to " name " failed: %s", strerror(retval)); \
+    RES = ncclSystemError; \
     goto label; \
   } \
 } while (0)

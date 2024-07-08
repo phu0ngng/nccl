@@ -286,9 +286,11 @@ end:
   *ns = nSocks;
   *nt = nThreads;
   if (nSocks > 0) INFO(NCCL_INIT, "NET/Socket: Using %d threads and %d sockets per thread", nThreads, nSocksPerThread);
-fail:
-  if (fd != -1) SYSCHECK(close(fd), "close");
+exit:
+  if (fd != -1) close(fd);
   return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclNetSocketListen(int dev, void* opaqueHandle, void** listenComm) {
@@ -451,7 +453,7 @@ ncclResult_t ncclNetSocketGetTask(struct ncclNetSocketComm* comm, int op, void* 
     res->comm = comm;
     pthread_mutex_init(&res->threadLock, NULL);
     pthread_cond_init(&res->threadCond, NULL);
-    pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, res);
+    PTHREADCHECK(pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, res), "pthread_create");
     ncclSetThreadName(comm->helperThread[tid], "NCCL Sock%c%1u%2u%2u", op == NCCL_SOCKET_SEND ? 'S' : 'R', comm->dev, tid, comm->cudaDev);
   }
   struct ncclNetSocketTask* r = queue->tasks+queue->next;
@@ -593,7 +595,7 @@ ncclResult_t ncclNetSocketClose(void* opaqueComm) {
         res->stop = 1;
         pthread_cond_signal(&res->threadCond);
         pthread_mutex_unlock(&res->threadLock);
-        pthread_join(comm->helperThread[i], NULL);
+        PTHREADCHECK(pthread_join(comm->helperThread[i], NULL), "pthread_join");
       }
       free(res->threadTaskQueue.tasks);
     }

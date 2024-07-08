@@ -502,8 +502,9 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
   } else if (ret < 0) {
     WARN("socketPollConnect poll() failed with error %s", strerror(errno));
     return ncclRemoteError;
-  } else {
-    EQCHECK(ret == 1 && (pfd.revents & POLLOUT), 0);
+  } else if (ret != 1 || (pfd.revents & POLLOUT) == 0) {
+    WARN("socketPollConnect poll() returned %d%s", ret, (pfd.revents & POLLOUT) ? "" : ", no POLLOUT events");
+    return ncclSystemError;
   }
 
   /* check socket status */

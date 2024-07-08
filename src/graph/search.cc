@@ -495,9 +495,11 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
   }
 
   *netCountRet = netCount;
-fail:
+exit:
   free(localNets);
   return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, struct ncclTopoNode* gpu, int step, int backToNet, int backToFirstRank, int forcedOrder, int *time) {
@@ -599,9 +601,11 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
     // Next path
     NCCLCHECK(ncclTopoSearchRecGpu(system, graph, saveGraph, gpu, ngpus, -1, -1, forcedOrder, time));
   }
-fail:
-  free(nets);
+exit:
+  if (nets) free(nets);
   return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, int backToNet, int backToFirstRank, int* time) {
@@ -696,9 +700,11 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
       }
     }
   }
-fail:
+exit:
   free(nets);
   return ret;
+fail:
+  goto exit;
 }
 
 /* Search Patterns
@@ -1154,9 +1160,11 @@ ncclResult_t ncclTopoDumpGraphs(struct ncclTopoSystem* system, int ngraphs, stru
     NCCLCHECKGOTO(ncclTopoGetXmlFromGraphs(ngraphs, graphs, system, xml), ret, fail);
     NCCLCHECKGOTO(ncclTopoDumpXmlToFile(str, xml), ret, fail);
   }
-fail:
-  free(xml);
+exit:
+  if (xml) free(xml);
   return ret;
+fail:
+  goto exit;
 }
 
 #include "comm.h"

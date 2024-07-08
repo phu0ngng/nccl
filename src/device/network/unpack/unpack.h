@@ -226,7 +226,7 @@ inline __device__ void ncclNetDeviceUnpackInner(
 
   int PPW = ppw(nbytes, nw);
 
-  // PPW is tiny; no need to store it in uint64_t.
+  // Coverity reports a potential overflow but in reality PPW is tiny so there's no need to store it in an uint64_t.
   // coverity[overflow_before_widen]
   for (uint64_t meta_s = w * PPW; meta_s < meta_cnt; meta_s += nw * PPW) {
 

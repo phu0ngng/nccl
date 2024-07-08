@@ -272,7 +272,7 @@ class Primitives<
         postPeer<Recv, Send>(0 < sliceSize);
         offset += sliceSize;
         slice += 1;
-        // Yes, most of the time SlicePerChunk==1 and the condition will be false then.  That's fine.
+        // Yes, for some template arguments this code will be unreachable.  That's fine.
         // coverity[dead_error_line]
       } while (slice < SlicePerChunk && offset < nelem);
     }
@@ -579,7 +579,7 @@ private:
     this->nworkers = nthreads - (MaxSend > 0 && nthreads >= NCCL_SIMPLE_EXTRA_GROUP_IF_NTHREADS_GE ? WARP_SIZE : 0);
 
     int nrecv=0, nsend=0;
-    // Yes, MaxRecv or MaxSend can be 0 and the condition will be false then.  That's fine.
+    // Yes, for some template arguments this code will be unreachable.  That's fine.
     // coverity[dead_error_line]
     while (nrecv < MaxRecv && recvPeers[nrecv] != -1) nrecv++;
     // coverity[dead_error_line]
@@ -600,7 +600,7 @@ private:
     // Unfortunately, we've been unsuccessful in trying to silence them with a single directive.
     // coverity[assignment:FALSE]
     if      (tid < nrecv)                 { flags |= RoleWaitRecv; index = tid; }
-    // Yes, for some values of MaxRecv and MaxSend the condition will be false.  That's fine.
+    // Yes, for some template arguments this code will be unreachable.  That's fine.
     // coverity[dead_error_begin]
     else if (tid < nrecv+nsend)           { flags |= RoleWaitSend; index = tid-nrecv; }
     else if (nthreads-nsend <= tid)       { flags |= RolePostSend; index = tid-(nthreads-nsend); }

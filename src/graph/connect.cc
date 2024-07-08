@@ -377,13 +377,12 @@ NCCL_PARAM(UnpackDoubleNChannels, "UNPACK_DOUBLE_NCHANNELS", 1);
 ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs, struct ncclComm* parent) {
   // Gather data from all ranks
   ncclResult_t ret = ncclSuccess;
-  int *ringRecv, *ringSend, *ringPrev, *ringNext, *treeToParent, *treeToChild0, *treeToChild1, *nvlsHeads;
+  int *ringRecv = NULL, *ringSend = NULL, *ringPrev = NULL, *ringNext = NULL, *treeToParent = NULL, *treeToChild0 = NULL, *treeToChild1 = NULL, *nvlsHeads = NULL;
   int nranks = comm->nRanks;
   int nNodes = comm->nNodes;
   int nChannels = comm->nChannels;
   int minHeadNum = INT_MAX;
   int shared = parent && parent->nvlsSupport  && parent->config.splitShare;
-  ringRecv = ringSend = ringPrev = ringNext = treeToParent = treeToChild0 = treeToChild1 = nvlsHeads = NULL;
   NCCLCHECK(ncclCalloc(&ringRecv, nNodes*MAXCHANNELS));
   NCCLCHECKGOTO(ncclCalloc(&ringSend, nNodes*MAXCHANNELS), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&ringPrev, nranks*MAXCHANNELS), ret, fail);
@@ -507,17 +506,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   // Create rings array and check all is fine
   NCCLCHECKGOTO(ncclBuildRings(nChannels, rings, comm->rank, comm->nRanks, ringPrev, ringNext), ret, fail);
 
-  free(ringRecv);
-  free(ringSend);
-  free(ringPrev);
-  free(ringNext);
-  free(treeToParent);
-  free(treeToChild0);
-  free(treeToChild1);
-  free(nvlsHeads);
 exit:
-  return ret;
-fail:
   if (ringRecv) free(ringRecv);
   if (ringSend) free(ringSend);
   if (ringPrev) free(ringPrev);
@@ -526,5 +515,7 @@ fail:
   if (treeToChild0) free(treeToChild0);
   if (treeToChild1) free(treeToChild1);
   if (nvlsHeads) free(nvlsHeads);
+  return ret;
+fail:
   goto exit;
 }

@@ -852,11 +852,13 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   }
 
   NCCLCHECKGOTO(ncclTopoGetSystemFromXml(xml, system, comm->peerInfo[comm->rank].hostHash), ret, fail);
-fail:
-  if (!comm->MNNVL) free(localRanks);
-  free(mem);
+exit:
+  if (!comm->MNNVL && localRanks) free(localRanks);
+  if (mem) free(mem);
   free(xml);
   return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclTopoGetLocal(struct ncclTopoSystem* system, int type, int index, int resultType, int** locals, int* localCount, int* pathType) {
@@ -919,10 +921,12 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int ch
   net += channelId%(DIVUP(localNetCount,localGpuCount));
   if (id) *id = system->nodes[NET].nodes[localNets[net%localNetCount]].id;
   if (dev) *dev = system->nodes[NET].nodes[localNets[net%localNetCount]].net.dev;
-fail:
+exit:
   free(localNets);
-  free(localGpus);
+  if (localGpus) free(localGpus);
   return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclTopoGetLocalGpu(struct ncclTopoSystem* system, int64_t netId, int* gpuIndex) {
@@ -931,6 +935,7 @@ ncclResult_t ncclTopoGetLocalGpu(struct ncclTopoSystem* system, int64_t netId, i
   NCCLCHECK(ncclTopoIdToIndex(system, NET, netId, &netIndex));
   int* localGpus = NULL;
   int localGpuCount;
+  int foundGpu = -1;
   NCCLCHECK(ncclTopoGetLocal(system, NET, netIndex, GPU, &localGpus, &localGpuCount, NULL));
   for (int c=0; c<MAXCHANNELS; c++) {
     for (int lg=0; lg<localGpuCount; lg++) {
@@ -939,13 +944,13 @@ ncclResult_t ncclTopoGetLocalGpu(struct ncclTopoSystem* system, int64_t netId, i
       int64_t id;
       NCCLCHECKGOTO(ncclTopoGetLocalNet(system, gpu->gpu.rank, c, &id, NULL), ret, fail);
       if (netId == id) {
-        *gpuIndex = g;
-        free(localGpus);
-        return ncclSuccess;
+        foundGpu = g;
+        goto exit;
       }
     }
   }
-  *gpuIndex = -1;
+exit:
+  *gpuIndex = foundGpu;
 fail:
   free(localGpus);
   return ret;

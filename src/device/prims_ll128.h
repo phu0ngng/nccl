@@ -388,7 +388,7 @@ public:
     }
     this->fan = Fan(nrecv, nsend);
     // Coverity reports recvConn and sendConn being possibly NULL at this point but that won't actually
-    // happen given the "while" loops above.
+    // happen given the two "while" loops just above.
     // coverity[var_deref_model:FALSE]
     loadRecvSync();
     // coverity[var_deref_model:FALSE]

@@ -627,7 +627,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
 
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
   ncclResult_t ret = ncclSuccess;
-  int *domains = NULL;
+  int *domains;
   int64_t *ids = NULL;
   int myDomain = 0;
   int ngpus = system->nodes[GPU].count;
@@ -665,13 +665,11 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     for (int n=system->nodes[NET].count-1; n>=0; n--)
       NCCLCHECKGOTO(ncclTopoRemoveNode(system, NET, n), ret, fail);
   }
-  free(domains);
-  free(ids);
 exit:
+  free(domains);
+  if (ids) free(ids);
   return ret;
 fail:
-  if (domains) free(domains);
-  if (ids) free(ids);
   goto exit;
 }
 

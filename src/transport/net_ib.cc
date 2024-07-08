@@ -494,7 +494,7 @@ int ncclIbFindMatchingDev(int dev) {
 }
 
 ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
-  ncclResult_t ret;
+  ncclResult_t ret = ncclSuccess;
   if (ncclParamIbDisable()) return ncclInternalError;
   static int shownIbHcaEnv = 0;
   if(wrap_ibv_symbols() != ncclSuccess) { return ncclInternalError; }
@@ -570,7 +570,7 @@ build_ib_list:
           ncclIbDevs[ncclNIbDevs].pdRefs = 0;
           ncclIbDevs[ncclNIbDevs].pd = NULL;
           strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
-          NCCLCHECK(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath, &ncclIbDevs[ncclNIbDevs].realPort));
+          NCCLCHECKGOTO(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath, &ncclIbDevs[ncclNIbDevs].realPort), ret, fail);
           ncclIbDevs[ncclNIbDevs].maxQp = devAttr.max_qp;
           ncclIbDevs[ncclNIbDevs].mrCache.capacity = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
@@ -585,9 +585,9 @@ build_ib_list:
           TRACE(NCCL_NET,"NET/IB: [%d] %s:%s:%d/%s speed=%d context=%p pciPath=%s ar=%d", d, devices[d]->name, devices[d]->dev_name, ncclIbDevs[ncclNIbDevs].portNum,
               portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE", ncclIbDevs[ncclNIbDevs].speed, context, ncclIbDevs[ncclNIbDevs].pciPath, ncclIbDevs[ncclNIbDevs].ar);
 
-          pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, ncclIbDevs + ncclNIbDevs);
+          PTHREADCHECKGOTO(pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, ncclIbDevs + ncclNIbDevs), "pthread_create", ret, fail);
           ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
-          pthread_detach(ncclIbAsyncThread); // will not be pthread_join()'d
+          PTHREADCHECKGOTO(pthread_detach(ncclIbAsyncThread), "pthread_detach", ret, fail); // will not be pthread_join()'d
 
           int mergedDev = ncclNMergedIbDevs;
           if (mergeNics) {
@@ -667,10 +667,11 @@ build_ib_list:
     }
     pthread_mutex_unlock(&ncclIbLock);
   }
-  return ncclSuccess;
+exit:
+  return ret;
 fail:
   pthread_mutex_unlock(&ncclIbLock);
-  return ret;
+  goto exit;
 }
 
 ncclResult_t ncclIbDevices(int* ndev) {
@@ -1325,7 +1326,7 @@ ib_send_ready:
 
   *sendComm = comm;
 exit:
-  free(stage->buffer);
+  if (stage->buffer) free(stage->buffer);
   stage->state = ncclIbCommStateStart;
   return ret;
 fail:
@@ -1531,7 +1532,7 @@ ib_recv_ready:
   *recvComm = rComm;
 exit:
   /* reset lComm stage */
-  free(stage->buffer);
+  if (stage->buffer) free(stage->buffer);
   stage->state = ncclIbCommStateStart;
   stage->offset = 0;
   stage->comm = NULL;

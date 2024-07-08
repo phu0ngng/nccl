@@ -866,7 +866,7 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
 static ncclResult_t ncclProxyProgressCreate(struct ncclProxyState* proxyState) {
   struct ncclProxyProgressState* state = &proxyState->progressState;
   if (!state->thread) {
-    pthread_create(&state->thread, NULL, ncclProxyProgress, proxyState);
+    PTHREADCHECK(pthread_create(&state->thread, NULL, ncclProxyProgress, proxyState), "pthread_create");
     ncclSetThreadName(state->thread, "NCCL Progress%2d", proxyState->tpLocalnRanks);
   }
   return ncclSuccess;
@@ -881,7 +881,7 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
     state->stop = 1;
     pthread_cond_signal(&state->opsPool->cond);
     pthread_mutex_unlock(&state->opsPool->mutex);
-    pthread_join(state->thread, NULL);
+    PTHREADCHECK(pthread_join(state->thread, NULL), "pthread_join");
   }
 
   // Free off any memory allocated for the proxy arg pools
@@ -1419,8 +1419,8 @@ static ncclResult_t proxyServiceInitOp(int type, struct ncclProxyLocalPeer* peer
 exit:
   return ret;
 fail:
-  free(asyncOp->reqBuff);
-  free(asyncOp->respBuff);
+  if (asyncOp->reqBuff) free(asyncOp->reqBuff);
+  if (asyncOp->respBuff) free(asyncOp->respBuff);
   free(asyncOp);
   goto exit;
 }
@@ -1697,12 +1697,12 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     proxyState->ncclCollNet = comm->ncclCollNet;
     memcpy(proxyState->buffSizes, comm->buffSizes, sizeof(comm->buffSizes));
 
-    pthread_create(&comm->proxyState->thread, NULL, ncclProxyService, comm->proxyState);
+    PTHREADCHECK(pthread_create(&comm->proxyState->thread, NULL, ncclProxyService, comm->proxyState), "pthread_create");
     ncclSetThreadName(comm->proxyState->thread, "NCCL Service %2d", comm->cudaDev);
 
     // UDS support
     INFO(NCCL_PROXY, "UDS: Creating service thread comm %p rank %d", comm, comm->rank);
-    pthread_create(&comm->proxyState->threadUDS, NULL, ncclProxyServiceUDS, comm->proxyState);
+    PTHREADCHECK(pthread_create(&comm->proxyState->threadUDS, NULL, ncclProxyServiceUDS, comm->proxyState), "pthread_create");
     ncclSetThreadName(comm->proxyState->threadUDS, "NCCL UDS Service %2d", comm->cudaDev);
   }
   return ncclSuccess;

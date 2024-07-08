@@ -884,7 +884,7 @@ static ncclResult_t scheduleCollTasksToPlan(
         proxyOp->channelId = c;
         proxyOp->opCount = proxyOpId;
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
-        // Coverity reports "proxyOp->connection" as being possible uninitialized.  It's hard to
+        // Coverity reports "proxyOp->connection" as being possibly uninitialized.  It's hard to
         // determine if that's actually true but it's also not clear if that would be an issue.
         // coverity[uninit_use_in_call:FALSE]
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, proxyOp));
@@ -1983,7 +1983,7 @@ static ncclResult_t calcCollChunking(
     int maxChunkSize = comm->nvlsChunkSize;
     if (comm->nNodes > 1 && comm->bandwidths[ncclFuncAllReduce][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] < 150) maxChunkSize = 32768;
     if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
-    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
+    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow.
     // However, nChannels * comm->channels[0].nvls.nHeads should easily fit in 32 bits.
     // coverity[overflow_before_widen]
     uint64_t concurrentOps = nChannels * comm->channels[0].nvls.nHeads;
@@ -1991,7 +1991,7 @@ static ncclResult_t calcCollChunking(
     if ((nBytes < (8 * (concurrentOps * chunkSize))) && (chunkSize > 32768)) chunkSize = 32768;
     if ((nBytes < (2 * (concurrentOps * chunkSize))) && (chunkSize > 16384)) chunkSize = 16384;
   } else if (info->algorithm == NCCL_ALGO_NVLS_TREE) {
-    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
+    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow.
     // However, nChannels * comm->channels[0].nvls.nHeads should easily fit in 32 bits.
     // coverity[overflow_before_widen]
     uint64_t concurrentOps = nChannels * comm->channels[0].nvls.nHeads;

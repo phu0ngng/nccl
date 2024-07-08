@@ -261,7 +261,7 @@ SPECIALIZE_REDUCE(FuncMinMax, double, 1, double, fn.isMinNotMax ? fmin(x, y) : f
 #if __CUDA_ARCH__ >= 530 && __CUDA_ARCH__ != 610
   SPECIALIZE_REDUCE(FuncSum, half, 1, half, __hadd(x, y))
   // Coverity recommends the use of std::move here but, given that half is a scalar,
-  // a plain copy should be just as effective.
+  // a plain copy will be just as efficient.
   // coverity[copy_constructor_call]
   SPECIALIZE_REDUCE(FuncSum, half, 2, half2, __hadd2(x, y))
   SPECIALIZE_REDUCE(FuncProd, half, 1, half, __hmul(x, y))
@@ -411,7 +411,7 @@ struct FuncPreMulSum {
 
 template<>
 // Coverity recommends the users of this type to use std::move in certain cases but,
-// given that half is a scalar, a plain copy should be just as effective.
+// given that half is a scalar, a plain copy will be just as efficient.
 // coverity[moveable_type]
 struct FuncPreMulSum<half> {
   using EltType = half;
@@ -436,7 +436,7 @@ struct FuncPreMulSum<half> {
 #if defined(__CUDA_BF16_TYPES_EXIST__)
   template<>
   // Coverity recommends the users of this type to use std::move in certain cases but,
-  // given that __nv_bfloat16 is a scalar, a plain copy should be just as effective.
+  // given that __nv_bfloat16 is a scalar, a plain copy will be just as efficient.
   // coverity[moveable_type]
   struct FuncPreMulSum<__nv_bfloat16> {
     using EltType = __nv_bfloat16;

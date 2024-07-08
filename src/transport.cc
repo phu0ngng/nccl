@@ -101,7 +101,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   // Stream used during transport setup; need for P2P pre-connect + CUDA Graph
   ncclResult_t ret = ncclSuccess;
   int highestType = TRANSPORT_UNDEFINED;  // track highest transport type
-  struct ncclConnect** data = NULL; // Store intermediate send/recvData structs for connect
+  struct ncclConnect** data; // Store intermediate send/recvData structs for connect
   struct ncclConnect** recvData = NULL; // Points to entries inside data for given recv connection within a channel
   struct ncclConnect** sendData = NULL; // Points to entries inside data for given send connection within a channel
   int done = 0;
@@ -113,7 +113,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   timeLast = timeStart; // struct copy
   bool timeReported = false;
 
-  NCCLCHECKGOTO(ncclCalloc(&data, maxPeers), ret, fail);
+  NCCLCHECK(ncclCalloc(&data, maxPeers));
   NCCLCHECKGOTO(ncclCalloc(&recvData, maxPeers), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&sendData, maxPeers), ret, fail);
 
@@ -289,8 +289,8 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   TIME_PRINT("P2P Setup/Connect");
 exit:
   free(data);
-  free(sendData);
-  free(recvData);
+  if (sendData) free(sendData);
+  if (recvData) free(recvData);
 
   NCCLCHECK(ncclStrongStreamWaitStream(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, &comm->sharedRes->hostStream));
   NCCLCHECK(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream));
@@ -332,10 +332,10 @@ int ncclTransportCollNetSetup(struct ncclComm* comm, struct ncclTopoGraph* collN
   } *allConnects = NULL;
   ncclConnect *masterConnects = NULL;
   if (isMaster) {
-    NCCLCHECKGOTO(transportComm->setup(comm, collNetGraph, myInfo, peerInfo, &myConnect, conn, collNetGraphChannelId, type), ret, cleanup);
+    NCCLCHECK(transportComm->setup(comm, collNetGraph, myInfo, peerInfo, &myConnect, conn, collNetGraphChannelId, type));
   }
   // prepare connect handles
-  NCCLCHECKGOTO(ncclCalloc(&masterConnects, nMasters), ret, cleanup);
+  NCCLCHECK(ncclCalloc(&masterConnects, nMasters));
   if (type == collNetRecv) {  // recv side: AllGather
     // all ranks must participate
     NCCLCHECKGOTO(ncclCalloc(&allConnects, nranks), ret, cleanup);
