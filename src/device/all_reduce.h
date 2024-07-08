@@ -23,7 +23,7 @@ namespace {
     int nelem;
     int chunk;
 
-    // Coverity reports that the collee treats &ring->next as an array.  However, due to the use of
+    // Coverity reports that the callee treats &ring->next as an array.  However, due to the use of
     // FanSymmetric<1>, only the first element is ever accessed, so it's fine.
     // coverity[callee_ptr_arith:FALSE]
     Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0> prims
@@ -183,7 +183,7 @@ namespace {
        * into DirectRecv and DirectSend capabilities, this ctor would have both=0,
        * but the ctor above for tree roots would be DirectRecv=0 DirectSend=1.
        */
-      // Coverity reports that the collee treats &tree->up as an array.  However, due to the use of
+      // Coverity reports that the callee treats &tree->up as an array.  However, due to the use of
       // FanAsymmetric<n, 1>, only the first element is ever accessed, so it's fine.
       // coverity[callee_ptr_arith:FALSE]
       Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_TREE_ARITY, 1>, /*Direct=*/1, Proto, 0>
@@ -205,7 +205,7 @@ namespace {
     }
     else {
       // Broadcast down. Max number of recv is 1, max number of send is 3 (binary tree + local)
-      // Coverity reports that the collee treats &tree->up as an array.  However, due to the use of
+      // Coverity reports that the callee treats &tree->up as an array.  However, due to the use of
       // FanAsymmetric<1, n>, only the first element is ever accessed, so it's fine.
       // coverity[callee_ptr_arith:FALSE]
       Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_TREE_ARITY>, /*Direct=*/1, Proto, 0>
@@ -285,9 +285,8 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
           prims.scatter(offset, nelem, chunkSize, chunkSize, direct->headRank, direct->shift);
         }
       }
-      // Coverity complains about a possible overrun inside the prims destructor, but that's actually
-      // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
-      // so we need to do it one-by-one at each use.
+      // Coverity complains about a possible overrun inside the destructor of "prims", but that's actually
+      // a false positive.
       // coverity[overrun-call:FALSE]
     } else if (tid >= tidStartReduce && direct->out != -1) {
       if (hasDn) {
@@ -337,8 +336,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
       if (hasDn) {
         // Recv from network, broadcast
         // Coverity complains about a possible overrun inside the class below, but that's actually
-        // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
-        // so we need to do it one-by-one at each use.
+        // a false positive.
         // coverity[identity_transfer:FALSE]
         Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto, 0>
           prims(tid-tidStartBcast, nThreadsBcast, &direct->out, direct->down, work->sendbuff, work->recvbuff,
@@ -474,8 +472,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
           // Reduce, broadcast through NVLS
           using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 1>;
           // Coverity complains about a possible overrun inside the class below, but that's actually
-          // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
-          // so we need to do it one-by-one at each use.
+          // a false positive.
           // coverity[identity_transfer:FALSE]
           Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
             prims(tid - tidEndGather, nThreadsReduce, &nvls->down, &nvls->down, NULL, NULL,
@@ -489,8 +486,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
           // Reduce, send to network
           using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
           // Coverity complains about a possible overrun inside the class below, but that's actually
-          // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
-          // so we need to do it one-by-one at each use.
+          // a false positive.
           // coverity[identity_transfer:FALSE]
           Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
             prims(tid - tidEndGather, nThreadsReduce, &nvls->down, &nvls->out, NULL, NULL,
@@ -505,8 +501,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
         // Recv from network, broadcast
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
         // Coverity complains about a possible overrun inside the class below, but that's actually
-        // a false positive.  All attempts to silence it inside the prims implementation have been unsuccessful
-        // so we need to do it one-by-one at each use.
+        // a false positive.
         // coverity[identity_transfer:FALSE]
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
           prims(tid - tidEndReduce, nThreadsBcast, &nvls->out, &nvls->down, NULL, NULL,
@@ -593,7 +588,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
       } else {
         // Reduce, send to network
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
-        // Coverity reports that the collee treats &treeUp as an array.  However, due to the use of
+        // Coverity reports that the callee treats &treeUp as an array.  However, due to the use of
         // FanAsymmetric<3, 1>, only the first element is ever accessed, so it's fine.
         // coverity[callee_ptr_arith:FALSE]
         Primitives<T, RedOp, FanAsymmetric<3, 1>, /*Direct=*/1, Proto, 0>
@@ -611,7 +606,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS_TREE, NCCL_PROTO_
     } else if (tid < tidEndBcast && nvls->headRank != -1) {
       // Recv from network, broadcast
       using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
-      // Coverity reports that the collee treats &treeUp as an array.  However, due to the use of
+      // Coverity reports that the callee treats &treeUp as an array.  However, due to the use of
       // FanAsymmetric<1, 3>, only the first element is ever accessed, so it's fine.
       // coverity[callee_ptr_arith:FALSE]
       Primitives<T, RedOp, FanAsymmetric<1, 3>, /*Direct=*/1, Proto, 0>
@@ -703,7 +698,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
             }
             __syncwarp();
           } else {
-            // Coverity reports that the collee treats &send as an array.  However, due to the use of
+            // Coverity reports that the callee treats &send as an array.  However, due to the use of
             // FanSymmetric<1>, only the first element is ever accessed, so it's fine.
             // coverity[callee_ptr_arith:FALSE]
             Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
@@ -716,7 +711,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
             }
           }
         } else {
-          // Coverity reports that the collee treats &send as an array.  However, due to the use of
+          // Coverity reports that the callee treats &send as an array.  However, due to the use of
           // FanSymmetric<1>, only the first element is ever accessed, so it's fine.
           // coverity[callee_ptr_arith:FALSE]
           Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
@@ -729,7 +724,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
           }
         }
       } else {
-        // Coverity reports that the collee treats &send as an array.  However, due to the use of
+        // Coverity reports that the callee treats &send as an array.  However, due to the use of
         // FanSymmetric<1>, only the first element is ever accessed, so it's fine.
         // coverity[callee_ptr_arith:FALSE]
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>

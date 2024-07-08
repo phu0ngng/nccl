@@ -24,7 +24,7 @@ namespace {
 
     T *inputBuf = (T*)work->sendbuff;
     T *outputBuf = (T*)work->recvbuff;
-    // Coverity reports that the collee treats &ring->next as an array.  However, due to the use of
+    // Coverity reports that the callee treats &ring->next as an array.  However, due to the use of
     // FanSymmetric<1>, only the first element is ever accessed, so it's fine.
     // coverity[callee_ptr_arith:FALSE]
     Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0>
