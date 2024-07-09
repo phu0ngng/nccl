@@ -68,6 +68,7 @@ struct alignas(64) ncclIbDev {
   int maxQp;
   struct ncclIbMrCache mrCache;
   int ar; // ADAPTIVE_ROUTING
+  int ibFatalEvent;
   struct ibv_port_attr portAttr;
 };
 
@@ -99,10 +100,40 @@ static void* ncclIbAsyncThreadMain(void* args) {
     if (ncclSuccess != wrap_ibv_get_async_event(dev->context, &event)) { break; }
     char *str;
     if (ncclSuccess != wrap_ibv_event_type_str(&str, event.event_type)) { break; }
-    if (event.event_type != IBV_EVENT_COMM_EST)
-      WARN("NET/IB : %s:%d Got async event : %s", dev->devName, dev->portNum, str);
+    switch (event.event_type) {
+      case IBV_EVENT_DEVICE_FATAL:
+      case IBV_EVENT_CQ_ERR:
+      case IBV_EVENT_QP_FATAL:
+      case IBV_EVENT_QP_REQ_ERR:
+      case IBV_EVENT_QP_ACCESS_ERR:
+      case IBV_EVENT_PATH_MIG_ERR:
+      case IBV_EVENT_SRQ_ERR:
+        // the above are fatal errors we need to signal
+        dev->ibFatalEvent++;
+        WARN("NET/IB : %s:%d Got async error unrecoverable event: %s", dev->devName, dev->portNum, str);
+        break;
+      case IBV_EVENT_PORT_ERR:
+      case IBV_EVENT_PATH_MIG:
+      case IBV_EVENT_PORT_ACTIVE:
+      case IBV_EVENT_SQ_DRAINED:
+      case IBV_EVENT_LID_CHANGE:
+      case IBV_EVENT_PKEY_CHANGE:
+      case IBV_EVENT_SM_CHANGE:
+      case IBV_EVENT_QP_LAST_WQE_REACHED:
+      case IBV_EVENT_CLIENT_REREGISTER:
+      case IBV_EVENT_SRQ_LIMIT_REACHED:
+        // the above are non-fatal
+        WARN("NET/IB : %s:%d Got async error event: %s", dev->devName, dev->portNum, str);
+        break;
+      case IBV_EVENT_COMM_EST:
+        break;
+      default:
+        WARN("NET/IB : %s:%d unknown event type (%d)", dev->devName, dev->portNum, event.event_type);
+        break;
+    }
     if (ncclSuccess != wrap_ibv_ack_async_event(&event)) { break; }
   }
+
   return NULL;
 }
 
@@ -501,6 +532,7 @@ build_ib_list:
           ncclIbDevs[ncclNIbDevs].mrCache.capacity = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.slots = NULL;
+          ncclIbDevs[ncclNIbDevs].ibFatalEvent = 0;
 
           // Enable ADAPTIVE_ROUTING by default on IB networks
           // But allow it to be overloaded by an env parameter
@@ -1937,6 +1969,8 @@ ncclResult_t ncclIbIflush(void* recvComm, int n, void** data, int* sizes, void**
   return ncclSuccess;
 }
 
+#define HCA_NAME(req, index) ((req)->devBases[(index)]->pd->context->device->name)
+
 ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
@@ -2017,6 +2051,12 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             }
             req->events[i]--;
           }
+        }
+        // No need for atomic fetch since we do not require strict synchronization.
+        // Once the IB fatal event is reported in the async thread, we want to propagate this error
+        // to communicator and prevent further polling to reduce error pollution.
+        if (ncclIbDevs[r->devBases[i]->ibDevN].ibFatalEvent) {
+          return ncclSystemError;
         }
       }
     }
