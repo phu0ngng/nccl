@@ -256,7 +256,7 @@ static ncclResult_t registerCheckP2PConnection(struct ncclComm* comm, struct ncc
     struct ncclPeerInfo* peerInfo = &comm->peerInfo[peer];
     struct ncclPeerInfo* myInfo = &comm->peerInfo[comm->rank];
     int canConnect = 0;
-    NCCLCHECK(ncclTransports[0]->canConnect(&canConnect, comm->topo, graph, myInfo, peerInfo));
+    NCCLCHECK(ncclTransports[0]->canConnect(&canConnect, comm, graph, myInfo, peerInfo));
     if (canConnect) {
       *needReg = true;
     } else {
