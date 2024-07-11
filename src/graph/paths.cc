@@ -272,8 +272,8 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int rank1, int rank
     }
   }
 
-  // In general, use P2P whenever we can.
-  int p2pLevel = PATH_SYS;
+  // By default don't use P2P across CPU Host Bridges
+  int p2pLevel = PATH_PXB;
 
   // User override
   if (ncclTopoUserP2pLevel == -1)
@@ -283,16 +283,6 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int rank1, int rank
     goto compare;
   }
 
-  // Don't use P2P through ARM CPUs
-  int arch, vendor, model;
-  NCCLCHECK(ncclTopoCpuType(system, &arch, &vendor, &model));
-  if (arch == NCCL_TOPO_CPU_ARCH_ARM) p2pLevel = PATH_PXB;
-  if (arch == NCCL_TOPO_CPU_ARCH_X86 && vendor == NCCL_TOPO_CPU_VENDOR_INTEL) {
-    p2pLevel = PATH_PXB;
-  }
-  if (arch == NCCL_TOPO_CPU_ARCH_X86 && vendor == NCCL_TOPO_CPU_VENDOR_ZHAOXIN) {
-    p2pLevel = PATH_PXB;
-  }
 
 compare:
   // Compute the PCI distance and compare with the p2pLevel.
