@@ -214,6 +214,7 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
       if (str) {
         int disable = strtol(str, NULL, 0);
         if (disable == 1) l = 0;
+        if (l >= 0) INFO(NCCL_ALL, "%s set by environment to %d", disableEnv, disable);
       }
     }
     if (l == -1) {
@@ -235,9 +236,9 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
           if (oldLevel > maxOldLevel) oldLevel = maxOldLevel;
           l = levelsOldToNew[oldLevel];
         }
+        if (l >= 0) INFO(NCCL_ALL, "%s set by environment to %s", levelEnv, topoPathTypeStr[l]);
       }
     }
-    if (l >= 0) INFO(NCCL_ALL, "%s set by environment to %s", levelEnv, topoPathTypeStr[l]);
     *level = l >= 0 ? l : -2;
   }
   return ncclSuccess;
