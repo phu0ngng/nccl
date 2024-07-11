@@ -33,10 +33,10 @@ ncclResult_t ncclTopoComputeCommCPU(struct ncclComm* comm);
 
 // Query topology
 ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoGraph* graph, int channelId, int peerRank, int64_t* id, int* dev, int* proxyRank);
-ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int rank1, int rank2, int* p2p, int *read, int* intermediateRank);
+ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* system, int rank1, int rank2, int* p2p, int *read, int* intermediateRank);
 ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* ret);
-ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* topo, int64_t busId, int64_t netId, int read, int* useGdr);
-ncclResult_t ncclTopoNeedFlush(struct ncclComm* comm, int netDev, int64_t busId, int* flush);
+ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* topo, int rank, int64_t netId, int read, int* useGdr);
+ncclResult_t ncclTopoNeedFlush(struct ncclComm* comm, int netDev, int rank, int* flush);
 ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int rank1, int rank2, int* net);
 int ncclPxnDisable(struct ncclComm* comm);
 ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks, int* nranks);

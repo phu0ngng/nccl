@@ -120,21 +120,9 @@ extern int64_t ncclParamMNNVLEnable();
 ncclResult_t p2pCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   initCeOperation();
 
-  // MNNVL support
-  if (comm->MNNVL && info1->hostHash != info2->hostHash) {
-    NCCLCHECK(ncclTopoCheckMNNVL(comm->topo, info1, info2, ret));
-    if (*ret) return ncclSuccess;
-  }
-
-  // Rule out different nodes / isolated containers
-  if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {
-    *ret = 0;
-    return ncclSuccess;
-  }
-
   // Check topology / p2p level.
   int intermediateRank;
-  NCCLCHECK(ncclTopoCheckP2p(comm->topo, info1->rank, info2->rank, ret, NULL, &intermediateRank));
+  NCCLCHECK(ncclTopoCheckP2p(comm, comm->topo, info1->rank, info2->rank, ret, NULL, &intermediateRank));
   if (*ret == 0) return ncclSuccess;
   if (intermediateRank != -1) {
     if (useMemcpy) *ret = 0;
@@ -146,6 +134,12 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph
   NCCLCHECK(ncclTopoCheckNet(comm->topo, info1->rank, info2->rank, &useNet));
   if (useNet) {
     *ret = 0;
+    return ncclSuccess;
+  }
+
+  if (info1->hostHash != comm->peerInfo[comm->rank].hostHash ||
+      info1->hostHash != info2->hostHash) {
+    // If either peer is non-local then we are done.
     return ncclSuccess;
   }
 
@@ -313,11 +307,11 @@ NCCL_PARAM(P2pDirectDisable, "P2P_DIRECT_DISABLE", 0);
 
 #define P2P_SAME_PID(MYINFO, PEERINFO) ((MYINFO->hostHash == PEERINFO->hostHash) && (MYINFO->pidHash == PEERINFO->pidHash))
 
-static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* read, int* intermediateRank) {
+static ncclResult_t p2pGetInfo(struct ncclComm* comm, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* read, int* intermediateRank) {
   int p2p;
   // Queries the topology to see if the GPUs are Ampere and
   // connected via NVLink, if so we enable P2P Read by default
-  NCCLCHECK(ncclTopoCheckP2p(topo, info1->rank, info2->rank, &p2p, read, intermediateRank));
+  NCCLCHECK(ncclTopoCheckP2p(comm, comm->topo, info1->rank, info2->rank, &p2p, read, intermediateRank));
 
   int readEnable = ncclParamP2pReadEnable();
   if (readEnable != -2) *read = readEnable;
@@ -367,7 +361,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
   int useRead, intermediateRank;
-  NCCLCHECK(p2pGetInfo(comm->topo, myInfo, peerInfo, &useRead, &intermediateRank));
+  NCCLCHECK(p2pGetInfo(comm, myInfo, peerInfo, &useRead, &intermediateRank));
   if (useMemcpy) useRead = 0;
 
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
@@ -437,7 +431,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
   int useRead, intermediateRank;
-  NCCLCHECK(p2pGetInfo(comm->topo, myInfo, peerInfo, &useRead, &intermediateRank));
+  NCCLCHECK(p2pGetInfo(comm, myInfo, peerInfo, &useRead, &intermediateRank));
 
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
