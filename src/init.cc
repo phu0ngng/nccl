@@ -1075,18 +1075,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       INFO(NCCL_INIT, "Communicator has %d nodes which is less than CollNet node threshold %d, disabling CollNet", comm->nNodes, collNetNodeThreshold);
       comm->collNetSupport = 0;
     }
-    comm->collNetRegSupport = true;
-    for (int n=0; n<comm->nNodes; n++) {
-      if (comm->nodeRanks[n].localRanks > NCCL_MAX_DIRECT_ARITY+1) {
-        WARN("CollNet currently only supports up to %d GPUs per node, disabling CollNet", NCCL_MAX_DIRECT_ARITY+1);
-        comm->collNetSupport = 0;
-        break;
-      }
-      if (comm->nodeRanks[n].localRanks > 1) {
-        // As long as there is more than 1 rank on any node, we need to disable collnet reg
-        comm->collNetRegSupport = false;
-      }
-    }
+    // As long as there is more than 1 rank on any node, we need to disable collnet reg
+    comm->collNetRegSupport = (comm->maxLocalRanks == 1);
   }
 
   NCCLCHECKGOTO(ncclCalloc(&rings, nranks*MAXCHANNELS), ret, fail);
@@ -1226,7 +1216,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     if (comm->collNetSupport > 0) {
       ncclCollNetSetup(comm, parent, graphs);
       NCCLCHECKGOTO(ncclCollNetChainBufferSetup(comm), ret, fail);
-      NCCLCHECKGOTO(ncclCollNetDirectBufferSetup(comm), ret, fail);
+      if (comm->maxLocalRanks <= NCCL_MAX_DIRECT_ARITY+1) {
+        NCCLCHECKGOTO(ncclCollNetDirectBufferSetup(comm), ret, fail);
+      }
     }
 
     // Connect to local net proxy
