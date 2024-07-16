@@ -1313,6 +1313,7 @@ NCCL_PARAM(MaxCTAs, "MAX_CTAS", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(MinCTAs, "MIN_CTAS", NCCL_CONFIG_UNDEF_INT);
 #define NCCL_MAX_CGA_CLUSTER_SIZE 8
 
+#define NCCL_COMMINIT_FUNCNAME_LEN 128
 struct ncclCommInitRankAsyncJob {
   struct ncclAsyncJob base;
   struct ncclComm* comm;
@@ -1324,6 +1325,8 @@ struct ncclCommInitRankAsyncJob {
   // for ncclCommSplit
   struct ncclComm* parent;
   int color, key;
+  // name of the function calling
+  char funcName[NCCL_COMMINIT_FUNCNAME_LEN];
 };
 
 struct ncclCommFinalizeAsyncJob {
@@ -1432,11 +1435,11 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES);
 
   if (job->parent) {
-    INFO(NCCL_INIT,"ncclCommSplit comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d commId 0x%llx - Init START",
-    comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key, (unsigned long long)hashUniqueId(job->commId));
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d commId 0x%llx - Init START", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key, (unsigned long long)hashUniqueId(job->commId));
   } else {
-    INFO(NCCL_INIT,"ncclCommInitRank comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START",
-    comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
   }
 
   NCCLCHECKGOTO(initTransportsRank(comm, job->parent, timers), res, fail);
@@ -1454,18 +1457,18 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   if (job->parent) {
     /* unlink child abort flag. */
     __atomic_store_n(&job->parent->childAbortFlag, NULL, __ATOMIC_RELEASE);
-    TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)",
+    TRACE_CALL("%s(%p, %d, %d, %p, %d, %d)", job->funcName,
                 job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
   } else {
-    TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)",
+    TRACE_CALL("%s(%p, %d, 0x%llx, %d, %d)", job->funcName,
                 comm, comm->nRanks, (unsigned long long)hashUniqueId(job->commId), comm->rank, comm->cudaDev);
   }
 
   if (job->parent) {
-    INFO(NCCL_INIT,"ncclCommSplit comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d commId 0x%llx - Init COMPLETE",
+    INFO(NCCL_INIT,"%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d commId 0x%llx - Init COMPLETE", job->funcName,
     comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key, (unsigned long long)hashUniqueId(job->commId));
   } else {
-    INFO(NCCL_INIT,"ncclCommInitRank comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init COMPLETE",
+    INFO(NCCL_INIT,"%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init COMPLETE", job->funcName,
     comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
   }
   sum_timers = 0.0;
@@ -1661,7 +1664,7 @@ fail:
   goto exit;
 }
 
-static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev, ncclConfig_t *config) {
+static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev, ncclConfig_t* config, const char funcName[]) {
   ncclResult_t res = ncclSuccess;
   ncclComm_t comm = NULL;
   struct ncclCommInitRankAsyncJob *job = NULL;
@@ -1704,6 +1707,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   job->commId = commId; // C++ struct assignment
   job->myrank = myrank;
   job->cudaDev = cudaDev;
+  snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", funcName);
   NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
@@ -1743,7 +1747,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   NvtxParamsCommInitRank payload{myrank, nranks, cudaDev};
   NVTX3_FUNC_WITH_PARAMS(CommInitRank, CommInitRankSchema, payload)
 
-  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, &config));
+  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, &config, __func__));
   return ncclSuccess;
 }
 
@@ -1797,7 +1801,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECKGOTO(ncclGroupStart(), ret, fail);
   for (int i=0; i<ndev; i++) {
     // Ignore return codes .. we need to call ncclGroupEnd to clean up anyway
-    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, &config);
+    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, devlist ? devlist[i] : i, &config, __func__);
   }
   NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
 
@@ -1832,7 +1836,7 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
     internalConfigPtr = &internalConfig;
   else
     internalConfigPtr = config;
-  NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, internalConfigPtr), ret, fail);
+  NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, internalConfigPtr, __func__), ret, fail);
 
 exit:
   ncclGroupErrCheck(ret);
@@ -2118,6 +2122,7 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   job->color = color;
   job->key = key;
   job->cudaDev = comm->cudaDev;
+  snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", __func__);
   NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
