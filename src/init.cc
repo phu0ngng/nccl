@@ -1457,11 +1457,12 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   if (job->parent) {
     /* unlink child abort flag. */
     __atomic_store_n(&job->parent->childAbortFlag, NULL, __ATOMIC_RELEASE);
-    TRACE_CALL("%s(%p, %d, %d, %p, %d, %d)", job->funcName,
-                job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
+    TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)",
+               job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
   } else {
-    TRACE_CALL("%s(%p, %d, 0x%llx, %d, %d)", job->funcName,
-                comm, comm->nRanks, (unsigned long long)hashUniqueId(job->commId), comm->rank, comm->cudaDev);
+    // the name for the replay tool is ncclCommInitRank for all the variations
+    TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)",
+               comm, comm->nRanks, (unsigned long long)hashUniqueId(job->commId), comm->rank, comm->cudaDev);
   }
 
   if (job->parent) {
