@@ -16,7 +16,7 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) { return ncclSuc
 __hidden ncclResult_t pluginDevices(int* ndev) { *ndev = 0; return ncclSuccess; }
 __hidden ncclResult_t pluginPciPath(int dev, char** path) { return ncclInternalError; }
 __hidden ncclResult_t pluginPtrSupport(int dev, int* supportedTypes) { return ncclInternalError; }
-__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v9_t* props) {
+__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_t* props) {
   // Below are default values, if unsure don't change.
 
   props->name = "Example";
@@ -41,14 +41,15 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v9_t* props
   // Coupling with NCCL network device-side code.
   props->netDeviceType = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
+  // Used to tell NCCL core whether this is a virtual device fusing multiple physical devices.
   props->vProps.ndevs = 1;
   props->vProps.devs[0] = dev;
   return ncclInternalError;
 }
 
 __hidden ncclResult_t pluginListen(int dev, void* handle, void** listenComm) { return ncclInternalError; }
-__hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_v8_t** sendDevComm) { return ncclInternalError; }
-__hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_v8_t** recvDevComm) { return ncclInternalError; }
+__hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) { return ncclInternalError; }
+__hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** recvDevComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginRegMr(void* collComm, void* data, size_t size, int type, void** mhandle) { return ncclInternalError; }
 __hidden ncclResult_t pluginRegMrDmaBuf(void* collComm, void* data, size_t size, int type, uint64_t offset, int fd, void** mhandle) { return ncclInternalError; }
 __hidden ncclResult_t pluginDeregMr(void* collComm, void* mhandle) { return ncclInternalError;}
@@ -88,31 +89,22 @@ const ncclNet_v9_t ncclNetPlugin_v9 = {
   .makeVDevice   = pluginMakeVDevice,
 };
 
-__hidden ncclResult_t pluginGetProperties_v8(int dev, ncclNetProperties_v8_t* props) {
-  // Below are default values, if unsure don't change.
-
-  props->name = "Example";
-  // Fill for proper topology detection, e.g. /sys/devices/pci0000:00/0000:00:10.0/0000:0b:00.0
-  props->pciPath = NULL;
-  // Only used to detect NICs with multiple PCI attachments.
-  props->guid = 0;
-  // Add NCCL_PTR_CUDA if GPU Direct RDMA is supported and regMr can take CUDA pointers.
-  props->ptrSupport = NCCL_PTR_HOST;
-  // If you regMr has a fast registration cache, set to 1. If set to 0, user buffer registration may be disabled.
-  props->regIsGlobal = 0;
-  // Speed in *Mbps*. 100000 means 100G
-  props->speed = 100000;
-  // Port number, used in conjunction with guid
-  props->port = 0;
-  // Custom latency (used to help tuning if latency is high. If set to 0, use default NCCL values.
-  props->latency = 0;
-  // Maximum number of comm objects we can create.
-  props->maxComms = 1024*1024;
-  // Maximum number of receive operations taken by irecv().
-  props->maxRecvs = 1;
-  // Coupling with NCCL network device-side code.
-  props->netDeviceType = 0;
-  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
+__hidden ncclResult_t pluginGetProperties_v8(int dev, ncclNetProperties_v8_t* props_v8) {
+  ncclNetProperties_t props;
+  ncclResult_t ret = pluginGetProperties(dev, &props);
+  if (ret != ncclSuccess) return ret;
+  props_v8->name = props.name;
+  props_v8->pciPath = props.pciPath;
+  props_v8->guid = props.guid;
+  props_v8->ptrSupport = props.ptrSupport;
+  props_v8->regIsGlobal = props.regIsGlobal;
+  props_v8->speed = props.speed;
+  props_v8->latency = props.latency;
+  props_v8->port = props.port;
+  props_v8->maxComms = props.maxComms;
+  props_v8->maxRecvs = props.maxRecvs;
+  props_v8->netDeviceType = props.netDeviceType;
+  props_v8->netDeviceVersion = props.netDeviceVersion;
   return ncclInternalError;
 }
 
@@ -147,6 +139,7 @@ __hidden ncclResult_t pluginGetProperties_v7(int dev, ncclNetProperties_v7_t* pr
   props_v7->guid = props.guid;
   props_v7->ptrSupport = props.ptrSupport;
   props_v7->speed = props.speed;
+  props_v7->latency = props.latency;
   props_v7->port = props.port;
   props_v7->maxComms = props.maxComms;
   props_v7->maxRecvs = props.maxRecvs;
@@ -190,6 +183,7 @@ __hidden ncclResult_t pluginGetProperties_v6(int dev, ncclNetProperties_v6_t* pr
   props_v6->guid = props.guid;
   props_v6->ptrSupport = props.ptrSupport;
   props_v6->speed = props.speed;
+  props_v6->latency = props.latency;
   props_v6->port = props.port;
   props_v6->maxComms = props.maxComms;
   props_v6->maxRecvs = props.maxRecvs;

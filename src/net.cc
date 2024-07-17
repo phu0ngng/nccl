@@ -414,7 +414,7 @@ static ncclResult_t ncclCollNet_v8_as_v9_getProperties(int dev, ncclNetPropertie
   return ncclSuccess;
 }
 
-// We use a wrapper around the v7 init to copy over the struct contents
+// We use a wrapper around the v8 init to copy over the struct contents
 // post-init since they may not be initialized before hand.
 static ncclResult_t ncclCollNet_v8_as_v9_init(ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclCollNet_v8->init(logfn));
@@ -603,10 +603,9 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   // Check for CollNet
   ncclCollNets[0] = (ncclCollNet_v9_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v9");
   if (ncclCollNets[0] == nullptr) {
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v98 symbol.");
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v9 symbol.");
     ncclCollNet_v8 = (ncclCollNet_v8_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v8");
-    if (ncclCollNets[0] == nullptr) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v8 symbol.");
+    if (ncclCollNet_v8 == nullptr) {
       ncclCollNet_v7 = (ncclCollNet_v7_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v7");
       if (ncclCollNet_v7 == nullptr) {
         ncclCollNet_v6 = (ncclCollNet_v6_t*)dlsym(netPluginLib, "ncclCollNetPlugin_v6");
@@ -633,11 +632,11 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
         INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v7)", ncclCollNets[0]->name);
       }
     } else {
-        ncclCollNets[0] = &ncclCollNet_v8_as_v9;
-        ncclCollNet_v8_as_v9.init = ncclCollNet_v8_as_v9_init;
-        ncclCollNet_v8_as_v9.name = ncclCollNet_v8->name;
-        INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v8)", ncclCollNets[0]->name);
-      }
+      ncclCollNets[0] = &ncclCollNet_v8_as_v9;
+      ncclCollNet_v8_as_v9.init = ncclCollNet_v8_as_v9_init;
+      ncclCollNet_v8_as_v9.name = ncclCollNet_v8->name;
+      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v8)", ncclCollNets[0]->name);
+    }
   }
 
   ++netPluginRefCount;

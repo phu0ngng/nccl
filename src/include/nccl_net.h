@@ -115,23 +115,7 @@ typedef struct {
   void* mhandle;
   void* address;
   uint32_t size;
-} ncclNetSGE_v8_t;
-
-typedef struct {
-  char* name;                      // Used mostly for logging.
-  char* pciPath;                   // Path to the PCI device in /sys.
-  uint64_t guid;                   // Unique identifier for the NIC chip. Important for
-                                   // cards with multiple PCI functions (Physical or virtual).
-  int ptrSupport;                  // [NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF]
-  int regIsGlobal;                 // regMr is not tied to a particular comm
-  int speed;                       // Port speed in Mbps.
-  int port;                        // Port number.
-  float latency;                   // Network latency
-  int maxComms;                    // Maximum number of comms we can create
-  int maxRecvs;                    // Maximum number of grouped receives.
-  ncclNetDeviceType netDeviceType; // Network offload type
-  int netDeviceVersion;            // Version number for network offload
-} ncclNetProperties_v8_t;
+} ncclNetSGE_v9_t;
 
 typedef struct {
   // Name of the collective network (mainly for logs)
@@ -162,10 +146,10 @@ typedef struct {
   // May return request == NULL if the call cannot be performed (or would block).
   ncclResult_t (*iallreduce)(void* collComm, void* sendData, void* recvData, int count,
       ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request);
-  ncclResult_t (*iallgather)(void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v8_t* recvParts,
+  ncclResult_t (*iallgather)(void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v9_t* recvParts,
                              size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                              void* sendMhandle, void** request);
-  ncclResult_t (*ireducescatter)(void* collComm, int nSendParts, ncclNetSGE_v8_t* sendParts, void* recvData,
+  ncclResult_t (*ireducescatter)(void* collComm, int nSendParts, ncclNetSGE_v9_t* sendParts, void* recvData,
                                  size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                                  ncclDataType_t dataType, ncclRedOp_t redOp,
                                  void* recvMhandle, void** request);
@@ -183,6 +167,22 @@ typedef struct {
 typedef ncclCollNet_v9_t ncclCollNet_t;
 
 #define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v9
+
+typedef struct {
+  char* name;                      // Used mostly for logging.
+  char* pciPath;                   // Path to the PCI device in /sys.
+  uint64_t guid;                   // Unique identifier for the NIC chip. Important for
+                                   // cards with multiple PCI functions (Physical or virtual).
+  int ptrSupport;                  // [NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF]
+  int regIsGlobal;                 // regMr is not tied to a particular comm
+  int speed;                       // Port speed in Mbps.
+  int port;                        // Port number.
+  float latency;                   // Network latency
+  int maxComms;                    // Maximum number of comms we can create
+  int maxRecvs;                    // Maximum number of grouped receives.
+  ncclNetDeviceType netDeviceType; // Network offload type
+  int netDeviceVersion;            // Version number for network offload
+} ncclNetProperties_v8_t;
 
 typedef struct {
   // Name of the network (mainly for logs)
@@ -238,6 +238,8 @@ typedef struct {
   // Notify the plugin that a recv has completed by the device
   ncclResult_t (*irecvConsumed)(void* recvComm, int n, void* request);
 } ncclNet_v8_t;
+
+typedef ncclNetSGE_v9_t ncclNetSGE_v8_t;
 
 typedef struct {
   // Name of the collective network (mainly for logs)
