@@ -37,7 +37,7 @@ void setEnvFile(const char* fileName) {
     while (line[s] != '\0' && line[s] != '=') s++;
     if (line[s] == '\0') continue;
     strncpy(envVar, line, std::min(1023,s));
-    envVar[s] = '\0';
+    envVar[std::min(1023,s)] = '\0';
     s++;
     strncpy(envValue, line+s, 1023);
     envValue[1023]='\0';
