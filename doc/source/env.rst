@@ -12,7 +12,7 @@ Environment variables can also be set statically in /etc/nccl.conf (for an admin
  NCCL_SOCKET_IFNAME==ens1f0
 
 There are two categories of environment variables. Some are needed to make NCCL follow system-specific configuration,
-and can be kept in scripts and system configuration. 
+and can be kept in scripts and system configuration.
 Other parameters listed in the "Debugging" section should not be used in production nor retained in scripts, or only
 as workaround, and removed as soon as the issue is resolved. Keeping them set may result in sub-optimal behavior,
 crashes, or hangs.
@@ -102,7 +102,7 @@ This has no effect on systems with only one NIC.
 Values accepted
 ^^^^^^^^^^^^^^^
 0: Always use the same NIC for the same ring/tree, to avoid crossing network rails. Suited for networks
-with per NIC switches (rails), with a slow inter-rail connection. Note that if the communicator does not 
+with per NIC switches (rails), with a slow inter-rail connection. Note that if the communicator does not
 contain the same GPUs on each node, NCCL may still need to communicate across NICs.
 
 1: Allow the use of different NICs for the same ring/tree. This is suited for networks where all NICs
@@ -419,7 +419,7 @@ The ``NCCL_P2P_LEVEL`` variable allows the user to finely control when to use th
 The level defines the maximum distance between GPUs where NCCL will use the P2P transport.  A short string representing
 the path type should be used to specify the topographical cutoff for using the P2P transport.
 
-If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in. 
+If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -661,7 +661,7 @@ NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 The ``NCCL_NET_GDR_LEVEL`` variable allows the user to finely control when to use GPU Direct RDMA between a NIC and a GPU.
 The level defines the maximum distance between the NIC and the GPU. A string representing the path type should be used to specify the topographical cutoff for GpuDirect.
 
-If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in. 
+If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -822,6 +822,16 @@ A value of 0 will disable the use of PXN for send/receive. A value of 1 will ena
 when the NIC preferred by the destination is not directly accessible. A value
 of 2 (default) will cause PXN to always be used, even if the NIC is directly accessible,
 storing data from all GPUs within the node on an intermediate GPU to maximize aggregation.
+
+NCCL_RUNTIME_CONNECT
+--------------------
+(since 2.22)
+
+Dynamically connect peers during runtime (e.g., calling `ncclAllreduce()`) instead of init stage.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 1, set to 0 to connect peers at init stage.
 
 .. _NCCL_GRAPH_REGISTER:
 

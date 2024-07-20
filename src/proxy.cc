@@ -1494,7 +1494,8 @@ void* ncclProxyService(void* _args) {
         int closed;
         res = ncclSocketTryRecv(sock, &type, sizeof(int), &closed, false /*blocking*/);
         if (res != ncclSuccess && res != ncclInProgress) {
-          WARN("[Service thread] Could not receive type from localRank %d, res=%u, closed=%d", peer->tpLocalRank, res, closed);
+          if (!__atomic_load_n(proxyState->abortFlag, __ATOMIC_RELAXED))
+            WARN("[Service thread] Could not receive type from localRank %d, res=%u, closed=%d", peer->tpLocalRank, res, closed);
           closeConn = 1;
         } else if (closed) {
           INFO(NCCL_INIT|NCCL_NET|NCCL_PROXY, "[Service thread] Connection closed by localRank %d", peer->tpLocalRank);
@@ -1518,7 +1519,8 @@ void* ncclProxyService(void* _args) {
         closeConn = 1;
       }
       if (res != ncclSuccess && res != ncclInProgress) {
-        WARN("[Proxy Service %d] Failed to execute operation %s from rank %d, retcode %d", proxyState->tpRank, ncclProxyMsgTypeStr[type], peer->tpRank, res);
+        if (!__atomic_load_n(proxyState->abortFlag, __ATOMIC_RELAXED))
+          WARN("[Proxy Service %d] Failed to execute operation %s from rank %d, retcode %d", proxyState->tpRank, ncclProxyMsgTypeStr[type], peer->tpRank, res);
         closeConn = 1;
       }
 
@@ -1661,7 +1663,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
         comm->proxyState->stop = 1;
       }
 
-      if (sharedProxyState->peerAddresses) {
+      if (*comm->abortFlag == 0 && sharedProxyState->peerAddresses) {
         struct ncclSocket sock;
         int type = ncclProxyMsgStop;
         ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag);
