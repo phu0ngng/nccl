@@ -678,13 +678,13 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
       }
     } else {
       // No information on /sys, attach GPU to unknown CPU
-      NCCLCHECK(xmlFindTagKv(xml, "cpu", &parent, "numaid", "-1"));
+      NCCLCHECK(xmlFindTagKv(xml, "cpu", &parent, "numaid", "0xffff"));
       if (parent == NULL) {
         struct ncclXmlNode* topNode;
         NCCLCHECK(xmlFindTag(xml, "system", &topNode));
         NCCLCHECK(xmlAddNode(xml, topNode, "cpu", &parent));
         NCCLCHECK(xmlSetAttrLong(parent, "host_hash", getHostHash()));
-        NCCLCHECK(xmlSetAttr(parent, "numaid", "-1"));
+        NCCLCHECK(xmlSetAttr(parent, "numaid", "0xffff"));
         NCCLCHECK(ncclTopoGetXmlFromCpu(parent, xml));
       }
     }
