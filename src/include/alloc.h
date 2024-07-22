@@ -67,17 +67,17 @@ ncclResult_t ncclCallocDebug(T** ptr, size_t nelem, const char *filefunc, int li
 
 template <typename T>
 ncclResult_t ncclRealloc(T** ptr, size_t oldNelem, size_t nelem) {
-  if (nelem < oldNelem) return ncclInternalError;
+  T* oldp = *ptr;
+  if (nelem < oldNelem || (oldp == NULL && oldNelem > 0)) return ncclInternalError;
   if (nelem == oldNelem) return ncclSuccess;
 
-  T* oldp = *ptr;
   T* p = (T*)malloc(nelem*ncclSizeOfT<T>());
   if (p == NULL) {
     WARN("Failed to malloc %ld bytes", nelem*ncclSizeOfT<T>());
     return ncclSystemError;
   }
-  memcpy(p, oldp, oldNelem*ncclSizeOfT<T>());
-  free(oldp);
+  if (oldp && oldNelem) memcpy(p, oldp, oldNelem * ncclSizeOfT<T>());
+  if (oldp) free(oldp);
   memset(p+oldNelem, 0, (nelem-oldNelem)*ncclSizeOfT<T>());
   *ptr = (T*)p;
   INFO(NCCL_ALLOC, "Mem Realloc old size %ld, new size %ld pointer %p", oldNelem*ncclSizeOfT<T>(), nelem*ncclSizeOfT<T>(), *ptr);
