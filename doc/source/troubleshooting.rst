@@ -245,4 +245,4 @@ With NCCL 2.21 and later the GID index is dynamically selected, but with prior v
 And then set ``NCCL_IB_GID_INDEX`` to the GID INDEX for the RoCE v2 VER GID.
 With NCCL 2.21 and later releases, this environment variable should *not* be set.
 
-Users may also need to set ``NCL_IB_TC`` when using RoCE based networks. Refer to your vendor's documentation for the values this should be set to.
+Users may also need to set ``NCCL_IB_TC`` when using RoCE based networks. Refer to your vendor's documentation for the values this should be set to.
