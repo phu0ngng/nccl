@@ -267,10 +267,6 @@ NVTX_LINKONCE_DEFINE_FUNCTION int NVTX_VERSIONED_IDENTIFIER(nvtxInitializeInject
         return NVTX_ERR_INIT_FAILED_LIBRARY_ENTRY_POINT;
     }
 
-    // Coverity rightly reports that we leak memory by not dlclose'ing
-    // injectionLibraryHandle, but that's deliberate in this case since we want
-    // init_fnptr to remain valid after this function returns.
-    // coverity[leaked_storage]
     return NVTX_SUCCESS;
 }
 
