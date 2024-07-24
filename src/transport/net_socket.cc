@@ -73,25 +73,29 @@ ncclResult_t ncclNetSocketDevices(int* ndev) {
 }
 
 static ncclResult_t ncclNetSocketGetSpeed(char* devName, int* speed) {
+  ncclResult_t ret = ncclSuccess;
   *speed = 0;
   char speedPath[PATH_MAX];
   sprintf(speedPath, "/sys/class/net/%s/speed", devName);
-  int fd = open(speedPath, O_RDONLY);
+  int fd = -1;
+  SYSCHECKSYNC(open(speedPath, O_RDONLY), "open", fd);
   if (fd != -1) {
     char speedStr[] = "        ";
-    // Coverity is wrong.  We are not ignoring the return value, we just don't care
-    // what it is exactly, so long as it's above 0...
-    // coverity[check_return:FALSE]
-    if (read(fd, speedStr, sizeof(speedStr)-1) > 0) {
+    int n;
+    SYSCHECKGOTO(n = read(fd, speedStr, sizeof(speedStr)-1), "read", ret, fail);
+    if (n > 0) {
       *speed = strtol(speedStr, NULL, 0);
     }
-    close(fd);
   }
   if (*speed <= 0) {
     INFO(NCCL_NET, "Could not get speed from %s. Defaulting to 10 Gbps.", speedPath);
     *speed = 10000;
   }
-  return ncclSuccess;
+exit:
+  if (fd != -1) SYSCHECK(close(fd), "close");
+  return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclNetSocketGetProperties(int dev, ncclNetProperties_t* props) {
