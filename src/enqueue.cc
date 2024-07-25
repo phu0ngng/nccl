@@ -1100,29 +1100,44 @@ static void waitWorkFifoAvailable(struct ncclComm* comm, uint32_t desiredProduce
   }
 }
 
+namespace {
+  struct uploadWork_cleanup_t {
+    struct ncclCommEventCallback base;
+    void *hostBuf;
+  };
+  ncclResult_t uploadWork_cleanup_fn(
+      struct ncclComm* comm, struct ncclCommEventCallback* cb
+    ) {
+    struct uploadWork_cleanup_t* me = (struct uploadWork_cleanup_t*)cb;
+    free(me->hostBuf);
+    CUDACHECK(cudaEventDestroy(me->base.event));
+    return ncclSuccess;
+  }
+}
+
 static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   size_t workBytes = plan->workBytes;
   size_t batchBytes = plan->nWorkBatches*sizeof(struct ncclDevWorkBatch);
-  void* fifoBuf;
+  void* fifoBufHost;
   uint32_t fifoCursor, fifoMask;
 
   switch (plan->workStorageType) {
   case ncclDevWorkStorageTypeArgs:
     plan->kernelArgs->workBuf = nullptr;
-    fifoBuf = (void*)plan->kernelArgs;
+    fifoBufHost = (void*)plan->kernelArgs;
     fifoCursor = sizeof(ncclDevKernelArgs) + batchBytes;
     fifoMask = ~0u;
     break;
   case ncclDevWorkStorageTypeFifo:
-    fifoBuf = comm->workFifoBuf;
+    fifoBufHost = comm->workFifoBuf;
     fifoCursor = comm->workFifoProduced;
     fifoMask = comm->workFifoBytes-1;
     waitWorkFifoAvailable(comm, fifoCursor + workBytes);
     plan->kernelArgs->workBuf = comm->workFifoBufDev;
     break;
   case ncclDevWorkStorageTypePersistent:
-    ncclMemoryStackPush(&comm->memScoped);
-    fifoBuf = ncclMemoryStackAlloc(&comm->memScoped, workBytes, /*align=*/16);
+    static_assert(16 <= alignof(max_align_t), "We rely on 16-byte alignment.");
+    fifoBufHost = malloc(workBytes);
     fifoCursor = 0;
     fifoMask = ~0u;
     break;
@@ -1144,7 +1159,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   // Write the channel-shared work structs.
   struct ncclWorkList* workNode = ncclIntruQueueHead(&plan->workQueue);
   while (workNode != nullptr) {
-    char* dst = (char*)fifoBuf;
+    char* dst = (char*)fifoBufHost;
     char* src = (char*)(workNode+1);
     for (int n = workNode->size; n != 0; n -= 16) {
       memcpy(
@@ -1164,11 +1179,39 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     if (comm->workFifoBufGdrHandle != nullptr) wc_store_fence();
     break;
   case ncclDevWorkStorageTypePersistent:
-    NCCLCHECK(ncclCudaMalloc(&plan->workBufPersistent, workBytes));
-    plan->kernelArgs->workBuf = plan->workBufPersistent;
-    NCCLCHECK(ncclCudaMemcpy(plan->workBufPersistent, fifoBuf, workBytes));
-    ncclMemoryStackPop(&comm->memScoped);
-    break;
+    { ncclResult_t result = ncclSuccess;
+      cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
+      void* fifoBufDev = nullptr;
+      CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+
+      // Acquire deviceStream to gain access to deviceStream.cudaStream. Since the
+      // user's graph will be launched later, and it also acquires the deviceStream,
+      // it will observe this upload.
+      NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->deviceStream), result, finish_scope);
+
+      CUDACHECKGOTO(cudaMallocAsync(&fifoBufDev, workBytes, comm->memPool, comm->sharedRes->deviceStream.cudaStream), result, finish_scope);
+      plan->workBufPersistent = fifoBufDev;
+      plan->kernelArgs->workBuf = fifoBufDev;
+
+      CUDACHECKGOTO(cudaMemcpyAsync(fifoBufDev, fifoBufHost, workBytes, cudaMemcpyDefault, comm->sharedRes->deviceStream.cudaStream), result, finish_scope);
+      cudaEvent_t memcpyDone;
+      CUDACHECKGOTO(cudaEventCreateWithFlags(&memcpyDone, cudaEventDisableTiming), result, finish_scope);
+      CUDACHECKGOTO(cudaEventRecord(memcpyDone, comm->sharedRes->deviceStream.cudaStream), result, finish_scope);
+
+      struct uploadWork_cleanup_t* cleanup;
+      NCCLCHECK(ncclCalloc(&cleanup, 1));
+      cleanup->base.fn = uploadWork_cleanup_fn;
+      cleanup->base.event = memcpyDone;
+      cleanup->hostBuf = fifoBufHost;
+      ncclIntruQueueEnqueue(&comm->eventCallbackQueue, &cleanup->base);
+
+      NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream), result, finish_scope);
+      NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm), result, finish_scope);
+
+    finish_scope:
+      CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+      if (result != ncclSuccess) return result;
+    } break;
   default: break;
   }
   return ncclSuccess;
@@ -1238,7 +1281,12 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
   struct ncclKernelPlan* plan = (struct ncclKernelPlan*)me; // cast from first member `reclaim`
   if (plan->persistent) {
     comm->persistentRefs -= 1;
-    NCCLCHECK(ncclCudaFree(plan->workBufPersistent));
+    if (plan->workStorageType == ncclDevWorkStorageTypePersistent) {
+      cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
+      CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+      CUDACHECK(cudaFree(plan->workBufPersistent));
+      CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+    }
     struct ncclProxyOp* q = ncclIntruQueueHead(&plan->proxyOpQueue);
     while (q != nullptr) {
       struct ncclProxyOp* q1 = q->enqNext;
@@ -1286,7 +1334,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       plan->comm = comm;
       plan->reclaimer.fn = reclaimPlan;
       plan->persistent = persistent;
-      // uploadWork() promotes ncclDevWorkStorageType[Fifo|Buf]->Args if the work can fit.
+      // finishPlan() promotes ncclDevWorkStorageType[Fifo|Persistent]->Args if the work can fit.
       plan->workStorageType = persistent ? ncclDevWorkStorageTypePersistent
                                          : ncclDevWorkStorageTypeFifo;
 

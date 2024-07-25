@@ -187,6 +187,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
     }
   }
 
+  CUDACHECK(cudaMemPoolDestroy(comm->memPool));
+
   delete[] comm->userRedOps;
 
   free(comm->connectSend);
@@ -395,6 +397,20 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   ncclIntruQueueMpscConstruct(&comm->callbackQueue);
 
   comm->regCache.pageSize = sysconf(_SC_PAGESIZE);
+
+  do {
+    cudaMemPoolProps props = {};
+    props.allocType = cudaMemAllocationTypePinned;
+    props.handleTypes = cudaMemHandleTypePosixFileDescriptor;
+    props.location.type = cudaMemLocationTypeDevice;
+    props.location.id = comm->cudaDev;
+    CUDACHECK(cudaMemPoolCreate(&comm->memPool, &props));
+    uint64_t releaseThreshold = ~uint64_t(0);
+    CUDACHECK(cudaMemPoolSetAttribute(comm->memPool, cudaMemPoolAttrReleaseThreshold, &releaseThreshold));
+  } while (0);
+
+  ncclIntruQueueConstruct(&comm->eventCallbackQueue);
+
   return ncclSuccess;
 }
 
@@ -1849,6 +1865,8 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
     if ((ret = ncclStrongStreamSynchronize(&comm->sharedRes->deviceStream)) != ncclSuccess) {
       WARN("commDestroySync: comm %p rank %d sync deviceStream error %d\n", comm, comm->rank, ret);
     }
+
+    NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm), ret, fail);
     NCCLCHECKGOTO(ncclCommPollCallbacks(comm, false), ret, fail);
     // And keep polling until all graphs referencing us die.
     while (comm->persistentRefs != 0) {
