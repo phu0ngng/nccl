@@ -6,6 +6,7 @@
 ## version 2.23
 
 - [Optimized CUDA Graph Upload](items/id_199febcf/Optimized_CUDA_Graph_Upload.md)
+- [improve_reduceCopy_performance](items/id_59542A65/improve_reduceCopy_performance.md)
 <!-- V2_23_DO_NOT_MOVE -->
 
 <!------------------------------------->

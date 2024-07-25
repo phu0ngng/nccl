@@ -60,7 +60,7 @@ __global__ void ReduceCopyMultiKernel(const T** srcs, T** dsts, int nsrcs, int n
   for (int i=0; i<NSRCS; i++) srcs[i] += bid*n;
   for (int i=0; i<NDSTS; i++) dsts[i] += bid*n;
   for (int i=0; i<NREPS; i++) {
-    reduceCopy<UNROLL, FuncSum<T>, T, 0, NSRCS >= 2 ? 2 : 1, NSRCS, 0, NDSTS >= 2 ? 2 : 1, NDSTS, 0>
+    reduceCopyFull<UNROLL, FuncSum<T>, T, 0, NSRCS >= 2 ? 2 : 1, NSRCS, 0, NDSTS >= 2 ? 2 : 1, NDSTS, 0>
       (threadIdx.x, blockDim.x, 0, NULL, false, nsrcs, (void**)srcs, ndsts, (void**)dsts, n);
   }
 }
