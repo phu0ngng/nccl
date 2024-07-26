@@ -419,6 +419,11 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
 
   ncclIntruQueueConstruct(&comm->eventCallbackQueue);
 
+  //  setup intraComm0 and intraRanks 0 to default values to ensure proper cleanup of the communicator
+  comm->intraComm0 = comm;
+  comm->intraRank = 0;
+  comm->intraRanks = 1;
+
   return ncclSuccess;
 }
 

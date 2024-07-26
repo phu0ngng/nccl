@@ -1767,13 +1767,15 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
 ncclResult_t ncclProxyDestroy(struct ncclComm* comm) {
   struct ncclProxyState* sharedProxyState = comm->sharedRes->proxyState;
 
-  assert(sharedProxyState->refCount == 0);
-  free(sharedProxyState->peerAddresses);
-  free(sharedProxyState->peerAddressesUDS);
-  free(sharedProxyState->peerSocks);
-  free(sharedProxyState->proxyOps);
-  free(sharedProxyState->sharedDevMems);
-  expectedProxyResponseFree(sharedProxyState);
-  free(sharedProxyState);
+  if (sharedProxyState) {
+    assert(sharedProxyState->refCount == 0);
+    free(sharedProxyState->peerAddresses);
+    free(sharedProxyState->peerAddressesUDS);
+    free(sharedProxyState->peerSocks);
+    free(sharedProxyState->proxyOps);
+    free(sharedProxyState->sharedDevMems);
+    expectedProxyResponseFree(sharedProxyState);
+    free(sharedProxyState);
+  }
   return ncclSuccess;
 }
