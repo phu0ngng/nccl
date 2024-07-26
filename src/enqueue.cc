@@ -251,7 +251,7 @@ static ncclResult_t registerIntraNodeBuffers(
   info->regBufType = NCCL_REGULAR_BUFFER;
   *regNeedConnect = true;
 #if CUDART_VERSION >= 11030
-  if ((info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) && comm->nvlsRegSupport) {
+  if ((info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) && comm->nvlsRegSupport && info->opDev.op != ncclDevPreMulSum) {
     bool regBufUsed = false;
     const void *sendbuff = info->sendbuff;
     void *recvbuff = info->recvbuff;
