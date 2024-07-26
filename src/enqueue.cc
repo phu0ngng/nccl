@@ -772,8 +772,6 @@ static ncclResult_t scheduleCollTasksToPlan(
       devWork->channelLo = 0;
       devWork->channelHi = nChannels-1;
       devWork->collnet.count = task->count;
-      // ncclTypeSize returns 0 for invalid input only.
-      // coverity[divide_by_zero]
       devWork->collnet.chunkCount = chunkSize/ncclTypeSize(task->datatype);
       devWork->direct = directFlags;
 
@@ -786,8 +784,6 @@ static ncclResult_t scheduleCollTasksToPlan(
       }
     } else { // not task->isCollnet
       constexpr size_t cellSize = 16;
-      // elementSize can't be 0 for any valid input.
-      // coverity[divide_by_zero]
       int elementsPerCell = cellSize/elementSize;
       size_t cells = divUp(task->count*elementSize, cellSize);
       int trafficPerByte = ncclFuncTrafficPerByte(task->func, comm->nRanks);
@@ -2325,8 +2321,10 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataTyp
   user->datatype = datatype;
   user->opFull.op = ncclDevPreMulSum;
   if (residence == ncclScalarHostImmediate) {
+    int size = ncclTypeSize(datatype);
+    if (size < 1) return ncclInternalError;
     user->opFull.scalarArgIsPtr = false;
-    std::memcpy(&user->opFull.scalarArg, scalar, ncclTypeSize(datatype));
+    std::memcpy(&user->opFull.scalarArg, scalar, size);
   } else {
     user->opFull.scalarArgIsPtr = true;
     user->opFull.scalarArg = reinterpret_cast<uint64_t>(scalar);
@@ -2343,7 +2341,9 @@ ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
     WARN("ncclRedOpDestroy : operator is a NCCL builtin.");
     return ncclInvalidArgument;
   }
-  // Yes, we expect int(ncclMaxRedOp) < int(op) to always be false...
+  // int(ncclMaxRedOp) < int(op) will always be false due to the sizes of
+  // the datatypes involved, and that's by design.  We keep the check though
+  // just as a reminder.
   // coverity[result_independent_of_operands]
   if (int(op) < 0 || int(ncclMaxRedOp) < int(op)) {
     WARN("ncclRedOpDestroy :  operator is garbage.");
