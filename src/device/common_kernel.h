@@ -36,7 +36,6 @@ __device__ __forceinline__ void reduceCopyPacks(
     IntBytes &nBytesBehind, IntBytes &nBytesAhead
   ) {
   static_assert(std::is_signed<IntBytes>::value, "IntBytes must be a signed integral type.");
-  static_assert(MultimemSrcs==0 || PreOpSrcs==0, "Can't preop a multimem src");
   if (BytePerPack == 0) __trap();
 
   // A hunk is the amount of contiguous data a warp consumes per loop iteration
