@@ -4,7 +4,8 @@ Environment Variables
 
 NCCL has an extensive set of environment variables to tune for specific usage.
 
-Environment variables can also be set statically in /etc/nccl.conf (for an administrator to set system-wide values) or in ~/.nccl.conf (for users). For example, those files could contain :
+Environment variables can also be set statically in /etc/nccl.conf (for an administrator to set system-wide values) or in ${NCCL_CONF_FILE} (since 2.23; see below).
+For example, those files could contain :
 
 .. code:: C
 
@@ -303,6 +304,17 @@ The ``NCCL_IGNORE_CPU_AFFINITY`` variable can be used to cause NCCL to ignore th
 Values accepted
 ^^^^^^^^^^^^^^^
 The default is 0, set to 1 to cause NCCL to ignore the job's supplied CPU affinity.
+
+NCCL_CONF_FILE
+-----------------
+(since 2.23)
+
+The ``NCCL_CONF_FILE`` variable allows the user to specify a file with the static configuration.
+This does not accept the ``~`` character as part of the path; please convert to a relative or absolute path first.
+
+Values accepted
+^^^^^^^^^^^^^^^
+If unset or if the version is prior to 2.23, NCCL uses .nccl.conf in the home directory if available.
 
 .. _NCCL_DEBUG:
 
