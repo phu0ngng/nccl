@@ -239,6 +239,17 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 0.
 
+NCCL_IB_RETURN_ASYNC_EVENTS
+---------------------------
+(since 2.23)
+
+IB events are reported to the user as warnings.
+If enabled, NCCL will also stop IB communications upon fatal IB asynchronous events.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 1, set to 0 to disable
+
 NCCL_NET
 --------
 (since 2.10)

@@ -51,6 +51,10 @@ struct alignas(64) ncclIbMergedDev {
   char devName[MAX_MERGED_DEV_NAME]; // Up to NCCL_IB_MAX_DEVS_PER_NIC * name size, and a character for each '+'
 };
 
+struct ncclIbStats {
+  int fatalErrorCount;
+};
+
 static int ncclNIbDevs = -1;
 struct alignas(64) ncclIbDev {
   pthread_mutex_t lock;
@@ -68,8 +72,8 @@ struct alignas(64) ncclIbDev {
   int maxQp;
   struct ncclIbMrCache mrCache;
   int ar; // ADAPTIVE_ROUTING
-  int ibFatalEvent;
   struct ibv_port_attr portAttr;
+  struct ncclIbStats stats;
 };
 
 #define MAX_IB_DEVS 32
@@ -91,6 +95,31 @@ NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
 NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", 0);
+NCCL_PARAM(IbAsyncEvents,"IB_RETURN_ASYNC_EVENTS",1);
+
+static ncclResult_t ncclIbStatsInit(struct ncclIbStats* stat) {
+  __atomic_store_n(&stat->fatalErrorCount, 0, __ATOMIC_RELAXED);
+  return ncclSuccess;
+}
+static void ncclIbStatsFatalError(struct ncclIbStats* stat){
+  __atomic_fetch_add(&stat->fatalErrorCount, 1, __ATOMIC_RELAXED);
+}
+static ncclResult_t ncclIbStatsCheckFatalCount(struct ncclIbStats* stat, const char* funcName) {
+  if (ncclParamIbAsyncEvents() && __atomic_load_n(&stat->fatalErrorCount, __ATOMIC_RELAXED)) {
+    WARN("communicator encountered a fatal error (detected in %s)\n", funcName);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+static void ncclIbQpFatalError(struct ibv_qp* qp) {
+  ncclIbStatsFatalError((struct ncclIbStats*)qp->qp_context);
+}
+static void ncclIbCqFatalError(struct ibv_cq* cq) {
+  ncclIbStatsFatalError((struct ncclIbStats*)cq->cq_context);
+}
+static void ncclIbDevFatalError(struct ncclIbDev* dev) {
+  ncclIbStatsFatalError(&dev->stats);
+}
 
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
@@ -99,41 +128,55 @@ static void* ncclIbAsyncThreadMain(void* args) {
     struct ibv_async_event event;
     if (ncclSuccess != wrap_ibv_get_async_event(dev->context, &event)) { break; }
     char *str;
+    struct ibv_cq* cq = event.element.cq;    // only valid if CQ error
+    struct ibv_qp* qp = event.element.qp;    // only valid if QP error
+    struct ibv_srq* srq = event.element.srq; // only valid if SRQ error
     if (ncclSuccess != wrap_ibv_event_type_str(&str, event.event_type)) { break; }
     switch (event.event_type) {
-      case IBV_EVENT_DEVICE_FATAL:
-      case IBV_EVENT_CQ_ERR:
-      case IBV_EVENT_QP_FATAL:
-      case IBV_EVENT_QP_REQ_ERR:
-      case IBV_EVENT_QP_ACCESS_ERR:
-      case IBV_EVENT_PATH_MIG_ERR:
-      case IBV_EVENT_SRQ_ERR:
-        // the above are fatal errors we need to signal
-        dev->ibFatalEvent++;
-        WARN("NET/IB : %s:%d Got async error unrecoverable event: %s", dev->devName, dev->portNum, str);
-        break;
-      case IBV_EVENT_PORT_ERR:
-      case IBV_EVENT_PATH_MIG:
-      case IBV_EVENT_PORT_ACTIVE:
-      case IBV_EVENT_SQ_DRAINED:
-      case IBV_EVENT_LID_CHANGE:
-      case IBV_EVENT_PKEY_CHANGE:
-      case IBV_EVENT_SM_CHANGE:
-      case IBV_EVENT_QP_LAST_WQE_REACHED:
-      case IBV_EVENT_CLIENT_REREGISTER:
-      case IBV_EVENT_SRQ_LIMIT_REACHED:
-        // the above are non-fatal
-        WARN("NET/IB : %s:%d Got async error event: %s", dev->devName, dev->portNum, str);
-        break;
-      case IBV_EVENT_COMM_EST:
-        break;
-      default:
-        WARN("NET/IB : %s:%d unknown event type (%d)", dev->devName, dev->portNum, event.event_type);
-        break;
+    case IBV_EVENT_DEVICE_FATAL:
+      // the above is device fatal error
+      WARN("NET/IB : %s:%d async fatal event: %s", dev->devName, dev->portNum, str);
+      ncclIbDevFatalError(dev);
+      break;
+    case IBV_EVENT_CQ_ERR:
+      // the above is a CQ fatal error
+      WARN("NET/IB : %s:%d async fatal event on CQ (%p): %s", dev->devName, dev->portNum, cq, str);
+      ncclIbCqFatalError(cq);
+      break;
+    case IBV_EVENT_QP_FATAL:
+    case IBV_EVENT_QP_REQ_ERR:
+    case IBV_EVENT_QP_ACCESS_ERR:
+      // the above are QP fatal errors
+      WARN("NET/IB : %s:%d async fatal event on QP (%p): %s", dev->devName, dev->portNum, qp, str);
+      ncclIbQpFatalError(qp);
+      break;
+    case IBV_EVENT_SRQ_ERR:
+      // SRQ are not used in NCCL
+      WARN("NET/IB : %s:%d async fatal event on SRQ, unused for now (%p): %s", dev->devName, dev->portNum, srq, str);
+      break;
+    case IBV_EVENT_PATH_MIG_ERR:
+    case IBV_EVENT_PORT_ERR:
+    case IBV_EVENT_PATH_MIG:
+    case IBV_EVENT_PORT_ACTIVE:
+    case IBV_EVENT_SQ_DRAINED:
+    case IBV_EVENT_LID_CHANGE:
+    case IBV_EVENT_PKEY_CHANGE:
+    case IBV_EVENT_SM_CHANGE:
+    case IBV_EVENT_QP_LAST_WQE_REACHED:
+    case IBV_EVENT_CLIENT_REREGISTER:
+    case IBV_EVENT_SRQ_LIMIT_REACHED:
+      // the above are non-fatal
+      WARN("NET/IB : %s:%d Got async error event: %s", dev->devName, dev->portNum, str);
+      break;
+    case IBV_EVENT_COMM_EST:
+      break;
+    default:
+      WARN("NET/IB : %s:%d unknown event type (%d)", dev->devName, dev->portNum, event.event_type);
+      break;
     }
+    // acknowledgment needs to happen last to avoid user-after-free
     if (ncclSuccess != wrap_ibv_ack_async_event(&event)) { break; }
   }
-
   return NULL;
 }
 
@@ -532,7 +575,7 @@ build_ib_list:
           ncclIbDevs[ncclNIbDevs].mrCache.capacity = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
           ncclIbDevs[ncclNIbDevs].mrCache.slots = NULL;
-          ncclIbDevs[ncclNIbDevs].ibFatalEvent = 0;
+          NCCLCHECK(ncclIbStatsInit(&ncclIbDevs[ncclNIbDevs].stats));
 
           // Enable ADAPTIVE_ROUTING by default on IB networks
           // But allow it to be overloaded by an env parameter
@@ -874,16 +917,19 @@ struct alignas(32) ncclIbNetCommBase {
   // Track necessary remDevInfo here
   int nRemDevs;
   struct ncclIbDevInfo remDevs[NCCL_IB_MAX_DEVS_PER_NIC];
+  // statistics about the comm
+  struct ncclIbStats stats;
 };
 
 struct ncclIbSendComm {
   struct ncclIbNetCommBase base;
+  // Start with fifo and ibv structs as they have alignment restrictions
   struct ncclIbSendFifo fifo[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  struct ibv_sge sges[NCCL_NET_IB_MAX_RECVS];
+  struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS + 1];
   // Each dev correlates to a mergedIbDev
   struct ncclIbSendCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
   struct ncclIbRequest* fifoReqs[MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
-  struct ibv_sge sges[NCCL_NET_IB_MAX_RECVS];
-  struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS+1];
   struct ncclIbRemSizesFifo remSizesFifo;
   uint64_t fifoHead;
   int ar; // Use adaptive routing when all merged devices have it enabled
@@ -935,8 +981,7 @@ static void ncclIbAddEvent(struct ncclIbRequest* req, int devIndex, struct ncclI
   req->events[devIndex]++;
   req->devBases[devIndex] = base;
 }
-
-ncclResult_t ncclIbInitCommDevBase(int ibDevN, struct ncclIbNetCommDevBase* base) {
+ncclResult_t ncclIbInitCommDevBase(int ibDevN, struct ncclIbNetCommDevBase* base, void* cq_context) {
   base->ibDevN = ibDevN;
   ncclIbDev* ibDev = ncclIbDevs + ibDevN;
   pthread_mutex_lock(&ibDev->lock);
@@ -953,7 +998,7 @@ ncclResult_t ncclIbInitCommDevBase(int ibDevN, struct ncclIbNetCommDevBase* base
   pthread_mutex_unlock(&ibDev->lock);
 
   // Recv requests can generate 2 completions (one for the post FIFO, one for the Recv).
-  NCCLCHECK(wrap_ibv_create_cq(&base->cq, ibDev->context, 2*MAX_REQUESTS*ncclParamIbQpsPerConn(), NULL, NULL, 0));
+  NCCLCHECK(wrap_ibv_create_cq(&base->cq, ibDev->context, 2*MAX_REQUESTS*ncclParamIbQpsPerConn(), cq_context, NULL, 0));
 
   return ncclSuccess;
 }
@@ -972,9 +1017,10 @@ returning:
   return res;
 }
 
-ncclResult_t ncclIbCreateQp(uint8_t ib_port, struct ncclIbNetCommDevBase* base, int access_flags, struct ncclIbQp* qp) {
+ncclResult_t ncclIbCreateQp(uint8_t ib_port, struct ncclIbNetCommDevBase* base, int access_flags, void* qp_context, struct ncclIbQp* qp) {
   struct ibv_qp_init_attr qpInitAttr;
   memset(&qpInitAttr, 0, sizeof(struct ibv_qp_init_attr));
+  qpInitAttr.qp_context = qp_context;
   qpInitAttr.send_cq = base->cq;
   qpInitAttr.recv_cq = base->cq;
   qpInitAttr.qp_type = IBV_QPT_RC;
@@ -1089,6 +1135,7 @@ ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm, ncclNet
   }
 
   NCCLCHECK(ncclIbMalloc((void**)&comm, sizeof(struct ncclIbSendComm)));
+  NCCLCHECK(ncclIbStatsInit(&comm->base.stats));
   NCCLCHECK(ncclSocketInit(&comm->base.sock, &handle->connectAddr, handle->magic, ncclSocketTypeNetIb, NULL, 1));
   stage->comm = comm;
   stage->state = ncclIbCommStateConnect;
@@ -1110,7 +1157,7 @@ ib_connect_check:
   comm->ar = 1; // Set to 1 for logic
   for (int i = 0; i < mergedDev->ndevs; i++) {
     int ibDevN = mergedDev->devs[i];
-    NCCLCHECK(ncclIbInitCommDevBase(ibDevN, &comm->devs[i].base));
+    NCCLCHECK(ncclIbInitCommDevBase(ibDevN, &comm->devs[i].base, &comm->base.stats));
     comm->ar = comm->ar && ncclIbDevs[dev].ar; // ADAPTIVE_ROUTING - if all merged devs have it enabled
   }
 
@@ -1123,7 +1170,7 @@ ib_connect_check:
   for (int q = 0; q < comm->base.nqps; q++) {
     ncclIbSendCommDev* commDev = comm->devs + devIndex;
     ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
-    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &commDev->base, IBV_ACCESS_REMOTE_WRITE, comm->base.qps+q));
+    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &commDev->base, IBV_ACCESS_REMOTE_WRITE, &comm->base.stats, comm->base.qps + q));
     comm->base.qps[q].devIndex = devIndex;
     meta.qpInfo[q].qpn      = comm->base.qps[q].qp->qp_num;
     meta.qpInfo[q].devIndex = comm->base.qps[q].devIndex;
@@ -1294,6 +1341,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle
   }
 
   NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
+  NCCLCHECK(ncclIbStatsInit(&rComm->base.stats));
   stage->comm = rComm;
   stage->state = ncclIbCommStateAccept;
   NCCLCHECK(ncclSocketInit(&rComm->base.sock));
@@ -1340,7 +1388,7 @@ ib_recv:
   for (int i = 0; i < rComm->base.ndevs; i++) {
     rCommDev = rComm->devs + i;
     ibDevN = mergedDev->devs[i];
-    NCCLCHECK(ncclIbInitCommDevBase(ibDevN, &rCommDev->base));
+    NCCLCHECK(ncclIbInitCommDevBase(ibDevN, &rCommDev->base,&rComm->base.stats));
     ibDev = ncclIbDevs + ibDevN;
     NCCLCHECK(ncclIbGetGidIndex(ibDev->context, ibDev->portNum, &ibDev->portAttr, &rCommDev->base.gidInfo.localGidIndex));
     NCCLCHECK(wrap_ibv_query_gid(ibDev->context, ibDev->portNum, rCommDev->base.gidInfo.localGidIndex, &rCommDev->base.gidInfo.localGid));
@@ -1368,7 +1416,7 @@ ib_recv:
     // Local ibDevN
     ibDevN = rComm->devs[devIndex].base.ibDevN;
     ibDev = ncclIbDevs + ibDevN;
-    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE, qp));
+    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE, &rComm->base.stats, qp));
     qp->devIndex = devIndex;
     devIndex = (devIndex + 1) % rComm->base.ndevs;
 
@@ -1408,7 +1456,7 @@ ib_recv:
       rCommDev->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlushHostMem;
       rCommDev->gpuFlush.sge.length = 1;
       rCommDev->gpuFlush.sge.lkey = rCommDev->gpuFlush.hostMr->lkey;
-      NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ, &rCommDev->gpuFlush.qp));
+      NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ, &rComm->base.stats, &rCommDev->gpuFlush.qp));
       struct ncclIbDevInfo devInfo;
       devInfo.lid         = ibDev->portAttr.lid;
       devInfo.link_layer  = ibDev->portAttr.link_layer;
@@ -1726,6 +1774,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
   if (comm->base.ready == 0) { WARN("NET/IB: ncclIbIsend() called when comm->base.ready == 0"); return ncclInternalError; }
   if (comm->base.ready == 0) { *request = NULL; return ncclSuccess; }
+  NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__))
 
   struct ncclIbMrHandle* mhandleWrapper = (struct ncclIbMrHandle*) mhandle;
 
@@ -1890,6 +1939,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
   if (comm->base.ready == 0) { WARN("NET/IB: ncclIbIrecv() called when comm->base.ready == 0"); return ncclInternalError; }
   if (comm->base.ready == 0) { *request = NULL; return ncclSuccess; }
   if (n > NCCL_NET_IB_MAX_RECVS) return ncclInternalError;
+  NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__))
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->base, &req));
@@ -1975,6 +2025,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
   while (1) {
+    NCCLCHECK(ncclIbStatsCheckFatalCount(&r->base->stats,__func__));
     if (r->events[0] == 0 && r->events[1] == 0) {
       TRACE(NCCL_NET, "r=%p done", r);
       *done = 1;
@@ -2052,12 +2103,9 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             req->events[i]--;
           }
         }
-        // No need for atomic fetch since we do not require strict synchronization.
         // Once the IB fatal event is reported in the async thread, we want to propagate this error
         // to communicator and prevent further polling to reduce error pollution.
-        if (ncclIbDevs[r->devBases[i]->ibDevN].ibFatalEvent) {
-          return ncclSystemError;
-        }
+        NCCLCHECK(ncclIbStatsCheckFatalCount(&ncclIbDevs[r->devBases[i]->ibDevN].stats,__func__));
       }
     }
 
