@@ -288,6 +288,9 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
   if (highestTransportType != NULL) *highestTransportType = highestType;
   TIME_PRINT("P2P Setup/Connect");
 exit:
+  for(int i=0; i<maxPeers; ++i){
+    if(data[i]) free(data[i]);
+  }
   free(data);
   if (sendData) free(sendData);
   if (recvData) free(recvData);
