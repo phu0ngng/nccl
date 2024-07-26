@@ -1801,7 +1801,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, int tag, void* mh
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
   if (comm->base.ready == 0) { WARN("NET/IB: ncclIbIsend() called when comm->base.ready == 0"); return ncclInternalError; }
   if (comm->base.ready == 0) { *request = NULL; return ncclSuccess; }
-  NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__))
+  NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__));
 
   struct ncclIbMrHandle* mhandleWrapper = (struct ncclIbMrHandle*) mhandle;
 
@@ -1966,7 +1966,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
   if (comm->base.ready == 0) { WARN("NET/IB: ncclIbIrecv() called when comm->base.ready == 0"); return ncclInternalError; }
   if (comm->base.ready == 0) { *request = NULL; return ncclSuccess; }
   if (n > NCCL_NET_IB_MAX_RECVS) return ncclInternalError;
-  NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__))
+  NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__));
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->base, &req));
