@@ -232,6 +232,11 @@ struct ncclTaskColl {
 
   void* sendMhandle;
   void* recvMhandle;
+  // index for IPC record lookup
+  uintptr_t sendbuffOffset;
+  uintptr_t recvbuffOffset;
+  uintptr_t* sendbuffRmtAddrs;
+  uintptr_t* recvbuffRmtAddrs;
 };
 struct ncclTaskP2p {
   struct ncclTaskP2p* next;
@@ -388,6 +393,8 @@ struct ncclComm {
   struct ncclChannel channels[MAXCHANNELS];
   struct ncclPeerInfo* peerInfo;
   struct ncclTopoSystem* topo;
+  struct ncclProxyConnector* gproxyConn;
+  struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> legacyRegCleanupQueue;
 
   int netPluginLoaded;
   ncclNet_t* ncclNet;
@@ -400,6 +407,7 @@ struct ncclComm {
   struct ncclTopoGraph graphs[NCCL_NUM_ALGORITHMS];
   bool initAlgoChannels[NCCL_NUM_ALGORITHMS];
   bool runtimeConn; // if dynamic connection is supported
+  bool directMode;
   int cuMemSupport;
 
   uint64_t magic; // Magic number for all network communication. Not a security key -- only goal is to detect mismatches.
@@ -509,7 +517,7 @@ struct ncclComm {
   int collNetSupport;
   bool collNetRegSupport;
   uint8_t collNetSupportMatrix[4/*sum,prod,max,min*/][ncclNumTypes];
-  int intraHighestTransportType;
+  bool intraNodeP2pSupport;
   int* collNetHeads;
   int collNetHeadsNum;
   int* collNetDenseToUserRank;

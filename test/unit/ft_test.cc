@@ -72,7 +72,7 @@ static void initBufferStream(void **sendbuffDptr, void **recvbuffDptr, char **bu
     CUDACHECK(cudaMemset(recvbuffDptr[i], 0, size));
     CUDACHECK(cudaStreamCreate(&sa[i]));
   }
-  
+
   CUDACHECK(cudaStreamSynchronize(0));
   return;
 }
@@ -145,11 +145,11 @@ int faultToleranceInitTest(ncclComm_t* comms, int nVis, int size) {
       for (int k = 0; k < size; ++k) {
         if ((int) bufHostPtr[j][k] != nVis) {
           errors++;
-          printf("FT-NCCL:\tncclAllReduce wrong result %d at %d buffer location [%d] != expected %d\n", bufHostPtr[j][k], j, k, nVis);
+          printf("FT-NCCL:\tncclAllReduce wrong result %d at dev %d buffer location [%d] != expected %d\n", bufHostPtr[j][k], j, k, nVis);
         }
       }
     }
-    
+
     //finalizing NCCL
     NCCLCHECK(ncclGroupStart());
     for (int j = 0; j < nVis; ++j)
@@ -163,7 +163,7 @@ int faultToleranceInitTest(ncclComm_t* comms, int nVis, int size) {
   }
 
 exit:
-  if (!errors) 
+  if (!errors)
     printf("Test fault tolerance for NCCL init\t[SUCCESS]\n\n");
   else
     printf("Test fault tolerance for NCCL init, errors %d\t[FAIL]\n\n", errors);
@@ -202,7 +202,7 @@ int faultToleranceAllreduceTest(ncclComm_t* comms, int nVis, int size) {
       CUDACHECK(cudaMemset(recvbuffDptr[j], 0, size));
     }
     CUDACHECK(cudaStreamSynchronize(0));
-    
+
     NCCLCHECK(ncclGetUniqueId(&id));
     NCCLCHECK(ncclGroupStart());
     for (int j = 0; j < nVis; ++j) {
@@ -215,9 +215,6 @@ int faultToleranceAllreduceTest(ncclComm_t* comms, int nVis, int size) {
 
     //communicating using NCCL
     NCCLCHECK(ncclGroupStart());
-    for (int j = 0; j < nVis; ++j)
-      NCCLCHECK(ncclAllReduce((const void*)sendbuffDptr[j], (void*)recvbuffDptr[j], size, ncclInt8, ncclSum, comms[j], sa[j]));
-    /* try one more time */
     for (int j = 0; j < nVis; ++j)
       NCCLCHECK(ncclAllReduce((const void*)sendbuffDptr[j], (void*)recvbuffDptr[j], size, ncclInt8, ncclSum, comms[j], sa[j]));
     ret = ncclGroupEnd();
@@ -243,11 +240,11 @@ int faultToleranceAllreduceTest(ncclComm_t* comms, int nVis, int size) {
       for (int k = 0; k < size; ++k) {
         if ((int) bufHostPtr[j][k] != nVis) {
           errors++;
-          printf("FT-NCCL:\tncclAllReduce wrong result %d at %d buffer location [%d] != expected %d\n", bufHostPtr[j][k], j, k, nVis);
+          printf("FT-NCCL:\tncclAllReduce wrong result %d at dev %d buffer location [%d] != expected %d\n", bufHostPtr[j][k], j, k, nVis);
         }
       }
     }
-    
+
     //finalizing NCCL
     NCCLCHECK(ncclGroupStart());
     for (int j = 0; j < nVis; ++j)
@@ -261,7 +258,7 @@ int faultToleranceAllreduceTest(ncclComm_t* comms, int nVis, int size) {
   }
 
 exit:
-  if (!errors) 
+  if (!errors)
     printf("Test fault tolerance for NCCL allreduce\t[SUCCESS]\n\n");
   else
     printf("Test fault tolerance for NCCL allreduce, errors %d\t[FAIL]\n\n", errors);
@@ -335,11 +332,11 @@ int faultToleranceAlltoAllTest(ncclComm_t* comms, int nVis, int size) {
       for (int k = 0; k < count * nVis; ++k) {
         if ((int) bufHostPtr[j][k] != 1) {
           errors++;
-          printf("FT-NCCL:\tsendrecv wrong result %d at %d buffer location [%d] != expected %d\n", bufHostPtr[j][k], j, k, 1);
+          printf("FT-NCCL:\tsendrecv wrong result %d at dev %d buffer location [%d] != expected %d\n", bufHostPtr[j][k], j, k, 1);
         }
       }
     }
-    
+
     //finalizing NCCL
     NCCLCHECK(ncclGroupStart());
     for (int j = 0; j < nVis; ++j)
@@ -353,7 +350,7 @@ int faultToleranceAlltoAllTest(ncclComm_t* comms, int nVis, int size) {
   }
 
 exit:
-  if (!errors) 
+  if (!errors)
     printf("Test fault tolerance for NCCL alltoall\t[SUCCESS]\n\n");
   else
     printf("Test fault tolerance for NCCL alltoall, errors %d\t[FAIL]\n\n", errors);
@@ -381,7 +378,7 @@ int faultToleranceFinalizeTest(ncclComm_t* comms, int nVis, int size) {
   sa = (cudaStream_t*) malloc(sizeof(cudaStream_t) * nVis);
 
   initBufferStream(sendbuffDptr, recvbuffDptr, bufHostPtr, sa, nVis, size);
-  
+
   //initializing NCCL
   for (int i = 0; i < NUM_SLEEP_CASES; ++i) {
     for (int j = 0; j < nVis; ++j) {
@@ -419,7 +416,7 @@ int faultToleranceFinalizeTest(ncclComm_t* comms, int nVis, int size) {
       for (int k = 0; k < size; ++k) {
         if ((int)bufHostPtr[j][k] != nVis) {
           errors++;
-          printf("FT-NCCL:\tncclAllReduce wrong result %d at %d buffer location [%d] != expected %d\n", bufHostPtr[j][k], j, k, nVis);
+          printf("FT-NCCL:\tncclAllReduce wrong result %d at dev %d buffer location [%d] != expected %d\n", bufHostPtr[j][k], j, k, nVis);
         }
       }
     }
@@ -430,7 +427,7 @@ int faultToleranceFinalizeTest(ncclComm_t* comms, int nVis, int size) {
       NCCLCHECK(ncclCommFinalize(comms[j]));
     NCCLCHECK(ncclGroupEnd());
     usleep(sleepTimes[i]);
-    
+
     if (i != NUM_SLEEP_CASES - 1) {
       for (int j = 0; j < nVis; ++j) ncclCommAbort(comms[j]);
       printf("FT-NCCL:\tSleep %dus, abort %d communicators at ncclCommFinalize\t[SUCCESS]\n", sleepTimes[i], nVis);
@@ -445,7 +442,7 @@ int faultToleranceFinalizeTest(ncclComm_t* comms, int nVis, int size) {
   }
 
 exit:
-  if (!errors) 
+  if (!errors)
     printf("Test fault tolerance for NCCL finalize\t[SUCCESS]\n\n");
   else
     printf("Test fault tolerance for NCCL finalize, errors %d\t[FAIL]\n\n", errors);
@@ -463,7 +460,7 @@ int main(int argc, char* argv[])
   int nVis, errors = 0;
   ncclComm_t* comms;
   setlinebuf(stdout);
-  
+
   CUDACHECK(cudaGetDeviceCount(&nVis));
   comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), nVis);
 
@@ -475,7 +472,7 @@ int main(int argc, char* argv[])
   errors += faultToleranceAlltoAllTest(comms, nVis, size);
   printf("\t================ Test fault tolerance for NCCL finalize ================\n");
   errors += faultToleranceFinalizeTest(comms, nVis, size);
-  
+
   free(comms);
   printf("[Summary] Single node NCCL fault tolerance test completes, %d errors.\n\n", errors);
   return errors;

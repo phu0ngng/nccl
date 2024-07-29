@@ -239,7 +239,29 @@ static ncclResult_t cleanupIpc(struct ncclComm* comm, struct ncclCommCallback* c
   return ncclSuccess;
 }
 
-static ncclResult_t registerIntraNodeBuffers(
+static ncclResult_t registerCheckP2PConnection(struct ncclComm* comm, struct ncclConnector* conn, struct ncclTopoGraph* graph, int peer, bool* needReg) {
+  if (conn->connected) {
+    if (conn->conn.flags & (NCCL_IPC_READ | NCCL_IPC_WRITE | NCCL_DIRECT_READ | NCCL_DIRECT_WRITE)) {
+      *needReg = true;
+    } else {
+      // network connection
+      *needReg = false;
+    }
+  } else {
+    struct ncclPeerInfo* peerInfo = &comm->peerInfo[peer];
+    struct ncclPeerInfo* myInfo = &comm->peerInfo[comm->rank];
+    int canConnect = 0;
+    NCCLCHECK(ncclTransports[0]->canConnect(&canConnect, comm->topo, graph, myInfo, peerInfo));
+    if (canConnect) {
+      *needReg = true;
+    } else {
+      *needReg = false;
+    }
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t registerCollBuffers(
     struct ncclComm* comm, struct ncclTaskColl* info,
     void* outRegBufSend[NCCL_MAX_LOCAL_RANKS],
     void* outRegBufRecv[NCCL_MAX_LOCAL_RANKS],
@@ -250,8 +272,10 @@ static ncclResult_t registerIntraNodeBuffers(
 
   info->regBufType = NCCL_REGULAR_BUFFER;
   *regNeedConnect = true;
+  if (!(ncclParamLocalRegister() || (comm->planner.persistent && ncclParamGraphRegister()))) goto exit;
 #if CUDART_VERSION >= 11030
-  if ((info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) && comm->nvlsRegSupport && info->opDev.op != ncclDevPreMulSum) {
+  if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) {
+    if (!comm->nvlsRegSupport || info->opDev.op == ncclDevPreMulSum) goto exit;
     bool regBufUsed = false;
     const void *sendbuff = info->sendbuff;
     void *recvbuff = info->recvbuff;
@@ -284,60 +308,6 @@ static ncclResult_t registerIntraNodeBuffers(
       }
       info->regBufType = NCCL_NVLS_REG_BUFFER;
     }
-  } else if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT &&   // limited to CollNetDirect for now
-    comm->intraHighestTransportType == TRANSPORT_P2P && // only when all ranks can p2p each other
-    comm->intraRanks < comm->localRanks &&  // only with inter-process & intra-node peers
-    comm->planner.persistent && 0) {
-    /* Disable CollnetDirect registration since it does not support cuMem* allocated memory. */
-    int localRank = comm->localRank;
-    cudaPointerAttributes sattr, rattr;
-
-    CUDACHECK(cudaPointerGetAttributes(&sattr, info->sendbuff));
-    CUDACHECK(cudaPointerGetAttributes(&rattr, info->recvbuff));
-    if (sattr.type != cudaMemoryTypeDevice || rattr.type != cudaMemoryTypeDevice) return ncclSuccess;
-
-    if (CUPFN(cuMemGetAddressRange) == nullptr) return ncclSuccess;
-
-    struct HandlePair {
-      cudaIpcMemHandle_t ipc[2]; // {send, recv}
-      size_t offset[2]; // {send, recv}
-    };
-    struct HandlePair handles[NCCL_MAX_LOCAL_RANKS];
-
-    CUDACHECKGOTO(cudaIpcGetMemHandle(&handles[localRank].ipc[0], (void*)info->sendbuff), result, fallback);
-    CUDACHECKGOTO(cudaIpcGetMemHandle(&handles[localRank].ipc[1], (void*)info->recvbuff), result, fallback);
-
-    void *baseSend, *baseRecv;
-    size_t size;
-    CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &size, (CUdeviceptr)info->sendbuff));
-    handles[localRank].offset[0] = (char*)info->sendbuff - (char*)baseSend;
-    CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseRecv, &size, (CUdeviceptr)info->recvbuff));
-    handles[localRank].offset[1] = (char*)info->recvbuff - (char*)baseRecv;
-
-    NCCLCHECK(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, handles, sizeof(struct HandlePair)));
-
-    // Open handles locally
-    for (int i=0; i < comm->localRanks; i++) {
-      if (i == localRank) { // Skip self
-        outRegBufSend[i] = nullptr;
-        outRegBufRecv[i] = nullptr;
-      } else {
-        for (int sr=0; sr < 2; sr++) {
-          // Get base address of mapping
-          void* base;
-          CUDACHECK(cudaIpcOpenMemHandle(&base, handles[i].ipc[sr], cudaIpcMemLazyEnablePeerAccess));
-          // Get real buffer address by adding offset in the mapping
-          (sr == 0 ? outRegBufSend : outRegBufRecv)[i] = (char*)base + handles[i].offset[sr];
-          // Enqueue reminder to close memory handle
-          struct ncclIpcCleanupCallback* cb = (struct ncclIpcCleanupCallback*)malloc(sizeof(struct ncclIpcCleanupCallback));
-          cb->base.fn = cleanupIpc;
-          cb->ptr = base;
-          ncclIntruQueueEnqueue(cleanupQueue, &cb->base);
-          info->nCleanupQueueElts += 1;
-        }
-      }
-    }
-    info->regBufType = NCCL_IPC_REG_BUFFER;
   } else if ((info->algorithm == NCCL_ALGO_COLLNET_DIRECT || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) && comm->collNetRegSupport && info->opDev.op != ncclDevPreMulSum && info->opDev.op != ncclDevSumPostDiv) {
     size_t elementSize = ncclTypeSize(info->datatype);
     size_t sendbuffSize = elementSize*ncclFuncSendCount(info->func, comm->nRanks, info->count);
@@ -356,25 +326,198 @@ static ncclResult_t registerIntraNodeBuffers(
     }
 
     if ((sendRegBufFlag == 0 || recvRegBufFlag == 0) && comm->planner.persistent && ncclParamGraphRegister()) {
-      ncclCollnetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &sendRegBufFlag, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
-      info->sendMhandle = sendHandle;
-      if (sendRegBufFlag) {
+      if (!sendRegBufFlag) {
+        ncclCollnetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &sendRegBufFlag, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
+        info->sendMhandle = sendHandle;
+      }
+      if (sendRegBufFlag && !recvRegBufFlag) {
         ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &recvRegBufFlag, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
         info->recvMhandle = recvHandle;
       }
     }
 
     if (sendRegBufFlag && recvRegBufFlag) {
-      info->nMaxChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, 1));
+      info->nMaxChannels = 1;
       info->regBufType = NCCL_COLLNET_REG_BUFFER;
       if (sendRegBufFlag == 1 && recvRegBufFlag == 1) {
         INFO(NCCL_REG, "rank %d successfully registered collNet sendbuff %p (handle %p), sendbuff size %ld, recvbuff %p (handle %p), recvbuff size %ld", comm->rank, info->sendbuff, sendHandle, sendbuffSize, info->recvbuff, recvHandle, recvbuffSize);
       }
     }
+  } else if (comm->intraNodeP2pSupport && info->protocol == NCCL_PROTO_SIMPLE) {
+    // IPC buffer registration
+    if (info->func == ncclFuncReduceScatter) goto exit;
+    if (info->algorithm == NCCL_ALGO_RING && ((info->func == ncclFuncAllReduce && info->sendbuff == info->recvbuff) || info->func == ncclFuncReduce)) goto exit;
+    if ((info->algorithm == NCCL_ALGO_TREE || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) && info->sendbuff == info->recvbuff) goto exit;
+    if (info->func == ncclFuncAllGather && info->algorithm == NCCL_ALGO_TREE) goto exit;
+
+    int peerRanks[NCCL_MAX_LOCAL_RANKS];
+    int nPeers = 0;
+    size_t elementSize = ncclTypeSize(info->datatype);
+    size_t sendbuffSize = elementSize*ncclFuncSendCount(info->func, comm->nRanks, info->count);
+    size_t recvbuffSize = elementSize*ncclFuncRecvCount(info->func, comm->nRanks, info->count);
+    int regBufFlag = 0;
+    memset(peerRanks, 0xff, sizeof(int) * NCCL_MAX_LOCAL_RANKS);
+
+    if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) {
+      struct ncclChannel* channel = comm->channels;
+      for (int r = 0; r < NCCL_MAX_DIRECT_ARITY; ++r) {
+        for (int updown = 0; updown < 2; ++updown) {
+          int peer;
+          if (updown == 0)
+            peer = channel->collnetDirect.up[r];
+          else
+            peer = channel->collnetDirect.down[r];
+          if (peer != -1) {
+            struct ncclConnector* peerConn = &channel->peers[peer]->recv[0];
+            bool needReg = false;
+
+            NCCLCHECK(registerCheckP2PConnection(comm, peerConn, &comm->graphs[NCCL_ALGO_COLLNET_DIRECT], peer, &needReg));
+            if (needReg) {
+              bool found = false;
+              for (int p = 0; p < nPeers; ++p) {
+                if (peerRanks[p] == peer) {
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) peerRanks[nPeers++] = peer;
+            }
+          }
+        }
+      }
+
+      if (nPeers > 0) {
+        if (ncclParamLocalRegister())
+          ncclIpcLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->sendbuffOffset, &info->sendbuffRmtAddrs);
+        if (!regBufFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+          ncclIpcGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->sendbuffOffset, &info->sendbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
+        }
+        if (regBufFlag) {
+          if (ncclParamLocalRegister())
+            ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
+          if (!regBufFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+            ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
+          }
+        }
+      }
+      if (regBufFlag) {
+        info->regBufType = NCCL_IPC_REG_BUFFER;
+      }
+    } else if (info->algorithm == NCCL_ALGO_RING) {
+      struct ncclReg* recvRegRecord;
+      NCCLCHECK(ncclRegFind(comm, info->recvbuff, recvbuffSize, &recvRegRecord));
+      if (recvRegRecord == NULL) goto exit;
+      for (int c = 0; c < comm->nChannels; ++c) {
+        struct ncclChannel* channel = comm->channels + c;
+        for (int r = 0; r < 2; ++r) {
+          bool needReg = false;
+          int peer;
+          struct ncclConnector* peerConn;
+          // P2P transport
+          if (r == 0)
+            peer = channel->ring.prev;
+          else
+            peer = channel->ring.next;
+          peerConn = &channel->peers[peer]->recv[0];
+          NCCLCHECK(registerCheckP2PConnection(comm, peerConn, &comm->graphs[NCCL_ALGO_RING], peer, &needReg));
+
+          if (needReg) {
+            bool found = false;
+            for (int p = 0; p < nPeers; ++p) {
+              if (peerRanks[p] == peer) {
+                found = true;
+                break;
+              }
+            }
+            if (!found) peerRanks[nPeers++] = peer;
+          }
+        }
+      }
+      if (nPeers > 0) {
+        if (ncclParamLocalRegister()) {
+          ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
+        }
+        if (!regBufFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+          ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
+        }
+      }
+      if (regBufFlag) {
+        info->regBufType = NCCL_IPC_REG_BUFFER;
+      }
+    } else if (info->algorithm == NCCL_ALGO_TREE || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) {
+      struct ncclReg* recvRegRecord;
+      NCCLCHECK(ncclRegFind(comm, info->recvbuff, recvbuffSize, &recvRegRecord));
+      if (recvRegRecord == NULL) goto exit;
+      for (int c = 0; c < comm->nChannels; ++c) {
+        struct ncclChannel* channel = comm->channels + c;
+        struct ncclTree* tree = NULL;
+        int peers[NCCL_MAX_TREE_ARITY + 1];
+
+        if (info->algorithm == NCCL_ALGO_TREE)
+          tree = &channel->tree;
+        else
+          tree = &channel->collnetChain;
+        for (int p = 0; p < NCCL_MAX_TREE_ARITY; ++p) peers[p] = tree->down[p];
+        peers[NCCL_MAX_TREE_ARITY] = tree->up;
+        for (int p = 0; p < NCCL_MAX_TREE_ARITY + 1; ++p) {
+          int peer = peers[p];
+          bool peerNeedReg = false;
+          struct ncclConnector* recvConn = NULL;
+          // P2P transport
+          if (peer == -1 || peer == comm->nRanks) continue;
+          recvConn = &channel->peers[peer]->recv[0];
+          NCCLCHECK(registerCheckP2PConnection(comm, recvConn, &comm->graphs[info->algorithm], peer, &peerNeedReg));
+
+          if (peerNeedReg) {
+            bool found = false;
+            for (int pindex = 0; pindex < nPeers; ++pindex) {
+              if (peerRanks[pindex] == peer) {
+                found = true;
+                break;
+              }
+            }
+            if (!found) peerRanks[nPeers++] = peer;
+          }
+        }
+      }
+      if (nPeers > 0) {
+        if (ncclParamLocalRegister()) {
+          ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
+        }
+        if (!regBufFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+          ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
+        }
+      }
+      if (regBufFlag) {
+        info->regBufType = NCCL_IPC_REG_BUFFER;
+      }
+    }
+
+    if (info->regBufType == NCCL_IPC_REG_BUFFER && comm->nNodes == 1 && 16 < info->nMaxChannels && info->nMaxChannels <= 24) {
+      info->nMaxChannels = 16;
+    }
   }
-fallback:
+exit:
 #endif
   return result;
+}
+
+static ncclResult_t registerP2pBuffer(struct ncclComm* comm, void* userbuff, int peerRank, size_t size, int* regFlag, void** regAddr, struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue) {
+  ncclResult_t ret = ncclSuccess;
+  uintptr_t offset = 0;
+  uintptr_t* peerRmtAddrs = NULL;
+
+  *regFlag = 0;
+  if (ncclParamLocalRegister()) {
+    ncclIpcLocalRegisterBuffer(comm, userbuff, size, &peerRank, 1, NCCL_IPC_SENDRECV, regFlag, &offset, &peerRmtAddrs);
+  }
+  if (*regFlag == 0 && comm->planner.persistent && ncclParamGraphRegister()) {
+    ncclIpcGraphRegisterBuffer(comm, userbuff, size, &peerRank, 1, NCCL_IPC_SENDRECV, regFlag, &offset, &peerRmtAddrs, reinterpret_cast<void*>(cleanupQueue), NULL);
+  }
+
+  if (*regFlag)
+    *regAddr = (void*)((uintptr_t)peerRmtAddrs + offset);
+  return ret;
 }
 
 static ncclResult_t getCollNetSupport(struct ncclComm* comm, struct ncclTaskColl* task, int* collNetSupport);
@@ -500,7 +643,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     void* regBufSend[NCCL_MAX_LOCAL_RANKS];
     void* regBufRecv[NCCL_MAX_LOCAL_RANKS];
     bool regNeedConnect = true;
-    registerIntraNodeBuffers(comm, task, regBufSend, regBufRecv, &planner->collCleanupQueue, &regNeedConnect);
+    registerCollBuffers(comm, task, regBufSend, regBufRecv, &planner->collCleanupQueue, &regNeedConnect);
 
     if (comm->runtimeConn && comm->initAlgoChannels[task->algorithm] == false) {
       if (task->algorithm == NCCL_ALGO_NVLS_TREE && comm->initAlgoChannels[NCCL_ALGO_NVLS] == false && regNeedConnect == true) {
@@ -517,6 +660,10 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     struct ncclDevWorkColl devWork = {};
     devWork.sendbuff = (void*)task->sendbuff;
     devWork.recvbuff = (void*)task->recvbuff;
+    devWork.sendbuffOffset = task->sendbuffOffset;
+    devWork.recvbuffOffset = task->recvbuffOffset;
+    devWork.sendbuffRmtAddrs = task->sendbuffRmtAddrs;
+    devWork.recvbuffRmtAddrs = task->recvbuffRmtAddrs;
     devWork.root = task->root;
     devWork.nWarps = task->nWarps;
     devWork.redOpArg = task->opDev.scalarArg;
@@ -527,34 +674,12 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     struct ncclWorkList* workNode;
     switch (task->regBufType) {
     case NCCL_REGULAR_BUFFER:
+    case NCCL_IPC_REG_BUFFER:
     case NCCL_COLLNET_REG_BUFFER:
       { workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkColl>(&comm->memScoped, 1);
         workNode->workType = ncclDevWorkTypeColl;
         workNode->size = sizeof(struct ncclDevWorkColl);
         memcpy((void*)(workNode+1), (void*)&devWork, workNode->size);
-      } break;
-    case NCCL_IPC_REG_BUFFER:
-      { struct ncclDevWorkCollReg workReg = {};
-        workReg.coll = devWork;
-        struct ncclChannel *channel0 = &comm->channels[0];
-        for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
-          int peer = channel0->collnetDirect.down[i];
-          if (peer == -1) break;
-          int j = comm->rankToLocalRank[peer]; // Get intra-node slot
-          workReg.dnInputs[i] = regBufSend[j]; // Input buffer of leaf peer
-          workReg.dnOutputs[i] = regBufRecv[j]; // Output buffer of leaf peer
-        }
-        for (int i=0; i < NCCL_MAX_DIRECT_ARITY; i++) {
-          int peer = channel0->collnetDirect.up[i];
-          if (peer == -1) break;
-          int j = comm->rankToLocalRank[peer];
-          // Output buffer of root peer
-          workReg.upOutputs[i] = regBufRecv[j];
-        }
-        workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkCollReg>(&comm->memScoped, 1);
-        workNode->workType = ncclDevWorkTypeCollReg;
-        workNode->size = sizeof(struct ncclDevWorkCollReg);
-        memcpy((void*)(workNode+1), (void*)&workReg, workNode->size);
       } break;
     case NCCL_NVLS_REG_BUFFER:
       { struct ncclDevWorkCollReg workReg = {};
@@ -665,7 +790,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       if (channelId+1 == nMaxChannels[kind]) { // On last channel everything goes to "lo"
         cellsLo = cells;
       } else {
-        cellsLo = std::min(cells, (trafficPerChannel-currentTraffic)/trafficPerCell);
+        cellsLo = std::min(cells, divUp((trafficPerChannel-currentTraffic),trafficPerCell));
       }
       int nMidChannels = (cells-cellsLo)/cellsPerChannel;
       size_t cellsHi = (cells-cellsLo)%cellsPerChannel;
@@ -842,7 +967,8 @@ static ncclResult_t addP2pToPlan(
   int chunkSize[2];
   int chunkDataSize[2];
   int chunkDataSize_u32fp8[2];
-  bool registered[2];
+  bool registered[2] = {false, false};
+  bool ipcRegistered[2] = {false, false};
 
   for (int dir=0; dir < 2; dir++) { // 0=recv, 1=send
     if (bytes[dir] != -1) protoLL[dir] &= bytes[dir] <= thresholdLL;
@@ -866,11 +992,29 @@ static ncclResult_t addP2pToPlan(
     chunkSize[dir] = chunkDataSize[dir];
     if (protocol[dir] == NCCL_PROTO_LL) chunkSize[dir] *= 2;
 
-    registered[dir] = false;
-    if (bytes[dir] > 0 && network[dir] && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE) {
-      struct ncclReg* regRecord;
-      NCCLCHECK(ncclRegFind(comm, addrs[dir], bytes[dir], &regRecord));
-      registered[dir] = (regRecord && regRecord->nDevs);
+    if (network[dir]) {
+      if (bytes[dir] > 0 && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE) {
+        struct ncclReg* regRecord;
+        NCCLCHECK(ncclRegFind(comm, addrs[dir], bytes[dir], &regRecord));
+        registered[dir] = regRecord && regRecord->nDevs;
+      }
+    } else if (bytes[dir] > 0 && addrs[dir] && protocol[dir] == NCCL_PROTO_SIMPLE && !selfSend) {
+      int peerRank = dir ? sendRank : recvRank;
+      int regFlag = 0;
+      int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, 0);
+      struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
+      struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
+        : &channelPeers[peerRank]->recv[connIndex];
+      void* regAddr = NULL;
+      if (conn->conn.flags & (NCCL_IPC_WRITE | NCCL_IPC_READ | NCCL_DIRECT_WRITE | NCCL_DIRECT_READ)) {
+        // We require users registering buffers on both sides
+        NCCLCHECK(registerP2pBuffer(comm, addrs[dir], peerRank, bytes[dir], &regFlag, &regAddr, &plan->cleanupQueue));
+        if (regFlag) {
+          if (dir == 0 && conn->conn.flags & (NCCL_IPC_WRITE | NCCL_DIRECT_WRITE)) recvAddr = regAddr;
+          else if (dir == 1 && conn->conn.flags & (NCCL_IPC_READ | NCCL_DIRECT_READ)) sendAddr = regAddr;
+        }
+      }
+      ipcRegistered[dir] = regFlag ? true : false;
     }
 
     if (bytes[dir] == -1) nChannels[dir] = 0;
@@ -900,6 +1044,7 @@ static ncclResult_t addP2pToPlan(
   work->nSendChannels = nChannels[1];
   work->sendProtoLL = protoLL[1];
   work->sendRegistered = registered[1];
+  work->sendIpcReg = ipcRegistered[1];
   work->sendChunkSize_u32fp8 = chunkDataSize_u32fp8[1];
   work->sendRank = sendRank;
   work->sendAddr = sendAddr;
@@ -907,6 +1052,7 @@ static ncclResult_t addP2pToPlan(
   work->nRecvChannels = nChannels[0];
   work->recvProtoLL = protoLL[0];
   work->recvRegistered = registered[0];
+  work->recvIpcReg = ipcRegistered[0];
   work->recvChunkSize_u32fp8 = chunkDataSize_u32fp8[0];
   work->recvRank = recvRank;
   work->recvAddr = recvAddr;
@@ -1851,7 +1997,7 @@ static ncclResult_t calcCollChunking(
   // Compute directFlags of work struct.
   if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) {
     // Set direct direction for broadcast-gather (read or write)
-    *outDirectFlags = (nBytes/nChannels <= 1024*1024) ? NCCL_DIRECT_WRITE : NCCL_DIRECT_READ;
+    *outDirectFlags = (nBytes/nChannels <= 1024 * 4) ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
   } else {
     *outDirectFlags = 0;
   }

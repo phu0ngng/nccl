@@ -332,8 +332,9 @@ enum ncclProxyMsgType {
   ncclProxyMsgAbort = 7,
   ncclProxyMsgStop = 8,
   ncclProxyMsgGetFd = 9, // cuMem API support (UDS)
-  ncclProxyMsgRegister = 10,
-  ncclProxyMsgDeregister = 11
+  ncclProxyMsgQueryFd = 10,
+  ncclProxyMsgRegister = 11,
+  ncclProxyMsgDeregister = 12
 };
 
 // This function is called by a client of the proxy that needs to invoke any of the non-progress proxyOp types
@@ -347,6 +348,7 @@ ncclResult_t ncclPollProxyResponse(struct ncclComm* comm, struct ncclProxyConnec
 
 // UDS support
 ncclResult_t ncclProxyClientGetFdBlocking(struct ncclComm* comm, int rank, void *handle, int* convertedFd);
+ncclResult_t ncclProxyClientQueryFdBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, int localFd, int* rmtFd);
 
 ncclResult_t ncclProxyStop(struct ncclComm* comm);
 ncclResult_t ncclProxyShmUnlink(struct ncclComm* comm);

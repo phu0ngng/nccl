@@ -92,7 +92,6 @@ struct ncclCollNetSharedRes {
   void* resources;
   int nChannels;
   size_t buffSize;
-  int intraHighestTransportType;
 };
 
 struct ncclTransportComm {
@@ -117,6 +116,7 @@ struct ncclTransport {
 
 ncclResult_t ncclTransportP2pConnect(struct ncclComm* comm, int channelId, int nrecv, int* peerRecv, int nsend, int* peerSend, int connIndex);
 ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, int connIndex, int* highestTransportType=NULL);
+ncclResult_t ncclTransportCheckP2pType(struct ncclComm* comm, bool* intraNodeP2pSupport, bool* directMode);
 
 ncclResult_t ncclNvlsInit(struct ncclComm* comm);
 ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent);

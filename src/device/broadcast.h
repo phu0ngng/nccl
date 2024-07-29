@@ -24,8 +24,8 @@ namespace {
 
     T *inputBuf = (T*)work->sendbuff;
     T *outputBuf = (T*)work->recvbuff;
-    Primitives<T, RedOp, FanSymmetric<1>, 0, Proto, 0>
-      prims(tid, nthreads, &ring->prev, &ring->next, inputBuf, outputBuf, work->redOpArg);
+    Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0>
+      prims(tid, nthreads, &ring->prev, &ring->next, inputBuf, outputBuf, work->redOpArg, 0, 0, 0, work);
 
     for (size_t elemOffset = 0; elemOffset < channelCount; elemOffset += chunkCount) {
       offset = gridOffset + elemOffset;
@@ -33,14 +33,14 @@ namespace {
 
       if (rank == root) {
         if (inputBuf == outputBuf) {
-          prims.send(offset, nelem);
+          prims.directSend(offset, offset, nelem);
         } else {
-          prims.copySend(offset, offset, nelem);
+          prims.directCopySend(offset, offset, nelem);
         }
       } else if (nextRank == root) {
-        prims.recv(offset, nelem);
+        prims.directRecv(offset, nelem);
       } else {
-        prims.recvCopySend(offset, nelem);
+        prims.directRecvCopyDirectSend(offset, nelem);
       }
     }
   }

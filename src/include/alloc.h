@@ -89,6 +89,40 @@ ncclResult_t ncclRealloc(T** ptr, size_t oldNelem, size_t nelem) {
 #include <cuda.h>
 #include "cudawrap.h"
 
+// ncclCuMemAllocAddr takes memory handle and size and returns the mapped address pointer
+static inline ncclResult_t ncclCuMemAllocAddr(void **ptr, CUmemGenericAllocationHandle *handleIn, size_t size) {
+  ncclResult_t result = ncclSuccess;
+  size_t granularity = 0;
+  CUmemAllocationProp prop = {};
+  CUmemAccessDesc accessDesc = {};
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  CUCHECK(cuMemGetAllocationPropertiesFromHandle(&prop, *handleIn));
+  CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM));
+  ALIGN_SIZE(size, granularity);
+  /* Reserve a virtual address range */
+  CUCHECK(cuMemAddressReserve((CUdeviceptr *)ptr, size, granularity, 0, 0));
+  /* Map the virtual address range to the physical allocation */
+  CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, *handleIn, 0));
+  /* Now allow RW access to the newly mapped memory */
+  accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  accessDesc.location.id = cudaDev;
+  accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+  CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+  TRACE(NCCL_ALLOC, "CuMem Map Size %zu pointer %p handle %llx", size, *ptr, *handleIn);
+  return result;
+}
+
+static inline ncclResult_t ncclCuMemFreeAddr(void *ptr) {
+  if (ptr == NULL) return ncclSuccess;
+  ncclResult_t result = ncclSuccess;
+  size_t size = 0;
+  CUCHECK(cuMemGetAddressRange(NULL, &size, (CUdeviceptr)ptr));
+  CUCHECK(cuMemUnmap((CUdeviceptr)ptr, size));
+  CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, size));
+  return result;
+}
+
 static inline ncclResult_t ncclCuMemAlloc(void **ptr, CUmemGenericAllocationHandle *handlep, size_t size) {
   ncclResult_t result = ncclSuccess;
   size_t granularity = 0;
@@ -154,6 +188,15 @@ static inline ncclResult_t ncclCuMemFree(void *ptr) {
   return ncclInternalError;
 }
 
+static inline ncclResult_t ncclCuMemAllocAddr(void **ptr, CUmemGenericAllocationHandle *handleIn, size_t size) {
+  WARN("CUMEM not supported prior to CUDA 11.3");
+  return ncclInternalError;
+}
+
+static inline ncclResult_t ncclCuMemFreeAddr(void *ptr) {
+  WARN("CUMEM not supported prior to CUDA 11.3");
+  return ncclInternalError;
+}
 #endif
 
 template <typename T>

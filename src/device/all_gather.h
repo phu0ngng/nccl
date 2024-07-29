@@ -24,7 +24,7 @@ namespace {
     T *inputBuf = (T*)work->sendbuff;
     T *outputBuf = (T*)work->recvbuff;
     Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0> prims
-      (tid, nthreads, &ring->prev, &ring->next, inputBuf, outputBuf, work->redOpArg);
+      (tid, nthreads, &ring->prev, &ring->next, inputBuf, outputBuf, work->redOpArg, 0, 0, 0, work);
 
     for (size_t elemOffset = 0; elemOffset < partCount; elemOffset += chunkCount) {
       /////////////// begin AllGather steps ///////////////
@@ -46,7 +46,7 @@ namespace {
         rankDest = ringRanks[nranks-j];
         offset = dataOffset + rankDest * count;
 
-        prims.directRecvCopySend(offset, nelem);
+        prims.directRecvCopyDirectSend(offset, nelem);
       }
 
       // Make final copy from buffer to dest.
@@ -165,7 +165,7 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
     template<int SlicePerChunk, int MinSrcs, int MaxSrcs, int MinDsts, int MaxDsts>
     __device__ __forceinline__ void operator()(
         int tid, int tn, int slice, int maxSliceSize,
-        int nSrcs, void** srcPtrs, int nDsts, void** dstPtrs, int32_t* dstSizes
+        int nSrcs, void** srcPtrs, int nDsts, void** dstPtrs, int32_t* dstSizes, uint32_t sendDirectFlag, uint32_t recvDirectFlag
       ) {
       static_assert(SlicePerChunk==1, "require: SlicePerChunk==1");
       static_assert(MaxDsts<=1 || MaxSrcs<=1, "require: MaxDsts<=1 || MaxSrcs<=1");
@@ -203,20 +203,23 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
           int rank = ncclShmem.comm.collNetDenseToUserRank[node*nRails + rail];
           ssize_t userOneBeg = rank*sizePerRank + railOneOffset;
           int outIsDst = (inPlace && rank == ncclShmem.comm.rank) ? 0 : 1;
-          uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
-          reduceCopy<ncclCollUnroll(), RedOp, T,
+          if (nSrcs != 0 && outIsDst+nDsts != 0) {
+            uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
+            reduceCopy<ncclCollUnroll(), RedOp, T,
                      /*MultimemSrcs,MinSrcs,MaxSrcs=*/0,1,1,
                      /*MultimemDsts=*/0, 0+MinDsts, 1+MaxDsts,
                      /*PreOpSrcs=*/0>
             (tid, tn, 0, nullptr, false,
              /*nSrcs=*/1, [=]__device__(int s/*==0*/) -> void* {
-               return (char*)srcPtrs[src] + railAllOffset;
+               return work->regUsed && (recvDirectFlag & NCCL_DIRECT_READ) ? (char*)srcPtrs[src] + userOneBeg : (char*)srcPtrs[src] + railAllOffset;
              },
              /*nDsts=*/outIsDst+nDsts, [=]__device__(int d) -> void* {
                return d < outIsDst ? outbuf + userOneBeg
+                                   : work->regUsed && (sendDirectFlag & NCCL_DIRECT_WRITE) ? (char*)dstPtrs[d-outIsDst] + userOneBeg
                                    : (char*)dstPtrs[d-outIsDst] + railAllOffset;
              },
              delta, scratch);
+          }
           railAllOffset += delta;
           node += 1;
         }
@@ -282,15 +285,15 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
         __syncwarp();
       } else {
         // Phase 2: Recv network -> deposit output + send to bcast
-        Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/0, Proto, 0>
-          prims(tid, tn, &direct->out, direct->heads + 1, nullptr, nullptr,
-            /*redOpArg=*/0, 1 * Proto::MaxGroupWidth, 0, 0);
+        Primitives<T, RedOp, FanAsymmetric<1, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto, 0>
+          prims(tid, tn, &direct->out, direct->heads + 1, nullptr, work->recvbuff,
+            /*redOpArg=*/0, 1 * Proto::MaxGroupWidth, 0, 0, work);
         for (ssize_t railGridOffset = 0; railGridOffset < nNodes * sizePerRank; railGridOffset += nChannels * chunkSize) {
           Scatterer</*BcastSendNotRecv=*/true> scat;
           scat.work = work;
           scat.chunkSize = chunkSize;
           scat.railGridOffset = railGridOffset;
-          prims.template process</*Recv=*/1, /*Send=*/1>(scat);
+          prims.template process</*Recv=*/1, /*Send=*/1>(scat, work->direct, 0);
         }
       }
       return;
@@ -300,15 +303,15 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
     tn = nWarps3*WARP_SIZE;
     if (tid < tn) {
       // Phase 3: Recv bcast -> deposit output
-      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 0>, /*Direct=*/0, Proto, 0>
-        prims(tid, tn, direct->heads+1, nullptr, nullptr, nullptr,
-              /*redOpArg=*/0, 2*Proto::MaxGroupWidth, 0, 0);
+      Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 0>, /*Direct=*/1, Proto, 0>
+        prims(tid, tn, direct->heads+1, nullptr, nullptr, work->recvbuff,
+              /*redOpArg=*/0, 2*Proto::MaxGroupWidth, 0, 0, work);
       for (ssize_t railGridOffset=0; railGridOffset < nNodes*sizePerRank; railGridOffset += nChannels*chunkSize) {
         Scatterer</*BcastSendNotRecv=*/false> scat;
         scat.work = work;
         scat.chunkSize = chunkSize;
         scat.railGridOffset = railGridOffset;
-        prims.template process</*Recv=*/1, /*Send=*/0>(scat);
+        prims.template process</*Recv=*/1, /*Send=*/0>(scat, 0, work->direct);
       }
       return;
     }

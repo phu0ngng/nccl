@@ -81,6 +81,7 @@ DECLARE_CUDA_PFN(cuMemRelease);
 DECLARE_CUDA_PFN(cuMemRetainAllocationHandle);
 DECLARE_CUDA_PFN(cuMemSetAccess);
 DECLARE_CUDA_PFN(cuMemUnmap);
+DECLARE_CUDA_PFN(cuMemGetAllocationPropertiesFromHandle);
 /* ncclMemAlloc/Free */
 DECLARE_CUDA_PFN(cuPointerGetAttribute);
 #if CUDA_VERSION >= 11070
@@ -157,6 +158,7 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuMemRetainAllocationHandle, 1);
   LOAD_SYM(cuMemSetAccess, 1);
   LOAD_SYM(cuMemUnmap, 1);
+  LOAD_SYM(cuMemGetAllocationPropertiesFromHandle, 1);
 /* ncclMemAlloc/Free */
   LOAD_SYM(cuPointerGetAttribute, 1);
 #if CUDA_VERSION >= 11070
