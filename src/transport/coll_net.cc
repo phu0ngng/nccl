@@ -154,15 +154,14 @@ struct setupReq {
 static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId, int connIndex) {
   struct setupReq req = { 0 };
 
-  int proxyRank, tpProxyRank;
+  int proxyRank;
   int64_t netId;
   NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, -1, &netId, &req.netDev, &proxyRank));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, netId, 1, &req.useGdr));
   send->conn.flags |= req.useGdr ? NCCL_DIRECT_NIC : 0;
 
   send->proxyConn.tpLocalRank = comm->topParentLocalRanks[comm->localRank];
-  tpProxyRank = comm->topParentRanks[myInfo->rank];
-  NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 1, tpProxyRank, &send->proxyConn));
+  NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 1, myInfo->rank, &send->proxyConn));
   ncclAtomicRefCountIncrement(&comm->collNetSharedRes->refCount);
   req.collNet = comm->collNetSharedRes;
   NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), NULL, 0));
@@ -175,7 +174,7 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
 static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* recv, int channelId, int connIndex) {
   struct setupReq req = { 0 };
 
-  int proxyRank, tpProxyRank;
+  int proxyRank;
   int64_t netId;
   NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, -1, &netId, &req.netDev, &proxyRank));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->busId, netId, 0, &req.useGdr));
@@ -184,8 +183,7 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   if (req.useGdr) NCCLCHECK(ncclTopoNeedFlush(comm->topo, myInfo->busId, &req.needFlush));
 
   recv->proxyConn.tpLocalRank = comm->topParentLocalRanks[comm->localRank];
-  tpProxyRank = comm->topParentRanks[myInfo->rank];
-  NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 0, tpProxyRank, &recv->proxyConn));
+  NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_COLLNET, 0, myInfo->rank, &recv->proxyConn));
   static_assert(sizeof(collNetRecvConnectInfo) <= sizeof(struct ncclConnect), "Collnet Recv Connect info is too big");
   struct collNetRecvConnectInfo* info = (struct collNetRecvConnectInfo*) connectInfo;
   ncclAtomicRefCountIncrement(&comm->collNetSharedRes->refCount);
@@ -1041,7 +1039,7 @@ ncclResult_t ncclCollnetLocalRegisterBuffer(struct ncclComm* comm, const void* u
         NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyconn, ncclProxyMsgRegister, &info, sizeof(struct collnetRegInfo), &handle, sizeof(void*)), ret, fail);
         if (handle) {
           regRecord->state |= COLLNET_REG_COMPLETE;
-          regRecord->proxyconn = proxyconn;
+          regRecord->collnetProxyconn = proxyconn;
           *outHandle = regRecord->collnetHandle = handle;
           *outRegBufFlag = 1;
         }
@@ -1216,23 +1214,6 @@ ncclResult_t ncclCollNetDirectBufferSetup(ncclComm_t comm) {
   }
   NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_COLLNET_DIRECT], 1, &highestTransportType1), ret, fail);
 
-  // Exchange highest intra-node transport type among ranks
-  // because we need to know whether all ranks can p2p each other to determine whether we can directly read/write registered user buffer
-  if (highestTransportType0 != TRANSPORT_UNDEFINED && highestTransportType1 != TRANSPORT_UNDEFINED) {
-    int highestTypes[NCCL_MAX_LOCAL_RANKS] = { TRANSPORT_UNDEFINED };
-
-    comm->intraHighestTransportType = highestTypes[comm->localRank] = highestTransportType0 > highestTransportType1 ? highestTransportType0 : highestTransportType1;
-    NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, highestTypes, sizeof(int)), ret, fail);
-    for (int i = 0; i < comm->localRanks; i++) {
-      if (highestTypes[i] > comm->intraHighestTransportType)
-        comm->intraHighestTransportType = highestTypes[i];
-    }
-    if (comm->collNetSharedRes->intraHighestTransportType < comm->intraHighestTransportType)
-      comm->collNetSharedRes->intraHighestTransportType = comm->intraHighestTransportType;
-  } else if (comm->intraHighestTransportType == TRANSPORT_UNDEFINED) {
-    // reuse previous shared intraHighestTransportType
-    comm->intraHighestTransportType = comm->collNetSharedRes->intraHighestTransportType;
-  }
   INFO(NCCL_INIT, "rank %d Connected CollNet", comm->rank);
 
 exit:

@@ -13,6 +13,7 @@ if [ "$graph" == "" ]; then graph=0; fi
 opts="-n 5 -w 1 -G $graph"
 range="-b 8 -e $max -f 2"
 enable_split_comm="-S 1 -P 1"
+enable_local_register="-R 1"
 
 export LD_LIBRARY_PATH=$SHARP_HOME/lib:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$HPCX_UCX_LIB:$PLUGIN_PATH:$LD_LIBRARY_PATH
@@ -38,6 +39,10 @@ $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts
 
 echo "=============================== all_reduce (Split Share CollNet) - $(date +\"%T\") ====================="
 $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts $enable_split_comm
+[ $? -ne 0 ] && let failure_count=$failure_count+1
+
+echo "=============================== all_reduce (local registration CollNet) - $(date +\"%T\") ====================="
+$SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts $enable_local_register
 [ $? -ne 0 ] && let failure_count=$failure_count+1
 
 exit $failure_count

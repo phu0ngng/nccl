@@ -274,4 +274,13 @@ inline __host__ __device__ uint32_t u32fp8Decode(uint8_t x) {
   return u32fpDecode(x, 3);
 }
 
+inline __host__ __device__ uint64_t getHash(const char* string, int n) {
+  // Based on DJB2a, result = result * 33 ^ char
+  uint64_t result = 5381;
+  for (int c = 0; c < n; c++) {
+    result = ((result << 5) + result) ^ string[c];
+  }
+  return result;
+}
+
 #endif

@@ -15,11 +15,11 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
   template<typename Proto>
   __device__ void runSend(int tid, int tn, int group, struct ncclDevWorkP2p* work) {
     size_t bytes = work->sendBytes;
-    int chunkSize = u32fp8Decode(work->sendChunkSize_u32fp8);
+    int chunkSize = work->sendIpcReg ? (1 << 30) : u32fp8Decode(work->sendChunkSize_u32fp8);
     Primitives<T, RedOp, FanAsymmetric<0, 1>, 1, Proto, 1>
       prims(tid, tn, nullptr, &work->sendRank, work->sendAddr, nullptr,
             /*redOpArg(ignored)=*/0, group, 1, 1, nullptr,
-            /*userBufferMode=*/work->sendRegistered, ncclShmem.comm.p2pChunkSize);
+            /*ipcReg=*/work->sendIpcReg, /*netReg=*/work->sendRegistered, ncclShmem.comm.p2pChunkSize);
     size_t cursor = 0;
     do {
       int n = min(size_t(chunkSize), bytes-cursor);
@@ -31,11 +31,11 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
   template<typename Proto>
   __device__ void runRecv(int tid, int tn, int group, struct ncclDevWorkP2p* work) {
     size_t bytes = work->recvBytes;
-    int chunkSize = u32fp8Decode(work->recvChunkSize_u32fp8);
+    int chunkSize = work->recvIpcReg ? (1 << 30) : u32fp8Decode(work->recvChunkSize_u32fp8);
     Primitives<T, RedOp, FanAsymmetric<1, 0>, 1, Proto, 1>
       prims(tid, tn, &work->recvRank, nullptr, nullptr, work->recvAddr,
             /*redOpArg(ignored)=*/0, group, 1, 1, nullptr,
-            /*userBufferMode=*/work->recvRegistered, ncclShmem.comm.p2pChunkSize);
+            /*ipcReg=*/work->recvIpcReg, /*netReg=*/work->recvRegistered, ncclShmem.comm.p2pChunkSize);
     size_t cursor = 0;
     do {
       int n = min(size_t(chunkSize), bytes-cursor);

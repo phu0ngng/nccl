@@ -77,10 +77,22 @@ for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gathe
 done
 
 export NCCL_ALGO=NVLS
-for func in all_reduce reduce_scatter all_gather sendrecv alltoall; do
-  echo "=============================== $func (local registration all sizes) - $(date +\"%T\") =========================="
+for func in all_reduce reduce_scatter all_gather; do
+  echo "=============================== $func NVLS (local registration all sizes) - $(date +\"%T\") =========================="
   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
-  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (split share all sizes): ${func}_perf $split_range $opts $enable_local_register")
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NVLS (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+done
+
+export NCCL_ALGO=Tree
+echo "=============================== all_reduce Tree (local registration all sizes) - $(date +\"%T\") =========================="
+$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_local_register
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce Tree (local registration all sizes): all_reduce_perf $range $opts $enable_local_register")
+
+export NCCL_ALGO=Ring
+for func in all_reduce reduce_scatter all_gather sendrecv alltoall broadcast; do
+  echo "=============================== $func Ring (local registration all sizes) - $(date +\"%T\") =========================="
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
 done
 unset NCCL_ALGO
 

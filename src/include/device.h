@@ -128,6 +128,8 @@ struct ncclConnInfo {
 };
 
 struct ncclProxyConnector {
+  bool initialized;
+  int rank;
   int tpRank;
   int tpLocalRank;
   int sameProcess;
@@ -225,6 +227,7 @@ struct alignas(16) ncclDevWorkP2p {
 
   uint8_t sendProtoLL:1, recvProtoLL:1;
   uint8_t sendRegistered:1, recvRegistered:1;
+  uint8_t sendIpcReg:1, recvIpcReg:1;
 };
 
 // Compute the subset of the data transfer corresponding to the given part index.
@@ -266,6 +269,10 @@ struct alignas(16) ncclDevWorkColl {
   uint32_t root;
   void* recvbuff;
   void* sendbuff;
+  uintptr_t sendbuffOffset;
+  uintptr_t recvbuffOffset;
+  uintptr_t* sendbuffRmtAddrs;
+  uintptr_t* recvbuffRmtAddrs;
   union {
     // Continuous-byte-distribution scheduling. The lo and hi channels are of
     // different size than the channels in the middle.
@@ -395,6 +402,7 @@ struct ncclDevComm {
 
   // Channels, device side
   struct ncclDevChannel* channels/*[MAXCHANNELS]*/;
+  int* rankToLocalRank;
 };
 
 struct alignas(16) ncclDevCommAndChannels {

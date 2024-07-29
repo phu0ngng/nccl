@@ -88,7 +88,7 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_S
     size_t offset;
     int nelem;
 
-    /* if we are direct NVLS, we only need to allocate 1 warp to scatter for sync; 
+    /* if we are direct NVLS, we only need to allocate 1 warp to scatter for sync;
      * if not, based on #ranks, we allocate 7 or 5 warps to reduce to saturate bandwidth
      * and the rest are allocated to scatter. */
     const int nThreadsReduce = work->regUsed ? (NCCL_MAX_NTHREADS - WARP_SIZE) : (nranks <= 6 ? 7 * WARP_SIZE : 5 * WARP_SIZE);
@@ -164,7 +164,7 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NC
     template<int SlicePerChunk, int MinSrcs, int MaxSrcs, int MinDsts, int MaxDsts>
     __device__ __forceinline__ void operator()(
         int tid, int tn, int slice, int maxSliceSize,
-        int nSrcs, void** srcPtrs, int nDsts, void** dstPtrs, int32_t* dstSizes
+        int nSrcs, void** srcPtrs, int nDsts, void** dstPtrs, int32_t* dstSizes, uint32_t sendDirectFlag, uint32_t recvDirectFlag
       ) {
       static_assert(SlicePerChunk==1, "require: SlicePerChunk==1");
       static_assert(MaxDsts<=1 || MaxSrcs<=1, "require: MaxDsts<=1 || MaxSrcs<=1");
@@ -199,20 +199,24 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NC
           int delta = min(railAllEnd, railOneEnd) - (railAllBeg+railAllOffset);
           int rank = ncclShmem.comm.collNetDenseToUserRank[node*nRails + rail];
           ssize_t userOneBeg = rank*sizePerRank + railOneOffset;
-          uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
-          reduceCopy<ncclCollUnroll(), RedOp, T,
+          if (nDsts != 0) {
+            uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
+            reduceCopy<ncclCollUnroll(), RedOp, T,
                      /*MultimemSrcs=*/0, 1+MinSrcs, 1+MaxSrcs,
                      /*MultimemDsts,MinDsts,MaxDsts=*/0,1,1,
                      /*PreOpSrcs=*/1>
             (tid, tn, work->redOpArg, &work->redOpArg, false,
              /*nSrcs=*/1+nSrcs, [=]__device__(int s) {
                return s==0 ? (T*)inbuf + userOneBeg
+                           : work->regUsed && (recvDirectFlag & NCCL_DIRECT_READ)
+                           ? (T*)srcPtrs[s-1] + userOneBeg
                            : (T*)srcPtrs[s-1] + railAllOffset;
              },
              /*nDsts=*/1, [=]__device__(int d/*==0*/) {
                return (T*)dstPtrs[dst] + railAllOffset;
              },
              delta, scratch);
+          }
           railAllOffset += delta;
           node += 1;
         }
@@ -246,15 +250,15 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NC
     int tn = nWarps1*WARP_SIZE;
     if (tid < tn) {
       // Phase 1: Scatter inputs to peers
-      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/0, Proto, 0>
-        prims(tid, tn, nullptr, direct->heads+1, nullptr, nullptr,
-              work->redOpArg, 0*Proto::MaxGroupWidth, 1, 1);
+      Primitives<T, RedOp, FanAsymmetric<0, NCCL_MAX_DIRECT_ARITY>, /*Direct=*/1, Proto, 0>
+        prims(tid, tn, nullptr, direct->heads+1, work->sendbuff, nullptr,
+              work->redOpArg, 0*Proto::MaxGroupWidth, 1, 1, work);
       for (ssize_t railGridOffset=0; railGridOffset < nNodes*sizePerRank; railGridOffset += nChannels*chunkSize) {
         Scatterer</*ReduceSendNotRecv=*/true> scat;
         scat.work = work;
         scat.chunkSize = chunkSize;
         scat.railGridOffset = railGridOffset;
-        prims.template process</*Recv=*/0, /*Send=*/1>(scat);
+        prims.template process</*Recv=*/0, /*Send=*/1>(scat, NCCL_DIRECT_READ, 0);
       }
       return;
     }
@@ -270,15 +274,15 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NC
         __syncwarp();
       } else {
         // Phase 2: Reduce from peers + local input -> send to network
-        Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/0, Proto, 0>
+        Primitives<T, RedOp, FanAsymmetric<NCCL_MAX_DIRECT_ARITY, 1>, /*Direct=*/1, Proto, 0>
           prims(tid, tn, direct->heads + 1, &direct->out, nullptr, nullptr,
-            work->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1);
+            work->redOpArg, 1 * Proto::MaxGroupWidth, 1, 1, work);
         for (ssize_t railGridOffset = 0; railGridOffset < nNodes * sizePerRank; railGridOffset += nChannels * chunkSize) {
           Scatterer</*ReduceSendNotRecv=*/false> scat;
           scat.work = work;
           scat.chunkSize = chunkSize;
           scat.railGridOffset = railGridOffset;
-          prims.template process</*Recv=*/1, /*Send=*/1>(scat);
+          prims.template process</*Recv=*/1, /*Send=*/1>(scat, 0, NCCL_DIRECT_READ);
         }
       }
       return;

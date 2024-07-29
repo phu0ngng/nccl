@@ -428,6 +428,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       bool algoNeedConnect[NCCL_NUM_ALGORITHMS];
       memset(algoNeedConnect, 0, sizeof(bool) * NCCL_NUM_ALGORITHMS);
 
+      CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
       NCCLCHECKGOTO(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, simInfo), ret, fail);
 
       if (comm->cuMemSupport && needConnect) {
