@@ -228,39 +228,51 @@ static ncclResult_t shmRecvFree(struct ncclConnector* recv) {
 }
 
 static ncclResult_t shmSendProxyConnect(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  ncclResult_t ret = ncclSuccess;
+  if (reqSize != sizeof(struct shmProxyInfo) || respSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
   struct shmProxyInfo* proxyInfo;
   NCCLCHECK(ncclCalloc(&proxyInfo, 1));
-  if (reqSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
   memcpy(proxyInfo, reqBuff, reqSize);
-  NCCLCHECK(ncclCudaCalloc(&proxyInfo->devFifo, proxyState->buffSizes[NCCL_PROTO_SIMPLE]));
-  NCCLCHECK(ncclCudaHostCalloc(&proxyInfo->ceRecvMem, 1));
-  CUDACHECK(cudaStreamCreateWithFlags(&proxyInfo->stream, cudaStreamNonBlocking));
+  NCCLCHECKGOTO(ncclCudaCalloc(&proxyInfo->devFifo, proxyState->buffSizes[NCCL_PROTO_SIMPLE]), ret, fail);
+  NCCLCHECKGOTO(ncclCudaHostCalloc(&proxyInfo->ceRecvMem, 1), ret, fail);
+  CUDACHECKGOTO(cudaStreamCreateWithFlags(&proxyInfo->stream, cudaStreamNonBlocking), ret, fail);
   for (int i=0; i<NCCL_STEPS; i++) {
-    CUDACHECK(cudaEventCreate(proxyInfo->events+i));
+    CUDACHECKGOTO(cudaEventCreate(proxyInfo->events+i), ret, fail);
   }
   connection->proxyAppendPtr = &connection->proxyAppend;
   connection->transportResources = proxyInfo;
-  if (respSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
   memcpy(respBuff, proxyInfo, respSize);
-  return ncclSuccess;
+exit:
+  return ret;
+fail:
+  if (proxyInfo->ceRecvMem) ncclCudaHostFree(proxyInfo->ceRecvMem);
+  if (proxyInfo->devFifo) (void)ncclCudaFree(proxyInfo->devFifo);
+  free(proxyInfo);
+  goto exit;
 }
 
 static ncclResult_t shmRecvProxyConnect(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  ncclResult_t ret = ncclSuccess;
+  if (reqSize != sizeof(struct shmProxyInfo) || respSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
   struct shmProxyInfo* proxyInfo;
   NCCLCHECK(ncclCalloc(&proxyInfo, 1));
-  if (reqSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
   memcpy(proxyInfo, reqBuff, reqSize);
-  NCCLCHECK(ncclCudaCalloc(&proxyInfo->devFifo, proxyState->buffSizes[NCCL_PROTO_SIMPLE]));
-  NCCLCHECK(ncclCudaHostCalloc(&proxyInfo->ceRecvMem, 1));
-  CUDACHECK(cudaStreamCreateWithFlags(&proxyInfo->stream, cudaStreamNonBlocking));
+  NCCLCHECKGOTO(ncclCudaCalloc(&proxyInfo->devFifo, proxyState->buffSizes[NCCL_PROTO_SIMPLE]), ret, fail);
+  NCCLCHECKGOTO(ncclCudaHostCalloc(&proxyInfo->ceRecvMem, 1), ret, fail);
+  CUDACHECKGOTO(cudaStreamCreateWithFlags(&proxyInfo->stream, cudaStreamNonBlocking), ret, fail);
   for (int i=0; i<NCCL_STEPS; i++) {
-    CUDACHECK(cudaEventCreate(proxyInfo->events+i));
+    CUDACHECKGOTO(cudaEventCreate(proxyInfo->events+i), ret, fail);
   }
   connection->proxyAppendPtr = &connection->proxyAppend;
   connection->transportResources = proxyInfo;
-  if (respSize != sizeof(struct shmProxyInfo)) return ncclInternalError;
   memcpy(respBuff, proxyInfo, respSize);
-  return ncclSuccess;
+exit:
+  return ret;
+fail:
+  if (proxyInfo->ceRecvMem) ncclCudaHostFree(proxyInfo->ceRecvMem);
+  if (proxyInfo->devFifo) (void)ncclCudaFree(proxyInfo->devFifo);
+  free(proxyInfo);
+  goto exit;
 }
 
 static ncclResult_t shmSendProxyFree(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState) {

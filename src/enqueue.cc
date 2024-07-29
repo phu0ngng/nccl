@@ -121,6 +121,10 @@ static void addWorkBatchToPlan(
   if (newBatch || extendBatch) {
     if (!newBatch) batch->nextExtends = extendBatch; // Extending the previous batch.
     struct ncclWorkBatchList* batchNode = ncclMemoryStackAlloc<ncclWorkBatchList>(&comm->memScoped);
+    // Coverity thinks that ncclIntruQueueEnqueue will access chan->workBatchQueue->tail, which might
+    // be NULL.  But that code is guarded by chan->workBatchQueue->head not being NULL, in which
+    // case tail won't be NULL either.
+    // coverity[var_deref_model:FALSE]
     ncclIntruQueueEnqueue(&chan->workBatchQueue, batchNode);
     batch = &batchNode->batch;
     batch->nextExtends = 0;
@@ -876,6 +880,9 @@ static ncclResult_t scheduleCollTasksToPlan(
         proxyOp->channelId = c;
         proxyOp->opCount = proxyOpId;
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
+        // Coverity reports "proxyOp->connection" as being possibly uninitialized.  It's hard to
+        // determine if that's actually true but it's also not clear if that would be an issue.
+        // coverity[uninit_use_in_call:FALSE]
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, proxyOp));
       }
     }
@@ -1795,6 +1802,8 @@ static ncclResult_t topoGetAlgoInfo(
   info->protocol = protocol;
   float time = minTime;
 
+  // Yes, we are first assigning and then testing if protocol is sane, but that's OK in this case.
+  // coverity[check_after_sink]
   if (info->algorithm == NCCL_ALGO_UNDEF || info->protocol == NCCL_PROTO_UNDEF) {
     if (backupAlgo == NCCL_ALGO_UNDEF || backupProto == NCCL_PROTO_UNDEF) {
       WARN("Error : no algorithm/protocol available");
@@ -1970,13 +1979,17 @@ static ncclResult_t calcCollChunking(
     int maxChunkSize = comm->nvlsChunkSize;
     if (comm->nNodes > 1 && comm->bandwidths[ncclFuncAllReduce][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] < 150) maxChunkSize = 32768;
     if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
-    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
+    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow.
+    // However, nChannels * comm->channels[0].nvls.nHeads should easily fit in 32 bits.
+    // coverity[overflow_before_widen]
     uint64_t concurrentOps = nChannels * comm->channels[0].nvls.nHeads;
     if ((nBytes < (64 * (concurrentOps * chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
     if ((nBytes < (8 * (concurrentOps * chunkSize))) && (chunkSize > 32768)) chunkSize = 32768;
     if ((nBytes < (2 * (concurrentOps * chunkSize))) && (chunkSize > 16384)) chunkSize = 16384;
   } else if (info->algorithm == NCCL_ALGO_NVLS_TREE) {
-    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow
+    // Use uint64_t so that concurrentOps*chunkSize*X does not overflow.
+    // However, nChannels * comm->channels[0].nvls.nHeads should easily fit in 32 bits.
+    // coverity[overflow_before_widen]
     uint64_t concurrentOps = nChannels * comm->channels[0].nvls.nHeads;
     chunkSize = comm->nvlsChunkSize;
     int maxChunkSize = (int)ncclParamNvlsTreeMaxChunkSize();
@@ -1990,7 +2003,10 @@ static ncclResult_t calcCollChunking(
     int nNodes = comm->nNodes;
     float ppn = comm->nRanks / (float)nNodes;
     float nstepsLL128 = 1+log2i(nNodes) + 0.1*ppn;
+    // Yes, we are OK with the division on the left side of the < operand being integer.
+    // coverity[integer_division]
     while (nBytes / (nChannels*chunkSize) < nstepsLL128*64/ppn && chunkSize > 131072) chunkSize /= 2;
+    // coverity[integer_division]
     while (nBytes / (nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
   }
 
@@ -2068,6 +2084,7 @@ static ncclResult_t hostToDevRedOp(
   opFull->proxyOp = op;
 
   int nbits = 8*ncclTypeSize(datatype);
+  if (nbits <= 0) return ncclInvalidArgument;
   uint64_t allBits = uint64_t(-1)>>(64-nbits);
   uint64_t signBit = allBits^(allBits>>1);
 
@@ -2220,7 +2237,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     while (true) {
       if (l == nullptr) { // Got to the end, this must be a new stream.
         struct ncclCudaGraph graph;
-        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream))
+        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream));
         if (planner->streams != nullptr && !ncclCudaGraphSame(planner->capturingGraph, graph)) {
           WARN("Streams given to a communicator within a NCCL group must either be all uncaptured or all captured by the same graph.");
           return ncclInvalidUsage;
@@ -2269,7 +2286,7 @@ exit:
   NCCLCHECK(ncclGroupEndInternal());
   /* if depth is 1, ncclGroupEndInternal() will trigger group ops. The state can change
    * so we have to check state here. */
-  if (info->comm && !info->comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(info->comm, &ret)) };
+  if (info->comm && !info->comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(info->comm, &ret)); }
   return ret;
 fail:
   if (info->comm && !info->comm->config.blocking) (void) ncclCommSetAsyncError(info->comm, ret);
@@ -2304,8 +2321,10 @@ ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t *op, void *scalar, ncclDataTyp
   user->datatype = datatype;
   user->opFull.op = ncclDevPreMulSum;
   if (residence == ncclScalarHostImmediate) {
+    int size = ncclTypeSize(datatype);
+    if (size < 1) return ncclInternalError;
     user->opFull.scalarArgIsPtr = false;
-    std::memcpy(&user->opFull.scalarArg, scalar, ncclTypeSize(datatype));
+    std::memcpy(&user->opFull.scalarArg, scalar, size);
   } else {
     user->opFull.scalarArgIsPtr = true;
     user->opFull.scalarArg = reinterpret_cast<uint64_t>(scalar);
@@ -2322,6 +2341,10 @@ ncclResult_t ncclRedOpDestroy(ncclRedOp_t op, ncclComm_t comm) {
     WARN("ncclRedOpDestroy : operator is a NCCL builtin.");
     return ncclInvalidArgument;
   }
+  // int(ncclMaxRedOp) < int(op) will always be false due to the sizes of
+  // the datatypes involved, and that's by design.  We keep the check though
+  // just as a reminder.
+  // coverity[result_independent_of_operands]
   if (int(op) < 0 || int(ncclMaxRedOp) < int(op)) {
     WARN("ncclRedOpDestroy :  operator is garbage.");
     return ncclInvalidArgument;

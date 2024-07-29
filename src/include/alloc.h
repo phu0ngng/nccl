@@ -50,14 +50,14 @@ inline ncclResult_t ncclCudaHostFree(void* ptr) {
 template <typename T>
 ncclResult_t ncclCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
   if (nelem > 0) {
-    void* p = malloc(nelem*ncclSizeOfT<T>());
+    T* p = (T*)malloc(nelem*ncclSizeOfT<T>());
     if (p == NULL) {
       WARN("Failed to malloc %ld bytes", nelem*ncclSizeOfT<T>());
       return ncclSystemError;
     }
     //INFO(NCCL_ALLOC, "%s:%d malloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), p);
     memset(p, 0, nelem*ncclSizeOfT<T>());
-    *ptr = (T*)p;
+    *ptr = p;
   } else {
     *ptr = NULL;
   }
@@ -317,7 +317,8 @@ finish:
 // and if they are shared, that could cause a crash in a child process
 inline ncclResult_t ncclIbMallocDebug(void** ptr, size_t size, const char *filefunc, int line) {
   if (size > 0) {
-    size_t page_size = sysconf(_SC_PAGESIZE);
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size < 0) return ncclSystemError;
     void* p;
     int size_aligned = ROUNDUP(size, page_size);
     int ret = posix_memalign(&p, page_size, size_aligned);

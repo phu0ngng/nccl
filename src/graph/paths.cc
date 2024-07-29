@@ -40,9 +40,8 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
 
   // breadth-first search to set all paths to that node in the system
   struct ncclTopoNodeList nodeList;
-  struct ncclTopoNodeList nextNodeList;
+  struct ncclTopoNodeList nextNodeList = { { 0 }, 0 };
   nodeList.count = 1; nodeList.list[0] = baseNode;
-  nextNodeList.count = 0;
   struct ncclTopoLinkList* basePath;
   NCCLCHECK(getPath(system, baseNode, baseNode->type, baseNode->id, &basePath));
   basePath->count = 0;
@@ -627,11 +626,13 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
 }
 
 ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* comm) {
+  ncclResult_t ret = ncclSuccess;
   int *domains;
-  int64_t *ids;
-  NCCLCHECK(ncclCalloc(&domains, system->nodes[GPU].count));
-  NCCLCHECK(ncclCalloc(&ids, system->nodes[GPU].count));
+  int64_t *ids = NULL;
   int myDomain = 0;
+  int ngpus = system->nodes[GPU].count;
+  NCCLCHECK(ncclCalloc(&domains, system->nodes[GPU].count));
+  NCCLCHECKGOTO(ncclCalloc(&ids, system->nodes[GPU].count), ret, fail);
   for (int g=0; g<system->nodes[GPU].count; g++) {
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
     domains[g] = g;
@@ -644,7 +645,6 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     if (gpu->gpu.rank == comm->rank) myDomain = domains[g];
   }
 
-  int ngpus = system->nodes[GPU].count;
   for (int i=0; i<ngpus; i++) {
     if (domains[i] == myDomain) continue;
     struct ncclTopoNode* gpu = NULL;
@@ -655,20 +655,22 @@ ncclResult_t ncclTopoTrimSystem(struct ncclTopoSystem* system, struct ncclComm* 
     }
     if (gpu == NULL) {
       WARN("Could not find id %lx", ids[i]);
-      free(domains);
-      free(ids);
-      return ncclInternalError;
+      ret = ncclInternalError;
+      goto fail;
     }
-    NCCLCHECK(ncclTopoRemoveNode(system, GPU, g));
+    NCCLCHECKGOTO(ncclTopoRemoveNode(system, GPU, g), ret, fail);
   }
 
   if (system->nodes[GPU].count == comm->nRanks) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
-      NCCLCHECK(ncclTopoRemoveNode(system, NET, n));
+      NCCLCHECKGOTO(ncclTopoRemoveNode(system, NET, n), ret, fail);
   }
+exit:
   free(domains);
-  free(ids);
-  return ncclSuccess;
+  if (ids) free(ids);
+  return ret;
+fail:
+  goto exit;
 }
 
 void ncclTopoFree(struct ncclTopoSystem* system) {

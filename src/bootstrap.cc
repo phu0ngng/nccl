@@ -168,7 +168,7 @@ static void *bootstrapRoot(void* rargs) {
 
 out:
   if (listenSock != NULL) {
-    ncclSocketClose(listenSock);
+    (void)ncclSocketClose(listenSock);
     free(listenSock);
   }
   if (rankAddresses) free(rankAddresses);
@@ -181,22 +181,28 @@ out:
 }
 
 ncclResult_t bootstrapCreateRoot(struct ncclBootstrapHandle* handle, bool idFromEnv) {
-  struct ncclSocket* listenSock;
-  struct bootstrapRootArgs* args;
+  ncclResult_t ret = ncclSuccess;
+  struct ncclSocket* listenSock = NULL;
+  struct bootstrapRootArgs* args = NULL;
   pthread_t thread;
 
   NCCLCHECK(ncclCalloc(&listenSock, 1));
-  NCCLCHECK(ncclSocketInit(listenSock, &handle->addr, handle->magic, ncclSocketTypeBootstrap, NULL, 0));
-  NCCLCHECK(ncclSocketListen(listenSock));
-  NCCLCHECK(ncclSocketGetAddr(listenSock, &handle->addr));
+  NCCLCHECKGOTO(ncclSocketInit(listenSock, &handle->addr, handle->magic, ncclSocketTypeBootstrap, NULL, 0), ret, fail);
+  NCCLCHECKGOTO(ncclSocketListen(listenSock), ret, fail);
+  NCCLCHECKGOTO(ncclSocketGetAddr(listenSock, &handle->addr), ret, fail);
 
-  NCCLCHECK(ncclCalloc(&args, 1));
+  NCCLCHECKGOTO(ncclCalloc(&args, 1), ret, fail);
   args->listenSock = listenSock;
   args->magic = handle->magic;
-  NEQCHECK(pthread_create(&thread, NULL, bootstrapRoot, (void*)args), 0);
+  PTHREADCHECKGOTO(pthread_create(&thread, NULL, bootstrapRoot, (void*)args), "pthread_create", ret, fail);
   ncclSetThreadName(thread, "NCCL BootstrapR");
-  NEQCHECK(pthread_detach(thread), 0); // will not be pthread_join()'d
-  return ncclSuccess;
+  PTHREADCHECKGOTO(pthread_detach(thread), "pthread_detach", ret, fail); // will not be pthread_join()'d
+exit:
+  return ret;
+fail:
+  if (listenSock) free(listenSock);
+  if (args) free(args);
+  goto exit;
 }
 
 ncclResult_t bootstrapGetUniqueId(struct ncclBootstrapHandle* handle) {
@@ -242,6 +248,7 @@ struct bootstrapState {
 };
 
 ncclResult_t bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* comm) {
+  ncclResult_t ret = ncclSuccess;
   int rank = comm->rank;
   int nranks = comm->nRanks;
   struct bootstrapState* state;
@@ -311,21 +318,24 @@ ncclResult_t bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* 
 
   // proxy is aborted through a message; don't set abortFlag
   NCCLCHECK(ncclCalloc(&proxySocket, 1));
-  NCCLCHECK(ncclSocketInit(proxySocket, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeProxy, comm->abortFlag));
-  NCCLCHECK(ncclSocketListen(proxySocket));
-  NCCLCHECK(ncclSocketGetAddr(proxySocket, state->peerProxyAddresses+rank));
-  NCCLCHECK(bootstrapAllGather(state, state->peerProxyAddresses, sizeof(union ncclSocketAddress)));
+  NCCLCHECKGOTO(ncclSocketInit(proxySocket, &bootstrapNetIfAddr, comm->magic, ncclSocketTypeProxy, comm->abortFlag), ret, fail);
+  NCCLCHECKGOTO(ncclSocketListen(proxySocket), ret, fail);
+  NCCLCHECKGOTO(ncclSocketGetAddr(proxySocket, state->peerProxyAddresses+rank), ret, fail);
+  NCCLCHECKGOTO(bootstrapAllGather(state, state->peerProxyAddresses, sizeof(union ncclSocketAddress)), ret, fail);
   // cuMem UDS support
   // Make sure we create a unique UDS socket name
   uint64_t randId;
-  NCCLCHECK(getRandomData(&randId, sizeof(randId)));
+  NCCLCHECKGOTO(getRandomData(&randId, sizeof(randId)), ret, fail);
   state->peerProxyAddressesUDS[rank] = getPidHash()+randId;
-  NCCLCHECK(bootstrapAllGather(state, state->peerProxyAddressesUDS, sizeof(*state->peerProxyAddressesUDS)));
-  NCCLCHECK(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses, state->peerProxyAddressesUDS));
+  NCCLCHECKGOTO(bootstrapAllGather(state, state->peerProxyAddressesUDS, sizeof(*state->peerProxyAddressesUDS)), ret, fail);
+  NCCLCHECKGOTO(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses, state->peerProxyAddressesUDS), ret, fail);
 
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
-
-  return ncclSuccess;
+exit:
+  return ret;
+fail:
+  free(proxySocket);
+  goto exit;
 }
 
 ncclResult_t bootstrapSplit(struct ncclBootstrapHandle* handle, struct ncclComm* comm, struct ncclComm* parent, int color, int key, int* parentRanks) {
@@ -334,7 +344,7 @@ ncclResult_t bootstrapSplit(struct ncclBootstrapHandle* handle, struct ncclComm*
   int nranks = comm->nRanks;
   int prev, next;
   ncclSocketAddress listenAddr, tmpAddr;
-  struct ncclSocket* proxySocket;
+  struct ncclSocket* proxySocket = NULL;
   struct bootstrapState* state;
 
   NCCLCHECKGOTO(ncclCalloc(&state, 1), ret, fail);
@@ -398,6 +408,7 @@ ncclResult_t bootstrapSplit(struct ncclBootstrapHandle* handle, struct ncclComm*
 exit:
   return ret;
 fail:
+  free(proxySocket);
   goto exit;
 }
 

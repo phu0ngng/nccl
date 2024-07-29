@@ -42,7 +42,7 @@ class Primitives<
   uint64_t step;
   struct ncclConnFifo* connFifo = NULL;
   T* connEltsFifo;
-  T* directBuff;
+  T* directBuff = NULL;
   uint64_t *connStepPtr;
   uint64_t connStepCache; // Cache last seen value of (*connStepPtr)
   int      connStepSize; // Connection step size
@@ -111,6 +111,8 @@ class Primitives<
     const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
     const bool noRecvWait = DirectRecv && Src && (flags & (DirectRead | IpcRead));        // no wait when directly reading from remote input
     const bool noSendWait = DirectSend && (flags & (DirectRead|DirectWrite)); // no wait in empty send (e.g. directScatter) or direct remote write
+    // Yes, for some template arguments this code will be unreachable.  That's fine.
+    // coverity[dead_error_line]
     if (((flags & (Recv*RoleWaitRecv)) && !noRecvWait) ||
         ((flags & (Send*RoleWaitSend)) && !noSendWait)) {
       int spins = 0;
@@ -149,6 +151,8 @@ class Primitives<
         }
       }
       else {
+        // Yes, for some template arguments this code will be unreachable.  That's fine.
+        // coverity[dead_error_line]
         ptrs[index] = connEltsFifo + (step%NCCL_STEPS)*connStepSize;
       }
       if (flags & NetDeviceUnpack) {
@@ -268,6 +272,8 @@ class Primitives<
         postPeer<Recv, Send>(0 < sliceSize);
         offset += sliceSize;
         slice += 1;
+        // Yes, for some template arguments this code will be unreachable.  That's fine.
+        // coverity[dead_error_line]
       } while (slice < SlicePerChunk && offset < nelem);
     }
 
@@ -319,7 +325,7 @@ public:
       if (tid < nworkers) {
         int nsend, nrecv;
         if (flags & (Recv*RoleWaitRecv | Send*RoleWaitSend)) {
-          bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
+          const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
           int spins = 0;
           while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
             connStepCache = loadStepValue(connStepPtr);
@@ -375,6 +381,8 @@ public:
       barrier();
       int32_t dstSize = 0;
       if (flags & Send*RolePostSend) {
+        // Yes, for some template arguments this code will be unreachable.  That's fine.
+        // coverity[dead_error_begin]
         dstSize = ncclShmem.groups[group].dstSizes[index];
         ncclShmem.groups[group].dstSizes[index] = 0;
         if (flags & ConnFifoEnabled) connFifo[step%NCCL_STEPS].size = dstSize*sizeof(T);
@@ -571,7 +579,10 @@ private:
     this->nworkers = nthreads - (MaxSend > 0 && nthreads >= NCCL_SIMPLE_EXTRA_GROUP_IF_NTHREADS_GE ? WARP_SIZE : 0);
 
     int nrecv=0, nsend=0;
+    // Yes, for some template arguments this code will be unreachable.  That's fine.
+    // coverity[dead_error_line]
     while (nrecv < MaxRecv && recvPeers[nrecv] != -1) nrecv++;
+    // coverity[dead_error_line]
     while (nsend < MaxSend && sendPeers[nsend] != -1) nsend++;
     this->fan = Fan(nrecv, nsend);
 
@@ -584,7 +595,14 @@ private:
     index = -1;
     flags = 0;
     assert(2*(nrecv+nsend) <= nthreads); // Ensure no thread is assigned more than one role.
+    // Coverity assumes that index will equal tid based on the line below, but it doesn't consider the setting
+    // of flags.  This results in multiple false positive overruns being reported here and in all_reduce.h.
+    // Unfortunately, we've been unsuccessful in trying to silence them with a single directive here so
+    // instead it's being done at the callers.
+    // coverity[assignment:FALSE]
     if      (tid < nrecv)                 { flags |= RoleWaitRecv; index = tid; }
+    // Yes, for some template arguments this code will be unreachable.  That's fine.
+    // coverity[dead_error_begin]
     else if (tid < nrecv+nsend)           { flags |= RoleWaitSend; index = tid-nrecv; }
     else if (nthreads-nsend <= tid)       { flags |= RolePostSend; index = tid-(nthreads-nsend); }
     else if (nthreads-nrecv-nsend <= tid) { flags |= RolePostRecv; index = tid-(nthreads-nrecv-nsend); }
@@ -593,7 +611,10 @@ private:
     if (flags & (RoleWaitRecv|RolePostRecv)) peer = recvPeers[index];
     if (flags & (RoleWaitSend|RolePostSend)) peer = sendPeers[index];
 
+    // Coverity thinks that index could be -1 here but that's not actually the case.
+    // coverity[negative_returns:FALSE]
     loadRecvConn(ncclShmem.channel.peers[peer], connIndexRecv, e ? e->direct : 0, e ? e->regUsed : ipcReg);
+    // coverity[negative_returns:FALSE]
     loadSendConn(ncclShmem.channel.peers[peer], connIndexSend, e ? e->direct : 0, e ? e->regUsed : ipcReg);
 
     if (netReg) flags |= NetRegMode;
@@ -608,6 +629,7 @@ private:
       }
     }
 
+    // coverity[negative_returns:FALSE]
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclDevWorkCollReg*)e, (uint8_t)(e ? e->regUsed : ipcReg), peer);
   }
 
@@ -737,6 +759,10 @@ private:
           *argSlot0 = 0; *argSlot1 = 0;
           *slot = nullptr;
         } else {
+          // Coverity complains about work being possibly NULL below.  However, slot
+          // being NULL means that the NVLS buffer is registered (regUsed == 1)
+          // so work can't be NULL in this code path.
+          // coverity[var_deref_op]
           directBuff = (T*)work->dnInputs[index];
         }
       }

@@ -30,7 +30,7 @@
 // to GPU traffic consumes more PCI bandwidth.
 #define INTEL_P2P_OVERHEAD(bw) (bw*6/5)
 
-#define NCCL_TOPO_NODE_TYPES 7
+#define NCCL_TOPO_NODE_TYPES 6
 #define GPU 0
 #define PCI 1
 #define NVS 2

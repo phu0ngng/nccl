@@ -1091,7 +1091,7 @@ ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* u
   record->size = buffSize;
   *outHandle = record->mhandle = handle;
   *outRegBufFlag = 1;
-  ncclIntruQueueEnqueue(cleanupQueue, &record->base);
+  ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
   *nCleanupQueueElts += 1;
 
 exit:

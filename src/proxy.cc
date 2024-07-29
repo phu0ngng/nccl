@@ -67,8 +67,10 @@ static ncclResult_t expectedProxyResponseStore(struct ncclProxyState* state, voi
         return ncclInternalError;
       }
 
-      memcpy(elem->respBuff, respBuff, respSize);
-      free(respBuff);
+      if (respSize > 0) {
+        memcpy(elem->respBuff, respBuff, respSize);
+        free(respBuff);
+      }
       elem->done = true;
       elem->res  = res;
       return ncclSuccess;
@@ -720,6 +722,10 @@ process_nextops:
     if (freeOp[i] == -1) continue;
     int newFree = freeOp[i];
     int oldFree = pool->freeOps[i];
+    // Coverity gets confused by the complex code structure here.  The previous "for" loop ensures that freeOpEnd[i]
+    // is initialized so long as freeOp[i] is initialized (is not -1).  In the current loop we filter out uninitialized
+    // freeOp[i], hence ensuring that freeOpEnd[i] is also initialized.
+    // coverity[uninit_use:FALSE]
     pool->ops[freeOpEnd[i]].next = oldFree;
     if (oldFree == -1) {
       // Nothing for the main thread to consume, we can set it.
@@ -860,7 +866,7 @@ ncclResult_t ncclProxyStart(struct ncclComm* comm) {
 static ncclResult_t ncclProxyProgressCreate(struct ncclProxyState* proxyState) {
   struct ncclProxyProgressState* state = &proxyState->progressState;
   if (!state->thread) {
-    pthread_create(&state->thread, NULL, ncclProxyProgress, proxyState);
+    PTHREADCHECK(pthread_create(&state->thread, NULL, ncclProxyProgress, proxyState), "pthread_create");
     ncclSetThreadName(state->thread, "NCCL Progress%2d", proxyState->tpLocalnRanks);
   }
   return ncclSuccess;
@@ -875,7 +881,7 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
     state->stop = 1;
     pthread_cond_signal(&state->opsPool->cond);
     pthread_mutex_unlock(&state->opsPool->mutex);
-    pthread_join(state->thread, NULL);
+    PTHREADCHECK(pthread_join(state->thread, NULL), "pthread_join");
   }
 
   // Free off any memory allocated for the proxy arg pools
@@ -1110,7 +1116,6 @@ ncclResult_t ncclProxyCallAsync(struct ncclComm* comm, struct ncclProxyConnector
   if (sharedProxyState->peerSocks == NULL) return ncclInternalError;
 
   sock = sharedProxyState->peerSocks + proxyConn->tpLocalRank;
-  if (sock == NULL) return ncclInternalError;
 
   NCCLCHECKGOTO(ncclSocketSend(sock, &type, sizeof(int)), ret, error);
   NCCLCHECKGOTO(ncclSocketSend(sock, &proxyConn->connection, sizeof(void*)), ret, error);
@@ -1387,30 +1392,37 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
 }
 
 static ncclResult_t proxyServiceInitOp(int type, struct ncclProxyLocalPeer* peer, struct ncclProxyConnectionPool* connectionPool, struct ncclProxyState* proxyState, int* asyncOpCount) {
+  ncclResult_t ret = ncclSuccess;
   struct ncclSocket* sock = &peer->sock;
   struct ncclProxyAsyncOp* asyncOp;
   NCCLCHECK(ncclCalloc(&asyncOp, 1));
 
   asyncOp->type = type;
-  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->connection, sizeof(void*)));
+  NCCLCHECKGOTO(ncclSocketRecv(sock, &asyncOp->connection, sizeof(void*)), ret, fail);
 
-  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->reqSize, sizeof(int)));
-  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->respSize, sizeof(int)));
+  NCCLCHECKGOTO(ncclSocketRecv(sock, &asyncOp->reqSize, sizeof(int)), ret, fail);
+  NCCLCHECKGOTO(ncclSocketRecv(sock, &asyncOp->respSize, sizeof(int)), ret, fail);
   if (asyncOp->reqSize) {
-    NCCLCHECK(ncclCalloc(&asyncOp->reqBuff, asyncOp->reqSize));
-    NCCLCHECK(ncclSocketRecv(sock, asyncOp->reqBuff, asyncOp->reqSize));
+    NCCLCHECKGOTO(ncclCalloc(&asyncOp->reqBuff, asyncOp->reqSize), ret, fail);
+    NCCLCHECKGOTO(ncclSocketRecv(sock, asyncOp->reqBuff, asyncOp->reqSize), ret, fail);
   }
 
   // Store opId for completion response
-  NCCLCHECK(ncclSocketRecv(sock, &asyncOp->opId, sizeof(asyncOp->opId)));
+  NCCLCHECKGOTO(ncclSocketRecv(sock, &asyncOp->opId, sizeof(asyncOp->opId)), ret, fail);
 
-  if (asyncOp->respSize) NCCLCHECK(ncclCalloc(&asyncOp->respBuff, asyncOp->respSize));
+  if (asyncOp->respSize) NCCLCHECKGOTO(ncclCalloc(&asyncOp->respBuff, asyncOp->respSize), ret, fail);
 
   asyncProxyOpEnqueue(peer, asyncOp);
 
   (*asyncOpCount)++;
   NCCLCHECK(proxyProgressAsync(asyncOp, proxyState, asyncOpCount, peer, connectionPool));
-  return ncclSuccess;
+exit:
+  return ret;
+fail:
+  if (asyncOp->reqBuff) free(asyncOp->reqBuff);
+  if (asyncOp->respBuff) free(asyncOp->respBuff);
+  free(asyncOp);
+  goto exit;
 }
 
 #include <poll.h>
@@ -1513,6 +1525,9 @@ void* ncclProxyService(void* _args) {
       while (op != nullptr) {
         ncclProxyAsyncOp* opnext = op->next; /* in case op is freed in proxyProgressAsync */
         type = op->type;
+        // Coverity gets confused here by complex code structure.  Yes, connectionPool.pools gets dereferenced, and
+        // while calling proxyProgressAsync() connectionPool.pools is NULL, but that changes before it's dereferenced.
+        // coverity[var_deref_model:FALSE]
         res = proxyProgressAsync(op, proxyState, &asyncOpCount, peer, &connectionPool);
         if (res == ncclSuccess || res == ncclInProgress) {
           op = opnext;
@@ -1560,7 +1575,7 @@ void* ncclProxyService(void* _args) {
       }
 
       if (closeConn) {
-        ncclSocketClose(sock);
+        (void)ncclSocketClose(sock);
 
         if (op != nullptr) {
           asyncProxyOpDequeue(peer, op);
@@ -1577,10 +1592,10 @@ void* ncclProxyService(void* _args) {
     WARN("[Proxy Service] proxyDestroy failed");
   }
   for (int s=0; s<maxnpeers; s++) {
-    ncclSocketClose(&peers[s].sock);
+    (void)ncclSocketClose(&peers[s].sock);
   }
   ncclProxyFreeConnections(&connectionPool, proxyState);
-  ncclSocketClose(proxyState->listenSock);
+  (void)ncclSocketClose(proxyState->listenSock);
   free(proxyState->listenSock);
   proxyOpsFree(proxyState);
   return NULL;
@@ -1682,12 +1697,12 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     proxyState->ncclCollNet = comm->ncclCollNet;
     memcpy(proxyState->buffSizes, comm->buffSizes, sizeof(comm->buffSizes));
 
-    pthread_create(&comm->proxyState->thread, NULL, ncclProxyService, comm->proxyState);
+    PTHREADCHECK(pthread_create(&comm->proxyState->thread, NULL, ncclProxyService, comm->proxyState), "pthread_create");
     ncclSetThreadName(comm->proxyState->thread, "NCCL Service %2d", comm->cudaDev);
 
     // UDS support
     INFO(NCCL_PROXY, "UDS: Creating service thread comm %p rank %d", comm, comm->rank);
-    pthread_create(&comm->proxyState->threadUDS, NULL, ncclProxyServiceUDS, comm->proxyState);
+    PTHREADCHECK(pthread_create(&comm->proxyState->threadUDS, NULL, ncclProxyServiceUDS, comm->proxyState), "pthread_create");
     ncclSetThreadName(comm->proxyState->threadUDS, "NCCL UDS Service %2d", comm->cudaDev);
   }
   return ncclSuccess;
@@ -1708,9 +1723,9 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
         int type = ncclProxyMsgStop;
         ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag);
         if (ncclSocketConnect(&sock) == ncclSuccess) {
-          ncclSocketSend(&sock, &type, sizeof(int));
+          (void)ncclSocketSend(&sock, &type, sizeof(int));
         }
-        ncclSocketClose(&sock);
+        (void)ncclSocketClose(&sock);
       }
 
       if (sharedProxyState->peerSocks) {
@@ -1728,7 +1743,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
               }
             }
             int type = ncclProxyMsgClose;
-            ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int));
+            (void)ncclSocketSend(sharedProxyState->peerSocks + i, &type, sizeof(int));
             NCCLCHECK(ncclSocketClose(sharedProxyState->peerSocks + i));
           }
         }

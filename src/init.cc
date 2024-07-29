@@ -186,10 +186,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
   if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
-    pthread_join(comm->proxyState->thread, nullptr);
+    PTHREADCHECK(pthread_join(comm->proxyState->thread, nullptr), "pthread_join");
     if (comm->proxyState->threadUDS) {
       // UDS support
-      pthread_join(comm->proxyState->threadUDS, nullptr);;
+      PTHREADCHECK(pthread_join(comm->proxyState->threadUDS, nullptr), "pthread_join");
     }
   }
 
@@ -1728,14 +1728,14 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
     INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", commIdEnv);
     NCCLCHECKGOTO(bootstrapCreateRoot(&job->bootstrapHandle, true), res, fail);
   }
-  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
   return ncclGroupErrCheck(res);
 fail:
   if (comm) {
     free(comm->abortFlag);
-    if (comm->abortFlagDev) ncclCudaHostFree((void*)comm->abortFlagDev);
+    if (comm->abortFlagDev) (void)ncclCudaHostFree((void*)comm->abortFlagDev);
     free(comm->abortFlagRefCount);
     free(comm);
   }
@@ -1963,14 +1963,15 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
   /* launch async thread to finalize comm. */
   NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
   job->comm = comm;
-  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, commDestroySync, NULL, free, comm), ret, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commDestroySync, NULL, free, comm), ret, fail);
 
 exit:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
-  if (comm && !comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)) };
+  if (comm && !comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)); }
   return ret;
 fail:
+  free(job);
   if (comm && !comm->config.blocking) (void) ncclCommSetAsyncError(comm, ret);
   goto exit;
 }
@@ -2017,6 +2018,8 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
         nextIntraComm = nextIntraComm->intraNext;
 
         if ((ret = commCleanup(curIntraComm)) != ncclSuccess) {
+          // We pass a freed pointer, but we don't dereference; we merely print its value, so it's OK.
+          // coverity[pass_freed_arg]
           WARN("commReclaim: cleanup comm %p rank %d failed in destroy/abort, error %d", curIntraComm, curRank, ret);
         }
       }
@@ -2052,7 +2055,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NCCLCHECK(ncclCommEnsureReady(comm));
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->comm = comm;
-  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, commReclaim, NULL, free, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
 
 exit:
   return res;
@@ -2086,11 +2089,11 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   comm->destroyFlag = 1;
   /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
-  ncclCommEnsureReady(comm);
+  (void)ncclCommEnsureReady(comm);
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->comm = comm;
-  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, commReclaim, NULL, free, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
 
 exit:
   return ncclSuccess;
@@ -2149,10 +2152,10 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   job->key = key;
   job->cudaDev = comm->cudaDev;
   snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", __func__);
-  NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
-  ncclGroupErrCheck(res);
+  (void)ncclGroupErrCheck(res);
   NCCLCHECK(ncclGroupEndInternal());
   return res;
 fail:
@@ -2310,6 +2313,9 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
 fallback:
 #endif
+  // Coverity is right to complain that we may pass a NULL ptr to cudaMalloc.  That's deliberate though:
+  // we want CUDA to return an error to the caller.
+  // coverity[var_deref_model]
   CUDACHECKGOTO(cudaMalloc(ptr, size), ret, fail);
 
 exit:
@@ -2348,7 +2354,7 @@ fallback:
   CUDACHECKGOTO(cudaFree(ptr), ret, fail);
 
 exit:
-  cudaSetDevice(saveDevice);
+  CUDACHECK(cudaSetDevice(saveDevice));
   return ret;
 fail:
   goto exit;

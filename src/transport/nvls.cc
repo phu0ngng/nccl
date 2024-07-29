@@ -502,7 +502,6 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   char shareableHandle[NVLS_HANDLE_SIZE];
   CUmemGenericAllocationHandle mcHandle;
   size_t minSize = SIZE_MAX;
-  bool localRegBufUsed = false;
   struct localRegData* regData = NULL;
   cudaPointerAttributes attr;
   size_t ucgran, mcgran;
@@ -512,7 +511,7 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   if (userBuff) {
     NCCLCHECKGOTO(ncclRegFind(comm, (void*)userBuff, buffSize, &regRecord), ret, fail);
     if (regRecord) {
-      CUDACHECK(cudaPointerGetAttributes(&attr, (void*)regRecord->addr));
+      CUDACHECKGOTO(cudaPointerGetAttributes(&attr, (void*)regRecord->addr), ret, fail);
       if (attr.type == cudaMemoryTypeDevice) {
         size_t regSize = regRecord->pages * comm->regCache.pageSize;
         memset(&mcprop, 0, sizeof(CUmulticastObjectProp));
@@ -520,7 +519,7 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
         mcprop.handleTypes = ncclCuMemHandleType;
         mcprop.flags = 0;
         mcprop.size = regSize;
-        CUCHECK(cuMulticastGetGranularity(&mcgran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+        CUCHECKGOTO(cuMulticastGetGranularity(&mcgran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED), ret, fail);
 
         memset(&ucprop, 0, sizeof(CUmemAllocationProp));
         ucprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
@@ -529,7 +528,7 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
         ucprop.requestedHandleTypes = ncclCuMemHandleType;
         CUCHECKGOTO(cuMemGetAllocationGranularity(&ucgran, &ucprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED), ret, fail);
 
-        CUCHECK(cuMemGetAddressRange((CUdeviceptr*)&regRecord->baseAddr, &regRecord->baseSize, (CUdeviceptr)regRecord->addr));
+        CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr*)&regRecord->baseAddr, &regRecord->baseSize, (CUdeviceptr)regRecord->addr), ret, fail);
         if (regSize % mcgran == 0) {
           regRecord->regSize = regSize;
         } else {
@@ -572,6 +571,9 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   }
 
   CUCHECKGOTO(cuMulticastAddDevice(mcHandle, comm->nvlsResources->dev), ret, fail);
+  // Coverity complains that regRecord could be NULL.  That won't in practice be the case because we've already checked
+  // (regData[i].reg.state & NVLS_REG_POSSIBLE) of all local ranks, which would catch it and bail out.
+  // coverity[var_deref_op]
   CUCHECKGOTO(cuMulticastBindAddr(mcHandle, 0, (CUdeviceptr)regRecord->addr, minSize, 0), ret, fail);
 
   // Create a VA for the NVLS
@@ -596,15 +598,13 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
     }
   }
 
-  localRegBufUsed = true;
-
+  *regAddr = (uintptr_t)regPtr + regData[comm->localRank].offset;
+  *regUsed = true;
 exit:
-  if (localRegBufUsed) *regAddr = (uintptr_t)regPtr + regData[comm->localRank].offset;
-  *regUsed = localRegBufUsed;
   free(regData);
   return ret;
 fail:
-  localRegBufUsed = false;
+  *regUsed = false;
   goto exit;
 }
 
@@ -874,19 +874,21 @@ exit:
     }
 
     if (recvRecord) {
+      // Yes, it's a dead code.  That's fine...
+      // coverity[dead_error_begin]
       ncclNvlsDeregBuffer(&recvRecord->mcHandle, recvRecord->ptr, recvRecord->dev, recvRecord->size);
       free(recvRecord);
     }
   } else {
     if (sendRecord) {
       *outRegBufSend = (void*)((uintptr_t)regSendPtr + (uintptr_t)sendbuff - (uintptr_t)baseSend);
-      ncclIntruQueueEnqueue(cleanupQueue, &sendRecord->base);
+      ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)sendRecord);
       *nCleanupQueueEltsAdded += 1;
     }
 
     if (recvRecord) {
       *outRegBufRecv = (void*)((uintptr_t)regRecvPtr + (uintptr_t)recvbuff - (uintptr_t)baseRecv);
-      ncclIntruQueueEnqueue(cleanupQueue, &recvRecord->base);
+      ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)recvRecord);
       *nCleanupQueueEltsAdded += 1;
     }
 

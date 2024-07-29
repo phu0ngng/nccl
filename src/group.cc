@@ -80,7 +80,7 @@ void* ncclAsyncJobMain(void* arg) {
 
 ncclResult_t ncclAsyncJobComplete(struct ncclAsyncJob* job) {
   ncclResult_t ret;
-  SYSCHECK(pthread_join(job->thread, NULL), "pthread_join");
+  PTHREADCHECK(pthread_join(job->thread, NULL), "pthread_join");
   if (job->result != ncclSuccess) {
     WARN("ncclAsyncJobComplete: job %p failed, job error %d", job, job->result);
   }
@@ -170,6 +170,8 @@ ncclResult_t ncclCollPreconnectFunc(struct ncclAsyncJob* job_) {
           NCCLCHECKGOTO(ncclCollNetDirectBufferSetup(comm), ret, fail);
           break;
         }
+        // Yes, it's a dead code.  That's fine...
+        // coverity[dead_error_begin]
         default: {
           ret = ncclInternalError;
           goto fail;
@@ -334,7 +336,7 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
   if (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueHead(asyncJobsMain);
     do {
-      SYSCHECKGOTO(pthread_create(&job->thread, nullptr, ncclAsyncJobMain, job), ret, fail);
+      PTHREADCHECKGOTO(pthread_create(&job->thread, nullptr, ncclAsyncJobMain, job), "pthread_create", ret, fail);
       job = job->next;
     } while (job != nullptr);
 
@@ -346,8 +348,9 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
         if (state == ncclGroupJobRunning) {
           jobsDone = false;
         } else if (state == ncclGroupJobDone) {
-          if (pthread_join(job->thread, nullptr) != 0) {
-            WARN("Error waiting for pthread_join : %s", strerror(errno));
+          int err;
+          if ((err = pthread_join(job->thread, nullptr)) != 0) {
+            WARN("Error waiting for pthread_join: %s", strerror(err));
             ret = ncclSystemError;
           }
           job->state = ncclGroupJobJoined;
@@ -408,7 +411,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       job->base.abortFlag = comm->abortFlag;
       job->base.abortFlagDev = comm->abortFlagDev;
       job->comm = comm;
-      ncclIntruQueueEnqueue(asyncJobsMain, &job->base);
+      ncclIntruQueueEnqueue(asyncJobsMain,  (struct ncclAsyncJob*)job);
 
       struct ncclComm* next = comm->preconnectNext;
       comm->preconnectNext = reinterpret_cast<struct ncclComm*>(0x1);
@@ -551,7 +554,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       }
 
       ncclGroupJobMainPtr->base.func = groupLaunchNonBlocking;
-      SYSCHECKGOTO(pthread_create(&ncclGroupJobMainPtr->base.thread, NULL, ncclAsyncJobMain, (void*)&ncclGroupJobMainPtr->base), ret, fail);
+      PTHREADCHECKGOTO(pthread_create(&ncclGroupJobMainPtr->base.thread, NULL, ncclAsyncJobMain, (void*)&ncclGroupJobMainPtr->base), "pthread_create", ret, fail);
       ret = ncclInProgress;
     } else {
       /* blocking group */
