@@ -631,6 +631,7 @@ private:
 
     // coverity[negative_returns:FALSE]
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclDevWorkCollReg*)e, (uint8_t)(e ? e->regUsed : ipcReg), peer);
+  }
 
   __device__ ~Primitives() {
     // Ensure ncclShmem.groups[].send/recvConns are available
