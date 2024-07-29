@@ -1679,11 +1679,12 @@ fail:
 
 static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev, ncclConfig_t* config, const char funcName[]) {
   ncclResult_t res = ncclSuccess;
+  const char* commIdEnv = NULL;
   ncclComm_t comm = NULL;
-  struct ncclCommInitRankAsyncJob *job = NULL;
-  const char* env = ncclGetEnv("NCCL_COMM_ID");
-
+  struct ncclCommInitRankAsyncJob* job = NULL;
+  // first call ncclInit, this will setup the environment
   NCCLCHECKGOTO(ncclInit(), res, fail);
+
   if (ncclDebugLevel > NCCL_LOG_WARN || (ncclDebugLevel != NCCL_LOG_NONE && myrank == 0)) {
     static pthread_once_t once = PTHREAD_ONCE_INIT;
     pthread_once(&once, showVersion);
@@ -1717,9 +1718,10 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   job->myrank = myrank;
   job->cudaDev = cudaDev;
   snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", funcName);
-  if (env && myrank == 0) {
+  commIdEnv = ncclGetEnv("NCCL_COMM_ID");
+  if (commIdEnv && myrank == 0) {
     // start the bootstrap root before bootstrapping
-    INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", env);
+    INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", commIdEnv);
     NCCLCHECKGOTO(bootstrapCreateRoot(&job->bootstrapHandle, true), res, fail);
   }
   NCCLCHECKGOTO(ncclAsyncLaunch(&job->base, ncclCommInitRankFunc, NULL, free, comm), res, fail);
