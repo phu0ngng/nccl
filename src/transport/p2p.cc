@@ -828,7 +828,7 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
                   int expFd = -1;
                   CUCHECKGOTO(cuMemExportToShareableHandle(&expFd, handle, ncclCuMemHandleType, 0), ret, fail);
                   NCCLCHECKGOTO(ncclProxyClientQueryFdBlocking(comm, proxyConn, expFd, &ipcInfo.impFd), ret, fail);
-                  SYSCHECKGOTO(close(expFd), ret, fail);
+                  SYSCHECKGOTO(close(expFd), "close", ret, fail);
                 } else {
                   CUCHECKGOTO(cuMemExportToShareableHandle(&ipcInfo.ipcDesc.cuDesc.handle, handle, ncclCuMemHandleType, 0), ret, fail);
                 }
@@ -981,7 +981,7 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
               ipcInfo.impFd = expFd;
             } else {
               NCCLCHECKGOTO(ncclProxyClientQueryFdBlocking(comm, proxyConn, expFd, &ipcInfo.impFd), ret, fail);
-              SYSCHECKGOTO(close(expFd), ret, fail);
+              SYSCHECKGOTO(close(expFd), "close", ret, fail);
             }
           } else {
             CUCHECKGOTO(cuMemExportToShareableHandle(&ipcInfo.ipcDesc.cuDesc.handle, handle, ncclCuMemHandleType, 0), ret, fail);
@@ -1079,7 +1079,7 @@ static ncclResult_t p2pProxyRegister(struct ncclProxyConnection* connection, str
     } else {
       if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
         CUCHECKGOTO(cuMemImportFromShareableHandle(&handle, (void*)(uintptr_t)ipcExpInfo->impFd, ncclCuMemHandleType), ret, fail);
-        SYSCHECKGOTO(close(ipcExpInfo->impFd), ret, fail);
+        SYSCHECKGOTO(close(ipcExpInfo->impFd), "close", ret, fail);
       } else {
         CUCHECKGOTO(cuMemImportFromShareableHandle(&handle, (void*)&ipcExpInfo->ipcDesc.cuDesc, ncclCuMemHandleType), ret, fail);
       }
@@ -1121,7 +1121,7 @@ static ncclResult_t p2pProxyDeregister(struct ncclProxyConnection* connection, s
     CUDACHECKGOTO(cudaIpcCloseMemHandle((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
   } else {
     if (connection->sameProcess) {
-      NCCLCHECKGOTO(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail)
+      NCCLCHECKGOTO(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
     } else {
       NCCLCHECKGOTO(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
     }
