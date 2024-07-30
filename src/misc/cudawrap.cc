@@ -11,7 +11,7 @@
 
 // This env var (NCCL_CUMEM_ENABLE) toggles cuMem API usage
 NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", -2);
-
+NCCL_PARAM(CuMemHostEnable, "CUMEM_HOST_ENABLE", 1);
 // Handle type used for cuMemCreate()
 CUmemAllocationHandleType ncclCuMemHandleType = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
 
@@ -47,6 +47,10 @@ int ncclCuMemEnable() {
   // NCCL_CUMEM_ENABLE=-2 means auto-detect CUMEM support
   int param = ncclParamCuMemEnable();
   return  param >= 0 ? param : (param == -2 && ncclCuMemSupported);
+}
+
+int ncclCuMemHostEnable() {
+  return ncclParamCuMemHostEnable();
 }
 
 #define DECLARE_CUDA_PFN(symbol) PFN_##symbol pfn_##symbol = nullptr
@@ -210,6 +214,20 @@ static void initOnceFunc() {
   // Determine whether we support the cuMem APIs or not
   ncclCuMemSupported = ncclIsCuMemSupported();
 
+#if CUDART_VERSION == 12030
+  /* To use cuMem* for host memory allocation, we need to create context on each 
+   * visible device. This is workaround needed in CUDA 12.3 which is fixed in 12.4. */
+  if (ncclCuMemSupported) {
+    int deviceCnt, saveDevice;
+    cudaGetDevice(&saveDevice);
+    cudaGetDeviceCount(&deviceCnt);
+    for (int i = 0; i < deviceCnt; ++i) {
+      cudaSetDevice(i);
+      cudaFree(NULL);
+    }
+    cudaSetDevice(saveDevice);
+  }
+#endif
   initResult = ret;
   return;
 error:

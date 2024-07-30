@@ -17,12 +17,129 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if CUDART_VERSION >= 11030
+#include <cuda.h>
+#include "cudawrap.h"
+#endif
+
 uint64_t clockNano(); // from utils.h with which we have a circular dependency
 
 template<typename T>
 constexpr size_t ncclSizeOfT() { return sizeof(T); }
 template<>
 constexpr size_t ncclSizeOfT<void>() { return 1; }
+
+#if CUDART_VERSION >= 12020
+
+static inline ncclResult_t ncclCuMemHostAlloc(void** ptr, CUmemGenericAllocationHandle *handlep, size_t size) {
+  ncclResult_t result = ncclSuccess;
+  size_t granularity = 0;
+  CUdevice currentDev;
+  CUmemAllocationProp prop = {};
+  CUmemAccessDesc accessDesc = {};
+  CUmemGenericAllocationHandle handle;
+  int cudaDev;
+  int flag = 0;
+  int cpuNumaNodeId = -1;
+  CUmemAllocationHandleType type = ncclCuMemHandleType;
+
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  CUCHECK(cuDeviceGet(&currentDev, cudaDev));
+  CUCHECK(cuDeviceGetAttribute(&cpuNumaNodeId, CU_DEVICE_ATTRIBUTE_HOST_NUMA_ID, currentDev));
+  if (cpuNumaNodeId < 0) cpuNumaNodeId = 0;
+  prop.location.type = CU_MEM_LOCATION_TYPE_HOST_NUMA;
+  prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+  prop.requestedHandleTypes = type; // So it can be exported
+  prop.location.id = cpuNumaNodeId;
+  // Query device to see if RDMA support is available
+  CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_SUPPORTED, currentDev));
+  if (flag) prop.allocFlags.gpuDirectRDMACapable = 1;
+  CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM));
+  ALIGN_SIZE(size, granularity);
+  /* Allocate the physical memory on the device */
+  CUCHECK(cuMemCreate(&handle, size, &prop, 0));
+  /* Reserve a virtual address range */
+  CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, granularity, 0, 0));
+  /* Map the virtual address range to the physical allocation */
+  CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
+  /* Now allow RW access to the newly mapped memory for local GPU */
+  accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  accessDesc.location.id = cudaDev;
+  accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+  CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+
+  /* Now allow RW access to the newly mapped memory from the CPU */
+  accessDesc.location.type = CU_MEM_LOCATION_TYPE_HOST_NUMA;
+  accessDesc.location.id = cpuNumaNodeId;
+  accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+  CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+
+  if (handlep) *handlep = handle;
+  INFO(NCCL_ALLOC, "CUMEM Host Alloc Size %zi pointer %p handle %llx numa %d dev %d granularity %ld", size, *ptr, handle, cpuNumaNodeId, cudaDev, granularity);
+  return result;
+}
+
+static inline ncclResult_t ncclCuMemHostFree(void* ptr) {
+  if (ptr == NULL) return ncclSuccess;
+  ncclResult_t result = ncclSuccess;
+  CUmemGenericAllocationHandle handle;
+  size_t size = 0;
+  CUCHECK(cuMemRetainAllocationHandle(&handle, ptr));
+  CUCHECK(cuMemRelease(handle));
+  CUCHECK(cuMemGetAddressRange(NULL, &size, (CUdeviceptr)ptr));
+  TRACE(NCCL_ALLOC, "CUMEM Host Free Size %zi pointer %p handle 0x%llx", size, ptr, handle);
+  CUCHECK(cuMemUnmap((CUdeviceptr)ptr, size));
+  CUCHECK(cuMemRelease(handle));
+  CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, size));
+  return result;
+}
+
+template <typename T>
+ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
+  int driverVersion;
+  ncclResult_t result = ncclSuccess;
+  cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
+  *ptr = nullptr;
+  NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
+  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+  if (ncclCuMemEnable() && ncclCuMemHostEnable() && driverVersion >= 12030) {
+    NCCLCHECKGOTO(ncclCuMemHostAlloc((void**)ptr, NULL, nelem*ncclSizeOfT<T>()), result, finish);
+  } else {
+    CUDACHECKGOTO(cudaHostAlloc(ptr, nelem*ncclSizeOfT<T>(), cudaHostAllocMapped), result, finish);
+    INFO(NCCL_ALLOC, "%s:%d Cuda Host Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
+  }
+  
+  memset(*ptr, 0, nelem*ncclSizeOfT<T>());
+finish:
+  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+  if (*ptr == nullptr) WARN("Failed to CUDA host alloc %ld bytes", nelem*ncclSizeOfT<T>());
+  return result;
+}
+
+static inline ncclResult_t ncclCudaHostFree(void* ptr) {
+  ncclResult_t result = ncclSuccess;
+  int driverVersion;
+  NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
+  if (ncclCuMemEnable() && ncclCuMemHostEnable() && driverVersion >= 12030) {
+    NCCLCHECKGOTO(ncclCuMemHostFree((void *)ptr), result, finish);
+  } else {
+    CUDACHECKGOTO(cudaFreeHost(ptr), result, finish);
+  }
+finish:
+  return result;
+}
+
+#else /* CUDART_VERSION >= 12020 */
+
+static inline ncclResult_t ncclCuMemHostAlloc(void** ptr, void* handlep, size_t size) {
+  WARN("CUMEM Host is not supported prior to CUDA 12.2");
+  return ncclInternalError;
+}
+
+static inline ncclResult_t ncclCuMemHostFree(void* ptr) {
+  WARN("CUMEM Host is not supported prior to CUDA 12.2");
+  return ncclInternalError;
+}
 
 template <typename T>
 ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
@@ -32,6 +149,7 @@ ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (nelem > 0) {
     CUDACHECKGOTO(cudaHostAlloc(ptr, nelem*ncclSizeOfT<T>(), cudaHostAllocMapped), result, finish);
+    INFO(NCCL_ALLOC, "%s:%d Cuda Host Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
     memset(*ptr, 0, nelem*ncclSizeOfT<T>());
   }
 finish:
@@ -40,12 +158,15 @@ finish:
   INFO(NCCL_ALLOC, "%s:%d Cuda Host Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
   return result;
 }
-#define ncclCudaHostCalloc(...) ncclCudaHostCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
 
-inline ncclResult_t ncclCudaHostFree(void* ptr) {
+static inline ncclResult_t ncclCudaHostFree(void* ptr) {
   CUDACHECK(cudaFreeHost(ptr));
   return ncclSuccess;
 }
+
+#endif  /* CUDART_VERSION >= 12020 */
+
+#define ncclCudaHostCalloc(...) ncclCudaHostCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
 
 template <typename T>
 ncclResult_t ncclCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {

@@ -8,7 +8,7 @@
 #include "info.h"
 #include "collectives.h"
 #include "socket.h"
-#include "shm.h"
+#include "shmutils.h"
 #include "profiler.h"
 #define ENABLE_TIMER 0
 #include "timer.h"
@@ -20,6 +20,7 @@
 #include <sys/time.h>
 
 enum { proxyRecv=0, proxySend=1 };
+void* ncclProxyServiceUDS(void* _args);
 
 static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
@@ -764,6 +765,7 @@ static int setProxyThreadContext(struct ncclProxyState* proxyState) {
       if (CUPFN(cuCtxCreate) == nullptr || CUPFN(cuCtxDestroy) == nullptr || CUPFN(cuCtxSetCurrent) == nullptr) {
         WARN("Unable to create thread context due to old driver, disabling.");
         createThreadContext = 0;
+        goto exit;
       }
     }
   }
@@ -773,15 +775,17 @@ static int setProxyThreadContext(struct ncclProxyState* proxyState) {
                             NULL, 0, CU_CTX_SCHED_SPIN|CU_CTX_MAP_HOST, proxyState->cudaDev)) != CUDA_SUCCESS) {
         WARN("Failed to create CUDA context on device %d", proxyState->cudaDev);
         createThreadContext = 0;
+        goto exit;
       }
     } else {
       if (CUPFN(cuCtxSetCurrent(proxyState->cudaCtx)) != CUDA_SUCCESS) {
         WARN("Failed to set CUDA context on device %d", proxyState->cudaDev);
-        return 0;
+        goto exit;
       }
-      return 1;
     }
+    return 1;
   }
+exit:
 #endif
   return 0;
 }
@@ -793,7 +797,7 @@ NCCL_PARAM(ProgressAppendOpFreq, "PROGRESS_APPENDOP_FREQ", 8);
 void* ncclProxyProgress(void *proxyState_) {
   struct ncclProxyState* proxyState = (struct ncclProxyState*)proxyState_;
   if (setProxyThreadContext(proxyState)) {
-    INFO(NCCL_INIT, "[Proxy Progress] Created CUDA context on device %d", proxyState->cudaDev);
+    INFO(NCCL_INIT, "[Proxy Progress] Set CUDA context on device %d", proxyState->cudaDev);
   } else if (cudaSetDevice(proxyState->cudaDev) != cudaSuccess) {
     WARN("[Proxy Progress] Failed to set CUDA device %d", proxyState->cudaDev);
   }
@@ -816,8 +820,7 @@ void* ncclProxyProgress(void *proxyState_) {
    * frequency of calling ncclProxyGetPostedOps() and reduce the perf impact. */
   int proxyOpAppendCounter = 0;
   struct ncclProxyArgs profArgs; // Only used for profiling purposes
-  while ((state->stop == 0 || (state->stop == 1 && state->active)) &&
-         __atomic_load_n(proxyState->abortFlag, __ATOMIC_ACQUIRE) == 0) {
+  while (state->stop == 0 || (state->stop == 1 && state->active)) {
     int idle = 1;
     ncclResult_t ret = progressOps(proxyState, state, state->active, &idle);
     if (ret != ncclSuccess) {
@@ -1442,6 +1445,12 @@ static bool proxyMatchOpType(int type) {
   }
 }
 
+enum {
+  PROXY_RUNNING = 0,
+  PROXY_STOP = 1,
+  PROXY_ABORT = 2
+};
+
 void* ncclProxyService(void* _args) {
   struct ncclProxyState* proxyState =  (struct ncclProxyState*) _args;
   // if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
@@ -1473,13 +1482,13 @@ void* ncclProxyService(void* _args) {
 
   int maxnpeers = 0;
   int npeers = 0;
-  int stop = 0;
+  int stop = PROXY_RUNNING;
   int asyncOpCount = 0;
-  while (stop == 0 || (stop == 1 && npeers > 0)) {
+  while (stop == PROXY_RUNNING || npeers > 0) {
     /* Even if local comm aborts, we cannot let proxy thread exit if we still have peer
      * connections. Need to wait until all other related comms call abort and safely exit
      * together, or we could face segmentation fault. */
-    if (__atomic_load_n(proxyState->abortFlag, __ATOMIC_ACQUIRE) != 0) stop = 1;
+    if (__atomic_load_n(proxyState->abortFlag, __ATOMIC_ACQUIRE) != 0) stop = PROXY_ABORT;
     /* never let proxy service thread blocks in poll, or it cannot receive abortFlag. */
     int ret;
     do {
@@ -1521,6 +1530,7 @@ void* ncclProxyService(void* _args) {
       if (pollfds[s].fd == -1) continue;
 
       // Progress all ops for this ncclProxyLocalPeer
+      if (stop == PROXY_ABORT && ncclCuMemEnable() && ncclCuMemHostEnable()) closeConn = 1;
       ncclProxyAsyncOp* op = peer->asyncOps;
       while (op != nullptr) {
         ncclProxyAsyncOp* opnext = op->next; /* in case op is freed in proxyProgressAsync */
@@ -1552,7 +1562,7 @@ void* ncclProxyService(void* _args) {
           closeConn = 1;
         } else if (res == ncclSuccess) { // We received something from the sock
           if (type == ncclProxyMsgStop) {
-            stop = 1;
+            stop = PROXY_STOP;
             closeConn = 1;
           } else if (type == ncclProxyMsgClose) {
             closeConn = 1;
@@ -1627,7 +1637,7 @@ void* ncclProxyServiceUDS(void* _args) {
   struct pollfd pollfds[1];
 
   if (setProxyThreadContext(proxyState)) {
-    INFO(NCCL_INIT, "[Proxy Service UDS] Created CUDA context on device %d", proxyState->cudaDev);
+    INFO(NCCL_INIT, "[Proxy Service UDS] Set CUDA context on device %d", proxyState->cudaDev);
   } else if (cudaSetDevice(proxyState->cudaDev) != cudaSuccess) {
     WARN("[Proxy Service UDS] Failed to set CUDA device %d", proxyState->cudaDev);
   }
