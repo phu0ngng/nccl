@@ -13,7 +13,7 @@ NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=512 time $SRUN ./enqueue_test 2>&1
 echo -e "\n\n"
 
 echo "=============================== ENQUEUE TESTS FIFO - $(date +\"%T\") ================================="
-NCCL_WORK_FIFO_BYTES=1024 time $SRUN ./enqueue_test time 2>&1
+NCCL_WORK_FIFO_BYTES=1024 time $SRUN ./enqueue_test 2>&1
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("ENQUEUE TESTS FIFO")
 echo -e "\n\n"
 
