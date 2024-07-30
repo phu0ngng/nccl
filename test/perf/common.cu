@@ -1423,6 +1423,7 @@ testResult_t run() {
   size_t memMaxBytes = ((maxMem - (4LL<<30) * (commNum + 1)) / (datacheck ? 3 : 2)) / commNum;
   if (maxBytes > memMaxBytes) {
     maxBytes = memMaxBytes;
+    if (minBytes > maxBytes) minBytes = maxBytes;
     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
   }
 
