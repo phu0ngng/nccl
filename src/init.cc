@@ -2070,15 +2070,6 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
     return ncclSuccess;
   }
 
-  int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
-  struct ncclCommFinalizeAsyncJob *job = NULL;
-  ncclResult_t res = ncclSuccess;
-
-  NvtxParamsCommInitRank payload{rank, nranks, cudaDev};
-  NVTX3_FUNC_WITH_PARAMS(CommAbort, CommInitRankSchema, payload)
-
-  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
-
   // Ask anything that might still be running on the device to quit
   if (comm->childAbortFlag != nullptr) {
     __atomic_store_n(comm->childAbortFlag, 1, __ATOMIC_RELEASE);
@@ -2090,6 +2081,16 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
   (void)ncclCommEnsureReady(comm);
+
+  // once the comm is ready, we can access ranks etc
+  int rank = comm->rank, nranks = comm->nRanks, cudaDev = comm->cudaDev;
+  struct ncclCommFinalizeAsyncJob *job = NULL;
+  ncclResult_t res = ncclSuccess;
+
+  NvtxParamsCommInitRank payload{rank, nranks, cudaDev};
+  NVTX3_FUNC_WITH_PARAMS(CommAbort, CommInitRankSchema, payload)
+
+  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->comm = comm;

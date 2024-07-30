@@ -424,11 +424,10 @@ static int netPluginStatus = netPluginLoadReady;
 
 ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   char couldNotFindNames[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
-  if (netPluginLoadFailed == netPluginStatus) {
-    return ncclSuccess;
-  }
-
   pthread_mutex_lock(&netPluginLock);
+  if (netPluginLoadFailed == netPluginStatus) {
+    goto exit;
+  }
   if (netPluginLoadSuccess == netPluginStatus) {
     ++netPluginRefCount;
     goto exit;

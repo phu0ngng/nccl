@@ -49,6 +49,7 @@ struct alignas(64) ncclIbMergedDev {
   int devs[NCCL_IB_MAX_DEVS_PER_NIC]; // Points to an index in ncclIbDevs
   int speed;
   char devName[MAX_MERGED_DEV_NAME]; // Up to NCCL_IB_MAX_DEVS_PER_NIC * name size, and a character for each '+'
+  int dmaBufSupported;               //  0 = uninit, 1 = yes, -1 = no
 };
 
 struct ncclIbStats {
@@ -683,46 +684,62 @@ ncclResult_t ncclIbDevices(int* ndev) {
 // Returns :
 // ncclSuccess : GDR works
 // ncclSystemError : no module or module loaded but not supported by GPU
+#define KNL_MODULE_LOADED(a) ((access(a, F_OK) == -1) ? 0 : 1)
+static int ncclIbGdrModuleLoaded = 0; // 1 = true, 0 = false
+static void ibGdrSupportInitOnce() {
+  // Check for the nv_peer_mem module being loaded
+  ncclIbGdrModuleLoaded = KNL_MODULE_LOADED("/sys/kernel/mm/memory_peers/nv_mem/version") ||
+                          KNL_MODULE_LOADED("/sys/kernel/mm/memory_peers/nv_mem_nc/version");
+}
 ncclResult_t ncclIbGdrSupport() {
-  static int moduleLoaded = -1;
-  if (moduleLoaded == -1) {
-    // Check for the nv_peer_mem module being loaded
-    moduleLoaded = ((access("/sys/kernel/mm/memory_peers/nv_mem/version", F_OK) == -1) &&
-                    // Also support the new nv_mem_nc module
-                    (access("/sys/kernel/mm/memory_peers/nv_mem_nc/version", F_OK) == -1)) ? 0 : 1;
-  }
-  if (moduleLoaded == 0) return ncclSystemError;
+  static pthread_once_t once = PTHREAD_ONCE_INIT;
+  pthread_once(&once, ibGdrSupportInitOnce);
+  if (!ncclIbGdrModuleLoaded)
+    return ncclSystemError;
   return ncclSuccess;
 }
 
+static __thread int ibDmaSupportInitDev; // which device to init, must be thread local
+static void ibDmaBufSupportInitOnce(){
+  ncclResult_t res;
+  // select the appropriate
+  struct ncclIbMergedDev* mergedDev = ncclIbMergedDevs + ibDmaSupportInitDev;
+  // Test each real devices
+  int dev_fail = 0;
+  for (int i = 0; i < mergedDev->ndevs; i++) {
+    int ibDev = mergedDev->devs[i];
+    struct ibv_pd* pd;
+    struct ibv_context* ctx = ncclIbDevs[ibDev].context;
+    NCCLCHECKGOTO(wrap_ibv_alloc_pd(&pd, ctx), res, failure);
+    // Test kernel DMA-BUF support with a dummy call (fd=-1)
+    (void)wrap_direct_ibv_reg_dmabuf_mr(pd, 0ULL /*offset*/, 0ULL /*len*/, 0ULL /*iova*/, -1 /*fd*/, 0 /*flags*/);
+    // ibv_reg_dmabuf_mr() will fail with EOPNOTSUPP/EPROTONOSUPPORT if not supported (EBADF otherwise)
+    dev_fail |= (errno == EOPNOTSUPP) || (errno == EPROTONOSUPPORT);
+    NCCLCHECKGOTO(wrap_ibv_dealloc_pd(pd), res, failure);
+    // stop the search and goto failure
+    if (dev_fail) goto failure;
+  }
+  mergedDev->dmaBufSupported = 1;
+  return;
+failure:
+  mergedDev->dmaBufSupported = -1;
+  return;
+}
 // Detect whether DMA-BUF support is present in the kernel
 // Returns :
 // ncclSuccess : DMA-BUF support is available
 // ncclSystemError : DMA-BUF is not supported by the kernel
 ncclResult_t ncclIbDmaBufSupport(int dev) {
-  static int dmaBufSupported = -1;
-  if (dmaBufSupported == -1) {
-    ncclResult_t res;
-    struct ibv_pd* pd;
-    struct ibv_context* ctx;
-    struct ncclIbMergedDev* mergedDev = ncclIbMergedDevs + dev;
+  struct oncewrap {
+    pthread_once_t once = PTHREAD_ONCE_INIT;
+  };
+  static oncewrap onces[MAX_IB_DEVS];
+  // init the device only once
+  ibDmaSupportInitDev = dev;
+  pthread_once(&onces[dev].once, ibDmaBufSupportInitOnce);
 
-    // Test each dev
-    for (int i = 0; i < mergedDev->ndevs; i++) {
-      int ibDev = mergedDev->devs[i];
-      ctx = ncclIbDevs[ibDev].context;
-      NCCLCHECKGOTO(wrap_ibv_alloc_pd(&pd, ctx), res, failure);
-      // Test kernel DMA-BUF support with a dummy call (fd=-1)
-      (void) wrap_direct_ibv_reg_dmabuf_mr(pd, 0ULL/*offset*/, 0ULL/*len*/, 0ULL/*iova*/, -1/*fd*/, 0/*flags*/);
-      // ibv_reg_dmabuf_mr() will fail with EOPNOTSUPP/EPROTONOSUPPORT if not supported (EBADF otherwise)
-      dmaBufSupported = (errno != EOPNOTSUPP && errno != EPROTONOSUPPORT) ? 1 : 0;
-      NCCLCHECKGOTO(wrap_ibv_dealloc_pd(pd), res, failure);
-    }
-  }
-  if (dmaBufSupported == 0) return ncclSystemError;
-  return ncclSuccess;
-failure:
-  dmaBufSupported = 0;
+  int dmaBufSupported = ncclIbMergedDevs[dev].dmaBufSupported;
+  if (dmaBufSupported == 1) return ncclSuccess;
   return ncclSystemError;
 }
 

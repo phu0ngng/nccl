@@ -1650,7 +1650,7 @@ void* ncclProxyServiceUDS(void* _args) {
     }
 
     // Check for stop/abort
-    if (proxyState->stop || *proxyState->abortFlag) break;
+    if (__atomic_load_n(&proxyState->stop, __ATOMIC_ACQUIRE) || __atomic_load_n(proxyState->abortFlag, __ATOMIC_ACQUIRE)) break;
 
     if (pollfds[0].revents) {
       // A request was seen on the UDS fd
@@ -1715,7 +1715,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
     if ((comm->proxyRefCountOld = ncclAtomicRefCountDecrement(&sharedProxyState->refCount)) == 0) {
       if (comm->proxyState->threadUDS) {
         // UDS support
-        comm->proxyState->stop = 1;
+        __atomic_store_n(&comm->proxyState->stop, 1, __ATOMIC_RELEASE);
       }
 
       if (*comm->abortFlag == 0 && sharedProxyState->peerAddresses) {
