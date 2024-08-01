@@ -50,7 +50,11 @@ int ncclCuMemEnable() {
 }
 
 int ncclCuMemHostEnable() {
+#if CUDART_VERSION < 12020
+  return 0;
+#else
   return ncclParamCuMemHostEnable();
+#endif
 }
 
 #define DECLARE_CUDA_PFN(symbol) PFN_##symbol pfn_##symbol = nullptr
@@ -214,8 +218,8 @@ static void initOnceFunc() {
   // Determine whether we support the cuMem APIs or not
   ncclCuMemSupported = ncclIsCuMemSupported();
 
-#if CUDART_VERSION == 12030
-  /* To use cuMem* for host memory allocation, we need to create context on each 
+#if 12020 <= CUDART_VERSION && CUDART_VERSION <= 12030
+  /* To use cuMem* for host memory allocation, we need to create context on each
    * visible device. This is workaround needed in CUDA 12.3 which is fixed in 12.4. */
   if (ncclCuMemSupported) {
     int deviceCnt, saveDevice;

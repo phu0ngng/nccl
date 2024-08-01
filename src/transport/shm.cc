@@ -503,7 +503,7 @@ ncclResult_t ncclShmAllocateShareableBuffer(int tpProxyRank, size_t size, ncclSh
     return ncclInvalidArgument;
   }
 #if CUDART_VERSION >= 12020
-  if (ncclCuMemEnable()) {
+  if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
     // cuMem API support
     CUmemAllocationHandleType type = SHM_HANDLE_TYPE;
     CUmemGenericAllocationHandle handle;
@@ -543,7 +543,7 @@ ncclResult_t ncclShmImportShareableBuffer(struct ncclComm *comm, ncclShmIpcDesc_
     return ncclInvalidArgument;
   }
 #if CUDART_VERSION >= 12020
-  if (ncclCuMemEnable()) {
+  if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
     // cuMem API support
     CUdeviceptr hostptr = 0;
     CUmemAllocationHandleType type = SHM_HANDLE_TYPE;
@@ -580,7 +580,7 @@ ncclResult_t ncclShmImportShareableBuffer(struct ncclComm *comm, ncclShmIpcDesc_
     prop.requestedHandleTypes = type;
     prop.location.id = cpuNumaNodeId;
     CUCHECK(cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM));
-    
+
     ALIGN_SIZE(size, granularity);
 
     // Reserve and map address
@@ -620,7 +620,7 @@ ncclResult_t ncclShmImportShareableBuffer(struct ncclComm *comm, ncclShmIpcDesc_
 ncclResult_t ncclShmIpcClose(ncclShmIpcDesc_t *desc) {
   if (desc) {
 #if CUDART_VERSION >= 12020
-    if (ncclCuMemEnable()) {
+    if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
       NCCLCHECK(ncclCuMemHostFree(desc->shmci.ptr));
     } else {
       NCCLCHECK(ncclShmClose(desc->shmli.handle));

@@ -96,19 +96,17 @@ static inline ncclResult_t ncclCuMemHostFree(void* ptr) {
 
 template <typename T>
 ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
-  int driverVersion;
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   *ptr = nullptr;
-  NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  if (ncclCuMemEnable() && ncclCuMemHostEnable() && driverVersion >= 12030) {
+  if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
     NCCLCHECKGOTO(ncclCuMemHostAlloc((void**)ptr, NULL, nelem*ncclSizeOfT<T>()), result, finish);
   } else {
     CUDACHECKGOTO(cudaHostAlloc(ptr, nelem*ncclSizeOfT<T>(), cudaHostAllocMapped), result, finish);
     INFO(NCCL_ALLOC, "%s:%d Cuda Host Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
   }
-  
+
   memset(*ptr, 0, nelem*ncclSizeOfT<T>());
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
@@ -118,9 +116,7 @@ finish:
 
 static inline ncclResult_t ncclCudaHostFree(void* ptr) {
   ncclResult_t result = ncclSuccess;
-  int driverVersion;
-  NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
-  if (ncclCuMemEnable() && ncclCuMemHostEnable() && driverVersion >= 12030) {
+  if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
     NCCLCHECKGOTO(ncclCuMemHostFree((void *)ptr), result, finish);
   } else {
     CUDACHECKGOTO(cudaFreeHost(ptr), result, finish);
