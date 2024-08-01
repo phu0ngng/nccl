@@ -1759,6 +1759,9 @@ static ncclResult_t updateCollCostTable(
     if (a == NCCL_ALGO_NVLS && collNetSupport != 1 && comm->nNodes > 1) continue;
     /* now we only support single-node NVLS allgather and reducescatter */
     if (a == NCCL_ALGO_NVLS && (info->func == ncclFuncAllGather || info->func == ncclFuncReduceScatter) && comm->nNodes > 1) continue;
+    /* Tree reduceScatter doesn't support scaling yet */
+    if (a == NCCL_ALGO_TREE && info->func == ncclFuncReduceScatter
+        && (info->opDev.op == ncclDevPreMulSum || info->opDev.op == ncclDevSumPostDiv)) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       bool backup;
       float time;
@@ -1813,7 +1816,7 @@ static ncclResult_t topoGetAlgoInfo(
     info->protocol = backupProto;
     time = backupTime;
   }
-  if (comm->rank == 0) INFO(NCCL_TUNING, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
+  if (comm->rank == 0) INFO(NCCL_TUNING, "%s: %ld Bytes -> Algo %d proto %d time %f", ncclFuncToString(info->func), nBytes, info->algorithm, info->protocol, time);
   if (simInfo) simInfo->estimatedTime = time;
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
 
@@ -1907,8 +1910,15 @@ static ncclResult_t calcCollChunking(
     pattern = info->algorithm == NCCL_ALGO_TREE ? ncclPatternTreeUp : ncclPatternPipelineTo;
     break;
   case ncclFuncReduceScatter:
+    pattern =
+      info->algorithm == NCCL_ALGO_TREE ? ncclPatternPatUp :
+      info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
+      info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
+      ncclPatternRing;
+    break;
   case ncclFuncAllGather:
     pattern =
+      info->algorithm == NCCL_ALGO_TREE ? ncclPatternPatDown :
       info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
       info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
       ncclPatternRing;
@@ -1932,6 +1942,8 @@ static ncclResult_t calcCollChunking(
   case ncclPatternTreeUp:
   case ncclPatternTreeDown:
   case ncclPatternTreeUpDown:
+  case ncclPatternPatUp:
+  case ncclPatternPatDown:
   case ncclPatternPipelineFrom:
   case ncclPatternPipelineTo:
   case ncclPatternCollnetChain:
@@ -2008,6 +2020,10 @@ static ncclResult_t calcCollChunking(
     while (nBytes / (nChannels*chunkSize) < nstepsLL128*64/ppn && chunkSize > 131072) chunkSize /= 2;
     // coverity[integer_division]
     while (nBytes / (nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
+  } else if (info->func == ncclFuncAllGather && info->algorithm == NCCL_ALGO_TREE) {
+    while (chunkSize*nChannels*32 > nBytes && chunkSize > 65536) chunkSize /= 2;
+  } else if (info->func == ncclFuncReduceScatter && info->algorithm == NCCL_ALGO_TREE) {
+    while (chunkSize*nChannels*16 > nBytes && chunkSize > 65536) chunkSize /= 2;
   }
 
   // Compute directFlags of work struct.
@@ -2060,6 +2076,10 @@ static ncclResult_t calcCollChunking(
     if (info->func == ncclFuncAllGather || info->func == ncclFuncReduceScatter) {
       proxyOp->specifics.collnetDirect.sizePerRank = info->count*ncclTypeSize(info->datatype);
     }
+  }
+
+  if (pattern == ncclPatternPatUp || pattern == ncclPatternPatDown) {
+    proxyOp->nbytes = DIVUP(nBytes, nChannels);
   }
 
   *outChunkSize = chunkSize;

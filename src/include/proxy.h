@@ -28,6 +28,8 @@ typedef enum : uint8_t {
   ncclPatternCollnetDirect,
   ncclPatternNvls,
   ncclPatternNvlsTree,
+  ncclPatternPatUp,
+  ncclPatternPatDown,
   ncclPatternSend,
   ncclPatternRecv
 } ncclPattern_t;
