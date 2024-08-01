@@ -78,6 +78,32 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_L
 };
 
 template<typename T, typename RedOp>
+struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE> {
+  __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
+    using Proto = ProtoSimple<1, 1>;
+    const int nranks = ncclShmem.comm.nRanks;
+    const int rank = ncclShmem.comm.rank;
+    size_t count, channelOffset, channelCount, chunkCount;
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), &count, &channelOffset, &channelCount, &chunkCount);
+
+    T *inputBuf = (T*)work->sendbuff;
+    T *outputBuf = (T*)work->recvbuff;
+    Primitives<T, RedOp, FanSymmetric<1>, 0, Proto, 0> prims
+      (tid, nthreads, NULL, NULL, inputBuf, outputBuf, work->redOpArg, 0*Proto::MaxGroupWidth, 0, 0, nullptr, false, false, 0, primsModePatRs);
+
+    PatRSAlgorithm<T> patAlgo(chunkCount*sizeof(T), NCCL_STEPS, channelOffset, channelOffset + channelCount, count, chunkCount, rank, nranks);
+    int last = 0;
+    while (!last) {
+      int recvDim, sendDim, recvOffset, sendOffset, sendStepOffset, postRecv, postSend, nelem;
+      size_t inpIx, outIx;
+      patAlgo.getNextOp(recvDim, sendDim, inpIx, outIx, recvOffset, sendOffset, sendStepOffset, nelem, postRecv, postSend, last);
+      prims.patReduce(recvDim, sendDim, inpIx, outIx, recvOffset, sendOffset, sendStepOffset, nelem, postRecv, postSend);
+    }
+  }
+};
+
+
+template<typename T, typename RedOp>
 struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(int tid, int/*nthreads*/, struct ncclDevWorkColl* work) {
     struct ncclNvls* nvls = &ncclShmem.channel.nvls;

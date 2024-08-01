@@ -547,11 +547,12 @@ inline int ncclDevFuncId(int coll, int devRedOp, int type, int algo, int proto) 
     if (coll == ncclFuncSendRecv) break;
     row += 1;
 
-    int nAlgos = 3;
+    int nAlgos = 4;
     if (coll == ncclFuncAllGather) {
-      int algo1 = algo == NCCL_ALGO_RING ? 0 :
-                  algo == NCCL_ALGO_COLLNET_DIRECT ? 1 :
-                /*algo == NCCL_ALGO_NVLS*/ 2;
+      int algo1 = algo == NCCL_ALGO_TREE ? 0 :
+                  algo == NCCL_ALGO_RING ? 1 :
+                  algo == NCCL_ALGO_COLLNET_DIRECT ? 2 :
+                /*algo == NCCL_ALGO_NVLS*/ 3;
       row += algo1*NCCL_NUM_PROTOCOLS + proto;
       break;
     }
@@ -578,11 +579,12 @@ inline int ncclDevFuncId(int coll, int devRedOp, int type, int algo, int proto) 
     }
     row += ncclNumDevRedOps*NumTypes*nAlgos*NCCL_NUM_PROTOCOLS;
 
-    nAlgos = 3;
+    nAlgos = 4;
     if (coll == ncclFuncReduceScatter) {
-      int algo1 = algo == NCCL_ALGO_RING ? 0 :
-                  algo == NCCL_ALGO_COLLNET_DIRECT ? 1 :
-                /*algo == NCCL_ALGO_NVLS*/ 2;
+      int algo1 = algo == NCCL_ALGO_TREE ? 0 :
+                  algo == NCCL_ALGO_RING ? 1 :
+                  algo == NCCL_ALGO_COLLNET_DIRECT ? 2 :
+                /*algo == NCCL_ALGO_NVLS*/ 3;
       row += ((devRedOp*NumTypes + type)*nAlgos + algo1)*NCCL_NUM_PROTOCOLS + proto;
       break;
     }
