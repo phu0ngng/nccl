@@ -90,37 +90,6 @@ static inline ncclResult_t ncclCuMemHostFree(void* ptr) {
   return result;
 }
 
-template <typename T>
-ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
-  ncclResult_t result = ncclSuccess;
-  cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
-  *ptr = nullptr;
-  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
-    NCCLCHECKGOTO(ncclCuMemHostAlloc((void**)ptr, NULL, nelem*ncclSizeOfT<T>()), result, finish);
-  } else {
-    CUDACHECKGOTO(cudaHostAlloc(ptr, nelem*ncclSizeOfT<T>(), cudaHostAllocMapped), result, finish);
-    INFO(NCCL_ALLOC, "%s:%d Cuda Host Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
-  }
-
-  memset(*ptr, 0, nelem*ncclSizeOfT<T>());
-finish:
-  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  if (*ptr == nullptr) WARN("Failed to CUDA host alloc %ld bytes", nelem*ncclSizeOfT<T>());
-  return result;
-}
-
-static inline ncclResult_t ncclCudaHostFree(void* ptr) {
-  ncclResult_t result = ncclSuccess;
-  if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
-    NCCLCHECKGOTO(ncclCuMemHostFree((void *)ptr), result, finish);
-  } else {
-    CUDACHECKGOTO(cudaFreeHost(ptr), result, finish);
-  }
-finish:
-  return result;
-}
-
 #else /* CUDART_VERSION >= 12020 */
 
 static inline ncclResult_t ncclCuMemHostAlloc(void** ptr, void* handlep, size_t size) {
@@ -133,6 +102,8 @@ static inline ncclResult_t ncclCuMemHostFree(void* ptr) {
   return ncclInternalError;
 }
 
+#endif  /* CUDART_VERSION >= 12020 */
+
 template <typename T>
 ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
   ncclResult_t result = ncclSuccess;
@@ -141,7 +112,6 @@ ncclResult_t ncclCudaHostCallocDebug(T** ptr, size_t nelem, const char *filefunc
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (nelem > 0) {
     CUDACHECKGOTO(cudaHostAlloc(ptr, nelem*ncclSizeOfT<T>(), cudaHostAllocMapped), result, finish);
-    INFO(NCCL_ALLOC, "%s:%d Cuda Host Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
     memset(*ptr, 0, nelem*ncclSizeOfT<T>());
   }
 finish:
@@ -155,8 +125,6 @@ static inline ncclResult_t ncclCudaHostFree(void* ptr) {
   CUDACHECK(cudaFreeHost(ptr));
   return ncclSuccess;
 }
-
-#endif  /* CUDART_VERSION >= 12020 */
 
 #define ncclCudaHostCalloc(...) ncclCudaHostCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
 
