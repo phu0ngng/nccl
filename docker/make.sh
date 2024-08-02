@@ -36,6 +36,11 @@ function identify_build_cluster() {
 	return
     fi
 
+    if [[ "$hostname" =~ draco-oci-login- ]]; then
+        echo "draco-oci"
+	return
+    fi
+
     echo "ERROR: Cluster unknown"
     exit 1	
 }

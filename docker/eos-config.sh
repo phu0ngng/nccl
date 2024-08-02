@@ -3,8 +3,8 @@
 
 # Relevant paths
 EOS_OPENMPI_HOME="/usr/mpi/gcc/openmpi-4.1.5rc2"
-EOS_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/vkhodel/cuda-12.0.1"
-EOS_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/vkhodel/images"
+EOS_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-12.0.1"
+EOS_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 
 OS="ubuntu20.04"
 CUDA_VERSION="12.0.1"
@@ -58,12 +58,14 @@ function get_docker_job_command() {
 function get_build_command() {
     current_dir="$1"
 
+    # ask for a lot of cores - otherwise we get 2
     echo "srun \
         --account=$EOS_SLURM_ACCOUNT \
         -J ${EOS_SLURM_ACCOUNT}-nccl:test \
         --mpi=pmix \
         -t 00:20:00 \
         -n 1 \
+	-c 48 \
         --container-image=$EOS_BUILD_TOOLS_IMAGE \
         --container-mounts=${current_dir}:/nccl \
         /nccl/docker/build_nccl.sh"
