@@ -443,6 +443,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
         job->base.destructor = free;
         job->base.state = ncclGroupJobRunning;
         job->base.abortFlag = comm->abortFlag;
+        job->base.abortFlagDev = comm->abortFlagDev;
         job->comm = comm;
         NCCLCHECKGOTO(ncclCalloc(&job->algoNeedConnect, NCCL_NUM_ALGORITHMS), ret, fail);
         memcpy(job->algoNeedConnect, algoNeedConnect, sizeof(bool) * NCCL_NUM_ALGORITHMS);
@@ -533,7 +534,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
     ncclGroupJobMainPtr = &ncclGroupJobMain;
     /* make sure ncclGroupBlocking has been set. */
     assert(ncclGroupBlocking == 0 || ncclGroupBlocking == 1);
-    if (ncclGroupBlocking == 0 && (ncclGroupCommPreconnectHead != nullptr || !ncclIntruQueueEmpty(&ncclAsyncJobs))) {
+    if (ncclGroupBlocking == 0) {
       /* nonblocking group */
       if (!ncclIntruQueueEmpty(&ncclAsyncJobs)) {
         ncclAsyncJob* job = ncclIntruQueueHead(&ncclAsyncJobs);

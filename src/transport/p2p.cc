@@ -21,6 +21,11 @@ struct ncclP2pBuff {
   ncclIpcDesc ipcDesc;
 };
 
+struct ncclP2pRequest {
+  size_t size;
+  int sameProcess;
+};
+
 struct p2pConnectInfo {
   int rank;
   int read;
@@ -203,7 +208,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTop
   } while (0)
 
 // cuMem API support
-ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, void **ptr) {
+ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, int directMap, ncclIpcDesc *ipcDesc, void **ptr) {
   if (ncclCuMemEnable()) {
 #if CUDART_VERSION >= 11030
     CUmemAllocationHandleType type = ncclCuMemHandleType;
@@ -217,7 +222,10 @@ ncclResult_t ncclP2pAllocateShareableBuffer(size_t size, ncclIpcDesc *ipcDesc, v
     } else {
       CUCHECK(cuMemExportToShareableHandle(&ipcDesc->cuDesc, handle, type, 0));
     }
-    memcpy(&ipcDesc->memHandle, &handle, sizeof(handle));
+    if (directMap) {
+      memcpy(&ipcDesc->memHandle, &handle, sizeof(handle));
+      CUCHECK(cuMemRetainAllocationHandle(&handle, *ptr));
+    }
 #else
     return ncclInternalError;
 #endif
@@ -331,6 +339,7 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
         // for intra-process ranks, we should map memHandle of the peers to increase refcount.
         // Otherwise, if peers abort and free the buffer, the rank can suffer invalid access.
         NCCLCHECK(ncclCuMemAllocAddr(devMem, &p2pBuff->ipcDesc.memHandle, p2pBuff->size));
+        CUCHECK(cuMemRelease(p2pBuff->ipcDesc.memHandle));
         *ipcPtr = *devMem;
       } else {
         *devMem = p2pBuff->directPtr;
@@ -352,6 +361,7 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
 ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
     struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId, int connIndex) {
   struct p2pResources* resources;
+  struct ncclP2pRequest req;
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
   int useRead, intermediateRank;
@@ -400,12 +410,14 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 	  comm->peerInfo[intermediateRank].nvmlDev, useReadStr);
   }
 
+  req.size = sendSize;
+  req.sameProcess = P2P_SAME_PID(myInfo, peerInfo);
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 1, info->rank, &send->proxyConn));
   if (useMemcpy) {
     NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, NULL, 0, &resources->proxyInfo, sizeof(struct p2pShmProxyInfo)));
     memcpy(&info->desc, &resources->proxyInfo.desc, sizeof(ncclShmIpcDesc_t));
   } else {
-    NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, &sendSize, sizeof(int), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
+    NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, &req, sizeof(struct ncclP2pRequest), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
     NCCLCHECK(p2pMap(comm, &send->proxyConn, myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->sendDevMem, &resources->sendMemIpc));
   }
 
@@ -416,6 +428,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo,
     struct ncclConnect* connectInfo, struct ncclConnector * recv, int channelId, int connIndex) {
   struct p2pResources* resources;
+  struct ncclP2pRequest req;
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
   int useRead, intermediateRank;
@@ -454,8 +467,10 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     info->rank = intermediateRank;
   }
 
+  req.size = recvSize;
+  req.sameProcess = P2P_SAME_PID(myInfo, peerInfo);
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_P2P, 0, info->rank, &recv->proxyConn));
-  NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, &recvSize, sizeof(int), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
+  NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, &req, sizeof(struct ncclP2pRequest), &info->p2pBuff, sizeof(struct ncclP2pBuff)));
 
   NCCLCHECK(p2pMap(comm, &recv->proxyConn, myInfo, comm->peerInfo+info->rank, &info->p2pBuff, (void**)&resources->recvDevMem, &resources->recvMemIpc));
   return ncclSuccess;
@@ -604,11 +619,12 @@ static ncclResult_t p2pSendProxySetup(struct ncclProxyConnection* connection, st
     NCCLCHECK(ncclCudaHostCalloc(&proxyInfo->ceRecvMem, 1));
     memcpy(respBuff, proxyInfo, sizeof(struct p2pShmProxyInfo));
   } else {
-    if (reqSize != sizeof(int)) return ncclInternalError;
-    int size = *((int*)reqBuff);
+    struct ncclP2pRequest* req = (struct ncclP2pRequest*)reqBuff;
+    if (reqSize != sizeof(struct ncclP2pRequest)) return ncclInternalError;
+    int size = req->size;
     if (respSize != sizeof(struct ncclP2pBuff)) return ncclInternalError;
     struct ncclP2pBuff* p2pBuff = (struct ncclP2pBuff*)respBuff;
-    NCCLCHECK(ncclP2pAllocateShareableBuffer(size, &p2pBuff->ipcDesc, &p2pBuff->directPtr));
+    NCCLCHECK(ncclP2pAllocateShareableBuffer(size, req->sameProcess, &p2pBuff->ipcDesc, &p2pBuff->directPtr));
     p2pBuff->size = size;
     if (ncclCuMemEnable()) {
       // cuMem API support
@@ -625,11 +641,12 @@ static ncclResult_t p2pSendProxySetup(struct ncclProxyConnection* connection, st
 }
 
 static ncclResult_t p2pRecvProxySetup(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
-  if (reqSize != sizeof(int)) return ncclInternalError;
-  int size = *((int*)reqBuff);
+  struct ncclP2pRequest* req = (struct ncclP2pRequest*)reqBuff;
+  if (reqSize != sizeof(struct ncclP2pRequest)) return ncclInternalError;
+  int size = req->size;
   if (respSize != sizeof(struct ncclP2pBuff)) return ncclInternalError;
   struct ncclP2pBuff* p2pBuff = (struct ncclP2pBuff*)respBuff;
-  NCCLCHECK(ncclP2pAllocateShareableBuffer(size, &p2pBuff->ipcDesc, &p2pBuff->directPtr));
+  NCCLCHECK(ncclP2pAllocateShareableBuffer(size, req->sameProcess, &p2pBuff->ipcDesc, &p2pBuff->directPtr));
   p2pBuff->size = size;
   if (ncclCuMemEnable()) {
     // cuMem API support
