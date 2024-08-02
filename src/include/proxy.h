@@ -74,6 +74,19 @@ struct ncclProxyOp {
 
   union ncclProxyOpSpecifics specifics;
 
+  // Profiler plugin
+  union {
+    struct ncclTaskColl* coll;
+    struct ncclTaskP2p* p2p;
+  } task;
+
+  int eActivationMask;
+  void* taskEventHandle;
+  int rank;
+  int peer;
+  pid_t pid;
+  void* profilerContext;
+
   struct ncclProxyOp *enqNext;
 };
 
@@ -102,7 +115,15 @@ struct ncclProxySubArgs {
   uint64_t done;
   uint64_t end;
   void* requests[NCCL_STEPS];
-  void* profilingEvents[NCCL_STEPS];
+
+  // Profiler plugin
+  int eActivationMask;
+  int rank;
+  void* taskEventHandle;
+  void* opEventHandle;
+  void* stepEventHandles[NCCL_STEPS];
+  size_t transSize;
+
   void* recvRequestsCache[NCCL_STEPS];
   int recvRequestsSubCount;
 };
@@ -130,6 +151,10 @@ struct ncclProxyArgs {
   int sharedSize[NCCL_STEPS];
 
   int idle;
+
+  // Profiler plugin
+  pid_t pid;
+  void* profilerContext;
 
   // Element linking
   struct ncclProxyArgs* next;
@@ -282,6 +307,9 @@ struct ncclProxyState {
 
   // Progress thread
   struct ncclProxyProgressState progressState;
+
+  // Profiler plugin
+  void* profilerContext;
 
   // Queue of expected responses from the proxy
   struct ncclExpectedProxyResponse* expectedResponses;

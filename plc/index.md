@@ -10,6 +10,7 @@
 - [improve_reduceCopy_performance](items/id_59542A65/improve_reduceCopy_performance.md)
 - [Intra-node IPC registration](items/id_73bd10af/Intra-node_IPC_registration.md)
 - [CUMEM Host Allocation](items/id_FAE002E0/CUMEM_Host_Allocation.md)
+- [Profiler plugin interface](items/id_471f63e6/Profiler_Plugin_Interface.md)
 <!-- V2_23_DO_NOT_MOVE -->
 
 <!------------------------------------->

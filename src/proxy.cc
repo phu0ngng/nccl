@@ -12,6 +12,7 @@
 #include "profiler.h"
 #define ENABLE_TIMER 0
 #include "timer.h"
+#include "profiler.h"
 #include "transport.h"
 
 #include <sys/syscall.h>
@@ -363,12 +364,17 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->nsteps = op->nsteps;
   sub->nbytes = op->nbytes;
   sub->offset = 0;
-  sub->peer = op->root;
+  sub->peer = op->peer;
   sub->reg = op->reg;
   sub->sendMhandle = op->sendMhandle;
   sub->recvMhandle = op->recvMhandle;
   sub->sendbuff = op->sendbuff;
   sub->recvbuff = op->recvbuff;
+  sub->eActivationMask = op->eActivationMask;
+  sub->taskEventHandle = op->taskEventHandle;
+  sub->rank = op->rank;
+  args->pid = op->pid;
+  args->profilerContext = op->profilerContext;
   args->nsubs = subIndex+1;
   if (subIndex) {
     if ((args->sliceSteps != op->sliceSteps) ||
@@ -530,6 +536,7 @@ static ncclResult_t SaveProxy(struct ncclComm* comm, struct ncclChannel* channel
 
   if (justInquire) *justInquire = true;
   else {
+    op->peer = peer;
     NCCLCHECK(ncclLocalOpAppend(comm, &connector->proxyConn, op));
   }
   return ncclSuccess;
@@ -718,9 +725,9 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyState* proxyState, int
   if (state->opsPool == NULL) return ncclInternalError;
   struct ncclProxyOpsPool* pool = state->opsPool;
 
-  struct ncclProxyArgs profArgs; // Only used for profiling purposes
   if (state->nextOps != -1) goto process_nextops;
 
+  void* eHandle;
   // If we have ops to progress, no need to block waiting for something to arrive or even wait for the lock
   // to be available. Exit, continue progress, and come back later.
   if (state->active != NULL && (pool->nextOps == -1 || pthread_mutex_trylock(&pool->mutex) != 0)) return ncclSuccess;
@@ -728,10 +735,11 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyState* proxyState, int
   if (state->active == NULL) {
     pthread_mutex_lock(&pool->mutex);
     while (pool->nextOps == -1 && !state->stop) {
-      struct ncclProxyArgs profArgs; // Only used for profiling purposes
-      ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileSleep);
+      ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
+      ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlSleep);
       pthread_cond_wait(&pool->cond, &pool->mutex);
-      ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileWakeup);
+      ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlWakeup);
+      ncclProfilerStopProxyCtrlEvent(eHandle);
     }
     if (state->stop) { // We might have been woken up to stop.
       pthread_mutex_unlock(&pool->mutex);
@@ -745,7 +753,8 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyState* proxyState, int
   if (state->nextOps == -1) return ncclInternalError;
 
 process_nextops:
-  ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileAppend);
+  ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
+  ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlAppend);
   TIME_START(2);
   int freeOp[NCCL_MAX_LOCAL_RANKS];
   int freeOpEnd[NCCL_MAX_LOCAL_RANKS];
@@ -800,8 +809,8 @@ process_nextops:
       }
     }
   }
-  profArgs.opCount = *added;
-  ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileAppendEnd);
+  ncclProfilerRecordProxyCtrlEventState(eHandle, *added, ncclProfilerProxyCtrlAppendEnd);
+  ncclProfilerStopProxyCtrlEvent(eHandle);
   TIME_STOP(2);
   return ncclSuccess;
 }
@@ -877,7 +886,6 @@ void* ncclProxyProgress(void *proxyState_) {
    * ncclParamProgressAppendOpFreq(). If they are equal, we will append proxy ops. This will decrease the
    * frequency of calling ncclProxyGetPostedOps() and reduce the perf impact. */
   int proxyOpAppendCounter = 0;
-  struct ncclProxyArgs profArgs; // Only used for profiling purposes
   while (state->stop == 0 || (state->stop == 1 && state->active)) {
     int idle = 1;
     ncclResult_t ret = progressOps(proxyState, state, state->active, &idle);
@@ -886,8 +894,11 @@ void* ncclProxyProgress(void *proxyState_) {
       INFO(NCCL_ALL,"%s:%d -> %d [Progress Thread]", __FILE__, __LINE__, ret);
       continue;
     }
-    if (lastIdle == 0 && idle == 1) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileIdle);
-    if (lastIdle == 1 && idle == 0) ncclProfilingRecord(&profArgs, 0, 0, ncclProxyProfileActive);
+    void* eHandle;
+    ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
+    if (lastIdle == 0 && idle == 1) ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlIdle);
+    if (lastIdle == 1 && idle == 0) ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlActive);
+    ncclProfilerStopProxyCtrlEvent(eHandle);
     if (idle || (++proxyOpAppendCounter == ncclParamProgressAppendOpFreq())) {
       int added = 0;
       proxyOpAppendCounter = 0;
@@ -952,7 +963,6 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
     state->pools = next;
   }
 
-  ncclProfilingDump();
   TIME_PRINT("Proxy");
   return ncclSuccess;
 }
@@ -1763,6 +1773,7 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
     proxyState->dmaBufSupport = comm->dmaBufSupport;
     proxyState->ncclNet = comm->ncclNet;
     proxyState->ncclCollNet = comm->ncclCollNet;
+    proxyState->profilerContext = comm->profilerContext;
     memcpy(proxyState->buffSizes, comm->buffSizes, sizeof(comm->buffSizes));
 
     PTHREADCHECK(pthread_create(&comm->proxyState->thread, NULL, ncclProxyService, comm->proxyState), "pthread_create");
