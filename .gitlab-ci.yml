@@ -426,16 +426,10 @@ apitest-eos:
   tags:
     - nccl-eos
   variables:
-    NCCL_CUMEM_ENABLE: "1"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-apitest.sh
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
   interruptible: true
 
 perftest-P100:
@@ -643,18 +637,12 @@ perftest-single-eos:
   variables:
     NCCL_DEBUG: "WARN"
     MPI_PARAMS: "-mca btl tcp,self"
-    NCCL_CUMEM_ENABLE: "1"
     NNODES: 1
     NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - salloc -N ${NNODES} -n ${NGPUS} --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
   interruptible: true
 
 perftest-multi-gc:
@@ -809,7 +797,6 @@ perftest-multi-eos:
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
-    NCCL_CUMEM_ENABLE: "1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
