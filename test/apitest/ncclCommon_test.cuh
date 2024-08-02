@@ -1,3 +1,4 @@
+#include <stdint.h>
 #pragma once
 template <typename OP, typename DT>
 void freePP(OP op, DT**& ptr, const int len) {
