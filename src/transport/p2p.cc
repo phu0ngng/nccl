@@ -249,7 +249,6 @@ ncclResult_t ncclP2pImportShareableBuffer(struct ncclComm *comm, int peer, size_
     CUmemGenericAllocationHandle handle;
     ncclCuDesc *cuDesc = &ipcDesc->cuDesc;
     CUmemAllocationProp prop = {};
-    int flag = 0;
     size_t granularity = 0;
 
     prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
