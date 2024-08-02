@@ -24,7 +24,7 @@ You can also call the ncclCommInitAll operation to create n communicator objects
 is limited to a single process, this function does not permit inter-node communication. ncclCommInitAll is equivalent
 to calling a combination of ncclGetUniqueId and ncclCommInitRank.
 
-The following sample code is a simplified implementation of ncclCommInitAll.  
+The following sample code is a simplified implementation of ncclCommInitAll.
 
 .. code:: C
 
@@ -170,12 +170,12 @@ collectives were to perform a device synchronization (e.g. allocate some CUDA me
 Finalizing a communicator
 -------------------------
 
-ncclCommFinalize will transition a communicator from the *ncclSuccess* state to the *ncclInProgress* state, start 
-completing all operations in the background and synchronize with other ranks which may be using resources for their 
+ncclCommFinalize will transition a communicator from the *ncclSuccess* state to the *ncclInProgress* state, start
+completing all operations in the background and synchronize with other ranks which may be using resources for their
 communications with other ranks.
-All uncompleted operations and network-related resources associated to a communicator will be flushed and freed with 
-ncclCommFinalize. 
-Once all NCCL operations are complete, the communicator will transition to the *ncclSuccess* state. Users can 
+All uncompleted operations and network-related resources associated to a communicator will be flushed and freed with
+ncclCommFinalize.
+Once all NCCL operations are complete, the communicator will transition to the *ncclSuccess* state. Users can
 query that state with ncclCommGetAsyncError.
 If a communicator is marked as nonblocking, this operation is nonblocking; otherwise, it is blocking.
 
@@ -185,7 +185,7 @@ Destroying a communicator
 -------------------------
 
 Once a communicator has been finalized, the next step is to free all resources, including the communicator itself.
-Local resources associated to a communicator can be destroyed with ncclCommDestroy. If the state of a communicator 
+Local resources associated to a communicator can be destroyed with ncclCommDestroy. If the state of a communicator
 is *ncclSuccess* when calling ncclCommDestroy, the call is guaranteed to be nonblocking; otherwise
 ncclCommDestroy might block.
 In all cases, ncclCommDestroy call will free the resources of the communicator and return, and
@@ -331,7 +331,7 @@ Related links:
 .. _ft:
 
 ***************
-Fault Tolerance 
+Fault Tolerance
 ***************
 
 NCCL provides a set of features to allow applications to recover from fatal errors such as a network failure,
@@ -382,7 +382,7 @@ Here is an example showing how to initialize and split a communicator in a non-b
 
   if (globalFlag) {
     ncclCommAbort(comm);
-    /* if chilComm is not NCCL_COMM_NULL, user should abort child communicator 
+    /* if chilComm is not NCCL_COMM_NULL, user should abort child communicator
      * here as well for resource reclamation. */
     if (childComm != NCCL_COMM_NULL) ncclCommAbort(childComm);
     restartNCCL(&comm);
@@ -391,4 +391,4 @@ Here is an example showing how to initialize and split a communicator in a non-b
 
 The *checkTimeout* function needs to be provided by users to determine what is the longest time the application should wait for
 NCCL initialization; likewise, users can apply other methods to detect errors besides a timeout function. Similar methods can be applied
-to NCCL finalization as well. 
+to NCCL finalization as well.
