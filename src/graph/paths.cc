@@ -36,6 +36,7 @@ NCCL_PARAM(NvbDisable, "NVB_DISABLE", 0);
 static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclTopoSystem* system) {
   if (baseNode->paths[baseNode->type] == NULL) {
     NCCLCHECK(ncclCalloc(baseNode->paths+baseNode->type, system->nodes[baseNode->type].count));
+    for (int i=0; i<system->nodes[baseNode->type].count; i++) baseNode->paths[baseNode->type][i].type = PATH_DIS;
   }
 
   // breadth-first search to set all paths to that node in the system
@@ -115,9 +116,9 @@ static void printNodePaths(struct ncclTopoSystem* system, struct ncclTopoNode* n
   const int linesize = 1024;
   char line[linesize];
 #ifdef ENABLE_TRACE
-  INFO(NCCL_GRAPH, "Paths from %s/%lX :", topoNodeTypeStr[node->type], node->id);
+  INFO(NCCL_GRAPH, "Paths from %s/%lx-%lx :", topoNodeTypeStr[node->type], NCCL_TOPO_ID_SYSTEM_ID(node->id), NCCL_TOPO_ID_LOCAL_ID(node->id));
 #else
-  snprintf(line, linesize, "%s/%lX :", topoNodeTypeStr[node->type], node->id);
+  snprintf(line, linesize, "%s/%lx-%lx :", topoNodeTypeStr[node->type], NCCL_TOPO_ID_SYSTEM_ID(node->id), NCCL_TOPO_ID_LOCAL_ID(node->id));
   int offset = strlen(line);
 #endif
   for (int t=0; t<NCCL_TOPO_NODE_TYPES; t++) {
@@ -154,14 +155,14 @@ ncclResult_t ncclTopoPrintPaths(struct ncclTopoSystem* system) {
   return ncclSuccess;
 }
 
-static ncclResult_t getLocalCpu(struct ncclTopoSystem* system, int gpu, int* retCpu) {
+ncclResult_t ncclGetLocalCpu(struct ncclTopoSystem* system, int gpu, int* retCpu) {
   // Find the closest CPU to a GPU
   int minHops = 0;
   int localCpu = -1;
   struct ncclTopoLinkList* paths = system->nodes[GPU].nodes[gpu].paths[CPU];
   for (int c=0; c<system->nodes[CPU].count; c++) {
     int hops = paths[c].count;
-    if (minHops == 0 || hops < minHops) {
+    if (hops > 0 && (minHops == 0 || hops < minHops)) {
       localCpu = c;
       minHops = hops;
     }
@@ -214,6 +215,7 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
       if (str) {
         int disable = strtol(str, NULL, 0);
         if (disable == 1) l = 0;
+        if (l >= 0) INFO(NCCL_ALL, "%s set by environment to %d", disableEnv, disable);
       }
     }
     if (l == -1) {
@@ -235,9 +237,9 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
           if (oldLevel > maxOldLevel) oldLevel = maxOldLevel;
           l = levelsOldToNew[oldLevel];
         }
+        if (l >= 0) INFO(NCCL_ALL, "%s set by environment to %s", levelEnv, topoPathTypeStr[l]);
       }
     }
-    if (l >= 0) INFO(NCCL_ALL, "%s set by environment to %s", levelEnv, topoPathTypeStr[l]);
     *level = l >= 0 ? l : -2;
   }
   return ncclSuccess;
@@ -559,7 +561,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
       if (p2p == 0) {
         // Divert all traffic through the CPU
         int cpu;
-        NCCLCHECK(getLocalCpu(system, g, &cpu));
+        NCCLCHECK(ncclGetLocalCpu(system, g, &cpu));
         NCCLCHECK(addInterStep(system, CPU, cpu, GPU, p, GPU, g));
       }
     }
@@ -571,10 +573,10 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
       if (p == g) continue;
       struct ncclPeerInfo* srcInfo = comm->peerInfo+system->nodes[GPU].nodes[p].gpu.rank;
       int p2p;
-      NCCLCHECK(ncclTransports[TRANSPORT_P2P]->canConnect(&p2p, system, NULL, srcInfo, dstInfo));
+      NCCLCHECK(ncclTransports[TRANSPORT_P2P]->canConnect(&p2p, comm, NULL, srcInfo, dstInfo));
       if (p2p == 0) {
         int shm;
-        NCCLCHECK(ncclTransports[TRANSPORT_SHM]->canConnect(&shm, system, NULL, srcInfo, dstInfo));
+        NCCLCHECK(ncclTransports[TRANSPORT_SHM]->canConnect(&shm, comm, NULL, srcInfo, dstInfo));
         if (shm == 0) {
           // Mark this peer as inaccessible. We'll trim it later.
           system->nodes[GPU].nodes[p].paths[GPU][g].type = PATH_NET;
@@ -615,7 +617,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
         if (gdr == 0) {
           // We cannot use GPU Direct RDMA, divert all traffic through the CPU local to the GPU
           int localCpu;
-          NCCLCHECK(getLocalCpu(system, g, &localCpu));
+          NCCLCHECK(ncclGetLocalCpu(system, g, &localCpu));
           NCCLCHECK(addInterStep(system, CPU, localCpu, NET, n, GPU, g));
           NCCLCHECK(addInterStep(system, CPU, localCpu, GPU, g, NET, n));
         }

@@ -256,7 +256,7 @@ static ncclResult_t registerCheckP2PConnection(struct ncclComm* comm, struct ncc
     struct ncclPeerInfo* peerInfo = &comm->peerInfo[peer];
     struct ncclPeerInfo* myInfo = &comm->peerInfo[comm->rank];
     int canConnect = 0;
-    NCCLCHECK(ncclTransports[0]->canConnect(&canConnect, comm->topo, graph, myInfo, peerInfo));
+    NCCLCHECK(ncclTransports[0]->canConnect(&canConnect, comm, graph, myInfo, peerInfo));
     if (canConnect) {
       *needReg = true;
     } else {
@@ -1789,6 +1789,8 @@ static ncclResult_t updateCollCostTable(
 
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetSupport != 1) continue;
+    // CollNetDirect is only supported for up to 8 local GPUs
+    if (a == NCCL_ALGO_COLLNET_DIRECT && comm->maxLocalRanks > NCCL_MAX_DIRECT_ARITY+1) continue;
     if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && nvlsSupport != 1 && info->func != ncclFuncAllGather) continue;
     if (a == NCCL_ALGO_NVLS && collNetSupport != 1 && comm->nNodes > 1) continue;
     /* now we only support single-node NVLS allgather and reducescatter */

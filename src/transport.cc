@@ -28,7 +28,7 @@ static ncclResult_t selectTransport(struct ncclComm* comm, struct ncclTopoGraph*
     struct ncclTransport *transport = ncclTransports[t];
     struct ncclTransportComm* transportComm = type == 1 ? &transport->send : &transport->recv;
     int ret = 0;
-    NCCLCHECK(transport->canConnect(&ret, comm->topo, graph, myInfo, peerInfo));
+    NCCLCHECK(transport->canConnect(&ret, comm, graph, myInfo, peerInfo));
     if (ret) {
       connector->transportComm = transportComm;
       NCCLCHECK(transportComm->setup(comm, graph, myInfo, peerInfo, connect, connector, channelId, connIndex));
@@ -83,7 +83,7 @@ ncclResult_t ncclTransportCheckP2pType(struct ncclComm* comm, bool* intraNodeP2p
         struct ncclPeerInfo* ipeerInfo = &comm->peerInfo[ipeer];
         struct ncclPeerInfo* jpeerInfo = &comm->peerInfo[jpeer];
         int canConnect = 0;
-        NCCLCHECK(ncclTransports[0]->canConnect(&canConnect, comm->topo, NULL, ipeerInfo, jpeerInfo));
+        NCCLCHECK(ncclTransports[0]->canConnect(&canConnect, comm, NULL, ipeerInfo, jpeerInfo));
         if (!canConnect && supportFlag == true) {
           supportFlag = false;
         }

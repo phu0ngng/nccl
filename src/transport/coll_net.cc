@@ -135,7 +135,7 @@ struct recvResources {
   int collNetRank;
 };
 
-static ncclResult_t canConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
+static ncclResult_t canConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   // This transport cannot be used for p2p
   *ret = 0;
   return ncclSuccess;

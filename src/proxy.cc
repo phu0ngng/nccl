@@ -19,6 +19,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <sched.h>
 
 enum { proxyRecv=0, proxySend=1 };
 void* ncclProxyServiceUDS(void* _args);
@@ -870,6 +871,8 @@ void* ncclProxyProgress(void *proxyState_) {
   }
   // if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
 
+  INFO(NCCL_INIT, "[Proxy Progress] Device %d CPU core %d", proxyState->cudaDev, sched_getcpu());
+
   struct ncclProxyProgressState* state = &proxyState->progressState;
   state->nextOps = -1;
   const int sig = ncclParamProxyDumpSignal();
@@ -1529,6 +1532,8 @@ void* ncclProxyService(void* _args) {
   }
   // if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
 
+  INFO(NCCL_INIT, "[Proxy Service] Device %d CPU core %d", proxyState->cudaDev, sched_getcpu());
+
   // Prepare poll descriptor
   struct ncclProxyConnectionPool connectionPool;
   connectionPool.pools = NULL;
@@ -1709,6 +1714,8 @@ void* ncclProxyServiceUDS(void* _args) {
   } else if (cudaSetDevice(proxyState->cudaDev) != cudaSuccess) {
     WARN("[Proxy Service UDS] Failed to set CUDA device %d", proxyState->cudaDev);
   }
+
+  INFO(NCCL_INIT, "[Proxy Service UDS] Device %d CPU core %d", proxyState->cudaDev, sched_getcpu());
 
   if (ncclIpcSocketGetFd(&proxyState->ipcSock, &pollfds[0].fd) != ncclSuccess) {
     WARN("[Proxy Service UDS] Get listenSock fd fails");

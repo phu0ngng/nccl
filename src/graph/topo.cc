@@ -287,7 +287,7 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
   for (int l=0; l<node->nlinks; l++) {
     struct ncclTopoLink* link = node->links+l;
     if (link->type == LINK_LOC) {
-      sprintf(line+offset, "+ %s[%2.1f] - %s/%lX", topoLinkTypeStr[link->type], link->bw, topoNodeTypeStr[link->remNode->type], link->remNode->id);
+      sprintf(line+offset, "+ %s[%2.1f] - %s/%lx-%lx", topoLinkTypeStr[link->type], link->bw, topoNodeTypeStr[link->remNode->type], NCCL_TOPO_ID_SYSTEM_ID(link->remNode->id), NCCL_TOPO_ID_LOCAL_ID(link->remNode->id));
       INFO(NCCL_GRAPH, "%s", line);
     } else if (link->type != LINK_PCI || link->remNode != prevNode) {
       sprintf(line+offset, "+ %s[%2.1f] - ", topoLinkTypeStr[link->type], link->bw);
@@ -296,9 +296,9 @@ static ncclResult_t ncclTopoPrintRec(struct ncclTopoNode* node, struct ncclTopoN
         NCCLCHECK(ncclTopoPrintRec(link->remNode, node, line, nextOffset));
       } else {
         if (link->remNode->type == NET) {
-          sprintf(line+nextOffset, "%s/%lX (%lx/%d/%f)", topoNodeTypeStr[link->remNode->type], link->remNode->id, link->remNode->net.asic, link->remNode->net.port, link->remNode->net.bw);
+          sprintf(line+nextOffset, "%s/%lx-%lx (%lx/%d/%f)", topoNodeTypeStr[link->remNode->type], NCCL_TOPO_ID_SYSTEM_ID(link->remNode->id), NCCL_TOPO_ID_LOCAL_ID(link->remNode->id), link->remNode->net.asic, link->remNode->net.port, link->remNode->net.bw);
         } else {
-          sprintf(line+nextOffset, "%s/%lX", topoNodeTypeStr[link->remNode->type], link->remNode->id);
+          sprintf(line+nextOffset, "%s/%lx-%lx", topoNodeTypeStr[link->remNode->type], NCCL_TOPO_ID_SYSTEM_ID(link->remNode->id), NCCL_TOPO_ID_LOCAL_ID(link->remNode->id));
         }
         INFO(NCCL_GRAPH, "%s", line);
       }
@@ -971,25 +971,11 @@ NCCL_PARAM(IgnoreCpuAffinity, "IGNORE_CPU_AFFINITY", 0);
 
 ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu_set_t* affinity) {
   struct ncclTopoNode* cpu = NULL, *gpu = NULL;
-  for (int g=0; g<system->nodes[GPU].count; g++) {
-    if (system->nodes[GPU].nodes[g].gpu.rank == rank) {
-      gpu = system->nodes[GPU].nodes+g;
-      // Find closer CPU
-      int cpuIndex = -1, minHops = 0;
-      for (int c=0; c<system->nodes[CPU].count; c++) {
-        int nHops = system->nodes[GPU].nodes[g].paths[CPU][c].count;
-        if (cpuIndex == -1 || nHops < minHops) {
-          cpuIndex = c;
-          minHops = nHops;
-        }
-      }
-      cpu = system->nodes[CPU].nodes+cpuIndex;
-    }
-  }
-  if (cpu == NULL) {
-    WARN("Set CPU affinity : unable to find GPU/CPU for rank %d", rank);
-    return ncclInternalError;
-  }
+  int gpuIndex, cpuIndex;
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpuIndex));
+  NCCLCHECK(ncclGetLocalCpu(system, gpuIndex, &cpuIndex));
+  gpu = system->nodes[GPU].nodes+gpuIndex;
+  cpu = system->nodes[CPU].nodes+cpuIndex;
 
   // Query the CPU affinity set we were provided
   cpu_set_t mask;

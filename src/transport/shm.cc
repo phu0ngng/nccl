@@ -66,14 +66,14 @@ static int shmLocality = 0;
 static void initCeOperation();
 
 /* Determine two peers can communicate with SHM */
-static ncclResult_t shmCanConnect(int* ret, struct ncclTopoSystem* topo, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
+static ncclResult_t shmCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   *ret = 0;
   initCeOperation();
 
   if (ncclParamShmDisable() == 1) return ncclSuccess;
 
   int useNet = 0;
-  NCCLCHECK(ncclTopoCheckNet(topo, info1->rank, info2->rank, &useNet));
+  NCCLCHECK(ncclTopoCheckNet(comm->topo, info1->rank, info2->rank, &useNet));
   if (useNet) return ncclSuccess;
 
   // Same host?

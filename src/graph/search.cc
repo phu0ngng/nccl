@@ -678,7 +678,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
           if (paths[g].bw > maxBw) {
             maxBw = paths[g].bw;
             minHops = paths[g].count;
-          } else if (paths[g].bw == maxBw && paths[g].count < minHops) {
+          } else if (paths[g].bw == maxBw && paths[g].count > 0 && paths[g].count < minHops) {
             minHops = paths[g].count;
           }
         }
@@ -1134,7 +1134,7 @@ ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGr
     sprintf(line, "%2d :", c);
     int offset = strlen(line);
     if (system->nodes[NET].count > 0) {
-      sprintf(line+offset, " %s/%lx", topoNodeTypeStr[NET], graph->inter[2*c]);
+      sprintf(line+offset, " %s/%lx-%lx", topoNodeTypeStr[NET], NCCL_TOPO_ID_SYSTEM_ID(graph->inter[2*c]), NCCL_TOPO_ID_LOCAL_ID(graph->inter[2*c]));
       offset = strlen(line);
     }
     for (int i=0; i<ngpus; i++) {
@@ -1142,7 +1142,7 @@ ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGr
       offset = strlen(line);
     }
     if (system->nodes[NET].count > 0) {
-      sprintf(line+offset, " %s/%lx", topoNodeTypeStr[NET], graph->inter[2*c+1]);
+      sprintf(line+offset, " %s/%lx-%lx", topoNodeTypeStr[NET], NCCL_TOPO_ID_SYSTEM_ID(graph->inter[2*c+1]), NCCL_TOPO_ID_LOCAL_ID(graph->inter[2*c]));
       offset = strlen(line);
     }
     INFO(NCCL_GRAPH, "%s", line);
