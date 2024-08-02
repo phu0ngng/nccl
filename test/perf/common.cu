@@ -106,6 +106,7 @@ static int local_register = 0;
 #endif
 static int per_coll_perf = 0;
 static int simulate = 0;
+static int nIdsUser = NCCL_CONFIG_UNDEF_INT; // number of ncclUniqueIds created
 
 static char* replay_file = NULL;
 
@@ -219,6 +220,28 @@ static double parsesize(const char *value) {
     }
 
     return size * units;
+}
+
+// return true if the rank has to host a root
+// this function matches the behavior of the scalable API
+static int rankHasRoot(int rank, int nRanks, int nRoots) {
+  // roots are divided in two groups:
+  // - the first (nRanks % nRoots) are associated to (nRanks / nRoots + 1) ranks
+  // - the rest are associated to (nRanks / nRoots) ranks
+  // similarly ranks are divided in two groups:
+  // - the first where their associated root is tied to (nRanks / nRoots + 1) ranks
+  // - the second where their associated root is tied to (nRanks / nRoots) ranks;
+  // the limit between the two groups is given by (nRanks % nRoots) * (nRanks / nRoots + 1)
+  int rmr = nRanks % nRoots;
+  int rpr = nRanks / nRoots;
+  int rlim = rmr * (rpr+1);
+  if (rank < rlim) {
+    // all the ranks below rlim are associated to roots that are tied to (rpr + 1) ranks
+    return !(rank % (rpr + 1));
+  } else {
+    // all the ranks above rlim are associated to roots that are tied to (rpr) ranks
+    return !((rank - rlim) % rpr);
+  }
 }
 
 testResult_t CheckDelta(void* results, void* expected, size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, uint64_t seed, int nranks, int64_t *wrongEltN) {
@@ -873,7 +896,15 @@ testResult_t threadInit(struct threadArgs* args) {
   for (int i = 0; i < args->nGpus; ++i) {
     int rank = args->globalProc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
     CUDACHECK(cudaSetDevice(args->gpus[i]));
-    NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, args->ncclId, rank, &config));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,23,0)
+    if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
+      NCCLCHECK(ncclCommInitRankScalable(globalComms + i, nranks, rank, args->nIds, args->ncclId, &config));
+    } else {
+      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
+    }
+#else
+      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
+#endif
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
   /* split comm if required. */
@@ -1144,13 +1175,14 @@ int main(int argc, char* argv[], char **envp) {
     {"local_register", required_argument, 0, 'R'},
     {"per_coll_perf", required_argument, 0, 'A'},
     {"simulate", required_argument, 0, 'E'},
+    {"init_ids", required_argument, 0, 'I'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1214,6 +1246,17 @@ int main(int argc, char* argv[], char **envp) {
         break;
       case 'r':
         ncclroot = strtol(optarg, NULL, 0);
+        break;
+      case 'I':
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,23,0)
+        nIdsUser = (int)strtol(optarg, NULL, 0);
+        if (nIdsUser < 0) {
+          printf("Option -I (--init_ids) invalid value: %d < 0. Ignoring\n", nIdsUser);
+          nIdsUser = NCCL_CONFIG_UNDEF_INT;
+        }
+#else
+        printf("Option -I (--init_ids) not supported before NCCL 2.23. Ignoring\n");
+#endif
         break;
       case 'z':
         blocking_coll = strtol(optarg, NULL, 0);
@@ -1334,6 +1377,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-P,--split_comm <0/1/2> enable communicator split (default: 0 disable; 1 dup global comm; 2 three split patterns)] \n\t"
             "[-R,--local_register <s/r/a> enable local buffer registration on send buffers/recv buffers/all buffers (default: disable)] \n\t"
             "[-A,--per_coll_perf <0/1/2> Report performance per-collective (default: 0 disable; 1 report per-collective performance and std deviation; 2: report only std deviation)] \n\t"
+            "[-I,--init_ids <num ids> enable scalable API for ncclCommInitRank using <num ids> ncclUniqueIds (default: disabled; 0 is equivalent to 1 ncclUniqueId per 128 NCCL ranks; value must be >=0)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1455,8 +1499,8 @@ testResult_t run() {
     }
   }
 
-  ncclUniqueId ncclId;
-
+  char* ncclIdLocal;
+  ncclUniqueId* ncclId;
   ncclComm_t globalComms[nThreads*nGpus];
   ncclComm_t comms[commNum][nThreads*nGpus];
   memset(globalComms, 0, sizeof(globalComms));
@@ -1468,12 +1512,39 @@ testResult_t run() {
   memset(recvRegHandles, 0, sizeof(recvRegHandles));
 #endif
   int nranks = totalProcs * nThreads * nGpus;
-  if (proc == 0) {
-    NCCLCHECK(ncclGetUniqueId(&ncclId));
+  // make sure the number of Ids does not exceed the number of total ranks
+  int nIds = 1;
+  if (nIdsUser == 0) {
+    nIds = (nranks > 128) ? (nranks / 128) : 1;
+  } else if (nIdsUser != NCCL_CONFIG_UNDEF_INT && nIdsUser > 0) {
+    nIds = (nIdsUser > nranks) ? nranks : nIdsUser;
+  }
+  // each proc can have multiple local ranks, so multiple local roots
+  int nIdsLocal = 0;
+  for (int i = 0; i < nGpus * nThreads; ++i) {
+    nIdsLocal += rankHasRoot(proc * nThreads * nGpus + i, nranks, nIds);
+  }
+  ncclIdLocal = (char*)calloc(nIdsLocal, NCCL_UNIQUE_ID_BYTES);
+  for (int i = 0; i < nIdsLocal; ++i) {
+    NCCLCHECK(ncclGetUniqueId((ncclUniqueId*)(ncclIdLocal + i * NCCL_UNIQUE_ID_BYTES)));
   }
 #ifdef MPI_SUPPORT
-  MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
+  ncclId = (ncclUniqueId*)calloc(nIds, NCCL_UNIQUE_ID_BYTES);
+  int sendCount = nIdsLocal * NCCL_UNIQUE_ID_BYTES;
+  int* recvCount = (int*)calloc(totalProcs, sizeof(int));
+  int* recvDispl = (int*)calloc(totalProcs, sizeof(int));
+  // all gather how many roots per proc
+  MPI_Allgather(&sendCount, 1, MPI_INT, recvCount, 1, MPI_INT, MPI_COMM_WORLD);
+  for (int i = 1; i < totalProcs; ++i) {
+    recvDispl[i] = recvDispl[i - 1] + recvCount[i - 1];
+  }
+  MPI_Allgatherv(ncclIdLocal, sendCount, MPI_CHAR, ncclId, recvCount, recvDispl, MPI_CHAR, MPI_COMM_WORLD);
+  free(recvDispl);
+  free(recvCount);
+  free(ncclIdLocal);           // can free the local list, the whole list is free'd at test completion
   MPI_Barrier(MPI_COMM_WORLD); // Ensure Bcast is complete for HCOLL
+#else
+  ncclId = (ncclUniqueId*)ncclIdLocal;
 #endif
   if (!parallel_init) {
     //if parallel init is not selected, use main thread to initialize NCCL
@@ -1484,7 +1555,15 @@ testResult_t run() {
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < nGpus * nThreads; ++i) {
       CUDACHECK(cudaSetDevice(gpus[i]));
-      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, ncclId, proc * nThreads * nGpus + i, &config));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2, 23, 0)
+      if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
+        NCCLCHECK(ncclCommInitRankScalable(globalComms + i, nranks, proc * nThreads * nGpus + i, nIds, ncclId, &config));
+      } else {
+        NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *ncclId, proc * nThreads * nGpus + i, &config));
+      }
+#else
+      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *ncclId, proc * nThreads * nGpus + i, &config));
+#endif
     }
     NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
     /* split comm if required. */
@@ -1654,6 +1733,7 @@ testResult_t run() {
     }
 
     threads[t].args.commNum = commNum;
+    threads[t].args.nIds = nIds;
     threads[t].args.ncclId = ncclId;
     threads[t].args.streams=streams+t*nGpus;
 
@@ -1715,6 +1795,8 @@ testResult_t run() {
     free(threads[t].args.recvRegHandles);
 #endif
   }
+  // once all threads are done, free the ncclIds
+  free(ncclId);
 
 #ifdef MPI_SUPPORT
   MPI_Allreduce(MPI_IN_PLACE, &errors[0], 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);

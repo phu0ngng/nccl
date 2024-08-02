@@ -47,10 +47,10 @@ Related links:
 
 .. _init-rank-config:
 
-Creating a communication with options
+Creating a communicator with options
 -------------------------------------
 
-The :c:func:`ncclCommInitRankConfig` function allows to create a NCCL communication with specific options.
+The :c:func:`ncclCommInitRankConfig` function allows to create a NCCL communicator with specific options.
 
 The config parameters NCCL supports are listed here :ref:`ncclconfig`.
 
@@ -73,6 +73,38 @@ code is shown below:
   } while(state == ncclInProgress);
 
 Related link: :c:func:`ncclCommGetAsyncError`
+
+Creating a communicator using multiple ncclUniqueIds
+----------------------------------------------------
+
+The :c:func:`ncclCommInitRankScalable` function enables the creation of a NCCL communicator using many ncclUniqueIds.
+All NCCL ranks have to provide the same array of ncclUniqueIds (same ncclUniqueIds, and in with the same order).
+For the best performance, we recommend distributing the ncclUniqueIds as evenly as possible amongst the NCCL ranks.
+
+Internally, NCCL ranks will mostly communicate with a single ncclUniqueId.
+Therefore, to obtain the best results, we recommend to evenly distribute ncclUniqueIds accross the ranks.
+
+The following function can be used to decide if a NCCL rank should create a ncclUniqueIds:
+
+.. code:: C
+
+ bool rankHasRoot(const int rank, const int nRanks, const int nIds) {
+   const int rmr = nRanks % nIds;
+   const int rpr = nRanks / nIds;
+   const int rlim = rmr * (rpr+1);
+   if (rank < rlim) {
+     return !(rank % (rpr + 1));
+   } else {
+     return !((rank - rlim) % rpr);
+   }
+ }
+
+For example, if 3 ncclUniqueIds are to be distributed accross 7 NCCL ranks, the first ncclUniqueId will be associated to
+ranks 0-2, while the others will be associated to ranks 3-4, and 5-6.
+This function will therefore return true on rank 0, 3, and 5, and false otherwise.
+
+Note: only the first ncclUniqueId will be used to create the communicator hash id, which is used to identify the
+communicator in the log file and in the replay tool.
 
 Creating more communicators
 ---------------------------

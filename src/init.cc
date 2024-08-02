@@ -1330,14 +1330,8 @@ struct ncclCommInitRankAsyncJob {
   struct ncclComm** newcomm;
   int cudaDev;
   // For ncclCommInitRank
-  int nranks, myrank;
-  // the anonymous union forces the same alignment for ncclUniqueId and ncclBootstrapHandle.
-  // it avoids alignment issues when casting a ncclUniqueId* into a ncclBootstrapHandle*
-  // both can then be used interchangeably
-  union {
-    ncclUniqueId commId;
-    struct ncclBootstrapHandle bootstrapHandle;
-  };
+  int nranks, myrank, nId;
+  ncclUniqueId* commId;
   // for ncclCommSplit
   struct ncclComm* parent;
   int color, key;
@@ -1352,30 +1346,31 @@ struct ncclCommFinalizeAsyncJob {
 
 NCCL_PARAM(CommSplitShareResources, "COMM_SPLIT_SHARE_RESOURCES", NCCL_CONFIG_UNDEF_INT);
 
+typedef struct{
+  int key;
+  int color;
+} commSplitInfo;
 static ncclResult_t commGetSplitInfo(struct ncclComm* comm, struct ncclComm* parent, int color, int key, int* nRanksRet, int* myRankRet, int* parentRanksRet) {
-  int* colors = NULL;
-  int* keys = NULL;
   int nRanks = 0, myRank = 0;
   ncclResult_t ret = ncclSuccess;
 
-  NCCLCHECKGOTO(ncclCalloc(&colors, parent->nRanks), ret, fail);
-  NCCLCHECKGOTO(ncclCalloc(&keys, parent->nRanks), ret, fail);
+  commSplitInfo* info = NULL;
+  NCCLCHECKGOTO(ncclCalloc(&info, parent->nRanks), ret, fail);
 
   // Compute nRanks, my rank and the ranks (of the original comm) before and after me
-  colors[parent->rank] = color;
-  keys[parent->rank] = key;
-  NCCLCHECKGOTO(bootstrapAllGather(parent->bootstrap, colors, sizeof(int)), ret, fail);
-  NCCLCHECKGOTO(bootstrapAllGather(parent->bootstrap, keys, sizeof(int)), ret, fail);
+  info[parent->rank].color = color;
+  info[parent->rank].key = key;
+  NCCLCHECKGOTO(bootstrapAllGather(parent->bootstrap, info, sizeof(commSplitInfo)), ret, fail);
 
   // Negative color does not create a new comm. Return now.
   if (color == NCCL_SPLIT_NOCOLOR) goto exit;
 
   memset(parentRanksRet, 0xff, sizeof(int) * parent->nRanks);
   for (int i = 0; i < parent->nRanks; i++) {
-    if (colors[i] != color) continue;
+    if (info[i].color != color) continue;
     // Find where to insert this rank
     int insert = 0;
-    while (insert < nRanks && keys[parentRanksRet[insert]] <= keys[i]) insert++;
+    while (insert < nRanks && info[parentRanksRet[insert]].key <= info[i].key) insert++;
     // Shift ranks by one after insert
     for (int r = nRanks; r > insert; r--) parentRanksRet[r] = parentRanksRet[r - 1];
     // Insert our rank
@@ -1391,8 +1386,7 @@ static ncclResult_t commGetSplitInfo(struct ncclComm* comm, struct ncclComm* par
   *myRankRet = myRank;
 
 exit:
-  free(colors);
-  free(keys);
+  free(info);
   return ret;
 fail:
   goto exit;
@@ -1409,6 +1403,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   int cudaArch;
   double sum_timers = 0;
   uint64_t timers[TIMERS_INIT_COUNT] = {0};
+  unsigned long long commIdHash;
 
   timers[TIMER_INIT_TOTAL] = clockNano();
   CUDACHECKGOTO(cudaSetDevice(cudaDev), res, fail);
@@ -1431,35 +1426,37 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     NCCLCHECKGOTO(commGetSplitInfo(comm, job->parent, job->color, job->key, &job->nranks, &job->myrank, parentRanks), res, fail);
     // Negative color does not create a new comm object. We needed to take part in the allgather, but we're done now.
     if (job->color == NCCL_SPLIT_NOCOLOR) goto exit;
-    snprintf((char*)&job->commId, sizeof(job->commId), "%016lx-%d", job->parent->commHash, job->color);
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
+    // obtain a unique hash for the comm, re-using part of the parent's hash, commHash is a 64bit struct (=16 hex), add the color
+    ncclUniqueId tmpId;
+    memset(&tmpId,0,sizeof(ncclUniqueId));// must set 0 here to avoid undefined bits
+    snprintf((char*)&tmpId, NCCL_UNIQUE_ID_BYTES, "%016lx-%d", job->parent->commHash, job->color);
+    comm->commHash = getHash(tmpId.internal, NCCL_UNIQUE_ID_BYTES);
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d- Init START", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
-    NCCLCHECKGOTO(bootstrapSplit(&job->bootstrapHandle, comm, job->parent, job->color, job->key, parentRanks), res, fail);
+    NCCLCHECKGOTO(bootstrapSplit(comm->commHash, comm, job->parent, job->color, job->key, parentRanks), res, fail);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano() - timers[TIMER_INIT_BOOTSTRAP];
+    // debug info, no commId was used
+    commIdHash = 0;
   } else {
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
+    // obtain a unique hash using the first commId
+    comm->commHash = getHash(job->commId->internal, NCCL_UNIQUE_ID_BYTES);
+    commIdHash = hashUniqueId(job->commId[0]);
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, commIdHash);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
-    NCCLCHECKGOTO(bootstrapInit(&job->bootstrapHandle, comm), res, fail);
+    NCCLCHECKGOTO(bootstrapInit(job->nId, (struct ncclBootstrapHandle*)job->commId, comm), res, fail);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano() - timers[TIMER_INIT_BOOTSTRAP];
   }
-
   comm->cudaArch = cudaArch;
-  comm->commHash = getHash(job->commId.internal, NCCL_UNIQUE_ID_BYTES);
-
-  if (job->parent) {
-    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d commId 0x%llx - Init START", job->funcName,
-         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key, (unsigned long long)hashUniqueId(job->commId));
-  } else {
-    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START", job->funcName,
-         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
-  }
 
   NCCLCHECKGOTO(initTransportsRank(comm, job->parent, timers), res, fail);
-
   NCCLCHECKGOTO(ncclTunerPluginLoad(comm), res, fail);
   if (comm->tuner) {
     NCCLCHECK(comm->tuner->init(comm->nRanks, comm->nNodes, ncclDebugLog, &comm->tunerContext));
@@ -1473,28 +1470,23 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   if (job->parent) {
     /* unlink child abort flag. */
     __atomic_store_n(&job->parent->childAbortFlag, NULL, __ATOMIC_RELEASE);
-    TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)",
-               job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
+    TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)", job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d - Init COMPLETE", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key);
   } else {
     // the name for the replay tool is ncclCommInitRank for all the variations
-    TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)",
-               comm, comm->nRanks, (unsigned long long)hashUniqueId(job->commId), comm->rank, comm->cudaDev);
-  }
-
-  if (job->parent) {
-    INFO(NCCL_INIT,"%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d commId 0x%llx - Init COMPLETE", job->funcName,
-    comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key, (unsigned long long)hashUniqueId(job->commId));
-  } else {
-    INFO(NCCL_INIT,"%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init COMPLETE", job->funcName,
-    comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, (unsigned long long)hashUniqueId(job->commId));
+    TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)", comm, comm->nRanks, commIdHash, comm->rank, comm->cudaDev);
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init COMPLETE", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, commIdHash);
   }
   sum_timers = 0.0;
   for (int it = 1; it < TIMERS_INIT_COUNT; ++it)
     sum_timers += (timers[it] / 1e9);
   INFO(NCCL_INIT | NCCL_PROFILE,
-       "Init timings: rank %d nranks %d total %.2f (kernels %.2f, alloc %.2f, bootstrap %.2f, allgathers %.2f, topo %.2f, graphs %.2f, "
+       "Init timings - %s: rank %d nranks %d total %.2f (kernels %.2f, alloc %.2f, bootstrap %.2f, allgathers %.2f, topo %.2f, graphs %.2f, "
        "connections %.2f, rest %.2f)\n",
-       comm->rank, comm->nRanks, timers[TIMER_INIT_TOTAL] / 1e9, timers[TIMER_INIT_KERNELS] / 1e9, timers[TIMER_INIT_ALLOC] / 1e9,
+       job->funcName, comm->rank, comm->nRanks,
+       timers[TIMER_INIT_TOTAL] / 1e9, timers[TIMER_INIT_KERNELS] / 1e9, timers[TIMER_INIT_ALLOC] / 1e9,
        timers[TIMER_INIT_BOOTSTRAP] / 1e9, timers[TIMER_INIT_ALLGATHER] / 1e9, timers[TIMER_INIT_TOPO] / 1e9,
        timers[TIMER_INIT_GRAPHS] / 1e9, timers[TIMER_INIT_CONNECT] / 1e9, timers[TIMER_INIT_TOTAL] / 1e9 - sum_timers);
 exit:
@@ -1681,7 +1673,17 @@ fail:
   goto exit;
 }
 
-static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank, int cudaDev, ncclConfig_t* config, const char funcName[]) {
+static void ncclCommInitJobFree(void* _job) {
+  struct ncclCommInitRankAsyncJob* job = (struct ncclCommInitRankAsyncJob*)_job;
+  free(job->commId);
+  free(_job);
+}
+
+static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId, ncclUniqueId* commId, int myrank, int cudaDev, ncclConfig_t *config, const char funcName[]) {
+  if (nId <= 0 || nId > nranks) {
+    WARN("improper usage of ncclCommInitRank: nId = %d, nranks=%d", nId, nranks);
+    return ncclInvalidArgument;
+  }
   ncclResult_t res = ncclSuccess;
   const char* commIdEnv = NULL;
   ncclComm_t comm = NULL;
@@ -1716,19 +1718,30 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, ncclUni
   *newcomm = comm;
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  job->nId = nId;
   job->comm = comm;
   job->nranks = nranks;
-  memcpy(&job->commId, &commId, sizeof(job->commId));
   job->myrank = myrank;
   job->cudaDev = cudaDev;
   snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", funcName);
+  // need to copy the commIds to allow async commInit and to avoid alignement issues when casting from ncclUNiqueId and ncclBootstrapHandle
+  // ncclUniqueIds and ncclBootstrapHandle don't have the same alignment requirements.
+  // Therefore the array of Ids coming from the user might not be properly aligned to be cast into a ncclBootstrapHandle
+  // copying into allocated memory guarantees that the memory is properly aligned for any objects, removing that issue
+  NCCLCHECKGOTO(ncclCalloc(&job->commId, nId), res, fail);
+  memcpy(job->commId, commId, nId * NCCL_UNIQUE_ID_BYTES);
+
   commIdEnv = ncclGetEnv("NCCL_COMM_ID");
   if (commIdEnv && myrank == 0) {
-    // start the bootstrap root before bootstrapping
     INFO(NCCL_ENV, "NCCL_COMM_ID set by environment to %s", commIdEnv);
-    NCCLCHECKGOTO(bootstrapCreateRoot(&job->bootstrapHandle, true), res, fail);
+    if (nId > 1) {
+      INFO(NCCL_INIT | NCCL_ENV, "NCCL_COMM_ID cannot be used with more than one ncclUniqueId");
+      job->nId = 1;
+    }
+    // start the bootstrap root before bootstrapping, use only the first handle
+    NCCLCHECKGOTO(bootstrapCreateRoot((struct ncclBootstrapHandle*)&job->commId[0], true), res, fail);
   }
-  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, free, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, ncclCommInitJobFree, comm), res, fail);
 
 exit:
   return ncclGroupErrCheck(res);
@@ -1767,7 +1780,7 @@ ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId comm
   NvtxParamsCommInitRank payload{myrank, nranks, cudaDev};
   NVTX3_FUNC_WITH_PARAMS(CommInitRank, CommInitRankSchema, payload)
 
-  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, &config, __func__));
+  NCCLCHECK(ncclCommInitRankDev(newcomm, nranks, 1, &commId, myrank, cudaDev, &config, __func__));
   return ncclSuccess;
 }
 
@@ -1825,7 +1838,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
     // Ignore return codes .. we need to call ncclGroupEnd to clean up anyway
     int dev = devlist ? devlist[i] : i;
     CUDACHECKGOTO(cudaSetDevice(dev), ret, fail);
-    ncclCommInitRankDev(comms+i, ndev, uniqueId, i, dev, &config, __func__);
+    ncclCommInitRankDev(comms+i, ndev,1, &uniqueId, i, dev, &config, __func__);
   }
   NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
 
@@ -1849,7 +1862,6 @@ ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState) {
 
 NCCL_API(ncclResult_t, ncclCommInitRankConfig, ncclComm_t* comm, int nranks, ncclUniqueId commId, int myrank, ncclConfig_t *config);
 ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueId commId, int myrank, ncclConfig_t *config) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
   int cudaDev;
   ncclResult_t ret = ncclSuccess;
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
@@ -1857,13 +1869,46 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
   NCCLCHECK(ncclGroupStartInternal());
 
   (void)ncclCudaLibraryInit();
-  CUDACHECKGOTO(cudaGetDevice(&cudaDev), ret, fail);
+  CUDACHECK(cudaGetDevice(&cudaDev));
+
+  NvtxParamsCommInitRank payload{myrank, nranks, cudaDev};
+  NVTX3_FUNC_WITH_PARAMS(CommInitRankConfig, CommInitRankSchema, payload)
 
   if (config == NULL)
     internalConfigPtr = &internalConfig;
   else
     internalConfigPtr = config;
-  NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, commId, myrank, cudaDev, internalConfigPtr, __func__), ret, fail);
+  NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, 1, &commId, myrank, cudaDev, internalConfigPtr, __func__), ret, fail);
+
+exit:
+  ncclGroupErrCheck(ret);
+  NCCLCHECK(ncclGroupEndInternal());
+  if (newcomm && *newcomm && !(*newcomm)->config.blocking) (void) ncclCommGetAsyncError(*newcomm, &ret);
+  return ret;
+fail:
+  if (newcomm && *newcomm && !(*newcomm)->config.blocking) (void) ncclCommSetAsyncError(*newcomm, ret);
+  goto exit;
+}
+
+NCCL_API(ncclResult_t, ncclCommInitRankScalable, ncclComm_t* newcomm, int nranks, int myrank, int nId, ncclUniqueId* commId, ncclConfig_t* config);
+ncclResult_t ncclCommInitRankScalable(ncclComm_t* newcomm, int nranks, int myrank, int nId, ncclUniqueId* commId, ncclConfig_t* config) {
+  int cudaDev;
+  ncclResult_t ret = ncclSuccess;
+  ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
+  ncclConfig_t *internalConfigPtr = NULL;
+  NCCLCHECK(ncclGroupStartInternal());
+
+  (void)ncclCudaLibraryInit();
+  CUDACHECK(cudaGetDevice(&cudaDev));
+
+  NvtxParamsCommInitRank payload{myrank, nranks, cudaDev};
+  NVTX3_FUNC_WITH_PARAMS(CommInitRankScalable, CommInitRankSchema, payload)
+
+  if (config == NULL)
+    internalConfigPtr = &internalConfig;
+  else
+    internalConfigPtr = config;
+  NCCLCHECKGOTO(ncclCommInitRankDev(newcomm, nranks, nId, commId, myrank, cudaDev, internalConfigPtr, __func__), ret, fail);
 
 exit:
   ncclGroupErrCheck(ret);
@@ -2109,14 +2154,33 @@ fail:
   goto exit;
 }
 
+struct NvtxParamsCommSplit {
+  int rank;
+  int nranks;
+  int cudaDev;
+  int color;
+  int key;
+};
+constexpr nvtxPayloadSchemaEntry_t CommSplitSchema[] = {
+    {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "Rank"},
+    {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "No. of ranks", nullptr, 0, offsetof(NvtxParamsCommSplit, nranks)},
+    {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "CUDA device", nullptr, 0, offsetof(NvtxParamsCommSplit, cudaDev)},
+    {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "color", nullptr, 0, offsetof(NvtxParamsCommSplit, color)},
+    {0, NVTX_PAYLOAD_ENTRY_TYPE_INT, "key", nullptr, 0, offsetof(NvtxParamsCommSplit, key)},
+};
+
 NCCL_API(ncclResult_t, ncclCommSplit, ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config);
 ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config) {
   struct ncclCommInitRankAsyncJob *job = NULL;
   struct ncclComm* childComm = NCCL_COMM_NULL;
   ncclResult_t res = ncclSuccess;
-  int oldDev;
 
+  NvtxParamsCommSplit payload{comm->rank, comm->nRanks, comm->cudaDev, color, key};
+  NVTX3_FUNC_WITH_PARAMS(CommSplit, CommSplitSchema, payload)
+
+  int oldDev;
   CUDACHECK(cudaGetDevice(&oldDev));
+
   NCCLCHECK(ncclGroupStartInternal());
   NCCLCHECKGOTO(CommCheck(comm, "CommSplit", "comm"), res, fail);
   NCCLCHECKGOTO(PtrCheck(newcomm, "CommSplit", "newcomm"), res, fail);

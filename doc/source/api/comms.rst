@@ -76,6 +76,18 @@ was called.
 
 See the :ref:`init-rank-config` section for details on configuration options.
 
+ncclCommInitRankScalable
+------------------------
+
+.. c:function:: ncclResult_t ncclCommInitRankScalable(ncclComm_t* newcomm, int nranks, int myrank, int nId, ncclUniqueId* commIds, ncclConfig_t* config)
+
+
+This function works the same way as *ncclCommInitRankConfig* but accepts a list of ncclUniqueIds instead of a single one.
+If only one ncclUniqueId is passed, the communicator will be initialized as if ncclCommInitRankConfig was called.
+The provided ncclUniqueIds will all be used to initalize the single communicator given in argument.
+
+See the :ref:`init-rank-config` section for details on how to create and distribute the list of ncclUniqueIds.
+
 ncclCommSplit
 -------------
 
