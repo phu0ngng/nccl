@@ -54,6 +54,11 @@ struct shmProxyInfo {
   ncclShmIpcDesc_t desc;
 };
 
+struct shmRequest {
+  size_t size;
+  bool legacy;
+};
+
 #define SHM_SEND_SIDE 1
 #define SHM_RECV_SIDE 2
 NCCL_PARAM(ShmDisable, "SHM_DISABLE", 0);
@@ -96,6 +101,7 @@ static ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   struct shmSendResources* resources;
   struct shmConnectInfo* info = (struct shmConnectInfo*)connectInfo;
   size_t shmSize = sizeof(struct ncclSendMem);
+  struct shmRequest req;
 
   static_assert(sizeof(struct shmConnectInfo) <= sizeof(struct ncclConnect), "shm Connect Info is too big");
 
@@ -105,9 +111,14 @@ static ncclResult_t shmSendSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   if (shmLocality == SHM_SEND_SIDE) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) shmSize += comm->buffSizes[p];
   }
+  req.size = shmSize;
+  if (myInfo->hostHash == peerInfo->hostHash && myInfo->pidHash == peerInfo->pidHash)
+    req.legacy = true;
+  else
+    req.legacy = false;
 
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_SHM, 1, myInfo->rank, &send->proxyConn));
-  NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, (void*)&shmSize, sizeof(size_t), (void*)info, sizeof(struct shmConnectInfo)));
+  NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, (void*)&req, sizeof(struct shmRequest), (void*)info, sizeof(struct shmConnectInfo)));
 
   resources->hostMem = (struct ncclSendMem*)info->buf.hptr;
   resources->devHostMem = (struct ncclSendMem*)info->buf.dptr;
@@ -120,6 +131,7 @@ static ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   struct shmRecvResources* resources;
   struct shmConnectInfo* info = (struct shmConnectInfo*)connectInfo;
   size_t shmSize = sizeof(struct ncclRecvMem);
+  struct shmRequest req;
 
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
@@ -129,9 +141,14 @@ static ncclResult_t shmRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* gr
   if (shmLocality == SHM_RECV_SIDE) {
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) shmSize += comm->buffSizes[p];
   }
+  req.size = shmSize;
+  if (myInfo->hostHash == peerInfo->hostHash && myInfo->pidHash == peerInfo->pidHash)
+    req.legacy = true;
+  else
+    req.legacy = false;
 
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_SHM, 0, myInfo->rank, &recv->proxyConn));
-  NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, (void*)&shmSize, sizeof(size_t), (void*)info, sizeof(struct shmConnectInfo)));
+  NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, (void*)&req, sizeof(struct shmRequest), (void*)info, sizeof(struct shmConnectInfo)));
 
   resources->hostMem = (struct ncclRecvMem*)info->buf.hptr;
   resources->devHostMem = (struct ncclRecvMem*)info->buf.dptr;
@@ -437,43 +454,36 @@ static ncclResult_t shmRecvProxyProgress(struct ncclProxyState* proxyState, stru
 }
 
 static ncclResult_t shmSendProxySetup(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  struct shmRequest* req = (struct shmRequest*)reqBuff;
   /* check message size */
-  if (reqSize != sizeof(size_t)) return ncclInternalError;
+  if (reqSize != sizeof(struct shmRequest)) return ncclInternalError;
   if (respSize != sizeof(struct shmConnectInfo)) return ncclInternalError;
 
-  size_t size = *(size_t*)reqBuff;
   struct shmConnectInfo* info = (struct shmConnectInfo*)respBuff;
   struct shmProxyInfo* proxyInfo;
 
   NCCLCHECK(ncclCalloc(&proxyInfo, 1));
-  NCCLCHECK(ncclShmAllocateShareableBuffer(proxyState->tpRank, size, &proxyInfo->desc, &info->buf.hptr, &info->buf.dptr));
+  NCCLCHECK(ncclShmAllocateShareableBuffer(proxyState->tpRank, req->size, req->legacy, &proxyInfo->desc, &info->buf.hptr, &info->buf.dptr));
   memcpy(&info->desc, &proxyInfo->desc, sizeof(ncclShmIpcDesc_t));
   connection->transportResources = proxyInfo;
   return ncclSuccess;
 }
 
 static ncclResult_t shmRecvProxySetup(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  struct shmRequest* req = (struct shmRequest*)reqBuff;
   /* check message size */
-  if (reqSize != sizeof(size_t)) return ncclInternalError;
+  if (reqSize != sizeof(struct shmRequest)) return ncclInternalError;
   if (respSize != sizeof(struct shmConnectInfo)) return ncclInternalError;
 
-  size_t size = *(size_t*)reqBuff;
   struct shmConnectInfo* info = (struct shmConnectInfo*)respBuff;
   struct shmProxyInfo* proxyInfo;
 
   NCCLCHECK(ncclCalloc(&proxyInfo, 1));
-  NCCLCHECK(ncclShmAllocateShareableBuffer(proxyState->tpRank, size, &proxyInfo->desc, &info->buf.hptr, &info->buf.dptr));
+  NCCLCHECK(ncclShmAllocateShareableBuffer(proxyState->tpRank, req->size, req->legacy, &proxyInfo->desc, &info->buf.hptr, &info->buf.dptr));
   memcpy(&info->desc, &proxyInfo->desc, sizeof(ncclShmIpcDesc_t));
   connection->transportResources = proxyInfo;
   return ncclSuccess;
 }
-
-struct ncclTransport shmTransport = {
-  "SHM",
-  shmCanConnect,
-  { shmSendSetup, shmSendConnect, shmSendFree, NULL, shmSendProxySetup, NULL, shmSendProxyFree, NULL },
-  { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL, shmRecvProxySetup, NULL, shmRecvProxyFree, NULL }
-};
 
 static void initCeOperation() {
   static int init = 0;
@@ -497,13 +507,13 @@ static void initCeOperation() {
   }
 }
 
-ncclResult_t ncclShmAllocateShareableBuffer(int tpProxyRank, size_t size, ncclShmIpcDesc_t *desc, void **hptr, void **dptr) {
+ncclResult_t ncclShmAllocateShareableBuffer(int tpProxyRank, size_t size, bool legacy, ncclShmIpcDesc_t *desc, void **hptr, void **dptr) {
   if (desc == NULL || hptr == NULL || tpProxyRank < -1) {
     WARN("Invalid argument desc %p, hptr %p, tpProxyRank %d", desc, hptr, tpProxyRank);
     return ncclInvalidArgument;
   }
 #if CUDART_VERSION >= 12020
-  if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
+  if (ncclCuMemEnable() && ncclCuMemHostEnable() && !legacy) {
     // cuMem API support
     CUmemAllocationHandleType type = SHM_HANDLE_TYPE;
     CUmemGenericAllocationHandle handle;
@@ -519,12 +529,14 @@ ncclResult_t ncclShmAllocateShareableBuffer(int tpProxyRank, size_t size, ncclSh
     desc->shmci.size = size;
     desc->shmci.ptr = *hptr;
     if (dptr) *dptr = *hptr;
+    desc->legacy = false;
     INFO(NCCL_SHM, "CUMEM allocated shareable buffer %p size %zi", desc->shmci.ptr, desc->shmci.size);
   } else {
     char shmPath[SHM_PATH_MAX] = { '\0' };
     desc->shmli.shmSize = size;
     NCCLCHECK(ncclShmOpen(shmPath, size, hptr, dptr, 1, &desc->shmli.handle));
     memcpy(desc->shmli.shmSuffix, shmPath + sizeof("/dev/shm/nccl-") - 1, sizeof(desc->shmli.shmSuffix));
+    desc->legacy = true;
     INFO(NCCL_SHM, "MMAP allocated shareable host buffer %s size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
   }
 #else /* CUDART_VERSION >= 12020 */
@@ -532,6 +544,7 @@ ncclResult_t ncclShmAllocateShareableBuffer(int tpProxyRank, size_t size, ncclSh
   desc->shmli.shmSize = size;
   NCCLCHECK(ncclShmOpen(shmPath, size, hptr, dptr, 1, &desc->shmli.handle));
   memcpy(desc->shmli.shmSuffix, shmPath + sizeof("/dev/shm/nccl-") - 1, sizeof(desc->shmli.shmSuffix));
+  desc->legacy = true;
   INFO(NCCL_SHM, "MMAP allocated shareable host buffer %s size %zi ptr %p", shmPath, size, *hptr);
 #endif /* CUDART_VERSION >= 12020 */
   return ncclSuccess;
@@ -543,7 +556,7 @@ ncclResult_t ncclShmImportShareableBuffer(struct ncclComm *comm, ncclShmIpcDesc_
     return ncclInvalidArgument;
   }
 #if CUDART_VERSION >= 12020
-  if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
+  if (ncclCuMemEnable() && ncclCuMemHostEnable() && !desc->legacy) {
     // cuMem API support
     CUdeviceptr hostptr = 0;
     CUmemAllocationHandleType type = SHM_HANDLE_TYPE;
@@ -600,19 +613,22 @@ ncclResult_t ncclShmImportShareableBuffer(struct ncclComm *comm, ncclShmIpcDesc_
     CUCHECK(cuMemSetAccess(hostptr, size, &accessDesc, 1));
 
     descOut->shmci.ptr = *hptr = (void *)hostptr;
+    descOut->legacy = false;
     if (dptr) *dptr = (void *)hostptr;
     INFO(NCCL_SHM, "CUMEM imported shareable host buffer from tpProxyRank %d size %zi ptr %p, granularity %ld", desc->shmci.tpProxyRank, desc->shmci.size, descOut->shmci.ptr, granularity);
   } else {
     char shmPath[SHM_PATH_MAX];
     sprintf(shmPath, "/dev/shm/nccl-%s", desc->shmli.shmSuffix);
     NCCLCHECK(ncclShmOpen(shmPath, desc->shmli.shmSize, hptr, dptr, -1, &descOut->shmli.handle));
+    descOut->legacy = true;
     INFO(NCCL_SHM, "MMAP imported shareable host buffer %s size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
   }
 #else /* CUDART_VERSION >= 12020 */
   char shmPath[SHM_PATH_MAX];
   sprintf(shmPath, "/dev/shm/nccl-%s", desc->shmli.shmSuffix);
   NCCLCHECK(ncclShmOpen(shmPath, desc->shmli.shmSize, hptr, dptr, -1, &descOut->shmli.handle));
-  INFO(NCCL_SHM, "MMAP imported shareable host buffer size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
+  descOut->legacy = true;
+  INFO(NCCL_SHM, "MMAP imported shareable host buffer %s size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
 #endif
   return ncclSuccess;
 }
@@ -620,7 +636,7 @@ ncclResult_t ncclShmImportShareableBuffer(struct ncclComm *comm, ncclShmIpcDesc_
 ncclResult_t ncclShmIpcClose(ncclShmIpcDesc_t *desc) {
   if (desc) {
 #if CUDART_VERSION >= 12020
-    if (ncclCuMemEnable() && ncclCuMemHostEnable()) {
+    if (ncclCuMemEnable() && ncclCuMemHostEnable() && !desc->legacy) {
       NCCLCHECK(ncclCuMemHostFree(desc->shmci.ptr));
     } else {
       NCCLCHECK(ncclShmClose(desc->shmli.handle));
@@ -632,3 +648,10 @@ ncclResult_t ncclShmIpcClose(ncclShmIpcDesc_t *desc) {
 
   return ncclSuccess;
 }
+
+struct ncclTransport shmTransport = {
+  "SHM",
+  shmCanConnect,
+  { shmSendSetup, shmSendConnect, shmSendFree, NULL, shmSendProxySetup, NULL, shmSendProxyFree, NULL },
+  { shmRecvSetup, shmRecvConnect, shmRecvFree, NULL, shmRecvProxySetup, NULL, shmRecvProxyFree, NULL }
+};

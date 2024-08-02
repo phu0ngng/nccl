@@ -614,7 +614,7 @@ static ncclResult_t p2pSendProxySetup(struct ncclProxyConnection* connection, st
 
     // Create a SHM segment for the peer to attach to
     shmSize = sizeof(struct ncclSendMem) + sizeof(struct ncclRecvMem);
-    NCCLCHECK(ncclShmAllocateShareableBuffer(proxyState->tpRank, shmSize, &proxyInfo->desc, (void**)&proxyInfo->shm, (void**)&proxyInfo->devShm));
+    NCCLCHECK(ncclShmAllocateShareableBuffer(proxyState->tpRank, shmSize, false, &proxyInfo->desc, (void**)&proxyInfo->shm, (void**)&proxyInfo->devShm));
 
     NCCLCHECK(ncclCudaHostCalloc(&proxyInfo->ceRecvMem, 1));
     memcpy(respBuff, proxyInfo, sizeof(struct p2pShmProxyInfo));
