@@ -62,7 +62,6 @@ function get_build_command() {
     echo "srun \
         --account=$DO_SLURM_ACCOUNT \
         -J ${DO_SLURM_ACCOUNT}-nccl:test \
-	--mpi=pmix \
 	-p batch_block1 \
         -t 00:20:00 \
         -n 1 \

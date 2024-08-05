@@ -62,7 +62,6 @@ function get_build_command() {
     echo "srun \
         --account=$EOS_SLURM_ACCOUNT \
         -J ${EOS_SLURM_ACCOUNT}-nccl:test \
-        --mpi=pmix \
         -t 00:20:00 \
         -n 1 \
 	-c 48 \
