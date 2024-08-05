@@ -46,7 +46,7 @@ then
     $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -np $np --map-by ppr:1:node ./build/test/perf/$func $range $opts -t 3 -g 1
     [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Multi-thread 3-GPU per-node (all sizes): $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -np $np --map-by ppr:1:node $func $range $opts -t 3 -g 1")
 
-    if [ "$NGPUS" >= "6" ];
+    if [ "$NGPUS" -ge "6" ];
     then
       echo "=============================== $func Multi-thread 6-GPU per-node (all sizes) - $(date +\"%T\") ================================="
       $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -np $np --map-by ppr:1:node ./build/test/perf/$func $range $opts -t 6 -g 1
