@@ -237,9 +237,7 @@ unit_tests-eos:
   stage: unit_tests
   rules:
     - when: always
-  needs:
-    - job: build-eos
-      artifacts: true
+  needs: ["build-eos"]
   tags:
     - nccl-eos
   variables:
@@ -420,9 +418,7 @@ apitest-eos:
   stage: api_tests
   rules:
     - when: always
-  needs: 
-    - job: build-eos
-      artifacts: true
+  needs: ["build-eos"]
   tags:
     - nccl-eos
   variables:
@@ -629,9 +625,7 @@ perftest-single-eos:
   stage: perf_tests_single
   rules:
     - when: always
-  needs:
-    - job: build-eos
-      artifacts: true
+  needs: ["build-eos"]
   tags:
     - nccl-eos
   variables:
@@ -785,9 +779,7 @@ perftest-multi-eos:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs:
-    - job: build-eos
-      artifacts: true
+  needs: ["build-eos"]
   tags:
     - nccl-eos
   variables:
