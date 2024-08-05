@@ -33,7 +33,7 @@ static void* tryOpenLib(char* name, int *err, char* errStr) {
   if (nullptr == handle) {
     strncpy(errStr, dlerror(), MAX_STR_LEN);
     errStr[MAX_STR_LEN] = 0;
-    if (strstr(errStr, name) && strstr(errStr, "No such file or directory")) {
+    if (name && strstr(errStr, name) && strstr(errStr, "No such file or directory")) {
       *err = ENOENT;
     }
   }

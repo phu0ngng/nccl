@@ -659,7 +659,8 @@ private:
       }
     }
 
-    // coverity[negative_returns:FALSE]
+    // coverity[negative_returns:FALSE] => coverity thinks that index could be -1 but that's not actually the case
+    // coverity[var_deref_model] => coverity thinks work can dereferenced if NULL but this is not the case
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclDevWorkCollReg*)e, (uint8_t)(e ? e->regUsed : ipcReg), peer);
   }
 
@@ -709,6 +710,7 @@ private:
             exchgPtr = (T*)outputBuf;
           } else {
             int localPeer = ncclShmem.comm.rankToLocalRank[peer];
+            // coverity[deref_parm:FALSE] => work cannot be NULL if ipcReg != NULL
             exchgPtr = (T*)(work->coll.recvbuffOffset + work->coll.recvbuffRmtAddrs[localPeer]);
           }
           *slot = reinterpret_cast<void*>(exchgPtr);
@@ -727,6 +729,7 @@ private:
           directBuff = reinterpret_cast<T*>(ptr);
           *slot = nullptr;
         } else {
+          // coverity[var_deref_op]
           directBuff = (T*)work->dnOutputs[index];
         }
       }
@@ -747,8 +750,10 @@ private:
           } else {
             int localPeer = ncclShmem.comm.rankToLocalRank[peer];
             if (MaxRecv == 0)
+              // coverity[var_deref_op]
               exchgPtr = (T*)(work->coll.sendbuffOffset + work->coll.sendbuffRmtAddrs[localPeer]);
             else
+              // coverity[var_deref_op]
               exchgPtr = (T*)(work->coll.recvbuffOffset + work->coll.recvbuffRmtAddrs[localPeer]);
           }
 
