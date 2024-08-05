@@ -63,7 +63,6 @@ function get_build_command() {
         --account=$DR_SLURM_ACCOUNT \
         -J ${DR_SLURM_ACCOUNT}-nccl:test \
         --nv-meta ml-model.dlss \
-        --mpi=pmix \
         -t 00:20:00 \
         -p batch_dgx1_m2 \
         -n 1 \
