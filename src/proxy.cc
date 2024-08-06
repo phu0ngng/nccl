@@ -1743,7 +1743,7 @@ void* ncclProxyServiceUDS(void* _args) {
     }
   }
 
-  ncclIpcSocketClose(&proxyState->ipcSock);
+  (void)ncclIpcSocketClose(&proxyState->ipcSock);
   INFO(NCCL_PROXY, "[Proxy Service UDS] exit: stop %d abortFlag %d", proxyState->stop, *proxyState->abortFlag);
   return NULL;
 }
