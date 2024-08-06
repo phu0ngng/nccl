@@ -601,13 +601,15 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
     } break;
   case ncclPatternPatUp: {
       // Run full algorithm to count the number of steps for each peer.
-      int *nstepsSend, *nstepsRecv;
-      const int rank = comm->rank, nranks = comm->nRanks;
-      NCCLCHECK(ncclCalloc(&nstepsSend, log2Up(nranks)));
-      NCCLCHECK(ncclCalloc(&nstepsRecv, log2Up(nranks)));
+      ncclResult_t result = ncclSuccess;
       const ssize_t size = op->nbytes/comm->nRanks;
-      PatRSAlgorithm<char> algo(op->chunkSize, NCCL_STEPS, 0, size, size, op->chunkSize, rank, nranks);
       int last = 0;
+      int *nstepsSend = NULL, *nstepsRecv = NULL;
+      const int rank = comm->rank, nranks = comm->nRanks;
+      PatRSAlgorithm<char> algo(op->chunkSize, NCCL_STEPS, 0, size, size, op->chunkSize, rank, nranks);
+      NCCLCHECKGOTO(ncclCalloc(&nstepsSend, log2Up(nranks)), result, exit_pat_up);
+      NCCLCHECKGOTO(ncclCalloc(&nstepsRecv, log2Up(nranks)), result, exit_pat_up);
+
       while (last == 0) {
         int recvDim, sendDim, recvOffset, sendOffset, sendStepOffset, postRecv, postSend, nelem;
         size_t inpIx, outIx;
@@ -619,24 +621,30 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
         if (nstepsSend[i]) {
           int sendPeer = (rank + (1<<i)) % nranks;
           op->nsteps = nstepsSend[i];
-          NCCLCHECK(SaveProxy(comm, channel, proxySend, sendPeer, op, 0, justInquire));
+          NCCLCHECKGOTO(SaveProxy(comm, channel, proxySend, sendPeer, op, 0, justInquire), result, exit_pat_up);
         }
         if (nstepsRecv[i]) {
           int recvPeer = (rank - (1<<i) + nranks) % nranks;
           op->nsteps = nstepsRecv[i];
-          NCCLCHECK(SaveProxy(comm, channel, proxyRecv, recvPeer, op, 0, justInquire));
+          NCCLCHECKGOTO(SaveProxy(comm, channel, proxyRecv, recvPeer, op, 0, justInquire), result, exit_pat_up);
         }
       }
+    exit_pat_up:
+      free(nstepsSend);
+      free(nstepsRecv);
+      NCCLCHECK(result);
     } break;
   case ncclPatternPatDown: {
       // Run full algorithm to count the number of steps for each peer.
-      int *nstepsSend, *nstepsRecv;
-      const int rank = comm->rank, nranks = comm->nRanks;
-      NCCLCHECK(ncclCalloc(&nstepsSend, log2Up(nranks)));
-      NCCLCHECK(ncclCalloc(&nstepsRecv, log2Up(nranks)));
+      ncclResult_t result = ncclSuccess;
       const ssize_t size = op->nbytes/comm->nRanks;
-      PatAGAlgorithm<char> algo(op->chunkSize, NCCL_STEPS, 0, size, size, op->chunkSize, rank, nranks);
       int last = 0;
+      int *nstepsSend = NULL, *nstepsRecv = NULL;
+      const int rank = comm->rank, nranks = comm->nRanks;
+      PatAGAlgorithm<char> algo(op->chunkSize, NCCL_STEPS, 0, size, size, op->chunkSize, rank, nranks);
+      NCCLCHECKGOTO(ncclCalloc(&nstepsSend, log2Up(nranks)), result, exit_pat_down);
+      NCCLCHECKGOTO(ncclCalloc(&nstepsRecv, log2Up(nranks)), result, exit_pat_down);
+
       while (last == 0) {
         int recvDim, sendDim, recvOffset, sendOffset, recvStepOffset, postRecv, postSend, nelem;
         size_t inpIx, outIx;
@@ -648,14 +656,18 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
         if (nstepsSend[i]) {
           int sendPeer = (rank - (1<<i) + nranks) % nranks;
           op->nsteps = nstepsSend[i];
-          NCCLCHECK(SaveProxy(comm, channel, proxySend, sendPeer, op, 0, justInquire));
+          NCCLCHECKGOTO(SaveProxy(comm, channel, proxySend, sendPeer, op, 0, justInquire), result, exit_pat_down);
         }
         if (nstepsRecv[i]) {
           int recvPeer = (rank + (1<<i)) % nranks;
           op->nsteps = nstepsRecv[i];
-          NCCLCHECK(SaveProxy(comm, channel, proxyRecv, recvPeer, op, 0, justInquire));
+          NCCLCHECKGOTO(SaveProxy(comm, channel, proxyRecv, recvPeer, op, 0, justInquire), result, exit_pat_down);
         }
       }
+    exit_pat_down:
+      free(nstepsSend);
+      free(nstepsRecv);
+      NCCLCHECK(result);
     } break;
   case ncclPatternSend:
   case ncclPatternRecv: {

@@ -454,6 +454,7 @@ static ncclResult_t shmRecvProxyProgress(struct ncclProxyState* proxyState, stru
 }
 
 static ncclResult_t shmSendProxySetup(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  ncclResult_t result = ncclSuccess;
   struct shmRequest* req = (struct shmRequest*)reqBuff;
   /* check message size */
   if (reqSize != sizeof(struct shmRequest)) return ncclInternalError;
@@ -463,13 +464,18 @@ static ncclResult_t shmSendProxySetup(struct ncclProxyConnection* connection, st
   struct shmProxyInfo* proxyInfo;
 
   NCCLCHECK(ncclCalloc(&proxyInfo, 1));
-  NCCLCHECK(ncclShmAllocateShareableBuffer(proxyState->tpRank, req->size, req->legacy, &proxyInfo->desc, &info->buf.hptr, &info->buf.dptr));
+  NCCLCHECKGOTO(ncclShmAllocateShareableBuffer(proxyState->tpRank, req->size, req->legacy, &proxyInfo->desc, &info->buf.hptr, &info->buf.dptr), result, fail);
   memcpy(&info->desc, &proxyInfo->desc, sizeof(ncclShmIpcDesc_t));
   connection->transportResources = proxyInfo;
-  return ncclSuccess;
+exit:
+  return result;
+fail:
+  free(proxyInfo);
+  goto exit;
 }
 
 static ncclResult_t shmRecvProxySetup(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
+  ncclResult_t result = ncclSuccess;
   struct shmRequest* req = (struct shmRequest*)reqBuff;
   /* check message size */
   if (reqSize != sizeof(struct shmRequest)) return ncclInternalError;
@@ -479,10 +485,14 @@ static ncclResult_t shmRecvProxySetup(struct ncclProxyConnection* connection, st
   struct shmProxyInfo* proxyInfo;
 
   NCCLCHECK(ncclCalloc(&proxyInfo, 1));
-  NCCLCHECK(ncclShmAllocateShareableBuffer(proxyState->tpRank, req->size, req->legacy, &proxyInfo->desc, &info->buf.hptr, &info->buf.dptr));
+  NCCLCHECKGOTO(ncclShmAllocateShareableBuffer(proxyState->tpRank, req->size, req->legacy, &proxyInfo->desc, &info->buf.hptr, &info->buf.dptr), result, fail);
   memcpy(&info->desc, &proxyInfo->desc, sizeof(ncclShmIpcDesc_t));
   connection->transportResources = proxyInfo;
-  return ncclSuccess;
+exit:
+  return result;
+fail:
+  free(proxyInfo);
+  goto exit;
 }
 
 static void initCeOperation() {

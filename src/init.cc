@@ -1747,6 +1747,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
 exit:
   return ncclGroupErrCheck(res);
 fail:
+  if (job) ncclCommInitJobFree(job);
   if (comm) {
     free(comm->abortFlag);
     if (comm->abortFlagDev) (void)ncclCudaHostFree((void*)comm->abortFlagDev);

@@ -1059,9 +1059,9 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
         peerRmtAddrs = (uintptr_t*)rmtRegAddr;
       *regBufFlag = 1;
       if (ipcInfo.legacyIpcCap)
-        ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, &record->base);
+        ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, (struct ncclCommCallback *)record);
       else
-        ncclIntruQueueEnqueue(cleanupQueue, &record->base);
+        ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback *)record);
       if (nCleanupQueueElts) *nCleanupQueueElts += 1;
       INFO(NCCL_REG, "rank %d - IPC graph register buffer %p size %ld (baseAddr %p size %ld) to peer %d regAddr %p offsetOut %ld", comm->rank, userbuff, buffSize, baseAddr, ipcInfo.size, peerRank, rmtRegAddr, (uintptr_t)userbuff - (uintptr_t)baseAddr);
     }
@@ -1076,14 +1076,15 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
     NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream), ret, fail);
     peerRmtAddrs = addrsRecord->regIpcAddrs.devPeerRmtAddrs;
     if (ipcInfo.legacyIpcCap)
-      ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, &addrsRecord->base);
+      ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, (struct ncclCommCallback *)addrsRecord);
     else
-      ncclIntruQueueEnqueue(cleanupQueue, &addrsRecord->base);
+      ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback *)addrsRecord);
   }
   *offsetOut = (uintptr_t)userbuff - (uintptr_t)baseAddr;
   *peerRmtAddrsOut = peerRmtAddrs;
 
 exit:
+  // coverity[leaked_storage:FALSE] => normally, addrsRecord is added to the cleanupQueue
   return ret;
 fail:
   *regBufFlag = 0;
