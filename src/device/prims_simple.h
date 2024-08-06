@@ -197,7 +197,7 @@ class Primitives<
     sliceSize = max(divUp(nelem, 16*SlicePerChunk)*16, sliceSize/32);
     int slice = 0;
     int offset = 0;
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
+    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE));
 
     if (tid < nworkers && offset < nelem && ((flags & NetRegMode) == 0)) {
       // Worker-only loop for non-empty slices. Non-workers and empty slices are
@@ -422,7 +422,7 @@ private:
     int offset = 0; // slice offset
     int sliceSize = stepSize*StepPerSlice;
     int dataSize = max(DIVUP(peerElem, 16*SlicePerChunk)*16, sliceSize/32);  // per-peer slice size
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
+    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE));
     #pragma unroll
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       ssize_t realSize = max(0, min(dataSize, peerElem-offset));
@@ -945,7 +945,7 @@ private:
 
     int workSize = ncclShmem.aborted ? 0 : nelem;
 
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
+    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE));
     reduceCopy<Unroll, RedOp, T, 0, 1, 2, 0, 1, 1, /*PreOpSrcs*/0>
       (tid, nthreads, ncclShmem.redOpArgs[0],  nullptr, /*postOp=*/false,
        nSrcs, srcs, 1, ncclShmem.groups[group].dsts, workSize, scratch);
@@ -1007,7 +1007,7 @@ private:
 
     int workSize = ncclShmem.aborted ? 0 : nelem;
 
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
+    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE));
     reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, 2, /*PreOpSrcs*/0>
       (tid, nthreads, ncclShmem.redOpArgs[0],  nullptr, /*postOp=*/false,
        1, ncclShmem.groups[group].srcs, nDsts, dsts, workSize, scratch);
