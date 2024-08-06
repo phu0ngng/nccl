@@ -74,11 +74,11 @@ else:
 ################################################################################
 
 algos_of_coll = {
-  "AllGather":     ["RING","COLLNET_DIRECT","NVLS"],
+  "AllGather":     ["TREE", "RING","COLLNET_DIRECT","NVLS"],
   "AllReduce":     all_algos,
   "Broadcast":     ["RING"],
   "Reduce":        ["RING"],
-  "ReduceScatter": ["RING","COLLNET_DIRECT","NVLS"],
+  "ReduceScatter": ["TREE", "RING","COLLNET_DIRECT","NVLS"],
   "SendRecv":      [None]
 }
 
@@ -253,6 +253,9 @@ with open(os.path.join(gensrc, "host_table.cc"), "w") as f:
     cudart, _ = required_cuda(*kfn)
     sym = paste("_", "ncclDevKernel", *kfn)
     if cudart != 0: out("#if CUDART_VERSION >= %d\n" % cudart)
+    # __global__ below gets removed by the host compiler, which results in
+    # Coverity diagnosing a specifiers inconsistency.
+    out("// coverity[declaration]\n")
     out("__global__ void %s(ncclDevKernelArgs4K const);\n" % sym)
     if cudart != 0: out("#endif\n")
   out("\n")

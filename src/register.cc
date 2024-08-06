@@ -105,7 +105,10 @@ ncclResult_t ncclRegFind(struct ncclComm* comm, const void* data, size_t size, s
 NCCL_PARAM(LocalRegister, "LOCAL_REGISTER", 1);
 
 ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, void** handle) {
-  if (!ncclParamLocalRegister()) return ncclSuccess;
+  if (!ncclParamLocalRegister()) {
+    *handle = NULL;
+    return ncclSuccess;
+  }
   struct ncclRegCache* cache = &comm->regCache;
   uintptr_t pageSize = cache->pageSize;
   uintptr_t addr = (uintptr_t)data & -pageSize;
@@ -166,6 +169,10 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
   struct ncclReg* reg = (struct ncclReg*)handle;
   struct ncclRegCache* cache = &comm->regCache;
   int slot;
+  int saveDev;
+  if (handle == NULL) goto exit;
+  CUDACHECK(cudaGetDevice(&saveDev));
+  CUDACHECK(cudaSetDevice(comm->cudaDev));
   for (slot=0; slot<cache->population && cache->slots[slot] != reg; slot++);
   if (slot == cache->population) {
     WARN("Deregister: Could not find handle");
@@ -178,10 +185,19 @@ ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
     reg->regAddr = (CUdeviceptr)NULL;
   }
   if (reg->state & COLLNET_REG_COMPLETE) {
-    NCCLCHECK(ncclCollnetDeregBuffer(comm, reg->proxyconn, reg->collnetHandle));
+    NCCLCHECK(ncclCollnetDeregBuffer(comm, reg->collnetProxyconn, reg->collnetHandle));
+  }
+  if (reg->state & IPC_REG_COMPLETE) {
+    for (int i = 0; i < NCCL_MAX_LOCAL_RANKS; ++i)
+      if (reg->ipcInfos[i])
+        NCCLCHECK(ncclIpcDeregBuffer(comm, reg->ipcInfos[i]));
+    if (reg->regIpcAddrs.hostPeerRmtAddrs) free(reg->regIpcAddrs.hostPeerRmtAddrs);
+    if (reg->regIpcAddrs.devPeerRmtAddrs) NCCLCHECK(ncclCudaFree(reg->regIpcAddrs.devPeerRmtAddrs));
   }
   free(reg);
   memmove(cache->slots+slot, cache->slots+slot+1, (cache->population-slot-1)*sizeof(struct ncclReg*));
   cache->population -= 1;
+  CUDACHECK(cudaSetDevice(saveDev));
+exit:
   return ncclSuccess;
 }

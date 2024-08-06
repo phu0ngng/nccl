@@ -5,6 +5,13 @@
 <!------------------------------------->
 ## version 2.23
 
+- [Log algorithms for Allgather ReduceScatter](items/id_e1e97705/Log_algorithms_for_Allgather_ReduceScatter.md)
+- [Optimized CUDA Graph Upload](items/id_199febcf/Optimized_CUDA_Graph_Upload.md)
+- [improve_reduceCopy_performance](items/id_59542A65/improve_reduceCopy_performance.md)
+- [Intra-node IPC registration](items/id_73bd10af/Intra-node_IPC_registration.md)
+- [CUMEM Host Allocation](items/id_FAE002E0/CUMEM_Host_Allocation.md)
+- [Profiler plugin interface](items/id_471f63e6/Profiler_Plugin_Interface.md)
+- [Fast Bootstrap](items/id_bd7e65bd/Fast_Bootstrap.md)
 <!-- V2_23_DO_NOT_MOVE -->
 
 <!------------------------------------->

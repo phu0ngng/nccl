@@ -14,7 +14,8 @@ enum {
   FT_TEST_ALLTOALL = 2,
   FT_TEST_FINALIZE = 3,
   FT_TEST_SPLIT = 4,
-  FT_TEST_NUM = 5,
+  FT_TEST_ABORT = 5,
+  FT_TEST_NUM = 6,
 };
 
 #define PRINT if (is_main_thread) printf
@@ -100,7 +101,7 @@ static testResult_t distributeFTInitTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   ret = ncclGroupEnd();
   assert(ret == ncclSuccess || ret == ncclInProgress);
@@ -169,7 +170,7 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
@@ -254,7 +255,7 @@ static testResult_t distributeFTAllreduceTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
@@ -324,7 +325,7 @@ static testResult_t distributeFTAlltoAllTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 #ifdef MPI_SUPPORT
@@ -396,7 +397,7 @@ static testResult_t distributeFTFinalizeTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
@@ -428,6 +429,52 @@ exit:
   return testSuccess;
 }
 
+testResult_t commAbortHangTest(struct threadArgs* args) {
+#if CUDA_VERSION >= 12020
+  int nGpus = args->nGpus;
+  int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
+  int totalGpus = args->nProcs * args->nThreads * args->nGpus;
+  ncclComm_t* comms = args->comms[0];
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
+  cudaStream_t* streams = args->streams;
+  size_t count;
+  ncclResult_t ret;
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    int dev = sDev + j;
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
+    CUDACHECK(cudaSetDevice(dev));
+    NCCLCHECK(ncclCommInitRank(&comms[j], totalGpus, *args->ncclId, rank));
+  }
+  count = size / totalGpus;
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    for (int k = 0; k < totalGpus; ++k) {
+      NCCLCHECK(ncclSend(((char*)sendbuffs[j]) + k * count, count, ncclChar, k, comms[j], streams[j]));
+      NCCLCHECK(ncclRecv(((char*)recvbuffs[j]) + k * count, count, ncclChar, k, comms[j], streams[j]));
+    }
+  }
+  ret = ncclGroupEnd();
+  assert(ret == ncclSuccess || ret == ncclInProgress);
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  if (args->proc == 0) {
+    NCCLCHECK(ncclCommAbort(comms[0]));
+#ifdef MPI_SUPPORT
+    MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  }
+
+  else {
+#ifdef MPI_SUPPORT
+    MPI_Barrier(MPI_COMM_WORLD);
+#endif
+    NCCLCHECK(ncclCommAbort(comms[0]));
+  }
+#endif
+  return testSuccess;
+}
 testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank, const char* ft_list) {
   struct testThread* threads;
   
@@ -441,8 +488,8 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
   int sDev = localRank * localnGpus;
   int totalGpus = ncclProcs * nThreads;
   int testEnable[FT_TEST_NUM];
-  const char* testName[FT_TEST_NUM] = {"init", "allreduce", "alltoall", "finalize", "split"};
-  threadFunc_t testFuncs[FT_TEST_NUM] = {distributeFTInitTest, distributeFTAllreduceTest, distributeFTAlltoAllTest, distributeFTFinalizeTest, distributeFTCommSplitTest};
+  const char* testName[FT_TEST_NUM] = {"init", "allreduce", "alltoall", "finalize", "split", "abort"};
+  threadFunc_t testFuncs[FT_TEST_NUM] = {distributeFTInitTest, distributeFTAllreduceTest, distributeFTAlltoAllTest, distributeFTFinalizeTest, distributeFTCommSplitTest, commAbortHangTest};
 
   if (ft_list != NULL) {
     /* users only set a subset of ft tests. */
@@ -465,6 +512,8 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
         testEnable[FT_TEST_FINALIZE] = 1;
       } else if (strcmp(token, "split") == 0) {
         testEnable[FT_TEST_SPLIT] = 1;
+      } else if (strcmp(token, "abort") == 0) {
+        testEnable[FT_TEST_ABORT] = 1;
       } else if (strcmp(token, "all") == 0) {
         for (int i = 0; i < FT_TEST_NUM; ++i) testEnable[i] = 1;
       } else {
@@ -522,7 +571,8 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
         MPI_Bcast(&ncclId, sizeof(ncclId), MPI_BYTE, 0, MPI_COMM_WORLD);
 #endif
         for (int t = nThreads - 1; t >= 0; t--) {
-          threads[t].args.ncclId = ncclId;
+          threads[t].args.nIds = 1;
+          threads[t].args.ncclId = &ncclId;
           threads[t].args.sleepId = i;
           threads[t].func = testFuncs[ft_id];
           if (t)

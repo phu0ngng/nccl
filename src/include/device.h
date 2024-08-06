@@ -128,6 +128,8 @@ struct ncclConnInfo {
 };
 
 struct ncclProxyConnector {
+  bool initialized;
+  int rank;
   int tpRank;
   int tpLocalRank;
   int sameProcess;
@@ -225,6 +227,7 @@ struct alignas(16) ncclDevWorkP2p {
 
   uint8_t sendProtoLL:1, recvProtoLL:1;
   uint8_t sendRegistered:1, recvRegistered:1;
+  uint8_t sendIpcReg:1, recvIpcReg:1;
 };
 
 // Compute the subset of the data transfer corresponding to the given part index.
@@ -266,6 +269,10 @@ struct alignas(16) ncclDevWorkColl {
   uint32_t root;
   void* recvbuff;
   void* sendbuff;
+  uintptr_t sendbuffOffset;
+  uintptr_t recvbuffOffset;
+  uintptr_t* sendbuffRmtAddrs;
+  uintptr_t* recvbuffRmtAddrs;
   union {
     // Continuous-byte-distribution scheduling. The lo and hi channels are of
     // different size than the channels in the middle.
@@ -395,6 +402,7 @@ struct ncclDevComm {
 
   // Channels, device side
   struct ncclDevChannel* channels/*[MAXCHANNELS]*/;
+  int* rankToLocalRank;
 };
 
 struct alignas(16) ncclDevCommAndChannels {
@@ -539,11 +547,12 @@ inline int ncclDevFuncId(int coll, int devRedOp, int type, int algo, int proto) 
     if (coll == ncclFuncSendRecv) break;
     row += 1;
 
-    int nAlgos = 3;
+    int nAlgos = 4;
     if (coll == ncclFuncAllGather) {
-      int algo1 = algo == NCCL_ALGO_RING ? 0 :
-                  algo == NCCL_ALGO_COLLNET_DIRECT ? 1 :
-                /*algo == NCCL_ALGO_NVLS*/ 2;
+      int algo1 = algo == NCCL_ALGO_TREE ? 0 :
+                  algo == NCCL_ALGO_RING ? 1 :
+                  algo == NCCL_ALGO_COLLNET_DIRECT ? 2 :
+                /*algo == NCCL_ALGO_NVLS*/ 3;
       row += algo1*NCCL_NUM_PROTOCOLS + proto;
       break;
     }
@@ -570,11 +579,12 @@ inline int ncclDevFuncId(int coll, int devRedOp, int type, int algo, int proto) 
     }
     row += ncclNumDevRedOps*NumTypes*nAlgos*NCCL_NUM_PROTOCOLS;
 
-    nAlgos = 3;
+    nAlgos = 4;
     if (coll == ncclFuncReduceScatter) {
-      int algo1 = algo == NCCL_ALGO_RING ? 0 :
-                  algo == NCCL_ALGO_COLLNET_DIRECT ? 1 :
-                /*algo == NCCL_ALGO_NVLS*/ 2;
+      int algo1 = algo == NCCL_ALGO_TREE ? 0 :
+                  algo == NCCL_ALGO_RING ? 1 :
+                  algo == NCCL_ALGO_COLLNET_DIRECT ? 2 :
+                /*algo == NCCL_ALGO_NVLS*/ 3;
       row += ((devRedOp*NumTypes + type)*nAlgos + algo1)*NCCL_NUM_PROTOCOLS + proto;
       break;
     }

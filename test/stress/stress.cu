@@ -689,8 +689,13 @@ testResult_t run() {
     int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
-    len += snprintf(line+len, MAX_LINE-len, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
-                    rank, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
+    if (len < MAX_LINE) {
+      len += snprintf(line+len, MAX_LINE-len, "#   Rank %2d Pid %6d on %10s device %2d [0x%02x] %s\n",
+                      rank, getpid(), hostname, cudaDev, prop.pciBusID, prop.name);
+    }
+  }
+  if (len >= MAX_LINE) {
+    strcpy(line+MAX_LINE-5, "...\n");
   }
 
 #if MPI_SUPPORT

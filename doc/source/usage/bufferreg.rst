@@ -126,6 +126,13 @@ To enable IB Sharp buffer registration by local registration:
  * Register send and recv buffer for each rank in the communicator with `ncclCommRegister`
  * Launch NCCL collectives
 
+General Buffer Registration
+---------------------------
+
+Since 2.23.x, NCCL supports intra-node buffer registration, which targets all peer-to-peer intra-node communications and brings less memory access, fewer SM usage
+and performance improvement. Either registering buffers by `ncclCommRegister` in the beginning or applying CUDA graph can enable intra-node buffer registration for NCCL collectives and sendrecv.
+The registered buffers can be allocated through legacy cuda API (e.g., `cudaMalloc`) as well as VMM API (e.g., `cuMem*` or `ncclMemAlloc`). However, VMM-allocated buffers are highly recommended since it is safer than legacy buffers during failure and abort.
+
 .. _mem_allocator:
 
 Memory Allocator

@@ -4,7 +4,8 @@ Environment Variables
 
 NCCL has an extensive set of environment variables to tune for specific usage.
 
-Environment variables can also be set statically in /etc/nccl.conf (for an administrator to set system-wide values) or in ~/.nccl.conf (for users). For example, those files could contain :
+Environment variables can also be set statically in /etc/nccl.conf (for an administrator to set system-wide values) or in ${NCCL_CONF_FILE} (since 2.23; see below).
+For example, those files could contain :
 
 .. code:: C
 
@@ -239,6 +240,65 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 0.
 
+NCCL_IB_RETURN_ASYNC_EVENTS
+---------------------------
+(since 2.23)
+
+IB events are reported to the user as warnings.
+If enabled, NCCL will also stop IB communications upon fatal IB asynchronous events.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 1, set to 0 to disable
+
+NCCL_OOB_NET_ENABLE
+-------------------
+(since 2.23)
+The variable ``NCCL_OOB_NET_ENABLE`` enables the use of NCCL net for out-of-band communcations.
+Enabling the usage of NCCL net will change the implementation of the allgather performed during the communicator initialization.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Set the variable to 0 to disable, and to 1 to enable.
+
+NCCL_OOB_NET_IFNAME
+-------------------
+(since 2.23)
+If NCCL net is enabled for out-of-band communication (see ``NCCL_OOB_NET_ENABLE``), the ``NCCL_OOB_NET_IFNAME`` variable specifies which network interfaces to use.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Define to filter interfaces to be used by NCCL for out-of-band communications.
+The accepted values follow the same logic as NCCL_SOCKET_IFNAME and NCCL_IB_HCA, see above.
+
+Note: if multiple devices are specified, NCCL will select the first matching device in the list.
+
+NCCL_UID_STAGGER_THRESHOLD
+-----------
+(since 2.23)
+The ``NCCL_UID_STAGGER_THRESHOLD`` variable is used to trigger staggering of communications between NCCL ranks and the ncclUniqueId in order to avoid overflowing the ncclUniqueId.
+If the number of NCCL ranks communicating exceeds the specified threshold, the communications are staggered using the rank value (see NCCL_UID_STAGGER_RATE below).
+If the number of NCCL ranks per ncclUniqueId is smaller or equal to the threshold, no staggering is performed.
+
+For example, if we have 128 NCCL ranks, 1 ncclUniqueId, and a threshold at 64, staggering is performed.
+However, if 2 ncclUniqueIds are used with 128 NCCL ranks and a threshold at 64, no staggering is done.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The value of ``NCCL_UID_STAGGER_THRESHOLD`` must be a strictly positive integer.
+If unspecified, the default value is 256.
+
+NCCL_UID_STAGGER_RATE
+-----------
+(since 2.23)
+The ``NCCL_UID_STAGGER_RATE`` variable is used to define the message rate targeted when staggering the communications between NCCL ranks and the ncclUniqueId.
+If staggering is used (see NCCL_UID_STAGGER_THRESHOLD above), the message rate is used to compute the time a given NCCL rank has to wait.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The value of ``NCCL_UID_STAGGER_RATE`` must be a strictly positive integer, expressed in messages/second.
+If unspecified, the default value is 7000.
+
 NCCL_NET
 --------
 (since 2.10)
@@ -283,6 +343,23 @@ Values accepted
 
 Plugin suffix, plugin file name, or "none".
 
+NCCL_PROFILER_PLUGIN
+--------------------
+
+Set it to either a suffix string or to a library name to choose among multiple NCCL profiler plugins. This setting will cause NCCL to look for the profiler plugin library using the following strategy:
+ - If NCCL_PROFILER_PLUGIN is set, attempt loading the library with name specified by NCCL_PROFILER_PLUGIN;
+ - If NCCL_PROFILER_PLUGIN is set and previous failed, attempt loading libnccl-profiler-<NCCL_PROFILER_PLUGIN>.so;
+ - If NCCL_PROFILER_PLUGIN is not set, attempt loading libnccl-profiler.so;
+ - If no plugin was found (neither user defined nor default), do not enable profiling.
+ - If NCCL_PROFILER_PLUGIN is set to ``STATIC_PLUGIN``, the plugin symbols are searched in the program binary.
+
+For example, setting ``NCCL_PROFILER_PLUGIN=aws`` will cause NCCL to try load aws and, if aws cannot be found, libnccl-profiler-aws.so (provided that it exists on the system). Setting ``NCCL_PROFILER_PLUGIN=none`` will cause NCCL not to use any plugin.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Plugin suffix, plugin file name, or "none".
+
 NCCL_IGNORE_CPU_AFFINITY
 ------------------------
 (since 2.4.6)
@@ -292,6 +369,17 @@ The ``NCCL_IGNORE_CPU_AFFINITY`` variable can be used to cause NCCL to ignore th
 Values accepted
 ^^^^^^^^^^^^^^^
 The default is 0, set to 1 to cause NCCL to ignore the job's supplied CPU affinity.
+
+NCCL_CONF_FILE
+-----------------
+(since 2.23)
+
+The ``NCCL_CONF_FILE`` variable allows the user to specify a file with the static configuration.
+This does not accept the ``~`` character as part of the path; please convert to a relative or absolute path first.
+
+Values accepted
+^^^^^^^^^^^^^^^
+If unset or if the version is prior to 2.23, NCCL uses .nccl.conf in the home directory if available.
 
 .. _NCCL_DEBUG:
 
@@ -653,6 +741,16 @@ Use CUDA cuMem* functions to allocate memory in NCCL.
 Values accepted
 ^^^^^^^^^^^^^^^
 0 or 1. Default is 0 in 2.18 (disabled); since 2.19 this feature is auto-enabled by default if the system supports it (NCCL_CUMEM_ENABLE can still be used to override the autodetection).
+
+NCCL_CUMEM_HOST_ENABLE
+----------------------
+(since 2.23)
+
+Use CUDA cuMem* functions to allocate host memory in NCCL.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Default is 0.
 
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------

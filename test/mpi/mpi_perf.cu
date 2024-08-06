@@ -130,7 +130,7 @@ int benchCollective(int collective, int rank, int nranks, int* ddata, int* hdata
     // Check results
     CUDACHECK(cudaMemcpy(hdata, (ddata+MAXSIZE), nbytes, cudaMemcpyDeviceToHost));
     errors = checkOp(collective, rank, nranks, hdata, realSize);
-    MPI_Allreduce(MPI_IN_PLACE, &errors, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &errors, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
     if (rank == 0) {
       printf(" %15ld %15.2f %15.2f %15.2f %15d\n",
         nbytes,
@@ -149,10 +149,29 @@ extern "C"
 void ncclMpiHook(MPI_Comm comm);
 #endif
 
+static int isRoot(int rank, int nranks, int nroots) {
+  int rmr = nranks % nroots;
+  int rpr = nranks / nroots;
+  int rlim = rmr * (rpr + 1);
+  if (rank < rlim) {
+    return !(rank % (rpr + 1));
+  } else {
+    return !((rank - rlim) % rpr);
+  }
+}
+
 int main(int argc, char *argv[]) {
   ncclUniqueId commId;
   int nranks, rank;
   ncclResult_t ret;
+
+  // get the number of roots from the env
+  int nroots = 1;
+  const char* n_root_env = getenv("MPI_PERF_N_ROOTS");
+  if (n_root_env) {
+    nroots = atoi(n_root_env);
+    printf("MPI-PERF: using %d roots",nroots);
+  }
 
   int threadProvided;
   MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &threadProvided);
@@ -177,9 +196,28 @@ int main(int argc, char *argv[]) {
 
   // NCCL Communicator creation
   ncclComm_t comm;
-  if (rank == 0) NCCLCHECK(ncclGetUniqueId(&commId));
-  MPI_Bcast(&commId, NCCL_UNIQUE_ID_BYTES, MPI_CHAR, 0, MPI_COMM_WORLD);
-  ret = ncclCommInitRank(&comm, nranks, commId, rank);
+  if (isRoot(rank, nranks,nroots)){
+    printf("rank %d is a root",rank);
+    NCCLCHECK(ncclGetUniqueId(&commId));
+  }
+  ncclUniqueId *id_array= (ncclUniqueId*)calloc(nroots,NCCL_UNIQUE_ID_BYTES);
+  int* recv_count = (int*)malloc(sizeof(int) * nranks);
+  int* recv_displ = (int*)malloc(sizeof(int) * nranks);
+  int c=0;
+  for (int i=0; i<nranks; ++i){
+    int peer_size = isRoot(i,nranks,nroots) ? NCCL_UNIQUE_ID_BYTES : 0;
+    recv_displ[i] = c;
+    recv_count[i] = peer_size;
+    c+= peer_size;
+  }
+  printf("allgather: %d, %d, %d\n",recv_count[rank],recv_count[0],recv_count[1]);
+  MPI_Allgatherv(&commId,recv_count[rank],MPI_CHAR,id_array,recv_count,recv_displ,MPI_CHAR,MPI_COMM_WORLD);
+  free(recv_count);
+  free(recv_displ);
+
+  printf("roots are in %p\n",id_array);
+  ret = ncclCommInitRankScalable(&comm, nranks, rank, nroots, id_array, NULL);
+  free(id_array);
   if (ret != ncclSuccess) {
     printf("NCCL Init failed (%d) '%s'\n", ret, ncclGetErrorString(ret));
     exit(1);

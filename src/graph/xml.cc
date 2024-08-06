@@ -690,6 +690,9 @@ ncclResult_t ncclTopoGetXmlFromSys(struct ncclXmlNode* pciNode, struct ncclXml* 
     }
     pciNode->parent = parent;
     // Keep PCI sub devices ordered by PCI Bus ID (Issue #820)
+    // Coverity complains about dereferenced parent being NULL
+    // but this can never happen.
+    // coverity[var_deref_op]
     int subIndex = parent->nSubs;
     const char* newBusId;
     NCCLCHECK(xmlGetAttrStr(pciNode, "busid", &newBusId));

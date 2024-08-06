@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
     if (*error > deltaMaxValue(type, 1)) failed++;
   }
 
-  MPICHECK(MPI_Allreduce(MPI_IN_PLACE, &failed, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD));
+  MPICHECK(MPI_Allreduce(MPI_IN_PLACE, &failed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD));
 
   if (globalRank == 0) printf("\n Out of bounds values : %d %s\n\n", failed, failed ? "FAILED" : "OK");
 
