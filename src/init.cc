@@ -1844,7 +1844,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
 
 exit:
-  cudaSetDevice(oldDev);
+  (void)cudaSetDevice(oldDev);
   free(gpuFlags);
   return ret;
 fail:
@@ -2231,7 +2231,7 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
-  cudaSetDevice(oldDev);
+  (void)cudaSetDevice(oldDev);
   (void)ncclGroupErrCheck(res);
   NCCLCHECK(ncclGroupEndInternal());
   return res;

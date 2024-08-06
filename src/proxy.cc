@@ -1808,7 +1808,7 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
       if (*comm->abortFlag == 0 && sharedProxyState->peerAddresses) {
         struct ncclSocket sock;
         int type = ncclProxyMsgStop;
-        ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag);
+        NCCLCHECK(ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag));
         if (ncclSocketConnect(&sock) == ncclSuccess) {
           (void)ncclSocketSend(&sock, &type, sizeof(int));
         }
