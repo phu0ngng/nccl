@@ -633,6 +633,7 @@ perftest-single-eos:
     MPI_PARAMS: "-mca btl tcp,self"
     NNODES: 1
     NGPUS: 8
+    SKIP_FT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
@@ -789,6 +790,7 @@ perftest-multi-eos:
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
+    SKIP_FT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)

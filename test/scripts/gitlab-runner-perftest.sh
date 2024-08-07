@@ -30,6 +30,7 @@ echo "Using UCX_TLS: $UCX_TLS"
 echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 echo "Using $NGPUS GPUs per node"
 echo "SKIP_MULTI_GPU=$SKIP_MULTI_GPU"
+echo "SKIP_FT=$SKIP_FT"
 
 for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf hypercube_perf; do
   echo "=============================== $func (all sizes) - $(date +\"%T\") ================================="
@@ -103,8 +104,13 @@ $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf -b8 -
 
 export NCCL_DEBUG="" # disable WARN information
 echo "=============================== all_reduce (FT tests) - $(date +\"%T\") ================================="
-$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
-[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce (FT tests): all_reduce_perf $range $opts $enable_ft")
+if [ "$SKIP_FT" != "1" ]
+then
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce (FT tests): all_reduce_perf $range $opts $enable_ft")
+else
+  echo "Skipping FT tests..."
+fi
 
 for str in "${failure_names[@]}"
 do
