@@ -681,12 +681,12 @@ NCCL_IB_SPLIT_DATA_ON_QPS
 (since 2.18)
 
 This parameter controls how we use the queue pairs when we create more than one.
-Set to 1 (split mode, default), each message will be split evenly on each queue pair. This may cause a visible latency degradation if we use many QPs.
+Set to 1 (split mode), each message will be split evenly on each queue pair. This may cause a visible latency degradation if many QPs are used.
 Set to 0 (round-robin mode), queue pairs will be used in round-robin mode for each message we send. Operations which do not send multiple messages will not use all QPs.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 or 1. Default is 1. Setting it to 0 will switch to round-robin mode.
+0 or 1. Default is 0 (since NCCL 2.20). Setting it to 1 will enable split mode (default in 2.18 and 2.19).
 
 NCCL_IB_CUDA_SUPPORT
 --------------------
