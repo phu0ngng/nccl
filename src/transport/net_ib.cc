@@ -689,7 +689,8 @@ static int ncclIbGdrModuleLoaded = 0; // 1 = true, 0 = false
 static void ibGdrSupportInitOnce() {
   // Check for the nv_peer_mem module being loaded
   ncclIbGdrModuleLoaded = KNL_MODULE_LOADED("/sys/kernel/mm/memory_peers/nv_mem/version") ||
-                          KNL_MODULE_LOADED("/sys/kernel/mm/memory_peers/nv_mem_nc/version");
+                          KNL_MODULE_LOADED("/sys/kernel/mm/memory_peers/nv_mem_nc/version") ||
+                          KNL_MODULE_LOADED("/sys/module/nvidia_peermem/version");
 }
 ncclResult_t ncclIbGdrSupport() {
   static pthread_once_t once = PTHREAD_ONCE_INIT;
