@@ -835,7 +835,6 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
               CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
               ipcInfo.legacyIpcCap = true;
             } else {
-              CUCHECKGOTO(cuMemRelease(handle), ret, fail);
               // cuMem* export to file descriptor or fabric handle
               if (proxyConn->sameProcess) {
                 memcpy(&ipcInfo.ipcDesc.memHandle, &handle, sizeof(CUmemGenericAllocationHandle));
@@ -847,9 +846,13 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
                   SYSCHECKGOTO(close(expFd), "close", ret, fail);
                 } else {
                   // Allow this to silently fail for cases where the user buff cannot be registered
-                  if (CUPFN(cuMemExportToShareableHandle(&ipcInfo.ipcDesc.cuDesc.handle, handle, ncclCuMemHandleType, 0)) != CUDA_SUCCESS) goto fail;
+                  if (CUPFN(cuMemExportToShareableHandle(&ipcInfo.ipcDesc.cuDesc.handle, handle, ncclCuMemHandleType, 0)) != CUDA_SUCCESS) {
+                    CUCHECKGOTO(cuMemRelease(handle), ret, fail);
+                    goto fail;
+                  }
                 }
               }
+              CUCHECKGOTO(cuMemRelease(handle), ret, fail);
             }
           } else {
             // nothing works, just return
