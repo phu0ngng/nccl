@@ -829,12 +829,13 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
             CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
           } else if (ncclCuMemEnable()) {
             CUmemGenericAllocationHandle handle;
-            if (pfn_cuMemRetainAllocationHandle(&handle, baseAddr) != CUDA_SUCCESS) {
+            if (CUPFN(cuMemRetainAllocationHandle(&handle, baseAddr)) != CUDA_SUCCESS) {
               // if cuMem* export fails, retry legacy export
               if (comm->directMode) goto fail;
               CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
               ipcInfo.legacyIpcCap = true;
             } else {
+              CUCHECKGOTO(cuMemRelease(handle), ret, fail);
               // cuMem* export to file descriptor or fabric handle
               if (proxyConn->sameProcess) {
                 memcpy(&ipcInfo.ipcDesc.memHandle, &handle, sizeof(CUmemGenericAllocationHandle));
@@ -845,10 +846,10 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
                   NCCLCHECKGOTO(ncclProxyClientQueryFdBlocking(comm, proxyConn, expFd, &ipcInfo.impFd), ret, fail);
                   SYSCHECKGOTO(close(expFd), "close", ret, fail);
                 } else {
-                  CUCHECKGOTO(cuMemExportToShareableHandle(&ipcInfo.ipcDesc.cuDesc.handle, handle, ncclCuMemHandleType, 0), ret, fail);
+                  // Allow this to silently fail for cases where the user buff cannot be registered
+                  if (CUPFN(cuMemExportToShareableHandle(&ipcInfo.ipcDesc.cuDesc.handle, handle, ncclCuMemHandleType, 0)) != CUDA_SUCCESS) goto fail;
                 }
               }
-              CUCHECKGOTO(cuMemRelease(handle), ret, fail);
             }
           } else {
             // nothing works, just return
