@@ -82,7 +82,7 @@ static ncclResult_t ncclNetSocketGetSpeed(char* devName, int* speed) {
   if (fd != -1) {
     char speedStr[] = "        ";
     int n;
-    SYSCHECKGOTO(n = read(fd, speedStr, sizeof(speedStr)-1), "read", ret, fail);
+    n = read(fd, speedStr, sizeof(speedStr)-1);
     if (n > 0) {
       *speed = strtol(speedStr, NULL, 0);
     }
@@ -94,8 +94,6 @@ static ncclResult_t ncclNetSocketGetSpeed(char* devName, int* speed) {
 exit:
   if (fd != -1) SYSCHECK(close(fd), "close");
   return ret;
-fail:
-  goto exit;
 }
 
 ncclResult_t ncclNetSocketGetProperties(int dev, ncclNetProperties_t* props) {
