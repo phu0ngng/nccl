@@ -47,13 +47,16 @@ This can be downloaded and built from the code and instructions found here: http
 GPU-to-NIC communication
 ------------------------
 
-GPUs can also communicate directly with network cards using GPU Direct RDMA. This requires having a compatible
+GPUs can also communicate directly with network cards using GPU Direct RDMA (GDRDMA). This requires having a compatible
 network cards and drivers, plus loading an extra kernel module called ``nvidia-peermem``.
 The ``nvidia-peermem`` module is now supplied with the CUDA drivers, however it must be loaded on each node boot with:
 
 .. code::
 
  sudo modprobe nvidia-peermem
+
+GDRDMA can also be enabled by using the DMA-BUF feature of recent Linux kernels combined with the Open Source Nvidia GPU driver.
+In this case, NCCL will automatically detect and enable DMA-BUF so the nvidia-peermem module will not be necessary.
 
 
 PCI Access Control Services (ACS)
