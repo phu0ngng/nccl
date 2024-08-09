@@ -6,17 +6,17 @@ DR_OPENMPI_HOME="/usr/mpi/gcc/openmpi-4.1.0rc5"
 DR_CUDA_HOME="/gpfs/fs1/projects/sw_gpucomms/users/vkhodel/cuda-12.0.1"
 DR_DOCKER_IMAGE_DIR="/gpfs/fs1/projects/sw_gpucomms/users/vkhodel/images"
 
-OS="ubuntu20.04"
+OS_VERSION="20.04"
 CUDA_VERSION="12.0.1"
 
 DR_SLURM_ACCOUNT="coreai_libraries_nccl"
 
 RUN_TOOLS_VERSION="1.0.5"
-RUN_TOOLS_IMAGE_NAME="nccl_run_tools-${RUN_TOOLS_VERSION}-${CUDA_VERSION}-${OS}.sqsh"
+RUN_TOOLS_IMAGE_NAME="nccl_run_tools-${RUN_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}.sqsh"
 DR_RUN_TOOLS_IMAGE="$DR_DOCKER_IMAGE_DIR/$RUN_TOOLS_IMAGE_NAME"
 
 BUILD_TOOLS_VERSION="1.0.5"
-BUILD_TOOLS_IMAGE_NAME="nccl_build_tools-${BUILD_TOOLS_VERSION}-${CUDA_VERSION}-${OS}.sqsh"
+BUILD_TOOLS_IMAGE_NAME="nccl_build_tools-${BUILD_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}.sqsh"
 DR_BUILD_TOOLS_IMAGE="$DR_DOCKER_IMAGE_DIR/$BUILD_TOOLS_IMAGE_NAME"
 
 # Target configs

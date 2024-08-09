@@ -6,17 +6,17 @@ EOS_OPENMPI_HOME="/usr/mpi/gcc/openmpi-4.1.5rc2"
 EOS_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-12.0.1"
 EOS_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 
-OS="ubuntu20.04"
+OS_VERSION="20.04"
 CUDA_VERSION="12.0.1"
 
 EOS_SLURM_ACCOUNT="coreai_libraries_nccl"
 
 RUN_TOOLS_VERSION="1.0.5"
-RUN_TOOLS_IMAGE_NAME="nccl_run_tools-${RUN_TOOLS_VERSION}-${CUDA_VERSION}-${OS}.sqsh"
+RUN_TOOLS_IMAGE_NAME="nccl_run_tools-${RUN_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}.sqsh"
 EOS_RUN_TOOLS_IMAGE="$EOS_DOCKER_IMAGE_DIR/$RUN_TOOLS_IMAGE_NAME"
 
 BUILD_TOOLS_VERSION="1.0.5"
-BUILD_TOOLS_IMAGE_NAME="nccl_build_tools-${BUILD_TOOLS_VERSION}-${CUDA_VERSION}-${OS}.sqsh"
+BUILD_TOOLS_IMAGE_NAME="nccl_build_tools-${BUILD_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}.sqsh"
 EOS_BUILD_TOOLS_IMAGE="$EOS_DOCKER_IMAGE_DIR/$BUILD_TOOLS_IMAGE_NAME"
 
 # Target configs
