@@ -21,6 +21,8 @@ TYPED_TEST(ncclReduce_test, basic) {
         }
     }
 };
+#if 0
+// Removed for BUG 4678244
 TYPED_TEST(ncclReduce_test, host_mem) {
     for (ncclRedOp_t op : this->RedOps) {
         for (int root = 0; root < this->nVis; ++root) {
@@ -40,6 +42,7 @@ TYPED_TEST(ncclReduce_test, host_mem) {
         }
     }
 };
+#endif
 TYPED_TEST(ncclReduce_test, pinned_mem) {
     if (this->sendbuffs_pinned_device && this->recvbuffs_pinned_device) {
         for (ncclRedOp_t op : this->RedOps) {

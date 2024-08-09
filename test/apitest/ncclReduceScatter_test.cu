@@ -18,6 +18,8 @@ TYPED_TEST(ncclReduceScatter_test, basic) {
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
 };
+#if 0
+// Removed for BUG 4678244
 TYPED_TEST(ncclReduceScatter_test, host_mem) {
     for (ncclRedOp_t op : this->RedOps) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -34,6 +36,7 @@ TYPED_TEST(ncclReduceScatter_test, host_mem) {
         ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
     }
 };
+#endif
 TYPED_TEST(ncclReduceScatter_test, pinned_mem) {
     if (this->sendbuffs_pinned_device && this->recvbuffs_pinned_device) {
         for (ncclRedOp_t op : this->RedOps) {

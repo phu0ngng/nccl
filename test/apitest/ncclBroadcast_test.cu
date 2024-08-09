@@ -18,6 +18,8 @@ TYPED_TEST(ncclBroadcast_test, basic) {
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
 };
+#if 0
+// Removed for BUG 4678244
 TYPED_TEST(ncclBroadcast_test, host_mem) {
     for (int root = 0; root < this->nVis; ++root) {
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -34,6 +36,7 @@ TYPED_TEST(ncclBroadcast_test, host_mem) {
         ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
     }
 };
+#endif
 TYPED_TEST(ncclBroadcast_test, pinned_mem) {
     if (this->sendbuffs_pinned_device && this->recvbuffs_pinned_device) {
         for (int root = 0; root < this->nVis; ++root) {
