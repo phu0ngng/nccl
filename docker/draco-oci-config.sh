@@ -3,20 +3,20 @@
 
 # Relevant paths
 DO_OPENMPI_HOME="/usr/mpi/gcc/openmpi-4.1.2a1"
-DO_CUDA_HOME="/lustre/fsw/portfolios/coreai/users/vkhodel/local/cuda-12.0.1"
-DO_DOCKER_IMAGE_DIR="/lustre/fsw/portfolios/coreai/users/vkhodel/images"
+DO_CUDA_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/cuda-12.0.1"
+DO_DOCKER_IMAGE_DIR="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/docker_sqsh"
 
-OS="ubuntu20.04"
+OS_VERSION="20.04"
 CUDA_VERSION="12.0.1"
 
 DO_SLURM_ACCOUNT="coreai_libraries_nccl"
 
 RUN_TOOLS_VERSION="1.0.5"
-RUN_TOOLS_IMAGE_NAME="nccl_run_tools-${RUN_TOOLS_VERSION}-${CUDA_VERSION}-${OS}.sqsh"
+RUN_TOOLS_IMAGE_NAME="nccl_run_tools-${RUN_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}.sqsh"
 DO_RUN_TOOLS_IMAGE="$DO_DOCKER_IMAGE_DIR/$RUN_TOOLS_IMAGE_NAME"
 
 BUILD_TOOLS_VERSION="1.0.5"
-BUILD_TOOLS_IMAGE_NAME="nccl_build_tools-${BUILD_TOOLS_VERSION}-${CUDA_VERSION}-${OS}.sqsh"
+BUILD_TOOLS_IMAGE_NAME="nccl_build_tools-${BUILD_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}.sqsh"
 DO_BUILD_TOOLS_IMAGE="$DO_DOCKER_IMAGE_DIR/$BUILD_TOOLS_IMAGE_NAME"
 
 # Target configs

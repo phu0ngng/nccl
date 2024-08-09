@@ -1,12 +1,12 @@
 # Config parameters for gc cluster
 # no host-specific code executes in this module to allow it to live elsewhere
 
-OS="ubuntu20.04"
+OS_VERSION="20.04"
 CUDA_VERSION="12.0.1"
 
 BUILD_TOOLS_VERSION="1.0.5"
 BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_build_tools"
-GC_BUILD_TOOLS_IMAGE="${BUILD_TOOLS_REPO}:${BUILD_TOOLS_VERSION}-${CUDA_VERSION}-${OS}"
+GC_BUILD_TOOLS_IMAGE="${BUILD_TOOLS_REPO}:${BUILD_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}"
 
 # Target configs
 function get_nvcc_gencode() {
