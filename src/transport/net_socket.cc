@@ -82,6 +82,7 @@ static ncclResult_t ncclNetSocketGetSpeed(char* devName, int* speed) {
   if (fd != -1) {
     char speedStr[] = "        ";
     int n;
+    // Allow this to silently fail (BUG 4788217)
     n = read(fd, speedStr, sizeof(speedStr)-1);
     if (n > 0) {
       *speed = strtol(speedStr, NULL, 0);
