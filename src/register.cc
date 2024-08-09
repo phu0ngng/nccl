@@ -26,8 +26,8 @@ ncclResult_t ncclNetDeregister(struct ncclComm* comm, struct ncclReg* reg) {
 
 ncclResult_t ncclNetRegister(struct ncclComm* comm, void* addr, size_t size, struct ncclReg* reg) {
   struct ncclRegCache* cache = &comm->regCache;
-  int netCount;
-  NCCLCHECK(ncclTopoGetNetCount(comm->topo, &netCount));
+  int netCount = 0;
+  if (comm->topo != NULL) NCCLCHECK(ncclTopoGetNetCount(comm->topo, &netCount));
   if (netCount == 0) return ncclSuccess;
 
   ncclResult_t ret = ncclSuccess;
