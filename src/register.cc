@@ -109,6 +109,7 @@ ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, void**
     *handle = NULL;
     return ncclSuccess;
   }
+  INFO(NCCL_REG, "register comm %p buffer %p size %zi", comm, data, size);
   struct ncclRegCache* cache = &comm->regCache;
   uintptr_t pageSize = cache->pageSize;
   uintptr_t addr = (uintptr_t)data & -pageSize;
