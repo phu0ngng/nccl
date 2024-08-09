@@ -91,7 +91,6 @@ static ncclResult_t ncclNetSocketGetSpeed(char* devName, int* speed) {
     INFO(NCCL_NET, "Could not get speed from %s. Defaulting to 10 Gbps.", speedPath);
     *speed = 10000;
   }
-exit:
   if (fd != -1) SYSCHECK(close(fd), "close");
   return ret;
 }
