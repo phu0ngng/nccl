@@ -411,7 +411,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   do {
     cudaMemPoolProps props = {};
     props.allocType = cudaMemAllocationTypePinned;
-    props.handleTypes = cudaMemHandleTypePosixFileDescriptor;
+    props.handleTypes = cudaMemHandleTypeNone;
     props.location.type = cudaMemLocationTypeDevice;
     props.location.id = comm->cudaDev;
     CUDACHECK(cudaMemPoolCreate(&comm->memPool, &props));
