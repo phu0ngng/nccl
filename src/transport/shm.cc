@@ -618,14 +618,14 @@ ncclResult_t ncclShmImportShareableBuffer(struct ncclComm *comm, ncclShmIpcDesc_
     INFO(NCCL_SHM, "CUMEM imported shareable host buffer from tpProxyRank %d size %zi ptr %p, granularity %ld", desc->shmci.tpProxyRank, desc->shmci.size, descOut->shmci.ptr, granularity);
   } else {
     char shmPath[SHM_PATH_MAX];
-    sprintf(shmPath, "/dev/shm/nccl-%s", desc->shmli.shmSuffix);
+    snprintf(shmPath, sizeof(shmPath), "/dev/shm/nccl-%s", desc->shmli.shmSuffix);
     NCCLCHECK(ncclShmOpen(shmPath, sizeof(shmPath), desc->shmli.shmSize, hptr, dptr, -1, &descOut->shmli.handle));
     descOut->legacy = true;
     INFO(NCCL_SHM, "MMAP imported shareable host buffer %s size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
   }
 #else /* CUDART_VERSION >= 12020 */
   char shmPath[SHM_PATH_MAX];
-  sprintf(shmPath, "/dev/shm/nccl-%s", desc->shmli.shmSuffix);
+  snprintf(shmPath, sizeof(shmPath), "/dev/shm/nccl-%s", desc->shmli.shmSuffix);
   NCCLCHECK(ncclShmOpen(shmPath, sizeof(shmPath), desc->shmli.shmSize, hptr, dptr, -1, &descOut->shmli.handle));
   descOut->legacy = true;
   INFO(NCCL_SHM, "MMAP imported shareable host buffer %s size %zi ptr %p", shmPath, desc->shmli.shmSize, *hptr);
