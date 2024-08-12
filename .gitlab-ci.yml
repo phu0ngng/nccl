@@ -1,5 +1,6 @@
 stages:
   - build
+  - setup
   - health
   - unit_tests
   - api_tests
@@ -7,6 +8,7 @@ stages:
   - perf_tests_multi
   - perf_regression
   - replay_tests
+  - cleanup
 
 variables:
   RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
@@ -21,6 +23,7 @@ variables:
   SHARP_MULTI_JOB_TIME:  10
   RUN_ON_SELENE_SHARP: "0"
   BUILD_TRACE: "0"
+  RUN_ON_AWS: "1"
 
 # Run our CI on:
 # - Every commit to master
@@ -86,6 +89,24 @@ build-eos:
       - build/**/*.o
     expire_in: 4 hrs
   interruptible: true
+
+setup-AWS_H100_EFA:
+  stage: setup
+  rules:
+    - if: $RUN_ON_AWS == "1"
+      when: always
+    - when: never
+  tags:
+    - aws_p5
+  needs:
+    # Builds targetted for EOS work on AWS as well as the build config is the same across both clusters.
+    # TODO - Refactor build jobs to decouple EOS and AWS.
+    - build-eos
+  variables:
+    AWS_HEAD_NODE: aws-pcluster-head
+    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
+  script:
+    - rsync -a --exclude ./.git ./ ${AWS_HEAD_NODE}:${AWS_HEAD_NODE_WORKDIR}/
 
 health-P100:
   stage: health
@@ -246,6 +267,35 @@ unit_tests-eos:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - srun --exclusive -n 1 -c8 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:unit::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-unit.sh
   interruptible: true
+
+unit_tests-AWS_H100_EFA:
+  stage: unit_tests
+  rules:
+    - if: $RUN_ON_AWS == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-AWS_H100_EFA
+  tags:
+    - aws_p5
+  variables:
+    GIT_STRATEGY: none
+    AWS_HEAD_NODE: aws-pcluster-head
+    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
+    SSHENV_FILE: sshenv_${CI_JOB_NAME}
+  before_script:
+    - |
+      cat > $SSHENV_FILE << EOF
+      export SRUN="srun --exclusive -t 00:10:00 -n 1 -G 8 -p compute"
+      EOF
+    - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+  script:
+    - ssh $AWS_HEAD_NODE "cd ${AWS_HEAD_NODE_WORKDIR} && source docker/aws-config.sh && configure_aws_test_env && source $SSHENV_FILE && bash -l ./test/scripts/gitlab-runner-unit.sh"
+  artifacts:
+    when: always
+    paths:
+      - sshenv_${CI_JOB_NAME}
+    expire_in: 4 hrs
 
 apitest-P100:
   stage: api_tests
@@ -427,6 +477,35 @@ apitest-eos:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
+
+apitest-AWS_H100_EFA:
+  stage: api_tests
+  rules:
+    - if: $RUN_ON_AWS == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-AWS_H100_EFA
+  tags:
+    - aws_p5
+  variables:
+    GIT_STRATEGY: none
+    AWS_HEAD_NODE: "aws-pcluster-head"
+    AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
+    SSHENV_FILE: sshenv_${CI_JOB_NAME}
+  before_script:
+    - |
+      cat > $SSHENV_FILE << EOF
+      export SRUN="srun --exclusive -t 00:10:00 -n 1 -G 8 -p compute"
+      EOF
+    - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+  script:
+    - ssh ${AWS_HEAD_NODE} "cd ${AWS_HEAD_NODE_WORKDIR} && source docker/aws-config.sh && configure_aws_test_env && source ${SSHENV_FILE} && bash -l ./test/scripts/gitlab-runner-apitest.sh"
+  artifacts:
+    when: always
+    paths:
+      - sshenv_${CI_JOB_NAME}
+    expire_in: 4 hrs
 
 perftest-P100:
   stage: perf_tests_single
@@ -640,6 +719,42 @@ perftest-single-eos:
     - salloc -N ${NNODES} -n ${NGPUS} --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G
   interruptible: true
 
+perftest_single-AWS_H100_EFA:
+  stage: perf_tests_single
+  rules:
+    - if: $RUN_ON_AWS == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-AWS_H100_EFA
+  tags:
+    - aws_p5
+  variables:
+    GIT_STRATEGY: none
+    AWS_HEAD_NODE: "aws-pcluster-head"
+    AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
+    SSHENV_FILE: sshenv_${CI_JOB_NAME}
+    NNODES: 1
+    NGPUS: 8
+  before_script:
+    - |
+      cat > $SSHENV_FILE << EOF
+      export MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
+      export NNODES=${NNODES}
+      export NGPUS=${NGPUS}
+      export SALLOC="salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -p compute"
+      export SKIP_FT=1
+      export UCX_TLS=tcp
+      EOF
+    - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+  script:
+    - ssh ${AWS_HEAD_NODE} "cd ${AWS_HEAD_NODE_WORKDIR} && source docker/aws-config.sh && configure_aws_test_env && source ${SSHENV_FILE} && bash -l ./test/scripts/gitlab-runner-perftest.sh"
+  artifacts:
+    when: always
+    paths:
+      - sshenv_${CI_JOB_NAME}
+    expire_in: 4 hrs
+
 perftest-multi-gc:
   stage: perf_tests_multi
   rules:
@@ -824,6 +939,44 @@ perftest-sharp-selene:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna --network=sharp -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SHARP_MULTI_JOB_TIME ./test/scripts/gitlab-runner-perftest-sharp.sh 4G 0
   interruptible: true
 
+perftest_multi-AWS_H100_EFA:
+  stage: perf_tests_multi
+  rules:
+    - if: $RUN_ON_AWS == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-AWS_H100_EFA
+  tags:
+    - aws_p5
+  variables:
+    GIT_STRATEGY: none
+    AWS_HEAD_NODE: "aws-pcluster-head"
+    AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
+    SSHENV_FILE: sshenv_${CI_JOB_NAME}
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+    NGPUS: 8
+    RUNNER_SCRIPT_ARGS: 128M 0
+  before_script:
+    - |
+      cat > $SSHENV_FILE << EOF
+      export MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
+      export NNODES=${NNODES}
+      export NGPUS=${NGPUS}
+      export SALLOC="salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -p compute"
+      export SKIP_FT=1
+      export UCX_TLS=tcp
+      EOF
+    - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+  script:
+    - ssh ${AWS_HEAD_NODE} "cd ${AWS_HEAD_NODE_WORKDIR} && source docker/aws-config.sh && configure_aws_test_env && source ${SSHENV_FILE} && bash -l ./test/scripts/gitlab-runner-perftest.sh ${RUNNER_SCRIPT_ARGS}"
+  interruptible: true
+  artifacts:
+    when: always
+    paths:
+      - sshenv_${CI_JOB_NAME}
+    expire_in: 4 hrs
+
 perf-regression-single-DGX-A100:
   stage: perf_regression
   rules:
@@ -924,3 +1077,24 @@ replay-multi-gc:
       - "**/core.*.*"
     expire_in: 4 hrs
   interruptible: true
+
+cleanup-AWS_H100_EFA:
+  stage: cleanup
+  rules:
+    - if: $RUN_ON_AWS == "1"
+      when: always
+    - when: never
+  tags:
+    - aws_p5
+  needs:
+    - unit_tests-AWS_H100_EFA
+    - apitest-AWS_H100_EFA
+    - perftest_single-AWS_H100_EFA
+    - perftest_multi-AWS_H100_EFA
+  variables:
+    GIT_STRATEGY: none
+    AWS_HEAD_NODE: "aws-pcluster-head"
+    AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
+  script:
+    - ssh ${AWS_HEAD_NODE} "rm -rf ${AWS_HEAD_NODE_WORKDIR}"
+  interruptible: false
