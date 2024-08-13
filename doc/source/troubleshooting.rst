@@ -81,6 +81,9 @@ If PCI switches have ACS enabled, it needs to be disabled. On some systems this 
 by disabling IO virtualization or VT-d. For Broadcom PLX devices, it can be done from the OS but needs to
 be done again after each reboot.
 
+If you must use virtualization and therefore cannot disable ACS, try and enable ATS on your NIC to recover
+some of the ACS-caused performance loss.
+
 Use the command below to find the PCI bus IDs of PLX PCI bridges:
 
 .. code::
