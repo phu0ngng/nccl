@@ -164,6 +164,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       if ((coll == ncclFuncReduceScatter || coll == ncclFuncAllGather)
           && a != NCCL_ALGO_PAT && a != NCCL_ALGO_RING
           && a != NCCL_ALGO_NVLS && a != NCCL_ALGO_COLLNET_DIRECT) continue;
+      if (coll == ncclFuncAllReduce && a == NCCL_ALGO_PAT) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && p != NCCL_PROTO_SIMPLE) continue;
