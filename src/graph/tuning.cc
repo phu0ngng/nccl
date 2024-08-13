@@ -162,13 +162,13 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
       if ((coll == ncclFuncBroadcast || coll == ncclFuncReduce) && a != NCCL_ALGO_RING) continue;
       if ((coll == ncclFuncReduceScatter || coll == ncclFuncAllGather)
-          && a != NCCL_ALGO_TREE && a != NCCL_ALGO_RING
+          && a != NCCL_ALGO_PAT && a != NCCL_ALGO_RING
           && a != NCCL_ALGO_NVLS && a != NCCL_ALGO_COLLNET_DIRECT) continue;
 
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && p != NCCL_PROTO_SIMPLE) continue;
         if ((coll == ncclFuncReduceScatter || coll == ncclFuncAllGather)
-            && a == NCCL_ALGO_TREE && (p != NCCL_PROTO_SIMPLE || ppn > 1 || ncclParamPatDisable() == 1)) continue;
+            && a == NCCL_ALGO_PAT && (p != NCCL_PROTO_SIMPLE || ppn > 1 || ncclParamPatDisable() == 1)) continue;
         int collnet = (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) ? 1 : 0;
         float bw = nNodes <= 2 || collnet ? graphs[a]->bwIntra : graphs[a]->bwInter;
         if (a == NCCL_ALGO_NVLS) bw = std::min(graphs[a]->bwIntra, graphs[a]->bwInter);
@@ -253,13 +253,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
           if (coll == ncclFuncAllReduce) {
             comm->latencies[coll][a][p] +=
               2 * ((nRanks/nNodes-1) * intraLat + log2i(nNodes) * interLat);
-          } else if (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter) {
-            comm->latencies[coll][a][p] = 8 // Base time
-              + log2i(nNodes) * (interLat/3.5) // Log latency
-              + nRanks * 2.8; // Still a linear part; hopefully we'll manage to remove it at some point.
           }
-
-
         } else if (a == NCCL_ALGO_COLLNET_DIRECT) {
           comm->latencies[coll][a][p] +=
             2 * (std::min(1, (nRanks/nNodes-1)) * intraLat + (nRanks/nNodes-1) * 0.4) + interLat;  // Add 0.4 us arity serialization latency
@@ -270,6 +264,12 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
           if (nNodes > 1) comm->latencies[coll][a][p] += interLat;
         } else if (a == NCCL_ALGO_NVLS_TREE) {
           comm->latencies[coll][a][p] += intraLat + 2 * log2i(nNodes) * interLat;
+        } else if (a == NCCL_ALGO_PAT) {
+          if (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter) {
+            comm->latencies[coll][a][p] = 8 // Base time
+              + log2i(nNodes) * (interLat/3.5) // Log latency
+              + nRanks * 2.8; // Still a linear part; hopefully we'll manage to remove it at some point.
+          }
         }
       }
     }
@@ -278,7 +278,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
   int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
-  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1, 1, 1, 1 };
+  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1, 1, 1, 1, 1 };
 
   const char *protoStr = ncclGetEnv("NCCL_PROTO");
   if (protoStr) {
@@ -348,23 +348,25 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
   if (comm->rank == 0) {
     char line[1024];
-    for (int block=0; block<2; block++) {
+    for (int block=0; block<DIVUP(NCCL_NUM_ALGORITHMS, 3); block++) {
       sprintf(line, "  Algorithm   |");
-      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
-	int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+      for (int ba=0; ba<3; ba++) {
+	int a = block*3+ba;
+        if (a >= NCCL_NUM_ALGORITHMS) continue;
         sprintf(line+strlen(line), " %14s   %14s   %14s |", "", ncclAlgoStr[a], "");
       }
       INFO(NCCL_TUNING, "%s", line);
       sprintf(line, "  Protocol    |");
-      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
+      for (int ba=0; ba<3; ba++) {
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
           sprintf(line+strlen(line), " %14s |", ncclProtoStr[p]);
         }
       }
       INFO(NCCL_TUNING, "%s", line);
       sprintf(line, " Max NThreads |");
-      for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
-	int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+      for (int ba=0; ba<3; ba++) {
+	int a = block*3+ba;
+        if (a >= NCCL_NUM_ALGORITHMS) continue;
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
           sprintf(line+strlen(line), " %14d |", comm->maxThreads[a][p]);
         }
@@ -372,8 +374,9 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       INFO(NCCL_TUNING, "%s", line);
       for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) {
         sprintf(line, "%13s |", ncclFuncStr[c]);
-        for (int ba=0; ba<NCCL_NUM_ALGORITHMS/2; ba++) {
-	  int a = block*NCCL_NUM_ALGORITHMS/2+ba;
+        for (int ba=0; ba<3; ba++) {
+	  int a = block*3+ba;
+          if (a >= NCCL_NUM_ALGORITHMS) continue;
           for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
             sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
           }

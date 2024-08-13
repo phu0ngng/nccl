@@ -35,7 +35,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclTransportBruckConnect(struct ncclComm* comm) {
+ncclResult_t ncclTransportPatConnect(struct ncclComm* comm) {
   ncclResult_t ret = ncclSuccess;
   if (comm && comm->nRanks > 1) {
     for (int mask=1; mask<comm->nRanks; mask<<=1) {
@@ -47,7 +47,7 @@ ncclResult_t ncclTransportBruckConnect(struct ncclComm* comm) {
       }
     }
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, NULL, 0), ret, fail);
-    INFO(NCCL_INIT, "Connected binomial tree");
+    INFO(NCCL_INIT, "Connected binomial trees");
   }
 exit:
   return ret;

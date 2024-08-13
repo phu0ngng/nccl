@@ -353,7 +353,7 @@ static ncclResult_t registerCollBuffers(
     if (info->func == ncclFuncReduceScatter) goto exit;
     if (info->algorithm == NCCL_ALGO_RING && ((info->func == ncclFuncAllReduce && info->sendbuff == info->recvbuff) || info->func == ncclFuncReduce)) goto exit;
     if ((info->algorithm == NCCL_ALGO_TREE || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) && info->sendbuff == info->recvbuff) goto exit;
-    if (info->func == ncclFuncAllGather && info->algorithm == NCCL_ALGO_TREE) goto exit;
+    if (info->func == ncclFuncAllGather && info->algorithm == NCCL_ALGO_PAT) goto exit;
 
     int peerRanks[NCCL_MAX_LOCAL_RANKS];
     int nPeers = 0;
@@ -1796,7 +1796,7 @@ static ncclResult_t updateCollCostTable(
     /* now we only support single-node NVLS allgather and reducescatter */
     if (a == NCCL_ALGO_NVLS && (info->func == ncclFuncAllGather || info->func == ncclFuncReduceScatter) && comm->nNodes > 1) continue;
     /* Tree reduceScatter doesn't support scaling yet */
-    if (a == NCCL_ALGO_TREE && info->func == ncclFuncReduceScatter
+    if (a == NCCL_ALGO_PAT && info->func == ncclFuncReduceScatter
         && (info->opDev.op == ncclDevPreMulSum || info->opDev.op == ncclDevSumPostDiv)) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       bool backup;
@@ -1895,6 +1895,7 @@ static ncclResult_t topoGetAlgoInfo(
   }
   nt = nt/WARP_SIZE < 3 ? 3*WARP_SIZE : nt;
   if (info->algorithm == NCCL_ALGO_TREE) nt = NCCL_MAX_NTHREADS; // Tree now uses all threads always.
+  if (info->algorithm == NCCL_ALGO_PAT) nt = NCCL_MAX_NTHREADS;
   info->nMaxChannels = nc;
   info->nWarps = nt/WARP_SIZE;
   return ncclSuccess;
@@ -1947,14 +1948,14 @@ static ncclResult_t calcCollChunking(
     break;
   case ncclFuncReduceScatter:
     pattern =
-      info->algorithm == NCCL_ALGO_TREE ? ncclPatternPatUp :
+      info->algorithm == NCCL_ALGO_PAT ? ncclPatternPatUp :
       info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
       info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
       ncclPatternRing;
     break;
   case ncclFuncAllGather:
     pattern =
-      info->algorithm == NCCL_ALGO_TREE ? ncclPatternPatDown :
+      info->algorithm == NCCL_ALGO_PAT ? ncclPatternPatDown :
       info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
       info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
       ncclPatternRing;
@@ -2056,9 +2057,9 @@ static ncclResult_t calcCollChunking(
     while (nBytes / (nChannels*chunkSize) < nstepsLL128*64/ppn && chunkSize > 131072) chunkSize /= 2;
     // coverity[integer_division]
     while (nBytes / (nChannels*chunkSize) < nstepsLL128*16/ppn && chunkSize > 32768) chunkSize /= 2;
-  } else if (info->func == ncclFuncAllGather && info->algorithm == NCCL_ALGO_TREE) {
+  } else if (info->func == ncclFuncAllGather && info->algorithm == NCCL_ALGO_PAT) {
     while (chunkSize*nChannels*32 > nBytes && chunkSize > 65536) chunkSize /= 2;
-  } else if (info->func == ncclFuncReduceScatter && info->algorithm == NCCL_ALGO_TREE) {
+  } else if (info->func == ncclFuncReduceScatter && info->algorithm == NCCL_ALGO_PAT) {
     while (chunkSize*nChannels*16 > nBytes && chunkSize > 65536) chunkSize /= 2;
   }
 
