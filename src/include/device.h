@@ -143,6 +143,8 @@ struct ncclConnector {
   struct ncclTransportComm* transportComm;
   void* transportResources;
   struct ncclConnInfo conn;
+  int sendMemSameProcess;
+  int recvMemSameProcess;
 };
 
 struct ncclRing {
