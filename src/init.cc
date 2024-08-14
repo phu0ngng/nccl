@@ -2376,8 +2376,19 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
     /* only size needs to be aligned to mcGran */
     ALIGN_SIZE(size, mcGran);
-    /* Allocate the physical memory on the device */
-    CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+    if (requestedHandleTypes & CU_MEM_HANDLE_TYPE_FABRIC) {
+      /* First try cuMemCreate() with FABRIC handle support and then remove if it fails */
+      CUresult err = CUPFN(cuMemCreate(&handle, size, &memprop, 0));
+      if (err == CUDA_ERROR_NOT_PERMITTED || err == CUDA_ERROR_NOT_SUPPORTED) {
+        requestedHandleTypes &= ~CU_MEM_HANDLE_TYPE_FABRIC;
+        memprop.requestedHandleTypes = (CUmemAllocationHandleType) requestedHandleTypes;
+        /* Allocate the physical memory on the device */
+        CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+      }
+    } else {
+      /* Allocate the physical memory on the device */
+      CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+    }
     /* Reserve a virtual address range */
     CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, memGran, 0, 0));
     /* Map the virtual address range to the physical allocation */
