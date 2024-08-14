@@ -7,6 +7,11 @@ failure_names=()
 cd build/test/unit
 TIMEFORMAT=%R
 
+echo "HOSTNAME=$HOSTNAME"
+echo "Using CUDA_HOME=$CUDA_HOME"
+echo "Using NCCL_HOME=$PWD/build"
+echo "Using LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+
 echo "=============================== ENQUEUE TESTS ARGS - $(date +\"%T\") ================================="
 NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=512 time $SRUN ./enqueue_test 2>&1
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("ENQUEUE TESTS ARGS")

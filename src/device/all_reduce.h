@@ -397,7 +397,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
       ssize_t offset;
       int nelem;
       int remCount = channelCount%(nvls->nHeads*chunkSize);
-      int lastChunkSize = alignUp(divUp(remCount, nvls->nHeads), 16/sizeof(T));
+      int lastChunkSize = alignUp(divUp(remCount, nvls->nHeads), 16384/sizeof(T));
 
       if (tid < tidEndScatter) {
         // Scatter

@@ -150,7 +150,6 @@ ncclResult_t ncclCollPreconnectFunc(struct ncclAsyncJob* job_) {
         }
         case NCCL_ALGO_TREE: {
           NCCLCHECKGOTO(ncclTransportTreeConnect(comm), ret, fail);
-          NCCLCHECKGOTO(ncclTransportBruckConnect(comm), ret, fail);
           break;
         }
         case NCCL_ALGO_NVLS: {
@@ -169,6 +168,10 @@ ncclResult_t ncclCollPreconnectFunc(struct ncclAsyncJob* job_) {
         }
         case NCCL_ALGO_COLLNET_DIRECT: {
           NCCLCHECKGOTO(ncclCollNetDirectBufferSetup(comm), ret, fail);
+          break;
+        }
+        case NCCL_ALGO_PAT: {
+          NCCLCHECKGOTO(ncclTransportPatConnect(comm), ret, fail);
           break;
         }
         // Yes, it's a dead code.  That's fine...
@@ -309,7 +312,7 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
       ncclKernelPlanner::Peer* tmp = comm->planner.peers;
       memset(&comm->planner, 0, sizeof(comm->planner));
       comm->planner.peers = tmp;
-      memset(comm->planner.peers, 0, comm->nRanks*sizeof(comm->planner.peers[0]));
+      if (comm->planner.peers != NULL) memset(comm->planner.peers, 0, comm->nRanks*sizeof(comm->planner.peers[0]));
     }
 
     if (!comm->config.blocking)

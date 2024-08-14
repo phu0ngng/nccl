@@ -78,7 +78,7 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_L
 };
 
 template<typename T, typename RedOp>
-struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_TREE, NCCL_PROTO_SIMPLE> {
+struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_PAT, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
     using Proto = ProtoSimple<1, 1>;
     const int nranks = ncclShmem.comm.nRanks;

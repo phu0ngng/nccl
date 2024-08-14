@@ -37,7 +37,7 @@
 #endif
 
 const char* ncclFuncStr[NCCL_NUM_FUNCTIONS] = { "Broadcast", "Reduce", "AllGather", "ReduceScatter", "AllReduce" };
-const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNetDirect", "CollNetChain", "NVLS", "NVLSTree" };
+const char* ncclAlgoStr[NCCL_NUM_ALGORITHMS] = { "Tree", "Ring", "CollNetDirect", "CollNetChain", "NVLS", "NVLSTree", "PAT" };
 const char* ncclProtoStr[NCCL_NUM_PROTOCOLS] = { "LL", "LL128", "Simple" };
 
 NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
@@ -411,7 +411,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   do {
     cudaMemPoolProps props = {};
     props.allocType = cudaMemAllocationTypePinned;
-    props.handleTypes = cudaMemHandleTypePosixFileDescriptor;
+    props.handleTypes = cudaMemHandleTypeNone;
     props.location.type = cudaMemLocationTypeDevice;
     props.location.id = comm->cudaDev;
     CUDACHECK(cudaMemPoolCreate(&comm->memPool, &props));
@@ -732,7 +732,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   struct ncclTopoGraph* collNetChainGraph = &comm->graphs[NCCL_ALGO_COLLNET_CHAIN];
   struct ncclTopoGraph* collNetDirectGraph = &comm->graphs[NCCL_ALGO_COLLNET_DIRECT];
   struct ncclTopoGraph* nvlsGraph = &comm->graphs[NCCL_ALGO_NVLS];
-  struct ncclTopoGraph* graphs[] = { treeGraph, ringGraph, collNetDirectGraph, collNetChainGraph, nvlsGraph, nvlsGraph };
+  struct ncclTopoGraph* graphs[] = { treeGraph, ringGraph, collNetDirectGraph, collNetChainGraph, nvlsGraph, nvlsGraph, treeGraph };
 
   struct graphInfo {
     int pattern;
@@ -1203,7 +1203,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
     // Connect Trees
     NCCLCHECKGOTO(ncclTransportTreeConnect(comm), ret, fail);
-    NCCLCHECKGOTO(ncclTransportBruckConnect(comm), ret, fail);
+
+    // Connect PAT only for communicators with 1 GPU per node
+    if (comm->maxLocalRanks == 1) NCCLCHECKGOTO(ncclTransportPatConnect(comm), ret, fail);
 
     // Setup NVLS
     NCCLCHECKGOTO(ncclNvlsSetup(comm, parent), ret, fail);
@@ -2334,7 +2336,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   CUmemAccessDesc accessDesc = {};
   CUmemGenericAllocationHandle handle;
   int cudaDev;
-  int flag = 0;
+  int flag;
   int dcnt;
   int mcSupport = 0;
 
@@ -2348,11 +2350,17 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
 
   if (mcSupport) {
+    int requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
+    // Query device to see if FABRIC handle support is available
+    flag = 0;
+    (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));;
+    if (flag) requestedHandleTypes |= CU_MEM_HANDLE_TYPE_FABRIC;
     memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
     memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    memprop.requestedHandleTypes = ncclCuMemHandleType;
+    memprop.requestedHandleTypes = (CUmemAllocationHandleType) requestedHandleTypes;
     memprop.location.id = currentDev;
     // Query device to see if RDMA support is available
+    flag = 0;
     CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, currentDev));
     if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
     CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
@@ -2362,14 +2370,25 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     mcprop.size = size;
     /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
     mcprop.numDevices = dcnt;
-    mcprop.handleTypes = ncclCuMemHandleType;
+    mcprop.handleTypes = requestedHandleTypes;
     mcprop.flags = 0;
     CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
 
     /* only size needs to be aligned to mcGran */
     ALIGN_SIZE(size, mcGran);
-    /* Allocate the physical memory on the device */
-    CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+    if (requestedHandleTypes & CU_MEM_HANDLE_TYPE_FABRIC) {
+      /* First try cuMemCreate() with FABRIC handle support and then remove if it fails */
+      CUresult err = CUPFN(cuMemCreate(&handle, size, &memprop, 0));
+      if (err == CUDA_ERROR_NOT_PERMITTED || err == CUDA_ERROR_NOT_SUPPORTED) {
+        requestedHandleTypes &= ~CU_MEM_HANDLE_TYPE_FABRIC;
+        memprop.requestedHandleTypes = (CUmemAllocationHandleType) requestedHandleTypes;
+        /* Allocate the physical memory on the device */
+        CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+      }
+    } else {
+      /* Allocate the physical memory on the device */
+      CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+    }
     /* Reserve a virtual address range */
     CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, memGran, 0, 0));
     /* Map the virtual address range to the physical allocation */
