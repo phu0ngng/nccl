@@ -237,6 +237,8 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, CUmulticastGranularit
   CUCHECKGOTO(cuMemSetAccess((CUdeviceptr)*ucptr, size, desc, 1), ret, fail);
   CUDACHECKGOTO(cudaMemset(*ucptr, 0, size), ret, fail);
 
+  // intra-node barrier to mitigate the possible hang in cuMulticastBindMem during abort
+  NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
   // Bind physical memory to the Multicast group
   // NB: It will block until all ranks have been added to the Group
   CUCHECKGOTO(cuMulticastBindMem(*mcHandle, 0/*mcOffset*/, *ucHandle, 0/*memOffset*/, size, 0/*flags*/), ret, fail);
