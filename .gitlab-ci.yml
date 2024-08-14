@@ -496,7 +496,7 @@ apitest-AWS_H100_EFA:
   before_script:
     - |
       cat > $SSHENV_FILE << EOF
-      export SRUN="srun --exclusive -t 00:10:00 -n 1 -G 8 -p compute"
+      export SRUN="srun --exclusive -t 00:30:00 -n 1 -G 8 -p compute"
       EOF
     - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
