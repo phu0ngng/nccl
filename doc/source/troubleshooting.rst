@@ -62,6 +62,8 @@ In this case, NCCL will automatically detect and enable DMA-BUF so the nvidia-pe
 PCI Access Control Services (ACS)
 ---------------------------------
 
+**Baremetal systems**
+
 IO virtualization (also known as VT-d or IOMMU) can interfere with GPU Direct by redirecting all PCI point-to-point
 traffic to the CPU root complex, causing a significant performance reduction or even a hang. You can check
 whether ACS is enabled on PCI bridges by running:
@@ -80,9 +82,6 @@ a PCI bridge has ACS enabled.
 If PCI switches have ACS enabled, it needs to be disabled. On some systems this can be done from the BIOS
 by disabling IO virtualization or VT-d. For Broadcom PLX devices, it can be done from the OS but needs to
 be done again after each reboot.
-
-If you must use virtualization and therefore cannot disable ACS, try and enable ATS on your NIC to recover
-some of the ACS-caused performance loss.
 
 Use the command below to find the PCI bus IDs of PLX PCI bridges:
 
@@ -108,6 +107,11 @@ Or you can use a script similar to this:
     fi
     sudo setpci -v -s ${BDF} ECAP_ACS+0x6.w=0000
   done
+
+**Virtual machines**
+
+Virtual machines require ACS to function, hence disabling ACS is not an option. To run with maximum
+performance inside virtual machines, ATS needs to be enabled in network adapters.
 
 ******************
 Topology detection
