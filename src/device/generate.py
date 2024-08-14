@@ -75,7 +75,7 @@ else:
 
 algos_of_coll = {
   "AllGather":     ["RING","COLLNET_DIRECT","NVLS","PAT"],
-  "AllReduce":     all_algos,
+  "AllReduce":     ["TREE","RING","COLLNET_DIRECT","COLLNET_CHAIN","NVLS","NVLS_TREE"],
   "Broadcast":     ["RING"],
   "Reduce":        ["RING"],
   "ReduceScatter": ["RING","COLLNET_DIRECT","NVLS","PAT"],

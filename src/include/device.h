@@ -565,7 +565,7 @@ inline int ncclDevFuncId(int coll, int devRedOp, int type, int algo, int proto) 
     }
     row += nAlgos*NCCL_NUM_PROTOCOLS;
 
-    nAlgos = NCCL_NUM_ALGORITHMS;
+    nAlgos = 6;
     if (coll == ncclFuncAllReduce) {
       row += ((devRedOp*NumTypes + type)*nAlgos + algo)*NCCL_NUM_PROTOCOLS + proto;
       break;
