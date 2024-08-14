@@ -190,7 +190,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
               struct ncclConnector* conn = comm->channels[c].peers[sendPeer]->send + connIndex;
               // This connector hasn't completed connection yet
               if (conn->connected == 0) {
-                NCCLCHECKGOTO(conn->transportComm->connect(comm, sendData[p] + sendDataOffset++, 1, comm->rank, conn), ret, fail);
+                NCCLCHECKGOTO(conn->transportComm->connect(comm, sendData[p] + sendDataOffset, 1, comm->rank, conn), ret, fail);
                 if (ret == ncclSuccess) {
                   conn->connected = 1;
                   /* comm->channels[c].devPeers[sendPeer]->send[connIndex] is a device memory access. */
@@ -199,6 +199,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
                   allChannelsConnected = false;
                 }
               }
+              sendDataOffset++;
             }
             TIME_STOP(3);
 
@@ -208,7 +209,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
               struct ncclConnector* conn = comm->channels[c].peers[recvPeer]->recv + connIndex;
               // This connector hasn't completed connection yet
               if (conn->connected == 0) {
-                NCCLCHECKGOTO(conn->transportComm->connect(comm, recvData[p] + recvDataOffset++, 1, comm->rank, conn), ret, fail);
+                NCCLCHECKGOTO(conn->transportComm->connect(comm, recvData[p] + recvDataOffset, 1, comm->rank, conn), ret, fail);
                 if (ret == ncclSuccess) {
                   conn->connected = 1;
                   /* comm->channels[c].devPeers[recvPeer]->recv[connIndex] is a device memory access. */
@@ -217,6 +218,7 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
                   allChannelsConnected = false;
                 }
               }
+              recvDataOffset++;
             }
             TIME_STOP(4);
           }
