@@ -57,7 +57,7 @@ namespace {
       offset = dataOffset + rankDest * count;
 
       // Final wait/copy.
-      prims.directRecv(offset, nelem);
+      prims.directRecv(offset, offset, nelem);
     }
   }
 }

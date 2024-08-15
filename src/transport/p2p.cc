@@ -820,7 +820,6 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
           proxyConn = &comm->gproxyConn[peerRank];
 
           ipcInfo.legacyIpcCap = legacyIpcCap;
-          ipcInfo.offset = regRecord->addr - (uintptr_t)baseAddr;
           // Get the mem handle for that buffer. It may have been allocated through cudaMalloc in which case we'll
           // get the CUDA legacy mem handle, or through cuMem*.
           if (ipcInfo.legacyIpcCap) {
@@ -860,7 +859,8 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
           }
 
           void* rmtRegAddr = NULL;
-          ipcInfo.size = regRecord->pages * comm->regCache.pageSize;
+          ipcInfo.size = baseSize;
+          ipcInfo.offset = regRecord->addr - (uintptr_t)baseAddr;
           // Now ipcInfo contains all necessary registration info. Start to register buffer on proxy side
           // and get the remote register address back.
           if (proxyConn)
@@ -882,7 +882,7 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
             regRecord->regIpcAddrs.hostPeerRmtAddrs[peerLocalRank] = (uintptr_t)rmtRegAddr;
             needUpdate = true;
             *regBufFlag = 1;
-            INFO(NCCL_REG, "rank %d - IPC local register buffer %p size %ld (baseAddr %p size %ld) to peer %d regAddr %p", comm->rank, userbuff, buffSize, (void*)regRecord->addr, ipcInfo.size, peerRank, rmtRegAddr);
+            INFO(NCCL_REG, "rank %d - IPC local register buffer %p size %ld (baseAddr %p size %ld) to peer %d regAddr %p offsetOut %ld", comm->rank, userbuff, buffSize, (void*)regRecord->addr, ipcInfo.size, peerRank, rmtRegAddr, (uintptr_t)userbuff - regRecord->addr);
           }
         }
       }
@@ -1038,7 +1038,7 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
       else
         ncclIntruQueueEnqueue(cleanupQueue, &record->base);
       if (nCleanupQueueElts) *nCleanupQueueElts += 1;
-      INFO(NCCL_REG, "rank %d - IPC graph register buffer %p size %ld (baseAddr %p size %ld) to peer %d regAddr %p", comm->rank, userbuff, buffSize, baseAddr, ipcInfo.size, peerRank, rmtRegAddr);
+      INFO(NCCL_REG, "rank %d - IPC graph register buffer %p size %ld (baseAddr %p size %ld) to peer %d regAddr %p offsetOut %ld", comm->rank, userbuff, buffSize, baseAddr, ipcInfo.size, peerRank, rmtRegAddr, (uintptr_t)userbuff - (uintptr_t)baseAddr);
     }
   }
 
