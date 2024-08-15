@@ -33,11 +33,11 @@ def grubb_test_max(data,alpha,mask=None,nOut = 0):
     g_critical = ((n - 1) * np.sqrt(np.square(t_value_1))) / (np.sqrt(n) * np.sqrt(n - 2 + np.square(t_value_1)))
     # test if the max is an outlier
     if(g_calculated > g_critical and nOut < 10):
-        idx = np.where(data == max_x)
+        idx = np.where(data == max_x)[0][0]
         assert(data[idx] == max_x)
-        mask[idx[0]] = 0
+        mask[idx] = 0
         if(verbose):
-            print(f"\t> {max_x:.4f} @ data[{idx[0][0]}] is an outlier (mean {mean_x:.4f}, test {g_calculated:.4f} > {g_critical:.4f})")
+            print(f"\t> {max_x:.4f} @ data[{idx}] is an outlier (mean {mean_x:.4f}, test {g_calculated:.4f} > {g_critical:.4f})")
         return grubb_test_max(data,alpha,mask=mask,nOut=nOut+1)
     else:
         if(verbose):
@@ -56,7 +56,8 @@ def readLog(fileName, pattern):
         for line in content:
             # if the pattern is present, save it
             if pattern in line:
-                log.insert(idx,line)
+                dataline = line.split(pattern,1)
+                log.insert(idx,dataline[1])
         file.close()
     return log
 
@@ -137,13 +138,17 @@ def extractFromLog(fileName,pattern,labels=None,nProcs=0, n_repeat=1,n_warmup=0,
         max[i] = np.max(lres_max[:,i])
         min[i] = np.min(lres_min[:,i])
         # get the confidence interval
-        num = (nData * roll_sum2[i] - roll_sum[i]**2)
-        if (num > 0.0 and nData>2):
-            std[i] = np.sqrt( num / (nData * (nData - 1)));
+        #num = (nData * roll_sum2[i] - roll_sum[i]**2)
+        sigma2 = roll_sum2[i]/nData - (roll_sum[i]/nData)**2
+        if (sigma2 > 0.0 and nData>2):
+            # sample variance
+            std[i] = np.sqrt(sigma2)
+            #unbiased sample variance
+            s = np.sqrt( nData / (nData - 1) * sigma2);
             # t-student, look for the prob to be outside of the CI with prob alpha.
             # because of symmetry, need to look for the ppf with alpha/2
             t_factor = stats.t.ppf(1 - alpha/2.0, nData - 1)
-            ci[i] = t_factor * std[i]*np.sqrt(1.0/nData)
+            ci[i] = t_factor * s/np.sqrt(nData)
         else:
             std[i] = 0
             ci[i] = 0
@@ -170,7 +175,7 @@ def extractFromLog(fileName,pattern,labels=None,nProcs=0, n_repeat=1,n_warmup=0,
     myPrint(f"----------------------------------------------------------------------------------------------------------------------------------------------------------------------")
     myPrint(f"legend:")
     myPrint(f"  {toLen("avg")}\taverage over the ranks and the iterations")
-    myPrint(f"  {toLen("CI")}\t width of the {100-100*alpha}% confidence interval, computed over the ranks and the iterations")
+    myPrint(f"  {toLen("CI")}\twidth of the {100-100*alpha}% confidence interval (difference between the measured avg and the true avg with {100-100*alpha}% confidence)")
     myPrint(f"  {toLen("min")}\tmininum over the ranks and the iterations")
     myPrint(f"  {toLen("max")}\tmaximum over the ranks and the iterations")
     myPrint(f"  {toLen("out iters")}\tnumber of iterations detected as outlier with a confidence of {100-100*alpha}%")
@@ -186,7 +191,6 @@ def extractFromLog(fileName,pattern,labels=None,nProcs=0, n_repeat=1,n_warmup=0,
     #     print(f"error when reading {fileName}")
 
 
-labels=["total","kernels","alloc","bootstrap","allgather","topo","graph","connect","rest"]
 parser = argparse.ArgumentParser()
 parser.add_argument("fileName", help="the name of the NCCL log file to read")
 parser.add_argument("pattern", help="the pattern to search for in the log file")
@@ -194,14 +198,26 @@ parser.add_argument("-v", "--verbose", help="increase output verbosity",action="
 parser.add_argument("-p", "--procs",type=int,help="number of processes; if given, used to determine the number of iterations; if not, we will use the number of data / number of iterations", default=0)
 parser.add_argument("-n", "--iters",type=int,help="number of iterations", default=1)
 parser.add_argument("-w", "--warmup",type=int,help="number of warmup iterations (substracted from iterations)", default=0)
-parser.add_argument("-a", "--alpha",type=float,help="confidence intervals and outlier percent is (1-alpha)*100", default=0.05)
-parser.add_argument("-l", "--labels",nargs='+', help="list of header for each for the measures", default=labels)
+parser.add_argument("-a", "--alpha",type=float,help="confidence intervals and outlier percent is (1-alpha)*100", default=0.01)
+parser.add_argument("-t", "--type",help="family of headers to be used, accepted values: init, alloc", default="init")
+parser.add_argument("-l", "--labels",nargs='+', help="list of header for each for the measures", default=None)
 args = parser.parse_args()
 
 # set the verbosity
 verbose = args.verbose
 # read the data
-extractFromLog(args.fileName,args.pattern,labels=args.labels,n_repeat=args.iters,n_warmup=args.warmup,alpha=args.alpha,nProcs=args.procs)
+labels = None
+if (args.labels is not None):
+    labels = args.labels
+else:
+    if(args.type == "init"):
+        labels=["total","kernels","alloc","bootstrap","allgather","topo","graph","connect","rest"]
+    elif (args.type == "alloc"):
+        labels=["total","plugin","netinit","nvml","rest"]
+    else:
+        print(f"un-recognized type {args.type}, ignoring")
+
+extractFromLog(args.fileName,args.pattern,labels=labels,n_repeat=args.iters,n_warmup=args.warmup,alpha=args.alpha,nProcs=args.procs)
 
 
 # end of file
