@@ -78,7 +78,7 @@ namespace {
       offset = gridOffset + elemOffset + chunkOffset;
       nelem = (int)min(chunkCount, remCount - chunkOffset);
 
-      prims.directRecv(offset, nelem);
+      prims.directRecv(offset, offset, nelem);
     }
   }
 
@@ -132,7 +132,7 @@ namespace {
         for (size_t elemOffset = 0; elemOffset < channelCount; elemOffset += chunkCount) {
           offset = gridOffset + elemOffset;
           nelem = min(chunkCount, channelCount - elemOffset);
-          prims.directRecv(offset, nelem);
+          prims.directRecv(offset, offset, nelem);
         }
       }
       else {
@@ -215,7 +215,7 @@ namespace {
         for (size_t elemOffset = 0; elemOffset < channelCount; elemOffset += chunkCount) {
           offset = gridOffset + elemOffset;
           nelem = min(chunkCount, channelCount - elemOffset);
-          prims.directRecv(offset, nelem);
+          prims.directRecv(offset, offset, nelem);
         }
       }
       else {
@@ -707,7 +707,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
             for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
               ssize_t offset = gridOffset + bid * int(chunkSize);
               int nelem = min(chunkSize, size - offset);
-              prims.directRecv(offset, nelem, /*postOp*/true);
+              prims.directRecv(offset, offset, nelem, /*postOp*/true);
             }
           }
         } else {
@@ -734,7 +734,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
           for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
             ssize_t offset = gridOffset + bid*int(chunkSize);
             int nelem = min(chunkSize, size-offset);
-            prims.directRecv(offset, nelem);
+            prims.directRecv(offset, offset, nelem);
           }
         } else {
           for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
