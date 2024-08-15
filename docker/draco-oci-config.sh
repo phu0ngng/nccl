@@ -34,7 +34,7 @@ function get_openmpi_home() {
 }
 
 function get_extra_ld_library_path() {
-    echo "$DO_CUDA_HOME/lib64:$DR_OPENMPI_HOME/lib"
+    echo "$DO_CUDA_HOME/lib64:$DO_OPENMPI_HOME/lib"
 }
 
 function get_slurm_account() {
@@ -63,7 +63,7 @@ function get_build_command() {
         --account=$DO_SLURM_ACCOUNT \
         -J ${DO_SLURM_ACCOUNT}-nccl:test \
 	-p batch_block1 \
-        -t 00:20:00 \
+        -t 00:05:00 \
         -n 1 \
 	-c 48 \
         --container-image=$DO_BUILD_TOOLS_IMAGE \
