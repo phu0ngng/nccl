@@ -905,24 +905,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(ncclTopoCompute(comm->topo, treeGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, treeGraph), ret, fail);
 
-  memset(collNetChainGraph, 0, sizeof(struct ncclTopoGraph));
-  collNetChainGraph->id = 2;
-  collNetChainGraph->pattern = NCCL_TOPO_PATTERN_TREE;
-  collNetChainGraph->collNet = 1;
-  collNetChainGraph->minChannels = ringGraph->nChannels;
-  collNetChainGraph->maxChannels = ringGraph->nChannels;
-
-  memset(collNetDirectGraph, 0, sizeof(struct ncclTopoGraph));
-  collNetDirectGraph->id = 4;
-  collNetDirectGraph->pattern = NCCL_TOPO_PATTERN_COLLNET_DIRECT;
-  collNetDirectGraph->collNet = 1;
-  collNetDirectGraph->minChannels = 1;
-  collNetDirectGraph->maxChannels = MAXCHANNELS;
   if (comm->collNetSupport) {
-    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, collNetChainGraph), ret, fail);
-    NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, collNetChainGraph), ret, fail);
+    memset(collNetDirectGraph, 0, sizeof(struct ncclTopoGraph));
+    collNetDirectGraph->id = 4;
+    collNetDirectGraph->pattern = NCCL_TOPO_PATTERN_COLLNET;
+    collNetDirectGraph->collNet = 1;
+    collNetDirectGraph->minChannels = 1;
+    collNetDirectGraph->maxChannels = MAXCHANNELS;
     NCCLCHECKGOTO(ncclTopoCompute(comm->topo, collNetDirectGraph), ret, fail);
     NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, collNetDirectGraph), ret, fail);
+    memcpy(collNetChainGraph, collNetDirectGraph, sizeof(struct ncclTopoGraph));
+    collNetChainGraph->id = 2;
   }
 
   memset(nvlsGraph, 0, sizeof(struct ncclTopoGraph));
