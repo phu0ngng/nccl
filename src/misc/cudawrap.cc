@@ -221,7 +221,7 @@ static void initOnceFunc() {
 #if 12020 <= CUDART_VERSION && CUDART_VERSION <= 12030
   /* To use cuMem* for host memory allocation, we need to create context on each
    * visible device. This is workaround needed in CUDA 12.3 which is fixed in 12.4. */
-  if (ncclCuMemSupported) {
+  if (ncclCuMemSupported && ncclCuMemHostEnable()) {
     int deviceCnt, saveDevice;
     cudaGetDevice(&saveDevice);
     cudaGetDeviceCount(&deviceCnt);
