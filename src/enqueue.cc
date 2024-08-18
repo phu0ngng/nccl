@@ -720,6 +720,7 @@ static ncclResult_t scheduleCollTasksToPlan(
   int nChannels[2*2] = {0, 0, 0, 0}; // [collnet][nvls]
   int const nMaxChannels[2*2] = {comm->nChannels, comm->nvlsChannels, // [collnet][nvls]
                                  comm->nChannels, comm->nvlsChannels};
+  constexpr size_t MinTrafficPerChannel = 16 << 10; // 16K traffic as minimal
   do {
     size_t workBytes = 0;
     struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
@@ -731,7 +732,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       nPlanColls += 1;
       workBytes += workNode->size;
       int kind = 2*task->isCollnet + task->isNvls;
-      trafficBytes[kind] += task->trafficBytes;
+      trafficBytes[kind] += std::max(MinTrafficPerChannel, task->trafficBytes);
       nChannels[kind] += task->nMaxChannels;
       nChannels[kind] = std::min(nChannels[kind], nMaxChannels[kind]);
       task = task->next;
@@ -741,7 +742,6 @@ static ncclResult_t scheduleCollTasksToPlan(
   } while (0);
 
   int kindPrev = -1;
-  constexpr size_t MinTrafficPerChannel = 512;
   size_t trafficPerChannel = 0;
   int channelId = 0;
   size_t currentTraffic = 0;
@@ -786,10 +786,10 @@ static ncclResult_t scheduleCollTasksToPlan(
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOp));
       }
     } else { // not task->isCollnet
-      constexpr size_t cellSize = 16;
+      int trafficPerByte = ncclFuncTrafficPerByte(task->func, comm->nRanks);
+      size_t cellSize = divUp(divUp(MinTrafficPerChannel, (size_t)trafficPerByte), 16) * 16;
       int elementsPerCell = cellSize/elementSize;
       size_t cells = divUp(task->count*elementSize, cellSize);
-      int trafficPerByte = ncclFuncTrafficPerByte(task->func, comm->nRanks);
       size_t trafficPerElement = elementSize*trafficPerByte;
       size_t trafficPerCell = cellSize*trafficPerByte;
       size_t cellsPerChannel = std::min(cells, divUp(trafficPerChannel, trafficPerCell));
@@ -857,12 +857,12 @@ static ncclResult_t scheduleCollTasksToPlan(
       // Update the current channel and vacant traffic budget.
       if (countHi != 0) {
         channelId += nChannels-1;
-        currentTraffic = countHi*trafficPerElement;
+        currentTraffic = cellsHi*elementsPerCell*trafficPerElement;
       } else if (nMidChannels != 0) {
         channelId += nChannels;
         currentTraffic = 0;
       } else {
-        currentTraffic += countLo*trafficPerElement;
+        currentTraffic += cellsLo*elementsPerCell*trafficPerElement;
       }
 
       if (currentTraffic >= trafficPerChannel && channelId+1 != nMaxChannels[kind]) {
