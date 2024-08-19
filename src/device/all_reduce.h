@@ -456,6 +456,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
           int nelem = work->regUsed ? 0 : min(nvls->nHeads * chunkSize, size - offset);
           prims.scatter(offset, nelem, chunkSize, chunkSize, -1, 0);
         }
+        // coverity[overrun-call] => Coverity think prims.index can be greater than 1
       } else if (tid < tidEndGather) {
         // Gather
         using Proto = ProtoSimple<1, 1, COLL_UNROLL>;
@@ -673,8 +674,10 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
           for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
             ssize_t offset = gridOffset + bid * int(chunkSize);
             int nelem = min(chunkSize, size - offset);
+            // coverity[overrun-call] => Coverity think prims.index can be greater than 1
             prims.directSend(offset, offset, nelem);
           }
+          // coverity[overrun-call] => Coverity think prims.index can be greater than 1
         }
       } else {
         Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>
@@ -683,8 +686,10 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
         for (ssize_t gridOffset = 0; gridOffset < size; gridOffset += loopSize) {
           ssize_t offset = gridOffset + bid * int(chunkSize);
           int nelem = min(chunkSize, size - offset);
+          // coverity[overrun-call] => Coverity think prims.index can be greater than 1
           prims.directRecvReduceDirectSend(offset, offset, nelem);
         }
+        // coverity[overrun-call] => Coverity think prims.index can be greater than 1
       }
     }
     else {

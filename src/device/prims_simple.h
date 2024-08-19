@@ -641,10 +641,9 @@ private:
       }
     }
 
-    // Coverity thinks that index could be -1 here but that's not actually the case.
-    // coverity[negative_returns:FALSE]
+    // coverity[overrun-call] => Coverity think prims.index can be greater than 1
     if (flags & (RoleWaitRecv|RolePostRecv)) loadRecvConn(ncclShmem.channel.peers[peer], connIndexRecv, e ? e->direct : 0, e ? e->regUsed : ipcReg);
-    // coverity[negative_returns:FALSE]
+    // coverity[overrun-call] => Coverity think prims.index can be greater than 1
     if (flags & (RoleWaitSend|RolePostSend)) loadSendConn(ncclShmem.channel.peers[peer], connIndexSend, e ? e->direct : 0, e ? e->regUsed : ipcReg);
 
     if (netReg) flags |= NetRegMode;

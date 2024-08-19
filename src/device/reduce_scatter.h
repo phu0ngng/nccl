@@ -137,6 +137,7 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_S
           nelem = min(chunkCount, channelCount - elemOffset);
           prims.scatter(offset, nvls->nHeads * count, nelem, count, -1, 0);
         }
+        // coverity[overrun-call] => Coverity think prims.index can be greater than 1
       } else if (tid < tidEndReduce) {
         // Reduce through NVLS
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 1, 0>;
