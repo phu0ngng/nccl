@@ -2237,7 +2237,7 @@ exit:
   return res;
 fail:
   if (childComm) {
-    if (comm && !comm->config.splitShare) {
+    if (!comm->config.splitShare) {
       free(childComm->abortFlag);
       if (childComm->abortFlagDev) ncclCudaHostFree(childComm->abortFlagDev);
       free(childComm->abortFlagRefCount);
