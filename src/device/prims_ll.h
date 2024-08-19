@@ -101,7 +101,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
     uint32_t data1, flag1, data2, flag2;
     int spins = 0;
     do {
-      asm("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4));
+      asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(data1), "=r"(flag1), "=r"(data2), "=r"(flag2) : "l"(&src->i4) : "memory");
       if (checkAbort(spins, 0)) break;
     } while ((flag1 != flag) || (flag2 != flag));
     uint64_t val64 = data1 + (((uint64_t)data2) << 32);
@@ -116,7 +116,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
       // coverity[dead_error_line]
       if (i < fan.nrecv()) {
         union ncclLLFifoLine* src = recvPtr(i) + offset;
-        asm("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(line[i].data1), "=r"(line[i].flag1), "=r"(line[i].data2), "=r"(line[i].flag2) : "l"(&src->i4));
+        asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(line[i].data1), "=r"(line[i].flag1), "=r"(line[i].data2), "=r"(line[i].flag2) : "l"(&src->i4) : "memory");
       }
     }
   }
@@ -125,7 +125,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
     uint32_t flag = recvFlag(i);
     int spins = 0;
     while (line[i].flag1 != flag || line[i].flag2 != flag) {
-      asm("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(line[i].data1), "=r"(line[i].flag1), "=r"(line[i].data2), "=r"(line[i].flag2) : "l"(&src->i4));
+      asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];" : "=r"(line[i].data1), "=r"(line[i].flag1), "=r"(line[i].data2), "=r"(line[i].flag2) : "l"(&src->i4) : "memory");
       if (checkAbort(spins, 0)) break;
     }
     uint64_t val64 = line[i].data1 + (((uint64_t)line[i].data2) << 32);
@@ -133,7 +133,7 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
   }
 
   __device__ void storeLL(union ncclLLFifoLine* dst, uint64_t val, uint32_t flag) {
-    asm volatile("st.volatile.global.v4.u32 [%0], {%1,%2,%3,%4};" :: "l"(&dst->i4), "r"((uint32_t)val), "r"(flag), "r"((uint32_t)(val >> 32)), "r"(flag));
+    asm volatile("st.volatile.global.v4.u32 [%0], {%1,%2,%3,%4};" :: "l"(&dst->i4), "r"((uint32_t)val), "r"(flag), "r"((uint32_t)(val >> 32)), "r"(flag) : "memory");
   }
 
   static constexpr int EltPerLine = sizeof(uint64_t)/sizeof(T);
@@ -147,13 +147,13 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
       uint64_t u8;
     };
     if(sizeof(U) == 1)
-      asm("ld.volatile.global.b8 %0,[%1];" : "=r"(u4) : "l"(src));
+      asm volatile("ld.volatile.global.b8 %0,[%1];" : "=r"(u4) : "l"(src) : "memory");
     else if(sizeof(U) == 2)
-      asm("ld.volatile.global.b16 %0,[%1];" : "=h"(u2) : "l"(src));
+      asm volatile("ld.volatile.global.b16 %0,[%1];" : "=h"(u2) : "l"(src) : "memory");
     else if(sizeof(U) == 4)
-      asm("ld.volatile.global.b32 %0,[%1];" : "=r"(u4) : "l"(src));
+      asm volatile("ld.volatile.global.b32 %0,[%1];" : "=r"(u4) : "l"(src) : "memory");
     else
-      asm("ld.volatile.global.b64 %0,[%1];" : "=l"(u8) : "l"(src));
+      asm volatile("ld.volatile.global.b64 %0,[%1];" : "=l"(u8) : "l"(src) : "memory");
     return elt;
   }
 
@@ -167,13 +167,13 @@ class Primitives<T, RedOp, Fan, Direct, ProtoLL, P2p>:
     };
     elt = val;
     if(sizeof(U) == 1)
-      asm("st.volatile.global.b8 [%0],%1;" :: "l"(dst), "r"(u4));
+      asm volatile("st.volatile.global.b8 [%0],%1;" :: "l"(dst), "r"(u4) : "memory");
     else if(sizeof(U) == 2)
-      asm("st.volatile.global.b16 [%0],%1;" :: "l"(dst), "h"(u2));
+      asm volatile("st.volatile.global.b16 [%0],%1;" :: "l"(dst), "h"(u2) : "memory");
     else if(sizeof(U) == 4)
-      asm("st.volatile.global.b32 [%0],%1;" :: "l"(dst), "r"(u4));
+      asm volatile("st.volatile.global.b32 [%0],%1;" :: "l"(dst), "r"(u4) : "memory");
     else
-      asm("st.volatile.global.b64 [%0],%1;" :: "l"(dst), "l"(u8));
+      asm volatile("st.volatile.global.b64 [%0],%1;" :: "l"(dst), "l"(u8) : "memory");
   }
 
   struct DataLoader {

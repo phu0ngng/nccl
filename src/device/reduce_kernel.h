@@ -234,10 +234,10 @@ struct Apply_Reduce<FuncProd<uint8_t>, /*EltPerPack=*/4> {
     uint32_t a = apack.native;
     uint32_t b = bpack.native;
     uint32_t ab0 = (a*b) & 0xffu;
-    asm("mad.lo.u32 %0, %1, %2, %0;" : "+r"(ab0) : "r"(a&0xff00u), "r"(b&0xff00u));
+    asm volatile("mad.lo.u32 %0, %1, %2, %0;" : "+r"(ab0) : "r"(a&0xff00u), "r"(b&0xff00u));
     uint32_t ab1;
-    asm("mul.hi.u32 %0, %1, %2;"     : "=r"(ab1) : "r"(a&0xff0000), "r"(b&0xff0000));
-    asm("mad.hi.u32 %0, %1, %2, %0;" : "+r"(ab1) : "r"(a&0xff000000u), "r"(b&0xff000000u));
+    asm volatile("mul.hi.u32 %0, %1, %2;"     : "=r"(ab1) : "r"(a&0xff0000), "r"(b&0xff0000));
+    asm volatile("mad.hi.u32 %0, %1, %2, %0;" : "+r"(ab1) : "r"(a&0xff000000u), "r"(b&0xff000000u));
     apack.native = __byte_perm(ab0, ab1, 0x6420);
     return apack;
   }
@@ -598,9 +598,9 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
     static constexpr int PackSize = SIZEOF_BytePack_field_##pack_field; \
     __device__ static BytePack<PackSize> load(FuncSum<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
-      asm("multimem.ld_reduce.relaxed.sys.global.add." #ptx_ty " %0, [%1];" \
+      asm volatile("multimem.ld_reduce.relaxed.sys.global.add." #ptx_ty " %0, [%1];" \
         : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field) \
-        : "l"(addr)); \
+        : "l"(addr) : "memory"); \
       return ans; \
     } \
   };
@@ -611,13 +611,13 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
     __device__ static BytePack<PackSize> load(FuncMinMax<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
       if (fn.isMinNotMax) { \
-        asm("multimem.ld_reduce.relaxed.sys.global.min." #ptx_ty " %0, [%1];" \
+        asm volatile("multimem.ld_reduce.relaxed.sys.global.min." #ptx_ty " %0, [%1];" \
           : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field) \
-          : "l"(addr)); \
+          : "l"(addr) : "memory"); \
       } else { \
-        asm("multimem.ld_reduce.relaxed.sys.global.max." #ptx_ty " %0, [%1];" \
+        asm volatile("multimem.ld_reduce.relaxed.sys.global.max." #ptx_ty " %0, [%1];" \
           : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field) \
-          : "l"(addr)); \
+          : "l"(addr) : "memory"); \
       } \
       return ans; \
     } \
@@ -629,12 +629,12 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
     static constexpr int PackSize = 4*(SIZEOF_BytePack_field_##pack_field); \
     __device__ static BytePack<PackSize> load(FuncSum<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
-      asm("multimem.ld_reduce.relaxed.sys.global.add.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
+      asm volatile("multimem.ld_reduce.relaxed.sys.global.add.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
         : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[0]), \
           "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[1]), \
           "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[2]), \
           "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[3]) \
-        : "l"(addr)); \
+        : "l"(addr) : "memory"); \
       return ans; \
     } \
   };
@@ -645,19 +645,19 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
     __device__ static BytePack<PackSize> load(FuncMinMax<T> fn, uintptr_t addr) { \
       BytePack<PackSize> ans; \
       if (fn.isMinNotMax) { \
-        asm("multimem.ld_reduce.relaxed.sys.global.min.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
+        asm volatile("multimem.ld_reduce.relaxed.sys.global.min.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
           : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[0]), \
             "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[1]), \
             "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[2]), \
             "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[3]) \
-          : "l"(addr)); \
+          : "l"(addr) : "memory"); \
       } else { \
-        asm("multimem.ld_reduce.relaxed.sys.global.max.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
+        asm volatile("multimem.ld_reduce.relaxed.sys.global.max.v4." #ptx_ty " {%0,%1,%2,%3}, [%4];" \
           : "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[0]), \
             "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[1]), \
             "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[2]), \
             "=" PTX_REG_BytePack_field_##pack_field(ans.pack_field[3]) \
-          : "l"(addr)); \
+          : "l"(addr) : "memory"); \
       } \
       return ans; \
     } \
@@ -669,9 +669,9 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
   struct Apply_LoadMultimem<FuncSum<T>, sizeof(T)> { \
     __device__ static BytePack<sizeof(T)> load(FuncSum<T> fn, uintptr_t addr) { \
       BytePack<2*sizeof(T)> tmp; \
-      asm("multimem.ld_reduce.relaxed.sys.global.add." #ptx_ty " %0, [%1];" \
+      asm volatile("multimem.ld_reduce.relaxed.sys.global.add." #ptx_ty " %0, [%1];" \
         : "=" PTX_REG_BytePack_field_##pack_field(tmp.pack_field) \
-        : "l"(addr & -uintptr_t(2*sizeof(T)))); \
+        : "l"(addr & -uintptr_t(2*sizeof(T))) : "memory"); \
       return tmp.half[(addr/sizeof(T))%2]; \
     } \
   };
@@ -682,13 +682,13 @@ struct Apply_PostOp<FuncSumPostDiv<T>, /*EltPerPack=*/1> {
     __device__ static BytePack<sizeof(T)> load(FuncMinMax<T> fn, uintptr_t addr) { \
       BytePack<2*sizeof(T)> tmp; \
       if (fn.isMinNotMax) { \
-        asm("multimem.ld_reduce.relaxed.sys.global.min." #ptx_ty " %0, [%1];" \
+        asm volatile("multimem.ld_reduce.relaxed.sys.global.min." #ptx_ty " %0, [%1];" \
           : "=" PTX_REG_BytePack_field_##pack_field(tmp.pack_field) \
-          : "l"(addr & -uintptr_t(2*sizeof(T)))); \
+          : "l"(addr & -uintptr_t(2*sizeof(T))) : "memory"); \
       } else { \
-        asm("multimem.ld_reduce.relaxed.sys.global.max." #ptx_ty " %0, [%1];" \
+        asm volatile("multimem.ld_reduce.relaxed.sys.global.max." #ptx_ty " %0, [%1];" \
           : "=" PTX_REG_BytePack_field_##pack_field(tmp.pack_field) \
-          : "l"(addr & -uintptr_t(2*sizeof(T)))); \
+          : "l"(addr & -uintptr_t(2*sizeof(T))) : "memory"); \
       } \
       return tmp.half[(addr/sizeof(T))%2]; \
     } \
