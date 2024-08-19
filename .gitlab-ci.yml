@@ -24,6 +24,7 @@ variables:
   RUN_ON_SELENE_SHARP: "0"
   BUILD_TRACE: "0"
   RUN_ON_AWS: "1"
+  RUN_ON_EOS: "1"
 
 # Run our CI on:
 # - Every commit to master
@@ -72,7 +73,9 @@ build-trace:
 build-eos:
   stage: build
   rules:
-    - when: always
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
   tags:
     - build-with-docker
   script:
@@ -257,7 +260,9 @@ unit_tests-A100:
 unit_tests-eos:
   stage: unit_tests
   rules:
-    - when: always
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
   needs: ["build-eos"]
   tags:
     - nccl-eos
@@ -467,7 +472,9 @@ apitest-DGX-A100:
 apitest-eos:
   stage: api_tests
   rules:
-    - when: always
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
   needs: ["build-eos"]
   tags:
     - nccl-eos
@@ -703,7 +710,9 @@ perftest-DGX-A100:
 perftest-single-eos:
   stage: perf_tests_single
   rules:
-    - when: always
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
   needs: ["build-eos"]
   tags:
     - nccl-eos
@@ -893,7 +902,9 @@ perftest-multi-selene:
 perftest-multi-eos:
   stage: perf_tests_multi
   rules:
-    - when: always
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
   needs: ["build-eos"]
   tags:
     - nccl-eos
