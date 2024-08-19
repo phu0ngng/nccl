@@ -197,7 +197,6 @@ class Primitives<
     sliceSize = max(divUp(nelem, 16*SlicePerChunk)*16, sliceSize/32);
     int slice = 0;
     int offset = 0;
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE));
 
     if (tid < nworkers && offset < nelem && ((flags & NetRegMode) == 0)) {
       // Worker-only loop for non-empty slices. Non-workers and empty slices are
@@ -258,7 +257,7 @@ class Primitives<
               (tid, nworkers, /*redArg*/0, /*preOpArgs*/nullptr, /*postOp*/false,
                1, ncclShmem.groups[group].srcs,
                fan.nsend(), ncclShmem.groups[group].dsts+1,
-               workSize, scratch);
+               workSize);
           }
         } else if (DirectSend && !DirectRecv && SrcBuf != Input && ncclShmem.groups[group].dsts[Dst] == nullptr) {
           // For broadcast in CollNet to do empty send
@@ -266,7 +265,7 @@ class Primitives<
             (tid, nworkers, ncclShmem.redOpArgs[0],  nullptr, postOp,
              Recv, ncclShmem.groups[group].srcs,
              Dst, ncclShmem.groups[group].dsts,
-             workSize, scratch);
+             workSize);
         } else if (ncclShmem.groups[group].srcs[0] && ncclShmem.groups[group].dsts[0]) {
           constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
                                     DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
@@ -276,7 +275,7 @@ class Primitives<
             (tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp,
              Recv*fan.nrecv()+Src, ncclShmem.groups[group].srcs,
              Send*fan.nsend()+Dst, ncclShmem.groups[group].dsts,
-             workSize, scratch);
+             workSize);
         }
         barrier(); // This barrier has a counterpart in following loop
         postPeer<Recv, Send>(0 < sliceSize);
@@ -422,7 +421,7 @@ private:
     int offset = 0; // slice offset
     int sliceSize = stepSize*StepPerSlice;
     int dataSize = max(DIVUP(peerElem, 16*SlicePerChunk)*16, sliceSize/32);  // per-peer slice size
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE));
+
     #pragma unroll
     for (int slice=0; slice<SlicePerChunk; ++slice) {
       ssize_t realSize = max(0, min(dataSize, peerElem-offset));
@@ -445,7 +444,7 @@ private:
             void* src0 = (T*)ncclShmem.groups[group].srcs[0] + pOffset;
             ssize_t realPeerSize = min(realSize, totalElem-pOffset);
             if (realPeerSize > 0 && ncclShmem.groups[group].dsts[i] != nullptr) {
-              reduceCopy<Unroll, RedOp, T, 0,1,1, 0,1,1, PreOpSrcs>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, false, 1, &src0, 1, ncclShmem.groups[group].dsts+i, realPeerSize, scratch);
+              reduceCopy<Unroll, RedOp, T, 0,1,1, 0,1,1, PreOpSrcs>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, false, 1, &src0, 1, ncclShmem.groups[group].dsts+i, realPeerSize);
               // Mark for threadfence at the end
               fenceNeeded |= true;
             }
@@ -465,7 +464,7 @@ private:
             void* dst0 = (T*)ncclShmem.groups[group].dsts[0] + pOffset;
             ssize_t realPeerSize = min(realSize, totalElem-pOffset);
             if (DirectRecv && ncclShmem.groups[group].srcs[i] == dst0) realPeerSize = 0;
-            if (realPeerSize > 0) reduceCopy<Unroll, RedOp, T, 0,1,1, 0,1,1, /*PreOpSrcs=*/0>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp, 1, ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize, scratch);
+            if (realPeerSize > 0) reduceCopy<Unroll, RedOp, T, 0,1,1, 0,1,1, /*PreOpSrcs=*/0>(tid, nworkers, ncclShmem.redOpArgs[0], ncclShmem.redOpArgs, postOp, 1, ncclShmem.groups[group].srcs+i, 1, &dst0, realPeerSize);
           }
         }
       }
@@ -945,10 +944,9 @@ private:
 
     int workSize = ncclShmem.aborted ? 0 : nelem;
 
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE));
     reduceCopy<Unroll, RedOp, T, 0, 1, 2, 0, 1, 1, /*PreOpSrcs*/0>
       (tid, nthreads, ncclShmem.redOpArgs[0],  nullptr, /*postOp=*/false,
-       nSrcs, srcs, 1, ncclShmem.groups[group].dsts, workSize, scratch);
+       nSrcs, srcs, 1, ncclShmem.groups[group].dsts, workSize);
 
     barrier();
     if (postRecv && recvPow2 >= 0 && recvPow2 == index && (flags & RolePostRecv)) postPeer<1, 0>(0 < nelem);
@@ -1007,10 +1005,9 @@ private:
 
     int workSize = ncclShmem.aborted ? 0 : nelem;
 
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tidInBlock/WARP_SIZE));
     reduceCopy<Unroll, RedOp, T, 0, 1, 1, 0, 1, 2, /*PreOpSrcs*/0>
       (tid, nthreads, ncclShmem.redOpArgs[0],  nullptr, /*postOp=*/false,
-       1, ncclShmem.groups[group].srcs, nDsts, dsts, workSize, scratch);
+       1, ncclShmem.groups[group].srcs, nDsts, dsts, workSize);
 
     barrier();
     if (postRecv && recvPow2 >= 0 && recvPow2 == index && (flags & RolePostRecv)) postPeer<1, 0>(0 < nelem);

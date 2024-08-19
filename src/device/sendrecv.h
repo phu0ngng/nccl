@@ -152,9 +152,8 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
     }
 
     if (isCopy) {
-      uint32_t scratch = cvta_to_shared(ncclScratchForWarp(subtid/WARP_SIZE));
       reduceCopy<COLL_UNROLL, RedOp, T, 0,1,1, 0,1,1, /*PreOpSrcs=*/0>
-        (subtid, subtn, 0, nullptr, false, 1, &work->sendAddr, 1, &work->recvAddr, (ssize_t)work->sendBytes, scratch);
+        (subtid, subtn, 0, nullptr, false, 1, &work->sendAddr, 1, &work->recvAddr, (ssize_t)work->sendBytes);
     } else if (isSend) {
       if (work->sendProtoLL) {
         runSend<ProtoLL>(subtid, subtn, group, work);

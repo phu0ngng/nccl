@@ -40,9 +40,8 @@ namespace {
         redOpArg = *reinterpret_cast<uint64_t*>(redOpArg);
       }
     }
-    uint32_t scratch = cvta_to_shared(ncclScratchForWarp(tid/WARP_SIZE));
     reduceCopy<COLL_UNROLL, RedOp, T, 0,1,1, 0,1,1, /*PreOpSrcs=*/1>
-      (tid, tn, redOpArg, &redOpArg, true, 1, &src, 1, &dst, i1-i0, scratch);
+      (tid, tn, redOpArg, &redOpArg, true, 1, &src, 1, &dst, i1-i0);
   }
 }
 
