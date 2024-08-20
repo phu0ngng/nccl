@@ -24,6 +24,7 @@ variables:
   RUN_ON_SELENE_SHARP: "0"
   BUILD_TRACE: "0"
   RUN_ON_AWS: "1"
+  RUN_ON_EOS: "1"
 
 # Run our CI on:
 # - Every commit to master
@@ -69,10 +70,12 @@ build-trace:
     - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
   interruptible: true
 
-build-eos:
+build-eos-aws:
   stage: build
   rules:
-    - when: always
+    - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1"
+      when: always
+    - when: never
   tags:
     - build-with-docker
   script:
@@ -101,7 +104,7 @@ setup-AWS_H100_EFA:
   needs:
     # Builds targetted for EOS work on AWS as well as the build config is the same across both clusters.
     # TODO - Refactor build jobs to decouple EOS and AWS.
-    - build-eos
+    - build-eos-aws
   variables:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
@@ -257,8 +260,10 @@ unit_tests-A100:
 unit_tests-eos:
   stage: unit_tests
   rules:
-    - when: always
-  needs: ["build-eos"]
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  needs: ["build-eos-aws"]
   tags:
     - nccl-eos
   variables:
@@ -467,8 +472,10 @@ apitest-DGX-A100:
 apitest-eos:
   stage: api_tests
   rules:
-    - when: always
-  needs: ["build-eos"]
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  needs: ["build-eos-aws"]
   tags:
     - nccl-eos
   variables:
@@ -703,8 +710,10 @@ perftest-DGX-A100:
 perftest-single-eos:
   stage: perf_tests_single
   rules:
-    - when: always
-  needs: ["build-eos"]
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  needs: ["build-eos-aws"]
   tags:
     - nccl-eos
   variables:
@@ -893,8 +902,10 @@ perftest-multi-selene:
 perftest-multi-eos:
   stage: perf_tests_multi
   rules:
-    - when: always
-  needs: ["build-eos"]
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  needs: ["build-eos-aws"]
   tags:
     - nccl-eos
   variables:

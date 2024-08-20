@@ -917,8 +917,8 @@ Value accepted
 ^^^^^^^^^^^^^^
 
 A value of 0 will disable the use of PXN for send/receive. A value of 1 will enable the use of PXN
-when the NIC preferred by the destination is not directly accessible. A value
-of 2 (default) will cause PXN to always be used, even if the NIC is directly accessible,
+when the NIC prefered by the destination is not accessible through PCI switches. A value
+of 2 (default) will cause PXN to always be used, even if the NIC is connected through PCI switches,
 storing data from all GPUs within the node on an intermediate GPU to maximize aggregation.
 
 NCCL_RUNTIME_CONNECT

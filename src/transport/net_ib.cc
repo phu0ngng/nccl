@@ -318,12 +318,14 @@ static ncclResult_t ncclIbRoceGetVersionNum(const char* deviceName, int portNum,
 
   int fd = open(roceTypePath, O_RDONLY);
   if (fd == -1) {
+    WARN("NET/IB: open failed in ncclIbRoceGetVersionNum: %s", strerror(errno));
     return ncclSystemError;
   }
   int ret = read(fd, gidRoceVerStr, 15);
   close(fd);
 
   if (ret == -1) {
+    WARN("NET/IB: read failed in ncclIbRoceGetVersionNum: %s", strerror(errno));
     return ncclSystemError;
   }
 
