@@ -362,7 +362,7 @@ setup:
     struct ncclNvlsSharedRes* resources = NULL;
     int nHeads = comm->channels[0].nvls.nHeads;
     int nChannels = comm->nChannels;
-    size_t memSize = 16;
+    size_t memSize = 64;
     size_t creditSize = nChannels * 2 * memSize * nHeads;
     int nvlsStepSize = comm->nvlsChunkSize;
 
