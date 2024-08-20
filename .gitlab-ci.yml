@@ -496,7 +496,7 @@ apitest-AWS_H100_EFA:
   before_script:
     - |
       cat > $SSHENV_FILE << EOF
-      export SRUN="srun --exclusive -t 00:10:00 -n 1 -G 8 -p compute"
+      export SRUN="srun --exclusive -t 00:30:00 -n 1 -G 8 -p compute"
       EOF
     - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
@@ -823,7 +823,6 @@ perftest-multi-DGX-1V:
     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
     PARTITION_LIST: "batch_short_dgx1_m2"
     UCX_TLS: "tcp"
-    NCCL_DEBUG: "INFO"
     NCCL_DEBUG_SUBSYS: "ENV"
     NCCL_IBEXT_DISABLE: "1"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
@@ -899,7 +898,6 @@ perftest-multi-eos:
   tags:
     - nccl-eos
   variables:
-    NCCL_DEBUG: "INFO"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"

@@ -4,7 +4,7 @@
 # Relevant paths
 DR_OPENMPI_HOME="/usr/mpi/gcc/openmpi-4.1.0rc5"
 DR_CUDA_HOME="/gpfs/fs1/projects/sw_gpucomms/users/vkhodel/cuda-12.0.1"
-DR_DOCKER_IMAGE_DIR="/gpfs/fs1/projects/sw_gpucomms/users/vkhodel/images"
+DR_DOCKER_IMAGE_DIR="/gpfs/fs1/projects/sw_gpucomms/users/vkhodel/docker_sqsh"
 
 OS_VERSION="20.04"
 CUDA_VERSION="12.0.1"
@@ -63,7 +63,7 @@ function get_build_command() {
         --account=$DR_SLURM_ACCOUNT \
         -J ${DR_SLURM_ACCOUNT}-nccl:test \
         --nv-meta ml-model.dlss \
-        -t 00:20:00 \
+        -t 00:05:00 \
         -p batch_dgx1_m2 \
         -n 1 \
 	-c 48 \

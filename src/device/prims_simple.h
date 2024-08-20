@@ -267,7 +267,7 @@ class Primitives<
              Recv, ncclShmem.groups[group].srcs,
              Dst, ncclShmem.groups[group].dsts,
              workSize, scratch);
-        } else {
+        } else if (ncclShmem.groups[group].srcs[0] && ncclShmem.groups[group].dsts[0]) {
           constexpr int PreOpSrcs = SrcBuf != Input ? 0 :
                                     DirectRecv*MaxRecv == NCCL_MAX_DIRECT_ARITY ? (1+NCCL_MAX_DIRECT_ARITY) : 1;
           reduceCopy<Unroll, RedOp, T,
@@ -818,8 +818,8 @@ private:
   __device__ __forceinline__ void recv(intptr_t outIx, int eltN, bool postOp=false) {
     genericOp<0, 0, 1, 0, -1, Output>(-1, outIx, eltN, postOp);
   }
-  __device__ __forceinline__ void directRecv(intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 0, -1, Output>(-1, outIx, eltN, postOp);
+  __device__ __forceinline__ void directRecv(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
+    genericOp<1, 0, 1, 0, -1, Output>(inpIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvCopy(intptr_t inpIx, intptr_t outIx, int eltN) {
     genericOp<1, 0, 1, 0, -1, Output>(inpIx, outIx, eltN, /*postOp=*/false);

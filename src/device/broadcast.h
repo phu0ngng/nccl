@@ -41,7 +41,7 @@ namespace {
           prims.directCopySend(offset, offset, nelem);
         }
       } else if (nextRank == root) {
-        prims.directRecv(offset, nelem);
+        prims.directRecv(offset, offset, nelem);
       } else {
         prims.directRecvCopyDirectSend(offset, nelem);
       }

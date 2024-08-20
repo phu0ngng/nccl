@@ -62,7 +62,7 @@ function get_build_command() {
     echo "srun \
         --account=$EOS_SLURM_ACCOUNT \
         -J ${EOS_SLURM_ACCOUNT}-nccl:test \
-        -t 00:20:00 \
+        -t 00:05:00 \
         -n 1 \
 	-c 48 \
         --container-image=$EOS_BUILD_TOOLS_IMAGE \

@@ -1,6 +1,10 @@
 # Config parameters for gc cluster
 # no host-specific code executes in this module to allow it to live elsewhere
 
+# Relevant paths
+GC_OPENMPI_HOME="/home/nvshmem_shared/openmpi"
+GC_CUDA_HOME="/usr/local/cuda"
+
 OS_VERSION="20.04"
 CUDA_VERSION="12.0.1"
 
@@ -11,6 +15,18 @@ GC_BUILD_TOOLS_IMAGE="${BUILD_TOOLS_REPO}:${BUILD_TOOLS_VERSION}-c${CUDA_VERSION
 # Target configs
 function get_nvcc_gencode() {
     echo "-gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_80,code=sm_80"
+}
+
+function get_cuda_home() {
+    echo "$GC_CUDA_HOME"
+}
+
+function get_openmpi_home() {
+    echo "$GC_OPENMPI_HOME"
+}
+
+function get_extra_ld_library_path() {
+    echo "$GC_CUDA_HOME/lib64:$GC_OPENMPI_HOME/lib"
 }
 
 # Build host configs
