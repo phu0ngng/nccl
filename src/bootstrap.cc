@@ -253,12 +253,12 @@ static ncclResult_t setFilesLimit() {
 static ncclResult_t rootSend(union ncclSocketAddress* addr, uint64_t magic, union ringConnectInfo* info) {
   ncclResult_t res = ncclSuccess;
   struct ncclSocket sock;
-  NCCLCHECKGOTO(ncclSocketInit(&sock, addr, magic, ncclSocketTypeBootstrap), res, out);
-  NCCLCHECKGOTO(ncclSocketConnect(&sock), res, out);
-  NCCLCHECKGOTO(socketSend(&sock, info, sizeof(union ringConnectInfo)), res, out);
+  NCCLCHECKGOTO(ncclSocketInit(&sock, addr, magic, ncclSocketTypeBootstrap), res, fail);
+  NCCLCHECKGOTO(ncclSocketConnect(&sock), res, fail);
+  NCCLCHECKGOTO(socketSend(&sock, info, sizeof(union ringConnectInfo)), res, fail);
   NCCLCHECK(ncclSocketClose(&sock));
   return res;
-out:
+fail:
   (void)ncclSocketClose(&sock);
   return res;
 }
@@ -586,11 +586,11 @@ static ncclResult_t sendToRoot(struct ncclBootstrapHandle* handle, struct ncclCo
   ncclResult_t ret = ncclSuccess;
   struct ncclSocket sock;
   NCCLCHECK(ncclSocketInit(&sock, &handle->addr, handle->magic, ncclSocketTypeBootstrap, comm->abortFlag));
-  NCCLCHECKGOTO(ncclSocketConnect(&sock), ret, exit);
-  NCCLCHECKGOTO(socketSend(&sock, info, sizeof(struct extInfo)), ret, exit);
+  NCCLCHECKGOTO(ncclSocketConnect(&sock), ret, fail);
+  NCCLCHECKGOTO(socketSend(&sock, info, sizeof(struct extInfo)), ret, fail);
   NCCLCHECK(ncclSocketClose(&sock));
   return ret;
-exit:
+fail:
   (void)ncclSocketClose(&sock);
   return ret;
 }
@@ -824,11 +824,11 @@ ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int s
   struct ncclSocket sock;
   TRACE(NCCL_BOOTSTRAP, "Sending to peer=%d tag=%d size=%d", peer, tag, size);
   NCCLCHECK(socketConnect(commState, peer, tag, &sock));
-  NCCLCHECKGOTO(socketSend(&sock, data, size), ret, exit);
+  NCCLCHECKGOTO(socketSend(&sock, data, size), ret, fail);
   TRACE(NCCL_BOOTSTRAP, "Sent to peer=%d tag=%d size=%d", peer, tag, size);
   NCCLCHECK(ncclSocketClose(&sock));
   return ret;
-exit:
+fail:
   (void)ncclSocketClose(&sock);
   return ret;
 }
@@ -915,10 +915,10 @@ ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int s
   struct ncclSocket sock;
   NCCLCHECK(socketAccept(commState, peer, tag, &sock));
   TRACE(NCCL_BOOTSTRAP, "Receiving tag=%d peer=%d size=%d", tag, peer, size);
-  NCCLCHECKGOTO(socketRecv(&sock, ((char*)data), size), ret, exit);
+  NCCLCHECKGOTO(socketRecv(&sock, ((char*)data), size), ret, fail);
   NCCLCHECK(ncclSocketClose(&sock));
   return ret;
-exit:
+fail:
   (void)ncclSocketClose(&sock);
   return ret;
 }
