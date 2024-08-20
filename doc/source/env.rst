@@ -62,6 +62,26 @@ Values accepted
 
 Set to ``AF_INET`` to force the use of IPv4, or ``AF_INET6`` to force IPv6 usage.
 
+NCCL_SOCKET_TIMEDOUT_RETRY_CNT
+-----------------------------
+(since 2.24)
+
+The ``NCCL_SOCKET_TIMEDOUT_RETRY_CNT`` variable specifies the number of times NCCL retries to establish a socket connection after a ``ETIMEDOUT`` error.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 3, any positive value is valid.
+
+NCCL_SOCKET_HOSTUNREACH_RETRY_CNT
+-----------------------------
+(since 2.24)
+
+The ``NCCL_SOCKET_HOSTUNREACH_RETRY_CNT`` variable specifies the number of times NCCL retries to establish a socket connection after a ``EHOSTUNREACH`` error.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 3, any positive value is valid.
+
 NCCL_SOCKET_NTHREADS
 --------------------
 (since 2.4.8)
