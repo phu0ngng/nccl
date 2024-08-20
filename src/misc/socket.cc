@@ -14,6 +14,7 @@
 #include "param.h"
 
 NCCL_PARAM(HostUnreachRetryCnt,"SOCKET_HOSTUNREACH_RETRY_CNT",3);
+NCCL_PARAM(TimedOutRetryCnt,"SOCKET_TIMEDOUT_RETRY_CNT",3);
 
 static ncclResult_t socketProgressOpt(int op, struct ncclSocket* sock, void* ptr, int size, int* offset, int block, int* closed) {
   int bytes = 0;
@@ -482,7 +483,7 @@ static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
     usleep(SLEEP_INT);
     return ncclSuccess;
   } else if (errno == ETIMEDOUT) {
-    if (++sock->timedOutRetries == RETRY_TIMEDOUT_TIMES) {
+    if (++sock->timedOutRetries == ncclParamTimedOutRetryCnt()) {
       sock->state = ncclSocketStateError;
       WARN("socketStartConnect: exceeded timeouts (%d)", sock->timedOutRetries);
       return ncclRemoteError;
@@ -540,7 +541,7 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
     usleep(SLEEP_INT);
     return ncclSuccess;
   } else if (ret == ETIMEDOUT) {
-    if (++sock->timedOutRetries == RETRY_TIMEDOUT_TIMES) {
+    if (++sock->timedOutRetries == ncclParamTimedOutRetryCnt()) {
       sock->state = ncclSocketStateError;
       WARN("socketPollConnect: exceeded timeouts (%d)", sock->timedOutRetries);
       return ncclRemoteError;
