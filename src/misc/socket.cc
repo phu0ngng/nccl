@@ -13,6 +13,8 @@
 #include <net/if.h>
 #include "param.h"
 
+NCCL_PARAM(HostUnreachRetryCnt,"SOCKET_HOSTUNREACH_RETRY_CNT",3);
+
 static ncclResult_t socketProgressOpt(int op, struct ncclSocket* sock, void* ptr, int size, int* offset, int block, int* closed) {
   int bytes = 0;
   *closed = 0;
@@ -471,6 +473,14 @@ static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
     usleep(SLEEP_INT);
     if (sock->refusedRetries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
     return ncclSuccess;
+  } else if (errno == EHOSTUNREACH) {
+    if (++sock->hostUnreachRetries == ncclParamHostUnreachRetryCnt()) {
+      sock->state = ncclSocketStateError;
+      WARN("socketStartConnect: exceeded host unreach retries (%d)", sock->hostUnreachRetries);
+      return ncclRemoteError;
+    }
+    usleep(SLEEP_INT);
+    return ncclSuccess;
   } else if (errno == ETIMEDOUT) {
     if (++sock->timedOutRetries == RETRY_TIMEDOUT_TIMES) {
       sock->state = ncclSocketStateError;
@@ -521,6 +531,14 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
     if (sock->refusedRetries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
     usleep(SLEEP_INT);
     sock->state = ncclSocketStateConnecting;
+  } else if (errno == EHOSTUNREACH) {
+    if (++sock->hostUnreachRetries == ncclParamHostUnreachRetryCnt()) {
+      sock->state = ncclSocketStateError;
+      WARN("socketStartConnect: exceeded host unreach retries (%d)", sock->hostUnreachRetries);
+      return ncclRemoteError;
+    }
+    usleep(SLEEP_INT);
+    return ncclSuccess;
   } else if (ret == ETIMEDOUT) {
     if (++sock->timedOutRetries == RETRY_TIMEDOUT_TIMES) {
       sock->state = ncclSocketStateError;
