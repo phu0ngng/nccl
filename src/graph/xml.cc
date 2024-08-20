@@ -430,7 +430,7 @@ static ncclResult_t getBcmLinks(const char* busId, int* nlinks, char** peers) {
 
 ncclResult_t ncclTopoGetStrFromSys(const char* path, const char* fileName, char* strValue) {
   char filePath[PATH_MAX];
-  sprintf(filePath, "%s/%s", path, fileName);
+  snprintf(filePath, sizeof(filePath), "%s/%s", path, fileName);
   int offset = 0;
   FILE* file;
   if ((file = fopen(filePath, "r")) != NULL) {
@@ -883,7 +883,7 @@ ncclResult_t ncclTopoFillGpu(struct ncclXml* xml, const char* busId, struct nccl
 // where sysPath/subsystem points to.
 ncclResult_t ncclTopoGetSubsystem(const char* sysPath, char* subSys) {
   char subSysPath[PATH_MAX];
-  sprintf(subSysPath, "%s/subsystem", sysPath);
+  snprintf(subSysPath, sizeof(subSysPath), "%s/subsystem", sysPath);
   char* path = realpath(subSysPath, NULL);
   if (path == NULL) {
     subSys[0] = '\0';

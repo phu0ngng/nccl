@@ -114,7 +114,7 @@ ncclResult_t bootstrapNetInit() {
         }
       }
       char line[SOCKET_NAME_MAXLEN+MAX_IF_NAME_SIZE+2];
-      sprintf(line, " %s:", bootstrapNetIfName);
+      snprintf(line, sizeof(line), " %s:", bootstrapNetIfName);
       ncclSocketToString(&bootstrapNetIfAddr, line+strlen(line));
       INFO(NCCL_BOOTSTRAP, "Bootstrap : Using%s", line);
       bootstrapNetInitDone = 1;

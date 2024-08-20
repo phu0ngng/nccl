@@ -76,7 +76,7 @@ static ncclResult_t ncclNetSocketGetSpeed(char* devName, int* speed) {
   ncclResult_t ret = ncclSuccess;
   *speed = 0;
   char speedPath[PATH_MAX];
-  sprintf(speedPath, "/sys/class/net/%s/speed", devName);
+  snprintf(speedPath, sizeof(speedPath), "/sys/class/net/%s/speed", devName);
   int fd = -1;
   SYSCHECKSYNC(open(speedPath, O_RDONLY), "open", fd);
   if (fd != -1) {
