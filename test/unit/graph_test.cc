@@ -264,6 +264,7 @@ int main(int argc, const char* argv[]) {
     RUN("LOC-1G");
     RUN("PCI-1R");
     RUN("PCI-2R");
+    RUN("PCI-No-Numa");
     RUN("PCI-NV");
     RUN("SKL-V100");
     RUN("MS-1G-2N");

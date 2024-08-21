@@ -103,9 +103,10 @@ struct ncclTopoLinkList {
 
 #define NCCL_TOPO_UNDEF (-1)
 
+#define NCCL_TOPO_ID_LOCAL_ID_MASK 0x00ffffffffffffff
 #define NCCL_TOPO_ID_SYSTEM_ID(id) (id >> 56)
-#define NCCL_TOPO_ID_LOCAL_ID(id) (id & 0x00ffffffffffffff)
-#define NCCL_TOPO_ID(systemid, localid) (((int64_t)systemid << 56) + localid)
+#define NCCL_TOPO_ID_LOCAL_ID(id) (id & NCCL_TOPO_ID_LOCAL_ID_MASK)
+#define NCCL_TOPO_ID(systemid, localid) (((int64_t)systemid << 56) + (localid & NCCL_TOPO_ID_LOCAL_ID_MASK))
 
 struct ncclTopoNode {
   int type;
