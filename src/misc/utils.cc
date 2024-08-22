@@ -107,7 +107,7 @@ static void getHostHashOnce() {
   hostHashValue = getHash(hostHash, strlen(hostHash));
 }
 uint64_t getHostHash(void) {
-  static pthread_once_t once;
+  static pthread_once_t once = PTHREAD_ONCE_INIT;
   pthread_once(&once, getHostHashOnce);
   return hostHashValue;
 }
