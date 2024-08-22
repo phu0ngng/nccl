@@ -253,11 +253,13 @@ static ncclResult_t setFilesLimit() {
 static ncclResult_t rootSend(union ncclSocketAddress* addr, uint64_t magic, union ringConnectInfo* info) {
   ncclResult_t res = ncclSuccess;
   struct ncclSocket sock;
-  NCCLCHECKGOTO(ncclSocketInit(&sock, addr, magic, ncclSocketTypeBootstrap), res, out);
-  NCCLCHECKGOTO(ncclSocketConnect(&sock), res, out);
-  NCCLCHECKGOTO(socketSend(&sock, info, sizeof(union ringConnectInfo)), res, out);
-  NCCLCHECKGOTO(ncclSocketClose(&sock), res, out);
-out:
+  NCCLCHECKGOTO(ncclSocketInit(&sock, addr, magic, ncclSocketTypeBootstrap), res, fail);
+  NCCLCHECKGOTO(ncclSocketConnect(&sock), res, fail);
+  NCCLCHECKGOTO(socketSend(&sock, info, sizeof(union ringConnectInfo)), res, fail);
+  NCCLCHECK(ncclSocketClose(&sock));
+  return res;
+fail:
+  (void)ncclSocketClose(&sock);
   return res;
 }
 static void* bootstrapRoot(void* rargs) {
@@ -584,10 +586,12 @@ static ncclResult_t sendToRoot(struct ncclBootstrapHandle* handle, struct ncclCo
   ncclResult_t ret = ncclSuccess;
   struct ncclSocket sock;
   NCCLCHECK(ncclSocketInit(&sock, &handle->addr, handle->magic, ncclSocketTypeBootstrap, comm->abortFlag));
-  NCCLCHECKGOTO(ncclSocketConnect(&sock), ret, exit);
-  NCCLCHECKGOTO(socketSend(&sock, info, sizeof(struct extInfo)), ret, exit);
-exit:
+  NCCLCHECKGOTO(ncclSocketConnect(&sock), ret, fail);
+  NCCLCHECKGOTO(socketSend(&sock, info, sizeof(struct extInfo)), ret, fail);
   NCCLCHECK(ncclSocketClose(&sock));
+  return ret;
+fail:
+  (void)ncclSocketClose(&sock);
   return ret;
 }
 
@@ -623,9 +627,9 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
   info.nroots = nHandles;
   // get the ring connection info
   memset(&nextPeer, 0, sizeof(union ringConnectInfo));
+  BOOTSTRAP_PROF_OPEN(timers[BOOTSTRAP_INIT_TIME_CREATE]);
   if (ncclParamBootstrapNetEnable()) {
     // Create net interface for other ranks to contact me (all gather)
-    BOOTSTRAP_PROF_OPEN(timers[BOOTSTRAP_INIT_TIME_CREATE]);
     NCCLCHECK(netGetDevice(rank, comm, &STATE_LISTEN(state, net.dev)));
     NCCLCHECK(state->net->listen(STATE_LISTEN(state, net.dev), STATE_LISTEN(state, net.handle), &STATE_LISTEN(state, net.comm)));
     memcpy(info.connectInfo.handle, STATE_LISTEN(state, net.handle), NCCL_NET_HANDLE_MAXSIZE);
@@ -812,7 +816,7 @@ static ncclResult_t socketConnect(void* commState, int peer, int tag, struct ncc
   NCCLCHECKGOTO(socketSend(sock, &ack, sizeof(struct socketAckInfo)), ret, fail);
   return ncclSuccess;
 fail:
-  NCCLCHECK(ncclSocketClose(sock));
+  (void)ncclSocketClose(sock);
   return ret;
 }
 ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int size) {
@@ -820,11 +824,12 @@ ncclResult_t bootstrapSend(void* commState, int peer, int tag, void* data, int s
   struct ncclSocket sock;
   TRACE(NCCL_BOOTSTRAP, "Sending to peer=%d tag=%d size=%d", peer, tag, size);
   NCCLCHECK(socketConnect(commState, peer, tag, &sock));
-  NCCLCHECKGOTO(socketSend(&sock, data, size), ret, exit);
+  NCCLCHECKGOTO(socketSend(&sock, data, size), ret, fail);
   TRACE(NCCL_BOOTSTRAP, "Sent to peer=%d tag=%d size=%d", peer, tag, size);
-
-exit:
   NCCLCHECK(ncclSocketClose(&sock));
+  return ret;
+fail:
+  (void)ncclSocketClose(&sock);
   return ret;
 }
 // Bootstrap send/receive functions
@@ -901,7 +906,7 @@ static ncclResult_t socketAccept(void* commState, int peer, int tag, struct nccl
   }
   return ncclSuccess;
 fail:
-  NCCLCHECK(ncclSocketClose(sock));
+  (void)ncclSocketClose(sock);
   return ret;
 }
 // We can't know who we'll receive from, so we need to receive everything at once
@@ -910,9 +915,11 @@ ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int s
   struct ncclSocket sock;
   NCCLCHECK(socketAccept(commState, peer, tag, &sock));
   TRACE(NCCL_BOOTSTRAP, "Receiving tag=%d peer=%d size=%d", tag, peer, size);
-  NCCLCHECKGOTO(socketRecv(&sock, ((char*)data), size), ret, exit);
-exit:
+  NCCLCHECKGOTO(socketRecv(&sock, ((char*)data), size), ret, fail);
   NCCLCHECK(ncclSocketClose(&sock));
+  return ret;
+fail:
+  (void)ncclSocketClose(&sock);
   return ret;
 }
 
