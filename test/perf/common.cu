@@ -18,6 +18,9 @@
 
 #include "../verifiable/verifiable.h"
 
+#define DIVUP(x, y) \
+    (((x)+(y)-1)/(y))
+
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
 
 #if NCCL_MAJOR >= 2
@@ -1463,8 +1466,10 @@ testResult_t run() {
   } else if (split_comm == 1) {
     commNum = 1;
   }
-  // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 2G for the rest.
-  size_t memMaxBytes = ((maxMem - (4LL<<30) * (commNum + 1)) / (datacheck ? 3 : 2)) / commNum;
+  // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 1G for the rest.
+  size_t reserveMem =  std::min(DIVUP(maxMem, (16ULL << 30)) * (1ULL << 30), 4ULL << 30);
+  size_t memMaxBytes = (maxMem - reserveMem * commNum - (1LL << 30)) / (datacheck ? 3 : 2) / commNum;
+  assert(maxMem > reserveMem * commNum + (1LL << 30));
   if (maxBytes > memMaxBytes) {
     maxBytes = memMaxBytes;
     if (minBytes > maxBytes) minBytes = maxBytes;
