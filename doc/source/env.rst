@@ -750,7 +750,8 @@ Use CUDA cuMem* functions to allocate host memory in NCCL.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 or 1. Default is 0.
+0 or 1.
+Default is 0 in 2.23; since 2.24, default is 1 if CUDA driver >= 12.6 and CUDA runtime >= 12.2
 
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
