@@ -8,7 +8,6 @@ stages:
   - perf_tests_multi
   - perf_regression
   - replay_tests
-  - cleanup
 
 variables:
   RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
@@ -109,7 +108,7 @@ setup-AWS_H100_EFA:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
   script:
-    - rsync -a --exclude ./.git ./ ${AWS_HEAD_NODE}:${AWS_HEAD_NODE_WORKDIR}/
+    - rsync -a --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
 
 health-P100:
   stage: health
@@ -287,19 +286,24 @@ unit_tests-AWS_H100_EFA:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
-    SSHENV_FILE: sshenv_${CI_JOB_NAME}
+    RUN_SCRIPT: run_${CI_JOB_NAME}.sh
+    TEST_CMD: ./test/scripts/gitlab-runner-unit.sh
   before_script:
     - |
-      cat > $SSHENV_FILE << EOF
+      cat > $RUN_SCRIPT << EOF
+      source docker/aws-config.sh && configure_aws_test_env
+
       export SRUN="srun --exclusive -t 00:10:00 -n 1 -G 8 -p compute"
+
+      $TEST_CMD
       EOF
-    - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
-    - ssh $AWS_HEAD_NODE "cd ${AWS_HEAD_NODE_WORKDIR} && source docker/aws-config.sh && configure_aws_test_env && source $SSHENV_FILE && bash -l ./test/scripts/gitlab-runner-unit.sh"
+    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   artifacts:
     when: always
     paths:
-      - sshenv_${CI_JOB_NAME}
+      - $RUN_SCRIPT
     expire_in: 4 hrs
 
 apitest-P100:
@@ -499,19 +503,24 @@ apitest-AWS_H100_EFA:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: "aws-pcluster-head"
     AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
-    SSHENV_FILE: sshenv_${CI_JOB_NAME}
+    RUN_SCRIPT: run_${CI_JOB_NAME}.sh
+    TEST_CMD: ./test/scripts/gitlab-runner-apitest.sh
   before_script:
     - |
-      cat > $SSHENV_FILE << EOF
+      cat > $RUN_SCRIPT << EOF
+      source docker/aws-config.sh && configure_aws_test_env
+
       export SRUN="srun --exclusive -t 00:30:00 -n 1 -G 8 -p compute"
+
+      $TEST_CMD
       EOF
-    - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
-    - ssh ${AWS_HEAD_NODE} "cd ${AWS_HEAD_NODE_WORKDIR} && source docker/aws-config.sh && configure_aws_test_env && source ${SSHENV_FILE} && bash -l ./test/scripts/gitlab-runner-apitest.sh"
+    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   artifacts:
     when: always
     paths:
-      - sshenv_${CI_JOB_NAME}
+      - $RUN_SCRIPT
     expire_in: 4 hrs
 
 perftest-P100:
@@ -742,26 +751,31 @@ perftest_single-AWS_H100_EFA:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: "aws-pcluster-head"
     AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
-    SSHENV_FILE: sshenv_${CI_JOB_NAME}
     NNODES: 1
     NGPUS: 8
+    RUN_SCRIPT: run_${CI_JOB_NAME}.sh
+    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh
   before_script:
     - |
-      cat > $SSHENV_FILE << EOF
+      cat > $RUN_SCRIPT << EOF
+      source docker/aws-config.sh && configure_aws_test_env
+
       export MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
-      export NNODES=${NNODES}
-      export NGPUS=${NGPUS}
-      export SALLOC="salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -p compute"
+      export NNODES=$NNODES
+      export NGPUS=$NGPUS
+      export SALLOC="salloc --exclusive -t 00:10:00 -N $NNODES -n $NGPUS -p compute"
       export SKIP_FT=1
       export UCX_TLS=tcp
+
+      $TEST_CMD
       EOF
-    - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
-    - ssh ${AWS_HEAD_NODE} "cd ${AWS_HEAD_NODE_WORKDIR} && source docker/aws-config.sh && configure_aws_test_env && source ${SSHENV_FILE} && bash -l ./test/scripts/gitlab-runner-perftest.sh"
+    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   artifacts:
     when: always
     paths:
-      - sshenv_${CI_JOB_NAME}
+      - $RUN_SCRIPT
     expire_in: 4 hrs
 
 perftest-multi-gc:
@@ -962,28 +976,32 @@ perftest_multi-AWS_H100_EFA:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: "aws-pcluster-head"
     AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
-    SSHENV_FILE: sshenv_${CI_JOB_NAME}
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
-    RUNNER_SCRIPT_ARGS: 128M 0
+    RUN_SCRIPT: run_${CI_JOB_NAME}.sh
+    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0
   before_script:
     - |
-      cat > $SSHENV_FILE << EOF
+      cat > $RUN_SCRIPT << EOF
+      source docker/aws-config.sh && configure_aws_test_env
+
       export MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
-      export NNODES=${NNODES}
-      export NGPUS=${NGPUS}
-      export SALLOC="salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -p compute"
+      export NNODES=$NNODES
+      export NGPUS=$NGPUS
+      export SALLOC="salloc --exclusive -t 00:10:00 -N $NNODES --ntasks-per-node=$NGPUS -p compute"
       export SKIP_FT=1
       export UCX_TLS=tcp
+
+      $TEST_CMD
       EOF
-    - rsync $SSHENV_FILE $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
-    - ssh ${AWS_HEAD_NODE} "cd ${AWS_HEAD_NODE_WORKDIR} && source docker/aws-config.sh && configure_aws_test_env && source ${SSHENV_FILE} && bash -l ./test/scripts/gitlab-runner-perftest.sh ${RUNNER_SCRIPT_ARGS}"
+    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   interruptible: true
   artifacts:
     when: always
     paths:
-      - sshenv_${CI_JOB_NAME}
+      - $RUN_SCRIPT
     expire_in: 4 hrs
 
 perf-regression-single-DGX-A100:
@@ -1086,24 +1104,3 @@ replay-multi-gc:
       - "**/core.*.*"
     expire_in: 4 hrs
   interruptible: true
-
-cleanup-AWS_H100_EFA:
-  stage: cleanup
-  rules:
-    - if: $RUN_ON_AWS == "1"
-      when: always
-    - when: never
-  tags:
-    - aws_p5
-  needs:
-    - unit_tests-AWS_H100_EFA
-    - apitest-AWS_H100_EFA
-    - perftest_single-AWS_H100_EFA
-    - perftest_multi-AWS_H100_EFA
-  variables:
-    GIT_STRATEGY: none
-    AWS_HEAD_NODE: "aws-pcluster-head"
-    AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
-  script:
-    - ssh ${AWS_HEAD_NODE} "rm -rf ${AWS_HEAD_NODE_WORKDIR}"
-  interruptible: false

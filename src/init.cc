@@ -448,6 +448,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   tmpCommAndChans.comm.node = comm->node;
   tmpCommAndChans.comm.nNodes = comm->nNodes;
   tmpCommAndChans.comm.abortFlag = comm->abortFlagDev;
+  tmpCommAndChans.comm.isNvlink = ncclTopoPathAllNVLink(comm->topo);
   for (int p=0; p < NCCL_NUM_PROTOCOLS; p++) {
     tmpCommAndChans.comm.buffSizes[p] = comm->buffSizes[p];
   }
@@ -905,24 +906,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(ncclTopoCompute(comm->topo, treeGraph), ret, fail);
   NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, treeGraph), ret, fail);
 
-  memset(collNetChainGraph, 0, sizeof(struct ncclTopoGraph));
-  collNetChainGraph->id = 2;
-  collNetChainGraph->pattern = NCCL_TOPO_PATTERN_TREE;
-  collNetChainGraph->collNet = 1;
-  collNetChainGraph->minChannels = ringGraph->nChannels;
-  collNetChainGraph->maxChannels = ringGraph->nChannels;
-
-  memset(collNetDirectGraph, 0, sizeof(struct ncclTopoGraph));
-  collNetDirectGraph->id = 4;
-  collNetDirectGraph->pattern = NCCL_TOPO_PATTERN_COLLNET_DIRECT;
-  collNetDirectGraph->collNet = 1;
-  collNetDirectGraph->minChannels = 1;
-  collNetDirectGraph->maxChannels = MAXCHANNELS;
   if (comm->collNetSupport) {
-    NCCLCHECKGOTO(ncclTopoCompute(comm->topo, collNetChainGraph), ret, fail);
-    NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, collNetChainGraph), ret, fail);
+    memset(collNetDirectGraph, 0, sizeof(struct ncclTopoGraph));
+    collNetDirectGraph->id = 4;
+    collNetDirectGraph->pattern = NCCL_TOPO_PATTERN_COLLNET;
+    collNetDirectGraph->collNet = 1;
+    collNetDirectGraph->minChannels = 1;
+    collNetDirectGraph->maxChannels = MAXCHANNELS;
     NCCLCHECKGOTO(ncclTopoCompute(comm->topo, collNetDirectGraph), ret, fail);
     NCCLCHECKGOTO(ncclTopoPrintGraph(comm->topo, collNetDirectGraph), ret, fail);
+    memcpy(collNetChainGraph, collNetDirectGraph, sizeof(struct ncclTopoGraph));
+    collNetChainGraph->id = 2;
   }
 
   memset(nvlsGraph, 0, sizeof(struct ncclTopoGraph));
@@ -1486,7 +1480,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     sum_timers += (timers[it] / 1e9);
   INFO(NCCL_INIT | NCCL_PROFILE,
        "Init timings - %s: rank %d nranks %d total %.2f (kernels %.2f, alloc %.2f, bootstrap %.2f, allgathers %.2f, topo %.2f, graphs %.2f, "
-       "connections %.2f, rest %.2f)\n",
+       "connections %.2f, rest %.2f)",
        job->funcName, comm->rank, comm->nRanks,
        timers[TIMER_INIT_TOTAL] / 1e9, timers[TIMER_INIT_KERNELS] / 1e9, timers[TIMER_INIT_ALLOC] / 1e9,
        timers[TIMER_INIT_BOOTSTRAP] / 1e9, timers[TIMER_INIT_ALLGATHER] / 1e9, timers[TIMER_INIT_TOPO] / 1e9,

@@ -393,6 +393,7 @@ struct ncclDevComm {
   int nNodes;
   int buffSizes[NCCL_NUM_PROTOCOLS];
   int p2pChunkSize;
+  int isNvlink;
 
   // Work fifo return credits
   uint32_t* workConsumed/*[MAXCHANNELS]*/;

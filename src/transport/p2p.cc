@@ -978,7 +978,6 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
   size_t baseSize;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue = reinterpret_cast<struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>*>(cleanupQueuePtr);
   uintptr_t* peerRmtAddrs = NULL;
-  struct ncclIpcCleanupCallback* record = NULL;
   struct ncclIpcCleanupCallback* addrsRecord = NULL;
 
   *regBufFlag = 0;
@@ -1079,7 +1078,7 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
     if (ipcInfo.legacyIpcCap)
       ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, &addrsRecord->base);
     else
-      ncclIntruQueueEnqueue(cleanupQueue, &record->base);
+      ncclIntruQueueEnqueue(cleanupQueue, &addrsRecord->base);
   }
   *offsetOut = (uintptr_t)userbuff - (uintptr_t)baseAddr;
   *peerRmtAddrsOut = peerRmtAddrs;

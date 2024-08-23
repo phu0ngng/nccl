@@ -15,7 +15,7 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
   template<typename Proto>
   __device__ void runSend(int tid, int tn, int group, struct ncclDevWorkP2p* work) {
     size_t bytes = work->sendBytes;
-    int chunkSize = work->sendIpcReg ? (1 << 30) : u32fp8Decode(work->sendChunkSize_u32fp8);
+    int chunkSize = work->sendIpcReg && ncclShmem.comm.isNvlink ? (1 << 30) : u32fp8Decode(work->sendChunkSize_u32fp8);
     Primitives<T, RedOp, FanAsymmetric<0, 1>, 1, Proto, 1>
       prims(tid, tn, nullptr, &work->sendRank, work->sendAddr, nullptr,
             /*redOpArg(ignored)=*/0, group, 1, 1, nullptr,
@@ -31,7 +31,7 @@ struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
   template<typename Proto>
   __device__ void runRecv(int tid, int tn, int group, struct ncclDevWorkP2p* work) {
     size_t bytes = work->recvBytes;
-    int chunkSize = work->recvIpcReg ? (1 << 30) : u32fp8Decode(work->recvChunkSize_u32fp8);
+    int chunkSize = work->recvIpcReg && ncclShmem.comm.isNvlink ? (1 << 30) : u32fp8Decode(work->recvChunkSize_u32fp8);
     Primitives<T, RedOp, FanAsymmetric<1, 0>, 1, Proto, 1>
       prims(tid, tn, &work->recvRank, nullptr, nullptr, work->recvAddr,
             /*redOpArg(ignored)=*/0, group, 1, 1, nullptr,
