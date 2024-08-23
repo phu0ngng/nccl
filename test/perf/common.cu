@@ -1457,7 +1457,7 @@ testResult_t run() {
   /* Now we support 4 split pattern when split_comm is enabled:
    * (1) keep all ranks in a group but in reversed order;
    * (2) split ranks into 2 groups based odd and even rank;
-   * (3) split ranks into 2 groups with 3:1 ratio.
+   * (3) split ranks into 1ppn on non-MNNVL platform.
    * (4) keep all ranks in a group but in reversed order (duplicate)
    * If NCCL_TESTS_SPLIT_MASK is set, we only split based on split mask. */
   if (splitMaskEnv == NULL && split_comm == 2) {
@@ -1580,6 +1580,8 @@ testResult_t run() {
       }
       NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
     } else if (split_comm == 2) {
+      int nDevs;
+      CUDACHECK(cudaGetDeviceCount(&nDevs));
       /* create split comm with predefined split pattern. */
       for (int splitCase = 0; splitCase < commNum; ++splitCase) {
         switch (splitCase) {
@@ -1604,11 +1606,11 @@ testResult_t run() {
             break;
           }
           case 2: {
-            /* 3:1 split */
+            /* 1ppn split */
             NCCLCHECK(ncclGroupStart());
             for (int i = 0; i < nGpus * nThreads; ++i) {
               int myrank = proc * nThreads * nGpus + i;
-              NCCLCHECK(ncclCommSplit(globalComms[i], 4 * (myrank + 1) <= 3 * nranks, myrank, &comms[splitCase][i], &config));
+              NCCLCHECK(ncclCommSplit(globalComms[i], myrank % nDevs, myrank, &comms[splitCase][i], &config));
             }
             NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
             break;
