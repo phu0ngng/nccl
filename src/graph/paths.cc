@@ -273,8 +273,13 @@ ncclResult_t ncclTopoCheckP2p(struct ncclTopoSystem* system, int rank1, int rank
     }
   }
 
-  // By default don't use P2P across CPU Host Bridges
+  // By default don't use P2P across CPU Host Bridges and further apart
   int p2pLevel = PATH_PXB;
+
+  int arch, vendor, model;
+  NCCLCHECK(ncclTopoCpuType(system, &arch, &vendor, &model));
+  // Allow P2P between pairs of GPUs on AMD systems
+  if ((arch == NCCL_TOPO_CPU_ARCH_X86 && vendor == NCCL_TOPO_CPU_VENDOR_AMD) && system->nodes[GPU].count <= 2) p2pLevel = PATH_SYS;
 
   // User override
   if (ncclTopoUserP2pLevel == -1)
