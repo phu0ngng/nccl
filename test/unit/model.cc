@@ -194,7 +194,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.collNetSupport = collNetSupport;
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
   comm.minCompCap = compCap;
-  struct ncclTopoGraph* graphs[6] = { &treeGraph, &ringGraph, &cNetGraph, &cNetGraph, &nvlsGraph, &nvlsGraph };
+  struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { &treeGraph, &ringGraph, &cNetGraph, &cNetGraph, &nvlsGraph, &nvlsGraph, &treeGraph };
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, graphs));
 
   if (!compactMode) {
