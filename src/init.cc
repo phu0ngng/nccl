@@ -733,7 +733,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   struct ncclTopoGraph* collNetChainGraph = &comm->graphs[NCCL_ALGO_COLLNET_CHAIN];
   struct ncclTopoGraph* collNetDirectGraph = &comm->graphs[NCCL_ALGO_COLLNET_DIRECT];
   struct ncclTopoGraph* nvlsGraph = &comm->graphs[NCCL_ALGO_NVLS];
-  struct ncclTopoGraph* graphs[] = { treeGraph, ringGraph, collNetDirectGraph, collNetChainGraph, nvlsGraph, nvlsGraph, treeGraph };
+  struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { treeGraph, ringGraph, collNetDirectGraph, collNetChainGraph, nvlsGraph, nvlsGraph, treeGraph };
 
   struct graphInfo {
     int pattern;
