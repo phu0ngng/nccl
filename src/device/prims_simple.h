@@ -661,6 +661,7 @@ private:
     // coverity[negative_returns:FALSE] => coverity thinks that index could be -1 but that's not actually the case
     // coverity[var_deref_model] => coverity thinks work can dereferenced if NULL but this is not the case
     setDataPtrs(inputBuf, outputBuf, redOpArg, (struct ncclDevWorkCollReg*)e, (uint8_t)(e ? e->regUsed : ipcReg), peer);
+    // coverity[uninit_member] => coverity thinks fan.n is not initialized
   }
 
   __device__ ~Primitives() {
