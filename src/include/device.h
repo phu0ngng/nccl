@@ -187,8 +187,6 @@ struct ncclNvls {
   int down;
   int treeUp;
   int treeDown[NCCL_MAX_NVLS_TREE_ARITY];
-  int node;
-  int nNodes;
 };
 
 #if __CUDA_ARCH__ >= 900

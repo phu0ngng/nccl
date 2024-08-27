@@ -259,8 +259,6 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, int nHead
     channel->nvls.out = -1;       // NVLS+SHARP not yet implemented.
     channel->nvls.headRank = headRank;
     channel->nvls.treeUp = channel->nvls.treeDown[0] = channel->nvls.treeDown[1] = channel->nvls.treeDown[2] = -1;
-    channel->nvls.node = comm->node;
-    channel->nvls.nNodes = comm->nNodes;
     if (comm->collNetSupport && channel->nvls.headRank != -1) channel->nvls.out = comm->nRanks;
   }
   if (comm->nNodes == 1) return ncclSuccess;

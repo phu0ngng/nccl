@@ -141,9 +141,11 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, size_t size, void* ucptr, 
 #include "channel.h"
 
 #define NVLS_MEM_ALIGN_SIZE (1 << 21)
+#define NVLS_NCHANNELS_SM90 16
+#define NVLS_NCHANNELS_SM100 32
 
 NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
-NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", 16);
+NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", -2);
 NCCL_PARAM(NvlsChunkSize, "NVLS_CHUNKSIZE", 128*1024);
 
 ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
@@ -170,7 +172,11 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
   }
 
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d", comm->nvlsSupport ? "" : "not ", dev);
-  if (comm->nvlsSupport == 1) comm->nvlsChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (int)ncclParamNvlsChannels()));
+  if (comm->nvlsSupport) {
+    int channels = (comm->compCap >= 100) ? NVLS_NCHANNELS_SM100 : NVLS_NCHANNELS_SM90;
+    if (ncclParamNvlsChannels() >= 0) channels = ncclParamNvlsChannels();
+    comm->nvlsChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, channels));
+  }
   return ncclSuccess;
 }
 
