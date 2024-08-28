@@ -1540,12 +1540,18 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
 
   minCTAsEnv = ncclParamMinCTAs();
   if (minCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
-    comm->config.minCTAs = minCTAsEnv;
+    if (minCTAsEnv <= 0)
+      WARN("NCCL_MIN_CTAS %d is too low, leaving it set at %d", minCTAsEnv, comm->config.minCTAs);
+    else
+      comm->config.minCTAs = minCTAsEnv;
   }
 
   maxCTAsEnv = ncclParamMaxCTAs();
   if (maxCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
-    comm->config.maxCTAs = maxCTAsEnv;
+    if (maxCTAsEnv <= 0)
+      WARN("NCCL_MAX_CTAS %d is too low, leaving it set at %d", maxCTAsEnv, comm->config.maxCTAs);
+    else
+      comm->config.maxCTAs = maxCTAsEnv;
   }
 
   envNetName = ncclGetEnv("NCCL_NET");
