@@ -54,7 +54,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
 // Latencies in us, Bandwidths in GB/s
 // Tree { LL, LL128, Simple } , Ring { LL, LL128, Simple }
 static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = {
-       {  6.8, 14.0,    0 }, {  6.6, 14.0,  8.4 },  // Tree, Ring
+       {  6.8, 14.0,  8.4 }, {  6.6, 14.0,  8.4 },  // Tree, Ring
        {    0,    0,    0 }, {    0,    0,    0 },  // Collnet Direct, Chain
        {    0,    0,    0 }, {    0,    0,    0 }}; // NVLS, NVLS Tree
 
