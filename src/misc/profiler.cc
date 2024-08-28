@@ -345,6 +345,11 @@ ncclResult_t ncclProfilerStopTaskEvents(struct ncclKernelPlan* plan) {
   return ncclSuccess;
 }
 
+// Bellow we set the proxy descriptor step number to DIVUP(step, args->sliceSteps).
+// The reason is that for some ncclOp (e.g. AllReduce) one network transfer is
+// made of sliceSteps steps rather than one step. In the profiler we are still
+// interested in whole network transfers though, so we account for this when
+// computing the actual network step number.
 ncclResult_t ncclProfilerStartSendProxyOpEvent(int s, struct ncclProxyArgs* args) {
   TIME_START_EVENT(proxyOpStart);
   struct ncclProxySubArgs* sub = &args->subs[s];
@@ -357,8 +362,8 @@ ncclResult_t ncclProfilerStartSendProxyOpEvent(int s, struct ncclProxyArgs* args
       eDescr.proxyOp.pid = sub->pid;
       eDescr.proxyOp.channelId = sub->channelId;
       eDescr.proxyOp.peer = sub->peer;
-      eDescr.proxyOp.nSteps = sub->nsteps;
-      eDescr.proxyOp.chunkSize = args->chunkSize;
+      eDescr.proxyOp.nSteps = DIVUP(sub->nsteps, args->sliceSteps);
+      eDescr.proxyOp.chunkSize = args->chunkSize * args->sliceSteps;
       eDescr.proxyOp.isSend = 1;
       ncclProfiler->startEvent(sub->profilerContext, &sub->opEventHandle, &eDescr);
     }
@@ -379,8 +384,8 @@ ncclResult_t ncclProfilerStartRecvProxyOpEvent(int s, struct ncclProxyArgs* args
       eDescr.proxyOp.pid = sub->pid;
       eDescr.proxyOp.channelId = sub->channelId;
       eDescr.proxyOp.peer = sub->peer;
-      eDescr.proxyOp.nSteps = sub->nsteps;
-      eDescr.proxyOp.chunkSize = args->chunkSize;
+      eDescr.proxyOp.nSteps = DIVUP(sub->nsteps, args->sliceSteps);
+      eDescr.proxyOp.chunkSize = args->chunkSize * args->sliceSteps;
       eDescr.proxyOp.isSend = 0;
       ncclProfiler->startEvent(sub->profilerContext, &sub->opEventHandle, &eDescr);
     }
@@ -400,53 +405,50 @@ ncclResult_t ncclProfilerStopProxyOpEvent(int s, struct ncclProxyArgs* args) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProfilerStartSendProxyStepEvents(int s, struct ncclProxyArgs* args, uint64_t stepLo, uint64_t stepHi) {
+ncclResult_t ncclProfilerStartSendProxyStepEvent(int s, struct ncclProxyArgs* args, int stepId) {
   TIME_START_EVENT(proxyStepStart);
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     if (sub->opEventHandle && (sub->eActivationMask & ncclProfileProxyStep)) {
-      for (uint64_t step = stepLo; step < stepHi; step++) {
-        ncclProfilerEventDescr_t eDescr = { 0 };
-        eDescr.type = ncclProfileProxyStep;
-        eDescr.parentObj = sub->opEventHandle;
-        eDescr.rank = sub->rank;
-        eDescr.proxyStep.step = step;
-        ncclProfiler->startEvent(sub->profilerContext, &sub->stepEventHandles[step%NCCL_STEPS], &eDescr);
-      }
+      int step_ = DIVUP(stepId, args->sliceSteps);
+      ncclProfilerEventDescr_t eDescr = { 0 };
+      eDescr.type = ncclProfileProxyStep;
+      eDescr.parentObj = sub->opEventHandle;
+      eDescr.rank = sub->rank;
+      eDescr.proxyStep.step = step_;
+      ncclProfiler->startEvent(sub->profilerContext, &sub->stepEventHandles[step_%NCCL_STEPS], &eDescr);
     }
   }
   TIME_STOP_EVENT(proxyStepStart);
   return ncclSuccess;
 }
 
-ncclResult_t ncclProfilerStartRecvProxyStepEvents(int s, struct ncclProxyArgs* args, uint64_t stepLo, uint64_t stepHi) {
+ncclResult_t ncclProfilerStartRecvProxyStepEvent(int s, struct ncclProxyArgs* args, int stepId) {
   TIME_START_EVENT(proxyStepStart);
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     if (sub->opEventHandle && (sub->eActivationMask & ncclProfileProxyStep)) {
-      for (uint64_t step = stepLo; step < stepHi; step++) {
-        ncclProfilerEventDescr_t eDescr = { 0 };
-        eDescr.type = ncclProfileProxyStep;
-        eDescr.parentObj = sub->opEventHandle;
-        eDescr.rank = sub->rank;
-        eDescr.proxyStep.step = step;
-        ncclProfiler->startEvent(sub->profilerContext, &sub->stepEventHandles[step%NCCL_STEPS], &eDescr);
-      }
+      int step_ = DIVUP(stepId, args->sliceSteps);
+      ncclProfilerEventDescr_t eDescr = { 0 };
+      eDescr.type = ncclProfileProxyStep;
+      eDescr.parentObj = sub->opEventHandle;
+      eDescr.rank = sub->rank;
+      eDescr.proxyStep.step = step_;
+      ncclProfiler->startEvent(sub->profilerContext, &sub->stepEventHandles[step_%NCCL_STEPS], &eDescr);
     }
   }
   TIME_STOP_EVENT(proxyStepStart);
   return ncclSuccess;
 }
 
-ncclResult_t ncclProfilerStopProxyStepEvents(int s, struct ncclProxyArgs* args, uint64_t stepLo, uint64_t stepHi) {
+ncclResult_t ncclProfilerStopProxyStepEvent(int s, struct ncclProxyArgs* args, int stepId) {
   TIME_START_EVENT(proxyStepStop);
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    for (uint64_t step = stepLo; step < stepHi; step++) {
-      if (sub->stepEventHandles[step%NCCL_STEPS]) {
-        ncclProfiler->stopEvent(sub->stepEventHandles[step%NCCL_STEPS]);
-        sub->stepEventHandles[step%NCCL_STEPS] = NULL;
-      }
+    int step_ = DIVUP(stepId, args->sliceSteps);
+    if (sub->stepEventHandles[step_%NCCL_STEPS]) {
+      ncclProfiler->stopEvent(sub->stepEventHandles[step_%NCCL_STEPS]);
+      sub->stepEventHandles[step_%NCCL_STEPS] = NULL;
     }
   }
   TIME_STOP_EVENT(proxyStepStop);
@@ -485,7 +487,7 @@ ncclResult_t ncclProfilerRecordProxyOpEventState(int s, struct ncclProxyArgs* ar
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0) && sub->opEventHandle) {
     ncclProfilerEventStateArgs_t a = { 0 };
-    a.proxyOp.steps = steps;
+    a.proxyOp.steps = DIVUP(steps, args->sliceSteps);
     a.proxyOp.transSize = transSize;
     ncclProfiler->recordEventState(sub->opEventHandle, eState, &a);
   }
@@ -493,14 +495,13 @@ ncclResult_t ncclProfilerRecordProxyOpEventState(int s, struct ncclProxyArgs* ar
   return ncclSuccess;
 }
 
-ncclResult_t ncclProfilerRecordProxyStepEventStates(int s, struct ncclProxyArgs* args, uint64_t stepLo, uint64_t stepHi, ncclProfilerEventState_t eState) {
+ncclResult_t ncclProfilerRecordProxyStepEventState(int s, struct ncclProxyArgs* args, int stepId, ncclProfilerEventState_t eState) {
   TIME_START_EVENT(proxyStepRecord);
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0) && sub->opEventHandle) {
-    for (uint64_t step = stepLo; step < stepHi; step++) {
-      if (sub->stepEventHandles[step%NCCL_STEPS]) {
-        ncclProfiler->recordEventState(sub->stepEventHandles[step%NCCL_STEPS], eState, 0);
-      }
+    int step_ = DIVUP(stepId, args->sliceSteps);
+    if (sub->stepEventHandles[step_%NCCL_STEPS]) {
+      ncclProfiler->recordEventState(sub->stepEventHandles[step_%NCCL_STEPS], eState, 0);
     }
   }
   TIME_STOP_EVENT(proxyStepRecord);
