@@ -110,7 +110,7 @@ static int ncclPatEnable(struct ncclComm* comm) {
   int patEnable = ncclParamPatEnable();
   if (patEnable != 2) return patEnable;
   if (comm->nNodes != comm->nRanks) return 0; // PAT only supports 1 GPU per node
-  if (comm->netDeviceType == NCCL_NET_DEVICE_HOST) return 0;   // PAT doesn't support net device offload
+  if (comm->netDeviceType != NCCL_NET_DEVICE_HOST) return 0;   // PAT doesn't support net device offload
   return 1;
 }
 
