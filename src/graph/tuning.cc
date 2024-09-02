@@ -54,7 +54,7 @@ ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* li
 // Latencies in us, Bandwidths in GB/s
 // Tree { LL, LL128, Simple } , Ring { LL, LL128, Simple }
 static const float baseLat  [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS] = {
-       {  6.8, 14.0,    0 }, {  6.6, 14.0,  8.4 },  // Tree, Ring
+       {  6.8, 14.0,  8.4 }, {  6.6, 14.0,  8.4 },  // Tree, Ring
        {    0,    0,    0 }, {    0,    0,    0 },  // Collnet Direct, Chain
        {    0,    0,    0 }, {    0,    0,    0 }}; // NVLS, NVLS Tree
 
@@ -105,7 +105,14 @@ static const double perChMaxTreeBws[3][3] = {
   /* Hopper (N1/N2/N4) */ {38.7, 41.4, 36.0},
 };
 
-NCCL_PARAM(PatDisable, "PAT_DISABLE", 0);
+NCCL_PARAM(PatEnable, "PAT_ENABLE", 2);
+static int ncclPatEnable(struct ncclComm* comm) {
+  int patEnable = ncclParamPatEnable();
+  if (patEnable != 2) return patEnable;
+  if (comm->nNodes != comm->nRanks) return 0; // PAT only supports 1 GPU per node
+  if (comm->netDeviceType != NCCL_NET_DEVICE_HOST) return 0;   // PAT doesn't support net device offload
+  return 1;
+}
 
 // Network post overhead in ns (1000 = 1 us)
 NCCL_PARAM(NetOverhead, "NET_OVERHEAD", -2);
@@ -169,7 +176,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
         if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && p != NCCL_PROTO_SIMPLE) continue;
         if ((coll == ncclFuncReduceScatter || coll == ncclFuncAllGather)
-            && a == NCCL_ALGO_PAT && (p != NCCL_PROTO_SIMPLE || ppn > 1 || ncclParamPatDisable() == 1)) continue;
+            && a == NCCL_ALGO_PAT && (p != NCCL_PROTO_SIMPLE || ncclPatEnable(comm) == 0)) continue;
         int collnet = (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) ? 1 : 0;
         float bw = nNodes <= 2 || collnet ? graphs[a]->bwIntra : graphs[a]->bwInter;
         if (a == NCCL_ALGO_NVLS) bw = std::min(graphs[a]->bwIntra, graphs[a]->bwInter);
