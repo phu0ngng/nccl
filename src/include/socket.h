@@ -19,7 +19,6 @@
 #define MAX_IF_NAME_SIZE 16
 #define SLEEP_INT            1000 // connection retry sleep interval in usec
 #define RETRY_REFUSED_TIMES   2e4 // connection refused retry times before reporting a timeout (20 sec)
-#define RETRY_TIMEDOUT_TIMES    3 // connection timed out retry times (each one can take 20s)
 #define SOCKET_NAME_MAXLEN (NI_MAXHOST+NI_MAXSERV)
 #define NCCL_SOCKET_MAGIC 0x564ab9f2fc4b9d6cULL
 
@@ -55,9 +54,8 @@ enum ncclSocketType {
 struct ncclSocket {
   int fd;
   int acceptFd;
-  int timedOutRetries;
+  int errorRetries;
   int refusedRetries;
-  int hostUnreachRetries;
   union ncclSocketAddress addr;
   volatile uint32_t* abortFlag;
   int asyncFlag;
