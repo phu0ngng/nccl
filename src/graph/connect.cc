@@ -457,6 +457,9 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   // Setup CollNet
   if (comm->collNetSupport == 1) {
     struct ncclTopoGraph* collNetChainGraph = graphs[NCCL_ALGO_COLLNET_CHAIN];
+    if (collNetChainGraph->nChannels < nChannels) {
+      copyChannels(comm, collNetChainGraph->nChannels, nChannels, ringPrev, ringNext);
+    }
     // Add more channels to saturate intra-node bandwidth, except the 1 PPN case
     if (collNetChainGraph->bwIntra > collNetChainGraph->bwInter && comm->nRanks > comm->nNodes) {
       int collNetNchannels = std::min(MAXCHANNELS, nChannels+nChannels/2);
