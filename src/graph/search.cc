@@ -951,7 +951,7 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   if (graph->pattern == NCCL_TOPO_PATTERN_NVLS || graph->pattern == NCCL_TOPO_PATTERN_COLLNET)
     graph->maxChannels = system->nodes[GPU].count;
 
-  if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
+  if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING && graph->pattern != NCCL_TOPO_PATTERN_COLLNET) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
   if (system->nodes[NET].count == 0 && graph->pattern == NCCL_TOPO_PATTERN_NVLS) {
     // Force intra-node NVLS algorithm to pull evenly from all GPUs.
