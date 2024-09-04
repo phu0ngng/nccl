@@ -421,10 +421,29 @@ static ncclResult_t socketTryAccept(struct ncclSocket* sock) {
   return ncclSuccess;
 }
 
+static ncclResult_t socketSetAsync(struct ncclSocket* sock) {
+  ncclResult_t ret = ncclSuccess;
+  /* Set socket as non-blocking if async or if we need to be able to abort */
+  if ((sock->asyncFlag || sock->abortFlag) && sock->fd >= 0) {
+    int flags;
+    SYSCHECKGOTO(flags = fcntl(sock->fd, F_GETFL), "fcntl", ret, clean);
+    SYSCHECKGOTO(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), "fcntl", ret, clean);
+  }
+  return ret;
+clean:
+  if (sock->fd != -1) {
+    (void)close(sock->fd);
+    sock->fd = -1;
+  }
+  return ret;
+}
+
 static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
   uint64_t magic;
   enum ncclSocketType type;
   int received = 0;
+  // once accepted, linux sockets do NOT inherit file status flags such as O_NONBLOCK (BSD ones do)
+  NCCLCHECK(socketSetAsync(sock));
   const int one = 1;
   SYSCHECK(setsockopt(sock->fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
 
@@ -454,22 +473,6 @@ static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
   return ncclSuccess;
 }
 
-static ncclResult_t socketSetAsync(struct ncclSocket* sock) {
-  ncclResult_t ret = ncclSuccess;
-  /* Set socket as non-blocking if async or if we need to be able to abort */
-  if ((sock->asyncFlag || sock->abortFlag) && sock->fd >= 0) {
-    int flags;
-    SYSCHECKGOTO(flags = fcntl(sock->fd, F_GETFL), "fcntl", ret, clean);
-    SYSCHECKGOTO(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), "fcntl", ret, clean);
-  }
-  return ret;
-clean:
-  if (sock->fd != -1) {
-    (void)close(sock->fd);
-    sock->fd = -1;
-  }
-  return ret;
-}
 static ncclResult_t socketResetFd(struct ncclSocket* sock) {
   ncclResult_t ret = ncclSuccess;
   int fd = -1;
