@@ -119,6 +119,8 @@ struct ncclProxySubArgs {
   // Profiler plugin
   int eActivationMask;
   int rank;
+  pid_t pid;
+  void* profilerContext;
   void* taskEventHandle;
   void* opEventHandle;
   void* stepEventHandles[NCCL_STEPS];
@@ -151,10 +153,6 @@ struct ncclProxyArgs {
   int sharedSize[NCCL_STEPS];
 
   int idle;
-
-  // Profiler plugin
-  pid_t pid;
-  void* profilerContext;
 
   // Element linking
   struct ncclProxyArgs* next;

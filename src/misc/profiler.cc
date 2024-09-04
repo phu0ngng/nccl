@@ -354,13 +354,13 @@ ncclResult_t ncclProfilerStartSendProxyOpEvent(int s, struct ncclProxyArgs* args
       eDescr.type = ncclProfileProxyOp;
       eDescr.parentObj = sub->taskEventHandle;
       eDescr.rank = sub->rank;
-      eDescr.proxyOp.pid = args->pid;
+      eDescr.proxyOp.pid = sub->pid;
       eDescr.proxyOp.channelId = sub->channelId;
       eDescr.proxyOp.peer = sub->peer;
       eDescr.proxyOp.nSteps = sub->nsteps;
       eDescr.proxyOp.chunkSize = args->chunkSize;
       eDescr.proxyOp.isSend = 1;
-      ncclProfiler->startEvent(args->profilerContext, &sub->opEventHandle, &eDescr);
+      ncclProfiler->startEvent(sub->profilerContext, &sub->opEventHandle, &eDescr);
     }
   }
   TIME_STOP_EVENT(proxyOpStart);
@@ -376,13 +376,13 @@ ncclResult_t ncclProfilerStartRecvProxyOpEvent(int s, struct ncclProxyArgs* args
       eDescr.type = ncclProfileProxyOp;
       eDescr.parentObj = sub->taskEventHandle;
       eDescr.rank = sub->rank;
-      eDescr.proxyOp.pid = args->pid;
+      eDescr.proxyOp.pid = sub->pid;
       eDescr.proxyOp.channelId = sub->channelId;
       eDescr.proxyOp.peer = sub->peer;
       eDescr.proxyOp.nSteps = sub->nsteps;
       eDescr.proxyOp.chunkSize = args->chunkSize;
       eDescr.proxyOp.isSend = 0;
-      ncclProfiler->startEvent(args->profilerContext, &sub->opEventHandle, &eDescr);
+      ncclProfiler->startEvent(sub->profilerContext, &sub->opEventHandle, &eDescr);
     }
   }
   TIME_STOP_EVENT(proxyOpStart);
@@ -411,7 +411,7 @@ ncclResult_t ncclProfilerStartSendProxyStepEvents(int s, struct ncclProxyArgs* a
         eDescr.parentObj = sub->opEventHandle;
         eDescr.rank = sub->rank;
         eDescr.proxyStep.step = step;
-        ncclProfiler->startEvent(args->profilerContext, &sub->stepEventHandles[step%NCCL_STEPS], &eDescr);
+        ncclProfiler->startEvent(sub->profilerContext, &sub->stepEventHandles[step%NCCL_STEPS], &eDescr);
       }
     }
   }
@@ -430,7 +430,7 @@ ncclResult_t ncclProfilerStartRecvProxyStepEvents(int s, struct ncclProxyArgs* a
         eDescr.parentObj = sub->opEventHandle;
         eDescr.rank = sub->rank;
         eDescr.proxyStep.step = step;
-        ncclProfiler->startEvent(args->profilerContext, &sub->stepEventHandles[step%NCCL_STEPS], &eDescr);
+        ncclProfiler->startEvent(sub->profilerContext, &sub->stepEventHandles[step%NCCL_STEPS], &eDescr);
       }
     }
   }
