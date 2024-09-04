@@ -3,35 +3,34 @@
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
-      <gpu dev="1"/>
+      <gpu dev="0x1"/>
       <net dev="0"/>
     </channel>
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
-      <gpu dev="1"/>
+      <gpu dev="0x1"/>
       <net dev="0"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="2" speedintra="48" speedinter="40" latencyinter="0" typeintra="NVL" typeinter="PHB" samechannels="0">
+  <graph id="1" pattern="3" crossnic="0" nchannels="2" speedintra="96" speedinter="40" latencyinter="0" typeintra="NVL" typeinter="PHB" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
-      <gpu dev="1"/>
+      <gpu dev="0x1"/>
       <net dev="0"/>
     </channel>
     <channel>
-      <net dev="2"/>
-      <gpu dev="1"/>
+      <net dev="0x2"/>
+      <gpu dev="0x1"/>
       <gpu dev="0"/>
-      <net dev="2"/>
+      <net dev="0x2"/>
     </channel>
   </graph>
   <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="1"/>
   <graph id="3" pattern="5" crossnic="0" nchannels="1" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="PXB" samechannels="0">
     <channel>
       <net dev="0"/>
-      <gpu dev="0"/>
       <gpu dev="0"/>
       <net dev="0"/>
     </channel>
