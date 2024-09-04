@@ -454,6 +454,38 @@ static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
   return ncclSuccess;
 }
 
+static ncclResult_t socketSetAsync(struct ncclSocket* sock) {
+  ncclResult_t ret = ncclSuccess;
+  /* Set socket as non-blocking if async or if we need to be able to abort */
+  if ((sock->asyncFlag || sock->abortFlag) && sock->fd >= 0) {
+    int flags;
+    SYSCHECKGOTO(flags = fcntl(sock->fd, F_GETFL), "fcntl", ret, clean);
+    SYSCHECKGOTO(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), "fcntl", ret, clean);
+  }
+  return ret;
+clean:
+  if (sock->fd != -1) {
+    (void)close(sock->fd);
+    sock->fd = -1;
+  }
+  return ret;
+}
+static ncclResult_t socketResetFd(struct ncclSocket* sock) {
+  ncclResult_t ret = ncclSuccess;
+  int fd = -1;
+  SYSCHECK(fd = socket(sock->addr.sa.sa_family, SOCK_STREAM, 0), "socket");
+  /* if the sock->fd already exists, reuse the fd number and close the old fd*/
+  if (sock->fd != -1) {
+    SYSCHECKGOTO(sock->fd = dup2(fd, sock->fd), "dup2", ret, clean);
+  } else {
+    sock->fd = fd;
+  }
+  NCCLCHECK(socketSetAsync(sock)); // in case of error, sock->fd is closed
+  return ret;
+clean:
+  if (fd != -1) (void)close(fd);
+  return ret;
+}
 static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
   /* blocking/non-blocking connect() is determined by asyncFlag. */
   int ret = connect(sock->fd, &sock->addr.sa, sock->salen);
@@ -470,8 +502,10 @@ static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
       WARN("socketStartConnect: exceeded refused retries (%d)", sock->refusedRetries);
       return ncclRemoteError;
     }
-    usleep(SLEEP_INT);
     if (sock->refusedRetries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
+    usleep(SLEEP_INT);
+    /* in case of failure in connect, socket state is unspecified */
+    NCCLCHECK(socketResetFd(sock));
     return ncclSuccess;
   } else if (errno == ETIMEDOUT || errno == EHOSTUNREACH) {
     if (++sock->errorRetries == ncclParamRetryCnt()) {
@@ -480,6 +514,8 @@ static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
       return ncclRemoteError;
     }
     usleep(SLEEP_INT);
+    /* in case of failure in connect, socket state is unspecified */
+    NCCLCHECK(socketResetFd(sock));
     return ncclSuccess;
   } else {
     char line[SOCKET_NAME_MAXLEN+1];
@@ -522,6 +558,8 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
     }
     if (sock->refusedRetries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
     usleep(SLEEP_INT);
+    /* in case of failure in connect, socket state is unspecified */
+    NCCLCHECK(socketResetFd(sock));
     sock->state = ncclSocketStateConnecting;
   } else if (ret == ETIMEDOUT || ret == EHOSTUNREACH) {
     if (++sock->errorRetries == ncclParamRetryCnt()) {
@@ -530,6 +568,8 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
       return ncclRemoteError;
     }
     usleep(SLEEP_INT);
+    /* in case of failure in connect, socket state is unspecified */
+    NCCLCHECK(socketResetFd(sock));
     sock->state = ncclSocketStateConnecting;
   } else if (ret != EINPROGRESS) {
     sock->state = ncclSocketStateError;
@@ -720,36 +760,15 @@ ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* ad
       WARN("ncclSocketInit: connecting to address %s with family %d is neither AF_INET(%d) nor AF_INET6(%d)",
           ncclSocketToString(&sock->addr, line), family, AF_INET, AF_INET6);
       ret = ncclInternalError;
-      goto fail;
+      goto exit;
     }
     sock->salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
-
-    /* Connect to a hostname / port */
-    sock->fd = socket(family, SOCK_STREAM, 0);
-    if (sock->fd == -1) {
-      WARN("ncclSocketInit: Socket creation failed : %s", strerror(errno));
-      ret = ncclSystemError;
-      goto fail;
-    }
+    NCCLCHECKGOTO(socketResetFd(sock), ret, exit);
   } else {
     memset(&sock->addr, 0, sizeof(union ncclSocketAddress));
   }
-
-  /* Set socket as non-blocking if async or if we need to be able to abort */
-  if ((sock->asyncFlag || sock->abortFlag) && sock->fd >= 0) {
-    int flags;
-    SYSCHECKGOTO(flags = fcntl(sock->fd, F_GETFL), "fcntl", ret, fail);
-    SYSCHECKGOTO(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), "fcntl", ret, fail);
-  }
-
 exit:
   return ret;
-fail:
-  if (sock->fd != -1) {
-    close(sock->fd);
-    sock->fd = -1;
-  }
-  goto exit;
 }
 
 ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
