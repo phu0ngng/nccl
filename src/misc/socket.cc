@@ -422,6 +422,7 @@ static ncclResult_t socketTryAccept(struct ncclSocket* sock) {
       WARN("socketTryAccept: exceeded error retry count (%d), %s", sock->errorRetries, strerror(errno));
       return ncclSystemError;
     }
+    INFO(NCCL_ALL, "Call to accept returned %s, retrying", strerror(errno));
   } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
     WARN("socketTryAccept: Accept failed: %s", strerror(errno));
     return ncclSystemError;
@@ -522,6 +523,7 @@ static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
       WARN("socketStartConnect: exceeded error retry count (%d)", sock->errorRetries);
       return ncclRemoteError;
     }
+    INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
     usleep(SLEEP_INT);
     /* in case of failure in connect, socket state is unspecified */
     NCCLCHECK(socketResetFd(sock));
@@ -576,6 +578,7 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
       WARN("socketPollConnect: exceeded error retry count (%d)", sock->errorRetries);
       return ncclRemoteError;
     }
+    INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
     usleep(SLEEP_INT);
     /* in case of failure in connect, socket state is unspecified */
     NCCLCHECK(socketResetFd(sock));
