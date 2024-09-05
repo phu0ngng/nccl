@@ -114,7 +114,7 @@ static int nIdsUser = NCCL_CONFIG_UNDEF_INT; // number of ncclUniqueIds created
 static char* replay_file = NULL;
 
 static FILE* dump_file = NULL;
-static double dump_values[30]; // 8 to 4G
+static double dump_values[32]; // 8 to 16G
 
 enum output_file_type_t {
   JSON_FILE_OUTPUT,
@@ -790,8 +790,8 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   if (dump_file) {
     /* only dump first split and communicator */
     size_t nBytes = max(args->sendBytes[0][0], args->expectedBytes[0][0]);
-    // Dump 8B to 4G to file.
-    for (int p=0; p<30; p++) if (nBytes == (8ULL<<p)) {
+    // Dump 8B to 16G to file.
+    for (int p=0; p<32; p++) if (nBytes == (8ULL<<p)) {
       if (dump_values[p] == 0.0) {
         dump_values[p] = timeUsec;
       } else {
@@ -1841,7 +1841,7 @@ testResult_t run() {
 #endif
 
   if (dump_file) {
-    for (int p=0; p<30; p++) {
+    for (int p=0; p<32; p++) {
       fprintf(dump_file, "%.1f\n", dump_values[p]);
     }
     fclose(dump_file);
