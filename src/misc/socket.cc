@@ -430,20 +430,13 @@ static ncclResult_t socketTryAccept(struct ncclSocket* sock) {
 }
 
 static ncclResult_t socketSetAsync(struct ncclSocket* sock) {
-  ncclResult_t ret = ncclSuccess;
   /* Set socket as non-blocking if async or if we need to be able to abort */
   if ((sock->asyncFlag || sock->abortFlag) && sock->fd >= 0) {
     int flags;
-    SYSCHECKGOTO(flags = fcntl(sock->fd, F_GETFL), "fcntl", ret, clean);
-    SYSCHECKGOTO(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), "fcntl", ret, clean);
+    SYSCHECK(flags = fcntl(sock->fd, F_GETFL), "fcntl");
+    SYSCHECK(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
   }
-  return ret;
-clean:
-  if (sock->fd != -1) {
-    (void)close(sock->fd);
-    sock->fd = -1;
-  }
-  return ret;
+  return ncclSuccess;
 }
 
 static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
@@ -484,18 +477,23 @@ static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
 static ncclResult_t socketResetFd(struct ncclSocket* sock) {
   ncclResult_t ret = ncclSuccess;
   int fd = -1;
-  SYSCHECK(fd = socket(sock->addr.sa.sa_family, SOCK_STREAM, 0), "socket");
-  /* if the sock->fd already exists, reuse the fd number and close the old fd*/
+  SYSCHECKGOTO(fd = socket(sock->addr.sa.sa_family, SOCK_STREAM, 0), "socket", ret, cleanup);
+  // if sock->fd is valid, close it and reuse its number
   if (sock->fd != -1) {
-    SYSCHECKGOTO(sock->fd = dup2(fd, sock->fd), "dup2", ret, clean);
+    SYSCHECKGOTO(dup2(fd, sock->fd), "dup2", ret, cleanup);
+    SYSCHECKGOTO(close(fd), "close", ret, cleanup);
   } else {
     sock->fd = fd;
   }
-  NCCLCHECK(socketSetAsync(sock)); // in case of error, sock->fd is closed
+  NCCLCHECKGOTO(socketSetAsync(sock), ret, exit);
+exit:
   return ret;
-clean:
-  if (fd != -1) (void)close(fd);
-  return ret;
+cleanup:
+  // cleanup fd, leave sock->fd untouched
+  if (fd != -1) {
+    (void)close(fd);
+  }
+  goto exit;
 }
 static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
   /* blocking/non-blocking connect() is determined by asyncFlag. */
@@ -774,12 +772,19 @@ ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* ad
       goto exit;
     }
     sock->salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
-    NCCLCHECKGOTO(socketResetFd(sock), ret, exit);
+    // in case of error, we close the fd before returning as it's unclear if the caller has to use ncclSocketClose for cleanup
+    NCCLCHECKGOTO(socketResetFd(sock), ret, fail);
   } else {
     memset(&sock->addr, 0, sizeof(union ncclSocketAddress));
   }
 exit:
   return ret;
+fail:
+  if (sock->fd != -1) {
+    close(sock->fd);
+    sock->fd = -1;
+  }
+  goto exit;
 }
 
 ncclResult_t ncclSocketProgress(int op, struct ncclSocket* sock, void* ptr, int size, int* offset) {
