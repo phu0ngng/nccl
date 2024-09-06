@@ -146,7 +146,7 @@ For more information, see section 12.7.34 of the InfiniBand specification Volume
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value used by NCCL is 18, i.e. just over 1 second (since 2.14; it was 14 in earlier versions).
+The default value used by NCCL is 20 (since 2.23; it was 18 since 2.14, and 14 before that).
 
 Values can be 1-31.
 
