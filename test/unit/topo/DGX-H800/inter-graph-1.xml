@@ -35,7 +35,7 @@
       <net dev="0"/>
     </channel>
   </graph>
-  <graph id="3" pattern="3" crossnic="0" nchannels="1" speedintra="96" speedinter="48" latencyinter="0" typeintra="LOC" typeinter="PXB" samechannels="0">
+  <graph id="3" pattern="3" crossnic="0" nchannels="1" speedintra="48" speedinter="48" latencyinter="0" typeintra="LOC" typeinter="PXB" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
