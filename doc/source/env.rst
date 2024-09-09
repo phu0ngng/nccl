@@ -66,18 +66,19 @@ NCCL_SOCKET_RETRY_CNT
 -----------------------------
 (since 2.24)
 
-The ``NCCL_SOCKET_RETRY_CNT`` variable specifies the number of times NCCL retries to establish a socket connection after a ``ETIMEDOUT``, ``ECONNREFUSED``, or ``EHOSTUNREACH`` error.
+The ``NCCL_SOCKET_RETRY_CNT`` variable specifies the number of times NCCL retries to establish a socket connection after an ``ETIMEDOUT``, ``ECONNREFUSED``, or ``EHOSTUNREACH`` error.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is 20, any positive value is valid.
+The default value is 34, any positive value is valid.
 
-NCCL_SOCKET_RETRY_TIMEOUT
+NCCL_SOCKET_RETRY_SLEEP_MSEC
 -----------------------------
 (since 2.24)
 
-The ``NCCL_SOCKET_RETRY_TIMEOUT`` variable specifies the number of milliseconds NCCL waits before retrying to establish a socket connection after the first ``ETIMEDOUT``, ``ECONNREFUSED``, or ``EHOSTUNREACH`` error.
-For subsequent errors, the waiting time scales with the number of errors. The total time will therefore be (N+1) * N/2 * ``NCCL_SOCKET_RETRY_TIMEOUT``, where N is given by ``NCCL_SOCKET_RETRY_CNT``.
+The ``NCCL_SOCKET_RETRY_SLEEP_MSEC`` variable specifies the number of milliseconds NCCL waits before retrying to establish a socket connection after the first ``ETIMEDOUT``, ``ECONNREFUSED``, or ``EHOSTUNREACH`` error.
+For subsequent errors, the waiting time scales linearly with the error count. The total time will therefore be (N+1) * N/2 * ``NCCL_SOCKET_RETRY_SLEEP_MSEC``, where N is given by ``NCCL_SOCKET_RETRY_CNT``.
+With the default values of ``NCCL_SOCKET_RETRY_CNT`` and ``NCCL_SOCKET_RETRY_SLEEP_MSEC``, the total retry time will be approx. 60 seconds.
 
 Values accepted
 ^^^^^^^^^^^^^^^

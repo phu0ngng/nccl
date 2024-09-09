@@ -12,9 +12,10 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include "param.h"
+#include <time.h>
 
-NCCL_PARAM(RetryCnt, "SOCKET_RETRY_CNT", 20);
-NCCL_PARAM(RetryTimeOut, "SOCKET_RETRY_TIMEOUT", 100);
+NCCL_PARAM(RetryCnt, "SOCKET_RETRY_CNT", 34);
+NCCL_PARAM(RetryTimeOut, "SOCKET_RETRY_SLEEP_MSEC", 100);
 static void msleep(unsigned int time_msec) {
   const long c_1e6 = 1e6;
   struct timespec tv = (struct timespec){
@@ -532,7 +533,7 @@ static ncclResult_t socketConnectCheck(struct ncclSocket* sock, int errCode, con
 static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
   /* blocking/non-blocking connect() is determined by asyncFlag. */
   int ret = connect(sock->fd, &sock->addr.sa, sock->salen);
-  return socketConnectCheck(sock, (ret == 0) ? ret : errno, __func__);
+  return socketConnectCheck(sock, (ret == -1) ? errno : 0, __func__);
 }
 
 static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
