@@ -452,3 +452,7 @@ ncclResult_t ncclProfilerAddPidToProxyOp(struct ncclProxyOp* op) {
   op->pid = pid;
   return ncclSuccess;
 }
+
+bool ncclProfilerNeedsProxy(struct ncclProxyOp* op) {
+  return true;
+}

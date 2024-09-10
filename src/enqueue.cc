@@ -478,6 +478,14 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   return ncclSuccess;
 }
 
+static ncclResult_t addProfilerProxyOpIfNeeded(struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclProxyOp* op) {
+  int tmp = op->pattern;
+  op->pattern = ncclPatternProfiler;
+  ncclResult_t ret = addProxyOpIfNeeded(comm, plan, op);
+  op->pattern = tmp;
+  return ret;
+}
+
 static ncclResult_t scheduleCollTasksToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclKernelPlanBudget* budget
   ) {
@@ -550,8 +558,12 @@ static ncclResult_t scheduleCollTasksToPlan(
         proxyOp.opCount = proxyOpId;
         proxyOp.task.coll = task;
         proxyOp.rank = comm->rank;
+        proxyOp.eActivationMask = task->eActivationMask;
+        proxyOp.workCounter = ++comm->profiler.workCounter[c];
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
+        // Set pattern to profiler to add a proxy profiler for kernel events
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOp));
+        NCCLCHECK(addProfilerProxyOpIfNeeded(comm, plan, &proxyOp));
       }
     } else { // not task->isCollnet
       int trafficPerByte = ncclFuncTrafficPerByte(task->func, comm->nRanks);
@@ -669,11 +681,14 @@ static ncclResult_t scheduleCollTasksToPlan(
           }
           proxyOp->ringAlgo->incRefCount();
         }
+        proxyOp->eActivationMask = task->eActivationMask;
+        proxyOp->workCounter = ++comm->profiler.workCounter[c];
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
         // Coverity reports "proxyOp->connection" as being possibly uninitialized.  It's hard to
         // determine if that's actually true but it's also not clear if that would be an issue.
         // coverity[uninit_use_in_call:FALSE]
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, proxyOp));
+        NCCLCHECK(addProfilerProxyOpIfNeeded(comm, plan, proxyOp));
       }
     }
 
@@ -888,6 +903,7 @@ static ncclResult_t addP2pToPlan(
     op->coll = p2pTasks[dir] ? p2pTasks[dir]->func : 0;
     op->task.p2p = p2pTasks[dir];
     op->rank = comm->rank;
+    op->eActivationMask = p2pTasks[dir] ? p2pTasks[dir]->eActivationMask : 0;
     // The following are modified per channel part in addWorkToChannels():
     // op->buffer, op->nbytes, op->nsteps = ...;
   }
@@ -898,7 +914,6 @@ static ncclResult_t addP2pToPlan(
     plan->channelMask |= uint64_t(1)<<channelId;
     // Add batch first.
     addWorkBatchToPlan(comm, plan, channelId, ncclDevWorkTypeP2p, ncclDevFuncId_P2p(), workOffset, p2pRound);
-    // Add proxy ops.
     for (int dir=0; dir < nProxyOps; dir++) {
       // Partition steps across channels.
       int nParts = dir ? work->nSendChannels : work->nRecvChannels;
@@ -935,9 +950,12 @@ static ncclResult_t addP2pToPlan(
         // equal one plus the batch index this p2p settled in.
         proxyOps[dir].channelId = channelId;
         proxyOps[dir].opCount = uint64_t(comm->planner.wipPlan.channels[channelId].nWorkBatchesP2p)<<1 | 1;
+        proxyOps[dir].workCounter = comm->profiler.workCounter[channelId]+1;
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOps[dir]));
+        NCCLCHECK(addProfilerProxyOpIfNeeded(comm, plan, &proxyOps[dir]));
       }
     }
+    comm->profiler.workCounter[channelId] += (proxyOps[0].nsteps || proxyOps[1].nsteps) ? 1 : 0;
   }
 
   return ncclSuccess;

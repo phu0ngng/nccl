@@ -17,6 +17,15 @@ struct ncclTaskP2p;
 struct ncclInfo;
 struct ncclComm;
 struct ncclProxyOp;
+struct ncclProxyConnector;
+
+struct ncclProfilerProxy {
+  uint64_t* workStarted/*[MAXCHANNELS]*/;
+  uint64_t* workCompleted/*[MAXCHANNELS]*/;
+  uint64_t workCounter[MAXCHANNELS]; // host work counter
+  struct ncclProxyConnector sendProxyConn[MAXCHANNELS];
+  struct ncclProxyConnector recvProxyConn[MAXCHANNELS];
+};
 
 // Plugin Init/Finalize Wrappers
 ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm);
@@ -51,5 +60,6 @@ ncclResult_t ncclProfilerRecordProxyCtrlEventState(void*eHandle, int appended, n
 
 // Profiler utility functions
 ncclResult_t ncclProfilerAddPidToProxyOp(struct ncclProxyOp* op);
+bool ncclProfilerNeedsProxy(struct ncclProxyOp* op);
 
 #endif

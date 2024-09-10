@@ -489,6 +489,14 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   comm->workFifoConsumedLeast = 0;
   tmpCommAndChans.comm.workConsumed = comm->workFifoConsumed;
 
+  // Alloc profiler counters for the kernel
+  NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->profiler.workStarted, MAXCHANNELS), ret, fail);
+  NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->profiler.workCompleted, MAXCHANNELS), ret, fail);
+  tmpCommAndChans.comm.workStarted = comm->profiler.workStarted;
+  tmpCommAndChans.comm.workCompleted = comm->profiler.workCompleted;
+  ncclCommPushCudaHostFree(comm, comm->profiler.workStarted);
+  ncclCommPushCudaHostFree(comm, comm->profiler.workCompleted);
+
   if (comm->collNetDenseToUserRank != nullptr) {
     NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.collNetDenseToUserRank, nRanks, comm->sharedRes->deviceStream.cudaStream), ret, fail);
     ncclCommPushCudaFree(comm, tmpCommAndChans.comm.collNetDenseToUserRank);
@@ -1201,6 +1209,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
       NCCLCHECKGOTO(ncclTransportP2pSetup(comm, NULL, 1), ret, fail);
     }
+  }
+
+  // Connect profiler transport
+  for (int c = 0; c < MAXCHANNELS; c++) {
+    NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_PROFILER, 0, comm->rank, &comm->profiler.sendProxyConn[c]), ret, fail);
+    NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &comm->profiler.sendProxyConn[c], ncclProxyMsgConnect, NULL, 0, NULL, 0), ret, fail);
+    NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_PROFILER, 0, comm->rank, &comm->profiler.recvProxyConn[c]), ret, fail);
+    NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &comm->profiler.recvProxyConn[c], ncclProxyMsgConnect, NULL, 0, NULL, 0), ret, fail);
   }
 
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);

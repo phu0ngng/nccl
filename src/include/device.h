@@ -375,6 +375,7 @@ struct alignas(16) ncclDevChannel {
   struct ncclDirect collnetDirect;
   struct ncclNvls nvls;
   uint32_t* workFifoDone; // Location of done counter, device writes index+1 of last work processed
+  uint64_t workCounter;
 };
 
 struct ncclDevComm {
@@ -397,6 +398,10 @@ struct ncclDevComm {
   // Channels, device side
   struct ncclDevChannel* channels/*[MAXCHANNELS]*/;
   int* rankToLocalRank;
+
+  // Profiler counters
+  uint64_t* workStarted/*[MAXCHANNELS]*/;
+  uint64_t* workCompleted/*[MAXCHANNELS]*/;
 };
 
 struct alignas(16) ncclDevCommAndChannels {
