@@ -27,6 +27,8 @@ struct ncclProfilerProxy {
   struct ncclProxyConnector recvProxyConn[MAXCHANNELS];
 };
 
+extern int ncclProfilerEventMask;
+
 // Plugin Init/Finalize Wrappers
 ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm);
 ncclResult_t ncclProfilerPluginFinalize(struct ncclComm* comm);

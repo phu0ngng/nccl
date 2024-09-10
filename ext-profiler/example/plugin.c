@@ -58,6 +58,7 @@ __hidden double gettime(void) {
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pid_t pid;
+static int* eActivationMaskPtr;
 
 __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) {
   pthread_mutex_lock(&lock);
@@ -65,7 +66,7 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) 
     // first thread initializes event mask, environment and detach pool
     const char* str;
     str = getenv("NCCL_PROFILE_EVENT_MASK");
-    __atomic_store_n(eActivationMask, str ? atoi(str) : defaultEActivationMask, __ATOMIC_RELAXED);
+    __atomic_store_n(eActivationMask, str ? atoi(str) : 0, __ATOMIC_RELAXED);
 
     str = getenv("NCCL_PROFILE_GROUP_POOL_SIZE");
     groupPoolSize = str ? atoi(str) : defaultGroupPoolSize;
@@ -99,6 +100,9 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) 
     startTime = gettime();
   }
   pthread_mutex_unlock(&lock);
+
+  // store pointer to activation mask globally
+  eActivationMaskPtr = eActivationMask;
 
   // pre-allocate memory for event object pools in dedicated profiler context
   struct context* ctx = (struct context *)calloc(1, sizeof(*ctx));
@@ -543,3 +547,17 @@ ncclProfiler_t ncclProfiler_v3 = {
   exampleProfilerRecordEventState,
   exampleProfilerFinalize,
 };
+
+int exampleProfilerStart(int eActivationMask) {
+  if (__atomic_load_n(&initialized, __ATOMIC_RELAXED)) {
+    __atomic_store_n(eActivationMaskPtr, eActivationMask, __ATOMIC_RELAXED);
+  }
+  return ncclSuccess;
+}
+
+int exampleProfilerStop(void) {
+  if (__atomic_load_n(&initialized, __ATOMIC_RELAXED)) {
+    __atomic_store_n(eActivationMaskPtr, 0, __ATOMIC_RELAXED);
+  }
+  return ncclSuccess;
+}
