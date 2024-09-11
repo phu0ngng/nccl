@@ -12,6 +12,18 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include "param.h"
+#include <time.h>
+
+NCCL_PARAM(RetryCnt, "SOCKET_RETRY_CNT", 34);
+NCCL_PARAM(RetryTimeOut, "SOCKET_RETRY_SLEEP_MSEC", 100);
+static void msleep(unsigned int time_msec) {
+  const long c_1e6 = 1e6;
+  struct timespec tv = (struct timespec){
+      .tv_sec = time_msec / 1000,
+      .tv_nsec = (time_msec % 1000) * c_1e6,
+  };
+  nanosleep(&tv, NULL);
+}
 
 static ncclResult_t socketProgressOpt(int op, struct ncclSocket* sock, void* ptr, int size, int* offset, int block, int* closed) {
   int bytes = 0;
@@ -412,9 +424,28 @@ static ncclResult_t socketTryAccept(struct ncclSocket* sock) {
   sock->fd = accept(sock->acceptFd, (struct sockaddr*)&sock->addr, &socklen);
   if (sock->fd != -1) {
     sock->state = ncclSocketStateAccepted;
+  } else if (errno == ENETDOWN || errno == EPROTO || errno == ENOPROTOOPT || errno == EHOSTDOWN ||
+             errno == ENONET || errno == EHOSTUNREACH || errno == EOPNOTSUPP || errno == ENETUNREACH) {
+    /* per accept's man page, for linux sockets, the following errors might be already pending errors
+     * and should be considered as EAGAIN. To avoid infinite loop in case of errors, we use the retry count*/
+    if (++sock->errorRetries == ncclParamRetryCnt()) {
+      WARN("socketTryAccept: exceeded error retry count (%d), %s", sock->errorRetries, strerror(errno));
+      return ncclSystemError;
+    }
+    INFO(NCCL_ALL, "Call to accept returned %s, retrying", strerror(errno));
   } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
     WARN("socketTryAccept: Accept failed: %s", strerror(errno));
     return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t socketSetAsync(struct ncclSocket* sock) {
+  /* Set socket as non-blocking if async or if we need to be able to abort */
+  if ((sock->asyncFlag || sock->abortFlag) && sock->fd >= 0) {
+    int flags;
+    SYSCHECK(flags = fcntl(sock->fd, F_GETFL), "fcntl");
+    SYSCHECK(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), "fcntl");
   }
   return ncclSuccess;
 }
@@ -423,6 +454,8 @@ static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
   uint64_t magic;
   enum ncclSocketType type;
   int received = 0;
+  // once accepted, linux sockets do NOT inherit file status flags such as O_NONBLOCK (BSD ones do)
+  NCCLCHECK(socketSetAsync(sock));
   const int one = 1;
   SYSCHECK(setsockopt(sock->fd, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof(int)), "setsockopt");
 
@@ -452,39 +485,55 @@ static ncclResult_t socketFinalizeAccept(struct ncclSocket* sock) {
   return ncclSuccess;
 }
 
-static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
-  /* blocking/non-blocking connect() is determined by asyncFlag. */
-  int ret = connect(sock->fd, &sock->addr.sa, sock->salen);
-
-  if (ret == 0) {
+static ncclResult_t socketResetFd(struct ncclSocket* sock) {
+  ncclResult_t ret = ncclSuccess;
+  int fd = -1;
+  SYSCHECKGOTO(fd = socket(sock->addr.sa.sa_family, SOCK_STREAM, 0), "socket", ret, cleanup);
+  // if sock->fd is valid, close it and reuse its number
+  if (sock->fd != -1) {
+    SYSCHECKGOTO(dup2(fd, sock->fd), "dup2", ret, cleanup);
+    SYSCHECKGOTO(close(fd), "close", ret, cleanup);
+  } else {
+    sock->fd = fd;
+  }
+  NCCLCHECKGOTO(socketSetAsync(sock), ret, exit);
+exit:
+  return ret;
+cleanup:
+  // cleanup fd, leave sock->fd untouched
+  if (fd != -1) {
+    (void)close(fd);
+  }
+  goto exit;
+}
+static ncclResult_t socketConnectCheck(struct ncclSocket* sock, int errCode, const char funcName[]) {
+  if (errCode == 0) {
     sock->state = ncclSocketStateConnected;
-    return ncclSuccess;
-  } else if (errno == EINPROGRESS) {
+  } else if (errCode == EINPROGRESS) {
     sock->state = ncclSocketStateConnectPolling;
-    return ncclSuccess;
-  } else if (errno == ECONNREFUSED) {
-    if (++sock->refusedRetries == RETRY_REFUSED_TIMES) {
+  } else if (errCode == ETIMEDOUT || errCode == EHOSTUNREACH || errCode == ECONNREFUSED) {
+    if (sock->errorRetries++ == ncclParamRetryCnt()) {
       sock->state = ncclSocketStateError;
-      WARN("socketStartConnect: exceeded retries (%d)", sock->refusedRetries);
+      WARN("%s: connect returned %s, exceeded error retry count (%d)", funcName, strerror(errCode), sock->errorRetries);
       return ncclRemoteError;
     }
-    usleep(SLEEP_INT);
-    if (sock->refusedRetries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
-    return ncclSuccess;
-  } else if (errno == ETIMEDOUT) {
-    if (++sock->timedOutRetries == RETRY_TIMEDOUT_TIMES) {
-      sock->state = ncclSocketStateError;
-      WARN("socketStartConnect: exceeded timeouts (%d)", sock->timedOutRetries);
-      return ncclRemoteError;
-    }
-    usleep(SLEEP_INT);
-    return ncclSuccess;
+    unsigned int sleepTime = sock->errorRetries * ncclParamRetryTimeOut();
+    INFO(NCCL_ALL, "%s: connect returned %s, retrying (%d/%ld) after sleep for %u msec", funcName, strerror(errCode), sock->errorRetries, ncclParamRetryCnt(), sleepTime);
+    msleep(sleepTime);
+    NCCLCHECK(socketResetFd(sock)); /* in case of failure in connect, socket state is unspecified */
+    sock->state = ncclSocketStateConnecting;
   } else {
     char line[SOCKET_NAME_MAXLEN+1];
     sock->state = ncclSocketStateError;
-    WARN("socketStartConnect: Connect to %s failed : %s", ncclSocketToString(&sock->addr, line), strerror(errno));
+    WARN("%s: Connect to %s failed : %s", funcName, ncclSocketToString(&sock->addr, line), strerror(errCode));
     return ncclSystemError;
   }
+  return ncclSuccess;
+}
+static ncclResult_t socketStartConnect(struct ncclSocket* sock) {
+  /* blocking/non-blocking connect() is determined by asyncFlag. */
+  int ret = connect(sock->fd, &sock->addr.sa, sock->salen);
+  return socketConnectCheck(sock, (ret == -1) ? errno : 0, __func__);
 }
 
 static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
@@ -509,33 +558,7 @@ static ncclResult_t socketPollConnect(struct ncclSocket* sock) {
 
   /* check socket status */
   SYSCHECK(getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, (void*)&ret, &rlen), "getsockopt");
-
-  if (ret == 0) {
-    sock->state = ncclSocketStateConnected;
-  } else if (ret == ECONNREFUSED) {
-    if (++sock->refusedRetries == RETRY_REFUSED_TIMES) {
-      sock->state = ncclSocketStateError;
-      WARN("socketPollConnect: exceeded retries (%d)", sock->refusedRetries);
-      return ncclRemoteError;
-    }
-    if (sock->refusedRetries % 1000 == 0) INFO(NCCL_ALL, "Call to connect returned %s, retrying", strerror(errno));
-    usleep(SLEEP_INT);
-    sock->state = ncclSocketStateConnecting;
-  } else if (ret == ETIMEDOUT) {
-    if (++sock->timedOutRetries == RETRY_TIMEDOUT_TIMES) {
-      sock->state = ncclSocketStateError;
-      WARN("socketPollConnect: exceeded timeouts (%d)", sock->timedOutRetries);
-      return ncclRemoteError;
-    }
-    usleep(SLEEP_INT);
-    sock->state = ncclSocketStateConnecting;
-  } else if (ret != EINPROGRESS) {
-    sock->state = ncclSocketStateError;
-    char line[SOCKET_NAME_MAXLEN+1];
-    WARN("socketPollConnect: Connect to %s returned %d(%s) errno %d(%s)", ncclSocketToString(&sock->addr, line), ret, strerror(ret), errno, strerror(errno));
-    return ncclSystemError;
-  }
-  return ncclSuccess;
+  return socketConnectCheck(sock, ret, __func__);
 }
 
 ncclResult_t ncclSocketPollConnect(struct ncclSocket* sock) {
@@ -698,8 +721,7 @@ ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* ad
   ncclResult_t ret = ncclSuccess;
 
   if (sock == NULL) goto exit;
-  sock->timedOutRetries = 0;
-  sock->refusedRetries = 0;
+  sock->errorRetries = 0;
   sock->abortFlag = abortFlag;
   sock->asyncFlag = asyncFlag;
   sock->state = ncclSocketStateInitialized;
@@ -718,28 +740,14 @@ ncclResult_t ncclSocketInit(struct ncclSocket* sock, union ncclSocketAddress* ad
       WARN("ncclSocketInit: connecting to address %s with family %d is neither AF_INET(%d) nor AF_INET6(%d)",
           ncclSocketToString(&sock->addr, line), family, AF_INET, AF_INET6);
       ret = ncclInternalError;
-      goto fail;
+      goto exit;
     }
     sock->salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
-
-    /* Connect to a hostname / port */
-    sock->fd = socket(family, SOCK_STREAM, 0);
-    if (sock->fd == -1) {
-      WARN("ncclSocketInit: Socket creation failed : %s", strerror(errno));
-      ret = ncclSystemError;
-      goto fail;
-    }
+    // in case of error, we close the fd before returning as it's unclear if the caller has to use ncclSocketClose for cleanup
+    NCCLCHECKGOTO(socketResetFd(sock), ret, fail);
   } else {
     memset(&sock->addr, 0, sizeof(union ncclSocketAddress));
   }
-
-  /* Set socket as non-blocking if async or if we need to be able to abort */
-  if ((sock->asyncFlag || sock->abortFlag) && sock->fd >= 0) {
-    int flags;
-    SYSCHECKGOTO(flags = fcntl(sock->fd, F_GETFL), "fcntl", ret, fail);
-    SYSCHECKGOTO(fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK), "fcntl", ret, fail);
-  }
-
 exit:
   return ret;
 fail:
