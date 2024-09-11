@@ -722,6 +722,16 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Enabled (1) by default on IB networks. Disabled (0) by default on RoCE networks. Set to 1 to force use of Adaptive Routing capable data transmission.
 
+NCCL_IB_ECE_ENABLE
+------------------
+(since 2.23)
+
+Enable the use of Enhanced Connection Establishment (ECE) on IB Verbs networks.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Enabled (1) by default. Set to 0 to disable use of ECE network capabilities.
+
 NCCL_MEM_SYNC_DOMAIN
 --------------------
 (since 2.16)
