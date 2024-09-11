@@ -600,6 +600,7 @@ NCCL_PARAM(StaggerRate, "UID_STAGGER_RATE", 7000);
 NCCL_PARAM(StaggerThreshold, "UID_STAGGER_THRESHOLD", 256);
 
 ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
+  ncclResult_t result = ncclSuccess;
   int rank = comm->rank;
   int nranks = comm->nRanks;
   // char nextPeerHandle[NCCL_NET_HANDLE_MAXSIZE];
@@ -697,23 +698,23 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
   // in case of failure, those resources will be free'd when calling bootstrapDestroy, so we can return immediatly
   NCCLCHECK(ncclCalloc(&state->peerProxyAddresses, nranks));
   NCCLCHECK(ncclCalloc(&proxySocket, 1));
-  NCCLCHECK(createListenSocket(comm, comm->magic, proxySocket, state->peerProxyAddresses + rank, ncclSocketTypeProxy));
+  NCCLCHECKGOTO(createListenSocket(comm, comm->magic, proxySocket, state->peerProxyAddresses + rank, ncclSocketTypeProxy), result, fail);
 
-  NCCLCHECK(ncclCalloc(&state->peerProxyAddressesUDS, nranks));
-  NCCLCHECK(getUDS(state->peerProxyAddressesUDS + rank));
+  NCCLCHECKGOTO(ncclCalloc(&state->peerProxyAddressesUDS, nranks), result, fail);
+  NCCLCHECKGOTO(getUDS(state->peerProxyAddressesUDS + rank), result, fail);
 
   // create a socket for others to reach out (P2P)
   union ncclSocketAddress peerSocketAddress;
-  NCCLCHECK(createListenSocket(comm, comm->magic, &STATE_LISTEN(state, peerSocket), &peerSocketAddress, ncclSocketTypeBootstrap));
-  NCCLCHECK(ncclCalloc(&state->peerP2pAddresses, nranks * sizeof(union ncclSocketAddress)));
+  NCCLCHECKGOTO(createListenSocket(comm, comm->magic, &STATE_LISTEN(state, peerSocket), &peerSocketAddress, ncclSocketTypeBootstrap), result, fail);
+  NCCLCHECKGOTO(ncclCalloc(&state->peerP2pAddresses, nranks * sizeof(union ncclSocketAddress)), result, fail);
   memcpy(state->peerP2pAddresses + rank, &peerSocketAddress, sizeof(union ncclSocketAddress));
 
   BOOTSTRAP_PROF_OPEN(timers[BOOTSTRAP_INIT_TIME_RING]);
-  NCCLCHECK(ringAllInfo(comm, state, state->peerP2pAddresses, state->peerProxyAddresses, state->peerProxyAddressesUDS));
+  NCCLCHECKGOTO(ringAllInfo(comm, state, state->peerP2pAddresses, state->peerProxyAddresses, state->peerProxyAddressesUDS), result, fail);
   BOOTSTRAP_PROF_CLOSE(timers[BOOTSTRAP_INIT_TIME_RING]);
 
   // Create the service proxy and get the UDS
-  NCCLCHECK(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses, state->peerProxyAddressesUDS));
+  NCCLCHECKGOTO(ncclProxyInit(comm, proxySocket, state->peerProxyAddresses, state->peerProxyAddressesUDS), result, fail);
 
   BOOTSTRAP_PROF_CLOSE(timers[BOOTSTRAP_INIT_TIME_TOTAL]);
   TRACE(NCCL_BOOTSTRAP, "rank %d nranks %d - DONE", rank, nranks);
@@ -723,8 +724,11 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
        timers[BOOTSTRAP_INIT_TIME_RECV] / 1e9,
        timers[BOOTSTRAP_INIT_TIME_RING] / 1e9,
        timers[BOOTSTRAP_INIT_TIME_DELAY] / 1e9);
-
-  return ncclSuccess;
+exit:
+  return result;
+fail:
+  free(proxySocket);
+  goto exit;
 }
 
 ncclResult_t bootstrapSplit(uint64_t magic, struct ncclComm* comm, struct ncclComm* parent, int color, int key, int* parentRanks) {

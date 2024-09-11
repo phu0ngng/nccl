@@ -137,6 +137,7 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
           nelem = min(chunkCount, channelCount - elemOffset);
           prims.gather(offset, nvls->nHeads * count, nelem, count, -1, 0);
         }
+        // coverity[overrun-call] => Coverity think prims.index can be greater than 1
       } else if (tid < tidEndBcast) {
         // Bcast through NVLS
         using Proto = ProtoSimple<1, 1, COLL_UNROLL, 0, 1>;
@@ -148,6 +149,7 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_SIMPL
           nelem = min(chunkCount, channelCount - elemOffset);
           prims.send(offset, nelem);
         }
+        // coverity[overrun-call] => Coverity think prims.index can be greater than 1
       }
     } else {
       /* direct allgather */

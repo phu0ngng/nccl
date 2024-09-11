@@ -1747,6 +1747,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
 exit:
   return ncclGroupErrCheck(res);
 fail:
+  if (job) ncclCommInitJobFree(job);
   if (comm) {
     free(comm->abortFlag);
     if (comm->abortFlagDev) (void)ncclCudaHostFree((void*)comm->abortFlagDev);
@@ -1844,7 +1845,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
 
 exit:
-  cudaSetDevice(oldDev);
+  (void)cudaSetDevice(oldDev);
   free(gpuFlags);
   return ret;
 fail:
@@ -2231,13 +2232,13 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
-  cudaSetDevice(oldDev);
+  (void)cudaSetDevice(oldDev);
   (void)ncclGroupErrCheck(res);
   NCCLCHECK(ncclGroupEndInternal());
   return res;
 fail:
   if (childComm) {
-    if (comm && !comm->config.splitShare) {
+    if (!comm->config.splitShare) {
       free(childComm->abortFlag);
       if (childComm->abortFlagDev) ncclCudaHostFree(childComm->abortFlagDev);
       free(childComm->abortFlagRefCount);

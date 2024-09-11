@@ -532,10 +532,10 @@ restart:
       int sendDataRank = (rank + nranks + s) % nranks;
       outIx = sendDataRank * count + offset;
       recvDim = s ? firstBitSet(s, nrPow2) : -1;
-      s -= (1<<recvDim);
       if (recvDim == -1) {
         recvOffset = -1;
       } else {
+        s -= (1<<recvDim);
         int foffset = (a*2*scale*aggDelta) >> (recvDim+1);
         recvOffset = (foffset%postFreq)*nelem;
         recvStepOffset = foffset / postFreq;

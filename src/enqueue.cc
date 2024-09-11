@@ -1346,37 +1346,41 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     break;
   case ncclDevWorkStorageTypePersistent:
     { ncclResult_t result = ncclSuccess;
+      struct uploadWork_cleanup_t* cleanup = nullptr;
       cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
       void* fifoBufDev = nullptr;
-      CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+      CUDACHECKGOTO(cudaThreadExchangeStreamCaptureMode(&mode), result, fail);
 
       // Acquire deviceStream to gain access to deviceStream.cudaStream. Since the
       // user's graph will be launched later, and it also acquires the deviceStream,
       // it will observe this upload.
-      NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->deviceStream), result, finish_scope);
+      NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->deviceStream), result, fail);
 
-      CUDACHECKGOTO(cudaMallocAsync(&fifoBufDev, workBytes, comm->memPool, comm->sharedRes->deviceStream.cudaStream), result, finish_scope);
+      CUDACHECKGOTO(cudaMallocAsync(&fifoBufDev, workBytes, comm->memPool, comm->sharedRes->deviceStream.cudaStream), result, fail);
       plan->workBufPersistent = fifoBufDev;
       plan->kernelArgs->workBuf = fifoBufDev;
 
-      CUDACHECKGOTO(cudaMemcpyAsync(fifoBufDev, fifoBufHost, workBytes, cudaMemcpyDefault, comm->sharedRes->deviceStream.cudaStream), result, finish_scope);
+      // coverity[uninit_use_in_call:FALSE] => fifoBufHost is never NULL
+      CUDACHECKGOTO(cudaMemcpyAsync(fifoBufDev, fifoBufHost, workBytes, cudaMemcpyDefault, comm->sharedRes->deviceStream.cudaStream), result, fail);
       cudaEvent_t memcpyDone;
-      CUDACHECKGOTO(cudaEventCreateWithFlags(&memcpyDone, cudaEventDisableTiming), result, finish_scope);
-      CUDACHECKGOTO(cudaEventRecord(memcpyDone, comm->sharedRes->deviceStream.cudaStream), result, finish_scope);
+      CUDACHECKGOTO(cudaEventCreateWithFlags(&memcpyDone, cudaEventDisableTiming), result, fail);
+      CUDACHECKGOTO(cudaEventRecord(memcpyDone, comm->sharedRes->deviceStream.cudaStream), result, fail);
 
-      struct uploadWork_cleanup_t* cleanup;
-      NCCLCHECK(ncclCalloc(&cleanup, 1));
+      NCCLCHECKGOTO(ncclCalloc(&cleanup, 1), result, fail);
       cleanup->base.fn = uploadWork_cleanup_fn;
       cleanup->base.event = memcpyDone;
       cleanup->hostBuf = fifoBufHost;
-      ncclIntruQueueEnqueue(&comm->eventCallbackQueue, &cleanup->base);
+      ncclIntruQueueEnqueue(&comm->eventCallbackQueue, (struct ncclCommEventCallback *)cleanup);
 
-      NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream), result, finish_scope);
-      NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm), result, finish_scope);
+      NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream), result, fail);
+      NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm), result, fail);
 
     finish_scope:
-      CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-      if (result != ncclSuccess) return result;
+      if (mode != cudaStreamCaptureModeRelaxed) (void)cudaThreadExchangeStreamCaptureMode(&mode);
+      return result;
+    fail:
+      if (!cleanup) free(fifoBufHost);
+      goto finish_scope;
     } break;
   default: break;
   }
