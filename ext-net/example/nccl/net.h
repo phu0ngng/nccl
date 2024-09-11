@@ -20,6 +20,7 @@
 // Maximum number of requests per comm object
 #define NCCL_NET_MAX_REQUESTS 32
 
+#include "net_v9.h"
 #include "net_v8.h"
 #include "net_v7.h"
 #include "net_v6.h"

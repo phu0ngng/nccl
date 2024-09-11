@@ -130,6 +130,13 @@ else
   echo "Skipping FT tests..."
 fi
 
+export NCCL_NET_MERGE_LEVEL=PHB
+for func in all_reduce alltoall; do
+  echo "=============================== $func NIC Fusion (PHB) - $(date +\"%T\") =========================="
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NIC Fusion (PHB): export NCCL_NET_MERGE_LEVEL=PHB; ${func}_perf $range $opts")
+done
+
 for str in "${failure_names[@]}"
 do
   echo "Failed Step: $str"

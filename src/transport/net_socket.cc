@@ -632,5 +632,6 @@ ncclNet_t ncclNetSocket = {
   ncclNetSocketClose,
   ncclNetSocketCloseListen,
   NULL /* getDeviceMr */,
-  NULL /* irecvConsumed */
+  NULL /* irecvConsumed */,
+  NULL /* mergeDevices */
 };

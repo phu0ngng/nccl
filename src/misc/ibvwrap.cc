@@ -53,7 +53,7 @@ ncclResult_t wrap_ibv_symbols(void) {
   } \
   int ret = container.call; \
   if (ret == ENOTSUP || ret == EOPNOTSUPP) { \
-    INFO(NCCL_NET, "Call to " name " failed with error %s errno %d", strerror(ret), ret); \
+    INFO(NCCL_NET, "Call to " name " not supported"); \
     *supported = 0; \
     return ncclSuccess; \
   } else if (ret != success_retval) { \

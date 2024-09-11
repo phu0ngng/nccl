@@ -14,10 +14,9 @@ int max_requests = NCCL_NET_MAX_REQUESTS;
 
 __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) { return ncclSuccess; }
 __hidden ncclResult_t pluginDevices(int* ndev) { *ndev = 0; return ncclSuccess; }
-
 __hidden ncclResult_t pluginPciPath(int dev, char** path) { return ncclInternalError; }
 __hidden ncclResult_t pluginPtrSupport(int dev, int* supportedTypes) { return ncclInternalError; }
-__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v8_t* props) {
+__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v9_t* props) {
   // Below are default values, if unsure don't change.
 
   props->name = "Example";
@@ -42,8 +41,11 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v8_t* props
   // Coupling with NCCL network device-side code.
   props->netDeviceType = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
+  props->vProps.ndevs = 1;
+  props->vProps.devs[0] = dev;
   return ncclInternalError;
 }
+
 __hidden ncclResult_t pluginListen(int dev, void* handle, void** listenComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_v8_t** sendDevComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_v8_t** recvDevComm) { return ncclInternalError; }
@@ -59,12 +61,66 @@ __hidden ncclResult_t pluginCloseRecv(void* recvComm) { return ncclInternalError
 __hidden ncclResult_t pluginCloseListen(void* listenComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) { return ncclInternalError; }
 __hidden ncclResult_t pluginGetDeviceMr(void* comm, void* mhandle, void** dptr_mhandle) { return ncclInternalError; }
+__hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* props) { return ncclInternalError; }
+
+#define PLUGIN_NAME "Plugin"
+
+const ncclNet_v9_t ncclNetPlugin_v9 = {
+  .name = PLUGIN_NAME,
+  .init = pluginInit,
+  .devices = pluginDevices,
+  .getProperties = pluginGetProperties,
+  .listen = pluginListen,
+  .connect = pluginConnect,
+  .accept = pluginAccept,
+  .regMr = pluginRegMr,
+  .regMrDmaBuf = pluginRegMrDmaBuf,
+  .deregMr = pluginDeregMr,
+  .isend = pluginIsend,
+  .irecv = pluginIrecv,
+  .iflush = pluginIflush,
+  .test = pluginTest,
+  .closeSend = pluginCloseSend,
+  .closeRecv = pluginCloseRecv,
+  .closeListen = pluginCloseListen,
+  .getDeviceMr = pluginGetDeviceMr,
+  .irecvConsumed = pluginIrecvConsumed,
+  .makeVDevice   = pluginMakeVDevice,
+};
+
+__hidden ncclResult_t pluginGetProperties_v8(int dev, ncclNetProperties_v8_t* props) {
+  // Below are default values, if unsure don't change.
+
+  props->name = "Example";
+  // Fill for proper topology detection, e.g. /sys/devices/pci0000:00/0000:00:10.0/0000:0b:00.0
+  props->pciPath = NULL;
+  // Only used to detect NICs with multiple PCI attachments.
+  props->guid = 0;
+  // Add NCCL_PTR_CUDA if GPU Direct RDMA is supported and regMr can take CUDA pointers.
+  props->ptrSupport = NCCL_PTR_HOST;
+  // If you regMr has a fast registration cache, set to 1. If set to 0, user buffer registration may be disabled.
+  props->regIsGlobal = 0;
+  // Speed in *Mbps*. 100000 means 100G
+  props->speed = 100000;
+  // Port number, used in conjunction with guid
+  props->port = 0;
+  // Custom latency (used to help tuning if latency is high. If set to 0, use default NCCL values.
+  props->latency = 0;
+  // Maximum number of comm objects we can create.
+  props->maxComms = 1024*1024;
+  // Maximum number of receive operations taken by irecv().
+  props->maxRecvs = 1;
+  // Coupling with NCCL network device-side code.
+  props->netDeviceType = 0;
+  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
+  return ncclInternalError;
+}
 
 const ncclNet_v8_t ncclNetPlugin_v8 = {
   .name = PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,
-  .getProperties = pluginGetProperties,
+  .getProperties = pluginGetProperties_v8,
   .listen = pluginListen,
   .connect = pluginConnect,
   .accept = pluginAccept,
