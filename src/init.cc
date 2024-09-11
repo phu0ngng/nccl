@@ -847,6 +847,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   } while(0);
 
   timers[TIMER_INIT_TOPO] = clockNano();
+
+  // Dump XML if requested by user
+  const char* dumpXmlFile;
+  dumpXmlFile = ncclGetEnv("NCCL_TOPO_DUMP_FILE");
+  if (dumpXmlFile) {
+    NCCLCHECKGOTO(ncclTopoGetSystem(comm, NULL, dumpXmlFile), ret, fail);
+  }
+
   // Topo detection / System graph creation
   NCCLCHECKGOTO(ncclTopoGetSystem(comm, &comm->topo), ret, fail);
   // Compute paths between GPUs and NICs

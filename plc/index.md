@@ -1,6 +1,10 @@
 <!-- This file is automatically changed -->
 <!-- update with extra care -->
 # NCCL - PLC
+<!------------------------------------->
+## version 2.24
+- [NIC Fusion](items/id_ecf30b98/NIC_Fusion.md)
+<!-- V2_24_DO_NOT_MOVE -->
 
 <!------------------------------------->
 ## version 2.23

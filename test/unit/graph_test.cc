@@ -30,6 +30,7 @@ int dumpDiff = 1;
 
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter, int* errors, int* warnings) {
   if (memcmp(ref, out, sizeof(struct ncclTopoGraph)) != 0) {
+    printf("memcmp(ref,out)=%d\n", memcmp(ref, out, sizeof(struct ncclTopoGraph)));
     if (ref->nChannels*ref->bwInter > out->nChannels*out->bwInter ||
         ref->nChannels*ref->bwIntra > out->nChannels*out->bwIntra ||
         ref->crossNic < out->crossNic ||
@@ -297,6 +298,7 @@ int main(int argc, const char* argv[]) {
     RUN_MULTI8("Viking-SHARP");
     RUN_MULTI4("Scout");
     RUN("PCI-H100-NV");
+    RUN("OCI-HGX-A100");
 #endif
     RUN("CG4");
     RUN("P9-6V");

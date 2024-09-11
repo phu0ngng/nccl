@@ -2,10 +2,18 @@
  * Copyright (c) 2017-2022, NVIDIA CORPORATION. All rights reserved.
  */
 
-#ifndef NCCL_NET_V8_H_
-#define NCCL_NET_V8_H_
+#ifndef NCCL_NET_V9_H_
+#define NCCL_NET_V9_H_
 
 #include "net_device.h"
+
+#define NCCL_NET_MAX_DEVS_PER_NIC_V9 4
+#define NCCL_NET_MAX_DEVS_PER_NIC NCCL_NET_MAX_DEVS_PER_NIC_V9
+typedef struct {
+  int ndevs;
+  int devs[NCCL_NET_MAX_DEVS_PER_NIC_V9];
+} ncclNetVDeviceProps_v9_t;
+typedef ncclNetVDeviceProps_v9_t ncclNetVDeviceProps_t;
 
 typedef struct {
   char* name;                      // Used mostly for logging.
@@ -21,7 +29,9 @@ typedef struct {
   int maxRecvs;                    // Maximum number of grouped receives.
   ncclNetDeviceType netDeviceType; // Network offload type
   int netDeviceVersion;            // Version number for network offload
-} ncclNetProperties_v8_t;
+  ncclNetVDeviceProps_v9_t vProps;
+} ncclNetProperties_v9_t;
+typedef ncclNetProperties_v9_t ncclNetProperties_t;
 
 typedef struct {
   // Name of the network (mainly for logs)
@@ -31,7 +41,7 @@ typedef struct {
   // Return the number of adapters.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v8_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v9_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create a connection.
@@ -76,6 +86,10 @@ typedef struct {
 
   // Notify the plugin that a recv has completed by the device
   ncclResult_t (*irecvConsumed)(void* recvComm, int n, void* request);
-} ncclNet_v8_t;
+
+  // Virtual NIC APIs. makeVDevice will create a virtual NIC given the specified properties, and tell the caller
+  // what index this new vNIC exists at
+  ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_t* props);
+} ncclNet_v9_t;
 
 #endif // end include guard

@@ -501,6 +501,7 @@ static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
           // check against user specified HCAs/ports
           bool found = matchIfList(props.name, props.port, userIfs, nUserIfs, searchExact) ^ searchNot;
           if (found) {
+            // All plain physical devices have been initialized at this point
             devOOB = devId;
             break;
           }
