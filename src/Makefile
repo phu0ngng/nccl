@@ -7,7 +7,7 @@ include ../makefiles/common.mk
 include ../makefiles/version.mk
 
 ##### src files
-INCEXPORTS  := nccl.h nccl_net.h
+INCEXPORTS  := nccl.h
 LIBSRCFILES := \
 	bootstrap.cc channel.cc collectives.cc debug.cc enqueue.cc group.cc \
 	init.cc init_nvtx.cc net.cc proxy.cc transport.cc register.cc \
