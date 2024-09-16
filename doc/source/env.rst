@@ -168,7 +168,7 @@ For more information, see section 12.7.34 of the InfiniBand specification Volume
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value used by NCCL is 18, i.e. just over 1 second (since 2.14; it was 14 in earlier versions).
+The default value used by NCCL is 20 (since 2.23; it was 18 since 2.14, and 14 before that).
 
 Values can be 1-31.
 
@@ -296,7 +296,7 @@ The accepted values follow the same logic as NCCL_SOCKET_IFNAME and NCCL_IB_HCA,
 Note: if multiple devices are specified, NCCL will select the first matching device in the list.
 
 NCCL_UID_STAGGER_THRESHOLD
------------
+--------------------------
 (since 2.23)
 The ``NCCL_UID_STAGGER_THRESHOLD`` variable is used to trigger staggering of communications between NCCL ranks and the ncclUniqueId in order to avoid overflowing the ncclUniqueId.
 If the number of NCCL ranks communicating exceeds the specified threshold, the communications are staggered using the rank value (see NCCL_UID_STAGGER_RATE below).
@@ -311,7 +311,7 @@ The value of ``NCCL_UID_STAGGER_THRESHOLD`` must be a strictly positive integer.
 If unspecified, the default value is 256.
 
 NCCL_UID_STAGGER_RATE
------------
+---------------------
 (since 2.23)
 The ``NCCL_UID_STAGGER_RATE`` variable is used to define the message rate targeted when staggering the communications between NCCL ranks and the ncclUniqueId.
 If staggering is used (see NCCL_UID_STAGGER_THRESHOLD above), the message rate is used to compute the time a given NCCL rank has to wait.
@@ -743,6 +743,16 @@ Enable the use of Adaptive Routing capable data transfers for the IB Verbs trans
 Values accepted
 ^^^^^^^^^^^^^^^
 Enabled (1) by default on IB networks. Disabled (0) by default on RoCE networks. Set to 1 to force use of Adaptive Routing capable data transmission.
+
+NCCL_IB_ECE_ENABLE
+------------------
+(since 2.23)
+
+Enable the use of Enhanced Connection Establishment (ECE) on IB Verbs networks.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Enabled (1) by default. Set to 0 to disable use of ECE network capabilities.
 
 NCCL_MEM_SYNC_DOMAIN
 --------------------
