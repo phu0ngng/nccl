@@ -274,7 +274,7 @@ The accepted values follow the same logic as NCCL_SOCKET_IFNAME and NCCL_IB_HCA,
 Note: if multiple devices are specified, NCCL will select the first matching device in the list.
 
 NCCL_UID_STAGGER_THRESHOLD
------------
+--------------------------
 (since 2.23)
 The ``NCCL_UID_STAGGER_THRESHOLD`` variable is used to trigger staggering of communications between NCCL ranks and the ncclUniqueId in order to avoid overflowing the ncclUniqueId.
 If the number of NCCL ranks communicating exceeds the specified threshold, the communications are staggered using the rank value (see NCCL_UID_STAGGER_RATE below).
@@ -289,7 +289,7 @@ The value of ``NCCL_UID_STAGGER_THRESHOLD`` must be a strictly positive integer.
 If unspecified, the default value is 256.
 
 NCCL_UID_STAGGER_RATE
------------
+---------------------
 (since 2.23)
 The ``NCCL_UID_STAGGER_RATE`` variable is used to define the message rate targeted when staggering the communications between NCCL ranks and the ncclUniqueId.
 If staggering is used (see NCCL_UID_STAGGER_THRESHOLD above), the message rate is used to compute the time a given NCCL rank has to wait.
