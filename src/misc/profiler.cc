@@ -16,9 +16,110 @@ static pthread_mutex_t profilerLock = PTHREAD_MUTEX_INITIALIZER;
 static int profilerPluginRefCount;
 static void* profilerPluginLib;
 static ncclProfiler_t* ncclProfiler;
+static ncclProfiler_v2_t ncclProfiler_v1_as_v2;
+static ncclProfiler_v1_t* ncclProfiler_v1;
+
+static uint8_t ncclStringToFunc(const char* func) {
+  if (0 == strcmp(func, "AllGather")) return ncclFuncAllGather;
+  if (0 == strcmp(func, "AllReduce")) return ncclFuncAllReduce;
+  if (0 == strcmp(func, "Broadcast")) return ncclFuncBroadcast;
+  if (0 == strcmp(func, "Recv")) return ncclFuncRecv;
+  if (0 == strcmp(func, "Reduce")) return ncclFuncReduce;
+  if (0 == strcmp(func, "ReduceScatter")) return ncclFuncReduceScatter;
+  if (0 == strcmp(func, "SendRecv")) return ncclFuncSendRecv;
+  return ncclFuncSend;
+}
+
+static uint8_t ncclStringToAlgo(const char* algo) {
+  if (0 == strcmp(algo, "TREE")) return NCCL_ALGO_TREE;
+  if (0 == strcmp(algo, "RING")) return NCCL_ALGO_RING;
+  if (0 == strcmp(algo, "COLLNET_DIRECT")) return NCCL_ALGO_COLLNET_DIRECT;
+  if (0 == strcmp(algo, "COLLNET_CHAIN")) return NCCL_ALGO_COLLNET_CHAIN;
+  if (0 == strcmp(algo, "NVLS")) return NCCL_ALGO_NVLS;
+  if (0 == strcmp(algo, "NVLS_TREE")) return NCCL_ALGO_NVLS_TREE;
+  return NCCL_ALGO_PAT;
+}
+
+static uint8_t ncclStringToProto(const char* proto) {
+  if (0 == strcmp(proto, "LL")) return NCCL_PROTO_LL;
+  if (0 == strcmp(proto, "LL128")) return NCCL_PROTO_LL128;
+  return NCCL_PROTO_SIMPLE;
+}
+
+static uint8_t ncclStringToDatatype(const char* dt) {
+  if (0 == strcmp(dt, "ncclInt8")) return ncclInt8;
+  if (0 == strcmp(dt, "ncclInt32")) return ncclInt32;
+  if (0 == strcmp(dt, "ncclUint32")) return ncclUint32;
+  if (0 == strcmp(dt, "ncclInt64")) return ncclInt64;
+  if (0 == strcmp(dt, "ncclUint64")) return ncclUint64;
+  if (0 == strcmp(dt, "ncclFloat16")) return ncclFloat16;
+  if (0 == strcmp(dt, "ncclFloat32")) return ncclFloat32;
+#if defined(__CUDA_BF16_TYPES_EXIST__)
+  if (0 == strcmp(dt, "ncclBfloat16")) return ncclBfloat16;
+#endif
+  return ncclFloat64;
+}
+
+static ncclResult_t ncclProfiler_v1_as_v2_startEvent(void* context, void** eHandle, ncclProfilerEventDescr_v2_t* eDescr) {
+  ncclProfilerEventDescr_v1_t eDescr_v1 = { 0 };
+  eDescr_v1.type = eDescr->type;
+  eDescr_v1.parentObj = eDescr->parentObj;
+  eDescr_v1.rank = eDescr->rank;
+  switch(eDescr->type) {
+    case ncclProfileGroup: break;
+    case ncclProfileColl: {
+      eDescr_v1.coll.name = eDescr->coll.name;
+      eDescr_v1.coll.commHash = eDescr->coll.commHash;
+      eDescr_v1.coll.seqNumber = eDescr->coll.seqNumber;
+      eDescr_v1.coll.func = ncclStringToFunc(eDescr->coll.func);
+      eDescr_v1.coll.sendBuff = eDescr->coll.sendBuff;
+      eDescr_v1.coll.recvBuff = eDescr->coll.recvBuff;
+      eDescr_v1.coll.count = eDescr->coll.count;
+      eDescr_v1.coll.root = eDescr->coll.root;
+      eDescr_v1.coll.datatype = ncclStringToDatatype(eDescr->coll.datatype);
+      eDescr_v1.coll.op = 0; // removed in v2
+      eDescr_v1.coll.trafficBytes = eDescr->coll.trafficBytes;
+      eDescr_v1.coll.nMaxChannels = eDescr->coll.nMaxChannels;
+      eDescr_v1.coll.nWarps = eDescr->coll.nWarps;
+      eDescr_v1.coll.algo = ncclStringToAlgo(eDescr->coll.algo);
+      eDescr_v1.coll.proto = ncclStringToProto(eDescr->coll.proto);
+    } break;
+    case ncclProfileP2p: {
+      eDescr_v1.p2p.name = eDescr->p2p.name;
+      eDescr_v1.p2p.commHash = eDescr->p2p.commHash;
+      eDescr_v1.p2p.func = ncclStringToFunc(eDescr->p2p.func);
+      eDescr_v1.p2p.buff = eDescr->p2p.buff;
+      eDescr_v1.p2p.count = eDescr->p2p.count;
+      eDescr_v1.p2p.datatype = ncclStringToDatatype(eDescr->p2p.datatype);
+      eDescr_v1.p2p.peer = eDescr->p2p.peer;
+    } break;
+    case ncclProfileProxyOp: {
+      eDescr_v1.proxyOp.pid = eDescr->proxyOp.pid;
+      eDescr_v1.proxyOp.channelId = eDescr->proxyOp.channelId;
+      eDescr_v1.proxyOp.peer = eDescr->proxyOp.peer;
+      eDescr_v1.proxyOp.nSteps = eDescr->proxyOp.nSteps;
+      eDescr_v1.proxyOp.chunkSize = eDescr->proxyOp.chunkSize;
+      eDescr_v1.proxyOp.isSend = eDescr->proxyOp.isSend;
+    } break;
+    case ncclProfileProxyStep: {
+      eDescr_v1.proxyStep.step = eDescr->proxyStep.step;
+    } break;
+    case ncclProfileProxyCtrl: break;
+    default:;
+  }
+  return ncclProfiler_v1->startEvent(context, eHandle, &eDescr_v1);
+}
+
+static ncclResult_t ncclProfiler_v1_as_v2_init(void** context, int* eActivationMask) {
+  ncclProfiler_v1->init(context, eActivationMask);
+  ncclProfiler_v1_as_v2.startEvent = ncclProfiler_v1_as_v2_startEvent;
+  ncclProfiler_v1_as_v2.stopEvent = ncclProfiler_v1->stopEvent;
+  ncclProfiler_v1_as_v2.recordEventState = ncclProfiler_v1->recordEventState;
+  ncclProfiler_v1_as_v2.finalize = ncclProfiler_v1->finalize;
+  return ncclSuccess;
+}
 
 #define MAX_STR_LEN 256
-#define NCCL_PROFILER_PLUGIN_SYMBOL "ncclProfiler_v1"
 
 static void* tryOpenLib(char* name, int *err, char* errStr) {
   if (nullptr == name || strlen(name) == 0) {
@@ -116,10 +217,21 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
     goto fail;
   }
 
-  ncclProfiler = (ncclProfiler_t*)dlsym(profilerPluginLib, NCCL_PROFILER_PLUGIN_SYMBOL);
+  ncclProfiler = (ncclProfiler_v2_t*)dlsym(profilerPluginLib, "ncclProfiler_v2");
   if (ncclProfiler == nullptr) {
-    INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: failed to find " NCCL_PROFILER_PLUGIN_SYMBOL ".");
-    goto fail;
+    INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: failed to find ncclProfiler_v2.");
+    ncclProfiler_v1 = (ncclProfiler_v1_t*)dlsym(profilerPluginLib, "ncclProfiler_v1");
+    if (ncclProfiler_v1 == nullptr) {
+      INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: failed to find ncclProfiler_v1.");
+      goto fail;
+    } else {
+      ncclProfiler = &ncclProfiler_v1_as_v2;
+      ncclProfiler_v1_as_v2.name = ncclProfiler_v1->name;
+      ncclProfiler_v1_as_v2.init = ncclProfiler_v1_as_v2_init;
+      INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: loaded ncclProfiler_v1.");
+    }
+  } else {
+    INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: loaded ncclProfiler_v2.");
   }
 
   ++profilerPluginRefCount;
@@ -247,7 +359,7 @@ ncclResult_t ncclProfilerStartGroupEvent(struct ncclKernelPlan* plan) {
   eActivationMaskGroup = __atomic_load_n(&eActivationMask, __ATOMIC_RELAXED);
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     if (eActivationMaskGroup & (ncclProfileColl | ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep)) {
-      ncclProfilerEventDescr_v1_t eDescr = { 0 };
+      ncclProfilerEventDescr_t eDescr = { 0 };
       eDescr.type = ncclProfileGroup;
       ncclProfiler->startEvent(plan->comm->profilerContext, &plan->groupEventHandle, &eDescr);
     }
@@ -279,20 +391,17 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
         eDescr.coll.name = plan->comm->commName;
         eDescr.coll.commHash = plan->comm->commHash;
         eDescr.coll.seqNumber = plan->comm->seqNumber[ct->func]++;
-        eDescr.coll.func = ct->func;
+        eDescr.coll.func = ncclFuncToString(ct->func);
         eDescr.coll.sendBuff = ct->sendbuff;
         eDescr.coll.recvBuff = ct->recvbuff;
         eDescr.coll.count = ct->count;
         eDescr.coll.root = ct->root;
-        eDescr.coll.datatype = ct->datatype;
-        eDescr.coll.op = ct->opHost;
+        eDescr.coll.datatype = ncclDatatypeToString(ct->datatype);
         eDescr.coll.trafficBytes = ct->trafficBytes;
         eDescr.coll.nMaxChannels = ct->nMaxChannels;
         eDescr.coll.nWarps = ct->nWarps;
-        eDescr.coll.algo = ct->algorithm;
-        eDescr.coll.proto = ct->protocol;
-        eDescr.coll.isCollnet = ct->isCollnet;
-        eDescr.coll.isNvls = ct->isNvls;
+        eDescr.coll.algo = ncclAlgoToString(ct->algorithm);
+        eDescr.coll.proto = ncclProtoToString(ct->protocol);
         ncclProfiler->startEvent(plan->comm->profilerContext, &ct->eventHandle, &eDescr);
 
         // update collective task with group event activation mask
@@ -307,10 +416,10 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
         eDescr.rank = plan->comm->rank;
         eDescr.p2p.name = plan->comm->commName;
         eDescr.p2p.commHash = plan->comm->commHash;
-        eDescr.p2p.func = pt->func;
+        eDescr.p2p.func = ncclFuncToString(pt->func);
         eDescr.p2p.buff = pt->buff;
         eDescr.p2p.count = pt->count;
-        eDescr.p2p.datatype = pt->datatype;
+        eDescr.p2p.datatype = ncclDatatypeToString(pt->datatype);
         eDescr.p2p.peer = pt->root;
         ncclProfiler->startEvent(plan->comm->profilerContext, &pt->eventHandle, &eDescr);
 
