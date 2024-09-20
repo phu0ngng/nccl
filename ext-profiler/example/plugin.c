@@ -203,7 +203,6 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       return ncclSuccess;
     }
     event->type = ncclProfileGroup;
-    __atomic_store_n(&event->refCount, 1, __ATOMIC_RELAXED);
     event->ctx = ctx;
     event->groupId = groupId;
     event->startTs = gettime() - startTime;
@@ -338,7 +337,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       event->parent = eventBase;
       event->startTs = gettime() - startTime;
       *eHandle = event;
-      __atomic_store_n(&parent->base.refCount, 1, __ATOMIC_RELAXED);
+      __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
       debugEvent(event, "ProxyOpStart");
     } else { // ncclProfileP2p
       struct p2p* parent = (struct p2p *)eDescr->parentObj;
@@ -354,7 +353,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       event->parent = eventBase;
       event->startTs = gettime() - startTime;
       *eHandle = event;
-      __atomic_store_n(&parent->base.refCount, 1, __ATOMIC_RELAXED);
+      __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
       debugEvent(event, "ProxyOpStart");
     }
  } else if (eDescr->type == ncclProfileProxyStep) {
@@ -449,6 +448,13 @@ __hidden ncclResult_t exampleProfilerStopEvent(void* eHandle) {
     // mean the collective has completed. It means the collective
     // was submitted/enqueued so we need to keep the event open
     struct collective* event = (struct collective *)eHandle;
+    event->base.stopTs = gettime() - startTime;
+    return ncclSuccess;
+  } else if (type == ncclProfileP2p) {
+    // stopping the p2p event in NCCL core does not
+    // mean the p2p has completed. It means the p2p
+    // was submitted/enqueued so we need to keep the event open
+    struct p2p* event = (struct p2p *)eHandle;
     event->base.stopTs = gettime() - startTime;
     return ncclSuccess;
   }
