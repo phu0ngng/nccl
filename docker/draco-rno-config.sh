@@ -1,6 +1,8 @@
 # config parameters for Draco-RNO cluster
 # no host-specific code executes in this module to allow it to live elsewhere
 
+DR_GPU_ARCHS="70"
+
 # Relevant paths
 DR_OPENMPI_HOME="/usr/mpi/gcc/openmpi-4.1.0rc5"
 DR_CUDA_HOME="/gpfs/fs1/projects/sw_gpucomms/users/vkhodel/cuda-12.0.1"
@@ -21,8 +23,8 @@ DR_BUILD_TOOLS_IMAGE="$DR_DOCKER_IMAGE_DIR/$BUILD_TOOLS_IMAGE_NAME"
 
 # Target configs
 # Draco-RNO only has one type of GPU: V100
-function get_nvcc_gencode() {
-    echo "-gencode=arch=compute_70,code=sm_70"
+function get_gpu_archs() {
+    echo "$DR_GPU_ARCHS"
 }
 
 function get_cuda_home() {

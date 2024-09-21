@@ -1,6 +1,8 @@
 # config parameters for Draco-RNO cluster
 # no host-specific code executes in this module to allow it to live elsewhere
 
+DO_GPU_ARCHS="80"
+
 # Relevant paths
 DO_OPENMPI_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/openmpi-4.1.4"
 DO_CUDA_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/cuda-12.0.1"
@@ -21,8 +23,8 @@ DO_BUILD_TOOLS_IMAGE="$DO_DOCKER_IMAGE_DIR/$BUILD_TOOLS_IMAGE_NAME"
 
 # Target configs
 # Draco-OCI only has one type of GPU: A100
-function get_nvcc_gencode() {
-    echo "-gencode=arch=compute_80,code=sm_80"
+function get_gpu_archs() {
+    echo "$DO_GPU_ARCHS"
 }
 
 function get_cuda_home() {

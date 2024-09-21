@@ -1,6 +1,8 @@
 # Config parameters for gc cluster
 # no host-specific code executes in this module to allow it to live elsewhere
 
+GC_GPU_ARCHS="60,70,80"
+
 # Relevant paths
 GC_OPENMPI_HOME="/home/nvshmem_shared/openmpi"
 GC_CUDA_HOME="/usr/local/cuda"
@@ -13,8 +15,8 @@ BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_
 GC_BUILD_TOOLS_IMAGE="${BUILD_TOOLS_REPO}:${BUILD_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}"
 
 # Target configs
-function get_nvcc_gencode() {
-    echo "-gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_80,code=sm_80"
+function get_gpu_archs() {
+    echo "$GC_GPU_ARCHS"
 }
 
 function get_cuda_home() {

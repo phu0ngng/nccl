@@ -18,6 +18,16 @@ function source_cluster_config() {
     source $config_file
 }
 
+function get_nvcc_gencodes() {
+    # comma-separated list of numeric gpu_archs
+    gpu_archs=$(echo $1 | tr ',' '\n')
+    gencode_string=""
+    for gpu_arch in $gpu_archs; do
+        gencode_string="$gencode_string -gencode=arch=compute_${gpu_arch},code=sm_${gpu_arch}"
+    done
+    echo "$gencode_string"
+}
+
 function identify_build_cluster() {
     hostname="$(hostname)"
     
@@ -63,10 +73,16 @@ do
     esac
 done
 
-source_cluster_config $target_cluster_tag
+# the only relevant target cluster parameter is gpu_arch/nvcc_gencode
+# special handling for target cluster tag "all"
+if [ "$target_cluster_tag" = "all" ]; then
+    gpu_archs="60,70,80,90"
+else
+    source_cluster_config $target_cluster_tag
+    gpu_archs=$(get_gpu_archs)
+fi
 
-# save off the only relevant target cluster parameter
-export NVCC_GENCODE="$(get_nvcc_gencode)"
+export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_archs)"
 
 # reload the config with build cluster data
 if [ "$target_cluster_tag" != "$build_cluster_tag" ]; then
