@@ -74,7 +74,7 @@ build-trace:
 build-eos-aws:
   stage: build
   rules:
-    - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1"
+    - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1"
       when: always
     - when: never
   tags:
@@ -85,30 +85,12 @@ build-eos-aws:
     #   NVCC_GENCODE: 90
     #   OS: ubuntu22.04
     #   MPI_HOME: "/usr/mpi/gcc/openmpi-4.1.5rc2"
-    - docker/make.sh eos
-  artifacts:
-    paths:
-      - build
-    exclude:
-      - build/**/*.o
-    expire_in: 4 hrs
-  interruptible: true
-
-build-draco_oci:
-  stage: build
-  rules:
-    - if: $RUN_ON_DRACO_OCI == "1"
-      when: always
-    - when: never
-  tags:
-    - build-with-docker
-  script:
     # Draco OCI-IAD cluster info
     #   NVIDIA-SMI 535.113.01  Driver Version: 535.104.12  CUDA Version: 12.2
     #   NVCC_GENCODE: 80
     #   OS: ubuntu20.04
     #   MPI_HOME: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/openmpi-4.1.4"
-    - docker/make.sh draco-oci
+    - docker/make.sh all
   artifacts:
     paths:
       - build
