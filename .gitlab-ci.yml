@@ -71,7 +71,7 @@ build-trace:
     - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
   interruptible: true
 
-build-eos-aws:
+build-eos-aws-oci:
   stage: build
   rules:
     - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1"
@@ -110,7 +110,7 @@ setup-AWS_H100_EFA:
   needs:
     # Builds targetted for EOS work on AWS as well as the build config is the same across both clusters.
     # TODO - Refactor build jobs to decouple EOS and AWS.
-    - build-eos-aws
+    - build-eos-aws-oci
   variables:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
@@ -269,7 +269,7 @@ unit_tests-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws"]
+  needs: ["build-eos-aws-oci"]
   tags:
     - nccl-eos
   variables:
@@ -320,7 +320,7 @@ unit_tests-draco_oci:
       when: always
     - when: never
   needs:
-    - build-draco_oci
+    - build-eos-aws-oci
   tags:
     - draco-oci-iad
   variables:
@@ -507,7 +507,7 @@ apitest-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws"]
+  needs: ["build-eos-aws-oci"]
   tags:
     - nccl-eos
   variables:
@@ -558,7 +558,7 @@ apitest-draco_oci:
       when: always
     - when: never
   needs:
-    - build-draco_oci
+    - build-eos-aws-oci
     - unit_tests-draco_oci
   tags:
     - draco-oci-iad
@@ -772,7 +772,7 @@ perftest-single-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws"]
+  needs: ["build-eos-aws-oci"]
   tags:
     - nccl-eos
   variables:
@@ -835,7 +835,7 @@ perftest_single-draco_oci:
       when: always
     - when: never
   needs:
-    - build-draco_oci
+    - build-eos-aws-oci
   tags:
     - draco-oci-iad
   variables:
@@ -991,7 +991,7 @@ perftest-multi-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws"]
+  needs: ["build-eos-aws-oci"]
   tags:
     - nccl-eos
   variables:
@@ -1083,7 +1083,7 @@ perftest_multi-draco_oci:
       when: always
     - when: never
   needs:
-    - build-draco_oci
+    - build-eos-aws-oci
     - perftest_single-draco_oci
   tags:
     - draco-oci-iad
