@@ -435,6 +435,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   struct ncclDevCommAndChannels tmpCommAndChans;
   struct ncclDevCommAndChannels *devCommAndChans = NULL;
   struct ncclNvmlCCStatus ccStatus;
+  bool ccEnable;
 
   NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->deviceStream), ret, fail);
   NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, comm->sharedRes->deviceStream.cudaStream), ret, fail);
@@ -458,11 +459,9 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   comm->workArgsBytes = std::min<size_t>(ncclParamWorkArgsBytes(), ncclMaxKernelArgsSize(comm->cudaArch));
 
   memset(&ccStatus, 0, sizeof(ccStatus));
-  if (ncclNvmlGetCCStatus(&ccStatus) == ncclSuccess && ccStatus.CCEnabled) {
+  ccEnable = ncclNvmlGetCCStatus(&ccStatus) && (ccStatus.CCEnabled || ccStatus.multiGpuProtectedPCIE);
+  if (ccEnable) {
     comm->workFifoBytes = 0;
-    if (ccStatus.multiGpuCCEnabled == false && comm->rank == 0) {
-      WARN("CC On, Multi-GPU CC Off (No inter-GPU communication protection)");
-    }
   } else {
     comm->workFifoBytes = ncclParamWorkFifoBytes();
     if (0 != (comm->workFifoBytes & (comm->workFifoBytes-1))) {
@@ -473,7 +472,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   }
 
   if (comm->rank == 0) {
-    INFO(NCCL_INIT, "CC %s, Multi-GPU CC %s, workFifoBytes %d", ccStatus.CCEnabled ? "On" : "Off", ccStatus.multiGpuCCEnabled ? "On" : "Off", comm->workFifoBytes);
+    INFO(NCCL_INIT, "CC %s, workFifoBytes %d", ccEnable ? "On" : "Off", comm->workFifoBytes);
   }
 
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable() == 1) {
