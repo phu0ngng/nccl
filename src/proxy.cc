@@ -374,8 +374,8 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->eActivationMask = op->eActivationMask;
   sub->taskEventHandle = op->taskEventHandle;
   sub->rank = op->rank;
-  args->pid = op->pid;
-  args->profilerContext = op->profilerContext;
+  sub->pid = op->pid;
+  sub->profilerContext = op->profilerContext;
   args->nsubs = subIndex+1;
   if (subIndex) {
     if ((args->sliceSteps != op->sliceSteps) ||
