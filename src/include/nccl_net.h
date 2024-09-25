@@ -37,6 +37,7 @@ typedef struct {
                                    // cards with multiple PCI functions (Physical or virtual).
   int ptrSupport;                  // [NCCL_PTR_HOST|NCCL_PTR_CUDA|NCCL_PTR_DMABUF]
   int regIsGlobal;                 // regMr is not tied to a particular comm
+  int forceFlush;                  // Force a flush on receives
   int speed;                       // Port speed in Mbps.
   int port;                        // Port number.
   float latency;                   // Network latency

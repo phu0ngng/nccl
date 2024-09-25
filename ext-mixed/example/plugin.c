@@ -28,6 +28,8 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_t* props) {
   props->ptrSupport = NCCL_PTR_HOST;
   // If you regMr has a fast registration cache, set to 1. If set to 0, user buffer registration may be disabled.
   props->regIsGlobal = 0;
+  // Force flush after receive. Needed if the control path and data path use a different path to the GPU
+  props->forceFlush = 0;
   // Speed in *Mbps*. 100000 means 100G
   props->speed = 100000;
   // Port number, used in conjunction with guid

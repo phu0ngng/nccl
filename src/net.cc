@@ -41,6 +41,7 @@ static ncclResult_t ncclNet_v8_as_v9_getProperties(int dev, ncclNetProperties_v9
   props->guid = p8.guid;
   props->ptrSupport = p8.ptrSupport;
   props->regIsGlobal = 0;
+  props->forceFlush = 0;
   props->speed = p8.speed;
   props->port = p8.port;
   props->maxComms = p8.maxComms;
@@ -77,7 +78,6 @@ static ncclResult_t ncclNet_v8_as_v9_init(ncclDebugLogger_t logfn) {
   return ncclSuccess;
 }
 
-
 static ncclResult_t ncclNet_v7_as_v9_getProperties(int dev, ncclNetProperties_v9_t* props) {
   ncclNetProperties_v7_t p7;
   ncclResult_t ans = ncclNet_v7->getProperties(dev, &p7);
@@ -87,6 +87,7 @@ static ncclResult_t ncclNet_v7_as_v9_getProperties(int dev, ncclNetProperties_v9
   props->guid = p7.guid;
   props->ptrSupport = p7.ptrSupport;
   props->regIsGlobal = 0;
+  props->forceFlush = 0;
   props->speed = p7.speed;
   props->port = p7.port;
   props->maxComms = p7.maxComms;
@@ -137,6 +138,7 @@ static ncclResult_t ncclNet_v6_as_v9_getProperties(int dev, ncclNetProperties_v9
   props->guid = p6.guid;
   props->ptrSupport = p6.ptrSupport;
   props->regIsGlobal = 0;
+  props->forceFlush = 0;
   props->speed = p6.speed;
   props->port = p6.port;
   props->maxComms = p6.maxComms;
@@ -195,6 +197,7 @@ static ncclResult_t ncclNet_v5_as_v9_getProperties(int dev, ncclNetProperties_v9
   props->guid = p6.guid;
   props->ptrSupport = p6.ptrSupport;
   props->regIsGlobal = 0;
+  props->forceFlush = 0;
   props->speed = p6.speed;
   props->port = p6.port;
   props->maxComms = p6.maxComms;
@@ -255,6 +258,7 @@ static ncclResult_t ncclCollNet_v5_as_v9_getProperties(int dev, ncclNetPropertie
   props->guid = p6.guid;
   props->ptrSupport = p6.ptrSupport;
   props->regIsGlobal = 0;
+  props->forceFlush = 0;
   props->speed = p6.speed;
   props->port = p6.port;
   props->maxComms = p6.maxComms;
@@ -304,6 +308,7 @@ static ncclResult_t ncclCollNet_v6_as_v9_getProperties(int dev, ncclNetPropertie
   props->guid = p6.guid;
   props->ptrSupport = p6.ptrSupport;
   props->regIsGlobal = 0;
+  props->forceFlush = 0;
   props->speed = p6.speed;
   props->port = p6.port;
   props->maxComms = p6.maxComms;
@@ -353,6 +358,7 @@ static ncclResult_t ncclCollNet_v7_as_v9_getProperties(int dev, ncclNetPropertie
   props->guid = p7.guid;
   props->ptrSupport = p7.ptrSupport;
   props->regIsGlobal = 0;
+  props->forceFlush = 0;
   props->speed = p7.speed;
   props->port = p7.port;
   props->maxComms = p7.maxComms;
@@ -402,6 +408,7 @@ static ncclResult_t ncclCollNet_v8_as_v9_getProperties(int dev, ncclNetPropertie
   props->guid = p8.guid;
   props->ptrSupport = p8.ptrSupport;
   props->regIsGlobal = p8.regIsGlobal;
+  props->forceFlush = 0;
   props->speed = p8.speed;
   props->port = p8.port;
   props->maxComms = p8.maxComms;
