@@ -2353,14 +2353,12 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
   CUDACHECK(cudaGetDevice(&cudaDev));
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
-  if (CUPFN(cuMulticastCreate) != NULL)
-    CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
 
-  if (mcSupport) {
+  if (ncclCuMemEnable()) {
     int requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
     // Query device to see if FABRIC handle support is available
     flag = 0;
-    (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));;
+    (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));
     if (flag) requestedHandleTypes |= CU_MEM_HANDLE_TYPE_FABRIC;
     memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
     memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
@@ -2371,18 +2369,24 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, currentDev));
     if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
     CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
-
-    /* mc property */
     CUDACHECK(cudaGetDeviceCount(&dcnt));
-    mcprop.size = size;
-    /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
-    mcprop.numDevices = dcnt;
-    mcprop.handleTypes = requestedHandleTypes;
-    mcprop.flags = 0;
-    CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
 
-    /* only size needs to be aligned to mcGran */
-    ALIGN_SIZE(size, mcGran);
+    if (CUPFN(cuMulticastCreate) != NULL) CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
+    if (mcSupport) {
+      /* mc property */
+      mcprop.size = size;
+      /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
+      mcprop.numDevices = dcnt;
+      mcprop.handleTypes = requestedHandleTypes;
+      mcprop.flags = 0;
+      CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+
+      /* only size needs to be aligned to mcGran */
+      ALIGN_SIZE(size, mcGran);
+    } else {
+      ALIGN_SIZE(size, memGran);
+    }
+
     if (requestedHandleTypes & CU_MEM_HANDLE_TYPE_FABRIC) {
       /* First try cuMemCreate() with FABRIC handle support and then remove if it fails */
       CUresult err = CUPFN(cuMemCreate(&handle, size, &memprop, 0));
@@ -2435,18 +2439,13 @@ ncclResult_t  ncclMemFree(void *ptr) {
   CUDACHECK(cudaGetDevice(&saveDevice));
 #if CUDART_VERSION >= 12010
   CUdevice ptrDev = 0;
-  int mcSupport = 0;
 
   if (ptr == NULL) goto fallback;
-
   if (ncclCudaLibraryInit() != ncclSuccess) goto fallback;
 
   CUCHECKGOTO(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr), ret, fail);
-  if (CUPFN(cuMulticastCreate) != NULL)
-    CUCHECKGOTO(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev), ret, fail);
-
   CUDACHECKGOTO(cudaSetDevice((int)ptrDev), ret, fail);
-  if (mcSupport) {
+  if (ncclCuMemEnable()) {
     NCCLCHECKGOTO(ncclCuMemFree(ptr), ret, fail);
     goto exit;
   }
