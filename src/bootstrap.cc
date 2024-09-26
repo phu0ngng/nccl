@@ -302,7 +302,7 @@ static void* bootstrapRoot(void* rargs) {
       // if the number of root > 1, we will receive one extra info from the first local_id of the next root
       n2send = nRankFromRoot(iroot, nranks, nroots);
       nrecv = n2send + ((nroots > 1) ? 1 : 0);
-      NCCLCHECKGOTO(ncclCalloc(&rankInfo, nrecv * sizeof(union ringConnectInfo)), res, out);
+      NCCLCHECKGOTO(ncclCalloc(&rankInfo, nrecv), res, out);
       NCCLCHECKGOTO(ncclCalloc(&rankAddressesRoot, nrecv), res, out);
     }
 
@@ -706,7 +706,7 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
   // create a socket for others to reach out (P2P)
   union ncclSocketAddress peerSocketAddress;
   NCCLCHECKGOTO(createListenSocket(comm, comm->magic, &STATE_LISTEN(state, peerSocket), &peerSocketAddress, ncclSocketTypeBootstrap), result, fail);
-  NCCLCHECKGOTO(ncclCalloc(&state->peerP2pAddresses, nranks * sizeof(union ncclSocketAddress)), result, fail);
+  NCCLCHECKGOTO(ncclCalloc(&state->peerP2pAddresses, nranks), result, fail);
   memcpy(state->peerP2pAddresses + rank, &peerSocketAddress, sizeof(union ncclSocketAddress));
 
   BOOTSTRAP_PROF_OPEN(timers[BOOTSTRAP_INIT_TIME_RING]);
@@ -778,7 +778,7 @@ ncclResult_t bootstrapSplit(uint64_t magic, struct ncclComm* comm, struct ncclCo
     NCCLCHECK(socketRingConnect(&nextPeer.addr, &STATE_RING(state, socket.send), &STATE_LISTEN(state, socket), &STATE_RING(state, socket.recv), comm->magic, state->abortFlag));
   }
 
-  NCCLCHECKGOTO(ncclCalloc(&state->peerP2pAddresses, nranks * sizeof(union ncclSocketAddress)), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&state->peerP2pAddresses, nranks), ret, fail);
   memcpy(state->peerP2pAddresses + rank, &peerSocketAddress, sizeof(union ncclSocketAddress));
   if (parent->config.splitShare) {
     /* map local rank to top parent local rank. */
