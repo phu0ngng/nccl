@@ -8,9 +8,9 @@ GC_OPENMPI_HOME="/home/nvshmem_shared/openmpi"
 GC_CUDA_HOME="/usr/local/cuda"
 
 OS_VERSION="20.04"
-CUDA_VERSION="12.0.1"
+CUDA_VERSION="11.7.1"
 
-BUILD_TOOLS_VERSION="1.0.5"
+BUILD_TOOLS_VERSION="1.0.1"
 BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_build_tools"
 GC_BUILD_TOOLS_IMAGE="${BUILD_TOOLS_REPO}:${BUILD_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}"
 

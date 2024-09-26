@@ -71,6 +71,20 @@ build-trace:
     - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
   interruptible: true
 
+build-classic:
+  stage: build
+  tags:
+    - build-with-docker
+  script:
+    - docker/make.sh gc
+  artifacts:
+    paths:
+      - build
+    exclude:
+      - build/**/*.o
+    expire_in: 4 hrs
+  interruptible: true
+
 build-eos-aws-oci:
   stage: build
   rules:
@@ -176,7 +190,8 @@ unit_tests-P100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci","health-P100"]
+      #  needs: ["build-eos-aws-oci","health-P100"]
+  needs: ["build-classic","health-P100"]
   tags:
     - p100
   variables:
@@ -191,7 +206,8 @@ unit_tests-P40:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci","health-P40"]
+      #needs: ["build-eos-aws-oci","health-P40"]
+  needs: ["build-classic","health-P40"]
   tags:
     - p40
   variables:
@@ -206,7 +222,8 @@ unit_tests-GP100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci","health-GP100"]
+      #needs: ["build-eos-aws-oci","health-GP100"]
+  needs: ["build-classic","health-GP100"]
   tags:
     - gp100
   variables:
@@ -222,7 +239,8 @@ unit_tests-A40-single:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci","health-A40"]
+      #needs: ["build-eos-aws-oci","health-A40"]
+  needs: ["build-classic","health-A40"]
   tags:
     - a40
   variables:
@@ -237,7 +255,8 @@ unit_tests-A40-dual:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci","health-A40"]
+    #needs: ["build-eos-aws-oci","health-A40"]
+  needs: ["build-classic","health-A40"]
   tags:
     - a40
   variables:
@@ -252,7 +271,8 @@ unit_tests-A100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci","health-A100"]
+      #needs: ["build-eos-aws-oci","health-A100"]
+  needs: ["build-classic","health-A100"]
   tags:
     - a100pci
   variables:
@@ -338,7 +358,8 @@ apitest-P100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci", "unit_tests-P100"]
+      #needs: ["build-eos-aws-oci", "unit_tests-P100"]
+  needs: ["build-classic", "unit_tests-P100"]
   tags:
     - p100
   variables:
@@ -358,7 +379,8 @@ apitest-P40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci", "unit_tests-P40"]
+      #needs: ["build-eos-aws-oci", "unit_tests-P40"]
+  needs: ["build-classic", "unit_tests-P40"]
   tags:
     - p40
   variables:
@@ -378,7 +400,8 @@ apitest-GP100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci", "unit_tests-GP100"]
+      #needs: ["build-eos-aws-oci", "unit_tests-GP100"]
+  needs: ["build-classic", "unit_tests-GP100"]
   tags:
     - gp100
   variables:
@@ -398,7 +421,8 @@ apitest-A40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci", "unit_tests-A40-single", "unit_tests-A40-dual"]
+      #needs: ["build-eos-aws-oci", "unit_tests-A40-single", "unit_tests-A40-dual"]
+  needs: ["build-classic", "unit_tests-A40-single", "unit_tests-A40-dual"]
   tags:
     - a40
   variables:
@@ -417,7 +441,8 @@ apitest-A100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-eos-aws-oci", "unit_tests-A100"]
+      #needs: ["build-eos-aws-oci", "unit_tests-A100"]
+  needs: ["build-classic", "unit_tests-A100"]
   tags:
     - a100pci
   variables:
@@ -577,7 +602,8 @@ perftest-P100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-eos-aws-oci, apitest-P100]
+      #needs: [build-eos-aws-oci, apitest-P100]
+  needs: [build-classic, apitest-P100]
   tags:
     - p100
   variables:
@@ -601,7 +627,8 @@ perftest-P40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-eos-aws-oci, apitest-P40]
+      #needs: [build-eos-aws-oci, apitest-P40]
+  needs: [build-classic, apitest-P40]
   tags:
     - p40
   variables:
@@ -625,7 +652,8 @@ perftest-GP100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-eos-aws-oci, apitest-GP100]
+      #needs: [build-eos-aws-oci, apitest-GP100]
+  needs: [build-classic, apitest-GP100]
   tags:
     - gp100
   variables:
@@ -649,7 +677,8 @@ perftest-A40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-eos-aws-oci, apitest-A40]
+      #needs: [build-eos-aws-oci, apitest-A40]
+  needs: [build-classic, apitest-A40]
   tags:
     - a40
   variables:
@@ -673,7 +702,8 @@ perftest-A100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-eos-aws-oci, apitest-A100]
+      #needs: [build-eos-aws-oci, apitest-A100]
+  needs: [build-classic, apitest-A100]
   tags:
     - a100pci
   variables:
