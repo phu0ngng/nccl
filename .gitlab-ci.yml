@@ -608,8 +608,8 @@ perftest-P100:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
-    #MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    MPI_HOME: "/home/nvshmem_shared/openmpi"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+      #MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
@@ -633,8 +633,8 @@ perftest-P40:
     - p40
   variables:
     NCCL_DEBUG: "WARN"
-    #MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    MPI_HOME: "/home/nvshmem_shared/openmpi"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+      # MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
@@ -658,8 +658,8 @@ perftest-GP100:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
-    #MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    MPI_HOME: "/home/nvshmem_shared/openmpi"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+      #MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
@@ -683,8 +683,8 @@ perftest-A40:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    #MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    MPI_HOME: "/home/nvshmem_shared/openmpi"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+      #MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 2
     NGPUS: 2
@@ -708,8 +708,8 @@ perftest-A100:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
-    #MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    MPI_HOME: "/home/nvshmem_shared/openmpi"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+      #MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
