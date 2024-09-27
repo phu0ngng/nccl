@@ -307,8 +307,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
         // Directly send to network
         if (work->regUsed == NCCL_COLLNET_REG_BUFFER) {
           if (tid == tidStartReduce) {
-            int steps = (int)divUp(size * sizeof(T), NCCL_MAX_COLLNET_SIZE);
-            Primitives<T, RedOp, FanAsymmetric<0, 1>, /*Direct=*/0, Proto, 0>::sendPeerNotify(direct->out, 1, steps);
+            Primitives<T, RedOp, FanAsymmetric<0, 1>, /*Direct=*/0, Proto, 0>::sendPeerNotify(direct->out, 1, 1);
           }
           __syncwarp();
         } else {
@@ -349,8 +348,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_DIRECT, NCCL_P
       } else {
         if (work->regUsed == NCCL_COLLNET_REG_BUFFER) {
           if (tid == tidStartBcast) {
-            int steps = (int)divUp(size * sizeof(T), NCCL_MAX_COLLNET_SIZE);
-            Primitives<T, RedOp, FanAsymmetric<1, 0>, /*Direct=*/0, Proto, 0>::recvPeerNotify(direct->out, 0, steps);
+            Primitives<T, RedOp, FanAsymmetric<1, 0>, /*Direct=*/0, Proto, 0>::recvPeerNotify(direct->out, 0, 1);
           }
           __syncwarp();
         } else {
@@ -663,8 +661,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
       if (recv == -1) {
         if (work->regUsed == NCCL_COLLNET_REG_BUFFER) {
           if (groupTid == 0) {
-            int steps = (int)divUp(size * sizeof(T), NCCL_MAX_COLLNET_SIZE);
-            Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>::sendPeerNotify(send, connIndex, steps);
+            Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>::sendPeerNotify(send, connIndex, 1);
           }
           __syncwarp();
         } else {
@@ -698,8 +695,7 @@ struct RunWorkColl<ncclFuncAllReduce, T, RedOp, NCCL_ALGO_COLLNET_CHAIN, NCCL_PR
         if (send == -1) {
           if (work->regUsed == NCCL_COLLNET_REG_BUFFER) {
             if (groupTid == 0) {
-              int steps = (int)divUp(size * sizeof(T), NCCL_MAX_COLLNET_SIZE);
-              Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>::recvPeerNotify(recv, connIndex, steps);
+              Primitives<T, RedOp, FanSymmetric<1>, /*Direct=*/1, Proto, 0>::recvPeerNotify(recv, connIndex, 1);
             }
             __syncwarp();
           } else {

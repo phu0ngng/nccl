@@ -107,6 +107,7 @@ struct sendNetResources {
   int netDeviceVersion;
   ncclNetDeviceType netDeviceType;
   ncclNetDeviceHandle_t* netDeviceHandle;
+  size_t maxP2pBytes;
 };
 
 struct recvNetResources {
@@ -139,6 +140,7 @@ struct recvNetResources {
   int netDeviceVersion;
   ncclNetDeviceType netDeviceType;
   ncclNetDeviceHandle_t* netDeviceHandle;
+  size_t maxP2pBytes;
 };
 
 /* Determine if two peers can communicate with NET */
@@ -522,7 +524,7 @@ static ncclResult_t sharedNetBuffersInit(struct ncclProxyState* proxyState, int 
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int channel, int slot, int* offset, int* size) {
+static ncclResult_t sharedBuffersGet(struct ncclProxyState* proxyState, int channel, int slot, int* offset, size_t* size) {
   // Use different pools for different channels and also separate send/recv.
   int globalSlot = (channel*NCCL_SHARED_STEPS)+slot;
   *offset = proxyState->p2pChunkSize * globalSlot;
@@ -590,6 +592,13 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
 
   resources->netDeviceVersion = props.netDeviceVersion;
   resources->netDeviceType = props.netDeviceType;
+  /* point-to-point size limits*/
+  resources->maxP2pBytes = props.maxP2pBytes;
+  if((resources->maxP2pBytes <= 0) || (resources->maxP2pBytes > NCCL_MAX_NET_SIZE_BYTES)) {
+    WARN("sendProxySetup: net plugin returned invalid value for maxP2pBytes %ld \
+      [allowed range: %ld - %ld] \n", resources->maxP2pBytes, 0L, NCCL_MAX_NET_SIZE_BYTES);
+    return ncclInternalError;
+  }
 
   // We don't return any data
   if (respSize != 0) return ncclInternalError;
@@ -621,6 +630,13 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   resources->maxRecvs = props.maxRecvs;
   resources->netDeviceVersion = props.netDeviceVersion;
   resources->netDeviceType = props.netDeviceType;
+  /* point-to-point size limits*/
+  resources->maxP2pBytes = props.maxP2pBytes;
+  if((resources->maxP2pBytes <= 0) || (resources->maxP2pBytes > NCCL_MAX_NET_SIZE_BYTES)) {
+    WARN("recvProxySetup: net plugin returned invalid value for maxP2pBytes %ld \
+      [allowed range: %ld - %ld] \n", resources->maxP2pBytes, 0L, NCCL_MAX_NET_SIZE_BYTES);
+    return ncclInternalError;
+  }
 
   if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
   NCCLCHECK(proxyState->ncclNet->listen(req->netDev, respBuff, &resources->netListenComm));
@@ -1032,7 +1048,6 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
 }
 
 static_assert(NCCL_STEPS <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for steps");
-#define MAX_NET_SIZE (1024*1024*1024L) // Rather than send INT_MAX which is 2G-1, send a power of two.
 
 static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct ncclProxyArgs* args) {
   if (args->state == ncclProxyOpReady) {
@@ -1097,7 +1112,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         uint64_t tail = sub->base + (sub->reg ? 0 : sub->transmitted);
         if ((sub->reg || connFifo[buffSlot].size != -1) && ((*recvTail > tail) || p == NCCL_PROTO_LL)) {
           // We have something to receive, let's check if it's completely ready.
-          int size = sub->reg ? std::min(MAX_NET_SIZE, sub->nbytes) : connFifo[buffSlot].size;
+          int size = sub->reg ? std::min(resources->maxP2pBytes, (size_t)sub->nbytes) : connFifo[buffSlot].size;
           bool shared = (p == NCCL_PROTO_SIMPLE) && resources->shared;
           char* buff = shared ? localBuff+connFifo[buffSlot].offset : localBuff+buffSlot*stepSize;
           int ready = 1;
@@ -1254,7 +1269,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       struct ncclProxySubArgs* subGroup = args->subs+s;
       int subCount = 0;
       void* ptrs[NCCL_PROXY_MAX_SUBS];
-      int sizes[NCCL_PROXY_MAX_SUBS];
+      size_t sizes[NCCL_PROXY_MAX_SUBS];
       int tags[NCCL_PROXY_MAX_SUBS];
       void* mhandles[NCCL_PROXY_MAX_SUBS];
       for (int i=0; i<subGroup->groupSize; i++) {
@@ -1274,7 +1289,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
               // Wait until CUDA kernel has started before we access the user buffer directly.
               if (connFifo[sub->base%NCCL_STEPS].size == -1) continue;
               ptrs[subCount] = sub->recvbuff;
-              sizes[subCount] = std::min(MAX_NET_SIZE, sub->nbytes);
+              sizes[subCount] = std::min(resources->maxP2pBytes, (size_t)sub->nbytes);
             } else {
               int sharedBuffSlot = sub->posted%maxDepth;
               int offset;

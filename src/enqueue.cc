@@ -2103,7 +2103,7 @@ static ncclResult_t calcCollChunking(
 
   if (info->regBufType == NCCL_COLLNET_REG_BUFFER) {
     proxyOp->reg = 1;
-    proxyOp->nsteps = DIVUP(nBytes, NCCL_MAX_COLLNET_SIZE);
+    proxyOp->nsteps = 1;
     proxyOp->sendMhandle = info->sendMhandle;
     proxyOp->recvMhandle = info->recvMhandle;
     proxyOp->sendbuff = (uint8_t*)info->sendbuff;

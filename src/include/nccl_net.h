@@ -13,6 +13,8 @@
 #include <stdint.h>
 
 #define NCCL_NET_HANDLE_MAXSIZE 128
+//Maximum value NCCL can accept for maxP2pBytes and maxCollBytes net properties
+#define NCCL_MAX_NET_SIZE_BYTES (1*1024*1024*1024*1024L)
 
 #define NCCL_PTR_HOST 0x1
 #define NCCL_PTR_CUDA 0x2
@@ -46,6 +48,8 @@ typedef struct {
   ncclNetDeviceType netDeviceType; // Network offload type
   int netDeviceVersion;            // Version number for network offload
   ncclNetVDeviceProps_v9_t vProps;
+  size_t maxP2pBytes;              // Max transfer size for point-to-point operations
+  size_t maxCollBytes;             // Max transfer size for collective operations
 } ncclNetProperties_v9_t;
 typedef ncclNetProperties_v9_t ncclNetProperties_t;
 
@@ -82,10 +86,10 @@ typedef struct {
   ncclResult_t (*deregMr)(void* comm, void* mhandle);
   // Asynchronous send to a peer.
   // May return request == NULL if the call cannot be performed (or would block)
-  ncclResult_t (*isend)(void* sendComm, void* data, int size, int tag, void* mhandle, void** request);
+  ncclResult_t (*isend)(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request);
   // Asynchronous recv from a peer.
   // May return request == NULL if the call cannot be performed (or would block)
-  ncclResult_t (*irecv)(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request);
+  ncclResult_t (*irecv)(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
   // visible to the GPU
   ncclResult_t (*iflush)(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request);
@@ -115,7 +119,7 @@ typedef ncclNet_v9_t ncclNet_t;
 typedef struct {
   void* mhandle;
   void* address;
-  uint32_t size;
+  size_t size;
 } ncclNetSGE_v9_t;
 
 typedef struct {
@@ -145,7 +149,7 @@ typedef struct {
   ncclResult_t (*deregMr)(void* collComm, void* mhandle);
   // Performs an asynchronous allreduce operation on the collective group.
   // May return request == NULL if the call cannot be performed (or would block).
-  ncclResult_t (*iallreduce)(void* collComm, void* sendData, void* recvData, int count,
+  ncclResult_t (*iallreduce)(void* collComm, void* sendData, void* recvData, size_t count,
       ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request);
   ncclResult_t (*iallgather)(void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v9_t* recvParts,
                              size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
@@ -240,7 +244,11 @@ typedef struct {
   ncclResult_t (*irecvConsumed)(void* recvComm, int n, void* request);
 } ncclNet_v8_t;
 
-typedef ncclNetSGE_v9_t ncclNetSGE_v8_t;
+typedef struct {
+  void* mhandle;
+  void* address;
+  uint32_t size;
+} ncclNetSGE_v8_t;
 
 typedef struct {
   // Name of the collective network (mainly for logs)
