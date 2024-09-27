@@ -1,14 +1,14 @@
 # config parameters for EOS cluster
 # no host-specific code executes in this module to allow it to live elsewhere
 
-# Relevant paths
-EOS_OPENMPI_HOME="/usr/mpi/gcc/openmpi-4.1.5rc2"
-EOS_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-12.0.1"
-EOS_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
-
 OS_VERSION="20.04"
 # CUDA_VERSION="12.0.1"
 CUDA_VERSION="12.6.1"
+
+# Relevant paths
+EOS_OPENMPI_HOME="/usr/mpi/gcc/openmpi-4.1.5rc2"
+EOS_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${CUDA_VERSION}"
+EOS_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 
 EOS_SLURM_ACCOUNT="coreai_libraries_nccl"
 
