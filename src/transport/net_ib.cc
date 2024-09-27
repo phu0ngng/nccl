@@ -2221,8 +2221,8 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             char remoteGidString[INET6_ADDRSTRLEN] = "";
             const char* localGidStr = NULL, *remoteGidStr = NULL;
             if (r->devBases[i]->gidInfo.link_layer == IBV_LINK_LAYER_ETHERNET) {
-              localGidStr = inet_ntop(AF_INET6, &r->devBases[i]->gidInfo.localGid, localGidString, sizeof(localGidString));
-              remoteGidStr = inet_ntop(AF_INET6, &r->base->remDevs[i].remoteGid, remoteGidString, sizeof(remoteGidString));
+              localGidStr = ibvGetGidStr(&r->devBases[i]->gidInfo.localGid, localGidString, sizeof(localGidString));
+              remoteGidStr = ibvGetGidStr(&r->base->remDevs[i].remoteGid, remoteGidString, sizeof(remoteGidString));
             }
 
             char line[SOCKET_NAME_MAXLEN+1];
