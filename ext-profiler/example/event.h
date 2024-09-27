@@ -86,7 +86,7 @@ struct taskEventBase {
   int rank;                         // rank of the operation in NCCL communicator
   const char* name;                 // FIXME: unused
   uint64_t commHash;                // communicator identifier
-  uint8_t func;                     // ncclFunc*
+  const char* func;                 // ncclFunc*
   int refCount;                     // number of references for this operation
   struct group* parent;             // parent event group
   struct taskEventBase* next;       // next top level event in group
@@ -102,14 +102,11 @@ struct collective {
   size_t count;
   size_t trafficBytes;
   int root;
-  uint8_t datatype;
+  const char* datatype;
   uint8_t nMaxChannels;
-  uint8_t algo;
-  uint8_t proto;
-  int op;
+  const char* algo;
+  const char* proto;
   int nWarps;
-  int isCollnet;
-  int isNvls;
   struct proxyOp send[MAX_CHANNELS];// array of send proxy operation events
   struct proxyOp recv[MAX_CHANNELS];// array of recv proxy operation events
 };
@@ -119,7 +116,7 @@ struct p2p {
   uint8_t func;
   void const* buff;
   size_t count;
-  uint8_t datatype;
+  const char* datatype;
   int peer;
   struct proxyOp op;
 };
