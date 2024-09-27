@@ -900,6 +900,10 @@ static ncclResult_t scheduleCollTasksToPlan(
     }
 
     if (comm->rank == 0) {
+      INFO(NCCL_TUNING, "%s: %ld Bytes -> Algo %s proto %s channel{Lo..Hi}={%d..%d}",
+        ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), ncclAlgoToString(task->algorithm),
+        ncclProtoToString(task->protocol), devWork->channelLo, devWork->channelHi);
+
       if (task->isCollnet) {
         TRACE(NCCL_COLL, "Collective %s(%s, %s, %s, %s) count=%ld devFuncId=%d channel{Lo..Hi}={%d..%d} count=%ld chunkCount=%d",
           ncclFuncToString(task->func), ncclDevRedOpToString(task->opDev.op),
@@ -1856,7 +1860,6 @@ static ncclResult_t topoGetAlgoInfo(
     info->protocol = backupProto;
     time = backupTime;
   }
-  if (comm->rank == 0) INFO(NCCL_TUNING, "%s: %ld Bytes -> Algo %d proto %d time %f", ncclFuncToString(info->func), nBytes, info->algorithm, info->protocol, time);
   if (simInfo) simInfo->estimatedTime = time;
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
 
@@ -2076,7 +2079,6 @@ static ncclResult_t calcCollChunking(
   }
 
   // Compute nSteps for proxies
-  //if (comm->rank == 0) printf("Coll %d, size %ld -> %dx%d, chunkSize %d (algo %d proto%d)\n", info->func, info->nBytes, info->nChannels, info->nThreads, chunkSize, info->algorithm, info->protocol);
   chunkSize = chunkSize / grainSize * grainSize; // align chunkSize to multiple grainSize
   int nLoops = (int)DIVUP(nBytes, size_t(nChannels)*nchunksPerLoop*chunkSize);
   memset(proxyOp, 0, sizeof(*proxyOp));

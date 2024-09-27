@@ -1239,6 +1239,7 @@ ib_recv_dev_list:
     comm->ar = comm->ar && ncclIbDevs[ibDevN].ar; // ADAPTIVE_ROUTING - if all merged devs have it enabled
   }
 
+  memset(&meta, 0, sizeof(meta));
   meta.ndevs = comm->base.vProps.ndevs;
 
   // Alternate QPs between devices
@@ -1532,6 +1533,9 @@ ib_recv:
       mergedDev->devName, rComm->base.vProps.ndevs, remMeta.devName, rComm->base.nRemDevs);
   }
 
+  // Metadata to send back to requestor (sender)
+  struct ncclIbConnectionMetadata meta;
+  memset(&meta, 0, sizeof(meta));
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
     ibDevN = rComm->base.vProps.devs[i];
@@ -1547,9 +1551,6 @@ ib_recv:
     rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
     rComm->base.remDevs[i].remoteGid.global.subnet_prefix = rComm->base.remDevs[i].gid.global.subnet_prefix;
   }
-
-  // Metadata to send back to requestor (sender)
-  struct ncclIbConnectionMetadata meta;
 
   // Stripe QP creation across merged devs
   // Make sure to get correct remote peer dev and QP info
@@ -1581,6 +1582,8 @@ ib_recv:
       // Store this in our own qpInfo for returning to the requestor
       if (meta.qpInfo[q].ece_supported)
         NCCLCHECKGOTO(wrap_ibv_query_ece(qp->qp, &meta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
+    } else {
+      meta.qpInfo[q].ece_supported = 0;
     }
 
     bool override_tc = (q == 0) ? true : false;
