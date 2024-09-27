@@ -321,6 +321,7 @@ unit_tests-eos:
   tags:
     - nccl-eos
   variables:
+    DISABLE_MEMLEAK: "1" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
