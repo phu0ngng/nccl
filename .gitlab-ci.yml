@@ -76,7 +76,7 @@ build-classic:
   tags:
     - build-with-docker
   script:
-    - docker/make.sh gc
+    - docker/make.sh gc-classic
   artifacts:
     paths:
       - build

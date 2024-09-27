@@ -1,15 +1,15 @@
-# Config parameters for gc cluster
+# Config parameters for gc cluster used in a classic gc00-based CI/CD flow
 # no host-specific code executes in this module to allow it to live elsewhere
 GC_GPU_ARCHS="60,70,80"
 
 # Relevant paths for bare metal
-GC_OPENMPI_HOME="/home/nvshmem_shared/openmpi"
-GC_CUDA_HOME="/usr/local/cuda"
+GC_OPENMPI_HOME="/opt/mpi/openmpi-1.10.7"
+GC_CUDA_HOME="/usr/local/cuda-11.7.1"
 
 # Container parameters
 DOCKER_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_build_tools"
 OS_VERSION="20.04"
-CUDA_VERSION="12.6.1"
+CUDA_VERSION="11.7.1"
 BUILD_TOOLS_VERSION="1.0.1"
 GC_BUILD_TOOLS_IMAGE="${BUILD_TOOLS_REPO}:${BUILD_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}"
 
