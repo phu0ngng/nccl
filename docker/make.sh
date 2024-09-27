@@ -85,7 +85,8 @@ fi
 export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_archs)"
 
 # reload the config with build cluster data
-if [ "$target_cluster_tag" != "$build_cluster_tag" ]; then
+# special case gc-classic
+if [[ "$target_cluster_tag" != "$build_cluster_tag" && "$target_cluster_tag" != "gc-classic" ]]; then
     source_cluster_config $build_cluster_tag
 fi
     
