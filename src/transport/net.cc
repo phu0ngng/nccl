@@ -1059,6 +1059,9 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
     int maxDepth = std::min(NCCL_STEPS, NCCL_SHARED_STEPS/args->nsubs);
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
+      int postedStepId = sub->posted;
+      int transmittedStepId = sub->transmitted;
+      int doneStepId = sub->done;
       if (sub->done == sub->nsteps) continue;
       struct sendNetResources* resources = (struct sendNetResources*) (sub->connection->transportResources);
       volatile struct ncclConnFifo* connFifo = (volatile struct ncclConnFifo*)resources->recvMem->connFifo;
@@ -1066,7 +1069,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       char* localBuff = NCCL_NET_MAP_GET_POINTER(&resources->map, cpu, buffs[p]);
       // Post buffers to the GPU
       if (sub->posted < sub->nsteps && sub->posted < sub->done + maxDepth) {
-        ncclProfilerStartSendProxyStepEvents(s, args, sub->posted, sub->posted+args->sliceSteps);
+        ncclProfilerStartSendProxyStepEvent(s, args, postedStepId);
         int buffSlot = (sub->base+sub->posted)%NCCL_STEPS;
         if (resources->shared) {
           if (!sub->reg) {
@@ -1083,7 +1086,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           if (resources->gdcSync) wc_store_fence(); // Flush out WC write
         } else sub->posted += args->sliceSteps;
         ncclProfilerRecordProxyOpEventState(s, args, sub->posted, sub->transSize, ncclProfilerProxyOpSendPosted);
-        ncclProfilerRecordProxyStepEventStates(s, args, sub->posted-args->sliceSteps, sub->posted, ncclProfilerProxyStepSendGPUWait);
+        ncclProfilerRecordProxyStepEventState(s, args, postedStepId, ncclProfilerProxyStepSendGPUWait);
         args->idle = 0;
         continue;
       }
@@ -1124,7 +1127,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             buff = sub->reg ? (char*)sub->recvbuff : localBuff+resources->recvMem->connFifo[buffSlot].offset;
           }
           if (ready) {
-            ncclProfilerRecordProxyOpEventState(s, args, sub->transmitted + args->sliceSteps, sub->transSize, ncclProfilerProxyOpSendRemFifoWait);
+            ncclProfilerRecordProxyOpEventState(s, args, sub->transmitted+args->sliceSteps, sub->transSize, ncclProfilerProxyOpSendRemFifoWait);
             // Data is ready, try to send.
             // Coverity complains about the size here as pointing to an out-of-scope temporary.  Which is nonsense,
             // since size is a plain integer.
@@ -1132,10 +1135,10 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             NCCLCHECK(proxyState->ncclNet->isend(resources->netSendComm, buff, size, resources->tpRank, sub->mhandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d] Isend posted, req %p, size %d, proto %d, myRank %d, channelId %d", sub->transmitted, buffSlot, sub->requests[buffSlot], size, p, proxyState->tpRank, sub->channelId);
+              sub->transSize += size;
               sub->transmitted += args->sliceSteps;
               ncclProfilerRecordProxyOpEventState(s, args, sub->transmitted, sub->transSize, ncclProfilerProxyOpSendTransmitted);
-              ncclProfilerRecordProxyStepEventStates(s, args, sub->transmitted-args->sliceSteps, sub->transmitted, ncclProfilerProxyStepSendWait);
-              sub->transSize += size;
+              ncclProfilerRecordProxyStepEventState(s, args, transmittedStepId, ncclProfilerProxyStepSendWait);
               args->idle = 0;
               continue;
             }
@@ -1165,7 +1168,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
           __sync_synchronize();
           TRACE(NCCL_NET, "sendProxy [%ld/%d] request %p done", sub->done, buffSlot, sub->requests[buffSlot]);
           sub->done += args->sliceSteps;
-          ncclProfilerStopProxyStepEvents(s, args, sub->done-args->sliceSteps, sub->done);
+          ncclProfilerStopProxyStepEvent(s, args, doneStepId);
           ncclProfilerRecordProxyOpEventState(s, args, sub->done, sub->transSize, ncclProfilerProxyOpSendDone);
 
           if (resources->shared == 0) {
@@ -1256,9 +1259,10 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       void* mhandles[NCCL_PROXY_MAX_SUBS];
       for (int i=0; i<subGroup->groupSize; i++) {
         struct ncclProxySubArgs* sub = subGroup + i;
+        int postedStepId = sub->posted;
         if (sub->posted < sub->nsteps) {
           if (sub->posted >= sub->done + maxDepth) { subCount = 0; break; }
-          ncclProfilerStartRecvProxyStepEvents(s+i, args, sub->posted, sub->posted+args->sliceSteps);
+          ncclProfilerStartRecvProxyStepEvent(s+i, args, postedStepId);
           struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
           if (sub->reg) maxDepth = 1;
           int stepSize = resources->buffSizes[p] / NCCL_STEPS;
@@ -1298,9 +1302,10 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
           subGroup->recvRequestsSubCount = subCount;
           for (int i=0; i<subGroup->groupSize; i++) {
             struct ncclProxySubArgs* sub = subGroup+i;
+            int postedStepId = sub->posted;
             sub->posted += args->sliceSteps;
             ncclProfilerRecordProxyOpEventState(s+i, args, sub->posted, sub->transSize, ncclProfilerProxyOpRecvPosted);
-            ncclProfilerRecordProxyStepEventStates(s+i, args, sub->posted-args->sliceSteps, sub->posted, ncclProfilerProxyStepRecvWait);
+            ncclProfilerRecordProxyStepEventState(s+i, args, postedStepId, ncclProfilerProxyStepRecvWait);
           }
           args->idle = 0;
         }
@@ -1325,6 +1330,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
           for (int i=0; i<NCCL_PROXY_MAX_SUBS; i++) totalSize += sizes[i];
           for (int i=0; i<subGroup->groupSize; i++) {
             struct ncclProxySubArgs* sub = subGroup + i;
+            int receivedStepId = sub->received;
             if (sub->received < sub->nsteps) {
               int size = sizes[subIndex++];
               if (sub->reg) {
@@ -1342,10 +1348,10 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
                 }
               }
             }
-            sub->received += args->sliceSteps;
             sub->transSize += sizes[i];
+            sub->received += args->sliceSteps;
             ncclProfilerRecordProxyOpEventState(s+i, args, sub->received, sub->transSize, ncclProfilerProxyOpRecvReceived);
-            ncclProfilerRecordProxyStepEventStates(s+i, args, sub->received-args->sliceSteps, sub->received, ncclProfilerProxyStepRecvFlushWait);
+            ncclProfilerRecordProxyStepEventState(s+i, args, receivedStepId, ncclProfilerProxyStepRecvFlushWait);
             if (step < sub->nsteps) {
               struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
               if (resources->useGdr) needFlush |= resources->needFlush;
@@ -1399,10 +1405,11 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         if (done) {
           for (int i=0; i<subGroup->groupSize; i++) {
             struct ncclProxySubArgs* sub = subGroup + i;
+            int transmittedStepId = sub->transmitted;
 
             sub->transmitted += args->sliceSteps;
             ncclProfilerRecordProxyOpEventState(s+i, args, sub->transmitted, sub->transSize, ncclProfilerProxyOpRecvTransmitted);
-            ncclProfilerRecordProxyStepEventStates(s+i, args, sub->transmitted-args->sliceSteps, sub->transmitted, ncclProfilerProxyStepRecvGPUWait);
+            ncclProfilerRecordProxyStepEventState(s+i, args, transmittedStepId, ncclProfilerProxyStepRecvGPUWait);
             if (step < sub->nsteps) {
               __sync_synchronize();
               struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
@@ -1425,6 +1432,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       struct ncclProxySubArgs* subGroup = args->subs+s;
       for (int i=0; i<subGroup->groupSize; i++) {
         struct ncclProxySubArgs* sub = subGroup + i;
+        int doneStepId = sub->done;
         if (sub->done == sub->nsteps) continue;
         if (sub->transmitted > sub->done) {
           struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
@@ -1440,7 +1448,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
               subGroup->recvRequestsCache[sub->done%NCCL_STEPS] = NULL;
             }
             sub->done += args->sliceSteps;
-            ncclProfilerStopProxyStepEvents(s+i, args, sub->done-args->sliceSteps, sub->done);
+            ncclProfilerStopProxyStepEvent(s+i, args, doneStepId);
             ncclProfilerRecordProxyOpEventState(s+i, args, sub->done, sub->transSize, ncclProfilerProxyOpRecvDone);
             args->idle = 0;
             if (sub->done == sub->nsteps) {
