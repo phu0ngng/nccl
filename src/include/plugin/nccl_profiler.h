@@ -14,6 +14,7 @@ enum {
   ncclProfileProxyOp   = (1 << 3),  // proxy operation event type
   ncclProfileProxyStep = (1 << 4),  // proxy step event type
   ncclProfileProxyCtrl = (1 << 5),  // proxy control event type
+  ncclProfileKernelCh  = (1 << 6),  // kernel channel event type
 };
 
 typedef enum {
@@ -44,13 +45,15 @@ typedef enum {
 
 typedef ncclProfilerEventState_t ncclProfilerEventState_v1_t;
 typedef ncclProfilerEventState_t ncclProfilerEventState_v2_t;
+typedef ncclProfilerEventState_t ncclProfilerEventState_v3_t;
 
 #include <cstdint>
+#include "profiler/profiler_v3.h"
 #include "profiler/profiler_v2.h"
 #include "profiler/profiler_v1.h"
 
-typedef ncclProfiler_v2_t ncclProfiler_t;
-typedef ncclProfilerEventDescr_v2_t ncclProfilerEventDescr_t;
-typedef ncclProfilerEventStateArgs_v2_t ncclProfilerEventStateArgs_t;
+typedef ncclProfiler_v3_t ncclProfiler_t;
+typedef ncclProfilerEventDescr_v3_t ncclProfilerEventDescr_t;
+typedef ncclProfilerEventStateArgs_v3_t ncclProfilerEventStateArgs_t;
 
 #endif

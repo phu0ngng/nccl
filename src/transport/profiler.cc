@@ -5,6 +5,7 @@
  ************************************************************************/
 #include "transport.h"
 #include "proxy.h"
+#include "profiler.h"
 
 static ncclResult_t profilerProxyConnect(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   connection->proxyAppendPtr = &connection->proxyAppend;

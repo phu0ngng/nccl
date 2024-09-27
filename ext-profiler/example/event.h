@@ -34,9 +34,15 @@
 #define MAX_PROXY_OP_STATES              ((NUM_PROXY_OP_SEND_STATES   > NUM_PROXY_OP_RECV_STATES  ) ? NUM_PROXY_OP_SEND_STATES   : NUM_PROXY_OP_RECV_STATES)
 #define MAX_PROXY_STEP_STATES            ((NUM_PROXY_STEP_SEND_STATES > NUM_PROXY_STEP_RECV_STATES) ? NUM_PROXY_STEP_SEND_STATES : NUM_PROXY_STEP_RECV_STATES)
 
-#define MAX_COMM_CLIQUES                 (32 * 8)
-
 struct proxyOp;
+
+struct kernelCh {
+  uint8_t type;
+  uint8_t channelId;
+  struct taskEventBase* parent;
+  double startTs;
+  double stopTs;
+};
 
 struct proxyStep {
   uint8_t type;                     // type of event: network transfer
@@ -111,6 +117,7 @@ struct collective {
   struct proxyOp send[MAX_CHANNELS][MAX_OPS];// array of send proxy operation events
   struct proxyOp recv[MAX_CHANNELS][MAX_OPS];// array of recv proxy operation events
   int nProxyOps[MAX_CHANNELS];
+  struct kernelCh kernel[MAX_CHANNELS];
 };
 
 struct p2p {
@@ -121,6 +128,7 @@ struct p2p {
   const char* datatype;
   int peer;
   struct proxyOp op[MAX_CHANNELS];
+  struct kernelCh kernel[MAX_CHANNELS];
 };
 
 struct group {

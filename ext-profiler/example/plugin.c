@@ -373,7 +373,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
       debugEvent(event, "ProxyOpStart");
     }
- } else if (eDescr->type == ncclProfileProxyStep) {
+  } else if (eDescr->type == ncclProfileProxyStep) {
     // the parent might be null if we run out of events
     struct proxyOp* parent = (struct proxyOp *)eDescr->parentObj;
     if (parent == NULL) return ncclSuccess;
@@ -387,6 +387,30 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->startTs = gettime() - startTime;
     *eHandle = event;
     debugEvent(event, "ProxyStepStart");
+  } else if (eDescr->type == ncclProfileKernelCh) {
+    struct taskEventBase* eventBase = (struct taskEventBase *)eDescr->parentObj;
+    if (eventBase == NULL) return ncclSuccess;
+    if (eventBase->type == ncclProfileColl) {
+      struct collective* parent = (struct collective *)eDescr->parentObj;
+      struct kernelCh* event = &parent->kernel[eDescr->kernelCh.channelId];
+      event->type = ncclProfileKernelCh;
+      event->channelId = eDescr->kernelCh.channelId;
+      event->parent = eventBase;
+      event->startTs = gettime() - startTime;
+      *eHandle = event;
+      __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
+      debugEvent(event, "KernelChStart");
+    } else { // ncclProfileP2p
+      struct p2p* parent = (struct p2p *)eDescr->parentObj;
+      struct kernelCh* event = &parent->kernel[eDescr->kernelCh.channelId];
+      event->type = ncclProfileKernelCh;
+      event->channelId = eDescr->kernelCh.channelId;
+      event->parent = eventBase;
+      event->startTs = gettime() - startTime;
+      *eHandle = event;
+      __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
+      debugEvent(event, "KernelChStart");
+    }
   }
   return ncclSuccess;
 }
@@ -445,6 +469,11 @@ void updateEvent(void* handle) {
     struct proxyCtrl* event = (struct proxyCtrl *)handle;
     event->stopTs = gettime() - startTime;
     debugEvent(event, "ProxyCtrlStop");
+  } else if (type == ncclProfileKernelCh) {
+    struct kernelCh* event = (struct kernelCh *)handle;
+    event->stopTs = gettime() - startTime;
+    updateEvent(event->parent);
+    debugEvent(event, "KernelChStop");
   }
 }
 
@@ -506,7 +535,7 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
   return ncclSuccess;
 }
 
-ncclProfiler_t ncclProfiler_v2 = {
+ncclProfiler_t ncclProfiler_v3 = {
   "Example-profiler",
   exampleProfilerInit,
   exampleProfilerStartEvent,

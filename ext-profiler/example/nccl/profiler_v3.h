@@ -4,10 +4,20 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_PROFILER_V2_H_
-#define NCCL_PROFILER_V2_H_
+#ifndef NCCL_PROFILER_V3_H_
+#define NCCL_PROFILER_V3_H_
 
 #include <stdint.h>
+
+enum {
+  ncclProfileGroup     = (1 << 0),  // group event type
+  ncclProfileColl      = (1 << 1),  // host collective call event type
+  ncclProfileP2p       = (1 << 2),  // host point-to-point call event type
+  ncclProfileProxyOp   = (1 << 3),  // proxy operation event type
+  ncclProfileProxyStep = (1 << 4),  // proxy step event type
+  ncclProfileProxyCtrl = (1 << 5),  // proxy control event type
+  ncclProfileKernelCh  = (1 << 6),  // kernel channel event type
+};
 
 typedef struct {
   uint8_t type;                 // event type descriptor: ncclProfileColl, ...
@@ -53,11 +63,49 @@ typedef struct {
     struct {
       int step;
     } proxyStep;
-  };
-} ncclProfilerEventDescr_v2_t;
 
-typedef ncclProfilerEventState_v3_t ncclProfilerEventState_v2_t;
-typedef ncclProfilerEventStateArgs_v3_t ncclProfilerEventStateArgs_v2_t;
+    struct {
+      uint8_t channelId;
+    } kernelCh;
+  };
+} ncclProfilerEventDescr_v3_t;
+
+typedef enum {
+  ncclProfilerProxyOpSendPosted,
+  ncclProfilerProxyOpSendRemFifoWait,
+  ncclProfilerProxyOpSendTransmitted,
+  ncclProfilerProxyOpSendDone,
+  ncclProfilerProxyOpRecvPosted,
+  ncclProfilerProxyOpRecvReceived,
+  ncclProfilerProxyOpRecvTransmitted,
+  ncclProfilerProxyOpRecvDone,
+
+  /* Legacy proxy profiler states */
+  ncclProfilerProxyStepSendGPUWait,
+  ncclProfilerProxyStepSendWait,
+  ncclProfilerProxyStepRecvWait,
+  ncclProfilerProxyStepRecvFlushWait,
+  ncclProfilerProxyStepRecvGPUWait,
+
+  /* Legacy proxy control states */
+  ncclProfilerProxyCtrlIdle,
+  ncclProfilerProxyCtrlActive,
+  ncclProfilerProxyCtrlSleep,
+  ncclProfilerProxyCtrlWakeup,
+  ncclProfilerProxyCtrlAppend,
+  ncclProfilerProxyCtrlAppendEnd,
+} ncclProfilerEventState_v3_t;
+
+typedef union {
+  struct {
+    size_t transSize;
+    int steps;
+  } proxyOp;
+
+  struct {
+    int appendedProxyOps;
+  } proxyCtrl;
+} ncclProfilerEventStateArgs_v3_t;
 
 typedef struct {
   const char* name;
@@ -75,7 +123,7 @@ typedef struct {
   //  - eDescr : pointer to ncclProfilerEventDescr_t object
   // Output
   //  - eHandle: return event handle for supplied event descriptor object
-  ncclResult_t (*startEvent)(void* context, void** eHandle, ncclProfilerEventDescr_v2_t* eDescr);
+  ncclResult_t (*startEvent)(void* context, void** eHandle, ncclProfilerEventDescr_v3_t* eDescr);
 
   // stopEvent - stop/finalize an event inside and event set
   // Input
@@ -87,12 +135,17 @@ typedef struct {
   //  - eHandle   : handle to event object created through startEvent
   //  - eStateArgs: optional argument used to capture event attribute updates associated with the state transition
   //  - eState    : event state transition
-  ncclResult_t (*recordEventState)(void* eHandle, ncclProfilerEventState_v2_t eState, ncclProfilerEventStateArgs_v2_t* eStateArgs);
+  ncclResult_t (*recordEventState)(void* eHandle, ncclProfilerEventState_v3_t eState, ncclProfilerEventStateArgs_v3_t* eStateArgs);
 
   // finalize - finalize the profiler plugin
   // Input
   //  - context: opaque profiler context object
   ncclResult_t (*finalize)(void* context);
-} ncclProfiler_v2_t;
+} ncclProfiler_v3_t;
+
+typedef ncclProfilerEventDescr_v3_t ncclProfilerEventDescr_t;
+typedef ncclProfilerEventState_v3_t ncclProfilerEventState_t;
+typedef ncclProfilerEventStateArgs_v3_t ncclProfilerEventStateArgs_t;
+typedef ncclProfiler_v3_t ncclProfiler_t;
 
 #endif

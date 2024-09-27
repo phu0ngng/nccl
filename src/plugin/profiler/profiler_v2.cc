@@ -10,9 +10,26 @@
 static ncclProfiler_t ncclProfiler;
 static ncclProfiler_v2_t* ncclProfiler_v2;
 
+static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclProfilerEventDescr_t* eDescr) {
+  if (eDescr->type == ncclProfileKernelCh) {
+    *eHandle = NULL;
+    return ncclSuccess;
+  }
+  return ncclProfiler_v2->startEvent(context, eHandle, (ncclProfilerEventDescr_v2_t *)eDescr);
+}
+
+static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_t* eStateArgs) {
+  return ncclProfiler_v2->recordEventState(eHandle, eState, (ncclProfilerEventStateArgs_v2_t *)eStateArgs);
+}
+
 ncclProfiler_t* getNcclProfiler_v2(void* lib) {
   ncclProfiler_v2 = (ncclProfiler_v2_t*)dlsym(lib, "ncclProfiler_v2");
   if (ncclProfiler_v2) {
+    ncclProfiler.init = ncclProfiler_v2->init;
+    ncclProfiler.startEvent = ncclProfiler_startEvent;
+    ncclProfiler.stopEvent = ncclProfiler_v2->stopEvent;
+    ncclProfiler.recordEventState = ncclProfiler_recordEventState;
+    ncclProfiler.finalize = ncclProfiler_v2->finalize;
     INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: loaded %s", ncclProfiler_v2->name);
     return &ncclProfiler;
   }

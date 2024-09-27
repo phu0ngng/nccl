@@ -53,6 +53,10 @@ ncclResult_t ncclProfilerStopProxyStepEvent(int sub, struct ncclProxyArgs* args,
 ncclResult_t ncclProfilerStartProxyCtrlEvent(void* profilerContext, void** eHandle);
 ncclResult_t ncclProfilerStopProxyCtrlEvent(void* eHandle);
 
+// Kernel Channel Start/Stop Event Wrappers
+ncclResult_t ncclProfilerStartKernelChEvent(struct ncclProxyArgs* args, int s);
+ncclResult_t ncclProfilerStopKernelChEvent(struct ncclProxyArgs* args, int s);
+
 // Record Event Wrappers
 ncclResult_t ncclProfilerRecordProxyOpEventState(int sub, struct ncclProxyArgs* args, int steps, size_t transSize, ncclProfilerEventState_t eState);
 ncclResult_t ncclProfilerRecordProxyStepEventState(int sub, struct ncclProxyArgs* args, int stepId, ncclProfilerEventState_t eState);
