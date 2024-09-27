@@ -98,8 +98,6 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 // Number of named barriers supported by CUDA
 #define NCCL_MAX_GROUPS 16
 
-#define NCCL_MAX_COLLNET_SIZE (1L << 29)
-
 enum ncclRegBufferType {
   NCCL_REGULAR_BUFFER = 0,
   NCCL_IPC_REG_BUFFER = 1,
