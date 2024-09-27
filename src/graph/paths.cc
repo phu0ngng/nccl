@@ -417,12 +417,17 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int64_t busId, int6
 NCCL_PARAM(NetForceFlush, "NET_FORCE_FLUSH", 0);
 
 // Determine whether we need to flush the GDR recv buffers
-ncclResult_t ncclTopoNeedFlush(struct ncclTopoSystem* system, int64_t busId, int* flush) {
+ncclResult_t ncclTopoNeedFlush(struct ncclComm* comm, int netDev, int64_t busId, int* flush) {
+  *flush = 1;
+  ncclNetProperties_t props;
+  NCCLCHECK(comm->ncclNet->getProperties(netDev, &props));
+  if (props.forceFlush == 1 || ncclParamNetForceFlush()) return ncclSuccess;
   int g;
+  struct ncclTopoSystem* system = comm->topo;
   NCCLCHECK(ncclTopoIdToIndex(system, GPU, busId, &g));
   struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
   // Flush is required on Ampere and earlier
-  *flush = gpu->gpu.cudaCompCap < 90 ? 1 : ncclParamNetForceFlush();
+  if (gpu->gpu.cudaCompCap >= 90) *flush = 0;
   return ncclSuccess;
 }
 
