@@ -7,7 +7,7 @@ EOS_GPU_ARCHS="90"
 
 EOS_OS_VERSION="20.04"
 EOS_CUDA_VERSION="12.0.1"
-EOS_BUILD_TOOLS_VERSION="1.0.1"
+EOS_BUILD_TOOLS_VERSION="1.0.5"
 EOS_BUILD_IMAGE_VERSION="${EOS_BUILD_TOOLS_VERSION}-c${EOS_CUDA_VERSION}-u${EOS_OS_VERSION}"
 
 EOS_OPENMPI_VERSION="4.1.5rc2"
@@ -22,7 +22,7 @@ EOS_OPENMPI_HOME="/usr/mpi/gcc/openmpi-${EOS_OPENMPI_VERSION}"
 EOS_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${EOS_CUDA_VERSION}"
 
 # Running tests on EOS in a run container
-EOS_RUN_TOOLS_VERSION="1.0.1"
+EOS_RUN_TOOLS_VERSION="1.0.5"
 EOS_RUN_IMAGE_VERSION="${EOS_RUN_TOOLS_VERSION}-c${EOS_CUDA_VERSION}-u${EOS_OS_VERSION}"
 
 # Target configs
@@ -47,7 +47,8 @@ function get_run_tools_image() {
 }
 
 function get_slurm_account() {
-    echo "$EOS_SLURM_ACCOUNT" }
+    echo "$EOS_SLURM_ACCOUNT"
+}
 
 function get_docker_job_command() {
     # ignore the arg
