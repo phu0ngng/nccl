@@ -60,7 +60,7 @@ build_cluster_tag="$(identify_build_cluster)"
 
 # arg parsing
 # defaults
-target_cluster_tag="$build_cluster_tag"
+target_cluster_arg="$build_cluster_tag"
 make_clean=0
 
 for arg in "$@"
@@ -68,22 +68,32 @@ do
     case $arg in
         --clean) make_clean=1
                  ;;
-        *) target_cluster_tag="$arg"
+        *) target_cluster_arg="$arg"
            ;;
     esac
 done
 
 # process target cluster config
-source_cluster_config $target_cluster_tag
+# comma separated list of cluster tags
+target_cluster_tags="$(echo $target_cluster_arg | tr ',' ' ')"
+gpu_arch_list=""
 
-gpu_archs=$(get_gpu_archs)
-export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_archs)"
+for target_cluster_tag in $target_cluster_tags; do
+    source_cluster_config $target_cluster_tag
+    # TODO: clean up the list from dups, sort
+    if [ -z "$gpu_arch_list" ]; then
+        gpu_arch_list="$(get_gpu_archs)"
+    else
+        gpu_arch_list="$(get_gpu_archs),$gpu_arch_list"
+    fi
+    # overrides previous value, ideally they are all the same
+    build_image_version="$(get_build_image_version)"
+done
 
-build_image_version="$(get_build_image_version)"
+export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_arch_list)"
 
 # reload the config with build cluster data
-# special case gc-classic
-if [[ "$target_cluster_tag" != "$build_cluster_tag" ]]; then
+if [[ "$target_cluster_arg" != "$build_cluster_tag" ]]; then
     source_cluster_config $build_cluster_tag
 fi
     
