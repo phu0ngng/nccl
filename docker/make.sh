@@ -20,7 +20,8 @@ function source_cluster_config() {
 
 function get_nvcc_gencodes() {
     # comma-separated list of numeric gpu_archs
-    gpu_archs=$(echo $1 | tr ',' '\n')
+    gpu_archs="$(echo $1 | tr ',' '\n' | sort -u)"
+
     gencode_string=""
     for gpu_arch in $gpu_archs; do
         gencode_string="$gencode_string -gencode=arch=compute_${gpu_arch},code=sm_${gpu_arch}"
@@ -80,7 +81,6 @@ gpu_arch_list=""
 
 for target_cluster_tag in $target_cluster_tags; do
     source_cluster_config $target_cluster_tag
-    # TODO: clean up the list from dups, sort
     if [ -z "$gpu_arch_list" ]; then
         gpu_arch_list="$(get_gpu_archs)"
     else
