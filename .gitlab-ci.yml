@@ -889,7 +889,7 @@ perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build-eos-aws-oci, perftest-P100]
+  needs: [build-classic, perftest-P100]
   tags:
     - p100
   variables:
@@ -915,7 +915,7 @@ perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build-eos-aws-oci, perftest-P100]
+  needs: [build-classic, perftest-P100]
   tags:
     - p100
   variables:
@@ -1214,7 +1214,7 @@ replay-multi-gc:
   stage: replay_tests
   rules:
     - when: always
-  needs: [build-eos-aws-oci, perftest-multi-gc]
+  needs: [build-classic, perftest-multi-gc]
   tags:
     - p100
   variables:
