@@ -39,7 +39,7 @@ workflow:
 build:
   stage: build
   rules:
-    - when: always
+    - when: never
   tags:
     - build
   variables:
