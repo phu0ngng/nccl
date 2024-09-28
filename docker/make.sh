@@ -73,20 +73,17 @@ do
     esac
 done
 
-# the only relevant target cluster parameter is gpu_arch/nvcc_gencode
-# special handling for target cluster tag "all"
-if [ "$target_cluster_tag" = "all" ]; then
-    gpu_archs="60,70,80,90"
-else
-    source_cluster_config $target_cluster_tag
-    gpu_archs=$(get_gpu_archs)
-fi
+# process target cluster config
+source_cluster_config $target_cluster_tag
 
+gpu_archs=$(get_gpu_archs)
 export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_archs)"
+
+build_image_version="$(get_build_image_version)"
 
 # reload the config with build cluster data
 # special case gc-classic
-if [[ "$target_cluster_tag" != "$build_cluster_tag" && "$target_cluster_tag" != "gc-classic" ]]; then
+if [[ "$target_cluster_tag" != "$build_cluster_tag" ]]; then
     source_cluster_config $build_cluster_tag
 fi
     
@@ -112,4 +109,4 @@ current_dir=$(realpath .)
 export DOCKER_USER_ID=$(stat --format %u $0)
 export DOCKER_GROUP_ID=$(stat --format %g $0)
 
-eval "$(get_build_command $current_dir)"
+eval "$(get_build_command $current_dir $build_image_version)"
