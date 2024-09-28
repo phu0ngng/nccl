@@ -12,7 +12,6 @@ EOS_BUILD_IMAGE_VERSION="${EOS_BUILD_TOOLS_VERSION}-c${EOS_CUDA_VERSION}-u${EOS_
 
 EOS_OPENMPI_VERSION="4.1.5rc2"
 
-
 # Parameters for executing tasks on EOS
 EOS_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 EOS_SLURM_ACCOUNT="coreai_libraries_nccl"
@@ -24,6 +23,7 @@ EOS_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${EOS_CUDA_VERSIO
 # Running tests on EOS in a run container
 EOS_RUN_TOOLS_VERSION="1.0.5"
 EOS_RUN_IMAGE_VERSION="${EOS_RUN_TOOLS_VERSION}-c${EOS_CUDA_VERSION}-u${EOS_OS_VERSION}"
+
 
 # Target configs
 # EOS only has one type of GPU: H100

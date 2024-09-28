@@ -28,9 +28,13 @@ time $SRUN ./graph_test
 echo -e "\n\n"
 
 echo "=============================== Single-Process Mem Leak TESTS Default - $(date +\"%T\") ================================="
-ASAN_OPTIONS=protect_shadow_gap=0 time $SRUN ./comm_leak_test
-[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Single-Process Mem Leak TESTS Default")
-echo -e "\n\n"
+if [ $DISABLE_MEMLEAK ]; then
+  echo "Disabled Single-Process Mem Leak TESTS Default test\n\n"
+else
+  ASAN_OPTIONS=protect_shadow_gap=0 time $SRUN ./comm_leak_test
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("Single-Process Mem Leak TESTS Default")
+  echo -e "\n\n"
+fi
 
 echo "=============================== Single-Process Mem Leak TESTS NO P2P - $(date +\"%T\") ================================="
 ASAN_OPTIONS=protect_shadow_gap=0 NCCL_P2P_DISABLE=1 time $SRUN ./comm_leak_test

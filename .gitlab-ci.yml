@@ -200,6 +200,11 @@ unit_tests-P100:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
     - ./test/scripts/gitlab-runner-unit.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 unit_tests-P40:
@@ -216,6 +221,11 @@ unit_tests-P40:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
     - ./test/scripts/gitlab-runner-unit.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 unit_tests-GP100:
@@ -233,6 +243,11 @@ unit_tests-GP100:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
     - ./test/scripts/gitlab-runner-unit.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 unit_tests-A40-single:
@@ -249,6 +264,11 @@ unit_tests-A40-single:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40"
   script:
     - ./test/scripts/gitlab-runner-unit.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 unit_tests-A40-dual:
@@ -265,6 +285,11 @@ unit_tests-A40-dual:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
   script:
     - ./test/scripts/gitlab-runner-unit.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 unit_tests-A100:
@@ -281,6 +306,11 @@ unit_tests-A100:
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
     - ./test/scripts/gitlab-runner-unit.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
   interruptible: true
 
 unit_tests-eos:
@@ -293,6 +323,7 @@ unit_tests-eos:
   tags:
     - nccl-eos
   variables:
+    DISABLE_MEMLEAK: "1" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
