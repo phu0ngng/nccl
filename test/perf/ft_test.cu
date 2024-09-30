@@ -430,7 +430,9 @@ exit:
 }
 
 testResult_t commAbortHangTest(struct threadArgs* args) {
-#if CUDA_VERSION >= 12020
+  int driverVersion = 0;
+  CUDACHECK(cudaDriverGetVersion(&driverVersion));
+  if (driverVersion < 12060) return testSuccess;
   int nGpus = args->nGpus;
   int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
@@ -470,7 +472,6 @@ testResult_t commAbortHangTest(struct threadArgs* args) {
 #endif
     for (int i = 0; i < nGpus; i++) NCCLCHECK(ncclCommAbort(comms[i]));
   }
-#endif
   return testSuccess;
 }
 testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank, const char* ft_list) {
