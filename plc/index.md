@@ -4,6 +4,7 @@
 <!------------------------------------->
 ## version 2.24
 - [NIC Fusion](items/id_ecf30b98/NIC_Fusion.md)
+- [FP8 Datatype Support](items/id_28abde35/FP8_Datatype_Support.md)
 <!-- V2_24_DO_NOT_MOVE -->
 
 <!------------------------------------->
