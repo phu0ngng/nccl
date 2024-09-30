@@ -439,7 +439,6 @@ testResult_t commAbortHangTest(struct threadArgs* args) {
   void** recvbuffs = args->recvbuffs[0];
   cudaStream_t* streams = args->streams;
   size_t count;
-  ncclResult_t ret;
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; ++j) {
     int dev = sDev + j;
@@ -447,6 +446,7 @@ testResult_t commAbortHangTest(struct threadArgs* args) {
     CUDACHECK(cudaSetDevice(dev));
     NCCLCHECK(ncclCommInitRank(&comms[j], totalGpus, *args->ncclId, rank));
   }
+  NCCLCHECK(ncclGroupEnd());
   count = size / totalGpus;
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; ++j) {
@@ -455,12 +455,10 @@ testResult_t commAbortHangTest(struct threadArgs* args) {
       NCCLCHECK(ncclRecv(((char*)recvbuffs[j]) + k * count, count, ncclChar, k, comms[j], streams[j]));
     }
   }
-  ret = ncclGroupEnd();
-  assert(ret == ncclSuccess || ret == ncclInProgress);
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
   if (args->proc == 0) {
-    NCCLCHECK(ncclCommAbort(comms[0]));
+    for (int i = 0; i < nGpus; i++) NCCLCHECK(ncclCommAbort(comms[i]));
 #ifdef MPI_SUPPORT
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
@@ -470,7 +468,7 @@ testResult_t commAbortHangTest(struct threadArgs* args) {
 #ifdef MPI_SUPPORT
     MPI_Barrier(MPI_COMM_WORLD);
 #endif
-    NCCLCHECK(ncclCommAbort(comms[0]));
+    for (int i = 0; i < nGpus; i++) NCCLCHECK(ncclCommAbort(comms[i]));
   }
 #endif
   return testSuccess;
