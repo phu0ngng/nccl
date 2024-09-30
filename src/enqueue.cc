@@ -1927,10 +1927,18 @@ static ncclResult_t getAlgoInfo(
   initCollCostTable((float **)collCostTable);
   NCCLCHECK(updateCollCostTable(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps, (float **)collCostTable, &backupAlgo, &backupProto, &backupTime));
   if (comm->tuner != NULL) {
+    size_t elementSize = ncclTypeSize(info->datatype);
+    size_t sendbuffSize = elementSize*ncclFuncSendCount(info->func, comm->nRanks, info->count);
+    size_t recvbuffSize = elementSize*ncclFuncRecvCount(info->func, comm->nRanks, info->count);
+    struct ncclReg* regSendBuf;
+    struct ncclReg* regRecvBuf;
+    NCCLCHECK(ncclRegFind(comm, info->sendbuff, sendbuffSize, &regSendBuf));
+    NCCLCHECK(ncclRegFind(comm, info->recvbuff, recvbuffSize, &regRecvBuf));
+    int regBuff = ((regSendBuf && regRecvBuf) || (ncclCudaGraphValid(comm->planner.capturingGraph) && ncclParamGraphRegister()));
     NCCLCHECK(comm->tuner->getCollInfo(
           comm->tunerContext, info->func, nBytes,
           numPipeOps, (float **)collCostTable, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
-          &nMaxChannels));
+          regBuff, &nMaxChannels));
   }
   NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, backupAlgo, backupProto, backupTime, simInfo));
   info->nMaxChannels = nMaxChannels == 0 ? info->nMaxChannels : nMaxChannels;

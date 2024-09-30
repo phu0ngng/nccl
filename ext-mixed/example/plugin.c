@@ -379,7 +379,7 @@ __hidden ncclResult_t tunerPluginInit(size_t nRanks, size_t nNodes, ncclDebugLog
 
 __hidden ncclResult_t tunerPluginGetCollInfo(void* context, ncclFunc_t collType, size_t nBytes,
                               int numPipeOps, float** collCostTable, int numAlgo, int numProto,
-                              int* nChannels) {
+                              int regBuff, int* nChannels) {
   // Update NCCL core generated cost table. Updated table will be evaluated by NCCL to pick the best algo/proto combo
   if (collCostTable[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] != NCCL_ALGO_PROTO_IGNORE) {
     collCostTable[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 0.0;
@@ -390,7 +390,7 @@ __hidden ncclResult_t tunerPluginGetCollInfo(void* context, ncclFunc_t collType,
 
 __hidden ncclResult_t tunerPluginDestroy(void* context) { return ncclSuccess; }
 
-const ncclTuner_v3_t ncclTunerPlugin_v3 = {
+const ncclTuner_v4_t ncclTunerPlugin_v4 = {
   .name = PLUGIN_NAME,
   .init = tunerPluginInit,
   .getCollInfo = tunerPluginGetCollInfo,
