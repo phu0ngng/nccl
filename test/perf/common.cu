@@ -97,6 +97,7 @@ int cudaGraphLaunches = 0;
 static int report_cputime = 0;
 static int out_of_place = 1;
 static int unalign = 0;
+static int trafficClass;
 
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
@@ -908,6 +909,7 @@ testResult_t threadInit(struct threadArgs* args) {
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = commblocking;
   config.splitShare = split_share;
+  config.trafficClass = trafficClass;
 
   NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; ++i) {
@@ -1196,13 +1198,14 @@ int main(int argc, char* argv[], char **envp) {
     {"per_coll_perf", required_argument, 0, 'A'},
     {"simulate", required_argument, 0, 'E'},
     {"init_ids", required_argument, 0, 'I'},
+    {"traffic_class", required_argument, 0, 'q'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1353,6 +1356,9 @@ int main(int argc, char* argv[], char **envp) {
       case 'E':
         simulate = (int)strtol(optarg, NULL, 0);
         break;
+      case 'q':
+        trafficClass = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1398,6 +1404,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-R,--local_register <s/r/a> enable local buffer registration on send buffers/recv buffers/all buffers (default: disable)] \n\t"
             "[-A,--per_coll_perf <0/1/2> Report performance per-collective (default: 0 disable; 1 report per-collective performance and std deviation; 2: report only std deviation)] \n\t"
             "[-I,--init_ids <num ids> enable scalable API for ncclCommInitRank using <num ids> ncclUniqueIds (default: disabled; 0 is equivalent to 1 ncclUniqueId per 128 NCCL ranks; value must be >=0)] \n\t"
+            "[-q,--traffic_class <tclass> set network traffic class] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1594,6 +1601,7 @@ testResult_t run() {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = commblocking;
     config.splitShare = split_share;
+    config.trafficClass = trafficClass;
 
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < nGpus * nThreads; ++i) {
