@@ -15,6 +15,7 @@
 #define NCCL_NET_HANDLE_MAXSIZE 128
 //Maximum value NCCL can accept for maxP2pBytes and maxCollBytes net properties
 #define NCCL_MAX_NET_SIZE_BYTES (1*1024*1024*1024*1024L)
+#define NCCL_NET_OPTIONAL_RECV_COMPLETION 0x1
 
 #define NCCL_PTR_HOST 0x1
 #define NCCL_PTR_CUDA 0x2
