@@ -69,6 +69,8 @@ static ncclResult_t ncclNet_old_as_v9_isend(void* sendComm, void* data, size_t s
 
 static ncclResult_t ncclNet_old_as_v9_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
    int sizesInt[NCCL_PROXY_MAX_SUBS];
+   //reset to NULL if optional receive completion is set
+   if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
    for (int i=0; i<n; i++) {
      if (sizes[i] > MAX_NET_SIZE) return ncclInternalError;
      sizesInt[i] = (int) sizes[i];
