@@ -117,30 +117,6 @@ build-draco_oci:
     expire_in: 4 hrs
   interruptible: true
 
-setup-eos:
-  stage: unit_tests
-  rules:
-    - if: $RUN_ON_EOS == "1"
-      when: always
-    - when: never
-  tags:
-    - nccl-eos
-  script:
-    - nccl/test/scripts/gitlab-runner-fairshare.sh
-  interruptible: true
-
-setup-draco-oci:
-  stage: unit_tests
-  rules:
-    - if: $RUN_ON_DRACO_OCI == "1"
-      when: always
-    - when: never
-  tags:
-    - nccl-eos
-  script:
-    - nccl/test/scripts/gitlab-runner-fairshare.sh
-  interruptible: true
-
 setup-AWS_H100_EFA:
   stage: setup
   rules:
