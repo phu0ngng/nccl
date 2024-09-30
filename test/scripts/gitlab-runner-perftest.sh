@@ -2,6 +2,7 @@
 
 export OPAL_PREFIX=$MPI_HOME
 export LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export NCCL_DEBUG=WARN
 
 max=$1
 if [ "$max" == "" ]; then max=1G; fi
