@@ -190,7 +190,6 @@ unit_tests-P100:
   stage: unit_tests
   rules:
     - when: always
-      #  needs: ["build-eos-aws-oci","health-P100"]
   needs: ["build-classic","health-P100"]
   tags:
     - p100
@@ -211,7 +210,6 @@ unit_tests-P40:
   stage: unit_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci","health-P40"]
   needs: ["build-classic","health-P40"]
   tags:
     - p40
@@ -232,7 +230,6 @@ unit_tests-GP100:
   stage: unit_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci","health-GP100"]
   needs: ["build-classic","health-GP100"]
   tags:
     - gp100
@@ -254,7 +251,6 @@ unit_tests-A40-single:
   stage: unit_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci","health-A40"]
   needs: ["build-classic","health-A40"]
   tags:
     - a40
@@ -275,7 +271,6 @@ unit_tests-A40-dual:
   stage: unit_tests
   rules:
     - when: always
-    #needs: ["build-eos-aws-oci","health-A40"]
   needs: ["build-classic","health-A40"]
   tags:
     - a40
@@ -296,7 +291,6 @@ unit_tests-A100:
   stage: unit_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci","health-A100"]
   needs: ["build-classic","health-A100"]
   tags:
     - a100pci
@@ -389,7 +383,6 @@ apitest-P100:
   stage: api_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci", "unit_tests-P100"]
   needs: ["build-classic", "unit_tests-P100"]
   tags:
     - p100
@@ -410,7 +403,6 @@ apitest-P40:
   stage: api_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci", "unit_tests-P40"]
   needs: ["build-classic", "unit_tests-P40"]
   tags:
     - p40
@@ -431,7 +423,6 @@ apitest-GP100:
   stage: api_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci", "unit_tests-GP100"]
   needs: ["build-classic", "unit_tests-GP100"]
   tags:
     - gp100
@@ -452,7 +443,6 @@ apitest-A40:
   stage: api_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci", "unit_tests-A40-single", "unit_tests-A40-dual"]
   needs: ["build-classic", "unit_tests-A40-single", "unit_tests-A40-dual"]
   tags:
     - a40
@@ -472,7 +462,6 @@ apitest-A100:
   stage: api_tests
   rules:
     - when: always
-      #needs: ["build-eos-aws-oci", "unit_tests-A100"]
   needs: ["build-classic", "unit_tests-A100"]
   tags:
     - a100pci
@@ -633,14 +622,12 @@ perftest-P100:
   stage: perf_tests_single
   rules:
     - when: always
-      #needs: [build-eos-aws-oci, apitest-P100]
   needs: [build-classic, apitest-P100]
   tags:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-      #MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
@@ -658,14 +645,12 @@ perftest-P40:
   stage: perf_tests_single
   rules:
     - when: always
-      #needs: [build-eos-aws-oci, apitest-P40]
   needs: [build-classic, apitest-P40]
   tags:
     - p40
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-      # MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
@@ -683,14 +668,12 @@ perftest-GP100:
   stage: perf_tests_single
   rules:
     - when: always
-      #needs: [build-eos-aws-oci, apitest-GP100]
   needs: [build-classic, apitest-GP100]
   tags:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-      #MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
@@ -708,14 +691,12 @@ perftest-A40:
   stage: perf_tests_single
   rules:
     - when: always
-      #needs: [build-eos-aws-oci, apitest-A40]
   needs: [build-classic, apitest-A40]
   tags:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-      #MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 2
     NGPUS: 2
@@ -733,14 +714,12 @@ perftest-A100:
   stage: perf_tests_single
   rules:
     - when: always
-      #needs: [build-eos-aws-oci, apitest-A100]
   needs: [build-classic, apitest-A100]
   tags:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-      #MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8

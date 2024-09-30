@@ -26,6 +26,7 @@ GCCL_CUDA_HOME="/usr/local/cuda-${GCCL_CUDA_VERSION}"
 
 #   Parameters for running in a container (unused)
 # DOCKER_RUN_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_run_tools"
+# GCCL_RUN_TOOLS_VERSION="1.0.1"
 # GCCL_RUN_IMAGE_VERSION="${GCCL_RUN_TOOLS_VERSION}-c${GCCL_CUDA_VERSION}-u${GCCL_OS_VERSION}"
 
 
