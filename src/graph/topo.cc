@@ -795,7 +795,6 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
   // Track a stack of parents per-net node being merged
   xmlNodeStack* parents;
   NCCLCHECK(ncclCalloc(&parents, nNodes));
-  TRACE(NCCL_GRAPH, "Allocated %d parent stacks", nNodes);
   // Find the common parent
   ncclXmlNode* common = NULL;
   
@@ -809,7 +808,6 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
     ncclXmlNode* temp;
     temp = nodes[i];
     while (temp) {
-      TRACE(NCCL_GRAPH, "Pushing %s from root %s to parents[%d]", temp->name, nodes[i]->name, i);
       parents[i].push(temp);
       temp = strcmp(temp->name, "system") == 0 ? NULL : temp->parent;
     }
@@ -820,14 +818,11 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
   c = 1;
   while (c && !parents[0].empty()) {
     ncclXmlNode* temp = parents[0].top();
-    TRACE(NCCL_GRAPH, "parents[%d].top()=%s", 0, temp->name);
     for (int i = 1; i < nNodes; i++) {
       if (!parents[i].empty()) {
         c &= (temp == parents[i].top());
-        TRACE(NCCL_GRAPH, "parents[%d].top()=%s c=%d", i, temp->name, c);
       } else {
         c = 0;
-        TRACE(NCCL_GRAPH, "parents[%d].top()=(nil) c=%d", i, c);
         break;
       }
     }
@@ -835,9 +830,7 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
     if (c) {
       common = temp;
       if (common == NULL) TRACE(NCCL_GRAPH, "COMMON IS NULL");
-      TRACE(NCCL_GRAPH, "Set common to %s", common->name);
       for (int i = 0; i < nNodes; i++) {
-        TRACE(NCCL_GRAPH, "Popping from parents[%d]", i);
         parents[i].pop();
       }
     // Check multi-port while we still have the mismatched parents
@@ -845,7 +838,6 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
     } else {
       int multiPort = 1;
       const char* tempBusId;
-      TRACE(NCCL_GRAPH, "Checking is common->name(%s) is pci", common->name);
       if (strcmp(common->name, "pci") != 0) {
         multiPort = 0;
       } else {
@@ -855,7 +847,6 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
             if (!parents[i].empty()) {
               const char* busId;
               NCCLCHECK(xmlGetAttrStr(parents[i].top(), "busid", &busId));
-              TRACE(NCCL_GRAPH, "Comparing i=%d busid=%s busid=%s", i, tempBusId, busId);
               if (busId) {
                 if (strlen(busId) != strlen(tempBusId)) {
                   multiPort = 0;
@@ -903,6 +894,64 @@ out:
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoMakeUniqueBusId(struct ncclXml* xml, char* busId, struct ncclXmlNode** pciNode, struct ncclXmlNode* parent) {
+  int i = 0;
+  int64_t rBusId;
+  NCCLCHECK(busIdToInt64(busId, &rBusId));
+  // Try to find an unused busid - NCCL expects leaf busid to be unique
+  while (i < 100) {
+    rBusId++;
+    TRACE(NCCL_GRAPH, "Trying to make new busId %lx", rBusId);
+    int64ToBusId(rBusId, busId);
+    struct ncclXmlNode* temp = NULL;
+    NCCLCHECK(xmlFindTagKv(xml, "pci", &temp, "busid", busId));
+    if (temp == NULL) {
+      NCCLCHECK(xmlAddNode(xml, parent, "pci", pciNode));
+      NCCLCHECK(xmlSetAttr(*pciNode, "busid", busId));
+      TRACE(NCCL_GRAPH, "Made new busId %lx", rBusId);
+      return ncclSuccess;
+    }
+    TRACE(NCCL_GRAPH, "Conflicting busId %lx", rBusId);
+    i++;
+  }
+
+  WARN("TOPO/NET : Couldn't generate unique busId after %d tries", i);
+  return ncclInternalError;
+}
+
+ncclResult_t ncclTopoMakePciParent(struct ncclXml* xml, struct ncclXmlNode** parent, struct ncclXmlNode* physNetNode) {
+  struct ncclXmlNode* newBusId = NULL;
+  struct ncclXmlNode* pci = physNetNode->parent;
+  if (pci) {
+    pci = pci->parent;
+    if (pci) {
+      if (strcmp(pci->name, "pci") == 0) {
+        char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
+        memset(busId, 0, sizeof(busId));
+        const char* originalBusId;
+        // Seed busId with the current NIC 0's busId to make discovering a unique hash quicker
+        NCCLCHECK(xmlGetAttrStr(pci, "busid", &originalBusId));
+        snprintf(busId, sizeof(busId), "%s", originalBusId);
+        NCCLCHECK(ncclTopoMakeUniqueBusId(xml, busId, &newBusId, *parent));
+        for (int i = 0; i < pci->nAttrs; i++) {
+          NCCLCHECK(xmlSetAttr(newBusId, pci->attrs[i].key, pci->attrs[i].value));
+        }
+        NCCLCHECK(xmlSetAttr(newBusId, "busid", busId));
+        *parent = newBusId;
+      }
+    }
+  }
+
+  if (newBusId == NULL) {
+    const char* name;
+    NCCLCHECK(xmlGetAttr(physNetNode, "name", &name));
+    WARN("TOPO/NET : Can't find busId of child 0 %s", name);
+    return ncclInternalError;
+  }
+
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoMakeVnic(ncclComm_t comm, struct ncclXml* xml, ncclNetVDeviceProps_t* vProps, struct ncclXmlNode** physNetNodes, struct ncclXmlNode** netNode) {
   if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) {
     WARN("TOPO/NET : Tried to merge too many NICs. %d > %d", vProps->ndevs, NCCL_NET_MAX_DEVS_PER_NIC);
@@ -933,6 +982,12 @@ ncclResult_t ncclTopoMakeVnic(ncclComm_t comm, struct ncclXml* xml, ncclNetVDevi
 
   ncclNetProperties_t props;
   NCCLCHECK(comm->ncclNet->getProperties(vDevIndex, &props));
+
+  // If the common parent is PCI, we must reparent the new NIC under a made up busId
+  if (strcmp(parent->name, "pci") == 0) {
+    NCCLCHECK(ncclTopoMakePciParent(xml, &parent, physNetNodes[0]));
+  }
+
   // Create a new xmlTopoNode for this net
   NCCLCHECK(ncclTopoFillNet(xml, props.pciPath, props.name, netNode, parent));
   INFO(NCCL_INIT|NCCL_GRAPH, "TOPO/NET : Made vNic %d %s", vDevIndex, props.name);
@@ -1063,7 +1118,12 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclComm_t comm, ncclNet
 
   int path = PATH_LOC;
   NCCLCHECK(ncclTopoGetPath(physNetNodes, vProps->ndevs, &path, parent));
-  if (path == PATH_LOC) *parent = NULL;
+  if (path == PATH_LOC) {
+    *parent = NULL;
+  } else if (parent && strcmp((*parent)->name, "pci") == 0) {
+    // If the common parent is PCI, we must reparent the new NIC under a made up busId
+    NCCLCHECK(ncclTopoMakePciParent(xml, parent, physNetNodes[0]));
+  }
   TRACE(NCCL_GRAPH, "Selected parent %s with path %d", (*parent)->name, path);
   return ncclSuccess;
 }
@@ -1173,12 +1233,12 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
 
   int usePhysicalDevices;
   usePhysicalDevices = (dumpXmlFile || (comm->ncclNet->makeVDevice == NULL)) ;
+  if (netDevCount == 0) {
+    NCCLCHECKGOTO(comm->ncclNet->devices(&netDevCount), ret, fail);
+  }
 
   // This should only happen when not dumping an XML file, to avoid overwriting properties
   if (dumpXmlFile == NULL) {
-    if (netDevCount == 0) {
-      NCCLCHECKGOTO(comm->ncclNet->devices(&netDevCount), ret, fail);
-    }
     // Get xml topo file info for all net nodes
     for (int n=0; n<netDevCount; n++) {
       ncclNetProperties_t props;
@@ -1237,10 +1297,12 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     ncclNetProperties_t props;
     struct ncclXmlNode* parent = NULL;
     NCCLCHECKGOTO(comm->ncclNet->getProperties(n, &props), ret, fail);
-
     if (!usePhysicalDevices) {
+      struct ncclXmlNode* net;
+      NCCLCHECK(xmlFindTagKv(xml, "net", &net, "name", props.name));
       // In the event of multithreaded use case, we need to re-discover the shared parent of the given devices for this vNIC
-      NCCLCHECKGOTO(ncclTopoGetVNicParent(xml, comm, &props.vProps, &parent), ret, fail);
+      // Only run this if the net doesn't exist locally - this may alter the XML state
+      if (net == NULL) NCCLCHECKGOTO(ncclTopoGetVNicParent(xml, comm, &props.vProps, &parent), ret, fail);
     }
 
     comm->netDeviceType = props.netDeviceType;

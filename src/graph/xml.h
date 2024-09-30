@@ -215,6 +215,24 @@ static ncclResult_t xmlSetAttr(struct ncclXmlNode* node, const char* attrName, c
   return ncclSuccess;
 }
 
+static ncclResult_t xmlPrintNodeRecursive(struct ncclXmlNode* node, const char* name) {
+  while (node) {
+    char line[1024*8];
+    int cursor = 0;
+    snprintf(line, sizeof(line), "<name=%s", node->name);
+    for (int i = 0; i < node->nAttrs; i++) {
+      cursor = strlen(line);
+      snprintf(line + cursor, sizeof(line) - cursor, " %s=%s", node->attrs[i].key, node->attrs[i].value);
+    }
+    cursor = strlen(line);
+    snprintf(line + cursor, sizeof(line) - cursor, ">");
+    INFO(NCCL_GRAPH, "%s", line);
+    node = node->parent;
+  }
+  return ncclSuccess;
+}
+
+
 static ncclResult_t xmlSetAttrIfUnset(struct ncclXmlNode* node, const char* attrName, const char* value) {
   int index;
   NCCLCHECK(xmlGetAttrIndex(node, attrName, &index));
