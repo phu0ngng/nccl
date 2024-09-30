@@ -523,9 +523,7 @@ inline bool ncclNvlsSupported(int devRedOp, int type) {
   case ncclInt64:
   case ncclUint64:
   case ncclFloat16:
-  #if defined(__CUDA_BF16_TYPES_EXIST__)
   case ncclBfloat16:
-  #endif
     return devRedOp == ncclDevSum || devRedOp == ncclDevMinMax;
   case ncclFloat:
   case ncclDouble:

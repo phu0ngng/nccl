@@ -1810,6 +1810,13 @@ static ncclResult_t updateCollCostTable(
       bool backup;
       float time;
       NCCLCHECK(ncclTopoGetAlgoTime(comm, info->func, a, p, nBytes, numPipeOps, &time, &backup));
+      // Relegate fp8 reduction trees of sufficient depth that they incur precision loss
+      // to be least preferred.
+      if (info->datatype == ncclFloat8e4m3 || info->datatype == ncclFloat8e5m2) {
+        if (a == NCCL_ALGO_RING && comm->nRanks > 8) {
+          time *= 1024.0; // Any factor large enough to act as a partition between lossy and non-lossy algos.
+        }
+      }
       if (!backup) {
         table[a][p] = time;
       } else {
@@ -2144,9 +2151,12 @@ static ncclResult_t hostToDevRedOp(
     int8_t   i8; uint8_t   u8;
     int32_t i32; uint32_t u32;
     int64_t i64; uint64_t u64;
-    half f16; float f32; double f64;
+    __half f16; float f32; double f64;
     #if defined(__CUDA_BF16_TYPES_EXIST__)
       __nv_bfloat16 bf16;
+    #endif
+    #if defined(__CUDA_FP8_TYPES_EXIST__)
+      __nv_fp8_storage_t f8;
     #endif
     void *ptr;
   };
@@ -2180,6 +2190,16 @@ static ncclResult_t hostToDevRedOp(
       opFull->op = ncclDevSumPostDiv;
       u64 = comm->nRanks;
       break;
+    #if defined(__CUDA_FP8_TYPES_EXIST__)
+    case ncclFloat8e4m3:
+      opFull->op = ncclDevPreMulSum;
+      f8 = __nv_cvt_float_to_fp8(float(1.0/comm->nRanks), __NV_SATFINITE, __NV_E4M3);
+      break;
+    case ncclFloat8e5m2:
+      opFull->op = ncclDevPreMulSum;
+      f8 = __nv_cvt_float_to_fp8(float(1.0/comm->nRanks), __NV_SATFINITE, __NV_E5M2);
+      break;
+    #endif
     case ncclFloat16:
       opFull->op = ncclDevPreMulSum;
       f16 = __float2half(float(1.0/comm->nRanks)); // __double2half not supported pre CUDA 11.x
@@ -2271,6 +2291,13 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     // Empty collectives can be discarded.
     if (info->count == 0) return ncclSuccess;
 
+    if (info->datatype == ncclFloat8e4m3 || info->datatype == ncclFloat8e5m2) {
+      if (comm->minCompCap < 90) {
+        WARN("FP8 reduction support begins with sm90 capable devices.");
+        return ncclInvalidArgument;
+      }
+    }
+    
     // Copy reduction op state from op handle into info struct here since the
     // op handle may be destroyed before ncclGroupEnd().
     struct ncclDevRedOpFull opDev;
