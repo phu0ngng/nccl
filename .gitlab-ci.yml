@@ -36,25 +36,6 @@ workflow:
   rules:
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
 
-build:
-  stage: build
-  rules:
-    - when: never
-  tags:
-    - build
-  variables:
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    GIT_CLONE_PATH: "$CI_BUILDS_DIR/$CI_COMMIT_SHA"
-  script:
-    - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
-    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME NVCC_GENCODE="-gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_80,code=sm_80"
-  artifacts:
-    paths:
-      - build
-    expire_in: 4 hrs
-  interruptible: true
-
 build-trace:
   stage: build
   rules:
@@ -195,9 +176,9 @@ unit_tests-P100:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -215,9 +196,9 @@ unit_tests-P40:
     - p40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -236,9 +217,9 @@ unit_tests-GP100:
   variables:
     NCCL_CUMEM_ENABLE: "0"
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -256,9 +237,9 @@ unit_tests-A40-single:
     - a40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -276,9 +257,9 @@ unit_tests-A40-dual:
     - a40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -296,9 +277,9 @@ unit_tests-A100:
     - a100pci
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
