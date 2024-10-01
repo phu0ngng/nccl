@@ -239,6 +239,12 @@ different offset within the original buffer, with a smaller size, etc), then der
 The call to ncclCommDeregister should call the final deregMr() and effectively remove the mapping
 on the network adapter.
 
+The `forceFlush` field can request the NCCL core to call flush for all transfers. By default,
+flushes are only called when the GPU architecture or PCI topology would not not guarantee correct
+PCI ordering. Plugins can set it to one if the NIC operates in a mode where e.g. the data and the
+completion paths use different PCI links and therefore need a call to flush() to guarantee
+ordering.
+
 The `speed` field indicates the speed of the network port in Mbps (10^6 bits per second). This is
 important to ensure proper optimization of flows within the node.
 
@@ -262,6 +268,10 @@ this must match the
 
   int netDeviceVersion;            // Version number for network offload
   ncclNetVDeviceProps_v9_t vProps;
+
+The `maxP2pBytes` and `maxCollBytes` fields indicate the maximum size the plugin can handle for
+point-to-point and collective calls. This will tell the NCCL core to cut large operations into
+multiple smaller chunks if needed.
 
 ### Connection establishment
 
