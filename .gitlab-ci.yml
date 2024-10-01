@@ -369,9 +369,9 @@ apitest-P100:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
@@ -389,9 +389,9 @@ apitest-P40:
     - p40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
@@ -409,9 +409,9 @@ apitest-GP100:
     - gp100
   variables:
     NCCL_CUMEM_ENABLE: "0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
@@ -428,9 +428,9 @@ apitest-A40:
   tags:
     - a40
   variables:
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
@@ -447,9 +447,9 @@ apitest-A100:
   tags:
     - a100pci
   variables:
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
@@ -608,12 +608,11 @@ perftest-P100:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh
   artifacts:
     when: always
@@ -631,12 +630,11 @@ perftest-P40:
     - p40
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh
   artifacts:
     when: always
@@ -654,12 +652,11 @@ perftest-GP100:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pGP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh 1G 2
   artifacts:
     when: always
@@ -677,12 +674,11 @@ perftest-A40:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 2
     NGPUS: 2
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   artifacts:
     when: always
@@ -700,12 +696,11 @@ perftest-A100:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   artifacts:
     when: always
@@ -886,14 +881,13 @@ perftest-multi-gc:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NCCL_ALLOC_P2P_NET_LL_BUFFERS: "1" # Add coverage of dedicated P2P LL buffers on constrained rank count
     NNODES: 2
     NGPUS: 8
     SKIP_MULTI_GPU: 1
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0
   artifacts:
     when: always
@@ -912,14 +906,13 @@ perftest-sharp-gc:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SHARP_HOME: "/opt/hpcx/v2.7/sharp"
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
     NNODES: 2
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   artifacts:
     when: always
@@ -1211,12 +1204,11 @@ replay-multi-gc:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC_RESNET: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
     SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"
     SALLOC_SELF_SINGLE: "salloc --exclusive -t 00:05:00 -N 1 -n 8 -pP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - SALLOC=$SALLOC_RESNET ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
     - ./test/scripts/gitlab-runner-replay-self-test.sh
   artifacts:
