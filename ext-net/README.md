@@ -98,10 +98,10 @@ typedef struct {
   ncclResult_t (*deregMr)(void* comm, void* mhandle);
   // Asynchronous send to a peer.
   // May return request == NULL if the call cannot be performed (or would block)
-  ncclResult_t (*isend)(void* sendComm, void* data, int size, int tag, void* mhandle, void** request);
+  ncclResult_t (*isend)(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request);
   // Asynchronous recv from a peer.
   // May return request == NULL if the call cannot be performed (or would block)
-  ncclResult_t (*irecv)(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request);
+  ncclResult_t (*irecv)(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request);
   // Perform a flush/fence to make sure all data received with NCCL_PTR_CUDA is
   // visible to the GPU
   ncclResult_t (*iflush)(void* recvComm, int n, void** data, int* sizes, void** mhandles, void** request);
@@ -122,7 +122,7 @@ typedef struct {
   // Virtual NIC APIs. makeVDevice will create a virtual NIC given the specified properties, and tell the caller
   // what index this new vNIC exists at
   ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_t* props);
-} ncclNet_v6_t;
+} ncclNet_t;
 ```
 
 ## Error codes
