@@ -1,28 +1,75 @@
-# config parameters for Draco-RNO cluster
-# no host-specific code executes in this module to allow it to live elsewhere
+# Config parameters for Draco-OCI cluster
+# No host-specific code executes in this module to allow it to live elsewhere
 
-# Relevant paths
-DO_OPENMPI_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/openmpi-4.1.4"
-DO_CUDA_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/cuda-12.0.1"
+# Targeting build to run on Draco-OCI
+DO_GPU_ARCHS="80"
+
+DO_OS_VERSION="20.04"
+DO_CUDA_VERSION="12.0.1"
+DO_BUILD_TOOLS_VERSION="1.0.5"
+DO_BUILD_IMAGE_VERSION="${DO_BUILD_TOOLS_VERSION}-c${DO_CUDA_VERSION}-u${DO_OS_VERSION}"
+
+DO_OPENMPI_VERSION="4.1.4"
+
+# Parameters for executing tasks on Draco-OCI
 DO_DOCKER_IMAGE_DIR="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/docker_sqsh"
-
-OS_VERSION="20.04"
-CUDA_VERSION="12.0.1"
-
 DO_SLURM_ACCOUNT="coreai_libraries_nccl"
 
-RUN_TOOLS_VERSION="1.0.5"
-RUN_TOOLS_IMAGE_NAME="nccl_run_tools-${RUN_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}.sqsh"
-DO_RUN_TOOLS_IMAGE="$DO_DOCKER_IMAGE_DIR/$RUN_TOOLS_IMAGE_NAME"
+# Relevant paths for running test on bare metal
+DO_OPENMPI_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/openmpi-${DO_OPENMPI_VERSION}"
+DO_CUDA_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/cuda-${DO_CUDA_VERSION}"
 
-BUILD_TOOLS_VERSION="1.0.5"
-BUILD_TOOLS_IMAGE_NAME="nccl_build_tools-${BUILD_TOOLS_VERSION}-c${CUDA_VERSION}-u${OS_VERSION}.sqsh"
-DO_BUILD_TOOLS_IMAGE="$DO_DOCKER_IMAGE_DIR/$BUILD_TOOLS_IMAGE_NAME"
+# Running test in run container
+DO_RUN_TOOLS_VERSION="1.0.5"
+DO_RUN_TOOLS_IMAGE_VERSION="${DO_RUN_TOOLS_VERSION}-c${DO_CUDA_VERSION}-u${DO_OS_VERSION}"
+
 
 # Target configs
 # Draco-OCI only has one type of GPU: A100
-function get_nvcc_gencode() {
-    echo "-gencode=arch=compute_80,code=sm_80"
+function get_gpu_archs() {
+    echo "$DO_GPU_ARCHS"
+}
+
+function get_build_image_version() {
+    echo "$DO_BUILD_IMAGE_VERSION"
+}
+
+# Build host configs
+function get_build_tools_image() {
+    build_image_version="$1"
+    echo "$DO_DOCKER_IMAGE_DIR/nccl_build_tools-${build_image_version}.sqsh"
+}
+
+function get_run_tools_image() {
+    run_image_version="$1"
+    echo "$DO_DOCKER_IMAGE_DIR/nccl_run_tools-${run_image_version}.sqsh"
+}
+
+function get_slurm_account() {
+    echo "$DO_SLURM_ACCOUNT"
+}
+
+function get_docker_job_command() {
+    # ignore the arg
+    echo "nproc"
+}
+
+function get_build_command() {
+    current_dir="$1"
+    build_image_version="$2"
+    build_tools_image="$(get_build_tools_image $build_image_version)"
+
+    # ask for a lot of cores - otherwise we get 2
+    echo "srun \
+        --account=$DO_SLURM_ACCOUNT \
+        -J ${DO_SLURM_ACCOUNT}-nccl:test \
+	-p batch_block1 \
+        -t 00:05:00 \
+        -n 1 \
+	-c 48 \
+        --container-image=$build_tools_image \
+        --container-mounts=${current_dir}:/nccl \
+        /nccl/docker/build_nccl.sh"
 }
 
 function get_cuda_home() {
@@ -35,40 +82,6 @@ function get_openmpi_home() {
 
 function get_extra_ld_library_path() {
     echo "$DO_CUDA_HOME/lib64:$DO_OPENMPI_HOME/lib"
-}
-
-function get_slurm_account() {
-    echo "$DO_SLURM_ACCOUNT"
-}
-
-function get_run_tools_image() {
-    echo "$DO_RUN_TOOLS_IMAGE"
-}
-
-# Build host configs
-function get_build_tools_image() {
-    echo "$DO_BUILD_TOOLS_IMAGE"
-}
-
-function get_docker_job_command() {
-    # ignore the arg
-    echo "nproc"
-}
-
-function get_build_command() {
-    current_dir="$1"
-
-    # ask for a lot of cores - otherwise we get 2
-    echo "srun \
-        --account=$DO_SLURM_ACCOUNT \
-        -J ${DO_SLURM_ACCOUNT}-nccl:test \
-	-p batch_block1 \
-        -t 00:05:00 \
-        -n 1 \
-	-c 48 \
-        --container-image=$DO_BUILD_TOOLS_IMAGE \
-        --container-mounts=${current_dir}:/nccl \
-        /nccl/docker/build_nccl.sh"
 }
 
 function configure_test_env() {
@@ -94,3 +107,5 @@ function configure_test_env() {
     export OMPI_MCA_coll_hcoll_enable=0
     export RX_QUEUE_LEN=8192
 }
+
+
