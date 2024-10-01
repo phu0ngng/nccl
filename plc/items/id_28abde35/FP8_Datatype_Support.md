@@ -81,9 +81,13 @@ Example of an image
 
 ### Validation
 
+"test/perf" includes support for the datatypes as f8e4m3 and f8e5m2, both of which are included in "-dall" when all GPUs are at least sm90.
+
 #### Where to run?
 
 #### What to run?
+
+The usual data validation with "test/perf" with "-dall".
 
 #### Expected output?
  
