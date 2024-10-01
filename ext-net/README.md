@@ -371,6 +371,12 @@ handled by a single request handle.
 The sizes provided to `irecv` can (and will) be larger than the size of the `isend` operation.
 The contrary (receive size being lower than the send size) is an error, however.
 
+NCCL sets request pointer in `irecv` to `NCCL_NET_OPTIONAL_RECV_COMPLETION` when it is using
+LL or LL128 protocols. In these cases, NCCL polls on flag embedded in data to detect completion
+of irecv and is resilient to redundant network writes. This allows the plugin to optimize request
+completions on such irecvs (for example, complete the request immediately). The plugin is still
+expected to set a valid request pointer on return which NCCL can poll to check for completion.
+
 Note: for a given connection, send/receive operations should always match in the order they were
 posted. Tags provided for receive operations are only used to assign a given send operation to one
 of the buffers of the first (multi-)receive in the queue, not to allow for out-of-order tag
