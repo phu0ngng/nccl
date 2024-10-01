@@ -22,7 +22,8 @@ DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tool
 
 #   Relevant paths for bare metal
 GCCL_OPENMPI_HOME="/opt/mpi/openmpi-${GCCL_OPENMPI_VERSION}"
-GCCL_CUDA_HOME="/usr/local/cuda-${GCCL_CUDA_VERSION}"
+GCCL_ACTUAL_CUDA_VERSION="11.7"
+GCCL_CUDA_HOME="/usr/local/cuda-${GCCL_ACTUAL_CUDA_VERSION}"
 
 #   Parameters for running in a container (unused)
 # DOCKER_RUN_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_run_tools"
