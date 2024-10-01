@@ -2,6 +2,7 @@
 
 export OPAL_PREFIX=$MPI_HOME
 export LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export NCCL_DEBUG=WARN
 
 max=$1
 if [ "$max" == "" ]; then max=1G; fi
@@ -9,6 +10,10 @@ if [ "$max" == "" ]; then max=1G; fi
 shift
 graph=$1
 if [ "$graph" == "" ]; then graph=0; fi
+
+shift
+nvls=$1
+if [ "$nvls" == "" ]; then nvls=0; fi
 
 opts="-n 5 -w 1 -G $graph"
 range="-b 8 -e $max -f 2"
@@ -95,12 +100,14 @@ for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gathe
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (split share all sizes): ${func}_perf $split_range $opts $enable_split_test")
 done
 
-export NCCL_ALGO=NVLS
-for func in all_reduce reduce_scatter all_gather; do
-  echo "=============================== $func NVLS (local registration all sizes) - $(date +\"%T\") =========================="
-  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
-  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NVLS (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
-done
+if [ "$nvls" == "1" ]; then
+  export NCCL_ALGO=NVLS
+  for func in all_reduce reduce_scatter all_gather; do
+    echo "=============================== $func NVLS (local registration all sizes) - $(date +\"%T\") =========================="
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
+    [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NVLS (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+  done
+fi
 
 export NCCL_ALGO=Tree
 echo "=============================== all_reduce Tree (local registration all sizes) - $(date +\"%T\") =========================="

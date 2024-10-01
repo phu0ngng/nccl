@@ -31,23 +31,54 @@ static int getNthreads(const char* name, int env, int min, int max, int def) {
   return nt;
 }
 
-ncclResult_t parseList(const char* str, const char* elems[], int nelems, int* list) {
+// Parse list of elements, allowing for prefixes. Prefixes are separated from the list with ":"
+// and different prefix:list are separated by ";". Prefixes are optional and apply to all prefixes.
+// For example:
+// NCCL_ALGO="ring,collnetdirect;allreduce:tree,collnetdirect;broadcast:ring"
+// Enable ring and collnetdirect for all functions, then select tree and collnetdirect for allreduce and
+// ring for broadcast.
+//
+// NCCL_PROTO="LL,Simple;allreduce:LL128"
+// Enable LL and Simple for all functions, but only LL128 for allreduce.
+ncclResult_t parseList(const char* str, const char* prefixElems[], int nprefixes, const char* elems[], int nelems, int* list) {
   int def, set;
   if (str[0] == '^') {
     def = 1; set = 0; str++;
   } else {
     def = 0; set = 1;
   }
-  for (int i=0; i<nelems; i++) list[i] = def;
-  char* tokStr = strdup(str);
-  char* tmpStr;
-  char* token = strtok_r(tokStr, ",", &tmpStr);
-  while (token) {
-    for (int i=0; i<nelems; i++)
-      if (strcasecmp(token, elems[i]) == 0) list[i] = set;
-    token = strtok_r(NULL, ",", &tmpStr);
+
+  char* fullStr = strdup(str);
+  char* tmpFullStr;
+  char* fullToken = strtok_r(fullStr, ";", &tmpFullStr);
+  while (fullToken) {
+    char* subToken = strdup(fullToken);
+    char* tmpSubStr;
+    char* prefix = strtok_r(subToken, ":", &tmpSubStr);
+    char* elemList = strtok_r(NULL, ":", &tmpSubStr);
+    if (elemList == NULL) {
+      elemList = prefix;
+      prefix = NULL;
+    }
+    for (int p=0; p<nprefixes; p++) {
+      if (prefix && strcasecmp(prefix, prefixElems[p]) != 0) continue;
+      for (int e=0; e<nelems; e++) list[p*nelems+e] = def;
+
+      char* tokStr = strdup(elemList);
+      char* tmpStr;
+      char* elem = strtok_r(tokStr, ",", &tmpStr);
+      while (elem) {
+        for (int e=0; e<nelems; e++)
+          if (strcasecmp(elem, elems[e]) == 0) list[p*nelems+e] = set;
+        elem = strtok_r(NULL, ",", &tmpStr);
+      }
+      free(tokStr);
+    }
+    free(subToken);
+
+    fullToken = strtok_r(NULL, ";", &tmpFullStr);
   }
-  free(tokStr);
+  free(fullStr);
   return ncclSuccess;
 }
 
@@ -225,10 +256,6 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
           busBw *= ratio;
         }
         comm->bandwidths[coll][a][p] = busBw;
-        /* Ring bandwidth backup */
-        if (a == NCCL_ALGO_RING)
-          comm->ringbdw[coll][p] = comm->bandwidths[coll][NCCL_ALGO_RING][p];
-
         comm->latencies[coll][a][p] = baseLat[a][p];
         float intraLat = hwLat[intraHw[a]][a][p];
         // With ppn=1 latencies are fully exposed, use the Tree network latency
@@ -285,41 +312,87 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
 
   // Protocols/Algorithms enable/disable, and user overrides.
   // All are enabled except ll128 which is enabled by default only in certain cases.
-  int protoEnable[NCCL_NUM_PROTOCOLS] = { 1, 2, 1 };
-  int algoEnable[NCCL_NUM_ALGORITHMS] = { 1, 1, 1, 1, 1, 1, 1 };
+  int protoEnable[NCCL_NUM_FUNCTIONS*NCCL_NUM_PROTOCOLS];
+  int algoEnable[NCCL_NUM_FUNCTIONS*NCCL_NUM_ALGORITHMS];
+  for (int f=0; f<NCCL_NUM_FUNCTIONS; f++) {
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      protoEnable[f*NCCL_NUM_PROTOCOLS+p] = p == NCCL_PROTO_LL128 ? 2 : 1;
+    }
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      algoEnable[f*NCCL_NUM_ALGORITHMS+a] = 1;
+    }
+  }
 
   const char *protoStr = ncclGetEnv("NCCL_PROTO");
   if (protoStr) {
     INFO(NCCL_ENV, "NCCL_PROTO set by environment to %s", protoStr);
-    NCCLCHECK(parseList(protoStr, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
+    NCCLCHECK(parseList(protoStr, ncclFuncStr, NCCL_NUM_FUNCTIONS, ncclProtoStr, NCCL_NUM_PROTOCOLS, protoEnable));
   }
   const char *algoStr = ncclGetEnv("NCCL_ALGO");
   if (algoStr) {
     INFO(NCCL_ENV, "NCCL_ALGO set by environment to %s", algoStr);
-    NCCLCHECK(parseList(algoStr, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
+    NCCLCHECK(parseList(algoStr, ncclFuncStr, NCCL_NUM_FUNCTIONS, ncclAlgoStr, NCCL_NUM_ALGORITHMS, algoEnable));
   }
 
-  if (comm->nNodes == 1) algoEnable[NCCL_ALGO_NVLS_TREE] = 0;
-
-  // Disable CollNet if it is not supported
-  if (comm->collNetSupport == 0) {
-    algoEnable[NCCL_ALGO_COLLNET_DIRECT] = 0;
-    algoEnable[NCCL_ALGO_COLLNET_CHAIN] = 0;
-    if (nNodes > 1) algoEnable[NCCL_ALGO_NVLS] = 0;
-    // If user has hard set NCCL_ALGO=COLLNET, ignore it
-    if (algoEnable[NCCL_ALGO_RING] == 0 && algoEnable[NCCL_ALGO_TREE] == 0 &&
-        algoEnable[NCCL_ALGO_NVLS] == 0 && algoEnable[NCCL_ALGO_NVLS_TREE] == 0) {
-      algoEnable[NCCL_ALGO_RING] = algoEnable[NCCL_ALGO_TREE] = 1;
+  if (comm->rank == 0 && (algoStr||protoStr)) {
+    int offset = 0;
+    char funcAlgoProtoTuningStr[1024];
+    snprintf(funcAlgoProtoTuningStr, 18, "\n     Function | ");
+    offset += 17;
+    for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+      snprintf(funcAlgoProtoTuningStr + offset, 11, "%8s  ", ncclProtoStr[p]);
+      offset += 10;
     }
-  } else {
-    // Disable CollNet+Direct if not on an NVSwitch system
-    int nvsCount = 0;
-    NCCLCHECK(ncclTopoGetNvsCount(comm->topo, &nvsCount));
-    if (nvsCount == 0) algoEnable[NCCL_ALGO_COLLNET_DIRECT] = 0;
+    snprintf(funcAlgoProtoTuningStr + offset, 4, " | ");
+    offset += 3;
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      snprintf(funcAlgoProtoTuningStr + offset, 16, "%13s  ", ncclAlgoStr[a]);
+      offset += 15;
+    }
+    snprintf(funcAlgoProtoTuningStr + offset, 2, "\n");
+    offset += 1;
+
+    for (int f=0; f<NCCL_NUM_FUNCTIONS; f++) {
+      snprintf(funcAlgoProtoTuningStr + offset, 17, "%13s | ", ncclFuncStr[f]);
+      offset += 16;
+      for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
+        snprintf(funcAlgoProtoTuningStr + offset, 11, "%8d  ", protoEnable[f*NCCL_NUM_PROTOCOLS+p]);
+        offset += 10;
+      }
+      snprintf(funcAlgoProtoTuningStr + offset, 4, " | ");
+      offset += 3;
+      for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+        snprintf(funcAlgoProtoTuningStr + offset, 16, "%13d  ", algoEnable[f*NCCL_NUM_ALGORITHMS+a]);
+        offset += 15;
+      }
+      snprintf(funcAlgoProtoTuningStr + offset, 2, "\n");
+      offset += 1;
+    }
+
+    INFO(NCCL_ENV, "Enabled NCCL Func/Proto/Algo Matrix:%s", funcAlgoProtoTuningStr);
+  }
+
+  int nvsCount = 0;
+  NCCLCHECK(ncclTopoGetNvsCount(comm->topo, &nvsCount));
+
+  for (int f=0; f<NCCL_NUM_FUNCTIONS; f++) {
+    for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
+      int disable = 0;
+      // Disable NVLS Tree on a single node
+      if (comm->nNodes == 1 && a == NCCL_ALGO_NVLS_TREE) disable = 1;
+      // Disable Collnet+Direct, Collnet+Chain or Collnet+NVLS if collnet is not supported.
+      if (comm->collNetSupport == 0 &&
+          (a == NCCL_ALGO_COLLNET_DIRECT ||
+           a == NCCL_ALGO_COLLNET_CHAIN ||
+           (a == NCCL_ALGO_NVLS && comm->nNodes > 1))) disable = 1;
+      // Disable CollNet+Direct if not on an NVSwitch system
+      if (nvsCount == 0 && a == NCCL_ALGO_COLLNET_DIRECT) disable = 1;
+      if (disable) algoEnable[f*NCCL_NUM_ALGORITHMS+a] = 0;
+    }
   }
 
   for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-    int pEnable = protoEnable[p];
+    int pEnable = protoEnable[c*NCCL_NUM_PROTOCOLS+p];
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
       // Enable LL128 by default only on Volta/Ampere/Hopper+NVLink. Other cases are not tested and may cause silent data corruption.
       pEnable = 1;
@@ -334,24 +407,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       }
     }
     if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
-    if (algoEnable[a] == 0) comm->bandwidths[c][a][p] = 0;
-    if (a == NCCL_ALGO_RING && pEnable == 0) comm->ringbdw[c][p] = 0;
-  }
-
-  for (int c = 0; c < NCCL_NUM_FUNCTIONS; c++) {
-    bool available = false;
-    for (int a = 0; a < NCCL_NUM_ALGORITHMS; a++)
-      for (int p = 0; p < NCCL_NUM_PROTOCOLS; p++)
-        if (comm->bandwidths[c][a][p] != 0) {
-          available = true;
-          goto check_avail;
-        }
-  check_avail:
-    if (available == false) {
-      /* at least set ring algo available */
-      for (int p = 0; p < NCCL_NUM_PROTOCOLS; p++)
-        comm->bandwidths[c][NCCL_ALGO_RING][p] = comm->ringbdw[c][p];
-    }
+    if (algoEnable[c*NCCL_NUM_ALGORITHMS+a] == 0) comm->bandwidths[c][a][p] = 0;
   }
 
   if (comm->rank == 0) {
@@ -437,18 +493,9 @@ static float treeCorrectionFactor[NCCL_NUM_PROTOCOLS][23] = {
   {  .9,  .9,  .9,  .9,  .9,  .9,  .9,  .8,  .7,  .6,  .6,  .5,  .5,  .5,  .5,  .6,  .7,  .8,  .7,  .7,  .8,  .9,  .9 }
 };
 
-ncclResult_t ncclTopoGetAlgoTime(struct ncclComm* comm, int coll, int algorithm, int protocol, size_t nBytes, int numPipeOps, float* time, bool* backup) {
+ncclResult_t ncclTopoGetAlgoTime(struct ncclComm* comm, int coll, int algorithm, int protocol, size_t nBytes, int numPipeOps, float* time) {
   float bw = comm->bandwidths[coll][algorithm][protocol];
   float lat = comm->latencies[coll][algorithm][protocol];
-
-  if (backup) {
-    *backup = false;
-    if (algorithm == NCCL_ALGO_RING && bw == 0.0f) {
-      /* try back up RING algorithm */
-      bw = comm->ringbdw[coll][protocol];
-      *backup = true;
-    }
-  }
 
   if (bw == 0) {
     *time = -1.0; return ncclSuccess;

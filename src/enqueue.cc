@@ -1786,8 +1786,7 @@ static void initCollCostTable(float** collCostTable) {
 static ncclResult_t updateCollCostTable(
     struct ncclComm* comm, struct ncclTaskColl* info, size_t nBytes,
     int collNetSupport, int nvlsSupport, int numPipeOps,
-    float** collCostTable, int* backupAlgo, int* backupProto, float* backupTime
-  ) {
+    float** collCostTable) {
   float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
 
   if (comm->nRanks == 1) {
@@ -1807,23 +1806,13 @@ static ncclResult_t updateCollCostTable(
     if (a == NCCL_ALGO_PAT && info->func == ncclFuncReduceScatter
         && (info->opDev.op == ncclDevPreMulSum || info->opDev.op == ncclDevSumPostDiv)) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      bool backup;
       float time;
-      NCCLCHECK(ncclTopoGetAlgoTime(comm, info->func, a, p, nBytes, numPipeOps, &time, &backup));
+      NCCLCHECK(ncclTopoGetAlgoTime(comm, info->func, a, p, nBytes, numPipeOps, &table[a][p]));
       // Relegate fp8 reduction trees of sufficient depth that they incur precision loss
       // to be least preferred.
       if (info->datatype == ncclFloat8e4m3 || info->datatype == ncclFloat8e5m2) {
         if (a == NCCL_ALGO_RING && comm->nRanks > 8) {
           time *= 1024.0; // Any factor large enough to act as a partition between lossy and non-lossy algos.
-        }
-      }
-      if (!backup) {
-        table[a][p] = time;
-      } else {
-        if (time >= 0.0 && time < *backupTime) {
-          *backupAlgo = a;
-          *backupProto = p;
-          *backupTime = time;
         }
       }
     }
@@ -1834,7 +1823,7 @@ static ncclResult_t updateCollCostTable(
 
 static ncclResult_t topoGetAlgoInfo(
     struct ncclComm* comm, struct ncclTaskColl* info, size_t nBytes,
-    float** collCostTable, int backupAlgo, int backupProto, float backupTime, ncclSimInfo_t* simInfo
+    float** collCostTable, ncclSimInfo_t* simInfo
   ) {
   float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
 
@@ -1859,13 +1848,18 @@ static ncclResult_t topoGetAlgoInfo(
   // Yes, we are first assigning and then testing if protocol is sane, but that's OK in this case.
   // coverity[check_after_sink]
   if (info->algorithm == NCCL_ALGO_UNDEF || info->protocol == NCCL_PROTO_UNDEF) {
-    if (backupAlgo == NCCL_ALGO_UNDEF || backupProto == NCCL_PROTO_UNDEF) {
-      WARN("Error : no algorithm/protocol available");
-      return ncclInternalError;
+    char ncclAlgoEnvStr[1024] = "";
+    char ncclProtoEnvStr[1024] = "";
+    char* algoEnv = getenv("NCCL_ALGO");
+    if (algoEnv) {
+      snprintf(ncclAlgoEnvStr, 1023, " NCCL_ALGO was set to %s.", algoEnv);
     }
-    info->algorithm = backupAlgo;
-    info->protocol = backupProto;
-    time = backupTime;
+    char* protoEnv = getenv("NCCL_PROTO");
+    if (protoEnv) {
+      snprintf(ncclProtoEnvStr, 1023, " NCCL_PROTO was set to %s.", protoEnv);
+    }
+    WARN("Error : no algorithm/protocol available for function %s with datatype %s.%s%s", ncclFuncToString(info->func), ncclDatatypeToString(info->datatype), ncclAlgoEnvStr, ncclProtoEnvStr);
+    return (algoEnv || protoEnv) ? ncclInvalidUsage : ncclInternalError;
   }
   if (simInfo) simInfo->estimatedTime = time;
   TRACE(NCCL_COLL, "%ld Bytes -> Algo %d proto %d time %f", nBytes, info->algorithm, info->protocol, time);
@@ -1927,12 +1921,9 @@ static ncclResult_t getAlgoInfo(
   info->algorithm = NCCL_ALGO_UNDEF;
   info->protocol = NCCL_PROTO_UNDEF;
   int nMaxChannels = 0;
-  int backupAlgo = NCCL_ALGO_UNDEF;
-  int backupProto = NCCL_PROTO_UNDEF;
-  float backupTime = 3600000000.0;
   float collCostTable[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   initCollCostTable((float **)collCostTable);
-  NCCLCHECK(updateCollCostTable(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps, (float **)collCostTable, &backupAlgo, &backupProto, &backupTime));
+  NCCLCHECK(updateCollCostTable(comm, info, nBytes, collNetSupport, nvlsSupport, numPipeOps, (float **)collCostTable));
   if (comm->tuner != NULL) {
     size_t elementSize = ncclTypeSize(info->datatype);
     size_t sendbuffSize = elementSize*ncclFuncSendCount(info->func, comm->nRanks, info->count);
@@ -1947,7 +1938,7 @@ static ncclResult_t getAlgoInfo(
           numPipeOps, (float **)collCostTable, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
           regBuff, &nMaxChannels));
   }
-  NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, backupAlgo, backupProto, backupTime, simInfo));
+  NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, simInfo));
   info->nMaxChannels = nMaxChannels == 0 ? info->nMaxChannels : nMaxChannels;
   return ncclSuccess;
 }

@@ -833,7 +833,7 @@ perftest-single-eos:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
-    - salloc -N ${NNODES} -n ${NGPUS} --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G
+    - salloc -N ${NNODES} -n ${NGPUS} --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0 1
   interruptible: true
 
 perftest_single-AWS_H100_EFA:
@@ -853,7 +853,7 @@ perftest_single-AWS_H100_EFA:
     NNODES: 1
     NGPUS: 8
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
-    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh
+    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 1G 0 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -1100,7 +1100,7 @@ perftest_multi-AWS_H100_EFA:
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
-    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0
+    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
