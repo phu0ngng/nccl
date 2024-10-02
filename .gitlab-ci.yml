@@ -94,6 +94,32 @@ build-eos-aws-oci:
     expire_in: 4 hrs
   interruptible: true
 
+fairshare-eos:
+  stage: setup
+  rules:
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  tags:
+    - nccl-eos
+  script:
+    - chmod +x test/scripts/gitlab-runner-fairshare.sh
+    - ./test/scripts/gitlab-runner-fairshare.sh
+  interruptible: true
+
+fairshare-draco-oci:
+  stage: setup
+  rules:
+    - if: $RUN_ON_DRACO_OCI == "1"
+      when: always
+    - when: never
+  tags:
+    - draco-oci-iad
+  script:
+    - chmod +x test/scripts/gitlab-runner-fairshare.sh
+    - ./test/scripts/gitlab-runner-fairshare.sh
+  interruptible: true
+
 setup-AWS_H100_EFA:
   stage: setup
   rules:
