@@ -1384,7 +1384,7 @@ static ncclResult_t proxyQueryFd(struct ncclProxyState* proxyState, int rank, vo
   ncclResult_t ret = ncclSuccess;
 
   NCCLCHECKGOTO(ncclIpcSocketInit(&ipcSock, proxyState->tpRank, hash^1, proxyState->abortFlag), ret, exit);
-  NCCLCHECKGOTO(ncclIpcSocketSendMsg(&ipcSock, &rmtFd, sizeof(int), rmtFd, rank, hash), ret, exit);
+  NCCLCHECKGOTO(ncclIpcSocketSendMsg(&ipcSock, &rmtFd, sizeof(int), -1, rank, hash), ret, exit);
 exit:
   NCCLCHECK(ncclIpcSocketClose(&ipcSock));
   return ncclSuccess;
@@ -1704,11 +1704,17 @@ static ncclResult_t proxyUDSRecvReq(struct ncclProxyState* proxyState, int reqFd
 
   NCCLCHECK(ncclIpcSocketRecvMsg(&proxyState->ipcSock, &hdr, sizeof(hdr), &rmtFd));
   if (hdr.type == ncclProxyMsgGetFd) {
-    // cuMem API support
+    // cuMem API support for non-UB case, and rmtFd is not used since UDS proxy thread need to export
+    // fd from handle and send it back to the main thread to import the buffer. We just need to close
+    // this dummy rmtFd.
     uint64_t handle = *(uint64_t*)hdr.data;
     INFO(NCCL_PROXY, "proxyUDSRecvReq::ncclProxyMsgGetFd rank %d opId %p handle=0x%lx", hdr.rank, hdr.opId, handle);
+    close(rmtFd);
     return proxyGetFd(proxyState, hdr.rank, hdr.opId, handle);
   } else if (hdr.type == ncclProxyMsgQueryFd) {
+    // remote main thread registers buffer into this rank, it querys rmtFd of this rank through UDS
+    // and the rmtFd is returned unchanged back to remote main thread which will use rmtFd to call into
+    // proxy service thread for buffer registration.
     INFO(NCCL_PROXY, "proxyUDSRecvReq::proxyQueryFd rank %d opId %p rmtFd %d", hdr.rank, hdr.opId, rmtFd);
     return proxyQueryFd(proxyState, hdr.rank, hdr.opId, rmtFd);
   }
