@@ -442,7 +442,7 @@ apitest-GP100:
       - "**/core.*.*"
     expire_in: 4 hrs
   interruptible: true
- 
+
 apitest-A40:
   stage: api_tests
   rules:
@@ -1000,7 +1000,7 @@ perftest-multi-DGX-1V:
 #     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
 #     PARTITION_LIST: "batch_short_dgx2h_m2"
 #     UCX_TLS: "tcp"
-#     NCCL_DEBUG_SUBSYS: "ENV" 
+#     NCCL_DEBUG_SUBSYS: "ENV"
 #     NCCL_DEBUG: "INFO"
 #     NCCL_IBEXT_DISABLE: "1"
 #     MPI_PARAMS: "-mca btl tcp,self -mca btl_tcp_if_include enp134s0f0np0"
@@ -1100,7 +1100,7 @@ perftest_multi-AWS_H100_EFA:
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
-    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0 1
+    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
