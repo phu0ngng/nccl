@@ -1173,6 +1173,7 @@ out:
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
 static int startVNicIndex = -1;
+static int nPhysicalNics = -1;
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system, const char* dumpXmlFile) {
   ncclResult_t ret = ncclSuccess;
   struct ncclXml* xml;
@@ -1232,15 +1233,17 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   }
 
   int usePhysicalDevices;
-  usePhysicalDevices = (dumpXmlFile || (comm->ncclNet->makeVDevice == NULL)) ;
-  if (netDevCount == 0) {
-    NCCLCHECKGOTO(comm->ncclNet->devices(&netDevCount), ret, fail);
-  }
+  usePhysicalDevices = (dumpXmlFile || (comm->ncclNet->makeVDevice == NULL));
 
   // This should only happen when not dumping an XML file, to avoid overwriting properties
   if (dumpXmlFile == NULL) {
+    // This needs to be run atomically given that net properties are changed within ncclTopoMakeVNics()
+    pthread_mutex_lock(&netLock);
+    if (netDevCount == 0) NCCLCHECKGOTO(comm->ncclNet->devices(&netDevCount), ret, fail);
+    // netDevCount can change after fusing nics. We need to cache this for other threads.
+    if (nPhysicalNics == -1) nPhysicalNics = netDevCount;
     // Get xml topo file info for all net nodes
-    for (int n=0; n<netDevCount; n++) {
+    for (int n=0; n<nPhysicalNics; n++) {
       ncclNetProperties_t props;
       NCCLCHECK(comm->ncclNet->getProperties(n, &props));
       comm->netDeviceType = props.netDeviceType;
@@ -1266,20 +1269,17 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
 
     // Only one thread per-process should run this initialization flow
     if (startVNicIndex == -1) {
-      pthread_mutex_lock(&netLock);
-      if (startVNicIndex == -1) {
-        if (usePhysicalDevices || netDevCount == 0) {
-          // If makeVDevice isn't defined, we know that no virtual devices have been made therefore start at 0
-          startVNicIndex = 0;
-        } else {
-          // If we know we want to make new vNICs for operation, we should track which vNIC to start at when adding
-          // keep=1 NICs to the topology
-          NCCLCHECKGOTO(comm->ncclNet->devices(&startVNicIndex), ret, fail);
-          NCCLCHECKGOTO(ncclTopoMakeVNics(xml, comm), ret, fail);
-        }
+      if (usePhysicalDevices || netDevCount == 0) {
+        // If makeVDevice isn't defined, we know that no virtual devices have been made therefore start at 0
+        startVNicIndex = 0;
+      } else {
+        // If we know we want to make new vNICs for operation, we should track which vNIC to start at when adding
+        // keep=1 NICs to the topology
+        startVNicIndex = netDevCount;
+        NCCLCHECKGOTO(ncclTopoMakeVNics(xml, comm), ret, fail);
       }
-      pthread_mutex_unlock(&netLock);
     }
+    pthread_mutex_unlock(&netLock);
   }
 
   int startIndex;
@@ -1289,20 +1289,25 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   } else {
     // New devices were added
     startIndex = startVNicIndex;
-    NCCLCHECKGOTO(comm->ncclNet->devices(&netDevCount), ret, fail);
   }
+
+  // Query again in case of dump XML file or topo construction
+  NCCLCHECKGOTO(comm->ncclNet->devices(&netDevCount), ret, fail);
 
   // Get xml topo file info for all virtual net nodes
   for (int n = startIndex; n < netDevCount; n++) {
     ncclNetProperties_t props;
+    memset(&props, 0, sizeof(props));
     struct ncclXmlNode* parent = NULL;
     NCCLCHECKGOTO(comm->ncclNet->getProperties(n, &props), ret, fail);
     if (!usePhysicalDevices) {
-      struct ncclXmlNode* net;
+      struct ncclXmlNode* net = NULL;
       NCCLCHECK(xmlFindTagKv(xml, "net", &net, "name", props.name));
       // In the event of multithreaded use case, we need to re-discover the shared parent of the given devices for this vNIC
       // Only run this if the net doesn't exist locally - this may alter the XML state
-      if (net == NULL) NCCLCHECKGOTO(ncclTopoGetVNicParent(xml, comm, &props.vProps, &parent), ret, fail);
+      if (net == NULL) {
+        NCCLCHECKGOTO(ncclTopoGetVNicParent(xml, comm, &props.vProps, &parent), ret, fail);
+      }
     }
 
     comm->netDeviceType = props.netDeviceType;

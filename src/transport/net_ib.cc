@@ -1223,12 +1223,8 @@ ib_recv_dev_list:
   if (stage->offset != sizeof(ncclNetVDeviceProps_t)) return ncclSuccess;
   stage->offset = 0;
   memcpy(&comm->base.vProps, stage->buffer, sizeof(ncclNetVDeviceProps_t));
-
   mergedDev = ncclIbMergedDevs + dev;
-  // The user enabled mismatched devs
-  if (comm->base.vProps.ndevs == 0) {
-    comm->base.vProps = mergedDev->vProps;
-  }
+  comm->base.vProps = mergedDev->vProps;
   comm->base.nqps = ncclParamIbQpsPerConn() * comm->base.vProps.ndevs; // We must have at least 1 qp per-device
 
   // Init PD, Ctx for each IB device
@@ -1405,9 +1401,10 @@ fail:
   goto exit;
 }
 
-NCCL_PARAM(IbIgnoreRailLocal, "NCCL_IB_IGNORE_RAIL_LOCAL", 0);
+NCCL_PARAM(IbWarnRailLocal, "NCCL_IB_WARN_RAIL_LOCAL", 0);
 
-ncclResult_t ncclIbReduceVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDeviceProps_t* vProps2, ncclNetVDeviceProps_t* outVProps) {
+ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDeviceProps_t* vProps2) {
+  ncclNetVDeviceProps_t  outVProps = {0};
   ncclNetVDeviceProps_t* minVProps = vProps2;
   ncclNetVDeviceProps_t* maxVProps = vProps1;
   if (vProps2->ndevs > vProps1->ndevs) {
@@ -1421,15 +1418,28 @@ ncclResult_t ncclIbReduceVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePr
     for (int j = 0; j < maxVProps->ndevs; j++) {
       // Found
       if (maxVProps->devs[j] == dev) {
-        outVProps->devs[outVProps->ndevs++] = dev;
+        outVProps.devs[outVProps.ndevs++] = dev;
       }
     }
   }
 
   // In the case that at least one side has a fused NIC but there are no matching physical NICs, we should check if the user wants this
-  if (ncclParamIbIgnoreRailLocal() == 0 && outVProps->ndevs == 0 && (vProps1->ndevs > 1 || vProps2->ndevs > 1)) {
-    WARN("NET/IB : There are no matching physical devices between local and remote. To force traffic between mismatched devices, set NCCL_IB_IGNORE_RAIL_LOCAL=1");
-    return ncclInvalidUsage;
+  if (ncclParamIbWarnRailLocal() && outVProps.ndevs < maxVProps->ndevs) {
+    char local[128];
+    int cursor = 1;
+    snprintf(local, sizeof(local), "%d", vProps1->devs[0]);
+    for (int i = 1; i < vProps1->ndevs; i++) {
+      snprintf(local+cursor, sizeof(local)+cursor, ",%d", vProps1->devs[i]);
+      cursor += 2;
+    }
+    char remote[128];
+    snprintf(remote, sizeof(remote), "%d", vProps2->devs[0]);
+    cursor = 1;
+    for (int i = 1; i < vProps2->ndevs; i++) {
+      snprintf(remote+cursor, sizeof(remote)+cursor, ",%d", vProps2->devs[i]);
+      cursor += 2;
+    }
+    INFO(NCCL_NET, "NET/IB : There are mismatched physical devices between local (%s) and remote (%s). To disable this warning, set NCCL_IB_WARN_RAIL_LOCAL=0", local, remote);
   }
 
   return ncclSuccess;
@@ -1489,13 +1499,9 @@ ib_recv_dev_list:
   // Reduce the physical device list and store in the connection base
   struct ncclIbMergedDev* mergedDev;
   mergedDev = ncclIbMergedDevs + lComm->dev;
-  NCCLCHECK(ncclIbReduceVProps(&mergedDev->vProps, &remoteVProps, &rComm->base.vProps));
-  // Copy to the stage->buffer before potentially overwriting, so the remote side knows if it should use local or reduced devs
+  NCCLCHECK(ncclIbCheckVProps(&mergedDev->vProps, &remoteVProps));
+  rComm->base.vProps = mergedDev->vProps;
   memcpy(stage->buffer, &rComm->base.vProps, sizeof(ncclNetVDeviceProps_t));
-  // If ndevs is 0, it means there are no matching devs but the user has force-enabled mismatched devs. Simply use the existing local devs.
-  if (rComm->base.vProps.ndevs == 0) {
-    rComm->base.vProps = mergedDev->vProps;
-  }
   rComm->base.isSend = false;
   int localNqps;
   localNqps = ncclParamIbQpsPerConn() * rComm->base.vProps.ndevs; // We must have at least 1 qp per-device
