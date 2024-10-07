@@ -4,6 +4,7 @@
 <!------------------------------------->
 ## version 2.26
 
+- [Kernel Profiler](items/id_20ef4ca6/Kernel_Profiler.md)
 - [Plugin Code Refactoring](items/id_f7c8b8eb/Plugin_Code_Refactoring.md)
 <!-- V2_26_DO_NOT_MOVE -->
 
