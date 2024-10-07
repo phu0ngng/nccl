@@ -1222,10 +1222,14 @@ ib_recv_dev_list:
   NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, &comm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t), &stage->offset));
   if (stage->offset != sizeof(ncclNetVDeviceProps_t)) return ncclSuccess;
   stage->offset = 0;
-  memcpy(&comm->base.vProps, stage->buffer, sizeof(ncclNetVDeviceProps_t));
+  ncclNetVDeviceProps_t remoteVProps;
+  memcpy(&remoteVProps, stage->buffer, sizeof(ncclNetVDeviceProps_t));
   mergedDev = ncclIbMergedDevs + dev;
   comm->base.vProps = mergedDev->vProps;
-  comm->base.nqps = ncclParamIbQpsPerConn() * comm->base.vProps.ndevs; // We must have at least 1 qp per-device
+  int localNqps, remoteNqps;
+  localNqps  = ncclParamIbQpsPerConn() * comm->base.vProps.ndevs; // We must have at least 1 qp per-device
+  remoteNqps = ncclParamIbQpsPerConn() * remoteVProps.ndevs;
+  comm->base.nqps = remoteNqps > localNqps ? remoteNqps : localNqps; // Select max nqps (local or remote)
 
   // Init PD, Ctx for each IB device
   comm->ar = 1; // Set to 1 for logic
@@ -1489,7 +1493,6 @@ ib_recv_dev_list:
   NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_RECV, &rComm->base.sock, stage->buffer, sizeof(ncclNetVDeviceProps_t), &stage->offset));
   if (stage->offset != sizeof(ncclNetVDeviceProps_t)) return ncclSuccess;
   ncclNetVDeviceProps_t remoteVProps;
-  remoteVProps = {0};
   memcpy(&remoteVProps, stage->buffer, sizeof(ncclNetVDeviceProps_t));
   if (lComm->dev >= ncclNMergedIbDevs) {
     WARN("NET/IB : Trying to use non-existant virtual device %d", lComm->dev);
@@ -1503,9 +1506,10 @@ ib_recv_dev_list:
   rComm->base.vProps = mergedDev->vProps;
   memcpy(stage->buffer, &rComm->base.vProps, sizeof(ncclNetVDeviceProps_t));
   rComm->base.isSend = false;
-  int localNqps;
-  localNqps = ncclParamIbQpsPerConn() * rComm->base.vProps.ndevs; // We must have at least 1 qp per-device
-  rComm->base.nqps = rComm->base.nqps > localNqps ? rComm->base.nqps : localNqps; // Select max nqps (local or remote)
+  int localNqps, remoteNqps;
+  localNqps  = ncclParamIbQpsPerConn() * rComm->base.vProps.ndevs; // We must have at least 1 qp per-device
+  remoteNqps = ncclParamIbQpsPerConn() * remoteVProps.ndevs;
+  rComm->base.nqps = remoteNqps > localNqps ? remoteNqps : localNqps; // Select max nqps (local or remote)
 
   stage->offset = 0;
   stage->state = ncclIbCommStateSendDevList;
@@ -1535,7 +1539,7 @@ ib_recv:
   mergedDev = ncclIbMergedDevs + lComm->dev;
   rComm->base.nRemDevs = remMeta.ndevs;
   if (rComm->base.nRemDevs != rComm->base.vProps.ndevs) {
-    WARN("NET/IB : Local mergedDev %s has a different number of devices=%d as remote %s %d",
+    INFO(NCCL_NET, "NET/IB : Local mergedDev %s has a different number of devices=%d as remote %s %d",
       mergedDev->devName, rComm->base.vProps.ndevs, remMeta.devName, rComm->base.nRemDevs);
   }
 

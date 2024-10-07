@@ -702,6 +702,29 @@ perftest-A40:
     NCCL_DEBUG: "WARN"
     MPI_HOME: "/opt/mpi/openmpi-1.10.7"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NNODES: 1
+    NGPUS: 2
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
+  script:
+    - ./test/scripts/gitlab-runner-perftest.sh 1G 0
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 4 hrs
+  interruptible: true
+
+multi-perftest-A40:
+  stage: perf_tests_multi
+  rules:
+    - when: always
+  needs: [build, perftest-A40]
+  tags:
+    - a40
+  variables:
+    NCCL_DEBUG: "WARN"
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 2
     NGPUS: 2
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
