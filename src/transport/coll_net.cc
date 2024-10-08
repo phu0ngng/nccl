@@ -737,7 +737,7 @@ static ncclResult_t collNetIallreduce(struct ncclProxyState* proxyState, struct 
 }
 
 static ncclResult_t collNetRegIallgather(struct ncclProxyState* proxyState, struct sendResources *resources, struct ncclProxyArgs *args, struct ncclProxySubArgs *sub, ssize_t nBytesIn, ssize_t allBeg, ssize_t recvBeg, void *recvMhandle, void **request) {
-  ncclNetSGE_v9_t recvParts;
+  ncclNetSGE_t recvParts;
   ssize_t sizePerRank = args->specifics.collnetDirect.sizePerRank;
   char *region = NCCL_NET_MAP_GET_POINTER(&resources->map, gpu, buffs[NCCL_PROTO_SIMPLE]);
   ssize_t nBytes;
@@ -779,7 +779,7 @@ static ncclResult_t collNetRegIallgather(struct ncclProxyState* proxyState, stru
 }
 
 static ncclResult_t collNetIallgather(struct ncclProxyState* proxyState, struct sendResources *resources, struct ncclProxyArgs *args, struct ncclProxySubArgs *sub, ssize_t nBytes, ssize_t allBeg, ssize_t sendBeg, ssize_t recvBeg, void *sendMhandle, void *recvMhandle, void **request) {
-  ncclNetSGE_v9_t recvParts;
+  ncclNetSGE_t recvParts;
   ssize_t sizePerRank = args->specifics.collnetDirect.sizePerRank;
   char *region = NCCL_NET_MAP_GET_POINTER(&resources->map, gpu, buffs[NCCL_PROTO_SIMPLE]);
   recvParts.mhandle = recvMhandle;
@@ -796,7 +796,7 @@ static ncclResult_t collNetIallgather(struct ncclProxyState* proxyState, struct 
 }
 
 static ncclResult_t collNetRegIreducescatter(struct ncclProxyState* proxyState, struct sendResources *resources, struct ncclProxyArgs *args, struct ncclProxySubArgs *sub, ssize_t nBytesIn, ssize_t allBeg, ssize_t sendBeg, void *sendMhandle, void **request) {
-  ncclNetSGE_v9_t sendParts;
+  ncclNetSGE_t sendParts;
   ssize_t sizePerRank = args->specifics.collnetDirect.sizePerRank;
   char *region = NCCL_NET_MAP_GET_POINTER(&resources->map, gpu, buffs[NCCL_PROTO_SIMPLE]);
   ssize_t nBytes;
@@ -835,7 +835,7 @@ static ncclResult_t collNetRegIreducescatter(struct ncclProxyState* proxyState, 
 }
 
 static ncclResult_t collNetIreducescatter(struct ncclProxyState* proxyState, struct sendResources *resources, struct ncclProxyArgs *args, struct ncclProxySubArgs *sub, ssize_t nBytes, ssize_t allBeg, ssize_t sendBeg, ssize_t recvBeg, void *sendMhandle, void *recvMhandle, void **request) {
-  ncclNetSGE_v9_t sendParts;
+  ncclNetSGE_t sendParts;
   ssize_t sizePerRank = args->specifics.collnetDirect.sizePerRank;
   char *region = NCCL_NET_MAP_GET_POINTER(&resources->map, gpu, buffs[NCCL_PROTO_SIMPLE]);
   sendParts.mhandle = sendMhandle;

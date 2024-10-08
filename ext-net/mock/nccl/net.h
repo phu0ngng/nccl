@@ -10,6 +10,8 @@
 
 #include "common.h"
 #include "err.h"
+#include "nccl.h"
+#include "net_device.h"
 
 #define NCCL_NET_HANDLE_MAXSIZE 128
 #define NCCL_MAX_NET_SIZE_BYTES (1*1024*1024*1024*1024L) //1TB
@@ -22,6 +24,9 @@
 // Maximum number of requests per comm object
 #define NCCL_NET_MAX_REQUESTS 32
 
+typedef ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* phandle, int64_t pluginId, void* extData);
+
+#include "net_v10.h"
 #include "net_v9.h"
 #include "net_v8.h"
 #include "net_v7.h"
@@ -30,5 +35,14 @@
 #include "net_v4.h"
 #include "net_v3.h"
 #include "net_v2.h"
+
+typedef ncclNetSGE_v10_t ncclNetSGE_t;
+typedef ncclNet_v10_t ncclNet_t;
+typedef ncclCollNet_v10_t ncclCollNet_t;
+typedef ncclNetProperties_v10_t ncclNetProperties_t;
+
+typedef ncclNetVDeviceProps_v10_t ncclNetVDeviceProps_t;
+
+#define NCCL_NET_MAX_DEVS_PER_NIC NCCL_NET_MAX_DEVS_PER_NIC_V10
 
 #endif // end include guard

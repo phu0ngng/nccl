@@ -106,7 +106,7 @@ void mallocAndStrCpy(char** dst, const char* src) {
   strcpy(*dst, src);
 }
 
-__hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
+__hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   pthread_mutex_lock(&mockLock);
   for (int i = 0; i < nPhysDevs; i++) {
     ncclNetProperties_t* m = mockProps + i;
@@ -155,6 +155,10 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
   pthread_mutex_unlock(&mockLock);
 
   return ncclSuccess;
+}
+
+__hidden ncclResult_t pluginInitCollNet(ncclDebugLogger_t logFunction) {
+  return pluginInit(logFunction, NULL);
 }
 
 __hidden ncclResult_t pluginDevices(int* ndev) {
@@ -235,7 +239,7 @@ __hidden ncclResult_t pluginCloseListen(void* listenComm) {
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginIsend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+__hidden ncclResult_t pluginIsend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* pHandle, void** request) {
   mockRequest* r = (mockRequest*) malloc(sizeof(mockRequest));
   r->sizes[0] = size;
   r->tags[0]  = tag;
@@ -244,7 +248,7 @@ __hidden ncclResult_t pluginIsend(void* sendComm, void* data, size_t size, int t
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginIrecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+__hidden ncclResult_t pluginIrecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** pHandles, void** request) {
   mockRequest* r = (mockRequest*) malloc(sizeof(mockRequest));
   r->ntags = n;
   memcpy(r->sizes, sizes, sizeof(int)*n);
@@ -307,7 +311,7 @@ __hidden ncclResult_t pluginIAllReduce(void* collComm, void* sendData, void* rec
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginIAllGather(void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v9_t* recvParts,
+__hidden ncclResult_t pluginIAllGather(void* collComm, void* sendData, int nRecvParts, ncclNetSGE_t* recvParts,
                              size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                              void* sendMhandle, void** request) {
   mockRequest* r = (mockRequest*) malloc(sizeof(mockRequest));
@@ -317,7 +321,7 @@ __hidden ncclResult_t pluginIAllGather(void* collComm, void* sendData, int nRecv
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginIReduceScatter(void* collComm, int nSendParts, ncclNetSGE_v9_t* sendParts, void* recvData,
+__hidden ncclResult_t pluginIReduceScatter(void* collComm, int nSendParts, ncclNetSGE_t* sendParts, void* recvData,
                                  size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                                  ncclDataType_t dataType, ncclRedOp_t redOp,
                                  void* recvMhandle, void** request) {
@@ -345,7 +349,7 @@ __hidden ncclResult_t pluginCloseColl(void* collComm) {
 
 #define NET_PLUGIN_NAME "MockPlugin"
 
-ncclNet_v9_t ncclNetPlugin_v9 = {
+ncclNet_t ncclNetPlugin = {
   .name = NET_PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,
@@ -370,9 +374,9 @@ ncclNet_v9_t ncclNetPlugin_v9 = {
 
 #define COLLNET_PLUGIN_NAME "CollNetMockPlugin"
 
-ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
+ncclCollNet_t ncclCollNetPlugin = {
   .name = COLLNET_PLUGIN_NAME,
-  .init = pluginInit,
+  .init = pluginInitCollNet,
   .devices = pluginDevices,
   .getProperties = pluginGetCollProperties,
   .listen = pluginListen,

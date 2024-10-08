@@ -536,3 +536,7 @@ bool ncclProfilerNeedsProxy(struct ncclComm* comm, struct ncclProxyOp* op) {
   if (enabled && !comm->profiler.initialized) (void)proxyProfilerConnect(comm, op);
   return enabled;
 }
+
+ncclResult_t ncclProfilerCallback(void** eHandle, int type, void* pHandle, int64_t pluginId, void* extData) {
+  return ncclSuccess;
+}

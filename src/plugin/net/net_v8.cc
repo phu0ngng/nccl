@@ -38,7 +38,7 @@ static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
   return ncclSuccess;
 }
 
-static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* pHandle, void** request) {
   int sizeInt;
   if (size > MAX_NET_SIZE) return ncclInternalError;
   sizeInt = (int)size;
@@ -46,10 +46,10 @@ static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int t
   return ans;
 }
 
-static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** pHandles, void** request) {
   int sizesInt[NCCL_PROXY_MAX_SUBS];
-  //reset to NULL if optional receive completion is set
-  if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
+  //reset to nullptr if optional receive completion is set
+  if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = nullptr;
   for (int i=0; i<n; i++) {
     if (sizes[i] > MAX_NET_SIZE) return ncclInternalError;
     sizesInt[i] = (int) sizes[i];
@@ -92,7 +92,7 @@ static ncclResult_t ncclCollNet_iallreduce(void* collComm, void* sendData, void*
   return ans;
 }
 
-static ncclResult_t ncclCollNet_iallgather (void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v9_t* recvParts,
+static ncclResult_t ncclCollNet_iallgather (void* collComm, void* sendData, int nRecvParts, ncclNetSGE_t* recvParts,
                            size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                            void* sendMhandle, void** request) {
   ncclNetSGE_v8_t recvPartsInt;
@@ -107,7 +107,7 @@ static ncclResult_t ncclCollNet_iallgather (void* collComm, void* sendData, int 
   return ans;
 }
 
-static ncclResult_t ncclCollNet_ireducescatter(void* collComm, int nSendParts, ncclNetSGE_v9_t* sendParts, void* recvData,
+static ncclResult_t ncclCollNet_ireducescatter(void* collComm, int nSendParts, ncclNetSGE_t* sendParts, void* recvData,
                                size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                                ncclDataType_t dataType, ncclRedOp_t redOp,
                                void* recvMhandle, void** request) {
@@ -124,7 +124,7 @@ static ncclResult_t ncclCollNet_ireducescatter(void* collComm, int nSendParts, n
   return ans;
 }
 
-static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn) {
+static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
   NCCLCHECK(ncclNet_v8->init(logfn));
   ncclNet.devices = ncclNet_v8->devices;
   ncclNet.getProperties = ncclNet_getProperties;
@@ -156,7 +156,7 @@ ncclNet_t* getNcclNet_v8(void* lib) {
     return &ncclNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin_v8 symbol.");
-  return NULL;
+  return nullptr;
 }
 
 static ncclResult_t ncclCollNet_init(ncclDebugLogger_t logfn) {
@@ -188,5 +188,5 @@ ncclCollNet_t* getNcclCollNet_v8(void* lib) {
     return &ncclCollNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v8 symbol.");
-  return NULL;
+  return nullptr;
 }

@@ -30,18 +30,25 @@
 // Max number of ncclNet objects which can live in the same process
 #define NCCL_NET_MAX_PLUGINS 3
 
+// NCCL core profiler callback for network defined events instrumentation
+typedef ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* pHandle, int64_t pluginId, void* extData);
+
+#include "net/net_v10.h"
 #include "net/net_v9.h"
 #include "net/net_v8.h"
 #include "net/net_v7.h"
 #include "net/net_v6.h"
 #include "net/net_v5.h"
 
-typedef ncclNet_v9_t ncclNet_t;
-typedef ncclCollNet_v9_t ncclCollNet_t;
-typedef ncclNetProperties_v9_t ncclNetProperties_t;
-typedef ncclNetVDeviceProps_v9_t ncclNetVDeviceProps_t;
+typedef ncclNet_v10_t ncclNet_t;
+typedef ncclCollNet_v10_t ncclCollNet_t;
+typedef ncclNetSGE_v10_t ncclNetSGE_t;
+typedef ncclNetProperties_v10_t ncclNetProperties_t;
+typedef ncclNetVDeviceProps_v10_t ncclNetVDeviceProps_t;
 
-#define NCCL_NET_PLUGIN_SYMBOL ncclNetPlugin_v9
-#define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v9
+#define NCCL_NET_MAX_DEVS_PER_NIC NCCL_NET_MAX_DEVS_PER_NIC_V10
+
+#define NCCL_NET_PLUGIN_SYMBOL ncclNetPlugin_v10
+#define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v10
 
 #endif // end include guard
