@@ -11,7 +11,7 @@
 # no host-specific code executes in this module to allow it to live elsewhere
 
 # Relevant paths
-AWS_CUDA_HOME="/usr/local/cuda-12.2"
+AWS_CUDA_HOME="/usr/local/cuda-12.4"
 AWS_OPENMPI_HOME="/opt/amazon/openmpi"
 AWS_OFI_PLUGIN_HOME="/opt/aws-ofi-nccl"
 
