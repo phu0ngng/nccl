@@ -186,6 +186,10 @@ const char* pncclGetErrorString(ncclResult_t result);
 const char*  ncclGetLastError(ncclComm_t comm);
 const char* pncclGetLastError(ncclComm_t comm);
 
+/* Reload environment variables that determine logging. */
+void  ncclResetDebugInit();
+void pncclResetDebugInit();
+
 /* Checks whether the comm has encountered any asynchronous errors */
 ncclResult_t  ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError);
 ncclResult_t pncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError);
