@@ -12,7 +12,7 @@
 #include "common_kernel.h"
 #include "common.h"
 
-#define NCCL_SPINS_BEFORE_CHECK_ABORT 1000000
+#define NCCL_SPINS_BEFORE_CHECK_ABORT 10000
 
 /* Protocol classes: ProtoSimple, ProtoLL, ProtoLL128
  * We use these as template args to the Primtiives class instead of integral
@@ -138,6 +138,15 @@ struct PrimitivesWithoutDirect {
     static_cast<RealPrimitives*>(this)->recvReduceCopySend(inpIx, outIx, eltN, postOp);
   }
 };
+
+__device__ inline int checkAbort(int &spins) {
+  spins++;
+  if (ncclShmem.aborted == 0 && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
+    ncclShmem.aborted = *ncclShmem.comm.abortFlag;
+    spins = 0;
+  }
+  return ncclShmem.aborted;
+}
 
 #include "prims_simple.h"
 #include "prims_ll.h"
