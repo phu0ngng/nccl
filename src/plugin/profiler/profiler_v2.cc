@@ -12,7 +12,7 @@ static ncclProfiler_t ncclProfiler;
 static ncclProfiler_v2_t* ncclProfiler_v2;
 
 static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclProfilerEventDescr_t* eDescr) {
-  if (eDescr->type == ncclProfileKernelCh) {
+  if (eDescr->type == ncclProfileKernelCh || eDescr->type == ncclProfileNetPlugin) {
     *eHandle = NULL;
     return ncclSuccess;
   }

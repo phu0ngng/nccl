@@ -15,6 +15,7 @@ enum {
   ncclProfileProxyStep = (1 << 4),  // proxy step event type
   ncclProfileProxyCtrl = (1 << 5),  // proxy control event type
   ncclProfileKernelCh  = (1 << 6),  // kernel channel event type
+  ncclProfileNetPlugin = (1 << 7),  // network plugin-defined, events
 };
 
 typedef enum {

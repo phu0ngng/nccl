@@ -35,8 +35,6 @@ enum {
 static int profilerPluginStatus = profilerPluginLoadReady;
 static pid_t pid;
 
-#define MAX_PLUGIN_LOAD 2
-
 static ncclResult_t ncclProfilerPluginLoad(void) {
   if (profilerPluginLoadFailed == profilerPluginStatus) {
     return ncclSuccess;
