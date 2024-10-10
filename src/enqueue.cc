@@ -1806,13 +1806,12 @@ static ncclResult_t updateCollCostTable(
     if (a == NCCL_ALGO_PAT && info->func == ncclFuncReduceScatter
         && (info->opDev.op == ncclDevPreMulSum || info->opDev.op == ncclDevSumPostDiv)) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      float time;
       NCCLCHECK(ncclTopoGetAlgoTime(comm, info->func, a, p, nBytes, numPipeOps, &table[a][p]));
       // Relegate fp8 reduction trees of sufficient depth that they incur precision loss
       // to be least preferred.
       if (info->datatype == ncclFloat8e4m3 || info->datatype == ncclFloat8e5m2) {
         if (a == NCCL_ALGO_RING && comm->nRanks > 8) {
-          time *= 1024.0; // Any factor large enough to act as a partition between lossy and non-lossy algos.
+          table[a][p] *= 1024.0; // Any factor large enough to act as a partition between lossy and non-lossy algos.
         }
       }
     }

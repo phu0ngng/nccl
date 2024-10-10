@@ -31,23 +31,26 @@ static int getNthreads(const char* name, int env, int min, int max, int def) {
   return nt;
 }
 
-// Parse list of elements, allowing for prefixes. Prefixes are separated from the list with ":"
-// and different prefix:list are separated by ";". Prefixes are optional and apply to all prefixes.
-// For example:
-// NCCL_ALGO="ring,collnetdirect;allreduce:tree,collnetdirect;broadcast:ring"
-// Enable ring and collnetdirect for all functions, then select tree and collnetdirect for allreduce and
-// ring for broadcast.
+// Parse a map of prefixes to a list of elements. The first prefix is
+// optional and, if not present, the list of elements will be applied
+// to all prefixes. Only the first list of elements can lack a
+// prefix. Prefixes (if present) are followed by a colon. Lists of
+// elements are comma delimited. Mappings of prefix to the lists of
+// elements are semi-colon delimited.
 //
-// NCCL_PROTO="LL,Simple;allreduce:LL128"
-// Enable LL and Simple for all functions, but only LL128 for allreduce.
+// For example:
+//
+//     NCCL_ALGO="ring,collnetdirect;allreduce:tree,collnetdirect;broadcast:ring"
+// Enable ring and collnetdirect for all functions, then select tree
+// and collnetdirect for allreduce and ring for broadcast.
+//
+//     NCCL_PROTO="LL,Simple;allreduce:^LL"
+// Enable LL and Simple for all functions, but everything except LL
+// for allreduce.
+//
+//     NCCL_PROTO="^LL128;allreduce:LL128"
+// Enable everything but LL128, but only LL128 for allreduce.
 ncclResult_t parseList(const char* str, const char* prefixElems[], int nprefixes, const char* elems[], int nelems, int* list) {
-  int def, set;
-  if (str[0] == '^') {
-    def = 1; set = 0; str++;
-  } else {
-    def = 0; set = 1;
-  }
-
   char* fullStr = strdup(str);
   char* tmpFullStr;
   char* fullToken = strtok_r(fullStr, ";", &tmpFullStr);
@@ -57,22 +60,52 @@ ncclResult_t parseList(const char* str, const char* prefixElems[], int nprefixes
     char* prefix = strtok_r(subToken, ":", &tmpSubStr);
     char* elemList = strtok_r(NULL, ":", &tmpSubStr);
     if (elemList == NULL) {
+      if (fullToken != fullStr) {
+        // It makes no sense for any entry other than the first to not have a prefix,
+        // because then all the prefixes before the prefix-less entry would be
+        // overwritten.
+        WARN("All entries except the first must have a prefix: \"%s\"", str);
+        return ncclInvalidUsage;
+      }
       elemList = prefix;
       prefix = NULL;
     }
+
+    int unset, set;
+    if (elemList[0] == '^') {
+      unset = 1; set = 0; elemList++;
+    } else {
+      unset = 0; set = 1;
+    }
+
+    bool foundPrefix = false;
     for (int p=0; p<nprefixes; p++) {
       if (prefix && strcasecmp(prefix, prefixElems[p]) != 0) continue;
-      for (int e=0; e<nelems; e++) list[p*nelems+e] = def;
+      foundPrefix = true;
+      for (int e=0; e<nelems; e++) list[p*nelems+e] = unset;
 
       char* tokStr = strdup(elemList);
       char* tmpStr;
       char* elem = strtok_r(tokStr, ",", &tmpStr);
       while (elem) {
-        for (int e=0; e<nelems; e++)
-          if (strcasecmp(elem, elems[e]) == 0) list[p*nelems+e] = set;
+        int e;
+        for (e=0; e<nelems; e++) {
+          if (strcasecmp(elem, elems[e]) == 0) {
+            list[p*nelems+e] = set;
+            break;
+          }
+        }
+        if (e==nelems) {
+          WARN("Unrecognized element token \"%s\" when parsing \"%s\"", elem, str);
+          return ncclInvalidUsage;
+        }
         elem = strtok_r(NULL, ",", &tmpStr);
       }
       free(tokStr);
+    }
+    if (!foundPrefix) {
+      WARN("Unrecognized prefix token \"%s\" when parsing \"%s\"", prefix, str);
+      return ncclInvalidUsage;
     }
     free(subToken);
 
@@ -335,38 +368,29 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   }
 
   if (comm->rank == 0 && (algoStr||protoStr)) {
+    constexpr int strLength = 1024;
+    char funcAlgoProtoTuningStr[strLength];
     int offset = 0;
-    char funcAlgoProtoTuningStr[1024];
-    snprintf(funcAlgoProtoTuningStr, 18, "\n     Function | ");
-    offset += 17;
+    offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), "\n     Function | ");
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      snprintf(funcAlgoProtoTuningStr + offset, 11, "%8s  ", ncclProtoStr[p]);
-      offset += 10;
+      offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), "%8s  ", ncclProtoStr[p]);
     }
-    snprintf(funcAlgoProtoTuningStr + offset, 4, " | ");
-    offset += 3;
+    offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), " | ");
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-      snprintf(funcAlgoProtoTuningStr + offset, 16, "%13s  ", ncclAlgoStr[a]);
-      offset += 15;
+      offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), "%13s  ", ncclAlgoStr[a]);
     }
-    snprintf(funcAlgoProtoTuningStr + offset, 2, "\n");
-    offset += 1;
+    offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), "\n");
 
     for (int f=0; f<NCCL_NUM_FUNCTIONS; f++) {
-      snprintf(funcAlgoProtoTuningStr + offset, 17, "%13s | ", ncclFuncStr[f]);
-      offset += 16;
+      offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), "%13s | ", ncclFuncStr[f]);
       for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-        snprintf(funcAlgoProtoTuningStr + offset, 11, "%8d  ", protoEnable[f*NCCL_NUM_PROTOCOLS+p]);
-        offset += 10;
+        offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), "%8d  ", protoEnable[f*NCCL_NUM_PROTOCOLS+p]);
       }
-      snprintf(funcAlgoProtoTuningStr + offset, 4, " | ");
-      offset += 3;
+      offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), " | ");
       for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
-        snprintf(funcAlgoProtoTuningStr + offset, 16, "%13d  ", algoEnable[f*NCCL_NUM_ALGORITHMS+a]);
-        offset += 15;
+        offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), "%13d  ", algoEnable[f*NCCL_NUM_ALGORITHMS+a]);
       }
-      snprintf(funcAlgoProtoTuningStr + offset, 2, "\n");
-      offset += 1;
+      offset += snprintf(funcAlgoProtoTuningStr+offset, std::max(0, strLength-offset), "\n");
     }
 
     INFO(NCCL_ENV, "Enabled NCCL Func/Proto/Algo Matrix:%s", funcAlgoProtoTuningStr);
@@ -411,45 +435,47 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
   }
 
   if (comm->rank == 0) {
-    char line[1024];
+    constexpr int lineLen = 1024;
+    char line[lineLen];
+    int offset = 0;
     for (int block=0; block<DIVUP(NCCL_NUM_ALGORITHMS, 3); block++) {
-      sprintf(line, "  Algorithm   |");
+      offset = snprintf(line, lineLen, "  Algorithm   |");
       for (int ba=0; ba<3; ba++) {
-	int a = block*3+ba;
+        int a = block*3+ba;
         if (a >= NCCL_NUM_ALGORITHMS) continue;
-        sprintf(line+strlen(line), " %14s   %14s   %14s |", "", ncclAlgoStr[a], "");
+        offset += snprintf(line+offset, std::max(0, lineLen-offset), " %14s   %14s   %14s |", "", ncclAlgoStr[a], "");
       }
       INFO(NCCL_TUNING, "%s", line);
-      sprintf(line, "  Protocol    |");
+      offset = snprintf(line, lineLen, "  Protocol    |");
       for (int ba=0; ba<3; ba++) {
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-          sprintf(line+strlen(line), " %14s |", ncclProtoStr[p]);
+          offset += snprintf(line+offset, std::max(0, lineLen-offset), " %14s |", ncclProtoStr[p]);
         }
       }
       INFO(NCCL_TUNING, "%s", line);
-      sprintf(line, " Max NThreads |");
+      offset = snprintf(line, lineLen, " Max NThreads |");
       for (int ba=0; ba<3; ba++) {
-	int a = block*3+ba;
+        int a = block*3+ba;
         if (a >= NCCL_NUM_ALGORITHMS) continue;
         for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-          sprintf(line+strlen(line), " %14d |", comm->maxThreads[a][p]);
+          offset += snprintf(line+offset, std::max(0, lineLen-offset), " %14d |", comm->maxThreads[a][p]);
         }
       }
       INFO(NCCL_TUNING, "%s", line);
       for (int c=0; c<NCCL_NUM_FUNCTIONS; c++) {
-        sprintf(line, "%13s |", ncclFuncStr[c]);
+        offset = snprintf(line, lineLen, "%13s |", ncclFuncStr[c]);
         for (int ba=0; ba<3; ba++) {
-	  int a = block*3+ba;
+          int a = block*3+ba;
           if (a >= NCCL_NUM_ALGORITHMS) continue;
           for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-            sprintf(line+strlen(line), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
+            offset += snprintf(line+offset, std::max(0, lineLen-offset), "%8.1f/%6.1f |", comm->latencies[c][a][p], comm->bandwidths[c][a][p]);
           }
         }
         INFO(NCCL_TUNING, "%s", line);
       }
     }
   }
-
+ 
   // Set per-thread amount of work before we increase nThreads and nChannels
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     comm->threadThresholds[a][NCCL_PROTO_LL] = NCCL_LL_THREAD_THRESHOLD;

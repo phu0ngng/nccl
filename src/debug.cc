@@ -8,6 +8,7 @@
 #include "nccl_net.h"
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/syscall.h>
@@ -222,6 +223,19 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
     buffer[len++] = '\n';
     fwrite(buffer, 1, len, ncclDebugFile);
   }
+}
+
+NCCL_API(void, ncclResetDebugInit);
+void ncclResetDebugInit() {
+  // Cleans up from a previous ncclDebugInit() and reruns.
+  // Use this after changing NCCL_DEBUG and related parameters in the environment.
+  __atomic_load_n(&ncclDebugLevel, __ATOMIC_ACQUIRE);
+  if (ncclDebugFile != stdout) {
+    fclose(ncclDebugFile);
+    ncclDebugFile = stdout;
+  }
+  ncclDebugLevel = -1;
+  ncclDebugInit();
 }
 
 NCCL_PARAM(SetThreadName, "SET_THREAD_NAME", 0);
