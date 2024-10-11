@@ -914,6 +914,7 @@ perftest_single-draco_oci:
     MPI_PARAMS: "-mca btl tcp,self"
     NNODES: 1
     NGPUS: 8
+    SKIP_FT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 16G
     TIMEOUT: "00:20:00" # HH:MM:SS
@@ -1163,6 +1164,7 @@ perftest_multi-draco_oci:
     MPI_PARAMS: "-mca btl tcp,self"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
+    SKIP_FT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0
     TIMEOUT: "00:20:00" # HH:MM:SS
