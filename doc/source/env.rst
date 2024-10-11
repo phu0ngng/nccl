@@ -290,10 +290,21 @@ If NCCL net is enabled for out-of-band communication (see ``NCCL_OOB_NET_ENABLE`
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Define to filter interfaces to be used by NCCL for out-of-band communications.
-The accepted values follow the same logic as NCCL_SOCKET_IFNAME and NCCL_IB_HCA, see above.
+Define to filter interfaces to be used by NCCL for out-of-band communications. The list of accepted interface depends on the network used by NCCL.
+The list is comma-separated; port numbers can be specified using the ``:`` symbol.
+An optional prefix ``^`` indicates the list is an exclude list.
+A second optional prefix ``=`` indicates that the tokens are exact names, otherwise by default NCCL would treat each token as a prefix.
+If multiple devices are specified, NCCL will select the first matching device in the list.
 
-Note: if multiple devices are specified, NCCL will select the first matching device in the list.
+Example:
+
+``NCCL_NET="IB" NCCL_OOB_NET_ENABLE=1 NCCL_OOB_NET_IFNAME="=mlx5_1"`` will use the Infiniband NET, with the interface ``mlx5_1``
+
+``NCCL_NET="IB" NCCL_OOB_NET_ENABLE=1 NCCL_OOB_NET_IFNAME="mlx5_1"`` will use the Infiniband NET, with the first interface found in the list of ``mlx5_1``, ``mlx5_10``, ``mlx5_11``, etc.
+
+``NCCL_NET="Socket" NCCL_OOB_NET_ENABLE=1 NCCL_OOB_NET_IFNAME="ens1"`` will use the socket NET, with the first interface found in the list of ``ens1f0``, ``ens1f1``, etc.
+
+
 
 NCCL_UID_STAGGER_THRESHOLD
 --------------------------

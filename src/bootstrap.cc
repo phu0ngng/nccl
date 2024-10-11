@@ -116,7 +116,7 @@ ncclResult_t bootstrapNetInit() {
       char line[SOCKET_NAME_MAXLEN+MAX_IF_NAME_SIZE+2];
       snprintf(line, sizeof(line), " %s:", bootstrapNetIfName);
       ncclSocketToString(&bootstrapNetIfAddr, line+strlen(line));
-      INFO(NCCL_BOOTSTRAP, "Bootstrap : Using%s", line);
+      INFO(NCCL_BOOTSTRAP, "Bootstrap: Using%s", line);
       bootstrapNetInitDone = 1;
     }
     pthread_mutex_unlock(&bootstrapNetLock);
@@ -493,15 +493,14 @@ static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
         struct netIf userIfs[MAX_OOB_DEVS];
         int nUserIfs = parseStringList(userIfEnv, userIfs, MAX_OOB_DEVS);
         // loop over the device and return the first one matching
-        int devId = 0;
         int nDev = 0;
         NCCLCHECK(comm->ncclNet->devices(&nDev));
+        int devId = 0;
         while (devId < nDev) {
           ncclNetProperties_t props;
           comm->ncclNet->getProperties(devId, &props);
           // check against user specified HCAs/ports
-          bool found = matchIfList(props.name, props.port, userIfs, nUserIfs, searchExact) ^ searchNot;
-          if (found) {
+          if (matchIfList(props.name, props.port, userIfs, nUserIfs, searchExact) ^ searchNot) {
             // All plain physical devices have been initialized at this point
             devOOB = devId;
             break;
@@ -509,14 +508,21 @@ static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
           devId++;
         }
         if (devOOB == -1) {
-          WARN("no device found matching NCCL_OOB_NET_IFNAME=%s, ignoring", userIfEnv);
-          goto noEnv;
+          if (!searchNot)
+            WARN("no device found matching %s%s, verify NCCL_OOB_NET_IFNAME", searchExact ? "exactly " : "", userIfEnv);
+          else
+            WARN("no device found after excluding %s%s, verify NCCL_OOB_NET_IFNAME", searchExact ? "exactly " : "", userIfEnv);
+          return ncclInvalidArgument;
         }
       } else {
-      noEnv:
         // default choice is device 0
         devOOB = 0;
       }
+      // display info on the chosen device
+      ncclNetProperties_t props;
+      ncclResult_t res = comm->ncclNet->getProperties(devOOB, &props);
+      bool hasProp = res == ncclSuccess;
+      INFO(NCCL_BOOTSTRAP, "Bootstrap: Using %s:%d", (hasProp) ? props.name : "N/A", (hasProp) ? props.port : -1);
     }
     pthread_mutex_unlock(&bootstrapNetLock);
   }
