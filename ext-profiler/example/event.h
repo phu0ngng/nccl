@@ -33,8 +33,33 @@
 
 #define MAX_PROXY_OP_STATES              ((NUM_PROXY_OP_SEND_STATES   > NUM_PROXY_OP_RECV_STATES  ) ? NUM_PROXY_OP_SEND_STATES   : NUM_PROXY_OP_RECV_STATES)
 #define MAX_PROXY_STEP_STATES            ((NUM_PROXY_STEP_SEND_STATES > NUM_PROXY_STEP_RECV_STATES) ? NUM_PROXY_STEP_SEND_STATES : NUM_PROXY_STEP_RECV_STATES)
+#define MAX_EVENTS_PER_REQ               (8)
 
 struct proxyOp;
+struct proxyStep;
+
+struct netPlugin {
+  uint8_t type;
+  int pluginType;
+  int pluginVer;
+  uint8_t pluginEvent;
+  union {
+    struct {
+      int qpNum;
+      int opcode;
+      uint64_t wr_id;
+      size_t length;
+    } qp;
+    struct {
+      int fd;
+      int op;
+      size_t length;
+    } sock;
+  };
+  double startTs;
+  double stopTs;
+  struct proxyStep* parent;
+};
 
 struct kernelCh {
   uint8_t type;
@@ -52,6 +77,8 @@ struct proxyStep {
   double startTs;
   double stopTs;
   struct proxyOp* parent;
+  struct netPlugin net[MAX_EVENTS_PER_REQ];
+  int nNetEvents;
 };
 
 struct proxyOp {

@@ -57,6 +57,7 @@ typedef ncclProfilerEventState_t ncclProfilerEventState_v3_t;
 #include "profiler_v3.h"
 #include "profiler_v2.h"
 #include "profiler_v1.h"
+#include "profiler_net.h"
 
 typedef ncclProfiler_v3_t ncclProfiler_t;
 typedef ncclProfilerEventDescr_v3_t ncclProfilerEventDescr_t;

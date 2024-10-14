@@ -72,7 +72,7 @@ __hidden void printProxyOpEventTrailer(FILE* fh, struct proxyOp* event) {
 }
 
 static __thread int proxyStepId;
-__hidden void printProxyStepEvent(FILE* fh, struct proxyStep* event) {
+__hidden void printProxyStepEventHeader(FILE* fh, struct proxyStep* event) {
   if (event->isSend) {
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
             "SendBufferWait", proxyStepId, getpid(), 1, event->startTs, event->step);
@@ -84,8 +84,6 @@ __hidden void printProxyStepEvent(FILE* fh, struct proxyStep* event) {
             "SendGpuWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_SEND_STATE_IDX(ncclProfilerProxyStepSendWait)]);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
             "SendWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_SEND_STATE_IDX(ncclProfilerProxyStepSendWait)], event->step);
-    fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
-            "SendWait", proxyStepId++, getpid(), 1, event->stopTs);
   } else {
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
             "RecvBufferWait", proxyStepId, getpid(), 1, event->startTs, event->step);
@@ -93,6 +91,14 @@ __hidden void printProxyStepEvent(FILE* fh, struct proxyStep* event) {
             "RecvBufferWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_RECV_STATE_IDX(ncclProfilerProxyStepRecvWait)]);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
             "RecvWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_RECV_STATE_IDX(ncclProfilerProxyStepRecvWait)], event->step);
+  }
+}
+
+__hidden void printProxyStepEventTrailer(FILE* fh, struct proxyStep* event) {
+  if (event->isSend) {
+    fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
+            "SendWait", proxyStepId++, getpid(), 1, event->stopTs);
+  } else {
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
             "RecvWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_RECV_STATE_IDX(ncclProfilerProxyStepRecvFlushWait)]);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
@@ -140,6 +146,29 @@ __hidden void printProxyCtrlEvent(FILE* fh, struct proxyCtrl* event) {
           str, proxyCtrlId++, getpid(), 1, event->stopTs);
 }
 
+static __thread int ibQpId, sockId;
+__hidden void printNetPluginEvent(FILE* fh, struct netPlugin* event) {
+  if (event->pluginType == NCCL_PROFILER_NET_TYPE_IB) {
+    if (event->pluginVer == 1) {
+      if (event->pluginEvent == ncclProfileQp) {
+        fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET_IB\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"qp_num\": %d, \"opcode\": %d, \"wr_id\": %lu, \"size\": %lu}},\n",
+                "Qp", ibQpId, getpid(), 1, event->startTs, event->qp.qpNum, event->qp.opcode, event->qp.wr_id, event->qp.length);
+        fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET_IB\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
+                "Qp", ibQpId++, getpid(), 1, event->stopTs);
+      }
+    }
+  } else if (event->pluginType == NCCL_PROFILER_NET_TYPE_SOCK) {
+    if (event->pluginVer == 1) {
+      if (event->pluginEvent == ncclProfileSocket) {
+        fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET_SOCK\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"sock\": %d, \"op\": %d, \"size\": %lu}},\n",
+                "Sock", sockId, getpid(), 1, event->startTs, event->sock.fd, event->sock.op, event->sock.length);
+        fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET_SOCK\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
+                "Sock", sockId++, getpid(), 1, event->stopTs);
+      }
+    }
+  }
+}
+
 //#define DEBUG_EVENTS
 void debugEvent(void* eHandle, const char* tag) {
 #ifdef DEBUG_EVENTS
@@ -159,8 +188,10 @@ void debugEvent(void* eHandle, const char* tag) {
     fprintf(fh, "Collective event %p tag = %s {\n", event, tag);
     fprintf(fh, "  refCount          = %d\n", __atomic_load_n(&event->base.refCount, __ATOMIC_RELAXED));
     fprintf(fh, "  parent            = %p\n", event->base.parent);
-    for (int i = 0; i < MAX_CHANNELS; i++ ) if (event->send[i].type == ncclProfileProxyOp) fprintf(fh, "  send[%d]           = %p\n", i, &event->send[i]);
-    for (int i = 0; i < MAX_CHANNELS; i++ ) if (event->recv[i].type == ncclProfileProxyOp) fprintf(fh, "  recv[%d]           = %p\n", i, &event->recv[i]);
+    for (int j = 0; j < MAX_OPS; j++) {
+      for (int i = 0; i < MAX_CHANNELS; i++) if (event->send[i][j].type == ncclProfileProxyOp) fprintf(fh, "  send[%d]           = %p\n", i, &event->send[i]);
+      for (int i = 0; i < MAX_CHANNELS; i++) if (event->recv[i][j].type == ncclProfileProxyOp) fprintf(fh, "  recv[%d]           = %p\n", i, &event->recv[i]);
+    }
     fprintf(fh, "  startTs           = %f\n", event->base.startTs);
     fprintf(fh, "  stopTs            = %f\n", event->base.stopTs);
     fprintf(fh, "}\n");
@@ -196,6 +227,12 @@ void debugEvent(void* eHandle, const char* tag) {
     fprintf(fh, "KernelCh event %p tag = %s {\n", event, tag);
     fprintf(fh, "  parent            = %p\n", event->parent);
     fprintf(fh, "  channel           = %d\n", event->channelId);
+  } else if (type == ncclProfileNetPlugin) {
+    struct netPlugin* event = (struct netPlugin *)eHandle;
+    fprintf(fh, "NetPlugin event %p tag = %s {\n", event, tag);
+    fprintf(fh, "  pluginType        = %d\n", event->pluginType);
+    fprintf(fh, "  pluginVer         = %d\n", event->pluginVer);
+    fprintf(fh, "  pluginEvent       = %d\n", event->pluginEvent);
     fprintf(fh, "  startTs           = %f\n", event->startTs);
     fprintf(fh, "  stopTs            = %f\n", event->stopTs);
     fprintf(fh, "}\n");
@@ -247,7 +284,11 @@ void printEvent(FILE* fh, void* handle) {
     printProxyOpEventTrailer(fh, p);
   } else if (type == ncclProfileProxyStep) {
     struct proxyStep* p = (struct proxyStep *)handle;
-    printProxyStepEvent(fh, p);
+    printProxyStepEventHeader(fh, p);
+    for (int q = 0; q < p->nNetEvents; q++) {
+      printNetPluginEvent(fh, &p->net[q]);
+    }
+    printProxyStepEventTrailer(fh, p);
   } else if (type == ncclProfileProxyCtrl) {
     struct proxyCtrl* p = (struct proxyCtrl *)handle;
     printProxyCtrlEvent(fh, p);
