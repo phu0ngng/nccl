@@ -392,7 +392,6 @@ fail:
 }
 
 static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInfo = NULL) {
-  int savedDev;
   ncclResult_t ret = ncclSuccess;
   struct ncclGroupJob *gjob = (struct ncclGroupJob*) job_;
   struct ncclComm *groupCommHeadMain = *gjob->groupCommHeadPtr;
@@ -400,8 +399,6 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
   struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain = gjob->asyncJobsPtr;
 
   bool *groupAbortFlag = gjob->abortFlagPtr;
-
-  CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
 
   if (!simInfo && groupCommPreconnectHeadMain != nullptr) {
     struct ncclComm* comm = groupCommPreconnectHeadMain;
@@ -454,7 +451,6 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       }
       comm = comm->groupNext;
     } while (comm);
-
     NCCLCHECKGOTO(asyncJobLaunch(&asyncCollJobs, groupAbortFlag), ret, fail);
     while (!ncclIntruQueueEmpty(&asyncCollJobs)) {
       struct ncclAsyncJob* job = ncclIntruQueueDequeue(&asyncCollJobs);
@@ -482,8 +478,6 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
     }
     groupCommHeadMain = next;
   }
-
-  CUDACHECK(cudaSetDevice(savedDev));
 
 exit:
   return ret;
@@ -563,7 +557,10 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       ret = ncclInProgress;
     } else {
       /* blocking group */
+      int savedDev;
+      CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
       NCCLCHECKGOTO(groupLaunch(&ncclGroupJobMainPtr->base, internalSimInfoPtr), ret, fail);
+      CUDACHECKGOTO(cudaSetDevice(savedDev), ret, fail);
       if (simInfo) memcpy((void*)simInfo, (void*)internalSimInfoPtr, realSize);
       groupResetJobState(ncclGroupJobMainPtr);
     }

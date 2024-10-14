@@ -1934,14 +1934,9 @@ fail:
 static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
   struct ncclCommFinalizeAsyncJob* job = (struct ncclCommFinalizeAsyncJob*) job_;
   ncclComm_t comm = job->comm;
-  int savedDevice;
-  int commDevice = comm->cudaDev;
   ncclResult_t ret = ncclSuccess;
 
-  CUDACHECKGOTO(cudaGetDevice(&savedDevice), ret, fail);
-  if (savedDevice != commDevice) {
-    CUDACHECKGOTO(cudaSetDevice(commDevice), ret, fail);
-  }
+  CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
   TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
 
@@ -1969,10 +1964,6 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
 
   if ((ret = ncclProxyStop(comm)) != ncclSuccess) {
     WARN("ncclProxyStop: comm %p (rank = %d) destroys proxy resource error %d", comm, comm->rank, ret);
-  }
-
-  if (savedDevice != commDevice) {
-    CUDACHECKGOTO(cudaSetDevice(savedDevice), ret, fail);
   }
 
 exit:
