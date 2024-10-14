@@ -1990,25 +1990,12 @@ fail:
 }
 
 static ncclResult_t commCleanup(ncclComm_t comm) {
-  int savedDevice;
-  int commDevice = comm->cudaDev;
-
-  CUDACHECK(cudaGetDevice(&savedDevice));
-  if (savedDevice != commDevice) {
-    CUDACHECK(cudaSetDevice(commDevice));
-  }
-
+  CUDACHECK(cudaSetDevice(comm->cudaDev));
   if (comm->tuner != NULL) {
     NCCLCHECK(comm->tuner->destroy(comm->tunerContext));
     NCCLCHECK(ncclTunerPluginUnload(comm));
   }
-
   NCCLCHECK(commFree(comm));
-
-  if (savedDevice != commDevice) {
-    CUDACHECK(cudaSetDevice(savedDevice));
-  }
-
   return ncclSuccess;
 }
 
@@ -2115,6 +2102,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NVTX3_FUNC_WITH_PARAMS(CommDestroy, CommInitRankSchema, payload)
 
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
+  NCCLCHECK(ncclGroupStartInternal());
   // Try and prevent a double free of the comm struct (user error)
   if (comm->rank == -1 || comm->nRanks == -1 || comm->cudaDev == -1 || comm->busId == -1) {
     WARN("comm %p has already been destroyed", comm);
@@ -2129,6 +2117,8 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
 
 exit:
+  ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
   return res;
 fail:
   goto exit;
@@ -2140,7 +2130,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
     NVTX3_FUNC_RANGE_IN(nccl_domain);
     return ncclSuccess;
   }
-
+  NCCLCHECK(ncclGroupStartInternal());
   // Ask anything that might still be running on the device to quit
   if (comm->childAbortFlag != nullptr) {
     __atomic_store_n(comm->childAbortFlag, 1, __ATOMIC_RELEASE);
@@ -2168,6 +2158,8 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
 
 exit:
+  ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
   return ncclSuccess;
 fail:
   goto exit;
