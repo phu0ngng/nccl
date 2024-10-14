@@ -7,6 +7,7 @@
 - [Kernel Profiler](items/id_20ef4ca6/Kernel_Profiler.md)
 - [Plugin Code Refactoring](items/id_f7c8b8eb/Plugin_Code_Refactoring.md)
 - [Improved RAS](items/id_3ee46fc4/Improved_RAS.md)
+- [Qp Profiling](items/id_31fddbba/Qp_Profiling.md)
 <!-- V2_26_DO_NOT_MOVE -->
 
 <!------------------------------------->
