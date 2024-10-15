@@ -104,7 +104,6 @@ fail:
 static ncclResult_t rasRanksConvertToPeers(struct rasRankInit* ranks, int nranks,
                                            struct rasPeerInfo** rankPeers, int *nRankPeers, int* newNRasPeers) {
   ncclResult_t ret = ncclSuccess;
-  int nEmpty = 0, nDuplicate = 0;
   int peerIdx, rankPeerIdx;
 
   // Handy when checking for empty (in case of errors) addresses.
@@ -127,7 +126,6 @@ static ncclResult_t rasRanksConvertToPeers(struct rasRankInit* ranks, int nranks
 
     if (memcmp(&emptyAddr, &rank->addr, sizeof(emptyAddr)) == 0) {
       // Skip empty rank entries.
-      nEmpty++;
       continue;
     }
 
@@ -135,7 +133,6 @@ static ncclResult_t rasRanksConvertToPeers(struct rasRankInit* ranks, int nranks
     // (possible if there are multiple ranks with the same address).
     if (rankPeerIdx > 0 && memcmp(&rank->addr, &rankPeer[-1].addr, sizeof(rank->addr)) == 0) {
       // Merge into the previous entry in peers.
-      nDuplicate++;
       rankPeer[-1].cudaDevs |= (1UL << rank->cudaDev);
       rankPeer[-1].nvmlDevs |= (1UL << rank->nvmlDev);
       continue;

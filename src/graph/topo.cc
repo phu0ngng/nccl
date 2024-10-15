@@ -758,7 +758,7 @@ int ncclTopoCheckPix(ncclXmlNode* common, ncclXmlNode** nodes, int nNodes) {
 }
 
 #define NCCL_TOPO_XML_DEPTH_MAX 256
-typedef struct {
+typedef struct xmlNodeStack {
   ncclXmlNode* elems[NCCL_TOPO_XML_DEPTH_MAX];
   int tail;
 

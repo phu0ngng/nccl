@@ -907,7 +907,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   // Fill in the remaining fields of auxComm's.
   for (int commIdx = 0; commIdx < commsData->nComms; commIdx++) {
     struct rasAuxComm* auxComm = auxComms+commIdx;
-    int nRanks;
+    int nRanks = 0;
     comm = auxComm->comm;
 
     if (comm->commNRanks > comm->nRanks) {

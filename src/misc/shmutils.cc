@@ -70,7 +70,7 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmPathSize, size_t shmSize, void
           INFO(NCCL_ALL, "mkstemp: Failed to create %s, error: %s (%d) - retrying", shmPath, strerror(errno), errno);
           goto retry_mkstemp;
         }
-        WARN("Error: failed to create shared memory file %p, error %s (%d)", shmPath, strerror(errno), errno);
+        WARN("Error: failed to create shared memory file %s, error %s (%d)", shmPath, strerror(errno), errno);
         ret = ncclSystemError;
         goto fail;
       }
