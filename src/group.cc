@@ -323,7 +323,7 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
   /* reset everything */
   while (!ncclIntruQueueEmpty(asyncJobsPtr)) {
     struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsPtr);
-    if (job->comm && !job->comm->config.blocking)
+    if (!job->destroyFlag && job->comm && !job->comm->config.blocking)
       (void) ncclCommSetAsyncError(job->comm, error);
     if (job->undo) job->undo(job);
     if (job->destructor) job->destructor((void*)job);
