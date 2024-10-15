@@ -377,8 +377,8 @@ ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerIn
 NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 int ncclTopoUserGdrLevel = -1;
 
-ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t netId, int read, int* useGdr) {
-  *useGdr = 0;
+ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t netId, int read, enum ncclTopoGdrMode* gdrMode) {
+  *gdrMode = ncclTopoGdrModeDisable;
 
   // Get GPU and NET
   int n, g;
@@ -429,14 +429,14 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t n
     return ncclSuccess;
   }
 
-  *useGdr = 1;
+  *gdrMode = distance < PATH_PXN ? ncclTopoGdrModePci : ncclTopoGdrModeCpu;
   INFO(NCCL_NET,"GPU Direct RDMA Enabled for GPU %d / HCA %lx (distance %d <= %d), read %d", rank, netId, distance, netGdrLevel, read);
   return ncclSuccess;
 }
 
 ncclResult_t ncclTopoIsGdrAvail(struct ncclTopoSystem* system, int rank, bool *avail) {
   int netNum = system->nodes[NET].count;
-  int useGdr = 0;
+  enum ncclTopoGdrMode useGdr = ncclTopoGdrModeDisable;
   *avail = false;
   for (int n = 0; n < netNum; n++) {
     int64_t netId = system->nodes[NET].nodes[n].id;
@@ -561,9 +561,9 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
     int proxyRank;
     NCCLCHECK(ncclTopoGetNetDev(comm, comm->rank, NULL, 0, rank, &netId, NULL, &proxyRank));
     if (proxyRank == comm->rank) continue;
-    int useGdr;
+    enum ncclTopoGdrMode useGdr;
     NCCLCHECK(ncclTopoCheckGdr(comm->topo, comm->rank, netId, 1, &useGdr));
-    if (useGdr == 0) continue;
+    if (useGdr == ncclTopoGdrModeDisable) continue;
     int found = 0;
     for (int r=0; r<nr; r++) {
       if (ranks[r] == proxyRank) found = 1;
@@ -664,7 +664,7 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
       }
       if (gpu->paths[NET][n].type < PATH_PHB) {
         // Update path when we dont want to / can't use GPU Direct RDMA.
-        int gdr;
+        enum ncclTopoGdrMode gdr;
         NCCLCHECK(ncclTopoCheckGdr(system, system->nodes[GPU].nodes[g].gpu.rank, netNode->id, 0, &gdr));
         if (gdr == 0) {
           // We cannot use GPU Direct RDMA, divert all traffic through the CPU local to the GPU
