@@ -114,6 +114,13 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) 
   ctx->proxyCtrlPool = (struct proxyCtrl *)calloc(proxyCtrlPoolSize, sizeof(*ctx->proxyCtrlPool));
   if (ctx->proxyCtrlPool == NULL) goto fail;
 
+  // Print event pool sizes for debugging
+  //fprintf(stdout, "Profiler: Group pool size (bytes): %lu\n", sizeof(struct group)*groupPoolSize);
+  //fprintf(stdout, "Profiler: Coll  pool size (bytes): %lu\n", sizeof(struct collective)*collPoolSize);
+  //fprintf(stdout, "Profiler: P2p   pool size (bytes): %lu\n", sizeof(struct p2p)*p2pPoolSize);
+  //fprintf(stdout, "Profiler: Proxy pool size (bytes): %lu\n", sizeof(struct proxyCtrl)*proxyCtrlPoolSize);
+  //fprintf(stdout, "Profiler: PXN   pool size (bytes): %lu\n", sizeof(struct proxyOp)*detachPoolSize);
+
   *context = ctx;
   return ncclSuccess;
 
