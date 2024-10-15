@@ -10,10 +10,11 @@ include ../makefiles/version.mk
 INCEXPORTS  := nccl.h
 LIBSRCFILES := \
 	bootstrap.cc channel.cc collectives.cc debug.cc enqueue.cc group.cc \
-	init.cc init_nvtx.cc net.cc proxy.cc transport.cc register.cc \
+	init.cc init_nvtx.cc net.cc proxy.cc transport.cc \
 	$(wildcard graph/*.cc) \
 	$(wildcard misc/*.cc) \
 	$(wildcard transport/*.cc) \
+	$(wildcard register/*.cc) \
 	$(filter-out ras/client.cc,$(wildcard ras/*.cc))
 BINSRCFILES := ras/client.cc
 

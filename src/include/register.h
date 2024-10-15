@@ -6,6 +6,9 @@
 #include <cuda.h>
 #include <stdint.h>
 
+int64_t ncclParamLocalRegister();
+int64_t ncclParamGraphRegister();
+
 enum {
   NET_REG_COMPLETE = 0x01,
   NVLS_REG_COMPLETE = 0x02,
@@ -20,6 +23,12 @@ struct ncclPeerRegIpcAddr {
   uintptr_t* hostPeerRmtAddrs;
 };
 
+struct ncclRegNetHandles {
+  void* handle;
+  struct ncclProxyConnector* proxyConn;
+  struct ncclRegNetHandles* next;
+};
+
 struct ncclReg {
   // common attributes
   size_t pages;
@@ -27,9 +36,7 @@ struct ncclReg {
   uintptr_t addr;
   uint32_t state;
   // net reg
-  int nDevs;
-  int devs[MAXCHANNELS];
-  void** handles;
+  struct ncclRegNetHandles* netHandleHead;
   // nvls reg
   uintptr_t baseAddr;
   size_t baseSize;

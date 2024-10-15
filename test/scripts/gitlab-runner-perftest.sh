@@ -21,6 +21,7 @@ enable_ft="-B 0 -F 1"
 enable_split_test="-S 1 -P 1"
 split_range="-b 8 -e 1G -f 2"
 enable_local_register="-R 1"
+enable_graph_register="-G 1"
 enable_parallel_init="-p 1"
 
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
@@ -104,22 +105,43 @@ if [ "$nvls" == "1" ]; then
   export NCCL_ALGO=NVLS
   for func in all_reduce reduce_scatter all_gather; do
     echo "=============================== $func NVLS (local registration all sizes) - $(date +\"%T\") =========================="
-    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/${func}_perf $range $opts $enable_local_register
     [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NVLS (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
   done
 fi
 
 export NCCL_ALGO=Tree
 echo "=============================== all_reduce Tree (local registration all sizes) - $(date +\"%T\") =========================="
-$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_local_register
+$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/all_reduce_perf $range $opts $enable_local_register
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce Tree (local registration all sizes): all_reduce_perf $range $opts $enable_local_register")
 
 export NCCL_ALGO=Ring
-for func in all_reduce reduce_scatter all_gather sendrecv alltoall broadcast; do
+for func in all_reduce all_gather broadcast; do
   echo "=============================== $func Ring (local registration all sizes) - $(date +\"%T\") =========================="
-  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/${func}_perf $range $opts $enable_local_register
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
 done
+
+for func in all_reduce all_gather broadcast; do
+  echo "=============================== $func Ring (graph registration all sizes) - $(date +\"%T\") =========================="
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/${func}_perf -b 1G -e 1G -n 1 -w 1 $enable_graph_register
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring (graph registration all sizes): ${func}_perf -b 1G -e 1G -n 1 -w 1 $enable_graph_register")
+done
+
+if [ "$IS_DRACO_OCI_IAD" != "1" ]; then
+  export NCCL_ALGO=Ring
+  for func in all_reduce all_gather broadcast; do
+    echo "=============================== $func Ring 1RPN (local registration all sizes) - $(date +\"%T\") =========================="
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO -x NCCL_SHM_DISABLE=1 -x NCCL_P2P_DISABLE=1 ./build/test/perf/${func}_perf $range $opts $enable_local_register
+    [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring 1RPN (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+  done
+
+  for func in sendrecv alltoall; do
+    echo "=============================== $func (local registration all sizes) - $(date +\"%T\") =========================="
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_PXN_DISABLE=1 ./build/test/perf/${func}_perf $range $opts $enable_local_register
+    [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+  done
+fi
 unset NCCL_ALGO
 
 export NCCL_DEBUG=""

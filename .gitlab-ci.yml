@@ -563,7 +563,7 @@ apitest-eos:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
-    - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-apitest.sh
+    - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:15:00 ./test/scripts/gitlab-runner-apitest.sh
   interruptible: true
 
 apitest-AWS_H100_EFA:
@@ -918,6 +918,7 @@ perftest_single-draco_oci:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 16G
     TIMEOUT: "00:20:00" # HH:MM:SS
+    IS_DRACO_OCI_IAD: 1
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - salloc --exclusive --nodes $NNODES --gpus-per-node $NGPUS --ntasks-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
@@ -1168,6 +1169,7 @@ perftest_multi-draco_oci:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0
     TIMEOUT: "00:20:00" # HH:MM:SS
+    IS_DRACO_OCI_IAD: 1
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - salloc --exclusive --nodes $NNODES --gpus-per-node $NGPUS --ntasks-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD

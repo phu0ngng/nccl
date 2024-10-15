@@ -94,13 +94,13 @@ ncclResult_t ncclTransportCheckP2pType(struct ncclComm* comm, bool* intraNodeP2p
   }
   *intraNodeP2pSupport = supportFlag;
   *directMode = directFlag;
+  if (comm->rank == 0) INFO(NCCL_INIT, "Check P2P Type intraNodeP2pSupport %d directMode %d", supportFlag, directFlag);
   return ncclSuccess;
 }
 
-ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, int connIndex, int* highestTransportType/*=NULL*/) {
+ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, int connIndex) {
   // Stream used during transport setup; need for P2P pre-connect + CUDA Graph
   ncclResult_t ret = ncclSuccess;
-  int highestType = TRANSPORT_UNDEFINED;  // track highest transport type
   struct ncclConnect** data; // Store intermediate send/recvData structs for connect
   struct ncclConnect** recvData = NULL; // Points to entries inside data for given recv connection within a channel
   struct ncclConnect** sendData = NULL; // Points to entries inside data for given send connection within a channel
@@ -139,7 +139,6 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     for (int c=0; c<MAXCHANNELS; c++) {
       if (recvMask & (1UL<<c)) {
         NCCLCHECKGOTO(selectTransport<0>(comm, graph, recvData[p]+recvChannels++, c, recvPeer, connIndex, &type), ret, fail);
-        if (type > highestType) highestType = type;
       }
     }
     TIME_STOP(0);
@@ -148,7 +147,6 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     for (int c=0; c<MAXCHANNELS; c++) {
       if (sendMask & (1UL<<c)) {
         NCCLCHECKGOTO(selectTransport<1>(comm, graph, sendData[p]+sendChannels++, c, sendPeer, connIndex, &type), ret, fail);
-        if (type > highestType) highestType = type;
       }
     }
     TIME_STOP(1);
@@ -280,7 +278,6 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     comm->connectRecv[recvPeer] = comm->connectSend[sendPeer] = 0UL;
   }
 
-  if (highestTransportType != NULL) *highestTransportType = highestType;
   TIME_PRINT("P2P Setup/Connect");
 exit:
   for(int i=0; i<maxPeers; ++i){

@@ -1,5 +1,6 @@
 #include "comm.h"
 #include "transport.h"
+#include "bootstrap.h"
 
 ncclResult_t ncclTransportRingConnect(struct ncclComm* comm) {
   ncclResult_t ret = ncclSuccess;
@@ -9,7 +10,20 @@ ncclResult_t ncclTransportRingConnect(struct ncclComm* comm) {
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->ring.prev, 1, &channel->ring.next, 0), ret, fail);
     }
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_RING], 0), ret, fail);
-    INFO(NCCL_INIT, "Connected all rings");
+    if (ncclParamLocalRegister() || ncclParamGraphRegister()) {
+      bool *usePxnGlobal;
+      NCCLCHECK(ncclCalloc(&usePxnGlobal, comm->nRanks));
+      usePxnGlobal[comm->rank] = comm->useNetPXN;
+      NCCLCHECK(bootstrapAllGather(comm->bootstrap, usePxnGlobal, sizeof(bool)));
+      for (int i = 0; i < comm->nRanks; ++i) {
+        if (usePxnGlobal[i]) {
+          comm->useNetPXN = true;
+          break;
+        }
+      }
+      free(usePxnGlobal);
+    }
+    INFO(NCCL_INIT, "Connected all rings, use ring PXN %d", comm->useNetPXN);
   }
 exit:
   return ret;

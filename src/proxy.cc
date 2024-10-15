@@ -364,7 +364,11 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->channelId = op->channelId;
   sub->nsteps = op->nsteps;
   sub->nbytes = op->nbytes;
+  sub->chunkSize = op->chunkSize;
   sub->offset = 0;
+  sub->loopSize = op->loopSize;
+  sub->loopOffset = op->loopOffset;
+  sub->isOneRPN = op->isOneRPN;
   sub->peer = op->peer;
   sub->reg = op->reg;
   sub->sendMhandle = op->sendMhandle;
@@ -376,6 +380,7 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->rank = op->rank;
   sub->pid = op->pid;
   sub->profilerContext = op->profilerContext;
+  sub->ringAlgo = op->ringAlgo;
   args->nsubs = subIndex+1;
   if (subIndex) {
     if ((args->sliceSteps != op->sliceSteps) ||
@@ -404,6 +409,7 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   args->pattern = op->pattern;
   args->protocol = op->protocol;
   args->coll = op->coll;
+  args->algorithm = op->algorithm;
   args->specifics = op->specifics;
   args->state = ncclProxyOpReady;
   args->progress = op->connection->tcomm->proxyProgress;
@@ -485,6 +491,7 @@ static ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyCon
   }
   if (op->next != -1) __builtin_prefetch(pool->ops+op->next); // Prefetch next free op
   memcpy(op, proxyOp, sizeof(struct ncclProxyOp));
+  if (proxyOp->ringAlgo) proxyOp->ringAlgo->incRefCount();
   op->next = -1;
   op->connection = proxyConn->connection;
   if (proxyOps->nextOps == -1) {
