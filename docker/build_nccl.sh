@@ -18,7 +18,7 @@ fi
 # figure out a fair job number
 jobs=$(eval "$DOCKER_JOB_COMMAND")
 
-make -j$jobs test.build MPI=1 WERROR=1
+make -j$jobs test.build MPI=1 WERROR=1 $1
 # make -j$jobs pkg.build
 
 # return file ownership to the user
