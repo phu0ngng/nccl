@@ -1306,8 +1306,8 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     plan->kernelArgs->workBuf = comm->workFifoBufDev;
     break;
   case ncclDevWorkStorageTypePersistent:
-    static_assert(16 <= alignof(max_align_t), "We rely on 16-byte alignment.");
-    fifoBufHost = malloc(workBytes);
+    // We rely on 16-byte alignment
+    fifoBufHost = aligned_alloc(16, workBytes);
     fifoCursor = 0;
     fifoMask = ~0u;
     break;
