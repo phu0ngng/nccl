@@ -21,6 +21,7 @@ variables:
   SINGLE_REGRESSION_SALLOC_TIME: 30 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
   SHARP_MULTI_JOB_TIME:  10
   RUN_ON_SELENE_SHARP: "0"
+  BUILD_TRACE: "0"
   RUN_ON_AWS: "1"
   RUN_ON_EOS: "1"
   RUN_ON_DRACO_OCI: "1"
@@ -35,7 +36,23 @@ workflow:
   rules:
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
 
-build-classic-trace-trace:
+build-trace:
+  stage: build
+  rules:
+    - if: $BUILD_TRACE == "1" || $CI_PIPELINE_SOURCE == 'schedule'
+      when: always
+    - when: never
+  tags:
+    - build
+  variables:
+    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+  script:
+    - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
+    - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
+  interruptible: true
+
+build-classic:
   stage: build
   tags:
     - build-with-docker
@@ -180,7 +197,7 @@ unit_tests-P100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-classic-trace","health-P100"]
+  needs: ["build-classic","health-P100"]
   tags:
     - p100
   variables:
@@ -200,7 +217,7 @@ unit_tests-P40:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-classic-trace","health-P40"]
+  needs: ["build-classic","health-P40"]
   tags:
     - p40
   variables:
@@ -220,7 +237,7 @@ unit_tests-GP100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-classic-trace","health-GP100"]
+  needs: ["build-classic","health-GP100"]
   tags:
     - gp100
   variables:
@@ -241,7 +258,7 @@ unit_tests-A40-single:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-classic-trace","health-A40"]
+  needs: ["build-classic","health-A40"]
   tags:
     - a40
   variables:
@@ -261,7 +278,7 @@ unit_tests-A40-dual:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-classic-trace","health-A40"]
+  needs: ["build-classic","health-A40"]
   tags:
     - a40
   variables:
@@ -281,7 +298,7 @@ unit_tests-A100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-classic-trace","health-A100"]
+  needs: ["build-classic","health-A100"]
   tags:
     - a100pci
   variables:
@@ -373,7 +390,7 @@ apitest-P100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic-trace", "unit_tests-P100"]
+  needs: ["build-classic", "unit_tests-P100"]
   tags:
     - p100
   variables:
@@ -393,7 +410,7 @@ apitest-P40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic-trace", "unit_tests-P40"]
+  needs: ["build-classic", "unit_tests-P40"]
   tags:
     - p40
   variables:
@@ -413,7 +430,7 @@ apitest-GP100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic-trace", "unit_tests-GP100"]
+  needs: ["build-classic", "unit_tests-GP100"]
   tags:
     - gp100
   variables:
@@ -433,7 +450,7 @@ apitest-A40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic-trace", "unit_tests-A40-single", "unit_tests-A40-dual"]
+  needs: ["build-classic", "unit_tests-A40-single", "unit_tests-A40-dual"]
   tags:
     - a40
   variables:
@@ -452,7 +469,7 @@ apitest-A100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic-trace", "unit_tests-A100"]
+  needs: ["build-classic", "unit_tests-A100"]
   tags:
     - a100pci
   variables:
@@ -612,7 +629,7 @@ perftest-P100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic-trace, apitest-P100]
+  needs: [build-classic, apitest-P100]
   tags:
     - p100
   variables:
@@ -634,7 +651,7 @@ perftest-P40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic-trace, apitest-P40]
+  needs: [build-classic, apitest-P40]
   tags:
     - p40
   variables:
@@ -656,7 +673,7 @@ perftest-GP100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic-trace, apitest-GP100]
+  needs: [build-classic, apitest-GP100]
   tags:
     - gp100
   variables:
@@ -678,7 +695,7 @@ perftest-A40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic-trace, apitest-A40]
+  needs: [build-classic, apitest-A40]
   tags:
     - a40
   variables:
@@ -700,7 +717,7 @@ perftest-A100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic-trace, apitest-A100]
+  needs: [build-classic, apitest-A100]
   tags:
     - a100pci
   variables:
@@ -884,7 +901,7 @@ perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build-classic-trace, perftest-P100]
+  needs: [build-classic, perftest-P100]
   tags:
     - p100
   variables:
@@ -909,7 +926,7 @@ perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build-classic-trace, perftest-P100]
+  needs: [build-classic, perftest-P100]
   tags:
     - p100
   variables:
@@ -1207,7 +1224,7 @@ replay-multi-gc:
   stage: replay_tests
   rules:
     - when: always
-  needs: [build-classic-trace, perftest-multi-gc]
+  needs: [build-classic, perftest-multi-gc]
   tags:
     - p100
   variables:

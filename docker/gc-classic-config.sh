@@ -71,7 +71,7 @@ function get_build_command() {
         -e DOCKER_GROUP_ID \
         -v ${current_dir}:/nccl \
         $build_tools_image \
-        /nccl/docker/build_nccl.sh TRACE=1"
+        /nccl/docker/build_nccl.sh"
 }
 
 function get_cuda_home() {
