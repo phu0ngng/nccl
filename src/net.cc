@@ -59,7 +59,7 @@ static ncclResult_t ncclNet_v8_as_v9_getProperties(int dev, ncclNetProperties_v9
   return ncclSuccess;
 }
 
-static ncclResult_t ncclNet_old_as_v9_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+static ncclResult_t ncclNet_v8_as_v9_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
    int sizeInt;
    if (size > MAX_NET_SIZE) return ncclInternalError;
    sizeInt = (int)size;
@@ -67,7 +67,7 @@ static ncclResult_t ncclNet_old_as_v9_isend(void* sendComm, void* data, size_t s
    return ans;
 }
 
-static ncclResult_t ncclNet_old_as_v9_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+static ncclResult_t ncclNet_v8_as_v9_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
    int sizesInt[NCCL_PROXY_MAX_SUBS];
    //reset to NULL if optional receive completion is set
    if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
@@ -90,8 +90,8 @@ static ncclResult_t ncclNet_v8_as_v9_init(ncclDebugLogger_t logfn) {
   ncclNet_v8_as_v9.regMr = ncclNet_v8->regMr;
   ncclNet_v8_as_v9.regMrDmaBuf = ncclNet_v8->regMrDmaBuf;
   ncclNet_v8_as_v9.deregMr = ncclNet_v8->deregMr;
-  ncclNet_v8_as_v9.isend = ncclNet_old_as_v9_isend;
-  ncclNet_v8_as_v9.irecv = ncclNet_old_as_v9_irecv;
+  ncclNet_v8_as_v9.isend = ncclNet_v8_as_v9_isend;
+  ncclNet_v8_as_v9.irecv = ncclNet_v8_as_v9_irecv;
   ncclNet_v8_as_v9.iflush = ncclNet_v8->iflush;
   ncclNet_v8_as_v9.test = ncclNet_v8->test;
   ncclNet_v8_as_v9.closeSend = ncclNet_v8->closeSend;
@@ -132,6 +132,26 @@ static ncclResult_t ncclNet_v7_as_v9_regMr(void* comm, void* data, size_t size, 
   return ncclNet_v7->regMr(comm, data, (int) size, type, mhandle);
 }
 
+static ncclResult_t ncclNet_v7_as_v9_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+   int sizeInt;
+   if (size > MAX_NET_SIZE) return ncclInternalError;
+   sizeInt = (int)size;
+   ncclResult_t ans = ncclNet_v7->isend(sendComm, data, sizeInt, tag, mhandle, request);
+   return ans;
+}
+
+static ncclResult_t ncclNet_v7_as_v9_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+   int sizesInt[NCCL_PROXY_MAX_SUBS];
+   //reset to NULL if optional receive completion is set
+   if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
+   for (int i=0; i<n; i++) {
+     if (sizes[i] > MAX_NET_SIZE) return ncclInternalError;
+     sizesInt[i] = (int) sizes[i];
+   }
+   ncclResult_t ans = ncclNet_v7->irecv(recvComm, n, data, sizesInt, tags, mhandles, request);
+   return ans;
+}
+
 static ncclResult_t ncclNet_v7_as_v9_init(ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclNet_v7->init(logfn));
   ncclNet_v7_as_v9.name = ncclNet_v7->name;
@@ -143,8 +163,8 @@ static ncclResult_t ncclNet_v7_as_v9_init(ncclDebugLogger_t logfn) {
   ncclNet_v7_as_v9.regMr = ncclNet_v7_as_v9_regMr;
   ncclNet_v7_as_v9.regMrDmaBuf = ncclNet_v7->regMrDmaBuf;
   ncclNet_v7_as_v9.deregMr = ncclNet_v7->deregMr;
-  ncclNet_v7_as_v9.isend = ncclNet_old_as_v9_isend;
-  ncclNet_v7_as_v9.irecv = ncclNet_old_as_v9_irecv;
+  ncclNet_v7_as_v9.isend = ncclNet_v7_as_v9_isend;
+  ncclNet_v7_as_v9.irecv = ncclNet_v7_as_v9_irecv;
   ncclNet_v7_as_v9.iflush = ncclNet_v7->iflush;
   ncclNet_v7_as_v9.test = ncclNet_v7->test;
   ncclNet_v7_as_v9.closeSend = ncclNet_v7->closeSend;
@@ -193,6 +213,26 @@ static ncclResult_t ncclNet_v6_as_v9_accept(void* listenComm, void** recvComm, n
   return ncclNet_v6->accept(listenComm, recvComm);
 }
 
+static ncclResult_t ncclNet_v6_as_v9_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+   int sizeInt;
+   if (size > MAX_NET_SIZE) return ncclInternalError;
+   sizeInt = (int)size;
+   ncclResult_t ans = ncclNet_v6->isend(sendComm, data, sizeInt, tag, mhandle, request);
+   return ans;
+}
+
+static ncclResult_t ncclNet_v6_as_v9_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+   int sizesInt[NCCL_PROXY_MAX_SUBS];
+   //reset to NULL if optional receive completion is set
+   if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
+   for (int i=0; i<n; i++) {
+     if (sizes[i] > MAX_NET_SIZE) return ncclInternalError;
+     sizesInt[i] = (int) sizes[i];
+   }
+   ncclResult_t ans = ncclNet_v6->irecv(recvComm, n, data, sizesInt, tags, mhandles, request);
+   return ans;
+}
+
 static ncclResult_t ncclNet_v6_as_v9_init(ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclNet_v6->init(logfn));
   ncclNet_v6_as_v9.name = ncclNet_v6->name;
@@ -204,8 +244,8 @@ static ncclResult_t ncclNet_v6_as_v9_init(ncclDebugLogger_t logfn) {
   ncclNet_v6_as_v9.regMr = ncclNet_v6_as_v9_regMr;
   ncclNet_v6_as_v9.regMrDmaBuf = ncclNet_v6->regMrDmaBuf;
   ncclNet_v6_as_v9.deregMr = ncclNet_v6->deregMr;
-  ncclNet_v6_as_v9.isend = ncclNet_old_as_v9_isend;
-  ncclNet_v6_as_v9.irecv = ncclNet_old_as_v9_irecv;
+  ncclNet_v6_as_v9.isend = ncclNet_v6_as_v9_isend;
+  ncclNet_v6_as_v9.irecv = ncclNet_v6_as_v9_irecv;
   ncclNet_v6_as_v9.iflush = ncclNet_v6->iflush;
   ncclNet_v6_as_v9.test = ncclNet_v6->test;
   ncclNet_v6_as_v9.closeSend = ncclNet_v6->closeSend;
@@ -254,6 +294,26 @@ static ncclResult_t ncclNet_v5_as_v9_accept(void* listenComm, void** recvComm, n
   return ncclNet_v5->accept(listenComm, recvComm);
 }
 
+static ncclResult_t ncclNet_v5_as_v9_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+   int sizeInt;
+   if (size > MAX_NET_SIZE) return ncclInternalError;
+   sizeInt = (int)size;
+   ncclResult_t ans = ncclNet_v5->isend(sendComm, data, sizeInt, tag, mhandle, request);
+   return ans;
+}
+
+static ncclResult_t ncclNet_v5_as_v9_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+   int sizesInt[NCCL_PROXY_MAX_SUBS];
+   //reset to NULL if optional receive completion is set
+   if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
+   for (int i=0; i<n; i++) {
+     if (sizes[i] > MAX_NET_SIZE) return ncclInternalError;
+     sizesInt[i] = (int) sizes[i];
+   }
+   ncclResult_t ans = ncclNet_v5->irecv(recvComm, n, data, sizesInt, tags, mhandles, request);
+   return ans;
+}
+
 // We use a wrapper around the v5 init to copy over the struct contents
 // post-init since they may not be initialized before hand.
 static ncclResult_t ncclNet_v5_as_v9_init(ncclDebugLogger_t logfn) {
@@ -267,8 +327,8 @@ static ncclResult_t ncclNet_v5_as_v9_init(ncclDebugLogger_t logfn) {
   ncclNet_v5_as_v9.regMr = ncclNet_v5_as_v9_regMr;
   ncclNet_v5_as_v9.regMrDmaBuf = NULL;
   ncclNet_v5_as_v9.deregMr = ncclNet_v5->deregMr;
-  ncclNet_v5_as_v9.isend = ncclNet_old_as_v9_isend;
-  ncclNet_v5_as_v9.irecv = ncclNet_old_as_v9_irecv;
+  ncclNet_v5_as_v9.isend = ncclNet_v5_as_v9_isend;
+  ncclNet_v5_as_v9.irecv = ncclNet_v5_as_v9_irecv;
   ncclNet_v5_as_v9.iflush = ncclNet_v5->iflush;
   ncclNet_v5_as_v9.test = ncclNet_v5->test;
   ncclNet_v5_as_v9.closeSend = ncclNet_v5->closeSend;
