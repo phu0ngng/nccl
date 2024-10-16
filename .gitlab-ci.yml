@@ -85,7 +85,7 @@ build-eos-aws-oci:
     #   NVCC_GENCODE: 80
     #   OS: ubuntu20.04
     #   MPI_HOME: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/openmpi-4.1.4"
-    - docker/make.sh eos,draco-oci
+    - docker/make.sh draco-oci,eos
   artifacts:
     paths:
       - build
