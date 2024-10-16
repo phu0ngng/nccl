@@ -200,14 +200,18 @@ void printEvent(FILE* fh, void* handle) {
     struct collective* c = (struct collective *)handle;
     printCollEventHeader(fh, c);
     for (int i = 0; i < MAX_CHANNELS; i++) {
-      printEvent(fh, &c->send[i]);
-      printEvent(fh, &c->recv[i]);
+      for (int j = 0; j < c->nProxyOps[i]; j++) {
+        printEvent(fh, &c->send[i][j]);
+        printEvent(fh, &c->recv[i][j]);
+      }
     }
     printCollEventTrailer(fh, c);
   } else if (type == ncclProfileP2p) {
     struct p2p* p = (struct p2p *)handle;
     printP2pEventHeader(fh, p);
-    printEvent(fh, &p->op);
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+      printEvent(fh, &p->op[i]);
+    }
     printP2pEventTrailer(fh, p);
   } else if (type == ncclProfileProxyOp) {
     struct proxyOp* p = (struct proxyOp *)handle;
