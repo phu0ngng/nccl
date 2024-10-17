@@ -21,6 +21,16 @@ jobs=$(eval "$DOCKER_JOB_COMMAND")
 make -j$jobs test.build MPI=1 WERROR=1
 # make -j$jobs pkg.build
 
+build_status=$?
+
+if [ $build_status -eq 0 ]; then
+    echo "INFO: Make exited successfully"
+else
+    echo "ERROR: Make exited with $build_status"
+fi
+
 # return file ownership to the user
 chown -R ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} .
 
+# propagate exit status
+exit $build_status
