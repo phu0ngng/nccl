@@ -27,6 +27,10 @@ variables:
   RUN_ON_DRACO_OCI: "1"
   RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
 
+default:
+  # set all jobs to interruptible by default
+  interruptible: true
+
 # Run our CI on:
 # - Every commit to master
 # - Every commit to a merge request
@@ -35,6 +39,9 @@ variables:
 workflow:
   rules:
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
+  # when cancelling a redundant pipeline, cancel all jobs that are interruptible
+  auto_cancel:
+    on_new_commit: interruptible
 
 build-trace:
   stage: build
@@ -50,7 +57,6 @@ build-trace:
   script:
     - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
     - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
-  interruptible: true
 
 build-classic:
   stage: build
@@ -64,7 +70,6 @@ build-classic:
     exclude:
       - build/**/*.o
     expire_in: 4 hrs
-  interruptible: true
 
 build-eos-aws-oci:
   stage: build
@@ -92,7 +97,6 @@ build-eos-aws-oci:
     exclude:
       - build/**/*.o
     expire_in: 4 hrs
-  interruptible: true
 
 fairshare-eos:
   stage: setup
@@ -105,7 +109,6 @@ fairshare-eos:
   script:
     - chmod +x test/scripts/gitlab-runner-fairshare.sh
     - ./test/scripts/gitlab-runner-fairshare.sh
-  interruptible: true
 
 fairshare-draco-oci:
   stage: setup
@@ -118,7 +121,6 @@ fairshare-draco-oci:
   script:
     - chmod +x test/scripts/gitlab-runner-fairshare.sh
     - ./test/scripts/gitlab-runner-fairshare.sh
-  interruptible: true
 
 setup-AWS_H100_EFA:
   stage: setup
@@ -147,7 +149,6 @@ health-P100:
     - p100
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP100 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 health-P40:
   stage: health
@@ -158,7 +159,6 @@ health-P40:
     - p40
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP40 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 health-GP100:
   stage: health
@@ -169,7 +169,6 @@ health-GP100:
     - gp100
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 health-A40:
   stage: health
@@ -180,7 +179,6 @@ health-A40:
     - a40
   script:
     - srun --exclusive -t 00:02:00 -N 2 -c 2 -pA40 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 health-A100:
   stage: health
@@ -191,7 +189,6 @@ health-A100:
     - a100pci
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 unit_tests-P100:
   stage: unit_tests
@@ -211,7 +208,6 @@ unit_tests-P100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-P40:
   stage: unit_tests
@@ -231,7 +227,6 @@ unit_tests-P40:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-GP100:
   stage: unit_tests
@@ -252,7 +247,6 @@ unit_tests-GP100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-A40-single:
   stage: unit_tests
@@ -272,7 +266,6 @@ unit_tests-A40-single:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-A40-dual:
   stage: unit_tests
@@ -292,7 +285,6 @@ unit_tests-A40-dual:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-A100:
   stage: unit_tests
@@ -312,7 +304,6 @@ unit_tests-A100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-eos:
   stage: unit_tests
@@ -329,7 +320,6 @@ unit_tests-eos:
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - srun --exclusive -n 1 -c8 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:unit::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-unit.sh
-  interruptible: true
 
 unit_tests-AWS_H100_EFA:
   stage: unit_tests
@@ -384,7 +374,6 @@ unit_tests-draco_oci:
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - srun --exclusive --nodes $NNODES --gpus-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
-  interruptible: true
 
 apitest-P100:
   stage: api_tests
@@ -404,7 +393,6 @@ apitest-P100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-P40:
   stage: api_tests
@@ -424,7 +412,6 @@ apitest-P40:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-GP100:
   stage: api_tests
@@ -444,7 +431,6 @@ apitest-GP100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-A40:
   stage: api_tests
@@ -463,7 +449,6 @@ apitest-A40:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-A100:
   stage: api_tests
@@ -482,7 +467,6 @@ apitest-A100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-DGX-1V:
   stage: api_tests
@@ -505,7 +489,6 @@ apitest-DGX-1V:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-DGX-2:
   stage: api_tests
@@ -528,7 +511,6 @@ apitest-DGX-2:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-DGX-A100:
   stage: api_tests
@@ -551,7 +533,6 @@ apitest-DGX-A100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-eos:
   stage: api_tests
@@ -567,7 +548,6 @@ apitest-eos:
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:15:00 ./test/scripts/gitlab-runner-apitest.sh
-  interruptible: true
 
 apitest-AWS_H100_EFA:
   stage: api_tests
@@ -623,7 +603,6 @@ apitest-draco_oci:
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - srun --exclusive --nodes $NNODES --gpus-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
-  interruptible: true
 
 perftest-P100:
   stage: perf_tests_single
@@ -645,7 +624,6 @@ perftest-P100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-P40:
   stage: perf_tests_single
@@ -667,7 +645,6 @@ perftest-P40:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-GP100:
   stage: perf_tests_single
@@ -689,7 +666,6 @@ perftest-GP100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-A40:
   stage: perf_tests_single
@@ -712,7 +688,6 @@ perftest-A40:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 multi-perftest-A40:
   stage: perf_tests_multi
@@ -736,7 +711,6 @@ multi-perftest-A40:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-A100:
   stage: perf_tests_single
@@ -758,7 +732,6 @@ perftest-A100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-DGX-1V:
   stage: perf_tests_single
@@ -784,7 +757,6 @@ perftest-DGX-1V:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-DGX-2:
   stage: perf_tests_single
@@ -810,7 +782,6 @@ perftest-DGX-2:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-DGX-A100:
   stage: perf_tests_single
@@ -836,7 +807,6 @@ perftest-DGX-A100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-single-eos:
   stage: perf_tests_single
@@ -856,7 +826,6 @@ perftest-single-eos:
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - salloc -N ${NNODES} -n ${NGPUS} --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0 1
-  interruptible: true
 
 perftest_single-AWS_H100_EFA:
   stage: perf_tests_single
@@ -920,7 +889,6 @@ perftest_single-draco_oci:
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - salloc --exclusive --nodes $NNODES --gpus-per-node $NGPUS --ntasks-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
-  interruptible: true
 
 perftest-multi-gc:
   stage: perf_tests_multi
@@ -945,7 +913,6 @@ perftest-multi-gc:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-sharp-gc:
   stage: perf_tests_multi
@@ -970,7 +937,6 @@ perftest-sharp-gc:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-multi-DGX-1V:
   stage: perf_tests_multi
@@ -1002,7 +968,6 @@ perftest-multi-DGX-1V:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 # Disabled - Allocation timeouts cause too much noise
 # perftest-multi-dgx-2:
@@ -1029,7 +994,6 @@ perftest-multi-DGX-1V:
 #     DRACO_SALLOC: "--exclusive --gpus-per-node=16 --ntasks-per-node=16 --account=coreai_libraries_nccl --nv-meta ml-model.nccl --exclusive -t 00:30:00"
 #   script:
 #     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
-#   interruptible: true
 
 perftest-multi-selene:
   stage: perf_tests_multi
@@ -1053,7 +1017,6 @@ perftest-multi-selene:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
-  interruptible: true
 
 perftest-multi-eos:
   stage: perf_tests_multi
@@ -1074,7 +1037,6 @@ perftest-multi-eos:
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
-  interruptible: true
 
 perftest-sharp-selene:
   stage: perf_tests_multi
@@ -1101,7 +1063,6 @@ perftest-sharp-selene:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna --network=sharp -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SHARP_MULTI_JOB_TIME ./test/scripts/gitlab-runner-perftest-sharp.sh 4G 0
-  interruptible: true
 
 perftest_multi-AWS_H100_EFA:
   stage: perf_tests_multi
@@ -1137,7 +1098,6 @@ perftest_multi-AWS_H100_EFA:
     - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
-  interruptible: true
   artifacts:
     when: always
     paths:
@@ -1167,7 +1127,6 @@ perftest_multi-draco_oci:
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - salloc --exclusive --nodes $NNODES --gpus-per-node $NGPUS --ntasks-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
-  interruptible: true
 
 perf-regression-single-DGX-A100:
   stage: perf_regression
@@ -1197,7 +1156,6 @@ perf-regression-single-DGX-A100:
     paths:
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
-  interruptible: true
 
 perf-regression-multi-DGX-A100:
   stage: perf_regression
@@ -1233,7 +1191,6 @@ perf-regression-multi-DGX-A100:
     paths:
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
-  interruptible: true
 
 QA-team-ci:
   stage: perf_regression
@@ -1243,7 +1200,6 @@ QA-team-ci:
     - cqa_host_runner
   script:
     - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
-  interruptible: true
 
 replay-multi-gc:
   stage: replay_tests
@@ -1267,4 +1223,3 @@ replay-multi-gc:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
