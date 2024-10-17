@@ -917,7 +917,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
       // currently don't collect data about missing ranks, we can't reliably distinguish these two cases.
       // For now we rely on an approximation: if we _know_ that some peers failed to respond, we mark this
       // as an INCOMPLETE error; otherwise as a MISMATCH warning.
-      if (nPeersMissing > 0)
+      if (nPeersMissing > 0 || nRasDeadPeers > 0)
         auxComm->errors |= RAS_ACE_INCOMPLETE;
       else {
         auxComm->errors |= RAS_ACE_MISMATCH;
