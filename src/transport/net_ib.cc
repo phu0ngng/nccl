@@ -761,6 +761,7 @@ ncclResult_t ncclIbGetPhysProperties(int dev, ncclNetProperties_t* props) {
   if (ncclIbDmaBufSupport(dev) == ncclSuccess) {
     props->ptrSupport |= NCCL_PTR_DMABUF; // GDR support via DMA-BUF
   }
+  props->forceFlush = 0;
   props->latency = 0; // Not set
   props->port = ibDev->portNum + ibDev->realPort;
   props->maxComms = ibDev->maxQp;
