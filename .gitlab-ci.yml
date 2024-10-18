@@ -822,6 +822,7 @@ perftest-single-eos:
     MPI_PARAMS: "-mca btl tcp,self"
     NNODES: 1
     NGPUS: 8
+    SKIP_FT_INIT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
