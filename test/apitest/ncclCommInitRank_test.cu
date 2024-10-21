@@ -110,8 +110,7 @@ class ncclCommInitRankOutputTest : public ncclCommInitRankShelveEnvTest {
 
     virtual void SetUp() override {
         ncclCommInitRankShelveEnvTest::SetUp();
-        //snprintf(logFileName, sizeof(logFileName), "/tmp/test_log_%d.tmp", getpid());
-        snprintf(logFileName, sizeof(logFileName), "test_log_%d.tmp", getpid());
+        snprintf(logFileName, sizeof(logFileName), "/tmp/test_log_%d.tmp", getpid());
         overrideEnvVariable("NCCL_DEBUG", "INFO");
         overrideEnvVariable("NCCL_DEBUG_SUBSYS", "ENV");
         overrideEnvVariable("NCCL_DEBUG_FILE", logFileName);
@@ -122,32 +121,31 @@ class ncclCommInitRankOutputTest : public ncclCommInitRankShelveEnvTest {
         ncclCommInitRankShelveEnvTest::TearDown();
         ncclResetDebugInit();
     }
-    bool verifyResult(const char* expected_regex) {
+    void verifyResult(const char* expected_regex) {
         // This reads the entire file and searches for expected_regex.
         FILE* f = fopen(logFileName, "rt");
+        ASSERT_NE(f, nullptr) << "Could not open log file used by test: " << logFileName;
+
         fseek(f, 0, SEEK_END);
         size_t len = ftell(f);
         fseek(f, 0, SEEK_SET);
         std::vector<char> buffer(len+1); 
-        if (fread(buffer.data(), 1, len, f) != len) {
-            fprintf(stderr, "FATAL: did not read from buffer %ld bytes.\n", len);
-            exit(1);
-        }
-        buffer[len] = '\0';
+        size_t len_read = fread(buffer.data(), 1, len, f);
+        buffer[len_read] = '\0';
         fclose(f);
+        ASSERT_EQ(len_read, len) << "FATAL: read " << len_read << " bytes from file, but was trying to read " << len << ".";
+
         regex_t reg;
         int e = regcomp(&reg, expected_regex, 0);
         if (e) {
-          fprintf(stderr, "FATAL: regcomp returned %d\n", e);
-          exit(1);
+          regfree(&reg);
         }
-        regmatch_t match[1];
-        int c = regexec(&reg, buffer.data(), sizeof(match)/sizeof(match[0]), match, 0);
+        ASSERT_EQ(e, 0) << "regcomp returned " << e << "... this indicates the test itself is broken.";
+
+        regmatch_t match;
+        int c = regexec(&reg, buffer.data(), 1, &match, 0);
         regfree(&reg);
-        if (c!=0) {
-          fprintf(stderr, "Failed to match \"%s\" to \"%s\"", expected_regex, buffer.data());
-        }
-        return c == 0;  // Returns zero on match.
+        EXPECT_EQ(c, 0) << "Failed to match \"" << expected_regex << "\" to \"" << buffer.data() << "\"";
     }
 };
 
@@ -191,7 +189,7 @@ class ncclCommInitRankParseListTest : public ncclCommInitRankOutputTest {
             EXPECT_EQ(destroyResult, ncclCommDestroy(comms[i]));
         }
 
-        EXPECT_TRUE(verifyResult(logRegex));
+        verifyResult(logRegex);
     }
 };
 
