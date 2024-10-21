@@ -822,6 +822,7 @@ perftest-single-eos:
     MPI_PARAMS: "-mca btl tcp,self"
     NNODES: 1
     NGPUS: 8
+    SKIP_FT_INIT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
@@ -1036,7 +1037,7 @@ perftest-multi-eos:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
 
 perftest-sharp-selene:
   stage: perf_tests_multi

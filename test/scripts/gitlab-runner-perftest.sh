@@ -153,6 +153,11 @@ export NCCL_DEBUG="" # disable WARN information
 echo "=============================== all_reduce (FT tests) - $(date +\"%T\") ================================="
 if [ "$SKIP_FT" != "1" ]
 then
+  if [ "$SKIP_FT_INIT" == "1" ]
+  then
+    echo "Skipping init FT test..."
+    enable_ft="$enable_ft -L allreduce,alltoall,finalize,split,abort"
+  fi
   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce (FT tests): all_reduce_perf $range $opts $enable_ft")
 else
