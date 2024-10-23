@@ -838,28 +838,25 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
     } else {
       int multiPort = 1;
       const char* tempBusId;
-      if (strcmp(common->name, "pci") != 0) {
-        multiPort = 0;
-      } else {
-        NCCLCHECK(xmlGetAttrStr(temp, "busid", &tempBusId));
-        if (tempBusId) {
-          for (int i = 1; i < nNodes; i++) {
-            if (!parents[i].empty()) {
-              const char* busId;
-              NCCLCHECK(xmlGetAttrStr(parents[i].top(), "busid", &busId));
-              if (busId) {
-                if (strlen(busId) != strlen(tempBusId)) {
-                  multiPort = 0;
-                  break;
-                }
-                if (strncmp(busId, tempBusId, strlen(busId)-1) != 0) {
-                  multiPort = 0;
-                  break;
-                }
-              } else {
+
+      NCCLCHECK(xmlGetAttrStr(temp, "busid", &tempBusId));
+      if (tempBusId) {
+        for (int i = 1; i < nNodes; i++) {
+          if (!parents[i].empty()) {
+            const char* busId;
+            NCCLCHECK(xmlGetAttrStr(parents[i].top(), "busid", &busId));
+            if (busId) {
+              if (strlen(busId) != strlen(tempBusId)) {
                 multiPort = 0;
                 break;
               }
+              if (strncmp(busId, tempBusId, strlen(busId)-1) != 0) {
+                multiPort = 0;
+                break;
+              }
+            } else {
+              multiPort = 0;
+              break;
             }
           }
         }
