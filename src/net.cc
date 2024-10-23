@@ -816,6 +816,8 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
       ncclCollNet_v8_as_v9.name = ncclCollNet_v8->name;
       INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v8)", ncclCollNets[0]->name);
     }
+  } else {
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v9)", ncclCollNets[0]->name);
   }
 
   ++netPluginRefCount;
