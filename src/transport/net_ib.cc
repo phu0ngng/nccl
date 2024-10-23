@@ -509,7 +509,7 @@ ncclResult_t ncclIbMakeVDeviceInternal(int* d, ncclNetVDeviceProps_t* props) {
     mDev->speed += dev->speed;
     // Each successive time, copy the name '+' new name
     if (mDev->vProps.ndevs > 1) {
-      snprintf(mDev->devName + strlen(mDev->devName), MAXNAMESIZE+1, "+%s", dev->devName);
+      snprintf(mDev->devName + strlen(mDev->devName), sizeof(mDev->devName) - strlen(mDev->devName), "+%s", dev->devName);
     // First time, copy the plain name
     } else {
       strncpy(mDev->devName, dev->devName, MAXNAMESIZE);
@@ -761,6 +761,7 @@ ncclResult_t ncclIbGetPhysProperties(int dev, ncclNetProperties_t* props) {
   if (ncclIbDmaBufSupport(dev) == ncclSuccess) {
     props->ptrSupport |= NCCL_PTR_DMABUF; // GDR support via DMA-BUF
   }
+  props->forceFlush = 0;
   props->latency = 0; // Not set
   props->port = ibDev->portNum + ibDev->realPort;
   props->maxComms = ibDev->maxQp;
@@ -1433,14 +1434,14 @@ ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePro
     int cursor = 1;
     snprintf(local, sizeof(local), "%d", vProps1->devs[0]);
     for (int i = 1; i < vProps1->ndevs; i++) {
-      snprintf(local+cursor, sizeof(local)+cursor, ",%d", vProps1->devs[i]);
+      snprintf(local+cursor, sizeof(local)-cursor, ",%d", vProps1->devs[i]);
       cursor += 2;
     }
     char remote[128];
     snprintf(remote, sizeof(remote), "%d", vProps2->devs[0]);
     cursor = 1;
     for (int i = 1; i < vProps2->ndevs; i++) {
-      snprintf(remote+cursor, sizeof(remote)+cursor, ",%d", vProps2->devs[i]);
+      snprintf(remote+cursor, sizeof(remote)-cursor, ",%d", vProps2->devs[i]);
       cursor += 2;
     }
     INFO(NCCL_NET, "NET/IB : There are mismatched physical devices between local (%s) and remote (%s). To disable this warning, set NCCL_IB_WARN_RAIL_LOCAL=0", local, remote);

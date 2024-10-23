@@ -114,6 +114,13 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) 
   ctx->proxyCtrlPool = (struct proxyCtrl *)calloc(proxyCtrlPoolSize, sizeof(*ctx->proxyCtrlPool));
   if (ctx->proxyCtrlPool == NULL) goto fail;
 
+  // Print event pool sizes for debugging
+  //fprintf(stdout, "Profiler: Group pool size (bytes): %lu\n", sizeof(struct group)*groupPoolSize);
+  //fprintf(stdout, "Profiler: Coll  pool size (bytes): %lu\n", sizeof(struct collective)*collPoolSize);
+  //fprintf(stdout, "Profiler: P2p   pool size (bytes): %lu\n", sizeof(struct p2p)*p2pPoolSize);
+  //fprintf(stdout, "Profiler: Proxy pool size (bytes): %lu\n", sizeof(struct proxyCtrl)*proxyCtrlPoolSize);
+  //fprintf(stdout, "Profiler: PXN   pool size (bytes): %lu\n", sizeof(struct proxyOp)*detachPoolSize);
+
   *context = ctx;
   return ncclSuccess;
 
@@ -192,14 +199,15 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
         if (base->type == ncclProfileColl) {
           struct collective* c = (struct collective *)base;
           // reset event proxyOps & proxySteps
-          memset(c->send, 0, sizeof(struct proxyOp)*MAX_CHANNELS);
-          memset(c->recv, 0, sizeof(struct proxyOp)*MAX_CHANNELS);
+          memset(c->send, 0, sizeof(struct proxyOp)*MAX_CHANNELS*MAX_OPS);
+          memset(c->recv, 0, sizeof(struct proxyOp)*MAX_CHANNELS*MAX_OPS);
+          memset(c->nProxyOps, 0, sizeof(int)*MAX_CHANNELS);
           // release collective events in the group and return them to the collective pool
           __atomic_fetch_add(&ctx->collPoolBase, 1, __ATOMIC_RELAXED);
         } else if (base->type == ncclProfileP2p) {
           struct p2p* p = (struct p2p *)base;
           // reset event proxyOp and proxySteps
-          memset(&p->op, 0, sizeof(struct proxyOp));
+          memset(&p->op, 0, sizeof(struct proxyOp)*MAX_CHANNELS);
           // release p2p events in the group and return them to the p2p pool
           __atomic_fetch_add(&ctx->p2pPoolBase, 1, __ATOMIC_RELAXED);
         }
@@ -329,9 +337,13 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
 
     if (eventBase->type == ncclProfileColl) {
       struct collective* parent = (struct collective *)eDescr->parentObj;
-      struct proxyOp* event = (eDescr->proxyOp.isSend) ? &parent->send[eDescr->proxyOp.channelId] : &parent->recv[eDescr->proxyOp.channelId];
+      int channelId = eDescr->proxyOp.channelId;
+      struct proxyOp* event = (eDescr->proxyOp.isSend) ?
+        &parent->send[channelId][parent->nProxyOps[channelId]++] :
+        &parent->recv[channelId][parent->nProxyOps[channelId]++];
+
       event->type = ncclProfileProxyOp;
-      event->channelId = eDescr->proxyOp.channelId;
+      event->channelId = channelId;
       event->pid = eDescr->proxyOp.pid;
       event->rank = eDescr->rank;
       event->peer = eDescr->proxyOp.peer;
@@ -345,9 +357,10 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       debugEvent(event, "ProxyOpStart");
     } else { // ncclProfileP2p
       struct p2p* parent = (struct p2p *)eDescr->parentObj;
-      struct proxyOp* event = &parent->op;
+      int channelId = eDescr->proxyOp.channelId;
+      struct proxyOp* event = &parent->op[channelId];
       event->type = ncclProfileProxyOp;
-      event->channelId = eDescr->proxyOp.channelId;
+      event->channelId = channelId;
       event->pid = eDescr->proxyOp.pid;
       event->rank = eDescr->rank;
       event->peer = eDescr->proxyOp.peer;

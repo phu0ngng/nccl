@@ -1005,6 +1005,19 @@ Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 1 (enabled).
 
+NCCL_LEGACY_CUDA_REGISTER
+-------------------------
+(since 2.24)
+
+Cuda buffers allocated through *cudaMalloc* (and related memory allocators) are legacy
+buffers. Registering legacy buffer can cause implicit synchronization, which is unsafe
+and can possibly cause a hang for NCCL. NCCL disables legacy buffer registration by
+default, and users should move to cuMem-based memory allocators for buffer registration.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 0 (disabled).
+
 NCCL_SET_STACK_SIZE
 -------------------
 (since 2.9)

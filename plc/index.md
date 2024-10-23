@@ -7,6 +7,9 @@
 - [FP8 Datatype Support](items/id_28abde35/FP8_Datatype_Support.md)
 - [Tuner user buffer registration argument](items/id_762642f0/Tuner_user_buffer_registration_argument.md)
 - [RAS](items/id_45c5cb05/RAS.md)
+- [Inter-node User Buffer Registration](items/id_e87c497b/Inter-node_User_Buffer_Registration.md)
+- [dynamically query collnet limits](items/id_22c0bc4a/dynamically_query_collnet_limits.md)
+- [skip ll completion](items/id_7825b160/skip_ll_completion.md)
 <!-- V2_24_DO_NOT_MOVE -->
 
 <!------------------------------------->

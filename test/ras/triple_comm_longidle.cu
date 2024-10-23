@@ -13,6 +13,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <stdint.h>
 
 #include <unistd.h>
 

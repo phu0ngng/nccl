@@ -323,7 +323,7 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
   /* reset everything */
   while (!ncclIntruQueueEmpty(asyncJobsPtr)) {
     struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsPtr);
-    if (job->comm && !job->comm->config.blocking)
+    if (!job->destroyFlag && job->comm && !job->comm->config.blocking)
       (void) ncclCommSetAsyncError(job->comm, error);
     if (job->undo) job->undo(job);
     if (job->destructor) job->destructor((void*)job);
@@ -456,6 +456,14 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       struct ncclAsyncJob* job = ncclIntruQueueDequeue(&asyncCollJobs);
       if (job->destructor) job->destructor((void*)job);
     }
+
+    // done with all buffer allocation, start registration and enqueue
+    comm = groupCommHeadMain;
+    do {
+      CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
+      NCCLCHECKGOTO(ncclTasksRegAndEnqueue(comm), ret, fail);
+      comm = comm->groupNext;
+    } while (comm);
   }
 
   if ((!simInfo) && (groupCommHeadMain != nullptr)) {

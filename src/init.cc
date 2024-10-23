@@ -452,7 +452,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   tmpCommAndChans.comm.node = comm->node;
   tmpCommAndChans.comm.nNodes = comm->nNodes;
   tmpCommAndChans.comm.abortFlag = comm->abortFlagDev;
-  tmpCommAndChans.comm.isNvlink = ncclTopoPathAllNVLink(comm->topo);
+  tmpCommAndChans.comm.isAllNvlink = comm->isAllNvlink;
   for (int p=0; p < NCCL_NUM_PROTOCOLS; p++) {
     tmpCommAndChans.comm.buffSizes[p] = comm->buffSizes[p];
   }
@@ -536,6 +536,21 @@ static void showVersion() {
 }
 
 NCCL_PARAM(MNNVLCliqueId, "MNNVL_CLIQUE_ID", -1);
+// collective call to find out whether gdr is available to every rank
+static ncclResult_t checkIsGdrGlobalAvail(struct ncclComm *comm) {
+  bool *isGdrAvail;
+  NCCLCHECK(ncclCalloc(&isGdrAvail, comm->nRanks));
+  NCCLCHECK(ncclTopoIsGdrAvail(comm->topo, comm->rank, &isGdrAvail[comm->rank]));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, isGdrAvail, sizeof(bool)));
+  comm->isGdrAvailGlobal = true;
+  for (int i = 0; i < comm->nRanks; ++i) {
+    if (!isGdrAvail[i]) {
+      comm->isGdrAvailGlobal = false;
+      break;
+    }
+  }
+  return ncclSuccess;
+}
 
 static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, uint64_t commHash) {
   info->rank = comm->rank;
@@ -618,7 +633,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   }
 
   if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
-  else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
+  else if (comm->isAllNvlink) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
 
   // Make sure P2P chunksize is not larger than coll chunksize.
@@ -1083,9 +1098,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       INFO(NCCL_INIT, "Communicator has %d nodes which is less than CollNet node threshold %d, disabling CollNet", comm->nNodes, collNetNodeThreshold);
       comm->collNetSupport = 0;
     }
-    // As long as there is more than 1 rank on any node, we need to disable collnet reg
-    comm->collNetRegSupport = (comm->maxLocalRanks == 1);
   }
+  comm->isAllNvlink = ncclTopoPathAllNVLink(comm->topo);
+  comm->isOneRPN = (comm->maxLocalRanks == 1);
 
   NCCLCHECKGOTO(ncclCalloc(&rings, nranks*MAXCHANNELS), ret, fail);
   NCCLCHECKGOTO(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings, graphs, parent), ret, fail);
@@ -1299,8 +1314,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Call devCommSetup before the last barrier, making sure we don't have a thread running in front and starting to
   // launch NCCL kernels before all cuda mem allocation is complete. That could cause a deadlock.
   NCCLCHECKGOTO(devCommSetup(comm), ret, fail);
+  // check gdr
+  NCCLCHECKGOTO(checkIsGdrGlobalAvail(comm), ret, fail);
   timers[TIMER_INIT_CONNECT] = clockNano() -  timers[TIMER_INIT_CONNECT];
-
+  if (comm->rank == 0) INFO(NCCL_INIT, "Global GDR %s", comm->isGdrAvailGlobal ? "ENABLE" : "DISABLE");
   /* Local intra-node barrier */
   NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
 
@@ -1973,25 +1990,12 @@ fail:
 }
 
 static ncclResult_t commCleanup(ncclComm_t comm) {
-  int savedDevice;
-  int commDevice = comm->cudaDev;
-
-  CUDACHECK(cudaGetDevice(&savedDevice));
-  if (savedDevice != commDevice) {
-    CUDACHECK(cudaSetDevice(commDevice));
-  }
-
+  CUDACHECK(cudaSetDevice(comm->cudaDev));
   if (comm->tuner != NULL) {
     NCCLCHECK(comm->tuner->destroy(comm->tunerContext));
     NCCLCHECK(ncclTunerPluginUnload(comm));
   }
-
   NCCLCHECK(commFree(comm));
-
-  if (savedDevice != commDevice) {
-    CUDACHECK(cudaSetDevice(savedDevice));
-  }
-
   return ncclSuccess;
 }
 
@@ -2098,6 +2102,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NVTX3_FUNC_WITH_PARAMS(CommDestroy, CommInitRankSchema, payload)
 
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
+  NCCLCHECK(ncclGroupStartInternal());
   // Try and prevent a double free of the comm struct (user error)
   if (comm->rank == -1 || comm->nRanks == -1 || comm->cudaDev == -1 || comm->busId == -1) {
     WARN("comm %p has already been destroyed", comm);
@@ -2112,6 +2117,8 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
 
 exit:
+  ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
   return res;
 fail:
   goto exit;
@@ -2123,7 +2130,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
     NVTX3_FUNC_RANGE_IN(nccl_domain);
     return ncclSuccess;
   }
-
+  NCCLCHECK(ncclGroupStartInternal());
   // Ask anything that might still be running on the device to quit
   if (comm->childAbortFlag != nullptr) {
     __atomic_store_n(comm->childAbortFlag, 1, __ATOMIC_RELEASE);
@@ -2151,6 +2158,8 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
 
 exit:
+  ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
   return ncclSuccess;
 fail:
   goto exit;

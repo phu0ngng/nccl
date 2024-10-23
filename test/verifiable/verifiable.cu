@@ -128,7 +128,7 @@ namespace {
   __host__ __device__ Y castTo(double x) {
     return Y(x);
   }
-  
+
   template<>
   __host__ __device__ half castTo<half>(float x) {
     return __float2half(x);
@@ -154,6 +154,33 @@ namespace {
   template<>
   __host__ __device__ __nv_bfloat16 castTo<__nv_bfloat16>(uint64_t x) {
     return __double2bfloat16((double)x);
+  }
+  #endif
+
+  #if HAVE_ncclFloat8
+  template<>
+  __host__ __device__ __nv_fp8_e4m3 castTo<__nv_fp8_e4m3>(float x) {
+    return __nv_fp8_e4m3(x);
+  }
+  template<>
+  __host__ __device__ __nv_fp8_e4m3 castTo<__nv_fp8_e4m3>(double x) {
+    return __nv_fp8_e4m3(x);
+  }
+  template<>
+  __host__ __device__ __nv_fp8_e4m3 castTo<__nv_fp8_e4m3>(uint64_t x) {
+    return __nv_fp8_e4m3((double)x);
+  }
+  template<>
+  __host__ __device__ __nv_fp8_e5m2 castTo<__nv_fp8_e5m2>(float x) {
+    return __nv_fp8_e5m2(x);
+  }
+  template<>
+  __host__ __device__ __nv_fp8_e5m2 castTo<__nv_fp8_e5m2>(double x) {
+    return __nv_fp8_e5m2(x);
+  }
+  template<>
+  __host__ __device__ __nv_fp8_e5m2 castTo<__nv_fp8_e5m2>(uint64_t x) {
+    return __nv_fp8_e5m2((double)x);
   }
   #endif
 }

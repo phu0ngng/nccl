@@ -758,7 +758,7 @@ int ncclTopoCheckPix(ncclXmlNode* common, ncclXmlNode** nodes, int nNodes) {
 }
 
 #define NCCL_TOPO_XML_DEPTH_MAX 256
-typedef struct {
+typedef struct xmlNodeStack {
   ncclXmlNode* elems[NCCL_TOPO_XML_DEPTH_MAX];
   int tail;
 
@@ -990,7 +990,7 @@ ncclResult_t ncclTopoMakeVnic(ncclComm_t comm, struct ncclXml* xml, ncclNetVDevi
 
   // Create a new xmlTopoNode for this net
   NCCLCHECK(ncclTopoFillNet(xml, props.pciPath, props.name, netNode, parent));
-  INFO(NCCL_INIT|NCCL_GRAPH, "TOPO/NET : Made vNic %d %s", vDevIndex, props.name);
+  INFO(NCCL_GRAPH, "TOPO/NET : Made vNic %d %s", vDevIndex, props.name);
   return ncclSuccess;
 }
 

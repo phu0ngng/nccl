@@ -364,7 +364,11 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->channelId = op->channelId;
   sub->nsteps = op->nsteps;
   sub->nbytes = op->nbytes;
+  sub->chunkSize = op->chunkSize;
   sub->offset = 0;
+  sub->loopSize = op->loopSize;
+  sub->loopOffset = op->loopOffset;
+  sub->isOneRPN = op->isOneRPN;
   sub->peer = op->peer;
   sub->reg = op->reg;
   sub->sendMhandle = op->sendMhandle;
@@ -376,6 +380,7 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->rank = op->rank;
   sub->pid = op->pid;
   sub->profilerContext = op->profilerContext;
+  sub->ringAlgo = op->ringAlgo;
   args->nsubs = subIndex+1;
   if (subIndex) {
     if ((args->sliceSteps != op->sliceSteps) ||
@@ -404,6 +409,7 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   args->pattern = op->pattern;
   args->protocol = op->protocol;
   args->coll = op->coll;
+  args->algorithm = op->algorithm;
   args->specifics = op->specifics;
   args->state = ncclProxyOpReady;
   args->progress = op->connection->tcomm->proxyProgress;
@@ -485,6 +491,7 @@ static ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyCon
   }
   if (op->next != -1) __builtin_prefetch(pool->ops+op->next); // Prefetch next free op
   memcpy(op, proxyOp, sizeof(struct ncclProxyOp));
+  if (proxyOp->ringAlgo) proxyOp->ringAlgo->incRefCount();
   op->next = -1;
   op->connection = proxyConn->connection;
   if (proxyOps->nextOps == -1) {
@@ -747,23 +754,17 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyState* proxyState, int
 
   if (state->active == NULL) {
     pthread_mutex_lock(&pool->mutex);
-    while (pool->nextOps == -1 && !state->stop) {
+    if (pool->nextOps == -1 && !state->stop) {
       ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
       ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlSleep);
       pthread_cond_wait(&pool->cond, &pool->mutex);
       ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlWakeup);
       ncclProfilerStopProxyCtrlEvent(eHandle);
     }
-    if (state->stop) { // We might have been woken up to stop.
-      pthread_mutex_unlock(&pool->mutex);
-      return ncclSuccess;
-    }
   }
-
   state->nextOps = pool->nextOps;
   pool->nextOps = pool->nextOpsEnd = -1;
   pthread_mutex_unlock(&pool->mutex);
-  if (state->nextOps == -1) return ncclInternalError;
 
 process_nextops:
   ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
@@ -901,7 +902,7 @@ void* ncclProxyProgress(void *proxyState_) {
    * ncclParamProgressAppendOpFreq(). If they are equal, we will append proxy ops. This will decrease the
    * frequency of calling ncclProxyGetPostedOps() and reduce the perf impact. */
   int proxyOpAppendCounter = 0;
-  while (state->stop == 0 || (state->stop == 1 && state->active)) {
+  do {
     int idle = 1;
     ncclResult_t ret = progressOps(proxyState, state, state->active, &idle);
     if (ret != ncclSuccess) {
@@ -914,12 +915,11 @@ void* ncclProxyProgress(void *proxyState_) {
     if (lastIdle == 0 && idle == 1) ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlIdle);
     if (lastIdle == 1 && idle == 0) ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlActive);
     ncclProfilerStopProxyCtrlEvent(eHandle);
-    if (idle || (++proxyOpAppendCounter == ncclParamProgressAppendOpFreq())) {
+    if (idle || !state->active || (++proxyOpAppendCounter == ncclParamProgressAppendOpFreq())) {
       int added = 0;
       proxyOpAppendCounter = 0;
       TIME_START(3);
-      if (state->stop == 0)
-        ret = ncclProxyGetPostedOps(proxyState, &added);
+      ret = ncclProxyGetPostedOps(proxyState, &added);
       if (added) { TIME_STOP(3); } else { TIME_CANCEL(3); }
       if (ret != ncclSuccess) {
         __atomic_store_n(&proxyState->asyncResult, ret, __ATOMIC_RELEASE);
@@ -930,7 +930,7 @@ void* ncclProxyProgress(void *proxyState_) {
       }
     }
     lastIdle = idle;
-  }
+  } while (state->stop == 0 || (state->stop == 1 && state->active));
   return NULL;
 }
 

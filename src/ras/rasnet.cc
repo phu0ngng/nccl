@@ -1082,10 +1082,11 @@ ncclResult_t rasLinkUpdateConn(struct rasLink* link, int connIdx, int peerIdx, b
     assert(i <= oldLinkIdx); // We can only get here if linkConn->peerIdx == -1 && peerIdx != -1.
     if (i != oldLinkIdx) {
       struct rasLinkConn tmp;
+      struct rasLinkConn* linkConnNext = link->conns+i+1; // Just to silence the compiler.
       // Move the existing conn from index oldLinkIdx to a (lower) index i, shifting the existing conns
       // with indices in the range [i, oldLinkIdx).
       memcpy(&tmp, link->conns+oldLinkIdx, sizeof(tmp));
-      memmove(linkConn+1, linkConn, (oldLinkIdx-i)*sizeof(*linkConn));
+      memmove(linkConnNext, linkConn, (oldLinkIdx-i)*sizeof(*linkConn));
       memcpy(linkConn, &tmp, sizeof(*linkConn));
     }
     if (!external)

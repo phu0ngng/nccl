@@ -27,6 +27,10 @@ variables:
   RUN_ON_DRACO_OCI: "1"
   RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
 
+default:
+  # set all jobs to interruptible by default
+  interruptible: true
+
 # Run our CI on:
 # - Every commit to master
 # - Every commit to a merge request
@@ -35,25 +39,9 @@ variables:
 workflow:
   rules:
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
-
-build:
-  stage: build
-  rules:
-    - when: always
-  tags:
-    - build
-  variables:
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
-    GIT_CLONE_PATH: "$CI_BUILDS_DIR/$CI_COMMIT_SHA"
-  script:
-    - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
-    - make -j test.build MPI=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME NVCC_GENCODE="-gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_80,code=sm_80"
-  artifacts:
-    paths:
-      - build
-    expire_in: 4 hrs
-  interruptible: true
+  # when cancelling a redundant pipeline, cancel all jobs that are interruptible
+  auto_cancel:
+    on_new_commit: interruptible
 
 build-trace:
   stage: build
@@ -69,12 +57,24 @@ build-trace:
   script:
     - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
     - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
-  interruptible: true
 
-build-eos-aws:
+build-classic:
+  stage: build
+  tags:
+    - build-with-docker
+  script:
+    - docker/make.sh gc-classic
+  artifacts:
+    paths:
+      - build
+    exclude:
+      - build/**/*.o
+    expire_in: 4 hrs
+
+build-eos-aws-oci:
   stage: build
   rules:
-    - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1"
+    - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1"
       when: always
     - when: never
   tags:
@@ -85,37 +85,42 @@ build-eos-aws:
     #   NVCC_GENCODE: 90
     #   OS: ubuntu22.04
     #   MPI_HOME: "/usr/mpi/gcc/openmpi-4.1.5rc2"
-    - docker/make.sh eos
-  artifacts:
-    paths:
-      - build
-    exclude:
-      - build/**/*.o
-    expire_in: 4 hrs
-  interruptible: true
-
-build-draco_oci:
-  stage: build
-  rules:
-    - if: $RUN_ON_DRACO_OCI == "1"
-      when: always
-    - when: never
-  tags:
-    - build-with-docker
-  script:
     # Draco OCI-IAD cluster info
     #   NVIDIA-SMI 535.113.01  Driver Version: 535.104.12  CUDA Version: 12.2
     #   NVCC_GENCODE: 80
     #   OS: ubuntu20.04
     #   MPI_HOME: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/openmpi-4.1.4"
-    - docker/make.sh draco-oci
+    - docker/make.sh draco-oci,eos
   artifacts:
     paths:
       - build
     exclude:
       - build/**/*.o
     expire_in: 4 hrs
-  interruptible: true
+
+fairshare-eos:
+  stage: setup
+  rules:
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  tags:
+    - nccl-eos
+  script:
+    - chmod +x test/scripts/gitlab-runner-fairshare.sh
+    - ./test/scripts/gitlab-runner-fairshare.sh
+
+fairshare-draco-oci:
+  stage: setup
+  rules:
+    - if: $RUN_ON_DRACO_OCI == "1"
+      when: always
+    - when: never
+  tags:
+    - draco-oci-iad
+  script:
+    - chmod +x test/scripts/gitlab-runner-fairshare.sh
+    - ./test/scripts/gitlab-runner-fairshare.sh
 
 setup-AWS_H100_EFA:
   stage: setup
@@ -128,7 +133,7 @@ setup-AWS_H100_EFA:
   needs:
     # Builds targetted for EOS work on AWS as well as the build config is the same across both clusters.
     # TODO - Refactor build jobs to decouple EOS and AWS.
-    - build-eos-aws
+    - build-eos-aws-oci
   variables:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
@@ -144,7 +149,6 @@ health-P100:
     - p100
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP100 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 health-P40:
   stage: health
@@ -155,7 +159,6 @@ health-P40:
     - p40
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP40 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 health-GP100:
   stage: health
@@ -166,7 +169,6 @@ health-GP100:
     - gp100
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 health-A40:
   stage: health
@@ -177,7 +179,6 @@ health-A40:
     - a40
   script:
     - srun --exclusive -t 00:02:00 -N 2 -c 2 -pA40 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 health-A100:
   stage: health
@@ -188,128 +189,121 @@ health-A100:
     - a100pci
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-health-check.sh
-  interruptible: true
 
 unit_tests-P100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build","health-P100"]
+  needs: ["build-classic","health-P100"]
   tags:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-P40:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build","health-P40"]
+  needs: ["build-classic","health-P40"]
   tags:
     - p40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-GP100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build","health-GP100"]
+  needs: ["build-classic","health-GP100"]
   tags:
     - gp100
   variables:
     NCCL_CUMEM_ENABLE: "0"
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-A40-single:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build","health-A40"]
+  needs: ["build-classic","health-A40"]
   tags:
     - a40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-A40-dual:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build","health-A40"]
+  needs: ["build-classic","health-A40"]
   tags:
     - a40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-A100:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build","health-A100"]
+  needs: ["build-classic","health-A100"]
   tags:
     - a100pci
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 unit_tests-eos:
   stage: unit_tests
@@ -317,7 +311,7 @@ unit_tests-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws"]
+  needs: ["build-eos-aws-oci"]
   tags:
     - nccl-eos
   variables:
@@ -326,7 +320,6 @@ unit_tests-eos:
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - srun --exclusive -n 1 -c8 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:unit::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-unit.sh
-  interruptible: true
 
 unit_tests-AWS_H100_EFA:
   stage: unit_tests
@@ -369,7 +362,7 @@ unit_tests-draco_oci:
       when: always
     - when: never
   needs:
-    - build-draco_oci
+    - build-eos-aws-oci
   tags:
     - draco-oci-iad
   variables:
@@ -381,105 +374,99 @@ unit_tests-draco_oci:
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - srun --exclusive --nodes $NNODES --gpus-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
-  interruptible: true
 
 apitest-P100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build"]
+  needs: ["build-classic"]
   tags:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-P40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build"]
+  needs: ["build-classic"]
   tags:
     - p40
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-GP100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build"]
+  needs: ["build-classic"]
   tags:
     - gp100
   variables:
     NCCL_CUMEM_ENABLE: "0"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-A40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build"]
+  needs: ["build-classic"]
   tags:
     - a40
   variables:
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-A100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build"]
+  needs: ["build-classic"]
   tags:
     - a100pci
   variables:
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
     - ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-DGX-1V:
   stage: api_tests
@@ -487,7 +474,7 @@ apitest-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-1v
   variables:
@@ -502,7 +489,6 @@ apitest-DGX-1V:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-DGX-2:
   stage: api_tests
@@ -510,7 +496,7 @@ apitest-DGX-2:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-2
   variables:
@@ -525,7 +511,6 @@ apitest-DGX-2:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-DGX-A100:
   stage: api_tests
@@ -533,7 +518,7 @@ apitest-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -548,7 +533,6 @@ apitest-DGX-A100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 apitest-eos:
   stage: api_tests
@@ -556,15 +540,14 @@ apitest-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws"]
+  needs: ["build-eos-aws-oci"]
   tags:
     - nccl-eos
   variables:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
-    - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-apitest.sh
-  interruptible: true
+    - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:15:00 ./test/scripts/gitlab-runner-apitest.sh
 
 apitest-AWS_H100_EFA:
   stage: api_tests
@@ -607,7 +590,7 @@ apitest-draco_oci:
       when: always
     - when: never
   needs:
-    - build-draco_oci
+    - build-eos-aws-oci
     - unit_tests-draco_oci
   tags:
     - draco-oci-iad
@@ -620,82 +603,75 @@ apitest-draco_oci:
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - srun --exclusive --nodes $NNODES --gpus-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
-  interruptible: true
 
 perftest-P100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build]
+  needs: ["build-classic"]
   tags:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-P40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build]
+  needs: ["build-classic"]
   tags:
     - p40
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-GP100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build]
+  needs: ["build-classic"]
   tags:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pGP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh 1G 2
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-A40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build]
+  needs: ["build-classic"]
   tags:
     - a40
   variables:
@@ -712,13 +688,12 @@ perftest-A40:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 multi-perftest-A40:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build]
+  needs: ["build-classic"]
   tags:
     - a40
   variables:
@@ -729,36 +704,34 @@ multi-perftest-A40:
     NGPUS: 2
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-A100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build]
+  needs: ["build-classic"]
   tags:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh 1G 0
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-DGX-1V:
   stage: perf_tests_single
@@ -766,7 +739,7 @@ perftest-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-1v
   variables:
@@ -784,7 +757,6 @@ perftest-DGX-1V:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-DGX-2:
   stage: perf_tests_single
@@ -792,7 +764,7 @@ perftest-DGX-2:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-2
   variables:
@@ -810,7 +782,6 @@ perftest-DGX-2:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-DGX-A100:
   stage: perf_tests_single
@@ -818,7 +789,7 @@ perftest-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -836,7 +807,6 @@ perftest-DGX-A100:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-single-eos:
   stage: perf_tests_single
@@ -844,7 +814,7 @@ perftest-single-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws"]
+  needs: ["build-eos-aws-oci"]
   tags:
     - nccl-eos
   variables:
@@ -852,12 +822,11 @@ perftest-single-eos:
     MPI_PARAMS: "-mca btl tcp,self"
     NNODES: 1
     NGPUS: 8
-    SKIP_FT: 1
+    SKIP_FT_INIT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - salloc -N ${NNODES} -n ${NGPUS} --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0 1
-  interruptible: true
 
 perftest_single-AWS_H100_EFA:
   stage: perf_tests_single
@@ -886,7 +855,6 @@ perftest_single-AWS_H100_EFA:
       export NNODES=$NNODES
       export NGPUS=$NGPUS
       export SALLOC="salloc --exclusive -t 00:10:00 -N $NNODES -n $NGPUS -p compute"
-      export SKIP_FT=1
       export UCX_TLS=tcp
 
       $TEST_CMD
@@ -907,7 +875,7 @@ perftest_single-draco_oci:
       when: always
     - when: never
   needs:
-    - build-draco_oci
+    - build-eos-aws-oci
   tags:
     - draco-oci-iad
   variables:
@@ -918,62 +886,58 @@ perftest_single-draco_oci:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 16G
     TIMEOUT: "00:20:00" # HH:MM:SS
+    IS_DRACO_OCI_IAD: 1
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - salloc --exclusive --nodes $NNODES --gpus-per-node $NGPUS --ntasks-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
-  interruptible: true
 
 perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build]
+  needs: [build-classic]
   tags:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NCCL_ALLOC_P2P_NET_LL_BUFFERS: "1" # Add coverage of dedicated P2P LL buffers on constrained rank count
     NNODES: 2
     NGPUS: 8
     SKIP_MULTI_GPU: 1
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest.sh 128M 0
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build]
+  needs: [build-classic]
   tags:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SHARP_HOME: "/opt/hpcx/v2.7/sharp"
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
     NNODES: 2
     NGPUS: 8
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 perftest-multi-DGX-1V:
   stage: perf_tests_multi
@@ -983,7 +947,7 @@ perftest-multi-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-1v
   variables:
@@ -1005,7 +969,6 @@ perftest-multi-DGX-1V:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true
 
 # Disabled - Allocation timeouts cause too much noise
 # perftest-multi-dgx-2:
@@ -1032,7 +995,6 @@ perftest-multi-DGX-1V:
 #     DRACO_SALLOC: "--exclusive --gpus-per-node=16 --ntasks-per-node=16 --account=coreai_libraries_nccl --nv-meta ml-model.nccl --exclusive -t 00:30:00"
 #   script:
 #     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
-#   interruptible: true
 
 perftest-multi-selene:
   stage: perf_tests_multi
@@ -1040,7 +1002,7 @@ perftest-multi-selene:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -1056,7 +1018,6 @@ perftest-multi-selene:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
-  interruptible: true
 
 perftest-multi-eos:
   stage: perf_tests_multi
@@ -1064,7 +1025,7 @@ perftest-multi-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws"]
+  needs: ["build-eos-aws-oci"]
   tags:
     - nccl-eos
   variables:
@@ -1073,12 +1034,10 @@ perftest-multi-eos:
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
-    SKIP_FT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
-  interruptible: true
+    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
 
 perftest-sharp-selene:
   stage: perf_tests_multi
@@ -1086,7 +1045,7 @@ perftest-sharp-selene:
     - if: $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -1105,7 +1064,6 @@ perftest-sharp-selene:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna --network=sharp -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SHARP_MULTI_JOB_TIME ./test/scripts/gitlab-runner-perftest-sharp.sh 4G 0
-  interruptible: true
 
 perftest_multi-AWS_H100_EFA:
   stage: perf_tests_multi
@@ -1134,7 +1092,6 @@ perftest_multi-AWS_H100_EFA:
       export NNODES=$NNODES
       export NGPUS=$NGPUS
       export SALLOC="salloc --exclusive -t 00:10:00 -N $NNODES --ntasks-per-node=$NGPUS -p compute"
-      export SKIP_FT=1
       export UCX_TLS=tcp
 
       $TEST_CMD
@@ -1142,7 +1099,6 @@ perftest_multi-AWS_H100_EFA:
     - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
-  interruptible: true
   artifacts:
     when: always
     paths:
@@ -1156,7 +1112,7 @@ perftest_multi-draco_oci:
       when: always
     - when: never
   needs:
-    - build-draco_oci
+    - build-eos-aws-oci
     - perftest_single-draco_oci
   tags:
     - draco-oci-iad
@@ -1168,10 +1124,10 @@ perftest_multi-draco_oci:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0
     TIMEOUT: "00:20:00" # HH:MM:SS
+    IS_DRACO_OCI_IAD: 1
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - salloc --exclusive --nodes $NNODES --gpus-per-node $NGPUS --ntasks-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
-  interruptible: true
 
 perf-regression-single-DGX-A100:
   stage: perf_regression
@@ -1179,7 +1135,7 @@ perf-regression-single-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
       when: always
     - when: never
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -1201,7 +1157,6 @@ perf-regression-single-DGX-A100:
     paths:
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
-  interruptible: true
 
 perf-regression-multi-DGX-A100:
   stage: perf_regression
@@ -1212,7 +1167,7 @@ perf-regression-multi-DGX-A100:
     - if: $REGRESSION_BASELINE == ""
       variables:
         REGRESSION_BASELINE: "${REGRESSION_BASELINE_TAG}"
-  needs: [build]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -1237,7 +1192,6 @@ perf-regression-multi-DGX-A100:
     paths:
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
-  interruptible: true
 
 QA-team-ci:
   stage: perf_regression
@@ -1247,24 +1201,22 @@ QA-team-ci:
     - cqa_host_runner
   script:
     - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
-  interruptible: true
 
 replay-multi-gc:
   stage: replay_tests
   rules:
     - when: always
-  needs: [build]
+  needs: [build-classic]
   tags:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     SALLOC_RESNET: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
     SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"
     SALLOC_SELF_SINGLE: "salloc --exclusive -t 00:05:00 -N 1 -n 8 -pP100"
   script:
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - SALLOC=$SALLOC_RESNET ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
     - ./test/scripts/gitlab-runner-replay-self-test.sh
   artifacts:
@@ -1272,4 +1224,3 @@ replay-multi-gc:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
-  interruptible: true

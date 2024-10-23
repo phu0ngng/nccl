@@ -18,6 +18,17 @@ function source_cluster_config() {
     source $config_file
 }
 
+function get_nvcc_gencodes() {
+    # comma-separated list of numeric gpu_archs
+    gpu_archs="$(echo $1 | tr ',' '\n' | sort -u)"
+
+    gencode_string=""
+    for gpu_arch in $gpu_archs; do
+        gencode_string="$gencode_string -gencode=arch=compute_${gpu_arch},code=sm_${gpu_arch}"
+    done
+    echo "$gencode_string"
+}
+
 function identify_build_cluster() {
     hostname="$(hostname)"
     
@@ -50,7 +61,7 @@ build_cluster_tag="$(identify_build_cluster)"
 
 # arg parsing
 # defaults
-target_cluster_tag="$build_cluster_tag"
+target_cluster_arg="$build_cluster_tag"
 make_clean=0
 
 for arg in "$@"
@@ -58,18 +69,39 @@ do
     case $arg in
         --clean) make_clean=1
                  ;;
-        *) target_cluster_tag="$arg"
+        *) target_cluster_arg="$arg"
            ;;
     esac
 done
 
-source_cluster_config $target_cluster_tag
+# process target cluster config
+# comma separated list of cluster tags
+target_cluster_tags="$(echo $target_cluster_arg | tr ',' ' ')"
+gpu_arch_list=""
+build_image_version=""
 
-# save off the only relevant target cluster parameter
-export NVCC_GENCODE="$(get_nvcc_gencode)"
+for target_cluster_tag in $target_cluster_tags; do
+    source_cluster_config $target_cluster_tag
+    if [ -z "$gpu_arch_list" ]; then
+        gpu_arch_list="$(get_gpu_archs)"
+    else
+        gpu_arch_list="$(get_gpu_archs),$gpu_arch_list"
+    fi
+    # make sure all build image versions are the same
+    if [ -z "$build_image_version" ]; then
+        build_image_version="$(get_build_image_version)"
+    else
+        if [ "$build_image_version" != "$(get_build_image_version)" ]; then
+            echo "ERROR: Build image version mismatch between: $target_cluster_tags"
+	    exit 1
+	fi
+    fi
+done
+
+export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_arch_list)"
 
 # reload the config with build cluster data
-if [ "$target_cluster_tag" != "$build_cluster_tag" ]; then
+if [[ "$target_cluster_arg" != "$build_cluster_tag" ]]; then
     source_cluster_config $build_cluster_tag
 fi
     
@@ -95,4 +127,4 @@ current_dir=$(realpath .)
 export DOCKER_USER_ID=$(stat --format %u $0)
 export DOCKER_GROUP_ID=$(stat --format %g $0)
 
-eval "$(get_build_command $current_dir)"
+eval "$(get_build_command $current_dir $build_image_version)"

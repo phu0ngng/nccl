@@ -45,4 +45,18 @@ echo "=============================== all_reduce (local registration CollNet) - 
 $SALLOC $MPI_HOME/bin/mpirun ./build/test/perf/all_reduce_perf $range $opts $enable_local_register
 [ $? -ne 0 ] && let failure_count=$failure_count+1
 
+# export NCCL_ALGO=CollnetDirect
+# for func in all_reduce reduce_scatter all_gather; do
+#   echo "=============================== $func CollnetDirect (local registration all sizes) - $(date +\"%T\") =========================="
+#   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/${func}_perf $range $opts $enable_local_register
+#   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func CollnetDirect (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+# done
+
+# export NCCL_ALGO=CollnetDirect
+# for func in all_reduce reduce_scatter all_gather; do
+#   echo "=============================== $func CollnetDirect 1PPN (local registration all sizes) - $(date +\"%T\") =========================="
+#   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO -x NCCL_SHM_DISABLE=1 -x NCCL_P2P_DISABLE=1 ./build/test/perf/${func}_perf $range $opts $enable_local_register
+#   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func CollnetDirect 1PPN (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+# done
+
 exit $failure_count

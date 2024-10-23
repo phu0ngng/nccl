@@ -197,12 +197,15 @@ struct ncclTaskColl {
   int32_t algorithm:8, protocol:8;
   uint32_t isCollnet:1, isNvls:1;
   uint32_t devFuncId:30;
-  enum ncclRegBufferType regBufType;
+  int regBufType;
   // number of elements in planner->ipcMemQueue associated with this collective
   int nCleanupQueueElts;
 
   void* sendMhandle;
   void* recvMhandle;
+  void** sendNetHandles;
+  void** recvNetHandles;
+  void** srecvNetHandles;
   // index for IPC record lookup
   uintptr_t sendbuffOffset;
   uintptr_t recvbuffOffset;
@@ -365,6 +368,7 @@ struct ncclKernelPlanner {
 
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueue;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueue;
+  struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> tmpCollWorkQueue;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueue;
 
   //////////////////////////////////////////////////////////////////////////////
@@ -533,7 +537,7 @@ struct ncclComm {
   int proxyRefCountOld; /* store proxy post-atomic-sub refcount */
   // Whether this communicator uses collNet
   int collNetSupport;
-  bool collNetRegSupport;
+  bool isOneRPN;
   uint8_t collNetSupportMatrix[4/*sum,prod,max,min*/][ncclNumTypes];
   bool intraNodeP2pSupport;
   int* collNetHeads;
@@ -601,6 +605,9 @@ struct ncclComm {
   // buffer registration cache
   struct ncclRegCache regCache;
   uint64_t endMagic;
+  int isAllNvlink;
+  bool isGdrAvailGlobal;
+  bool useNetPXN;
 };
 
 enum ncclLaunchMode {

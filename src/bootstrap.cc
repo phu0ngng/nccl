@@ -513,6 +513,7 @@ static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
             WARN("no device found matching %s%s, verify NCCL_OOB_NET_IFNAME", searchExact ? "exactly " : "", userIfEnv);
           else
             WARN("no device found after excluding %s%s, verify NCCL_OOB_NET_IFNAME", searchExact ? "exactly " : "", userIfEnv);
+          pthread_mutex_unlock(&bootstrapNetLock);
           return ncclInvalidArgument;
         }
       } else {
