@@ -299,6 +299,7 @@ int main(int argc, const char* argv[]) {
     RUN_MULTI4("Scout");
     RUN("PCI-H100-NV");
     RUN("OCI-HGX-A100");
+    RUN("Dual-Port-CPU-V100");
 #endif
     RUN("CG4");
     RUN("P9-6V");
