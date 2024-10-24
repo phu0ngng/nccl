@@ -15,6 +15,11 @@ shift
 nvls=$1
 if [ "$nvls" == "" ]; then nvls=0; fi
 
+if [ "$SALLOC" == "" ]; then
+  export SACCT_FORMAT_STRING="JobID,JobName%100,User%10,Partition%15,NNodes,Timelimit,$PLANNED_RESERVED"
+  ./test/scripts/slurm_job_summary.sh
+fi
+
 opts="-w 1 -G $graph -s 512M"
 range="-b 8 -e $max -f 2"
 enable_ft="-B 0 -F 1"
