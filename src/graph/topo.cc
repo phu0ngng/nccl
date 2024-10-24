@@ -839,12 +839,12 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
       int multiPort = 1;
       const char* tempBusId;
 
-      NCCLCHECK(xmlGetAttrStr(temp, "busid", &tempBusId));
+      NCCLCHECK(xmlGetAttr(temp, "busid", &tempBusId));
       if (tempBusId) {
         for (int i = 1; i < nNodes; i++) {
           if (!parents[i].empty()) {
             const char* busId;
-            NCCLCHECK(xmlGetAttrStr(parents[i].top(), "busid", &busId));
+            NCCLCHECK(xmlGetAttr(parents[i].top(), "busid", &busId));
             if (busId) {
               if (strlen(busId) != strlen(tempBusId)) {
                 multiPort = 0;
