@@ -860,6 +860,8 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
             }
           }
         }
+      } else {
+        multiPort = 0;
       }
 
       if (multiPort) {
