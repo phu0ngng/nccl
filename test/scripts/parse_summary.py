@@ -18,9 +18,11 @@ try:
 
     for item in json_data:
         created = datetime.fromisoformat(item["created_at"])
+        started = datetime.datetime.now()
         if item["started_at"] is None:
             running = "Pending"
-            started = datetime.datetime.now()
+        else:
+            started = datetime.fromisoformat(item["started_at"])
         if item["finished_at"] is None:
             running = "Running"
         else:
