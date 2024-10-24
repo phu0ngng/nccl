@@ -62,6 +62,28 @@ Values accepted
 
 Set to ``AF_INET`` to force the use of IPv4, or ``AF_INET6`` to force IPv6 usage.
 
+NCCL_SOCKET_RETRY_CNT
+-----------------------------
+(since 2.24)
+
+The ``NCCL_SOCKET_RETRY_CNT`` variable specifies the number of times NCCL retries to establish a socket connection after an ``ETIMEDOUT``, ``ECONNREFUSED``, or ``EHOSTUNREACH`` error.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 34, any positive value is valid.
+
+NCCL_SOCKET_RETRY_SLEEP_MSEC
+-----------------------------
+(since 2.24)
+
+The ``NCCL_SOCKET_RETRY_SLEEP_MSEC`` variable specifies the number of milliseconds NCCL waits before retrying to establish a socket connection after the first ``ETIMEDOUT``, ``ECONNREFUSED``, or ``EHOSTUNREACH`` error.
+For subsequent errors, the waiting time scales linearly with the error count. The total time will therefore be (N+1) * N/2 * ``NCCL_SOCKET_RETRY_SLEEP_MSEC``, where N is given by ``NCCL_SOCKET_RETRY_CNT``.
+With the default values of ``NCCL_SOCKET_RETRY_CNT`` and ``NCCL_SOCKET_RETRY_SLEEP_MSEC``, the total retry time will be approx. 60 seconds.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 100 milliseconds, any positive value is valid.
+
 NCCL_SOCKET_NTHREADS
 --------------------
 (since 2.4.8)
@@ -268,10 +290,21 @@ If NCCL net is enabled for out-of-band communication (see ``NCCL_OOB_NET_ENABLE`
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Define to filter interfaces to be used by NCCL for out-of-band communications.
-The accepted values follow the same logic as NCCL_SOCKET_IFNAME and NCCL_IB_HCA, see above.
+Define to filter interfaces to be used by NCCL for out-of-band communications. The list of accepted interface depends on the network used by NCCL.
+The list is comma-separated; port numbers can be specified using the ``:`` symbol.
+An optional prefix ``^`` indicates the list is an exclude list.
+A second optional prefix ``=`` indicates that the tokens are exact names, otherwise by default NCCL would treat each token as a prefix.
+If multiple devices are specified, NCCL will select the first matching device in the list.
 
-Note: if multiple devices are specified, NCCL will select the first matching device in the list.
+Example:
+
+``NCCL_NET="IB" NCCL_OOB_NET_ENABLE=1 NCCL_OOB_NET_IFNAME="=mlx5_1"`` will use the Infiniband NET, with the interface ``mlx5_1``
+
+``NCCL_NET="IB" NCCL_OOB_NET_ENABLE=1 NCCL_OOB_NET_IFNAME="mlx5_1"`` will use the Infiniband NET, with the first interface found in the list of ``mlx5_1``, ``mlx5_10``, ``mlx5_11``, etc.
+
+``NCCL_NET="Socket" NCCL_OOB_NET_ENABLE=1 NCCL_OOB_NET_IFNAME="ens1"`` will use the socket NET, with the first interface found in the list of ``ens1f0``, ``ens1f1``, etc.
+
+
 
 NCCL_UID_STAGGER_THRESHOLD
 --------------------------
@@ -760,7 +793,8 @@ Use CUDA cuMem* functions to allocate host memory in NCCL.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-0 or 1. Default is 0.
+0 or 1.
+Default is 0 in 2.23; since 2.24, default is 1 if CUDA driver >= 12.6 and CUDA runtime >= 12.2
 
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
@@ -970,6 +1004,19 @@ Enable user local buffer registration when users explicitly call *ncclCommRegist
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 1 (enabled).
+
+NCCL_LEGACY_CUDA_REGISTER
+-------------------------
+(since 2.24)
+
+Cuda buffers allocated through *cudaMalloc* (and related memory allocators) are legacy
+buffers. Registering legacy buffer can cause implicit synchronization, which is unsafe
+and can possibly cause a hang for NCCL. NCCL disables legacy buffer registration by
+default, and users should move to cuMem-based memory allocators for buffer registration.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 0 (disabled).
 
 NCCL_SET_STACK_SIZE
 -------------------

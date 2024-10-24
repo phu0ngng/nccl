@@ -91,6 +91,8 @@ struct p2pCuMemProxyInfo {
 
 #include <sys/types.h>
 
+NCCL_PARAM(LegacyCudaRegister, "LEGACY_CUDA_REGISTER", 0);
+
 /* Convert a PCI busId string into a local cudaDev device index (cf. CUDA_VISIBLE_DEVICES) */
 static int busIdToCudaDev(int64_t busId) {
   int ndev;
@@ -120,21 +122,9 @@ extern int64_t ncclParamMNNVLEnable();
 ncclResult_t p2pCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2) {
   initCeOperation();
 
-  // MNNVL support
-  if (comm->MNNVL && info1->hostHash != info2->hostHash) {
-    NCCLCHECK(ncclTopoCheckMNNVL(comm->topo, info1, info2, ret));
-    if (*ret) return ncclSuccess;
-  }
-
-  // Rule out different nodes / isolated containers
-  if (info1->hostHash != info2->hostHash || info1->shmDev != info2->shmDev) {
-    *ret = 0;
-    return ncclSuccess;
-  }
-
   // Check topology / p2p level.
   int intermediateRank;
-  NCCLCHECK(ncclTopoCheckP2p(comm->topo, info1->rank, info2->rank, ret, NULL, &intermediateRank));
+  NCCLCHECK(ncclTopoCheckP2p(comm, comm->topo, info1->rank, info2->rank, ret, NULL, &intermediateRank));
   if (*ret == 0) return ncclSuccess;
   if (intermediateRank != -1) {
     if (useMemcpy) *ret = 0;
@@ -146,6 +136,12 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph
   NCCLCHECK(ncclTopoCheckNet(comm->topo, info1->rank, info2->rank, &useNet));
   if (useNet) {
     *ret = 0;
+    return ncclSuccess;
+  }
+
+  if (info1->hostHash != comm->peerInfo[comm->rank].hostHash ||
+      info1->hostHash != info2->hostHash) {
+    // If either peer is non-local then we are done.
     return ncclSuccess;
   }
 
@@ -313,11 +309,11 @@ NCCL_PARAM(P2pDirectDisable, "P2P_DIRECT_DISABLE", 0);
 
 #define P2P_SAME_PID(MYINFO, PEERINFO) ((MYINFO->hostHash == PEERINFO->hostHash) && (MYINFO->pidHash == PEERINFO->pidHash))
 
-static ncclResult_t p2pGetInfo(struct ncclTopoSystem* topo, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* read, int* intermediateRank) {
+static ncclResult_t p2pGetInfo(struct ncclComm* comm, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* read, int* intermediateRank) {
   int p2p;
   // Queries the topology to see if the GPUs are Ampere and
   // connected via NVLink, if so we enable P2P Read by default
-  NCCLCHECK(ncclTopoCheckP2p(topo, info1->rank, info2->rank, &p2p, read, intermediateRank));
+  NCCLCHECK(ncclTopoCheckP2p(comm, comm->topo, info1->rank, info2->rank, &p2p, read, intermediateRank));
 
   int readEnable = ncclParamP2pReadEnable();
   if (readEnable != -2) *read = readEnable;
@@ -367,7 +363,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclCalloc(&resources, 1));
   send->transportResources = resources;
   int useRead, intermediateRank;
-  NCCLCHECK(p2pGetInfo(comm->topo, myInfo, peerInfo, &useRead, &intermediateRank));
+  NCCLCHECK(p2pGetInfo(comm, myInfo, peerInfo, &useRead, &intermediateRank));
   if (useMemcpy) useRead = 0;
 
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
@@ -386,7 +382,6 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     info->rank = myInfo->rank;
     if (P2P_SAME_PID(myInfo, peerInfo) && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
       resources->type = P2P_DIRECT;
-      send->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
       INFO(NCCL_INIT|NCCL_P2P, "Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/direct pointer%s",
           channelId, connIndex, myInfo->rank, myInfo->nvmlDev, peerInfo->rank, peerInfo->nvmlDev, useReadStr);
     } else {
@@ -402,8 +397,8 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
         INFO(NCCL_INIT|NCCL_P2P,"Channel %02d/%01d : %d[%d] -> %d[%d] via P2P/IPC%s%s",
              channelId, connIndex, myInfo->rank, myInfo->nvmlDev, peerInfo->rank, peerInfo->nvmlDev, useReadStr, useMemcpy ? "/CE" : "");
       }
-      send->conn.flags |= info->read ? NCCL_IPC_READ : NCCL_IPC_WRITE;
     }
+    send->conn.flags |= info->read ? NCCL_P2P_READ : NCCL_P2P_WRITE;
   } else {
     resources->type = P2P_INTERMEDIATE;
     info->rank = intermediateRank;
@@ -437,7 +432,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
   NCCLCHECK(ncclCalloc(&resources, 1));
   recv->transportResources = resources;
   int useRead, intermediateRank;
-  NCCLCHECK(p2pGetInfo(comm->topo, myInfo, peerInfo, &useRead, &intermediateRank));
+  NCCLCHECK(p2pGetInfo(comm, myInfo, peerInfo, &useRead, &intermediateRank));
 
   static_assert(sizeof(struct p2pConnectInfo) <= sizeof(struct ncclConnect), "p2p Connect Info is too big");
   struct p2pConnectInfo* info = (struct p2pConnectInfo*)connectInfo;
@@ -454,7 +449,6 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     info->rank = myInfo->rank;
     if (P2P_SAME_PID(myInfo, peerInfo) && ncclParamP2pDirectDisable() == 0 && useMemcpy == 0) {
       resources->type = P2P_DIRECT;
-      recv->conn.flags |= info->read ? NCCL_DIRECT_READ : NCCL_DIRECT_WRITE;
     } else {
       if (ncclCuMemEnable()) {
         // cuMem API support
@@ -465,8 +459,8 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
         // Legacy CUDA IPC
         resources->type = P2P_IPC;
       }
-      recv->conn.flags |= info->read ? NCCL_IPC_READ : NCCL_IPC_WRITE;
     }
+    recv->conn.flags |= info->read ? NCCL_P2P_READ : NCCL_P2P_WRITE;
   } else {
     resources->type = P2P_INTERMEDIATE;
     info->rank = intermediateRank;
@@ -845,21 +839,17 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
             NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_P2P, 1, peerRank, &comm->gproxyConn[peerRank]), ret, fail);
           proxyConn = &comm->gproxyConn[peerRank];
 
-          ipcInfo.legacyIpcCap = legacyIpcCap;
           // Get the mem handle for that buffer. It may have been allocated through cudaMalloc in which case we'll
           // get the CUDA legacy mem handle, or through cuMem*.
-          if (ipcInfo.legacyIpcCap) {
-            // legacy export
-            if (comm->directMode) goto fail;
-            CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
-          } else if (ncclCuMemEnable()) {
+          if (ncclCuMemEnable()) {
             CUmemGenericAllocationHandle handle;
             if (CUPFN(cuMemRetainAllocationHandle(&handle, baseAddr)) != CUDA_SUCCESS) {
               // if cuMem* export fails, retry legacy export
-              if (comm->directMode) goto fail;
+              if (comm->directMode || !ncclParamLegacyCudaRegister()) goto fail;
               CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
               ipcInfo.legacyIpcCap = true;
             } else {
+              ipcInfo.legacyIpcCap = false;
               // cuMem* export to file descriptor or fabric handle
               if (proxyConn->sameProcess) {
                 memcpy(&ipcInfo.ipcDesc.memHandle, &handle, sizeof(CUmemGenericAllocationHandle));
@@ -879,6 +869,11 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
               }
               CUCHECKGOTO(cuMemRelease(handle), ret, fail);
             }
+          } else if (legacyIpcCap) {
+            // legacy export
+            if (comm->directMode || !ncclParamLegacyCudaRegister()) goto fail;
+            CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
+            ipcInfo.legacyIpcCap = true;
           } else {
             // nothing works, just return
             goto fail;
@@ -1004,17 +999,15 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
     proxyConn = &comm->gproxyConn[peerRank];
     // Same as local registration. Get the mem handle for that buffer. It may have been allocated through
     // cudaMalloc in which case we'll get the CUDA legacy mem handle, or through cuMem*.
-    if (ipcInfo.legacyIpcCap) {
-      if (comm->directMode) goto fail;
-      CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
-    } else if (ncclCuMemEnable()) {
+    if (ncclCuMemEnable()) {
       // cuMem* export
       CUmemGenericAllocationHandle handle;
       if (pfn_cuMemRetainAllocationHandle(&handle, baseAddr) != CUDA_SUCCESS) {
-        if (comm->directMode) goto fail;
+        if (comm->directMode || !ncclParamLegacyCudaRegister()) goto fail;
         CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
         ipcInfo.legacyIpcCap = true;
       } else {
+        ipcInfo.legacyIpcCap = false;
         if (proxyConn->sameProcess) {
           memcpy(&ipcInfo.ipcDesc.memHandle, &handle, sizeof(CUmemGenericAllocationHandle));
         } else {
@@ -1033,6 +1026,9 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
         }
         CUCHECKGOTO(cuMemRelease(handle), ret, fail);
       }
+    } else if (ipcInfo.legacyIpcCap) {
+      if (comm->directMode || !ncclParamLegacyCudaRegister()) goto fail;
+      CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
     } else {
       goto fail;
     }
@@ -1058,11 +1054,12 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
       else
         peerRmtAddrs = (uintptr_t*)rmtRegAddr;
       *regBufFlag = 1;
-      if (ipcInfo.legacyIpcCap)
-        ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, &record->base);
-      else
-        ncclIntruQueueEnqueue(cleanupQueue, &record->base);
-      if (nCleanupQueueElts) *nCleanupQueueElts += 1;
+      if (ipcInfo.legacyIpcCap) {
+        ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, (struct ncclCommCallback *)record);
+      } else {
+        ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback *)record);
+        if (nCleanupQueueElts) *nCleanupQueueElts += 1;
+      }
       INFO(NCCL_REG, "rank %d - IPC graph register buffer %p size %ld (baseAddr %p size %ld) to peer %d regAddr %p offsetOut %ld", comm->rank, userbuff, buffSize, baseAddr, ipcInfo.size, peerRank, rmtRegAddr, (uintptr_t)userbuff - (uintptr_t)baseAddr);
     }
   }
@@ -1075,15 +1072,18 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
     NCCLCHECKGOTO(ncclStrongStreamWaitStream(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, &comm->sharedRes->hostStream), ret, fail);
     NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream), ret, fail);
     peerRmtAddrs = addrsRecord->regIpcAddrs.devPeerRmtAddrs;
-    if (ipcInfo.legacyIpcCap)
-      ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, &addrsRecord->base);
-    else
-      ncclIntruQueueEnqueue(cleanupQueue, &addrsRecord->base);
+    if (ipcInfo.legacyIpcCap) {
+      ncclIntruQueueEnqueue(&comm->legacyRegCleanupQueue, (struct ncclCommCallback *)addrsRecord);
+    } else {
+      ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback *)addrsRecord);
+      if (nCleanupQueueElts) *nCleanupQueueElts += 1;
+    }
   }
   *offsetOut = (uintptr_t)userbuff - (uintptr_t)baseAddr;
   *peerRmtAddrsOut = peerRmtAddrs;
 
 exit:
+  // coverity[leaked_storage:FALSE] => normally, addrsRecord is added to the cleanupQueue
   return ret;
 fail:
   *regBufFlag = 0;

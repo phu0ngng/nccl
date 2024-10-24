@@ -78,6 +78,7 @@ done
 # comma separated list of cluster tags
 target_cluster_tags="$(echo $target_cluster_arg | tr ',' ' ')"
 gpu_arch_list=""
+build_image_version=""
 
 for target_cluster_tag in $target_cluster_tags; do
     source_cluster_config $target_cluster_tag
@@ -86,8 +87,15 @@ for target_cluster_tag in $target_cluster_tags; do
     else
         gpu_arch_list="$(get_gpu_archs),$gpu_arch_list"
     fi
-    # overrides previous value, ideally they are all the same
-    build_image_version="$(get_build_image_version)"
+    # make sure all build image versions are the same
+    if [ -z "$build_image_version" ]; then
+        build_image_version="$(get_build_image_version)"
+    else
+        if [ "$build_image_version" != "$(get_build_image_version)" ]; then
+            echo "ERROR: Build image version mismatch between: $target_cluster_tags"
+	    exit 1
+	fi
+    fi
 done
 
 export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_arch_list)"

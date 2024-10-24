@@ -26,14 +26,20 @@ int test_ncclVersion = 0; // init'd with ncclGetVersion()
 #if NCCL_MAJOR >= 2
   ncclDataType_t test_types[ncclNumTypes] = {
     ncclInt8, ncclUint8, ncclInt32, ncclUint32, ncclInt64, ncclUint64, ncclHalf, ncclFloat, ncclDouble
-  #if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
+  #if HAVE_BF16
     , ncclBfloat16
+  #endif
+  #if HAVE_FP8
+    , ncclFloat8e4m3, ncclFloat8e5m2
   #endif
   };
   const char *test_typenames[ncclNumTypes] = {
     "int8", "uint8", "int32", "uint32", "int64", "uint64", "half", "float", "double"
-  #if defined(__CUDA_BF16_TYPES_EXIST__) && NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0)
+  #if HAVE_BF16
     , "bfloat16"
+  #endif
+  #if HAVE_FP8
+    , "f8e4m3", "f8e5m2"
   #endif
   };
   int test_typenum = -1;
@@ -110,6 +116,7 @@ static int local_register = 0;
 static int per_coll_perf = 0;
 static int simulate = 0;
 static int nIdsUser = NCCL_CONFIG_UNDEF_INT; // number of ncclUniqueIds created
+static int minCudaArch = 1<<30;
 
 static char* replay_file = NULL;
 
@@ -499,9 +506,12 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         union {
           int8_t i8; uint8_t u8; int32_t i32; uint32_t u32; int64_t i64; uint64_t u64;
           half f16; float f32; double f64;
-#if defined(__CUDA_BF16_TYPES_EXIST__)
+          #if HAVE_BF16
           __nv_bfloat16 bf16;
-#endif
+          #endif
+          #if HAVE_FP8
+          __nv_fp8_e4m3 f8e4m3; __nv_fp8_e5m2 f8e5m2;
+          #endif
         };
         switch (type) {
           case ncclInt8: i8 = ncclVerifiablePremulScalar<int8_t>(rank); break;
@@ -513,9 +523,13 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
           case ncclFloat16: f16 = ncclVerifiablePremulScalar<half>(rank); break;
           case ncclFloat32: f32 = ncclVerifiablePremulScalar<float>(rank); break;
           case ncclFloat64: f64 = ncclVerifiablePremulScalar<double>(rank); break;
-#if defined(__CUDA_BF16_TYPES_EXIST__)
+          #if HAVE_BF16
           case ncclBfloat16: bf16 = ncclVerifiablePremulScalar<__nv_bfloat16>(rank); break;
-#endif
+          #endif
+          #if HAVE_FP8
+          case ncclFloat8e4m3: f8e4m3 = ncclVerifiablePremulScalar<__nv_fp8_e4m3>(rank); break;
+          case ncclFloat8e5m2: f8e5m2 = ncclVerifiablePremulScalar<__nv_fp8_e5m2>(rank); break;
+          #endif
           default: break; // Just to silence clang
         }
         NCCLCHECK(ncclRedOpCreatePreMulSum(&op, &u64, type, ncclScalarHostImmediate, args->comms[id][i]));
@@ -1128,13 +1142,16 @@ int main(int argc, char* argv[], char **envp) {
     test_typenum = 9;
     if (NCCL_VERSION_CODE >= NCCL_VERSION(2,10,0) && test_ncclVersion >= NCCL_VERSION(2,10,0)) {
       test_opnum++; // ncclAvg
-      #if defined(__CUDA_BF16_TYPES_EXIST__)
-        test_typenum++; // bfloat16
-      #endif
     }
     if (NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0) && test_ncclVersion >= NCCL_VERSION(2,11,0)) {
       test_opnum++; // PreMulSum
     }
+    #if HAVE_BF16
+      test_typenum++; // bfloat16
+    #endif
+    #if HAVE_FP8
+      test_typenum += 2; // fp8 e4m3,e5m2
+    #endif
   #endif
 
   // Parse args
@@ -1494,6 +1511,7 @@ testResult_t run() {
 
   envstr = getenv("NCCL_TESTS_DEVICE");
   int gpu0 = envstr ? atoi(envstr) : -1;
+  minCudaArch = 1<<30;
   for (int i = 0; i < nGpus * nThreads; ++i) {
     gpus[i] = (gpu0 != -1 ? gpu0 : localRank * nThreads * nGpus) + i;
     CUDACHECK(cudaSetDevice(gpus[i]));
@@ -1502,8 +1520,28 @@ testResult_t run() {
     } else {
       CUDACHECK(cudaStreamCreateWithFlags(streams + i, cudaStreamNonBlocking));
     }
+    int archMajor, archMinor;
+    CUDACHECK(cudaDeviceGetAttribute(&archMajor, cudaDevAttrComputeCapabilityMajor, gpus[i]));
+    CUDACHECK(cudaDeviceGetAttribute(&archMinor, cudaDevAttrComputeCapabilityMinor, gpus[i]));
+    minCudaArch = std::min(minCudaArch, 100*archMajor + 10*archMinor);
   }
-
+#ifdef MPI_SUPPORT
+  MPI_Allreduce(MPI_IN_PLACE, &minCudaArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+#endif 
+#if HAVE_FP8
+  if (minCudaArch < 900) { // Filter out fp8 on pre-Hopper hardware
+    int n = 0;
+    for (int i=0; i < test_typenum; i++) {
+      if (!(test_types[i] == ncclFloat8e4m3 || test_types[i] == ncclFloat8e5m2)) {
+        test_types[n] = test_types[i];
+        test_typenames[n] = test_typenames[i];
+        n += 1;
+      }
+    }
+    test_typenum = n;
+  };
+#endif
+  
   char* ncclIdLocal;
   ncclUniqueId* ncclId;
   ncclComm_t globalComms[nThreads*nGpus];

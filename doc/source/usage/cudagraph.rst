@@ -10,6 +10,8 @@ CUDA Graphs provide a way to define workflows as graphs rather than single opera
 
 NCCL's collective, P2P and group operations all support CUDA Graph captures. This support requires a minimum CUDA version of 11.3.
 
+Whether an operation launch is graph-captured is considered a collective property of that operation and therefore must be uniform over all ranks participating in the launch (for collectives this is all ranks in the communicator, for peer-to-peer this is both the sender and receiver). The launch of a graph (via cudaGraphLaunch, etc.) containing a captured NCCL operation is considered collective for the same set of ranks that were present in the capture, and each of those ranks must be using the graph derived from that collective capture.
+
 The following sample code shows how to capture computational kernels and NCCL operations in a CUDA Graph: ::
 
   cudaGraph_t graph;

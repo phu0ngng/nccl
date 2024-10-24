@@ -17,6 +17,7 @@
 #include "graph.h"
 #include "argcheck.h"
 #include "tuner.h"
+#include "ras.h"
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -181,6 +182,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   /* commFree() should not involve any sync among ranks. */
   if (comm == NULL)
     return ncclSuccess;
+
+  NCCLCHECK(ncclRasCommFini(comm));
 
   /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
    * free all intra-process communicators; therefore, we only need to focus on local
@@ -435,6 +438,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   struct ncclDevCommAndChannels tmpCommAndChans;
   struct ncclDevCommAndChannels *devCommAndChans = NULL;
   struct ncclNvmlCCStatus ccStatus;
+  bool ccEnable;
 
   NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->deviceStream), ret, fail);
   NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, comm->sharedRes->deviceStream.cudaStream), ret, fail);
@@ -448,7 +452,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   tmpCommAndChans.comm.node = comm->node;
   tmpCommAndChans.comm.nNodes = comm->nNodes;
   tmpCommAndChans.comm.abortFlag = comm->abortFlagDev;
-  tmpCommAndChans.comm.isNvlink = ncclTopoPathAllNVLink(comm->topo);
+  tmpCommAndChans.comm.isAllNvlink = comm->isAllNvlink;
   for (int p=0; p < NCCL_NUM_PROTOCOLS; p++) {
     tmpCommAndChans.comm.buffSizes[p] = comm->buffSizes[p];
   }
@@ -458,11 +462,9 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   comm->workArgsBytes = std::min<size_t>(ncclParamWorkArgsBytes(), ncclMaxKernelArgsSize(comm->cudaArch));
 
   memset(&ccStatus, 0, sizeof(ccStatus));
-  if (ncclNvmlGetCCStatus(&ccStatus) == ncclSuccess && ccStatus.CCEnabled) {
+  ccEnable = ncclNvmlGetCCStatus(&ccStatus) && (ccStatus.CCEnabled || ccStatus.multiGpuProtectedPCIE);
+  if (ccEnable) {
     comm->workFifoBytes = 0;
-    if (ccStatus.multiGpuCCEnabled == false && comm->rank == 0) {
-      WARN("CC On, Multi-GPU CC Off (No inter-GPU communication protection)");
-    }
   } else {
     comm->workFifoBytes = ncclParamWorkFifoBytes();
     if (0 != (comm->workFifoBytes & (comm->workFifoBytes-1))) {
@@ -473,7 +475,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   }
 
   if (comm->rank == 0) {
-    INFO(NCCL_INIT, "CC %s, Multi-GPU CC %s, workFifoBytes %d", ccStatus.CCEnabled ? "On" : "Off", ccStatus.multiGpuCCEnabled ? "On" : "Off", comm->workFifoBytes);
+    INFO(NCCL_INIT, "CC %s, workFifoBytes %d", ccEnable ? "On" : "Off", comm->workFifoBytes);
   }
 
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable() == 1) {
@@ -534,6 +536,21 @@ static void showVersion() {
 }
 
 NCCL_PARAM(MNNVLCliqueId, "MNNVL_CLIQUE_ID", -1);
+// collective call to find out whether gdr is available to every rank
+static ncclResult_t checkIsGdrGlobalAvail(struct ncclComm *comm) {
+  bool *isGdrAvail;
+  NCCLCHECK(ncclCalloc(&isGdrAvail, comm->nRanks));
+  NCCLCHECK(ncclTopoIsGdrAvail(comm->topo, comm->rank, &isGdrAvail[comm->rank]));
+  NCCLCHECK(bootstrapAllGather(comm->bootstrap, isGdrAvail, sizeof(bool)));
+  comm->isGdrAvailGlobal = true;
+  for (int i = 0; i < comm->nRanks; ++i) {
+    if (!isGdrAvail[i]) {
+      comm->isGdrAvailGlobal = false;
+      break;
+    }
+  }
+  return ncclSuccess;
+}
 
 static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, uint64_t commHash) {
   info->rank = comm->rank;
@@ -608,9 +625,6 @@ NCCL_PARAM(P2pPciChunkSize, "P2P_PCI_CHUNKSIZE", (1 << 17)); /* 128 kB */
 NCCL_PARAM(P2pNvlChunkSize, "P2P_NVL_CHUNKSIZE", (1 << 19)); /* 512 kB */
 
 static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
-  int cpuArch, cpuVendor, cpuModel;
-  NCCLCHECK(ncclTopoCpuType(comm->topo, &cpuArch, &cpuVendor, &cpuModel));
-
   int64_t envs[NCCL_NUM_PROTOCOLS] = { ncclParamLlBuffSize(), ncclParamLl128BuffSize(), ncclParamBuffSize() };
   int defaults[NCCL_NUM_PROTOCOLS] = { DEFAULT_LL_BUFFSIZE, DEFAULT_LL128_BUFFSIZE, DEFAULT_BUFFSIZE };
 
@@ -619,7 +633,7 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
   }
 
   if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
-  else if (ncclTopoPathAllNVLink(comm->topo)) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
+  else if (comm->isAllNvlink) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
   else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
 
   // Make sure P2P chunksize is not larger than coll chunksize.
@@ -850,6 +864,14 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   } while(0);
 
   timers[TIMER_INIT_TOPO] = clockNano();
+
+  // Dump XML if requested by user
+  const char* dumpXmlFile;
+  dumpXmlFile = ncclGetEnv("NCCL_TOPO_DUMP_FILE");
+  if (dumpXmlFile) {
+    NCCLCHECKGOTO(ncclTopoGetSystem(comm, NULL, dumpXmlFile), ret, fail);
+  }
+
   // Topo detection / System graph creation
   NCCLCHECKGOTO(ncclTopoGetSystem(comm, &comm->topo), ret, fail);
   // Compute paths between GPUs and NICs
@@ -1076,9 +1098,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       INFO(NCCL_INIT, "Communicator has %d nodes which is less than CollNet node threshold %d, disabling CollNet", comm->nNodes, collNetNodeThreshold);
       comm->collNetSupport = 0;
     }
-    // As long as there is more than 1 rank on any node, we need to disable collnet reg
-    comm->collNetRegSupport = (comm->maxLocalRanks == 1);
   }
+  comm->isAllNvlink = ncclTopoPathAllNVLink(comm->topo);
+  comm->isOneRPN = (comm->maxLocalRanks == 1);
 
   NCCLCHECKGOTO(ncclCalloc(&rings, nranks*MAXCHANNELS), ret, fail);
   NCCLCHECKGOTO(ncclTopoPostset(comm, nodesFirstRank, nodesTreePatterns, allTopoRanks, rings, graphs, parent), ret, fail);
@@ -1292,8 +1314,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Call devCommSetup before the last barrier, making sure we don't have a thread running in front and starting to
   // launch NCCL kernels before all cuda mem allocation is complete. That could cause a deadlock.
   NCCLCHECKGOTO(devCommSetup(comm), ret, fail);
+  // check gdr
+  NCCLCHECKGOTO(checkIsGdrGlobalAvail(comm), ret, fail);
   timers[TIMER_INIT_CONNECT] = clockNano() -  timers[TIMER_INIT_CONNECT];
-
+  if (comm->rank == 0) INFO(NCCL_INIT, "Global GDR %s", comm->isGdrAvailGlobal ? "ENABLE" : "DISABLE");
   /* Local intra-node barrier */
   NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
 
@@ -1716,8 +1740,8 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
   comm->startMagic = comm->endMagic = NCCL_MAGIC; // Used to detect comm corruption.
   *comm->abortFlagRefCount = 1;
   NCCLCHECKGOTO(parseCommConfig(comm, config), res, fail);
-  /* start with ncclInternalError and will be changed to ncclSuccess if init succeeds. */
-  comm->initState = ncclInternalError;
+  /* start with ncclInProgress and will be changed to ncclSuccess if init succeeds. */
+  comm->initState = ncclInProgress;
   *newcomm = comm;
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
@@ -1749,6 +1773,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
 exit:
   return ncclGroupErrCheck(res);
 fail:
+  if (job) ncclCommInitJobFree(job);
   if (comm) {
     free(comm->abortFlag);
     if (comm->abortFlagDev) (void)ncclCudaHostFree((void*)comm->abortFlagDev);
@@ -1846,7 +1871,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
   NCCLCHECKGOTO(ncclGroupEnd(), ret, fail);
 
 exit:
-  cudaSetDevice(oldDev);
+  (void)cudaSetDevice(oldDev);
   free(gpuFlags);
   return ret;
 fail:
@@ -1926,14 +1951,9 @@ fail:
 static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
   struct ncclCommFinalizeAsyncJob* job = (struct ncclCommFinalizeAsyncJob*) job_;
   ncclComm_t comm = job->comm;
-  int savedDevice;
-  int commDevice = comm->cudaDev;
   ncclResult_t ret = ncclSuccess;
 
-  CUDACHECKGOTO(cudaGetDevice(&savedDevice), ret, fail);
-  if (savedDevice != commDevice) {
-    CUDACHECKGOTO(cudaSetDevice(commDevice), ret, fail);
-  }
+  CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
   TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
 
@@ -1963,10 +1983,6 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
     WARN("ncclProxyStop: comm %p (rank = %d) destroys proxy resource error %d", comm, comm->rank, ret);
   }
 
-  if (savedDevice != commDevice) {
-    CUDACHECKGOTO(cudaSetDevice(savedDevice), ret, fail);
-  }
-
 exit:
   return ret;
 fail:
@@ -1974,25 +1990,12 @@ fail:
 }
 
 static ncclResult_t commCleanup(ncclComm_t comm) {
-  int savedDevice;
-  int commDevice = comm->cudaDev;
-
-  CUDACHECK(cudaGetDevice(&savedDevice));
-  if (savedDevice != commDevice) {
-    CUDACHECK(cudaSetDevice(commDevice));
-  }
-
+  CUDACHECK(cudaSetDevice(comm->cudaDev));
   if (comm->tuner != NULL) {
     NCCLCHECK(comm->tuner->destroy(comm->tunerContext));
     NCCLCHECK(ncclTunerPluginUnload(comm));
   }
-
   NCCLCHECK(commFree(comm));
-
-  if (savedDevice != commDevice) {
-    CUDACHECK(cudaSetDevice(savedDevice));
-  }
-
   return ncclSuccess;
 }
 
@@ -2099,6 +2102,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NVTX3_FUNC_WITH_PARAMS(CommDestroy, CommInitRankSchema, payload)
 
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
+  NCCLCHECK(ncclGroupStartInternal());
   // Try and prevent a double free of the comm struct (user error)
   if (comm->rank == -1 || comm->nRanks == -1 || comm->cudaDev == -1 || comm->busId == -1) {
     WARN("comm %p has already been destroyed", comm);
@@ -2113,6 +2117,8 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
 
 exit:
+  ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
   return res;
 fail:
   goto exit;
@@ -2124,7 +2130,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
     NVTX3_FUNC_RANGE_IN(nccl_domain);
     return ncclSuccess;
   }
-
+  NCCLCHECK(ncclGroupStartInternal());
   // Ask anything that might still be running on the device to quit
   if (comm->childAbortFlag != nullptr) {
     __atomic_store_n(comm->childAbortFlag, 1, __ATOMIC_RELEASE);
@@ -2152,6 +2158,8 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
 
 exit:
+  ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
   return ncclSuccess;
 fail:
   goto exit;
@@ -2218,8 +2226,8 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
       NCCLCHECKGOTO(parseCommConfig(childComm, config), res, fail);
     }
 
-    /* start with ncclInternalError and will be changed to ncclSuccess if init succeeds. */
-    childComm->initState = ncclInternalError;
+    /* start with ncclInProgress and will be changed to ncclSuccess if init succeeds. */
+    childComm->initState = ncclInProgress;
   }
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
@@ -2233,13 +2241,13 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, free, comm), res, fail);
 
 exit:
-  cudaSetDevice(oldDev);
+  (void)cudaSetDevice(oldDev);
   (void)ncclGroupErrCheck(res);
   NCCLCHECK(ncclGroupEndInternal());
   return res;
 fail:
   if (childComm) {
-    if (comm && !comm->config.splitShare) {
+    if (!comm->config.splitShare) {
       free(childComm->abortFlag);
       if (childComm->abortFlagDev) ncclCudaHostFree(childComm->abortFlagDev);
       free(childComm->abortFlagRefCount);
@@ -2347,14 +2355,12 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
   CUDACHECK(cudaGetDevice(&cudaDev));
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
-  if (CUPFN(cuMulticastCreate) != NULL)
-    CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
 
-  if (mcSupport) {
+  if (ncclCuMemEnable()) {
     int requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
     // Query device to see if FABRIC handle support is available
     flag = 0;
-    (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));;
+    (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));
     if (flag) requestedHandleTypes |= CU_MEM_HANDLE_TYPE_FABRIC;
     memprop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
     memprop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
@@ -2365,18 +2371,24 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     CUCHECK(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, currentDev));
     if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
     CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
-
-    /* mc property */
     CUDACHECK(cudaGetDeviceCount(&dcnt));
-    mcprop.size = size;
-    /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
-    mcprop.numDevices = dcnt;
-    mcprop.handleTypes = requestedHandleTypes;
-    mcprop.flags = 0;
-    CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
 
-    /* only size needs to be aligned to mcGran */
-    ALIGN_SIZE(size, mcGran);
+    if (CUPFN(cuMulticastCreate) != NULL) CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
+    if (mcSupport) {
+      /* mc property */
+      mcprop.size = size;
+      /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
+      mcprop.numDevices = dcnt;
+      mcprop.handleTypes = requestedHandleTypes;
+      mcprop.flags = 0;
+      CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
+
+      /* only size needs to be aligned to mcGran */
+      ALIGN_SIZE(size, mcGran);
+    } else {
+      ALIGN_SIZE(size, memGran);
+    }
+
     if (requestedHandleTypes & CU_MEM_HANDLE_TYPE_FABRIC) {
       /* First try cuMemCreate() with FABRIC handle support and then remove if it fails */
       CUresult err = CUPFN(cuMemCreate(&handle, size, &memprop, 0));
@@ -2429,18 +2441,13 @@ ncclResult_t  ncclMemFree(void *ptr) {
   CUDACHECK(cudaGetDevice(&saveDevice));
 #if CUDART_VERSION >= 12010
   CUdevice ptrDev = 0;
-  int mcSupport = 0;
 
   if (ptr == NULL) goto fallback;
-
   if (ncclCudaLibraryInit() != ncclSuccess) goto fallback;
 
   CUCHECKGOTO(cuPointerGetAttribute((void*)&ptrDev, CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL, (CUdeviceptr)ptr), ret, fail);
-  if (CUPFN(cuMulticastCreate) != NULL)
-    CUCHECKGOTO(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, ptrDev), ret, fail);
-
   CUDACHECKGOTO(cudaSetDevice((int)ptrDev), ret, fail);
-  if (mcSupport) {
+  if (ncclCuMemEnable()) {
     NCCLCHECKGOTO(ncclCuMemFree(ptr), ret, fail);
     goto exit;
   }

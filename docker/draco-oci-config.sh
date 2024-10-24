@@ -5,8 +5,8 @@
 DO_GPU_ARCHS="80"
 
 DO_OS_VERSION="20.04"
-DO_CUDA_VERSION="12.0.1"
-DO_BUILD_TOOLS_VERSION="1.0.5"
+DO_CUDA_VERSION="12.6.1"
+DO_BUILD_TOOLS_VERSION="1.0.1"
 DO_BUILD_IMAGE_VERSION="${DO_BUILD_TOOLS_VERSION}-c${DO_CUDA_VERSION}-u${DO_OS_VERSION}"
 
 DO_OPENMPI_VERSION="4.1.4"
@@ -20,7 +20,7 @@ DO_OPENMPI_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/lo
 DO_CUDA_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/cuda-${DO_CUDA_VERSION}"
 
 # Running test in run container
-DO_RUN_TOOLS_VERSION="1.0.5"
+DO_RUN_TOOLS_VERSION="1.0.1"
 DO_RUN_TOOLS_IMAGE_VERSION="${DO_RUN_TOOLS_VERSION}-c${DO_CUDA_VERSION}-u${DO_OS_VERSION}"
 
 

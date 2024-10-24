@@ -2,6 +2,7 @@
 /build
 /ext-net/ib_sharp/build/
 /ext-net/example/*.so
+/ext-mixed/example/*.so
 *.gcov
 /coverage/
 tags

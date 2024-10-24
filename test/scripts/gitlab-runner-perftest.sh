@@ -2,6 +2,7 @@
 
 export OPAL_PREFIX=$MPI_HOME
 export LD_LIBRARY_PATH=$MPI_HOME/lib:$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export NCCL_DEBUG=WARN
 
 max=$1
 if [ "$max" == "" ]; then max=1G; fi
@@ -10,12 +11,17 @@ shift
 graph=$1
 if [ "$graph" == "" ]; then graph=0; fi
 
+shift
+nvls=$1
+if [ "$nvls" == "" ]; then nvls=0; fi
+
 opts="-n 5 -w 1 -G $graph"
 range="-b 8 -e $max -f 2"
 enable_ft="-B 0 -F 1"
 enable_split_test="-S 1 -P 1"
 split_range="-b 8 -e 1G -f 2"
 enable_local_register="-R 1"
+enable_graph_register="-G 1"
 enable_parallel_init="-p 1"
 
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
@@ -95,24 +101,47 @@ for func in all_reduce reduce reduce_scatter broadcast all_gather alltoall gathe
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (split share all sizes): ${func}_perf $split_range $opts $enable_split_test")
 done
 
-export NCCL_ALGO=NVLS
-for func in all_reduce reduce_scatter all_gather; do
-  echo "=============================== $func NVLS (local registration all sizes) - $(date +\"%T\") =========================="
-  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
-  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NVLS (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
-done
+if [ "$nvls" == "1" ]; then
+  export NCCL_ALGO=NVLS
+  for func in all_reduce reduce_scatter all_gather; do
+    echo "=============================== $func NVLS (local registration all sizes) - $(date +\"%T\") =========================="
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/${func}_perf $range $opts $enable_local_register
+    [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NVLS (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+  done
+fi
 
 export NCCL_ALGO=Tree
 echo "=============================== all_reduce Tree (local registration all sizes) - $(date +\"%T\") =========================="
-$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_local_register
+$SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/all_reduce_perf $range $opts $enable_local_register
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce Tree (local registration all sizes): all_reduce_perf $range $opts $enable_local_register")
 
 export NCCL_ALGO=Ring
-for func in all_reduce reduce_scatter all_gather sendrecv alltoall broadcast; do
+for func in all_reduce all_gather broadcast; do
   echo "=============================== $func Ring (local registration all sizes) - $(date +\"%T\") =========================="
-  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf $range $opts $enable_local_register
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/${func}_perf $range $opts $enable_local_register
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
 done
+
+for func in all_reduce all_gather broadcast; do
+  echo "=============================== $func Ring (graph registration all sizes) - $(date +\"%T\") =========================="
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/${func}_perf -b 1G -e 1G -n 1 -w 1 $enable_graph_register
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring (graph registration all sizes): ${func}_perf -b 1G -e 1G -n 1 -w 1 $enable_graph_register")
+done
+
+if [ "$IS_DRACO_OCI_IAD" != "1" ]; then
+  export NCCL_ALGO=Ring
+  for func in all_reduce all_gather broadcast; do
+    echo "=============================== $func Ring 1RPN (local registration all sizes) - $(date +\"%T\") =========================="
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO -x NCCL_SHM_DISABLE=1 -x NCCL_P2P_DISABLE=1 ./build/test/perf/${func}_perf $range $opts $enable_local_register
+    [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring 1RPN (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+  done
+
+  for func in sendrecv alltoall; do
+    echo "=============================== $func (local registration all sizes) - $(date +\"%T\") =========================="
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_PXN_DISABLE=1 ./build/test/perf/${func}_perf $range $opts $enable_local_register
+    [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
+  done
+fi
 unset NCCL_ALGO
 
 export NCCL_DEBUG=""
@@ -124,11 +153,27 @@ export NCCL_DEBUG="" # disable WARN information
 echo "=============================== all_reduce (FT tests) - $(date +\"%T\") ================================="
 if [ "$SKIP_FT" != "1" ]
 then
+  if [ "$SKIP_FT_INIT" == "1" ]
+  then
+    echo "Skipping init FT test..."
+    enable_ft="$enable_ft -L allreduce,alltoall,finalize,split,abort"
+  fi
   $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce (FT tests): all_reduce_perf $range $opts $enable_ft")
 else
   echo "Skipping FT tests..."
 fi
+
+export NCCL_NET_MERGE_LEVEL=PHB
+for func in all_reduce alltoall; do
+  echo "=============================== $func NIC Fusion (PHB) - $(date +\"%T\") =========================="
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/${func}_perf -b 8 -e 128M -f2 $opts
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NIC Fusion (PHB): export NCCL_NET_MERGE_LEVEL=PHB; ${func}_perf $range $opts")
+
+  # Multithreaded
+  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS --map-by ppr:1:node ./build/test/perf/${func}_perf -b 8 -e 128M -f2 $opts -t $NGPUS
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func NIC Fusion (PHB): export NCCL_NET_MERGE_LEVEL=PHB; ${func}_perf $range $opts -t $NGPUS")
+done
 
 for str in "${failure_names[@]}"
 do

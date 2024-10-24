@@ -126,6 +126,14 @@ ncclDataType_t
 
   16-bits floating point number (truncated precision in bfloat16 format, CUDA 11 or later)
 
+ .. c:macro:: ncclFloat8e4m3
+
+  8-bits floating point number, 4 exponent bits, 3 mantissa bits (CUDA >= 11.8 and SM >= 90)
+
+ .. c:macro:: ncclFloat8e5m2
+
+  8-bits floating point number, 5 exponent bits, 2 mantissa bits (CUDA >= 11.8 and SM >= 90)
+
 
 ncclRedOp_t
 -----------
