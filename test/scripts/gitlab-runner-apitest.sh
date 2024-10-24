@@ -6,6 +6,11 @@ failure_count=0
 failure_names=()
 TIMEFORMAT=%R
 
+if [ "$SRUN" == "" ]; then
+  export SACCT_FORMAT_STRING="JobID,JobName%100,User%10,Partition%15,NNodes,Timelimit,$PLANNED_RESERVED"
+  ./test/scripts/slurm_job_summary.sh
+fi
+
 echo "HOSTNAME=$HOSTNAME"
 echo "Using CUDA_HOME=$CUDA_HOME"
 echo "Using NCCL_HOME=$PWD/build"
