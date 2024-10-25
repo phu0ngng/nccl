@@ -970,7 +970,7 @@ struct ncclXmlNode** physNetNodes, struct ncclXmlNode** netNode, ncclResult_t (*
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), int* virtualDevs) {
   INFO(NCCL_ENV|NCCL_NET, "TOPO/NET : Force-fusing NICs using NCCL_NET_FORCE_MERGE=%s", str);
   char* semi_token;
   char* semi = strtok_r(str, ";", &semi_token);
@@ -1004,6 +1004,7 @@ ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, char* str,
 
     struct ncclXmlNode* netNode;
     NCCLCHECK(ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice));
+    *virtualDevs++;
 
     // Only set that a device is "placed" after successfully making a vNic (it's possible to exit before this)
     for (int i = 0; i < vProps.ndevs; i++) {
@@ -1016,7 +1017,7 @@ ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, char* str,
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoAutoMerge(ncclComm_t comm, struct ncclXml* xml, int mergeLevel, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+ncclResult_t ncclTopoAutoMerge(ncclComm_t comm, struct ncclXml* xml, int mergeLevel, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), int* virtualDevs) {
   // Compute the path type between each device
   int* paths = NULL;
   ncclResult_t res = ncclSuccess;
@@ -1064,6 +1065,7 @@ ncclResult_t ncclTopoAutoMerge(ncclComm_t comm, struct ncclXml* xml, int mergeLe
       if (vProps.ndevs == 1) continue;
       struct ncclXmlNode* netNode;
       NCCLCHECKGOTO(ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice), res, out);
+      *virtualDevs++;
     }
   }
 
@@ -1135,10 +1137,11 @@ ncclResult_t ncclTopoMakeVNics(ncclComm_t comm, struct ncclXml* xml, ncclResult_
   NCCLCHECK(ncclCalloc(&placedDevs, physicalDevs));
   memset(placedDevs, 0, sizeof(int)*physicalDevs);
 
+  *virtualDevs = 0;
   if (forceMerge) {
-    NCCLCHECKGOTO(ncclTopoForceMerge(comm, xml, forceMerge, placedDevs, props, physNetNodes, physicalDevs, makeVDevice), res, out);
+    NCCLCHECKGOTO(ncclTopoForceMerge(comm, xml, forceMerge, placedDevs, props, physNetNodes, physicalDevs, makeVDevice, virtualDevs), res, out);
   }
-  NCCLCHECKGOTO(ncclTopoAutoMerge(comm, xml, mergeLevel, placedDevs, props, physNetNodes, physicalDevs, makeVDevice), res, out);
+  NCCLCHECKGOTO(ncclTopoAutoMerge(comm, xml, mergeLevel, placedDevs, props, physNetNodes, physicalDevs, makeVDevice, virtualDevs), res, out);
 
 out:
   free(physNetNodes);
@@ -1168,7 +1171,7 @@ ncclResult_t ncclTopoPopulateNics(ncclComm_t comm, ncclXml* xml, int startIndex,
     NCCLCHECKGOTO(xmlGetAttr(netNode, "coll", &colAttr), ret, fail);
 
     // If coll == 0 but the netNode is tagged as coll, don't update the keep value
-    if (coll == 0 && strcmp(colAttr,"1") == 0) NCCLCHECKGOTO(xmlSetAttrInt(netNode, "keep", keep), ret, fail);
+    if (colAttr == NULL || coll != 0 || strcmp(colAttr,"1") != 0) NCCLCHECKGOTO(xmlSetAttrInt(netNode, "keep", keep), ret, fail);
     NCCLCHECKGOTO(xmlSetAttrInt(netNode, "dev", n), ret, fail);
     NCCLCHECKGOTO(xmlInitAttrInt(netNode, "latency", props.latency), ret, fail);
     NCCLCHECKGOTO(xmlInitAttrInt(netNode, "speed", props.speed), ret, fail);
@@ -1180,6 +1183,13 @@ ncclResult_t ncclTopoPopulateNics(ncclComm_t comm, ncclXml* xml, int startIndex,
     NCCLCHECKGOTO(xmlInitAttrInt(netNode, "gdr", gdrSupport), ret, fail);
     // Only set coll if it's not 0
     if (coll) NCCLCHECKGOTO(xmlInitAttrInt(netNode, "coll", coll), ret, fail);
+
+    const char* keepAttr;
+    NCCLCHECKGOTO(xmlGetAttr(netNode, "coll", &colAttr), ret, fail);
+    NCCLCHECKGOTO(xmlGetAttr(netNode, "keep", &keepAttr), ret, fail);
+    INFO(NCCL_GRAPH, "ncclTopoProcessNet : Filled %s in topo with pciPath=%s keep=%s coll=%s",
+      props.name, props.pciPath, keepAttr, colAttr);
+
   }
 
 fail:
@@ -1190,6 +1200,7 @@ ncclResult_t ncclTopoProcessNet(ncclComm_t comm, ncclXml* xml, int coll, const c
   ncclResult_t ret = ncclSuccess;
   int usePhysicalDevices = (dumpXmlFile || makeVDevice == NULL);
   if (*physicalDevs == -1) NCCLCHECK(devices(physicalDevs));
+  INFO(NCCL_GRAPH, "ncclTopoProcessNet : physicalDevs=%d usePhysicalDevices=%d", *physicalDevs, usePhysicalDevices);
   // Enumerate physical devices
   NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, *physicalDevs, getProperties, coll, 1, 0), ret, fail);
   if (!usePhysicalDevices) {
@@ -1250,11 +1261,12 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   // Auto-detect NICs if needed. net/collnet share the same xml/graph nodes,
   // so we start with collnet so that it has precedence.
   pthread_mutex_lock(&netLock);
+  INFO(NCCL_GRAPH, "Processing nets");
   if (collNetSupport(comm)) {
     NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 1, dumpXmlFile, &nPhysicalCollNetNics, &nVirtualCollNetNics,
       comm->ncclCollNet->getProperties, comm->ncclCollNet->makeVDevice, comm->ncclCollNet->devices), ret, fail);
   }
-  NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 1, dumpXmlFile, &nPhysicalNetNics, &nVirtualNetNics,
+  NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 0, dumpXmlFile, &nPhysicalNetNics, &nVirtualNetNics,
     comm->ncclNet->getProperties, comm->ncclNet->makeVDevice, comm->ncclNet->devices), ret, fail);
   pthread_mutex_unlock(&netLock);
 
