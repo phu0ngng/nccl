@@ -108,8 +108,7 @@ typedef struct {
   // Notify the plugin that a recv has completed by the device
   ncclResult_t (*irecvConsumed)(void* recvComm, int n, void* request);
 
-  // Virtual NIC APIs. makeVDevice will create a virtual NIC given the specified properties, and tell the caller
-  // what index this new vNIC exists at
+  // Create a virtual NIC given the specified properties, which can be accessed at device index d
   ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_t* props);
 } ncclNet_v9_t;
 
@@ -168,6 +167,9 @@ typedef struct {
   // Close and free collective comm objects
   ncclResult_t (*closeColl)(void* collComm);
   ncclResult_t (*closeListen)(void* listenComm);
+
+  // Create a virtual NIC given the specified properties, which can be accessed at device index d
+  ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_t* props);
 } ncclCollNet_v9_t;
 
 typedef ncclCollNet_v9_t ncclCollNet_t;
