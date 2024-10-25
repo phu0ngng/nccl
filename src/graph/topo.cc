@@ -1257,9 +1257,6 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   }
   NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 1, dumpXmlFile, &nPhysicalNetNics, &nVirtualNetNics,
     comm->ncclNet->getProperties, comm->ncclNet->makeVDevice, comm->ncclNet->devices), ret, fail);
-  if (collNetSupport(comm)) {
-    
-  }
   pthread_mutex_unlock(&netLock);
 
   // Remove XML branches which don't have a node with keep="1" (typically when importing a topology)
