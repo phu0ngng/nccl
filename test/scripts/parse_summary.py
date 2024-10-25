@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Specify the path to your JSON file
 json_file_path = 'data.json'
