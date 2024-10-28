@@ -100,10 +100,6 @@ ncclResult_t ncclRegCleanup(struct ncclComm* comm) {
     free(reg);
   }
   free(cache->slots);
-  for (int d=0; d<MAXCHANNELS; d++) {
-    if (cache->sComms[d]) NCCLCHECK(comm->ncclNet->closeSend(cache->sComms[d]));
-    if (cache->rComms[d]) NCCLCHECK(comm->ncclNet->closeRecv(cache->rComms[d]));
-  }
   return ncclSuccess;
 }
 

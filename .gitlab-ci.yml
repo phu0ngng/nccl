@@ -1237,7 +1237,6 @@ summarize-pipeline:
   stage: summary
   rules:
     - when: always
-  needs: [replay-multi-gc, perftest-multi-eos, perftest_multi-AWS_H100_EFA,perftest_multi-draco_oci]
   tags:
     - build
   script:

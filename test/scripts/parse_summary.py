@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Specify the path to your JSON file
 json_file_path = 'data.json'
@@ -18,14 +18,12 @@ try:
 
     for item in json_data:
         created = datetime.fromisoformat(item["created_at"])
-        started = datetime.datetime.now()
-        if item["started_at"] is None:
-            running = "Pending"
-        else:
+        started = datetime.now(timezone.utc)
+        running = "Pending"
+        if item["started_at"] is not None:
             started = datetime.fromisoformat(item["started_at"])
-        if item["finished_at"] is None:
             running = "Running"
-        else:
+        if item["finished_at"] is not None:
             finished = datetime.fromisoformat(item["finished_at"])
             running = str(finished - started)
         waiting = str(started - created)
