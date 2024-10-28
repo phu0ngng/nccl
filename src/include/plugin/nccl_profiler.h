@@ -57,4 +57,13 @@ typedef ncclProfiler_v3_t ncclProfiler_t;
 typedef ncclProfilerEventDescr_v3_t ncclProfilerEventDescr_t;
 typedef ncclProfilerEventStateArgs_v3_t ncclProfilerEventStateArgs_t;
 
+#define NCCL_PROFILER_NET_VER_BITS  (16)
+#define NCCL_PROFILER_NET_VER_MASK  (~0U >> NCCL_PROFILER_NET_VER_BITS)
+#define NCCL_PROFILER_NET_TYPE_MASK (~0U << NCCL_PROFILER_NET_VER_BITS)
+
+typedef enum {
+  NCCL_PROFILER_NET_TYPE_IB   = (1U << NCCL_PROFILER_NET_VER_BITS),
+  NCCL_PROFILER_NET_TYPE_SOCK = (2U << NCCL_PROFILER_NET_VER_BITS),
+} ncclProfilerNetType;
+
 #endif
