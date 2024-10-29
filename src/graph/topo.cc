@@ -1194,26 +1194,33 @@ fail:
   return ret;
 }
 
-ncclResult_t ncclTopoProcessNet(ncclComm_t comm, ncclXml* xml, int coll, const char* dumpXmlFile, int* physicalDevs, int* virtualDevs, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*)) {
+struct ncclTopoNetState {
+  int nVirtualNics;
+  int nPhysicalNics;
+  const char* name;
+};
+
+ncclResult_t ncclTopoProcessNet(ncclComm_t comm, ncclXml* xml, int coll, const char* dumpXmlFile, ncclTopoNetState* state, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*)) {
   ncclResult_t ret = ncclSuccess;
   int usePhysicalDevices = (dumpXmlFile || makeVDevice == NULL);
-  if (*physicalDevs == -1) NCCLCHECK(devices(physicalDevs));
-  INFO(NCCL_GRAPH, "ncclTopoProcessNet : physicalDevs=%d usePhysicalDevices=%d coll=%d", *physicalDevs, usePhysicalDevices, coll);
+  INFO(NCCL_GRAPH, "state=%p", state);
+  if (state->nPhysicalNics == -1) NCCLCHECK(devices(&state->nPhysicalNics));
+  INFO(NCCL_GRAPH, "ncclTopoProcessNet : physicalDevs=%d usePhysicalDevices=%d coll=%d", state->nPhysicalNics, usePhysicalDevices, coll);
   // Enumerate physical devices
-  NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, *physicalDevs, getProperties, coll, 1, 0), ret, fail);
+  NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, state->nPhysicalNics, getProperties, coll, 1, 0), ret, fail);
   if (!usePhysicalDevices) {
-    if (*virtualDevs == -1) {
-      NCCLCHECKGOTO(ncclTopoMakeVNics(comm, xml, makeVDevice, *physicalDevs), ret, fail);
+    if (state->nVirtualNics == -1) {
+      NCCLCHECKGOTO(ncclTopoMakeVNics(comm, xml, makeVDevice, state->nPhysicalNics), ret, fail);
       int nDevs;
       NCCLCHECKGOTO(devices(&nDevs), ret, fail);
-      *virtualDevs = nDevs - *physicalDevs;
+      state->nVirtualNics = nDevs - state->nPhysicalNics;
     }
-    INFO(NCCL_GRAPH, "*virtualDevs=%d", *virtualDevs);
+    INFO(NCCL_GRAPH, "state->nVirtualNics=%d", state->nVirtualNics);
     // Remove keep=1 for physical collnets
-    if (*virtualDevs > 0) {
-      NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, *physicalDevs, getProperties, coll, 0, 0), ret, fail);
+    if (state->nVirtualNics > 0) {
+      NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, state->nPhysicalNics, getProperties, coll, 0, 0), ret, fail);
       // Populate new devices
-      NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, *physicalDevs, *physicalDevs+*virtualDevs, getProperties, coll, 1, 1), ret, fail);
+      NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, state->nPhysicalNics, state->nPhysicalNics+state->nVirtualNics, getProperties, coll, 1, 1), ret, fail);
     }
   }
 
@@ -1222,10 +1229,29 @@ fail:
 }
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
-static int nVirtualCollNetNics = -1;
-static int nVirtualNetNics = -1;
-static int nPhysicalCollNetNics = -1;
-static int nPhysicalNetNics = -1;
+ncclTopoNetState netStates[2] = {};
+ncclTopoNetState collNetStates[2] = {};
+ncclResult_t ncclTopoGetSharedState(ncclTopoNetState** state, const char* name, ncclTopoNetState* states) {
+  INFO(NCCL_GRAPH, "Retrieving state for %s", name);
+  for (int i = 0; i < 2; i++) {
+    // Empty slot
+    if (states[i].name == NULL) {
+      states[i].nVirtualNics = -1;
+      states[i].nPhysicalNics = -1;
+      states[i].name = strdup(name);
+      *state = states + i;
+      INFO(NCCL_GRAPH, "Initialized state %d for %s", i, name);
+      return ncclSuccess;
+    // Found my slot
+    } else if (strcmp(states[i].name, name) == 0) {
+      *state = states + i;
+      return ncclSuccess;
+    }
+  }
+  WARN("NET/TOPO : Couldn't find net with name %s", name);
+  return ncclInternalError;
+}
+
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system, const char* dumpXmlFile) {
   ncclResult_t ret = ncclSuccess;
   struct ncclXml* xml;
@@ -1265,12 +1291,16 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   // Auto-detect NICs if needed. net/collnet share the same xml/graph nodes,
   // so we start with collnet so that it has precedence.
   pthread_mutex_lock(&netLock);
-  INFO(NCCL_GRAPH, "Processing nets");
+  INFO(NCCL_GRAPH, "Importing network plugins to topology");
+  ncclTopoNetState* state;
+  state = NULL;
   if (collNetSupport(comm)) {
-    NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 1, dumpXmlFile, &nPhysicalCollNetNics, &nVirtualCollNetNics,
+    NCCLCHECKGOTO(ncclTopoGetSharedState(&state, comm->ncclCollNet->name, collNetStates), ret, fail);
+    NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 1, dumpXmlFile, state,
       comm->ncclCollNet->getProperties, comm->ncclCollNet->makeVDevice, comm->ncclCollNet->devices), ret, fail);
   }
-  NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 0, dumpXmlFile, &nPhysicalNetNics, &nVirtualNetNics,
+  NCCLCHECKGOTO(ncclTopoGetSharedState(&state, comm->ncclNet->name, netStates), ret, fail);
+  NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 0, dumpXmlFile, state,
     comm->ncclNet->getProperties, comm->ncclNet->makeVDevice, comm->ncclNet->devices), ret, fail);
   pthread_mutex_unlock(&netLock);
 
