@@ -370,7 +370,7 @@ ncclNet_v9_t ncclNetPlugin_v9 = {
 
 #define COLLNET_PLUGIN_NAME "CollNetMockPlugin"
 
-/* ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
+ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
   .name = COLLNET_PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,
@@ -389,4 +389,4 @@ ncclNet_v9_t ncclNetPlugin_v9 = {
   .closeColl = pluginCloseColl,
   .closeListen = pluginCloseListen,
   .makeVDevice   = NULL
-}; */
+};
