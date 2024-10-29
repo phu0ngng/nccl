@@ -680,6 +680,8 @@ static ncclResult_t ncclNetGetDeviceHandle(ncclNetDeviceType type, int version, 
 static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct sendNetResources* resources = (struct sendNetResources*)(connection->transportResources);
   if (reqSize != sizeof(netSendConnectArgs)) return ncclInternalError;
+  INFO(NCCL_NET, "Connect started");
+ 
   ncclResult_t ret = ncclSuccess;
   netSendConnectArgs* req = (netSendConnectArgs*) reqBuff;
   NCCLCHECK(ncclNetGetDeviceHandle(resources->netDeviceType, resources->netDeviceVersion, false /*isRecv*/, &resources->netDeviceHandle));
@@ -718,6 +720,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     *done = 0;
     return ncclInProgress;
   }
+  INFO(NCCL_NET, "Connect finished");
   *done = 1;
 
   if (resources->netDeviceHandle) {
@@ -834,6 +837,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   netRecvConnectArgs* req = (netRecvConnectArgs*) reqBuff;
   resources->tpRemoteProxyRank = req->proxyRank;
   ncclResult_t ret = ncclSuccess;
+  INFO(NCCL_NET, "Accept started");
 
   NCCLCHECK(ncclNetGetDeviceHandle(resources->netDeviceType, resources->netDeviceVersion, true /*isRecv*/, &resources->netDeviceHandle));
   // Finish connection establishment from remote peer
@@ -873,6 +877,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     return ncclInProgress;
   }
   *done = 1;
+  INFO(NCCL_NET, "Accept finished");
 
   if (resources->netDeviceHandle) {
     connection->netDeviceHandle = resources->netDeviceHandle;
@@ -1180,6 +1185,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         int done;
         int size;
         int buffSlot = (sub->base+sub->done)%NCCL_STEPS;
+        printf("ncclNet->test1 buffSlot=%d r=%p\n",buffSlot, sub->requests[buffSlot]);
         NCCLCHECK(proxyState->ncclNet->test(sub->requests[buffSlot], &done, &size));
         if (done) {
           // Make sure size is reset to -1 before we update the head.
@@ -1321,6 +1327,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         if (ignoreCompletion) *requestPtr = (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION;
         NCCLCHECK(proxyState->ncclNet->irecv(resources->netRecvComm, subCount, ptrs, sizes, tags, mhandles, requestPtr));
         if (*requestPtr) {
+          printf("irecv requestPtr=%p", *requestPtr);
           subGroup->recvRequestsCache[step%NCCL_STEPS] = *requestPtr;
           subGroup->recvRequestsSubCount = subCount;
           for (int i=0; i<subGroup->groupSize; i++) {
@@ -1346,6 +1353,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         int sizes[NCCL_PROXY_MAX_SUBS];
         void* mhandles[NCCL_PROXY_MAX_SUBS];
         for (int i=0; i<NCCL_PROXY_MAX_SUBS; i++) sizes[i] = 0;
+        printf("ncclNet->test2 step=%ld r=%p\n",step, subGroup->requests[step%NCCL_STEPS]);
         NCCLCHECK(proxyState->ncclNet->test(subGroup->requests[step%NCCL_STEPS], &done, sizes));
         if (done) {
           int needFlush = 0;
@@ -1417,6 +1425,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         uint64_t step = subGroup->transmitted;
         int done = 1;
         void* request = subGroup->requests[step%NCCL_STEPS];
+        printf("ncclNet->test3 request=%p\n",request);
         if (request) NCCLCHECK(proxyState->ncclNet->test(request, &done, NULL));
         if (done) {
           for (int i=0; i<subGroup->groupSize; i++) {
@@ -1474,6 +1483,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       }
     }
     if (args->done == args->nsubs) {
+      printf("Done\n");
       args->state = ncclProxyOpNone;
       for (int s=0; s<args->nsubs; s++) {
         ncclProfilerStopProxyOpEvent(s, args);

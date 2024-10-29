@@ -67,7 +67,6 @@ struct alignas(64) ncclIbDev {
   ibv_pd* pd;
   char devName[MAXNAMESIZE];
   char* pciPath;
-  char* virtualPciPath;
   int realPort;
   int maxQp;
   float latency;
