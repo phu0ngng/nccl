@@ -127,7 +127,7 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
   props0.ptrSupport       = 0;
   props0.regIsGlobal      = 1;
   props0.forceFlush       = 0;
-  props0.speed            = 100000;
+  props0.speed            = 10000;
   props0.port             = 1;
   props0.maxComms         = 1024;
   props0.maxRecvs         = NCCL_PLUGIN_MAX_RECVS;
@@ -144,7 +144,7 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
   props1.ptrSupport = 0;
   props1.regIsGlobal = 1;
   props1.forceFlush  = 0;
-  props1.speed       = 100000;
+  props1.speed       = 10000;
   props1.port       = 1;
   props1.maxComms       = 1024;
   props1.maxRecvs       =   NCCL_PLUGIN_MAX_RECVS;
