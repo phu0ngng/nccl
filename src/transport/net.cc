@@ -648,10 +648,7 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
     return ncclInternalError;
   }
 
-  if (respSize != sizeof(ncclNetHandle_t)) {
-    WARN("respSize=%d sizeof=%zu", respSize, sizeof(ncclNetHandle_t));
-    return ncclInternalError;
-  }
+  if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
   NCCLCHECK(proxyState->ncclNet->listen(req->netDev, respBuff, &resources->netListenComm));
   *done = 1;
 
@@ -683,7 +680,6 @@ static ncclResult_t ncclNetGetDeviceHandle(ncclNetDeviceType type, int version, 
 static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct sendNetResources* resources = (struct sendNetResources*)(connection->transportResources);
   if (reqSize != sizeof(netSendConnectArgs)) return ncclInternalError;
- 
   ncclResult_t ret = ncclSuccess;
   netSendConnectArgs* req = (netSendConnectArgs*) reqBuff;
   NCCLCHECK(ncclNetGetDeviceHandle(resources->netDeviceType, resources->netDeviceVersion, false /*isRecv*/, &resources->netDeviceHandle));
