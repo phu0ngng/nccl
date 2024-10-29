@@ -106,6 +106,7 @@ fairshare-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
+  needs: []
   tags:
     - nccl-eos
   script:
@@ -118,6 +119,7 @@ fairshare-draco-oci:
     - if: $RUN_ON_DRACO_OCI == "1"
       when: always
     - when: never
+  needs: []
   tags:
     - draco-oci-iad
   script:
