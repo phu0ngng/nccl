@@ -300,6 +300,7 @@ fail:
 
 ncclResult_t ncclNetSocketListen(int dev, void* opaqueHandle, void** listenComm) {
   if (dev < 0 || dev >= ncclNetIfs) { // data transfer socket is based on specified dev
+    WARN("NET/Socket : ncclNetSocketListen dev=%d ncclNetIfs=%d", dev, ncclNetIfs);
     return ncclInternalError;
   }
   ncclResult_t ret = ncclSuccess;
