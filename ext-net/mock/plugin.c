@@ -18,7 +18,15 @@ int nPhysDevs = 0;
 int nVirtualDevs = 0;
 #define MAX_MOCK_DEVS  32
 #define MAX_MOCK_VDEVS MAX_MOCK_DEVS*8
-ncclNetVDeviceProps_t mockVDevProps[MAX_MOCK_VDEVS];
+
+struct mockVDev {
+  char name[128];
+  int speed;
+  int latency;
+  ncclNetVDeviceProps_t vProps;
+};
+
+mockVDev mockVDevs[MAX_MOCK_VDEVS];
 ncclNetProperties_t   mockProps[MAX_MOCK_DEVS];
 
 struct mockListenComm {
@@ -49,11 +57,26 @@ struct mockHandle {
   // struct ncclIbCommStage stage; // Used by the other side when connecting
 };
 
-__hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* props) {
+__hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
   if (nVirtualDevs < MAX_MOCK_VDEVS) {
-    if (props->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidArgument;
+    if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidArgument;
     int deviceIndex = nVirtualDevs;
-    memcpy(mockVDevProps + deviceIndex, props, sizeof(ncclNetVDeviceProps_t));
+    mockVDev* mDev = mockVDevs + deviceIndex;
+    memset(mDev, 0, sizeof(mockVDev));
+    memcpy(&mDev->vProps, vProps, sizeof(ncclNetVDeviceProps_t));
+    for (int i = 0; i < mDev->vProps.ndevs; i++) {
+      int pDev = mDev->vProps.devs[i];
+      mDev->speed   += mockProps[pDev].speed;
+      mDev->latency += mockProps[pDev].latency;
+      if (i > 0) {
+        snprintf(mDev->name + strlen(mDev->name), sizeof(mDev->name) - strlen(mDev->name), "+%s", mockProps[pDev].name);
+      } else {
+        strncpy(mDev->name, mockProps[pDev].name, 128);
+      }
+    }
+
+    printf("Mock/Plugin : Made vDevice %s speed=%d\n", mDev->name, mDev->speed);
+
     nVirtualDevs++;
     return ncclSuccess;
   } else {
@@ -91,7 +114,7 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
   }
 
   memset(mockProps,     0, sizeof(mockProps));
-  memset(mockVDevProps, 0, sizeof(mockVDevProps));
+  memset(mockVDevs,     0, sizeof(mockVDevs));
   nPhysDevs    = 0;
   nVirtualDevs = 0;
 
@@ -116,7 +139,7 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
   // Dev 1
   ncclNetProperties_t props1 = {};
   mallocAndStrCpy(&props1.name, "mock_1");
-  mallocAndStrCpy(&props1.pciPath, "/sys/devices/pci0000:00/0000:00:03.0/0000:09:00.0/0000:0a:0c.0/0000:0d:00.0");
+  mallocAndStrCpy(&props1.pciPath, "/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:05:00.1");
   props1.guid = 1;
   props1.ptrSupport = 0;
   props1.regIsGlobal = 1;
@@ -142,9 +165,14 @@ __hidden ncclResult_t pluginDevices(int* ndev) {
 
 __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_t* props) {
   if (dev < nVirtualDevs) {
-    int pDevIndex = mockVDevProps[dev].devs[0];
+    mockVDev* vDev = mockVDevs + dev;
+    int pDevIndex = vDev->vProps.devs[0];
     memcpy(props, mockProps + pDevIndex, sizeof(ncclNetProperties_t));
-    props->vProps = mockVDevProps[dev];
+    props->vProps = vDev->vProps;
+    props->speed = vDev->speed;
+    props->name  = vDev->name;
+    props->latency  = vDev->latency;
+
     return ncclSuccess;
   } else {
     return ncclInvalidUsage;
@@ -355,5 +383,5 @@ ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
   .test = pluginTest,
   .closeColl = pluginCloseColl,
   .closeListen = pluginCloseListen,
-  .makeVDevice   = pluginMakeVDevice
+  .makeVDevice   = NULL
 };
