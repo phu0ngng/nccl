@@ -1111,6 +1111,7 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclComm_t comm, ncclNet
 ncclResult_t ncclTopoMakeVNics(ncclComm_t comm, struct ncclXml* xml, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), int* virtualDevs, int physicalDevs) {
   int* placedDevs = NULL;
   struct ncclXmlNode** physNetNodes = NULL;
+  INFO(NCCL_GRAPH, "ncclTopoMakeVNics %d", physicalDevs);
   if (physicalDevs == 0) return ncclSuccess;
 
   ncclCalloc(&physNetNodes, physicalDevs);
