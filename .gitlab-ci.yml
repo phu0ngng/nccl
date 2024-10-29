@@ -63,7 +63,7 @@ nic-fusion-A40:
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 2
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
+    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -pA40"
   script:
     - pushd ext-net/mock
     - make

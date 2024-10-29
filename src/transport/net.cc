@@ -648,7 +648,10 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
     return ncclInternalError;
   }
 
-  if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
+  if (respSize != sizeof(ncclNetHandle_t)) {
+    WARN("respSize=%d sizeof=%zu", respSize, sizeof(ncclNetHandle_t));
+    return ncclInternalError;
+  }
   NCCLCHECK(proxyState->ncclNet->listen(req->netDev, respBuff, &resources->netListenComm));
   *done = 1;
 

@@ -1157,6 +1157,7 @@ ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
 exit:
   return ret;
 fail:
+  WARN("NET/IB : Listen failed for dev=%d magic=0x%lx", dev, handle->magic);
   (void)ncclSocketClose(&comm->sock);
   free(comm);
   goto exit;

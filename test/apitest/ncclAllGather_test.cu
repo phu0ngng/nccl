@@ -186,6 +186,11 @@ TYPED_TEST(ncclAllGather_test, multi_net) {
         }
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
+        for (int i = 0; i < this->nVis; ++i) {
+            cudaStreamSynchronize(this->streams[i]);
+        }
+        printf("IB AllGather worked\n");
+
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < this->nVis; ++i) {
             ASSERT_EQ(ncclSuccess,
