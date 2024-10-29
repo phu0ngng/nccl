@@ -1148,44 +1148,36 @@ struct collnetRegInfo {
   size_t size;
 };
 
-ncclResult_t ncclCollnetLocalRegisterBuffer(struct ncclComm* comm, const void* userbuff, size_t buffSize, int type, int* outRegBufFlag, void** outHandle) {
+static ncclResult_t collnetRegisterBuffer(struct ncclComm* comm, const void* userbuff, size_t buffSize, int type, struct ncclReg* regRecord, int* outRegBufFlag, void** outHandle) {
   ncclResult_t ret = ncclSuccess;
-  struct ncclReg *regRecord = NULL;
+  if (regRecord) {
+    if (regRecord->state & COLLNET_REG_COMPLETE) {
+      // reuse previous registration
+      *outRegBufFlag = 2;
+      *outHandle = regRecord->collnetHandle;
+      INFO(NCCL_REG, "rank %d - COLLNET reuse register userbuff %p (handle %p), buffSize %ld, type %s", comm->rank, userbuff, regRecord->collnetHandle, buffSize, type == collNetRecv ? "Recv" : "Send");
+      goto exit;
+    } else {
+      /* start register collnet buffer */
+      struct collnetRegInfo info = { regRecord->addr, regRecord->pages * comm->regCache.pageSize };
+      void* handle = NULL;
+      struct ncclConnInfo* conn = (type == collNetRecv) ? &comm->channels[0].peers[comm->nRanks]->recv[type].conn : &comm->channels[0].peers[comm->nRanks]->send[type].conn;
 
-  *outRegBufFlag = 0;
-  *outHandle = NULL;
-  if (comm && userbuff && buffSize > 0 && comm->isGdrAvailGlobal) {
-    NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
-    if (regRecord) {
-      if (regRecord->state & COLLNET_REG_COMPLETE) {
-        // reuse previous registration
-        *outRegBufFlag = 2;
-        *outHandle = regRecord->collnetHandle;
-        INFO(NCCL_REG, "rank %d - COLLNET reuse local register userbuff %p (handle %p), buffSize %ld, type %s", comm->rank, userbuff, regRecord->collnetHandle, buffSize, type == collNetRecv ? "Recv" : "Send");
-        goto exit;
-      } else {
-        /* start register collnet buffer */
-        struct collnetRegInfo info = {regRecord->addr, regRecord->pages * comm->regCache.pageSize};
-        void* handle = NULL;
-        struct ncclConnInfo* conn = (type == collNetRecv) ? &comm->channels[0].peers[comm->nRanks]->recv[type].conn : &comm->channels[0].peers[comm->nRanks]->send[type].conn;
-
-        if (conn->flags & NCCL_DIRECT_NIC) {
-          struct ncclProxyConnector* proxyconn = (type == collNetRecv) ? &comm->channels[0].peers[comm->nRanks]->recv[type].proxyConn : &comm->channels[0].peers[comm->nRanks]->send[type].proxyConn;
-          NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyconn, ncclProxyMsgRegister, &info, sizeof(struct collnetRegInfo), &handle, sizeof(void*)), ret, fail);
-          if (handle) {
-            regRecord->state |= COLLNET_REG_COMPLETE;
-            regRecord->collnetProxyconn = proxyconn;
-            *outHandle = regRecord->collnetHandle = handle;
-            *outRegBufFlag = 1;
-            INFO(NCCL_REG, "rank %d - COLLNET local register userbuff %p (handle %p), buffSize %ld, type %s", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
-          }
-        } else {
-          WARN("rank %d - COLLNET failed to local register userbuff %p (handle %p), buffSize %ld, type %s, GPURDMA is not enabled", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
+      if (conn->flags & NCCL_DIRECT_NIC) {
+        struct ncclProxyConnector* proxyconn = (type == collNetRecv) ? &comm->channels[0].peers[comm->nRanks]->recv[type].proxyConn : &comm->channels[0].peers[comm->nRanks]->send[type].proxyConn;
+        NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyconn, ncclProxyMsgRegister, &info, sizeof(struct collnetRegInfo), &handle, sizeof(void*)), ret, fail);
+        if (handle) {
+          regRecord->state |= COLLNET_REG_COMPLETE;
+          regRecord->collnetProxyconn = proxyconn;
+          *outHandle = regRecord->collnetHandle = handle;
+          *outRegBufFlag = 1;
+          INFO(NCCL_REG, "rank %d - COLLNET register userbuff %p (handle %p), buffSize %ld, type %s", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
         }
+      } else {
+        WARN("rank %d - COLLNET failed to register userbuff %p (handle %p), buffSize %ld, type %s, GPURDMA is not enabled", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
       }
     }
   }
-
 exit:
   return ret;
 fail:
@@ -1194,47 +1186,56 @@ fail:
   goto exit;
 }
 
+ncclResult_t ncclCollnetLocalRegisterBuffer(struct ncclComm* comm, const void* userbuff, size_t buffSize, int type, int* outRegBufFlag, void** outHandle) {
+  ncclResult_t ret = ncclSuccess;
+  struct ncclReg *regRecord = NULL;
+
+  *outRegBufFlag = 0;
+  *outHandle = NULL;
+  if (comm && userbuff && buffSize > 0 && comm->isGdrAvailGlobal) {
+    NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
+    NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
+  }
+exit:
+  return ret;
+fail:
+  *outRegBufFlag = 0;
+  goto exit;
+}
+
 struct ncclCollnetCleanupCallback {
   struct ncclCommCallback base;
-  struct ncclProxyConnector* proxyConn;
-  void* mhandle;
+  struct ncclComm *comm;
+  struct ncclReg *reg;
 };
 
 static ncclResult_t cleanupCollnet(struct ncclComm* comm, struct ncclCommCallback* cb) {
   struct ncclCollnetCleanupCallback* obj = (struct ncclCollnetCleanupCallback*)cb;
-  NCCLCHECK(ncclCollnetDeregBuffer(comm, obj->proxyConn, obj->mhandle));
+  NCCLCHECK(ncclCommDeregister(obj->comm, (void*)obj->reg));
   free(obj);
   return ncclSuccess;
 }
 
 ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* userbuff, size_t buffSize, int type, int* outRegBufFlag, void** outHandle, struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue, int* nCleanupQueueElts) {
   ncclResult_t ret = ncclSuccess;
-  void* handle = NULL;
-  struct ncclRegCache* cache = &comm->regCache;
-  uintptr_t pageSize = cache->pageSize;
-  uintptr_t addr = (uintptr_t)userbuff & -pageSize;
-  size_t size = DIVUP((uintptr_t)userbuff - addr + buffSize, pageSize) * pageSize;
-  collnetRegInfo info = {addr, size};
   struct ncclCollnetCleanupCallback* record = NULL;
-  struct ncclConnInfo* conn = (type == collNetRecv) ? &comm->channels[0].peers[comm->nRanks]->recv[type].conn : &comm->channels[0].peers[comm->nRanks]->send[type].conn;
+  struct ncclReg *regRecord = NULL;
+  void *baseSend = NULL;
+  size_t baseSendSize = 0;
 
   *outRegBufFlag = 0;
-  *outHandle = NULL;
   if (comm && userbuff && buffSize > 0 && comm->isGdrAvailGlobal) {
-    if (conn->flags & NCCL_DIRECT_NIC) {
-      struct ncclProxyConnector* proxyConn = (type == collNetRecv) ? &comm->channels[0].peers[comm->nRanks]->recv[type].proxyConn : &comm->channels[0].peers[comm->nRanks]->send[type].proxyConn;
-      NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyConn, ncclProxyMsgRegister, &info, sizeof(struct collnetRegInfo), &handle, sizeof(void*)), ret, fail);
+    CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)userbuff), ret, fail);
+    NCCLCHECKGOTO(ncclCommRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
+    NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
+
+    if (*outRegBufFlag) {
       record = (struct ncclCollnetCleanupCallback*)malloc(sizeof(struct ncclCollnetCleanupCallback));
       record->base.fn = cleanupCollnet;
-      record->proxyConn = proxyConn;
-      *outHandle = record->mhandle = handle;
-      *outRegBufFlag = 1;
+      record->comm = comm;
+      record->reg = regRecord;
       ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
       *nCleanupQueueElts += 1;
-
-      INFO(NCCL_REG, "rank %d - COLLNET graph register userbuff userbuff %p (handle %p), buffSize %ld, type %s", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
-    } else {
-      WARN("rank %d - COLLNET failed to graph register userbuff %p (handle %p), buffSize %ld, type %s, GPURDMA is not enabled", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
     }
   }
 
