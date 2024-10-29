@@ -136,14 +136,12 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
 }
 
 __hidden ncclResult_t pluginDevices(int* ndev) {
-  printf("pluginDevices pDevs=%d vDevs=%d\n", nPhysDevs, nVirtualDevs);
   *ndev = nVirtualDevs;
   return ncclSuccess;
 }
 
 __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_t* props) {
   if (dev < nVirtualDevs) {
-    printf("pluginGetProperties dev[%d]=%s\n", dev, mockProps[dev].name);
     int pDevIndex = mockVDevProps[dev].devs[0];
     memcpy(props, mockProps + pDevIndex, sizeof(ncclNetProperties_t));
     props->vProps = mockVDevProps[dev];
@@ -155,7 +153,6 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_t* props) {
 
 __hidden ncclResult_t pluginListen(int dev, void* /*handle*/, void** listenComm) {
   if (dev < nVirtualDevs) {
-    printf("pluginListen dev[%d]=%s\n", dev, mockProps[dev].name);
     mockListenComm* lComm = (mockListenComm*) malloc(sizeof(mockListenComm));
     lComm->dev = dev;
     *listenComm = lComm;
@@ -167,7 +164,6 @@ __hidden ncclResult_t pluginListen(int dev, void* /*handle*/, void** listenComm)
 
 __hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   if (dev < nVirtualDevs) {
-    printf("pluginConnect dev[%d]=%s\n", dev, mockProps[dev].name);
     mockSendComm* sComm = (mockSendComm*) malloc(sizeof(mockSendComm));
     *sendComm = sComm;
     return ncclSuccess;
@@ -179,7 +175,6 @@ __hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, nccl
 __hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** /*recvDevComm*/) {
   mockListenComm* lComm = (mockListenComm*) listenComm;
   if (lComm->dev < nVirtualDevs) {
-    printf("pluginAccept dev[%d]=%s\n", lComm->dev, mockProps[lComm->dev].name);
     mockRecvComm* rComm = (mockRecvComm*) malloc(sizeof(mockRecvComm));
     *recvComm = rComm;
     return ncclSuccess;
@@ -213,7 +208,6 @@ __hidden ncclResult_t pluginIsend(void* sendComm, void* data, size_t size, int t
   r->tags[0]  = tag;
   r->ntags    = 1;
   *request = r;
-  printf("pluginIsend r=%p\n", r);
   return ncclSuccess;
 }
 
@@ -222,7 +216,6 @@ __hidden ncclResult_t pluginIrecv(void* recvComm, int n, void** data, size_t* si
   r->ntags = n;
   memcpy(r->sizes, sizes, sizeof(int)*n);
   memcpy(r->tags, tags, sizeof(int)*n);
-  printf("pluginIrecv r=%p\n", r);
   *request = r;
   return ncclSuccess;
 }
@@ -236,7 +229,6 @@ __hidden ncclResult_t pluginIflush(void* recvComm, int n, void** data, int* size
   r->ntags = n;
   memcpy(r->sizes, sizes, sizeof(int)*n);
   *request = r;
-  printf("pluginIflush r=%p\n", r);
   return ncclSuccess;
 }
 
@@ -244,8 +236,6 @@ __hidden ncclResult_t pluginTest(void* request, int* done, int* sizes) {
   *done = 1;
   if (request == NULL) return ncclSuccess;
   mockRequest* r = (mockRequest*) request;
-  printf("pluginTest r=%p\n", r);
-  printf("r->ntags=%d\n", r->ntags);
   memcpy(sizes, r->sizes, sizeof(int)*r->ntags);
   free(request);
   return ncclSuccess;
