@@ -680,7 +680,6 @@ static ncclResult_t ncclNetGetDeviceHandle(ncclNetDeviceType type, int version, 
 static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   struct sendNetResources* resources = (struct sendNetResources*)(connection->transportResources);
   if (reqSize != sizeof(netSendConnectArgs)) return ncclInternalError;
-  INFO(NCCL_NET, "Connect started");
  
   ncclResult_t ret = ncclSuccess;
   netSendConnectArgs* req = (netSendConnectArgs*) reqBuff;
@@ -720,7 +719,6 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     *done = 0;
     return ncclInProgress;
   }
-  INFO(NCCL_NET, "Connect finished");
   *done = 1;
 
   if (resources->netDeviceHandle) {
@@ -837,7 +835,6 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   netRecvConnectArgs* req = (netRecvConnectArgs*) reqBuff;
   resources->tpRemoteProxyRank = req->proxyRank;
   ncclResult_t ret = ncclSuccess;
-  INFO(NCCL_NET, "Accept started");
 
   NCCLCHECK(ncclNetGetDeviceHandle(resources->netDeviceType, resources->netDeviceVersion, true /*isRecv*/, &resources->netDeviceHandle));
   // Finish connection establishment from remote peer
@@ -877,7 +874,6 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
     return ncclInProgress;
   }
   *done = 1;
-  INFO(NCCL_NET, "Accept finished");
 
   if (resources->netDeviceHandle) {
     connection->netDeviceHandle = resources->netDeviceHandle;

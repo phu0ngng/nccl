@@ -236,7 +236,7 @@ __hidden ncclResult_t pluginTest(void* request, int* done, int* sizes) {
   *done = 1;
   if (request == NULL) return ncclSuccess;
   mockRequest* r = (mockRequest*) request;
-  memcpy(sizes, r->sizes, sizeof(int)*r->ntags);
+  if (sizes) memcpy(sizes, r->sizes, sizeof(int)*r->ntags);
   free(request);
   return ncclSuccess;
 }
@@ -267,14 +267,20 @@ __hidden ncclResult_t pluginReduceSupport(ncclDataType_t dataType, ncclRedOp_t r
 
 __hidden ncclResult_t pluginIAllReduce(void* collComm, void* sendData, void* recvData, size_t count,
       ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request) {
-  *request = (mockRequest*) malloc(sizeof(mockRequest));
+  mockRequest* r = (mockRequest*) malloc(sizeof(mockRequest));
+  r->ntags = 1;
+  r->sizes[0] = count;
+  *request = r;
   return ncclSuccess;
 }
 
 __hidden ncclResult_t pluginIAllGather(void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v9_t* recvParts,
                              size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                              void* sendMhandle, void** request) {
-  *request = (mockRequest*) malloc(sizeof(mockRequest));
+  mockRequest* r = (mockRequest*) malloc(sizeof(mockRequest));
+  r->ntags = 1;
+  r->sizes[0] = bytesPerRank;
+  *request = r;
   return ncclSuccess;
 }
 
@@ -282,18 +288,25 @@ __hidden ncclResult_t pluginIReduceScatter(void* collComm, int nSendParts, ncclN
                                  size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                                  ncclDataType_t dataType, ncclRedOp_t redOp,
                                  void* recvMhandle, void** request) {
-  *request = (mockRequest*) malloc(sizeof(mockRequest));
+  mockRequest* r = (mockRequest*) malloc(sizeof(mockRequest));
+  r->ntags = 1;
+  r->sizes[0] = bytesPerRank;
+  *request = r;
   return ncclSuccess;
 }
 
 
 __hidden ncclResult_t pluginCollNetIflush(void* collComm, void* data, int size, void* mhandle, void** request) {
-  *request = (mockRequest*) malloc(sizeof(mockRequest));
+  mockRequest* r = (mockRequest*) malloc(sizeof(mockRequest));
+  r->ntags = 1;
+  r->sizes[0] = size;
+  *request = r;
   return ncclSuccess;
 }
 
 __hidden ncclResult_t pluginCloseColl(void* collComm) {
   if (collComm) free(collComm);
+  collComm = NULL;
   return ncclSuccess;
 }
 
@@ -322,7 +335,6 @@ ncclNet_v9_t ncclNetPlugin_v9 = {
   .makeVDevice   = pluginMakeVDevice,
 };
 
-/*
 #define COLLNET_PLUGIN_NAME "CollNetMockPlugin"
 
 ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
@@ -341,8 +353,7 @@ ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
   .ireducescatter = pluginIReduceScatter,
   .iflush = pluginCollNetIflush,
   .test = pluginTest,
-  .closeColl = NULL,
+  .closeColl = pluginCloseColl,
   .closeListen = pluginCloseListen,
   .makeVDevice   = pluginMakeVDevice
 };
-*/
