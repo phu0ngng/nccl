@@ -50,24 +50,24 @@ ncclResult_t ncclRegisterCollNvlsBuffers(
     size_t sendbuffSize = elementSize*ncclFuncSendCount(info->func, comm->nRanks, info->count);
     size_t recvbuffSize = elementSize*ncclFuncRecvCount(info->func, comm->nRanks, info->count);
 
-    /* first try local registration. */
-    if (ncclParamLocalRegister()) {
-      ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, sendbuffSize, recvbuffSize, &nvlsReged, outRegBufSend, outRegBufRecv);
-    }
-
-    if (nvlsReged == 0 && comm->planner.persistent && ncclParamGraphRegister()) {
+    /* first try graph registration. */
+    if (comm->planner.persistent && ncclParamGraphRegister()) {
       ncclNvlsGraphRegisterBuffer(comm, sendbuff, recvbuff, sendbuffSize, recvbuffSize, &nvlsReged, outRegBufSend, outRegBufRecv, cleanupQueue, &info->nCleanupQueueElts);
     }
 
-    if (nvlsReged && comm->nNodes > 1 && info->algorithm == NCCL_ALGO_NVLS) {
-      if (ncclParamLocalRegister()) {
-        ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetSend, &collnetReged, &sendHandle);
-        if (collnetReged) ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle);
-      }
+    if (nvlsReged == 0 && ncclParamLocalRegister()) {
+      ncclNvlsLocalRegisterBuffer(comm, sendbuff, recvbuff, sendbuffSize, recvbuffSize, &nvlsReged, outRegBufSend, outRegBufRecv);
+    }
 
-      if (collnetReged == 0 && comm->planner.persistent && ncclParamGraphRegister()) {
+    if (nvlsReged && comm->nNodes > 1 && info->algorithm == NCCL_ALGO_NVLS) {
+      if (comm->planner.persistent && ncclParamGraphRegister()) {
         ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetSend, &collnetReged, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
         if (collnetReged) ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
+      }
+
+      if (collnetReged == 0 && ncclParamLocalRegister()) {
+        ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetSend, &collnetReged, &sendHandle);
+        if (collnetReged) ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle);
       }
     }
 
@@ -111,6 +111,7 @@ ncclResult_t ncclRegisterCollBuffers(
   if (!(ncclParamLocalRegister() || (comm->planner.persistent && ncclParamGraphRegister()))) goto exit;
 #if CUDART_VERSION >= 11030
   if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) {
+    /* this part of nvls reg code is temporarily not used and obsolete. */
     if (!comm->nvlsRegSupport || info->opDev.op == ncclDevPreMulSum) goto exit;
     int nvlsReged = 0;
     int collnetReged = 0;

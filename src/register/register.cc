@@ -75,7 +75,7 @@ static ncclResult_t regCleanup(struct ncclComm* comm, struct ncclReg* reg) {
     }
   }
   if (reg->state & NVLS_REG_COMPLETE) {
-    NCCLCHECK(ncclNvlsDeregBuffer(&reg->mcHandle, reg->regAddr, reg->dev, reg->regSize));
+    NCCLCHECK(ncclNvlsDeregBuffer(comm, &reg->mcHandle, reg->regAddr, reg->dev, reg->regSize));
     reg->regAddr = (CUdeviceptr)NULL;
   }
   if (reg->state & COLLNET_REG_COMPLETE) {
