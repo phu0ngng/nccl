@@ -42,7 +42,7 @@ for func in all_reduce_perf; do
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("singlethreaded: diff $NCCL_GRAPH_DUMP_FILE $compare_graph")
 
   # Multithreaded
-  $SALLOC -n 1 $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts -t $NGPUS
+  $SALLOC -n 1 -c $NGPUS $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts -t $NGPUS
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func multithreaded: $func $range $opts -t $NGPUS")
 
   diff $NCCL_GRAPH_DUMP_FILE $compare_graph
