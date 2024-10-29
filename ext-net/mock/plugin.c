@@ -77,6 +77,7 @@ __hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
 
     printf("Mock/Plugin : Made vDevice %s speed=%d\n", mDev->name, mDev->speed);
 
+    *d = nVirtualDevs;
     nVirtualDevs++;
     return ncclSuccess;
   } else {
@@ -133,7 +134,6 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
   props0.netDeviceType    = NCCL_NET_DEVICE_HOST;
   props0.netDeviceVersion = 0;
   props0.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  props0.maxCollBytes     = NCCL_MAX_NET_SIZE_BYTES;
   pluginAddDevice(&props0);
 
   // Dev 1
@@ -151,7 +151,6 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) {
   props1.netDeviceType    = NCCL_NET_DEVICE_HOST;
   props1.netDeviceVersion = 0;
   props1.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  props1.maxCollBytes     = NCCL_MAX_NET_SIZE_BYTES;
   pluginAddDevice(&props1);
   pthread_mutex_unlock(&mockLock);
 
@@ -177,6 +176,12 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_t* props) {
   } else {
     return ncclInvalidUsage;
   }
+}
+
+__hidden ncclResult_t pluginGetCollProperties(int dev, ncclNetProperties_t* props) {
+  ncclResult_t ret = pluginGetProperties(dev, props);
+  if (ret == ncclSuccess) props->maxCollBytes = NCCL_MAX_NET_SIZE_BYTES;
+  return ret;
 }
 
 __hidden ncclResult_t pluginListen(int dev, void* /*handle*/, void** listenComm) {
@@ -365,11 +370,11 @@ ncclNet_v9_t ncclNetPlugin_v9 = {
 
 #define COLLNET_PLUGIN_NAME "CollNetMockPlugin"
 
-ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
+/* ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
   .name = COLLNET_PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,
-  .getProperties = pluginGetProperties,
+  .getProperties = pluginGetCollProperties,
   .listen = pluginListen,
   .connect = pluginCollConnect,
   .reduceSupport = pluginReduceSupport,
@@ -384,4 +389,4 @@ ncclCollNet_v9_t ncclCollNetPlugin_v9 = {
   .closeColl = pluginCloseColl,
   .closeListen = pluginCloseListen,
   .makeVDevice   = NULL
-};
+}; */
