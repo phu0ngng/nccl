@@ -35,18 +35,18 @@ echo "Using $NGPUS GPUs per node"
 
 for func in all_reduce_perf; do
   echo "=============================== $func (all sizes) - $(date +\"%T\") ================================="
-  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts
+  $SALLOC -n $NGPUS $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func singlethreaded: $func $range $opts")
 
   diff $NCCL_GRAPH_DUMP_FILE $compare_graph
-  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("diff $NCCL_GRAPH_DUMP_FILE $compare_graph")
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("singlethreaded: diff $NCCL_GRAPH_DUMP_FILE $compare_graph")
 
   # Multithreaded
-  $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS --map-by ppr:1:node ./build/test/perf/$func $range $opts -t $NGPUS
+  $SALLOC -n 1 $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts -t $NGPUS
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func multithreaded: $func $range $opts -t $NGPUS")
 
   diff $NCCL_GRAPH_DUMP_FILE $compare_graph
-  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("diff $NCCL_GRAPH_DUMP_FILE $compare_graph")
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("multithreaded: diff $NCCL_GRAPH_DUMP_FILE $compare_graph")
 done
 
 for str in "${failure_names[@]}"
