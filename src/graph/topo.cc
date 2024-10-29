@@ -1229,11 +1229,11 @@ fail:
 }
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
-ncclTopoNetState netStates[2] = {};
-ncclTopoNetState collNetStates[2] = {};
+ncclTopoNetState netStates[NCCL_NET_MAX_PLUGINS] = {};
+ncclTopoNetState collNetStates[NCCL_NET_MAX_PLUGINS] = {};
 ncclResult_t ncclTopoGetSharedState(ncclTopoNetState** state, const char* name, ncclTopoNetState* states) {
   INFO(NCCL_GRAPH, "Retrieving state for %s", name);
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < NCCL_NET_MAX_PLUGINS; i++) {
     // Empty slot
     if (states[i].name == NULL) {
       states[i].nVirtualNics = -1;

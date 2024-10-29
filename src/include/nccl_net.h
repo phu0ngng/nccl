@@ -24,6 +24,9 @@
 // Maximum number of requests per comm object
 #define NCCL_NET_MAX_REQUESTS 32
 
+// Max number of ncclNet objects which can live in the same process
+#define NCCL_NET_MAX_PLUGINS 8
+
 #define NCCL_NET_MAX_DEVS_PER_NIC_V9 4
 #define NCCL_NET_MAX_DEVS_PER_NIC NCCL_NET_MAX_DEVS_PER_NIC_V9
 
