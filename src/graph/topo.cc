@@ -1200,7 +1200,7 @@ ncclResult_t ncclTopoProcessNet(ncclComm_t comm, ncclXml* xml, int coll, const c
   ncclResult_t ret = ncclSuccess;
   int usePhysicalDevices = (dumpXmlFile || makeVDevice == NULL);
   if (*physicalDevs == -1) NCCLCHECK(devices(physicalDevs));
-  INFO(NCCL_GRAPH, "ncclTopoProcessNet : physicalDevs=%d usePhysicalDevices=%d", *physicalDevs, usePhysicalDevices);
+  INFO(NCCL_GRAPH, "ncclTopoProcessNet : physicalDevs=%d usePhysicalDevices=%d coll=%d", *physicalDevs, usePhysicalDevices, coll);
   // Enumerate physical devices
   NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, *physicalDevs, getProperties, coll, 1, 0), ret, fail);
   if (!usePhysicalDevices) {
