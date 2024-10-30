@@ -1,27 +1,27 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # Specify the path to your JSON file
-json_file_path = 'data.json'
+json_file_path = 'jobs.json'
 
 try:
     # Open and read the JSON file
     with open(json_file_path, 'r') as file:
         json_data = json.load(file)
     
-    # Print the parsed JSON data
-    # print(json.dumps(json_data, indent=2))
-
+    gitlabTzInfo = timezone(timedelta(hours=-7))
 
     # Print header
     print("{:<30} {:<20} {:<20}".format("Job", "Waiting", "Running"))
 
     for item in json_data:
         created = datetime.fromisoformat(item["created_at"])
-        started = datetime.fromisoformat(item["started_at"])
-        if item["finished_at"] is None:
+        started = datetime.now(gitlabTzInfo)
+        running = "Pending"
+        if item["started_at"] is not None:
+            started = datetime.fromisoformat(item["started_at"])
             running = "Running"
-        else:
+        if item["finished_at"] is not None:
             finished = datetime.fromisoformat(item["finished_at"])
             running = str(finished - started)
         waiting = str(started - created)
