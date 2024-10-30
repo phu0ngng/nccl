@@ -1068,7 +1068,7 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
     // allocate the dev addr array and copy all previously stored addrs into it.
     NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->hostStream), ret, fail);
     NCCLCHECKGOTO(ncclCudaCallocAsync(&addrsRecord->regIpcAddrs.devPeerRmtAddrs, comm->localRanks, comm->sharedRes->hostStream.cudaStream), ret, fail);
-    NCCLCHECKGOTO(ncclCudaMemcpyAsync(addrsRecord->regIpcAddrs.devPeerRmtAddrs, addrsRecord->regIpcAddrs.hostPeerRmtAddrs, comm->nRanks, comm->sharedRes->hostStream.cudaStream), ret, fail);
+    NCCLCHECKGOTO(ncclCudaMemcpyAsync(addrsRecord->regIpcAddrs.devPeerRmtAddrs, addrsRecord->regIpcAddrs.hostPeerRmtAddrs, comm->localRanks, comm->sharedRes->hostStream.cudaStream), ret, fail);
     NCCLCHECKGOTO(ncclStrongStreamWaitStream(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, &comm->sharedRes->hostStream), ret, fail);
     NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream), ret, fail);
     peerRmtAddrs = addrsRecord->regIpcAddrs.devPeerRmtAddrs;

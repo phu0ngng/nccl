@@ -8,6 +8,7 @@ stages:
   - perf_tests_multi
   - perf_regression
   - replay_tests
+  - summary
 
 variables:
   RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
@@ -26,6 +27,7 @@ variables:
   RUN_ON_EOS: "1"
   RUN_ON_DRACO_OCI: "1"
   RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
+  PLANNED_RESERVED: "Reserved"
 
 default:
   # set all jobs to interruptible by default
@@ -317,6 +319,7 @@ unit_tests-eos:
   variables:
     DISABLE_MEMLEAK: "1" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    PLANNED_RESERVED: "Planned"
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - srun --exclusive -n 1 -c8 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:unit::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-unit.sh
@@ -341,7 +344,7 @@ unit_tests-AWS_H100_EFA:
     - |
       cat > $RUN_SCRIPT << EOF
       source docker/aws-config.sh && configure_aws_test_env
-
+      export PLANNED_RESERVED="Skip"
       export SRUN="srun --exclusive -t 00:10:00 -n 1 -G 8 -p compute"
 
       $TEST_CMD
@@ -368,6 +371,7 @@ unit_tests-draco_oci:
   variables:
     NNODES: 1
     NGPUS: 8
+    PLANNED_RESERVED: "Planned"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-unit.sh
     TIMEOUT: "00:10:00" # HH:MM:SS
@@ -545,6 +549,7 @@ apitest-eos:
     - nccl-eos
   variables:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    PLANNED_RESERVED: "Planned"
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
     - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:15:00 ./test/scripts/gitlab-runner-apitest.sh
@@ -569,9 +574,8 @@ apitest-AWS_H100_EFA:
     - |
       cat > $RUN_SCRIPT << EOF
       source docker/aws-config.sh && configure_aws_test_env
-
+      export PLANNED_RESERVED="Skip"
       export SRUN="srun --exclusive -t 00:30:00 -n 1 -G 8 -p compute"
-
       $TEST_CMD
       EOF
     - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
@@ -600,6 +604,7 @@ apitest-draco_oci:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-apitest.sh
     TIMEOUT: "00:30:00" # HH:MM:SS
+    PLANNED_RESERVED: "Planned"
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - srun --exclusive --nodes $NNODES --gpus-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
@@ -822,6 +827,7 @@ perftest-single-eos:
     MPI_PARAMS: "-mca btl tcp,self"
     NNODES: 1
     NGPUS: 8
+    PLANNED_RESERVED: "Planned"
     SKIP_FT_INIT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
@@ -850,13 +856,12 @@ perftest_single-AWS_H100_EFA:
     - |
       cat > $RUN_SCRIPT << EOF
       source docker/aws-config.sh && configure_aws_test_env
-
       export MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
       export NNODES=$NNODES
       export NGPUS=$NGPUS
       export SALLOC="salloc --exclusive -t 00:10:00 -N $NNODES -n $NGPUS -p compute"
       export UCX_TLS=tcp
-
+      export PLANNED_RESERVED="Skip"
       $TEST_CMD
       EOF
     - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
@@ -886,6 +891,7 @@ perftest_single-draco_oci:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 16G
     TIMEOUT: "00:20:00" # HH:MM:SS
+    PLANNED_RESERVED: "Planned"
     IS_DRACO_OCI_IAD: 1
   script:
     - source docker/draco-oci-config.sh && configure_test_env
@@ -1034,6 +1040,7 @@ perftest-multi-eos:
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
+    PLANNED_RESERVED: "Planned"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
     - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
@@ -1087,12 +1094,12 @@ perftest_multi-AWS_H100_EFA:
     - |
       cat > $RUN_SCRIPT << EOF
       source docker/aws-config.sh && configure_aws_test_env
-
       export MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
       export NNODES=$NNODES
       export NGPUS=$NGPUS
       export SALLOC="salloc --exclusive -t 00:10:00 -N $NNODES --ntasks-per-node=$NGPUS -p compute"
       export UCX_TLS=tcp
+      export PLANNED_RESERVED="Skip"
 
       $TEST_CMD
       EOF
@@ -1119,6 +1126,7 @@ perftest_multi-draco_oci:
   variables:
     MPI_PARAMS: "-mca btl tcp,self"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+    PLANNED_RESERVED: "Planned"
     NGPUS: 8
     SKIP_FT: 1
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
@@ -1224,3 +1232,13 @@ replay-multi-gc:
     paths:
       - "**/core.*.*"
     expire_in: 4 hrs
+
+summarize-pipeline:
+  stage: summary
+  rules:
+    - when: always
+  tags:
+    - build
+  script:
+    - chmod +x test/scripts/gitlab-runner-summary.sh
+    - ./test/scripts/gitlab-runner-summary.sh

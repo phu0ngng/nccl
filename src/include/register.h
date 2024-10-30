@@ -57,8 +57,6 @@ struct ncclRegCache {
   struct ncclReg **slots;
   int capacity, population;
   uintptr_t pageSize;
-  void* sComms[MAXCHANNELS];
-  void* rComms[MAXCHANNELS];
 };
 
 ncclResult_t ncclRegCleanup(struct ncclComm* comm);
