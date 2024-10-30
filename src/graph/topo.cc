@@ -1109,7 +1109,6 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclComm_t comm, ncclNet
 ncclResult_t ncclTopoMakeVNics(ncclComm_t comm, struct ncclXml* xml, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), int physicalDevs) {
   int* placedDevs = NULL;
   struct ncclXmlNode** physNetNodes = NULL;
-  INFO(NCCL_GRAPH, "ncclTopoMakeVNics %d", physicalDevs);
   if (physicalDevs == 0) return ncclSuccess;
 
   ncclCalloc(&physNetNodes, physicalDevs);
@@ -1203,9 +1202,7 @@ struct ncclTopoNetState {
 ncclResult_t ncclTopoProcessNet(ncclComm_t comm, ncclXml* xml, int coll, const char* dumpXmlFile, ncclTopoNetState* state, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*)) {
   ncclResult_t ret = ncclSuccess;
   int usePhysicalDevices = (dumpXmlFile || makeVDevice == NULL);
-  INFO(NCCL_GRAPH, "state=%p", state);
   if (state->nPhysicalNics == -1) NCCLCHECK(devices(&state->nPhysicalNics));
-  INFO(NCCL_GRAPH, "ncclTopoProcessNet : physicalDevs=%d usePhysicalDevices=%d coll=%d", state->nPhysicalNics, usePhysicalDevices, coll);
   // Enumerate physical devices
   NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, state->nPhysicalNics, getProperties, coll, 1, 0), ret, fail);
   if (!usePhysicalDevices) {
@@ -1215,7 +1212,6 @@ ncclResult_t ncclTopoProcessNet(ncclComm_t comm, ncclXml* xml, int coll, const c
       NCCLCHECKGOTO(devices(&nDevs), ret, fail);
       state->nVirtualNics = nDevs - state->nPhysicalNics;
     }
-    INFO(NCCL_GRAPH, "state->nVirtualNics=%d", state->nVirtualNics);
     // Remove keep=1 for physical collnets
     if (state->nVirtualNics > 0) {
       NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, state->nPhysicalNics, getProperties, coll, 0, 0), ret, fail);
@@ -1291,7 +1287,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   // Auto-detect NICs if needed. net/collnet share the same xml/graph nodes,
   // so we start with collnet so that it has precedence.
   pthread_mutex_lock(&netLock);
-  INFO(NCCL_GRAPH, "Importing network plugins to topology");
+  INFO(NCCL_GRAPH, "TOPO/NET : Importing network plugins to topology");
   ncclTopoNetState* state;
   state = NULL;
   if (collNetSupport(comm)) {
