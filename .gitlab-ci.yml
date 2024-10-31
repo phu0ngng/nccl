@@ -106,6 +106,7 @@ fairshare-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
+  needs: []
   tags:
     - nccl-eos
   script:
@@ -118,6 +119,7 @@ fairshare-draco-oci:
     - if: $RUN_ON_DRACO_OCI == "1"
       when: always
     - when: never
+  needs: []
   tags:
     - draco-oci-iad
   script:
@@ -383,7 +385,7 @@ apitest-P100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic", "unit_tests-P100"]
+  needs: ["build-classic"]
   tags:
     - p100
   variables:
@@ -402,7 +404,7 @@ apitest-P40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic", "unit_tests-P40"]
+  needs: ["build-classic"]
   tags:
     - p40
   variables:
@@ -421,7 +423,7 @@ apitest-GP100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic", "unit_tests-GP100"]
+  needs: ["build-classic"]
   tags:
     - gp100
   variables:
@@ -440,7 +442,7 @@ apitest-A40:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic", "unit_tests-A40-single", "unit_tests-A40-dual"]
+  needs: ["build-classic"]
   tags:
     - a40
   variables:
@@ -458,7 +460,7 @@ apitest-A100:
   stage: api_tests
   rules:
     - when: always
-  needs: ["build-classic", "unit_tests-A100"]
+  needs: ["build-classic"]
   tags:
     - a100pci
   variables:
@@ -613,7 +615,7 @@ perftest-P100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic, apitest-P100]
+  needs: ["build-classic"]
   tags:
     - p100
   variables:
@@ -634,7 +636,7 @@ perftest-P40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic, apitest-P40]
+  needs: ["build-classic"]
   tags:
     - p40
   variables:
@@ -655,7 +657,7 @@ perftest-GP100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic, apitest-GP100]
+  needs: ["build-classic"]
   tags:
     - gp100
   variables:
@@ -676,7 +678,7 @@ perftest-A40:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic, apitest-A40]
+  needs: ["build-classic"]
   tags:
     - a40
   variables:
@@ -698,7 +700,7 @@ multi-perftest-A40:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build-classic, perftest-A40]
+  needs: ["build-classic"]
   tags:
     - a40
   variables:
@@ -721,7 +723,7 @@ perftest-A100:
   stage: perf_tests_single
   rules:
     - when: always
-  needs: [build-classic, apitest-A100]
+  needs: ["build-classic"]
   tags:
     - a100pci
   variables:
@@ -744,7 +746,7 @@ perftest-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build-eos-aws-oci, apitest-DGX-1V]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-1v
   variables:
@@ -769,7 +771,7 @@ perftest-DGX-2:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build-eos-aws-oci, apitest-DGX-2]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-2
   variables:
@@ -794,7 +796,7 @@ perftest-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build-eos-aws-oci, apitest-DGX-A100]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -901,7 +903,7 @@ perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build-classic, perftest-P100]
+  needs: [build-classic]
   tags:
     - p100
   variables:
@@ -925,7 +927,7 @@ perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: always
-  needs: [build-classic, perftest-P100]
+  needs: [build-classic]
   tags:
     - p100
   variables:
@@ -953,7 +955,7 @@ perftest-multi-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build-eos-aws-oci, perftest-DGX-1V]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-1v
   variables:
@@ -1008,7 +1010,7 @@ perftest-multi-selene:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build-eos-aws-oci, perftest-DGX-A100]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -1052,7 +1054,7 @@ perftest-sharp-selene:
     - if: $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build-eos-aws-oci, perftest-DGX-A100]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -1143,7 +1145,7 @@ perf-regression-single-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
       when: always
     - when: never
-  needs: [build-eos-aws-oci, perftest-DGX-A100]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -1175,7 +1177,7 @@ perf-regression-multi-DGX-A100:
     - if: $REGRESSION_BASELINE == ""
       variables:
         REGRESSION_BASELINE: "${REGRESSION_BASELINE_TAG}"
-  needs: [build-eos-aws-oci, perftest-DGX-A100]
+  needs: [build-eos-aws-oci]
   tags:
     - dgx-a100
   variables:
@@ -1214,7 +1216,7 @@ replay-multi-gc:
   stage: replay_tests
   rules:
     - when: always
-  needs: [build-classic, perftest-multi-gc]
+  needs: [build-classic]
   tags:
     - p100
   variables:
