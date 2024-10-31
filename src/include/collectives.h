@@ -97,7 +97,7 @@ public:
     return __atomic_add_fetch(&refCount, 1, __ATOMIC_RELAXED);
   }
   int decRefCount() {
-    return __atomic_sub_fetch(&refCount, 1, __ATOMIC_RELAXED);
+    return __atomic_sub_fetch(&refCount, 1, __ATOMIC_RELEASE);
   }
   RingAlgorithm() { refCount = 0; }
   virtual ~RingAlgorithm() {};
