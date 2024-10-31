@@ -412,6 +412,7 @@ int faultToleranceFinalizeTest(ncclComm_t* comms, int nVis, int size) {
       CUDACHECK(cudaStreamSynchronize(sa[j]));
 
     for (int j = 0; j < nVis; ++j) {
+      CUDACHECK(cudaSetDevice(j));
       CUDACHECK(cudaMemcpy(bufHostPtr[j], recvbuffDptr[j], size, cudaMemcpyDeviceToHost));
       for (int k = 0; k < size; ++k) {
         if ((int)bufHostPtr[j][k] != nVis) {
