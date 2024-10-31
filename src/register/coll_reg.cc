@@ -208,16 +208,18 @@ ncclResult_t ncclRegisterCollBuffers(
         }
 
         if (nPeers > 0) {
-          if (ncclParamLocalRegister())
-            ncclIpcLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->sendbuffOffset, &info->sendbuffRmtAddrs);
-          if (!ipcRegFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+          if (comm->planner.persistent && ncclParamGraphRegister()) {
             ncclIpcGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->sendbuffOffset, &info->sendbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
           }
+          if (!ipcRegFlag && ncclParamLocalRegister()) {
+            ncclIpcLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->sendbuffOffset, &info->sendbuffRmtAddrs);
+          }
           if (ipcRegFlag) {
-            if (ncclParamLocalRegister())
-              ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
-            if (!ipcRegFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+            if (comm->planner.persistent && ncclParamGraphRegister()) {
               ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
+            }
+            if (!ipcRegFlag && ncclParamLocalRegister()) {
+              ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
             }
           }
         }
@@ -228,22 +230,22 @@ ncclResult_t ncclRegisterCollBuffers(
 
       // register collnet buffer
       if (info->opDev.op != ncclDevPreMulSum && info->opDev.op != ncclDevSumPostDiv && !(info->func == ncclFuncAllReduce && !comm->isOneRPN)) {
-        if (ncclParamLocalRegister()) {
-          ncclCollnetLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &netSendRegFlag, &sendHandle);
+        if (comm->planner.persistent && ncclParamGraphRegister()) {
+          ncclCollnetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &netSendRegFlag, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
           info->sendMhandle = sendHandle;
           if (netSendRegFlag) {
-            ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &netRecvRegFlag, &recvHandle);
+            ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &netRecvRegFlag, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
             info->recvMhandle = recvHandle;
           }
         }
 
-        if ((netSendRegFlag == 0 || netRecvRegFlag == 0) && comm->planner.persistent && ncclParamGraphRegister()) {
+        if ((netSendRegFlag == 0 || netRecvRegFlag == 0) && ncclParamLocalRegister()) {
           if (!netSendRegFlag) {
-            ncclCollnetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &netSendRegFlag, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
+            ncclCollnetLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &netSendRegFlag, &sendHandle);
             info->sendMhandle = sendHandle;
           }
           if (netSendRegFlag && !netRecvRegFlag) {
-            ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &netRecvRegFlag, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
+            ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &netRecvRegFlag, &recvHandle);
             info->recvMhandle = recvHandle;
           }
         }
@@ -312,11 +314,11 @@ ncclResult_t ncclRegisterCollBuffers(
         }
       }
       if (nPeers > 0 && comm->intraNodeP2pSupport) {
-        if (ncclParamLocalRegister()) {
-          ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
-        }
-        if (!regBufFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+        if (comm->planner.persistent && ncclParamGraphRegister()) {
           ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
+        }
+        if (!regBufFlag && ncclParamLocalRegister()) {
+          ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
         }
       }
       if (regBufFlag) {
@@ -326,16 +328,7 @@ ncclResult_t ncclRegisterCollBuffers(
       // start net registration
       regBufFlag = 0;
       if (!comm->useNetPXN) {
-        if (ncclParamLocalRegister()) {
-          if (hasSendNetPeer) {
-            ncclNetLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, sendNetConns, sendNetPeers, &regBufFlag, sendNetHandles);
-            if (regBufFlag)
-              ncclNetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, sendNetConns, sendNetPeers, &regBufFlag, srecvNetHandles);
-          }
-          if ((regBufFlag || !hasSendNetPeer) && hasRecvNetPeer)
-            ncclNetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, recvNetConns, recvNetPeers, &regBufFlag, recvNetHandles);
-        }
-        if (!regBufFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+        if (comm->planner.persistent && ncclParamGraphRegister()) {
           if (hasSendNetPeer) {
             ncclNetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, sendNetConns, sendNetPeers, &regBufFlag, sendNetHandles, cleanupQueue, &info->nCleanupQueueElts);
             if (regBufFlag)
@@ -343,6 +336,15 @@ ncclResult_t ncclRegisterCollBuffers(
           }
           if ((regBufFlag || !hasSendNetPeer) && hasRecvNetPeer)
             ncclNetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, recvNetConns, recvNetPeers, &regBufFlag, recvNetHandles, cleanupQueue, &info->nCleanupQueueElts);
+        }
+        if (!regBufFlag && ncclParamLocalRegister()) {
+          if (hasSendNetPeer) {
+            ncclNetLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, sendNetConns, sendNetPeers, &regBufFlag, sendNetHandles);
+            if (regBufFlag)
+              ncclNetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, sendNetConns, sendNetPeers, &regBufFlag, srecvNetHandles);
+          }
+          if ((regBufFlag || !hasSendNetPeer) && hasRecvNetPeer)
+            ncclNetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, recvNetConns, recvNetPeers, &regBufFlag, recvNetHandles);
         }
       }
 
@@ -400,11 +402,11 @@ ncclResult_t ncclRegisterCollBuffers(
           }
         }
         if (nPeers > 0) {
-          if (ncclParamLocalRegister()) {
-            ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
-          }
-          if (!regBufFlag && comm->planner.persistent && ncclParamGraphRegister()) {
+          if (comm->planner.persistent && ncclParamGraphRegister()) {
             ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
+          }
+          if (!regBufFlag && ncclParamLocalRegister()) {
+            ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
           }
         }
         if (regBufFlag) {
