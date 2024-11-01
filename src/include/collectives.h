@@ -120,17 +120,23 @@ public:
     ssize_t chunkOffset;
     ssize_t sliceOffset;
     ssize_t curSliceSize;
+    ssize_t curChunkSize;
     ssize_t size;
+    ssize_t nelem;
     int chunkId;
 
     if (remSize < loopSize) {
-      chunkSize = alignUp(divUp(remSize / elemSize, nRanks), 16 / elemSize) * elemSize;
+      curChunkSize = alignUp(divUp(remSize / elemSize, nRanks), 16 / elemSize) * elemSize;
+    } else {
+      curChunkSize = chunkSize;
     }
-    curSliceSize = std::max(divUp(chunkSize / elemSize, 16 * slicePerChunk) * 16, sliceSize / elemSize / 32) * elemSize;
-    sliceOffset = sliceStage * curSliceSize;
     chunkId = (ringIndex + nRanks - 1 - chunkStage) % nRanks;
-    chunkOffset = chunkId * chunkSize;
-    if (std::min(remSize - chunkOffset, chunkSize) <= sliceOffset) {
+    chunkOffset = chunkId * curChunkSize;
+    nelem = std::min(remSize - chunkOffset, curChunkSize);
+    curSliceSize = std::max(divUp(nelem / elemSize, 16 * slicePerChunk) * 16, sliceSize / elemSize / 32) * elemSize;
+    sliceOffset = sliceStage * curSliceSize;
+
+    if (nelem <= sliceOffset) {
       *sendbuffOut = sendbuff;
       *mhandleOut = sendMhandle;
     } else {
@@ -142,7 +148,7 @@ public:
         *mhandleOut = srecvMhandle;
       }
     }
-    size = std::min(curSliceSize, std::min(remSize - chunkOffset, chunkSize) - sliceOffset);
+    size = std::min(curSliceSize, nelem - sliceOffset);
     *sizeOut = size < 0 ? 0 : size;
     return;
   }
@@ -157,28 +163,34 @@ public:
     ssize_t chunkOffset;
     ssize_t sliceOffset;
     ssize_t curSliceSize;
+    ssize_t curChunkSize;
     ssize_t size;
+    ssize_t nelem;
     int chunkId;
 
     if (remSize < loopSize) {
-      chunkSize = alignUp(divUp(remSize / elemSize, nRanks), 16 / elemSize) * elemSize;
+      curChunkSize = alignUp(divUp(remSize / elemSize, nRanks), 16 / elemSize) * elemSize;
+    } else {
+      curChunkSize = chunkSize;
     }
-    curSliceSize = std::max(divUp(chunkSize / elemSize, 16 * slicePerChunk) * 16, sliceSize / elemSize / 32) * elemSize;
-    sliceOffset = sliceStage * curSliceSize;
+
     if (curLoopStage == 0) {
       chunkId = (ringIndex + 1) % nRanks;
     } else {
       chunkId = (ringIndex + nRanks - 1 - chunkStage) % nRanks;
     }
 
-    chunkOffset = chunkId * chunkSize;
-    if (std::min(remSize - chunkOffset, chunkSize) <= sliceOffset) {
+    chunkOffset = chunkId * curChunkSize;
+    nelem = std::min(remSize - chunkOffset, curChunkSize);
+    curSliceSize = std::max(divUp(nelem / elemSize, 16 * slicePerChunk) * 16, sliceSize / elemSize / 32) * elemSize;
+    sliceOffset = sliceStage * curSliceSize;
+    if (nelem <= sliceOffset) {
       *recvbuffOut = recvbuff;
     } else {
       *recvbuffOut = recvbuff + elemOffset + chunkOffset + sliceOffset;
     }
     if (sizeOut) {
-      size = std::min(curSliceSize, std::min(remSize - chunkOffset, chunkSize) - sliceOffset);
+      size = std::min(curSliceSize, nelem - sliceOffset);
       *sizeOut = size < 0 ? 0 : size;
     }
     *mhandleOut = recvMhandle;
