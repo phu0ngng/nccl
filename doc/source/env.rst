@@ -593,9 +593,9 @@ Use this variable if you encounter memory constraint issues when using NCCL or y
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default is 4194304 (4 MB).
+The default is 4194304 (4 MiB).
 
-Values are integers, in bytes. The recommendation is to use powers of 2. For example,  1024 will give a 1K buffer.
+Values are integers, in bytes. The recommendation is to use powers of 2. For example,  1024 will give a 1KiB buffer.
 
 
 NCCL_NTHREADS
@@ -621,6 +621,8 @@ number of CUDA blocks used for communication, hence the impact on GPU computing 
 
 The old ``NCCL_MAX_NRINGS`` variable (used until 2.4) still works as an alias in newer versions but is ignored if ``NCCL_MAX_NCHANNELS`` is set.
 
+This environment variable has been superseded by ``NCCL_MAX_CTAS`` which can also be set programmatically using :ref:`ncclCommInitRankConfig`.
+
 Values accepted
 ^^^^^^^^^^^^^^^
 Any value above or equal to 1.
@@ -636,6 +638,8 @@ CUDA blocks NCCL uses, which may be useful to improve performance; however, it u
 This is especially useful when using aggregated collectives on platforms where NCCL would usually only create one channel.
 
 The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in newer versions, but is ignored if ``NCCL_MIN_NCHANNELS`` is set.
+
+This environment variable has been superseded by ``NCCL_MIN_CTAS`` which can also be set programmatically using :ref:`ncclCommInitRankConfig`.
 
 Values accepted
 ^^^^^^^^^^^^^^^

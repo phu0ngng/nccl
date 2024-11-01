@@ -65,6 +65,8 @@ Returns an array of *ndev* newly initialized communicators in *comms*.
 *devlist* defines the CUDA devices associated with each rank. If *devlist* is NULL,
 the first *ndev* CUDA devices are used, in order.
 
+.. _ncclcomminitrankconfig:
+
 ncclCommInitRankConfig
 ----------------------
 
