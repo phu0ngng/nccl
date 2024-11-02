@@ -288,8 +288,10 @@ static ncclResult_t rasConnSendCollResp(struct rasConnection* conn,
   msg->collResp.nLegTimeouts = nLegTimeouts;
   msg->collResp.nPeers = nPeers;
   msg->collResp.nData = nData;
-  memcpy(msg->collResp.peers, peers, nPeers*sizeof(*msg->collResp.peers));
-  memcpy(((char*)msg)+dataOffset, data, nData);
+  if (nPeers)
+    memcpy(msg->collResp.peers, peers, nPeers*sizeof(*msg->collResp.peers));
+  if (nData)
+    memcpy(((char*)msg)+dataOffset, data, nData);
 
   rasConnEnqueueMsg(conn, msg, msgLen);
 
