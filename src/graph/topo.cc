@@ -1147,7 +1147,7 @@ out:
   return res;
 }
 
-ncclResult_t ncclTopoPopulateNics(ncclComm_t comm, ncclXml* xml, int startIndex, int endIndex, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), int coll, int keep, int virtualNics) {
+static ncclResult_t ncclTopoPopulateNics(ncclComm_t comm, ncclXml* xml, int startIndex, int endIndex, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), int coll, int keep, int virtualNics) {
   for (int n = startIndex; n < endIndex; n++) {
     ncclNetProperties_t props;
     NCCLCHECK(getProperties(n, &props));
