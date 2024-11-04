@@ -10,6 +10,7 @@
 - [Inter-node User Buffer Registration](items/id_e87c497b/Inter-node_User_Buffer_Registration.md)
 - [dynamically query collnet limits](items/id_22c0bc4a/dynamically_query_collnet_limits.md)
 - [skip ll completion](items/id_7825b160/skip_ll_completion.md)
+- [IB modify QP retry](items/id_1554f68c/IB_modify_QP_retry.md)
 <!-- V2_24_DO_NOT_MOVE -->
 
 <!------------------------------------->
