@@ -1148,10 +1148,9 @@ out:
 }
 
 ncclResult_t ncclTopoPopulateNics(ncclComm_t comm, ncclXml* xml, int startIndex, int endIndex, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), int coll, int keep, int virtualNics) {
-  ncclResult_t ret = ncclSuccess;
   for (int n = startIndex; n < endIndex; n++) {
     ncclNetProperties_t props;
-    NCCLCHECKGOTO(getProperties(n, &props), ret, fail);
+    NCCLCHECK(getProperties(n, &props));
     struct ncclXmlNode* netNode = NULL;
     struct ncclXmlNode* parent = NULL;
     if (virtualNics) {
@@ -1159,38 +1158,36 @@ ncclResult_t ncclTopoPopulateNics(ncclComm_t comm, ncclXml* xml, int startIndex,
       NCCLCHECK(xmlFindTagKv(xml, "net", &net, "name", props.name));
       // In the event of multithreaded use case, we need to re-discover the shared parent of the given devices for this vNIC
       // Only run this if the net doesn't exist locally - this may alter the XML state
-      if (net == NULL) NCCLCHECKGOTO(ncclTopoGetVNicParent(xml, comm, &props.vProps, &parent), ret, fail);
+      if (net == NULL) NCCLCHECK(ncclTopoGetVNicParent(xml, comm, &props.vProps, &parent));
     }
 
-    NCCLCHECKGOTO(ncclTopoFillNet(xml, props.pciPath, props.name, &netNode, parent), ret, fail);
+    NCCLCHECK(ncclTopoFillNet(xml, props.pciPath, props.name, &netNode, parent));
 
     const char* colAttr;
-    NCCLCHECKGOTO(xmlGetAttr(netNode, "coll", &colAttr), ret, fail);
+    NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
 
     // If coll == 0 but the netNode is tagged as coll, don't update the keep value
-    if (colAttr == NULL || coll != 0 || strcmp(colAttr,"1") != 0) NCCLCHECKGOTO(xmlSetAttrInt(netNode, "keep", keep), ret, fail);
-    NCCLCHECKGOTO(xmlSetAttrInt(netNode, "dev", n), ret, fail);
-    NCCLCHECKGOTO(xmlInitAttrInt(netNode, "latency", props.latency), ret, fail);
-    NCCLCHECKGOTO(xmlInitAttrInt(netNode, "speed", props.speed), ret, fail);
-    NCCLCHECKGOTO(xmlInitAttrInt(netNode, "port", props.port), ret, fail);
-    NCCLCHECKGOTO(xmlInitAttrUint64(netNode, "guid", props.guid), ret, fail);
-    NCCLCHECKGOTO(xmlInitAttrInt(netNode, "maxconn", props.maxComms), ret, fail);
+    if (colAttr == NULL || coll != 0 || strcmp(colAttr,"1") != 0) NCCLCHECK(xmlSetAttrInt(netNode, "keep", keep));
+    NCCLCHECK(xmlSetAttrInt(netNode, "dev", n));
+    NCCLCHECK(xmlInitAttrInt(netNode, "latency", props.latency));
+    NCCLCHECK(xmlInitAttrInt(netNode, "speed", props.speed));
+    NCCLCHECK(xmlInitAttrInt(netNode, "port", props.port));
+    NCCLCHECK(xmlInitAttrUint64(netNode, "guid", props.guid));
+    NCCLCHECK(xmlInitAttrInt(netNode, "maxconn", props.maxComms));
     bool gdrSupport = (props.ptrSupport & NCCL_PTR_CUDA) || (comm->dmaBufSupport && (props.ptrSupport & NCCL_PTR_DMABUF));
     INFO(NCCL_NET,"NET/%s : GPU Direct RDMA %s for HCA %d '%s'", comm->ncclNet->name, gdrSupport ? "Enabled" : "Disabled", n, props.name);
-    NCCLCHECKGOTO(xmlInitAttrInt(netNode, "gdr", gdrSupport), ret, fail);
+    NCCLCHECK(xmlInitAttrInt(netNode, "gdr", gdrSupport));
     // Only set coll if it's not 0
-    if (coll) NCCLCHECKGOTO(xmlInitAttrInt(netNode, "coll", coll), ret, fail);
+    if (coll) NCCLCHECK(xmlInitAttrInt(netNode, "coll", coll));
 
     const char* keepAttr;
-    NCCLCHECKGOTO(xmlGetAttr(netNode, "coll", &colAttr), ret, fail);
-    NCCLCHECKGOTO(xmlGetAttr(netNode, "keep", &keepAttr), ret, fail);
-    INFO(NCCL_GRAPH, "ncclTopoProcessNet : Filled %s in topo with pciPath=%s keep=%s coll=%s",
+    NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
+    NCCLCHECK(xmlGetAttr(netNode, "keep", &keepAttr));
+    INFO(NCCL_GRAPH, "ncclTopoPopulateNics : Filled %s in topo with pciPath=%s keep=%s coll=%s",
       props.name, props.pciPath, keepAttr, colAttr);
-
   }
 
-fail:
-  return ret;
+  return ncclSuccess;
 }
 
 struct ncclTopoNetState {
@@ -1199,29 +1196,28 @@ struct ncclTopoNetState {
   const char* name;
 };
 
-ncclResult_t ncclTopoProcessNet(ncclComm_t comm, ncclXml* xml, int coll, const char* dumpXmlFile, ncclTopoNetState* state, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*)) {
-  ncclResult_t ret = ncclSuccess;
+// Calls to network plugin APIs should be protected. This function should be called inside a per-process lock.
+static ncclResult_t ncclTopoProcessNet(ncclComm_t comm, ncclXml* xml, int coll, const char* dumpXmlFile, ncclTopoNetState* state, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*)) {
   int usePhysicalDevices = (dumpXmlFile || makeVDevice == NULL);
   if (state->nPhysicalNics == -1) NCCLCHECK(devices(&state->nPhysicalNics));
   // Enumerate physical devices
-  NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, state->nPhysicalNics, getProperties, coll, 1, 0), ret, fail);
+  NCCLCHECK(ncclTopoPopulateNics(comm, xml, 0, state->nPhysicalNics, getProperties, coll, 1, 0));
   if (!usePhysicalDevices) {
     if (state->nVirtualNics == -1) {
-      NCCLCHECKGOTO(ncclTopoMakeVNics(comm, xml, makeVDevice, state->nPhysicalNics), ret, fail);
+      NCCLCHECK(ncclTopoMakeVNics(comm, xml, makeVDevice, state->nPhysicalNics));
       int nDevs;
-      NCCLCHECKGOTO(devices(&nDevs), ret, fail);
+      NCCLCHECK(devices(&nDevs));
       state->nVirtualNics = nDevs - state->nPhysicalNics;
     }
     // Remove keep=1 for physical collnets
     if (state->nVirtualNics > 0) {
-      NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, 0, state->nPhysicalNics, getProperties, coll, 0, 0), ret, fail);
+      NCCLCHECK(ncclTopoPopulateNics(comm, xml, 0, state->nPhysicalNics, getProperties, coll, 0, 0));
       // Populate new devices
-      NCCLCHECKGOTO(ncclTopoPopulateNics(comm, xml, state->nPhysicalNics, state->nPhysicalNics+state->nVirtualNics, getProperties, coll, 1, 1), ret, fail);
+      NCCLCHECK(ncclTopoPopulateNics(comm, xml, state->nPhysicalNics, state->nPhysicalNics+state->nVirtualNics, getProperties, coll, 1, 1));
     }
   }
 
-fail:
-  return ret;
+  return ncclSuccess;
 }
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
@@ -1354,6 +1350,9 @@ exit:
   if (!comm->MNNVL && localRanks) free(localRanks);
   if (mem) free(mem);
   free(xml);
+  // Try and take the netLock. Regardless if it's held or not, we can now guarunteed unlock it.
+  pthread_mutex_trylock(&netLock);
+  pthread_mutex_unlock(&netLock);
   return ret;
 fail:
   goto exit;

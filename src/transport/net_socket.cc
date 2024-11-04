@@ -321,7 +321,6 @@ ncclResult_t ncclNetSocketListen(int dev, void* opaqueHandle, void** listenComm)
 exit:
   return ret;
 fail:
-  WARN("NET/Socket : Listen failed from dev=%d magic=0x%lx", dev, handle->magic);
   (void)ncclSocketClose(&comm->sock);
   free(comm);
   goto exit;
