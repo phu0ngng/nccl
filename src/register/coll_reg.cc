@@ -327,7 +327,7 @@ ncclResult_t ncclRegisterCollBuffers(
 
       // start net registration
       regBufFlag = 0;
-      if (!comm->useNetPXN && comm->useGdr) {
+      if (!comm->useNetPXN && comm->useGdr && comm->netDeviceType != NCCL_NET_DEVICE_UNPACK) {
         if (comm->planner.persistent && ncclParamGraphRegister()) {
           if (hasSendNetPeer) {
             ncclNetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, sendNetConns, sendNetPeers, &regBufFlag, sendNetHandles, cleanupQueue, &info->nCleanupQueueElts);
