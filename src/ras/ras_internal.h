@@ -10,6 +10,9 @@
 #define NCCL_RAS_CLIENT_PORT 28028
 #define NCCL_RAS_CLIENT_PROTOCOL 2
 
+#define RAS_COLLECTIVE_LEG_TIMEOUT_SEC 5
+#define RAS_COLLECTIVE_EXTRA_TIMEOUT_SEC RAS_COLLECTIVE_LEG_TIMEOUT_SEC
+
 // End of the client section; everything below is meant for the NCCL threads only.
 #ifndef NCCL_RAS_CLIENT
 
@@ -197,10 +200,10 @@ static inline size_t rasMsgLength(rasMsgType type, rasCollectiveType collType = 
 
 // Abort a leg of a collective operation if the response takes more than 5 seconds to arrive *and* one of the
 // connections experiences delays.
-#define RAS_COLLECTIVE_LEG_TIMEOUT RAS_KEEPALIVE_TIMEOUT_WARN
+#define RAS_COLLECTIVE_LEG_TIMEOUT (RAS_COLLECTIVE_LEG_TIMEOUT_SEC*CLOCK_UNITS_PER_SEC)
 
 // Abort a whole collective operation after at most RAS_COLLECTIVE_LEG_TIMEOUT+RAS_COLLECTIVE_EXTRA_TIMEOUT (10s).
-#define RAS_COLLECTIVE_EXTRA_TIMEOUT RAS_COLLECTIVE_LEG_TIMEOUT
+#define RAS_COLLECTIVE_EXTRA_TIMEOUT (RAS_COLLECTIVE_EXTRA_TIMEOUT_SEC*CLOCK_UNITS_PER_SEC)
 
 // Structure used for tracking the progress of sending a RAS message.
 struct rasMsgMeta {

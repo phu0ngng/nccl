@@ -94,7 +94,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client);
 static ncclResult_t rasClientRunConns(struct rasClient* client);
 static ncclResult_t rasClientRunComms(struct rasClient* client);
 static void rasClientBreakDownErrors(struct rasClient* client, struct rasCollComms::comm* comm,
-                                     const int* peerIdxConv, int ncclErrors[ncclNumResults]);
+                                     const int* peerIdxConv, int ncclErrors[ncclNumResults], bool isAsync = false);
 
 static void rasOutAppend(const char* format, ...) __attribute__ ((format(printf, 1, 2)));
 static void rasOutExtract(char* buffer);
@@ -464,15 +464,15 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
   int firstIdx, nPeers;
   struct rasValCount valCounts[NCCL_MAX_LOCAL_RANKS];
   int nValCounts;
+  static int cudaDriver = -1, cudaRuntime = -1;
 
   rasOutReset();
   rasOutAppend("NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX
                " compiled with CUDA " STR(CUDA_MAJOR) "." STR(CUDA_MINOR) "\n");
-  int cudaDriver, cudaRuntime;
-  if (cudaRuntimeGetVersion(&cudaRuntime) != cudaSuccess)
-    cudaRuntime = -1;
-  if (cudaDriverGetVersion(&cudaDriver) != cudaSuccess)
-    cudaDriver = -1;
+  if (cudaRuntime == -1)
+    cudaRuntimeGetVersion(&cudaRuntime);
+  if (cudaDriver == -1)
+    cudaDriverGetVersion(&cudaDriver);
   rasOutAppend("CUDA runtime version %d, driver version %d\n\n", cudaRuntime, cudaDriver);
   msgLen = rasOutLength();
   NCCLCHECKGOTO(rasClientAllocMsg(&msg, msgLen), ret, fail);
@@ -917,7 +917,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
       // currently don't collect data about missing ranks, we can't reliably distinguish these two cases.
       // For now we rely on an approximation: if we _know_ that some peers failed to respond, we mark this
       // as an INCOMPLETE error; otherwise as a MISMATCH warning.
-      if (nPeersMissing > 0)
+      if (nPeersMissing > 0 || nRasDeadPeers > 0)
         auxComm->errors |= RAS_ACE_INCOMPLETE;
       else {
         auxComm->errors |= RAS_ACE_MISMATCH;
@@ -1073,8 +1073,12 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
           rasPeerIdx++;
           collPeerIdx++;
         } else if (cmp < 0) {
-          // Process missing from coll->peers.
-          memcpy(peersBuf+(nPeersBuf++), rasPeers+rasPeerIdx, sizeof(*peersBuf));
+          // Process missing from coll->peers.  Don't report dead ones though, as they are not included
+          // in nPeersMissing and are reported separately below.
+          if (!rasPeerIsDead(&rasPeers[rasPeerIdx].addr)) {
+            assert(nPeersBuf < nPeersMissing);
+            memcpy(peersBuf+(nPeersBuf++), rasPeers+rasPeerIdx, sizeof(*peersBuf));
+          }
           rasPeerIdx++;
         } else { // cmp > 0
           // Process not found in rasPeers -- shouldn't happen, unless during a race?
@@ -1180,7 +1184,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
         if (nErrors > 0) {
           rasOutAppend("  Asynchronous error%s on %d rank%s\n",
                        (nErrors > 1 ? "s" : ""), nErrors, (nErrors > 1 ? "s" : ""));
-          rasClientBreakDownErrors(client, comm, peerIdxConv, ncclErrors);
+          rasClientBreakDownErrors(client, comm, peerIdxConv, ncclErrors, /*isAsync*/true);
         }
         rasOutAppend("\n");
       } // if (auxComm->errors & RAS_ACE_ERROR)
@@ -1393,7 +1397,7 @@ fail:
 }
 
 static void rasClientBreakDownErrors(struct rasClient* client, struct rasCollComms::comm* comm,
-                                     const int* peerIdxConv, int ncclErrors[ncclNumResults]) {
+                                     const int* peerIdxConv, int ncclErrors[ncclNumResults], bool isAsync) {
   for (;;) {
     int maxCount = 0;
     ncclResult_t maxCountIdx = ncclSuccess;
@@ -1409,7 +1413,7 @@ static void rasClientBreakDownErrors(struct rasClient* client, struct rasCollCom
       rasOutAppend("  %d ranks reported %s\n", maxCount, ncclErrorToString(maxCountIdx));
     if (rasCountIsOutlier(maxCount, client->verbose)) {
       for (int rankIdx = 0; rankIdx < comm->nRanks; rankIdx++) {
-        if (comm->ranks[rankIdx].status.initState == maxCountIdx) {
+        if ((isAsync ? comm->ranks[rankIdx].status.asyncError : comm->ranks[rankIdx].status.initState) == maxCountIdx) {
           int peerIdx = peerIdxConv[comm->ranks[rankIdx].peerIdx];
           if (peerIdx != -1) {
             if (maxCount > 1)
@@ -1431,7 +1435,7 @@ static void rasClientBreakDownErrors(struct rasClient* client, struct rasCollCom
               rasOutAppend("  Rank %d reported %s -- [process information not found]\n",
                            comm->ranks[rankIdx].commRank, ncclErrorToString(maxCountIdx));
           } // peerIdx == -1
-        } // if rank's initState matches
+        } // if rank's error matches
       } // for (rankIdx)
     } // if (rasCountIsOutlier(maxCount))
     ncclErrors[maxCountIdx] = 0;

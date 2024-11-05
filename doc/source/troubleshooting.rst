@@ -4,6 +4,8 @@ Troubleshooting
 
 Ensure you are familiar with the following known issues and useful debugging strategies.
 
+.. highlight:: shell
+
 ******
 Errors
 ******
@@ -16,6 +18,17 @@ Errors are grouped into different categories.
 * ncclInvalidArgument and ncclInvalidUsage indicates there was a programming error in the application using NCCL.
 
 In either case, refer to the NCCL warning message to understand how to resolve the problem.
+
+***
+RAS
+***
+
+Starting with version 2.24, NCCL includes a reliability, availability, and serviceability (RAS) subsystem to help with
+the diagnosis and debugging of crashes and hangs.
+
+.. toctree::
+
+  troubleshooting/ras
 
 **********
 GPU Direct
@@ -33,7 +46,7 @@ GPU-to-GPU communication
 To make sure GPU-to-GPU communication is working correctly, look for the p2pBandwidthLatencyTest from the CUDA
 samples.
 
-.. code::
+.. code:: shell
 
   cd /usr/local/cuda/samples/1_Utilities/p2pBandwidthLatencyTest
   sudo make
@@ -51,7 +64,7 @@ GPUs can also communicate directly with network cards using GPU Direct RDMA (GDR
 network cards and drivers, plus loading an extra kernel module called ``nvidia-peermem``.
 The ``nvidia-peermem`` module is now supplied with the CUDA drivers, however it must be loaded on each node boot with:
 
-.. code::
+.. code:: shell
 
  sudo modprobe nvidia-peermem
 
@@ -68,14 +81,14 @@ IO virtualization (also known as VT-d or IOMMU) can interfere with GPU Direct by
 traffic to the CPU root complex, causing a significant performance reduction or even a hang. You can check
 whether ACS is enabled on PCI bridges by running:
 
-.. code::
+.. code:: shell
 
   sudo lspci -vvv | grep ACSCtl
 
 If lines show "SrcValid+", then ACS might be enabled. Looking at the full output of lspci, one can check if
 a PCI bridge has ACS enabled.
 
-.. code::
+.. code:: shell
 
   sudo lspci -vvv
 
@@ -85,19 +98,19 @@ be done again after each reboot.
 
 Use the command below to find the PCI bus IDs of PLX PCI bridges:
 
-.. code::
+.. code:: shell
 
   sudo lspci | grep PLX
 
 Next, use setpci to disable ACS with the command below, replacing 03:00.0 by the PCI bus ID of each PCI bridge.
 
-.. code::
+.. code:: shell
 
   sudo setpci -s 03:00.0 ECAP_ACS+0x6.w=0000
 
 Or you can use a script similar to this:
 
-.. code::
+.. code:: shell
 
   for BDF in `lspci -d "*:*:*" | awk '{print $1}'`; do
     # skip if it doesn't support ACS
@@ -132,7 +145,7 @@ system’s documentation for details.
 If insufficient shared memory is available, NCCL will fail to initialize. Running with NCCL_DEBUG=WARN
 will show a message similar to this:
 
-.. code::
+.. code:: shell
 
  NCCL WARN Error: failed to extend /dev/shm/nccl-03v824 to 4194660 bytes
 
@@ -143,7 +156,7 @@ In particular, Docker containers default to limited shared and pinned memory res
 container, please make sure to adjust the shared memory size inside the container, for example by adding the following
 arguments to the docker launch command line:
 
-.. code::
+.. code:: shell
 
  --shm-size=1g --ulimit memlock=-1
 
@@ -154,7 +167,7 @@ When running jobs using mpirun or SLURM, systemd may remove files in shared memo
 corresponding user is not logged in, in an attempt to clean up old temporary files. This can cause NCCL to crash
 during init with an error like:
 
-.. code::
+.. code:: shell
 
  NCCL WARN unlink shared memory /dev/shm/nccl-d5rTd0 failed, error: No such file or directory
 
@@ -162,13 +175,13 @@ Given mpirun and SLURM jobs can run on the node without the user being seen as l
 to disable that clean-up mechanism, which can be performed by SLURM epilogue scripts instead. To do this, the following
 line needs to be set in /etc/systemd/logind.conf:
 
-.. code::
+.. code:: shell
 
  RemoveIPC=no
 
 Once updated, the daemons should be restarted with:
 
-.. code::
+.. code:: shell
 
  sudo systemctl restart systemd-logind
 
@@ -256,3 +269,5 @@ And then set ``NCCL_IB_GID_INDEX`` to the GID INDEX for the RoCE v2 VER GID.
 With NCCL 2.21 and later releases, this environment variable should *not* be set.
 
 Users may also need to set ``NCCL_IB_TC`` when using RoCE based networks. Refer to your vendor's documentation for the values this should be set to.
+
+.. highlight:: c++
