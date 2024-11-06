@@ -3,8 +3,8 @@
 NCCL_SRCDIR=../../src
 
 # Check plugin versions
-netplugin_ver=$(cat ${NCCL_SRCDIR}/include/nccl_net.h | grep NCCL_NET_PLUGIN_SYMBOL | cut -d" " -f3)
-tunplugin_ver=$(cat ${NCCL_SRCDIR}/include/nccl_tuner.h | grep NCCL_TUNER_PLUGIN_SYMBOL | cut -d" " -f3)
+netplugin_ver=$(cat ${NCCL_SRCDIR}/include/plugin/net/nccl_net.h | grep NCCL_NET_PLUGIN_SYMBOL | cut -d" " -f3)
+tunplugin_ver=$(cat ${NCCL_SRCDIR}/include/plugin/tuner/nccl_tuner.h | grep NCCL_TUNER_PLUGIN_SYMBOL | cut -d" " -f3)
 
 net_symbols=$(nm -D libnccl-mixed.so | cut -d" " -f3 | grep NetPlugin | sort -k 15 -r)
 tun_symbols=$(nm -D libnccl-mixed.so | cut -d" " -f3 | grep TunerPlugin | sort -k 17 -r)
