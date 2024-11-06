@@ -419,6 +419,7 @@ struct ncclComm {
 
   int netPluginLoaded;
   ncclNet_t* ncclNet;
+  int ncclNetVer;
   ncclNetDeviceType netDeviceType;
   ncclCollNet_t* ncclCollNet;
   void* bootstrap;

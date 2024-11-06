@@ -538,7 +538,7 @@ NCCL_PARAM(PxnDisable, "PXN_DISABLE", 0);
 int ncclPxnDisable(struct ncclComm* comm) {
   static int pxnDisable = -1;
   if (pxnDisable == -1) {
-    if (comm && ncclNetVersion(comm) == 4) {
+    if (comm && comm->ncclNetVer == 4) {
       INFO(NCCL_INIT, "PXN Disabled as plugin is v4");
       pxnDisable = 1;
     } else {

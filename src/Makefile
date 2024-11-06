@@ -15,6 +15,7 @@ LIBSRCFILES := \
 	$(wildcard misc/*.cc) \
 	$(wildcard transport/*.cc) \
 	$(wildcard register/*.cc) \
+	$(wildcard plugin/net/*.cc) \
 	$(filter-out ras/client.cc,$(wildcard ras/*.cc))
 BINSRCFILES := ras/client.cc
 
