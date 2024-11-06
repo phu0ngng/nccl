@@ -323,6 +323,10 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   int fnOpTyIndices[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
   int fnOpTyCount = 0;
 
+  // Poll for callbacks sent to us from other threads. Typically these free
+  // resources from to our memory pools.
+  NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
+
   // Walk the size sorted tasks, binning them by (fn,op,ty).
   while (task != nullptr) {
     struct ncclTaskColl* next = task->next;
@@ -1313,10 +1317,6 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   bool persistent = ncclCudaGraphValid(planner->capturingGraph);
   planner->persistent = persistent;
   int nPlans = 0;
-
-  // Poll for callbacks sent to us from other threads. Typically these free
-  // resources from to our memory pools.
-  NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
 
   if (planner->nTasksColl + planner->nTasksP2p != 0) {
     do {

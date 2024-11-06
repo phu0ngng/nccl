@@ -720,15 +720,16 @@ int rasLinkCalculatePeer(const struct rasLink* link, int peerIdx, bool isFallbac
 ncclResult_t rasPeerDeclareDead(const union ncclSocketAddress* addr) {
   union ncclSocketAddress* deadAddr;
 
-  NCCLCHECK(getNewDeadEntry(&deadAddr));
-  memcpy(deadAddr, addr, sizeof(*deadAddr));
-  qsort(rasDeadPeers, nRasDeadPeers, sizeof(*rasDeadPeers), &ncclSocketsCompare);
+  if (!rasPeerIsDead(addr)) {
+    NCCLCHECK(getNewDeadEntry(&deadAddr));
+    memcpy(deadAddr, addr, sizeof(*deadAddr));
+    qsort(rasDeadPeers, nRasDeadPeers, sizeof(*rasDeadPeers), &ncclSocketsCompare);
 
-  rasDeadPeersHash = getHash((const char*)rasDeadPeers, nRasDeadPeers*sizeof(*rasDeadPeers));
+    rasDeadPeersHash = getHash((const char*)rasDeadPeers, nRasDeadPeers*sizeof(*rasDeadPeers));
 
-  INFO(NCCL_RAS, "RAS declaring peer %s as DEAD; rasDeadPeersHash 0x%lx",
-       ncclSocketToString(addr, rasLine), rasDeadPeersHash);
-
+    INFO(NCCL_RAS, "RAS declaring peer %s as DEAD; rasDeadPeersHash 0x%lx",
+         ncclSocketToString(addr, rasLine), rasDeadPeersHash);
+  }
   return ncclSuccess;
 }
 

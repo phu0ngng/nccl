@@ -276,7 +276,7 @@ The default value is 1, set to 0 to disable
 NCCL_OOB_NET_ENABLE
 -------------------
 (since 2.23)
-The variable ``NCCL_OOB_NET_ENABLE`` enables the use of NCCL net for out-of-band communcations.
+The variable ``NCCL_OOB_NET_ENABLE`` enables the use of NCCL net for out-of-band communications.
 Enabling the usage of NCCL net will change the implementation of the allgather performed during the communicator initialization.
 
 Values accepted
@@ -458,11 +458,15 @@ Prefixing the subsystem name with ‘^’ will disable the logging for that subs
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is INIT.
+The default value is INIT,BOOTSTRAP,ENV.
 
 Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
 peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
-and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), ALLOC (stands for memory allocations), and ALL (includes every subsystem).
+and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), ALLOC (stands
+for memory allocations), CALL (standard for function calls), PROXY (stands for the proxy thread operations), NVLS
+(standard for NVLink SHARP), BOOTSTRAP (stands for early initialization), REG (stands for memory registration), PROFILE
+(stands for coarse-grained profiling of initialization), RAS (stands for reliability, availability, and serviceability
+subsystem) and ALL (includes every subsystem).
 
 NCCL_COLLNET_ENABLE
 -------------------
@@ -589,9 +593,9 @@ Use this variable if you encounter memory constraint issues when using NCCL or y
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default is 4194304 (4 MB).
+The default is 4194304 (4 MiB).
 
-Values are integers, in bytes. The recommendation is to use powers of 2. For example,  1024 will give a 1K buffer.
+Values are integers, in bytes. The recommendation is to use powers of 2. For example,  1024 will give a 1KiB buffer.
 
 
 NCCL_NTHREADS
@@ -617,6 +621,8 @@ number of CUDA blocks used for communication, hence the impact on GPU computing 
 
 The old ``NCCL_MAX_NRINGS`` variable (used until 2.4) still works as an alias in newer versions but is ignored if ``NCCL_MAX_NCHANNELS`` is set.
 
+This environment variable has been superseded by ``NCCL_MAX_CTAS`` which can also be set programmatically using :ref:`ncclCommInitRankConfig`.
+
 Values accepted
 ^^^^^^^^^^^^^^^
 Any value above or equal to 1.
@@ -632,6 +638,8 @@ CUDA blocks NCCL uses, which may be useful to improve performance; however, it u
 This is especially useful when using aggregated collectives on platforms where NCCL would usually only create one channel.
 
 The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in newer versions, but is ignored if ``NCCL_MIN_NCHANNELS`` is set.
+
+This environment variable has been superseded by ``NCCL_MIN_CTAS`` which can also be set programmatically using :ref:`ncclCommInitRankConfig`.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -1169,3 +1177,37 @@ MNNVL requires a fully configured and operational IMEX domain for all the nodes 
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is automatic detection, define and set to 0 to disable MNNVL support.
+
+.. _env_NCCL_RAS_ENABLE:
+
+NCCL_RAS_ENABLE
+---------------
+(since 2.24)
+
+Enable NCCL's reliability, availability, and serviceability (RAS) subsystem, which can be used to query the health of
+NCCL jobs during execution (see :doc:`troubleshooting/ras`).
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1 (enabled); define and set to 0 to disable RAS.
+
+.. _env_NCCL_RAS_ADDR:
+
+NCCL_RAS_ADDR
+-------------
+(since 2.24)
+
+Specify the IP address and port number of a socket that the RAS subsystem will listen on for client connections.  RAS
+can share this socket between multiple processes but that would not be desirable if multiple independent NCCL jobs share
+a single node (and if those jobs belong to different users, the OS will not allow the socket to be shared).  In such
+cases, each job should be started with a different value (e.g., ``localhost:12345``, ``localhost:12346``, etc.).  Since
+``localhost`` is normally used, only those with access to the nodes where the job is running can connect to the socket.
+If desired, the address of an externally accessible network interface can be specified instead, which will make RAS
+accessible from other nodes (such as a cluster's head node), but that has security implications that should be
+considered.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Default is ``localhost:28028``.  Either a host name or an IP address can be used for the first part; an IPv6 address
+needs to be enclosed in square brackets (e.g., ``[::1]``).
