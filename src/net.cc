@@ -258,20 +258,20 @@ static ncclResult_t ncclNet_v6_as_v9_init(ncclDebugLogger_t logfn) {
 }
 
 static ncclResult_t ncclNet_v5_as_v9_getProperties(int dev, ncclNetProperties_v9_t* props) {
-  ncclNetProperties_v6_t p6;
-  ncclResult_t ans = ncclNet_v5->getProperties(dev, &p6);
+  ncclNetProperties_v5_t p5;
+  ncclResult_t ans = ncclNet_v5->getProperties(dev, &p5);
   if (ans != ncclSuccess) return ans;
-  props->name = p6.name;
-  props->pciPath = p6.pciPath;
-  props->guid = p6.guid;
-  props->ptrSupport = p6.ptrSupport;
+  props->name = p5.name;
+  props->pciPath = p5.pciPath;
+  props->guid = p5.guid;
+  props->ptrSupport = p5.ptrSupport;
   props->regIsGlobal = 0;
   props->forceFlush = 0;
-  props->speed = p6.speed;
-  props->port = p6.port;
-  props->maxComms = p6.maxComms;
-  props->maxRecvs = p6.maxRecvs;
-  props->latency = p6.latency;
+  props->speed = p5.speed;
+  props->port = p5.port;
+  props->maxComms = p5.maxComms;
+  props->maxRecvs = p5.maxRecvs;
+  props->latency = p5.latency;
   props->netDeviceType    = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   props->vProps.ndevs = 1;
@@ -341,20 +341,20 @@ static ncclResult_t ncclNet_v5_as_v9_init(ncclDebugLogger_t logfn) {
 }
 
 static ncclResult_t ncclCollNet_v5_as_v9_getProperties(int dev, ncclNetProperties_v9_t* props) {
-  ncclNetProperties_v6_t p6;
-  ncclResult_t ans = ncclCollNet_v5->getProperties(dev, &p6);
+  ncclNetProperties_v5_t p5;
+  ncclResult_t ans = ncclCollNet_v5->getProperties(dev, &p5);
   if (ans != ncclSuccess) return ans;
-  props->name = p6.name;
-  props->pciPath = p6.pciPath;
-  props->guid = p6.guid;
-  props->ptrSupport = p6.ptrSupport;
+  props->name = p5.name;
+  props->pciPath = p5.pciPath;
+  props->guid = p5.guid;
+  props->ptrSupport = p5.ptrSupport;
   props->regIsGlobal = 0;
   props->forceFlush = 0;
-  props->speed = p6.speed;
-  props->port = p6.port;
-  props->maxComms = p6.maxComms;
-  props->maxRecvs = p6.maxRecvs;
-  props->latency = p6.latency;
+  props->speed = p5.speed;
+  props->port = p5.port;
+  props->maxComms = p5.maxComms;
+  props->maxRecvs = p5.maxRecvs;
+  props->latency = p5.latency;
   props->netDeviceType    = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   props->vProps.ndevs = 1;
