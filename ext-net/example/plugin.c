@@ -70,7 +70,7 @@ __hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* props) { 
 
 #define PLUGIN_NAME "Plugin"
 
-const ncclNet_v9_t ncclNetPlugin_v9 = {
+ncclNet_v9_t ncclNetPlugin_v9 = {
   .name = PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,

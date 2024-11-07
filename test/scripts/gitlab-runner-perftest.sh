@@ -164,6 +164,11 @@ then
   fi
   NCCL_SOCKET_RETRY_SLEEP_MSEC=1 $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce (FT tests): NCCL_SOCKET_RETRY_SLEEP_MSEC=1 all_reduce_perf $range $opts $enable_ft")
+
+
+  # https://nvbugspro.nvidia.com/bug/4934665
+  # NCCL_SOCKET_RETRY_SLEEP_MSEC=1 $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS --map-by ppr:1:node ./build/test/perf/${func}_perf -b 8 -e 128M -f2 $opts -t $NGPUS $enable_ft
+  # [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce (FT tests multithreaded): NCCL_SOCKET_RETRY_SLEEP_MSEC=1 mpirun $MPI_PARAMS --map-by ppr:1:node ./build/test/perf/${func}_perf -b 8 -e 128M -f2 $opts -t $NGPUS $enable_ft")
 else
   echo "Skipping FT tests..."
 fi

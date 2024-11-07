@@ -616,16 +616,15 @@ static ncclResult_t ncclCollNet_v8_as_v9_init(ncclDebugLogger_t logfn) {
 }
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
-#define NET_NUM 3
-ncclNet_t* ncclNets[NET_NUM] = { nullptr, &ncclNetIb, &ncclNetSocket };
-ncclCollNet_t* ncclCollNets[NET_NUM] = { nullptr, nullptr, nullptr };
+ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr, &ncclNetIb, &ncclNetSocket };
+ncclCollNet_t* ncclCollNets[NCCL_NET_MAX_PLUGINS] = { nullptr, nullptr, nullptr };
 enum ncclNetState {
   ncclNetStateInit = 0,
   ncclNetStateEnabled = 1,
   ncclNetStateDisabled = 2
 };
-enum ncclNetState ncclNetStates[NET_NUM] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
-enum ncclNetState ncclCollNetStates[NET_NUM] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
+enum ncclNetState ncclNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
+enum ncclNetState ncclCollNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 
 #define MAX_STR_LEN 255
 
@@ -848,7 +847,7 @@ ncclResult_t ncclNetPluginUnload(struct ncclComm* comm) {
     ncclCollNets[0] = nullptr;
     netPluginStatus = netPluginLoadReady;
     comm->netPluginLoaded = 0;
-    for (int i = 0; i < NET_NUM; ++i)
+    for (int i = 0; i < NCCL_NET_MAX_PLUGINS; ++i)
       ncclCollNetStates[i] = ncclNetStates[i] = ncclNetStateInit;
   }
   pthread_mutex_unlock(&netPluginLock);
