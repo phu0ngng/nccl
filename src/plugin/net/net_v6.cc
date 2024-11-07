@@ -5,19 +5,18 @@
  ************************************************************************/
 
 #include "nccl_net.h"
-#include "net_v6.h"
 #include "net_device.h"
 #include "proxy.h"
 
 #define MAX_NET_SIZE (1024*1024*1024L) // Rather than send INT_MAX which is 2G-1, send a power of two.
 #define MAX_COLLNET_SIZE (512*1024*1024L) //Set for initial collent plugins when size was not dynamically queried
 
-static ncclNet_v9_t ncclNet_v6_as_v9;
-static ncclCollNet_v9_t ncclCollNet_v6_as_v9;
+static ncclNet_t ncclNet;
+static ncclCollNet_t ncclCollNet;
 static ncclNet_v6_t* ncclNet_v6;
 static ncclCollNet_v6_t* ncclCollNet_v6;
 
-static ncclResult_t ncclNet_v6_as_v9_getProperties(int dev, ncclNetProperties_v9_t* props) {
+static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
   ncclNetProperties_v6_t p6;
   ncclResult_t ans = ncclNet_v6->getProperties(dev, &p6);
   if (ans != ncclSuccess) return ans;
@@ -41,20 +40,20 @@ static ncclResult_t ncclNet_v6_as_v9_getProperties(int dev, ncclNetProperties_v9
   return ncclSuccess;
 }
 
-static ncclResult_t ncclNet_v6_as_v9_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
+static ncclResult_t ncclNet_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
   if (size >= 1UL<<31) return ncclInternalError;
   return ncclNet_v6->regMr(comm, data, (int) size, type, mhandle);
 }
 
-static ncclResult_t ncclNet_v6_as_v9_connect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+static ncclResult_t ncclNet_connect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   return ncclNet_v6->connect(dev, handle, sendComm);
 }
 
-static ncclResult_t ncclNet_v6_as_v9_accept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** /*recvDevComm*/) {
+static ncclResult_t ncclNet_accept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** /*recvDevComm*/) {
   return ncclNet_v6->accept(listenComm, recvComm);
 }
 
-static ncclResult_t ncclNet_v6_as_v9_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
   int sizeInt;
   if (size > MAX_NET_SIZE) return ncclInternalError;
   sizeInt = (int)size;
@@ -62,7 +61,7 @@ static ncclResult_t ncclNet_v6_as_v9_isend(void* sendComm, void* data, size_t si
   return ans;
 }
 
-static ncclResult_t ncclNet_v6_as_v9_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
   int sizesInt[NCCL_PROXY_MAX_SUBS];
   //reset to NULL if optional receive completion is set
   if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
@@ -74,7 +73,7 @@ static ncclResult_t ncclNet_v6_as_v9_irecv(void* recvComm, int n, void** data, s
   return ans;
 }
 
-static ncclResult_t ncclCollNet_v6_as_v9_getProperties(int dev, ncclNetProperties_v9_t* props) {
+static ncclResult_t ncclCollNet_getProperties(int dev, ncclNetProperties_t* props) {
   ncclNetProperties_v6_t p6;
   ncclResult_t ans = ncclCollNet_v6->getProperties(dev, &p6);
   if (ans != ncclSuccess) return ans;
@@ -98,12 +97,12 @@ static ncclResult_t ncclCollNet_v6_as_v9_getProperties(int dev, ncclNetPropertie
   return ncclSuccess;
 }
 
-static ncclResult_t ncclCollNet_v6_as_v9_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
+static ncclResult_t ncclCollNet_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
   if (size >= 1UL<<31) return ncclInternalError;
   return ncclCollNet_v6->regMr(comm, data, (int) size, type, mhandle);
 }
 
-static ncclResult_t ncclCollNet_v6_as_v9_iallreduce(void* collComm, void* sendData, void* recvData, size_t count,
+static ncclResult_t ncclCollNet_iallreduce(void* collComm, void* sendData, void* recvData, size_t count,
      ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request) {
   int countInt;
   if (count > MAX_NET_SIZE) return ncclInternalError;
@@ -113,58 +112,58 @@ static ncclResult_t ncclCollNet_v6_as_v9_iallreduce(void* collComm, void* sendDa
   return ans;
 }
 
-ncclNet_v9_t* getNcclNet_v6_as_v9(void* lib) {
+ncclNet_t* getNcclNet_v6(void* lib) {
   ncclNet_v6 = (ncclNet_v6_t*)dlsym(lib, "ncclNetPlugin_v6");
   if (ncclNet_v6) {
-    ncclNet_v6_as_v9.name = ncclNet_v6->name;
-    ncclNet_v6_as_v9.init = ncclNet_v6->init;
-    ncclNet_v6_as_v9.devices = ncclNet_v6->devices;
-    ncclNet_v6_as_v9.getProperties = ncclNet_v6_as_v9_getProperties;
-    ncclNet_v6_as_v9.listen = ncclNet_v6->listen;
-    ncclNet_v6_as_v9.connect = ncclNet_v6_as_v9_connect;
-    ncclNet_v6_as_v9.accept =  ncclNet_v6_as_v9_accept;
-    ncclNet_v6_as_v9.regMr = ncclNet_v6_as_v9_regMr;
-    ncclNet_v6_as_v9.regMrDmaBuf = ncclNet_v6->regMrDmaBuf;
-    ncclNet_v6_as_v9.deregMr = ncclNet_v6->deregMr;
-    ncclNet_v6_as_v9.isend = ncclNet_v6_as_v9_isend;
-    ncclNet_v6_as_v9.irecv = ncclNet_v6_as_v9_irecv;
-    ncclNet_v6_as_v9.iflush = ncclNet_v6->iflush;
-    ncclNet_v6_as_v9.test = ncclNet_v6->test;
-    ncclNet_v6_as_v9.closeSend = ncclNet_v6->closeSend;
-    ncclNet_v6_as_v9.closeRecv = ncclNet_v6->closeRecv;
-    ncclNet_v6_as_v9.closeListen = ncclNet_v6->closeListen;
-    ncclNet_v6_as_v9.getDeviceMr = NULL;
-    ncclNet_v6_as_v9.irecvConsumed = NULL;
-    ncclNet_v6_as_v9.makeVDevice  = NULL;
+    ncclNet.name = ncclNet_v6->name;
+    ncclNet.init = ncclNet_v6->init;
+    ncclNet.devices = ncclNet_v6->devices;
+    ncclNet.getProperties = ncclNet_getProperties;
+    ncclNet.listen = ncclNet_v6->listen;
+    ncclNet.connect = ncclNet_connect;
+    ncclNet.accept =  ncclNet_accept;
+    ncclNet.regMr = ncclNet_regMr;
+    ncclNet.regMrDmaBuf = ncclNet_v6->regMrDmaBuf;
+    ncclNet.deregMr = ncclNet_v6->deregMr;
+    ncclNet.isend = ncclNet_isend;
+    ncclNet.irecv = ncclNet_irecv;
+    ncclNet.iflush = ncclNet_v6->iflush;
+    ncclNet.test = ncclNet_v6->test;
+    ncclNet.closeSend = ncclNet_v6->closeSend;
+    ncclNet.closeRecv = ncclNet_v6->closeRecv;
+    ncclNet.closeListen = ncclNet_v6->closeListen;
+    ncclNet.getDeviceMr = NULL;
+    ncclNet.irecvConsumed = NULL;
+    ncclNet.makeVDevice  = NULL;
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded net plugin %s (v6)", ncclNet_v6->name);
-    return &ncclNet_v6_as_v9;
+    return &ncclNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin_v6 symbol.");
   return NULL;
 }
 
-ncclCollNet_v9_t* getNcclCollNet_v6_as_v9(void* lib) {
+ncclCollNet_t* getNcclCollNet_v6(void* lib) {
   ncclCollNet_v6 = (ncclCollNet_v6_t*)dlsym(lib, "ncclCollNetPlugin_v6");
   if (ncclCollNet_v6) {
-    ncclCollNet_v6_as_v9.name = ncclCollNet_v6->name;
-    ncclCollNet_v6_as_v9.init = ncclCollNet_v6->init;
-    ncclCollNet_v6_as_v9.devices = ncclCollNet_v6->devices;
-    ncclCollNet_v6_as_v9.getProperties = ncclCollNet_v6_as_v9_getProperties;
-    ncclCollNet_v6_as_v9.listen = ncclCollNet_v6->listen;
-    ncclCollNet_v6_as_v9.connect = ncclCollNet_v6->connect;
-    ncclCollNet_v6_as_v9.reduceSupport = ncclCollNet_v6->reduceSupport;
-    ncclCollNet_v6_as_v9.regMr = ncclCollNet_v6_as_v9_regMr;
-    ncclCollNet_v6_as_v9.regMrDmaBuf = ncclCollNet_v6->regMrDmaBuf;
-    ncclCollNet_v6_as_v9.deregMr = ncclCollNet_v6->deregMr;
-    ncclCollNet_v6_as_v9.iallreduce = ncclCollNet_v6_as_v9_iallreduce;
-    ncclCollNet_v6_as_v9.iallgather = nullptr;
-    ncclCollNet_v6_as_v9.ireducescatter = nullptr;
-    ncclCollNet_v6_as_v9.iflush = ncclCollNet_v6->iflush;
-    ncclCollNet_v6_as_v9.test = ncclCollNet_v6->test;
-    ncclCollNet_v6_as_v9.closeColl = ncclCollNet_v6->closeColl;
-    ncclCollNet_v6_as_v9.closeListen = ncclCollNet_v6->closeListen;
+    ncclCollNet.name = ncclCollNet_v6->name;
+    ncclCollNet.init = ncclCollNet_v6->init;
+    ncclCollNet.devices = ncclCollNet_v6->devices;
+    ncclCollNet.getProperties = ncclCollNet_getProperties;
+    ncclCollNet.listen = ncclCollNet_v6->listen;
+    ncclCollNet.connect = ncclCollNet_v6->connect;
+    ncclCollNet.reduceSupport = ncclCollNet_v6->reduceSupport;
+    ncclCollNet.regMr = ncclCollNet_regMr;
+    ncclCollNet.regMrDmaBuf = ncclCollNet_v6->regMrDmaBuf;
+    ncclCollNet.deregMr = ncclCollNet_v6->deregMr;
+    ncclCollNet.iallreduce = ncclCollNet_iallreduce;
+    ncclCollNet.iallgather = nullptr;
+    ncclCollNet.ireducescatter = nullptr;
+    ncclCollNet.iflush = ncclCollNet_v6->iflush;
+    ncclCollNet.test = ncclCollNet_v6->test;
+    ncclCollNet.closeColl = ncclCollNet_v6->closeColl;
+    ncclCollNet.closeListen = ncclCollNet_v6->closeListen;
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v6)", ncclCollNet_v6->name);
-    return &ncclCollNet_v6_as_v9;
+    return &ncclCollNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v6 symbol.");
   return NULL;

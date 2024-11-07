@@ -5,19 +5,18 @@
  ************************************************************************/
 
 #include "nccl_net.h"
-#include "net_v8.h"
 #include "net_device.h"
 #include "proxy.h"
 
 #define MAX_NET_SIZE (1024*1024*1024L) // Rather than send INT_MAX which is 2G-1, send a power of two.
 #define MAX_COLLNET_SIZE (512*1024*1024L) //Set for initial collent plugins when size was not dynamically queried
 
-static ncclNet_v9_t ncclNet_v8_as_v9;
-static ncclCollNet_v9_t ncclCollNet_v8_as_v9;
+static ncclNet_t ncclNet;
+static ncclCollNet_t ncclCollNet;
 static ncclNet_v8_t* ncclNet_v8;
 static ncclCollNet_v8_t* ncclCollNet_v8;
 
-static ncclResult_t ncclNet_v8_as_v9_getProperties(int dev, ncclNetProperties_v9_t* props) {
+static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
   ncclNetProperties_v8_t p8;
   ncclResult_t ans = ncclNet_v8->getProperties(dev, &p8);
   if (ans != ncclSuccess) return ans;
@@ -41,7 +40,7 @@ static ncclResult_t ncclNet_v8_as_v9_getProperties(int dev, ncclNetProperties_v9
   return ncclSuccess;
 }
 
-static ncclResult_t ncclNet_v8_as_v9_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
   int sizeInt;
   if (size > MAX_NET_SIZE) return ncclInternalError;
   sizeInt = (int)size;
@@ -49,7 +48,7 @@ static ncclResult_t ncclNet_v8_as_v9_isend(void* sendComm, void* data, size_t si
   return ans;
 }
 
-static ncclResult_t ncclNet_v8_as_v9_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
   int sizesInt[NCCL_PROXY_MAX_SUBS];
   //reset to NULL if optional receive completion is set
   if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
@@ -61,7 +60,7 @@ static ncclResult_t ncclNet_v8_as_v9_irecv(void* recvComm, int n, void** data, s
   return ans;
 }
 
-static ncclResult_t ncclCollNet_v8_as_v9_getProperties(int dev, ncclNetProperties_v9_t* props) {
+static ncclResult_t ncclCollNet_getProperties(int dev, ncclNetProperties_t* props) {
   ncclNetProperties_v8_t p8;
   ncclResult_t ans = ncclCollNet_v8->getProperties(dev, &p8);
   if (ans != ncclSuccess) return ans;
@@ -85,7 +84,7 @@ static ncclResult_t ncclCollNet_v8_as_v9_getProperties(int dev, ncclNetPropertie
   return ncclSuccess;
 }
 
-static ncclResult_t ncclCollNet_v8_as_v9_iallreduce(void* collComm, void* sendData, void* recvData, size_t count,
+static ncclResult_t ncclCollNet_iallreduce(void* collComm, void* sendData, void* recvData, size_t count,
       ncclDataType_t dataType, ncclRedOp_t redOp, void* sendMhandle, void* recvMhandle, void** request) {
   int countInt;
   if (count > MAX_NET_SIZE) return ncclInternalError;
@@ -95,7 +94,7 @@ static ncclResult_t ncclCollNet_v8_as_v9_iallreduce(void* collComm, void* sendDa
   return ans;
 }
 
-static ncclResult_t ncclCollNet_v8_as_v9_iallgather (void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v9_t* recvParts,
+static ncclResult_t ncclCollNet_iallgather (void* collComm, void* sendData, int nRecvParts, ncclNetSGE_v9_t* recvParts,
                            size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                            void* sendMhandle, void** request) {
   ncclNetSGE_v8_t recvPartsInt;
@@ -110,7 +109,7 @@ static ncclResult_t ncclCollNet_v8_as_v9_iallgather (void* collComm, void* sendD
   return ans;
 }
 
-static ncclResult_t ncclCollNet_v8_as_v9_ireducescatter(void* collComm, int nSendParts, ncclNetSGE_v9_t* sendParts, void* recvData,
+static ncclResult_t ncclCollNet_ireducescatter(void* collComm, int nSendParts, ncclNetSGE_v9_t* sendParts, void* recvData,
                                size_t bytesPerRank, size_t windowOffset, size_t windowBytes,
                                ncclDataType_t dataType, ncclRedOp_t redOp,
                                void* recvMhandle, void** request) {
@@ -127,58 +126,58 @@ static ncclResult_t ncclCollNet_v8_as_v9_ireducescatter(void* collComm, int nSen
   return ans;
 }
 
-ncclNet_v9_t* getNcclNet_v8_as_v9(void* lib) {
+ncclNet_t* getNcclNet_v8(void* lib) {
   ncclNet_v8 = (ncclNet_v8_t*)dlsym(lib, "ncclNetPlugin_v8");
   if (ncclNet_v8) {
-    ncclNet_v8_as_v9.name = ncclNet_v8->name;
-    ncclNet_v8_as_v9.init = ncclNet_v8->init;
-    ncclNet_v8_as_v9.devices = ncclNet_v8->devices;
-    ncclNet_v8_as_v9.getProperties = ncclNet_v8_as_v9_getProperties;
-    ncclNet_v8_as_v9.listen = ncclNet_v8->listen;
-    ncclNet_v8_as_v9.connect = ncclNet_v8->connect;
-    ncclNet_v8_as_v9.accept =  ncclNet_v8->accept;
-    ncclNet_v8_as_v9.regMr = ncclNet_v8->regMr;
-    ncclNet_v8_as_v9.regMrDmaBuf = ncclNet_v8->regMrDmaBuf;
-    ncclNet_v8_as_v9.deregMr = ncclNet_v8->deregMr;
-    ncclNet_v8_as_v9.isend = ncclNet_v8_as_v9_isend;
-    ncclNet_v8_as_v9.irecv = ncclNet_v8_as_v9_irecv;
-    ncclNet_v8_as_v9.iflush = ncclNet_v8->iflush;
-    ncclNet_v8_as_v9.test = ncclNet_v8->test;
-    ncclNet_v8_as_v9.closeSend = ncclNet_v8->closeSend;
-    ncclNet_v8_as_v9.closeRecv = ncclNet_v8->closeRecv;
-    ncclNet_v8_as_v9.closeListen = ncclNet_v8->closeListen;
-    ncclNet_v8_as_v9.getDeviceMr = ncclNet_v8->getDeviceMr;
-    ncclNet_v8_as_v9.irecvConsumed = ncclNet_v8->irecvConsumed;
-    ncclNet_v8_as_v9.makeVDevice   = NULL;
+    ncclNet.name = ncclNet_v8->name;
+    ncclNet.init = ncclNet_v8->init;
+    ncclNet.devices = ncclNet_v8->devices;
+    ncclNet.getProperties = ncclNet_getProperties;
+    ncclNet.listen = ncclNet_v8->listen;
+    ncclNet.connect = ncclNet_v8->connect;
+    ncclNet.accept =  ncclNet_v8->accept;
+    ncclNet.regMr = ncclNet_v8->regMr;
+    ncclNet.regMrDmaBuf = ncclNet_v8->regMrDmaBuf;
+    ncclNet.deregMr = ncclNet_v8->deregMr;
+    ncclNet.isend = ncclNet_isend;
+    ncclNet.irecv = ncclNet_irecv;
+    ncclNet.iflush = ncclNet_v8->iflush;
+    ncclNet.test = ncclNet_v8->test;
+    ncclNet.closeSend = ncclNet_v8->closeSend;
+    ncclNet.closeRecv = ncclNet_v8->closeRecv;
+    ncclNet.closeListen = ncclNet_v8->closeListen;
+    ncclNet.getDeviceMr = ncclNet_v8->getDeviceMr;
+    ncclNet.irecvConsumed = ncclNet_v8->irecvConsumed;
+    ncclNet.makeVDevice   = NULL;
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded net plugin %s (v8)", ncclNet_v8->name);
-    return &ncclNet_v8_as_v9;
+    return &ncclNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin_v8 symbol.");
   return NULL;
 }
 
-ncclCollNet_v9_t* getNcclCollNet_v8_as_v9(void* lib) {
+ncclCollNet_t* getNcclCollNet_v8(void* lib) {
   ncclCollNet_v8 = (ncclCollNet_v8_t*)dlsym(lib, "ncclCollNetPlugin_v8");
   if (ncclCollNet_v8) {
-    ncclCollNet_v8_as_v9.name = ncclCollNet_v8->name;
-    ncclCollNet_v8_as_v9.init = ncclCollNet_v8->init;
-    ncclCollNet_v8_as_v9.devices = ncclCollNet_v8->devices;
-    ncclCollNet_v8_as_v9.getProperties = ncclCollNet_v8_as_v9_getProperties;
-    ncclCollNet_v8_as_v9.listen = ncclCollNet_v8->listen;
-    ncclCollNet_v8_as_v9.connect = ncclCollNet_v8->connect;
-    ncclCollNet_v8_as_v9.reduceSupport = ncclCollNet_v8->reduceSupport;
-    ncclCollNet_v8_as_v9.regMr = ncclCollNet_v8->regMr;
-    ncclCollNet_v8_as_v9.regMrDmaBuf = ncclCollNet_v8->regMrDmaBuf;
-    ncclCollNet_v8_as_v9.deregMr = ncclCollNet_v8->deregMr;
-    ncclCollNet_v8_as_v9.iallreduce = ncclCollNet_v8_as_v9_iallreduce;
-    ncclCollNet_v8_as_v9.iallgather = ncclCollNet_v8_as_v9_iallgather;
-    ncclCollNet_v8_as_v9.ireducescatter = ncclCollNet_v8_as_v9_ireducescatter;
-    ncclCollNet_v8_as_v9.iflush = ncclCollNet_v8->iflush;
-    ncclCollNet_v8_as_v9.test = ncclCollNet_v8->test;
-    ncclCollNet_v8_as_v9.closeColl = ncclCollNet_v8->closeColl;
-    ncclCollNet_v8_as_v9.closeListen = ncclCollNet_v8->closeListen;
+    ncclCollNet.name = ncclCollNet_v8->name;
+    ncclCollNet.init = ncclCollNet_v8->init;
+    ncclCollNet.devices = ncclCollNet_v8->devices;
+    ncclCollNet.getProperties = ncclCollNet_getProperties;
+    ncclCollNet.listen = ncclCollNet_v8->listen;
+    ncclCollNet.connect = ncclCollNet_v8->connect;
+    ncclCollNet.reduceSupport = ncclCollNet_v8->reduceSupport;
+    ncclCollNet.regMr = ncclCollNet_v8->regMr;
+    ncclCollNet.regMrDmaBuf = ncclCollNet_v8->regMrDmaBuf;
+    ncclCollNet.deregMr = ncclCollNet_v8->deregMr;
+    ncclCollNet.iallreduce = ncclCollNet_iallreduce;
+    ncclCollNet.iallgather = ncclCollNet_iallgather;
+    ncclCollNet.ireducescatter = ncclCollNet_ireducescatter;
+    ncclCollNet.iflush = ncclCollNet_v8->iflush;
+    ncclCollNet.test = ncclCollNet_v8->test;
+    ncclCollNet.closeColl = ncclCollNet_v8->closeColl;
+    ncclCollNet.closeListen = ncclCollNet_v8->closeListen;
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v8)", ncclCollNet_v8->name);
-    return &ncclCollNet_v8_as_v9;
+    return &ncclCollNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v8 symbol.");
   return NULL;

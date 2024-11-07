@@ -15,16 +15,16 @@
 //#include <sys/stat.h>
 //#include <unistd.h>
 
-extern ncclNet_v9_t* getNcclNet_v9(void* netPluginLib);
-extern ncclNet_v9_t* getNcclNet_v5_as_v9(void* netPluginLib);
-extern ncclNet_v9_t* getNcclNet_v6_as_v9(void* netPluginLib);
-extern ncclNet_v9_t* getNcclNet_v7_as_v9(void* netPluginLib);
-extern ncclNet_v9_t* getNcclNet_v8_as_v9(void* netPluginLib);
-extern ncclCollNet_v9_t* getNcclCollNet_v9(void* netPluginLib);
-extern ncclCollNet_v9_t* getNcclCollNet_v5_as_v9(void* netPluginLib);
-extern ncclCollNet_v9_t* getNcclCollNet_v6_as_v9(void* netPluginLib);
-extern ncclCollNet_v9_t* getNcclCollNet_v7_as_v9(void* netPluginLib);
-extern ncclCollNet_v9_t* getNcclCollNet_v8_as_v9(void* netPluginLib);
+extern ncclNet_t* getNcclNet_v9(void* netPluginLib);
+extern ncclNet_t* getNcclNet_v5(void* netPluginLib);
+extern ncclNet_t* getNcclNet_v6(void* netPluginLib);
+extern ncclNet_t* getNcclNet_v7(void* netPluginLib);
+extern ncclNet_t* getNcclNet_v8(void* netPluginLib);
+extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
+extern ncclCollNet_t* getNcclCollNet_v5(void* netPluginLib);
+extern ncclCollNet_t* getNcclCollNet_v6(void* netPluginLib);
+extern ncclCollNet_t* getNcclCollNet_v7(void* netPluginLib);
+extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
 
 #define MAX_NET_SIZE (1024*1024*1024L) // Rather than send INT_MAX which is 2G-1, send a power of two.
 #define MAX_COLLNET_SIZE (512*1024*1024L) //Set for initial collent plugins when size was not dynamically queried
@@ -148,22 +148,22 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   ncclNets[0] = getNcclNet_v9(netPluginLib);
   if (ncclNets[0]) ncclNetsVer[0] = 9;
   if (ncclNets[0] == nullptr) {
-    ncclNets[0] = getNcclNet_v8_as_v9(netPluginLib);
+    ncclNets[0] = getNcclNet_v8(netPluginLib);
     if (ncclNets[0]) ncclNetsVer[0] = 8;
   }
   if (ncclNets[0] == nullptr) {
     // Try v7 plugin
-    ncclNets[0] = getNcclNet_v7_as_v9(netPluginLib);
+    ncclNets[0] = getNcclNet_v7(netPluginLib);
     if (ncclNets[0]) ncclNetsVer[0] = 7;
   }
   if (ncclNets[0] == nullptr) {
     // Try v6 plugin
-    ncclNets[0] = getNcclNet_v6_as_v9(netPluginLib);
+    ncclNets[0] = getNcclNet_v6(netPluginLib);
     if (ncclNets[0]) ncclNetsVer[0] = 6;
   }
   if (ncclNets[0] == nullptr) {
     // Try v5 plugin
-    ncclNets[0] = getNcclNet_v5_as_v9(netPluginLib);
+    ncclNets[0] = getNcclNet_v5(netPluginLib);
     if (ncclNets[0]) ncclNetsVer[0] = 5;
   }
   if (ncclNets[0] == nullptr) {
@@ -173,16 +173,16 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   // Check for CollNet
   ncclCollNets[0] = getNcclCollNet_v9(netPluginLib);
   if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v8_as_v9(netPluginLib);;
+    ncclCollNets[0] = getNcclCollNet_v8(netPluginLib);
   }
   if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v7_as_v9(netPluginLib);;
+    ncclCollNets[0] = getNcclCollNet_v7(netPluginLib);
   }
   if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v6_as_v9(netPluginLib);
+    ncclCollNets[0] = getNcclCollNet_v6(netPluginLib);
   }
   if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v5_as_v9(netPluginLib);
+    ncclCollNets[0] = getNcclCollNet_v5(netPluginLib);
   }
 
   ++netPluginRefCount;
