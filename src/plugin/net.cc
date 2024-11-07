@@ -15,19 +15,17 @@
 //#include <sys/stat.h>
 //#include <unistd.h>
 
-extern ncclNet_t* getNcclNet_v9(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v5(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v6(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v7(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v8(void* netPluginLib);
-extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
+extern ncclNet_t* getNcclNet_v9(void* netPluginLib);
+
 extern ncclCollNet_t* getNcclCollNet_v5(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v6(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v7(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
-
-#define MAX_NET_SIZE (1024*1024*1024L) // Rather than send INT_MAX which is 2G-1, send a power of two.
-#define MAX_COLLNET_SIZE (512*1024*1024L) //Set for initial collent plugins when size was not dynamically queried
+extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
 ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr, &ncclNetIb, &ncclNetSocket };

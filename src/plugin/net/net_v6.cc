@@ -8,9 +8,6 @@
 #include "net_device.h"
 #include "proxy.h"
 
-#define MAX_NET_SIZE (1024*1024*1024L) // Rather than send INT_MAX which is 2G-1, send a power of two.
-#define MAX_COLLNET_SIZE (512*1024*1024L) //Set for initial collent plugins when size was not dynamically queried
-
 static ncclNet_t ncclNet;
 static ncclCollNet_t ncclCollNet;
 static ncclNet_v6_t* ncclNet_v6;
