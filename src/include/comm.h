@@ -606,8 +606,8 @@ struct ncclComm {
   struct ncclRegCache regCache;
   uint64_t endMagic;
   int isAllNvlink;
-  bool isGdrAvailGlobal;
   bool useNetPXN;
+  bool useGdr;
 };
 
 enum ncclLaunchMode {

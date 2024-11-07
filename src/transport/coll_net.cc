@@ -1174,7 +1174,7 @@ static ncclResult_t collnetRegisterBuffer(struct ncclComm* comm, const void* use
           INFO(NCCL_REG, "rank %d - COLLNET register userbuff %p (handle %p), buffSize %ld, type %s", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
         }
       } else {
-        WARN("rank %d - COLLNET failed to register userbuff %p (handle %p), buffSize %ld, type %s, GPURDMA is not enabled", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
+        WARN("rank %d - COLLNET failed to register userbuff %p (handle %p), buffSize %ld, type %s, GDR is not enabled", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
       }
     }
   }
@@ -1192,7 +1192,7 @@ ncclResult_t ncclCollnetLocalRegisterBuffer(struct ncclComm* comm, const void* u
 
   *outRegBufFlag = 0;
   *outHandle = NULL;
-  if (comm && userbuff && buffSize > 0 && comm->isGdrAvailGlobal) {
+  if (comm && userbuff && buffSize > 0) {
     NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
     NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
   }
@@ -1224,7 +1224,7 @@ ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* u
   size_t baseSendSize = 0;
 
   *outRegBufFlag = 0;
-  if (comm && userbuff && buffSize > 0 && comm->isGdrAvailGlobal) {
+  if (comm && userbuff && buffSize > 0) {
     CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)userbuff), ret, fail);
     NCCLCHECKGOTO(ncclCommRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
     NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
