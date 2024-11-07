@@ -194,36 +194,38 @@ class ncclCommInitRankParseListTest : public ncclCommInitRankOutputTest {
 };
 
 // Verify correct behavior in both proto and algo
+// Do not validate the default for the settings (algo/proto) that is not
+// being tested, as it may be set outside the test.
 TEST_F(ncclCommInitRankParseListTest, protoEmpty) {
-    const char regex[] = "    Broadcast . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "       Reduce . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllGather . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "ReduceScatter . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllReduce . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*";
+    const char regex[] = "    Broadcast . *1 *2 *1 *. *. *. *. *. *. *. *..*"
+                         "       Reduce . *1 *2 *1 *. *. *. *. *. *. *. *..*"
+                         "    AllGather . *1 *2 *1 *. *. *. *. *. *. *. *..*"
+                         "ReduceScatter . *1 *2 *1 *. *. *. *. *. *. *. *..*"
+                         "    AllReduce . *1 *2 *1 *. *. *. *. *. *. *. *..*";
     runTest("NCCL_PROTO", "", ncclSuccess, ncclSuccess, ncclSuccess, regex);
 }
 TEST_F(ncclCommInitRankParseListTest, algoEmpty) {
-    const char regex[] = "    Broadcast . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "       Reduce . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllGather . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "ReduceScatter . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllReduce . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*";
+    const char regex[] = "    Broadcast . *. *. *. *. *1 *1 *1 *1 *1 *1 *1.*"
+                         "       Reduce . *. *. *. *. *1 *1 *1 *1 *1 *1 *1.*"
+                         "    AllGather . *. *. *. *. *1 *1 *1 *1 *1 *1 *1.*"
+                         "ReduceScatter . *. *. *. *. *1 *1 *1 *1 *1 *1 *1.*"
+                         "    AllReduce . *. *. *. *. *1 *1 *1 *1 *1 *1 *1.*";
     runTest("NCCL_ALGO", "", ncclSuccess, ncclSuccess, ncclSuccess, regex);
 }
 TEST_F(ncclCommInitRankParseListTest, protoValid) {
-    const char regex[] = "    Broadcast . *1 *0 *0 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "       Reduce . *1 *0 *0 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllGather . *1 *0 *0 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "ReduceScatter . *1 *0 *0 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllReduce . *1 *0 *0 *. *1 *1 *1 *1 *1 *1 *1.*";
+    const char regex[] = "    Broadcast . *1 *0 *0 *. *. *. *. *. *. *. *..*"
+                         "       Reduce . *1 *0 *0 *. *. *. *. *. *. *. *..*"
+                         "    AllGather . *1 *0 *0 *. *. *. *. *. *. *. *..*"
+                         "ReduceScatter . *1 *0 *0 *. *. *. *. *. *. *. *..*"
+                         "    AllReduce . *1 *0 *0 *. *. *. *. *. *. *. *..*";
     runTest("NCCL_PROTO", "LL", ncclSuccess, ncclSuccess, ncclSuccess, regex);
 }
 TEST_F(ncclCommInitRankParseListTest, algoValid) {
-    const char regex[] = "    Broadcast . *1 *2 *1 *. *0 *1 *0 *0 *0 *0 *0.*"
-                         "       Reduce . *1 *2 *1 *. *0 *1 *0 *0 *0 *0 *0.*"
-                         "    AllGather . *1 *2 *1 *. *0 *1 *0 *0 *0 *0 *0.*"
-                         "ReduceScatter . *1 *2 *1 *. *0 *1 *0 *0 *0 *0 *0.*"
-                         "    AllReduce . *1 *2 *1 *. *0 *1 *0 *0 *0 *0 *0.*";
+    const char regex[] = "    Broadcast . *. *. *. *. *0 *1 *0 *0 *0 *0 *0.*"
+                         "       Reduce . *. *. *. *. *0 *1 *0 *0 *0 *0 *0.*"
+                         "    AllGather . *. *. *. *. *0 *1 *0 *0 *0 *0 *0.*"
+                         "ReduceScatter . *. *. *. *. *0 *1 *0 *0 *0 *0 *0.*"
+                         "    AllReduce . *. *. *. *. *0 *1 *0 *0 *0 *0 *0.*";
     runTest("NCCL_ALGO", "RING", ncclSuccess, ncclSuccess, ncclSuccess, regex);
 }
 TEST_F(ncclCommInitRankParseListTest, protoBad) {
@@ -240,35 +242,35 @@ TEST_F(ncclCommInitRankParseListTest, protoBadPrefixedElement) {
     runTest("NCCL_PROTO", "reduce:LL,bad,Simple", ncclSuccess, ncclInvalidUsage, ncclSuccess, "NCCL WARN Unrecognized element token");
 }
 TEST_F(ncclCommInitRankParseListTest, notGlobal) {
-    const char regex[] = "    Broadcast . *0 *1 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "       Reduce . *0 *1 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllGather . *0 *1 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "ReduceScatter . *0 *1 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllReduce . *0 *1 *1 *. *1 *1 *1 *1 *1 *1 *1.*";
+    const char regex[] = "    Broadcast . *0 *1 *1 *. *. *. *. *. *. *. *..*"
+                         "       Reduce . *0 *1 *1 *. *. *. *. *. *. *. *..*"
+                         "    AllGather . *0 *1 *1 *. *. *. *. *. *. *. *..*"
+                         "ReduceScatter . *0 *1 *1 *. *. *. *. *. *. *. *..*"
+                         "    AllReduce . *0 *1 *1 *. *. *. *. *. *. *. *..*";
     runTest("NCCL_PROTO", "^LL", ncclSuccess, ncclSuccess, ncclSuccess, regex);
 }
 TEST_F(ncclCommInitRankParseListTest, funcOverride) {
-    const char regex[] = "    Broadcast . *1 *0 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "       Reduce . *1 *0 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllGather . *1 *0 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "ReduceScatter . *1 *0 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllReduce . *0 *1 *0 *. *1 *1 *1 *1 *1 *1 *1.*";
+    const char regex[] = "    Broadcast . *1 *0 *1 *. *. *. *. *. *. *. *..*"
+                         "       Reduce . *1 *0 *1 *. *. *. *. *. *. *. *..*"
+                         "    AllGather . *1 *0 *1 *. *. *. *. *. *. *. *..*"
+                         "ReduceScatter . *1 *0 *1 *. *. *. *. *. *. *. *..*"
+                         "    AllReduce . *0 *1 *0 *. *. *. *. *. *. *. *..*";
     runTest("NCCL_PROTO", "LL,Simple;allreduce:LL128", ncclSuccess, ncclSuccess, ncclSuccess, regex);
 }
 TEST_F(ncclCommInitRankParseListTest, globalNotWithFuncOverrides) {
-    const char regex[] = "    Broadcast . *0 *0 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "       Reduce . *0 *1 *0 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllGather . *0 *1 *0 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "ReduceScatter . *0 *1 *0 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllReduce . *0 *1 *0 *. *1 *1 *1 *1 *1 *1 *1.*";
+    const char regex[] = "    Broadcast . *0 *0 *1 *. *. *. *. *. *. *. *..*"
+                         "       Reduce . *0 *1 *0 *. *. *. *. *. *. *. *..*"
+                         "    AllGather . *0 *1 *0 *. *. *. *. *. *. *. *..*"
+                         "ReduceScatter . *0 *1 *0 *. *. *. *. *. *. *. *..*"
+                         "    AllReduce . *0 *1 *0 *. *. *. *. *. *. *. *..*";
     runTest("NCCL_PROTO", "^LL,Simple;BROADCAST:Simple", ncclSuccess, ncclSuccess, ncclSuccess, regex);
 }
 TEST_F(ncclCommInitRankParseListTest, noGlobal) {
-    const char regex[] = "    Broadcast . *1 *1 *0 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "       Reduce . *1 *0 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllGather . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "ReduceScatter . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*"
-                         "    AllReduce . *1 *2 *1 *. *1 *1 *1 *1 *1 *1 *1.*";
+    const char regex[] = "    Broadcast . *1 *1 *0 *. *. *. *. *. *. *. *..*"
+                         "       Reduce . *1 *0 *1 *. *. *. *. *. *. *. *..*"
+                         "    AllGather . *1 *2 *1 *. *. *. *. *. *. *. *..*"
+                         "ReduceScatter . *1 *2 *1 *. *. *. *. *. *. *. *..*"
+                         "    AllReduce . *1 *2 *1 *. *. *. *. *. *. *. *..*";
     runTest("NCCL_PROTO", "broadcast:^Simple;reduce:Simple,LL", ncclSuccess, ncclSuccess, ncclSuccess, regex);
 }
 TEST_F(ncclCommInitRankParseListTest, funcOverrideGlobalNotFirst) {

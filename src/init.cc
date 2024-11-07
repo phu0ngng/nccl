@@ -2415,6 +2415,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
         accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
         CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
       }
+      if (0 == p2p && i != cudaDev) INFO(NCCL_ALLOC, "P2P not supported between GPU%d and GPU%d", cudaDev, i);
     }
     goto exit;
   }
