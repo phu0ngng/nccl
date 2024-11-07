@@ -1489,6 +1489,64 @@ ncclResult_t ncclNetDeregBuffer(struct ncclComm* comm, struct ncclProxyConnector
   return ncclSuccess;
 }
 
+static ncclResult_t netRegisterBuffer(ncclComm* comm, const void* userbuff, size_t buffSize, struct ncclConnector** peerConns, int nPeers, struct ncclReg* regRecord, int* outRegBufFlag, void** outHandle) {
+  ncclResult_t ret = ncclSuccess;
+
+  if (regRecord) {
+    for (int p = 0; p < nPeers; ++p) {
+      struct ncclConnector* peerConn = peerConns[p];
+      struct ncclProxyConnector* peerProxyConn = NULL;
+      struct ncclRegNetHandles* netHandle = NULL;
+      bool found = false;
+      if (peerConn == NULL) continue;
+      peerProxyConn = &peerConn->proxyConn;
+      netHandle = regRecord->netHandleHead;
+      while (netHandle) {
+        if (netHandle->proxyConn == peerProxyConn) {
+          found = true;
+          break;
+        }
+        netHandle = netHandle->next;
+      }
+      if (found) {
+        *outRegBufFlag = 1;
+        outHandle[p] = netHandle->handle;
+        INFO(NCCL_REG, "rank %d - NET reuse buffer %p size %ld (baseAddr %p size %ld) handle %p", comm->rank, userbuff, buffSize, (void*)regRecord->addr, regRecord->pages * comm->regCache.pageSize, netHandle->handle);
+      } else {
+        struct netRegInfo info = { regRecord->addr, regRecord->pages * comm->regCache.pageSize };
+        void* handle = NULL;
+
+        if (peerConn->conn.flags & NCCL_DIRECT_NIC) {
+          NCCLCHECKGOTO(ncclProxyCallBlocking(comm, peerProxyConn, ncclProxyMsgRegister, &info, sizeof(struct netRegInfo), &handle, sizeof(void*)), ret, fail);
+          if (handle) {
+            struct ncclRegNetHandles* netHandle;
+            regRecord->state |= NET_REG_COMPLETE;
+            NCCLCHECK(ncclCalloc(&netHandle, 1));
+            netHandle->handle = handle;
+            netHandle->proxyConn = peerProxyConn;
+            netHandle->next = regRecord->netHandleHead;
+            regRecord->netHandleHead = netHandle;
+            outHandle[p] = handle;
+            *outRegBufFlag = 1;
+            INFO(NCCL_REG, "rank %d - NET register userbuff %p (handle %p), buffSize %ld", comm->rank, userbuff, handle, buffSize);
+          } else {
+            goto fail;
+          }
+        } else {
+          goto fail;
+        }
+      }
+    }
+  }
+
+exit:
+  return ret;
+fail:
+  *outRegBufFlag = 0;
+  WARN("rank %d failed to NET register userbuff %p buffSize %ld", comm->rank, userbuff, buffSize);
+  goto exit;
+}
+
 ncclResult_t ncclNetLocalRegisterBuffer(ncclComm* comm, const void* userbuff, size_t buffSize, struct ncclConnector** peerConns, int nPeers, int* outRegBufFlag, void** outHandle) {
   ncclResult_t ret = ncclSuccess;
   struct ncclReg *regRecord = NULL;
@@ -1496,118 +1554,54 @@ ncclResult_t ncclNetLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
   *outRegBufFlag = 0;
   if (comm && userbuff && buffSize > 0 && nPeers > 0 && comm->isGdrAvailGlobal) {
     NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
-    if (regRecord) {
-      for (int p = 0; p < nPeers; ++p) {
-        struct ncclConnector* peerConn = peerConns[p];
-        struct ncclProxyConnector* peerProxyConn = NULL;
-        struct ncclRegNetHandles* netHandle = NULL;
-        bool found = false;
-        if (peerConn == NULL) continue;
-        peerProxyConn = &peerConn->proxyConn;
-        netHandle = regRecord->netHandleHead;
-        while (netHandle) {
-          if (netHandle->proxyConn == peerProxyConn) {
-            found = true;
-            break;
-          }
-          netHandle = netHandle->next;
-        }
-        if (found) {
-          *outRegBufFlag = 1;
-          outHandle[p] = netHandle->handle;
-          INFO(NCCL_REG, "rank %d - NET local reuse buffer %p size %ld (baseAddr %p size %ld) handle %p", comm->rank, userbuff, buffSize, (void*)regRecord->addr, regRecord->pages * comm->regCache.pageSize, netHandle->handle);
-        } else {
-          struct netRegInfo info = { regRecord->addr, regRecord->pages * comm->regCache.pageSize };
-          void* handle = NULL;
-
-          if (peerConn->conn.flags & NCCL_DIRECT_NIC) {
-            NCCLCHECKGOTO(ncclProxyCallBlocking(comm, peerProxyConn, ncclProxyMsgRegister, &info, sizeof(struct netRegInfo), &handle, sizeof(void*)), ret, fail);
-            if (handle) {
-              struct ncclRegNetHandles* netHandle;
-              regRecord->state |= NET_REG_COMPLETE;
-              NCCLCHECK(ncclCalloc(&netHandle, 1));
-              netHandle->handle = handle;
-              netHandle->proxyConn = peerProxyConn;
-              netHandle->next = regRecord->netHandleHead;
-              regRecord->netHandleHead = netHandle;
-              outHandle[p] = handle;
-              *outRegBufFlag = 1;
-              INFO(NCCL_REG, "rank %d - NET local register userbuff %p (handle %p), buffSize %ld", comm->rank, userbuff, handle, buffSize);
-            } else {
-              goto fail;
-            }
-          } else {
-            goto fail;
-          }
-        }
-      }
-    }
+    NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
   }
 
 exit:
   return ret;
 fail:
   *outRegBufFlag = 0;
-  WARN("rank %d failed to NET local register userbuff %p buffSize %ld", comm->rank, userbuff, buffSize);
   goto exit;
 }
 
 struct ncclNetCleanupCallback {
   struct ncclCommCallback base;
-  struct ncclProxyConnector* proxyConn;
-  void* mhandle;
+  struct ncclComm *comm;
+  struct ncclReg *reg;
 };
 
 static ncclResult_t cleanupNet(struct ncclComm* comm, struct ncclCommCallback* cb) {
   struct ncclNetCleanupCallback* obj = (struct ncclNetCleanupCallback*)cb;
-  NCCLCHECK(ncclNetDeregBuffer(comm, obj->proxyConn, obj->mhandle));
+  NCCLCHECK(ncclCommDeregister(obj->comm, (void*)obj->reg));
   free(obj);
   return ncclSuccess;
 }
 
 ncclResult_t ncclNetGraphRegisterBuffer(ncclComm* comm, const void* userbuff, size_t buffSize, struct ncclConnector** peerConns, int nPeers, int* outRegBufFlag, void** outHandle, struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next>* cleanupQueue, int* nCleanupQueueElts) {
   ncclResult_t ret = ncclSuccess;
-  struct ncclRegCache* cache = &comm->regCache;
-  uintptr_t pageSize = cache->pageSize;
-  uintptr_t addr = (uintptr_t)userbuff & -pageSize;
-  size_t size = DIVUP((uintptr_t)userbuff - addr + buffSize, pageSize) * pageSize;
-  netRegInfo info = {addr, size};
-  struct ncclNetCleanupCallback* record = NULL;
+  struct ncclNetCleanupCallback *record = NULL;
+  struct ncclReg *regRecord = NULL;
+  void *baseSend;
+  size_t baseSendSize;
 
   *outRegBufFlag = 0;
   if (comm && userbuff && buffSize > 0 && nPeers > 0 && comm->isGdrAvailGlobal) {
-    for (int p = 0; p < nPeers; ++p) {
-      void* handle = NULL;
-      struct ncclConnector* peerConn = peerConns[p];
-      struct ncclProxyConnector* peerProxyConn = NULL;
-      if (peerConn == NULL) continue;
-      peerProxyConn = &peerConn->proxyConn;
-      if (peerConn->conn.flags & NCCL_DIRECT_NIC) {
-        NCCLCHECKGOTO(ncclProxyCallBlocking(comm, peerProxyConn, ncclProxyMsgRegister, &info, sizeof(struct netRegInfo), &handle, sizeof(void*)), ret, fail);
-        if (handle) {
-          NCCLCHECKGOTO(ncclCalloc(&record, 1), ret, fail);
-          record->base.fn = cleanupNet;
-          record->proxyConn = peerProxyConn;
-          outHandle[p] = record->mhandle = handle;
-          *outRegBufFlag = 1;
-          ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
-          if (nCleanupQueueElts) *nCleanupQueueElts += 1;
-        } else {
-          goto fail;
-        }
-        INFO(NCCL_REG, "rank %d - NET graph register userbuff %p (handle %p), buffSize %ld", comm->rank, userbuff, handle, buffSize);
-      } else {
-        goto fail;
-      }
+    CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)userbuff), ret, fail);
+    NCCLCHECKGOTO(ncclCommRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
+    NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
+    if (*outRegBufFlag) {
+      NCCLCHECKGOTO(ncclCalloc(&record, 1), ret, fail);
+      record->base.fn = cleanupNet;
+      record->comm = comm;
+      record->reg = regRecord;
+      ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
+      if (nCleanupQueueElts) *nCleanupQueueElts += 1;
     }
   }
-
 exit:
   return ret;
 fail:
   *outRegBufFlag = 0;
-  *outHandle = NULL;
-  WARN("rank %d failed to NET graph register userbuff %p buffSize %ld", comm->rank, userbuff, buffSize);
   goto exit;
 }
 

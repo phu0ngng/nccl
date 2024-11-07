@@ -131,7 +131,10 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
     // The next M entries contain sendData, connection information for send connections
     // It's not guaranteed that each entry of data has the same number of total or send/recv specific connections
     int p = i-(done+1);
-    if (recvMask || sendMask) NCCLCHECKGOTO(ncclCalloc(data+p, 2*MAXCHANNELS), ret, fail);
+    if (recvMask || sendMask) {
+      if (data[p] == NULL) NCCLCHECKGOTO(ncclCalloc(data + p, 2 * MAXCHANNELS), ret, fail);
+      else memset(data[p], 0, 2 * MAXCHANNELS * sizeof(struct ncclConnect));
+    }
     recvData[p] = data[p];
     int sendChannels = 0, recvChannels = 0;
     int type;
@@ -220,22 +223,18 @@ ncclResult_t ncclTransportP2pSetup(struct ncclComm* comm, struct ncclTopoGraph* 
             }
             TIME_STOP(4);
           }
-          if (sendMask || recvMask) {
-            free(data[p]);
-            data[p] = NULL;
-          }
         }
-	if (ncclParamReportConnectProgress() && comm->rank == 0 && done > 0) {
+        if (ncclParamReportConnectProgress() && comm->rank == 0 && done > 0) {
           struct timeval now;
           gettimeofday(&now, NULL);
-          if (((now.tv_sec - timeLast.tv_sec)*1.0 + (now.tv_usec-timeLast.tv_usec)*1e-6) > 1) {
-            float elapsed = (now.tv_sec - timeStart.tv_sec)*1.0 + (now.tv_usec-timeStart.tv_usec)*1e-6;
-	    float remaining = elapsed*(comm->nRanks-done)/done;
+          if (((now.tv_sec - timeLast.tv_sec) * 1.0 + (now.tv_usec - timeLast.tv_usec) * 1e-6) > 1) {
+            float elapsed = (now.tv_sec - timeStart.tv_sec) * 1.0 + (now.tv_usec - timeStart.tv_usec) * 1e-6;
+            float remaining = elapsed * (comm->nRanks - done) / done;
             printf("%sP2p connect: %g%% Elapsed %d:%02d Remaining %d:%02d                                       ",
-                timeReported ? "\r" : "", done*100.0/comm->nRanks, ((int)elapsed)/60, ((int)elapsed)%60, ((int)remaining)/60, ((int)remaining)%60);
+              timeReported ? "\r" : "", done * 100.0 / comm->nRanks, ((int)elapsed) / 60, ((int)elapsed) % 60, ((int)remaining) / 60, ((int)remaining) % 60);
             fflush(stdout);
             timeReported = true;
-	    timeLast = now; // struct copy;
+            timeLast = now; // struct copy;
           }
         }
       }

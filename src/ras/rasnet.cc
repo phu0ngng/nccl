@@ -419,8 +419,9 @@ void rasSocksHandleTimeouts(int64_t now, int64_t* nextWakeup) {
       }
     } // if (sock->status == RAS_SOCK_TERMINATING)
 
-    // Terminate sockets that haven't been used in a good while.  This won't trigger for anything important because
-    // important sockets have shorter timeouts so they should've already been handled.
+    // Terminate sockets that haven't been used in a good while.  In principle this shouldn't trigger for anything
+    // important due to shorter timeouts on RAS network connections, but in case of weird situations like process
+    // suspend, rasSocketTerminate will do additional checking.
     if (sock->status == RAS_SOCK_READY) {
       if (now - std::max(sock->lastSendTime, sock->lastRecvTime) > RAS_IDLE_TIMEOUT) {
         INFO(NCCL_RAS, "RAS idle timeout (%lds) on socket connection with %s",
@@ -451,9 +452,10 @@ void rasSocketTerminate(struct rasSocket* sock, bool finalize, uint64_t startRet
       conn->sockIdx = -1;
 
       // Don't attempt to retry on sockets that have been unused for so long that the remote peer probably
-      // deliberately closed them.
-      if (retry &&
-          clockNano() - std::max(sock->lastSendTime, sock->lastRecvTime) < RAS_IDLE_TIMEOUT - RAS_IDLE_GRACE_PERIOD) {
+      // deliberately closed them.  Make an exception for sockets that are part of the RAS network links.
+      if ((retry &&
+           clockNano() - std::max(sock->lastSendTime, sock->lastRecvTime) < RAS_IDLE_TIMEOUT - RAS_IDLE_GRACE_PERIOD) ||
+          rasLinkFindConn(&rasNextLink, sock->connIdx) != -1 || rasLinkFindConn(&rasPrevLink, sock->connIdx) != -1) {
         // For connections that were fine until now, the connection-level timeout starts at termination, and possibly
         // even earlier, depending on what event trigerred the termination -- if it was another timeout expiring, then
         // we need to include that timeout as well.
@@ -481,10 +483,10 @@ void rasSocketTerminate(struct rasSocket* sock, bool finalize, uint64_t startRet
             free(meta);
           }
         } // while (meta)
-
-        // Stop collectives from waiting for a response over this connection.
-        rasCollsPurgeConn(sock->connIdx);
       } // if (retry)
+
+      // Stop collectives from waiting for a response over this connection.
+      rasCollsPurgeConn(sock->connIdx);
     } // if (conn->sockIdx == sock-rasSockets)
   } // if (sock->connIdx != -1)
 

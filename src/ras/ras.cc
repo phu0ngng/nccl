@@ -95,7 +95,7 @@ ncclResult_t ncclRasCommInit(struct ncclComm* comm, struct rasRankInit* myRank) 
       NCCLCHECKGOTO(ncclSocketInit(&rasNetListeningSocket, &addr, NCCL_SOCKET_MAGIC, ncclSocketTypeRasNetwork,
                                    /*abortFlag*/nullptr, /*asyncFlag*/1), ret, fail);
       NCCLCHECKGOTO(ncclSocketListen(&rasNetListeningSocket), ret, fail);
-      INFO(NCCL_INIT|NCCL_RAS, "RAS network listening socket at %s",
+      INFO(NCCL_RAS, "RAS network listening socket at %s",
            ncclSocketToString(&rasNetListeningSocket.addr, rasLine));
 
       (void)rasClientInitSocket();
@@ -531,7 +531,7 @@ static void* rasThreadMain(void*) {
   int pfd;
   int rasNetListeningSocketFd;
 
-  INFO(NCCL_INIT|NCCL_RAS, "RAS thread started");
+  INFO(NCCL_RAS, "RAS thread started");
 
   // Initialize the global pollfd with the file descriptors we already have (the pipe and the listening socket).
   NCCLCHECKGOTO(rasGetNewPollEntry(&pfd), ret, fail);

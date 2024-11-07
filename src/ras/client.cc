@@ -21,6 +21,9 @@
 #define STR2(v) #v
 #define STR(v) STR2(v)
 
+// Local timeout increment compared to the '-t' argument, in seconds.
+#define TIMEOUT_INCREMENT 1
+
 static const char* hostName = "localhost";
 static const char* port = STR(NCCL_RAS_CLIENT_PORT);
 static int timeout = 0;
@@ -38,7 +41,7 @@ static void printUsage(const char* argv0) {
           "                      (" STR(NCCL_RAS_CLIENT_PORT) " by default)\n"
           "  -t, --timeout=SECS  Maximum time for the local NCCL process to wait for\n"
           "                      responses from other NCCL processes (5 secs by default)\n"
-          "  -v, --verbose       Increase the verbosity level of RAS output\n"
+          "  -v, --verbose       Increase the verbosity level of the RAS output\n"
           "      --help          Print this help and exit\n"
           "      --version       Print the version number and exit\n", argv0);
 }
@@ -135,11 +138,13 @@ static int connectToNCCL() {
   int ret;
   char msgBuf[1024];
   int bytes;
+  struct timeval tv = {TIMEOUT_INCREMENT, 0};
 
+retry:
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
   if ((ret = getaddrinfo(hostName, port, &hints, &addrInfo)) != 0) {
-    fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret));
+    fprintf(stderr, "Resolving %s:%s: %s\n", hostName, port, gai_strerror(ret));
     goto fail;
   }
   for (struct addrinfo* ai = addrInfo; ai; ai = ai->ai_next) {
@@ -149,6 +154,12 @@ static int connectToNCCL() {
     if (sock == -1) {
       perror("socket");
       continue;
+    }
+    // Initially start with a small, 1-sec timeout to quickly eliminate non-responsive processes...
+    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv) != 0 ||
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) != 0) {
+      perror("setsockopt");
+      // Non-fatal; fall through.
     }
     if (connect(sock, ai->ai_addr, ai->ai_addrlen) == 0)
       break;
@@ -165,17 +176,30 @@ static int connectToNCCL() {
   freeaddrinfo(addrInfo);
   addrInfo = nullptr;
 
-  if (sock == -1)
+  if (sock == -1) {
+    fprintf(stderr, "Failed to connect to the NCCL RAS service!\n"
+            "Please make sure that the NCCL job has the RAS service enabled and that\n"
+            "%s.\n",
+            (strcmp(hostName, "localhost") || strcmp(port, STR(NCCL_RAS_CLIENT_PORT)) ?
+            "the host/port arguments are correct and match NCCL_RAS_ADDR" :
+            "the RAS client was started on a node where the NCCL job is running"));
     goto fail;
+  }
 
   // Exchange the RAS client handshake.
   strcpy(msgBuf, "CLIENT PROTOCOL " STR(NCCL_RAS_CLIENT_PROTOCOL) "\n");
   if (socketWrite(sock, msgBuf, strlen(msgBuf)) != strlen(msgBuf)) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      goto timeout;
+    }
     perror("write to socket");
     goto fail;
   }
   bytes = rasRead(sock, msgBuf, sizeof(msgBuf));
   if (bytes < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      goto timeout;
+    }
     perror("read socket");
     goto fail;
   }
@@ -195,11 +219,17 @@ static int connectToNCCL() {
   if (timeout > 0) {
     snprintf(msgBuf, sizeof(msgBuf), "TIMEOUT %d\n", timeout);
     if (socketWrite(sock, msgBuf, strlen(msgBuf)) != strlen(msgBuf)) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        goto timeout;
+      }
       perror("write to socket");
       goto fail;
     }
     bytes = rasRead(sock, msgBuf, sizeof(msgBuf));
     if (bytes < 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        goto timeout;
+      }
       perror("read socket");
       goto fail;
     }
@@ -212,6 +242,12 @@ static int connectToNCCL() {
       goto fail;
     }
   }
+  // Increase the socket timeout to accommodate NCCL timeout.
+  tv.tv_sec += (timeout > 0 ? timeout : RAS_COLLECTIVE_LEG_TIMEOUT_SEC) + RAS_COLLECTIVE_EXTRA_TIMEOUT_SEC;
+  if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) != 0) {
+    perror("setsockopt");
+    // Non-fatal; fall through.
+  }
 
   return 0;
 fail:
@@ -220,6 +256,10 @@ fail:
   if (sock != -1)
     (void)close(sock);
   return 1;
+timeout:
+  fprintf(stderr, "Connection timed out; retrying...\n");
+  (void)close(sock);
+  goto retry;
 }
 
 int getNCCLStatus() {
@@ -227,13 +267,19 @@ int getNCCLStatus() {
   int bytes;
   snprintf(msgBuf, sizeof(msgBuf), "%sSTATUS\n", (verbose ? "VERBOSE " : ""));
   if (socketWrite(sock, msgBuf, strlen(msgBuf)) != strlen(msgBuf)) {
-    perror("write to socket");
+    if (errno == EAGAIN || errno == EWOULDBLOCK)
+      fprintf(stderr, "Connection timed out\n");
+    else
+      perror("write to socket");
     return 1;
   }
   for (;;) {
     bytes = rasRead(sock, msgBuf, sizeof(msgBuf), /*untileNewLine*/false);
     if (bytes < 0) {
-      perror("read socket");
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+        fprintf(stderr, "Connection timed out\n");
+      else
+        perror("read socket");
       return 1;
     }
     if (bytes == 0) // EOF

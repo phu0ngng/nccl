@@ -1406,7 +1406,7 @@ fail:
   goto exit;
 }
 
-NCCL_PARAM(IbWarnRailLocal, "NCCL_IB_WARN_RAIL_LOCAL", 0);
+NCCL_PARAM(IbWarnRailLocal, "IB_WARN_RAIL_LOCAL", 0);
 
 ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDeviceProps_t* vProps2) {
   ncclNetVDeviceProps_t  outVProps = {0};
