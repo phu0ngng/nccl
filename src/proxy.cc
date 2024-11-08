@@ -1615,7 +1615,7 @@ void* ncclProxyService(void* _args) {
       if (pollfds[s].fd == -1) continue;
 
       // Progress all ops for this ncclProxyLocalPeer
-      if (stop == PROXY_ABORT && ncclCuMemEnable() && ncclCuMemHostEnable() && !proxyState->directMode) closeConn = 1;
+      if (stop == PROXY_ABORT && ncclCuMemEnable() && ncclCuMemHostEnable() && !proxyState->directMode && __atomic_load_n(&proxyState->stop, __ATOMIC_ACQUIRE)) closeConn = 1;
       ncclProxyAsyncOp* op = peer->asyncOps;
       while (op != nullptr) {
         ncclProxyAsyncOp* opnext = op->next; /* in case op is freed in proxyProgressAsync */
@@ -1818,11 +1818,6 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
     struct ncclProxyState* sharedProxyState = comm->proxyState;
 
     if ((comm->proxyRefCountOld = ncclAtomicRefCountDecrement(&sharedProxyState->refCount)) == 0) {
-      if (comm->proxyState->threadUDS) {
-        // UDS support
-        __atomic_store_n(&comm->proxyState->stop, 1, __ATOMIC_RELEASE);
-      }
-
       if (*comm->abortFlag == 0 && sharedProxyState->peerAddresses) {
         struct ncclSocket sock;
         int type = ncclProxyMsgStop;
@@ -1853,6 +1848,8 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
           }
         }
       }
+      // Now we notify proxy service and UDS thread to exit.
+      __atomic_store_n(&comm->proxyState->stop, 1, __ATOMIC_RELEASE);
     }
   }
 
