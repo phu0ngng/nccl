@@ -22,8 +22,8 @@
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
 
 const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
-const char* topoLinkTypeStr[] = { "LOC", "NVL", "",    "PCI",    "",    "",    "", "SYS", "NET" };
-const char* topoPathTypeStr[] = { "LOC", "NVL", "NVB", "PIX", "PXB", "PXN", "PHB", "SYS", "NET", "DIS" };
+const char* topoLinkTypeStr[] = { "LOC", "NVL", "",    "C2C", "PCI",    "",    "",    "", "SYS", "NET" };
+const char* topoPathTypeStr[] = { "LOC", "NVL", "NVB", "C2C", "PIX", "PXB", "PXN", "PHB", "SYS", "NET", "DIS" };
 
 /******************************************************************/
 /******************* Graph Creation Functions *********************/
@@ -653,8 +653,8 @@ ncclResult_t ncclTopoAddC2c(struct ncclXmlNode* node, struct ncclTopoSystem* sys
     struct ncclTopoNode* cpu = NULL;
     NCCLCHECK(findLocalCpu(gpu, &cpu, NULL));
     if (cpu == NULL) return ncclSuccess;
-    NCCLCHECK(ncclTopoConnectNodes(gpu, cpu, LINK_NVL, c2cBw));
-    NCCLCHECK(ncclTopoConnectNodes(cpu, gpu, LINK_NVL, c2cBw));
+    NCCLCHECK(ncclTopoConnectNodes(gpu, cpu, LINK_C2C, c2cBw));
+    NCCLCHECK(ncclTopoConnectNodes(cpu, gpu, LINK_C2C, c2cBw));
   } else {
     if (strcmp(node->name, "cpu") == 0) {
       NCCLCHECK(ncclGetSystemId(system, node, &systemId));
