@@ -10,7 +10,6 @@
 
 #include <string.h>
 #include <errno.h>
-#include <dlfcn.h>
 //#include <sys/types.h>
 //#include <sys/stat.h>
 //#include <unistd.h>
@@ -27,6 +26,8 @@ extern ncclCollNet_t* getNcclCollNet_v7(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
 
+extern void* openNetPluginLib(char* couldNotFindNames, int len);
+
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
 ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr, &ncclNetIb, &ncclNetSocket };
 static int ncclNetsVer[NCCL_NET_MAX_PLUGINS] = { -1, 9, 9 };
@@ -38,75 +39,6 @@ enum ncclNetState {
 };
 enum ncclNetState ncclNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 enum ncclNetState ncclCollNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
-
-#define MAX_STR_LEN 255
-
-static void* tryOpenLib(char* name, int* err, char* errStr) {
-  *err = 0;
-  if (nullptr == name || strlen(name) == 0) {
-    return nullptr;
-  }
-
-  if (strncasecmp(name, "STATIC_PLUGIN", strlen(name)) == 0) {
-    name = nullptr;
-  }
-
-  void *handle = dlopen(name, RTLD_NOW | RTLD_LOCAL);
-  if (nullptr == handle) {
-    strncpy(errStr, dlerror(), MAX_STR_LEN);
-    errStr[MAX_STR_LEN] = '\0';
-    // "handle" and "name" won't be NULL at the same time.
-    // coverity[var_deref_model]
-    if (strstr(errStr, name) && strstr(errStr, "No such file or directory")) {
-      *err = ENOENT;
-    }
-  }
-  return handle;
-}
-
-static char* tryOpenLibCheck(int openErr, char* openErrStr, char* nameList, int *nameListLen, char* name) {
-  if (openErr == ENOENT) {
-    snprintf(nameList, *nameListLen, " %s", name);
-    nameList += strlen(name) + 1;
-    *nameListLen -= strlen(name) + 1;
-    return nameList;
-  }
-  INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: %s", openErrStr);
-  return nameList;
-}
-
-static void* openNetPluginLib(char* couldNotFindNames, int len) {
-  int openErr;
-  void *pluginLib;
-  char netPluginLibName[PATH_MAX];
-  char openErrStr[MAX_STR_LEN + 1] = { 0 };
-  const char *envNetPluginName = getenv("NCCL_NET_PLUGIN");
-  if (envNetPluginName && strlen(envNetPluginName)) {
-    snprintf(netPluginLibName, PATH_MAX, "%s", envNetPluginName);
-    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin name set by env to %s", netPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
-
-    snprintf(netPluginLibName, PATH_MAX, "libnccl-net-%s.so", envNetPluginName);
-    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin name set by env to %s", netPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
-  } else {
-    snprintf(netPluginLibName, PATH_MAX, "libnccl-net.so");
-    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
-  }
-  return nullptr;
-}
 
 static pthread_mutex_t netPluginLock = PTHREAD_MUTEX_INITIALIZER;
 static int netPluginRefCount;

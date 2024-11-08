@@ -5,7 +5,6 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#include <dlfcn.h>
 #include <errno.h>
 #include <stdlib.h>
 
@@ -17,108 +16,12 @@ extern ncclTuner_t* getNcclTuner_v2(void* lib);
 extern ncclTuner_t* getNcclTuner_v3(void* lib);
 extern ncclTuner_t* getNcclTuner_v4(void* lib);
 
+extern void* openTunerPluginLib(char* couldNotFindNames, int len);
+
 pthread_mutex_t tunerPluginLock = PTHREAD_MUTEX_INITIALIZER;
 static int tunerPluginRefCount;
 static void* tunerPluginLib = nullptr;
 static ncclTuner_t* tunerSymbol = nullptr;
-
-#define MAX_STR_LEN 255
-
-static void* tryOpenLib(const char* name, int* err, char* errStr) {
-  *err = 0;
-  if (nullptr == name || strlen(name) == 0) {
-    return nullptr;
-  }
-
-  if (strncasecmp(name, "STATIC_PLUGIN", strlen(name)) == 0) {
-    name = nullptr;
-  }
-
-  void *handle = dlopen(name, RTLD_LAZY | RTLD_LOCAL);
-  if (nullptr == handle) {
-    strncpy(errStr, dlerror(), MAX_STR_LEN);
-    errStr[MAX_STR_LEN] = '\0';
-    // "handle" and "name" won't be NULL at the same time.
-    // coverity[var_deref_model]
-    if (strstr(errStr, name) && strstr(errStr, "No such file or directory")) {
-      *err = ENOENT;
-    }
-  }
-  return handle;
-}
-
-static char* tryOpenLibCheck(int openErr, char* openErrStr, char* nameList, int *nameListLen, char* name) {
-  if (openErr == ENOENT) {
-    snprintf(nameList, *nameListLen, " %s", name);
-    nameList += strlen(name) + 1;
-    *nameListLen -= strlen(name) + 1;
-    return nameList;
-  }
-  INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: %s", openErrStr);
-  return nameList;
-}
-
-static void* openTunerPluginLib(char* couldNotFindNames, int len) {
-  int openErr;
-  void *pluginLib;
-  char tunerPluginLibName[PATH_MAX];
-  char openErrStr[MAX_STR_LEN + 1] = { 0 };
-  const char *envTunerPluginName = getenv("NCCL_TUNER_PLUGIN");
-  if (envTunerPluginName && strlen(envTunerPluginName)) {
-    INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: NCCL_TUNER_PLUGIN set to %s", envTunerPluginName);
-    snprintf(tunerPluginLibName, PATH_MAX, "%s", envTunerPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-
-    snprintf(tunerPluginLibName, PATH_MAX, "libnccl-tuner-%s.so", envTunerPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-  } else {
-    snprintf(tunerPluginLibName, PATH_MAX, "libnccl-tuner.so");
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-  }
-
-  const char *envNetPluginName = getenv("NCCL_NET_PLUGIN");
-  if (envNetPluginName && strlen(envNetPluginName)) {
-    // Users are allowed to pack tuner into the net plugin
-    snprintf(tunerPluginLibName, PATH_MAX, "%s", envNetPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-
-    snprintf(tunerPluginLibName, PATH_MAX, "libnccl-net-%s.so", envNetPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-  } else {
-    snprintf(tunerPluginLibName, PATH_MAX, "libnccl-net.so");
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-  }
-  tunerPluginLibName[0] = '\0';
-  return nullptr;
-}
 
 enum {
   tunerPluginLoadFailed  = -1,

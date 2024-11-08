@@ -15,78 +15,12 @@
 extern ncclProfiler_t* getNcclProfiler_v1(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v2(void* lib);
 
+extern void* openProfilerPluginLib(char* couldNotFindNames, int len);
+
 static pthread_mutex_t profilerLock = PTHREAD_MUTEX_INITIALIZER;
 static int profilerPluginRefCount;
 static void* profilerPluginLib;
 static ncclProfiler_t* ncclProfiler;
-
-#define MAX_STR_LEN 256
-
-static void* tryOpenLib(char* name, int *err, char* errStr) {
-  if (nullptr == name || strlen(name) == 0) {
-    return nullptr;
-  }
-
-  if (strncasecmp(name, "STATIC_PLUGIN", strlen(name)) == 0) {
-    name = nullptr;
-  }
-
-  void *handle = dlopen(name, RTLD_NOW | RTLD_LOCAL);
-  if (nullptr == handle) {
-    strncpy(errStr, dlerror(), MAX_STR_LEN);
-    errStr[MAX_STR_LEN] = 0;
-    if (name && strstr(errStr, name) && strstr(errStr, "No such file or directory")) {
-      *err = ENOENT;
-    }
-  }
-
-  return handle;
-}
-
-static char* tryOpenLibCheck(int openErr, char* openErrStr, char* nameList, int *nameListLen, char* name) {
-  if (openErr == ENOENT) {
-    snprintf(nameList, *nameListLen, " %s", name);
-    nameList += strlen(name) + 1;
-    *nameListLen -= strlen(name) + 1;
-    return nameList;
-  }
-  INFO(NCCL_ENV, "PROFILER/Plugin: %s", openErrStr);
-  return nameList;
-}
-
-static void* openProfilerPluginLib(char* couldNotFindNames, int len) {
-  int openErr;
-  void *pluginLib;
-  char profilerPluginLibName[PATH_MAX];
-  char openErrStr[MAX_STR_LEN + 1] = { 0 };
-
-  const char *envProfilerPluginName = getenv("NCCL_PROFILER_PLUGIN");
-  if (envProfilerPluginName && strlen(envProfilerPluginName)) {
-    snprintf(profilerPluginLibName, PATH_MAX, "%s", envProfilerPluginName);
-    pluginLib = tryOpenLib(profilerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: Plugin name set by env to %s", profilerPluginLibName);
-      return pluginLib;
-    }
-
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, profilerPluginLibName);
-    pluginLib = tryOpenLib(profilerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: Plugin name set by env to %s", profilerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, profilerPluginLibName);
-  } else {
-    snprintf(profilerPluginLibName, PATH_MAX, "libnccl-profiler.so");
-    pluginLib = tryOpenLib(profilerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, profilerPluginLibName);
-  }
-
-  return nullptr;
-}
 
 enum {
   profilerPluginLoadFailed = -1,
