@@ -1189,12 +1189,15 @@ fail:
 ncclResult_t ncclCollnetLocalRegisterBuffer(struct ncclComm* comm, const void* userbuff, size_t buffSize, int type, int* outRegBufFlag, void** outHandle) {
   ncclResult_t ret = ncclSuccess;
   struct ncclReg *regRecord = NULL;
+  bool isValid = false;
 
   *outRegBufFlag = 0;
   *outHandle = NULL;
   if (comm && userbuff && buffSize > 0) {
     NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
-    NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
+    NCCLCHECKGOTO(ncclRegLocalIsValid(regRecord, &isValid), ret, fail);
+    if (isValid)
+      NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
   }
 exit:
   return ret;
@@ -1211,7 +1214,7 @@ struct ncclCollnetCleanupCallback {
 
 static ncclResult_t cleanupCollnet(struct ncclComm* comm, struct ncclCommCallback* cb) {
   struct ncclCollnetCleanupCallback* obj = (struct ncclCollnetCleanupCallback*)cb;
-  NCCLCHECK(ncclCommDeregister(obj->comm, (void*)obj->reg));
+  NCCLCHECK(ncclCommGraphDeregister(obj->comm, obj->reg));
   free(obj);
   return ncclSuccess;
 }
@@ -1226,7 +1229,7 @@ ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* u
   *outRegBufFlag = 0;
   if (comm && userbuff && buffSize > 0) {
     CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)userbuff), ret, fail);
-    NCCLCHECKGOTO(ncclCommRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
+    NCCLCHECKGOTO(ncclCommGraphRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
     NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
 
     if (*outRegBufFlag) {

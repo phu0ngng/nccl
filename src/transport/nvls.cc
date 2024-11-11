@@ -706,12 +706,25 @@ fail:
 ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *sendbuff, void *recvbuff, size_t sendbuffSize, size_t recvbuffSize, int *outRegBufUsed, void **outRegBufSend, void **outRegBufRecv) {
   struct ncclReg *sendRegRecord = NULL;
   struct ncclReg *recvRegRecord = NULL;
+  bool sendIsValid = false;
+  bool recvIsValid = false;
 
   *outRegBufUsed = 0;
-  if (sendbuff) NCCLCHECK(ncclRegFind(comm, sendbuff, sendbuffSize, &sendRegRecord));
-  if (recvbuff) NCCLCHECK(ncclRegFind(comm, recvbuff, recvbuffSize, &recvRegRecord));
+  if (sendbuff) {
+    NCCLCHECK(ncclRegFind(comm, sendbuff, sendbuffSize, &sendRegRecord));
+    NCCLCHECK(ncclRegLocalIsValid(sendRegRecord, &sendIsValid));
+  } else {
+    sendIsValid = true;
+  }
+  if (recvbuff) {
+    NCCLCHECK(ncclRegFind(comm, recvbuff, recvbuffSize, &recvRegRecord));
+    NCCLCHECK(ncclRegLocalIsValid(recvRegRecord, &recvIsValid));
+  } else {
+    recvIsValid = true;
+  }
 
-  NCCLCHECK(nvlsRegisterBuffer(comm, sendbuff, recvbuff, sendbuffSize, recvbuffSize, sendRegRecord, recvRegRecord, outRegBufUsed, outRegBufSend, outRegBufRecv));
+  if (sendIsValid && recvIsValid)
+    NCCLCHECK(nvlsRegisterBuffer(comm, sendbuff, recvbuff, sendbuffSize, recvbuffSize, sendRegRecord, recvRegRecord, outRegBufUsed, outRegBufSend, outRegBufRecv));
 
   return ncclSuccess;
 }
@@ -724,7 +737,7 @@ struct ncclNvlsCleanupCallback {
 
 static ncclResult_t cleanupNvls(struct ncclComm* comm, struct ncclCommCallback* cb) {
   struct ncclNvlsCleanupCallback* obj = (struct ncclNvlsCleanupCallback*)cb;
-  NCCLCHECK(ncclCommDeregister(obj->comm, (void*)obj->reg));
+  NCCLCHECK(ncclCommGraphDeregister(obj->comm, obj->reg));
   free(obj);
   return ncclSuccess;
 }
@@ -746,12 +759,12 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(
   *outRegBufUsed = 0;
   if (sendbuff) {
     CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)sendbuff));
-    NCCLCHECK(ncclCommRegister(comm, baseSend, baseSendSize, (void**)&sendRegRecord));
+    NCCLCHECK(ncclCommGraphRegister(comm, baseSend, baseSendSize, (void**)&sendRegRecord));
   }
 
   if (recvbuff) {
     CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseRecv, &baseRecvSize, (CUdeviceptr)recvbuff));
-    NCCLCHECK(ncclCommRegister(comm, baseRecv, baseRecvSize, (void**)&recvRegRecord));
+    NCCLCHECK(ncclCommGraphRegister(comm, baseRecv, baseRecvSize, (void**)&recvRegRecord));
   }
 
   NCCLCHECK(nvlsRegisterBuffer(comm, baseSend, baseRecv, baseSendSize, baseRecvSize, sendRegRecord, recvRegRecord, outRegBufUsed, outRegBufSend, outRegBufRecv));

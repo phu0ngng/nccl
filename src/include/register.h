@@ -32,7 +32,8 @@ struct ncclRegNetHandles {
 struct ncclReg {
   // common attributes
   size_t pages;
-  int refs;
+  int localRefs;
+  int graphRefs;
   uintptr_t addr;
   uint32_t state;
   // net reg
@@ -61,5 +62,8 @@ struct ncclRegCache {
 
 ncclResult_t ncclRegCleanup(struct ncclComm* comm);
 ncclResult_t ncclRegFind(struct ncclComm* comm, const void* data, size_t size, struct ncclReg** reg);
+ncclResult_t ncclCommGraphRegister(const ncclComm_t comm, void* buff, size_t size, void** handle);
+ncclResult_t ncclCommGraphDeregister(const ncclComm_t comm, struct ncclReg *handle);
+ncclResult_t ncclRegLocalIsValid(struct ncclReg *reg, bool *isValid);
 
 #endif

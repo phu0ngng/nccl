@@ -29,16 +29,26 @@ ncclResult_t ncclRegFind(struct ncclComm* comm, const void* data, size_t size, s
 }
 NCCL_PARAM(LocalRegister, "LOCAL_REGISTER", 1);
 
-ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, void** handle) {
-  if (!ncclParamLocalRegister()) {
-    *handle = NULL;
-    return ncclSuccess;
+ncclResult_t ncclRegLocalIsValid(struct ncclReg *reg, bool *isValid) {
+  if (reg && isValid) {
+    if (reg->localRefs)
+      *isValid = true;
+    else
+      *isValid = false;
   }
-  INFO(NCCL_REG, "register comm %p buffer %p size %zi", comm, data, size);
+  return ncclSuccess;
+}
+
+ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, bool isGraph, void** handle) {
+  NCCLCHECK(CommCheck(comm, "ncclCommRegister", "comm"));
   struct ncclRegCache* cache = &comm->regCache;
   uintptr_t pageSize = cache->pageSize;
   uintptr_t addr = (uintptr_t)data & -pageSize;
   size_t pages = ((uintptr_t)data + size - addr + pageSize-1)/pageSize;
+
+  if (comm->checkPointers) NCCLCHECK(CudaPtrCheck(data, comm, "buff", "ncclCommRegister"));
+  INFO(NCCL_REG, "register comm %p buffer %p size %zi", comm, data, size);
+
   for (int slot=0; /*true*/; slot++) {
     if ((slot == cache->population) || (addr < cache->slots[slot]->addr)) {
       if (cache->population == cache->capacity) { // must grow cache
@@ -50,17 +60,22 @@ ncclResult_t ncclRegister(struct ncclComm* comm, void* data, size_t size, void**
       struct ncclReg* regSlot = cache->slots[slot];
       regSlot->addr = addr;
       regSlot->pages = pages;
-      regSlot->refs = 1;
+      if (isGraph) regSlot->graphRefs = 1;
+      else regSlot->localRefs = 1;
       cache->population += 1;
       *handle = regSlot;
-      return ncclSuccess;
+      goto exit;
     } else if ((addr >= cache->slots[slot]->addr) &&
         ((addr-cache->slots[slot]->addr)/pageSize+pages) <= cache->slots[slot]->pages) {
-      cache->slots[slot]->refs++;
+      if (isGraph) cache->slots[slot]->graphRefs++;
+      else cache->slots[slot]->localRefs++;
       *handle = cache->slots[slot];
-      return ncclSuccess;
+      goto exit;
     }
   }
+
+exit:
+  return ncclSuccess;
 }
 
 static ncclResult_t regCleanup(struct ncclComm* comm, struct ncclReg* reg) {
@@ -105,33 +120,50 @@ ncclResult_t ncclRegCleanup(struct ncclComm* comm) {
 
 NCCL_API(ncclResult_t, ncclCommRegister, const ncclComm_t comm, void* buff, size_t size, void** handle);
 ncclResult_t ncclCommRegister(const ncclComm_t comm, void* buff, size_t size, void** handle) {
-  NCCLCHECK(CommCheck(comm, "ncclCommRegister", "comm"));
-  if (comm->checkPointers) NCCLCHECK(CudaPtrCheck(buff, comm, "buff", "ncclCommRegister"));
-  NCCLCHECK(ncclRegister(comm, buff, size, handle));
+  if (!ncclParamLocalRegister())
+    *handle = NULL;
+  else
+    NCCLCHECK(ncclRegister(comm, buff, size, false, handle));
   return ncclSuccess;
 }
 
-NCCL_API(ncclResult_t, ncclCommDeregister, const ncclComm_t comm, void* handle);
-ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) {
+ncclResult_t ncclCommGraphRegister(const ncclComm_t comm, void* buff, size_t size, void** handle) {
+  NCCLCHECK(ncclRegister(comm, buff, size, true, handle));
+  return ncclSuccess;
+}
+
+static ncclResult_t commDeregister(struct ncclComm *comm, bool isGraph, struct ncclReg* reg) {
   NCCLCHECK(CommCheck(comm, "ncclCommRegister", "comm"));
-  struct ncclReg* reg = (struct ncclReg*)handle;
   struct ncclRegCache* cache = &comm->regCache;
   int slot;
   int saveDev;
-  if (handle == NULL) goto exit;
+  if (reg == NULL) goto exit;
   CUDACHECK(cudaGetDevice(&saveDev));
   CUDACHECK(cudaSetDevice(comm->cudaDev));
-  for (slot=0; slot<cache->population && cache->slots[slot] != reg; slot++);
+  for (slot = 0; slot < cache->population && cache->slots[slot] != reg; slot++);
   if (slot == cache->population) {
     WARN("Deregister: Could not find handle");
     return ncclInvalidUsage;
   }
-  if (--reg->refs) return ncclSuccess;
+  if (isGraph) --reg->graphRefs;
+  else --reg->localRefs;
+  if (reg->localRefs || reg->graphRefs) return ncclSuccess;
   NCCLCHECK(regCleanup(comm, reg));
   free(reg);
-  memmove(cache->slots+slot, cache->slots+slot+1, (cache->population-slot-1)*sizeof(struct ncclReg*));
+  memmove(cache->slots + slot, cache->slots + slot + 1, (cache->population - slot - 1) * sizeof(struct ncclReg*));
   cache->population -= 1;
   CUDACHECK(cudaSetDevice(saveDev));
 exit:
+  return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclCommDeregister, const ncclComm_t comm, void* handle);
+ncclResult_t ncclCommDeregister(const ncclComm_t comm, void *handle) {
+  NCCLCHECK(commDeregister(comm, false, (struct ncclReg*)handle));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCommGraphDeregister(const ncclComm_t comm, struct ncclReg *handle) {
+  NCCLCHECK(commDeregister(comm, true, handle));
   return ncclSuccess;
 }
