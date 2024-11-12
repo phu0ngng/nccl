@@ -808,7 +808,8 @@ static ncclResult_t getNewDeadEntry(union ncclSocketAddress** pAddr) {
 
 // Checks whether a peer is dead by looking it up in the rasDeadPeers array.
 bool rasPeerIsDead(const union ncclSocketAddress* addr) {
-  return (bsearch(addr, rasDeadPeers, nRasDeadPeers, sizeof(*rasDeadPeers), ncclSocketsCompare) != nullptr);
+  return (rasDeadPeers != nullptr &&
+          bsearch(addr, rasDeadPeers, nRasDeadPeers, sizeof(*rasDeadPeers), ncclSocketsCompare) != nullptr);
 }
 
 
