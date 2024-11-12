@@ -54,6 +54,9 @@ echo -e "\n\n"
 echo "=============================== FT TESTS Default - $(date +\"%T\") ================================="
 time $SRUN ./ft_test
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("FT TESTS Default")
+
+time $SRUN ./ft_abort_rank0
+[ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("FT TESTS Default")
 echo "=============================== FT TESTS Default DONE - $(date +\"%T\") ============================"
 echo -e "\n\n"
 

@@ -22,8 +22,8 @@ STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
-CU_FILES := align_test.cu ft_test.cu #kernel_test.cu
-CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc
+CU_FILES := align_test.cu  #kernel_test.cu
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc ft_abort_rank0.cc
 KCU_FILES := align_test.cu #kernel_test.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
@@ -79,6 +79,11 @@ ${DST_DIR}/align_test: ${DST_DIR}/align_test.o
 #	@mkdir -p ${DST_DIR}
 #	mpicc -std=c99 $(CXXFLAGS) -I$(BUILDDIR)/include/ -o $@ -c $<
 #
+${DST_DIR}/ft_abort_rank0: ${DST_DIR}/ft_abort_rank0.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
 ${DST_DIR}/ft_test: ${DST_DIR}/ft_test.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
