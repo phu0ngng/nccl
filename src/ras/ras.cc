@@ -258,23 +258,27 @@ void rasMsgFree(struct rasMsg* msg) {
 void rasConnEnqueueMsg(struct rasConnection* conn, struct rasMsg* msg, size_t msgLen, bool front) {
   // Get to the metadata of this message.
   struct rasMsgMeta* meta = (struct rasMsgMeta*)((char*)msg - offsetof(struct rasMsgMeta, msg));
+  bool ready = false;
 
   meta->enqueueTime = clockNano();
   meta->offset = 0;
   meta->length = msgLen;
 
   if (front)
-      ncclIntruQueueEnqueueFront(&conn->sendQ, meta);
+    ncclIntruQueueEnqueueFront(&conn->sendQ, meta);
   else
     ncclIntruQueueEnqueue(&conn->sendQ, meta);
 
   if (conn->sockIdx != -1) {
     struct rasSocket* sock = rasSockets+conn->sockIdx;
-    if (sock->status == RAS_SOCK_READY || sock->status == RAS_SOCK_HANDSHAKE)
+    if (sock->status == RAS_SOCK_READY || (sock->status == RAS_SOCK_HANDSHAKE && msg->type == RAS_MSG_CONNINIT)) {
       rasPfds[sock->pfd].events |= POLLOUT;
-  } else {
+      ready = true;
+    }
+  }
+  if (!ready) {
     // It's not a bug, unless it's for things like keep-alive messages...
-    INFO(NCCL_RAS, "RAS enqueued message on connIdx %td but sockIdx is -1", conn-rasConns);
+    INFO(NCCL_RAS, "RAS enqueued message type %d on a non-ready socket", msg->type);
   }
 }
 
@@ -284,6 +288,11 @@ ncclResult_t rasConnSendMsg(struct rasConnection* conn, int* closed, bool* allSe
   struct rasMsgMeta* meta;
   *closed = 0;
   while ((meta = ncclIntruQueueHead(&conn->sendQ)) != nullptr) {
+    if (rasSockets[conn->sockIdx].status == RAS_SOCK_HANDSHAKE && meta->msg.type != RAS_MSG_CONNINIT) {
+      // We don't send anything beyond the handshake at this point.
+      meta = nullptr;
+      break;
+    }
     if (meta->offset < sizeof(meta->length)) {
       // Send the length of the message.
       NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, sock, &meta->length, sizeof(meta->length), &meta->offset, closed));
@@ -418,8 +427,7 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
   }
 
   sock->status = RAS_SOCK_READY;
-  // We have successfully established the connection; turn off the timeouts.
-  conn->startRetryTime = conn->lastRetryTime = 0;
+  // rasConnResume will reset any experiencingDelays, startRetryTime, etc.
 
   conn->sockIdx = sock-rasSockets;
   sock->connIdx = connIdx;
@@ -472,9 +480,7 @@ static ncclResult_t rasMsgHandleConnInitAck(const struct rasMsg* msg, struct ras
   }
 
   sock->status = RAS_SOCK_READY;
-
-  if (sock->connIdx != -1)
-    rasConnResume(sock->connIdx);
+  // rasConnResume will reset any experiencingDelays, startRetryTime, etc.
 
   return ncclSuccess;
 }

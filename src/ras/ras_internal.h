@@ -457,7 +457,6 @@ void rasSocketTerminate(struct rasSocket* sock, bool finalize = false, uint64_t 
 void rasSockEventLoop(int sockIdx, int pollIdx);
 void rasNetHandleTimeouts(int64_t now, int64_t* nextWakeup);
 ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* sock);
-void rasConnResume(int connIdx);
 ncclResult_t rasLinkUpdateConn(struct rasLink* link, int connIdx, int peerIdx, bool external = false,
                                bool insert = false, bool pretend = false, int* pLinkIdx = nullptr);
 

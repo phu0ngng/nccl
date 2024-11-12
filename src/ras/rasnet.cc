@@ -34,6 +34,7 @@ static ncclResult_t rasLinkHandleNetTimeouts(struct rasLink* link, int64_t now, 
 static void rasConnHandleNetTimeouts(int connIdx, int64_t now, int64_t* nextWakeup);
 
 static ncclResult_t rasLinkAddFallback(struct rasLink* link, int connIdx);
+static void rasConnResume(int connIdx);
 static void rasLinkSanitizeFallbacks(struct rasLink* link);
 static void rasLinkDropConn(struct rasLink* link, int connIdx, int linkIdx = -1);
 static int rasLinkFindConn(const struct rasLink* link, int connIdx);
@@ -592,15 +593,18 @@ void rasSockEventLoop(int sockIdx, int pollIdx) {
         } else {
           sock->lastRecvTime = clockNano();
           if (msg) {
-            if (rasMsgHandle(msg, sock) != ncclSuccess) {
-              // Message handlers can terminate a socket for certain fatal errors; we need to check for
-              // that here so that we don't try to receive from a closed socket.
-              if (sock->status == RAS_SOCK_CLOSED)
-                break;
-            }
+            (void)rasMsgHandle(msg, sock);
             free(msg);
+            // Message handlers can terminate a socket in certain cases; we need to check for
+            // that here so that we don't try to receive from a closed socket.
+            // No handlers are currently believed to create new sockets but better to be safe than sorry
+            // and re-init the sock variable.
+            sock = rasSockets+sockIdx;
+            if (sock->status == RAS_SOCK_CLOSED)
+              break;
           }
-          if (sock->connIdx != -1 && rasConns[sock->connIdx].experiencingDelays)
+          if (sock->connIdx != -1 && rasConns[sock->connIdx].sockIdx == sockIdx &&
+              (rasConns[sock->connIdx].startRetryTime || rasConns[sock->connIdx].experiencingDelays))
             rasConnResume(sock->connIdx);
         }
       } while (msg);
@@ -890,10 +894,9 @@ exit:
 // Invoked when we receive a message over a connection that was experiencing delays, i.e., when we experience a
 // recovery after a temporary network issue, or when we finish the handshake on a new connection.  Cleans up the
 // fallbacks, timers, etc, as appropriate.
-void rasConnResume(int connIdx) {
+static void rasConnResume(int connIdx) {
   struct rasConnection* conn = rasConns+connIdx;
 
-  // Double-check, as conn->sockIdx may no longer point to the same socket as the one that just received a message...
   if (conn->sockIdx != -1 && rasSockets[conn->sockIdx].status == RAS_SOCK_READY &&
       clockNano() - rasSockets[conn->sockIdx].lastRecvTime < RAS_KEEPALIVE_TIMEOUT_WARN) {
     conn->experiencingDelays = false;
@@ -902,6 +905,9 @@ void rasConnResume(int connIdx) {
 
     rasLinkSanitizeFallbacks(&rasNextLink);
     rasLinkSanitizeFallbacks(&rasPrevLink);
+
+    if (!ncclIntruQueueEmpty(&conn->sendQ))
+      rasPfds[rasSockets[conn->sockIdx].pfd].events |= POLLOUT;
   }
 }
 
