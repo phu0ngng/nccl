@@ -26,7 +26,8 @@ extern ncclCollNet_t* getNcclCollNet_v7(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
 
-extern void* openNetPluginLib(char* couldNotFindNames, int len);
+extern void* openNetPluginLib(const char* name);
+extern void closePluginLib(void* handle);
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
 ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr, &ncclNetIb, &ncclNetSocket };
@@ -52,10 +53,7 @@ enum {
 
 static int netPluginStatus = netPluginLoadReady;
 
-#define MAX_PLUGIN_LOAD 2
-
 ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
-  char couldNotFindNames[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
   pthread_mutex_lock(&netPluginLock);
   if (netPluginLoadFailed == netPluginStatus) {
     goto exit;
@@ -65,13 +63,8 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
     goto exit;
   }
 
-  netPluginLib = openNetPluginLib(couldNotFindNames, MAX_PLUGIN_LOAD * PATH_MAX);
+  netPluginLib = openNetPluginLib(getenv("NCCL_NET_PLUGIN"));
   if (netPluginLib == nullptr) {
-    if (strlen(couldNotFindNames)) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Could not find:%s. Using internal network plugin.", couldNotFindNames);
-    } else {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Using internal network plugin.");
-    }
     goto fail;
   }
 
@@ -123,7 +116,7 @@ exit:
   pthread_mutex_unlock(&netPluginLock);
   return ncclSuccess;
 fail:
-  if (netPluginLib) dlclose(netPluginLib);
+  if (netPluginLib) closePluginLib(netPluginLib);
   netPluginStatus = netPluginLoadFailed;
   goto exit;
 }
@@ -137,7 +130,7 @@ ncclResult_t ncclNetPluginUnload(struct ncclComm* comm) {
     if (ncclCollNets[0]) {
       INFO(NCCL_NET, "NET/Plugin: Closing collnet plugin '%s'", ncclCollNets[0]->name);
     }
-    dlclose(netPluginLib);
+    closePluginLib(netPluginLib);
     netPluginLib = nullptr;
     ncclNets[0] = nullptr;
     ncclCollNets[0] = nullptr;

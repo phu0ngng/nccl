@@ -15,7 +15,8 @@
 extern ncclProfiler_t* getNcclProfiler_v1(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v2(void* lib);
 
-extern void* openProfilerPluginLib(char* couldNotFindNames, int len);
+extern void* openProfilerPluginLib(const char* name);
+extern void closePluginLib(void* handle);
 
 static pthread_mutex_t profilerLock = PTHREAD_MUTEX_INITIALIZER;
 static int profilerPluginRefCount;
@@ -37,18 +38,14 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
     return ncclSuccess;
   }
 
-  char couldNotFindNames[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
   pthread_mutex_lock(&profilerLock);
   if (profilerPluginLoadSuccess == profilerPluginStatus) {
     ++profilerPluginRefCount;
     goto exit;
   }
 
-  profilerPluginLib = openProfilerPluginLib(couldNotFindNames, MAX_PLUGIN_LOAD * PATH_MAX);
+  profilerPluginLib = openProfilerPluginLib(getenv("NCCL_PROFILER_PLUGIN"));
   if (profilerPluginLib == nullptr) {
-    if (strlen(couldNotFindNames)) {
-      INFO(NCCL_ENV, "PROFILER/Plugin: Could not find:%s.", couldNotFindNames);
-    }
     goto fail;
   }
 
@@ -70,7 +67,7 @@ exit:
   pthread_mutex_unlock(&profilerLock);
   return ncclSuccess;
 fail:
-  if (profilerPluginLib) dlclose(profilerPluginLib);
+  if (profilerPluginLib) closePluginLib(profilerPluginLib);
   profilerPluginStatus = profilerPluginLoadFailed;
   goto exit;
 }
@@ -79,7 +76,7 @@ static ncclResult_t ncclProfilerPluginUnload(void) {
   pthread_mutex_lock(&profilerLock);
   if (0 == (--profilerPluginRefCount)) {
     INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
-    dlclose(profilerPluginLib);
+    closePluginLib(profilerPluginLib);
     profilerPluginLib = nullptr;
     ncclProfiler = nullptr;
     profilerPluginStatus = profilerPluginLoadReady;

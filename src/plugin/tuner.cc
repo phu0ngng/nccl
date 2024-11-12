@@ -16,7 +16,9 @@ extern ncclTuner_t* getNcclTuner_v2(void* lib);
 extern ncclTuner_t* getNcclTuner_v3(void* lib);
 extern ncclTuner_t* getNcclTuner_v4(void* lib);
 
-extern void* openTunerPluginLib(char* couldNotFindNames, int len);
+extern void* openTunerPluginLib(const char* name);
+extern void* getNetPluginLib(void);
+extern void closePluginLib(void* handle);
 
 pthread_mutex_t tunerPluginLock = PTHREAD_MUTEX_INITIALIZER;
 static int tunerPluginRefCount;
@@ -35,7 +37,6 @@ static int status = tunerPluginLoadReady;
 
 ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
   // Initialize to nullptr by default if plugin tuner cannot be loaded.
-  char couldNotFindNames[MAX_PLUGIN_LOAD * PATH_MAX] = { 0 };
   comm->tuner = nullptr;
   if (tunerPluginLoadFailed == status) {
     return ncclSuccess;
@@ -52,14 +53,12 @@ ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
     goto exit;
   }
 
-  tunerPluginLib = openTunerPluginLib(couldNotFindNames, MAX_PLUGIN_LOAD * PATH_MAX);
+  tunerPluginLib = openTunerPluginLib(getenv("NCCL_TUNER_PLUGIN"));
   if (nullptr == tunerPluginLib) {
-    if (strlen(couldNotFindNames)) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Could not find:%s. Using internal tuner plugin.", couldNotFindNames);
-    } else {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Using internal tuner plugin.");
+    tunerPluginLib = getNetPluginLib();
+    if (nullptr == tunerPluginLib) {
+      goto fail;
     }
-    goto fail;
   }
 
   tunerSymbol = getNcclTuner_v4(tunerPluginLib);
@@ -88,7 +87,7 @@ ncclResult_t ncclTunerPluginUnload(struct ncclComm* comm) {
   pthread_mutex_lock(&tunerPluginLock);
   if (comm->tunerPluginLoaded && 0 == (--tunerPluginRefCount)) {
     INFO(NCCL_TUNING, "TUNER/Plugin: Closing tuner: '%s'", tunerSymbol->name);
-    dlclose(tunerPluginLib);
+    closePluginLib(tunerPluginLib);
     tunerPluginLib = nullptr;
     tunerSymbol = nullptr;
     comm->tuner = nullptr;

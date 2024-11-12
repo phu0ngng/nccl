@@ -13,6 +13,18 @@
 
 #define MAX_STR_LEN 255
 
+enum ncclPluginType {
+  ncclPluginTypeNet,
+  ncclPluginTypeTuner,
+  ncclPluginTypeProfiler,
+};
+
+static void *libHandles[3];
+static const char *pluginNames[3] = { "NET", "TUNER", "PROFILER" };
+static const char *pluginPrefix[3] = { "libnccl-net", "libnccl-tuner", "libnccl-profiler" };
+static const char *pluginFallback[3] = { "Using internal net plugin.", "Using internal tuner plugin.", "" };
+static unsigned long subsys[3] = { NCCL_INIT|NCCL_NET, NCCL_INIT|NCCL_TUNING, NCCL_INIT };
+
 static void* tryOpenLib(char* name, int* err, char* errStr) {
   *err = 0;
   if (nullptr == name || strlen(name) == 0) {
@@ -36,143 +48,79 @@ static void* tryOpenLib(char* name, int* err, char* errStr) {
   return handle;
 }
 
-static char* tryOpenLibCheck(int openErr, char* openErrStr, char* nameList, int *nameListLen, char* name) {
-  if (openErr == ENOENT) {
-    snprintf(nameList, *nameListLen, " %s", name);
-    nameList += strlen(name) + 1;
-    *nameListLen -= strlen(name) + 1;
-    return nameList;
-  }
-  INFO(NCCL_INIT|NCCL_NET, "Plugin: %s", openErrStr);
-  return nameList;
+static void appendNameToList(char* nameList, int *nameListLen, char* name) {
+  snprintf(nameList, *nameListLen, " %s", name);
+  nameList += strlen(name) + 1;
+  *nameListLen -= strlen(name) + 1;
 }
 
-static void* openNetPluginLib(char* couldNotFindNames, int len) {
-  int openErr;
-  void *pluginLib;
-  char netPluginLibName[PATH_MAX];
+static void* openPluginLib(enum ncclPluginType type, const char* libName) {
+  int openErr, len = PATH_MAX;
+  char libName_[MAX_STR_LEN] = { 0 };
   char openErrStr[MAX_STR_LEN + 1] = { 0 };
-  const char *envNetPluginName = getenv("NCCL_NET_PLUGIN");
-  if (envNetPluginName && strlen(envNetPluginName)) {
-    snprintf(netPluginLibName, PATH_MAX, "%s", envNetPluginName);
-    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin name set by env to %s", netPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
+  char eNoEntNameList[PATH_MAX] = { 0 };
 
-    snprintf(netPluginLibName, PATH_MAX, "libnccl-net-%s.so", envNetPluginName);
-    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Plugin name set by env to %s", netPluginLibName);
-      return pluginLib;
+  if (libName && strlen(libName)) {
+    snprintf(libName_, MAX_STR_LEN, "%s", libName);
+    libHandles[type] = tryOpenLib(libName_, &openErr, openErrStr);
+    if (libHandles[type]) {
+      INFO(subsys[type], "%s/Plugin: Plugin name set by env to %s", pluginNames[type], libName_);
+      return libHandles[type];
     }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
+    if (openErr == ENOENT) {
+      appendNameToList(eNoEntNameList, &len, libName_);
+    } else {
+      INFO(subsys[type], "%s/Plugin: %s", pluginNames[type], openErrStr);
+    }
+
+    snprintf(libName_, MAX_STR_LEN, "%s-%s.so", pluginPrefix[type], libName);
+    libHandles[type] = tryOpenLib(libName_, &openErr, openErrStr);
+    if (libHandles[type]) {
+      INFO(subsys[type], "%s/Plugin: Plugin name set by env to %s", pluginNames[type], libName_);
+      return libHandles[type];
+    }
+    if (openErr == ENOENT) {
+      appendNameToList(eNoEntNameList, &len, libName_);
+    } else {
+      INFO(subsys[type], "%s/Plugin: %s", pluginNames[type], openErrStr);
+    }
   } else {
-    snprintf(netPluginLibName, PATH_MAX, "libnccl-net.so");
-    pluginLib = tryOpenLib(netPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      return pluginLib;
+    snprintf(libName_, MAX_STR_LEN, "%s.so", pluginPrefix[type]);
+    libHandles[type] = tryOpenLib(libName_, &openErr, openErrStr);
+    if (libHandles[type]) {
+      return libHandles[type];
     }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, netPluginLibName);
+    if (openErr == ENOENT) {
+      appendNameToList(eNoEntNameList, &len, libName_);
+    } else {
+      INFO(subsys[type], "%s/Plugin: %s", pluginNames[type], openErrStr);
+    }
+  }
+
+  if (strlen(eNoEntNameList)) {
+    INFO(subsys[type], "%s/Plugin: Could not find:%s. %s", pluginNames[type], eNoEntNameList, pluginFallback[type]);
+  } else if (strlen(pluginFallback[type])) {
+    INFO(subsys[type], "%s/Plugin: %s", pluginNames[type], pluginFallback[type]);
   }
   return nullptr;
 }
 
-static void* openTunerPluginLib(char* couldNotFindNames, int len) {
-  int openErr;
-  void *pluginLib;
-  char tunerPluginLibName[PATH_MAX];
-  char openErrStr[MAX_STR_LEN + 1] = { 0 };
-  const char *envTunerPluginName = getenv("NCCL_TUNER_PLUGIN");
-  if (envTunerPluginName && strlen(envTunerPluginName)) {
-    INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: NCCL_TUNER_PLUGIN set to %s", envTunerPluginName);
-    snprintf(tunerPluginLibName, PATH_MAX, "%s", envTunerPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-
-    snprintf(tunerPluginLibName, PATH_MAX, "libnccl-tuner-%s.so", envTunerPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-  } else {
-    snprintf(tunerPluginLibName, PATH_MAX, "libnccl-tuner.so");
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-  }
-
-  const char *envNetPluginName = getenv("NCCL_NET_PLUGIN");
-  if (envNetPluginName && strlen(envNetPluginName)) {
-    // Users are allowed to pack tuner into the net plugin
-    snprintf(tunerPluginLibName, PATH_MAX, "%s", envNetPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-
-    snprintf(tunerPluginLibName, PATH_MAX, "libnccl-net-%s.so", envNetPluginName);
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Plugin name set by env to %s", tunerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-  } else {
-    snprintf(tunerPluginLibName, PATH_MAX, "libnccl-net.so");
-    pluginLib = tryOpenLib(tunerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, tunerPluginLibName);
-  }
-  tunerPluginLibName[0] = '\0';
-  return nullptr;
+void* openNetPluginLib(const char* name) {
+  return openPluginLib(ncclPluginTypeNet, name);
 }
 
-static void* openProfilerPluginLib(char* couldNotFindNames, int len) {
-  int openErr;
-  void *pluginLib;
-  char profilerPluginLibName[PATH_MAX];
-  char openErrStr[MAX_STR_LEN + 1] = { 0 };
+void* openTunerPluginLib(const char* name) {
+  return openPluginLib(ncclPluginTypeTuner, name);
+}
 
-  const char *envProfilerPluginName = getenv("NCCL_PROFILER_PLUGIN");
-  if (envProfilerPluginName && strlen(envProfilerPluginName)) {
-    snprintf(profilerPluginLibName, PATH_MAX, "%s", envProfilerPluginName);
-    pluginLib = tryOpenLib(profilerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: Plugin name set by env to %s", profilerPluginLibName);
-      return pluginLib;
-    }
+void* openProfilerPluginLib(const char* name) {
+  return openPluginLib(ncclPluginTypeProfiler, name);
+}
 
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, profilerPluginLibName);
-    snprintf(profilerPluginLibName, PATH_MAX, "libnccl-profiler-%s.so", envProfilerPluginName);
-    pluginLib = tryOpenLib(profilerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: Plugin name set by env to %s", profilerPluginLibName);
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, profilerPluginLibName);
-  } else {
-    snprintf(profilerPluginLibName, PATH_MAX, "libnccl-profiler.so");
-    pluginLib = tryOpenLib(profilerPluginLibName, &openErr, openErrStr);
-    if (pluginLib) {
-      return pluginLib;
-    }
-    couldNotFindNames = tryOpenLibCheck(openErr, openErrStr, couldNotFindNames, &len, profilerPluginLibName);
-  }
+void* getNetPluginLib(void) {
+  return libHandles[ncclPluginTypeNet];
+}
 
-  return nullptr;
+void closePluginLib(void* handle) {
+  dlclose(handle);
 }
