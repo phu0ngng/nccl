@@ -386,7 +386,6 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
     INFO(NCCL_RAS, "RAS connection from a peer that is considered dead!");
     rasNetSendNack(sock);
     rasSocketTerminate(sock, /*finalize*/true);
-    ret = ncclRemoteError;
     goto exit;
   }
 
@@ -469,7 +468,7 @@ static ncclResult_t rasMsgHandleConnInitAck(const struct rasMsg* msg, struct ras
     rasConnDisconnect(&addr);
     (void)rasPeerDeclareDead(&addr);
 
-    return ncclInvalidUsage;
+    return ncclSuccess;
   }
 
   sock->status = RAS_SOCK_READY;
