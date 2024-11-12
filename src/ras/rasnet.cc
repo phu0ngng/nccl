@@ -190,6 +190,7 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
 
     if (conn->sockIdx != -1) {
       struct rasSocket* sock = rasSockets+conn->sockIdx;
+      bool sockTerminated = false;
 
       // Retry the socket connections that have been refused.
       if (sock->status == RAS_SOCK_CONNECTING && sock->sock.state == ncclSocketStateConnecting) {
@@ -199,6 +200,7 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
             INFO(NCCL_RAS, "Unexpected error from ncclSocketReady; finalizing the socket connection");
             rasSocketTerminate(sock, /*finalize*/true);
             // We will retry below in the same loop.
+            sockTerminated = true;
           } else {
             // We update lastSendTime even if !ready because we need it up-to-date for timeout calculations.
             sock->lastSendTime = clockNano();
@@ -214,7 +216,7 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
 
       // For connections that have data to send but that we've been unable to send a message on for a while,
       // consider their sockets lost and terminate them.
-      if (!ncclIntruQueueEmpty(&conn->sendQ) && sock->status == RAS_SOCK_READY) {
+      if (!sockTerminated && !ncclIntruQueueEmpty(&conn->sendQ) && sock->status == RAS_SOCK_READY) {
         if (now - std::max(sock->lastSendTime, ncclIntruQueueHead(&conn->sendQ)->enqueueTime) > RAS_STUCK_TIMEOUT) {
           INFO(NCCL_RAS, "RAS send stuck timeout error (%lds) on socket connection with %s",
                (now - std::max(sock->lastSendTime, ncclIntruQueueHead(&conn->sendQ)->enqueueTime)) /
@@ -443,6 +445,7 @@ void rasSocksHandleTimeouts(int64_t now, int64_t* nextWakeup) {
 // Once we get an EOF when receiving data, we finalize the termination.
 // For not fully established sockets, we can terminate immediately as there's no useful data to extract.
 void rasSocketTerminate(struct rasSocket* sock, bool finalize, uint64_t startRetryOffset, bool retry) {
+  assert(sock->status != RAS_SOCK_CLOSED);
   if (sock->connIdx != -1) {
     struct rasConnection* conn = rasConns+sock->connIdx;
     // If the sockIdx of the connection points back to us, it means that we are the current socket of this
@@ -641,6 +644,8 @@ static ncclResult_t rasLinkHandleNetTimeouts(struct rasLink* link, int64_t now, 
       if (!rasConns[linkConn->connIdx].linkFlag) {
         rasConnHandleNetTimeouts(linkConn->connIdx, now, nextWakeup);
         // rasConns may have been reallocated by the above call, which is why we don't have a conn variable here.
+        // For the same reason we re-init linkConn.
+        linkConn = link->conns+i;
         rasConns[linkConn->connIdx].linkFlag = true;
       }
     } else if (i == 0 && link->lastUpdatePeersTime != 0) {
@@ -712,8 +717,9 @@ static void rasConnHandleNetTimeouts(int connIdx, int64_t now, int64_t* nextWake
           conn->experiencingDelays = true;
           (void)rasLinkAddFallback(&rasNextLink, connIdx);
           (void)rasLinkAddFallback(&rasPrevLink, connIdx);
-          // rasConns may have been reallocated by the above calls.
+          // rasConns and rasSockets may have been reallocated by the above calls.
           conn = rasConns+connIdx;
+          sock = rasSockets+conn->sockIdx;
 
           // Stop collectives from waiting for a response over it.
           rasCollsPurgeConn(connIdx);
