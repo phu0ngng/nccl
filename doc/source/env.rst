@@ -262,6 +262,21 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 0.
 
+NCCL_IB_FIFO_TC
+----------
+(since 2.22.3)
+
+Defines the InfiniBand traffic class for control messages.
+Control messages are short RDMA write operations which control
+credit return, contrary to other RDMA operations transmitting
+large segments of data. This setting allows to have those
+messages use a high priority, low-latency traffic class and
+avoid being delayed by the rest of the traffic.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is the traffic class set by NCCL_IB_TC, which defaults to 0 if not set.
+
 NCCL_IB_RETURN_ASYNC_EVENTS
 ---------------------------
 (since 2.23)
