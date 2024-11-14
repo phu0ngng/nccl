@@ -700,6 +700,7 @@ exit:
   return ncclSuccess;
 fail:
   regBufUsed = 0;
+  WARN("rank %d failed to NVLS register sendbuff %p sendbuffSize %ld recvbuff %p recvbuffSize %ld", comm->rank, sendbuff, sendbuffSize, recvbuff, recvbuffSize);
   goto exit;
 }
 
@@ -787,6 +788,9 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(
       ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)recvRecord);
       *nCleanupQueueEltsAdded += 1;
     }
+  } else {
+    if (sendbuff) NCCLCHECK(ncclCommGraphDeregister(comm, sendRegRecord));
+    if (recvbuff) NCCLCHECK(ncclCommGraphDeregister(comm, recvRegRecord));
   }
 
   return ncclSuccess;

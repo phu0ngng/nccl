@@ -1239,6 +1239,8 @@ ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* u
       record->reg = regRecord;
       ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
       *nCleanupQueueElts += 1;
+    } else {
+      NCCLCHECKGOTO(ncclCommGraphDeregister(comm, regRecord), ret, fail);
     }
   }
 
