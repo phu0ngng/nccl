@@ -32,9 +32,10 @@ static ncclResult_t getNewSockEntry(struct rasSocket** pSock);
 
 static ncclResult_t rasLinkHandleNetTimeouts(struct rasLink* link, int64_t now, int64_t* nextWakeup);
 static void rasConnHandleNetTimeouts(int connIdx, int64_t now, int64_t* nextWakeup);
+static void rasConnSendKeepAlive(struct rasConnection* conn, bool nack = false);
 
 static ncclResult_t rasLinkAddFallback(struct rasLink* link, int connIdx);
-static void rasConnResume(int connIdx);
+static void rasConnResume(struct rasConnection* conn);
 static void rasLinkSanitizeFallbacks(struct rasLink* link);
 static void rasLinkDropConn(struct rasLink* link, int connIdx, int linkIdx = -1);
 static int rasLinkFindConn(const struct rasLink* link, int connIdx);
@@ -510,7 +511,7 @@ void rasSocketTerminate(struct rasSocket* sock, bool finalize, uint64_t startRet
     } // if (conn->sockIdx == sock-rasSockets)
   } // if (sock->connIdx != -1)
 
-  if (sock->status != RAS_SOCK_CONNECTING && !finalize && (rasPfds[sock->pfd].events & POLLIN)) {
+  if (sock->status != RAS_SOCK_CONNECTING && sock->connIdx != -1 && !finalize && (rasPfds[sock->pfd].events & POLLIN)) {
     if (sock->status != RAS_SOCK_TERMINATING) {
       // The receiving side is still open -- close just the sending side.
       (void)ncclSocketShutdown(&sock->sock, SHUT_WR);
@@ -582,6 +583,7 @@ void rasSockEventLoop(int sockIdx, int pollIdx) {
       bool allSent = false;
       assert(sock->connIdx != -1);
       struct rasConnection* conn = rasConns+sock->connIdx;
+      assert(conn->sockIdx == sockIdx);
       if (rasConnSendMsg(conn, &closed, &allSent) != ncclSuccess) {
         INFO(NCCL_RAS, "RAS unexpected error from rasConnSendMsg; terminating the socket connection with %s",
              ncclSocketToString(&sock->sock.addr, rasLine));
@@ -635,9 +637,11 @@ void rasSockEventLoop(int sockIdx, int pollIdx) {
             if (sock->status == RAS_SOCK_CLOSED)
               break;
           }
-          if (sock->connIdx != -1 && rasConns[sock->connIdx].sockIdx == sockIdx &&
-              (rasConns[sock->connIdx].startRetryTime || rasConns[sock->connIdx].experiencingDelays))
-            rasConnResume(sock->connIdx);
+          if (sock->connIdx != -1) {
+            struct rasConnection* conn = rasConns+sock->connIdx;
+            if (conn->sockIdx == sockIdx && (conn->startRetryTime || conn->experiencingDelays))
+              rasConnResume(conn);
+          }
         }
       } while (msg);
     } // if (POLLIN)
@@ -718,25 +722,7 @@ static void rasConnHandleNetTimeouts(int connIdx, int64_t now, int64_t* nextWake
       // Send a regular keep-alive message if we haven't sent anything in a while and we don't have anything queued.
       if (ncclIntruQueueEmpty(&conn->sendQ)) {
         if (now - sock->lastSendTime > RAS_KEEPALIVE_INTERVAL) {
-          struct rasMsg* msg = nullptr;
-          int msgLen = rasMsgLength(RAS_MSG_KEEPALIVE);
-          if (rasMsgAlloc(&msg, msgLen) == ncclSuccess) {
-            int linkIdx;
-            msg->type = RAS_MSG_KEEPALIVE;
-            msg->keepAlive.peersHash = rasPeersHash;
-            msg->keepAlive.deadPeersHash = rasDeadPeersHash;
-
-            linkIdx = rasLinkFindConn(&rasNextLink, connIdx);
-            if (linkIdx != -1 && !rasNextLink.conns[linkIdx].external)
-              msg->keepAlive.linkMask |= 2; // Our rasNextLink should be the peer's rasPrevLink.
-            linkIdx = rasLinkFindConn(&rasPrevLink, connIdx);
-            if (linkIdx != -1 && !rasPrevLink.conns[linkIdx].external)
-              msg->keepAlive.linkMask |= 1; // Our rasPrevLink should be the peer's rasNextLink.
-
-            (void)clock_gettime(CLOCK_REALTIME, &msg->keepAlive.realTime);
-
-            rasConnEnqueueMsg(conn, msg, msgLen);
-          }
+          rasConnSendKeepAlive(conn);
         } else {
           *nextWakeup = std::min(*nextWakeup, sock->lastSendTime+RAS_KEEPALIVE_INTERVAL);
         }
@@ -777,6 +763,30 @@ static void rasConnHandleNetTimeouts(int connIdx, int64_t now, int64_t* nextWake
   } // if (conn->sockIdx != -1)
 }
 
+// Sends a keep-alive message to a peer on the RAS network.
+static void rasConnSendKeepAlive(struct rasConnection* conn, bool nack) {
+  struct rasMsg* msg = nullptr;
+  int msgLen = rasMsgLength(RAS_MSG_KEEPALIVE);
+  if (rasMsgAlloc(&msg, msgLen) == ncclSuccess) {
+    int linkIdx;
+    msg->type = RAS_MSG_KEEPALIVE;
+    msg->keepAlive.peersHash = rasPeersHash;
+    msg->keepAlive.deadPeersHash = rasDeadPeersHash;
+    msg->keepAlive.nack = (nack ? 1 : 0);
+
+    linkIdx = rasLinkFindConn(&rasNextLink, conn-rasConns);
+    if (linkIdx != -1 && !rasNextLink.conns[linkIdx].external)
+      msg->keepAlive.linkMask |= 2; // Our rasNextLink should be the peer's rasPrevLink.
+    linkIdx = rasLinkFindConn(&rasPrevLink, conn-rasConns);
+    if (linkIdx != -1 && !rasPrevLink.conns[linkIdx].external)
+      msg->keepAlive.linkMask |= 1; // Our rasPrevLink should be the peer's rasNextLink.
+
+    (void)clock_gettime(CLOCK_REALTIME, &msg->keepAlive.realTime);
+
+    rasConnEnqueueMsg(conn, msg, msgLen);
+  }
+}
+
 // Handles incoming keep-alive messages.
 ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* sock) {
   struct timespec currentTime;
@@ -805,6 +815,18 @@ ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* s
   (void)rasLinkUpdateConn(&rasNextLink, (msg->keepAlive.linkMask & 1) ? sock->connIdx : -1, peerIdx, /*external*/true);
   (void)rasLinkUpdateConn(&rasPrevLink, (msg->keepAlive.linkMask & 2) ? sock->connIdx : -1, peerIdx, /*external*/true);
 
+  // If the keep-alive message is from a peer that doesn't actually need this connection (i.e., for that peer the
+  // connection is just an external fallback), we should check if *we* still need it.  It might be that we don't,
+  // and because we stopped sending the keep-alives, our peer doesn't know about it.  rasLinkUpdateConn calls above
+  // will have wiped any external fallbacks, so anything that remains must be needed.
+  if (!msg->keepAlive.nack && msg->keepAlive.linkMask == 0) {
+    if (rasLinkFindConn(&rasNextLink, sock->connIdx) == -1 && rasLinkFindConn(&rasPrevLink, sock->connIdx) == -1) {
+      // We don't need this connection either.  Notify the peer about it.  To avoid an infinite loop, we set the
+      // special nack flag in the message to distinguish it from regular keep-alives.
+      rasConnSendKeepAlive(conn, /*nack*/true);
+    }
+  }
+
   if (conn->travelTimeMin > travelTime)
     conn->travelTimeMin = travelTime;
   if (conn->travelTimeMax < travelTime)
@@ -830,8 +852,8 @@ ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* s
 // Functions related to the RAS links and recovery from connection failures. //
 ///////////////////////////////////////////////////////////////////////////////
 
-// Checks if the connection (that we just detected a warning timeout on) is part of the RAS link and if so,
-// tries to initiate a(nother) fallback connection.
+// Checks if the connection (that we just detected some problem with) is part of the RAS link and if so,
+// tries to initiate a(nother) fallback connection if needed.
 // External connections are generally ignored by this whole process: in particular, we don't add fallbacks for
 // timing out external connections.  However, we will use an active external connection if it would be a better
 // option than whatever we can come up with.
@@ -851,12 +873,13 @@ static ncclResult_t rasLinkAddFallback(struct rasLink* link, int connIdx) {
       break;
     }
 
-    // Check for active connections.
-    if (linkConn->connIdx != -1) {
+    // Check for any other connection that might be a viable fallback (basically, anything that is not experiencing
+    // delays).
+    if (linkConn->connIdx != -1 && linkConn->connIdx != connIdx) {
       struct rasConnection* conn = rasConns+linkConn->connIdx;
-      if (conn->sockIdx != -1 && rasSockets[conn->sockIdx].status == RAS_SOCK_READY && !conn->experiencingDelays) {
+      if (!conn->experiencingDelays) {
         if (!linkConn->external)
-          goto exit; // We don't need to do anything if there's a non-external active connection.
+          goto exit; // We don't need to do anything if there's a non-external connection.
         else if (linkConn->peerIdx != -1) {
           // Record the location of the first potentially viable external connection in the chain; we may prefer it
           // over anything we can come up with.
@@ -864,8 +887,8 @@ static ncclResult_t rasLinkAddFallback(struct rasLink* link, int connIdx) {
             firstExtLinkIdx = i;
           if (linkIdx != -1)
             break; // Break out of the loop if we already have all the data we might need.
-        } // linkConn->external
-      } // active connection
+        } // linkConn->external && linkConn->peerIdx != -1
+      } // if (!conn->experiencingDelays)
     } // if (linkConn->connIdx != -1)
 
     if (linkConn->connIdx == connIdx) {
@@ -932,14 +955,10 @@ exit:
   return ncclSuccess;
 }
 
-// Invoked when we receive a message over a connection that was experiencing delays, i.e., when we experience a
-// recovery after a temporary network issue, or when we finish the handshake on a new connection.  Cleans up the
-// fallbacks, timers, etc, as appropriate.
-static void rasConnResume(int connIdx) {
-  struct rasConnection* conn = rasConns+connIdx;
-
-  if (conn->sockIdx != -1 && rasSockets[conn->sockIdx].status == RAS_SOCK_READY &&
-      clockNano() - rasSockets[conn->sockIdx].lastRecvTime < RAS_KEEPALIVE_TIMEOUT_WARN) {
+// Invoked when we receive a message over a connection that was just activated or was experiencing delays.
+// Cleans up the fallbacks, timers, etc, as appropriate.
+static void rasConnResume(struct rasConnection* conn) {
+  if (conn->sockIdx != -1 && rasSockets[conn->sockIdx].status == RAS_SOCK_READY) {
     INFO(NCCL_RAS, "RAS %s connection with %s (sendQ %sempty, experiencingDelays %d, startRetryTime %.2fs)",
          (conn->experiencingDelays && conn->startRetryTime == 0 ? "recovered" : "established"),
          ncclSocketToString(&conn->addr, rasLine), (ncclIntruQueueEmpty(&conn->sendQ) ? "" : "not "),
@@ -962,19 +981,14 @@ static void rasLinkSanitizeFallbacks(struct rasLink* link) {
   if (link->nConns > 0 && link->conns[0].connIdx != -1) {
     struct rasConnection* conn = rasConns+link->conns[0].connIdx;
     if (conn->sockIdx != -1 && rasSockets[conn->sockIdx].status == RAS_SOCK_READY && !conn->experiencingDelays) {
-      // We have a good primary!
-      int newIdx = 1;
+      // We have a good primary.  Simply drop all the fallbacks (the external ones will get recreated via the
+      // keepAlive messages).
       for (int i = 1; i < link->nConns; i++) {
-        // We keep the externally-requested connections (which our peers requested as fallbacks) but the rest gets
-        // dropped.  Strictly speaking we don't even have to keep them here, as they will get re-added via keep-alive
-        // messages if needed.
-        if (link->conns[i].external) {
-          if (newIdx != i)
-            memcpy(link->conns+newIdx, link->conns+i, sizeof(*link->conns));
-          newIdx++;
-        }
+        INFO(NCCL_RAS, "RAS link %d: dropping %sfallback connection %d with %s",
+             link->direction, (link->conns[i].external ? "external " : ""), i,
+             ncclSocketToString(&rasConns[link->conns[i].connIdx].addr, rasLine));
       }
-      link->nConns = newIdx;
+      link->nConns = 1;
       link->lastUpdatePeersTime = 0;
     }
   }

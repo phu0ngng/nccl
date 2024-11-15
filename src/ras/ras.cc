@@ -428,7 +428,7 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
       // side) and terminate the old one (that it presumably just opened).
       if (ncclSocketsCompare(&rasNetListeningSocket.addr, &conn->addr) < 0) {
         INFO(NCCL_RAS, "RAS terminating the new socket");
-        rasSocketTerminate(sock);
+        rasSocketTerminate(sock, /*finalize*/true);
         goto exit;
       } else {
         INFO(NCCL_RAS, "RAS keeping the new socket and terminating the existing one");

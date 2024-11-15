@@ -606,8 +606,8 @@ fail:
 // The newly added peers could also shift all the existing peerIdx values, invalidating the values in RasLinkConn
 // structures, so it's better to drop it all and recalculate from scratch.
 // We recalculate the primary peer; if an active connection to it already exists, then we're done.  If there
-// is not connection, we create one.  If a connection exists but is not fully established (bad socket state or
-// it's experiencing delays) then we add a fallback to it and the process repeats.
+// is no connection, we create one.  If a connection exists but is experiencing delays then we add a fallback and
+// the process repeats.
 // External conns are dropped from the links as well (they will be re-created via keepAlive messages as needed).
 static ncclResult_t rasLinkReinitConns(struct rasLink* link) {
   struct rasLinkConn* linkConn;
@@ -620,9 +620,8 @@ static ncclResult_t rasLinkReinitConns(struct rasLink* link) {
   }
   link->nConns = 0;
 
-  // Create the new chain of connections for this link.  We iterate as long as there are no active connections within
-  // the newly created chain.
-  do {
+  // Establish a connection for this link.  We iterate as long as the connections we find are experiencing delays.
+  while (newPeerIdx != -1) {
     if (link->nConns == link->connsSize) {
       NCCLCHECK(ncclRealloc(&link->conns, link->connsSize, link->connsSize+RAS_INCREMENT));
       link->connsSize += RAS_INCREMENT;
@@ -675,10 +674,15 @@ static ncclResult_t rasLinkReinitConns(struct rasLink* link) {
       break;
     conn = rasConns+linkConn->connIdx;
 
+    // We check if the connection already went through the fallback calculation; if so, we'll need to create a new
+    // fallback in the next iteration, to ensure that RAS will keep retrying.
+    if (!conn->experiencingDelays)
+      break;
+
     INFO(NCCL_RAS, "RAS connection experiencingDelays %d, startRetryTime %.2fs, socket status %d",
          conn->experiencingDelays, (clockNano()-conn->startRetryTime)/1e9,
          (conn->sockIdx == -1 ? -1 : rasSockets[conn->sockIdx].status));
-  } while (conn->sockIdx == -1 || rasSockets[conn->sockIdx].status != RAS_SOCK_READY || conn->experiencingDelays);
+  }
 
   return ncclSuccess;
 }

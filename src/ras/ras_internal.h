@@ -104,6 +104,7 @@ struct rasMsg {
       struct timespec realTime; // Wallclock time at the source, for statistical purposes (in principle there's
                                 // no guarantee that the nodes have synchronized clocks so we can't really rely
                                 // on it for anything important)..
+      int nack; // If non-0, it means that this message is a response to an unexpected keepAlive message.
     } keepAlive;
     struct {
       uint64_t peersHash;
@@ -289,7 +290,7 @@ struct rasLinkConn {
                // for a connection to be started by the remote peer).
   bool external; // true if the entry exists only due to an external request (requested by a remote peer, most
                  // likely as part of fault recovery).  Such connections are kept as fallbacks even if there's a
-                 // valid primary connection, in order to ensure that keep-alive messages are exchanged.
+                 // valid primary connection, in order to ensure that keep-alive messages are sent.
 };
 
 // Describes a link that forms the backbone of the RAS network.  Links focus on direction (previous/next in
