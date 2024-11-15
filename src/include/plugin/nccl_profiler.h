@@ -46,8 +46,8 @@ typedef ncclProfilerEventState_t ncclProfilerEventState_v1_t;
 typedef ncclProfilerEventState_t ncclProfilerEventState_v2_t;
 
 #include <cstdint>
-#include "profiler_v2.h"
-#include "profiler_v1.h"
+#include "profiler/profiler_v2.h"
+#include "profiler/profiler_v1.h"
 
 typedef ncclProfiler_v2_t ncclProfiler_t;
 typedef ncclProfilerEventDescr_v2_t ncclProfilerEventDescr_t;

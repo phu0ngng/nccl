@@ -30,11 +30,11 @@
 // Max number of ncclNet objects which can live in the same process
 #define NCCL_NET_MAX_PLUGINS 3
 
-#include "net_v9.h"
-#include "net_v8.h"
-#include "net_v7.h"
-#include "net_v6.h"
-#include "net_v5.h"
+#include "net/net_v9.h"
+#include "net/net_v8.h"
+#include "net/net_v7.h"
+#include "net/net_v6.h"
+#include "net/net_v5.h"
 
 typedef ncclNet_v9_t ncclNet_t;
 typedef ncclCollNet_v9_t ncclCollNet_t;

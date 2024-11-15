@@ -11,9 +11,9 @@
 #include "nccl.h"
 #include "nccl_common.h"
 
-#include "tuner_v4.h"
-#include "tuner_v3.h"
-#include "tuner_v2.h"
+#include "tuner/tuner_v4.h"
+#include "tuner/tuner_v3.h"
+#include "tuner/tuner_v2.h"
 
 typedef ncclTuner_v4_t ncclTuner_t;
 
