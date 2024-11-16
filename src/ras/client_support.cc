@@ -859,6 +859,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   int* peerIdxConv = nullptr;
   int vcIdx;
   int nPeersMissing;
+  uint64_t* peerNvmlDevs = nullptr;
   const char*const statusStr[] = { "UNKNOWN", "INIT", "RUNNING", "FINALIZE", "ABORT" };
   const char*const errorStr[] = {
     // Listing them all like this, while a bit of a hassle, is less effort than formatting in a temporary buffer.
@@ -1018,29 +1019,41 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   if (commsData->nComms == 0)
     rasOutAppend("No communicator data collected!\n");
 
+  // Allocate an auxiliary structure used for counting the number of ranks (unique GPUs) in a group.
+  NCCLCHECKGOTO(ncclCalloc(&peerNvmlDevs, coll->nPeers), ret, fail);
+
   // Print it out, the largest communicators first.
   for (int vcIdx = 0; vcIdx < nValCounts; vcIdx++) {
     struct rasValCount* vc = valCounts+vcIdx;
     struct rasAuxComm* auxComm = auxComms+vc->firstIdx;
     int ranksPerNodeMin, ranksPerNodeMax;
+    int ranksTotal;
 
     ranksPerNodeMin = NCCL_MAX_LOCAL_RANKS;
     ranksPerNodeMax = 0;
+    memset(peerNvmlDevs, '\0', coll->nPeers * sizeof(*peerNvmlDevs));
     // We don't group comms by ranksPerNodeMin/Max, so the values may differ between comms in one group.
     // Calculate the group's min/max.
+    // Also calculate the number of unique ranks in the group.
     for (int commIdx = 0; commIdx < vc->count; commIdx++) {
       if (ranksPerNodeMin > auxComm[commIdx].ranksPerNodeMin)
         ranksPerNodeMin = auxComm[commIdx].ranksPerNodeMin;
       if (ranksPerNodeMax < auxComm[commIdx].ranksPerNodeMax)
         ranksPerNodeMax = auxComm[commIdx].ranksPerNodeMax;
+      for (int rankIdx = 0; rankIdx < auxComm[commIdx].comm->nRanks; rankIdx++) {
+        struct rasCollComms::comm::rank* rank = auxComm[commIdx].comm->ranks+rankIdx;
+        peerNvmlDevs[rank->peerIdx] |= (1UL << rank->nvmlDev);
+      }
     }
+    ranksTotal = 0;
+    for (int peerIdx = 0; peerIdx < coll->nPeers; peerIdx++)
+      ranksTotal += __builtin_popcountll(peerNvmlDevs[peerIdx]);
     if (ranksPerNodeMin == ranksPerNodeMax)
       snprintf(rasLine, sizeof(rasLine), "%d", ranksPerNodeMin);
     else
       snprintf(rasLine, sizeof(rasLine), "%d-%d", ranksPerNodeMin, ranksPerNodeMax);
     rasOutAppend("%5d  %8d  %8d  %8s  %8d  %8d  %8s  %6s\n",
-                 vcIdx, vc->count, auxComm->nNodes, rasLine, auxComm->comm->commNRanks,
-                 auxComm->comm->commNRanks * vc->count,
+                 vcIdx, vc->count, auxComm->nNodes, rasLine, auxComm->comm->commNRanks, ranksTotal,
                  // __builtin_clz returns the number of leading 0-bits.  This makes it possible to translate the
                  // status (which is a bitmask) into an array index.
                  statusStr[(sizeof(unsigned int)*8-1)-__builtin_clz(auxComm->status)], errorStr[auxComm->errors]);
@@ -1386,6 +1399,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   rasClientEnqueueMsg(client, msg, msgLen);
   msg = nullptr;
 exit:
+  free(peerNvmlDevs);
   free(collOpCounts);
   free(valCounts);
   free(peerIdxConv);
