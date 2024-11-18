@@ -796,7 +796,8 @@ static ncclResult_t addP2pToPlan(
           int peerRank = dir ? sendRank : recvRank;
           struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
             : &channelPeers[peerRank]->recv[connIndex];
-          ncclRegisterP2pNetBuffer(comm, addrs[dir], bytes[dir], conn, &regFlag, &handles[dir][part], &plan->cleanupQueue);
+          if (conn->conn.flags & NCCL_DIRECT_NIC)
+            ncclRegisterP2pNetBuffer(comm, addrs[dir], bytes[dir], conn, &regFlag, &handles[dir][part], &plan->cleanupQueue);
           if (!regFlag) break;
         }
         netRegistered[dir] = regFlag ? true : false;
