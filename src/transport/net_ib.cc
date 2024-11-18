@@ -492,6 +492,11 @@ ncclResult_t ncclIbMakeVDeviceInternal(int* d, ncclNetVDeviceProps_t* props) {
     return ncclInvalidUsage;
   }
 
+  if (props->ndevs == 0) {
+      WARN("NET/IB : Can't make virtual NIC with 0 devices");
+      return ncclInvalidUsage;
+  }
+
   if (ncclNMergedIbDevs == MAX_IB_VDEVS) {
     WARN("NET/IB : Cannot allocate any more virtual devices (%d)", MAX_IB_VDEVS);
     return ncclInvalidUsage;
