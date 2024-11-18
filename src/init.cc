@@ -462,7 +462,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   comm->workArgsBytes = std::min<size_t>(ncclParamWorkArgsBytes(), ncclMaxKernelArgsSize(comm->cudaArch));
 
   memset(&ccStatus, 0, sizeof(ccStatus));
-  ccEnable = ncclNvmlGetCCStatus(&ccStatus) && (ccStatus.CCEnabled || ccStatus.multiGpuProtectedPCIE);
+  ccEnable = (ncclSuccess == ncclNvmlGetCCStatus(&ccStatus)) && (ccStatus.CCEnabled || ccStatus.multiGpuProtectedPCIE);
   if (ccEnable) {
     comm->workFifoBytes = 0;
   } else {
