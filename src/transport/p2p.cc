@@ -939,6 +939,7 @@ fail:
   *offsetOut = 0;
   *peerRmtAddrsOut = NULL;
   if (newInfo) free(newInfo);
+  WARN("rank %d failed to IPC register userbuff %p buffSize %ld nPeers %d isLegacyIpc %p", comm->rank, userbuff, buffSize, nPeers, isLegacyIpc);
   goto exit;
 }
 
@@ -1006,6 +1007,8 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
         ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
         if (nCleanupQueueElts) *nCleanupQueueElts += 1;
       }
+    } else {
+      NCCLCHECKGOTO(ncclCommGraphDeregister(comm, regRecord), ret, fail);
     }
   }
 

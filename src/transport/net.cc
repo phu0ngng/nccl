@@ -1558,7 +1558,7 @@ exit:
   return ret;
 fail:
   *outRegBufFlag = 0;
-  WARN("rank %d failed to NET register userbuff %p buffSize %ld, GDR flag %d", comm->rank, userbuff, buffSize, gdrFlag);
+  WARN("rank %d failed to NET register userbuff %p buffSize %ld GDR flag %d", comm->rank, userbuff, buffSize, gdrFlag);
   goto exit;
 }
 
@@ -1614,6 +1614,8 @@ ncclResult_t ncclNetGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
       record->reg = regRecord;
       ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
       if (nCleanupQueueElts) *nCleanupQueueElts += 1;
+    } else {
+      NCCLCHECKGOTO(ncclCommGraphDeregister(comm, regRecord), ret, fail);
     }
   }
 exit:

@@ -83,23 +83,33 @@ static ncclResult_t regCleanup(struct ncclComm* comm, struct ncclReg* reg) {
     struct ncclRegNetHandles* netHandle = reg->netHandleHead;
     struct ncclRegNetHandles* netHandlePrev;
     while(netHandle) {
-      NCCLCHECK(ncclNetDeregBuffer(comm, netHandle->proxyConn, netHandle->handle));
+      if (ncclNetDeregBuffer(comm, netHandle->proxyConn, netHandle->handle) != ncclSuccess) {
+        WARN("rank %d deregister NET buffer handle %p proxy rank %d failed\n", comm->rank, netHandle->handle, netHandle->proxyConn->rank);
+      }
       netHandlePrev = netHandle;
       netHandle = netHandle->next;
       free(netHandlePrev);
     }
   }
   if (reg->state & NVLS_REG_COMPLETE) {
-    NCCLCHECK(ncclNvlsDeregBuffer(comm, &reg->mcHandle, reg->regAddr, reg->dev, reg->regSize));
+    if (ncclNvlsDeregBuffer(comm, &reg->mcHandle, reg->regAddr, reg->dev, reg->regSize) != ncclSuccess) {
+      WARN("rank %d deregister NVLS buffer %p dev %d size %ld failed", comm->rank, (void*)reg->regAddr, reg->dev, reg->regSize);
+    }
     reg->regAddr = (CUdeviceptr)NULL;
   }
   if (reg->state & COLLNET_REG_COMPLETE) {
-    NCCLCHECK(ncclCollnetDeregBuffer(comm, reg->collnetProxyconn, reg->collnetHandle));
+    if (ncclCollnetDeregBuffer(comm, reg->collnetProxyconn, reg->collnetHandle) != ncclSuccess) {
+      WARN("rank %d deregister COLLNET buffer handle %p proxy rank %d failed", comm->rank, reg->collnetHandle, reg->collnetProxyconn->rank);
+    }
   }
   if (reg->state & IPC_REG_COMPLETE) {
     for (int i = 0; i < NCCL_MAX_LOCAL_RANKS; ++i)
-      if (reg->ipcInfos[i])
-        NCCLCHECK(ncclIpcDeregBuffer(comm, reg->ipcInfos[i]));
+      if (reg->ipcInfos[i]) {
+        if (ncclIpcDeregBuffer(comm, reg->ipcInfos[i]) != ncclSuccess) {
+          WARN("rank %d deregister IPC buffer %p peerRank %d failed", comm->rank, reg->ipcInfos[i]->baseAddr, reg->ipcInfos[i]->peerRank);
+        }
+        free(reg->ipcInfos[i]);
+      }
     if (reg->regIpcAddrs.hostPeerRmtAddrs) free(reg->regIpcAddrs.hostPeerRmtAddrs);
     if (reg->regIpcAddrs.devPeerRmtAddrs) NCCLCHECK(ncclCudaFree(reg->regIpcAddrs.devPeerRmtAddrs));
   }
