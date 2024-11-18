@@ -35,9 +35,6 @@ int ncclIsCuMemSupported() {
   // Query device to see if CUMEM VMM support is available
   CUCHECKGOTO(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED, currentDev), ret, error);
   if (!flag) return 0;
-  // Query device to see if CUMEM RDMA support is available
-  CUCHECKGOTO(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, currentDev), ret, error);
-  if (!flag) return 0;
 error:
   return (ret == ncclSuccess);
 #endif

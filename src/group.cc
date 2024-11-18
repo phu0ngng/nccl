@@ -480,6 +480,9 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
   while (groupCommHeadMain != nullptr) {
     struct ncclComm* comm = groupCommHeadMain;
     struct ncclComm* next = comm->groupNext;
+    // Poll for callbacks sent to us from other threads. Typically these free
+    // resources from to our memory pools and UB
+    NCCLCHECKGOTO(ncclCommPollCallbacks(comm, /*waitSome=*/false), ret, fail);
     (void) ncclGroupCommLeave(comm);
     if (!comm->config.blocking) {
       (void) ncclCommSetAsyncError(comm, ret);
