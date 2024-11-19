@@ -1226,3 +1226,18 @@ Values accepted
 
 Default is ``localhost:28028``.  Either a host name or an IP address can be used for the first part; an IPv6 address
 needs to be enclosed in square brackets (e.g., ``[::1]``).
+
+NCCL_RAS_TIMEOUT_FACTOR
+-----------------------
+(since 2.24)
+
+Specify the multiplier factor to apply to all the timeouts of the RAS subsystem.  RAS relies on multiple timeouts,
+ranging from 5 to 60 seconds, to determine the state of the application and to maintain its internal communication, with
+complex interdependecies between different timeouts.  This variable can be used to scale up all these timeouts in a
+safe, consistent manner, should any of the defaults turn out to be too small; e.g., if the NCCL application is subject
+to high-overhead debugging/tracing/etc., which makes its execution less predictable.  If one wants to use the
+``ncclras`` client in such circumstances, its timeout may need to be increased as well (or disabled).
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1; define and set to larger values to increase the timeouts.

@@ -32,7 +32,7 @@ The RAS threads also listen for client connections on ``localhost``, port ``2802
 :ref:`env_NCCL_RAS_ADDR`).  The ``ncclras`` binary client can be used to connect to that socket and query the RAS
 subsystem for the current job status, which is then printed to standard output.  The client accepts the ``-h`` and
 ``-p`` arguments to specify the host name and port, ``-v`` to produce a more verbose output in case of problems, and
-``-t`` to specify a different timeout (``5`` seconds by default).
+``-t`` to specify a different timeout (``5`` seconds by default; `0` disables the timeout).
 
 As the client communication protocol is fully text-based, standard networking tools such as telnet or netcat can be used
 instead of the ``ncclras`` binary.  The relevant commands include ``STATUS``, ``VERBOSE STATUS`` (equivalent to the

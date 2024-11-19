@@ -26,7 +26,7 @@
 
 static const char* hostName = "localhost";
 static const char* port = STR(NCCL_RAS_CLIENT_PORT);
-static int timeout = 0;
+static int timeout = -1;
 static bool verbose = false;
 static int sock = -1;
 
@@ -40,7 +40,8 @@ static void printUsage(const char* argv0) {
           "  -p, --port=PORT     TCP port of the RAS client socket of the NCCL job\n"
           "                      (" STR(NCCL_RAS_CLIENT_PORT) " by default)\n"
           "  -t, --timeout=SECS  Maximum time for the local NCCL process to wait for\n"
-          "                      responses from other NCCL processes (5 secs by default)\n"
+          "                      responses from other NCCL processes\n"
+          "                      (" STR(RAS_COLLECTIVE_LEG_TIMEOUT_SEC) " secs by default; 0 disables the timeout)\n"
           "  -v, --verbose       Increase the verbosity level of the RAS output\n"
           "      --help          Print this help and exit\n"
           "      --version       Print the version number and exit\n", argv0);
@@ -70,7 +71,7 @@ static void parseArgs(int argc, char** argv) {
       case 't': {
         char* endPtr = nullptr;
         timeout = strtol(optarg, &endPtr, 10);
-        if (timeout < 1 || !endPtr || *endPtr != '\0') {
+        if (timeout < 0 || !endPtr || *endPtr != '\0') {
           fprintf(stderr, "Invalid timeout: %s\n", optarg);
           exit(1);
         }
@@ -156,8 +157,8 @@ retry:
       continue;
     }
     // Initially start with a small, 1-sec timeout to quickly eliminate non-responsive processes...
-    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv) != 0 ||
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) != 0) {
+    if (timeout && (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv) != 0 ||
+                    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) != 0)) {
       perror("setsockopt");
       // Non-fatal; fall through.
     }
@@ -216,7 +217,7 @@ retry:
             "Will try to continue in spite of that...\n", msgBuf+strlen("SERVER PROTOCOL "), NCCL_RAS_CLIENT_PROTOCOL);
   }
 
-  if (timeout > 0) {
+  if (timeout >= 0) {
     snprintf(msgBuf, sizeof(msgBuf), "TIMEOUT %d\n", timeout);
     if (socketWrite(sock, msgBuf, strlen(msgBuf)) != strlen(msgBuf)) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -242,11 +243,13 @@ retry:
       goto fail;
     }
   }
-  // Increase the socket timeout to accommodate NCCL timeout.
-  tv.tv_sec += (timeout > 0 ? timeout : RAS_COLLECTIVE_LEG_TIMEOUT_SEC) + RAS_COLLECTIVE_EXTRA_TIMEOUT_SEC;
-  if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) != 0) {
-    perror("setsockopt");
-    // Non-fatal; fall through.
+  if (timeout) {
+    // Increase the socket timeout to accommodate NCCL timeout.
+    tv.tv_sec += (timeout > 0 ? timeout : RAS_COLLECTIVE_LEG_TIMEOUT_SEC) + RAS_COLLECTIVE_EXTRA_TIMEOUT_SEC;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv) != 0) {
+      perror("setsockopt");
+      // Non-fatal; fall through.
+    }
   }
 
   return 0;

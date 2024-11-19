@@ -409,7 +409,7 @@ void rasCollFree(struct rasCollective* coll) {
 void rasCollsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
   for (int collIdx = 0; collIdx < nRasCollectives; collIdx++) {
     struct rasCollective* coll = rasCollectives+collIdx;
-    if (coll->type == RAS_MSG_NONE)
+    if (coll->type == RAS_MSG_NONE || coll->timeout == 0)
       continue;
 
     if (now - coll->startTime > coll->timeout) {

@@ -194,6 +194,7 @@ static ncclResult_t getNewClientEntry(struct rasClient** pClient) {
   memset(client, '\0', sizeof(*client));
   client->sock = client->pfd = -1;
   ncclIntruQueueConstruct(&client->sendQ);
+  client->timeout =  RAS_COLLECTIVE_LEG_TIMEOUT;
   client->collIdx = -1;
 
   *pClient = client;
@@ -320,7 +321,7 @@ void rasClientEventLoop(int clientIdx, int pollIdx) {
       } else if (strncasecmp(cmd, "timeout ", strlen("timeout ")) == 0) {
         char* endPtr = nullptr;
         int timeout = strtol(cmd+strlen("timeout "), &endPtr, 10);
-        if (timeout < 1 || !endPtr || *endPtr != '\0') {
+        if (timeout < 0 || !endPtr || *endPtr != '\0') {
           snprintf(rasLine, sizeof(rasLine), "ERROR: Invalid timeout value %s\n", cmd+strlen("timeout "));
         } else {
           client->timeout = timeout * CLOCK_UNITS_PER_SEC;
@@ -670,8 +671,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
 
 #if 0 // Commented out for now to focus the summary status report on the information most relevant to the users.
       // To be revisited with future extensions to RAS.
-  rasOutAppend("\nGathering data about the RAS network (timeout %lds)...",
-               (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT) / CLOCK_UNITS_PER_SEC);
+  rasOutAppend("\nGathering data about the RAS network (timeout %lds)...", client->timeout / CLOCK_UNITS_PER_SEC);
   msgLen = rasOutLength();
   NCCLCHECKGOTO(rasClientAllocMsg(&msg, msgLen), ret, fail);
   rasOutExtract(msg);
@@ -681,7 +681,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
     struct rasCollRequest collReq;
     bool allDone = false;
     rasCollReqInit(&collReq);
-    collReq.timeout = (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT);
+    collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_CONNS;
     NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_CONNS), &allDone, &client->collIdx),
                   ret, fail);
@@ -699,7 +699,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
     struct rasCollRequest collReq;
     bool allDone = false;
     rasCollReqInit(&collReq);
-    collReq.timeout = (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT);
+    collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_COMMS;
     NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_COMMS), &allDone, &client->collIdx),
                   ret, fail);
@@ -815,7 +815,7 @@ static ncclResult_t rasClientRunConns(struct rasClient* client) {
   rasCollFree(coll);
 
   rasOutAppend("\nGathering data about the NCCL communicators (timeout %lds)...",
-               (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT) / CLOCK_UNITS_PER_SEC);
+               client->timeout / CLOCK_UNITS_PER_SEC);
   msgLen = rasOutLength();
   NCCLCHECKGOTO(rasClientAllocMsg(&msg, msgLen), ret, fail);
   rasOutExtract(msg);
@@ -825,7 +825,7 @@ static ncclResult_t rasClientRunConns(struct rasClient* client) {
     struct rasCollRequest collReq;
     bool allDone = false;
     rasCollReqInit(&collReq);
-    collReq.timeout = (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT);
+    collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_COMMS;
     NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_COMMS), &allDone, &client->collIdx),
                   ret, fail);

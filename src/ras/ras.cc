@@ -74,6 +74,7 @@ static ncclResult_t rasNetSendNack(struct rasSocket* sock);
 
 static void* rasThreadMain(void*);
 
+NCCL_PARAM(RasTimeoutFactor, "RAS_TIMEOUT_FACTOR", 1);
 
 //////////////////////////////////////////////////
 // Functions invoked from regular NCCL threads. //
