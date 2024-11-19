@@ -284,20 +284,23 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
         int i = a*NCCL_NUM_PROTOCOLS+p;
         float ref = data[i];
         float value = model[i];
-        int bold = value == bestmodel ? 7 : 0;
+        int boldmodel = value == bestmodel ? 7 : 0;
+        int boldref = ref == bestdata ? 7 : 0;
         if (ref == -1.0) {
           printf("%10s ", "");
-          if (bold) printf("%c[%d;32m", 0x1b, bold);
+          if (boldmodel) printf("%c[%d;32m", 0x1b, boldmodel);
         } else {
+          if (boldref) printf("%c[%d;37m", 0x1b, boldref);
           PRINT_MODE("%9.1f  ", ref);
+          if (boldref) printf("%c[00m", 0x1b);
           float s = 1-ref/value;
           s *= s;
-          if (s > .15) printf("%c[%d;31m", 0x1b, bold);
-          else if (s > .08) printf("%c[%d;33m", 0x1b, bold);
-          else printf("%c[%d;32m", 0x1b, bold);
+          if (s > .15) printf("%c[%d;31m", 0x1b, boldmodel);
+          else if (s > .08) printf("%c[%d;33m", 0x1b, boldmodel);
+          else printf("%c[%d;32m", 0x1b, boldmodel);
         }
         PRINT_MODE("%9.1f", value);
-        if ((ref != -1.0) || bold) printf("%c[00m", 0x1b);
+        if ((ref != -1.0) || boldmodel) printf("%c[00m", 0x1b);
         printf(" |");
       }
     }
