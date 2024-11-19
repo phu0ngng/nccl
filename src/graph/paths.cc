@@ -469,6 +469,14 @@ ncclResult_t ncclTopoNeedFlush(struct ncclComm* comm, int netDev, int rank, int*
   struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
   // Flush is required on Ampere and earlier
   if (gpu->gpu.cudaCompCap >= 90) *flush = 0;
+  // On C2C platforms, data could go through a PCI switch while completions and
+  // flags would go through C2C. In that case, force a flush.
+  int c, n;
+  NCCLCHECK(ncclGetLocalCpu(system, g, &c));
+  NCCLCHECK(ncclTopoIdToIndex(system, NET, netDev, &n));
+  if (gpu->paths[NET][n].type <= PATH_PXB && gpu->paths[CPU][c].type == PATH_C2C) {
+    *flush = 1;
+  }
   return ncclSuccess;
 }
 
