@@ -44,7 +44,7 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
     goto exit;
   }
 
-  profilerPluginLib = openProfilerPluginLib(getenv("NCCL_PROFILER_PLUGIN"));
+  profilerPluginLib = openProfilerPluginLib(ncclGetEnv("NCCL_PROFILER_PLUGIN"));
   if (profilerPluginLib == nullptr) {
     goto fail;
   }

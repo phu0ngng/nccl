@@ -970,17 +970,21 @@ struct ncclXmlNode** physNetNodes, struct ncclXmlNode** netNode, ncclResult_t (*
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, const char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+  ncclResult_t ret = ncclSuccess;
   INFO(NCCL_ENV|NCCL_NET, "TOPO/NET : Force-fusing NICs using NCCL_NET_FORCE_MERGE=%s", str);
+  char* ncStr;
+  NCCLCHECK(ncclCalloc(&ncStr, strlen(str)+1));
+  strcpy(ncStr, str);
   char* semi_token;
-  char* semi = strtok_r(str, ";", &semi_token);
+  char* semi = strtok_r(ncStr, ";", &semi_token);
   while (semi) {
     TRACE(NCCL_NET, "Fusing %s", semi);
     struct netIf userIfs[NCCL_NET_MAX_DEVS_PER_NIC];
     int nUserIfs = parseStringList(semi, userIfs, NCCL_NET_MAX_DEVS_PER_NIC);
     if (nUserIfs == 0) {
       INFO(NCCL_NET, "NET/IB : Invalid NCCL_NET_FORCE_MERGE specified %s. Couldn't parse substring %s. Please provide a semicolon-delimited list of comma-delimited NIC groups.",
-        str, semi);
+        ncStr, semi);
       continue;
     }
 
@@ -994,16 +998,18 @@ ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, char* str,
     if (vProps.ndevs != nUserIfs) {
       WARN("TOPO/NET : Only matched %d devices, %d requested from %s",
         vProps.ndevs, nUserIfs, semi);
-      return ncclInvalidUsage;
+      ret = ncclInvalidUsage;
+      goto fail;
     }
 
     if (vProps.ndevs > NCCL_NET_MAX_DEVS_PER_NIC) {
       WARN("Specified fused NIC %s which has too many devices (%d). Max %d", semi, vProps.ndevs, NCCL_NET_MAX_DEVS_PER_NIC);
-      return ncclInvalidUsage;
+      ret = ncclInvalidUsage;
+      goto fail;
     }
 
     struct ncclXmlNode* netNode;
-    NCCLCHECK(ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice));
+    NCCLCHECKGOTO(ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice), ret, fail);
 
     // Only set that a device is "placed" after successfully making a vNic (it's possible to exit before this)
     for (int i = 0; i < vProps.ndevs; i++) {
@@ -1013,7 +1019,11 @@ ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, char* str,
     semi = strtok_r(NULL, ";", &semi_token);;
   }
 
-  return ncclSuccess;
+exit:
+  free(ncStr);
+  return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclTopoAutoMerge(ncclComm_t comm, struct ncclXml* xml, int mergeLevel, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
@@ -1125,16 +1135,16 @@ ncclResult_t ncclTopoMakeVNics(ncclComm_t comm, struct ncclXml* xml, ncclResult_
   // By default, don't merge any devices
   int mergeLevel;
   mergeLevel = PATH_PORT;
-  char* mergeLevelEnv;
-  mergeLevelEnv = getenv("NCCL_NET_MERGE_LEVEL");
-  if (mergeLevelEnv) kvConvertToInt(mergeLevelEnv, &mergeLevel, nicPathKvList);
-  char* forceMerge;
-  forceMerge = getenv("NCCL_NET_FORCE_MERGE");
-  NCCLCHECK(ncclCalloc(&placedDevs, physicalDevs));
-  memset(placedDevs, 0, sizeof(int)*physicalDevs);
+  { // Avoids warnings related to jumping to "out"
+    const char* mergeLevelEnv = ncclGetEnv("NCCL_NET_MERGE_LEVEL");
+    if (mergeLevelEnv) kvConvertToInt(mergeLevelEnv, &mergeLevel, nicPathKvList);
+    const char* forceMerge = ncclGetEnv("NCCL_NET_FORCE_MERGE");
+    NCCLCHECK(ncclCalloc(&placedDevs, physicalDevs));
+    memset(placedDevs, 0, sizeof(int)*physicalDevs);
 
-  if (forceMerge) {
-    NCCLCHECKGOTO(ncclTopoForceMerge(comm, xml, forceMerge, placedDevs, props, physNetNodes, physicalDevs, makeVDevice), res, out);
+    if (forceMerge) {
+      NCCLCHECKGOTO(ncclTopoForceMerge(comm, xml, forceMerge, placedDevs, props, physNetNodes, physicalDevs, makeVDevice), res, out);
+    }
   }
   NCCLCHECKGOTO(ncclTopoAutoMerge(comm, xml, mergeLevel, placedDevs, props, physNetNodes, physicalDevs, makeVDevice), res, out);
 

@@ -484,7 +484,7 @@ static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
   if (devOOB < 0) {
     pthread_mutex_lock(&bootstrapNetLock);
     if (devOOB < 0) {
-      char* userIfEnv = getenv("NCCL_OOB_NET_IFNAME");
+      const char* userIfEnv = ncclGetEnv("NCCL_OOB_NET_IFNAME");
       if (userIfEnv && strlen(userIfEnv) > 0) {
         INFO(NCCL_BOOTSTRAP | NCCL_ENV, "NCCL_OOB_NET_IFNAME set to %s", userIfEnv);
         bool searchNot = userIfEnv && userIfEnv[0] == '^';
