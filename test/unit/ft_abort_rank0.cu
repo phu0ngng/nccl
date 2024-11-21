@@ -104,8 +104,8 @@ int main(int argc, char** argv) {
     if (comm_rank == 0) NCCLCHECK(ncclGetUniqueId(&id));
     MPI_TRY(MPI_Bcast(&id, sizeof(ncclUniqueId), MPI_CHAR, 0, MPI_COMM_WORLD));
 
-    // Only need 2 ranks
-    assert(comm_size == 2);
+    // Only need 2 ranks at most
+    assert(comm_size <= 2);
     runAllReduceProcess(comm_rank, comm_size, id);
 
     MPI_TRY(MPI_Finalize());

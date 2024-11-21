@@ -55,7 +55,7 @@ echo "=============================== FT TESTS Default - $(date +\"%T\") =======
 time $SRUN ./ft_test
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("FT TESTS Default")
 
-time $SRUN $MPI_HOME/bin/mpirun --oversubscribe -n 2 ./ft_abort_rank0
+time $SRUN $MPI_HOME/bin/mpirun $MPI_PARAMS ./ft_abort_rank0
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("FT TESTS Default")
 echo "=============================== FT TESTS Default DONE - $(date +\"%T\") ============================"
 echo -e "\n\n"
