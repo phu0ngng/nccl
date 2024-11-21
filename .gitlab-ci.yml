@@ -205,7 +205,7 @@ unit_tests-P100:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -224,7 +224,7 @@ unit_tests-P40:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -244,7 +244,7 @@ unit_tests-GP100:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -263,7 +263,7 @@ unit_tests-A40-single:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -282,7 +282,7 @@ unit_tests-A40-dual:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -301,7 +301,7 @@ unit_tests-A100:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -323,7 +323,7 @@ unit_tests-eos:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
   script:
-    - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
+    - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account) && export MPI_HOME=$(get_openmpi_home)
     - srun --exclusive -n 1 -c8 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:unit::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-unit.sh
 
 unit_tests-AWS_H100_EFA:
