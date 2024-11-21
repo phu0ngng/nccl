@@ -1251,6 +1251,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   int* localRanks = NULL;
   struct ncclXml* rankXml;
   int localRank = -1, nLocalRanks = 0;
+  int netLockHeld = 0;
   NCCLCHECK(xmlAlloc(&xml, NCCL_TOPO_XML_MAX_NODES));
   const char* xmlTopoFile = ncclGetEnv("NCCL_TOPO_FILE");
   if (xmlTopoFile) {
@@ -1283,6 +1284,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   // Auto-detect NICs if needed. net/collnet share the same xml/graph nodes,
   // so we start with collnet so that it has precedence.
   pthread_mutex_lock(&netLock);
+  netLockHeld = 1;
   INFO(NCCL_GRAPH, "TOPO/NET : Importing network plugins to topology");
   ncclTopoNetState* state;
   state = NULL;
@@ -1295,6 +1297,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   NCCLCHECKGOTO(ncclTopoProcessNet(comm, xml, 0, dumpXmlFile, state,
     comm->ncclNet->getProperties, comm->ncclNet->makeVDevice, comm->ncclNet->devices), ret, fail);
   pthread_mutex_unlock(&netLock);
+  netLockHeld = 0;
 
   // Remove XML branches which don't have a node with keep="1" (typically when importing a topology)
   NCCLCHECKGOTO(ncclTopoTrimXml(xml), ret, fail);
@@ -1350,11 +1353,9 @@ exit:
   if (!comm->MNNVL && localRanks) free(localRanks);
   if (mem) free(mem);
   free(xml);
-  // Try and take the netLock. Regardless if it's held or not, we can now guarunteed unlock it.
-  pthread_mutex_trylock(&netLock);
-  pthread_mutex_unlock(&netLock);
   return ret;
 fail:
+  if (netLockHeld) pthread_mutex_unlock(&netLock);
   goto exit;
 }
 
