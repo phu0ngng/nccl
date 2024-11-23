@@ -204,8 +204,9 @@ unit_tests-P100:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
+    MPI_PARAMS: "--oversubscribe -n 2"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -223,8 +224,9 @@ unit_tests-P40:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
+    MPI_PARAMS: "--oversubscribe -n 2"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -243,8 +245,9 @@ unit_tests-GP100:
     NCCL_CUMEM_ENABLE: "0"
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
+    MPI_PARAMS: "--oversubscribe -n 2"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -262,8 +265,9 @@ unit_tests-A40-single:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40"
+    MPI_PARAMS: "--oversubscribe -n 1"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -281,8 +285,9 @@ unit_tests-A40-dual:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
+    MPI_PARAMS: "--oversubscribe -n 2"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -300,8 +305,9 @@ unit_tests-A100:
   variables:
     NCCL_IB_HCA: "mlx5_0"
     SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
+    MPI_PARAMS: "--oversubscribe -n 2"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
+    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-unit.sh
   artifacts:
     when: always
@@ -322,8 +328,9 @@ unit_tests-eos:
     DISABLE_MEMLEAK: "1" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
+    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
   script:
-    - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
+    - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account) && export MPI_HOME=$(get_openmpi_home)
     - srun --exclusive -n 1 -c8 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:unit::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-unit.sh
 
 unit_tests-AWS_H100_EFA:
@@ -342,6 +349,7 @@ unit_tests-AWS_H100_EFA:
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
     TEST_CMD: ./test/scripts/gitlab-runner-unit.sh
+    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -377,6 +385,7 @@ unit_tests-draco_oci:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     TEST_CMD: ./test/scripts/gitlab-runner-unit.sh
     TIMEOUT: "00:10:00" # HH:MM:SS
+    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
   script:
     - source docker/draco-oci-config.sh && configure_test_env
     - srun --exclusive --nodes $NNODES --gpus-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
