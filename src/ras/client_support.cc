@@ -67,8 +67,8 @@ struct rasAuxComm {
 };
 
 // Connected RAS clients.
-struct rasClient* rasClients;
-int nRasClients;
+struct rasClient* rasClientsHead;
+struct rasClient* rasClientsTail;
 
 // Minimum byte count to increment the output buffer size by if it's too small.
 #define RAS_OUT_INCREMENT 4096
@@ -181,21 +181,20 @@ fail:
 // Returns the index of the first available entry in the rasClients array, enlarging the array if necessary.
 static ncclResult_t getNewClientEntry(struct rasClient** pClient) {
   struct rasClient* client;
-  int i;
-  for (i = 0; i < nRasClients; i++)
-    if (rasClients[i].status == RAS_CLIENT_CLOSED)
-      break;
-  if (i == nRasClients) {
-    NCCLCHECK(ncclRealloc(&rasClients, nRasClients, nRasClients+RAS_INCREMENT));
-    nRasClients += RAS_INCREMENT;
-  }
 
-  client = rasClients+i;
-  memset(client, '\0', sizeof(*client));
+  NCCLCHECK(ncclCalloc(&client, 1));
+
   client->sock = client->pfd = -1;
   ncclIntruQueueConstruct(&client->sendQ);
   client->timeout =  RAS_COLLECTIVE_LEG_TIMEOUT;
-  client->collIdx = -1;
+
+  if (rasClientsHead) {
+    rasClientsTail->next = client;
+    client->prev = rasClientsTail;
+    rasClientsTail = client;
+  } else {
+    rasClientsHead = rasClientsTail = client;
+  }
 
   *pClient = client;
   return ncclSuccess;
@@ -227,14 +226,21 @@ static void rasClientEnqueueMsg(struct rasClient* client, char* msg, size_t msgL
 // Terminates a connection with a RAS client.
 static void rasClientTerminate(struct rasClient* client) {
   (void)close(client->sock);
-  client->sock = -1;
-  client->status = RAS_CLIENT_CLOSED;
   rasPfds[client->pfd].fd = -1;
   rasPfds[client->pfd].events = rasPfds[client->pfd].revents = 0;
-  client->pfd = -1;
   while (struct rasMsgMeta* meta = ncclIntruQueueTryDequeue(&client->sendQ)) {
     free(meta);
   }
+
+  if (client == rasClientsHead)
+    rasClientsHead = rasClientsHead->next;
+  if (client == rasClientsTail)
+    rasClientsTail = rasClientsTail->prev;
+  if (client->prev)
+    client->prev->next = client->next;
+  if (client->next)
+    client->next->prev = client->prev;
+  free(client);
 }
 
 
@@ -245,16 +251,12 @@ static void rasClientTerminate(struct rasClient* client) {
 // Invoked when an asynchronous operation that a client was waiting on completes.  Finds the right client and
 // reinvokes rasClientRun.
 ncclResult_t rasClientResume(struct rasCollective* coll) {
-  int collIdx = coll-rasCollectives;
-  int i;
-  struct rasClient* client = nullptr;
-  for (i = 0; i < nRasClients; i++) {
-    client = rasClients+i;
-    if (client->status != RAS_CLIENT_CLOSED && client->collIdx == collIdx) {
+  struct rasClient* client;
+
+  for (client = rasClientsHead; client; client = client->next)
+    if (client->coll == coll)
       break;
-    }
-  }
-  if (i == nRasClients) {
+  if (client == nullptr) {
     INFO(NCCL_RAS, "RAS failed to find a matching client!");
     rasCollFree(coll);
     goto exit;
@@ -266,8 +268,7 @@ exit:
 }
 
 // Handles a ready client FD from the main event loop.
-void rasClientEventLoop(int clientIdx, int pollIdx) {
-  struct rasClient* client = rasClients+clientIdx;
+void rasClientEventLoop(struct rasClient* client, int pollIdx) {
   bool closed = false;
 
   if (client->status == RAS_CLIENT_CONNECTED) {
@@ -431,7 +432,7 @@ static ncclResult_t rasClientRun(struct rasClient* client) {
         break;
       }
     case RAS_CLIENT_CONNS:
-      assert(client->collIdx != -1);
+      assert(client->coll);
       NCCLCHECKGOTO(rasClientRunConns(client), ret, exit);
 #endif
       client->status = RAS_CLIENT_COMMS;
@@ -440,7 +441,7 @@ static ncclResult_t rasClientRun(struct rasClient* client) {
         break;
       }
     case RAS_CLIENT_COMMS:
-      assert(client->collIdx != -1);
+      assert(client->coll);
       NCCLCHECKGOTO(rasClientRunComms(client), ret, exit);
       client->status = RAS_CLIENT_FINISHED;
       break;
@@ -683,7 +684,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
     rasCollReqInit(&collReq);
     collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_CONNS;
-    NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_CONNS), &allDone, &client->collIdx),
+    NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_CONNS), &allDone, &client->coll),
                   ret, fail);
     if (!allDone)
       ret = ncclInProgress; // We need to wait for async. responses.
@@ -701,7 +702,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
     rasCollReqInit(&collReq);
     collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_COMMS;
-    NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_COMMS), &allDone, &client->collIdx),
+    NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_COMMS), &allDone, &client->coll),
                   ret, fail);
     if (!allDone)
       ret = ncclInProgress;
@@ -721,13 +722,13 @@ static ncclResult_t rasClientRunConns(struct rasClient* client) {
   ncclResult_t ret = ncclSuccess;
   char* msg = nullptr;
   int msgLen;
-  struct rasCollective* coll = rasCollectives+client->collIdx;
+  struct rasCollective* coll = client->coll;
   struct rasCollConns* connsData = (struct rasCollConns*)coll->data;
   int expected;
   struct rasPeerInfo* peersBuf = nullptr;
 
   assert(coll->nFwdSent == coll->nFwdRecv);
-  client->collIdx = -1;
+  client->coll = nullptr;
 
   rasOutReset();
   rasOutAppend(" obtained a result in %.2fs\n", (clockNano()-coll->startTime)/1e9);
@@ -827,7 +828,7 @@ static ncclResult_t rasClientRunConns(struct rasClient* client) {
     rasCollReqInit(&collReq);
     collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_COMMS;
-    NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_COMMS), &allDone, &client->collIdx),
+    NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_COMMS), &allDone, &client->coll),
                   ret, fail);
     if (!allDone)
       ret = ncclInProgress;
@@ -847,7 +848,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   ncclResult_t ret = ncclSuccess;
   char* msg = nullptr;
   int msgLen;
-  struct rasCollective* coll = rasCollectives+client->collIdx;
+  struct rasCollective* coll = client->coll;
   struct rasCollComms* commsData = (struct rasCollComms*)coll->data;
   struct rasCollComms::comm* comm;
   struct rasCollComms::comm::rank* ranksReSorted = nullptr;
@@ -874,7 +875,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   };
 
   assert(coll->nFwdSent == coll->nFwdRecv);
-  client->collIdx = -1;
+  client->coll = nullptr;
 
   rasOutReset();
   rasOutAppend(" (%.2fs)\n=============\n\n", (clockNano()-coll->startTime)/1e9);
@@ -992,7 +993,8 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
     }
   } // for (commIdx)
   // Sort it by size/nNodes/status/errors/missing ranks.
-  qsort(auxComms, commsData->nComms, sizeof(*auxComms), &rasAuxCommsCompareRev);
+  if (auxComms)
+    qsort(auxComms, commsData->nComms, sizeof(*auxComms), &rasAuxCommsCompareRev);
 
   // Calculate the distribution of different communicator sizes.
   NCCLCHECKGOTO(ncclCalloc(&valCounts, commsData->nComms), ret, fail);

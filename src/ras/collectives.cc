@@ -32,14 +32,14 @@ static int nRasCollHistory, rasCollHistNextIdx;
 // Monotonically increased to ensure that each collective originating locally has a unique Id.
 static uint64_t rasCollLastId;
 
-// Array keeping track of ongoing collective operations (apart from broadcasts, which have no response so require
+// Keeping track of ongoing collective operations (apart from broadcasts, which have no response so require
 // no such tracking).
-struct rasCollective* rasCollectives;
-static int nRasCollectives;
+struct rasCollective* rasCollectivesHead;
+struct rasCollective* rasCollectivesTail;
 
 static ncclResult_t getNewCollEntry(struct rasCollective** pColl);
 static ncclResult_t rasLinkSendCollReq(struct rasLink* link, struct rasCollective* coll,
-                                       const struct rasCollRequest* req, size_t reqLen, int fromConnIdx);
+                                       const struct rasCollRequest* req, size_t reqLen, struct rasConnection* fromConn);
 static ncclResult_t rasConnSendCollReq(struct rasConnection* conn, const struct rasCollRequest* req, size_t reqLen);
 static ncclResult_t rasCollReadyResp(struct rasCollective* coll);
 static ncclResult_t rasConnSendCollResp(struct rasConnection* conn,
@@ -62,21 +62,25 @@ static int ncclCommsCompare(const void* p1, const void* p2);
 // Returns the index of the first available entry in the rasCollectives array, enlarging the array if necessary.
 static ncclResult_t getNewCollEntry(struct rasCollective** pColl) {
   struct rasCollective* coll;
-  int i;
-  for (i = 0; i < nRasCollectives; i++)
-    if (rasCollectives[i].type == RAS_MSG_NONE)
-      break;
-  if (i == nRasCollectives) {
-    NCCLCHECK(ncclRealloc(&rasCollectives, nRasCollectives, nRasCollectives+RAS_INCREMENT));
-    nRasCollectives += RAS_INCREMENT;
-  }
+  int nRasConns;
 
-  coll = rasCollectives+i;
-  memset(coll, '\0', sizeof(*coll));
+  NCCLCHECK(ncclCalloc(&coll, 1));
+
   coll->startTime = clockNano();
-  coll->fromConnIdx = -1;
+  coll->fromConn = nullptr;
   // We are unlikely to use the whole array, but at least we won't need to realloc.
+  nRasConns = 0;
+  for (struct rasConnection* conn = rasConnsHead; conn; conn = conn->next)
+    nRasConns++;
   NCCLCHECK(ncclCalloc(&coll->fwdConns, nRasConns));
+
+  if (rasCollectivesHead) {
+    rasCollectivesTail->next = coll;
+    coll->prev = rasCollectivesTail;
+    rasCollectivesTail = coll;
+  } else {
+    rasCollectivesHead = rasCollectivesTail = coll;
+  }
 
   *pColl = coll;
   return ncclSuccess;
@@ -95,21 +99,21 @@ void rasCollReqInit(struct rasCollRequest* req) {
 // in preparation for collective response messages.
 // pAllDone indicates on return if the collective operation is already finished, which is unusual, but possible
 // in scenarios such as a total of two peers.
-// pCollIdx provides on return an index of the allocated rasCollective structure to track this collective (unless
+// pColl provides on return a pointer to the allocated rasCollective structure to track this collective (unless
 // it's a broadcast, which require no such tracking).
-ncclResult_t rasNetSendCollReq(const struct rasCollRequest* req, size_t reqLen, bool* pAllDone, int* pCollIdx,
-                               int fromConnIdx) {
+ncclResult_t rasNetSendCollReq(const struct rasCollRequest* req, size_t reqLen, bool* pAllDone,
+                               struct rasCollective** pColl, struct rasConnection* fromConn) {
   struct rasCollective* coll = nullptr;
   if (req->type >= RAS_COLL_CONNS) {
     // Keep track of this collective operation so that we can handle the responses appropriately.
     NCCLCHECK(getNewCollEntry(&coll));
-    if (pCollIdx)
-      *pCollIdx = coll-rasCollectives;
+    if (pColl)
+      *pColl = coll;
     memcpy(&coll->rootAddr, &req->rootAddr, sizeof(coll->rootAddr));
     coll->rootId = req->rootId;
     coll->type = req->type;
     coll->timeout = req->timeout;
-    coll->fromConnIdx = fromConnIdx;
+    coll->fromConn = fromConn;
     if (ncclCalloc(&coll->peers, 1) == ncclSuccess) {
       memcpy(coll->peers, &rasNetListeningSocket.addr, sizeof(*coll->peers));
       coll->nPeers = 1;
@@ -137,11 +141,11 @@ ncclResult_t rasNetSendCollReq(const struct rasCollRequest* req, size_t reqLen, 
     }
   } // req->type < RAS_COLL_CONNS
 
-  for (int connIdx = 0; connIdx < nRasConns; connIdx++)
-    rasConns[connIdx].linkFlag = false;
+  for (struct rasConnection* conn = rasConnsHead; conn; conn = conn->next)
+    conn->linkFlag = false;
 
-  (void)rasLinkSendCollReq(&rasNextLink, coll, req, reqLen, fromConnIdx);
-  (void)rasLinkSendCollReq(&rasPrevLink, coll, req, reqLen, fromConnIdx);
+  (void)rasLinkSendCollReq(&rasNextLink, coll, req, reqLen, fromConn);
+  (void)rasLinkSendCollReq(&rasPrevLink, coll, req, reqLen, fromConn);
 
   if (coll && pAllDone)
     *pAllDone = (coll->nFwdSent == coll->nFwdRecv);
@@ -152,20 +156,19 @@ exit:
 // Sends the collective message through all connections associated with this link (with the exception of the one
 // the message came from, if any).
 static ncclResult_t rasLinkSendCollReq(struct rasLink* link, struct rasCollective* coll,
-                                       const struct rasCollRequest* req, size_t reqLen, int fromConnIdx) {
+                                       const struct rasCollRequest* req, size_t reqLen,
+                                       struct rasConnection* fromConn) {
   for (int i = 0; i < link->nConns; i++) {
     struct rasLinkConn* linkConn = link->conns+i;
-    if (linkConn->connIdx != -1 && linkConn->connIdx != fromConnIdx) {
-      struct rasConnection* conn = rasConns+linkConn->connIdx;
-      if (!conn->linkFlag) {
-        // We send collective messages through fully established and operational connections only.
-        if (conn->sockIdx != -1 && rasSockets[conn->sockIdx].status == RAS_SOCK_READY && !conn->experiencingDelays) {
-          if (rasConnSendCollReq(conn, req, reqLen) == ncclSuccess && coll != nullptr)
-            coll->fwdConns[coll->nFwdSent++] = linkConn->connIdx;
-        } // if (conn->sockIdx != -1 && RAS_SOCK_READY)
-        conn->linkFlag = true;
-      } // if (!conn->linkFlag)
-    } // if (linkConn->connIdx != -1 && linkConn->connIdx != fromConnIdx)
+    if (linkConn->conn && linkConn->conn != fromConn && !linkConn->conn->linkFlag) {
+      // We send collective messages through fully established and operational connections only.
+      if (linkConn->conn->sock && linkConn->conn->sock->status == RAS_SOCK_READY &&
+          !linkConn->conn->experiencingDelays) {
+        if (rasConnSendCollReq(linkConn->conn, req, reqLen) == ncclSuccess && coll != nullptr)
+          coll->fwdConns[coll->nFwdSent++] = linkConn->conn;
+      } // linkConn->conn is fully established and operational.
+      linkConn->conn->linkFlag = true;
+    } // if (linkConn->conn && linkConn->conn != fromConn && !linkConn->con->linkFlag)
   } // for (i)
 
   return ncclSuccess;
@@ -190,8 +193,8 @@ static ncclResult_t rasConnSendCollReq(struct rasConnection* conn, const struct 
 // in which case it can immediately send the response.
 ncclResult_t rasMsgHandleCollReq(struct rasMsg* msg, struct rasSocket* sock) {
   bool allDone = false;
-  int collIdx = -1;
-  assert(sock->connIdx != -1);
+  struct rasCollective* coll = nullptr;
+  assert(sock->conn);
 
   // First check if we've already handled this request (through another connection).
   for (int i = 0; i < nRasCollHistory; i++) {
@@ -202,7 +205,7 @@ ncclResult_t rasMsgHandleCollReq(struct rasMsg* msg, struct rasSocket* sock) {
       if (msg->collReq.type >= RAS_COLL_CONNS) {
         // Send an empty response so that the sender can account for it.  The non-empty response has already been
         // sent through the connection that we received the request through first.
-        NCCLCHECK(rasConnSendCollResp(rasConns+sock->connIdx, &msg->collReq.rootAddr, msg->collReq.rootId,
+        NCCLCHECK(rasConnSendCollResp(sock->conn, &msg->collReq.rootAddr, msg->collReq.rootId,
                                       /*peers*/nullptr, /*nPeers*/0, /*data*/nullptr, /*nData*/0, /*nLegTimeouts*/0));
       }
       goto exit;
@@ -211,31 +214,29 @@ ncclResult_t rasMsgHandleCollReq(struct rasMsg* msg, struct rasSocket* sock) {
 
   if (msg->collReq.type >= RAS_COLL_CONNS) {
     // Check if we're currently handling this collective request.
-    for (int i = 0; i < nRasCollectives; i++) {
-      struct rasCollective* coll = rasCollectives+i;
-      if (coll->type != RAS_MSG_NONE &&
-          memcmp(&msg->collReq.rootAddr, &coll->rootAddr, sizeof(msg->collReq.rootAddr)) == 0 &&
+    for (coll = rasCollectivesHead; coll; coll = coll->next) {
+      if (memcmp(&msg->collReq.rootAddr, &coll->rootAddr, sizeof(msg->collReq.rootAddr)) == 0 &&
           msg->collReq.rootId == coll->rootId) {
         assert(msg->collReq.type == coll->type);
 
         // Send an empty response so that the sender can account for it.  The non-empty response will be
         // sent through the connection that we received the request through first.
-        NCCLCHECK(rasConnSendCollResp(rasConns+sock->connIdx, &msg->collReq.rootAddr, msg->collReq.rootId,
+        NCCLCHECK(rasConnSendCollResp(sock->conn, &msg->collReq.rootAddr, msg->collReq.rootId,
                                       /*peers*/nullptr, /*nPeers*/0, /*data*/nullptr, /*nData*/0, /*nLegTimeouts*/0));
         goto exit;
       } // if match
-    } // for (i)
+    } // for (coll)
   } // if (msg->collReq.type >= RAS_COLL_CONNS)
 
   // Re-broadcast the message to my peers (minus the one it came from) and handle it locally.
-  NCCLCHECK(rasNetSendCollReq(&msg->collReq, rasCollDataLength(msg->collReq.type), &allDone, &collIdx, sock->connIdx));
+  NCCLCHECK(rasNetSendCollReq(&msg->collReq, rasCollDataLength(msg->collReq.type), &allDone, &coll, sock->conn));
 
   if (msg->collReq.type >= RAS_COLL_CONNS && allDone) {
-    assert(collIdx != -1);
+    assert(coll);
     // We are a leaf process -- send the response right away.  This can probably trigger only for the case of a total
     // of two peers, and hence just one RAS connection, or during communication issues, because normally every peer
     // has more than one connection so there should always be _some_ other peer to forward the request to.
-    NCCLCHECK(rasCollReadyResp(rasCollectives+collIdx));
+    NCCLCHECK(rasCollReadyResp(coll));
   }
 exit:
   return ncclSuccess;
@@ -245,9 +246,9 @@ exit:
 // Invoked when we are finished waiting for the collective responses from other peers (i.e., either there weren't
 // any peers (unlikely), the peers sent their responses (likely), or we timed out.
 static ncclResult_t rasCollReadyResp(struct rasCollective* coll) {
-  if (coll->fromConnIdx != -1) {
+  if (coll->fromConn) {
     // For remotely-initiated collectives, send the response back.
-    NCCLCHECK(rasConnSendCollResp(rasConns+coll->fromConnIdx, &coll->rootAddr, coll->rootId,
+    NCCLCHECK(rasConnSendCollResp(coll->fromConn, &coll->rootAddr, coll->rootId,
                                   coll->peers, coll->nPeers, coll->data, coll->nData, coll->nLegTimeouts));
 
     // Add the identifying info to the collective message history.
@@ -302,18 +303,15 @@ static ncclResult_t rasConnSendCollResp(struct rasConnection* conn,
 // the data from the response into the accumulated data.  If all the responses have been accounted for, sends the
 // accumulated response back.
 ncclResult_t rasMsgHandleCollResp(struct rasMsg* msg, struct rasSocket* sock) {
-  int collIdx;
-  struct rasCollective* coll = nullptr;
+  struct rasCollective* coll;
   char line[SOCKET_NAME_MAXLEN+1];
 
-  for (collIdx = 0; collIdx < nRasCollectives; collIdx++) {
-    coll = rasCollectives+collIdx;
-    if (coll->type != RAS_MSG_NONE &&
-        memcmp(&msg->collResp.rootAddr, &coll->rootAddr, sizeof(msg->collResp.rootAddr)) == 0 &&
+  for (coll = rasCollectivesHead; coll; coll = coll->next) {
+    if (memcmp(&msg->collResp.rootAddr, &coll->rootAddr, sizeof(msg->collResp.rootAddr)) == 0 &&
         msg->collResp.rootId == coll->rootId)
       break;
   }
-  if (collIdx == nRasCollectives) {
+  if (coll == nullptr) {
     INFO(NCCL_RAS, "RAS failed to find a matching ongoing collective for response %s:%ld from %s!",
          ncclSocketToString(&msg->collResp.rootAddr, line), msg->collResp.rootId,
          ncclSocketToString(&sock->sock.addr, rasLine));
@@ -321,11 +319,11 @@ ncclResult_t rasMsgHandleCollResp(struct rasMsg* msg, struct rasSocket* sock) {
   }
 
   coll->nLegTimeouts += msg->collResp.nLegTimeouts;
-  assert(sock->connIdx != -1);
-  // Account for the received response in our collective operation tracking.
+  assert(sock->conn);
+  // Account for the received response in our collective operations tracking.
   for (int i = 0; i < coll->nFwdSent; i++) {
-    if (coll->fwdConns[i] == sock->connIdx) {
-      coll->fwdConns[i] = -1;
+    if (coll->fwdConns[i] == sock->conn) {
+      coll->fwdConns[i] = nullptr;
       break;
     }
   }
@@ -353,46 +351,53 @@ exit:
 
 // Removes a connection from all ongoing collectives.  Called when a connection is experiencing a delay or is being
 // terminated.
-void rasCollsPurgeConn(int connIdx) {
-  for (int i = 0; i < nRasCollectives; i++) {
-    struct rasCollective* coll = rasCollectives+i;
-    if (coll->type != RAS_MSG_NONE) {
-      char line[SOCKET_NAME_MAXLEN+1];
-      if (coll->fromConnIdx == connIdx) {
-        INFO(NCCL_RAS, "RAS purging collective %s:%ld because it comes from %s",
-             ncclSocketToString(&coll->rootAddr, line), coll->rootId,
-             ncclSocketToString(&rasConns[connIdx].addr, rasLine));
-        rasCollFree(coll);
-      } else {
-        for (int j = 0; j < coll->nFwdSent; j++) {
-          if (coll->fwdConns[j] == connIdx) {
-            coll->fwdConns[j] = -1;
-            coll->nFwdRecv++;
-            coll->nLegTimeouts++;
-            INFO(NCCL_RAS, "RAS not waiting for response from %s to collective %s:%ld "
-                 "(nFwdSent %d, nFwdRecv %d, nLegTimeouts %d)",
-                 ncclSocketToString(&rasConns[connIdx].addr, rasLine), ncclSocketToString(&coll->rootAddr, line),
-                 coll->rootId, coll->nFwdSent, coll->nFwdRecv, coll->nLegTimeouts);
-            if (coll->nFwdSent == coll->nFwdRecv)
-              (void)rasCollReadyResp(coll);
-            break;
-          }
-        } // for (j)
-      } // coll->fromConnIdx != connIdx
-    } // !RAS_MSG_NONE
-  } // for (i)
+void rasCollsPurgeConn(struct rasConnection* conn) {
+  for (struct rasCollective* coll = rasCollectivesHead; coll;) {
+    struct rasCollective* collNext = coll->next;
+    char line[SOCKET_NAME_MAXLEN+1];
+    if (coll->fromConn == conn) {
+      INFO(NCCL_RAS, "RAS purging collective %s:%ld because it comes from %s",
+           ncclSocketToString(&coll->rootAddr, line), coll->rootId,
+           ncclSocketToString(&conn->addr, rasLine));
+      rasCollFree(coll);
+    } else {
+      for (int i = 0; i < coll->nFwdSent; i++) {
+        if (coll->fwdConns[i] == conn) {
+          coll->fwdConns[i] = nullptr;
+          coll->nFwdRecv++;
+          coll->nLegTimeouts++;
+          INFO(NCCL_RAS, "RAS not waiting for response from %s to collective %s:%ld "
+               "(nFwdSent %d, nFwdRecv %d, nLegTimeouts %d)",
+               ncclSocketToString(&conn->addr, rasLine), ncclSocketToString(&coll->rootAddr, line), coll->rootId,
+               coll->nFwdSent, coll->nFwdRecv, coll->nLegTimeouts);
+          if (coll->nFwdSent == coll->nFwdRecv)
+            (void)rasCollReadyResp(coll);
+          break;
+        }
+      } // for (i)
+    } // coll->fromConn != conn
+    coll = collNext;
+  } // for (coll)
 }
 
 // Frees a rasCollective entry and any memory associated with it.
 void rasCollFree(struct rasCollective* coll) {
+  if (coll == nullptr)
+    return;
+
   free(coll->fwdConns);
-  coll->fwdConns = nullptr;
   free(coll->peers);
-  coll->peers = nullptr;
   free(coll->data);
-  coll->data = nullptr;
-  coll->fromConnIdx = -1;
-  coll->type = RAS_MSG_NONE;
+
+  if (coll == rasCollectivesHead)
+    rasCollectivesHead = rasCollectivesHead->next;
+  if (coll == rasCollectivesTail)
+    rasCollectivesTail = rasCollectivesTail->prev;
+  if (coll->prev)
+    coll->prev->next = coll->next;
+  if (coll->next)
+    coll->next->prev = coll->prev;
+  free(coll);
 }
 
 // Invoked from the main RAS thread loop to handle timeouts of the collectives.
@@ -407,64 +412,64 @@ void rasCollFree(struct rasCollective* coll) {
 // and send back whatever we have.  Unfortunately, the peer that the RAS client is connected to will in all likelihood
 // time out first, so at that point any delayed responses that eventually arrive are likely to be too late...
 void rasCollsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
-  for (int collIdx = 0; collIdx < nRasCollectives; collIdx++) {
-    struct rasCollective* coll = rasCollectives+collIdx;
-    if (coll->type == RAS_MSG_NONE || coll->timeout == 0)
-      continue;
-
-    if (now - coll->startTime > coll->timeout) {
-      // We've exceeded the leg timeout.  For all outstanding responses, check their connections.
-      if (!coll->timeoutWarned) {
-        INFO(NCCL_RAS, "RAS collective %s:%ld timeout warning (%lds) -- %d responses missing",
-             ncclSocketToString(&coll->rootAddr, rasLine), coll->rootId,
-             (now - coll->startTime) / CLOCK_UNITS_PER_SEC, coll->nFwdSent - coll->nFwdRecv);
-        coll->timeoutWarned = true;
-      }
-      for (int i = 0; i < coll->nFwdSent; i++) {
-        if (coll->fwdConns[i] != -1) {
-          struct rasConnection* conn = rasConns+coll->fwdConns[i];
-          char line[SOCKET_NAME_MAXLEN+1];
-          if (!conn->experiencingDelays && conn->sockIdx != -1) {
-            struct rasSocket* sock = rasSockets+conn->sockIdx;
-            // Ensure that the connection is fully established and operational, and that the socket hasn't been
-            // re-created during the handling of the collective (which would suggest that the request may have been
-            // lost).
-            if (sock->status == RAS_SOCK_READY && sock->createTime < coll->startTime)
-              continue;
-          }
-          // In all other cases we declare a timeout so that we can (hopefully) recover.
-          INFO(NCCL_RAS, "RAS not waiting for response from %s to collective %s:%ld "
-               "(nFwdSent %d, nFwdRecv %d, nLegTimeouts %d)",
-               ncclSocketToString(&conn->addr, rasLine), ncclSocketToString(&coll->rootAddr, line),
-               coll->rootId, coll->nFwdSent, coll->nFwdRecv, coll->nLegTimeouts);
-          coll->fwdConns[i] = -1;
-          coll->nFwdRecv++;
-          coll->nLegTimeouts++;
-        } // if (coll->fwdConns[i] != -1)
-      } // for (i)
-      if (coll->nFwdSent == coll->nFwdRecv) {
-        (void)rasCollReadyResp(coll);
-      } else {
-        // At least some of the delays are *not* due to this process' connections experiencing delays, i.e., they
-        // must be due to delays at other processes.  Presumably those processes will give up waiting soon and the
-        // (incomplete) responses will arrive shortly, so we should wait a little longer.
-        if (now - coll->startTime > coll->timeout + RAS_COLLECTIVE_EXTRA_TIMEOUT) {
-          // We've exceeded even the longer timeout, which is unexpected.  Try to return whatever we have (though
-          // the originator of the collective, if it's not us, may have timed out already anyway).
-          INFO(NCCL_RAS, "RAS collective %s:%ld timeout error (%lds) -- giving up on %d missing responses",
+  for (struct rasCollective* coll = rasCollectivesHead; coll;) {
+    struct rasCollective* collNext = coll->next;
+    if (coll->timeout > 0) {
+      if (now - coll->startTime > coll->timeout) {
+        // We've exceeded the leg timeout.  For all outstanding responses, check their connections.
+        if (!coll->timeoutWarned) {
+          INFO(NCCL_RAS, "RAS collective %s:%ld timeout warning (%lds) -- %d responses missing",
                ncclSocketToString(&coll->rootAddr, rasLine), coll->rootId,
                (now - coll->startTime) / CLOCK_UNITS_PER_SEC, coll->nFwdSent - coll->nFwdRecv);
-          coll->nLegTimeouts += coll->nFwdSent - coll->nFwdRecv;
-          coll->nFwdRecv = coll->nFwdSent;
+          coll->timeoutWarned = true;
+        }
+        for (int i = 0; i < coll->nFwdSent; i++) {
+          if (coll->fwdConns[i]) {
+            struct rasConnection* conn = coll->fwdConns[i];
+            char line[SOCKET_NAME_MAXLEN+1];
+            if (!conn->experiencingDelays && conn->sock) {
+              // Ensure that the connection is fully established and operational, and that the socket hasn't been
+              // re-created during the handling of the collective (which would suggest that the request may have been
+              // lost).
+              if (conn->sock->status == RAS_SOCK_READY && conn->sock->createTime < coll->startTime)
+                continue;
+            }
+            // In all other cases we declare a timeout so that we can (hopefully) recover.
+            INFO(NCCL_RAS, "RAS not waiting for response from %s to collective %s:%ld "
+                 "(nFwdSent %d, nFwdRecv %d, nLegTimeouts %d)",
+                 ncclSocketToString(&conn->addr, rasLine), ncclSocketToString(&coll->rootAddr, line),
+                 coll->rootId, coll->nFwdSent, coll->nFwdRecv, coll->nLegTimeouts);
+            coll->fwdConns[i] = nullptr;
+            coll->nFwdRecv++;
+            coll->nLegTimeouts++;
+          } // if (coll->fwdConns[i])
+        } // for (i)
+        if (coll->nFwdSent == coll->nFwdRecv) {
           (void)rasCollReadyResp(coll);
         } else {
-          *nextWakeup = std::min(*nextWakeup, coll->startTime+coll->timeout+RAS_COLLECTIVE_EXTRA_TIMEOUT);
-        }
-      } // conn->nFwdRecv < conn->nFwdSent
-    } else {
-      *nextWakeup = std::min(*nextWakeup, coll->startTime+coll->timeout);
-    }
-  } // for (collIdx)
+          // At least some of the delays are *not* due to this process' connections experiencing delays, i.e., they
+          // must be due to delays at other processes.  Presumably those processes will give up waiting soon and the
+          // (incomplete) responses will arrive shortly, so we should wait a little longer.
+          if (now - coll->startTime > coll->timeout + RAS_COLLECTIVE_EXTRA_TIMEOUT) {
+            // We've exceeded even the longer timeout, which is unexpected.  Try to return whatever we have (though
+            // the originator of the collective, if it's not us, may have timed out already anyway).
+            INFO(NCCL_RAS, "RAS collective %s:%ld timeout error (%lds) -- giving up on %d missing responses",
+                 ncclSocketToString(&coll->rootAddr, rasLine), coll->rootId,
+                 (now - coll->startTime) / CLOCK_UNITS_PER_SEC, coll->nFwdSent - coll->nFwdRecv);
+            coll->nLegTimeouts += coll->nFwdSent - coll->nFwdRecv;
+            coll->nFwdRecv = coll->nFwdSent;
+            (void)rasCollReadyResp(coll);
+          } else {
+            *nextWakeup = std::min(*nextWakeup, coll->startTime+coll->timeout+RAS_COLLECTIVE_EXTRA_TIMEOUT);
+          }
+        } // conn->nFwdRecv < conn->nFwdSent
+      } else {
+        *nextWakeup = std::min(*nextWakeup, coll->startTime+coll->timeout);
+      }
+    } // if (coll->timeout > 0)
+
+    coll = collNext;
+  } // for (coll)
 }
 
 
@@ -482,9 +487,8 @@ static ncclResult_t rasCollConnsInit(char** pData, int* pNData) {
 
   // Update the statistical data first and in the process also calculate how much connection-specific space we
   // will need.
-  for (int i = 0; i < nRasConns; i++) {
-    struct rasConnection* conn = rasConns+i;
-    if (conn->inUse && conn->travelTimeCount > 0) {
+  for (struct rasConnection* conn = rasConnsHead; conn; conn = conn->next) {
+    if (conn->travelTimeCount > 0) {
       if (connsData.travelTimeMin > conn->travelTimeMin)
         connsData.travelTimeMin = conn->travelTimeMin;
       if (connsData.travelTimeMax < conn->travelTimeMax)
@@ -502,9 +506,9 @@ static ncclResult_t rasCollConnsInit(char** pData, int* pNData) {
   pConnsData = (struct rasCollConns*)*pData;
   memcpy(pConnsData, &connsData, sizeof(*pConnsData));
   if (connsData.nNegativeMins > 0) {
-    for (int i = 0, negMinsIdx = 0; i < nRasConns; i++) {
-      struct rasConnection* conn = rasConns+i;
-      if (conn->inUse && conn->travelTimeMin < 0) {
+    int negMinsIdx = 0;
+    for (struct rasConnection* conn = rasConnsHead; conn; conn = conn->next) {
+      if (conn->travelTimeMin < 0) {
         struct rasCollConns::negativeMin* negativeMin = pConnsData->negativeMins+negMinsIdx;
         memcpy(&negativeMin->source, &rasNetListeningSocket.addr, sizeof(negativeMin->source));
         memcpy(&negativeMin->dest, &conn->addr, sizeof(negativeMin->dest));

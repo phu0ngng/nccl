@@ -218,6 +218,9 @@ struct rasMsgMeta {
 // Describes an ongoing collective RAS operation (apart from broadcasts, which don't need a response).
 // For every collective operation, each participating RAS thread will create its own.
 struct rasCollective {
+  struct rasCollective* next;
+  struct rasCollective* prev;
+
   union ncclSocketAddress rootAddr;
   uint64_t rootId;
 
@@ -227,9 +230,10 @@ struct rasCollective {
   bool timeoutWarned;
 
   int64_t startTime; // For timeout calculations.
-  int fromConnIdx; // The connection we received the request from.
+  struct rasConnection* fromConn; // The connection we received the request from.
 
-  int* fwdConns; // Indices of the connections we forwarded the request to; replaced by -1 as the responses arrive.
+  struct rasConnection** fwdConns; // Connections we forwarded the request to; replaced by nullptr's as the
+                                   // responses arrive.
   int nFwdSent; // Count of the above (local process only).
   int nFwdRecv; // Count of the responses received or timeouts (local process only).
 
@@ -286,8 +290,8 @@ struct rasCollComms {
 struct rasLinkConn {
   int peerIdx; // Index in the rasPeers array of the peer this entry describes.  Could be -1 (an entry initiated
                // by an as of yet unknown peer -- should be a temporary situation that resolves via peer updates).
-  int connIdx; // Index in the rasConns array of the connection to the above peer.  Could be -1 (a placeholder
-               // for a connection to be started by the remote peer).
+  struct rasConnection* conn; // The connection to the above peer.  Could be nullptr (a placeholder for a connection
+                              // to be started by the remote peer).
   bool external; // true if the entry exists only due to an external request (requested by a remote peer, most
                  // likely as part of fault recovery).  Such connections are kept as fallbacks even if there's a
                  // valid primary connection, in order to ensure that keep-alive messages are sent.
@@ -315,15 +319,15 @@ struct rasLink {
 // Describes a connection to another peer on the RAS network.  It is meant to be more persistent than a volatile
 // socket (described by the rasSocket structure), which can be affected by transient network issues.
 struct rasConnection {
-  bool inUse;
+  struct rasConnection* next;
+  struct rasConnection* prev;
 
   union ncclSocketAddress addr;
 
-  // Index of the current rasSocket in the rasSockets array.  Note that multiple rasSocket entries may point back
+  // Pointer to the current rasSocket.  Note that multiple rasSocket entries may point back
   // to a single entry here, for sockets that are in the process of being terminated and re-established.
-  // We use indices, not pointers, because the arrays holding these structures can be re-alloced at run time.
-  // -1 if there is no such socket.
-  int sockIdx;
+  // nullptr if there is no such socket.
+  struct rasSocket* sock;
 
   // We keep the rasPeersHash of remote connections to minimize the number of needless exchanges.
   // There is a subtle difference in the meaning of lastSentPeersHash and lastRecvPeersHash.
@@ -371,16 +375,18 @@ typedef enum {
 
 // Describes a socket implementing communication between two peers.
 struct rasSocket {
+  struct rasSocket* next;
+  struct rasSocket* prev;
+
   struct ncclSocket sock;
 
   rasSocketStatus status;
 
   int pfd; // Index in the rasPfds array.
 
- // Index of the corresponding entry in the rasConns array.
-  // We use indices, not pointers, because the arrays holding these structures can be re-alloced at run time.
-  // -1 if there is no connection (normal condition on the accept side before the connInit message).
-  int connIdx;
+  // Pointer to the corresponding entry in the rasConns array.
+  // nullptr if there is no connection (a normal condition on the accept side before the connInit message).
+  struct rasConnection* conn;
 
   int64_t createTime;
   int64_t lastSendTime;
@@ -404,7 +410,10 @@ typedef enum {
 
 // Describes a RAS client.
 struct rasClient {
-  int sock;
+  struct rasClient* next;
+  struct rasClient* prev;
+
+  int sock; // File descriptor
 
   rasClientStatus status;
 
@@ -420,7 +429,7 @@ struct rasClient {
   int64_t timeout;
 
   // State stored during asynchronous operations such as collectives.
-  int collIdx; // Index to the onging rasCollective.
+  struct rasCollective* coll;
 };
 
 
@@ -446,24 +455,24 @@ ncclResult_t rasGetNewPollEntry(int* index);
 
 // rasnet.cc
 extern struct rasLink rasNextLink, rasPrevLink;
-extern struct rasConnection* rasConns;
-extern int nRasConns;
-extern struct rasSocket *rasSockets;
-extern int nRasSockets;
+extern struct rasConnection* rasConnsHead;
+extern struct rasConnection* rasConnsTail;
+extern struct rasSocket *rasSocketsHead;
+extern struct rasSocket *rasSocketsTail;
 
 ncclResult_t getNewConnEntry(struct rasConnection** pConn);
-ncclResult_t rasConnCreate(const union ncclSocketAddress* addr, int* pConnIdx);
-int rasConnFind(const union ncclSocketAddress* addr);
+ncclResult_t rasConnCreate(const union ncclSocketAddress* addr, struct rasConnection** pConn);
+struct rasConnection* rasConnFind(const union ncclSocketAddress* addr);
 void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup);
 void rasConnDisconnect(const union ncclSocketAddress* addr);
 ncclResult_t rasNetAcceptNewSocket();
 void rasSocksHandleTimeouts(int64_t now, int64_t* nextWakeup);
 void rasSocketTerminate(struct rasSocket* sock, bool finalize = false, uint64_t startRetryOffset = 0,
                         bool retry = true);
-void rasSockEventLoop(int sockIdx, int pollIdx);
+void rasSockEventLoop(struct rasSocket* sock, int pollIdx);
 void rasNetHandleTimeouts(int64_t now, int64_t* nextWakeup);
 ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* sock);
-ncclResult_t rasLinkUpdateConn(struct rasLink* link, int connIdx, int peerIdx, bool external = false,
+ncclResult_t rasLinkUpdateConn(struct rasLink* link, struct rasConnection* conn, int peerIdx, bool external = false,
                                bool insert = false, bool pretend = false, int* pLinkIdx = nullptr);
 
 // peers.cc
@@ -486,25 +495,28 @@ bool ncclSocketsSameNode(const union ncclSocketAddress* a1, const union ncclSock
 
 
 // collectives.cc
-extern struct rasCollective* rasCollectives;
+extern struct rasCollective* rasCollectivesHead;
+extern struct rasCollective* rasCollectivesTail;
 
 void rasCollReqInit(struct rasCollRequest* req);
 ncclResult_t rasNetSendCollReq(const struct rasCollRequest* req, size_t reqLen, bool* pAllDone = nullptr,
-                               int* pCollIdx = nullptr, int fromConnIdx = -1);
+                               struct rasCollective** pColl = nullptr, struct rasConnection* fromConn = nullptr);
 ncclResult_t rasMsgHandleCollReq(struct rasMsg* msg, struct rasSocket* sock);
 ncclResult_t rasMsgHandleCollResp(struct rasMsg* msg, struct rasSocket* sock);
-void rasCollsPurgeConn(int connIdx);
+void rasCollsPurgeConn(struct rasConnection* conn);
 void rasCollFree(struct rasCollective* coll);
 void rasCollsHandleTimeouts(int64_t now, int64_t* nextWakeup);
 
+
 // client_support.cc
 extern int rasClientListeningSocket;
-extern struct rasClient* rasClients;
-extern int nRasClients;
+extern struct rasClient* rasClientsHead;
+extern struct rasClient* rasClientsTail;
+
 ncclResult_t rasClientInitSocket();
 ncclResult_t rasClientAcceptNewSocket();
 ncclResult_t rasClientResume(struct rasCollective* coll);
-void rasClientEventLoop(int clientIdx, int pollIdx);
+void rasClientEventLoop(struct rasClient* client, int pollIdx);
 const char* rasGpuDevsToString(uint64_t cudaDevs, uint64_t nvmlDevs, char* buf, size_t size);
 
 #endif // !NCCL_RAS_CLIENT
