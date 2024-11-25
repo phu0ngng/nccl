@@ -239,6 +239,7 @@ struct ncclKernelPlan {
   struct ncclKernelPlan* next;
 
   bool persistent; // aka captured in a graph
+  bool isHostCbEnq;
   enum ncclDevWorkStorageType workStorageType;
   bool kernelSpecialized;
   void *kernelFn;
@@ -565,6 +566,7 @@ struct ncclComm {
   // Subset of those in groupNext list. Holds 0x1 if not needing preconnect.
   struct ncclComm* preconnectNext;
   int persistentRefs; // number of persistent plan-lists capturing this comm
+  int noncapturedRefs; // number of non-captured hostStreamPlanCallback on the stream
   struct P2pSchedulePair { int sendRank; int recvRank; } *p2pSchedule;
 
   struct ncclKernelPlanner planner;

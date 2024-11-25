@@ -1244,6 +1244,8 @@ static void CUDART_CB hostStreamPlanCallback(void *plan_) {
   if (result != ncclSuccess) {
     WARN("hostStreamPlanCallback() failed : %s", ncclGetErrorString(result));
   }
+  if (!plan->persistent) ncclAtomicRefCountDecrement(&plan->comm->noncapturedRefs);
+  return;
 }
 
 static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* me) {
@@ -1376,7 +1378,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     }
     NCCLCHECKGOTO(ncclStrongStreamWaitStream(planner->capturingGraph, launchStream, &comm->sharedRes->deviceStream), result, failure);
 
-    if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking) {
+    if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking || __atomic_load_n(&comm->noncapturedRefs, __ATOMIC_ACQUIRE)) {
       // We have to launch host tasks to push proxy args. We are careful to only
       // do this if necessary since host tasks impose a high performance cost in CUDA.
       bool acquired = false;
@@ -1386,6 +1388,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
             acquired = true;
             NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->sharedRes->hostStream), result, failure);
           }
+          if (!persistent) ncclAtomicRefCountIncrement(&comm->noncapturedRefs);
+          plan->isHostCbEnq = true;
           NCCLCHECKGOTO(ncclStrongStreamLaunchHost(planner->capturingGraph, &comm->sharedRes->hostStream, hostStreamPlanCallback, plan), result, failure);
         }
       }
@@ -1494,7 +1498,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 }
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  if (!(plan->persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking)) {
+  if (!(plan->persistent || ncclCudaLaunchBlocking || plan->isHostCbEnq)) {
     // We are not using the host stream for proxy ops and reclaimation submission.
     NCCLCHECK(hostStreamPlanTask(comm, plan));
   } else {
