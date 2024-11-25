@@ -390,8 +390,7 @@ fail:
 static ncclResult_t rasLinkPropagateUpdate(struct rasLink* link, const struct rasPeerInfo* newPeers, int nNewPeers,
                                            bool updateDeadPeers, struct rasRankInit* ranks, int nranks,
                                            struct rasConnection* fromConn) {
-  for (int i = 0; i < link->nConns; i++) {
-    struct rasLinkConn* linkConn = link->conns+i;
+  for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConn = linkConn->next) {
     // Note that we don't send the update via the connection that we received this notification from in the first
     // place (while it wouldn't loop indefinitely, it would add a needless extra exchange).
     if (linkConn->conn && linkConn->conn != fromConn) {
@@ -613,73 +612,49 @@ static ncclResult_t rasLinkReinitConns(struct rasLink* link) {
   struct rasLinkConn* linkConn;
   int newPeerIdx = myPeerIdx;
 
-  if (link->connsSize == 0) {
-    link->connsSize = RAS_INCREMENT;
-    NCCLCHECK(ncclCalloc(&link->conns, link->connsSize));
+  if (link->conns) {
+    // Free the old contents but keep the first entry for convenience (though wipe it).
+    for (struct rasLinkConn* linkConn = link->conns->next; linkConn;) {
+      struct rasLinkConn* linkConnNext = linkConn->next;
+      free(linkConn);
+      linkConn = linkConnNext;
+    }
+    memset(link->conns, '\0', sizeof(*link->conns));
+    link->lastUpdatePeersTime = 0;
+  } else { // link->conns == nullptr
+    NCCLCHECK(ncclCalloc(&link->conns, 1));
   }
-  link->nConns = 0;
 
-  // Establish a connection for this link.  We iterate as long as the connections we find are experiencing delays.
-  while (newPeerIdx != -1) {
-    if (link->nConns == link->connsSize) {
-      NCCLCHECK(ncclRealloc(&link->conns, link->connsSize, link->connsSize+RAS_INCREMENT));
-      link->connsSize += RAS_INCREMENT;
-    }
+  // Fill in the entry for the primary connection.
+  linkConn = link->conns;
+  linkConn->peerIdx = newPeerIdx = rasLinkCalculatePeer(link, myPeerIdx, /*isFallback*/false);
+  linkConn->conn = (newPeerIdx != -1 ? rasConnFind(&rasPeers[newPeerIdx].addr) : nullptr);
+  linkConn->external = false;
 
-    newPeerIdx = rasLinkCalculatePeer(link, newPeerIdx, /*isFallback*/link->nConns > 1);
-    if (newPeerIdx == -1) {
-      INFO(NCCL_RAS, "RAS link %d: no more fallbacks to add (nConns %d)", link->direction, link->nConns);
-      if (link->nConns > 0)
-        break;
-    }
-    linkConn = link->conns+link->nConns;
-    linkConn->peerIdx = newPeerIdx;
-    linkConn->conn = (newPeerIdx != -1 ? rasConnFind(&rasPeers[newPeerIdx].addr) : nullptr);
-    linkConn->external = false;
-
-    // If the calculated connection does not exist, then we are at the end of the chain and this is the last iteration.
-    // Depending on the circumstances, we may first need to create that connection.
-    if (linkConn->conn == nullptr) {
-      if (link->nConns == 0) {
-        if (linkConn->peerIdx != -1) {
-          INFO(NCCL_RAS, "RAS link %d: %s primary connection with %s",
-               link->direction, (myPeerIdx < linkConn->peerIdx ? "opening new" : "calculated deferred"),
-               ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
-          // We try to initiate primary connections from the side with a lower address (and thus an earlier peer index)
-          // to avoid races and the creation of duplicate connections.
-          if (myPeerIdx < linkConn->peerIdx) {
-            NCCLCHECK(rasConnCreate(&rasPeers[linkConn->peerIdx].addr, &linkConn->conn));
-          }
-          else { // If we didn't initiate the connection, start the timeout.
-            link->lastUpdatePeersTime = clockNano();
-          }
-        } // if (linkConn->peerIdx != -1)
-      } else { // link->nConns > 0
-        INFO(NCCL_RAS, "RAS link %d: opening new fallback connection %d with %s",
-             link->direction, link->nConns, ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
-        NCCLCHECK(rasConnCreate(&rasPeers[newPeerIdx].addr, &linkConn->conn));
-      } // link->nConns > 0
-    } else { // linkConn->conn
-      if (link->nConns == 0) {
-        INFO(NCCL_RAS, "RAS link %d: calculated existing primary connection with %s",
-             link->direction, ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
-      } else {
-        INFO(NCCL_RAS, "RAS link %d: calculated existing fallback connection %d with %s",
-             link->direction, link->nConns, ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
+  if (linkConn->conn == nullptr) {
+    if (linkConn->peerIdx != -1) {
+      // We try to initiate primary connections from the side with a lower address (and thus an earlier peer index)
+      // to avoid races and the creation of duplicate connections.
+      INFO(NCCL_RAS, "RAS link %d: %s primary connection with %s",
+           link->direction, (myPeerIdx < linkConn->peerIdx ? "opening new" : "calculated deferred"),
+           ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
+      if (myPeerIdx < linkConn->peerIdx) {
+        NCCLCHECK(rasConnCreate(&rasPeers[linkConn->peerIdx].addr, &linkConn->conn));
       }
-    } // linkConn->conn
-    link->nConns++;
-    if (linkConn->conn == nullptr)
-      break;
+      else { // If we didn't initiate the connection, start the timeout.
+        link->lastUpdatePeersTime = clockNano();
+      }
+    } // if (linkConn->peerIdx != -1)
+  } else { // linkConn->conn
+    INFO(NCCL_RAS, "RAS link %d: calculated existing primary connection with %s",
+         link->direction, ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
+  } // linkConn->conn
 
-    // We check if the connection already went through the fallback calculation; if so, we'll need to create a new
-    // fallback in the next iteration, to ensure that RAS will keep retrying.
-    if (!linkConn->conn->experiencingDelays)
-      break;
-
+  if (linkConn->conn && linkConn->conn->experiencingDelays) {
     INFO(NCCL_RAS, "RAS connection experiencingDelays %d, startRetryTime %.2fs, socket status %d",
          linkConn->conn->experiencingDelays, (clockNano()-linkConn->conn->startRetryTime)/1e9,
          (linkConn->conn->sock ? linkConn->conn->sock->status : - 1));
+    NCCLCHECK(rasLinkAddFallback(link, linkConn->conn));
   }
 
   return ncclSuccess;

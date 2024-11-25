@@ -452,8 +452,8 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
   // Note: it's possible for peerIdx to be -1 at this point if, due to races, the connInit arrives before
   // the peers update.
   if (peerIdx != -1) {
-    (void)rasLinkUpdateConn(&rasNextLink, conn, peerIdx);
-    (void)rasLinkUpdateConn(&rasPrevLink, conn, peerIdx);
+    (void)rasLinkConnUpdate(&rasNextLink, conn, peerIdx);
+    (void)rasLinkConnUpdate(&rasPrevLink, conn, peerIdx);
   }
 
   // Send a confirmation to the server that requested the connection (so that the resilience code can mark

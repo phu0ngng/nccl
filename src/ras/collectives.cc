@@ -158,8 +158,7 @@ exit:
 static ncclResult_t rasLinkSendCollReq(struct rasLink* link, struct rasCollective* coll,
                                        const struct rasCollRequest* req, size_t reqLen,
                                        struct rasConnection* fromConn) {
-  for (int i = 0; i < link->nConns; i++) {
-    struct rasLinkConn* linkConn = link->conns+i;
+  for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConn = linkConn->next) {
     if (linkConn->conn && linkConn->conn != fromConn && !linkConn->conn->linkFlag) {
       // We send collective messages through fully established and operational connections only.
       if (linkConn->conn->sock && linkConn->conn->sock->status == RAS_SOCK_READY &&
@@ -169,7 +168,7 @@ static ncclResult_t rasLinkSendCollReq(struct rasLink* link, struct rasCollectiv
       } // linkConn->conn is fully established and operational.
       linkConn->conn->linkFlag = true;
     } // if (linkConn->conn && linkConn->conn != fromConn && !linkConn->con->linkFlag)
-  } // for (i)
+  } // for (linkConn)
 
   return ncclSuccess;
 }

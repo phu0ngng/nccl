@@ -288,6 +288,7 @@ struct rasCollComms {
 // Holds data needed to keep track of a connection belonging to a RAS network link (either the primary one
 // or one of the fallbacks).
 struct rasLinkConn {
+  struct rasLinkConn* next;
   int peerIdx; // Index in the rasPeers array of the peer this entry describes.  Could be -1 (an entry initiated
                // by an as of yet unknown peer -- should be a temporary situation that resolves via peer updates).
   struct rasConnection* conn; // The connection to the above peer.  Could be nullptr (a placeholder for a connection
@@ -298,18 +299,17 @@ struct rasLinkConn {
 };
 
 // Describes a link that forms the backbone of the RAS network.  Links focus on direction (previous/next in
-// case of 1-D topology) rather than a particular destination.  The are implemented using rasConnections, but
+// case of 1-D topology) rather than a particular destination.  They are implemented using rasConnections, but
 // they are persistent through the life of the RAS threads, whereas rasConnections can be terminated if the RAS
 // network is reconfigured or a peer dies.
 struct rasLink {
   int direction; // 1 for nextLink, -1 for prevLink.
 
-  // Index 0 is the primary connection; any additional ones are fallbacks (that get created if we are having
-  // problems with the primary connection).  The elements are de-facto ordered (highest-preference ones have
-  // the lowest indices).
+  // First element is the primary connection; any additional ones are fallbacks (that get created if we are having
+  // problems with the primary connection).  The highest-preference elements come first; the list is de-facto sorted
+  // by peerIdx, though peerIdx values can wrap around (given the ring/torus topology) and they can also be -1
+  // (the latter are stored at the end).
   struct rasLinkConn* conns;
-  int nConns;
-  int connsSize; // Array size; could be larger than nConns.
 
   // Keep track of a timeout in case we did not create a connection during the last peers update (because we expect
   // the peer on the other side to do so) but that peer failed to initiate.
@@ -472,8 +472,9 @@ void rasSocketTerminate(struct rasSocket* sock, bool finalize = false, uint64_t 
 void rasSockEventLoop(struct rasSocket* sock, int pollIdx);
 void rasNetHandleTimeouts(int64_t now, int64_t* nextWakeup);
 ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* sock);
-ncclResult_t rasLinkUpdateConn(struct rasLink* link, struct rasConnection* conn, int peerIdx, bool external = false,
-                               bool insert = false, bool pretend = false, int* pLinkIdx = nullptr);
+ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasConnection* conn);
+ncclResult_t rasLinkConnUpdate(struct rasLink* link, struct rasConnection* conn, int peerIdx);
+
 
 // peers.cc
 extern struct rasPeerInfo* rasPeers;

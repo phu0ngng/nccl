@@ -36,11 +36,15 @@ static ncclResult_t rasLinkHandleNetTimeouts(struct rasLink* link, int64_t now, 
 static void rasConnHandleNetTimeouts(struct rasConnection* conn, int64_t now, int64_t* nextWakeup);
 static void rasConnSendKeepAlive(struct rasConnection* conn, bool nack = false);
 
-static ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasConnection* conn);
 static void rasConnResume(struct rasConnection* conn);
 static void rasLinkSanitizeFallbacks(struct rasLink* link);
-static void rasLinkDropConn(struct rasLink* link, const struct rasConnection* conn, int linkIdx = -1);
-static int rasLinkFindConn(const struct rasLink* link, const struct rasConnection* conn);
+static ncclResult_t rasLinkConnAdd(struct rasLink* link, struct rasConnection* conn, int peerIdx, bool pretend = false,
+                                   int* pLinkIdx = nullptr, struct rasLinkConn** pLinkConn = nullptr,
+                                   bool insert = true);
+static ncclResult_t rasLinkConnAddExternal(struct rasLink* link, struct rasConnection* conn, int peerIdx);
+static void rasLinkConnDrop(struct rasLink* link, const struct rasConnection* conn, bool external = false);
+static struct rasLinkConn* rasLinkConnFind(const struct rasLink* link, const struct rasConnection* conn,
+                                           int* pLinkIdx = nullptr);
 
 
 ///////////////////////////////////////////////
@@ -312,8 +316,8 @@ void rasConnDisconnect(const union ncclSocketAddress* addr) {
   if (conn) {
     (void)rasLinkAddFallback(&rasNextLink, conn);
     (void)rasLinkAddFallback(&rasPrevLink, conn);
-    rasLinkDropConn(&rasNextLink, conn);
-    rasLinkDropConn(&rasPrevLink, conn);
+    rasLinkConnDrop(&rasNextLink, conn);
+    rasLinkConnDrop(&rasPrevLink, conn);
 
     rasConnTerminate(conn);
   }
@@ -489,7 +493,7 @@ void rasSocketTerminate(struct rasSocket* sock, bool finalize, uint64_t startRet
       // deliberately closed them.  Make an exception for sockets that are part of the RAS network links.
       if ((retry &&
            clockNano() - std::max(sock->lastSendTime, sock->lastRecvTime) < RAS_IDLE_TIMEOUT - RAS_IDLE_GRACE_PERIOD) ||
-          rasLinkFindConn(&rasNextLink, sock->conn) != -1 || rasLinkFindConn(&rasPrevLink, sock->conn) != -1) {
+          rasLinkConnFind(&rasNextLink, sock->conn) || rasLinkConnFind(&rasPrevLink, sock->conn)) {
         // For connections that were fine until now, the connection-level timeout starts at termination, and possibly
         // even earlier, depending on what event trigerred the termination -- if it was another timeout expiring, then
         // we need to include that timeout as well.
@@ -680,14 +684,13 @@ void rasNetHandleTimeouts(int64_t now, int64_t* nextWakeup) {
 
 // Checks for and handles timeouts at the link level; primarily the keep-alives for link connections.
 static ncclResult_t rasLinkHandleNetTimeouts(struct rasLink* link, int64_t now, int64_t* nextWakeup) {
-  for (int i = 0; i < link->nConns; i++) {
-    struct rasLinkConn* linkConn = link->conns+i;
+  for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConn = linkConn->next) {
     if (linkConn->conn) {
       if (!linkConn->conn->linkFlag) {
+        rasConnHandleNetTimeouts(linkConn->conn, now, nextWakeup);
         linkConn->conn->linkFlag = true;
-        rasConnHandleNetTimeouts(conn, now, nextWakeup);
       }
-    } else if (i == 0 && link->lastUpdatePeersTime != 0) {
+    } else if (linkConn == link->conns && link->lastUpdatePeersTime != 0) {
       // This triggers when rasLinkReinitConns didn't create the primary connection because we have a higher address
       // than the peer.  If that peer fails to initiate within RAS_CONNECT_WARN, we need to take action.
       if (now - link->lastUpdatePeersTime > RAS_CONNECT_WARN) {
@@ -698,15 +701,12 @@ static ncclResult_t rasLinkHandleNetTimeouts(struct rasLink* link, int64_t now, 
         if (linkConn->conn) {
           linkConn->conn->linkFlag = true;
         }
-        // We used to connect to the first fallback but I think trying to connect to the calculated primary first
-        // in this case is more intuitive.
-        //(void)rasLinkTryFallback(link, -1);
         link->lastUpdatePeersTime = 0;
       } else {
         *nextWakeup = std::min(*nextWakeup, link->lastUpdatePeersTime+RAS_CONNECT_WARN);
       }
-    } // if (i == 0 && link->lastUpdatePeerTime != 0)
-  } // for (i)
+    } // if (linkConn == link->conns && link->lastUpdatePeerTime != 0)
+  } // for (linkConn)
 
   return ncclSuccess;
 }
@@ -761,17 +761,17 @@ static void rasConnSendKeepAlive(struct rasConnection* conn, bool nack) {
   struct rasMsg* msg = nullptr;
   int msgLen = rasMsgLength(RAS_MSG_KEEPALIVE);
   if (rasMsgAlloc(&msg, msgLen) == ncclSuccess) {
-    int linkIdx;
+    struct rasLinkConn* linkConn;
     msg->type = RAS_MSG_KEEPALIVE;
     msg->keepAlive.peersHash = rasPeersHash;
     msg->keepAlive.deadPeersHash = rasDeadPeersHash;
     msg->keepAlive.nack = (nack ? 1 : 0);
 
-    linkIdx = rasLinkFindConn(&rasNextLink, conn);
-    if (linkIdx != -1 && !rasNextLink.conns[linkIdx].external)
+    linkConn = rasLinkConnFind(&rasNextLink, conn);
+    if (linkConn && !linkConn->external)
       msg->keepAlive.linkMask |= 2; // Our rasNextLink should be the peer's rasPrevLink.
-    linkIdx = rasLinkFindConn(&rasPrevLink, conn);
-    if (linkIdx != -1 && !rasPrevLink.conns[linkIdx].external)
+    linkConn = rasLinkConnFind(&rasPrevLink, conn);
+    if (linkConn && !linkConn->external)
       msg->keepAlive.linkMask |= 1; // Our rasPrevLink should be the peer's rasNextLink.
 
     (void)clock_gettime(CLOCK_REALTIME, &msg->keepAlive.realTime);
@@ -804,17 +804,21 @@ ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* s
   peerIdx = rasPeerFind(&sock->conn->addr);
   // Note: it's possible for peerIdx to be -1 at this point if, due to races, the keepAlive arrives before
   // the peers update.
-  (void)rasLinkUpdateConn(&rasNextLink, (msg->keepAlive.linkMask & 1) ? sock->conn : nullptr, peerIdx,
-                          /*external*/true);
-  (void)rasLinkUpdateConn(&rasPrevLink, (msg->keepAlive.linkMask & 2) ? sock->conn : nullptr, peerIdx,
-                          /*external*/true);
+  if (msg->keepAlive.linkMask & 1)
+    (void)rasLinkConnAddExternal(&rasNextLink, sock->conn, peerIdx);
+  else
+    rasLinkConnDrop(&rasNextLink, sock->conn, /*external*/true);
+  if (msg->keepAlive.linkMask & 2)
+    (void)rasLinkConnAddExternal(&rasPrevLink, sock->conn, peerIdx);
+  else
+    rasLinkConnDrop(&rasPrevLink, sock->conn, /*external*/true);
 
   // If the keep-alive message is from a peer that doesn't actually need this connection (i.e., for that peer the
   // connection is just an external fallback), we should check if *we* still need it.  It might be that we don't,
-  // and because we stopped sending the keep-alives, our peer doesn't know about it.  rasLinkUpdateConn calls above
-  // will have wiped any external fallbacks, so anything that remains must be needed.
+  // and because we stopped sending the keep-alives, our peer doesn't know about it.  The rasLinkConnDrop calls
+  // above will have wiped any external fallbacks, so anything that remains must be needed.
   if (!msg->keepAlive.nack && msg->keepAlive.linkMask == 0) {
-    if (rasLinkFindConn(&rasNextLink, sock->conn) == -1 && rasLinkFindConn(&rasPrevLink, sock->conn) == -1) {
+    if (rasLinkConnFind(&rasNextLink, sock->conn) == nullptr && rasLinkConnFind(&rasPrevLink, sock->conn) == nullptr) {
       // We don't need this connection either.  Notify the peer about it.  To avoid an infinite loop, we set the
       // special nack flag in the message to distinguish it from regular keep-alives.
       rasConnSendKeepAlive(sock->conn, /*nack*/true);
@@ -851,19 +855,18 @@ ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* s
 // External connections are generally ignored by this whole process: in particular, we don't add fallbacks for
 // timing out external connections.  However, we will use an active external connection if it would be a better
 // option than whatever we can come up with.
-static ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasConnection* conn) {
-  int peerIdx = -1;
-  int linkIdx = -1;
+ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasConnection* conn) {
+  struct rasLinkConn* foundLinkConn = nullptr;
+  struct rasLinkConn* firstExtLinkConn = nullptr;
   int firstExtLinkIdx = -1;
-  int newPeerIdx;
+  int newPeerIdx, i;
 
   // First check if the connection is part of this link.  In the process also check if any of the link's connections
   // might be active -- if so, there's no need to initiate any more fallbacks and we can bail out.
-  for (int i = 0; i < link->nConns; i++) {
-    struct rasLinkConn* linkConn = link->conns+i;
-
+  i = 0;
+  for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConn = linkConn->next, i++) {
     if (linkConn->peerIdx == -1) {
-      // Such elements are always at the very end of the array and we can't use them so we can just as well break.
+      // Such elements are always at the end and we can't use them so we can just as well break.
       break;
     }
 
@@ -876,9 +879,11 @@ static ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasCon
         } else if (linkConn->peerIdx != -1) {
           // Record the location of the first potentially viable external connection in the chain; we may prefer it
           // over anything we can come up with.
-          if (firstExtLinkIdx == -1)
+          if (firstExtLinkConn == nullptr) {
+            firstExtLinkConn = linkConn;
             firstExtLinkIdx = i;
-          if (linkIdx != -1)
+          }
+          if (foundLinkConn)
             break; // Break out of the loop if we already have all the data we might need.
         } // linkConn->external && linkConn->peerIdx != -1
       } // if (!linkConn->conn->experiencingDelays)
@@ -887,41 +892,40 @@ static ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasCon
     if (linkConn->conn == conn) {
       if (linkConn->external)
         goto exit; // We don't add fallbacks for external connections...
-      peerIdx = linkConn->peerIdx;
-      linkIdx = i;
+      foundLinkConn = linkConn;
       // We are not breaking out of the loop here because we want to check for active connections on *all* potentially
       // viable elements (in particular, there could be some external ones beyond this one).
     }
   }
 
-  if (linkIdx == -1)
+  if (foundLinkConn == nullptr)
     goto exit;
 
   // We found an existing element so the connection is part of the link.  No existing non-external connections of this
   // link are active, so a fallback is needed.
-  assert(peerIdx != -1);
-  newPeerIdx = rasLinkCalculatePeer(link, peerIdx, /*isFallback*/linkIdx > 0);
+  assert(foundLinkConn->peerIdx != -1);
+  newPeerIdx = rasLinkCalculatePeer(link, foundLinkConn->peerIdx, /*isFallback*/(foundLinkConn != link->conns));
   // In principle we want to add (at most) one fallback.  However, if the found fallback connection already exists
   // and is also experiencing delays, we need to keep iterating.
   while (newPeerIdx != -1) {
     struct rasConnection* newConn = rasConnFind(&rasPeers[newPeerIdx].addr);
+    int linkIdx;
+    struct rasLinkConn* newLinkConn;
     // If we previously found a potential external fallback connection, check if it's better than what we just found.
-    if (firstExtLinkIdx != -1) {
+    if (firstExtLinkConn) {
       linkIdx = -1;
       // Calculate the index that the newly found fallback would have (pretend mode).
-      NCCLCHECK(rasLinkUpdateConn(link, newConn, newPeerIdx, /*external*/false, /*insert*/true, /*pretend*/true,
-                                  &linkIdx));
+      NCCLCHECK(rasLinkConnAdd(link, newConn, newPeerIdx, /*pretend*/true, &linkIdx));
       assert(linkIdx != -1);
       if (firstExtLinkIdx < linkIdx) {
         // The external connection *is* better -- use it as a fallback instead and be done.
-        link->conns[firstExtLinkIdx].external = false;
+        firstExtLinkConn->external = false;
         goto exit;
       }
     }
-    NCCLCHECK(rasLinkUpdateConn(link, newConn, newPeerIdx, /*external*/false, /*insert*/true, /*pretend*/false,
-                                &linkIdx));
-    if (firstExtLinkIdx != -1 && linkIdx <= firstExtLinkIdx)
-      firstExtLinkIdx++; // Adjust if we inserted a new conn at a lower index.
+    NCCLCHECK(rasLinkConnAdd(link, newConn, newPeerIdx, /*pretend*/false, &linkIdx, &newLinkConn));
+    if (firstExtLinkConn && linkIdx <= firstExtLinkIdx)
+      firstExtLinkIdx++; // Adjust if we inserted a new entry ahead of this one.
 
     INFO(NCCL_RAS, "RAS link %d: %s fallback connection %d with %s",
          link->direction, (newConn == nullptr ? "opening new" : "calculated existing"),
@@ -931,7 +935,7 @@ static ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasCon
     // recovery. It may temporarily result in duplicate connections, but we have a mechanism to deal with those.
     if (newConn == nullptr) {
       NCCLCHECK(rasConnCreate(&rasPeers[newPeerIdx].addr, &newConn));
-      link->conns[linkIdx].conn = newConn;
+      newLinkConn->conn = newConn;
     }
 
     // If the fallback connection is also experiencing delays, we need to keep trying.
@@ -943,8 +947,12 @@ static ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasCon
 
     newPeerIdx = rasLinkCalculatePeer(link, newPeerIdx, /*isFallback*/true);
   }
-  if (newPeerIdx == -1)
-      INFO(NCCL_RAS, "RAS link %d: no more fallbacks to add (nConns %d)", link->direction, link->nConns);
+  if (newPeerIdx == -1) {
+    int nConns = 0;
+    for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConn = linkConn->next)
+      nConns++;
+    INFO(NCCL_RAS, "RAS link %d: no more fallbacks to add (total %d)", link->direction, nConns);
+  }
 exit:
   return ncclSuccess;
 }
@@ -972,213 +980,326 @@ static void rasConnResume(struct rasConnection* conn) {
 
 // Checks if the primary connection is fully established and if so, purges the fallbacks (as they are no longer needed).
 static void rasLinkSanitizeFallbacks(struct rasLink* link) {
-  if (link->nConns > 0 && link->conns[0].conn) {
-    struct rasConnection* conn = link->conns[0].conn;
+  if (link->conns && link->conns->conn) {
+    struct rasConnection* conn = link->conns->conn;
     if (conn->sock && conn->sock->status == RAS_SOCK_READY && !conn->experiencingDelays) {
       // We have a good primary.  Simply drop all the fallbacks (the external ones will get recreated via the
       // keepAlive messages).
-      for (int i = 1; i < link->nConns; i++) {
+      int i = 1;
+      for (struct rasLinkConn* linkConn = link->conns->next; linkConn; i++) {
+        struct rasLinkConn* linkConnNext = linkConn->next;
         INFO(NCCL_RAS, "RAS link %d: dropping %sfallback connection %d with %s",
-             link->direction, (link->conns[i].external ? "external " : ""), i,
-             ncclSocketToString(&link->conns[i].conn->addr, rasLine));
+             link->direction, (linkConn->external ? "external " : ""), i,
+             ncclSocketToString(&linkConn->conn->addr, rasLine));
+        free(linkConn);
+        linkConn = linkConnNext;
       }
-      link->nConns = 1;
+      link->conns->next = nullptr;
       link->lastUpdatePeersTime = 0;
     }
   }
 }
 
-// Attempt to drop a connection from a link.
-static void rasLinkDropConn(struct rasLink* link, const struct rasConnection* conn, int linkIdx) {
-  if (linkIdx == -1)
-    linkIdx = rasLinkFindConn(link, conn);
-  if (linkIdx != -1) {
-    if (linkIdx == 0) {
-      INFO(NCCL_RAS, "RAS link %d: dropping primary connection with %s",
-           link->direction, ncclSocketToString(&conn->addr, rasLine));
-    } else {
-      INFO(NCCL_RAS, "RAS link %d: dropping %sfallback connection %d with %s",
-           link->direction, (link->conns[linkIdx].external ? "external " : ""), linkIdx,
-           ncclSocketToString(&conn->addr, rasLine));
-    }
-    memmove(link->conns+linkIdx, link->conns+linkIdx+1, (link->nConns-(linkIdx+1))*sizeof(*link->conns));
-    if (link->nConns > 1) {
-      link->nConns--;
-    } else {
-      link->conns[0].peerIdx = -1;
-      link->conns[0].conn = nullptr;
-    }
-
-    if (linkIdx == 0) {
-      // First ensure that the conn becoming the primary is not marked as external (we don't want to lose it if
-      // the remote peer loses interest in it).
-      link->conns[0].external = false;
-      if (link->conns[0].conn) {
-        INFO(NCCL_RAS, "RAS link %d: former fallback connection 1 with %s is the new primary",
-             link->direction, ncclSocketToString(&link->conns[0].conn->addr, rasLine));
-      }
-      rasLinkSanitizeFallbacks(link);
-    }
-  } // if (linkIdx != -1)
-}
-
-// Checks if a given connection is a member of this link and if so, returns its entry index.
-// Returns -1 if connection not found.
-static int rasLinkFindConn(const struct rasLink* link, const struct rasConnection* conn) {
-  for (int i = 0; i < link->nConns; i++) {
-    if (link->conns[i].conn == conn)
-      return i;
-  }
-  return -1;
-}
-
-// Note: the behavior of this function has become super-complex and so it should be considered for refactoring.
-// Searches for and updates an entry in a RAS network link.  The conns array is de-facto sorted by peerIdx: it is
-// ordered by preference, though peerIdx values can wrap around (given the ring/torus topology) and they can also
-// be -1 (the latter are stored at the end).
-// external provides an updated value for the entry's external field.  A false value, if requested, is always set;
-// a true value, however, is only set if a new entry is added (external == true implies insert), i.e., if an entry
-// already exists and the function is invoked with external == true, the new value will be ignored.
-// If insert is set, it will, if necessary, insert a new entry if one is not already there.
-// If pretend is set, it will not modify the array and will just set *pLinkIdx as appropriate.
-// pLinkIdx is a pointer to an (optional) result where the index of the added/updated entry is stored.
-// -1 can be passed as peerIdx if unknown (possible in case of race conditions, and only if external).
-// nullptr can be passed as conn if unknown or, if insert is *not* set, to indicate that the entry is to be removed
-// (the entry's external must match the argument external for it to be removed).
-ncclResult_t rasLinkUpdateConn(struct rasLink* link, struct rasConnection* conn, int peerIdx, bool external,
-                               bool insert, bool pretend, int* pLinkIdx) {
+// Adds an entry to a RAS network link (or updates one, if it already exists).
+// conn can be nullptr if the connection doesn't exist (yet).
+// peerIdx *cannot* be -1 when this function is invoked.
+// If pretend is true, the function will not modify the list and will just set *pLinkIdx and *pLinkConn as appropriate.
+// pLinkIdx and pLinkConn are (optional) pointers to the results; the index/address of the added/updated entry are
+// stored there.
+// insert (true by default) determines whether this is an "add" function (as implied by the name) or an "update" --
+// if set to false, it will refuse to add a new entry (but will update an existing one as needed).
+// Note: there is some code duplication between this function and rasLinkConnAddExternal so changes to one of them
+// may need to be sync'ed to the other one as well.  They used to be a single function that could do it all but the
+// logic was extremely difficult to follow then.
+static ncclResult_t rasLinkConnAdd(struct rasLink* link, struct rasConnection* conn, int peerIdx, bool pretend,
+                                   int* pLinkIdx, struct rasLinkConn** pLinkConn, bool insert) {
+  struct rasLinkConn* oldLinkConn = nullptr;
+  struct rasLinkConn* linkConnPrev = nullptr;
   int i, oldLinkIdx = -1;
 
-  if (external && conn)
-    insert = true;
-
+  assert(peerIdx != -1);
   if (conn) {
     // Start by checking if we already have an element with this conn.
-    oldLinkIdx = rasLinkFindConn(link, conn);
-    if (oldLinkIdx != -1) {
-      struct rasLinkConn* linkConn = link->conns+oldLinkIdx;
-      if (linkConn->peerIdx != -1)
-        assert(linkConn->peerIdx == peerIdx);
+    oldLinkConn = rasLinkConnFind(link, conn, &oldLinkIdx);
+    if (oldLinkConn) {
+      if (pLinkConn)
+        *pLinkConn = oldLinkConn;
+      if (oldLinkConn->peerIdx != -1) {
+        assert(oldLinkConn->peerIdx == peerIdx);
 
-      if (linkConn->peerIdx == peerIdx) {
-        if (!external && !pretend)
-          linkConn->external = false; // Ensure that external is cleared if so requested.
+        if (!pretend)
+          oldLinkConn->external = false; // Ensure that external is cleared.
         if (pLinkIdx)
           *pLinkIdx = oldLinkIdx;
         goto exit; // Nothing more to do if both conn and peerIdx are up to date.
-      }
+      } // if (oldLinkConn->peerIdx != -1)
 
-      // Otherwise (linkConn->peerIdx == -1 && peerIdx != -1) we have a linkConn that, due to -1 peerIdx, is in a wrong
-      // place in the array -- we need to find the right spot.  linkConn->peerIdx == -1 can only happen for external
-      // connections.
-      assert(external);
-    }
-  }
+      // Otherwise oldLinkConn->peerIdx == -1.  The oldLinkConn is in a wrong place in the list -- we need to find
+      // the right spot.  This can happen only for external connections.
+    } // if (oldLinkConn)
+  } // if (conn)
 
-  if (peerIdx != -1) {
-    // Search for the right spot in the conns array.
-    for (i = 0; i < link->nConns; i++) {
-      struct rasLinkConn* linkConn = link->conns+i;
-      if (peerIdx != -1 && linkConn->peerIdx == peerIdx) {
-        // The exact linkConn element already exists.
-        if (conn == nullptr && !insert) {
-          // Drop the connection from the link.
-          if (linkConn->external == external) {
-            if (!pretend)
-              rasLinkDropConn(link, linkConn->conn, i);
-            else if (pLinkIdx)
-              *pLinkIdx = i;
-          }
-        } else { // conn || insert
-          if (!pretend) {
-            if (linkConn->conn)
-              assert(linkConn->conn == conn);
-            else
-              linkConn->conn = conn;
-            if (!external)
-              linkConn->external = false; // Ensure that external is cleared if so requested.
-            if (i == 0) {
-              // We received a connection from the remote peer that matches the primary connection we've been
-              // waiting for.
-              rasLinkSanitizeFallbacks(link);
-            }
-          } // if (!pretend)
-          if (pLinkIdx)
-            *pLinkIdx = i;
-        } // conn || insert
+  // Search for the right spot in the conns list.
+  i = 0;
+  for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConnPrev = linkConn, linkConn = linkConn->next, i++) {
+    if (linkConn->peerIdx == peerIdx) {
+      // The exact linkConn element already exists.
+      if (linkConn->conn)
+        assert(linkConn->conn == conn);
+      if (!pretend) {
+        if (linkConn->conn == nullptr)
+          linkConn->conn = conn;
+        linkConn->external = false; // Ensure that external is cleared.
+        if (linkConn == link->conns) {
+          // We received a connection from the remote peer that matches the primary connection we've been
+          // waiting for.
+          rasLinkSanitizeFallbacks(link);
+        }
+      } // if (!pretend)
+      if (pLinkIdx)
+        *pLinkIdx = i;
+      if (pLinkConn)
+        *pLinkConn = linkConn;
+      goto exit;
+    } // if (linkConn->peerIdx == peerIdx)
 
-        goto exit;
-      } // if (peerIdx != -1 && linkConn->peerIdx == peerIdx)
-      if (!insert)
-        continue;
-      // Ensure that the i-1 index is also valid.
-      if (i == 0)
-        continue;
-      // linkConns with peerIdx == -1 are stored at the end, so anything else needs to go before them.
-      if (peerIdx != -1 && linkConn->peerIdx == -1)
+    // Ensure that the previous element is valid.
+    if (linkConnPrev == nullptr)
+      continue;
+    // linkConns with peerIdx == -1 are stored at the end, so if we reach one of them, we are done.
+    if (linkConn->peerIdx == -1)
+      break;
+    // Detect a roll-over and handle it specially.
+    if (link->direction * (linkConnPrev->peerIdx - linkConn->peerIdx) > 0) {
+      if (link->direction * (peerIdx - linkConnPrev->peerIdx) > 0 ||
+          link->direction * (peerIdx - linkConn->peerIdx) < 0)
         break;
-      // Detect a roll-over and handle it specially.
-      if (link->direction * (link->conns[i-1].peerIdx - linkConn->peerIdx) > 0) {
-        if (link->direction * (peerIdx - link->conns[i-1].peerIdx) > 0 ||
-            link->direction * (peerIdx - linkConn->peerIdx) < 0)
-          break;
-      } else { // Regular, monotonic case with the peerIdx value between two existing elements.
-        if (link->direction * (peerIdx - link->conns[i-1].peerIdx) > 0 &&
-            link->direction * (peerIdx - linkConn->peerIdx) < 0)
-          break;
-      }
-    } // for (i)
-  } else {
-    // If peerIdx == -1, insert the new element at the very end.  This can only happen for external connections.
-    assert(external && oldLinkIdx == -1);
-    i = link->nConns;
-  }
-  if (!insert)
-    goto exit;
+    } else { // Regular, monotonic case with the peerIdx value between two existing elements.
+      if (link->direction * (peerIdx - linkConnPrev->peerIdx) > 0 &&
+          link->direction * (peerIdx - linkConn->peerIdx) < 0)
+        break;
+    }
+  } // for (linkConn)
 
-  // i holds the index at which to insert a new element.
-  if (pretend) {
-    if (pLinkIdx)
-      *pLinkIdx = i;
-    goto exit;
-  }
-
-  if (oldLinkIdx == -1) {
-    struct rasLinkConn* linkConn;
-    if (link->nConns == link->connsSize) {
-      NCCLCHECK(ncclRealloc(&link->conns, link->connsSize, link->connsSize+RAS_INCREMENT));
-      link->connsSize += RAS_INCREMENT;
-    }
-    linkConn = link->conns+i;
-    // Shift existing conns with indices >= i to make room for the new one.
-    memmove(linkConn+1, linkConn, (link->nConns-i)*sizeof(*link->conns));
-    linkConn->peerIdx = peerIdx;
-    linkConn->conn = conn;
-    linkConn->external = external;
-    if (external) {
-      INFO(NCCL_RAS, "RAS link %d: adding external fallback connection %d with %s", link->direction, i,
-           ncclSocketToString((conn ? &conn->addr : &rasPeers[peerIdx].addr), rasLine));
-    }
-    link->nConns++;
-  }
-  else { // oldLinkIdx > -1
-    // We already have the conn, we just need to move it to a new spot.
-    struct rasLinkConn* linkConn = link->conns+i;
-    assert(i <= oldLinkIdx); // We can only get here if linkConn->peerIdx == -1 && peerIdx != -1.
-    if (i != oldLinkIdx) {
-      struct rasLinkConn tmp;
-      struct rasLinkConn* linkConnNext = link->conns+i+1; // Just to silence the compiler.
-      // Move the existing linkConn from index oldLinkIdx to a (lower) index i, shifting the existing linkConns
-      // with indices in the range [i, oldLinkIdx).
-      memcpy(&tmp, link->conns+oldLinkIdx, sizeof(tmp));
-      memmove(linkConnNext, linkConn, (oldLinkIdx-i)*sizeof(*linkConn));
-      memcpy(linkConn, &tmp, sizeof(*linkConn));
-    }
-    if (!external)
-      linkConn->external = false; // Ensure that external is cleared if so requested.
-  } // oldLinkIdx > -1
+  // The new element should be inserted after linkConnPrev (which is at index i-1).
   if (pLinkIdx)
     *pLinkIdx = i;
+  if (pretend)
+    goto exit;
+
+  if (oldLinkConn) {
+    if (i != oldLinkIdx) {
+      // We already have the entry, but we need to move it to a new spot (which must be earlier in the list).
+      assert(i < oldLinkIdx);
+      // Remove oldLinkConn from its old spot.
+      for (struct rasLinkConn* linkConn = linkConnPrev; linkConn->next; linkConn = linkConn->next) {
+        if (linkConn->next == oldLinkConn) {
+          linkConn->next = oldLinkConn->next;
+          break;
+        }
+      } // for (linkConn)
+      // Insert it at its new spot.
+      oldLinkConn->next = linkConnPrev->next;
+      linkConnPrev->next = oldLinkConn;
+    } // if (i != oldLinkIdx)
+    oldLinkConn->peerIdx = peerIdx;
+    oldLinkConn->external = false;
+  } else if (insert) {
+    struct rasLinkConn* linkConn;
+    NCCLCHECK(ncclCalloc(&linkConn, 1));
+    if (linkConnPrev) {
+      linkConn->next = linkConnPrev->next;
+      linkConnPrev->next = linkConn;
+    } else {
+      assert(link->conns == nullptr); // We never add an element that would replace an existing primary.
+      link->conns = linkConn;
+      // linkConn->next is already nullptr.
+    }
+    linkConn->peerIdx = peerIdx;
+    linkConn->conn = conn;
+    linkConn->external = false;
+    if (pLinkConn)
+      *pLinkConn = linkConn;
+  } // oldLinkConn == nullptr && insert
+
 exit:
   return ncclSuccess;
+}
+
+// Adds an external entry in a RAS network link (or updates one, if already exists).
+// conn *cannot* be nullptr when this function is invoked.
+// peerIdx can be -1 if unknown (possible in case of a race condition between keepAlive and peers update).
+// Note: there is some code duplication between this function and rasLinkConnAdd so changes to one of them
+// may need to be sync'ed to the other one as well.  They used to be a single function that could do it all but the
+// logic was extremely difficult to follow then.
+static ncclResult_t rasLinkConnAddExternal(struct rasLink* link, struct rasConnection* conn, int peerIdx) {
+  struct rasLinkConn* oldLinkConn = nullptr;
+  struct rasLinkConn* linkConnPrev = nullptr;
+  int i, oldLinkIdx = -1;
+
+  assert(conn);
+  oldLinkConn = rasLinkConnFind(link, conn, &oldLinkIdx);
+  if (oldLinkConn) {
+    if (oldLinkConn->peerIdx != -1)
+      assert(oldLinkConn->peerIdx == peerIdx);
+
+    if (oldLinkConn->peerIdx == peerIdx)
+      goto exit; // Nothing more to do if both conn and peerIdx are up to date.  Note that we neither check nor
+                 // update the value of external here.
+
+    // Otherwise (oldLinkConn->peerIdx == -1 && peerIdx != -1) oldLinkConn, due to its -1 peerIdx, is in
+    // a wrong place in the array -- we need to find the right spot.  oldLinkConn->peerIdx == -1 can only happen for
+    // external connections.
+  } // if (oldLinkConn)
+
+  // Search for the right spot in the conns list.
+  i = 0;
+  for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConnPrev = linkConn, linkConn = linkConn->next, i++) {
+    if (peerIdx == -1) {
+      // We simply want to find the end of the list so that we can insert a new entry with -1 peerIdx there.
+      continue;
+    }
+    if (linkConn->peerIdx == peerIdx) {
+      // The exact linkConn element already exists.
+      if (linkConn->conn)
+        assert(linkConn->conn == conn);
+      if (linkConn->conn == nullptr)
+        linkConn->conn = conn;
+      if (linkConn == link->conns) {
+        // We received a connection from the remote peer that matches the primary connection we've been
+        // waiting for.  This shouldn't trigger for external connections (rasLinkConnUpdate should be invoked first,
+        // which will update the entry's conn, so rasLinkConnFind invoked at the top of this function should succeed),
+        // but better safe than sorry...
+        rasLinkSanitizeFallbacks(link);
+      }
+      goto exit;
+    } // if (linkConn->peerIdx == peerIdx)
+
+    // Ensure that the previous element is valid.
+    if (linkConnPrev == nullptr)
+      continue;
+    // linkConns with peerIdx == -1 are stored at the end, so if we reach one of them, we are done.
+    if (linkConn->peerIdx == -1)
+      break;
+    // Detect a roll-over and handle it specially.
+    if (link->direction * (linkConnPrev->peerIdx - linkConn->peerIdx) > 0) {
+      if (link->direction * (peerIdx - linkConnPrev->peerIdx) > 0 ||
+          link->direction * (peerIdx - linkConn->peerIdx) < 0)
+        break;
+    } else { // Regular, monotonic case with the peerIdx value between two existing elements.
+      if (link->direction * (peerIdx - linkConnPrev->peerIdx) > 0 &&
+          link->direction * (peerIdx - linkConn->peerIdx) < 0)
+        break;
+    }
+  } // for (linkConn)
+
+  // The new element should be inserted after linkConnPrev (which is at index i-1).
+  if (oldLinkConn) {
+    if (i != oldLinkIdx) {
+      // We already have the entry, but we need to move it to a new spot (which must be earlier in the list).
+      assert(i < oldLinkIdx);
+      INFO(NCCL_RAS, "RAS link %d: moving %sfallback connection with %s from %d to %d", link->direction,
+           (oldLinkConn->external ? "external " : ""), ncclSocketToString(&conn->addr, rasLine), oldLinkIdx, i);
+      // Remove oldLinkConn from its old spot.
+      for (struct rasLinkConn* linkConn = linkConnPrev; linkConn->next; linkConn = linkConn->next) {
+        if (linkConn->next == oldLinkConn) {
+          linkConn->next = oldLinkConn->next;
+          break;
+        }
+      } // for (linkConn)
+      // Insert it at its new spot.
+      oldLinkConn->next = linkConnPrev->next;
+      linkConnPrev->next = oldLinkConn;
+    } // if (i != oldLinkIdx)
+    oldLinkConn->peerIdx = peerIdx;
+    oldLinkConn->external = false;
+  } else { // oldLinkConn == nullptr
+    struct rasLinkConn* linkConn;
+    NCCLCHECK(ncclCalloc(&linkConn, 1));
+    if (linkConnPrev) {
+      INFO(NCCL_RAS, "RAS link %d: adding external fallback connection %d with %s", link->direction, i,
+           ncclSocketToString(&conn->addr, rasLine));
+      linkConn->next = linkConnPrev->next;
+      linkConnPrev->next = linkConn;
+      linkConn->external = true;
+    } else {
+      INFO(NCCL_RAS, "RAS link %d: adding external fallback with %s as a new primary connection", link->direction,
+           ncclSocketToString(&conn->addr, rasLine));
+      linkConn->next = link->conns;
+      link->conns = linkConn;
+      linkConn->external = false; // Primary connections are never external.
+    }
+    linkConn->peerIdx = peerIdx;
+    linkConn->conn = conn;
+  } // oldLinkConn == nullptr
+
+exit:
+  return ncclSuccess;
+}
+
+// Updates an existing entry in a RAS network link, if any.
+// Basically an easy-to-use variant of rasLinkConnAdd.
+// For this function, conn cannot be a nullptr and peerIdx cannot be -1.
+ncclResult_t rasLinkConnUpdate(struct rasLink* link, struct rasConnection* conn, int peerIdx) {
+  assert(conn && peerIdx != -1);
+
+  NCCLCHECK(rasLinkConnAdd(link, conn, peerIdx, /*pretend*/false, /*pLinkIdx*/nullptr, /*pLinkConn*/nullptr,
+                           /*insert*/false));
+  return ncclSuccess;
+}
+
+// Attempts to drop a connection from a link.
+// If the optional external argument is true, it will drop a connection only if its external flag is set
+// (otherwise the flag is ignored and a connection is always dropped if found).
+static void rasLinkConnDrop(struct rasLink* link, const struct rasConnection* conn, bool external) {
+  struct rasLinkConn* linkConnPrev = nullptr;
+  int i = 0;
+  for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConnPrev = linkConn, linkConn = linkConn->next, i++) {
+    if (linkConn->conn == conn && (!external || linkConn->external)) {
+      if (linkConnPrev) {
+        INFO(NCCL_RAS, "RAS link %d: dropping %sfallback connection %d with %s",
+             link->direction, (linkConn->external ? "external " : ""), i,
+             ncclSocketToString(&conn->addr, rasLine));
+        linkConnPrev->next = linkConn->next;
+        free(linkConn);
+      } else { // linkConnPrev == nullptr
+        INFO(NCCL_RAS, "RAS link %d: dropping primary connection with %s",
+             link->direction, ncclSocketToString(&conn->addr, rasLine));
+        if (linkConn->next) {
+          link->conns = linkConn->next;
+          // Ensure that the conn becoming the primary is not marked as external (we don't want to lose it if
+          // the remote peer loses interest in it).
+          link->conns->external = false;
+          if (link->conns->conn)
+            INFO(NCCL_RAS, "RAS link %d: former fallback connection 1 with %s is the new primary",
+                 link->direction, ncclSocketToString(&link->conns->conn->addr, rasLine));
+          rasLinkSanitizeFallbacks(link);
+          free(linkConn);
+        } else { // linkConn->next == nullptr
+          // We prefer the primary entry to always be present, even if empty.
+          linkConn->peerIdx = -1;
+          linkConn->conn = nullptr;
+        } // linkConn->next == nullptr
+      } // linkConnPrev == nullptr
+      break;
+    } // if (linkConn->conn == conn)
+  } // for (linkConn)
+}
+
+// Checks if a given connection is a member of this link and if so, returns its link entry.
+// Optionally returns the position of the connection in the conns list.
+// Returns nullptr if connection not found.
+static struct rasLinkConn* rasLinkConnFind(const struct rasLink* link, const struct rasConnection* conn,
+                                           int* pLinkIdx) {
+  int i = 0;
+  for (struct rasLinkConn* linkConn = link->conns; linkConn; linkConn = linkConn->next, i++) {
+    if (linkConn->conn == conn) {
+      if (pLinkIdx)
+        *pLinkIdx = i;
+      return linkConn;
+    }
+  }
+  if (pLinkIdx)
+    *pLinkIdx = -1;
+  return nullptr;
 }
