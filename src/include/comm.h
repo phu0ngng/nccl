@@ -604,11 +604,14 @@ struct ncclComm {
 
   // buffer registration cache
   struct ncclRegCache regCache;
-  uint64_t endMagic;
   int isAllNvlink;
   bool useNetPXN;
   bool useGdr;
+  uint64_t endMagic;
 };
+
+static_assert(offsetof(struct ncclComm, startMagic) == 0, "startMagic must be the first field of ncclComm");
+static_assert(offsetof(struct ncclComm, endMagic) == sizeof(struct ncclComm) - sizeof(uint64_t), "endMagic must be the last field of ncclComm");
 
 enum ncclLaunchMode {
   ncclLaunchModeInvalid=0,
