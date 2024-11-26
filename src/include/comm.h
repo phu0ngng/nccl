@@ -609,6 +609,7 @@ struct ncclComm {
   int isAllNvlink;
   bool useNetPXN;
   bool useGdr;
+  int splitCount;
   uint64_t endMagic;
 };
 
