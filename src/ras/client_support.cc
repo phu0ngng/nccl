@@ -38,7 +38,7 @@ struct rasValCount {
 
 // Used in rasAuxComm below.  The values are bitmasks so that they can be combined.
 typedef enum {
-  RAS_ACS_UNKNOWN = 1, // Set if a peer that did not provide info about a given communicator.
+  RAS_ACS_UNKNOWN = 1, // Set if a peer did not provide info about a given communicator.
   RAS_ACS_INIT = 2,
   RAS_ACS_RUNNING = 4,
   RAS_ACS_FINALIZE = 8,

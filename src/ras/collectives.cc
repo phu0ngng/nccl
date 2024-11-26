@@ -597,12 +597,26 @@ static ncclResult_t rasCollCommsInit(char** pData, int* pNData) {
     ncclResult_t asyncError;
     if (ncclComms[i] == nullptr)
       break;
-    if (i == 0 || (i > 0 && ncclComms[i]->commHash != ncclComms[i-1]->commHash)) {
+    if (i == 0 || ncclComms[i]->commHash != ncclComms[i-1]->commHash) {
       if (i > 0)
         comm = (struct rasCollComms::comm*)(((char*)(comm+1)) + comm->nRanks * sizeof(*comm->ranks));
       comm->commHash = ncclComms[i]->commHash;
       comm->commNRanks = ncclComms[i]->nRanks;
       comm->nRanks = 0;
+    } else if (ncclComms[i]->nRanks != ncclComms[i-1]->nRanks) {
+      INFO(NCCL_RAS, "RAS encountered inconsistent communicator data: size %d != %d -- "
+           "possible commHash collision (0x%lx)", ncclComms[i-1]->nRanks, ncclComms[i]->nRanks, comm->commHash);
+      continue; // Short of failing, the best we can do is skip...
+    } else if (ncclComms[i]->rank == ncclComms[i-1]->rank) {
+      INFO(NCCL_RAS, "RAS encountered duplicate data for rank %d -- possible commHash collision (0x%lx)",
+           ncclComms[i]->rank, comm->commHash);
+      continue; // Short of failing, the best we can do is skip...
+    }
+    if (comm->nRanks == comm->commNRanks) {
+      INFO(NCCL_RAS,
+           "RAS encountered more ranks than the communicator size (%d) -- possible commHash collision (0x%lx)",
+           comm->commNRanks, comm->commHash);
+      continue; // Short of failing, the best we can do is skip...
     }
     rank = comm->ranks+comm->nRanks;
     rank->commRank = ncclComms[i]->rank;
@@ -651,17 +665,32 @@ static ncclResult_t rasCollCommsMerge(struct rasCollective* coll, struct rasMsg*
       else
         cmp = (collIdx < collData->nComms ? -1 : 1);
 
+      if (cmp == 0 && collComm->commNRanks != msgComm->commNRanks) {
+        INFO(NCCL_RAS, "RAS encountered inconsistent communicator data: size %d != %d -- "
+             "possible commHash collision (0x%lx)", collComm->commNRanks, msgComm->commNRanks, collComm->commHash);
+        cmp = (collComm->commNRanks < msgComm->commNRanks ? -1 : 1);
+        // We try to preserve both separately, although the input data might already be messed up anyway...
+      }
+
       if (cmp == 0) {
         // Merge the comms.
         newComm->commHash = collComm->commHash;
-        assert(collComm->commNRanks == msgComm->commNRanks);
         newComm->commNRanks = collComm->commNRanks;
-        newComm->nRanks = collComm->nRanks + msgComm->nRanks;
+        if (collComm->nRanks + msgComm->nRanks > collComm->commNRanks) {
+          INFO(NCCL_RAS,
+               "RAS encountered more ranks (%d) than the communicator size (%d) -- possible commHash collision (0x%lx)",
+               collComm->nRanks + msgComm->nRanks, newComm->commNRanks, newComm->commHash);
+          // We'll skip the extras in the loop below.
+        } else {
+          newComm->nRanks = collComm->nRanks + msgComm->nRanks;
+        }
         // Merge the ranks.
         for (int newRankIdx = 0, collRankIdx = 0, msgRankIdx = 0;
              collRankIdx < collComm->nRanks || msgRankIdx < msgComm->nRanks;
              newRankIdx++) {
           int cmpRank;
+          if (newRankIdx == newComm->commNRanks)
+            break; // Short of failing, the best we can do is skip...
           if (collRankIdx < collComm->nRanks && msgRankIdx < msgComm->nRanks)
             cmpRank = (collComm->ranks[collRankIdx].commRank < msgComm->ranks[msgRankIdx].commRank ? -1 :
                        (collComm->ranks[collRankIdx].commRank > msgComm->ranks[msgRankIdx].commRank ? 1 : 0));
@@ -669,11 +698,15 @@ static ncclResult_t rasCollCommsMerge(struct rasCollective* coll, struct rasMsg*
             cmpRank = (collRankIdx < collComm->nRanks ? -1 : 1);
 
           // There shouldn't be any overlaps in ranks between different sources.
-          assert(cmpRank != 0);
-          memcpy(newComm->ranks+newRankIdx, (cmpRank < 0 ? collComm->ranks+collRankIdx++ :
+          if (cmpRank == 0) {
+            INFO(NCCL_RAS, "RAS encountered duplicate data for rank %d -- possible commHash collision (0x%lx)",
+                 collComm->ranks[collRankIdx].commRank, newComm->commHash);
+            msgRankIdx++; // Short of failing, the best we can do is skip...
+          }
+          memcpy(newComm->ranks+newRankIdx, (cmpRank <= 0 ? collComm->ranks+collRankIdx++ :
                                              msgComm->ranks+msgRankIdx++), sizeof(*newComm->ranks));
           if (cmpRank > 0) {
-            // peerIdx values from msgColl need to shift after merge.
+            // peerIdx values from msgComm need to shift after merge.
             newComm->ranks[newRankIdx].peerIdx += coll->nPeers;
           }
         } // for (newRankIdx)
@@ -694,7 +727,7 @@ static ncclResult_t rasCollCommsMerge(struct rasCollective* coll, struct rasMsg*
         int commSize = sizeof(*msgComm) + msgComm->nRanks * sizeof(*msgComm->ranks);
         memcpy(newComm, msgComm, commSize);
         for (int i = 0; i < newComm->nRanks; i++) {
-          // peerIdx values from msgColl need to shift after merge.
+          // peerIdx values from msgComm need to shift after merge.
           newComm->ranks[i].peerIdx += coll->nPeers;
         }
         newComm = (struct rasCollComms::comm*)(((char*)(newComm)) + commSize);
