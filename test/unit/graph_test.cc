@@ -30,7 +30,6 @@ int dumpDiff = 1;
 
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter, int* errors, int* warnings) {
   if (memcmp(ref, out, sizeof(struct ncclTopoGraph)) != 0) {
-    printf("memcmp(ref,out)=%d\n", memcmp(ref, out, sizeof(struct ncclTopoGraph)));
     if (ref->nChannels*ref->bwInter > out->nChannels*out->bwInter ||
         ref->nChannels*ref->bwIntra > out->nChannels*out->bwIntra ||
         ref->crossNic < out->crossNic ||
