@@ -951,8 +951,20 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   graph->crossNic = crossNic == 1 ? 1 : 0;
   graph->bwIntra = graph->bwInter = 0;
   graph->latencyInter = 0;
-  graph->typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
-  graph->typeInter = PATH_PIX;
+  int minTypeIntra = PATH_LOC, minTypeInter = PATH_PIX;
+  int maxTypeIntra = PATH_SYS, maxTypeInter = PATH_SYS;
+  if (ngpus > 1) {
+    NCCLCHECK(ncclTopoGetGpuMinPath(system, GPU, &minTypeIntra));
+    NCCLCHECK(ncclTopoGetGpuMaxPath(system, GPU, &maxTypeIntra));
+  }
+  if (system->nodes[NET].count > 0) {
+    NCCLCHECK(ncclTopoGetGpuMinPath(system, NET, &minTypeInter));
+    NCCLCHECK(ncclTopoGetGpuMaxPath(system, NET, &maxTypeInter));
+    maxTypeIntra = maxTypeInter;
+  }
+
+  graph->typeIntra = minTypeIntra;
+  graph->typeInter = minTypeInter;
   graph->nChannels = 0;
   int trySameChannels = graph->pattern == NCCL_TOPO_PATTERN_NVLS ? 0 : 1;
   graph->sameChannels = trySameChannels;
@@ -977,14 +989,14 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
   NCCLCHECK(ncclTopoGetCompCap(system, &ccMin, NULL));
   if (graph->pattern == NCCL_TOPO_PATTERN_NVLS && (system->nodes[NVS].count == 0 || ccMin < 90)) return ncclSuccess;
   // NVLS and COLLNET_DIRECT search must have ngpus heads at most.
-  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS || graph->pattern == NCCL_TOPO_PATTERN_COLLNET_DIRECT)
-    graph->maxChannels = system->nodes[GPU].count;
+  if (graph->pattern == NCCL_TOPO_PATTERN_NVLS) graph->maxChannels = std::min(NCCL_MAX_NVLS_ARITY, system->nodes[GPU].count);
+  if (graph->pattern == NCCL_TOPO_PATTERN_COLLNET_DIRECT) graph->maxChannels = std::min(NCCL_MAX_DIRECT_ARITY+1, system->nodes[GPU].count);
 
   if (ngpus == 1) if (graph->pattern != NCCL_TOPO_PATTERN_RING) graph->pattern = NCCL_TOPO_PATTERN_TREE;
 
   if (system->nodes[NET].count == 0 && graph->pattern == NCCL_TOPO_PATTERN_NVLS) {
     // Force intra-node NVLS algorithm to pull evenly from all GPUs.
-    graph->minChannels = graph->maxChannels = system->nodes[GPU].count;
+    graph->minChannels = graph->maxChannels;
   }
 
   struct ncclTopoGraph tmpGraph;
@@ -1053,18 +1065,18 @@ search:
     }
     tmpGraph.pattern = graph->pattern;
 
-    int maxTypeIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : PATH_SYS;
-    if (tmpGraph.typeIntra < maxTypeIntra && (graph->nChannels == 0 || tmpGraph.typeIntra < graph->typeIntra)) {
+    int maxIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : maxTypeIntra;
+    if (tmpGraph.typeIntra < maxIntra && (graph->nChannels == 0 || tmpGraph.typeIntra < graph->typeIntra)) {
       tmpGraph.typeIntra += 1;
       goto search;
     }
-    tmpGraph.typeIntra = ngpus == 1 ? PATH_LOC : PATH_NVL;
+    tmpGraph.typeIntra = minTypeIntra;
 
-    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < PATH_SYS && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < PATH_PXN)) {
+    if (system->nodes[NET].count > 0 && tmpGraph.typeInter < maxTypeInter && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < PATH_PXN)) {
       tmpGraph.typeInter += 1;
       goto search;
     }
-    tmpGraph.typeInter = PATH_PIX;
+    tmpGraph.typeInter = minTypeInter;
 
     if (crossNic == 2 && tmpGraph.crossNic == 0
         && (graph->pattern == NCCL_TOPO_PATTERN_RING || graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE)) {
