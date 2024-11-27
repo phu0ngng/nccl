@@ -5,11 +5,13 @@ ncclResult_t ncclRegisterP2pNetBuffer(struct ncclComm* comm, void* userbuff, siz
   ncclResult_t ret = ncclSuccess;
 
   *regFlag = 0;
-  if (comm->planner.persistent && ncclParamGraphRegister()) {
-    ncclNetGraphRegisterBuffer(comm, userbuff, size, &conn, 1, regFlag, handle, cleanupQueue, NULL);
-  }
-  if (*regFlag == 0 && ncclParamLocalRegister()) {
-    ncclNetLocalRegisterBuffer(comm, userbuff, size, &conn, 1, regFlag, handle);
+  if (comm->netDeviceType != NCCL_NET_DEVICE_UNPACK) {
+    if (comm->planner.persistent && ncclParamGraphRegister()) {
+      ncclNetGraphRegisterBuffer(comm, userbuff, size, &conn, 1, regFlag, handle, cleanupQueue, NULL);
+    }
+    if (*regFlag == 0 && ncclParamLocalRegister()) {
+      ncclNetLocalRegisterBuffer(comm, userbuff, size, &conn, 1, regFlag, handle);
+    }
   }
   return ret;
 }

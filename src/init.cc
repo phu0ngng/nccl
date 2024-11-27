@@ -463,7 +463,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   comm->workArgsBytes = std::min<size_t>(ncclParamWorkArgsBytes(), ncclMaxKernelArgsSize(comm->cudaArch));
 
   memset(&ccStatus, 0, sizeof(ccStatus));
-  ccEnable = ncclNvmlGetCCStatus(&ccStatus) && (ccStatus.CCEnabled || ccStatus.multiGpuProtectedPCIE);
+  ccEnable = (ncclSuccess == ncclNvmlGetCCStatus(&ccStatus)) && (ccStatus.CCEnabled || ccStatus.multiGpuProtectedPCIE);
   if (ccEnable) {
     comm->workFifoBytes = 0;
   } else {
@@ -537,21 +537,6 @@ static void showVersion() {
 }
 
 NCCL_PARAM(MNNVLCliqueId, "MNNVL_CLIQUE_ID", -1);
-// collective call to find out whether gdr is available to every rank
-static ncclResult_t checkIsGdrGlobalAvail(struct ncclComm *comm) {
-  bool *isGdrAvail;
-  NCCLCHECK(ncclCalloc(&isGdrAvail, comm->nRanks));
-  NCCLCHECK(ncclTopoIsGdrAvail(comm->topo, comm->rank, &isGdrAvail[comm->rank]));
-  NCCLCHECK(bootstrapAllGather(comm->bootstrap, isGdrAvail, sizeof(bool)));
-  comm->isGdrAvailGlobal = true;
-  for (int i = 0; i < comm->nRanks; ++i) {
-    if (!isGdrAvail[i]) {
-      comm->isGdrAvailGlobal = false;
-      break;
-    }
-  }
-  return ncclSuccess;
-}
 
 static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, uint64_t commHash) {
   info->rank = comm->rank;
@@ -1315,10 +1300,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Call devCommSetup before the last barrier, making sure we don't have a thread running in front and starting to
   // launch NCCL kernels before all cuda mem allocation is complete. That could cause a deadlock.
   NCCLCHECKGOTO(devCommSetup(comm), ret, fail);
-  // check gdr
-  NCCLCHECKGOTO(checkIsGdrGlobalAvail(comm), ret, fail);
   timers[TIMER_INIT_CONNECT] = clockNano() -  timers[TIMER_INIT_CONNECT];
-  if (comm->rank == 0) INFO(NCCL_INIT, "Global GDR %s", comm->isGdrAvailGlobal ? "ENABLE" : "DISABLE");
   /* Local intra-node barrier */
   NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
 
@@ -1363,6 +1345,7 @@ struct ncclCommInitRankAsyncJob {
   // for ncclCommSplit
   struct ncclComm* parent;
   int color, key;
+  int splitCount;
   // name of the function calling
   char funcName[NCCL_COMMINIT_FUNCNAME_LEN];
 };
@@ -1457,13 +1440,14 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
-    // obtain a unique hash for the comm, re-using part of the parent's hash, commHash is a 64bit struct (=16 hex), add the color
+    // obtain a unique hash for the comm, re-using part of the parent's hash, commHash is a 64bit struct (=16 hex),
+    // add unique split counter and the color
     ncclUniqueId tmpId;
     memset(&tmpId,0,sizeof(ncclUniqueId));// must set 0 here to avoid undefined bits
-    snprintf((char*)&tmpId, NCCL_UNIQUE_ID_BYTES, "%016lx-%d", job->parent->commHash, job->color);
+    snprintf((char*)&tmpId, NCCL_UNIQUE_ID_BYTES, "%016lx-%d-%d", job->parent->commHash, job->splitCount, job->color);
     comm->commHash = getHash(tmpId.internal, NCCL_UNIQUE_ID_BYTES);
-    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d- Init START", job->funcName,
-         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key);
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p splitCount %d color %d key %d- Init START", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->splitCount, job->color, job->key);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
     NCCLCHECKGOTO(bootstrapSplit(comm->commHash, comm, job->parent, job->color, job->key, parentRanks), res, fail);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano() - timers[TIMER_INIT_BOOTSTRAP];
@@ -1499,8 +1483,8 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     /* unlink child abort flag. */
     __atomic_store_n(&job->parent->childAbortFlag, NULL, __ATOMIC_RELEASE);
     TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)", job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
-    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p color %d key %d - Init COMPLETE", job->funcName,
-         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->color, job->key);
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p splitCount %d color %d key %d - Init COMPLETE", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->splitCount, job->color, job->key);
   } else {
     // the name for the replay tool is ncclCommInitRank for all the variations
     TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)", comm, comm->nRanks, commIdHash, comm->rank, comm->cudaDev);
@@ -2228,6 +2212,7 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
   job->comm = childComm;
   job->newcomm = newcomm;
   job->parent = comm;
+  job->splitCount = ++comm->splitCount;
   job->color = color;
   job->key = key;
   job->cudaDev = comm->cudaDev;

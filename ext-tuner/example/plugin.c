@@ -14,8 +14,9 @@ __hidden ncclResult_t pluginGetCollInfo(void* context, ncclFunc_t collType, size
                               int numPipeOps, float** collCostTable, int numAlgo, int numProto,
                               int regBuff, int* nChannels) {
   // Update NCCL core generated cost table. Updated table will be evaluated by NCCL to pick the best algo/proto combo
-  if (collCostTable[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] != NCCL_ALGO_PROTO_IGNORE) {
-    collCostTable[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 0.0;
+  float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
+  if (table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] != NCCL_ALGO_PROTO_IGNORE) {
+    table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] = 0.0;
   }
   *nChannels = 1;
   return ncclSuccess;

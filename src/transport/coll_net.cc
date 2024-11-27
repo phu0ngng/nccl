@@ -1174,7 +1174,7 @@ static ncclResult_t collnetRegisterBuffer(struct ncclComm* comm, const void* use
           INFO(NCCL_REG, "rank %d - COLLNET register userbuff %p (handle %p), buffSize %ld, type %s", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
         }
       } else {
-        WARN("rank %d - COLLNET failed to register userbuff %p (handle %p), buffSize %ld, type %s, GPURDMA is not enabled", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
+        WARN("rank %d - COLLNET failed to register userbuff %p (handle %p), buffSize %ld, type %s, GDR is not enabled", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
       }
     }
   }
@@ -1189,12 +1189,15 @@ fail:
 ncclResult_t ncclCollnetLocalRegisterBuffer(struct ncclComm* comm, const void* userbuff, size_t buffSize, int type, int* outRegBufFlag, void** outHandle) {
   ncclResult_t ret = ncclSuccess;
   struct ncclReg *regRecord = NULL;
+  bool isValid = false;
 
   *outRegBufFlag = 0;
   *outHandle = NULL;
-  if (comm && userbuff && buffSize > 0 && comm->isGdrAvailGlobal) {
+  if (comm && userbuff && buffSize > 0) {
     NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
-    NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
+    NCCLCHECKGOTO(ncclRegLocalIsValid(regRecord, &isValid), ret, fail);
+    if (isValid)
+      NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
   }
 exit:
   return ret;
@@ -1211,7 +1214,7 @@ struct ncclCollnetCleanupCallback {
 
 static ncclResult_t cleanupCollnet(struct ncclComm* comm, struct ncclCommCallback* cb) {
   struct ncclCollnetCleanupCallback* obj = (struct ncclCollnetCleanupCallback*)cb;
-  NCCLCHECK(ncclCommDeregister(obj->comm, (void*)obj->reg));
+  NCCLCHECK(ncclCommGraphDeregister(obj->comm, obj->reg));
   free(obj);
   return ncclSuccess;
 }
@@ -1224,9 +1227,9 @@ ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* u
   size_t baseSendSize = 0;
 
   *outRegBufFlag = 0;
-  if (comm && userbuff && buffSize > 0 && comm->isGdrAvailGlobal) {
+  if (comm && userbuff && buffSize > 0) {
     CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)userbuff), ret, fail);
-    NCCLCHECKGOTO(ncclCommRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
+    NCCLCHECKGOTO(ncclCommGraphRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
     NCCLCHECKGOTO(collnetRegisterBuffer(comm, userbuff, buffSize, type, regRecord, outRegBufFlag, outHandle), ret, fail);
 
     if (*outRegBufFlag) {
@@ -1236,6 +1239,8 @@ ncclResult_t ncclCollnetGraphRegisterBuffer(struct ncclComm* comm, const void* u
       record->reg = regRecord;
       ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
       *nCleanupQueueElts += 1;
+    } else {
+      NCCLCHECKGOTO(ncclCommGraphDeregister(comm, regRecord), ret, fail);
     }
   }
 

@@ -176,6 +176,7 @@ struct setupReq {
 
 NCCL_PARAM(NetOptionalRecvCompletion, "NET_OPTIONAL_RECV_COMPLETION", 1);
 
+static_assert(sizeof(ncclNetHandle_t) + sizeof(int) <= CONNECT_SIZE, "Not large enough ncclConnect to hold ncclNetHandle_t and useGdr flag");
 // Forward declaration
 static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct ncclProxyArgs* args);
 
@@ -193,6 +194,7 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, peerInfo->rank, &netId, &req.netDev, &proxyRank));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->rank, netId, 1, &req.useGdr));
   send->conn.flags |= req.useGdr ? NCCL_DIRECT_NIC : 0;
+  if (!req.useGdr && connIndex == 0) comm->useGdr = 0;
   if (proxyRank != myInfo->rank && connIndex == 0) comm->useNetPXN = true;
 
   NCCLCHECK(ncclProxyConnect(comm, TRANSPORT_NET, 1, proxyRank, &send->proxyConn));
@@ -209,6 +211,7 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
         proxyRank, req.useGdr ? "/GDRDMA" : "", req.shared ? "/Shared" : "");
   }
   *((int*)connectInfo) = comm->topParentRanks[proxyRank];
+  memcpy((uint8_t*)connectInfo + sizeof(ncclNetHandle_t), &req.useGdr, sizeof(int));
   return ncclSuccess;
 }
 
@@ -231,6 +234,7 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   NCCLCHECK(ncclTopoGetNetDev(comm, myInfo->rank, graph, channelId, myInfo->rank, &netId, &req.netDev, &proxyRank));
   NCCLCHECK(ncclTopoCheckGdr(comm->topo, myInfo->rank, netId, 0, &req.useGdr));
   recv->conn.flags |= req.useGdr ? NCCL_DIRECT_NIC : 0;
+  if (!req.useGdr && connIndex == 0) comm->useGdr = 0;
 
   // Determine whether we need to flush the GDR buffer on recv or not
   if (req.useGdr) NCCLCHECK(ncclTopoNeedFlush(comm, req.netDev, myInfo->rank, &req.needFlush));
@@ -242,6 +246,7 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   req.tpRank = comm->topParentRanks[myInfo->rank];
   req.tpRemoteRank = comm->topParentRanks[peerInfo->rank];
   NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), connectInfo, sizeof(ncclNetHandle_t)));
+  memcpy((uint8_t*)connectInfo + sizeof(ncclNetHandle_t), &req.useGdr, sizeof(int));
   INFO(NCCL_INIT|NCCL_NET,"Channel %02d/%d : %d[%d] -> %d[%d] [receive] via NET/%s/%d%s%s", channelId, connIndex, peerInfo->rank, peerInfo->nvmlDev, myInfo->rank, myInfo->nvmlDev, comm->ncclNet->name, req.netDev,
       req.useGdr ? "/GDRDMA" : "", req.shared ? "/Shared" : "");
   return ncclSuccess;
@@ -295,8 +300,11 @@ struct netRecvConnectArgs {
 
 static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* send) {
   struct connectMap* map = (connectMap*) send->transportResources;
-
   void* opId;
+  int recvUseGdr;
+
+  memcpy(&recvUseGdr, (uint8_t*)connectInfo + sizeof(ncclNetHandle_t), sizeof(int));
+  if (!recvUseGdr) send->conn.flags &= ~NCCL_DIRECT_NIC;
 
   // map isn't allocated thus this op hasn't been submitted yet
   if (!map) {
@@ -403,6 +411,11 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
 static ncclResult_t recvConnect(struct ncclComm* comm, struct ncclConnect* connectInfo, int nranks, int rank, struct ncclConnector* recv) {
   struct connectMap* map = (connectMap*) recv->transportResources;
   void* opId;
+  int sendUseGdr;
+
+  memcpy(&sendUseGdr, (uint8_t*)connectInfo + sizeof(ncclNetHandle_t), sizeof(int));
+  if (!sendUseGdr) recv->conn.flags &= ~NCCL_DIRECT_NIC;
+
   if (!map) {
     NCCLCHECK(ncclCalloc(&map, 1));
     recv->transportResources = map;
@@ -1491,6 +1504,7 @@ ncclResult_t ncclNetDeregBuffer(struct ncclComm* comm, struct ncclProxyConnector
 
 static ncclResult_t netRegisterBuffer(ncclComm* comm, const void* userbuff, size_t buffSize, struct ncclConnector** peerConns, int nPeers, struct ncclReg* regRecord, int* outRegBufFlag, void** outHandle) {
   ncclResult_t ret = ncclSuccess;
+  int gdrFlag = 1;
 
   if (regRecord) {
     for (int p = 0; p < nPeers; ++p) {
@@ -1533,6 +1547,7 @@ static ncclResult_t netRegisterBuffer(ncclComm* comm, const void* userbuff, size
             goto fail;
           }
         } else {
+          gdrFlag = 0;
           goto fail;
         }
       }
@@ -1543,18 +1558,21 @@ exit:
   return ret;
 fail:
   *outRegBufFlag = 0;
-  WARN("rank %d failed to NET register userbuff %p buffSize %ld", comm->rank, userbuff, buffSize);
+  WARN("rank %d failed to NET register userbuff %p buffSize %ld GDR flag %d", comm->rank, userbuff, buffSize, gdrFlag);
   goto exit;
 }
 
 ncclResult_t ncclNetLocalRegisterBuffer(ncclComm* comm, const void* userbuff, size_t buffSize, struct ncclConnector** peerConns, int nPeers, int* outRegBufFlag, void** outHandle) {
   ncclResult_t ret = ncclSuccess;
   struct ncclReg *regRecord = NULL;
+  bool isValid = false;
 
   *outRegBufFlag = 0;
-  if (comm && userbuff && buffSize > 0 && nPeers > 0 && comm->isGdrAvailGlobal) {
+  if (comm && userbuff && buffSize > 0 && nPeers > 0) {
     NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
-    NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
+    NCCLCHECKGOTO(ncclRegLocalIsValid(regRecord, &isValid), ret, fail);
+    if (isValid)
+      NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
   }
 
 exit:
@@ -1572,7 +1590,7 @@ struct ncclNetCleanupCallback {
 
 static ncclResult_t cleanupNet(struct ncclComm* comm, struct ncclCommCallback* cb) {
   struct ncclNetCleanupCallback* obj = (struct ncclNetCleanupCallback*)cb;
-  NCCLCHECK(ncclCommDeregister(obj->comm, (void*)obj->reg));
+  NCCLCHECK(ncclCommGraphDeregister(obj->comm, obj->reg));
   free(obj);
   return ncclSuccess;
 }
@@ -1585,9 +1603,9 @@ ncclResult_t ncclNetGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
   size_t baseSendSize;
 
   *outRegBufFlag = 0;
-  if (comm && userbuff && buffSize > 0 && nPeers > 0 && comm->isGdrAvailGlobal) {
+  if (comm && userbuff && buffSize > 0 && nPeers > 0) {
     CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)userbuff), ret, fail);
-    NCCLCHECKGOTO(ncclCommRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
+    NCCLCHECKGOTO(ncclCommGraphRegister(comm, baseSend, baseSendSize, (void**)&regRecord), ret, fail);
     NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
     if (*outRegBufFlag) {
       NCCLCHECKGOTO(ncclCalloc(&record, 1), ret, fail);
@@ -1596,6 +1614,8 @@ ncclResult_t ncclNetGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
       record->reg = regRecord;
       ncclIntruQueueEnqueue(cleanupQueue, (struct ncclCommCallback*)record);
       if (nCleanupQueueElts) *nCleanupQueueElts += 1;
+    } else {
+      NCCLCHECKGOTO(ncclCommGraphDeregister(comm, regRecord), ret, fail);
     }
   }
 exit:
@@ -1624,8 +1644,8 @@ static ncclResult_t sendProxyRegBuffer(struct ncclProxyConnection* connection, s
     (void)close(dmabuf_fd);
     needReg = false;
   }
-#endif
 peermem:
+#endif
   if (needReg) {
     NCCLCHECKGOTO(proxyState->ncclNet->regMr(resources->netSendComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, &handle), ret, fail);
   }
@@ -1658,8 +1678,8 @@ static ncclResult_t recvProxyRegBuffer(struct ncclProxyConnection* connection, s
     (void)close(dmabuf_fd);
     needReg = false;
   }
-#endif
 peermem:
+#endif
   if (needReg) {
     NCCLCHECKGOTO(proxyState->ncclNet->regMr(resources->netRecvComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, &handle), ret, fail);
   }

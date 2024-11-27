@@ -323,10 +323,6 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   int fnOpTyIndices[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
   int fnOpTyCount = 0;
 
-  // Poll for callbacks sent to us from other threads. Typically these free
-  // resources from to our memory pools.
-  NCCLCHECK(ncclCommPollCallbacks(comm, /*waitSome=*/false));
-
   // Walk the size sorted tasks, binning them by (fn,op,ty).
   while (task != nullptr) {
     struct ncclTaskColl* next = task->next;
@@ -800,7 +796,8 @@ static ncclResult_t addP2pToPlan(
           int peerRank = dir ? sendRank : recvRank;
           struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
             : &channelPeers[peerRank]->recv[connIndex];
-          ncclRegisterP2pNetBuffer(comm, addrs[dir], bytes[dir], conn, &regFlag, &handles[dir][part], &plan->cleanupQueue);
+          if (conn->conn.flags & NCCL_DIRECT_NIC)
+            ncclRegisterP2pNetBuffer(comm, addrs[dir], bytes[dir], conn, &regFlag, &handles[dir][part], &plan->cleanupQueue);
           if (!regFlag) break;
         }
         netRegistered[dir] = regFlag ? true : false;
@@ -992,6 +989,8 @@ static ncclResult_t scheduleP2pTasksToPlan(
         // Skip send to self in-place (we don't need to support this).
         ncclIntruQueueDequeue(&peers[sendRank].sendQueue);
         ncclIntruQueueDequeue(&peers[recvRank].recvQueue);
+        ncclMemoryPoolFree(&comm->memPool_ncclTaskP2p, send);
+        ncclMemoryPoolFree(&comm->memPool_ncclTaskP2p, recv);
         comm->planner.nTasksP2p -= 2;
       } else {
         // Ensure room for worst case of one new batch per channel.
@@ -1214,18 +1213,8 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
 
     NCCLCHECK(ncclProxySaveOp(comm, op, nullptr));
     op->opCount = oldId; // Restore for next uploadProxyOps()
-
-    struct ncclProxyOp* opNext = op->enqNext;
-    if (!plan->persistent) {
-      // Non-persistent kernels upload ops only once so can be free'd here.
-      if (op->ringAlgo && op->ringAlgo->decRefCount() == 0) delete op->ringAlgo;
-      ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, op);
-    }
-    op = opNext;
+    op = op->enqNext;
   }
-
-  // Erase proxyOpQueue since all ops were free'd back to mempool.
-  if (!plan->persistent) ncclIntruQueueConstruct(&plan->proxyOpQueue);
 
   for (int c=0; c < MAXCHANNELS; c++) {
     // Advance channel's p2pOpCount by number of p2p's in this plan channel.
@@ -1255,6 +1244,8 @@ static void CUDART_CB hostStreamPlanCallback(void *plan_) {
   if (result != ncclSuccess) {
     WARN("hostStreamPlanCallback() failed : %s", ncclGetErrorString(result));
   }
+  if (!plan->persistent) ncclAtomicRefCountDecrement(&plan->comm->noncapturedRefs);
+  return;
 }
 
 static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* me) {
@@ -1267,36 +1258,41 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
       CUDACHECK(cudaFree(plan->workBufPersistent));
       CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
     }
-    struct ncclProxyOp* q = ncclIntruQueueHead(&plan->proxyOpQueue);
-    while (q != nullptr) {
-      struct ncclProxyOp* q1 = q->enqNext;
-      if (q->ringAlgo && q->ringAlgo->decRefCount() == 0) delete q->ringAlgo;
-      ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
-      q = q1;
-    }
-    struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
-    while (ct != nullptr) {
-      struct ncclTaskColl* ct1 = ct->next;
-      free(ct->sendNetHandles);
-      free(ct->recvNetHandles);
-      free(ct->srecvNetHandles);
-      ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, ct);
-      ct = ct1;
-    }
-    struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
-    while (pt != nullptr) {
-      struct ncclTaskP2p* pt1 = pt->next;
-      ncclMemoryPoolFree(&comm->memPool_ncclTaskP2p, pt);
-      pt = pt1;
-    }
-    ncclResult_t result = ncclSuccess;
-    while (!ncclIntruQueueEmpty(&plan->cleanupQueue)) {
-      struct ncclCommCallback* cb = ncclIntruQueueDequeue(&plan->cleanupQueue);
-      ncclResult_t res1 = cb->fn(comm, cb); // Expect to reclaim memory of cb
-      if (res1 != ncclSuccess) result = res1;
-    }
-    NCCLCHECK(result);
   }
+  // Free coll tasks
+  struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
+  while (ct != nullptr) {
+    struct ncclTaskColl* ct1 = ct->next;
+    free(ct->sendNetHandles);
+    free(ct->recvNetHandles);
+    free(ct->srecvNetHandles);
+    ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, ct);
+    ct = ct1;
+  }
+  // Free p2p tasks
+  struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
+  while (pt != nullptr) {
+    struct ncclTaskP2p* pt1 = pt->next;
+    ncclMemoryPoolFree(&comm->memPool_ncclTaskP2p, pt);
+    pt = pt1;
+  }
+  // Free proxy ops
+  struct ncclProxyOp* q = ncclIntruQueueHead(&plan->proxyOpQueue);
+  while (q != nullptr) {
+    struct ncclProxyOp* q1 = q->enqNext;
+    if (q->ringAlgo && q->ringAlgo->decRefCount() == 0) delete q->ringAlgo;
+    ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
+    q = q1;
+  }
+  // Run other free callbacks
+  ncclResult_t result = ncclSuccess;
+  while (!ncclIntruQueueEmpty(&plan->cleanupQueue)) {
+    struct ncclCommCallback* cb = ncclIntruQueueDequeue(&plan->cleanupQueue);
+    ncclResult_t res1 = cb->fn(comm, cb); // Expect to reclaim memory of cb
+    if (res1 != ncclSuccess) result = res1;
+  }
+  NCCLCHECK(result);
+  // Free plan struct
   ncclMemoryPoolFree(&comm->memPool_ncclKernelPlan, plan);
   return ncclSuccess;
 }
@@ -1382,7 +1378,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     }
     NCCLCHECKGOTO(ncclStrongStreamWaitStream(planner->capturingGraph, launchStream, &comm->sharedRes->deviceStream), result, failure);
 
-    if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking) {
+    if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking || __atomic_load_n(&comm->noncapturedRefs, __ATOMIC_ACQUIRE)) {
       // We have to launch host tasks to push proxy args. We are careful to only
       // do this if necessary since host tasks impose a high performance cost in CUDA.
       bool acquired = false;
@@ -1392,6 +1388,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
             acquired = true;
             NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->sharedRes->hostStream), result, failure);
           }
+          if (!persistent) ncclAtomicRefCountIncrement(&comm->noncapturedRefs);
+          plan->isHostCbEnq = true;
           NCCLCHECKGOTO(ncclStrongStreamLaunchHost(planner->capturingGraph, &comm->sharedRes->hostStream, hostStreamPlanCallback, plan), result, failure);
         }
       }
@@ -1407,6 +1405,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       NCCLCHECKGOTO(ncclCudaGraphAddDestructor(planner->capturingGraph, persistentDestructor, (void*)planHead), result, failure);
     }
   }
+
 failure:
   return result;
 }
@@ -1499,7 +1498,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
 }
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  if (!(plan->persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking)) {
+  if (!(plan->persistent || ncclCudaLaunchBlocking || plan->isHostCbEnq)) {
     // We are not using the host stream for proxy ops and reclaimation submission.
     NCCLCHECK(hostStreamPlanTask(comm, plan));
   } else {

@@ -50,7 +50,7 @@ ncclResult_t rasMsgHandlePeersUpdate(struct rasMsg* msg, struct rasSocket* sock)
 
 static ncclResult_t rasLinkReinitConns(struct rasLink* link);
 
-static ncclResult_t rasDeadPeersUpdate(union ncclSocketAddress* updatePeers, int nUpdatePeers);
+static ncclResult_t rasDeadPeersUpdate(union ncclSocketAddress* updatePeers, int* nUpdatePeers);
 static ncclResult_t getNewDeadEntry(union ncclSocketAddress** pAddr);
 
 static int rasAddrRankInitCompare(const void* k, const void* e);
@@ -58,6 +58,7 @@ static int rasAddrPeerInfoCompare(const void* k, const void* e);
 static int rasRanksCompare(const void* e1, const void* e2);
 
 static void rasPeersDump();
+static void rasDeadPeersDump();
 static char* rasPeerDump(const struct rasPeerInfo* peer, char* result, size_t nres);
 
 
@@ -71,7 +72,6 @@ ncclResult_t rasLocalHandleAddRanks(struct rasRankInit* ranks, int nranks) {
   ncclResult_t ret = ncclSuccess;
 
   INFO(NCCL_RAS, "RAS handling local addRanks request (old nRasPeers %d)", nRasPeers);
-  rasPeersDump();
 
   // Convert the input rasRankInit structures into our internal rasPeerInfo.
   struct rasPeerInfo* rankPeers = nullptr;
@@ -84,7 +84,9 @@ ncclResult_t rasLocalHandleAddRanks(struct rasRankInit* ranks, int nranks) {
 
   INFO(NCCL_RAS, "RAS finished local processing of addRanks request (new nRasPeers %d, nRankPeers %d)",
        nRasPeers, nRankPeers);
-  rasPeersDump();
+  // Print peers only if something changed and we're the "root".
+  if (nRankPeers > 0 && memcmp(&ranks[0].addr, &rasNetListeningSocket.addr, sizeof(ranks[0].addr)) == 0)
+    rasPeersDump();
 
   // Propagate the changes through our RAS network links.
   NCCLCHECKGOTO(rasNetUpdatePeers(rankPeers, nRankPeers, /*updateDeadPeers*/false, ranks, nranks), ret, fail);
@@ -185,6 +187,7 @@ fail:
 
 // Updates the rasPeers array with the new data.  The new data gets updated in the process as well: any data that
 // wasn't actually new is purged, so as to minimize the amount of data we forward to our peers.
+// On a successful return, nRankPeers contains the number of entries that were updated.
 static ncclResult_t rasPeersUpdate(struct rasPeerInfo* rankPeers, int* nRankPeers, int newNRasPeers) {
   ncclResult_t ret = ncclSuccess;
   int rankPeerIdxDst;
@@ -466,6 +469,9 @@ ncclResult_t rasConnSendPeersUpdate(struct rasConnection* conn, const struct ras
   if (nDeadPeers > 0)
     conn->lastSentDeadPeersHash = rasDeadPeersHash;
 
+  INFO(NCCL_RAS, "RAS sending a peersUpdate to %s (nPeers %d, nDeadPeers %d)",
+       ncclSocketToString(&conn->addr, rasLine), nPeers, nDeadPeers);
+
   rasConnEnqueueMsg(conn, msg, msgLen);
 exit:
   return ncclSuccess;
@@ -485,12 +491,11 @@ ncclResult_t rasMsgHandlePeersUpdate(struct rasMsg* msg, struct rasSocket* sock)
   int deadPeersOffset = 0;
   bool updatePeers, updateDeadPeers;
 
-  INFO(NCCL_RAS, "RAS handling peersUpdate (peersHash 0x%lx, deadPeersHash 0x%lx, nPeers %d, nDeadPeers %d)",
-       msg->peersUpdate.peersHash, msg->peersUpdate.deadPeersHash, msg->peersUpdate.nPeers,
-       msg->peersUpdate.nDeadPeers);
-  INFO(NCCL_RAS, "RAS old rasPeersHash 0x%lx, rasDeadPeersHash 0x%lx, nRasPeers %d, nRasDeadPeers %d",
+  INFO(NCCL_RAS, "RAS handling peersUpdate from %s (peersHash 0x%lx, deadPeersHash 0x%lx, nPeers %d, nDeadPeers %d)",
+       ncclSocketToString(&sock->sock.addr, rasLine), msg->peersUpdate.peersHash, msg->peersUpdate.deadPeersHash,
+       msg->peersUpdate.nPeers, msg->peersUpdate.nDeadPeers);
+  INFO(NCCL_RAS, "RAS my old rasPeersHash 0x%lx, rasDeadPeersHash 0x%lx, nRasPeers %d, nRasDeadPeers %d",
        rasPeersHash, rasDeadPeersHash, nRasPeers, nRasDeadPeers);
-  rasPeersDump();
   conn->lastRecvPeersHash = msg->peersUpdate.peersHash;
   conn->lastRecvDeadPeersHash = msg->peersUpdate.deadPeersHash;
 
@@ -523,13 +528,21 @@ ncclResult_t rasMsgHandlePeersUpdate(struct rasMsg* msg, struct rasSocket* sock)
 
     if (nPeers > 0)
       NCCLCHECKGOTO(rasPeersUpdate(msg->peersUpdate.peers, &msg->peersUpdate.nPeers), ret, fail);
+    else
+      msg->peersUpdate.nPeers = 0;
     if (nDeadPeers > 0)
       NCCLCHECKGOTO(rasDeadPeersUpdate((union ncclSocketAddress*)(((char*)msg)+deadPeersOffset),
-                                       msg->peersUpdate.nDeadPeers), ret, fail);
+                                       &msg->peersUpdate.nDeadPeers), ret, fail);
+    else
+      msg->peersUpdate.nDeadPeers = 0;
 
-    INFO(NCCL_RAS, "RAS finished local processing of peersUpdate (new nRasPeers %d, nPeers %d)",
-         nRasPeers, msg->peersUpdate.nPeers);
-    rasPeersDump();
+    INFO(NCCL_RAS, "RAS finished local processing of peersUpdate "
+         "(new nRasPeers %d, nRasDeadPeers %d, nPeers %d, nDeadPeers %d)",
+         nRasPeers, nRasDeadPeers, msg->peersUpdate.nPeers, msg->peersUpdate.nDeadPeers);
+    if (msg->peersUpdate.nPeers > 0)
+      rasPeersDump();
+    if (msg->peersUpdate.nDeadPeers > 0)
+      rasDeadPeersDump();
 
     // If post-merge the hashes are still different, send our (dead) peers back.
     updatePeers = (conn->lastSentPeersHash != rasPeersHash && conn->lastRecvPeersHash != rasPeersHash);
@@ -564,9 +577,12 @@ ncclResult_t rasMsgHandlePeersUpdate(struct rasMsg* msg, struct rasSocket* sock)
         newMsg->peersUpdate.nDeadPeers = 0;
       }
 
+      INFO(NCCL_RAS, "RAS sending back a peersUpdate (nPeers %d, nDeadPeers %d)",
+           newMsg->peersUpdate.nPeers, newMsg->peersUpdate.nDeadPeers);
+
       rasConnEnqueueMsg(conn, newMsg, newMsgLen);
       newMsg = nullptr;
-    }
+    } // if (updatePeers || updateDeadPeers)
 
     // Propagate the changes through our RAS network links.
     NCCLCHECKGOTO(rasNetUpdatePeers(msg->peersUpdate.peers, msg->peersUpdate.nPeers, updateDeadPeers, nullptr, 0,
@@ -590,8 +606,8 @@ fail:
 // The newly added peers could also shift all the existing peerIdx values, invalidating the values in RasLinkConn
 // structures, so it's better to drop it all and recalculate from scratch.
 // We recalculate the primary peer; if an active connection to it already exists, then we're done.  If there
-// is not connection, we create one.  If a connection exists but is not fully established (bad socket state or
-// it's experiencing delays) then we add a fallback to it and the process repeats.
+// is no connection, we create one.  If a connection exists but is experiencing delays then we add a fallback and
+// the process repeats.
 // External conns are dropped from the links as well (they will be re-created via keepAlive messages as needed).
 static ncclResult_t rasLinkReinitConns(struct rasLink* link) {
   struct rasLinkConn* linkConn;
@@ -604,17 +620,19 @@ static ncclResult_t rasLinkReinitConns(struct rasLink* link) {
   }
   link->nConns = 0;
 
-  // Create the new chain of connections for this link.  We iterate as long as there are no active connections within
-  // the newly created chain.
-  do {
+  // Establish a connection for this link.  We iterate as long as the connections we find are experiencing delays.
+  while (newPeerIdx != -1) {
     if (link->nConns == link->connsSize) {
       NCCLCHECK(ncclRealloc(&link->conns, link->connsSize, link->connsSize+RAS_INCREMENT));
       link->connsSize += RAS_INCREMENT;
     }
 
     newPeerIdx = rasLinkCalculatePeer(link, newPeerIdx, /*isFallback*/link->nConns > 1);
-    if (newPeerIdx == -1 && link->nConns > 0)
-      break;
+    if (newPeerIdx == -1) {
+      INFO(NCCL_RAS, "RAS link %d: no more fallbacks to add (nConns %d)", link->direction, link->nConns);
+      if (link->nConns > 0)
+        break;
+    }
     linkConn = link->conns+link->nConns;
     linkConn->peerIdx = newPeerIdx;
     linkConn->connIdx = (newPeerIdx != -1 ? rasConnFind(&rasPeers[newPeerIdx].addr) : -1);
@@ -625,6 +643,9 @@ static ncclResult_t rasLinkReinitConns(struct rasLink* link) {
     if (linkConn->connIdx == - 1) {
       if (link->nConns == 0) {
         if (linkConn->peerIdx != -1) {
+          INFO(NCCL_RAS, "RAS link %d: %s primary connection with %s",
+               link->direction, (myPeerIdx < linkConn->peerIdx ? "opening new" : "calculated deferred"),
+               ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
           // We try to initiate primary connections from the side with a lower address (and thus an earlier peer index)
           // to avoid races and the creation of duplicate connections.
           if (myPeerIdx < linkConn->peerIdx) {
@@ -634,21 +655,34 @@ static ncclResult_t rasLinkReinitConns(struct rasLink* link) {
             link->lastUpdatePeersTime = clockNano();
           }
         } // if (linkConn->peerIdx != -1)
-        link->nConns++;
       } else { // link->nConns > 0
-        // conn here refers to the _previous_ iteration of this loop -- the previous connection in the fallback chain.
-        // We check if it already went through the fallback calculation; if so, we need to create a new fallback
-        // connection at the end of the chain here, to ensure that we'll keep retrying.
-        if (conn->experiencingDelays) {
-          NCCLCHECK(rasConnCreate(&rasPeers[newPeerIdx].addr, &linkConn->connIdx));
-          link->nConns++;
-        }
+        INFO(NCCL_RAS, "RAS link %d: opening new fallback connection %d with %s",
+             link->direction, link->nConns, ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
+        NCCLCHECK(rasConnCreate(&rasPeers[newPeerIdx].addr, &linkConn->connIdx));
       } // link->nConns > 0
-      break;
-    } // if (linkConn->connIdx == - 1)
+    } else { // linkConn->connIdx != -1
+      if (link->nConns == 0) {
+        INFO(NCCL_RAS, "RAS link %d: calculated existing primary connection with %s",
+             link->direction, ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
+      } else {
+        INFO(NCCL_RAS, "RAS link %d: calculated existing fallback connection %d with %s",
+             link->direction, link->nConns, ncclSocketToString(&rasPeers[linkConn->peerIdx].addr, rasLine));
+      }
+    }
     link->nConns++;
+    if (linkConn->connIdx == -1)
+      break;
     conn = rasConns+linkConn->connIdx;
-  } while (conn->sockIdx == -1 || rasSockets[conn->sockIdx].status != RAS_SOCK_READY || conn->experiencingDelays);
+
+    // We check if the connection already went through the fallback calculation; if so, we'll need to create a new
+    // fallback in the next iteration, to ensure that RAS will keep retrying.
+    if (!conn->experiencingDelays)
+      break;
+
+    INFO(NCCL_RAS, "RAS connection experiencingDelays %d, startRetryTime %.2fs, socket status %d",
+         conn->experiencingDelays, (clockNano()-conn->startRetryTime)/1e9,
+         (conn->sockIdx == -1 ? -1 : rasSockets[conn->sockIdx].status));
+  }
 
   return ncclSuccess;
 }
@@ -736,17 +770,16 @@ ncclResult_t rasPeerDeclareDead(const union ncclSocketAddress* addr) {
 // Invoked when an incoming RAS_MSG_PEERSUPDATE includes info on dead peers.  Updates the rasDeadPeers array.
 // Any propagation needs to be handled outside of this function, though it *does* disconnect any connections
 // with the newly dead peers.
-static ncclResult_t rasDeadPeersUpdate(union ncclSocketAddress* updatePeers, int nUpdatePeers) {
+// On return, nUpdatePeers contains the number of newly added dead entries.
+static ncclResult_t rasDeadPeersUpdate(union ncclSocketAddress* updatePeers, int* nUpdatePeers) {
   static union ncclSocketAddress* newPeers = nullptr;
   static union ncclSocketAddress* oldPeers;
 
-  INFO(NCCL_RAS, "RAS rasDeadPeersUpdate (old nRasDeadPeers %d, nUpdatePeers %d)", nRasDeadPeers, nUpdatePeers);
-
-  if (nUpdatePeers == 0)
+  if (*nUpdatePeers == 0)
     return ncclSuccess;
 
   // Pessimistically estimate the new size of rasDeadPeers.
-  int nNewPeers = nRasDeadPeers + nUpdatePeers;
+  int nNewPeers = nRasDeadPeers + *nUpdatePeers;
   if (nNewPeers > rasDeadPeersSize) {
     nNewPeers = ROUNDUP(nNewPeers, RAS_INCREMENT);
 
@@ -762,9 +795,9 @@ static ncclResult_t rasDeadPeersUpdate(union ncclSocketAddress* updatePeers, int
 
   // Merge updatePeers with oldPeers into newPeers.
   int oldPeersIdx, updatePeersIdx, newPeersIdx;
-  for (oldPeersIdx = updatePeersIdx = newPeersIdx = 0; oldPeersIdx < nRasDeadPeers || updatePeersIdx < nUpdatePeers;) {
+  for (oldPeersIdx = updatePeersIdx = newPeersIdx = 0; oldPeersIdx < nRasDeadPeers || updatePeersIdx < *nUpdatePeers;) {
     int cmp;
-    if (oldPeersIdx < nRasDeadPeers && updatePeersIdx < nUpdatePeers) {
+    if (oldPeersIdx < nRasDeadPeers && updatePeersIdx < *nUpdatePeers) {
       cmp = ncclSocketsCompare(oldPeers+oldPeersIdx, updatePeers+updatePeersIdx);
     } else {
       cmp = (oldPeersIdx < nRasDeadPeers ? -1 : 1);
@@ -779,6 +812,7 @@ static ncclResult_t rasDeadPeersUpdate(union ncclSocketAddress* updatePeers, int
     if (cmp >= 0)
       updatePeersIdx++;
   }
+  *nUpdatePeers = newPeersIdx - nRasDeadPeers;
   nRasDeadPeers = newPeersIdx;
 
   if (newPeers != rasDeadPeers) {
@@ -788,9 +822,6 @@ static ncclResult_t rasDeadPeersUpdate(union ncclSocketAddress* updatePeers, int
   }
 
   rasDeadPeersHash = getHash((const char*)rasDeadPeers, nRasDeadPeers*sizeof(*rasDeadPeers));
-
-  INFO(NCCL_RAS, "RAS rasDeadPeersUpdate end (new nRasDeadPeers %d, rasDeadPeersHash 0x%lx)",
-       nRasDeadPeers, rasDeadPeersHash);
 
   return ncclSuccess;
 }
@@ -808,7 +839,8 @@ static ncclResult_t getNewDeadEntry(union ncclSocketAddress** pAddr) {
 
 // Checks whether a peer is dead by looking it up in the rasDeadPeers array.
 bool rasPeerIsDead(const union ncclSocketAddress* addr) {
-  return (bsearch(addr, rasDeadPeers, nRasDeadPeers, sizeof(*rasDeadPeers), ncclSocketsCompare) != nullptr);
+  return (rasDeadPeers != nullptr &&
+          bsearch(addr, rasDeadPeers, nRasDeadPeers, sizeof(*rasDeadPeers), ncclSocketsCompare) != nullptr);
 }
 
 
@@ -902,12 +934,26 @@ static void rasPeersDump() {
     const struct rasPeerInfo* peer = rasPeers+p;
     INFO(NCCL_RAS, "RAS peer %d: %s%s", p, rasPeerDump(peer, rasLine, sizeof(rasLine)), (p == myPeerIdx ? " [this process]" : ""));
   }
+  if (nRasPeers > 0)
+    INFO(NCCL_RAS, "RAS peersHash 0x%lx", rasPeersHash);
+}
+
+// Debug output routine: dumps the rasDeadPeers array.
+static void rasDeadPeersDump() {
+  for (int p = 0; p < nRasDeadPeers; p++) {
+    int deadPeerIdx = rasPeerFind(rasDeadPeers+p);
+    INFO(NCCL_RAS, "RAS dead peer %d: %s", p,
+         (deadPeerIdx >= 0 ? rasPeerDump(rasPeers+deadPeerIdx, rasLine, sizeof(rasLine)) :
+          ncclSocketToString(rasDeadPeers+p, rasLine)));
+  }
+  if (nRasDeadPeers > 0)
+    INFO(NCCL_RAS, "RAS deadPeersHash 0x%lx", rasDeadPeersHash);
 }
 
 // Debug output routine: dumps part of an individual element from the rasPeers array.
 static char* rasPeerDump(const struct rasPeerInfo* peer, char* result, size_t nres) {
   char line[SOCKET_NAME_MAXLEN+1], line2[1024];
-  snprintf(result, nres, "node %s, pid %d, GPU%s %s", ncclSocketToString(&peer->addr, line), peer->pid,
+  snprintf(result, nres, "socket %s, pid %d, GPU%s %s", ncclSocketToString(&peer->addr, line), peer->pid,
            (__builtin_popcountll(peer->cudaDevs) > 1 ? "s" : ""),
            rasGpuDevsToString(peer->cudaDevs, peer->nvmlDevs, line2, sizeof(line2)));
   return result;

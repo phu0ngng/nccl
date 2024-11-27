@@ -61,7 +61,12 @@ TEST_F(ncclCommInitRank_test, rank_negative) {
 TEST_F(ncclCommInitRank_test, DISABLED_dev_too_many) { // cause dead loop
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitRank(&comm, 10, commId, rank));
 }
-
+TEST_F(ncclCommInitRank_test, magic) {
+    uint64_t ncclMagic = 0x0280028002800280;
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
+    ASSERT_EQ(ncclSuccess, ncclCommInitRank(&comm, ndev, commId, rank));
+    ASSERT_EQ(ncclMagic, ((uint64_t*)comm)[0]);
+}
 
 class ncclCommInitRankShelveEnvTest : public ncclCommInitRank_test {
   // Allows testing NCCL when an environment variable needs to be temporarily changed.

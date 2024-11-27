@@ -414,8 +414,8 @@ void writeBenchmarkLinePreamble(size_t nBytes, size_t nElem, const char typeName
 
   if(write_json) {
     jsonStartObject();
-    jsonKey("size");  jsonInt(nBytes);
-    jsonKey("count"); jsonInt(nElem);
+    jsonKey("size");  jsonSize_t(nBytes);
+    jsonKey("count"); jsonSize_t(nElem);
     jsonKey("type");  jsonStr(typeName);
     jsonKey("redop"); jsonStr(opName);
     jsonKey("root");  jsonStr(rootName);

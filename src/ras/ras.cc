@@ -74,6 +74,7 @@ static ncclResult_t rasNetSendNack(struct rasSocket* sock);
 
 static void* rasThreadMain(void*);
 
+NCCL_PARAM(RasTimeoutFactor, "RAS_TIMEOUT_FACTOR", 1);
 
 //////////////////////////////////////////////////
 // Functions invoked from regular NCCL threads. //
@@ -258,23 +259,31 @@ void rasMsgFree(struct rasMsg* msg) {
 void rasConnEnqueueMsg(struct rasConnection* conn, struct rasMsg* msg, size_t msgLen, bool front) {
   // Get to the metadata of this message.
   struct rasMsgMeta* meta = (struct rasMsgMeta*)((char*)msg - offsetof(struct rasMsgMeta, msg));
+  bool ready = false;
 
   meta->enqueueTime = clockNano();
   meta->offset = 0;
   meta->length = msgLen;
 
   if (front)
-      ncclIntruQueueEnqueueFront(&conn->sendQ, meta);
+    ncclIntruQueueEnqueueFront(&conn->sendQ, meta);
   else
     ncclIntruQueueEnqueue(&conn->sendQ, meta);
 
   if (conn->sockIdx != -1) {
     struct rasSocket* sock = rasSockets+conn->sockIdx;
-    if (sock->status == RAS_SOCK_READY || sock->status == RAS_SOCK_HANDSHAKE)
+    if (sock->status == RAS_SOCK_READY || (sock->status == RAS_SOCK_HANDSHAKE && msg->type == RAS_MSG_CONNINIT)) {
       rasPfds[sock->pfd].events |= POLLOUT;
-  } else {
+      ready = true;
+    }
+  }
+  if (!ready) {
     // It's not a bug, unless it's for things like keep-alive messages...
-    INFO(NCCL_RAS, "RAS enqueued message on connIdx %td but sockIdx is -1", conn-rasConns);
+    INFO(NCCL_RAS, "RAS enqueued message type %d on a non-ready connection with %s "
+         "(experiencingDelays %d, startRetryTime %.2fs, socket status %d)",
+         msg->type, ncclSocketToString(&conn->addr, rasLine),
+         conn->experiencingDelays, (conn->startRetryTime ? (clockNano()-conn->startRetryTime)/1e9 : 0.0),
+         (conn->sockIdx == -1 ? -1 : rasSockets[conn->sockIdx].status));
   }
 }
 
@@ -284,6 +293,11 @@ ncclResult_t rasConnSendMsg(struct rasConnection* conn, int* closed, bool* allSe
   struct rasMsgMeta* meta;
   *closed = 0;
   while ((meta = ncclIntruQueueHead(&conn->sendQ)) != nullptr) {
+    if (rasSockets[conn->sockIdx].status == RAS_SOCK_HANDSHAKE && meta->msg.type != RAS_MSG_CONNINIT) {
+      // We don't send anything beyond the handshake at this point.
+      meta = nullptr;
+      break;
+    }
     if (meta->offset < sizeof(meta->length)) {
       // Send the length of the message.
       NCCLCHECK(ncclSocketProgress(NCCL_SOCKET_SEND, sock, &meta->length, sizeof(meta->length), &meta->offset, closed));
@@ -366,10 +380,11 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
   int connIdx, peerIdx;
   struct rasMsg* newMsg = nullptr;
   int newMsgLen;
+  char line[SOCKET_NAME_MAXLEN+1];
 
-  INFO(NCCL_RAS, "RAS handling connInit (version %d, listeningAddr %s, peersHash 0x%lx, deadPeersHash 0x%lx)",
-       msg->connInit.ncclVersion, ncclSocketToString(&msg->connInit.listeningAddr, rasLine),
-       msg->connInit.peersHash, msg->connInit.deadPeersHash);
+  INFO(NCCL_RAS, "RAS handling connInit from %s (version %d, listeningAddr %s, peersHash 0x%lx, deadPeersHash 0x%lx)",
+       ncclSocketToString(&sock->sock.addr, rasLine), msg->connInit.ncclVersion,
+       ncclSocketToString(&msg->connInit.listeningAddr, line), msg->connInit.peersHash, msg->connInit.deadPeersHash);
 
   if (msg->connInit.ncclVersion != NCCL_VERSION_CODE) {
     // Close any such sockets immediately!  This is basically unrecoverable...
@@ -383,10 +398,10 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
 
   if (rasPeerIsDead(&msg->connInit.listeningAddr)) {
     // A peer long declared dead is suddenly alive again?!
-    INFO(NCCL_RAS, "RAS connection from a peer that is considered dead!");
+    INFO(NCCL_RAS, "RAS connection from peer %s that is considered dead!",
+         ncclSocketToString(&msg->connInit.listeningAddr, rasLine));
     rasNetSendNack(sock);
     rasSocketTerminate(sock, /*finalize*/true);
-    ret = ncclRemoteError;
     goto exit;
   }
 
@@ -395,7 +410,15 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
   if (connIdx != -1) {
     conn = rasConns+connIdx;
 
+    INFO(NCCL_RAS,
+         "RAS found a matching existing connection (sendQ %sempty, experiencingDelays %d, startRetryTime %.2fs)",
+         (ncclIntruQueueEmpty(&conn->sendQ) ? "" : "not "),
+         conn->experiencingDelays, (conn->startRetryTime ? (clockNano()-conn->startRetryTime)/1e9 : 0.0));
+
     if (conn->sockIdx != -1) {
+      struct rasSocket* connSock = rasSockets+conn->sockIdx;
+      INFO(NCCL_RAS, "RAS found an alternative existing socket (status %d, createTime %.2fs)",
+           connSock->status, (clockNano()-connSock->createTime)/1e9);
       // In general we prefer to keep the newer connection, but "newer" can be a relative term: we may have
       // a race where both sides attempt to establish a connection at roughly the same time, so the other side's
       // incoming connection ends up looking newer than the locally-initiated one -- for *both* of them.
@@ -405,10 +428,12 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
       // came from the "wrong" side), whereas the "higher" side will keep the new one (as it came from the correct
       // side) and terminate the old one (that it presumably just opened).
       if (ncclSocketsCompare(&rasNetListeningSocket.addr, &conn->addr) < 0) {
-        rasSocketTerminate(sock);
+        INFO(NCCL_RAS, "RAS terminating the new socket");
+        rasSocketTerminate(sock, /*finalize*/true);
         goto exit;
       } else {
-        rasSocketTerminate(rasSockets+conn->sockIdx);
+        INFO(NCCL_RAS, "RAS keeping the new socket and terminating the existing one");
+        rasSocketTerminate(connSock);
       }
     }
   }
@@ -419,8 +444,7 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
   }
 
   sock->status = RAS_SOCK_READY;
-  // We have successfully established the connection; turn off the timeouts.
-  conn->startRetryTime = conn->lastRetryTime = 0;
+  // rasConnResume will reset any experiencingDelays, startRetryTime, etc.
 
   conn->sockIdx = sock-rasSockets;
   sock->connIdx = connIdx;
@@ -459,7 +483,8 @@ exit:
 
 // Handles the second message sent over a RAS socket as part of the handshake.
 static ncclResult_t rasMsgHandleConnInitAck(const struct rasMsg* msg, struct rasSocket* sock) {
-  INFO(NCCL_RAS, "RAS handling connInitAck (nack %d)", msg->connInitAck.nack);
+  INFO(NCCL_RAS, "RAS handling connInitAck from %s (nack %d)",
+       ncclSocketToString(&sock->sock.addr, rasLine), msg->connInitAck.nack);
 
   if (msg->connInitAck.nack) {
     // The remote peer doesn't want to talk to us.  The easiest way to prevent it is by declaring it dead.
@@ -469,13 +494,11 @@ static ncclResult_t rasMsgHandleConnInitAck(const struct rasMsg* msg, struct ras
     rasConnDisconnect(&addr);
     (void)rasPeerDeclareDead(&addr);
 
-    return ncclInvalidUsage;
+    return ncclSuccess;
   }
 
   sock->status = RAS_SOCK_READY;
-
-  if (sock->connIdx != -1)
-    rasConnResume(sock->connIdx);
+  // rasConnResume will reset any experiencingDelays, startRetryTime, etc.
 
   return ncclSuccess;
 }

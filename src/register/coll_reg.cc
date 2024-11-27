@@ -183,7 +183,7 @@ ncclResult_t ncclRegisterCollBuffers(
     if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) {
       struct ncclChannel* channel = comm->channels;
       int ipcRegFlag = 0, netSendRegFlag = 0, netRecvRegFlag = 0;
-      void* sendHandle, * recvHandle;
+      void *sendHandle, *recvHandle;
       if (info->func != ncclFuncReduceScatter && comm->intraNodeP2pSupport) {
         for (int r = 0; r < NCCL_MAX_DIRECT_ARITY; ++r) {
           for (int down = 0; down < 2; ++down) {
@@ -210,17 +210,11 @@ ncclResult_t ncclRegisterCollBuffers(
         if (nPeers > 0) {
           if (comm->planner.persistent && ncclParamGraphRegister()) {
             ncclIpcGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->sendbuffOffset, &info->sendbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
+            if (ipcRegFlag) ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
           }
           if (!ipcRegFlag && ncclParamLocalRegister()) {
             ncclIpcLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->sendbuffOffset, &info->sendbuffRmtAddrs);
-          }
-          if (ipcRegFlag) {
-            if (comm->planner.persistent && ncclParamGraphRegister()) {
-              ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
-            }
-            if (!ipcRegFlag && ncclParamLocalRegister()) {
-              ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
-            }
+            if (ipcRegFlag) ncclIpcLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &ipcRegFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs);
           }
         }
         if (ipcRegFlag) {
@@ -254,9 +248,6 @@ ncclResult_t ncclRegisterCollBuffers(
       if (netSendRegFlag && netRecvRegFlag) {
         if (comm->isOneRPN) info->nMaxChannels = 1;
         info->regBufType |= NCCL_NET_REG_BUFFER;
-        if (netSendRegFlag == 1 && netRecvRegFlag == 1) {
-          INFO(NCCL_REG, "rank %d successfully registered collNet sendbuff %p (handle %p), sendbuff size %ld, recvbuff %p (handle %p), recvbuff size %ld", comm->rank, info->sendbuff, sendHandle, sendbuffSize, info->recvbuff, recvHandle, recvbuffSize);
-        }
       }
     } else if (info->algorithm == NCCL_ALGO_RING) {
       struct ncclReg* recvRegRecord = NULL;
@@ -327,7 +318,7 @@ ncclResult_t ncclRegisterCollBuffers(
 
       // start net registration
       regBufFlag = 0;
-      if (!comm->useNetPXN) {
+      if (!comm->useNetPXN && comm->useGdr && comm->netDeviceType != NCCL_NET_DEVICE_UNPACK) {
         if (comm->planner.persistent && ncclParamGraphRegister()) {
           if (hasSendNetPeer) {
             ncclNetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, sendNetConns, sendNetPeers, &regBufFlag, sendNetHandles, cleanupQueue, &info->nCleanupQueueElts);
@@ -366,8 +357,10 @@ ncclResult_t ncclRegisterCollBuffers(
       free(recvNetConns);
     } else if (info->algorithm == NCCL_ALGO_TREE || info->algorithm == NCCL_ALGO_COLLNET_CHAIN) {
       struct ncclReg* recvRegRecord;
+      int netSendRegFlag = 0, netRecvRegFlag = 0;
+      void *sendHandle, *recvHandle;
       NCCLCHECK(ncclRegFind(comm, info->recvbuff, recvbuffSize, &recvRegRecord));
-      if (recvRegRecord == NULL) goto exit;
+      if (recvRegRecord == NULL && !(comm->planner.persistent && ncclParamGraphRegister())) goto exit;
       if (comm->intraNodeP2pSupport) {
         for (int c = 0; c < comm->nChannels; ++c) {
           struct ncclChannel* channel = comm->channels + c;
@@ -412,6 +405,34 @@ ncclResult_t ncclRegisterCollBuffers(
         if (regBufFlag) {
           info->regBufType = NCCL_IPC_REG_BUFFER;
         }
+      }
+
+      // register collnet chain 1RPN buffer
+      if (info->algorithm == NCCL_ALGO_COLLNET_CHAIN && info->opDev.op != ncclDevPreMulSum && info->opDev.op != ncclDevSumPostDiv && comm->isOneRPN) {
+        if (comm->planner.persistent && ncclParamGraphRegister()) {
+          ncclCollnetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &netSendRegFlag, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
+          info->sendMhandle = sendHandle;
+          if (netSendRegFlag) {
+            ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &netRecvRegFlag, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
+            info->recvMhandle = recvHandle;
+          }
+        }
+
+        if ((netSendRegFlag == 0 || netRecvRegFlag == 0) && ncclParamLocalRegister()) {
+          if (!netSendRegFlag) {
+            ncclCollnetLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &netSendRegFlag, &sendHandle);
+            info->sendMhandle = sendHandle;
+          }
+          if (netSendRegFlag && !netRecvRegFlag) {
+            ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &netRecvRegFlag, &recvHandle);
+            info->recvMhandle = recvHandle;
+          }
+        }
+      }
+
+      if (netSendRegFlag && netRecvRegFlag) {
+        if (comm->isOneRPN) info->nMaxChannels = 1;
+        info->regBufType |= NCCL_NET_REG_BUFFER;
       }
     }
 

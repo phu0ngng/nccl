@@ -3,29 +3,35 @@
 #include "bootstrap.h"
 
 ncclResult_t ncclTransportRingConnect(struct ncclComm* comm) {
+  struct ringConnInfo {
+    bool useNetPXN;
+    bool useGdr;
+  };
+  struct ringConnInfo* ringInfo = NULL;
   ncclResult_t ret = ncclSuccess;
   if (comm && comm->nRanks > 1) {
+    comm->useGdr = true;
+    comm->useNetPXN = false;
     for (int c = 0; c < comm->nChannels; c++) {
       struct ncclChannel* channel = comm->channels + c;
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->ring.prev, 1, &channel->ring.next, 0), ret, fail);
     }
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_RING], 0), ret, fail);
     if (ncclParamLocalRegister() || ncclParamGraphRegister()) {
-      bool *usePxnGlobal;
-      NCCLCHECK(ncclCalloc(&usePxnGlobal, comm->nRanks));
-      usePxnGlobal[comm->rank] = comm->useNetPXN;
-      NCCLCHECK(bootstrapAllGather(comm->bootstrap, usePxnGlobal, sizeof(bool)));
+      NCCLCHECK(ncclCalloc(&ringInfo, comm->nRanks));
+      ringInfo[comm->rank].useGdr = comm->useGdr;
+      ringInfo[comm->rank].useNetPXN = comm->useNetPXN;
+      NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, ringInfo, sizeof(struct ringConnInfo)), ret, fail);
       for (int i = 0; i < comm->nRanks; ++i) {
-        if (usePxnGlobal[i]) {
-          comm->useNetPXN = true;
-          break;
-        }
+        if (!ringInfo[i].useGdr) comm->useGdr = false;
+        if (ringInfo[i].useNetPXN) comm->useNetPXN = true;
+        if (comm->useGdr == false && comm->useNetPXN == true) break;
       }
-      free(usePxnGlobal);
     }
-    INFO(NCCL_INIT, "Connected all rings, use ring PXN %d", comm->useNetPXN);
+    INFO(NCCL_INIT, "Connected all rings, use ring PXN %d GDR %d", comm->useNetPXN, comm->useGdr);
   }
 exit:
+  free(ringInfo);
   return ret;
 fail:
   goto exit;

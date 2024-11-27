@@ -38,7 +38,7 @@ struct rasValCount {
 
 // Used in rasAuxComm below.  The values are bitmasks so that they can be combined.
 typedef enum {
-  RAS_ACS_UNKNOWN = 1, // Set if a peer that did not provide info about a given communicator.
+  RAS_ACS_UNKNOWN = 1, // Set if a peer did not provide info about a given communicator.
   RAS_ACS_INIT = 2,
   RAS_ACS_RUNNING = 4,
   RAS_ACS_FINALIZE = 8,
@@ -194,6 +194,7 @@ static ncclResult_t getNewClientEntry(struct rasClient** pClient) {
   memset(client, '\0', sizeof(*client));
   client->sock = client->pfd = -1;
   ncclIntruQueueConstruct(&client->sendQ);
+  client->timeout =  RAS_COLLECTIVE_LEG_TIMEOUT;
   client->collIdx = -1;
 
   *pClient = client;
@@ -320,7 +321,7 @@ void rasClientEventLoop(int clientIdx, int pollIdx) {
       } else if (strncasecmp(cmd, "timeout ", strlen("timeout ")) == 0) {
         char* endPtr = nullptr;
         int timeout = strtol(cmd+strlen("timeout "), &endPtr, 10);
-        if (timeout < 1 || !endPtr || *endPtr != '\0') {
+        if (timeout < 0 || !endPtr || *endPtr != '\0') {
           snprintf(rasLine, sizeof(rasLine), "ERROR: Invalid timeout value %s\n", cmd+strlen("timeout "));
         } else {
           client->timeout = timeout * CLOCK_UNITS_PER_SEC;
@@ -670,8 +671,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
 
 #if 0 // Commented out for now to focus the summary status report on the information most relevant to the users.
       // To be revisited with future extensions to RAS.
-  rasOutAppend("\nGathering data about the RAS network (timeout %lds)...",
-               (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT) / CLOCK_UNITS_PER_SEC);
+  rasOutAppend("\nGathering data about the RAS network (timeout %lds)...", client->timeout / CLOCK_UNITS_PER_SEC);
   msgLen = rasOutLength();
   NCCLCHECKGOTO(rasClientAllocMsg(&msg, msgLen), ret, fail);
   rasOutExtract(msg);
@@ -681,7 +681,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
     struct rasCollRequest collReq;
     bool allDone = false;
     rasCollReqInit(&collReq);
-    collReq.timeout = (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT);
+    collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_CONNS;
     NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_CONNS), &allDone, &client->collIdx),
                   ret, fail);
@@ -699,7 +699,7 @@ static ncclResult_t rasClientRunInit(struct rasClient* client) {
     struct rasCollRequest collReq;
     bool allDone = false;
     rasCollReqInit(&collReq);
-    collReq.timeout = (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT);
+    collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_COMMS;
     NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_COMMS), &allDone, &client->collIdx),
                   ret, fail);
@@ -815,7 +815,7 @@ static ncclResult_t rasClientRunConns(struct rasClient* client) {
   rasCollFree(coll);
 
   rasOutAppend("\nGathering data about the NCCL communicators (timeout %lds)...",
-               (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT) / CLOCK_UNITS_PER_SEC);
+               client->timeout / CLOCK_UNITS_PER_SEC);
   msgLen = rasOutLength();
   NCCLCHECKGOTO(rasClientAllocMsg(&msg, msgLen), ret, fail);
   rasOutExtract(msg);
@@ -825,7 +825,7 @@ static ncclResult_t rasClientRunConns(struct rasClient* client) {
     struct rasCollRequest collReq;
     bool allDone = false;
     rasCollReqInit(&collReq);
-    collReq.timeout = (client->timeout ? client->timeout : RAS_COLLECTIVE_LEG_TIMEOUT);
+    collReq.timeout = client->timeout;
     collReq.type = RAS_COLL_COMMS;
     NCCLCHECKGOTO(rasNetSendCollReq(&collReq, rasCollDataLength(RAS_COLL_COMMS), &allDone, &client->collIdx),
                   ret, fail);
@@ -859,6 +859,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   int* peerIdxConv = nullptr;
   int vcIdx;
   int nPeersMissing;
+  uint64_t* peerNvmlDevs = nullptr;
   const char*const statusStr[] = { "UNKNOWN", "INIT", "RUNNING", "FINALIZE", "ABORT" };
   const char*const errorStr[] = {
     // Listing them all like this, while a bit of a hassle, is less effort than formatting in a temporary buffer.
@@ -1018,29 +1019,41 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   if (commsData->nComms == 0)
     rasOutAppend("No communicator data collected!\n");
 
+  // Allocate an auxiliary structure used for counting the number of ranks (unique GPUs) in a group.
+  NCCLCHECKGOTO(ncclCalloc(&peerNvmlDevs, coll->nPeers), ret, fail);
+
   // Print it out, the largest communicators first.
   for (int vcIdx = 0; vcIdx < nValCounts; vcIdx++) {
     struct rasValCount* vc = valCounts+vcIdx;
     struct rasAuxComm* auxComm = auxComms+vc->firstIdx;
     int ranksPerNodeMin, ranksPerNodeMax;
+    int ranksTotal;
 
     ranksPerNodeMin = NCCL_MAX_LOCAL_RANKS;
     ranksPerNodeMax = 0;
+    memset(peerNvmlDevs, '\0', coll->nPeers * sizeof(*peerNvmlDevs));
     // We don't group comms by ranksPerNodeMin/Max, so the values may differ between comms in one group.
     // Calculate the group's min/max.
+    // Also calculate the number of unique ranks in the group.
     for (int commIdx = 0; commIdx < vc->count; commIdx++) {
       if (ranksPerNodeMin > auxComm[commIdx].ranksPerNodeMin)
         ranksPerNodeMin = auxComm[commIdx].ranksPerNodeMin;
       if (ranksPerNodeMax < auxComm[commIdx].ranksPerNodeMax)
         ranksPerNodeMax = auxComm[commIdx].ranksPerNodeMax;
+      for (int rankIdx = 0; rankIdx < auxComm[commIdx].comm->nRanks; rankIdx++) {
+        struct rasCollComms::comm::rank* rank = auxComm[commIdx].comm->ranks+rankIdx;
+        peerNvmlDevs[rank->peerIdx] |= (1UL << rank->nvmlDev);
+      }
     }
+    ranksTotal = 0;
+    for (int peerIdx = 0; peerIdx < coll->nPeers; peerIdx++)
+      ranksTotal += __builtin_popcountll(peerNvmlDevs[peerIdx]);
     if (ranksPerNodeMin == ranksPerNodeMax)
       snprintf(rasLine, sizeof(rasLine), "%d", ranksPerNodeMin);
     else
       snprintf(rasLine, sizeof(rasLine), "%d-%d", ranksPerNodeMin, ranksPerNodeMax);
     rasOutAppend("%5d  %8d  %8d  %8s  %8d  %8d  %8s  %6s\n",
-                 vcIdx, vc->count, auxComm->nNodes, rasLine, auxComm->comm->commNRanks,
-                 auxComm->comm->commNRanks * vc->count,
+                 vcIdx, vc->count, auxComm->nNodes, rasLine, auxComm->comm->commNRanks, ranksTotal,
                  // __builtin_clz returns the number of leading 0-bits.  This makes it possible to translate the
                  // status (which is a bitmask) into an array index.
                  statusStr[(sizeof(unsigned int)*8-1)-__builtin_clz(auxComm->status)], errorStr[auxComm->errors]);
@@ -1386,6 +1399,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   rasClientEnqueueMsg(client, msg, msgLen);
   msg = nullptr;
 exit:
+  free(peerNvmlDevs);
   free(collOpCounts);
   free(valCounts);
   free(peerIdxConv);

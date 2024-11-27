@@ -613,7 +613,7 @@ will end up being dropped...
 
 Finally, the _idle_ timeout gets triggered (`rasSocksHandleTimeouts`) when
 an otherwise healthy connection has not been used for 60 seconds.  That
-will never be the case for connections that are part of the RAS links, as
+should never be the case for connections that are part of the RAS links, as
 those exchange keep-alive messages once a second, but it's possible for RAS
 connections to exist outside of RAS links.  Currently that can happen,
 e.g., if the set of RAS peers gets expanded through the creation of a new
@@ -633,7 +633,7 @@ fallback connections getting initiated after the first 5 seconds).
 Finally, the current recovery mechanism makes no attempts to retransmit
 messages potentially lost when a socket is terminated and recreated.
 `rasMsgSend` will dequeue and free any message accepted by the OS kernel,
-even though in general that only means that the message has been buffered
+even though in general that means only that the message has been buffered
 locally, with no guarantee as to if and when it will be transmitted.  This
 could be addressed by keeping the messages around at the sender until a
 user-level message acknowledgment arrives from the receiver (possibly even
@@ -647,10 +647,16 @@ result in a timeout and partial data being returned to the client, which,
 while unfortunate, is clearly indicated, and the client can always reissue
 the collective.
 
+The environment variable `NCCL_RAS_TIMEOUT_FACTOR` can be used to uniformly
+scale all the aforementioned RAS timeouts by a specified integer factor.  This
+will make RAS more tolerant of unexpected slowdowns, and may be necessary to
+keep RAS operational if NCCL processes are subject to external, high-overhead
+debugging/tracing/monitoring.
+
 _Fallbacks_
 
 The handling of fallback connections is probably the most complex aspect of
-this fault recovery mechanism.  _Fallback_ is a concept specific to RAS
+the RAS fault recovery mechanism.  _Fallback_ is a concept specific to RAS
 links, which can host multiple RAS connections, held in the `conns` array.
 The first entry (at index 0) is the _primary_ connection, and under regular
 circumstances it should be the only one.  Additional entries -- fallbacks
@@ -662,7 +668,7 @@ _external fallbacks_.
 
 Local decisions are driven by `rasLinkAddFallback`, invoked when RAS
 decides that an existing connection is under some form of stress.  If there
-are no other fully established and ready to take over connections within
+are no other healthy connections within
 the link's `conns` array, `rasLinkAddFallback` attempts to initiate a new
 one.  `rasLinkCalculatePeer` is used to select the peer that the new
 fallback should connect to.  Typically, for a fallback to a primary
@@ -673,15 +679,15 @@ trying to connect to each of the 8 processes in turn, wasting valuable
 time.  So for fallbacks to fallbacks, unless we have persuasive evidence
 that the node is fine (e.g., we have other connections to that node that
 remain operational, or it's the same node that _we_ are running on), we skip over any
-other peers running on that same node and try "the next node over" instead.
+other peers running on that node and try "the next node over" instead.
 
 Assuming that a fallback connection gets successfully established, it will
 be used for sending any regular RAS messages just like the primary
 connection, including the keep-alive messages being exchanged with its
 peer.  If the primary connection gets terminated, `rasLinkDropConn` will
 shift the `conns` array and the first fallback becomes the new primary
-connection.  If the new primary connection is fully operational, any
-further locally initiated fallbacks are dropped from the `conns` array
+connection.  If the new primary connection is operational, any
+further fallbacks are dropped from the `conns` array
 (`rasLinkSanitizeFallbacks`) as they are no longer needed.
 
 For initially established RAS link connections, given that our peer
@@ -692,21 +698,24 @@ RAS link on the initiator's side, to the destination peer it could appear
 to be just some random temporary connection, so the destination peer would
 not send keep-alive messages through it, etc.  To avoid such an undesirable
 situation, keep-alive
-messages from the initiator peer include information on what RAS link(s) at
-the receiver side the connection should be a part of.  The receiver will
+messages from the initiator peer include a request to add the connection
+to the RAS link(s) at the receiver side.  The receiver will
 (`rasMsgHandleKeepAlive`, `rasLinkUpdateConn`), if necessary, add any such
-connections to the RAS links as _external fallbacks_.  While locally
-initiated fallbacks are dropped from RAS links when no longer needed,
-external fallbacks are kept around so long as the other side needs them.
+connections to the RAS links as _external fallbacks_.  They normally remain
+part of the link until the requesting side no longer needs them (which is
+indicated by a special `nack` keep-alive message) or until the link gets
+reconfigured.
 
 If the `rasPeers` array is being updated, RAS links are reinitialized
 (`rasLinkReinitConns`) and the `conns` array is reset -- all link
 connections, whether primary or fallbacks, local or external, are purged.
 That's because the number of peers, and thus the network topology, will
-have changed, and the set of closest peers we should connect with may have
+have changed, and the set of closest peers the process should connect with
+may have
 changed as well.  Further, the `conns` array contains peer indexes, which
 go stale when the `rasPeers` array changes.  The peer selection needs to
-be repeated; should it result in the same outcome, the process should be
+be repeated; should it result in the same outcome, the connection process
+should be
 much faster this time around, as any unreachable peers will have been
 permanently declared dead, and the RAS connections to the fallbacks are
 already established as well.  External fallbacks will be re-added to the
@@ -714,7 +723,7 @@ links when the next keep-alive message arrives over such connections.
 
 Finally, fallback connections are not subject to the "lower address is the
 one initiating a connection" rule discussed earlier; should the other side
-initiate a connection to us at the same time, we will discover it during
+initiate a connection at the same time, the local process will discover it during
 the RAS handshake (`rasMsgHandleConnInit`) and the RAS socket initiated by
 the "higher" address will get terminated (we trade off efficiency for
 resilience in this case -- we don't want to wait during fault recovery).
@@ -737,7 +746,8 @@ rather limited.  The client can send one of the following commands
 supported by the client (currently `2`); the RAS network responds with its
 own indication `SERVER PROTOCOL <version>`.
 - `TIMEOUT <seconds>` -- overrides the default collective operation timeout
-of five seconds; the RAS network should respond with `OK`.
+of five seconds; the RAS network should respond with `OK`.  A value of `0`
+disables the timeout.
 - `[VERBOSE] STATUS` -- requests an overview of the state of the NCCL job.
 RAS generates a summary plus additional information about the outliers, if
 any (provided that they are not too numerous).  RAS responds with a series

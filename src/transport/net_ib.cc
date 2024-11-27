@@ -97,7 +97,7 @@ NCCL_PARAM(IbTc, "IB_TC", 0);
 NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
-NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", 0);
+NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
 NCCL_PARAM(IbAsyncEvents,"IB_RETURN_ASYNC_EVENTS",1);
 NCCL_PARAM(IbEceEnable,"IB_ECE_ENABLE",1);
 
@@ -490,6 +490,11 @@ ncclResult_t ncclIbMakeVDeviceInternal(int* d, ncclNetVDeviceProps_t* props) {
   if (ncclParamIbMergeNics() == 0 && props->ndevs > 1) {
     WARN("NET/IB : Trying to merge multiple devices together when NCCL_IB_MERGE_NICS=0. Please enable it or disable device merging in NCCL.");
     return ncclInvalidUsage;
+  }
+
+  if (props->ndevs == 0) {
+      WARN("NET/IB : Can't make virtual NIC with 0 devices");
+      return ncclInvalidUsage;
   }
 
   if (ncclNMergedIbDevs == MAX_IB_VDEVS) {
@@ -1079,7 +1084,7 @@ ncclResult_t ncclIbCreateQp(uint8_t ib_port, struct ncclIbNetCommDevBase* base, 
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint32_t dest_qp_num, struct ncclIbDevInfo* info, bool override_tc) {
+ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint32_t dest_qp_num, struct ncclIbDevInfo* info, bool fifoTc) {
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTR;
@@ -1095,11 +1100,7 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint
     qpAttr.ah_attr.grh.flow_label = 0;
     qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
     qpAttr.ah_attr.grh.hop_limit = 255;
-    if(ncclParamIbFifoTc() && override_tc) {
-      qpAttr.ah_attr.grh.traffic_class = ncclParamIbFifoTc();
-    } else {
-      qpAttr.ah_attr.grh.traffic_class = ncclParamIbTc();
-    }
+    qpAttr.ah_attr.grh.traffic_class = fifoTc && ncclParamIbFifoTc() != -1 ? ncclParamIbFifoTc() : ncclParamIbTc();
   } else {
     //pick lid if subnet prefixs are same, FLID if they are not
     if (ncclIbExtractLocalSubnetPrefix(sGidInfo->localGid.global.subnet_prefix) ==
@@ -1597,8 +1598,7 @@ ib_recv:
       meta.qpInfo[q].ece_supported = 0;
     }
 
-    bool override_tc = (q == 0) ? true : false;
-    NCCLCHECKGOTO(ncclIbRtrQp(qp->qp, &rCommDev->base.gidInfo, remMeta.qpInfo[q].qpn, remDevInfo, override_tc), ret, fail);
+    NCCLCHECKGOTO(ncclIbRtrQp(qp->qp, &rCommDev->base.gidInfo, remMeta.qpInfo[q].qpn, remDevInfo, true), ret, fail);
     NCCLCHECKGOTO(ncclIbRtsQp(qp->qp), ret, fail);
   }
 

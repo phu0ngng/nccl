@@ -51,7 +51,7 @@ namespace {
           prims.directRecvCopyDirectSend(offset, offset, nelem);
         }
       }
-    } else if (inputBuf != outputBuf) {
+    } else if (inputBuf != outputBuf && rank == root) {
       inputBuf = inputBuf + gridOffset;
       outputBuf = outputBuf + gridOffset;
       reduceCopy<COLL_UNROLL, RedOp, T, 0, 1, 1, 0, 1, 1, /*PreOpSrcs=*/0>

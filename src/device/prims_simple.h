@@ -718,6 +718,16 @@ private:
     // Make sure all threads are done writing back conn->step and done using
     // ncclShmem.groups[group]
     barrier();
+
+    if ((flags & DirectRead) && (flags & RoleWaitSend) && P2p) {
+      // For sendrecv DirectRead, sender needs to wait for receiver reading data from src.
+      // This has to be done after barrier() since post thread might have contention with
+      // this check.
+      int spins = 0;
+      volatile uint64_t* tail = conn->tail;
+      volatile uint64_t* head = conn->head;
+      while (*tail > *head) if (checkAbort(spins)) break;
+    }
   }
 
   __device__ void setDataPtrs(void const *inputBuf, void *outputBuf, uint64_t redOpArg, struct ncclDevWorkCollReg* work, uint8_t ipcReg, int peer) {
