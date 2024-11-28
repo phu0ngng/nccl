@@ -560,8 +560,8 @@ enum testFuncs { testFuncAllReduce = 0, testFuncAllGather = 1, testFuncReduceSca
 	testFuncGroupStart = 5, testFuncGroupEnd = 6, testFuncSend = 7, testFuncRecv = 8 };
 testFunc_t testFuncArray[] = { allReduce, allGather, reduceScatter, broadcast, reduce, groupStart, groupEnd, send, recv };
 const char *testFuncNames[] = { "ncclAllReduce", "ncclAllGather", "ncclReduceScatter", "ncclBroadcast", "ncclReduce", "ncclGroupStart", "ncclGroupEnd", "ncclSend", "ncclRecv" };
-const char *testTypeNames[ncclNumTypes] = {"ncclInt8", "ncclUint8", "ncclInt32", "ncclUint32", "ncclInt64", "ncclUint64", "ncclHalf", "ncclFloat", "ncclDouble"};
-const char *testOpNames[ncclNumOps] = {"ncclSum", "ncclProd", "ncclMax", "ncclMin"};
+const char *testTypeNames[ncclNumTypes] = {"ncclInt8", "ncclUint8", "ncclInt32", "ncclUint32", "ncclInt64", "ncclUint64", "ncclHalf", "ncclFloat", "ncclDouble", "ncclBfloat16", "ncclFloat8e4m3", "ncclFloat8e5m2" };
+const char *testOpNames[ncclNumOps] = {"ncclSum", "ncclProd", "ncclMax", "ncclMin", "ncclAvg"};
 
 testResult_t threadRunTests(struct threadArgs* targs) {
   int nranks = getNranks(targs);
