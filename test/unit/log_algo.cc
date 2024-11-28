@@ -1,3 +1,8 @@
+/******************************************************************************************/
+/*  Usage: log_algo {rs,ag} minranks maxranks rank size stepSize nChannels nSteps verbose */
+/*  Default values:      rs        0 minranks    0    8   524288         2      8 depends */
+/*  All arguments are optional and have default values                                    */
+/******************************************************************************************/
 #include "collectives.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +19,8 @@ struct fifo {
   uint64_t tail;
   struct fifoElement* send;
   struct fifoElement* recv;
+  int postSend;
+  int postRecv;
 };
 
 struct fifoElement {
@@ -59,6 +66,10 @@ void fifoSend(struct fifo* fifo, int shiftRecv, int nranks, int offset, int step
   }
 
   if (postSend) {
+    if (fifo->postSend) {
+      *error = 3;
+    }
+    fifo->postSend = 1;
     e = fifo->send;
     struct fifoElement* prev = NULL;
     struct fifoElement* recvEnd = fifo->recv;
@@ -105,6 +116,10 @@ void fifoRecv(struct fifo* fifo, int offset, int stepOffset, int rank, int postR
     *error = 2;
   }
   if (postRecv) {
+    if (fifo->postRecv) {
+      *error = 3;
+    }
+    fifo->postRecv = 1;
     struct fifoElement* e = fifo->recv;
     struct fifoElement* prev = NULL;
     while (e) {
@@ -122,232 +137,217 @@ void fifoRecv(struct fifo* fifo, int offset, int stepOffset, int rank, int postR
   }
 }
 
-int runRSAlgo(int nranks, size_t size, int nChannels, int nsteps, int stepSize, int verbose) {
+int runRSAlgo(int nranks, int rank, size_t size, int nChannels, int nsteps, int stepSize, int verbose) {
   int errors = 0;
   const ssize_t channelSize = size / nChannels;
   struct fifo* fifos = (struct fifo*)malloc(sizeof(struct fifo)*log2Up(nranks)*nranks);
-  for (int rank=0; rank<nranks; rank+=verbose ? 1 : nranks-1) {
-    int nsend = 0, nrecv = 0;
-    for (int i=0; i<log2Up(nranks); i++) fifoInit(fifos+i);
-    PatRSAlgorithm<char> algo(stepSize, nsteps, 0, channelSize, size, stepSize, rank, nranks);
-    if (verbose) printf("|Rank|RecvDim|SendDim|InputOffset|OutputOffset|RecvOffset|SendOffset|Nelem|PostRecv|PostSend|\n");
-    if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+-----+--------+--------+\n");
-    int last = 0;
-    while (last == 0) {
-      int recvDim, sendDim, recvOffset, sendOffset, sendStepOffset, postRecv, postSend, nelem;
-      size_t inpIx, outIx;
-      algo.getNextOp(recvDim, sendDim, inpIx, outIx, recvOffset, sendOffset, sendStepOffset, nelem, postRecv, postSend, last);
-      nsend += postSend;
-      nrecv += postRecv;
-      int peer = inpIx/size;
-      int rcolor = 0, scolor = 0;
-      int sendError = 0, recvError = 0;
-      int errorColor[] = { 0, 33, 31 };
-      if (sendDim != -1) {
-        fifoSend(fifos+sendDim, -(1<<sendDim), nranks, sendOffset, sendStepOffset, peer, postSend, &sendError);
-        scolor = errorColor[sendError];
+  int nsend = 0, nrecv = 0;
+  int last = -1;
+  for (int i=0; i<log2Up(nranks); i++) fifoInit(fifos+i);
+  PatRSAlgorithm<char> algo(stepSize, nsteps, NCCL_PAT_NWORKERS/WARP_SIZE, 0, channelSize, size, stepSize, rank, nranks);
+  int parFactor = algo.getParallelFactor();
+  if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
+  if (verbose) printf("| Reduce Scatter nranks %6d size %8ld nChannels %2d nsteps %1d stepSize %7d parFactor %2d |\n", nranks, size, nChannels, nsteps, stepSize, parFactor);
+  if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
+  if (verbose) printf("|Rank|RecvDim|SendDim|InputOffset|OutputOffset|RecvOffset|SendOffset|Nelems|PostRecv|PostSend|USL|\n");
+  struct ncclPatStep ps;
+  int step = 0;
+  do {
+    if (step++ % parFactor == 0) {
+      if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
+      for (int i=0; i<log2Up(nranks); i++) fifos[i].postSend = fifos[i].postRecv = 0;
+      if (last > 0) {
+        errors++;
+        if (verbose) printf("%c[0;31mNew step after last steps.%c[00m\n", 0x1b, 0x1b);
       }
-      if (recvDim != -1) {
-        fifoRecv(fifos+recvDim, recvOffset, 0, peer, postRecv, &recvError);
-        rcolor = errorColor[recvError];
-      }
-      char rcolorstr[] = " [0;XXm";
-      char scolorstr[] = " [0;XXm";
-      char rcolorend[] = " [00m";
-      char scolorend[] = " [00m";
-      rcolorstr[0] = scolorstr[0] = 0;
-      rcolorend[0] = scolorend[0] = 0;
-      if (rcolor) { sprintf(rcolorstr, "%c[0;%dm", 0x1b, rcolor); rcolorend[0] = 0x1b; errors++; }
-      if (scolor) { sprintf(scolorstr, "%c[0;%dm", 0x1b, scolor); scolorend[0] = 0x1b; errors++; }
-      if (verbose) printf("|%4d|%3d/%3d|%3d/%3d|%11ld|%12ld|%s%10d%s|%s%1d/%8d%s|%5d|%8d|%8d|\n",
-          rank, recvDim, peer, sendDim, peer, inpIx, outIx,
-          rcolorstr, recvOffset, rcolorend, scolorstr, sendStepOffset, sendOffset, scolorend,
-          nelem, postRecv, postSend);
-      if (postSend || postRecv) if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+-----+--------+--------+\n");
+      last = -1;
     }
-    if (nsend != nrecv) { if (verbose) printf("%c[0;31mError : sends don't match receives%c[00m\n", 0x1b, 0x1b); errors++; }
-    for (int i=0; i<log2Up(nranks); i++) {
-      for (struct fifoElement* e = fifos[i].send; e; e = e->next) {
-        if (verbose) printf("%c[0;31mRemaining element in send fifo dimension %d offset %d rank %d step %ld%c[00m\n", 0x1b, i, e->offset, e->rank, e->step, 0x1b);
-        errors++;
-      }
-      for (struct fifoElement* e = fifos[i].recv; e; e = e->next) {
-        if (verbose) printf("%c[0;31mRemaining element in recv fifo dimension %d offset %d rank %d step %ld%c[00m\n", 0x1b, i, e->offset, e->rank, e->step, 0x1b);
-        errors++;
-      }
+    algo.getNextOp(&ps);
+    if (ps.flags & PatSkipped) {
+      if (verbose) printf("|%4d|       |       |           |            |          |          |      |        |        |%1d%1d%1d|\n", rank, ps.flags&PatUsed ? 1 : 0, ps.flags&PatSkipped ? 1 : 0, ps.last);
+      continue;
     }
-  }
-  free(fifos);
-  return errors;
-}
-int runAGAlgo(int nranks, size_t size, int nChannels, int nsteps, int stepSize, int verbose) {
-  int errors = 0;
-  const ssize_t channelSize = size / nChannels;
-  struct fifo* fifos = (struct fifo*)malloc(sizeof(struct fifo)*log2Up(nranks)*nranks);
-  for (int rank=0; rank<nranks; rank+=verbose ? 1 : nranks-1) {
-    int nsend = 0, nrecv = 0;
-    for (int i=0; i<log2Up(nranks); i++) fifoInit(fifos+i);
-    PatAGAlgorithm<char> algo(stepSize, nsteps, 0, channelSize, size, stepSize, rank, nranks);
-    if (verbose) printf("|Rank|RecvDim|SendDim|InputOffset|OutputOffset|RecvOffset|SendOffset|Nelem|PostRecv|PostSend|\n");
-    if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+-----+--------+--------+\n");
-    int last = 0;
-    while (last == 0) {
-      int recvDim, sendDim, recvOffset, sendOffset, recvStepOffset, postRecv, postSend, nelem;
-      size_t inpIx, outIx;
-      algo.getNextOp(recvDim, sendDim, inpIx, outIx, recvOffset, sendOffset, recvStepOffset, nelem, postRecv, postSend, last);
-      nsend += postSend;
-      nrecv += postRecv;
-      int peer = outIx/size;
-      int rcolor = 0, scolor = 0;
-      int sendError = 0, recvError = 0;
-      int errorColor[] = { 0, 33, 31 };
-      if (sendDim != -1) {
-        fifoSend(fifos+sendDim, 1<<sendDim, nranks, sendOffset, 0, peer, postSend, &sendError);
-        scolor = errorColor[sendError];
-      }
-      if (recvDim != -1) {
-        fifoRecv(fifos+recvDim, recvOffset, recvStepOffset, peer, postRecv, &recvError);
-        rcolor = errorColor[recvError];
-      }
-      char rcolorstr[] = " [0;XXm";
-      char scolorstr[] = " [0;XXm";
-      char rcolorend[] = " [00m";
-      char scolorend[] = " [00m";
-      rcolorstr[0] = scolorstr[0] = 0;
-      rcolorend[0] = scolorend[0] = 0;
-      if (rcolor) { sprintf(rcolorstr, "%c[0;%dm", 0x1b, rcolor); rcolorend[0] = 0x1b; errors++; }
-      if (scolor) { sprintf(scolorstr, "%c[0;%dm", 0x1b, scolor); scolorend[0] = 0x1b; errors++; }
-      if (verbose) printf("|%4d|%3d/%3d|%3d/%3d|%11ld|%12ld|%s%1d/%8d%s|%s%10d%s|%5d|%8d|%8d|\n",
-          rank, recvDim, peer, sendDim, peer, inpIx, outIx,
-          rcolorstr, recvStepOffset, recvOffset, rcolorend, scolorstr, sendOffset, scolorend,
-          nelem, postRecv, postSend);
-      if (postSend || postRecv) if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+-----+--------+--------+\n");
+    nsend += ps.postSend;
+    nrecv += ps.postRecv;
+    int peer = ps.inpIx/size;
+    int rcolor = 0, scolor = 0, lcolor = 0;
+    int sendError = 0, recvError = 0;
+    int errorColor[] = { 0, 33, 31, 35 };
+    int newLast = ps.last ? 1 : 0;
+    if (last != -1 && newLast != last) {
+      lcolor = errorColor[2];
     }
-    if (nsend != nrecv) { if (verbose) printf("%c[0;31mError : sends don't match receives%c[00m\n", 0x1b, 0x1b); errors++; }
-    for (int i=0; i<log2Up(nranks); i++) {
-      for (struct fifoElement* e = fifos[i].send; e; e = e->next) {
-        if (verbose) printf("%c[0;31mRemaining element in send fifo dimension %d offset %d rank %d step %ld%c[00m\n", 0x1b, i, e->offset, e->rank, e->step, 0x1b);
-        errors++;
-      }
-      for (struct fifoElement* e = fifos[i].recv; e; e = e->next) {
-        if (verbose) printf("%c[0;31mRemaining element in recv fifo dimension %d offset %d rank %d step %ld%c[00m\n", 0x1b, i, e->offset, e->rank, e->step, 0x1b);
-        errors++;
-      }
+    last = newLast;
+    if (ps.sendDim != -1) {
+      fifoSend(fifos+ps.sendDim, -(1<<ps.sendDim), nranks, ps.sendOffset, ps.stepOffset, peer, ps.postSend, &sendError);
+      scolor = errorColor[sendError];
+    }
+    if (ps.recvDim != -1) {
+      fifoRecv(fifos+ps.recvDim, ps.recvOffset, 0, peer, ps.postRecv, &recvError);
+      rcolor = errorColor[recvError];
+    }
+    char rcolorstr[] = " [0;XXm";
+    char scolorstr[] = " [0;XXm";
+    char lcolorstr[] = " [0;XXm";
+    char rcolorend[] = " [00m";
+    char scolorend[] = " [00m";
+    char lcolorend[] = " [00m";
+    rcolorstr[0] = scolorstr[0] = lcolorstr[0] = 0;
+    rcolorend[0] = scolorend[0] = lcolorend[0] = 0;
+    if (rcolor) { sprintf(rcolorstr, "%c[0;%dm", 0x1b, rcolor); rcolorend[0] = 0x1b; errors++; }
+    if (scolor) { sprintf(scolorstr, "%c[0;%dm", 0x1b, scolor); scolorend[0] = 0x1b; errors++; }
+    if (lcolor) { sprintf(lcolorstr, "%c[0;%dm", 0x1b, lcolor); lcolorend[0] = 0x1b; errors++; }
+    if (verbose) printf("|%4d|%3d/%3d|%3d/%3d|%11ld|%12ld|%s%10d%s|%s%1d/%8d%s|%6d|%8d|%8d|%1d%1d%s%1d%s|\n",
+        rank, ps.recvDim, peer, ps.sendDim, peer, ps.inpIx, ps.outIx,
+        rcolorstr, ps.recvOffset, rcolorend, scolorstr, ps.stepOffset, ps.sendOffset, scolorend,
+        ps.nelem, ps.postRecv, ps.postSend,
+        ps.flags&PatUsed ? 1 : 0, ps.flags&PatSkipped ? 1 : 0, lcolorstr, ps.last, lcolorend);
+  } while (ps.last != 2);
+  if (nsend != nrecv) { if (verbose) printf("%c[0;31mError : sends don't match receives%c[00m\n", 0x1b, 0x1b); errors++; }
+  for (int i=0; i<log2Up(nranks); i++) {
+    for (struct fifoElement* e = fifos[i].send; e; e = e->next) {
+      if (verbose) printf("%c[0;31mRemaining element in send fifo dimension %d offset %d rank %d step %ld%c[00m\n", 0x1b, i, e->offset, e->rank, e->step, 0x1b);
+      errors++;
+    }
+    for (struct fifoElement* e = fifos[i].recv; e; e = e->next) {
+      if (verbose) printf("%c[0;31mRemaining element in recv fifo dimension %d offset %d rank %d step %ld%c[00m\n", 0x1b, i, e->offset, e->rank, e->step, 0x1b);
+      errors++;
     }
   }
+  if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
   free(fifos);
   return errors;
 }
 
-/*
-int runAGAlgo(int nranks, size_t size, int nChannels, int nsteps, int stepSize) {
+int runAGAlgo(int nranks, int rank, size_t size, int nChannels, int nsteps, int stepSize, int verbose) {
   int errors = 0;
   const ssize_t channelSize = size / nChannels;
-  int *offsets = (int*)malloc(sizeof(int)*log2Up(nranks)*nranks);
-  for (int rank=0; rank<nranks; rank++) {
-    int nsend = 0, nrecv = 0;
-    for (int i=0; i<log2Up(nranks)*nranks; i++) offsets[i] = -1;
-    PatAGAlgorithm<char> algo(stepSize, nsteps, 0, channelSize, size, stepSize, rank, nranks);
-    printf("|Rank|RecvDim|SendDim|InputOffset|OutputOffset|RecvOffset|SendOffset|Nelem|PostRecv|PostSend|\n");
-    int last = 0;
-    int lastSendDim = -2;
-    while (last == 0) {
-      int recvDim, sendDim, recvOffset, sendOffset, recvStepOffset, postRecv, postSend, nelem;
-      size_t inpIx, outIx;
-      algo.getNextOp(recvDim, sendDim, inpIx, outIx, recvOffset, sendOffset, recvStepOffset, nelem, postRecv, postSend, last);
-      if (sendDim != lastSendDim) {
-        printf("+----+-------+-------+-----------+------------+----------+----------+-----+--------+--------+\n");
-        lastSendDim = sendDim;
+  struct fifo* fifos = (struct fifo*)malloc(sizeof(struct fifo)*log2Up(nranks)*nranks);
+  int nsend = 0, nrecv = 0;
+  int last = -1;
+  for (int i=0; i<log2Up(nranks); i++) fifoInit(fifos+i);
+  PatAGAlgorithm<char> algo(stepSize, nsteps, NCCL_PAT_NWORKERS/WARP_SIZE, 0, channelSize, size, stepSize, rank, nranks);
+  int parFactor = algo.getParallelFactor();
+  if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
+  if (verbose) printf("| All Gather     nranks %6d size %8ld nChannels %2d nsteps %1d stepSize %7d parFactor %2d |\n", nranks, size, nChannels, nsteps, stepSize, parFactor);
+  if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
+  if (verbose) printf("|Rank|RecvDim|SendDim|InputOffset|OutputOffset|RecvOffset|SendOffset|Nelems|PostRecv|PostSend|USL|\n");
+  struct ncclPatStep ps;
+  int step = 0;
+  do {
+    if (step++ % parFactor == 0) {
+      if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
+      for (int i=0; i<log2Up(nranks); i++) fifos[i].postSend = fifos[i].postRecv = 0;
+      if (last > 0) {
+        errors++;
+        if (verbose) printf("%c[0;31mNew step after last steps.%c[00m\n", 0x1b, 0x1b);
       }
-      nsend += postSend;
-      nrecv += postRecv;
-      int peer = outIx/nelem;
-      int sendPeer = sendDim >= 0 ? peer : -1;
-      int recvPeer = recvDim >= 0 ? peer : -1;
-      int rocolor = 0, socolor = 0, rpcolor = 0;
-      if (recvDim != -1) {
-        if (offsets[recvDim*nranks+sendPeer] == -1) offsets[recvDim*nranks+sendPeer] = recvOffset;
-        else if (offsets[recvDim*nranks+sendPeer] != recvOffset) { socolor = 33; errors++; }
-      }
-      int found = -1;
-      if (sendDim != -1) {
-        for (int i=0; i<nranks; i++) {
-          if (offsets[sendDim*nranks+i] == sendOffset) {
-            found = i;
-            if (((found-(1<<sendDim)+nranks)%nranks) != sendPeer) { rpcolor = 31; errors++; }
-            offsets[sendDim*nranks+i] = -1;
-            break;
-          }
-        }
-        if (found == -1) { rocolor = 31; errors++; }
-      }
-      char rocolorstr[] = " [0;XXm";
-      char socolorstr[] = " [0;XXm";
-      char rpcolorstr[] = " [0;XXm";
-      char rocolorend[] = " [00m";
-      char socolorend[] = " [00m";
-      char rpcolorend[] = " [00m";
-      rocolorstr[0] = socolorstr[0] = rpcolorstr[0] = 0;
-      rocolorend[0] = socolorend[0] = rpcolorend[0] = 0;
-      if (rocolor) { sprintf(rocolorstr, "%c[0;%dm", 0x1b, rocolor); rocolorend[0] = 0x1b; }
-      if (socolor) { sprintf(socolorstr, "%c[0;%dm", 0x1b, socolor); socolorend[0] = 0x1b; }
-      if (rpcolor) { sprintf(rpcolorstr, "%c[0;%dm", 0x1b, rpcolor); rpcolorend[0] = 0x1b; }
-      printf("|%4d|%3d/%s%3d%s|%3d/%3d|%11ld|%12ld|%s%1d/%8d%s|%s%10d%s|%5d|%8d|%8d|\n",
-          rank, recvDim, rpcolorstr, recvPeer, rpcolorend, sendDim, sendPeer, inpIx, outIx,
-          rocolorstr, recvStepOffset, recvOffset, rocolorend, socolorstr, sendOffset, socolorend,
-          nelem, postRecv, postSend);
+      last = -1;
     }
-    if (nsend != nrecv) { printf("%c[0;31mError : sends don't match receives%c[00m\n", 0x1b, 0x1b); errors++; }
+    algo.getNextOp(&ps);
+    if (ps.flags & PatSkipped) {
+      if (verbose) printf("|%4d|       |       |           |            |          |          |      |        |        |%1d%1d%1d|\n", rank, ps.flags&PatUsed ? 1 : 0, ps.flags&PatSkipped ? 1 : 0, ps.last);
+      continue;
+    }
+    nsend += ps.postSend;
+    nrecv += ps.postRecv;
+    int peer = ps.outIx/size;
+    int rcolor = 0, scolor = 0, lcolor = 0;
+    int sendError = 0, recvError = 0;
+    int errorColor[] = { 0, 33, 31, 35 };
+    int newLast = ps.last ? 1 : 0;
+    if (last != -1 && newLast != last) {
+      lcolor = errorColor[2];
+    }
+    last = newLast;
+    if (ps.sendDim != -1) {
+      fifoSend(fifos+ps.sendDim, 1<<ps.sendDim, nranks, ps.sendOffset, 0, peer, ps.postSend, &sendError);
+      scolor = errorColor[sendError];
+    }
+    if (ps.recvDim != -1) {
+      fifoRecv(fifos+ps.recvDim, ps.recvOffset, ps.stepOffset, peer, ps.postRecv, &recvError);
+      rcolor = errorColor[recvError];
+    }
+    char rcolorstr[] = " [0;XXm";
+    char scolorstr[] = " [0;XXm";
+    char lcolorstr[] = " [0;XXm";
+    char rcolorend[] = " [00m";
+    char scolorend[] = " [00m";
+    char lcolorend[] = " [00m";
+    rcolorstr[0] = scolorstr[0] = lcolorstr[0] = 0;
+    rcolorend[0] = scolorend[0] = lcolorend[0] = 0;
+    if (rcolor) { sprintf(rcolorstr, "%c[0;%dm", 0x1b, rcolor); rcolorend[0] = 0x1b; errors++; }
+    if (scolor) { sprintf(scolorstr, "%c[0;%dm", 0x1b, scolor); scolorend[0] = 0x1b; errors++; }
+    if (lcolor) { sprintf(lcolorstr, "%c[0;%dm", 0x1b, lcolor); lcolorend[0] = 0x1b; errors++; }
+    if (verbose) printf("|%4d|%3d/%3d|%3d/%3d|%11ld|%12ld|%s%1d/%8d%s|%s%10d%s|%6d|%8d|%8d|%1d%1d%s%1d%s|\n",
+        rank, ps.recvDim, peer, ps.sendDim, peer, ps.inpIx, ps.outIx,
+        rcolorstr, ps.stepOffset, ps.recvOffset, rcolorend, scolorstr, ps.sendOffset, scolorend,
+        ps.nelem, ps.postRecv, ps.postSend,
+        ps.flags&PatUsed ? 1 : 0, ps.flags&PatSkipped ? 1 : 0, lcolorstr, ps.last, lcolorend);
+  } while (ps.last != 2);
+  if (nsend != nrecv) { if (verbose) printf("%c[0;31mError : sends don't match receives%c[00m\n", 0x1b, 0x1b); errors++; }
+  for (int i=0; i<log2Up(nranks); i++) {
+    for (struct fifoElement* e = fifos[i].send; e; e = e->next) {
+      if (verbose) printf("%c[0;31mRemaining element in send fifo dimension %d offset %d rank %d step %ld%c[00m\n", 0x1b, i, e->offset, e->rank, e->step, 0x1b);
+      errors++;
+    }
+    for (struct fifoElement* e = fifos[i].recv; e; e = e->next) {
+      if (verbose) printf("%c[0;31mRemaining element in recv fifo dimension %d offset %d rank %d step %ld%c[00m\n", 0x1b, i, e->offset, e->rank, e->step, 0x1b);
+      errors++;
+    }
   }
-  free(offsets);
+  if (verbose) printf("+----+-------+-------+-----------+------------+----------+----------+------+--------+--------+---+\n");
+  free(fifos);
   return errors;
-}*/
+}
 
 int main(int argc, char *argv[]) {
   setlinebuf(stdout);
-  int errors = 0;
-  if (argc < 3) { printf("Usage: log_algo <rs|ag> <nranks> [<size> <stepsize> <nchannels> <nsteps>]\n"); return 1; }
-  char* op = argv[1];
-  int nranks = strtol(argv[2], NULL, 0);
-  ssize_t size = -1;
-  ssize_t stepSize = -1;
-  int nChannels = -1;
-  int nsteps = -1;
-  if (argc > 3) {
-    size = strtoll(argv[3], NULL, 0);
-    stepSize = strtoll(argv[4], NULL, 0);
-    nChannels = strtoll(argv[5], NULL, 0);
-    nsteps = strtoll(argv[6], NULL, 0);
-    if (strcmp(op, "rs") == 0) {
-      errors += runRSAlgo(nranks, size, nChannels, nsteps, stepSize, 1);
-    } else {
-      errors += runAGAlgo(nranks, size, nChannels, nsteps, stepSize, 1);
+  int totalErrors = 0;
+  const char* op         = argc > 1 ? argv[1] : "rs";
+  int nranksStart  = argc > 2 ? strtol(argv[2], NULL, 0) : 128;
+  int nranksEnd    = argc > 3 ? strtol(argv[3], NULL, 0) : nranksStart;
+  int rank         = argc > 4 ? strtol(argv[4], NULL, 0) : 0;
+  ssize_t size     = argc > 5 ? strtoll(argv[5], NULL, 0) : 8;
+  ssize_t stepSize = argc > 6 ? strtoll(argv[6], NULL, 0) : 512*1024;
+  int nChannels    = argc > 7 ? strtol(argv[7], NULL, 0) : 2;
+  int nsteps       = argc > 8 ? strtol(argv[8], NULL, 0) : 8;
+  int verbose      = argc > 9 ? strtol(argv[9], NULL, 0) : argc > 4 ? 1 : 0;
+  if (argc > 4) {
+    for (int nr=nranksStart; nr<=nranksEnd; nr++) {
+      if (strcmp(op, "rs") == 0) {
+        totalErrors = runRSAlgo(nr, rank, size, nChannels, nsteps, stepSize, verbose);
+      } else {
+        totalErrors = runAGAlgo(nr, rank, size, nChannels, nsteps, stepSize, verbose);
+      }
     }
   } else {
-    printf("+-----------+-----------------------------------+-----------------------------------+-----------------------------------+-----------------------------------+\n");
-    printf("|    nsteps |                 1                 |                 2                 |                 4                 |                 8                 |\n");
-    printf("| nchannels |        1        |       2         |         1       |        2        |         1       |        2        |         1       |        2        |\n");
-    printf("|      size |1K 16K  512K  64M|1K 16K  512K  64M|1K 16K  512K  64M|1K 16K  512K  64M|1K 16K  512K  64M|1K 16K  512K  64M|1K 16K  512K  64M|1K 16K  512K  64M|\n");
-    printf("|    nranks |v   v    v      v|v   v    v      v|v   v    v      v|v   v    v      v|v   v    v      v|v   v    v      v|v   v    v      v|v   v    v      v|\n");
-    printf("+-----------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+\n");
+    printf("+-----------+-----------------------------+\n");
+    printf("| nchannels |      1       |     2        |\n");
+    printf("|      size |1K 16K 256K 8M|1K 16K 256K 8M|\n");
+    printf("|    nranks |v   v   v    v|v   v   v    v|\n");
+    printf("+-----------+--------------+--------------+\n");
     stepSize = 512*1024;
-    for (int nr=2; nr<=nranks; nr++) {
+    for (int nr=nranksStart; nr<=nranksEnd; nr++) {
       printf("| %9d |", nr);
-      for (nsteps = 1; nsteps <=8; nsteps *= 2) {
-        for (nChannels=1; nChannels<3; nChannels++) {
-          for (size = 1024; size < 128*1024*1024; size *= 2) {
-            if (strcmp(op, "rs") == 0) {
-              errors = runRSAlgo(nr, size, nChannels, nsteps, stepSize, 0);
-            } else {
-              errors = runAGAlgo(nr, size, nChannels, nsteps, stepSize, 0);
-            }
-            printf("%c", errors?'X':'.');
+      for (nChannels=1; nChannels<3; nChannels++) {
+        for (size = 1024; size <= 8*1024*1024; size *= 2) {
+          int errors;
+          if (strcmp(op, "rs") == 0) {
+            totalErrors += errors = runRSAlgo(nr, rank, size, nChannels, nsteps, stepSize, verbose);
+          } else {
+            totalErrors += errors = runAGAlgo(nr, rank, size, nChannels, nsteps, stepSize, verbose);
           }
-          printf("|");
+          printf("%c", errors?'X':'.');
+          fflush(stdout);
         }
+        printf("|");
       }
       printf("\n");
     }
+    printf("+-----------+-----------------------------+\n");
+    printf("| Total     | %10d errors           |\n", totalErrors);
+    printf("+-----------+-----------------------------+\n");
   }
-  return errors ? 1 : 0;
+  return totalErrors ? 1 : 0;
 }
