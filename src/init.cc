@@ -196,7 +196,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     }
   }
 
-  CUDACHECK(cudaMemPoolDestroy(comm->memPool));
+  if (comm->memPool) CUDACHECK(cudaMemPoolDestroy(comm->memPool));
 
   delete[] comm->userRedOps;
 
