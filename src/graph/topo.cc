@@ -878,9 +878,9 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
   } else if (strcmp(common->name, "cpu") == 0) {
     *path = PATH_PHB;
   } else if (strcmp(common->name, "nic") == 0) {
-    *path = PATH_LOC;
+    *path = PATH_PORT;
   } else if (strcmp(common->name, "net") == 0) {
-    *path = PATH_LOC;
+    *path = PATH_PORT;
   } else if (ncclTopoCheckPix(common, nodes, nNodes)) {
     *path = PATH_PIX;
   } else {
@@ -1060,8 +1060,6 @@ ncclResult_t ncclTopoAutoMerge(ncclComm_t comm, struct ncclXml* xml, int mergeLe
         return ncclInternalError;
       }
 
-      // Don't make the vNic if it's only one device, it already exists
-      if (vProps.ndevs == 1) continue;
       struct ncclXmlNode* netNode;
       NCCLCHECKGOTO(ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice), res, out);
     }
