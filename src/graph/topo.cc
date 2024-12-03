@@ -878,9 +878,9 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
   } else if (strcmp(common->name, "cpu") == 0) {
     *path = PATH_PHB;
   } else if (strcmp(common->name, "nic") == 0) {
-    *path = PATH_LOC;
+    *path = PATH_PORT;
   } else if (strcmp(common->name, "net") == 0) {
-    *path = PATH_LOC;
+    *path = PATH_PORT;
   } else if (ncclTopoCheckPix(common, nodes, nNodes)) {
     *path = PATH_PIX;
   } else {
