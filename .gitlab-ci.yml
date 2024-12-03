@@ -325,7 +325,7 @@ unit_tests-eos:
   tags:
     - nccl-eos
   variables:
-    DISABLE_MEMLEAK: "1" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
+    DISABLE_MEMLEAK: "0" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
