@@ -1996,7 +1996,8 @@ static ncclResult_t hostToDevRedOp(
   if (nbits <= 0) return ncclInvalidArgument;
   uint64_t allBits = uint64_t(-1)>>(64-nbits);
   uint64_t signBit = allBits^(allBits>>1);
-
+  bool datatype_signed = false;
+  
   switch (int(op)) {
   case ncclSum:  opFull->op = ncclDevSum;  break;
   case ncclProd: opFull->op = ncclDevProd; break;
@@ -2014,9 +2015,11 @@ static ncclResult_t hostToDevRedOp(
   case ncclAvg:
     switch ((int)datatype) {
     case ncclInt8:  case ncclInt32:  case ncclInt64:
+      datatype_signed = true;
+      // no break, we want to fall through...
     case ncclUint8: case ncclUint32: case ncclUint64:
       opFull->op = ncclDevSumPostDiv;
-      u64 = comm->nRanks;
+      u64 = comm->nRanks<<1 | datatype_signed;
       break;
     #if defined(__CUDA_FP8_TYPES_EXIST__)
     case ncclFloat8e4m3:
