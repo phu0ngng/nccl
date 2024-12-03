@@ -97,6 +97,12 @@ struct IsIntegral<half>: std::false_type {};
 template<>
 struct IsIntegral<__nv_bfloat16>: std::false_type {};
 #endif
+#if HAVE_ncclFloat8
+template<>
+struct IsIntegral<__nv_fp8_e4m3>: std::false_type {};
+template<>
+struct IsIntegral<__nv_fp8_e5m2>: std::false_type {};
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1184,7 +1190,7 @@ __global__ void __launch_bounds__(512, 1) verifyPrepared(
     bad += tolerance < delta ? 1 : 0;
     #if 0
       if(tolerance < delta) {
-        printf("verifyPrepared ix=%lld got=%g exp=%g\n", (long long)i, (float)results[i], (float)expected[i]);
+        printf("verifyPrepared ix=%lld got=%g exp=%g tol=%d\n", (long long)i, (float)results[i], (float)expected[i], tolerance);
       }
     #endif
     i += blockDim.x;
@@ -1294,7 +1300,11 @@ cudaError_t ncclVerifiableVerify(
   #if HAVE_ncclBfloat16
     floating |= elt_ty == ncclBfloat16;
   #endif
-
+  #if HAVE_ncclFloat8
+    floating |= elt_ty == ncclFloat8e4m3;
+    floating |= elt_ty == ncclFloat8e5m2;
+  #endif
+  
   unsigned tolerance = 0;
   #if HAVE_ncclAvg
   if (floating && red_op == ncclAvg) {

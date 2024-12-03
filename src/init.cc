@@ -197,7 +197,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     }
   }
 
-  CUDACHECK(cudaMemPoolDestroy(comm->memPool));
+  if (comm->memPool) CUDACHECK(cudaMemPoolDestroy(comm->memPool));
 
   delete[] comm->userRedOps;
 
@@ -424,11 +424,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   } while (0);
 
   ncclIntruQueueConstruct(&comm->eventCallbackQueue);
-
-  //  setup intraComm0 and intraRanks 0 to default values to ensure proper cleanup of the communicator
-  comm->intraComm0 = comm;
-  comm->intraRank = 0;
-  comm->intraRanks = 1;
 
   return ncclSuccess;
 }
