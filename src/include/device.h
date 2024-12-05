@@ -133,6 +133,7 @@ struct ncclProxyConnector {
 
 struct ncclConnector {
   int connected;
+  int hasSeen;
   struct ncclProxyConnector proxyConn;
   struct ncclTransportComm* transportComm;
   void* transportResources;
