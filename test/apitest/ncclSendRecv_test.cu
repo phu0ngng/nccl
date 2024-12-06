@@ -88,10 +88,7 @@ TYPED_TEST(ncclSendRecv_test, alltoallv) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, alltoallv_JoC) {
-   /* In BUG 3197885 this AlltoAllv pattern was found to causes hangs
-    * on DGX A100 and DGX2
-    */
+TYPED_TEST(ncclSendRecv_test, alltoallv_pattern1) {
     size_t sendCount[8][8] = {
       1048576, 1048576, 1048576, 1048576, 1048576, 1048576, 1048576, 1048576,
       4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304, 4194304,
@@ -132,9 +129,7 @@ TYPED_TEST(ncclSendRecv_test, alltoallv_JoC) {
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 };
-TYPED_TEST(ncclSendRecv_test, alltoallv_vasp) {
-   /* In BUG 3571899 this AlltoAllv pattern was found to causes hangs
-    */
+TYPED_TEST(ncclSendRecv_test, alltoallv_pattern2) {
     size_t size = this->N;
     size_t sendCount[4] = { size, 0, 0, 0 };
     size_t recvCount[4] = { size, size, size, size };
