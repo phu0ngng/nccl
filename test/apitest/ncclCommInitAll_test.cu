@@ -40,18 +40,6 @@ TEST_F(ncclCommInitAll_test, comms_null) {
 TEST_F(ncclCommInitAll_test, ndev_negative) {
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitAll(comms, -1, NULL));
 };
-#if 0
-// This was only failing becuase NCCL was artifically limiting to 128 devices
-// per thread. That has been replaced with dynamic allocation so the new failure
-// mode is that NCCL hangs indefinitely since threads representing valid devices
-// are awaiting bootstrap connections from threads which aborted due to failing
-// cudaSetDevice().
-TEST_F(ncclCommInitAll_test, ndev_toomany) {
-    comms = (ncclComm_t*)calloc(256, sizeof(ncclComm_t));
-    ASSERT_EQ(ncclInvalidUsage,
-              ncclCommInitAll(comms, 256, NULL));
-};
-#endif
 TEST_F(ncclCommInitAll_test, devList_null) {
     ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
 };

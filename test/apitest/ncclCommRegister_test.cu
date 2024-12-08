@@ -37,17 +37,6 @@ TEST_F(ncclCommRegister_test, null_buff) {
     void* handle;
     ASSERT_EQ(ncclInvalidArgument, ncclCommRegister(comms[0], nullptr, 1024, &handle));
 }
-#if 0
-// Removed for BUG 4678244
-TEST_F(ncclCommRegister_test, host_buff) {
-    const int size = 1024;
-    void* buff = nullptr;
-    ASSERT_NE(nullptr, buff = malloc(size));
-    void* handle;
-    ASSERT_EQ(ncclInvalidArgument, ncclCommRegister(comms[0], buff, size, &handle));
-    free(buff);
-}
-#endif
 TEST_F(ncclCommRegister_test, many) {
     const int n = 1024;
     const int size = 1024;

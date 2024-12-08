@@ -18,25 +18,6 @@ TYPED_TEST(ncclBroadcast_test, basic) {
         ASSERT_EQ(ncclSuccess, ncclGroupEnd());
     }
 };
-#if 0
-// Removed for BUG 4678244
-TYPED_TEST(ncclBroadcast_test, host_mem) {
-    for (int root = 0; root < this->nVis; ++root) {
-        ASSERT_EQ(ncclSuccess, ncclGroupStart());
-        for (int i = 0; i < this->nVis; ++i) {
-            ASSERT_EQ(
-                ncclInvalidArgument,
-                ncclBroadcast(this->sendbuffs_host[i], this->recvbuffs_host[i],
-                              std::min(this->N, 1024 * 1024),
-                              this->DataType(), root,
-                              this->comms[i], this->streams[i]))
-                << "root: " << root << ", "
-                << "i" << i << ", " << std::endl;
-        }
-        ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
-    }
-};
-#endif
 TYPED_TEST(ncclBroadcast_test, pinned_mem) {
     if (this->sendbuffs_pinned_device && this->recvbuffs_pinned_device) {
         for (int root = 0; root < this->nVis; ++root) {

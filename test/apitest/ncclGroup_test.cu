@@ -66,18 +66,6 @@ TEST_F(ncclGroup_test, basic_simulate_invalid_arg_magic) {
     ASSERT_EQ(ncclInvalidArgument, ncclGroupSimulateEnd(&simInfo));
   }
 }
-#if 0
-// NCCL doesn't test for that
-TEST_F(ncclGroup_test, DISABLED_different_stream) {
-  for (int i=0; i < ndev; i++) {
-    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-    ASSERT_EQ(ncclSuccess, ncclGroupStart());
-    ASSERT_EQ(ncclSuccess, ncclAllReduce(NULL, NULL, 0, ncclFloat, ncclSum, comms[i], NULL));
-    ASSERT_EQ(ncclInvalidUsage, ncclAllReduce(NULL, NULL, 0, ncclFloat, ncclSum, comms[i], streams[i]));
-    ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
-  }
-}
-#endif
 TEST_F(ncclGroup_test, aggregation_mixed_bag) {
   std::unique_ptr<int32_t*[]> buf32(new int32_t*[ndev]);
   std::unique_ptr<int64_t*[]> buf64(new int64_t*[ndev]);
