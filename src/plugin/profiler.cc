@@ -225,10 +225,10 @@ ncclResult_t ncclProfilerStopGroupEvent(struct ncclKernelPlan* plan) {
 
 ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
   TIME_START_EVENT(taskStart);
-  if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    if (plan->groupEventHandle) {
-      struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
-      while (ct) {
+  struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
+  while (ct) {
+    if (__builtin_expect(ncclProfiler != NULL, 0)) {
+      if (plan->groupEventHandle) {
         int enable = ct->eActivationMask & (ncclProfileColl | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh);
         if (enable) {
           ncclProfilerEventDescr_t eDescr = { 0 };
@@ -237,7 +237,7 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
           eDescr.rank = plan->comm->rank;
           eDescr.coll.name = plan->comm->commName;
           eDescr.coll.commHash = plan->comm->commHash;
-          eDescr.coll.seqNumber = plan->comm->seqNumber[ct->func]++;
+          eDescr.coll.seqNumber = plan->comm->seqNumber[ct->func];
           eDescr.coll.func = ncclFuncToString(ct->func);
           eDescr.coll.sendBuff = ct->sendbuff;
           eDescr.coll.recvBuff = ct->recvbuff;
@@ -250,8 +250,21 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
           eDescr.coll.proto = ncclProtoToString(ct->protocol);
           ncclProfiler->startEvent(plan->comm->profilerContext, &ct->eventHandle, &eDescr);
         }
-        ct = ct->next;
       }
+    }
+    // comm->seqNumber values are updated even if the plugin is not active, since they are used by RAS as well.
+    // The test for "persistent" is a workaround for graph-captured collectives.  In their case this function may not be
+    // consistently invoked on all the ranks, which would lead to mismatched counter values and thus false-positive
+    // reports from RAS.  Instead, we choose not to include graph-captured collectives in our counts.  An exception is
+    // made if ncclProfileKernelCh profiler events are active, as they result in proxy events always being added, which
+    // gives the consistency.
+    if (!plan->persistent || (__builtin_expect(ncclProfiler != NULL, 0) && plan->groupEventHandle &&
+                              (ct->eActivationMask & ncclProfileKernelCh)))
+      plan->comm->seqNumber[ct->func]++;
+    ct = ct->next;
+  }
+  if (__builtin_expect(ncclProfiler != NULL, 0)) {
+    if (plan->groupEventHandle) {
       struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
       while (pt) {
         int enable = pt->eActivationMask & (ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh);

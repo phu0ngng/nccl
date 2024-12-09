@@ -63,7 +63,7 @@ struct rasAuxComm {
   int ranksPerNodeMax;
   unsigned int status; // Bitmask of rasACStatus values.
   unsigned int errors; // Bitmask of rasACError values.
-  uint64_t firstCollOpCount; // collOpCount of the first rank, to compare against.
+  uint64_t firstCollOpCounts[NCCL_NUM_FUNCTIONS]; // collOpCounts of the first rank, to compare against.
 };
 
 // Connected RAS clients.
@@ -84,6 +84,11 @@ static char lineBuf[1024]; // Temporary buffer used for printing at most 10 (RAS
                            // small numbers (times two if the NVML mask is different than the CUDA mask).
                            // Still, 1024 should normally be plenty (verbose output may make things more difficult,
                            // but we do check for overflows, so it will just be trimmed).
+
+// collIdx of the collective operation that rasCommRanksCollOpCompare should sort by.  I hate that qsort doesn't allow
+// us to pass it as one of the arguments so we need to do it via a global variable; thankfully, this code is
+// single-threaded.
+static int rasCommRanksCollOpCompareIdx;
 
 static ncclResult_t getNewClientEntry(struct rasClient** pClient);
 static void rasClientEnqueueMsg(struct rasClient* client, char* msg, size_t msgLen);
@@ -941,7 +946,7 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
         auxComm->nPeers = auxComm->nNodes = 1;
         auxComm->ranksPerNodeMin = NCCL_MAX_LOCAL_RANKS;
         auxComm->ranksPerNodeMax = 0;
-        auxComm->firstCollOpCount = rank->collOpCount;
+        memcpy(auxComm->firstCollOpCounts, rank->collOpCounts, sizeof(auxComm->firstCollOpCounts));
         nRanks = 1;
       } else { // rankIdx > 0
         if (rank->peerIdx != rank[-1].peerIdx) {
@@ -979,8 +984,10 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
       else // rank->initState != ncclSuccess
         auxComm->status |= RAS_ACS_INIT;
 
-      if (rank->collOpCount != auxComm->firstCollOpCount)
-        auxComm->errors |= RAS_ACE_MISMATCH;
+      for (int collIdx = 0; collIdx < NCCL_NUM_FUNCTIONS && !(auxComm->errors & RAS_ACE_MISMATCH); collIdx++) {
+        if (rank->collOpCounts[collIdx] != auxComm->firstCollOpCounts[collIdx])
+          auxComm->errors |= RAS_ACE_MISMATCH;
+      }
       if (rank->status.initState != ncclSuccess && rank->status.initState != ncclInProgress)
         auxComm->errors |= RAS_ACE_ERROR;
       if (rank->status.asyncError != ncclSuccess && rank->status.asyncError != ncclInProgress)
@@ -1218,7 +1225,6 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
   for (int vcIdx = 0; vcIdx < nValCounts; vcIdx++) {
     struct rasValCount* vc = valCounts+vcIdx;
     for (int commIdx = vc->firstIdx; commIdx < vc->count + vc->firstIdx; commIdx++) {
-      bool inconsistent;
       struct rasAuxComm* auxComm = auxComms+commIdx;
       comm = auxComm->comm;
 
@@ -1236,28 +1242,30 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
           rasOutAppend("  Communicator ranks have different status\n");
 
           // We need to sort the ranks by status.  However, status is normally calculated from other fields.
-          // We will copy the ranks and reuse collOpCount to store it.
+          // We will copy the ranks and reuse collOpCounts[0] to store it.
           memcpy(ranksReSorted, comm->ranks, comm->nRanks * sizeof(*ranksReSorted));
           for (int rankIdx = 0; rankIdx < comm->nRanks; rankIdx++) {
             struct rasCollComms::comm::rank* rank = ranksReSorted+rankIdx;
 
             if (rank->status.abortFlag)
-              rank->collOpCount = RAS_ACS_ABORT;
+              rank->collOpCounts[0] = RAS_ACS_ABORT;
             else if (rank->status.finalizeCalled || rank->status.destroyFlag)
-              rank->collOpCount = RAS_ACS_FINALIZE;
+              rank->collOpCounts[0] = RAS_ACS_FINALIZE;
             else if (rank->status.initState == ncclSuccess)
-              rank->collOpCount = RAS_ACS_RUNNING;
+              rank->collOpCounts[0] = RAS_ACS_RUNNING;
             else
-              rank->collOpCount = RAS_ACS_INIT;
+              rank->collOpCounts[0] = RAS_ACS_INIT;
           }
+          rasCommRanksCollOpCompareIdx = 0;
           qsort(ranksReSorted, comm->nRanks, sizeof(*ranksReSorted), rasCommRanksCollOpCompare);
           // Calculate the frequency of different status values.
           int nCollOpCounts = 0;
           for (int rankIdx = 0; rankIdx < comm->nRanks; rankIdx++) {
-            if (rankIdx == 0 || ranksReSorted[rankIdx].collOpCount != ranksReSorted[rankIdx-1].collOpCount) {
+            if (rankIdx == 0 || ranksReSorted[rankIdx].collOpCounts[0] != ranksReSorted[rankIdx-1].collOpCounts[0]) {
               // __builtin_clz returns the number of leading 0-bits.  This makes it possible to translate the
               // status (which is a bitmask) into an array index.
-              collOpCounts[nCollOpCounts].value = (sizeof(unsigned int)*8-1) - __builtin_clz(ranksReSorted[rankIdx].collOpCount);
+              collOpCounts[nCollOpCounts].value =
+                (sizeof(unsigned int)*8-1) - __builtin_clz(ranksReSorted[rankIdx].collOpCounts[0]);
               collOpCounts[nCollOpCounts].count = 1;
               collOpCounts[nCollOpCounts].firstIdx = rankIdx;
               nCollOpCounts++;
@@ -1329,67 +1337,89 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
           } // for (coc)
         } // if (__builtin_popcount(auxComm->status) > 1)
 
-        inconsistent = false;
-        for (int rankIdx = 0; rankIdx < comm->nRanks; rankIdx++) {
-          if (comm->ranks[rankIdx].collOpCount != auxComm->firstCollOpCount) {
-            inconsistent = true;
-            break;
-          }
-        }
-        if (inconsistent) {
-          rasOutAppend("  Communicator ranks have different collective operation counts\n");
+        for (int collIdx = 0; collIdx < NCCL_NUM_FUNCTIONS; collIdx++) {
+          bool inconsistent = false;
 
-          // Sort the ranks by collOpCount and rank for easy counting.
-          memcpy(ranksReSorted, comm->ranks, comm->nRanks * sizeof(*ranksReSorted));
-          qsort(ranksReSorted, comm->nRanks, sizeof(*ranksReSorted), rasCommRanksCollOpCompare);
-          // Calculate the frequency of different collOpCount values.
-          int nCollOpCounts = 0;
-          for (int rankIdx = 0; rankIdx < comm->nRanks; rankIdx++) {
-            if (rankIdx == 0 || ranksReSorted[rankIdx].collOpCount != ranksReSorted[rankIdx-1].collOpCount) {
-              collOpCounts[nCollOpCounts].value = ranksReSorted[rankIdx].collOpCount;
-              collOpCounts[nCollOpCounts].count = 1;
-              collOpCounts[nCollOpCounts].firstIdx = rankIdx;
-              nCollOpCounts++;
-            } else {
-              collOpCounts[nCollOpCounts-1].count++;
+          for (int rankIdx = 0; rankIdx < comm->nRanks && !inconsistent; rankIdx++) {
+            if (comm->ranks[rankIdx].collOpCounts[collIdx] != auxComm->firstCollOpCounts[collIdx])
+              inconsistent = true;
+          }
+
+          if (inconsistent) {
+            rasOutAppend("  Communicator ranks have different %s operation counts\n", ncclFuncStr[collIdx]);
+
+            // Sort the ranks by collOpCounts[collIdx] and rank for easy counting.
+            memcpy(ranksReSorted, comm->ranks, comm->nRanks * sizeof(*ranksReSorted));
+            rasCommRanksCollOpCompareIdx = collIdx;
+            qsort(ranksReSorted, comm->nRanks, sizeof(*ranksReSorted), rasCommRanksCollOpCompare);
+            // Calculate the frequency of different collOpCounts[collIdx] values.
+            int nCollOpCounts = 0;
+            for (int rankIdx = 0; rankIdx < comm->nRanks; rankIdx++) {
+              if (rankIdx == 0 ||
+                  ranksReSorted[rankIdx].collOpCounts[collIdx] != ranksReSorted[rankIdx-1].collOpCounts[collIdx]) {
+                collOpCounts[nCollOpCounts].value = ranksReSorted[rankIdx].collOpCounts[collIdx];
+                collOpCounts[nCollOpCounts].count = 1;
+                collOpCounts[nCollOpCounts].firstIdx = rankIdx;
+                nCollOpCounts++;
+              } else {
+                collOpCounts[nCollOpCounts-1].count++;
+              }
             }
-          }
-          // Sort by that frequency (most frequent first).
-          qsort(collOpCounts, nCollOpCounts, sizeof(*collOpCounts), rasValCountsCompareRev);
+            // Sort by that frequency (most frequent first).
+            qsort(collOpCounts, nCollOpCounts, sizeof(*collOpCounts), rasValCountsCompareRev);
 
-          for (int coc = 0; coc < nCollOpCounts; coc++) {
-            struct rasValCount* vcc = collOpCounts+coc;
-            if (vcc->count > 1)
-              rasOutAppend("  %d ranks have launched up to operation %ld\n", vcc->count, vcc->value);
-            if (rasCountIsOutlier(vcc->count, client->verbose, comm->commNRanks)) {
-              // ranksReSorted is sorted by rank as the secondary key, which comes in handy when printing...
-              for (int rankIdx = vcc->firstIdx; rankIdx < vcc->count+vcc->firstIdx; rankIdx++) {
-                int peerIdx = peerIdxConv[ranksReSorted[rankIdx].peerIdx];
-                if (peerIdx != -1) {
-                  if (vcc->count > 1)
-                    rasOutAppend("  Rank %d -- GPU %s managed by process %d on node %s\n",
-                                 ranksReSorted[rankIdx].commRank,
-                                 rasCommRankGpuToString(ranksReSorted+rankIdx, lineBuf, sizeof(lineBuf)),
-                                 rasPeers[peerIdx].pid,
-                                 ncclSocketToHost(&rasPeers[peerIdx].addr, rasLine, sizeof(rasLine)));
-                  else
-                    rasOutAppend("  Rank %d has launched up to operation %ld -- GPU %s managed by process %d on node %s\n",
-                                 ranksReSorted[rankIdx].commRank, vcc->value,
-                                 rasCommRankGpuToString(ranksReSorted+rankIdx, lineBuf, sizeof(lineBuf)),
-                                 rasPeers[peerIdx].pid,
-                                 ncclSocketToHost(&rasPeers[peerIdx].addr, rasLine, sizeof(rasLine)));
-                } else { // peerIdx == -1
-                  if (vcc->count > 1)
-                    rasOutAppend("  Rank %d -- [process information not found]\n", ranksReSorted[rankIdx].commRank);
-                  else
-                     rasOutAppend("  Rank %d has launched up to operation %ld -- [process information not found]\n",
-                                  ranksReSorted[rankIdx].commRank, vcc->value);
-                } // peerIdx == -1
-              } // for (rankIdx)
-            } // if (rasCountIsOutlier(vcc->count))
-          } // for (coc)
-        } // if (inconsistent)
-        rasOutAppend("\n");
+            for (int coc = 0; coc < nCollOpCounts; coc++) {
+              struct rasValCount* vcc = collOpCounts+coc;
+              if (vcc->count > 1) {
+                if (vcc->value > 0)
+                  rasOutAppend("  %d ranks have launched up to operation %ld\n", vcc->count, vcc->value);
+                else
+                  rasOutAppend("  %d ranks have not launched any operations\n", vcc->count);
+              }
+              if (rasCountIsOutlier(vcc->count, client->verbose, comm->commNRanks)) {
+                // ranksReSorted is sorted by rank as the secondary key, which comes in handy when printing...
+                for (int rankIdx = vcc->firstIdx; rankIdx < vcc->count+vcc->firstIdx; rankIdx++) {
+                  int peerIdx = peerIdxConv[ranksReSorted[rankIdx].peerIdx];
+                  if (peerIdx != -1) {
+                    if (vcc->count > 1) {
+                      rasOutAppend("  Rank %d -- GPU %s managed by process %d on node %s\n",
+                                   ranksReSorted[rankIdx].commRank,
+                                   rasCommRankGpuToString(ranksReSorted+rankIdx, lineBuf, sizeof(lineBuf)),
+                                   rasPeers[peerIdx].pid,
+                                   ncclSocketToHost(&rasPeers[peerIdx].addr, rasLine, sizeof(rasLine)));
+                    } else {
+                      if (vcc->value > 0) {
+                        rasOutAppend("  Rank %d has launched up to operation %ld -- GPU %s managed by process %d "
+                                     "on node %s\n", ranksReSorted[rankIdx].commRank, vcc->value,
+                                     rasCommRankGpuToString(ranksReSorted+rankIdx, lineBuf, sizeof(lineBuf)),
+                                     rasPeers[peerIdx].pid,
+                                     ncclSocketToHost(&rasPeers[peerIdx].addr, rasLine, sizeof(rasLine)));
+                      } else {
+                        rasOutAppend("  Rank %d has not launched any operations -- GPU %s managed by process %d "
+                                     "on node %s\n", ranksReSorted[rankIdx].commRank,
+                                     rasCommRankGpuToString(ranksReSorted+rankIdx, lineBuf, sizeof(lineBuf)),
+                                     rasPeers[peerIdx].pid,
+                                     ncclSocketToHost(&rasPeers[peerIdx].addr, rasLine, sizeof(rasLine)));
+                      }
+                    }
+                  } else { // peerIdx == -1
+                    if (vcc->count > 1) {
+                      rasOutAppend("  Rank %d -- [process information not found]\n", ranksReSorted[rankIdx].commRank);
+                    } else {
+                      if (vcc->value > 0)
+                        rasOutAppend("  Rank %d has launched up to operation %ld -- [process information not found]\n",
+                                     ranksReSorted[rankIdx].commRank, vcc->value);
+                      else
+                        rasOutAppend("  Rank %d has not launched any operations -- [process information not found]\n",
+                                     ranksReSorted[rankIdx].commRank);
+                    }
+                  } // peerIdx == -1
+                } // for (rankIdx)
+              } // if (rasCountIsOutlier(vcc->count))
+            } // for (coc)
+            rasOutAppend("\n");
+          } // if (inconsistent)
+        } // for (collIdx)
       } // if (auxComm->errors & RAS_ACE_MISMATCH)
     } // for (commIdx)
   } // for (vcIdx)
@@ -1667,16 +1697,17 @@ static int rasCommRanksPeerCompare(const void* p1, const void* p2) {
   return (r1->peerIdx < r2->peerIdx ? -1 : (r1->peerIdx > r2->peerIdx ? 1 : 0));
 }
 
-// Sorting callback for rasCollComms::comm::rank elements.  Sorts by the collOpCount, with rank as the secondary key.
+// Sorting callback for rasCollComms::comm::rank elements.  Sorts by the collOpCounts[rasCommRanksCollOpCompareIdx],
+// with rank as the secondary key.
 static int rasCommRanksCollOpCompare(const void* p1, const void* p2) {
   const struct rasCollComms::comm::rank* r1 = (const struct rasCollComms::comm::rank*)p1;
   const struct rasCollComms::comm::rank* r2 = (const struct rasCollComms::comm::rank*)p2;
 
-  if (r1->collOpCount == r2->collOpCount) {
+  if (r1->collOpCounts[rasCommRanksCollOpCompareIdx] == r2->collOpCounts[rasCommRanksCollOpCompareIdx]) {
     // Use the rank as the secondary key.
     return (r1->commRank < r2->commRank ? -1 : (r1->commRank > r2->commRank ? 1 : 0));
   } else {
-    return (r1->collOpCount < r2->collOpCount ? -1 : 1);
+    return (r1->collOpCounts[rasCommRanksCollOpCompareIdx] < r2->collOpCounts[rasCommRanksCollOpCompareIdx] ? -1 : 1);
   }
 }
 

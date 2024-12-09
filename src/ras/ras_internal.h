@@ -271,7 +271,7 @@ struct rasCollComms {
     struct rank {
       int commRank;
       int peerIdx; // Index within rasCollective->peers, *not* rasPeers.
-      uint64_t collOpCount;
+      uint64_t collOpCounts[NCCL_NUM_FUNCTIONS];
       struct {
         ncclResult_t initState:4;
         ncclResult_t asyncError:4;

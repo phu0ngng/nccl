@@ -626,7 +626,7 @@ static ncclResult_t rasCollCommsInit(char** pData, int* pNData) {
     // rasNetSendCollReq initializes coll->peers[0] to our rasNetListeningSocket.addr, so peerIdx is initially
     // always 0.  It will increase after we send this response back to the peer we got the request from.
     rank->peerIdx = 0;
-    rank->collOpCount = ncclComms[i]->collOpCount;
+    memcpy(rank->collOpCounts, ncclComms[i]->seqNumber, sizeof(rank->collOpCounts));
     rank->status.initState = ncclComms[i]->initState;
     if (ncclCommGetAsyncError(ncclComms[i], &asyncError) == ncclSuccess)
       rank->status.asyncError = asyncError;

@@ -135,30 +135,31 @@ int main(int argc, char* argv[])
   MPICHECK(MPI_Bcast((void *)&id3, sizeof(id3), MPI_BYTE, root3, MPI_COMM_WORLD));
 
   // Initializing NCCL
-  printf("Creating communicator 1\n");
   if (myRank1 >= 0)
     NCCLCHECK(ncclCommInitRank(&comm1, nRanks1, id1, myRank1));
   sleep(5);
-  if (mpiRank == 0) launchRasClient("triple_comm_idle.after_comm1.out");
+  if (mpiRank == 0) launchRasClient("triple_comm_longidle.after_comm1.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
-  printf("Creating communicator 2\n");
   if (myRank2 >= 0)
     NCCLCHECK(ncclCommInitRank(&comm2, nRanks2, id2, myRank2));
   sleep(5);
-  if (mpiRank == 0) launchRasClient("triple_comm_idle.after_comm2.out");
+  if (mpiRank == 0) launchRasClient("triple_comm_longidle.after_comm2.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
-  printf("Creating communicator 3\n");
   if (myRank3 >= 0)
     NCCLCHECK(ncclCommInitRank(&comm3, nRanks3, id3, myRank3));
   sleep(5);
-  if (mpiRank == 0) launchRasClient("triple_comm_idle.after_comm3.out");
+  if (mpiRank == 0) launchRasClient("triple_comm_longidle.after_comm3.out");
 
-  sleep(60);
-  if (mpiRank == 0) launchRasClient("triple_comm_idle.after_sleep.out");
+  MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+
+  sleep(70);
+  if (mpiRank == 0) launchRasClient("triple_comm_longidle.after_sleep.out");
+
+  MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
   // Finalizing NCCL
   if (myRank1 >= 0)
