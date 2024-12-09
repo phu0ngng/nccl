@@ -32,16 +32,6 @@ if [ "${SRCTXZ_APITESTS}" = "1" ]; then
   NCCLNAME+="-apitest"
 fi
 
-EXCLUDES="--exclude fortran"
-EXCLUDES+=" --exclude doc"
-EXCLUDES+=" --exclude plc"
-EXCLUDES+=" --exclude build"
-EXCLUDES+=" --exclude .git*"
-EXCLUDES+=" --exclude share"
-EXCLUDES+=" --exclude ompi"
-EXCLUDES+=" --exclude ext-net"
-EXCLUDES+=" --exclude pkg/srctxz"
-EXCLUDES+=" --exclude docker"
 
 INCLUDE_TEST_ENTRIES=("apitest" "googletest" "gtest.mk")
 
@@ -49,12 +39,23 @@ if [ "${SRCTXZ_APITESTS}" = "1" ]; then
   # Exclude all entries inside test folder except those in INCLUDE_TEST_ENTRIES
   for entry in $(ls $NCCLDIR/test); do
     if [[ ! " ${INCLUDE_TEST_ENTRIES[@]} " =~ " $entry " ]]; then
-      EXCLUDES+=" --exclude $NCCLDIR/test/$entry"
+      EXCLUDE_TEST+=" --exclude $NCCLDIR/test/$entry"
     fi
   done
 else
   # Exclude the entire test directory
-  EXCLUDES+=" --exclude test"
+  EXCLUDE_TEST+=" --exclude test"
 fi
 
-tar $EXCLUDES --transform "s/^$NCCLDIR/$NCCLNAME/" -Jcf $NCCLNAME.txz --owner=0 --group=0 $NCCLDIR
+tar --exclude fortran \
+    --exclude doc \
+    --exclude plc \
+    --exclude build \
+    --exclude ".git*" \
+    --exclude share \
+    --exclude ompi \
+    --exclude ext-net \
+    --exclude pkg/srctxz \
+    --exclude docker \
+    $EXCLUDE_TEST \
+    --transform "s/^$NCCLDIR/$NCCLNAME/" -Jcf $NCCLNAME.txz --owner=0 --group=0 $NCCLDIR
