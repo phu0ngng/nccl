@@ -133,6 +133,7 @@ struct ncclSharedResources {
   struct ncclStrongStream deviceStream, hostStream;
   int noncapturedRefs; // number of non-captured hostStreamPlanCallback on the stream
   int persistentRefs;
+  cudaEvent_t launchEvent, scratchEvent;
 
   /* proxy related shared res */
   struct ncclProxyState* proxyState;
@@ -409,6 +410,7 @@ struct ncclComm {
   // List of destructors to run when comm is destructed
   struct ncclDestructor* destructorHead;
 
+  struct ncclCudaContext* context;
   struct ncclSharedResources* sharedRes;
   /* map to top parent ranks. */
   int* topParentRanks;

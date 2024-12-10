@@ -154,18 +154,28 @@ Related links:
 Using multiple NCCL communicators concurrently
 ----------------------------------------------
 
-Using multiple NCCL communicators requires careful synchronization, or can lead to deadlocks.
+Prior to NCCL 2.26, using multiple NCCL communicators per-device required serializing the order of all communication operations (via CUDA stream dependencies or synchronization) into a consistent total global order otherwise deadlocks could ensue. As of 2.26, NCCL implicitly creates this order dynamically by following the order operations are issued from the host. Thus to remain deadlock free, users must ensure the order of host-side launches matches for all devices. This is most easily accomplished by using a determinstic order issued from a single host thread per-device. For example:
 
-NCCL kernels are blocking (waiting for data to arrive), and any CUDA operation can cause a device synchronization,
-meaning it will wait for all NCCL kernels to complete. This can quickly lead to deadlocks since NCCL operations perform
-CUDA calls themselves.
+.. code:: C
+  ncclAllReduce(..., comm1, stream1); // all ranks do this first
+  ncclAllReduce(..., comm2, stream2); // and this second
 
-Operations on different communicators should therefore be used at different epochs with a locking mechanism, and
-applications should ensure operations are submitted in the same order across ranks.
+When NCCL is captured in a CUDA graph the same rules apply to both capture time and launch time. At capture time this means NCCL calls in the same graph must be captured in the same order:
 
-Launching multiple communication operations (on different streams) might work provided they can fit within the GPU, but
-could break at any time if NCCL were to use more CUDA blocks per operation, or if some calls used inside NCCL
-collectives were to perform a device synchronization (e.g. allocate some CUDA memory dynamically).
+.. code:: C
+  // both stream1 and stream2 are capturing in the same graph
+  ncclAllReduce(..., comm1, stream1); // all ranks do this first
+  ncclAllReduce(..., comm2, stream2); // and this second
+
+And at graph launch time different graphs must be launched in a globally consistent order:
+
+.. code:: C
+  cudaGraphLaunch(graph1, stream1) // all ranks do this first
+  cudaGraphLaunch(graph2, stream2) // and this second
+
+When running on CUDA 12.3 or later, the implicit ordering of the operations is created using CUDA launch completion events which permits parallel execution of the two communicator's kernels.
+
+The environment variable :ref:`NCCL_LAUNCH_ORDER_IMPLICIT` controls this behavior.
 
 Finalizing a communicator
 -------------------------

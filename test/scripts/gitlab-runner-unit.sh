@@ -85,6 +85,13 @@ echo "=============================== LOG ALGO AG TESTS - $(date +\"%T\") ======
 time $SRUN ./log_algo ag 2 513
 [ $? -ne 0 ] && let failure_count=$failer_count+1 && failure_names+=("LOG ALGO AG TESTS")
 echo "=============================== LOG ALGO AG TESTS - $(date +\"%T\") ======================"
+echo -e "\n\n"
+
+echo "=============================== OVERLAP TESTS - $(date +\"%T\") ==========================="
+time $SRUN ./overlap_test
+[ $? -ne 0 ] && let failure_count=$failer_count+1 && failure_names+=("OVERLAP TESTS")
+echo "=============================== OVERLAP TESTS - $(date +\"%T\") ======================"
+echo -e "\n\n"
 
 for str in "${failure_names[@]}"
 do

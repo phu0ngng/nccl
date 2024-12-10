@@ -1297,3 +1297,25 @@ to high-overhead debugging/tracing/etc., which makes its execution less predicta
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 1; define and set to larger values to increase the timeouts.
+
+
+NCCL_LAUNCH_ORDER_IMPLICIT
+--------------------------
+(since 2.26)
+
+Implicitly order NCCL operations from different communicators on the same device using the host program order. This ensures the operations will not deadlock. When the CUDA runtime and driver are 12.3+, overlapped execution is permitted. On older CUDA versions the operations will be serialized.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1 (enabled); set to 0 to disable.
+
+
+NCCL_LAUNCH_RACE_FATAL
+--------------------------
+(since 2.26)
+
+Attempt to catch host threads racing to launch to the same device and if so return a fatal error. Such a race would violate the determinacy of the program order relied upon by NCCL_LAUNCH_ORDER_IMPLICIT.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1 (enabled); set to 0 to disable.

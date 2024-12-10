@@ -1175,22 +1175,23 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       struct uploadWork_cleanup_t* cleanup = nullptr;
       cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
       void* fifoBufDev = nullptr;
+      cudaStream_t deviceStream;
+      
       CUDACHECKGOTO(cudaThreadExchangeStreamCaptureMode(&mode), result, fail);
 
-      // Acquire deviceStream to gain access to deviceStream.cudaStream. Since the
-      // user's graph will be launched later, and it also acquires the deviceStream,
-      // it will observe this upload.
-      NCCLCHECKGOTO(ncclStrongStreamAcquireUncaptured(&comm->sharedRes->deviceStream), result, fail);
+      // Acquire deviceStream. Since the user's graph will be launched later and it also
+      // acquires the deviceStream, it will observe this upload.
+      NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), result, fail);
 
-      CUDACHECKGOTO(cudaMallocAsync(&fifoBufDev, workBytes, comm->memPool, comm->sharedRes->deviceStream.cudaStream), result, fail);
+      CUDACHECKGOTO(cudaMallocAsync(&fifoBufDev, workBytes, comm->memPool, deviceStream), result, fail);
       plan->workBufPersistent = fifoBufDev;
       plan->kernelArgs->workBuf = fifoBufDev;
 
       // coverity[uninit_use_in_call:FALSE] => fifoBufHost is never NULL
-      CUDACHECKGOTO(cudaMemcpyAsync(fifoBufDev, fifoBufHost, workBytes, cudaMemcpyDefault, comm->sharedRes->deviceStream.cudaStream), result, fail);
+      CUDACHECKGOTO(cudaMemcpyAsync(fifoBufDev, fifoBufHost, workBytes, cudaMemcpyDefault, deviceStream), result, fail);
       cudaEvent_t memcpyDone;
       CUDACHECKGOTO(cudaEventCreateWithFlags(&memcpyDone, cudaEventDisableTiming), result, fail);
-      CUDACHECKGOTO(cudaEventRecord(memcpyDone, comm->sharedRes->deviceStream.cudaStream), result, fail);
+      CUDACHECKGOTO(cudaEventRecord(memcpyDone, deviceStream), result, fail);
 
       NCCLCHECKGOTO(ncclCalloc(&cleanup, 1), result, fail);
       cleanup->base.fn = uploadWork_cleanup_fn;
@@ -1198,7 +1199,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       cleanup->hostBuf = fifoBufHost;
       ncclIntruQueueEnqueue(&comm->eventCallbackQueue, (struct ncclCommEventCallback *)cleanup);
 
-      NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream), result, fail);
+      NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false), result, fail);
       NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm), result, fail);
 
     finish_scope:
@@ -1336,6 +1337,28 @@ static void persistentDestructor(void* plans_) {
   }
 }
 
+NCCL_PARAM(LaunchOrderImplicit, "LAUNCH_ORDER_IMPLICIT", 1);
+
+namespace {
+  enum ncclImplicitOrder {
+    ncclImplicitOrderNone,
+    ncclImplicitOrderSerial,
+    ncclImplicitOrderLaunch
+  };
+}
+
+static ncclResult_t getImplicitOrder(enum ncclImplicitOrder *mode, bool capturing, int driver=-1) {
+  if (ncclParamLaunchOrderImplicit()) {
+    // Due to an unresolved bug in CUDA ncclImplicitOrderLaunch is not supported in graphs
+    if (capturing) { *mode = ncclImplicitOrderSerial; return ncclSuccess; }
+    if (driver < 0) { NCCLCHECK(ncclCudaDriverVersion(&driver)); }
+    *mode = 12030 <= std::min<int>(CUDART_VERSION, driver) ? ncclImplicitOrderLaunch : ncclImplicitOrderSerial;
+    return ncclSuccess;
+  }
+  *mode = ncclImplicitOrderNone;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   ncclResult_t result = ncclSuccess;
   struct ncclKernelPlanner* planner = &comm->planner;
@@ -1383,49 +1406,51 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
     if (nPlans == 0) return ncclSuccess;
 
-    // Semantically we want these dependencies for the kernels launched:
-    //   1. Launch host task on hostStream.
-    //   2. Launch kernel, depends on all of {deviceStream, hostStream, userStream[i]...}
-    //   3. {deviceStream, userStream[i]...} depend on kernel.
-    // We achieve this by:
-    //   1. userStream[0] waits on deviceStream
-    //   2. deviceStream waits on each of userStream[1...]
-    //   3. host task launch on hostStream
-    //   4. userStream[0] waits on hostStream
-    //   5. kernel launch on userStream[0]
-    //   6. deviceStream waits on userStream[0]
-    //   7. userStream[1...] each waits on deviceStream
-    // The two-level fan-in fan-out is because ncclStrongStreamWaitStream() requires
-    // at least one of the two streams to be strong-stream.
     cudaStream_t launchStream = planner->streams->stream;
-    NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->sharedRes->deviceStream), result, failure);
+    cudaStream_t deviceStream, launchOrder;
+    NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), result, failure);
 
-    // Create dependency for device stream on user streams. First from extra user
-    // streams to deviceStream. Then deviceStream to first user stream.
+    // userStream[0] waits on each userStream[i]...
     for (struct ncclCudaStreamList* l=planner->streams->next; l != nullptr; l = l->next) {
-      NCCLCHECKGOTO(ncclStrongStreamWaitStream(planner->capturingGraph, &comm->sharedRes->deviceStream, l->stream), result, failure);
+      CUDACHECKGOTO(cudaEventRecord(comm->sharedRes->scratchEvent, l->stream), result, failure);
+      CUDACHECKGOTO(cudaStreamWaitEvent(launchStream, comm->sharedRes->scratchEvent, 0), result, failure);
     }
-    NCCLCHECKGOTO(ncclStrongStreamWaitStream(planner->capturingGraph, launchStream, &comm->sharedRes->deviceStream), result, failure);
+    // userStream[0] waits on deviceStream
+    NCCLCHECKGOTO(ncclStreamWaitStream(launchStream, deviceStream, comm->sharedRes->scratchEvent), result, failure);
+
+    bool capturing = ncclCudaGraphValid(planner->capturingGraph);
+    enum ncclImplicitOrder implicitOrder;
+    NCCLCHECKGOTO(getImplicitOrder(&implicitOrder, capturing), result, failure);
+
+    if (implicitOrder != ncclImplicitOrderNone) {
+      // userStream[0] waits on per-device (context) launchOrder. Concurrent strong stream access is
+      // required if this is a graph capture, non-captured cannot be concurrent because that would violate
+      // deterministic program order of launches.
+      bool concurrent = capturing;
+      NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->context->launchOrder, concurrent, &launchOrder), result, failure);
+      NCCLCHECKGOTO(ncclStreamWaitStream(launchStream, launchOrder, comm->sharedRes->scratchEvent), result, failure);
+    }
 
     if (persistent || comm->sharedRes->persistentRefs != 0 || ncclCudaLaunchBlocking || __atomic_load_n(&comm->sharedRes->noncapturedRefs, __ATOMIC_ACQUIRE)) {
       // We have to launch host tasks to push proxy args. We are careful to only
       // do this if necessary since host tasks impose a high performance cost in CUDA.
       bool acquired = false;
+      cudaStream_t hostStream;
       for (struct ncclKernelPlan* plan=planHead; plan != nullptr; plan = plan->next) {
         if (plan->hasProxyOps) {
           if (!acquired) {
             acquired = true;
-            NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->sharedRes->hostStream), result, failure);
+            NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->sharedRes->hostStream, /*concurrent=*/false, &hostStream), result, failure);
           }
           if (!persistent) ncclAtomicRefCountIncrement(&comm->sharedRes->noncapturedRefs);
           plan->isHostCbEnq = true;
-          NCCLCHECKGOTO(ncclStrongStreamLaunchHost(planner->capturingGraph, &comm->sharedRes->hostStream, hostStreamPlanCallback, plan), result, failure);
+          CUDACHECKGOTO(cudaLaunchHostFunc(hostStream, hostStreamPlanCallback, plan), result, failure);
         }
       }
       if (acquired) {
         // Make to-be-launched kernels dependent on just-launched host stream tasks.
-        NCCLCHECKGOTO(ncclStrongStreamWaitStream(planner->capturingGraph, launchStream, &comm->sharedRes->hostStream), result, failure);
-        NCCLCHECKGOTO(ncclStrongStreamRelease(planner->capturingGraph, &comm->sharedRes->hostStream), result, failure);
+        NCCLCHECKGOTO(ncclStreamWaitStream(launchStream, hostStream, comm->sharedRes->scratchEvent), result, failure);
+        NCCLCHECKGOTO(ncclStrongStreamRelease(planner->capturingGraph, &comm->sharedRes->hostStream, /*concurrent=*/false), result, failure);
       }
     }
 
@@ -1435,7 +1460,6 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       NCCLCHECKGOTO(ncclCudaGraphAddDestructor(planner->capturingGraph, persistentDestructor, (void*)planHead), result, failure);
     }
   }
-
 failure:
   return result;
 }
@@ -1454,6 +1478,7 @@ NCCL_PARAM(MemSyncDomain, "MEM_SYNC_DOMAIN", cudaLaunchMemSyncDomainRemote);
 #endif
 
 ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan) {
+  ncclResult_t ret = ncclSuccess;
   struct ncclKernelPlanner* planner = &comm->planner;
   int nChannels = countOneBits(plan->channelMask);
   void* sym = plan->kernelFn;
@@ -1466,19 +1491,20 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     CU_LAUNCH_PARAM_BUFFER_SIZE, &plan->kernelArgsSize,
     CU_LAUNCH_PARAM_END
   };
-
-  CUfunction fn;
-  CUDACHECK(cudaGetFuncBySymbol(&fn, sym));
-
-  #if CUDART_VERSION >= 11080
+  
   int driverVersion;
-  NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
-  if (driverVersion >= 11080) {
+  NCCLCHECKGOTO(ncclCudaDriverVersion(&driverVersion), ret, do_return);
+  
+  CUfunction fn;
+  CUDACHECKGOTO(cudaGetFuncBySymbol(&fn, sym), ret, do_return);
+
+  if (CUDART_VERSION >= 11080 && driverVersion >= 11080) {
+  #if CUDART_VERSION >= 11080
     int compCap = comm->compCap;
     unsigned int clusterSize = (compCap >= 90) ? comm->config.cgaClusterSize : 0;
 
     CUlaunchConfig launchConfig = {0};
-    CUlaunchAttribute launchAttrs[3];
+    CUlaunchAttribute launchAttrs[4] = {};
     int attrs = 0;
     /* Cooperative Group Array (CGA)
      * On sm90 and later we have an extra level of hierarchy where we
@@ -1505,6 +1531,17 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
       launchAttrs[attrs++].value.memSyncDomain = (CUlaunchMemSyncDomain) ncclParamMemSyncDomain();
     }
     #endif
+    #if CUDART_VERSION >= 12030
+    bool capturing = ncclCudaGraphValid(planner->capturingGraph);
+    enum ncclImplicitOrder implicitOrder;
+    NCCLCHECKGOTO(getImplicitOrder(&implicitOrder, capturing, driverVersion), ret, do_return);
+    if (implicitOrder == ncclImplicitOrderLaunch) {
+      launchAttrs[attrs].id = CU_LAUNCH_ATTRIBUTE_LAUNCH_COMPLETION_EVENT;
+      launchAttrs[attrs].value.launchCompletionEvent.event = comm->sharedRes->launchEvent;
+      launchAttrs[attrs].value.launchCompletionEvent.flags = 0;
+      attrs++;
+    }
+    #endif
     launchConfig.gridDimX = grid.x;
     launchConfig.gridDimY = grid.y;
     launchConfig.gridDimZ = grid.z;
@@ -1516,15 +1553,15 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     launchConfig.numAttrs = attrs;
     launchConfig.hStream = launchStream;
 
-    //CUDACHECK(cudaLaunchKernelExC(&launchConfig, fnAddr, args));
-    CUCHECK(cuLaunchKernelEx(&launchConfig, fn, nullptr, extra));
-    return ncclSuccess;
-  }
+    CUCHECKGOTO(cuLaunchKernelEx(&launchConfig, fn, nullptr, extra), ret, do_return);
   #endif
-  // Standard kernel launch
-  CUCHECK(cuLaunchKernel(fn, grid.x, grid.y, grid.z, block.x, block.y, block.z, smem, launchStream, nullptr, extra));
-  //CUDACHECK(cudaLaunchKernel(fnAddr, grid, block, args, smem, launchStream));
-  return ncclSuccess;
+  } else {
+    // Standard kernel launch
+    CUCHECKGOTO(cuLaunchKernel(fn, grid.x, grid.y, grid.z, block.x, block.y, block.z, smem, launchStream, nullptr, extra), ret, do_return);
+  }
+
+do_return:
+  return ret;
 }
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
@@ -1544,34 +1581,39 @@ ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKern
 }
 
 ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
-  ncclResult_t result = ncclSuccess;
   struct ncclKernelPlanner* planner = &comm->planner;
-
   if (!ncclIntruQueueEmpty(&planner->planQueue)) {
     // Reset queue to empty without destroying plans since those will be sent
     // back to us for reclaiming via callbackQueue.
     ncclIntruQueueConstruct(&planner->planQueue);
+
     cudaStream_t launchStream = planner->streams->stream; // First user stream gets launch
-    // Create dependency for deviceStream on launchStream. We know that deviceStream
-    // hasn't been modified since launchStream waited on it (in ncclLaunchPrepare),
-    // so we can say that launchStream subsumes it.
-    NCCLCHECKGOTO(ncclStrongStreamWaitStream(planner->capturingGraph, &comm->sharedRes->deviceStream, launchStream, /*b_subsumes_a=*/true), result, resume1);
-  resume1:
-    // Create dependency for other user streams (skip launch stream) on deviceStream.
-    // Again, the user streams haven't been touched since deviceStream waited on them
-    // so we can say they are subsumed by deviceStream.
-    struct ncclCudaStreamList* sl = planner->streams->next;
-    planner->streams = nullptr; // Reset comm->planner.streams to empty.
-    while (sl != nullptr) {
-      NCCLCHECKGOTO(ncclStrongStreamWaitStream(planner->capturingGraph, sl->stream, &comm->sharedRes->deviceStream, /*b_subsumes_a=*/true), result, resume2);
-    resume2:
-      sl = sl->next;
+    cudaStream_t deviceStream, launchOrder;
+    CUDACHECK(cudaEventRecord(comm->sharedRes->scratchEvent, launchStream));
+    // deviceStream waits on userStream[0]
+    NCCLCHECK(ncclStrongStreamAcquiredWorkStream(planner->capturingGraph, &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream));
+    CUDACHECK(cudaStreamWaitEvent(deviceStream, comm->sharedRes->scratchEvent, 0));
+    // Each userStream[i] waits on userStream[0]
+    for (struct ncclCudaStreamList* l=planner->streams->next; l != nullptr; l = l->next) {
+      CUDACHECK(cudaStreamWaitEvent(l->stream, comm->sharedRes->scratchEvent, 0));
     }
-    // Release device stream as acquired in ncclLaunchPrepare()
-    NCCLCHECKGOTO(ncclStrongStreamRelease(planner->capturingGraph, &comm->sharedRes->deviceStream), result, resume3);
-  resume3:;
+    bool capturing = ncclCudaGraphValid(planner->capturingGraph);
+    enum ncclImplicitOrder implicitOrder;
+    NCCLCHECK(getImplicitOrder(&implicitOrder, capturing));
+    if (implicitOrder != ncclImplicitOrderNone) {
+      // As in ncclLaunchPrepare, strong stream can be non-concurrent when non-captured.
+      bool concurrent = capturing;
+      // Incorporate launch event into per-device (context) launch order.
+      NCCLCHECK(ncclStrongStreamAcquiredWorkStream(planner->capturingGraph, &comm->context->launchOrder, concurrent, &launchOrder));
+      // If we don't have launch events (requires CUDA 12.3) then just use completion event (serialize execution).
+      CUDACHECK(cudaStreamWaitEvent(launchOrder, implicitOrder == ncclImplicitOrderLaunch ? comm->sharedRes->launchEvent : comm->sharedRes->scratchEvent));
+      // Release launchOrder as acquired in ncclLaunchPrepare()
+      NCCLCHECK(ncclStrongStreamRelease(planner->capturingGraph, &comm->context->launchOrder, concurrent));
+    }
+    // Release deviceStream as acquired in ncclLaunchPrepare()
+    NCCLCHECK(ncclStrongStreamRelease(planner->capturingGraph, &comm->sharedRes->deviceStream, /*concurrent=*/false));
   }
-  return result;
+  return ncclSuccess;
 }
 
 /*****************************************************************************/
