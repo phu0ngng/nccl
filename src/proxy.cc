@@ -723,10 +723,10 @@ static ncclResult_t progressOps(struct ncclProxyState* proxyState, struct ncclPr
   while (op) {
     if (op->state == ncclProxyOpNone) return ncclInternalError;
     TIME_START(0); TIME_START(1);
-    NCCLCHECK(op->progress(proxyState, op));
+    ncclResult_t ret = op->progress(proxyState, op);
     if (op->idle) { TIME_STOP(1); TIME_CANCEL(0); } else { TIME_CANCEL(1); TIME_STOP(0); }
     *idle &= op->idle;
-    if (op->state == ncclProxyOpNone) {
+    if (op->state == ncclProxyOpNone || ret != ncclSuccess) {
       TIME_START(2);
       NCCLCHECK(removeOp(state, &op, &prevOp));
       TIME_STOP(2);
@@ -930,7 +930,7 @@ void* ncclProxyProgress(void *proxyState_) {
       }
     }
     lastIdle = idle;
-  } while (state->stop == 0 || (state->stop == 1 && state->active));
+  } while ((state->stop == 0 || (state->stop == 1 && state->active)) && __atomic_load_n(proxyState->abortFlag, __ATOMIC_ACQUIRE) == 0);
   return NULL;
 }
 
