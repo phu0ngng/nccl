@@ -18,6 +18,7 @@
 #include "argcheck.h"
 #include "tuner.h"
 #include "ras.h"
+#include "mnnvl.h"
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -645,86 +646,6 @@ NCCL_PARAM(AllocP2pNetLLBuffers, "ALLOC_P2P_NET_LL_BUFFERS", 0);
 // MNNVL: Flag to indicate whether to enable Multi-Node NVLink
 NCCL_PARAM(MNNVLEnable, "MNNVL_ENABLE", 2);
 
-#if CUDART_VERSION >= 11030
-
-#include <cuda.h>
-#include "cudawrap.h"
-
-// Determine if MNNVL support is available
-static ncclResult_t checkMNNVL(struct ncclComm* comm) {
-  // MNNVL requires cuMem to be enabled
-  if (!ncclCuMemEnable()) return ncclSystemError;
-
-  // MNNVL also requires FABRIC handle support
-  int cudaDev;
-  int flag = 0;
-  CUdevice currentDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  CUCHECK(cuDeviceGet(&currentDev, cudaDev));
-  // Ignore error if CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED is not supported
-  (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));
-  if (!flag) return ncclSystemError;
-  // Check that all ranks have initialized the fabric fully
-  for (int i = 0; i < comm->nRanks; i++) {
-    if (comm->peerInfo[i].fabricInfo.state != NVML_GPU_FABRIC_STATE_COMPLETED) return ncclSystemError;
-  }
-
-  // Determine our MNNVL domain/clique
-  NCCLCHECK(ncclCalloc(&comm->clique.ranks, comm->nRanks));
-  comm->clique.id = comm->peerInfo[comm->rank].fabricInfo.cliqueId;
-  for (int i = 0; i < comm->nRanks; i++) {
-    nvmlGpuFabricInfoV_t *fabricInfo1 = &comm->peerInfo[comm->rank].fabricInfo;
-    nvmlGpuFabricInfoV_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
-    // Check if the cluster UUID and cliqueId match
-    // A zero UUID means we don't have MNNVL fabric info - disable MNNVL
-    if ((((long *)&fabricInfo2->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) return ncclSystemError;
-    if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
-        (fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
-      if (i == comm->rank) {
-        comm->cliqueRank = comm->clique.size;
-      }
-      comm->clique.ranks[comm->clique.size++] = i;
-    }
-  }
-
-  // No MNNVL clique found
-  if (comm->clique.size == 0) return ncclSystemError;
-
-#if CUDART_VERSION >= 11030
-  // Check that FABRIC handles can be exported & imported by IMEX
-  {
-    void *ptr = NULL;
-    CUmemGenericAllocationHandle handle;
-    ncclCuDesc cuDesc;
-    CUresult err;
-
-    // Allocate FABRIC handle compatible memory
-    ncclResult_t ret = ncclCuMemAlloc(&ptr, &handle, CU_MEM_HANDLE_TYPE_FABRIC, CUDA_IPC_MIN);
-    if (ret != ncclSuccess) return ret;
-    err = CUPFN(cuMemExportToShareableHandle(&cuDesc, handle, CU_MEM_HANDLE_TYPE_FABRIC, 0));
-    if (err != CUDA_SUCCESS ||
-        (err = CUPFN(cuMemImportFromShareableHandle(&handle, &cuDesc, CU_MEM_HANDLE_TYPE_FABRIC))) != CUDA_SUCCESS) {
-      const char *errStr;
-      (void) pfn_cuGetErrorString(err, &errStr);
-      NCCLCHECK(ncclCuMemFree(ptr));
-      INFO(NCCL_INIT, "MNNVL disabled as IMEX Import is non-functional err %d '%s'", err, errStr);
-      return ncclSystemError;
-    }
-    NCCLCHECK(ncclCuMemFree(ptr));
-  }
-#else
-  return ncclSystemError;
-#endif
-
-  return ncclSuccess;
-}
-
-#else
-static ncclResult_t checkMNNVL(struct ncclComm* comm) {
-  return ncclSuccess;
-}
-#endif
-
 #define TIMER_INIT_TOTAL 0
 #define TIMER_INIT_KERNELS 1
 #define TIMER_INIT_BOOTSTRAP 2
@@ -806,21 +727,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   // Check for MNNVL support
   if ((nNodes > 1 && ncclParamMNNVLEnable() != 0) || ncclParamMNNVLEnable() == 1) {
-    if (checkMNNVL(comm) != ncclSuccess && comm->clique.size > 1) {
-      // Return an error if this is a MNNVL capable system but it's not working
-      WARN("MNNVL (cliqueSize %d) is available but not supported on this system. Check the IMEX configuration.",
-           comm->clique.size);
-      ret = ncclSystemError;
-      goto fail;
-    }
-
-    if (comm->clique.size > 1) {
-      // Force the CUMEM handle type to be FABRIC for MNNVL
-      ncclCuMemHandleType = CU_MEM_HANDLE_TYPE_FABRIC;
-      comm->MNNVL = 1;
-      INFO(NCCL_INIT, "MNNVL %d cliqueId %x cliqueSize %d cliqueRank %d",
-           comm->MNNVL, comm->clique.id, comm->clique.size, comm->cliqueRank);
-    }
+    NCCLCHECKGOTO(ncclMnnvlCheck(comm), ret, fail);
   }
 
   do {
