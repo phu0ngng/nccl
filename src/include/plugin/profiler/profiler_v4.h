@@ -4,10 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef PROFILER_V3_H_
-#define PROFILER_V3_H_
-
-#include <stdint.h>
+#ifndef PROFILER_V4_H_
+#define PROFILER_V4_H_
 
 typedef struct {
   uint8_t type;                 // event type descriptor: ncclProfileColl, ...
@@ -46,7 +44,6 @@ typedef struct {
       int peer;                 // remote rank for send/recv
       int nSteps;               // number of steps for this proxy operation
       int chunkSize;            // amount of data transferred by this proxy operation
-      int isSend;
     } proxyOp;
 
     struct {
@@ -62,18 +59,21 @@ typedef struct {
       void* data;
     } netPlugin;
   };
-} ncclProfilerEventDescr_v3_t;
+} ncclProfilerEventDescr_v4_t;
 
 typedef union {
   struct {
-    size_t transSize;
-    int steps;
+    int isSend;
   } proxyOp;
+
+  struct {
+    size_t transSize;
+  } proxyStep;
 
   struct {
     int appendedProxyOps;
   } proxyCtrl;
-} ncclProfilerEventStateArgs_v3_t;
+} ncclProfilerEventStateArgs_v4_t;
 
 typedef struct {
   const char* name;
@@ -91,7 +91,7 @@ typedef struct {
   //  - eDescr : pointer to ncclProfilerEventDescr_t object
   // Output
   //  - eHandle: return event handle for supplied event descriptor object
-  ncclResult_t (*startEvent)(void* context, void** eHandle, ncclProfilerEventDescr_v3_t* eDescr);
+  ncclResult_t (*startEvent)(void* context, void** eHandle, ncclProfilerEventDescr_v4_t* eDescr);
 
   // stopEvent - stop/finalize an event inside and event set
   // Input
@@ -103,12 +103,12 @@ typedef struct {
   //  - eHandle   : handle to event object created through startEvent
   //  - eStateArgs: optional argument used to capture event attribute updates associated with the state transition
   //  - eState    : event state transition
-  ncclResult_t (*recordEventState)(void* eHandle, ncclProfilerEventState_v3_t eState, ncclProfilerEventStateArgs_v3_t* eStateArgs);
+  ncclResult_t (*recordEventState)(void* eHandle, ncclProfilerEventState_v4_t eState, ncclProfilerEventStateArgs_v4_t* eStateArgs);
 
   // finalize - finalize the profiler plugin
   // Input
   //  - context: opaque profiler context object
   ncclResult_t (*finalize)(void* context);
-} ncclProfiler_v3_t;
+} ncclProfiler_v4_t;
 
 #endif

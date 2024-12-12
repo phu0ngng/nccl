@@ -20,7 +20,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
 }
 
 static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_t* eStateArgs) {
-  return ncclProfiler_v2->recordEventState(eHandle, eState, (ncclProfilerEventStateArgs_v2_t *)eStateArgs);
+  return ncclProfiler_v2->recordEventState(eHandle, (ncclProfilerEventState_v2_t)eState, (ncclProfilerEventStateArgs_v2_t*)eStateArgs);
 }
 
 static ncclResult_t ncclProfiler_init(void** context, int* eActivationMask) {

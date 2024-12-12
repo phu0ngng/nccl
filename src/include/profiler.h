@@ -43,8 +43,7 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan);
 ncclResult_t ncclProfilerStopTaskEvents(struct ncclKernelPlan* plan);
 
 // Proxy Op Start/Stop Event Wrappers
-ncclResult_t ncclProfilerStartSendProxyOpEvent(int sub, struct ncclProxyArgs* args);
-ncclResult_t ncclProfilerStartRecvProxyOpEvent(int sub, struct ncclProxyArgs* args);
+ncclResult_t ncclProfilerStartProxyOpEvent(int sub, struct ncclProxyArgs* args);
 ncclResult_t ncclProfilerStopProxyOpEvent(int sub, struct ncclProxyArgs* args);
 
 // Proxy Step Start/Stop Event Wrappers
@@ -61,7 +60,7 @@ ncclResult_t ncclProfilerStartKernelChEvent(struct ncclProxyArgs* args, int s);
 ncclResult_t ncclProfilerStopKernelChEvent(struct ncclProxyArgs* args, int s);
 
 // Record Event Wrappers
-ncclResult_t ncclProfilerRecordProxyOpEventState(int sub, struct ncclProxyArgs* args, int steps, size_t transSize, ncclProfilerEventState_t eState);
+ncclResult_t ncclProfilerRecordProxyOpEventState(int sub, struct ncclProxyArgs* args, int isSend, ncclProfilerEventState_t eState);
 ncclResult_t ncclProfilerRecordProxyStepEventState(int sub, struct ncclProxyArgs* args, int stepId, ncclProfilerEventState_t eState);
 ncclResult_t ncclProfilerRecordProxyCtrlEventState(void*eHandle, int appended, ncclProfilerEventState_t eState);
 
