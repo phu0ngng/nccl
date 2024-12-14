@@ -18,6 +18,7 @@
 #include "argcheck.h"
 #include "tuner.h"
 #include "ras.h"
+#include "mnnvl.h"
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -214,6 +215,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   free(comm->rankToNode);
   free(comm->rankToLocalRank);
   free(comm->collNetHeads);
+  free(comm->clique.ranks);
 
   if (comm->bootstrap)
     NCCLCHECK(bootstrapClose(comm->bootstrap));
@@ -531,6 +533,7 @@ static void showVersion() {
   }
 }
 
+NCCL_PARAM(MNNVLUUID, "MNNVL_UUID", -1);
 NCCL_PARAM(MNNVLCliqueId, "MNNVL_CLIQUE_ID", -1);
 
 static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, uint64_t commHash) {
@@ -565,12 +568,16 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     info->fabricInfo.state = NVML_GPU_FABRIC_STATE_NOT_SUPPORTED;
     (void) ncclNvmlDeviceGetGpuFabricInfoV(nvmlDev, &info->fabricInfo);
     if (info->fabricInfo.state != NVML_GPU_FABRIC_STATE_NOT_SUPPORTED) {
+      if (ncclParamMNNVLUUID() != -1) {
+        ((long*)&info->fabricInfo.clusterUuid)[0] = ncclParamMNNVLUUID();
+        ((long*)&info->fabricInfo.clusterUuid)[1] = ncclParamMNNVLUUID();
+      }
+      if (ncclParamMNNVLCliqueId() != -1) info->fabricInfo.cliqueId = ncclParamMNNVLCliqueId();
       INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx cliqueId 0x%x state %d healthMask 0x%x",
            info->busId,
            ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1],
            info->fabricInfo.cliqueId, info->fabricInfo.state, info->fabricInfo.healthMask);
     }
-    if (ncclParamMNNVLCliqueId() != -1) info->fabricInfo.cliqueId = ncclParamMNNVLCliqueId();
   }
 
   return ncclSuccess;
@@ -638,71 +645,6 @@ NCCL_PARAM(AllocP2pNetLLBuffers, "ALLOC_P2P_NET_LL_BUFFERS", 0);
 
 // MNNVL: Flag to indicate whether to enable Multi-Node NVLink
 NCCL_PARAM(MNNVLEnable, "MNNVL_ENABLE", 2);
-
-#if CUDART_VERSION >= 11030
-
-#include <cuda.h>
-#include "cudawrap.h"
-
-// Determine if MNNVL support is available
-static int checkMNNVL(struct ncclComm* comm) {
-  ncclResult_t ret = ncclSuccess;
-
-  // MNNVL requires cuMem to be enabled
-  if (!ncclCuMemEnable()) return 0;
-
-  // MNNVL also requires FABRIC handle support
-  int cudaDev;
-  int flag = 0;
-  CUdevice currentDev;
-  CUDACHECK(cudaGetDevice(&cudaDev));
-  CUCHECK(cuDeviceGet(&currentDev, cudaDev));
-  // Ignore error if CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED is not supported
-  (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));;
-  if (!flag) return 0;
-  // Check that all ranks have initialized the fabric fully
-  for (int i = 0; i < comm->nRanks; i++) {
-    if (comm->peerInfo[i].fabricInfo.state != NVML_GPU_FABRIC_STATE_COMPLETED) return 0;
-  }
-
-  // Determine our MNNVL domain/clique
-  NCCLCHECKGOTO(ncclCalloc(&comm->clique.ranks, comm->nRanks), ret, fail);
-  comm->clique.id = comm->peerInfo[comm->rank].fabricInfo.cliqueId;
-  for (int i = 0; i < comm->nRanks; i++) {
-    nvmlGpuFabricInfoV_t *fabricInfo1 = &comm->peerInfo[comm->rank].fabricInfo;
-    nvmlGpuFabricInfoV_t *fabricInfo2 = &comm->peerInfo[i].fabricInfo;
-    // Check if the cluster UUID and cliqueId match
-    // A zero UUID means we don't have MNNVL fabric info - disable MNNVL
-    if ((((long *)&fabricInfo2->clusterUuid)[0]|((long *)fabricInfo2->clusterUuid)[1]) == 0) goto fail;
-    if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
-        (fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
-      if (i == comm->rank) {
-        comm->cliqueRank = comm->clique.size;
-      }
-      comm->clique.ranks[comm->clique.size++] = i;
-    }
-  }
-  // Determine whether to enable MNNVL or not
-  comm->MNNVL = ncclParamMNNVLEnable() == 2 ? comm->clique.size > 1 : ncclParamMNNVLEnable();
-  INFO(NCCL_INIT, "MNNVL %d cliqueId %x cliqueSize %d cliqueRank %d ", comm->MNNVL, comm->clique.id, comm->clique.size, comm->cliqueRank);
-
-  if (comm->MNNVL) {
-    // Force the CUMEM handle type to be FABRIC for MNNVL
-    ncclCuMemHandleType = CU_MEM_HANDLE_TYPE_FABRIC;
-  }
-
-  return comm->MNNVL;
-
-fail:
-  if (comm->clique.ranks) free(comm->clique.ranks);
-  return 0;
-}
-
-#else
-static int checkMNNVL(struct ncclComm* comm) {
-  return 0;
-}
-#endif
 
 #define TIMER_INIT_TOTAL 0
 #define TIMER_INIT_KERNELS 1
@@ -783,12 +725,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // AllGather1 - end
   timers[TIMER_INIT_ALLGATHER] = clockNano() - timers[TIMER_INIT_ALLGATHER];
 
-  // MNNVL support
-  if (nNodes > 1 && !checkMNNVL(comm) && ncclParamMNNVLEnable() == 1) {
-    // Return an error if the user specifically requested MNNVL support
-    WARN("MNNVL is not supported on this system");
-    ret = ncclSystemError;
-    goto fail;
+  // Check for MNNVL support
+  if ((nNodes > 1 && ncclParamMNNVLEnable() != 0) || ncclParamMNNVLEnable() == 1) {
+    NCCLCHECKGOTO(ncclMnnvlCheck(comm), ret, fail);
   }
 
   do {
@@ -1080,7 +1019,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       comm->collNetSupport = 0;
     }
   }
-  comm->isAllNvlink = ncclTopoPathAllNVLink(comm->topo);
+  NCCLCHECK(ncclTopoPathAllNVLink(comm->topo, &comm->isAllNvlink));
   comm->isOneRPN = (comm->maxLocalRanks == 1);
 
   NCCLCHECKGOTO(ncclCalloc(&rings, nranks*MAXCHANNELS), ret, fail);
@@ -1407,18 +1346,20 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   int cudaDev = job->cudaDev;
   int* parentRanks = NULL;
   int cudaArch;
+  int maxSharedMem = 0;
   double sum_timers = 0;
   uint64_t timers[TIMERS_INIT_COUNT] = {0};
   unsigned long long commIdHash;
 
   timers[TIMER_INIT_TOTAL] = clockNano();
   CUDACHECKGOTO(cudaSetDevice(cudaDev), res, fail);
+  CUDACHECKGOTO(cudaDeviceGetAttribute(&maxSharedMem, cudaDevAttrMaxSharedMemoryPerBlockOptin, cudaDev), res, fail);
   CUDACHECKGOTO(cudaDeviceGetAttribute(&archMajor, cudaDevAttrComputeCapabilityMajor, cudaDev), res, fail);
   CUDACHECKGOTO(cudaDeviceGetAttribute(&archMinor, cudaDevAttrComputeCapabilityMinor, cudaDev), res, fail);
   cudaArch = 100*archMajor + 10*archMinor;
 
   timers[TIMER_INIT_KERNELS] = clockNano();
-  NCCLCHECK(ncclInitKernelsForDevice(cudaArch, &maxLocalSizeBytes));
+  NCCLCHECK(ncclInitKernelsForDevice(cudaArch, maxSharedMem, &maxLocalSizeBytes));
   // Set the maximum kernel stack size of all kernels to avoid
   // a CUDA memory reconfig on load (c.f. NVSHMEM issue)
   if (maxLocalSizeBytes > 0 && ncclParamSetStackSize() == 1) {
@@ -1534,18 +1475,24 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   if (0 <= cgaClusterSizeEnv && cgaClusterSizeEnv <= NCCL_MAX_CGA_CLUSTER_SIZE) {
     comm->config.cgaClusterSize = cgaClusterSizeEnv;
   } else if (cgaClusterSizeEnv > NCCL_MAX_CGA_CLUSTER_SIZE) {
-    WARN("NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.", cgaClusterSizeEnv, NCCL_MAX_CGA_CLUSTER_SIZE);
+    INFO(NCCL_ENV, "NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.", cgaClusterSizeEnv, NCCL_MAX_CGA_CLUSTER_SIZE);
     comm->config.cgaClusterSize = NCCL_MAX_CGA_CLUSTER_SIZE;
   }
 
   minCTAsEnv = ncclParamMinCTAs();
   if (minCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
-    comm->config.minCTAs = minCTAsEnv;
+    if (minCTAsEnv <= 0)
+      INFO(NCCL_ENV, "NCCL_MIN_CTAS %d is too low, leaving it set at %d", minCTAsEnv, comm->config.minCTAs);
+    else
+      comm->config.minCTAs = minCTAsEnv;
   }
 
   maxCTAsEnv = ncclParamMaxCTAs();
   if (maxCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
-    comm->config.maxCTAs = maxCTAsEnv;
+    if (maxCTAsEnv <= 0)
+      INFO(NCCL_ENV, "NCCL_MAX_CTAS %d is too low, leaving it set at %d", maxCTAsEnv, comm->config.maxCTAs);
+    else
+      comm->config.maxCTAs = maxCTAsEnv;
   }
 
   envNetName = ncclGetEnv("NCCL_NET");
@@ -1566,22 +1513,22 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
 
   /* cap channels if needed */
   if (comm->config.minCTAs > MAXCHANNELS) {
-    WARN("minCTAs %d is larger than #channels upper limit %d, cap it to %d", comm->config.minCTAs, MAXCHANNELS, MAXCHANNELS);
+    INFO(NCCL_ENV, "minCTAs %d is larger than #channels upper limit %d, cap it to %d", comm->config.minCTAs, MAXCHANNELS, MAXCHANNELS);
     comm->config.minCTAs = MAXCHANNELS;
   }
 
   if (comm->config.maxCTAs > MAXCHANNELS) {
-    WARN("maxCTAs %d is larger than #channels upper limit %d, cap it to %d", comm->config.maxCTAs, MAXCHANNELS, MAXCHANNELS);
+    INFO(NCCL_ENV, "maxCTAs %d is larger than #channels upper limit %d, cap it to %d", comm->config.maxCTAs, MAXCHANNELS, MAXCHANNELS);
     comm->config.maxCTAs = MAXCHANNELS;
   }
 
   if (comm->config.minCTAs > comm->config.maxCTAs) {
-    WARN("minCTAs %d is larger than maxCTAs %d, set both to %d", comm->config.minCTAs, comm->config.maxCTAs, comm->config.maxCTAs);
+    INFO(NCCL_ENV, "minCTAs %d is larger than maxCTAs %d, set both to %d", comm->config.minCTAs, comm->config.maxCTAs, comm->config.maxCTAs);
     comm->config.minCTAs = comm->config.maxCTAs;
   }
 
   if (comm->config.splitShare != 1 && comm->config.splitShare != 0) {
-    WARN("splitShare %d is not a valid value 0/1, set it to 0", comm->config.splitShare);
+    INFO(NCCL_ENV, "splitShare %d is not a valid value 0/1, set it to 0", comm->config.splitShare);
     comm->config.splitShare = 0;
   }
 

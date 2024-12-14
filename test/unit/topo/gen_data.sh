@@ -42,6 +42,7 @@ echo "##########################################"
 echo
 
 REPS=20
+nranks=`expr $ngpus \* $nnodes`
 
 gen_data() {
   perftest=$1
@@ -52,7 +53,6 @@ gen_data() {
   if [ "$algos" != "" -a "$protos" != "" ]; then
     for algo in $algos; do
       for proto in $protos; do
-        if [ "$proto" == "LL" ]; then continue; fi
         dir="$topo_path/$coll/$algo/$proto"
         mkdir -p $dir
         echo "############ $coll/$algo/$proto -> $dir/time.txt #############"
@@ -61,18 +61,22 @@ gen_data() {
         else
           maxsize="16G"
         fi
-        mpirun --bind-to numa -x NCCL_ALGO=$algo -x NCCL_PROTO=$proto -x NCCL_TESTS_DUMP_FILE=$dir/time.txt $perftest -w 1 -n $REPS -b 8 -e $maxsize -f 2 -c 0
+        mpirun -np $nranks --bind-to numa -x NCCL_ALGO=$algo -x NCCL_PROTO=$proto -x NCCL_TESTS_DUMP_FILE=$dir/time.txt $perftest -w 1 -n $REPS -b 8 -e $maxsize -f 2 -c 0
       done
     done
   else
     # Default
     echo "############ $coll/Default -> $topo_path/$coll/time.txt #############"
-    mpirun --bind-to numa -x NCCL_TESTS_DUMP_FILE=$topo_path/$coll/time.txt $perftest -w 1 -n $REPS -b 8 -e $maxsize -f 2 -c 0
+    mpirun -np $nranks --bind-to numa -x NCCL_TESTS_DUMP_FILE=$topo_path/$coll/time.txt $perftest -w 1 -n $REPS -b 8 -e $maxsize -f 2 -c 0
   fi
 }
 
 gen_data $perftest_path/all_reduce_perf $topo_path AllReduce "Ring Tree" "LL LL128 Simple"
-gen_data $perftest_path/all_reduce_perf $topo_path AllReduce "NVLSTree" "Simple"
+if [ "$nnodes" == 1 ]; then
+  gen_data $perftest_path/all_reduce_perf $topo_path AllReduce "NVLS" "Simple"
+else
+  gen_data $perftest_path/all_reduce_perf $topo_path AllReduce "NVLSTree" "Simple"
+fi
 gen_data $perftest_path/all_reduce_perf $topo_path AllReduce
 gen_data $perftest_path/all_gather_perf $topo_path AllGather "Ring" "LL LL128 Simple"
 if [ "$ngpus" == 1 ]; then

@@ -2,6 +2,14 @@
 <!-- update with extra care -->
 # NCCL - PLC
 <!------------------------------------->
+## version 2.25
+
+- [Graph Search for NVL72](items/id_91e0f6d2/Graph_Search_for_NVL72.md)
+<!-- V2_25_DO_NOT_MOVE -->
+
+<!------------------------------------->
+
+<!------------------------------------->
 ## version 2.24
 - [NIC Fusion](items/id_ecf30b98/NIC_Fusion.md)
 - [FP8 Datatype Support](items/id_28abde35/FP8_Datatype_Support.md)
