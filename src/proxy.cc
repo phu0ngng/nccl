@@ -538,6 +538,8 @@ static ncclResult_t SaveProxyProfiler(struct ncclComm* comm, struct ncclProxyOp*
     op->sendbuff = (uint8_t *)comm->profiler.workStarted;
     op->recvbuff = (uint8_t *)comm->profiler.workCompleted;
     NCCLCHECK(ncclLocalOpAppend(comm, proxyConn, op));
+    // Ensure that in graph capturing the proxy workCounter is incremented to keep up with kernel workCounter
+    op->workCounter += comm->profiler.workCounter[op->channelId];
   }
   return ncclSuccess;
 }
