@@ -335,10 +335,14 @@ Fault Tolerance
 ***************
 
 NCCL provides a set of features to allow applications to recover from fatal errors such as a network failure,
-a node failure, or a process failure. When such an error happens, the application should be able to call ncclCommAbort
+a node failure, or a process failure. When such an error happens, the application should be able to call *ncclCommAbort*
 on the communicator to free all resources, then create a new communicator to continue.
-All NCCL calls can be non-blocking to ensure ncclCommAbort can be called at any point, during initialization,
-communication or when finalizing the communicator.
+
+In order to abort NCCL communicators safely, NCCL requires applications to set communicators as nonblocking and make sure
+no thread is calling any NCCL operations while calling *ncclCommAbort*. After nonblocking is set, all NCCL calls
+(except *ncclCommDestroy/Abort*) become nonblocking so that *ncclCommAbort* can be called at any point, during initialization,
+communication or finalizing the communicator. If NCCL communicators are set blocking, the thread can possibly get stuck inside
+NCCL calls due to network errors; in this case, NCCL communicators might hang forever.
 
 To correctly abort, when any rank in a communicator fails (e.g., due to a segmentation fault), all other ranks need to
 call *ncclCommAbort* to abort their own NCCL communicator.
@@ -350,6 +354,7 @@ Here is an example showing how to initialize and split a communicator in a non-b
   bool globalFlag;
   bool abortFlag = false;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  /* set communicator as nonblocking */
   config.blocking = 0;
   CHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
   do {
