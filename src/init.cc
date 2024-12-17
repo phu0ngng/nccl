@@ -315,11 +315,6 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
       if (ret == ncclInProgress) ret = ncclInvalidArgument;
       goto exit;
     }
-    /* if there is linked group job, we should complete it. */
-    if (comm->groupJob) {
-      NCCLCHECK(ncclGroupJobComplete(comm->groupJob));
-      comm->groupJob = NULL;
-    }
   }
 
 exit:
@@ -2215,6 +2210,11 @@ ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
 
   *asyncError = __atomic_load_n(&comm->asyncResult, __ATOMIC_ACQUIRE);
   if (*asyncError == ncclSuccess && comm->proxyState) *asyncError = __atomic_load_n(&comm->proxyState->asyncResult, __ATOMIC_ACQUIRE);
+  /* if there is linked group job, we should complete it. */
+  if (*asyncError == ncclSuccess && comm->groupJob) {
+    NCCLCHECK(ncclGroupJobComplete(comm->groupJob));
+    comm->groupJob = NULL;
+  }
   return ncclSuccess;
 }
 
