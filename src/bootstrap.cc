@@ -111,7 +111,7 @@ ncclResult_t bootstrapNetInit() {
         if (nIfs <= 0) {
           WARN("Bootstrap : no socket interface found");
           pthread_mutex_unlock(&bootstrapNetLock);
-          return ncclInternalError;
+          return ncclInvalidUsage;
         }
       }
       char line[SOCKET_NAME_MAXLEN+MAX_IF_NAME_SIZE+2];

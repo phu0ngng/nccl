@@ -128,7 +128,7 @@ def required_cuda(coll, redop, ty, algo, proto):
 def equivalent_primary(coll, redop, ty, algo, proto):
   if coll in ("AllReduce", "Reduce", "ReduceScatter"):
     # map signed integer sum/prod to unsigned
-    if redop in ("Sum","Prod","PreMulSum") and ty[0]=="i":
+    if redop in ("Sum","Prod","PreMulSum","SumPostDiv") and ty[0]=="i":
       return (coll, redop, "u"+ty[1:], algo, proto)
     # map signed integer min/max to unsigned for non-NVLS
     if redop=="MinMax" and ty[0]=="i" and ("NVLS" not in algo):

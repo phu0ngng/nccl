@@ -638,61 +638,36 @@ struct RedOpArg<FuncSumPostDiv<T>> {
   }
 };
 
-template<typename T, bool IsFloating=IsFloatingPoint<T>::value, int sizeof_T=sizeof(T)>
-struct FuncSumPostDiv_IntOnly;
-
 template<typename T>
-struct FuncSumPostDiv: FuncSumPostDiv_IntOnly<T> {
-  __device__ FuncSumPostDiv(uint64_t opArg=0):
-    FuncSumPostDiv_IntOnly<T>(opArg) {
-  }
-};
-
-template<typename T>
-struct FuncSumPostDiv_IntOnly<T, /*IsFloating=*/false, /*sizeof_T=*/8>: FuncSum<T> {
+struct FuncSumPostDiv {
+  static_assert(T(0) < T(-1), "FuncSumPostDiv is only for implementing ncclAvg on uint types.");
   using EltType = T;
-  uint32_t divisor;
-  uint64_t recip;
+  using UintType = typename std::conditional<sizeof(T)==8, uint64_t, uint32_t>::type;
+  uint32_t divisor:31, isSigned:1;
+  UintType recip;
   
-  __device__ FuncSumPostDiv_IntOnly(uint64_t opArg=0) {
-    divisor = opArg;
-    recip =  uint64_t(-1)/divisor;
-  }
-  __device__ static uint64_t absval(T x) {
-    return (T(-1)>>1) == T(-1) ? (uint64_t)labs((long)x) : (uint64_t)x;
+  __device__ FuncSumPostDiv(uint64_t opArg=0) {
+    isSigned = opArg & 1;
+    divisor = opArg >> 1;
+    recip =  UintType(-1)/divisor;
   }
   __device__ T divide(T x) {
-    uint64_t arg = absval(x);
-    uint64_t q = __umul64hi(arg, recip);
-    if (arg - q*divisor >= divisor) q += 1;
-    return arg != (uint64_t)x ? -T(q) : T(q);
+    // x is negative iff we are in signed mode and the top bit is set
+    bool xneg = isSigned && (x & ~(T(-1)>>1));
+    // Compute abs(x):
+    // T(-x) vs -T(x) is critical. We have to negate then truncate the bits. Consider
+    // if we are doing signed 8-bit types, thus T=uint8_t. The value -1 is encoded
+    // as 0xff. -T(0xff) when promoted to 32-bit (which is implicit by compiler)
+    // gives 0xffffff01, but T(-0xff) is 0x1, and that is the abs value we want.
+    UintType xabs = xneg ? T(-x) : x;
+    // Compute quotient by multiplying by reciprical.
+    UintType q = sizeof(T)==8 ? __umul64hi(xabs, recip) : __umulhi(xabs, recip);
+    // Quotient may be off by one so do a fixup.
+    if (xabs - q*divisor >= divisor) q += 1;
+    // If original x was negative then we have to negate it back since we were
+    // working with its abs val.
+    return xneg ? -T(q) : T(q);
   }
-};
-
-template<typename T, int sizeof_T>
-struct FuncSumPostDiv_IntOnly<T, /*IsFloating=*/false, sizeof_T>: FuncSum<T> {
-  using EltType = T;
-  uint32_t divisor;
-  uint32_t recip;
-  
-  __device__ FuncSumPostDiv_IntOnly(uint64_t opArg=0) {
-    divisor = opArg;
-    recip =  uint32_t(-1)/divisor;
-  }
-  __device__ static uint32_t absval(T x) {
-    return (T(-1)>>1) == T(-1) ? (uint32_t)abs((int)x) : (uint32_t)x;
-  }
-  __device__ T divide(T x) {
-    uint32_t arg = absval(x);
-    uint32_t q = __umulhi(arg, recip);
-    if (arg - q*divisor >= divisor) q += 1;
-    return arg != (uint32_t)x ? -T(q) : T(q);
-  }
-};
-
-template<typename T, int sizeof_T>
-struct FuncSumPostDiv_IntOnly<T, /*IsFloating=*/true, sizeof_T> {
-  static_assert(sizeof(T)!=sizeof(T), "FuncSumPostDiv is only for implementing ncclAvg on integral types.");
 };
 
 template<typename T, int EltPerPack>

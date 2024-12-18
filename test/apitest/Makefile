@@ -27,18 +27,18 @@ ${DST_DIR}/%.dep:%.cu
 endif
 all:${DST_DIR}/apitest ${DST_DIR}/apitest_static
 
-clean:
+clean:gtest.clean
 	rm -rf ${DST_DIR}
 
 test: ${DST_DIR}/apitest
 	/bin/bash -c "LD_LIBRARY_PATH+=:$(LIBDIR) $^"
 
-${DST_DIR}/apitest:${OBJ_FILES}
+${DST_DIR}/apitest:${GTEST_LIBS} ${OBJ_FILES}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	${NVCC} -o $@ ${NVCUFLAGS} ${NVLDFLAGS} $^ -lnccl
 
-${DST_DIR}/apitest_static:${OBJ_FILES}
+${DST_DIR}/apitest_static:${GTEST_LIBS} ${OBJ_FILES}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	${NVCC} -o $@ ${NVCUFLAGS} ${NVLDFLAGS} $^ -lnccl_static
