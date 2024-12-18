@@ -797,7 +797,7 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
   NCCLCHECK(ncclCalloc(&parents, nNodes));
   // Find the common parent
   ncclXmlNode* common = NULL;
-  
+
   if (nNodes == 1) {
     common = nodes[0];
     *path = PATH_LOC;
