@@ -42,6 +42,14 @@ typedef enum {
   RAS_COLL_COMMS = 1002, // Collect data about all communicators.
 } rasCollectiveType;
 
+// Unique communicator identifier.  commHash by itself is definitely not guaranteed to be unique.
+// Combined with the two other hashes, the chance is much better...
+// All three fields are used for sorting.
+struct rasCommId {
+  uint64_t commHash;
+  uint64_t hostHash, pidHash; // These are the hashes of the *first* rank (comm->peerInfo[0]).
+};
+
 // Payload of a collective request message (RAS_MSG_COLLREQ).
 struct rasCollRequest {
   union ncclSocketAddress rootAddr;
@@ -56,6 +64,10 @@ struct rasCollRequest {
     struct {
     } conns;
     struct {
+      int nSkipMissingRanksComms; // Number of elements in the array below.
+      // Communicators for which we do *not* need the missingRanks data in the responses
+      // (see struct rasCollCommsMissingRank later).
+      struct rasCommId skipMissingRanksComms[0]; // Variable length, sorted.
     } comms;
   };
 };
@@ -69,8 +81,8 @@ struct rasCollResponse {
   int nPeers;
   int nData; // Size of data in bytes.
   union ncclSocketAddress peers[0]; // Variable length.
-  // The peersAddrs array is followed by:
-  //alignas(int64_t) char data[0]; // Variable length, collective-dependent.
+  // The peers array is followed by:
+  // alignas(int64_t) char data[0]; // Variable length, collective-dependent.
 };
 
 // Describes a peer NCCL process.  Every RAS thread keeps an (identical) array of them, one entry for each
@@ -80,6 +92,8 @@ struct rasPeerInfo {
   pid_t pid;
   uint64_t cudaDevs; // Bitmask.  This is for local devices so 64 bits is enough.
   uint64_t nvmlDevs; // Same, but not affected by CUDA_VISIBLE_DEVICES.
+  uint64_t hostHash, pidHash; // Taken from ncclComm, but with the commHash subtracted to make it
+                              // communicator-independent.
 };
 
 // Describes a RAS message.  Every message is preceded by a (32-bit) message length.  All data in the host
@@ -112,7 +126,7 @@ struct rasMsg {
       int nPeers;
       int nDeadPeers;
       struct rasPeerInfo peers[0]; // Variable length.
-      // The peers array is followed by the following:
+      // The peers array is followed by:
       //union ncclSocketAddress deadPeers[0]; // Variable length.
     } peersUpdate;
     struct {
@@ -239,7 +253,7 @@ struct rasCollective {
 
   int nLegTimeouts; // Collective (from this process and the responses we received).
 
-  union ncclSocketAddress* peers; // Collective (from this process and the responses we received).
+  union ncclSocketAddress* peers; // Collective (from this process and the responses we received).  Unsorted.
   int nPeers;
 
   char* data; // Collective (from this process and the responses we received).
@@ -265,9 +279,10 @@ struct rasCollConns {
 struct rasCollComms {
   int nComms;
   struct comm {
-    uint64_t commHash;
-    int commNRanks;
-    int nRanks; // number of elements in the array below, *not* in the communicator.
+    struct rasCommId commId;
+    int commNRanks; // >= nRanks + nMissingRanks
+    int nRanks; // Number of elements in the ranks array below, *not* in the communicator.
+    int nMissingRanks; // Number of elements in the missingRanks array below.
     struct rank {
       int commRank;
       int peerIdx; // Index within rasCollective->peers, *not* rasPeers.
@@ -282,7 +297,20 @@ struct rasCollComms {
       char cudaDev;
       char nvmlDev;
     } ranks[0]; // Variable length. Sorted by commRank.  Optimized for 1 GPU/process.
-  } comms[0]; // Variable length. Sorted by commHash.
+    // The ranks array is followed by:
+    // struct rasCollCommsMissingRank missingRanks[0]; // Variable length.  Sorted by commRank.
+  } comms[0]; // Variable length.  Sorted by commId.
+};
+
+// Provides info about missing ranks.  An array of these structures can be part of struct rasCollComms above.
+// Because the arrays are of variable length, we can't describe them in C.  To ensure that adding
+// rasCollCommsMissingRank structures doesn't mess up the alignment, we explicitly request one.
+struct alignas(struct rasCollComms) rasCollCommsMissingRank {
+  int commRank;
+  union ncclSocketAddress addr;
+  // We don't need pid here as we can look it up in rasPeers via addr.
+  char cudaDev;
+  char nvmlDev;
 };
 
 // Holds data needed to keep track of a connection belonging to a RAS network link (either the primary one
@@ -449,7 +477,7 @@ void rasConnEnqueueMsg(struct rasConnection* conn, struct rasMsg* msg, size_t ms
 ncclResult_t rasConnSendMsg(struct rasConnection* conn, int* closed, bool* allSent);
 ncclResult_t rasMsgRecv(struct rasSocket* sock, struct rasMsg** msg, int* closed);
 ncclResult_t rasMsgHandle(struct rasMsg* msg, struct rasSocket* sock);
-void rasMsgHandleBCDeadPeer(const struct rasCollRequest* req, bool* pDone);
+void rasMsgHandleBCDeadPeer(struct rasCollRequest** pReq, size_t* pReqLen, bool* pDone);
 ncclResult_t rasGetNewPollEntry(int* index);
 
 
@@ -500,7 +528,7 @@ extern struct rasCollective* rasCollectivesHead;
 extern struct rasCollective* rasCollectivesTail;
 
 void rasCollReqInit(struct rasCollRequest* req);
-ncclResult_t rasNetSendCollReq(const struct rasCollRequest* req, size_t reqLen, bool* pAllDone = nullptr,
+ncclResult_t rasNetSendCollReq(const struct rasCollRequest* req, bool* pAllDone = nullptr,
                                struct rasCollective** pColl = nullptr, struct rasConnection* fromConn = nullptr);
 ncclResult_t rasMsgHandleCollReq(struct rasMsg* msg, struct rasSocket* sock);
 ncclResult_t rasMsgHandleCollResp(struct rasMsg* msg, struct rasSocket* sock);

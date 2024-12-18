@@ -258,7 +258,7 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
         rasCollReqInit(&bCast);
         bCast.type = RAS_BC_DEADPEER;
         memcpy(&bCast.deadPeer.addr, &conn->addr, sizeof(bCast.deadPeer.addr));
-        (void)rasNetSendCollReq(&bCast, rasCollDataLength(RAS_BC_DEADPEER));
+        (void)rasNetSendCollReq(&bCast);
 
         connTerminated = true;
       } else {

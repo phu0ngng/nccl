@@ -500,12 +500,13 @@ static ncclResult_t rasMsgHandleConnInitAck(const struct rasMsg* msg, struct ras
 }
 
 // Handles the deadPeer broadcast.
-void rasMsgHandleBCDeadPeer(const struct rasCollRequest* req, bool* pDone) {
-  INFO(NCCL_RAS, "RAS handling deadPeer (addr %s)", ncclSocketToString(&req->deadPeer.addr, rasLine));
+void rasMsgHandleBCDeadPeer(struct rasCollRequest** pReq, size_t* pReqLen, bool* pDone) {
+  INFO(NCCL_RAS, "RAS handling deadPeer (addr %s)", ncclSocketToString(&(*pReq)->deadPeer.addr, rasLine));
 
-  if (!rasPeerIsDead(&req->deadPeer.addr)) {
-    rasConnDisconnect(&req->deadPeer.addr);
-    (void)rasPeerDeclareDead(&req->deadPeer.addr);
+  *pReqLen = rasCollDataLength(RAS_BC_DEADPEER);
+  if (!rasPeerIsDead(&(*pReq)->deadPeer.addr)) {
+    rasConnDisconnect(&(*pReq)->deadPeer.addr);
+    (void)rasPeerDeclareDead(&(*pReq)->deadPeer.addr);
     *pDone = false;
   } else {
     INFO(NCCL_RAS, "RAS already knew it was dead");

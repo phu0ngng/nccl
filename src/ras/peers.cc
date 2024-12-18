@@ -147,6 +147,8 @@ static ncclResult_t rasRanksConvertToPeers(struct rasRankInit* ranks, int nranks
     rankPeer->pid = rank->pid;
     rankPeer->cudaDevs = (1UL << rank->cudaDev);
     rankPeer->nvmlDevs = (1UL << rank->nvmlDev);
+    rankPeer->hostHash = rank->hostHash;
+    rankPeer->pidHash = rank->pidHash;
     rankPeerIdx++;
 
     // Also check if there is already an entry with that address in the global rasPeers so that the caller can know how
