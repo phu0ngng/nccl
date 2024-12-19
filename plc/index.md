@@ -2,6 +2,14 @@
 <!-- update with extra care -->
 # NCCL - PLC
 <!------------------------------------->
+## version 2.26
+
+- [Plugin Code Refactoring](items/id_f7c8b8eb/Plugin_Code_Refactoring.md)
+<!-- V2_26_DO_NOT_MOVE -->
+
+<!------------------------------------->
+
+<!------------------------------------->
 ## version 2.25
 
 - [Graph Search for NVL72](items/id_91e0f6d2/Graph_Search_for_NVL72.md)
