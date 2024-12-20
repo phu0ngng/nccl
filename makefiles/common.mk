@@ -39,13 +39,14 @@ endif
 CUDA9_GENCODE = -gencode=arch=compute_70,code=sm_70
 CUDA11_GENCODE = -gencode=arch=compute_80,code=sm_80
 CUDA12_GENCODE = -gencode=arch=compute_90,code=sm_90
-CUDA13_GENCODE = -gencode=arch=compute_100,code=sm_100
+CUDA13_GENCODE = -gencode=arch=compute_100,code=sm_100 \
+                 -gencode=arch=compute_120,code=sm_120
 
 CUDA8_PTX     = -gencode=arch=compute_61,code=compute_61
 CUDA9_PTX     = -gencode=arch=compute_70,code=compute_70
 CUDA11_PTX    = -gencode=arch=compute_80,code=compute_80
 CUDA12_PTX    = -gencode=arch=compute_90,code=compute_90
-CUDA13_PTX    = -gencode=arch=compute_100,code=compute_100
+CUDA13_PTX    = -gencode=arch=compute_120,code=compute_120
 
 
 ifeq ($(shell test "0$(CUDA_MAJOR)" -eq 12 -a "0$(CUDA_MINOR)" -ge 7 -o "0$(CUDA_MAJOR)" -gt 12; echo $$?),0)
