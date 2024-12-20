@@ -28,7 +28,7 @@
 #define NCCL_NET_MAX_REQUESTS 32
 
 // Max number of ncclNet objects which can live in the same process
-#define NCCL_NET_MAX_PLUGINS 3
+#define NCCL_NET_MAX_PLUGINS 16
 
 #include "net/net_v10.h"
 #include "net/net_v9.h"

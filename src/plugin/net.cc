@@ -28,9 +28,9 @@ extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v10(void* netPluginLib);
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
-ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr, &ncclNetIb, &ncclNetSocket };
-static int ncclNetsVer[NCCL_NET_MAX_PLUGINS] = { -1, 10, 10 };
-ncclCollNet_t* ncclCollNets[NCCL_NET_MAX_PLUGINS] = { nullptr, nullptr, nullptr };
+ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr };
+static int ncclNetsVer[NCCL_NET_MAX_PLUGINS] = { -1 };
+ncclCollNet_t* ncclCollNets[NCCL_NET_MAX_PLUGINS] = { nullptr };
 
 enum ncclNetPluginState {
   ncclNetPluginStateDisabled   = -2,
