@@ -31,38 +31,33 @@ static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
 ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr, &ncclNetIb, &ncclNetSocket };
 static int ncclNetsVer[NCCL_NET_MAX_PLUGINS] = { -1, 10, 10 };
 ncclCollNet_t* ncclCollNets[NCCL_NET_MAX_PLUGINS] = { nullptr, nullptr, nullptr };
-enum ncclNetState {
-  ncclNetStateInit = 0,
-  ncclNetStateEnabled = 1,
-  ncclNetStateDisabled = 2
+
+enum ncclNetPluginState {
+  ncclNetPluginStateDisabled   = -2,
+  ncclNetPluginStateLoadFailed = -1,
+  ncclNetPluginStateLoadReady  = 0,
+  ncclNetPluginStateInitReady  = 1,
+  ncclNetPluginStateEnabled    = 2
 };
-enum ncclNetState ncclNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
-enum ncclNetState ncclCollNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
+
+enum ncclNetPluginState ncclNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetPluginStateLoadReady };
+enum ncclNetPluginState ncclCollNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetPluginStateLoadReady };
 
 NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 1);
 static pthread_mutex_t netPluginLock = PTHREAD_MUTEX_INITIALIZER;
 static void* netPluginLib;
 
-static int netPluginRefCount;
-static void initNetPluginRefCountOnce(void) { netPluginRefCount = ncclParamNetPluginRefCount();}
-
-enum {
-  netPluginLoadFailed  = -1,
-  netPluginLoadReady   =  0,
-  netPluginLoadSuccess =  1,
-};
-
-static int netPluginStatus = netPluginLoadReady;
+static int netPluginStatus = ncclNetPluginStateLoadReady;
 
 ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   static pthread_once_t netPluginRefCountOnce = PTHREAD_ONCE_INIT;
   pthread_once(&netPluginRefCountOnce, initNetPluginRefCountOnce);
 
   pthread_mutex_lock(&netPluginLock);
-  if (netPluginLoadFailed == netPluginStatus) {
+  if (ncclNetPluginStateLoadFailed == netPluginStatus) {
     goto exit;
   }
-  if (netPluginLoadSuccess == netPluginStatus) {
+  if (ncclNetStateInitReady == netPluginStatus) {
     ++netPluginRefCount;
     goto exit;
   }
@@ -114,7 +109,7 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   }
 
   ++netPluginRefCount;
-  netPluginStatus = netPluginLoadSuccess;
+  netPluginStatus = ncclNetStateInitReady;
   comm->netPluginLoaded = 1;
 
 exit:
@@ -122,7 +117,7 @@ exit:
   return ncclSuccess;
 fail:
   if (netPluginLib) NCCLCHECK(ncclClosePluginLib(netPluginLib));
-  netPluginStatus = netPluginLoadFailed;
+  netPluginStatus = ncclNetPluginStateLoadFailed;
   goto exit;
 }
 
@@ -139,10 +134,10 @@ ncclResult_t ncclNetPluginUnload(struct ncclComm* comm) {
     netPluginLib = nullptr;
     ncclNets[0] = nullptr;
     ncclCollNets[0] = nullptr;
-    netPluginStatus = netPluginLoadReady;
+    netPluginStatus = ncclNetPluginStateLoadReady;
     comm->netPluginLoaded = 0;
     for (int i = 0; i < NCCL_NET_MAX_PLUGINS; ++i)
-      ncclCollNetStates[i] = ncclNetStates[i] = ncclNetStateInit;
+      ncclCollNetStates[i] = ncclNetStates[i] = ncclNetStateInitReady;
   }
   pthread_mutex_unlock(&netPluginLock);
   return ncclSuccess;
@@ -172,26 +167,26 @@ ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, in
   return ncclSuccess;
 }
 
-static ncclResult_t netGetState(int i, enum ncclNetState* state) {
+static ncclResult_t netGetState(int i, enum ncclNetPluginState* state) {
   pthread_mutex_lock(&netLock);
-  if (ncclNetStates[i] == ncclNetStateInit) {
+  if (ncclNetStates[i] == ncclNetStateInitReady) {
     int ndev;
-    if (ncclNets[i]->init(ncclDebugLog, ncclProfilerCallback) != ncclSuccess) ncclNetStates[i] = ncclNetStateDisabled;
-    else if (ncclNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclNetStates[i] = ncclNetStateDisabled;
-    else ncclNetStates[i] = ncclNetStateEnabled;
+    if (ncclNets[i]->init(ncclDebugLog, ncclProfilerCallback) != ncclSuccess) ncclNetStates[i] = ncclNetPluginStateDisabled;
+    else if (ncclNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclNetStates[i] = ncclNetPluginStateDisabled;
+    else ncclNetStates[i] = ncclNetPluginStateEnabled;
   }
   *state = ncclNetStates[i];
   pthread_mutex_unlock(&netLock);
   return ncclSuccess;
 }
 
-static ncclResult_t collNetGetState(int i, enum ncclNetState* state) {
+static ncclResult_t collNetGetState(int i, enum ncclNetPluginState* state) {
   pthread_mutex_lock(&netLock);
-  if (ncclCollNetStates[i] == ncclNetStateInit) {
+  if (ncclCollNetStates[i] == ncclNetStateInitReady) {
     int ndev;
-    if (ncclCollNets[i]->init(ncclDebugLog) != ncclSuccess) ncclCollNetStates[i] = ncclNetStateDisabled;
-    else if (ncclCollNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclCollNetStates[i] = ncclNetStateDisabled;
-    else ncclCollNetStates[i] = ncclNetStateEnabled;
+    if (ncclCollNets[i]->init(ncclDebugLog) != ncclSuccess) ncclCollNetStates[i] = ncclNetPluginStateDisabled;
+    else if (ncclCollNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclCollNetStates[i] = ncclNetPluginStateDisabled;
+    else ncclCollNetStates[i] = ncclNetPluginStateEnabled;
   }
   *state = ncclCollNetStates[i];
   pthread_mutex_unlock(&netLock);
@@ -206,9 +201,9 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
   netName = comm->config.netName;
   for (int i=0; i<3; i++) {
     if (ncclNets[i] == nullptr) continue;
-    enum ncclNetState state;
+    enum ncclNetPluginState state;
     NCCLCHECK(netGetState(i, &state));
-    if (state != ncclNetStateEnabled) continue;
+    if (state != ncclNetPluginStateEnabled) continue;
     if (netName && strcasecmp(netName, ncclNets[i]->name) != 0) continue;
     if (ncclSuccess != ncclNetCheckDeviceVersion(comm, ncclNets[i], 0)) {
       // Mismatched device plugin version
@@ -221,7 +216,7 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
 
     if (ncclCollNets[i]) {
       NCCLCHECK(collNetGetState(i, &state));
-      if (state == ncclNetStateEnabled) {
+      if (state == ncclNetPluginStateEnabled) {
         comm->ncclCollNet = ncclCollNets[i];
       }
     }
