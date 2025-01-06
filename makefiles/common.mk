@@ -49,8 +49,8 @@ CUDA12_PTX    = -gencode=arch=compute_90,code=compute_90
 CUDA13_PTX    = -gencode=arch=compute_120,code=compute_120
 
 
-ifeq ($(shell test "0$(CUDA_MAJOR)" -eq 12 -a "0$(CUDA_MINOR)" -ge 7 -o "0$(CUDA_MAJOR)" -gt 12; echo $$?),0)
-# Include Blackwell support if we're using CUDA12.7 or above
+ifeq ($(shell test "0$(CUDA_MAJOR)" -eq 12 -a "0$(CUDA_MINOR)" -ge 8 -o "0$(CUDA_MAJOR)" -gt 12; echo $$?),0)
+# Include Blackwell support if we're using CUDA12.8 or above
   NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA9_GENCODE) $(CUDA11_GENCODE) $(CUDA12_GENCODE) $(CUDA13_GENCODE) $(CUDA13_PTX)
 else ifeq ($(shell test "0$(CUDA_MAJOR)" -eq 11 -a "0$(CUDA_MINOR)" -ge 8 -o "0$(CUDA_MAJOR)" -gt 11; echo $$?),0)
 # Include Hopper support if we're using CUDA11.8 or above
