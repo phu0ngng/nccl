@@ -1060,7 +1060,8 @@ ncclResult_t ncclProxyConnect(struct ncclComm* comm, int transport, int send, in
   struct ncclProxyState* sharedProxyState = comm->proxyState;
   int tpProxyRank = comm->topParentRanks[proxyRank];
 
-  proxyConn->sameProcess = comm->peerInfo[proxyRank].pidHash == comm->peerInfo[comm->rank].pidHash ? 1 : 0;
+  proxyConn->sameProcess = ((comm->peerInfo[proxyRank].hostHash == comm->peerInfo[comm->rank].hostHash) &&
+                            (comm->peerInfo[proxyRank].pidHash == comm->peerInfo[comm->rank].pidHash)) ? 1 : 0;
   // Keep one connection per local rank
   proxyConn->connection = NULL;
   proxyConn->tpRank = tpProxyRank;
@@ -1552,7 +1553,7 @@ void* ncclProxyService(void* _args) {
   connectionPool.banks = 0;
   connectionPool.offset = NCCL_PROXY_CONN_POOL_SIZE;
 
-  struct pollfd pollfds[NCCL_MAX_LOCAL_RANKS+1];
+  struct pollfd pollfds[NCCL_MAX_LOCAL_RANKS+1]; // one extra for listenSock fd
   struct ncclProxyLocalPeer peers[NCCL_MAX_LOCAL_RANKS];
   memset(&peers, 0, sizeof(struct ncclProxyLocalPeer)*NCCL_MAX_LOCAL_RANKS);
   for (int s=0; s<NCCL_MAX_LOCAL_RANKS; s++) {
@@ -1577,6 +1578,7 @@ void* ncclProxyService(void* _args) {
     /* never let proxy service thread blocks in poll, or it cannot receive abortFlag. */
     int ret;
     do {
+      // poll all fds including the listenSock
       ret = poll(pollfds, NCCL_MAX_LOCAL_RANKS+1, asyncOpCount ? 0 : 500);
     } while (ret < 0 && errno == EINTR);
     if (ret < 0) {
@@ -1584,6 +1586,7 @@ void* ncclProxyService(void* _args) {
       return NULL;
     }
     if (pollfds[NCCL_MAX_LOCAL_RANKS].revents) {
+      // We got an event on the listenSock
       int s = 0;
       while (s < NCCL_MAX_LOCAL_RANKS && pollfds[s].fd >= 0) s++;
       if (s == NCCL_MAX_LOCAL_RANKS) {
@@ -1819,13 +1822,27 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
 
     if ((comm->proxyRefCountOld = ncclAtomicRefCountDecrement(&sharedProxyState->refCount)) == 0) {
       if (*comm->abortFlag == 0 && sharedProxyState->peerAddresses) {
-        struct ncclSocket sock;
+        // We need to send a ncclProxyMsgStop message to our own proxy
+        struct ncclSocket newSock;
+        struct ncclSocket *sock = NULL;
         int type = ncclProxyMsgStop;
-        NCCLCHECK(ncclSocketInit(&sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag));
-        if (ncclSocketConnect(&sock) == ncclSuccess) {
-          (void)ncclSocketSend(&sock, &type, sizeof(int));
+        int ready = 0;
+        if (sharedProxyState->peerSocks) {
+          // reuse an exiting proxy connection if available
+          sock = sharedProxyState->peerSocks + comm->topParentRanks[comm->rank];
+          if (sock)
+            NCCLCHECK(ncclSocketReady(sock, &ready));
         }
-        (void)ncclSocketClose(&sock);
+        if (!ready) {
+          sock = &newSock;
+          NCCLCHECK(ncclSocketInit(sock, sharedProxyState->peerAddresses + comm->topParentRanks[comm->rank], comm->sharedRes->magic, ncclSocketTypeProxy, comm->abortFlag));
+          if (ncclSocketConnect(sock) == ncclSuccess) {
+            (void)ncclSocketSend(sock, &type, sizeof(int));
+          }
+          (void)ncclSocketClose(sock);
+        } else {
+          (void)ncclSocketSend(sock, &type, sizeof(int));
+        }
       }
 
       if (sharedProxyState->peerSocks) {
