@@ -4,10 +4,10 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_PROFILER_NET_IB_H_
-#define NCCL_PROFILER_NET_IB_H_
+#ifndef NET_IB_H_
+#define NET_IB_H_
 
 #include "nccl_profiler.h"
-#include "nccl_profiler_net_ib_v1.h"
+#include "net_ib_v1.h"
 
 #endif

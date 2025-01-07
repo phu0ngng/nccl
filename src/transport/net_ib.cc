@@ -11,7 +11,7 @@
 #include "graph.h"
 #include "utils.h"
 #include "param.h"
-#include "profiler/nccl_profiler_net_ib.h"
+#include "profiler/net_ib.h"
 
 #include <assert.h>
 #include <pthread.h>

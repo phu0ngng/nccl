@@ -16,7 +16,7 @@ typedef enum {
   NCCL_PROFILER_NET_TYPE_SOCK = (2U << NCCL_PROFILER_NET_VER_BITS),
 } ncclProfilerNetType;
 
-#include "profiler_net_ib_v1.h"
-#include "profiler_net_socket_v1.h"
+#include "net_ib_v1.h"
+#include "net_socket_v1.h"
 
 #endif

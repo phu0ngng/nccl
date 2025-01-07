@@ -9,7 +9,7 @@
 #include "socket.h"
 #include "net.h"
 #include "param.h"
-#include "profiler/nccl_profiler_net_socket.h"
+#include "profiler/net_socket.h"
 
 #include <pthread.h>
 #include <stdlib.h>

@@ -4,13 +4,13 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_PROFILER_NET_SOCKET_V1_H_
-#define NCCL_PROFILER_NET_SOCKET_V1_H_
+#ifndef NET_IB_V1_H_
+#define NET_IB_V1_H_
 
-#define NCCL_PROFILER_NET_SOCKET_VER 1
+#define NCCL_PROFILER_NET_IB_VER 1
 
 enum {
-  ncclProfileSocket = (1 << 0),
+  ncclProfileQp = (1 << 0),
 };
 
 // The data structure version is encoded in the plugin identifier bitmask and
@@ -22,11 +22,12 @@ typedef struct {
   uint8_t type;        // event type (plugin defined)
   union {
     struct {
-      int fd;
-      int op;
-      size_t length;
-    } sock;
+      uint64_t wr_id;  // work request id
+      int opcode;      // ibv opcode
+      int qpNum;       // QP number
+      size_t length;   // work request data length
+    } qp;
   };
-} ncclProfilerNetSockDescr_v1_t;
+} ncclProfilerNetIbDescr_v1_t;
 
 #endif

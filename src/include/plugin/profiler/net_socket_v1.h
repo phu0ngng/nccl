@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_PROFILER_NET_SOCKET_V1_H_
-#define NCCL_PROFILER_NET_SOCKET_V1_H_
+#ifndef NET_SOCKET_V1_H_
+#define NET_SOCKET_V1_H_
 
 #define NCCL_PROFILER_NET_SOCKET_VER 1
 

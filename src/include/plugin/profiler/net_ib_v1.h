@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_PROFILER_NET_IB_V1_H_
-#define NCCL_PROFILER_NET_IB_V1_H_
+#ifndef NET_IB_V1_H_
+#define NET_IB_V1_H_
 
 #define NCCL_PROFILER_NET_IB_VER 1
 
