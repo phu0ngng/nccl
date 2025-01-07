@@ -131,7 +131,7 @@ struct ncclProxySubArgs {
   // Profiler plugin
   int eActivationMask;
   int rank;
-  uint64_t step;
+  uint64_t profilerSteps;
   pid_t pid;
   void* profilerContext;
   void* taskEventHandle;

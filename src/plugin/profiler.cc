@@ -547,7 +547,7 @@ ncclResult_t ncclProfilerCallback(void** eHandle, int type, void* pHandle, int64
       if (sub->eActivationMask & ncclProfileNetPlugin) {
         ncclProfilerEventDescr_t eDescr = { 0 };
         eDescr.type = ncclProfileNetPlugin;
-        eDescr.parentObj = sub->stepEventHandles[sub->step%NCCL_STEPS];
+        eDescr.parentObj = sub->stepEventHandles[sub->profilerSteps%NCCL_STEPS];
         eDescr.rank = sub->rank;
         eDescr.netPlugin.id = pluginId;
         eDescr.netPlugin.data = extData;
