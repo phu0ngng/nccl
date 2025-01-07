@@ -8,6 +8,7 @@
 #include "bootstrap.h"
 #include "checks.h"
 #include "plugin.h"
+#include "nccl_net.h"
 
 #include <string.h>
 #include <errno.h>
@@ -15,17 +16,24 @@
 //#include <sys/stat.h>
 //#include <unistd.h>
 
-extern ncclNet_t* getNcclNet_v6(void* netPluginLib);
-extern ncclNet_t* getNcclNet_v7(void* netPluginLib);
-extern ncclNet_t* getNcclNet_v8(void* netPluginLib);
-extern ncclNet_t* getNcclNet_v9(void* netPluginLib);
-extern ncclNet_t* getNcclNet_v10(void* netPluginLib);
+typedef ncclNet_t* getNcclNet_t(void* netPluginLib);
+typedef ncclCollNet_t* getNcclCollNet_t(void* netPluginLib);
 
-extern ncclCollNet_t* getNcclCollNet_v6(void* netPluginLib);
-extern ncclCollNet_t* getNcclCollNet_v7(void* netPluginLib);
-extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
-extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
-extern ncclCollNet_t* getNcclCollNet_v10(void* netPluginLib);
+extern getNcclNet_t getNcclNet_v6;
+extern getNcclNet_t getNcclNet_v7;
+extern getNcclNet_t getNcclNet_v8;
+extern getNcclNet_t getNcclNet_v9;
+extern getNcclNet_t getNcclNet_v10;
+extern getNcclCollNet_t getNcclCollNet_v6;
+extern getNcclCollNet_t getNcclCollNet_v7;
+extern getNcclCollNet_t getNcclCollNet_v8;
+extern getNcclCollNet_t getNcclCollNet_v9;
+extern getNcclCollNet_t getNcclCollNet_v10;
+
+#define NCCL_NET_VERSION_COUNT 5
+int ncclNetVersion[NCCL_NET_VERSION_COUNT] = {10, 9, 8, 7, 6};
+getNcclNet_t* getNcclNet[NCCL_NET_VERSION_COUNT] = {getNcclNet_v10, getNcclNet_v9, getNcclNet_v8, getNcclNet_v7, getNcclNet_v6};
+getNcclCollNet_t* getNcclCollNet[NCCL_NET_VERSION_COUNT] = {getNcclCollNet_v10, getNcclCollNet_v9, getNcclCollNet_v8, getNcclCollNet_v7,  getNcclCollNet_v6};
 
 #define NCCL_NET_NUM_INTERNAL_PLUGINS 2
 
@@ -66,47 +74,26 @@ static ncclResult_t ncclNetPluginUnload(netPluginLib_t* pluginLib) {
 
 static ncclResult_t ncclNetPluginLoad(netPluginLib_t* pluginLib) {
   pluginLib->dlHandle = ncclOpenNetPluginLib(pluginLib->name);
-  if (!pluginLib->dlHandle) goto fail;
-  pluginLib->ncclNet = getNcclNet_v9(pluginLib->dlHandle);
-  if (pluginLib->ncclNet) pluginLib->ncclNetVer = 9;
-  if (pluginLib->ncclNet == nullptr) {
-    pluginLib->ncclNet = getNcclNet_v8(pluginLib->dlHandle);
-    if (pluginLib->ncclNet) pluginLib->ncclNetVer = 8;
+
+  if (pluginLib->dlHandle == nullptr) goto fail;
+  // load ncclNet
+  for (int i = 0; i < NCCL_NET_VERSION_COUNT; i++) {
+    pluginLib->ncclNetVer = ncclNetVersion[i];
+    pluginLib->ncclNet = getNcclNet[i](pluginLib->dlHandle);
+    if (pluginLib->ncclNet) break;
   }
-  if (pluginLib->ncclNet == nullptr) {
-    // Try v7 plugin
-    pluginLib->ncclNet = getNcclNet_v7(pluginLib->dlHandle);
-    if (pluginLib->ncclNet) pluginLib->ncclNetVer = 7;
-  }
-  if (pluginLib->ncclNet == nullptr) {
-    // Try v6 plugin
-    pluginLib->ncclNet = getNcclNet_v6(pluginLib->dlHandle);
-    if (pluginLib->ncclNet) pluginLib->ncclNetVer = 6;
-  }
-  if (pluginLib->ncclNet == nullptr) {
-    // Try v5 plugin
-    pluginLib->ncclNet = getNcclNet_v5(pluginLib->dlHandle);
-    if (pluginLib->ncclNet) pluginLib->ncclNetVer = 5;
-  }
-  if (pluginLib->ncclNet == nullptr) {
-    goto fail;
-  }
+
+  // if we fail to find a net, exit
+  if (pluginLib->ncclNet == nullptr) goto fail;
+
   pluginLib->ncclNetPluginState = ncclNetPluginStateInitReady;
 
-  // Check for CollNet
-  pluginLib->ncclCollNet = getNcclCollNet_v9(pluginLib->dlHandle);
-  if (pluginLib->ncclCollNet == nullptr) {
-    pluginLib->ncclCollNet = getNcclCollNet_v8(pluginLib->dlHandle);
+  // load ncclColNet
+  for (int i = 0; i < NCCL_NET_VERSION_COUNT; i++) {
+    pluginLib->ncclCollNet = getNcclCollNet[i](pluginLib->dlHandle);
+    if (pluginLib->ncclCollNet) break;
   }
-  if (pluginLib->ncclCollNet == nullptr) {
-    pluginLib->ncclCollNet = getNcclCollNet_v7(pluginLib->dlHandle);
-  }
-  if (pluginLib->ncclCollNet == nullptr) {
-    pluginLib->ncclCollNet = getNcclCollNet_v6(pluginLib->dlHandle);
-  }
-  if (pluginLib->ncclCollNet == nullptr) {
-    pluginLib->ncclCollNet = getNcclCollNet_v5(pluginLib->dlHandle);
-  }
+
   if (pluginLib->ncclCollNet == nullptr)
     pluginLib->ncclCollNetPluginState = ncclNetPluginStateLoadFailed;
   else
