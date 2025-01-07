@@ -27,120 +27,101 @@ extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v10(void* netPluginLib);
 
-static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
-ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr };
-static int ncclNetsVer[NCCL_NET_MAX_PLUGINS] = { -1 };
-ncclCollNet_t* ncclCollNets[NCCL_NET_MAX_PLUGINS] = { nullptr };
+#define NCCL_NET_NUM_INTERNAL_PLUGINS 2
 
-enum ncclNetPluginState {
-  ncclNetPluginStateDisabled   = -2,
-  ncclNetPluginStateLoadFailed = -1,
-  ncclNetPluginStateLoadReady  = 0,
-  ncclNetPluginStateInitReady  = 1,
-  ncclNetPluginStateEnabled    = 2
-};
+typedef enum ncclNetPluginState {
+  ncclNetPluginStateDisabled        = -2,       // Plugin library failed to initialize
+  ncclNetPluginStateLoadFailed      = -1,       // Plugin library failed to load
+  ncclNetPluginStateLoadReady       = 0,        // Plugin library is ready to be loaded
+  ncclNetPluginStateInitReady       = 1,        // Plugin library is loaded and ready to be initialized
+  ncclNetPluginStateEnabled         = 2,        // Plugin library is loaded and initialized
+} ncclNetPluginState_t;
 
-enum ncclNetPluginState ncclNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetPluginStateLoadReady };
-enum ncclNetPluginState ncclCollNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetPluginStateLoadReady };
+#define MAX_STR_LEN 255
+typedef struct netPluginLib {
+  char name[MAX_STR_LEN];                       // Name of the plugin library
+  void* dlHandle;                               // Handle to the plugin library
+  ncclNet_t* ncclNet;                           // Pointer to the ncclNet_t structure
+  int ncclNetVer;                               // Version of the nccl net plugin
+  ncclCollNet_t* ncclCollNet;                   // Pointer to the ncclCollNet_t structure
+  ncclNetPluginState_t ncclNetPluginState;      // State of the nccl net plugin
+  ncclNetPluginState_t ncclCollNetPluginState;  // State of the nccl coll net plugin
+  int ncclNetPluginRefCount;                    // Reference count for the nccl net plugin
+} netPluginLib_t;
 
-NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 1);
+int pluginCount = 0;
+bool netPluginLibsInitialized = false;
+netPluginLib_t netPluginLibs[NCCL_NET_MAX_PLUGINS] = { 0 };
 static pthread_mutex_t netPluginLock = PTHREAD_MUTEX_INITIALIZER;
-static void* netPluginLib;
+static pthread_once_t initPluginLibsOnceControl = PTHREAD_ONCE_INIT;
 
-static int netPluginStatus = ncclNetPluginStateLoadReady;
-
-ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
-  static pthread_once_t netPluginRefCountOnce = PTHREAD_ONCE_INIT;
-  pthread_once(&netPluginRefCountOnce, initNetPluginRefCountOnce);
-
-  pthread_mutex_lock(&netPluginLock);
-  if (ncclNetPluginStateLoadFailed == netPluginStatus) {
-    goto exit;
+static ncclResult_t ncclNetPluginUnload(netPluginLib_t* pluginLib) {
+  if ((pluginLib->dlHandle) && ((pluginLib->ncclNetPluginRefCount) == 0)) {
+    INFO(NCCL_INIT|NCCL_NET, "Unloading plugin %s", pluginLib->name);
+    NCCLCHECK(ncclClosePluginLib(pluginLib->dlHandle));
+    memset(pluginLib, 0, sizeof(netPluginLib_t));
   }
-  if (ncclNetStateInitReady == netPluginStatus) {
-    ++netPluginRefCount;
-    goto exit;
-  }
-
-  netPluginLib = ncclOpenNetPluginLib(ncclGetEnv("NCCL_NET_PLUGIN"));
-  if (netPluginLib == nullptr) {
-    goto fail;
-  }
-
-  ncclNets[0] = getNcclNet_v10(netPluginLib);
-  if (ncclNets[0]) ncclNetsVer[0] = 10;
-  if (ncclNets[0] == nullptr) {
-    // Try v9 plugin
-    ncclNets[0] = getNcclNet_v9(netPluginLib);
-    if (ncclNets[0]) ncclNetsVer[0] = 9;
-  }
-  if (ncclNets[0] == nullptr) {
-    // Try v8 plugin
-    ncclNets[0] = getNcclNet_v8(netPluginLib);
-    if (ncclNets[0]) ncclNetsVer[0] = 8;
-  }
-  if (ncclNets[0] == nullptr) {
-    // Try v7 plugin
-    ncclNets[0] = getNcclNet_v7(netPluginLib);
-    if (ncclNets[0]) ncclNetsVer[0] = 7;
-  }
-  if (ncclNets[0] == nullptr) {
-    // Try v6 plugin
-    ncclNets[0] = getNcclNet_v6(netPluginLib);
-    if (ncclNets[0]) ncclNetsVer[0] = 6;
-  }
-  if (ncclNets[0] == nullptr) {
-    goto fail;
-  }
-
-  // Check for CollNet
-  ncclCollNets[0] = getNcclCollNet_v10(netPluginLib);
-  if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v9(netPluginLib);
-  }
-  if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v8(netPluginLib);
-  }
-  if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v7(netPluginLib);
-  }
-  if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v6(netPluginLib);
-  }
-
-  ++netPluginRefCount;
-  netPluginStatus = ncclNetStateInitReady;
-  comm->netPluginLoaded = 1;
-
-exit:
-  pthread_mutex_unlock(&netPluginLock);
   return ncclSuccess;
-fail:
-  if (netPluginLib) NCCLCHECK(ncclClosePluginLib(netPluginLib));
-  netPluginStatus = ncclNetPluginStateLoadFailed;
-  goto exit;
 }
 
-ncclResult_t ncclNetPluginUnload(struct ncclComm* comm) {
-  pthread_mutex_lock(&netPluginLock);
-  if (comm->netPluginLoaded && 0 == (--netPluginRefCount)) {
-    if (ncclNets[0]) {
-      INFO(NCCL_NET, "NET/Plugin: Closing net plugin '%s'", ncclNets[0]->name);
-    }
-    if (ncclCollNets[0]) {
-      INFO(NCCL_NET, "NET/Plugin: Closing collnet plugin '%s'", ncclCollNets[0]->name);
-    }
-    NCCLCHECK(ncclClosePluginLib(netPluginLib));
-    netPluginLib = nullptr;
-    ncclNets[0] = nullptr;
-    ncclCollNets[0] = nullptr;
-    netPluginStatus = ncclNetPluginStateLoadReady;
-    comm->netPluginLoaded = 0;
-    for (int i = 0; i < NCCL_NET_MAX_PLUGINS; ++i)
-      ncclCollNetStates[i] = ncclNetStates[i] = ncclNetStateInitReady;
+static ncclResult_t ncclNetPluginLoad(netPluginLib_t* pluginLib) {
+  pluginLib->dlHandle = ncclOpenNetPluginLib(pluginLib->name);
+  if (!pluginLib->dlHandle) goto fail;
+  pluginLib->ncclNet = getNcclNet_v9(pluginLib->dlHandle);
+  if (pluginLib->ncclNet) pluginLib->ncclNetVer = 9;
+  if (pluginLib->ncclNet == nullptr) {
+    pluginLib->ncclNet = getNcclNet_v8(pluginLib->dlHandle);
+    if (pluginLib->ncclNet) pluginLib->ncclNetVer = 8;
   }
-  pthread_mutex_unlock(&netPluginLock);
+  if (pluginLib->ncclNet == nullptr) {
+    // Try v7 plugin
+    pluginLib->ncclNet = getNcclNet_v7(pluginLib->dlHandle);
+    if (pluginLib->ncclNet) pluginLib->ncclNetVer = 7;
+  }
+  if (pluginLib->ncclNet == nullptr) {
+    // Try v6 plugin
+    pluginLib->ncclNet = getNcclNet_v6(pluginLib->dlHandle);
+    if (pluginLib->ncclNet) pluginLib->ncclNetVer = 6;
+  }
+  if (pluginLib->ncclNet == nullptr) {
+    // Try v5 plugin
+    pluginLib->ncclNet = getNcclNet_v5(pluginLib->dlHandle);
+    if (pluginLib->ncclNet) pluginLib->ncclNetVer = 5;
+  }
+  if (pluginLib->ncclNet == nullptr) {
+    goto fail;
+  }
+  pluginLib->ncclNetPluginState = ncclNetPluginStateInitReady;
+
+  // Check for CollNet
+  pluginLib->ncclCollNet = getNcclCollNet_v9(pluginLib->dlHandle);
+  if (pluginLib->ncclCollNet == nullptr) {
+    pluginLib->ncclCollNet = getNcclCollNet_v8(pluginLib->dlHandle);
+  }
+  if (pluginLib->ncclCollNet == nullptr) {
+    pluginLib->ncclCollNet = getNcclCollNet_v7(pluginLib->dlHandle);
+  }
+  if (pluginLib->ncclCollNet == nullptr) {
+    pluginLib->ncclCollNet = getNcclCollNet_v6(pluginLib->dlHandle);
+  }
+  if (pluginLib->ncclCollNet == nullptr) {
+    pluginLib->ncclCollNet = getNcclCollNet_v5(pluginLib->dlHandle);
+  }
+  if (pluginLib->ncclCollNet == nullptr)
+    pluginLib->ncclCollNetPluginState = ncclNetPluginStateLoadFailed;
+  else
+    pluginLib->ncclCollNetPluginState = ncclNetPluginStateInitReady;
+
+  INFO(NCCL_INIT|NCCL_NET, "Successfully loaded external plugin %s", pluginLib->name);
+exit:
   return ncclSuccess;
+fail:
+  if (pluginLib->dlHandle) {
+    NCCLCHECK(ncclClosePluginLib(pluginLib->dlHandle));
+  }
+  pluginLib->ncclNetPluginState = ncclNetPluginStateLoadFailed;
+  pluginLib->ncclCollNetPluginState = ncclNetPluginStateLoadFailed;
+  goto exit;
 }
 
 ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, int dev) {
@@ -167,72 +148,142 @@ ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, in
   return ncclSuccess;
 }
 
-static ncclResult_t netGetState(int i, enum ncclNetPluginState* state) {
-  pthread_mutex_lock(&netLock);
-  if (ncclNetStates[i] == ncclNetStateInitReady) {
-    int ndev;
-    if (ncclNets[i]->init(ncclDebugLog, ncclProfilerCallback) != ncclSuccess) ncclNetStates[i] = ncclNetPluginStateDisabled;
-    else if (ncclNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclNetStates[i] = ncclNetPluginStateDisabled;
-    else ncclNetStates[i] = ncclNetPluginStateEnabled;
+static ncclResult_t ncclNetPluginInit(netPluginLib_t* pluginLib) {
+  int ndev;
+  if (pluginLib->ncclNetPluginState == ncclNetPluginStateInitReady && pluginLib->ncclNet) {
+    if (pluginLib->ncclNet->init(ncclDebugLog, ncclProfilerCallback) != ncclSuccess) goto fail;
+    if (pluginLib->ncclNet->devices(&ndev) != ncclSuccess || ndev <= 0) goto fail;
   }
-  *state = ncclNetStates[i];
-  pthread_mutex_unlock(&netLock);
+  pluginLib->ncclNetPluginState = ncclNetPluginStateEnabled;
+  INFO(NCCL_INIT|NCCL_NET, "Initialized NET plugin %s", pluginLib->ncclNet->name);
+
+  if (pluginLib->ncclCollNetPluginState == ncclNetPluginStateInitReady && pluginLib->ncclCollNet) {
+    if (pluginLib->ncclCollNet->init(ncclDebugLog) != ncclSuccess) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
+    else if (pluginLib->ncclCollNet->devices(&ndev) != ncclSuccess || ndev <= 0) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
+    else {
+      pluginLib->ncclCollNetPluginState = ncclNetPluginStateEnabled;
+    }
+  }
+exit:
+  return ncclSuccess;
+fail:
+  pluginLib->ncclNetPluginState = ncclNetPluginStateDisabled;
+  pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
+  goto exit;
+}
+
+static ncclResult_t ncclNetPluginAssignToComm(struct ncclComm* comm, int pluginIndex, bool* isAssigned) {
+  const char* netName = comm->config.netName;
+  if (netName && strcasecmp(netName, netPluginLibs[pluginIndex].ncclNet->name) != 0) goto fail;
+  if (ncclSuccess != ncclNetCheckDeviceVersion(comm, netPluginLibs[pluginIndex].ncclNet, 0)) goto fail;
+
+  if (netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateEnabled) {
+    comm->ncclNet = netPluginLibs[pluginIndex].ncclNet;
+    comm->ncclNetVer = netPluginLibs[pluginIndex].ncclNetVer;
+    comm->netPluginIndex = pluginIndex;
+    netPluginLibs[pluginIndex].ncclNetPluginRefCount++;
+    *isAssigned = true;
+    INFO(NCCL_INIT|NCCL_NET, "Assigned NET plugin %s to comm", netPluginLibs[pluginIndex].ncclNet->name);
+    if (netPluginLibs[pluginIndex].ncclCollNetPluginState >= ncclNetPluginStateEnabled) {
+      comm->ncclCollNet = netPluginLibs[pluginIndex].ncclCollNet;
+    }
+  }
+exit:
+  return ncclSuccess;
+fail:
+  *isAssigned = false;
+  netPluginLibs[pluginIndex].ncclNetPluginState = ncclNetPluginStateEnabled;
+  netPluginLibs[pluginIndex].ncclCollNetPluginState = ncclNetPluginStateEnabled;
+  goto exit;
+}
+
+static ncclResult_t ncclNetPluginDisableOtherExternal(int pluginIndex) {
+  // Only if an external plugin is enabled, disable other external plugins
+  if (pluginIndex >= (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) return ncclSuccess;
+  char names[MAX_STR_LEN*(NCCL_NET_MAX_PLUGINS - NCCL_NET_NUM_INTERNAL_PLUGINS)] = { 0 };
+  for (int i = 0; i < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS); i++) {
+    if (i != pluginIndex) {
+      // Append all disabled plugin names to a string
+      snprintf(names+strlen(names), sizeof(names)-strlen(names), (strlen(names) == 0) ? "%s" : ", %s", netPluginLibs[i].name);
+      netPluginLibs[i].ncclNetPluginState = ncclNetPluginStateDisabled;
+    }
+  }
+  if(strlen(names) > 0) {
+    INFO(NCCL_INIT|NCCL_NET, "Disabling external plugins: %s", names);
+  }
   return ncclSuccess;
 }
 
-static ncclResult_t collNetGetState(int i, enum ncclNetPluginState* state) {
-  pthread_mutex_lock(&netLock);
-  if (ncclCollNetStates[i] == ncclNetStateInitReady) {
-    int ndev;
-    if (ncclCollNets[i]->init(ncclDebugLog) != ncclSuccess) ncclCollNetStates[i] = ncclNetPluginStateDisabled;
-    else if (ncclCollNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclCollNetStates[i] = ncclNetPluginStateDisabled;
-    else ncclCollNetStates[i] = ncclNetPluginStateEnabled;
+static void initPluginLibsOnceFunc() {
+  char* netPluginName = nullptr;
+  const char* envNetPluginName = nullptr;
+  const char* defaultNetPlugin = "libnccl-net.so";
+  char envNetPluginList[MAX_STR_LEN*NCCL_NET_MAX_PLUGINS] = { 0 };
+  char* savePtr = nullptr;
+  int pluginCounter = 0;
+
+  memset(netPluginLibs, 0, NCCL_NET_MAX_PLUGINS * sizeof(netPluginLib_t));
+
+  envNetPluginName = ncclGetEnv("NCCL_NET_PLUGIN");
+  if (envNetPluginName) {
+    strcpy(envNetPluginList, envNetPluginName);
+    strcat(envNetPluginList, ",");
   }
-  *state = ncclCollNetStates[i];
-  pthread_mutex_unlock(&netLock);
-  return ncclSuccess;
+  strcat(envNetPluginList, defaultNetPlugin);
+
+  // Iterate over list until the list is empty
+  netPluginName = strtok_r(envNetPluginList, ",", &savePtr);
+  while(netPluginName) {
+    assert(strlen(netPluginName) < MAX_STR_LEN);
+    netPluginLibs[pluginCounter].ncclNetPluginState = ncclNetPluginStateLoadReady;
+    strcpy(netPluginLibs[pluginCounter].name, netPluginName);
+    pluginCounter++;
+    netPluginName = strtok_r(nullptr, ",", &savePtr);
+  }
+
+  // Add 2 internal ib and socket plugins
+  netPluginLibs[pluginCounter].ncclNet = &ncclNetIb;
+  netPluginLibs[pluginCounter++].ncclNetPluginState = ncclNetPluginStateInitReady;
+  netPluginLibs[pluginCounter].ncclNet = &ncclNetSocket;
+  netPluginLibs[pluginCounter++].ncclNetPluginState = ncclNetPluginStateInitReady;
+  pluginCount = pluginCounter;
 }
 
 ncclResult_t ncclNetInit(struct ncclComm* comm) {
-  // Initialize main communication network
-  const char* netName;
-  bool ok = false;
-
-  netName = comm->config.netName;
-  for (int i=0; i<3; i++) {
-    if (ncclNets[i] == nullptr) continue;
-    enum ncclNetPluginState state;
-    NCCLCHECK(netGetState(i, &state));
-    if (state != ncclNetPluginStateEnabled) continue;
-    if (netName && strcasecmp(netName, ncclNets[i]->name) != 0) continue;
-    if (ncclSuccess != ncclNetCheckDeviceVersion(comm, ncclNets[i], 0)) {
-      // Mismatched device plugin version
-      continue;
+  bool ncclNetPluginInitialized = false;
+  pthread_once(&initPluginLibsOnceControl, initPluginLibsOnceFunc);
+  pthread_mutex_lock(&netPluginLock);
+  for (int pluginIndex = 0; pluginIndex < pluginCount; pluginIndex++) {
+    if ((pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) && (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateLoadReady)) {
+      NCCLCHECK(ncclNetPluginLoad(&netPluginLibs[pluginIndex]));
     }
-
-    comm->ncclNet = ncclNets[i];
-    comm->ncclNetVer = ncclNetsVer[i];
-    ok = true;
-
-    if (ncclCollNets[i]) {
-      NCCLCHECK(collNetGetState(i, &state));
-      if (state == ncclNetPluginStateEnabled) {
-        comm->ncclCollNet = ncclCollNets[i];
+    if (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateInitReady) {
+      NCCLCHECK(ncclNetPluginInit(&netPluginLibs[pluginIndex]));
+    }
+    if (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateEnabled) {
+      bool isAssigned = false;
+      NCCLCHECK(ncclNetPluginAssignToComm(comm, pluginIndex, &isAssigned));
+      if (isAssigned) {
+        // If one external plugin is assigned to a comm, then disable all other external plugins
+        ncclNetPluginDisableOtherExternal(pluginIndex);
+        ncclNetPluginInitialized = true;
+        break;
       }
     }
-    break;
   }
-
-  if (!ok) {
-    WARN("Error: network %s not found.", netName ? netName : "");
-    return ncclInvalidUsage;
-  }
-  return ncclSuccess;
+  pthread_mutex_unlock(&netPluginLock);
+  if (ncclNetPluginInitialized) return ncclSuccess;
+  WARN("Failed to initialize any NET plugin");
+  return ncclInvalidUsage;
 }
 
 ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
-  comm->ncclNet = nullptr;
-  comm->ncclCollNet = nullptr;
+  int pluginIndex = comm->netPluginIndex;
+  pthread_mutex_lock(&netPluginLock);
+  netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
+  if(pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS))
+    NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[pluginIndex]));
+  pthread_mutex_unlock(&netPluginLock);      
   return ncclSuccess;
 }
 
