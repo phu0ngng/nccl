@@ -137,3 +137,7 @@ endif
 ifneq ($(RDMA_CORE), 0)
 CXXFLAGS += -DNCCL_BUILD_RDMA_CORE=1
 endif
+
+ifneq ($(NET_PROFILER), 0)
+CXXFLAGS += -DNCCL_ENABLE_NET_PROFILING=1
+endif
