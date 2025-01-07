@@ -44,6 +44,7 @@ typedef ncclCollNet_v10_t ncclCollNet_t;
 typedef ncclNetSGE_v10_t ncclNetSGE_t;
 typedef ncclNetProperties_v10_t ncclNetProperties_t;
 typedef ncclNetVDeviceProps_v10_t ncclNetVDeviceProps_t;
+typedef ncclNetCommConfig_v10_t ncclNetCommConfig_t;
 
 #define NCCL_NET_MAX_DEVS_PER_NIC NCCL_NET_MAX_DEVS_PER_NIC_V10
 

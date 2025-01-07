@@ -26,6 +26,10 @@ static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* si
   return ncclNet_v9->irecv(recvComm, n, data, sizes, tags, mhandles, request);
 }
 
+static ncclResult_t ncclNet_connect(int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
+  return ncclNet_v9->connect(dev, handle, sendComm, sendDevComm);
+}
+
 static ncclResult_t ncclNet_makeVDevice(int* d, ncclNetVDeviceProps_t* props) {
   return ncclNet_v9->makeVDevice(d, (ncclNetVDeviceProps_v9_t*)props);
 }
@@ -54,7 +58,7 @@ static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn, ncclProfilerCallback_t
   ncclNet.devices = ncclNet_v9->devices;
   ncclNet.getProperties = ncclNet_getProperties;
   ncclNet.listen = ncclNet_v9->listen;
-  ncclNet.connect = ncclNet_v9->connect;
+  ncclNet.connect = ncclNet_connect;
   ncclNet.accept = ncclNet_v9->accept;
   ncclNet.regMr = ncclNet_v9->regMr;
   ncclNet.regMrDmaBuf = ncclNet_v9->regMrDmaBuf;
