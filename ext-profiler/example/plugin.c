@@ -203,8 +203,6 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
         if (base->type == ncclProfileColl) {
           struct collective* c = (struct collective *)base;
           // reset event proxyOps & proxySteps
-          memset(c->send, 0, sizeof(struct proxyOp)*MAX_CHANNELS*MAX_OPS);
-          memset(c->recv, 0, sizeof(struct proxyOp)*MAX_CHANNELS*MAX_OPS);
           memset(c->nProxyOps, 0, sizeof(int)*MAX_CHANNELS);
           // release collective events in the group and return them to the collective pool
           __atomic_fetch_add(&ctx->collPoolBase, 1, __ATOMIC_RELAXED);
