@@ -107,7 +107,6 @@ struct collective {
   void const* sendBuff;
   void* recvBuff;
   size_t count;
-  size_t trafficBytes;
   int root;
   const char* datatype;
   uint8_t nMaxChannels;

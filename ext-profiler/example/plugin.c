@@ -256,7 +256,6 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->count = eDescr->coll.count;
     event->root = eDescr->coll.root;
     event->datatype = eDescr->coll.datatype;
-    event->trafficBytes = eDescr->coll.trafficBytes;
     event->nMaxChannels = eDescr->coll.nMaxChannels;
     event->nWarps = eDescr->coll.nWarps;
     event->algo = eDescr->coll.algo;

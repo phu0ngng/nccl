@@ -156,7 +156,6 @@ typedef struct {
       size_t count;         // data count
       int root;             // root rank
       const char* datatype; // string containing the name of the datatype
-      size_t trafficBytes;  // number of transfer bytes
       uint8_t nMaxChannels; // max number of channels for this collective
       uint8_t nWarps;       // number of GPU warps for this collective
       const char* algo;     // string containing name of the algorithm for this collective

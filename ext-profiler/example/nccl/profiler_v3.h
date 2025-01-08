@@ -34,7 +34,6 @@ typedef struct {
       size_t count;
       int root;
       const char* datatype;
-      size_t trafficBytes;
       uint8_t nMaxChannels;
       uint8_t nWarps;
       const char* algo;
