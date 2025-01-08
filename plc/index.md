@@ -9,6 +9,7 @@
 - [Improved RAS](items/id_3ee46fc4/Improved_RAS.md)
 - [Qp Profiling](items/id_31fddbba/Qp_Profiling.md)
 - [PAT Optimization](items/id_763fe7ed/PAT_Optimization.md)
+- [Quality_of_service](items/id_adf8e316/Quality_of_service.md)
 <!-- V2_26_DO_NOT_MOVE -->
 
 <!------------------------------------->
