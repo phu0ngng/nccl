@@ -14,14 +14,12 @@
 //#include <sys/stat.h>
 //#include <unistd.h>
 
-extern ncclNet_t* getNcclNet_v5(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v6(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v7(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v8(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v9(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v10(void* netPluginLib);
 
-extern ncclCollNet_t* getNcclCollNet_v5(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v6(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v7(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
@@ -93,11 +91,6 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
     if (ncclNets[0]) ncclNetsVer[0] = 6;
   }
   if (ncclNets[0] == nullptr) {
-    // Try v5 plugin
-    ncclNets[0] = getNcclNet_v5(netPluginLib);
-    if (ncclNets[0]) ncclNetsVer[0] = 5;
-  }
-  if (ncclNets[0] == nullptr) {
     goto fail;
   }
 
@@ -114,9 +107,6 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   }
   if (ncclCollNets[0] == nullptr) {
     ncclCollNets[0] = getNcclCollNet_v6(netPluginLib);
-  }
-  if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v5(netPluginLib);
   }
 
   ++netPluginRefCount;

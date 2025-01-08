@@ -38,7 +38,6 @@ typedef ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* p
 #include "net/net_v8.h"
 #include "net/net_v7.h"
 #include "net/net_v6.h"
-#include "net/net_v5.h"
 
 typedef ncclNet_v10_t ncclNet_t;
 typedef ncclCollNet_v10_t ncclCollNet_t;
