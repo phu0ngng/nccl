@@ -129,17 +129,23 @@ To enable IB Sharp buffer registration by local registration:
 General Buffer Registration
 ---------------------------
 
-Since 2.23.x, NCCL supports intra-node buffer registration, which targets all peer-to-peer intra-node communications and brings less memory access, fewer SM usage
-and performance improvement. Either registering buffers by `ncclCommRegister` in the beginning or applying CUDA graph can enable intra-node buffer registration for NCCL collectives and sendrecv.
-The registered buffers can be allocated through legacy cuda API (e.g., `cudaMalloc`) as well as VMM API (e.g., `cuMem*` or `ncclMemAlloc`). However, VMM-allocated buffers are highly recommended since it is safer than legacy buffers during failure and abort.
+Since 2.23.x, NCCL supports intra-node buffer registration, which targets all peer-to-peer intra-node communications (e.g., Allgather Ring) and brings less memory pressure, better communication and computation overlap performance. Either registering buffers by `ncclCommRegister` in the beginning or applying CUDA graph can enable intra-node buffer registration for NCCL collectives and sendrecv.
+
+The user buffers can be allocated through VMM API (i.e., `cuMem*`), any VMM-based allocators (:ref:`mem_allocator`) or `ncclMemAlloc` will work. The buffers allocated through legacy cuda API (e.g., `cudaMalloc`) can also be used for registration. However, it is not safe due to the potential hang during execution and segmentation fault during failure and abort, so using legacy buffers for registration is not recommended; currently, legacy buffer registration is disabled by default, users can set `NCCL_LEGACY_CUDA_REGISTER=1` to enable it.
 
 .. _mem_allocator:
 
 Memory Allocator
 ----------------
 
-For convenience, NCCL provides `ncclMemAlloc` function to help users to allocate buffers through VMM API, which can be used for NCCL registration later. It is only designed for NCCL so that it is not recommended to use `ncclMemAlloc` allocated buffers everywhere in the applications. For advanced users, if you want to create your own memory allocator for NVLS buffer registration, the allocator needs to satisfy the following requirements:
+For convenience, NCCL provides `ncclMemAlloc` function to help users to allocate buffers through VMM API, which can be used for NCCL registration later. It is only designed for NCCL so that it is not recommended to use `ncclMemAlloc` allocated buffers everywhere in the applications.
+
+For advanced users, if you want to create your own memory allocator for NVLS buffer registration, the allocator needs to satisfy the following requirements:
 
  * Allocate buffer with shared flag `CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR` and also `CU_MEM_HANDLE_TYPE_FABRIC` on GPUs where it's supported.
  * Buffer size is multiple of multicast recommended granularity (i.e. cuMulticastGetGranularity(..., `CU_MULTICAST_GRANULARITY_RECOMMENDED`))
  * Buffer head address is at least aligned to multicast minimal granularity (i.e. cuMulticastGetGranularity(..., `CU_MULTICAST_GRANULARITY_MINIMUM`))
+
+For general buffer registration, the allocator needs to satisfy the following requirements:
+
+ * Allocate buffer with shared flag `CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR` and also `CU_MEM_HANDLE_TYPE_FABRIC` on GPUs where it's supported.

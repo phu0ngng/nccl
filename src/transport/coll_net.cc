@@ -1150,6 +1150,7 @@ struct collnetRegInfo {
 
 static ncclResult_t collnetRegisterBuffer(struct ncclComm* comm, const void* userbuff, size_t buffSize, int type, struct ncclReg* regRecord, int* outRegBufFlag, void** outHandle) {
   ncclResult_t ret = ncclSuccess;
+  int gdrEnable = -1;
   if (regRecord) {
     if (regRecord->state & COLLNET_REG_COMPLETE) {
       // reuse previous registration
@@ -1165,6 +1166,7 @@ static ncclResult_t collnetRegisterBuffer(struct ncclComm* comm, const void* use
 
       if (conn->flags & NCCL_DIRECT_NIC) {
         struct ncclProxyConnector* proxyconn = (type == collNetRecv) ? &comm->channels[0].peers[comm->nRanks]->recv[type].proxyConn : &comm->channels[0].peers[comm->nRanks]->send[type].proxyConn;
+        gdrEnable = 1;
         NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyconn, ncclProxyMsgRegister, &info, sizeof(struct collnetRegInfo), &handle, sizeof(void*)), ret, fail);
         if (handle) {
           regRecord->state |= COLLNET_REG_COMPLETE;
@@ -1174,7 +1176,8 @@ static ncclResult_t collnetRegisterBuffer(struct ncclComm* comm, const void* use
           INFO(NCCL_REG, "rank %d - COLLNET register userbuff %p (handle %p), buffSize %ld, type %s", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
         }
       } else {
-        WARN("rank %d - COLLNET failed to register userbuff %p (handle %p), buffSize %ld, type %s, GDR is not enabled", comm->rank, userbuff, handle, buffSize, type == collNetRecv ? "Recv" : "Send");
+        gdrEnable = 0;
+        goto fail;
       }
     }
   }
@@ -1183,6 +1186,7 @@ exit:
 fail:
   *outRegBufFlag = 0;
   *outHandle = NULL;
+  INFO(NCCL_REG, "rank %d - COLLNET failed to register userbuff %p, buffSize %ld, type %s, GDR %d", comm->rank, userbuff, buffSize, type == collNetRecv ? "Recv" : "Send", gdrEnable);
   goto exit;
 }
 

@@ -1558,7 +1558,7 @@ exit:
   return ret;
 fail:
   *outRegBufFlag = 0;
-  WARN("rank %d failed to NET register userbuff %p buffSize %ld GDR flag %d", comm->rank, userbuff, buffSize, gdrFlag);
+  INFO(NCCL_REG, "rank %d failed to NET register userbuff %p buffSize %ld GDR flag %d", comm->rank, userbuff, buffSize, gdrFlag);
   goto exit;
 }
 
