@@ -1655,11 +1655,11 @@ static ncclResult_t topoGetAlgoInfo(
   if (info->algorithm == NCCL_ALGO_UNDEF || info->protocol == NCCL_PROTO_UNDEF) {
     char ncclAlgoEnvStr[1024] = "";
     char ncclProtoEnvStr[1024] = "";
-    char* algoEnv = getenv("NCCL_ALGO");
+    const char* algoEnv = ncclGetEnv("NCCL_ALGO");
     if (algoEnv) {
       snprintf(ncclAlgoEnvStr, 1023, " NCCL_ALGO was set to %s.", algoEnv);
     }
-    char* protoEnv = getenv("NCCL_PROTO");
+    const char* protoEnv = ncclGetEnv("NCCL_PROTO");
     if (protoEnv) {
       snprintf(ncclProtoEnvStr, 1023, " NCCL_PROTO was set to %s.", protoEnv);
     }

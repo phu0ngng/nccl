@@ -63,7 +63,7 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
     goto exit;
   }
 
-  netPluginLib = openNetPluginLib(getenv("NCCL_NET_PLUGIN"));
+  netPluginLib = openNetPluginLib(ncclGetEnv("NCCL_NET_PLUGIN"));
   if (netPluginLib == nullptr) {
     goto fail;
   }

@@ -53,7 +53,7 @@ ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
     goto exit;
   }
 
-  tunerPluginLib = openTunerPluginLib(getenv("NCCL_TUNER_PLUGIN"));
+  tunerPluginLib = openTunerPluginLib(ncclGetEnv("NCCL_TUNER_PLUGIN"));
   if (nullptr == tunerPluginLib) {
     tunerPluginLib = getNetPluginLib();
     if (nullptr == tunerPluginLib) {
