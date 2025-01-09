@@ -74,6 +74,8 @@ static ncclResult_t rasNetSendNack(struct rasSocket* sock);
 
 static void* rasThreadMain(void*);
 
+static void rasTerminate();
+
 NCCL_PARAM(RasTimeoutFactor, "RAS_TIMEOUT_FACTOR", 1);
 
 //////////////////////////////////////////////////
@@ -105,9 +107,10 @@ ncclResult_t ncclRasCommInit(struct ncclComm* comm, struct rasRankInit* myRank) 
 
       PTHREADCHECKGOTO(pthread_create(&rasThread, nullptr, &rasThreadMain, nullptr), "pthread_create", ret, fail);
       ncclSetThreadName(rasThread, "NCCL RAS");
-      (void)pthread_detach(rasThread);
 
       rasInitialized = true;
+
+      atexit(rasTerminate);
     }
   }
   ncclAtomicRefCountIncrement(&rasInitRefCount);
@@ -157,12 +160,18 @@ ncclResult_t ncclRasCommFini(const struct ncclComm* comm) {
       }
     }
   }
-  if (ncclAtomicRefCountDecrement(&rasInitRefCount) == 0) {
-    struct rasNotification msg;
-    msg.type = RAS_TERMINATE;
-    NCCLCHECK(rasLocalNotify(&msg));
-  }
+  ncclAtomicRefCountDecrement(&rasInitRefCount);
   return ncclSuccess;
+}
+
+// atexit callback.  Notifies the RAS thread to release all the resources
+// and terminate.  Waits for the thread to terminate.
+static void rasTerminate() {
+  struct rasNotification msg;
+  memset(&msg, '\0', sizeof(msg));
+  msg.type = RAS_TERMINATE;
+  if (rasLocalNotify(&msg) == ncclSuccess)
+    (void)pthread_join(rasThread, nullptr);
 }
 
 // Invoked by regular NCCL threads on every (non-split) comm initialization.  Provides info on all the ranks within
@@ -227,7 +236,36 @@ static ncclResult_t rasLocalHandle() {
 // Handles local RAS_TERMINATE notification.
 static void rasLocalHandleTerminate() {
   INFO(NCCL_RAS, "RAS handling local termination request");
-  // For now we don't do anything.
+
+  rasClientSupportTerminate();
+  rasNetTerminate();
+  rasCollectivesTerminate();
+  rasPeersTerminate();
+
+  {
+    std::lock_guard<std::mutex> lock(rasInitMutex);
+    (void)close(rasNotificationPipe[1]);
+    (void)close(rasNotificationPipe[0]);
+    // rasClientListeningSocket is taken care of by rasClientSupportTerminate().
+    rasNotificationPipe[0] = rasNotificationPipe[1] = -1;
+    (void)ncclSocketClose(&rasNetListeningSocket);
+    rasInitRefCount = 0;
+    rasInitialized = false;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(ncclCommsMutex);
+    free(ncclComms);
+    ncclComms = nullptr;
+    nNcclComms = 0;
+    ncclCommsSorted = false;
+  }
+
+  free(rasPfds);
+  rasPfds = nullptr;
+  nRasPfds = 0;
+
+  pthread_exit(nullptr);
 }
 
 

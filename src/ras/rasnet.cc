@@ -1303,3 +1303,33 @@ static struct rasLinkConn* rasLinkConnFind(const struct rasLink* link, const str
     *pLinkIdx = -1;
   return nullptr;
 }
+
+// Invoked during RAS termination to release all the allocated resources.
+void rasNetTerminate() {
+  for (struct rasLinkConn* linkConn = rasNextLink.conns; linkConn;) {
+    struct rasLinkConn* linkConnNext = linkConn->next;
+    free(linkConn);
+    linkConn = linkConnNext;
+  }
+  for (struct rasLinkConn* linkConn = rasPrevLink.conns; linkConn;) {
+    struct rasLinkConn* linkConnNext = linkConn->next;
+    free(linkConn);
+    linkConn = linkConnNext;
+  }
+  rasNextLink.conns = rasPrevLink.conns = nullptr;
+  rasNextLink.lastUpdatePeersTime = rasPrevLink.lastUpdatePeersTime = 0;
+
+  for (struct rasConnection* conn = rasConnsHead; conn;) {
+    struct rasConnection* connNext = conn->next;
+    rasConnTerminate(conn);
+    conn = connNext;
+  }
+  // rasConnsHead and rasConnsTail are taken care of by rasConnTerminate().
+
+  for (struct rasSocket* sock = rasSocketsHead; sock;) {
+    struct rasSocket* sockNext = sock->next;
+    rasSocketTerminate(sock);
+    sock = sockNext;
+  }
+  // rasSocketsHead and rasSocketsTail are taken care of by rasSocketTerminate().
+}

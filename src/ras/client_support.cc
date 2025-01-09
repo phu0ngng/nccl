@@ -26,9 +26,6 @@
 #define STR2(v) #v
 #define STR(v) STR2(v)
 
-// The RAS client listening socket of this RAS thread (normally port 28028).
-int rasClientListeningSocket = -1;
-
 // Auxiliary structure used when processing the results.  Helps with statistics gathering and sorting.
 struct rasValCount {
   uint64_t value; // The observed value.
@@ -78,6 +75,9 @@ struct rasAuxCommRank {
   struct rasCollComms::comm::rank* rank;
   uint64_t value;
 };
+
+// The RAS client listening socket of this RAS thread (normally port 28028).
+int rasClientListeningSocket = -1;
 
 // Connected RAS clients.
 struct rasClient* rasClientsHead;
@@ -1808,4 +1808,22 @@ static bool rasCountIsOutlier(int count, bool verbose, int totalCount) {
     return count <= RAS_CLIENT_DETAIL_THRESHOLD &&
            (totalCount == -1 || count <= totalCount * RAS_CLIENT_OUTLIER_FRACTION);
   }
+}
+
+// Invoked during RAS termination to release all the allocated resources.
+void rasClientSupportTerminate() {
+  (void)close(rasClientListeningSocket);
+  rasClientListeningSocket = -1;
+
+  free(rasOutBuffer);
+  rasOutBuffer = nullptr;
+  nRasOutBuffer = rasOutBufferSize = 0;
+
+  for (struct rasClient* client = rasClientsHead; client;) {
+    struct rasClient* clientNext = client->next;
+    rasClientTerminate(client);
+    client = clientNext;
+  }
+
+  // rasClientsHead and rasClientsTail are taken care of by rasClientTerminate().
 }

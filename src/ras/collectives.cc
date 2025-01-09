@@ -585,7 +585,7 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
   ncclResult_t ret = ncclSuccess;
   struct rasCollComms* commsData;
   int nComms = 0, nRanks = 0, nMissingRanks = 0;
-  bool skipMissing;
+  bool skipMissing = false;
   std::lock_guard<std::mutex> lock(ncclCommsMutex);
   struct rasCollComms::comm* comm;
   struct rasCollRequest* req = nullptr;
@@ -968,4 +968,15 @@ static int rasCollCommsMissingRankSearch(const void* k, const void* e) {
   const struct rasCollCommsMissingRank* elem = (const struct rasCollCommsMissingRank*)e;
 
   return (key < elem->commRank ? -1 : (key > elem->commRank ? 1 : 0));
+}
+
+// Invoked during RAS termination to release all the allocated resources.
+void rasCollectivesTerminate() {
+  for (struct rasCollective* coll = rasCollectivesHead; coll;) {
+    struct rasCollective* collNext = coll->next;
+    rasCollFree(coll);
+    coll = collNext;
+  }
+
+  // rasCollectivesHead and rasCollectivesTail are taken care of by rasCollFree().
 }

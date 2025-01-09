@@ -706,7 +706,7 @@ int rasLinkCalculatePeer(const struct rasLink* link, int peerIdx, bool isFallbac
       if (tryPeerIdx == myPeerIdx)
         break;
     } // if (isFallback && !ncclSocketsSameNode(&rasPeers[peerIdx].addr, &rasNetListeningSocket.addr))
-    
+
     if (rasPeerIsDead(&rasPeers[newPeerIdx].addr)) {
       newPeerIdx = (newPeerIdx + nRasPeers + link->direction) % nRasPeers;
     }
@@ -931,4 +931,18 @@ static char* rasPeerDump(const struct rasPeerInfo* peer, char* result, size_t nr
            (__builtin_popcountll(peer->cudaDevs) > 1 ? "s" : ""),
            rasGpuDevsToString(peer->cudaDevs, peer->nvmlDevs, line2, sizeof(line2)));
   return result;
+}
+
+// Invoked during RAS termination to release all the allocated resources.
+void rasPeersTerminate() {
+  free(rasPeers);
+  rasPeers = nullptr;
+  nRasPeers = 0;
+  rasPeersHash = 0;
+  myPeerIdx = -1;
+
+  free(rasDeadPeers);
+  rasDeadPeers = nullptr;
+  nRasDeadPeers = rasDeadPeersSize = 0;
+  rasDeadPeersHash = 0;
 }

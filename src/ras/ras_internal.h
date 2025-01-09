@@ -502,6 +502,7 @@ void rasNetHandleTimeouts(int64_t now, int64_t* nextWakeup);
 ncclResult_t rasMsgHandleKeepAlive(const struct rasMsg* msg, struct rasSocket* sock);
 ncclResult_t rasLinkAddFallback(struct rasLink* link, const struct rasConnection* conn);
 ncclResult_t rasLinkConnUpdate(struct rasLink* link, struct rasConnection* conn, int peerIdx);
+void rasNetTerminate();
 
 
 // peers.cc
@@ -521,6 +522,7 @@ ncclResult_t rasPeerDeclareDead(const union ncclSocketAddress* addr);
 bool rasPeerIsDead(const union ncclSocketAddress* addr);
 int ncclSocketsCompare(const void* p1, const void* p2);
 bool ncclSocketsSameNode(const union ncclSocketAddress* a1, const union ncclSocketAddress* a2);
+void rasPeersTerminate();
 
 
 // collectives.cc
@@ -535,6 +537,7 @@ ncclResult_t rasMsgHandleCollResp(struct rasMsg* msg, struct rasSocket* sock);
 void rasCollsPurgeConn(struct rasConnection* conn);
 void rasCollFree(struct rasCollective* coll);
 void rasCollsHandleTimeouts(int64_t now, int64_t* nextWakeup);
+void rasCollectivesTerminate();
 
 
 // client_support.cc
@@ -547,6 +550,7 @@ ncclResult_t rasClientAcceptNewSocket();
 ncclResult_t rasClientResume(struct rasCollective* coll);
 void rasClientEventLoop(struct rasClient* client, int pollIdx);
 const char* rasGpuDevsToString(uint64_t cudaDevs, uint64_t nvmlDevs, char* buf, size_t size);
+void rasClientSupportTerminate();
 
 #endif // !NCCL_RAS_CLIENT
 
