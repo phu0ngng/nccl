@@ -11,6 +11,7 @@
 #include "utils.h"
 #include "proxy.h"
 #include "profiler.h"
+#include "transport.h"
 
 extern ncclProfiler_t* getNcclProfiler_v1(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v2(void* lib);
@@ -499,6 +500,26 @@ ncclResult_t ncclProfilerAddPidToProxyOp(struct ncclProxyOp* op) {
   return ncclSuccess;
 }
 
-bool ncclProfilerNeedsProxy(struct ncclProxyOp* op) {
-  return (__builtin_expect(ncclProfiler != NULL, 0) && (op->eActivationMask & ncclProfileKernelCh));
+static pthread_mutex_t proxyProfilerConnectLock = PTHREAD_MUTEX_INITIALIZER;
+
+static ncclResult_t proxyProfilerConnect(struct ncclComm* comm, struct ncclProxyOp* op) {
+  ncclResult_t ret;
+  pthread_mutex_lock(&proxyProfilerConnectLock);
+  if (comm->profiler.initialized) goto exit;
+  for (int c = 0; c < MAXCHANNELS; c++) {
+    NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_PROFILER, 0, comm->rank, &comm->profiler.sendProxyConn[c]), ret, exit);
+    NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &comm->profiler.sendProxyConn[c], ncclProxyMsgConnect, NULL, 0, NULL, 0), ret, exit);
+    NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_PROFILER, 0, comm->rank, &comm->profiler.recvProxyConn[c]), ret, exit);
+    NCCLCHECKGOTO(ncclProxyCallBlocking(comm, &comm->profiler.recvProxyConn[c], ncclProxyMsgConnect, NULL, 0, NULL, 0), ret, exit);
+  }
+  comm->profiler.initialized = true;
+exit:
+  pthread_mutex_unlock(&proxyProfilerConnectLock);
+  return ret;
+}
+
+bool ncclProfilerNeedsProxy(struct ncclComm* comm, struct ncclProxyOp* op) {
+  bool enabled = (__builtin_expect(ncclProfiler != NULL, 0) && (op->eActivationMask & ncclProfileKernelCh));
+  if (enabled && !comm->profiler.initialized) (void)proxyProfilerConnect(comm, op);
+  return enabled;
 }

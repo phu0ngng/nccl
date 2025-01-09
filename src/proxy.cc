@@ -696,7 +696,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       NCCLCHECK(SaveProxy(comm, channel, op->pattern == ncclPatternSend ? proxySend : proxyRecv, op->root, op, 1, justInquire));
     } break;
   case ncclPatternProfiler: {
-      if (ncclProfilerNeedsProxy(op)) {
+      if (ncclProfilerNeedsProxy(comm, op)) {
         NCCLCHECK(SaveProxyProfiler(comm, op, justInquire));
       }
     } break;

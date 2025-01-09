@@ -20,6 +20,7 @@ struct ncclProxyOp;
 struct ncclProxyConnector;
 
 struct ncclProfilerProxy {
+  bool initialized;
   uint64_t* workStarted/*[MAXCHANNELS]*/;
   uint64_t* workCompleted/*[MAXCHANNELS]*/;
   uint64_t workCounter[MAXCHANNELS]; // host work counter
@@ -66,6 +67,6 @@ ncclResult_t ncclProfilerRecordProxyCtrlEventState(void*eHandle, int appended, n
 
 // Profiler utility functions
 ncclResult_t ncclProfilerAddPidToProxyOp(struct ncclProxyOp* op);
-bool ncclProfilerNeedsProxy(struct ncclProxyOp* op);
+bool ncclProfilerNeedsProxy(struct ncclComm* comm, struct ncclProxyOp* op);
 
 #endif
