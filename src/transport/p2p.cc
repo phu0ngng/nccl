@@ -407,6 +407,7 @@ ncclResult_t p2pSendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
 	  comm->peerInfo[intermediateRank].nvmlDev, useReadStr);
   }
 
+  memset(&req, '\0', sizeof(req));
   req.size = sendSize;
   req.refcount = 0;
   if (P2P_SAME_PID((comm->peerInfo + info->rank), peerInfo) && (comm->peerInfo[info->rank].cudaDev != peerInfo->cudaDev)) req.refcount++;
@@ -466,6 +467,7 @@ ncclResult_t p2pRecvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, st
     info->rank = intermediateRank;
   }
 
+  memset(&req, '\0', sizeof(req));
   req.size = recvSize;
   req.refcount = 0;
   if (P2P_SAME_PID((comm->peerInfo + info->rank), peerInfo) && (comm->peerInfo[info->rank].cudaDev != peerInfo->cudaDev)) req.refcount++;

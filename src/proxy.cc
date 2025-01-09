@@ -1137,6 +1137,7 @@ ncclResult_t ncclProxyCallBlockingUDS(struct ncclComm* comm, struct ncclProxyCon
   }
 
   ncclIpcHdr hdr;
+  memset(&hdr, '\0', sizeof(hdr));
   hdr.type = type;
   hdr.rank = rank;
   hdr.reqSize = reqSize;
@@ -1320,9 +1321,12 @@ static ncclResult_t proxyProgressInit(struct ncclProxyState* proxyState) {
     pthread_mutexattr_init(&mutexAttr);
     pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
     pthread_mutex_init(&pool->mutex, &mutexAttr);
+    pthread_mutexattr_destroy(&mutexAttr);
     pthread_condattr_t condAttr;
+    pthread_condattr_init(&condAttr);
     pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
     pthread_cond_init(&pool->cond, &condAttr);
+    pthread_condattr_destroy(&condAttr);
     state->opsPool = pool;
 
     memcpy(state->opsPoolShmSuffix, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1);

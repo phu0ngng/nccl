@@ -169,6 +169,7 @@ ncclResult_t ncclRasCommFini(const struct ncclComm* comm) {
 // the communicator.
 ncclResult_t ncclRasAddRanks(struct rasRankInit* ranks, int nranks) {
   struct rasNotification msg;
+  memset(&msg, '\0', sizeof(msg));
   msg.type = RAS_ADD_RANKS;
   msg.addRanks.ranks = ranks;
   msg.addRanks.nranks = nranks;
@@ -530,6 +531,7 @@ static ncclResult_t rasNetSendNack(struct rasSocket* sock) {
 
   INFO(NCCL_RAS, "RAS sending NACK to %s", ncclSocketToString(&sock->sock.addr, rasLine));
 
+  memset(&msg, '\0', sizeof(msg));
   msg.type = RAS_MSG_CONNINITACK;
   msg.connInitAck.nack = 1;
   offset = 0;

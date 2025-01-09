@@ -171,6 +171,7 @@ static int findInterfaces(const char* prefixList, char* names, union ncclSocketA
       strncpy(names+found*maxIfNameSize, interface->ifa_name, maxIfNameSize);
       // Store the IP address
       int salen = (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+      memset(addrs+found, '\0', sizeof(*addrs));
       memcpy(addrs+found, interface->ifa_addr, salen);
       found++;
     }

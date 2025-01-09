@@ -468,7 +468,7 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
     for (int i=0; i<localNetCount; i++) {
       int n = localNets[i];
       int found = 0;
-      while (nets[found] != n && found<netCount) found++;
+      while (found<netCount && nets[found] != n) found++;
       if (found == netCount) nets[netCount++] = n;
     }
   }
@@ -487,7 +487,7 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
       for (int i=0; i<localNetCount; i++) {
         int n = localNets[i];
         int found = 0;
-        while (nets[found] != n && found<netCount) found++;
+        while (found<netCount && nets[found] != n) found++;
         if (found == netCount) nets[netCount++] = n;
       }
     }

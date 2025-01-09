@@ -198,7 +198,10 @@ extern testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recv
 
 static void getHostName(char* hostname, int maxlen) {
   gethostname(hostname, maxlen);
-  for (int i=0; i< maxlen; i++) {
+  for (int i=0; i < maxlen; i++) {
+    if (hostname[i] == '\0') {
+      return;
+    }
     if (hostname[i] == '.') {
       hostname[i] = '\0';
       return;

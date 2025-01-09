@@ -1062,7 +1062,7 @@ static ncclResult_t bootstrapP2PBarrier(void* commState, int* ranks, int rank, i
    * Based on the dissemination algorithm by Debra Hensgen, Raphael Finkel, and Udi Manbet,
    * "Two Algorithms for Barrier Synchronization," International Journal of Parallel Programming, 17(1):1-17, 1988"
    */
-  int data[1];
+  int data[1] = {0};
   for (int mask = 1; mask < nranks; mask <<= 1) {
     int src = (rank - mask + nranks) % nranks;
     int dst = (rank + mask) % nranks;

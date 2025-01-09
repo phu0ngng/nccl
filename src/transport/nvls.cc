@@ -208,6 +208,7 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, CUmulticastGranularit
   int allocMcHandle = 0;
 
   *ucptr = *mcptr = NULL;
+  memset(shareableHandle, '\0', sizeof(shareableHandle));
   memset(&mcprop, 0, sizeof(CUmulticastObjectProp));
   mcprop.numDevices = comm->localRanks;
   mcprop.handleTypes = ncclCuMemHandleType;
