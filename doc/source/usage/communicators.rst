@@ -397,3 +397,54 @@ Here is an example showing how to initialize and split a communicator in a non-b
 The *checkTimeout* function needs to be provided by users to determine what is the longest time the application should wait for
 NCCL initialization; likewise, users can apply other methods to detect errors besides a timeout function. Similar methods can be applied
 to NCCL finalization as well.
+
+******************
+Quality of Service
+******************
+
+Applications which overlap communication may benefit from network Quality of
+Service (QoS) features. NCCL allows an application to assign a traffic class (TC) to
+each communicator to identify the communication requirements of the
+communicator. All network operations on a communicator will use the assigned
+TC.
+
+The meaning of TC is specific to the network plugin in use by the communicator
+(e.g. IB networks use service level, RoCE networks use type of service). TCs are defined
+by the system configuration. Applications must understand the TCs available on
+a system and their relative behavior in order to use them effectively.
+
+TC is specified during communicator creation using :ref:`ncclconfig`.
+
+.. code:: C
+
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  config.trafficClass = 1;
+  CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
+
+Infiniband networks support QoS through the use of Service Levels (SL). Each IB SL 
+is mapped to Virtual Lane (VL), which defines the relative priority of traffic. SL
+behavior is defined within the subnet manager, such as OpenSM. Refer to subnet
+manager documentation for more detail. An example configuration is shown below.
+
+.. code:: C
+
+  ...
+  qos_max_vls 2
+  qos_high_limit 255
+  qos_vlarb_high 1:4
+  qos_vlarb_low 0:1,1:4
+  qos_sl2vl 0,1
+
+  max_op_vls 2
+  ....
+
+The example defines one low priority and one high priority VL which 
+are mapped to SL 0 and 1, respectively. The high priority SL will be 
+given a larger share of network bandwidth at each port. In NCCL, the 
+communicator's traffic class corresponds to the SL on IB networks. Using 
+this configuration, applications can assign TC 0 to low-priority communicators 
+and TC 1 to high-priority ones.
+
+On RoCE networks, the NCCL communicator trafficClass is interpreted as an IP
+Type of Service (ToS). Refer to network management tools to understand how to
+configure QoS for a given workload.

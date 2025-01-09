@@ -233,6 +233,17 @@ ncclConfig_t
   other communicators in the same family becoming unusable. Irrespective of whether sharing resources or not, users should
   always abort/destroy all no longer needed communicators to free up resources.
 
+ .. c:macro:: trafficClass
+
+  Set the traffic class (TC) to use for network operations on the communicator.
+  The meaning of TC is specific to the network plugin in use by the
+  communicator (e.g. IB networks use service level, RoCE networks use type of service).
+  Assigning different TCs to each communicator can benefit workloads which
+  overlap communication. TCs are defined by the system configuration and should be greater 
+  than or equal to 0. Note that environment variables, such as `NCCL_IB_SL` and `NCCL_IB_TC`, 
+  take precedence over user-specified TC values. To utilize user-defined TCs, ensure that 
+  these environment variables are unset.
+
 .. _ncclsiminfo:
 
 ncclSimInfo_t
