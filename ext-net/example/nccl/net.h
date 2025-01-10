@@ -38,5 +38,6 @@ typedef ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* p
 typedef ncclNet_v10_t ncclNet_t;
 typedef ncclNetProperties_v10_t ncclNetProperties_t;
 typedef ncclNetVDeviceProps_v10_t ncclNetVDeviceProps_t;
+typedef ncclNetCommConfig_v10_t ncclNetCommConfig_t;
 
 #endif // end include guard

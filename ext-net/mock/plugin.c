@@ -194,7 +194,7 @@ __hidden ncclResult_t pluginListen(int dev, void* /*handle*/, void** listenComm)
   }
 }
 
-__hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+__hidden ncclResult_t pluginConnect(int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   if (dev < nVirtualDevs) {
     mockSendComm* sComm = (mockSendComm*) malloc(sizeof(mockSendComm));
     *sendComm = sComm;

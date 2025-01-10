@@ -83,7 +83,7 @@ typedef struct {
   // should return successfully with sendComm == NULL with the expectation that
   // it will be called again until sendComm != NULL.
   // If *sendDevComm points to a valid object, then NCCL is requesting device offload for this connection
-  ncclResult_t (*connect)(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_v10_t** sendDevComm);
+  ncclResult_t (*connect)(int dev, ncclNetCommConfig_v10_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_v10_t** sendDevComm);
   // Finalize connection establishment after remote peer has called connect.
   // This call must not block for the connection to be established, and instead
   // should return successfully with recvComm == NULL with the expectation that
@@ -303,6 +303,11 @@ To finalize the connection, the receiver side will call `accept` on the `listenC
 the `listen` call previously. If the sender did not connect yet, `accept` should not block. It
 should return `ncclSuccess`, setting `recvComm` to `NULL`. NCCL will call `accept` again until it
 succeeds.
+
+The `connect` API takes a `ncclNetCommConfig_t`, which contains a trafficClass field. 
+This field can be used by the network plugin to specify the QoS level of the connection. By default, 
+`trafficClass` is set to -1 but can be configured by the application during communicator initialization 
+to select a plugin-supported QoS level.
 
 `closeListen`/`closeSend`/`closeRecv`
 
