@@ -327,6 +327,9 @@ static ncclResult_t ncclIbRoceGetVersionNum(const char* deviceName, int portNum,
   close(fd);
 
   if (ret == -1) {
+    // In containerized environments, read could return EINVAL if the GID index is not mapped to the
+    // container sysfs. In this case return ncclSuccess and let the caller move to next GID index.
+    if (errno == EINVAL) return ncclSuccess;
     WARN("NET/IB: read failed in ncclIbRoceGetVersionNum: %s", strerror(errno));
     return ncclSystemError;
   }
