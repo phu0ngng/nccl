@@ -359,7 +359,7 @@ static ncclResult_t ncclUpdateGidIndex(struct ibv_context* context, uint8_t port
       return ncclSuccess;
     }
     int usrRoceVer = roceVer;
-    int gidRoceVerNum, gidRoceVerNumCandidate;
+    int gidRoceVerNum, gidRoceVerNumCandidate = -1;
     const char* deviceName = wrap_ibv_get_device_name(context->device);
     NCCLCHECK(ncclIbRoceGetVersionNum(deviceName, portNum, *gidIndex, &gidRoceVerNum));
     NCCLCHECK(ncclIbRoceGetVersionNum(deviceName, portNum, gidIndexCandidate, &gidRoceVerNumCandidate));
