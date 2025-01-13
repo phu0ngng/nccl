@@ -339,6 +339,7 @@ If unspecified, the default value is 256.
 NCCL_UID_STAGGER_RATE
 ---------------------
 (since 2.23)
+
 The ``NCCL_UID_STAGGER_RATE`` variable is used to define the message rate targeted when staggering the communications between NCCL ranks and the ncclUniqueId.
 If staggering is used (see NCCL_UID_STAGGER_THRESHOLD above), the message rate is used to compute the time a given NCCL rank has to wait.
 
@@ -933,25 +934,87 @@ The ``NCCL_ALGO`` variable defines which algorithms NCCL will use.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Comma-separated list of algorithms (not case sensitive) among: Tree, Ring, Collnet (up to 2.13), CollnetDirect (2.14+) and CollnetChain (2.14+).
-NVLS (2.17+) is the algorithm used to enable NVLink SHARP offload.
-To specify algorithms to exclude (instead of include), start the list with ^.
+(since 2.5)
 
-The default is ``Tree,Ring,CollnetDirect,CollnetChain,NVLS,NVLSTree``.
+Comma-separated list of algorithms (not case sensitive) among:
+
++-------------+---------------+
+| Version     | Algorithm     |
++=============+===============+
+| 2.5+        | Ring          |
++-------------+---------------+
+| 2.5+        | Tree          |
++-------------+---------------+
+| 2.5 to 2.13 | Collnet       |
++-------------+---------------+
+| 2.14+       | CollnetChain  |
++-------------+---------------+
+| 2.14+       | CollnetDirect |
++-------------+---------------+
+| 2.17+       | NVLS          |
++-------------+---------------+
+| 2.18+       | NVLSTree      |
++-------------+---------------+
+| 2.23+       | PAT           |
++-------------+---------------+
+
+NVLS and NVLSTree enable NVLink SHARP offload.
+
+To specify algorithms to exclude (instead of include), start the list with ``^``.
+
+(since 2.24)
+
+The accepted values are expanded to allow more flexibility, and parsing will
+issue a warning and fail if an unexpected token is found. Also, if ``ring``
+is not specified as a valid algorithm then it will not implicitly fall back
+to ``ring`` if there is no other valid algorithm for the function. Instead,
+it will fail.
+
+The format is now a semicolon-separated list of pairs of function name and
+list of algorithms, where the function name is optional for the first entry.
+If not present, then it applies to all functions not later listed.
+A colon separates the function (when present) and the comma-separated
+list of algorithms.
+Also, if the first character of the comma-separated list of algorithms
+is a caret (``^``), then all the selections are inverted.
+
+For example,
+``NCCL_ALGO="ring,collnetdirect;allreduce:tree,collnetdirect;broadcast:ring"``
+Will enable ring and collnetdirect for all functions, then enable tree
+and collnetdirect for allreduce and ring for broadcast.
+
+And, ``NCCL_ALGO=allreduce:^tree`` will allow the default (all algorithms
+available) for all the functions except allreduce, which will have all
+algorithms available except tree.
+
+The default is unset, which causes NCCL to automatically choose the available
+algorithms based on the node topology and architecture.
 
 NCCL_PROTO
 ----------
 (since 2.5)
 
-The ``NCCL_PROTO`` variable defines which protocol NCCL will use.
+The ``NCCL_PROTO`` variable defines which protocol(s) NCCL will be allowed
+to use. 
+
+Users are discouraged from setting this variable, with the exception of
+disabling a specific protocol in case a bug in NCCL is suspected. In
+particular, enabling LL128 on platforms that don't support it can lead
+to data corruption.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Comma-separated list of protocols (not case sensitive) among: LL, LL128, Simple. To specify protocols to exclude (instead of include), start the list with ^.
+(since 2.5) Comma-separated list of protocols (not case sensitive) among:
+``LL``, ``LL128``, and ``Simple``. To specify protocols to exclude
+(instead of to include), start the list with ``^``.
 
-The default is ``LL,LL128,Simple`` on platforms which support LL128, ``LL,Simple`` otherwise.
+The default behavior enables all supported algorithms: equivalent to
+``LL,LL128,Simple`` on platforms which support LL128, and ``LL,Simple``
+otherwise.
 
-Users are discouraged from setting this variable, with the exception of disabling a specific protocol in case a bug in NCCL is suspected. In particular, enabling LL128 on platforms that don't support it can lead to data corruption.
+(since 2.24) The accepted values are expanded to allow more flexibility,
+just as decribed for ``NCCL_ALGO`` above, allowing the user to specify
+protocols for each function. 
 
 NCCL_NVB_DISABLE
 ----------------
