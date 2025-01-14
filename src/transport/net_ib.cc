@@ -327,6 +327,9 @@ static ncclResult_t ncclIbRoceGetVersionNum(const char* deviceName, int portNum,
   close(fd);
 
   if (ret == -1) {
+    // In containerized environments, read could return EINVAL if the GID index is not mapped to the
+    // container sysfs. In this case return ncclSuccess and let the caller move to next GID index.
+    if (errno == EINVAL) return ncclSuccess;
     WARN("NET/IB: read failed in ncclIbRoceGetVersionNum: %s", strerror(errno));
     return ncclSystemError;
   }
@@ -359,7 +362,7 @@ static ncclResult_t ncclUpdateGidIndex(struct ibv_context* context, uint8_t port
       return ncclSuccess;
     }
     int usrRoceVer = roceVer;
-    int gidRoceVerNum, gidRoceVerNumCandidate;
+    int gidRoceVerNum, gidRoceVerNumCandidate = -1;
     const char* deviceName = wrap_ibv_get_device_name(context->device);
     NCCLCHECK(ncclIbRoceGetVersionNum(deviceName, portNum, *gidIndex, &gidRoceVerNum));
     NCCLCHECK(ncclIbRoceGetVersionNum(deviceName, portNum, gidIndexCandidate, &gidRoceVerNumCandidate));
