@@ -483,6 +483,62 @@ for memory allocations), CALL (standard for function calls), PROXY (stands for t
 (stands for coarse-grained profiling of initialization), RAS (stands for reliability, availability, and serviceability
 subsystem) and ALL (includes every subsystem).
 
+NCCL_DEBUG_TIMESTAMP_FORMAT
+--------------------------
+(since 2.26)
+
+The ``NCCL_DEBUG_TIMESTAMP_FORMAT`` variable allows the user to change
+the format used when printing debug log messages.
+
+The time is printed as a local
+time. This can be changed by setting the ``TZ`` environment variable. UTC
+is available by setting ``TZ=UTC``. Valid values for TZ look like:
+``US/Pacific``, ``America/Los_Angeles``, etc.
+
+Note that the non-call ``TRACE`` level of logs continues to print the
+microseconds since the NCCL debug subsystem was initialized. The
+``TRACE`` logs can also print the strftime formatted timestamp at the
+beginning if so configured (see ``NCCL_DEBUG_TIMESTAMP_LEVELS``).
+
+Value accepted
+^^^^^^^^^^^^^^
+The value of the environment variable
+is passed to strftime, so any valid format will work here. The
+default is ``[%F %T] ``, which is ``[YYYY-MM-DD HH:MM:SS] ``. If the
+value is set, but empty, then no timestamp will be printed
+(``NCCL_DEBUG_TIMESTAMP_FORMAT=``).
+
+In addition to conversion specifications supported by strftime, ``%Xf``
+can be specified, where ``X`` is a single numerical digit from 1-9.
+This will print fractions of a second. The value of ``X``
+indicates how many digits will be printed. For example, ``%3f`` will
+print milliseconds. The value is zero padded. (Note that this can only
+be used once in the format string.)
+
+NCCL_DEBUG_TIMESTAMP_LEVELS
+--------------------------
+(since 2.26)
+
+The ``NCCL_DEBUG_TIMESTAMP_LEVELS`` variable allows the user to set
+which log lines get a timestamp depending upon the level of the log.
+
+Value accepted
+^^^^^^^^^^^^^^
+The value should be a comma separated list of the levels which should
+have the timestamp. Valid levels are: ``VERSION``, ``WARN``, ``INFO``,
+``ABORT``, and ``TRACE``. In addition, ``ALL`` can be used to turn it
+on for all levels. Setting it to an empty value disables it for all
+levels. If the value is prefixed with a caret (``^``) then the listed
+levels will NOT log a timestamp, and the rest will.
+The default is to enable timestamps for ``WARN``, but disable it for
+the rest.
+
+For example, ``NCCL_DEBUG_TIMESTAMP_LEVELS=WARN,INFO,TRACE`` will turn
+it on for warnings, info logs, and traces. Or,
+``NCCL_DEBUG_TIMESTAMP_LEVELS=^TRACE`` will turn them on for everything
+but traces, which (except call traces) have their own type of timestamp
+(microseconds since nccl debug initialization).
+
 NCCL_COLLNET_ENABLE
 -------------------
 (since 2.6)

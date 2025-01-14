@@ -154,4 +154,98 @@ typedef ::testing::Types<char, int, half, float, double, long long,
 typedef ::testing::Types<char>
     testNoType;
 // TYPED_TEST_CASE(ncclCommon_test, testDataTypes);
+
+
+class ncclShelveEnvTest : public ::testing::Test {
+  // Allows testing NCCL when an environment variable needs to be temporarily changed.
+  private:
+    std::map<std::string, std::string> oldValues;
+  protected:
+    virtual void SetUp() override {
+        ::testing::Test::SetUp();
+    }
+    virtual void TearDown() override {
+        for (auto iter : oldValues) {
+            if (iter.second.empty()) {
+                unsetenv(iter.first.c_str());
+            } else {
+                if (setenv(iter.first.c_str(), iter.second.c_str(), 1)) {
+                    printf("FATAL: Could not set environment variable \"%s\" to value \"%s\".\n", iter.first.c_str(), iter.second.c_str());
+                    exit(1);
+                }
+            }
+        }
+        ::testing::Test::TearDown();
+    }
+    void overrideEnvVariable(const char* envVarName, const char* newEnvVarValue) {
+        const char* curValue = getenv(envVarName);
+        if (oldValues.find(envVarName) == oldValues.end()) {
+            oldValues[envVarName] = (curValue==NULL) ? "" : curValue;
+        }
+        if (newEnvVarValue) {
+            if (setenv(envVarName, newEnvVarValue, 1)) {
+                printf("FATAL: Could not set environment variable \"%s\" to value \"%s\".\n", envVarName, newEnvVarValue);
+                exit(1);
+            }
+        } else {
+            if (unsetenv(envVarName)) {
+                printf("FATAL: Could not unset environment variable \"%s\".\n", envVarName);
+                exit(1);
+            }
+        }
+    }
+};
+
+class ncclOutputTest : public ncclShelveEnvTest {
+  // This class reroutes the output to a file so that the results can be verified against a regex.
+  protected:
+    char logFileName[PATH_MAX];
+
+    virtual void SetUp() override {
+        ncclShelveEnvTest::SetUp();
+        snprintf(logFileName, sizeof(logFileName), "/tmp/test_log_%d.tmp", getpid());
+        overrideEnvVariable("NCCL_DEBUG", "INFO");
+        overrideEnvVariable("NCCL_DEBUG_SUBSYS", "ENV");
+        overrideEnvVariable("NCCL_DEBUG_FILE", logFileName);
+        ncclResetDebugInit();
+    }
+    virtual void TearDown() override {
+        remove(logFileName);
+        ncclShelveEnvTest::TearDown();
+        ncclResetDebugInit();
+    }
+    void verifyResult(const char* expectedRegex, bool expectMatch=true, int regexCompFlags=0, int regexExecFlags=0) {
+        // This reads the entire file and searches for expectedRegex.
+        // Note that C++ Regexes are problematic. "\d" does not work (not even "\\d"). "[0-9]" will work.
+        // "+" must be escaped: "[0-9]\\+".
+        FILE* f = fopen(logFileName, "rt");
+        ASSERT_NE(f, nullptr) << "Could not open log file used by test: " << logFileName;
+
+        fseek(f, 0, SEEK_END);
+        size_t len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        std::vector<char> buffer(len+1);
+        size_t len_read = fread(buffer.data(), 1, len, f);
+        buffer[len_read] = '\0';
+        fclose(f);
+        ASSERT_EQ(len_read, len) << "FATAL: read " << len_read << " bytes from file, but was trying to read " << len << ".";
+
+        regex_t reg;
+        int e = regcomp(&reg, expectedRegex, regexCompFlags);
+        if (e) {
+          regfree(&reg);
+        }
+        ASSERT_EQ(e, 0) << "regcomp returned " << e << "... this indicates the test itself is broken.";
+
+        regmatch_t match;
+        int c = regexec(&reg, buffer.data(), 1, &match, regexExecFlags);
+        regfree(&reg);
+        if (expectMatch) {
+            EXPECT_EQ(c, 0) << "Failed to match \"" << expectedRegex << "\" to \"" << buffer.data() << "\"";
+        } else {
+            EXPECT_NE(c, 0) << "Failed to NOT match \"" << expectedRegex << "\" to \"" << buffer.data() << "\"";
+        }
+    }
+};
+
 // EOF

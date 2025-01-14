@@ -68,99 +68,14 @@ TEST_F(ncclCommInitRank_test, magic) {
     ASSERT_EQ(ncclMagic, ((uint64_t*)comm)[0]);
 }
 
-class ncclCommInitRankShelveEnvTest : public ncclCommInitRank_test {
-  // Allows testing NCCL when an environment variable needs to be temporarily changed.
-  private:
-    std::map<std::string, std::string> oldValues;
-  protected:
-    virtual void SetUp() override {
-        ncclCommInitRank_test::SetUp();
-        ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
-    }
-    virtual void TearDown() override {
-        for (auto iter : oldValues) {
-            if (iter.second.empty()) {
-                unsetenv(iter.first.c_str());
-            } else {
-                if (setenv(iter.first.c_str(), iter.second.c_str(), 1)) {
-                    printf("FATAL: Could not set environment variable \"%s\" to value \"%s\".\n", iter.first.c_str(), iter.second.c_str());
-                    exit(1);
-                }
-            }
-        }
-        ncclCommInitRank_test::TearDown();
-    }
-    void overrideEnvVariable(const char* envVarName, const char* newEnvVarValue) {
-        const char* curValue = getenv(envVarName);
-        oldValues[envVarName] = (curValue==NULL) ? "" : curValue;
-        if (newEnvVarValue) {
-            if (setenv(envVarName, newEnvVarValue, 1)) {
-                printf("FATAL: Could not set environment variable \"%s\" to value \"%s\".\n", envVarName, newEnvVarValue);
-                exit(1);
-            }
-        } else {
-            if (unsetenv(envVarName)) {
-                printf("FATAL: Could not unset environment variable \"%s\".\n", envVarName);
-                exit(1);
-            }
-        }
-    }
-};
-
-
-class ncclCommInitRankOutputTest : public ncclCommInitRankShelveEnvTest {
-  // This class reroutes the output to a file so that the results can be verified against a regex.
-  protected:
-    char logFileName[PATH_MAX];
-
-    virtual void SetUp() override {
-        ncclCommInitRankShelveEnvTest::SetUp();
-        snprintf(logFileName, sizeof(logFileName), "/tmp/test_log_%d.tmp", getpid());
-        overrideEnvVariable("NCCL_DEBUG", "INFO");
-        overrideEnvVariable("NCCL_DEBUG_SUBSYS", "ENV");
-        overrideEnvVariable("NCCL_DEBUG_FILE", logFileName);
-        ncclResetDebugInit();
-    }
-    virtual void TearDown() override {
-        remove(logFileName);
-        ncclCommInitRankShelveEnvTest::TearDown();
-        ncclResetDebugInit();
-    }
-    void verifyResult(const char* expected_regex) {
-        // This reads the entire file and searches for expected_regex.
-        FILE* f = fopen(logFileName, "rt");
-        ASSERT_NE(f, nullptr) << "Could not open log file used by test: " << logFileName;
-
-        fseek(f, 0, SEEK_END);
-        size_t len = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        std::vector<char> buffer(len+1); 
-        size_t len_read = fread(buffer.data(), 1, len, f);
-        buffer[len_read] = '\0';
-        fclose(f);
-        ASSERT_EQ(len_read, len) << "FATAL: read " << len_read << " bytes from file, but was trying to read " << len << ".";
-
-        regex_t reg;
-        int e = regcomp(&reg, expected_regex, 0);
-        if (e) {
-          regfree(&reg);
-        }
-        ASSERT_EQ(e, 0) << "regcomp returned " << e << "... this indicates the test itself is broken.";
-
-        regmatch_t match;
-        int c = regexec(&reg, buffer.data(), 1, &match, 0);
-        regfree(&reg);
-        EXPECT_EQ(c, 0) << "Failed to match \"" << expected_regex << "\" to \"" << buffer.data() << "\"";
-    }
-};
-
-
-class ncclCommInitRankParseListTest : public ncclCommInitRankOutputTest {
+class ncclCommInitRankParseListTest : public ncclOutputTest {
   // Tests for ParseList, as accessed through the NCCL_PROTO and NCCL_ALGO environment variables.
   protected:
     int nDev=0;
+    ncclUniqueId commId;
     virtual void SetUp() override {
-        ncclCommInitRankOutputTest::SetUp();
+        ncclOutputTest::SetUp();
+        ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
         cudaGetDeviceCount(&nDev);
         if (nDev<2) {
             static bool once_only = false;
@@ -282,3 +197,4 @@ TEST_F(ncclCommInitRankParseListTest, funcOverrideGlobalNotFirst) {
     runTest("NCCL_PROTO", "allreduce:LL128;LL,Simple", ncclSuccess, ncclInvalidUsage, ncclSuccess,
             "All entries except the first must have a prefix");
 }
+
