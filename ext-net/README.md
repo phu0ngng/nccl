@@ -263,15 +263,13 @@ receive).
 The `netDeviceType` indicates which type of device networking this plugin supports. The current supported
 options are `NCCL_NET_DEVICE_HOST` and `NCCL_NET_DEVICE_UNPACK`.
 
-The `netDeviceVersion` indicates the version of device networking this plugin supports. Currently,
-this must match the 
-
-  int netDeviceVersion;            // Version number for network offload
-  ncclNetVDeviceProps_v9_t vProps;
+The `netDeviceVersion` indicates the version of device networking this plugin supports. Currently, this must match the associated netDeviceVersion of this netDeviceType compiled into NCCL core. Net device functionality is built as apart of NCCL core's device code.
 
 The `maxP2pBytes` and `maxCollBytes` fields indicate the maximum size the plugin can handle for
 point-to-point and collective calls. This will tell the NCCL core to cut large operations into
 multiple smaller chunks if needed.
+
+`vProps` is the list of devices that have been fused into the current device. Each entry is an index pointing to the child device.
 
 ### Connection establishment
 

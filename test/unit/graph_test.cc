@@ -29,6 +29,7 @@ const char* graphNames[] = { "Ring", "Tree", "CollNet", "NVLS" };
 int dumpDiff = 1;
 
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter, int* errors, int* warnings) {
+  if (ref->nChannels == 0 && out->nChannels == 0) return;
   if (memcmp(ref, out, sizeof(struct ncclTopoGraph)) != 0) {
     if (ref->nChannels*ref->bwInter > out->nChannels*out->bwInter ||
         ref->nChannels*ref->bwIntra > out->nChannels*out->bwIntra ||
@@ -38,7 +39,7 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
     else (*warnings)++;
 
     if (dumpDiff) {
-      char line[256];
+      char line[1024];
       int margin = 37;
       int width = std::max(3*ngpus+10, 40);
 
@@ -304,6 +305,8 @@ int main(int argc, const char* argv[]) {
     RUN("P9-6V");
     RUN("P9-4V");
     RUN("HP-ARM-V100");
+    RUN("GB200-NVL36");
+    RUN("GB200-NVL72");
   }
   printf("%d errors, %d warnings (%s)\n", errors, warnings, errors ? "FAILED" : "PASSED");
   return errors ? 1 : 0;
