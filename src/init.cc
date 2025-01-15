@@ -309,12 +309,12 @@ ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
     ncclGroupJobAbort(comm->groupJob);
   } else {
     NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
-    if (ret != ncclSuccess) {
-      /* if ret is not ncclInProgress, we just keep it. */
+    if (ret == ncclInProgress) {
       WARN("Attempt to use communicator before the previous operation returned ncclSuccess");
-      if (ret == ncclInProgress) ret = ncclInvalidArgument;
+      ret = ncclInvalidArgument;
       goto exit;
     }
+    /* if ret is not ncclInProgress, we just keep it. */
   }
 
 exit:
