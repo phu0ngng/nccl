@@ -180,6 +180,16 @@ static_assert(sizeof(ncclNetHandle_t) + sizeof(int) <= CONNECT_SIZE, "Not large 
 // Forward declaration
 static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct ncclProxyArgs* args);
 
+// Returns the flags to be used by a call to cuMemGetHandleForAddressRange.
+static inline int getHandleForAddressRangeFlags(ncclTopoGdrMode useGdr) {
+  int flags = 0;
+#if CUDA_VERSION >= 12080
+  // Force mapping on PCIe on systems with both PCI and C2C attachments.
+  if (useGdr == ncclTopoGdrModePci) flags = CU_MEM_RANGE_FLAG_DMA_BUF_MAPPING_TYPE_PCIE;
+#endif
+  return flags;
+}
+
 /* Determine if we will use this transport for this peer and return connect
  * information for this peer */
 static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph, struct ncclPeerInfo* myInfo, struct ncclPeerInfo* peerInfo, struct ncclConnect* connectInfo, struct ncclConnector* send, int channelId, int connIndex) {
@@ -205,10 +215,13 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
 
   if (proxyRank == myInfo->rank) {
     INFO(NCCL_INIT|NCCL_NET,"Channel %02d/%d : %d[%d] -> %d[%d] [send] via NET/%s/%d%s%s", channelId, connIndex, myInfo->rank, myInfo->nvmlDev, peerInfo->rank, peerInfo->nvmlDev, comm->ncclNet->name, req.netDev,
-        req.useGdr ? "/GDRDMA" : "", req.shared ? "/Shared" : "");
+        req.useGdr==ncclTopoGdrModePci ? "/GDRDMA(PCI)" : (req.useGdr==ncclTopoGdrModeCpu ? "/GDRDMA(C2C)" : ""),
+        req.shared ? "/Shared" : "");
   } else {
     INFO(NCCL_INIT|NCCL_NET,"Channel %02d/%d : %d[%d] -> %d[%d] [send] via NET/%s/%d(%d)%s%s", channelId, connIndex, myInfo->rank, myInfo->nvmlDev, peerInfo->rank, peerInfo->nvmlDev, comm->ncclNet->name, req.netDev,
-        proxyRank, req.useGdr ? "/GDRDMA" : "", req.shared ? "/Shared" : "");
+        proxyRank,
+        req.useGdr==ncclTopoGdrModePci ? "/GDRDMA(PCI)" : (req.useGdr==ncclTopoGdrModeCpu ? "/GDRDMA(C2C)" : ""),
+        req.shared ? "/Shared" : "");
   }
   *((int*)connectInfo) = comm->topParentRanks[proxyRank];
   memcpy((uint8_t*)connectInfo + sizeof(ncclNetHandle_t), &req.useGdr, sizeof(int));
@@ -248,7 +261,8 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), connectInfo, sizeof(ncclNetHandle_t)));
   memcpy((uint8_t*)connectInfo + sizeof(ncclNetHandle_t), &req.useGdr, sizeof(int));
   INFO(NCCL_INIT|NCCL_NET,"Channel %02d/%d : %d[%d] -> %d[%d] [receive] via NET/%s/%d%s%s", channelId, connIndex, peerInfo->rank, peerInfo->nvmlDev, myInfo->rank, myInfo->nvmlDev, comm->ncclNet->name, req.netDev,
-      req.useGdr ? "/GDRDMA" : "", req.shared ? "/Shared" : "");
+      req.useGdr==ncclTopoGdrModePci ? "/GDRDMA(PCI)" : (req.useGdr==ncclTopoGdrModeCpu ? "/GDRDMA(C2C)" : ""),
+      req.shared ? "/Shared" : "");
   return ncclSuccess;
 }
 
@@ -824,12 +838,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
       int type = NCCL_NET_MAP_DEV_MEM(map, buffs[p]) ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
       if (type == NCCL_PTR_CUDA && resources->useDmaBuf) {
         int dmabuf_fd;
-        int flags = 0;
-#if CUDA_VERSION >= 12080
-        // Force mapping on PCIe on systems with both PCI and C2C attachments.
-        if (resources->useGdr == ncclTopoGdrModePci) flags = CU_MEM_RANGE_FLAG_DMA_BUF_MAPPING_TYPE_PCIE;
-#endif
-        CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)resources->buffers[p], resources->buffSizes[p], CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, flags));
+        CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)resources->buffers[p], resources->buffSizes[p], CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, getHandleForAddressRangeFlags(resources->useGdr)));
         NCCLCHECK(proxyState->ncclNet->regMrDmaBuf(resources->netSendComm, resources->buffers[p], resources->buffSizes[p], type, 0ULL, dmabuf_fd, &resources->mhandles[p]));
         (void)close(dmabuf_fd);
       } else // FALL-THROUGH to nv_peermem GDR path
@@ -973,12 +982,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
       int type = NCCL_NET_MAP_DEV_MEM(map, buffs[p]) ? NCCL_PTR_CUDA : NCCL_PTR_HOST;
       if (type == NCCL_PTR_CUDA && resources->useDmaBuf) {
         int dmabuf_fd;
-        int flags = 0;
-#if CUDA_VERSION >= 12080
-        // Force mapping on PCIe on systems with both PCI and C2C attachments.
-        if (resources->useGdr == ncclTopoGdrModePci) flags = CU_MEM_RANGE_FLAG_DMA_BUF_MAPPING_TYPE_PCIE;
-#endif
-        CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)resources->buffers[p], resources->buffSizes[p], CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, flags));
+        CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)resources->buffers[p], resources->buffSizes[p], CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, getHandleForAddressRangeFlags(resources->useGdr)));
         NCCLCHECK(proxyState->ncclNet->regMrDmaBuf(resources->netRecvComm, resources->buffers[p], resources->buffSizes[p], type, 0ULL, dmabuf_fd, &resources->mhandles[p]));
         (void)close(dmabuf_fd);
       } else // FALL-THROUGH to nv_peermem GDR path
@@ -1657,12 +1661,7 @@ static ncclResult_t sendProxyRegBuffer(struct ncclProxyConnection* connection, s
   /* DMA-BUF support */
   if (resources->useDmaBuf) {
     int dmabuf_fd;
-    int flags = 0;
-#if CUDA_VERSION >= 12080
-    // Force mapping on PCIe on systems with both PCI and C2C attachments.
-    if (resources->useGdr == ncclTopoGdrModePci) flags = CU_MEM_RANGE_FLAG_DMA_BUF_MAPPING_TYPE_PCIE;
-#endif
-    CUCHECKGOTO(cuMemGetHandleForAddressRange((void*)&dmabuf_fd, (CUdeviceptr)info->buffer, info->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, flags), ret, peermem);
+    CUCHECKGOTO(cuMemGetHandleForAddressRange((void*)&dmabuf_fd, (CUdeviceptr)info->buffer, info->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, getHandleForAddressRangeFlags(resources->useGdr)), ret, peermem);
     NCCLCHECKGOTO(proxyState->ncclNet->regMrDmaBuf(resources->netSendComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, 0ULL, dmabuf_fd, &handle), ret, peermem);
     (void)close(dmabuf_fd);
     needReg = false;
@@ -1696,12 +1695,7 @@ static ncclResult_t recvProxyRegBuffer(struct ncclProxyConnection* connection, s
   /* DMA-BUF support */
   if (resources->useDmaBuf) {
     int dmabuf_fd;
-    int flags = 0;
-#if CUDA_VERSION >= 12080
-    // Force mapping on PCIe on systems with both PCI and C2C attachments.
-    if (resources->useGdr == ncclTopoGdrModePci) flags = CU_MEM_RANGE_FLAG_DMA_BUF_MAPPING_TYPE_PCIE;
-#endif
-    CUCHECKGOTO(cuMemGetHandleForAddressRange((void*)&dmabuf_fd, (CUdeviceptr)info->buffer, info->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, flags), ret, peermem);
+    CUCHECKGOTO(cuMemGetHandleForAddressRange((void*)&dmabuf_fd, (CUdeviceptr)info->buffer, info->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, getHandleForAddressRangeFlags(resources->useGdr)), ret, peermem);
     NCCLCHECKGOTO(proxyState->ncclNet->regMrDmaBuf(resources->netRecvComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, 0ULL, dmabuf_fd, &handle), ret, peermem);
     (void)close(dmabuf_fd);
     needReg = false;
