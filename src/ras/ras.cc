@@ -4,8 +4,6 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#define NDEBUG // Comment out during development only!
-#include <cassert>
 #include <cstddef>
 #include <mutex>
 #include <poll.h>
