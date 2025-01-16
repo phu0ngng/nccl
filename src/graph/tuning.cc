@@ -433,6 +433,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       case 80: pEnable &= 1; break;
       case 90: pEnable &= !(CUDART_VERSION == 11080 && c == ncclFuncAllReduce && a == NCCL_ALGO_RING && comm->nRanks == 2); break;
       case 100: pEnable &= 1; break;
+      case 120: pEnable &= 1; break;
       default: pEnable &= 0; break;
       }
     }

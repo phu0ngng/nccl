@@ -827,7 +827,7 @@ void setupArgs(size_t size, ncclDataType_t type, struct threadArgs* args) {
       size_t sendCount, recvCount, paramCount, sendInplaceOffset, recvInplaceOffset;
 
       ncclCommCount(args->comms[id][i], &nranks);
-      args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, (size_t)count, (size_t)nranks);
+      args->collTest->getCollByteCount(&sendCount, &recvCount, &paramCount, &sendInplaceOffset, &recvInplaceOffset, (size_t)count, wordSize(type), (size_t)nranks);
       args->nbytes[id][i] = paramCount * wordSize(type);
       args->sendBytes[id][i] = sendCount * wordSize(type);
       args->expectedBytes[id][i] = recvCount * wordSize(type);

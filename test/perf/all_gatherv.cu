@@ -10,9 +10,9 @@
 //InitRecvResult is not ready yet for that, so the test will report FAILED if checks are enabled.
 //#define TRIANGULAR
 
-void AllGathervGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, int nranks) {
-    *sendcount = count/nranks;
-    *recvcount = (count/nranks)*nranks;
+void AllGathervGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
+    *sendcount = (count/nranks) & -(16/eltSize);
+    *recvcount = (*sendcount)*nranks;
     *sendInplaceOffset = count/nranks;
     *recvInplaceOffset = 0;
     *paramcount = *sendcount;
@@ -97,7 +97,7 @@ struct testColl allGathervTest = {
 
 void AllGathervGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, int nranks) {
   size_t paramcount, sendInplaceOffset, recvInplaceOffset;
-  AllGathervGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, nranks);
+  AllGathervGetCollByteCount(sendcount, recvcount, &paramcount, &sendInplaceOffset, &recvInplaceOffset, count, /*eltSize=*/1, nranks);
 }
 
 testResult_t AllGathervRunTest(struct threadArgs* args, int root, ncclDataType_t type, const char* typeName, ncclRedOp_t op, const char* opName) {
