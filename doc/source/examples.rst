@@ -222,7 +222,7 @@ The following code depicts a complete working example with multiple MPI processe
  } while(0)
 
 
- static uint64_t getHostHash(const char* string) {
+ static uint64_t getHash(const char* string) {
    // Based on DJB2a, result = result * 33 ^ char
    uint64_t result = 5381;
    for (int c = 0; string[c] != '\0'; c++){
@@ -231,6 +231,36 @@ The following code depicts a complete working example with multiple MPI processe
    return result;
  }
 
+ /* Generate a hash of the unique identifying string for this host
+  * that will be unique for both bare-metal and container instances
+  * Equivalent of a hash of;
+  *
+  * $(hostname)$(cat /proc/sys/kernel/random/boot_id)
+  *
+  */
+ #define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
+ static uint64_t getHostHash(const char* hostname) {
+   char hostHash[1024];
+
+   // Fall back is the hostname if something fails
+   (void) strncpy(hostHash, hostname, sizeof(hostHash));
+   int offset = strlen(hostHash);
+
+   FILE *file = fopen(HOSTID_FILE, "r");
+   if (file != NULL) {
+     char *p;
+     if (fscanf(file, "%ms", &p) == 1) {
+	 strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
+	 free(p);
+     }
+   }
+   fclose(file);
+
+   // Make sure the string is terminated
+   hostHash[sizeof(hostHash)-1]='\0';
+
+   return getHash(hostHash, strlen(hostHash));
+ }
 
  static void getHostName(char* hostname, int maxlen) {
    gethostname(hostname, maxlen);
@@ -407,7 +437,7 @@ The following code depicts a complete working example with multiple MPI processe
  } while(0)
 
 
- static uint64_t getHostHash(const char* string) {
+ static uint64_t getHash(const char* string) {
    // Based on DJB2a, result = result * 33 ^ char
    uint64_t result = 5381;
    for (int c = 0; string[c] != '\0'; c++){
@@ -416,6 +446,36 @@ The following code depicts a complete working example with multiple MPI processe
    return result;
  }
 
+ /* Generate a hash of the unique identifying string for this host
+  * that will be unique for both bare-metal and container instances
+  * Equivalent of a hash of;
+  *
+  * $(hostname)$(cat /proc/sys/kernel/random/boot_id)
+  *
+  */
+ #define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
+ static uint64_t getHostHash(const char* hostname) {
+   char hostHash[1024];
+
+   // Fall back is the hostname if something fails
+   (void) strncpy(hostHash, hostname, sizeof(hostHash));
+   int offset = strlen(hostHash);
+
+   FILE *file = fopen(HOSTID_FILE, "r");
+   if (file != NULL) {
+     char *p;
+     if (fscanf(file, "%ms", &p) == 1) {
+	 strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
+	 free(p);
+     }
+   }
+   fclose(file);
+
+   // Make sure the string is terminated
+   hostHash[sizeof(hostHash)-1]='\0';
+
+   return getHash(hostHash, strlen(hostHash));
+ }
 
  static void getHostName(char* hostname, int maxlen) {
    gethostname(hostname, maxlen);
