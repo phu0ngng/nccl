@@ -2105,6 +2105,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     // Mark channels that need pre-connect
     if (comm->rank != peer) {
       if (!(isSendNotRecv ? planner->peers[peer].sendSeen : planner->peers[peer].recvSeen)) {
+        // planner->peers[peer].send/recvSeen is private to each comm, so we need to set it anyway.
         (isSendNotRecv ? planner->peers[peer].sendSeen : planner->peers[peer].recvSeen) = true;
         int round = 0;
         while (peer != (isSendNotRecv ? comm->p2pSchedule[round].sendRank
@@ -2115,12 +2116,17 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
         for (int c=0; c < comm->p2pnChannelsPerPeer; c++) {
           int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, c);
           if (isSendNotRecv) {
-            if (comm->channels[channelId].peers[peer]->send[1].connected == 0) { // P2P uses only 1 connector
+            if (comm->channels[channelId].peers[peer]->send[1].hasSeen == 0) { // P2P uses only 1 connector
+              // the send/recv connector is shared among split shared comms. We need to set hasSeen to
+              // 1 in order to avoid duplicate connection setup if user group sendrecv ops with split
+              // shared comms together.
+              comm->channels[channelId].peers[peer]->send[1].hasSeen = 1;
               comm->connectSend[peer] |= (1UL<<channelId);
               ncclGroupCommPreconnect(comm);
             }
           } else {
-            if (comm->channels[channelId].peers[peer]->recv[1].connected == 0) { // P2P uses only 1 connector
+            if (comm->channels[channelId].peers[peer]->recv[1].hasSeen == 0) { // P2P uses only 1 connector
+              comm->channels[channelId].peers[peer]->recv[1].hasSeen = 1;
               comm->connectRecv[peer] |= (1UL<<channelId);
               ncclGroupCommPreconnect(comm);
             }
