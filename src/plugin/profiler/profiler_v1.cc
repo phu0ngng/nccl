@@ -69,7 +69,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v1.coll.root = eDescr->coll.root;
       eDescr_v1.coll.datatype = ncclStringToDatatype(eDescr->coll.datatype);
       eDescr_v1.coll.op = 0; // removed in v2
-      eDescr_v1.coll.trafficBytes = eDescr->coll.trafficBytes;
+      eDescr_v1.coll.trafficBytes = 0; // removed in v3
       eDescr_v1.coll.nMaxChannels = eDescr->coll.nMaxChannels;
       eDescr_v1.coll.nWarps = eDescr->coll.nWarps;
       eDescr_v1.coll.algo = ncclStringToAlgo(eDescr->coll.algo);
@@ -96,12 +96,16 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v1.proxyStep.step = eDescr->proxyStep.step;
     } break;
     case ncclProfileProxyCtrl: break;
+    case ncclProfileKernelCh: {
+      *eHandle = NULL;
+      return ncclSuccess;
+    }
     default:;
   }
   return ncclProfiler_v1->startEvent(context, eHandle, &eDescr_v1);
 }
 
-static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_v2_t* eStateArgs) {
+static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_t* eStateArgs) {
   return ncclProfiler_v1->recordEventState(eHandle, eState, (ncclProfilerEventStateArgs_v1_t*)eStateArgs);
 }
 

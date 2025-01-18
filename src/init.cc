@@ -489,6 +489,14 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   comm->workFifoConsumedLeast = 0;
   tmpCommAndChans.comm.workConsumed = comm->workFifoConsumed;
 
+  // Alloc profiler counters for the kernel
+  NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->profiler.workStarted, MAXCHANNELS), ret, fail);
+  NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->profiler.workCompleted, MAXCHANNELS), ret, fail);
+  tmpCommAndChans.comm.workStarted = comm->profiler.workStarted;
+  tmpCommAndChans.comm.workCompleted = comm->profiler.workCompleted;
+  ncclCommPushCudaHostFree(comm, comm->profiler.workStarted);
+  ncclCommPushCudaHostFree(comm, comm->profiler.workCompleted);
+
   if (comm->collNetDenseToUserRank != nullptr) {
     NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.collNetDenseToUserRank, nRanks, comm->sharedRes->deviceStream.cudaStream), ret, fail);
     ncclCommPushCudaFree(comm, tmpCommAndChans.comm.collNetDenseToUserRank);

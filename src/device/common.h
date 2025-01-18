@@ -53,6 +53,7 @@ struct ncclShmemData {
   int nWorks;
   int workSize;
   uint32_t workConsumed;
+  uint64_t workCounter;
   struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
   uint64_t redOpArgs[NCCL_MAX_NVLS_ARITY+1];
 
@@ -364,6 +365,7 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
     ncclShmem.comm.workConsumed[ncclShmem.channelId] = ncclShmem.workConsumed;
   }
 
+  if (tid == 0) ncclShmem.comm.workStarted[ncclShmem.channelId] = (ncclShmem.channel.workCounter += ncclShmem.nWorks);
   while (true) {
     if (0 <= SpecializedFnId && ncclShmem.funcId == (unsigned)SpecializedFnId) {
       SpecializedRunWorkBatch().run();
@@ -374,6 +376,7 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
     if (ncclShmem.nextBatchIx == -1) break;
     int batchIx = ncclShmem.nextBatchIx;
     __syncthreads();
+    if (tid == 0) ncclShmem.comm.workCompleted[ncclShmem.channelId] = ncclShmem.channel.workCounter;
     loadWorkBatchToShmem(tid, tn, args, batchIx);
 
     // Check whether the last operation was aborted and make sure all threads exit
@@ -385,6 +388,11 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
       ncclShmem.comm.workConsumed[ncclShmem.channelId] = ncclShmem.workConsumed;
     }
     if (aborted) break;
+    if (tid == 0) ncclShmem.comm.workStarted[ncclShmem.channelId] = (ncclShmem.channel.workCounter += ncclShmem.nWorks);
+  }
+  if (tid == 0) {
+    ncclShmem.comm.workCompleted[ncclShmem.channelId] = ncclShmem.channel.workCounter;
+    ((ncclDevCommAndChannels*)ncclShmem.args.comm)->channels[ncclShmem.channelId].workCounter = ncclShmem.channel.workCounter;
   }
 }
 

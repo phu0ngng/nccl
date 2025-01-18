@@ -604,6 +604,7 @@ struct ncclComm {
   // Profiler plugin
   void* profilerContext;
   uint64_t seqNumber[NCCL_NUM_FUNCTIONS];
+  struct ncclProfilerProxy profiler;
 
   // buffer registration cache
   struct ncclRegCache regCache;

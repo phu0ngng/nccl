@@ -381,6 +381,7 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->pid = op->pid;
   sub->profilerContext = op->profilerContext;
   sub->ringAlgo = op->ringAlgo;
+  sub->workCounter = op->workCounter;
   args->nsubs = subIndex+1;
   if (subIndex) {
     if ((args->sliceSteps != op->sliceSteps) ||
@@ -527,6 +528,19 @@ static ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyCon
     proxyOps->count -= toSend;
   }
   TIME_STOP(0);
+  return ncclSuccess;
+}
+
+static ncclResult_t SaveProxyProfiler(struct ncclComm* comm, struct ncclProxyOp* op, bool* justInquire) {
+  struct ncclProxyConnector* proxyConn = (op->coll == ncclFuncRecv) ? &comm->profiler.recvProxyConn[op->channelId] : &comm->profiler.sendProxyConn[op->channelId];
+  if (justInquire) *justInquire = true;
+  else {
+    op->sendbuff = (uint8_t *)comm->profiler.workStarted;
+    op->recvbuff = (uint8_t *)comm->profiler.workCompleted;
+    NCCLCHECK(ncclLocalOpAppend(comm, proxyConn, op));
+    // Ensure that in graph capturing the proxy workCounter is incremented to keep up with kernel workCounter
+    op->workCounter += comm->profiler.workCounter[op->channelId];
+  }
   return ncclSuccess;
 }
 
@@ -680,6 +694,11 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
   case ncclPatternRecv: {
       if (op->root == comm->rank) return ncclSuccess;
       NCCLCHECK(SaveProxy(comm, channel, op->pattern == ncclPatternSend ? proxySend : proxyRecv, op->root, op, 1, justInquire));
+    } break;
+  case ncclPatternProfiler: {
+      if (ncclProfilerNeedsProxy(comm, op)) {
+        NCCLCHECK(SaveProxyProfiler(comm, op, justInquire));
+      }
     } break;
   }
   return ncclSuccess;

@@ -58,6 +58,7 @@ __hidden double gettime(void) {
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pid_t pid;
+static int* eActivationMaskPtr;
 
 __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) {
   pthread_mutex_lock(&lock);
@@ -65,7 +66,7 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) 
     // first thread initializes event mask, environment and detach pool
     const char* str;
     str = getenv("NCCL_PROFILE_EVENT_MASK");
-    __atomic_store_n(eActivationMask, str ? atoi(str) : defaultEActivationMask, __ATOMIC_RELAXED);
+    __atomic_store_n(eActivationMask, str ? atoi(str) : 0, __ATOMIC_RELAXED);
 
     str = getenv("NCCL_PROFILE_GROUP_POOL_SIZE");
     groupPoolSize = str ? atoi(str) : defaultGroupPoolSize;
@@ -99,6 +100,9 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) 
     startTime = gettime();
   }
   pthread_mutex_unlock(&lock);
+
+  // store pointer to activation mask globally
+  eActivationMaskPtr = eActivationMask;
 
   // pre-allocate memory for event object pools in dedicated profiler context
   struct context* ctx = (struct context *)calloc(1, sizeof(*ctx));
@@ -252,7 +256,6 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->count = eDescr->coll.count;
     event->root = eDescr->coll.root;
     event->datatype = eDescr->coll.datatype;
-    event->trafficBytes = eDescr->coll.trafficBytes;
     event->nMaxChannels = eDescr->coll.nMaxChannels;
     event->nWarps = eDescr->coll.nWarps;
     event->algo = eDescr->coll.algo;
@@ -373,7 +376,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
       debugEvent(event, "ProxyOpStart");
     }
- } else if (eDescr->type == ncclProfileProxyStep) {
+  } else if (eDescr->type == ncclProfileProxyStep) {
     // the parent might be null if we run out of events
     struct proxyOp* parent = (struct proxyOp *)eDescr->parentObj;
     if (parent == NULL) return ncclSuccess;
@@ -387,6 +390,30 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->startTs = gettime() - startTime;
     *eHandle = event;
     debugEvent(event, "ProxyStepStart");
+  } else if (eDescr->type == ncclProfileKernelCh) {
+    struct taskEventBase* eventBase = (struct taskEventBase *)eDescr->parentObj;
+    if (eventBase == NULL) return ncclSuccess;
+    if (eventBase->type == ncclProfileColl) {
+      struct collective* parent = (struct collective *)eDescr->parentObj;
+      struct kernelCh* event = &parent->kernel[eDescr->kernelCh.channelId];
+      event->type = ncclProfileKernelCh;
+      event->channelId = eDescr->kernelCh.channelId;
+      event->parent = eventBase;
+      event->startTs = gettime() - startTime;
+      *eHandle = event;
+      __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
+      debugEvent(event, "KernelChStart");
+    } else { // ncclProfileP2p
+      struct p2p* parent = (struct p2p *)eDescr->parentObj;
+      struct kernelCh* event = &parent->kernel[eDescr->kernelCh.channelId];
+      event->type = ncclProfileKernelCh;
+      event->channelId = eDescr->kernelCh.channelId;
+      event->parent = eventBase;
+      event->startTs = gettime() - startTime;
+      *eHandle = event;
+      __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
+      debugEvent(event, "KernelChStart");
+    }
   }
   return ncclSuccess;
 }
@@ -445,6 +472,11 @@ void updateEvent(void* handle) {
     struct proxyCtrl* event = (struct proxyCtrl *)handle;
     event->stopTs = gettime() - startTime;
     debugEvent(event, "ProxyCtrlStop");
+  } else if (type == ncclProfileKernelCh) {
+    struct kernelCh* event = (struct kernelCh *)handle;
+    event->stopTs = gettime() - startTime;
+    updateEvent(event->parent);
+    debugEvent(event, "KernelChStop");
   }
 }
 
@@ -506,7 +538,7 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
   return ncclSuccess;
 }
 
-ncclProfiler_t ncclProfiler_v2 = {
+ncclProfiler_t ncclProfiler_v3 = {
   "Example-profiler",
   exampleProfilerInit,
   exampleProfilerStartEvent,
@@ -514,3 +546,17 @@ ncclProfiler_t ncclProfiler_v2 = {
   exampleProfilerRecordEventState,
   exampleProfilerFinalize,
 };
+
+int exampleProfilerStart(int eActivationMask) {
+  if (__atomic_load_n(&initialized, __ATOMIC_RELAXED)) {
+    __atomic_store_n(eActivationMaskPtr, eActivationMask, __ATOMIC_RELAXED);
+  }
+  return ncclSuccess;
+}
+
+int exampleProfilerStop(void) {
+  if (__atomic_load_n(&initialized, __ATOMIC_RELAXED)) {
+    __atomic_store_n(eActivationMaskPtr, 0, __ATOMIC_RELAXED);
+  }
+  return ncclSuccess;
+}

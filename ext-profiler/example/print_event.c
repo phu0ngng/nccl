@@ -106,6 +106,19 @@ __hidden void printProxyStepEvent(FILE* fh, struct proxyStep* event) {
   }
 }
 
+static __thread int kernelId;
+__hidden void printKernelChEventHeader(FILE* fh, struct kernelCh* event) {
+  if (event->type != ncclProfileKernelCh) return;
+  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"GPU\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Channel\": %d}},\n",
+          "KernelCh", kernelId, getpid(), 1, event->startTs, event->channelId);
+}
+
+__hidden void printKernelChEventTrailer(FILE* fh, struct kernelCh* event) {
+  if (event->type != ncclProfileKernelCh) return;
+  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"GPU\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
+          "KernelCh", kernelId, getpid(), 1, event->stopTs);
+}
+
 static __thread int proxyCtrlId;
 __hidden void printProxyCtrlEvent(FILE* fh, struct proxyCtrl* event) {
   const char* str;
@@ -178,6 +191,14 @@ void debugEvent(void* eHandle, const char* tag) {
     fprintf(fh, "  startTs           = %f\n", event->startTs);
     fprintf(fh, "  stopTs            = %f\n", event->stopTs);
     fprintf(fh, "}\n");
+  } else if (type == ncclProfileKernelCh) {
+    struct kernelCh* event = (struct kernelCh *)eHandle;
+    fprintf(fh, "KernelCh event %p tag = %s {\n", event, tag);
+    fprintf(fh, "  parent            = %p\n", event->parent);
+    fprintf(fh, "  channel           = %d\n", event->channelId);
+    fprintf(fh, "  startTs           = %f\n", event->startTs);
+    fprintf(fh, "  stopTs            = %f\n", event->stopTs);
+    fprintf(fh, "}\n");
   }
   fclose(fh);
 #endif
@@ -200,17 +221,21 @@ void printEvent(FILE* fh, void* handle) {
     struct collective* c = (struct collective *)handle;
     printCollEventHeader(fh, c);
     for (int i = 0; i < MAX_CHANNELS; i++) {
+      printKernelChEventHeader(fh, &c->kernel[i]);
       for (int j = 0; j < c->nProxyOps[i]; j++) {
         printEvent(fh, &c->send[i][j]);
         printEvent(fh, &c->recv[i][j]);
       }
+      printKernelChEventTrailer(fh, &c->kernel[i]);
     }
     printCollEventTrailer(fh, c);
   } else if (type == ncclProfileP2p) {
     struct p2p* p = (struct p2p *)handle;
     printP2pEventHeader(fh, p);
     for (int i = 0; i < MAX_CHANNELS; i++) {
+      printKernelChEventHeader(fh, &p->kernel[i]);
       printEvent(fh, &p->op[i]);
+      printKernelChEventTrailer(fh, &p->kernel[i]);
     }
     printP2pEventTrailer(fh, p);
   } else if (type == ncclProfileProxyOp) {

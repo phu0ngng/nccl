@@ -18,6 +18,7 @@
 #define TRANSPORT_SHM 1
 #define TRANSPORT_NET 2
 #define TRANSPORT_COLLNET 3
+#define TRANSPORT_PROFILER 4
 
 #include "proxy.h"
 #include "comm.h"
@@ -26,6 +27,7 @@ extern struct ncclTransport p2pTransport;
 extern struct ncclTransport shmTransport;
 extern struct ncclTransport netTransport;
 extern struct ncclTransport collNetTransport;
+extern struct ncclTransport profilerTransport;
 
 extern struct ncclTransport* ncclTransports[];
 // Forward declarations

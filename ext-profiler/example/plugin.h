@@ -4,17 +4,10 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_PROFILER_H_
-#define NCCL_PROFILER_H_
+#ifndef PLUGIN_H_
+#define PLUGIN_H_
 
-#include <stdint.h>
-#include <stdlib.h>
+int exampleProfilerStart(int eActivationMask);
+int exampleProfilerStop(void);
 
-#include "common.h"
-#include "err.h"
-
-#include "profiler_v3.h"
-#include "profiler_v2.h"
-#include "profiler_v1.h"
-
-#endif // end include guard
+#endif
