@@ -46,13 +46,18 @@ static ncclResult_t ncclTuner_getCollInfo(void* context, ncclFunc_t collType, si
   return ncclSuccess;
 }
 
+static ncclResult_t ncclTuner_init(size_t nRanks, size_t nNodes, ncclDebugLogger_t logfn, void** context) {
+  NCCLCHECK(ncclTuner_v2->init(nRanks, nNodes, logfn, context));
+  ncclTuner.getCollInfo = ncclTuner_getCollInfo;
+  ncclTuner.destroy = ncclTuner_v2->destroy;
+  return ncclSuccess;
+}
+
 ncclTuner_t* getNcclTuner_v2(void* lib) {
   ncclTuner_v2 = (ncclTuner_v2_t*)dlsym(lib, "ncclTunerPlugin_v2");
   if (ncclTuner_v2) {
     ncclTuner.name = ncclTuner_v2->name;
-    ncclTuner.init = ncclTuner_v2->init;
-    ncclTuner.getCollInfo = ncclTuner_getCollInfo;
-    ncclTuner.destroy = ncclTuner_v2->destroy;
+    ncclTuner.init = ncclTuner_init;
     INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Using tuner plugin %s", ncclTuner_v2->name);
     return &ncclTuner;
   }
