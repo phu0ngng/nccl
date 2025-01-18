@@ -429,6 +429,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
         event->pluginVer = ver;
         if (descr->type == ncclProfileQp) {
           event->pluginEvent = ncclProfileQp;
+          event->qp.device = descr->qp.device;
           event->qp.wr_id = descr->qp.wr_id;
           event->qp.opcode = descr->qp.opcode;
           event->qp.qpNum = descr->qp.qpNum;

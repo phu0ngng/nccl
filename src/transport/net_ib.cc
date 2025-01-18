@@ -1955,6 +1955,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandl
       // Store info for profiler
       int pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       reqs[r]->pInfo[0].data.type = ncclProfileQp;
+      reqs[r]->pInfo[0].data.qp.device = devIndex;
       reqs[r]->pInfo[0].data.qp.wr_id = comm->wrs[r].wr_id;
       reqs[r]->pInfo[0].data.qp.opcode = comm->wrs[r].opcode;
       reqs[r]->pInfo[0].data.qp.qpNum = qp->qp->qp_num;
@@ -2184,6 +2185,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
       // Store info for profiler
       int pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       req->pInfo[r].data.type = ncclProfileQp;
+      req->pInfo[r].data.qp.device = qp->devIndex;
       req->pInfo[r].data.qp.wr_id = wr.wr_id;
       req->pInfo[r].data.qp.qpNum = qp->qp->qp_num;
       NCCLCHECK(ncclProfilerFunction(&req->pInfo[r].qpEventHandles[i], 0, phandles[r], pluginId, &req->pInfo[r].data));

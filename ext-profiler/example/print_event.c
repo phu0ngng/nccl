@@ -151,8 +151,8 @@ __hidden void printNetPluginEvent(FILE* fh, struct netPlugin* event) {
   if (event->pluginType == NCCL_PROFILER_NET_TYPE_IB) {
     if (event->pluginVer == 1) {
       if (event->pluginEvent == ncclProfileQp) {
-        fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET_IB\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"qp_num\": %d, \"opcode\": %d, \"wr_id\": %lu, \"size\": %lu}},\n",
-                "Qp", ibQpId, getpid(), 1, event->startTs, event->qp.qpNum, event->qp.opcode, event->qp.wr_id, event->qp.length);
+        fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET_IB\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"device\": %d, \"qp_num\": %d, \"opcode\": %d, \"wr_id\": %lu, \"size\": %lu}},\n",
+                "Qp", ibQpId, getpid(), 1, event->startTs, event->qp.device, event->qp.qpNum, event->qp.opcode, event->qp.wr_id, event->qp.length);
         fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET_IB\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
                 "Qp", ibQpId++, getpid(), 1, event->stopTs);
       }

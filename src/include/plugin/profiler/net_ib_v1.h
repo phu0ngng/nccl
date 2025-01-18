@@ -22,6 +22,7 @@ typedef struct {
   uint8_t type;        // event type (plugin defined)
   union {
     struct {
+      int device;      // network device id
       uint64_t wr_id;  // work request id
       int opcode;      // ibv opcode
       int qpNum;       // QP number

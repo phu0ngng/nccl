@@ -45,6 +45,7 @@ struct netPlugin {
   uint8_t pluginEvent;
   union {
     struct {
+      int device;
       int qpNum;
       int opcode;
       uint64_t wr_id;
