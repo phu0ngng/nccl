@@ -14,7 +14,8 @@ DST_DIR := $(BUILDDIR)/test/ras
 all: $(DST_DIR)/single_comm_idle $(DST_DIR)/triple_comm_idle \
      $(DST_DIR)/triple_comm_longidle $(DST_DIR)/single_comm_1exit \
      $(DST_DIR)/single_comm_1suspend $(DST_DIR)/single_comm_2suspend \
-     $(DST_DIR)/single_comm_4suspend $(DST_DIR)/triple_comm_latecoll
+     $(DST_DIR)/single_comm_4suspend $(DST_DIR)/triple_comm_latecoll \
+     $(DST_DIR)/single_comm_mixedcoll
 
 clean:
 	rm -rf $(DST_DIR)
@@ -57,6 +58,11 @@ ${DST_DIR}/single_comm_4suspend: single_comm_4suspend.cu
 	$(NVCC) -o $@ $(NVCUFLAGS) $< $(NVLDFLAGS) $(NCCL_NVLDFLAGS) $(MPI_NVLDFLAGS)
 
 ${DST_DIR}/triple_comm_latecoll: triple_comm_latecoll.cu
+	@printf "Linking  %s\n" $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $< $(NVLDFLAGS) $(NCCL_NVLDFLAGS) $(MPI_NVLDFLAGS)
+
+${DST_DIR}/single_comm_mixedcoll: single_comm_mixedcoll.cu
 	@printf "Linking  %s\n" $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $< $(NVLDFLAGS) $(NCCL_NVLDFLAGS) $(MPI_NVLDFLAGS)

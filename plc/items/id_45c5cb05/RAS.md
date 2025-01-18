@@ -292,10 +292,11 @@ RAS.  That function is not invoked for communicators created using
 `ncclCommSplit`, because they consist exclusively of already known
 processes, so there's nothing to register.
 
-`ncclRasCommInit` and `ncclRasCommFini` functions maintain a reference counter;
-when it goes down to 0, the RAS thread is notified.  Note that currently
-the RAS thread effectively ignores that notification and keeps running until
-the whole process is terminated. *[to be revisited after 2.24]*
+`ncclRasCommInit` and `ncclRasCommFini` functions maintain a reference
+counter.  While the intention behind it was to release all RAS resources
+when the last communicator is terminated, currently that is not the case
+until the whole process is about to terminate, when a previously registered
+`atexit` counter is invoked. *[to be revisited after 2.24]*
 
 **Maintaining the list of NCCL processes**
 
@@ -306,7 +307,7 @@ for each peer, the RAS network socket address, process ID, and the list of
 GPUs managed by that peer (kept as a bitmask).  The RAS network socket
 address (of `ncclSocketAddress` type) is different for each peer and is
 frequently used internally as a unique identifier of a peer.  The
-`rasPeers` array elements are in fact ordered by these addresses (using the
+`rasPeers` array elements are in fact sorted by these addresses (using the
 `ncclSocketsCompare` sorting function), enabling quick lookup using binary
 search.  The ordering used facilitates locality, with peers running on the
 same node being stored right next to each other.  Assuming a sane network
@@ -314,7 +315,7 @@ addressing scheme, peers on physically proximate nodes should be stored
 close to each other as well.
 
 New processes can be added to the `rasPeers` array at any time, by being
-part of newly created communicators; given the array ordering criteria, the
+part of newly created communicators; given the array sorting criteria, the
 indexes of existing entries can change when new ones are added, and the whole
 array may need to be reallocated if it runs out of space.  Hence, referring
 to particular array elements using pointers or even indexes is best avoided
@@ -327,7 +328,7 @@ declared dead (more on that later) are kept in as well, but their addresses
 are added to a separate global `rasDeadPeers` array.  Both arrays are
 replicated, with every peer holding an identical copy of each.
 `rasPeersHash` and `rasDeadPeersHash` hold the checksums of the two arrays,
-and the checksums are regularly exchanged with the peers over the RAS
+and the checksums are regularly exchanged between the peers over the RAS
 network to ensure that all peers are up to date.
 
 If a new communicator is being created and the local process participates
@@ -359,7 +360,7 @@ update.  For every RAS network connection, the peer keeps track of the
 checksums it had sent to the remote peer with the previous update, and also
 of the checksums it last received from that peer.  If either matches the
 locally calculated updated checksums, the destination is already up to date
-and the update does not need to be send.
+and the update does not need to be sent.
 
 It's also possible for the update propagation process to require a
 follow-up.  Consider two established communicators running on
@@ -400,24 +401,19 @@ but, during fault events, the destination peer may change and the number of
 connections may temporarily increase (more on that later).
 
 - RAS connections: described by the `rasConnection` structure; there is a
-global array `rasConns` that holds them all.  A connection targets a
+global list `rasConnsHead` that holds them all.  A connection targets a
 particular destination peer (the destination address is one of the key
 elements).  It's an abstraction over a socket, because a socket can, due to
 transient failures, end up getting closed and re-created, while a
 connection structure remains persistent.  The sent/received (dead) peers'
 checksums discussed earlier are stored inside connections, as are various
-timers, counters, and flags.  While the index of a particular connection
-within the `rasConns` array will not change so long as the connection is
-open, the array itself might be reallocated if it runs out of space, so
-indexes rather than pointers should be used to refer to particular
-connections in a persistent manner.
+timers, counters, and flags.
 
 - RAS sockets: described by the `rasSocket` structure; there is a global
-array `rasSockets` that holds them all (as with `rasConns`, indexes rather
-than pointers should be used to persistently refer to particular entries).
+list `rasSocketsHead` that holds them all.
 This is an extension of the `ncclSocket` structure (which is actually its
 first element).  It stores references to other associated structures (such
-as an index to the RAS connection that this socket is part of), the
+as a pointer to the RAS connection that this socket is part of), the
 timestamps keeping track of its most recent usage, the data about the
 message currently being received, etc.  RAS sockets are always
 non-blocking.
@@ -490,9 +486,9 @@ added to the global `rasCollHistory` array to indicate that that particular
 message has already been handled, so that should it bounce back, it can
 simply be dropped.  For more complicated collectives, a `rasCollective`
 structure is allocated instead, that keeps track of the operation's progress
-from the point of view of the current peer (there is a global array
-`rasCollectives` that holds all these structures).  It keeps track of a list of
-connections that the peer sent the collective request over and the counts
+from the point of view of the current peer (there is a global list
+`rasCollectivesHead` that holds all these structures).  It keeps track of a list of
+connections that the peer sent the collective request over and of the counts
 of the messages sent and the responses received; once the latter two are equal,
 the local processing of a given collective operation is complete.  The
 structure also holds the operation-specific data buffer that accumulates
@@ -570,7 +566,7 @@ socket and retry again, as described above).
 Attempts to reconnect will continue until the RAS connection's retry timer
 hits 60 seconds.  At that point RAS gives up, flags the peer as dead
 (`rasPeerDeclareDead`) by adding its address to the `rasDeadPeers` array,
-drops the connection from the RAS link(s) (`rasLinkDropConn`), broadcasts
+drops the connection from the RAS link(s) (`rasLinkConnDrop`), broadcasts
 the information about the dead peer (`RAS_BC_DEADPEER`) throughout the rest
 of the RAS network, and finally terminates the RAS connection
 (`rasConnTerminate`).  This action is irreversible; should the remote peer
@@ -657,19 +653,19 @@ _Fallbacks_
 
 The handling of fallback connections is probably the most complex aspect of
 the RAS fault recovery mechanism.  _Fallback_ is a concept specific to RAS
-links, which can host multiple RAS connections, held in the `conns` array.
-The first entry (at index 0) is the _primary_ connection, and under regular
+links, which can host multiple RAS connections, held in the `conns` list.
+The first entry is the _primary_ connection, and under regular
 circumstances it should be the only one.  Additional entries -- fallbacks
 -- can be added when the RAS network is experiencing connection issues,
-forming a chain of sorts, with the more preferred fallbacks at the lower
-indexes.  Entries can be added through a local decision or through an
+forming a chain of sorts, with the more preferred fallbacks closer to the
+head of the list.  Entries can be added through a local decision or through an
 external request (from another peer) -- the latter are referred to as
 _external fallbacks_.
 
 Local decisions are driven by `rasLinkAddFallback`, invoked when RAS
 decides that an existing connection is under some form of stress.  If there
 are no other healthy connections within
-the link's `conns` array, `rasLinkAddFallback` attempts to initiate a new
+the link's `conns` list, `rasLinkAddFallback` attempts to initiate a new
 one.  `rasLinkCalculatePeer` is used to select the peer that the new
 fallback should connect to.  Typically, for a fallback to a primary
 connection, that will be "the next peer over" beyond the primary peer.  For
@@ -684,10 +680,10 @@ other peers running on that node and try "the next node over" instead.
 Assuming that a fallback connection gets successfully established, it will
 be used for sending any regular RAS messages just like the primary
 connection, including the keep-alive messages being exchanged with its
-peer.  If the primary connection gets terminated, `rasLinkDropConn` will
-shift the `conns` array and the first fallback becomes the new primary
+peer.  If the primary connection gets terminated, `rasLinkConnDrop` will
+shift the `conns` list and the first fallback becomes the new primary
 connection.  If the new primary connection is operational, any
-further fallbacks are dropped from the `conns` array
+further fallbacks are dropped from the `conns` list
 (`rasLinkSanitizeFallbacks`) as they are no longer needed.
 
 For initially established RAS link connections, given that our peer
@@ -700,19 +696,19 @@ not send keep-alive messages through it, etc.  To avoid such an undesirable
 situation, keep-alive
 messages from the initiator peer include a request to add the connection
 to the RAS link(s) at the receiver side.  The receiver will
-(`rasMsgHandleKeepAlive`, `rasLinkUpdateConn`), if necessary, add any such
+(`rasMsgHandleKeepAlive`, `rasLinkConnUpdate`), if necessary, add any such
 connections to the RAS links as _external fallbacks_.  They normally remain
 part of the link until the requesting side no longer needs them (which is
 indicated by a special `nack` keep-alive message) or until the link gets
 reconfigured.
 
 If the `rasPeers` array is being updated, RAS links are reinitialized
-(`rasLinkReinitConns`) and the `conns` array is reset -- all link
+(`rasLinkReinitConns`) and the `conns` list is reset -- all link
 connections, whether primary or fallbacks, local or external, are purged.
 That's because the number of peers, and thus the network topology, will
 have changed, and the set of closest peers the process should connect with
 may have
-changed as well.  Further, the `conns` array contains peer indexes, which
+changed as well.  Further, the `conns` list contains peer indexes, which
 go stale when the `rasPeers` array changes.  The peer selection needs to
 be repeated; should it result in the same outcome, the connection process
 should be
@@ -731,9 +727,8 @@ resilience in this case -- we don't want to wait during fault recovery).
 **RAS client interactions**
 
 RAS clients are described by the `rasClient` structure; there is a global
-array `rasClients` that holds them all (as with other similar RAS arrays,
-indexes rather than pointers should be used to persistently refer to
-particular entries).  Unlike the RAS network sockets described above, RAS
+`rasClientsHead` list that holds them all.  Unlike the RAS network sockets
+described above, RAS
 client sockets do not leverage the existing `ncclSocket` implementation
 because it requires a binary protocol, whereas for the client protocol
 there's a desire for a telnet-compatible solution.
@@ -753,7 +748,7 @@ RAS generates a summary plus additional information about the outliers, if
 any (provided that they are not too numerous).  RAS responds with a series
 of messages containing pre-formatted text and, when finished, terminates
 the client socket connection.  `VERBOSE` increases the verbosity of the
-output by relaxing the outlier criteria.  by default, a group of objects is
+output by relaxing the outlier criteria.  By default, a group of objects is
 considered to be outliers if they represent no more than 25% of the total,
 and details about them are printed only if there are no more than 10 of them.
 With `VERBOSE`, anything below 50% of the total is considered an outlier,
@@ -771,8 +766,8 @@ the output, and sends it to the client via `rasClientEnqueueMsg`.
 `rasClientRunInit` processes the locally available data such as the version
 information and job size.  A lot of the effort goes into
 filtering and presenting the information in a maximally compressed form
-suitable for direct human consumption without additional
-searching/filtering requirement.  Outliers are identified and details about them
+suitable for direct human consumption without a need for additional
+searching/filtering.  Outliers are identified and details about them
 are also printed.  The formatted data is sent to the client.
 
 Subsequently, a collective `RAS_COLL_COMMS` operation is initiated, which
@@ -782,13 +777,13 @@ returns to the main RAS event loop.  When the results of the collective are
 ready, `rasClient` is invoked again and it resumes where it left off --
 `rasClientRunComms` in this case.  That function presents an overview of
 all the identified communicators in a tabular form (from the largest to the
-smallest), including their status and any issues identified.  Subsequently
+smallest), including their status and any issues identified.  Subsequently,
 more detailed information is printed about the identified errors and
 warnings.  This includes information about incomplete data being returned
 by the collective operation, timeouts, missing ranks, and error conditions
-stored in communicators.  Unfortunately, it's not trivial to print more
-information about missing ranks beyond the rank number, as ranks currently
-self-report information about themselves.  Mismatches are also identified
+stored in communicators.  Ranks self-report information about themselves;
+for ranks that fail to respond, basic information about their location is
+collected from their peers.  Mismatches are also identified
 between ranks of any single communicator, in terms of their status (e.g.,
 readiness level) and the count of collective operations they participated
 in.  Given the latency of RAS collectives, some discrepancies can be
@@ -799,7 +794,10 @@ client.
 
 ### Commit list or MR
 
-https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/615
+* https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/615 (RAS subsystem)
+* https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/673 (Assorted RAS tweaks for 2.24)
+* https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/700 (More RAS tweaks)
+
 
 </details>
 

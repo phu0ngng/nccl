@@ -736,6 +736,8 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
     rasRanks[rank].pid = getpid();
     rasRanks[rank].cudaDev = comm->cudaDev;
     rasRanks[rank].nvmlDev = comm->nvmlDev;
+    rasRanks[rank].hostHash = getHostHash();
+    rasRanks[rank].pidHash = getPidHash();
     if (ncclRasCommInit(comm, rasRanks+rank) != ncclSuccess) {
       INFO(NCCL_INIT|NCCL_RAS, "Continuing in spite of a RAS initialization error");
       // We should still participate in the ringAllInfo below as the peers will be waiting for us.

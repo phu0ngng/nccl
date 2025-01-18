@@ -1,17 +1,13 @@
 //
-// This test creates two NCCL communicators on non-overlapping halves of
-// ranks, and then it creates a third communicator consisting of rank 0 of
-// each of the existing two communicators.
+// This test creates three NCCL communicators and performs a series of p2p and
+// collective operations to verify that the tracking of collective operation
+// counts works as expected.
 //
-// The test can be used to verify that RAS correctly joins two RAS networks
-// into one and propagates the network updates across all the peers.
+// One of the ranks will initially be delayed to some collective operations,
+// which should result in a MISMATCH report from RAS.  It should then catch
+// up with the ramining ranks.
 //
-// Must be run on at least 2 ranks total.  4 ranks+ will exercise all the
-// scenarios when it comes to the peers update ( because some ranks will
-// not be the members of the third communicator).  6 ranks+ will exercise
-// all the scenarios when it comes to the RAS network reconfiguration
-// (because some connections will not be needed anymore after the third
-// communicator is created).
+// Should be run on at least 4 ranks total.
 //
 #include <cassert>
 #include <cstdio>
@@ -138,26 +134,37 @@ int main(int argc, char* argv[])
   config.splitShare = 1;
 
   // Initializing NCCL
-  printf("Creating communicator 1\n");
+  // Creating comm1
   if (myRank1 >= 0)
     NCCLCHECK(ncclCommInitRankConfig(&comm1, nRanks1, id1, myRank1, &config));
   sleep(5);
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_comm1.out");
 
-  printf("Splitting communicator 1 into communicators 2 and 3\n");
+  MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+
+  // Splitting comm1 into comm2 and comm3
   NCCLCHECK(ncclCommSplit(comm1, (myRank2 != -1), myRank1, (myRank2 != -1 ? &comm2 : &comm3), nullptr));
   sleep(5);
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_commsplit.out");
+
+  MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
   CUDACHECK(cudaStreamCreate(&s1));
   CUDACHECK(cudaStreamCreate(&s2));
 
   // Communicating over comm1 using collectives
+  if (mpiRank == 0)
+    printf("starting the first 10 allreduce calls and a broadcast\n");
   for (int i = 0; i < 10; i++)
     NCCLCHECK(ncclAllReduce(sendbuff, recvbuff, size, ncclFloat, ncclSum, comm1, s1));
+  NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, size, ncclFloat, 0, comm1, s1));
   CUDACHECK(cudaStreamSynchronize(s1));
+  if (mpiRank == 0)
+    printf("finished the first 10 allreduce calls and a broadcast\n");
 
   // Communicating over comm1 using p2p's
+  if (mpiRank == 0)
+    printf("starting the 10 p2p calls\n");
   for (int i = 0; i < 10; i++) {
     if (myRank1 == 0)
       NCCLCHECK(ncclSend(sendbuff, size, ncclFloat, nRanks1-1, comm1, s1));
@@ -165,15 +172,73 @@ int main(int argc, char* argv[])
       NCCLCHECK(ncclRecv(recvbuff, size, ncclFloat, 0, comm1, s1));
   }
   CUDACHECK(cudaStreamSynchronize(s1));
+  if (mpiRank == 0)
+    printf("finished the 10 p2p calls\n");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
   // Communicating over comm2 using collectives
   if (comm2 != nullptr) {
+    if (mpiRank == 0)
+      printf("starting the 5 comm2 allreduce calls and a broadcast\n");
     for (int i = 0; i < 5; i++)
       NCCLCHECK(ncclAllReduce(sendbuff, recvbuff, size, ncclFloat, ncclSum, comm2, s2));
+    NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, size, ncclFloat, 0, comm2, s2));
     CUDACHECK(cudaStreamSynchronize(s2));
+    if (mpiRank == 0)
+      printf("finished the 5 comm2 allreduce calls and a broadcast\n");
   }
+  sleep(5);
+  if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_colls_indiv.out");
+
+  MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+
+  // Communicating over comm1 using aggregated collectives
+  if (mpiRank == 0)
+    printf("starting the aggregated 10 allreduce calls and a broadcast\n");
+  NCCLCHECK(ncclGroupStart());
+  for (int i = 0; i < 10; i++)
+    NCCLCHECK(ncclAllReduce(sendbuff, recvbuff, size, ncclFloat, ncclSum, comm1, s1));
+  NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, size, ncclFloat, 0, comm1, s1));
+  NCCLCHECK(ncclGroupEnd());
+  CUDACHECK(cudaStreamSynchronize(s1));
+  sleep(5);
+  if (mpiRank == 0) {
+    printf("finished the aggregated 10 allreduce calls and a broadcast\n");
+    launchRasClient("triple_comm_latecoll.after_colls_agg.out");
+  }
+
+  MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+
+  // Note: RAS doesn't currently update counters for graph-captured collectives.  But we still test to ensure
+  // that the counters on different ranks don't get out of sync.
+  if (mpiRank == 0)
+    printf("starting the graph capturing of 10 allreduce calls and a broadcast\n");
+  // Communicating over comm1 using collectives with graph capture
+  cudaGraph_t graph;
+  CUDACHECK(cudaStreamBeginCapture(s1, cudaStreamCaptureModeGlobal));
+  for (int i = 0; i < 10; i++)
+    NCCLCHECK(ncclAllReduce(sendbuff, recvbuff, size, ncclFloat, ncclSum, comm1, s1));
+  NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, size, ncclFloat, 0, comm1, s1));
+  CUDACHECK(cudaStreamEndCapture(s1, &graph));
+  CUDACHECK(cudaStreamSynchronize(s1));
+  if (mpiRank == 0)
+    printf("finished the graph capturing of 10 allreduce calls and a broadcast\n");
+  cudaGraphExec_t instance;
+  CUDACHECK(cudaGraphInstantiate(&instance, graph, NULL, NULL, 0));
+  if (mpiRank == 0)
+    printf("starting the first graph launch\n");
+  CUDACHECK(cudaGraphLaunch(instance, s1));
+  if (mpiRank == 0)
+    printf("starting the second graph launch\n");
+  CUDACHECK(cudaGraphLaunch(instance, s1));
+  CUDACHECK(cudaStreamSynchronize(s1));
+  if (mpiRank == 0)
+    printf("finished the two graph launches\n");
+  CUDACHECK(cudaGraphExecDestroy(instance));
+  CUDACHECK(cudaGraphDestroy(graph));
+  sleep(5);
+  if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_colls_graph.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
@@ -184,11 +249,19 @@ int main(int argc, char* argv[])
   // Communicating over comm1 using collectives
   for (int i = 0; i < 10; i++)
     NCCLCHECK(ncclAllReduce(sendbuff, recvbuff, size, ncclFloat, ncclSum, comm1, s1));
+  NCCLCHECK(ncclBroadcast(sendbuff, recvbuff, size, ncclFloat, 0, comm1, s1));
+  sleep(5);
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_delay.out");
+
+  MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+
   CUDACHECK(cudaStreamSynchronize(s1));
   if (mpiRank == 0) launchRasClient("triple_comm_latecoll.after_sync.out");
 
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
+
+  CUDACHECK(cudaStreamDestroy(s1));
+  CUDACHECK(cudaStreamDestroy(s2));
 
   CUDACHECK(cudaFree(sendbuff));
   CUDACHECK(cudaFree(recvbuff));
@@ -198,8 +271,7 @@ int main(int argc, char* argv[])
     ncclCommDestroy(comm3);
   if (myRank2 >= 0)
     ncclCommDestroy(comm2);
-  if (myRank1 >= 0)
-    ncclCommDestroy(comm1);
+  ncclCommDestroy(comm1);
 
   // Finalizing MPI
   MPICHECK(MPI_Finalize());
