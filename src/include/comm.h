@@ -131,6 +131,7 @@ struct ncclSharedResources {
   int* tpRankToLocalRank;
   // Internal streams
   struct ncclStrongStream deviceStream, hostStream;
+  int noncapturedRefs; // number of non-captured hostStreamPlanCallback on the stream
 
   /* proxy related shared res */
   struct ncclProxyState* proxyState;
@@ -567,7 +568,6 @@ struct ncclComm {
   // Subset of those in groupNext list. Holds 0x1 if not needing preconnect.
   struct ncclComm* preconnectNext;
   int persistentRefs; // number of persistent plan-lists capturing this comm
-  int noncapturedRefs; // number of non-captured hostStreamPlanCallback on the stream
   struct P2pSchedulePair { int sendRank; int recvRank; } *p2pSchedule;
 
   struct ncclKernelPlanner planner;
