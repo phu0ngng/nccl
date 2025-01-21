@@ -1899,7 +1899,7 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
     NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm), ret, fail);
     NCCLCHECKGOTO(ncclCommPollCallbacks(comm, false), ret, fail);
     // And keep polling until all graphs referencing us die.
-    while (comm->persistentRefs != 0) {
+    while (comm->localPersistentRefs != 0) {
       NCCLCHECKGOTO(ncclCommPollCallbacks(comm, /*waitSome=*/true), ret, fail);
     }
     while (!ncclIntruQueueEmpty(&comm->legacyRegCleanupQueue)) {
