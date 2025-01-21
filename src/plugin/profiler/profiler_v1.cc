@@ -6,6 +6,7 @@
 
 #include "comm.h"
 #include "nccl_profiler.h"
+#include "checks.h"
 
 static ncclProfiler_t ncclProfiler;
 static ncclProfiler_v1_t* ncclProfiler_v1;
@@ -109,15 +110,20 @@ static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEve
   return ncclProfiler_v1->recordEventState(eHandle, eState, (ncclProfilerEventStateArgs_v1_t*)eStateArgs);
 }
 
+static ncclResult_t ncclProfiler_init(void** context, int* eActivationMask) {
+  NCCLCHECK(ncclProfiler_v1->init(context, eActivationMask));
+  ncclProfiler.startEvent = ncclProfiler_startEvent;
+  ncclProfiler.stopEvent = ncclProfiler_v1->stopEvent;
+  ncclProfiler.recordEventState = ncclProfiler_recordEventState;
+  ncclProfiler.finalize = ncclProfiler_v1->finalize;
+  return ncclSuccess;
+}
+
 ncclProfiler_t* getNcclProfiler_v1(void* lib) {
   ncclProfiler_v1 = (ncclProfiler_v1_t*)dlsym(lib, "ncclProfiler_v1");
   if (ncclProfiler_v1) {
     ncclProfiler.name = ncclProfiler_v1->name;
-    ncclProfiler.init = ncclProfiler_v1->init;
-    ncclProfiler.startEvent = ncclProfiler_startEvent;
-    ncclProfiler.stopEvent = ncclProfiler_v1->stopEvent;
-    ncclProfiler.recordEventState = ncclProfiler_recordEventState;
-    ncclProfiler.finalize = ncclProfiler_v1->finalize;
+    ncclProfiler.init = ncclProfiler_init;
     INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: loaded %s", ncclProfiler_v1->name);
     return &ncclProfiler;
   }

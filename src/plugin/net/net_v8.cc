@@ -7,6 +7,7 @@
 #include "nccl_net.h"
 #include "net_device.h"
 #include "proxy.h"
+#include "checks.h"
 
 static ncclNet_t ncclNet;
 static ncclCollNet_t ncclCollNet;
@@ -123,29 +124,34 @@ static ncclResult_t ncclCollNet_ireducescatter(void* collComm, int nSendParts, n
   return ans;
 }
 
+static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn) {
+  NCCLCHECK(ncclNet_v8->init(logfn));
+  ncclNet.devices = ncclNet_v8->devices;
+  ncclNet.getProperties = ncclNet_getProperties;
+  ncclNet.listen = ncclNet_v8->listen;
+  ncclNet.connect = ncclNet_v8->connect;
+  ncclNet.accept =  ncclNet_v8->accept;
+  ncclNet.regMr = ncclNet_v8->regMr;
+  ncclNet.regMrDmaBuf = ncclNet_v8->regMrDmaBuf;
+  ncclNet.deregMr = ncclNet_v8->deregMr;
+  ncclNet.isend = ncclNet_isend;
+  ncclNet.irecv = ncclNet_irecv;
+  ncclNet.iflush = ncclNet_v8->iflush;
+  ncclNet.test = ncclNet_v8->test;
+  ncclNet.closeSend = ncclNet_v8->closeSend;
+  ncclNet.closeRecv = ncclNet_v8->closeRecv;
+  ncclNet.closeListen = ncclNet_v8->closeListen;
+  ncclNet.getDeviceMr = ncclNet_v8->getDeviceMr;
+  ncclNet.irecvConsumed = ncclNet_v8->irecvConsumed;
+  ncclNet.makeVDevice   = NULL;
+  return ncclSuccess;
+}
+
 ncclNet_t* getNcclNet_v8(void* lib) {
   ncclNet_v8 = (ncclNet_v8_t*)dlsym(lib, "ncclNetPlugin_v8");
   if (ncclNet_v8) {
     ncclNet.name = ncclNet_v8->name;
-    ncclNet.init = ncclNet_v8->init;
-    ncclNet.devices = ncclNet_v8->devices;
-    ncclNet.getProperties = ncclNet_getProperties;
-    ncclNet.listen = ncclNet_v8->listen;
-    ncclNet.connect = ncclNet_v8->connect;
-    ncclNet.accept =  ncclNet_v8->accept;
-    ncclNet.regMr = ncclNet_v8->regMr;
-    ncclNet.regMrDmaBuf = ncclNet_v8->regMrDmaBuf;
-    ncclNet.deregMr = ncclNet_v8->deregMr;
-    ncclNet.isend = ncclNet_isend;
-    ncclNet.irecv = ncclNet_irecv;
-    ncclNet.iflush = ncclNet_v8->iflush;
-    ncclNet.test = ncclNet_v8->test;
-    ncclNet.closeSend = ncclNet_v8->closeSend;
-    ncclNet.closeRecv = ncclNet_v8->closeRecv;
-    ncclNet.closeListen = ncclNet_v8->closeListen;
-    ncclNet.getDeviceMr = ncclNet_v8->getDeviceMr;
-    ncclNet.irecvConsumed = ncclNet_v8->irecvConsumed;
-    ncclNet.makeVDevice   = NULL;
+    ncclNet.init = ncclNet_init;
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded net plugin %s (v8)", ncclNet_v8->name);
     return &ncclNet;
   }
@@ -153,26 +159,31 @@ ncclNet_t* getNcclNet_v8(void* lib) {
   return NULL;
 }
 
+static ncclResult_t ncclCollNet_init(ncclDebugLogger_t logfn) {
+  NCCLCHECK(ncclCollNet_v8->init(logfn));
+  ncclCollNet.devices = ncclCollNet_v8->devices;
+  ncclCollNet.getProperties = ncclCollNet_getProperties;
+  ncclCollNet.listen = ncclCollNet_v8->listen;
+  ncclCollNet.connect = ncclCollNet_v8->connect;
+  ncclCollNet.reduceSupport = ncclCollNet_v8->reduceSupport;
+  ncclCollNet.regMr = ncclCollNet_v8->regMr;
+  ncclCollNet.regMrDmaBuf = ncclCollNet_v8->regMrDmaBuf;
+  ncclCollNet.deregMr = ncclCollNet_v8->deregMr;
+  ncclCollNet.iallreduce = ncclCollNet_iallreduce;
+  ncclCollNet.iallgather = ncclCollNet_iallgather;
+  ncclCollNet.ireducescatter = ncclCollNet_ireducescatter;
+  ncclCollNet.iflush = ncclCollNet_v8->iflush;
+  ncclCollNet.test = ncclCollNet_v8->test;
+  ncclCollNet.closeColl = ncclCollNet_v8->closeColl;
+  ncclCollNet.closeListen = ncclCollNet_v8->closeListen;
+  return ncclSuccess;
+}
+
 ncclCollNet_t* getNcclCollNet_v8(void* lib) {
   ncclCollNet_v8 = (ncclCollNet_v8_t*)dlsym(lib, "ncclCollNetPlugin_v8");
   if (ncclCollNet_v8) {
     ncclCollNet.name = ncclCollNet_v8->name;
-    ncclCollNet.init = ncclCollNet_v8->init;
-    ncclCollNet.devices = ncclCollNet_v8->devices;
-    ncclCollNet.getProperties = ncclCollNet_getProperties;
-    ncclCollNet.listen = ncclCollNet_v8->listen;
-    ncclCollNet.connect = ncclCollNet_v8->connect;
-    ncclCollNet.reduceSupport = ncclCollNet_v8->reduceSupport;
-    ncclCollNet.regMr = ncclCollNet_v8->regMr;
-    ncclCollNet.regMrDmaBuf = ncclCollNet_v8->regMrDmaBuf;
-    ncclCollNet.deregMr = ncclCollNet_v8->deregMr;
-    ncclCollNet.iallreduce = ncclCollNet_iallreduce;
-    ncclCollNet.iallgather = ncclCollNet_iallgather;
-    ncclCollNet.ireducescatter = ncclCollNet_ireducescatter;
-    ncclCollNet.iflush = ncclCollNet_v8->iflush;
-    ncclCollNet.test = ncclCollNet_v8->test;
-    ncclCollNet.closeColl = ncclCollNet_v8->closeColl;
-    ncclCollNet.closeListen = ncclCollNet_v8->closeListen;
+    ncclCollNet.init = ncclCollNet_init;
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v8)", ncclCollNet_v8->name);
     return &ncclCollNet;
   }
