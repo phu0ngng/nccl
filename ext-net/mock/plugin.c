@@ -349,7 +349,7 @@ __hidden ncclResult_t pluginCloseColl(void* collComm) {
 
 #define NET_PLUGIN_NAME "MockPlugin"
 
-ncclNet_t ncclNetPlugin = {
+ncclNet_t ncclNetPlugin_v10 = {
   .name = NET_PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,
@@ -374,7 +374,7 @@ ncclNet_t ncclNetPlugin = {
 
 #define COLLNET_PLUGIN_NAME "CollNetMockPlugin"
 
-ncclCollNet_t ncclCollNetPlugin = {
+ncclCollNet_t ncclCollNetPlugin_v10 = {
   .name = COLLNET_PLUGIN_NAME,
   .init = pluginInitCollNet,
   .devices = pluginDevices,
