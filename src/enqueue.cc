@@ -1272,14 +1272,15 @@ static void CUDART_CB hostStreamPlanCallback(void *plan_) {
   if (result != ncclSuccess) {
     WARN("hostStreamPlanCallback() failed : %s", ncclGetErrorString(result));
   }
-  if (!plan->persistent) ncclAtomicRefCountDecrement(&plan->comm->noncapturedRefs);
+  if (!plan->persistent) ncclAtomicRefCountDecrement(&plan->comm->sharedRes->noncapturedRefs);
   return;
 }
 
 static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* me) {
   struct ncclKernelPlan* plan = (struct ncclKernelPlan*)me; // cast from first member `reclaim`
   if (plan->persistent) {
-    comm->persistentRefs -= 1;
+    comm->sharedRes->persistentRefs -= 1;
+    comm->localPersistentRefs -= 1;
     if (plan->workStorageType == ncclDevWorkStorageTypePersistent) {
       cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
       CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
@@ -1406,7 +1407,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     }
     NCCLCHECKGOTO(ncclStrongStreamWaitStream(planner->capturingGraph, launchStream, &comm->sharedRes->deviceStream), result, failure);
 
-    if (persistent || comm->persistentRefs != 0 || ncclCudaLaunchBlocking || __atomic_load_n(&comm->noncapturedRefs, __ATOMIC_ACQUIRE)) {
+    if (persistent || comm->sharedRes->persistentRefs != 0 || ncclCudaLaunchBlocking || __atomic_load_n(&comm->sharedRes->noncapturedRefs, __ATOMIC_ACQUIRE)) {
       // We have to launch host tasks to push proxy args. We are careful to only
       // do this if necessary since host tasks impose a high performance cost in CUDA.
       bool acquired = false;
@@ -1416,7 +1417,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
             acquired = true;
             NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->sharedRes->hostStream), result, failure);
           }
-          if (!persistent) ncclAtomicRefCountIncrement(&comm->noncapturedRefs);
+          if (!persistent) ncclAtomicRefCountIncrement(&comm->sharedRes->noncapturedRefs);
           plan->isHostCbEnq = true;
           NCCLCHECKGOTO(ncclStrongStreamLaunchHost(planner->capturingGraph, &comm->sharedRes->hostStream, hostStreamPlanCallback, plan), result, failure);
         }
@@ -1429,7 +1430,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
     }
 
     if (persistent) {
-      comm->persistentRefs += nPlans;
+      comm->sharedRes->persistentRefs += nPlans;
+      comm->localPersistentRefs += nPlans;
       NCCLCHECKGOTO(ncclCudaGraphAddDestructor(planner->capturingGraph, persistentDestructor, (void*)planHead), result, failure);
     }
   }
@@ -2025,7 +2027,7 @@ static ncclResult_t hostToDevRedOp(
   uint64_t allBits = uint64_t(-1)>>(64-nbits);
   uint64_t signBit = allBits^(allBits>>1);
   bool datatype_signed = false;
-  
+
   switch (int(op)) {
   case ncclSum:  opFull->op = ncclDevSum;  break;
   case ncclProd: opFull->op = ncclDevProd; break;
