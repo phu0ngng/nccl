@@ -125,13 +125,13 @@ static void ncclDebugInit() {
   } else {
     int invert = 0;
     if (timestamps[0] == '^') { invert = 1; ++timestamps; }
-    ncclDebugTimestampLevels = invert ? ~0ULL : 0ULL;
+    ncclDebugTimestampLevels = invert ? ~0U : 0U;
     char *timestampsDup = strdup(timestamps);
     char *level = strtok(timestampsDup, ",");
     while (level != NULL) {
-      uint64_t mask = 0;
+      uint32_t mask = 0;
       if (strcasecmp(level, "ALL") == 0) {
-        mask = ~0ULL;
+        mask = ~0U;
       } else if (strcasecmp(level, "VERSION") == 0) {
         mask = (1<<NCCL_LOG_VERSION);
       } else if (strcasecmp(level, "WARN") == 0) {
@@ -169,7 +169,7 @@ static void ncclDebugInit() {
         ('1' <= tsFormat[i+1] && tsFormat[i+1] <= '9') && // Next char is a digit between 1 and 9 inclusive
         tsFormat[i+2]=='f'                                // Two characters later is an "f"
         ) {
-      constexpr int replaceLen = strlen("%Xf");
+      constexpr int replaceLen = sizeof("%Xf") - 1;
       ncclDebugTimestampSubsecondDigits = tsFormat[i+1] - '0';
       if (ncclDebugTimestampSubsecondDigits + strlen(tsFormat) - replaceLen > sizeof(ncclDebugTimestampFormat) - 1) {
         // Won't fit; fall back on the default.

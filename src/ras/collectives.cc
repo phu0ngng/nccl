@@ -616,8 +616,8 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
         struct rasCommId* skipComm;
         if (req == nullptr) {
           // We pessimistically allocate space for all the remaining communicators so that we don't need to reallocate.
-          NCCLCHECKGOTO(ncclCalloc((char**)&req, *pReqLen +
-                                   (nNcclComms-commIdx) * sizeof(*req->comms.skipMissingRanksComms)), ret, fail);
+          int newSize = *pReqLen + (nNcclComms-commIdx) * sizeof(*req->comms.skipMissingRanksComms);
+          NCCLCHECKGOTO(ncclCalloc((char**)&req, newSize), ret, fail);
           memcpy(req, *pReq, *pReqLen);
           *pReq = req;
           firstNewSkipMissingIdx = req->comms.nSkipMissingRanksComms;

@@ -516,7 +516,7 @@ ncclResult_t ncclProfilerAddPidToProxyOp(struct ncclProxyOp* op) {
 static pthread_mutex_t proxyProfilerConnectLock = PTHREAD_MUTEX_INITIALIZER;
 
 static ncclResult_t proxyProfilerConnect(struct ncclComm* comm, struct ncclProxyOp* op) {
-  ncclResult_t ret;
+  ncclResult_t ret = ncclSuccess;
   pthread_mutex_lock(&proxyProfilerConnectLock);
   if (comm->profiler.initialized) goto exit;
   for (int c = 0; c < MAXCHANNELS; c++) {
