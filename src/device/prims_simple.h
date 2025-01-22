@@ -26,7 +26,6 @@ class Primitives<
                        RoleWaitSend = 0x08,
                        RolePostSend = 0x10,
                        RolePostRecv = 0x20,
-                       Aborted = 0x40,
                        NetRegMode = 0x80,
                        ConnFifoEnabled = 0x100,
                        DirectWrite = 0x200,
@@ -85,18 +84,6 @@ class Primitives<
       int name = 15-group - (nworkers!=nthreads ? 1 : 0);
       return barrier_red_or(vote, name, nworkers);
     }
-  }
-
-  inline __device__ bool checkAbort(int &spins) {
-    spins++;
-    if (!(flags & Aborted) && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
-      if (*ncclShmem.comm.abortFlag) {
-        flags |= Aborted;
-        ncclShmem.aborted = 1;
-      }
-      spins = 0;
-    }
-    return flags & Aborted;
   }
 
   inline __device__ uint64_t loadStepValue(uint64_t* ptr) {
@@ -338,13 +325,7 @@ public:
     peerPtr->recv[connIndex].step += steps;
     st_relaxed_sys_global(peerPtr->recv[connIndex].head, peerPtr->recv[connIndex].step);
     while (ld_volatile_global(peerPtr->recv[connIndex].tail) < peerPtr->recv[connIndex].step) {
-      if (spins++ == NCCL_SPINS_BEFORE_CHECK_ABORT) {
-        if (*ncclShmem.comm.abortFlag) {
-          ncclShmem.aborted = 1;
-          break;
-        }
-        spins = 0;
-      }
+      if (checkAbort(spins)) break;
     }
   }
 
