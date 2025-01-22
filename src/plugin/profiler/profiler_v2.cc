@@ -35,6 +35,7 @@ static ncclResult_t ncclProfiler_init(void** context, int* eActivationMask) {
 ncclProfiler_t* getNcclProfiler_v2(void* lib) {
   ncclProfiler_v2 = (ncclProfiler_v2_t*)dlsym(lib, "ncclProfiler_v2");
   if (ncclProfiler_v2) {
+    ncclProfiler.name = ncclProfiler_v2->name;
     ncclProfiler.init = ncclProfiler_init;
     INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: loaded %s", ncclProfiler_v2->name);
     return &ncclProfiler;
