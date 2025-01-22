@@ -982,6 +982,15 @@ ncclResult_t ncclTopoCompute(ncclTopoSystem* system, struct ncclTopoGraph* graph
     graph->minChannels = graph->maxChannels;
   }
 
+  int splitNvLink;
+  NCCLCHECK(ncclTopoSplitNvLink(system, &splitNvLink));
+  if (graph->pattern == NCCL_TOPO_PATTERN_RING && splitNvLink) {
+    // We have two sockets with NVLink and a slower link in between (typically QPI).
+    // Tree is likely going to work better but it needs at least 2 channels.
+    // Since Tree needs to have the same number of channels as Ring, also force Ring to use 2 channels.
+    if (graph->maxChannels >= 2 && graph->minChannels == 1) graph->minChannels = 2;
+  }
+
   struct ncclTopoGraph tmpGraph;
   memcpy(&tmpGraph, graph, sizeof(struct ncclTopoGraph));
 

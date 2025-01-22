@@ -300,6 +300,8 @@ int main(int argc, const char* argv[]) {
     RUN("PCI-H100-NV");
     RUN("OCI-HGX-A100");
     RUN("DualPort-CPU");
+    RUN("Dell_R760xa");
+    RUN("SMC521GE");
 #endif
     RUN("CG4");
     RUN("P9-6V");

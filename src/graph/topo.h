@@ -18,9 +18,11 @@
 #define SM86_NVLINK_BW 12.0
 #define SM100_NVLINK_BW 40.0
 #define PCI_BW 12.0           // PCI Gen3 x16
-#define QPI_BW 6.0
 #define AMD_BW 16.0
+#define BDW_QPI_BW 6.0
 #define SKL_QPI_BW 10.0
+#define SRP_QPI_BW 22.0
+#define ERP_QPI_BW 40.0
 #define ZPI_BW 6.0
 #define YONGFENG_ZPI_BW 9.0
 #define P9_BW 32.0
@@ -103,9 +105,6 @@ struct ncclTopoLinkList {
   int type;
 };
 
-#define NCCL_TOPO_CPU_INTEL_BDW 1
-#define NCCL_TOPO_CPU_INTEL_SKL 2
-
 #define NCCL_TOPO_UNDEF (-1)
 
 #define NCCL_TOPO_ID_LOCAL_ID_MASK 0x00ffffffffffffff
@@ -176,6 +175,7 @@ ncclResult_t ncclTopoLoadSystem(const char* xmlTopoFile, struct ncclTopoSystem* 
 ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank, int64_t netId, int* intermediateRank);
 ncclResult_t ncclTopoGetGpuMinPath(struct ncclTopoSystem* system, int type, int* min);
 ncclResult_t ncclTopoGetGpuMaxPath(struct ncclTopoSystem* system, int type, int* max);
+ncclResult_t ncclTopoSplitNvLink(struct ncclTopoSystem* system, int* splitNvLink);
 
 #define NCCL_TOPO_XML_MAX_NODES 256
 #define NCCL_GRAPH_XML_MAX_NODES 4096
