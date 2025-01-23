@@ -153,7 +153,7 @@ static ncclResult_t netIsend(ncclNet_t* net, void* sendComm, void* data, int siz
                              int* done) {
   if (*done) return ncclSuccess;
   if (!*sendReq) {
-    NCCLCHECK(net->isend(sendComm, data, (size_t)size, tag, dataHandle, sendReq));
+    NCCLCHECK(net->isend(sendComm, data, (size_t)size, tag, dataHandle, NULL, sendReq));
   }
   if (*sendReq) {
     NCCLCHECK(net->test(*sendReq, done, NULL));
@@ -168,7 +168,7 @@ static ncclResult_t netIrecv(ncclNet_t* net, void* recvComm, void* data, int siz
   if (*done) return ncclSuccess;
   if (!*recvReq) {
     size_t size64 = size; 
-    NCCLCHECK(net->irecv(recvComm, 1, &data, &size64, &tag, &dataHandle, recvReq));
+    NCCLCHECK(net->irecv(recvComm, 1, &data, &size64, &tag, &dataHandle, NULL, recvReq));
   }
   if (*recvReq) {
     NCCLCHECK(net->test(*recvReq, done, NULL));

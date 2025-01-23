@@ -51,7 +51,7 @@ static ncclResult_t ncclNet_accept(void* listenComm, void** recvComm, ncclNetDev
   return ncclNet_v6->accept(listenComm, recvComm);
 }
 
-static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
+static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* pHandle, void** request) {
   int sizeInt;
   if (size > MAX_NET_SIZE) return ncclInternalError;
   sizeInt = (int)size;
@@ -59,10 +59,10 @@ static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int t
   return ans;
 }
 
-static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** request) {
+static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** pHandles, void** request) {
   int sizesInt[NCCL_PROXY_MAX_SUBS];
-  //reset to NULL if optional receive completion is set
-  if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = NULL;
+  //reset to nullptr if optional receive completion is set
+  if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = nullptr;
   for (int i=0; i<n; i++) {
     if (sizes[i] > MAX_NET_SIZE) return ncclInternalError;
     sizesInt[i] = (int) sizes[i];
@@ -110,7 +110,7 @@ static ncclResult_t ncclCollNet_iallreduce(void* collComm, void* sendData, void*
   return ans;
 }
 
-static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn) {
+static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
   NCCLCHECK(ncclNet_v6->init(logfn));
   ncclNet.devices = ncclNet_v6->devices;
   ncclNet.getProperties = ncclNet_getProperties;
@@ -142,7 +142,7 @@ ncclNet_t* getNcclNet_v6(void* lib) {
     return &ncclNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin_v6 symbol.");
-  return NULL;
+  return nullptr;
 }
 
 static ncclResult_t ncclCollNet_init(ncclDebugLogger_t logfn) {
@@ -174,5 +174,5 @@ ncclCollNet_t* getNcclCollNet_v6(void* lib) {
     return &ncclCollNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v6 symbol.");
-  return NULL;
+  return nullptr;
 }

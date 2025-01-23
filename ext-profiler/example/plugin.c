@@ -203,8 +203,6 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
         if (base->type == ncclProfileColl) {
           struct collective* c = (struct collective *)base;
           // reset event proxyOps & proxySteps
-          memset(c->send, 0, sizeof(struct proxyOp)*MAX_CHANNELS*MAX_OPS);
-          memset(c->recv, 0, sizeof(struct proxyOp)*MAX_CHANNELS*MAX_OPS);
           memset(c->nProxyOps, 0, sizeof(int)*MAX_CHANNELS);
           // release collective events in the group and return them to the collective pool
           __atomic_fetch_add(&ctx->collPoolBase, 1, __ATOMIC_RELAXED);
@@ -388,6 +386,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->isSend = parent->isSend;
     event->parent = parent;
     event->startTs = gettime() - startTime;
+    event->nNetEvents = 0;
     *eHandle = event;
     debugEvent(event, "ProxyStepStart");
   } else if (eDescr->type == ncclProfileKernelCh) {
@@ -413,6 +412,50 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       *eHandle = event;
       __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
       debugEvent(event, "KernelChStart");
+    }
+  } else if (eDescr->type == ncclProfileNetPlugin) {
+    struct proxyStep* parent = (struct proxyStep *)eDescr->parentObj;
+    if (parent == NULL) return ncclSuccess;
+
+    int64_t pluginId = eDescr->netPlugin.id;
+    int64_t type = pluginId & NCCL_PROFILER_NET_TYPE_MASK;
+    int64_t ver = pluginId & NCCL_PROFILER_NET_VER_MASK;
+    if (type == NCCL_PROFILER_NET_TYPE_IB) {
+      if (ver == 1) {
+        ncclProfilerNetIbDescr_v1_t* descr = (ncclProfilerNetIbDescr_v1_t *)eDescr->netPlugin.data;
+        struct netPlugin* event = parent->net + __atomic_fetch_add(&parent->nNetEvents, 1, __ATOMIC_RELAXED);
+        event->type = ncclProfileNetPlugin;
+        event->pluginType = type;
+        event->pluginVer = ver;
+        if (descr->type == ncclProfileQp) {
+          event->pluginEvent = ncclProfileQp;
+          event->qp.device = descr->qp.device;
+          event->qp.wr_id = descr->qp.wr_id;
+          event->qp.opcode = descr->qp.opcode;
+          event->qp.qpNum = descr->qp.qpNum;
+          event->qp.length = descr->qp.length;
+        }
+        event->startTs = gettime() - startTime;
+        *eHandle = event;
+        debugEvent(event, "NetPluginStart");
+      }
+    } else if (type == NCCL_PROFILER_NET_TYPE_SOCK) {
+      if (ver == 1) {
+        ncclProfilerNetSockDescr_v1_t* descr = (ncclProfilerNetSockDescr_v1_t *)eDescr->netPlugin.data;
+        struct netPlugin* event = parent->net + __atomic_fetch_add(&parent->nNetEvents, 1, __ATOMIC_RELAXED);
+        event->type = ncclProfileNetPlugin;
+        event->pluginType = type;
+        event->pluginVer = ver;
+        if (descr->type == ncclProfileSocket) {
+          event->pluginEvent = ncclProfileSocket;
+          event->sock.fd = descr->sock.fd;
+          event->sock.op = descr->sock.op;
+          event->sock.length = descr->sock.length;
+        }
+        event->startTs = gettime() - startTime;
+        *eHandle = event;
+        debugEvent(event, "NetPluginStart");
+      }
     }
   }
   return ncclSuccess;
@@ -477,6 +520,10 @@ void updateEvent(void* handle) {
     event->stopTs = gettime() - startTime;
     updateEvent(event->parent);
     debugEvent(event, "KernelChStop");
+  } else if (type == ncclProfileNetPlugin) {
+    struct netPlugin* event = (struct netPlugin *)handle;
+    event->stopTs = gettime() - startTime;
+    debugEvent(event, "NetPluginStop");
   }
 }
 

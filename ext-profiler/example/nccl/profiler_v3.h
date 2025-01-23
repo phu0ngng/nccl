@@ -4,20 +4,10 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_PROFILER_V3_H_
-#define NCCL_PROFILER_V3_H_
+#ifndef PROFILER_V3_H_
+#define PROFILER_V3_H_
 
 #include <stdint.h>
-
-enum {
-  ncclProfileGroup     = (1 << 0),  // group event type
-  ncclProfileColl      = (1 << 1),  // host collective call event type
-  ncclProfileP2p       = (1 << 2),  // host point-to-point call event type
-  ncclProfileProxyOp   = (1 << 3),  // proxy operation event type
-  ncclProfileProxyStep = (1 << 4),  // proxy step event type
-  ncclProfileProxyCtrl = (1 << 5),  // proxy control event type
-  ncclProfileKernelCh  = (1 << 6),  // kernel channel event type
-};
 
 typedef struct {
   uint8_t type;                 // event type descriptor: ncclProfileColl, ...
@@ -34,6 +24,7 @@ typedef struct {
       size_t count;
       int root;
       const char* datatype;
+      size_t trafficBytes;
       uint8_t nMaxChannels;
       uint8_t nWarps;
       const char* algo;
@@ -66,34 +57,13 @@ typedef struct {
     struct {
       uint8_t channelId;
     } kernelCh;
+
+    struct {
+      int64_t id;
+      void* data;
+    } netPlugin;
   };
 } ncclProfilerEventDescr_v3_t;
-
-typedef enum {
-  ncclProfilerProxyOpSendPosted,
-  ncclProfilerProxyOpSendRemFifoWait,
-  ncclProfilerProxyOpSendTransmitted,
-  ncclProfilerProxyOpSendDone,
-  ncclProfilerProxyOpRecvPosted,
-  ncclProfilerProxyOpRecvReceived,
-  ncclProfilerProxyOpRecvTransmitted,
-  ncclProfilerProxyOpRecvDone,
-
-  /* Legacy proxy profiler states */
-  ncclProfilerProxyStepSendGPUWait,
-  ncclProfilerProxyStepSendWait,
-  ncclProfilerProxyStepRecvWait,
-  ncclProfilerProxyStepRecvFlushWait,
-  ncclProfilerProxyStepRecvGPUWait,
-
-  /* Legacy proxy control states */
-  ncclProfilerProxyCtrlIdle,
-  ncclProfilerProxyCtrlActive,
-  ncclProfilerProxyCtrlSleep,
-  ncclProfilerProxyCtrlWakeup,
-  ncclProfilerProxyCtrlAppend,
-  ncclProfilerProxyCtrlAppendEnd,
-} ncclProfilerEventState_v3_t;
 
 typedef union {
   struct {

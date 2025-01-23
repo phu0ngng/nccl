@@ -97,7 +97,8 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v1.proxyStep.step = eDescr->proxyStep.step;
     } break;
     case ncclProfileProxyCtrl: break;
-    case ncclProfileKernelCh: {
+    case ncclProfileKernelCh:
+    case ncclProfileNetPlugin: {
       *eHandle = NULL;
       return ncclSuccess;
     }

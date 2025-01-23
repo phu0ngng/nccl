@@ -12,7 +12,7 @@ static ncclProfiler_t ncclProfiler;
 static ncclProfiler_v2_t* ncclProfiler_v2;
 
 static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclProfilerEventDescr_t* eDescr) {
-  if (eDescr->type == ncclProfileKernelCh) {
+  if (eDescr->type == ncclProfileKernelCh || eDescr->type == ncclProfileNetPlugin) {
     *eHandle = NULL;
     return ncclSuccess;
   }
@@ -35,6 +35,7 @@ static ncclResult_t ncclProfiler_init(void** context, int* eActivationMask) {
 ncclProfiler_t* getNcclProfiler_v2(void* lib) {
   ncclProfiler_v2 = (ncclProfiler_v2_t*)dlsym(lib, "ncclProfiler_v2");
   if (ncclProfiler_v2) {
+    ncclProfiler.name = ncclProfiler_v2->name;
     ncclProfiler.init = ncclProfiler_init;
     INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: loaded %s", ncclProfiler_v2->name);
     return &ncclProfiler;

@@ -14,17 +14,17 @@
 //#include <sys/stat.h>
 //#include <unistd.h>
 
-extern ncclNet_t* getNcclNet_v5(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v6(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v7(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v8(void* netPluginLib);
 extern ncclNet_t* getNcclNet_v9(void* netPluginLib);
+extern ncclNet_t* getNcclNet_v10(void* netPluginLib);
 
-extern ncclCollNet_t* getNcclCollNet_v5(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v6(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v7(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
+extern ncclCollNet_t* getNcclCollNet_v10(void* netPluginLib);
 
 extern void* openNetPluginLib(const char* name);
 extern void closePluginLib(void* handle);
@@ -68,9 +68,15 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
     goto fail;
   }
 
-  ncclNets[0] = getNcclNet_v9(netPluginLib);
-  if (ncclNets[0]) ncclNetsVer[0] = 9;
+  ncclNets[0] = getNcclNet_v10(netPluginLib);
+  if (ncclNets[0]) ncclNetsVer[0] = 10;
   if (ncclNets[0] == nullptr) {
+    // Try v9 plugin
+    ncclNets[0] = getNcclNet_v9(netPluginLib);
+    if (ncclNets[0]) ncclNetsVer[0] = 9;
+  }
+  if (ncclNets[0] == nullptr) {
+    // Try v8 plugin
     ncclNets[0] = getNcclNet_v8(netPluginLib);
     if (ncclNets[0]) ncclNetsVer[0] = 8;
   }
@@ -85,16 +91,14 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
     if (ncclNets[0]) ncclNetsVer[0] = 6;
   }
   if (ncclNets[0] == nullptr) {
-    // Try v5 plugin
-    ncclNets[0] = getNcclNet_v5(netPluginLib);
-    if (ncclNets[0]) ncclNetsVer[0] = 5;
-  }
-  if (ncclNets[0] == nullptr) {
     goto fail;
   }
 
   // Check for CollNet
-  ncclCollNets[0] = getNcclCollNet_v9(netPluginLib);
+  ncclCollNets[0] = getNcclCollNet_v10(netPluginLib);
+  if (ncclCollNets[0] == nullptr) {
+    ncclCollNets[0] = getNcclCollNet_v9(netPluginLib);
+  }
   if (ncclCollNets[0] == nullptr) {
     ncclCollNets[0] = getNcclCollNet_v8(netPluginLib);
   }
@@ -103,9 +107,6 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
   }
   if (ncclCollNets[0] == nullptr) {
     ncclCollNets[0] = getNcclCollNet_v6(netPluginLib);
-  }
-  if (ncclCollNets[0] == nullptr) {
-    ncclCollNets[0] = getNcclCollNet_v5(netPluginLib);
   }
 
   ++netPluginRefCount;
@@ -171,7 +172,7 @@ static ncclResult_t netGetState(int i, enum ncclNetState* state) {
   pthread_mutex_lock(&netLock);
   if (ncclNetStates[i] == ncclNetStateInit) {
     int ndev;
-    if (ncclNets[i]->init(ncclDebugLog) != ncclSuccess) ncclNetStates[i] = ncclNetStateDisabled;
+    if (ncclNets[i]->init(ncclDebugLog, ncclProfilerCallback) != ncclSuccess) ncclNetStates[i] = ncclNetStateDisabled;
     else if (ncclNets[i]->devices(&ndev) != ncclSuccess || ndev <= 0) ncclNetStates[i] = ncclNetStateDisabled;
     else ncclNetStates[i] = ncclNetStateEnabled;
   }

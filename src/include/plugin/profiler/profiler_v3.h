@@ -22,6 +22,7 @@ typedef struct {
       size_t count;
       int root;
       const char* datatype;
+      size_t trafficBytes;
       uint8_t nMaxChannels;
       uint8_t nWarps;
       const char* algo;
@@ -54,6 +55,11 @@ typedef struct {
     struct {
       uint8_t channelId;
     } kernelCh;
+
+    struct {
+      int64_t id;
+      void* data;
+    } netPlugin;
   };
 } ncclProfilerEventDescr_v3_t;
 
