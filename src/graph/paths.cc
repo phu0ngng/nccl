@@ -866,9 +866,11 @@ ncclResult_t ncclTopoPathAllNVLink(struct ncclTopoSystem* system, int* allNvLink
 // Check whether we are in a split NVLink situation, with two NVLink domains, not
 // connected through NVLink (e.g. QPI).
 ncclResult_t ncclTopoSplitNvLink(struct ncclTopoSystem* system, int* splitNvLink) {
+  ncclResult_t res = ncclSuccess;
+  int nvlDomains = 0;
+  int *nvlDomain = NULL, *nvlDomainCount = NULL;
   // Compute NVLink domains
-  int *nvlDomain;
-  NCCLCHECK(ncclCalloc(&nvlDomain, system->nodes[GPU].count));
+  NCCLCHECKGOTO(ncclCalloc(&nvlDomain, system->nodes[GPU].count), res, exit);
   for (int g=0; g<system->nodes[GPU].count; g++) nvlDomain[g] = g;
   for (int g=0; g<system->nodes[GPU].count; g++) {
     struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
@@ -880,16 +882,18 @@ ncclResult_t ncclTopoSplitNvLink(struct ncclTopoSystem* system, int* splitNvLink
     }
   }
   // Compute number of GPUs per NVLink domain.
-  int *nvlDomainCount;
-  NCCLCHECK(ncclCalloc(&nvlDomainCount, system->nodes[GPU].count));
+  NCCLCHECKGOTO(ncclCalloc(&nvlDomainCount, system->nodes[GPU].count), res, exit);
   for (int g=0; g<system->nodes[GPU].count; g++) {
     nvlDomainCount[nvlDomain[g]]++;
   }
   // Count the number of NVLink domains
-  int nvlDomains = 0;
   for (int g=0; g<system->nodes[GPU].count; g++) {
     if (nvlDomainCount[g] > 1) nvlDomains++;
   }
   *splitNvLink = nvlDomains == 2 ? 1 : 0;
-  return ncclSuccess;
+
+exit:
+  if(nvlDomain) free(nvlDomain);
+  if(nvlDomainCount) free(nvlDomainCount);
+  return res;
 }
