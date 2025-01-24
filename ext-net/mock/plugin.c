@@ -101,11 +101,6 @@ ncclResult_t pluginAddDevice(ncclNetProperties_t* props) {
   return ncclSuccess;
 }
 
-void mallocAndStrCpy(char** dst, const char* src) {
-  *dst = (char*) malloc(strlen(src)*sizeof(char));
-  strcpy(*dst, src);
-}
-
 __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   pthread_mutex_lock(&mockLock);
   for (int i = 0; i < nPhysDevs; i++) {
@@ -121,8 +116,8 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCall
 
   // Add test devices for now
   ncclNetProperties_t props0 = {};
-  mallocAndStrCpy(&props0.name, "mock_0");
-  mallocAndStrCpy(&props0.pciPath, "/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:05:00.0");
+  props0.name = strdup("mock_0");
+  props0.pciPath = strdup("/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:05:00.0");
   props0.guid             = 0;
   props0.ptrSupport       = 0;
   props0.regIsGlobal      = 1;
@@ -138,8 +133,8 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCall
 
   // Dev 1
   ncclNetProperties_t props1 = {};
-  mallocAndStrCpy(&props1.name, "mock_1");
-  mallocAndStrCpy(&props1.pciPath, "/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:05:00.1");
+  props1.name = strdup("mock_1");
+  props1.pciPath = strdup("/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:05:00.1");
   props1.guid = 1;
   props1.ptrSupport = 0;
   props1.regIsGlobal = 1;
