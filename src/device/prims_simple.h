@@ -868,8 +868,8 @@ private:
   __device__ __forceinline__ void recv(intptr_t outIx, int eltN, bool postOp=false) {
     genericOp<0, 0, 1, 0, -1, Output>(-1, outIx, eltN, postOp);
   }
-  __device__ __forceinline__ void directRecv(intptr_t inpIx, intptr_t outIx, int eltN, bool postOp=false) {
-    genericOp<1, 0, 1, 0, -1, Output>(inpIx, outIx, eltN, postOp);
+  __device__ __forceinline__ void directRecv(intptr_t outIx, int eltN, bool postOp=false) {
+    genericOp<1, 0, 1, 0, -1, Output>(outIx, outIx, eltN, postOp);
   }
   __device__ __forceinline__ void directRecvCopy(intptr_t inpIx, intptr_t outIx, int eltN) {
     genericOp<1, 0, 1, 0, -1, Output>(inpIx, outIx, eltN, /*postOp=*/false);

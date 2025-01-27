@@ -67,7 +67,7 @@ namespace {
         offset = dataOffset + rankDest * count;
 
         // Final wait/copy.
-        prims.directRecv(offset, offset, nelem);
+        prims.directRecv(offset, nelem);
       }
     } else if (inputBuf != outputBuf + ringRanks[0] * count) {
       inputBuf = inputBuf + partOffset;
