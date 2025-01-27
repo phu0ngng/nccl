@@ -376,6 +376,7 @@ ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerIn
 
 NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 int ncclTopoUserGdrLevel = -1;
+const char* ncclTopoGdrModeStr[ncclTopoGdrModeNum] = { "Disabled", "Default", "PCI" };
 
 ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t netId, int read, enum ncclTopoGdrMode* gdrMode) {
   *gdrMode = ncclTopoGdrModeDisable;
@@ -418,19 +419,31 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t n
   int distance = gpu->paths[NET][n].type;
   if (distance == PATH_PXN) {
     // In case of PXN, use the intermediate GPU distance instead
-    int proxyRank, g;
+    int proxyRank;
     NCCLCHECK(ncclTopoGetIntermediateRank(system, gpu->gpu.rank, netId, &proxyRank));
     NCCLCHECK(ncclTopoRankToIndex(system, proxyRank, &g));
-    struct ncclTopoNode* proxyGpu = system->nodes[GPU].nodes+g;
-    distance = proxyGpu->paths[NET][n].type;
+    gpu = system->nodes[GPU].nodes+g;
+    distance = gpu->paths[NET][n].type;
   }
+
+  int c;
+  NCCLCHECK(ncclGetLocalCpu(system, g, &c));
+  if (distance == PATH_PHB && gpu->paths[CPU][c].type == PATH_C2C) {
+    // On C2C platforms we can still use GDRDMA on NICs connected to the CPUs
+    INFO(NCCL_NET, "GPU %d / HCA %lx connected to CPU %d via C2C link", rank, netId, c);
+    distance = PATH_C2C;
+  }
+
   if (distance > netGdrLevel) {
     INFO(NCCL_NET,"GPU Direct RDMA Disabled for GPU %d / HCA %lx (distance %d > %d)", rank, netId, distance, netGdrLevel);
     return ncclSuccess;
   }
 
-  *gdrMode = distance < PATH_PXN ? ncclTopoGdrModePci : ncclTopoGdrModeCpu;
-  INFO(NCCL_NET,"GPU Direct RDMA Enabled for GPU %d / HCA %lx (distance %d <= %d), read %d", rank, netId, distance, netGdrLevel, read);
+  // Force PCIe mapping if path goes through PCI on a C2C system
+  if (gpu->paths[CPU][c].type == PATH_C2C && distance != PATH_C2C) *gdrMode = ncclTopoGdrModePci;
+  else *gdrMode = ncclTopoGdrModeDefault;
+
+  INFO(NCCL_NET,"GPU Direct RDMA Enabled for GPU %d / HCA %lx (distance %d <= %d), read %d mode %s", rank, netId, distance, netGdrLevel, read, ncclTopoGdrModeStr[*gdrMode]);
   return ncclSuccess;
 }
 

@@ -38,8 +38,9 @@ ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* syst
 ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* ret);
 enum ncclTopoGdrMode {
   ncclTopoGdrModeDisable = 0,
-  ncclTopoGdrModePci = 1,
-  ncclTopoGdrModeCpu = 2
+  ncclTopoGdrModeDefault = 1,
+  ncclTopoGdrModePci = 2,
+  ncclTopoGdrModeNum = 3
 };
 ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* topo, int rank, int64_t netId, int read, enum ncclTopoGdrMode* gdrMode);
 ncclResult_t ncclTopoNeedFlush(struct ncclComm* comm, int netDev, int rank, int* flush);
