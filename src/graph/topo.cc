@@ -970,9 +970,10 @@ struct ncclXmlNode** physNetNodes, struct ncclXmlNode** netNode, ncclResult_t (*
   // Trigger the merge, then get the new device's properties
   int vDevIndex = 0;
   ncclResult_t ret = makeVDevice(&vDevIndex, vProps);
-  if (ret == ncclInvalidUsage) {
-    WARN("TOPO/NET : Tried merging multiple devices together and failed. Try setting NCCL_NET_MERGE_LEVEL=LOC");
-    NCCLCHECK(ret);
+  if (ret != ncclSuccess) {
+    INFO(NCCL_GRAPH|NCCL_INIT|NCCL_NET, "TOPO/NET : Tried merging multiple devices together and failed. vProps={ndevs=%d, devs=[%d %d %d %d]}. Set NCCL_NET_MERGE_LEVEL=LOC to disable NIC fusion.",
+      vProps->ndevs, vProps->devs[0], vProps->devs[1], vProps->devs[2], vProps->devs[3]);
+    return ret;
   }
 
   INFO(NCCL_GRAPH, "TOPO/NET : Made vNic %d", vDevIndex);
@@ -1018,11 +1019,16 @@ ncclResult_t ncclTopoForceMerge(ncclComm_t comm, struct ncclXml* xml, const char
     }
 
     struct ncclXmlNode* netNode;
-    NCCLCHECKGOTO(ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice), ret, fail);
-
-    // Only set that a device is "placed" after successfully making a vNic (it's possible to exit before this)
-    for (int i = 0; i < vProps.ndevs; i++) {
-      placedDevs[vProps.devs[i]] = 1;
+    ret = ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice);
+    if (ret == ncclSuccess) {
+      // Only set that a device is "placed" after successfully making a vNic (it's possible to exit before this)
+      for (int i = 0; i < vProps.ndevs; i++) {
+        placedDevs[vProps.devs[i]] = 1;
+      }
+    } else {
+      WARN("TOPO/NET : Could not force merge NICs %s. Please specify a valid NCCL_NET_FORCE_MERGE string.", semi);
+      ret = ncclInvalidUsage;
+      goto fail;
     }
 
     semi = strtok_r(NULL, ";", &semi_token);;
@@ -1080,7 +1086,23 @@ ncclResult_t ncclTopoAutoMerge(ncclComm_t comm, struct ncclXml* xml, int mergeLe
       }
 
       struct ncclXmlNode* netNode;
-      NCCLCHECKGOTO(ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice), res, out);
+      ncclResult_t ret = ncclTopoMakeVnic(comm, xml, &vProps, physNetNodes, &netNode, makeVDevice);
+
+      // Merging failed.
+      // Mark all as unplaced and increase their distance to disconnected (PATH_DIS)
+      // Set i to 0 to restart the automatic merging process and ensure all are placed
+      if (ret != ncclSuccess) {
+        INFO(NCCL_GRAPH|NCCL_INIT|NCCL_NET, "Marking physical devices as unplaced, increasing distance and restarting search.");
+        placedDevs[i] = 0;
+        TRACE(NCCL_GRAPH, "Setting dev %d as unplaced, keeping distance -> self as PATH_LOC", i);
+        for (int k = 1; k < vProps.ndevs; k++) {
+          int dev = vProps.devs[k];
+          placedDevs[dev] = 0;
+          paths[i*nPhysDevs + dev] = PATH_DIS;
+          TRACE(NCCL_GRAPH, "Setting dev %d as unplaced, setting distance -> %d as PATH_DIS", dev, i);
+        }
+        i = 0;
+      }
     }
   }
 

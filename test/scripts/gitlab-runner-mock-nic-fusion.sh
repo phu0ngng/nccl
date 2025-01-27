@@ -9,6 +9,7 @@ export NCCL_P2P_DISABLE=1
 export NCCL_SHM_DISABLE=1
 export NCCL_GRAPH_DUMP_FILE=graph.xml
 export NCCL_NET=MockPlugin
+export NCCL_DEBUG=WARN
 
 compare_graph=$1
 if [ "$compare_graph" == "" ]; then compare_graph=test/nic-fusion/mock-a40-mixed-graph.xml; fi
@@ -38,15 +39,32 @@ for func in all_reduce_perf; do
   $SALLOC -n $NGPUS $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func singlethreaded: $func $range $opts")
 
+  echo "=============================== $func (all sizes) compare graph - $(date +\"%T\") ================================="
   diff $NCCL_GRAPH_DUMP_FILE $compare_graph
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("singlethreaded: diff $NCCL_GRAPH_DUMP_FILE $compare_graph")
 
   # Multithreaded
+  echo "=============================== $func (all sizes multithreaded) - $(date +\"%T\") ================================="
   $SALLOC -n 1 -c $NGPUS $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts -t $NGPUS
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func multithreaded: $func $range $opts -t $NGPUS")
 
+  echo "=============================== $func (all sizes multithreaded) compare graph - $(date +\"%T\") ================================="
   diff $NCCL_GRAPH_DUMP_FILE $compare_graph
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("multithreaded: diff $NCCL_GRAPH_DUMP_FILE $compare_graph")
+
+  echo "=============================== $func FORCE_MERGE (all sizes) - $(date +\"%T\") ================================="
+  # FORCE_MERGE
+  NCCL_NET_FORCE_MERGE="mock_0,mock_1;mock_2;mock_3;" $SALLOC -n 1 -c $NGPUS $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts -t $NGPUS
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func force_merge: NCCL_NET_FORCE_MERGE=\"mock_0,mock_1;mock_2;mock_3;\" $func $range $opts -t $NGPUS")
+
+  echo "=============================== $func FORCE_MERGE (all sizes) compare graph - $(date +\"%T\") ================================="
+  diff $NCCL_GRAPH_DUMP_FILE $compare_graph
+  [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func force_merge: diff $NCCL_GRAPH_DUMP_FILE $compare_graph")
+
+  echo "=============================== $func FORCE_MERGE (all sizes) expect failure - $(date +\"%T\") ================================="
+  # FORCE_MERGE expect failure
+  NCCL_NET_FORCE_MERGE="mock_0,mock_1;mock_2,mock_3;" $SALLOC -n 1 -c $NGPUS $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/$func $range $opts -t $NGPUS
+  [ $? -eq 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func force_merge_expect_failure: NCCL_NET_FORCE_MERGE=\"mock_0,mock_1;mock_2,mock_3;\" $func $range $opts -t $NGPUS")
 done
 
 for str in "${failure_names[@]}"
