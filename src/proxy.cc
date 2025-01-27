@@ -927,7 +927,7 @@ void* ncclProxyProgress(void *proxyState_) {
     if (ret != ncclSuccess) {
       __atomic_store_n(&proxyState->asyncResult, ret, __ATOMIC_RELEASE);
       INFO(NCCL_ALL,"%s:%d -> %d [Progress Thread]", __FILE__, __LINE__, ret);
-      continue;
+      break;
     }
     void* eHandle;
     ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
