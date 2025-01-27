@@ -38,6 +38,8 @@ static int detachPoolIndex;
 static int detachPoolDone;
 static struct proxyOp* detachPool;
 
+ncclDebugLogger_t logFn;
+
 static double freq = -1;
 __hidden void calibrate() {
   struct timeval tv;
@@ -60,7 +62,7 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pid_t pid;
 static int* eActivationMaskPtr;
 
-__hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) {
+__hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask, const char* commName, uint64_t commHash, int nranks, int rank, ncclDebugLogger_t logfn) {
   pthread_mutex_lock(&lock);
   if (__atomic_fetch_add(&initialized, 1, __ATOMIC_RELAXED) == 0) {
     // first thread initializes event mask, environment and detach pool
@@ -106,6 +108,12 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask) 
 
   // pre-allocate memory for event object pools in dedicated profiler context
   struct context* ctx = (struct context *)calloc(1, sizeof(*ctx));
+  ctx->commName = commName;
+  ctx->commHash = commHash;
+  ctx->nranks = nranks;
+  ctx->rank = rank;
+  logFn = logfn;
+
   ctx->groupPool = (struct group *)calloc(groupPoolSize, sizeof(*ctx->groupPool));
   if (ctx->groupPool == NULL) goto fail;
 
@@ -142,17 +150,15 @@ fail:
 __hidden ncclResult_t exampleProfilerFinalize(void* context) {
   FILE* fh = NULL;
   char filename[PATH_MAX] = { 0 };
-  char hostname[64] = { 0 };
-  gethostname(hostname, 64);
+  struct context* ctx = (struct context *)context;
   const char* dump = getenv("NCCL_PROFILE_DUMP_FILE");
   if (dump) {
-    sprintf(filename, "%s-%s-%ld.txt", dump, hostname, syscall(SYS_gettid));
+    sprintf(filename, "%s_%lu_%d.json", dump, ctx->commHash, ctx->rank);
     fh = fopen(filename, "w");
     fprintf(fh, "[\n");
   }
 
   // print last N groups/collectives/p2ps
-  struct context* ctx = (struct context *)context;
   int start = (ctx->groupPoolIndex - groupPoolSize >= 0) ? ctx->groupPoolIndex - groupPoolSize : 0;
   int end = ctx->groupPoolIndex;
   for (int i = start; i < end; i++) {
@@ -243,8 +249,6 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
 
     event->base.type = ncclProfileColl;
     event->base.rank = eDescr->rank;
-    event->base.name = eDescr->coll.name;
-    event->base.commHash = eDescr->coll.commHash;
     event->base.func = eDescr->coll.func;
     event->base.startTs = gettime() - startTime;
     event->base.parent = parent;
@@ -281,8 +285,6 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
 
     event->base.type = ncclProfileP2p;
     event->base.rank = eDescr->rank;
-    event->base.name = eDescr->p2p.name;
-    event->base.commHash = eDescr->p2p.commHash;
     event->base.func = eDescr->p2p.func;
     event->base.next = parent->eventHead;
     event->base.startTs = gettime() - startTime;

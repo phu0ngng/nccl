@@ -166,7 +166,7 @@ ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm) {
   TIME_START_EVENT(init);
   ncclProfilerPluginLoad();
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    int err = ncclProfiler->init(&comm->profilerContext, &ncclProfilerEventMask);
+    int err = ncclProfiler->init(&comm->profilerContext, &ncclProfilerEventMask, nullptr, comm->commHash, comm->nRanks, comm->rank, ncclDebugLog);
     if (err) {
       WARN("Profiler init failed with error (%d). Continue without profiler.", err);
       ncclProfiler = NULL;
@@ -243,8 +243,6 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
           eDescr.type = ncclProfileColl;
           eDescr.parentObj = plan->groupEventHandle;
           eDescr.rank = plan->comm->rank;
-          eDescr.coll.name = plan->comm->commName;
-          eDescr.coll.commHash = plan->comm->commHash;
           eDescr.coll.seqNumber = plan->comm->seqNumber[ct->func];
           eDescr.coll.func = ncclFuncToString(ct->func);
           eDescr.coll.sendBuff = ct->sendbuff;
@@ -281,8 +279,6 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
           eDescr.type = ncclProfileP2p;
           eDescr.parentObj = plan->groupEventHandle;
           eDescr.rank = plan->comm->rank;
-          eDescr.p2p.name = plan->comm->commName;
-          eDescr.p2p.commHash = plan->comm->commHash;
           eDescr.p2p.func = ncclFuncToString(pt->func);
           eDescr.p2p.buff = pt->buff;
           eDescr.p2p.count = pt->count;
