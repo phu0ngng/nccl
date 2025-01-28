@@ -907,6 +907,18 @@ Integer values are discouraged due to breaking changes in path types - the liter
 
 Values greater than 4 will be interpreted as SYS.
 
+NCCL_NET_GDR_C2C
+----------------
+(since 2.26)
+
+The ``NCCL_NET_GDR_C2C`` variable enables GPU Direct RDMA when sending data via a NIC attached to a CPU (i.e. distance PHB) where the CPU is connected to the GPU via a C2C interconnect. This effectively overloads the ``NCCL_NET_GDR_LEVEL`` setting for this particular NIC.
+
+Values accepted
+^^^^^^^^^^^^^^^
+0 or 1. Define and set to 1 to use GPU Direct RDMA to send data to the NIC directly via C2C connected CPUs.
+
+The default value is 0.
+
 NCCL_NET_GDR_READ
 -----------------
 The ``NCCL_NET_GDR_READ`` variable enables GPU Direct RDMA when sending data as long as the GPU-NIC distance is within the distance specified by ``NCCL_NET_GDR_LEVEL``. Before 2.4.2, GDR read is disabled by default, i.e. when sending data, the data is first stored in CPU memory, then goes to the InfiniBand card. Since 2.4.2, GDR read is enabled by default for NVLink-based platforms.

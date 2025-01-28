@@ -378,6 +378,8 @@ NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 int ncclTopoUserGdrLevel = -1;
 const char* ncclTopoGdrModeStr[ncclTopoGdrModeNum] = { "Disabled", "Default", "PCI" };
 
+NCCL_PARAM(NetGdrC2c, "NET_GDR_C2C", 0);
+
 ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t netId, int read, enum ncclTopoGdrMode* gdrMode) {
   *gdrMode = ncclTopoGdrModeDisable;
 
@@ -428,7 +430,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t n
 
   int c;
   NCCLCHECK(ncclGetLocalCpu(system, g, &c));
-  if (distance == PATH_PHB && gpu->paths[CPU][c].type == PATH_C2C) {
+  if (ncclParamNetGdrC2c() && distance == PATH_PHB && gpu->paths[CPU][c].type == PATH_C2C) {
     // On C2C platforms we can still use GDRDMA on NICs connected to the CPUs
     INFO(NCCL_NET, "GPU %d / HCA %lx connected to CPU %d via C2C link", rank, netId, c);
     distance = PATH_C2C;
