@@ -67,8 +67,8 @@ int nNcclComms = 0;
 bool ncclCommsSorted = false; // Whether the array is currently sorted. We sort by the comms' commHash and rank.
 
 static ncclResult_t rasLocalNotify(const struct rasNotification* msg);
-static ncclResult_t rasLocalHandle();
-static void rasLocalHandleTerminate();
+static ncclResult_t rasLocalHandle(bool* terminate);
+static void rasThreadCleanup();
 
 static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSocket* sock);
 static ncclResult_t rasMsgHandleConnInitAck(const struct rasMsg* msg, struct rasSocket* sock);
@@ -76,7 +76,7 @@ static ncclResult_t rasNetSendNack(struct rasSocket* sock);
 
 static void* rasThreadMain(void*);
 
-static void rasTerminate();
+static void rasTerminate() __attribute__((destructor));
 
 NCCL_PARAM(RasTimeoutFactor, "RAS_TIMEOUT_FACTOR", 1);
 
@@ -111,8 +111,6 @@ ncclResult_t ncclRasCommInit(struct ncclComm* comm, struct rasRankInit* myRank) 
       ncclSetThreadName(rasThread, "NCCL RAS");
 
       rasInitialized = true;
-
-      atexit(rasTerminate);
     }
   }
   ncclAtomicRefCountIncrement(&rasInitRefCount);
@@ -166,10 +164,12 @@ ncclResult_t ncclRasCommFini(const struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-// atexit callback.  Notifies the RAS thread to release all the resources
+// Global destructor.  Notifies the RAS thread to release all the resources
 // and terminate.  Waits for the thread to terminate.
 static void rasTerminate() {
   struct rasNotification msg;
+  if (!rasInitialized)
+    return;
   memset(&msg, '\0', sizeof(msg));
   msg.type = RAS_TERMINATE;
   if (rasLocalNotify(&msg) == ncclSuccess)
@@ -211,7 +211,7 @@ static ncclResult_t rasLocalNotify(const struct rasNotification* msg) {
 /////////////////////////////////////////////////////////////////////////////////
 
 // Handles asynchronous local notifications arriving from regular NCCL threads.
-static ncclResult_t rasLocalHandle() {
+static ncclResult_t rasLocalHandle(bool* terminate) {
   struct rasNotification msg;
 
   size_t done = 0;
@@ -224,9 +224,11 @@ static ncclResult_t rasLocalHandle() {
   }
 
   if (msg.type == RAS_ADD_RANKS) {
-    NCCLCHECK(rasLocalHandleAddRanks(msg.addRanks.ranks, msg.addRanks.nranks));
+    (void)rasLocalHandleAddRanks(msg.addRanks.ranks, msg.addRanks.nranks);
+    // Not great if the above fails, but it shouldn't be critical; better to keep going.
   } else if (msg.type == RAS_TERMINATE) {
-    rasLocalHandleTerminate();
+    INFO(NCCL_RAS, "RAS handling local termination request");
+    *terminate = true;
   } else {
     WARN("RAS received unknown notification type %d", msg.type);
     return ncclInternalError;
@@ -235,10 +237,8 @@ static ncclResult_t rasLocalHandle() {
   return ncclSuccess;
 }
 
-// Handles local RAS_TERMINATE notification.
-static void rasLocalHandleTerminate() {
-  INFO(NCCL_RAS, "RAS handling local termination request");
-
+// Cleans up local RAS state, normally in response to a RAS_TERMINATE notification.
+static void rasThreadCleanup() {
   rasClientSupportTerminate();
   rasNetTerminate();
   rasCollectivesTerminate();
@@ -266,8 +266,6 @@ static void rasLocalHandleTerminate() {
   free(rasPfds);
   rasPfds = nullptr;
   nRasPfds = 0;
-
-  pthread_exit(nullptr);
 }
 
 
@@ -595,16 +593,16 @@ static void* rasThreadMain(void*) {
   INFO(NCCL_RAS, "RAS thread started");
 
   // Initialize the global pollfd with the file descriptors we already have (the pipe and the listening socket).
-  NCCLCHECKGOTO(rasGetNewPollEntry(&pfd), ret, fail);
+  NCCLCHECKGOTO(rasGetNewPollEntry(&pfd), ret, exit);
   rasPfds[pfd].fd = rasNotificationPipe[0];
   rasPfds[pfd].events = POLLIN;
 
-  NCCLCHECKGOTO(rasGetNewPollEntry(&pfd), ret, fail);
-  NCCLCHECKGOTO(ncclSocketGetFd(&rasNetListeningSocket, &rasNetListeningSocketFd), ret, fail);
+  NCCLCHECKGOTO(rasGetNewPollEntry(&pfd), ret, exit);
+  NCCLCHECKGOTO(ncclSocketGetFd(&rasNetListeningSocket, &rasNetListeningSocketFd), ret, exit);
   rasPfds[pfd].fd = rasNetListeningSocketFd;
   rasPfds[pfd].events = POLLIN;
 
-  NCCLCHECKGOTO(rasGetNewPollEntry(&pfd), ret, fail);
+  NCCLCHECKGOTO(rasGetNewPollEntry(&pfd), ret, exit);
   rasPfds[pfd].fd = rasClientListeningSocket;
   rasPfds[pfd].events = POLLIN;
 
@@ -633,7 +631,10 @@ static void* rasThreadMain(void*) {
       if (rasPfds[pollIdx].revents) {
         nEvents--;
         if (rasPfds[pollIdx].fd == rasNotificationPipe[0]) {
-          (void)rasLocalHandle();
+          bool terminate = false;
+          NCCLCHECKGOTO(rasLocalHandle(&terminate), ret, exit);
+          if (terminate)
+            goto exit;
         } else if (rasPfds[pollIdx].fd == rasNetListeningSocketFd) {
           (void)rasNetAcceptNewSocket();
         } else if (rasPfds[pollIdx].fd == rasClientListeningSocket) {
@@ -676,14 +677,9 @@ static void* rasThreadMain(void*) {
     rasCollsHandleTimeouts(now, &nextWakeup);
   } // for (;;)
 
-fail:
-  WARN("fatal error - RAS thread terminating");
-  std::lock_guard<std::mutex> lock(rasInitMutex);
-  (void)close(rasNotificationPipe[1]);
-  (void)close(rasNotificationPipe[0]);
-  (void)close(rasClientListeningSocket);
-  (void)ncclSocketClose(&rasNetListeningSocket);
-  rasInitialized = false;
+exit:
+  rasThreadCleanup();
+  INFO(NCCL_RAS, "RAS thread terminating");
   return nullptr;
 }
 
