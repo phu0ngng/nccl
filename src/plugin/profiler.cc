@@ -166,7 +166,7 @@ ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm) {
   TIME_START_EVENT(init);
   ncclProfilerPluginLoad();
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    int err = ncclProfiler->init(&comm->profilerContext, &ncclProfilerEventMask, nullptr, comm->commHash, comm->nRanks, comm->rank, ncclDebugLog);
+    int err = ncclProfiler->init(&comm->profilerContext, &ncclProfilerEventMask, comm->commName, comm->commHash, comm->nRanks, comm->rank, ncclDebugLog);
     if (err) {
       WARN("Profiler init failed with error (%d). Continue without profiler.", err);
       ncclProfiler = NULL;

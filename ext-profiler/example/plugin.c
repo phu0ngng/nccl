@@ -39,6 +39,7 @@ static int detachPoolDone;
 static struct proxyOp* detachPool;
 
 ncclDebugLogger_t logFn;
+#define INFO(FLAGS, ...) logFn(NCCL_LOG_INFO, (FLAGS), __func__, __LINE__, __VA_ARGS__)
 
 static double freq = -1;
 __hidden void calibrate() {
@@ -113,6 +114,7 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask, 
   ctx->nranks = nranks;
   ctx->rank = rank;
   logFn = logfn;
+  INFO(NCCL_INIT, "PROFILER/Plugin: init commName: %s commHash: %lu nranks: %d rank: %d", commName ? commName : "", commHash, nranks, rank);
 
   ctx->groupPool = (struct group *)calloc(groupPoolSize, sizeof(*ctx->groupPool));
   if (ctx->groupPool == NULL) goto fail;
@@ -157,6 +159,7 @@ __hidden ncclResult_t exampleProfilerFinalize(void* context) {
     fh = fopen(filename, "w");
     fprintf(fh, "[\n");
   }
+  INFO(NCCL_INIT, "PROFILER/Plugin: finalize commName: %s commHash: %lu nranks: %d rank: %d", ctx->commName ? ctx->commName : "", ctx->commHash, ctx->nranks, ctx->rank);
 
   // print last N groups/collectives/p2ps
   int start = (ctx->groupPoolIndex - groupPoolSize >= 0) ? ctx->groupPoolIndex - groupPoolSize : 0;
