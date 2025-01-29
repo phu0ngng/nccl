@@ -2274,16 +2274,13 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
 
 #if CUDART_VERSION >= 12010
   size_t memGran = 0;
-  size_t mcGran = 0;
   CUdevice currentDev;
   CUmemAllocationProp memprop = {};
-  CUmulticastObjectProp mcprop = {};
   CUmemAccessDesc accessDesc = {};
   CUmemGenericAllocationHandle handle;
   int cudaDev;
   int flag;
   int dcnt;
-  int mcSupport = 0;
 
   if (ptr == NULL || size == 0) goto fallback;
 
@@ -2293,6 +2290,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   CUCHECK(cuDeviceGet(&currentDev, cudaDev));
 
   if (ncclCuMemEnable()) {
+    size_t handleSize = size;
     int requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
     // Query device to see if FABRIC handle support is available
     flag = 0;
@@ -2308,40 +2306,25 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     if (flag) memprop.allocFlags.gpuDirectRDMACapable = 1;
     CUCHECK(cuMemGetAllocationGranularity(&memGran, &memprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED));
     CUDACHECK(cudaGetDeviceCount(&dcnt));
-
-    if (CUPFN(cuMulticastCreate) != NULL) CUCHECK(cuDeviceGetAttribute(&mcSupport, CU_DEVICE_ATTRIBUTE_MULTICAST_SUPPORTED, currentDev));
-    if (mcSupport) {
-      /* mc property */
-      mcprop.size = size;
-      /* device cnt is a dummy value right now, it might affect mc granularity in the future. */
-      mcprop.numDevices = dcnt;
-      mcprop.handleTypes = requestedHandleTypes;
-      mcprop.flags = 0;
-      CUCHECK(cuMulticastGetGranularity(&mcGran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED));
-
-      /* only size needs to be aligned to mcGran */
-      ALIGN_SIZE(size, mcGran);
-    } else {
-      ALIGN_SIZE(size, memGran);
-    }
+    ALIGN_SIZE(handleSize, memGran);
 
     if (requestedHandleTypes & CU_MEM_HANDLE_TYPE_FABRIC) {
       /* First try cuMemCreate() with FABRIC handle support and then remove if it fails */
-      CUresult err = CUPFN(cuMemCreate(&handle, size, &memprop, 0));
+      CUresult err = CUPFN(cuMemCreate(&handle, handleSize, &memprop, 0));
       if (err == CUDA_ERROR_NOT_PERMITTED || err == CUDA_ERROR_NOT_SUPPORTED) {
         requestedHandleTypes &= ~CU_MEM_HANDLE_TYPE_FABRIC;
         memprop.requestedHandleTypes = (CUmemAllocationHandleType) requestedHandleTypes;
         /* Allocate the physical memory on the device */
-        CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+        CUCHECK(cuMemCreate(&handle, handleSize, &memprop, 0));
       }
     } else {
       /* Allocate the physical memory on the device */
-      CUCHECK(cuMemCreate(&handle, size, &memprop, 0));
+      CUCHECK(cuMemCreate(&handle, handleSize, &memprop, 0));
     }
     /* Reserve a virtual address range */
-    CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, size, memGran, 0, 0));
+    CUCHECK(cuMemAddressReserve((CUdeviceptr*)ptr, handleSize, memGran, 0, 0));
     /* Map the virtual address range to the physical allocation */
-    CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
+    CUCHECK(cuMemMap((CUdeviceptr)*ptr, handleSize, 0, handle, 0));
     /* Now allow RW access to the newly mapped memory */
     for (int i = 0; i < dcnt; ++i) {
       int p2p = 0;
@@ -2349,7 +2332,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
         accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
         accessDesc.location.id = i;
         accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-        CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+        CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, handleSize, &accessDesc, 1));
       }
       if (0 == p2p && i != cudaDev) INFO(NCCL_ALLOC, "P2P not supported between GPU%d and GPU%d", cudaDev, i);
     }

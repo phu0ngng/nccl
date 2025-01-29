@@ -108,12 +108,12 @@ ncclResult_t nvlsGroupUnbind(struct ncclComm *comm, size_t size, CUmemGenericAll
   return ncclSuccess;
 }
 
-ncclResult_t ncclNvlsDeregBuffer(struct ncclComm* comm, CUmemGenericAllocationHandle *mcHandler, CUdeviceptr ptr, int dev, size_t size) {
-  CUCHECK(cuMulticastUnbind(*mcHandler, dev, 0/*mcOffset*/, size));
-  CUCHECK(cuMemUnmap(ptr, size));
-  CUCHECK(cuMemAddressFree(ptr, size));
+ncclResult_t ncclNvlsDeregBuffer(struct ncclComm* comm, CUmemGenericAllocationHandle *mcHandler, CUdeviceptr ptr, int dev, size_t ucsize, size_t mcsize) {
+  CUCHECK(cuMulticastUnbind(*mcHandler, dev, 0/*mcOffset*/, ucsize));
+  CUCHECK(cuMemUnmap(ptr, mcsize));
+  CUCHECK(cuMemAddressFree(ptr, mcsize));
   CUCHECK(cuMemRelease(*mcHandler));
-  INFO(NCCL_NVLS, "rank %d - NVLS deregistered buffer %p on device %d, size %ld", comm->rank, (void*)ptr, dev, size);
+  INFO(NCCL_NVLS, "rank %d - NVLS deregistered buffer %p on device %d ucsize %ld mcsize %ld", comm->rank, (void*)ptr, dev, ucsize, mcsize);
   return ncclSuccess;
 }
 
@@ -522,7 +522,7 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   size_t minSize = SIZE_MAX;
   struct localRegData* regData = NULL;
   cudaPointerAttributes attr;
-  size_t ucgran, mcgran;
+  size_t ucgran, mcgran, ucsize, mcsize;
 
   NCCLCHECKGOTO(ncclCalloc(&regData, comm->localRanks), ret, fail);
 
@@ -547,13 +547,12 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
         CUCHECKGOTO(cuMemGetAllocationGranularity(&ucgran, &ucprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED), ret, fail);
 
         CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr*)&regRecord->baseAddr, &regRecord->baseSize, (CUdeviceptr)regRecord->addr), ret, fail);
-        if (regSize % mcgran == 0) {
-          regRecord->regSize = regSize;
-        } else {
-          regRecord->regSize = regRecord->baseSize - (regRecord->addr - regRecord->baseAddr);
-        }
-
-        if (regRecord->addr % ucgran == 0 && regRecord->regSize % mcgran == 0) {
+        if (regRecord->addr % ucgran == 0) {
+          if (regSize % ucgran != 0) {
+            regRecord->regUCSize = ALIGN_SIZE(regSize, ucgran);
+          } else {
+            regRecord->regUCSize = regSize;
+          }
           regRecord->state |= NVLS_REG_POSSIBLE;
           memcpy(&regData[comm->localRank].reg, regRecord, sizeof(struct ncclReg));
           regData[comm->localRank].offset = userBuff - regRecord->addr;
@@ -573,13 +572,17 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
       goto fail;
     }
     /* get minimal reg size of nvls buffers */
-    if (minSize > regData[i].reg.regSize)
-      minSize = regData[i].reg.regSize;
+    if (minSize > regData[i].reg.regUCSize)
+      minSize = regData[i].reg.regUCSize;
   }
 
   /* start registration */
+  mcsize = ucsize = minSize;
   mcprop.size = minSize;
   CUCHECKGOTO(cuMulticastGetGranularity(&mcgran, &mcprop, CU_MULTICAST_GRANULARITY_RECOMMENDED), ret, fail);
+  ALIGN_SIZE(mcsize, mcgran);
+  mcprop.size = mcsize;
+
   if (comm->localRank == 0) {
     NCCLCHECKGOTO(nvlsGroupCreate(comm, &mcprop, comm->localRank, comm->localRanks, &mcHandle, shareableHandle), ret, fail);
     NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
@@ -592,16 +595,17 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   // Coverity complains that regRecord could be NULL.  That won't in practice be the case because we've already checked
   // (regData[i].reg.state & NVLS_REG_POSSIBLE) of all local ranks, which would catch it and bail out.
   // coverity[var_deref_op]
-  CUCHECKGOTO(cuMulticastBindAddr(mcHandle, 0, (CUdeviceptr)regRecord->addr, minSize, 0), ret, fail);
+  CUCHECKGOTO(cuMulticastBindAddr(mcHandle, 0, (CUdeviceptr)regRecord->addr, ucsize, 0), ret, fail);
 
   // Create a VA for the NVLS
-  CUCHECKGOTO(cuMemAddressReserve(&regPtr, minSize, mcgran, 0U, 0), ret, fail);
+  CUCHECKGOTO(cuMemAddressReserve(&regPtr, mcsize, mcgran, 0U, 0), ret, fail);
   // Map the VA locally
-  CUCHECKGOTO(cuMemMap(regPtr, minSize, 0, mcHandle, 0), ret, fail);
-  CUCHECKGOTO(cuMemSetAccess(regPtr, minSize, &comm->nvlsResources->accessDesc, 1), ret, fail);
+  CUCHECKGOTO(cuMemMap(regPtr, mcsize, 0, mcHandle, 0), ret, fail);
+  CUCHECKGOTO(cuMemSetAccess(regPtr, mcsize, &comm->nvlsResources->accessDesc, 1), ret, fail);
 
   regRecord->regAddr = regPtr;
-  regRecord->regSize = minSize;
+  regRecord->regUCSize = ucsize;
+  regRecord->regMCSize = mcsize;
   regRecord->dev = comm->nvlsResources->dev;
   regRecord->mcHandle = mcHandle;
   regRecord->state |= NVLS_REG_COMPLETE;
@@ -852,7 +856,7 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
   return ncclSuccess;
 }
 
-ncclResult_t ncclNvlsDeregBuffer(struct ncclComm* comm, CUmemGenericAllocationHandle *mcHandler, CUdeviceptr ptr, int dev, size_t size) {
+ncclResult_t ncclNvlsDeregBuffer(struct ncclComm* comm, CUmemGenericAllocationHandle *mcHandler, CUdeviceptr ptr, int dev, size_t ucsize, size_t mcsize) {
   return ncclSuccess;
 }
 
