@@ -418,11 +418,13 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
   while (remaining) {
     int idle = 1;
 #ifdef MPI_SUPPORT
-    int flag;
-    /* poke MPI progress for OpenMPI */
-    pthread_mutex_lock(&mpiLock);
-    MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
-    pthread_mutex_unlock(&mpiLock);
+    if (comms) {
+      int flag;
+      /* poke MPI progress for OpenMPI */
+      pthread_mutex_lock(&mpiLock);
+      MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+      pthread_mutex_unlock(&mpiLock);
+    }
 #endif
     for (int id0 = 0; id0 < commNum; ++id0) {
       for (int i = 0; i < ngpus; i++) {
@@ -451,20 +453,21 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
             // Abort the perf test
             NCCLCHECK(ncclAsyncErr);
           }
-        }
-        double delta = tim.elapsed();
-        if (delta > timeout && timeout > 0) {
-          for (int id1 = 0; id1 < commNum; ++id1)
-            for (int i = 0; i < ngpus; i++)
-              NCCLCHECK(ncclCommAbort(comms[id1][i]));
-          char hostname[1024];
-          getHostName(hostname, 1024);
-          printf("%s: Test timeout (%ds) %s:%d\n",
-            hostname,
-            timeout,
-            __FILE__, __LINE__);
-          free(done);
-          return testTimeout;
+
+          double delta = tim.elapsed();
+          if (delta > timeout && timeout > 0) {
+            for (int id1 = 0; id1 < commNum; ++id1)
+              for (int i = 0; i < ngpus; i++)
+                NCCLCHECK(ncclCommAbort(comms[id1][i]));
+            char hostname[1024];
+            getHostName(hostname, 1024);
+            printf("%s: Test timeout (%ds) %s:%d\n",
+              hostname,
+              timeout,
+              __FILE__, __LINE__);
+            free(done);
+            return testTimeout;
+          }
         }
   #endif
       }
