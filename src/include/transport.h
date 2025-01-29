@@ -67,8 +67,10 @@ struct ncclNvlsSharedRes {
   CUmulticastObjectProp signalProp;
   CUmemAccessDesc accessDesc;
   int dev;
-  size_t buffSize;
-  size_t creditSize;
+  size_t creditUCSize;
+  size_t creditMCSize;
+  size_t buffUCSize;
+  size_t buffMCSize;
   CUmemGenericAllocationHandle mcBuffHandle; // Multicast handle for NVLS buffer
   CUmemGenericAllocationHandle mcCreditHandle; // Multicast handle for NVLS credit buffer
   char* mcBuff; // Multicast NVLS buffer address
