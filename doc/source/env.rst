@@ -137,7 +137,7 @@ if it would result in a better performance.
 
 NCCL_IB_HCA
 -----------
-The ``NCCL_IB_HCA`` variable specifies which RDMA interfaces to use for communication.
+The ``NCCL_IB_HCA`` variable specifies which Host Channel Adapter (RDMA) interfaces to use for communication.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -156,7 +156,7 @@ Examples:
 Note: using ``mlx5_1`` without a preceding ``=`` will select ``mlx5_1`` as well as ``mlx5_10`` to ``mlx5_19``, if they exist.
 It is therefore always recommended to add the ``=`` prefix to ensure an exact match.
 
-Note: The is a fixed upper limit of 32 HCA devices supported in NCCL.
+Note: There is a fixed upper limit of 32 Host Channel Adapter (HCA) devices supported in NCCL.
 
 NCCL_IB_TIMEOUT
 ---------------
@@ -787,11 +787,13 @@ NCCL_IB_ECE_ENABLE
 ------------------
 (since 2.23)
 
-Enable the use of Enhanced Connection Establishment (ECE) on IB Verbs networks.
+Enable the use of Enhanced Connection Establishment (ECE) on IB/RoCE Verbs networks. ECE can be used to enable advanced networking features such as Congestion Control, Adaptive Routing and Selective Repeat. Note: These parameters are not interpreted or controlled by NCCL and are passed through directly to the HCAs via the ECE mechanism.
 
 Values accepted
 ^^^^^^^^^^^^^^^
 Enabled (1) by default. Set to 0 to disable use of ECE network capabilities.
+
+Note: Incorrect configuration of the ECE parameters on a system can adversely affect NCCL performance. Administrators should ensure ECE is correctly configured if it is enabled at the system level.
 
 NCCL_MEM_SYNC_DOMAIN
 --------------------
