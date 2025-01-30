@@ -429,6 +429,7 @@ struct ncclComm {
   uint64_t* connectSend;
   uint64_t* connectRecv;
   struct ncclTopoGraph graphs[NCCL_NUM_ALGORITHMS];
+  int maxTreePattern;
   bool initAlgoChannels[NCCL_NUM_ALGORITHMS];
   bool runtimeConn; // if dynamic connection is supported
   bool directMode;
