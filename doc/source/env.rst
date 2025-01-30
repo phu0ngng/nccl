@@ -791,7 +791,7 @@ Enable the use of Enhanced Connection Establishment (ECE) on IB/RoCE Verbs netwo
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Enabled (1) by default. Set to 0 to disable use of ECE network capabilities.
+Enabled (1) by default (since 2.19). Set to 0 to disable use of ECE network capabilities.
 
 Note: Incorrect configuration of the ECE parameters on a system can adversely affect NCCL performance. Administrators should ensure ECE is correctly configured if it is enabled at the system level.
 
