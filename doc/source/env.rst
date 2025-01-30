@@ -156,6 +156,8 @@ Examples:
 Note: using ``mlx5_1`` without a preceding ``=`` will select ``mlx5_1`` as well as ``mlx5_10`` to ``mlx5_19``, if they exist.
 It is therefore always recommended to add the ``=`` prefix to ensure an exact match.
 
+Note: The is a fixed upper limit of 32 HCA devices supported in NCCL.
+
 NCCL_IB_TIMEOUT
 ---------------
 The ``NCCL_IB_TIMEOUT`` variable controls the InfiniBand Verbs Timeout.
@@ -171,6 +173,8 @@ Values accepted
 The default value used by NCCL is 20 (since 2.23; it was 18 since 2.14, and 14 before that).
 
 Values can be 1-31.
+
+Note: Setting a value of 0 or >= 32 will result in an infinite timeout value.
 
 NCCL_IB_RETRY_CNT
 -----------------
