@@ -143,15 +143,16 @@ done
 
 if [ "$IS_DRACO_OCI_IAD" != "1" ]; then
   export NCCL_ALGO=Ring
+  export NCCL_PROTO=Simple
   for func in all_reduce all_gather broadcast; do
     echo "=============================== $func Ring 1RPN (graph registration all types) - $(date +\"%T\") =========================="
-    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO -x NCCL_SHM_DISABLE=1 -x NCCL_P2P_DISABLE=1 ./build/test/perf/${func}_perf -b 16M -e 16M -n 5 -w 5 -d all $enable_graph_register
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO -x NCCL_PROTO -x NCCL_SHM_DISABLE=1 -x NCCL_P2P_DISABLE=1 ./build/test/perf/${func}_perf -b 16M -e 16M -n 5 -w 5 -d all $enable_graph_register
     [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring 1RPN (graph registration all types): ${func}_perf -b 16M -e 16M -n 5 -w 5 -d all $enable_graph_register")
   done
 
   for func in all_reduce all_gather broadcast; do
     echo "=============================== $func Ring 1RPN (local registration all sizes) - $(date +\"%T\") =========================="
-    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO -x NCCL_SHM_DISABLE=1 -x NCCL_P2P_DISABLE=1 ./build/test/perf/${func}_perf $range $opts $enable_local_register
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO -x NCCL_PROTO -x NCCL_SHM_DISABLE=1 -x NCCL_P2P_DISABLE=1 ./build/test/perf/${func}_perf $range $opts $enable_local_register
     [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("$func Ring 1RPN (local registration all sizes): ${func}_perf $range $opts $enable_local_register")
   done
 
@@ -162,6 +163,7 @@ if [ "$IS_DRACO_OCI_IAD" != "1" ]; then
   done
 fi
 unset NCCL_ALGO
+unset NCCL_PROTO
 
 export NCCL_DEBUG=""
 echo "=============================== all_reduce (Output File) - $(date +\"%T\") ================================="
