@@ -45,7 +45,7 @@ ncclResult_t ncclNetSocketInit(ncclDebugLogger_t logFunction, ncclProfilerCallba
     if (ncclNetIfs == -1) {
       char names[MAX_IF_NAME_SIZE*MAX_IFS];
       union ncclSocketAddress addrs[MAX_IFS];
-      ncclNetIfs = ncclFindInterfaces(names, addrs, MAX_IF_NAME_SIZE, MAX_IFS);
+      NCCLCHECK(ncclFindInterfaces(names, addrs, MAX_IF_NAME_SIZE, MAX_IFS, &ncclNetIfs));
       if (ncclNetIfs <= 0) {
         WARN("NET/Socket : no interface found");
         pthread_mutex_unlock(&ncclNetSocketLock);
