@@ -23,7 +23,6 @@ NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
 // Returns maximum kernel stack size of all CUDA kernels
 ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* maxStackSize) {
   ncclResult_t result = ncclSuccess;
-  int print = 0;
 
   if (maxStackSize) *maxStackSize = 0;
   int carveout = ncclParamL1SharedMemoryCarveout();
@@ -48,11 +47,9 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
     if (ncclMaxSharedMem != 0) {
       int sharedMemSize = ncclMaxSharedMem;
       if (sharedMemSize > (maxSharedMem-attr.sharedSizeBytes)) {
-        if (print++ == 0)
-          INFO(NCCL_INIT, "ncclMaxSharedMem %d exceeds device/fn maxSharedMem %zu",
-               sharedMemSize, maxSharedMem-attr.sharedSizeBytes);
-        // Reduce requested MaxDynamicSharedMemorySize attribute
-        sharedMemSize = maxSharedMem - attr.sharedSizeBytes;
+        WARN("cudaArch %d ncclMaxSharedMem %d exceeds device/fn maxSharedMem %zu",
+             cudaArch, sharedMemSize, maxSharedMem-attr.sharedSizeBytes);
+        return ncclSystemError;
       }
       CUDACHECKGOTO(cudaFuncSetAttribute(fn,
         cudaFuncAttributeMaxDynamicSharedMemorySize, sharedMemSize),
