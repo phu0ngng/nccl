@@ -77,12 +77,12 @@ time $SRUN make -C ../../../ext-mixed/example test
 echo "=============================== PLUGIN TESTS Net/Tuner DONE - $(date +\"%T\") ======================"
 
 echo "=============================== LOG ALGO RS TESTS - $(date +\"%T\") ==========================="
-time $SRUN ./log_algo rs 128
+time $SRUN ./log_algo rs 2 513
 [ $? -ne 0 ] && let failure_count=$failer_count+1 && failure_names+=("LOG ALGO RS TESTS")
 echo "=============================== LOG ALGO RS TESTS - $(date +\"%T\") ======================"
 
 echo "=============================== LOG ALGO AG TESTS - $(date +\"%T\") ==========================="
-time $SRUN ./log_algo ag 128
+time $SRUN ./log_algo ag 2 513
 [ $? -ne 0 ] && let failure_count=$failer_count+1 && failure_names+=("LOG ALGO AG TESTS")
 echo "=============================== LOG ALGO AG TESTS - $(date +\"%T\") ======================"
 

@@ -8,6 +8,7 @@
 - [Plugin Code Refactoring](items/id_f7c8b8eb/Plugin_Code_Refactoring.md)
 - [Improved RAS](items/id_3ee46fc4/Improved_RAS.md)
 - [Qp Profiling](items/id_31fddbba/Qp_Profiling.md)
+- [PAT Optimization](items/id_763fe7ed/PAT_Optimization.md)
 <!-- V2_26_DO_NOT_MOVE -->
 
 <!------------------------------------->

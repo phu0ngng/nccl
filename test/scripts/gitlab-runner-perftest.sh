@@ -119,6 +119,15 @@ echo "=============================== all_reduce Tree (local registration all si
 $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_ALGO ./build/test/perf/all_reduce_perf $range $opts $enable_local_register -n 1
 [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce Tree (local registration all sizes): NCCL_ALGO=Tree all_reduce_perf $range $opts $enable_local_register -n 1")
 
+if [ "$NGPUS" == "8" ]; then
+  export NCCL_ALGO=PAT
+  for func in all_gather reduce_scatter; do
+    echo "=============================== $func PAT (local registration all sizes) - $(date +\"%T\") =========================="
+    $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS -x NCCL_TESTS_SPLIT_MASK=0x7 -x NCCL_ALGO ./build/test/perf/${func}_perf $range $opts $enable_local_register -n 1
+    [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce PAT (local registration all sizes): NCCL_ALGO=PAT all_reduce_perf $range $opts $enable_local_register -n 1")
+  done
+fi
+
 export NCCL_ALGO=Ring
 for func in all_reduce all_gather broadcast; do
   echo "=============================== $func Ring (local registration all sizes) - $(date +\"%T\") =========================="
