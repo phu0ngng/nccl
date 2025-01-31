@@ -167,7 +167,7 @@ static ncclResult_t netIrecv(ncclNet_t* net, void* recvComm, void* data, int siz
                              int* done) {
   if (*done) return ncclSuccess;
   if (!*recvReq) {
-    size_t size64 = size; 
+    size_t size64 = size;
     NCCLCHECK(net->irecv(recvComm, 1, &data, &size64, &tag, &dataHandle, NULL, recvReq));
   }
   if (*recvReq) {
@@ -969,7 +969,7 @@ ncclResult_t bootstrapRecv(void* commState, int peer, int tag, void* data, int s
   NCCLCHECK(socketAccept(commState, peer, tag, &sock));
   TRACE(NCCL_BOOTSTRAP, "Receiving tag=%d peer=%d size=%d", tag, peer, size);
   NCCLCHECKGOTO(socketRecv(&sock, ((char*)data), size), ret, fail);
-  NCCLCHECK(ncclSocketClose(&sock));
+  NCCLCHECKGOTO(ncclSocketClose(&sock, /*wait*/true), ret, fail);
   return ret;
 fail:
   (void)ncclSocketClose(&sock);
