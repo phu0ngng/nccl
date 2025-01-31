@@ -768,7 +768,7 @@ perftest-A100:
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA100"
   script:
     - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-perftest.sh 1G 0
+    - ./test/scripts/gitlab-runner-perftest.sh 256M 0
   artifacts:
     when: always
     paths:
