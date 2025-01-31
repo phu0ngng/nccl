@@ -51,17 +51,6 @@ NCCL_PARAM(RuntimeConnect, "RUNTIME_CONNECT", 1);
 
 static ncclResult_t commReclaim(ncclComm_t comm);
 
-static uint64_t hashUniqueId(ncclUniqueId const &id) {
-  char const *bytes = (char const*)&id;
-  uint64_t h = 0xdeadbeef;
-  for(int i=0; i < (int)sizeof(ncclUniqueId); i++) {
-    h ^= h >> 32;
-    h *= 0x8db3db47fa2994ad;
-    h += bytes[i];
-  }
-  return h;
-}
-
 // GDRCOPY support: Off by default
 NCCL_PARAM(GdrCopyEnable, "GDRCOPY_ENABLE", 0);
 
@@ -111,7 +100,7 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   memset(out, 0, sizeof(*out));
   // copy to avoid alignment mismatch
   memcpy(out, &handle, sizeof(handle));
-  TRACE_CALL("ncclGetUniqueId(0x%llx)", (unsigned long long)hashUniqueId(*out));
+  TRACE_CALL("ncclGetUniqueId(0x%llx)", (unsigned long long)getHash(out->internal, NCCL_UNIQUE_ID_BYTES));
   return ncclSuccess;
 }
 
@@ -1380,12 +1369,12 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
-    // obtain a unique hash for the comm, re-using part of the parent's hash, commHash is a 64bit struct (=16 hex),
-    // add unique split counter and the color
-    ncclUniqueId tmpId;
-    memset(&tmpId,0,sizeof(ncclUniqueId));// must set 0 here to avoid undefined bits
-    snprintf((char*)&tmpId, NCCL_UNIQUE_ID_BYTES, "%016lx-%d-%d", job->parent->commHash, job->splitCount, job->color);
-    comm->commHash = getHash(tmpId.internal, NCCL_UNIQUE_ID_BYTES);
+    // child hash obtained from (parent hash, split count, color)
+    uint64_t hacc[2] = {1, 1};
+    eatHash(hacc, &job->parent->commHash);
+    eatHash(hacc, &job->splitCount);
+    eatHash(hacc, &job->color);
+    comm->commHash = digestHash(hacc);
     INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p splitCount %d color %d key %d- Init START", job->funcName,
          comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->splitCount, job->color, job->key);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
@@ -1398,8 +1387,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
     // obtain a unique hash using the first commId
-    comm->commHash = getHash(job->commId->internal, NCCL_UNIQUE_ID_BYTES);
-    commIdHash = hashUniqueId(job->commId[0]);
+    comm->commHash = commIdHash = getHash(job->commId->internal, NCCL_UNIQUE_ID_BYTES);
     INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START", job->funcName,
          comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, commIdHash);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
