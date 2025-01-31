@@ -88,8 +88,12 @@ echo "=============================== LOG ALGO AG TESTS - $(date +\"%T\") ======
 echo -e "\n\n"
 
 echo "=============================== OVERLAP TESTS - $(date +\"%T\") ==========================="
-time $SRUN ./overlap_test
-[ $? -ne 0 ] && let failure_count=$failer_count+1 && failure_names+=("OVERLAP TESTS")
+if [[ $NCCL_CUMEM_ENABLE != 0 ]]; then
+  time $SRUN ./overlap_test
+  [ $? -ne 0 ] && let failure_count=$failer_count+1 && failure_names+=("OVERLAP TESTS")
+else
+  echo "skipped because NCCL_CUMEM_ENABLE=0"
+fi
 echo "=============================== OVERLAP TESTS - $(date +\"%T\") ======================"
 echo -e "\n\n"
 
