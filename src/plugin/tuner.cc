@@ -68,6 +68,9 @@ ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
   if (tunerSymbol == NULL) {
     tunerSymbol = getNcclTuner_v2(tunerPluginLib);
   }
+  if (tunerSymbol == NULL) {
+    goto fail;
+  }
 
   comm->tuner = tunerSymbol;
   ++tunerPluginRefCount;

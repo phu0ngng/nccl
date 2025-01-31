@@ -58,6 +58,9 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
   if (ncclProfiler == NULL) {
     ncclProfiler = getNcclProfiler_v1(profilerPluginLib);
   }
+  if (ncclProfiler == NULL) {
+    goto fail;
+  }
 
   ++profilerPluginRefCount;
   profilerPluginStatus = profilerPluginLoadSuccess;
