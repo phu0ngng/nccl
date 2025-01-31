@@ -39,7 +39,13 @@ ncclResult_t xmlGetValue(FILE* file, char* value, char* last) {
 #if INT_OK
     int o = 0;
     do {
-      value[o++] = c;
+      value[o] = c;
+      if (o == MAX_STR_LEN-1) {
+        value[o] = '\0';
+        WARN("Error : value %s too long (max %d)", value, MAX_STR_LEN);
+        return ncclInternalError;
+      }
+      o++;
       NCCLCHECK(xmlGetChar(file, &c));
     } while (c >= '0' && c <= '9');
     value[o] = '\0';
@@ -54,7 +60,13 @@ ncclResult_t xmlGetValue(FILE* file, char* value, char* last) {
   char quote = c;  // Remember which quote type we started with
   do {
     NCCLCHECK(xmlGetChar(file, &c));
-    value[o++] = c;
+    value[o] = c;
+    if (o == MAX_STR_LEN-1) {
+      value[o] = '\0';
+      WARN("Error : value %s too long (max %d)", value, MAX_STR_LEN);
+      return ncclInternalError;
+    }
+    o++;
   } while (c != quote);
   value[o-1] = '\0';
   NCCLCHECK(xmlGetChar(file, last));
