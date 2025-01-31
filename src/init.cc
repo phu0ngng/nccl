@@ -1646,6 +1646,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
   const char* commIdEnv = NULL;
   ncclComm_t comm = NULL;
   struct ncclCommInitRankAsyncJob* job = NULL;
+  bool launchedJob = false;
   // first call ncclInit, this will setup the environment
   NCCLCHECKGOTO(ncclInit(), res, fail);
 
@@ -1699,12 +1700,13 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
     // start the bootstrap root before bootstrapping, use only the first handle
     NCCLCHECKGOTO(bootstrapCreateRoot((struct ncclBootstrapHandle*)&job->commId[0], true), res, fail);
   }
+  launchedJob = true;
   NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, ncclCommInitJobFree, comm), res, fail);
 
 exit:
   return ncclGroupErrCheck(res);
 fail:
-  if (job) ncclCommInitJobFree(job);
+  if (job && !launchedJob) ncclCommInitJobFree(job);
   if (comm) {
     free(comm->abortFlag);
     if (comm->abortFlagDev) (void)ncclCudaHostFree((void*)comm->abortFlagDev);
@@ -1968,7 +1970,6 @@ exit:
   }
   return ret;
 fail:
-  free(job);
   if (comm && !comm->config.blocking) (void) ncclCommSetAsyncError(comm, ret);
   goto exit;
 }
