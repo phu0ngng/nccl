@@ -12,6 +12,14 @@ typedef struct {
   int devs[NCCL_NET_MAX_DEVS_PER_NIC_V10];
 } ncclNetVDeviceProps_v10_t;
 
+#define NCCL_NET_TRAFFIC_CLASS_UNDEF -1
+
+typedef struct {
+  // Plugin-specific TC value
+  int trafficClass;
+} ncclNetCommConfig_v10_t;
+
+
 typedef struct {
   char* name;                      // Used mostly for logging.
   char* pciPath;                   // Path to the PCI device in /sys.
@@ -50,7 +58,7 @@ typedef struct {
   // should return successfully with sendComm == NULL with the expectation that
   // it will be called again until sendComm != NULL.
   // If *sendDevComm points to a valid object, then NCCL is requesting device offload for this connection
-  ncclResult_t (*connect)(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_v10_t** sendDevComm);
+  ncclResult_t (*connect)(int dev, ncclNetCommConfig_v10_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_v10_t** sendDevComm);
   // Finalize connection establishment after remote peer has called connect.
   // This call must not block for the connection to be established, and instead
   // should return successfully with recvComm == NULL with the expectation that

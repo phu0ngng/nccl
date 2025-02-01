@@ -38,6 +38,10 @@ static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
   return ncclSuccess;
 }
 
+static ncclResult_t ncclNet_connect(int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
+  return ncclNet_v7->connect(dev, handle, sendComm, sendDevComm);
+}
+
 static ncclResult_t ncclNet_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
   if (size >= 1UL<<31) return ncclInternalError;
   return ncclNet_v7->regMr(comm, data, (int) size, type, mhandle);
@@ -107,7 +111,7 @@ static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn, ncclProfilerCallback_t
   ncclNet.devices = ncclNet_v7->devices;
   ncclNet.getProperties = ncclNet_getProperties; // ncclNet_v5->getProperties;
   ncclNet.listen = ncclNet_v7->listen;
-  ncclNet.connect = ncclNet_v7->connect;
+  ncclNet.connect = ncclNet_connect;
   ncclNet.accept =  ncclNet_v7->accept;
   ncclNet.regMr = ncclNet_regMr;
   ncclNet.regMrDmaBuf = ncclNet_v7->regMrDmaBuf;

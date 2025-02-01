@@ -86,6 +86,9 @@ struct ncclIbDev ncclIbDevs[MAX_IB_DEVS];
 pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
 static int ncclIbRelaxedOrderingEnabled = 0;
 
+#define NCCL_IB_SL_DEFAULT 0
+#define NCCL_IB_TC_DEFAULT 0
+
 NCCL_PARAM(IbGidIndex, "IB_GID_INDEX", -1);
 NCCL_PARAM(IbRoutableFlidIbGidIndex, "IB_ROUTABLE_FLID_GID_INDEX", 1);
 NCCL_PARAM(IbRoceVersionNum, "IB_ROCE_VERSION_NUM", 2);
@@ -93,8 +96,8 @@ NCCL_PARAM(IbTimeout, "IB_TIMEOUT", 20);
 NCCL_PARAM(IbRetryCnt, "IB_RETRY_CNT", 7);
 NCCL_PARAM(IbPkey, "IB_PKEY", 0);
 NCCL_PARAM(IbUseInline, "IB_USE_INLINE", 0);
-NCCL_PARAM(IbSl, "IB_SL", 0);
-NCCL_PARAM(IbTc, "IB_TC", 0);
+NCCL_PARAM(IbSl, "IB_SL", -1);
+NCCL_PARAM(IbTc, "IB_TC", -1);
 NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
@@ -839,6 +842,8 @@ struct ncclIbConnectionMetadata {
   char devName[MAX_MERGED_DEV_NAME];
   uint64_t fifoAddr;
   int ndevs;
+  int tc;
+  int sl;
 };
 
 enum ncclIbCommState {
@@ -1100,7 +1105,7 @@ ncclResult_t ncclIbCreateQp(uint8_t ib_port, struct ncclIbNetCommDevBase* base, 
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint32_t dest_qp_num, struct ncclIbDevInfo* info, bool fifoTc) {
+ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint32_t dest_qp_num, struct ncclIbDevInfo* info, bool fifoTc, int tc, int sl) {
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTR;
@@ -1116,7 +1121,7 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint
     qpAttr.ah_attr.grh.flow_label = 0;
     qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
     qpAttr.ah_attr.grh.hop_limit = 255;
-    qpAttr.ah_attr.grh.traffic_class = fifoTc && ncclParamIbFifoTc() != -1 ? ncclParamIbFifoTc() : ncclParamIbTc();
+    qpAttr.ah_attr.grh.traffic_class = fifoTc && ncclParamIbFifoTc() != -1 ? ncclParamIbFifoTc() : tc;
   } else {
     //pick lid if subnet prefixs are same, FLID if they are not
     if (ncclIbExtractLocalSubnetPrefix(sGidInfo->localGid.global.subnet_prefix) ==
@@ -1138,10 +1143,10 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint
 	qpAttr.ah_attr.grh.hop_limit = 255;
     }
   }
-  qpAttr.ah_attr.sl = ncclParamIbSl();
+  qpAttr.ah_attr.sl = sl;
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = info->ib_port;
-  TRACE(NCCL_NET, "NET/IB : ncclIbRtrQp qpn=%u mtu=%d dst=%u ll=%u port=%u", qp->qp_num, info->mtu, dest_qp_num, info->link_layer, info->ib_port);
+  TRACE(NCCL_NET, "NET/IB : ncclIbRtrQp qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", qp->qp_num, info->mtu, dest_qp_num, info->link_layer, info->ib_port, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
   return ncclSuccess;
 }
@@ -1180,7 +1185,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclIbConnect(int dev, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+ncclResult_t ncclIbConnect(int dev, ncclNetCommConfig_t* config, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   ncclResult_t ret = ncclSuccess;
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   struct ncclIbCommStage* stage = &handle->stage;
@@ -1323,6 +1328,8 @@ ib_recv_dev_list:
     }
   }
   meta.fifoAddr = (uint64_t)comm->fifo;
+  meta.sl = (ncclParamIbSl() != -1) ? ncclParamIbSl() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_SL_DEFAULT;
+  meta.tc = (ncclParamIbTc() != -1) ? ncclParamIbTc() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_TC_DEFAULT;
   strncpy(meta.devName, mergedDev->devName, MAX_MERGED_DEV_NAME);
 
   stage->state = ncclIbCommStateSend;
@@ -1389,7 +1396,7 @@ ib_connect:
 
     ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
     remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
-    NCCLCHECKGOTO(ncclIbRtrQp(qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false), ret, fail);
+    NCCLCHECKGOTO(ncclIbRtrQp(qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta.tc, remMeta.sl), ret, fail);
     NCCLCHECKGOTO(ncclIbRtsQp(qp), ret, fail);
   }
 
@@ -1614,7 +1621,7 @@ ib_recv:
       meta.qpInfo[q].ece_supported = 0;
     }
 
-    NCCLCHECKGOTO(ncclIbRtrQp(qp->qp, &rCommDev->base.gidInfo, remMeta.qpInfo[q].qpn, remDevInfo, true), ret, fail);
+    NCCLCHECKGOTO(ncclIbRtrQp(qp->qp, &rCommDev->base.gidInfo, remMeta.qpInfo[q].qpn, remDevInfo, true, remMeta.tc, remMeta.sl), ret, fail);
     NCCLCHECKGOTO(ncclIbRtsQp(qp->qp), ret, fail);
   }
 
@@ -1645,7 +1652,7 @@ ib_recv:
       devInfo.gid.global.subnet_prefix        = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
       devInfo.gid.global.interface_id         = rCommDev->base.gidInfo.localGid.global.interface_id;
       devInfo.mtu         = ibDev->portAttr.active_mtu;
-      NCCLCHECKGOTO(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, &rCommDev->base.gidInfo, rCommDev->gpuFlush.qp.qp->qp_num, &devInfo, false), ret, fail);
+      NCCLCHECKGOTO(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, &rCommDev->base.gidInfo, rCommDev->gpuFlush.qp.qp->qp_num, &devInfo, false, remMeta.tc, remMeta.sl), ret, fail);
       NCCLCHECKGOTO(ncclIbRtsQp(rCommDev->gpuFlush.qp.qp), ret, fail);
     }
 
@@ -1662,6 +1669,8 @@ ib_recv:
     meta.devs[i].fifoRkey = rComm->devs[i].sizesFifoMr->rkey;
   }
   meta.fifoAddr = (uint64_t)rComm->sizesFifo;
+  meta.sl = remMeta.sl;
+  meta.tc = remMeta.tc;
 
   for (int q = 0; q < rComm->base.nqps; q++) {
     meta.qpInfo[q].qpn      = rComm->base.qps[q].qp->qp_num;

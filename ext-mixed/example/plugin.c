@@ -54,7 +54,7 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_t* props) {
 }
 
 __hidden ncclResult_t pluginListen(int dev, void* handle, void** listenComm) { return ncclInternalError; }
-__hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) { return ncclInternalError; }
+__hidden ncclResult_t pluginConnect(int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** recvDevComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginRegMr(void* collComm, void* data, size_t size, int type, void** mhandle) { return ncclInternalError; }
 __hidden ncclResult_t pluginRegMrDmaBuf(void* collComm, void* data, size_t size, int type, uint64_t offset, int fd, void** mhandle) { return ncclInternalError; }
@@ -103,6 +103,10 @@ __hidden ncclResult_t pluginGetProperties_v9(int dev, ncclNetProperties_v9_t* pr
   return pluginGetProperties(dev, (ncclNetProperties_t*)props);
 }
 
+__hidden ncclResult_t pluginConnect_v9(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm){
+  return pluginConnect(dev, NULL, handle, sendComm, sendDevComm);
+}
+
 __hidden ncclResult_t pluginIsend_v9(void* sendComm, void* data, size_t size, int tag, void* mhandle, void** request) {
   return pluginIsend(sendComm, data, size, tag, mhandle, NULL, request);
 }
@@ -119,7 +123,7 @@ const ncclNet_v9_t ncclNetPlugin_v9 = {
   .devices = pluginDevices,
   .getProperties = pluginGetProperties_v9,
   .listen = pluginListen,
-  .connect = pluginConnect,
+  .connect = pluginConnect_v9,
   .accept = pluginAccept,
   .regMr = pluginRegMr,
   .regMrDmaBuf = pluginRegMrDmaBuf,
@@ -175,7 +179,7 @@ const ncclNet_v8_t ncclNetPlugin_v8 = {
   .devices = pluginDevices,
   .getProperties = pluginGetProperties_v8,
   .listen = pluginListen,
-  .connect = pluginConnect,
+  .connect = pluginConnect_v9,
   .accept = pluginAccept,
   .regMr = pluginRegMr,
   .regMrDmaBuf = pluginRegMrDmaBuf,
@@ -219,7 +223,7 @@ const ncclNet_v7_t ncclNetPlugin_v7 = {
   .devices = pluginDevices,
   .getProperties = pluginGetProperties_v7,
   .listen = pluginListen,
-  .connect = pluginConnect,
+  .connect = pluginConnect_v9,
   .accept = pluginAccept,
   .regMr = pluginRegMr_v7,
   .regMrDmaBuf = pluginRegMrDmaBuf,
@@ -322,7 +326,7 @@ static ncclResult_t pluginConnect_v4(int dev, void* handle, void** sendComm) {
   ncclResult_t ret;
   do {
     ncclNetDeviceHandle_v7_t* handle = NULL;
-    ret = pluginConnect(dev, handle, sendComm, &handle);
+    ret = pluginConnect(dev, NULL, handle, sendComm, &handle);
   } while (ret == ncclSuccess && *sendComm == NULL);
   return ret;
 }

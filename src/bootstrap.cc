@@ -540,7 +540,7 @@ static ncclResult_t netRingConnect(ncclNet_t* net, struct bootstrapListen_t* lis
   do {
     NCCLCHECK(checkAbort(abortFlag, &abortCounter));
     if (!*sendComm)
-      NCCLCHECK(net->connect(listen->net.dev, peerHandle, sendComm, sendDevHandle));
+      NCCLCHECK(net->connect(listen->net.dev, NULL, peerHandle, sendComm, sendDevHandle));
     if (!*recvComm)
       NCCLCHECK(net->accept(listen->net.comm, recvComm, recvDevHandle));
   } while (!*sendComm || !*recvComm);

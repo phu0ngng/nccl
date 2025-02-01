@@ -43,7 +43,7 @@ static ncclResult_t ncclNet_regMr(void* comm, void* data, size_t size, int type,
   return ncclNet_v6->regMr(comm, data, (int) size, type, mhandle);
 }
 
-static ncclResult_t ncclNet_connect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+static ncclResult_t ncclNet_connect(int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   return ncclNet_v6->connect(dev, handle, sendComm);
 }
 
