@@ -241,13 +241,13 @@ void* persistentSocketThread(void *args_) {
               data.sock.fd = r->sock->fd;
               data.sock.op = r->op;
               data.sock.length = r->size;
-              ncclProfilerFunction(&eHandle[i+j], 0, resource->pInfo->pHandle, NCCL_PROFILER_NET_TYPE_SOCK | 1, &data);
+              ncclProfilerFunction(&eHandle[i+j], ncclProfilerNetEventStart, resource->pInfo->pHandle, NCCL_PROFILER_NET_TYPE_SOCK | 1, &data);
             }
 #endif
             r->result = ncclSocketProgress(r->op, r->sock, r->data, r->size, &r->offset);
             if (r->result != ncclSuccess) {
 #ifdef NCCL_ENABLE_NET_PROFILING
-              ncclProfilerFunction(&eHandle[i+j], 1, NULL, 0, NULL);
+              ncclProfilerFunction(&eHandle[i+j], ncclProfilerNetEventStop, NULL, 0, NULL);
               eHandle[i+j] = NULL;
 #endif
               WARN("NET/Socket : socket progress error");
@@ -257,7 +257,7 @@ void* persistentSocketThread(void *args_) {
             if (r->offset < r->size) repeat = 1;
 #ifdef NCCL_ENABLE_NET_PROFILING
             if (repeat == 0) {
-              ncclProfilerFunction(&eHandle[i+j], 1, NULL, 0, NULL);
+              ncclProfilerFunction(&eHandle[i+j], ncclProfilerNetEventStop, NULL, 0, NULL);
               eHandle[i+j] = NULL;
             }
 #endif
@@ -588,7 +588,7 @@ ncclResult_t ncclNetSocketTest(void* request, int* done, int* size) {
         data.sock.fd = r->ctrlSock->fd;
         data.sock.op = r->op;
         data.sock.length = r->size;
-        ncclProfilerFunction(&r->pInfo.eHandle, 0, r->pInfo.pHandle, NCCL_PROFILER_NET_TYPE_SOCK | 1, &data);
+        ncclProfilerFunction(&r->pInfo.eHandle, ncclProfilerNetEventStart, r->pInfo.pHandle, NCCL_PROFILER_NET_TYPE_SOCK | 1, &data);
       }
 #endif
       if (r->offset < r->size) {
@@ -599,7 +599,7 @@ ncclResult_t ncclNetSocketTest(void* request, int* done, int* size) {
         *done = 1;
         r->used = 0;
 #ifdef NCCL_ENABLE_NET_PROFILING
-        ncclProfilerFunction(&r->pInfo.eHandle, 1, NULL, 0, NULL);
+        ncclProfilerFunction(&r->pInfo.eHandle, ncclProfilerNetEventStop, NULL, 0, NULL);
         r->pInfo.eHandle = NULL;
 #endif
       }

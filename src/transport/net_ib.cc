@@ -1993,14 +1993,14 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandl
       int nEventHandles = reqs[r]->pInfo[0].nEventHandles;
       reqs[r]->pInfo[0].qpIndex[nEventHandles%MAX_QPS_PER_REQ] = qpIndex;
       // Store info for profiler
-      int pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
+      int64_t pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       reqs[r]->pInfo[0].data.type = ncclProfileQp;
       reqs[r]->pInfo[0].data.qp.device = devIndex;
       reqs[r]->pInfo[0].data.qp.wr_id = comm->wrs[r].wr_id;
       reqs[r]->pInfo[0].data.qp.opcode = comm->wrs[r].opcode;
       reqs[r]->pInfo[0].data.qp.qpNum = qp->qp->qp_num;
       reqs[r]->pInfo[0].data.qp.length = comm->sges[r].length;
-      NCCLCHECK(ncclProfilerFunction(&reqs[r]->pInfo[0].qpEventHandles[nEventHandles%MAX_QPS_PER_REQ], 0, pHandle, pluginId, &reqs[r]->pInfo[0].data));
+      NCCLCHECK(ncclProfilerFunction(&reqs[r]->pInfo[0].qpEventHandles[nEventHandles%MAX_QPS_PER_REQ], ncclProfilerNetEventStart, pHandle, pluginId, &reqs[r]->pInfo[0].data));
       reqs[r]->pInfo[0].nEventHandles++;
     }
 #endif
@@ -2229,12 +2229,12 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
     // Start a QP event for every request in the multirecv and every qp
     for (int r = 0; r < n && phandles; r++) {
       // Store info for profiler
-      int pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
+      int64_t pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       req->pInfo[r].data.type = ncclProfileQp;
       req->pInfo[r].data.qp.device = qp->devIndex;
       req->pInfo[r].data.qp.wr_id = wr.wr_id;
       req->pInfo[r].data.qp.qpNum = qp->qp->qp_num;
-      NCCLCHECK(ncclProfilerFunction(&req->pInfo[r].qpEventHandles[i], 0, phandles[r], pluginId, &req->pInfo[r].data));
+      NCCLCHECK(ncclProfilerFunction(&req->pInfo[r].qpEventHandles[i], ncclProfilerNetEventStart, phandles[r], pluginId, &req->pInfo[r].data));
       req->pInfo[r].nEventHandles++;
     }
 #endif
@@ -2316,7 +2316,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
           sizes[i] = r->recv.sizes[i];
 #ifdef NCCL_ENABLE_NET_PROFILING
           for (int j = 0; j < r->pInfo[i].nEventHandles; j++) {
-            NCCLCHECK(ncclProfilerFunction(&r->pInfo[i].qpEventHandles[j], 1, NULL, 0, NULL));
+            NCCLCHECK(ncclProfilerFunction(&r->pInfo[i].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
           }
 #endif
         }
@@ -2325,7 +2325,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
         sizes[0] = r->send.size;
 #ifdef NCCL_ENABLE_NET_PROFILING
         for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
-          NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], 1, NULL, 0, NULL));
+          NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
         }
 #endif
       }
@@ -2386,7 +2386,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
               sendReq->events[i]--;
 #ifdef NCCL_ENABLE_NET_PROFILING
               // Stop Qp event for sendReq
-              NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[getReqQpIndex(sendReq, j, wc->qp_num)], 1, NULL, 0, NULL));
+              NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[getReqQpIndex(sendReq, j, wc->qp_num)], ncclProfilerNetEventStop, NULL, 0, NULL));
 #endif
             }
           } else {
@@ -2403,7 +2403,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
 #ifdef NCCL_ENABLE_NET_PROFILING
             // Stop Qp event for workFifo
             for (int j = 0; j < req->nreqs; j++) {
-              NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[getReqQpIndex(req, j, wc->qp_num)], 1, NULL, 0, NULL));
+              NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[getReqQpIndex(req, j, wc->qp_num)], ncclProfilerNetEventStop, NULL, 0, NULL));
             }
 #endif
           }
