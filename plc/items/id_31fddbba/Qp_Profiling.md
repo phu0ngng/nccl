@@ -51,7 +51,7 @@ No special requirements.
 ### Proposed Design
 The network plugin `init` interface is extended to take a NCCL core callback following defined:
 
-* `ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* pHandle, int pluginId, void* extData)`
+* `ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* pHandle, int64_t pluginId, void* extData)`
 
 The callback takes a `type` (0/1) indicating the type of profiler call (start/stop), an opaque pointer
 to a NCCL core object (`pHandle`), a `pluginId` and an opaque pointer to a network plugin object (`extData`).
@@ -81,7 +81,7 @@ typedef struct {
     struct coll { ... };
     struct p2p { ... };
     ...
-    struct netPlugin { int id, void* data; };
+    struct netPlugin { int64_t id, void* data; };
   };
 } ncclProfilerEventDescr_t;
 ```
@@ -91,7 +91,7 @@ net plugin events as opaque. It merely forwards them to the profiler by initiali
 descriptor appropriately and calling `startEvent`:
 
 ```
-ncclResult_t ncclProfilerCallback(void** eHandle, int type, void* pHandle, int pluginId, void* extData) {
+ncclResult_t ncclProfilerCallback(void** eHandle, int type, void* pHandle, int64_t pluginId, void* extData) {
   if (type == 0) { // start
     struct ncclProxySubArgs* sub = (struct ncclProxySubArgs*)pHandle;
     ncclProfilerEventDescr_t eDescr = { 0 };
