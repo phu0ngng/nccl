@@ -44,6 +44,8 @@ typedef void (*ncclDebugLogger_t)(ncclDebugLogLevel level, unsigned long flags, 
 enum {
   ncclProfilerNetEventStart = 0,
   ncclProfilerNetEventStop,
+  ncclProfilerNetEventUpdate,
+  ncclProfilerNetEventUpdateAndStop,
 };
 
 typedef ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* pHandle, int64_t pluginId, void* extData);

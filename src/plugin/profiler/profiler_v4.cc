@@ -6,6 +6,7 @@
 
 #include "comm.h"
 #include "nccl_profiler.h"
+#include "checks.h"
 
 static ncclProfiler_v4_t* ncclProfiler_v4;
 

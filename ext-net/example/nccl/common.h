@@ -14,7 +14,7 @@ typedef enum {NCCL_INIT=1, NCCL_COLL=2, NCCL_P2P=4, NCCL_SHM=8, NCCL_NET=16, NCC
 
 typedef void (*ncclDebugLogger_t)(ncclDebugLogLevel level, unsigned long flags, const char *file, int line, const char *fmt, ...);
 
-enum { ncclProfilerNetEventStart = 0, ncclProfilerNetEventStop };
+enum { ncclProfilerNetEventStart = 0, ncclProfilerNetEventStop, ncclProfilerNetEventUpdate, ncclProfilerNetEventUpdateAndStop };
 
 typedef ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* phandle, int64_t pluginId, void* extData);
 

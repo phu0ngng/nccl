@@ -44,6 +44,9 @@ typedef enum {
   ncclProfilerProxyCtrlWakeup          = 16,
   ncclProfilerProxyCtrlAppend          = 17,
   ncclProfilerProxyCtrlAppendEnd       = 18,
+
+  /* Network defined event states */
+  ncclProfilerNetPluginUpdate          = 21,
 } ncclProfilerEventState_t;
 
 typedef ncclProfilerEventState_t ncclProfilerEventState_v1_t;
