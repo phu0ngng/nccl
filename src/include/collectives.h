@@ -383,7 +383,9 @@ public:
   ~RingBCAlgorithm() {}
 };
 
+#if __CUDA_ARCH__ >= 600
 #include <cuda/atomic>
+#endif
 
 // Need a power of two to ensure it divides by parallelFactor (which is also a power of two)
 #define NCCL_PAT_NWORKERS 512
@@ -883,7 +885,7 @@ public:
       ps->last = 1;
     }
     int flags = PatUsed | (skip ? PatSkipped : 0);
-#ifdef __CUDA_ARCH__
+#if __CUDA_ARCH__ >= 600
     cuda::atomic_ref<int, cuda::thread_scope_block> a(ps->flags);
     a.store(flags, cuda::memory_order_release);
 #else
