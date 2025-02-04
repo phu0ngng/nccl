@@ -383,7 +383,7 @@ public:
   ~RingBCAlgorithm() {}
 };
 
-#if __GNUC__ || __CUDA_ARCH__ >= 600
+#if !defined (__CUDA_ARCH__) || __CUDA_ARCH__ >= 600
 #include <cuda/atomic>
 #endif
 
