@@ -809,7 +809,8 @@ static ncclResult_t addP2pToPlan(
     if (protocol[dir] == NCCL_PROTO_LL) chunkSize[dir] *= 2;
 
     if (network[dir]) {
-      if (bytes[dir] > 0 && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE && (ncclPxnDisable(comm) || !comm->isAllNvlink)) {
+      bool pxnUsed = !ncclPxnDisable(comm) && comm->isAllNvlink && comm->maxLocalRanks > 1;
+      if (bytes[dir] > 0 && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE && (!pxnUsed)) {
         int regFlag = 0;
         NCCLCHECK(ncclCalloc(&handles[dir], nChannelsMax));
         for (int part = 0; part < nChannelsMax; part++) {
