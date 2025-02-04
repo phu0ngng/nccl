@@ -383,7 +383,7 @@ public:
   ~RingBCAlgorithm() {}
 };
 
-#if __CUDA_ARCH__ >= 600
+#if __GNUC__ || __CUDA_ARCH__ >= 600
 #include <cuda/atomic>
 #endif
 
@@ -663,7 +663,7 @@ public:
       ps->last = 1;
     }
     int flags = PatUsed | (skip ? PatSkipped : 0);
-#ifdef __CUDA_ARCH__
+#if __CUDA_ARCH__ >= 600
     cuda::atomic_ref<int, cuda::thread_scope_block> a(ps->flags);
     a.store(flags, cuda::memory_order_release);
 #else
