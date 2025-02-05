@@ -7,6 +7,7 @@
 #include "net.h"
 #include "bootstrap.h"
 #include "checks.h"
+#include "plugin.h"
 
 #include <string.h>
 #include <errno.h>
@@ -25,9 +26,6 @@ extern ncclCollNet_t* getNcclCollNet_v7(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v8(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v9(void* netPluginLib);
 extern ncclCollNet_t* getNcclCollNet_v10(void* netPluginLib);
-
-extern void* openNetPluginLib(const char* name);
-extern void closePluginLib(void* handle);
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
 ncclNet_t* ncclNets[NCCL_NET_MAX_PLUGINS] = { nullptr, &ncclNetIb, &ncclNetSocket };
@@ -63,7 +61,7 @@ ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
     goto exit;
   }
 
-  netPluginLib = openNetPluginLib(ncclGetEnv("NCCL_NET_PLUGIN"));
+  netPluginLib = ncclOpenNetPluginLib(ncclGetEnv("NCCL_NET_PLUGIN"));
   if (netPluginLib == nullptr) {
     goto fail;
   }
@@ -117,7 +115,7 @@ exit:
   pthread_mutex_unlock(&netPluginLock);
   return ncclSuccess;
 fail:
-  if (netPluginLib) closePluginLib(netPluginLib);
+  if (netPluginLib) NCCLCHECK(ncclClosePluginLib(netPluginLib));
   netPluginStatus = netPluginLoadFailed;
   goto exit;
 }
@@ -131,7 +129,7 @@ ncclResult_t ncclNetPluginUnload(struct ncclComm* comm) {
     if (ncclCollNets[0]) {
       INFO(NCCL_NET, "NET/Plugin: Closing collnet plugin '%s'", ncclCollNets[0]->name);
     }
-    closePluginLib(netPluginLib);
+    NCCLCHECK(ncclClosePluginLib(netPluginLib));
     netPluginLib = nullptr;
     ncclNets[0] = nullptr;
     ncclCollNets[0] = nullptr;

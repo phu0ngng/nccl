@@ -19,11 +19,12 @@ enum ncclPluginType {
   ncclPluginTypeProfiler,
 };
 
-static void *libHandles[3];
-static const char *pluginNames[3] = { "NET", "TUNER", "PROFILER" };
-static const char *pluginPrefix[3] = { "libnccl-net", "libnccl-tuner", "libnccl-profiler" };
-static const char *pluginFallback[3] = { "Using internal net plugin.", "Using internal tuner plugin.", "" };
-static unsigned long subsys[3] = { NCCL_INIT|NCCL_NET, NCCL_INIT|NCCL_TUNING, NCCL_INIT };
+#define NUM_LIBS 3
+static void *libHandles[NUM_LIBS];
+static const char *pluginNames[NUM_LIBS] = { "NET", "TUNER", "PROFILER" };
+static const char *pluginPrefix[NUM_LIBS] = { "libnccl-net", "libnccl-tuner", "libnccl-profiler" };
+static const char *pluginFallback[NUM_LIBS] = { "Using internal net plugin.", "Using internal tuner plugin.", "" };
+static unsigned long subsys[NUM_LIBS] = { NCCL_INIT|NCCL_NET, NCCL_INIT|NCCL_TUNING, NCCL_INIT };
 
 static void* tryOpenLib(char* name, int* err, char* errStr) {
   *err = 0;
@@ -105,22 +106,29 @@ static void* openPluginLib(enum ncclPluginType type, const char* libName) {
   return nullptr;
 }
 
-void* openNetPluginLib(const char* name) {
+void* ncclOpenNetPluginLib(const char* name) {
   return openPluginLib(ncclPluginTypeNet, name);
 }
 
-void* openTunerPluginLib(const char* name) {
+void* ncclOpenTunerPluginLib(const char* name) {
   return openPluginLib(ncclPluginTypeTuner, name);
 }
 
-void* openProfilerPluginLib(const char* name) {
+void* ncclOpenProfilerPluginLib(const char* name) {
   return openPluginLib(ncclPluginTypeProfiler, name);
 }
 
-void* getNetPluginLib(void) {
+void* ncclGetNetPluginLib(void) {
   return libHandles[ncclPluginTypeNet];
 }
 
-void closePluginLib(void* handle) {
-  dlclose(handle);
+ncclResult_t ncclClosePluginLib(void* handle) {
+  for (int l=0; l<NUM_LIBS; l++) {
+    if (libHandles[l] == handle) {
+      libHandles[l] = nullptr;
+      dlclose(handle);
+      return ncclSuccess;
+    }
+  }
+  return ncclInternalError;
 }

@@ -12,13 +12,11 @@
 #include "proxy.h"
 #include "profiler.h"
 #include "transport.h"
+#include "plugin.h"
 
 extern ncclProfiler_t* getNcclProfiler_v1(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v2(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v3(void* lib);
-
-extern void* openProfilerPluginLib(const char* name);
-extern void closePluginLib(void* handle);
 
 static pthread_mutex_t profilerLock = PTHREAD_MUTEX_INITIALIZER;
 static int profilerPluginRefCount;
@@ -46,7 +44,7 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
     goto exit;
   }
 
-  profilerPluginLib = openProfilerPluginLib(ncclGetEnv("NCCL_PROFILER_PLUGIN"));
+  profilerPluginLib = ncclOpenProfilerPluginLib(ncclGetEnv("NCCL_PROFILER_PLUGIN"));
   if (profilerPluginLib == nullptr) {
     goto fail;
   }
@@ -75,7 +73,7 @@ exit:
   pthread_mutex_unlock(&profilerLock);
   return ncclSuccess;
 fail:
-  if (profilerPluginLib) closePluginLib(profilerPluginLib);
+  if (profilerPluginLib) NCCLCHECK(ncclClosePluginLib(profilerPluginLib));
   profilerPluginStatus = profilerPluginLoadFailed;
   goto exit;
 }
@@ -84,7 +82,7 @@ static ncclResult_t ncclProfilerPluginUnload(void) {
   pthread_mutex_lock(&profilerLock);
   if (0 == (--profilerPluginRefCount)) {
     INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
-    closePluginLib(profilerPluginLib);
+    NCCLCHECK(ncclClosePluginLib(profilerPluginLib));
     profilerPluginLib = nullptr;
     ncclProfiler = nullptr;
     profilerPluginStatus = profilerPluginLoadReady;
