@@ -918,7 +918,7 @@ NCCL_NET_GDR_C2C
 ----------------
 (since 2.26)
 
-The ``NCCL_NET_GDR_C2C`` variable enables GPU Direct RDMA when sending data via a NIC attached to a CPU (i.e. distance PHB) where the CPU is connected to the GPU via a C2C interconnect. This effectively overloads the ``NCCL_NET_GDR_LEVEL`` setting for this particular NIC.
+The ``NCCL_NET_GDR_C2C`` variable enables GPU Direct RDMA when sending data via a NIC attached to a CPU (i.e. distance PHB) where the CPU is connected to the GPU via a C2C interconnect. This effectively overrides the ``NCCL_NET_GDR_LEVEL`` setting for this particular NIC.
 
 Values accepted
 ^^^^^^^^^^^^^^^
