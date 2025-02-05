@@ -302,6 +302,7 @@ int main(int argc, const char* argv[]) {
     RUN("DualPort-CPU");
     RUN("Dell_R760xa");
     RUN("SMC521GE");
+    RUN("Perlmutter");
 #endif
     RUN("CG4");
     RUN("P9-6V");
