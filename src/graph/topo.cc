@@ -22,8 +22,8 @@
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
 
 const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
-const char* topoLinkTypeStr[] = { "LOC", "NVL", "",    "PCI",    "",    "",    "", "SYS", "NET" };
-const char* topoPathTypeStr[] = { "LOC", "NVL", "NVB", "PIX", "PXB", "PXN", "PHB", "SYS", "NET", "DIS" };
+const char* topoLinkTypeStr[] = { "LOC", "NVL", "",    "C2C", "PCI",    "",    "",    "", "SYS", "NET" };
+const char* topoPathTypeStr[] = { "LOC", "NVL", "NVB", "C2C", "PIX", "PXB", "PXN", "PHB", "SYS", "NET", "DIS" };
 
 /******************************************************************/
 /******************* Graph Creation Functions *********************/
@@ -45,7 +45,7 @@ ncclResult_t pciPathToInt64(char* path, int offset, int minOffset, int64_t* id) 
   return ncclSuccess;
 }
 
-static ncclResult_t findLocalCpu(struct ncclTopoNode* node, struct ncclTopoNode** cpu) {
+static ncclResult_t findLocalCpu(struct ncclTopoNode* node, struct ncclTopoNode** cpu, struct ncclTopoNode* from) {
   *cpu = NULL;
   if (node->type == CPU) {
     *cpu = node;
@@ -54,9 +54,10 @@ static ncclResult_t findLocalCpu(struct ncclTopoNode* node, struct ncclTopoNode*
   for (int l=0; l<node->nlinks; l++) {
     // Go up the PCI tree to find the CPU. Follow only PCI switches.
     if (node->links[l].type == LINK_PCI
+	&& node->links[l].remNode != from
 	&& (node->links[l].remNode->type == PCI
 	    || node->links[l].remNode->type == CPU)) {
-      NCCLCHECK(findLocalCpu(node->links[l].remNode, cpu));
+      NCCLCHECK(findLocalCpu(node->links[l].remNode, cpu, node));
     }
     if (*cpu != NULL) return ncclSuccess;
   }
@@ -573,7 +574,7 @@ ncclResult_t ncclTopoAddNvLinks(struct ncclXmlNode* node, struct ncclTopoSystem*
       NCCLCHECK(ncclTopoGetNode(system, &remote, GPU, NCCL_TOPO_ID(systemId, busId)));
     } else if (targetType == CPU) {
       // NVL connection to the local CPU
-      NCCLCHECK(findLocalCpu(gpu, &remote));
+      NCCLCHECK(findLocalCpu(gpu, &remote, NULL));
     } else {
       if (system->nodes[NVS].count == 0) {
         NCCLCHECK(ncclTopoCreateNode(system, &remote, NVS, 0));
@@ -650,10 +651,10 @@ ncclResult_t ncclTopoAddC2c(struct ncclXmlNode* node, struct ncclTopoSystem* sys
     NCCLCHECK(xmlGetAttrInt(node, "bw", &bw));
     double c2cBw = (bw*count)/1000.0;
     struct ncclTopoNode* cpu = NULL;
-    NCCLCHECK(findLocalCpu(gpu, &cpu));
+    NCCLCHECK(findLocalCpu(gpu, &cpu, NULL));
     if (cpu == NULL) return ncclSuccess;
-    NCCLCHECK(ncclTopoConnectNodes(gpu, cpu, LINK_NVL, c2cBw));
-    NCCLCHECK(ncclTopoConnectNodes(cpu, gpu, LINK_NVL, c2cBw));
+    NCCLCHECK(ncclTopoConnectNodes(gpu, cpu, LINK_C2C, c2cBw));
+    NCCLCHECK(ncclTopoConnectNodes(cpu, gpu, LINK_C2C, c2cBw));
   } else {
     if (strcmp(node->name, "cpu") == 0) {
       NCCLCHECK(ncclGetSystemId(system, node, &systemId));

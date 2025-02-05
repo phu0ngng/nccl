@@ -103,7 +103,7 @@ struct sendResources {
   int rank;
   int nranks;
   int netDev;
-  int useGdr;
+  enum ncclTopoGdrMode useGdr;
   int useDmaBuf;
   uint64_t* gdcSync;
   void* gdrDesc;
@@ -124,7 +124,7 @@ struct recvResources {
   int rank;
   int nranks;
   int netDev;
-  int useGdr;
+  enum ncclTopoGdrMode useGdr;
   int useDmaBuf;
   int needFlush;
   uint64_t* gdcSync;
@@ -143,9 +143,19 @@ static ncclResult_t canConnect(int* ret, struct ncclComm* comm, struct ncclTopoG
   return ncclSuccess;
 }
 
+// Returns the flags to be used by a call to cuMemGetHandleForAddressRange.
+static inline int getHandleForAddressRangeFlags(ncclTopoGdrMode useGdr) {
+  int flags = 0;
+#if CUDA_VERSION >= 12080
+  // Force mapping on PCIe on systems with both PCI and C2C attachments.
+  if (useGdr == ncclTopoGdrModePci) flags = CU_MEM_RANGE_FLAG_DMA_BUF_MAPPING_TYPE_PCIE;
+#endif
+  return flags;
+}
+
 struct setupReq {
   int netDev;
-  int useGdr;
+  enum ncclTopoGdrMode useGdr;
   int needFlush;
   struct ncclCollNetSharedRes* collNet;
 };
@@ -168,8 +178,8 @@ static ncclResult_t sendSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   req.collNet = comm->collNetSharedRes;
   NCCLCHECK(ncclProxyCallBlocking(comm, &send->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), NULL, 0));
 
-  INFO(NCCL_INIT|NCCL_NET,"CollNet %02d/%1d : %d [send] via COLLNET/%s/%d%s", channelId, connIndex, myInfo->rank, collNetName(comm), req.netDev,
-      req.useGdr ? "/GDRDMA" : "");
+  INFO(NCCL_INIT|NCCL_NET,"CollNet %02d/%1d : %d [send] via COLLNET/%s/%d%s%s", channelId, connIndex, myInfo->rank, collNetName(comm), req.netDev,
+      req.useGdr ? "/GDRDMA" : "", req.useGdr==ncclTopoGdrModePci ? "(PCI)" : "");
   return ncclSuccess;
 }
 
@@ -192,8 +202,8 @@ static ncclResult_t recvSetup(struct ncclComm* comm, struct ncclTopoGraph* graph
   req.collNet = comm->collNetSharedRes;
   NCCLCHECK(ncclProxyCallBlocking(comm, &recv->proxyConn, ncclProxyMsgSetup, &req, sizeof(req), &info->collNetHandle, sizeof(collNetHandle_t)));
 
-  INFO(NCCL_INIT|NCCL_NET,"CollNet %02d/%1d : %d [receive] via COLLNET/%s/%d%s", channelId, connIndex, myInfo->rank, collNetName(comm), req.netDev,
-      req.useGdr ? "/GDRDMA" : "");
+  INFO(NCCL_INIT|NCCL_NET,"CollNet %02d/%1d : %d [receive] via COLLNET/%s/%d%s%s", channelId, connIndex, myInfo->rank, collNetName(comm), req.netDev,
+      req.useGdr ? "/GDRDMA" : "", req.useGdr==ncclTopoGdrModePci ? "(PCI)" : "");
   return ncclSuccess;
 }
 
@@ -505,13 +515,13 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
   struct connectMapMem* mapMem = map->mems+bank;
   NCCLCHECK(sharedBuffersInit(connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
-  NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
+  NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr ? 1 : 0, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
 
 #if CUDA_VERSION >= 11070
   /* DMA-BUF support */
   if (resources->useGdr && resources->useDmaBuf) {
     int dmabuf_fd;
-    CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)mapMem->cpuPtr, mapMem->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0));
+    CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)mapMem->cpuPtr, mapMem->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, getHandleForAddressRangeFlags(resources->useGdr)));
     NCCLCHECK(proxyState->ncclCollNet->regMrDmaBuf(resources->collNetComm, mapMem->cpuPtr, mapMem->size,
                                                   NCCL_PTR_CUDA, 0ULL, dmabuf_fd,
                                                   &resources->sendMhandles[NCCL_PROTO_SIMPLE]));
@@ -574,13 +584,13 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
   struct connectMapMem* mapMem = map->mems+bank;
   NCCLCHECK(sharedBuffersInit(connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
-  NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
+  NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr ? 1 : 0, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
 
 #if CUDA_VERSION >= 11070
   /* DMA-BUF support */
   if (resources->useGdr && resources->useDmaBuf) {
     int dmabuf_fd;
-    CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)mapMem->cpuPtr, mapMem->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0));
+    CUCHECK(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)mapMem->cpuPtr, mapMem->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, getHandleForAddressRangeFlags(resources->useGdr)));
     NCCLCHECK(proxyState->ncclCollNet->regMrDmaBuf(resources->collNetComm, mapMem->cpuPtr, mapMem->size,
                                                   NCCL_PTR_CUDA, 0ULL, dmabuf_fd,
                                                   &resources->mhandles[NCCL_PROTO_SIMPLE]));
@@ -1276,7 +1286,7 @@ static ncclResult_t sendProxyRegBuffer(struct ncclProxyConnection* connection, s
   /* DMA-BUF support */
   if (resources->useGdr && resources->useDmaBuf) {
     int dmabuf_fd;
-    CUCHECKGOTO(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)info->buffer, info->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0), ret, peermem);
+    CUCHECKGOTO(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)info->buffer, info->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, getHandleForAddressRangeFlags(resources->useGdr)), ret, peermem);
     NCCLCHECKGOTO(proxyState->ncclCollNet->regMrDmaBuf(resources->collNetComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, 0ULL, dmabuf_fd, &handle), ret, peermem);
     (void)close(dmabuf_fd);
     needReg = false;
@@ -1309,7 +1319,7 @@ static ncclResult_t recvProxyRegBuffer(struct ncclProxyConnection* connection, s
   /* DMA-BUF support */
   if (resources->useGdr && resources->useDmaBuf) {
     int dmabuf_fd;
-    CUCHECKGOTO(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)info->buffer, info->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, 0), ret, peermem);
+    CUCHECKGOTO(cuMemGetHandleForAddressRange((void *)&dmabuf_fd, (CUdeviceptr)info->buffer, info->size, CU_MEM_RANGE_HANDLE_TYPE_DMA_BUF_FD, getHandleForAddressRangeFlags(resources->useGdr)), ret, peermem);
     NCCLCHECKGOTO(proxyState->ncclCollNet->regMrDmaBuf(resources->collNetComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, 0ULL, dmabuf_fd, &handle), ret, peermem);
     (void)close(dmabuf_fd);
     needReg = false;
