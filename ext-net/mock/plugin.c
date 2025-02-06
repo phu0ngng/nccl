@@ -59,7 +59,14 @@ struct mockHandle {
 
 __hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
   if (nVirtualDevs < MAX_MOCK_VDEVS) {
-    if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidArgument;
+    if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidUsage;
+    if (vProps->ndevs > 1) {
+      if ((vProps->devs[0] == 2 && vProps->devs[1] == 3) || (vProps->devs[0] == 3 && vProps->devs[1] == 2)) {
+        printf("Mock/Plugin : Force-failing makeVDevice with devs 2 and 3\n");
+        return ncclInvalidUsage;
+      }
+    }
+
     int deviceIndex = nVirtualDevs;
     mockVDev* mDev = mockVDevs + deviceIndex;
     memset(mDev, 0, sizeof(mockVDev));
@@ -147,6 +154,41 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCall
   props1.netDeviceVersion = 0;
   props1.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
   pluginAddDevice(&props1);
+
+  // Devs 3 and 4 are a separate NIC Fusion device which will fail to merge together
+  // Dev 3
+  ncclNetProperties_t props2 = {};
+  props2.name = strdup("mock_2");
+  props2.pciPath = strdup("/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:06:00.0");
+  props2.guid = 2;
+  props2.ptrSupport = 0;
+  props2.regIsGlobal = 1;
+  props2.forceFlush  = 0;
+  props2.speed       = 10000;
+  props2.port       = 1;
+  props2.maxComms       = 1024;
+  props2.maxRecvs       =   NCCL_PLUGIN_MAX_RECVS;
+  props2.netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props2.netDeviceVersion = 0;
+  props2.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
+  pluginAddDevice(&props2);
+
+  // Dev 4
+  ncclNetProperties_t props3 = {};
+  props3.name = strdup("mock_3");
+  props3.pciPath = strdup("/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:06:00.1");
+  props3.guid = 3;
+  props3.ptrSupport = 0;
+  props3.regIsGlobal = 1;
+  props3.forceFlush  = 0;
+  props3.speed       = 10000;
+  props3.port       = 1;
+  props3.maxComms       = 1024;
+  props3.maxRecvs       =   NCCL_PLUGIN_MAX_RECVS;
+  props3.netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props3.netDeviceVersion = 0;
+  props3.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
+  pluginAddDevice(&props3);
   pthread_mutex_unlock(&mockLock);
 
   return ncclSuccess;
