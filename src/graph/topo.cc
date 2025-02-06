@@ -1099,6 +1099,7 @@ ncclResult_t ncclTopoAutoMerge(ncclComm_t comm, struct ncclXml* xml, int mergeLe
           int dev = vProps.devs[k];
           placedDevs[dev] = 0;
           paths[i*nPhysDevs + dev] = PATH_DIS;
+          paths[dev*nPhysDevs + i] = PATH_DIS;
           TRACE(NCCL_GRAPH, "Setting dev %d as unplaced, setting distance -> %d as PATH_DIS", dev, i);
         }
         i = 0;
