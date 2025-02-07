@@ -225,14 +225,22 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
 }
 
 void checkPlatform(const char* platform, int ngpus, int* errors, int* warnings) {
-  char xmlTopoFile[1024];
-  char xmlGraphFile[1024];
-  sprintf(xmlTopoFile, "topo/%s/system.xml", platform);
-  if (ngpus == -1) sprintf(xmlGraphFile, "topo/%s/intra-graph.xml", platform);
-  else sprintf(xmlGraphFile, "topo/%s/intra-graph-%d.xml", platform, ngpus);
+  char xmlTopoFile[PATH_MAX];
+  char xmlGraphFile[PATH_MAX];
+  char topoDir[1024];
+  const char* envTopoDir = getenv("TOPO_DIR");
+  if (envTopoDir) {
+    snprintf(topoDir, 1024, "%s", envTopoDir);
+  } else {
+    topoDir[0] = '\0';
+  }
+
+  sprintf(xmlTopoFile, "%stopo/%s/system.xml", topoDir, platform);
+  if (ngpus == -1) sprintf(xmlGraphFile, "%stopo/%s/intra-graph.xml", topoDir, platform);
+  else sprintf(xmlGraphFile, "%stopo/%s/intra-graph-%d.xml", topoDir, platform, ngpus);
   checkTopo(xmlTopoFile, xmlGraphFile, platform, 0, ngpus, errors, warnings);
-  if (ngpus == -1) sprintf(xmlGraphFile, "topo/%s/inter-graph.xml", platform);
-  else sprintf(xmlGraphFile, "topo/%s/inter-graph-%d.xml", platform, ngpus);
+  if (ngpus == -1) sprintf(xmlGraphFile, "%stopo/%s/inter-graph.xml", topoDir, platform);
+  else sprintf(xmlGraphFile, "%stopo/%s/inter-graph-%d.xml", topoDir, platform, ngpus);
   checkTopo(xmlTopoFile, xmlGraphFile, platform, 1, ngpus, errors, warnings);
 }
 

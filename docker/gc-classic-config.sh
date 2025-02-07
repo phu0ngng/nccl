@@ -14,7 +14,7 @@ GCCL_BUILD_IMAGE_VERSION="${GCCL_BUILD_TOOLS_VERSION}-c${GCCL_CUDA_VERSION}-u${G
 
 # Also build container uses this openmpi
 GCCL_OPENMPI_VERSION="1.10.7"
-
+GCCL_PLANNED_RESERVED="Reserved"
 
 # Using gc
 #   Parameters for building on gc
@@ -84,4 +84,20 @@ function get_openmpi_home() {
 
 function get_extra_ld_library_path() {
     echo "$GCCL_CUDA_HOME/lib64:$GCCL_OPENMPI_HOME/lib"
+}
+
+function get_mpi_params() {
+    echo "--mca btl ^openib --mca shmem_mmap_enable_nfs_warning 0"
+}
+
+function get_extra_path() {
+    echo "$GCCL_CUDA_HOME/bin:$GCCL_OPENMPI_HOME/bin"
+}
+
+function get_planned_reserved() {
+    echo "$GCCL_PLANNED_RESERVED"
+}
+
+function configure_test_env() {
+    echo ""
 }

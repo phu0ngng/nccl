@@ -17,6 +17,8 @@ AWS_OFI_PLUGIN_HOME="/opt/aws-ofi-nccl"
 
 # Modules to be loaded-in for configuring the EFA driver
 AWS_EFA_MODULE="libfabric-aws"
+AWS_PLANNED_RESERVED="Planned"
+AWS_MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
 
 # Target configs
 function get_cuda_home() {
@@ -39,17 +41,28 @@ function configure_efa() {
     # Configure the EFA driver
     module load $(get_efa_module)
 
-    # Add OFI plugin to LD_LIBRARY_PATH
-    export LD_LIBRARY_PATH=$(get_ofi_plugin_home)/lib:$LD_LIBRARY_PATH
-
     # Set other variables to help NCCL discover EFA as a network interface
     export FI_EFA_USE_DEVICE_RDMA=1
     export FI_PROVIDER=efa
 }
 
-function configure_aws_test_env() {
-    export CUDA_HOME=$(get_cuda_home)
-    export MPI_HOME=$(get_openmpi_home)
-
+function configure_test_env() {
     configure_efa
+}
+
+function get_planned_reserved() {
+    echo "$AWS_PLANNED_RESERVED"
+}
+
+function get_mpi_params() {
+    echo "$AWS_MPI_PARAMS"
+}
+
+function get_extra_ld_library_path() {
+    # Add OFI plugin to LD_LIBRARY_PATH
+    echo "$(get_ofi_plugin_home)/lib:$AWS_CUDA_HOME/lib64:$AWS_OPENMPI_HOME/lib"
+}
+
+function get_extra_path() {
+    echo "$AWS_CUDA_HOME/bin:$AWS_OPENMPI_HOME/bin"
 }

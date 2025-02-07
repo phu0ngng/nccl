@@ -22,7 +22,8 @@ DO_CUDA_HOME="/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local
 # Running test in run container
 DO_RUN_TOOLS_VERSION="1.0.1"
 DO_RUN_TOOLS_IMAGE_VERSION="${DO_RUN_TOOLS_VERSION}-c${DO_CUDA_VERSION}-u${DO_OS_VERSION}"
-
+DO_PLANNED_RESERVED="Planned"
+DO_MPI_PARAMS="-mca btl tcp,self"
 
 # Target configs
 # Draco-OCI only has one type of GPU: A100
@@ -90,6 +91,7 @@ function configure_test_env() {
 
     # Slurm account to use to submit tests
     export SLURM_ACCOUNT=$(get_slurm_account)
+    #export UCX_TLS=tcp
 
     # Set oci-iad specific environment variables for NCCL testing
     export HCOLL_ENABLE_MCAST_ALL=0
@@ -102,10 +104,21 @@ function configure_test_env() {
     export NCCL_IB_QPS_PER_CONNECTION=4
     export NCCL_CROSS_NIC=0
     export NCCL_IB_HCA="=mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_1,mlx5_2,mlx5_3,mlx5_4,mlx5_14,mlx5_15,mlx5_16,mlx5_17,mlx5_9,mlx5_10,mlx5_11,mlx5_12"
-    export OMPI_MCA_pml="ucx"
+    #export OMPI_MCA_pml="ucx"
     export OMPI_MCA_coll="^hcoll"
     export OMPI_MCA_coll_hcoll_enable=0
     export RX_QUEUE_LEN=8192
+    export MPIRUN_SKIP_PPN=1
 }
 
+function get_planned_reserved() {
+    echo "$DO_PLANNED_RESERVED"
+}
 
+function get_mpi_params() {
+    echo "$DO_MPI_PARAMS"
+}
+
+function get_extra_path() {
+    echo "$DO_CUDA_HOME/bin:$DO_OPENMPI_HOME/bin"
+}
