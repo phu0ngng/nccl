@@ -24,6 +24,10 @@ EOS_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${EOS_CUDA_VERSIO
 EOS_RUN_TOOLS_VERSION="1.0.1"
 EOS_RUN_IMAGE_VERSION="${EOS_RUN_TOOLS_VERSION}-c${EOS_CUDA_VERSION}-u${EOS_OS_VERSION}"
 
+EOS_NCCL_SOCKET_IFNAME="eth3"
+EOS_MPI_PARAMS="-mca btl tcp,self --mca btl_tcp_if_include $EOS_NCCL_SOCKET_IFNAME"
+EOS_NCCL_IB_SL="1"
+EOS_PLANNED_RESERVED="Planned"
 
 # Target configs
 # EOS only has one type of GPU: H100
@@ -84,3 +88,22 @@ function get_extra_ld_library_path() {
     echo "$EOS_CUDA_HOME/lib64:$EOS_OPENMPI_HOME/lib"
 }
 
+function get_mpi_params() {
+    echo "$EOS_MPI_PARAMS"
+}
+
+function get_extra_path() {
+    echo "$EOS_CUDA_HOME/bin:$EOS_OPENMPI_HOME/bin"
+}
+
+function get_nccl_socket_ifname() {
+    echo "$EOS_NCCL_SOCKET_IFNAME"
+}
+
+function get_nccl_ib_sl() {
+    echo "$EOS_NCCL_IB_SL"
+}
+
+function get_planned_reserved() {
+    echo "$EOS_PLANNED_RESERVED"
+}

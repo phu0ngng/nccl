@@ -66,12 +66,13 @@ build-classic:
     - build-with-docker
   script:
     - docker/make.sh gc-classic
+    - mv build build-gc
   artifacts:
     paths:
-      - build
+      - build-gc
     exclude:
-      - build/**/*.o
-    expire_in: 4 hrs
+      - build-gc/**/*.o
+    expire_in: 48 hrs
 
 build-eos-aws-oci:
   stage: build
@@ -82,23 +83,14 @@ build-eos-aws-oci:
   tags:
     - build-with-docker
   script:
-    # EOS cluster info
-    #   NVIDIA-SMI 535.129.03  Driver Version: 535.129.03  CUDA Version: 12.2
-    #   NVCC_GENCODE: 90
-    #   OS: ubuntu22.04
-    #   MPI_HOME: "/usr/mpi/gcc/openmpi-4.1.5rc2"
-    # Draco OCI-IAD cluster info
-    #   NVIDIA-SMI 535.113.01  Driver Version: 535.104.12  CUDA Version: 12.2
-    #   NVCC_GENCODE: 80
-    #   OS: ubuntu20.04
-    #   MPI_HOME: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/local/openmpi-4.1.4"
     - docker/make.sh draco-oci,eos
+    - mv build build-eos
   artifacts:
     paths:
-      - build
+      - build-eos
     exclude:
-      - build/**/*.o
-    expire_in: 4 hrs
+      - build-eos/**/*.o
+    expire_in: 48 hrs
 
 fairshare-eos:
   stage: setup
@@ -142,7 +134,7 @@ setup-AWS_H100_EFA:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
   script:
-    - rsync -a --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
+    - rsync -I -c -a --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
 
 health-P100:
   stage: health
@@ -202,17 +194,27 @@ unit_tests-P100:
   tags:
     - p100
   variables:
-    NCCL_IB_HCA: "mlx5_0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
-    MPI_PARAMS: "--oversubscribe -n 2"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: "P100"
+    NNODES: 1
+    NGPUS: 8
+    NP: 1
+    NCCL_HOME: build-gc
+    RUN_MODE: "SALLOC_MPI"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 unit_tests-P40:
   stage: unit_tests
@@ -222,17 +224,27 @@ unit_tests-P40:
   tags:
     - p40
   variables:
-    NCCL_IB_HCA: "mlx5_0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
-    MPI_PARAMS: "--oversubscribe -n 2"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: "P40"
+    NNODES: 1
+    NGPUS: 8
+    NP: 1
+    NCCL_HOME: build-gc
+    RUN_MODE: "SALLOC_MPI"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 unit_tests-GP100:
   stage: unit_tests
@@ -242,18 +254,27 @@ unit_tests-GP100:
   tags:
     - gp100
   variables:
-    NCCL_CUMEM_ENABLE: "0"
-    NCCL_IB_HCA: "mlx5_0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
-    MPI_PARAMS: "--oversubscribe -n 2"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: "GP100"
+    NNODES: 1
+    NGPUS: 8
+    NP: 1
+    NCCL_HOME: build-gc
+    RUN_MODE: "SALLOC_MPI"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 unit_tests-A40-single:
   stage: unit_tests
@@ -263,37 +284,60 @@ unit_tests-A40-single:
   tags:
     - a40
   variables:
-    NCCL_IB_HCA: "mlx5_0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 1 -pA40"
-    MPI_PARAMS: "--oversubscribe -n 1"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: "A40"
+    NNODES: 1
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: build-gc
+    RUN_MODE: "SALLOC_MPI"
+    DISABLE_MEMLEAK_DEFAULT: 1
+    DISABLE_MEMLEAK_NETWORK: 1
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 unit_tests-A40-dual:
   stage: unit_tests
   rules:
     - when: always
-  needs: ["build-classic","health-A40"]
+  needs: ["build-classic"]
   tags:
     - a40
   variables:
-    NCCL_IB_HCA: "mlx5_0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
-    MPI_PARAMS: "--oversubscribe -n 2"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: "A40"
+    NNODES: 1
+    NGPUS: 2
+    NP: 1
+    NCCL_HOME: build-gc
+    RUN_MODE: "SALLOC_MPI"
+    DISABLE_MEMLEAK_NETWORK: 1
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 unit_tests-A100:
   stage: unit_tests
@@ -303,17 +347,27 @@ unit_tests-A100:
   tags:
     - a100pci
   variables:
-    NCCL_IB_HCA: "mlx5_0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
-    MPI_PARAMS: "--oversubscribe -n 2"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: "A100"
+    NNODES: 1
+    NGPUS: 8
+    NP: 1
+    NCCL_HOME: build-gc
+    RUN_MODE: "SALLOC_MPI"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 unit_tests-eos:
   stage: unit_tests
@@ -325,13 +379,28 @@ unit_tests-eos:
   tags:
     - nccl-eos
   variables:
-    DISABLE_MEMLEAK: "0" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    PLANNED_RESERVED: "Planned"
-    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/eos-config.sh"
+    SLURM_TIME: 20
+    NNODES: 1
+    NGPUS: 8
+    NP: 1
+    NCCL_HOME: build-eos
+    RUN_MODE: "MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
-    - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account) && export MPI_HOME=$(get_openmpi_home)
-    - srun --exclusive -n 1 -c8 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:unit::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:10:00 ./test/scripts/gitlab-runner-unit.sh
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 unit_tests-AWS_H100_EFA:
   stage: unit_tests
@@ -348,25 +417,46 @@ unit_tests-AWS_H100_EFA:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
-    TEST_CMD: ./test/scripts/gitlab-runner-unit.sh
-    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+    TEST_CMD: ./test/scripts/ci/gitlab-runner-unit.sh
+    JUNIT: junit_results_unit.xml
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
-      source docker/aws-config.sh && configure_aws_test_env
-      export PLANNED_RESERVED="Skip"
-      export SRUN="srun --exclusive -t 00:10:00 -n 1 -G 8 -p compute"
-
+      export NCCL_DEBUG="WARN"
+      export CLUSTER_CONFIG="docker/aws-config.sh"
+      export SLURM_TIME=15
+      export SLURM_PARTITION=compute
+      export NNODES=1
+      export NGPUS=8
+      export NP=1
+      export GRAPH=0
+      export DISABLE_MEMLEAK_NETWORK=1
+      export DISABLE_MEMLEAK=1
+      export NCCL_HOME=build-eos
+      export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
+      export RUN_MODE="SALLOC_MPI"
+      export CI_PIPELINE_ID=${CI_PIPELINE_ID}
+      export CI_JOB_NAME=${CI_JOB_NAME}
+      export JUNIT=$JUNIT
       $TEST_CMD
       EOF
-    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
+  after_script:
+    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && JUNIT=junit_results_unit.xml bash -l ./test/scripts/ci/finalize-junit.sh"
+    - ssh $AWS_HEAD_NODE "test -d $AWS_HEAD_NODE_WORKDIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/failed .
+    - scp $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/$JUNIT .
+    - ls && ls failed && ls $JUNIT
   artifacts:
     when: always
     paths:
+      - $JUNIT
       - $RUN_SCRIPT
-    expire_in: 4 hrs
+      - "failed/**"
+    reports:
+      junit: $JUNIT
+    expire_in: 48 hrs
 
 unit_tests-draco_oci:
   stage: unit_tests
@@ -379,16 +469,29 @@ unit_tests-draco_oci:
   tags:
     - draco-oci-iad
   variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/eos-config.sh"
+    SLURM_TIME: 10
     NNODES: 1
     NGPUS: 8
-    PLANNED_RESERVED: "Planned"
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    TEST_CMD: ./test/scripts/gitlab-runner-unit.sh
-    TIMEOUT: "00:10:00" # HH:MM:SS
-    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+    NP: 1
+    NCCL_HOME: build-eos
+    RUN_MODE: "MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NO_LOOPBACK_NETWORKING: 1
   script:
-    - source docker/draco-oci-config.sh && configure_test_env
-    - srun --exclusive --nodes $NNODES --gpus-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 apitest-P100:
   stage: api_tests
@@ -396,18 +499,29 @@ apitest-P100:
     - when: always
   needs: ["build-classic"]
   tags:
-    - p100
+    - a100pci
   variables:
-    NCCL_IB_HCA: "mlx5_0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP100"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "P100"
+    NNODES: 1
+    NGPUS: 8
+    NP:    1
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
-    - ./test/scripts/gitlab-runner-apitest.sh
+    - ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 apitest-P40:
   stage: api_tests
@@ -417,16 +531,27 @@ apitest-P40:
   tags:
     - p40
   variables:
-    NCCL_IB_HCA: "mlx5_0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pP40"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "P40"
+    NNODES: 1
+    NGPUS: 8
+    NP:    1
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
-    - ./test/scripts/gitlab-runner-apitest.sh
+    - ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 apitest-GP100:
   stage: api_tests
@@ -436,16 +561,27 @@ apitest-GP100:
   tags:
     - gp100
   variables:
-    NCCL_CUMEM_ENABLE: "0"
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pGP100"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "GP100"
+    NNODES: 1
+    NGPUS: 8
+    NP:    1
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
-    - ./test/scripts/gitlab-runner-apitest.sh
+    - ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 apitest-A40:
   stage: api_tests
@@ -455,15 +591,27 @@ apitest-A40:
   tags:
     - a40
   variables:
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 2 -pA40"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "A40"
+    NNODES: 1
+    NGPUS: 2
+    NP:    1
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
-    - ./test/scripts/gitlab-runner-apitest.sh
+    - ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 apitest-A100:
   stage: api_tests
@@ -473,15 +621,27 @@ apitest-A100:
   tags:
     - a100pci
   variables:
-    SRUN: "srun --exclusive -t 00:10:00 -n 1 -c 8 -pA100"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "A100"
+    NNODES: 1
+    NGPUS: 8
+    NP:    1
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home)
-    - ./test/scripts/gitlab-runner-apitest.sh
+    - ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 apitest-DGX-1V:
   stage: api_tests
@@ -498,12 +658,13 @@ apitest-DGX-1V:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
   script:
+    - mv build-eos build
     - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 apitest-DGX-2:
   stage: api_tests
@@ -520,12 +681,13 @@ apitest-DGX-2:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
   script:
+    - mv build-eos build
     - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 apitest-DGX-A100:
   stage: api_tests
@@ -547,7 +709,7 @@ apitest-DGX-A100:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 apitest-eos:
   stage: api_tests
@@ -559,11 +721,28 @@ apitest-eos:
   tags:
     - nccl-eos
   variables:
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    PLANNED_RESERVED: "Planned"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/eos-config.sh"
+    SLURM_TIME: 30
+    RUN_MODE: "MPI"
+    NNODES: 1
+    NGPUS: 8
+    NP: 1
+    NCCL_HOME: build-eos
+    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
-    - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && SLURM_ACCOUNT=$(get_slurm_account)
-    - srun -n 1 --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:15:00 ./test/scripts/gitlab-runner-apitest.sh
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 apitest-AWS_H100_EFA:
   stage: api_tests
@@ -572,31 +751,51 @@ apitest-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - setup-AWS_H100_EFA
+    - [setup-AWS_H100_EFA,unit_tests-AWS_H100_EFA]
   tags:
     - aws_p5
   variables:
     GIT_STRATEGY: none
-    AWS_HEAD_NODE: "aws-pcluster-head"
-    AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
+    AWS_HEAD_NODE: aws-pcluster-head
+    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
-    TEST_CMD: ./test/scripts/gitlab-runner-apitest.sh
+    TEST_CMD: ./test/scripts/ci/gitlab-runner-api.sh
+    JUNIT: junit_results_apitest.xml
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
-      source docker/aws-config.sh && configure_aws_test_env
-      export PLANNED_RESERVED="Skip"
-      export SRUN="srun --exclusive -t 00:30:00 -n 1 -G 8 -p compute"
+      export NCCL_DEBUG="WARN"
+      export CLUSTER_CONFIG="docker/aws-config.sh"
+      export SLURM_TIME=20
+      export SLURM_PARTITION=compute
+      export NNODES=1
+      export NGPUS=8
+      export NP=1
+      export NCCL_HOME=build-eos
+      export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
+      export RUN_MODE="SALLOC_MPI"
+      export CI_PIPELINE_ID=${CI_PIPELINE_ID}
+      export CI_JOB_NAME=${CI_JOB_NAME}
+      export JUNIT=$JUNIT
       $TEST_CMD
       EOF
-    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
+  after_script:
+    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && JUNIT=junit_results_apitest.xml bash -l ./test/scripts/ci/finalize-junit.sh"
+    - ssh $AWS_HEAD_NODE "test -d $AWS_HEAD_NODE_WORKDIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/failed .
+    - scp $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/$JUNIT .
+    - ls && ls failed && ls $JUNIT
   artifacts:
     when: always
     paths:
+      - $JUNIT
       - $RUN_SCRIPT
-    expire_in: 4 hrs
+      - "failed/**"
+    reports:
+      junit: $JUNIT
+    expire_in: 48 hrs
 
 apitest-draco_oci:
   stage: api_tests
@@ -610,15 +809,29 @@ apitest-draco_oci:
   tags:
     - draco-oci-iad
   variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/draco-oci-config.sh"
+    SLURM_TIME: 20
+    RUN_MODE: "MPI"
     NNODES: 1
     NGPUS: 8
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    TEST_CMD: ./test/scripts/gitlab-runner-apitest.sh
-    TIMEOUT: "00:30:00" # HH:MM:SS
-    PLANNED_RESERVED: "Planned"
+    NP: 1
+    NCCL_HOME: build-eos
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NO_LOOPBACK_NETWORKING: 1
   script:
-    - source docker/draco-oci-config.sh && configure_test_env
-    - srun --exclusive --nodes $NNODES --gpus-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest-P100:
   stage: perf_tests_single
@@ -629,17 +842,29 @@ perftest-P100:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "MPI"
+    SLURM_PARTITION: "P100"
+    MAX: "1G"
     NNODES: 1
+    ENABLE_NVLS: 0
+    GRAPH: 0
     NGPUS: 8
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP100"
+    NCCL_HOME: build-gc
+    SALLOC: "salloc --exclusive -t 00:30:00 -N ${NNODES} -n ${NGPUS} -p ${SLURM_PARTITION}"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-perftest.sh
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest-P40:
   stage: perf_tests_single
@@ -647,20 +872,32 @@ perftest-P40:
     - when: always
   needs: ["build-classic"]
   tags:
-    - p40
+    - p100
   variables:
     NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "P40"
+    MAX: "1G"
     NNODES: 1
+    ENABLE_NVLS: 0
+    GRAPH: 0
     NGPUS: 8
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pP40"
+    NP: 8
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-perftest.sh
+    - ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest-GP100:
   stage: perf_tests_single
@@ -671,17 +908,29 @@ perftest-GP100:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "GP100"
+    MAX: "1G"
     NNODES: 1
+    ENABLE_NVLS: 0
+    GRAPH: 0
     NGPUS: 8
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pGP100"
+    NP: 8
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-perftest.sh 1G 2
+    - ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 nic-fusion-A40:
   stage: perf_tests_single
@@ -707,7 +956,7 @@ nic-fusion-A40:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 perftest-A40:
   stage: perf_tests_single
@@ -718,18 +967,29 @@ perftest-A40:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "A40"
+    MAX: "1G"
     NNODES: 1
+    ENABLE_NVLS: 0
+    GRAPH: 0
     NGPUS: 2
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
+    NP: 2
+    NCCL_HOME: build-gc
   script:
-    - ./test/scripts/gitlab-runner-perftest.sh 1G 0
+    - ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 multi-perftest-A40:
   stage: perf_tests_multi
@@ -740,19 +1000,29 @@ multi-perftest-A40:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "A40"
+    MAX: "1G"
     NNODES: 2
+    ENABLE_NVLS: 0
+    GRAPH: 0
     NGPUS: 2
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA40"
+    NP: 2
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-perftest.sh 1G 0
+    - ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest-A100:
   stage: perf_tests_single
@@ -763,17 +1033,29 @@ perftest-A100:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "A100"
+    MAX: "256M"
     NNODES: 1
+    ENABLE_NVLS: 0
+    GRAPH: 0
     NGPUS: 8
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} -n ${NGPUS} -pA100"
+    NP: 8
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-perftest.sh 256M 0
+    - ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest-DGX-1V:
   stage: perf_tests_single
@@ -793,12 +1075,13 @@ perftest-DGX-1V:
     NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
+    - mv build-eos build
     - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=coreai_libraries_nccl --nv-meta ml-model.nccl -p $PARTITION_LIST -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 2G
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 perftest-DGX-2:
   stage: perf_tests_single
@@ -818,12 +1101,13 @@ perftest-DGX-2:
     NGPUS: 16
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
   script:
+    - mv build-eos build
     - salloc -N 1 --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} --account=coreai_libraries_nccl --nv-meta ml-model.nccl -p $PARTITION_LIST -t 00:35:00 ./test/scripts/gitlab-runner-perftest.sh 1G
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 perftest-DGX-A100:
   stage: perf_tests_single
@@ -848,7 +1132,7 @@ perftest-DGX-A100:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 perftest-single-eos:
   stage: perf_tests_single
@@ -861,15 +1145,27 @@ perftest-single-eos:
     - nccl-eos
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_PARAMS: "-mca btl tcp,self"
+    CLUSTER_CONFIG: "docker/eos-config.sh"
+    SLURM_TIME: 20
+    RUN_MODE: "MPI"
     NNODES: 1
     NGPUS: 8
-    PLANNED_RESERVED: "Planned"
+    MAX: "1G"
+    NP: 8
     SKIP_FT_INIT: 1
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    NCCL_HOME: build-eos
+    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
-    - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
-    - salloc -N ${NNODES} -n ${NGPUS} --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0 1
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest_single-AWS_H100_EFA:
   stage: perf_tests_single
@@ -878,37 +1174,52 @@ perftest_single-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - setup-AWS_H100_EFA
+    - [setup-AWS_H100_EFA,apitest-AWS_H100_EFA]
   tags:
     - aws_p5
   variables:
     GIT_STRATEGY: none
-    AWS_HEAD_NODE: "aws-pcluster-head"
-    AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
-    NNODES: 1
-    NGPUS: 8
+    AWS_HEAD_NODE: aws-pcluster-head
+    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}/
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
-    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 1G 0 1
+    TEST_CMD: ./test/scripts/ci/gitlab-runner-perf.sh
+    JUNIT: junit_results_perf_single.xml
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
-      source docker/aws-config.sh && configure_aws_test_env
-      export MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
-      export NNODES=$NNODES
-      export NGPUS=$NGPUS
-      export SALLOC="salloc --exclusive -t 00:10:00 -N $NNODES -n $NGPUS -p compute"
-      export UCX_TLS=tcp
-      export PLANNED_RESERVED="Skip"
+      export NCCL_DEBUG="WARN"
+      export CLUSTER_CONFIG="docker/aws-config.sh"
+      export SLURM_TIME=10
+      export SLURM_PARTITION=compute
+      export NNODES=1
+      export NGPUS=8
+      export NP=8
+      export GRAPH=0
+      export MAX=1G
+      export NCCL_HOME=build-eos
+      export RUN_MODE="SALLOC_MPI"
+      export CI_PIPELINE_ID=${CI_PIPELINE_ID}
+      export CI_JOB_NAME=${CI_JOB_NAME}
+      export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
+      export JUNIT=$JUNIT
       $TEST_CMD
       EOF
-    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
+  after_script:
+    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && JUNIT=junit_results_perf_single.xml bash -l ./test/scripts/ci/finalize-junit.sh"
+    - ssh $AWS_HEAD_NODE "test -d $AWS_HEAD_NODE_WORKDIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/failed .
+    - scp $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/$JUNIT .
   artifacts:
     when: always
     paths:
+      - $JUNIT
       - $RUN_SCRIPT
-    expire_in: 4 hrs
+      - "failed/**"
+    reports:
+      junit: $JUNIT
+    expire_in: 48 hrs
 
 perftest_single-draco_oci:
   stage: perf_tests_single
@@ -921,18 +1232,30 @@ perftest_single-draco_oci:
   tags:
     - draco-oci-iad
   variables:
-    MPI_PARAMS: "-mca btl tcp,self"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/draco-oci-config.sh"
+    SLURM_TIME: 20
+    RUN_MODE: "MPI"
     NNODES: 1
     NGPUS: 8
-    SKIP_FT: 1
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 16G
-    TIMEOUT: "00:20:00" # HH:MM:SS
-    PLANNED_RESERVED: "Planned"
-    IS_DRACO_OCI_IAD: 1
+    GRAPH: 0
+    MAX: "1G"
+    NP: 8
+    SKIP_FT_INIT: 1
+    NCCL_HOME: build-eos
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NO_LOOPBACK_NETWORKING: 1
   script:
-    - source docker/draco-oci-config.sh && configure_test_env
-    - salloc --exclusive --nodes $NNODES --gpus-per-node $NGPUS --ntasks-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
+    - export SALLOC="salloc -N ${NNODES} --gpus-per-node ${NGPUS} -n ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest-multi-gc:
   stage: perf_tests_multi
@@ -942,21 +1265,30 @@ perftest-multi-gc:
   tags:
     - p100
   variables:
-    NCCL_IB_HCA: "mlx5_0"
     NCCL_DEBUG: "WARN"
-    NCCL_ALLOC_P2P_NET_LL_BUFFERS: "1" # Add coverage of dedicated P2P LL buffers on constrained rank count
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_HOSTS: "gc01,gc02"
+    MAX: "1G"
     NNODES: 2
+    ENABLE_NVLS: 0
+    GRAPH: 0
     NGPUS: 8
-    SKIP_MULTI_GPU: 1
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
+    NP: 8
+    NCCL_HOME: build-gc
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-perftest.sh 128M 0
+    - ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
-      - "**/core.*.*"
-    expire_in: 4 hrs
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest-sharp-gc:
   stage: perf_tests_multi
@@ -972,6 +1304,7 @@ perftest-sharp-gc:
     PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
     NNODES: 2
     NGPUS: 8
+    NCCL_HOME: build-gc
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
     - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
@@ -980,7 +1313,7 @@ perftest-sharp-gc:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 perftest-multi-DGX-1V:
   stage: perf_tests_multi
@@ -1006,12 +1339,13 @@ perftest-multi-DGX-1V:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     DRACO_SALLOC: "--exclusive --gpus-per-node=8 --ntasks-per-node=8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl --exclusive -t 00:25:00"
   script:
+    - mv build-eos build
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
   artifacts:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 # Disabled - Allocation timeouts cause too much noise
 # perftest-multi-dgx-2:
@@ -1072,16 +1406,30 @@ perftest-multi-eos:
   tags:
     - nccl-eos
   variables:
-    NCCL_IB_SL: "1"
-    OMPI_MCA_btl: "^openib"
-    MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
-    NNODES: $MULTI_PERFTEST_NODE_COUNT
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/eos-config.sh"
+    SLURM_TIME: 30
+    RUN_MODE: "MPI"
     NGPUS: 8
-    PLANNED_RESERVED: "Planned"
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    MAX: "1G"
+    NP: 8
+    SKIP_FT_INIT: 1
+    NCCL_HOME: build-eos
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
   script:
-    - source docker/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home) && SLURM_ACCOUNT=$(get_slurm_account)
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=$SLURM_ACCOUNT -J "${SLURM_ACCOUNT}-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perftest-sharp-selene:
   stage: perf_tests_multi
@@ -1116,38 +1464,53 @@ perftest_multi-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - setup-AWS_H100_EFA
+    - [setup-AWS_H100_EFA,perftest_single-AWS_H100_EFA]
   tags:
     - aws_p5
   variables:
     GIT_STRATEGY: none
-    AWS_HEAD_NODE: "aws-pcluster-head"
-    AWS_HEAD_NODE_WORKDIR: "/shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}"
-    NNODES: $MULTI_PERFTEST_NODE_COUNT
-    NGPUS: 8
+    AWS_HEAD_NODE: aws-pcluster-head
+    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
-    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0
+    TEST_CMD: ./test/scripts/ci/gitlab-runner-perf.sh
+    JUNIT: junit_results_perf_multi.xml
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
-      source docker/aws-config.sh && configure_aws_test_env
-      export MPI_PARAMS="--oversubscribe --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0 --bind-to none"
-      export NNODES=$NNODES
-      export NGPUS=$NGPUS
-      export SALLOC="salloc --exclusive -t 00:10:00 -N $NNODES --ntasks-per-node=$NGPUS -p compute"
-      export UCX_TLS=tcp
-      export PLANNED_RESERVED="Skip"
-
+      export NCCL_DEBUG="WARN"
+      export CLUSTER_CONFIG="docker/aws-config.sh"
+      export SLURM_TIME=10
+      export SLURM_PARTITION=compute
+      export NGPUS=8
+      export NNODES=4
+      export MAX=1G
+      export GRAPH=0
+      export NP=8
+      export NCCL_HOME=build-eos
+      export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
+      export RUN_MODE="SALLOC_MPI"
+      export CI_PIPELINE_ID=${CI_PIPELINE_ID}
+      export CI_JOB_NAME=${CI_JOB_NAME}
+      export JUNIT=$JUNIT
+      export SKIP_FT_FINALIZE=1
       $TEST_CMD
       EOF
-    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
+  after_script:
+    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && JUNIT=junit_results_perf_multi.xml bash -l ./test/scripts/ci/finalize-junit.sh"
+    - ssh $AWS_HEAD_NODE "test -d $AWS_HEAD_NODE_WORKDIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/failed .
+    - scp $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/$JUNIT .
   artifacts:
     when: always
     paths:
+      - $JUNIT
       - $RUN_SCRIPT
-    expire_in: 4 hrs
+      - "failed/**"
+    reports:
+      junit: $JUNIT
+    expire_in: 48 hrs
 
 perftest_multi-draco_oci:
   stage: perf_tests_multi
@@ -1157,22 +1520,33 @@ perftest_multi-draco_oci:
     - when: never
   needs:
     - build-eos-aws-oci
-    - perftest_single-draco_oci
   tags:
     - draco-oci-iad
   variables:
-    MPI_PARAMS: "-mca btl tcp,self"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/draco-oci-config.sh"
+    SLURM_TIME: 20
+    RUN_MODE: "MPI"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
-    PLANNED_RESERVED: "Planned"
     NGPUS: 8
-    SKIP_FT: 1
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    TEST_CMD: ./test/scripts/gitlab-runner-perftest.sh 128M 0
-    TIMEOUT: "00:20:00" # HH:MM:SS
-    IS_DRACO_OCI_IAD: 1
+    MAX: "1G"
+    NP: 8
+    GRAPH: 0
+    SKIP_FT_INIT: 1
+    NCCL_HOME: build-eos
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NO_LOOPBACK_NETWORKING: 1
   script:
-    - source docker/draco-oci-config.sh && configure_test_env
-    - salloc --exclusive --nodes $NNODES --gpus-per-node $NGPUS --ntasks-per-node $NGPUS --account=$SLURM_ACCOUNT -J "$SLURM_ACCOUNT-cicd::${GITLAB_USER_LOGIN}::perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t $TIMEOUT $TEST_CMD
+    - export SALLOC="salloc -N ${NNODES} --gpus-per-node ${NGPUS} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 perf-regression-single-DGX-A100:
   stage: perf_regression
@@ -1245,6 +1619,7 @@ QA-team-ci:
   tags:
     - cqa_host_runner
   script:
+    - mv build-gc build
     - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
 
 replay-multi-gc:
@@ -1256,6 +1631,7 @@ replay-multi-gc:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
+    NCCL_HOME: build-gc
     NCCL_DEBUG: "WARN"
     SALLOC_RESNET: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
     SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"
@@ -1268,7 +1644,7 @@ replay-multi-gc:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 4 hrs
+    expire_in: 48 hrs
 
 summarize-pipeline:
   stage: summary
@@ -1279,3 +1655,4 @@ summarize-pipeline:
   script:
     - chmod +x test/scripts/gitlab-runner-summary.sh
     - ./test/scripts/gitlab-runner-summary.sh
+
