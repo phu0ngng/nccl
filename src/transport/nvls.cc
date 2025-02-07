@@ -117,20 +117,20 @@ ncclResult_t ncclNvlsDeregBuffer(struct ncclComm* comm, CUmemGenericAllocationHa
   return ncclSuccess;
 }
 
-ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, size_t size, void* ucptr, CUmemGenericAllocationHandle* ucHandle, void* mcptr, CUmemGenericAllocationHandle* mcHandle) {
-  INFO(NCCL_NVLS, "NVLS Unmap mem UC handle 0x%llx(%p) MC handle 0x%llx(%p)", *ucHandle, ucptr, *mcHandle, mcptr);
+ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, size_t ucsize, void* ucptr, CUmemGenericAllocationHandle* ucHandle, size_t mcsize, void* mcptr, CUmemGenericAllocationHandle* mcHandle) {
+  INFO(NCCL_NVLS, "NVLS Unmap mem UC handle 0x%llx(%p) ucsize %zu MC handle 0x%llx(%p) mcsize %zd", *ucHandle, ucptr, ucsize, *mcHandle, mcptr, mcsize);
 
   // Release the UC memory and mapping
   if (ucptr) {
-    CUCHECK(cuMemUnmap((CUdeviceptr)ucptr, size));
-    CUCHECK(cuMemAddressFree((CUdeviceptr)ucptr, size));
+    CUCHECK(cuMemUnmap((CUdeviceptr)ucptr, ucsize));
+    CUCHECK(cuMemAddressFree((CUdeviceptr)ucptr, ucsize));
     CUCHECK(cuMemRelease(*ucHandle));
   }
 
   // Release the MC memory and mapping
   if (mcptr) {
-    CUCHECK(cuMemUnmap((CUdeviceptr)mcptr, size));
-    CUCHECK(cuMemAddressFree((CUdeviceptr)mcptr, size));
+    CUCHECK(cuMemUnmap((CUdeviceptr)mcptr, mcsize));
+    CUCHECK(cuMemAddressFree((CUdeviceptr)mcptr, mcsize));
     CUCHECK(cuMemRelease(*mcHandle));
   }
 
@@ -498,12 +498,12 @@ ncclResult_t ncclNvlsFree(struct ncclComm* comm) {
 
     if (resources->ucCredit || resources->mcCredit) {
       NCCLCHECK(nvlsGroupUnbind(comm, resources->creditUCSize, &resources->mcCreditHandle));
-      NCCLCHECK(nvlsGroupUnmapMem(comm, resources->creditMCSize, resources->ucCredit, &resources->ucCreditHandle, resources->mcCredit, &resources->mcCreditHandle));
+      NCCLCHECK(nvlsGroupUnmapMem(comm, resources->creditUCSize, resources->ucCredit, &resources->ucCreditHandle, resources->creditMCSize, resources->mcCredit, &resources->mcCreditHandle));
     }
 
     if (comm->nvlsResources->inited) {
       NCCLCHECK(nvlsGroupUnbind(comm, resources->buffUCSize, &resources->mcBuffHandle));
-      NCCLCHECK(nvlsGroupUnmapMem(comm, resources->buffMCSize, resources->ucBuff, &resources->ucBuffHandle, resources->mcBuff, &resources->mcBuffHandle));
+      NCCLCHECK(nvlsGroupUnmapMem(comm, resources->buffUCSize, resources->ucBuff, &resources->ucBuffHandle, resources->buffMCSize, resources->mcBuff, &resources->mcBuffHandle));
     }
     free(resources);
     comm->nvlsResources = NULL;
