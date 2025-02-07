@@ -11,7 +11,7 @@ if ! has_testsuite_closing_tag "$JUNIT"; then
     end=$(date +%s%N)
     let runtime=$((end - start))/1000000000
     echo "Error: The XML file is incomplete. The </testsuite> tag is missing from $label. Appending failure to the last testcase."
-    echo " status=\"failed\" time=\"$runtime\"><failed>Script timed out</failed></testcase>" >> $xml_file
+    echo " status=\"failed\" time=\"$runtime\"><failed>Script timed out</failed></testcase>" >> $JUNIT
     end_junit_file
 else
     echo "The XML file is complete."
