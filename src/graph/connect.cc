@@ -330,7 +330,7 @@ int ncclMinNchannels() {
   if (ncclParamMinNrings() != -2) minNchannels = ncclParamMinNrings();
   if (ncclParamMinNchannels() != -2) minNchannels = ncclParamMinNchannels();
   if (minNchannels > MAXCHANNELS) {
-    WARN("User asked for a minimum of %d channels, limiting to %d", minNchannels, MAXCHANNELS);
+    INFO(NCCL_GRAPH|NCCL_ENV, "User asked for a minimum of %d channels, limiting to %d", minNchannels, MAXCHANNELS);
     minNchannels = MAXCHANNELS;
   }
   if (minNchannels < 0) minNchannels = 0;
@@ -346,7 +346,7 @@ int ncclMaxNchannels() {
   maxNchannels = std::min(maxNchannels, ncclDevMaxChannelsForArgsBytes(ncclParamWorkArgsBytes()));
   if (maxNchannels > MAXCHANNELS) maxNchannels = MAXCHANNELS;
   if (maxNchannels < 1) {
-    WARN("User asked for a maximum of %d channels, setting it to 1", maxNchannels);
+    INFO(NCCL_GRAPH|NCCL_ENV, "User asked for a maximum of %d channels, setting it to 1", maxNchannels);
     maxNchannels = 1;
   }
   return maxNchannels;
