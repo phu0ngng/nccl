@@ -267,7 +267,7 @@ Values accepted
 The default value is 0.
 
 NCCL_IB_FIFO_TC
-----------
+---------------
 (since 2.22.3)
 
 Defines the InfiniBand traffic class for control messages.
@@ -489,7 +489,7 @@ for memory allocations), CALL (standard for function calls), PROXY (stands for t
 subsystem) and ALL (includes every subsystem).
 
 NCCL_DEBUG_TIMESTAMP_FORMAT
---------------------------
+---------------------------
 (since 2.26)
 
 The ``NCCL_DEBUG_TIMESTAMP_FORMAT`` variable allows the user to change
@@ -521,7 +521,7 @@ print milliseconds. The value is zero padded. (Note that this can only
 be used once in the format string.)
 
 NCCL_DEBUG_TIMESTAMP_LEVELS
---------------------------
+---------------------------
 (since 2.26)
 
 The ``NCCL_DEBUG_TIMESTAMP_LEVELS`` variable allows the user to set
@@ -1379,6 +1379,7 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Default is 1; define and set to larger values to increase the timeouts.
 
+.. _NCCL_LAUNCH_ORDER_IMPLICIT:
 
 NCCL_LAUNCH_ORDER_IMPLICIT
 --------------------------
