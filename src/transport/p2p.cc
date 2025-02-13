@@ -807,7 +807,7 @@ static ncclResult_t ipcRegisterBuffer(ncclComm* comm, const void* userbuff, size
 ncclResult_t ret = ncclSuccess;
   struct ncclIpcRegInfo* newInfo = NULL;
   uintptr_t* peerRmtAddrs = NULL;
-  bool legacyIpcCap = false;
+  int legacyIpcCap = 0;
   size_t baseSize = 0;
   void* baseAddr = NULL;
   bool needUpdate = false;
