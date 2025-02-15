@@ -67,8 +67,7 @@ function get_build_command() {
     echo "docker run --rm \
         -e NVCC_GENCODE \
         -e DOCKER_JOB_COMMAND \
-        -e DOCKER_USER_ID \
-        -e DOCKER_GROUP_ID \
+        --user ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} \
         -v ${current_dir}:/nccl \
         $build_tools_image \
         /nccl/docker/build_nccl.sh"

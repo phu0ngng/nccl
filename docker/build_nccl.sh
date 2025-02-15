@@ -29,8 +29,5 @@ else
     echo "ERROR: Make exited with $build_status"
 fi
 
-# return file ownership to the user
-chown -R ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} .
-
 # propagate exit status
 exit $build_status
