@@ -47,6 +47,9 @@ typedef enum {
 
   /* Network defined event states */
   ncclProfilerNetPluginUpdate          = 21,
+
+  /* Kernel event states */
+  ncclProfilerKernelChStop             = 22,
 } ncclProfilerEventState_t;
 
 typedef ncclProfilerEventState_t ncclProfilerEventState_v1_t;

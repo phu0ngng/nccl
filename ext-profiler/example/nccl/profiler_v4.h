@@ -49,6 +49,7 @@ typedef struct {
 
     struct {
       uint8_t channelId;
+      uint64_t pTimer;          // start timestamp from GPU globaltimer
     } kernelCh;
 
     struct {
@@ -74,6 +75,10 @@ typedef union {
   struct {
     void* data;
   } netPlugin;
+
+  struct {
+    uint64_t pTimer;
+  } kernelCh;
 } ncclProfilerEventStateArgs_v4_t;
 
 typedef struct {
