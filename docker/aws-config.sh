@@ -3,7 +3,7 @@
 # 16 nodes - 8 H100 80G GPUs / node - EFA NICs
 # OS: Ubuntu20.04
 # NVIDIA-SMI/Driver: 535.183.01
-# CUDA: 12.2
+# CUDA: 12.2 -> 12.8.0
 # OpenMPI: 4.1.6
 # EFA driver: 121.0
 # AWS_OFI_PLUGIN: 1.9.2
@@ -11,7 +11,8 @@
 # no host-specific code executes in this module to allow it to live elsewhere
 
 # Relevant paths
-AWS_CUDA_HOME="/usr/local/cuda-12.4"
+# AWS_CUDA_HOME="/usr/local/cuda-12.4"
+AWS_CUDA_HOME="/shared/toolkits/cuda-12.8.0"
 AWS_OPENMPI_HOME="/opt/amazon/openmpi"
 AWS_OFI_PLUGIN_HOME="/opt/aws-ofi-nccl"
 

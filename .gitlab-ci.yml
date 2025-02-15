@@ -388,6 +388,11 @@ unit_tests-eos:
     NCCL_HOME: build-eos
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
+    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    DISABLE_MEMLEAK: "0" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
+    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    PLANNED_RESERVED: "Planned"
+    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -730,6 +735,9 @@ apitest-eos:
     NP: 1
     NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
+    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    PLANNED_RESERVED: "Planned"
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1144,6 +1152,7 @@ perftest-single-eos:
   tags:
     - nccl-eos
   variables:
+    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/eos-config.sh"
     SLURM_TIME: 20
@@ -1410,6 +1419,11 @@ perftest-multi-eos:
     CLUSTER_CONFIG: "docker/eos-config.sh"
     SLURM_TIME: 30
     RUN_MODE: "MPI"
+    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_IB_SL: "1"
+    OMPI_MCA_btl: "^openib"
+    MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
     MAX: "1G"
     NP: 8
