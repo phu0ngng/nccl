@@ -221,7 +221,9 @@ void* persistentSocketThread(void *args_) {
   struct ncclNetSocketComm* comm = resource->comm;
   struct ncclNetSocketTaskQueue* myQueue = &resource->threadTaskQueue;
   int nSocksPerThread = comm->nSocks / comm->nThreads;
+#ifdef NCCL_ENABLE_NET_PROFILING
   void* eHandle[MAX_REQUESTS*MAX_SOCKETS] = { 0 };
+#endif
   while (1) {
     int idle = 1;
     int mark = myQueue->next; // mark newest task seen
@@ -232,6 +234,7 @@ void* persistentSocketThread(void *args_) {
         for (int j=0; j<nSocksPerThread; j++) {
           struct ncclNetSocketTask* r = myQueue->tasks+i+j;
           if (r != NULL && r->used == 1 && r->offset < r->size) {
+#ifdef NCCL_ENABLE_NET_PROFILING
             if (!eHandle[i+j]) {
               ncclProfilerNetSockDescr_v1_t data;
               data.type = ncclProfileSocket;
@@ -240,19 +243,24 @@ void* persistentSocketThread(void *args_) {
               data.sock.length = r->size;
               ncclProfilerFunction(&eHandle[i+j], 0, resource->pInfo->pHandle, NCCL_PROFILER_NET_TYPE_SOCK | 1, &data);
             }
+#endif
             r->result = ncclSocketProgress(r->op, r->sock, r->data, r->size, &r->offset);
             if (r->result != ncclSuccess) {
+#ifdef NCCL_ENABLE_NET_PROFILING
               ncclProfilerFunction(&eHandle[i+j], 1, NULL, 0, NULL);
               eHandle[i+j] = NULL;
+#endif
               WARN("NET/Socket : socket progress error");
               return NULL;
             }
             idle = 0;
             if (r->offset < r->size) repeat = 1;
+#ifdef NCCL_ENABLE_NET_PROFILING
             if (repeat == 0) {
               ncclProfilerFunction(&eHandle[i+j], 1, NULL, 0, NULL);
               eHandle[i+j] = NULL;
             }
+#endif
           }
         }
       } while (repeat);
@@ -483,7 +491,9 @@ ncclResult_t ncclNetSocketGetTask(struct ncclNetSocketComm* comm, struct ncclPro
     NCCLCHECK(ncclCalloc(&queue->tasks, queue->len));
     queue->next = 0;
     res->comm = comm;
+#ifdef NCCL_ENABLE_NET_PROFILING
     res->pInfo = pInfo;
+#endif
     pthread_mutex_init(&res->threadLock, NULL);
     pthread_cond_init(&res->threadCond, NULL);
     PTHREADCHECK(pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, res), "pthread_create");
@@ -571,6 +581,7 @@ ncclResult_t ncclNetSocketTest(void* request, int* done, int* size) {
         }
       }
     } else { // progress request using main thread
+#ifdef NCCL_ENABLE_NET_PROFILING
       if (!r->pInfo.eHandle) {
         ncclProfilerNetSockDescr_v1_t data;
         data.type = ncclProfileSocket;
@@ -579,6 +590,7 @@ ncclResult_t ncclNetSocketTest(void* request, int* done, int* size) {
         data.sock.length = r->size;
         ncclProfilerFunction(&r->pInfo.eHandle, 0, r->pInfo.pHandle, NCCL_PROFILER_NET_TYPE_SOCK | 1, &data);
       }
+#endif
       if (r->offset < r->size) {
         NCCLCHECK(ncclSocketProgress(r->op, r->ctrlSock, r->data, r->size, &r->offset));
       }
@@ -586,8 +598,10 @@ ncclResult_t ncclNetSocketTest(void* request, int* done, int* size) {
         if (size) *size = r->size;
         *done = 1;
         r->used = 0;
+#ifdef NCCL_ENABLE_NET_PROFILING
         ncclProfilerFunction(&r->pInfo.eHandle, 1, NULL, 0, NULL);
         r->pInfo.eHandle = NULL;
+#endif
       }
     }
   }
@@ -602,9 +616,11 @@ ncclResult_t ncclNetSocketDeregMr(void* comm, void* mhandle) { return ncclSucces
 ncclResult_t ncclNetSocketIsend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* phandle, void** request) {
   struct ncclNetSocketComm* comm = (struct ncclNetSocketComm*)sendComm;
   NCCLCHECK(ncclNetSocketGetRequest(comm, NCCL_SOCKET_SEND, data, (int) size, (struct ncclNetSocketRequest**)request));
+#ifdef NCCL_ENABLE_NET_PROFILING
   // NCCL core profiler callback
   struct ncclNetSocketRequest* req = *(struct ncclNetSocketRequest **)request;
   req->pInfo.pHandle = phandle;
+#endif
   return ncclSuccess;
 }
 
@@ -612,9 +628,11 @@ ncclResult_t ncclNetSocketIrecv(void* recvComm, int n, void** data, size_t* size
   struct ncclNetSocketComm* comm = (struct ncclNetSocketComm*)recvComm;
   if (n != 1) return ncclInternalError;
   NCCLCHECK(ncclNetSocketGetRequest(comm, NCCL_SOCKET_RECV, data[0], (int)sizes[0], (struct ncclNetSocketRequest**)request));
+#ifdef NCCL_ENABLE_NET_PROFILING
   // NCCL core profiler callback
   struct ncclNetSocketRequest* req = *(struct ncclNetSocketRequest **)request;
-  req->pInfo.pHandle = phandles[0];
+  if (phandles) req->pInfo.pHandle = phandles[0];
+#endif
   return ncclSuccess;
 }
 
