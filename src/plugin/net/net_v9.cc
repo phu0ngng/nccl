@@ -72,7 +72,7 @@ static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn, ncclProfilerCallback_t
   ncclNet.closeListen = ncclNet_v9->closeListen;
   ncclNet.getDeviceMr = ncclNet_v9->getDeviceMr;
   ncclNet.irecvConsumed = ncclNet_v9->irecvConsumed;
-  ncclNet.makeVDevice = ncclNet_makeVDevice;
+  ncclNet.makeVDevice = (ncclNet_v9->makeVDevice) ? ncclNet_makeVDevice : nullptr;
   return ncclSuccess;
 }
 
