@@ -193,7 +193,6 @@ fail:
 
 static ncclResult_t doLaunches(struct ncclComm* head) {
   ncclResult_t result = ncclSuccess;
-  struct ncclComm* cliqueComm0 = head->intraComm0;
   struct ncclComm* cliqueHead = head;
   struct ncclComm* cliqueNextHead;
   bool useBarrier = ncclParamLaunchMode == ncclLaunchModeGroup;
@@ -209,7 +208,7 @@ static ncclResult_t doLaunches(struct ncclComm* head) {
       NCCLCHECKGOTO(ncclLaunchPrepare(comm), result, failure);
       if (useBarrier) ncclCommIntraBarrierIn(comm, 1);
       comm = comm->groupNext;
-    } while (comm != nullptr && comm->intraComm0 == cliqueComm0);
+    } while (comm != nullptr && comm->intraComm0 == cliqueHead->intraComm0);
     cliqueNextHead = comm;
 
     if (capturingYes && capturingNo) {
