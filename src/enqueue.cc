@@ -1335,7 +1335,7 @@ static void persistentDestructor(void* plans_) {
   }
 }
 
-NCCL_PARAM(LaunchOrderImplicit, "LAUNCH_ORDER_IMPLICIT", 1);
+NCCL_PARAM(LaunchOrderImplicit, "LAUNCH_ORDER_IMPLICIT", 0);
 
 namespace {
   enum ncclImplicitOrder {
