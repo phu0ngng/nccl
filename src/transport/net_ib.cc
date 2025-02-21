@@ -86,6 +86,8 @@ struct ncclIbDev ncclIbDevs[MAX_IB_DEVS];
 pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
 static int ncclIbRelaxedOrderingEnabled = 0;
 
+#define NCCL_IB_LLSTR(ll) (((ll) == IBV_LINK_LAYER_INFINIBAND) ? "IB" : (((ll) == IBV_LINK_LAYER_ETHERNET) ? "RoCE" : "UNSPECIFIED"))
+
 #define NCCL_IB_SL_DEFAULT 0
 #define NCCL_IB_TC_DEFAULT 0
 
@@ -537,8 +539,8 @@ ncclResult_t ncclIbMakeVDeviceInternal(int* d, ncclNetVDeviceProps_t* props) {
     }
     ncclIbDev* dev = ncclIbDevs + props->devs[i];
     if (dev->link != dev0->link) {
-      WARN("NET/IB : Trying to merge multiple devices together with different link_layer properties %s -> %d, %s -> %d. Try only selecting NICs with one type of link using NCCL_IB_HCA",
-        dev0->devName, dev0->link, dev->devName, dev->link);
+      WARN("NET/IB : Attempted to merge incompatible devices: [%d]%s:%d/%s and [%d]%s:%d/%s. Try selecting NICs of only one link type using NCCL_IB_HCA",
+        props->devs[0], dev0->devName, dev0->portNum, NCCL_IB_LLSTR(dev0->link), props->devs[i], dev->devName, dev->portNum, NCCL_IB_LLSTR(dev->link));
       return ncclInvalidUsage;
     }
   }
@@ -644,7 +646,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t pr
           if (ncclParamIbAdaptiveRouting() != -2) ncclIbDevs[ncclNIbDevs].ar = ncclParamIbAdaptiveRouting();
 
           TRACE(NCCL_NET,"NET/IB: [%d] %s:%s:%d/%s speed=%d context=%p pciPath=%s ar=%d", d, devices[d]->name, devices[d]->dev_name, ncclIbDevs[ncclNIbDevs].portNum,
-              portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE", ncclIbDevs[ncclNIbDevs].speed, context, ncclIbDevs[ncclNIbDevs].pciPath, ncclIbDevs[ncclNIbDevs].ar);
+              NCCL_IB_LLSTR(portAttr.link_layer), ncclIbDevs[ncclNIbDevs].speed, context, ncclIbDevs[ncclNIbDevs].pciPath, ncclIbDevs[ncclNIbDevs].ar);
 
           PTHREADCHECKGOTO(pthread_create(&ncclIbAsyncThread, NULL, ncclIbAsyncThreadMain, ncclIbDevs + ncclNIbDevs), "pthread_create", ret, fail);
           ncclSetThreadName(ncclIbAsyncThread, "NCCL IbAsync %2d", ncclNIbDevs);
@@ -676,7 +678,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t pr
     ncclIbRelaxedOrderingEnabled = ncclIbRelaxedOrderingCapable();
     for (int d = 0; d < ncclNIbDevs; d++) {
         snprintf(line+strlen(line), sizeof(line)-strlen(line), " [%d]%s:%d/%s", d, ncclIbDevs[d].devName,
-          ncclIbDevs[d].portNum, ncclIbDevs[d].link == IBV_LINK_LAYER_INFINIBAND ? "IB" : "RoCE");
+          ncclIbDevs[d].portNum, NCCL_IB_LLSTR(ncclIbDevs[d].link));
     }
     char addrline[SOCKET_NAME_MAXLEN+1];
     INFO(NCCL_INIT|NCCL_NET, "NET/IB : Using%s %s; OOB %s:%s", line, ncclIbRelaxedOrderingEnabled ? "[RO]" : "",
@@ -1193,6 +1195,7 @@ ncclResult_t ncclIbConnect(int dev, ncclNetCommConfig_t* config, void* opaqueHan
   struct ncclIbCommStage* stage = &handle->stage;
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)stage->comm;
   int ready;
+  uint8_t link_layer = IBV_LINK_LAYER_UNSPECIFIED;
   *sendComm = NULL;
 
   if (stage->state == ncclIbCommStateConnect)      goto ib_connect_check;
@@ -1222,7 +1225,7 @@ ib_connect_check:
   // IB Setup
   struct ncclIbMergedDev* mergedDev;
   if (dev >= ncclNMergedIbDevs) {
-    WARN("NET/IB : Trying to use non-existant virtual device %d", dev);
+    WARN("NET/IB : Trying to use non-existent virtual device %d", dev);
     return ncclInternalError;
   }
 
@@ -1328,6 +1331,13 @@ ib_recv_dev_list:
             devInfo->gid.global.subnet_prefix, devInfo->gid.global.interface_id, devInfo->fifoRkey, commDev->fifoMr->lkey);
       }
     }
+    if (link_layer == IBV_LINK_LAYER_UNSPECIFIED) link_layer = devInfo->link_layer;
+    if (link_layer != devInfo->link_layer) {
+      int ibDev0 = comm->devs[0].base.ibDevN;
+      WARN("NET/IB : Attempted to connect incompatible devices: [%d]%s:%d/%s and [%d]%s:%d/%s. Try selecting NICs of only one link type using NCCL_IB_HCA",
+           commDev->base.ibDevN, ibDev->devName, ibDev->portNum, NCCL_IB_LLSTR(ibDev->portAttr.link_layer), ibDev0, ncclIbDevs[ibDev0].devName, ncclIbDevs[ibDev0].portNum, NCCL_IB_LLSTR(link_layer));
+      return ncclInternalError;
+    }
   }
   meta.fifoAddr = (uint64_t)comm->fifo;
   meta.sl = (ncclParamIbSl() != -1) ? ncclParamIbSl() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_SL_DEFAULT;
@@ -1357,13 +1367,16 @@ ib_connect:
 
   comm->base.nRemDevs = remMeta.ndevs;
 
-  int link_layer;
-  link_layer = remMeta.devs[0].link_layer;
-  for (int i = 1; i < remMeta.ndevs; i++) {
-    if (remMeta.devs[i].link_layer != link_layer) {
-      WARN("NET/IB : Can't connect net devices with different link_layer. i=%d remMeta.ndevs=%d link_layer=%d rem_link_layer=%d",
-      i, remMeta.ndevs, link_layer, remMeta.devs[i].link_layer);
-      return ncclInternalError;
+  // ensure that the remote devices have the same link layer than the local devices used in the connection.
+  if (comm->base.vProps.ndevs > 0) {
+    int ibDev0 = comm->devs[0].base.ibDevN;
+    link_layer = ncclIbDevs[ibDev0].portAttr.link_layer;
+    for (int i = 0; i < remMeta.ndevs; i++) {
+      if (remMeta.devs[i].link_layer != link_layer) {
+        WARN("NET/IB : Remote %s device is incompatible with the local [%d]%s:%d/%s. Try selecting NICs of only one link type using NCCL_IB_HCA",
+             NCCL_IB_LLSTR(remMeta.devs[i].link_layer), ibDev0, ncclIbDevs[ibDev0].devName, ncclIbDevs[ibDev0].portNum, NCCL_IB_LLSTR(link_layer));
+        return ncclInternalError;
+      }
     }
   }
 
@@ -1484,6 +1497,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle
   struct ncclIbCommStage* stage = &lComm->stage;
   struct ncclIbRecvComm* rComm = (struct ncclIbRecvComm*)stage->comm;
   int ready;
+  int link_layer = IBV_LINK_LAYER_UNSPECIFIED;
   *recvComm = NULL;
 
   if (stage->state == ncclIbCommStateAccept)   goto ib_accept_check;
@@ -1522,7 +1536,7 @@ ib_recv_dev_list:
   ncclNetVDeviceProps_t remoteVProps;
   memcpy(&remoteVProps, stage->buffer, sizeof(ncclNetVDeviceProps_t));
   if (lComm->dev >= ncclNMergedIbDevs) {
-    WARN("NET/IB : Trying to use non-existant virtual device %d", lComm->dev);
+    WARN("NET/IB : Trying to use non-existent virtual device %d", lComm->dev);
     return ncclInternalError;
   }
 
@@ -1580,6 +1594,13 @@ ib_recv:
     ibDev = ncclIbDevs + ibDevN;
     NCCLCHECKGOTO(ncclIbGetGidIndex(ibDev->context, ibDev->portNum, &ibDev->portAttr, &rCommDev->base.gidInfo.localGidIndex), ret, fail);
     NCCLCHECKGOTO(wrap_ibv_query_gid(ibDev->context, ibDev->portNum, rCommDev->base.gidInfo.localGidIndex, &rCommDev->base.gidInfo.localGid), ret, fail);
+    if (link_layer == IBV_LINK_LAYER_UNSPECIFIED) link_layer = ibDev->portAttr.link_layer;
+    if (link_layer != ibDev->portAttr.link_layer) {
+      int ibDev0 = rComm->devs[0].base.ibDevN;
+      WARN("NET/IB : Attempted to connect incompatible devices: [%d]%s:%d/%s and [%d]%s:%d/%s. Try selecting NICs of only one link type using NCCL_IB_HCA",
+           ibDevN, ibDev->devName, ibDev->portNum, NCCL_IB_LLSTR(ibDev->portAttr.link_layer), ibDev0, ncclIbDevs[ibDev0].devName, ncclIbDevs[ibDev0].portNum, NCCL_IB_LLSTR(link_layer));
+      return ncclInternalError;
+    }
   }
 
   // Copy remDevInfo for things like remGidInfo, remFifoAddr, etc.
@@ -1587,6 +1608,12 @@ ib_recv:
     rComm->base.remDevs[i] = remMeta.devs[i];
     rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
     rComm->base.remDevs[i].remoteGid.global.subnet_prefix = rComm->base.remDevs[i].gid.global.subnet_prefix;
+    if (remMeta.devs[i].link_layer != link_layer) {
+      int ibDev0 = rComm->devs[0].base.ibDevN;
+      WARN("NET/IB : Remote %s device is incompatible with the local [%d]%s:%d/%s. Try selecting NICs of only one link type using NCCL_IB_HCA",
+           NCCL_IB_LLSTR(remMeta.devs[i].link_layer), ibDev0, ncclIbDevs[ibDev0].devName, ncclIbDevs[ibDev0].portNum, NCCL_IB_LLSTR(link_layer));
+      return ncclInternalError;
+    }
   }
 
   // Stripe QP creation across merged devs
