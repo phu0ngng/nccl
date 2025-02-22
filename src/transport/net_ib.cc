@@ -899,7 +899,9 @@ struct ncclIbRequest {
   struct ncclSocket* sock;
   int events[NCCL_IB_MAX_DEVS_PER_NIC];
   struct ncclIbNetCommDevBase* devBases[NCCL_IB_MAX_DEVS_PER_NIC];
+#ifdef NCCL_ENABLE_NET_PROFILING
   struct ncclProfilerInfo pInfo[NCCL_NET_IB_MAX_RECVS];
+#endif
   int nreqs;
   union {
     struct {
@@ -1885,7 +1887,9 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandl
     wr->wr.rdma.remote_addr = slots[r].addr;
     wr->next = wr + 1;
     wr_id += (reqs[r] - comm->base.reqs) << (r*8);
+#ifdef NCCL_ENABLE_NET_PROFILING
     reqs[r]->pInfo[0].nEventHandles = 0;
+#endif
   }
 
   // Write size as immediate data. In the case of multi-send, only write
@@ -1957,7 +1961,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandl
     struct ibv_send_wr* bad_wr;
 #ifdef NCCL_ENABLE_NET_PROFILING
     // QP profiling loop
-    for (int r=0; r<nreqs; r++) {
+    for (int r=0; r<nreqs && pHandle; r++) {
       // Store comm qpIndex for this request
       int nEventHandles = reqs[r]->pInfo[0].nEventHandles;
       reqs[r]->pInfo[0].qpIndex[nEventHandles%MAX_QPS_PER_REQ] = qpIndex;
@@ -2166,7 +2170,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
   req->sock = &comm->base.sock;
   req->nreqs = n;
 #ifdef NCCL_ENABLE_NET_PROFILING
-  for (int r = 0; r < n; r++) req->pInfo[r].nEventHandles = 0;
+  for (int r = 0; r < n && phandles; r++) req->pInfo[r].nEventHandles = 0;
 #endif
 
   for (int i = 0; i < comm->base.vProps.ndevs; i++) {
@@ -2190,7 +2194,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
     ncclIbAddEvent(req, qp->devIndex, &comm->devs[qp->devIndex].base);
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
-    for (int r = 0; r < n; r++) {
+    for (int r = 0; r < n && phandles; r++) {
       // Store info for profiler
       int pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       req->pInfo[r].data.type = ncclProfileQp;
@@ -2256,6 +2260,7 @@ ncclResult_t ncclIbIflush(void* recvComm, int n, void** data, int* sizes, void**
 
 #define HCA_NAME(req, index) ((req)->devBases[(index)]->pd->context->device->name)
 
+#ifdef NCCL_ENABLE_NET_PROFILING
 static int getReqQpIndex(struct ncclIbRequest* req, int request, int qpNumber) {
   for (int i = 0; i < MAX_QPS_PER_REQ; i++) {
     int qpIndex = req->pInfo[request].qpIndex[i];
@@ -2263,6 +2268,7 @@ static int getReqQpIndex(struct ncclIbRequest* req, int request, int qpNumber) {
   }
   return 0;
 }
+#endif
 
 ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
