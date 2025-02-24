@@ -26,6 +26,7 @@ class Primitives<
                        RoleWaitSend = 0x08,
                        RolePostSend = 0x10,
                        RolePostRecv = 0x20,
+                       Aborted = 0x40,
                        NetRegMode = 0x80,
                        ConnFifoEnabled = 0x100,
                        DirectWrite = 0x200,
@@ -113,7 +114,7 @@ class Primitives<
       int spins = 0;
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         connStepCache = loadStepValue(connStepPtr);
-        if (checkAbort(spins)) break;
+        if (checkAbort(flags, Aborted, spins)) break;
         //if (spins == 0) printf("r=%d b=%d t=%d SPUN OUT got=%d want=%d\n", ncclShmem.comm.rank, blockIdx.x, threadIdx.x, int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
       }
     }
@@ -330,7 +331,8 @@ public:
     peerPtr->recv[connIndex].step += steps;
     st_relaxed_sys_global(peerPtr->recv[connIndex].head, peerPtr->recv[connIndex].step);
     while (ld_volatile_global(peerPtr->recv[connIndex].tail) < peerPtr->recv[connIndex].step) {
-      if (checkAbort(spins)) break;
+      int abort = 0;
+      if (checkAbort(abort, 1, spins)) break;
     }
   }
 
@@ -345,7 +347,7 @@ public:
           int spins = 0;
           while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
             connStepCache = loadStepValue(connStepPtr);
-            if (checkAbort(spins)) break;
+            if (checkAbort(flags, Aborted, spins)) break;
           }
           void **ptrs = isSendNotRecv ? ncclShmem.groups[group].dsts
                                       : ncclShmem.groups[group].srcs;
@@ -710,7 +712,7 @@ private:
       uint64_t prevStep = step - StepPerSlice;
       volatile ssize_t* ptr = &(connFifo[prevStep%NCCL_STEPS].size);
       int spins = 0;
-      while (*ptr != -1) if (checkAbort(spins)) break;
+      while (*ptr != -1) if (checkAbort(flags, Aborted, spins)) break;
     }
 
     if (flags & NetDeviceUnpack) {
@@ -728,7 +730,7 @@ private:
       int spins = 0;
       volatile uint64_t* tail = conn->tail;
       volatile uint64_t* head = conn->head;
-      while (*tail > *head) if (checkAbort(spins)) break;
+      while (*tail > *head) if (checkAbort(flags, Aborted, spins)) break;
     }
   }
 
@@ -751,7 +753,7 @@ private:
         if (slot) {
           T* exchgPtr;
           directBuff = (T*)outputBuf;
-          while (*slot != nullptr && !checkAbort(spins));
+          while (*slot != nullptr && !checkAbort(flags, Aborted, spins));
           if (P2p) {
             exchgPtr = (T*)outputBuf;
           } else {
@@ -768,7 +770,7 @@ private:
         void* ptr;
         while (slot) {
           ptr = *slot;
-          if (ptr != nullptr || checkAbort(spins)) break;
+          if (ptr != nullptr || checkAbort(flags, Aborted, spins)) break;
         }
 
         if (slot) {
@@ -787,7 +789,7 @@ private:
         // Wait for consumer to consume previous value before trampling it.
         if (slot && argSlot0 && argSlot1) {
           T* exchgPtr;
-          while ((*slot != nullptr || *argSlot0 != 0 || *argSlot1 != 0) && !checkAbort(spins));
+          while ((*slot != nullptr || *argSlot0 != 0 || *argSlot1 != 0) && !checkAbort(flags, Aborted, spins));
           // If there is no recv, then we are directly pulling from input buffer (e.g. directScatter)
           // Otherwise, we are pulling from output buffer (e.g. recvCopyDirectSend)
           directBuff = MaxRecv == 0 ? (T*)inputBuf : (T*)outputBuf;
@@ -817,7 +819,7 @@ private:
         void* ptr;
         while (slot) {
           ptr = *slot;
-          if (ptr != nullptr || checkAbort(spins)) break;
+          if (ptr != nullptr || checkAbort(flags, Aborted, spins)) break;
         }
 
         if (slot && argSlot0 && argSlot1) {
@@ -828,7 +830,7 @@ private:
             while (true) {
               arg0 = *argSlot0;
               arg1 = *argSlot1;
-              if ((arg0 != 0 && arg1 != 0) || checkAbort(spins)) break;
+              if ((arg0 != 0 && arg1 != 0) || checkAbort(flags, Aborted, spins)) break;
             }
             ncclShmem.redOpArgs[1 + index] = ((arg1 & 0xffffffff) << 32) | (arg0 & 0xffffffff);
           }
@@ -972,14 +974,14 @@ private:
       int spins = 0;
       while (peer->stepCache < step + StepPerSlice) {
         peer->stepCache = loadStepValue(peer->tailPtr);
-        if (checkAbort(spins)) break;
+        if (checkAbort(flags, Aborted, spins)) break;
       }
     }
     if (send && (flags & RoleWaitSend)) {
       int spins = 0;
       while (peer->stepCache + NCCL_STEPS < step + ps->stepOffset + StepPerSlice) {
         peer->stepCache = loadStepValue(peer->headPtr);
-        if (checkAbort(spins)) break;
+        if (checkAbort(flags, Aborted, spins)) break;
       }
       ncclShmem.groups[group].dsts[0] = ((T*)peer->buff) + ((step+ps->stepOffset)%NCCL_STEPS)*peer->connStepSize + ps->sendOffset;
       if (peer->accSize < ps->sendOffset + nelem + (step+ps->stepOffset)*peer->connStepSize) {
@@ -1066,7 +1068,7 @@ private:
       int spins = 0;
       while (peer->stepCache < step + ps->stepOffset + StepPerSlice) {
         peer->stepCache = loadStepValue(peer->tailPtr);
-        if (checkAbort(spins)) break;
+        if (checkAbort(flags, Aborted, spins)) break;
       }
       if (peer->accSize < ps->recvOffset + nelem + (step+ps->stepOffset)*peer->connStepSize) {
         // New data, copy to our output buffer.
@@ -1079,7 +1081,7 @@ private:
       int spins = 0;
       while (peer->stepCache + NCCL_STEPS < step + StepPerSlice) {
         peer->stepCache = loadStepValue(peer->headPtr);
-        if (checkAbort(spins)) break;
+        if (checkAbort(flags, Aborted, spins)) break;
       }
       ncclShmem.groups[group].dsts[0] = ((T*)peer->buff) + (step%NCCL_STEPS)*peer->connStepSize + ps->sendOffset;
     }

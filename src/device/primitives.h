@@ -139,13 +139,15 @@ struct PrimitivesWithoutDirect {
   }
 };
 
-__device__ inline int checkAbort(int &spins) {
-  spins++;
-  if (ncclShmem.aborted == 0 && spins == NCCL_SPINS_BEFORE_CHECK_ABORT) {
-    ncclShmem.aborted = *ncclShmem.comm.abortFlag;
-    spins = 0;
+__device__ inline int checkAbort(int &abortCache, const int abortValue, int &spins) {
+  if (abortCache & abortValue) return 1;
+  if (++spins < NCCL_SPINS_BEFORE_CHECK_ABORT) return 0;
+  int abort = *ncclShmem.comm.abortFlag;
+  if (abort) {
+    ncclShmem.aborted = abort;
+    abortCache |= abortValue;
   }
-  return ncclShmem.aborted;
+  return abort;
 }
 
 #include "prims_simple.h"
