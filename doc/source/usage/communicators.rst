@@ -154,7 +154,7 @@ Related links:
 Using multiple NCCL communicators concurrently
 ----------------------------------------------
 
-Prior to NCCL 2.26, using multiple NCCL communicators per-device required serializing the order of all communication operations (via CUDA stream dependencies or synchronization) into a consistent total global order otherwise deadlocks could ensue. As of 2.26, NCCL implicitly creates this order dynamically by following the order operations are issued from the host. Thus to remain deadlock free, users must ensure the order of host-side launches matches for all devices. This is most easily accomplished by using a determinstic order issued from a single host thread per-device. For example:
+Prior to NCCL 2.26, using multiple NCCL communicators per-device required serializing the order of all communication operations (via CUDA stream dependencies or synchronization) into a consistent total global order otherwise deadlocks could ensue. As of 2.26, NCCL introduces :ref:`NCCL_LAUNCH_ORDER_IMPLICIT` which when enabled implicitly creates this order dynamically by following the order operations are issued from the host. Thus to remain deadlock free, users must ensure the order of host-side launches matches for all devices. This is most easily accomplished by using a determinstic order issued from a single host thread per-device. For example:
 
 .. code:: C
   ncclAllReduce(..., comm1, stream1); // all ranks do this first
@@ -175,7 +175,6 @@ And at graph launch time different graphs must be launched in a globally consist
 
 When running on CUDA 12.3 or later, the implicit ordering of the operations is created using CUDA launch completion events which permits parallel execution of the two communicator's kernels.
 
-The environment variable :ref:`NCCL_LAUNCH_ORDER_IMPLICIT` controls this behavior.
 
 Finalizing a communicator
 -------------------------

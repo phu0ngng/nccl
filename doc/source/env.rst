@@ -1388,7 +1388,7 @@ Implicitly order NCCL operations from different communicators on the same device
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is 1 (enabled); set to 0 to disable.
+Default is 0 (disabled); set to 1 to enable.
 
 
 NCCL_LAUNCH_RACE_FATAL
