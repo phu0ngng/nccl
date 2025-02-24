@@ -18,7 +18,7 @@ NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 DST_DIR := $(BUILDDIR)/test/mpi
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
-BIN_FILES_LIST := mpi_perf all_reduce_scan
+BIN_FILES_LIST := mpi_perf
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%)
 #ifeq ($(MPI), 1)
 #BIN_FILES += $(BIN_FILES_LIST:%=${DST_DIR}/%_mpi_transport)
