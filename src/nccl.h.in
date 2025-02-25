@@ -21,9 +21,9 @@
 #define NCCL_PATCH ${nccl:Patch}
 #define NCCL_SUFFIX "${nccl:Suffix}"
 #ifdef GITHASH
-#define GIT_COMMIT "(" GITHASH ")"
+#define NCCL_COMMIT "(" GITHASH ")"
 #else
-#define GIT_COMMIT ""
+#define NCCL_COMMIT ""
 #endif
 
 #define NCCL_VERSION_CODE ${nccl:Version}
