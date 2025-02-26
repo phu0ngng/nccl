@@ -72,6 +72,7 @@ typedef struct ncclConfig_v21700 {
   const char *netName;
   int splitShare;
   int trafficClass;
+  const char *commName;
 } ncclConfig_t;
 
 /* Config initializer must be assigned to initialize config structure when it is created.
@@ -87,6 +88,7 @@ typedef struct ncclConfig_v21700 {
   NCCL_CONFIG_UNDEF_PTR,                    /* netName */               \
   NCCL_CONFIG_UNDEF_INT,                    /* splitShare */            \
   NCCL_CONFIG_UNDEF_INT,                    /* trafficClass */          \
+  NCCL_CONFIG_UNDEF_PTR,                    /* commName */              \
 }
 
 /* This struct will be used by ncclGroupSimulateEnd() API to query information about simulation. */

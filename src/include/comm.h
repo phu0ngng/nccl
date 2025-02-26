@@ -452,7 +452,6 @@ struct ncclComm {
 
   uint64_t magic; // Magic number for all network communication. Not a security key -- only goal is to detect mismatches.
 
-  const char* commName;
   uint64_t commHash;
   int rank;    // my rank in the communicator
   int nRanks;  // number of GPUs in communicator
