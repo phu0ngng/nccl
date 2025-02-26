@@ -55,6 +55,11 @@ DEPFILES   := $(LIBOBJ:%.o=%.d) $(BINOBJ:%.o=%.d)
 LDFLAGS    += -L${CUDA_LIB} -l$(CUDARTLIB) -lpthread -lrt -ldl
 INCPLUGIN  := include/plugin
 
+ifeq ($(INCLUDE_GITHASH), 1)
+	GITHASH   := $(shell git describe --always --dirty)
+	CXXFLAGS  += -DGITHASH=\"$(GITHASH)\"
+endif
+
 DEVMANIFEST := $(BUILDDIR)/obj/device/manifest
 
 ##### rules
