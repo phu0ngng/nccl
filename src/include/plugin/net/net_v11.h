@@ -38,6 +38,51 @@ typedef struct {
   size_t maxCollBytes;             // Max transfer size for collective operations
 } ncclNetProperties_v11_t;
 
+#define NCCL_NET_ATTR_INIT { \
+  { -1, -1, -1, -1 }, /* sendCommAttr */ \
+  { -1, -1, -1, -1 }, /* recvCommAttr */ \
+  -1, /* op */ \
+  -1, /* algo */ \
+  -1  /* proto */ \
+}
+
+#define NCCL_NET_ATTR_OP_BROADCAST    (1 << ncclFuncBroadcast)
+#define NCCL_NET_ATTR_OP_REDUCE       (1 << ncclFuncReduce)
+#define NCCL_NET_ATTR_OP_ALLGATHER    (1 << ncclFuncAllGather)
+#define NCCL_NET_ATTR_OP_REDUCESCATTER (1 << ncclFuncReduceScatter)
+#define NCCL_NET_ATTR_OP_ALLREDUCE    (1 << ncclFuncAllReduce)
+#define NCCL_NET_ATTR_OP_SENDRECV     (1 << ncclFuncSendRecv)
+#define NCCL_NET_ATTR_OP_SEND         (1 << ncclFuncSend)
+#define NCCL_NET_ATTR_OP_RECV         (1 << ncclFuncRecv)
+#define NCCL_NET_ATTR_OP_MASK(func)   (1 << (func))
+
+#define NCCL_NET_ATTR_ALGO_TREE     (1 << NCCL_ALGO_TREE)
+#define NCCL_NET_ATTR_ALGO_RING     (1 << NCCL_ALGO_RING)
+#define NCCL_NET_ATTR_ALGO_COLLNET  (1 << NCCL_ALGO_COLLNET)
+#define NCCL_NET_ATTR_ALGO_NVLS     (1 << NCCL_ALGO_NVLS)
+#define NCCL_NET_ATTR_ALGO_NVLS_TREE (1 << NCCL_ALGO_NVLS_TREE)
+#define NCCL_NET_ATTR_ALGO_MASK(algo) (1 << (algo))
+
+#define NCCL_NET_ATTR_PROTO_LL      (1 << NCCL_PROTO_LL)
+#define NCCL_NET_ATTR_PROTO_LL128   (1 << NCCL_PROTO_LL128)
+#define NCCL_NET_ATTR_PROTO_SIMPLE  (1 << NCCL_PROTO_SIMPLE)
+#define NCCL_NET_ATTR_PROTO_MASK(proto) (1 << (proto))
+
+typedef struct {
+  int32_t maxConcurrentPeers;
+  int32_t minConcurrentPeers;
+  int32_t maxFlowsPerPeer;
+  int32_t minFlowsPerPeer;
+} ncclNetCommAttr_v11_t;
+
+typedef struct {
+  ncclNetCommAttr_v11_t sendCommAttr;
+  ncclNetCommAttr_v11_t recvCommAttr;
+  uint32_t op;
+  uint32_t algo;
+  uint32_t proto;
+} ncclNetAttr_v11_t;
+
 typedef struct {
   // Name of the network (mainly for logs)
   const char* name;
@@ -97,6 +142,8 @@ typedef struct {
   ncclResult_t (*makeVDevice)(void* ctx, int* d, ncclNetVDeviceProps_v11_t* props);
   // Finalize the network.
   ncclResult_t (*finalize)(void* ctx);
+
+  ncclResult_t (*setNetAttr)(void* ctx, ncclNetAttr_v11_t* netAttr);
 } ncclNet_v11_t;
 
 typedef struct {
