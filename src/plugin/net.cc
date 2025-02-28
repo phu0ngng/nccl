@@ -39,8 +39,9 @@ enum ncclNetState {
 enum ncclNetState ncclNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 enum ncclNetState ncclCollNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 
+NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 1);
 static pthread_mutex_t netPluginLock = PTHREAD_MUTEX_INITIALIZER;
-static int netPluginRefCount;
+static int netPluginRefCount = ncclParamNetPluginRefCount();
 static void* netPluginLib;
 
 enum {
