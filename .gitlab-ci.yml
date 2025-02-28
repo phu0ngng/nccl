@@ -26,6 +26,8 @@ variables:
   RUN_ON_AWS: "1"
   RUN_ON_EOS: "1"
   RUN_ON_DRACO_OCI: "1"
+  RUN_ON_PRE_NYX: "1"
+  RUN_ON_PRE_TYCHE: "1"
   RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
   PLANNED_RESERVED: "Reserved"
 
@@ -92,6 +94,46 @@ build-eos-aws-oci:
       - build-eos/**/*.o
     expire_in: 48 hrs
 
+build-pre-nyx:
+  stage: build
+  rules:
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+    - when: never
+  tags:
+    - prenyx
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+  script:
+    - docker/make.sh pre-nyx --clean --baremetal-build
+    - mv build build-pre-nyx
+  artifacts:
+    paths:
+      - build-pre-nyx
+    exclude:
+      - build-pre-nyx/**/*.o
+    expire_in: 48 hrs
+
+build-pre-tyche:
+  stage: build
+  rules:
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+  script:
+    - docker/make.sh pre-tyche --clean --baremetal-build
+    - mv build build-pre-tyche
+  artifacts:
+    paths:
+      - build-pre-tyche
+    exclude:
+      - build-pre-tyche/**/*.o
+    expire_in: 48 hrs
+
 fairshare-eos:
   stage: setup
   rules:
@@ -102,7 +144,6 @@ fairshare-eos:
   tags:
     - nccl-eos
   script:
-    - chmod +x test/scripts/gitlab-runner-fairshare.sh
     - ./test/scripts/gitlab-runner-fairshare.sh
 
 fairshare-draco-oci:
@@ -115,7 +156,34 @@ fairshare-draco-oci:
   tags:
     - draco-oci-iad
   script:
-    - chmod +x test/scripts/gitlab-runner-fairshare.sh
+    - ./test/scripts/gitlab-runner-fairshare.sh
+
+fairshare-pre-nyx:
+  stage: setup
+  rules:
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+    - when: never
+  needs: []
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+  tags:
+    - prenyx
+  script:
+    - ./test/scripts/gitlab-runner-fairshare.sh
+
+fairshare-pre-tyche:
+  stage: setup
+  rules:
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs: []
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+  tags:
+    - ptyche
+  script:
     - ./test/scripts/gitlab-runner-fairshare.sh
 
 setup-AWS_H100_EFA:
@@ -483,9 +551,80 @@ unit_tests-draco_oci:
     NCCL_HOME: build-eos
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
-    NO_LOOPBACK_NETWORKING: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-pre-nyx:
+  stage: unit_tests
+  rules:
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-nyx"]
+  tags:
+    - prenyx
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: batch
+    NNODES: 1
+    NGPUS: 8
+    NP: 1
+    NCCL_HOME: build-pre-nyx
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-pre-tyche:
+  stage: unit_tests
+  rules:
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: batch
+    NNODES: 1
+    NGPUS: 4
+    NP: 1
+    NCCL_HOME: build-pre-tyche
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
+    DISABLE_ENQUEUE_TESTS_FIFO: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -826,9 +965,78 @@ apitest-draco_oci:
     NP: 1
     NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
-    NO_LOOPBACK_NETWORKING: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+apitest-pre-nyx:
+  stage: api_tests
+  rules:
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-nyx"]
+  tags:
+    - prenyx
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: batch
+    RUN_MODE: "SRUN_MPI"
+    NNODES: 1
+    NGPUS: 8
+    NP: 1
+    NCCL_HOME: build-pre-nyx
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+apitest-pre-tyche:
+  stage: api_tests
+  rules:
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: batch
+    RUN_MODE: "SRUN_MPI"
+    NNODES: 1
+    NGPUS: 4
+    NP: 1
+    NCCL_HOME: build-pre-tyche
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -958,7 +1166,6 @@ nic-fusion-A40:
     - pushd ext-net/mock
     - make
     - popd
-    - chmod +x ./test/scripts/gitlab-runner-mock-nic-fusion.sh
     - ./test/scripts/gitlab-runner-mock-nic-fusion.sh test/nic-fusion/mock-a40-mixed-graph.xml
   artifacts:
     when: always
@@ -1266,6 +1473,76 @@ perftest_single-draco_oci:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+perftest-single-pre-nyx:
+  stage: perf_tests_single
+  rules:
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-nyx"]
+  tags:
+    - prenyx
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
+    SLURM_TIME: 45
+    SLURM_PARTITION: batch
+    RUN_MODE: "SRUN_MPI"
+    NNODES: 1
+    NGPUS: 8
+    MAX: "1G"
+    NP: 8
+    GRAPH: 0
+    NCCL_HOME: build-pre-nyx
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-single-pre-tyche:
+  stage: perf_tests_single
+  rules:
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
+    SLURM_TIME: 45
+    SLURM_PARTITION: batch
+    RUN_MODE: "SRUN_MPI"
+    NNODES: 1
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    GRAPH: 0
+    NCCL_HOME: build-pre-tyche
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 perftest-multi-gc:
   stage: perf_tests_multi
   rules:
@@ -1562,6 +1839,82 @@ perftest_multi-draco_oci:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+perftest-multi-pre-nyx:
+  stage: perf_tests_multi
+  rules:
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-nyx"]
+  tags:
+    - prenyx
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
+    SLURM_TIME: 45
+    SLURM_PARTITION: batch
+    RUN_MODE: "SRUN_MPI"
+    NGPUS: 8
+    MAX: "1G"
+    NP: 8
+    GRAPH: 0
+    NCCL_HOME: build-pre-nyx
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-multi-pre-tyche:
+  stage: perf_tests_multi
+  rules:
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
+    SLURM_TIME: 45
+    SLURM_PARTITION: batch
+    RUN_MODE: "SRUN_MPI"
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    GRAPH: 0
+    NCCL_HOME: build-pre-tyche
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable ring 1rpn registration tests
+    NO_LOOPBACK_NETWORKING: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 perf-regression-single-DGX-A100:
   stage: perf_regression
   rules:
@@ -1667,6 +2020,4 @@ summarize-pipeline:
   tags:
     - build
   script:
-    - chmod +x test/scripts/gitlab-runner-summary.sh
     - ./test/scripts/gitlab-runner-summary.sh
-

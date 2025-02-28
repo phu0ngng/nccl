@@ -1,22 +1,20 @@
 #!/bin/bash -x
-# use plain docker to build the binaries
+
+# Utility script to build NCCL on different clusters
+# By default, uses the NCCL build tools containers but also supports baremetal builds.
 # provide target cluster name (defaults to the build cluster name)
 # identify build machine/cluster automatically
 function usage() {
-    echo "INFO:  Usage: $0 [ target_cluster_tag ] [ --clean ]"
+    echo "INFO:  Usage: $0 [ target_cluster_tag ] [ --clean ] [ --baremetal-build ]"
     exit 1
 }
 
-function source_cluster_config() {
-    config_file="docker/$1-config.sh"
-    
-    if [ ! -f "$config_file" ]; then
-        echo "ERROR: Config file $config_file is not found."
-        usage
-    fi
-  
-    source $config_file
-}
+if [ ! -d "docker" ]; then
+  echo "Please launch from the top of NCCL source tree"
+  exit 1
+fi
+
+source docker/cluster-utils.sh
 
 function get_nvcc_gencodes() {
     # comma-separated list of numeric gpu_archs
@@ -29,46 +27,24 @@ function get_nvcc_gencodes() {
     echo "$gencode_string"
 }
 
-function identify_build_cluster() {
-    hostname="$(hostname)"
-    
-    if [[ "$hostname" =~ ^gc[01][0-9]$ ]]; then
-        echo "gc"
-	return
-    fi
-
-    if [[ "$hostname" =~ eos.clusters.nvidia.com$ ]]; then
-        echo "eos"
-	return
-    fi
- 
-    if [[ "$hostname" =~ draco-rno-login- ]]; then
-	echo "draco-rno"
-	return
-    fi
-
-    if [[ "$hostname" =~ draco-oci-login- ]]; then
-        echo "draco-oci"
-	return
-    fi
-
-    echo "ERROR: Cluster unknown"
-    exit 1	
-}
-
 # identify build cluster first
-build_cluster_tag="$(identify_build_cluster)"
+build_cluster_tag="$(identify_cluster)"
 
 # arg parsing
 # defaults
 target_cluster_arg="$build_cluster_tag"
 make_clean=0
+baremetal_build=0
 
 for arg in "$@"
 do
     case $arg in
         --clean) make_clean=1
                  ;;
+        --baremetal-build) baremetal_build=1
+                           ;;
+        --help|-h) usage
+                   ;;
         *) target_cluster_arg="$arg"
            ;;
     esac
@@ -87,14 +63,17 @@ for target_cluster_tag in $target_cluster_tags; do
     else
         gpu_arch_list="$(get_gpu_archs),$gpu_arch_list"
     fi
-    # make sure all build image versions are the same
-    if [ -z "$build_image_version" ]; then
-        build_image_version="$(get_build_image_version)"
-    else
-        if [ "$build_image_version" != "$(get_build_image_version)" ]; then
-            echo "ERROR: Build image version mismatch between: $target_cluster_tags"
-	    exit 1
-	fi
+
+    # For container builds, make sure all build image versions are the same
+    if [ "$baremetal_build" -eq 0 ]; then
+        if [ -z "$build_image_version" ]; then
+            build_image_version="$(get_build_image_version)"
+        else
+            if [ "$build_image_version" != "$(get_build_image_version)" ]; then
+                echo "ERROR: Build image version mismatch between: $target_cluster_tags"
+                exit 1
+            fi
+        fi
     fi
 done
 
@@ -105,26 +84,29 @@ if [[ "$target_cluster_arg" != "$build_cluster_tag" ]]; then
     source_cluster_config $build_cluster_tag
 fi
     
-export DOCKER_JOB_COMMAND="$(get_docker_job_command $(hostname))"
-
-if [ ! -d "docker" ]; then
-  echo "Please launch from the top of NCCL source tree"
-  exit 1
-fi
-
 if [[ $make_clean == 1 && -d "build" ]]; then
-    # to be deleted by docker user later on
-    mv build build.old
+    if [ "$baremetal_build" -eq 1 ]; then
+        rm -rf build
+    else
+        # to be deleted by docker user later on
+        mv build build.old
+    fi
 fi
 
 # recreate as needed
 mkdir -p build
 
-# assuming local drives or NFS mounted home dir
-current_dir=$(realpath .)
+export NUM_BUILD_PROCS="$(get_num_build_procs $(hostname))"
 
-# extract file ownership data
-export DOCKER_USER_ID=$(stat --format %u $0)
-export DOCKER_GROUP_ID=$(stat --format %g $0)
+if [ "$baremetal_build" -eq 0 ]; then
+    # assuming local drives or NFS mounted home dir
+    current_dir=$(realpath .)
 
-eval "$(get_build_command $current_dir $build_image_version)"
+    # extract file ownership data
+    export DOCKER_USER_ID=$(stat --format %u $0)
+    export DOCKER_GROUP_ID=$(stat --format %g $0)
+
+    eval "$(get_build_command $current_dir $build_image_version)"
+else
+    eval "$(get_build_command)"
+fi

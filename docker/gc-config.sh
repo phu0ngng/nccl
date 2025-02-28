@@ -44,7 +44,7 @@ function get_run_tools_image() {
 }
 
 # be nice on gc00
-function get_docker_job_command() {
+function get_num_build_procs() {
     hostname="$1"
 
     if [ "$hostname" = "gc00" ]; then
@@ -63,7 +63,7 @@ function get_build_command() {
     # pass in relevant env vars
     echo "docker run --rm \
         -e NVCC_GENCODE \
-        -e DOCKER_JOB_COMMAND \
+        -e NUM_BUILD_PROCS \
         --user ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} \
         -v ${current_dir}:/nccl \
         $build_tools_image \

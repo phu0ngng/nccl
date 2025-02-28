@@ -54,7 +54,7 @@ function get_slurm_account() {
     echo "$EOS_SLURM_ACCOUNT"
 }
 
-function get_docker_job_command() {
+function get_num_build_procs() {
     # ignore the arg
     echo "nproc"
 }
