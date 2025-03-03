@@ -29,6 +29,8 @@ Example:
 "
 }
 
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # CLI args
 initial_commit=$1
 if [ "$initial_commit" == "" ]; then
@@ -103,6 +105,17 @@ if [[ "$load_checkpoint" == "" || "$load_checkpoint" == "-" ]]; then
 fi
 echo "load_checkpoint=$load_checkpoint"
 
+if [ "$NVCC_GENCODE" == "" ] && command -v nvidia-smi &> /dev/null; then
+    gencode_flags=""
+
+    for arch in $(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | sort -Vu | sed 's/\.//g'); do
+        gencode_flags+="-gencode=arch=compute_${arch},code=sm_${arch} "
+    done
+
+    export NVCC_GENCODE=$gencode_flags
+fi
+echo "NVCC_GENCODE=$NVCC_GENCODE"
+
 # Copy NCCL to staging dir to avoid altering src repo
 if [ $load_checkpoint -eq 0 ]; then
     echo "Deleting $NCCL_SRC_DIR/build*"
@@ -110,22 +123,22 @@ if [ $load_checkpoint -eq 0 ]; then
     echo "Deleting $NCCL_TMP_DIR"
     rm -rf $NCCL_TMP_DIR
     echo "Copying $NCCL_SRC_DIR to $NCCL_TMP_DIR"
-    mkdir $NCCL_TMP_DIR
+    mkdir -p $NCCL_TMP_DIR
     cp -r $NCCL_SRC_DIR $NCCL_TMP_DIR
 fi
 NCCL_TMP_DIR=$NCCL_TMP_DIR/nccl
 
-# Use the tmp nccl repo as a working
+# Use the tmp nccl repo as a working directory
 echo "Moving to $NCCL_TMP_DIR"
 pushd $NCCL_TMP_DIR
 git reset --hard
 
-git rev-list --first-parent --oneline $initial_commit..$final_commit > $NCCL_TMP_DIR/commits-oneline.txt
+git rev-list --first-parent --oneline $initial_commit..$final_commit -- src/* > commits-oneline.txt
 echo "Performing a bisection over the following set of commits:"
-nl -b a $NCCL_TMP_DIR/commits-oneline.txt
+nl -b a commits-oneline.txt
 
-git rev-list --first-parent --abbrev-commit $initial_commit..$final_commit > $NCCL_TMP_DIR/commits.txt
-count=$(git rev-list --first-parent --count $initial_commit..$final_commit)
+git rev-list --first-parent --abbrev-commit $initial_commit..$final_commit -- src/* > commits.txt
+count=$(git rev-list --first-parent --count $initial_commit..$final_commit -- src/*)
 first=0
 last=$count
 
@@ -177,7 +190,7 @@ while [ $commit_num_low -ne $commit_num_high ]; do
 
     # Get a good build
     while [ 1 ] ; do
-        commit=$(head -$commit_num_mid $NCCL_TMP_DIR/commits.txt | tail -1 )
+        commit=$(head -$commit_num_mid commits.txt | tail -1 )
         git checkout $commit 2> /dev/null
         d="build-$commit_num_mid-$commit"
         echo "$(date) Checking out and building commit#$commit_num_mid out of $last: $(git show --oneline -s)"
@@ -200,7 +213,7 @@ while [ $commit_num_low -ne $commit_num_high ]; do
         $MPI_HOME/bin/mpirun -q --bind-to numa $TEST_HOME/$repro >> "$d/$repro.txt"
     done
 
-    ./test/scripts/perf_regression.py old="build-0-$initial_commit/$repro.txt" new="$d/$repro.txt" threshold=$threshold rmad_threshold=0.2
+    ${BASE_DIR}/perf_regression.py old="build-0-$initial_commit/$repro.txt" new="$d/$repro.txt" threshold=$threshold rmad_threshold=0.2
     regression=$?
     if [ $regression -eq 0 ]; then
         # The final commit is the first line, so to search closer to the present, decrease the number
@@ -231,14 +244,14 @@ if [ $last_regression -eq -1 ]; then
     echo "No regressions found between $initial_commit and $last_commit"
 else
     let commit_num_mid=$last_regression
-    commit=$(head -$commit_num_mid $NCCL_TMP_DIR/commits.txt | tail -1 )
+    commit=$(head -$commit_num_mid commits.txt | tail -1 )
     echo "$(date) Checking out commit#$commit_num_mid out of $last, hash=$commit"
     git checkout $commit 2> /dev/null
     echo "$(date) Suspected regression:"
     git show --oneline -s
     d="build-$commit_num_mid-$commit"
     # Show this regression data one last time
-    ./test/scripts/perf_regression.py old="build-0-$initial_commit/$repro.txt" new="$d/$repro.txt" threshold=$threshold rmad_threshold=0.2
+    ${BASE_DIR}/perf_regression.py old="build-0-$initial_commit/$repro.txt" new="$d/$repro.txt" threshold=$threshold rmad_threshold=0.2
 fi
 
 popd
