@@ -516,57 +516,60 @@ void printPerCollPerf(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t 
   }
 }
 
+void getFloatStr(double value, int width, char* str) {
+  int power = 0;
+  for (uint64_t val = 1; value >= val; val *= 10) power++;
+
+  if (power < width-2) sprintf(str, "%*.2f", width, value);
+  else if (power < width-1) sprintf(str, "%*.1f", width, value);
+  else if (power < width+1) sprintf(str, "%*.0f", width, value);
+  else if (width >= 7) sprintf(str, "%*.1e", width, value);
+  else if (width >= 8) sprintf(str, "%*.2e", width, value);
+  else sprintf(str, "%*.0e", width, value);
+}
 
 // Write the performance-related payload to stdout/json.
 // We call this function twice at the top level per test: once for out-of-place, and once for in-place.
 // The Json output assumes out-of-place happens first.
 void writeBenchmarkLineBody(double timeUsec, double totalTime, double algBw, double busBw, double sideBw, bool reportErrors, int64_t wrongElts, bool report_cputime, bool out_of_place, bool simulate) {
-  char timeStr[100];
-  if (timeUsec >= 10000.0) {
-    sprintf(timeStr, "%7.0f", timeUsec);
-  } else if (timeUsec >= 100.0) {
-    sprintf(timeStr, "%7.1f", timeUsec);
-  } else {
-    sprintf(timeStr, "%7.2f", timeUsec);
-  }
+  char timeStr[8];
+  getFloatStr(timeUsec, 7, timeStr);
 
-  char estTimeStr[100];
-  if (simulate) {
-    if (totalTime >= 10000.0) {
-      sprintf(estTimeStr, "%7.0f", totalTime);
-    } else if (totalTime >= 100.0) {
-      sprintf(estTimeStr, "%7.1f", totalTime);
-    } else {
-      sprintf(estTimeStr, "%7.2f", totalTime);
-    }
-  }
+  char estTimeStr[8];
+  if (simulate) getFloatStr(totalTime, 7, estTimeStr);
+
+  char algBwStr[7];
+  getFloatStr(algBw, 6, algBwStr);
+
+  char busBwStr[7];
+  getFloatStr(busBw, 6, busBwStr);
 
   if (reportErrors) {
     if (simulate) {
       if (side_comp == 1) {
-        PRINT("  %7s  %6.2f  %6.2f  %6g %6.2f %9s", timeStr, algBw, busBw, (double)wrongElts, sideBw, estTimeStr);
+        PRINT("  %7s  %6s  %6s  %6g %6.2f %9s", timeStr, algBwStr, busBwStr, (double)wrongElts, sideBw, estTimeStr);
       } else {
-        PRINT("  %7s  %6.2f  %6.2f  %6g %9s", timeStr, algBw, busBw, (double)wrongElts, estTimeStr);
+        PRINT("  %7s  %6s  %6s  %6g %9s", timeStr, algBwStr, busBwStr, (double)wrongElts, estTimeStr);
       }
     } else {
       if (side_comp == 1) {
-        PRINT("  %7s  %6.2f  %6.2f  %6g %6.2f", timeStr, algBw, busBw, (double)wrongElts, sideBw);
+        PRINT("  %7s  %6s  %6s  %6g %6.2f", timeStr, algBwStr, busBwStr, (double)wrongElts, sideBw);
       } else {
-        PRINT("  %7s  %6.2f  %6.2f  %6g", timeStr, algBw, busBw, (double)wrongElts);
+        PRINT("  %7s  %6s  %6s  %6g", timeStr, algBwStr, busBwStr, (double)wrongElts);
       }
     }
   } else {
     if (simulate) {
       if (side_comp == 1) {
-        PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f %9s", timeStr, algBw, busBw, sideBw, estTimeStr);
+        PRINT("  %7s  %6s  %6s    N/A %6.2f %9s", timeStr, algBwStr, busBwStr, sideBw, estTimeStr);
       } else {
-        PRINT("  %7s  %6.2f  %6.2f    N/A %9s", timeStr, algBw, busBw, estTimeStr);
+        PRINT("  %7s  %6s  %6s    N/A %9s", timeStr, algBwStr, busBwStr, estTimeStr);
       }
     } else {
       if (side_comp == 1) {
-        PRINT("  %7s  %6.2f  %6.2f    N/A %6.2f", timeStr, algBw, busBw, sideBw);
+        PRINT("  %7s  %6s  %6s    N/A %6.2f", timeStr, algBwStr, busBwStr, sideBw);
       } else {
-        PRINT("  %7s  %6.2f  %6.2f    N/A", timeStr, algBw, busBw);
+        PRINT("  %7s  %6s  %6s    N/A", timeStr, algBwStr, busBwStr);
       }
     }
   }
