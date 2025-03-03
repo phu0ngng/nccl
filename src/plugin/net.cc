@@ -39,9 +39,12 @@ enum ncclNetState {
 enum ncclNetState ncclNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 enum ncclNetState ncclCollNetStates[NCCL_NET_MAX_PLUGINS] = { ncclNetStateInit, ncclNetStateInit, ncclNetStateInit };
 
+NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 1);
 static pthread_mutex_t netPluginLock = PTHREAD_MUTEX_INITIALIZER;
-static int netPluginRefCount;
 static void* netPluginLib;
+
+static int netPluginRefCount;
+static void initNetPluginRefCountOnce(void) { netPluginRefCount = ncclParamNetPluginRefCount();}
 
 enum {
   netPluginLoadFailed  = -1,
@@ -52,6 +55,9 @@ enum {
 static int netPluginStatus = netPluginLoadReady;
 
 ncclResult_t ncclNetPluginLoad(struct ncclComm* comm) {
+  static pthread_once_t netPluginRefCountOnce = PTHREAD_ONCE_INIT;
+  pthread_once(&netPluginRefCountOnce, initNetPluginRefCountOnce);
+
   pthread_mutex_lock(&netPluginLock);
   if (netPluginLoadFailed == netPluginStatus) {
     goto exit;
