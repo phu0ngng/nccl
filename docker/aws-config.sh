@@ -49,6 +49,7 @@ function configure_efa() {
 
 function configure_test_env() {
     configure_efa
+    export SALLOC_EXCLUSIVE="--exclusive"
 }
 
 function get_planned_reserved() {
