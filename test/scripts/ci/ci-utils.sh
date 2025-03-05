@@ -65,7 +65,7 @@ function make_run_command() {
     if [ "$run_mode" = "CMD" ]; then
         echo ""
     elif [ "$run_mode" = "SALLOC_MPI" ]; then
-        run_mode_cmd="salloc -N ${NNODES} --ntasks-per-node ${NGPUS} -t ${SLURM_TIME}"
+        run_mode_cmd="salloc -N ${NNODES} --ntasks-per-node ${NGPUS} -t ${SLURM_TIME} --exclusive"
         if [ "$SLURM_PARTITION" != "" ]; then
             run_mode_cmd+=" -p $SLURM_PARTITION"
         fi
