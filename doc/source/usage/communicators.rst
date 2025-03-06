@@ -151,6 +151,8 @@ Related links:
 
  * :c:func:`ncclCommSplit`
 
+.. _multi-thread-concurrent-usage:
+
 Using multiple NCCL communicators concurrently
 ----------------------------------------------
 
@@ -430,7 +432,7 @@ TC is specified during communicator creation using :ref:`ncclconfig`.
   config.trafficClass = 1;
   CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
 
-Infiniband networks support QoS through the use of Service Levels (SL). Each IB SL 
+Infiniband networks support QoS through the use of Service Levels (SL). Each IB SL
 is mapped to Virtual Lane (VL), which defines the relative priority of traffic. SL
 behavior is defined within the subnet manager, such as OpenSM. Refer to subnet
 manager documentation for more detail. An example configuration is shown below.
@@ -447,11 +449,11 @@ manager documentation for more detail. An example configuration is shown below.
   max_op_vls 2
   ....
 
-The example defines one low priority and one high priority VL which 
-are mapped to SL 0 and 1, respectively. The high priority SL will be 
-given a larger share of network bandwidth at each port. In NCCL, the 
-communicator's traffic class corresponds to the SL on IB networks. Using 
-this configuration, applications can assign TC 0 to low-priority communicators 
+The example defines one low priority and one high priority VL which
+are mapped to SL 0 and 1, respectively. The high priority SL will be
+given a larger share of network bandwidth at each port. In NCCL, the
+communicator's traffic class corresponds to the SL on IB networks. Using
+this configuration, applications can assign TC 0 to low-priority communicators
 and TC 1 to high-priority ones.
 
 On RoCE networks, the NCCL communicator trafficClass is interpreted as an IP
