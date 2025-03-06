@@ -11,11 +11,70 @@ static ncclProfiler_t ncclProfiler;
 static ncclProfiler_v3_t* ncclProfiler_v3;
 
 static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclProfilerEventDescr_t* eDescr) {
-  return ncclProfiler_v3->startEvent(context, eHandle, (ncclProfilerEventDescr_v3_t*)eDescr);
+  *eHandle = nullptr;
+  ncclProfilerEventDescr_v3_t eDescr_v3 = { };
+  eDescr_v3.type = eDescr->type;
+  eDescr_v3.parentObj = eDescr->parentObj;
+  eDescr_v3.rank = eDescr->rank;
+  switch(eDescr->type) {
+    case ncclProfileGroup: break;
+    case ncclProfileColl: {
+      eDescr_v3.coll.name = eDescr->coll.name;
+      eDescr_v3.coll.commHash = eDescr->coll.commHash;
+      eDescr_v3.coll.seqNumber = eDescr->coll.seqNumber;
+      eDescr_v3.coll.func = eDescr->coll.func;
+      eDescr_v3.coll.sendBuff = eDescr->coll.sendBuff;
+      eDescr_v3.coll.recvBuff = eDescr->coll.recvBuff;
+      eDescr_v3.coll.count = eDescr->coll.count;
+      eDescr_v3.coll.root = eDescr->coll.root;
+      eDescr_v3.coll.datatype = eDescr->coll.datatype;
+      eDescr_v3.coll.nMaxChannels = eDescr->coll.nMaxChannels;
+      eDescr_v3.coll.nWarps = eDescr->coll.nWarps;
+      eDescr_v3.coll.algo = eDescr->coll.algo;
+      eDescr_v3.coll.proto = eDescr->coll.proto;
+    } break;
+    case ncclProfileP2p: {
+      eDescr_v3.p2p.name = eDescr->p2p.name;
+      eDescr_v3.p2p.commHash = eDescr->p2p.commHash;
+      eDescr_v3.p2p.func = eDescr->p2p.func;
+      eDescr_v3.p2p.buff = eDescr->p2p.buff;
+      eDescr_v3.p2p.count = eDescr->p2p.count;
+      eDescr_v3.p2p.datatype = eDescr->p2p.datatype;
+      eDescr_v3.p2p.peer = eDescr->p2p.peer;
+    } break;
+    case ncclProfileProxyOp: {
+      eDescr_v3.proxyOp.pid = eDescr->proxyOp.pid;
+      eDescr_v3.proxyOp.channelId = eDescr->proxyOp.channelId;
+      eDescr_v3.proxyOp.peer = eDescr->proxyOp.peer;
+      eDescr_v3.proxyOp.nSteps = eDescr->proxyOp.nSteps;
+      eDescr_v3.proxyOp.chunkSize = eDescr->proxyOp.chunkSize;
+      eDescr_v3.proxyOp.isSend = 0; // removed in v4
+    } break;
+    case ncclProfileProxyStep: {
+      eDescr_v3.proxyStep.step = eDescr->proxyStep.step;
+    } break;
+    case ncclProfileProxyCtrl: break;
+    case ncclProfileKernelCh: {
+      eDescr_v3.kernelCh.channelId = eDescr->kernelCh.channelId;
+    } break;
+    case ncclProfileNetPlugin: {
+      eDescr_v3.netPlugin.id = eDescr->netPlugin.id;
+      eDescr_v3.netPlugin.data = eDescr->netPlugin.data;
+    } break;
+    default: return ncclSuccess;
+  }
+  return ncclProfiler_v3->startEvent(context, eHandle, &eDescr_v3);
 }
 
 static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_t* eStateArgs) {
-  return ncclProfiler_v3->recordEventState(eHandle, (ncclProfilerEventState_v3_t)eState, (ncclProfilerEventStateArgs_v3_t*)eStateArgs);
+  // event states after ProxyCtrlAppendEnd are introduced in v4 and not supported by older plugins
+  if (eState > ncclProfilerProxyCtrlAppendEnd) return ncclSuccess;
+  // proxy event state arguments after v4 have changed and no longer supported by older plugins
+  if (eState < ncclProfilerProxyCtrlIdle) return ncclSuccess;
+  // if we get here we are recording ProxyCtrl states
+  ncclProfilerEventStateArgs_v3_t args = { };
+  args.proxyCtrl.appendedProxyOps = eStateArgs->proxyCtrl.appendedProxyOps;
+  return ncclProfiler_v3->recordEventState(eHandle, eState, &args);
 }
 
 static ncclResult_t ncclProfiler_init(void** context, int* eActivationMask) {
