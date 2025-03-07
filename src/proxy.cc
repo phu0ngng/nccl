@@ -20,6 +20,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sched.h>
+#include <algorithm>
 
 #define NCCL_MAX_PROXY_CONNECTIONS (NCCL_MAX_LOCAL_RANKS+1)
 
@@ -386,6 +387,8 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   sub->workCounter = op->workCounter;
   args->nsubs = subIndex+1;
   if (subIndex) {
+    args->nChannels = std::min(args->nChannels, op->nChannels);
+    args->nPeers = std::min(args->nPeers, op->nPeers);
     if ((args->sliceSteps != op->sliceSteps) ||
         (args->chunkSteps != op->chunkSteps) ||
         (args->protocol != op->protocol) ||
@@ -413,6 +416,8 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   args->protocol = op->protocol;
   args->coll = op->coll;
   args->algorithm = op->algorithm;
+  args->nChannels = op->nChannels;
+  args->nPeers = op->nPeers;
   args->specifics = op->specifics;
   args->state = ncclProxyOpReady;
   args->progress = op->connection->tcomm->proxyProgress;

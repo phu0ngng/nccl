@@ -741,5 +741,6 @@ ncclNet_t ncclNetSocket = {
   NULL /* getDeviceMr */,
   NULL /* irecvConsumed */,
   NULL /* mergeDevices */,
-  ncclNetSocketFinalize
+  ncclNetSocketFinalize,
+  NULL /* setNetAttr */,
 };

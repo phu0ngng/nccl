@@ -185,7 +185,7 @@ static ncclResult_t ncclNet_init(void** ctx __attribute__((unused)),
   ncclNet.irecvConsumed = ncclNet_v8->irecvConsumed;
   ncclNet.makeVDevice   = NULL;
   ncclNet.finalize = ncclNet_finalize;
-  ncclNet.setNetAttr = NULL;
+  ncclNet.setNetAttr = nullptr;
   return ncclSuccess;
 }
 

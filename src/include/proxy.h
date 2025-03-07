@@ -81,6 +81,8 @@ struct ncclProxyOp {
   int isOneRPN;
   RingAlgorithm *ringAlgo;
   union ncclProxyOpSpecifics specifics;
+  int nChannels;
+  int nPeers;
 
   // Profiler plugin
   union {
@@ -180,6 +182,8 @@ struct ncclProxyArgs {
   int state;
   char* sharedBuff[NCCL_STEPS];
   int sharedSize[NCCL_STEPS];
+  int nChannels;
+  int nPeers;
 
   int idle;
 

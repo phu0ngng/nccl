@@ -70,7 +70,7 @@ static ncclResult_t ncclNet_init(void** ctx __attribute__((unused)),
   ncclNet.irecvConsumed = ncclNet_v10->irecvConsumed;
   ncclNet.makeVDevice = (ncclNet_v10->makeVDevice) ? ncclNet_makeVDevice : nullptr;
   ncclNet.finalize = ncclNet_finalize;
-  ncclNet.setNetAttr = NULL;
+  ncclNet.setNetAttr = nullptr;
   return ncclSuccess;
 }
 
