@@ -29,11 +29,19 @@ variables:
   RUN_ON_DRACO_OCI: "1"
   RUN_ON_PRE_NYX: "1"
   RUN_ON_PRE_TYCHE: "1"
-  RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
+  RUN_ON_A100: "1"
+  RUN_ON_P100: "1"
+  RUN_ON_A40: "1"
+  RUN_ON_P40: "1"
+  RUN_ON_GP100: "1"
+  RUN_UNIT_TESTS: "1"
+  RUN_API_TESTS: "1"
+  RUN_PERF_TESTS_SINGLE: "1"
+  RUN_PERF_TESTS_MULTIPLE: "1"
   PLANNED_RESERVED: "Reserved"
   RUN_DLFW_TESTS: "1"
-  RUN_EOS_APITEST: "1"
   RUN_ON_IPP6: "1"
+  TRIGGER_PIPELINE: "default"
 
 default:
   # set all jobs to interruptible by default
@@ -52,6 +60,7 @@ workflow:
     - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
       auto_cancel:
         on_new_commit: none
+    - if: $TRIGGER_PIPELINE == "default"
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
 
 # verify that setting TRACE=1 does not break compile
@@ -59,7 +68,7 @@ workflow:
 build-trace:
   stage: build
   rules:
-    - if: $BUILD_TRACE == "1" || $CI_PIPELINE_SOURCE == 'schedule'
+    - if: ($TRIGGER_PIPELINE == "default") && ($BUILD_TRACE == "1" || $CI_PIPELINE_SOURCE == 'schedule')
       when: always
     - when: never
   tags:
@@ -71,6 +80,10 @@ build-trace:
 
 build-classic:
   stage: build
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1")
+      when: always
+    - when: never
   tags:
     - build-with-docker
   script:
@@ -86,7 +99,7 @@ build-classic:
 build-ipp6:
   stage: build
   rules:
-    - if: $RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   tags:
@@ -107,7 +120,7 @@ build-ipp6:
 build-pre-tyche:
   stage: build
   rules:
-    - if: $RUN_ON_PRE_TYCHE == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1"
       when: always
     - when: never
   tags:
@@ -127,7 +140,7 @@ build-pre-tyche:
 build-dlfw-pytorch-container:
   stage: build
   rules:
-    - if: $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
       when: always
     - when: never
   tags:
@@ -147,7 +160,7 @@ build-dlfw-pytorch-container:
 fairshare-eos:
   stage: setup
   rules:
-    - if: $RUN_ON_EOS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1"
       when: always
     - when: never
   needs: []
@@ -161,7 +174,7 @@ fairshare-eos:
 fairshare-draco-oci:
   stage: setup
   rules:
-    - if: $RUN_ON_DRACO_OCI == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1"
       when: always
     - when: never
   needs: []
@@ -173,7 +186,7 @@ fairshare-draco-oci:
 fairshare-pre-nyx:
   stage: setup
   rules:
-    - if: $RUN_ON_PRE_NYX == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
   needs: []
@@ -187,7 +200,7 @@ fairshare-pre-nyx:
 fairshare-pre-tyche:
   stage: setup
   rules:
-    - if: $RUN_ON_PRE_TYCHE == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1"
       when: always
     - when: never
   needs: []
@@ -201,7 +214,7 @@ fairshare-pre-tyche:
 setup-AWS_H100_EFA:
   stage: setup
   rules:
-    - if: $RUN_ON_AWS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1"
       when: always
     - when: never
   tags:
@@ -223,7 +236,9 @@ setup-AWS_H100_EFA:
 health-P100:
   stage: health
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_P100 == "1" || ($RUN_ON_P40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"))
+      when: always
+    - when: never
   needs: []
   tags:
     - p100
@@ -233,7 +248,9 @@ health-P100:
 health-P40:
   stage: health
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_P40 == "1" || ($RUN_ON_P100 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"))
+      when: always
+    - when: never
   needs: []
   tags:
     - p40
@@ -243,7 +260,9 @@ health-P40:
 health-GP100:
   stage: health
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_GP100 == "1"
+      when: always
+    - when: never
   needs: []
   tags:
     - gp100
@@ -253,7 +272,9 @@ health-GP100:
 health-A40:
   stage: health
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1"
+      when: always
+    - when: never
   needs: []
   tags:
     - a40
@@ -263,7 +284,9 @@ health-A40:
 health-A100:
   stage: health
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1"
+      when: always
+    - when: never
   needs: []
   tags:
     - a100pci
@@ -273,7 +296,9 @@ health-A100:
 unit_tests-P100:
   stage: unit_tests
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
   needs: ["build-classic","health-P100"]
   tags:
     - p100
@@ -287,6 +312,18 @@ unit_tests-P100:
     NP: 1
     NCCL_HOME: build-gc
     RUN_MODE: "SALLOC_MPI"
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -303,7 +340,9 @@ unit_tests-P100:
 unit_tests-P40:
   stage: unit_tests
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P40 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
   needs: ["build-classic","health-P40"]
   tags:
     - p40
@@ -317,6 +356,18 @@ unit_tests-P40:
     NP: 1
     NCCL_HOME: build-gc
     RUN_MODE: "SALLOC_MPI"
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -333,7 +384,9 @@ unit_tests-P40:
 unit_tests-GP100:
   stage: unit_tests
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_GP100 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
   needs: ["build-classic","health-GP100"]
   tags:
     - gp100
@@ -347,6 +400,18 @@ unit_tests-GP100:
     NP: 1
     NCCL_HOME: build-gc
     RUN_MODE: "SALLOC_MPI"
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -363,7 +428,9 @@ unit_tests-GP100:
 unit_tests-A40-single:
   stage: unit_tests
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
   needs: ["build-classic","health-A40"]
   tags:
     - a40
@@ -377,8 +444,18 @@ unit_tests-A40-single:
     NP: 1
     NCCL_HOME: build-gc
     RUN_MODE: "SALLOC_MPI"
-    DISABLE_MEMLEAK_DEFAULT: 1
-    DISABLE_MEMLEAK_NETWORK: 1
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 0
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 0
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -395,8 +472,10 @@ unit_tests-A40-single:
 unit_tests-A40-dual:
   stage: unit_tests
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-A40"]
   tags:
     - a40
   variables:
@@ -409,7 +488,18 @@ unit_tests-A40-dual:
     NP: 1
     NCCL_HOME: build-gc
     RUN_MODE: "SALLOC_MPI"
-    DISABLE_MEMLEAK_NETWORK: 1
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 0
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -426,7 +516,9 @@ unit_tests-A40-dual:
 unit_tests-A100:
   stage: unit_tests
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
   needs: ["build-classic","health-A100"]
   tags:
     - a100pci
@@ -440,6 +532,18 @@ unit_tests-A100:
     NP: 1
     NCCL_HOME: build-gc
     RUN_MODE: "SALLOC_MPI"
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 0
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -456,7 +560,7 @@ unit_tests-A100:
 unit_tests-eos:
   stage: unit_tests
   rules:
-    - if: $RUN_ON_EOS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -475,9 +579,23 @@ unit_tests-eos:
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     DISABLE_MEMLEAK: "0" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
+    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+    ENQUEUE_TESTS_ARGS: 1
+    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
+    ENQUEUE_TESTS_FIFO: 0
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -497,7 +615,7 @@ unit_tests-eos:
 unit_tests-AWS_H100_EFA:
   stage: unit_tests
   rules:
-    - if: $RUN_ON_AWS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -511,6 +629,18 @@ unit_tests-AWS_H100_EFA:
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-unit.sh
     JUNIT: junit_results_unit.xml
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 0
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 0
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -553,8 +683,9 @@ unit_tests-AWS_H100_EFA:
 unit_tests-draco_oci:
   stage: unit_tests
   rules:
-    - if: $RUN_ON_DRACO_OCI == "1" && $RUN_UNIT_API_TESTS_ON_DRACO_OCI == "1"
-      when: always
+    # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
+    #    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1" && $RUN_UNIT_TESTS == "1"
+    #      when: always
     - when: never
   needs:
     - build-ipp6
@@ -570,6 +701,18 @@ unit_tests-draco_oci:
     NCCL_HOME: build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -589,7 +732,7 @@ unit_tests-draco_oci:
 unit_tests-pre-nyx:
   stage: unit_tests
   rules:
-    - if: $RUN_ON_PRE_NYX == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -608,6 +751,19 @@ unit_tests-pre-nyx:
     NCCL_HOME: build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
+    ENQUEUE_TESTS_ARGS: 1
+    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
+    ENQUEUE_TESTS_FIFO: 0
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -627,7 +783,7 @@ unit_tests-pre-nyx:
 unit_tests-pre-tyche:
   stage: unit_tests
   rules:
-    - if: $RUN_ON_PRE_TYCHE == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -645,8 +801,19 @@ unit_tests-pre-tyche:
     NCCL_HOME: build-pre-tyche
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
+    ENQUEUE_TESTS_ARGS: 1
     # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
-    DISABLE_ENQUEUE_TESTS_FIFO: 1
+    ENQUEUE_TESTS_FIFO: 0
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -664,7 +831,7 @@ unit_tests-pre-tyche:
 unit_tests-ipp6-a100:
   stage: unit_tests
   rules:
-    - if: $RUN_ON_IPP6 == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -704,8 +871,10 @@ unit_tests-ipp6-a100:
 apitest-P100:
   stage: api_tests
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1" && $RUN_API_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-P100"]
   tags:
     - p100
   variables:
@@ -718,6 +887,9 @@ apitest-P100:
     NGPUS: 8
     NP:    1
     NCCL_HOME: build-gc
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -734,8 +906,10 @@ apitest-P100:
 apitest-P40:
   stage: api_tests
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P40 == "1" && $RUN_API_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-P40"]
   tags:
     - p40
   variables:
@@ -748,6 +922,9 @@ apitest-P40:
     NGPUS: 8
     NP:    1
     NCCL_HOME: build-gc
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -764,8 +941,10 @@ apitest-P40:
 apitest-GP100:
   stage: api_tests
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_GP100 == "1" && $RUN_API_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-GP100"]
   tags:
     - gp100
   variables:
@@ -781,6 +960,9 @@ apitest-GP100:
     # The NIC direct is not symmetric for rank 0 and 7; graph registration for sendrecv on rank 0 would
     # succeed but would fail on rank 7, this can cause hang.
     NCCL_GRAPH_REGISTER: 0
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -797,8 +979,10 @@ apitest-GP100:
 apitest-A40:
   stage: api_tests
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_API_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-A40"]
   tags:
     - a40
   variables:
@@ -811,6 +995,9 @@ apitest-A40:
     NGPUS: 2
     NP:    1
     NCCL_HOME: build-gc
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -827,8 +1014,10 @@ apitest-A40:
 apitest-A100:
   stage: api_tests
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1" && $RUN_API_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-A100"]
   tags:
     - a100pci
   variables:
@@ -841,6 +1030,9 @@ apitest-A100:
     NGPUS: 8
     NP:    1
     NCCL_HOME: build-gc
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -857,7 +1049,7 @@ apitest-A100:
 apitest-DGX-1V:
   stage: api_tests
   rules:
-    - if: $RUN_ON_DRACO == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1"
       when: always
     - when: never
   needs:
@@ -869,6 +1061,9 @@ apitest-DGX-1V:
     PARTITION_LIST: "batch_short_dgx1_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -882,7 +1077,7 @@ apitest-DGX-1V:
 apitest-DGX-2:
   stage: api_tests
   rules:
-    - if: $RUN_ON_DRACO == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1"
       when: always
     - when: never
   needs:
@@ -894,6 +1089,9 @@ apitest-DGX-2:
     PARTITION_LIST: "batch_short_dgx2h_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -907,7 +1105,7 @@ apitest-DGX-2:
 apitest-DGX-A100:
   stage: api_tests
   rules:
-    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
   needs:
@@ -919,6 +1117,9 @@ apitest-DGX-A100:
     NCCL_SOCKET_IFNAME: "ibp12s0"
     NCCL_CUMEM_ENABLE: "1"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -932,7 +1133,7 @@ apitest-DGX-A100:
 apitest-eos:
   stage: api_tests
   rules:
-    - if: $RUN_ON_EOS == "1" && $RUN_EOS_APITEST == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -952,6 +1153,9 @@ apitest-eos:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -971,7 +1175,7 @@ apitest-eos:
 apitest-AWS_H100_EFA:
   stage: api_tests
   rules:
-    - if: $RUN_ON_AWS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -985,6 +1189,9 @@ apitest-AWS_H100_EFA:
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-api.sh
     JUNIT: junit_results_apitest.xml
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 0 # NvBug 5210770
+    API_TESTS_NETWORK: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -994,7 +1201,6 @@ apitest-AWS_H100_EFA:
       export SLURM_PARTITION=compute
       export NNODES=1
       export NGPUS=8
-      export SKIP_API_NO_P2P=1 # NvBug 5210770
       export NP=1
       export NCCL_HOME=build
       export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
@@ -1026,8 +1232,9 @@ apitest-AWS_H100_EFA:
 apitest-draco_oci:
   stage: api_tests
   rules:
-    - if: $RUN_ON_DRACO_OCI == "1" && $RUN_UNIT_API_TESTS_ON_DRACO_OCI == "1"
-      when: always
+    # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
+    #    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1" && $RUN_API_TESTS == "1"
+    #      when: always
     - when: never
   needs:
     - build-ipp6
@@ -1044,6 +1251,9 @@ apitest-draco_oci:
     NP: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -1063,7 +1273,7 @@ apitest-draco_oci:
 apitest-pre-nyx:
   stage: api_tests
   rules:
-    - if: $RUN_ON_PRE_NYX == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -1082,6 +1292,9 @@ apitest-pre-nyx:
     NP: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -1101,7 +1314,7 @@ apitest-pre-nyx:
 apitest-pre-tyche:
   stage: api_tests
   rules:
-    - if: $RUN_ON_PRE_TYCHE == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -1119,6 +1332,9 @@ apitest-pre-tyche:
     NP: 1
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1136,7 +1352,7 @@ apitest-pre-tyche:
 apitest-ipp6-a100:
   stage: api_tests
   rules:
-    - if: $RUN_ON_IPP6 == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -1176,8 +1392,10 @@ apitest-ipp6-a100:
 perftest-P100:
   stage: perf_tests_single
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-P100"]
   tags:
     - p100
   variables:
@@ -1210,8 +1428,10 @@ perftest-P100:
 perftest-P40:
   stage: perf_tests_single
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-P40"]
   tags:
     - p40
   variables:
@@ -1244,8 +1464,10 @@ perftest-P40:
 perftest-GP100:
   stage: perf_tests_single
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_GP100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-GP100"]
   tags:
     - gp100
   variables:
@@ -1278,7 +1500,9 @@ perftest-GP100:
 nic-fusion-A40:
   stage: perf_tests_single
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+      when: always
+    - when: never
   needs: [build-classic, apitest-A40]
   tags:
     - a40
@@ -1303,8 +1527,10 @@ nic-fusion-A40:
 perftest-A40:
   stage: perf_tests_single
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-A40"]
   tags:
     - a40
   variables:
@@ -1337,8 +1563,10 @@ perftest-A40:
 multi-perftest-A40:
   stage: perf_tests_multi
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-A40"]
   tags:
     - a40
   variables:
@@ -1371,8 +1599,10 @@ multi-perftest-A40:
 perftest-A100:
   stage: perf_tests_single
   rules:
-    - when: always
-  needs: ["build-classic"]
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+      when: always
+    - when: never
+  needs: ["build-classic", "health-A100"]
   tags:
     - a100pci
   variables:
@@ -1405,7 +1635,7 @@ perftest-A100:
 perftest-DGX-1V:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_DRACO == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
@@ -1433,7 +1663,7 @@ perftest-DGX-1V:
 perftest-DGX-2:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_DRACO == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
@@ -1461,7 +1691,7 @@ perftest-DGX-2:
 perftest-DGX-A100:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
@@ -1489,7 +1719,7 @@ perftest-DGX-A100:
 perftest-single-eos:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_EOS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
@@ -1527,7 +1757,7 @@ perftest-single-eos:
 perftest_single-AWS_H100_EFA:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_AWS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
@@ -1583,7 +1813,7 @@ perftest_single-AWS_H100_EFA:
 perftest_single-draco_oci:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_DRACO_OCI == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
@@ -1622,7 +1852,7 @@ perftest_single-draco_oci:
 perftest-single-pre-nyx:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_PRE_NYX == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
@@ -1661,7 +1891,7 @@ perftest-single-pre-nyx:
 perftest-single-pre-tyche:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_PRE_TYCHE == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -1697,7 +1927,7 @@ perftest-single-pre-tyche:
 perftest-single-ipp6-a100:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_IPP6 == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
@@ -1740,7 +1970,7 @@ perftest-multi-gc:
   stage: perf_tests_multi
   rules:
     - when: never
-  needs: [build-classic]
+  needs: [build-classic, health-P100, health-P40]
   tags:
     - p100
   variables:
@@ -1774,7 +2004,7 @@ perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
     - when: never
-  needs: [build-classic]
+  needs: [build-classic, health-P100]
   tags:
     - p100
   variables:
@@ -1798,9 +2028,7 @@ perftest-sharp-gc:
 perftest-multi-DGX-1V:
   stage: perf_tests_multi
   rules:
-    - when: always
-  rules:
-    - if: $RUN_ON_DRACO == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
@@ -1856,7 +2084,7 @@ perftest-multi-DGX-1V:
 perftest-multi-selene:
   stage: perf_tests_multi
   rules:
-    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
@@ -1882,7 +2110,7 @@ perftest-multi-selene:
 perftest-multi-eos:
   stage: perf_tests_multi
   rules:
-    - if: $RUN_ON_EOS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
@@ -1925,7 +2153,7 @@ perftest-multi-eos:
 perftest-sharp-selene:
   stage: perf_tests_multi
   rules:
-    - if: $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
@@ -1954,7 +2182,7 @@ perftest-sharp-selene:
 perftest_multi-AWS_H100_EFA:
   stage: perf_tests_multi
   rules:
-    - if: $RUN_ON_AWS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
@@ -2010,7 +2238,7 @@ perftest_multi-AWS_H100_EFA:
 perftest_multi-draco_oci:
   stage: perf_tests_multi
   rules:
-    - if: $RUN_ON_DRACO_OCI == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
@@ -2048,7 +2276,7 @@ perftest_multi-draco_oci:
 perftest-multi-pre-nyx:
   stage: perf_tests_multi
   rules:
-    - if: $RUN_ON_PRE_NYX == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
@@ -2088,7 +2316,7 @@ perftest-multi-pre-nyx:
 perftest-multi-pre-tyche:
   stage: perf_tests_multi
   rules:
-    - if: $RUN_ON_PRE_TYCHE == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -2128,7 +2356,7 @@ perftest-multi-pre-tyche:
 perftest-multi-ipp6-a100:
   stage: perf_tests_multi
   rules:
-    - if: $RUN_ON_IPP6 == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
@@ -2170,7 +2398,7 @@ perftest-multi-ipp6-a100:
 perf-regression-single-DGX-A100:
   stage: perf_regression
   rules:
-    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
       when: always
     - when: never
   needs:
@@ -2221,9 +2449,8 @@ self-test-pytorch-container-eos:
 perf-regression-multi-DGX-A100:
   stage: perf_regression
   rules:
-    - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE != "merge_request_event" && $RUN_MULTI_REGRESSION == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE != "merge_request_event" && $RUN_MULTI_REGRESSION == "1"
       when: always
-    - when: never
     - if: $REGRESSION_BASELINE == ""
       variables:
         REGRESSION_BASELINE: "${REGRESSION_BASELINE_TAG}"
@@ -2259,7 +2486,10 @@ perf-regression-multi-DGX-A100:
 QA-team-ci:
   stage: perf_regression
   rules:
-    - when: always
+    - if: $TRIGGER_PIPELINE == "default"
+      when: always
+    - when: never
+  needs: [build-classic]
   tags:
     - cqa_host_runner
   script:
@@ -2269,7 +2499,9 @@ QA-team-ci:
 replay-multi-gc:
   stage: replay_tests
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1"
+      when: always
+    - when: never
   needs: [build-classic]
   tags:
     - p100
