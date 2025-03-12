@@ -28,7 +28,7 @@ ncclResult_t ncclCudaContextTrack(struct ncclCudaContext** out) {
   ncclResult_t result = ncclSuccess;
   CUcontext hcontext;
   CUCHECK(cuCtxGetCurrent(&hcontext));
-  
+
   pthread_mutex_lock(&cxtListLock);
   struct ncclCudaContext* p = cxtListHead;
   while (1) {
@@ -171,7 +171,7 @@ ncclResult_t ncclStrongStreamAcquire(
 
       ncclResult_t ret = ncclSuccess;
       if (concurrent) pthread_mutex_lock(&ss->lock);
-      
+
       // Look for capture in our list of active captures.
       struct ncclStrongStreamCapture** pcap = &ss->captureHead;
       struct ncclStrongStreamCapture* cap;
@@ -225,7 +225,7 @@ ncclResult_t ncclStrongStreamAcquire(
       CUDACHECK(cudaStreamWaitEvent(cap->captureStream, scratch, 0));
       CUDACHECK(cudaEventDestroy(scratch));
       CUDACHECK(cudaStreamUpdateCaptureDependencies(cap->captureStream, nullptr, 0, cudaStreamSetCaptureDependencies));
-      
+
       if (mixing && firstCapture) {
         CUDACHECK(cudaEventRecord(ss->serialEvent, ss->liveStream));
       }
@@ -277,7 +277,7 @@ ncclResult_t ncclStrongStreamRelease(
         struct ncclStrongStreamCapture* cap = ss->captureHead;
         while (cap->graphId != graph.graphId) cap = cap->next;
         if (concurrent) pthread_mutex_unlock(&ss->lock);
-        
+
         // Add event record node with dependencies added further down.
         cudaGraphNode_t recordNode;
         CUDACHECK(cudaGraphAddEventRecordNode(&recordNode, graph.graph, nullptr, 0, ss->serialEvent));
@@ -293,7 +293,7 @@ ncclResult_t ncclStrongStreamRelease(
         cudaGraphNode_t const* nodes;
         size_t count = 0;
         cudaError_t res = cudaStreamGetCaptureInfo_v2(cap->captureStream, &status, nullptr, nullptr, &nodes, &count);
-        
+
         #if CUDART_VERSION >= 12030
         if (res == cudaErrorLossyQuery) { // CUDA is telling us the dependencies have edge annotations.
           cudaGraphEdgeData const* edges;

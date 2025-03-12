@@ -1176,7 +1176,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
       void* fifoBufDev = nullptr;
       cudaStream_t deviceStream;
-      
+
       CUDACHECKGOTO(cudaThreadExchangeStreamCaptureMode(&mode), result, fail);
 
       // Acquire deviceStream. Since the user's graph will be launched later and it also
@@ -1491,10 +1491,10 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     CU_LAUNCH_PARAM_BUFFER_SIZE, &plan->kernelArgsSize,
     CU_LAUNCH_PARAM_END
   };
-  
+
   int driverVersion;
   NCCLCHECKGOTO(ncclCudaDriverVersion(&driverVersion), ret, do_return);
-  
+
   CUfunction fn;
   CUDACHECKGOTO(cudaGetFuncBySymbol(&fn, sym), ret, do_return);
 
