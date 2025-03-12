@@ -30,6 +30,7 @@ variables:
   RUN_ON_PRE_TYCHE: "1"
   RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
   PLANNED_RESERVED: "Reserved"
+  RUN_DLFW_TESTS: "1"
 
 default:
   # set all jobs to interruptible by default
