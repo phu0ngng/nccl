@@ -9,7 +9,6 @@
 #include "collectives.h"
 #include "socket.h"
 #include "shmutils.h"
-#include "profiler.h"
 #define ENABLE_TIMER 0
 #include "timer.h"
 #include "profiler.h"
