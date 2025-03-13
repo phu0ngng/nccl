@@ -1564,6 +1564,7 @@ perftest-multi-gc:
     GRAPH: 0
     NGPUS: 8
     NP: 8
+    SKIP_FT_ABORT: 1 # NVBUG 5165144
     NCCL_HOME: build-gc
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
