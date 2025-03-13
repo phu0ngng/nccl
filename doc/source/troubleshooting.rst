@@ -43,13 +43,13 @@ a bad configuration of a virtual machine or a container, or some BIOS settings.
 GPU-to-GPU communication
 ------------------------
 
-To make sure GPU-to-GPU communication is working correctly, look for the p2pBandwidthLatencyTest from the CUDA
-samples.
+To make sure GPU-to-GPU communication is working correctly, look for the ``p2pBandwidthLatencyTest`` from the CUDA
+samples found here: https://github.com/nvidia/cuda-samples
 
 .. code:: shell
 
-  cd /usr/local/cuda/samples/1_Utilities/p2pBandwidthLatencyTest
-  sudo make
+  cd cuda-samples/Samples/5_Domain_Specific/p2pBandwidthLatencyTest
+  make
   ./p2pBandwidthLatencyTest
 
 The test should run to completion and report good performance between GPUs.

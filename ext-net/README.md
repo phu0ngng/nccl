@@ -304,9 +304,9 @@ the `listen` call previously. If the sender did not connect yet, `accept` should
 should return `ncclSuccess`, setting `recvComm` to `NULL`. NCCL will call `accept` again until it
 succeeds.
 
-The `connect` API takes a `ncclNetCommConfig_t`, which contains a trafficClass field. 
-This field can be used by the network plugin to specify the QoS level of the connection. By default, 
-`trafficClass` is set to -1 but can be configured by the application during communicator initialization 
+The `connect` API takes a `ncclNetCommConfig_t`, which contains a trafficClass field.
+This field can be used by the network plugin to specify the QoS level of the connection. By default,
+`trafficClass` is set to -1 but can be configured by the application during communicator initialization
 to select a plugin-supported QoS level.
 
 `closeListen`/`closeSend`/`closeRecv`

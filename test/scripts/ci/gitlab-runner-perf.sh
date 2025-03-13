@@ -98,7 +98,7 @@ NCCL_DEBUG_OLD=$NCCL_DEBUG
 export NCCL_DEBUG=VERSION
 run_command "all_reduce_output_file" $RUN_MODE $NGPUS "" "NCCL_PXN_DISABLE=1" "$NCCL_HOME/test/perf/all_reduce_perf" "-b8 -e8 -w0 -n1 -J test_out.json"
 
-enable_ft="$enable_ft -L allreduce,alltoall,abort,split"
+enable_ft="$enable_ft -L allreduce,alltoall,split"
 if [ "$SKIP_FT_INIT" != "1" ]
 then
   enable_ft+=",init"
@@ -115,6 +115,15 @@ then
   SKIP_FT_FINALIZE=0
 else
   echo "WARNING : Skipping finalize FT test"
+fi
+
+if [ "$SKIP_FT_ABORT" != "1" ]
+then
+  enable_ft+=",abort"
+  # Mark as 0 for clarity of test label
+  SKIP_FT_ABORT=0
+else
+  echo "WARNING : Skipping abort FT test"
 fi
 
 run_command "ft_test_skip_init_${SKIP_FT_INIT}_skip_finalize_${SKIP_FT_FINALIZE}" $RUN_MODE $NGPUS "" "NCCL_SOCKET_RETRY_SLEEP_MSEC=1" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts $enable_ft"
