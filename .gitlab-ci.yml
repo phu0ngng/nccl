@@ -30,6 +30,7 @@ variables:
   RUN_ON_PRE_TYCHE: "1"
   RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
   PLANNED_RESERVED: "Reserved"
+  RUN_DLFW_TESTS: "1"
 
 default:
   # set all jobs to interruptible by default
@@ -133,6 +134,28 @@ build-pre-tyche:
     exclude:
       - build-pre-tyche/**/*.o
     expire_in: 48 hrs
+
+build-dlfw-pytorch-container:
+  stage: build
+  rules:
+    - if: $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE == 'schedule'
+      when: always
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'web'
+      when: manual
+    - when: never
+  tags:
+    - build-with-docker
+  variables:
+    CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
+  script:
+    - chmod +x test/scripts/dlfw/*.sh
+    - ./test/scripts/dlfw/host_login_cr.sh
+    - ./test/scripts/dlfw/host_build_nccl_pytorch.sh
+  artifacts:
+    paths:
+      - build-dlfw
+    expire_in: 48 hrs
+  allow_failure: false
 
 fairshare-eos:
   stage: setup
@@ -1946,6 +1969,24 @@ perf-regression-single-DGX-A100:
     paths:
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
       - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
+
+self-test-pytorch-container-eos:
+  stage: perf_tests_single
+  rules:
+    - if: $RUN_ON_EOS == "1" && ( $RUN_DLFW_TESTS == "1" || $CI_PIPELINE_SOURCE == 'schedule' )
+      when: always
+    - when: never
+  tags:
+    - nccl-eos
+  needs:
+    - build-dlfw-pytorch-container
+  parallel: 4
+  variables:
+    CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
+  script:
+    - chmod +x test/scripts/dlfw/*.sh
+    - srun -N1 --exclusive -t60 -A coreai_libraries_nccl -J coreai_libraries_nccl-bewilliams.test-cont --container-image="$CONTAINER" --container-mounts=$(pwd):/workspace/nccl /workspace/nccl/test/scripts/dlfw/run_dlfw_selftest.sh
+  timeout: 48 hours
 
 perf-regression-multi-DGX-A100:
   stage: perf_regression
