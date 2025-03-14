@@ -1985,7 +1985,7 @@ self-test-pytorch-container-eos:
     CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
   script:
     - chmod +x test/scripts/dlfw/*.sh
-    - srun -N1 --exclusive -t60 -A coreai_libraries_nccl -J coreai_libraries_nccl-bewilliams.test-cont --container-image="$CONTAINER" --container-mounts=$(pwd):/workspace/nccl /workspace/nccl/test/scripts/dlfw/run_dlfw_selftest.sh
+    - srun -N1 -mpi=pmix --exclusive -t60 -A coreai_libraries_nccl -J coreai_libraries_nccl-bewilliams.test-cont --container-image="$CONTAINER" --container-mounts=$(pwd):/workspace/nccl /workspace/nccl/test/scripts/dlfw/run_dlfw_selftest.sh
   timeout: 48 hours
 
 perf-regression-multi-DGX-A100:
