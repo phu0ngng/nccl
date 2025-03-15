@@ -22,6 +22,7 @@ class ncclDebugLogTest: public ncclOutputTest {
     }
 };
 
+#define TIMESTAMP_NS_REGEX "\\[....-..-.. ..:..:..\\..........\\]"
 #define TIMESTAMP_MS_REGEX "\\[....-..-.. ..:..:..\\....\\]"
 #define TIMESTAMP_REGEX "\\[....-..-.. ..:..:..\\]"
 #define REST_REGEX "[^ :]*:[0-9]*:[0-9]* \\[[0-9]*\\]"
@@ -29,10 +30,10 @@ class ncclDebugLogTest: public ncclOutputTest {
 TEST_F(ncclDebugLogTest, timestampOnWarn) {
     overrideEnvVariable("NCCL_DEBUG", "INFO");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_LEVELS", "WARN");
-    overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_FORMAT", "[%F %T.%3f] ");
+    overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_FORMAT", "[%F %T.%9f] ");
     ncclResetDebugInit();
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitRank(NULL, 0, commId, rank));    // bad nranks=0
-    verifyResult(".*\n" TIMESTAMP_MS_REGEX " " REST_REGEX " init.cc:[0-9]* NCCL WARN improper usage of ncclCommInitRank: .*"
+    verifyResult(".*\n" TIMESTAMP_NS_REGEX " " REST_REGEX " init.cc:[0-9]* NCCL WARN improper usage of ncclCommInitRank: .*"
                  "\n" REST_REGEX " NCCL INFO init.cc.*");
 }
 
