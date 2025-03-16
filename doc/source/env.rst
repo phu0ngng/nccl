@@ -505,6 +505,9 @@ microseconds since the NCCL debug subsystem was initialized. The
 ``TRACE`` logs can also print the strftime formatted timestamp at the
 beginning if so configured (see ``NCCL_DEBUG_TIMESTAMP_LEVELS``).
 
+(since 2.26)
+Underscores in the format are rendered as spaces.
+
 Value accepted
 ^^^^^^^^^^^^^^
 The value of the environment variable
@@ -517,8 +520,9 @@ In addition to conversion specifications supported by strftime, ``%Xf``
 can be specified, where ``X`` is a single numerical digit from 1-9.
 This will print fractions of a second. The value of ``X``
 indicates how many digits will be printed. For example, ``%3f`` will
-print milliseconds. The value is zero padded. (Note that this can only
-be used once in the format string.)
+print milliseconds. The value is zero padded. For example:
+``[%F %T.%9f] ``. (Note that this can only be used once in the format
+string.)
 
 NCCL_DEBUG_TIMESTAMP_LEVELS
 ---------------------------
