@@ -928,7 +928,7 @@ Values accepted
 ^^^^^^^^^^^^^^^
 0 or 1. Define and set to 1 to use GPU Direct RDMA to send data to the NIC directly via C2C connected CPUs.
 
-The default value is 0.
+The default value was 0 in 2.26. The default value is 1 since 2.27.
 
 NCCL_NET_GDR_READ
 -----------------
