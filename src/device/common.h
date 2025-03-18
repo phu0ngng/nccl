@@ -355,7 +355,10 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
   }
   __syncthreads(); // publish ncclShmem.{args, channelId}
   /* set abort flag to 0 */
-  if (tid == 0) ncclShmem.aborted = 0;
+  if (tid == 0) {
+    ncclShmem.aborted = 0;
+    ncclShmem.channel.workCounter = ((ncclDevCommAndChannels*)ncclShmem.args.comm)->channels[ncclShmem.channelId].workCounter;
+  }
 
   // Use first 2 warps to load comm and channel, and remaining load work batch.
   switch (tid/WARP_SIZE) {

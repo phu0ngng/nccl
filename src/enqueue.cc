@@ -559,7 +559,7 @@ static ncclResult_t scheduleCollTasksToPlan(
         proxyOp.task.coll = task;
         proxyOp.rank = comm->rank;
         proxyOp.eActivationMask = task->eActivationMask;
-        proxyOp.workCounter = ++comm->profiler.workCounter[c];
+        proxyOp.incWorkCounter = true;
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
         // Set pattern to profiler to add a proxy profiler for kernel events
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOp));
@@ -683,7 +683,7 @@ static ncclResult_t scheduleCollTasksToPlan(
           proxyOp->ringAlgo->incRefCount();
         }
         proxyOp->eActivationMask = task->eActivationMask;
-        proxyOp->workCounter = ++comm->profiler.workCounter[c];
+        proxyOp->incWorkCounter = true;
         addWorkBatchToPlan(comm, plan, c, workNode->workType, task->devFuncId, plan->workBytes);
         // Coverity reports "proxyOp->connection" as being possibly uninitialized.  It's hard to
         // determine if that's actually true but it's also not clear if that would be an issue.
@@ -913,6 +913,7 @@ static ncclResult_t addP2pToPlan(
 
   nChannelsMax = std::max(nChannels[0], nChannels[1]);
   for (int part=0; part < nChannelsMax; part++) {
+    int incWorkCounter = -1;
     int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, part);
     plan->channelMask |= uint64_t(1)<<channelId;
     // Add batch first.
@@ -948,17 +949,21 @@ static ncclResult_t addP2pToPlan(
         }
       }
 
+      // Increment work counter for <send, recv> pair rather than individual p2p
+      if (proxyOps[dir].nsteps && incWorkCounter < 0) {
+        proxyOps[dir].incWorkCounter = true;
+        incWorkCounter = dir;
+      }
+
       if (proxyOps[dir].nsteps != 0) {
         // Calculate the opCount after adding batch since then the batch count will
         // equal one plus the batch index this p2p settled in.
         proxyOps[dir].channelId = channelId;
         proxyOps[dir].opCount = uint64_t(comm->planner.wipPlan.channels[channelId].nWorkBatchesP2p)<<1 | 1;
-        proxyOps[dir].workCounter = comm->profiler.workCounter[channelId]+1;
         NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOps[dir]));
         NCCLCHECK(addProfilerProxyOpIfNeeded(comm, plan, &proxyOps[dir]));
       }
     }
-    comm->profiler.workCounter[channelId] += (proxyOps[0].nsteps || proxyOps[1].nsteps) ? 1 : 0;
   }
 
   return ncclSuccess;
