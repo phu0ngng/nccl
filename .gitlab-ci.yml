@@ -7,6 +7,7 @@ stages:
   - perf_tests_single
   - perf_tests_multi
   - perf_regression
+  - profiler_tests
   - replay_tests
   - summary
 
@@ -2065,3 +2066,36 @@ summarize-pipeline:
     - build
   script:
     - ./test/scripts/gitlab-runner-summary.sh
+
+profiler-tests-A100:
+  stage: profiler_tests
+  rules:
+    - when: manual
+  needs: ["build-classic"]
+  tags:
+    - a100pci
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "A100"
+    NNODES: 1
+    ENABLE_NVLS: 0
+    NGPUS: 8
+    NP: 8
+    NCCL_HOME: build-gc
+  script:
+    - ./test/scripts/ci/gitlab-runner-profiler.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "all_reduce_perf*"
+      - "alltoall_perf*"
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
