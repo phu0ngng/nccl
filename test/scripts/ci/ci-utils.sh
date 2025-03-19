@@ -17,31 +17,78 @@ function get_failed_dir() {
     echo "failed/$CI_JOB_NAME/$label"
 }
 
-# Options=CMD,SALLOC_MPI,SRUN,MPI
+# Transform a space-separated list of env vars ("k1=v1 k2=v2...") into format needed by target command:
+# - For mpirun: "-x k1=v1 -x k2=v2..."
+# - For srun: "k1=v1,k2=v2,..."
+function transform_env_vars() {
+    local env_vars="$1"
+    local target="$2"
+
+    local result=""
+
+    OLD_IFS=$IFS
+    IFS=' '
+
+    if [ "$target" = "mpirun" ]; then
+        for var in $env_vars; do
+            if [ -z "$result" ]; then
+                result="-x $var"  # No space before the first element
+            else
+                result+=" -x $var"  # Add a space before subsequent elements
+            fi
+        done
+    elif [ "$target" = "srun" ]; then
+        for var in $env_vars; do
+            if [ -z "$result" ]; then
+                result="$var"  # No comma before the first element
+            else
+                result+=",${var}"  # Add a comma before subsequent elements
+            fi
+        done
+    fi
+
+    IFS=$OLD_IFS
+
+    echo "$result"
+}
+
+# Options=CMD,SALLOC_MPI,MPI,SRUN_MPI
 function make_run_command() {
     run_mode="$1"
     ppn="$2"
-    extra_args="$3"
+    test_mpi_flags="$3"
+    test_env_vars="$4"
+
+    local mpi_flags="$MPI_PARAMS $test_mpi_flags"
+    local env_vars="$test_env_vars LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+
     if [ "$run_mode" = "CMD" ]; then
         echo ""
     elif [ "$run_mode" = "SALLOC_MPI" ]; then
-        run_mode_cmd="salloc -N ${NNODES} --ntasks-per-node ${NGPUS} -t ${SLURM_TIME}"
+        run_mode_cmd="salloc -N ${NNODES} --ntasks-per-node ${NGPUS} -t ${SLURM_TIME} --exclusive"
         if [ "$SLURM_PARTITION" != "" ]; then
             run_mode_cmd+=" -p $SLURM_PARTITION"
         fi
         if [ "$SLURM_HOSTS" != "" ]; then
             run_mode_cmd+=" -w $SLURM_HOSTS"
         fi
-        run_mode_cmd+=" mpirun $MPI_PARAMS -x LD_LIBRARY_PATH=$LD_LIBRARY_PATH $extra_args"
         if [ "$MPIRUN_SKIP_PPN" != "1" ] || [ "$ppn" == "1" ]; then
-            run_mode_cmd+=" --map-by ppr:$ppn:node"
+            mpi_flags+=" --map-by ppr:$ppn:node"
         fi
+        transformed_env_vars=$(transform_env_vars "$env_vars" "mpirun")
+        run_mode_cmd+=" mpirun $mpi_flags $transformed_env_vars"
         echo $run_mode_cmd
     elif [ "$run_mode" = "MPI" ]; then
-        run_mode_cmd="mpirun $MPI_PARAMS -x LD_LIBRARY_PATH=$LD_LIBRARY_PATH $extra_args"
         if [ "$MPIRUN_SKIP_PPN" != "1" ] || [ "$ppn" == "1" ]; then
-            run_mode_cmd+=" --map-by ppr:$ppn:node"
+            mpi_flags+=" --map-by ppr:$ppn:node"
         fi
+        transformed_env_vars=$(transform_env_vars "$env_vars" "mpirun")
+        run_mode_cmd="mpirun $mpi_flags $transformed_env_vars"
+        echo $run_mode_cmd
+    elif [ "$run_mode" = "SRUN_MPI" ]; then
+        # Deliberately ignore any MPI flags passed as they should have been set in the test env already
+        transformed_env_vars=$(transform_env_vars "$env_vars" "srun")
+        run_mode_cmd="srun --export=ALL,$transformed_env_vars --ntasks-per-node=$ppn --mpi=pmix"
         echo $run_mode_cmd
     fi
 }
@@ -193,8 +240,10 @@ function move_repro_script() {
     failed_dir="$(get_failed_dir $label)"
     mkdir -p $failed_dir
     mv repro.sh $failed_dir
+    chmod +x $failed_dir/repro.sh
     if [ "$SALLOC" != "" ]; then
         mv run.sh $failed_dir
+        chmod +x $failed_dir/run.sh
     fi
 }
 
@@ -251,14 +300,15 @@ function run_command() {
     label="$1"
     run_mode="$2"
     ppn="$3"
-    extra_args="$4"
-    binary="$5"
-    args="$6"
+    test_mpi_flags="$4"
+    test_env_vars="$5"
+    binary="$6"
+    args="$7"
     cmd="$binary $args"
     if [ "$ONLY_RUN_LABEL" != "" ] && [ "$label" != "$ONLY_RUN_LABEL" ]; then
             echo "Skipping label: $label (Matching for $ONLY_RUN_LABEL)"
     else
-        run_mode_cmd=$(make_run_command $run_mode $ppn "$extra_args")
+        run_mode_cmd=$(make_run_command $run_mode $ppn "$test_mpi_flags" "$test_env_vars")
         echo "$(date +%T) : "=============================== $label "==============================="
         echo "$(date +%T) : $run_mode_cmd $cmd"
         init_junit_command $label
@@ -299,7 +349,7 @@ function print_failed_commands() {
         for label in "${!failed_commands[@]}"; do
             echo "  $label: ${failed_commands[$label]}"
             failed_dir="$(get_failed_dir $label)"
-            echo "    Repro: chmod +x ${failed_dir}/*.sh; bash -c ${failed_dir}/repro.sh"
+            echo "    Repro: bash -c ${failed_dir}/repro.sh"
         done
     fi
 

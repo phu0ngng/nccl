@@ -16,7 +16,7 @@ if [ -d "build.old" ]; then
 fi
 
 # figure out a fair job number
-jobs=$(eval "$DOCKER_JOB_COMMAND")
+jobs=$(eval "$NUM_BUILD_PROCS")
 
 make -j$jobs test.build MPI=1 WERROR=1
 # make -j$jobs pkg.build

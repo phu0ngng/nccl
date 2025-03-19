@@ -378,7 +378,8 @@ NCCL_PARAM(NetGdrRead, "NET_GDR_READ", -2);
 int ncclTopoUserGdrLevel = -1;
 const char* ncclTopoGdrModeStr[ncclTopoGdrModeNum] = { "Disabled", "Default", "PCI" };
 
-NCCL_PARAM(NetGdrC2c, "NET_GDR_C2C", 0);
+// On C2C platforms use GDRDMA on NICs which are connected to the CPUs
+NCCL_PARAM(NetGdrC2c, "NET_GDR_C2C", 1);
 
 ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t netId, int read, enum ncclTopoGdrMode* gdrMode) {
   *gdrMode = ncclTopoGdrModeDisable;

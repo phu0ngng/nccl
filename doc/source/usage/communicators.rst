@@ -151,18 +151,22 @@ Related links:
 
  * :c:func:`ncclCommSplit`
 
+.. _multi-thread-concurrent-usage:
+
 Using multiple NCCL communicators concurrently
 ----------------------------------------------
 
 Prior to NCCL 2.26, using multiple NCCL communicators per-device required serializing the order of all communication operations (via CUDA stream dependencies or synchronization) into a consistent total global order otherwise deadlocks could ensue. As of 2.26, NCCL introduces :ref:`NCCL_LAUNCH_ORDER_IMPLICIT` which when enabled implicitly creates this order dynamically by following the order operations are issued from the host. Thus to remain deadlock free, users must ensure the order of host-side launches matches for all devices. This is most easily accomplished by using a determinstic order issued from a single host thread per-device. For example:
 
 .. code:: C
+
   ncclAllReduce(..., comm1, stream1); // all ranks do this first
   ncclAllReduce(..., comm2, stream2); // and this second
 
 When NCCL is captured in a CUDA graph the same rules apply to both capture time and launch time. At capture time this means NCCL calls in the same graph must be captured in the same order:
 
 .. code:: C
+
   // both stream1 and stream2 are capturing in the same graph
   ncclAllReduce(..., comm1, stream1); // all ranks do this first
   ncclAllReduce(..., comm2, stream2); // and this second
@@ -170,8 +174,9 @@ When NCCL is captured in a CUDA graph the same rules apply to both capture time 
 And at graph launch time different graphs must be launched in a globally consistent order:
 
 .. code:: C
-  cudaGraphLaunch(graph1, stream1) // all ranks do this first
-  cudaGraphLaunch(graph2, stream2) // and this second
+
+  cudaGraphLaunch(graph1, stream1); // all ranks do this first
+  cudaGraphLaunch(graph2, stream2); // and this second
 
 When running on CUDA 12.3 or later, the implicit ordering of the operations is created using CUDA launch completion events which permits parallel execution of the two communicator's kernels.
 
@@ -430,7 +435,7 @@ TC is specified during communicator creation using :ref:`ncclconfig`.
   config.trafficClass = 1;
   CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
 
-Infiniband networks support QoS through the use of Service Levels (SL). Each IB SL 
+Infiniband networks support QoS through the use of Service Levels (SL). Each IB SL
 is mapped to Virtual Lane (VL), which defines the relative priority of traffic. SL
 behavior is defined within the subnet manager, such as OpenSM. Refer to subnet
 manager documentation for more detail. An example configuration is shown below.
@@ -447,11 +452,11 @@ manager documentation for more detail. An example configuration is shown below.
   max_op_vls 2
   ....
 
-The example defines one low priority and one high priority VL which 
-are mapped to SL 0 and 1, respectively. The high priority SL will be 
-given a larger share of network bandwidth at each port. In NCCL, the 
-communicator's traffic class corresponds to the SL on IB networks. Using 
-this configuration, applications can assign TC 0 to low-priority communicators 
+The example defines one low priority and one high priority VL which
+are mapped to SL 0 and 1, respectively. The high priority SL will be
+given a larger share of network bandwidth at each port. In NCCL, the
+communicator's traffic class corresponds to the SL on IB networks. Using
+this configuration, applications can assign TC 0 to low-priority communicators
 and TC 1 to high-priority ones.
 
 On RoCE networks, the NCCL communicator trafficClass is interpreted as an IP

@@ -261,7 +261,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   NCCLCHECK(ncclNetPluginUnload(comm));
 
   ncclCudaContextDrop(comm->context);
-  
+
   free(comm);
 
   return ncclSuccess;
@@ -345,7 +345,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   // Try to create a CUDA object right away. If there is something wrong with
   // the device we're on (failure cause #1) , better know it early.
   CUDACHECK(cudaGetDevice(&comm->cudaDev));
-  
+
   NCCLCHECK(ncclCudaContextTrack(&comm->context));
 
   NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
@@ -526,7 +526,7 @@ fail:
 }
 
 // Pre-process the string so that running "strings" on the lib can quickly reveal the version.
-#define VERSION_STRING "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX NCCL_COMMIT "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR)
+#define VERSION_STRING "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR)
 static void showVersion() {
   if (ncclDebugLevel == NCCL_LOG_VERSION || ncclDebugLevel == NCCL_LOG_WARN) {
     VERSION("%s", VERSION_STRING);

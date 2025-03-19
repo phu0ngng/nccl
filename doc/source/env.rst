@@ -267,7 +267,7 @@ Values accepted
 The default value is 0.
 
 NCCL_IB_FIFO_TC
-----------
+---------------
 (since 2.22.3)
 
 Defines the InfiniBand traffic class for control messages.
@@ -489,7 +489,7 @@ for memory allocations), CALL (standard for function calls), PROXY (stands for t
 subsystem) and ALL (includes every subsystem).
 
 NCCL_DEBUG_TIMESTAMP_FORMAT
---------------------------
+---------------------------
 (since 2.26)
 
 The ``NCCL_DEBUG_TIMESTAMP_FORMAT`` variable allows the user to change
@@ -505,6 +505,9 @@ microseconds since the NCCL debug subsystem was initialized. The
 ``TRACE`` logs can also print the strftime formatted timestamp at the
 beginning if so configured (see ``NCCL_DEBUG_TIMESTAMP_LEVELS``).
 
+(since 2.26)
+Underscores in the format are rendered as spaces.
+
 Value accepted
 ^^^^^^^^^^^^^^
 The value of the environment variable
@@ -517,11 +520,12 @@ In addition to conversion specifications supported by strftime, ``%Xf``
 can be specified, where ``X`` is a single numerical digit from 1-9.
 This will print fractions of a second. The value of ``X``
 indicates how many digits will be printed. For example, ``%3f`` will
-print milliseconds. The value is zero padded. (Note that this can only
-be used once in the format string.)
+print milliseconds. The value is zero padded. For example:
+``[%F %T.%9f] ``. (Note that this can only be used once in the format
+string.)
 
 NCCL_DEBUG_TIMESTAMP_LEVELS
---------------------------
+---------------------------
 (since 2.26)
 
 The ``NCCL_DEBUG_TIMESTAMP_LEVELS`` variable allows the user to set
@@ -924,7 +928,7 @@ Values accepted
 ^^^^^^^^^^^^^^^
 0 or 1. Define and set to 1 to use GPU Direct RDMA to send data to the NIC directly via C2C connected CPUs.
 
-The default value is 0.
+The default value was 0 in 2.26. The default value is 1 since 2.27.
 
 NCCL_NET_GDR_READ
 -----------------
@@ -1379,6 +1383,7 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Default is 1; define and set to larger values to increase the timeouts.
 
+.. _NCCL_LAUNCH_ORDER_IMPLICIT:
 
 NCCL_LAUNCH_ORDER_IMPLICIT
 --------------------------

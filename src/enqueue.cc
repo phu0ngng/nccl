@@ -385,6 +385,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
         struct ncclTaskColl* next = aggBeg->next;
         aggBeg->algorithm = agg.algorithm;
         aggBeg->protocol = agg.protocol;
+        if (aggBeg->protocol == NCCL_PROTO_LL) aggBeg->trafficBytes *= 4;
         aggBeg->nMaxChannels = agg.nMaxChannels;
         aggBeg->nWarps = agg.nWarps;
         aggBeg->devFuncId = agg.devFuncId;
@@ -564,6 +565,7 @@ static ncclResult_t scheduleCollTasksToPlan(
       }
     } else { // not task->isCollnet
       int trafficPerByte = ncclFuncTrafficPerByte(task->func, comm->nRanks);
+      if (task->protocol == NCCL_PROTO_LL) trafficPerByte *= 4;
       size_t cellSize = divUp(divUp(MinTrafficPerChannel, (size_t)trafficPerByte), 16) * 16;
       int elementsPerCell = cellSize/elementSize;
       size_t cells = divUp(task->count*elementSize, cellSize);
@@ -1174,7 +1176,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
       void* fifoBufDev = nullptr;
       cudaStream_t deviceStream;
-      
+
       CUDACHECKGOTO(cudaThreadExchangeStreamCaptureMode(&mode), result, fail);
 
       // Acquire deviceStream. Since the user's graph will be launched later and it also
@@ -1489,10 +1491,10 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     CU_LAUNCH_PARAM_BUFFER_SIZE, &plan->kernelArgsSize,
     CU_LAUNCH_PARAM_END
   };
-  
+
   int driverVersion;
   NCCLCHECKGOTO(ncclCudaDriverVersion(&driverVersion), ret, do_return);
-  
+
   CUfunction fn;
   CUDACHECKGOTO(cudaGetFuncBySymbol(&fn, sym), ret, do_return);
 

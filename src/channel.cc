@@ -111,7 +111,7 @@ ncclResult_t initCollnetChannel(struct ncclComm* comm, int channelId, struct ncc
   struct ncclSharedResources* sharedRes = comm->sharedRes;
   uintptr_t addr;
   cudaStream_t deviceStream;
-  
+
   if (channel->collnetPeers != NULL)
     return ncclSuccess;
 

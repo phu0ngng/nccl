@@ -1312,23 +1312,27 @@ ib_recv_dev_list:
     devInfo->gid.global.interface_id = commDev->base.gidInfo.localGid.global.interface_id;
 
     // info logging
-    if (devInfo->link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
-      for (int q = 0; q < comm->base.nqps; q++) {
-        // Print just the QPs for this dev
-        if (comm->base.qps[q].devIndex == i)
+    for (int q = 0; q < comm->base.nqps; q++) {
+      // Print just the QPs for this dev
+      if (comm->base.qps[q].devIndex == i) {
+        if (devInfo->link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
           INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d LID %d subnet-prefix %lu  FLID %d fifoRkey=0x%x fifoLkey=0x%x",
-            comm->base.vProps.ndevs > 2 ? "NCCL MergedDev" : "NCCL Dev",
-            dev, commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn, devInfo->mtu, devInfo->lid,
-	    devInfo->gid.global.subnet_prefix, ncclIbExtractFlid(&devInfo->gid), devInfo->fifoRkey, commDev->fifoMr->lkey);
-      }
-    } else { // RoCE
-      for (int q = 0; q < comm->base.nqps; q++) {
-        // Print just the QPs for this dev
-        if (comm->base.qps[q].devIndex == i)
-          INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d query_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x} GID %ld (%lX/%lX) fifoRkey=0x%x fifoLkey=0x%x",
-            comm->base.vProps.ndevs > 2 ? "NCCL MergedDev" : "NCCL Dev", dev,
-            commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn, devInfo->mtu, meta.qpInfo[q].ece_supported, meta.qpInfo[q].ece.vendor_id, meta.qpInfo[q].ece.options, meta.qpInfo[q].ece.comp_mask, (int64_t)commDev->base.gidInfo.localGidIndex,
-            devInfo->gid.global.subnet_prefix, devInfo->gid.global.interface_id, devInfo->fifoRkey, commDev->fifoMr->lkey);
+               comm->base.vProps.ndevs > 2 ? "NCCL MergedDev" : "NCCL Dev",
+               dev, commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn, devInfo->mtu, devInfo->lid,
+               devInfo->gid.global.subnet_prefix, ncclIbExtractFlid(&devInfo->gid), devInfo->fifoRkey, commDev->fifoMr->lkey);
+        } else { // RoCE
+          INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX) fifoRkey=0x%x fifoLkey=0x%x",
+               comm->base.vProps.ndevs > 2 ? "NCCL MergedDev" : "NCCL Dev", dev,
+               commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn, devInfo->mtu,
+               (int64_t)commDev->base.gidInfo.localGidIndex,
+               devInfo->gid.global.subnet_prefix, devInfo->gid.global.interface_id, devInfo->fifoRkey, commDev->fifoMr->lkey);
+        }
+        // Log ECE info
+        if (meta.qpInfo[q].ece_supported) {
+          INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d query_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
+               commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn,
+               meta.qpInfo[q].ece_supported, meta.qpInfo[q].ece.vendor_id, meta.qpInfo[q].ece.options, meta.qpInfo[q].ece.comp_mask);
+        }
       }
     }
     if (link_layer == IBV_LINK_LAYER_UNSPECIFIED) link_layer = devInfo->link_layer;
@@ -1406,23 +1410,19 @@ ib_connect:
     ncclIbSendCommDev* commDev = comm->devs + devIndex;
 
     struct ibv_qp* qp = comm->base.qps[q].qp;
-    if (remQpInfo->ece_supported)
+    if (remQpInfo->ece_supported) {
+      struct ncclIbQp* nqp = comm->base.qps + q;
+      int ibDevN = comm->devs[nqp->devIndex].base.ibDevN;
+      struct ncclIbDev* ibDev = ncclIbDevs + ibDevN;
+      INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
+        ibDevN, ibDev->portNum, qp->qp_num, remMeta.qpInfo[q].ece_supported, remMeta.qpInfo[q].ece.vendor_id, remMeta.qpInfo[q].ece.options, remMeta.qpInfo[q].ece.comp_mask);
       NCCLCHECKGOTO(wrap_ibv_set_ece(qp, &remQpInfo->ece, &remQpInfo->ece_supported), ret, fail);
+    }
 
     ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
     remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
     NCCLCHECKGOTO(ncclIbRtrQp(qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta.tc, remMeta.sl), ret, fail);
     NCCLCHECKGOTO(ncclIbRtsQp(qp), ret, fail);
-  }
-
-  if (link_layer == IBV_LINK_LAYER_ETHERNET ) { // RoCE
-    for (int q = 0; q < comm->base.nqps; q++) {
-      struct ncclIbQp* qp = comm->base.qps + q;
-      int ibDevN = comm->devs[qp->devIndex].base.ibDevN;
-      struct ncclIbDev* ibDev = ncclIbDevs + ibDevN;
-      INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
-        ibDevN, ibDev->portNum, remMeta.qpInfo[q].qpn, remMeta.qpInfo[q].ece_supported, remMeta.qpInfo[q].ece.vendor_id, remMeta.qpInfo[q].ece.options, remMeta.qpInfo[q].ece.comp_mask);
-    }
   }
 
   comm->base.nDataQps = std::max(comm->base.vProps.ndevs, comm->base.nRemDevs);
@@ -1650,8 +1650,9 @@ ib_recv:
 
     // Query the reduced ece for this QP (matching enhancements between the requestor and the responder)
     // Store this in our own qpInfo for returning to the requestor
-    if (remMeta.qpInfo[q].ece_supported && meta.qpInfo[q].ece_supported)
+    if (remMeta.qpInfo[q].ece_supported && meta.qpInfo[q].ece_supported) {
       NCCLCHECKGOTO(wrap_ibv_query_ece(qp->qp, &meta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
+    }
   }
 
   rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
@@ -2022,8 +2023,11 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandl
 
 ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* phandle, void** request) {
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
-  if (comm->base.ready == 0) { WARN("NET/IB: ncclIbIsend() called when comm->base.ready == 0"); return ncclInternalError; }
-  if (comm->base.ready == 0) { *request = NULL; return ncclSuccess; }
+  if (comm->base.ready == 0) { 
+    WARN("NET/IB: ncclIbIsend() called when comm->base.ready == 0"); 
+    *request = NULL;
+    return ncclInternalError; 
+  }
   NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__));
 
   struct ncclIbMrHandle* mhandleWrapper = (struct ncclIbMrHandle*) mhandle;
@@ -2186,8 +2190,11 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
 
 ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** phandles, void** request) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
-  if (comm->base.ready == 0) { WARN("NET/IB: ncclIbIrecv() called when comm->base.ready == 0"); return ncclInternalError; }
-  if (comm->base.ready == 0) { *request = NULL; return ncclSuccess; }
+  if (comm->base.ready == 0) { 
+    WARN("NET/IB: ncclIbIrecv() called when comm->base.ready == 0"); 
+    *request = NULL;
+    return ncclInternalError; 
+  }
   if (n > NCCL_NET_IB_MAX_RECVS) return ncclInternalError;
   NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__));
 
