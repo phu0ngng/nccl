@@ -51,11 +51,14 @@ static int getNthreads(const char* name, int env, int min, int max, int def) {
 //     NCCL_PROTO="^LL128;allreduce:LL128"
 // Enable everything but LL128, but only LL128 for allreduce.
 ncclResult_t parseList(const char* str, const char* prefixElems[], int nprefixes, const char* elems[], int nelems, int* list) {
+  ncclResult_t ret = ncclSuccess;
   char* fullStr = strdup(str);
   char* tmpFullStr;
   char* fullToken = strtok_r(fullStr, ";", &tmpFullStr);
+  char* subToken = nullptr;
+  char* tokStr = nullptr;
   while (fullToken) {
-    char* subToken = strdup(fullToken);
+    subToken = strdup(fullToken);
     char* tmpSubStr;
     char* prefix = strtok_r(subToken, ":", &tmpSubStr);
     char* elemList = strtok_r(NULL, ":", &tmpSubStr);
@@ -65,7 +68,8 @@ ncclResult_t parseList(const char* str, const char* prefixElems[], int nprefixes
         // because then all the prefixes before the prefix-less entry would be
         // overwritten.
         WARN("All entries except the first must have a prefix: \"%s\"", str);
-        return ncclInvalidUsage;
+        ret = ncclInvalidUsage;
+        goto fail;
       }
       elemList = prefix;
       prefix = NULL;
@@ -84,7 +88,7 @@ ncclResult_t parseList(const char* str, const char* prefixElems[], int nprefixes
       foundPrefix = true;
       for (int e=0; e<nelems; e++) list[p*nelems+e] = unset;
 
-      char* tokStr = strdup(elemList);
+      tokStr = strdup(elemList);
       char* tmpStr;
       char* elem = strtok_r(tokStr, ",", &tmpStr);
       while (elem) {
@@ -97,22 +101,32 @@ ncclResult_t parseList(const char* str, const char* prefixElems[], int nprefixes
         }
         if (e==nelems) {
           WARN("Unrecognized element token \"%s\" when parsing \"%s\"", elem, str);
-          return ncclInvalidUsage;
+          ret = ncclInvalidUsage;
+          goto fail;
         }
         elem = strtok_r(NULL, ",", &tmpStr);
       }
       free(tokStr);
+      tokStr = nullptr;
     }
     if (!foundPrefix) {
       WARN("Unrecognized prefix token \"%s\" when parsing \"%s\"", prefix, str);
-      return ncclInvalidUsage;
+      ret = ncclInvalidUsage;
+      goto fail;
     }
     free(subToken);
+    subToken = nullptr;
 
     fullToken = strtok_r(NULL, ";", &tmpFullStr);
   }
+
+exit:
+  free(tokStr);
+  free(subToken);
   free(fullStr);
-  return ncclSuccess;
+  return ret;
+fail:
+  goto exit;
 }
 
 // Latencies in us, Bandwidths in GB/s
