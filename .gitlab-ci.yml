@@ -103,7 +103,7 @@ build-pre-nyx:
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   script:
     - docker/make.sh pre-nyx --clean --baremetal-build
     - mv build build-pre-nyx
@@ -123,7 +123,7 @@ build-pre-tyche:
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   script:
     - docker/make.sh pre-tyche --clean --baremetal-build
     - mv build build-pre-tyche
@@ -166,7 +166,7 @@ fairshare-pre-nyx:
     - when: never
   needs: []
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   tags:
     - prenyx
   script:
@@ -180,7 +180,7 @@ fairshare-pre-tyche:
     - when: never
   needs: []
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   tags:
     - ptyche
   script:
@@ -447,6 +447,7 @@ unit_tests-eos:
   tags:
     - nccl-eos
   variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/eos-config.sh"
     SLURM_TIME: 20
@@ -456,7 +457,6 @@ unit_tests-eos:
     NCCL_HOME: build-eos
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
-    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     DISABLE_MEMLEAK: "0" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
@@ -575,7 +575,7 @@ unit_tests-pre-nyx:
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
     SLURM_TIME: 20
@@ -610,7 +610,7 @@ unit_tests-pre-tyche:
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
     SLURM_TIME: 20
@@ -874,7 +874,7 @@ apitest-eos:
     NP: 1
     NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
-    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
   script:
@@ -989,7 +989,7 @@ apitest-pre-nyx:
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
     SLURM_TIME: 30
@@ -1024,7 +1024,7 @@ apitest-pre-tyche:
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
     SLURM_TIME: 30
@@ -1361,7 +1361,7 @@ perftest-single-eos:
   tags:
     - nccl-eos
   variables:
-    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/eos-config.sh"
     SLURM_TIME: 20
@@ -1485,7 +1485,7 @@ perftest-single-pre-nyx:
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
     SLURM_TIME: 45
@@ -1520,7 +1520,7 @@ perftest-single-pre-tyche:
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
     SLURM_TIME: 45
@@ -1699,7 +1699,7 @@ perftest-multi-eos:
     CLUSTER_CONFIG: "docker/eos-config.sh"
     SLURM_TIME: 30
     RUN_MODE: "MPI"
-    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
@@ -1852,7 +1852,7 @@ perftest-multi-pre-nyx:
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
     SLURM_TIME: 45
@@ -1889,7 +1889,7 @@ perftest-multi-pre-tyche:
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: /lustre/fsw/coreai_libraries_nccl/ci_builds
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
     SLURM_TIME: 45
