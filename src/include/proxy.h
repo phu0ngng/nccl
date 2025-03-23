@@ -226,6 +226,8 @@ struct ncclProxyPeer {
 };
 
 struct ncclSharedNetComms {
+  int activeConnect[MAXCHANNELS];
+  int activeAccept[MAXCHANNELS];
   void* sendComm[MAXCHANNELS];
   void* recvComm[MAXCHANNELS];
   int sendRefCount[MAXCHANNELS];
