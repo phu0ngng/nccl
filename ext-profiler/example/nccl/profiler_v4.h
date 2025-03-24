@@ -36,6 +36,7 @@ typedef struct {
       const char* datatype;
       size_t count;
       int peer;
+      uint8_t nChannels;
     } p2p;
 
     struct {

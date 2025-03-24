@@ -38,8 +38,8 @@ __hidden void printCollEventTrailer(FILE* fh, struct collective* event) {
 
 static __thread int p2pId;
 __hidden void printP2pEventHeader(FILE* fh, struct p2p* event) {
-  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"P2P\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"CommHash\": %lu, \"Rank\": %d, \"Peer\": %d, \"Count\": %lu, \"Datatype\": \"%s\"}},\n",
-          event->base.func, p2pId, getpid(), 1, event->base.startTs, event->base.commHash, event->base.rank, event->peer, event->count, event->datatype);
+  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"P2P\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"CommHash\": %lu, \"Rank\": %d, \"Peer\": %d, \"Count\": %lu, \"Datatype\": \"%s\", \"nChannels\": %d}},\n",
+          event->base.func, p2pId, getpid(), 1, event->base.startTs, event->base.commHash, event->base.rank, event->peer, event->count, event->datatype, event->nChannels);
 }
 
 __hidden void printP2pEventTrailer(FILE* fh, struct p2p* event) {

@@ -288,6 +288,7 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
           eDescr.p2p.count = pt->count;
           eDescr.p2p.datatype = ncclDatatypeToString(pt->datatype);
           eDescr.p2p.peer = pt->root;
+          eDescr.p2p.nChannels = pt->nChannels;
           ncclProfiler->startEvent(plan->comm->profilerContext, &pt->eventHandle, &eDescr);
         }
         pt = pt->next;

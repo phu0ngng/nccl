@@ -231,6 +231,7 @@ struct ncclTaskP2p {
   // Profiler plugin
   int eActivationMask;
   void* eventHandle;
+  uint8_t nChannels;
 };
 
 struct ncclKernelPlan {

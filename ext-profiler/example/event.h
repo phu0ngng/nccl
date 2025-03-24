@@ -133,6 +133,7 @@ struct p2p {
   size_t count;
   const char* datatype;
   int peer;
+  uint8_t nChannels;
   struct proxyOp op[MAX_CHANNELS];
   struct kernelCh kernel[MAX_CHANNELS];
 };

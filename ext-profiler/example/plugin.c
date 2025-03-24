@@ -291,6 +291,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->count = eDescr->p2p.count;
     event->datatype = eDescr->p2p.datatype;
     event->peer = eDescr->p2p.peer;
+    event->nChannels = eDescr->p2p.nChannels;
     *eHandle = event;
     // increment the group ref counter so the event will staty open
     taskEventQueueEnqueue(parent, (struct taskEventBase *)event);
