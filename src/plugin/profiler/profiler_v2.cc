@@ -30,7 +30,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v2.coll.root = eDescr->coll.root;
       eDescr_v2.coll.datatype = eDescr->coll.datatype;
       eDescr_v2.coll.trafficBytes = 0; // removed in v3
-      eDescr_v2.coll.nMaxChannels = eDescr->coll.nMaxChannels;
+      eDescr_v2.coll.nMaxChannels = eDescr->coll.nChannels;
       eDescr_v2.coll.nWarps = eDescr->coll.nWarps;
       eDescr_v2.coll.algo = eDescr->coll.algo;
       eDescr_v2.coll.proto = eDescr->coll.proto;

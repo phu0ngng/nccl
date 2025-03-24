@@ -72,7 +72,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v1.coll.datatype = ncclStringToDatatype(eDescr->coll.datatype);
       eDescr_v1.coll.op = 0; // removed in v2
       eDescr_v1.coll.trafficBytes = 0; // removed in v3
-      eDescr_v1.coll.nMaxChannels = eDescr->coll.nMaxChannels;
+      eDescr_v1.coll.nMaxChannels = eDescr->coll.nChannels;
       eDescr_v1.coll.nWarps = eDescr->coll.nWarps;
       eDescr_v1.coll.algo = ncclStringToAlgo(eDescr->coll.algo);
       eDescr_v1.coll.proto = ncclStringToProto(eDescr->coll.proto);

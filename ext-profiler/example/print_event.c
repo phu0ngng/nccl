@@ -27,8 +27,8 @@ __hidden void printGroupEventTrailer(FILE* fh, struct group* event) {
 
 static __thread int collId;
 __hidden void printCollEventHeader(FILE* fh, struct collective* event) {
-  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"COLL\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"SeqNum\": %lu, \"CommHash\": %lu, \"Rank\": %d, \"Count\": %lu, \"Datatype\": \"%s\", \"Algorithm\": \"%s\", \"Protocol\": \"%s\", \"nMaxChannels\": %d}},\n",
-          event->base.func, collId, getpid(), 1, event->base.startTs, event->seqNumber, event->base.commHash, event->base.rank, event->count, event->datatype, event->algo, event->proto, event->nMaxChannels);
+  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"COLL\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"SeqNum\": %lu, \"CommHash\": %lu, \"Rank\": %d, \"Count\": %lu, \"Datatype\": \"%s\", \"Algorithm\": \"%s\", \"Protocol\": \"%s\", \"nChannels\": %d}},\n",
+          event->base.func, collId, getpid(), 1, event->base.startTs, event->seqNumber, event->base.commHash, event->base.rank, event->count, event->datatype, event->algo, event->proto, event->nChannels);
 }
 
 __hidden void printCollEventTrailer(FILE* fh, struct collective* event) {

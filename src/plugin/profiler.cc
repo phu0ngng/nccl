@@ -252,7 +252,7 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
           eDescr.coll.count = ct->count;
           eDescr.coll.root = ct->root;
           eDescr.coll.datatype = ncclDatatypeToString(ct->datatype);
-          eDescr.coll.nMaxChannels = ct->nChannels;
+          eDescr.coll.nChannels = ct->nChannels;
           eDescr.coll.nWarps = ct->nWarps;
           eDescr.coll.algo = ncclAlgoToString(ct->algorithm);
           eDescr.coll.proto = ncclProtoToString(ct->protocol);

@@ -28,7 +28,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v3.coll.count = eDescr->coll.count;
       eDescr_v3.coll.root = eDescr->coll.root;
       eDescr_v3.coll.datatype = eDescr->coll.datatype;
-      eDescr_v3.coll.nMaxChannels = eDescr->coll.nMaxChannels;
+      eDescr_v3.coll.nMaxChannels = eDescr->coll.nChannels;
       eDescr_v3.coll.nWarps = eDescr->coll.nWarps;
       eDescr_v3.coll.algo = eDescr->coll.algo;
       eDescr_v3.coll.proto = eDescr->coll.proto;

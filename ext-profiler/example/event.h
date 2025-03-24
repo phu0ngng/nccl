@@ -117,7 +117,7 @@ struct collective {
   size_t count;
   int root;
   const char* datatype;
-  uint8_t nMaxChannels;
+  uint8_t nChannels;
   const char* algo;
   const char* proto;
   int nWarps;
