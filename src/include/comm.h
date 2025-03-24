@@ -218,6 +218,7 @@ struct ncclTaskColl {
   // Profiler plugin
   int eActivationMask;
   void* eventHandle;
+  uint8_t nChannels;
 };
 struct ncclTaskP2p {
   struct ncclTaskP2p* next;
