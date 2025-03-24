@@ -1662,6 +1662,7 @@ testResult_t run() {
     config.blocking = commblocking;
     config.splitShare = split_share;
     config.trafficClass = trafficClass;
+    config.commName = "perftest";
 
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < nGpus * nThreads; ++i) {
