@@ -131,7 +131,6 @@ struct ncclSharedResources {
   int* tpRankToLocalRank;
   // Internal streams
   struct ncclStrongStream deviceStream, hostStream;
-  int noncapturedRefs; // number of non-captured hostStreamPlanCallback on the stream
   int persistentRefs;
   cudaEvent_t launchEvent, scratchEvent;
 

@@ -1230,6 +1230,7 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
   uint64_t collOpCount = comm->sharedRes->collOpCount;
   uint64_t p2pOpBump[MAXCHANNELS] = {/*0...*/};
   // Advance comm's collOpCount by number of colls in this plan.
+  int hasp2p = 0;
   comm->sharedRes->collOpCount += plan->collOpCount;
   comm->collOpCount += plan->collOpCount;
 
@@ -1248,6 +1249,7 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
       // remember last value to compute max.
       p2pOpBump[op->channelId] = (oldId>>1) + 1; // +1 to ensure next plan doesn't collide
       op->opCount = (comm->sharedRes->p2pOpCount[op->channelId]<<1) + oldId;
+      hasp2p = 1;
     } else { // coll
       op->opCount = (collOpCount<<1) + oldId;
     }
@@ -1257,9 +1259,11 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
     op = op->enqNext;
   }
 
-  for (int c=0; c < MAXCHANNELS; c++) {
-    // Advance channel's p2pOpCount by number of p2p's in this plan channel.
-    comm->sharedRes->p2pOpCount[c] += p2pOpBump[c];
+  if (hasp2p) {
+    for (int c=0; c < MAXCHANNELS; c++) {
+      // Advance channel's p2pOpCount by number of p2p's in this plan channel.
+      comm->sharedRes->p2pOpCount[c] += p2pOpBump[c];
+    }
   }
   return ncclSuccess;
 }
@@ -1267,8 +1271,10 @@ static ncclResult_t uploadProxyOps(struct ncclComm* comm, struct ncclKernelPlan*
 static ncclResult_t hostStreamPlanTask(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   NCCLCHECK(ncclProfilerStartGroupEvent(plan));
   NCCLCHECK(ncclProfilerStartTaskEvents(plan));
-  NCCLCHECK(uploadProxyOps(comm, plan));
-  NCCLCHECK(ncclProxyStart(comm));
+  if (ncclIntruQueueHead(&plan->proxyOpQueue)) {
+    NCCLCHECK(uploadProxyOps(comm, plan));
+    NCCLCHECK(ncclProxyStart(comm));
+  }
   NCCLCHECK(ncclProfilerStopTaskEvents(plan));
   NCCLCHECK(ncclProfilerStopGroupEvent(plan));
   if (!plan->persistent) {
@@ -1285,7 +1291,6 @@ static void CUDART_CB hostStreamPlanCallback(void *plan_) {
   if (result != ncclSuccess) {
     WARN("hostStreamPlanCallback() failed : %s", ncclGetErrorString(result));
   }
-  if (!plan->persistent) ncclAtomicRefCountDecrement(&plan->comm->sharedRes->noncapturedRefs);
   return;
 }
 
@@ -1432,6 +1437,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
     bool capturing = ncclCudaGraphValid(planner->capturingGraph);
     enum ncclImplicitOrder implicitOrder;
+    cudaError_t status = cudaSuccess;
     NCCLCHECKGOTO(getImplicitOrder(&implicitOrder, capturing), result, failure);
 
     if (implicitOrder != ncclImplicitOrderNone) {
@@ -1443,7 +1449,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       NCCLCHECKGOTO(ncclStreamWaitStream(launchStream, launchOrder, comm->sharedRes->scratchEvent), result, failure);
     }
 
-    if (persistent || comm->sharedRes->persistentRefs != 0 || ncclCudaLaunchBlocking || __atomic_load_n(&comm->sharedRes->noncapturedRefs, __ATOMIC_ACQUIRE)) {
+    if (!persistent && comm->sharedRes->persistentRefs) status = cudaEventQuery(comm->sharedRes->hostStream.serialEvent);
+    if (persistent || ncclCudaLaunchBlocking || status == cudaErrorNotReady) {
       // We have to launch host tasks to push proxy args. We are careful to only
       // do this if necessary since host tasks impose a high performance cost in CUDA.
       bool acquired = false;
@@ -1454,7 +1461,6 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
             acquired = true;
             NCCLCHECKGOTO(ncclStrongStreamAcquire(planner->capturingGraph, &comm->sharedRes->hostStream, /*concurrent=*/false, &hostStream), result, failure);
           }
-          if (!persistent) ncclAtomicRefCountIncrement(&comm->sharedRes->noncapturedRefs);
           plan->isHostCbEnq = true;
           CUDACHECKGOTO(cudaLaunchHostFunc(hostStream, hostStreamPlanCallback, plan), result, failure);
         }
@@ -1577,17 +1583,10 @@ do_return:
 }
 
 ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  if (!(plan->persistent || ncclCudaLaunchBlocking || plan->isHostCbEnq)) {
-    // We are not using the host stream for proxy ops and reclaimation submission.
+  if (!plan->isHostCbEnq) {
+    // we are not using the host stream for proxy ops and reclaimation submission, call
+    // hostStreamPlanTask directly
     NCCLCHECK(hostStreamPlanTask(comm, plan));
-  } else {
-    // We are using the host stream for proxy ops and reclaimation submission.
-    // Only plans with proxy ops have a callback pushed by ncclLaunchPrepare.
-    // Since non-persistent plans also require reclaimation, we have to do it
-    // here.
-    if (!plan->persistent && !plan->hasProxyOps) {
-      ncclIntruQueueMpscEnqueue(&comm->callbackQueue, &plan->reclaimer);
-    }
   }
   return ncclSuccess;
 }
