@@ -1605,7 +1605,16 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
     CUDACHECK(cudaEventRecord(comm->sharedRes->scratchEvent, launchStream));
     // deviceStream waits on userStream[0]
     NCCLCHECK(ncclStrongStreamAcquiredWorkStream(planner->capturingGraph, &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream));
-    CUDACHECK(cudaStreamWaitEvent(deviceStream, comm->sharedRes->scratchEvent, 0));
+
+    // We know that deviceStream is strictly behind the launchStream because launchStream
+    // synced with it before kernel launch. This allows us to to see deviceStream waiting
+    // on launchStream as a fast-forward. When building CUDA graphs fast forwards should
+    // be handled specially so as not to create graphs with a blowup in the number of edges.
+    // So we could do this:
+    //   CUDACHECK(cudaStreamWaitEvent(deviceStream, comm->sharedRes->scratchEvent, 0));
+    // But instead we do:
+    NCCLCHECK(ncclStreamAdvanceToEvent(planner->capturingGraph, deviceStream, comm->sharedRes->scratchEvent));
+
     // Each userStream[i] waits on userStream[0]
     for (struct ncclCudaStreamList* l=planner->streams->next; l != nullptr; l = l->next) {
       CUDACHECK(cudaStreamWaitEvent(l->stream, comm->sharedRes->scratchEvent, 0));
