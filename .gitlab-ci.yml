@@ -2070,7 +2070,7 @@ summarize-pipeline:
 profiler-tests-A100:
   stage: profiler_tests
   rules:
-    - when: manual
+    - when: always
   needs: ["build-classic"]
   tags:
     - a100pci
@@ -2082,8 +2082,8 @@ profiler-tests-A100:
     SLURM_PARTITION: "A100"
     NNODES: 1
     ENABLE_NVLS: 0
-    NGPUS: 8
-    NP: 8
+    NGPUS: 4
+    NP: 4
     NCCL_HOME: build-gc
   script:
     - ./test/scripts/ci/gitlab-runner-profiler.sh
@@ -2092,8 +2092,6 @@ profiler-tests-A100:
   artifacts:
     when: always
     paths:
-      - "all_reduce_perf*"
-      - "alltoall_perf*"
       - "failed/**"
       - "junit_results.xml"
     reports:
