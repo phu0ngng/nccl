@@ -84,12 +84,13 @@ typedef struct {
   //  - context        : opaque profiler context object for separating profiler behavior across comms
   //  - commName       : user assigned communicator name
   //  - commHash       : communicator id
+  //  - nNodes         : number of nodes in communicator
   //  - nranks         : number of ranks in communciator
   //  - rank           : rank identifier in communicator
   //  - logfn          : logger function
   // Output
   //  - eActivationMask: bitmask of active events set by the plugin
-  ncclResult_t (*init)(void** context, int* eActivationMask, const char* commName, uint64_t commHash, int nranks, int rank, ncclDebugLogger_t logfn);
+  ncclResult_t (*init)(void** context, int* eActivationMask, const char* commName, uint64_t commHash, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn);
 
   // startEvent - initialize and start a new event for the supplied event descriptor inside the eventset
   // Input

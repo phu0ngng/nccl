@@ -63,7 +63,7 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pid_t pid;
 static int* eActivationMaskPtr;
 
-__hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask, const char* commName, uint64_t commHash, int nranks, int rank, ncclDebugLogger_t logfn) {
+__hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask, const char* commName, uint64_t commHash, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn) {
   pthread_mutex_lock(&lock);
   if (__atomic_fetch_add(&initialized, 1, __ATOMIC_RELAXED) == 0) {
     // first thread initializes event mask, environment and detach pool
