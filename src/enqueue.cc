@@ -1418,9 +1418,8 @@ namespace {
 
 static ncclResult_t getImplicitOrder(enum ncclImplicitOrder *mode, bool capturing, int driver=-1) {
   if (ncclParamLaunchOrderImplicit()) {
-    // Due to an unresolved bug in CUDA ncclImplicitOrderLaunch is not supported in graphs
-    if (capturing) { *mode = ncclImplicitOrderSerial; return ncclSuccess; }
     if (driver < 0) { NCCLCHECK(ncclCudaDriverVersion(&driver)); }
+    if (capturing && driver < 12090) { *mode = ncclImplicitOrderSerial; return ncclSuccess; }
     *mode = 12030 <= std::min<int>(CUDART_VERSION, driver) ? ncclImplicitOrderLaunch : ncclImplicitOrderSerial;
     return ncclSuccess;
   }
