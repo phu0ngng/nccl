@@ -33,11 +33,11 @@ typedef enum {
   ncclProfilerProxyOpRecvReceived      = 5,  // deprecated in v4
   ncclProfilerProxyOpRecvTransmitted   = 6,  // deprecated in v4
   ncclProfilerProxyOpRecvDone          = 7,  // deprecated in v4
-  ncclProfilerProxyOpInProgress_v4     = 20,
+  ncclProfilerProxyOpInProgress_v4     = 19,
 
   /* Legacy proxy profiler states */
   ncclProfilerProxyStepSendGPUWait     = 8,
-  ncclProfilerProxyStepSendPeerWait_v4 = 30,
+  ncclProfilerProxyStepSendPeerWait_v4 = 20,
   ncclProfilerProxyStepSendWait        = 9,
   ncclProfilerProxyStepRecvWait        = 10,
   ncclProfilerProxyStepRecvFlushWait   = 11,
