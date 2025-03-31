@@ -52,12 +52,20 @@ struct kernelCh {
   double stopTs;
 };
 
+#define PROXY_STEP_SEND_GPU_WAIT 0
+#define PROXY_STEP_SEND_PEER_WAIT 1
+#define PROXY_STEP_SEND_WAIT 2
+#define PROXY_STEP_RECV_WAIT 0
+#define PROXY_STEP_RECV_FLUSH_WAIT 1
+#define PROXY_STEP_RECV_GPU_WAIT 2
+#define PROXY_STEP_MAX_STATES 3
+
 struct proxyStep {
   uint8_t type;                     // type of event: network transfer
   int state;
   int step;                         // network transfer id in given channel
   int isSend;                       // send/recv channel operation
-  double timestamp[3];
+  double timestamp[PROXY_STEP_MAX_STATES];
   double startTs;
   double stopTs;
   struct proxyOp* parent;

@@ -75,18 +75,18 @@ static __thread int proxyStepId;
 __hidden void printProxyStepEventHeader(FILE* fh, struct proxyStep* event) {
   if (event->isSend) {
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
-            "SendGpuWait", proxyStepId, getpid(), 1, event->timestamp[0], event->step);
+            "SendGpuWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_SEND_GPU_WAIT], event->step);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
-            "SendGpuWait", proxyStepId, getpid(), 1, event->timestamp[1]);
+            "SendGpuWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_SEND_PEER_WAIT]);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
-            "SendPeerWait", proxyStepId, getpid(), 1, event->timestamp[1], event->step);
+            "SendPeerWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_SEND_PEER_WAIT], event->step);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
-            "SendPeerWait", proxyStepId, getpid(), 1, event->timestamp[2]);
+            "SendPeerWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_SEND_WAIT]);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
-            "SendWait", proxyStepId, getpid(), 1, event->timestamp[2], event->step);
+            "SendWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_SEND_WAIT], event->step);
   } else {
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
-            "RecvWait", proxyStepId, getpid(), 1, event->timestamp[0], event->step);
+            "RecvWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_RECV_WAIT], event->step);
   }
 }
 
@@ -96,13 +96,13 @@ __hidden void printProxyStepEventTrailer(FILE* fh, struct proxyStep* event) {
             "SendWait", proxyStepId++, getpid(), 1, event->stopTs);
   } else {
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
-            "RecvWait", proxyStepId, getpid(), 1, event->timestamp[1]);
+            "RecvWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_RECV_FLUSH_WAIT]);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
-            "RecvFlushWait", proxyStepId, getpid(), 1, event->timestamp[1], event->step);
+            "RecvFlushWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_RECV_FLUSH_WAIT], event->step);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
-            "RecvFlushWait", proxyStepId, getpid(), 1, event->timestamp[2]);
+            "RecvFlushWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_RECV_GPU_WAIT]);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Step\": %d}},\n",
-            "RecvGpuWait", proxyStepId, getpid(), 1, event->timestamp[2], event->step);
+            "RecvGpuWait", proxyStepId, getpid(), 1, event->timestamp[PROXY_STEP_RECV_GPU_WAIT], event->step);
     fprintf(fh, "{\"name\": \"%s\", \"cat\": \"NET\", \"ph\": \"e\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f},\n",
             "RecvGpuWait", proxyStepId++, getpid(), 1, event->stopTs);
   }

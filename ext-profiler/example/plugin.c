@@ -578,27 +578,27 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
     struct proxyOp* parent = event->parent;
     switch (eState) {
       case ncclProfilerProxyStepSendGPUWait:
-        event->timestamp[0] = gettime() - startTime;
+        event->timestamp[PROXY_STEP_SEND_GPU_WAIT] = gettime() - startTime;
         break;
       case ncclProfilerProxyStepSendPeerWait_v4:
         // do not update step event if in SendPeerWait
         if (event->state == ncclProfilerProxyStepSendPeerWait_v4) break;
-        event->timestamp[1] = gettime() - startTime;
+        event->timestamp[PROXY_STEP_SEND_PEER_WAIT] = gettime() - startTime;
         event->state = ncclProfilerProxyStepSendPeerWait_v4;
         break;
       case ncclProfilerProxyStepSendWait:
-        event->timestamp[2] = gettime() - startTime;
+        event->timestamp[PROXY_STEP_SEND_WAIT] = gettime() - startTime;
         parent->transSize += eStateArgs->proxyStep.transSize;
         break;
       case ncclProfilerProxyStepRecvWait:
-        event->timestamp[0] = gettime() - startTime;
+        event->timestamp[PROXY_STEP_RECV_WAIT] = gettime() - startTime;
         break;
       case ncclProfilerProxyStepRecvFlushWait:
-        event->timestamp[1] = gettime() - startTime;
+        event->timestamp[PROXY_STEP_RECV_FLUSH_WAIT] = gettime() - startTime;
         parent->transSize += eStateArgs->proxyStep.transSize;
         break;
       case ncclProfilerProxyStepRecvGPUWait:
-        event->timestamp[2] = gettime() - startTime;
+        event->timestamp[PROXY_STEP_RECV_GPU_WAIT] = gettime() - startTime;
         break;
     }
   } else if (type == ncclProfileProxyCtrl) {
