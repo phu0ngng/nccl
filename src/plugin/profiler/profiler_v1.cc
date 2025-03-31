@@ -53,6 +53,7 @@ static uint8_t ncclStringToDatatype(const char* dt) {
 }
 
 static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclProfilerEventDescr_t* eDescr) {
+  *eHandle = NULL;
   ncclProfilerEventDescr_v1_t eDescr_v1 = { 0 };
   eDescr_v1.type = eDescr->type;
   eDescr_v1.parentObj = eDescr->parentObj;
@@ -71,7 +72,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v1.coll.datatype = ncclStringToDatatype(eDescr->coll.datatype);
       eDescr_v1.coll.op = 0; // removed in v2
       eDescr_v1.coll.trafficBytes = 0; // removed in v3
-      eDescr_v1.coll.nMaxChannels = eDescr->coll.nMaxChannels;
+      eDescr_v1.coll.nMaxChannels = eDescr->coll.nChannels;
       eDescr_v1.coll.nWarps = eDescr->coll.nWarps;
       eDescr_v1.coll.algo = ncclStringToAlgo(eDescr->coll.algo);
       eDescr_v1.coll.proto = ncclStringToProto(eDescr->coll.proto);
@@ -91,24 +92,26 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v1.proxyOp.peer = eDescr->proxyOp.peer;
       eDescr_v1.proxyOp.nSteps = eDescr->proxyOp.nSteps;
       eDescr_v1.proxyOp.chunkSize = eDescr->proxyOp.chunkSize;
-      eDescr_v1.proxyOp.isSend = eDescr->proxyOp.isSend;
+      eDescr_v1.proxyOp.isSend = 0; // removed in v4
     } break;
     case ncclProfileProxyStep: {
       eDescr_v1.proxyStep.step = eDescr->proxyStep.step;
     } break;
     case ncclProfileProxyCtrl: break;
-    case ncclProfileKernelCh:
-    case ncclProfileNetPlugin: {
-      *eHandle = NULL;
-      return ncclSuccess;
-    }
-    default:;
+    default: return ncclSuccess;
   }
   return ncclProfiler_v1->startEvent(context, eHandle, &eDescr_v1);
 }
 
 static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_t* eStateArgs) {
-  return ncclProfiler_v1->recordEventState(eHandle, eState, (ncclProfilerEventStateArgs_v1_t*)eStateArgs);
+  // event states after ProxyCtrlAppendEnd are introduced in v4 and not supported by older plugins
+  if (eState > ncclProfilerProxyCtrlAppendEnd) return ncclSuccess;
+  // proxy event state arguments after v4 have changed and no longer supported by older plugins
+  if (eState < ncclProfilerProxyCtrlIdle) return ncclSuccess;
+  // if we get here we are recording ProxyCtrl states
+  ncclProfilerEventStateArgs_v1_t args = { };
+  args.proxyCtrl.appendedProxyOps = eStateArgs->proxyCtrl.appendedProxyOps;
+  return ncclProfiler_v1->recordEventState(eHandle, eState, &args);
 }
 
 static ncclResult_t ncclProfiler_init(void** context, int* eActivationMask) {

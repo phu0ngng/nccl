@@ -2,6 +2,14 @@
 <!-- update with extra care -->
 # NCCL - PLC
 <!------------------------------------->
+## version 2.27
+
+- [Harmonization of Proxy Events](items/id_54FC6F8F/Harmonization_of_Proxy_Events.md)
+<!-- V2_27_DO_NOT_MOVE -->
+
+<!------------------------------------->
+
+<!------------------------------------->
 ## version 2.26
 
 - [Kernel Profiler](items/id_20ef4ca6/Kernel_Profiler.md)

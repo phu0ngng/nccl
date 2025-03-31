@@ -254,7 +254,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->count = eDescr->coll.count;
     event->root = eDescr->coll.root;
     event->datatype = eDescr->coll.datatype;
-    event->nMaxChannels = eDescr->coll.nMaxChannels;
+    event->nChannels = eDescr->coll.nChannels;
     event->nWarps = eDescr->coll.nWarps;
     event->algo = eDescr->coll.algo;
     event->proto = eDescr->coll.proto;
@@ -291,6 +291,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->count = eDescr->p2p.count;
     event->datatype = eDescr->p2p.datatype;
     event->peer = eDescr->p2p.peer;
+    event->nChannels = eDescr->p2p.nChannels;
     *eHandle = event;
     // increment the group ref counter so the event will staty open
     taskEventQueueEnqueue(parent, (struct taskEventBase *)event);
@@ -328,9 +329,10 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       event->peer = eDescr->proxyOp.peer;
       event->nSteps = eDescr->proxyOp.nSteps;
       event->chunkSize = eDescr->proxyOp.chunkSize;
-      event->isSend = eDescr->proxyOp.isSend;
+      event->isSend = -1;
       event->startTs = gettime() - startTime;
       event->parent = NULL;
+      event->stepCount = 0;
       *eHandle = event;
       debugEvent(event, "PxnProxyOpStart");
       return ncclSuccess;
@@ -339,9 +341,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     if (eventBase->type == ncclProfileColl) {
       struct collective* parent = (struct collective *)eDescr->parentObj;
       int channelId = eDescr->proxyOp.channelId;
-      struct proxyOp* event = (eDescr->proxyOp.isSend) ?
-        &parent->send[channelId][parent->nProxyOps[channelId]++] :
-        &parent->recv[channelId][parent->nProxyOps[channelId]++];
+      struct proxyOp* event = &parent->op[channelId][parent->nProxyOps[channelId]++];
 
       event->type = ncclProfileProxyOp;
       event->channelId = channelId;
@@ -350,9 +350,10 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       event->peer = eDescr->proxyOp.peer;
       event->nSteps = eDescr->proxyOp.nSteps;
       event->chunkSize = eDescr->proxyOp.chunkSize;
-      event->isSend = eDescr->proxyOp.isSend;
+      event->isSend = -1;
       event->parent = eventBase;
       event->startTs = gettime() - startTime;
+      event->stepCount = 0;
       *eHandle = event;
       __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
       debugEvent(event, "ProxyOpStart");
@@ -367,9 +368,10 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       event->peer = eDescr->proxyOp.peer;
       event->nSteps = eDescr->proxyOp.nSteps;
       event->chunkSize = eDescr->proxyOp.chunkSize;
-      event->isSend = eDescr->proxyOp.isSend;
+      event->isSend = -1;
       event->parent = eventBase;
       event->startTs = gettime() - startTime;
+      event->stepCount = 0;
       *eHandle = event;
       __atomic_fetch_add(&parent->base.refCount, 1, __ATOMIC_RELAXED);
       debugEvent(event, "ProxyOpStart");
@@ -382,9 +384,10 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     int s = parent->stepCount++ % MAX_STEPS;
     struct proxyStep* event = &parent->step[s];
     event->type = ncclProfileProxyStep;
+    event->state = 0;
     event->step = eDescr->proxyStep.step;
-    event->isSend = parent->isSend;
     event->parent = parent;
+    event->isSend = parent->isSend;
     event->startTs = gettime() - startTime;
     event->nNetEvents = 0;
     *eHandle = event;
@@ -563,18 +566,41 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
   // the event handle might be null if we run out of events
   if (eHandle == NULL) return ncclSuccess;
 
-  debugEvent(eHandle, "RecordEventState");
   uint8_t type = *(uint8_t *)eHandle;
   if (type == ncclProfileProxyOp) {
     struct proxyOp* event = (struct proxyOp *)eHandle;
-    int steps = event->states[event->isSend ? PROXY_OP_SEND_STATE_IDX(eState) : PROXY_OP_RECV_STATE_IDX(eState)].steps;
-    if (eState == ncclProfilerProxyOpSendRemFifoWait && eStateArgs->proxyOp.steps == steps) return ncclSuccess;
-    event->states[event->isSend ? PROXY_OP_SEND_STATE_IDX(eState) : PROXY_OP_RECV_STATE_IDX(eState)].steps = eStateArgs->proxyOp.steps;
-    event->states[event->isSend ? PROXY_OP_SEND_STATE_IDX(eState) : PROXY_OP_RECV_STATE_IDX(eState)].timestamp = gettime() - startTime;
-    event->transSize = eStateArgs->proxyOp.transSize;
+    if (eState == ncclProfilerProxyOpInProgress_v4) {
+      event->isSend = eStateArgs->proxyOp.isSend;
+      event->progrTs = gettime() - startTime;
+    }
   } else if (type == ncclProfileProxyStep) {
     struct proxyStep* event = (struct proxyStep *)eHandle;
-    event->timestamp[event->isSend ? PROXY_STEP_SEND_STATE_IDX(eState) : PROXY_STEP_RECV_STATE_IDX(eState)] = gettime() - startTime;
+    struct proxyOp* parent = event->parent;
+    switch (eState) {
+      case ncclProfilerProxyStepSendGPUWait:
+        event->timestamp[PROXY_STEP_SEND_GPU_WAIT] = gettime() - startTime;
+        break;
+      case ncclProfilerProxyStepSendPeerWait_v4:
+        // do not update step event if in SendPeerWait
+        if (event->state == ncclProfilerProxyStepSendPeerWait_v4) break;
+        event->timestamp[PROXY_STEP_SEND_PEER_WAIT] = gettime() - startTime;
+        event->state = ncclProfilerProxyStepSendPeerWait_v4;
+        break;
+      case ncclProfilerProxyStepSendWait:
+        event->timestamp[PROXY_STEP_SEND_WAIT] = gettime() - startTime;
+        parent->transSize += eStateArgs->proxyStep.transSize;
+        break;
+      case ncclProfilerProxyStepRecvWait:
+        event->timestamp[PROXY_STEP_RECV_WAIT] = gettime() - startTime;
+        break;
+      case ncclProfilerProxyStepRecvFlushWait:
+        event->timestamp[PROXY_STEP_RECV_FLUSH_WAIT] = gettime() - startTime;
+        parent->transSize += eStateArgs->proxyStep.transSize;
+        break;
+      case ncclProfilerProxyStepRecvGPUWait:
+        event->timestamp[PROXY_STEP_RECV_GPU_WAIT] = gettime() - startTime;
+        break;
+    }
   } else if (type == ncclProfileProxyCtrl) {
     struct proxyCtrl* event = (struct proxyCtrl *)eHandle;
     if (eState == ncclProfilerProxyCtrlAppendEnd) {
@@ -582,10 +608,11 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
     }
     event->state = eState;
   }
+  debugEvent(eHandle, "RecordEventState");
   return ncclSuccess;
 }
 
-ncclProfiler_t ncclProfiler_v3 = {
+ncclProfiler_t ncclProfiler_v4 = {
   "Example-profiler",
   exampleProfilerInit,
   exampleProfilerStartEvent,

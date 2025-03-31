@@ -864,6 +864,8 @@ static ncclResult_t addP2pToPlan(
         partSize = divUp(bytes[dir], nChannels[dir]);
       }
     }
+    // Update number of channels propagated to the profiler
+    if (p2pTasks[dir]) p2pTasks[dir]->nChannels = nChannels[dir];
   }
 
   struct ncclWorkList* workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkP2p>(&comm->memScoped, 1);
