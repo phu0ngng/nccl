@@ -8,9 +8,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "common.h"
 #include "err.h"
 #include "net_device.h"
+#include "common.h"
 
 #define NCCL_NET_HANDLE_MAXSIZE 128
 #define NCCL_MAX_NET_SIZE_BYTES (1*1024*1024*1024*1024L) //1TB
