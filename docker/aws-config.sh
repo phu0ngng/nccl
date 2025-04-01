@@ -14,7 +14,7 @@
 # AWS_CUDA_HOME="/usr/local/cuda-12.4"
 AWS_CUDA_HOME="/shared/toolkits/cuda-12.8.0"
 AWS_OPENMPI_HOME="/opt/amazon/openmpi"
-AWS_OFI_PLUGIN_HOME="/opt/aws-ofi-nccl"
+AWS_OFI_PLUGIN_HOME="/shared/toolkits/aws-ofi-nccl-1.12.0"
 
 # Modules to be loaded-in for configuring the EFA driver
 AWS_EFA_MODULE="libfabric-aws"
