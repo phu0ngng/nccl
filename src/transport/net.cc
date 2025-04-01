@@ -732,7 +732,14 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
         NCCLCHECK(ncclCalloc(progressState->netComms + resources->netDev, proxyState->tpnRanks));
       }
       struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev] + resources->tpRemoteRank;
-      if (comms->sendComm[resources->channelId] == NULL) ret = proxyState->ncclNet->connect(resources->netDev, &commConfig, req->handle, comms->sendComm + resources->channelId, &resources->netDeviceHandle);
+      // let only one localrank connect to a tpRemoteRank to avoid duplicate connections
+      if (comms->activeConnect[resources->channelId] == 0)
+        comms->activeConnect[resources->channelId] = (resources->tpLocalRank + 1);
+      if (comms->sendComm[resources->channelId] == NULL
+          && comms->activeConnect[resources->channelId] == (resources->tpLocalRank + 1)) {
+        ret = proxyState->ncclNet->connect(resources->netDev, &commConfig, req->handle,
+            comms->sendComm + resources->channelId, &resources->netDeviceHandle);
+      }
       resources->netSendComm = comms->sendComm[resources->channelId];
       if (comms->sendComm[resources->channelId]) comms->sendRefCount[resources->channelId]++;
     } else {
@@ -886,7 +893,15 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
         NCCLCHECK(ncclCalloc(progressState->netComms + resources->netDev, proxyState->tpnRanks));
       }
       struct ncclSharedNetComms* comms = progressState->netComms[resources->netDev] + resources->tpRemoteProxyRank;
-      if (comms->recvComm[resources->channelId] == NULL) ret = proxyState->ncclNet->accept(resources->netListenComm, comms->recvComm+resources->channelId, &resources->netDeviceHandle);
+      // reuse handle to for netdev/remote rank to avoid duplicate connections
+      if (comms->activeAccept[resources->channelId] == 0)
+        comms->activeAccept[resources->channelId] = (resources->tpLocalRank + 1);
+      //try connecting while comm is null
+      if (comms->recvComm[resources->channelId] == NULL
+         && comms->activeAccept[resources->channelId] == (resources->tpLocalRank + 1)) {
+        ret = proxyState->ncclNet->accept(resources->netListenComm,
+            comms->recvComm+resources->channelId, &resources->netDeviceHandle);
+      }
       resources->netRecvComm = comms->recvComm[resources->channelId];
       if (comms->recvComm[resources->channelId]) comms->recvRefCount[resources->channelId]++;
     } else {
