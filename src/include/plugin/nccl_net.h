@@ -30,9 +30,6 @@
 // Max number of ncclNet objects which can live in the same process
 #define NCCL_NET_MAX_PLUGINS 3
 
-// NCCL core profiler callback for network defined events instrumentation
-typedef ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* pHandle, int64_t pluginId, void* extData);
-
 #include "net/net_v10.h"
 #include "net/net_v9.h"
 #include "net/net_v8.h"

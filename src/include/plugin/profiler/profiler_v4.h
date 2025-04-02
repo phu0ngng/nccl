@@ -74,6 +74,10 @@ typedef union {
   struct {
     int appendedProxyOps;
   } proxyCtrl;
+
+  struct {
+    void* data;
+  } netPlugin;
 } ncclProfilerEventStateArgs_v4_t;
 
 typedef struct {

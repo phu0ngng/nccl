@@ -7,6 +7,8 @@
 #ifndef NCCL_DEBUG_H_
 #define NCCL_DEBUG_H_
 
+#include <cstdint>
+
 typedef enum {
   NCCL_LOG_NONE = 0,
   NCCL_LOG_VERSION = 1,
@@ -37,6 +39,16 @@ typedef enum {
 } ncclDebugLogSubSys;
 
 typedef void (*ncclDebugLogger_t)(ncclDebugLogLevel level, unsigned long flags, const char *file, int line, const char *fmt, ...);
+
+// NCCL core profiler callback for network defined events instrumentation
+enum {
+  ncclProfilerNetEventStart = 0,
+  ncclProfilerNetEventStop,
+  ncclProfilerNetEventUpdate,
+  ncclProfilerNetEventUpdateAndStop,
+};
+
+typedef ncclResult_t (*ncclProfilerCallback_t)(void** eHandle, int type, void* pHandle, int64_t pluginId, void* extData);
 
 #define NCCL_NUM_FUNCTIONS 5 // Send/Recv not included for now
 typedef enum {
