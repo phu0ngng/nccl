@@ -117,13 +117,19 @@ static ncclResult_t xmlGetAttrIntDefault(struct ncclXmlNode* node, const char* a
   return ncclSuccess;
 }
 
+static ncclResult_t xmlGetAttrUint64(struct ncclXmlNode* node, const char* attrName, uint64_t* value) {
+  const char* str;
+  NCCLCHECK(xmlGetAttrStr(node, attrName, &str));
+  *value = strtoull(str, NULL, 0);
+  return ncclSuccess;
+}
+
 static ncclResult_t xmlGetAttrLong(struct ncclXmlNode* node, const char* attrName, int64_t* value) {
   const char* str;
   NCCLCHECK(xmlGetAttrStr(node, attrName, &str));
   *value = strtol(str, NULL, 0);
   return ncclSuccess;
 }
-
 
 static ncclResult_t xmlGetAttrFloat(struct ncclXmlNode* node, const char* attrName, float* value) {
   const char* str;

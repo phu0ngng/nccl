@@ -45,6 +45,14 @@ function transform_env_vars() {
                 result+=",${var}"  # Add a comma before subsequent elements
             fi
         done
+    elif [ "$target" = "cmd" ]; then
+        for var in $env_vars; do
+            if [ -z "$result" ]; then
+                result="env ${var}"  # No space before the first element
+            else
+                result+=" env ${var}"  # Add a space before subsequent elements
+            fi
+        done
     fi
 
     IFS=$OLD_IFS
@@ -62,9 +70,7 @@ function make_run_command() {
     local mpi_flags="$MPI_PARAMS $test_mpi_flags"
     local env_vars="$test_env_vars LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 
-    if [ "$run_mode" = "CMD" ]; then
-        echo ""
-    elif [ "$run_mode" = "SALLOC_MPI" ]; then
+    if [ "$run_mode" = "SALLOC_MPI" ]; then
         run_mode_cmd="salloc -N ${NNODES} --ntasks-per-node ${NGPUS} -t ${SLURM_TIME} --exclusive"
         if [ "$SLURM_PARTITION" != "" ]; then
             run_mode_cmd+=" -p $SLURM_PARTITION"
@@ -89,6 +95,11 @@ function make_run_command() {
         # Deliberately ignore any MPI flags passed as they should have been set in the test env already
         transformed_env_vars=$(transform_env_vars "$env_vars" "srun")
         run_mode_cmd="srun --export=ALL,$transformed_env_vars --ntasks-per-node=$ppn --mpi=pmix"
+        echo $run_mode_cmd
+    elif [ "$run_mode" = "CMD" ]; then
+        # Directly pass through space-delimited env_vars
+        transformed_env_vars=$(transform_env_vars "$env_vars" "cmd")
+        run_mode_cmd="$transformed_env_vars"
         echo $run_mode_cmd
     fi
 }

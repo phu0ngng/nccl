@@ -1,5 +1,6 @@
 #include "topo.h"
 #include "xml.h"
+#include "nccl_net.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -7,7 +8,7 @@
 #define ERROR(fmt, ...) do { \
   printf("%s:%d " fmt "\n", __FILE__, __LINE__, __VA_ARGS__); \
   exit(1); \
-} while (0);
+} while (0)
 
 #define CHECK(call) do { \
   ncclResult_t res = call; \
@@ -27,6 +28,7 @@ uint64_t getTime() {
 const char* graphNames[] = { "Ring", "Tree", "CollNet", "NVLS" };
 
 int dumpDiff = 1;
+int coll = 0;
 
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter, int* errors, int* warnings) {
   if (ref->nChannels == 0 && out->nChannels == 0) return;
@@ -82,6 +84,150 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
 }
 #define MAX_MNNVL_NODES 64
 
+#define NCCL_PLUGIN_MAX_RECVS 8
+int max_requests = NCCL_NET_MAX_REQUESTS;
+int nPhysDevs = 0;
+int nVirtualDevs = 0;
+#define MAX_MOCK_DEVS 1024
+#define MAX_MOCK_VDEVS MAX_MOCK_DEVS*8
+#define MOCK_VDEV_NAME_LENGTH 256
+struct mockVDev {
+  char name[MOCK_VDEV_NAME_LENGTH];
+  int speed;
+  float latency;
+  int ignore;
+  ncclNetVDeviceProps_t vProps;
+};
+mockVDev* mockVDevs = nullptr;
+ncclNetProperties_t* mockProps = nullptr;
+
+void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
+  int devIndex;
+  CHECK(xmlGetAttrInt(node, "dev", &devIndex));
+  mockVDev* dev = mockVDevs + devIndex;
+  dev->ignore = 0;
+  CHECK(xmlGetAttrInt(node, "speed", &dev->speed));
+  xmlGetAttrFloat(node, "latency", &dev->latency);
+  const char* name;
+  CHECK(xmlGetAttrStr(node, "name", &name));
+  snprintf(dev->name, sizeof(dev->name), "%s", name);
+  ncclNetProperties_t* props = mockProps + devIndex;
+  // Perhaps todo - Compute PCI Path
+  CHECK(xmlGetAttrUint64(node, "guid", &props->guid));
+  int size = strlen(name) + 1;
+  props->name = (char*) malloc(size);
+  snprintf(props->name, size, "%s", name);
+  CHECK(xmlGetAttrInt(node, "speed", &props->speed));
+  xmlGetAttrFloat(node, "latency", &props->latency);
+  CHECK(xmlGetAttrInt(node, "port", &props->port));
+  // We are assuming that all NICs are coll=1 on collnet platforms
+  xmlGetAttrInt(node, "coll", &coll);
+
+  // It's assumed system.xml files won't have duplicate "dev" fields
+  if (nPhysDevs < (devIndex + 1)) nPhysDevs = devIndex + 1;
+  nVirtualDevs = nPhysDevs;
+}
+
+void fakeNetPluginInit(struct ncclXml* xmlSystem) {
+  if (mockVDevs == NULL) {
+    mockVDevs = (mockVDev*) malloc(sizeof(mockVDev)*MAX_MOCK_DEVS);
+    mockProps = (ncclNetProperties_t*) malloc(sizeof(ncclNetProperties_t)*MAX_MOCK_DEVS);
+  }
+
+  for (int i = 0; i < nPhysDevs; i++) {
+    free(mockProps[i].name);
+  }
+
+  nPhysDevs = 0;
+  nVirtualDevs = 0;
+  coll = 0;
+  memset(mockVDevs, 0, sizeof(mockVDev)*MAX_MOCK_DEVS);
+  memset(mockProps, 0, sizeof(ncclNetProperties_t)*MAX_MOCK_DEVS);
+
+  struct ncclXmlNode* node;
+  CHECK(xmlFindTag(xmlSystem, "net", &node));
+  while (node) {
+    fakeNetPluginAddNetNode(node);
+    CHECK(xmlFindNextTag(xmlSystem, "net", node, &node));
+  }
+
+  // Add in fake devs if there are any skipped in system.xml
+  for (int i = 0; i < nPhysDevs; i++) {
+    mockVDev* dev = mockVDevs + i;
+    ncclNetProperties_t* props = mockProps + i;
+    if (dev->speed == 0) {
+      dev->speed = 1;
+      dev->ignore = 1;
+      snprintf(dev->name, sizeof(dev->name), "ignore_%d", i);
+      int size = strlen(dev->name) + 1;
+      props->name = (char*) malloc(size);
+      snprintf(props->name, size, "ignore_%d", i);
+      props->speed = 1;
+    }
+  }
+}
+
+ncclResult_t fakeNetPluginGetProperties(int dev, ncclNetProperties_t* props) {
+  if (dev < nVirtualDevs) {
+    mockVDev* vDev = mockVDevs + dev;
+    int pDevIndex = vDev->vProps.devs[0];
+    memcpy(props, mockProps + pDevIndex, sizeof(ncclNetProperties_t));
+    props->vProps = vDev->vProps;
+    props->speed = vDev->speed;
+    props->name  = vDev->name;
+    props->latency  = vDev->latency;
+    return ncclSuccess;
+  } else {
+    return ncclInvalidUsage;
+  }
+}
+
+ncclResult_t fakeNetPluginDevices(int* ndev) {
+  *ndev = nVirtualDevs;
+  return ncclSuccess;
+}
+
+ncclResult_t fakeNetPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
+  if (nVirtualDevs < MAX_MOCK_VDEVS) {
+    if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidArgument;
+    for (int i = 0; i < vProps->ndevs; i++) {
+      int pDev = vProps->devs[i];
+      if (mockVDevs[pDev].ignore) return ncclInvalidArgument;
+    }
+    int deviceIndex = nVirtualDevs;
+    mockVDev* mDev = mockVDevs + deviceIndex;
+    memset(mDev, 0, sizeof(mockVDev));
+    memcpy(&mDev->vProps, vProps, sizeof(ncclNetVDeviceProps_t));
+    for (int i = 0; i < mDev->vProps.ndevs; i++) {
+      int pDev = mDev->vProps.devs[i];
+      mDev->speed   += mockProps[pDev].speed;
+      mDev->latency += mockProps[pDev].latency;
+      if (i > 0) {
+        snprintf(mDev->name + strlen(mDev->name), sizeof(mDev->name) - strlen(mDev->name), "+%s", mockProps[pDev].name);
+      } else {
+        strncpy(mDev->name, mockProps[pDev].name, 128);
+      }
+    }
+
+    printf("Fake/Plugin : Made vDevice %s speed=%d\n", mDev->name, mDev->speed);
+
+    *d = nVirtualDevs;
+    nVirtualDevs++;
+    return ncclSuccess;
+  } else {
+    return ncclInvalidUsage;
+  }
+}
+
+void keepGpus(struct ncclXml* xmlSystem) {
+  struct ncclXmlNode* node;
+  CHECK(xmlFindTag(xmlSystem, "gpu", &node));
+  while (node) {
+    CHECK(xmlSetAttrInt(node, "keep", 1));
+    CHECK(xmlFindNextTag(xmlSystem, "gpu", node, &node));
+  }
+}
+
 void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter, int ngpus, int* errors, int* warnings) {
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
@@ -93,6 +239,14 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     (*errors)++;
     return;
   }
+  // Inititalize a netState object for NIC fusion
+  ncclTopoNetState netState = {-1,-1};
+  fakeNetPluginInit(xmlSystem);
+  CHECK(ncclTopoProcessNet(xmlSystem, coll, NULL, &netState,
+    fakeNetPluginGetProperties, fakeNetPluginMakeVDevice, fakeNetPluginDevices, "Fake", true));
+  // We need to force all GPUs as keep="1" here to avoid trimming them
+  keepGpus(xmlSystem);
+  CHECK(ncclTopoTrimXml(xmlSystem));
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
   free(xmlSystem);
   if (inter == 0) {
@@ -212,8 +366,10 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &cNetGraph, &nvlsGraph };
     CHECK(ncclTopoGetXmlFromGraphs(4, graphs, system, xml));
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));
+    printf("\ngraph_test : Dumping XML to %s\n", dumpFile);
     free(xml);
     printf(" %s %5ld ms\n", err ? "FAILED" : "  WARN", computeTime[4]/1000);
+    printf("Dumping computed graph to %s\n", dumpFile);
   } else if (computeTime[4] > 1000000) {
     printf("   SLOW %5ld ms [%ld+%ld+%ld+%ld]\n", computeTime[4]/1000,
         computeTime[0]/1000, computeTime[1]/1000, computeTime[2]/1000, computeTime[3]/1000);

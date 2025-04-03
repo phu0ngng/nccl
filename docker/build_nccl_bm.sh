@@ -19,7 +19,7 @@ export PATH=$CUDA_HOME/bin:${PATH}
 
 export NCCL_HOME=$(pwd)/build
 
-make clean
+if [ $make_clean ]; then make clean; fi
 
 # figure out a fair job number
 jobs=$(eval "$NUM_BUILD_PROCS")
