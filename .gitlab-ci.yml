@@ -1192,7 +1192,7 @@ nic-fusion-A40:
     - pushd ext-net/mock
     - make
     - popd
-    - ./test/scripts/gitlab-runner-mock-nic-fusion.sh test/nic-fusion/mock-a40-mixed-graph.xml
+    - ./test/scripts/gitlab-runner-mock-nic-fusion.sh test/nic-fusion/mock-a40-mixed-graph.xml test/nic-fusion/mock-a40-mixed-graph-1rpn.xml
   artifacts:
     when: always
     paths:

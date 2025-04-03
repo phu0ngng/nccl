@@ -47,7 +47,7 @@
       </pci>
     </pci>
     <nic>
-      <net name="eth0" dev="0" speed="10000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
+      <net name="eth1" dev="1" speed="10000" port="0" latency="0.000000" guid="0x0" maxconn="65536" gdr="0"/>
     </nic>
     <pci busid="0000:b8:00.0" class="0x060400" vendor="0x1000" device="0xc030" subsystem_vendor="0x15d9" subsystem_device="0x1d24" link_speed="32.0 GT/s PCIe" link_width="16">
       <pci busid="0000:bc:00.0" class="0x030200" vendor="0x10de" device="0x233b" subsystem_vendor="0x10de" subsystem_device="0x1996" link_speed="32.0 GT/s PCIe" link_width="16">

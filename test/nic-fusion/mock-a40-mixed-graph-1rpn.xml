@@ -1,9 +1,14 @@
 <graphs version="1">
-  <graph id="0" pattern="4" crossnic="0" nchannels="4" speedintra="1.2" speedinter="1.2" latencyinter="0" typeintra="LOC" typeinter="PHB" samechannels="1">
+  <graph id="0" pattern="4" crossnic="0" nchannels="5" speedintra="1.2" speedinter="1.2" latencyinter="0" typeintra="LOC" typeinter="PHB" samechannels="1">
     <channel>
       <net dev="0x4"/>
       <gpu dev="0"/>
       <net dev="0x4"/>
+    </channel>
+    <channel>
+      <net dev="0x1"/>
+      <gpu dev="0"/>
+      <net dev="0x1"/>
     </channel>
     <channel>
       <net dev="0x2"/>
@@ -21,11 +26,16 @@
       <net dev="0x4"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="4" speedintra="2.4" speedinter="1.2" latencyinter="0" typeintra="LOC" typeinter="PHB" samechannels="1">
+  <graph id="1" pattern="3" crossnic="0" nchannels="5" speedintra="2.4" speedinter="1.2" latencyinter="0" typeintra="LOC" typeinter="PHB" samechannels="1">
     <channel>
       <net dev="0x4"/>
       <gpu dev="0"/>
       <net dev="0x4"/>
+    </channel>
+    <channel>
+      <net dev="0x1"/>
+      <gpu dev="0"/>
+      <net dev="0x1"/>
     </channel>
     <channel>
       <net dev="0x2"/>
@@ -50,7 +60,17 @@
       <net dev="0x2"/>
     </channel>
   </graph>
-  <graph id="2" pattern="3" crossnic="0" nchannels="4" speedintra="1.2" speedinter="0.24" latencyinter="0" typeintra="LOC" typeinter="PHB" samechannels="1">
+  <graph id="2" pattern="3" crossnic="0" nchannels="5" speedintra="1.2" speedinter="0.24" latencyinter="0" typeintra="LOC" typeinter="PHB" samechannels="1">
+    <channel>
+      <net dev="0x3"/>
+      <gpu dev="0"/>
+      <net dev="0x3"/>
+    </channel>
+    <channel>
+      <net dev="0x2"/>
+      <gpu dev="0"/>
+      <net dev="0x2"/>
+    </channel>
     <channel>
       <net dev="0x2"/>
       <gpu dev="0"/>
@@ -65,11 +85,6 @@
       <net dev="0x3"/>
       <gpu dev="0"/>
       <net dev="0x3"/>
-    </channel>
-    <channel>
-      <net dev="0x2"/>
-      <gpu dev="0"/>
-      <net dev="0x2"/>
     </channel>
   </graph>
   <graph id="3" pattern="5" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="LOC" typeinter="LOC" samechannels="0"/>
