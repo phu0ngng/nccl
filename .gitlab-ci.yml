@@ -125,7 +125,7 @@ build-pre-tyche:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   script:
-    - docker/make.sh pre-tyche --clean --baremetal-build
+    - docker/make.sh pre-tyche
     - mv build build-pre-tyche
   artifacts:
     paths:

@@ -15,6 +15,11 @@ PRETYCHE_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${PRETYCHE_C
 PRETYCHE_OPENMPI_VERSION="5.0.6"
 PRETYCHE_OPENMPI_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/openmpi-${PRETYCHE_OPENMPI_VERSION}"
 
+PRETYCHE_OS_VERSION="20.04"
+PRETYCHE_BUILD_TOOLS_VERSION="1.0.1"
+PRETYCHE_BUILD_IMAGE_VERSION="${PRETYCHE_BUILD_TOOLS_VERSION}-c${PRETYCHE_CUDA_VERSION}-u${PRETYCHE_OS_VERSION}"
+PRETYCHE_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
+
 # Slurm account for executing jobs
 PRETYCHE_SLURM_ACCOUNT="coreai_libraries_nccl"
 
@@ -37,7 +42,16 @@ function get_num_build_procs() {
     echo "nproc"
 }
 
-function get_build_command() {
+function get_build_image_version() {
+    echo ${PRETYCHE_BUILD_IMAGE_VERSION}
+}
+
+function get_build_tools_image() {
+    build_image_version="$1"
+    echo "$PRETYCHE_DOCKER_IMAGE_DIR/nccl_build_tools-${build_image_version}.sqsh"
+}
+
+function get_build_command_bm() {
     echo "srun \
             --account=$PRETYCHE_SLURM_ACCOUNT \
             -J $PRETYCHE_SLURM_ACCOUNT-ci:nccl-build \
@@ -46,6 +60,24 @@ function get_build_command() {
             -c 64 \
             -p batch \
             docker/build_nccl_bm.sh"
+}
+
+function get_build_command() {
+    current_dir="$1"
+    build_image_version="$2"
+    build_tools_image="$(get_build_tools_image $build_image_version)"
+
+    # ask for a lot of cores - otherwise we get 2
+    echo "srun \
+        --account=$PRETYCHE_SLURM_ACCOUNT \
+        -J ${PRETYCHE_SLURM_ACCOUNT}-nccl:test \
+        -p batch \
+        -t 00:05:00 \
+        -n 1 \
+        -c 64 \
+        --container-image=$build_tools_image \
+        --container-mounts=${current_dir}:/nccl \
+        /nccl/docker/build_nccl.sh"
 }
 
 function get_cuda_home() {
