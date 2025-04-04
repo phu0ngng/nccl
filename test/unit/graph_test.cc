@@ -262,12 +262,12 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   // We need to force all GPUs as keep="1" here to avoid trimming them
   keepGpus(xmlSystem);
   if (dumpProcessedXml) {
-    sprintf(dumpFile, "%s.processed", xmlTopoFile);
+    snprintf(dumpFile, sizeof(dumpFile), "%s.processed", xmlTopoFile);
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
   }
   CHECK(ncclTopoTrimXml(xmlSystem));
   if (dumpProcessedXml) {
-    sprintf(dumpFile, "%s.processed_trimmed", xmlTopoFile);
+    snprintf(dumpFile, sizeof(dumpFile), "%s.processed_trimmed", xmlTopoFile);
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
@@ -382,7 +382,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
       nvlsGraph.nChannels, nvlsGraph.bwIntra, nvlsGraph.bwInter);
 
   if (err || warn || incompleteRef) {
-    sprintf(dumpFile, "%s.dump", xmlGraphFile);
+    snprintf(dumpFile, sizeof(dumpFile), "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
     CHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
     struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &cNetGraph, &nvlsGraph };
