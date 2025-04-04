@@ -1,6 +1,7 @@
 #include "register.h"
 #include "transport.h"
 #include "enqueue.h"
+#include "register_inline.h"
 
 static ncclResult_t registerCheckP2PConnection(struct ncclComm* comm, struct ncclConnector* conn, struct ncclTopoGraph* graph, int peer, bool* needReg) {
   if (conn->connected) {
@@ -188,7 +189,7 @@ ncclResult_t ncclRegisterCollBuffers(
       struct ncclChannel* channel = comm->channels;
       int ipcRegFlag = 0, netSendRegFlag = 0, netRecvRegFlag = 0;
       void *sendHandle, *recvHandle;
-      if (info->func != ncclFuncReduceScatter && comm->intraNodeP2pSupport) {
+      if (info->func != ncclFuncReduceScatter && comm->isAllDirectP2p) {
         for (int r = 0; r < NCCL_MAX_DIRECT_ARITY; ++r) {
           for (int down = 0; down < 2; ++down) {
             int peer = down ? channel->collnetDirect.down[r] : channel->collnetDirect.up[r];
@@ -308,7 +309,7 @@ ncclResult_t ncclRegisterCollBuffers(
           }
         }
       }
-      if (nPeers > 0 && comm->intraNodeP2pSupport) {
+      if (nPeers > 0 && comm->isAllDirectP2p) {
         if (comm->planner.persistent && ncclParamGraphRegister()) {
           ncclIpcGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, peerRanks, nPeers, NCCL_IPC_COLLECTIVE, &regBufFlag, &info->recvbuffOffset, &info->recvbuffRmtAddrs, cleanupQueue, &info->nCleanupQueueElts);
         }
@@ -365,7 +366,7 @@ ncclResult_t ncclRegisterCollBuffers(
       void *sendHandle, *recvHandle;
       NCCLCHECK(ncclRegFind(comm, info->recvbuff, recvbuffSize, &recvRegRecord));
       if (recvRegRecord == NULL && !(comm->planner.persistent && ncclParamGraphRegister())) goto exit;
-      if (comm->intraNodeP2pSupport) {
+      if (comm->isAllDirectP2p) {
         for (int c = 0; c < comm->nChannels; ++c) {
           struct ncclChannel* channel = comm->channels + c;
           struct ncclTree* tree = NULL;

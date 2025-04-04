@@ -2,7 +2,7 @@
 Types
 *****
 
-The following types are used by the NCCL library.  
+The following types are used by the NCCL library.
 
 ncclComm_t
 ----------
@@ -14,10 +14,10 @@ ncclComm_t
 ncclResult_t
 ------------
 
-.. c:type:: ncclResult_t 
+.. c:type:: ncclResult_t
 
  Return values for all NCCL functions. Possible values are :
- 
+
  .. c:macro:: ncclSuccess
 
    (``0``)
@@ -65,7 +65,7 @@ ncclDataType_t
 .. c:type:: ncclDataType_t
 
  NCCL defines the following integral and floating data-types.
- 
+
  .. c:macro:: ncclInt8
 
   Signed 8-bits integer
@@ -188,9 +188,9 @@ ncclConfig_t
 
 .. c:type:: ncclConfig_t
 
- A structure-based configuration users can set to initialize a communicator; a 
+ A structure-based configuration users can set to initialize a communicator; a
  newly created configuration must be initialized by NCCL_CONFIG_INITIALIZER.
- 
+
  .. c:macro:: NCCL_CONFIG_INITIALIZER
 
   A configuration macro initializer which must be assigned to a newly created configuration.
@@ -239,9 +239,9 @@ ncclConfig_t
   The meaning of TC is specific to the network plugin in use by the
   communicator (e.g. IB networks use service level, RoCE networks use type of service).
   Assigning different TCs to each communicator can benefit workloads which
-  overlap communication. TCs are defined by the system configuration and should be greater 
-  than or equal to 0. Note that environment variables, such as `NCCL_IB_SL` and `NCCL_IB_TC`, 
-  take precedence over user-specified TC values. To utilize user-defined TCs, ensure that 
+  overlap communication. TCs are defined by the system configuration and should be greater
+  than or equal to 0. Note that environment variables, such as `NCCL_IB_SL` and `NCCL_IB_TC`,
+  take precedence over user-specified TC values. To utilize user-defined TCs, ensure that
   these environment variables are unset.
 
 .. _ncclsiminfo:
@@ -261,3 +261,10 @@ ncclSimInfo_t
  .. c:macro:: estimatedTime
 
  Estimated time for the operation(s) in the group call will be returned in this attribute.
+
+ncclWindow_t
+------------
+
+.. c:type:: ncclWindow_t
+
+  NCCL window object for window registration and deregistration.

@@ -1,6 +1,9 @@
 <!-- This file is automatically changed -->
 <!-- update with extra care -->
 # NCCL - PLC
+
+## version 2.27
+- [Symmetric API](items/id_52d22bee/Symmetric_API.md)
 <!------------------------------------->
 ## version 2.27
 

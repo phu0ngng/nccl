@@ -95,15 +95,15 @@ ncclCommSplit
 
 .. c:function:: ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t* newcomm, ncclConfig_t* config)
 
-The *ncclCommSplit* is a collective function and creates a set of new communicators from an existing one. Ranks which 
-pass the same *color* value will be part of the same group; color must be a non-negative value. If it is 
-passed as *NCCL_SPLIT_NOCOLOR*, it means that the rank will not be part of any group, therefore returning NULL 
+The *ncclCommSplit* is a collective function and creates a set of new communicators from an existing one. Ranks which
+pass the same *color* value will be part of the same group; color must be a non-negative value. If it is
+passed as *NCCL_SPLIT_NOCOLOR*, it means that the rank will not be part of any group, therefore returning NULL
 as newcomm.
 The value of key will determine the rank order, and the smaller key means the smaller rank in new communicator.
 If keys are equal between ranks, then the rank in the original communicator will be used to order ranks.
 If the new communicator needs to have a special configuration, it can be passed as *config*, otherwise setting
 config to NULL will make the new communicator inherit the original communicator's configuration.
-When split, there should not be any outstanding NCCL operations on the *comm*. Otherwise, it might cause 
+When split, there should not be any outstanding NCCL operations on the *comm*. Otherwise, it might cause
 a deadlock.
 
 
@@ -112,11 +112,11 @@ ncclCommFinalize
 
 .. c:function:: ncclResult_t ncclCommFinalize(ncclComm_t comm)
 
-Finalize a communicator object *comm*. When the communicator is marked as nonblocking, *ncclCommFinalize* is a 
-nonblocking function. Successful return from it will set communicator state as *ncclInProgress* and indicates 
-the communicator is under finalization where all uncompleted operations and the network-related resources are 
-being flushed and freed. 
-Once all NCCL operations are complete, the communicator will transition to the *ncclSuccess* state. Users 
+Finalize a communicator object *comm*. When the communicator is marked as nonblocking, *ncclCommFinalize* is a
+nonblocking function. Successful return from it will set communicator state as *ncclInProgress* and indicates
+the communicator is under finalization where all uncompleted operations and the network-related resources are
+being flushed and freed.
+Once all NCCL operations are complete, the communicator will transition to the *ncclSuccess* state. Users
 can query that state with *ncclCommGetAsyncError*.
 
 ncclCommDestroy
@@ -125,11 +125,11 @@ ncclCommDestroy
 .. c:function:: ncclResult_t ncclCommDestroy(ncclComm_t comm)
 
 Destroy a communicator object *comm*.
-*ncclCommDestroy* only frees the local resources that are allocated to the communicator object *comm* if *ncclCommFinalize* 
-was previously called on the communicator; otherwise, *ncclCommDestroy* will call ncclCommFinalize internally. 
-If *ncclCommFinalize* is called by users, users should guarantee that the state of the communicator becomes *ncclSuccess* before 
-calling *ncclCommDestroy*. 
-In all cases, the communicator should no longer be accessed after ncclCommDestroy returns. It is recommended that 
+*ncclCommDestroy* only frees the local resources that are allocated to the communicator object *comm* if *ncclCommFinalize*
+was previously called on the communicator; otherwise, *ncclCommDestroy* will call ncclCommFinalize internally.
+If *ncclCommFinalize* is called by users, users should guarantee that the state of the communicator becomes *ncclSuccess* before
+calling *ncclCommDestroy*.
+In all cases, the communicator should no longer be accessed after ncclCommDestroy returns. It is recommended that
 users call *ncclCommFinalize* and then *ncclCommDestroy*.
 This function is an intra-node collective call, which all ranks on the same node should call to avoid a hang.
 
@@ -171,7 +171,7 @@ ncclCommCuDevice
 
 .. c:function:: ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int* device)
 
-Returns in *device* the CUDA device associated with the NCCL communicator *comm*. 
+Returns in *device* the CUDA device associated with the NCCL communicator *comm*.
 
 ncclCommUserRank
 ----------------
@@ -195,13 +195,31 @@ ncclCommDeregister
 
 Deregister buffer represented by *handle* under communicator *comm*.
 
+ncclCommWindowRegister
+----------------------
+
+.. c:function:: ncclResult_t ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags)
+
+Collectively register local buffer *buff* with *size* under communicator *comm* into NCCL window. Since this is a collective call,
+every rank in the communicator needs to participate the registration, and *size* by default needs to be equal among the ranks. *win* is
+returned for future deregistration. See *buff* requirement and more instructions in :ref:`user_buffer_reg`. User can also pass
+different win flags to control the registration behavior. For more win flags information, please refer to :ref:`win_flags`.
+
+ncclCommWindowDeregister
+------------------------
+
+.. c:function:: ncclResult_t ncclCommWindowDeregister(ncclComm_t comm, ncclWindow_t win)
+
+Deregister NCCL window represented by *win* under communicator *comm*. Deregistration is local to the rank, and
+caller needs to make sure the corresponding buffer within the window is not being accessed by any NCCL operation.
+
 ncclMemAlloc
 ------------
 
 .. c:function:: ncclResult_t ncclMemAlloc(void **ptr, size_t size)
 
 Allocate a GPU buffer with *size*. Allocated buffer head address will be returned by *ptr*,
-and the actual allocated size can be larger than requested because of the buffer granularity 
+and the actual allocated size can be larger than requested because of the buffer granularity
 requirements from all types of NCCL optimizations.
 
 ncclMemFree

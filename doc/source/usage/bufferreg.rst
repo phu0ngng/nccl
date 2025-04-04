@@ -147,3 +147,10 @@ For advanced users, if you want to create your own memory allocator for NVLS UB,
  * Buffer virtual head address is at least aligned to CUMEM recommended granularity and size is multiple of CUMEM recommended granularity.
 
 For general buffer registration with VMM API, the allocator needs to satisfy the same requirements as NVLS UB allocators.
+
+Window Registration
+-------------------
+
+Since 2.27, NCCL supports window registration, which allows users to register local buffers into NCCL window and enables extreme low latency and high bandwith communication in NCCL. Currently, window registration only supports input buffers from VMM-based allocators (:ref:`mem_allocator`) and `ncclMemAlloc`; any other type of cuda buffers will fail to be registered.
+
+NCCL window registration is enabled by default. However, if users do not use window registration and need to turn it off, set `NCCL_WIN_ENABLE=0` to disable it. In addition, users can also control the behavior of window registration through flags in :ref:`win_flags`.

@@ -114,6 +114,7 @@ static int commNum = 1;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 #define LOCAL_REGISTER_SEND 0x1
 #define LOCAL_REGISTER_RECV 0x2
+#define SYMMETRIC_REGISTER_ALL 0x4
 static int local_register = 0;
 #endif
 static int per_coll_perf = 0;
@@ -1015,6 +1016,7 @@ testResult_t threadInit(struct threadArgs* args) {
   }
 
   /* allocate buffer for each split comm. */
+  NCCLCHECK(ncclGroupStart());
   for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       int nranks;
@@ -1024,13 +1026,21 @@ testResult_t threadInit(struct threadArgs* args) {
       ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
       CUDACHECK(cudaSetDevice(args->gpus[i]));
       TESTCHECK(AllocateBuffs(args->sendbuffs[id] + i, sendBytes, args->recvbuffs[id] + i, recvBytes, args->expected[id] + i, (size_t)maxBytes, &allocBytes));
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+      if (local_register & SYMMETRIC_REGISTER_ALL) {
+        NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, (ncclWindow_t*)&args->sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
+        NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, (ncclWindow_t*)&args->recvRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
+      } else {
+        if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, &args->sendRegHandles[id][i]));
+        if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, &args->recvRegHandles[id][i]));
+      }
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
       if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, &args->sendRegHandles[id][i]));
       if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, &args->recvRegHandles[id][i]));
 #endif
     }
   }
-
+  NCCLCHECK(ncclGroupEnd());
   TESTCHECK(threadRunTests(args));
 
   return testSuccess;
@@ -1347,13 +1357,18 @@ int main(int argc, char* argv[], char **envp) {
         split_comm = (int)strtol(optarg, NULL, 0);
         break;
       case 'R':
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+        if (optarg[0] == 's') local_register = LOCAL_REGISTER_SEND;
+        else if (optarg[0] == 'r') local_register = LOCAL_REGISTER_RECV;
+        else if (optarg[0] == 'a' || (int)strtol(optarg, NULL, 0) == 1) local_register = LOCAL_REGISTER_SEND|LOCAL_REGISTER_RECV;
+        else if ((int)strtol(optarg, NULL, 0) == 2) local_register = SYMMETRIC_REGISTER_ALL;
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
         if (optarg[0] == 's') local_register = LOCAL_REGISTER_SEND;
         else if (optarg[0] == 'r') local_register = LOCAL_REGISTER_RECV;
         else if ((optarg[0] == 'a') || ((int)strtol(optarg, NULL, 0))) local_register = LOCAL_REGISTER_SEND|LOCAL_REGISTER_RECV;
 #else
         printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
-#endif
+#endif // NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
         break;
       case 'A':
         per_coll_perf = (int)strtol(optarg, NULL, 0);
@@ -1406,7 +1421,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
             "[-S,--split_share <0/1> enable shared resources during communicator split (default: 0)] \n\t"
             "[-P,--split_comm <0/1/2> enable communicator split (default: 0 disable; 1 dup global comm; 2 three split patterns)] \n\t"
-            "[-R,--local_register <s/r/a> enable local buffer registration on send buffers/recv buffers/all buffers (default: disable)] \n\t"
+            "[-R,--local_register <s/r/a/1/2> enable local (s/r/a/1) or symmetric (2) buffer registration on send buffers/recv buffers/all buffers (default: disable)] \n\t"
             "[-A,--per_coll_perf <0/1/2> Report performance per-collective (default: 0 disable; 1 report per-collective performance and std deviation; 2: report only std deviation)] \n\t"
             "[-I,--init_ids <num ids> enable scalable API for ncclCommInitRank using <num ids> ncclUniqueIds (default: disabled; 0 is equivalent to 1 ncclUniqueId per 128 NCCL ranks; value must be >=0)] \n\t"
             "[-q,--traffic_class <tclass> set network traffic class] \n\t"
@@ -1484,22 +1499,22 @@ testResult_t run() {
     color = proc & strtoul(splitMaskEnv, NULL, 16);
   } else if (splitMaskEnv = getenv("NCCL_TESTS_SPLIT")) {
     if (
-      (strncasecmp(splitMaskEnv, "AND", strlen("AND")) == 0 && parseInt(splitMaskEnv + strlen("AND"), &color)) || 
+      (strncasecmp(splitMaskEnv, "AND", strlen("AND")) == 0 && parseInt(splitMaskEnv + strlen("AND"), &color)) ||
       (strncasecmp(splitMaskEnv, "&", strlen("&")) == 0 && parseInt(splitMaskEnv + strlen("&"), &color))
     )
         color = proc & color;
     if (
-      (strncasecmp(splitMaskEnv, "OR", strlen("OR")) == 0 && parseInt(splitMaskEnv + strlen("OR"), &color)) || 
+      (strncasecmp(splitMaskEnv, "OR", strlen("OR")) == 0 && parseInt(splitMaskEnv + strlen("OR"), &color)) ||
       (strncasecmp(splitMaskEnv, "|", strlen("|")) == 0 && parseInt(splitMaskEnv + strlen("|"), &color))
     )
         color = proc | color;
     if (
-      (strncasecmp(splitMaskEnv, "MOD", strlen("MOD")) == 0 && parseInt(splitMaskEnv + strlen("MOD"), &color)) || 
+      (strncasecmp(splitMaskEnv, "MOD", strlen("MOD")) == 0 && parseInt(splitMaskEnv + strlen("MOD"), &color)) ||
       (strncasecmp(splitMaskEnv, "%", strlen("%")) == 0 && parseInt(splitMaskEnv + strlen("%"), &color))
     )
         color = proc % color;
     if (
-      (strncasecmp(splitMaskEnv, "DIV", strlen("DIV")) == 0 && parseInt(splitMaskEnv + strlen("DIV"), &color)) || 
+      (strncasecmp(splitMaskEnv, "DIV", strlen("DIV")) == 0 && parseInt(splitMaskEnv + strlen("DIV"), &color)) ||
       (strncasecmp(splitMaskEnv, "/", strlen("/")) == 0 && parseInt(splitMaskEnv + strlen("/"), &color))
     )
         color = proc / color;
@@ -1579,7 +1594,7 @@ testResult_t run() {
   }
 #ifdef MPI_SUPPORT
   MPI_Allreduce(MPI_IN_PLACE, &minCudaArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
-#endif 
+#endif
 #if HAVE_FP8
   if (minCudaArch < 900) { // Filter out fp8 on pre-Hopper hardware
     int n = 0;
@@ -1593,7 +1608,7 @@ testResult_t run() {
     test_typenum = n;
   };
 #endif
-  
+
   char* ncclIdLocal;
   ncclUniqueId* ncclId;
   ncclComm_t globalComms[nThreads*nGpus];
@@ -1746,6 +1761,7 @@ testResult_t run() {
     }
 
     /* allocate buffer for each split comm. */
+    NCCLCHECK(ncclGroupStart());
     for (int id = 0; id < commNum; ++id) {
       for (int i = 0; i < nGpus * nThreads; i++) {
         int nranks;
@@ -1754,12 +1770,21 @@ testResult_t run() {
         ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
         CUDACHECK(cudaSetDevice(gpus[i]));
         TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+        if (local_register & SYMMETRIC_REGISTER_ALL) {
+          NCCLCHECK(ncclCommWindowRegister(comms[id][i], sendbuffs[id][i], allocBytes, (ncclWindow_t*)&sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
+          NCCLCHECK(ncclCommWindowRegister(comms[id][i], recvbuffs[id][i], allocBytes, (ncclWindow_t*)&recvRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
+        } else {
+          if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
+          if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
+        }
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
         if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
         if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
 #endif
       }
     }
+    NCCLCHECK(ncclGroupEnd());
   }
 
   int errors[nThreads];
@@ -1903,7 +1928,18 @@ testResult_t run() {
   // Free off CUDA allocated memory
   for (int id = 0; id < commNum; ++id) {
     for (int i=0; i<nGpus*nThreads; i++) {
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+      if (local_register & SYMMETRIC_REGISTER_ALL) {
+        NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)sendRegHandles[id][i]));
+        NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)recvRegHandles[id][i]));
+      } else {
+        if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
+        if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
+      }
+      if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
+      if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
+      if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
       if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
       if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
