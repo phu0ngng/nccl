@@ -245,10 +245,14 @@ struct ncclKernelPlan {
 
   bool persistent; // aka captured in a graph
   bool isHostCbEnq;
+  bool isSymColl;
   enum ncclDevWorkStorageType workStorageType;
   bool kernelSpecialized;
-  void *kernelFn;
-  struct ncclDevKernelArgs* kernelArgs;
+  void* kernelFn;
+  union {
+    struct ncclDevKernelArgs* kernelArgs;
+    struct ncclSymDevArgs* kernelSymArgs;
+  };
   size_t kernelArgsSize;
   uint64_t channelMask; // bitset of which channels are present
   bool hasProxyOps; // does any channel have a non-empty proxyOpQueue
@@ -357,6 +361,7 @@ struct ncclKernelPlanner {
   struct Peer* peers/*[nRanks]*/;
   int nTasksColl, nTasksP2p;
   bool persistent;
+  bool isSymColl;
 
   // The list of user streams aggregated over all tasks present.
   struct ncclCudaStreamList* streams;
@@ -523,6 +528,7 @@ struct ncclComm {
 
   // Device side of the communicator (for cudaFree's)
   struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm
+  struct ncclSymDevComm symDevComm;
 
   uint32_t workArgsBytes; // max size of kernel args
   uint32_t workFifoBytes; // size of workFifoBuf, power of 2

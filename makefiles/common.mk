@@ -50,7 +50,6 @@ CUDA11_PTX    = -gencode=arch=compute_80,code=compute_80
 CUDA12_PTX    = -gencode=arch=compute_90,code=compute_90
 CUDA13_PTX    = -gencode=arch=compute_120,code=compute_120
 
-
 ifeq ($(shell test "0$(CUDA_MAJOR)" -eq 12 -a "0$(CUDA_MINOR)" -ge 8 -o "0$(CUDA_MAJOR)" -gt 12; echo $$?),0)
 # Include Blackwell support if we're using CUDA12.8 or above
   NVCC_GENCODE ?= $(CUDA8_GENCODE) $(CUDA9_GENCODE) $(CUDA11_GENCODE) $(CUDA12_GENCODE) $(CUDA13_GENCODE) $(CUDA13_PTX)

@@ -2,11 +2,11 @@
 <!-- update with extra care -->
 # NCCL - PLC
 
-## version 2.27
-- [Symmetric API](items/id_52d22bee/Symmetric_API.md)
 <!------------------------------------->
 ## version 2.27
 
+- [Symmetric API](items/id_52d22bee/Symmetric_API.md)
+- [Symmetric Kernels](items/id_0ed44e4e/Symmetric_Kernels.md)
 - [Harmonization of Proxy Events](items/id_54FC6F8F/Harmonization_of_Proxy_Events.md)
 - [Network Defined Event Update](items/id_bba87131/Network_Defined_Event_Update.md)
 - [DirectNIC support](items/id_b992ce97/DirectNIC_support.md)

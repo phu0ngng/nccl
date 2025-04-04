@@ -175,6 +175,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  if (comm->symmetricSupport) {
+    NCCLCHECK(ncclCommSymmetricFreeInternal(comm, comm->baseUCSymPtr + comm->rank * comm->baseStride));
+  }
+
   NCCLCHECK(ncclRasCommFini(comm));
 
   /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
@@ -1264,6 +1268,23 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Call devCommSetup before the last barrier, making sure we don't have a thread running in front and starting to
   // launch NCCL kernels before all cuda mem allocation is complete. That could cause a deadlock.
   NCCLCHECKGOTO(devCommSetup(comm), ret, fail);
+
+  // Allocate symmetric
+  if (comm->symmetricSupport) {
+    struct ncclSymDevBase* symBase;
+    size_t size = ncclSymDevBase::size(comm->localRanks);
+    NCCLCHECKGOTO(ncclCommSymmetricAllocInternal(comm, size, alignof(struct ncclSymDevBase), (void**)&symBase), ret, fail);
+    assert((void*)symBase == (void*)(comm->baseUCSymPtr + comm->localRank * comm->baseStride));
+    CUDACHECKGOTO(cudaMemset(symBase, 0, size), ret, fail);
+
+    comm->symDevComm.base = (struct ncclSymDevBase*)(comm->baseUCSymPtr + comm->localRank * comm->baseStride);
+    comm->symDevComm.baseMc = (struct ncclSymDevBase*)comm->baseMCSymPtr;
+    comm->symDevComm.nRanks = comm->localRanks;
+    comm->symDevComm.nRanks_rcp32 = idivRcp32(comm->localRanks);
+    comm->symDevComm.rank = comm->localRank;
+    comm->symDevComm.stride4G = comm->baseStride>>32;
+  }
+
   timers[TIMER_INIT_CONNECT] = clockNano() -  timers[TIMER_INIT_CONNECT];
   /* Local intra-node barrier */
   NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
