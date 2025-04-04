@@ -17,6 +17,7 @@ PROFAPI ?= 1
 NVTX ?= 1
 RDMA_CORE ?= 0
 NET_PROFILER ?= 0
+MLX5DV ?= 0
 
 NVCC = $(CUDA_HOME)/bin/nvcc
 
@@ -136,7 +137,11 @@ CXXFLAGS += -DPROFAPI
 endif
 
 ifneq ($(RDMA_CORE), 0)
-CXXFLAGS += -DNCCL_BUILD_RDMA_CORE=1
+CXXFLAGS += -DNCCL_BUILD_RDMA_CORE=1 -libverbs
+endif
+
+ifneq ($(MLX5DV), 0)
+CXXFLAGS += -DNCCL_BUILD_MLX5DV=1 -lmlx5
 endif
 
 ifneq ($(NET_PROFILER), 0)

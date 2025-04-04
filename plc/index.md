@@ -6,6 +6,7 @@
 
 - [Harmonization of Proxy Events](items/id_54FC6F8F/Harmonization_of_Proxy_Events.md)
 - [Network Defined Event Update](items/id_bba87131/Network_Defined_Event_Update.md)
+- [DirectNIC support](items/id_b992ce97/DirectNIC_support.md)
 <!-- V2_27_DO_NOT_MOVE -->
 
 <!------------------------------------->
