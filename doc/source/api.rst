@@ -1,7 +1,7 @@
 .. _api-label:
 
 ########
-NCCL API 
+NCCL API
 ########
 
 The following sections describe the NCCL methods and operations.
@@ -14,3 +14,4 @@ The following sections describe the NCCL methods and operations.
  api/p2p
  api/types
  api/ops
+ api/flags

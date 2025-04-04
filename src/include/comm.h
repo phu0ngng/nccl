@@ -17,6 +17,7 @@
 #include "register.h"
 #include "graph.h"
 #include "profiler.h"
+#include "allocator.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -405,6 +406,12 @@ struct ncclKernelPlanner {
 
 #define NCCL_MAGIC 0x0280028002800280 // Nickel atomic number is 28.
 
+typedef enum ncclGroupTaskType {
+  ncclGroupTaskTypeCollective = 0,
+  ncclGroupTaskTypeSymRegister = 1,
+  ncclGroupTaskTypeNum = 2,
+} ncclGroupTaskType_t;
+
 struct ncclComm {
   uint64_t startMagic;
   struct ncclMemoryStack memPermanent, memScoped;
@@ -547,7 +554,6 @@ struct ncclComm {
   int collNetSupport;
   bool isOneRPN;
   uint8_t collNetSupportMatrix[4/*sum,prod,max,min*/][ncclNumTypes];
-  bool intraNodeP2pSupport;
   int* collNetHeads;
   int collNetHeadsNum;
   int* collNetDenseToUserRank;
@@ -569,7 +575,7 @@ struct ncclComm {
 
   // Next comm in this thread's active ncclGroup[Start|End](). Holds "0x1" when
   // this comm is not yet in a group.
-  struct ncclComm* groupNext;
+  struct ncclComm* groupNext[ncclGroupTaskTypeNum];
   // Subset of those in groupNext list. Holds 0x1 if not needing preconnect.
   struct ncclComm* preconnectNext;
   int localPersistentRefs; // number of persistent plan-lists capturing this comm
@@ -614,9 +620,18 @@ struct ncclComm {
   // buffer registration cache
   struct ncclRegCache regCache;
   int isAllNvlink;
+  bool isAllDirectP2p;
+  int symmetricSupport;
   bool useNetPXN;
   bool useGdr;
   int splitCount;
+  // symmetric buffer
+  uint8_t* baseUCSymPtr;
+  uint8_t* baseMCSymPtr;
+  size_t baseStride;
+  size_t symAllocHead;
+  CUmemGenericAllocationHandle symMCHandle;
+  struct ncclIntruQueue<struct ncclSymRegTask, &ncclSymRegTask::next> symRegTaskQueue;
   uint64_t endMagic;
 };
 

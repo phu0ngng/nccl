@@ -1073,7 +1073,7 @@ NCCL_PROTO
 (since 2.5)
 
 The ``NCCL_PROTO`` variable defines which protocol(s) NCCL will be allowed
-to use. 
+to use.
 
 Users are discouraged from setting this variable, with the exception of
 disabling a specific protocol in case a bug in NCCL is suspected. In
@@ -1092,7 +1092,7 @@ otherwise.
 
 (since 2.24) The accepted values are expanded to allow more flexibility,
 just as decribed for ``NCCL_ALGO`` above, allowing the user to specify
-protocols for each function. 
+protocols for each function.
 
 NCCL_NVB_DISABLE
 ----------------
@@ -1181,6 +1181,16 @@ default, and users should move to cuMem-based memory allocators for buffer regis
 Value accepted
 ^^^^^^^^^^^^^^
 0 or 1. Default value is 0 (disabled).
+
+NCCL_WIN_ENABLE
+---------------------
+(since 2.27)
+
+Enable window memory registration.
+
+Value accepted
+^^^^^^^^^^^^^^
+0 or 1. Default value is 1 (enabled).
 
 NCCL_SET_STACK_SIZE
 -------------------

@@ -13,6 +13,7 @@
 #include "cudawrap.h"
 #include "profiler.h"
 #include "transport.h"
+#include "register_inline.h"
 
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
@@ -2173,7 +2174,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     bool isSendNotRecv = info->coll == ncclFuncSend;
 
     // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
-    ncclGroupCommJoin(info->comm);
+    ncclGroupCommJoin(info->comm, ncclGroupTaskTypeCollective);
     struct ncclTaskP2p* p2p = ncclMemoryPoolAlloc<struct ncclTaskP2p>(&comm->memPool_ncclTaskP2p, &comm->memPermanent);
     p2p->func = info->coll;
     p2p->buff = (void*)info->recvbuff;
@@ -2240,7 +2241,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       return ncclSuccess;
     } else {
       // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
-      ncclGroupCommJoin(info->comm);
+      ncclGroupCommJoin(info->comm, ncclGroupTaskTypeCollective);
       struct ncclTaskColl* t = ncclMemoryPoolAlloc<struct ncclTaskColl>(&comm->memPool_ncclTaskColl, &comm->memPermanent);
       t->func = info->coll;
       t->sendbuff = info->sendbuff;
