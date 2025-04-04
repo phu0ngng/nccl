@@ -433,6 +433,7 @@ struct ncclComm {
   struct ncclTopoSystem* topo;
   struct ncclProxyConnector* gproxyConn;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> legacyRegCleanupQueue;
+  bool peerInfoValid;
 
   int netPluginLoaded;
   ncclNet_t* ncclNet;

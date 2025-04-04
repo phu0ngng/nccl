@@ -606,6 +606,10 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
   for (int commIdx = 0; commIdx < nNcclComms; commIdx++) {
     if (ncclComms[commIdx] == nullptr) // nullptr's are always at the end after sorting.
       break;
+    if (!__atomic_load_n(&ncclComms[commIdx]->peerInfoValid, __ATOMIC_ACQUIRE)) {
+      // Critical data is not yet initialized -- ignore the communicator.
+      continue;
+    }
     // A process may manage multiple GPUs and thus have multiple communicators with the same commHash.
     // Comparing just the commHash is OK though within communicators that are part of the same process.
     if (commIdx == 0 || ncclComms[commIdx]->commHash != ncclComms[commIdx-1]->commHash) {
@@ -651,6 +655,8 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
   // collCommIdx counts rasCollComms::comm (comm); commIdx indexes ncclComms.
   for (int collCommIdx = 0, commIdx = 0; collCommIdx < nComms; collCommIdx++) {
     struct ncclComm* ncclComm = ncclComms[commIdx];
+    if (!__atomic_load_n(&ncclComm->peerInfoValid, __ATOMIC_ACQUIRE))
+      continue;
 
     comm->commId.commHash = ncclComm->commHash;
     comm->commId.hostHash = ncclComm->peerInfo->hostHash;
@@ -680,7 +686,7 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
       comm->nRanks++;
     } // for (commIdx)
 
-    if (firstNewSkipMissingIdx != -1 &&
+    if (__atomic_load_n(&ncclComm->peerInfoValid, __ATOMIC_ACQUIRE) && firstNewSkipMissingIdx != -1 &&
         memcmp(req->comms.skipMissingRanksComms+firstNewSkipMissingIdx, &comm->commId, sizeof(comm->commId)) == 0) {
       // Fill in the missingRanks array that follows the comm->ranks.
       struct rasCollCommsMissingRank* missingRanks = (struct rasCollCommsMissingRank*)(comm->ranks+comm->nRanks);
