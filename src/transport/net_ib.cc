@@ -470,6 +470,10 @@ static ncclResult_t ncclIbGetPciPath(char* devName, char** path, int* realPort) 
   if (p == NULL) {
     WARN("Could not find real path of %s (%s)", devName, devicePath);
   } else {
+    // Merge multi-port NICs into the same PCI device
+    p[strlen(p)-1] = '0';
+    // Also merge virtual functions (VF) into the same device
+    if (ncclParamIbMergeVfs()) p[strlen(p)-3] = p[strlen(p)-4] = '0';
     // Keep the real port aside (the ibv port is always 1 on recent cards)
     *realPort = 0;
     for (int d=0; d<ncclNIbDevs; d++) {
@@ -536,7 +540,7 @@ failure:
 
 ncclResult_t ncclIbMakeVDeviceInternal(int* d, ncclNetVDeviceProps_t* props) {
   if (ncclParamIbMergeNics() == 0 && props->ndevs > 1) {
-    WARN("NET/IB : Trying to merge multiple devices together when NCCL_IB_MERGE_NICS=0. Please enable it or disable device merging in NCCL.");
+    INFO(NCCL_NET, "NET/IB : Skipping makeVDevice, NCCL_IB_MERGE_NICS=0");
     return ncclInvalidUsage;
   }
 

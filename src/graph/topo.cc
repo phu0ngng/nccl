@@ -800,6 +800,17 @@ typedef struct xmlNodeStack {
 
 } xmlNodeStack;
 
+ncclResult_t ncclFindFirstPciParent(ncclXmlNode** parent) {
+  ncclXmlNode* newParent = *parent;
+  while (strcmp(newParent->name, "pci") != 0) {
+    newParent = newParent->parent;
+    if (newParent == nullptr) return ncclSuccess;
+    if (strcmp(newParent->name, "system") == 0) return ncclSuccess;
+  }
+  *parent = newParent;
+  return ncclSuccess;
+}
+
 // 1. Find the common parent xmlNode between the given set of nodes
 ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXmlNode** parent) {
   // Track a stack of parents per-net node being merged
@@ -898,6 +909,7 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
   }
 
 out:
+  ncclFindFirstPciParent(&common);
   *parent = common;
   free(parents);
   return ncclSuccess;
@@ -1151,8 +1163,13 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclResult_t (*getProper
   if (path == PATH_LOC) {
     *parent = NULL;
   } else if (parent && strcmp((*parent)->name, "pci") == 0) {
-    // If the common parent is PCI, we must reparent the new NIC under a made up busId
-    NCCLCHECK(ncclTopoMakePciParent(xml, parent, physNetNodes[0]));
+    // Compare PCI class here to avoid NCCL WARN when the "class" attribute doesn't exist
+    const char* c;
+    NCCLCHECK(xmlGetAttrStr(*parent, "class", &c));
+    if (strcmp(c, "0x060400") == 0) {
+      // If the common parent is a PCI switch, we must reparent the new NIC under a made up pci device with a unique busid
+      NCCLCHECK(ncclTopoMakePciParent(xml, parent, physNetNodes[0]));
+    }
   }
   TRACE(NCCL_GRAPH, "Selected parent %s with path %d", (*parent)->name, path);
   return ncclSuccess;
