@@ -1124,7 +1124,9 @@ ncclResult_t ncclIpcSymmetricInit(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclIpcSymmetricFinalize(struct ncclComm* comm) {
-  CUCHECK(cuMemAddressFree((CUdeviceptr)comm->baseUCSymPtr, comm->baseStride * comm->localRanks));
+  if (comm->baseUCSymPtr) {
+    CUCHECK(cuMemAddressFree((CUdeviceptr)comm->baseUCSymPtr, comm->baseStride * comm->localRanks));
+  }
   return ncclSuccess;
 }
 

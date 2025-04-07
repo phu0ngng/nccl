@@ -179,7 +179,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  if (comm->symmetricSupport) {
+  if (comm->symmetricSupport && comm->symDevComm.base) {
     NCCLCHECK(ncclCommSymmetricFreeInternal(comm, comm->baseUCSymPtr + comm->rank * comm->baseStride));
   }
 
