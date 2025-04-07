@@ -165,6 +165,8 @@ fairshare-eos:
       when: always
     - when: never
   needs: []
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   tags:
     - nccl-eos
   script:
@@ -1984,6 +1986,7 @@ self-test-pytorch-container-eos:
   parallel: 4
   variables:
     CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   script:
     - chmod +x test/scripts/dlfw/*.sh
     - srun -N1 --exclusive -t60 -A coreai_libraries_nccl -J coreai_libraries_nccl-bewilliams.test-cont --container-image="$CONTAINER" --container-mounts=$(pwd):/workspace/nccl /workspace/nccl/test/scripts/dlfw/run_dlfw_selftest.sh
