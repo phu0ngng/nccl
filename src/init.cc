@@ -1078,6 +1078,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
   comm->topParentLocalRanks = topParentLocalRanks;
 
+  // Profiler plugin context has to be initialized before proxy thread
+  NCCLCHECK(ncclProfilerPluginInit(comm));
+
   NCCLCHECKGOTO(ncclTransportCheckP2pType(comm, &comm->isAllDirectP2p, &comm->directMode), ret, fail);
   // Launch proxy service thread, after this, the proxy calls can be used.
   if (parent && parent->config.splitShare) {
@@ -1458,7 +1461,6 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   if (comm->tuner) {
     NCCLCHECK(comm->tuner->init(comm->nRanks, comm->nNodes, ncclDebugLog, &comm->tunerContext));
   }
-  NCCLCHECK(ncclProfilerPluginInit(comm));
 
   // update communicator state
   comm->initState = ncclSuccess;
