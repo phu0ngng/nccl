@@ -1340,6 +1340,17 @@ Values accepted
 
 2: Automatic detection of NVLink SHARP support. Will *not* fail if NVLS is unsupported or if NVLink SHARP resources cannot be allocated.
 
+NCCL_NVLINK_UTIL_CENTRIC_SCHED_ENABLE
+-------------------------------------
+(since 2.27)
+
+Enable NCCL to use CUDA 13.0 NVLink centric scheduling for its communication kernels. This is a hint to CUDA and can lead to better NVLink bandwidth
+utilization if CUDA can honor it.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 0 (disabled), define and set to 1 to enable
+
 NCCL_IB_MERGE_NICS
 ------------------
 (since 2.20)
