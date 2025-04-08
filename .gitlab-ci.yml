@@ -917,6 +917,7 @@ apitest-AWS_H100_EFA:
       export SLURM_PARTITION=compute
       export NNODES=1
       export NGPUS=8
+      export SKIP_API_NO_P2P=1 # NvBug 5210770
       export NP=1
       export NCCL_HOME=build-eos
       export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
