@@ -279,14 +279,6 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_COLLNET_DIRECT && p == NCCL_PROTO_SIMPLE) {
           if (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter) {
             busBw = ppn * bw;
-            // AllGather/ReduceScatter requires 1:1 GPU:NIC
-            int nicPerNode = comm->collNetHeadsNum;
-            if (coll == ncclFuncAllGather && comm->nNodes > 1) {
-              if (!comm->ncclCollNet || !comm->ncclCollNet->iallgather || ppn > nicPerNode) busBw = 0;
-            }
-            if (coll == ncclFuncReduceScatter && comm->nNodes > 1) {
-              if (!comm->ncclCollNet || !comm->ncclCollNet->ireducescatter || ppn > nicPerNode) busBw = 0;
-            }
             // Measured corrective ratio needed at 1 ppn and 8ppn. Here we hackishly
             // interpolate the two.
             float w = (ppn-1)/(8-1);
@@ -297,6 +289,26 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
             factor -= (factor-1)/2;
             busBw /= factor;
             if (minCompCap >= 90) busBw *= .85;
+          }
+        }
+        // disable collnet for allgather/reducescatter if #localranks > #heads
+        // AllGather/ReduceScatter requires 1:1 GPU:NIC
+        if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_COLLNET_DIRECT) && p == NCCL_PROTO_SIMPLE && (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter) && comm->nNodes > 1) {
+          int nHeads = 0;
+          if (coll == ncclFuncAllGather && comm->nNodes > 1 && (!comm->ncclCollNet || !comm->ncclCollNet->iallgather)) busBw = 0.0f;
+          if (coll == ncclFuncReduceScatter && comm->nNodes > 1 && (!comm->ncclCollNet || !comm->ncclCollNet->ireducescatter)) busBw = 0.0f;
+          if (comm->config.collnetEnable)
+            nHeads = comm->collNetHeadsNum;
+          else
+            busBw = 0.0f;
+          if (busBw > 0.0f) {
+            for (int r = 0; r < comm->nRanks; r++) {
+              int node = comm->rankToNode[r];
+              if (comm->nodeRanks[node].localRanks > nHeads) {
+                busBw = 0.0f;
+                break;
+              }
+            }
           }
         }
 
@@ -425,7 +437,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       // Disable NVLS Tree on a single node
       if (comm->nNodes == 1 && a == NCCL_ALGO_NVLS_TREE) disable = 1;
       // Disable Collnet+Direct, Collnet+Chain or Collnet+NVLS if collnet is not supported.
-      if (comm->collNetSupport == 0 &&
+      if (comm->config.collnetEnable == 0 &&
           (a == NCCL_ALGO_COLLNET_DIRECT ||
            a == NCCL_ALGO_COLLNET_CHAIN ||
            (a == NCCL_ALGO_NVLS && comm->nNodes > 1))) disable = 1;
@@ -497,7 +509,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       }
     }
   }
- 
+
   // Set per-thread amount of work before we increase nThreads and nChannels
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     comm->threadThresholds[a][NCCL_PROTO_LL] = NCCL_LL_THREAD_THRESHOLD;

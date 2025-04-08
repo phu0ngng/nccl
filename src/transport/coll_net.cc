@@ -1390,7 +1390,7 @@ ncclResult_t ncclCollNetChainBufferSetup(ncclComm_t comm) {
   ncclResult_t ret = ncclSuccess;
   char line[1024];
 
-  if (comm->collNetSupport == 0) goto exit;
+  if (comm->config.collnetEnable == 0) goto exit;
   // Connect Collnet + chain
   for (int c = 0; c < comm->nChannels; c++) {
     struct ncclChannel* channel = comm->channels + c;
@@ -1422,7 +1422,7 @@ fail:
 ncclResult_t ncclCollNetDirectBufferSetup(ncclComm_t comm) {
   ncclResult_t ret = ncclSuccess;
 
-  if (comm->collNetSupport == 0) goto exit;
+  if (comm->config.collnetEnable == 0) goto exit;
 
   // Connect intra-node CollNet + Direct
   for (int c = 0; c < comm->nChannels; c++) {
@@ -1499,7 +1499,7 @@ ncclResult_t ncclCollNetSetup(ncclComm_t comm, ncclComm_t parent, struct ncclTop
 
   comm->collNetHeads = headsUnique;
   comm->collNetHeadsNum = nHeadsUnique;
-  if (parent && parent->collNetSupport && parent->nNodes == comm->nNodes) {
+  if (parent && parent->config.collnetEnable && parent->nNodes == comm->nNodes) {
     if (!parent->config.splitShare) {
       collNetSetupFail = 1;
       goto fail;
@@ -1627,7 +1627,7 @@ exit:
   return ret;
 fail:
   ncclTransportCollNetFree(comm);
-  comm->collNetSupport = 0;
+  comm->config.collnetEnable = 0;
   goto exit;
 }
 

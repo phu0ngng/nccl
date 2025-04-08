@@ -740,6 +740,9 @@ apitest-GP100:
     NGPUS: 8
     NP:    1
     NCCL_HOME: build-gc
+    # The NIC direct is not symmetric for rank 0 and 7; graph registration for sendrecv on rank 0 would
+    # succeed but would fail on rank 7, this can cause hang.
+    NCCL_GRAPH_REGISTER: 0
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:

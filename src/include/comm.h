@@ -556,7 +556,6 @@ struct ncclComm {
   struct ncclProxyState* proxyState;
   int proxyRefCountOld; /* store proxy post-atomic-sub refcount */
   // Whether this communicator uses collNet
-  int collNetSupport;
   bool isOneRPN;
   uint8_t collNetSupportMatrix[4/*sum,prod,max,min*/][ncclNumTypes];
   int* collNetHeads;
@@ -600,6 +599,7 @@ struct ncclComm {
   ncclUserRedOp *userRedOps;
 
   // Queue of things for the main thread to do
+  int reclaimSteps;
   struct ncclIntruQueueMpsc<struct ncclCommCallback, &ncclCommCallback::next> callbackQueue;
 
   ncclConfig_t config;

@@ -244,6 +244,15 @@ ncclConfig_t
   take precedence over user-specified TC values. To utilize user-defined TCs, ensure that
   these environment variables are unset.
 
+ .. c:macro:: collnetEnable
+
+  Set 1/0 to enable/disable IB SHARP on the communicator. The default value is 0 (disabled).
+
+ .. c:macro:: CTAPolicy
+
+  Set the policy for the communicator. The full list of supported policies can be found in :ref:`cta_policy_flags`.
+  The default value is `NCCL_CTA_POLICY_DEFAULT`.
+
 .. _ncclsiminfo:
 
 ncclSimInfo_t

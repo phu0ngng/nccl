@@ -568,6 +568,19 @@ Value accepted
 ^^^^^^^^^^^^^^
 Default is 2, define and set to an integer.
 
+NCCL_CTA_POLICY
+---------------
+(since 2.27)
+
+The ``NCCL_CTA_POLICY`` variable allows the user to set the policy for the NCCL communicator.
+
+Value accepted
+^^^^^^^^^^^^^^
+
+Set to 0 to use NCCL_CTA_POLICY_DEFAULT policy (default);
+Set to 1 to use NCCL_CTA_POLICY_EFFICIENCY policy.
+For more explanation about NCCL policies, please see :ref:`cta_policy_flags`.
+
 NCCL_TOPO_FILE
 --------------
 (since 2.6)

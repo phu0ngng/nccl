@@ -57,9 +57,13 @@ typedef enum { ncclSuccess                 =  0,
 #define NCCL_WIN_DEFAULT 0x00
 #define NCCL_WIN_COLL_SYMMETRIC 0x01
 
+/* NCCL performance policy */
+#define NCCL_CTA_POLICY_DEFAULT 0x00
+#define NCCL_CTA_POLICY_EFFICIENCY 0x01
+
 /* Communicator configuration. Users can assign value to attributes to specify the
  * behavior of a communicator. */
-typedef struct ncclConfig_v21700 {
+typedef struct ncclConfig_v22700 {
   /* attributes that users should never touch. */
   size_t size;
   unsigned int magic;
@@ -73,6 +77,8 @@ typedef struct ncclConfig_v21700 {
   int splitShare;
   int trafficClass;
   const char *commName;
+  int collnetEnable;
+  int CTAPolicy;
 } ncclConfig_t;
 
 /* Config initializer must be assigned to initialize config structure when it is created.
@@ -89,6 +95,8 @@ typedef struct ncclConfig_v21700 {
   NCCL_CONFIG_UNDEF_INT,                    /* splitShare */            \
   NCCL_CONFIG_UNDEF_INT,                    /* trafficClass */          \
   NCCL_CONFIG_UNDEF_PTR,                    /* commName */              \
+  NCCL_CONFIG_UNDEF_INT,                    /* collnetEnable */         \
+  NCCL_CONFIG_UNDEF_INT,                    /* CTAPolicy */             \
 }
 
 /* This struct will be used by ncclGroupSimulateEnd() API to query information about simulation. */
