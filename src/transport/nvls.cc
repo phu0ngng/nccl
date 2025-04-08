@@ -110,7 +110,9 @@ ncclResult_t nvlsGroupUnbind(struct ncclComm *comm, size_t size, CUmemGenericAll
 }
 
 ncclResult_t ncclNvlsDeregBuffer(struct ncclComm* comm, CUmemGenericAllocationHandle *mcHandler, CUdeviceptr ptr, int dev, size_t ucsize, size_t mcsize) {
-  CUCHECK(cuMulticastUnbind(*mcHandler, dev, 0/*mcOffset*/, ucsize));
+  // unbind can trigger RM error if buffer is freed already by users
+  // however, it is safe to ignore the error, and unbind will succeed anyway
+  CUCALL(cuMulticastUnbind(*mcHandler, dev, 0/*mcOffset*/, ucsize));
   CUCHECK(cuMemUnmap(ptr, mcsize));
   CUCHECK(cuMemAddressFree(ptr, mcsize));
   CUCHECK(cuMemRelease(*mcHandler));
@@ -143,7 +145,7 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, size_t ucsize, void* ucptr
 
 #define NVLS_MEM_ALIGN_SIZE (1 << 21)
 #define NVLS_NCHANNELS_SM90 16
-#define NVLS_NCHANNELS_SM100 24
+#define NVLS_NCHANNELS_SM100 32
 
 NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
 NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", -2);
@@ -388,6 +390,7 @@ setup:
     comm->nvlsResources->inited = false;
     comm->nvlsResources->refCount = 1;
     comm->nvlsResources->nChannels = comm->nvlsChannels;
+    comm->nvlsResources->nHeads = nHeads;
     resources = comm->nvlsResources;
 
     if (parent && parent->nvlsSupport && parent->config.splitShare) {
@@ -547,8 +550,7 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
         ucprop.requestedHandleTypes = ncclCuMemHandleType;
         CUCHECKGOTO(cuMemGetAllocationGranularity(&ucgran, &ucprop, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED), ret, fail);
 
-        CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr*)&regRecord->baseAddr, &regRecord->baseSize, (CUdeviceptr)regRecord->begAddr), ret, fail);
-        if (regRecord->baseAddr % ucgran == 0) {
+        if (regRecord->begAddr % ucgran == 0) {
           if (regSize % ucgran != 0) {
             regRecord->regUCSize = ALIGN_SIZE(regSize, ucgran);
           } else {
@@ -788,7 +790,7 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(
     NCCLCHECK(ncclCommGraphRegister(comm, baseRecv, baseRecvSize, (void**)&recvRegRecord));
   }
 
-  NCCLCHECK(nvlsRegisterBuffer(comm, baseSend, baseRecv, baseSendSize, baseRecvSize, sendRegRecord, recvRegRecord, outRegBufUsed, outRegBufSend, outRegBufRecv));
+  NCCLCHECK(nvlsRegisterBuffer(comm, sendbuff, recvbuff, sendbuffSize, recvbuffSize, sendRegRecord, recvRegRecord, outRegBufUsed, outRegBufSend, outRegBufRecv));
 
   if (*outRegBufUsed) {
     if (sendRegRecord) {
@@ -891,6 +893,45 @@ fail:
   goto exit;
 }
 
+ncclResult_t ncclNvlsRegResourcesQuery(struct ncclComm* comm, struct ncclTaskColl* info, int* recChannels) {
+  int factor;
+  ncclResult_t ret = ncclSuccess;
+  if (comm->nNodes == 1) {
+    if (info->func == ncclFuncReduceScatter) {
+      factor = (comm->compCap >= 100 ? 6 : 5) * 8;
+      *recChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, DIVUP(factor, comm->nvlsResources->nHeads)));
+    } else if (info->func == ncclFuncAllGather) {
+      factor = 4 * 8;
+      *recChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, DIVUP(factor, comm->nvlsResources->nHeads)));
+    } else if (info->func == ncclFuncAllReduce) {
+      factor = 4 * 8;
+      *recChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, DIVUP(factor, comm->nvlsResources->nHeads)));
+    } else {
+      goto fail;
+    }
+  } else {
+    // Further tweaks for Blackwell with NVLS registered buffers
+    if (info->func == ncclFuncReduceScatter) {
+      factor = (comm->bandwidths[ncclFuncReduceScatter][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] > 400 ? 7 : 6) * 8;
+      *recChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, DIVUP(factor, comm->nvlsResources->nHeads)));
+    } else if (info->func == ncclFuncAllGather) {
+      factor = 6 * 8;
+      *recChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, DIVUP(factor, comm->nvlsResources->nHeads)));
+    } else if (info->func == ncclFuncAllReduce) {
+      factor = (comm->compCap >= 100 ? 7 : 6) * 8;
+      *recChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, DIVUP(factor, comm->nvlsResources->nHeads)));
+    } else {
+      goto fail;
+    }
+  }
+
+exit:
+  return ret;
+fail:
+  ret = ncclInvalidArgument;
+  goto exit;
+}
+
 #else
 
 /*
@@ -949,6 +990,11 @@ ncclResult_t ncclNvlsSymmetricFree(struct ncclComm* comm, size_t ucsize, void* u
 }
 
 ncclResult_t ncclNvlsSymmetricFinalize(struct ncclComm* comm) {
+  return ncclSuccess;
+}
+
+ncclResult_t ncclNvlsRegResourcesQuery(struct ncclComm* comm, struct ncclTaskColl* info, int* recChannels) {
+  *recChannels = 0;
   return ncclSuccess;
 }
 

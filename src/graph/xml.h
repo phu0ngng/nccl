@@ -260,7 +260,6 @@ static ncclResult_t xmlSetAttrInt(struct ncclXmlNode* node, const char* attrName
     node->attrs[index].key[MAX_STR_LEN] = '\0';
   }
   snprintf(node->attrs[index].value, MAX_STR_LEN, "%d", value);
-  node->attrs[index].value[MAX_STR_LEN] = '\0';
   return ncclSuccess;
 }
 
@@ -273,7 +272,6 @@ static ncclResult_t xmlSetAttrFloat(struct ncclXmlNode* node, const char* attrNa
     node->attrs[index].key[MAX_STR_LEN] = '\0';
   }
   snprintf(node->attrs[index].value, MAX_STR_LEN, "%g", value);
-  node->attrs[index].value[MAX_STR_LEN] = '\0';
   return ncclSuccess;
 }
 
@@ -286,7 +284,6 @@ static ncclResult_t xmlSetAttrLong(struct ncclXmlNode* node, const char* attrNam
     node->attrs[index].key[MAX_STR_LEN] = '\0';
   }
   snprintf(node->attrs[index].value, MAX_STR_LEN, "%#lx", value);
-  node->attrs[index].value[MAX_STR_LEN] = '\0';
   return ncclSuccess;
 }
 

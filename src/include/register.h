@@ -47,8 +47,6 @@ struct ncclReg {
   // net reg
   struct ncclRegNetHandles* netHandleHead;
   // nvls reg
-  uintptr_t baseAddr;
-  size_t baseSize;
   CUdeviceptr regAddr;
   size_t regUCSize, regMCSize;
   int dev;

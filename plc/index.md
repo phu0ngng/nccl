@@ -1,7 +1,6 @@
 <!-- This file is automatically changed -->
 <!-- update with extra care -->
 # NCCL - PLC
-
 <!------------------------------------->
 ## version 2.27
 
@@ -11,6 +10,7 @@
 - [Network Defined Event Update](items/id_bba87131/Network_Defined_Event_Update.md)
 - [DirectNIC support](items/id_b992ce97/DirectNIC_support.md)
 - [Profiler Init Update](items/id_bda9f2b0/Profiler_Init_Update.md)
+- [UB NVLS+IB SHARP AG and RS](items/id_cb556be5/UB_NVLS+IB_SHARP_for_AG_and_RS.md)
 <!-- V2_27_DO_NOT_MOVE -->
 
 <!------------------------------------->

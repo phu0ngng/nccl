@@ -83,7 +83,7 @@ size_t maxBytes = 32*1024*1024;
 size_t stepBytes = 1*1024*1024;
 size_t stepFactor = 1;
 int datacheck = 1;
-int warmup_iters = 20;
+int warmup_iters = 1;
 int iters = 20;
 int agg_iters = 1;
 static int run_cycles = 1;
@@ -856,19 +856,15 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
     }
   }
 
-  // Warm-up for large size
-  setupArgs(args->maxbytes, type, args);
-  for (int iter = 0; iter < warmup_iters; iter++) {
-    TESTCHECK(startColl(args, type, op, root, 0, iter));
+  // Warm-up for all sizes
+  for (size_t size = args->minbytes; size <= args->maxbytes; size = ((args->stepfactor > 1) ? size * args->stepfactor : size + args->stepbytes)) {
+    setupArgs(size, type, args);
+    for (int iter = 0; iter < warmup_iters; iter++) {
+      TESTCHECK(startColl(args, type, op, root, 0, iter));
+      TESTCHECK(startColl(args, type, op, root, 1, iter));
+    }
+    TESTCHECK(completeColl(args));
   }
-  TESTCHECK(completeColl(args));
-
-  // Warm-up for small size
-  setupArgs(args->minbytes, type, args);
-  for (int iter = 0; iter < warmup_iters; iter++) {
-    TESTCHECK(startColl(args, type, op, root, 0, iter));
-  }
-  TESTCHECK(completeColl(args));
 
   // Benchmark
   long repeat = run_cycles;
@@ -1937,12 +1933,17 @@ testResult_t run() {
         if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
         if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       }
-      if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
-      if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
-      if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
 #elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
       if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
       if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
+#endif
+      NCCLCHECK(ncclCommDestroy(comms[id][i]));
+    }
+  }
+
+  for (int id = 0; id < commNum; ++id) {
+    for (int i=0; i<nGpus*nThreads; i++) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
       if (sendbuffs[id][i]) NCCLCHECK(ncclMemFree(sendbuffs[id][i]));
       if (recvbuffs[id][i]) NCCLCHECK(ncclMemFree(recvbuffs[id][i]));
       if (datacheck) NCCLCHECK(ncclMemFree(expected[id][i]));
@@ -1951,7 +1952,6 @@ testResult_t run() {
       if (recvbuffs[id][i]) CUDACHECK(cudaFree(recvbuffs[id][i]));
       if (datacheck) NCCLCHECK(cudaFree(expected[id][i]));
 #endif
-      NCCLCHECK(ncclCommDestroy(comms[id][i]));
     }
   }
 

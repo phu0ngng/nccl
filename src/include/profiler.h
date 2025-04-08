@@ -21,8 +21,8 @@ struct ncclProxyConnector;
 
 struct ncclProfilerProxy {
   bool initialized;
-  uint64_t* workStarted/*[MAXCHANNELS]*/;
-  uint64_t* workCompleted/*[MAXCHANNELS]*/;
+  struct ncclDevProfiler* workStarted/*[MAXCHANNELS]*/;
+  struct ncclDevProfiler* workCompleted/*[MAXCHANNELS]*/;
   uint64_t workCounter[MAXCHANNELS]; // host work counter
   struct ncclProxyConnector sendProxyConn[MAXCHANNELS];
   struct ncclProxyConnector recvProxyConn[MAXCHANNELS];
@@ -56,8 +56,8 @@ ncclResult_t ncclProfilerStartProxyCtrlEvent(void* profilerContext, void** eHand
 ncclResult_t ncclProfilerStopProxyCtrlEvent(void* eHandle);
 
 // Kernel Channel Start/Stop Event Wrappers
-ncclResult_t ncclProfilerStartKernelChEvent(struct ncclProxyArgs* args, int s);
-ncclResult_t ncclProfilerStopKernelChEvent(struct ncclProxyArgs* args, int s);
+ncclResult_t ncclProfilerStartKernelChEvent(struct ncclProxyArgs* args, int s, uint64_t start);
+ncclResult_t ncclProfilerStopKernelChEvent(struct ncclProxyArgs* args, int s, uint64_t stop);
 
 // Record Event Wrappers
 ncclResult_t ncclProfilerRecordProxyOpEventState(int sub, struct ncclProxyArgs* args, int isSend, ncclProfilerEventState_t eState);

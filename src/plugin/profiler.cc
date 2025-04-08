@@ -429,7 +429,7 @@ ncclResult_t ncclProfilerStopProxyCtrlEvent(void* eHandle) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclProfilerStartKernelChEvent(struct ncclProxyArgs* args, int s) {
+ncclResult_t ncclProfilerStartKernelChEvent(struct ncclProxyArgs* args, int s, uint64_t start) {
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     struct ncclProxySubArgs* sub = &args->subs[s];
     if (sub->eActivationMask & ncclProfileKernelCh) {
@@ -437,16 +437,20 @@ ncclResult_t ncclProfilerStartKernelChEvent(struct ncclProxyArgs* args, int s) {
       eDescr.type = ncclProfileKernelCh;
       eDescr.parentObj = sub->taskEventHandle;
       eDescr.kernelCh.channelId = sub->channelId;
+      eDescr.kernelCh.pTimer = start;
       ncclProfiler->startEvent(sub->profilerContext, &sub->kernelEventHandle, &eDescr);
     }
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclProfilerStopKernelChEvent(struct ncclProxyArgs* args, int s) {
+ncclResult_t ncclProfilerStopKernelChEvent(struct ncclProxyArgs* args, int s, uint64_t stop) {
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     struct ncclProxySubArgs* sub = &args->subs[s];
     if (sub->kernelEventHandle) {
+      ncclProfilerEventStateArgs_t a = { };
+      a.kernelCh.pTimer = stop;
+      ncclProfiler->recordEventState(sub->kernelEventHandle, ncclProfilerKernelChStop, &a);
       ncclProfiler->stopEvent(sub->kernelEventHandle);
     }
   }

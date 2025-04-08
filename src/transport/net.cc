@@ -630,8 +630,6 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
   resources->netDeviceVersion = props.netDeviceVersion;
   resources->netDeviceType = props.netDeviceType;
 
-  resources->netDeviceVersion = props.netDeviceVersion;
-  resources->netDeviceType = props.netDeviceType;
   /* point-to-point size limits*/
   resources->maxP2pBytes = props.maxP2pBytes;
   if((resources->maxP2pBytes <= 0) || (resources->maxP2pBytes > NCCL_MAX_NET_SIZE_BYTES)) {

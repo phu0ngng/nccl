@@ -50,6 +50,8 @@ struct kernelCh {
   struct taskEventBase* parent;
   double startTs;
   double stopTs;
+  uint64_t startGpuClk;
+  uint64_t stopGpuClk;
 };
 
 #define PROXY_STEP_SEND_GPU_WAIT 0

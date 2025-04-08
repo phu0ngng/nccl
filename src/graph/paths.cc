@@ -214,7 +214,7 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
       const char* str = ncclGetEnv(disableEnv);
       if (str) {
         int disable = strtol(str, NULL, 0);
-        if (disable == 1) l = 0;
+        if (disable == 1) l = PATH_LOC;
         if (l >= 0) INFO(NCCL_ALL, "%s set by environment to %d", disableEnv, disable);
       }
     }
@@ -247,7 +247,18 @@ ncclResult_t ncclGetLevel(int* level, const char* disableEnv, const char* levelE
 
 NCCL_PARAM(IgnoreDisabledP2p, "IGNORE_DISABLED_P2P", 0);
 
-int ncclTopoUserP2pLevel = -1;
+static int ncclTopoUserP2pLevel = -1; // Initially "uninitialized".  When initialized but unset, changes to -2.
+
+// Gets the user-provided value of NCCL_P2P_LEVEL/NCCL_P2P_DISABLE.  If the user did not provide any, the value
+// of the "level" argument is left unchanged.
+ncclResult_t ncclGetUserP2pLevel(int* level) {
+  if (ncclTopoUserP2pLevel == -1)
+    NCCLCHECK(ncclGetLevel(&ncclTopoUserP2pLevel, "NCCL_P2P_DISABLE", "NCCL_P2P_LEVEL"));
+  if (ncclTopoUserP2pLevel != -2)
+    *level = ncclTopoUserP2pLevel;
+  return ncclSuccess;
+}
+
 ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* system, int rank1, int rank2,
                               int* p2p, int *read, int* intermediateRank) {
   int mnnvl = 0;
@@ -302,15 +313,8 @@ ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* syst
   if ((arch == NCCL_TOPO_CPU_ARCH_X86 && vendor == NCCL_TOPO_CPU_VENDOR_AMD) && system->nodes[GPU].count <= 2) p2pLevel = PATH_SYS;
 
   // User override
-  if (ncclTopoUserP2pLevel == -1)
-    NCCLCHECK(ncclGetLevel(&ncclTopoUserP2pLevel, "NCCL_P2P_DISABLE", "NCCL_P2P_LEVEL"));
-  if (ncclTopoUserP2pLevel != -2) {
-    p2pLevel = ncclTopoUserP2pLevel;
-    goto compare;
-  }
+  NCCLCHECK(ncclGetUserP2pLevel(&p2pLevel));
 
-
-compare:
   // Compute the PCI distance and compare with the p2pLevel.
   if (path->type <= p2pLevel) *p2p = 1;
 

@@ -191,7 +191,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   comm.nChannels = ringGraph.nChannels*2;
   comm.channels[0].tree.depth = system->nodes[GPU].count-1+log2i(nnodes);
   comm.buffSizes[NCCL_PROTO_SIMPLE] = 1 << 22;
-  comm.collNetSupport = collNetSupport;
+  comm.config.collnetEnable = collNetSupport;
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
   comm.minCompCap = compCap;
   struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { &treeGraph, &ringGraph, &cNetGraph, &cNetGraph, &nvlsGraph, &nvlsGraph, &treeGraph };

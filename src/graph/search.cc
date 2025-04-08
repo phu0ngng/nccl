@@ -1123,7 +1123,7 @@ done:
   }
 
   if (graph->nChannels == 0 && graph->collNet == 0 && graph->pattern != NCCL_TOPO_PATTERN_NVLS) {
-    WARN("Could not find a path for pattern %d, falling back to simple order", graph->pattern);
+    INFO(NCCL_GRAPH, "Could not find a path for pattern %d, falling back to simple order", graph->pattern);
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
     graph->inter[0] = graph->inter[1] = 0;
     graph->bwIntra = graph->bwInter = 0.1;
