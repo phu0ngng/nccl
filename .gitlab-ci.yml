@@ -1093,7 +1093,6 @@ perftest-P100:
     ENABLE_NVLS: 0
     GRAPH: 0
     NGPUS: 8
-    SKIP_FT_ABORT: 1 # NVBUG 5165144
     NCCL_HOME: build-gc
     SALLOC: "salloc --exclusive -t 00:30:00 -N ${NNODES} -n ${NGPUS} -p ${SLURM_PARTITION}"
   script:
@@ -1161,7 +1160,6 @@ perftest-GP100:
     GRAPH: 0
     NGPUS: 8
     NP: 8
-    SKIP_FT_ABORT: 1 # NVBUG 5165144
     NCCL_HOME: build-gc
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
@@ -1590,7 +1588,6 @@ perftest-multi-gc:
     GRAPH: 0
     NGPUS: 8
     NP: 8
-    SKIP_FT_ABORT: 1 # NVBUG 5165144
     NCCL_HOME: build-gc
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
