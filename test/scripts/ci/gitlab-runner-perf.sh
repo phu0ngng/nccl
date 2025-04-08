@@ -137,6 +137,11 @@ for func in all_reduce_perf alltoall_perf; do
   run_command "${func}_nic_fusion_phb_1ppn" $RUN_MODE 1      "" "NCCL_NET_MERGE_LEVEL=PHB" "$NCCL_HOME/test/perf/$func" "-b 8 -e 128M -f2 $opts -t $NGPUS -n 1"
 done
 
+# socket NET testing
+for func in all_reduce_perf all_gather_perf broadcast_perf; do
+  run_command "${func}_socket_net" $RUN_MODE $NGPUS "" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_MNNVL_ENABLE=0 NCCL_NET=Socket" "$NCCL_HOME/test/perf/$func" "-b 8 -e 16M -f2 $opts -n 1"
+done
+
 print_failed_commands
 end_junit_file
 ci_exit
