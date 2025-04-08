@@ -127,7 +127,7 @@ build-pre-tyche:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   script:
-    - docker/make.sh pre-tyche --clean --baremetal-build
+    - docker/make.sh pre-tyche
     - mv build build-pre-tyche
   artifacts:
     paths:
@@ -943,6 +943,7 @@ apitest-AWS_H100_EFA:
       export SLURM_PARTITION=compute
       export NNODES=1
       export NGPUS=8
+      export SKIP_API_NO_P2P=1 # NvBug 5210770
       export NP=1
       export NCCL_HOME=build-eos
       export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
