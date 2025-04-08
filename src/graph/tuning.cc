@@ -16,13 +16,13 @@ static int getNthreads(const char* name, int env, int min, int max, int def) {
   int nt = env;
   if (nt > 0) {
     if (nt % WARP_SIZE != 0) {
-      WARN("Invalid %s %d (must be a multiple of %d)", name, nt, WARP_SIZE);
+      INFO(NCCL_GRAPH|NCCL_ENV, "Invalid %s %d (must be a multiple of %d)", name, nt, WARP_SIZE);
       nt = max;
     } else if (nt > max) {
-      WARN("Invalid %s %d (maximum %d).", name, nt, max);
+      INFO(NCCL_GRAPH|NCCL_ENV, "Invalid %s %d (maximum %d).", name, nt, max);
       nt = max;
     } else if (nt < min) {
-      WARN("Invalid %s %d (minimum %d).", name, nt, min);
+      INFO(NCCL_GRAPH|NCCL_ENV, "Invalid %s %d (minimum %d).", name, nt, min);
       nt = min;
      }
   } else {
