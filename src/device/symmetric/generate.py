@@ -137,16 +137,20 @@ def kernel_cname(k):
   else:
     return paste("_", "ncclSymDevKernel", k.coll, k.algo)
 
-def instantiate(k):
+def kernel_conds(k):
   cudart, arch, specific_sms = required_cuda(k)
-
-  cond = "CUDART_VERSION >= %d && "%cudart
+  if cudart == 0: return (None, None)
+  
+  cudart_cond = "CUDART_VERSION >= %d"%cudart
   if not specific_sms:
-    cond += "__CUDA_ARCH__ >= %d"%arch
+    arch_cond = "__CUDA_ARCH__ >= %d"%arch
   else:
-    cond += "(" + " || ".join(["0"] + ["NCCL_CUDA_ARCH_SPECIFIC==%d"%(10*sm) for sm in specific_sms]) + ")"
+    arch_cond = " || ".join(["0"] + ["NCCL_CUDA_ARCH_SPECIFIC==%d"%(10*sm) for sm in specific_sms])
+  return cudart_cond, arch_cond
 
-  if (cudart, arch, specific_sms) == (0, 0, None):
+def instantiate(k):
+  cudart_cond, arch_cond = kernel_conds(k)
+  if (cudart_cond, arch_cond) == (None, None):
     form_red_ty = (
       "__global__ void {cname}(ncclSymDevArgs NCCL_GRID_CONSTANT const args) {{\n"
       "  ncclSymRun_{id}<{red}, {ty}>(&args);\n"
@@ -159,30 +163,45 @@ def instantiate(k):
     )
   else:
     form_red_ty = (
-      "__global__ void {cname}(ncclSymDevArgs NCCL_GRID_CONSTANT const args) {{\n"
-      "  #if {cond}\n"
-      "    ncclSymRun_{id}<{red}, {ty}>(&args);\n"
-      "  #endif\n"
-      "}}"
+      "#if {cudart_cond}\n"
+      "  __global__ void {cname}(ncclSymDevArgs NCCL_GRID_CONSTANT const args) {{\n"
+      "    #if {arch_cond}\n"
+      "      ncclSymRun_{id}<{red}, {ty}>(&args);\n"
+      "    #endif\n"
+      "  }}\n"
+      "#endif"
     )
     form = (
-      "__global__ void {cname}(ncclSymDevArgs NCCL_GRID_CONSTANT const args) {{\n"
-      "  #if {cond}\n"
-      "    ncclSymRun_{id}(&args);\n"
-      "  #endif\n"
-      "}}"
+      "#if {cudart_cond}\n"
+      "  __global__ void {cname}(ncclSymDevArgs NCCL_GRID_CONSTANT const args) {{\n"
+      "    #if {arch_cond}\n"
+      "      ncclSymRun_{id}(&args);\n"
+      "    #endif\n"
+      "  }}\n"
+      "#endif"
     )
 
   id = k.coll+'_'+k.algo
   cname = kernel_cname(k)
   if k.coll in reductions:
-    inst = form_red_ty.format(cname=cname, id=id, red=red_to_Func[k.red], ty=ty_to_cxxtype[k.ty], cond=cond)
+    inst = form_red_ty.format(cname=cname, id=id, red=red_to_Func[k.red], ty=ty_to_cxxtype[k.ty], cudart_cond=cudart_cond, arch_cond=arch_cond)
   else:
-    inst = form.format(cname=cname, id=id, cond=cond)
+    inst = form.format(cname=cname, id=id, cudart_cond=cudart_cond, arch_cond=arch_cond)
   return inst
 
 def prototype(k):
-  return "__global__ void {cname}(ncclSymDevArgs const);".format(cname=kernel_cname(k))
+  cudart_cond, arch_cond = kernel_conds(k)
+  if cudart_cond is None:
+    form = "__global__ void {cname}(ncclSymDevArgs const);"
+  else:
+    form = (
+      "#if {cudart_cond}\n"
+      "  __global__ void {cname}(ncclSymDevArgs const);\n"
+      "#else\n"
+      "  constexpr void* {cname} = nullptr;\n"
+      "#endif"
+    )
+  return form.format(cname=kernel_cname(k), cudart_cond=cudart_cond)
 
 ################################################################################
 
@@ -226,7 +245,7 @@ with open(os.path.join(gensrc, "symmetric_kernels.cc"), "w") as f:
   emitln(f, 'extern int const ncclSymKernelCount = %d;' % len(list(enumerate_kernels())))
   emitln(f, 'extern void* const ncclSymKernelList[] = {')
   for k in enumerate_kernels():
-    emitln(f, '(void*)&{cname},'.format(cname=kernel_cname(k)))
+    emitln(f, '(void*){cname},'.format(cname=kernel_cname(k)))
   emitln(f, 'nullptr};')
   emitln(f, '')
 
@@ -248,7 +267,7 @@ with open(os.path.join(gensrc, "symmetric_kernels.cc"), "w") as f:
         emitln(f, 'switch (ty) {')
         emitln(f, 'default: return nullptr;')
         for k in coll_algo_red_ks:
-          emitln(f, 'case '+ty_to_ncclDataType[k.ty]+': return (void*)&'+kernel_cname(k)+';')
+          emitln(f, 'case '+ty_to_ncclDataType[k.ty]+': return (void*)'+kernel_cname(k)+';')
         emitln(f, '}')
         indents -= 1
       emitln(f, '}')
