@@ -12,6 +12,8 @@
 #include <assert.h>
 #include "bootstrap.h"
 
+#define GROUP_MAX_RECLAIM_STEPS 10
+
 __thread int ncclGroupDepth = 0; // depth of ncclGroupStart nesting
 __thread ncclResult_t ncclGroupError = ncclSuccess;
 __thread struct ncclComm* ncclGroupCommHead[ncclGroupTaskTypeNum] = {nullptr};
@@ -552,7 +554,12 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       struct ncclComm* next = comm->groupNext[type];
       // Poll for callbacks sent to us from other threads. Typically these free
       // resources from to our memory pools and UB
-      NCCLCHECKGOTO(ncclCommPollCallbacks(comm, /*waitSome=*/false), ret, fail);
+      if (comm->reclaimSteps == GROUP_MAX_RECLAIM_STEPS) {
+        NCCLCHECKGOTO(ncclCommPollCallbacks(comm, /*waitSome=*/false), ret, fail);
+        comm->reclaimSteps = 0;
+      } else {
+        comm->reclaimSteps++;
+      }
       (void)ncclGroupCommLeave(comm, type);
       if (!comm->config.blocking) {
         (void)ncclCommSetAsyncError(comm, ret);

@@ -36,6 +36,10 @@ extern CUmemAllocationHandleType ncclCuMemHandleType;
     }							      \
 } while(false)
 
+#define CUCALL(cmd) do {				      \
+    pfn_##cmd;				                \
+} while(false)
+
 #define CUCHECKGOTO(cmd, res, label) do {		      \
     CUresult err = pfn_##cmd;				      \
     if( err != CUDA_SUCCESS ) {				      \

@@ -62,32 +62,34 @@ ncclResult_t ncclRegisterCollNvlsBuffers(
 
     if (nvlsReged && comm->nNodes > 1 && info->algorithm == NCCL_ALGO_NVLS) {
       if (comm->planner.persistent && ncclParamGraphRegister()) {
-        ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetSend, &collnetReged, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
-        if (collnetReged) ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
+        if (info->func == ncclFuncAllGather) {
+          ncclCollnetGraphRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &collnetReged, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
+        } else if (info->func == ncclFuncReduceScatter) {
+          ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
+        } else if (info->func == ncclFuncAllReduce) {
+          ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle, cleanupQueue, &info->nCleanupQueueElts);
+          if (collnetReged) ncclCollnetGraphRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetSend, &collnetReged, &sendHandle, cleanupQueue, &info->nCleanupQueueElts);
+        }
       }
 
       if (collnetReged == 0 && ncclParamLocalRegister()) {
-        ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetSend, &collnetReged, &sendHandle);
-        if (collnetReged) ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle);
+        if (info->func == ncclFuncAllGather) {
+          ncclCollnetLocalRegisterBuffer(comm, info->sendbuff, sendbuffSize, collNetSend, &collnetReged, &sendHandle);
+        } else if (info->func == ncclFuncReduceScatter) {
+          ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle);
+        } else if (info->func == ncclFuncAllReduce) {
+          ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetRecv, &collnetReged, &recvHandle);
+          if (collnetReged) ncclCollnetLocalRegisterBuffer(comm, info->recvbuff, recvbuffSize, collNetSend, &collnetReged, &sendHandle);
+        }
       }
     }
 
     if (nvlsReged) {
       *regNeedConnect = 0;
       /* tweak NVLS channels usage; for registered NVLS buffer to saturate bandwidth. */
-      if (comm->nNodes == 1) {
-        if (info->func == ncclFuncReduceScatter) {
-          // RS: Further tweaks for Blackwell with NVLS registered buffers
-          info->nMaxChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (comm->compCap >= 100) ? 6 : 5));
-        }
-        else {
-          // AR/AG: Further tweaks for Blackwell with NVLS registered buffers
-          info->nMaxChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (comm->compCap >= 100) ? 8 : 4));
-        }
-      } else {
-        // Further tweaks for Blackwell with NVLS registered buffers
-        info->nMaxChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, (comm->compCap >= 100) ? 7 : 6));
-      }
+      int recChannels;
+      NCCLCHECK(ncclNvlsRegResourcesQuery(comm, info, &recChannels));
+      info->nMaxChannels = recChannels;
       info->regBufType |= NCCL_NVLS_REG_BUFFER;
     }
 

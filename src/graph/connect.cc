@@ -258,7 +258,7 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, int nHead
     channel->nvls.out = -1;       // NVLS+SHARP not yet implemented.
     channel->nvls.headRank = headRank;
     channel->nvls.treeUp = channel->nvls.treeDown[0] = channel->nvls.treeDown[1] = channel->nvls.treeDown[2] = -1;
-    if (comm->collNetSupport && channel->nvls.headRank != -1) channel->nvls.out = comm->nRanks;
+    if (comm->config.collnetEnable && channel->nvls.headRank != -1) channel->nvls.out = comm->nRanks;
   }
   if (comm->nNodes == 1) return ncclSuccess;
 
@@ -452,7 +452,7 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
 
   // Setup CollNet
-  if (comm->collNetSupport == 1) {
+  if (comm->config.collnetEnable) {
     struct ncclTopoGraph* collNetChainGraph = graphs[NCCL_ALGO_COLLNET_CHAIN];
     // Add more channels to saturate intra-node bandwidth, except the 1 PPN case
     if (collNetChainGraph->bwIntra > collNetChainGraph->bwInter && comm->nRanks > comm->nNodes) {
