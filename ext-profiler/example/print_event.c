@@ -111,8 +111,8 @@ __hidden void printProxyStepEventTrailer(FILE* fh, struct proxyStep* event) {
 static __thread int kernelId;
 __hidden void printKernelChEventHeader(FILE* fh, struct kernelCh* event) {
   if (event->type != ncclProfileKernelCh) return;
-  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"GPU\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Channel\": %d}},\n",
-          "KernelCh", kernelId, getpid(), 1, event->startTs, event->channelId);
+  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"GPU\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"Channel\": %d, \"StartGpuClk\": %lu, \"StopGpuClk\": %lu}},\n",
+          "KernelCh", kernelId, getpid(), 1, event->startTs, event->channelId, event->startGpuClk, event->stopGpuClk);
 }
 
 __hidden void printKernelChEventTrailer(FILE* fh, struct kernelCh* event) {

@@ -405,6 +405,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       struct kernelCh* event = &parent->kernel[eDescr->kernelCh.channelId];
       event->type = ncclProfileKernelCh;
       event->channelId = eDescr->kernelCh.channelId;
+      event->startGpuClk = eDescr->kernelCh.pTimer;
       event->parent = eventBase;
       event->startTs = gettime() - startTime;
       *eHandle = event;
@@ -415,6 +416,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       struct kernelCh* event = &parent->kernel[eDescr->kernelCh.channelId];
       event->type = ncclProfileKernelCh;
       event->channelId = eDescr->kernelCh.channelId;
+      event->startGpuClk = eDescr->kernelCh.pTimer;
       event->parent = eventBase;
       event->startTs = gettime() - startTime;
       *eHandle = event;
@@ -612,6 +614,11 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
       event->appended = eStateArgs->proxyCtrl.appendedProxyOps;
     }
     event->state = eState;
+  } else if (type == ncclProfileKernelCh) {
+    struct kernelCh* event = (struct kernelCh *)eHandle;
+    if (eState == ncclProfilerKernelChStop) {
+      event->stopGpuClk = eStateArgs->kernelCh.pTimer;
+    }
   }
   debugEvent(eHandle, "RecordEventState");
   return ncclSuccess;

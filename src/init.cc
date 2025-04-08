@@ -18,6 +18,7 @@
 #include "argcheck.h"
 #include "tuner.h"
 #include "ras.h"
+#include "profiler.h"
 #include "mnnvl.h"
 #include <fcntl.h>
 #include <string.h>

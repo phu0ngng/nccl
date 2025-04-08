@@ -397,6 +397,14 @@ struct alignas(16) ncclDevChannel {
   uint64_t workCounter;
 };
 
+#define MAX_PROFILER_EVENTS_PER_CHANNEL 64
+struct ncclDevProfiler {
+  struct {
+    uint64_t counter;
+    uint64_t timestamp;
+  } data[MAX_PROFILER_EVENTS_PER_CHANNEL];
+};
+
 struct ncclDevComm {
   int rank;
   int nRanks;
@@ -419,8 +427,8 @@ struct ncclDevComm {
   int* rankToLocalRank;
 
   // Profiler counters
-  uint64_t* workStarted/*[MAXCHANNELS]*/;
-  uint64_t* workCompleted/*[MAXCHANNELS]*/;
+  struct ncclDevProfiler* workStarted/*[MAXCHANNELS]*/;
+  struct ncclDevProfiler* workCompleted/*[MAXCHANNELS]*/;
 };
 
 struct alignas(16) ncclDevCommAndChannels {
