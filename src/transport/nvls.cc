@@ -143,7 +143,7 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, size_t ucsize, void* ucptr
 
 #define NVLS_MEM_ALIGN_SIZE (1 << 21)
 #define NVLS_NCHANNELS_SM90 16
-#define NVLS_NCHANNELS_SM100 24
+#define NVLS_NCHANNELS_SM100 32
 
 NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
 NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", -2);
