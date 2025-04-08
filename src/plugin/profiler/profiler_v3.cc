@@ -20,8 +20,8 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
   switch(eDescr->type) {
     case ncclProfileGroup: break;
     case ncclProfileColl: {
-      eDescr_v3.coll.name = eDescr->coll.name;
-      eDescr_v3.coll.commHash = eDescr->coll.commHash;
+      eDescr_v3.coll.name = nullptr; // removed in v4
+      eDescr_v3.coll.commHash = 0; // removed in v4
       eDescr_v3.coll.seqNumber = eDescr->coll.seqNumber;
       eDescr_v3.coll.func = eDescr->coll.func;
       eDescr_v3.coll.sendBuff = eDescr->coll.sendBuff;
@@ -35,8 +35,8 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v3.coll.proto = eDescr->coll.proto;
     } break;
     case ncclProfileP2p: {
-      eDescr_v3.p2p.name = eDescr->p2p.name;
-      eDescr_v3.p2p.commHash = eDescr->p2p.commHash;
+      eDescr_v3.p2p.name = nullptr; // removed in v4
+      eDescr_v3.p2p.commHash = 0; // removed in v4
       eDescr_v3.p2p.func = eDescr->p2p.func;
       eDescr_v3.p2p.buff = eDescr->p2p.buff;
       eDescr_v3.p2p.count = eDescr->p2p.count;
@@ -78,7 +78,7 @@ static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEve
   return ncclProfiler_v3->recordEventState(eHandle, eState, &args);
 }
 
-static ncclResult_t ncclProfiler_init(void** context, int* eActivationMask) {
+static ncclResult_t ncclProfiler_init(void** context, int* eActivationMask, const char* commName, uint64_t commHash, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclProfiler_v3->init(context, eActivationMask));
   ncclProfiler.startEvent = ncclProfiler_startEvent;
   ncclProfiler.stopEvent = ncclProfiler_v3->stopEvent;

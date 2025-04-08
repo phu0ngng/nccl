@@ -107,8 +107,6 @@ struct proxyCtrl {
 struct taskEventBase {
   uint8_t type;                     // event type: collective/p2p
   int rank;                         // rank of the operation in NCCL communicator
-  const char* name;                 // FIXME: unused
-  uint64_t commHash;                // communicator identifier
   const char* func;                 // ncclFunc*
   int refCount;                     // number of references for this operation
   struct group* parent;             // parent event group
@@ -160,6 +158,11 @@ struct group {
 
 // arrays for different event objects
 struct context {
+  const char* commName;
+  uint64_t commHash;
+  int nranks;
+  int rank;
+
   int groupPoolSize;
   int groupPoolBase;
   int groupPoolIndex;

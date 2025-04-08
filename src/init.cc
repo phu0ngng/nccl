@@ -342,7 +342,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
 
   NCCLCHECK(ncclNetPluginLoad(comm));
   NCCLCHECK(ncclNetInit(comm));
-  NCCLCHECK(ncclProfilerPluginInit(comm));
   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 
   if (parent && parent->config.splitShare) {
@@ -1079,6 +1078,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
   comm->topParentLocalRanks = topParentLocalRanks;
 
+  // Profiler plugin context has to be initialized before proxy thread
+  NCCLCHECK(ncclProfilerPluginInit(comm));
+
   NCCLCHECKGOTO(ncclTransportCheckP2pType(comm, &comm->isAllDirectP2p, &comm->directMode), ret, fail);
   // Launch proxy service thread, after this, the proxy calls can be used.
   if (parent && parent->config.splitShare) {
@@ -1661,6 +1663,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   NCCL_CONFIG_DEFAULT(internalConfigPtr, netName, NCCL_CONFIG_UNDEF_PTR, NULL, "Net name", "%s");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, splitShare, NCCL_CONFIG_UNDEF_INT, 0, "Split share", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, trafficClass, NCCL_CONFIG_UNDEF_INT, NCCL_CONFIG_UNDEF_INT, "Traffic class", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, commName, NCCL_CONFIG_UNDEF_PTR, NULL, "Comm name", "%s");
 
   /* assign config to communicator */
   comm->config.blocking = internalConfigPtr->blocking;
@@ -1670,6 +1673,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   comm->config.netName = internalConfigPtr->netName;
   comm->config.splitShare = internalConfigPtr->splitShare;
   comm->config.trafficClass = internalConfigPtr->trafficClass;
+  comm->config.commName = internalConfigPtr->commName;
 
   NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
 
