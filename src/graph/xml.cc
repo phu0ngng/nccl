@@ -975,8 +975,8 @@ ncclResult_t ncclTopoTrimXmlRec(struct ncclXmlNode* node, int* keep) {
       *keep += k;
     }
     // Remove node if it has no children and no keep attribute
-    if (*keep == 0 && // Trim PCI switches or CPU with no used GPU/NIC under them.
-        (strcmp(node->name, "pci") == 0 || strcmp(node->name, "cpu") == 0)) {
+    if (*keep == 0 && // Trim PCI switches, CPUs with no used GPU/NIC under them, or pruned NICs
+        (strcmp(node->name, "pci") == 0 || strcmp(node->name, "cpu") == 0 || strcmp(node->name, "nic") == 0 || strcmp(node->name, "net") == 0)) {
 #ifdef ENABLE_TRACE
       const char* name;
       const char* busid;

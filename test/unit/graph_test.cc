@@ -29,6 +29,7 @@ const char* graphNames[] = { "Ring", "Tree", "CollNet", "NVLS" };
 
 int dumpDiff = 1;
 int coll = 0;
+int dumpProcessedXml = 0;
 
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, int inter, int* errors, int* warnings) {
   if (ref->nChannels == 0 && out->nChannels == 0) return;
@@ -96,6 +97,8 @@ struct mockVDev {
   int speed;
   float latency;
   int ignore;
+  int gdr;
+  int maxConns;
   ncclNetVDeviceProps_t vProps;
 };
 mockVDev* mockVDevs = nullptr;
@@ -122,6 +125,9 @@ void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
   CHECK(xmlGetAttrInt(node, "port", &props->port));
   // We are assuming that all NICs are coll=1 on collnet platforms
   xmlGetAttrInt(node, "coll", &coll);
+  xmlGetAttrInt(node, "gdr", &dev->gdr);
+  xmlGetAttrInt(node, "maxconn", &dev->maxConns);
+  dev->ignore = 0;
 
   // It's assumed system.xml files won't have duplicate "dev" fields
   if (nPhysDevs < (devIndex + 1)) nPhysDevs = devIndex + 1;
@@ -176,6 +182,11 @@ ncclResult_t fakeNetPluginGetProperties(int dev, ncclNetProperties_t* props) {
     props->speed = vDev->speed;
     props->name  = vDev->name;
     props->latency  = vDev->latency;
+    props->ptrSupport = NCCL_PTR_HOST;
+    props->maxComms = vDev->maxConns;
+    if (vDev->gdr) {
+      props->ptrSupport |= NCCL_PTR_CUDA;
+    }
     return ncclSuccess;
   } else {
     return ncclInvalidUsage;
@@ -198,10 +209,13 @@ ncclResult_t fakeNetPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
     mockVDev* mDev = mockVDevs + deviceIndex;
     memset(mDev, 0, sizeof(mockVDev));
     memcpy(&mDev->vProps, vProps, sizeof(ncclNetVDeviceProps_t));
+    mDev->gdr = 1;
     for (int i = 0; i < mDev->vProps.ndevs; i++) {
       int pDev = mDev->vProps.devs[i];
-      mDev->speed   += mockProps[pDev].speed;
-      mDev->latency += mockProps[pDev].latency;
+      mDev->speed    += mockProps[pDev].speed;
+      mDev->latency  += mockProps[pDev].latency;
+      mDev->gdr      &= mockVDevs[pDev].gdr;
+      mDev->maxConns += mockVDevs[pDev].maxConns;
       if (i > 0) {
         snprintf(mDev->name + strlen(mDev->name), sizeof(mDev->name) - strlen(mDev->name), "+%s", mockProps[pDev].name);
       } else {
@@ -230,6 +244,7 @@ void keepGpus(struct ncclXml* xmlSystem) {
 
 void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter, int ngpus, int* errors, int* warnings) {
   struct ncclXml* xmlSystem;
+  char dumpFile[PATH_MAX];
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES*NCCL_TOPO_XML_MAX_NODES));
   CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
@@ -246,7 +261,15 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     fakeNetPluginGetProperties, fakeNetPluginMakeVDevice, fakeNetPluginDevices, "Fake", true));
   // We need to force all GPUs as keep="1" here to avoid trimming them
   keepGpus(xmlSystem);
+  if (dumpProcessedXml) {
+    snprintf(dumpFile, sizeof(dumpFile), "%s.processed", xmlTopoFile);
+    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
+  }
   CHECK(ncclTopoTrimXml(xmlSystem));
+  if (dumpProcessedXml) {
+    snprintf(dumpFile, sizeof(dumpFile), "%s.processed_trimmed", xmlTopoFile);
+    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
+  }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
   free(xmlSystem);
   if (inter == 0) {
@@ -359,8 +382,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
       nvlsGraph.nChannels, nvlsGraph.bwIntra, nvlsGraph.bwInter);
 
   if (err || warn || incompleteRef) {
-    char dumpFile[PATH_MAX];
-    sprintf(dumpFile, "%s.dump", xmlGraphFile);
+    snprintf(dumpFile, sizeof(dumpFile), "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
     CHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
     struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &cNetGraph, &nvlsGraph };
@@ -380,7 +402,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   *warnings += warn;
 }
 
-void checkPlatform(const char* platform, int ngpus, int* errors, int* warnings) {
+void checkPlatform(const char* platform, int ngpus, int intraOnly, int* errors, int* warnings) {
   char xmlTopoFile[PATH_MAX];
   char xmlGraphFile[PATH_MAX];
   char topoDir[1024];
@@ -397,24 +419,38 @@ void checkPlatform(const char* platform, int ngpus, int* errors, int* warnings) 
   checkTopo(xmlTopoFile, xmlGraphFile, platform, 0, ngpus, errors, warnings);
   if (ngpus == -1) sprintf(xmlGraphFile, "%stopo/%s/inter-graph.xml", topoDir, platform);
   else sprintf(xmlGraphFile, "%stopo/%s/inter-graph-%d.xml", topoDir, platform, ngpus);
-  checkTopo(xmlTopoFile, xmlGraphFile, platform, 1, ngpus, errors, warnings);
+  if (!intraOnly) checkTopo(xmlTopoFile, xmlGraphFile, platform, 1, ngpus, errors, warnings);
 }
 
-#define RUN(platform) checkPlatform(platform, -1, &errors, &warnings)
+#define RUN_INTRA(platform) checkPlatform(platform, -1, 1, &errors, &warnings)
+
+#define RUN(platform) checkPlatform(platform, -1, 0, &errors, &warnings)
 
 #define RUN_MULTI4(platform) do { \
-  checkPlatform(platform, 4, &errors, &warnings); \
-  checkPlatform(platform, 2, &errors, &warnings); \
-  checkPlatform(platform, 1, &errors, &warnings); \
+  checkPlatform(platform, 4, 0, &errors, &warnings); \
+  checkPlatform(platform, 2, 0, &errors, &warnings); \
+  checkPlatform(platform, 1, 0, &errors, &warnings); \
 } while(0)
 
 #define RUN_MULTI8(platform) do { \
-  checkPlatform(platform, 8, &errors, &warnings); \
-  checkPlatform(platform, 6, &errors, &warnings); \
-  checkPlatform(platform, 4, &errors, &warnings); \
-  checkPlatform(platform, 2, &errors, &warnings); \
-  checkPlatform(platform, 1, &errors, &warnings); \
+  checkPlatform(platform, 8, 0, &errors, &warnings); \
+  checkPlatform(platform, 6, 0, &errors, &warnings); \
+  checkPlatform(platform, 4, 0, &errors, &warnings); \
+  checkPlatform(platform, 2, 0, &errors, &warnings); \
+  checkPlatform(platform, 1, 0, &errors, &warnings); \
 } while(0)
+
+void printHelpMessage() {
+  printf("This tool directly invokes NCCL topology and graph search code, and operates on a database of system.xml files. You can directly modify topo.cc or any other relevant files and test their behavior here.\n");
+  printf("Usage : graph_test [platform] [ngpus]\n");
+  printf("  platform : platform name (e.g. LOC-1G)\n");
+  printf("  ngpus    : number of GPUs per node (default -1, all)\n");
+  printf("  -h       : print this help message\n");
+  printf("Set NCCL_TOPO_DIR to override the default topo directory. This is necessary to invoke graph_test from an outside directory.\n");
+  printf("Set NCCL_GRAPH_TEST_DUMP=0 to disable dumping of graph diffs.\n");
+  printf("Set NCCL_GRAPH_TEST_DUMP_SYSTEM_XML=1 to dump the processed system XML from NIC Fusion and then the fully trimmed system XML.\n");
+  printf("Set NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=GRAPH to get standard NCCL logs of your scenario.\n");
+}
 
 int main(int argc, const char* argv[]) {
   setenv("NCCL_IGNORE_DISABLED_P2P", "2", 0); // Disable hardware health checks (NVML)
@@ -422,9 +458,15 @@ int main(int argc, const char* argv[]) {
   char* str = getenv("NCCL_GRAPH_TEST_DUMP");
   if (str) dumpDiff = atoi(str);
   int errors = 0, warnings = 0;
+  str = getenv("NCCL_GRAPH_TEST_DUMP_SYSTEM_XML");
+  if (str) dumpProcessedXml = atoi(str);
   if (argc > 1) {
-    if (argc > 2) checkPlatform(argv[1], atoi(argv[2]), &errors, &warnings);
-    else checkPlatform(argv[1], -1, &errors, &warnings);
+    if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+      printHelpMessage();
+      return 0;
+    }
+    if (argc > 2) checkPlatform(argv[1], atoi(argv[2]), 0, &errors, &warnings);
+    else checkPlatform(argv[1], -1, 0, &errors, &warnings);
   } else {
     RUN("LOC-1G");
     RUN("PCI-1R");
@@ -463,6 +505,7 @@ int main(int argc, const char* argv[]) {
     RUN_MULTI4("Scout");
     RUN("PCI-H100-NV");
     RUN("OCI-HGX-A100");
+    RUN("OCI-HGX-A100-flat");
     RUN("DualPort-CPU");
     RUN("Dell_R760xa");
     RUN("SMC521GE");
@@ -472,8 +515,11 @@ int main(int argc, const char* argv[]) {
     RUN("P9-6V");
     RUN("P9-4V");
     RUN("HP-ARM-V100");
-    RUN("GB200-NVL36");
-    RUN("GB200-NVL72");
+    RUN_INTRA("GB200-NVL36");
+    RUN_INTRA("GB200-NVL72");
+    RUN("GB200-CX8");
+    RUN("DGX-Spark");
+    RUN("DGX-Spark-flat");
   }
   printf("%d errors, %d warnings (%s)\n", errors, warnings, errors ? "FAILED" : "PASSED");
   return errors ? 1 : 0;

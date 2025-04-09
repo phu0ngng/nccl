@@ -402,7 +402,9 @@ ncclResult_t ncclTopoAddGpu(struct ncclXmlNode* xmlGpu, struct ncclTopoSystem* s
   return ncclSuccess;
 }
 
-struct kvDict kvDictPciClass[] = { { "0x060400", PCI }, { "0x068000", NVS }, { "0x068001", CPU }, { "0x03", GPU }, { "0x02", NIC }, { NULL, PCI /* Default fallback value */ } };
+#define PCI_BRIDGE_DEVICE_CLASS "0x060400"
+
+struct kvDict kvDictPciClass[] = { { PCI_BRIDGE_DEVICE_CLASS, PCI }, { "0x068000", NVS }, { "0x068001", CPU }, { "0x03", GPU }, { "0x02", NIC }, { NULL, PCI /* Default fallback value */ } };
 struct kvDict kvDictPciGen[] = {
   { "2.5 GT/s", 15 }, { "5 GT/s", 30 }, { "8 GT/s", 60 }, { "16 GT/s", 120 }, { "32 GT/s", 240 }, /* Kernel 5.6 and earlier */
   { "2.5 GT/s PCIe", 15 }, { "5.0 GT/s PCIe", 30 }, { "8.0 GT/s PCIe", 60 }, { "16.0 GT/s PCIe", 120 }, { "32.0 GT/s PCIe", 240 }, { "64.0 GT/s PCIe", 480 },
@@ -800,6 +802,17 @@ typedef struct xmlNodeStack {
 
 } xmlNodeStack;
 
+ncclResult_t ncclFindFirstPciParent(ncclXmlNode** parent) {
+  ncclXmlNode* newParent = *parent;
+  while (strcmp(newParent->name, "pci") != 0) {
+    newParent = newParent->parent;
+    if (newParent == nullptr) return ncclSuccess;
+    if (strcmp(newParent->name, "system") == 0) return ncclSuccess;
+  }
+  *parent = newParent;
+  return ncclSuccess;
+}
+
 // 1. Find the common parent xmlNode between the given set of nodes
 ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXmlNode** parent) {
   // Track a stack of parents per-net node being merged
@@ -898,6 +911,7 @@ ncclResult_t ncclTopoGetPath(ncclXmlNode** nodes, int nNodes, int* path, ncclXml
   }
 
 out:
+  ncclFindFirstPciParent(&common);
   *parent = common;
   free(parents);
   return ncclSuccess;
@@ -1151,8 +1165,13 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclResult_t (*getProper
   if (path == PATH_LOC) {
     *parent = NULL;
   } else if (parent && strcmp((*parent)->name, "pci") == 0) {
-    // If the common parent is PCI, we must reparent the new NIC under a made up busId
-    NCCLCHECK(ncclTopoMakePciParent(xml, parent, physNetNodes[0]));
+    // Compare PCI class here to avoid NCCL WARN when the "class" attribute doesn't exist
+    const char* c;
+    NCCLCHECK(xmlGetAttrStr(*parent, "class", &c));
+    if (strcmp(c, PCI_BRIDGE_DEVICE_CLASS) == 0) {
+      // If the common parent is a PCI switch, we must reparent the new NIC under a made up pci device with a unique busid
+      NCCLCHECK(ncclTopoMakePciParent(xml, parent, physNetNodes[0]));
+    }
   }
   TRACE(NCCL_GRAPH, "Selected parent %s with path %d", (*parent)->name, path);
   return ncclSuccess;
