@@ -271,10 +271,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   commPoison(comm); // poison comm before free to avoid comm reuse.
   NCCLCHECK(ncclProfilerPluginFinalize(comm));
   NCCLCHECK(ncclNetFinalize(comm));
-  NCCLCHECK(ncclNetPluginUnload(comm));
-
   ncclCudaContextDrop(comm->context);
-
   free(comm);
 
   return ncclSuccess;
@@ -344,7 +341,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   comm->rank = rank;
   comm->nRanks = ndev;
 
-  NCCLCHECK(ncclNetPluginLoad(comm));
   NCCLCHECK(ncclNetInit(comm));
   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 

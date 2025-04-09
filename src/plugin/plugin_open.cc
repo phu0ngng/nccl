@@ -23,7 +23,7 @@ enum ncclPluginType {
 static void *libHandles[NUM_LIBS];
 static const char *pluginNames[NUM_LIBS] = { "NET", "TUNER", "PROFILER" };
 static const char *pluginPrefix[NUM_LIBS] = { "libnccl-net", "libnccl-tuner", "libnccl-profiler" };
-static const char *pluginFallback[NUM_LIBS] = { "Using internal net plugin.", "Using internal tuner plugin.", "" };
+static const char *pluginFallback[NUM_LIBS] = { "", "Using internal tuner plugin.", "" };
 static unsigned long subsys[NUM_LIBS] = { NCCL_INIT|NCCL_NET, NCCL_INIT|NCCL_TUNING, NCCL_INIT };
 
 static void* tryOpenLib(char* name, int* err, char* errStr) {
@@ -123,12 +123,17 @@ void* ncclGetNetPluginLib(void) {
 }
 
 ncclResult_t ncclClosePluginLib(void* handle) {
+  bool found = false;
   for (int l=0; l<NUM_LIBS; l++) {
     if (libHandles[l] == handle) {
       libHandles[l] = nullptr;
-      dlclose(handle);
-      return ncclSuccess;
+      if (!found) {
+        if (handle) {
+          dlclose(handle);
+        }
+        found = true;
+      }
     }
   }
-  return ncclInternalError;
+  return ncclSuccess;
 }

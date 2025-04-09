@@ -9,18 +9,32 @@ load_cluster_ci_variables
 init_junit_file
 get_slurm_planned_time
 
-# Args for run_command
-# run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
+export LD_LIBRARY_PATH=$NCCL_HOME/test/apitest/plugin:$LD_LIBRARY_PATH
 
-run_command "apitest_default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/apitest" ""
+# argument list: testPrefix, gtest_filter 
+run_api_test(){
+    echo "RUNNING API TEST with $1 and --gtest_filter = $2"
+    # Args for run_command
+    # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
+    run_command "apitest_${1}default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+    # NvBug 5210770
+    if [ "$SKIP_API_NO_P2P" != "1" ]
+    then
+        run_command "apitest_${1}no_p2p" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+    fi
+    run_command "apitest_${1}no_p2p_no_shm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+}
 
-# NvBug 5210770
-if [ "$SKIP_API_NO_P2P" != "1" ]
-then
-    run_command "apitest_no_p2p" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/apitest/apitest" ""
-fi
+# list of tests with a special config
+multinetTests="ncclCommInitRankConfig_test.multi_net_plugin_*"
 
-run_command "apitest_no_p2p_no_shm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1" "$NCCL_HOME/test/apitest/apitest" ""
+# run all tests except the ones with a special config
+run_api_test "" "-${multinetTests}"
+
+# run multinet tests with special config
+export NCCL_NET_PLUGIN="plugin_nodev_v5,plugin_nodev_v6,plugin_v7,plugin_nodev_v8,plugin_nodev_v9"
+run_api_test "multinet_" "${multinetTests}"
+unset NCCL_NET_PLUGIN
 
 print_failed_commands
 end_junit_file

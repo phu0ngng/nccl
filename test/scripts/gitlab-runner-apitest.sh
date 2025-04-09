@@ -1,5 +1,5 @@
 #!/bin/bash
-export LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$PWD/build/lib:$CUDA_HOME/lib64:$PWD/build/test/apitest/plugin:$LD_LIBRARY_PATH
 
 # We need to catch failures manually and then throw at the end to get gitlab to detect a failure
 failure_count=0
