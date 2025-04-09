@@ -85,7 +85,7 @@ build-eos-aws-oci:
   tags:
     - build-with-docker
   script:
-    - docker/make.sh draco-oci,eos
+    - docker/make.sh draco-oci,eos,pre-nyx
     - mv build build-eos
   artifacts:
     paths:
@@ -94,7 +94,7 @@ build-eos-aws-oci:
       - build-eos/**/*.o
     expire_in: 48 hrs
 
-build-pre-nyx:
+.build-pre-nyx:
   stage: build
   rules:
     - if: $RUN_ON_PRE_NYX == "1"
@@ -571,7 +571,8 @@ unit_tests-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-pre-nyx"]
+  needs:
+    - build-eos-aws-oci
   tags:
     - prenyx
   variables:
@@ -583,7 +584,7 @@ unit_tests-pre-nyx:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-pre-nyx
+    NCCL_HOME: build-eos
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
@@ -986,7 +987,8 @@ apitest-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-pre-nyx"]
+  needs:
+    - build-eos-aws-oci
   tags:
     - prenyx
   variables:
@@ -999,7 +1001,7 @@ apitest-pre-nyx:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-pre-nyx
+    NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1482,7 +1484,8 @@ perftest-single-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-pre-nyx"]
+  needs:
+    - build-eos-aws-oci
   tags:
     - prenyx
   variables:
@@ -1497,7 +1500,7 @@ perftest-single-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: build-pre-nyx
+    NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1849,7 +1852,8 @@ perftest-multi-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-pre-nyx"]
+  needs:
+    - build-eos-aws-oci
   tags:
     - prenyx
   variables:
@@ -1863,7 +1867,7 @@ perftest-multi-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: build-pre-nyx
+    NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
   script:
