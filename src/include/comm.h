@@ -612,6 +612,9 @@ struct ncclComm {
   // group job to support multi-thread FT
   struct ncclGroupJob *groupJob;
 
+  // Flag indicating if this communicator shares resources with parent or children
+  bool shareResources;
+
   // Tuning plugin
   int tunerPluginLoaded;
   ncclTuner_t* tuner;

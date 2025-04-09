@@ -177,7 +177,7 @@ then
   if [ "$SKIP_FT_INIT" == "1" ]
   then
     echo "Skipping init FT test..."
-    enable_ft="$enable_ft -L allreduce,alltoall,finalize,split,abort"
+    enable_ft="$enable_ft -L allreduce,alltoall,finalize,split,shrink,abort"
   fi
   NCCL_SOCKET_RETRY_SLEEP_MSEC=1 $SALLOC $MPI_HOME/bin/mpirun $MPI_PARAMS ./build/test/perf/all_reduce_perf $range $opts $enable_ft
   [ $? -ne 0 ] && let failure_count=$failure_count+1 && failure_names+=("all_reduce (FT tests): NCCL_SOCKET_RETRY_SLEEP_MSEC=1 all_reduce_perf $range $opts $enable_ft")

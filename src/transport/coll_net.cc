@@ -1500,7 +1500,7 @@ ncclResult_t ncclCollNetSetup(ncclComm_t comm, ncclComm_t parent, struct ncclTop
   comm->collNetHeads = headsUnique;
   comm->collNetHeadsNum = nHeadsUnique;
   if (parent && parent->config.collnetEnable && parent->nNodes == comm->nNodes) {
-    if (!parent->config.splitShare) {
+    if (!parent->shareResources) {
       collNetSetupFail = 1;
       goto fail;
     }

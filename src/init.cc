@@ -30,6 +30,7 @@
 #include <unistd.h>
 #include "param.h"
 #include "nvtx_payload_schemas.h"
+#include "utils.h"
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -347,7 +348,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   NCCLCHECK(ncclNetInit(comm));
   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 
-  if (parent && parent->config.splitShare) {
+  if (parent && parent->shareResources) {
     if (parent->ncclNet != comm->ncclNet) {
       WARN("Split shares resources, but parent comm netName %s is different from child comm netName %s", parent->ncclNet->name, comm->ncclNet->name);
       return ncclInvalidUsage;
@@ -390,7 +391,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   // Mark channels as non initialized.
   for (int c=0; c < MAXCHANNELS; c++) comm->channels[c].id = -1;
 
-  if (parent == NULL || !parent->config.splitShare) {
+  if (parent == NULL || !parent->shareResources) {
     struct ncclSharedResources* sharedRes = NULL;
     NCCLCHECK(ncclCalloc(&sharedRes, 1));
     /* most of attributes are assigned later in initTransportsRank(). */
@@ -1082,7 +1083,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   NCCLCHECKGOTO(ncclTransportCheckP2pType(comm, &comm->isAllDirectP2p, &comm->directMode), ret, fail);
   // Launch proxy service thread, after this, the proxy calls can be used.
-  if (parent && parent->config.splitShare) {
+  if (parent && parent->shareResources) {
     comm->proxyState = parent->sharedRes->proxyState;
     ncclAtomicRefCountIncrement(&parent->sharedRes->proxyState->refCount);
   } else {
@@ -1299,7 +1300,7 @@ exit:
   /* If split resource is shared, we are not able to unlink the proxy ops pool here since the child comm can
    * attach the proxy ops pool of parent at any time; otherwise, unlink it here to make sure the pool will be
    * properly cleaned up. */
-  if (comm->sharedRes->owner == comm && !comm->config.splitShare && ret == ncclSuccess && !ncclCuMemEnable()) ncclProxyShmUnlink(comm);
+  if (comm->sharedRes->owner == comm && !comm->shareResources && ret == ncclSuccess && !ncclCuMemEnable()) ncclProxyShmUnlink(comm);
   free(allTopoRanks);
   free(nodesTreePatterns);
   free(nodesFirstRank);
@@ -1332,6 +1333,9 @@ struct ncclCommInitRankAsyncJob {
   struct ncclComm* parent;
   int color, key;
   int splitCount;
+  // For Shrink
+  int* excludeRanksList;
+  int excludeRanksCount;
   // name of the function calling
   char funcName[NCCL_COMMINIT_FUNCNAME_LEN];
 };
@@ -1342,6 +1346,7 @@ struct ncclCommFinalizeAsyncJob {
 };
 
 NCCL_PARAM(CommSplitShareResources, "COMM_SPLIT_SHARE_RESOURCES", NCCL_CONFIG_UNDEF_INT);
+NCCL_PARAM(CommShrinkShareResources, "COMM_SHRINK_SHARE_RESOURCES", NCCL_CONFIG_UNDEF_INT);
 
 typedef struct{
   int key;
@@ -1389,6 +1394,21 @@ fail:
   goto exit;
 }
 
+static ncclResult_t getParentRanks(int parentRanks, int parentRank, int* excludeRanksList, int excludeRanksCount, int* nRanksRet, int* myRankRet, int* parentRanksRet) {
+  int count = 0, j = 0;
+  for (int i = 0; i < parentRanks; i++) {
+    // we assume excludeRanksList is sorted
+    if (j < excludeRanksCount && excludeRanksList[j] == i) {
+      j++;
+      continue;
+    }
+    if (i == parentRank) *myRankRet = count;
+    parentRanksRet[count++] = i;
+  }
+  *nRanksRet = parentRanks - excludeRanksCount;
+  return ncclSuccess;
+}
+
 static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   struct ncclCommInitRankAsyncJob* job = (struct ncclCommInitRankAsyncJob*)job_;
   ncclComm_t comm = job->comm;
@@ -1422,9 +1442,13 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
 
   if (job->parent) {
     NCCLCHECKGOTO(ncclCalloc(&parentRanks, job->parent->nRanks), res, fail);
-    NCCLCHECKGOTO(commGetSplitInfo(comm, job->parent, job->color, job->key, &job->nranks, &job->myrank, parentRanks), res, fail);
-    // Negative color does not create a new comm object. We needed to take part in the allgather, but we're done now.
-    if (job->color == NCCL_SPLIT_NOCOLOR) goto exit;
+    if (job->excludeRanksCount) {
+      NCCLCHECKGOTO(getParentRanks(job->parent->nRanks, job->parent->rank, job->excludeRanksList, job->excludeRanksCount, &job->nranks, &job->myrank, parentRanks), res, fail);
+    } else {
+      NCCLCHECKGOTO(commGetSplitInfo(comm, job->parent, job->color, job->key, &job->nranks, &job->myrank, parentRanks), res, fail);
+      // Negative color does not create a new comm object. We needed to take part in the allgather, but we're done now.
+      if (job->color == NCCL_SPLIT_NOCOLOR) goto exit;
+    }
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
@@ -1518,6 +1542,8 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int splitShareEnv;
   int collnetEnableEnv;
   int ctaPolicyEnv;
+  int shrinkShareEnv;
+
   /* override configuration from env variable. */
   blockingEnv = ncclParamCommBlocking();
   if (blockingEnv == 0 || blockingEnv == 1)
@@ -1561,6 +1587,10 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   splitShareEnv = ncclParamCommSplitShareResources();
   if (splitShareEnv != NCCL_CONFIG_UNDEF_INT) {
     comm->config.splitShare = splitShareEnv;
+  }
+  shrinkShareEnv = ncclParamCommShrinkShareResources();
+  if (shrinkShareEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->config.shrinkShare = shrinkShareEnv;
   }
 
   collnetEnableEnv = ncclParamCollnetEnable();
@@ -1651,6 +1681,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     if (internalConfigPtr->version < NCCL_VERSION(2, 27, 0)) {
       internalConfigPtr->collnetEnable = defaultConfig.collnetEnable;
       internalConfigPtr->CTAPolicy = defaultConfig.CTAPolicy;
+      internalConfigPtr->shrinkShare = defaultConfig.shrinkShare;
     }
   }
 
@@ -1692,6 +1723,10 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   if (internalConfigPtr->CTAPolicy != NCCL_CONFIG_UNDEF_INT && (internalConfigPtr->CTAPolicy < NCCL_CTA_POLICY_DEFAULT ||
     internalConfigPtr->CTAPolicy > NCCL_CTA_POLICY_EFFICIENCY)) {
     WARN("Invalid config policy attribute value %d", internalConfigPtr->CTAPolicy);
+  }
+
+  if (internalConfigPtr->shrinkShare != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->shrinkShare != 0 && internalConfigPtr->shrinkShare != 1) {
+    WARN("Invalid config shrinkShare attribute value %d", internalConfigPtr->shrinkShare);
     ret = ncclInvalidArgument;
     goto fail;
   }
@@ -1707,6 +1742,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   NCCL_CONFIG_DEFAULT(internalConfigPtr, commName, NCCL_CONFIG_UNDEF_PTR, NULL, "Comm name", "%s");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, collnetEnable, NCCL_CONFIG_UNDEF_INT, 0, "Collnet enable", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, CTAPolicy, NCCL_CONFIG_UNDEF_INT, NCCL_CTA_POLICY_DEFAULT, "CTA policy flags", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, shrinkShare, NCCL_CONFIG_UNDEF_INT, 0, "shrinkShare", "%d");
 
   /* assign config to communicator */
   comm->config.blocking = internalConfigPtr->blocking;
@@ -1719,6 +1755,8 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   comm->config.commName = internalConfigPtr->commName;
   comm->config.collnetEnable = internalConfigPtr->collnetEnable;
   comm->config.CTAPolicy = internalConfigPtr->CTAPolicy;
+  comm->config.shrinkShare = internalConfigPtr->shrinkShare;
+
   NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
 
 exit:
@@ -2160,6 +2198,17 @@ fail:
   goto exit;
 }
 
+static ncclResult_t setCommAbortFlags(ncclComm_t comm, int value) {
+  // Set abort flags
+  if (comm->childAbortFlag != nullptr) {
+    __atomic_store_n(comm->childAbortFlag, value, __ATOMIC_RELEASE);
+    __atomic_store_n(comm->childAbortFlagDev, value, __ATOMIC_RELEASE);
+  }
+  __atomic_store_n(comm->abortFlag, value, __ATOMIC_RELEASE);
+  __atomic_store_n(comm->abortFlagDev, value, __ATOMIC_RELEASE);
+  return ncclSuccess;
+}
+
 NCCL_API(ncclResult_t, ncclCommAbort, ncclComm_t comm);
 ncclResult_t ncclCommAbort(ncclComm_t comm) {
   NVTX3_RANGE(NcclNvtxParamsCommAbort);
@@ -2169,12 +2218,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   }
   NCCLCHECK(ncclGroupStartInternal());
   // Ask anything that might still be running on the device to quit
-  if (comm->childAbortFlag != nullptr) {
-    __atomic_store_n(comm->childAbortFlag, 1, __ATOMIC_RELEASE);
-    __atomic_store_n(comm->childAbortFlagDev, 1, __ATOMIC_RELEASE);
-  }
-  __atomic_store_n(comm->abortFlag, 1, __ATOMIC_RELEASE);
-  __atomic_store_n(comm->abortFlagDev, 1, __ATOMIC_RELEASE);
+  NCCLCHECK(setCommAbortFlags(comm,1));
   comm->destroyFlag = 1;
   /* init thread must be joined before we destroy the comm,
    * and we should ignore the init error here. */
@@ -2202,31 +2246,46 @@ fail:
   goto exit;
 }
 
-NCCL_API(ncclResult_t, ncclCommSplit, ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config);
-ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config) {
+static void childCommCleanupJob(void* job) {
+  struct ncclCommInitRankAsyncJob* initJob = (struct ncclCommInitRankAsyncJob*)job;
+  if (initJob->excludeRanksList) free(initJob->excludeRanksList);
+  free(job);
+}
+
+// initializing a child communicator (for both split and shrink)
+static ncclResult_t ncclCommInitChildComm(ncclComm_t comm, ncclComm_t* newcomm, bool isShrink, int flags, int color, int key, int* excludeRanksList, int excludeRanksCount,
+                                          ncclConfig_t* config, const char* caller) {
   struct ncclCommInitRankAsyncJob *job = NULL;
   struct ncclComm* childComm = NCCL_COMM_NULL;
   ncclResult_t res = ncclSuccess;
 
-  NVTX3_RANGE(NcclNvtxParamsCommSplit)
-
   int oldDev;
   CUDACHECK(cudaGetDevice(&oldDev));
+  NCCLCHECKGOTO(CommCheck(comm, caller, "comm"), res, exit);
+  NCCLCHECKGOTO(PtrCheck(newcomm, caller, "newcomm"), res, exit);
+  if (isShrink) {
+    NCCLCHECKGOTO(PtrCheck(excludeRanksList, caller, "excludeRanksList"), res, exit);
+    NCCLCHECKGOTO(excludeRanksCount > 0 ? ncclSuccess : ncclInvalidArgument, res, exit);
+    // excludeRanksList may not be sorted, need to sort it
+    qsort(excludeRanksList, excludeRanksCount, sizeof(int), compareInts);
+    // ranks in excludeRanksList should not call into this function
+    NCCLCHECKGOTO(bsearch(&comm->rank, excludeRanksList, excludeRanksCount, sizeof(int), compareInts) ? ncclInvalidArgument : ncclSuccess, res, exit);
+  }
+  NCCLCHECKGOTO(ncclCommEnsureReady(comm), res, exit);
+  CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), res, exit);
 
-  NCCLCHECK(ncclGroupStartInternal());
-  NCCLCHECKGOTO(CommCheck(comm, "CommSplit", "comm"), res, fail);
-  NCCLCHECKGOTO(PtrCheck(newcomm, "CommSplit", "newcomm"), res, fail);
-  NCCLCHECKGOTO(ncclCommEnsureReady(comm), res, fail);
-
-  CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), res, fail);
   /* *newcomm should be NCCL_COMM_NULL until comm split fully complete. */
   *newcomm = NCCL_COMM_NULL;
-  if (color == NCCL_SPLIT_NOCOLOR) {
+  if (!isShrink && color == NCCL_SPLIT_NOCOLOR) {
     INFO(NCCL_INIT, "Rank %d has color with NCCL_SPLIT_NOCOLOR, not creating a new communicator", comm->rank);
   } else {
     NCCLCHECKGOTO(ncclCalloc(&childComm, 1), res, fail);
     childComm->startMagic = childComm->endMagic = NCCL_MAGIC;
-    if (comm->config.splitShare) {
+
+    // Set the shareResource field, this is used throughout the init and must be reset every time.
+    // If we shrink, we only reuse resources if we shrink in the default mode
+    comm->shareResources = isShrink ? (!(flags & NCCL_SHRINK_ABORT) && comm->config.shrinkShare) : comm->config.splitShare;
+    if (comm->shareResources) {
       childComm->abortFlag = comm->abortFlag;
       childComm->abortFlagDev = comm->abortFlagDev;
       childComm->abortFlagRefCount = comm->abortFlagRefCount;
@@ -2247,43 +2306,82 @@ ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newc
       NCCLCHECKGOTO(parseCommConfig(childComm, config), res, fail);
     }
 
-    /* start with ncclInProgress and will be changed to ncclSuccess if init succeeds. */
-    childComm->initState = ncclInProgress;
+    /* start with ncclInternalError and will be changed to ncclSuccess if init succeeds. */
+    childComm->initState = ncclInternalError;
   }
 
   NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
   job->comm = childComm;
   job->newcomm = newcomm;
   job->parent = comm;
-  job->splitCount = ++comm->splitCount;
   job->color = color;
   job->key = key;
+  if (excludeRanksList) {
+    // need to copy the list of ranks to exclude because the job is async
+    job->excludeRanksCount = excludeRanksCount;
+    NCCLCHECKGOTO(ncclCalloc(&job->excludeRanksList, excludeRanksCount), res, fail);
+    memcpy(job->excludeRanksList, excludeRanksList, excludeRanksCount * sizeof(int));
+  } else {
+    // each split has to lead to a unique comm, so increment the splitCount
+    job->splitCount = ++comm->splitCount;
+    job->excludeRanksList = NULL;
+  }
   job->cudaDev = comm->cudaDev;
-  snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", __func__);
-  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, free, comm), res, fail);
+  snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", caller);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, /*undo=*/NULL, /*destructor=*/childCommCleanupJob, comm), res, fail);
 
 exit:
   (void)cudaSetDevice(oldDev);
-  (void)ncclGroupErrCheck(res);
-  NCCLCHECK(ncclGroupEndInternal());
-
-  if (res == ncclSuccess && *newcomm) {
-    NVTX3_RANGE_ADD_PAYLOAD(CommSplit, NcclNvtxParamsCommSplitSchema,
-      NVTX3_PAYLOAD((*newcomm)->commHash, comm->commHash, comm->nRanks, comm->rank, comm->cudaDev, color, key));
-  }
-
   return res;
 fail:
   if (childComm) {
-    if (!comm->config.splitShare) {
-      free(childComm->abortFlag);
+    if (!comm->shareResources) {
+      if (childComm->abortFlag) free(childComm->abortFlag);
       if (childComm->abortFlagDev) ncclCudaHostFree(childComm->abortFlagDev);
-      free(childComm->abortFlagRefCount);
+      if (childComm->abortFlagRefCount) free(childComm->abortFlagRefCount);
     }
     free(childComm);
   }
   if (newcomm) *newcomm = NULL;
   goto exit;
+}
+
+NCCL_API(ncclResult_t, ncclCommShrink, ncclComm_t comm, int* excludeRanksList, int excludeRanksCount, ncclComm_t* newcomm, ncclConfig_t* config, int shrinkFlags);
+ncclResult_t  ncclCommShrink(ncclComm_t comm, int* excludeRanksList, int excludeRanksCount, ncclComm_t *newcomm, ncclConfig_t* config, int shrinkFlags) {
+  NVTX3_RANGE(NcclNvtxParamsCommShrink)
+  ncclResult_t res = ncclSuccess;
+  NCCLCHECK(ncclGroupStartInternal());
+  // Handle error mode by setting abort flags and waiting for kernels to complete and unset the flags to avoid bootstrap issues
+  if (shrinkFlags & NCCL_SHRINK_ABORT) {
+    NCCLCHECKGOTO(setCommAbortFlags(comm, 1), res, exit);
+    NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->sharedRes->deviceStream), res, exit);
+    NCCLCHECKGOTO(setCommAbortFlags(comm, 0), res, exit);
+  }
+  NCCLCHECKGOTO(ncclCommInitChildComm(comm, newcomm, /*isShrink=*/true, shrinkFlags, /*color=*/0, /*key=*/comm->rank, excludeRanksList, excludeRanksCount, config, __func__), res, exit);
+
+  if (*newcomm) NVTX3_RANGE_ADD_PAYLOAD(CommShrink, NcclNvtxParamsCommShrinkSchema, NVTX3_PAYLOAD(comm->commHash, comm->nRanks, comm->rank, comm->cudaDev, excludeRanksCount));
+
+exit:
+  (void)ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
+  return res;
+}
+
+NCCL_API(ncclResult_t, ncclCommSplit, ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config);
+ncclResult_t ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config) {
+  NVTX3_RANGE(NcclNvtxParamsCommSplit)
+
+  ncclResult_t res = ncclSuccess;
+  NCCLCHECK(ncclGroupStartInternal());
+  NCCLCHECKGOTO(ncclCommInitChildComm(comm, newcomm, /*isShrink=*/false, /*shrink mode=*/NCCL_SHRINK_DEFAULT, color, key, NULL, 0, config, __func__), res, exit);
+
+  if (*newcomm)
+    NVTX3_RANGE_ADD_PAYLOAD(CommSplit, NcclNvtxParamsCommSplitSchema, NVTX3_PAYLOAD((*newcomm)->commHash, comm->commHash, comm->nRanks, comm->rank, comm->cudaDev, color, key));
+
+exit:
+  (void)ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
+  return res;
 }
 
 NCCL_API(const char*, ncclGetErrorString, ncclResult_t code);

@@ -98,7 +98,7 @@ NCCL_DEBUG_OLD=$NCCL_DEBUG
 export NCCL_DEBUG=VERSION
 run_command "all_reduce_output_file" $RUN_MODE $NGPUS "" "NCCL_PXN_DISABLE=1" "$NCCL_HOME/test/perf/all_reduce_perf" "-b8 -e8 -w0 -n1 -J test_out.json"
 
-enable_ft="$enable_ft -L allreduce,alltoall,split"
+enable_ft="$enable_ft -L allreduce,alltoall,split,shrink"
 if [ "$SKIP_FT_INIT" != "1" ]
 then
   enable_ft+=",init"

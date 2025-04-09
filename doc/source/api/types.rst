@@ -233,6 +233,13 @@ ncclConfig_t
   other communicators in the same family becoming unusable. Irrespective of whether sharing resources or not, users should
   always abort/destroy all no longer needed communicators to free up resources.
 
+ .. c:macro:: shrinkShare
+
+  Specify whether to share resources with child communicator during communicator shrink.
+  Set the value of shrinkShare to 0 or 1. The default value is 0.
+  Note: when shrink is used with NCCL_SHRINK_ABORT, the value of shrinkShare is ignored and no resources are shared.
+  The behavior of this flag is similar to `splitShare`, see above.
+
  .. c:macro:: trafficClass
 
   Set the traffic class (TC) to use for network operations on the communicator.

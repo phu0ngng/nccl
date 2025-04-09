@@ -38,3 +38,22 @@ NCCL Communicator CTA Policy Flags
   Use the CTA efficiency policy for NCCL communicator. In this policy, NCCL will optimize CTA usage and use minimal
   number of CTAs to achieve the decent performance when possible. This policy is suitable for applications which require
   better compute and communication overlap.
+
+.. _comm_shrink_flags:
+
+Communicator Shrink Flags
+--------------------------
+
+These flags modify the behavior of the ``ncclCommShrink`` operation.
+
+.. c:macro:: NCCL_SHRINK_DEFAULT
+
+   Default behavior. Shrink the parent communicator without affecting ongoing operations.
+   Value: ``0x00``.
+
+.. c:macro:: NCCL_SHRINK_ABORT
+
+   First, terminate ongoing parent communicator operations, and then proceed with shrinking the communicator.
+   This is used for error recovery scenarios where the parent communicator might be in a hung state.
+   Resources of parent comm are still not freed, users should decide whether to call ncclCommAbort on the parent communicator after shrink.
+   Value: ``0x01``.
