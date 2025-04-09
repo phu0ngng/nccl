@@ -14,8 +14,9 @@ enum {
   FT_TEST_ALLTOALL = 2,
   FT_TEST_FINALIZE = 3,
   FT_TEST_SPLIT = 4,
-  FT_TEST_ABORT = 5,
-  FT_TEST_NUM = 6,
+  FT_TEST_SHRINK = 5,
+  FT_TEST_ABORT = 6,
+  FT_TEST_NUM = 7,
 };
 
 #define PRINT if (is_main_thread) printf
@@ -429,6 +430,129 @@ exit:
   return testSuccess;
 }
 
+static testResult_t distributeFTShrinkTest(struct threadArgs* args) {
+  ncclComm_t* comms = args->comms[0];
+  testResult_t ret = testSuccess;
+  int nGpus = args->nGpus;
+  
+  int totalGpus = args->nProcs * args->nThreads * nGpus;
+  int sDev = args->localRank * args->nThreads * nGpus + args->thread * nGpus;
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
+  cudaStream_t* streams = args->streams;
+  int badIdx = 1;
+
+  // not enought gpus to run the test, return
+  if (totalGpus <= 1) return testSuccess;
+
+  // First time: Initialize all communicators
+  ncclConfig_t initConfig = NCCL_CONFIG_INITIALIZER;
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int dev = sDev + j;
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    CUDACHECK(cudaSetDevice(dev));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &initConfig));
+  }
+  NCCLCHECK(ncclGroupEnd());
+
+  // Allocate arrays for split communicators
+  ncclComm_t* splitComms = (ncclComm_t*)malloc(sizeof(ncclComm_t) * nGpus);
+  ncclComm_t* shrinkComms = (ncclComm_t*)malloc(sizeof(ncclComm_t) * nGpus);
+
+  // Step 1: Shrink existing communicators for all ranks except the badIdx one
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    ncclConfig_t shrinkConfig = NCCL_CONFIG_INITIALIZER;
+    NCCLCHECK(ncclCommShrink(comms[j], &badIdx, 1, &shrinkComms[j], &shrinkConfig, NCCL_SHRINK_ABORT));
+  }
+  NCCLCHECK(ncclGroupEnd());
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) {
+      ncclCommAbort(comms[j]);
+      comms[j] = NULL;
+    } else {
+      NCCLCHECK(ncclCommDestroy(comms[j]));
+      comms[j] = shrinkComms[j];
+    }
+  }
+  NCCLCHECK(ncclGroupEnd());
+
+  // Step 2: Create split communicators to emulate PyTorch usage
+  ncclConfig_t splitConfig = NCCL_CONFIG_INITIALIZER;
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    NCCLCHECK(ncclCommSplit(comms[j], 1, rank, &splitComms[j], &splitConfig));
+  }
+  NCCLCHECK(ncclGroupEnd());
+
+  // Step 3: Do allreduce using split comms
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    int h_val = rank + 1;
+    CUDACHECK(cudaMemcpy(sendbuffs[j], &h_val, sizeof(int), cudaMemcpyHostToDevice));
+  }
+  
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    NCCLCHECK(ncclAllReduce(sendbuffs[j], recvbuffs[j], 1, ncclInt32, ncclSum, splitComms[j], streams[j]));
+  }
+  NCCLCHECK(ncclGroupEnd());
+  
+  // Step 4: Synchronize streams and verify results
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    CUDACHECK(cudaStreamSynchronize(streams[j]));
+  }
+
+  // Calculate expected result
+  int expected = totalGpus * (totalGpus + 1) / 2 - (badIdx + 1);
+
+  // Verify results
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    int h_result = 0;
+    CUDACHECK(cudaMemcpy(&h_result, recvbuffs[j], sizeof(int), cudaMemcpyDeviceToHost));
+    if (h_result != expected) {
+      printf("Distributed FT: Allreduce result on device %d is %d, expected %d\n", 
+             j, h_result, expected);
+      ret = testNcclError;
+    }
+  }
+
+  // Step 5: Cleanup split comms
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    NCCLCHECK(ncclCommDestroy(splitComms[j]));
+  }
+  NCCLCHECK(ncclGroupEnd());
+
+  // Final cleanup of base comms
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    NCCLCHECK(ncclCommDestroy(comms[j]));
+  }
+  NCCLCHECK(ncclGroupEnd());
+  
+  free(splitComms);
+  return ret;
+}
+
 testResult_t commAbortHangTest(struct threadArgs* args) {
 #if CUDART_VERSION >= 12020
   int driverVersion = 0;
@@ -489,8 +613,8 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
   int sDev = localRank * localnGpus;
   int totalGpus = ncclProcs * nThreads;
   int testEnable[FT_TEST_NUM];
-  const char* testName[FT_TEST_NUM] = {"init", "allreduce", "alltoall", "finalize", "split", "abort"};
-  threadFunc_t testFuncs[FT_TEST_NUM] = {distributeFTInitTest, distributeFTAllreduceTest, distributeFTAlltoAllTest, distributeFTFinalizeTest, distributeFTCommSplitTest, commAbortHangTest};
+  const char* testName[FT_TEST_NUM] = {"init", "allreduce", "alltoall", "finalize", "split", "shrink", "abort"};
+  threadFunc_t testFuncs[FT_TEST_NUM] = {distributeFTInitTest, distributeFTAllreduceTest, distributeFTAlltoAllTest, distributeFTFinalizeTest, distributeFTCommSplitTest, distributeFTShrinkTest, commAbortHangTest};
 
   if (ft_list != NULL) {
     /* users only set a subset of ft tests. */
@@ -513,6 +637,8 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
         testEnable[FT_TEST_FINALIZE] = 1;
       } else if (strcmp(token, "split") == 0) {
         testEnable[FT_TEST_SPLIT] = 1;
+      } else if (strcmp(token, "shrink") == 0) {
+        testEnable[FT_TEST_SHRINK] = 1;
       } else if (strcmp(token, "abort") == 0) {
         testEnable[FT_TEST_ABORT] = 1;
       } else if (strcmp(token, "all") == 0) {

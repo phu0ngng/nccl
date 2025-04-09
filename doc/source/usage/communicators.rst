@@ -106,6 +106,52 @@ This function will therefore return true on rank 0, 3, and 5, and false otherwis
 Note: only the first ncclUniqueId will be used to create the communicator hash id, which is used to identify the
 communicator in the log file and in the replay tool.
 
+Shrinking a communicator
+------------------------
+
+The :c:func:`ncclCommShrink` function allows you to create a new communicator by removing specific ranks from an existing one.
+This is useful when you need to exclude certain GPUs or nodes from a collective operation, for example in fault tolerance scenarios or when dynamically adjusting resource utilization.
+
+The following example demonstrates how to create a new communicator by excluding rank 1:
+
+.. code:: C
+
+  int excludeRanks[] = {1};  // Rank to exclude
+  int excludeCount = 1;      // Number of ranks to exclude
+  ncclComm_t newcomm;
+
+  // Only ranks that will be in the new communicator should call ncclCommShrink
+  if (myRank != 1) {
+    ncclResult_t res = ncclCommShrink(comm, excludeRanks, excludeCount, &newcomm, NULL, NCCL_SHRINK_DEFAULT);
+    if (res != ncclSuccess) {
+      // Handle error
+    }
+    // Use the new communicator for collective operations
+    // ...
+    // When done, destroy the new communicator
+    ncclCommDestroy(newcomm);
+  }
+
+When recovering from communication errors, you may want to use the error mode:
+
+.. code:: C
+
+  if (myRank != 1) {
+    // When shrinking after an error, use NCCL_SHRINK_ABORT to abort operations on the parent communicator
+    // This mode is also useful when there might be ongoing operations on the parent communicator
+    ncclResult_t res = ncclCommShrink(comm, excludeRanks, excludeCount, &newcomm, NULL, NCCL_SHRINK_ABORT);
+    // ...
+  }
+
+Note that:
+
+1. Only ranks that will be part of the new communicator should call :c:func:`ncclCommShrink`.
+2. Ranks listed in the exclusion list should not call this function.
+3. The new communicator will have ranks re-ordered to maintain contiguous numbering.
+4. You can use the ncclGroupStart/ncclGroupEnd mechanism to synchronize the creation of new communicators.
+
+Related link: :c:func:`ncclCommShrink`
+
 Creating more communicators
 ---------------------------
 
@@ -351,6 +397,10 @@ Fault Tolerance
 NCCL provides a set of features to allow applications to recover from fatal errors such as a network failure,
 a node failure, or a process failure. When such an error happens, the application should be able to call *ncclCommAbort*
 on the communicator to free all resources, then create a new communicator to continue.
+
+For more advanced recovery, the *ncclCommShrink* function with *NCCL_SHRINK_ABORT* can be used to create a new communicator
+by removing failed ranks from the existing communicator while safely handling in-progress operations. This approach is
+particularly useful in distributed environments where only some ranks have failed.
 
 In order to abort NCCL communicators safely, NCCL requires applications to set communicators as nonblocking and make sure
 no thread is calling any NCCL operations while calling *ncclCommAbort*. After nonblocking is set, all NCCL calls

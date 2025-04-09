@@ -341,7 +341,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   size_t typeSize;
   char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
   uintptr_t *nvlsShmem = NULL;
-  bool nvlsShare = parent && parent->nvlsSupport && parent->config.splitShare;
+  bool nvlsShare = parent && parent->nvlsSupport && parent->shareResources;
   int nHeads = comm->channels[0].nvls.nHeads;
 
   if (comm->nvlsSupport == 0 || comm->nvlsChannels == 0) return ncclSuccess;
@@ -393,7 +393,7 @@ setup:
     comm->nvlsResources->nHeads = nHeads;
     resources = comm->nvlsResources;
 
-    if (parent && parent->nvlsSupport && parent->config.splitShare) {
+    if (parent && parent->nvlsSupport && parent->shareResources) {
       /* ranks on other nodes might share the NVLS resources, we need to cap nvlsChannels
        * to make sure nvlsChannels match for each rank. */
       comm->nvlsChannels = std::min(comm->nvlsChannels, parent->nvlsResources->nChannels);

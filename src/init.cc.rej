@@ -1,0 +1,45 @@
+diff a/src/init.cc b/src/init.cc	(rejected hunks)
+@@ -337,7 +337,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
+   NCCLCHECK(ncclProfilerPluginInit(comm));
+   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
+ 
+-  if (parent && parent->config.splitShare) {
++  if (parent && parent->shareResources) {
+     if (parent->ncclNet != comm->ncclNet) {
+       WARN("Split shares resources, but parent comm netName %s is different from child comm netName %s", parent->ncclNet->name, comm->ncclNet->name);
+       return ncclInvalidUsage;
+@@ -2185,8 +2185,20 @@ static ncclResult_t ncclCommInitChildComm(ncclComm_t comm, ncclComm_t *newcomm,
+   } else {
+     NCCLCHECKGOTO(ncclCalloc(&childComm, 1), res, fail);
+     childComm->startMagic = childComm->endMagic = NCCL_MAGIC;
+-    // splitShare is only for non shrink operations
+-    if (!isShrink && comm->config.splitShare) {
++
++    // Determine child communicator configuration before deciding on resource sharing
++    if (config == NULL) {
++      NCCLCHECKGOTO(copyCommConfig(childComm, comm), res, fail);
++    } else {
++      NCCLCHECKGOTO(parseCommConfig(childComm, config), res, fail);
++    }
++
++    // Determine if resources should be shared based on final child config
++    childComm->shareResources = (!isShrink && childComm->config.splitShare) || 
++                               (isShrink && childComm->config.shrinkMode == ncclShrinkShareMode);
++
++    if (childComm->shareResources) {
++
+       childComm->abortFlag = comm->abortFlag;
+       childComm->abortFlagDev = comm->abortFlagDev;
+       childComm->abortFlagRefCount = comm->abortFlagRefCount;
+@@ -2201,11 +2213,6 @@ static ncclResult_t ncclCommInitChildComm(ncclComm_t comm, ncclComm_t *newcomm,
+       comm->childAbortFlagDev = childComm->abortFlagDev;
+       *childComm->abortFlagRefCount = 1;
+     }
+-    if (config == NULL) {
+-      NCCLCHECKGOTO(copyCommConfig(childComm, comm), res, fail);
+-    } else {
+-      NCCLCHECKGOTO(parseCommConfig(childComm, config), res, fail);
+-    }
+ 
+     /* start with ncclInternalError and will be changed to ncclSuccess if init succeeds. */
+     childComm->initState = ncclInternalError;

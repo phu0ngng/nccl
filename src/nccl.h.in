@@ -61,6 +61,10 @@ typedef enum { ncclSuccess                 =  0,
 #define NCCL_CTA_POLICY_DEFAULT 0x00
 #define NCCL_CTA_POLICY_EFFICIENCY 0x01
 
+/* ncclCommShrink flags*/
+#define NCCL_SHRINK_DEFAULT 0x00 /* shrink the parent communicator */
+#define NCCL_SHRINK_ABORT 0x01   /* First, terminate ongoing parent operations, and then shrink the parent communicator */
+
 /* Communicator configuration. Users can assign value to attributes to specify the
  * behavior of a communicator. */
 typedef struct ncclConfig_v22700 {
@@ -79,6 +83,7 @@ typedef struct ncclConfig_v22700 {
   const char *commName;
   int collnetEnable;
   int CTAPolicy;
+  int shrinkShare;
 } ncclConfig_t;
 
 /* Config initializer must be assigned to initialize config structure when it is created.
@@ -97,6 +102,7 @@ typedef struct ncclConfig_v22700 {
   NCCL_CONFIG_UNDEF_PTR,                    /* commName */              \
   NCCL_CONFIG_UNDEF_INT,                    /* collnetEnable */         \
   NCCL_CONFIG_UNDEF_INT,                    /* CTAPolicy */             \
+  NCCL_CONFIG_UNDEF_INT,                    /* shrinkShare */           \
 }
 
 /* This struct will be used by ncclGroupSimulateEnd() API to query information about simulation. */
@@ -187,6 +193,14 @@ ncclResult_t pncclCommAbort(ncclComm_t comm);
  * configuration*/
 ncclResult_t  ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t* config);
 ncclResult_t pncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t* config);
+
+/* Shrink existing communicator.
+ * Ranks in excludeRanksList will be removed form the existing communicator.
+ * Within the new communicator, ranks will be re-ordered to fill the gap of removed ones.
+ * If config is NULL, the new communicator will inherit the original communicator's configuration
+ * The flag enables NCCL to adapt to various states of the parent communicator, see NCCL_SHRINK flags.*/
+ncclResult_t  ncclCommShrink(ncclComm_t comm, int* excludeRanksList, int excludeRanksCount, ncclComm_t* newcomm, ncclConfig_t* config, int shrinkFlags);
+ncclResult_t pncclCommShrink(ncclComm_t comm, int* excludeRanksList, int excludeRanksCount, ncclComm_t* newcomm, ncclConfig_t* config, int shrinkFlags);
 
 /* Creates a new communicator (multi thread/process version), similar to ncclCommInitRankConfig.
  * Allows to use more than one ncclUniqueId (up to one per rank), indicated by nId, to accelerate the init operation.
