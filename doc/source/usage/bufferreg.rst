@@ -154,3 +154,30 @@ Window Registration
 Since 2.27, NCCL supports window registration, which allows users to register local buffers into NCCL window and enables extreme low latency and high bandwith communication in NCCL. Currently, window registration only supports input buffers from VMM-based allocators (:ref:`mem_allocator`) and `ncclMemAlloc`; any other type of cuda buffers will fail to be registered.
 
 NCCL window registration is enabled by default. However, if users do not use window registration and need to turn it off, set `NCCL_WIN_ENABLE=0` to disable it. In addition, users can also control the behavior of window registration through flags in :ref:`win_flags`.
+
+The following example shows how to register buffers into NCCL window and use it for communication:
+
+.. code:: C
+
+  void* src;
+  void* dst;
+  ncclWindow_t src_win;
+  ncclWindow_t dst_win;
+
+  CHECK(ncclMemAlloc(&src, src_size)); // cudaMalloc doesn’t work in here
+  CHECK(ncclMemAlloc(&dst, dst_size));
+  // Passing NCCL_WIN_COLL_SYMMETRIC requires users to provide the symmetric buffers among all ranks in collectives.
+  // Every rank needs to call ncclCommWindowRegister to register its buffers.
+  CHECK(ncclCommWindowRegister(comm, src, src_size, &src_win, NCCL_WIN_COLL_SYMMETRIC));
+  CHECK(ncclCommWindowRegister(comm, dst, dst_size, &dst_win, NCCL_WIN_COLL_SYMMETRIC));
+  // Use the registered buffers for communication to enable symmetric communication benefits.
+  // In this example, every rank has 0x1000 offset and 0x2000 offset from the head address of
+  // src and dst respectively, which satisfies the symmetric buffer requirement.
+  CHECK(ncclAllgather((uint8_t*)src + 0x1000, (uint8_t*)dst + 0x2000, src_size, ncclInt8, comm, stream));
+  CHECK(cudaStreamSynchronize(stream));
+
+  CHECK(ncclCommWindowDeregister(src_win));
+  CHECK(ncclCommWindowDeregister(dst_win));
+
+  CHECK(ncclMemFree(src));
+  CHECK(ncclMemFree(dst));
