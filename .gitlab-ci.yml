@@ -45,6 +45,9 @@ default:
 workflow:
   rules:
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
+      auto_cancel:
+        on_new_commit: none
   # when cancelling a redundant pipeline, cancel all jobs that are interruptible
   auto_cancel:
     on_new_commit: interruptible
@@ -87,7 +90,7 @@ build-eos-aws-oci:
   tags:
     - build-with-docker
   script:
-    - docker/make.sh draco-oci,eos
+    - docker/make.sh draco-oci,eos,pre-nyx
     - mv build build-eos
   artifacts:
     paths:
@@ -96,7 +99,7 @@ build-eos-aws-oci:
       - build-eos/**/*.o
     expire_in: 48 hrs
 
-build-pre-nyx:
+.build-pre-nyx:
   stage: build
   rules:
     - if: $RUN_ON_PRE_NYX == "1"
@@ -597,7 +600,8 @@ unit_tests-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-pre-nyx"]
+  needs:
+    - build-eos-aws-oci
   tags:
     - prenyx
   variables:
@@ -609,7 +613,7 @@ unit_tests-pre-nyx:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-pre-nyx
+    NCCL_HOME: build-eos
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
@@ -669,7 +673,7 @@ apitest-P100:
     - when: always
   needs: ["build-classic"]
   tags:
-    - a100pci
+    - p100
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/gc-classic-config.sh"
@@ -1015,7 +1019,8 @@ apitest-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-pre-nyx"]
+  needs:
+    - build-eos-aws-oci
   tags:
     - prenyx
   variables:
@@ -1028,7 +1033,7 @@ apitest-pre-nyx:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-pre-nyx
+    NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1099,6 +1104,7 @@ perftest-P100:
     NGPUS: 8
     NCCL_HOME: build-gc
     SALLOC: "salloc --exclusive -t 00:30:00 -N ${NNODES} -n ${NGPUS} -p ${SLURM_PARTITION}"
+    NO_LOOPBACK_NETWORKING: 1
   script:
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -1118,7 +1124,7 @@ perftest-P40:
     - when: always
   needs: ["build-classic"]
   tags:
-    - p100
+    - p40
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/gc-classic-config.sh"
@@ -1132,6 +1138,7 @@ perftest-P40:
     NGPUS: 8
     NP: 8
     NCCL_HOME: build-gc
+    NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -1165,6 +1172,7 @@ perftest-GP100:
     NGPUS: 8
     NP: 8
     NCCL_HOME: build-gc
+    NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -1223,6 +1231,7 @@ perftest-A40:
     NGPUS: 2
     NP: 2
     NCCL_HOME: build-gc
+    NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -1256,6 +1265,7 @@ multi-perftest-A40:
     NGPUS: 2
     NP: 2
     NCCL_HOME: build-gc
+    NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -1289,6 +1299,7 @@ perftest-A100:
     NGPUS: 8
     NP: 8
     NCCL_HOME: build-gc
+    NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -1509,7 +1520,8 @@ perftest-single-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-pre-nyx"]
+  needs:
+    - build-eos-aws-oci
   tags:
     - prenyx
   variables:
@@ -1524,7 +1536,7 @@ perftest-single-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: build-pre-nyx
+    NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1576,7 +1588,7 @@ perftest-single-pre-tyche:
 perftest-multi-gc:
   stage: perf_tests_multi
   rules:
-    - when: always
+    - when: never
   needs: [build-classic]
   tags:
     - p100
@@ -1593,6 +1605,7 @@ perftest-multi-gc:
     NGPUS: 8
     NP: 8
     NCCL_HOME: build-gc
+    NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -1609,7 +1622,7 @@ perftest-multi-gc:
 perftest-sharp-gc:
   stage: perf_tests_multi
   rules:
-    - when: always
+    - when: never
   needs: [build-classic]
   tags:
     - p100
@@ -1875,7 +1888,8 @@ perftest-multi-pre-nyx:
     - if: $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
-  needs: ["build-pre-nyx"]
+  needs:
+    - build-eos-aws-oci
   tags:
     - prenyx
   variables:
@@ -1889,7 +1903,7 @@ perftest-multi-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: build-pre-nyx
+    NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
   script:
