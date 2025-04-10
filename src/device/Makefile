@@ -37,12 +37,12 @@ define COMPILE
 endef
 
 ifeq ($(shell echo "$$((1000*$(CUDA_MAJOR) + 10*$(CUDA_MINOR) >= 12080))"),1)
-	GENCODE_LDMC_FP8 = -gencode=arch=compute_100a,code=sm_100a \
+	NVCC_GENCODE_LDMC_FP8 = -gencode=arch=compute_100a,code=sm_100a \
                      -gencode=arch=compute_120a,code=sm_120a
 else ifeq ($(shell echo "$$((1000*$(CUDA_MAJOR) + 10*$(CUDA_MINOR) >= 12070))"),1)
-  GENCODE_LDMC_FP8 = -gencode=arch=compute_100a,code=sm_100a
+  NVCC_GENCODE_LDMC_FP8 = -gencode=arch=compute_100a,code=sm_100a
 else
-	GENCODE_LDMC_FP8 =
+	NVCC_GENCODE_LDMC_FP8 =
 endif
 
 define COMPILE_SYM

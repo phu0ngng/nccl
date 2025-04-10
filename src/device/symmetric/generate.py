@@ -127,7 +127,7 @@ def kernel_fname(k):
 
 def kernel_gencode(k):
   if k.coll in reductions and k.algo in ldmc_algos and k.ty.startswith('f8'):
-    return "$(GENCODE_LDMC_FP8)"
+    return "$(NVCC_GENCODE_LDMC_FP8)"
   else:
     return "$(NVCC_GENCODE)"
 

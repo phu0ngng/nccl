@@ -30,7 +30,9 @@ extern const char* ncclProtoStr[NCCL_NUM_PROTOCOLS];
   #define NCCL_CUDA_ARCH 0
 #endif
 
-#ifdef __CUDA_ARCH_HAS_FEATURE__
+#ifdef __CUDA_ARCH_SPECIFIC__
+  #define NCCL_CUDA_ARCH_SPECIFIC __CUDA_ARCH_SPECIFIC__
+#elif defined(__CUDA_ARCH_HAS_FEATURE__)
   #if __CUDA_ARCH_HAS_FEATURE__(SM90_ALL)
     #define NCCL_CUDA_ARCH_SPECIFIC 900
   #elif __CUDA_ARCH_HAS_FEATURE__(SM100_ALL)
@@ -44,6 +46,12 @@ extern const char* ncclProtoStr[NCCL_NUM_PROTOCOLS];
   #endif
 #else
   #define NCCL_CUDA_ARCH_SPECIFIC 0
+#endif
+
+#ifdef __CUDA_ARCH_FAMILY_SPECIFIC__
+  #define NCCL_CUDA_ARCH_FAMILY_SPECIFIC __CUDA_ARCH_FAMILY_SPECIFIC__
+#else
+  #define NCCL_CUDA_ARCH_FAMILY_SPECIFIC 0
 #endif
 
 #include "net_device.h"
