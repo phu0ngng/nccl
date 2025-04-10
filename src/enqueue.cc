@@ -1160,6 +1160,7 @@ namespace {
     struct uploadWork_cleanup_t* me = (struct uploadWork_cleanup_t*)cb;
     free(me->hostBuf);
     CUDACHECK(cudaEventDestroy(me->base.event));
+    free(me);
     return ncclSuccess;
   }
 }

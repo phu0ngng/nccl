@@ -679,7 +679,7 @@ inline ncclResult_t ncclCommPollEventCallbacks(struct ncclComm *comm) {
   while (true) {
     struct ncclCommEventCallback* cb = ncclIntruQueueHead(&comm->eventCallbackQueue);
     if (cb == nullptr) break;
-    cudaError_t ok = cudaEventSynchronize(cb->event);
+    cudaError_t ok = cudaEventQuery(cb->event);
     if (ok == cudaErrorNotReady) break;
     ncclIntruQueueDequeue(&comm->eventCallbackQueue);
     if (ok == cudaSuccess) {
