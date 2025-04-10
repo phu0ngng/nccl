@@ -164,7 +164,7 @@ The following example shows how to register buffers into NCCL window and use it 
   ncclWindow_t src_win;
   ncclWindow_t dst_win;
 
-  CHECK(ncclMemAlloc(&src, src_size)); // cudaMalloc doesn’t work in here
+  CHECK(ncclMemAlloc(&src, src_size));
   CHECK(ncclMemAlloc(&dst, dst_size));
   // Passing NCCL_WIN_COLL_SYMMETRIC requires users to provide the symmetric buffers among all ranks in collectives.
   // Every rank needs to call ncclCommWindowRegister to register its buffers.
