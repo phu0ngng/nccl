@@ -422,9 +422,6 @@ struct ncclDevComm {
   int p2pChunkSize;
   int isAllNvlink;
 
-  // Work fifo return credits
-  uint32_t* workConsumed/*[MAXCHANNELS]*/;
-
   int* collNetDenseToUserRank;
 
   // Flag to ask NCCL kernels to abort

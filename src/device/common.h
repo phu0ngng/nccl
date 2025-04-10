@@ -52,7 +52,6 @@ struct ncclShmemData {
   uint16_t funcId;
   int nWorks;
   int workSize;
-  uint32_t workConsumed;
   uint64_t workCounter;
   bool profilerEnabled;
   struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
@@ -182,7 +181,6 @@ __device__ __forceinline__ void loadWorkBatchToShmem(
     }
     if (tid == 0) {
       ncclShmem.workSize = workSize;
-      ncclShmem.workConsumed = batch.offsetBase + (64-__clzll(batch.offsetBitset))*workSize;
     }
     // We deliberately replicate these div and mod calculations into the case
     // blocks above so that they get constant divisor optimizations by the compiler.
@@ -384,11 +382,6 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
   }
   __syncthreads(); // publish ncclShmem
 
-  if (tid == 0 && ncclShmem.args.workStorageType == ncclDevWorkStorageTypeFifo) {
-    // ncclShmem.workConsumed written by loadWorkBatchToShmem before __syncthreads()
-    ncclShmem.comm.workConsumed[ncclShmem.channelId] = ncclShmem.workConsumed;
-  }
-
   while (ncclShmem.aborted == 0) {
     profiler(START);
     if (0 <= SpecializedFnId && ncclShmem.funcId == (unsigned)SpecializedFnId) {
@@ -403,11 +396,6 @@ __device__ __forceinline__ void ncclKernelMain(struct ncclDevKernelArgs const* a
     profiler(STOP);
     loadWorkBatchToShmem(tid, tn, args, batchIx);
     __syncthreads();
-
-    if (tid == 0 && ncclShmem.args.workStorageType == ncclDevWorkStorageTypeFifo) {
-      // ncclShmem.workConsumed written by loadWorkBatchToShmem before __syncthreads()
-      ncclShmem.comm.workConsumed[ncclShmem.channelId] = ncclShmem.workConsumed;
-    }
   }
   profiler(FINI);
 }

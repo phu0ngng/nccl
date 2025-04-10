@@ -501,12 +501,10 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     comm->workFifoBufDev = comm->workFifoBuf;
   }
 
-  NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->workFifoConsumed, MAXCHANNELS), ret, fail);
-  ncclCommPushCudaHostFree(comm, comm->workFifoConsumed);
   comm->workFifoProduced = 0;
-  comm->workFifoConsumedLeast = 0;
-  tmpCommAndChans.comm.workConsumed = comm->workFifoConsumed;
-
+  comm->workFifoProducedLastRecorded = 0;
+  comm->workFifoConsumed = 0;
+  
   // Alloc profiler counters for the kernel
   NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->profiler.workStarted, MAXCHANNELS), ret, fail);
   NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->profiler.workCompleted, MAXCHANNELS), ret, fail);
@@ -2040,7 +2038,7 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
       WARN("commDestroySync: comm %p rank %d sync deviceStream error %d\n", comm, comm->rank, ret);
     }
 
-    NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm), ret, fail);
+    NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm, true), ret, fail);
     NCCLCHECKGOTO(ncclCommPollCallbacks(comm, false), ret, fail);
     // And keep polling until all graphs referencing us die.
     while (comm->localPersistentRefs != 0) {

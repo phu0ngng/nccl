@@ -1106,47 +1106,17 @@ static ncclResult_t scheduleP2pTasksToPlan(
 }
 
 // Spin until its safe to increase comm->workFifoProduced to desiredProduced.
-static void waitWorkFifoAvailable(struct ncclComm* comm, uint32_t desiredProduced) {
-  bool hasRoom = (desiredProduced - comm->workFifoConsumedLeast) <= comm->workFifoBytes;
-  if (hasRoom) return;
-  while (true) {
-    // We have to poll for notifications from device.
-    uint32_t* consumedLive = comm->workFifoConsumed;
-    uint32_t consumed[MAXCHANNELS];
-    for (int c=0; c < MAXCHANNELS; c++) {
-      consumed[c] = __atomic_load_n(&consumedLive[c], __ATOMIC_RELAXED);
+static ncclResult_t waitWorkFifoAvailable(struct ncclComm* comm, uint32_t desiredProduced) {
+  bool hasRoom = (desiredProduced - comm->workFifoConsumed) <= comm->workFifoBytes;
+  if (!hasRoom) {
+    while (true) {
+      NCCLCHECK(ncclCommPollEventCallbacks(comm, /*waitSome=*/true));
+      hasRoom = (desiredProduced - comm->workFifoConsumed) <= comm->workFifoBytes;
+      if (hasRoom) break;
+      sched_yield();
     }
-    // Compiler-only fence to prevent fusion of loops to encourage dense loads.
-    __atomic_signal_fence(__ATOMIC_SEQ_CST);
-
-    uint32_t produced = comm->workFifoProduced;
-    uint32_t consumedLeast = produced;
-    for (int c=0; c < MAXCHANNELS; c++) {
-      // consumedLeast is min over all non-quiesced channels
-      if (consumed[c] != comm->channels[c].workFifoProduced) {
-        if ((produced - consumedLeast) < (produced - consumed[c])) {
-          consumedLeast = consumed[c];
-        }
-      }
-    }
-
-    // Compiler only fence to prevent fusion of loops to encourage dense stores.
-    __atomic_signal_fence(__ATOMIC_SEQ_CST);
-
-    for (int c=0; c < MAXCHANNELS; c++) {
-      // Advance counter on quiesced channels so they don't lag behind
-      // too far where they could get lost in 32-bit wraparound.
-      if (consumed[c] == comm->channels[c].workFifoProduced) {
-        comm->channels[c].workFifoProduced = consumedLeast;
-        __atomic_store_n(&consumedLive[c], consumedLeast, __ATOMIC_RELAXED);
-      }
-    }
-    comm->workFifoConsumedLeast = consumedLeast;
-
-    hasRoom = (desiredProduced - comm->workFifoConsumedLeast) <= comm->workFifoBytes;
-    if (hasRoom) break;
-    sched_yield();
   }
+  return ncclSuccess;
 }
 
 namespace {
@@ -1184,7 +1154,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     fifoBufHost = comm->workFifoBuf;
     fifoCursor = comm->workFifoProduced;
     fifoMask = comm->workFifoBytes-1;
-    waitWorkFifoAvailable(comm, fifoCursor + workBytes);
+    NCCLCHECK(waitWorkFifoAvailable(comm, fifoCursor + workBytes));
     plan->kernelArgs->workBuf = comm->workFifoBufDev;
     break;
   case ncclDevWorkStorageTypePersistent:
@@ -1265,7 +1235,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       ncclIntruQueueEnqueue(&comm->eventCallbackQueue, (struct ncclCommEventCallback *)cleanup);
 
       NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false), result, fail);
-      NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm), result, fail);
+      NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm, /*waitSome=*/false), result, fail);
 
     finish_scope:
       if (mode != cudaStreamCaptureModeRelaxed) (void)cudaThreadExchangeStreamCaptureMode(&mode);
@@ -1672,6 +1642,22 @@ ncclResult_t ncclLaunchKernelAfter_NoCuda(struct ncclComm* comm, struct ncclKern
   return ncclSuccess;
 }
 
+namespace {
+  struct KernelFinishCallback {
+    struct ncclCommEventCallback base;
+    uint32_t workFifoConsumed;
+  };
+  ncclResult_t KernelFinishCallback_fn(
+      struct ncclComm* comm, struct ncclCommEventCallback* cb
+    ) {
+    struct KernelFinishCallback* me = (struct KernelFinishCallback*)cb;
+    comm->workFifoConsumed = me->workFifoConsumed;
+    CUDACHECK(cudaEventDestroy(me->base.event));
+    free(me);
+    return ncclSuccess;
+  }
+}
+
 ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
   if (!ncclIntruQueueEmpty(&planner->planQueue)) {
@@ -1681,7 +1667,21 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
 
     cudaStream_t launchStream = planner->streams->stream; // First user stream gets launch
     cudaStream_t deviceStream, launchOrder;
-    CUDACHECK(cudaEventRecord(comm->sharedRes->scratchEvent, launchStream));
+    cudaEvent_t finishedEvent = comm->sharedRes->scratchEvent;
+    CUDACHECK(cudaEventRecord(finishedEvent, launchStream));
+
+    if (comm->workFifoProduced - comm->workFifoProducedLastRecorded > comm->workFifoBytes/8) {
+      comm->workFifoProducedLastRecorded = comm->workFifoProduced;
+      struct KernelFinishCallback* cb;
+      NCCLCHECK(ncclCalloc(&cb, 1));
+      cb->base.event = finishedEvent;
+      cb->base.fn = KernelFinishCallback_fn;
+      cb->workFifoConsumed = comm->workFifoProduced;
+      ncclIntruQueueEnqueue(&comm->eventCallbackQueue, &cb->base);
+      // We just stole scratchEvent so must create a new one.
+      CUDACHECK(cudaEventCreateWithFlags(&comm->sharedRes->scratchEvent, cudaEventDisableTiming));
+    }
+
     // deviceStream waits on userStream[0]
     NCCLCHECK(ncclStrongStreamAcquiredWorkStream(planner->capturingGraph, &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream));
 
@@ -1690,13 +1690,13 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
     // on launchStream as a fast-forward. When building CUDA graphs fast forwards should
     // be handled specially so as not to create graphs with a blowup in the number of edges.
     // So we could do this:
-    //   CUDACHECK(cudaStreamWaitEvent(deviceStream, comm->sharedRes->scratchEvent, 0));
+    //   CUDACHECK(cudaStreamWaitEvent(deviceStream, finishedEvent, 0));
     // But instead we do:
-    NCCLCHECK(ncclStreamAdvanceToEvent(planner->capturingGraph, deviceStream, comm->sharedRes->scratchEvent));
+    NCCLCHECK(ncclStreamAdvanceToEvent(planner->capturingGraph, deviceStream, finishedEvent));
 
     // Each userStream[i] waits on userStream[0]
     for (struct ncclCudaStreamList* l=planner->streams->next; l != nullptr; l = l->next) {
-      CUDACHECK(cudaStreamWaitEvent(l->stream, comm->sharedRes->scratchEvent, 0));
+      CUDACHECK(cudaStreamWaitEvent(l->stream, finishedEvent, 0));
     }
     bool capturing = ncclCudaGraphValid(planner->capturingGraph);
     enum ncclImplicitOrder implicitOrder;
@@ -1707,7 +1707,7 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
       // Incorporate launch event into per-device (context) launch order.
       NCCLCHECK(ncclStrongStreamAcquiredWorkStream(planner->capturingGraph, &comm->context->launchOrder, concurrent, &launchOrder));
       // If we don't have launch events (requires CUDA 12.3) then just use completion event (serialize execution).
-      CUDACHECK(cudaStreamWaitEvent(launchOrder, implicitOrder == ncclImplicitOrderLaunch ? comm->sharedRes->launchEvent : comm->sharedRes->scratchEvent));
+      CUDACHECK(cudaStreamWaitEvent(launchOrder, implicitOrder == ncclImplicitOrderLaunch ? comm->sharedRes->launchEvent : finishedEvent));
       // Release launchOrder as acquired in ncclLaunchPrepare()
       NCCLCHECK(ncclStrongStreamRelease(planner->capturingGraph, &comm->context->launchOrder, concurrent));
     }

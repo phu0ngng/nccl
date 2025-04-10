@@ -536,12 +536,10 @@ struct ncclComm {
   void* workFifoBufDev;
   void* workFifoBufGdrHandle;
 
-  // Monotonic number of bytes (mod 1<<32) consumed per channel. In cudaHost memory.
-  uint32_t* workFifoConsumed/*[MAXCHANNELS]*/;
-  // Last observed value of: min(workFifoConsumed[c] for c < MAXCHANNELS)
-  uint32_t workFifoConsumedLeast;
   // Monotonic number of bytes (mod 1<<32) sent to fifo.
   uint32_t workFifoProduced;
+  uint32_t workFifoProducedLastRecorded;
+  uint32_t workFifoConsumed;
 
   // Intra-process sync
   struct ncclComm* intraComm0; // leader of intra-process comms (self possible)
@@ -672,15 +670,21 @@ inline ncclResult_t ncclCommPollCallbacks(struct ncclComm* comm, bool waitSome) 
   return ncclSuccess;
 }
 
-inline ncclResult_t ncclCommPollEventCallbacks(struct ncclComm *comm) {
+inline ncclResult_t ncclCommPollEventCallbacks(struct ncclComm *comm, bool waitSome) {
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   while (true) {
     struct ncclCommEventCallback* cb = ncclIntruQueueHead(&comm->eventCallbackQueue);
     if (cb == nullptr) break;
-    cudaError_t ok = cudaEventQuery(cb->event);
-    if (ok == cudaErrorNotReady) break;
+    cudaError_t ok;
+    if (waitSome) {
+      ok = cudaEventSynchronize(cb->event);
+      waitSome = false;
+    } else {
+      ok = cudaEventQuery(cb->event);
+      if (ok == cudaErrorNotReady) break;
+    }
     ncclIntruQueueDequeue(&comm->eventCallbackQueue);
     if (ok == cudaSuccess) {
       NCCLCHECKGOTO(cb->fn(comm, cb), result, finish);
