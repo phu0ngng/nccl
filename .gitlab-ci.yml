@@ -1403,12 +1403,13 @@ perftest-single-eos:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/eos-config.sh"
-    SLURM_TIME: 20
+    SLURM_TIME: 25
     RUN_MODE: "MPI"
     NNODES: 1
     NGPUS: 8
     MAX: "1G"
     NP: 8
+    SYMMETRIC: 1
     SKIP_FT_INIT: 1
     NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
@@ -1459,6 +1460,7 @@ perftest_single-AWS_H100_EFA:
       export CI_JOB_NAME=${CI_JOB_NAME}
       export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
       export JUNIT=$JUNIT
+      export SYMMETRIC=1
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
@@ -1498,6 +1500,7 @@ perftest_single-draco_oci:
     GRAPH: 0
     MAX: "1G"
     NP: 8
+    SYMMETRIC: 1
     SKIP_FT_INIT: 1
     NCCL_HOME: build-eos
     SLURM_ACCOUNT: coreai_libraries_nccl
@@ -1537,6 +1540,7 @@ perftest-single-pre-nyx:
     NP: 8
     GRAPH: 0
     NCCL_HOME: build-eos
+    SYMMETRIC: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1571,6 +1575,7 @@ perftest-single-pre-tyche:
     MAX: "1G"
     NP: 4
     GRAPH: 0
+    SYMMETRIC: 1
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
@@ -1939,6 +1944,7 @@ perftest-multi-pre-tyche:
     NGPUS: 4
     MAX: "1G"
     NP: 4
+    SYMMETRIC: 1
     GRAPH: 0
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
@@ -1946,7 +1952,7 @@ perftest-multi-pre-tyche:
     # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable ring 1rpn registration tests
     NO_LOOPBACK_NETWORKING: 1
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh

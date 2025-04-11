@@ -25,6 +25,18 @@ for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_g
   run_command "${func}_all_sizes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts"
 done
 
+if [ "$SYMMETRIC" == "1" ];
+then
+  for func in all_reduce_perf reduce_scatter_perf all_gather_perf; do
+    run_command "${func}_symm_memory_min_size" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-w 1 -n 1 -b 1K -e 1K -R 2"
+    run_command "${func}_symm_memory_max_size" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-w 1 -n 1 -b 16G -e 16G -R 2"
+    run_command "${func}_symm_memory_sweep" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -R 2"
+    run_command "${func}_symm_memory_min_size_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-G 1 -w 1 -n 1 -b 1K -e 1K -R 2"
+    run_command "${func}_symm_memory_max_size_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-G 1 -w 1 -n 1 -b 16G -e 16G -R 2"
+    run_command "${func}_symm_memory_sweep_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -G 1 -R 2"
+  done
+fi
+
 if [ "$NGPUS" -ge "3" ];
 then
   for func in all_reduce_perf alltoall_perf; do
