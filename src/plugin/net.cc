@@ -270,8 +270,9 @@ ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
   int pluginIndex = comm->netPluginIndex;
   pthread_mutex_lock(&netPluginLock);
   netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
-  if(pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS))
-    NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[pluginIndex]));
+  for (int i = 0; i < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS); i++) {
+    NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[i]));
+  }
   pthread_mutex_unlock(&netPluginLock);      
   return ncclSuccess;
 }
