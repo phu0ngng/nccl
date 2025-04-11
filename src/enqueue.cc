@@ -1467,6 +1467,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
         planner->nTasksColl -= 1;
         ncclIntruQueueEnqueue(&planner->planQueue, plan);
+        INFO(NCCL_TUNING, "%s [Symmetric]: %ld Bytes -> Kernel %s nchannels %d nthreads %d",
+        ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), ncclSymKernelIdToString(task->devFuncId), task->nMaxChannels, plan->threadPerBlock);
         nPlans += 1;
       } else {
         struct ncclKernelPlanBudget budget;
