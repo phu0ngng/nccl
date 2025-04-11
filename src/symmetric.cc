@@ -284,3 +284,10 @@ ncclResult_t ncclSymPickKernel(
   *nWarps = 16;
   return ncclSuccess;
 }
+
+const char* ncclSymKernelIdToString(int kernelId) {
+  if (kernelId < 0 || kernelId >= ncclSymKernelId_Count) {
+    return "Unknown";
+  }
+  return kernelName[kernelId];
+}

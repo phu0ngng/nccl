@@ -84,5 +84,6 @@ ncclResult_t ncclSymPickKernel(struct ncclComm* comm, ncclFunc_t fn, int/*ncclDe
 extern int const ncclSymKernelCount;
 extern void* const ncclSymKernelList[];
 void* ncclSymGetKernelPtr(ncclSymKernelId kernelId, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty);
+const char* ncclSymKernelIdToString(int kernelId);
 
 #endif
