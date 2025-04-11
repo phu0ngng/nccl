@@ -54,13 +54,14 @@ ncclResult_t ncclAsyncLaunch(
 
 struct ncclGroupJob {
   struct ncclAsyncJob base;
-  struct ncclComm **groupCommHeadPtr;
-  struct ncclComm **groupCommPreconnectHeadPtr;
-  ncclResult_t *groupErrorPtr;
-  bool *abortFlagPtr;
-  int *groupBlockingPtr;
-  struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsPtr;
-  bool initialized;
+  int groupRefCount;
+  bool nonBlockingInit;
+  bool joined;
+  struct ncclComm *groupCommHead[ncclGroupTaskTypeNum];
+  struct ncclComm *groupCommPreconnectHead;
+  ncclResult_t groupError;
+  bool abortFlag;
+  struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> asyncJobs;
 };
 
 ncclResult_t ncclGroupStartInternal();
@@ -74,24 +75,6 @@ extern __thread ncclResult_t ncclGroupError;
 extern __thread struct ncclComm* ncclGroupCommHead[ncclGroupTaskTypeNum];
 extern __thread struct ncclComm* ncclGroupCommPreconnectHead;
 extern __thread int ncclGroupBlocking;
-extern __thread struct ncclGroupJob *ncclGroupJobMainPtr;
-extern __thread struct ncclGroupJob ncclGroupJobMain;
-
-static inline void groupResetJobState() {
-  ncclGroupBlocking = -1;
-  ncclGroupJobMainPtr = NULL;
-  memset(&ncclGroupJobMain, 0, sizeof(struct ncclGroupJob));
-  return;
-}
-
-static inline ncclResult_t groupJobComplete(struct ncclGroupJob* job) {
-  ncclResult_t ret = ncclSuccess;
-  if (job) {
-    ret = ncclAsyncJobComplete(&job->base);
-    groupResetJobState();
-  }
-  return ret;
-}
 
 inline ncclResult_t ncclGroupStartInternal() {
   ncclGroupDepth++;
