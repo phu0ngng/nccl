@@ -30,6 +30,7 @@ extern getNcclCollNet_t getNcclCollNet_v8;
 extern getNcclCollNet_t getNcclCollNet_v9;
 extern getNcclCollNet_t getNcclCollNet_v10;
 
+NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 1);
 #define NCCL_NET_VERSION_COUNT 5
 int ncclNetVersion[NCCL_NET_VERSION_COUNT] = {10, 9, 8, 7, 6};
 getNcclNet_t* getNcclNet[NCCL_NET_VERSION_COUNT] = {getNcclNet_v10, getNcclNet_v9, getNcclNet_v8, getNcclNet_v7, getNcclNet_v6};
@@ -223,6 +224,7 @@ static void initPluginLibsOnceFunc() {
   while(netPluginName) {
     assert(strlen(netPluginName) < MAX_STR_LEN);
     netPluginLibs[pluginCounter].ncclNetPluginState = ncclNetPluginStateLoadReady;
+    netPluginLibs[pluginCounter].ncclNetPluginRefCount = ncclParamNetPluginRefCount();
     strcpy(netPluginLibs[pluginCounter].name, netPluginName);
     pluginCounter++;
     netPluginName = strtok_r(nullptr, ",", &savePtr);
