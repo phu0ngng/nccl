@@ -133,6 +133,11 @@ Since 2.23.x, NCCL supports intra-node buffer registration, which targets all pe
 
 The user buffers can be allocated through VMM API (i.e., `cuMem*`), any VMM-based allocators (:ref:`mem_allocator`) or `ncclMemAlloc` will work. The buffers allocated through legacy cuda API (e.g., `cudaMalloc`) can also be used for registration. However, it is not safe due to the potential hang during execution and segmentation fault during failure and abort, so using legacy buffers for registration is not recommended; currently, legacy buffer registration is disabled by default, users can set `NCCL_LEGACY_CUDA_REGISTER=1` to enable it.
 
+Buffer Registration and PXN
+---------------------------
+
+Buffer registration for network communication (e.g., InfiniBand) and PXN are inherently incompatible. PXN is enabled by default in NCCL as long as the platform supports it, and it can be used for sendrecv-based operations and collectives. When PXN is enabled, the network buffer registration will not be enabled even if users have called `ncclCommRegister` to register the buffers. To enable network buffer registration, users can set `NCCL_PXN_DISABLE=1` to disable PXN.
+
 .. _mem_allocator:
 
 Memory Allocator
