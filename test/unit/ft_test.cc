@@ -6,7 +6,7 @@
 #include <time.h>
 #include <cstring>
 #include <assert.h>
-
+#include <pthread.h>
 #define CUDACHECK(cmd) do {                         \
   cudaError_t e = cmd;                              \
   if( e != cudaSuccess ) {                          \
@@ -455,6 +455,71 @@ exit:
   return errors;
 }
 
+struct threadArgs {
+  int rank;
+  ncclComm_t comm;
+  pthread_barrier_t* barrier;
+  int* errors;
+};
+
+static void* threadFunc(void* args_) {
+  struct threadArgs* args = (struct threadArgs*)args_;
+  ncclComm_t comm = args->comm;
+  pthread_barrier_t* barrier = args->barrier;
+  int* errors = args->errors;
+  int errorLocal = 0;
+
+  CUDACHECK(cudaSetDevice(args->rank));
+  pthread_barrier_wait(barrier);
+  errorLocal += checkCommsState(&comm, 1, ncclInProgress, ncclSuccess);
+
+  if (!errorLocal) {
+    NCCLCHECK(ncclCommDestroy(comm));
+  } else {
+    ncclCommAbort(comm);
+  }
+  __atomic_fetch_add(errors, errorLocal, __ATOMIC_RELAXED);
+  return NULL;
+}
+
+int faultToleranceMultiThreadTest(ncclComm_t* comms, int nVis, int size) {
+  int errors = 0;
+  ncclUniqueId id;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  pthread_barrier_t barrier;
+  pthread_t* threads = (pthread_t*)malloc(sizeof(pthread_t) * nVis);
+  struct threadArgs* args = (struct threadArgs*)malloc(sizeof(struct threadArgs) * nVis);
+
+  pthread_barrier_init(&barrier, NULL, nVis);
+
+  NCCLCHECK(ncclGetUniqueId(&id));
+  NCCLCHECK(ncclGroupStart());
+  for (int i = 0; i < nVis; i++) {
+    CUDACHECK(cudaSetDevice(i));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[i], nVis, id, i, &config));
+  }
+  NCCLCHECK(ncclGroupEnd());
+  for (int i = 0; i < nVis; i++) {
+    args[i].rank = i;
+    args[i].comm = comms[i];
+    args[i].barrier = &barrier;
+    args[i].errors = &errors;
+    pthread_create(&threads[i], NULL, threadFunc, (void*)&args[i]);
+  }
+  for (int i = 0; i < nVis; i++) {
+    pthread_join(threads[i], NULL);
+  }
+
+  if (!errors)
+    printf("Test fault tolerance for NCCL multi-thread\t[SUCCESS]\n\n");
+  else
+    printf("Test fault tolerance for NCCL multi-thread, errors %d\t[FAIL]\n\n", errors);
+  pthread_barrier_destroy(&barrier);
+  free(threads);
+  free(args);
+  return errors;
+}
+
 int main(int argc, char* argv[])
 {
   int size = 32 * 1024 * 1024;
@@ -473,6 +538,8 @@ int main(int argc, char* argv[])
   errors += faultToleranceAlltoAllTest(comms, nVis, size);
   printf("\t================ Test fault tolerance for NCCL finalize ================\n");
   errors += faultToleranceFinalizeTest(comms, nVis, size);
+  printf("\t================ Test fault tolerance for NCCL multi-thread ==============\n");
+  errors += faultToleranceMultiThreadTest(comms, nVis, size);
 
   free(comms);
   printf("[Summary] Single node NCCL fault tolerance test completes, %d errors.\n\n", errors);

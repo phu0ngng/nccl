@@ -19,11 +19,7 @@ __thread ncclResult_t ncclGroupError = ncclSuccess;
 __thread struct ncclComm* ncclGroupCommHead[ncclGroupTaskTypeNum] = {nullptr};
 __thread struct ncclComm* ncclGroupCommPreconnectHead = nullptr;
 __thread struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> ncclAsyncJobs;
-__thread struct ncclGroupJob *ncclGroupJobMainPtr = NULL;
-__thread struct ncclGroupJob ncclGroupJobMain;
 __thread int ncclGroupBlocking = -1; /* default mode */
-__thread bool ncclGroupJobAbortFlag = false;
-
 void* ncclAsyncJobMain(void* arg);
 
 ncclResult_t ncclAsyncLaunch(
@@ -284,24 +280,21 @@ failure:
   return result;
 }
 
-static inline void groupResetJobState(struct ncclGroupJob* job) {
-  if (job) {
-    if (job->groupBlockingPtr) *job->groupBlockingPtr = -1;
-    if (job->abortFlagPtr) *job->abortFlagPtr = false;
-    if (job->groupErrorPtr) *job->groupErrorPtr = ncclSuccess;
-    if (job->groupCommHeadPtr) {
-      for (int type = 0; type < ncclGroupTaskTypeNum; ++type) job->groupCommHeadPtr[type] = NULL;
-    }
-    if (job->groupCommPreconnectHeadPtr) *job->groupCommPreconnectHeadPtr = NULL;
-    memset(job, 0, sizeof(struct ncclGroupJob));
-  }
+static inline void groupLocalResetJobState() {
+  ncclGroupError = ncclSuccess;
+  for (int type = 0; type < ncclGroupTaskTypeNum; ++type) ncclGroupCommHead[type] = NULL;
+  ncclGroupCommPreconnectHead = NULL;
+  ncclGroupBlocking = -1;
+  ncclIntruQueueConstruct(&ncclAsyncJobs);
   return;
 }
 
-static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** groupCommPreconnectHeadPtr, struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next>* asyncJobsPtr, ncclResult_t* groupErrorPtr, int* groupBlockingPtr, volatile bool* groupJobAbortFlagPtr, ncclResult_t error) {
+static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next>* asyncJobsPtr, ncclResult_t error) {
   struct ncclComm* comm;
   for (int type = 0; type < ncclGroupTaskTypeNum; ++type) {
     comm = groupCommHeadPtr[type];
+    // reset groupCommHeadPtr[type]
+    groupCommHeadPtr[type] = nullptr;
     while (comm != nullptr) {
       struct ncclComm* next = comm->groupNext[type];
       (void)ncclGroupCommLeave(comm, type); // overwrites comm->groupNext
@@ -351,13 +344,6 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclComm** g
     if (job->undo) job->undo(job);
     if (job->destructor) job->destructor((void*)job);
   }
-
-  /* reset all thread local variables */
-  for (int type = 0; type < ncclGroupTaskTypeNum; ++type) groupCommHeadPtr[type] = NULL;
-  *groupCommPreconnectHeadPtr = NULL;
-  *groupErrorPtr = ncclSuccess;
-  *groupBlockingPtr = -1;
-  *groupJobAbortFlagPtr = false;
 
   return;
 }
@@ -424,11 +410,10 @@ fail:
 static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInfo = NULL) {
   ncclResult_t ret = ncclSuccess;
   struct ncclGroupJob *gjob = (struct ncclGroupJob*) job_;
-  struct ncclComm **groupCommHeadMain = gjob->groupCommHeadPtr;
-  struct ncclComm *groupCommPreconnectHeadMain = *gjob->groupCommPreconnectHeadPtr;
-  struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain = gjob->asyncJobsPtr;
-
-  bool *groupAbortFlag = gjob->abortFlagPtr;
+  struct ncclComm **groupCommHeadMain = gjob->groupCommHead;
+  struct ncclComm *groupCommPreconnectHeadMain = gjob->groupCommPreconnectHead;
+  struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> *asyncJobsMain = &gjob->asyncJobs;
+  bool *groupAbortFlag = &gjob->abortFlag;
 
   if (!simInfo && groupCommPreconnectHeadMain != nullptr) {
     struct ncclComm* comm = groupCommPreconnectHeadMain;
@@ -543,7 +528,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
 
   while (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueDequeue(asyncJobsMain);
-    if (!job->destroyFlag && job->comm && !job->comm->config.blocking)
+    if (!job->destroyFlag && job->comm && !job->comm->config.blocking && groupCommHeadMain[ncclGroupTaskTypeCollective] == nullptr)
       (void) ncclCommSetAsyncError(job->comm, ret);
     if (job->destructor) job->destructor((void*)job);
   }
@@ -571,7 +556,7 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
 exit:
   return ret;
 fail:
-  groupCleanup(gjob->groupCommHeadPtr, gjob->groupCommPreconnectHeadPtr, gjob->asyncJobsPtr, gjob->groupErrorPtr, gjob->groupBlockingPtr, gjob->abortFlagPtr, ret);
+  groupCleanup(gjob->groupCommHead, &gjob->asyncJobs, ret);
   goto exit;
 }
 
@@ -585,6 +570,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
   ncclSimInfo_t* internalSimInfoPtr = NULL;
   size_t realSize = 0;
   bool hasCommHead = false;
+  ncclGroupJob* groupJob = NULL;
 
   internalSimInfo.magic = 0;
 
@@ -616,24 +602,31 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       break;
     }
   }
-  if (hasCommHead || !ncclIntruQueueEmpty(&ncclAsyncJobs) || ncclGroupCommPreconnectHead != nullptr) {
-    ncclGroupJobMain.groupCommHeadPtr = ncclGroupCommHead;
-    ncclGroupJobMain.groupCommPreconnectHeadPtr = &ncclGroupCommPreconnectHead;
-    ncclGroupJobMain.groupErrorPtr = &ncclGroupError;
-    ncclGroupJobMain.asyncJobsPtr = &ncclAsyncJobs;
-    ncclGroupJobMain.abortFlagPtr = &ncclGroupJobAbortFlag;
-    ncclGroupJobMain.groupBlockingPtr = &ncclGroupBlocking;
-    ncclGroupJobMain.initialized = true;
-    ncclGroupJobMainPtr = &ncclGroupJobMain;
+
+  NCCLCHECKGOTO(ncclCalloc(&groupJob, 1), ret, fail);
+  ncclIntruQueueConstruct(&groupJob->asyncJobs);
+  groupJob->groupRefCount = 0;
+  groupJob->nonBlockingInit = false;
+  memcpy(groupJob->groupCommHead, ncclGroupCommHead, sizeof(ncclGroupCommHead));
+  groupJob->groupCommPreconnectHead = ncclGroupCommPreconnectHead;
+  groupJob->groupError = ncclSuccess;
+  groupJob->abortFlag = false;
+  groupJob->joined = false;
+  ncclIntruQueueTransfer(&groupJob->asyncJobs, &ncclAsyncJobs);
+
+  if (hasCommHead || !ncclIntruQueueEmpty(&groupJob->asyncJobs) || ncclGroupCommPreconnectHead != nullptr) {
     /* make sure ncclGroupBlocking has been set. */
     assert(ncclGroupBlocking == 0 || ncclGroupBlocking == 1);
     if (ncclGroupBlocking == 0) {
       /* nonblocking group */
-      if (!ncclIntruQueueEmpty(&ncclAsyncJobs)) {
-        ncclAsyncJob* job = ncclIntruQueueHead(&ncclAsyncJobs);
+      if (!ncclIntruQueueEmpty(&groupJob->asyncJobs)) {
+        ncclAsyncJob* job = ncclIntruQueueHead(&groupJob->asyncJobs);
         do {
           NCCLCHECKGOTO(ncclCommSetAsyncError(job->comm, ncclInProgress), ret, fail);
-          job->comm->groupJob = ncclGroupJobMainPtr;
+          if (job->comm->groupJob == NULL) {
+            job->comm->groupJob = groupJob;
+            groupJob->groupRefCount++;
+          }
           job = job->next;
         } while (job);
       }
@@ -644,46 +637,67 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
           do {
             NCCLCHECKGOTO(ncclCommSetAsyncError(comm, ncclInProgress), ret, fail);
             /* link group job to communicators. */
-            comm->groupJob = ncclGroupJobMainPtr;
+            if (comm->groupJob == NULL) {
+              comm->groupJob = groupJob;
+              groupJob->groupRefCount++;
+            }
             comm = comm->groupNext[type];
           } while (comm);
         }
       }
 
-      ncclGroupJobMainPtr->base.func = groupLaunchNonBlocking;
-      PTHREADCHECKGOTO(pthread_create(&ncclGroupJobMainPtr->base.thread, NULL, ncclAsyncJobMain, (void*)&ncclGroupJobMainPtr->base), "pthread_create", ret, fail);
+      groupJob->base.func = groupLaunchNonBlocking;
+      PTHREADCHECKGOTO(pthread_create(&groupJob->base.thread, NULL, ncclAsyncJobMain, (void*)&groupJob->base), "pthread_create", ret, fail);
+      groupJob->nonBlockingInit = true;
       ret = ncclInProgress;
     } else {
       /* blocking group */
       int savedDev;
       CUDACHECKGOTO(cudaGetDevice(&savedDev), ret, fail);
-      NCCLCHECKGOTO(groupLaunch(&ncclGroupJobMainPtr->base, internalSimInfoPtr), ret, fail);
+      NCCLCHECKGOTO(groupLaunch(&groupJob->base, internalSimInfoPtr), ret, fail);
       CUDACHECKGOTO(cudaSetDevice(savedDev), ret, fail);
       if (simInfo) memcpy((void*)simInfo, (void*)internalSimInfoPtr, realSize);
-      groupResetJobState(ncclGroupJobMainPtr);
+      free(groupJob);
     }
   }
+  /* Reset the job state for the next group call. */
+  groupLocalResetJobState();
 
 exit:
   return ret;
 fail:
-  groupCleanup(ncclGroupCommHead, &ncclGroupCommPreconnectHead, &ncclAsyncJobs, &ncclGroupError, &ncclGroupBlocking, &ncclGroupJobAbortFlag, ret);
+  if (groupJob) {
+    groupCleanup(groupJob->groupCommHead, &groupJob->asyncJobs, ret);
+    free(groupJob);
+  } else {
+    groupCleanup(ncclGroupCommHead, &ncclAsyncJobs, ret);
+  }
+  groupLocalResetJobState();
   goto exit;
 }
 
 ncclResult_t ncclGroupJobComplete(struct ncclGroupJob* groupJob) {
   ncclResult_t ret = ncclSuccess;
-  if (groupJob && groupJob->initialized) {
-    ret = ncclAsyncJobComplete(&groupJob->base);
-    groupResetJobState(groupJob);
+  if (groupJob && groupJob->nonBlockingInit) {
+    if (!__atomic_exchange_n(&groupJob->joined, true, __ATOMIC_ACQ_REL)) {
+      ret = ncclAsyncJobComplete(&groupJob->base);
+    }
+    if (ncclAtomicRefCountDecrement(&groupJob->groupRefCount) == 0) {
+      free(groupJob);
+    }
   }
   return ret;
 }
 
 ncclResult_t ncclGroupJobAbort(struct ncclGroupJob* groupJob) {
-  if (groupJob && groupJob->initialized) {
-    __atomic_store_n(groupJob->abortFlagPtr, true, __ATOMIC_RELEASE);
-    NCCLCHECK(ncclGroupJobComplete(groupJob));
+  if (groupJob && groupJob->nonBlockingInit) {
+    if (!__atomic_exchange_n(&groupJob->joined, true, __ATOMIC_ACQ_REL)) {
+      __atomic_store_n(&groupJob->abortFlag, true, __ATOMIC_RELAXED);
+      ncclAsyncJobComplete(&groupJob->base);
+    }
+    if (ncclAtomicRefCountDecrement(&groupJob->groupRefCount) == 0) {
+      free(groupJob);
+    }
   }
   return ncclSuccess;
 }
