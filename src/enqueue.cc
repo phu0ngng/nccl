@@ -797,6 +797,7 @@ static ncclResult_t addP2pToPlan(
     int recvRank, void* recvAddr, ssize_t recvBytes,
     struct ncclTaskP2p** p2pTasks
   ) {
+  ncclResult_t ret = ncclSuccess;
   constexpr int connIndex = 1;
   bool selfSend = (sendRank == comm->rank);
   // recv: dir=0, send: dir=1
@@ -807,6 +808,8 @@ static ncclResult_t addP2pToPlan(
   bool proxySameProcess[2] = {true, true};
   void** handles[2] = {NULL, NULL};
   uint8_t base = ncclP2pChannelBaseForRound(comm, p2pRound);
+  struct ncclProxyOp proxyOps[2] = {};
+  int nProxyOps = selfSend ? 0 : 2;
   if (!selfSend) {
     for (int part=0; part < nChannelsMax; part++) {
       int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, part);
@@ -860,7 +863,7 @@ static ncclResult_t addP2pToPlan(
       bool pxnUsed = !ncclPxnDisable(comm) && comm->isAllNvlink && comm->maxLocalRanks > 1;
       if (bytes[dir] > 0 && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE && (!pxnUsed)) {
         int regFlag = 0;
-        NCCLCHECK(ncclCalloc(&handles[dir], nChannelsMax));
+        NCCLCHECKGOTO(ncclCalloc(&handles[dir], nChannelsMax), ret, cleanup);
         for (int part = 0; part < nChannelsMax; part++) {
           int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, part);
           struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
@@ -883,7 +886,7 @@ static ncclResult_t addP2pToPlan(
       void* regAddr = NULL;
       if (conn->conn.flags & (NCCL_P2P_WRITE | NCCL_P2P_READ)) {
         // We require users registering buffers on both sides
-        NCCLCHECK(ncclRegisterP2pIpcBuffer(comm, addrs[dir], bytes[dir], peerRank, &regFlag, &regAddr, &plan->cleanupQueue));
+        NCCLCHECKGOTO(ncclRegisterP2pIpcBuffer(comm, addrs[dir], bytes[dir], peerRank, &regFlag, &regAddr, &plan->cleanupQueue), ret, cleanup);
         if (regFlag) {
           if (dir == 0 && (conn->conn.flags & NCCL_P2P_WRITE)) recvAddr = regAddr;
           else if (dir == 1 && (conn->conn.flags & NCCL_P2P_READ)) sendAddr = regAddr;
@@ -908,14 +911,17 @@ static ncclResult_t addP2pToPlan(
     if (p2pTasks[dir]) p2pTasks[dir]->nChannels = nChannels[dir];
   }
 
-  struct ncclWorkList* workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkP2p>(&comm->memScoped, 1);
+  struct ncclWorkList* workNode;
+  workNode = ncclMemoryStackAllocInlineArray<ncclWorkList, ncclDevWorkP2p>(&comm->memScoped, 1);
   workNode->workType = ncclDevWorkTypeP2p;
   workNode->size = sizeof(struct ncclDevWorkP2p);
   ncclIntruQueueEnqueue(&plan->workQueue, workNode);
-  uint32_t workOffset = plan->workBytes;
+  uint32_t workOffset;
+  workOffset = plan->workBytes;
   plan->workBytes += sizeof(struct ncclDevWorkP2p);
 
-  struct ncclDevWorkP2p* work = (struct ncclDevWorkP2p*)(workNode+1);
+  struct ncclDevWorkP2p* work;
+  work = (struct ncclDevWorkP2p*)(workNode+1);
   work->nP2pChannels = comm->p2pnChannels;
   work->channelBase = base;
   work->nSendChannels = nChannels[1];
@@ -936,8 +942,6 @@ static ncclResult_t addP2pToPlan(
   work->recvBytes = recvBytes==-1 ? 0 : recvBytes;
   work->profilerEnabled = ncclProfilerPluginLoaded() && ((p2pTasks[0] ? p2pTasks[0] : p2pTasks[1])->eActivationMask & ncclProfileKernelCh);
 
-  struct ncclProxyOp proxyOps[2] = {};
-  int nProxyOps = selfSend ? 0 : 2;
   for (int dir=0; dir < nProxyOps; dir++) {
     struct ncclProxyOp* op = &proxyOps[dir];
     op->root = dir ? sendRank : recvRank;
@@ -1006,13 +1010,15 @@ static ncclResult_t addP2pToPlan(
         // equal one plus the batch index this p2p settled in.
         proxyOps[dir].channelId = channelId;
         proxyOps[dir].opCount = uint64_t(comm->planner.wipPlan.channels[channelId].nWorkBatchesP2p)<<1 | 1;
-        NCCLCHECK(addProxyOpIfNeeded(comm, plan, &proxyOps[dir]));
-        NCCLCHECK(addProfilerProxyOpIfNeeded(comm, plan, &proxyOps[dir]));
+        NCCLCHECKGOTO(addProxyOpIfNeeded(comm, plan, &proxyOps[dir]), ret, cleanup);
+        NCCLCHECKGOTO(addProfilerProxyOpIfNeeded(comm, plan, &proxyOps[dir]), ret, cleanup);
       }
     }
   }
-
-  return ncclSuccess;
+cleanup:
+  free(handles[0]);
+  free(handles[1]);
+  return ret;
 }
 
 static int calcP2pChannelCount(size_t totalSize, int minChannels, int maxChannels, size_t minSize, size_t maxSize) {
