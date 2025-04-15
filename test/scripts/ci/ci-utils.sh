@@ -383,9 +383,21 @@ function rerun_failed_command_with_logging() {
     echo "$output"
     mv *.out $failed_dir
     echo "Moved logs $NCCL_DEBUG_FILE to $failed_dir"
-    export NCCL_DEBUG=$ORIG_DEBUG
-    export NCCL_DEBUG_SUBSYS=$ORIG_SUBSYS
-    export NCCL_DEBUG_FILE=$ORIG_FILE
+    if [ "$ORIG_DEBUG" != "" ]; then
+      export NCCL_DEBUG=$ORIG_DEBUG
+    else
+      unset NCCL_DEBUG
+    fi
+    if [ "$ORIG_SUBSYS" != "" ]; then
+      export NCCL_DEBUG_SUBSYS=$ORIG_SUBSYS
+    else
+      unset NCCL_DEBUG_SUBSYS
+    fi
+    if [ "$ORIG_FILE" != "" ]; then
+      export NCCL_DEBUG_FILE=$ORIG_FILE
+    else
+      unset NCCL_DEBUG_FILE
+    fi
 }
 
 function load_cluster_ci_variables() {
