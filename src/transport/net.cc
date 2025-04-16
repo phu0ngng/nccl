@@ -1487,7 +1487,6 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       struct ncclProxySubArgs* subGroup = args->subs+s;
       for (int i=0; i<subGroup->groupSize; i++) {
         struct ncclProxySubArgs* sub = subGroup + i;
-        int doneStepId = sub->done;
         if (sub->done == sub->nsteps) continue;
         if (sub->transmitted > sub->done) {
           struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
@@ -1502,6 +1501,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
                 NCCLCHECK(proxyState->ncclNet->irecvConsumed(resources->netRecvComm, subGroup->recvRequestsSubCount, subGroup->recvRequestsCache[sub->done%NCCL_STEPS]));
               subGroup->recvRequestsCache[sub->done%NCCL_STEPS] = NULL;
             }
+            int doneStepId = sub->done;
             sub->done += args->sliceSteps;
             ncclProfilerStopProxyStepEvent(s+i, args, doneStepId);
             args->idle = 0;
