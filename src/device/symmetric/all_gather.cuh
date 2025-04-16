@@ -17,7 +17,7 @@ static __device__ void bcastDeep(
   Pack* inpHere = (Pack*)inputHere + intptr_t(w)*UnrollPacks*WARP_SIZE + lane;
   Pack* outRank0 = (Pack*)outputRank0 + intptr_t(w)*UnrollPacks*WARP_SIZE + lane;
   Pack tmp[UnrollPacks];
-  
+
   nIters -= w;
   if (0 < nIters) {
     #pragma unroll
@@ -27,7 +27,7 @@ static __device__ void bcastDeep(
   }
 
   if (waitNeeded) prim.barrierWait(ncclCoopCta(), /*acquire=*/false);
-  
+
   if (0 < nIters) {
     while (true) {
       int dr = inPlace ? 1 : 0;
@@ -54,7 +54,7 @@ static __device__ void bcastDeep(
       outRank0 += intptr_t(wn)*UnrollPacks*WARP_SIZE;
       nIters -= wn;
       if (nIters <= 0) break;
-      
+
       // Load data for next iteration.
       #pragma unroll
       for (int u=0; u < UnrollPacks; u++) {
@@ -66,7 +66,7 @@ static __device__ void bcastDeep(
 
 template<int UnrollPeers, typename T>
 static __device__ void bcastEnds(
-    ncclSymPrims& prim, int tn, int t, 
+    ncclSymPrims& prim, int tn, int t,
     T* inputHere, T* outputRank0, bool inPlace, size_t nElts, uint32_t nPreElts, size_t nSufElts
   ) {
   int const& rank = prim.rank;
@@ -109,13 +109,13 @@ static __device__ void bcast(
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input);
   uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output);
   size_t nBytes = nElts*sizeof(T);
-  
+
   uint32_t nPreBytes = (128u - inputUptr)%128u;
   nPreBytes = min((size_t)nPreBytes, nBytes);
   uintptr_t cursor = nPreBytes;
 
   constexpr int MinWarpPerBlock = 4;
-  
+
   if ((inputUptr-outputUptr)%16 == 0) {
     constexpr int BytePerPack = 16, UnrollPacks = 4, UnrollPeers = 2;
     constexpr int BytePerChunk = MinWarpPerBlock*UnrollPacks*WARP_SIZE*BytePerPack;
@@ -132,7 +132,7 @@ static __device__ void bcast(
       waitNeeded = false;
     }
   }
-  
+
   if (sizeof(T) == 4 || (sizeof(T) < 4 && (inputUptr-outputUptr)%4 == 0)) {
     constexpr int BytePerPack = 4, UnrollPacks = 4, UnrollPeers = 4;
     constexpr int BytePerChunk = MinWarpPerBlock*UnrollPacks*WARP_SIZE*BytePerPack;
@@ -160,7 +160,7 @@ static __device__ void bcast(
 __device__ __forceinline__ void ncclSymRun_AllGather_ST(ncclSymDevArgs const* args) {
   ncclSymPrims prim(args->comm, ncclSymPrims_UseBarrier);
   int const& rank = prim.rank;
-  
+
   // Threads numbered over rank.
   int bt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
                      prim.block, prim.nBlocks,
@@ -187,7 +187,7 @@ static __device__ void bcastMultimem(
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input);
   uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output);
   size_t nBytes = nElts*sizeof(T);
-  
+
   uint32_t nPreBytes = (16-inputUptr)%16;
   nPreBytes = min((size_t)nPreBytes, nBytes);
   uintptr_t nSufBytes;
@@ -237,7 +237,7 @@ __device__ __forceinline__ void ncclSymRun_AllGather_STMC(ncclSymDevArgs const* 
 
   char* input = args->input;
   char* output = args->output;
-  size_t bytes = args->nElts;  
+  size_t bytes = args->nElts;
   // Round robin memory to blocks.
   int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
                     prim.block, prim.nBlocks,
@@ -293,7 +293,7 @@ static __device__ void allgather_LL_body(
           if (nIterPacks <= pack) { peer += 1; pack -= nIterPacks; }
         }
       }
-      
+
       int i = (nRanks*nIterPacks & -(Unroll*tn)) + t;
       int n = (nRanks*nIterPacks)/tn % Unroll;
       if (i + n*tn < nRanks*nIterPacks) n += 1;
@@ -322,7 +322,7 @@ static __device__ void allgather_LL_body(
     #endif
 
     prim.endLL(cta);
-    
+
     input += tn*EltPerPack;
     output += tn*EltPerPack;
     nElts -= tn*EltPerPack;

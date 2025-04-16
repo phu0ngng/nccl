@@ -12,7 +12,7 @@ Additionally, the profiler init function should also take the number of ranks in
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 https://jirasw.nvidia.com/browse/NCCL-1764
 
@@ -35,12 +35,12 @@ https://jirasw.nvidia.com/browse/NCCL-1764
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 <!-- note: the following HTML code is also valid -->
@@ -56,7 +56,7 @@ https://jirasw.nvidia.com/browse/NCCL-1764
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -64,9 +64,9 @@ https://jirasw.nvidia.com/browse/NCCL-1764
 
 ### Commit list or MR
 [ProfilerInitUpdate](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/806)
- 
+
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -81,7 +81,7 @@ https://jirasw.nvidia.com/browse/NCCL-1764
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -110,13 +110,13 @@ https://jirasw.nvidia.com/browse/NCCL-1764
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Giuseppe Congiu <gcongiu@nvidia.com>
 
 </details>

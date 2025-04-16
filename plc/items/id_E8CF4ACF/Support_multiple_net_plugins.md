@@ -14,7 +14,7 @@ can work on different networks. With a list of plugins assigned to NCCL_NET_PLUG
 we can add more than one plugin in a container to support different networks. NCCL can
 then go through the provided list and initialize the appropriate plugin.
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 NvBug: [4578372](https://nvbugspro.nvidia.com/bug/4578372)
 
@@ -39,20 +39,20 @@ can now assign a list of plugins.
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 In the current implementation, net plugin load code loads only one external plugin and then tries
 to initialize the external plugin. If that fails, it will try to initialize internal IB and
-socket plugin. 
+socket plugin.
 With the new design we are expanding the externally provided plugins to 14. (16 - 2 for internal IB and socket plugins)
 For each povided plugin, we will maintain its state and other parameters such as ref count and handle.
-This design will help us in future as well when we want to enable multiple plugins simultaneously. 
+This design will help us in future as well when we want to enable multiple plugins simultaneously.
 NCCL net init goes through the list of plugins. It loads and tries to initialize the plugin, if load or init fails, it
 tries the next plugin in the list. At the end of the list, it attempts to load IB and socket plugin.
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 <!-- note: the following HTML code is also valid -->
@@ -68,7 +68,7 @@ tries the next plugin in the list. At the end of the list, it attempts to load I
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -82,7 +82,7 @@ in the array.
 ### Commit list or MR
  https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/761
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -97,7 +97,7 @@ in the array.
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -126,13 +126,13 @@ in the array.
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Unmesh Deodhar
 
 </details>

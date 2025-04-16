@@ -434,7 +434,7 @@ static testResult_t distributeFTShrinkTest(struct threadArgs* args) {
   ncclComm_t* comms = args->comms[0];
   testResult_t ret = testSuccess;
   int nGpus = args->nGpus;
-  
+
   int totalGpus = args->nProcs * args->nThreads * nGpus;
   int sDev = args->localRank * args->nThreads * nGpus + args->thread * nGpus;
   void** sendbuffs = args->sendbuffs[0];
@@ -499,7 +499,7 @@ static testResult_t distributeFTShrinkTest(struct threadArgs* args) {
     int h_val = rank + 1;
     CUDACHECK(cudaMemcpy(sendbuffs[j], &h_val, sizeof(int), cudaMemcpyHostToDevice));
   }
-  
+
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; j++) {
     int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
@@ -507,7 +507,7 @@ static testResult_t distributeFTShrinkTest(struct threadArgs* args) {
     NCCLCHECK(ncclAllReduce(sendbuffs[j], recvbuffs[j], 1, ncclInt32, ncclSum, splitComms[j], streams[j]));
   }
   NCCLCHECK(ncclGroupEnd());
-  
+
   // Step 4: Synchronize streams and verify results
   for (int j = 0; j < nGpus; j++) {
     int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
@@ -525,7 +525,7 @@ static testResult_t distributeFTShrinkTest(struct threadArgs* args) {
     int h_result = 0;
     CUDACHECK(cudaMemcpy(&h_result, recvbuffs[j], sizeof(int), cudaMemcpyDeviceToHost));
     if (h_result != expected) {
-      printf("Distributed FT: Allreduce result on device %d is %d, expected %d\n", 
+      printf("Distributed FT: Allreduce result on device %d is %d, expected %d\n",
              j, h_result, expected);
       ret = testNcclError;
     }
@@ -548,7 +548,7 @@ static testResult_t distributeFTShrinkTest(struct threadArgs* args) {
     NCCLCHECK(ncclCommDestroy(comms[j]));
   }
   NCCLCHECK(ncclGroupEnd());
-  
+
   free(splitComms);
   return ret;
 }
@@ -602,7 +602,7 @@ testResult_t commAbortHangTest(struct threadArgs* args) {
 }
 testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank, const char* ft_list) {
   struct testThread* threads;
-  
+
   ncclUniqueId ncclId;
   void** sendbuffs;
   void** recvbuffs;

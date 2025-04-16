@@ -90,11 +90,11 @@ struct ncclSymPrims {
   uint32_t nWarpPerRank, nWarpPerRank_rcp32;
   struct ncclSymDevBase* const &base;
   uintptr_t offsetMc;
-  
+
   uint32_t const &stride4G;
   uint32_t barEpoch;
   uint32_t llEpoch;
-  
+
   __device__ ncclSymPrims(ncclSymDevComm const &comm, int flags):
     flags(flags),
     rank(comm.rank),
@@ -138,7 +138,7 @@ struct ncclSymPrims {
   __device__ T* multimemPtr(T* selfPtr) {
     return reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(selfPtr) + offsetMc);
   }
-  
+
   __device__  void barrierArrive(ncclCoopCta cta, bool release) {
     cta.sync();
     #if __CUDA_ARCH__ < 700
@@ -368,7 +368,7 @@ struct ncclSymPrims {
     this->template recvLL<1, 1, T>(slot, 1, 0, one);
     return one[0];
   }
-  
+
   template<typename Coop, typename T>
   __device__ void coopRecvLL(Coop coop, int slot0, int nSlots, T* dst) {
     int me = coop.self();

@@ -10,7 +10,7 @@ static __device__ __forceinline__ void allreduceDeep(
   using Pack = BytePack<BytePerPack>;
   using Acc = typename Red::EltType;
   using AccPack = BytePack<BytePerPack*sizeof(Acc)/sizeof(T)>;
-  
+
   int wn = tn/WARP_SIZE;
   int w = t/WARP_SIZE;
   int lane = t%WARP_SIZE;
@@ -30,7 +30,7 @@ static __device__ __forceinline__ void allreduceDeep(
   }
 
   if (waitNeeded) prim.barrierWait(ncclCoopCta(), /*acquire=*/false);
-  
+
   if (0 < nIters) {
     while (true) {
       AccPack acc1[UnrollPacks];
@@ -46,7 +46,7 @@ static __device__ __forceinline__ void allreduceDeep(
           acc1[u] = applyReduce(red, applyCast<T, Acc>(acc0[u]), applyCast<T, Acc>(tmp1[u]));
         }
       }
-      
+
       if (++r == nRanks) r = 0;
 
       int dr = 2;
@@ -57,7 +57,7 @@ static __device__ __forceinline__ void allreduceDeep(
              partial ? i < 1 : (dr + UnrollPeers <= nRanks);
              partial ? i++ : (dr += UnrollPeers)) {
           if (partial && dr == nRanks) break;
-          
+
           Pack tmp1[UnrollPeers][UnrollPacks];
           #pragma unroll
           for (int ur=0; ur < UnrollPeers-partial; ur++) {
@@ -101,12 +101,12 @@ static __device__ __forceinline__ void allreduceDeep(
           }
         }
       }
-      
+
       inpRank0 += intptr_t(wn)*UnrollPacks*WARP_SIZE;
       outRank0 += intptr_t(wn)*UnrollPacks*WARP_SIZE;
       nIters -= wn;
       if (nIters <= 0) break;
-      
+
       // Load data for next iteration.
       #pragma unroll
       for (int u=0; u < UnrollPacks; u++) {
@@ -122,7 +122,7 @@ static __device__ __forceinline__ void allreduceEnds(
     T* inputRank0, T* outputRank0, size_t nElts, uint32_t nPreElts, size_t nSufElts
   ) {
   using Acc = typename Red::EltType;
-  
+
   int const& rank = prim.rank;
   int const& nRanks = prim.nRanks;
   uint32_t const& stride4G = prim.stride4G;
@@ -202,7 +202,7 @@ static __device__ void allreduce(
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input);
   uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output);
   size_t nBytes = nElts*sizeof(T);
-  
+
   uint32_t nPreBytes = (16u - inputUptr)%16u;
   nPreBytes = min((size_t)nPreBytes, nBytes);
   uintptr_t cursor = nPreBytes;
@@ -225,7 +225,7 @@ static __device__ void allreduce(
       waitNeeded = false;
     }
   }
-  
+
   if (sizeof(T) == 4 || (sizeof(T) < 4 && (inputUptr-outputUptr)%4 == 0)) {
     constexpr int BytePerPack = 4, UnrollPacks = 4, UnrollPeers = 4;
     constexpr int BytePerChunk = MinWarpPerBlock*UnrollPacks*WARP_SIZE*BytePerPack;
@@ -286,7 +286,7 @@ static __device__ void allreduceMultimem(
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input);
   uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output);
   size_t nBytes = nElts*sizeof(T);
-  
+
   constexpr int BytePerPack = LoadMultimem_BigPackSize<Red>::BigPackSize;
   uint32_t nPreBytes = (BytePerPack - inputUptr)%BytePerPack;
   nPreBytes = min((size_t)nPreBytes, nBytes);
@@ -345,7 +345,7 @@ __device__ __forceinline__ void ncclSymRun_AllReduce_RSxLDMC_AGxSTMC(ncclSymDevA
 
   prim.barrierArrive(ncclCoopCta(), /*release=*/false);
   prim.barrierWait(ncclCoopCta(), /*acquire=*/false);
-  
+
   allreduceMultimem(prim, gtn, gt, red, (T*)args->input, (T*)args->output, args->nElts);
 
   prim.barrierArrive(ncclCoopCta(), /*release=*/true);
@@ -397,7 +397,7 @@ __device__ __forceinline__ void ncclSymRun_AllReduce_AGxLL_R_impl(ncclSymDevArgs
         storePack((Pack*)output, t, nPacks, out);
       }
       prim.endLL(cta);
-      
+
       input += tn*EltPerPack;
       output += tn*EltPerPack;
       nPacks -= tn;
@@ -413,7 +413,7 @@ __device__ __forceinline__ void ncclSymRun_AllReduce_AGxLL_R_impl(ncclSymDevArgs
         storePack(output, t*EltPerPack, nElts, out);
       }
       prim.endLL(cta);
-      
+
       input += tn*EltPerPack;
       output += tn*EltPerPack;
       nElts -= tn*EltPerPack;

@@ -10,7 +10,7 @@ static __device__ void reduceDeep(
   using Pack = BytePack<BytePerPack>;
   using Acc = typename Red::EltType;
   using AccPack = BytePack<BytePerPack*sizeof(Acc)/sizeof(T)>;
-  
+
   int wn = tn/WARP_SIZE;
   int w = t/WARP_SIZE;
   int lane = t%WARP_SIZE;
@@ -30,7 +30,7 @@ static __device__ void reduceDeep(
   }
 
   if (waitNeeded) prim.barrierWait(ncclCoopCta(), /*acquire=*/false);
-  
+
   if (0 < nIters) {
     while (true) {
       AccPack acc1[UnrollPacks];
@@ -46,7 +46,7 @@ static __device__ void reduceDeep(
           acc1[u] = applyReduce(red, applyCast<T, Acc>(acc0[u]), applyCast<T, Acc>(tmp1[u]));
         }
       }
-      
+
       r += 1;
       if (r == nRanks) r = 0;
 
@@ -58,7 +58,7 @@ static __device__ void reduceDeep(
              partial ? i < 1 : (dr + UnrollPeers <= nRanks);
              partial ? i++ : (dr += UnrollPeers)) {
           if (partial && dr == nRanks) break;
-          
+
           Pack tmp1[UnrollPeers][UnrollPacks];
           #pragma unroll
           for (int ur=0; ur < UnrollPeers-partial; ur++) {
@@ -107,7 +107,7 @@ static __device__ void reduceEnds(
     T* inputRank0, T* outputHere, size_t nElts, uint32_t nPreElts, size_t nSufElts
   ) {
   using Acc = typename Red::EltType;
-  
+
   int const& rank = prim.rank;
   int const& nRanks = prim.nRanks;
   uint32_t const& stride4G = prim.stride4G;
@@ -165,12 +165,12 @@ static __device__ void reduce(
   int nBlocks = prim.nBlocks;
   // Mpve input to rank=0
   input = prim.peerPtr(0, input);
-  
+
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input);
   uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output);
   uint32_t alignment = uint32_t(inputUptr - outputUptr);
   size_t nBytes = nElts*sizeof(T);
-  
+
   uint32_t nPreBytes = (16u - inputUptr)%16u;
   nPreBytes = min((size_t)nPreBytes, nBytes);
   uintptr_t cursor = nPreBytes;
@@ -193,7 +193,7 @@ static __device__ void reduce(
       waitNeeded = false;
     }
   }
-  
+
   if (sizeof(T) == 4 || (sizeof(T) < 4 && alignment%4 == 0)) {
     constexpr int BytePerPack = 4, UnrollPacks = 4, UnrollPeers = 4;
     constexpr int BytePerChunk = MinWarpPerBlock*UnrollPacks*WARP_SIZE*BytePerPack;
@@ -210,7 +210,7 @@ static __device__ void reduce(
       waitNeeded = false;
     }
   }
-  
+
   if (waitNeeded) prim.barrierWait(ncclCoopCta(), /*acquire=*/false);
 
   constexpr int UnrollPeers = 8;
@@ -232,7 +232,7 @@ __device__ __forceinline__ void ncclSymRun_ReduceScatter_LD(ncclSymDevArgs const
 
   prim.barrierArrive(ncclCoopCta(), /*release=*/false);
   //prim.barrierWait(ncclCoopCta(), /*acquire=*/false);
-  
+
   reduce(prim, tn, t, /*waitNeeded=*/true, red, (T*)args->input + prim.rank*args->nElts, (T*)args->output, args->nElts);
 
   prim.barrierArrive(ncclCoopCta(), /*release=*/false);
@@ -246,11 +246,11 @@ static __device__ void reduceMultimem(
   ) {
   // Mpve input to multimem
   input = prim.multimemPtr(input);
-  
+
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input);
   uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output);
   size_t nBytes = nElts*sizeof(T);
-  
+
   constexpr int BytePerPack = LoadMultimem_BigPackSize<Red>::BigPackSize;
   uint32_t nPreBytes = (BytePerPack - inputUptr)%BytePerPack;
   nPreBytes = min((size_t)nPreBytes, nBytes);
@@ -308,7 +308,7 @@ __device__ __forceinline__ void ncclSymRun_ReduceScatter_LDMC(ncclSymDevArgs con
 
   prim.barrierArrive(ncclCoopCta(), /*release=*/false);
   prim.barrierWait(ncclCoopCta(), /*acquire=*/false);
-  
+
   reduceMultimem(prim, tn, t, red, (T*)args->input + prim.rank*args->nElts, (T*)args->output, args->nElts);
 
   prim.barrierArrive(ncclCoopCta(), /*release=*/false);
@@ -327,7 +327,7 @@ __device__ __forceinline__ void ncclSymRun_ReduceScatter_LL_body(
   int t = threadIdx.x;
   int tn = ncclSymMaxThreads;
   ncclCoopCta cta;
-  
+
   #pragma unroll 1
   while (0 < nElts) {
     int nIterPacks = min(nPacks, tn);
@@ -361,7 +361,7 @@ template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymRun_ReduceScatter_LL(ncclSymDevArgs const* args) {
   ncclSymPrims prim(args->comm, ncclSymPrims_UseLL);
   Red<typename ncclSymAccumType<Red, T, /*nvls=*/false>::Type> red(args->redOpArg);
-  
+
   using Pack = BytePack<8>;
   constexpr int EltPerPack = 8/sizeof(T);
   int nAllElts = args->nElts;

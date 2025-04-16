@@ -140,7 +140,7 @@ def kernel_cname(k):
 def kernel_conds(k):
   cudart, arch, specific_sms = required_cuda(k)
   if cudart == 0: return (None, None)
-  
+
   cudart_cond = "CUDART_VERSION >= %d"%cudart
   if not specific_sms:
     arch_cond = "__CUDA_ARCH__ >= %d"%arch

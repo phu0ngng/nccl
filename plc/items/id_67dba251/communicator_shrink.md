@@ -9,7 +9,7 @@ The Communicator Shrink feature allows NCCL to dynamically remove devices from a
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 
 - [NVBugs](https://nvbugspro.nvidia.com/bug/5007856): NCCL API extension to support Shrink communicators
@@ -85,7 +85,7 @@ ncclComm_t newcomm;
 // For error recovery mode:
 if (myRank != 1) {
   ncclCommShrink(comm, excludeList, 1, ncclShrinkModeError, &newcomm, NULL);
-  
+
   // Use the new communicator
   ncclAllReduce(...);
 
@@ -137,12 +137,12 @@ if (myRank != 1) {
    if (detectDeviceFailure()) {
      int failedRank = getFailedRank();
      int excludeList[] = {failedRank};
-     
+
      // Create new communicator without the failed rank, using error mode
      ncclGroupStart();
      ncclCommShrink(comm, excludeList, 1, ncclShrinkModeError, &newcomm, NULL);
      ncclGroupEnd();
-     
+
      // Continue training with the new communicator
      continueTraining(newcomm);
    }
@@ -193,12 +193,12 @@ if (myRank != 1) {
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 #### API Extension
@@ -272,8 +272,8 @@ The workflow for creating a shrunken communicator is:
 The rank calculation is handled by the `getParentRanks` function, which efficiently computes the new ranks by skipping excluded ranks:
 
 ```c
-static ncclResult_t getParentRanks(int parentRanks, int parentRank, int* excludeRanksList, 
-                                  int excludeRanksCount, int* nRanksRet, int* myRankRet, 
+static ncclResult_t getParentRanks(int parentRanks, int parentRank, int* excludeRanksList,
+                                  int excludeRanksCount, int* nRanksRet, int* myRankRet,
                                   int* parentRanksRet) {
   int count = 0;
   int j = 0;
@@ -355,7 +355,7 @@ The implementation handles several validation checks:
 // excludeRanksList may not be sorted, need to sort it
 qsort(excludeRanksList, excludeRanksCount, sizeof(int), compareInts);
 // ranks in excludeRanksList should not call into this function
-NCCLCHECKGOTO(bsearch(&comm->rank, excludeRanksList, excludeRanksCount, sizeof(int), compareInts) 
+NCCLCHECKGOTO(bsearch(&comm->rank, excludeRanksList, excludeRanksCount, sizeof(int), compareInts)
               ? ncclInvalidArgument : ncclSuccess, res, exit);
 ```
 
@@ -370,7 +370,7 @@ Key validations:
 The main entry point for the Shrink operation:
 
 ```c
-ncclResult_t ncclCommShrink(ncclComm_t comm, int* excludeRanksList, int excludeRanksCount, 
+ncclResult_t ncclCommShrink(ncclComm_t comm, int* excludeRanksList, int excludeRanksCount,
                            ncclShrinkMode_t mode, ncclComm_t *newcomm, ncclConfig_t* config) {
   NVTX3_RANGE(NcclNvtxParamsCommShrink)
   ncclResult_t res = ncclSuccess;
@@ -420,7 +420,7 @@ The key aspects of the implementation:
 
 2. **Robustness**: The implementation handles edge cases such as:
    - Invalid exclude lists
-   - Unsorted exclude lists 
+   - Unsorted exclude lists
    - Attempts to exclude all ranks
    - Attempts by excluded ranks to call the function
 
@@ -442,7 +442,7 @@ The key aspects of the implementation:
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -456,7 +456,7 @@ The implementation of the Shrink feature can be found in:
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -547,13 +547,13 @@ Test fault tolerance for NCCL shrink    [SUCCESS]
 ```
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Bruce Chang
 
 </details>

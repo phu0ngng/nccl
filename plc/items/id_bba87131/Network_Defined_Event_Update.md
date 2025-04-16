@@ -1,13 +1,13 @@
 # Network Defined Event Update
 
 ## Abstract
-Network defined events were added in the NCCL profiler interface in version v2.26. Such events support start and stop semantics but lack update, which is useful in many cases. One example is capturing network supplied information and passing this to the profiler plugin. This can not be done with start/stop semantics. Therefore, update semantics, throught the _recordEventState_ profiler interface, is added for network defined events. 
+Network defined events were added in the NCCL profiler interface in version v2.26. Such events support start and stop semantics but lack update, which is useful in many cases. One example is capturing network supplied information and passing this to the profiler plugin. This can not be done with start/stop semantics. Therefore, update semantics, throught the _recordEventState_ profiler interface, is added for network defined events.
 
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 [NetworkEventUpdates](https://jirasw.nvidia.com/browse/NCCL-1763)
 
@@ -30,12 +30,12 @@ Network defined events were added in the NCCL profiler interface in version v2.2
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 We define a new network event _ncclProfilerNetPluginUpdate_ state and _netPlugin_ state argument in the profiler interface:
@@ -69,18 +69,18 @@ The _type_ argument in the _ncclProfilerCallback_ function is extended to suppor
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
 <!-- ============================================================================================-->
 
 ### Commit list or MR
- 
+
 [NetworkEventUpdate](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/835)
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -95,7 +95,7 @@ The _type_ argument in the _ncclProfilerCallback_ function is extended to suppor
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -124,13 +124,13 @@ The _type_ argument in the _ncclProfilerCallback_ function is extended to suppor
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Giuseppe Congiu <gcongiu@nvidia.com>
 
 </details>

@@ -2095,10 +2095,10 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandl
 
 ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* phandle, void** request) {
   struct ncclIbSendComm* comm = (struct ncclIbSendComm*)sendComm;
-  if (comm->base.ready == 0) { 
-    WARN("NET/IB: ncclIbIsend() called when comm->base.ready == 0"); 
+  if (comm->base.ready == 0) {
+    WARN("NET/IB: ncclIbIsend() called when comm->base.ready == 0");
     *request = NULL;
-    return ncclInternalError; 
+    return ncclInternalError;
   }
   NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__));
 
@@ -2262,10 +2262,10 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
 
 ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** phandles, void** request) {
   struct ncclIbRecvComm* comm = (struct ncclIbRecvComm*)recvComm;
-  if (comm->base.ready == 0) { 
-    WARN("NET/IB: ncclIbIrecv() called when comm->base.ready == 0"); 
+  if (comm->base.ready == 0) {
+    WARN("NET/IB: ncclIbIrecv() called when comm->base.ready == 0");
     *request = NULL;
-    return ncclInternalError; 
+    return ncclInternalError;
   }
   if (n > NCCL_NET_IB_MAX_RECVS) return ncclInternalError;
   NCCLCHECK(ncclIbStatsCheckFatalCount(&comm->base.stats,__func__));

@@ -26,7 +26,7 @@ _ncclProfilerProxyOpRemFifoWait_.
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 * [NVBug-5040628 (item 10)](https://nvbugspro.nvidia.com/bug/5040628)
 * [Jira-1762](https://jirasw.nvidia.com/browse/NCCL-1762)
@@ -50,12 +50,12 @@ _ncclProfilerProxyOpRemFifoWait_.
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 We propose to harmonize the _ProxyOp_ and _ProxyStep_ events in the following way:
@@ -187,7 +187,7 @@ info.
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -197,7 +197,7 @@ info.
 [MR !808](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/808)
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -212,7 +212,7 @@ info.
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -241,13 +241,13 @@ info.
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Giuseppe Congiu <gcongiu@nvidia.com>
 
 </details>

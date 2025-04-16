@@ -7,7 +7,7 @@
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 
 ### User Experience
@@ -29,12 +29,12 @@
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 Example of an image
@@ -53,16 +53,16 @@ Example of an image
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
 <!-- ============================================================================================-->
 
 ### Commit list or MR
- 
+
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -77,7 +77,7 @@ Example of an image
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -106,13 +106,13 @@ Example of an image
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Tintin
   - Captain Haddock
 

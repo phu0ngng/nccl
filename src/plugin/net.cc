@@ -273,7 +273,7 @@ ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
   for (int i = 0; i < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS); i++) {
     NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[i]));
   }
-  pthread_mutex_unlock(&netPluginLock);      
+  pthread_mutex_unlock(&netPluginLock);
   return ncclSuccess;
 }
 

@@ -11,7 +11,7 @@ get_slurm_planned_time
 
 export LD_LIBRARY_PATH=$NCCL_HOME/test/apitest/plugin:$LD_LIBRARY_PATH
 
-# argument list: testPrefix, gtest_filter 
+# argument list: testPrefix, gtest_filter
 run_api_test(){
     echo "RUNNING API TEST with $1 and --gtest_filter = $2"
     # Args for run_command

@@ -494,7 +494,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   comm->workFifoProduced = 0;
   comm->workFifoProducedLastRecorded = 0;
   comm->workFifoConsumed = 0;
-  
+
   // Alloc profiler counters for the kernel
   NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->profiler.workStarted, MAXCHANNELS), ret, fail);
   NCCLCHECKGOTO(ncclCudaHostCalloc(&comm->profiler.workCompleted, MAXCHANNELS), ret, fail);
