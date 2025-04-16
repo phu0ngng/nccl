@@ -294,8 +294,8 @@ ncclResult_t ncclNvlsBufferSetup(struct ncclComm* comm) {
   nvlsPerRankSize = nChannels * 2 * buffSize;
   nvlsTotalSize = nvlsPerRankSize * nHeads;
 
-  INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d buffSize %zu nvlsPerRankSize %zu nvlsTotalSize %zu",
-       comm, headRank, nHeads, buffSize, nvlsPerRankSize, nvlsTotalSize);
+  INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d nvlsRanks %d buffSize %zu nvlsPerRankSize %zu nvlsTotalSize %zu",
+       comm, headRank, nHeads, comm->localRanks, buffSize, nvlsPerRankSize, nvlsTotalSize);
 
   NCCLCHECKGOTO(nvlsAllocateMem(comm, &resources->accessDesc, nvlsTotalSize, &resources->ucBuffHandle, &resources->mcBuffHandle, (void**)&resources->ucBuff, (void**)&resources->mcBuff, &resources->buffUCSize, &resources->buffMCSize), res, fail);
 
@@ -341,32 +341,10 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   size_t typeSize;
   char shmPath[sizeof("/dev/shm/nccl-XXXXXX")];
   uintptr_t *nvlsShmem = NULL;
-  bool nvlsShare = parent && parent->nvlsSupport && parent->shareResources;
-  int nHeads = comm->channels[0].nvls.nHeads;
+  bool nvlsShare = parent && parent->nvlsSupport && parent->shareResources && parent->localRanks == comm->localRanks;
 
   if (comm->nvlsSupport == 0 || comm->nvlsChannels == 0) return ncclSuccess;
 
-  if (nvlsShare && parent->channels[0].nvls.nHeads == nHeads) {
-    for (int ch = 0; ch < nHeads; ++ch) {
-      bool find = false;
-      for (int h = 0; h < parent->channels[0].nvls.nHeads; ++h) {
-        if (comm->nvlsHeads[ch] == parent->nvlsHeads[h]) {
-          // find the head
-          find = true;
-          break;
-        }
-      }
-      if (find == false) {
-        nvlsShare = false;
-        goto setup;
-      }
-    }
-    nvlsShare = true;
-  } else {
-    nvlsShare = false;
-  }
-
-setup:
   comm->nvlsChunkSize = ncclParamNvlsChunkSize();
   if (nvlsShare) {
     /* reuse NVLS resources */
