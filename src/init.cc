@@ -475,12 +475,6 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     comm->workFifoBytes = std::min(comm->workFifoBytes, 1u<<30);
   }
 
-  // WAR: Disable work fifo for Blackwell all2all hang issue on MNNVL
-  if (comm->MNNVL && (comm->compCap >= 100)) {
-    INFO(NCCL_INIT, "Disabling work fifo");
-    comm->workFifoBytes = 0;
-  }
-
   if (comm->rank == 0) {
     INFO(NCCL_INIT, "CC %s, workFifoBytes %d", ccEnable ? "On" : "Off", comm->workFifoBytes);
   }
