@@ -363,7 +363,8 @@ ncclResult_t ncclProfilerStartSendProxyStepEvent(int s, struct ncclProxyArgs* ar
       eDescr.parentObj = sub->opEventHandle;
       eDescr.rank = sub->rank;
       eDescr.proxyStep.step = step_;
-      ncclProfiler->startEvent(sub->profilerContext, &sub->stepEventHandles[step_%NCCL_STEPS], &eDescr);
+      ncclProfiler->startEvent(sub->profilerContext, &sub->pHandles[step_%NCCL_STEPS].stepEventHandle, &eDescr);
+      sub->pHandles[step_%NCCL_STEPS].subArgPtr = sub;
     }
   }
   TIME_STOP_EVENT(proxyStepStart);
@@ -381,7 +382,8 @@ ncclResult_t ncclProfilerStartRecvProxyStepEvent(int s, struct ncclProxyArgs* ar
       eDescr.parentObj = sub->opEventHandle;
       eDescr.rank = sub->rank;
       eDescr.proxyStep.step = step_;
-      ncclProfiler->startEvent(sub->profilerContext, &sub->stepEventHandles[step_%NCCL_STEPS], &eDescr);
+      ncclProfiler->startEvent(sub->profilerContext, &sub->pHandles[step_%NCCL_STEPS].stepEventHandle, &eDescr);
+      sub->pHandles[step_%NCCL_STEPS].subArgPtr = sub;
     }
   }
   TIME_STOP_EVENT(proxyStepStart);
@@ -393,9 +395,9 @@ ncclResult_t ncclProfilerStopProxyStepEvent(int s, struct ncclProxyArgs* args, i
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     int step_ = DIVUP(stepId, args->sliceSteps);
-    if (sub->stepEventHandles[step_%NCCL_STEPS]) {
-      ncclProfiler->stopEvent(sub->stepEventHandles[step_%NCCL_STEPS]);
-      sub->stepEventHandles[step_%NCCL_STEPS] = NULL;
+    if (sub->pHandles[step_%NCCL_STEPS].stepEventHandle) {
+      ncclProfiler->stopEvent(sub->pHandles[step_%NCCL_STEPS].stepEventHandle);
+      sub->pHandles[step_%NCCL_STEPS].stepEventHandle = NULL;
     }
   }
   TIME_STOP_EVENT(proxyStepStop);
@@ -474,10 +476,10 @@ ncclResult_t ncclProfilerRecordProxyStepEventState(int s, struct ncclProxyArgs* 
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0) && sub->opEventHandle) {
     int step_ = DIVUP(stepId, args->sliceSteps);
-    if (sub->stepEventHandles[step_%NCCL_STEPS]) {
+    if (sub->pHandles[step_%NCCL_STEPS].stepEventHandle) {
       ncclProfilerEventStateArgs_t a = { };
       a.proxyStep.transSize = sub->transSize;
-      ncclProfiler->recordEventState(sub->stepEventHandles[step_%NCCL_STEPS], eState, &a);
+      ncclProfiler->recordEventState(sub->pHandles[step_%NCCL_STEPS].stepEventHandle, eState, &a);
     }
   }
   TIME_STOP_EVENT(proxyStepRecord);
@@ -530,12 +532,13 @@ bool ncclProfilerPluginLoaded(void) {
 
 ncclResult_t ncclProfilerCallback(void** eHandle, int type, void* pHandle, int64_t pluginId, void* extData) {
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    struct ncclProxySubArgs* sub = (struct ncclProxySubArgs*)pHandle;
     if (type == ncclProfilerNetEventStart) { // start
+      struct ncclProxyEventHandle* p = (struct ncclProxyEventHandle*)pHandle;
+      struct ncclProxySubArgs* sub = p->subArgPtr;
       if (sub->eActivationMask & ncclProfileNetPlugin) {
         ncclProfilerEventDescr_t eDescr = { 0 };
         eDescr.type = ncclProfileNetPlugin;
-        eDescr.parentObj = sub->stepEventHandles[sub->profilerSteps%NCCL_STEPS];
+        eDescr.parentObj = p->stepEventHandle;
         eDescr.rank = sub->rank;
         eDescr.netPlugin.id = pluginId;
         eDescr.netPlugin.data = extData;
