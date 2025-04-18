@@ -83,7 +83,7 @@ export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_arch_list)"
 if [[ "$target_cluster_arg" != "$build_cluster_tag" ]]; then
     source_cluster_config $build_cluster_tag
 fi
-    
+
 if [[ $make_clean == 1 && -d "build" ]]; then
     if [ "$baremetal_build" -eq 1 ]; then
         rm -rf build

@@ -52,6 +52,8 @@ workflow:
   auto_cancel:
     on_new_commit: interruptible
 
+# verify that setting TRACE=1 does not break compile
+# this is a special build-time setting to increase log verbosity
 build-trace:
   stage: build
   rules:
@@ -59,13 +61,11 @@ build-trace:
       when: always
     - when: never
   tags:
-    - build
+    - build-with-docker
   variables:
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_BUILD_TRACE: 1
   script:
-    - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
-    - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
+    - docker/make.sh gc-classic
 
 build-classic:
   stage: build

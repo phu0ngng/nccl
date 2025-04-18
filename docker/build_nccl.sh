@@ -18,7 +18,7 @@ fi
 # figure out a fair job number
 jobs=$(eval "$NUM_BUILD_PROCS")
 
-make -j$jobs test.build MPI=1 WERROR=1
+make -j$jobs test.build MPI=1 WERROR=1 TRACE=$NCCL_BUILD_TRACE
 # make -j$jobs pkg.build
 
 build_status=$?
