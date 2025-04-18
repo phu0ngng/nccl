@@ -249,7 +249,7 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, int nHead
     if (nvlsHeads[h * comm->nNodes + comm->node] == comm->rank) headRank = h;
   }
 
-  for (int c=0; c<comm->nChannels; c++) {
+  for (int c=0; c<comm->nvlsChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->nvls.nHeads = nHeads;
     for (int h=0; h<nHeads; h++) channel->nvls.up[h] = comm->nRanks+1+h;
@@ -301,7 +301,7 @@ static ncclResult_t connectNvls(struct ncclComm* comm, int* nvlsHeads, int nHead
   }
   // Set prev/next in all channels (NVLS compute channels work
   // orthogonally to NVLS search channels).
-  for (int c=0; c<comm->nChannels; c++) {
+  for (int c=0; c<comm->nvlsChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
     channel->nvls.treeUp = treeUp[c%2];
     channel->nvls.treeDown[0] = channel->nvls.down;
@@ -489,9 +489,6 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   // Support maximal channel usage for aggregation
   if (shared && comm->nvlsChannels > parent->nvlsResources->nChannels) {
     comm->nvlsChannels = parent->nvlsResources->nChannels;
-  }
-  if (comm->nChannels < comm->nvlsChannels) {
-    nChannels = comm->nChannels = copyChannels(comm, comm->nChannels, comm->nvlsChannels, ringPrev, ringNext);
   }
   NCCLCHECKGOTO(connectNvls(comm, nvlsHeads, minHeadNum), ret, fail);
 #endif
