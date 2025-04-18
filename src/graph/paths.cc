@@ -286,9 +286,9 @@ ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* syst
 
   // Get GPUs from topology
   int g1, g2;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank1, &g1));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank1, &g1, /*showWarn=*/true));
   struct ncclTopoNode* gpu1 = system->nodes[GPU].nodes+g1;
-  if (ncclTopoRankToIndex(system, rank2, &g2) == ncclInternalError) {
+  if (ncclTopoRankToIndex(system, rank2, &g2, /*showWarn=*/false) == ncclInternalError) {
     // GPU not found, we can't use p2p.
     return ncclSuccess;
   }
@@ -392,7 +392,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t n
   int n, g;
   NCCLCHECK(ncclTopoIdToIndex(system, NET, netId, &n));
   struct ncclTopoNode* net = system->nodes[NET].nodes+n;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g, /*showWarn=*/true));
   struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
 
   // Check that both the NIC and GPUs support it
@@ -428,7 +428,7 @@ ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* system, int rank, int64_t n
     // In case of PXN, use the intermediate GPU distance instead
     int proxyRank;
     NCCLCHECK(ncclTopoGetIntermediateRank(system, gpu->gpu.rank, netId, &proxyRank));
-    NCCLCHECK(ncclTopoRankToIndex(system, proxyRank, &g));
+    NCCLCHECK(ncclTopoRankToIndex(system, proxyRank, &g, /*showWarn=*/true));
     gpu = system->nodes[GPU].nodes+g;
     distance = gpu->paths[NET][n].type;
   }
@@ -485,7 +485,7 @@ ncclResult_t ncclTopoNeedFlush(struct ncclComm* comm, int64_t netId, int netDev,
   if (props.forceFlush == 1 || ncclParamNetForceFlush()) return ncclSuccess;
   int g;
   struct ncclTopoSystem* system = comm->topo;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g, /*showWarn=*/true));
   struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
   // Flush is required on Ampere and earlier
   if (gpu->gpu.cudaCompCap >= 90) *flush = 0;
@@ -511,8 +511,8 @@ ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int rank1, int rank
   *net = 1;
   // First check the current GPU-to-GPU speed.
   int g1, g2;
-  if (ncclTopoRankToIndex(system, rank1, &g1) != ncclSuccess ||
-      ncclTopoRankToIndex(system, rank2, &g2) != ncclSuccess) {
+  if (ncclTopoRankToIndex(system, rank1, &g1, /*showWarn=*/false) != ncclSuccess ||
+      ncclTopoRankToIndex(system, rank2, &g2, /*showWarn=*/false) != ncclSuccess) {
     return ncclSuccess;
   }
 
@@ -538,7 +538,7 @@ ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank
   // Get GPU and NET
   int n, g;
   NCCLCHECK(ncclTopoIdToIndex(system, NET, netId, &n));
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &g, /*showWarn=*/true));
   struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
   struct ncclTopoLinkList* path = gpu->paths[NET]+n;
   if (path->type == PATH_PXN) {
@@ -766,7 +766,7 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclComm* comm, int g /*local gp
   int peer;
   struct ncclTopoSystem* system = comm->topo;
   struct ncclTopoLinkList* path = NULL;
-  if (ncclTopoRankToIndex(system, peerRank, &peer) == ncclSuccess) {
+  if (ncclTopoRankToIndex(system, peerRank, &peer, /*showWarn=*/false) == ncclSuccess) {
     // Same rank
     if (g == peer) {
       *nChannels = -1;

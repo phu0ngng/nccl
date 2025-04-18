@@ -1326,6 +1326,15 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     // Try default XML topology location
     NCCLCHECKGOTO(ncclTopoGetXmlFromFile("/var/run/nvidia-topologyd/virtualTopology.xml", xml, 0), ret, fail);
   }
+  // Fixup the cpu's host_hashes.
+  struct ncclXmlNode* node;
+  // Update every cpu node's host_hash attribute since those are not
+  // intended to be preserved from the XML files that have been read.
+  NCCLCHECKGOTO(xmlFindTag(xml, "cpu", &node), ret, fail);
+  while (node != nullptr) {
+    NCCLCHECKGOTO(xmlSetAttrLong(node, "host_hash", getHostHash()), ret, fail);
+    NCCLCHECKGOTO(xmlFindNextTag(xml, "cpu", node, &node), ret, fail);
+  }
   if (xml->maxIndex == 0) {
     // Create top tag
     struct ncclXmlNode* top;
@@ -1338,7 +1347,6 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   // Detect only the GPU managed by this process.  We'll get any others through XML fusion.
   char busId[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
   NCCLCHECKGOTO(int64ToBusId(comm->peerInfo[comm->rank].busId, busId), ret, fail);
-  struct ncclXmlNode* node;
   NCCLCHECKGOTO(ncclTopoFillGpu(xml, busId, &node), ret, fail);
   if (node) {
     NCCLCHECKGOTO(xmlSetAttrInt(node, "keep", 1), ret, fail);
@@ -1477,7 +1485,7 @@ ncclResult_t getLocalNetCountByBw(struct ncclTopoSystem* system, int gpu, int *c
 
 ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int channelId, int64_t* id, int* dev) {
   int gpu;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpu));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpu, /*showWarn=*/true));
 
   int localNets[NCCL_TOPO_MAX_NODES];
   int localNetCount;
@@ -1542,7 +1550,7 @@ NCCL_PARAM(IgnoreCpuAffinity, "IGNORE_CPU_AFFINITY", 0);
 ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu_set_t* affinity) {
   struct ncclTopoNode* cpu = NULL, *gpu = NULL;
   int gpuIndex, cpuIndex;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpuIndex));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpuIndex, /*showWarn=*/true));
   NCCLCHECK(ncclGetLocalCpu(system, gpuIndex, &cpuIndex));
   gpu = system->nodes[GPU].nodes+gpuIndex;
   cpu = system->nodes[CPU].nodes+cpuIndex;

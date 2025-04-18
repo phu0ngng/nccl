@@ -1247,7 +1247,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
       }
       if (pxnLevel == 1) {
         int g, n;
-        NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g));
+        NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g, /*showWarn=*/true));
         NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netId, &n));
         struct ncclTopoNode* gpu = comm->topo->nodes[GPU].nodes+g;
         if (gpu->paths[NET][n].type <= PATH_PXN) {
@@ -1259,7 +1259,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
         // Check which local GPU corresponds to that NIC and see if we can use PXN.
         int n, g1, g2;
         NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netId, &n));
-        NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g1));
+        NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g1, /*showWarn=*/true));
         NCCLCHECK(ncclTopoGetLocalGpu(comm->topo, netId, &g2));
         if (g2 != -1) {
           struct ncclTopoNode* peerGpu = comm->topo->nodes[GPU].nodes+g2;
