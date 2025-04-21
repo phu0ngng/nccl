@@ -176,7 +176,25 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
   }
 
   if (comm->nvlsSupport) {
-    int channels = ((comm->compCap >= 100) ? (comm->nNodes > 1 ? NVLS_NCHANNELS_SM100 : NVLS_NCHANNELS_SM100_NVL) : NVLS_NCHANNELS_SM90);
+    int channels;
+    if (comm->compCap >= 100) {
+      // Use a reduced number of channels for single node/MNNVL domain on Blackwell.
+      // comm->nNodes is not yet initialized at this point so we need to use other data.
+      bool multiNode;
+      if (comm->MNNVL) {
+        multiNode = (comm->clique.size < comm->nRanks);
+      } else {
+        int i;
+        for (i = 1; i < comm->nRanks; i++) {
+          if (comm->peerInfo[i].hostHash != comm->peerInfo[0].hostHash)
+            break;
+        }
+        multiNode = (i < comm->nRanks);
+      }
+      channels = (multiNode ? NVLS_NCHANNELS_SM100 : NVLS_NCHANNELS_SM100_NVL);
+    } else {
+      channels = NVLS_NCHANNELS_SM90;
+    }
     if (ncclParamNvlsChannels() >= 0) channels = ncclParamNvlsChannels();
     comm->nvlsChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, channels));
   }
