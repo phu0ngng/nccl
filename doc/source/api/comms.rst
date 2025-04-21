@@ -107,7 +107,7 @@ When split, there should not be any outstanding NCCL operations on the *comm*. O
 a deadlock.
 
 ncclCommShrink
--------------
+--------------
 
 .. c:function:: ncclResult_t ncclCommShrink(ncclComm_t comm, int* excludeRanksList, int excludeRanksCount, ncclComm_t* newcomm, ncclConfig_t* config, int shrinkFlags)
 

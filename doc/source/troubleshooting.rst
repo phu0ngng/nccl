@@ -138,7 +138,8 @@ result in sub-optimal performance.
 Shared memory
 *************
 
-To communicate between processes and even between threads of a process, NCCL creates shared memory segments
+To communicate between processes and even between threads of a process, NCCL creates shared memory segments,
+traditionally
 in /dev/shm. The operating system’s limits on these resources may need to be increased accordingly. Please see your
 system’s documentation for details.
 
@@ -184,6 +185,21 @@ Once updated, the daemons should be restarted with:
 .. code:: shell
 
  sudo systemctl restart systemd-logind
+
+.. _cuMem_host_allocations:
+
+cuMem host allocations
+----------------------
+
+Starting with version 2.23, NCCL supports an alternative shared memory mechanism using cuMem host allocations.  From
+NCCL 2.24, if CUDA driver >= 12.6 and CUDA runtime >= 12.2, it is enabled by default in favor of /dev/shm.
+
+However, cuMem host allocations rely on correctly configured and working NUMA support, which may not be available in
+some VM and containerization scenarios.  In particular, Docker by default disables NUMA support (it can be enabled by
+invoking Docker with ``--cap-add SYS_NICE``).  From version 2.26.5, NCCL checks if cuMem host allocations work and, if
+needed, automatically falls back to the /dev/shm code.  In prior versions, the same outcome can be achieved by manually
+specifying ``NCCL_CUMEM_HOST_ENABLE=0``.  We still recommend configuring the underlying system to ensure that cuMem host
+allocations work, as they provide improved reliability during communicator aborts.
 
 *****************
 Networking issues
