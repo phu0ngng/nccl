@@ -3,7 +3,7 @@
 # Utility script for housing cluster-related functions
 
 function source_cluster_config() {
-    config_file="docker/$1-config.sh"
+    config_file="docker/clusters/$1-config.sh"
 
     if [ ! -f "$config_file" ]; then
         echo "ERROR: Config file $config_file is not found."
@@ -46,9 +46,8 @@ function identify_cluster() {
 	return
     fi
 
-    # copy the gc setup in pdx
     if [[ "$(hostname -f)" =~ pdx02.us.nvidia.com$ ]]; then
-        echo "gc"
+        echo "ipp6"
         return
     fi
 
