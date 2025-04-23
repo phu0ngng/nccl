@@ -1246,7 +1246,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
 
   // reserve stride * localRanks as symmetric space
-  comm->symmetricSupport = comm->isAllDirectP2p && comm->nNodes == 1 && ncclParamWinEnable();
+  comm->symmetricSupport = comm->isAllDirectP2p && comm->nNodes == 1 && ncclParamWinEnable() && ncclCuMemEnable();
   if (comm->symmetricSupport) {
     if (ncclParamWinStride() != -1) {
       comm->baseStride = ncclParamWinStride();
