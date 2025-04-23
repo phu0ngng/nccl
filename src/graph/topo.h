@@ -217,6 +217,7 @@ static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank,
       return ncclSuccess;
     }
   }
+  WARN("ncclTopoRankToIndex could not find rank %d", rank);
   return ncclInternalError;
 }
 
