@@ -3,19 +3,19 @@
 # Utility script for housing cluster-related functions
 
 function source_cluster_config() {
-    config_file="docker/$1-config.sh"
-    
+    config_file="docker/clusters/$1-config.sh"
+
     if [ ! -f "$config_file" ]; then
         echo "ERROR: Config file $config_file is not found."
         usage
     fi
-  
+
     source $config_file
 }
 
 function identify_cluster() {
     hostname="$(hostname)"
-    
+
     if [[ "$hostname" =~ ^gc[01][0-9]$ ]]; then
         echo "gc"
 	return
@@ -25,7 +25,7 @@ function identify_cluster() {
         echo "eos"
 	return
     fi
- 
+
     if [[ "$hostname" =~ draco-rno-login- ]]; then
 	echo "draco-rno"
 	return
@@ -46,6 +46,10 @@ function identify_cluster() {
 	return
     fi
 
-    echo "ERROR: Cluster unknown"
-    exit 1	
+    if [[ "$(hostname -f)" =~ pdx02.us.nvidia.com$ ]]; then
+        echo "ipp6"
+        return
+    fi
+
+    echo "UNKNOWN"
 }

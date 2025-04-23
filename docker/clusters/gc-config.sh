@@ -62,6 +62,7 @@ function get_build_command() {
 
     # pass in relevant env vars
     echo "docker run --rm \
+        -e NCCL_BUILD_TRACE \
         -e NVCC_GENCODE \
         -e NUM_BUILD_PROCS \
         --user ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} \

@@ -52,6 +52,8 @@ workflow:
   auto_cancel:
     on_new_commit: interruptible
 
+# verify that setting TRACE=1 does not break compile
+# this is a special build-time setting to increase log verbosity
 build-trace:
   stage: build
   rules:
@@ -59,13 +61,11 @@ build-trace:
       when: always
     - when: never
   tags:
-    - build
+    - build-with-docker
   variables:
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
+    NCCL_BUILD_TRACE: 1
   script:
-    - echo "Using CUDA_HOME=$CUDA_HOME, MPI_HOME=$MPI_HOME"
-    - make -j test.build MPI=1 TRACE=1 MPI_HOME=$MPI_HOME CUDA_HOME=$CUDA_HOME
+    - docker/make.sh gc-classic
 
 build-classic:
   stage: build
@@ -292,7 +292,7 @@ unit_tests-P100:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     SLURM_PARTITION: "P100"
     NNODES: 1
@@ -322,7 +322,7 @@ unit_tests-P40:
     - p40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     SLURM_PARTITION: "P40"
     NNODES: 1
@@ -352,7 +352,7 @@ unit_tests-GP100:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     SLURM_PARTITION: "GP100"
     NNODES: 1
@@ -382,7 +382,7 @@ unit_tests-A40-single:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     SLURM_PARTITION: "A40"
     NNODES: 1
@@ -414,7 +414,7 @@ unit_tests-A40-dual:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     SLURM_PARTITION: "A40"
     NNODES: 1
@@ -445,7 +445,7 @@ unit_tests-A100:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     SLURM_PARTITION: "A100"
     NNODES: 1
@@ -478,7 +478,7 @@ unit_tests-eos:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/eos-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 20
     NNODES: 1
     NGPUS: 8
@@ -525,7 +525,7 @@ unit_tests-AWS_H100_EFA:
     - |
       cat > $RUN_SCRIPT << EOF
       export NCCL_DEBUG="WARN"
-      export CLUSTER_CONFIG="docker/aws-config.sh"
+      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
       export SLURM_TIME=15
       export SLURM_PARTITION=compute
       export NNODES=1
@@ -572,7 +572,7 @@ unit_tests-draco_oci:
     - draco-oci-iad
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/eos-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 10
     NNODES: 1
     NGPUS: 8
@@ -607,7 +607,7 @@ unit_tests-pre-nyx:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 20
     SLURM_PARTITION: batch
     NNODES: 1
@@ -642,7 +642,7 @@ unit_tests-pre-tyche:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 20
     SLURM_PARTITION: batch
     NNODES: 1
@@ -676,7 +676,7 @@ apitest-P100:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "P100"
@@ -706,7 +706,7 @@ apitest-P40:
     - p40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "P40"
@@ -736,7 +736,7 @@ apitest-GP100:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "GP100"
@@ -769,7 +769,7 @@ apitest-A40:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "A40"
@@ -799,7 +799,7 @@ apitest-A100:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "A100"
@@ -899,7 +899,7 @@ apitest-eos:
     - nccl-eos
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/eos-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 30
     RUN_MODE: "MPI"
     NNODES: 1
@@ -945,7 +945,7 @@ apitest-AWS_H100_EFA:
     - |
       cat > $RUN_SCRIPT << EOF
       export NCCL_DEBUG="WARN"
-      export CLUSTER_CONFIG="docker/aws-config.sh"
+      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
       export SLURM_TIME=20
       export SLURM_PARTITION=compute
       export NNODES=1
@@ -991,7 +991,7 @@ apitest-draco_oci:
     - draco-oci-iad
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/draco-oci-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 20
     RUN_MODE: "MPI"
     NNODES: 1
@@ -1026,7 +1026,7 @@ apitest-pre-nyx:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 30
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
@@ -1061,7 +1061,7 @@ apitest-pre-tyche:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 30
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
@@ -1093,7 +1093,7 @@ perftest-P100:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "MPI"
     SLURM_PARTITION: "P100"
@@ -1127,7 +1127,7 @@ perftest-P40:
     - p40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "P40"
@@ -1161,7 +1161,7 @@ perftest-GP100:
     - gp100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "GP100"
@@ -1220,7 +1220,7 @@ perftest-A40:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "A40"
@@ -1254,7 +1254,7 @@ multi-perftest-A40:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "A40"
@@ -1288,7 +1288,7 @@ perftest-A100:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "A100"
@@ -1402,7 +1402,7 @@ perftest-single-eos:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/eos-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 25
     RUN_MODE: "MPI"
     NNODES: 1
@@ -1446,7 +1446,7 @@ perftest_single-AWS_H100_EFA:
     - |
       cat > $RUN_SCRIPT << EOF
       export NCCL_DEBUG="WARN"
-      export CLUSTER_CONFIG="docker/aws-config.sh"
+      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
       export SLURM_TIME=10
       export SLURM_PARTITION=compute
       export NNODES=1
@@ -1492,7 +1492,7 @@ perftest_single-draco_oci:
     - draco-oci-iad
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/draco-oci-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 20
     RUN_MODE: "MPI"
     NNODES: 1
@@ -1530,7 +1530,7 @@ perftest-single-pre-nyx:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 45
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
@@ -1566,7 +1566,7 @@ perftest-single-pre-tyche:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 45
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
@@ -1599,7 +1599,7 @@ perftest-multi-gc:
     - p100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_HOSTS: "gc01,gc02"
@@ -1641,7 +1641,7 @@ perftest-sharp-gc:
     NCCL_HOME: build-gc
     SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - source docker/clusters/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
   artifacts:
     when: always
@@ -1741,7 +1741,7 @@ perftest-multi-eos:
     - nccl-eos
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/eos-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 30
     RUN_MODE: "MPI"
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
@@ -1817,7 +1817,7 @@ perftest_multi-AWS_H100_EFA:
     - |
       cat > $RUN_SCRIPT << EOF
       export NCCL_DEBUG="WARN"
-      export CLUSTER_CONFIG="docker/aws-config.sh"
+      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
       export SLURM_TIME=10
       export SLURM_PARTITION=compute
       export NGPUS=8
@@ -1863,7 +1863,7 @@ perftest_multi-draco_oci:
     - draco-oci-iad
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/draco-oci-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 20
     RUN_MODE: "MPI"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
@@ -1900,7 +1900,7 @@ perftest-multi-pre-nyx:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/pre-nyx-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 45
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
@@ -1937,7 +1937,7 @@ perftest-multi-pre-tyche:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/pre-tyche-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 45
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
@@ -2073,7 +2073,7 @@ replay-multi-gc:
     SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"
     SALLOC_SELF_SINGLE: "salloc --exclusive -t 00:05:00 -N 1 -n 8 -pP100"
   script:
-    - source docker/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - source docker/clusters/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - SALLOC=$SALLOC_RESNET ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
     - ./test/scripts/gitlab-runner-replay-self-test.sh
   artifacts:
@@ -2100,7 +2100,7 @@ profiler-tests-A100:
     - a100pci
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "A100"

@@ -512,7 +512,7 @@ Value accepted
 ^^^^^^^^^^^^^^
 The value of the environment variable
 is passed to strftime, so any valid format will work here. The
-default is ``[%F %T] ``, which is ``[YYYY-MM-DD HH:MM:SS] ``. If the
+default is :literal:`[%F %T] \ `, which is :literal:`[YYYY-MM-DD HH:MM:SS] \ `. If the
 value is set, but empty, then no timestamp will be printed
 (``NCCL_DEBUG_TIMESTAMP_FORMAT=``).
 
@@ -521,7 +521,7 @@ can be specified, where ``X`` is a single numerical digit from 1-9.
 This will print fractions of a second. The value of ``X``
 indicates how many digits will be printed. For example, ``%3f`` will
 print milliseconds. The value is zero padded. For example:
-``[%F %T.%9f] ``. (Note that this can only be used once in the format
+:literal:`[%F %T.%9f] \ `. (Note that this can only be used once in the format
 string.)
 
 NCCL_DEBUG_TIMESTAMP_LEVELS
@@ -892,12 +892,12 @@ NCCL_CUMEM_HOST_ENABLE
 ----------------------
 (since 2.23)
 
-Use CUDA cuMem* functions to allocate host memory in NCCL.
+Use CUDA cuMem* functions to allocate host memory in NCCL.  See :ref:`cuMem_host_allocations` for more information.
 
 Values accepted
 ^^^^^^^^^^^^^^^
 0 or 1.
-Default is 0 in 2.23; since 2.24, default is 1 if CUDA driver >= 12.6 and CUDA runtime >= 12.2
+Default is 0 in 2.23; since 2.24, default is 1 if CUDA driver >= 12.6, CUDA runtime >= 12.2, and cuMem host allocations are supported.
 
 NCCL_NET_GDR_LEVEL (formerly NCCL_IB_GDR_LEVEL)
 -----------------------------------------------
