@@ -204,31 +204,42 @@ static ncclResult_t ncclNetPluginDisableOtherExternal(int pluginIndex) {
 
 static void initPluginLibsOnceFunc() {
   char* netPluginName = nullptr;
-  const char* envNetPluginName = nullptr;
   const char* defaultNetPlugin = "libnccl-net.so";
-  char envNetPluginList[MAX_STR_LEN*NCCL_NET_MAX_PLUGINS] = { 0 };
+  const char* envNetPlugin = nullptr;
+  char* envNetPluginList = nullptr;
   char* savePtr = nullptr;
   int pluginCounter = 0;
 
   memset(netPluginLibs, 0, NCCL_NET_MAX_PLUGINS * sizeof(netPluginLib_t));
-
-  envNetPluginName = ncclGetEnv("NCCL_NET_PLUGIN");
-  if (envNetPluginName) {
-    strcpy(envNetPluginList, envNetPluginName);
-    strcat(envNetPluginList, ",");
+  envNetPlugin = ncclGetEnv("NCCL_NET_PLUGIN");
+  if (envNetPlugin) {
+    envNetPluginList = strdup(envNetPlugin);
+    // Iterate over list until the list is empty
+    netPluginName = strtok_r(envNetPluginList, ",", &savePtr);
+    while(netPluginName) {
+      // We have 2 internal plugins (ib and socket) + 1 for the default net plugin
+      // So, we can have at most( NCCL_NET_MAX_PLUGINS - (NCCL_NET_NUM_INTERNAL_PLUGINS + 1)) in the NCCL_NET_PLUGIN list
+      if (pluginCounter >= (NCCL_NET_MAX_PLUGINS - (NCCL_NET_NUM_INTERNAL_PLUGINS + 1))) {
+        INFO(NCCL_NET|NCCL_INIT,"NCCL_NET_PLUGIN list contains more than %d plugins, ignoring the rest", (NCCL_NET_MAX_PLUGINS - (NCCL_NET_NUM_INTERNAL_PLUGINS + 1)));
+        break;
+      }
+      // need to leave space for the name + "\n"
+      if((strlen(netPluginName)+1) <= MAX_STR_LEN) {
+        netPluginLibs[pluginCounter].ncclNetPluginState = ncclNetPluginStateLoadReady;
+        netPluginLibs[pluginCounter].ncclNetPluginRefCount = ncclParamNetPluginRefCount();
+        strcpy(netPluginLibs[pluginCounter].name, netPluginName);
+        pluginCounter++;
+      } else {
+        INFO(NCCL_NET|NCCL_INIT,"NCCL_NET_PLUGIN list contains a plugin name %s longer than %d characters, ignoring it.", netPluginName, MAX_STR_LEN);
+      }
+      netPluginName = strtok_r(nullptr, ",", &savePtr);
+    }
+    if (envNetPluginList) free(envNetPluginList);
   }
-  strcat(envNetPluginList, defaultNetPlugin);
-
-  // Iterate over list until the list is empty
-  netPluginName = strtok_r(envNetPluginList, ",", &savePtr);
-  while(netPluginName) {
-    assert(strlen(netPluginName) < MAX_STR_LEN);
-    netPluginLibs[pluginCounter].ncclNetPluginState = ncclNetPluginStateLoadReady;
-    netPluginLibs[pluginCounter].ncclNetPluginRefCount = ncclParamNetPluginRefCount();
-    strcpy(netPluginLibs[pluginCounter].name, netPluginName);
-    pluginCounter++;
-    netPluginName = strtok_r(nullptr, ",", &savePtr);
-  }
+  // Add default net plugin
+  netPluginLibs[pluginCounter].ncclNetPluginState = ncclNetPluginStateLoadReady;
+  netPluginLibs[pluginCounter].ncclNetPluginRefCount = ncclParamNetPluginRefCount();
+  strcpy(netPluginLibs[pluginCounter++].name, defaultNetPlugin);
 
   // Add 2 internal ib and socket plugins
   netPluginLibs[pluginCounter].ncclNet = &ncclNetIb;
