@@ -265,16 +265,33 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, const CUmemAccessDesc
   CUCHECKGOTO(cuMemAddressReserve((CUdeviceptr*)ucptr, ucsize, ucgran, 0U, 0), ret, fail);
 
   // Alloc local physical mem for this NVLS group
-  CUCHECKGOTO(cuMemCreate(ucHandle, ucsize, &ucprop, 0), ret, fail);
-  CUCHECKGOTO(cuMemMap((CUdeviceptr)*ucptr, ucsize, 0, *ucHandle, 0), ret, fail);
-  CUCHECKGOTO(cuMemSetAccess((CUdeviceptr)*ucptr, ucsize, desc, 1), ret, fail);
-  CUDACHECKGOTO(cudaMemset(*ucptr, 0, ucsize), ret, fail);
+  CUCHECKGOTO(cuMemCreate(ucHandle, ucsize, &ucprop, 0), ret, fail1);
+  CUCHECKGOTO(cuMemMap((CUdeviceptr)*ucptr, ucsize, 0, *ucHandle, 0), ret, fail2);
+  CUCHECKGOTO(cuMemSetAccess((CUdeviceptr)*ucptr, ucsize, desc, 1), ret, fail3);
+  CUDACHECKGOTO(cudaMemset(*ucptr, 0, ucsize), ret, fail3);
 
   // intra-node barrier to mitigate the possible hang in cuMulticastBindMem during abort
-  NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
+  NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail3);
   // Bind physical memory to the Multicast group
   // NB: It will block until all ranks have been added to the Group
-  CUCHECKGOTO(cuMulticastBindMem(*mcHandle, 0/*mcOffset*/, *ucHandle, 0/*memOffset*/, ucsize, 0/*flags*/), ret, fail);
+  // This is where we normally see issues if the system NVLS/Multicast support is broken
+  {
+    CUresult err = CUPFN(cuMulticastBindMem(*mcHandle, 0/*mcOffset*/, *ucHandle, 0/*memOffset*/, ucsize, 0/*flags*/));
+    if (err != CUDA_SUCCESS) {
+      const char *errStr;						\
+      (void) pfn_cuGetErrorString(err, &errStr);			\
+      if (ncclParamNvlsEnable() == 1) {
+        // Fail the job as NVLS support is not available
+        WARN("Failed to bind NVLink SHARP (NVLS) Multicast memory of size %ld : CUDA error %d '%s'.\nThis is usually caused by a system or configuration error in the Fabric Manager or NVSwitches.\nDo not force-enable NVLS (NCCL_NVLS_ENABLE=1) if you wish to avoid this error in the future.", ucsize, err, errStr );
+        ret = ncclUnhandledCudaError;
+      } else {
+        // Continue without NVLS support (returns ncclSuccess)
+        INFO(NCCL_INIT|NCCL_NVLS, "Failed to bind NVLink SHARP (NVLS) Multicast memory of size %ld : CUDA error %d '%s'. Proceeding without NVLS support.", ucsize, err, errStr);
+      }
+      comm->nvlsSupport = comm->nvlsChannels = 0;
+      goto fail3;
+   }
+  }
 
   // Map mc virtual address
   CUCHECKGOTO(cuMemAddressReserve((CUdeviceptr*)mcptr, mcsize, mcgran, 0U, 0), ret, fail);
@@ -286,6 +303,12 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, const CUmemAccessDesc
 
 exit:
   return ret;
+fail3:
+  CUCHECK(cuMemUnmap((CUdeviceptr)*ucptr, ucsize));
+fail2:
+  CUCHECK(cuMemRelease(*ucHandle));
+fail1:
+  CUCHECK(cuMemAddressFree((CUdeviceptr)*ucptr, ucsize));
 fail:
   if (allocMcHandle && *mcptr == NULL && *ucptr == NULL) CUCHECK(cuMemRelease(*mcHandle));
   goto exit;
