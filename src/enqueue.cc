@@ -350,13 +350,6 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     bool implemented = ncclSymImplemented(task->func, task->opDev.op, task->datatype);
 
     if (sendReg && recvReg && (sendReg->winFlags & recvReg->winFlags & NCCL_WIN_COLL_SYMMETRIC) && implemented) {
-      int collNetSupport = 0;
-      NCCLCHECK(getCollNetSupport(comm, task, &collNetSupport));
-      int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(task->opDev.op, task->datatype) || task->func == ncclFuncAllGather);
-
-      ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
-      NCCLCHECK(getAlgoInfo(comm, task, collNetSupport, nvlsSupport, 1, &simInfo));
-
       enum ncclSymKernelId kernel;
       int nChannels, nWarps;
       float estTimeUs = 1.e18;
@@ -365,7 +358,6 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
       // We should only use symmetric kernel if it beats the asymmetric kernel. But the
       // perf model accuracy from asymmetric kernels is too inaccurate and reports too high
       // of a bandwidth. For now just always use symmetric if available.
-      //if (estTimeUs < simInfo.estimatedTime) {
       if (kernel != ncclSymKernelId_Count) {
         task->sendbuff = sendSymPtr;
         task->recvbuff = recvSymPtr;

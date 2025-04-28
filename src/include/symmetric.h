@@ -25,15 +25,16 @@ struct alignas(16) ncclSymDevBase {
 
   static constexpr size_t size(int nRanks) {
     return sizeof(ncclSymDevBase) +
-           alignUp(nRanks*ncclSymMaxBlocks*sizeof(uint32_t), 16) +
+           alignUp(ncclSymMaxBlocks*nRanks*sizeof(uint32_t), 16) +
            ncclSymMaxBlocks * /*epochs=*/2 * ncclSymLLEpochSize(nRanks);
   }
 };
 
 static __device__ uint4* ncclSymDevBase_getLLBuf(struct ncclSymDevBase* base, int nRanks, int block, uint32_t epoch) {
-  char* ans = (char*)base;
-  // Skip over barEpochs[]
-  ans += alignUp(nRanks*ncclSymMaxBlocks*sizeof(uint32_t), 16);
+  // Get pointer to buffer trailing the header struct.
+  char* ans = (char*)(base + 1);
+  // Skip over barInboxPerPeer[]
+  ans += alignUp(ncclSymMaxBlocks*nRanks*sizeof(uint32_t), 16);
   // Skip to our block
   int epochSize = ncclSymLLEpochSize(nRanks);
   ans += block * /*epochs=*/2 * epochSize;
