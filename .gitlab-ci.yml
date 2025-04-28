@@ -1995,7 +1995,7 @@ perf-regression-single-DGX-A100:
 self-test-pytorch-container-eos:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_EOS == "1" && ( $RUN_DLFW_TESTS == "1" || $CI_PIPELINE_SOURCE == 'schedule' )
+    - if: $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
       when: always
     - when: never
   tags:
