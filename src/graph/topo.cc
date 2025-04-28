@@ -1554,8 +1554,8 @@ ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu
 #ifdef ENABLE_TRACE
   {
     char affinityStr[sizeof(cpu_set_t)*2];
-    NCCLCHECK(ncclCpusetToStr(&mask, affinityStr));
-    TRACE(NCCL_INIT, "Current affinity for GPU %d is %s", gpu->gpu.dev, affinityStr);
+    TRACE(NCCL_INIT, "Current affinity for GPU %d is %s", gpu->gpu.dev,
+          ncclCpusetToRangeStr(&mask, affinityStr, sizeof(affinityStr)));
   }
 #endif
 
@@ -1565,8 +1565,8 @@ ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu
 #ifdef ENABLE_TRACE
   {
     char affinityStr[sizeof(cpu_set_t)*2];
-    NCCLCHECK(ncclCpusetToStr(&cpuMask, affinityStr));
-    TRACE(NCCL_INIT, "CPU GPU affinity for GPU %d is %s", gpu->gpu.dev, affinityStr);
+    TRACE(NCCL_INIT, "CPU GPU affinity for GPU %d is %s", gpu->gpu.dev,
+          ncclCpusetToRangeStr(&cpuMask, affinityStr, sizeof(affinityStr)));
   }
 #endif
 
@@ -1583,8 +1583,8 @@ ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu
   // If there is a non empty set, use it to set affinity
   if (CPU_COUNT(&finalMask)) {
     char affinityStr[sizeof(cpu_set_t)*2];
-    NCCLCHECK(ncclCpusetToStr(&finalMask, affinityStr));
-    INFO(NCCL_INIT, "Setting affinity for GPU %d to %s", gpu->gpu.dev, affinityStr);
+    INFO(NCCL_INIT, "Setting affinity for GPU %d to %s", gpu->gpu.dev,
+         ncclCpusetToRangeStr(&finalMask, affinityStr, sizeof(affinityStr)));
   }
   return ncclSuccess;
 }
