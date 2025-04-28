@@ -142,10 +142,8 @@ build-pre-tyche:
 build-dlfw-pytorch-container:
   stage: build
   rules:
-    - if: $RUN_DLFW_TESTS == "1"
+    - if: $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'web'
-      when: manual
     - when: never
   tags:
     - build-with-docker
