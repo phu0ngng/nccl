@@ -18,7 +18,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   CUdevice currentDev;
   CUmemAllocationProp memprop = {};
   CUmemAccessDesc accessDesc = {};
-  CUmemGenericAllocationHandle handle;
+  CUmemGenericAllocationHandle handle = (CUmemGenericAllocationHandle)-1;
   int cudaDev;
   int flag;
   int dcnt;
@@ -56,6 +56,9 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
         requestedHandleTypes &= ~CU_MEM_HANDLE_TYPE_FABRIC;
         memprop.requestedHandleTypes = (CUmemAllocationHandleType) requestedHandleTypes;
         /* Allocate the physical memory on the device */
+        CUCHECK(cuMemCreate(&handle, handleSize, &memprop, 0));
+      } else if (err != CUDA_SUCCESS) {
+        // Catch and report any error from above
         CUCHECK(cuMemCreate(&handle, handleSize, &memprop, 0));
       }
     } else {
