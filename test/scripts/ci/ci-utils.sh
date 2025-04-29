@@ -398,13 +398,13 @@ function load_cluster_ci_variables() {
 
     # Optional functions
     if function_exists get_nccl_socket_ifname; then
-        NCCL_SOCKET_IFNAME=$(get_nccl_socket_ifname)
+        export NCCL_SOCKET_IFNAME=$(get_nccl_socket_ifname)
     fi
     if function_exists get_slurm_account; then
         SLURM_ACCOUNT=$(get_slurm_account)
     fi
     if function_exists get_nccl_ib_sl; then
-        NCCL_IB_SL=$(get_nccl_ib_sl)
+        export NCCL_IB_SL=$(get_nccl_ib_sl)
     fi
     if function_exists get_planned_reserved; then
         PLANNED_RESERVED=$(get_planned_reserved)
