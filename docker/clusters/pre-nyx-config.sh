@@ -21,7 +21,7 @@ PRENYX_SLURM_ACCOUNT="coreai_libraries_nccl"
 # Use with sacct on to get Slurm wait times
 PRENYX_PLANNED_RESERVED="Planned"
 
-PRENYX_NCCL_SOCKET_IFNAME="ibp24s0"
+PRENYX_NCCL_SOCKET_IFNAME="ens6f1np1"
 
 # Target configs
 function get_gpu_archs() {
@@ -73,12 +73,16 @@ function get_planned_reserved() {
     echo "$PRENYX_PLANNED_RESERVED"
 }
 
+function get_nccl_socket_ifname() {
+    echo "$PRENYX_NCCL_SOCKET_IFNAME"
+}
+
 function configure_test_env() {
     export UCX_NET_DEVICES=$PRENYX_NCCL_SOCKET_IFNAME
     export UCX_TLS=tcp
 
-    # Note: These are the non-E/W IB interfaces on Pre-Nyx
-    export NCCL_IB_HCA="^mlx5_0,mlx5_1,mlx5_2,mlx5_3,mlx5_5,mlx5_11,mlx5_6,mlx5_12"
+    # Note: These are the E/W IB interfaces on Pre-Nyx
+    export NCCL_IB_HCA="=mlx5_4,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_13,mlx5_14,mlx5_15"
 
     # MPI params
     # --oversubscribe
