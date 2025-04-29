@@ -956,6 +956,7 @@ apitest-AWS_H100_EFA:
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
       export JUNIT=$JUNIT
+      export NCCL_NVLS_ENABLE=0
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
@@ -1451,6 +1452,7 @@ perftest_single-AWS_H100_EFA:
       export NGPUS=8
       export NP=8
       export GRAPH=0
+      export NCCL_NVLS_ENABLE=0
       export MAX=1G
       export NCCL_HOME=build-eos
       export RUN_MODE="SALLOC_MPI"
@@ -1822,6 +1824,7 @@ perftest_multi-AWS_H100_EFA:
       export NNODES=4
       export MAX=1G
       export GRAPH=0
+      export NCCL_NVLS_ENABLE=0
       export NP=8
       export NCCL_HOME=build-eos
       export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
