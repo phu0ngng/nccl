@@ -441,6 +441,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   bool ccEnable;
   cudaStream_t deviceStream;
 
+  memset(&tmpCommAndChans, '\0', sizeof(tmpCommAndChans));
   NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), ret, fail);
   NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, deviceStream), ret, fail);
   ncclCommPushCudaFree(comm, devCommAndChans);
