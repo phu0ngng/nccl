@@ -9,9 +9,9 @@
 #include "checks.h"
 #include "param.h"
 
-#if CUDA_VERSION >= 13000
+#if CUDART_VERSION >= 13000
 /* CUDA 13.0 uses the v3 API by default */
-extern cudaError_t cudaStreamGetCaptureInfo_v3(cudaStream_t stream, enum cudaStreamCaptureStatus *captureStatus_out, unsigned long long *id_out=nullptr, cudaGraph_t *graph_out=nullptr, const cudaGraphNode_t **dependencies_out=nullptr, size_t *numDependencies_out=0);
+extern cudaError_t cudaStreamGetCaptureInfo_v3(cudaStream_t stream, enum cudaStreamCaptureStatus *captureStatus_out, unsigned long long *id_out, cudaGraph_t *graph_out, const cudaGraphNode_t **dependencies_out, const cudaGraphEdgeData **edgeData_out, size_t *numDependencies_out);
 /* CUDA 13.0 uses the v2 API by default */
 extern cudaError_t cudaGraphAddDependencies_v2(cudaGraph_t graph, const cudaGraphNode_t *from, const cudaGraphNode_t *to, size_t numDependencies);
 #endif
