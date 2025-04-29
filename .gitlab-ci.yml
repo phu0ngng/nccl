@@ -32,6 +32,7 @@ variables:
   RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
   PLANNED_RESERVED: "Reserved"
   RUN_DLFW_TESTS: "1"
+  RUN_EOS_APITEST: "1"
 
 default:
   # set all jobs to interruptible by default
@@ -889,7 +890,7 @@ apitest-DGX-A100:
 apitest-eos:
   stage: api_tests
   rules:
-    - if: $RUN_ON_EOS == "1"
+    - if: $RUN_ON_EOS == "1" && $RUN_EOS_APITEST == "1"
       when: always
     - when: never
   needs: ["build-eos-aws-oci"]
