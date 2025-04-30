@@ -76,7 +76,7 @@ static ncclResult_t rasNetSendNack(struct rasSocket* sock);
 
 static void* rasThreadMain(void*);
 
-static void rasTerminate() __attribute__((destructor));
+static void rasTerminate();
 
 NCCL_PARAM(RasTimeoutFactor, "RAS_TIMEOUT_FACTOR", 1);
 
@@ -111,6 +111,8 @@ ncclResult_t ncclRasCommInit(struct ncclComm* comm, struct rasRankInit* myRank) 
       ncclSetThreadName(rasThread, "NCCL RAS");
 
       rasInitialized = true;
+
+      atexit(rasTerminate);
     }
   }
   ncclAtomicRefCountIncrement(&rasInitRefCount);
