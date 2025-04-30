@@ -556,7 +556,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->pidHash=getPidHash()+commHash;
   info->cuMemSupport = ncclCuMemEnable();
   CUDACHECK(cudaGetDeviceProperties(&prop, comm->cudaDev));
-  info->totalGlobalMem = ROUNDUP(prop.totalGlobalMem, (1L << 37));
+  info->totalGlobalMem = ROUNDUP(prop.totalGlobalMem, (1L << 32));
 
   // Get the device MAJOR:MINOR of /dev/shm so we can use that
   // information to decide whether we can use SHM for inter-process
