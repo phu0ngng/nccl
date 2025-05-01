@@ -962,6 +962,7 @@ struct ncclProfilerInfo {
   int qpIndex[MAX_QPS_PER_REQ];
   int nEventHandles;
   ncclProfilerNetIbDescr_v1_t data;
+  void* pHandle;
 };
 
 struct ncclIbRequest {
@@ -1969,7 +1970,7 @@ ncclResult_t ncclIbDeregMr(void* comm, void* mhandle) {
 
 NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 0);
 
-ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandle) {
+ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
   volatile struct ncclIbSendFifo* slots = comm->fifo[slot];
   int nreqs = slots[0].nreqs;
@@ -2061,10 +2062,11 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandl
     struct ibv_send_wr* bad_wr;
 #ifdef NCCL_ENABLE_NET_PROFILING
     // QP profiling loop
-    for (int r=0; r<nreqs && pHandle; r++) {
+    for (int r=0; r<nreqs; r++) {
       // Store comm qpIndex for this request
       int nEventHandles = reqs[r]->pInfo[0].nEventHandles;
-      reqs[r]->pInfo[0].qpIndex[nEventHandles%MAX_QPS_PER_REQ] = qpIndex;
+      assert(nEventHandles < MAX_QPS_PER_REQ);
+      reqs[r]->pInfo[0].qpIndex[nEventHandles] = qpIndex;
       // Store info for profiler
       int64_t pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       reqs[r]->pInfo[0].data.type = ncclProfileQp;
@@ -2073,7 +2075,8 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot, void* pHandl
       reqs[r]->pInfo[0].data.qp.opcode = comm->wrs[r].opcode;
       reqs[r]->pInfo[0].data.qp.qpNum = qp->qp->qp_num;
       reqs[r]->pInfo[0].data.qp.length = comm->sges[r].length;
-      NCCLCHECK(ncclProfilerFunction(&reqs[r]->pInfo[0].qpEventHandles[nEventHandles%MAX_QPS_PER_REQ], ncclProfilerNetEventStart, pHandle, pluginId, &reqs[r]->pInfo[0].data));
+      void* pHandle = reqs[r]->pInfo[0].pHandle;
+      NCCLCHECK(ncclProfilerFunction(&reqs[r]->pInfo[0].qpEventHandles[nEventHandles], ncclProfilerNetEventStart, pHandle, pluginId, &reqs[r]->pInfo[0].data));
       reqs[r]->pInfo[0].nEventHandles++;
     }
 #endif
@@ -2140,6 +2143,9 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     req->send.size = size;
     req->send.data = data;
     req->send.offset = 0;
+#ifdef NCCL_ENABLE_NET_PROFILING
+    req->pInfo[0].pHandle = phandle;
+#endif
 
     // Populate events
     int nEvents = ncclParamIbSplitDataOnQps() ? comm->base.nqps : comm->base.nDataQps;
@@ -2169,7 +2175,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     }
 
     TIME_START(0);
-    NCCLCHECK(ncclIbMultiSend(comm, slot, phandle));
+    NCCLCHECK(ncclIbMultiSend(comm, slot));
 
     // Clear slots[0]->nreqs, as well as other fields to help debugging and sanity checks
     memset((void*)slots, 0, sizeof(struct ncclIbSendFifo));
@@ -2300,14 +2306,17 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
     ncclIbAddEvent(req, qp->devIndex, &comm->devs[qp->devIndex].base);
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
-    for (int r = 0; r < n && phandles; r++) {
+    for (int r = 0; r < n; r++) {
+      int nEventHandles = req->pInfo[r].nEventHandles;
+      assert(nEventHandles < MAX_QPS_PER_REQ);
+      req->pInfo[r].qpIndex[nEventHandles] = comm->base.qpIndex;
       // Store info for profiler
       int64_t pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       req->pInfo[r].data.type = ncclProfileQp;
       req->pInfo[r].data.qp.device = qp->devIndex;
       req->pInfo[r].data.qp.wr_id = wr.wr_id;
       req->pInfo[r].data.qp.qpNum = qp->qp->qp_num;
-      NCCLCHECK(ncclProfilerFunction(&req->pInfo[r].qpEventHandles[i], ncclProfilerNetEventStart, phandles[r], pluginId, &req->pInfo[r].data));
+      NCCLCHECK(ncclProfilerFunction(&req->pInfo[r].qpEventHandles[nEventHandles], ncclProfilerNetEventStart, phandles[r], pluginId, &req->pInfo[r].data));
       req->pInfo[r].nEventHandles++;
     }
 #endif
@@ -2459,7 +2468,8 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
               sendReq->events[i]--;
 #ifdef NCCL_ENABLE_NET_PROFILING
               // Stop Qp event for sendReq
-              NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[getReqQpIndex(sendReq, j, wc->qp_num)], ncclProfilerNetEventStop, NULL, 0, NULL));
+              int qpIndex = getReqQpIndex(sendReq, j, wc->qp_num);
+              NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
 #endif
             }
           } else {
@@ -2476,7 +2486,8 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
 #ifdef NCCL_ENABLE_NET_PROFILING
             // Stop Qp event for workFifo
             for (int j = 0; j < req->nreqs; j++) {
-              NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[getReqQpIndex(req, j, wc->qp_num)], ncclProfilerNetEventStop, NULL, 0, NULL));
+              int qpIndex = getReqQpIndex(req, j, wc->qp_num);
+              NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
             }
 #endif
           }
