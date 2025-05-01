@@ -52,9 +52,10 @@ extern const char* topoNodeTypeStr[];
 #define LINK_PCI 4
 // Skipping 5 for PATH_PXB
 // Skipping 6 for PATH_PXN
-// Skipping 7 for PATH_PHB
-#define LINK_SYS 8
-#define LINK_NET 9
+// Skipping 7 for PATH_P2C
+// Skipping 8 for PATH_PHB
+#define LINK_SYS 9
+#define LINK_NET 10
 extern const char* topoLinkTypeStr[];
 
 // Local (myself)
@@ -78,20 +79,23 @@ extern const char* topoLinkTypeStr[];
 // Connection between a GPU and a NIC using an intermediate GPU. Used to enable rail-local, aggregated network send/recv operations.
 #define PATH_PXN 6
 
+// Connection between a GPU and a NIC using the C2C connection to the CPU and the PCIe connection to the NIC
+#define PATH_P2C 7
+
 // Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
-#define PATH_PHB 7
+#define PATH_PHB 8
 
 // Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
-#define PATH_SYS 8
+#define PATH_SYS 9
 
 // Connection through the network
-#define PATH_NET 9
+#define PATH_NET 10
 
 // New type of path which should precede PATH_PIX
 #define PATH_PORT PATH_NVL
 
 // Disconnected
-#define PATH_DIS 10
+#define PATH_DIS 11
 extern const char* topoPathTypeStr[];
 
 struct ncclTopoNode;
