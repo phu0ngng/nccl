@@ -208,6 +208,8 @@ static float getNetOverhead(struct ncclComm* comm) {
   return 1.0;
 }
 
+NCCL_PARAM(Ll128C2c, "LL128_C2C", 1);
+
 ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCompCap, struct ncclTopoGraph** graphs) {
   int simpleDefaultThreads = (graphs[NCCL_ALGO_RING]->bwIntra*graphs[NCCL_ALGO_RING]->nChannels <= PCI_BW) ? 256 : NCCL_SIMPLE_MAX_NTHREADS;
   comm->maxThreads[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] =
@@ -452,7 +454,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
     if (pEnable == 2 && p == NCCL_PROTO_LL128) {
       // Enable LL128 by default only on Volta/Ampere/Hopper/Blackwell+NVLink. Other cases are not tested and may cause silent data corruption.
       pEnable = 1;
-      pEnable &= (graphs[a]->typeInter <= PATH_PXB || (minCompCap >= 90 && graphs[a]->typeInter <= PATH_PXN));
+      pEnable &= (graphs[a]->typeInter <= PATH_PXB || (minCompCap >= 90 && graphs[a]->typeInter <= (ncclParamLl128C2c() ? PATH_P2C : PATH_PXN)));
       pEnable &= (graphs[a]->typeIntra <= PATH_NVB);
       pEnable &= (minCompCap == maxCompCap);
       switch (minCompCap) {
