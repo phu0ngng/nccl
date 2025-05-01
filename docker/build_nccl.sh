@@ -18,6 +18,8 @@ fi
 # figure out a fair job number
 jobs=$(eval "$NUM_BUILD_PROCS")
 
+echo "$(date +%T) : make starting"
+start=$(date +%s%N)
 make -j$jobs test.build MPI=1 WERROR=1 TRACE=$NCCL_BUILD_TRACE
 # make -j$jobs pkg.build
 
@@ -28,6 +30,9 @@ if [ $build_status -eq 0 ]; then
 else
     echo "ERROR: Make exited with $build_status"
 fi
+end=$(date +%s%N)
+let runtime=$((end - start))/1000000000
+echo "$(date +%T) : make took $runtime s"
 
 # propagate exit status
 exit $build_status

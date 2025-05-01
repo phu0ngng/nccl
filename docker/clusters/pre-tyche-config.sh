@@ -55,7 +55,7 @@ function get_build_command_bm() {
     echo "srun \
             --account=$PRETYCHE_SLURM_ACCOUNT \
             -J $PRETYCHE_SLURM_ACCOUNT-ci:nccl-build \
-            -t 00:05:00 \
+            -t 00:10:00 \
             -n 1 \
             -c 64 \
             -p batch \
@@ -72,7 +72,7 @@ function get_build_command() {
         --account=$PRETYCHE_SLURM_ACCOUNT \
         -J ${PRETYCHE_SLURM_ACCOUNT}-nccl:test \
         -p batch \
-        -t 00:05:00 \
+        -t 00:10:00 \
         -n 1 \
         -c 64 \
         --container-image=$build_tools_image \
