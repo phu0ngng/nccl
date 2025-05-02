@@ -84,6 +84,7 @@ typedef struct ncclConfig_v22700 {
   int collnetEnable;
   int CTAPolicy;
   int shrinkShare;
+  int nvlsCTAs;
 } ncclConfig_t;
 
 /* Config initializer must be assigned to initialize config structure when it is created.
@@ -103,6 +104,7 @@ typedef struct ncclConfig_v22700 {
   NCCL_CONFIG_UNDEF_INT,                    /* collnetEnable */         \
   NCCL_CONFIG_UNDEF_INT,                    /* CTAPolicy */             \
   NCCL_CONFIG_UNDEF_INT,                    /* shrinkShare */           \
+  NCCL_CONFIG_UNDEF_INT,                    /* nvlsCTAs */              \
 }
 
 /* This struct will be used by ncclGroupSimulateEnd() API to query information about simulation. */

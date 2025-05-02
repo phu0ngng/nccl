@@ -54,6 +54,8 @@ NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
 NCCL_PARAM(WinEnable, "WIN_ENABLE", 1);
 NCCL_PARAM(CollnetEnable, "COLLNET_ENABLE", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(CtaPolicy, "CTA_POLICY", NCCL_CONFIG_UNDEF_INT);
+NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", NCCL_CONFIG_UNDEF_INT);
+
 static ncclResult_t commReclaim(ncclComm_t comm);
 
 // GDRCOPY support: Off by default
@@ -1539,6 +1541,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int collnetEnableEnv;
   int ctaPolicyEnv;
   int shrinkShareEnv;
+  int nvlsCTAsEnv;
 
   /* override configuration from env variable. */
   blockingEnv = ncclParamCommBlocking();
@@ -1599,6 +1602,11 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
     comm->config.CTAPolicy = ctaPolicyEnv;
   }
 
+  nvlsCTAsEnv = ncclParamNvlsChannels();
+  if (nvlsCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
+    comm->config.nvlsCTAs = nvlsCTAsEnv;
+  }
+
   /* cap channels if needed */
   if (comm->config.minCTAs > MAXCHANNELS) {
     INFO(NCCL_ENV, "minCTAs %d is larger than #channels upper limit %d, cap it to %d", comm->config.minCTAs, MAXCHANNELS, MAXCHANNELS);
@@ -1628,6 +1636,11 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   if (comm->config.CTAPolicy < NCCL_CTA_POLICY_DEFAULT || comm->config.CTAPolicy > NCCL_CTA_POLICY_EFFICIENCY) {
     INFO(NCCL_ENV, "CTAPolicy %d is not a valid value, set it to %d", comm->config.CTAPolicy, NCCL_CTA_POLICY_DEFAULT);
     comm->config.CTAPolicy = NCCL_CTA_POLICY_DEFAULT;
+  }
+
+  if (comm->config.nvlsCTAs != NCCL_CONFIG_UNDEF_INT && comm->config.nvlsCTAs <= 0) {
+    INFO(NCCL_ENV, "nvlsCTAs %d is not a valid value, NCCL will decide the default value automatically", comm->config.nvlsCTAs);
+    comm->config.nvlsCTAs = NCCL_CONFIG_UNDEF_INT;
   }
   return ret;
 }
@@ -1678,6 +1691,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
       internalConfigPtr->collnetEnable = defaultConfig.collnetEnable;
       internalConfigPtr->CTAPolicy = defaultConfig.CTAPolicy;
       internalConfigPtr->shrinkShare = defaultConfig.shrinkShare;
+      internalConfigPtr->nvlsCTAs = defaultConfig.nvlsCTAs;
     }
   }
 
@@ -1719,10 +1733,18 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   if (internalConfigPtr->CTAPolicy != NCCL_CONFIG_UNDEF_INT && (internalConfigPtr->CTAPolicy < NCCL_CTA_POLICY_DEFAULT ||
     internalConfigPtr->CTAPolicy > NCCL_CTA_POLICY_EFFICIENCY)) {
     WARN("Invalid config policy attribute value %d", internalConfigPtr->CTAPolicy);
+    ret = ncclInvalidArgument;
+    goto fail;
   }
 
   if (internalConfigPtr->shrinkShare != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->shrinkShare != 0 && internalConfigPtr->shrinkShare != 1) {
     WARN("Invalid config shrinkShare attribute value %d", internalConfigPtr->shrinkShare);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
+  if (internalConfigPtr->nvlsCTAs != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->nvlsCTAs <= 0) {
+    WARN("Invalid config nvlsCTAs attribute value %d", internalConfigPtr->nvlsCTAs);
     ret = ncclInvalidArgument;
     goto fail;
   }
@@ -1739,6 +1761,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   NCCL_CONFIG_DEFAULT(internalConfigPtr, collnetEnable, NCCL_CONFIG_UNDEF_INT, 0, "Collnet enable", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, CTAPolicy, NCCL_CONFIG_UNDEF_INT, NCCL_CTA_POLICY_DEFAULT, "CTA policy flags", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, shrinkShare, NCCL_CONFIG_UNDEF_INT, 0, "shrinkShare", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, nvlsCTAs, NCCL_CONFIG_UNDEF_INT, NCCL_CONFIG_UNDEF_INT, "nvlsCTAs", "%d");
 
   /* assign config to communicator */
   comm->config.blocking = internalConfigPtr->blocking;
@@ -1752,7 +1775,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   comm->config.collnetEnable = internalConfigPtr->collnetEnable;
   comm->config.CTAPolicy = internalConfigPtr->CTAPolicy;
   comm->config.shrinkShare = internalConfigPtr->shrinkShare;
-
+  comm->config.nvlsCTAs = internalConfigPtr->nvlsCTAs;
   NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
 
 exit:
