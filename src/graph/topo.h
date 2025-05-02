@@ -209,7 +209,7 @@ static ncclResult_t ncclTopoIdToIndex(struct ncclTopoSystem* system, int type, i
   return ncclInternalError;
 }
 
-static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank, int* index) {
+static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank, int* index, bool showWarn) {
   *index = -1;
   for (int i=0; i<system->nodes[GPU].count; i++) {
     if (system->nodes[GPU].nodes[i].gpu.rank == rank) {
@@ -217,7 +217,7 @@ static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank,
       return ncclSuccess;
     }
   }
-  WARN("ncclTopoRankToIndex could not find rank %d", rank);
+  if (showWarn) WARN("ncclTopoRankToIndex could not find rank %d", rank);
   return ncclInternalError;
 }
 

@@ -1485,7 +1485,7 @@ ncclResult_t getLocalNetCountByBw(struct ncclTopoSystem* system, int gpu, int *c
 
 ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int channelId, int64_t* id, int* dev) {
   int gpu;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpu));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpu, /*showWarn=*/true));
 
   int localNets[NCCL_TOPO_MAX_NODES];
   int localNetCount;
@@ -1550,7 +1550,7 @@ NCCL_PARAM(IgnoreCpuAffinity, "IGNORE_CPU_AFFINITY", 0);
 ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu_set_t* affinity) {
   struct ncclTopoNode* cpu = NULL, *gpu = NULL;
   int gpuIndex, cpuIndex;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpuIndex));
+  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpuIndex, /*showWarn=*/true));
   NCCLCHECK(ncclGetLocalCpu(system, gpuIndex, &cpuIndex));
   gpu = system->nodes[GPU].nodes+gpuIndex;
   cpu = system->nodes[CPU].nodes+cpuIndex;
