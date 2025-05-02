@@ -1359,7 +1359,11 @@ MNNVL requires a fully configured and operational IMEX domain for all the nodes 
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is automatic detection, define and set to 0 to disable MNNVL support.
+0: Disable MNNVL support.
+
+1: Enable MNNVL support. NCCL initialization will fail if MNNVL is not supported or cannot be enabled.
+
+2: Automatic detection of MNNVL support. Will *not* fail if MNNVL is unsupported or if MNNVL resources cannot be allocated.
 
 .. _env_NCCL_RAS_ENABLE:
 
