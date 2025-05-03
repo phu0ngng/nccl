@@ -148,7 +148,7 @@ struct ncclSymPrims {
       }
     #endif
     if (flags & ncclSymPrims_UseMultimem) {
-    #if __CUDA_ARCH__ >= 900
+    #if __CUDA_ARCH__ >= 900 && CUDART_VERSION >= 12010
       if (cta.self() == 0) {
         uint32_t* inbox = &multimemPtr(base)->barInboxMc[block];
         if (release) {

@@ -149,7 +149,6 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, size_t ucsize, void* ucptr
 #define NVLS_NCHANNELS_SM100_NVL 24
 
 NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
-NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", -2);
 NCCL_PARAM(NvlsChunkSize, "NVLS_CHUNKSIZE", 128*1024);
 
 ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
@@ -176,8 +175,26 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
   }
 
   if (comm->nvlsSupport) {
-    int channels = ((comm->compCap >= 100) ? (comm->nNodes > 1 ? NVLS_NCHANNELS_SM100 : NVLS_NCHANNELS_SM100_NVL) : NVLS_NCHANNELS_SM90);
-    if (ncclParamNvlsChannels() >= 0) channels = ncclParamNvlsChannels();
+    int channels;
+    if (comm->compCap >= 100) {
+      // Use a reduced number of channels for single node/MNNVL domain on Blackwell.
+      // comm->nNodes is not yet initialized at this point so we need to use other data.
+      bool multiNode;
+      if (comm->MNNVL) {
+        multiNode = (comm->clique.size < comm->nRanks);
+      } else {
+        int i;
+        for (i = 1; i < comm->nRanks; i++) {
+          if (comm->peerInfo[i].hostHash != comm->peerInfo[0].hostHash)
+            break;
+        }
+        multiNode = (i < comm->nRanks);
+      }
+      channels = (multiNode ? NVLS_NCHANNELS_SM100 : NVLS_NCHANNELS_SM100_NVL);
+    } else {
+      channels = NVLS_NCHANNELS_SM90;
+    }
+    if (comm->config.nvlsCTAs != NCCL_CONFIG_UNDEF_INT) channels = comm->config.nvlsCTAs;
     comm->nvlsChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, channels));
   }
   INFO(NCCL_INIT, "NVLS multicast support is %savailable on dev %d (NVLS_NCHANNELS %d)",
@@ -247,16 +264,33 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, const CUmemAccessDesc
   CUCHECKGOTO(cuMemAddressReserve((CUdeviceptr*)ucptr, ucsize, ucgran, 0U, 0), ret, fail);
 
   // Alloc local physical mem for this NVLS group
-  CUCHECKGOTO(cuMemCreate(ucHandle, ucsize, &ucprop, 0), ret, fail);
-  CUCHECKGOTO(cuMemMap((CUdeviceptr)*ucptr, ucsize, 0, *ucHandle, 0), ret, fail);
-  CUCHECKGOTO(cuMemSetAccess((CUdeviceptr)*ucptr, ucsize, desc, 1), ret, fail);
-  CUDACHECKGOTO(cudaMemset(*ucptr, 0, ucsize), ret, fail);
+  CUCHECKGOTO(cuMemCreate(ucHandle, ucsize, &ucprop, 0), ret, fail1);
+  CUCHECKGOTO(cuMemMap((CUdeviceptr)*ucptr, ucsize, 0, *ucHandle, 0), ret, fail2);
+  CUCHECKGOTO(cuMemSetAccess((CUdeviceptr)*ucptr, ucsize, desc, 1), ret, fail3);
+  CUDACHECKGOTO(cudaMemset(*ucptr, 0, ucsize), ret, fail3);
 
   // intra-node barrier to mitigate the possible hang in cuMulticastBindMem during abort
-  NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
+  NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail3);
   // Bind physical memory to the Multicast group
   // NB: It will block until all ranks have been added to the Group
-  CUCHECKGOTO(cuMulticastBindMem(*mcHandle, 0/*mcOffset*/, *ucHandle, 0/*memOffset*/, ucsize, 0/*flags*/), ret, fail);
+  // This is where we normally see issues if the system NVLS/Multicast support is broken
+  {
+    CUresult err = CUPFN(cuMulticastBindMem(*mcHandle, 0/*mcOffset*/, *ucHandle, 0/*memOffset*/, ucsize, 0/*flags*/));
+    if (err != CUDA_SUCCESS) {
+      const char *errStr;						\
+      (void) pfn_cuGetErrorString(err, &errStr);			\
+      if (ncclParamNvlsEnable() == 1) {
+        // Fail the job as NVLS support is not available
+        WARN("Failed to bind NVLink SHARP (NVLS) Multicast memory of size %ld : CUDA error %d '%s'.\nThis is usually caused by a system or configuration error in the Fabric Manager or NVSwitches.\nDo not force-enable NVLS (NCCL_NVLS_ENABLE=1) if you wish to avoid this error in the future.", ucsize, err, errStr );
+        ret = ncclUnhandledCudaError;
+      } else {
+        // Continue without NVLS support (returns ncclSuccess)
+        INFO(NCCL_INIT|NCCL_NVLS, "Failed to bind NVLink SHARP (NVLS) Multicast memory of size %ld : CUDA error %d '%s'. Proceeding without NVLS support.", ucsize, err, errStr);
+      }
+      comm->nvlsSupport = comm->nvlsChannels = 0;
+      goto fail3;
+   }
+  }
 
   // Map mc virtual address
   CUCHECKGOTO(cuMemAddressReserve((CUdeviceptr*)mcptr, mcsize, mcgran, 0U, 0), ret, fail);
@@ -268,6 +302,12 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, const CUmemAccessDesc
 
 exit:
   return ret;
+fail3:
+  CUCHECK(cuMemUnmap((CUdeviceptr)*ucptr, ucsize));
+fail2:
+  CUCHECK(cuMemRelease(*ucHandle));
+fail1:
+  CUCHECK(cuMemAddressFree((CUdeviceptr)*ucptr, ucsize));
 fail:
   if (allocMcHandle && *mcptr == NULL && *ucptr == NULL) CUCHECK(cuMemRelease(*mcHandle));
   goto exit;

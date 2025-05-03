@@ -350,13 +350,6 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     bool implemented = ncclSymImplemented(task->func, task->opDev.op, task->datatype);
 
     if (sendReg && recvReg && (sendReg->winFlags & recvReg->winFlags & NCCL_WIN_COLL_SYMMETRIC) && implemented) {
-      int collNetSupport = 0;
-      NCCLCHECK(getCollNetSupport(comm, task, &collNetSupport));
-      int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(task->opDev.op, task->datatype) || task->func == ncclFuncAllGather);
-
-      ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
-      NCCLCHECK(getAlgoInfo(comm, task, collNetSupport, nvlsSupport, 1, &simInfo));
-
       enum ncclSymKernelId kernel;
       int nChannels, nWarps;
       float estTimeUs = 1.e18;
@@ -365,7 +358,6 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
       // We should only use symmetric kernel if it beats the asymmetric kernel. But the
       // perf model accuracy from asymmetric kernels is too inaccurate and reports too high
       // of a bandwidth. For now just always use symmetric if available.
-      //if (estTimeUs < simInfo.estimatedTime) {
       if (kernel != ncclSymKernelId_Count) {
         task->sendbuff = sendSymPtr;
         task->recvbuff = recvSymPtr;
@@ -1767,7 +1759,7 @@ static ncclResult_t updateCollCostTable(
     if ((a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) && collNetSupport != 1) continue;
     // CollNetDirect is only supported for up to 8 local GPUs
     if (a == NCCL_ALGO_COLLNET_DIRECT && comm->maxLocalRanks > NCCL_MAX_DIRECT_ARITY+1) continue;
-    if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && (!nvlsSupport || comm->localRanks > NCCL_MAX_NVLS_ARITY)) continue;
+    if ((a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) && (!nvlsSupport || (info->func != ncclFuncAllReduce && comm->localRanks > NCCL_MAX_NVLS_ARITY))) continue;
     if (a == NCCL_ALGO_NVLS && collNetSupport != 1 && comm->nNodes > 1) continue;
     /* Tree reduceScatter doesn't support scaling yet */
     if (a == NCCL_ALGO_PAT && info->func == ncclFuncReduceScatter
@@ -1910,7 +1902,8 @@ static ncclResult_t getAlgoInfo(
     NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, simInfo));
   } else {
     NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, simInfo));
-    if (comm->config.CTAPolicy == NCCL_CTA_POLICY_EFFICIENCY && ncclGetEnv("NCCL_ALGO") == NULL && ncclGetEnv("NCCL_PROTO") == NULL) {
+    // NCCL_CTA_POLICY_EFFICIENCY requires user (non-symmetric) buffer registration (currently unsupported with MNNVL)
+    if (comm->config.CTAPolicy == NCCL_CTA_POLICY_EFFICIENCY && ncclGetEnv("NCCL_ALGO") == NULL && ncclGetEnv("NCCL_PROTO") == NULL && !comm->MNNVL) {
       // make algorithm selection based on buffer registration
       // there can be other specialized policies for algorithms and protocols pickup in the future
       NCCLCHECK(ncclRegFind(comm, info->sendbuff, sendbuffSize, &regSendBuf));

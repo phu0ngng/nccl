@@ -200,17 +200,19 @@ ncclResult_t ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, nc
   size_t baseSize;
   void* baseAddr = NULL;
   struct ncclReg* regHandle = NULL;
-  int saveDev = comm->cudaDev;
+  int saveDev;
 
-  CUDACHECKGOTO(cudaGetDevice(&saveDev), ret, fail);
+  *win = NULL;
+
+  CUDACHECK(cudaGetDevice(&saveDev));
+  NCCLCHECK(ncclGroupStartInternal());
   if (!ncclParamLocalRegister() || !ncclCuMemEnable()) {
-    goto fail;
+    goto exit;
   }
 
   NCCLCHECKGOTO(ncclCommEnsureReady(comm), ret, fail);
 
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
-  NCCLCHECKGOTO(ncclGroupStartInternal(), ret, fail);
   if (comm && buff && size && win) {
     size_t alignment = 0;
     CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr*)&baseAddr, &baseSize, (CUdeviceptr)buff), ret, fail);
@@ -245,6 +247,7 @@ exit:
   cudaSetDevice(saveDev);
   return ret;
 fail:
+  free(*win);
   *win = NULL;
   goto exit;
 }
@@ -252,9 +255,11 @@ fail:
 NCCL_API(ncclResult_t, ncclCommWindowDeregister, ncclComm_t comm, ncclWindow_t win);
 ncclResult_t ncclCommWindowDeregister(ncclComm_t comm, ncclWindow_t win) {
   ncclResult_t ret = ncclSuccess;
-  int saveDev = comm->cudaDev;
-  struct ncclReg* regHandle = win->handle;
-  CUDACHECKGOTO(cudaGetDevice(&saveDev), ret, fail);
+  int saveDev;
+  struct ncclReg* regHandle;
+  CUDACHECK(cudaGetDevice(&saveDev));
+  if (win == NULL) goto exit;
+  regHandle = win->handle;
   if (regHandle && ncclParamLocalRegister() && ncclCuMemEnable()) {
     if (regHandle->baseSymPtr) {
       CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);

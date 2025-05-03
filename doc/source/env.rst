@@ -1330,11 +1330,15 @@ NCCL_NVLS_ENABLE
 (since 2.17)
 
 Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in third-generation NVSwitch systems (NVLink4) with Hopper and later GPU architectures, allowing collectives such as ``ncclAllReduce`` to be offloaded to the NVSwitch domain.
-NVLS will be disabled automatically on systems which do not support the feature.
+By default NVLS will be disabled automatically on systems which do not support the feature.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is automatic detection, define and set to 0 to disable use of NVLink SHARP.
+0: Disable the use of NVLink SHARP. No NVLink SHARP resources will be allocated.
+
+1: Enable NVLink SHARP. NCCL initialization will fail if the NVLink SHARP resources cannot be allocated.
+
+2: Automatic detection of NVLink SHARP support. Will *not* fail if NVLS is unsupported or if NVLink SHARP resources cannot be allocated.
 
 NCCL_IB_MERGE_NICS
 ------------------
@@ -1355,7 +1359,11 @@ MNNVL requires a fully configured and operational IMEX domain for all the nodes 
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Default is automatic detection, define and set to 0 to disable MNNVL support.
+0: Disable MNNVL support.
+
+1: Enable MNNVL support. NCCL initialization will fail if MNNVL is not supported or cannot be enabled.
+
+2: Automatic detection of MNNVL support. Will *not* fail if MNNVL is unsupported or if MNNVL resources cannot be allocated.
 
 .. _env_NCCL_RAS_ENABLE:
 

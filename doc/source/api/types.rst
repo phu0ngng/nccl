@@ -260,6 +260,12 @@ ncclConfig_t
   Set the policy for the communicator. The full list of supported policies can be found in :ref:`cta_policy_flags`.
   The default value is `NCCL_CTA_POLICY_DEFAULT`.
 
+ .. c:macro:: nvlsCTAs
+
+  Set the total number of CTAs NCCL should use for NVLS kernels.
+  Set to a positive integer value. By default, NCCL will automatically determine the best number of CTAs based on
+  the system configuration.
+
 .. _ncclsiminfo:
 
 ncclSimInfo_t

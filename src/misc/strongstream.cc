@@ -9,6 +9,17 @@
 #include "checks.h"
 #include "param.h"
 
+#if CUDART_VERSION >= 13000
+/* CUDA 13.0 uses the v3 API by default */
+extern cudaError_t cudaStreamGetCaptureInfo_v3(cudaStream_t stream, enum cudaStreamCaptureStatus *captureStatus_out, unsigned long long *id_out, cudaGraph_t *graph_out, const cudaGraphNode_t **dependencies_out, const cudaGraphEdgeData **edgeData_out, size_t *numDependencies_out);
+/* CUDA 13.0 uses the v2 API by default */
+extern cudaError_t cudaGraphAddDependencies_v2(cudaGraph_t graph, const cudaGraphNode_t *from, const cudaGraphNode_t *to, const cudaGraphEdgeData *edgeData, size_t numDependencies);
+
+/* CUDA 13.0 uses the v2 API by default */
+extern cudaError_t cudaStreamUpdateCaptureDependencies_v2(cudaStream_t stream, cudaGraphNode_t *dependencies, const cudaGraphEdgeData *dependencyData, size_t numDependencies, unsigned int flags);
+
+#endif
+
 // Tracks the captured work a given graph captured identified by its graph id.
 struct ncclStrongStreamCapture {
   struct ncclStrongStreamCapture* next;
@@ -89,7 +100,11 @@ ncclResult_t ncclCudaGetCapturingGraph(
     } else {
       #if CUDART_VERSION >= 11030
         cudaStreamCaptureStatus status;
+      #if CUDART_VERSION >= 13000
+        CUDACHECK(cudaStreamGetCaptureInfo_v3(stream, &status, &graph->graphId, &graph->graph, nullptr, nullptr, nullptr));
+      #else
         CUDACHECK(cudaStreamGetCaptureInfo_v2(stream, &status, &graph->graphId, &graph->graph, nullptr, nullptr));
+      #endif
         if (status != cudaStreamCaptureStatusActive) {
           graph->origin = nullptr;
           graph->graph = nullptr;
@@ -224,7 +239,11 @@ ncclResult_t ncclStrongStreamAcquire(
       CUDACHECK(cudaEventRecord(scratch, graph.origin));
       CUDACHECK(cudaStreamWaitEvent(cap->captureStream, scratch, 0));
       CUDACHECK(cudaEventDestroy(scratch));
+      #if CUDART_VERSION >= 13000
+      CUDACHECK(cudaStreamUpdateCaptureDependencies_v2(cap->captureStream, nullptr, nullptr, 0, cudaStreamSetCaptureDependencies));
+      #else
       CUDACHECK(cudaStreamUpdateCaptureDependencies(cap->captureStream, nullptr, 0, cudaStreamSetCaptureDependencies));
+      #endif
 
       if (mixing && firstCapture) {
         CUDACHECK(cudaEventRecord(ss->serialEvent, ss->liveStream));
@@ -284,7 +303,11 @@ ncclResult_t ncclStrongStreamRelease(
 
         // Make this record order after previous record on this stream.
         if (cap->lastRecord != nullptr) {
+        #if CUDART_VERSION >= 13000
+          CUDACHECK(cudaGraphAddDependencies_v2(graph.graph, &cap->lastRecord, &recordNode, nullptr, 1));
+        #else
           CUDACHECK(cudaGraphAddDependencies(graph.graph, &cap->lastRecord, &recordNode, 1));
+        #endif
         }
         cap->lastRecord = recordNode;
 
@@ -292,7 +315,11 @@ ncclResult_t ncclStrongStreamRelease(
         cudaStreamCaptureStatus status;
         cudaGraphNode_t const* nodes;
         size_t count = 0;
+        #if CUDART_VERSION >= 13000
+        cudaError_t res = cudaStreamGetCaptureInfo_v3(cap->captureStream, &status, nullptr, nullptr, &nodes, nullptr, &count);
+        #else
         cudaError_t res = cudaStreamGetCaptureInfo_v2(cap->captureStream, &status, nullptr, nullptr, &nodes, &count);
+        #endif
 
         #if CUDART_VERSION >= 12030
         if (res == cudaErrorLossyQuery) { // CUDA is telling us the dependencies have edge annotations.
@@ -308,7 +335,11 @@ ncclResult_t ncclStrongStreamRelease(
         else {
           CUDACHECK(res /* = cudaStreamGetCaptureInfo_v2(...)*/);
           for (int i=0; i < (int)count; i++) {
+          #if CUDART_VERSION >= 13000
+            CUDACHECK(cudaGraphAddDependencies_v2(graph.graph, &nodes[i], &recordNode, nullptr, 1));
+          #else
             CUDACHECK(cudaGraphAddDependencies(graph.graph, &nodes[i], &recordNode, 1));
+          #endif
           }
         }
 
@@ -339,7 +370,11 @@ ncclResult_t ncclStreamAdvanceToEvent(struct ncclCudaGraph g, cudaStream_t s, cu
     cudaStreamCaptureStatus status;
     cudaGraphNode_t const* nodes;
     size_t count = 0;
+    #if CUDART_VERSION >= 13000
+    cudaError_t res = cudaStreamGetCaptureInfo_v3(tmp, &status, nullptr, nullptr, &nodes, nullptr, &count);
+    #else
     cudaError_t res = cudaStreamGetCaptureInfo_v2(tmp, &status, nullptr, nullptr, &nodes, &count);
+    #endif
 
     #if CUDART_VERSION >= 12030
     if (res == cudaErrorLossyQuery) { // CUDA is telling us the dependencies have edge annotations.
@@ -352,7 +387,11 @@ ncclResult_t ncclStreamAdvanceToEvent(struct ncclCudaGraph g, cudaStream_t s, cu
     #endif
     else {
       CUDACHECK(res /* = cudaStreamGetCaptureInfo_v2(...)*/);
+    #if CUDART_VERSION >= 13000
+      CUDACHECK(cudaStreamUpdateCaptureDependencies_v2(s, (cudaGraphNode_t*)nodes, nullptr, count, cudaStreamSetCaptureDependencies));
+    #else
       CUDACHECK(cudaStreamUpdateCaptureDependencies(s, (cudaGraphNode_t*)nodes, count, cudaStreamSetCaptureDependencies));
+    #endif
     }
 
     CUDACHECK(cudaStreamDestroy(tmp));

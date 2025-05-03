@@ -383,9 +383,21 @@ function rerun_failed_command_with_logging() {
     echo "$output"
     mv *.out $failed_dir
     echo "Moved logs $NCCL_DEBUG_FILE to $failed_dir"
-    export NCCL_DEBUG=$ORIG_DEBUG
-    export NCCL_DEBUG_SUBSYS=$ORIG_SUBSYS
-    export NCCL_DEBUG_FILE=$ORIG_FILE
+    if [ "$ORIG_DEBUG" != "" ]; then
+      export NCCL_DEBUG=$ORIG_DEBUG
+    else
+      unset NCCL_DEBUG
+    fi
+    if [ "$ORIG_SUBSYS" != "" ]; then
+      export NCCL_DEBUG_SUBSYS=$ORIG_SUBSYS
+    else
+      unset NCCL_DEBUG_SUBSYS
+    fi
+    if [ "$ORIG_FILE" != "" ]; then
+      export NCCL_DEBUG_FILE=$ORIG_FILE
+    else
+      unset NCCL_DEBUG_FILE
+    fi
 }
 
 function load_cluster_ci_variables() {
@@ -398,13 +410,13 @@ function load_cluster_ci_variables() {
 
     # Optional functions
     if function_exists get_nccl_socket_ifname; then
-        NCCL_SOCKET_IFNAME=$(get_nccl_socket_ifname)
+        export NCCL_SOCKET_IFNAME=$(get_nccl_socket_ifname)
     fi
     if function_exists get_slurm_account; then
         SLURM_ACCOUNT=$(get_slurm_account)
     fi
     if function_exists get_nccl_ib_sl; then
-        NCCL_IB_SL=$(get_nccl_ib_sl)
+        export NCCL_IB_SL=$(get_nccl_ib_sl)
     fi
     if function_exists get_planned_reserved; then
         PLANNED_RESERVED=$(get_planned_reserved)

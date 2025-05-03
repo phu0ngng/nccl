@@ -32,6 +32,7 @@ variables:
   RUN_UNIT_API_TESTS_ON_DRACO_OCI: "0" # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
   PLANNED_RESERVED: "Reserved"
   RUN_DLFW_TESTS: "1"
+  RUN_EOS_APITEST: "1"
 
 default:
   # set all jobs to interruptible by default
@@ -43,14 +44,14 @@ default:
 # - Schedules (nightlies and weeklies)
 # - Merge requests without "Draft:" in the title
 workflow:
+  # when cancelling a redundant pipeline, cancel all jobs that are interruptible
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
     - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
       auto_cancel:
         on_new_commit: none
-  # when cancelling a redundant pipeline, cancel all jobs that are interruptible
-  auto_cancel:
-    on_new_commit: interruptible
 
 # verify that setting TRACE=1 does not break compile
 # this is a special build-time setting to increase log verbosity
@@ -142,10 +143,8 @@ build-pre-tyche:
 build-dlfw-pytorch-container:
   stage: build
   rules:
-    - if: $RUN_DLFW_TESTS == "1"
+    - if: $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
       when: always
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'web'
-      when: manual
     - when: never
   tags:
     - build-with-docker
@@ -891,7 +890,7 @@ apitest-DGX-A100:
 apitest-eos:
   stage: api_tests
   rules:
-    - if: $RUN_ON_EOS == "1"
+    - if: $RUN_ON_EOS == "1" && $RUN_EOS_APITEST == "1"
       when: always
     - when: never
   needs: ["build-eos-aws-oci"]
@@ -958,6 +957,7 @@ apitest-AWS_H100_EFA:
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
       export JUNIT=$JUNIT
+      export NCCL_NVLS_ENABLE=0
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
@@ -1453,6 +1453,7 @@ perftest_single-AWS_H100_EFA:
       export NGPUS=8
       export NP=8
       export GRAPH=0
+      export NCCL_NVLS_ENABLE=0
       export MAX=1G
       export NCCL_HOME=build-eos
       export RUN_MODE="SALLOC_MPI"
@@ -1824,6 +1825,7 @@ perftest_multi-AWS_H100_EFA:
       export NNODES=4
       export MAX=1G
       export GRAPH=0
+      export NCCL_NVLS_ENABLE=0
       export NP=8
       export NCCL_HOME=build-eos
       export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
@@ -1997,7 +1999,7 @@ perf-regression-single-DGX-A100:
 self-test-pytorch-container-eos:
   stage: perf_tests_single
   rules:
-    - if: $RUN_ON_EOS == "1" && ( $RUN_DLFW_TESTS == "1" || $CI_PIPELINE_SOURCE == 'schedule' )
+    - if: $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
       when: always
     - when: never
   tags:
