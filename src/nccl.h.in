@@ -60,6 +60,7 @@ typedef enum { ncclSuccess                 =  0,
 /* NCCL performance policy */
 #define NCCL_CTA_POLICY_DEFAULT 0x00
 #define NCCL_CTA_POLICY_EFFICIENCY 0x01
+#define NCCL_CTA_POLICY_ZERO 0x02
 
 /* ncclCommShrink flags*/
 #define NCCL_SHRINK_DEFAULT 0x00 /* shrink the parent communicator */

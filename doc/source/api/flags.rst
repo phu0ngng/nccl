@@ -39,6 +39,11 @@ NCCL Communicator CTA Policy Flags
   number of CTAs to achieve the decent performance when possible. This policy is suitable for applications which require
   better compute and communication overlap.
 
+.. c:macro:: NCCL_CTA_POLICY_ZERO
+
+  Use the Zero-CTA policy for NCCL communicator. In this policy, NCCL will use zero CTA whenever it can, even when that choice
+  may sacrifice some performance. Select this mode when your application must preserve the maximum number of CTAs for compute kernels.
+
 .. _comm_shrink_flags:
 
 Communicator Shrink Flags

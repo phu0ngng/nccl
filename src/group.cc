@@ -11,6 +11,7 @@
 #include "channel.h"
 #include <assert.h>
 #include "bootstrap.h"
+#include "ce_coll.h"
 
 #define GROUP_MAX_RECLAIM_STEPS 10
 
@@ -296,7 +297,11 @@ static ncclResult_t doLaunches(struct ncclComm* head) {
             comm->planner.unlaunchedPlansHead = plan->next;
             CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), result, failure);
             NCCLCHECKGOTO(ncclLaunchKernelBefore_NoUncapturedCuda(comm, plan), result, failure);
-            NCCLCHECKGOTO(ncclLaunchKernel(comm, plan), result, failure);
+            if (plan->isCeColl) {
+              NCCLCHECKGOTO(ncclLaunchCeColl(comm, plan), result, failure);
+            } else {
+              NCCLCHECKGOTO(ncclLaunchKernel(comm, plan), result, failure);
+            }
           }
           // Barrier reduction input indicates if we require further rounds.
           if (useBarrier) ncclCommIntraBarrierIn(comm, comm->planner.unlaunchedPlansHead != nullptr ? 1 : 0);

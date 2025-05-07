@@ -154,6 +154,12 @@ DECLARE_CUDA_PFN(cuMulticastCreate, 12010);
 DECLARE_CUDA_PFN(cuMulticastGetGranularity, 12010);
 DECLARE_CUDA_PFN(cuMulticastUnbind, 12010);
 #endif
+/* Stream MemOp support */
+DECLARE_CUDA_PFN(cuStreamBatchMemOp, 11070);
+DECLARE_CUDA_PFN(cuStreamWaitValue32, 11070);
+DECLARE_CUDA_PFN(cuStreamWaitValue64, 11070);
+DECLARE_CUDA_PFN(cuStreamWriteValue32, 11070);
+DECLARE_CUDA_PFN(cuStreamWriteValue64, 11070);
 #endif
 
 #define CUDA_DRIVER_MIN_VERSION 11030
@@ -239,6 +245,12 @@ static ncclResult_t cudaPfnFuncLoader(void) {
   LOAD_SYM(cuMulticastGetGranularity, 12010, 1);
   LOAD_SYM(cuMulticastUnbind, 12010, 1);
 #endif
+/* Stream MemOp support */
+  LOAD_SYM(cuStreamBatchMemOp, 11070, 1);
+  LOAD_SYM(cuStreamWaitValue32, 11070, 1);
+  LOAD_SYM(cuStreamWaitValue64, 11070, 1);
+  LOAD_SYM(cuStreamWriteValue32, 11070, 1);
+  LOAD_SYM(cuStreamWriteValue64, 11070, 1);
   return ncclSuccess;
 }
 #endif

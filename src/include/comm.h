@@ -18,6 +18,7 @@
 #include "graph.h"
 #include "profiler.h"
 #include "allocator.h"
+#include "ce_coll.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -246,12 +247,14 @@ struct ncclKernelPlan {
   bool persistent; // aka captured in a graph
   bool isHostCbEnq;
   bool isSymColl;
+  bool isCeColl;
   enum ncclDevWorkStorageType workStorageType;
   bool kernelSpecialized;
   void* kernelFn;
   union {
     struct ncclDevKernelArgs* kernelArgs;
     struct ncclSymDevArgs* kernelSymArgs;
+    struct ncclCeCollArgs* ceCollArgs;
   };
   size_t kernelArgsSize;
   uint64_t channelMask; // bitset of which channels are present
@@ -362,7 +365,7 @@ struct ncclKernelPlanner {
   int nTasksColl, nTasksP2p;
   bool persistent;
   bool isSymColl;
-
+  bool isCeColl;
   // The list of user streams aggregated over all tasks present.
   struct ncclCudaStreamList* streams;
   // The most recent user stream. Ignored if streams==nullptr
@@ -623,6 +626,9 @@ struct ncclComm {
   void* profilerContext;
   uint64_t seqNumber[NCCL_NUM_FUNCTIONS];
   struct ncclProfilerProxy profiler;
+
+  // CE Collective
+  struct ncclCeColl ceColl;
 
   // buffer registration cache
   struct ncclRegCache regCache;
