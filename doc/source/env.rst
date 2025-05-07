@@ -1365,6 +1365,24 @@ Values accepted
 
 2: Automatic detection of MNNVL support. Will *not* fail if MNNVL is unsupported or if MNNVL resources cannot be allocated.
 
+NCCL_MNNVL_UUID
+---------------
+(since 2.25)
+Can be used to set the Multi-Node NVLink (MNNVL) UUID to a user defined value. The supplied value will be assigned to both the upper and lower 64-bit words of the 128-bit UUID. Normally the MNNVL UUID is assigned by the Fabric Manager, and it should not need to be overridden.
+
+Values accepted
+^^^^^^^^^^^^^^^
+64-bit integer value.
+
+NCCL_MNNVL_CLIQUE_ID
+--------------------
+(since 2.25)
+Can be used to set the Multi-Node NVLink (MNNVL) Clique Id to a user defined value. Normally the Clique Id is assigned by the Fabric Manager, but this environment variable can be used to "soft" partition MNNVL jobs. i.e. NCCL will only treat ranks with the same <UUID,CLIQUE_ID> as being part of the same NVLink domain.
+
+Values accepted
+^^^^^^^^^^^^^^^
+32-bit integer value.
+
 .. _env_NCCL_RAS_ENABLE:
 
 NCCL_RAS_ENABLE
