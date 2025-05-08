@@ -8,7 +8,8 @@ User Buffer Registration is a feature that allows NCCL to directly send/receive/
 It can accelerate collectives and greatly reduce the resource usage (e.g. #channel usage). NCCL provides two ways to register user buffers; one is *CUDA Graph*
 registration, and the other is *Local* registration. NCCL requires that for all NCCL communication function calls (e.g., allreduce, sendrecv, and so on), if any
 rank in a communicator passes registered buffers to a NCCL communication function, all other ranks in the same communicator must pass their registered buffers;
-otherwise, mixing registered and non-registered buffers can result in undefined behavior.
+otherwise, mixing registered and non-registered buffers can result in undefined behavior; in addition, source and destination buffers must be registered in order
+to enable user buffer registration for NCCL operations.
 
 NVLink Sharp Buffer Registration
 --------------------------------
@@ -102,6 +103,7 @@ example shows a use case:
   recvbuff = (void*)((uint8_t*)buffer + (1 << 20));
 
   CHECK(ncclAllReduce(sendbuff, recvbuff, 1024, ncclFloat, ncclSum, comm, stream));
+  CHECK(ncclAllGather(sendbuff, recvbuff, 1024, ncclInt8, comm, stream));
   CHECK(cudaStreamSynchronize(stream));
 
   CHECK(ncclCommDeregister(comm, handle));
