@@ -48,10 +48,10 @@ workflow:
   auto_cancel:
     on_new_commit: interruptible
   rules:
-    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
     - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
       auto_cancel:
         on_new_commit: none
+    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
 
 # verify that setting TRACE=1 does not break compile
 # this is a special build-time setting to increase log verbosity
@@ -541,7 +541,7 @@ unit_tests-AWS_H100_EFA:
       export JUNIT=$JUNIT
       $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   after_script:
@@ -960,7 +960,7 @@ apitest-AWS_H100_EFA:
       export NCCL_NVLS_ENABLE=0
       $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   after_script:
@@ -1464,7 +1464,7 @@ perftest_single-AWS_H100_EFA:
       export SYMMETRIC=1
       $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   after_script:
@@ -1836,7 +1836,7 @@ perftest_multi-AWS_H100_EFA:
       export SKIP_FT_FINALIZE=1
       $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   after_script:
