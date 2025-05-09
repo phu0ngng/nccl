@@ -218,7 +218,7 @@ struct RunWorkColl<ncclFuncReduceScatter, T, RedOp, NCCL_ALGO_NVLS, NCCL_PROTO_S
      * if not, based on #ranks, we allocate 7 or 5 warps to reduce to saturate bandwidth
      * and the rest are allocated to scatter. */
     const int nThreadsNetRecv = work->oneNode ? 0 : (work->netRegUsed ? WARP_SIZE :  6 * WARP_SIZE);
-    const int nThreadsScatter = work->regUsed ? WARP_SIZE : 8 * WARP_SIZE;
+    const int nThreadsScatter = work->regUsed ? roundUp(nvls->nHeads << 2, WARP_SIZE) : 8 * WARP_SIZE;
     const int nThreadsReduce = NCCL_MAX_NTHREADS - nThreadsNetRecv - nThreadsScatter;
     const int tidEndNetRecv = nThreadsNetRecv;
     const int tidEndScatter = tidEndNetRecv + nThreadsScatter;
