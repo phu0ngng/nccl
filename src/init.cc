@@ -50,7 +50,6 @@ NCCL_PARAM(GroupCudaStream, "GROUP_CUDA_STREAM", NCCL_GROUP_CUDA_STREAM);
 NCCL_PARAM(CheckPointers, "CHECK_POINTERS", 0);
 NCCL_PARAM(CommBlocking, "COMM_BLOCKING", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(RuntimeConnect, "RUNTIME_CONNECT", 1);
-NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
 NCCL_PARAM(WinEnable, "WIN_ENABLE", 1);
 NCCL_PARAM(CollnetEnable, "COLLNET_ENABLE", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(CtaPolicy, "CTA_POLICY", NCCL_CONFIG_UNDEF_INT);
@@ -1248,42 +1247,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   }
 
-  // reserve stride * localRanks as symmetric space
   comm->symmetricSupport = comm->isAllDirectP2p && comm->nNodes == 1 && ncclParamWinEnable() && ncclCuMemEnable();
-  if (comm->symmetricSupport) {
-    if (ncclParamWinStride() != -1) {
-      comm->baseStride = ncclParamWinStride();
-    } else {
-      size_t maxStride = 0;
-      for (int r = 0; r < comm->nRanks; ++r)
-        if (comm->peerInfo[r].totalGlobalMem > maxStride) maxStride = comm->peerInfo[r].totalGlobalMem;
-      comm->baseStride = maxStride;
-    }
-    INFO(NCCL_INIT, "rank %d base stride %zuGB total VM %zuGB", comm->rank, comm->baseStride >> 30, (comm->baseStride * comm->localRanks) >> 30);
-    NCCLCHECKGOTO(ncclIpcSymmetricInit(comm), ret, fail);
-    NCCLCHECKGOTO(ncclNvlsSymmetricInit(comm), ret, fail);
-    comm->symAllocHead = 0;
-  }
+  comm->baseStride = 0;
 
   // Call devCommSetup before the last barrier, making sure we don't have a thread running in front and starting to
   // launch NCCL kernels before all cuda mem allocation is complete. That could cause a deadlock.
   NCCLCHECKGOTO(devCommSetup(comm), ret, fail);
-
-  // Allocate symmetric
-  if (comm->symmetricSupport) {
-    struct ncclSymDevBase* symBase;
-    size_t size = ncclSymDevBase::size(comm->localRanks);
-    NCCLCHECKGOTO(ncclCommSymmetricAllocInternal(comm, size, alignof(struct ncclSymDevBase), (void**)&symBase), ret, fail);
-    assert((void*)symBase == (void*)(comm->baseUCSymPtr + comm->localRank * comm->baseStride));
-    CUDACHECKGOTO(cudaMemset(symBase, 0, size), ret, fail);
-
-    comm->symDevComm.base = (struct ncclSymDevBase*)(comm->baseUCSymPtr + comm->localRank * comm->baseStride);
-    comm->symDevComm.baseMc = (struct ncclSymDevBase*)comm->baseMCSymPtr;
-    comm->symDevComm.nRanks = comm->localRanks;
-    comm->symDevComm.nRanks_rcp32 = idivRcp32(comm->localRanks);
-    comm->symDevComm.rank = comm->localRank;
-    comm->symDevComm.stride4G = comm->baseStride>>32;
-  }
 
   timers[TIMER_INIT_CONNECT] = clockNano() -  timers[TIMER_INIT_CONNECT];
   /* Local intra-node barrier */
