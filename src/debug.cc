@@ -389,14 +389,26 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   pthread_mutex_unlock(&ncclDebugLock);
 }
 
-NCCL_API(void, ncclResetDebugInit);
-void ncclResetDebugInit() {
+// Non-deprecated version for internal use.
+extern "C"
+__attribute__ ((visibility("default")))
+void ncclResetDebugInitInternal() {
   // Cleans up from a previous ncclDebugInit() and reruns.
   // Use this after changing NCCL_DEBUG and related parameters in the environment.
   pthread_mutex_lock(&ncclDebugLock);
   // Let ncclDebugInit() know to complete the reset.
   __atomic_store_n(&ncclDebugLevel, NCCL_DEBUG_RESET_TRIGGERED, __ATOMIC_RELEASE);
   pthread_mutex_unlock(&ncclDebugLock);
+}
+
+extern "C"
+__attribute__ ((visibility("default")))
+__attribute__ ((deprecated("ncclResetDebugInit() is not supported as part of the NCCL API")))
+void ncclResetDebugInit() {
+  // This is now deprecated as part of the NCCL API. It will be removed
+  // from the API in the future. It is still available as an
+  // exported symbol.
+  ncclResetDebugInitInternal();
 }
 
 NCCL_PARAM(SetThreadName, "SET_THREAD_NAME", 0);
