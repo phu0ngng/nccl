@@ -10,14 +10,9 @@
 #include "param.h"
 
 #if CUDART_VERSION >= 13000
-/* CUDA 13.0 uses the v3 API by default */
-extern cudaError_t cudaStreamGetCaptureInfo_v3(cudaStream_t stream, enum cudaStreamCaptureStatus *captureStatus_out, unsigned long long *id_out, cudaGraph_t *graph_out, const cudaGraphNode_t **dependencies_out, const cudaGraphEdgeData **edgeData_out, size_t *numDependencies_out);
-/* CUDA 13.0 uses the v2 API by default */
-extern cudaError_t cudaGraphAddDependencies_v2(cudaGraph_t graph, const cudaGraphNode_t *from, const cudaGraphNode_t *to, const cudaGraphEdgeData *edgeData, size_t numDependencies);
-
-/* CUDA 13.0 uses the v2 API by default */
-extern cudaError_t cudaStreamUpdateCaptureDependencies_v2(cudaStream_t stream, cudaGraphNode_t *dependencies, const cudaGraphEdgeData *dependencyData, size_t numDependencies, unsigned int flags);
-
+#define cudaStreamGetCaptureInfo_v3 cudaStreamGetCaptureInfo
+#define cudaGraphAddDependencies_v2 cudaGraphAddDependencies
+#define cudaStreamUpdateCaptureDependencies_v2 cudaStreamUpdateCaptureDependencies
 #endif
 
 // Tracks the captured work a given graph captured identified by its graph id.
