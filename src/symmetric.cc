@@ -81,7 +81,7 @@ static uint32_t kernelMask_user() {
   return got;
 }
 
-NCCL_PARAM(SymSMs, "SYM_SMS", 0)
+NCCL_PARAM(SymCTAs, "SYM_CTAS", 0)
 
 static double softmin(double x, double ceiling, double softness) {
   // looks like a smooth version of: min(x, ceiling)
@@ -161,9 +161,11 @@ static void queryModel(struct ncclComm* comm, ncclSymKernelId k, size_t nBytes, 
     break;
   }
 
-  int nMinBlocks = 1;
-  int nSMs = std::min(ncclSymMaxBlocks, (int)ncclParamSymSMs());
-  if (nSMs != 0) nMinBlocks = nMaxBlocks = nSMs;
+  nMaxBlocks = std::min<int>(nMaxBlocks, comm->config.maxCTAs);
+  int nMinBlocks = comm->config.minCTAs;
+  
+  int nUserCTAs = std::min<int>(ncclSymMaxBlocks, ncclParamSymCTAs());
+  if (nUserCTAs > 0) nMinBlocks = nMaxBlocks = nUserCTAs;
 
   bool isLL = kernelMask_LL>>k & 1;
   bool isAG = kernelMask_AG>>k & 1;
@@ -254,11 +256,12 @@ ncclResult_t ncclSymPickKernel(
   if (!hasLDMC) kmask &= ~kernelMask_LDMC;
 
   size_t nBytes = nElts*ncclTypeSize(ty);
+  size_t nBusBytes = (coll == ncclFuncAllReduce ? 1 : comm->nRanks)*nBytes;
   // LL kernels use 32-bit ints to track element counts and indices.
-  if (nBytes >= (size_t(2)<<30)) kmask &= ~kernelMask_LL;
+  if (nBusBytes >= (size_t(2)<<30)) kmask &= ~kernelMask_LL;
   // Any kernel might use 32-bit int to track unrolled loop chunks (which are going
   // to be at least 32 bytes per chunk)
-  if (nBytes >= 32*(size_t(2)<<30)) kmask = 0;
+  if (nBusBytes >= 32*(size_t(2)<<30)) kmask = 0;
 
   ncclSymKernelId bestKernel = ncclSymKernelId_Count;
   float bestTime = 1.e30f;
