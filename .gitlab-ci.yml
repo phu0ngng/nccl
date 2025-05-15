@@ -1494,7 +1494,7 @@ perftest_single-draco_oci:
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
-    SLURM_TIME: 20
+    SLURM_TIME: 30
     RUN_MODE: "MPI"
     NNODES: 1
     NGPUS: 8
@@ -1866,7 +1866,7 @@ perftest_multi-draco_oci:
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
-    SLURM_TIME: 20
+    SLURM_TIME: 30
     RUN_MODE: "MPI"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
