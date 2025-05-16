@@ -18,37 +18,42 @@ function identify_cluster() {
 
     if [[ "$hostname" =~ ^gc[01][0-9]$ ]]; then
         echo "gc"
-	return
+    return
     fi
 
     if [[ "$hostname" =~ eos.clusters.nvidia.com$ ]]; then
         echo "eos"
-	return
+    return
     fi
 
     if [[ "$hostname" =~ draco-rno-login- ]]; then
-	echo "draco-rno"
-	return
+	    echo "draco-rno"
+    return
     fi
 
     if [[ "$hostname" =~ draco-oci-login- ]]; then
         echo "draco-oci"
-	return
+    return
     fi
 
     if [[ "$hostname" =~ .*prenyx.*clusters\.nvidia\.com$ ]]; then
         echo "pre-nyx"
-	return
+    return
     fi
 
     if [[ "$hostname" =~ .*ptyche.*$ ]]; then
         echo "pre-tyche"
+    return
+    fi
+
+    if [[ "$hostname" =~ k8s-m1 ]]; then
+        echo "ipp6-slurm"
 	return
     fi
 
     if [[ "$(hostname -f)" =~ pdx02.us.nvidia.com$ ]]; then
         echo "ipp6"
-        return
+    return
     fi
 
     echo "UNKNOWN"
