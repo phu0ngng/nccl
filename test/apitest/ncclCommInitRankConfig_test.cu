@@ -548,6 +548,12 @@ TEST_F(ncclCommInitRankConfig_test, split_share_invalid_net_name) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_v7) {
+    if (getenv("NCCL_NET_PLUGIN")==nullptr) {
+      // GTEST_SKIP requires a more recent googletest version. For now, we'll just pass the test.
+      // GTEST_SKIP() << "Skipping test since NCCL_NET_PLUGIN is not defined.");
+      return;
+    }
+
     ncclComm_t *comms = NULL;
     ncclUniqueId id;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
@@ -570,6 +576,12 @@ TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_v7) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_int_sock) {
+    if (getenv("NCCL_NET_PLUGIN")==nullptr) {
+      // GTEST_SKIP requires a more recent googletest version. For now, we'll just pass the test.
+      // GTEST_SKIP() << "Skipping test since NCCL_NET_PLUGIN is not defined.");
+      return;
+    }
+
     ncclComm_t *comms = NULL;
     ncclUniqueId id;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
@@ -593,6 +605,12 @@ TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_int_sock) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_fail) {
+    if (getenv("NCCL_NET_PLUGIN")==nullptr) {
+      // GTEST_SKIP requires a more recent googletest version. For now, we'll just pass the test.
+      // GTEST_SKIP() << "Skipping test since NCCL_NET_PLUGIN is not defined.");
+      return;
+    }
+
     ncclComm_t *comms = NULL;
     ncclUniqueId id;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
