@@ -702,16 +702,15 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
           // PXN = PCI + NVLink.
           struct ncclTopoNode* peerNode = system->nodes[GPU].nodes+localGpuIndex;
           // Only use PXN for NIC n if remote GPU p ...
-          if (/* (1) is either connected to the NIC with PXB*/
-              (peerNode->paths[NET][n].type <= PATH_PXB ||
-               /* or with P2C and PxN over C2C is enabled */
-               (ncclParamPxnC2c() && peerNode->paths[NET][n].type == PATH_P2C)) &&
+          int pxnType = ncclParamPxnC2c() ? PATH_P2C : PATH_PXB;
+          if (/* (1) is connected to the NIC with PxN type*/
+              peerNode->paths[NET][n].type <= pxnType &&
               /* and (2) is connected to us through NVLink */
               peerNode->paths[GPU][g].type <= PATH_NVL &&
               /* and (3) is on the same node as us */
               NCCL_TOPO_ID_SYSTEM_ID(peerNode->id) == NCCL_TOPO_ID_SYSTEM_ID(gpu->id) &&
               /* and (4) has either higher bw to that NIC or avoid going through the CPU*/
-              (peerNode->paths[NET][n].bw > gpu->paths[NET][n].bw || gpu->paths[NET][n].type > PATH_PXB))
+              (peerNode->paths[NET][n].bw > gpu->paths[NET][n].bw || gpu->paths[NET][n].type > pxnType))
             // We can use that GPU as relay to communicate with that NIC.
             // Only enabling it in the GPU->NIC direction for now to favor
             // receiving locally and sending remotely (consistent with net.cc)
