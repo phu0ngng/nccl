@@ -1563,7 +1563,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     unsigned int clusterSize = (compCap >= 90) ? comm->config.cgaClusterSize : 0;
 
     CUlaunchConfig launchConfig = {0};
-    CUlaunchAttribute launchAttrs[5] = {};
+    CUlaunchAttribute launchAttrs[6] = {};
     int attrs = 0;
     /* Cooperative Group Array (CGA)
      * On sm90 and later we have an extra level of hierarchy where we
@@ -1607,9 +1607,11 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     }
     #endif
     #if CUDART_VERSION >= 13000
-    launchAttrs[attrs].id = CU_LAUNCH_ATTRIBUTE_NVLINK_UTIL_CENTRIC_SCHEDULING;
-    launchAttrs[attrs].value.nvlinkUtilCentricScheduling = ncclParamNvlinkUtilCentricSchedEnable();
-    attrs++;
+    if (compCap >= 90 && driverVersion >= 13000) {
+      launchAttrs[attrs].id = CU_LAUNCH_ATTRIBUTE_NVLINK_UTIL_CENTRIC_SCHEDULING;
+      launchAttrs[attrs].value.nvlinkUtilCentricScheduling = ncclParamNvlinkUtilCentricSchedEnable();
+      attrs++;
+    }
     #endif
     launchConfig.gridDimX = grid.x;
     launchConfig.gridDimY = grid.y;
