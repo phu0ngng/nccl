@@ -457,14 +457,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       pEnable &= (graphs[a]->typeInter <= PATH_PXB || (minCompCap >= 90 && graphs[a]->typeInter <= (ncclParamLl128C2c() ? PATH_P2C : PATH_PXN)));
       pEnable &= (graphs[a]->typeIntra <= PATH_NVB);
       pEnable &= (minCompCap == maxCompCap);
-      switch (minCompCap) {
-      case 70: pEnable &= 1; break;
-      case 80: pEnable &= 1; break;
-      case 90: pEnable &= !(CUDART_VERSION == 11080 && c == ncclFuncAllReduce && a == NCCL_ALGO_RING && comm->nRanks == 2); break;
-      case 100: pEnable &= 1; break;
-      case 120: pEnable &= 1; break;
-      default: pEnable &= 0; break;
-      }
+      pEnable &= !(minCompCap < 70 || (minCompCap == 90 && CUDART_VERSION == 11080 && c == ncclFuncAllReduce && a == NCCL_ALGO_RING && comm->nRanks == 2));
     }
     if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
     if (algoEnable[c*NCCL_NUM_ALGORITHMS+a] == 0) comm->bandwidths[c][a][p] = 0;
