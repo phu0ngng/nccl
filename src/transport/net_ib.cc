@@ -125,6 +125,7 @@ NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
 NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
 NCCL_PARAM(IbAsyncEvents,"IB_RETURN_ASYNC_EVENTS",1);
 NCCL_PARAM(IbEceEnable,"IB_ECE_ENABLE",1);
+NCCL_PARAM(IbDataDirect,"IB_DATA_DIRECT",1);
 
 static ncclResult_t ncclIbStatsInit(struct ncclIbStats* stat) {
   __atomic_store_n(&stat->fatalErrorCount, 0, __ATOMIC_RELAXED);
@@ -652,8 +653,10 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t pr
         if (wrap_mlx5dv_is_supported(devices[d])) {
           ibProvider = IB_PROVIDER_MLX5;
           snprintf(dataDirectDevicePath, PATH_MAX, "/sys");
-          if((ncclMlx5dvDmaBufCapable(context)) && (wrap_mlx5dv_get_data_direct_sysfs_path(context, dataDirectDevicePath + 4, PATH_MAX - 4) == ncclSuccess))
-            dataDirectSupported = 1;
+          if((ncclMlx5dvDmaBufCapable(context)) && (wrap_mlx5dv_get_data_direct_sysfs_path(context, dataDirectDevicePath + 4, PATH_MAX - 4) == ncclSuccess)) {
+            INFO(NCCL_NET, "Data Direct DMA Interface is detected for device:%s", devices[d]->name);
+            if(ncclParamIbDataDirect()) dataDirectSupported = 1;
+          }
         }
         int nPorts = 0;
         struct ibv_device_attr devAttr;
