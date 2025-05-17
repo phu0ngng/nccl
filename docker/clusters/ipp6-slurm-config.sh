@@ -61,7 +61,7 @@ function get_build_command() {
     echo "srun \
         -p cpuonly \
         -J nccl:ci-build \
-        -t 00:10:00 \
+        -t 00:30:00 \
         -n 1 \
         --container-image=$build_tools_image \
         --container-mounts=${current_dir}:/nccl \
