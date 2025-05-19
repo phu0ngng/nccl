@@ -137,6 +137,7 @@ static ncclResult_t ncclTopoFollowPath(struct ncclTopoSystem* system, struct ncc
   float bw = intra ? graph->bwIntra : graph->bwInter;
   int type = intra ? graph->typeIntra : graph->typeInter;
 
+  if (path->type >= PATH_DIS) return ncclSuccess;
   if (mult == 1 && (path->type > type)) return ncclSuccess;
   if (mult == 1 && (graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE ||
         graph->pattern == NCCL_TOPO_PATTERN_TREE ||
@@ -657,24 +658,12 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
         }
 
         // Then try the most local GPUs
-        float maxBw = 0;
-        int minHops = 0xfffffff;
-        struct ncclTopoLinkList* paths = net->paths[GPU];
-        for (int g=0; g<system->nodes[GPU].count; g++) {
-          if (paths[g].bw > maxBw) {
-            maxBw = paths[g].bw;
-            minHops = paths[g].count;
-          } else if (paths[g].bw == maxBw && paths[g].count > 0 && paths[g].count < minHops) {
-            minHops = paths[g].count;
-          }
-        }
-        if (maxBw >= bw) {
-          for (int i=0; i<system->nodes[GPU].count; i++) {
-            int g = (graph->nChannels+i)%system->nodes[GPU].count;
-            if (paths[g].bw == maxBw && paths[g].count == minHops) {
-              NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, g));
-            }
-          }
+        int localGpus[NCCL_TOPO_MAX_NODES], localGpuCount, pathType;
+        NCCLCHECK(ncclTopoGetLocal(system, NET, n, GPU, localGpus, &localGpuCount, &pathType));
+        // if no GPUs are connected, skip this net
+        if (pathType == PATH_DIS) continue;
+        for (int g = 0; g < localGpuCount; ++g) {
+          NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, localGpus[g]));
         }
       }
     }
@@ -1060,13 +1049,13 @@ search:
     int maxIntra = system->nodes[NET].count > 0 ? tmpGraph.typeInter : maxTypeIntra;
     if (tmpGraph.typeIntra < maxIntra && (graph->nChannels == 0 || tmpGraph.typeIntra < graph->typeIntra)) {
       tmpGraph.typeIntra += 1;
-      goto search;
+      if (tmpGraph.typeIntra < PATH_DIS) goto search;
     }
     tmpGraph.typeIntra = minTypeIntra;
 
     if (system->nodes[NET].count > 0 && tmpGraph.typeInter < maxTypeInter && (graph->nChannels == 0 || tmpGraph.typeInter < graph->typeInter || tmpGraph.typeInter < PATH_PXN)) {
       tmpGraph.typeInter += 1;
-      goto search;
+      if (tmpGraph.typeInter < PATH_DIS) goto search;
     }
     tmpGraph.typeInter = minTypeInter;
 
