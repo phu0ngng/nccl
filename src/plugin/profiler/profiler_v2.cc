@@ -50,7 +50,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v2.proxyOp.peer = eDescr->proxyOp.peer;
       eDescr_v2.proxyOp.nSteps = eDescr->proxyOp.nSteps;
       eDescr_v2.proxyOp.chunkSize = eDescr->proxyOp.chunkSize;
-      eDescr_v2.proxyOp.isSend = 0; // removed in v4
+      eDescr_v2.proxyOp.isSend = eDescr->proxyOp.isSend;
     } break;
     case ncclProfileProxyStep: {
       eDescr_v2.proxyStep.step = eDescr->proxyStep.step;
