@@ -139,14 +139,14 @@ ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, in
 
 static ncclResult_t ncclNetPluginInit(netPluginLib_t* pluginLib) {
   int ndev;
-  if (pluginLib->ncclNetPluginState == ncclNetPluginStateInitReady && pluginLib->ncclNet) {
+  if (pluginLib->ncclNetPluginState >= ncclNetPluginStateInitReady && pluginLib->ncclNet) {
     if (pluginLib->ncclNet->init(ncclDebugLog, ncclProfilerCallback) != ncclSuccess) goto fail;
     if (pluginLib->ncclNet->devices(&ndev) != ncclSuccess || ndev <= 0) goto fail;
   }
   pluginLib->ncclNetPluginState = ncclNetPluginStateEnabled;
   INFO(NCCL_INIT|NCCL_NET, "Initialized NET plugin %s", pluginLib->ncclNet->name);
 
-  if (pluginLib->ncclCollNetPluginState == ncclNetPluginStateInitReady && pluginLib->ncclCollNet) {
+  if (pluginLib->ncclCollNetPluginState >= ncclNetPluginStateInitReady && pluginLib->ncclCollNet) {
     if (pluginLib->ncclCollNet->init(ncclDebugLog) != ncclSuccess) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
     else if (pluginLib->ncclCollNet->devices(&ndev) != ncclSuccess || ndev <= 0) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
     else {
@@ -259,7 +259,7 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
     if ((pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) && (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateLoadReady)) {
       NCCLCHECK(ncclNetPluginLoad(&netPluginLibs[pluginIndex]));
     }
-    if (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateInitReady) {
+    if (netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateInitReady) {
       NCCLCHECK(ncclNetPluginInit(&netPluginLibs[pluginIndex]));
     }
     if (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateEnabled) {
