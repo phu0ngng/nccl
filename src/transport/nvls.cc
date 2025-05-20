@@ -924,7 +924,11 @@ ncclResult_t ncclNvlsRegResourcesQuery(struct ncclComm* comm, struct ncclTaskCol
       factor = 4 * 8;
       *recChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, DIVUP(factor, comm->nvlsResources->nHeads)));
     } else if (info->func == ncclFuncAllReduce) {
-      factor = 4 * 8;
+      if (comm->compCap >= 100) {
+        factor = 8 * 8;
+      } else {
+        factor = 4 * 8;
+      }
       *recChannels = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, DIVUP(factor, comm->nvlsResources->nHeads)));
     } else {
       goto fail;
