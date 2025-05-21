@@ -264,7 +264,14 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
             && a == NCCL_ALGO_PAT && (p != NCCL_PROTO_SIMPLE || ncclPatEnable(comm) == 0)) continue;
         int collnet = (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) ? 1 : 0;
         float bw = nNodes <= 2 || collnet ? graphs[a]->bwIntra : graphs[a]->bwInter;
-        if (a == NCCL_ALGO_NVLS) bw = std::min(graphs[a]->bwIntra, graphs[a]->bwInter);
+        if (a == NCCL_ALGO_NVLS) {
+          if (coll == ncclFuncAllReduce) {
+            bw = std::min(graphs[a]->bwIntra, graphs[a]->bwInter);
+          } else {
+            // allgather and reducescatter
+            bw = std::min(graphs[a]->bwIntra * (ppn - 1.0f) / ppn, graphs[a]->bwInter * 0.9f);
+          }
+        }
         if (a == NCCL_ALGO_NVLS_TREE) bw = std::min(graphs[a]->bwIntra, nNodes <= 2 ? graphs[a]->bwInter : graphs[a]->bwInter/2);
         float busBw = graphs[a]->nChannels * bw;
 
@@ -280,11 +287,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         if (a == NCCL_ALGO_COLLNET_CHAIN && p != NCCL_PROTO_SIMPLE) busBw = 0;  // Not used
         if (a == NCCL_ALGO_COLLNET_DIRECT && p == NCCL_PROTO_SIMPLE) {
           if (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter) {
-            busBw = ppn * bw;
-            // Measured corrective ratio needed at 1 ppn and 8ppn. Here we hackishly
-            // interpolate the two.
-            float w = (ppn-1)/(8-1);
-            busBw *= w*0.85 + (1-w)*0.95;
+            busBw = ppn * std::min(graphs[a]->bwIntra, graphs[a]->bwInter * 0.9f);
           } else {
             // Collnet+Direct requires all GPUs to have a local NIC to work at full speed
             float factor = ppn / (1.0*graphs[a]->nChannels); // GPU/NIC ratio
