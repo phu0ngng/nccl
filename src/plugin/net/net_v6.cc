@@ -14,6 +14,11 @@ static ncclCollNet_t ncclCollNet;
 static ncclNet_v6_t* ncclNet_v6;
 static ncclCollNet_v6_t* ncclCollNet_v6;
 
+#define NET_INDEX 0
+#define COLLNET_INDEX 1
+#define INDEX_NUMS 2
+static int refCount[INDEX_NUMS];
+
 static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
   ncclNetProperties_v6_t p6;
   ncclResult_t ans = ncclNet_v6->getProperties(dev, &p6);
@@ -76,6 +81,7 @@ static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* si
 }
 
 static ncclResult_t ncclNet_finalize(void* ctx) {
+  refCount[NET_INDEX]--;
   return ncclSuccess;
 }
 
@@ -123,10 +129,12 @@ static ncclResult_t ncclCollNet_iallreduce(void* collComm, void* sendData, void*
 }
 
 static ncclResult_t ncclCollNet_finalize(void* ctx) {
+  refCount[COLLNET_INDEX]--;
   return ncclSuccess;
 }
 
 static ncclResult_t ncclNet_init(void** ctx, uint64_t commId, ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
+  if (refCount[NET_INDEX]++ > 0) return ncclSuccess;
   NCCLCHECK(ncclNet_v6->init(logfn));
   ncclNet.devices = ncclNet_v6->devices;
   ncclNet.getProperties = ncclNet_getProperties;
@@ -163,6 +171,7 @@ ncclNet_t* getNcclNet_v6(void* lib) {
 }
 
 static ncclResult_t ncclCollNet_init(void** ctx, uint64_t commId, ncclDebugLogger_t logfn) {
+  if (refCount[COLLNET_INDEX]++ > 0) return ncclSuccess;
   NCCLCHECK(ncclCollNet_v6->init(logfn));
   ncclCollNet.devices = ncclCollNet_v6->devices;
   ncclCollNet.getProperties = ncclCollNet_getProperties;
