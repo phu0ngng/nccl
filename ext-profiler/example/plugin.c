@@ -52,7 +52,7 @@ static pid_t pid;
 static int* eActivationMaskPtr;
 static int enabled = 1;
 
-__hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask, const char* commName, uint64_t commHash, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn) {
+__hidden ncclResult_t exampleProfilerInit(void** context, uint64_t commId, int* eActivationMask, const char* commName, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn) {
   if (__atomic_load_n(&enabled, __ATOMIC_RELAXED) == 0) return ncclInternalError;
   pthread_mutex_lock(&lock);
   if (__atomic_fetch_add(&initialized, 1, __ATOMIC_RELAXED) == 0) {
@@ -98,11 +98,11 @@ __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask, 
   // pre-allocate memory for event object pools in dedicated profiler context
   struct context* ctx = (struct context *)calloc(1, sizeof(*ctx));
   ctx->commName = commName;
-  ctx->commHash = commHash;
+  ctx->commHash = commId;
   ctx->nranks = nranks;
   ctx->rank = rank;
   logFn = logfn;
-  INFO(NCCL_INIT, "PROFILER/Plugin: init commName: %s commHash: %lu nranks: %d rank: %d", commName ? commName : "", commHash, nranks, rank);
+  INFO(NCCL_INIT, "PROFILER/Plugin: init commName: %s commHash: %lu nranks: %d rank: %d", commName ? commName : "", commId, nranks, rank);
 
   ctx->groupPool = (struct group *)calloc(groupPoolSize, sizeof(*ctx->groupPool));
   if (ctx->groupPool == NULL) goto fail;
@@ -613,7 +613,7 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
   return ncclSuccess;
 }
 
-ncclProfiler_t ncclProfiler_v4 = {
+ncclProfiler_t ncclProfiler_v5 = {
   "Example-profiler",
   exampleProfilerInit,
   exampleProfilerStartEvent,

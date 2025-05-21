@@ -56,16 +56,18 @@ typedef ncclProfilerEventState_t ncclProfilerEventState_v1_t;
 typedef ncclProfilerEventState_t ncclProfilerEventState_v2_t;
 typedef ncclProfilerEventState_t ncclProfilerEventState_v3_t;
 typedef ncclProfilerEventState_t ncclProfilerEventState_v4_t;
+typedef ncclProfilerEventState_t ncclProfilerEventState_v5_t;
 
 #include <cstdint>
+#include "profiler/profiler_v5.h"
 #include "profiler/profiler_v4.h"
 #include "profiler/profiler_v3.h"
 #include "profiler/profiler_v2.h"
 #include "profiler/profiler_v1.h"
 
-typedef ncclProfiler_v4_t ncclProfiler_t;
-typedef ncclProfilerEventDescr_v4_t ncclProfilerEventDescr_t;
-typedef ncclProfilerEventStateArgs_v4_t ncclProfilerEventStateArgs_t;
+typedef ncclProfiler_v5_t ncclProfiler_t;
+typedef ncclProfilerEventDescr_v5_t ncclProfilerEventDescr_t;
+typedef ncclProfilerEventStateArgs_v5_t ncclProfilerEventStateArgs_t;
 
 #define NCCL_PROFILER_NET_VER_BITS  (16)
 #define NCCL_PROFILER_NET_VER_MASK  (~0U >> NCCL_PROFILER_NET_VER_BITS)
