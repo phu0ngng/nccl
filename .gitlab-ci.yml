@@ -33,6 +33,7 @@ variables:
   PLANNED_RESERVED: "Reserved"
   RUN_DLFW_TESTS: "1"
   RUN_EOS_APITEST: "1"
+  RUN_ON_IPP6: "1"
 
 default:
   # set all jobs to interruptible by default
@@ -48,10 +49,10 @@ workflow:
   auto_cancel:
     on_new_commit: interruptible
   rules:
-    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
     - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
       auto_cancel:
         on_new_commit: none
+    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
 
 # verify that setting TRACE=1 does not break compile
 # this is a special build-time setting to increase log verbosity
@@ -82,10 +83,33 @@ build-classic:
       - build-gc/**/*.o
     expire_in: 48 hrs
 
+build-ipp6:
+  stage: build
+  rules:
+    - if: $RUN_ON_IPP6 == "1"
+      when: always
+    - when: never
+  tags:
+    - ipp6-nccl
+  script:
+    - docker/make.sh ipp6-slurm
+  after_script:
+    - tar --exclude="*.o" -cf - build | pigz --best > build-ipp6.tar.gz
+    - rm -rf build/
+  # TODO (kartiki) - Uncomment this once build-eos-aws-oci is retired
+  # artifacts:
+  #   paths:
+  #     - build-ipp6.tar.gz
+  #   expire_in: 48 hrs
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - build-ipp6.tar.gz
+
 build-eos-aws-oci:
   stage: build
   rules:
-    - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1"
+    - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
   tags:
@@ -98,26 +122,6 @@ build-eos-aws-oci:
       - build-eos
     exclude:
       - build-eos/**/*.o
-    expire_in: 48 hrs
-
-.build-pre-nyx:
-  stage: build
-  rules:
-    - if: $RUN_ON_PRE_NYX == "1"
-      when: always
-    - when: never
-  tags:
-    - prenyx
-  variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  script:
-    - docker/make.sh pre-nyx --clean --baremetal-build
-    - mv build build-pre-nyx
-  artifacts:
-    paths:
-      - build-pre-nyx
-    exclude:
-      - build-pre-nyx/**/*.o
     expire_in: 48 hrs
 
 build-pre-tyche:
@@ -541,7 +545,7 @@ unit_tests-AWS_H100_EFA:
       export JUNIT=$JUNIT
       $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   after_script:
@@ -654,6 +658,46 @@ unit_tests-pre-tyche:
     DISABLE_ENQUEUE_TESTS_FIFO: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-ipp6-a100:
+  stage: unit_tests
+  rules:
+    - if: $RUN_ON_IPP6 == "1"
+      when: always
+    - when: never
+  needs: ["build-ipp6"]
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - build/
+    policy: pull
+  tags:
+    - ipp6-nccl
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: a100-cicd
+    NNODES: 1
+    NGPUS: 2
+    NP: 1
+    NCCL_HOME: build
+    RUN_MODE: "MPI"
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -960,7 +1004,7 @@ apitest-AWS_H100_EFA:
       export NCCL_NVLS_ENABLE=0
       $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   after_script:
@@ -1072,6 +1116,46 @@ apitest-pre-tyche:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+apitest-ipp6-a100:
+  stage: api_tests
+  rules:
+    - if: $RUN_ON_IPP6 == "1"
+      when: always
+    - when: never
+  needs: ["build-ipp6"]
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - build/
+    policy: pull
+  tags:
+    - ipp6-nccl
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: a100-cicd
+    NNODES: 1
+    NGPUS: 2
+    NP: 1
+    NCCL_HOME: build
+    RUN_MODE: "MPI"
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -1464,7 +1548,7 @@ perftest_single-AWS_H100_EFA:
       export SYMMETRIC=1
       $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   after_script:
@@ -1494,7 +1578,7 @@ perftest_single-draco_oci:
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
-    SLURM_TIME: 20
+    SLURM_TIME: 30
     RUN_MODE: "MPI"
     NNODES: 1
     NGPUS: 8
@@ -1582,6 +1666,48 @@ perftest-single-pre-tyche:
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-single-ipp6-a100:
+  stage: perf_tests_single
+  rules:
+    - if: $RUN_ON_IPP6 == "1"
+      when: always
+    - when: never
+  needs: ["build-ipp6"]
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - build/
+    policy: pull
+  tags:
+    - ipp6-nccl
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: a100-cicd
+    NNODES: 1
+    NGPUS: 2
+    NP: 2
+    NCCL_HOME: build
+    RUN_MODE: "MPI"
+    SYMMETRIC: 1
+    MAX: "1G"
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
   artifacts:
     when: always
     paths:
@@ -1836,7 +1962,7 @@ perftest_multi-AWS_H100_EFA:
       export SKIP_FT_FINALIZE=1
       $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR
+    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
   script:
     - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
   after_script:
@@ -1866,7 +1992,7 @@ perftest_multi-draco_oci:
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
-    SLURM_TIME: 20
+    SLURM_TIME: 30
     RUN_MODE: "MPI"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     NGPUS: 8
@@ -1955,6 +2081,48 @@ perftest-multi-pre-tyche:
     NO_LOOPBACK_NETWORKING: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-multi-ipp6-a100:
+  stage: perf_tests_multi
+  rules:
+    - if: $RUN_ON_IPP6 == "1"
+      when: always
+    - when: never
+  needs: ["build-ipp6"]
+  cache:
+    key: "$CI_COMMIT_REF_SLUG"
+    paths:
+      - build/
+    policy: pull
+  tags:
+    - ipp6-nccl
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: a100-cicd
+    NNODES: 2
+    NGPUS: 2
+    NP: 2
+    NCCL_HOME: build
+    RUN_MODE: "MPI"
+    SYMMETRIC: 1
+    MAX: "1G"
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh

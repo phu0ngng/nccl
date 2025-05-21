@@ -106,6 +106,10 @@ if [ "$baremetal_build" -eq 0 ]; then
     export DOCKER_USER_ID=$(stat --format %u $0)
     export DOCKER_GROUP_ID=$(stat --format %g $0)
 
+    # Disable GPU detection to allow enroot to launch this on CPU-only nodes
+    # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html#gpu-enumeration
+    export NVIDIA_VISIBLE_DEVICES=void
+
     eval "$(get_build_command $current_dir $build_image_version)"
 else
     eval "$(get_build_command)"

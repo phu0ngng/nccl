@@ -96,7 +96,11 @@ int main(int argc, char* argv[])
   CUdevice device;
   CUcontext context;
   CUDACHECK(cuDeviceGet(&device, localRank));
+  #if CUDART_VERSION >= 13000
+  CUDACHECK(cuCtxCreate(&context, NULL, 0, device));
+  #else
   CUDACHECK(cuCtxCreate(&context, 0, device));
+  #endif
   CUDACHECK(cuCtxSetCurrent(context));
   CUDACHECK(cuMemAlloc(&sendbuff, size * sizeof(float)));
   CUDACHECK(cuMemAlloc(&recvbuff, size * sizeof(float)));
