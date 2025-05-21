@@ -338,6 +338,10 @@ struct ncclProxyState {
   // Progress thread
   struct ncclProxyProgressState progressState;
 
+  // Network plugin
+  void* netContext;
+  void* collNetContext;
+
   // Profiler plugin
   void* profilerContext;
 

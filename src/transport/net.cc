@@ -677,7 +677,7 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   }
 
   if (respSize != sizeof(ncclNetHandle_t)) return ncclInternalError;
-  NCCLCHECK(proxyState->ncclNet->listen(req->netDev, respBuff, &resources->netListenComm));
+  NCCLCHECK(proxyState->ncclNet->listen(proxyState->netContext, req->netDev, respBuff, &resources->netListenComm));
   *done = 1;
 
   return ncclSuccess;
@@ -736,17 +736,17 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
         comms->activeConnect[resources->channelId] = (resources->tpLocalRank + 1);
       if (comms->sendComm[resources->channelId] == NULL
           && comms->activeConnect[resources->channelId] == (resources->tpLocalRank + 1)) {
-        ret = proxyState->ncclNet->connect(resources->netDev, &commConfig, req->handle,
+        ret = proxyState->ncclNet->connect(proxyState->netContext, resources->netDev, &commConfig, req->handle,
             comms->sendComm + resources->channelId, &resources->netDeviceHandle);
       }
       resources->netSendComm = comms->sendComm[resources->channelId];
       if (comms->sendComm[resources->channelId]) comms->sendRefCount[resources->channelId]++;
     } else {
-      ret = proxyState->ncclNet->connect(resources->netDev, &commConfig, req->handle, &resources->netSendComm, &resources->netDeviceHandle);
+      ret = proxyState->ncclNet->connect(proxyState->netContext, resources->netDev, &commConfig, req->handle, &resources->netSendComm, &resources->netDeviceHandle);
     }
   } else {
     // Connect to remote peer
-    ret = proxyState->ncclNet->connect(resources->netDev, &commConfig, req->handle, &resources->netSendComm, &resources->netDeviceHandle);
+    ret = proxyState->ncclNet->connect(proxyState->netContext, resources->netDev, &commConfig, req->handle, &resources->netSendComm, &resources->netDeviceHandle);
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
 

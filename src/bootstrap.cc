@@ -535,7 +535,7 @@ static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
   return ncclSuccess;
 }
 
-static ncclResult_t netRingConnect(ncclNet_t* net, struct bootstrapListen_t* listen, char peerHandle[NCCL_NET_HANDLE_MAXSIZE],
+static ncclResult_t netRingConnect(void* ctx, ncclNet_t* net, struct bootstrapListen_t* listen, char peerHandle[NCCL_NET_HANDLE_MAXSIZE],
                                    void** sendComm, ncclNetDeviceHandle_t** sendDevHandle,
                                    void** recvComm, ncclNetDeviceHandle_t** recvDevHandle, volatile uint32_t* abortFlag) {
 
@@ -543,7 +543,7 @@ static ncclResult_t netRingConnect(ncclNet_t* net, struct bootstrapListen_t* lis
   do {
     NCCLCHECK(checkAbort(abortFlag, &abortCounter));
     if (!*sendComm)
-      NCCLCHECK(net->connect(listen->net.dev, NULL, peerHandle, sendComm, sendDevHandle));
+      NCCLCHECK(net->connect(ctx, listen->net.dev, NULL, peerHandle, sendComm, sendDevHandle));
     if (!*recvComm)
       NCCLCHECK(net->accept(listen->net.comm, recvComm, recvDevHandle));
   } while (!*sendComm || !*recvComm);
@@ -655,7 +655,7 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
   if (ncclParamBootstrapNetEnable()) {
     // Create net interface for other ranks to contact me (all gather)
     NCCLCHECK(netGetDevice(rank, comm, &STATE_LISTEN(state, net.dev)));
-    NCCLCHECK(state->net->listen(STATE_LISTEN(state, net.dev), STATE_LISTEN(state, net.handle), &STATE_LISTEN(state, net.comm)));
+    NCCLCHECK(state->net->listen(comm->netContext, STATE_LISTEN(state, net.dev), STATE_LISTEN(state, net.handle), &STATE_LISTEN(state, net.comm)));
     memcpy(info.connectInfo.handle, STATE_LISTEN(state, net.handle), NCCL_NET_HANDLE_MAXSIZE);
   } else {
     // create socket for ring neightbor to contact mee
@@ -709,7 +709,7 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
 
   // accept and connect the ring network
   if (ncclParamBootstrapNetEnable()) {
-    NCCLCHECK(netRingConnect(state->net, &state->listen, nextPeer.handle,
+    NCCLCHECK(netRingConnect(comm->netContext, state->net, &state->listen, nextPeer.handle,
                              &STATE_RING(state, net.sendComm), &STATE_RING(state, net.sendDevHandle),
                              &STATE_RING(state, net.recvComm), &STATE_RING(state, net.recvDevHandle), state->abortFlag));
   } else {
@@ -802,7 +802,7 @@ ncclResult_t bootstrapSplit(uint64_t magic, struct ncclComm* comm, struct ncclCo
   // create a handle for the others to reach out to me
   if (ncclParamBootstrapNetEnable()) {
     NCCLCHECKGOTO(netGetDevice(rank, comm, &STATE_LISTEN(state, net.dev)), ret, fail);
-    NCCLCHECKGOTO(state->net->listen(STATE_LISTEN(state, net.dev), STATE_LISTEN(state, net.handle), &STATE_LISTEN(state, net.comm)), ret, fail);
+    NCCLCHECKGOTO(state->net->listen(comm->netContext, STATE_LISTEN(state, net.dev), STATE_LISTEN(state, net.handle), &STATE_LISTEN(state, net.comm)), ret, fail);
     memcpy(info.handle, STATE_LISTEN(state, net.handle), NCCL_NET_HANDLE_MAXSIZE);
   } else {
     // create socket for ring neightbor to contact mee
@@ -821,7 +821,7 @@ ncclResult_t bootstrapSplit(uint64_t magic, struct ncclComm* comm, struct ncclCo
   NCCLCHECKGOTO(bootstrapSend(parent->bootstrap, prev, BOOTSTRAP_TAG_COMMSPLIT, &info, sizeof(union ringConnectInfo)), ret, fail);
   NCCLCHECKGOTO(bootstrapRecv(parent->bootstrap, next, BOOTSTRAP_TAG_COMMSPLIT, &nextPeer, sizeof(union ringConnectInfo)), ret, fail);
   if (ncclParamBootstrapNetEnable()) {
-    NCCLCHECKGOTO(netRingConnect(state->net, &state->listen, nextPeer.handle,
+    NCCLCHECKGOTO(netRingConnect(comm->netContext, state->net, &state->listen, nextPeer.handle,
                                  &STATE_RING(state, net.sendComm), &STATE_RING(state, net.sendDevHandle),
                                  &STATE_RING(state, net.recvComm), &STATE_RING(state, net.recvDevHandle), state->abortFlag),
                   ret, fail);

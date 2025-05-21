@@ -43,7 +43,11 @@ static ncclResult_t ncclNet_regMr(void* comm, void* data, size_t size, int type,
   return ncclNet_v6->regMr(comm, data, (int) size, type, mhandle);
 }
 
-static ncclResult_t ncclNet_connect(int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+static ncclResult_t ncclNet_listen(void* ctx, int d, void* handle, void** listenComm) {
+  return ncclNet_v6->listen(d, handle, listenComm);
+}
+
+static ncclResult_t ncclNet_connect(void* ctx, int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   return ncclNet_v6->connect(dev, handle, sendComm);
 }
 
@@ -71,6 +75,10 @@ static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* si
   return ans;
 }
 
+static ncclResult_t ncclNet_finalize(void* ctx) {
+  return ncclSuccess;
+}
+
 static ncclResult_t ncclCollNet_getProperties(int dev, ncclNetProperties_t* props) {
   ncclNetProperties_v6_t p6;
   ncclResult_t ans = ncclCollNet_v6->getProperties(dev, &p6);
@@ -95,6 +103,10 @@ static ncclResult_t ncclCollNet_getProperties(int dev, ncclNetProperties_t* prop
   return ncclSuccess;
 }
 
+static ncclResult_t ncclCollNet_listen(void* ctx, int d, void* handle, void** listenComm) {
+  return ncclCollNet_v6->listen(d, handle, listenComm);
+}
+
 static ncclResult_t ncclCollNet_regMr(void* comm, void* data, size_t size, int type, void** mhandle) {
   if (size >= 1UL<<31) return ncclInternalError;
   return ncclCollNet_v6->regMr(comm, data, (int) size, type, mhandle);
@@ -110,11 +122,15 @@ static ncclResult_t ncclCollNet_iallreduce(void* collComm, void* sendData, void*
   return ans;
 }
 
-static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
+static ncclResult_t ncclCollNet_finalize(void* ctx) {
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclNet_init(void** ctx, uint64_t commId, ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
   NCCLCHECK(ncclNet_v6->init(logfn));
   ncclNet.devices = ncclNet_v6->devices;
   ncclNet.getProperties = ncclNet_getProperties;
-  ncclNet.listen = ncclNet_v6->listen;
+  ncclNet.listen = ncclNet_listen;
   ncclNet.connect = ncclNet_connect;
   ncclNet.accept =  ncclNet_accept;
   ncclNet.regMr = ncclNet_regMr;
@@ -130,6 +146,7 @@ static ncclResult_t ncclNet_init(ncclDebugLogger_t logfn, ncclProfilerCallback_t
   ncclNet.getDeviceMr = NULL;
   ncclNet.irecvConsumed = NULL;
   ncclNet.makeVDevice  = NULL;
+  ncclNet.finalize = ncclNet_finalize;
   return ncclSuccess;
 }
 
@@ -145,11 +162,11 @@ ncclNet_t* getNcclNet_v6(void* lib) {
   return nullptr;
 }
 
-static ncclResult_t ncclCollNet_init(ncclDebugLogger_t logfn) {
+static ncclResult_t ncclCollNet_init(void** ctx, uint64_t commId, ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclCollNet_v6->init(logfn));
   ncclCollNet.devices = ncclCollNet_v6->devices;
   ncclCollNet.getProperties = ncclCollNet_getProperties;
-  ncclCollNet.listen = ncclCollNet_v6->listen;
+  ncclCollNet.listen = ncclCollNet_listen;
   ncclCollNet.connect = ncclCollNet_v6->connect;
   ncclCollNet.reduceSupport = ncclCollNet_v6->reduceSupport;
   ncclCollNet.regMr = ncclCollNet_regMr;
@@ -162,6 +179,7 @@ static ncclResult_t ncclCollNet_init(ncclDebugLogger_t logfn) {
   ncclCollNet.test = ncclCollNet_v6->test;
   ncclCollNet.closeColl = ncclCollNet_v6->closeColl;
   ncclCollNet.closeListen = ncclCollNet_v6->closeListen;
+  ncclCollNet.finalize = ncclCollNet_finalize;
   return ncclSuccess;
 }
 

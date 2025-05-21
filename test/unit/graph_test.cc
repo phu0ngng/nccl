@@ -233,7 +233,7 @@ ncclResult_t fakeNetPluginDevices(int* ndev) {
   return ncclSuccess;
 }
 
-ncclResult_t fakeNetPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
+ncclResult_t fakeNetPluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* vProps) {
   if (nVirtualDevs < MAX_MOCK_VDEVS) {
     if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidArgument;
     for (int i = 0; i < vProps->ndevs; i++) {

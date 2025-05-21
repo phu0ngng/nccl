@@ -25,17 +25,19 @@ extern getNcclNet_t getNcclNet_v7;
 extern getNcclNet_t getNcclNet_v8;
 extern getNcclNet_t getNcclNet_v9;
 extern getNcclNet_t getNcclNet_v10;
+extern getNcclNet_t getNcclNet_v11;
 extern getNcclCollNet_t getNcclCollNet_v6;
 extern getNcclCollNet_t getNcclCollNet_v7;
 extern getNcclCollNet_t getNcclCollNet_v8;
 extern getNcclCollNet_t getNcclCollNet_v9;
 extern getNcclCollNet_t getNcclCollNet_v10;
+extern getNcclCollNet_t getNcclCollNet_v11;
 
 NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 1);
-#define NCCL_NET_VERSION_COUNT 5
-int ncclNetVersion[NCCL_NET_VERSION_COUNT] = {10, 9, 8, 7, 6};
-getNcclNet_t* getNcclNet[NCCL_NET_VERSION_COUNT] = {getNcclNet_v10, getNcclNet_v9, getNcclNet_v8, getNcclNet_v7, getNcclNet_v6};
-getNcclCollNet_t* getNcclCollNet[NCCL_NET_VERSION_COUNT] = {getNcclCollNet_v10, getNcclCollNet_v9, getNcclCollNet_v8, getNcclCollNet_v7,  getNcclCollNet_v6};
+#define NCCL_NET_VERSION_COUNT 6
+int ncclNetVersion[NCCL_NET_VERSION_COUNT] = {11, 10, 9, 8, 7, 6};
+getNcclNet_t* getNcclNet[NCCL_NET_VERSION_COUNT] = {getNcclNet_v11, getNcclNet_v10, getNcclNet_v9, getNcclNet_v8, getNcclNet_v7, getNcclNet_v6};
+getNcclCollNet_t* getNcclCollNet[NCCL_NET_VERSION_COUNT] = {getNcclCollNet_v11, getNcclCollNet_v10, getNcclCollNet_v9, getNcclCollNet_v8, getNcclCollNet_v7,  getNcclCollNet_v6};
 
 #define NCCL_NET_NUM_INTERNAL_PLUGINS 2
 
@@ -137,17 +139,17 @@ ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, in
   return ncclSuccess;
 }
 
-static ncclResult_t ncclNetPluginInit(netPluginLib_t* pluginLib) {
+static ncclResult_t ncclNetPluginInit(void** netCtx, void** collNetCtx, uint64_t commId, netPluginLib_t* pluginLib) {
   int ndev;
   if (pluginLib->ncclNetPluginState >= ncclNetPluginStateInitReady && pluginLib->ncclNet) {
-    if (pluginLib->ncclNet->init(ncclDebugLog, ncclProfilerCallback) != ncclSuccess) goto fail;
+    if (pluginLib->ncclNet->init(netCtx, commId, ncclDebugLog, ncclProfilerCallback) != ncclSuccess) goto fail;
     if (pluginLib->ncclNet->devices(&ndev) != ncclSuccess || ndev <= 0) goto fail;
   }
   pluginLib->ncclNetPluginState = ncclNetPluginStateEnabled;
   INFO(NCCL_INIT|NCCL_NET, "Initialized NET plugin %s", pluginLib->ncclNet->name);
 
   if (pluginLib->ncclCollNetPluginState >= ncclNetPluginStateInitReady && pluginLib->ncclCollNet) {
-    if (pluginLib->ncclCollNet->init(ncclDebugLog) != ncclSuccess) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
+    if (pluginLib->ncclCollNet->init(collNetCtx, commId, ncclDebugLog) != ncclSuccess) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
     else if (pluginLib->ncclCollNet->devices(&ndev) != ncclSuccess || ndev <= 0) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
     else {
       pluginLib->ncclCollNetPluginState = ncclNetPluginStateEnabled;
@@ -260,7 +262,7 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
       NCCLCHECK(ncclNetPluginLoad(&netPluginLibs[pluginIndex]));
     }
     if (netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateInitReady) {
-      NCCLCHECK(ncclNetPluginInit(&netPluginLibs[pluginIndex]));
+      NCCLCHECK(ncclNetPluginInit(&comm->netContext, &comm->collNetContext, comm->commHash, &netPluginLibs[pluginIndex]));
     }
     if (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateEnabled) {
       bool isAssigned = false;
@@ -282,6 +284,7 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
 ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
   int pluginIndex = comm->netPluginIndex;
   pthread_mutex_lock(&netPluginLock);
+  NCCLCHECK(comm->ncclNet->finalize(comm->netContext));
   netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
   for (int i = 0; i < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS); i++) {
     NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[i]));
@@ -324,7 +327,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
     void* mHandle = NULL;
     ncclResult_t ret;
     ncclDebugNoWarn = NCCL_NET;
-    NCCLCHECKGOTO(comm->ncclNet->listen(dev, &handle, &lComm), ret, cleanup1);
+    NCCLCHECKGOTO(comm->ncclNet->listen(comm->netContext, dev, &handle, &lComm), ret, cleanup1);
 
     bool connected;
     connected = false;
@@ -336,7 +339,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
       }
 
       if (sComm == NULL)
-        NCCLCHECKGOTO(comm->ncclNet->connect(dev, NULL, &handle, &sComm, NULL), ret, cleanup2);
+        NCCLCHECKGOTO(comm->ncclNet->connect(comm->netContext, dev, NULL, &handle, &sComm, NULL), ret, cleanup2);
 
       if (rComm == NULL)
         NCCLCHECKGOTO(comm->ncclNet->accept(lComm, &rComm, NULL), ret, cleanup2);

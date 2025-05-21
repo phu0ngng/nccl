@@ -597,7 +597,7 @@ ncclResult_t ncclIbMakeVDeviceInternal(int* d, ncclNetVDeviceProps_t* props) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbMakeVDevice(int* d, ncclNetVDeviceProps_t* props) {
+ncclResult_t ncclIbMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* props) {
   pthread_mutex_lock(&ncclIbLock);
   ncclResult_t res = ncclIbMakeVDeviceInternal(d, props);
   pthread_mutex_unlock(&ncclIbLock);
@@ -606,7 +606,7 @@ ncclResult_t ncclIbMakeVDevice(int* d, ncclNetVDeviceProps_t* props) {
 
 static ncclProfilerCallback_t ncclProfilerFunction;
 
-ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   ncclResult_t ret = ncclSuccess;
   ncclProfilerFunction = profFunction;
   if (ncclParamIbDisable()) return ncclInternalError;
@@ -1248,7 +1248,7 @@ ncclResult_t ncclIbRtsQp(struct ibv_qp* qp) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbListen(int dev, void* opaqueHandle, void** listenComm) {
+ncclResult_t ncclIbListen(void* ctx, int dev, void* opaqueHandle, void** listenComm) {
   ncclResult_t ret = ncclSuccess;
   struct ncclIbListenComm* comm;
   NCCLCHECK(ncclCalloc(&comm, 1));
@@ -1269,7 +1269,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclIbConnect(int dev, ncclNetCommConfig_t* config, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+ncclResult_t ncclIbConnect(void* ctx, int dev, ncclNetCommConfig_t* config, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   ncclResult_t ret = ncclSuccess;
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   struct ncclIbCommStage* stage = &handle->stage;
@@ -2565,6 +2565,10 @@ ncclResult_t ncclIbCloseListen(void* listenComm) {
   return ncclSuccess;
 }
 
+ncclResult_t ncclIbFinalize(void* ctx) {
+  return ncclSuccess;
+}
+
 ncclNet_t ncclNetIb = {
   "IB",
   ncclIbInit,
@@ -2585,7 +2589,8 @@ ncclNet_t ncclNetIb = {
   ncclIbCloseListen,
   NULL /* getDeviceMr */,
   NULL /* irecvConsumed */,
-  ncclIbMakeVDevice
+  ncclIbMakeVDevice,
+  ncclIbFinalize
 };
 
 /*

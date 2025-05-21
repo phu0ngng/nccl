@@ -439,10 +439,12 @@ struct ncclComm {
   bool peerInfoValid;
 
   ncclNet_t* ncclNet;
+  void* netContext;
   int netPluginIndex;
   int ncclNetVer;
   ncclNetDeviceType netDeviceType;
   ncclCollNet_t* ncclCollNet;
+  void* collNetContext;
   void* bootstrap;
   // Bitmasks for ncclTransportP2pSetup
   uint64_t* connectSend;

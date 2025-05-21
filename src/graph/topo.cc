@@ -983,7 +983,7 @@ ncclResult_t ncclTopoMakePciParent(struct ncclXml* xml, struct ncclXmlNode** par
 }
 
 ncclResult_t ncclTopoMakeVnic(struct ncclXml* xml, ncclNetVDeviceProps_t* vProps,
-struct ncclXmlNode** physNetNodes, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+struct ncclXmlNode** physNetNodes, ncclResult_t (*makeVDevice)(void* ctx, int*, ncclNetVDeviceProps_t*)) {
   if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) {
     WARN("TOPO/NET : Tried to merge too many NICs. %d > %d", vProps->ndevs, NCCL_NET_MAX_DEVS_PER_NIC);
     return ncclInternalError;
@@ -997,7 +997,7 @@ struct ncclXmlNode** physNetNodes, ncclResult_t (*makeVDevice)(int*, ncclNetVDev
 
   // Trigger the merge, then get the new device's properties
   int vDevIndex = 0;
-  ncclResult_t ret = makeVDevice(&vDevIndex, vProps);
+  ncclResult_t ret = makeVDevice(nullptr, &vDevIndex, vProps);
   if (ret != ncclSuccess) {
     INFO(NCCL_GRAPH|NCCL_INIT|NCCL_NET, "TOPO/NET : Tried merging multiple devices together and failed. vProps={ndevs=%d, devs=[%d %d %d %d]}. Set NCCL_NET_MERGE_LEVEL=LOC to disable NIC fusion.",
       vProps->ndevs, vProps->devs[0], vProps->devs[1], vProps->devs[2], vProps->devs[3]);
@@ -1015,7 +1015,7 @@ struct ncclXmlNode** physNetNodes, ncclResult_t (*makeVDevice)(int*, ncclNetVDev
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoForceMerge(struct ncclXml* xml, char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+ncclResult_t ncclTopoForceMerge(struct ncclXml* xml, char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(void* ctx, int*, ncclNetVDeviceProps_t*)) {
   ncclResult_t ret = ncclSuccess;
   INFO(NCCL_ENV|NCCL_NET, "TOPO/NET : Force-fusing NICs using NCCL_NET_FORCE_MERGE=%s", str);
   char* ncStr;
@@ -1075,7 +1075,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, int mergeLevel, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, int mergeLevel, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(void* ctx, int*, ncclNetVDeviceProps_t*)) {
   // Compute the path type between each device
   int* paths = NULL;
   ncclResult_t res = ncclSuccess;
@@ -1185,7 +1185,7 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclResult_t (*getProper
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoMakeVNics(struct ncclXml* xml, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*getProperties)(int, ncclNetProperties_t*), int physicalDevs) {
+ncclResult_t ncclTopoMakeVNics(struct ncclXml* xml, ncclResult_t (*makeVDevice)(void* ctx, int*, ncclNetVDeviceProps_t*), ncclResult_t (*getProperties)(int, ncclNetProperties_t*), int physicalDevs) {
   int* placedDevs = NULL;
   struct ncclXmlNode** physNetNodes = NULL;
   if (physicalDevs == 0) return ncclSuccess;
@@ -1272,7 +1272,7 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
 }
 
 // Calls to network plugin APIs should be protected. This function should be called inside a per-process lock.
-ncclResult_t ncclTopoProcessNet(ncclXml* xml, int coll, const char* dumpXmlFile, ncclTopoNetState* state, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*), const char* netName, bool dmaBufSupport) {
+ncclResult_t ncclTopoProcessNet(ncclXml* xml, int coll, const char* dumpXmlFile, ncclTopoNetState* state, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(void*, int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*), const char* netName, bool dmaBufSupport) {
   int usePhysicalDevices = (dumpXmlFile || makeVDevice == NULL);
   if (state->nPhysicalNics == -1) NCCLCHECK(devices(&state->nPhysicalNics));
   // Enumerate physical devices
