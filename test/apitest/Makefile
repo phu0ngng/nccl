@@ -32,12 +32,10 @@ ${DST_DIR}/%.dep:%.cu
 	> $@
 endif
 all:${DST_DIR}/apitest ${DST_DIR}/apitest_static \
-    ${DST_DIR}/plugin/libnccl-net-plugin_v5.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_v6.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_v7.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_v8.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_v9.so   \
-    ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v5.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v6.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v7.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v8.so   \
