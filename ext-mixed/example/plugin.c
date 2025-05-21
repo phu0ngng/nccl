@@ -71,8 +71,6 @@ __hidden ncclResult_t pluginGetDeviceMr(void* comm, void* mhandle, void** dptr_m
 __hidden ncclResult_t pluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* props) { return ncclInternalError; }
 __hidden ncclResult_t pluginFinalize(void* ctx) { return ncclSuccess; }
 
-#define PLUGIN_NAME "Plugin"
-
 const ncclNet_v11_t ncclNetPlugin_v11 = {
   .name = PLUGIN_NAME,
   .init = pluginInit,
@@ -99,7 +97,7 @@ const ncclNet_v11_t ncclNetPlugin_v11 = {
 
 #include "tuner.h"
 
-__hidden ncclResult_t tunerPluginInit(size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, void **context) { return ncclSuccess; }
+__hidden ncclResult_t tunerPluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction) { return ncclSuccess; }
 
 __hidden ncclResult_t tunerPluginGetCollInfo(void* context, ncclFunc_t collType, size_t nBytes,
                               int numPipeOps, float** collCostTable, int numAlgo, int numProto,
@@ -112,11 +110,11 @@ __hidden ncclResult_t tunerPluginGetCollInfo(void* context, ncclFunc_t collType,
   return ncclSuccess;
 }
 
-__hidden ncclResult_t tunerPluginDestroy(void* context) { return ncclSuccess; }
+__hidden ncclResult_t tunerPluginFinalize(void* context) { return ncclSuccess; }
 
-const ncclTuner_v4_t ncclTunerPlugin_v4 = {
+const ncclTuner_v5_t ncclTunerPlugin_v5 = {
   .name = PLUGIN_NAME,
   .init = tunerPluginInit,
   .getCollInfo = tunerPluginGetCollInfo,
-  .destroy = tunerPluginDestroy
+  .finalize = tunerPluginFinalize
 };
