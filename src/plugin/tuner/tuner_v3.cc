@@ -18,10 +18,14 @@ static ncclResult_t ncclTuner_getCollInfo(void* context, ncclFunc_t collType, si
   return ncclSuccess;
 }
 
-static ncclResult_t ncclTuner_init(size_t nRanks, size_t nNodes, ncclDebugLogger_t logfn, void** context) {
+static ncclResult_t ncclTuner_finalize(void* ctx) {
+  return ncclTuner_v3->destroy(ctx);
+}
+
+static ncclResult_t ncclTuner_init(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logfn) {
   NCCLCHECK(ncclTuner_v3->init(nRanks, nNodes, logfn, context));
   ncclTuner.getCollInfo = ncclTuner_getCollInfo;
-  ncclTuner.destroy = ncclTuner_v3->destroy;
+  ncclTuner.finalize = ncclTuner_finalize;
   return ncclSuccess;
 }
 

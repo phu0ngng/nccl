@@ -289,7 +289,7 @@ static ncclResult_t loadConfig(TunerContext* ctx, const char* filename) {
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginInit(size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, void **context) {
+__hidden ncclResult_t pluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction) {
   TunerContext* ctx = (TunerContext*)malloc(sizeof(TunerContext));
   if (!ctx) return ncclSystemError;
 
@@ -432,7 +432,7 @@ __hidden ncclResult_t pluginGetCollInfo(void* context, ncclFunc_t collType, size
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginDestroy(void* context) {
+__hidden ncclResult_t pluginFinalize(void* context) {
   if (context) {
     TunerContext* ctx = (TunerContext*)context;
     if (ctx->configs) {
@@ -443,11 +443,12 @@ __hidden ncclResult_t pluginDestroy(void* context) {
   return ncclSuccess;
 }
 
+
 #define PLUGIN_NAME "Example"
 
-const ncclTuner_v4_t ncclTunerPlugin_v4 = {
+const ncclTuner_v5_t ncclTunerPlugin_v5 = {
   .name = PLUGIN_NAME,
   .init = pluginInit,
   .getCollInfo = pluginGetCollInfo,
-  .destroy = pluginDestroy
+  .finalize = pluginFinalize
 };

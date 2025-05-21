@@ -11,12 +11,13 @@
 #include "nccl.h"
 #include "nccl_common.h"
 
+#include "tuner/tuner_v5.h"
 #include "tuner/tuner_v4.h"
 #include "tuner/tuner_v3.h"
 #include "tuner/tuner_v2.h"
 
-typedef ncclTuner_v4_t ncclTuner_t;
+typedef ncclTuner_v5_t ncclTuner_t;
 
-#define NCCL_TUNER_PLUGIN_SYMBOL "ncclTunerPlugin_v4"
+#define NCCL_TUNER_PLUGIN_SYMBOL "ncclTunerPlugin_v5"
 
 #endif
