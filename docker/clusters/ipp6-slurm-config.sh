@@ -88,7 +88,7 @@ function get_planned_reserved() {
     echo "$IPP6_PLANNED_RESERVED"
 }
 
-function get_nccl_socket_ifname() { 
+function get_nccl_socket_ifname() {
     echo "$IPP6_NCCL_SOCKET_IFNAME"
 }
 
