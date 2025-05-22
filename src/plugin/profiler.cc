@@ -48,7 +48,10 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
 
   profilerPluginLib = ncclOpenProfilerPluginLib(ncclGetEnv("NCCL_PROFILER_PLUGIN"));
   if (profilerPluginLib == nullptr) {
-    goto fail;
+    profilerPluginLib = ncclGetNetPluginLib();
+    if (nullptr == profilerPluginLib) {
+      goto fail;
+    }
   }
 
   ncclProfiler = getNcclProfiler_v5(profilerPluginLib);
