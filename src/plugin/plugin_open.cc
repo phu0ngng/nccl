@@ -49,10 +49,9 @@ static void* tryOpenLib(char* name, int* err, char* errStr) {
   return handle;
 }
 
-static void appendNameToList(char* nameList, int *nameListLen, char* name) {
-  snprintf(nameList, *nameListLen, " %s", name);
-  nameList += strlen(name) + 1;
-  *nameListLen -= strlen(name) + 1;
+static void appendNameToList(char* nameList, int *leftChars, char* name) {
+  snprintf(nameList + PATH_MAX - *leftChars, *leftChars, " %s", name);
+  *leftChars -= strlen(name) + 1;
 }
 
 static void* openPluginLib(enum ncclPluginType type, const char* libName) {
@@ -62,28 +61,31 @@ static void* openPluginLib(enum ncclPluginType type, const char* libName) {
   char eNoEntNameList[PATH_MAX] = { 0 };
 
   if (libName && strlen(libName)) {
-    snprintf(libName_, MAX_STR_LEN, "%s", libName);
-    libHandles[type] = tryOpenLib(libName_, &openErr, openErrStr);
-    if (libHandles[type]) {
-      INFO(subsys[type], "%s/Plugin: Plugin name set by env to %s", pluginNames[type], libName_);
-      return libHandles[type];
-    }
-    if (openErr == ENOENT) {
-      appendNameToList(eNoEntNameList, &len, libName_);
+    // match names that start with 'lib' and end with '.so'
+    if (strlen(libName) >= strlen("libX.so") && strncmp(libName, "lib", strlen("lib")) == 0 && strncmp(libName + strlen(libName) - strlen(".so"), ".so", strlen(".so")) == 0) {
+      snprintf(libName_, MAX_STR_LEN, "%s", libName);
+      libHandles[type] = tryOpenLib(libName_, &openErr, openErrStr);
+      if (libHandles[type]) {
+        INFO(subsys[type], "%s/Plugin: Plugin name set by env to %s", pluginNames[type], libName_);
+        return libHandles[type];
+      }
+      if (openErr == ENOENT) {
+        appendNameToList(eNoEntNameList, &len, libName_);
+      } else {
+        INFO(subsys[type], "%s/Plugin: %s", pluginNames[type], openErrStr);
+      }
     } else {
-      INFO(subsys[type], "%s/Plugin: %s", pluginNames[type], openErrStr);
-    }
-
-    snprintf(libName_, MAX_STR_LEN, "%s-%s.so", pluginPrefix[type], libName);
-    libHandles[type] = tryOpenLib(libName_, &openErr, openErrStr);
-    if (libHandles[type]) {
-      INFO(subsys[type], "%s/Plugin: Plugin name set by env to %s", pluginNames[type], libName_);
-      return libHandles[type];
-    }
-    if (openErr == ENOENT) {
-      appendNameToList(eNoEntNameList, &len, libName_);
-    } else {
-      INFO(subsys[type], "%s/Plugin: %s", pluginNames[type], openErrStr);
+      snprintf(libName_, MAX_STR_LEN, "%s-%s.so", pluginPrefix[type], libName);
+      libHandles[type] = tryOpenLib(libName_, &openErr, openErrStr);
+      if (libHandles[type]) {
+        INFO(subsys[type], "%s/Plugin: Plugin name set by env to %s", pluginNames[type], libName_);
+        return libHandles[type];
+      }
+      if (openErr == ENOENT) {
+        appendNameToList(eNoEntNameList, &len, libName_);
+      } else {
+        INFO(subsys[type], "%s/Plugin: %s", pluginNames[type], openErrStr);
+      }
     }
   } else {
     snprintf(libName_, MAX_STR_LEN, "%s.so", pluginPrefix[type]);
