@@ -334,6 +334,7 @@ ncclResult_t ncclProfilerStartProxyOpEvent(int s, struct ncclProxyArgs* args) {
       eDescr.proxyOp.peer = sub->peer;
       eDescr.proxyOp.nSteps = DIVUP(sub->nsteps, args->sliceSteps);
       eDescr.proxyOp.chunkSize = args->chunkSize * args->sliceSteps;
+      eDescr.proxyOp.isSend = args->progress == ncclTransports[TRANSPORT_NET]->send.proxyProgress ? 1 : 0;
       ncclProfiler->startEvent(sub->profilerContext, &sub->opEventHandle, &eDescr);
     }
   }
@@ -459,12 +460,11 @@ ncclResult_t ncclProfilerStopKernelChEvent(struct ncclProxyArgs* args, int s, ui
   return ncclSuccess;
 }
 
-ncclResult_t ncclProfilerRecordProxyOpEventState(int s, struct ncclProxyArgs* args, int isSend, ncclProfilerEventState_t eState) {
+ncclResult_t ncclProfilerRecordProxyOpEventState(int s, struct ncclProxyArgs* args, ncclProfilerEventState_t eState) {
   TIME_START_EVENT(proxyOpRecord);
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0) && sub->opEventHandle) {
     ncclProfilerEventStateArgs_t a = { };
-    a.proxyOp.isSend = isSend;
     ncclProfiler->recordEventState(sub->opEventHandle, eState, &a);
   }
   TIME_STOP_EVENT(proxyOpRecord);

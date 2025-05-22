@@ -181,6 +181,7 @@ typedef struct {
       int peer;             // peer rank
       int nSteps;           // number of network transfers/steps required by the `ncclProxyOp`
       int chunkSize;        // chunk size for this `ncclProxyOp`
+      int isSend;           // type of network operation
     } proxyOp;
 
     struct {                // proxyStep events metadata
@@ -363,12 +364,8 @@ reason the profiler defines the `ncclProfilerEventStateArgs_t` struct, reported 
 
 ```
 typedef union {
-  struct {                // attributes to update for ncclProfileProxyOp events
-    int isSend;           // transfer type flag for proxy operation
-  } proxyOp;
-
   struct {                // attributes for update for ncclProfileProxyStep events
-    size_t transSize;     // transfer size field for proxy step
+    size_t transSize;     // transfer size field for this proxy step
   } proxyStep;
 
   struct {                // attributes to update for ncclProfileProxyCtrl events

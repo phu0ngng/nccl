@@ -41,6 +41,7 @@ typedef struct {
       int peer;                 // remote rank for send/recv
       int nSteps;               // number of steps for this proxy operation
       int chunkSize;            // amount of data transferred by this proxy operation
+      int isSend;
     } proxyOp;
 
     struct {
@@ -60,10 +61,6 @@ typedef struct {
 } ncclProfilerEventDescr_v4_t;
 
 typedef union {
-  struct {
-    int isSend;
-  } proxyOp;
-
   struct {
     size_t transSize;
   } proxyStep;

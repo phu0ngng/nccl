@@ -1115,7 +1115,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       // Set step base for next op
       resources->step = sub->base + sub->nsteps;
       sub->posted = sub->transmitted = sub->done = 0;
-      ncclProfilerRecordProxyOpEventState(s, args, 1, ncclProfilerProxyOpInProgress_v4);
+      ncclProfilerRecordProxyOpEventState(s, args, ncclProfilerProxyOpInProgress_v4);
       if (!sub->reg)
         sub->sendMhandle = resources->mhandles[args->protocol];
     }
@@ -1293,7 +1293,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       sub->posted = sub->received = sub->transmitted = sub->done = 0;
       sub->regBufferReady = 0;
       for (int i=0; i<groupSize; i++) sub[-i].groupSize = groupSize;
-      ncclProfilerRecordProxyOpEventState(s, args, 0, ncclProfilerProxyOpInProgress_v4);
+      ncclProfilerRecordProxyOpEventState(s, args, ncclProfilerProxyOpInProgress_v4);
       if (!sub->reg)
         sub->recvMhandle = resources->mhandles[args->protocol];
     }
