@@ -1,5 +1,5 @@
 <graphs version="1">
-  <graph id="0" pattern="4" crossnic="2" nchannels="8" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="PHB" samechannels="0">
+  <graph id="0" pattern="4" crossnic="2" nchannels="8" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
@@ -65,7 +65,7 @@
       <net dev="0x9"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="8" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="PHB" samechannels="0">
+  <graph id="1" pattern="3" crossnic="0" nchannels="8" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
@@ -131,6 +131,6 @@
       <net dev="0x9"/>
     </channel>
   </graph>
-  <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="1"/>
-  <graph id="3" pattern="5" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0"/>
+  <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="1"/>
+  <graph id="3" pattern="5" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0"/>
 </graphs>
