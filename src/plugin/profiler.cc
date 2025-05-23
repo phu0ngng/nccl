@@ -48,7 +48,7 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
 
   profilerPluginLib = ncclOpenProfilerPluginLib(ncclGetEnv("NCCL_PROFILER_PLUGIN"));
   if (profilerPluginLib == nullptr) {
-    profilerPluginLib = ncclGetNetPluginLib();
+    profilerPluginLib = ncclGetNetPluginLib(ncclPluginTypeProfiler);
     if (nullptr == profilerPluginLib) {
       goto fail;
     }
@@ -84,7 +84,7 @@ exit:
   pthread_mutex_unlock(&profilerLock);
   return ncclSuccess;
 fail:
-  if (profilerPluginLib) NCCLCHECK(ncclClosePluginLib(profilerPluginLib));
+  if (profilerPluginLib) NCCLCHECK(ncclClosePluginLib(profilerPluginLib, ncclPluginTypeProfiler));
   profilerPluginStatus = profilerPluginLoadFailed;
   goto exit;
 }
