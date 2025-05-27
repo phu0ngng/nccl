@@ -203,6 +203,7 @@ ncclResult_t ncclCommGroupRegisterSymmetric(struct ncclAsyncJob* job_) {
 
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
   if (comm->baseStride == 0) {
+    cudaStream_t hostStream;
     // first time to allocate symmetric VA space.
     // calling into this function means symmetric is supported.
     struct ncclSymDevBase* symBase = NULL;
@@ -223,7 +224,10 @@ ncclResult_t ncclCommGroupRegisterSymmetric(struct ncclAsyncJob* job_) {
     // Allocate symmetric memory for NCCL internal usage
     NCCLCHECKGOTO(ncclCommSymmetricAllocInternal(comm, size, alignof(struct ncclSymDevBase), (void**)&symBase), ret, fail);
     assert((void*)symBase == (void*)(comm->baseUCSymPtr + comm->localRank * comm->baseStride));
-    CUDACHECKGOTO(cudaMemset(symBase, 0, size), ret, fail);
+    NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(), &comm->sharedRes->hostStream, /*concurrent=*/false, &hostStream), ret, fail);
+    CUDACHECKGOTO(cudaMemsetAsync(symBase, 0, size, hostStream), ret, fail);
+    CUDACHECKGOTO(cudaStreamSynchronize(hostStream), ret, fail);
+    NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream, /*concurrent=*/false), ret, fail);
 
     comm->symDevComm.base = (struct ncclSymDevBase*)(comm->baseUCSymPtr + comm->localRank * comm->baseStride);
     comm->symDevComm.baseMc = (struct ncclSymDevBase*)comm->baseMCSymPtr;
