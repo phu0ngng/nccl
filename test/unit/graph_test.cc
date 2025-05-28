@@ -223,7 +223,7 @@ ncclResult_t fakeNetPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
       }
     }
 
-    printf("Fake/Plugin : Made vDevice %s speed=%d\n", mDev->name, mDev->speed);
+    INFO(NCCL_GRAPH, "Fake/Plugin : Made vDevice %s speed=%d\n", mDev->name, mDev->speed);
 
     *d = nVirtualDevs;
     nVirtualDevs++;
