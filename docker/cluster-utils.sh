@@ -46,7 +46,7 @@ function identify_cluster() {
     return
     fi
 
-    if [[ "$hostname" =~ k8s-m1 ]]; then
+    if [[ "$hostname" =~ k8s-m* ]]; then
         echo "ipp6-slurm"
 	return
     fi
