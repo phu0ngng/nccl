@@ -163,7 +163,7 @@ static void queryModel(struct ncclComm* comm, ncclSymKernelId k, size_t nBytes, 
 
   nMaxBlocks = std::min<int>(nMaxBlocks, comm->config.maxCTAs);
   int nMinBlocks = comm->config.minCTAs;
-  
+
   int nUserCTAs = std::min<int>(ncclSymMaxBlocks, ncclParamSymCTAs());
   if (nUserCTAs > 0) nMinBlocks = nMaxBlocks = nUserCTAs;
 
