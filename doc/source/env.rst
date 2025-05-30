@@ -1313,7 +1313,7 @@ Set the maximal number of CTAs the NCCL should use. Setting this environment var
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Set to a positive integer value up to 32. Default value is undefined.
+Set to a positive integer value up to 64 (32 prior to 2.25). Default value is undefined.
 
 NCCL_MIN_CTAS
 -------------
@@ -1323,7 +1323,7 @@ Set the minimal number of CTAs the NCCL should use. Setting this environment var
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Set to a positive integer value up to 32. Default value is undefined.
+Set to a positive integer value up to 64 (32 prior to 2.25). Default value is undefined.
 
 NCCL_NVLS_ENABLE
 ----------------
