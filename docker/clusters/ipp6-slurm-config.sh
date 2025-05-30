@@ -60,7 +60,7 @@ function get_build_command() {
 
     echo "srun \
         -p cpuonly \
-        -J nccl:ci-build \
+        -J nccl:build \
         -t 00:30:00 \
         -n 1 \
         --container-image=$build_tools_image \
