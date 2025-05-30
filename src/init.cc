@@ -31,6 +31,7 @@
 #include "param.h"
 #include "nvtx_payload_schemas.h"
 #include "utils.h"
+#include <mutex>
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -71,7 +72,7 @@ ncclResult_t initGdrCopy() {
 }
 
 static ncclResult_t initResult = ncclSuccess;
-static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
+static std::once_flag initOnceFlag;
 
 static void initOnceFunc() {
   initEnv();
@@ -84,7 +85,7 @@ exit:;
 }
 
 static ncclResult_t ncclInit() {
-  pthread_once(&initOnceControl, initOnceFunc);
+  std::call_once(initOnceFlag, initOnceFunc);
   return initResult;
 }
 
@@ -1773,8 +1774,8 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
   NCCLCHECKGOTO(ncclInit(), res, fail);
 
   if (ncclDebugLevel > NCCL_LOG_WARN || (ncclDebugLevel != NCCL_LOG_NONE && myrank == 0)) {
-    static pthread_once_t once = PTHREAD_ONCE_INIT;
-    pthread_once(&once, showVersion);
+    static std::once_flag once;
+    std::call_once(once, showVersion);
   }
   // Make sure the CUDA runtime is initialized.
   CUDACHECKGOTO(cudaFree(NULL), res, fail);

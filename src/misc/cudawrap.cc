@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "param.h"
 #include "cudawrap.h"
+#include <mutex>
 
 // This env var (NCCL_CUMEM_ENABLE) toggles cuMem API usage
 NCCL_PARAM(CuMemEnable, "CUMEM_ENABLE", -2);
@@ -242,7 +243,7 @@ static ncclResult_t cudaPfnFuncLoader(void) {
 }
 #endif
 
-static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
+static std::once_flag initOnceFlag;
 static ncclResult_t initResult;
 
 static void initOnceFunc() {
@@ -295,6 +296,6 @@ error:
 }
 
 ncclResult_t ncclCudaLibraryInit() {
-  pthread_once(&initOnceControl, initOnceFunc);
+  std::call_once(initOnceFlag, initOnceFunc);
   return initResult;
 }
