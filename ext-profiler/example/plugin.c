@@ -334,7 +334,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       event->peer = eDescr->proxyOp.peer;
       event->nSteps = eDescr->proxyOp.nSteps;
       event->chunkSize = eDescr->proxyOp.chunkSize;
-      event->isSend = -1;
+      event->isSend = eDescr->proxyOp.isSend;
       event->startTs = gettime() - startTime;
       event->parent = NULL;
       event->stepCount = 0;
@@ -355,7 +355,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       event->peer = eDescr->proxyOp.peer;
       event->nSteps = eDescr->proxyOp.nSteps;
       event->chunkSize = eDescr->proxyOp.chunkSize;
-      event->isSend = -1;
+      event->isSend = eDescr->proxyOp.isSend;
       event->parent = eventBase;
       event->startTs = gettime() - startTime;
       event->stepCount = 0;
@@ -373,7 +373,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
       event->peer = eDescr->proxyOp.peer;
       event->nSteps = eDescr->proxyOp.nSteps;
       event->chunkSize = eDescr->proxyOp.chunkSize;
-      event->isSend = -1;
+      event->isSend = eDescr->proxyOp.isSend;
       event->parent = eventBase;
       event->startTs = gettime() - startTime;
       event->stepCount = 0;
@@ -577,7 +577,6 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
   if (type == ncclProfileProxyOp) {
     struct proxyOp* event = (struct proxyOp *)eHandle;
     if (eState == ncclProfilerProxyOpInProgress_v4) {
-      event->isSend = eStateArgs->proxyOp.isSend;
       event->progrTs = gettime() - startTime;
     }
   } else if (type == ncclProfileProxyStep) {

@@ -49,7 +49,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
       eDescr_v3.proxyOp.peer = eDescr->proxyOp.peer;
       eDescr_v3.proxyOp.nSteps = eDescr->proxyOp.nSteps;
       eDescr_v3.proxyOp.chunkSize = eDescr->proxyOp.chunkSize;
-      eDescr_v3.proxyOp.isSend = 0; // removed in v4
+      eDescr_v3.proxyOp.isSend = eDescr->proxyOp.isSend;
     } break;
     case ncclProfileProxyStep: {
       eDescr_v3.proxyStep.step = eDescr->proxyStep.step;
@@ -68,13 +68,24 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
 }
 
 static ncclResult_t ncclProfiler_recordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_t* eStateArgs) {
-  // event states after ProxyCtrlAppendEnd are introduced in v4 and not supported by older plugins
-  if (eState > ncclProfilerProxyCtrlAppendEnd) return ncclSuccess;
-  // proxy event state arguments after v4 have changed and no longer supported by older plugins
-  if (eState < ncclProfilerProxyCtrlIdle) return ncclSuccess;
-  // if we get here we are recording ProxyCtrl states
   ncclProfilerEventStateArgs_v3_t args = { };
-  args.proxyCtrl.appendedProxyOps = eStateArgs->proxyCtrl.appendedProxyOps;
+  switch (eState) {
+    case ncclProfilerProxyCtrlIdle:
+    case ncclProfilerProxyCtrlActive:
+    case ncclProfilerProxyCtrlSleep:
+    case ncclProfilerProxyCtrlWakeup:
+    case ncclProfilerProxyCtrlAppend:
+    case ncclProfilerProxyCtrlAppendEnd:
+      args.proxyCtrl.appendedProxyOps = eStateArgs->proxyCtrl.appendedProxyOps;
+      break;
+    case ncclProfilerProxyStepSendGPUWait:
+    case ncclProfilerProxyStepSendWait:
+    case ncclProfilerProxyStepRecvWait:
+    case ncclProfilerProxyStepRecvFlushWait:
+    case ncclProfilerProxyStepRecvGPUWait:
+      break;
+    default: return ncclSuccess;
+  }
   return ncclProfiler_v3->recordEventState(eHandle, eState, &args);
 }
 

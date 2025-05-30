@@ -63,11 +63,11 @@ build-trace:
       when: always
     - when: never
   tags:
-    - build-with-docker
+    - ipp6-nccl
   variables:
     NCCL_BUILD_TRACE: 1
   script:
-    - docker/make.sh gc-classic
+    - docker/make.sh ipp6-slurm
 
 build-classic:
   stage: build
@@ -86,43 +86,23 @@ build-classic:
 build-ipp6:
   stage: build
   rules:
-    - if: $RUN_ON_IPP6 == "1"
+    - if: $RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1"
       when: always
     - when: never
   tags:
     - ipp6-nccl
   script:
-    - docker/make.sh ipp6-slurm
-  after_script:
-    - tar --exclude="*.o" -cf - build | pigz --best > build-ipp6.tar.gz
-    - rm -rf build/
-  # TODO (kartiki) - Uncomment this once build-eos-aws-oci is retired
-  # artifacts:
-  #   paths:
-  #     - build-ipp6.tar.gz
-  #   expire_in: 48 hrs
-  cache:
-    key: "$CI_COMMIT_REF_SLUG"
-    paths:
-      - build-ipp6.tar.gz
-
-build-eos-aws-oci:
-  stage: build
-  rules:
-    - if: $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1"
-      when: always
-    - when: never
-  tags:
-    - build-with-docker
-  script:
-    - docker/make.sh draco-oci,eos,pre-nyx
-    - mv build build-eos
+    - docker/make.sh --ci-build ipp6-slurm,draco-oci,eos,pre-nyx
+    - tar -cf - build | pigz --best > build-ipp6.tar.gz
   artifacts:
     paths:
-      - build-eos
-    exclude:
-      - build-eos/**/*.o
+      - build-ipp6.tar.gz
     expire_in: 48 hrs
+  cache:
+    key: "$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build
+    policy: push
 
 build-pre-tyche:
   stage: build
@@ -225,11 +205,15 @@ setup-AWS_H100_EFA:
       when: always
     - when: never
   tags:
-    - aws_p5
+    - ipp6-nccl
   needs:
-    # Builds targetted for EOS work on AWS as well as the build config is the same across both clusters.
-    # TODO - Refactor build jobs to decouple EOS and AWS.
-    - build-eos-aws-oci
+    - job: build-ipp6
+      artifacts: false
+  cache:
+    key: "$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build
+    policy: pull
   variables:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
@@ -475,7 +459,8 @@ unit_tests-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws-oci"]
+  needs:
+    - build-ipp6
   tags:
     - nccl-eos
   variables:
@@ -486,13 +471,15 @@ unit_tests-eos:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     DISABLE_MEMLEAK: "0" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -516,7 +503,7 @@ unit_tests-AWS_H100_EFA:
   needs:
     - setup-AWS_H100_EFA
   tags:
-    - aws_p5
+    - ipp6-nccl
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -537,8 +524,8 @@ unit_tests-AWS_H100_EFA:
       export GRAPH=0
       export DISABLE_MEMLEAK_NETWORK=1
       export DISABLE_MEMLEAK=1
-      export NCCL_HOME=build-eos
-      export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
+      export NCCL_HOME=build
+      export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
       export RUN_MODE="SALLOC_MPI"
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
@@ -570,7 +557,7 @@ unit_tests-draco_oci:
       when: always
     - when: never
   needs:
-    - build-eos-aws-oci
+    - build-ipp6
   tags:
     - draco-oci-iad
   variables:
@@ -580,9 +567,11 @@ unit_tests-draco_oci:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -604,7 +593,7 @@ unit_tests-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-eos-aws-oci
+    - build-ipp6
   tags:
     - prenyx
   variables:
@@ -616,9 +605,11 @@ unit_tests-pre-nyx:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -676,11 +667,13 @@ unit_tests-ipp6-a100:
     - if: $RUN_ON_IPP6 == "1"
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs:
+    - job: build-ipp6
+      artifacts: false
   cache:
-    key: "$CI_COMMIT_REF_SLUG"
+    key: "$CI_COMMIT_SHORT_SHA"
     paths:
-      - build/
+      - build
     policy: pull
   tags:
     - ipp6-nccl
@@ -694,8 +687,6 @@ unit_tests-ipp6-a100:
     NP: 1
     NCCL_HOME: build
     RUN_MODE: "MPI"
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -869,7 +860,8 @@ apitest-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-1v
   variables:
@@ -877,8 +869,9 @@ apitest-DGX-1V:
     PARTITION_LIST: "batch_short_dgx1_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
-    - mv build-eos build
     - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
   artifacts:
     when: always
@@ -892,7 +885,8 @@ apitest-DGX-2:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-2
   variables:
@@ -900,8 +894,9 @@ apitest-DGX-2:
     PARTITION_LIST: "batch_short_dgx2h_m2"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
-    - mv build-eos build
     - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
   artifacts:
     when: always
@@ -915,7 +910,8 @@ apitest-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-a100
   variables:
@@ -923,6 +919,8 @@ apitest-DGX-A100:
     NCCL_SOCKET_IFNAME: "ibp12s0"
     NCCL_CUMEM_ENABLE: "1"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - srun -n 1 --account=coreai_libraries_nccl -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:30:00 ./test/scripts/gitlab-runner-apitest.sh
   artifacts:
@@ -937,7 +935,8 @@ apitest-eos:
     - if: $RUN_ON_EOS == "1" && $RUN_EOS_APITEST == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws-oci"]
+  needs:
+    - build-ipp6
   tags:
     - nccl-eos
   variables:
@@ -948,11 +947,13 @@ apitest-eos:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     PLANNED_RESERVED: "Planned"
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -976,7 +977,7 @@ apitest-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,unit_tests-AWS_H100_EFA]
   tags:
-    - aws_p5
+    - ipp6-nccl
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -995,8 +996,8 @@ apitest-AWS_H100_EFA:
       export NGPUS=8
       export SKIP_API_NO_P2P=1 # NvBug 5210770
       export NP=1
-      export NCCL_HOME=build-eos
-      export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
+      export NCCL_HOME=build
+      export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
       export RUN_MODE="SALLOC_MPI"
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
@@ -1029,7 +1030,7 @@ apitest-draco_oci:
       when: always
     - when: never
   needs:
-    - build-eos-aws-oci
+    - build-ipp6
     - unit_tests-draco_oci
   tags:
     - draco-oci-iad
@@ -1041,8 +1042,10 @@ apitest-draco_oci:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1064,7 +1067,7 @@ apitest-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-eos-aws-oci
+    - build-ipp6
   tags:
     - prenyx
   variables:
@@ -1077,8 +1080,10 @@ apitest-pre-nyx:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1134,11 +1139,13 @@ apitest-ipp6-a100:
     - if: $RUN_ON_IPP6 == "1"
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs:
+    - job: build-ipp6
+      artifacts: false
   cache:
-    key: "$CI_COMMIT_REF_SLUG"
+    key: "$CI_COMMIT_SHORT_SHA"
     paths:
-      - build/
+      - build
     policy: pull
   tags:
     - ipp6-nccl
@@ -1152,8 +1159,6 @@ apitest-ipp6-a100:
     NP: 1
     NCCL_HOME: build
     RUN_MODE: "MPI"
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1403,7 +1408,8 @@ perftest-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-1v
   variables:
@@ -1414,8 +1420,9 @@ perftest-DGX-1V:
     NNODES: 1
     NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
-    - mv build-eos build
     - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=coreai_libraries_nccl --nv-meta ml-model.nccl -p $PARTITION_LIST -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 2G
   artifacts:
     when: always
@@ -1429,7 +1436,8 @@ perftest-DGX-2:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-2
   variables:
@@ -1440,8 +1448,9 @@ perftest-DGX-2:
     NNODES: 1
     NGPUS: 16
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
-    - mv build-eos build
     - salloc -N 1 --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} --account=coreai_libraries_nccl --nv-meta ml-model.nccl -p $PARTITION_LIST -t 00:35:00 ./test/scripts/gitlab-runner-perftest.sh 1G
   artifacts:
     when: always
@@ -1455,7 +1464,8 @@ perftest-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-a100
   variables:
@@ -1466,6 +1476,8 @@ perftest-DGX-A100:
     NNODES: 1
     NGPUS: 8
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - salloc -N ${NNODES} -n ${NGPUS} --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:30:00 ./test/scripts/gitlab-runner-perftest.sh 16G
   artifacts:
@@ -1480,7 +1492,8 @@ perftest-single-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws-oci"]
+  needs:
+    - build-ipp6
   tags:
     - nccl-eos
   variables:
@@ -1495,8 +1508,10 @@ perftest-single-eos:
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -1518,7 +1533,7 @@ perftest_single-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,apitest-AWS_H100_EFA]
   tags:
-    - aws_p5
+    - ipp6-nccl
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -1539,11 +1554,11 @@ perftest_single-AWS_H100_EFA:
       export GRAPH=0
       export NCCL_NVLS_ENABLE=0
       export MAX=1G
-      export NCCL_HOME=build-eos
+      export NCCL_HOME=build
       export RUN_MODE="SALLOC_MPI"
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
-      export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
+      export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
       export JUNIT=$JUNIT
       export SYMMETRIC=1
       $TEST_CMD
@@ -1572,7 +1587,7 @@ perftest_single-draco_oci:
       when: always
     - when: never
   needs:
-    - build-eos-aws-oci
+    - build-ipp6
   tags:
     - draco-oci-iad
   variables:
@@ -1587,9 +1602,11 @@ perftest_single-draco_oci:
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --gpus-per-node ${NGPUS} -n ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -1609,7 +1626,7 @@ perftest-single-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-eos-aws-oci
+    - build-ipp6
   tags:
     - prenyx
   variables:
@@ -1624,9 +1641,11 @@ perftest-single-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SYMMETRIC: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -1681,11 +1700,13 @@ perftest-single-ipp6-a100:
     - if: $RUN_ON_IPP6 == "1"
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs:
+    - job: build-ipp6
+      artifacts: false
   cache:
-    key: "$CI_COMMIT_REF_SLUG"
+    key: "$CI_COMMIT_SHORT_SHA"
     paths:
-      - build/
+      - build
     policy: pull
   tags:
     - ipp6-nccl
@@ -1701,8 +1722,6 @@ perftest-single-ipp6-a100:
     RUN_MODE: "MPI"
     SYMMETRIC: 1
     MAX: "1G"
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -1784,7 +1803,8 @@ perftest-multi-DGX-1V:
     - if: $RUN_ON_DRACO == "1"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-1v
   variables:
@@ -1800,7 +1820,6 @@ perftest-multi-DGX-1V:
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
     DRACO_SALLOC: "--exclusive --gpus-per-node=8 --ntasks-per-node=8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl --exclusive -t 00:25:00"
   script:
-    - mv build-eos build
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
   artifacts:
     when: always
@@ -1840,7 +1859,8 @@ perftest-multi-selene:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-a100
   variables:
@@ -1854,6 +1874,8 @@ perftest-multi-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     NCCL_CUMEM_ENABLE: "1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
 
@@ -1863,7 +1885,8 @@ perftest-multi-eos:
     - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: ["build-eos-aws-oci"]
+  needs:
+    - build-ipp6
   tags:
     - nccl-eos
   variables:
@@ -1880,9 +1903,11 @@ perftest-multi-eos:
     MAX: "1G"
     NP: 8
     SKIP_FT_INIT: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -1903,7 +1928,8 @@ perftest-sharp-selene:
     - if: $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2"
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-a100
   variables:
@@ -1920,6 +1946,8 @@ perftest-sharp-selene:
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     NCCL_CUMEM_ENABLE: "1"
     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna --network=sharp -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SHARP_MULTI_JOB_TIME ./test/scripts/gitlab-runner-perftest-sharp.sh 4G 0
 
@@ -1932,7 +1960,7 @@ perftest_multi-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,perftest_single-AWS_H100_EFA]
   tags:
-    - aws_p5
+    - ipp6-nccl
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -1953,8 +1981,8 @@ perftest_multi-AWS_H100_EFA:
       export GRAPH=0
       export NCCL_NVLS_ENABLE=0
       export NP=8
-      export NCCL_HOME=build-eos
-      export LD_LIBRARY_PATH=build-eos/lib:$LD_LIBRARY_PATH
+      export NCCL_HOME=build
+      export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
       export RUN_MODE="SALLOC_MPI"
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
@@ -1986,7 +2014,7 @@ perftest_multi-draco_oci:
       when: always
     - when: never
   needs:
-    - build-eos-aws-oci
+    - build-ipp6
   tags:
     - draco-oci-iad
   variables:
@@ -2000,9 +2028,11 @@ perftest_multi-draco_oci:
     NP: 8
     GRAPH: 0
     SKIP_FT_INIT: 1
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --gpus-per-node ${NGPUS} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2022,7 +2052,7 @@ perftest-multi-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-eos-aws-oci
+    - build-ipp6
   tags:
     - prenyx
   variables:
@@ -2036,9 +2066,11 @@ perftest-multi-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: build-eos
+    NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2099,11 +2131,13 @@ perftest-multi-ipp6-a100:
     - if: $RUN_ON_IPP6 == "1"
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs:
+    - job: build-ipp6
+      artifacts: false
   cache:
-    key: "$CI_COMMIT_REF_SLUG"
+    key: "$CI_COMMIT_SHORT_SHA"
     paths:
-      - build/
+      - build
     policy: pull
   tags:
     - ipp6-nccl
@@ -2119,8 +2153,6 @@ perftest-multi-ipp6-a100:
     RUN_MODE: "MPI"
     SYMMETRIC: 1
     MAX: "1G"
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2141,7 +2173,8 @@ perf-regression-single-DGX-A100:
     - if: $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
       when: always
     - when: never
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-a100
   variables:
@@ -2151,6 +2184,8 @@ perf-regression-single-DGX-A100:
     NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
     NCCL_CUMEM_ENABLE: "1"
     GPU_APPLICATION_CLOCK: 1410
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
     - salloc -N 1 -n 8 --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-single-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SINGLE_REGRESSION_SALLOC_TIME ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA
@@ -2192,7 +2227,8 @@ perf-regression-multi-DGX-A100:
     - if: $REGRESSION_BASELINE == ""
       variables:
         REGRESSION_BASELINE: "${REGRESSION_BASELINE_TAG}"
-  needs: [build-eos-aws-oci]
+  needs:
+    - build-ipp6
   tags:
     - dgx-a100
   variables:
@@ -2205,6 +2241,8 @@ perf-regression-multi-DGX-A100:
     OMPI_MCA_btl: "^openib"
     OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
     GPU_APPLICATION_CLOCK: 1410
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $MULTI_REGRESSION_SALLOC_TIME ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA

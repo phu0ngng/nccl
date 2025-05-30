@@ -5,7 +5,7 @@
 # provide target cluster name (defaults to the build cluster name)
 # identify build machine/cluster automatically
 function usage() {
-    echo "INFO:  Usage: $0 [ target_cluster_tag ] [ --clean ] [ --baremetal-build ]"
+    echo "INFO:  Usage: $0 [ target_cluster_tag ] [ --clean ] [ --baremetal-build ] [ --ci-build ]"
     exit 1
 }
 
@@ -35,6 +35,7 @@ build_cluster_tag="$(identify_cluster)"
 target_cluster_arg="$build_cluster_tag"
 make_clean=0
 baremetal_build=0
+ci_build=0
 
 for arg in "$@"
 do
@@ -43,12 +44,16 @@ do
                  ;;
         --baremetal-build) baremetal_build=1
                            ;;
+        --ci-build) ci_build=1
+                 ;;
         --help|-h) usage
                    ;;
         *) target_cluster_arg="$arg"
            ;;
     esac
 done
+
+export CI_BUILD=$ci_build
 
 # process target cluster config
 # comma separated list of cluster tags

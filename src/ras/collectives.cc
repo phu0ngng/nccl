@@ -669,15 +669,15 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
          commIdx++) {
       ncclComm = ncclComms[commIdx];
       struct rasCollComms::comm::rank* rank = comm->ranks+comm->nRanks;
-      ncclResult_t asyncError;
       rank->commRank = ncclComm->rank;
       // rasNetSendCollReq initializes coll->peers[0] to our rasNetListeningSocket.addr, so peerIdx is initially
       // always 0.  It will increase after we send this response back to the peer we got the request from.
       rank->peerIdx = 0;
       memcpy(rank->collOpCounts, ncclComm->seqNumber, sizeof(rank->collOpCounts));
       rank->status.initState = ncclComm->initState;
-      if (ncclCommGetAsyncError(ncclComm, &asyncError) == ncclSuccess)
-        rank->status.asyncError = asyncError;
+      rank->status.asyncError = __atomic_load_n(&ncclComm->asyncResult, __ATOMIC_ACQUIRE);
+      if (rank->status.asyncError == ncclSuccess && ncclComm->proxyState)
+        rank->status.asyncError = __atomic_load_n(&ncclComm->proxyState->asyncResult, __ATOMIC_ACQUIRE);
       rank->status.finalizeCalled = (ncclComm->finalizeCalled != 0);
       rank->status.destroyFlag = (ncclComm->destroyFlag != 0);
       rank->status.abortFlag = (__atomic_load_n(ncclComm->abortFlag, __ATOMIC_ACQUIRE) != 0);
