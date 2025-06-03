@@ -48,7 +48,9 @@ cp $RUN_TST run_test.py
 # note(mkozuki): Cheat `run_test.py` so that we can disable "parallel" execution of tests as possible.
 export TEST_CONFIG="distributed"
 
-export PYTORCH_TEST_RUN_EVERYTHING_IN_SERIAL=1
+export PYTORCH_TEST_RUN_EVERYTHING_IN_SERIAL=
+
+nvidia-smi
 
 pip install --upgrade --force-reinstall zstandard
 pip install --upgrade --force-reinstall zstd
