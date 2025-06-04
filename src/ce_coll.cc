@@ -11,7 +11,6 @@ ncclResult_t ncclCeInit(struct ncclComm* comm) {
   uint8_t* ceDevBase;
   size_t ceDevBaseSize = alignUp(comm->nRanks*sizeof(uint32_t), 16) * 2;
   NCCLCHECKGOTO(ncclCommSymmetricAllocInternal(comm, ceDevBaseSize, 16 /*alignment*/, (void**)&ceDevBase), ret, fail);
-  CUDACHECKGOTO(cudaMemset(ceDevBase, 0, ceDevBaseSize), ret, fail);
   comm->ceColl.baseUCSymReadyPtr = ceDevBase;
   comm->ceColl.baseUCSymComplPtr = ceDevBase + alignUp(comm->nRanks*sizeof(uint32_t), 16);
   comm->ceColl.ceSeqNum = 0;
