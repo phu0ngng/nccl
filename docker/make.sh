@@ -119,3 +119,6 @@ if [ "$baremetal_build" -eq 0 ]; then
 else
     eval "$(get_build_command)"
 fi
+
+exit_code=$?
+exit $exit_code
