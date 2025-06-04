@@ -32,7 +32,7 @@ Options:
 
 Custom Pipeline Options:
   -s, --system LIST      Comma-separated list of systems to run tests on (options: aws, eos, draco-oci, pre-nyx, pre-tyche, a100, a40, p100, p40, gp100, ipp6)
-  -t, --test LIST        Comma-separated list of test types (options: unit-tests, api-tests, perf-tests-single, perf-tests-multiple)
+  -t, --test LIST        Comma-separated list of test types (options: unit-tests, api-tests, perf-tests-single, perf-tests-multiple, profiler-tests)
   -B, --build SCRIPT     Custom build script path (unsupported)
   -S, --setup SCRIPT     Custom setup script path (unsupported)
   -R, --run SCRIPT       Custom run script path   (unsupported)
@@ -203,7 +203,7 @@ while [[ $# -gt 0 ]] ; do
       shift 2
       ;;
     -t|--test)
-      avail_tests=( unit-tests api-tests perf-tests-single perf-tests-multiple )
+      avail_tests=( unit-tests api-tests perf-tests-single perf-tests-multiple profiler-tests )
       target_tests="$2"
       local_vars=","
       IFS=',' read -ra tests <<< "$target_tests"

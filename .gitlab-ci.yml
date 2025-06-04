@@ -25,6 +25,7 @@ variables:
   RUN_ON_P40: "1"
   RUN_ON_GP100: "1"
   RUN_UNIT_TESTS: "1"
+  RUN_PROFILER_TESTS: "1"
   RUN_API_TESTS: "1"
   RUN_PERF_TESTS_SINGLE: "1"
   RUN_PERF_TESTS_MULTIPLE: "1"
@@ -2129,7 +2130,9 @@ perftest-multi-ipp6-a100:
 profiler-tests-A100:
   stage: profiler_tests
   rules:
-    - when: always
+    - if: $TRIGGER_PIPELINE == "default" && $RUN_ON_A100 == "1" && $RUN_PROFILER_TESTS == "1"
+      when: always
+    - when: never
   needs: ["build-classic"]
   tags:
     - a100pci
