@@ -17,6 +17,7 @@
 #define NCCL_THREAD_NAMELEN 16
 
 extern int ncclDebugLevel;
+extern uint64_t ncclDebugMask;
 extern FILE *ncclDebugFile;
 
 void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *filefunc, int line, const char *fmt, ...) __attribute__ ((format (printf, 5, 6)));
@@ -27,11 +28,27 @@ extern char ncclLastError[];
 
 #define VERSION(...) ncclDebugLog(NCCL_LOG_VERSION, NCCL_ALL, __FILE__, __LINE__, __VA_ARGS__)
 #define WARN(...) ncclDebugLog(NCCL_LOG_WARN, NCCL_ALL, __FILE__, __LINE__, __VA_ARGS__)
-#define INFO(FLAGS, ...) ncclDebugLog(NCCL_LOG_INFO, (FLAGS), __func__, __LINE__, __VA_ARGS__)
-#define TRACE_CALL(...) ncclDebugLog(NCCL_LOG_TRACE, NCCL_CALL, __func__, __LINE__, __VA_ARGS__)
+
+#define INFO(FLAGS, ...) \
+    do{ \
+        if(ncclDebugLevel >= NCCL_LOG_INFO && (ncclDebugMask & (unsigned long)(FLAGS))) \
+            ncclDebugLog(NCCL_LOG_INFO, (FLAGS), __func__, __LINE__, __VA_ARGS__); \
+    } while(0)
+
+#define TRACE_CALL(...) \
+    do { \
+        if (ncclDebugLevel >= NCCL_LOG_TRACE && (NCCL_CALL & ncclDebugMask)) { \
+            ncclDebugLog(NCCL_LOG_TRACE, NCCL_CALL, __func__, __LINE__, __VA_ARGS__); \
+        } \
+    } while (0)
 
 #ifdef ENABLE_TRACE
-#define TRACE(FLAGS, ...) ncclDebugLog(NCCL_LOG_TRACE, (FLAGS), __func__, __LINE__, __VA_ARGS__)
+#define TRACE(FLAGS, ...) \
+    do { \
+        if (ncclDebugLevel >= NCCL_LOG_TRACE && ((unsigned long)(FLAGS) & ncclDebugMask)) { \
+            ncclDebugLog(NCCL_LOG_TRACE, (unsigned long)(FLAGS), __func__, __LINE__, __VA_ARGS__); \
+        } \
+    } while (0)
 #else
 #define TRACE(...)
 #endif

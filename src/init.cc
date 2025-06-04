@@ -535,6 +535,11 @@ fail:
   goto exit;
 }
 
+int idgunji_testingBug(){ //New Function
+  printf("IDGUNJI TESTING MACRO BUG\n");
+  return 0;
+}
+
 // Pre-process the string so that running "strings" on the lib can quickly reveal the version.
 #define VERSION_STRING "NCCL version " STR(NCCL_MAJOR) "." STR(NCCL_MINOR) "." STR(NCCL_PATCH) NCCL_SUFFIX "+cuda" STR(CUDA_MAJOR) "." STR(CUDA_MINOR)
 static void showVersion() {
@@ -542,6 +547,7 @@ static void showVersion() {
     VERSION("%s", VERSION_STRING);
   } else {
     INFO(NCCL_ALL,"%s", VERSION_STRING);
+    INFO(NCCL_INIT, "CALLING IDGUNJI TESTING MACRO BUG, result: %d", idgunji_testingBug());
   }
 }
 
@@ -1473,6 +1479,9 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   sum_timers = 0.0;
   for (int it = 1; it < TIMERS_INIT_COUNT; ++it)
     sum_timers += (timers[it] / 1e9);
+  
+  INFO(NCCL_INIT, "CALLING IDGUNJI TESTING MACRO BUG (from ncclCommInitRankFunc), result: %d", idgunji_testingBug());
+
   INFO(NCCL_INIT | NCCL_PROFILE,
        "Init timings - %s: rank %d nranks %d total %.2f (kernels %.2f, alloc %.2f, bootstrap %.2f, allgathers %.2f, topo %.2f, graphs %.2f, "
        "connections %.2f, rest %.2f)",
