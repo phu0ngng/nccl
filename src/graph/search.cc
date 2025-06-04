@@ -798,8 +798,10 @@ ncclResult_t ncclTopoGetGraphFromXmlSub(struct ncclXmlNode *xmlGraph, struct ncc
   NCCLCHECK(xmlGetAttrInt(xmlGraph, "nchannels", &graph->nChannels));
   NCCLCHECK(xmlGetAttrFloat(xmlGraph, "speedintra", &graph->bwIntra));
   NCCLCHECK(xmlGetAttrFloat(xmlGraph, "speedinter", &graph->bwInter));
-  if (xmlGetAttrFloat(xmlGraph, "latencyinter", &graph->latencyInter) != ncclSuccess) graph->latencyInter = 0.0;
   const char* str;
+  NCCLCHECK(xmlGetAttr(xmlGraph, "latencyinter", &str));
+  if (!str) INFO(NCCL_GRAPH, "latencyinter not found in graph, using 0.0");
+  graph->latencyInter = str ? strtof(str, NULL) : 0.0;
   NCCLCHECK(xmlGetAttr(xmlGraph, "typeintra", &str));
   NCCLCHECK(kvConvertToInt(str, &graph->typeIntra, kvDictLinkType));
   NCCLCHECK(xmlGetAttr(xmlGraph, "typeinter", &str));
@@ -1136,8 +1138,12 @@ ncclResult_t ncclTopoPrintGraph(struct ncclTopoSystem* system, struct ncclTopoGr
       offset = strlen(line);
     }
     for (int i=0; i<ngpus; i++) {
-      sprintf(line+offset, " %s/%d", topoNodeTypeStr[GPU], graph->intra[ngpus*c+i]);
+      int g;
+      ncclTopoRankToIndex(system, graph->intra[ngpus * c + i], &g, true);
+      int64_t topoId = system->nodes[GPU].nodes[g].id;
+      sprintf(line + offset, " %s/%lx-%lx", topoNodeTypeStr[GPU], NCCL_TOPO_ID_SYSTEM_ID(topoId), NCCL_TOPO_ID_LOCAL_ID(topoId));
       offset = strlen(line);
+      if (graph->id == 3) break; // NVLS graphs only use the first GPU
     }
     if (system->nodes[NET].count > 0) {
       sprintf(line+offset, " %s/%lx-%lx", topoNodeTypeStr[NET], NCCL_TOPO_ID_SYSTEM_ID(graph->inter[2*c+1]), NCCL_TOPO_ID_LOCAL_ID(graph->inter[2*c+1]));
