@@ -279,7 +279,7 @@ health-A40:
   tags:
     - a40
   script:
-    - srun --exclusive -t 00:02:00 -N 2 -c 2 -pA40 ./test/scripts/gitlab-runner-health-check.sh
+    - srun --exclusive -t 00:02:00 -N 3 -c 2 -pA40 ./test/scripts/gitlab-runner-health-check.sh
 
 health-A100:
   stage: health
