@@ -94,12 +94,14 @@ int nVirtualDevs = 0;
 #define MOCK_VDEV_NAME_LENGTH 256
 struct mockVDev {
   char name[MOCK_VDEV_NAME_LENGTH];
+  char pciPath[MOCK_VDEV_NAME_LENGTH];
   int speed;
   float latency;
   int ignore;
   int gdr;
   int maxConns;
   ncclNetVDeviceProps_t vProps;
+  int used;
 };
 mockVDev* mockVDevs = nullptr;
 ncclNetProperties_t* mockProps = nullptr;
@@ -107,27 +109,64 @@ ncclNetProperties_t* mockProps = nullptr;
 void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
   int devIndex;
   CHECK(xmlGetAttrInt(node, "dev", &devIndex));
-  mockVDev* dev = mockVDevs + devIndex;
+
+  // if devIndex is already in use, find the next suitable location
+  mockVDev* dev = NULL;
+  int count = -1;
+  do {
+    dev = mockVDevs + devIndex + (++count);
+  } while (dev->used);
+  devIndex += count;
+  // if duplicates, overwrite the new devIndex and generate a unique name
+  char nameSuffix[MAX_STR_LEN] = "";
+  if (count > 0) {
+    snprintf(nameSuffix, sizeof(nameSuffix), "-%d", count);
+    CHECK(xmlSetAttrInt(node, "dev", devIndex));
+  }
+  dev->used = 1;
   dev->ignore = 0;
-  CHECK(xmlGetAttrInt(node, "speed", &dev->speed));
-  xmlGetAttrFloat(node, "latency", &dev->latency);
-  const char* name;
-  CHECK(xmlGetAttrStr(node, "name", &name));
-  snprintf(dev->name, sizeof(dev->name), "%s", name);
+
   ncclNetProperties_t* props = mockProps + devIndex;
-  // Perhaps todo - Compute PCI Path
+
+  // get the original name and overwrite it if needed
+  const char *name, *attr;
+  CHECK(xmlGetAttrStr(node, "name", &name));
+  char uniqueName[MAX_STR_LEN];
+  snprintf(uniqueName, sizeof(uniqueName), "%s%s", name, nameSuffix);
+  snprintf(dev->name, sizeof(dev->name), "%s", uniqueName);
+  CHECK(xmlSetAttr(node, "name", uniqueName));
+  props->name = dev->name;
+
+  // get speed, port, guid, and optional latency
   CHECK(xmlGetAttrUint64(node, "guid", &props->guid));
-  int size = strlen(name) + 1;
-  props->name = (char*) malloc(size);
-  snprintf(props->name, size, "%s", name);
-  CHECK(xmlGetAttrInt(node, "speed", &props->speed));
-  xmlGetAttrFloat(node, "latency", &props->latency);
   CHECK(xmlGetAttrInt(node, "port", &props->port));
-  // We are assuming that all NICs are coll=1 on collnet platforms
-  xmlGetAttrInt(node, "coll", &coll);
-  xmlGetAttrInt(node, "gdr", &dev->gdr);
-  xmlGetAttrInt(node, "maxconn", &dev->maxConns);
+  CHECK(xmlGetAttrInt(node, "speed", &props->speed));
+  dev->speed = props->speed;
+
+  // missing the following argument is not an error.
+  xmlGetAttr(node, "latency", &attr);
+  if (attr) dev->latency = props->latency = strtof(attr, NULL);
+  xmlGetAttr(node, "coll", &attr);
+  if (attr) coll = strtol(attr, NULL, 0);
+  xmlGetAttr(node, "gdr", &attr);
+  if (attr) dev->gdr = strtol(attr, NULL, 0);
+  xmlGetAttr(node, "maxconn", &attr);
+  if (attr) dev->maxConns = strtol(attr, NULL, 0);
   dev->ignore = 0;
+
+  // get the busId of the first PCI parent
+  const char* busId = NULL;
+  struct ncclXmlNode* parent = node;
+  while (busId == NULL && parent != NULL) {
+    CHECK(xmlGetAttr(parent, "busid", &busId));
+    parent = parent->parent;
+  }
+  if (busId) {
+    // getPciPath will fail to resolve the path, so hardcode the imaginary path.
+    // Getting the path right is not important, we need to have different path to avoid NIC fusion.
+    snprintf(dev->pciPath, sizeof(dev->pciPath), "/sys/class/pci_bus/%.*s/%.*s", (int)strlen("0000:00"), busId, (int)strlen("0000:00:00.0"), busId);
+    props->pciPath = dev->pciPath;
+  }
 
   // It's assumed system.xml files won't have duplicate "dev" fields
   if (nPhysDevs < (devIndex + 1)) nPhysDevs = devIndex + 1;
@@ -138,10 +177,6 @@ void fakeNetPluginInit(struct ncclXml* xmlSystem) {
   if (mockVDevs == NULL) {
     mockVDevs = (mockVDev*) malloc(sizeof(mockVDev)*MAX_MOCK_DEVS);
     mockProps = (ncclNetProperties_t*) malloc(sizeof(ncclNetProperties_t)*MAX_MOCK_DEVS);
-  }
-
-  for (int i = 0; i < nPhysDevs; i++) {
-    free(mockProps[i].name);
   }
 
   nPhysDevs = 0;
@@ -515,8 +550,8 @@ int main(int argc, const char* argv[]) {
     RUN("P9-6V");
     RUN("P9-4V");
     RUN("HP-ARM-V100");
-    RUN_INTRA("GB200-NVL36");
-    RUN_INTRA("GB200-NVL72");
+    RUN("GB200-NVL36");
+    RUN("GB200-NVL72");
     RUN("GB200-CX8");
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
