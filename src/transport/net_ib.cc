@@ -21,6 +21,7 @@
 #include <poll.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <mutex>
 #define ENABLE_TIMER 0
 #include "timer.h"
 
@@ -780,8 +781,8 @@ static void ibGdrSupportInitOnce() {
                           KNL_MODULE_LOADED("/sys/module/nvidia_peermem/version");
 }
 ncclResult_t ncclIbGdrSupport() {
-  static pthread_once_t once = PTHREAD_ONCE_INIT;
-  pthread_once(&once, ibGdrSupportInitOnce);
+  static std::once_flag once;
+  std::call_once(once, ibGdrSupportInitOnce);
   if (!ncclIbGdrModuleLoaded)
     return ncclSystemError;
   return ncclSuccess;
@@ -816,13 +817,10 @@ failure:
 // ncclSuccess : DMA-BUF support is available
 // ncclSystemError : DMA-BUF is not supported by the kernel
 ncclResult_t ncclIbDmaBufSupport(int dev) {
-  struct oncewrap {
-    pthread_once_t once = PTHREAD_ONCE_INIT;
-  };
-  static oncewrap onces[MAX_IB_DEVS];
+  static std::once_flag onces[MAX_IB_DEVS];
   // init the device only once
   ibDmaSupportInitDev = dev;
-  pthread_once(&onces[dev].once, ibDmaBufSupportInitOnce);
+  std::call_once(onces[dev], ibDmaBufSupportInitOnce);
   ncclIbMergedDev* mergedDev = ncclIbMergedDevs + ibDmaSupportInitDev;
   ncclIbDev* ibDev = ncclIbDevs + mergedDev->vProps.devs[0];
   int dmaBufSupported = ibDev->dmaBufSupported;

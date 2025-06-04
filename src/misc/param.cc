@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <mutex>
 #include <pwd.h>
 
 const char* userHomeDir() {
@@ -67,8 +68,8 @@ static void initEnvFunc() {
 }
 
 void initEnv() {
-  static pthread_once_t once = PTHREAD_ONCE_INIT;
-  pthread_once(&once, initEnvFunc);
+  static std::once_flag once;
+  std::call_once(once, initEnvFunc);
 }
 
 void ncclLoadParam(char const* env, int64_t deftVal, int64_t uninitialized, int64_t* cache) {

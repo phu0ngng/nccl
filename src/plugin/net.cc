@@ -12,6 +12,7 @@
 
 #include <string.h>
 #include <errno.h>
+#include <mutex>
 //#include <sys/types.h>
 //#include <sys/stat.h>
 //#include <unistd.h>
@@ -62,7 +63,7 @@ int pluginCount = 0;
 bool netPluginLibsInitialized = false;
 netPluginLib_t netPluginLibs[NCCL_NET_MAX_PLUGINS] = { 0 };
 static pthread_mutex_t netPluginLock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_once_t initPluginLibsOnceControl = PTHREAD_ONCE_INIT;
+static std::once_flag initPluginLibsOnceFlag;
 
 static ncclResult_t ncclNetPluginUnload(netPluginLib_t* pluginLib) {
   if ((pluginLib->dlHandle) && ((pluginLib->ncclNetPluginRefCount) == 0)) {
@@ -252,7 +253,7 @@ static void initPluginLibsOnceFunc() {
 
 ncclResult_t ncclNetInit(struct ncclComm* comm) {
   bool ncclNetPluginInitialized = false;
-  pthread_once(&initPluginLibsOnceControl, initPluginLibsOnceFunc);
+  std::call_once(initPluginLibsOnceFlag, initPluginLibsOnceFunc);
   pthread_mutex_lock(&netPluginLock);
   for (int pluginIndex = 0; pluginIndex < pluginCount; pluginIndex++) {
     if ((pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) && (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateLoadReady)) {
