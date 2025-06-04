@@ -6,23 +6,13 @@ stages:
   - api_tests
   - perf_tests_single
   - perf_tests_multi
-  - perf_regression
   - profiler_tests
   - replay_tests
   - summary
 
 variables:
-  RUN_MULTI_REGRESSION: "0" # Set to 1 to run multinode regression pipeline
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
-  REGRESSION_BASELINE: "v2.15.5-1" # Compare to stable branch (Update git tag as necessary)
-  REGRESSION_THRESHOLD: 7 # What percent difference should we use to compare?
-  REGRESSION_ITERATIONS: 5 # How many iterations should we run latency and overhead tests?
-  REGRESSION_CHECK_CPU_OVERHEAD: 0 # Should we run CPU overhead tests in the perf regression?
-  MULTI_REGRESSION_SALLOC_TIME: 45 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
-  SINGLE_REGRESSION_SALLOC_TIME: 30 # How many minutes to salloc for multinode regression. This can be tuned for multinode pipelines
-  SHARP_MULTI_JOB_TIME:  10
-  RUN_ON_SELENE_SHARP: "0"
   BUILD_TRACE: "0"
   RUN_ON_AWS: "1"
   RUN_ON_EOS: "1"
@@ -62,6 +52,10 @@ workflow:
         on_new_commit: none
     - if: $TRIGGER_PIPELINE == "default"
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
+
+##
+## Stage: build - Start...
+##
 
 # verify that setting TRACE=1 does not break compile
 # this is a special build-time setting to increase log verbosity
@@ -106,7 +100,7 @@ build-ipp6:
     - ipp6-nccl
   script:
     - docker/make.sh --ci-build ipp6-slurm,draco-oci,eos,pre-nyx
-    - tar -cf - build | pigz --best > build-ipp6.tar.gz
+    - tar -cf - build | pigz --fast > build-ipp6.tar.gz
   artifacts:
     paths:
       - build-ipp6.tar.gz
@@ -156,6 +150,14 @@ build-dlfw-pytorch-container:
       - build-dlfw
     expire_in: 48 hrs
   allow_failure: false
+
+##
+## Stage: build - Finish!
+##
+
+##
+## Stage: setup - Start...
+##
 
 fairshare-eos:
   stage: setup
@@ -233,6 +235,14 @@ setup-AWS_H100_EFA:
   script:
     - rsync -I -c -a --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
 
+##
+## Stage: setup - Finish!
+##
+
+##
+## Stage: health - Start...
+##
+
 health-P100:
   stage: health
   rules:
@@ -292,6 +302,14 @@ health-A100:
     - a100pci
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-health-check.sh
+
+##
+## Stage: health - Finish!
+##
+
+##
+## Stage: unit_tests - Start...
+##
 
 unit_tests-P100:
   stage: unit_tests
@@ -868,6 +886,14 @@ unit_tests-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+##
+## Stage: unit_tests - Finish!
+##
+
+##
+## Stage: api_tests - Start...
+##
+
 apitest-P100:
   stage: api_tests
   rules:
@@ -1044,90 +1070,6 @@ apitest-A100:
       - "junit_results.xml"
     reports:
       junit: junit_results.xml
-    expire_in: 48 hrs
-
-apitest-DGX-1V:
-  stage: api_tests
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-1v
-  variables:
-    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
-    PARTITION_LIST: "batch_short_dgx1_m2"
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    SRUN_PARAMS: "--exclusive -N 1 -n 1 -G 8 -c 8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
-    API_TESTS_DEFAULT: 1
-    API_TESTS_NO_P2P: 1
-    API_TESTS_NETWORK: 1
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 48 hrs
-
-apitest-DGX-2:
-  stage: api_tests
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-2
-  variables:
-    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
-    PARTITION_LIST: "batch_short_dgx2h_m2"
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    SRUN_PARAMS: "--exclusive --mem=0 -N 1 -n 1 -G 16 -c 16 --account=coreai_libraries_nccl --nv-meta ml-model.nccl -t 00:20:00"
-    API_TESTS_DEFAULT: 1
-    API_TESTS_NO_P2P: 1
-    API_TESTS_NETWORK: 1
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - srun $SRUN_PARAMS -p $PARTITION_LIST ./test/scripts/gitlab-runner-apitest.sh minimal
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 48 hrs
-
-apitest-DGX-A100:
-  stage: api_tests
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-a100
-  variables:
-    CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
-    NCCL_SOCKET_IFNAME: "ibp12s0"
-    NCCL_CUMEM_ENABLE: "1"
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    API_TESTS_DEFAULT: 1
-    API_TESTS_NO_P2P: 1
-    API_TESTS_NETWORK: 1
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - srun -n 1 --account=coreai_libraries_nccl -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:apitest::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -pluna -t 00:30:00 ./test/scripts/gitlab-runner-apitest.sh
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
     expire_in: 48 hrs
 
 apitest-eos:
@@ -1389,6 +1331,14 @@ apitest-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+##
+## Stage: api_tests - Finish!
+##
+
+##
+## Stage: perf_tests_single - Start...
+##
+
 perftest-P100:
   stage: perf_tests_single
   rules:
@@ -1560,42 +1510,6 @@ perftest-A40:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-multi-perftest-A40:
-  stage: perf_tests_multi
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
-      when: always
-    - when: never
-  needs: ["build-classic", "health-A40"]
-  tags:
-    - a40
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "A40"
-    MAX: "1G"
-    NNODES: 2
-    ENABLE_NVLS: 0
-    GRAPH: 0
-    NGPUS: 2
-    NP: 2
-    NCCL_HOME: build-gc
-    NO_LOOPBACK_NETWORKING: 1
-  script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
 perftest-A100:
   stage: perf_tests_single
   rules:
@@ -1630,90 +1544,6 @@ perftest-A100:
       - "junit_results.xml"
     reports:
       junit: junit_results.xml
-    expire_in: 48 hrs
-
-perftest-DGX-1V:
-  stage: perf_tests_single
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1" && $RUN_PERF_TESTS_SINGLE == "1"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-1v
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
-    PARTITION_LIST: "batch_short_dgx1_m2"
-    NNODES: 1
-    NGPUS: 8
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - salloc --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} -N ${NNODES} --account=coreai_libraries_nccl --nv-meta ml-model.nccl -p $PARTITION_LIST -t 00:25:00 ./test/scripts/gitlab-runner-perftest.sh 2G
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 48 hrs
-
-perftest-DGX-2:
-  stage: perf_tests_single
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1" && $RUN_PERF_TESTS_SINGLE == "1"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-2
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
-    PARTITION_LIST: "batch_short_dgx2h_m2"
-    NNODES: 1
-    NGPUS: 16
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - salloc -N 1 --gpus-per-node=${NGPUS} --ntasks-per-node=${NGPUS} --account=coreai_libraries_nccl --nv-meta ml-model.nccl -p $PARTITION_LIST -t 00:35:00 ./test/scripts/gitlab-runner-perftest.sh 1G
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 48 hrs
-
-perftest-DGX-A100:
-  stage: perf_tests_single
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $RUN_PERF_TESTS_SINGLE == "1"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-a100
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
-    NCCL_CUMEM_ENABLE: "1"
-    NNODES: 1
-    NGPUS: 8
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - salloc -N ${NNODES} -n ${NGPUS} --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-single::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:30:00 ./test/scripts/gitlab-runner-perftest.sh 16G
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
     expire_in: 48 hrs
 
 perftest-single-eos:
@@ -1966,25 +1796,54 @@ perftest-single-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-perftest-multi-gc:
+self-test-pytorch-container-eos:
+  stage: perf_tests_single
+  rules:
+    - if: $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
+      when: always
+    - when: never
+  tags:
+    - nccl-eos
+  needs:
+    - build-dlfw-pytorch-container
+  parallel: 4
+  variables:
+    CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  script:
+    - chmod +x test/scripts/dlfw/*.sh
+    - srun -N1 --exclusive -t60 -A coreai_libraries_nccl -J coreai_libraries_nccl-bewilliams.test-cont --container-image="$CONTAINER" --container-mounts=$(pwd):/workspace/nccl /workspace/nccl/test/scripts/dlfw/run_dlfw_selftest.sh
+  timeout: 48 hours
+
+##
+## Stage: perf_tests_single - Finish!
+##
+
+##
+## Stage: perf_tests_multi - Start...
+##
+
+multi-perftest-A40:
   stage: perf_tests_multi
   rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+      when: always
     - when: never
-  needs: [build-classic, health-P100, health-P40]
+  needs: ["build-classic", "health-A40"]
   tags:
-    - p100
+    - a40
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
     RUN_MODE: "SALLOC_MPI"
-    SLURM_HOSTS: "gc01,gc02"
+    SLURM_PARTITION: "A40"
     MAX: "1G"
     NNODES: 2
     ENABLE_NVLS: 0
     GRAPH: 0
-    NGPUS: 8
-    NP: 8
+    NGPUS: 2
+    NP: 2
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -1999,113 +1858,6 @@ perftest-multi-gc:
     reports:
       junit: junit_results.xml
     expire_in: 48 hrs
-
-perftest-sharp-gc:
-  stage: perf_tests_multi
-  rules:
-    - when: never
-  needs: [build-classic, health-P100]
-  tags:
-    - p100
-  variables:
-    NCCL_IB_HCA: "mlx5_0"
-    NCCL_DEBUG: "WARN"
-    SHARP_HOME: "/opt/hpcx/v2.7/sharp"
-    PLUGIN_PATH: "/opt/nccl-rdma-sharp-plugins/src/.libs"
-    NNODES: 2
-    NGPUS: 8
-    NCCL_HOME: build-gc
-    SALLOC: "salloc --exclusive -t 00:10:00 -N ${NNODES} --ntasks-per-node=${NGPUS} -w gc[01-02]"
-  script:
-    - source docker/clusters/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/gitlab-runner-perftest-sharp.sh 128M 0
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 48 hrs
-
-perftest-multi-DGX-1V:
-  stage: perf_tests_multi
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-1v
-  variables:
-    MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
-    CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
-    PARTITION_LIST: "batch_short_dgx1_m2"
-    UCX_TLS: "tcp"
-    NCCL_DEBUG_SUBSYS: "ENV"
-    NCCL_IBEXT_DISABLE: "1"
-    NNODES: $MULTI_PERFTEST_NODE_COUNT
-    NGPUS: 8
-    MPI_PARAMS: "-mca btl tcp,self -mca btl_tcp_if_include enp1s0f0"
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    DRACO_SALLOC: "--exclusive --gpus-per-node=8 --ntasks-per-node=8 --account=coreai_libraries_nccl --nv-meta ml-model.nccl --exclusive -t 00:25:00"
-  script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 48 hrs
-
-# Disabled - Allocation timeouts cause too much noise
-# perftest-multi-dgx-2:
-#   stage: perf_tests_multi
-#   rules:
-#     - when: always
-#   rules:
-#     - if: $RUN_ON_DRACO == "1"
-#       when: always
-#     - when: never
-#   needs: [build, unit_tests, perftest-DGX-2]
-#   tags:
-#     - dgx-2
-#   variables:
-#     MPI_HOME: "/home/svc_nvshmem_ci/mpi/openmpi-1.10.7"
-#     CUDA_HOME: "/gpfs/fs1/projects/sw_gpucomms/users/svc_nvshmem_ci/cuda/cuda-${CUDA_VERSION}"
-#     PARTITION_LIST: "batch_short_dgx2h_m2"
-#     UCX_TLS: "tcp"
-#     NCCL_DEBUG_SUBSYS: "ENV"
-#     NCCL_DEBUG: "INFO"
-#     NCCL_IBEXT_DISABLE: "1"
-#     MPI_PARAMS: "-mca btl tcp,self -mca btl_tcp_if_include enp134s0f0np0"
-#     SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-#     DRACO_SALLOC: "--exclusive --gpus-per-node=16 --ntasks-per-node=16 --account=coreai_libraries_nccl --nv-meta ml-model.nccl --exclusive -t 00:30:00"
-#   script:
-#     - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*16 && salloc $DRACO_SALLOC -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES -G $NUM_PROCESSES -p $PARTITION_LIST ./test/scripts/gitlab-runner-perftest.sh 1G
-
-perftest-multi-selene:
-  stage: perf_tests_multi
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $RUN_PERF_TESTS_MULTIPLE == "1"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-a100
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
-    NCCL_IB_SL: "1"
-    OMPI_MCA_btl: "^openib"
-    NNODES: $MULTI_PERFTEST_NODE_COUNT
-    NGPUS: 8
-    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
-    NCCL_CUMEM_ENABLE: "1"
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t 00:20:00 ./test/scripts/gitlab-runner-perftest.sh 16G 0
 
 perftest-multi-eos:
   stage: perf_tests_multi
@@ -2149,35 +1901,6 @@ perftest-multi-eos:
     reports:
       junit: junit_results.xml
     expire_in: 48 hrs
-
-perftest-sharp-selene:
-  stage: perf_tests_multi
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE_SHARP == "1" && $CUDA_VERSION != "10.2" && $RUN_PERF_TESTS_MULTIPLE == "1"
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-a100
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
-    SHARP_HOME: "/lustre/fsw/nccl/hpcx/hpcx-v2.14-gcc-MLNX_OFED_LINUX-5-ubuntu20.04-cuda11-gdrcopy2-nccl2.16-x86_64/sharp"
-    HPCX_UCX_LIB: "/lustre/fsw/nccl/hpcx/hpcx-v2.14-gcc-MLNX_OFED_LINUX-5-ubuntu20.04-cuda11-gdrcopy2-nccl2.16-x86_64/ucx/lib"
-    PLUGIN_PATH: "/lustre/fsw/nccl/hpcx/hpcx-v2.14-gcc-MLNX_OFED_LINUX-5-ubuntu20.04-cuda11-gdrcopy2-nccl2.16-x86_64/nccl_rdma_sharp_plugin/lib"
-    NCCL_IB_SL: "1"
-    OMPI_MCA_btl: "^openib"
-    NNODES: $MULTI_PERFTEST_NODE_COUNT
-    NGPUS: 8
-    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
-    NCCL_CUMEM_ENABLE: "1"
-    SALLOC: "" # Needs to be empty for CI runner scripts performing cluster jobs
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna --network=sharp -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SHARP_MULTI_JOB_TIME ./test/scripts/gitlab-runner-perftest-sharp.sh 4G 0
 
 perftest_multi-AWS_H100_EFA:
   stage: perf_tests_multi
@@ -2395,141 +2118,13 @@ perftest-multi-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-perf-regression-single-DGX-A100:
-  stage: perf_regression
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE == 'merge_request_event'
-      when: always
-    - when: never
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-a100
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
-    NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
-    NCCL_CUMEM_ENABLE: "1"
-    GPU_APPLICATION_CLOCK: 1410
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
-    - salloc -N 1 -n 8 --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-single-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $SINGLE_REGRESSION_SALLOC_TIME ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA
-  cache:
-    key: "build-${REGRESSION_BASELINE}"
-    paths:
-      - "build-${REGRESSION_BASELINE}/lib"
-      - "build-${REGRESSION_BASELINE}/test/perf"
-    key: "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}"
-    paths:
-      - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
-      - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
+##
+## Stage: perf_tests_multi - Finish!
+##
 
-self-test-pytorch-container-eos:
-  stage: perf_tests_single
-  rules:
-    - if: $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
-      when: always
-    - when: never
-  tags:
-    - nccl-eos
-  needs:
-    - build-dlfw-pytorch-container
-  parallel: 4
-  variables:
-    CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  script:
-    - chmod +x test/scripts/dlfw/*.sh
-    - srun -N1 --exclusive -t60 -A coreai_libraries_nccl -J coreai_libraries_nccl-bewilliams.test-cont --container-image="$CONTAINER" --container-mounts=$(pwd):/workspace/nccl /workspace/nccl/test/scripts/dlfw/run_dlfw_selftest.sh
-  timeout: 48 hours
-
-perf-regression-multi-DGX-A100:
-  stage: perf_regression
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_SELENE == "1" && $CUDA_VERSION != "10.2" && $CI_PIPELINE_SOURCE != "merge_request_event" && $RUN_MULTI_REGRESSION == "1"
-      when: always
-    - if: $REGRESSION_BASELINE == ""
-      variables:
-        REGRESSION_BASELINE: "${REGRESSION_BASELINE_TAG}"
-  needs:
-    - build-ipp6
-  tags:
-    - dgx-a100
-  variables:
-    NCCL_DEBUG: "WARN"
-    MPI_HOME: "/home/svcnccl/install/openmpi-1.10.7"
-    CUDA_HOME: "/project/nccl/toolkits/cuda-${CUDA_VERSION}/"
-    NVCC_GENCODE: " -gencode=arch=compute_80,code=sm_80"
-    NCCL_IB_SL: "1"
-    NCCL_CUMEM_ENABLE: "1"
-    OMPI_MCA_btl: "^openib"
-    OMPI_MCA_btl_tcp_if_include: "enp97s0f1"
-    GPU_APPLICATION_CLOCK: 1410
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
-  script:
-    - ./test/scripts/gitlab-runner-build-baseline.sh $CI_MERGE_REQUEST_DIFF_BASE_SHA
-    - let NUM_PROCESSES=$MULTI_PERFTEST_NODE_COUNT*8 && salloc -N $MULTI_PERFTEST_NODE_COUNT -n $NUM_PROCESSES --account=coreai_libraries_nccl -pluna -J "coreai_libraries_nccl-cicd::$GITLAB_USER_LOGIN:perftest-multi-regression::$CI_COMMIT_BRANCH:$CI_COMMIT_SHORT_SHA" -t $MULTI_REGRESSION_SALLOC_TIME ./test/scripts/gitlab-runner-compare-perf.sh $REGRESSION_THRESHOLD $REGRESSION_ITERATIONS $REGRESSION_CHECK_CPU_OVERHEAD $CI_MERGE_REQUEST_DIFF_BASE_SHA
-  cache:
-    key: "build-${REGRESSION_BASELINE}"
-    paths:
-      - "build-${REGRESSION_BASELINE}/lib"
-      - "build-${REGRESSION_BASELINE}/test/perf"
-    key: "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}"
-    paths:
-      - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/lib"
-      - "build-${CI_MERGE_REQUEST_DIFF_BASE_SHA}/test/perf"
-
-QA-team-ci:
-  stage: perf_regression
-  rules:
-    - if: $TRIGGER_PIPELINE == "default"
-      when: always
-    - when: never
-  needs: [build-classic]
-  tags:
-    - cqa_host_runner
-  script:
-    - mv build-gc build
-    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
-
-replay-multi-gc:
-  stage: replay_tests
-  rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1"
-      when: always
-    - when: never
-  needs: [build-classic]
-  tags:
-    - p100
-  variables:
-    NCCL_IB_HCA: "mlx5_0"
-    NCCL_HOME: build-gc
-    NCCL_DEBUG: "WARN"
-    SALLOC_RESNET: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
-    SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"
-    SALLOC_SELF_SINGLE: "salloc --exclusive -t 00:05:00 -N 1 -n 8 -pP100"
-  script:
-    - source docker/clusters/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - SALLOC=$SALLOC_RESNET ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
-    - ./test/scripts/gitlab-runner-replay-self-test.sh
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 48 hrs
-
-summarize-pipeline:
-  stage: summary
-  rules:
-    - when: always
-  tags:
-    - build
-  script:
-    - ./test/scripts/gitlab-runner-summary.sh
+##
+## Stage: profiler_tests - Start...
+##
 
 profiler-tests-A100:
   stage: profiler_tests
@@ -2561,3 +2156,69 @@ profiler-tests-A100:
     reports:
       junit: junit_results.xml
     expire_in: 48 hrs
+
+##
+## Stage: profiler_tests - Finish!
+##
+
+##
+## Stage: replay_tests - Start...
+##
+
+replay-multi-gc:
+  stage: replay_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1"
+      when: always
+    - when: never
+  needs: [build-classic]
+  tags:
+    - p100
+  variables:
+    NCCL_IB_HCA: "mlx5_0"
+    NCCL_HOME: build-gc
+    NCCL_DEBUG: "WARN"
+    SALLOC_RESNET: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
+    SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"
+    SALLOC_SELF_SINGLE: "salloc --exclusive -t 00:05:00 -N 1 -n 8 -pP100"
+  script:
+    - source docker/clusters/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - SALLOC=$SALLOC_RESNET ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
+    - ./test/scripts/gitlab-runner-replay-self-test.sh
+  artifacts:
+    when: always
+    paths:
+      - "**/core.*.*"
+    expire_in: 48 hrs
+
+##
+## Stage: replay_tests - Finish!
+##
+
+##
+## Stage: summary - Start...
+##
+
+summarize-pipeline:
+  stage: summary
+  dependencies: []
+  rules:
+    - when: always
+  tags:
+    - ipp6-nccl
+  script:
+    - ./test/scripts/gitlab-runner-summary.sh
+
+# Kicks off an independent CI pipeline on QA nodes
+# https://gitlab-master.nvidia.com/xiaojingl/comms_lib_auto/-/blob/main/NCCL_CI/ci_perftest.sh?ref_type=heads
+QA-team-ci:
+  stage: summary
+  dependencies: []
+  tags:
+    - cqa_host_runner
+  script:
+    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
+
+##
+## Stage: summary - Finish!
+##
