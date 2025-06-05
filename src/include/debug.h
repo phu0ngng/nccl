@@ -31,13 +31,15 @@ extern char ncclLastError[];
 
 #define INFO(FLAGS, ...) \
     do{ \
-        if(ncclDebugLevel >= NCCL_LOG_INFO && (ncclDebugMask & (unsigned long)(FLAGS))) \
+        int level = __atomic_load_n(&ncclDebugLevel, __ATOMIC_ACQUIRE); \
+        if(((level >= NCCL_LOG_INFO || level < 0) && (ncclDebugMask & (unsigned long)(FLAGS))) || (ncclDebugLevel < 0)) \
             ncclDebugLog(NCCL_LOG_INFO, (FLAGS), __func__, __LINE__, __VA_ARGS__); \
     } while(0)
 
 #define TRACE_CALL(...) \
     do { \
-        if (ncclDebugLevel >= NCCL_LOG_TRACE && (NCCL_CALL & ncclDebugMask)) { \
+        int level = __atomic_load_n(&ncclDebugLevel, __ATOMIC_ACQUIRE); \
+        if (((level >= NCCL_LOG_TRACE || level < 0) && (NCCL_CALL & ncclDebugMask)) || (ncclDebugLevel < 0)) { \
             ncclDebugLog(NCCL_LOG_TRACE, NCCL_CALL, __func__, __LINE__, __VA_ARGS__); \
         } \
     } while (0)
@@ -45,7 +47,8 @@ extern char ncclLastError[];
 #ifdef ENABLE_TRACE
 #define TRACE(FLAGS, ...) \
     do { \
-        if (ncclDebugLevel >= NCCL_LOG_TRACE && ((unsigned long)(FLAGS) & ncclDebugMask)) { \
+        int level = __atomic_load_n(&ncclDebugLevel, __ATOMIC_ACQUIRE); \
+        if (((level >= NCCL_LOG_TRACE || level < 0) && ((unsigned long)(FLAGS) & ncclDebugMask)) || (ncclDebugLevel < 0)) { \
             ncclDebugLog(NCCL_LOG_TRACE, (unsigned long)(FLAGS), __func__, __LINE__, __VA_ARGS__); \
         } \
     } while (0)
