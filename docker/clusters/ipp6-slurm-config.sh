@@ -63,6 +63,7 @@ function get_build_command() {
         -J nccl:build \
         -t 00:30:00 \
         -n 1 \
+        --exclusive \
         --container-image=$build_tools_image \
         --container-mounts=${current_dir}:/nccl \
         /nccl/docker/build_nccl.sh"

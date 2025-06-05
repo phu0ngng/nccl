@@ -16,13 +16,24 @@ run_api_test(){
     echo "RUNNING API TEST with $1 and --gtest_filter = $2"
     # Args for run_command
     # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
-    run_command "apitest_${1}default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
-    # NvBug 5210770
-    if [ "$SKIP_API_NO_P2P" != "1" ]
-    then
-        run_command "apitest_${1}no_p2p" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+    if [[ ${API_TESTS_DEFAULT} -eq 1 ]] ; then
+      run_command "apitest_${1}default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+    else
+      echo "Disabled Api TESTS Default test\n\n"
     fi
-    run_command "apitest_${1}no_p2p_no_shm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+
+    # NvBug 5210770
+    if [[ ${API_TESTS_NO_P2P} -eq 1 ]] ; then
+      run_command "apitest_${1}no_p2p" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+    else
+      echo "Disabled Api TESTS no_p2p test\n\n"
+    fi
+
+    if [[ ${API_TESTS_NETWORK} -eq 1 ]] ; then
+      run_command "apitest_${1}no_p2p_no_shm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1" "$NCCL_HOME/test/apitest/apitest --gtest_filter=${2}" ""
+    else
+      echo "Disabled Api TESTS network test\n\n"
+    fi
 }
 
 # list of tests with a special config

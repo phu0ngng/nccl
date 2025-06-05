@@ -180,7 +180,7 @@ The following example shows how to register buffers into NCCL window and use it 
   // Use the registered buffers for communication to enable symmetric communication benefits.
   // In this example, every rank has 0x1000 offset and 0x2000 offset from the head address of
   // src and dst respectively, which satisfies the symmetric buffer requirement.
-  CHECK(ncclAllgather((uint8_t*)src + 0x1000, (uint8_t*)dst + 0x2000, src_size, ncclInt8, comm, stream));
+  CHECK(ncclAllgather((uint8_t*)src + 0x1000, (uint8_t*)dst + 0x2000, 1, ncclInt8, comm, stream));
   CHECK(cudaStreamSynchronize(stream));
 
   CHECK(ncclCommWindowDeregister(src_win));
