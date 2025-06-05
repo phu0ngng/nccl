@@ -2217,6 +2217,8 @@ summarize-pipeline:
 QA-team-ci:
   stage: summary
   dependencies: []
+  rules:
+    - when: always
   tags:
     - cqa_host_runner
   script:
