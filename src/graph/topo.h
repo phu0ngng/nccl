@@ -143,6 +143,7 @@ struct ncclTopoNode {
       int gdrSupport;
       int collSupport;
       int maxChannels;
+      int localGpu;
     }net;
     struct {
       int arch;

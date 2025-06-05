@@ -625,8 +625,7 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
     if (graph->pattern == NCCL_TOPO_PATTERN_NVLS || graph->pattern == NCCL_TOPO_PATTERN_COLLNET_DIRECT) {
       // NVLS search only tries to find NIC:GPU combinations to compute the heads.
       if (graph->nChannels < netCount) {
-        int gpu;
-        NCCLCHECK(ncclTopoGetLocalGpu(system, net->id, &gpu));
+        int gpu = net->net.localGpu;
         if (gpu != -1) {
           int duplicate = 0;
           // check whether there is duplicate head when one GPU connects with multiple NICs
@@ -643,13 +642,12 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
         }
       }
     } else {
-      if (graph->nChannels > 0) {
+      if (graph->nChannels > 0 && graph->sameChannels == 1) {
         // Try to replay the last channel
         int g;
         NCCLCHECK(ncclTopoReplayGetGpu(system, graph, -1, &g));
         NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, FORCED_ORDER_REPLAY, time, NET, n, g));
-      }
-      if (graph->nChannels == 0 || graph->sameChannels == 0) {
+      } else {
         if (graph->nChannels == 0 && system->nodes[NVS].count == 0) {
           // Always try the PCI order first to set a reference, but don't count in the timeout nor let it run for long
           int t = 1 << 10;
@@ -658,11 +656,16 @@ ncclResult_t ncclTopoSearchRecNet(struct ncclTopoSystem* system, struct ncclTopo
         }
 
         // Then try the most local GPUs
+        int localGpu = net->net.localGpu;
+        if (localGpu != -1) {
+          NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, localGpu));
+        }
         int localGpus[NCCL_TOPO_MAX_NODES], localGpuCount, pathType;
         NCCLCHECK(ncclTopoGetLocal(system, NET, n, GPU, localGpus, &localGpuCount, &pathType));
         // if no GPUs are connected, skip this net
         if (pathType == PATH_DIS) continue;
         for (int g = 0; g < localGpuCount; ++g) {
+          if (localGpus[g] == localGpu) continue; // We already tried this one
           NCCLCHECK(ncclTopoSearchTryGpu(system, graph, saveGraph, 0, backToNet, backToFirstRank, 0, time, NET, n, localGpus[g]));
         }
       }
