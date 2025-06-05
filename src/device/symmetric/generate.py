@@ -223,8 +223,10 @@ for coll in set(k.coll for k in enumerate_kernels()):
   if (fname, coll) not in kernels_by_file:
     kernels_by_file[fname, coll] = []
 
+files_to_print = ""
 # Generate each kernel instantiation file
 for (fname, coll), ks in kernels_by_file.items():
+  files_to_print += fname + ";"
   with open(os.path.join(gensrc, fname), "w") as f:
     emitln(f, '#include "symmetric.h"')
     emitln(f, '#include "symmetric/kernel.cuh"')
@@ -233,6 +235,7 @@ for (fname, coll), ks in kernels_by_file.items():
       emitln(f, instantiate(k))
 
 # Generate <gensrc>/symmetric_host.cc
+files_to_print += "symmetric_kernels.cc;"
 with open(os.path.join(gensrc, "symmetric_kernels.cc"), "w") as f:
   emitln(f, '#include "symmetric.h"')
   emitln(f, '#include "device.h"')
@@ -277,6 +280,11 @@ with open(os.path.join(gensrc, "symmetric_kernels.cc"), "w") as f:
   emitln(f, '}')
 
 # Generate <gensrc>/rules.mk
+files_to_print += "rules.mk;"
+
+if os.environ.get("NCCL_USE_CMAKE", "0") == "1":
+    print(files_to_print)
+
 with open(os.path.join(gensrc, "rules.mk"), "w") as f:
   inst_names = sorted(set(kernel_fname(k) for k in enumerate_kernels()))
   names = inst_names + ["symmetric_kernels.cc"]
