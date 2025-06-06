@@ -545,6 +545,7 @@ int main(int argc, const char* argv[]) {
     RUN("Dell_R760xa");
     RUN("SMC521GE");
     RUN("Perlmutter");
+    RUN_MULTI8("Umbriel");
 #endif
     RUN("CG4");
     RUN("P9-6V");
