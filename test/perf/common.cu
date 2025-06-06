@@ -1591,20 +1591,6 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Allreduce(MPI_IN_PLACE, &minCudaArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 #endif
-#if HAVE_FP8
-  if (minCudaArch < 900) { // Filter out fp8 on pre-Hopper hardware
-    int n = 0;
-    for (int i=0; i < test_typenum; i++) {
-      if (!(test_types[i] == ncclFloat8e4m3 || test_types[i] == ncclFloat8e5m2)) {
-        test_types[n] = test_types[i];
-        test_typenames[n] = test_typenames[i];
-        n += 1;
-      }
-    }
-    test_typenum = n;
-  };
-#endif
-
   char* ncclIdLocal;
   ncclUniqueId* ncclId;
   ncclComm_t globalComms[nThreads*nGpus];
@@ -1984,4 +1970,12 @@ testResult_t run() {
     return testNumResults;
   else
     return testSuccess;
+}
+bool isFp8ValidForReductions(ncclDataType_t type) {
+#if HAVE_FP8
+  if ((type == ncclFloat8e4m3 || type == ncclFloat8e5m2) && minCudaArch < 900) {
+    return false;
+  }
+#endif
+  return true;
 }

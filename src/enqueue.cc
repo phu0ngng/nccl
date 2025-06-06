@@ -2341,7 +2341,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     if (info->count == 0) return ncclSuccess;
 
     if (info->datatype == ncclFloat8e4m3 || info->datatype == ncclFloat8e5m2) {
-      if (comm->minCompCap < 90) {
+      if (comm->minCompCap < 90 && info->coll != ncclFuncAllGather && info->coll != ncclFuncBroadcast) {
         WARN("FP8 reduction support begins with sm90 capable devices.");
         return ncclInvalidArgument;
       }
