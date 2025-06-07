@@ -494,7 +494,9 @@ static int ibvSpeeds[] = {
   14000, /* FDR */
   25000, /* EDR */
   50000, /* HDR */
-  100000 /* NDR */ };
+  100000, /* NDR */
+  200000  /* XDR */
+};
 
 static int firstBitSet(int val, int max) {
   int i = 0;
