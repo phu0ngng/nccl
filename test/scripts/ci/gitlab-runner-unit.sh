@@ -93,6 +93,14 @@ else
   "Disabled PAT Log Algo AG TESTS test\n\n"
 fi
 
+export LD_LIBRARY_PATH=$NCCL_HOME/test/unit/plugins
+
+if [[ ${PLUGIN_LOADING_TESTS} ]] ; then
+  run_command "plugin_loading_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/plugin_load" ""
+else
+  "Disabled Plugin Loading TESTS test\n\n"
+fi
+
 print_failed_commands
 end_junit_file
 ci_exit
