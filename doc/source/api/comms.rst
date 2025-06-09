@@ -118,7 +118,7 @@ The original ranks listed in *excludeRanksList* (of size *excludeRanksCount*) wi
 Within the new communicator, ranks will be updated to maintain a contiguous set of ids.
 If the new communicator needs a special configuration, it can be passed as *config*; otherwise, setting config to NULL will make the new communicator inherit the configuration of the parent communicator.
 
-The *flag* parameter controls the behavior of the operation. Use *NCCL_SHRINK_DEFAULT* or *0* for normal operation or *NCCL_SHRINK_ABORT* when shrinking after an error on the parent communicator.
+The *shrinkFlags* parameter controls the behavior of the operation. Use *NCCL_SHRINK_DEFAULT* (or *0*) for normal operation, or *NCCL_SHRINK_ABORT* when shrinking after an error on the parent communicator.
 Specifically, when using *NCCL_SHRINK_DEFAULT*, there should not be any outstanding NCCL operations on the *comm* to avoid potential deadlocks. Further, if the parent communicator has the flag config.shrinkShare set to 1, NCCL will reuse the parent communicator resources.
 On the other hand, when using *NCCL_SHRINK_ABORT*, NCCL will automatically abort any outstanding operations on the parent communicator, and no resources will be shared between the parent and the newly created communicator.
 
