@@ -7,6 +7,11 @@
 #ifndef NCCL_DEBUG_H_
 #define NCCL_DEBUG_H_
 
+// Workaround for libstdc++ trying to force public visibility of std:: symbols.  We don't want to do that in libnccl.so.
+#include <bits/c++config.h>
+#undef _GLIBCXX_VISIBILITY
+#define _GLIBCXX_VISIBILITY(V)
+
 #include <cstdint>
 
 typedef enum {
