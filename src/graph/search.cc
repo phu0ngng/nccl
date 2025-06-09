@@ -797,8 +797,8 @@ struct kvDict kvDictLinkType[] = {
   { "NVB", PATH_NVB },
   { "PIX", PATH_PIX },
   { "PXB", PATH_PXB },
-  { "PXN", PATH_PXN },
   { "P2C", PATH_P2C },
+  { "PXN", PATH_PXN },
   { "PHB", PATH_PHB },
   { "SYS", PATH_SYS },
   { NULL, 0 }

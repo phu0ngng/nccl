@@ -21,7 +21,7 @@
 
 const char* topoNodeTypeStr[] = { "GPU", "PCI", "NVS", "CPU", "NIC", "NET" };
 const char* topoLinkTypeStr[] = { "LOC", "NVL", "",    "C2C", "PCI",    "",    "",    "",    "", "SYS", "NET" };
-const char* topoPathTypeStr[] = { "LOC", "NVL", "NVB", "C2C", "PIX", "PXB", "PXN", "P2C", "PHB", "SYS", "NET", "DIS" };
+const char* topoPathTypeStr[] = { "LOC", "NVL", "NVB", "C2C", "PIX", "PXB", "P2C", "PXN", "PHB", "SYS", "NET", "DIS" };
 
 /******************************************************************/
 /******************* Graph Creation Functions *********************/
@@ -1143,8 +1143,8 @@ struct kvDict nicPathKvList[] = {
   { "PORT", PATH_PORT },
   { "PIX",  PATH_PIX },
   { "PXB",  PATH_PXB },
-  { "PXN",  PATH_PXN },
   { "P2C",  PATH_P2C },
+  { "PXN",  PATH_PXN },
   { "PHB",  PATH_PHB },
   { "SYS",  PATH_SYS },
   { NULL, 0 }

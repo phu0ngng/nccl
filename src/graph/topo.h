@@ -76,11 +76,11 @@ extern const char* topoLinkTypeStr[];
 // Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
 #define PATH_PXB 5
 
-// Connection between a GPU and a NIC using an intermediate GPU. Used to enable rail-local, aggregated network send/recv operations.
-#define PATH_PXN 6
-
 // Connection between a GPU and a NIC using the C2C connection to the CPU and the PCIe connection to the NIC
-#define PATH_P2C 7
+#define PATH_P2C 6
+
+// Connection between a GPU and a NIC using an intermediate GPU. Used to enable rail-local, aggregated network send/recv operations.
+#define PATH_PXN 7
 
 // Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
 #define PATH_PHB 8
