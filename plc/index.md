@@ -2,6 +2,13 @@
 <!-- update with extra care -->
 # NCCL - PLC
 <!------------------------------------->
+## version 2.28
+ 
+- [CE_Collectives](items/id_69ed1e63/CE_Collectives.md)
+<!-- V2_28_DO_NOT_MOVE -->
+ 
+<!------------------------------------->
+<!------------------------------------->
 ## version 2.27
 
 - [Symmetric API](items/id_52d22bee/Symmetric_API.md)
