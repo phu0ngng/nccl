@@ -23,7 +23,7 @@ NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu  #kernel_test.cu
-CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc
 KCU_FILES := align_test.cu #kernel_test.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
@@ -36,7 +36,7 @@ DEP_FILES:= $(OBJ_FILES:%.o=%.d)
 
 LSB_RELEASE=$(shell lsb_release -is)
 #
-all:${EXE_FILES}
+all:${EXE_FILES} net.build tuner.build profiler.build
 	@printf "Syncing  %-35s > %s\n" topo ${DST_DIR}
 	rsync -q -av topo ${DST_DIR}
 
@@ -49,6 +49,15 @@ ifneq (clean,${MAKECMDGOALS})
 -include ${DEP_FILES}
 endif
 #
+net.%:
+	${MAKE} -C $(BUILDDIR)/../ext-net/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+
+tuner.%:
+	${MAKE} -C $(BUILDDIR)/../ext-tuner/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+
+profiler.%:
+	${MAKE} -C $(BUILDDIR)/../ext-profiler/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+
 ${DST_DIR}/%.o:%.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
@@ -162,3 +171,8 @@ ${DST_DIR}/overlap_test: ${DST_DIR}/overlap_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -lcudart
+
+${DST_DIR}/plugin_load: ${DST_DIR}/plugin_load.o
+	@printf "Linking %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl
