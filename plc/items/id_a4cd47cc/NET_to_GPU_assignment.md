@@ -51,7 +51,7 @@ A summary for both communicator 0 and 1 is illustrated below
 Starting the design explanation from  `ncclTopoGetLocalNet`. This function takes the GPU and a channel index.
 For that GPU, we get the number (and index) of the closest (aka lowest path type and higher bandwidth) net, `localNetCount`.
 For the net, we also get the closest GPUs, `localGpuCount`.
-Then, the NET associated to a given channel for a given GPU is computed as 
+Then, the NET associated to a given channel for a given GPU is computed as
 
 ```c
 int net = system->nodes[GPU].nodes[gpu].gpu.dev;
@@ -100,7 +100,7 @@ This logic extends to the case of larger `NVLD` and was successfully used to use
 <!-- ============================================================================================-->
 
 Author(s):
-  - Thomas Gillis 
+  - Thomas Gillis
   - Sylvain Jeaugey
 
 </details>
