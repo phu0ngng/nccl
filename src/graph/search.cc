@@ -1307,7 +1307,8 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
         NCCLCHECK(ncclTopoGetLocalGpu(comm->topo, netId, &g2));
         if (g2 != -1) {
           struct ncclTopoNode* peerGpu = comm->topo->nodes[GPU].nodes+g2;
-          if (peerGpu->paths[GPU][g1].type <= PATH_NVL && peerGpu->paths[NET][n].type <= PATH_PXB) {
+          int pxnType = ncclParamPxnC2c() ? PATH_P2C : PATH_PXB;
+          if (peerGpu->paths[GPU][g1].type <= PATH_NVL && peerGpu->paths[NET][n].type <= pxnType) {
             *proxyRank = peerGpu->gpu.rank;
             if (dev) *dev = netDev;
             if (id) *id = netId;
