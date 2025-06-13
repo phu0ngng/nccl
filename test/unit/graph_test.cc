@@ -312,7 +312,19 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     snprintf(dumpFile, sizeof(dumpFile), "%s.processed_trimmed", xmlTopoFile);
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
   }
-  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
+  uint64_t hostHash = 0;
+  {
+    // Get the host_hash of the first CPU.
+    struct ncclXmlNode* cpuNode;
+    CHECK(xmlFindTag(xmlSystem, "cpu", &cpuNode));
+    if (cpuNode) {
+      const char* hostHashStr;
+      CHECK(xmlGetAttr(cpuNode, "host_hash", &hostHashStr));
+      if (hostHashStr)
+        hostHash = strtoull(hostHashStr, NULL, 16);
+    }
+  }
+  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, hostHash));
   free(xmlSystem);
   if (inter == 0) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)

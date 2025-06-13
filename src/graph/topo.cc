@@ -677,7 +677,14 @@ ncclResult_t ncclTopoGetSystemFromXml(struct ncclXml* xml, struct ncclTopoSystem
     struct ncclXmlNode* node = topNode->subs[s];
     if (strcmp(node->name, "cpu") == 0) NCCLCHECK(ncclTopoAddCpu(node, *topoSystem));
   }
-  for (int systemId=0; systemId<system->nHosts; systemId++) if (system->hostHashes[systemId] == localHostHash) system->systemId = systemId;
+
+  int systemId = 0;
+  while (systemId < system->nHosts && system->hostHashes[systemId] != localHostHash) systemId++;
+  system->systemId = systemId;
+  if(systemId == system->nHosts){
+    WARN("localHostHash = 0x%lx not found in the list of system hostHashes",localHostHash);
+    return ncclInvalidArgument;
+  }
 
   NCCLCHECK(ncclTopoAddNvLinks(topNode, *topoSystem, NULL, 0));
   NCCLCHECK(ncclTopoAddC2c(topNode, *topoSystem, NULL, 0));
