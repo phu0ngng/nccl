@@ -47,6 +47,11 @@ export NCCL_NET_PLUGIN="plugin_nodev_v5,plugin_nodev_v6,plugin_v7,plugin_nodev_v
 run_api_test "multinet_" "${multinetTests}"
 unset NCCL_NET_PLUGIN
 
+sharedPluginTest="ncclCommInitRankConfig_test.shared_plugin_lib"
+export NCCL_NET_PLUGIN="libnccl-shared-plugins.so"
+run_api_test "" "${sharedPluginTest}"
+unset NCCL_NET_PLUGIN
+
 print_failed_commands
 end_junit_file
 ci_exit

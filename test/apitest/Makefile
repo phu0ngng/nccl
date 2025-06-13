@@ -39,7 +39,8 @@ all:${DST_DIR}/apitest ${DST_DIR}/apitest_static \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v6.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v7.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v8.so   \
-    ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v9.so
+    ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v9.so   \
+    ${DST_DIR}/plugin/libnccl-shared-plugins.so
 
 clean:gtest.clean
 	rm -rf ${DST_DIR}

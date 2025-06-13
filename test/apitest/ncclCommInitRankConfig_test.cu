@@ -632,3 +632,52 @@ TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_fail) {
 
     free(comms);
 }
+
+// Test Description:
+// This test achieves two goals:
+//   1. it makes sure that the network plugin is initialized for every new comm
+//   2. it makes sure that all the plugins can be loaded from the same library
+TEST_F(ncclCommInitRankConfig_test, shared_plugin_lib) {
+    if (getenv("NCCL_NET_PLUGIN")==nullptr) {
+      // GTEST_SKIP requires a more recent googletest version. For now, we'll just pass the test.
+      // GTEST_SKIP() << "Skipping test since NCCL_NET_PLUGIN is not defined.");
+      return;
+    }
+
+    ncclComm_t *comms = nullptr;
+    ncclUniqueId id;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    config.netName = "ncclNetPlugin_v11";
+
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+
+    // First comm initialization:
+    // All plugins are loaded from the same shared library
+    // All plugins initialize correctly the first time but the tuner and the profiler set the number of devices for network to 0
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        (void)ncclCommInitRankConfig(&comms[i], ndev, id, i, &config);
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    }
+
+    // Second comm initialization:
+    // Net plugin returns 0 devices, test fails with ncclInvalidArgument
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        (void)ncclCommInitRankConfig(&comms[i], ndev, id, i, &config);
+    }
+    ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    }
+
+    free(comms);
+}
