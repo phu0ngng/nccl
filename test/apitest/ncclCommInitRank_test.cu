@@ -67,6 +67,14 @@ TEST_F(ncclCommInitRank_test, magic) {
     ASSERT_EQ(ncclSuccess, ncclCommInitRank(&comm, ndev, commId, rank));
     ASSERT_EQ(ncclMagic, ((uint64_t*)comm)[0]);
 }
+TEST_F(ncclCommInitRank_test, socket_connection_crash) {
+    ncclComm_t testComm = NULL;
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&commId));
+    memset(&commId, 0, sizeof(ncclUniqueId));  // Zero out the ID to make it invalid
+    int testRank = 0;
+    ASSERT_EQ(ncclInternalError, ncclCommInitRank(&testComm, 2, commId, testRank));
+    ASSERT_EQ(NULL, testComm);
+}
 
 class ncclCommInitRankParseListTest : public ncclOutputTest {
   // Tests for ParseList, as accessed through the NCCL_PROTO and NCCL_ALGO environment variables.
