@@ -1425,15 +1425,15 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
       // Negative color does not create a new comm object. We needed to take part in the allgather, but we're done now.
       if (job->color == NCCL_SPLIT_NOCOLOR) goto exit;
     }
-    timers[TIMER_INIT_ALLOC] = clockNano();
-    NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
-    timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
     // child hash obtained from (parent hash, split count, color)
     uint64_t hacc[2] = {1, 1};
     eatHash(hacc, &job->parent->commHash);
     eatHash(hacc, &job->splitCount);
     eatHash(hacc, &job->color);
     comm->commHash = digestHash(hacc);
+    timers[TIMER_INIT_ALLOC] = clockNano();
+    NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
+    timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
     INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p splitCount %d color %d key %d- Init START", job->funcName,
          comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->splitCount, job->color, job->key);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
@@ -1442,11 +1442,11 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     // debug info, no commId was used
     commIdHash = 0;
   } else {
+    // obtain a unique hash using the first commId
+    comm->commHash = commIdHash = getHash(job->commId->internal, NCCL_UNIQUE_ID_BYTES);
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
-    // obtain a unique hash using the first commId
-    comm->commHash = commIdHash = getHash(job->commId->internal, NCCL_UNIQUE_ID_BYTES);
     INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START", job->funcName,
          comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, commIdHash);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
