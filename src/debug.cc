@@ -401,9 +401,17 @@ void ncclResetDebugInitInternal() {
   pthread_mutex_unlock(&ncclDebugLock);
 }
 
+// In place of: NCCL_API(void, ncclResetDebugInit);
+__attribute__ ((visibility("default")))
+__attribute__ ((alias("ncclResetDebugInit")))
+void pncclResetDebugInit();
 extern "C"
 __attribute__ ((visibility("default")))
-__attribute__ ((deprecated("ncclResetDebugInit() is not supported as part of the NCCL API")))
+__attribute__ ((weak))
+__attribute__ ((deprecated("ncclResetDebugInit is not supported as part of the NCCL API and will be removed in the future")))
+void ncclResetDebugInit();
+
+
 void ncclResetDebugInit() {
   // This is now deprecated as part of the NCCL API. It will be removed
   // from the API in the future. It is still available as an
