@@ -8,12 +8,19 @@
 # https://confluence.nvidia.com/display/DSE/Pre-Nyx+Hardware
 PRENYX_GPU_ARCHS="100,120"
 
-# NCCL CI deps
-PRENYX_CUDA_VERSION="12.8"
-PRENYX_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${PRENYX_CUDA_VERSION}"
+PRENYX_TOOLKIT_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits"
+
+PRENYX_OS_VERSION="20.04"
+PRENYX_CUDA_VERSION="12.8.0"
+PRENYX_BUILD_TOOLS_VERSION="1.0.1"
+PRENYX_BUILD_IMAGE_VERSION="${PRENYX_BUILD_TOOLS_VERSION}-c${PRENYX_CUDA_VERSION}-u${PRENYX_OS_VERSION}"
+
+PRENYX_DOCKER_IMAGE_DIR="$PRENYX_TOOLKIT_DIR/docker_sqsh"
+
+PRENYX_CUDA_HOME="$PRENYX_TOOLKIT_DIR/cuda-${PRENYX_CUDA_VERSION}"
 
 PRENYX_OPENMPI_VERSION="5.0.6"
-PRENYX_OPENMPI_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/openmpi-${PRENYX_OPENMPI_VERSION}"
+PRENYX_OPENMPI_HOME="$PRENYX_TOOLKIT_DIR/openmpi-${PRENYX_OPENMPI_VERSION}"
 
 # Slurm account for executing jobs
 PRENYX_SLURM_ACCOUNT="coreai_libraries_nccl"
@@ -28,6 +35,15 @@ function get_gpu_archs() {
     echo "$PRENYX_GPU_ARCHS"
 }
 
+function get_build_image_version() {
+    echo "$PRENYX_BUILD_IMAGE_VERSION"
+}
+
+function get_build_tools_image() {
+    build_image_version="$1"
+    echo "$PRENYX_DOCKER_IMAGE_DIR/nccl_build_tools-${build_image_version}.sqsh"
+}
+
 function get_slurm_account() {
     echo "$PRENYX_SLURM_ACCOUNT"
 }
@@ -37,15 +53,32 @@ function get_num_build_procs() {
     echo "nproc"
 }
 
-function get_build_command() {
+function get_build_command_bm() {
     echo "srun \
             --account=$PRENYX_SLURM_ACCOUNT \
             -J $PRENYX_SLURM_ACCOUNT-ci:nccl-build \
-            -t 00:05:00 \
+            -p batch \
+            -t 00:10:00 \
             -n 1 \
             -c 64 \
-            -p batch \
             docker/build_nccl_bm.sh"
+}
+
+function get_build_command() {
+    current_dir="$1"
+    build_image_version="$2"
+    build_tools_image="$(get_build_tools_image $build_image_version)"
+
+    echo "srun \
+        --account=$PRENYX_SLURM_ACCOUNT \
+        -J ${PRENYX_SLURM_ACCOUNT}-ci:nccl-build \
+        -p batch \
+        -t 00:10:00 \
+        -n 1 \
+	-c 64 \
+        --container-image=$build_tools_image \
+        --container-mounts=${current_dir}:/nccl \
+        /nccl/docker/build_nccl.sh"
 }
 
 function get_cuda_home() {
