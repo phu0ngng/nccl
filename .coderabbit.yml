@@ -2,11 +2,7 @@
 # This configuration disables automatic reviews by default
 
 # Language configuration
-language: 
-  - cpp
-  - c
-  - cuda
-  - makefile
+language: "en-US"
 
 # Review settings - DISABLED BY DEFAULT
 reviews:
