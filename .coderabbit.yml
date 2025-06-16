@@ -1,0 +1,153 @@
+# CodeRabbit configuration for NCCL (NVIDIA Collective Communication Library)
+# This configuration disables automatic reviews by default
+
+# Language configuration
+language: 
+  - cpp
+  - c
+  - cuda
+  - makefile
+
+# Review settings - DISABLED BY DEFAULT
+reviews:
+  # Disable automatic reviews
+  auto_review: false
+  
+  # Only review when explicitly requested
+  request_review: manual
+  
+  # Skip all files by default - can be overridden by manual requests
+  path_filters:
+    - "!**/*"  # Skip everything by default
+  
+  # When reviews are manually requested, use a conservative profile
+  profile: chill
+  
+  # Early access features
+  early_access: true
+
+# Chat settings - also conservative
+chat:
+  # Disable automatic chat responses
+  auto_reply: false
+  
+  # Only respond when directly mentioned
+  mention_required: true
+
+# Knowledge base (available when reviews are manually triggered)
+knowledge_base:
+  - path: "README.md"
+    description: "NCCL overview and build instructions"
+  - path: "doc/"
+    description: "NCCL public documentation"
+  - path: "plc/"
+    description: "NCCL private, per-feature documentation"
+  - path: "src/"
+    description: "Core NCCL library source code"
+  - path: "test/"
+    description: "Test suite, apitest, performance tests, scripts, and unit tests"
+  - path: "makefiles/"
+    description: "Build system configuration"
+
+# Custom instructions for manual reviews
+instructions: |
+  You are reviewing code for NCCL (NVIDIA Collective Communication Library).
+  
+  IMPORTANT: This configuration disables automatic reviews. Reviews will only be 
+  provided when explicitly requested using @coderabbitai commands.
+  
+  When manually requested, focus on:
+  1. **Test coverage**: Ensure all code paths are tested
+  2. **Documentation**: Ensure all code is well-documented
+  3. **Performance**: NCCL is a high-performance communication library
+  4. **GPU memory management**: Check for proper CUDA memory handling
+  5. **Communication patterns**: Verify collective operation implementations
+  6. **Thread safety**: Look for race conditions in multi-GPU scenarios
+  7. **Error handling**: Ensure robust error propagation and cleanup
+  8. **Compatibility**: Check for CUDA version and hardware compatibility
+  9. **Network protocols**: Review InfiniBand, TCP/IP, and NVLink implementations
+  
+  Code quality areas:
+  - Memory leaks and proper resource cleanup
+  - Synchronization and locking mechanisms
+  - Performance bottlenecks in critical paths
+  - API consistency and backward compatibility in plugin interfaces
+
+# File-specific review guidelines (only when manually requested)
+file_specific:
+  "src/**/*.cc":
+    instructions: |
+      Core NCCL implementation - focus on performance, thread safety, and GPU memory management.
+  
+  "src/device/*":
+    instructions: |
+      CUDA kernels - review for performance optimization, memory coalescing, and proper GPU resource usage.
+  
+  "src/graph/*":
+    instructions: |
+      Graph Search and Topology - Review for correctness and edge cases.
+  
+  "src/include/**/*.h":
+    instructions: |
+      Public and internal APIs - check for consistency, documentation, and backward compatibility.
+  
+  "test/**/*":
+    instructions: |
+      Test code - verify coverage of edge cases, multi-GPU scenarios, and error conditions.
+  
+  "**/Makefile":
+    instructions: |
+      Build system - check for proper compiler flags, dependency management, and platform support.
+  
+  "src/transport/**/*":
+    instructions: |
+      Network transport implementations - focus on protocol correctness and performance.
+
+# Trigger settings - very conservative
+triggers:
+  # Do NOT review on pull requests automatically
+  pull_request: false
+  
+  # Do NOT review on pushes
+  push: false
+  
+  # Only respond to explicit mentions
+  mention_only: true
+  
+  # Skip all automatic triggers
+  skip_patterns:
+    - ".*"  # Skip everything by default
+
+# Integration settings
+integrations:
+  github:
+    # Disable automatic PR comments
+    pr_comments: false
+    
+    # Disable automatic PR summaries
+    pr_summary: false
+    
+    # Disable incremental reviews
+    incremental_review: false
+  
+  ci_cd:
+    # Disable automatic test suggestions
+    suggest_tests: false
+    
+    # Disable performance alerts
+    performance_alerts: false
+
+# Tone and style for manual reviews
+tone: professional
+style: concise
+
+# Manual review commands available:
+# @coderabbitai review - Review specific files or changes
+# @coderabbitai explain - Explain code functionality
+# @coderabbitai optimize - Suggest performance optimizations
+# @coderabbitai security - Security-focused review
+
+# Example usage:
+# @coderabbitai review src/transport/net.cc
+# @coderabbitai optimize this CUDA kernel
+# @coderabbitai explain this collective algorithm 
