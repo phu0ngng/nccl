@@ -17,34 +17,33 @@ reviews:
   profile: chill
 
   path_instructions:
-    - "src/**/*.cc":
+    - path: "src/**/*.cc"
       instructions: |
         Core NCCL implementation - focus on performance, thread safety, and GPU memory management.
-    
-    - "src/device/*":
+
+    - path: "src/device/*"
       instructions: |
         CUDA kernels - review for performance optimization, memory coalescing, and proper GPU resource usage.
-    
-    - "src/graph/*":
+
+    - path: "src/graph/*"
       instructions: |
         Graph Search and Topology - Review for correctness and edge cases.
-    
-    - "src/include/**/*.h":
+
+    - path: "src/include/**/*.h"
       instructions: |
         Public and internal APIs - check for consistency, documentation, and backward compatibility.
-    
-    - "test/**/*":
+
+    - path: "test/**/*"
       instructions: |
         Test code - verify coverage of edge cases, multi-GPU scenarios, and error conditions.
-    
-    - "**/Makefile":
+
+    - path: "**/Makefile"
       instructions: |
         Build system - check for proper compiler flags, dependency management, and platform support.
-    
-    - "src/transport/**/*":
+
+    - path: "src/transport/**/*"
       instructions: |
         Network transport implementations - focus on protocol correctness and performance.
-
 # Chat settings - also conservative
 chat:
   auto_reply: true
