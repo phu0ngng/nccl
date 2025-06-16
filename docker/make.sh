@@ -117,7 +117,7 @@ if [ "$baremetal_build" -eq 0 ]; then
 
     eval "$(get_build_command $current_dir $build_image_version)"
 else
-    eval "$(get_build_command)"
+    eval "$(get_build_command_bm)"
 fi
 
 exit_code=$?
