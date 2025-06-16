@@ -10,7 +10,7 @@ source docker/cluster-utils.sh
 
 # Assumes that if you're building baremetal, then you're build and target cluster are the same
 target_cluster_tag=$(identify_cluster)
-source docker/$target_cluster_tag-config.sh
+source docker/clusters/$target_cluster_tag-config.sh
 
 export CUDA_HOME=$(get_cuda_home)
 export MPI_HOME=$(get_openmpi_home)
