@@ -160,6 +160,18 @@ build-dlfw-pytorch-container:
 ## Stage: setup - Start...
 ##
 
+# Kicks off an independent CI pipeline on QA nodes
+# https://gitlab-master.nvidia.com/xiaojingl/comms_lib_auto/-/blob/main/NCCL_CI/ci_perftest.sh?ref_type=heads
+QA-team-ci:
+  stage: setup
+  dependencies: []
+  rules:
+    - when: always
+  tags:
+    - cqa_host_runner
+  script:
+    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
+
 fairshare-eos:
   stage: setup
   rules:
@@ -2222,18 +2234,6 @@ summarize-pipeline:
     - ipp6-nccl
   script:
     - ./test/scripts/gitlab-runner-summary.sh
-
-# Kicks off an independent CI pipeline on QA nodes
-# https://gitlab-master.nvidia.com/xiaojingl/comms_lib_auto/-/blob/main/NCCL_CI/ci_perftest.sh?ref_type=heads
-QA-team-ci:
-  stage: summary
-  dependencies: []
-  rules:
-    - when: always
-  tags:
-    - cqa_host_runner
-  script:
-    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
 
 ##
 ## Stage: summary - Finish!
