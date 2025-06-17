@@ -82,13 +82,13 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
-            fprintf(stderr, "%s: plugin name not found\n", testName[type]);
+            fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
-          fprintf(stderr, "%s: %s\n", testName[type], strerror(errno));
+          fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }
-        fprintf(stderr, "%s: %s\n", testName[type], strerror(errno));
+        fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
         return 1;
       }
       break;
@@ -98,7 +98,7 @@ static int test_plugin_load(enum test type) {
         if (handle) {
           return 0;
         }
-        fprintf(stderr, "%s: %s\n", testName[type], strerror(errno));
+        fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
         return 1;
       }
       break;
@@ -115,13 +115,13 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
-            fprintf(stderr, "%s: plugin name not found\n", testName[type]);
+            fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
-          fprintf(stderr, "%s: %s\n", testName[type], strerror(errno));
+          fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }
-        fprintf(stderr, "%s: %s\n", testName[type], strerror(errno));
+        fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
         return 1;
       }
       break;
@@ -138,13 +138,13 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
-            fprintf(stderr, "%s: plugin name not found\n", testName[type]);
+            fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
-          fprintf(stderr, "%s: %s\n", testName[type], strerror(errno));
+          fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }
-        fprintf(stderr, "%s: %s\n", testName[type], strerror(errno));
+        fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
         return 1;
       }
       break;
