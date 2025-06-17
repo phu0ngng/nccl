@@ -12,6 +12,8 @@ reviews:
   auto_review:
     enabled: false
     auto_incremental_review: false
+
+  poem: false
   
   # When reviews are manually requested, use a conservative profile
   profile: chill
