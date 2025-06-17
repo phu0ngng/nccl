@@ -132,10 +132,10 @@ static int countConfigLines(const char* filename) {
   while (fgets(line, sizeof(line), file)) {
     // Skip comments and empty lines
     if (line[0] == '#' || line[0] == '\n') continue;
-    
+
     // Remove trailing newline
     line[strcspn(line, "\n")] = 0;
-    
+
     // Check if line has content
     if (strlen(line) > 0) {
       count++;
@@ -151,7 +151,7 @@ static ncclResult_t loadConfig(TunerContext* ctx, const char* filename) {
   FILE* file = fopen(filename, "r");
   if (!file) {
     if (ctx->logFunction) {
-      ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+      ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                        "TUNER/ExamplePlugin: Config file %s not found, using defaults", filename);
     }
     return ncclSuccess; // Not finding config file is not an error
@@ -161,7 +161,7 @@ static ncclResult_t loadConfig(TunerContext* ctx, const char* filename) {
   int configCount = countConfigLines(filename);
   if (configCount == 0) {
     if (ctx->logFunction) {
-      ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+      ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                        "TUNER/ExamplePlugin: No valid configurations found in %s", filename);
     }
     fclose(file);
@@ -172,18 +172,18 @@ static ncclResult_t loadConfig(TunerContext* ctx, const char* filename) {
   ctx->configs = (TuningConfig*)malloc(configCount * sizeof(TuningConfig));
   if (!ctx->configs) {
     if (ctx->logFunction) {
-      ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+      ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                        "TUNER/ExamplePlugin: Failed to allocate memory for %d configurations", configCount);
     }
     fclose(file);
     return ncclSystemError;
   }
-  
+
   ctx->maxConfigs = configCount;
   ctx->numConfigs = 0;
 
   if (ctx->logFunction) {
-    ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+    ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                      "TUNER/ExamplePlugin: Allocated memory for %d configurations", configCount);
   }
 
@@ -234,47 +234,47 @@ static ncclResult_t loadConfig(TunerContext* ctx, const char* filename) {
       config->nChannels = atoi(tokens[CONFIG_FIELD_CHANNELS]);
       config->nNodes = atoi(tokens[CONFIG_FIELD_NNODES]);
       config->nRanks = atoi(tokens[CONFIG_FIELD_NRANKS]);
-      
+
       // numPipeOps is optional (9th field, index 8)
       if (tokenCount >= CONFIG_FIELDS_WITH_PIPEOPS) {
         config->numPipeOps = atoi(tokens[CONFIG_FIELD_PIPEOPS]);
       } else {
         config->numPipeOps = -1; // -1 means match any numPipeOps
       }
-      
+
       // regBuff is optional (10th field, index 9)
       if (tokenCount >= CONFIG_FIELDS_WITH_REGBUFF) {
         config->regBuff = atoi(tokens[CONFIG_FIELD_REGBUFF]);
       } else {
         config->regBuff = -1; // -1 means match any regBuff value
       }
-      
+
       ctx->numConfigs++;
 
       if (ctx->logFunction) {
         if (config->numPipeOps == -1 && config->regBuff == -1) {
-          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                            "TUNER/ExamplePlugin: Loaded config: %s [%zu-%zu] %s/%s channels=%d nodes=%d ranks=%d pipeOps=any regBuff=any",
-                           tokens[CONFIG_FIELD_COLLTYPE], config->minBytes, config->maxBytes, 
-                           tokens[CONFIG_FIELD_ALGORITHM], tokens[CONFIG_FIELD_PROTOCOL], 
+                           tokens[CONFIG_FIELD_COLLTYPE], config->minBytes, config->maxBytes,
+                           tokens[CONFIG_FIELD_ALGORITHM], tokens[CONFIG_FIELD_PROTOCOL],
                            config->nChannels, config->nNodes, config->nRanks);
         } else if (config->regBuff == -1) {
-          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                            "TUNER/ExamplePlugin: Loaded config: %s [%zu-%zu] %s/%s channels=%d nodes=%d ranks=%d pipeOps=%d regBuff=any",
-                           tokens[CONFIG_FIELD_COLLTYPE], config->minBytes, config->maxBytes, 
-                           tokens[CONFIG_FIELD_ALGORITHM], tokens[CONFIG_FIELD_PROTOCOL], 
+                           tokens[CONFIG_FIELD_COLLTYPE], config->minBytes, config->maxBytes,
+                           tokens[CONFIG_FIELD_ALGORITHM], tokens[CONFIG_FIELD_PROTOCOL],
                            config->nChannels, config->nNodes, config->nRanks, config->numPipeOps);
         } else if (config->numPipeOps == -1) {
-          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                            "TUNER/ExamplePlugin: Loaded config: %s [%zu-%zu] %s/%s channels=%d nodes=%d ranks=%d pipeOps=any regBuff=%d",
-                           tokens[CONFIG_FIELD_COLLTYPE], config->minBytes, config->maxBytes, 
-                           tokens[CONFIG_FIELD_ALGORITHM], tokens[CONFIG_FIELD_PROTOCOL], 
+                           tokens[CONFIG_FIELD_COLLTYPE], config->minBytes, config->maxBytes,
+                           tokens[CONFIG_FIELD_ALGORITHM], tokens[CONFIG_FIELD_PROTOCOL],
                            config->nChannels, config->nNodes, config->nRanks, config->regBuff);
         } else {
-          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                            "TUNER/ExamplePlugin: Loaded config: %s [%zu-%zu] %s/%s channels=%d nodes=%d ranks=%d pipeOps=%d regBuff=%d",
-                           tokens[CONFIG_FIELD_COLLTYPE], config->minBytes, config->maxBytes, 
-                           tokens[CONFIG_FIELD_ALGORITHM], tokens[CONFIG_FIELD_PROTOCOL], 
+                           tokens[CONFIG_FIELD_COLLTYPE], config->minBytes, config->maxBytes,
+                           tokens[CONFIG_FIELD_ALGORITHM], tokens[CONFIG_FIELD_PROTOCOL],
                            config->nChannels, config->nNodes, config->nRanks, config->numPipeOps, config->regBuff);
         }
       }
@@ -283,7 +283,7 @@ static ncclResult_t loadConfig(TunerContext* ctx, const char* filename) {
 
   fclose(file);
   if (ctx->logFunction) {
-    ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+    ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                      "TUNER/ExamplePlugin: Loaded %d tuning configurations from %s", ctx->numConfigs, filename);
   }
   return ncclSuccess;
@@ -301,7 +301,7 @@ __hidden ncclResult_t pluginInit(size_t nRanks, size_t nNodes, ncclDebugLogger_t
   ctx->logFunction = logFunction;
 
   if (logFunction) {
-    logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+    logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                 "TUNER/ExamplePlugin: Initializing tuner for %zu nodes, %zu ranks", nNodes, nRanks);
   }
 
@@ -334,7 +334,7 @@ __hidden ncclResult_t pluginGetCollInfo(void* context, ncclFunc_t collType, size
   *nChannels = 1;
 
   if (ctx->logFunction) {
-    ctx->logFunction(NCCL_LOG_TRACE, NCCL_TUNING, __FILE__, __LINE__, 
+    ctx->logFunction(NCCL_LOG_TRACE, NCCL_TUNING, __FILE__, __LINE__,
                      "TUNER/ExamplePlugin: pluginGetCollInfo called - collType=%s, nBytes=%zu, numPipeOps=%d, regBuff=%d, numConfigs=%d",
                      collTypeToString(collType), nBytes, numPipeOps, regBuff, ctx->numConfigs);
   }
@@ -342,76 +342,76 @@ __hidden ncclResult_t pluginGetCollInfo(void* context, ncclFunc_t collType, size
   // Look for matching configuration
   for (int i = 0; i < ctx->numConfigs; i++) {
     TuningConfig* config = &ctx->configs[i];
-    
+
     if (ctx->logFunction) {
-      ctx->logFunction(NCCL_LOG_TRACE, NCCL_TUNING, __FILE__, __LINE__, 
+      ctx->logFunction(NCCL_LOG_TRACE, NCCL_TUNING, __FILE__, __LINE__,
                        "TUNER/ExamplePlugin: Checking config %d - collType=%s, minBytes=%zu, maxBytes=%zu, algo=%s, proto=%s, nNodes=%d, nRanks=%d, numPipeOps=%d, regBuff=%d",
                        i, collTypeToString(config->collType), config->minBytes, config->maxBytes, algorithmToString(config->algorithm), protocolToString(config->protocol),
                        config->nNodes, config->nRanks, config->numPipeOps, config->regBuff);
     }
-    
+
     // Check if this config matches the current collective, size range, topology, pipeline ops, and regBuff
-    if (config->collType == collType && 
-        nBytes >= config->minBytes && 
+    if (config->collType == collType &&
+        nBytes >= config->minBytes &&
         nBytes <= config->maxBytes &&
         (config->nNodes == -1 || config->nNodes == (int)ctx->nNodes) &&
         (config->nRanks == -1 || config->nRanks == (int)ctx->nRanks) &&
         (config->numPipeOps == -1 || config->numPipeOps == numPipeOps) &&
         (config->regBuff == -1 || config->regBuff == regBuff)) {
-      
+
       if (ctx->logFunction) {
-        ctx->logFunction(NCCL_LOG_TRACE, NCCL_TUNING, __FILE__, __LINE__, 
+        ctx->logFunction(NCCL_LOG_TRACE, NCCL_TUNING, __FILE__, __LINE__,
                          "TUNER/ExamplePlugin: Config matches. Applying algo=%s, proto=%s, channels=%d",
                          algorithmToString(config->algorithm), protocolToString(config->protocol), config->nChannels);
       }
-  
+
       // Check bounds
       if (config->algorithm < numAlgo && config->protocol < numProto) {
         if (collCostTable[config->algorithm][config->protocol] != NCCL_ALGO_PROTO_IGNORE) {
           if (ctx->logFunction) {
-            ctx->logFunction(NCCL_LOG_TRACE, NCCL_TUNING, __FILE__, __LINE__, 
+            ctx->logFunction(NCCL_LOG_TRACE, NCCL_TUNING, __FILE__, __LINE__,
                              "TUNER/ExamplePlugin: Setting cost table[%s][%s] (%p) = 0.0 (was %.1f)",
-                             algorithmToString(config->algorithm), protocolToString(config->protocol), 
+                             algorithmToString(config->algorithm), protocolToString(config->protocol),
                              &collCostTable[config->algorithm][config->protocol], collCostTable[config->algorithm][config->protocol]);
           }
           collCostTable[config->algorithm][config->protocol] = 0.0; // Set low cost to prefer this configuration
-          
+
           // Only override channels if not set to -1 (keep default)
           if (config->nChannels != -1) {
             *nChannels = config->nChannels;
           }
-          
+
           if (ctx->logFunction) {
             if (config->nChannels == -1) {
-              ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+              ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                                "TUNER/ExamplePlugin: Applied config for collType=%s, bytes=%zu, pipeOps=%d, regBuff=%d: algo=%s, proto=%s, channels=default (nodes=%d, ranks=%d)",
-                               collTypeToString(config->collType), nBytes, numPipeOps, regBuff, algorithmToString(config->algorithm), protocolToString(config->protocol), 
+                               collTypeToString(config->collType), nBytes, numPipeOps, regBuff, algorithmToString(config->algorithm), protocolToString(config->protocol),
                                config->nNodes, config->nRanks);
             } else {
-              ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+              ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                                "TUNER/ExamplePlugin: Applied config for collType=%s, bytes=%zu, pipeOps=%d, regBuff=%d: algo=%s, proto=%s, channels=%d (nodes=%d, ranks=%d)",
-                               collTypeToString(config->collType), nBytes, numPipeOps, regBuff, algorithmToString(config->algorithm), protocolToString(config->protocol), 
+                               collTypeToString(config->collType), nBytes, numPipeOps, regBuff, algorithmToString(config->algorithm), protocolToString(config->protocol),
                                config->nChannels, config->nNodes, config->nRanks);
             }
           }
           return ncclSuccess;
         } else {
           if (ctx->logFunction) {
-            ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+            ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                              "TUNER/ExamplePlugin: Algorithm/protocol combination [%s][%s] is marked as IGNORE",
                              algorithmToString(config->algorithm), protocolToString(config->protocol));
           }
         }
       } else {
         if (ctx->logFunction) {
-          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+          ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                            "TUNER/ExamplePlugin: Algorithm/protocol out of bounds - algo=%s (max %d), proto=%s (max %d)",
                            algorithmToString(config->algorithm), numAlgo, protocolToString(config->protocol), numProto);
         }
       }
     } else {
       if (ctx->logFunction) {
-        ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+        ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                          "TUNER/ExamplePlugin: Config does not match - collType match=%d, size match=%d, nodes match=%d, ranks match=%d, pipeOps match=%d, regBuff match=%d",
                          config->collType == collType,
                          (nBytes >= config->minBytes && nBytes <= config->maxBytes),
@@ -425,7 +425,7 @@ __hidden ncclResult_t pluginGetCollInfo(void* context, ncclFunc_t collType, size
 
   // If no specific config found, apply default behavior
   if (ctx->logFunction) {
-    ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__, 
+    ctx->logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
                      "TUNER/ExamplePlugin: No matching config found");
   }
 

@@ -71,7 +71,7 @@ python scripts/optimize_config.py --dry-run performance_data.csv
 
 The script uses these default size ranges (in bytes):
 - Small: 0 - 1,024
-- Medium: 1,025 - 65,536  
+- Medium: 1,025 - 65,536
 - Large: 65,537 - 1,048,576
 - XLarge: 1,048,577 - 16,777,216
 - XXLarge: 16,777,217 - 4,294,967,295
@@ -103,4 +103,4 @@ The key is to have comprehensive data covering:
 - Different message sizes (small to large)
 - Various topologies (single node, multi-node)
 - All relevant algorithm/protocol combinations
-- Different channel counts and pipeline configurations 
+- Different channel counts and pipeline configurations

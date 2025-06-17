@@ -38,15 +38,15 @@
 static int test_log_count = 0;
 
 // Mock logger function
-void mock_logger(ncclDebugLogLevel level, unsigned long flags, 
+void mock_logger(ncclDebugLogLevel level, unsigned long flags,
                  const char* file, int line, const char* fmt, ...) {
   (void)flags; // Suppress unused parameter warning
   test_log_count++;
-  
+
   // Check if we should print based on NCCL_DEBUG level
   const char* debug_level = getenv("NCCL_DEBUG");
   int should_print = 0;
-  
+
   if (debug_level) {
     if (strcmp(debug_level, "TRACE") == 0) {
       should_print = 1; // Print everything
@@ -56,9 +56,9 @@ void mock_logger(ncclDebugLogLevel level, unsigned long flags,
       should_print = 1; // Print WARN and below
     }
   }
-  
+
   if (!should_print) return;
-  
+
   // Convert log level to string
   const char* level_str;
   switch(level) {
@@ -70,16 +70,16 @@ void mock_logger(ncclDebugLogLevel level, unsigned long flags,
     case NCCL_LOG_TRACE: level_str = "TRACE"; break;
     default: level_str = "UNKNOWN"; break;
   }
-  
+
   // Print log header
   printf("[TUNER:%s:%s:%d] ", level_str, file, line);
-  
+
   // Print formatted message
   va_list args;
   va_start(args, fmt);
   vprintf(fmt, args);
   va_end(args);
-  
+
   printf("\n");
 }
 
@@ -95,12 +95,12 @@ void create_test_config(const char* filename, const char* content) {
 // Test 1: Plugin initialization
 int test_plugin_init() {
   void* context = NULL;
-  
+
   // Test successful initialization
   ncclResult_t result = pluginInit(8, 2, mock_logger, &context);
   TEST_ASSERT(result == ncclSuccess, "Plugin init should succeed");
   TEST_ASSERT(context != NULL, "Context should be allocated");
-  
+
   // Clean up
   pluginDestroy(context);
   TEST_PASS();
@@ -108,23 +108,23 @@ int test_plugin_init() {
 
 // Test 2: Configuration file parsing - valid CSV
 int test_config_parsing_valid() {
-  const char* test_config = 
+  const char* test_config =
     "# Test configuration\n"
     "allreduce,0,65536,tree,simple,2,1,-1,-1,-1\n"
     "broadcast,0,32768,ring,ll128,4,2,16,-1,-1\n"
     "# Comment line\n"
     "\n"  // Empty line
     "reduce,1024,2048,tree,simple,-1,-1,-1,-1,-1\n";
-    
+
   create_test_config("test_valid.conf", test_config);
-  
+
   // Set environment variable to use our test config
   setenv("NCCL_TUNER_CONFIG_FILE", "test_valid.conf", 1);
-  
+
   void* context = NULL;
   ncclResult_t result = pluginInit(16, 2, mock_logger, &context);
   TEST_ASSERT(result == ncclSuccess, "Plugin init with valid config should succeed");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink("test_valid.conf");
@@ -134,19 +134,19 @@ int test_config_parsing_valid() {
 
 // Test 3: Configuration file parsing - invalid CSV
 int test_config_parsing_invalid() {
-  const char* test_config = 
+  const char* test_config =
     "allreduce,0,65536,tree,simple,2,1  # Missing nRanks and other fields\n"
     "invalid_collective,0,1024,ring,simple,1,1,1,-1,-1\n"
     "broadcast,abc,def,ring,simple,1,1,1,-1,-1\n";  // Invalid numbers
-    
+
   create_test_config("test_invalid.conf", test_config);
   setenv("NCCL_TUNER_CONFIG_FILE", "test_invalid.conf", 1);
-  
+
   void* context = NULL;
   ncclResult_t result = pluginInit(8, 1, mock_logger, &context);
   // Should still succeed but with no valid configs loaded
   TEST_ASSERT(result == ncclSuccess, "Plugin init should succeed even with invalid config");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink("test_invalid.conf");
@@ -156,16 +156,16 @@ int test_config_parsing_invalid() {
 
 // Test 4: Collective type matching
 int test_collective_matching() {
-  const char* test_config = 
+  const char* test_config =
     "allreduce,0,65536,tree,simple,8,1,-1,-1,-1\n"
     "broadcast,0,32768,ring,ll128,4,-1,-1,-1,-1\n";
-    
+
   create_test_config("test_match.conf", test_config);
   setenv("NCCL_TUNER_CONFIG_FILE", "test_match.conf", 1);
-  
+
   void* context = NULL;
   pluginInit(8, 1, mock_logger, &context);
-  
+
   // Create mock cost table
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -175,38 +175,38 @@ int test_collective_matching() {
       cost_table[i][j] = 1.0; // Default high cost
     }
   }
-  
+
   int nChannels;
-  
+
   // Test allreduce matching (should match first config)
-  ncclResult_t result = pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                                          cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+  ncclResult_t result = pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                                          cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                                           0, &nChannels);
-  
+
   TEST_ASSERT(result == ncclSuccess, "GetCollInfo should succeed");
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
-              "DEBUG: Checking cost_table[TREE][SIMPLE] (%p) = %.1f (expecting 0.0)", 
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
+              "DEBUG: Checking cost_table[TREE][SIMPLE] (%p) = %.1f (expecting 0.0)",
               &cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE], cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE]);
   TEST_ASSERT(cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] == 0.0, "Tree/Simple should have low cost");
   TEST_ASSERT(nChannels == 8, "Should set 8 channels");
-  
+
   // Test broadcast matching (should match second config)
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0; // Reset costs
     }
   }
-  
-  result = pluginGetCollInfo(context, ncclFuncBroadcast, 16384, 1, 
-                            cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  result = pluginGetCollInfo(context, ncclFuncBroadcast, 16384, 1,
+                            cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                             0, &nChannels);
   TEST_ASSERT(result == ncclSuccess, "GetCollInfo should succeed");
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
-              "DEBUG: Checking cost_table[RING][LL128] (%p) = %.1f (expecting 0.0)", 
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
+              "DEBUG: Checking cost_table[RING][LL128] (%p) = %.1f (expecting 0.0)",
               &cost_table[NCCL_ALGO_RING][NCCL_PROTO_LL128], cost_table[NCCL_ALGO_RING][NCCL_PROTO_LL128]);
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_LL128] == 0.0, "Ring/LL128 should have low cost");
   TEST_ASSERT(nChannels == 4, "Should set 4 channels");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink("test_match.conf");
@@ -216,14 +216,14 @@ int test_collective_matching() {
 
 // Test 5: Size range matching
 int test_size_matching() {
-  const char* test_config = 
+  const char* test_config =
     "allreduce,0,1024,tree,simple,2,-1,-1,-1,-1\n"
     "allreduce,1025,65536,ring,simple,4,-1,-1,-1,-1\n"
     "allreduce,65537,4294967295,ring,ll128,8,-1,-1,-1,-1\n";
-    
+
   create_test_config("test_size.conf", test_config);
   setenv("NCCL_TUNER_CONFIG_FILE", "test_size.conf", 1);
-  
+
   void* context = NULL;
   pluginInit(8, 1, mock_logger, &context);
 
@@ -236,48 +236,48 @@ int test_size_matching() {
     }
   }
   int nChannels = 1;
-  
-  pluginGetCollInfo(context, ncclFuncAllReduce, 512, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context, ncclFuncAllReduce, 512, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
-              "DEBUG: Small message - checking cost_table[TREE][SIMPLE] (%p) = %.1f (expecting 0.0)", 
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
+              "DEBUG: Small message - checking cost_table[TREE][SIMPLE] (%p) = %.1f (expecting 0.0)",
               &cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE], cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE]);
   TEST_ASSERT(cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] == 0.0, "Small: Tree/Simple should have low cost");
   TEST_ASSERT(nChannels == 2, "Small: Should set 2 channels");
-  
+
   // Test medium message (should match second config)
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
-              "DEBUG: Medium message - checking cost_table[RING][SIMPLE] (%p) = %.1f (expecting 0.0)", 
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
+              "DEBUG: Medium message - checking cost_table[RING][SIMPLE] (%p) = %.1f (expecting 0.0)",
               &cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE], cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]);
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] == 0.0, "Medium: Ring/Simple should have low cost");
   TEST_ASSERT(nChannels == 4, "Medium: Should set 4 channels");
-  
+
   // Test large message (should match third config)
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
-  pluginGetCollInfo(context, ncclFuncAllReduce, 1048576, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context, ncclFuncAllReduce, 1048576, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
-              "DEBUG: Large message - checking cost_table[RING][LL128] (%p) = %.1f (expecting 0.0)", 
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
+              "DEBUG: Large message - checking cost_table[RING][LL128] (%p) = %.1f (expecting 0.0)",
               &cost_table[NCCL_ALGO_RING][NCCL_PROTO_LL128], cost_table[NCCL_ALGO_RING][NCCL_PROTO_LL128]);
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_LL128] == 0.0, "Large: Ring/LL128 should have low cost");
   TEST_ASSERT(nChannels == 8, "Large: Should set 8 channels");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink("test_size.conf");
@@ -287,18 +287,18 @@ int test_size_matching() {
 
 // Test 6: Topology matching
 int test_topology_matching() {
-  const char* test_config = 
+  const char* test_config =
     "allreduce,0,65536,tree,simple,2,1,-1,-1,-1\n"      // Single node only
     "allreduce,0,65536,ring,simple,4,4,32,-1,-1\n"      // 4 nodes, 32 ranks exactly
     "allreduce,0,65536,ring,ll128,8,-1,-1,-1,-1\n";     // Any topology
-    
+
   create_test_config("test_topo.conf", test_config);
   setenv("NCCL_TUNER_CONFIG_FILE", "test_topo.conf", 1);
-  
+
   // Test with single node setup
   void* context1 = NULL;
   pluginInit(8, 1, mock_logger, &context1);  // 8 ranks, 1 node
-  
+
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
@@ -307,32 +307,32 @@ int test_topology_matching() {
       cost_table[i][j] = 1.0;
     }
   }
-  
+
   int nChannels;
-  pluginGetCollInfo(context1, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+  pluginGetCollInfo(context1, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
   TEST_ASSERT(cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] == 0.0, "Single node: Should match tree config");
   TEST_ASSERT(nChannels == 2, "Single node: Should set 2 channels");
-  
+
   pluginDestroy(context1);
-  
+
   // Test with 4 nodes, 32 ranks setup
   void* context2 = NULL;
   pluginInit(32, 4, mock_logger, &context2);  // 32 ranks, 4 nodes
-  
+
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
-  pluginGetCollInfo(context2, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context2, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] == 0.0, "4-node: Should match ring/simple config");
   TEST_ASSERT(nChannels == 4, "4-node: Should set 4 channels");
-  
+
   // Clean up
   unlink("test_topo.conf");
   unsetenv("NCCL_TUNER_CONFIG_FILE");
@@ -341,15 +341,15 @@ int test_topology_matching() {
 
 // Test 7: Default channels behavior (-1)
 int test_default_channels() {
-  const char* test_config = 
+  const char* test_config =
     "allreduce,0,65536,tree,simple,-1,-1,-1,-1,-1\n";  // Use default channels
-    
+
   create_test_config("test_default.conf", test_config);
   setenv("NCCL_TUNER_CONFIG_FILE", "test_default.conf", 1);
-  
+
   void* context = NULL;
   pluginInit(8, 1, mock_logger, &context);
-  
+
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
@@ -358,15 +358,15 @@ int test_default_channels() {
       cost_table[i][j] = 1.0;
     }
   }
-  
+
   int nChannels = 99;  // Set to known value
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
-  
+
   TEST_ASSERT(cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] == 0.0, "Should apply algorithm/protocol");
   TEST_ASSERT(nChannels == 1, "Should keep default channels (1) when config has -1");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink("test_default.conf");
@@ -376,65 +376,65 @@ int test_default_channels() {
 
 // Test 8: regBuff matching
 int test_regbuff_matching() {
-  const char* test_config = 
+  const char* test_config =
     "allreduce,0,65536,tree,simple,2,-1,-1,-1,1\n"      // Registered buffers only
     "allreduce,0,65536,ring,simple,4,-1,-1,-1,0\n"      // Non-registered buffers only
     "allreduce,0,65536,ring,ll128,8,-1,-1,-1,-1\n";     // Any buffer type (backward compatible)
-    
+
   create_test_config("test_regbuff.conf", test_config);
   setenv("NCCL_TUNER_CONFIG_FILE", "test_regbuff.conf", 1);
-  
+
   void* context = NULL;
   pluginInit(8, 1, mock_logger, &context);
-  
+
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     cost_table_ptr[i] = cost_table[i];
   }
-  
+
   int nChannels;
-  
+
   // Test registered buffer (should match first config)
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     1, &nChannels);  // regBuff = 1 (registered)
   TEST_ASSERT(cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] == 0.0, "Registered buffer: Tree/Simple should have low cost");
   TEST_ASSERT(nChannels == 2, "Registered buffer: Should set 2 channels");
-  
+
   // Test non-registered buffer (should match second config)
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);  // regBuff = 0 (non-registered)
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] == 0.0, "Non-registered buffer: Ring/Simple should have low cost");
   TEST_ASSERT(nChannels == 4, "Non-registered buffer: Should set 4 channels");
-  
+
   // Test backward compatibility - config without regBuff should match any regBuff value
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
+
   // First try with regBuff=2 (unusual value, should match third config)
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     2, &nChannels);  // regBuff = 2 (only third config should match)
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_LL128] == 0.0, "Any regBuff: Ring/LL128 should have low cost");
   TEST_ASSERT(nChannels == 8, "Any regBuff: Should set 8 channels");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink("test_regbuff.conf");
@@ -444,64 +444,64 @@ int test_regbuff_matching() {
 
 // Test 9: numPipeOps matching
 int test_pipeops_matching() {
-  const char* test_config = 
+  const char* test_config =
     "allreduce,0,65536,tree,simple,2,-1,-1,1,-1\n"      // Single pipeline op
     "allreduce,0,65536,ring,simple,4,-1,-1,4,-1\n"      // Multiple pipeline ops
     "allreduce,0,65536,ring,ll128,8,-1,-1,-1,-1\n";     // Any pipeline ops (backward compatible)
-    
+
   create_test_config("test_pipeops.conf", test_config);
   setenv("NCCL_TUNER_CONFIG_FILE", "test_pipeops.conf", 1);
-  
+
   void* context = NULL;
   pluginInit(8, 1, mock_logger, &context);
-  
+
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     cost_table_ptr[i] = cost_table[i];
   }
-  
+
   int nChannels;
-  
+
   // Test single pipeline op (should match first config)
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
   TEST_ASSERT(cost_table[NCCL_ALGO_TREE][NCCL_PROTO_SIMPLE] == 0.0, "Single pipeOp: Tree/Simple should have low cost");
   TEST_ASSERT(nChannels == 2, "Single pipeOp: Should set 2 channels");
-  
+
   // Test multiple pipeline ops (should match second config)
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 4, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 4,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] == 0.0, "Multiple pipeOps: Ring/Simple should have low cost");
   TEST_ASSERT(nChannels == 4, "Multiple pipeOps: Should set 4 channels");
-  
+
   // Test different number of pipeline ops (should match third config - backward compatible)
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
       cost_table[i][j] = 1.0;
     }
   }
-  
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 2, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 2,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_LL128] == 0.0, "Any pipeOps: Ring/LL128 should have low cost");
   TEST_ASSERT(nChannels == 8, "Any pipeOps: Should set 8 channels");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink("test_pipeops.conf");
@@ -511,15 +511,15 @@ int test_pipeops_matching() {
 
 // Test 10: No matching configuration (fallback behavior)
 int test_no_match_fallback() {
-  const char* test_config = 
+  const char* test_config =
     "broadcast,0,1024,tree,simple,2,-1,-1,-1,-1\n";  // Only broadcast config
-    
+
   create_test_config("test_fallback.conf", test_config);
   setenv("NCCL_TUNER_CONFIG_FILE", "test_fallback.conf", 1);
-  
+
   void* context = NULL;
   pluginInit(8, 1, mock_logger, &context);
-  
+
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
@@ -528,19 +528,19 @@ int test_no_match_fallback() {
       cost_table[i][j] = 1.0;
     }
   }
-  
+
   int nChannels;
   // Try allreduce (should not match, use fallback)
-  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+  pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                    cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                     0, &nChannels);
-  
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
-              "DEBUG: Fallback test - checking cost_table[RING][SIMPLE] (%p) = %.1f (expecting 0.0)", 
+
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
+              "DEBUG: Fallback test - checking cost_table[RING][SIMPLE] (%p) = %.1f (expecting 0.0)",
               &cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE], cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE]);
   TEST_ASSERT(cost_table[NCCL_ALGO_RING][NCCL_PROTO_SIMPLE] == 1.0, "Should use pass through unmodified");
   TEST_ASSERT(nChannels == 1, "Should use default channels");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink("test_fallback.conf");
@@ -551,28 +551,28 @@ int test_no_match_fallback() {
 // Test 11: Large configuration files (testing dynamic allocation)
 int test_large_config() {
   const char* large_config_file = "test_large.conf";
-  
+
   // Create a large configuration file with many entries
   // This tests the dynamic allocation functionality
   FILE* f = fopen(large_config_file, "w");
   TEST_ASSERT(f != NULL, "Should be able to create large config file");
-  
+
   // Write header comment
   fprintf(f, "# Large configuration file for testing dynamic allocation\n");
   fprintf(f, "# This file contains many configurations to test memory allocation\n");
-  
+
   // Generate a large number of configurations (much more than the old MAX_CONFIGS=100)
   const int num_configs = 500; // 5x the old static limit
   const char* collectives[] = {"allreduce", "broadcast", "reduce", "allgather", "reducescatter"};
   const char* algorithms[] = {"tree", "ring", "collnet_direct", "nvls"};
   const char* protocols[] = {"simple", "ll", "ll128"};
-  
+
   for (int i = 0; i < num_configs; i++) {
     // Vary the configurations to create realistic test data
     const char* coll = collectives[i % 5];
     const char* algo = algorithms[i % 4];
     const char* proto = protocols[i % 3];
-    
+
     size_t min_bytes = (i * 1024) % 1048576; // Vary from 0 to 1MB
     size_t max_bytes = min_bytes + 65536;    // 64KB range
     int channels = (i % 8) + 1;              // 1-8 channels
@@ -580,28 +580,28 @@ int test_large_config() {
     int ranks = (i % 8) == 0 ? -1 : (i % 32) + 1; // Mix of -1 and 1-32 ranks
     int pipeOps = (i % 3) == 0 ? -1 : (i % 4) + 1; // Mix of -1 and 1-4 pipeOps
     int regBuff = (i % 3) == 0 ? -1 : (i % 2); // Mix of -1, 0, 1
-    
+
     fprintf(f, "%s,%zu,%zu,%s,%s,%d,%d,%d,%d,%d\n",
             coll, min_bytes, max_bytes, algo, proto, channels, nodes, ranks, pipeOps, regBuff);
   }
-  
+
   fclose(f);
-  
+
   // Set environment to use our large config file
   setenv("NCCL_TUNER_CONFIG_FILE", large_config_file, 1);
-  
+
   // Initialize plugin with large config
   void* context = NULL;
   ncclResult_t result = pluginInit(16, 4, mock_logger, &context);
   TEST_ASSERT(result == ncclSuccess, "Plugin init with large config should succeed");
   TEST_ASSERT(context != NULL, "Context should be allocated");
-  
+
   // Verify that configurations were loaded
   TunerContext* ctx = (TunerContext*)context;
   TEST_ASSERT(ctx->numConfigs == num_configs, "Should load all configurations from large file");
   TEST_ASSERT(ctx->maxConfigs == num_configs, "maxConfigs should match allocated size");
   TEST_ASSERT(ctx->configs != NULL, "Configs array should be dynamically allocated");
-  
+
   // Test that we can access configurations throughout the array
   // (This would have failed with the old static MAX_CONFIGS=100 limit)
   for (int i = 0; i < ctx->numConfigs; i++) {
@@ -612,27 +612,27 @@ int test_large_config() {
     TEST_ASSERT(config->maxBytes >= config->minBytes, "maxBytes should be >= minBytes");
     TEST_ASSERT(config->nChannels > 0, "nChannels should be positive");
   }
-  
+
   // Test specific configuration access at various indices
   // Index 0 (first config)
   TuningConfig* first_config = &ctx->configs[0];
   TEST_ASSERT(first_config != NULL, "First config should be accessible");
-  
+
   // Index in middle
   TuningConfig* mid_config = &ctx->configs[num_configs / 2];
   TEST_ASSERT(mid_config != NULL, "Middle config should be accessible");
-  
+
   // Index near end (this would have crashed with static array of 100)
   TuningConfig* late_config = &ctx->configs[num_configs - 1];
   TEST_ASSERT(late_config != NULL, "Last config should be accessible");
-  
+
   // Test memory allocation size - verify we didn't over-allocate
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
               "Successfully loaded %d configurations (dynamic allocation)", ctx->numConfigs);
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
-              "Memory allocated for %d configurations (%zu bytes total)", 
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
+              "Memory allocated for %d configurations (%zu bytes total)",
               ctx->maxConfigs, ctx->maxConfigs * sizeof(TuningConfig));
-  
+
   // Test that the plugin can still find matching configurations from the large set
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -642,97 +642,97 @@ int test_large_config() {
       cost_table[i][j] = 1.0; // Default high cost
     }
   }
-  
+
   int nChannels;
   // Try to find a matching configuration - should work with large config set
-  result = pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                            cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+  result = pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                            cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                             0, &nChannels);
   TEST_ASSERT(result == ncclSuccess, "GetCollInfo should work with large config set");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink(large_config_file);
   unsetenv("NCCL_TUNER_CONFIG_FILE");
-  
+
   TEST_PASS();
 }
 
 // Test 12: Very large configuration stress test
 int test_very_large_config_stress() {
   const char* stress_config_file = "test_stress.conf";
-  
+
   // Create an even larger configuration file to stress test the implementation
   FILE* f = fopen(stress_config_file, "w");
   TEST_ASSERT(f != NULL, "Should be able to create stress test config file");
-  
+
   fprintf(f, "# Stress test configuration with very large number of entries\n");
-  
+
   // Generate an extremely large number of configurations
   const int stress_configs = 2000; // 20x the old static limit
-  
+
   for (int i = 0; i < stress_configs; i++) {
     // Create varied but valid configurations
-    fprintf(f, "allreduce,%d,%d,ring,simple,4,-1,-1,-1,-1\n", 
+    fprintf(f, "allreduce,%d,%d,ring,simple,4,-1,-1,-1,-1\n",
             i * 512, (i * 512) + 1024);
   }
-  
+
   fclose(f);
-  
+
   setenv("NCCL_TUNER_CONFIG_FILE", stress_config_file, 1);
-  
+
   // Test initialization with stress config
   void* context = NULL;
   ncclResult_t result = pluginInit(8, 2, mock_logger, &context);
   TEST_ASSERT(result == ncclSuccess, "Plugin should handle very large config files");
-  
+
   TunerContext* ctx = (TunerContext*)context;
   TEST_ASSERT(ctx->numConfigs == stress_configs, "Should load all stress test configurations");
   TEST_ASSERT(ctx->configs != NULL, "Stress test configs should be allocated");
-  
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
+
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
               "Stress test - loaded %d configurations successfully", stress_configs);
-  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__, 
-              "Memory usage: %zu bytes for configuration array", 
+  mock_logger(NCCL_LOG_INFO, NCCL_ALL, __FILE__, __LINE__,
+              "Memory usage: %zu bytes for configuration array",
               stress_configs * sizeof(TuningConfig));
-  
+
   // Verify we can access configurations throughout the entire range
   for (int i = 0; i < stress_configs; i += 100) { // Sample every 100th config
     TuningConfig* config = &ctx->configs[i];
     TEST_ASSERT(config->collType == ncclFuncAllReduce, "Config should have correct collective type");
     TEST_ASSERT(config->minBytes == (size_t)(i * 512), "Config should have correct minBytes");
   }
-  
+
   // Clean up
   pluginDestroy(context);
   unlink(stress_config_file);
   unsetenv("NCCL_TUNER_CONFIG_FILE");
-  
+
   TEST_PASS();
 }
 
 // Test 13: Edge case - empty config file
 int test_empty_config() {
   const char* empty_config_file = "test_empty.conf";
-  
+
   // Create empty config file (only comments)
-  create_test_config(empty_config_file, 
+  create_test_config(empty_config_file,
     "# Empty configuration file\n"
     "# No actual configurations\n"
     "\n"
     "\n");
-  
+
   setenv("NCCL_TUNER_CONFIG_FILE", empty_config_file, 1);
-  
+
   void* context = NULL;
   ncclResult_t result = pluginInit(8, 2, mock_logger, &context);
   TEST_ASSERT(result == ncclSuccess, "Plugin should handle empty config files");
-  
+
   TunerContext* ctx = (TunerContext*)context;
   TEST_ASSERT(ctx->numConfigs == 0, "Should have zero configurations");
   TEST_ASSERT(ctx->maxConfigs == 0, "Should have zero max configurations");
   TEST_ASSERT(ctx->configs == NULL, "Should not allocate memory for empty config");
-  
+
   // Test that plugin still works with no configurations (fallback behavior)
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -742,18 +742,18 @@ int test_empty_config() {
       cost_table[i][j] = 1.0;
     }
   }
-  
+
   int nChannels;
-  result = pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1, 
-                            cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS, 
+  result = pluginGetCollInfo(context, ncclFuncAllReduce, 32768, 1,
+                            cost_table_ptr, NCCL_NUM_ALGORITHMS, NCCL_NUM_PROTOCOLS,
                             0, &nChannels);
   TEST_ASSERT(result == ncclSuccess, "GetCollInfo should work with empty config");
-  
+
   // Clean up
   pluginDestroy(context);
   unlink(empty_config_file);
   unsetenv("NCCL_TUNER_CONFIG_FILE");
-  
+
   TEST_PASS();
 }
 
@@ -771,7 +771,7 @@ typedef struct {
 TestCase test_cases[] = {
   {"init", test_plugin_init, "Plugin initialization"},
   {"config-valid", test_config_parsing_valid, "Valid configuration parsing"},
-  {"config-invalid", test_config_parsing_invalid, "Invalid configuration parsing"},  
+  {"config-invalid", test_config_parsing_invalid, "Invalid configuration parsing"},
   {"collective", test_collective_matching, "Collective type matching"},
   {"size", test_size_matching, "Size range matching"},
   {"topology", test_topology_matching, "Topology matching"},
@@ -812,16 +812,16 @@ TestFunction find_test(const char* name) {
 // Main test runner
 int main(int argc, char* argv[]) {
   int passed = 0, total = 0;
-  
+
   // Check for help
   if (argc > 1 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
     show_help(argv[0]);
     return 0;
   }
-  
+
   printf("Running NCCL Tuner Plugin Unit Tests\n");
   printf("=====================================\n");
-  
+
   if (argc == 1) {
     // No arguments - run all tests
     for (int i = 0; test_cases[i].name != NULL; i++) {
@@ -842,10 +842,10 @@ int main(int argc, char* argv[]) {
       }
     }
   }
-  
+
   printf("\n=====================================\n");
   printf("Test Results: %d/%d tests passed\n", passed, total);
-  
+
   if (passed == total) {
     printf("All tests PASSED!\n");
     return 0;
@@ -853,4 +853,4 @@ int main(int argc, char* argv[]) {
     printf("Some tests FAILED!\n");
     return 1;
   }
-} 
+}

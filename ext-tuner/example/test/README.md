@@ -122,7 +122,7 @@ Some tests FAILED!
 The tests use the actual NCCL header files from the `../nccl/` directory:
 
 - `tuner.h` - Complete NCCL tuner interface and type definitions
-- `common.h` - Common NCCL types and logging functions  
+- `common.h` - Common NCCL types and logging functions
 - `err.h` - NCCL error codes
 
 This allows testing with the real NCCL interface definitions while still being able to run tests without the full NCCL library installation.
@@ -202,4 +202,4 @@ gdb ./test_plugin
 make clean
 ```
 
-This comprehensive test suite ensures the NCCL tuner plugin works correctly across all supported configurations and edge cases. 
+This comprehensive test suite ensures the NCCL tuner plugin works correctly across all supported configurations and edge cases.

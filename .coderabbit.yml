@@ -14,7 +14,7 @@ reviews:
     auto_incremental_review: false
 
   poem: false
-  
+
   # When reviews are manually requested, use a conservative profile
   profile: chill
 
@@ -61,4 +61,4 @@ tone_instructions: "professional and concise"
 # Example usage:
 # @coderabbitai review src/transport/net.cc
 # @coderabbitai optimize this CUDA kernel
-# @coderabbitai explain this collective algorithm 
+# @coderabbitai explain this collective algorithm

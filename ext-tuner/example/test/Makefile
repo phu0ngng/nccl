@@ -27,4 +27,4 @@ test-verbose: $(TARGET)
 clean:
 	rm -f $(TARGET) *.o *.gcov *.gcda *.gcno test_*.conf
 
-.PHONY: all test test-verbose clean 
+.PHONY: all test test-verbose clean

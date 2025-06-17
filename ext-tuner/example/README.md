@@ -38,7 +38,7 @@ collective_type,min_bytes,max_bytes,algorithm,protocol,channels,nNodes,nRanks,nu
 - **algorithm**: The NCCL algorithm to use
   - `tree`, `ring`, `collnet_direct`, `collnet_chain`, `nvls`, `nvls_tree`, `pat`
 
-- **protocol**: The NCCL protocol to use  
+- **protocol**: The NCCL protocol to use
   - `ll`, `ll128`, `simple`
 
 - **channels**: Number of channels (SMs) to use
@@ -50,7 +50,7 @@ collective_type,min_bytes,max_bytes,algorithm,protocol,channels,nNodes,nRanks,nu
   - Use `-1` to match any number of nodes
 
 - **nRanks**: Number of ranks to match
-  - Use a positive integer to match specific rank count  
+  - Use a positive integer to match specific rank count
   - Use `-1` to match any number of ranks
 
 - **numPipeOps**: Number of pipeline operations to match (optional)
@@ -143,7 +143,7 @@ Configurations are only applied when the topology matches:
 
 - **Exact Match**: Configuration specifies `nNodes=4,nRanks=32`, only applied when communicator has exactly 4 nodes and 32 ranks
 - **Wildcard Nodes**: Configuration specifies `nNodes=-1,nRanks=8`, applied to any topology with exactly 8 ranks
-- **Wildcard Ranks**: Configuration specifies `nNodes=2,nRanks=-1`, applied to any 2-node topology regardless of ranks per node  
+- **Wildcard Ranks**: Configuration specifies `nNodes=2,nRanks=-1`, applied to any 2-node topology regardless of ranks per node
 - **Wildcard Both**: Configuration specifies `nNodes=-1,nRanks=-1`, applied to any topology
 
 This allows you to create specialized configurations for different cluster setups while maintaining flexibility.
@@ -161,4 +161,4 @@ When channels is set to `-1`, NCCL's default channel selection logic is preserve
 3. **Plugin not loaded**: Ensure `LD_LIBRARY_PATH` includes the plugin directory
 4. **No effect on performance**: Check that NCCL is actually using the tuner plugin with `NCCL_DEBUG=INFO`
 5. **Topology mismatch**: Verify that nNodes and nRanks match your actual setup, or use -1 for wildcards
-6. **CSV parsing errors**: Ensure no spaces after commas, or quote fields containing spaces 
+6. **CSV parsing errors**: Ensure no spaces after commas, or quote fields containing spaces
