@@ -22,11 +22,11 @@ static int initialized;             // initialization counter for profiler
 static double startTime;            // profiler start time
 
 static const int defaultEActivationMask = ncclProfileColl | ncclProfileP2p;
-static const int defaultGroupPoolSize = 16;
-static const int defaultCollPoolSize = 16;
-static const int defaultP2pPoolSize = 1024;
+static const int defaultGroupPoolSize = 256;
+static const int defaultCollPoolSize = 256;
+static const int defaultP2pPoolSize = 256;
 static const int defaultProxyCtrlPoolSize = 16;
-static const int defaultDetachPoolSize = 128;
+static const int defaultDetachPoolSize = 256;
 
 static int groupPoolSize;
 static int collPoolSize;
@@ -50,8 +50,10 @@ __hidden double gettime(void) {
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pid_t pid;
 static int* eActivationMaskPtr;
+static int enabled = 1;
 
 __hidden ncclResult_t exampleProfilerInit(void** context, int* eActivationMask, const char* commName, uint64_t commHash, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn) {
+  if (__atomic_load_n(&enabled, __ATOMIC_RELAXED) == 0) return ncclInternalError;
   pthread_mutex_lock(&lock);
   if (__atomic_fetch_add(&initialized, 1, __ATOMIC_RELAXED) == 0) {
     // first thread initializes event mask, environment and detach pool
@@ -135,11 +137,13 @@ fail:
   return ncclSystemError;
 }
 
+static const char* profilerDumpFile;
+
 __hidden ncclResult_t exampleProfilerFinalize(void* context) {
   FILE* fh = NULL;
   char filename[PATH_MAX] = { 0 };
   struct context* ctx = (struct context *)context;
-  const char* dump = getenv("NCCL_PROFILE_DUMP_FILE");
+  const char* dump = profilerDumpFile ? profilerDumpFile : getenv("NCCL_PROFILE_DUMP_FILE");
   if (dump) {
     sprintf(filename, "%s_%lu_%d.json", dump, ctx->commHash, ctx->rank);
     fh = fopen(filename, "w");
@@ -618,7 +622,8 @@ ncclProfiler_t ncclProfiler_v4 = {
   exampleProfilerFinalize,
 };
 
-int exampleProfilerStart(int eActivationMask) {
+int exampleProfilerStart(int eActivationMask, const char* name) {
+  profilerDumpFile = name;
   if (__atomic_load_n(&initialized, __ATOMIC_RELAXED)) {
     __atomic_store_n(eActivationMaskPtr, eActivationMask, __ATOMIC_RELAXED);
   }
@@ -630,4 +635,8 @@ int exampleProfilerStop(void) {
     __atomic_store_n(eActivationMaskPtr, 0, __ATOMIC_RELAXED);
   }
   return ncclSuccess;
+}
+
+void exampleProfilerDisable(void) {
+  __atomic_store_n(&enabled, 0, __ATOMIC_RELAXED);
 }

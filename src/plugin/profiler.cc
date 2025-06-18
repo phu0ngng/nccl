@@ -85,7 +85,9 @@ fail:
 static ncclResult_t ncclProfilerPluginUnload(void) {
   pthread_mutex_lock(&profilerLock);
   if (0 == (--profilerPluginRefCount)) {
-    INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
+    if (__builtin_expect(ncclProfiler != NULL, 0)) {
+      INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
+    }
     NCCLCHECK(ncclClosePluginLib(profilerPluginLib));
     profilerPluginLib = nullptr;
     ncclProfiler = nullptr;
@@ -168,8 +170,7 @@ ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm) {
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     int err = ncclProfiler->init(&comm->profilerContext, &ncclProfilerEventMask, comm->config.commName, comm->commHash, comm->nNodes, comm->nRanks, comm->rank, ncclDebugLog);
     if (err) {
-      WARN("Profiler init failed with error (%d). Continue without profiler.", err);
-      ncclProfiler = NULL;
+      WARN("Profiler init failed with error '%d': %s. Continue without profiler.", err, strerror(errno));
     }
   }
   TIME_STOP_EVENT(init);
@@ -178,7 +179,7 @@ ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm) {
 
 ncclResult_t ncclProfilerPluginFinalize(struct ncclComm* comm) {
   TIME_START_EVENT(finalize);
-  if (__builtin_expect(ncclProfiler != NULL, 0)) {
+  if (__builtin_expect(ncclProfiler != NULL, 0) && comm->profilerContext) {
     ncclProfiler->finalize(comm->profilerContext);
   }
   ncclProfilerPluginUnload();

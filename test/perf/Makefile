@@ -2,9 +2,10 @@ include ../../makefiles/common.mk
 
 .PHONY: all clean
 
+PROFDIR := $(abspath ../../ext-profiler/example)
 BUILDDIR := $(abspath ../../build)
 NCCLDIR := $(BUILDDIR)
-NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include -g
+NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include -g -I$(PROFDIR)
 ifeq ($(MPI), 1)
 NVCUFLAGS += -DMPI_SUPPORT -I$(MPI_HOME)/include
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi
@@ -13,7 +14,7 @@ ifeq ($(MPI_IBM),1)
 NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
-LIBRARIES += nccl m stdc++
+LIBRARIES += nccl-profiler-example nccl m stdc++
 NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%) -lcuda
 RPATHS = $$ORIGIN
 
@@ -35,7 +36,7 @@ BIN_FILES += $(COLLS:%=${DST_DIR}/%_perf_mpi_collnet)
 endif
 DEP_FILES := $(OBJ_FILES:%.o=%.dep)
 
-all: ${BIN_FILES}
+all: profiler.build ${BIN_FILES}
 
 clean:
 	rm -rf ${DST_DIR}
@@ -59,6 +60,9 @@ ${DST_DIR}/%.dep: %.cu
 	| sed "0,/^$*.o :/s//$(subst /,\/,${DST_DIR}/$*.o) :/" \
 	> $@
 endif
+
+profiler.%:
+	${MAKE} -C $(PROFDIR) $* BUILDDIR=$(BUILDDIR)/lib
 
 ${DST_DIR}/%.o: %.cu common.h util.h $(TEST_VERIFIABLE_HDRS)
 	@printf "Compiling  %-35s > %s\n" $< $@
