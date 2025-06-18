@@ -422,6 +422,8 @@ function load_cluster_ci_variables() {
         PLANNED_RESERVED=$(get_planned_reserved)
     fi
 
+    export NCCL_PROFILER_PLUGIN=none
+
     echo "CUDA_HOME=$CUDA_HOME"
     echo "PLANNED_RESERVED=$PLANNED_RESERVED"
     echo "MPI_HOME=$MPI_HOME"
