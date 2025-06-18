@@ -95,6 +95,12 @@ testResult_t ReduceScatterRunTest(struct threadArgs* args, int root, ncclDataTyp
   }
 
   for (int i=0; i<type_count; i++) {
+    if (!isFp8ValidForReductions(run_types[i])) {
+	    if ((int)type != -1) {
+            printf("SKIP: FP8 reduction operations require sm90+ hardware\n");
+        }
+      continue;
+    }
     for (int j=0; j<op_count; j++) {
       TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], run_ops[j], run_opnames[j], -1));
     }
