@@ -85,7 +85,9 @@ fail:
 static ncclResult_t ncclProfilerPluginUnload(void) {
   pthread_mutex_lock(&profilerLock);
   if (0 == (--profilerPluginRefCount)) {
-    INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
+    if (__builtin_expect(ncclProfiler != NULL, 0)) {
+      INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
+    }
     NCCLCHECK(ncclClosePluginLib(profilerPluginLib));
     profilerPluginLib = nullptr;
     ncclProfiler = nullptr;
