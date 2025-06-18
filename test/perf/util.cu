@@ -10,9 +10,13 @@
 // give up when passed non-ASCII strings and non-printable characters
 // except some of the usual ones.
 
+#include "nccl.h"
+#include "nccl_profiler.h"
 #include "util.h"
 #include <assert.h>
 #include <errno.h>
+// external profiler symbols
+#include <dlfcn.h>
 
 #define PRINT if (is_main_thread) printf
 
@@ -30,6 +34,7 @@ extern int parallel_init;
 extern int blocking_coll;
 extern int side_comp;
 extern int cudaGraphLaunches;
+extern int tuning;
 
 static FILE *json_report_fp;
 static bool write_json;
@@ -48,6 +53,40 @@ typedef enum {
 json_state_t *states = nullptr;
 size_t state_cap = 0; // Allocated stack capacity
 size_t state_n = 0;   // # of items in the stack.
+
+// profiler event
+struct groupEvent {
+  int type;
+  int count;
+};
+
+struct taskEvent {
+  int type;
+  int count;
+  bool ready;
+  union {
+    struct {
+      const char* algo;
+      const char* proto;
+      uint8_t nChannels;
+    } coll;
+
+    struct {
+      uint8_t nChannels;
+    } p2p;
+  };
+};
+
+struct proxyEvent {
+  int type;
+  int count;
+  bool ready;
+  int chunkSize;
+};
+
+static struct groupEvent group;
+static struct taskEvent task;
+static struct proxyEvent proxy;
 
 // This tries to sanitize/quote a string from 'in' into 'out',
 // assuming 'out' has length 'lim'.  We mainly quote ",/,\,\t,\n, and
@@ -425,8 +464,33 @@ void writeBenchmarkLinePreamble(size_t nBytes, size_t nElem, const char typeName
 // Finish a result record we were writing to stdout/json
 void writeBenchmarkLineTerminator(int actualIters, const char *name) {
   PRINT("  %6d", actualIters);
+  if (tuning) {
+    if (__atomic_load_n(&task.ready, __ATOMIC_ACQUIRE) && task.type == ncclProfileColl) {
+      PRINT("  %14s  %8s  %8d", task.coll.algo, task.coll.proto, task.coll.nChannels);
+    } else { // p2p
+      PRINT("  %14s  %8s  %8d", "N/A", "N/A", task.p2p.nChannels);
+    }
+    PRINT("  %8d", proxy.chunkSize);
+  }
   PRINT("    %s\n", name);
   if(write_json) {
+    if (tuning) {
+      jsonKey("tuning"); jsonStartObject();
+      if (task.ready && task.type == ncclProfileColl) {
+        jsonKey("algo"); jsonStr((const char *)task.coll.algo);
+        jsonKey("proto"); jsonStr((const char *)task.coll.proto);
+        jsonKey("#channels"); jsonInt(task.coll.nChannels);
+      } else { // p2p
+        jsonKey("algo"); jsonStr("N/A");
+        jsonKey("proto"); jsonStr("N/A");
+        jsonKey("#channels"); jsonInt(task.p2p.nChannels);
+      }
+      if (__atomic_load_n(&proxy.ready, __ATOMIC_ACQUIRE) && proxy.chunkSize) { jsonKey("chunkSize"); jsonInt(proxy.chunkSize); }
+      else { jsonKey("chunkSize"); jsonStr("N/A"); }
+      jsonFinishObject();
+    }
+    __atomic_store_n(&task.ready, false, __ATOMIC_RELAXED);
+    __atomic_store_n(&proxy.ready, false, __ATOMIC_RELAXED);
     jsonKey("actual_iterations"); jsonInt(actualIters);
     jsonKey("experiment_name");   jsonStr(name);
     jsonFinishObject();
@@ -696,17 +760,28 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
 void writeResultHeader(bool report_cputime, bool simulate) {
   const char* timeStr = report_cputime ? "cputime" : "time";
   PRINT("#\n");
-  PRINT("# %10s  %12s  %8s  %6s  %6s                out-of-place                                 in-place          \n", "", "", "", "", "");
+  if (tuning) {
+    PRINT("# %10s  %12s  %8s  %6s  %6s                out-of-place                                 in-place                                 tuning          \n", "", "", "", "", "");
+  } else {
+    PRINT("# %10s  %12s  %8s  %6s  %6s                out-of-place                                 in-place          \n", "", "", "", "", "");
+  }
   if (simulate) {
     PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %8s  %7s  %6s  %6s  %6s  %8s  %5s\n", "size", "count", "type", "redop", "root",
           timeStr, "algbw", "busbw", "#wrong", "esttime", timeStr, "algbw", "busbw", "#wrong", "esttime", "#iters");
     PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %8s  %7s  %6s  %6s  %6s  %8s  %5s\n", "(B)", "(elements)", "", "", "",
           "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(us)", "(GB/s)", "(GB/s)", "", "(us)", "");
   } else {
-    PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %7s  %6s  %6s  %6s  %5s\n", "size", "count", "type", "redop", "root",
-          timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong", "#iters");
-    PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %7s  %6s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
-          "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "", "");
+    if (tuning) {
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %7s  %6s  %6s  %6s  %5s  %14s  %8s  %8s  %8s\n", "size", "count", "type", "redop", "root",
+            timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong", "#iters", "algo", "proto", "#channels", "chunkSize");
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %7s  %6s  %6s  %6s  %5s  %14s  %8s  %8s  %8s\n", "(B)", "(elements)", "", "", "(B)",
+            "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "", "", "", "", "", "");
+    } else {
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %7s  %6s  %6s  %6s  %5s\n", "size", "count", "type", "redop", "root",
+            timeStr, "algbw", "busbw", "#wrong", timeStr, "algbw", "busbw", "#wrong", "#iters");
+      PRINT("# %10s  %12s  %8s  %6s  %6s  %7s  %6s  %6s  %6s  %7s  %6s  %6s  %6s  %5s\n", "(B)", "(elements)", "", "", "",
+            "(us)", "(GB/s)", "(GB/s)", "", "(us)", "(GB/s)", "(GB/s)", "", "");
+    }
   }
 
   if(write_json) {
@@ -756,3 +831,85 @@ void writeErrors() {
     jsonFinishList();
   }
 }
+
+static int profilerContext;
+
+static ncclResult_t ncclProfilerInit(void** ctx, int* eMask, const char* name, uint64_t id, int nodes, int ranks, int rank, ncclDebugLogger_t logfn) {
+  *ctx = &profilerContext;
+  *eMask = (ncclProfileColl | ncclProfileP2p | ncclProfileProxyOp);
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclProfilerStartEvent(void* ctx, void** eHandle, ncclProfilerEventDescr_t* eDescr) {
+  switch (eDescr->type) {
+    case ncclProfileGroup:
+      group.type = eDescr->type;
+      if (__atomic_fetch_add(&group.count, 1, __ATOMIC_RELAXED)) break;
+      *eHandle = &group;
+      break;
+    case ncclProfileColl:
+      if (__atomic_fetch_add(&task.count, 1, __ATOMIC_RELAXED)) break;
+      task.type = eDescr->type;
+      task.coll.algo = eDescr->coll.algo;
+      task.coll.proto = eDescr->coll.proto;
+      task.coll.nChannels = eDescr->coll.nChannels;
+      *eHandle = &task;
+      break;
+    case ncclProfileP2p:
+      if (__atomic_fetch_add(&task.count, 1, __ATOMIC_RELAXED)) break;
+      task.type = eDescr->type;
+      task.p2p.nChannels = eDescr->p2p.nChannels;
+      *eHandle = &task;
+      break;
+    case ncclProfileProxyOp:
+      // the chunkSize is the same for all channels so we only need to update the proxy event once and for all threads
+      if (__atomic_fetch_add(&proxy.count, 1, __ATOMIC_RELAXED)) break;
+      proxy.type = ncclProfileProxyOp;
+      proxy.chunkSize = eDescr->proxyOp.chunkSize;
+      *eHandle = (void *)&proxy;
+      break;
+    default:;
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclProfilerStopEvent(void* eHandle) {
+  int type = *(int *)eHandle;
+  switch (type) {
+    case ncclProfileGroup: {
+      struct groupEvent* e = (struct groupEvent *)eHandle;
+      __atomic_sub_fetch(&e->count, 1, __ATOMIC_RELAXED);
+    } break;
+    case ncclProfileColl:
+    case ncclProfileP2p: {
+      struct taskEvent* e = (struct taskEvent *)eHandle;
+      if (__atomic_sub_fetch(&e->count, 1, __ATOMIC_RELAXED) == 0)
+        __atomic_store_n(&e->ready, true, __ATOMIC_RELEASE);
+    } break;
+    case ncclProfileProxyOp: {
+      struct proxyEvent* e = (struct proxyEvent *)eHandle;
+      if (__atomic_sub_fetch(&e->count, 1, __ATOMIC_RELAXED) == 0)
+        __atomic_store_n(&e->ready, true, __ATOMIC_RELEASE);
+    } break;
+    default:;
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclProfilerRecordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_t* eStateArgs) {
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclProfilerFinalize(void* ctx) {
+  return ncclSuccess;
+}
+
+// perftest exposes profiler interface to nccl
+ncclProfiler_t ncclProfiler_v4 {
+  .name = "perftest",
+  .init = ncclProfilerInit,
+  .startEvent = ncclProfilerStartEvent,
+  .stopEvent = ncclProfilerStopEvent,
+  .recordEventState = ncclProfilerRecordEventState,
+  .finalize = ncclProfilerFinalize,
+};

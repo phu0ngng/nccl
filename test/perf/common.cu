@@ -17,6 +17,7 @@
 #include <ctype.h>
 #include "cuda.h"
 #include "util.h"
+#include "plugin.h" // example profiler header
 
 #include "../verifiable/verifiable.h"
 
@@ -100,6 +101,11 @@ static int report_cputime = 0;
 static int out_of_place = 1;
 static int unalign = 0;
 static int trafficClass;
+static int profilerMask;
+static const char* profilerDumpDefault = "perftest";
+static char* profilerDump = (char *)profilerDumpDefault;
+static int profilerIters;
+int tuning;
 
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
@@ -663,13 +669,16 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   // Performance Benchmark
   timer tim;
+  int profilerIter = 0;
   for (int iter = 0; iter < actualIters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
 
     if (record) TESTCHECK(recordEvents(args, actualIters, iter));
 
     for (int aiter = 0; aiter < agg_iters; aiter++) {
+      if (profilerMask && profilerIter < profilerIters) exampleProfilerStart(profilerMask, profilerDump);
       TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
+      if (profilerMask && profilerIter++ < profilerIters) exampleProfilerStop();
     }
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
@@ -1210,13 +1219,14 @@ int main(int argc, char* argv[], char **envp) {
     {"simulate", required_argument, 0, 'E'},
     {"init_ids", required_argument, 0, 'I'},
     {"traffic_class", required_argument, 0, 'q'},
+    {"tuning", required_argument, 0, 'U'},
     {"help", no_argument, 0, 'h'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1375,6 +1385,9 @@ int main(int argc, char* argv[], char **envp) {
       case 'q':
         trafficClass = (int)strtol(optarg, NULL, 0);
         break;
+      case 'U':
+        tuning = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1421,6 +1434,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-A,--per_coll_perf <0/1/2> Report performance per-collective (default: 0 disable; 1 report per-collective performance and std deviation; 2: report only std deviation)] \n\t"
             "[-I,--init_ids <num ids> enable scalable API for ncclCommInitRank using <num ids> ncclUniqueIds (default: disabled; 0 is equivalent to 1 ncclUniqueId per 128 NCCL ranks; value must be >=0)] \n\t"
             "[-q,--traffic_class <tclass> set network traffic class] \n\t"
+            "[-U,--tuning <0/1> report NCCL tuning info (default: 0)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1433,6 +1447,27 @@ int main(int argc, char* argv[], char **envp) {
     return -1;
   }
 
+  // Let NCCL load the perftest profiler implementation
+  if (tuning) {
+    setenv("NCCL_PROFILER_PLUGIN", "STATIC_PLUGIN", 1);
+  } else {
+    setenv("NCCL_PROFILER_PLUGIN", "example", 1);
+    const char* profilerMaskStr = getenv("NCCL_PERF_PROFILER_MASK");
+    if (profilerMaskStr) {
+      profilerMask = strtol(profilerMaskStr, nullptr, 0);
+    }
+    const char* profilerDumpStr = getenv("NCCL_PERF_PROFILER_DUMP");
+    if (profilerDumpStr) {
+      profilerDump = (char *)profilerDumpStr;
+    }
+    const char* profilerItersStr = getenv("NCCL_PERF_PROFILER_ITERS");
+    if (profilerItersStr) {
+      profilerIters = strtol(getenv("NCCL_PERF_PROFILER_ITERS"), nullptr, 0);
+    }
+    if (profilerMask == 0) {
+      exampleProfilerDisable();
+    }
+  }
 #ifdef MPI_SUPPORT
   int provide;
   MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provide);
