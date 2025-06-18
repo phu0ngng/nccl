@@ -1,0 +1,64 @@
+# CodeRabbit configuration for NCCL (NVIDIA Collective Communication Library)
+# This configuration disables automatic reviews by default
+
+# Language configuration
+language: "en-US"
+
+# Early access features
+early_access: true
+
+# Review settings - DISABLED BY DEFAULT
+reviews:
+  auto_review:
+    enabled: false
+    auto_incremental_review: false
+
+  poem: false
+
+  # When reviews are manually requested, use a conservative profile
+  profile: chill
+
+  path_instructions:
+    - path: "src/**/*.cc"
+      instructions: |
+        Core NCCL implementation - focus on performance, thread safety, and GPU memory management.
+
+    - path: "src/device/*"
+      instructions: |
+        CUDA kernels - review for performance optimization, memory coalescing, and proper GPU resource usage.
+
+    - path: "src/graph/*"
+      instructions: |
+        Graph Search and Topology - Review for correctness and edge cases.
+
+    - path: "src/include/**/*.h"
+      instructions: |
+        Public and internal APIs - check for consistency, documentation, and backward compatibility.
+
+    - path: "test/**/*"
+      instructions: |
+        Test code - verify coverage of edge cases, multi-GPU scenarios, and error conditions.
+
+    - path: "**/Makefile"
+      instructions: |
+        Build system - check for proper compiler flags, dependency management, and platform support.
+
+    - path: "src/transport/**/*"
+      instructions: |
+        Network transport implementations - focus on protocol correctness and performance.
+# Chat settings - also conservative
+chat:
+  auto_reply: true
+# Tone and style for manual reviews
+tone_instructions: "professional and concise"
+
+# Manual review commands available:
+# @coderabbitai review - Review specific files or changes
+# @coderabbitai explain - Explain code functionality
+# @coderabbitai optimize - Suggest performance optimizations
+# @coderabbitai security - Security-focused review
+
+# Example usage:
+# @coderabbitai review src/transport/net.cc
+# @coderabbitai optimize this CUDA kernel
+# @coderabbitai explain this collective algorithm

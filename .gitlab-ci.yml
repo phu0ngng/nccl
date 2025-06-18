@@ -160,6 +160,18 @@ build-dlfw-pytorch-container:
 ## Stage: setup - Start...
 ##
 
+# Kicks off an independent CI pipeline on QA nodes
+# https://gitlab-master.nvidia.com/xiaojingl/comms_lib_auto/-/blob/main/NCCL_CI/ci_perftest.sh?ref_type=heads
+QA-team-ci:
+  stage: setup
+  dependencies: []
+  rules:
+    - when: always
+  tags:
+    - cqa_host_runner
+  script:
+    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
+
 fairshare-eos:
   stage: setup
   rules:
@@ -343,6 +355,7 @@ unit_tests-P100:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -387,6 +400,7 @@ unit_tests-P40:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -431,6 +445,7 @@ unit_tests-GP100:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -475,6 +490,7 @@ unit_tests-A40-single:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -519,6 +535,7 @@ unit_tests-A40-dual:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -563,6 +580,7 @@ unit_tests-A100:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -615,6 +633,7 @@ unit_tests-eos:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -660,6 +679,7 @@ unit_tests-AWS_H100_EFA:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -732,6 +752,7 @@ unit_tests-draco_oci:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -783,6 +804,7 @@ unit_tests-pre-nyx:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -833,6 +855,7 @@ unit_tests-pre-tyche:
     PLUGIN_TESTS_NET_TUNER: 1
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -2211,18 +2234,6 @@ summarize-pipeline:
     - ipp6-nccl
   script:
     - ./test/scripts/gitlab-runner-summary.sh
-
-# Kicks off an independent CI pipeline on QA nodes
-# https://gitlab-master.nvidia.com/xiaojingl/comms_lib_auto/-/blob/main/NCCL_CI/ci_perftest.sh?ref_type=heads
-QA-team-ci:
-  stage: summary
-  dependencies: []
-  rules:
-    - when: always
-  tags:
-    - cqa_host_runner
-  script:
-    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
 
 ##
 ## Stage: summary - Finish!

@@ -277,6 +277,13 @@ void keepGpus(struct ncclXml* xmlSystem) {
   }
 }
 
+#define TIME_RING 0
+#define TIME_TREE 1
+#define TIME_CNET 2
+#define TIME_NVLS 3
+#define TIME_TOTL 4
+#define TIME_SIZE 5
+
 void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, int inter, int ngpus, int* errors, int* warnings) {
   struct ncclXml* xmlSystem;
   char dumpFile[PATH_MAX];
@@ -305,7 +312,19 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     snprintf(dumpFile, sizeof(dumpFile), "%s.processed_trimmed", xmlTopoFile);
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
   }
-  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
+  uint64_t hostHash = 0;
+  {
+    // Get the host_hash of the first CPU.
+    struct ncclXmlNode* cpuNode;
+    CHECK(xmlFindTag(xmlSystem, "cpu", &cpuNode));
+    if (cpuNode) {
+      const char* hostHashStr;
+      CHECK(xmlGetAttr(cpuNode, "host_hash", &hostHashStr));
+      if (hostHashStr)
+        hostHash = strtoull(hostHashStr, NULL, 16);
+    }
+  }
+  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, hostHash));
   free(xmlSystem);
   if (inter == 0) {
     for (int n=system->nodes[NET].count-1; n>=0; n--)
@@ -355,29 +374,30 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   nvlsGraph.collNet = 0;
 
   /* Compute */
-  uint64_t computeTime[5];
-  computeTime[0] = getTime();
+  uint64_t computeTime[TIME_SIZE];
+  computeTime[TIME_RING] = getTime();
   CHECK(ncclTopoCompute(system, &ringGraph));
-  computeTime[0] = getTime() - computeTime[0];
+  computeTime[TIME_RING] = getTime() - computeTime[TIME_RING];
   CHECK(ncclTopoPrintGraph(system, &ringGraph));
   treeGraph.minChannels = ringGraph.nChannels;
   treeGraph.maxChannels = ringGraph.nChannels;
-  computeTime[1] = getTime();
+  computeTime[TIME_TREE] = getTime();
   CHECK(ncclTopoCompute(system, &treeGraph));
-  computeTime[1] = getTime() - computeTime[1];
+  computeTime[TIME_TREE] = getTime() - computeTime[TIME_TREE];
   CHECK(ncclTopoPrintGraph(system, &treeGraph));
   cNetGraph.minChannels = cNetGraph.maxChannels = ringGraph.nChannels;
-  computeTime[2] = getTime();
+  computeTime[TIME_CNET] = getTime();
   CHECK(ncclTopoCompute(system, &cNetGraph));
-  computeTime[2] = getTime() - computeTime[2];
+  computeTime[TIME_CNET] = getTime() - computeTime[TIME_CNET];
   CHECK(ncclTopoPrintGraph(system, &cNetGraph));
   nvlsGraph.minChannels = 1;
   nvlsGraph.maxChannels = MAXCHANNELS;
-  computeTime[3] = getTime();
+  computeTime[TIME_NVLS] = getTime();
   CHECK(ncclTopoCompute(system, &nvlsGraph));
-  computeTime[3] = getTime() - computeTime[3];
+  computeTime[TIME_NVLS] = getTime() - computeTime[TIME_NVLS];
   CHECK(ncclTopoPrintGraph(system, &nvlsGraph));
-  computeTime[4] = computeTime[0]+computeTime[1]+computeTime[2]+computeTime[3];
+  computeTime[TIME_TOTL] = 0;
+  for(int i=0; i<TIME_TOTL; ++i) computeTime[TIME_TOTL] += computeTime[i];
 
   int err = 0, warn = 0, incompleteRef = 0;
 
@@ -425,13 +445,16 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xml));
     printf("\ngraph_test : Dumping XML to %s\n", dumpFile);
     free(xml);
-    printf(" %s %5ld ms\n", err ? "FAILED" : "  WARN", computeTime[4]/1000);
+    printf(" %s %5ld ms\n", (err || warn) ? "FAILED" : "  WARN", computeTime[TIME_TOTL] / 1000);
     printf("Dumping computed graph to %s\n", dumpFile);
-  } else if (computeTime[4] > 1000000) {
-    printf("   SLOW %5ld ms [%ld+%ld+%ld+%ld]\n", computeTime[4]/1000,
-        computeTime[0]/1000, computeTime[1]/1000, computeTime[2]/1000, computeTime[3]/1000);
-    warn++;
-  } else printf("     OK %5ld ms\n", computeTime[4]/1000);
+  } else if (computeTime[TIME_TOTL] > 1e6) {
+    bool tooSlow = computeTime[TIME_TOTL] > 5e6;
+    printf("   %sSLOW %5ld ms (ring: %ld ms + tree: %ld ms + collNet: %ld ms + nvls %ld ms)\n", tooSlow ? "TOO " : "",\
+           computeTime[TIME_TOTL] / 1000, \
+           computeTime[TIME_RING] / 1000, computeTime[TIME_TREE] / 1000, computeTime[TIME_CNET] / 1000, computeTime[TIME_NVLS] / 1000);
+    if (tooSlow) warn++;
+  } else
+    printf("     OK %5ld ms\n", computeTime[TIME_TOTL] / 1000);
   ncclTopoFree(system);
   *errors += err;
   *warnings += warn;
@@ -557,6 +580,6 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
   }
-  printf("%d errors, %d warnings (%s)\n", errors, warnings, errors ? "FAILED" : "PASSED");
-  return errors ? 1 : 0;
+  printf("%d errors, %d warnings (%s)\n", errors, warnings, (errors || warnings) ? "FAILED" : "PASSED");
+  return (errors || warnings) ? 1 : 0;
 }

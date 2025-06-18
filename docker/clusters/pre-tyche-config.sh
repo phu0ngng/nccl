@@ -70,7 +70,7 @@ function get_build_command() {
     # ask for a lot of cores - otherwise we get 2
     echo "srun \
         --account=$PRETYCHE_SLURM_ACCOUNT \
-        -J ${PRETYCHE_SLURM_ACCOUNT}-nccl:test \
+        -J ${PRETYCHE_SLURM_ACCOUNT}-ci:nccl-build \
         -p batch \
         -t 00:10:00 \
         -n 1 \

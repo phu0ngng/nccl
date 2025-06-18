@@ -21,6 +21,7 @@
 - [Support multiple net plugins](items/id_E8CF4ACF/Support_multiple_net_plugins.md)
 - [Communicator Shrink](items/id_67dba251/communicator_shrink.md)
 - [NVLink centric scheduling support](items/id_142d4589/NVLink_centric_scheduling_support.md)
+- [NET to GPU assignment](items/id_a4cd47cc/NET_to_GPU_assignment.md)
 <!-- V2_27_DO_NOT_MOVE -->
 
 <!------------------------------------->
