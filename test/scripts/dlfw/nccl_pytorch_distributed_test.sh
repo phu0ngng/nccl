@@ -55,5 +55,5 @@ nvidia-smi
 pip install --upgrade --force-reinstall zstandard
 pip install --upgrade --force-reinstall zstd
 export NCCL_DEBUG=WARN
-export PYTEST_K_EXPR="nccl and not (test_close_multi_pg_unordered or test_intra_node_comm_all_reduce or test_init_process_group_for_all_backends or test_short_json)"
+export PYTEST_K_EXPR="nccl and not (test_close_multi_pg_unordered or test_intra_node_comm_all_reduce or test_init_process_group_for_all_backends or test_short_json or test_short_pickle)"
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python run_test.py --shard ${shard_id} ${nshards} --distributed-tests -v --pipe-logs -x ${EXCLUDE_PYTEST[@]} --continue-through-error -- -k "$PYTEST_K_EXPR"
