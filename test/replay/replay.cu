@@ -1114,7 +1114,7 @@ enum class CallCode {
   comm_split,
   group_start, group_end,
   redop_create_premulsum, redop_destroy,
-  allgather, allreduce, broadcast, reduce, reduce_scatter,
+  allgather, allreduce, broadcast, reduce, reduce_scatter, alltoall, gather, scatter,
   send, recv,
   count
 };
@@ -1175,6 +1175,12 @@ std::string callCodeToString(CallCode code) {
     return "Send";
   if (code == CallCode::recv)
     return "Recv";
+  if (code == CallCode::alltoall)
+    return "AlltoAll";
+  if (code == CallCode::gather)
+    return "Gather";
+  if (code == CallCode::scatter)
+    return "Scatter";
 
   return "Unknown CallCode";
 }
@@ -1321,7 +1327,7 @@ struct CallCommInitRank {
   int comm_rank_me;
 };
 struct CallDataOp { // collectives and p2p
-  uint64_t sptr, dptr;
+  uint64_t sptr, dptr, eptr;
   int64_t elt_n;
   ncclDataType_t elt_ty;
   int red_op;
@@ -1506,6 +1512,18 @@ void calculateBw(OpTimer* opTimer, int nranks) {
       opTimer->algoBw = (double)(opTimer->elt_n * typeSize * nranks) / 1.0E9 / sec.count();
       opTimer->busBw = opTimer->algoBw * ((double)(nranks - 1))/((double)nranks);
       break;
+    case CallCode::scatter:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize * nranks) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw * ((double)(nranks - 1))/((double)nranks);
+      break;
+    case CallCode::gather:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize * nranks) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw * ((double)(nranks - 1))/((double)nranks);
+      break;
+    case CallCode::alltoall:
+      opTimer->algoBw = (double)(opTimer->elt_n * typeSize * nranks) / 1.0E9 / sec.count();
+      opTimer->busBw = opTimer->algoBw * ((double)(nranks - 1))/((double)nranks);
+      break;
     default:
       fprintf(stderr, "calculateBw: Unknown callCode %u\n", (uint32_t) opTimer->code);
   }
@@ -1674,6 +1692,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
 
   void* sptr = nullptr;
   void* dptr = nullptr;
+  void* eptr = nullptr;
 
   char const *call_name = "???";
 
@@ -1747,6 +1766,65 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     NCCL_CHECK(ncclBroadcast(sptr, dptr, body.elt_n, (ncclDataType_t)body.elt_ty, body.root, vc->comm, stream_nccl));
     verify_elt_ix0 = 0;
     verify_elt_n = rank_me == body.root ? 0 : body.elt_n;
+    verify_rank_n = 1;
+    break;
+  case CallCode::scatter:
+    call_name = "Scatter";
+    seed = hashOf(vc->vunique, vc->coll_seq++);
+
+    if(rank_me == body.root) {
+      if (!opt_measure_performance) {
+        sptr = CudaHelp::allocate(device, rank_n*body.elt_n*elt_sz, body.sptr, my_op_id);
+        ncclVerifiablePrepareInput(sptr, rank_n*body.elt_n, body.elt_ty, red_op, /*rank_n=*/1, /*rank_me=*/0, seed, /*elt_ix0=*/0, stream_prepare);
+        CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+      }
+    }
+    dptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.dptr, my_op_id);
+
+    NCCL_CHECK(ncclScatter(sptr, dptr, body.elt_n, (ncclDataType_t)body.elt_ty, body.root, vc->comm, stream_nccl));
+    verify_elt_ix0 = rank_me * body.elt_n;  
+    verify_elt_n = body.elt_n;              
+    verify_rank_n = 1;                      
+    break;
+  case CallCode::gather:
+    call_name = "Gather";
+    seed = hashOf(vc->vunique, vc->coll_seq++);
+    
+    sptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.sptr, my_op_id);
+
+    if (!opt_measure_performance) {
+      ncclVerifiablePrepareInput(sptr, body.elt_n, body.elt_ty, red_op, /*rank_n=*/1, /*rank_me=*/0, seed, /*elt_ix0=*/rank_me*body.elt_n, stream_prepare);
+      CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    }
+
+    if(rank_me == body.root) {
+      dptr = CudaHelp::allocate(device, rank_n*body.elt_n*elt_sz, body.dptr, my_op_id);
+    } else {
+      dptr = nullptr;
+    }
+
+    NCCL_CHECK(ncclGather(sptr, dptr, body.elt_n, (ncclDataType_t)body.elt_ty, body.root, vc->comm, stream_nccl));
+    verify_elt_ix0 = 0;
+    verify_elt_n = rank_me == body.root ? rank_n * body.elt_n : 0;
+    verify_rank_n = 1;
+    break;
+  case CallCode::alltoall:
+    call_name = "AlltoAll";
+    seed = hashOf(vc->vunique, vc->coll_seq++);
+    sptr = CudaHelp::allocate(device, rank_n*body.elt_n*elt_sz, body.sptr, my_op_id);
+    dptr = CudaHelp::allocate(device, rank_n*body.elt_n*elt_sz, body.dptr, my_op_id);
+    eptr = CudaHelp::allocate(device, rank_n*body.elt_n*elt_sz, body.eptr, my_op_id);
+
+    if (!opt_measure_performance) {
+      ncclVerifiablePrepareInput(sptr, rank_n*body.elt_n, body.elt_ty, ncclSum, /*rank_n=*/1, /*rank_me=*/0, seed+rank_me, /*elt_ix0=*/0, stream_prepare);
+      for(int i = 0; i < rank_n; i++) {
+        ncclVerifiablePrepareInput((char*)eptr+i*body.elt_n*elt_sz, body.elt_n, body.elt_ty, ncclSum, /*rank_n=*/1, /*rank_me=*/0, seed+i, /*elt_ix0=*/rank_me*body.elt_n, stream_prepare);
+      }
+      CudaHelp::streamWaitOnStream(device, stream_nccl, device, stream_prepare);
+    }
+    NCCL_CHECK(ncclAlltoAll(sptr, dptr, body.elt_n, (ncclDataType_t)body.elt_ty, vc->comm, stream_nccl));
+    verify_elt_ix0 = 0;
+    verify_elt_n = rank_n * body.elt_n;
     verify_rank_n = 1;
     break;
   case CallCode::reduce:
@@ -1906,7 +1984,7 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
       int64_t *bad_elt_n = the_host_pool.allocate<int64_t>();
 
       ncclVerifiableVerify(
-        dptr, nullptr, verify_elt_n, body.elt_ty, red_op,
+        dptr, eptr, verify_elt_n, body.elt_ty, red_op,
         verify_rank_n, seed, verify_elt_ix0, bad_elt_n, stream_verify
       );
 
@@ -2002,6 +2080,9 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
       case CallCode::broadcast:
       case CallCode::reduce:
       case CallCode::reduce_scatter:
+      case CallCode::scatter:
+      case CallCode::gather:
+      case CallCode::alltoall:
       case CallCode::send:
       case CallCode::recv:
         { CallDataOp &body = cur.template pop<CallDataOp>();
@@ -2056,6 +2137,9 @@ void playTrace(ByteBuffer& trace, std::chrono::duration<double>* duration) {
       case CallCode::broadcast:
       case CallCode::reduce:
       case CallCode::reduce_scatter:
+      case CallCode::scatter:
+      case CallCode::gather:
+      case CallCode::alltoall:
       case CallCode::send:
       case CallCode::recv:
         { CallDataOp const &body = cur.template pop<CallDataOp>();
@@ -2925,6 +3009,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
           coll_name, &call.sptr, &call.dptr, &call.elt_n, (int*) &call.elt_ty, &call.red_op, &call.root, &call.vcomm, &call.vstream
         );
 
+          call.eptr = 0;
           if (opt_force_fit && call.root != 0) {
             // If we are forcing fit
             if (force_fit_rank_map.find(call.root) != force_fit_rank_map.end()) {
@@ -2952,6 +3037,14 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
         }
 
         if(matched >= 9) {
+          if (call.elt_n <= 0) {
+            if (opt_verbose) {
+              fprintf(stderr, "Skipping operation with zero element count: %s elt_n=%ld line=%zu\n", 
+                      coll_name, call.elt_n, line_counter);
+            }
+            parsedLinesSkipped.fetch_add(1);
+            continue;
+          }
           if(0 == std::strcmp(coll_name, "AllGather"))
             hdr.code = CallCode::allgather;
           else if(0 == std::strcmp(coll_name, "AllReduce"))
@@ -2966,6 +3059,12 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
             hdr.code = CallCode::send;
           else if(0 == std::strcmp(coll_name, "Recv"))
             hdr.code = CallCode::recv;
+          else if(0 == std::strcmp(coll_name, "Scatter"))
+            hdr.code = CallCode::scatter;
+          else if(0 == std::strcmp(coll_name, "Gather"))
+            hdr.code = CallCode::gather;
+          else if(0 == std::strcmp(coll_name, "AlltoAll"))
+            hdr.code = CallCode::alltoall;
           else
             assert(0);
 
