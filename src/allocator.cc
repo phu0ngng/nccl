@@ -162,6 +162,7 @@ ncclResult_t ncclCommSymmetricAllocInternal(struct ncclComm* comm, size_t size, 
   ALIGN_SIZE(comm->symAllocHead, alignment);
   NCCLCHECKGOTO(ncclIpcSymmetricMap(comm, comm->symAllocHead, allocSize, memHandle, &regSymAddr), ret, fail);
   NCCLCHECKGOTO(ncclNvlsSymmetricMap(comm, comm->symAllocHead, allocSize, regSymAddr), ret, fail);
+  CUDACHECKGOTO(cudaMemset(regSymAddr, 0, allocSize), ret, fail);
   NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, comm->localRankToRank[0]), ret, fail);
   comm->symAllocHead += allocSize;
   *symPtr = regSymAddr;

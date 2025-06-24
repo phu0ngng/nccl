@@ -30,4 +30,12 @@ static inline ncclResult_t ncclRegFindSymmetric(struct ncclComm* comm, const voi
   return ncclSuccess;
 }
 
+static inline void* peerUCSymPtr(struct ncclComm* comm, int peerRank, const void* ucSymPtr){
+  return (void*)((uintptr_t)ucSymPtr + comm->baseStride * (peerRank - comm->localRank));
+}
+
+static inline void* peerMCSymPtr(struct ncclComm* comm, int peerRank, const void* ucSymPtr){ 
+    return (void*)(comm->baseMCSymPtr + (uintptr_t)ucSymPtr - ((uintptr_t)comm->baseUCSymPtr + comm->localRank * comm->baseStride));
+}
+
 #endif

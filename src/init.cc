@@ -32,6 +32,7 @@
 #include "nvtx_payload_schemas.h"
 #include "utils.h"
 #include <mutex>
+#include "ce_coll.h"
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -181,6 +182,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  if (comm->ceColl.baseUCSymReadyPtr) {
+    NCCLCHECK(ncclCommSymmetricFreeInternal(comm, comm->ceColl.baseUCSymReadyPtr));
+  }
+  
   if (comm->symmetricSupport && comm->symDevComm.base) {
     NCCLCHECK(ncclCommSymmetricFreeInternal(comm, comm->baseUCSymPtr + comm->rank * comm->baseStride));
   }
@@ -1251,6 +1256,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   comm->symmetricSupport = comm->isAllDirectP2p && comm->nNodes == 1 && ncclParamWinEnable() && ncclCuMemEnable();
   comm->baseStride = 0;
 
+  comm->ceColl.baseUCSymReadyPtr = NULL;
+  comm->ceColl.baseUCSymComplPtr = NULL;
+
   // Call devCommSetup before the last barrier, making sure we don't have a thread running in front and starting to
   // launch NCCL kernels before all cuda mem allocation is complete. That could cause a deadlock.
   NCCLCHECKGOTO(devCommSetup(comm), ret, fail);
@@ -1609,7 +1617,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
     comm->config.collnetEnable = 0;
   }
 
-  if (comm->config.CTAPolicy < NCCL_CTA_POLICY_DEFAULT || comm->config.CTAPolicy > NCCL_CTA_POLICY_EFFICIENCY) {
+  if (comm->config.CTAPolicy < NCCL_CTA_POLICY_DEFAULT || comm->config.CTAPolicy > NCCL_CTA_POLICY_ZERO) {
     INFO(NCCL_ENV, "CTAPolicy %d is not a valid value, set it to %d", comm->config.CTAPolicy, NCCL_CTA_POLICY_DEFAULT);
     comm->config.CTAPolicy = NCCL_CTA_POLICY_DEFAULT;
   }
@@ -1707,7 +1715,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   }
 
   if (internalConfigPtr->CTAPolicy != NCCL_CONFIG_UNDEF_INT && (internalConfigPtr->CTAPolicy < NCCL_CTA_POLICY_DEFAULT ||
-    internalConfigPtr->CTAPolicy > NCCL_CTA_POLICY_EFFICIENCY)) {
+    internalConfigPtr->CTAPolicy > NCCL_CTA_POLICY_ZERO)) {
     WARN("Invalid config policy attribute value %d", internalConfigPtr->CTAPolicy);
     ret = ncclInvalidArgument;
     goto fail;
@@ -1752,6 +1760,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   comm->config.CTAPolicy = internalConfigPtr->CTAPolicy;
   comm->config.shrinkShare = internalConfigPtr->shrinkShare;
   comm->config.nvlsCTAs = internalConfigPtr->nvlsCTAs;
+
   NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
 
 exit:

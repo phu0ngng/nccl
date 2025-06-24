@@ -107,6 +107,7 @@ static char* profilerDump = (char *)profilerDumpDefault;
 static int profilerIters;
 int tuning;
 
+static int ctaPolicy = 0;
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
 static int commblocking = NCCL_CONFIG_UNDEF_INT;
@@ -921,7 +922,7 @@ testResult_t threadInit(struct threadArgs* args) {
   config.blocking = commblocking;
   config.splitShare = split_share;
   config.trafficClass = trafficClass;
-
+  config.CTAPolicy = ctaPolicy;
   NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; ++i) {
     int rank = args->globalProc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
@@ -1221,12 +1222,13 @@ int main(int argc, char* argv[], char **envp) {
     {"traffic_class", required_argument, 0, 'q'},
     {"tuning", required_argument, 0, 'U'},
     {"help", no_argument, 0, 'h'},
+    {"cta_policy", required_argument, 0, 'x'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1388,6 +1390,9 @@ int main(int argc, char* argv[], char **envp) {
       case 'U':
         tuning = (int)strtol(optarg, NULL, 0);
         break;
+      case 'x':
+        ctaPolicy = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1435,6 +1440,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-I,--init_ids <num ids> enable scalable API for ncclCommInitRank using <num ids> ncclUniqueIds (default: disabled; 0 is equivalent to 1 ncclUniqueId per 128 NCCL ranks; value must be >=0)] \n\t"
             "[-q,--traffic_class <tclass> set network traffic class] \n\t"
             "[-U,--tuning <0/1> report NCCL tuning info (default: 0)] \n\t"
+            "[-x,--cta_policy <0/1/2> set CTA policy (default: 0)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1680,6 +1686,7 @@ testResult_t run() {
     config.splitShare = split_share;
     config.trafficClass = trafficClass;
     config.commName = "perftest";
+    config.CTAPolicy = ctaPolicy;
 
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < nGpus * nThreads; ++i) {

@@ -579,6 +579,7 @@ Value accepted
 
 Set to 0 to use NCCL_CTA_POLICY_DEFAULT policy (default);
 Set to 1 to use NCCL_CTA_POLICY_EFFICIENCY policy.
+Set to 2 to use NCCL_CTA_POLICY_ZERO policy.
 For more explanation about NCCL policies, please see :ref:`cta_policy_flags`.
 
 NCCL_TOPO_FILE

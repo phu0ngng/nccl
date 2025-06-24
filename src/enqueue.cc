@@ -14,7 +14,7 @@
 #include "profiler.h"
 #include "transport.h"
 #include "register_inline.h"
-
+#include "ce_coll.h"
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
 #include <cassert>
@@ -266,7 +266,7 @@ static bool testBudget(
 
 ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
-  if (planner->isSymColl) return ncclSuccess;
+  if (planner->isSymColl || planner->isCeColl) return ncclSuccess;
   struct ncclTaskColl *task;
   task = ncclIntruQueueHead(&planner->collTaskQueue);
   while (task != nullptr) {
@@ -347,9 +347,30 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
     size_t size = task->count*ncclTypeSize(task->datatype);
     NCCLCHECK(ncclRegFindSymmetric(comm, task->sendbuff, size, &sendSymPtr, &sendReg));
     NCCLCHECK(ncclRegFindSymmetric(comm, task->recvbuff, size, &recvSymPtr, &recvReg));
-    bool implemented = ncclSymImplemented(task->func, task->opDev.op, task->datatype);
+    bool symImplemented = ncclSymImplemented(task->func, task->opDev.op, task->datatype);
+    bool ceImplemented = ncclCeImplemented(task->func, task->opDev.op, task->datatype);
 
-    if (sendReg && recvReg && (sendReg->winFlags & recvReg->winFlags & NCCL_WIN_COLL_SYMMETRIC) && implemented) {
+    // CE collective
+    if (sendReg && recvReg && (sendReg->winFlags & recvReg->winFlags & NCCL_WIN_COLL_SYMMETRIC) && comm->config.CTAPolicy == NCCL_CTA_POLICY_ZERO && ceImplemented) {
+      // Initialize CE collective if not already initialized
+      if (comm->ceColl.baseUCSymReadyPtr == NULL) {
+        NCCLCHECK(ncclCeInit(comm));
+      }
+      task->sendbuff = sendSymPtr;
+      task->recvbuff = recvSymPtr;
+      ncclIntruQueueEnqueue(&planner->collTaskQueue, task);
+      planner->isCeColl = true;
+      return ncclSuccess;
+    }
+
+    if (sendReg && recvReg && (sendReg->winFlags & recvReg->winFlags & NCCL_WIN_COLL_SYMMETRIC) && symImplemented) {
+      int collNetSupport = 0;
+      NCCLCHECK(getCollNetSupport(comm, task, &collNetSupport));
+      int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(task->opDev.op, task->datatype) || task->func == ncclFuncAllGather);
+
+      ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
+      NCCLCHECK(getAlgoInfo(comm, task, collNetSupport, nvlsSupport, 1, &simInfo));
+
       enum ncclSymKernelId kernel;
       int nChannels, nWarps;
       float estTimeUs = 1.e18;
@@ -1134,7 +1155,7 @@ namespace {
 }
 
 static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* plan) {
-  if (plan->isSymColl) return ncclSuccess;
+  if (plan->isSymColl || plan->isCeColl) return ncclSuccess;
 
   size_t workBytes = plan->workBytes;
   size_t batchBytes = plan->nWorkBatches*sizeof(struct ncclDevWorkBatch);
@@ -1415,7 +1436,21 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       plan->workStorageType = persistent ? ncclDevWorkStorageTypePersistent
                                          : ncclDevWorkStorageTypeFifo;
 
-      if (planner->isSymColl) {
+      if (planner->isCeColl) {
+        struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
+        plan->isCeColl = true;
+        plan->ceCollArgs = ncclMemoryStackAlloc<struct ncclCeCollArgs>(&comm->memScoped);
+        plan->ceCollArgs->rootRank = task->root;
+        plan->ceCollArgs->nElts = task->count;
+        plan->ceCollArgs->eltSize = ncclTypeSize(task->datatype);
+        plan->ceCollArgs->sendBuff = (uint8_t*)task->sendbuff;
+        plan->ceCollArgs->recvBuff = (uint8_t*)task->recvbuff;
+        plan->ceCollArgs->func = task->func;
+
+        planner->nTasksColl -= 1;
+        ncclIntruQueueEnqueue(&planner->planQueue, plan);
+        nPlans += 1;
+      } else if (planner->isSymColl) {
         plan->workStorageType = ncclDevWorkStorageTypeArgs;
 
         struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
