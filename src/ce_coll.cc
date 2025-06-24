@@ -132,16 +132,17 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   uint8_t* myRecvBuff = (uint8_t*)args->recvBuff + comm->rank * bytes;
   bool capturing;
 #if CUDA_VERSION >= 12080 && CUDART_VERSION >= 12080 
+  size_t opIdx = 0;
   cudaMemcpyAttributes attrs = {};
   void**  srcs     = nullptr;
   void**  dsts     = nullptr;
   size_t* sizes    = nullptr;
   size_t* attrIdxs = nullptr;
-  NCCLCHECKGOTO(ncclCalloc(&srcs,     comm->nRanks-1), ret, fail);
-  NCCLCHECKGOTO(ncclCalloc(&dsts,     comm->nRanks-1), ret, fail);
-  NCCLCHECKGOTO(ncclCalloc(&sizes,    comm->nRanks-1), ret, fail);
-  NCCLCHECKGOTO(ncclCalloc(&attrIdxs, comm->nRanks-1), ret, fail);
-  for (int i = 0; i < comm->nRanks-1; ++i) sizes[i] = bytes;
+  NCCLCHECKGOTO(ncclCalloc(&srcs,     comm->nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&dsts,     comm->nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&sizes,    comm->nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&attrIdxs, comm->nRanks), ret, fail);
+  for (int i = 0; i < comm->nRanks; ++i) sizes[i] = bytes;
 #endif
   // Check if we are in a CUDA graph capture 
   capturing = ncclCudaGraphValid((&comm->planner)->capturingGraph);
@@ -150,7 +151,7 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   NCCLCHECKGOTO(ncclMemOpSync(comm, false, stream), ret, fail);
 
   //--------------Graph capture--------------
-  // cudaMemcpyAsync is not supported during CUDA graph capture
+  // cudaMemcpyBatchAsync is not supported during CUDA graph capture
   if (capturing) {
 
     // Copy own data to receive buffer if operation is out-of-place
@@ -189,10 +190,11 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
 
 #if CUDA_VERSION >= 12080 && CUDART_VERSION >= 12080 
     // For CUDA 12.8+, use batch memory copy for better performance
-    for (int offset = 1; offset < comm->nRanks; offset++) {
-      int targetRank = (comm->rank + offset) % comm->nRanks;
-      srcs[offset-1] = (void*)mySendBuff;
-      dsts[offset-1] = (void*)peerUCSymPtr(comm, targetRank, myRecvBuff);
+    for (int i = 1; i < comm->nRanks; i++) {
+      int targetRank = (comm->rank + i) % comm->nRanks;
+      srcs[opIdx] = (void*)mySendBuff;
+      dsts[opIdx] = (void*)peerUCSymPtr(comm, targetRank, myRecvBuff);
+      opIdx++;
     }
 
     // Configure copy attributes for performance
@@ -200,17 +202,28 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
     attrs.flags = cudaMemcpyFlagPreferOverlapWithCompute;
 
     // Perform all transfers in a single batch operation
+  #if CUDA_VERSION >= 13000 && CUDART_VERSION >= 13000 
     CUDACHECKGOTO(cudaMemcpyBatchAsync(
       dsts,               /* dst array */
       srcs,               /* src array */
       sizes,              /* size array */
-      (size_t)comm->nRanks-1,
+      (size_t)opIdx,
+      &attrs,
+      attrIdxs,
+      1,  // Using one set of attributes
+      stream), ret, fail);
+#else
+    CUDACHECKGOTO(cudaMemcpyBatchAsync(
+      dsts,               /* dst array */
+      srcs,               /* src array */
+      sizes,              /* size array */
+      (size_t)opIdx,
       &attrs,
       attrIdxs,
       1,  // Using one set of attributes
       nullptr,
       stream), ret, fail);
-
+  #endif
 #else 
     // For older CUDA versions, fall back to individual transfers
     for (int offset = 1; offset < comm->nRanks; offset++) {
