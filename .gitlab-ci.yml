@@ -134,7 +134,7 @@ build-pre-tyche:
 build-dlfw-pytorch-container:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_DLFW_TESTS == "1"
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
       when: always
     - when: never
   tags:
@@ -1822,7 +1822,7 @@ perftest-single-ipp6-a100:
 self-test-pytorch-container-eos:
   stage: perf_tests_single
   rules:
-    - if: $TRIGGER_PIPELINE == "default" && $RUN_DLFW_TESTS == "1" && $RUN_ON_EOS == "1"
+    - if: $TRIGGER_PIPELINE == "default" && $RUN_DLFW_TESTS == "1" && $RUN_ON_EOS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
       when: always
     - when: never
   tags:
