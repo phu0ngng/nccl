@@ -477,8 +477,8 @@ TEST_F(ncclCommInitRankConfig_test, split_config) {
     config.cgaClusterSize = 4;
     config.minCTAs = 4;
     config.maxCTAs = 16;
-    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
-    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
 
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -517,8 +517,8 @@ TEST_F(ncclCommInitRankConfig_test, split_share_invalid_net_name) {
     /* when split shares resource. user cannot specify a different netName for child comm from parent comm. */
     config.splitShare = 1;
     config.netName = "Socket";
-    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
-    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
 
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -559,7 +559,7 @@ TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_v7) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.netName = "ncclNetPlugin_v7";
 
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -587,7 +587,7 @@ TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_int_sock) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.netName = "Socket";
 
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -616,7 +616,7 @@ TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_fail) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.netName = "ncclNetPlugin_v9";
 
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -649,7 +649,7 @@ TEST_F(ncclCommInitRankConfig_test, shared_plugin_lib) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.netName = "ncclNetPlugin_v11";
 
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
 
     // First comm initialization:
