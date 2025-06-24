@@ -8,6 +8,7 @@
 #include "net_device.h"
 #include "proxy.h"
 #include "checks.h"
+#include <dlfcn.h>
 
 static ncclNet_t ncclNet;
 static ncclCollNet_t ncclCollNet;

@@ -7,6 +7,7 @@
 #include "nccl_net.h"
 #include "net_device.h"
 #include "proxy.h"
+#include <dlfcn.h>
 
 static ncclNet_v11_t* ncclNet_v11;
 static ncclCollNet_v11_t* ncclCollNet_v11;
