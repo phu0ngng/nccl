@@ -44,15 +44,21 @@ static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
   return ncclSuccess;
 }
 
-static ncclResult_t ncclNet_listen(void* ctx, int dev, void* handle, void** listenComm) {
+static ncclResult_t ncclNet_listen(void* ctx __attribute__((unused)),
+    int dev, void* handle, void** listenComm) {
   return ncclNet_v8->listen(dev, handle, listenComm);
 }
 
-static ncclResult_t ncclNet_connect(void* ctx, int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
+static ncclResult_t ncclNet_connect(void* ctx __attribute__((unused)),
+    int dev,
+    ncclNetCommConfig_t* config __attribute__((unused)),
+    void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
   return ncclNet_v8->connect(dev, handle, sendComm, sendDevComm);
 }
 
-static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* pHandle, void** request) {
+static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle,
+    void* pHandle __attribute__((unused)),
+    void** request) {
   int sizeInt;
   if (size > MAX_NET_SIZE) return ncclInternalError;
   sizeInt = (int)size;
@@ -60,7 +66,9 @@ static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int t
   return ans;
 }
 
-static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** pHandles, void** request) {
+static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles,
+    void** pHandles __attribute__((unused)),
+    void** request) {
   int sizesInt[NCCL_PROXY_MAX_SUBS];
   //reset to nullptr if optional receive completion is set
   if (*request == (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION) *request = nullptr;
@@ -72,7 +80,7 @@ static ncclResult_t ncclNet_irecv(void* recvComm, int n, void** data, size_t* si
   return ans;
 }
 
-static ncclResult_t ncclNet_finalize(void* ctx) {
+static ncclResult_t ncclNet_finalize(void* ctx __attribute__((unused))) {
   refCount[NET_INDEX]--;
   return ncclSuccess;
 }
@@ -101,7 +109,8 @@ static ncclResult_t ncclCollNet_getProperties(int dev, ncclNetProperties_t* prop
   return ncclSuccess;
 }
 
-static ncclResult_t ncclCollNet_listen(void* ctx, int dev, void* handle, void** listenComm) {
+static ncclResult_t ncclCollNet_listen(void* ctx __attribute__((unused)),
+    int dev, void* handle, void** listenComm) {
   return ncclCollNet_v8->listen(dev, handle, listenComm);
 }
 
@@ -147,12 +156,14 @@ static ncclResult_t ncclCollNet_ireducescatter(void* collComm, int nSendParts, n
   return ans;
 }
 
-static ncclResult_t ncclCollNet_finalize(void* ctx) {
+static ncclResult_t ncclCollNet_finalize(void* ctx __attribute__((unused))) {
   refCount[COLLNET_INDEX]--;
   return ncclSuccess;
 }
 
-static ncclResult_t ncclNet_init(void** ctx, uint64_t commId, ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
+static ncclResult_t ncclNet_init(void** ctx __attribute__((unused)),
+    uint64_t commId __attribute__((unused)),
+    ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
   if (refCount[NET_INDEX]++ > 0) return ncclSuccess;
   NCCLCHECK(ncclNet_v8->init(logfn));
   ncclNet.devices = ncclNet_v8->devices;
@@ -189,7 +200,9 @@ ncclNet_t* getNcclNet_v8(void* lib) {
   return nullptr;
 }
 
-static ncclResult_t ncclCollNet_init(void** ctx, uint64_t commId, ncclDebugLogger_t logfn) {
+static ncclResult_t ncclCollNet_init(void** ctx __attribute__((unused)),
+    uint64_t commId __attribute__((unused)),
+    ncclDebugLogger_t logfn) {
   if (refCount[COLLNET_INDEX]++ > 0) return ncclSuccess;
   NCCLCHECK(ncclCollNet_v8->init(logfn));
   ncclCollNet.devices = ncclCollNet_v8->devices;
