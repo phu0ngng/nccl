@@ -25,7 +25,7 @@ ncclNet_t* getNcclNet_v11(void* lib) {
 ncclCollNet_t* getNcclCollNet_v11(void* lib) {
   ncclCollNet_v11 = (ncclCollNet_v11_t*)dlsym(lib, "ncclCollNetPlugin_v11");
   if (ncclCollNet_v11) {
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v11)", ncclNet_v11->name);
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v11)", ncclCollNet_v11->name);
     return ncclCollNet_v11;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v11 symbol.");
