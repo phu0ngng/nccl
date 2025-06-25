@@ -126,6 +126,7 @@ void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
   dev->used = 1;
   dev->ignore = 0;
 
+  dev->vProps.devs[0] = devIndex;
   ncclNetProperties_t* props = mockProps + devIndex;
 
   // get the original name and overwrite it if needed
