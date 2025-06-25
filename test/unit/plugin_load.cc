@@ -9,9 +9,9 @@
 #include "nccl_tuner.h"
 #include "nccl_profiler.h"
 
-#define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v10"
-#define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v4"
-#define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v4"
+#define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v11"
+#define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v5"
+#define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v5"
 
 enum test {
   ncclPluginNetRelPathTest,
