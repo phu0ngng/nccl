@@ -106,6 +106,13 @@ struct ncclIbDev ncclIbDevs[MAX_IB_DEVS];
 pthread_mutex_t ncclIbLock = PTHREAD_MUTEX_INITIALIZER;
 static int ncclIbRelaxedOrderingEnabled = 0;
 
+// With ncclNet_v11_t the NCCL core initializes the network plugin per-communicator
+// rather than once for all communicators. However, the internal plugin implementation
+// still assumes the plugin is initialized only once across all communicators. The ref
+// counter makes sure the plugin internally initializes only once. When per communicator
+// context support is added to the plugin the ref counter can be removed.
+static int netRefCount;
+
 #define NCCL_IB_LLSTR(ll) (((ll) == IBV_LINK_LAYER_INFINIBAND) ? "IB" : (((ll) == IBV_LINK_LAYER_ETHERNET) ? "RoCE" : "UNSPECIFIED"))
 
 #define NCCL_IB_SL_DEFAULT 0
@@ -607,6 +614,7 @@ ncclResult_t ncclIbMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* props) 
 static ncclProfilerCallback_t ncclProfilerFunction;
 
 ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  if (netRefCount++) return ncclSuccess;
   ncclResult_t ret = ncclSuccess;
   ncclProfilerFunction = profFunction;
   if (ncclParamIbDisable()) return ncclInternalError;
@@ -2566,6 +2574,7 @@ ncclResult_t ncclIbCloseListen(void* listenComm) {
 }
 
 ncclResult_t ncclIbFinalize(void* ctx) {
+  netRefCount--;
   return ncclSuccess;
 }
 
