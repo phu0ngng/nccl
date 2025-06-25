@@ -40,7 +40,7 @@ run_api_test(){
 multinetTests="ncclCommInitRankConfig_test.multi_net_plugin_*"
 
 # run all tests except the ones with a special config
-run_api_test "" "-${multinetTests}"
+run_api_test "" "-${multinetTests}:${sharedPluginTest}"
 
 # run multinet tests with special config
 export NCCL_NET_PLUGIN="plugin_nodev_v5,plugin_nodev_v6,plugin_v7,plugin_nodev_v8,plugin_nodev_v9"
