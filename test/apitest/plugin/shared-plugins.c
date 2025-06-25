@@ -155,6 +155,8 @@ __hidden ncclResult_t netPluginIflush(void* recvComm, int n, void** data, int* s
   return ncclSuccess;
 }
 __hidden ncclResult_t netPluginTest(void* request, int* done, int* size) {
+  if (done) *done = 1;
+  free(request);
   return ncclSuccess;
 }
 __hidden ncclResult_t netPluginCloseSend(void* sendComm) {
