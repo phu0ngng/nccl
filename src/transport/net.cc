@@ -750,7 +750,10 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
     connection->proxyAppendPtr = &connection->proxyAppend;
   }
 
-  NCCLCHECK(ret);
+  if (ret != ncclSuccess) {
+    if (resources->netSendComm) proxyState->ncclNet->closeSend(resources->netSendComm);
+    NCCLCHECK(ret);
+  }
   if (resources->netSendComm == NULL) {
     *done = 0;
     return ncclInProgress;
