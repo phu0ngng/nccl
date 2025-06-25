@@ -78,6 +78,7 @@ exit:
   pthread_mutex_unlock(&tunerPluginLock);
   return ncclSuccess;
 fail:
+  if (tunerPluginLib) NCCLCHECK(ncclClosePluginLib(tunerPluginLib, ncclPluginTypeTuner));
   tunerPluginLib = nullptr;
   status = tunerPluginLoadFailed;
   goto exit;
