@@ -38,7 +38,15 @@ static ncclResult_t ncclNetSocketGetPciPath(char* devName, char** pciPath) {
 
 static ncclProfilerCallback_t ncclProfilerFunction;
 
+// With ncclNet_v11_t the NCCL core initializes the network plugin per-communicator
+// rather than once for all communicators. However, the internal plugin implementation
+// still assumes the plugin is initialized only once across all communicators. The ref
+// counter makes sure the plugin internally initializes only once. When per communicator
+// context support is added to the plugin the ref counter can be removed.
+static int netRefCount;
+
 ncclResult_t ncclNetSocketInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  if (netRefCount++) return ncclSuccess;
   ncclProfilerFunction = profFunction;
   if (ncclNetIfs == -1) {
     pthread_mutex_lock(&ncclNetSocketLock);
@@ -708,6 +716,7 @@ ncclResult_t ncclNetSocketClose(void* opaqueComm) {
 }
 
 ncclResult_t ncclNetSocketFinalize(void* ctx) {
+  netRefCount--;
   return ncclSuccess;
 }
 
