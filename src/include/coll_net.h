@@ -29,7 +29,7 @@ static ncclResult_t collNetIflush(struct ncclComm* comm, void* collComm, void* d
 static ncclResult_t collNetTest(struct ncclComm* comm, void* request, int* done, int* size) { NCCLCHECK(comm->ncclCollNet->test(request, done, size)); return ncclSuccess; }
 static ncclResult_t collNetCloseColl(struct ncclComm* comm, void* collComm) { NCCLCHECK(comm->ncclCollNet->closeColl(collComm)); return ncclSuccess; }
 static ncclResult_t collNetCloseListen(struct ncclComm* comm, void* listenComm) { NCCLCHECK(comm->ncclCollNet->closeListen(listenComm)); return ncclSuccess; }
-static ncclResult_t collNetFinalize(void* ctx) { return ncclSuccess; }
+static ncclResult_t collNetFinalize(struct ncclComm* comm, void* ctx) { NCCLCHECK(comm->ncclCollNet->finalize(ctx)); return ncclSuccess; }
 
 static int collNetSupport(struct ncclComm* comm) { return comm->ncclCollNet != nullptr ? 1 : 0; }
 
