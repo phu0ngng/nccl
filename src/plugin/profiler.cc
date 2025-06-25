@@ -85,6 +85,7 @@ exit:
   return ncclSuccess;
 fail:
   if (profilerPluginLib) NCCLCHECK(ncclClosePluginLib(profilerPluginLib, ncclPluginTypeProfiler));
+  profilerPluginLib = nullptr;
   profilerPluginStatus = profilerPluginLoadFailed;
   goto exit;
 }
