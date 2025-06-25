@@ -28,6 +28,7 @@ struct mockVDev {
 
 mockVDev mockVDevs[MAX_MOCK_VDEVS];
 ncclNetProperties_t   mockProps[MAX_MOCK_DEVS];
+static int netRefCount;
 
 struct mockListenComm {
   int dev;
@@ -109,6 +110,7 @@ ncclResult_t pluginAddDevice(void* ctx, ncclNetProperties_t* props) {
 }
 
 __hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  if (__atomic_fetch_add(&netRefCount, 1, __ATOMIC_RELAXED)) return ncclSuccess;
   pthread_mutex_lock(&mockLock);
   for (int i = 0; i < nPhysDevs; i++) {
     ncclNetProperties_t* m = mockProps + i;
@@ -385,6 +387,7 @@ __hidden ncclResult_t pluginCloseColl(void* collComm) {
 }
 
 __hidden ncclResult_t pluginFinalize(void* ctx) {
+  __atomic_fetch_sub(&netRefCount, 1, __ATOMIC_RELAXED);
   return ncclSuccess;
 }
 
