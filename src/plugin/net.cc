@@ -107,6 +107,7 @@ fail:
   if (pluginLib->dlHandle) {
     NCCLCHECK(ncclClosePluginLib(pluginLib->dlHandle, ncclPluginTypeNet));
   }
+  pluginLib->dlHandle = nullptr;
   pluginLib->ncclNetPluginState = ncclNetPluginStateLoadFailed;
   pluginLib->ncclCollNetPluginState = ncclNetPluginStateLoadFailed;
   goto exit;
