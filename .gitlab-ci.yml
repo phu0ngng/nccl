@@ -48,11 +48,14 @@ workflow:
   auto_cancel:
     on_new_commit: interruptible
   rules:
+    # For designated branches only
     - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
       auto_cancel:
         on_new_commit: none
-    - if: $TRIGGER_PIPELINE == "default"
-    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && ($CI_PIPELINE_SOURCE == 'merge_request_event' || $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
+    # For merge requests only (regardless of source branch)
+    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && $CI_PIPELINE_SOURCE == 'merge_request_event'
+    # For scheduled and manual triggers
+    - if: $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web'
 
 ##
 ## Stage: build - Start...
@@ -166,7 +169,11 @@ QA-team-ci:
   stage: setup
   dependencies: []
   rules:
-    - when: always
+    - if: ($TRIGGER_PIPELINE == "default") && ($CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
+      when: always
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TITLE !~ /^Draft:/
+      when: always
+    - when: never
   tags:
     - cqa_host_runner
   script:

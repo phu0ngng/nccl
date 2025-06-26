@@ -1,5 +1,4 @@
-# CodeRabbit configuration for NCCL (NVIDIA Collective Communication Library)
-# This configuration disables automatic reviews by default
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 
 # Language configuration
 language: "en-US"
@@ -12,6 +11,7 @@ reviews:
   auto_review:
     enabled: false
     auto_incremental_review: false
+  commit_status: false
 
   poem: false
 
