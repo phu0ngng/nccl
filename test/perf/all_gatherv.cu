@@ -82,8 +82,14 @@ testResult_t ncclAllGatherv(void* sendbuff, void* recvbuff, size_t count, ncclDa
   return testSuccess;
 }
 
-testResult_t AllGathervRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  TESTCHECK(ncclAllGatherv(sendbuff, recvbuff, count, type, comm, stream));
+testResult_t AllGathervRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
+  if (deviceImpl == 0) {
+    char* sptr = (char*)sendbuff + sendoffset;
+    char* rptr = (char*)recvbuff + recvoffset;
+    TESTCHECK(ncclAllGatherv(sptr, rptr, count, type, comm, stream));
+  } else {
+    return testNotImplemented;
+  }
   return testSuccess;
 }
 

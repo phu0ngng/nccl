@@ -75,29 +75,32 @@ void HyperCubeGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
-testResult_t HyperCubeRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  char* sbuff = (char*)sendbuff;
-  char* rbuff = (char*)recvbuff;
-  int nRanks;
-  int rank;
-  size_t rankSize = count * wordSize(type);
+testResult_t HyperCubeRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
+  if (deviceImpl == 0) {
+    char* sbuff = ((char*)sendbuff) + sendoffset;
+    char* rbuff = ((char*)recvbuff) + recvoffset;
+    int nRanks;
+    int rank;
+    size_t rankSize = count * wordSize(type);
 
-  NCCLCHECK(ncclCommCount(comm, &nRanks));
-  if (isPow2(nRanks)) {
-    NCCLCHECK(ncclCommUserRank(comm, &rank));
-    if (rbuff+rank*rankSize != sbuff) CUDACHECK(cudaMemcpyAsync(rbuff+rank*rankSize, sbuff, rankSize, cudaMemcpyDeviceToDevice, stream));
+    NCCLCHECK(ncclCommCount(comm, &nRanks));
+    if (isPow2(nRanks)) {
+      NCCLCHECK(ncclCommUserRank(comm, &rank));
+      if (rbuff+rank*rankSize != sbuff) CUDACHECK(cudaMemcpyAsync(rbuff+rank*rankSize, sbuff, rankSize, cudaMemcpyDeviceToDevice, stream));
 
-    // Hypercube AllGather
-    for (int mask=1; mask<nRanks; mask<<=1) {
-      NCCLCHECK(ncclGroupStart());
-      int s = rank & ~(mask-1);
-      int r = s ^ mask;
-      NCCLCHECK(ncclSend(rbuff+s*rankSize, count*mask, type, rank^mask, comm, stream));
-      NCCLCHECK(ncclRecv(rbuff+r*rankSize, count*mask, type, rank^mask, comm, stream));
-      NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+      // Hypercube AllGather
+      for (int mask=1; mask<nRanks; mask<<=1) {
+        NCCLCHECK(ncclGroupStart());
+        int s = rank & ~(mask-1);
+        int r = s ^ mask;
+        NCCLCHECK(ncclSend(rbuff+s*rankSize, count*mask, type, rank^mask, comm, stream));
+        NCCLCHECK(ncclRecv(rbuff+r*rankSize, count*mask, type, rank^mask, comm, stream));
+        NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+      }
     }
+  } else {
+    return testNotImplemented;
   }
-  
   return testSuccess;
 }
 

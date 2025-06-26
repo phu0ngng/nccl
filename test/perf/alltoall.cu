@@ -6,6 +6,9 @@
 
 #include "cuda_runtime.h"
 #include "common.h"
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+#include "nccl_device.h"
+#endif
 
 void AlltoAllGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   *paramcount = (count/nranks) & -(16/eltSize);
@@ -50,24 +53,59 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
   *busBw = baseBw * factor;
 }
 
-testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  int nRanks;
-  NCCLCHECK(ncclCommCount(comm, &nRanks));
-  size_t rankOffset = count * wordSize(type);
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+// Device implementation #1
+template <typename T>
+__global__ void alltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
+  int rank = devComm.rank, nRanks = devComm.nRanks;
+
+  int tid = threadIdx.x + blockDim.x * blockIdx.x;
+  int nthreads = blockDim.x * gridDim.x;
+  T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, rank);
+
+  for (int peer = 0; peer < nRanks; peer++) {
+    T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+
+    for (size_t offset = tid; offset < count; offset += nthreads) {
+      T value = sendPtr[peer * count + offset];
+      recvPtr[rank * count + offset] = value;
+    }
+  }
+
+  bar.sync(ncclCoopCta(), cuda::memory_order_release);
+}
+#endif
+
+testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
+  if (deviceImpl == 0) {
+    char* sptr = (char*)sendbuff + sendoffset;
+    char* rptr = (char*)recvbuff + recvoffset;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0) 
-  NCCLCHECK_COMM_WAIT(ncclAlltoAll(sendbuff, recvbuff, count, type, comm, stream), comm);
+    NCCLCHECK_COMM_WAIT(ncclAlltoAll(sptr, rptr, count, type, comm, stream), comm);
 #elif NCCL_VERSION_CODE >= NCCL_VERSION(2,7,0)
+    int nRanks;
+    NCCLCHECK(ncclCommCount(comm, &nRanks));
+    size_t rankOffset = count * wordSize(type);
     NCCLCHECK(ncclGroupStart());
     for (int r=0; r<nRanks; r++) {
-      NCCLCHECK(ncclSend(((char*)sendbuff)+r*rankOffset, count, type, r, comm, stream));
-      NCCLCHECK(ncclRecv(((char*)recvbuff)+r*rankOffset, count, type, r, comm, stream));
+      NCCLCHECK(ncclSend(sptr+r*rankOffset, count, type, r, comm, stream));
+      NCCLCHECK(ncclRecv(rptr+r*rankOffset, count, type, r, comm, stream));
     }
     NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 #else
-  printf("NCCL 2.7 or later is needed for alltoall. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
-  return testNcclError;
+    printf("NCCL 2.7 or later is needed for alltoall. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
+    return testNcclError;
 #endif
+  } else {
+    if (deviceImpl == 1) {
+      TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(alltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    } else {
+      return testNotImplemented;
+    }
+  }
   return testSuccess;
 }
 
