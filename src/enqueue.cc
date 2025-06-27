@@ -556,7 +556,7 @@ static ncclResult_t scheduleCollTasksToPlan(
   size_t trafficBytes[2*2] = {0, 0, 0, 0}; // [collnet][nvls]
   int nChannels[2*2] = {0, 0, 0, 0}; // [collnet][nvls]
   int const nMaxChannels[2*2] = {comm->nChannels, comm->nvlsChannels, // [collnet][nvls]
-                                 comm->nChannels, comm->nvlsChannels};
+                                 comm->nChannels, std::min(comm->nChannels, comm->nvlsChannels)};
   constexpr size_t MinTrafficPerChannel = 16 << 10; // 16K traffic as minimal
   do {
     size_t workBytes = 0;
@@ -1888,7 +1888,11 @@ static ncclResult_t topoGetAlgoInfo(
     }
   } else if (info->algorithm == NCCL_ALGO_NVLS || info->algorithm == NCCL_ALGO_NVLS_TREE) {
     // NVLS should not need more than 16 channels to get peak BW.
-    nc = comm->nvlsChannels;
+    if (comm->nNodes > 1 && info->algorithm == NCCL_ALGO_NVLS) {
+      nc = std::min(comm->nvlsChannels, comm->nChannels);
+    } else {
+      nc = comm->nvlsChannels;
+    }
   } else {
     // Ring/Tree channel tuning
     while (nBytes < nc * nt * threadThreshold) {

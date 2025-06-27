@@ -205,7 +205,7 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
 ncclResult_t ncclNvlsTreeConnect(struct ncclComm* comm) {
   ncclResult_t ret = ncclSuccess;
   if (comm && comm->nvlsSupport && comm->nNodes > 1) {
-    for (int c = 0; c < comm->nChannels; c++) {
+    for (int c = 0; c < comm->nvlsChannels; c++) {
       struct ncclChannel* channel = comm->channels + c;
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, NCCL_MAX_NVLS_TREE_ARITY, channel->nvls.treeDown, 1, &channel->nvls.treeUp, 0), ret, fail);
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &channel->nvls.treeUp, NCCL_MAX_NVLS_TREE_ARITY, channel->nvls.treeDown, 0), ret, fail);
@@ -330,7 +330,7 @@ ncclResult_t ncclNvlsBufferSetup(struct ncclComm* comm) {
   nHeads = comm->channels[0].nvls.nHeads;
   headRank = comm->channels[0].nvls.headRank;
   resources = comm->nvlsResources;
-  nChannels = comm->nvlsResources->nChannels;
+  nChannels = comm->nvlsChannels;
   nvlsStepSize = comm->nvlsChunkSize;
   buffSize = nvlsStepSize * NCCL_STEPS;
   nvlsPerRankSize = nChannels * 2 * buffSize;
@@ -391,7 +391,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   if (nvlsShare) {
     /* reuse NVLS resources */
     comm->nvlsChannels = std::min(comm->nvlsChannels, parent->nvlsResources->nChannels);
-    for (int c = 0; c < comm->nChannels; c++) {
+    for (int c = 0; c < comm->nvlsChannels; c++) {
       NCCLCHECKGOTO(initNvlsChannel(comm, c, parent, true), res, fail);
     }
 
@@ -400,7 +400,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   } else {
     struct ncclNvlsSharedRes* resources = NULL;
     int nHeads = comm->channels[0].nvls.nHeads;
-    int nChannels = comm->nChannels;
+    int nChannels = comm->nvlsChannels;
     size_t memSize = 64;
     size_t creditSize = nChannels * 2 * memSize * nHeads;
     int nvlsStepSize = comm->nvlsChunkSize;
@@ -420,7 +420,7 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
     }
     comm->nvlsResources->nChannels = comm->nvlsChannels;
 
-    for (int c = 0; c < comm->nChannels; c++) {
+    for (int c = 0; c < nChannels; c++) {
       NCCLCHECKGOTO(initNvlsChannel(comm, c, NULL, false), res, fail);
     }
 
