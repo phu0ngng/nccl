@@ -457,24 +457,40 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
           if (ncclAsyncErr != ncclSuccess) {
             // An asynchronous error happened. Stop the operation and destroy
             // the communicator
+            char hostname[1024];
+            getHostName(hostname, 1024);
+            printf(
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,12,10)
+              "\n%s: Async error detected: %s / %s %s:%d\n",
+#else
+              "\n%s: Async error detected: %s %s:%d\n",
+#endif
+              hostname,
+              ncclGetErrorString(ncclAsyncErr),
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,12,10)
+              ncclGetLastError(NULL),
+#endif
+              __FILE__, __LINE__);
+
             for (int id1 = 0; id1 < commNum; ++id1)
               for (int i = 0; i < ngpus; i++)
                 NCCLCHECK(ncclCommAbort(comms[id1][i]));
             // Abort the perf test
-            NCCLCHECK(ncclAsyncErr);
+            return testNcclError;
           }
 
           double delta = tim.elapsed();
           if (delta > timeout && timeout > 0) {
-            for (int id1 = 0; id1 < commNum; ++id1)
-              for (int i = 0; i < ngpus; i++)
-                NCCLCHECK(ncclCommAbort(comms[id1][i]));
             char hostname[1024];
             getHostName(hostname, 1024);
             printf("%s: Test timeout (%ds) %s:%d\n",
               hostname,
               timeout,
               __FILE__, __LINE__);
+
+            for (int id1 = 0; id1 < commNum; ++id1)
+              for (int i = 0; i < ngpus; i++)
+                NCCLCHECK(ncclCommAbort(comms[id1][i]));
             free(done);
             return testTimeout;
           }
