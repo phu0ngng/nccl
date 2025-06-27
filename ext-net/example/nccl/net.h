@@ -22,6 +22,7 @@
 
 // Maximum number of requests per comm object
 #define NCCL_NET_MAX_REQUESTS 32
+#define NCCL_NET_MAX_DEVS_PER_NIC 4
 
 #include "net_v11.h"
 #include "net_v10.h"

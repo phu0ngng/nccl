@@ -5,8 +5,6 @@
 #ifndef NET_V10_H_
 #define NET_V10_H_
 
-#define NCCL_NET_MAX_DEVS_PER_NIC 4
-
 typedef struct {
   int ndevs;
   int devs[NCCL_NET_MAX_DEVS_PER_NIC];

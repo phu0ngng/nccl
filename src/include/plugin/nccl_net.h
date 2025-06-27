@@ -32,6 +32,8 @@
 #define NCCL_NET_MAX_PLUGINS 16
 #endif
 
+#define NCCL_NET_MAX_DEVS_PER_NIC 4
+
 #include "net/net_v11.h"
 #include "net/net_v10.h"
 #include "net/net_v9.h"

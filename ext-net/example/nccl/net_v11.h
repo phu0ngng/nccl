@@ -5,11 +5,9 @@
 #ifndef NET_V11_H_
 #define NET_V11_H_
 
-#define NCCL_NET_MAX_DEVS_PER_NIC_v10 4
-
 typedef struct {
   int ndevs;
-  int devs[NCCL_NET_MAX_DEVS_PER_NIC_v10];
+  int devs[NCCL_NET_MAX_DEVS_PER_NIC];
 } ncclNetVDeviceProps_v11_t;
 
 #define NCCL_NET_TRAFFIC_CLASS_UNDEF -1
