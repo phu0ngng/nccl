@@ -773,16 +773,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
           comm->intraNext = comm->peerInfo[i].comm;
         }
       }
-
-      if (comm->nvlsRegSupport) {
-        for (int j = i + 1; j < nranks; j++) {
-          if (comm->peerInfo[i].hostHash == comm->peerInfo[j].hostHash &&
-            comm->peerInfo[i].pidHash == comm->peerInfo[j].pidHash) {
-            comm->nvlsRegSupport = 0;
-            break;
-          }
-        }
-      }
     }
 
     // Buffer Registration is not supported with MNNVL
