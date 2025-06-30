@@ -62,15 +62,17 @@ typedef ncclProfilerEventState_t ncclProfilerEventState_v1_t;
 typedef ncclProfilerEventState_t ncclProfilerEventState_v2_t;
 typedef ncclProfilerEventState_t ncclProfilerEventState_v3_t;
 typedef ncclProfilerEventState_t ncclProfilerEventState_v4_t;
+typedef ncclProfilerEventState_t ncclProfilerEventState_v5_t;
 
+#include "profiler_v5.h"
 #include "profiler_v4.h"
 #include "profiler_v3.h"
 #include "profiler_v2.h"
 #include "profiler_v1.h"
 #include "profiler_net.h"
 
-typedef ncclProfiler_v4_t ncclProfiler_t;
-typedef ncclProfilerEventDescr_v4_t ncclProfilerEventDescr_t;
-typedef ncclProfilerEventStateArgs_v4_t ncclProfilerEventStateArgs_t;
+typedef ncclProfiler_v5_t ncclProfiler_t;
+typedef ncclProfilerEventDescr_v5_t ncclProfilerEventDescr_t;
+typedef ncclProfilerEventStateArgs_v5_t ncclProfilerEventStateArgs_t;
 
 #endif // end include guard

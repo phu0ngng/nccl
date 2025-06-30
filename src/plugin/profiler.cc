@@ -18,6 +18,7 @@ extern ncclProfiler_t* getNcclProfiler_v1(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v2(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v3(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v4(void* lib);
+extern ncclProfiler_t* getNcclProfiler_v5(void* lib);
 
 static pthread_mutex_t profilerLock = PTHREAD_MUTEX_INITIALIZER;
 static int profilerPluginRefCount;
@@ -47,10 +48,16 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
 
   profilerPluginLib = ncclOpenProfilerPluginLib(ncclGetEnv("NCCL_PROFILER_PLUGIN"));
   if (profilerPluginLib == nullptr) {
-    goto fail;
+    profilerPluginLib = ncclGetNetPluginLib(ncclPluginTypeProfiler);
+    if (nullptr == profilerPluginLib) {
+      goto fail;
+    }
   }
 
-  ncclProfiler = getNcclProfiler_v4(profilerPluginLib);
+  ncclProfiler = getNcclProfiler_v5(profilerPluginLib);
+  if (ncclProfiler == nullptr) {
+    ncclProfiler = getNcclProfiler_v4(profilerPluginLib);
+  }
   if (ncclProfiler == nullptr) {
     ncclProfiler = getNcclProfiler_v3(profilerPluginLib);
   }
@@ -77,7 +84,8 @@ exit:
   pthread_mutex_unlock(&profilerLock);
   return ncclSuccess;
 fail:
-  if (profilerPluginLib) NCCLCHECK(ncclClosePluginLib(profilerPluginLib));
+  if (profilerPluginLib) NCCLCHECK(ncclClosePluginLib(profilerPluginLib, ncclPluginTypeProfiler));
+  profilerPluginLib = nullptr;
   profilerPluginStatus = profilerPluginLoadFailed;
   goto exit;
 }
@@ -88,7 +96,7 @@ static ncclResult_t ncclProfilerPluginUnload(void) {
     if (__builtin_expect(ncclProfiler != NULL, 0)) {
       INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
     }
-    NCCLCHECK(ncclClosePluginLib(profilerPluginLib));
+    NCCLCHECK(ncclClosePluginLib(profilerPluginLib, ncclPluginTypeProfiler));
     profilerPluginLib = nullptr;
     ncclProfiler = nullptr;
     profilerPluginStatus = profilerPluginLoadReady;
@@ -168,7 +176,7 @@ ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm) {
   TIME_START_EVENT(init);
   ncclProfilerPluginLoad();
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    int err = ncclProfiler->init(&comm->profilerContext, &ncclProfilerEventMask, comm->config.commName, comm->commHash, comm->nNodes, comm->nRanks, comm->rank, ncclDebugLog);
+    int err = ncclProfiler->init(&comm->profilerContext, comm->commHash, &ncclProfilerEventMask, comm->config.commName, comm->nNodes, comm->nRanks, comm->rank, ncclDebugLog);
     if (err) {
       WARN("Profiler init failed with error '%d': %s. Continue without profiler.", err, strerror(errno));
     }

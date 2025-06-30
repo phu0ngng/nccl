@@ -16,6 +16,7 @@
 extern ncclTuner_t* getNcclTuner_v2(void* lib);
 extern ncclTuner_t* getNcclTuner_v3(void* lib);
 extern ncclTuner_t* getNcclTuner_v4(void* lib);
+extern ncclTuner_t* getNcclTuner_v5(void* lib);
 
 pthread_mutex_t tunerPluginLock = PTHREAD_MUTEX_INITIALIZER;
 static int tunerPluginRefCount;
@@ -52,13 +53,16 @@ ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
 
   tunerPluginLib = ncclOpenTunerPluginLib(ncclGetEnv("NCCL_TUNER_PLUGIN"));
   if (nullptr == tunerPluginLib) {
-    tunerPluginLib = ncclGetNetPluginLib();
+    tunerPluginLib = ncclGetNetPluginLib(ncclPluginTypeTuner);
     if (nullptr == tunerPluginLib) {
       goto fail;
     }
   }
 
-  tunerSymbol = getNcclTuner_v4(tunerPluginLib);
+  tunerSymbol = getNcclTuner_v5(tunerPluginLib);
+  if (tunerSymbol == NULL) {
+    tunerSymbol = getNcclTuner_v4(tunerPluginLib);
+  }
   if (tunerSymbol == NULL) {
     tunerSymbol = getNcclTuner_v3(tunerPluginLib);
   }
@@ -78,6 +82,7 @@ exit:
   pthread_mutex_unlock(&tunerPluginLock);
   return ncclSuccess;
 fail:
+  if (tunerPluginLib) NCCLCHECK(ncclClosePluginLib(tunerPluginLib, ncclPluginTypeTuner));
   tunerPluginLib = nullptr;
   status = tunerPluginLoadFailed;
   goto exit;
@@ -87,7 +92,7 @@ ncclResult_t ncclTunerPluginUnload(struct ncclComm* comm) {
   pthread_mutex_lock(&tunerPluginLock);
   if (comm->tunerPluginLoaded && 0 == (--tunerPluginRefCount)) {
     INFO(NCCL_TUNING, "TUNER/Plugin: Closing tuner: '%s'", tunerSymbol->name);
-    NCCLCHECK(ncclClosePluginLib(tunerPluginLib));
+    NCCLCHECK(ncclClosePluginLib(tunerPluginLib, ncclPluginTypeTuner));
     tunerPluginLib = nullptr;
     tunerSymbol = nullptr;
     comm->tuner = nullptr;

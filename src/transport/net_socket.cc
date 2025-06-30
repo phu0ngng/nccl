@@ -38,7 +38,15 @@ static ncclResult_t ncclNetSocketGetPciPath(char* devName, char** pciPath) {
 
 static ncclProfilerCallback_t ncclProfilerFunction;
 
-ncclResult_t ncclNetSocketInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+// With ncclNet_v11_t the NCCL core initializes the network plugin per-communicator
+// rather than once for all communicators. However, the internal plugin implementation
+// still assumes the plugin is initialized only once across all communicators. The ref
+// counter makes sure the plugin internally initializes only once. When per communicator
+// context support is added to the plugin the ref counter can be removed.
+static int netRefCount;
+
+ncclResult_t ncclNetSocketInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  if (netRefCount++) return ncclSuccess;
   ncclProfilerFunction = profFunction;
   if (ncclNetIfs == -1) {
     pthread_mutex_lock(&ncclNetSocketLock);
@@ -335,7 +343,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclNetSocketListen(int dev, void* opaqueHandle, void** listenComm) {
+ncclResult_t ncclNetSocketListen(void* ctx, int dev, void* opaqueHandle, void** listenComm) {
   if (dev < 0 || dev >= ncclNetIfs) { // data transfer socket is based on specified dev
     WARN("NET/Socket : ncclNetSocketListen dev=%d ncclNetIfs=%d", dev, ncclNetIfs);
     return ncclInternalError;
@@ -364,7 +372,7 @@ fail:
 }
 
 #define SOCKET_CTRL_SIZE (sizeof(int))
-ncclResult_t ncclNetSocketConnect(int dev, ncclNetCommConfig_t* config, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+ncclResult_t ncclNetSocketConnect(void* ctx, int dev, ncclNetCommConfig_t* config, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   if (dev < 0 || dev >= ncclNetIfs) { // data transfer socket is based on specified dev
     return ncclInternalError;
   }
@@ -707,6 +715,11 @@ ncclResult_t ncclNetSocketClose(void* opaqueComm) {
   return ncclSuccess;
 }
 
+ncclResult_t ncclNetSocketFinalize(void* ctx) {
+  netRefCount--;
+  return ncclSuccess;
+}
+
 ncclNet_t ncclNetSocket = {
   "Socket",
   ncclNetSocketInit,
@@ -727,5 +740,6 @@ ncclNet_t ncclNetSocket = {
   ncclNetSocketCloseListen,
   NULL /* getDeviceMr */,
   NULL /* irecvConsumed */,
-  NULL /* mergeDevices */
+  NULL /* mergeDevices */,
+  ncclNetSocketFinalize
 };

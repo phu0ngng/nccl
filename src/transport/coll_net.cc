@@ -355,7 +355,7 @@ static ncclResult_t sharedListen(struct ncclProxyState* proxyState, int netDev, 
     collNet->resources = resources;
   }
   if (resources->collNetComms[netDev] == NULL)
-    NCCLCHECK(proxyState->ncclCollNet->listen(netDev, collNetHandle, resources->collNetListenComms + netDev));
+    NCCLCHECK(proxyState->ncclCollNet->listen(proxyState->collNetContext, netDev, collNetHandle, resources->collNetListenComms + netDev));
   return ncclSuccess;
 }
 

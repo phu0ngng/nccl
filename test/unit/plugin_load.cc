@@ -9,9 +9,9 @@
 #include "nccl_tuner.h"
 #include "nccl_profiler.h"
 
-#define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v10"
-#define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v4"
-#define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v4"
+#define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v11"
+#define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v5"
+#define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v5"
 
 enum test {
   ncclPluginNetRelPathTest,
@@ -78,7 +78,7 @@ static int test_plugin_load(enum test type) {
           ncclNet_t* sym = (ncclNet_t*)dlsym(handle, NCCL_NET_PLUGIN_SYM);
           if (sym) {
             if (strncmp(sym->name, "Plugin", strlen("Plugin")) == 0) {
-              ncclClosePluginLib(handle);
+              ncclClosePluginLib(handle, ncclPluginTypeNet);
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
@@ -111,7 +111,7 @@ static int test_plugin_load(enum test type) {
           ncclTuner_t* sym = (ncclTuner_t*)dlsym(handle, NCCL_TUNER_PLUGIN_SYM);
           if (sym) {
             if (strncmp(sym->name, "Example", strlen("Example")) == 0) {
-              ncclClosePluginLib(handle);
+              ncclClosePluginLib(handle, ncclPluginTypeTuner);
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
@@ -134,7 +134,7 @@ static int test_plugin_load(enum test type) {
           ncclProfiler_t* sym = (ncclProfiler_t*)dlsym(handle, NCCL_PROFILER_PLUGIN_SYM);
           if (sym) {
             if (strncmp(sym->name, "Example", strlen("Example")) == 0) {
-              ncclClosePluginLib(handle);
+              ncclClosePluginLib(handle, ncclPluginTypeProfiler);
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }

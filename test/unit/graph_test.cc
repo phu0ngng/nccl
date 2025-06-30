@@ -233,7 +233,7 @@ ncclResult_t fakeNetPluginDevices(int* ndev) {
   return ncclSuccess;
 }
 
-ncclResult_t fakeNetPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
+ncclResult_t fakeNetPluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* vProps) {
   if (nVirtualDevs < MAX_MOCK_VDEVS) {
     if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidArgument;
     for (int i = 0; i < vProps->ndevs; i++) {
@@ -299,8 +299,32 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   // Inititalize a netState object for NIC fusion
   ncclTopoNetState netState = {-1,-1};
   fakeNetPluginInit(xmlSystem);
-  CHECK(ncclTopoProcessNet(xmlSystem, coll, NULL, &netState,
-    fakeNetPluginGetProperties, fakeNetPluginMakeVDevice, fakeNetPluginDevices, "Fake", true));
+
+  ncclNet_t net = {
+    .name = "Fake",
+    .init = nullptr,
+    .devices = fakeNetPluginDevices,
+    .getProperties = fakeNetPluginGetProperties,
+    .listen = nullptr,
+    .connect = nullptr,
+    .accept = nullptr,
+    .regMr = nullptr,
+    .regMrDmaBuf = nullptr,
+    .deregMr = nullptr,
+    .isend = nullptr,
+    .irecv = nullptr,
+    .iflush = nullptr,
+    .test = nullptr,
+    .closeSend = nullptr,
+    .closeRecv = nullptr,
+    .closeListen = nullptr,
+    .getDeviceMr = nullptr,
+    .irecvConsumed = nullptr,
+    .makeVDevice   = fakeNetPluginMakeVDevice,
+    .finalize = nullptr,
+  };
+
+  CHECK(ncclTopoProcessNet(xmlSystem, NULL, &netState, &net, nullptr, true));
   // We need to force all GPUs as keep="1" here to avoid trimming them
   keepGpus(xmlSystem);
   if (dumpProcessedXml) {

@@ -195,7 +195,11 @@ struct ncclTopoNetState {
   int nPhysicalNics;
   const char* name;
 };
-ncclResult_t ncclTopoProcessNet(ncclXml* xml, int coll, const char* dumpXmlFile, ncclTopoNetState* state, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*), const char* netName, bool dmaBufSupport);
+template<typename T>
+ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, T* net, void* netContext, bool dmaBufSupport);
+
+extern template ncclResult_t ncclTopoProcessNet<ncclNet_t>(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, ncclNet_t* net, void* netContext, bool dmaBufSupport);
+extern template ncclResult_t ncclTopoProcessNet<ncclCollNet_t>(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, ncclCollNet_t* net, void* netContext, bool dmaBufSupport);
 
 #define NCCL_TOPO_XML_MAX_NODES 256
 #define NCCL_GRAPH_XML_MAX_NODES 4096

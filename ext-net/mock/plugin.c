@@ -28,6 +28,7 @@ struct mockVDev {
 
 mockVDev mockVDevs[MAX_MOCK_VDEVS];
 ncclNetProperties_t   mockProps[MAX_MOCK_DEVS];
+static int netRefCount;
 
 struct mockListenComm {
   int dev;
@@ -57,7 +58,7 @@ struct mockHandle {
   // struct ncclIbCommStage stage; // Used by the other side when connecting
 };
 
-__hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
+__hidden ncclResult_t pluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* vProps) {
   if (nVirtualDevs < MAX_MOCK_VDEVS) {
     if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidUsage;
     if (vProps->ndevs > 1) {
@@ -92,7 +93,7 @@ __hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
   }
 }
 
-ncclResult_t pluginAddDevice(ncclNetProperties_t* props) {
+ncclResult_t pluginAddDevice(void* ctx, ncclNetProperties_t* props) {
   if (nPhysDevs < MAX_MOCK_DEVS) {
     int deviceIndex = nPhysDevs;
     ncclNetProperties_t* dst = mockProps + deviceIndex;
@@ -101,14 +102,15 @@ ncclResult_t pluginAddDevice(ncclNetProperties_t* props) {
     ncclNetVDeviceProps_t vProps = {};
     vProps.ndevs = 1;
     vProps.devs[0] = deviceIndex;
-    return pluginMakeVDevice(&deviceIndex, &vProps);
+    return pluginMakeVDevice(ctx, &deviceIndex, &vProps);
   } else {
     return ncclInvalidUsage;
   }
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+__hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  if (__atomic_fetch_add(&netRefCount, 1, __ATOMIC_RELAXED)) return ncclSuccess;
   pthread_mutex_lock(&mockLock);
   for (int i = 0; i < nPhysDevs; i++) {
     ncclNetProperties_t* m = mockProps + i;
@@ -136,7 +138,7 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCall
   props0.netDeviceType    = NCCL_NET_DEVICE_HOST;
   props0.netDeviceVersion = 0;
   props0.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  pluginAddDevice(&props0);
+  pluginAddDevice(ctx, &props0);
 
   // Dev 1
   ncclNetProperties_t props1 = {};
@@ -153,7 +155,7 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCall
   props1.netDeviceType    = NCCL_NET_DEVICE_HOST;
   props1.netDeviceVersion = 0;
   props1.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  pluginAddDevice(&props1);
+  pluginAddDevice(ctx, &props1);
 
   // Devs 3 and 4 are a separate NIC Fusion device which will fail to merge together
   // Dev 3
@@ -171,7 +173,7 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCall
   props2.netDeviceType    = NCCL_NET_DEVICE_HOST;
   props2.netDeviceVersion = 0;
   props2.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  pluginAddDevice(&props2);
+  pluginAddDevice(ctx, &props2);
 
   // Dev 4
   ncclNetProperties_t props3 = {};
@@ -188,14 +190,14 @@ __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCall
   props3.netDeviceType    = NCCL_NET_DEVICE_HOST;
   props3.netDeviceVersion = 0;
   props3.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  pluginAddDevice(&props3);
+  pluginAddDevice(ctx, &props3);
   pthread_mutex_unlock(&mockLock);
 
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginInitCollNet(ncclDebugLogger_t logFunction) {
-  return pluginInit(logFunction, NULL);
+__hidden ncclResult_t pluginInitCollNet(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
+  return pluginInit(ctx, commId, logFunction, NULL);
 }
 
 __hidden ncclResult_t pluginDevices(int* ndev) {
@@ -225,7 +227,7 @@ __hidden ncclResult_t pluginGetCollProperties(int dev, ncclNetProperties_t* prop
   return ret;
 }
 
-__hidden ncclResult_t pluginListen(int dev, void* /*handle*/, void** listenComm) {
+__hidden ncclResult_t pluginListen(void* ctx, int dev, void* /*handle*/, void** listenComm) {
   if (dev < nVirtualDevs) {
     mockListenComm* lComm = (mockListenComm*) malloc(sizeof(mockListenComm));
     lComm->dev = dev;
@@ -236,7 +238,7 @@ __hidden ncclResult_t pluginListen(int dev, void* /*handle*/, void** listenComm)
   }
 }
 
-__hidden ncclResult_t pluginConnect(int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+__hidden ncclResult_t pluginConnect(void* ctx, int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   if (dev < nVirtualDevs) {
     mockSendComm* sComm = (mockSendComm*) malloc(sizeof(mockSendComm));
     *sendComm = sComm;
@@ -384,9 +386,14 @@ __hidden ncclResult_t pluginCloseColl(void* collComm) {
   return ncclSuccess;
 }
 
+__hidden ncclResult_t pluginFinalize(void* ctx) {
+  __atomic_fetch_sub(&netRefCount, 1, __ATOMIC_RELAXED);
+  return ncclSuccess;
+}
+
 #define NET_PLUGIN_NAME "MockPlugin"
 
-ncclNet_t ncclNetPlugin_v10 = {
+ncclNet_t ncclNetPlugin_v11 = {
   .name = NET_PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,
@@ -407,11 +414,12 @@ ncclNet_t ncclNetPlugin_v10 = {
   .getDeviceMr = NULL,
   .irecvConsumed = pluginIrecvConsumed,
   .makeVDevice   = pluginMakeVDevice,
+  .finalize = pluginFinalize
 };
 
 #define COLLNET_PLUGIN_NAME "CollNetMockPlugin"
 
-ncclCollNet_t ncclCollNetPlugin_v10 = {
+ncclCollNet_t ncclCollNetPlugin_v11 = {
   .name = COLLNET_PLUGIN_NAME,
   .init = pluginInitCollNet,
   .devices = pluginDevices,
@@ -429,5 +437,6 @@ ncclCollNet_t ncclCollNetPlugin_v10 = {
   .test = pluginTest,
   .closeColl = pluginCloseColl,
   .closeListen = pluginCloseListen,
-  .makeVDevice   = NULL
+  .makeVDevice   = NULL,
+  .finalize = pluginFinalize
 };

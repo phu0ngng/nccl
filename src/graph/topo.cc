@@ -982,8 +982,9 @@ ncclResult_t ncclTopoMakePciParent(struct ncclXml* xml, struct ncclXmlNode** par
   return ncclSuccess;
 }
 
+template<typename T>
 ncclResult_t ncclTopoMakeVnic(struct ncclXml* xml, ncclNetVDeviceProps_t* vProps,
-struct ncclXmlNode** physNetNodes, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+struct ncclXmlNode** physNetNodes, T* netsym, void* netContext) {
   if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) {
     WARN("TOPO/NET : Tried to merge too many NICs. %d > %d", vProps->ndevs, NCCL_NET_MAX_DEVS_PER_NIC);
     return ncclInternalError;
@@ -997,7 +998,7 @@ struct ncclXmlNode** physNetNodes, ncclResult_t (*makeVDevice)(int*, ncclNetVDev
 
   // Trigger the merge, then get the new device's properties
   int vDevIndex = 0;
-  ncclResult_t ret = makeVDevice(&vDevIndex, vProps);
+  ncclResult_t ret = netsym->makeVDevice(netContext, &vDevIndex, vProps);
   if (ret != ncclSuccess) {
     INFO(NCCL_GRAPH|NCCL_INIT|NCCL_NET, "TOPO/NET : Tried merging multiple devices together and failed. vProps={ndevs=%d, devs=[%d %d %d %d]}. Set NCCL_NET_MERGE_LEVEL=LOC to disable NIC fusion.",
       vProps->ndevs, vProps->devs[0], vProps->devs[1], vProps->devs[2], vProps->devs[3]);
@@ -1015,7 +1016,8 @@ struct ncclXmlNode** physNetNodes, ncclResult_t (*makeVDevice)(int*, ncclNetVDev
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoForceMerge(struct ncclXml* xml, char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+template<typename T>
+ncclResult_t ncclTopoForceMerge(struct ncclXml* xml, char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, T* netsym, void* netContext) {
   ncclResult_t ret = ncclSuccess;
   INFO(NCCL_ENV|NCCL_NET, "TOPO/NET : Force-fusing NICs using NCCL_NET_FORCE_MERGE=%s", str);
   char* ncStr;
@@ -1053,7 +1055,7 @@ ncclResult_t ncclTopoForceMerge(struct ncclXml* xml, char* str, int* placedDevs,
       goto fail;
     }
 
-    ret = ncclTopoMakeVnic(xml, &vProps, physNetNodes, makeVDevice);
+    ret = ncclTopoMakeVnic(xml, &vProps, physNetNodes, netsym, netContext);
     if (ret == ncclSuccess) {
       // Only set that a device is "placed" after successfully making a vNic (it's possible to exit before this)
       for (int i = 0; i < vProps.ndevs; i++) {
@@ -1075,7 +1077,8 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, int mergeLevel, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*)) {
+template<typename T>
+ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, int mergeLevel, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs, T* netsym, void* netContext) {
   // Compute the path type between each device
   int* paths = NULL;
   ncclResult_t res = ncclSuccess;
@@ -1119,7 +1122,7 @@ ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, int mergeLevel, int* placedD
         return ncclInternalError;
       }
 
-      ncclResult_t ret = ncclTopoMakeVnic(xml, &vProps, physNetNodes, makeVDevice);
+      ncclResult_t ret = ncclTopoMakeVnic(xml, &vProps, physNetNodes, netsym, netContext);
 
       // Merging failed.
       // Mark all as unplaced and increase their distance to disconnected (PATH_DIS)
@@ -1157,11 +1160,12 @@ struct kvDict nicPathKvList[] = {
   { NULL, 0 }
 };
 
-ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclNetVDeviceProps_t* vProps, ncclXmlNode** parent) {
+template<typename T>
+ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, T* netsym, ncclNetVDeviceProps_t* vProps, ncclXmlNode** parent) {
   ncclNetProperties_t props[NCCL_NET_MAX_DEVS_PER_NIC];
   ncclXmlNode* physNetNodes[NCCL_NET_MAX_DEVS_PER_NIC];
   for (int i = 0; i < vProps->ndevs; i++) {
-    NCCLCHECK(getProperties(vProps->devs[i], props + i));
+    NCCLCHECK(netsym->getProperties(vProps->devs[i], props + i));
     struct ncclXmlNode* physNetNode;
     NCCLCHECK(xmlFindTagKv(xml, "net", &physNetNode, "name", props[i].name));
     physNetNodes[i] = physNetNode;
@@ -1185,7 +1189,8 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclResult_t (*getProper
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoMakeVNics(struct ncclXml* xml, ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*getProperties)(int, ncclNetProperties_t*), int physicalDevs) {
+template<typename T>
+ncclResult_t ncclTopoMakeVNics(struct ncclXml* xml, T* netsym, void* netContext, int physicalDevs) {
   int* placedDevs = NULL;
   struct ncclXmlNode** physNetNodes = NULL;
   if (physicalDevs == 0) return ncclSuccess;
@@ -1196,7 +1201,7 @@ ncclResult_t ncclTopoMakeVNics(struct ncclXml* xml, ncclResult_t (*makeVDevice)(
   ncclNetProperties_t* props = NULL;
   ncclCalloc(&props, physicalDevs);
   for (int i = 0; i < physicalDevs; i++) {
-    NCCLCHECKGOTO(getProperties(i, props + i), res, out);
+    NCCLCHECKGOTO(netsym->getProperties(i, props + i), res, out);
     struct ncclXmlNode* physNetNode;
     NCCLCHECKGOTO(xmlFindTagKv(xml, "net", &physNetNode, "name", props[i].name), res, out);
     physNetNodes[i] = physNetNode;
@@ -1214,10 +1219,10 @@ ncclResult_t ncclTopoMakeVNics(struct ncclXml* xml, ncclResult_t (*makeVDevice)(
     memset(placedDevs, 0, sizeof(int)*physicalDevs);
 
     if (forceMerge) {
-      NCCLCHECKGOTO(ncclTopoForceMerge(xml, forceMerge, placedDevs, props, physNetNodes, physicalDevs, makeVDevice), res, out);
+      NCCLCHECKGOTO(ncclTopoForceMerge(xml, forceMerge, placedDevs, props, physNetNodes, physicalDevs, netsym, netContext), res, out);
     }
   }
-  NCCLCHECKGOTO(ncclTopoAutoMerge(xml, mergeLevel, placedDevs, props, physNetNodes, physicalDevs, makeVDevice), res, out);
+  NCCLCHECKGOTO(ncclTopoAutoMerge(xml, mergeLevel, placedDevs, props, physNetNodes, physicalDevs, netsym, netContext), res, out);
 
 out:
   free(physNetNodes);
@@ -1226,10 +1231,24 @@ out:
   return res;
 }
 
-static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIndex, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), const char* netName, int coll, int virtualNics, bool dmaBufSupport) {
+template<typename T>
+struct mapper;
+
+template<>
+struct mapper<ncclNet_t> {
+  static constexpr int value = 0;
+};
+
+template<>
+struct mapper<ncclCollNet_t> {
+  static constexpr int value = 1;
+};
+
+template<typename T>
+static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIndex, T* netsym, int virtualNics, bool dmaBufSupport) {
   for (int n = startIndex; n < endIndex; n++) {
     ncclNetProperties_t props;
-    NCCLCHECK(getProperties(n, &props));
+    NCCLCHECK(netsym->getProperties(n, &props));
     struct ncclXmlNode* netNode = NULL;
     struct ncclXmlNode* parent = NULL;
     if (virtualNics) {
@@ -1237,7 +1256,7 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
       NCCLCHECK(xmlFindTagKv(xml, "net", &net, "name", props.name));
       // In the event of multithreaded use case, we need to re-discover the shared parent of the given devices for this vNIC
       // Only run this if the net doesn't exist locally - this may alter the XML state
-      if (net == NULL) NCCLCHECK(ncclTopoGetVNicParent(xml, getProperties, &props.vProps, &parent));
+      if (net == NULL) NCCLCHECK(ncclTopoGetVNicParent(xml, netsym, &props.vProps, &parent));
     }
 
     NCCLCHECK(ncclTopoFillNet(xml, props.pciPath, props.name, &netNode, parent));
@@ -1248,7 +1267,7 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     NCCLCHECK(xmlSetAttrInt(netNode, "keep", 1));
     int dev;
     xmlGetAttrIntDefault(netNode, "dev", &dev, -1);
-    if (dev != -1 && dev != n) INFO(NCCL_GRAPH, "TOPO/NET : Changing %s dev index from %d to %d", netName, dev, n);
+    if (dev != -1 && dev != n) INFO(NCCL_GRAPH, "TOPO/NET : Changing %s dev index from %d to %d", netsym->name, dev, n);
     NCCLCHECK(xmlSetAttrInt(netNode, "dev", n));
     NCCLCHECK(xmlInitAttrInt(netNode, "latency", props.latency));
     NCCLCHECK(xmlInitAttrInt(netNode, "speed", props.speed));
@@ -1256,10 +1275,10 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     NCCLCHECK(xmlInitAttrUint64(netNode, "guid", props.guid));
     NCCLCHECK(xmlInitAttrInt(netNode, "maxconn", props.maxComms));
     bool gdrSupport = (props.ptrSupport & NCCL_PTR_CUDA) || (dmaBufSupport && (props.ptrSupport & NCCL_PTR_DMABUF));
-    INFO(NCCL_NET,"NET/%s : GPU Direct RDMA %s for HCA %d '%s'", netName, gdrSupport ? "Enabled" : "Disabled", n, props.name);
+    INFO(NCCL_NET,"NET/%s : GPU Direct RDMA %s for HCA %d '%s'", netsym->name, gdrSupport ? "Enabled" : "Disabled", n, props.name);
     NCCLCHECK(xmlInitAttrInt(netNode, "gdr", gdrSupport));
-    // Only set coll if it's not 0
-    if (coll) NCCLCHECK(xmlInitAttrInt(netNode, "coll", coll));
+    // Only set value for collnet node
+    if (mapper<T>::value) NCCLCHECK(xmlInitAttrInt(netNode, "coll", mapper<T>::value));
 
     const char* keepAttr;
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
@@ -1272,26 +1291,31 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
 }
 
 // Calls to network plugin APIs should be protected. This function should be called inside a per-process lock.
-ncclResult_t ncclTopoProcessNet(ncclXml* xml, int coll, const char* dumpXmlFile, ncclTopoNetState* state, ncclResult_t (*getProperties)(int, ncclNetProperties_t*), ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*), ncclResult_t (*devices)(int*), const char* netName, bool dmaBufSupport) {
-  int usePhysicalDevices = (dumpXmlFile || makeVDevice == NULL);
-  if (state->nPhysicalNics == -1) NCCLCHECK(devices(&state->nPhysicalNics));
+template<typename T>
+ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, T* netsym, void* netContext, bool dmaBufSupport) {
+  int usePhysicalDevices = (dumpXmlFile || netsym->makeVDevice == NULL);
+  if (state->nPhysicalNics == -1) NCCLCHECK(netsym->devices(&state->nPhysicalNics));
   // Enumerate physical devices
-  NCCLCHECK(ncclTopoPopulateNics(xml, 0, state->nPhysicalNics, getProperties, netName, coll, false, dmaBufSupport));
+  NCCLCHECK(ncclTopoPopulateNics(xml, 0, state->nPhysicalNics, netsym, false, dmaBufSupport));
   if (!usePhysicalDevices) {
     if (state->nVirtualNics == -1) {
-      NCCLCHECK(ncclTopoMakeVNics(xml, makeVDevice, getProperties, state->nPhysicalNics));
+      NCCLCHECK(ncclTopoMakeVNics(xml, netsym, netContext, state->nPhysicalNics));
       int nDevs;
-      NCCLCHECK(devices(&nDevs));
+      NCCLCHECK(netsym->devices(&nDevs));
       state->nVirtualNics = nDevs - state->nPhysicalNics;
     }
     if (state->nVirtualNics > 0) {
       // Populate new devices
-      NCCLCHECK(ncclTopoPopulateNics(xml, state->nPhysicalNics, state->nPhysicalNics+state->nVirtualNics, getProperties, netName, coll, true, dmaBufSupport));
+      NCCLCHECK(ncclTopoPopulateNics(xml, state->nPhysicalNics, state->nPhysicalNics+state->nVirtualNics, netsym, true, dmaBufSupport));
     }
   }
 
   return ncclSuccess;
 }
+
+// instanciate template functions here. This, combined with extern declaration in header, prevents the compiler from stamping a new function for every compilation unit
+template ncclResult_t ncclTopoProcessNet<ncclNet_t>(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, ncclNet_t* netsym, void* netContext, bool dmaBufSupport);
+template ncclResult_t ncclTopoProcessNet<ncclCollNet_t>(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, ncclCollNet_t* collnet, void* collnetContext, bool dmaBufSupport);
 
 static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
 ncclTopoNetState netStates[NCCL_NET_MAX_PLUGINS] = {};
@@ -1371,12 +1395,10 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   state = NULL;
   if (collNetSupport(comm)) {
     NCCLCHECKGOTO(ncclTopoGetSharedState(&state, comm->ncclCollNet->name, collNetStates), ret, fail);
-    NCCLCHECKGOTO(ncclTopoProcessNet(xml, 1, dumpXmlFile, state,
-      comm->ncclCollNet->getProperties, comm->ncclCollNet->makeVDevice, comm->ncclCollNet->devices, comm->ncclCollNet->name, comm->dmaBufSupport), ret, fail);
+    NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, state, comm->ncclCollNet, comm->collNetContext, comm->dmaBufSupport), ret, fail);
   }
   NCCLCHECKGOTO(ncclTopoGetSharedState(&state, comm->ncclNet->name, netStates), ret, fail);
-  NCCLCHECKGOTO(ncclTopoProcessNet(xml, 0, dumpXmlFile, state,
-    comm->ncclNet->getProperties, comm->ncclNet->makeVDevice, comm->ncclNet->devices, comm->ncclNet->name, comm->dmaBufSupport), ret, fail);
+  NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, state, comm->ncclNet, comm->netContext, comm->dmaBufSupport), ret, fail);
   pthread_mutex_unlock(&netLock);
   netLockHeld = 0;
 

@@ -32,22 +32,23 @@
 #define NCCL_NET_MAX_PLUGINS 16
 #endif
 
+#define NCCL_NET_MAX_DEVS_PER_NIC 4
+
+#include "net/net_v11.h"
 #include "net/net_v10.h"
 #include "net/net_v9.h"
 #include "net/net_v8.h"
 #include "net/net_v7.h"
 #include "net/net_v6.h"
 
-typedef ncclNet_v10_t ncclNet_t;
-typedef ncclCollNet_v10_t ncclCollNet_t;
-typedef ncclNetSGE_v10_t ncclNetSGE_t;
-typedef ncclNetProperties_v10_t ncclNetProperties_t;
-typedef ncclNetVDeviceProps_v10_t ncclNetVDeviceProps_t;
-typedef ncclNetCommConfig_v10_t ncclNetCommConfig_t;
+typedef ncclNet_v11_t ncclNet_t;
+typedef ncclCollNet_v11_t ncclCollNet_t;
+typedef ncclNetSGE_v11_t ncclNetSGE_t;
+typedef ncclNetProperties_v11_t ncclNetProperties_t;
+typedef ncclNetVDeviceProps_v11_t ncclNetVDeviceProps_t;
+typedef ncclNetCommConfig_v11_t ncclNetCommConfig_t;
 
-#define NCCL_NET_MAX_DEVS_PER_NIC NCCL_NET_MAX_DEVS_PER_NIC_V10
-
-#define NCCL_NET_PLUGIN_SYMBOL ncclNetPlugin_v10
-#define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v10
+#define NCCL_NET_PLUGIN_SYMBOL ncclNetPlugin_v11
+#define NCCL_COLLNET_PLUGIN_SYMBOL ncclCollNetPlugin_v11
 
 #endif // end include guard
