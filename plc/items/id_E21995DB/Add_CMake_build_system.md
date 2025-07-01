@@ -81,9 +81,9 @@ https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/1021
 
 #### What to run?
 User can run :
-rm -rf build                      #clean
-cmake -B build/                   #configure step
-cmake --build build/ --parallel   # build step
+rm -rf build                                      # clean
+cmake -B build/ -DCMAKE_CUDA_ARCHICTECTURES=90    # configure step with arch information
+cmake --build build/ --parallel                   # build step
 
 #### Expected output?
 It should generate the nccl library and nccl ras binary.
