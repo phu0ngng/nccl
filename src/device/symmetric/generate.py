@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import shutil
 
 ################################################################################
 # The first command line argument is the path to the directory to generate and
@@ -10,8 +11,11 @@ gensrc = sys.argv[1]
 
 if os.path.exists(gensrc):
   for name in os.listdir(gensrc):
-    os.remove(os.path.join(gensrc, name))
-    #os.truncate(os.path.join(gensrc, name), 0)
+    path = os.path.join(gensrc, name)
+    if os.path.isfile(path):
+      os.remove(path)
+    elif os.path.isdir(path):
+      shutil.rmtree(path)
 else:
   os.mkdir(gensrc)
 
