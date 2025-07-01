@@ -20,13 +20,6 @@ if(CUDARTLIB STREQUAL "cudart_static")
     list(APPEND LIBSRCFILES enhcompat.cc)
 endif()
 
-# Configure header file
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/nccl.h.in
-    ${CMAKE_BINARY_DIR}/include/nccl.h
-    @ONLY
-)
-
 # Configure pkg-config file
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/nccl.pc.in
@@ -76,6 +69,22 @@ target_include_directories(nccl PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}/device/gensrc
     ${CUDAToolkit_INCLUDE_DIRS}
 )
+
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/include/nccl.h
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/include
+    COMMAND sed -e "s/\\\$$\\{nccl:Major\\}/${NCCL_MAJOR}/g"
+                -e "s/\\\$$\\{nccl:Minor\\}/${NCCL_MINOR}/g"
+                -e "s/\\\$$\\{nccl:Patch\\}/${NCCL_PATCH}/g"
+                -e "s/\\\$$\\{nccl:Suffix\\}/${NCCL_SUFFIX}/g"
+                -e "s/\\\$$\\{nccl:Version\\}/${NCCL_VERSION_CODE}/g"
+                ${CMAKE_CURRENT_SOURCE_DIR}/nccl.h.in > ${CMAKE_BINARY_DIR}/include/nccl.h
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/include/nccl.h
+)
+
+add_custom_target(nccl_header DEPENDS ${CMAKE_BINARY_DIR}/include/nccl.h)
+
+add_dependencies(nccl nccl_header)
 
 # Set version and output name
 set_target_properties(nccl PROPERTIES
@@ -145,6 +154,9 @@ target_include_directories(nccl_static PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}/device/gensrc
     ${CUDAToolkit_INCLUDE_DIRS}
 )
+
+# Add dependency on nccl_header
+add_dependencies(nccl_static nccl_header)
 
 # Link libraries
 target_link_libraries(nccl_static
