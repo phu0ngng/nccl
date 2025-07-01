@@ -588,14 +588,20 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     info->fabricInfo.state = NVML_GPU_FABRIC_STATE_NOT_SUPPORTED;
     (void) ncclNvmlDeviceGetGpuFabricInfoV(nvmlDev, &info->fabricInfo);
     if (info->fabricInfo.state != NVML_GPU_FABRIC_STATE_NOT_SUPPORTED) {
+      unsigned long uuid0 = 0;
+      unsigned long uuid1 = 0;
       if (ncclParamMNNVLUUID() != -1) {
-        ((long*)&info->fabricInfo.clusterUuid)[0] = ncclParamMNNVLUUID();
-        ((long*)&info->fabricInfo.clusterUuid)[1] = ncclParamMNNVLUUID();
+        unsigned long temp_uuid0 = (unsigned long)ncclParamMNNVLUUID();
+        unsigned long temp_uuid1 = (unsigned long)ncclParamMNNVLUUID();
+        memcpy(info->fabricInfo.clusterUuid, &temp_uuid0, sizeof(temp_uuid0));
+        memcpy(info->fabricInfo.clusterUuid + sizeof(temp_uuid0), &temp_uuid1, sizeof(temp_uuid1));
       }
+      memcpy(&uuid0, info->fabricInfo.clusterUuid, sizeof(uuid0));
+      memcpy(&uuid1, info->fabricInfo.clusterUuid + sizeof(uuid0), sizeof(uuid1)); 
       if (ncclParamMNNVLCliqueId() != -1) info->fabricInfo.cliqueId = ncclParamMNNVLCliqueId();
       INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx cliqueId 0x%x state %d healthMask 0x%x",
            info->busId,
-           ((long *)&info->fabricInfo.clusterUuid)[0], ((long *)&info->fabricInfo.clusterUuid)[1],
+           uuid0, uuid1,
            info->fabricInfo.cliqueId, info->fabricInfo.state, info->fabricInfo.healthMask);
     }
   }
