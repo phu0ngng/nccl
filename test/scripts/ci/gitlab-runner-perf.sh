@@ -151,7 +151,7 @@ done
 
 # socket NET testing
 for func in all_reduce_perf all_gather_perf broadcast_perf; do
-  run_command "${func}_socket_net" $RUN_MODE $NGPUS "" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_MNNVL_ENABLE=0 NCCL_NET=Socket" "$NCCL_HOME/test/perf/$func" "-b 8 -e 16M -f2 $opts -n 1"
+  run_command "${func}_socket_net" $RUN_MODE $NGPUS "" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_NET=Socket" "$NCCL_HOME/test/perf/$func" "-b 8 -e 16M -f2 $opts -n 1"
 done
 
 print_failed_commands
