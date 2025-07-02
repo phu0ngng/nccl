@@ -82,9 +82,11 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
+            ncclClosePluginLib(handle, ncclPluginTypeNet);
             fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
+          ncclClosePluginLib(handle, ncclPluginTypeNet);
           fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }
@@ -115,9 +117,11 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
+            ncclClosePluginLib(handle, ncclPluginTypeTuner);
             fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
+          ncclClosePluginLib(handle, ncclPluginTypeTuner);
           fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }
@@ -138,9 +142,11 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
+            ncclClosePluginLib(handle, ncclPluginTypeProfiler);
             fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
+          ncclClosePluginLib(handle, ncclPluginTypeProfiler);
           fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }
