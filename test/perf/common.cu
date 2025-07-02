@@ -198,7 +198,7 @@ static void outputFileFinalize(output_file_type_t output_file_type) {
 
 // Side computation constants
 #define COMP_SIZE (1 << 22)
-#define NUM_BLOCKS 32
+#define NUM_BLOCKS 64
 
 static double parsesize(const char *value) {
     long long int units;
@@ -1042,12 +1042,26 @@ testResult_t threadInit(struct threadArgs* args) {
   return testSuccess;
 }
 
-__global__ void compute(void* _ptr, int _size) {
+__global__ void compute(void* _ptr, size_t _size) {
   uint64_t *ptr = (uint64_t*)(_ptr);
   uint64_t size = _size / sizeof(uint64_t);
   ptr += size*blockIdx.x;
   for (uint64_t offset=threadIdx.x; offset < size; offset += blockDim.x) {
      ptr[offset] <<= 1;
+  }
+}
+
+__global__ void poll(void* _ptr, size_t _size) {
+  uint64_t *ptr = (uint64_t*)(_ptr);
+  uint64_t size = _size / sizeof(uint64_t);
+  ptr += size*blockIdx.x;
+
+  for (uint64_t offset=threadIdx.x; offset < size; offset += blockDim.x) {
+    volatile uint64_t* poll_ptr = ptr + offset;
+    uint64_t value = *poll_ptr;
+    // This ensures the polling actually happens
+    if (value != 0) {
+    }
   }
 }
 
@@ -1101,6 +1115,14 @@ testResult_t compThread(struct threadArgs* args) {
       } else {
         usleep(40000);
       }
+    } else if (side_comp == 3) {
+      for (int i=0; i<args->nGpus; i++) {
+        CUDACHECK(cudaSetDevice(gpuids[i]));
+        // poll the RX buffer from the GPU
+        poll<<<NUM_BLOCKS, 1024, 0, streams[i]>>>(args->recvbuffs[0][i], (args->nbytes[0][i])/NUM_BLOCKS);
+      }
+      TESTCHECK(testStreamSynchronize(args->nGpus, streams, NULL));
+      (*args->compThreadCount)++;
     }
   }
   for (int i=0; i<args->nGpus; i++) {
