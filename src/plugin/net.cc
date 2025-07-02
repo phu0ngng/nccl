@@ -33,7 +33,7 @@ extern getNcclCollNet_t getNcclCollNet_v9;
 extern getNcclCollNet_t getNcclCollNet_v10;
 extern getNcclCollNet_t getNcclCollNet_v11;
 
-NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 1);
+NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 0);
 #define NCCL_NET_VERSION_COUNT 6
 int ncclNetVersion[NCCL_NET_VERSION_COUNT] = {11, 10, 9, 8, 7, 6};
 getNcclNet_t* getNcclNet[NCCL_NET_VERSION_COUNT] = {getNcclNet_v11, getNcclNet_v10, getNcclNet_v9, getNcclNet_v8, getNcclNet_v7, getNcclNet_v6};
@@ -59,6 +59,10 @@ typedef struct netPluginLib {
   ncclNetPluginState_t ncclNetPluginState;      // State of the nccl net plugin
   ncclNetPluginState_t ncclCollNetPluginState;  // State of the nccl coll net plugin
   int ncclNetPluginRefCount;                    // Reference count for the nccl net plugin
+  int netPhysDevs;                              // ncclNet - number of physical devices
+  int netVirtDevs;                              // ncclNet - number of virtual devices
+  int collNetPhysDevs;                          // ncclCollNet -  number of physical devices
+  int collNetVirtDevs;                          // ncclCollNet -  number of virtual devices
 } netPluginLib_t;
 
 int pluginCount = 0;
@@ -71,7 +75,11 @@ static ncclResult_t ncclNetPluginUnload(netPluginLib_t* pluginLib) {
   if ((pluginLib->dlHandle) && ((pluginLib->ncclNetPluginRefCount) == 0)) {
     INFO(NCCL_INIT|NCCL_NET, "Unloading plugin %s", pluginLib->name);
     NCCLCHECK(ncclClosePluginLib(pluginLib->dlHandle, ncclPluginTypeNet));
+    // memset will reset the status to ncllNetPluginStateLoadReady
     memset(pluginLib, 0, sizeof(netPluginLib_t));
+    // reset the count of devices to UNDEF_DEV_COUNT
+    pluginLib->netPhysDevs = pluginLib->netVirtDevs = NCCL_UNDEF_DEV_COUNT;
+    pluginLib->collNetPhysDevs = pluginLib->collNetVirtDevs = NCCL_UNDEF_DEV_COUNT;
   }
   return ncclSuccess;
 }
@@ -145,6 +153,8 @@ static ncclResult_t ncclNetPluginInit(void** netCtx, void** collNetCtx, uint64_t
   if (pluginLib->ncclNetPluginState >= ncclNetPluginStateInitReady && pluginLib->ncclNet) {
     if (pluginLib->ncclNet->init(netCtx, commId, ncclDebugLog, ncclProfilerCallback) != ncclSuccess) goto fail;
     if (pluginLib->ncclNet->devices(&ndev) != ncclSuccess || ndev <= 0) goto fail;
+    pluginLib->netPhysDevs = ndev;
+    pluginLib->netVirtDevs = NCCL_UNDEF_DEV_COUNT;
   }
   pluginLib->ncclNetPluginState = ncclNetPluginStateEnabled;
   INFO(NCCL_INIT|NCCL_NET, "Initialized NET plugin %s", pluginLib->ncclNet->name);
@@ -153,12 +163,16 @@ static ncclResult_t ncclNetPluginInit(void** netCtx, void** collNetCtx, uint64_t
     if (pluginLib->ncclCollNet->init(collNetCtx, commId, ncclDebugLog) != ncclSuccess) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
     else if (pluginLib->ncclCollNet->devices(&ndev) != ncclSuccess || ndev <= 0) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
     else {
+      pluginLib->collNetPhysDevs = ndev;
+      pluginLib->collNetVirtDevs = NCCL_UNDEF_DEV_COUNT;
       pluginLib->ncclCollNetPluginState = ncclNetPluginStateEnabled;
     }
   }
 exit:
   return ncclSuccess;
 fail:
+  pluginLib->netPhysDevs = pluginLib->netVirtDevs = NCCL_UNDEF_DEV_COUNT;
+  pluginLib->collNetPhysDevs = pluginLib->collNetVirtDevs = NCCL_UNDEF_DEV_COUNT;
   pluginLib->ncclNetPluginState = ncclNetPluginStateDisabled;
   pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
   goto exit;
@@ -292,6 +306,50 @@ ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
   }
   pthread_mutex_unlock(&netPluginLock);
   return ncclSuccess;
+}
+
+ncclResult_t ncclNetGetDevCount(int netPluginIndex, int* nPhysDevs, int* nVirtDevs) {
+  if (netPluginLibs[netPluginIndex].ncclNetPluginState != ncclNetPluginStateEnabled ||
+     netPluginLibs[netPluginIndex].netPhysDevs == NCCL_UNDEF_DEV_COUNT) goto fail;
+  // lock not needed as it's called within a lock already in ncclTopoGetSystem
+  *nPhysDevs = netPluginLibs[netPluginIndex].netPhysDevs;
+  *nVirtDevs = netPluginLibs[netPluginIndex].netVirtDevs;
+  return ncclSuccess;
+fail:
+  WARN("%s: trying to access the number of devices of an uninitialized netPlugin[%d]", __func__, netPluginIndex);
+  return ncclInternalError;
+}
+
+ncclResult_t ncclCollNetGetDevCount(int netPluginIndex, int* nPhysDevs, int* nVirtDevs) {
+  if (netPluginLibs[netPluginIndex].ncclCollNetPluginState != ncclNetPluginStateEnabled ||
+     netPluginLibs[netPluginIndex].collNetPhysDevs == NCCL_UNDEF_DEV_COUNT) goto fail;
+  // lock not needed as it's called within a lock already in ncclTopoGetSystem
+  *nPhysDevs = netPluginLibs[netPluginIndex].collNetPhysDevs;
+  *nVirtDevs = netPluginLibs[netPluginIndex].collNetVirtDevs;
+  return ncclSuccess;
+fail:
+  WARN("%s: trying to access the number of devices of an uninitialized netPlugin[%d]", __func__, netPluginIndex);
+  return ncclInternalError;
+}
+
+ncclResult_t ncclNetSetVirtDevCount(int netPluginIndex, int nVirtDevs) {
+  if (netPluginLibs[netPluginIndex].ncclNetPluginState != ncclNetPluginStateEnabled || nVirtDevs < 0) goto fail;
+  // lock not needed as it's called within a lock already in ncclTopoGetSystem
+  netPluginLibs[netPluginIndex].netVirtDevs = nVirtDevs;
+  return ncclSuccess;
+fail:
+  WARN("%s: failed to set the number of devices for netPlugin[%d] to %d", __func__, netPluginIndex,nVirtDevs);
+  return ncclInternalError;
+}
+
+ncclResult_t ncclCollNetSetVirtDevCount(int netPluginIndex, int nVirtDevs) {
+  if (netPluginLibs[netPluginIndex].ncclCollNetPluginState != ncclNetPluginStateEnabled || nVirtDevs < 0) goto fail;
+  // lock not needed as it's called within a lock already in ncclTopoGetSystem
+  netPluginLibs[netPluginIndex].collNetVirtDevs = nVirtDevs;
+  return ncclSuccess;
+fail:
+  WARN("%s: failed to set the number of devices for netPlugin[%d] to %d", __func__, netPluginIndex,nVirtDevs);
+  return ncclInternalError;
 }
 
 ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
