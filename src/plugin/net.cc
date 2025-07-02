@@ -303,6 +303,7 @@ ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
   int pluginIndex = comm->netPluginIndex;
   std::lock_guard<std::mutex> lock(netPluginMutex);
   NCCLCHECK(comm->ncclNet->finalize(comm->netContext));
+  if (comm->collNetContext) NCCLCHECK(comm->ncclCollNet->finalize(comm->collNetContext));
   netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
   for (int i = 0; i < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS); i++) {
     NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[i]));
