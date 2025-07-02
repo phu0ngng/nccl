@@ -190,16 +190,22 @@ ncclResult_t ncclTopoGetGpuMinPath(struct ncclTopoSystem* system, int type, int*
 ncclResult_t ncclTopoGetGpuMaxPath(struct ncclTopoSystem* system, int type, int* max);
 ncclResult_t ncclTopoSplitNvLink(struct ncclTopoSystem* system, int* splitNvLink);
 
-struct ncclTopoNetState {
-  int nVirtualNics;
-  int nPhysicalNics;
+struct ncclTopoNetInfo {
+  bool coll;
+  // communicator-specific information
+  int netPluginIndex;
+  bool dmaBufSupport;
+  void* netContext;
+  // dev count tracking functions (not part of ncclNet)
+  ncclResult_t (*getDevCount)(int, int*, int*);
+  ncclResult_t (*setVirtDevCount)(int, int);
+  // ncclNet API functions
   const char* name;
+  ncclResult_t (*getProperties)(int, ncclNetProperties_t*);
+  ncclResult_t (*makeVDevice)(void* ctx, int*, ncclNetVDeviceProps_t*);
+  ncclResult_t (*devices)(int*);
 };
-template<typename T>
-ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, T* net, void* netContext, bool dmaBufSupport);
-
-extern template ncclResult_t ncclTopoProcessNet<ncclNet_t>(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, ncclNet_t* net, void* netContext, bool dmaBufSupport);
-extern template ncclResult_t ncclTopoProcessNet<ncclCollNet_t>(ncclXml* xml, const char* dumpXmlFile, ncclTopoNetState* state, ncclCollNet_t* net, void* netContext, bool dmaBufSupport);
+ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, struct ncclTopoNetInfo* net);
 
 #define NCCL_TOPO_XML_MAX_NODES 256
 #define NCCL_GRAPH_XML_MAX_NODES 4096

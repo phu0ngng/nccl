@@ -87,8 +87,8 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
 
 #define NCCL_PLUGIN_MAX_RECVS 8
 int max_requests = NCCL_NET_MAX_REQUESTS;
-int nPhysDevs = 0;
-int nVirtualDevs = 0;
+int nPhysDevs = 0; // number of physical devices only
+int nVirtualDevs = 0; // number of virtual devices only
 #define MAX_MOCK_DEVS 1024
 #define MAX_MOCK_VDEVS MAX_MOCK_DEVS*8
 #define MOCK_VDEV_NAME_LENGTH 256
@@ -170,7 +170,6 @@ void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
 
   // It's assumed system.xml files won't have duplicate "dev" fields
   if (nPhysDevs < (devIndex + 1)) nPhysDevs = devIndex + 1;
-  nVirtualDevs = nPhysDevs;
 }
 
 void fakeNetPluginInit(struct ncclXml* xmlSystem) {
@@ -180,7 +179,7 @@ void fakeNetPluginInit(struct ncclXml* xmlSystem) {
   }
 
   nPhysDevs = 0;
-  nVirtualDevs = 0;
+  nVirtualDevs = NCCL_UNDEF_DEV_COUNT;
   coll = 0;
   memset(mockVDevs, 0, sizeof(mockVDev)*MAX_MOCK_DEVS);
   memset(mockProps, 0, sizeof(ncclNetProperties_t)*MAX_MOCK_DEVS);
@@ -188,6 +187,7 @@ void fakeNetPluginInit(struct ncclXml* xmlSystem) {
   struct ncclXmlNode* node;
   CHECK(xmlFindTag(xmlSystem, "net", &node));
   while (node) {
+    // will increment the number of nPhysDevs
     fakeNetPluginAddNetNode(node);
     CHECK(xmlFindNextTag(xmlSystem, "net", node, &node));
   }
@@ -209,7 +209,9 @@ void fakeNetPluginInit(struct ncclXml* xmlSystem) {
 }
 
 ncclResult_t fakeNetPluginGetProperties(int dev, ncclNetProperties_t* props) {
-  if (dev < nVirtualDevs) {
+  // if nVirtualDevs is NCCL_UNDEF_DEV_COUNT, NIC fusion hasn't happened yet > no virtual devices
+  int totalDevs = nPhysDevs + (nVirtualDevs != NCCL_UNDEF_DEV_COUNT ? nVirtualDevs : 0);
+  if (dev < totalDevs) {
     mockVDev* vDev = mockVDevs + dev;
     int pDevIndex = vDev->vProps.devs[0];
     memcpy(props, mockProps + pDevIndex, sizeof(ncclNetProperties_t));
@@ -224,23 +226,26 @@ ncclResult_t fakeNetPluginGetProperties(int dev, ncclNetProperties_t* props) {
     }
     return ncclSuccess;
   } else {
+    printf("[MOCK] trying to get the properties of dev %d, but only %d are known", dev, totalDevs);
     return ncclInvalidUsage;
   }
 }
 
 ncclResult_t fakeNetPluginDevices(int* ndev) {
-  *ndev = nVirtualDevs;
+  *ndev = nPhysDevs + (nVirtualDevs != NCCL_UNDEF_DEV_COUNT ? nVirtualDevs : 0);
   return ncclSuccess;
 }
 
 ncclResult_t fakeNetPluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* vProps) {
-  if (nVirtualDevs < MAX_MOCK_VDEVS) {
+  if (nVirtualDevs == NCCL_UNDEF_DEV_COUNT) nVirtualDevs = 0;
+  int totalDevs = nPhysDevs + nVirtualDevs;
+  if (totalDevs < MAX_MOCK_VDEVS) {
     if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidArgument;
     for (int i = 0; i < vProps->ndevs; i++) {
       int pDev = vProps->devs[i];
       if (mockVDevs[pDev].ignore) return ncclInvalidArgument;
     }
-    int deviceIndex = nVirtualDevs;
+    int deviceIndex = totalDevs;
     mockVDev* mDev = mockVDevs + deviceIndex;
     memset(mDev, 0, sizeof(mockVDev));
     memcpy(&mDev->vProps, vProps, sizeof(ncclNetVDeviceProps_t));
@@ -260,12 +265,27 @@ ncclResult_t fakeNetPluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* 
 
     INFO(NCCL_GRAPH, "Fake/Plugin : Made vDevice %s speed=%d\n", mDev->name, mDev->speed);
 
-    *d = nVirtualDevs;
+    *d = totalDevs;
     nVirtualDevs++;
     return ncclSuccess;
   } else {
     return ncclInvalidUsage;
   }
+}
+
+static ncclResult_t fakeNetPluginGetDevCount(int pluginIndex, int* nPhys, int* nVirt){
+  // if no new virtual device has been created, we return undefined to trigger the usage of makeVDevices
+  *nPhys = nPhysDevs;
+  *nVirt = nVirtualDevs;
+  return ncclSuccess;
+}
+static ncclResult_t fakeNetPluginSetDevCount(int pluginIndex, int nVirt) {
+  // if no new virtual device has been created, we return undefined to trigger the usage of makeVDevices
+  if (nVirt != nVirtualDevs && nVirtualDevs >= 0) {
+    printf("NCCL core is trying to set an inconsistent number of physical devices. I have tracked %d virtual devs in the plugin, NCCL core thinks it's %d.\n", nVirtualDevs, nVirt);
+    return ncclInvalidArgument;
+  }
+  return ncclSuccess;
 }
 
 void keepGpus(struct ncclXml* xmlSystem) {
@@ -297,34 +317,20 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     return;
   }
   // Inititalize a netState object for NIC fusion
-  ncclTopoNetState netState = {-1,-1};
   fakeNetPluginInit(xmlSystem);
 
-  ncclNet_t net = {
-    .name = "Fake",
-    .init = nullptr,
-    .devices = fakeNetPluginDevices,
-    .getProperties = fakeNetPluginGetProperties,
-    .listen = nullptr,
-    .connect = nullptr,
-    .accept = nullptr,
-    .regMr = nullptr,
-    .regMrDmaBuf = nullptr,
-    .deregMr = nullptr,
-    .isend = nullptr,
-    .irecv = nullptr,
-    .iflush = nullptr,
-    .test = nullptr,
-    .closeSend = nullptr,
-    .closeRecv = nullptr,
-    .closeListen = nullptr,
-    .getDeviceMr = nullptr,
-    .irecvConsumed = nullptr,
-    .makeVDevice   = fakeNetPluginMakeVDevice,
-    .finalize = nullptr,
-  };
-
-  CHECK(ncclTopoProcessNet(xmlSystem, NULL, &netState, &net, nullptr, true));
+  struct ncclTopoNetInfo netInfo{};
+  netInfo.coll = coll > 0;
+  netInfo.netPluginIndex = 0;
+  netInfo.dmaBufSupport = true;
+  netInfo.netContext = NULL;
+  netInfo.getDevCount = fakeNetPluginGetDevCount;
+  netInfo.setVirtDevCount = fakeNetPluginSetDevCount;
+  netInfo.name = "Fake";
+  netInfo.getProperties = fakeNetPluginGetProperties;
+  netInfo.makeVDevice = fakeNetPluginMakeVDevice;
+  netInfo.devices = fakeNetPluginDevices;
+  CHECK(ncclTopoProcessNet(xmlSystem, NULL, &netInfo));
   // We need to force all GPUs as keep="1" here to avoid trimming them
   keepGpus(xmlSystem);
   if (dumpProcessedXml) {

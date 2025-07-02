@@ -18,17 +18,20 @@ int nPhysDevs = 0;
 int nVirtualDevs = 0;
 #define MAX_MOCK_DEVS  32
 #define MAX_MOCK_VDEVS MAX_MOCK_DEVS*8
+#define MOCK_STRLEN 128
 
 struct mockVDev {
-  char name[128];
+  char name[MOCK_STRLEN];
   int speed;
   int latency;
   ncclNetVDeviceProps_t vProps;
 };
 
+char mockDevName[MAX_MOCK_DEVS][MOCK_STRLEN];
+char mockPciPath[MAX_MOCK_DEVS][MOCK_STRLEN];
 mockVDev mockVDevs[MAX_MOCK_VDEVS];
 ncclNetProperties_t   mockProps[MAX_MOCK_DEVS];
-static int netRefCount;
+static int netRefCount = 0;
 
 struct mockListenComm {
   int dev;
@@ -79,7 +82,7 @@ __hidden ncclResult_t pluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t
       if (i > 0) {
         snprintf(mDev->name + strlen(mDev->name), sizeof(mDev->name) - strlen(mDev->name), "+%s", mockProps[pDev].name);
       } else {
-        strncpy(mDev->name, mockProps[pDev].name, 128);
+        strncpy(mDev->name, mockProps[pDev].name, MOCK_STRLEN);
       }
     }
 
@@ -110,89 +113,103 @@ ncclResult_t pluginAddDevice(void* ctx, ncclNetProperties_t* props) {
 }
 
 __hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
-  if (__atomic_fetch_add(&netRefCount, 1, __ATOMIC_RELAXED)) return ncclSuccess;
-  pthread_mutex_lock(&mockLock);
-  for (int i = 0; i < nPhysDevs; i++) {
-    ncclNetProperties_t* m = mockProps + i;
-    free(m->name);
-    free(m->pciPath);
-  }
+  // netContext is ignored, setting to NULL
+  *ctx = NULL;
 
-  memset(mockProps,     0, sizeof(mockProps));
-  memset(mockVDevs,     0, sizeof(mockVDevs));
-  nPhysDevs    = 0;
+  // realy return if the plugin has been initialized already
+  if (__atomic_fetch_add(&netRefCount, 1, __ATOMIC_RELAXED)) return ncclSuccess;
+
+  pthread_mutex_lock(&mockLock);
+  memset(mockProps, 0, sizeof(mockProps));
+  memset(mockVDevs, 0, sizeof(mockVDevs));
+  nPhysDevs = 0;
   nVirtualDevs = 0;
 
   // Add test devices for now
   ncclNetProperties_t props0 = {};
-  props0.name = strdup("mock_0");
-  props0.pciPath = strdup("/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:05:00.0");
-  props0.guid             = 0;
-  props0.ptrSupport       = 0;
-  props0.regIsGlobal      = 1;
-  props0.forceFlush       = 0;
-  props0.speed            = 10000;
-  props0.port             = 1;
-  props0.maxComms         = 1024;
-  props0.maxRecvs         = NCCL_PLUGIN_MAX_RECVS;
-  props0.netDeviceType    = NCCL_NET_DEVICE_HOST;
+  snprintf(mockDevName[0], MOCK_STRLEN, "mock_0");
+  snprintf(mockPciPath[0], MOCK_STRLEN,
+           "/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/"
+           "0000:05:00.0");
+  props0.name = mockDevName[0];
+  props0.pciPath = mockPciPath[0];
+  props0.guid = 0;
+  props0.ptrSupport = 0;
+  props0.regIsGlobal = 1;
+  props0.forceFlush = 0;
+  props0.speed = 10000;
+  props0.port = 1;
+  props0.maxComms = 1024;
+  props0.maxRecvs = NCCL_PLUGIN_MAX_RECVS;
+  props0.netDeviceType = NCCL_NET_DEVICE_HOST;
   props0.netDeviceVersion = 0;
-  props0.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  pluginAddDevice(ctx, &props0);
+  props0.maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  pluginAddDevice(*ctx, &props0);
 
   // Dev 1
   ncclNetProperties_t props1 = {};
-  props1.name = strdup("mock_1");
-  props1.pciPath = strdup("/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:05:00.1");
+  snprintf(mockDevName[1], MOCK_STRLEN, "mock_1");
+  snprintf(mockPciPath[1], MOCK_STRLEN,
+           "/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/"
+           "0000:05:00.1");
+  props1.name = mockDevName[1];
+  props1.pciPath = mockPciPath[1];
   props1.guid = 1;
   props1.ptrSupport = 0;
   props1.regIsGlobal = 1;
-  props1.forceFlush  = 0;
-  props1.speed       = 10000;
-  props1.port       = 1;
-  props1.maxComms       = 1024;
-  props1.maxRecvs       =   NCCL_PLUGIN_MAX_RECVS;
-  props1.netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props1.forceFlush = 0;
+  props1.speed = 10000;
+  props1.port = 1;
+  props1.maxComms = 1024;
+  props1.maxRecvs = NCCL_PLUGIN_MAX_RECVS;
+  props1.netDeviceType = NCCL_NET_DEVICE_HOST;
   props1.netDeviceVersion = 0;
-  props1.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  pluginAddDevice(ctx, &props1);
+  props1.maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  pluginAddDevice(*ctx, &props1);
 
-  // Devs 3 and 4 are a separate NIC Fusion device which will fail to merge together
-  // Dev 3
+  // Devs 3 and 4 are a separate NIC Fusion device which will fail to merge
+  // together Dev 3
   ncclNetProperties_t props2 = {};
-  props2.name = strdup("mock_2");
-  props2.pciPath = strdup("/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:06:00.0");
+  snprintf(mockDevName[2], MOCK_STRLEN, "mock_2");
+  snprintf(mockPciPath[2], MOCK_STRLEN,
+           "/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/"
+           "0000:06:00.0");
+  props2.name = mockDevName[2];
+  props2.pciPath = mockPciPath[2];
   props2.guid = 2;
   props2.ptrSupport = 0;
   props2.regIsGlobal = 1;
-  props2.forceFlush  = 0;
-  props2.speed       = 10000;
-  props2.port       = 1;
-  props2.maxComms       = 1024;
-  props2.maxRecvs       =   NCCL_PLUGIN_MAX_RECVS;
-  props2.netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props2.forceFlush = 0;
+  props2.speed = 10000;
+  props2.port = 1;
+  props2.maxComms = 1024;
+  props2.maxRecvs = NCCL_PLUGIN_MAX_RECVS;
+  props2.netDeviceType = NCCL_NET_DEVICE_HOST;
   props2.netDeviceVersion = 0;
-  props2.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  pluginAddDevice(ctx, &props2);
+  props2.maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  pluginAddDevice(*ctx, &props2);
 
   // Dev 4
   ncclNetProperties_t props3 = {};
-  props3.name = strdup("mock_3");
-  props3.pciPath = strdup("/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/0000:06:00.1");
+  snprintf(mockDevName[3], MOCK_STRLEN, "mock_3");
+  snprintf(mockPciPath[3], MOCK_STRLEN,
+           "/sys/devices/pci0000:00/0000:00:02.0/0000:02:00.0/0000:03:08.0/"
+           "0000:06:00.1");
+  props3.name = mockDevName[3];
+  props3.pciPath = mockPciPath[3];
   props3.guid = 3;
   props3.ptrSupport = 0;
   props3.regIsGlobal = 1;
-  props3.forceFlush  = 0;
-  props3.speed       = 10000;
-  props3.port       = 1;
-  props3.maxComms       = 1024;
-  props3.maxRecvs       =   NCCL_PLUGIN_MAX_RECVS;
-  props3.netDeviceType    = NCCL_NET_DEVICE_HOST;
+  props3.forceFlush = 0;
+  props3.speed = 10000;
+  props3.port = 1;
+  props3.maxComms = 1024;
+  props3.maxRecvs = NCCL_PLUGIN_MAX_RECVS;
+  props3.netDeviceType = NCCL_NET_DEVICE_HOST;
   props3.netDeviceVersion = 0;
-  props3.maxP2pBytes      = NCCL_MAX_NET_SIZE_BYTES;
-  pluginAddDevice(ctx, &props3);
+  props3.maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  pluginAddDevice(*ctx, &props3);
   pthread_mutex_unlock(&mockLock);
-
   return ncclSuccess;
 }
 
