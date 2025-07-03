@@ -54,13 +54,9 @@ testResult_t ScatterRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDa
   size_t rankOffset = count * wordSize(type);
   if (count == 0) return testSuccess;
 
-#if NCCL_MAJOR < 2 || NCCL_MINOR < 7
-  printf("NCCL 2.7 or later is needed for scatter. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
-  return testNcclError;
-#else
-  if (NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=28)) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     NCCLCHECK_COMM_WAIT(ncclScatter(sendbuff, recvbuff, count, type, root, comm, stream), comm);
-  } else {
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,7,0)
     NCCLCHECK(ncclGroupStart());
     if (rank == root) {
       for (int r=0; r<nRanks; r++) {
@@ -69,9 +65,11 @@ testResult_t ScatterRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDa
     }
     NCCLCHECK(ncclRecv(recvbuff, count, type, root, comm, stream));
     NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
-  }
-  return testSuccess;
+#else
+  printf("NCCL 2.7 or later is needed for scatter. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
+  return testNcclError;
 #endif
+  return testSuccess;
 }
 
 struct testColl scatterTest = {

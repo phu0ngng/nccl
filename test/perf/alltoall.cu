@@ -55,22 +55,20 @@ testResult_t AlltoAllRunColl(void* sendbuff, void* recvbuff, size_t count, ncclD
   NCCLCHECK(ncclCommCount(comm, &nRanks));
   size_t rankOffset = count * wordSize(type);
 
-#if NCCL_MAJOR < 2 || NCCL_MINOR < 7
-  printf("NCCL 2.7 or later is needed for alltoall. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
-  return testNcclError;
-#else
-  if (NCCL_MAJOR > 2 || (NCCL_MAJOR == 2 && NCCL_MINOR >=28)) {
-    NCCLCHECK_COMM_WAIT(ncclAlltoAll(sendbuff, recvbuff, count, type, comm, stream), comm);
-  } else {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0) 
+  NCCLCHECK_COMM_WAIT(ncclAlltoAll(sendbuff, recvbuff, count, type, comm, stream), comm);
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,7,0)
     NCCLCHECK(ncclGroupStart());
     for (int r=0; r<nRanks; r++) {
       NCCLCHECK(ncclSend(((char*)sendbuff)+r*rankOffset, count, type, r, comm, stream));
       NCCLCHECK(ncclRecv(((char*)recvbuff)+r*rankOffset, count, type, r, comm, stream));
     }
     NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
-  }
-  return testSuccess;
+#else
+  printf("NCCL 2.7 or later is needed for alltoall. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
+  return testNcclError;
 #endif
+  return testSuccess;
 }
 
 struct testColl alltoAllTest = {
