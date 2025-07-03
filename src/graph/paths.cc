@@ -617,7 +617,7 @@ ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks,
   return ncclSuccess;
 }
 
-NCCL_PARAM(PxnC2c, "PXN_C2C", 0);
+NCCL_PARAM(PxnC2c, "PXN_C2C", 1);
 
 ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm* comm) {
   // Precompute paths between GPUs/NICs.
