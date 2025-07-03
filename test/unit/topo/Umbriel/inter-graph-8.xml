@@ -97,7 +97,7 @@
       <net dev="0xd"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="8" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="PXB" samechannels="0">
+  <graph id="1" pattern="3" crossnic="0" nchannels="8" speedintra="96" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="PXB" samechannels="0">
     <channel>
       <net dev="0x4"/>
       <gpu dev="0"/>
