@@ -81,12 +81,12 @@ This provides a CSV-based configuration system that you can customize or use as 
 - NCCL headers (included in `nccl/` subdirectories)
 - Make
 
-### Option 2: Use the the Basic Plugin
+## Option 2: Use the Basic Plugin
 
 For more customized tuning needs, you might want to start with a clean baseline. In that case, base off the basic plugin in the `basic/` directory:
 
 ```bash
-cd example/
+cd basic/
 make
 ```
 
