@@ -126,6 +126,7 @@ void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
   dev->used = 1;
   dev->ignore = 0;
 
+  dev->vProps.devs[0] = devIndex;
   ncclNetProperties_t* props = mockProps + devIndex;
 
   // get the original name and overwrite it if needed
@@ -607,6 +608,9 @@ int main(int argc, const char* argv[]) {
     RUN("GB200-NVL36");
     RUN("GB200-NVL72");
     RUN("GB200-CX8");
+    RUN("GB200-CX8-NVLD8");
+    RUN("GB300-CX8");
+    RUN("GB300-CX8-NVLD8");
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
   }

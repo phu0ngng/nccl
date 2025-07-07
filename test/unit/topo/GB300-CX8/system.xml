@@ -8,7 +8,7 @@
       </pci>
       <pci busid="0008:04:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">
         <pci busid="0008:06:00.0" class="0x030200" vendor="0x10de" device="0x31c2" subsystem_vendor="0x10de" subsystem_device="0x21f1" link_speed="64.0 GT/s PCIe" link_width="16">
-          <gpu dev="0" sm="100" rank="0" gdr="1">
+          <gpu dev="0" sm="103" rank="0" gdr="1">
             <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
             <c2c bw="44712" count="5"/>
           </gpu>
@@ -23,7 +23,7 @@
       </pci>
       <pci busid="0009:04:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">
         <pci busid="0009:06:00.0" class="0x030200" vendor="0x10de" device="0x31c2" subsystem_vendor="0x10de" subsystem_device="0x21f1" link_speed="64.0 GT/s PCIe" link_width="16">
-          <gpu dev="1" sm="100" rank="1" gdr="1">
+          <gpu dev="1" sm="103" rank="1" gdr="1">
             <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
             <c2c bw="44712" count="5"/>
           </gpu>
@@ -40,7 +40,7 @@
       </pci>
       <pci busid="0018:04:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">
         <pci busid="0018:06:00.0" class="0x030200" vendor="0x10de" device="0x31c2" subsystem_vendor="0x10de" subsystem_device="0x21f1" link_speed="64.0 GT/s PCIe" link_width="16">
-          <gpu dev="2" sm="100" rank="2" gdr="1">
+          <gpu dev="2" sm="103" rank="2" gdr="1">
             <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
             <c2c bw="44712" count="5"/>
           </gpu>
@@ -55,7 +55,7 @@
       </pci>
       <pci busid="0019:04:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">
         <pci busid="0019:06:00.0" class="0x030200" vendor="0x10de" device="0x31c2" subsystem_vendor="0x10de" subsystem_device="0x21f1" link_speed="64.0 GT/s PCIe" link_width="16">
-          <gpu dev="3" sm="100" rank="3" gdr="1">
+          <gpu dev="3" sm="103" rank="3" gdr="1">
             <nvlink target="fffffff:ff:ff.0" count="18" tclass="0x068000"/>
             <c2c bw="44712" count="5"/>
           </gpu>
