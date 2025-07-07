@@ -90,6 +90,12 @@ export LD_LIBRARY_PATH=/path/to/basic:$LD_LIBRARY_PATH
 mpirun -np 4 your_nccl_application
 ```
 
+```bash
+export NCCL_TUNER_PLUGIN=basic
+export NCCL_TUNER_PLUGIN=libnccl-tuner-basic.so
+export NCCL_TUNER_PLUGIN=/path/to/your/plugin/libnccl-tuner-basic.so
+```
+
 ### Verifying Plugin Loading
 
 Enable NCCL debug output to see if the plugin is loaded:

@@ -56,8 +56,8 @@ The `nChannels` parameter allows you to:
 ### 4. Error Handling
 
 Always return appropriate `ncclResult_t` values:
-- `ncclSuccess` for successful operations
-- `ncclInternalError` for plugin-specific errors
+- `ncclSuccess` for successful or ignored operations
+- `ncclInternalError` for plugin-specific errors. Returning an error is only advisable on plugin initialization and destruction, as the penalty users can pay for the overhead of a failed plugin call can be immense.
 - Other NCCL error codes as appropriate
 
 ## Getting Started
@@ -107,6 +107,14 @@ Set the `LD_LIBRARY_PATH` to include your plugin directory:
 
 ```bash
 export LD_LIBRARY_PATH=/path/to/your/plugin:$LD_LIBRARY_PATH
+```
+
+Set `NCCL_TUNER_PLUGIN` to either the plugin name, or the absolute path to the plugin file. Any of the below can work:
+
+```bash
+export NCCL_TUNER_PLUGIN=example
+export NCCL_TUNER_PLUGIN=libnccl-tuner-example.so
+export NCCL_TUNER_PLUGIN=/path/to/your/plugin/libnccl-tuner-example.so
 ```
 
 NCCL will automatically discover and load the plugin based on the exported symbol names.
