@@ -181,8 +181,7 @@ __hidden ncclResult_t netPluginIrecvConsumed(void* recvComm, int n, void* reques
 __hidden ncclResult_t netPluginGetDeviceMr(void* comm, void* mhandle, void** dptr_mhandle) {
   return ncclSuccess;
 }
-__hidden ncclResult_t netPluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* props) {
-  if (((struct pluginContext *)ctx)->commId == 0UL) return ncclInternalError;
+__hidden ncclResult_t netPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* props) {
   return ncclSuccess;
 }
 

@@ -195,14 +195,13 @@ struct ncclTopoNetInfo {
   // communicator-specific information
   int netPluginIndex;
   bool dmaBufSupport;
-  void* netContext;
   // dev count tracking functions (not part of ncclNet)
   ncclResult_t (*getDevCount)(int, int*, int*);
   ncclResult_t (*setVirtDevCount)(int, int);
   // ncclNet API functions
   const char* name;
   ncclResult_t (*getProperties)(int, ncclNetProperties_t*);
-  ncclResult_t (*makeVDevice)(void* ctx, int*, ncclNetVDeviceProps_t*);
+  ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*);
   ncclResult_t (*devices)(int*);
 };
 ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, struct ncclTopoNetInfo* net);

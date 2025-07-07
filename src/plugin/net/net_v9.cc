@@ -47,8 +47,7 @@ static ncclResult_t ncclNet_connect(void* ctx __attribute__((unused)),
   return ncclNet_v9->connect(dev, handle, sendComm, sendDevComm);
 }
 
-static ncclResult_t ncclNet_makeVDevice(void* ctx __attribute__((unused)),
-    int* d, ncclNetVDeviceProps_t* props) {
+static ncclResult_t ncclNet_makeVDevice(int* d, ncclNetVDeviceProps_t* props) {
   return ncclNet_v9->makeVDevice(d, (ncclNetVDeviceProps_v9_t*)props);
 }
 
@@ -81,8 +80,7 @@ static ncclResult_t ncclCollNet_ireducescatter(void* collComm, int nSendParts, n
                                  windowOffset, windowBytes, dataType, redOp, recvMhandle, request);
 }
 
-static ncclResult_t ncclCollNet_makeVDevice(void* ctx __attribute__((unused)),
-    int* d, ncclNetVDeviceProps_t* props) {
+static ncclResult_t ncclCollNet_makeVDevice(int* d, ncclNetVDeviceProps_t* props) {
   return ncclCollNet_v9->makeVDevice(d, (ncclNetVDeviceProps_v9_t *)props);
 }
 
@@ -152,6 +150,7 @@ static ncclResult_t ncclCollNet_init(void** ctx __attribute__((unused)),
   ncclCollNet.test = ncclCollNet_v9->test;
   ncclCollNet.closeColl = ncclCollNet_v9->closeColl;
   ncclCollNet.closeListen = ncclCollNet_v9->closeListen;
+  ncclCollNet.makeVDevice = (ncclCollNet_v9->makeVDevice) ? ncclCollNet_makeVDevice : nullptr;
   ncclCollNet.finalize = ncclCollNet_finalize;
   return ncclSuccess;
 }

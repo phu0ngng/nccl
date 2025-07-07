@@ -61,7 +61,7 @@ struct mockHandle {
   // struct ncclIbCommStage stage; // Used by the other side when connecting
 };
 
-__hidden ncclResult_t pluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* vProps) {
+__hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
   if (nVirtualDevs < MAX_MOCK_VDEVS) {
     if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidUsage;
     if (vProps->ndevs > 1) {
@@ -105,7 +105,7 @@ ncclResult_t pluginAddDevice(void* ctx, ncclNetProperties_t* props) {
     ncclNetVDeviceProps_t vProps = {};
     vProps.ndevs = 1;
     vProps.devs[0] = deviceIndex;
-    return pluginMakeVDevice(ctx, &deviceIndex, &vProps);
+    return pluginMakeVDevice(&deviceIndex, &vProps);
   } else {
     return ncclInvalidUsage;
   }

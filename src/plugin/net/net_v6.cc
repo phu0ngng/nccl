@@ -204,6 +204,7 @@ static ncclResult_t ncclCollNet_init(void** ctx __attribute__((unused)),
   ncclCollNet.test = ncclCollNet_v6->test;
   ncclCollNet.closeColl = ncclCollNet_v6->closeColl;
   ncclCollNet.closeListen = ncclCollNet_v6->closeListen;
+  ncclCollNet.makeVDevice  = NULL;
   ncclCollNet.finalize = ncclCollNet_finalize;
   return ncclSuccess;
 }

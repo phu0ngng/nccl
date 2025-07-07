@@ -33,8 +33,7 @@ static ncclResult_t ncclNet_connect(void* ctx, int dev, void* handle, void** sen
   return ncclNet_v10->connect(dev, (ncclNetCommConfig_v10_t *)ctx, handle, sendComm, sendDevComm);
 }
 
-static ncclResult_t ncclNet_makeVDevice(void* ctx __attribute__((unused)),
-    int* d, ncclNetVDeviceProps_v11_t* props) {
+static ncclResult_t ncclNet_makeVDevice(int* d, ncclNetVDeviceProps_v11_t* props) {
   return ncclNet_v10->makeVDevice(d, (ncclNetVDeviceProps_v10_t *)props);
 }
 
@@ -111,8 +110,7 @@ static ncclResult_t ncclCollNet_ireducescatter(void* collComm, int nSendParts, n
                                  windowOffset, windowBytes, dataType, redOp, recvMhandle, request);
 }
 
-static ncclResult_t ncclCollNet_makeVDevice(void* ctx __attribute__((unused)),
-    int* d, ncclNetVDeviceProps_t* props) {
+static ncclResult_t ncclCollNet_makeVDevice(int* d, ncclNetVDeviceProps_t* props) {
   return ncclCollNet_v10->makeVDevice(d, (ncclNetVDeviceProps_v10_t *)props);
 }
 

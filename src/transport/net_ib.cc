@@ -606,7 +606,7 @@ ncclResult_t ncclIbMakeVDeviceInternal(int* d, ncclNetVDeviceProps_t* props) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* props) {
+ncclResult_t ncclIbMakeVDevice(int* d, ncclNetVDeviceProps_t* props) {
   std::lock_guard<std::mutex> lock(ncclIbMutex);
   ncclResult_t res = ncclIbMakeVDeviceInternal(d, props);
   return res;

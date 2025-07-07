@@ -121,7 +121,7 @@ typedef struct {
 
   // Virtual NIC APIs. makeVDevice will create a virtual NIC given the specified properties, and tell the caller
   // what index this new vNIC exists at
-  ncclResult_t (*makeVDevice)(void* ctx, int* d, ncclNetVDeviceProps_t* props);
+  ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_t* props);
 } ncclNet_t;
 ```
 
@@ -150,9 +150,7 @@ NCCL will call the `init` function first, then query the number of network devic
 
 If NCCL wishes to initialize virtual devices, used in NIC fusion currently, it can call `makeVDevice`
 specifying a list of physical devices (the original devices listed from `devices`) it wishes to
-merge together. If the plugin does not support NIC fusion, it can set `makeVDevice` to null. Since
-`makeVDevice` in v11 takes an opaque plugin context returned during `init`, every communicator can
-have a different configuration of fused devices.
+merge together. If the plugin does not support NIC fusion, it can set `makeVDevice` to null.
 
 To establish a connection between two network devices, NCCL will first call `listen` on the
 receiving side, pass the returned handle to the sender side of the connection, and call `connect`
@@ -195,7 +193,7 @@ internal ones.
 
 Every call to `init` returns an opaque context that the plugin uses internally to allocate resources
 and manage state. Such context is passed to other net plugin calls that create further resources,
-such as `listen`, `connect` and `makeVDevice`. Every context is uniquely associated to a communicator
+such as `listen` and `connect`. Every context is uniquely associated to a communicator
 using the commId. The network can also be initialized with a per communicator configuration using
 the `config` argument.
 

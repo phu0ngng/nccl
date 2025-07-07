@@ -997,7 +997,7 @@ ncclResult_t ncclTopoMakeVnic(struct ncclXml* xml, struct ncclTopoNetInfo* netIn
 
   // Trigger the merge, then get the new device's properties
   int vDevIndex = 0;
-  ncclResult_t ret = netInfo->makeVDevice(netInfo->netContext, &vDevIndex, vProps);
+  ncclResult_t ret = netInfo->makeVDevice(&vDevIndex, vProps);
   if (ret != ncclSuccess) {
     INFO(NCCL_GRAPH|NCCL_INIT|NCCL_NET, "TOPO/NET : Tried merging multiple devices together and failed. vProps={ndevs=%d, devs=[%d %d %d %d]}. Set NCCL_NET_MERGE_LEVEL=LOC to disable NIC fusion.",
       vProps->ndevs, vProps->devs[0], vProps->devs[1], vProps->devs[2], vProps->devs[3]);
@@ -1351,23 +1351,21 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       std::lock_guard<std::mutex> lock(netMutex);
       INFO(NCCL_GRAPH, "TOPO/NET : Importing network plugins to topology");
       if (collNetSupport(comm)) {
-          netInfo.coll = 1;
-          netInfo.netPluginIndex = comm->netPluginIndex;
-          netInfo.dmaBufSupport = comm->dmaBufSupport;
-          netInfo.netContext = comm->collNetContext;
-          netInfo.getDevCount = ncclCollNetGetDevCount;
-          netInfo.setVirtDevCount = ncclCollNetSetVirtDevCount;
-          netInfo.name = comm->ncclCollNet->name;
-          netInfo.getProperties = comm->ncclCollNet->getProperties;
-          netInfo.makeVDevice = comm->ncclCollNet->makeVDevice;
-          netInfo.devices = comm->ncclCollNet->devices;
-          NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
+        netInfo.coll = 1;
+        netInfo.netPluginIndex = comm->netPluginIndex;
+        netInfo.dmaBufSupport = comm->dmaBufSupport;
+        netInfo.getDevCount = ncclCollNetGetDevCount;
+        netInfo.setVirtDevCount = ncclCollNetSetVirtDevCount;
+        netInfo.name = comm->ncclCollNet->name;
+        netInfo.getProperties = comm->ncclCollNet->getProperties;
+        netInfo.makeVDevice = comm->ncclCollNet->makeVDevice;
+        netInfo.devices = comm->ncclCollNet->devices;
+        NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
       }
 
       netInfo.coll = 0;
       netInfo.netPluginIndex = comm->netPluginIndex;
       netInfo.dmaBufSupport = comm->dmaBufSupport;
-      netInfo.netContext = comm->netContext;
       netInfo.getDevCount = ncclNetGetDevCount;
       netInfo.setVirtDevCount = ncclNetSetVirtDevCount;
       netInfo.name = comm->ncclNet->name;

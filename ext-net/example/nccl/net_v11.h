@@ -94,7 +94,7 @@ typedef struct {
 
   // Virtual NIC APIs. makeVDevice will create a virtual NIC given the specified properties, and tell the caller
   // what index this new vNIC exists at
-  ncclResult_t (*makeVDevice)(void* ctx, int* d, ncclNetVDeviceProps_v11_t* props);
+  ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_v11_t* props);
   // Finalize the network.
   ncclResult_t (*finalize)(void* ctx);
 } ncclNet_v11_t;
