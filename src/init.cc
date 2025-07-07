@@ -2216,6 +2216,10 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
   if (comm == NULL) {
     return ncclSuccess;
   }
+
+  INFO(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx - Abort START",
+      comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId);
+
   NCCLCHECK(ncclGroupStartInternal());
   // Ask anything that might still be running on the device to quit
   NCCLCHECK(setCommAbortFlags(comm,1));
