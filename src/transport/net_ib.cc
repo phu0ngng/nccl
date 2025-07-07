@@ -33,6 +33,8 @@
 static char ncclIbIfName[MAX_IF_NAME_SIZE+1];
 static union ncclSocketAddress ncclIbIfAddr;
 
+static ncclNetCommConfig_t ibContext;
+
 struct ncclIbMr {
   uintptr_t addr;
   size_t pages;
@@ -619,7 +621,7 @@ ncclResult_t ncclIbSetNetAttr(void *ctx, ncclNetAttr_t *netAttr) {
 
 static ncclProfilerCallback_t ncclProfilerFunction;
 
-ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   if (netRefCount++) return ncclSuccess;
   ncclResult_t ret = ncclSuccess;
   ncclProfilerFunction = profFunction;
@@ -778,6 +780,8 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFuncti
 
   }
 exit:
+  ibContext.trafficClass = config->trafficClass;
+  *ctx = &ibContext;
   return ret;
 fail:
   goto exit;
@@ -1270,7 +1274,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclIbConnect(void* ctx, int dev, ncclNetCommConfig_t* config, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+ncclResult_t ncclIbConnect(void* ctx, int dev, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   ncclResult_t ret = ncclSuccess;
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
   struct ncclIbCommStage* stage = &handle->stage;
@@ -1332,6 +1336,7 @@ ib_recv_dev_list:
   if (stage->offset != sizeof(ncclNetVDeviceProps_t)) return ncclSuccess;
   stage->offset = 0;
   ncclNetVDeviceProps_t remoteVProps;
+  ncclNetCommConfig_t* config;
   memcpy(&remoteVProps, stage->buffer, sizeof(ncclNetVDeviceProps_t));
   mergedDev = ncclIbMergedDevs + dev;
   comm->base.vProps = mergedDev->vProps;
@@ -1424,6 +1429,7 @@ ib_recv_dev_list:
       return ncclInternalError;
     }
   }
+  config = (ncclNetCommConfig_t*)ctx;
   meta.fifoAddr = (uint64_t)comm->fifo;
   meta.sl = (ncclParamIbSl() != -1) ? ncclParamIbSl() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_SL_DEFAULT;
   meta.tc = (ncclParamIbTc() != -1) ? ncclParamIbTc() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_TC_DEFAULT;

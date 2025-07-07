@@ -51,7 +51,6 @@ static ncclResult_t ncclNet_listen(void* ctx __attribute__((unused)),
 
 static ncclResult_t ncclNet_connect(void* ctx __attribute__((unused)),
     int dev,
-    ncclNetCommConfig_t* config __attribute__((unused)),
     void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
   return ncclNet_v8->connect(dev, handle, sendComm, sendDevComm);
 }
@@ -163,6 +162,7 @@ static ncclResult_t ncclCollNet_finalize(void* ctx __attribute__((unused))) {
 
 static ncclResult_t ncclNet_init(void** ctx __attribute__((unused)),
     uint64_t commId __attribute__((unused)),
+    ncclNetCommConfig_t* config __attribute__((unused)),
     ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
   if (refCount[NET_INDEX]++ > 0) return ncclSuccess;
   NCCLCHECK(ncclNet_v8->init(logfn));

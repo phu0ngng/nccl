@@ -69,7 +69,7 @@ typedef struct {
   // Name of the network (mainly for logs)
   const char* name;
   // Initialize the network.
-  ncclResult_t (*init)(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction);
+  ncclResult_t (*init)(void** ctx, uint64_t commId, ncclNetCommConfig_v11_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction);
   // Return the number of adapters.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
@@ -83,7 +83,7 @@ typedef struct {
   // should return successfully with sendComm == NULL with the expectation that
   // it will be called again until sendComm != NULL.
   // If *sendDevComm points to a valid object, then NCCL is requesting device offload for this connection
-  ncclResult_t (*connect)(void* ctx, int dev, ncclNetCommConfig_v11_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_v11_t** sendDevComm);
+  ncclResult_t (*connect)(void* ctx, int dev, void* handle, void** sendComm, ncclNetDeviceHandle_v11_t** sendDevComm);
   // Finalize connection establishment after remote peer has called connect.
   // This call must not block for the connection to be established, and instead
   // should return successfully with recvComm == NULL with the expectation that
@@ -195,7 +195,9 @@ internal ones.
 
 Every call to `init` returns an opaque context that the plugin uses internally to allocate resources
 and manage state. Such context is passed to other net plugin calls that create further resources,
-such as `listen`, `connect` and `makeVDevice`.
+such as `listen`, `connect` and `makeVDevice`. Every context is uniquely associated to a communicator
+using the commId. The network can also be initialized with a per communicator configuration using
+the `config` argument.
 
 To allow the plugin logs to integrate into the NCCL logs seemlessly, NCCL provides a logging
 function to `init`. This function is typically used to allow for `INFO` and `WARN` macros within
@@ -310,7 +312,8 @@ the `listen` call previously. If the sender did not connect yet, `accept` should
 should return `ncclSuccess`, setting `recvComm` to `NULL`. NCCL will call `accept` again until it
 succeeds.
 
-The `connect` API takes the opaque plugin context returned by `init` and a `ncclNetCommConfig_t`, which contains a trafficClass field.
+The `connect` API takes the opaque plugin context returned by `init`. The plugin context can reference
+the `ncclNetCommConfig_t` passed to the `init` function and containing a trafficClass field.
 This field can be used by the network plugin to specify the QoS level of the connection. By default,
 `trafficClass` is set to -1 but can be configured by the application during communicator initialization
 to select a plugin-supported QoS level.
