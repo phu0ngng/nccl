@@ -81,7 +81,7 @@ typedef enum {
 
   /* Kernel event states */
   ncclProfilerKernelChStop             = 22,
-} ncclProfilerEventState_v4_t;
+} ncclProfilerEventState_v5_t;
 
 typedef struct {
   uint8_t type;                 // event type descriptor: ncclProfileColl, ...
@@ -133,7 +133,7 @@ typedef struct {
       void* data;
     } netPlugin;
   };
-} ncclProfilerEventDescr_v4_t;
+} ncclProfilerEventDescr_v5_t;
 
 typedef struct {
   struct {
@@ -155,21 +155,21 @@ typedef struct {
   struct {
     uint64_t pTimer;
   } kernelCh;
-} ncclProfilerEventStateArgs_v4_t;
+} ncclProfilerEventStateArgs_v5_t;
 
 typedef struct {
   const char* name;
-  ncclResult_t (*init)(void** ctx, int* eMask, const char* commName, uint64_t commId, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn);
-  ncclResult_t (*startEvent)(void* ctx, void** eHandle, ncclProfilerEventDescr_v4_t* eDescr);
+  ncclResult_t (*init)(void** ctx, uint64_t commId, int* eMask, const char* commName, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn);
+  ncclResult_t (*startEvent)(void* ctx, void** eHandle, ncclProfilerEventDescr_v5_t* eDescr);
   ncclResult_t (*stopEvent)(void* eHandle);
-  ncclResult_t (*recordEventState)(void* eHandle, ncclProfilerEventState_v4_t eState, ncclProfilerEventStateArgs_v4_t* eStateArgs);
+  ncclResult_t (*recordEventState)(void* eHandle, ncclProfilerEventState_v5_t eState, ncclProfilerEventStateArgs_v5_t* eStateArgs);
   ncclResult_t (*finalize)(void* ctx);
-} ncclProfiler_v4_t;
+} ncclProfiler_v5_t;
 
-typedef ncclProfiler_v4_t ncclProfiler_t;
-typedef ncclProfilerEventDescr_v4_t ncclProfilerEventDescr_t;
-typedef ncclProfilerEventStateArgs_v4_t ncclProfilerEventStateArgs_t;
-typedef ncclProfilerEventState_v4_t ncclProfilerEventState_t;
+typedef ncclProfiler_v5_t ncclProfiler_t;
+typedef ncclProfilerEventDescr_v5_t ncclProfilerEventDescr_t;
+typedef ncclProfilerEventStateArgs_v5_t ncclProfilerEventStateArgs_t;
+typedef ncclProfilerEventState_v5_t ncclProfilerEventState_t;
 
-#define PROFILER_PLUGIN_SYM "ncclProfiler_v4"
+#define PROFILER_PLUGIN_SYM "ncclProfiler_v5"
 #endif

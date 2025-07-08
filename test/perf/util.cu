@@ -834,7 +834,7 @@ void writeErrors() {
 
 static int profilerContext;
 
-static ncclResult_t ncclProfilerInit(void** ctx, int* eMask, const char* name, uint64_t id, int nodes, int ranks, int rank, ncclDebugLogger_t logfn) {
+static ncclResult_t ncclProfilerInit(void** ctx, uint64_t id, int* eMask, const char* name, int nodes, int ranks, int rank, ncclDebugLogger_t logfn) {
   *ctx = &profilerContext;
   *eMask = (ncclProfileColl | ncclProfileP2p | ncclProfileProxyOp);
   return ncclSuccess;
@@ -905,7 +905,7 @@ static ncclResult_t ncclProfilerFinalize(void* ctx) {
 }
 
 // perftest exposes profiler interface to nccl
-ncclProfiler_t ncclProfiler_v4 {
+ncclProfiler_t ncclProfiler_v5 {
   .name = "perftest",
   .init = ncclProfilerInit,
   .startEvent = ncclProfilerStartEvent,
