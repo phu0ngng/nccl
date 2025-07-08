@@ -6,6 +6,7 @@
  
 - [NCCLNet Shared Plugin Context](items/id_987f1052/NCCLNet_Shared_Plugin_Context.md)
 - [CE_Collectives](items/id_69ed1e63/CE_Collectives.md)
+- [Add CMake build system](items/id_E21995DB/Add_CMake_build_system.md)
 <!-- V2_28_DO_NOT_MOVE -->
  
 <!------------------------------------->
