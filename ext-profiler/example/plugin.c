@@ -50,10 +50,8 @@ __hidden double gettime(void) {
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static pid_t pid;
 static int* eActivationMaskPtr;
-static int enabled = 1;
 
 __hidden ncclResult_t exampleProfilerInit(void** context, uint64_t commId, int* eActivationMask, const char* commName, int nNodes, int nranks, int rank, ncclDebugLogger_t logfn) {
-  if (__atomic_load_n(&enabled, __ATOMIC_RELAXED) == 0) return ncclInternalError;
   pthread_mutex_lock(&lock);
   if (__atomic_fetch_add(&initialized, 1, __ATOMIC_RELAXED) == 0) {
     // first thread initializes event mask, environment and detach pool
@@ -635,8 +633,4 @@ int exampleProfilerStop(void) {
     __atomic_store_n(eActivationMaskPtr, 0, __ATOMIC_RELAXED);
   }
   return ncclSuccess;
-}
-
-void exampleProfilerDisable(void) {
-  __atomic_store_n(&enabled, 0, __ATOMIC_RELAXED);
 }

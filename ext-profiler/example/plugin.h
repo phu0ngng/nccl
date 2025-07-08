@@ -7,7 +7,6 @@
 #ifndef PLUGIN_H_
 #define PLUGIN_H_
 
-void exampleProfilerDisable(void);
 int exampleProfilerStart(int eActivationMask, const char* name);
 int exampleProfilerStop(void);
 
