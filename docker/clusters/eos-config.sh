@@ -107,3 +107,7 @@ function get_nccl_ib_sl() {
 function get_planned_reserved() {
     echo "$EOS_PLANNED_RESERVED"
 }
+
+function configure_test_env() {
+    echo ""
+}

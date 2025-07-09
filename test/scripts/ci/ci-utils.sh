@@ -163,7 +163,7 @@ complete_junit_command() {
 
 init_junit_file() {
     : ${JUNIT:="junit_results.xml"}
-    rm $JUNIT
+    rm -f $JUNIT
     # Create the XML file with header
     cat << EOF > "$JUNIT"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -260,11 +260,11 @@ function move_repro_script() {
 
 function generate_repro_script() {
     label=$1
-    rm repro.sh
+    rm -f repro.sh
     echo "#!/bin/bash" > repro.sh
     run_file=repro.sh
     if [ "$SALLOC" != "" ]; then
-        rm run.sh
+        rm -f run.sh
         failed_dir="$(get_failed_dir $label)"
         echo "$SALLOC $failed_dir/run.sh" >> repro.sh
         run_file=run.sh
