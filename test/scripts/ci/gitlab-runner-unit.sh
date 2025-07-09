@@ -73,6 +73,12 @@ else
   echo "Disabled FT TESTS network test\n\n"
 fi
 
+if [[ ${DEVICE_ID_TESTS} -eq 1 ]] ; then
+  run_command "device_id_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/device_id_test" ""
+else
+  "Disabled Device ID TESTS test\n\n"
+fi
+
 export NCCL_DEBUG=$NCCL_DEBUG_OLD
 if [[ ${PLUGIN_TESTS_NET_TUNER} -eq 1 ]] ; then
   run_command "make_mixed_tuner" "CMD" 1 "" "" "make" "-C ext-mixed/example test"
