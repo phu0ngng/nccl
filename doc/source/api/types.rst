@@ -266,6 +266,11 @@ ncclConfig_t
   Set to a positive integer value. By default, NCCL will automatically determine the best number of CTAs based on
   the system configuration.
 
+ .. c:macro:: commName
+
+  Specify the user defined name for the communicator.
+  The communicator name can be used by NCCL to enrich logging and profiling.
+
 .. _ncclsiminfo:
 
 ncclSimInfo_t
