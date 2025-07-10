@@ -38,8 +38,8 @@ add_custom_command(
 add_library(nccl_device OBJECT
             ${files}
             ${symmetric_files}
-            common.cu
-            onerank.cu
+            ${CMAKE_CURRENT_SOURCE_DIR}/common.cu
+            ${CMAKE_CURRENT_SOURCE_DIR}/onerank.cu
 )
 
 set_target_properties(nccl_device PROPERTIES
@@ -51,6 +51,7 @@ set_target_properties(nccl_device PROPERTIES
 target_include_directories(nccl_device PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src/include
+    ${CMAKE_SOURCE_DIR}/src/include/plugin
     ${CMAKE_BINARY_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}/gensrc
     ${CUDAToolkit_INCLUDE_DIRS}

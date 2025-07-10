@@ -2,6 +2,7 @@
 set(LIBSRCFILES
     bootstrap.cc
     channel.cc
+    ce_coll.cc
     collectives.cc
     debug.cc
     enqueue.cc
@@ -109,8 +110,6 @@ target_link_libraries(nccl
     pthread
     rt
     dl
-    cudart
-    cuda
     ${CUDAToolkit_LIBRARIES}
     ${EXTRA_LIBS}
 )
@@ -165,8 +164,6 @@ target_link_libraries(nccl_static
     pthread
     rt
     dl
-    cudart
-    cuda
     ${CUDAToolkit_LIBRARIES}
     ${EXTRA_LIBS}
 )
