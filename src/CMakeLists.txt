@@ -125,8 +125,11 @@ set(RAS_BINSRCFILES ras/client.cc)
 add_executable(ncclras ${RAS_BINSRCFILES})
 
 target_include_directories(ncclras PUBLIC
+    ${CMAKE_BINARY_DIR}/include
     ${CUDAToolkit_INCLUDE_DIRS}
 )
+
+add_dependencies(ncclras nccl_header)
 
 target_link_libraries(ncclras
     PRIVATE
