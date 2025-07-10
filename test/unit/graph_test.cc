@@ -139,7 +139,7 @@ void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
   props->name = dev->name;
 
   // get speed, port, guid, and optional latency
-  CHECK(xmlGetAttrUint64(node, "guid", &props->guid));
+  CHECK(xmlGetAttrUint64Default(node, "guid", &props->guid, /*default=*/devIndex));
   CHECK(xmlGetAttrInt(node, "port", &props->port));
   CHECK(xmlGetAttrInt(node, "speed", &props->speed));
   dev->speed = props->speed;
@@ -605,12 +605,15 @@ int main(int argc, const char* argv[]) {
     RUN("P9-6V");
     RUN("P9-4V");
     RUN("HP-ARM-V100");
+    RUN("GB200");
+    RUN("GB200-Ariel-NVL8");
+    RUN("GB200-AWS-NVL8");
     RUN("GB200-NVL36");
     RUN("GB200-NVL72");
-    RUN("GB200-CX8");
-    RUN("GB200-CX8-NVLD8");
-    RUN("GB300-CX8");
-    RUN("GB300-CX8-NVLD8");
+    RUN("GB200-CX8-NVL4");
+    RUN("GB200-CX8-NVL32");
+    RUN("GB300-CX8-NVL4");
+    RUN("GB300-CX8-NVL32");
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
   }
