@@ -363,6 +363,7 @@ unit_tests-P100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -408,6 +409,7 @@ unit_tests-P40:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -453,6 +455,7 @@ unit_tests-GP100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -498,6 +501,7 @@ unit_tests-A40-single:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -543,6 +547,7 @@ unit_tests-A40-dual:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -588,6 +593,7 @@ unit_tests-A100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -641,6 +647,7 @@ unit_tests-eos:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -687,6 +694,7 @@ unit_tests-AWS_H100_EFA:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -760,6 +768,7 @@ unit_tests-draco_oci:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -812,6 +821,7 @@ unit_tests-pre-nyx:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -863,6 +873,7 @@ unit_tests-pre-tyche:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -903,6 +914,7 @@ unit_tests-ipp6-a100:
     NP: 1
     NCCL_HOME: build
     RUN_MODE: "MPI"
+    DEVICE_ID_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
