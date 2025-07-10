@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include <gtest/gtest.h>
+#include <nccl.h>
 #pragma once
 template <typename OP, typename DT>
 void freePP(OP op, DT**& ptr, const int len) {
