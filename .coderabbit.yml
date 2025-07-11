@@ -12,6 +12,7 @@ reviews:
     enabled: false
     auto_incremental_review: false
   commit_status: false
+  high_level_summary: false
 
   poem: false
 

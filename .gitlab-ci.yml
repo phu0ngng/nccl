@@ -628,10 +628,8 @@ unit_tests-eos:
     NCCL_HOME: build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
-    DISABLE_MEMLEAK: "0" # Enable after addressing https://nvbugspro.nvidia.com/bug/4868411
     CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    PLANNED_RESERVED: "Planned"
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
     ENQUEUE_TESTS_ARGS: 1
     # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
@@ -705,15 +703,26 @@ unit_tests-AWS_H100_EFA:
       export NNODES=1
       export NGPUS=8
       export NP=1
-      export GRAPH=0
-      export DISABLE_MEMLEAK_NETWORK=1
-      export DISABLE_MEMLEAK=1
       export NCCL_HOME=build
       export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
       export RUN_MODE="SALLOC_MPI"
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
       export JUNIT=$JUNIT
+      export ENQUEUE_TESTS_ARGS=$ENQUEUE_TESTS_ARGS
+      export ENQUEUE_TESTS_FIFO=$ENQUEUE_TESTS_FIFO
+      export GRAPH_TESTS_DEFAULT=$GRAPH_TESTS_DEFAULT
+      export MEMLEAK_TESTS_DEFAULT=$MEMLEAK_TESTS_DEFAULT
+      export MEMLEAK_TESTS_NO_P2P=$MEMLEAK_TESTS_NO_P2P
+      export MEMLEAK_TESTS_NETWORK=$MEMLEAK_TESTS_NETWORK
+      export FT_TESTS_DEFAULT=$FT_TESTS_DEFAULT
+      export FT_TESTS_NO_P2P=$FT_TESTS_NO_P2P
+      export FT_TESTS_NETWORK=$FT_TESTS_NETWORK
+      export PLUGIN_TESTS_NET_TUNER=$PLUGIN_TESTS_NET_TUNER
+      export LOG_ALGO_RS_TESTS=$LOG_ALGO_RS_TESTS
+      export LOG_ALGO_AG_TESTS=$LOG_ALGO_AG_TESTS
+      export PLUGIN_LOADING_TESTS=$PLUGIN_LOADING_TESTS
+      export DEVICE_ID_TESTS=$DEVICE_ID_TESTS
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
@@ -906,7 +915,7 @@ unit_tests-ipp6-a100:
     - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 20
     SLURM_PARTITION: a100-cicd
     NNODES: 1
@@ -914,6 +923,20 @@ unit_tests-ipp6-a100:
     NP: 1
     NCCL_HOME: build
     RUN_MODE: "MPI"
+    DEVICE_ID_TESTS: 1
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
     DEVICE_ID_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1137,7 +1160,6 @@ apitest-eos:
     SLURM_ACCOUNT: coreai_libraries_nccl
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    PLANNED_RESERVED: "Planned"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -1194,6 +1216,9 @@ apitest-AWS_H100_EFA:
       export CI_JOB_NAME=${CI_JOB_NAME}
       export JUNIT=$JUNIT
       export NCCL_NVLS_ENABLE=0
+      export API_TESTS_DEFAULT=$API_TESTS_DEFAULT
+      export API_TESTS_NO_P2P=$API_TESTS_NO_P2P
+      export API_TESTS_NETWORK=$API_TESTS_NETWORK
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
@@ -1352,7 +1377,7 @@ apitest-ipp6-a100:
     - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
     SLURM_PARTITION: a100-cicd
     NNODES: 1
@@ -1360,6 +1385,9 @@ apitest-ipp6-a100:
     NP: 1
     NCCL_HOME: build
     RUN_MODE: "MPI"
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1815,7 +1843,7 @@ perftest-single-ipp6-a100:
     - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
     SLURM_PARTITION: a100-cicd
     NNODES: 1
@@ -2137,7 +2165,7 @@ perftest-multi-ipp6-a100:
     - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
     SLURM_PARTITION: a100-cicd
     NNODES: 2
