@@ -1495,7 +1495,6 @@ int main(int argc, char* argv[], char **envp) {
   if (tuning) {
     setenv("NCCL_PROFILER_PLUGIN", "STATIC_PLUGIN", 1);
   } else {
-    setenv("NCCL_PROFILER_PLUGIN", "example", 1);
     const char* profilerMaskStr = getenv("NCCL_PERF_PROFILER_MASK");
     if (profilerMaskStr) {
       profilerMask = strtol(profilerMaskStr, nullptr, 0);
@@ -1508,8 +1507,8 @@ int main(int argc, char* argv[], char **envp) {
     if (profilerItersStr) {
       profilerIters = strtol(getenv("NCCL_PERF_PROFILER_ITERS"), nullptr, 0);
     }
-    if (profilerMask == 0) {
-      exampleProfilerDisable();
+    if (profilerMask != 0) {
+      setenv("NCCL_PROFILER_PLUGIN", "example", 1);
     }
   }
 #ifdef MPI_SUPPORT
