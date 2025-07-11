@@ -1487,6 +1487,38 @@ ncclResult_t getLocalNetCountByBw(struct ncclTopoSystem* system, int gpu, int *c
   return ncclSuccess;
 }
 
+enum netDevsPolicy {
+  NETDEVS_POLICY_AUTO = 0x0,
+  NETDEVS_POLICY_ALL = 0x1,
+  NETDEVS_POLICY_MAX = 0x2,
+  NETDEVS_POLICY_UNDEF = 0xffffffff
+};
+
+static enum netDevsPolicy netDevsPolicy = NETDEVS_POLICY_UNDEF;
+static int netDevsPolicyNum = -1;
+
+static void getNetDevsPolicyOnce() {
+  const char* envStr = ncclGetEnv("NCCL_NETDEVS_POLICY");
+  if (envStr) {
+    if (strcasecmp(envStr, "AUTO") == 0) {
+      netDevsPolicy = NETDEVS_POLICY_AUTO;
+    } else if (strcasecmp(envStr, "ALL") == 0) {
+      netDevsPolicy = NETDEVS_POLICY_ALL;
+    } else if (strncasecmp(envStr, "MAX:", strlen("MAX:")) == 0) {
+      int envNum = atoi(envStr + strlen("MAX:"));
+      if (envNum > 0) {
+        netDevsPolicy = NETDEVS_POLICY_MAX;
+        netDevsPolicyNum = envNum;
+      }
+    }
+    if (netDevsPolicy == NETDEVS_POLICY_UNDEF)
+      INFO(NCCL_ENV, "Unable to recognize NCCL_NETDEVS_POLICY=%s, using NCCL_NETDEVS_POLICY_AUTO instead.", envStr);
+    else
+      INFO(NCCL_ENV, "NCCL_NETDEVS_POLICY set by environment to %s", envStr);
+  }
+  if (netDevsPolicy == NETDEVS_POLICY_UNDEF) netDevsPolicy = NETDEVS_POLICY_AUTO;
+}
+
 ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int channelId, int64_t* id, int* dev) {
   int gpu;
   NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpu, /*showWarn=*/true));
@@ -1499,13 +1531,30 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int ch
     return ncclInternalError;
   }
 
-  int localGpus[NCCL_TOPO_MAX_NODES];
-  int localGpuCount;
-  NCCLCHECK(ncclTopoGetLocal(system, NET, localNets[0], GPU, localGpus, &localGpuCount, NULL));
+  static pthread_once_t once = PTHREAD_ONCE_INIT;
+  pthread_once(&once,getNetDevsPolicyOnce);
+  int netsPerGpu = 0;
+  if (netDevsPolicy == NETDEVS_POLICY_AUTO) {
+    int localGpus[NCCL_TOPO_MAX_NODES];
+    int localGpuCount;
+    NCCLCHECK(ncclTopoGetLocal(system, NET, localNets[0], GPU, localGpus, &localGpuCount, NULL));
+    netsPerGpu = DIVUP(localNetCount, localGpuCount);
+  } else if (netDevsPolicy == NETDEVS_POLICY_ALL) {
+    netsPerGpu = localNetCount;
+  } else if (netDevsPolicy == NETDEVS_POLICY_MAX) {
+    if (netDevsPolicyNum <= 0) {
+      WARN("Invalid number of network devices = %d for policy MAX", netDevsPolicyNum);
+      return ncclInternalError;
+    }
+    netsPerGpu = std::min(netDevsPolicyNum, localNetCount);
+  } else {
+    WARN("Unknown netDevs policy");
+    return ncclInternalError;
+  }
 
   int net = system->nodes[GPU].nodes[gpu].gpu.dev;
   if (isPow2(localNetCount)) net = mirrorBits(net, localNetCount);
-  net += channelId%(DIVUP(localNetCount,localGpuCount));
+  net += channelId%(netsPerGpu);
   if (id) *id = system->nodes[NET].nodes[localNets[net%localNetCount]].id;
   if (dev) *dev = system->nodes[NET].nodes[localNets[net%localNetCount]].net.dev;
   return ncclSuccess;
