@@ -1565,25 +1565,10 @@ ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu
   cpu_set_t mask;
   SYSCHECK(sched_getaffinity(0, sizeof(cpu_set_t), &mask), "sched_getaffinity");
 
-#ifdef ENABLE_TRACE
-  {
-    char affinityStr[sizeof(cpu_set_t)*2];
-    TRACE(NCCL_INIT, "Current affinity for GPU %d is %s", gpu->gpu.dev,
-          ncclCpusetToRangeStr(&mask, affinityStr, sizeof(affinityStr)));
-  }
-#endif
-
   // Get the affinity of the CPU close to our GPU.
   cpu_set_t cpuMask = cpu->cpu.affinity;
 
-#ifdef ENABLE_TRACE
-  {
-    char affinityStr[sizeof(cpu_set_t)*2];
-    TRACE(NCCL_INIT, "CPU GPU affinity for GPU %d is %s", gpu->gpu.dev,
-          ncclCpusetToRangeStr(&cpuMask, affinityStr, sizeof(affinityStr)));
-  }
-#endif
-
+  // Get the final affinity
   cpu_set_t finalMask;
   if (ncclParamIgnoreCpuAffinity())
     // Ignore the CPU affinity set and use the GPU one instead
@@ -1594,12 +1579,22 @@ ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu
 
   memcpy(affinity, &finalMask, sizeof(cpu_set_t));
 
-  // If there is a non empty set, use it to set affinity
+  // display the final affinity
+  char msg[1024] = "";
+  snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), "Affinity for GPU %d is ", gpu->gpu.dev);
   if (CPU_COUNT(&finalMask)) {
-    char affinityStr[sizeof(cpu_set_t)*2];
-    INFO(NCCL_INIT, "Setting affinity for GPU %d to %s", gpu->gpu.dev,
-         ncclCpusetToRangeStr(&finalMask, affinityStr, sizeof(affinityStr)));
+    (void)ncclCpusetToRangeStr(&finalMask, msg + strlen(msg), sizeof(msg) - strlen(msg));
+  } else {
+    snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), "empty, ignoring");
   }
+  snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), ". (GPU affinity = ");
+  (void)ncclCpusetToRangeStr(&cpuMask, msg + strlen(msg), sizeof(msg) - strlen(msg));
+  if (!ncclParamIgnoreCpuAffinity()) {
+    snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), " ; CPU affinity = ");
+    (void)ncclCpusetToRangeStr(&mask, msg + strlen(msg), sizeof(msg) - strlen(msg));
+  }
+  snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), ").");
+  INFO(NCCL_INIT, "%s: %s", __func__, msg);
   return ncclSuccess;
 }
 
