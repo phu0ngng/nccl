@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <mutex>
 
 #include "checks.h"
 #include "debug.h"
@@ -18,7 +19,7 @@ extern ncclTuner_t* getNcclTuner_v3(void* lib);
 extern ncclTuner_t* getNcclTuner_v4(void* lib);
 extern ncclTuner_t* getNcclTuner_v5(void* lib);
 
-pthread_mutex_t tunerPluginLock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex tunerPluginMutex;
 static int tunerPluginRefCount;
 static void* tunerPluginLib = nullptr;
 static ncclTuner_t* tunerSymbol = nullptr;
@@ -40,7 +41,7 @@ ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
     return ncclSuccess;
   }
 
-  pthread_mutex_lock(&tunerPluginLock);
+  std::lock_guard<std::mutex> lock(tunerPluginMutex);
   if (tunerPluginLoadFailed == status) {
     goto exit;
   }
@@ -79,7 +80,6 @@ ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
   comm->tunerPluginLoaded = 1;
 
 exit:
-  pthread_mutex_unlock(&tunerPluginLock);
   return ncclSuccess;
 fail:
   if (tunerPluginLib) NCCLCHECK(ncclClosePluginLib(tunerPluginLib, ncclPluginTypeTuner));
@@ -89,7 +89,7 @@ fail:
 }
 
 ncclResult_t ncclTunerPluginUnload(struct ncclComm* comm) {
-  pthread_mutex_lock(&tunerPluginLock);
+  std::lock_guard<std::mutex> lock(tunerPluginMutex);
   if (comm->tunerPluginLoaded && 0 == (--tunerPluginRefCount)) {
     INFO(NCCL_TUNING, "TUNER/Plugin: Closing tuner: '%s'", tunerSymbol->name);
     NCCLCHECK(ncclClosePluginLib(tunerPluginLib, ncclPluginTypeTuner));
@@ -99,6 +99,5 @@ ncclResult_t ncclTunerPluginUnload(struct ncclComm* comm) {
     status = tunerPluginLoadReady;
     comm->tunerPluginLoaded = 0;
   }
-  pthread_mutex_unlock(&tunerPluginLock);
   return ncclSuccess;
 }

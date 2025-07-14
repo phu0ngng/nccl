@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include "cpuset.h"
 #include "bootstrap.h"
+#include <mutex>
 
 #define BUSID_SIZE (sizeof("0000:00:00.0"))
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
@@ -1297,7 +1298,7 @@ ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, struct nc
   return ncclSuccess;
 }
 
-static pthread_mutex_t netLock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex netMutex;
 
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system, const char* dumpXmlFile) {
   ncclResult_t ret = ncclSuccess;
@@ -1307,7 +1308,6 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   struct ncclXml* rankXml;
   int localRank = -1, nLocalRanks = 0;
   struct ncclTopoNetInfo netInfo = {0};
-  int netLockHeld = 0;
   NCCLCHECK(xmlAlloc(&xml, NCCL_TOPO_XML_MAX_NODES));
   const char* xmlTopoFile = ncclGetEnv("NCCL_TOPO_FILE");
   if (xmlTopoFile) {
@@ -1347,36 +1347,35 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
 
   // Auto-detect NICs if needed. net/collnet share the same xml/graph nodes,
   // so we start with collnet so that it has precedence.
-  pthread_mutex_lock(&netLock);
-  netLockHeld = 1;
-  INFO(NCCL_GRAPH, "TOPO/NET : Importing network plugins to topology");
-  if (collNetSupport(comm)) {
-    netInfo.coll = 1;
-    netInfo.netPluginIndex = comm->netPluginIndex;
-    netInfo.dmaBufSupport = comm->dmaBufSupport;
-    netInfo.netContext = comm->collNetContext;
-    netInfo.getDevCount = ncclCollNetGetDevCount;
-    netInfo.setVirtDevCount = ncclCollNetSetVirtDevCount;
-    netInfo.name = comm->ncclCollNet->name;
-    netInfo.getProperties = comm->ncclCollNet->getProperties;
-    netInfo.makeVDevice = comm->ncclCollNet->makeVDevice;
-    netInfo.devices = comm->ncclCollNet->devices;
-    NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
-  }
+  {
+      std::lock_guard<std::mutex> lock(netMutex);
+      INFO(NCCL_GRAPH, "TOPO/NET : Importing network plugins to topology");
+      if (collNetSupport(comm)) {
+          netInfo.coll = 1;
+          netInfo.netPluginIndex = comm->netPluginIndex;
+          netInfo.dmaBufSupport = comm->dmaBufSupport;
+          netInfo.netContext = comm->collNetContext;
+          netInfo.getDevCount = ncclCollNetGetDevCount;
+          netInfo.setVirtDevCount = ncclCollNetSetVirtDevCount;
+          netInfo.name = comm->ncclCollNet->name;
+          netInfo.getProperties = comm->ncclCollNet->getProperties;
+          netInfo.makeVDevice = comm->ncclCollNet->makeVDevice;
+          netInfo.devices = comm->ncclCollNet->devices;
+          NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
+      }
 
-  netInfo.coll = 0;
-  netInfo.netPluginIndex = comm->netPluginIndex;
-  netInfo.dmaBufSupport = comm->dmaBufSupport;
-  netInfo.netContext = comm->netContext;
-  netInfo.getDevCount = ncclNetGetDevCount;
-  netInfo.setVirtDevCount = ncclNetSetVirtDevCount;
-  netInfo.name = comm->ncclNet->name;
-  netInfo.getProperties = comm->ncclNet->getProperties;
-  netInfo.makeVDevice = comm->ncclNet->makeVDevice;
-  netInfo.devices = comm->ncclNet->devices;
-  NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
-  pthread_mutex_unlock(&netLock);
-  netLockHeld = 0;
+      netInfo.coll = 0;
+      netInfo.netPluginIndex = comm->netPluginIndex;
+      netInfo.dmaBufSupport = comm->dmaBufSupport;
+      netInfo.netContext = comm->netContext;
+      netInfo.getDevCount = ncclNetGetDevCount;
+      netInfo.setVirtDevCount = ncclNetSetVirtDevCount;
+      netInfo.name = comm->ncclNet->name;
+      netInfo.getProperties = comm->ncclNet->getProperties;
+      netInfo.makeVDevice = comm->ncclNet->makeVDevice;
+      netInfo.devices = comm->ncclNet->devices;
+      NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
+  }
 
   // Remove XML branches which don't have a node with keep="1" (typically when importing a topology)
   NCCLCHECKGOTO(ncclTopoTrimXml(xml), ret, fail);
@@ -1434,7 +1433,6 @@ exit:
   free(xml);
   return ret;
 fail:
-  if (netLockHeld) pthread_mutex_unlock(&netLock);
   goto exit;
 }
 

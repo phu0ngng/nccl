@@ -15,6 +15,7 @@
 #include <sys/syscall.h>
 #include <chrono>
 #include "param.h"
+#include <mutex>
 
 #define NCCL_DEBUG_RESET_TRIGGERED (-2)
 
@@ -30,7 +31,7 @@ thread_local int ncclDebugNoWarn = 0;
 char ncclLastError[1024] = ""; // Global string for the last error in human readable form
 uint64_t ncclDebugMask = 0;
 FILE *ncclDebugFile = stdout;
-static pthread_mutex_t ncclDebugLock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex ncclDebugMutex;
 static std::chrono::steady_clock::time_point ncclEpoch;
 static bool ncclWarnSetDebugInfo = false;
 
@@ -269,15 +270,13 @@ static void ncclDebugInit() {
  * they can share the debugging mechanisms and output files
  */
 void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *filefunc, int line, const char *fmt, ...) {
-  bool locked = false; // Keeps track of the ncclDebugLock state.
   int gotLevel = __atomic_load_n(&ncclDebugLevel, __ATOMIC_ACQUIRE);
 
   if (ncclDebugNoWarn != 0 && level == NCCL_LOG_WARN) { level = NCCL_LOG_INFO; flags = ncclDebugNoWarn; }
 
   // Save the last error (WARN) as a human readable string
   if (level == NCCL_LOG_WARN) {
-    pthread_mutex_lock(&ncclDebugLock);
-    locked = true;
+    std::lock_guard<std::mutex> lock(ncclDebugMutex);
     va_list vargs;
     va_start(vargs, fmt);
     (void) vsnprintf(ncclLastError, sizeof(ncclLastError), fmt, vargs);
@@ -285,20 +284,13 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   }
 
   if (gotLevel >= 0 && (gotLevel < level || (flags & ncclDebugMask) == 0)) {
-    if (locked)
-      pthread_mutex_unlock(&ncclDebugLock);
     return;
   }
 
-  if (!locked) {
-    pthread_mutex_lock(&ncclDebugLock);
-    locked = true;
-  }
-  // From this point on ncclDebugLock is always locked so we don't need to check "locked" anymore.
+  std::lock_guard<std::mutex> lock(ncclDebugMutex);
   if (ncclDebugLevel < 0)
     ncclDebugInit();
   if (ncclDebugLevel < level || ((flags & ncclDebugMask) == 0)) {
-    pthread_mutex_unlock(&ncclDebugLock);
     return;
   }
 
@@ -386,7 +378,6 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   // necessary since we write bytes instead of the string.
   buffer[len++] = '\n';
   fwrite(buffer, 1, len, ncclDebugFile);
-  pthread_mutex_unlock(&ncclDebugLock);
 }
 
 // Non-deprecated version for internal use.
@@ -395,10 +386,9 @@ __attribute__ ((visibility("default")))
 void ncclResetDebugInitInternal() {
   // Cleans up from a previous ncclDebugInit() and reruns.
   // Use this after changing NCCL_DEBUG and related parameters in the environment.
-  pthread_mutex_lock(&ncclDebugLock);
+  std::lock_guard<std::mutex> lock(ncclDebugMutex);
   // Let ncclDebugInit() know to complete the reset.
   __atomic_store_n(&ncclDebugLevel, NCCL_DEBUG_RESET_TRIGGERED, __ATOMIC_RELEASE);
-  pthread_mutex_unlock(&ncclDebugLock);
 }
 
 // In place of: NCCL_API(void, ncclResetDebugInit);
