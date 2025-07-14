@@ -68,7 +68,7 @@ typedef enum { ncclSuccess                 =  0,
 
 /* Communicator configuration. Users can assign value to attributes to specify the
  * behavior of a communicator. */
-typedef struct ncclConfig_v22700 {
+typedef struct ncclConfig_v22800 {
   /* attributes that users should never touch. */
   size_t size;
   unsigned int magic;
@@ -86,6 +86,7 @@ typedef struct ncclConfig_v22700 {
   int CTAPolicy;
   int shrinkShare;
   int nvlsCTAs;
+  int nChannelsPerNetPeer;
 } ncclConfig_t;
 
 /* Config initializer must be assigned to initialize config structure when it is created.
@@ -106,6 +107,7 @@ typedef struct ncclConfig_v22700 {
   NCCL_CONFIG_UNDEF_INT,                    /* CTAPolicy */             \
   NCCL_CONFIG_UNDEF_INT,                    /* shrinkShare */           \
   NCCL_CONFIG_UNDEF_INT,                    /* nvlsCTAs */              \
+  NCCL_CONFIG_UNDEF_INT,                    /* nChannelsPerNetPeer */   \
 }
 
 /* This struct will be used by ncclGroupSimulateEnd() API to query information about simulation. */

@@ -1292,6 +1292,8 @@ NCCL_PARAM(MaxCTAs, "MAX_CTAS", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(MinCTAs, "MIN_CTAS", NCCL_CONFIG_UNDEF_INT);
 #define NCCL_MAX_CGA_CLUSTER_SIZE 8
 
+NCCL_PARAM(NChannelsPerNetPeer, "NCHANNELS_PER_NET_PEER", NCCL_CONFIG_UNDEF_INT);
+
 #define NCCL_COMMINIT_FUNCNAME_LEN 128
 struct ncclCommInitRankAsyncJob {
   struct ncclAsyncJob base;
@@ -1516,8 +1518,9 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int ctaPolicyEnv;
   int shrinkShareEnv;
   int nvlsCTAsEnv;
+  int nChannelsPerNetPeerEnv;
 
-  /* override configuration from env variable. */
+  /* override configuration with env variable. */
   blockingEnv = ncclParamCommBlocking();
   if (blockingEnv == 0 || blockingEnv == 1)
     comm->config.blocking = blockingEnv;
@@ -1544,6 +1547,15 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
       INFO(NCCL_ENV, "NCCL_MAX_CTAS %d is too low, leaving it set at %d", maxCTAsEnv, comm->config.maxCTAs);
     else
       comm->config.maxCTAs = maxCTAsEnv;
+  }
+
+  /* override configuration with env variable. */
+  nChannelsPerNetPeerEnv = ncclParamNChannelsPerNetPeer();
+  if (nChannelsPerNetPeerEnv != NCCL_CONFIG_UNDEF_INT) {
+    if (nChannelsPerNetPeerEnv <= 0)
+      INFO(NCCL_ENV, "NCCL_NCHANNELS_PER_NET_PEER %d is too low, leaving it set at %d", nChannelsPerNetPeerEnv, comm->config.nChannelsPerNetPeer);
+    else
+      comm->config.nChannelsPerNetPeer = nChannelsPerNetPeerEnv;
   }
 
   envNetName = ncclGetEnv("NCCL_NET");
@@ -1673,6 +1685,9 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
       internalConfigPtr->shrinkShare = defaultConfig.shrinkShare;
       internalConfigPtr->nvlsCTAs = defaultConfig.nvlsCTAs;
     }
+    if (internalConfigPtr->version < NCCL_VERSION(2, 28, 0)) {
+      internalConfigPtr->nChannelsPerNetPeer = defaultConfig.nChannelsPerNetPeer;
+    }
   }
 
   /* check input config attributes, -1 means user-undefined and we should use default value from NCCL. */
@@ -1729,6 +1744,12 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     goto fail;
   }
 
+  if (internalConfigPtr->nChannelsPerNetPeer != NCCL_CONFIG_UNDEF_INT && (internalConfigPtr->nChannelsPerNetPeer <= 0 || internalConfigPtr->nChannelsPerNetPeer > MAXCHANNELS)) {
+    WARN("Invalid config nChannelsPerNetPeer attribute value %d", internalConfigPtr->nChannelsPerNetPeer);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
   /* default config value can be tuned on different platform. */
   NCCL_CONFIG_DEFAULT(internalConfigPtr, blocking, NCCL_CONFIG_UNDEF_INT, 1, "Blocking", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, cgaClusterSize, NCCL_CONFIG_UNDEF_INT, 4, "CGA cluster size", "%d");
@@ -1742,6 +1763,8 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   NCCL_CONFIG_DEFAULT(internalConfigPtr, CTAPolicy, NCCL_CONFIG_UNDEF_INT, NCCL_CTA_POLICY_DEFAULT, "CTA policy flags", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, shrinkShare, NCCL_CONFIG_UNDEF_INT, 0, "shrinkShare", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, nvlsCTAs, NCCL_CONFIG_UNDEF_INT, NCCL_CONFIG_UNDEF_INT, "nvlsCTAs", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, nChannelsPerNetPeer, NCCL_CONFIG_UNDEF_INT,
+                      NCCL_CONFIG_UNDEF_INT, "nChannelsPerNetPeer", "%d");
 
   /* assign config to communicator */
   comm->config.blocking = internalConfigPtr->blocking;
@@ -1756,7 +1779,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   comm->config.CTAPolicy = internalConfigPtr->CTAPolicy;
   comm->config.shrinkShare = internalConfigPtr->shrinkShare;
   comm->config.nvlsCTAs = internalConfigPtr->nvlsCTAs;
-
+  comm->config.nChannelsPerNetPeer = internalConfigPtr->nChannelsPerNetPeer;
   NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
 
 exit:
