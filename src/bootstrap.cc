@@ -14,6 +14,7 @@
 #include "proxy.h"
 #include "param.h"
 #include "ras.h"
+#include <mutex>
 
 #define BOOTSTRAP_N_CHECK_ABORT           10000
 #define BOOTSTRAP_TAG_CONNECT             (0x1 << 31)
@@ -85,13 +86,13 @@ struct bootstrapRootArgs {
 static char bootstrapNetIfName[MAX_IF_NAME_SIZE+1];
 static union ncclSocketAddress bootstrapNetIfAddr;
 static int bootstrapNetInitDone = 0;
-pthread_mutex_t bootstrapNetLock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex bootstrapNetMutex;
 
 NCCL_PARAM(BootstrapNetEnable,"OOB_NET_ENABLE", 0);
 
 ncclResult_t bootstrapNetInit() {
   if (bootstrapNetInitDone == 0) {
-    pthread_mutex_lock(&bootstrapNetLock);
+    std::lock_guard<std::mutex> lock(bootstrapNetMutex);
     if (bootstrapNetInitDone == 0) {
       const char* env = ncclGetEnv("NCCL_COMM_ID");
       int nIfs = 0;
@@ -99,21 +100,18 @@ ncclResult_t bootstrapNetInit() {
         union ncclSocketAddress remoteAddr;
         if (ncclSocketGetAddrFromString(&remoteAddr, env) != ncclSuccess) {
           WARN("Invalid NCCL_COMM_ID, please use format: <ipv4>:<port> or [<ipv6>]:<port> or <hostname>:<port>");
-          pthread_mutex_unlock(&bootstrapNetLock);
           return ncclInvalidArgument;
         }
         NCCLCHECK(ncclFindInterfaceMatchSubnet(bootstrapNetIfName, &bootstrapNetIfAddr, &remoteAddr, MAX_IF_NAME_SIZE,
                                                &nIfs));
         if (nIfs <= 0) {
           WARN("NET/Socket : No usable listening interface found");
-          pthread_mutex_unlock(&bootstrapNetLock);
           return ncclSystemError;
         }
       } else {
         NCCLCHECK(ncclFindInterfaces(bootstrapNetIfName, &bootstrapNetIfAddr, MAX_IF_NAME_SIZE, 1, &nIfs));
         if (nIfs <= 0) {
           WARN("Bootstrap : no socket interface found");
-          pthread_mutex_unlock(&bootstrapNetLock);
           return ncclInvalidUsage;
         }
       }
@@ -123,7 +121,6 @@ ncclResult_t bootstrapNetInit() {
       INFO(NCCL_BOOTSTRAP, "Bootstrap: Using%s", line);
       bootstrapNetInitDone = 1;
     }
-    pthread_mutex_unlock(&bootstrapNetLock);
   }
   return ncclSuccess;
 }
@@ -485,7 +482,7 @@ static ncclResult_t getUDS(uint64_t* peerUDS) {
 static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
   static int devOOB = -1;
   if (devOOB < 0) {
-    pthread_mutex_lock(&bootstrapNetLock);
+    std::lock_guard<std::mutex> lock(bootstrapNetMutex);
     if (devOOB < 0) {
       const char* userIfEnv = ncclGetEnv("NCCL_OOB_NET_IFNAME");
       if (userIfEnv && strlen(userIfEnv) > 0) {
@@ -516,7 +513,6 @@ static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
             WARN("no device found matching %s%s, verify NCCL_OOB_NET_IFNAME", searchExact ? "exactly " : "", userIfEnv);
           else
             WARN("no device found after excluding %s%s, verify NCCL_OOB_NET_IFNAME", searchExact ? "exactly " : "", userIfEnv);
-          pthread_mutex_unlock(&bootstrapNetLock);
           return ncclInvalidArgument;
         }
       } else {
@@ -529,7 +525,6 @@ static ncclResult_t netGetDevice(int rank, struct ncclComm* comm, int* dev) {
       bool hasProp = res == ncclSuccess;
       INFO(NCCL_BOOTSTRAP, "Bootstrap: Using %s:%d", (hasProp) ? props.name : "N/A", (hasProp) ? props.port : -1);
     }
-    pthread_mutex_unlock(&bootstrapNetLock);
   }
   *dev = devOOB;
   return ncclSuccess;

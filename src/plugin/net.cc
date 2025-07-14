@@ -68,7 +68,7 @@ typedef struct netPluginLib {
 int pluginCount = 0;
 bool netPluginLibsInitialized = false;
 netPluginLib_t netPluginLibs[NCCL_NET_MAX_PLUGINS] = { 0 };
-static pthread_mutex_t netPluginLock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex netPluginMutex;
 static std::once_flag initPluginLibsOnceFlag;
 
 static ncclResult_t ncclNetPluginUnload(netPluginLib_t* pluginLib) {
@@ -271,7 +271,7 @@ static void initPluginLibsOnceFunc() {
 ncclResult_t ncclNetInit(struct ncclComm* comm) {
   bool ncclNetPluginInitialized = false;
   std::call_once(initPluginLibsOnceFlag, initPluginLibsOnceFunc);
-  pthread_mutex_lock(&netPluginLock);
+  std::lock_guard<std::mutex> lock(netPluginMutex);
   for (int pluginIndex = 0; pluginIndex < pluginCount; pluginIndex++) {
     if ((pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) && (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateLoadReady)) {
       NCCLCHECK(ncclNetPluginLoad(&netPluginLibs[pluginIndex]));
@@ -290,7 +290,6 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
       }
     }
   }
-  pthread_mutex_unlock(&netPluginLock);
   if (ncclNetPluginInitialized) return ncclSuccess;
   WARN("Failed to initialize any NET plugin");
   return ncclInvalidUsage;
@@ -298,13 +297,12 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
 
 ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
   int pluginIndex = comm->netPluginIndex;
-  pthread_mutex_lock(&netPluginLock);
+  std::lock_guard<std::mutex> lock(netPluginMutex);
   NCCLCHECK(comm->ncclNet->finalize(comm->netContext));
   netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
   for (int i = 0; i < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS); i++) {
     NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[i]));
   }
-  pthread_mutex_unlock(&netPluginLock);
   return ncclSuccess;
 }
 

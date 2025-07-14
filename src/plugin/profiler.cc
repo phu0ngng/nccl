@@ -13,6 +13,7 @@
 #include "profiler.h"
 #include "transport.h"
 #include "plugin.h"
+#include <mutex>
 
 extern ncclProfiler_t* getNcclProfiler_v1(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v2(void* lib);
@@ -20,7 +21,7 @@ extern ncclProfiler_t* getNcclProfiler_v3(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v4(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v5(void* lib);
 
-static pthread_mutex_t profilerLock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex profilerMutex;
 static int profilerPluginRefCount;
 static void* profilerPluginLib;
 static ncclProfiler_t* ncclProfiler;
@@ -40,7 +41,7 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
     return ncclSuccess;
   }
 
-  pthread_mutex_lock(&profilerLock);
+  std::lock_guard<std::mutex> lock(profilerMutex);
   if (profilerPluginLoadSuccess == profilerPluginStatus) {
     ++profilerPluginRefCount;
     goto exit;
@@ -81,7 +82,6 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
   pid = getpid();
 
 exit:
-  pthread_mutex_unlock(&profilerLock);
   return ncclSuccess;
 fail:
   if (profilerPluginLib) NCCLCHECK(ncclClosePluginLib(profilerPluginLib, ncclPluginTypeProfiler));
@@ -91,7 +91,7 @@ fail:
 }
 
 static ncclResult_t ncclProfilerPluginUnload(void) {
-  pthread_mutex_lock(&profilerLock);
+  std::lock_guard<std::mutex> lock(profilerMutex);
   if (0 == (--profilerPluginRefCount)) {
     if (__builtin_expect(ncclProfiler != NULL, 0)) {
       INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
@@ -101,7 +101,6 @@ static ncclResult_t ncclProfilerPluginUnload(void) {
     ncclProfiler = nullptr;
     profilerPluginStatus = profilerPluginLoadReady;
   }
-  pthread_mutex_unlock(&profilerLock);
   return ncclSuccess;
 }
 
@@ -511,11 +510,11 @@ ncclResult_t ncclProfilerAddPidToProxyOp(struct ncclProxyOp* op) {
   return ncclSuccess;
 }
 
-static pthread_mutex_t proxyProfilerConnectLock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex proxyProfilerConnectMutex;
 
 static ncclResult_t proxyProfilerConnect(struct ncclComm* comm, struct ncclProxyOp* op) {
   ncclResult_t ret = ncclSuccess;
-  pthread_mutex_lock(&proxyProfilerConnectLock);
+  std::lock_guard<std::mutex> lock(proxyProfilerConnectMutex);
   if (comm->profiler.initialized) goto exit;
   for (int c = 0; c < MAXCHANNELS; c++) {
     NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_PROFILER, 0, comm->rank, &comm->profiler.sendProxyConn[c]), ret, exit);
@@ -525,7 +524,6 @@ static ncclResult_t proxyProfilerConnect(struct ncclComm* comm, struct ncclProxy
   }
   comm->profiler.initialized = true;
 exit:
-  pthread_mutex_unlock(&proxyProfilerConnectLock);
   return ret;
 }
 
