@@ -36,11 +36,12 @@ struct pluginMemHandle {
 
 __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) { return ncclSuccess; }
 __hidden ncclResult_t pluginDevices(int* ndev) { *ndev = 1; return ncclSuccess; }
-__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v7_t* props) {
-  props->name = "ncclNetPlugin_v7";
+__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v8_t* props) {
+  props->name = (char *)"ncclNetPlugin_v8";
   props->pciPath = NULL;
   props->guid = 0;
   props->ptrSupport = NCCL_PTR_HOST;
+  props->regIsGlobal = 0;
   props->speed = 100000;
   props->port = 0;
   props->latency = 0;
@@ -62,12 +63,11 @@ __hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, nccl
   return ncclSuccess;
 }
 __hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** recvDevComm) {
-  struct pluginListenComm* listen = (struct pluginListenComm*)listenComm;
   struct pluginRecvComm* comm = (struct pluginRecvComm*)malloc(sizeof(*comm));
   *recvComm = comm;
   return ncclSuccess;
 }
-__hidden ncclResult_t pluginRegMr(void* collComm, void* data, int size, int type, void** mhandle) {
+__hidden ncclResult_t pluginRegMr(void* collComm, void* data, size_t size, int type, void** mhandle) {
   struct pluginMemHandle* m = (struct pluginMemHandle*)malloc(sizeof(*m));
   *mhandle = m;
   return ncclSuccess;
@@ -117,9 +117,12 @@ __hidden ncclResult_t pluginCloseListen(void* listenComm) {
   free(listenComm);
   return ncclSuccess;
 }
+__hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) {
+  return ncclSuccess;
+}
 
-const ncclNet_v7_t ncclNetPlugin_v7 = {
-  .name = "ncclNetPlugin_v7",
+const ncclNet_v8_t ncclNetPlugin_v8 = {
+  .name = "ncclNetPlugin_v8",
   .init = pluginInit,
   .devices = pluginDevices,
   .getProperties = pluginGetProperties,
@@ -136,4 +139,5 @@ const ncclNet_v7_t ncclNetPlugin_v7 = {
   .closeSend = pluginCloseSend,
   .closeRecv = pluginCloseRecv,
   .closeListen = pluginCloseListen,
+  .irecvConsumed = pluginIrecvConsumed,
 };

@@ -33,15 +33,15 @@ set(API_TEST_SOURCES
 
 # Plugin source files
 set(PLUGIN_SOURCES
-    plugin/net-plugin_v6.c
-    plugin/net-plugin_v7.c
-    plugin/net-plugin_v8.c
-    plugin/net-plugin_v9.c
-    plugin/net-plugin_nodev_v6.c
-    plugin/net-plugin_nodev_v7.c
-    plugin/net-plugin_nodev_v8.c
-    plugin/net-plugin_nodev_v9.c
-    plugin/shared-plugins.c
+    plugin/net-plugin_v6.cc
+    plugin/net-plugin_v7.cc
+    plugin/net-plugin_v8.cc
+    plugin/net-plugin_v9.cc
+    plugin/net-plugin_nodev_v6.cc
+    plugin/net-plugin_nodev_v7.cc
+    plugin/net-plugin_nodev_v8.cc
+    plugin/net-plugin_nodev_v9.cc
+    plugin/shared-plugins.cc
 )
 
 # Create object files for each CUDA source

@@ -74,7 +74,7 @@ __hidden ncclResult_t netPluginInit(void** ctx, uint64_t commId, ncclDebugLogger
 
 __hidden ncclResult_t netPluginDevices(int* ndev) { *ndev = context[0].devices; return ncclSuccess; }
 __hidden ncclResult_t netPluginGetProperties(int dev, ncclNetProperties_t* props) {
-  props->name = "ncclNetPlugin_v11";
+  props->name = (char *)"ncclNetPlugin_v11";
   props->pciPath = NULL;
   props->guid = 0;
   props->ptrSupport = NCCL_PTR_HOST;
@@ -97,14 +97,14 @@ __hidden ncclResult_t netPluginListen(void* ctx, int dev, void* handle, void** l
   if (((struct pluginContext *)ctx)->commId == 0UL) return ncclInternalError;
   struct netPluginListenComm* comm = (struct netPluginListenComm*)malloc(sizeof(*comm));
   comm->dev = dev;
-  comm->context = ctx;
+  comm->context = (struct pluginContext *)ctx;
   *listenComm = comm;
   return ncclSuccess;
 }
 __hidden ncclResult_t netPluginConnect(void* ctx, int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
   if (((struct pluginContext *)ctx)->commId == 0UL) return ncclInternalError;
   struct netPluginSendComm* comm = (struct netPluginSendComm*)malloc(sizeof(*comm));
-  comm->context = ctx;
+  comm->context = (struct pluginContext *)ctx;
   *sendComm = comm;
   return ncclSuccess;
 }
@@ -112,7 +112,7 @@ __hidden ncclResult_t netPluginAccept(void* listenComm, void** recvComm, ncclNet
   struct netPluginListenComm* listen = (struct netPluginListenComm*)listenComm;
   if (listen->context->commId == 0UL) return ncclInternalError;
   struct netPluginRecvComm* comm = (struct netPluginRecvComm*)malloc(sizeof(*comm));
-  comm->context = listen->context;
+  comm->context = (struct pluginContext *)listen->context;
   *recvComm = comm;
   return ncclSuccess;
 }

@@ -12,8 +12,8 @@ OBJ_FILES	:= $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 DEP_FILES	:= $(OBJ_FILES:%.o=%.dep)
 
 ### plugin libraries
-PLUGIN_SRC:= $(basename $(wildcard plugin/*.c))
-PLUGIN_OBJ:= $(PLUGIN_SRC:%.c=${DST_DIR}/plugin/libnccl-%.so)
+PLUGIN_SRC:= $(basename $(wildcard plugin/*.cc))
+PLUGIN_OBJ:= $(PLUGIN_SRC:%.cc=${DST_DIR}/plugin/libnccl-%.so)
 
 ### cc
 NVCUFLAGS += -I${NCCLDIR}/include/ -include nccl.h ${CPPFLAGS} ${GTEST_CPPFLAGS} -g
@@ -63,7 +63,7 @@ ${DST_DIR}/%.o: %.cu
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ ${NVCUFLAGS} --compile $<
 
-${DST_DIR}/plugin/libnccl-%.so: plugin/%.c
+${DST_DIR}/plugin/libnccl-%.so: plugin/%.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}/plugin
 	${CC} -I${SRCDIR}/ext-net/example/nccl -I${SRCDIR}/ext-profiler/example/nccl -I${SRCDIR}/ext-tuner/example/nccl -fPIC -shared -o $@ $^
