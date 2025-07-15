@@ -53,6 +53,5 @@ target_include_directories(nccl_device PUBLIC
     ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/src/include/plugin
     ${CMAKE_BINARY_DIR}/include
-    ${CMAKE_CURRENT_BINARY_DIR}/gensrc
     ${CUDAToolkit_INCLUDE_DIRS}
 )

@@ -62,12 +62,9 @@ target_sources(nccl PRIVATE ${LIBSRCFILES})
 
 # Include directories
 target_include_directories(nccl PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/device
-    ${CMAKE_CURRENT_BINARY_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
-    ${CMAKE_CURRENT_BINARY_DIR}/device/gensrc
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 
@@ -148,12 +145,9 @@ add_library(nccl_static STATIC ${LIBSRCFILES})
 
 # Include directories
 target_include_directories(nccl_static PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/device
-    ${CMAKE_CURRENT_BINARY_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
-    ${CMAKE_CURRENT_BINARY_DIR}/device/gensrc
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 
