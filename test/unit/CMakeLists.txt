@@ -12,6 +12,7 @@ set(UNIT_TEST_SOURCES
     log_algo.cc
     ft_test.cc
     overlap_test.cc
+    plugin_load.cc
 )
 
 # MPI-dependent sources
