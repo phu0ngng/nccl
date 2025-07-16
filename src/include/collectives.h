@@ -8,7 +8,7 @@
 #define NCCL_COLLECTIVES_H_
 
 #include "nccl.h"
-#include "nccl_common.h"
+#include "nccl_tuner.h"
 #include "device.h"
 
 #define NCCL_MAX_NET_SIZE (1024*1024*1024L) // Rather than send INT_MAX which is 2G-1, send a power of two.

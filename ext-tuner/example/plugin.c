@@ -289,7 +289,24 @@ static ncclResult_t loadConfig(TunerContext* ctx, const char* filename) {
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction) {
+__hidden ncclResult_t pluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, ncclTunerConstants_v5_t* constants) {
+
+  if (NULL != constants) {
+    // NCCL constants tuning
+    // Tune NCCL's internal tuning model to improve base algo/proto selection.
+    // Note: Example numbers are for reference only.
+    //       Actual numbers may vary depending on the hardware and network topology.
+    //       These numbers are not guaranteed to be optimal for all cases.
+    // Limit the tree bandwidth to 15GB/s
+    constants->perChMaxTreeBws[NCCL_BLACKWELL_COMPCAP_IDX][NCCL_TUNING_SCALE_4NODES] = 15.0;
+
+    // Limit the ring bandwidth to 20GB/s
+    constants->perChMaxRingLL128Bws[NCCL_BLACKWELL_COMPCAP_IDX][NCCL_TUNING_SCALE_4NODES] = 20.0;
+
+    // Set NVLSTree base network latency to 24us
+    constants->hwLatencies[NCCL_HW_NET][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] = 24.0;
+  }
+
   TunerContext* ctx = (TunerContext*)malloc(sizeof(TunerContext));
   if (!ctx) return ncclSystemError;
 

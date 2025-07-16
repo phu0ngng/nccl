@@ -7,6 +7,7 @@
 
 #include <dlfcn.h>
 #include "debug.h"
+#include "checks.h"
 #include "nccl_tuner.h"
 #include "checks.h"
 
@@ -17,7 +18,7 @@ static ncclResult_t ncclTuner_finalize(void* ctx) {
   return ncclTuner_v4->destroy(ctx);
 }
 
-static ncclResult_t ncclTuner_init(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logfn) {
+static ncclResult_t ncclTuner_init(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logfn, ncclTunerConstants_t* /*constants*/) {
   NCCLCHECK(ncclTuner_v4->init(nRanks, nNodes, logfn, context));
   ncclTuner.getCollInfo = ncclTuner_v4->getCollInfo;
   ncclTuner.finalize = ncclTuner_finalize;

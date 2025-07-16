@@ -217,7 +217,7 @@ const ncclNet_t ncclNetPlugin_v11 = {
   .finalize = netPluginFinalize,
 };
 
-__hidden ncclResult_t tunerPluginInit(void** ctx, uint64_t commId, size_t nranks, size_t nnodes, ncclDebugLogger_t logFunction) {
+__hidden ncclResult_t tunerPluginInit(void** ctx, uint64_t commId, size_t nranks, size_t nnodes, ncclDebugLogger_t logFunction, ncclTunerConstants_v5_t* constants) {
   int counter = __atomic_fetch_add(&tunerContextCounter, 1, __ATOMIC_RELAXED);
   __atomic_fetch_sub(&context[counter].devices, 1, __ATOMIC_RELAXED);
   //fprintf(stdout, "commId: %lu\n", commId);

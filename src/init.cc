@@ -1229,6 +1229,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   TRACE(NCCL_INIT, "rank %d nranks %d - CONNECTED %d RINGS AND TREES", rank, nranks, comm->nChannels);
 
   // Compute time models for algorithm and protocol combinations
+  NCCLCHECKGOTO(ncclTopoInitTunerConstants(comm), ret, fail);
+  NCCLCHECKGOTO(ncclTunerPluginLoad(comm), ret, fail);
+  if (comm->tuner) {
+    NCCLCHECK(comm->tuner->init(&comm->tunerContext, comm->commHash, comm->nRanks, comm->nNodes, ncclDebugLog, &comm->tunerConstants));
+  }
   NCCLCHECKGOTO(ncclTopoTuneModel(comm, comm->minCompCap, comm->maxCompCap, graphs), ret, fail);
 
   INFO(NCCL_INIT, "%d coll channels, %d collnet channels, %d nvls channels, %d p2p channels, %d p2p channels per peer", comm->nChannels, comm->nChannels, comm->nvlsChannels, comm->p2pnChannels, comm->p2pnChannelsPerPeer);
@@ -1454,10 +1459,6 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   comm->cudaArch = cudaArch;
 
   NCCLCHECKGOTO(initTransportsRank(comm, job->parent, timers), res, fail);
-  NCCLCHECKGOTO(ncclTunerPluginLoad(comm), res, fail);
-  if (comm->tuner) {
-    NCCLCHECK(comm->tuner->init(&comm->tunerContext, comm->commHash, comm->nRanks, comm->nNodes, ncclDebugLog));
-  }
 
   // update communicator state
   comm->initState = ncclSuccess;
