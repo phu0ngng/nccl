@@ -45,6 +45,7 @@ typedef ncclNet_v11_t ncclNet_t;
 typedef ncclCollNet_v11_t ncclCollNet_t;
 typedef ncclNetSGE_v11_t ncclNetSGE_t;
 typedef ncclNetProperties_v11_t ncclNetProperties_t;
+typedef ncclNetAttr_v11_t ncclNetAttr_t;
 typedef ncclNetVDeviceProps_v11_t ncclNetVDeviceProps_t;
 typedef ncclNetCommConfig_v11_t ncclNetCommConfig_t;
 

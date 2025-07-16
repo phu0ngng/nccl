@@ -290,3 +290,28 @@ void ncclMemoryStackDestruct(struct ncclMemoryStack* me) {
     h = h1;
   }
 }
+
+/* return concatenated string representing each set bit */
+ncclResult_t ncclBitsToString(uint32_t bits, uint32_t mask, const char* (*toStr)(int), char *buf, size_t bufLen, const char *wildcard) {
+  if (!buf || !bufLen)
+    return ncclInvalidArgument;
+
+  bits &= mask;
+
+  // print wildcard value if all bits set
+  if (wildcard && bits == mask) {
+    snprintf(buf, bufLen, "%s", wildcard);
+    return ncclSuccess;
+  }
+
+  // Add each set bit to string
+  int pos = 0;
+  for (int i = 0; bits; i++, bits >>= 1) {
+    if (bits & 1) {
+      if (pos > 0) pos += snprintf(buf + pos, bufLen - pos, "|");
+      pos += snprintf(buf + pos, bufLen - pos, "%s", toStr(i));
+    }
+  }
+
+  return ncclSuccess;
+}

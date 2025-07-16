@@ -608,6 +608,13 @@ ncclResult_t ncclIbMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* props) 
   std::lock_guard<std::mutex> lock(ncclIbMutex);
   ncclResult_t res = ncclIbMakeVDeviceInternal(d, props);
   return res;
+
+}
+
+ncclResult_t ncclIbSetNetAttr(void *ctx, ncclNetAttr_t *netAttr) {
+  (void)ctx;
+  (void)netAttr;
+  return ncclSuccess;
 }
 
 static ncclProfilerCallback_t ncclProfilerFunction;
@@ -2575,7 +2582,8 @@ ncclNet_t ncclNetIb = {
   NULL /* getDeviceMr */,
   NULL /* irecvConsumed */,
   ncclIbMakeVDevice,
-  ncclIbFinalize
+  ncclIbFinalize,
+  ncclIbSetNetAttr,
 };
 
 /*

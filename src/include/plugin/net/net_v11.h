@@ -38,6 +38,31 @@ typedef struct {
   size_t maxCollBytes;             // Max transfer size for collective operations
 } ncclNetProperties_v11_t;
 
+#define NCCL_NET_ATTR_UNDEF -1
+
+#define NCCL_NET_ATTR_INIT { \
+  { NCCL_NET_ATTR_UNDEF, NCCL_NET_ATTR_UNDEF, NCCL_NET_ATTR_UNDEF, NCCL_NET_ATTR_UNDEF }, /* sendCommAttr */ \
+  { NCCL_NET_ATTR_UNDEF, NCCL_NET_ATTR_UNDEF, NCCL_NET_ATTR_UNDEF, NCCL_NET_ATTR_UNDEF }, /* recvCommAttr */ \
+  (uint32_t)NCCL_NET_ATTR_UNDEF, /* op */ \
+  (uint32_t)NCCL_NET_ATTR_UNDEF, /* algo */ \
+  (uint32_t)NCCL_NET_ATTR_UNDEF, /* proto */ \
+}
+
+typedef struct {
+  int32_t maxConcurrentPeers;
+  int32_t minConcurrentPeers;
+  int32_t maxFlowsPerPeer;
+  int32_t minFlowsPerPeer;
+} ncclNetCommAttr_v11_t;
+
+typedef struct {
+  ncclNetCommAttr_v11_t sendCommAttr;
+  ncclNetCommAttr_v11_t recvCommAttr;
+  uint32_t op;
+  uint32_t algo;
+  uint32_t proto;
+} ncclNetAttr_v11_t;
+
 typedef struct {
   // Name of the network (mainly for logs)
   const char* name;
@@ -97,6 +122,8 @@ typedef struct {
   ncclResult_t (*makeVDevice)(void* ctx, int* d, ncclNetVDeviceProps_v11_t* props);
   // Finalize the network.
   ncclResult_t (*finalize)(void* ctx);
+
+  ncclResult_t (*setNetAttr)(void* ctx, ncclNetAttr_v11_t* netAttr);
 } ncclNet_v11_t;
 
 typedef struct {
