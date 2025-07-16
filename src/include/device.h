@@ -8,7 +8,7 @@
 #define NCCL_DEVICE_H_
 
 #include "nccl.h"
-#include "nccl_common.h"
+#include "nccl_tuner.h"
 #include "bitops.h"
 #include "symmetric.h"
 #include <algorithm>

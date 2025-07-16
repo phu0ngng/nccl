@@ -22,7 +22,7 @@ static ncclResult_t ncclTuner_finalize(void* ctx) {
   return ncclTuner_v3->destroy(ctx);
 }
 
-static ncclResult_t ncclTuner_init(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logfn) {
+static ncclResult_t ncclTuner_init(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logfn, ncclTunerConstants_t* /*constants*/) {
   NCCLCHECK(ncclTuner_v3->init(nRanks, nNodes, logfn, context));
   ncclTuner.getCollInfo = ncclTuner_getCollInfo;
   ncclTuner.finalize = ncclTuner_finalize;
