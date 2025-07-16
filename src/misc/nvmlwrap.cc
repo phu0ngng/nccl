@@ -314,6 +314,10 @@ ncclResult_t ncclNvmlGetCCStatus(struct ncclNvmlCCStatus *status) {
       status->multiGpuProtectedPCIE = true;
     else
       status->multiGpuProtectedPCIE = false;
+    if (ccInfo.settingV12040.multiGpuMode == NVML_CC_SYSTEM_MULTIGPU_NVLE)
+      status->multiGpuNVLE = true;
+    else
+      status->multiGpuNVLE = false;
   } else if (pfn_nvmlSystemGetConfComputeState != NULL) {
     NVMLTRY(nvmlSystemGetConfComputeState, &ccInfo.settingV12020);
     if (ccInfo.settingV12020.ccFeature == NVML_CC_SYSTEM_FEATURE_ENABLED)
@@ -321,9 +325,11 @@ ncclResult_t ncclNvmlGetCCStatus(struct ncclNvmlCCStatus *status) {
     else
       status->CCEnabled = false;
     status->multiGpuProtectedPCIE = false;
+    status->multiGpuNVLE = false;
   } else {
     status->CCEnabled = false;
     status->multiGpuProtectedPCIE = false;
+    status->multiGpuNVLE = false;
   }
   return ncclSuccess;
 }
