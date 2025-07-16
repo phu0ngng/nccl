@@ -344,7 +344,7 @@ static __host__ UInt reverseSubBits(UInt x) {
     default: static_assert(8*sizeof(UInt) <= 64, "Unsupported integer type.");
     }
     return reverseSubBits<UInt, 8>(x);
-  } else if (nSubBits == 1) {
+  } else if (nSubBits <= 1) {
     return x;
   } else {
     UInt m = UInt(-1)/((UInt(1)<<(nSubBits/2))+1);
