@@ -765,6 +765,8 @@ static ncclResult_t scheduleCollTasksToPlan(
       plan->kernelFn = ncclDevKernelForFunc[task->devFuncId];
       plan->kernelSpecialized = ncclDevKernelForFuncIsSpecialized[task->devFuncId];
     }
+    // Profiler
+    plan->groupApiEventHandle = task->groupApiEventHandle;
 
     if (comm->rank == 0) {
       INFO(NCCL_TUNING, "%s: %ld Bytes -> Algo %s proto %s channel{Lo..Hi}={%d..%d}",
@@ -1126,12 +1128,16 @@ static ncclResult_t scheduleP2pTasksToPlan(
         NCCLCHECK(addP2pToPlan(comm, plan, nChannelsMin, nChannelsMax, round, sendRank, sendBuff, sendBytes, recvRank, recvBuff, recvBytes, planTotalTasks, p2pTasks));
         if (send != nullptr) {
           ncclIntruQueueDequeue(&peers[sendRank].sendQueue);
+          // Profiler - We can overwrite groupAPI event handles here since all operations here belong to the same group
+          plan->groupApiEventHandle = send->groupApiEventHandle;
           ncclIntruQueueEnqueue(&plan->p2pTaskQueue, send);
           comm->planner.nTasksP2p -= 1;
           comm->planner.nTasksP2pSend -= 1;
         }
         if (recv != nullptr) {
           ncclIntruQueueDequeue(&peers[recvRank].recvQueue);
+          // Profiler - We can overwrite groupAPI event handles here since all operations here belong to the same group
+          plan->groupApiEventHandle = recv->groupApiEventHandle;
           ncclIntruQueueEnqueue(&plan->p2pTaskQueue, recv);
           comm->planner.nTasksP2p -= 1;
           comm->planner.nTasksP2pRecv -= 1;
@@ -1485,7 +1491,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         plan->kernelSymArgs->nElts = task->count;
         plan->kernelSymArgs->input = (char*)task->sendbuff;
         plan->kernelSymArgs->output = (char*)task->recvbuff;
-
+        // Profiler
+        plan->groupApiEventHandle = task->groupApiEventHandle;
         planner->nTasksColl -= 1;
         ncclIntruQueueEnqueue(&planner->planQueue, plan);
         INFO(NCCL_TUNING, "%s [Symmetric]: %ld Bytes -> Kernel %s nchannels %d nthreads %d",
@@ -1604,6 +1611,9 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   dim3 block = {(unsigned)plan->threadPerBlock, 1, 1};
   int smem = ncclShmemDynamicSize(comm->cudaArch);
   cudaStream_t launchStream = planner->streams->stream;
+
+  NCCLCHECK(ncclProfilerStartKernelLaunchEvent(plan, launchStream));
+
   void* extra[] = {
     CU_LAUNCH_PARAM_BUFFER_POINTER, plan->kernelArgs,
     CU_LAUNCH_PARAM_BUFFER_SIZE, &plan->kernelArgsSize,
@@ -1690,6 +1700,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   }
 
 do_return:
+  NCCLCHECK(ncclProfilerStopKernelLaunchEvent(plan));
   return ret;
 }
 
@@ -2365,8 +2376,38 @@ static ncclResult_t hostToDevRedOp(
   return ncclSuccess;
 }
 
-static void p2pTaskAppend(
+static ncclResult_t ncclPlannerSetCapturingGraph(struct ncclComm* comm, struct ncclInfo* info) {
+  struct ncclKernelPlanner *planner = &comm->planner;
+  if (info->stream != planner->streamRecent || planner->streams == nullptr) {
+    planner->streamRecent = info->stream;
+    struct ncclCudaStreamList* l = planner->streams;
+    while (true) {
+      if (l == nullptr) { // Got to the end, this must be a new stream.
+        struct ncclCudaGraph graph;
+        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream));
+        if (planner->streams != nullptr && !ncclCudaGraphSame(planner->capturingGraph, graph)) {
+          WARN("Streams given to a communicator within a NCCL group must either be all uncaptured or all captured by the same graph.");
+          return ncclInvalidUsage;
+        }
+        planner->capturingGraph = graph; // C++ struct assignment
+        // Add stream to list
+        l = ncclMemoryStackAlloc<struct ncclCudaStreamList>(&comm->memScoped);
+        l->stream = info->stream;
+        l->next = planner->streams;
+        planner->streams = l;
+        break;
+      }
+      if (l->stream == info->stream)
+        break; // Already seen stream.
+      l = l->next;
+    }
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t p2pTaskAppend(
     struct ncclComm* comm,
+    struct ncclInfo* info,
     ncclFunc_t coll,
     void* buff,
     size_t count,
@@ -2380,6 +2421,15 @@ static void p2pTaskAppend(
 
   // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
   ncclGroupCommJoin(comm, ncclGroupTaskTypeCollective);
+  info->coll = coll;
+  // Set capturing graph. Called here so that profiler can emit a group API event with this information
+  NCCLCHECK(ncclPlannerSetCapturingGraph(comm, info));
+  bool isGraphCaptured = ncclCudaGraphValid(planner->capturingGraph);
+  NCCLCHECK(ncclProfilerStartGroupApiEvent(info, isGraphCaptured));
+  NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupStartApiStop));
+
+  NCCLCHECK(ncclProfilerStartP2pApiEvent(info, isGraphCaptured));
+
   struct ncclTaskP2p* p2p = ncclMemoryPoolAlloc<struct ncclTaskP2p>(&comm->memPool_ncclTaskP2p, &comm->memPermanent);
   p2p->func = coll;
   p2p->buff = buff;
@@ -2387,7 +2437,9 @@ static void p2pTaskAppend(
   p2p->datatype = datatype;
   p2p->root = peer;
   p2p->bytes = nBytes;
-  p2p->eActivationMask = __atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED);
+  p2p->eActivationMask = ncclProfilerApiState.eActivationMask;
+  p2p->groupApiEventHandle = ncclProfilerApiState.groupApiEventHandle;
+  p2p->p2pApiEventHandle = ncclProfilerApiState.p2pApiEventHandle;
   ncclIntruQueueEnqueue(
     isSendNotRecv ? &planner->peers[peer].sendQueue : &planner->peers[peer].recvQueue,
     p2p);
@@ -2431,9 +2483,11 @@ static void p2pTaskAppend(
       }
     }
   }
+  ncclProfilerStopP2pApiEvent();
+  return ncclSuccess;
 }
 
-static void collTaskAppend(
+static ncclResult_t collTaskAppend(
     struct ncclComm* comm,
     struct ncclInfo* info,
     struct ncclDevRedOpFull opDev) {
@@ -2441,6 +2495,13 @@ static void collTaskAppend(
 
   // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
   ncclGroupCommJoin(info->comm, ncclGroupTaskTypeCollective);
+  // Set capturing graph. Called here so that profiler can emit a group API event with this information
+  NCCLCHECK(ncclPlannerSetCapturingGraph(comm, info));
+  bool isGraphCaptured = ncclCudaGraphValid(planner->capturingGraph);
+  NCCLCHECK(ncclProfilerStartGroupApiEvent(info, isGraphCaptured));
+  NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupStartApiStop));
+  NCCLCHECK(ncclProfilerStartCollApiEvent(info, isGraphCaptured));
+  
   struct ncclTaskColl* t = ncclMemoryPoolAlloc<struct ncclTaskColl>(&comm->memPool_ncclTaskColl, &comm->memPermanent);
   t->func = info->coll;
   t->sendbuff = info->sendbuff;
@@ -2459,21 +2520,24 @@ static void collTaskAppend(
   t->opDev = opDev; // C++ struct assignment
   t->chunkSteps = info->chunkSteps;
   t->sliceSteps = info->sliceSteps;
-  t->eActivationMask = __atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED);
+  t->eActivationMask = ncclProfilerApiState.eActivationMask;
+  t->groupApiEventHandle = ncclProfilerApiState.groupApiEventHandle;
+  t->collApiEventHandle = ncclProfilerApiState.collApiEventHandle;
 
   planner->nTasksColl += 1;
   ncclTaskCollSorterInsert(&planner->collSorter, t, t->trafficBytes);
 
+  ncclProfilerStopCollApiEvent();
+  return ncclSuccess;
 }
 
 // Converts `info` to a task and adds it to `comm->planner`. The exception is with
 // single rank communicators, collectives are issued as `ncclMemcpyAsync`s and
 // thus don't need a task.
 static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
-  struct ncclKernelPlanner *planner = &comm->planner;
 
   if (info->coll == ncclFuncSend || info->coll == ncclFuncRecv) {
-    p2pTaskAppend(comm, info->coll, (void*)info->recvbuff, info->count, info->datatype, info->root);
+    NCCLCHECK(p2pTaskAppend(comm, info, info->coll, (void*)info->recvbuff, info->count, info->datatype, info->root));
   } else {
     // Empty collectives can be discarded.
     if (info->count == 0) return ncclSuccess;
@@ -2497,16 +2561,16 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
 
       if (info->coll == ncclFuncAlltoAll) {
         for (int r=0; r<comm->nRanks; r++) {
-          p2pTaskAppend(comm, ncclFuncSend, (void*)((char*)info->sendbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r);
-          p2pTaskAppend(comm, ncclFuncRecv, (void*)((char*)info->recvbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r);
+          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, (void*)((char*)info->sendbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
+          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, (void*)((char*)info->recvbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
         }
       } else if (info->coll == ncclFuncGather){
         size_t offset = 0;
-        p2pTaskAppend(comm, ncclFuncSend, (void*)info->sendbuff, info->count, info->datatype, info->root);
+        NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, (void*)info->sendbuff, info->count, info->datatype, info->root));
         if (comm->rank == info->root) {
           for (int r=0; r<comm->nRanks; r++) {
             void* buff = (void*)((char*)info->recvbuff + offset);
-            p2pTaskAppend(comm, ncclFuncRecv, buff, info->count, info->datatype, r);
+            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, buff, info->count, info->datatype, r));
             offset += info->count * ncclTypeSize(info->datatype);
           }
         }
@@ -2515,45 +2579,26 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
         if (comm->rank == info->root) {
           for (int r = 0; r < comm->nRanks; r++) {
             void* buff = (void*)((char*)info->sendbuff + offset);
-            p2pTaskAppend(comm, ncclFuncSend, buff, info->count, info->datatype, r);
+            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, buff, info->count, info->datatype, r));
             offset += info->count * ncclTypeSize(info->datatype);
           }
         }
-        p2pTaskAppend(comm, ncclFuncRecv, (void*)info->recvbuff, info->count, info->datatype, info->root);
+        NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, (void*)info->recvbuff, info->count, info->datatype, info->root));
       } else {
-        collTaskAppend(comm, info, opDev);
+        NCCLCHECK(collTaskAppend(comm, info, opDev));
       }
     }
   }
 
-  if (info->stream != planner->streamRecent || planner->streams == nullptr) {
-    planner->streamRecent = info->stream;
-    struct ncclCudaStreamList* l = planner->streams;
-    while (true) {
-      if (l == nullptr) { // Got to the end, this must be a new stream.
-        struct ncclCudaGraph graph;
-        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream));
-        if (planner->streams != nullptr && !ncclCudaGraphSame(planner->capturingGraph, graph)) {
-          WARN("Streams given to a communicator within a NCCL group must either be all uncaptured or all captured by the same graph.");
-          return ncclInvalidUsage;
-        }
-        planner->capturingGraph = graph; // C++ struct assignment
-        // Add stream to list
-        l = ncclMemoryStackAlloc<struct ncclCudaStreamList>(&comm->memScoped);
-        l->stream = info->stream;
-        l->next = planner->streams;
-        planner->streams = l;
-        break;
-      }
-      if (l->stream == info->stream)
-        break; // Already seen stream.
-      l = l->next;
-    }
-  }
   return ncclSuccess;
 }
 
 ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
+  // Profiler - If a group API event has already started, update the profilerGroupDepth so that the depth
+  // updates correctly for implicit ncclGroupStartInternal and ncclGroupEndInternal calls
+  if (ncclProfilerApiState.profilerGroupDepth > 0) {
+    ncclProfilerApiState.profilerGroupDepth++;
+  }
   NCCLCHECK(ncclGroupStartInternal());
   ncclResult_t ret = ncclSuccess;
   int devOld = -1;

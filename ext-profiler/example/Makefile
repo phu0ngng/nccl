@@ -18,7 +18,7 @@ build: ${DST_DIR}/libnccl-profiler-example.so
 ${DST_DIR}/libnccl-profiler-example.so: ${SRC_FILES}
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(CXX) -Inccl -fPIC -shared -o $@ $^
+	$(CXX) -Inccl -I${CUDA_INC} -fPIC -shared -o $@ $^
 
 clean:
 	rm -f ${DST_DIR}/libnccl-profiler-example.so

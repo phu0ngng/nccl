@@ -26,6 +26,9 @@ static int profilerPluginRefCount;
 static void* profilerPluginLib;
 static ncclProfiler_t* ncclProfiler;
 
+extern __thread int ncclGroupDepth;
+__thread ncclProfilerApiState_t ncclProfilerApiState;
+
 #define MAX_STR_LEN 256
 
 enum {
@@ -196,6 +199,143 @@ ncclResult_t ncclProfilerPluginFinalize(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
+ncclResult_t ncclProfilerStartGroupApiEvent(struct ncclInfo* info, bool isGraphCaptured) {
+  ncclProfilerEventDescr_t eDescr = { 0 };
+  eDescr.type = ncclProfileGroupApi;
+  eDescr.groupApi.graphCaptured = isGraphCaptured;
+
+  ncclProfilerApiState.eActivationMask = __atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED);
+  int groupApiMask = ncclProfileGroupApi | ncclProfileP2pApi | ncclProfileCollApi | ncclProfileKernelLaunch | ncclProfileGroup | ncclProfileColl | ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin;
+  // Only count outermost groups when emitting group API events
+  if (__builtin_expect(ncclProfiler != NULL, 0) && (ncclProfilerApiState.eActivationMask & groupApiMask)) {
+    if (ncclProfilerApiState.profilerGroupDepth == 0) {
+      eDescr.groupApi.groupDepth = ncclGroupDepth;
+      ncclProfiler->startEvent(info->comm->profilerContext, &ncclProfilerApiState.groupApiEventHandle, &eDescr);
+      ncclProfilerApiState.profilerGroupDepth = ncclGroupDepth;
+      ncclProfilerApiState.state = ncclProfilerGroupApiStartStateStarted;
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProfilerStopGroupApiEvent() {
+  void* groupApiEventHandle = ncclProfilerApiState.groupApiEventHandle;
+  if (__builtin_expect(ncclProfiler != NULL, 0) && groupApiEventHandle && ncclProfilerApiState.profilerGroupDepth == 0) {
+    ncclProfiler->stopEvent(groupApiEventHandle);
+    ncclProfilerApiState.groupApiEventHandle = nullptr;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProfilerRecordGroupApiEventState(ncclProfilerEventState_t eState) {
+  void* groupApiEventHandle = ncclProfilerApiState.groupApiEventHandle;
+  bool shouldRecord = false;
+  if (eState == ncclProfilerGroupStartApiStop && ncclProfilerApiState.state == ncclProfilerGroupApiStartStateStarted) {
+    ncclProfilerApiState.state = ncclProfilerGroupApiStartStateStopped;
+    shouldRecord = true;
+  } else if (eState == ncclProfilerGroupEndApiStart && ncclProfilerApiState.state == ncclProfilerGroupApiStartStateStopped) {
+    ncclProfilerApiState.state = ncclProfilerGroupApiStartStateReset;
+    shouldRecord = true;
+  }
+
+  if (__builtin_expect(ncclProfiler != NULL, 0) && groupApiEventHandle && shouldRecord) {
+    ncclProfiler->recordEventState(groupApiEventHandle, eState, NULL);
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProfilerStartP2pApiEvent(struct ncclInfo *info, bool isGraphCaptured) {
+  ncclProfilerEventDescr_t eDescr = { 0 };
+  eDescr.type = ncclProfileP2pApi;
+  eDescr.parentObj = ncclProfilerApiState.groupApiEventHandle;
+  eDescr.p2pApi.func = ncclFuncToString(info->coll);
+  eDescr.p2pApi.count = info->count;
+  eDescr.p2pApi.datatype = ncclDatatypeToString(info->datatype);
+  eDescr.p2pApi.stream = (void *) info->stream;
+  eDescr.p2pApi.graphCaptured = isGraphCaptured;
+  int p2pApiMask = ncclProfileP2pApi | ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin;
+  if (__builtin_expect(ncclProfiler != NULL, 0) && (ncclProfilerApiState.eActivationMask & p2pApiMask)) {
+    ncclProfiler->startEvent(info->comm->profilerContext, &ncclProfilerApiState.p2pApiEventHandle, &eDescr);
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProfilerStopP2pApiEvent() {
+  if (__builtin_expect(ncclProfiler != NULL, 0) && ncclProfilerApiState.p2pApiEventHandle) {
+    ncclProfiler->stopEvent(ncclProfilerApiState.p2pApiEventHandle);
+    ncclProfilerApiState.p2pApiEventHandle = nullptr;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProfilerStartCollApiEvent(struct ncclInfo *info, bool isGraphCaptured) {
+  ncclProfilerEventDescr_t eDescr = { 0 };
+  eDescr.type = ncclProfileCollApi;
+  eDescr.parentObj = ncclProfilerApiState.groupApiEventHandle;
+  eDescr.collApi.func = ncclFuncToString(info->coll);
+  eDescr.collApi.count = info->count;
+  eDescr.collApi.datatype = ncclDatatypeToString(info->datatype);
+  eDescr.collApi.stream = (void *) info->stream;
+  eDescr.collApi.root = info->root;
+  eDescr.collApi.graphCaptured = isGraphCaptured;
+  int collApiMask = ncclProfileCollApi | ncclProfileColl | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin;
+  if (__builtin_expect(ncclProfiler != NULL, 0) && (ncclProfilerApiState.eActivationMask & collApiMask)) {
+    ncclProfiler->startEvent(info->comm->profilerContext, &ncclProfilerApiState.collApiEventHandle, &eDescr);
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProfilerStopCollApiEvent() {
+  if (__builtin_expect(ncclProfiler != NULL, 0) && ncclProfilerApiState.collApiEventHandle) {
+    ncclProfiler->stopEvent(ncclProfilerApiState.collApiEventHandle);
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProfilerStartKernelLaunchEvent(struct ncclKernelPlan* plan, cudaStream_t stream) {
+  ncclProfilerEventDescr_t eDescr = { 0 };
+  if (__builtin_expect(ncclProfiler != NULL, 0)) {
+    void* groupApiEventHandle = NULL;
+    // Check if any collective in the plan has a set event activation mask
+    struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
+    struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
+    int eActivationMask_ = 0;
+    while (ct) {
+      if (ct->eActivationMask) {
+        eActivationMask_ = ct->eActivationMask;
+        groupApiEventHandle = ct->groupApiEventHandle;
+        goto startKernelLaunchEvent;
+      }
+      ct = ct->next;
+    }
+    // Check if any pt2pt in the plan has a set event activation mask
+    while (pt) {
+      if (pt->eActivationMask) {
+        eActivationMask_ = pt->eActivationMask;
+        groupApiEventHandle = pt->groupApiEventHandle;
+        goto startKernelLaunchEvent;
+      }
+      pt = pt->next;
+    }
+
+  startKernelLaunchEvent:
+    if (eActivationMask_ & ncclProfileKernelLaunch) {
+      eDescr.type = ncclProfileKernelLaunch;
+      eDescr.parentObj = groupApiEventHandle;
+      eDescr.kernelLaunch.stream = (void *) stream;
+      ncclProfiler->startEvent(plan->comm->profilerContext, &plan->kernelLaunchEventHandle, &eDescr);
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclProfilerStopKernelLaunchEvent(struct ncclKernelPlan* plan) {
+  if (__builtin_expect(ncclProfiler != NULL, 0) && plan->kernelLaunchEventHandle) {
+    ncclProfiler->stopEvent(plan->kernelLaunchEventHandle);
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclProfilerStartGroupEvent(struct ncclKernelPlan* plan) {
   TIME_START_EVENT(groupStart);
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
@@ -244,12 +384,13 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
   struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
   while (ct) {
     if (__builtin_expect(ncclProfiler != NULL, 0)) {
-      if (plan->groupEventHandle) {
+      if (plan->groupEventHandle || ct->collApiEventHandle) {
         int enable = ct->eActivationMask & (ncclProfileColl | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin);
         if (enable) {
           ncclProfilerEventDescr_t eDescr = { 0 };
           eDescr.type = ncclProfileColl;
-          eDescr.parentObj = plan->groupEventHandle;
+          eDescr.coll.parentGroup = plan->groupEventHandle;
+          eDescr.parentObj = ct->collApiEventHandle;
           eDescr.rank = plan->comm->rank;
           eDescr.coll.seqNumber = plan->comm->seqNumber[ct->func];
           eDescr.coll.func = ncclFuncToString(ct->func);
@@ -272,20 +413,21 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
     // reports from RAS.  Instead, we choose not to include graph-captured collectives in our counts.  An exception is
     // made if ncclProfileKernelCh profiler events are active, as they result in proxy events always being added, which
     // gives the consistency.
-    if (!plan->persistent || (__builtin_expect(ncclProfiler != NULL, 0) && plan->groupEventHandle &&
+    if (!plan->persistent || (__builtin_expect(ncclProfiler != NULL, 0) && (plan->groupEventHandle || ct->collApiEventHandle) &&
                               (ct->eActivationMask & ncclProfileKernelCh)))
       __atomic_fetch_add(&plan->comm->seqNumber[ct->func], 1, __ATOMIC_RELAXED);
     ct = ct->next;
   }
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    if (plan->groupEventHandle) {
       struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
+      if (plan->groupEventHandle != nullptr || (pt && pt->p2pApiEventHandle)) {
       while (pt) {
         int enable = pt->eActivationMask & (ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh);
         if (enable) {
           ncclProfilerEventDescr_t eDescr = { 0 };
           eDescr.type = ncclProfileP2p;
-          eDescr.parentObj = plan->groupEventHandle;
+          eDescr.p2p.parentGroup = plan->groupEventHandle;
+          eDescr.parentObj = pt->p2pApiEventHandle;
           eDescr.rank = plan->comm->rank;
           eDescr.p2p.func = ncclFuncToString(pt->func);
           eDescr.p2p.buff = pt->buff;

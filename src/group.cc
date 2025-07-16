@@ -12,6 +12,7 @@
 #include <assert.h>
 #include "bootstrap.h"
 #include "ce_coll.h"
+#include "profiler.h"
 
 #define GROUP_MAX_RECLAIM_STEPS 10
 
@@ -627,6 +628,13 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
     goto exit;
   }
 
+  if (ncclProfilerApiState.profilerGroupDepth > 0) {
+    ncclProfilerApiState.profilerGroupDepth--;
+  }
+  if (ncclProfilerApiState.profilerGroupDepth == 0) {
+    NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupEndApiStart));
+  }
+
   if ((--ncclGroupDepth) > 0) goto exit;
 
   if ((ret = ncclGroupError) != ncclSuccess) goto fail;
@@ -711,6 +719,8 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
   groupLocalResetJobState();
 
 exit:
+  // Profiler group API start is called inside taskAppend to get graph capture information for the event
+  NCCLCHECK(ncclProfilerStopGroupApiEvent());
   return ret;
 fail:
   if (groupJob) {

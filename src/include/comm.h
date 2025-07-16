@@ -218,9 +218,12 @@ struct ncclTaskColl {
 
   // Profiler plugin
   int eActivationMask;
+  void* groupApiEventHandle;
+  void* collApiEventHandle;
   void* eventHandle;
   uint8_t nChannels;
 };
+
 struct ncclTaskP2p {
   struct ncclTaskP2p* next;
   ncclFunc_t func;
@@ -232,6 +235,8 @@ struct ncclTaskP2p {
 
   // Profiler plugin
   int eActivationMask;
+  void* groupApiEventHandle;
+  void* p2pApiEventHandle;
   void* eventHandle;
   uint8_t nChannels;
 };
@@ -273,6 +278,8 @@ struct ncclKernelPlan {
   struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
 
   // Profiler plugin
+  void* groupApiEventHandle;
+  void* kernelLaunchEventHandle;
   void* groupEventHandle;
 };
 

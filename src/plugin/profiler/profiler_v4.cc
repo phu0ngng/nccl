@@ -31,6 +31,7 @@ static ncclResult_t ncclProfiler_startEvent(void* ctx, void** eHandle, ncclProfi
       eDescr_v4.coll.nWarps = eDescr->coll.nWarps;
       eDescr_v4.coll.algo = eDescr->coll.algo;
       eDescr_v4.coll.proto = eDescr->coll.proto;
+      eDescr_v4.parentObj = eDescr->coll.parentGroup;
     } break;
     case ncclProfileP2p: {
       eDescr_v4.p2p.func = eDescr->p2p.func;
@@ -38,6 +39,7 @@ static ncclResult_t ncclProfiler_startEvent(void* ctx, void** eHandle, ncclProfi
       eDescr_v4.p2p.count = eDescr->p2p.count;
       eDescr_v4.p2p.datatype = eDescr->p2p.datatype;
       eDescr_v4.p2p.peer = eDescr->p2p.peer;
+      eDescr_v4.parentObj = eDescr->p2p.parentGroup;
     } break;
     case ncclProfileProxyOp: {
       eDescr_v4.proxyOp.pid = eDescr->proxyOp.pid;
