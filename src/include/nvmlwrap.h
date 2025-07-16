@@ -270,6 +270,7 @@ typedef struct nvmlConfComputeSystemState_st {
  */
 #define NVML_CC_SYSTEM_MULTIGPU_NONE 0
 #define NVML_CC_SYSTEM_MULTIGPU_PROTECTED_PCIE 1
+#define NVML_CC_SYSTEM_MULTIGPU_NVLE 2
 
 /**
  * Confidential Compute System settings
@@ -303,6 +304,7 @@ extern ncclNvmlDevicePairInfo ncclNvmlDevicePairs[ncclNvmlMaxDevices][ncclNvmlMa
 struct ncclNvmlCCStatus {
     bool CCEnabled;
     bool multiGpuProtectedPCIE;
+    bool multiGpuNVLE;
 };
 
 // All ncclNvmlFoo() functions call ncclNvmlEnsureInitialized() implicitly.
