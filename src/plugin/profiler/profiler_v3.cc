@@ -23,6 +23,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
     case ncclProfileColl: {
       eDescr_v3.coll.name = nullptr; // removed in v4
       eDescr_v3.coll.commHash = 0; // removed in v4
+      eDescr_v3.parentObj = eDescr->coll.parentGroup; // Hierarchy changed in v5
       eDescr_v3.coll.seqNumber = eDescr->coll.seqNumber;
       eDescr_v3.coll.func = eDescr->coll.func;
       eDescr_v3.coll.sendBuff = eDescr->coll.sendBuff;
@@ -38,6 +39,7 @@ static ncclResult_t ncclProfiler_startEvent(void* context, void** eHandle, ncclP
     case ncclProfileP2p: {
       eDescr_v3.p2p.name = nullptr; // removed in v4
       eDescr_v3.p2p.commHash = 0; // removed in v4
+      eDescr_v3.parentObj = eDescr->p2p.parentGroup; // Hierarchy changed in v5
       eDescr_v3.p2p.func = eDescr->p2p.func;
       eDescr_v3.p2p.buff = eDescr->p2p.buff;
       eDescr_v3.p2p.count = eDescr->p2p.count;

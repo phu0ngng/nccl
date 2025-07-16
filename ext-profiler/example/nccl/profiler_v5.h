@@ -6,12 +6,39 @@
 
 #ifndef PROFILER_V5_H_
 #define PROFILER_V5_H_
+#include <stdbool.h>
 
 typedef struct {
-  uint8_t type;                 // event type descriptor: ncclProfileColl, ...
-  void* parentObj;              // pointer to the profiler parent object (for coll is the group)
+  uint64_t type;                // event type descriptor: ncclProfileGroupApi, ...
+  void* parentObj;              // pointer to the profiler parent object
   int rank;                     // originating rank
   union {
+    struct {
+      int graphCaptured;
+      int groupDepth;
+    } groupApi;
+
+    struct {
+      const char* func;
+      size_t count;
+      const char* datatype;
+      int root;
+      void* stream;
+      bool graphCaptured;
+    } collApi;
+
+    struct {
+      const char* func;
+      size_t count;
+      const char* datatype;
+      void* stream;
+      bool graphCaptured;
+    } p2pApi;
+
+    struct {
+      void* stream;
+    } kernelLaunch;
+
     struct {
       uint64_t seqNumber;
       const char* func;
@@ -24,6 +51,7 @@ typedef struct {
       uint8_t nWarps;
       const char* algo;
       const char* proto;
+      void* parentGroup; // for backward compatibility with v4
     } coll;
 
     struct {
@@ -33,6 +61,7 @@ typedef struct {
       size_t count;
       int peer;
       uint8_t nChannels;
+      void* parentGroup; // for backward compatibility with v4
     } p2p;
 
     struct {
