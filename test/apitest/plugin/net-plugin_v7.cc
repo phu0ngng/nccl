@@ -117,7 +117,7 @@ __hidden ncclResult_t pluginCloseListen(void* listenComm) {
   return ncclSuccess;
 }
 
-const ncclNet_v7_t ncclNetPlugin_v7 = {
+extern "C" const ncclNet_v7_t ncclNetPlugin_v7 = {
   .name = "ncclNetPlugin_v7",
   .init = pluginInit,
   .devices = pluginDevices,

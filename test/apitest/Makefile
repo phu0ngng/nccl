@@ -66,4 +66,4 @@ ${DST_DIR}/%.o: %.cu
 ${DST_DIR}/plugin/libnccl-%.so: plugin/%.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}/plugin
-	${CC} -I${SRCDIR}/ext-net/example/nccl -I${SRCDIR}/ext-profiler/example/nccl -I${SRCDIR}/ext-tuner/example/nccl -fPIC -shared -o $@ $^
+	${CXX} -I${SRCDIR}/ext-net/example/nccl -I${SRCDIR}/ext-profiler/example/nccl -I${SRCDIR}/ext-tuner/example/nccl -fPIC -fvisibility=default -shared -o $@ $^

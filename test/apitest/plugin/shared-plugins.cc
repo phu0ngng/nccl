@@ -193,7 +193,7 @@ __hidden ncclResult_t netPluginFinalize(void *ctx) {
   return ncclSuccess;
 }
 
-const ncclNet_t ncclNetPlugin_v11 = {
+extern "C" const ncclNet_t ncclNetPlugin_v11 = {
   .name = "ncclNetPlugin_v11",
   .init = netPluginInit,
   .devices = netPluginDevices,

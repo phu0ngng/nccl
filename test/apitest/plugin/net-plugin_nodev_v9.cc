@@ -28,7 +28,7 @@ __hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) 
 __hidden ncclResult_t pluginGetDeviceMr(void* comm, void* mhandle, void** dptr_mhandle) { return ncclInternalError; }
 __hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_v9_t* props) { return ncclInternalError; }
 
-const ncclNet_v9_t ncclNetPlugin_v9 = {
+extern "C" const ncclNet_v9_t ncclNetPlugin_v9 = {
   .name = "ncclNetPlugin_v9",
   .init = pluginInit,
   .devices = pluginDevices,
