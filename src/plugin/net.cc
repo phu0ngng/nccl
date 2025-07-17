@@ -171,6 +171,8 @@ static ncclResult_t ncclNetPluginInit(void** netCtx, void** collNetCtx, uint64_t
 exit:
   return ncclSuccess;
 fail:
+  INFO(NCCL_INIT|NCCL_NET, "Failed to initialize NET plugin %s", pluginLib->ncclNet->name);
+  pluginLib->ncclNet->finalize(netCtx);
   pluginLib->netPhysDevs = pluginLib->netVirtDevs = NCCL_UNDEF_DEV_COUNT;
   pluginLib->collNetPhysDevs = pluginLib->collNetVirtDevs = NCCL_UNDEF_DEV_COUNT;
   pluginLib->ncclNetPluginState = ncclNetPluginStateDisabled;
