@@ -55,6 +55,7 @@ static ncclResult_t ncclProfiler_startEvent(void* ctx, void** eHandle, ncclProfi
     case ncclProfileProxyCtrl: break;
     case ncclProfileKernelCh: {
       eDescr_v4.kernelCh.channelId = eDescr->kernelCh.channelId;
+      eDescr_v4.kernelCh.pTimer = eDescr->kernelCh.pTimer;
     } break;
     case ncclProfileNetPlugin: {
       eDescr_v4.netPlugin.id = eDescr->netPlugin.id;
