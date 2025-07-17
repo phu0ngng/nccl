@@ -261,6 +261,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     event->startTs = gettime() - startTime;
     *eHandle = event;
   } else if (eDescr->type == ncclProfileCollApi) {
+    if (eDescr->parentObj == NULL) return ncclSuccess;
     struct collApi* event;
     int collApiId = __atomic_fetch_add(&ctx->collApiPoolIndex, 1, __ATOMIC_RELAXED);
     if ((collApiId - __atomic_load_n(&ctx->collApiPoolBase, __ATOMIC_RELAXED)) < collApiPoolSize) {
@@ -287,6 +288,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     __atomic_fetch_add(&parent->refCount, 1, __ATOMIC_RELAXED);
     *eHandle = event;
   } else if (eDescr->type == ncclProfileP2pApi) {
+    if (eDescr->parentObj == NULL) return ncclSuccess;
     struct p2pApi* event;
     int p2pApiId = __atomic_fetch_add(&ctx->p2pApiPoolIndex, 1, __ATOMIC_RELAXED);
     if ((p2pApiId - __atomic_load_n(&ctx->p2pApiPoolBase, __ATOMIC_RELAXED)) < p2pApiPoolSize) {
@@ -312,6 +314,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     __atomic_fetch_add(&parent->refCount, 1, __ATOMIC_RELAXED);
     *eHandle = event;
   } else if (eDescr->type == ncclProfileKernelLaunch) {
+    if (eDescr->parentObj == NULL) return ncclSuccess;
     struct kernelLaunch* event;
     int kernelLaunchId = __atomic_fetch_add(&ctx->kernelLaunchPoolIndex, 1, __ATOMIC_RELAXED);
     if ((kernelLaunchId - __atomic_load_n(&ctx->kernelLaunchPoolBase, __ATOMIC_RELAXED)) < kernelLaunchPoolSize) {
@@ -330,6 +333,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
     __atomic_fetch_add(&parent->refCount, 1, __ATOMIC_RELAXED);
     *eHandle = event;
   } else if (eDescr->type == ncclProfileGroup) {
+    if (eDescr->parentObj == NULL) return ncclSuccess;
     struct group* event;
     int groupId = __atomic_fetch_add(&ctx->groupPoolIndex, 1, __ATOMIC_RELAXED);
     if ((groupId - __atomic_load_n(&ctx->groupPoolBase, __ATOMIC_RELAXED)) < groupPoolSize) {

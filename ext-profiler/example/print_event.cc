@@ -28,7 +28,7 @@ __hidden void printGroupApiEventTrailer(FILE* fh, struct groupApi* event) {
 
 static __thread int p2pApiId;
 __hidden void printP2pApiEventHeader(FILE* fh, struct p2pApi* event) {
-  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"P2P_API\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"count\": %d, \"datatype\": %s, \"GraphCaptured\":%d, \"Stream\": %p}},\n",
+  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"P2P_API\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"count\": %lu, \"datatype\": %s, \"GraphCaptured\":%d, \"Stream\": %p}},\n",
       event->func, p2pApiId, getpid(), 1, event->startTs, event->count, event->datatype, event->graphCaptured, event->stream);
 }
 
@@ -39,7 +39,7 @@ __hidden void printP2pApiEventTrailer(FILE* fh, struct p2pApi* event) {
 
 static __thread int collApiId;
 __hidden void printCollApiEventHeader(FILE* fh, struct collApi* event) {
-  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"COLL_API\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"count\": %d, \"datatype\": %s, \"root\": %d, \"GraphCaptured\":%d, \"Stream\": %p}},\n",
+  fprintf(fh, "{\"name\": \"%s\", \"cat\": \"COLL_API\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"count\": %lu, \"datatype\": %s, \"root\": %d, \"GraphCaptured\":%d, \"Stream\": %p}},\n",
       event->func, collApiId, getpid(), 1, event->startTs, event->count, event->datatype, event->root, event->graphCaptured, event->stream);
 }
 
@@ -82,7 +82,7 @@ __hidden void printCollEventTrailer(FILE* fh, struct collective* event) {
 static __thread int p2pId;
 __hidden void printP2pEventHeader(FILE* fh, struct p2p* event) {
   fprintf(fh, "{\"name\": \"%s\", \"cat\": \"P2P\", \"ph\": \"b\", \"id\": %d, \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {\"CommHash\": %lu, \"Rank\": %d, \"Peer\": %d, \"Count\": %lu, \"Datatype\": \"%s\", \"nChannels\": %d}},\n",
-          event->base.func, p2pId, getpid(), 1, event->base.startTs, ((struct p2pApi*)event->base.parent), event->base.rank, event->peer, event->count, event->datatype, event->nChannels);
+          event->base.func, p2pId, getpid(), 1, event->base.startTs, ((struct p2pApi*)event->base.parent)->ctx->commHash, event->base.rank, event->peer, event->count, event->datatype, event->nChannels);
 }
 
 __hidden void printP2pEventTrailer(FILE* fh, struct p2p* event) {

@@ -384,27 +384,25 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
   struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
   while (ct) {
     if (__builtin_expect(ncclProfiler != NULL, 0)) {
-      if (plan->groupEventHandle || ct->collApiEventHandle) {
-        int enable = ct->eActivationMask & (ncclProfileColl | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin);
-        if (enable) {
-          ncclProfilerEventDescr_t eDescr = { 0 };
-          eDescr.type = ncclProfileColl;
-          eDescr.coll.parentGroup = plan->groupEventHandle;
-          eDescr.parentObj = ct->collApiEventHandle;
-          eDescr.rank = plan->comm->rank;
-          eDescr.coll.seqNumber = plan->comm->seqNumber[ct->func];
-          eDescr.coll.func = ncclFuncToString(ct->func);
-          eDescr.coll.sendBuff = ct->sendbuff;
-          eDescr.coll.recvBuff = ct->recvbuff;
-          eDescr.coll.count = ct->count;
-          eDescr.coll.root = ct->root;
-          eDescr.coll.datatype = ncclDatatypeToString(ct->datatype);
-          eDescr.coll.nChannels = ct->nChannels;
-          eDescr.coll.nWarps = ct->nWarps;
-          eDescr.coll.algo = ncclAlgoToString(ct->algorithm);
-          eDescr.coll.proto = ncclProtoToString(ct->protocol);
-          ncclProfiler->startEvent(plan->comm->profilerContext, &ct->eventHandle, &eDescr);
-        }
+      int enable = ct->eActivationMask & (ncclProfileColl | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin);
+      if (enable) {
+        ncclProfilerEventDescr_t eDescr = { 0 };
+        eDescr.type = ncclProfileColl;
+        eDescr.coll.parentGroup = plan->groupEventHandle;
+        eDescr.parentObj = ct->collApiEventHandle;
+        eDescr.rank = plan->comm->rank;
+        eDescr.coll.seqNumber = plan->comm->seqNumber[ct->func];
+        eDescr.coll.func = ncclFuncToString(ct->func);
+        eDescr.coll.sendBuff = ct->sendbuff;
+        eDescr.coll.recvBuff = ct->recvbuff;
+        eDescr.coll.count = ct->count;
+        eDescr.coll.root = ct->root;
+        eDescr.coll.datatype = ncclDatatypeToString(ct->datatype);
+        eDescr.coll.nChannels = ct->nChannels;
+        eDescr.coll.nWarps = ct->nWarps;
+        eDescr.coll.algo = ncclAlgoToString(ct->algorithm);
+        eDescr.coll.proto = ncclProtoToString(ct->protocol);
+        ncclProfiler->startEvent(plan->comm->profilerContext, &ct->eventHandle, &eDescr);
       }
     }
     // comm->seqNumber values are updated even if the plugin is not active, since they are used by RAS as well.
@@ -419,26 +417,24 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
     ct = ct->next;
   }
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-      struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
-      if (plan->groupEventHandle != nullptr || (pt && pt->p2pApiEventHandle)) {
-      while (pt) {
-        int enable = pt->eActivationMask & (ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh);
-        if (enable) {
-          ncclProfilerEventDescr_t eDescr = { 0 };
-          eDescr.type = ncclProfileP2p;
-          eDescr.p2p.parentGroup = plan->groupEventHandle;
-          eDescr.parentObj = pt->p2pApiEventHandle;
-          eDescr.rank = plan->comm->rank;
-          eDescr.p2p.func = ncclFuncToString(pt->func);
-          eDescr.p2p.buff = pt->buff;
-          eDescr.p2p.count = pt->count;
-          eDescr.p2p.datatype = ncclDatatypeToString(pt->datatype);
-          eDescr.p2p.peer = pt->root;
-          eDescr.p2p.nChannels = pt->nChannels;
-          ncclProfiler->startEvent(plan->comm->profilerContext, &pt->eventHandle, &eDescr);
-        }
-        pt = pt->next;
+    struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
+    while (pt) {
+      int enable = pt->eActivationMask & (ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh);
+      if (enable) {
+        ncclProfilerEventDescr_t eDescr = { 0 };
+        eDescr.type = ncclProfileP2p;
+        eDescr.p2p.parentGroup = plan->groupEventHandle;
+        eDescr.parentObj = pt->p2pApiEventHandle;
+        eDescr.rank = plan->comm->rank;
+        eDescr.p2p.func = ncclFuncToString(pt->func);
+        eDescr.p2p.buff = pt->buff;
+        eDescr.p2p.count = pt->count;
+        eDescr.p2p.datatype = ncclDatatypeToString(pt->datatype);
+        eDescr.p2p.peer = pt->root;
+        eDescr.p2p.nChannels = pt->nChannels;
+        ncclProfiler->startEvent(plan->comm->profilerContext, &pt->eventHandle, &eDescr);
       }
+      pt = pt->next;
     }
   }
   TIME_STOP_EVENT(taskStart);
@@ -448,17 +444,15 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
 ncclResult_t ncclProfilerStopTaskEvents(struct ncclKernelPlan* plan) {
   TIME_START_EVENT(taskStop);
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    if (plan->groupEventHandle) {
-      struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
-      while (ct) {
-        if (ct->eventHandle) ncclProfiler->stopEvent(ct->eventHandle);
-        ct = ct->next;
-      }
-      struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
-      while (pt) {
-        if (pt->eventHandle) ncclProfiler->stopEvent(pt->eventHandle);
-        pt = pt->next;
-      }
+    struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
+    while (ct) {
+      if (ct->eventHandle) ncclProfiler->stopEvent(ct->eventHandle);
+      ct = ct->next;
+    }
+    struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
+    while (pt) {
+      if (pt->eventHandle) ncclProfiler->stopEvent(pt->eventHandle);
+      pt = pt->next;
     }
   }
   TIME_STOP_EVENT(taskStop);
@@ -507,7 +501,7 @@ ncclResult_t ncclProfilerStartSendProxyStepEvent(int s, struct ncclProxyArgs* ar
   TIME_START_EVENT(proxyStepStart);
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    if (sub->opEventHandle && (sub->eActivationMask & (ncclProfileProxyStep | ncclProfileNetPlugin))) {
+    if (sub->eActivationMask & (ncclProfileProxyStep | ncclProfileNetPlugin)) {
       int step_ = DIVUP(stepId, args->sliceSteps);
       ncclProfilerEventDescr_t eDescr = { 0 };
       eDescr.type = ncclProfileProxyStep;
@@ -526,7 +520,7 @@ ncclResult_t ncclProfilerStartRecvProxyStepEvent(int s, struct ncclProxyArgs* ar
   TIME_START_EVENT(proxyStepStart);
   struct ncclProxySubArgs* sub = &args->subs[s];
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
-    if (sub->opEventHandle && (sub->eActivationMask & (ncclProfileProxyStep | ncclProfileNetPlugin))) {
+    if (sub->eActivationMask & (ncclProfileProxyStep | ncclProfileNetPlugin)) {
       int step_ = DIVUP(stepId, args->sliceSteps);
       ncclProfilerEventDescr_t eDescr = { 0 };
       eDescr.type = ncclProfileProxyStep;
