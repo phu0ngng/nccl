@@ -803,7 +803,7 @@ ncclProfiler_t ncclProfiler_v5 = {
   exampleProfilerFinalize,
 };
 
-int exampleProfilerStart(int eActivationMask, const char* name) {
+__attribute__((visibility("default"))) int exampleProfilerStart(int eActivationMask, const char* name) {
   profilerDumpFile = name;
   if (__atomic_load_n(&initialized, __ATOMIC_RELAXED)) {
     __atomic_store_n(eActivationMaskPtr, eActivationMask, __ATOMIC_RELAXED);
@@ -811,7 +811,7 @@ int exampleProfilerStart(int eActivationMask, const char* name) {
   return ncclSuccess;
 }
 
-int exampleProfilerStop(void) {
+__attribute__((visibility("default"))) int exampleProfilerStop(void) {
   if (__atomic_load_n(&initialized, __ATOMIC_RELAXED)) {
     __atomic_store_n(eActivationMaskPtr, 0, __ATOMIC_RELAXED);
   }

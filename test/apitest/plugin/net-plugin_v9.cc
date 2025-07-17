@@ -39,7 +39,7 @@ struct pluginMemHandle {
 __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) { return ncclSuccess; }
 __hidden ncclResult_t pluginDevices(int* ndev) { *ndev = 1; return ncclSuccess; }
 __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v9_t* props) {
-  props->name = "ncclNetPlugin_v9";
+  props->name = (char *)"ncclNetPlugin_v9";
   props->pciPath = NULL;
   props->guid = 0;
   props->ptrSupport = NCCL_PTR_HOST;
@@ -70,7 +70,6 @@ __hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, nccl
   return ncclSuccess;
 }
 __hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** recvDevComm) {
-  struct pluginListenComm* listen = (struct pluginListenComm*)listenComm;
   struct pluginRecvComm* comm = (struct pluginRecvComm*)malloc(sizeof(*comm));
   *recvComm = comm;
   return ncclSuccess;
@@ -135,7 +134,7 @@ __hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_v9_t* props)
   return ncclSuccess;
 }
 
-const ncclNet_v9_t ncclNetPlugin_v9 = {
+extern "C" const ncclNet_v9_t ncclNetPlugin_v9 = {
   .name = "ncclNetPlugin_v9",
   .init = pluginInit,
   .devices = pluginDevices,

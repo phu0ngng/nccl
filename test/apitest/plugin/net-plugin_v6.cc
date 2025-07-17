@@ -5,7 +5,6 @@
  ************************************************************************/
 
 #include "net.h"
-#include "net_device.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -36,8 +35,8 @@ struct pluginMemHandle {
 
 __hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) { return ncclSuccess; }
 __hidden ncclResult_t pluginDevices(int* ndev) { *ndev = 1; return ncclSuccess; }
-__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v7_t* props) {
-  props->name = "ncclNetPlugin_v7";
+__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v6_t* props) {
+  props->name = (char *)"ncclNetPlugin_v6";
   props->pciPath = NULL;
   props->guid = 0;
   props->ptrSupport = NCCL_PTR_HOST;
@@ -46,8 +45,6 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v7_t* props
   props->latency = 0;
   props->maxComms = 1024*1024;
   props->maxRecvs = NCCL_PLUGIN_MAX_RECVS;
-  props->netDeviceType = NCCL_NET_DEVICE_HOST;
-  props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   return ncclSuccess;
 }
 __hidden ncclResult_t pluginListen(int dev, void* handle, void** listenComm) {
@@ -56,13 +53,12 @@ __hidden ncclResult_t pluginListen(int dev, void* handle, void** listenComm) {
   *listenComm = comm;
   return ncclSuccess;
 }
-__hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
+__hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm) {
   struct pluginSendComm* comm = (struct pluginSendComm*)malloc(sizeof(*comm));
   *sendComm = comm;
   return ncclSuccess;
 }
-__hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** recvDevComm) {
-  struct pluginListenComm* listen = (struct pluginListenComm*)listenComm;
+__hidden ncclResult_t pluginAccept(void* listenComm, void** recvComm) {
   struct pluginRecvComm* comm = (struct pluginRecvComm*)malloc(sizeof(*comm));
   *recvComm = comm;
   return ncclSuccess;
@@ -118,8 +114,8 @@ __hidden ncclResult_t pluginCloseListen(void* listenComm) {
   return ncclSuccess;
 }
 
-const ncclNet_v7_t ncclNetPlugin_v7 = {
-  .name = "ncclNetPlugin_v7",
+extern "C" const ncclNet_v6_t ncclNetPlugin_v6 = {
+  .name = "ncclNetPlugin_v6",
   .init = pluginInit,
   .devices = pluginDevices,
   .getProperties = pluginGetProperties,

@@ -2,6 +2,7 @@
 set(LIBSRCFILES
     bootstrap.cc
     channel.cc
+    ce_coll.cc
     collectives.cc
     debug.cc
     enqueue.cc
@@ -61,12 +62,9 @@ target_sources(nccl PRIVATE ${LIBSRCFILES})
 
 # Include directories
 target_include_directories(nccl PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/device
-    ${CMAKE_CURRENT_BINARY_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
-    ${CMAKE_CURRENT_BINARY_DIR}/device/gensrc
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 
@@ -109,8 +107,6 @@ target_link_libraries(nccl
     pthread
     rt
     dl
-    cudart
-    cuda
     ${CUDAToolkit_LIBRARIES}
     ${EXTRA_LIBS}
 )
@@ -126,8 +122,11 @@ set(RAS_BINSRCFILES ras/client.cc)
 add_executable(ncclras ${RAS_BINSRCFILES})
 
 target_include_directories(ncclras PUBLIC
+    ${CMAKE_BINARY_DIR}/include
     ${CUDAToolkit_INCLUDE_DIRS}
 )
+
+add_dependencies(ncclras nccl_header)
 
 target_link_libraries(ncclras
     PRIVATE
@@ -146,12 +145,9 @@ add_library(nccl_static STATIC ${LIBSRCFILES})
 
 # Include directories
 target_include_directories(nccl_static PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/device
-    ${CMAKE_CURRENT_BINARY_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
-    ${CMAKE_CURRENT_BINARY_DIR}/device/gensrc
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 
@@ -165,8 +161,6 @@ target_link_libraries(nccl_static
     pthread
     rt
     dl
-    cudart
-    cuda
     ${CUDAToolkit_LIBRARIES}
     ${EXTRA_LIBS}
 )

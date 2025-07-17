@@ -155,6 +155,22 @@ build-dlfw-pytorch-container:
     expire_in: 48 hrs
   allow_failure: false
 
+build-cmake:
+  stage: build
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default")
+      when: always
+    - when: never
+  tags:
+    - ipp6-nccl
+  variables:
+    SLURM_PARTITION: cpuonly
+    SLURM_TIME: 15
+  script:
+    # TODO (kartiki) - Invoke this via docker/make.sh
+    - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh
+  allow_failure: false
+
 ##
 ## Stage: build - Finish!
 ##

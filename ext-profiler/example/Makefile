@@ -8,9 +8,9 @@ include ../../makefiles/common.mk
 BUILDDIR ?= .
 NCCLDIR  := $(BUILDDIR)
 
-SRC_FILES := $(wildcard *.c)
+SRC_FILES := $(wildcard *.cc)
 DST_DIR   := $(BUILDDIR)
-OBJ_FILES := $(SRC_FILES:%.c=${DST_DIR}/%.o)
+OBJ_FILES := $(SRC_FILES:%.cc=${DST_DIR}/%.o)
 DEP_FILES := $(OBJ_FILES:%.o=%.dep)
 
 build: ${DST_DIR}/libnccl-profiler-example.so
