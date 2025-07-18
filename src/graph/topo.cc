@@ -8,6 +8,7 @@
 #include "graph.h"
 #include "topo.h"
 #include "comm.h"
+#include "nccl.h"
 #include "nvmlwrap.h"
 #include "coll_net.h"
 #include "transport.h"
@@ -1015,9 +1016,10 @@ ncclResult_t ncclTopoMakeVnic(struct ncclXml* xml, struct ncclTopoNetInfo* netIn
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoForceMerge(struct ncclXml* xml, struct ncclTopoNetInfo* netInfo, char* str, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs) {
+ncclResult_t ncclTopoForceMerge(struct ncclXml* xml, struct ncclTopoNetInfo* netInfo, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs) {
   ncclResult_t ret = ncclSuccess;
-  INFO(NCCL_ENV|NCCL_NET, "TOPO/NET : Force-fusing NICs using NCCL_NET_FORCE_MERGE=%s", str);
+  const char* str = netInfo->forceMerge;
+  INFO(NCCL_ENV | NCCL_NET, "TOPO/NET : Force-fusing NICs using NCCL_NET_FORCE_MERGE=%s", str);
   char* ncStr;
   NCCLCHECK(ncclCalloc(&ncStr, strlen(str)+1));
   strcpy(ncStr, str);
@@ -1075,7 +1077,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, struct ncclTopoNetInfo* netInfo, int mergeLevel, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs) {
+ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, struct ncclTopoNetInfo* netInfo, int* placedDevs, ncclNetProperties_t* propsList, struct ncclXmlNode** physNetNodes, int nPhysDevs) {
   // Compute the path type between each device
   int* paths = NULL;
   ncclResult_t res = ncclSuccess;
@@ -1105,7 +1107,7 @@ ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, struct ncclTopoNetInfo* netI
       // Select each unplaced device "j" which is at most "mergeLevel" distance from "i", but not equal to "i"
       // (Don't merge the same device with itself)
       for (int j = 0; j < nPhysDevs; j++) {
-        if (paths[i*nPhysDevs + j] <= mergeLevel &&
+        if (paths[i*nPhysDevs + j] <= netInfo->mergeLevel &&
         placedDevs[j] == 0 && j != i) {
           vProps.devs[vProps.ndevs++] = j;
           placedDevs[j] = 1;
@@ -1188,13 +1190,13 @@ ncclResult_t ncclTopoGetVNicParent(struct ncclXml* xml, ncclResult_t (*getProper
 ncclResult_t ncclTopoMakeVNics(struct ncclXml* xml, struct ncclTopoNetInfo* netInfo, int physicalDevs) {
   int* placedDevs = NULL;
   struct ncclXmlNode** physNetNodes = NULL;
+  ncclNetProperties_t* props = NULL;
+  ncclResult_t res = ncclSuccess;
   if (physicalDevs == 0) return ncclSuccess;
 
-  ncclCalloc(&physNetNodes, physicalDevs);
-  ncclResult_t res = ncclSuccess;
-
-  ncclNetProperties_t* props = NULL;
-  ncclCalloc(&props, physicalDevs);
+  NCCLCHECK(ncclCalloc(&physNetNodes, physicalDevs));
+  NCCLCHECK(ncclCalloc(&placedDevs, physicalDevs));
+  NCCLCHECK(ncclCalloc(&props, physicalDevs));
   for (int i = 0; i < physicalDevs; i++) {
     NCCLCHECKGOTO(netInfo->getProperties(i, props + i), res, out);
     struct ncclXmlNode* physNetNode;
@@ -1203,21 +1205,8 @@ ncclResult_t ncclTopoMakeVNics(struct ncclXml* xml, struct ncclTopoNetInfo* netI
     TRACE(NCCL_GRAPH, "Found physical ncclNet node %d %s", i,  props[i].name);
   }
 
-  // By default, don't merge any devices
-  int mergeLevel;
-  mergeLevel = PATH_PORT;
-  { // Avoids warnings related to jumping to "out"
-    const char* mergeLevelEnv = ncclGetEnv("NCCL_NET_MERGE_LEVEL");
-    if (mergeLevelEnv) kvConvertToInt(mergeLevelEnv, &mergeLevel, nicPathKvList);
-    char* forceMerge = (char*) ncclGetEnv("NCCL_NET_FORCE_MERGE");
-    NCCLCHECK(ncclCalloc(&placedDevs, physicalDevs));
-    memset(placedDevs, 0, sizeof(int)*physicalDevs);
-
-    if (forceMerge) {
-      NCCLCHECKGOTO(ncclTopoForceMerge(xml, netInfo, forceMerge, placedDevs, props, physNetNodes, physicalDevs), res, out);
-    }
-  }
-  NCCLCHECKGOTO(ncclTopoAutoMerge(xml, netInfo, mergeLevel, placedDevs, props, physNetNodes, physicalDevs), res, out);
+  if (netInfo->forceMerge) NCCLCHECKGOTO(ncclTopoForceMerge(xml, netInfo, placedDevs, props, physNetNodes, physicalDevs), res, out);
+  NCCLCHECKGOTO(ncclTopoAutoMerge(xml, netInfo, placedDevs, props, physNetNodes, physicalDevs), res, out);
 
 out:
   free(physNetNodes);
@@ -1298,6 +1287,17 @@ ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, struct nc
   return ncclSuccess;
 }
 
+ncclResult_t ncclTopoGetFusionEnv(int* mergeLevel, const char** forceMerge) {
+  if (forceMerge) *forceMerge = ncclGetEnv("NCCL_NET_FORCE_MERGE");
+  const char* mergeLevelEnv = ncclGetEnv("NCCL_NET_MERGE_LEVEL");
+  if (mergeLevelEnv) {
+    kvConvertToInt(mergeLevelEnv, mergeLevel, nicPathKvList);
+  } else {
+    *mergeLevel = PATH_PORT;
+  }
+  return ncclSuccess;
+}
+
 static std::mutex netMutex;
 
 ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** system, const char* dumpXmlFile) {
@@ -1360,6 +1360,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
         netInfo.getProperties = comm->ncclCollNet->getProperties;
         netInfo.makeVDevice = comm->ncclCollNet->makeVDevice;
         netInfo.devices = comm->ncclCollNet->devices;
+        NCCLCHECK(ncclTopoGetFusionEnv(&netInfo.mergeLevel, &netInfo.forceMerge));
         NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
       }
 
@@ -1372,6 +1373,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       netInfo.getProperties = comm->ncclNet->getProperties;
       netInfo.makeVDevice = comm->ncclNet->makeVDevice;
       netInfo.devices = comm->ncclNet->devices;
+      NCCLCHECK(ncclTopoGetFusionEnv(&netInfo.mergeLevel, &netInfo.forceMerge));
       NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
   }
 
