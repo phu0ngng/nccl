@@ -5,6 +5,10 @@
 #include "nccl_common.h"
 #include "bitops.h"
 
+// Memory operations per rank for different synchronization protocols
+#define NCCL_CE_SYNC_OPS_PER_RANK_MC 2  
+#define NCCL_CE_SYNC_OPS_PER_RANK_UC 3  
+
 struct ncclCeColl {
   uint8_t* baseUCSymReadyPtr;
   uint8_t* baseUCSymComplPtr;
