@@ -56,7 +56,6 @@ static ncclResult_t ncclNet_listen(void* ctx __attribute__((unused)),
 
 static ncclResult_t ncclNet_connect(void* ctx __attribute__((unused)),
     int dev,
-    ncclNetCommConfig_t* config __attribute__((unused)),
     void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   return ncclNet_v6->connect(dev, handle, sendComm);
 }
@@ -145,6 +144,7 @@ static ncclResult_t ncclCollNet_finalize(void* ctx __attribute__((unused))) {
 
 static ncclResult_t ncclNet_init(void** ctx __attribute__((unused)),
     uint64_t commId __attribute__((unused)),
+    ncclNetCommConfig_t* config __attribute__((unused)),
     ncclDebugLogger_t logfn,
     ncclProfilerCallback_t proffn __attribute__((unused))) {
   if (refCount[NET_INDEX]++ > 0) return ncclSuccess;
@@ -204,6 +204,7 @@ static ncclResult_t ncclCollNet_init(void** ctx __attribute__((unused)),
   ncclCollNet.test = ncclCollNet_v6->test;
   ncclCollNet.closeColl = ncclCollNet_v6->closeColl;
   ncclCollNet.closeListen = ncclCollNet_v6->closeListen;
+  ncclCollNet.makeVDevice  = NULL;
   ncclCollNet.finalize = ncclCollNet_finalize;
   return ncclSuccess;
 }

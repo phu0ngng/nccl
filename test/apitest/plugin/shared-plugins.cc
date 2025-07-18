@@ -62,7 +62,7 @@ struct netPluginMemHandle {
   int data;
 };
 
-__hidden ncclResult_t netPluginInit(void** ctx, uint64_t commId, ncclDebugLogger_t logfn, ncclProfilerCallback_t profFunction) {
+__hidden ncclResult_t netPluginInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logfn, ncclProfilerCallback_t profFunction) {
   int counter = __atomic_fetch_add(&netContextCounter, 1, __ATOMIC_RELAXED);
   if (counter == MAX_CONTEXT_COUNT) return ncclInternalError;
   context[counter].commId = commId;
@@ -101,7 +101,7 @@ __hidden ncclResult_t netPluginListen(void* ctx, int dev, void* handle, void** l
   *listenComm = comm;
   return ncclSuccess;
 }
-__hidden ncclResult_t netPluginConnect(void* ctx, int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
+__hidden ncclResult_t netPluginConnect(void* ctx, int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
   if (((struct pluginContext *)ctx)->commId == 0UL) return ncclInternalError;
   struct netPluginSendComm* comm = (struct netPluginSendComm*)malloc(sizeof(*comm));
   comm->context = (struct pluginContext *)ctx;
@@ -181,8 +181,7 @@ __hidden ncclResult_t netPluginIrecvConsumed(void* recvComm, int n, void* reques
 __hidden ncclResult_t netPluginGetDeviceMr(void* comm, void* mhandle, void** dptr_mhandle) {
   return ncclSuccess;
 }
-__hidden ncclResult_t netPluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* props) {
-  if (((struct pluginContext *)ctx)->commId == 0UL) return ncclInternalError;
+__hidden ncclResult_t netPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* props) {
   return ncclSuccess;
 }
 

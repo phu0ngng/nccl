@@ -61,7 +61,7 @@ struct mockHandle {
   // struct ncclIbCommStage stage; // Used by the other side when connecting
 };
 
-__hidden ncclResult_t pluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* vProps) {
+__hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
   if (nVirtualDevs < MAX_MOCK_VDEVS) {
     if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) return ncclInvalidUsage;
     if (vProps->ndevs > 1) {
@@ -105,14 +105,14 @@ ncclResult_t pluginAddDevice(void* ctx, ncclNetProperties_t* props) {
     ncclNetVDeviceProps_t vProps = {};
     vProps.ndevs = 1;
     vProps.devs[0] = deviceIndex;
-    return pluginMakeVDevice(ctx, &deviceIndex, &vProps);
+    return pluginMakeVDevice(&deviceIndex, &vProps);
   } else {
     return ncclInvalidUsage;
   }
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+__hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   // netContext is ignored, setting to NULL
   *ctx = NULL;
 
@@ -214,7 +214,7 @@ __hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclDebugLogger_t 
 }
 
 __hidden ncclResult_t pluginInitCollNet(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
-  return pluginInit(ctx, commId, logFunction, NULL);
+  return pluginInit(ctx, commId, NULL, logFunction, NULL);
 }
 
 __hidden ncclResult_t pluginDevices(int* ndev) {
@@ -255,7 +255,7 @@ __hidden ncclResult_t pluginListen(void* ctx, int dev, void* /*handle*/, void** 
   }
 }
 
-__hidden ncclResult_t pluginConnect(void* ctx, int dev, ncclNetCommConfig_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
+__hidden ncclResult_t pluginConnect(void* ctx, int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   if (dev < nVirtualDevs) {
     mockSendComm* sComm = (mockSendComm*) malloc(sizeof(mockSendComm));
     *sendComm = sComm;

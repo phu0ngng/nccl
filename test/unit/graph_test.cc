@@ -237,7 +237,7 @@ ncclResult_t fakeNetPluginDevices(int* ndev) {
   return ncclSuccess;
 }
 
-ncclResult_t fakeNetPluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* vProps) {
+ncclResult_t fakeNetPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* vProps) {
   if (nVirtualDevs == NCCL_UNDEF_DEV_COUNT) nVirtualDevs = 0;
   int totalDevs = nPhysDevs + nVirtualDevs;
   if (totalDevs < MAX_MOCK_VDEVS) {
@@ -324,7 +324,6 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   netInfo.coll = coll > 0;
   netInfo.netPluginIndex = 0;
   netInfo.dmaBufSupport = true;
-  netInfo.netContext = NULL;
   netInfo.getDevCount = fakeNetPluginGetDevCount;
   netInfo.setVirtDevCount = fakeNetPluginSetDevCount;
   netInfo.name = "Fake";
