@@ -103,6 +103,72 @@ Related links:
 * :c:func:`ncclGroupStart`
 * :c:func:`ncclGroupEnd`
 
+Group Operation Ordering Semantics
+-------------------------------------
+
+Although NCCL group allows different operations to be issued in one shot, users still need to guarantee the same
+issuing order of the operations among different GPUs no matter whether the operations are issued to the same or 
+different communicators. 
+
+For example, the following code provides the correct order of the operations. In this example, *comm0* and *comm1*
+are duplicated independent communicators that include rank 0 and 1.
+
+.. code:: C
+
+ RANK0/GPU0/Process0:
+ ncclGroupStart();
+ ncclBroadcast(sendbuff1, recvbuff1, count1, datatype, root, comm0, stream);
+ ncclAllReduce(sendbuff2, recvbuff2, count2, datatype, comm0, stream);
+ ncclAllReduce(sendbuff3, recvbuff3, count3, datatype, comm0, stream);
+ ncclAllReduce(sendbuff4, recvbuff4, count4, datatype, comm1, stream);
+ ncclGroupEnd();
+
+ RANK1/GPU1/Process1:
+ ncclGroupStart();
+ ncclBroadcast(sendbuff1, recvbuff1, count1, datatype, root, comm0, stream);
+ ncclAllReduce(sendbuff2, recvbuff2, count2, datatype, comm0, stream);
+ ncclAllReduce(sendbuff3, recvbuff3, count3, datatype, comm0, stream);
+ ncclAllReduce(sendbuff4, recvbuff4, count4, datatype, comm1, stream);
+ ncclGroupEnd();
+
+However, changing the order of the any operations will lead to incorrect results or hang as shown in the following 2 examples:
+
+.. code:: C
+
+ RANK0/GPU0/Process0:
+ ncclGroupStart();
+ ncclBroadcast(sendbuff1, recvbuff1, count1, datatype, root, comm0, stream);
+ ncclAllReduce(sendbuff3, recvbuff3, count3, datatype, comm0, stream); // WRONG: reversed order
+ ncclAllReduce(sendbuff2, recvbuff2, count2, datatype, comm0, stream); // WRONG: reversed order
+ ncclAllReduce(sendbuff4, recvbuff4, count4, datatype, comm1, stream);
+ ncclGroupEnd();
+
+ RANK1/GPU1/Process1:
+ ncclGroupStart();
+ ncclBroadcast(sendbuff1, recvbuff1, count1, datatype, root, comm0, stream);
+ ncclAllReduce(sendbuff2, recvbuff2, count2, datatype, comm0, stream); // WRONG: reversed order
+ ncclAllReduce(sendbuff3, recvbuff3, count3, datatype, comm0, stream); // WRONG: reversed order
+ ncclAllReduce(sendbuff4, recvbuff4, count4, datatype, comm1, stream);
+ ncclGroupEnd();
+
+.. code:: C
+
+ RANK0/GPU0/Process0:
+ ncclGroupStart();
+ ncclAllReduce(sendbuff4, recvbuff4, count4, datatype, comm1, stream); // WRONG: reversed order
+ ncclBroadcast(sendbuff1, recvbuff1, count1, datatype, root, comm0, stream);
+ ncclAllReduce(sendbuff2, recvbuff2, count2, datatype, comm0, stream);
+ ncclAllReduce(sendbuff3, recvbuff3, count3, datatype, comm0, stream);
+ ncclGroupEnd();
+
+ RANK1/GPU1/Process1:
+ ncclGroupStart();
+ ncclBroadcast(sendbuff1, recvbuff1, count1, datatype, root, comm0, stream);
+ ncclAllReduce(sendbuff2, recvbuff2, count2, datatype, comm0, stream);
+ ncclAllReduce(sendbuff3, recvbuff3, count3, datatype, comm0, stream);
+ ncclAllReduce(sendbuff4, recvbuff4, count4, datatype, comm1, stream); // WRONG: reversed order
+ ncclGroupEnd();
+
 Nonblocking Group Operation
 -------------------------------------
 
