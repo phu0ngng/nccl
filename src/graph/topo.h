@@ -195,6 +195,9 @@ struct ncclTopoNetInfo {
   // communicator-specific information
   int netPluginIndex;
   bool dmaBufSupport;
+  // NIC fusion
+  int mergeLevel;
+  const char* forceMerge;
   // dev count tracking functions (not part of ncclNet)
   ncclResult_t (*getDevCount)(int, int*, int*);
   ncclResult_t (*setVirtDevCount)(int, int);
@@ -204,7 +207,9 @@ struct ncclTopoNetInfo {
   ncclResult_t (*makeVDevice)(int*, ncclNetVDeviceProps_t*);
   ncclResult_t (*devices)(int*);
 };
+
 ncclResult_t ncclTopoProcessNet(ncclXml* xml, const char* dumpXmlFile, struct ncclTopoNetInfo* net);
+ncclResult_t ncclTopoGetFusionEnv(int* mergeLevel, const char** forceMerge);
 
 #define NCCL_TOPO_XML_MAX_NODES 256
 #define NCCL_GRAPH_XML_MAX_NODES 4096
@@ -248,6 +253,8 @@ static ncclResult_t ncclTopoDevToRank(struct ncclTopoSystem* system, int dev, in
   }
   return ncclInternalError;
 }
+
+extern struct kvDict nicPathKvList[];
 
 static ncclResult_t ncclTopoIdToNetDev(struct ncclTopoSystem* system, int64_t id, int* netDev) {
   *netDev = -1;
