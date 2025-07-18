@@ -104,7 +104,7 @@ static int trafficClass;
 static int profilerMask;
 static const char* profilerDumpDefault = "perftest";
 static char* profilerDump = (char *)profilerDumpDefault;
-static int profilerIters;
+static int profilerIters = INT_MAX;
 int tuning;
 
 static int ctaPolicy = 0;
