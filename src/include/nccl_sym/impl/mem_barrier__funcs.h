@@ -1,0 +1,108 @@
+#ifndef _NCCL_SYM_MEM_BARRIER__FUNCS_H_
+#define _NCCL_SYM_MEM_BARRIER__FUNCS_H_
+#include "mem_barrier__types.h"
+#include "comm__types.h"
+
+#if __CUDACC__
+template<typename Coop>
+NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
+    Coop coop, ncclSymComm const& comm, ncclSymTeam team,
+    ncclSymMemBarrierHandle handle, uint32_t index,
+    bool multimem, ncclSymMultimemHandle mmHandle
+  ):
+  ncclSymMemBarrierSession_internal<Coop>{
+    coop, comm, team, handle, (int)index, multimem, mmHandle, /*epoch=*/0
+  } {
+  uint32_t* state = (uint32_t*)ncclSymGetResourceBufferLocalPointer(comm, handle.bufHandle);
+  this->epoch = state[(this->multimem ? 0 : 1)*this->handle.nBarriers + this->index];
+}
+#endif
+
+#if __CUDACC__
+template<typename Coop>
+NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
+    Coop coop, ncclSymComm const& comm, ncclSymTeamTagNear, uint32_t index, bool multimem
+  ): ncclSymMemBarrierSession(
+    coop, comm, ncclSymTeamNear(comm), comm.nearMemBarrier, index, multimem, comm.nearMultimem
+  ) {
+}
+#endif
+
+#if __CUDACC__
+template<typename Coop>
+NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::~ncclSymMemBarrierSession() {
+  uint32_t* state = (uint32_t*)ncclSymGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
+  if (this->coop.thread_rank() == 0) {
+    state[(this->multimem ? 0 : 1)*this->handle.nBarriers + this->index] = this->epoch;
+  }
+  this->coop.sync();
+}
+#endif
+
+#if __CUDACC__
+template<typename Coop>
+NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::arrive(Coop, cuda::memory_order order) {
+  this->coop.sync();
+  if (this->multimem) {
+  #if __CUDA_ARCH__ >= 900
+    if (this->coop.thread_rank() == 0) {
+      uint32_t* inbox = this->mcInbox(/*multimem=*/true);
+      if (nccl::utility::releaseOrderOf(order) != cuda::memory_order_relaxed) {
+        asm volatile("multimem.red.release.sys.add.u32 [%0],1;" :: "l"(inbox));
+      } else {
+        asm volatile("multimem.red.relaxed.sys.add.u32 [%0],1;" :: "l"(inbox));
+      }
+    }
+  #endif
+  } else {
+    #pragma unroll 1
+    for (int i = this->coop.thread_rank(); i < this->team.nRanks-1; i += this->coop.size()) {
+      int peer = i + (this->team.rank <= i ? 1 : 0);
+      cuda::atomic_ref<uint32_t> inbox(*this->ucInbox(peer, this->team.rank));
+      inbox.store(this->epoch+1, nccl::utility::releaseOrderOf(order));
+    }
+  }
+}
+#endif
+
+#if __CUDACC__
+template<typename Coop>
+NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::wait(Coop, cuda::memory_order order) {
+  if (this->multimem) {
+  #if __CUDA_ARCH__ >= 900
+    if (this->coop.thread_rank() == 0) {
+      cuda::atomic_ref<uint32_t> inbox(*this->mcInbox(/*multimem=*/false));
+      #pragma unroll 1
+      while (true) {
+        uint32_t got = inbox.load(nccl::utility::acquireOrderOf(order));
+        if (got - (this->epoch + this->team.nRanks) <= uint32_t(-1)>>1) break;
+      }
+      this->epoch += this->team.nRanks;
+    }
+  #endif
+  } else {
+    #pragma unroll 1
+    for (int i = this->coop.thread_rank(); i < this->team.nRanks-1; i += this->coop.size()) {
+      int peer = i + (this->team.rank <= i ? 1 : 0);
+      cuda::atomic_ref<uint32_t> inbox(*this->ucInbox(this->team.rank, peer));
+      #pragma unroll 1
+      while (true) {
+        uint32_t got = inbox.load(nccl::utility::acquireOrderOf(order));
+        if (got - (this->epoch + 1) <= uint32_t(-1)>>1) break;
+      }
+    }
+    this->epoch += 1;
+  }
+  this->coop.sync();
+}
+#endif
+
+#if __CUDACC__
+template<typename Coop>
+NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::sync(Coop coop, cuda::memory_order order) {
+  this->arrive(coop, order);
+  this->wait(coop, order);
+}
+#endif
+
+#endif // _NCCL_SYM_MEM_BARRIER__FUNCS_H_

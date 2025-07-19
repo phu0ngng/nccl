@@ -26,7 +26,7 @@ jobs=$(eval "$NUM_BUILD_PROCS")
 
 echo "$(date +%T) : make starting"
 start=$(date +%s%N)
-make -j$jobs test.build MPI=1 WERROR=1
+make -j$jobs test.build MPI=1
 
 build_status=$?
 

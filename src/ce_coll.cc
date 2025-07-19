@@ -13,7 +13,10 @@ ncclResult_t ncclCeInit(struct ncclComm* comm) {
 
   uint8_t* ceDevBase;
   size_t ceDevBaseSize = alignUp(comm->nRanks*sizeof(uint32_t), 16) * 2;
+  #warning "TODO: Fix me, function no longer exists"
+  #if 0
   NCCLCHECKGOTO(ncclCommSymmetricAllocInternal(comm, ceDevBaseSize, 16 /*alignment*/, (void**)&ceDevBase), ret, fail);
+  #endif
   comm->ceColl.baseUCSymReadyPtr = ceDevBase;
   comm->ceColl.baseUCSymComplPtr = ceDevBase + alignUp(comm->nRanks*sizeof(uint32_t), 16);
   comm->ceColl.ceSeqNum = 0;

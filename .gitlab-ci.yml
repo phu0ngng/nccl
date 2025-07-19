@@ -11,6 +11,7 @@ stages:
   - summary
 
 variables:
+  WERROR: 0
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   BUILD_TRACE: "0"

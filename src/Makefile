@@ -7,10 +7,12 @@ include ../makefiles/common.mk
 include ../makefiles/version.mk
 
 ##### src files
-INCEXPORTS  := nccl.h
+INCEXPORTS  := nccl.h nccl_sym.h \
+	$(patsubst include/%,%,$(wildcard include/nccl_sym/*.h include/nccl_sym/impl/*.h))
+
 LIBSRCFILES := \
 	bootstrap.cc channel.cc collectives.cc debug.cc enqueue.cc group.cc \
-	init.cc init_nvtx.cc proxy.cc transport.cc mnnvl.cc allocator.cc symmetric.cc ce_coll.cc\
+	init.cc init_nvtx.cc proxy.cc transport.cc mnnvl.cc allocator.cc sym_runtime.cc sym_kernels.cc ce_coll.cc \
 	$(wildcard graph/*.cc) \
 	$(wildcard misc/*.cc) \
 	$(wildcard transport/*.cc) \
@@ -19,6 +21,7 @@ LIBSRCFILES := \
 	$(wildcard plugin/net/*.cc) \
 	$(wildcard plugin/tuner/*.cc) \
 	$(wildcard plugin/profiler/*.cc) \
+	$(wildcard nccl_sym/*.cc) \
 	$(filter-out ras/client.cc,$(wildcard ras/*.cc))
 BINSRCFILES := ras/client.cc
 
@@ -121,6 +124,16 @@ $(INCDIR)/%.h : %.h
 $(INCDIR)/nccl_%.h : include/nccl_%.h
 	@printf "Grabbing   %-35s > %s\n" $< $@
 	mkdir -p $(INCDIR)
+	install -m 644 $< $@
+
+$(INCDIR)/nccl_sym/%.h: include/nccl_sym/%.h
+	@printf "Grabbing   %-35s > %s\n" $< $@
+	mkdir -p $(INCDIR)/nccl_sym
+	install -m 644 $< $@
+
+$(INCDIR)/nccl_sym/impl/%.h: include/nccl_sym/impl/%.h
+	@printf "Grabbing   %-35s > %s\n" $< $@
+	mkdir -p $(INCDIR)/nccl_sym/impl
 	install -m 644 $< $@
 
 $(PKGDIR)/%.pc : %.pc

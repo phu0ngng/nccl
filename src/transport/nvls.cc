@@ -48,7 +48,7 @@ struct ncclTransport nvlsTransport = {
   { NULL, NULL, nvlsRecvFree, NULL, NULL, NULL, NULL, NULL }
 };
 
-ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop, int rank, unsigned int nranks, CUmemGenericAllocationHandle *mcHandle, char *shareableHandle) {
+ncclResult_t ncclNvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop, int rank, unsigned int nranks, CUmemGenericAllocationHandle *mcHandle, char *shareableHandle) {
   CUmemAllocationHandleType type = ncclCuMemHandleType;
   size_t size = prop->size;
 
@@ -70,7 +70,7 @@ ncclResult_t nvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *prop,
   return ncclSuccess;
 }
 
-ncclResult_t nvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int rank, CUmemGenericAllocationHandle *mcHandle) {
+ncclResult_t ncclNvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int rank, CUmemGenericAllocationHandle *mcHandle) {
   CUmemAllocationHandleType type = ncclCuMemHandleType;
   int fd = -1;
   ncclResult_t ret = ncclSuccess;
@@ -242,12 +242,12 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, const CUmemAccessDesc
   mcprop.size = mcsize;
 
   if (comm->localRank == 0) {
-    NCCLCHECKGOTO(nvlsGroupCreate(comm, &mcprop, comm->localRank, comm->localRanks, mcHandle, shareableHandle), ret, fail);
+    NCCLCHECKGOTO(ncclNvlsGroupCreate(comm, &mcprop, comm->localRank, comm->localRanks, mcHandle, shareableHandle), ret, fail);
     allocMcHandle = 1;
     NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
   } else {
     NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
-    NCCLCHECKGOTO(nvlsGroupConnect(comm, shareableHandle, comm->localRankToRank[0], mcHandle), ret, fail);
+    NCCLCHECKGOTO(ncclNvlsGroupConnect(comm, shareableHandle, comm->localRankToRank[0], mcHandle), ret, fail);
     allocMcHandle = 1;
   }
 
@@ -607,11 +607,11 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   mcprop.size = mcsize;
 
   if (comm->localRank == 0) {
-    NCCLCHECKGOTO(nvlsGroupCreate(comm, &mcprop, comm->localRank, comm->localRanks, &mcHandle, shareableHandle), ret, fail);
+    NCCLCHECKGOTO(ncclNvlsGroupCreate(comm, &mcprop, comm->localRank, comm->localRanks, &mcHandle, shareableHandle), ret, fail);
     NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
   } else {
     NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
-    NCCLCHECKGOTO(nvlsGroupConnect(comm, shareableHandle, comm->localRankToRank[0], &mcHandle), ret, fail);
+    NCCLCHECKGOTO(ncclNvlsGroupConnect(comm, shareableHandle, comm->localRankToRank[0], &mcHandle), ret, fail);
   }
 
   CUCHECKGOTO(cuMulticastAddDevice(mcHandle, comm->nvlsResources->dev), ret, fail);
@@ -865,81 +865,6 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(
 
 exit:
   return ncclSuccess;
-}
-
-ncclResult_t ncclNvlsSymmetricInit(struct ncclComm* comm) {
-  ncclResult_t ret = ncclSuccess;
-  if (comm && comm->nvlsSupport) {
-    CUmulticastObjectProp mcprop = {};
-    CUmemGenericAllocationHandle mcHandle;
-    char shareableHandle[NVLS_HANDLE_SIZE];
-    CUmemAccessDesc accessDesc = {};
-
-    mcprop.numDevices = comm->localRanks;
-    mcprop.handleTypes = ncclCuMemHandleType;
-    mcprop.flags = 0;
-    mcprop.size = comm->baseStride;
-
-    if (comm->localRank == 0) {
-      NCCLCHECKGOTO(nvlsGroupCreate(comm, &mcprop, comm->localRank, comm->localRanks, &mcHandle, shareableHandle), ret, fail);
-      NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
-    } else {
-      NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, comm->localRankToRank, comm->localRank, comm->localRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
-      NCCLCHECKGOTO(nvlsGroupConnect(comm, shareableHandle, comm->localRankToRank[0], &mcHandle), ret, fail);
-    }
-
-    CUCHECKGOTO(cuMulticastAddDevice(mcHandle, comm->cudaDev), ret, fail);
-    CUCHECKGOTO(cuMemAddressReserve((CUdeviceptr*)&comm->baseMCSymPtr, comm->baseStride, NCCL_MAX_PAGE_SIZE, 0, 0), ret, fail);
-    CUCHECKGOTO(cuMemMap((CUdeviceptr)comm->baseMCSymPtr, comm->baseStride, 0, mcHandle, 0), ret, fail);
-    accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    accessDesc.location.id = comm->cudaDev;
-    accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-    CUCHECKGOTO(cuMemSetAccess((CUdeviceptr)comm->baseMCSymPtr, comm->baseStride, &accessDesc, 1), ret, fail);
-    comm->symMCHandle = mcHandle;
-  }
-exit:
-  return ret;
-fail:
-  goto exit;
-}
-
-ncclResult_t ncclNvlsSymmetricFinalize(struct ncclComm* comm) {
-  ncclResult_t ret = ncclSuccess;
-  if (comm && comm->nvlsSupport && comm->baseMCSymPtr) {
-    CUCHECKGOTO(cuMemUnmap((CUdeviceptr)comm->baseMCSymPtr, comm->baseStride), ret, fail);
-    CUCHECKGOTO(cuMemAddressFree((CUdeviceptr)comm->baseMCSymPtr, comm->baseStride), ret, fail);
-    CUCHECKGOTO(cuMemRelease(comm->symMCHandle), ret, fail);
-  }
-exit:
-  return ret;
-fail:
-  goto exit;
-}
-
-ncclResult_t ncclNvlsSymmetricMap(struct ncclComm* comm, size_t offset, size_t ucsize, void* ucaddr) {
-  ncclResult_t ret = ncclSuccess;
-  assert((uintptr_t)ucaddr % NCCL_REC_PAGE_SIZE == 0 && ucsize % NCCL_REC_PAGE_SIZE == 0);
-  if (comm && comm->nvlsSupport && ucaddr && ucsize > 0) {
-    CUCHECKGOTO(cuMulticastBindAddr(comm->symMCHandle, offset, (CUdeviceptr)ucaddr, ucsize, 0), ret, fail);
-    INFO(NCCL_ALLOC, "NVLS symmetric alloc mc buffer ptr %p offset %ld UC addr %p UC size %ld symAllocHead %ld", comm->baseMCSymPtr + offset, offset, ucaddr, ucsize, comm->symAllocHead);
-  }
-
-exit:
-  return ret;
-fail:
-  goto exit;
-}
-
-ncclResult_t ncclNvlsSymmetricFree(struct ncclComm* comm, size_t ucsize, void* ucaddr) {
-  ncclResult_t ret = ncclSuccess;
-  if (comm && comm->nvlsSupport && ucaddr && ucsize > 0) {
-    size_t offset = (size_t)ucaddr - ((size_t)comm->baseUCSymPtr + comm->localRank * comm->baseStride);
-    CUCHECKGOTO(cuMulticastUnbind(comm->symMCHandle, comm->cudaDev, offset, ucsize), ret, fail);
-  }
-exit:
-  return ret;
-fail:
-  goto exit;
 }
 
 ncclResult_t ncclNvlsRegResourcesQuery(struct ncclComm* comm, struct ncclTaskColl* info, int* recChannels) {

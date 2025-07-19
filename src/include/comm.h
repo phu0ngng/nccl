@@ -18,6 +18,8 @@
 #include "graph.h"
 #include "profiler.h"
 #include "allocator.h"
+#include "sym_runtime.h"
+#include "sym_kernels.h"
 #include "ce_coll.h"
 
 #if CUDART_VERSION < 9000
@@ -205,6 +207,8 @@ struct ncclTaskColl {
   // number of elements in planner->ipcMemQueue associated with this collective
   int nCleanupQueueElts;
 
+  struct ncclSymrWindow* sendWin;
+  struct ncclSymrWindow* recvWin;
   void* sendMhandle;
   void* recvMhandle;
   void** sendNetHandles;
@@ -258,7 +262,7 @@ struct ncclKernelPlan {
   void* kernelFn;
   union {
     struct ncclDevKernelArgs* kernelArgs;
-    struct ncclSymDevArgs* kernelSymArgs;
+    void* kernelSymArgs;
     struct ncclCeCollArgs* ceCollArgs;
   };
   size_t kernelArgsSize;
@@ -428,6 +432,8 @@ typedef enum ncclGroupTaskType {
   ncclGroupTaskTypeNum = 2,
 } ncclGroupTaskType_t;
 
+struct ncclCommSymTeams;
+
 struct ncclComm {
   uint64_t startMagic;
   struct ncclMemoryStack memPermanent, memScoped;
@@ -542,7 +548,6 @@ struct ncclComm {
 
   // Device side of the communicator (for cudaFree's)
   struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm
-  struct ncclSymDevComm symDevComm;
 
   uint32_t workArgsBytes; // max size of kernel args
   uint32_t workFifoBytes; // size of workFifoBuf, power of 2
@@ -649,13 +654,10 @@ struct ncclComm {
   bool useNetPXN;
   bool useGdr;
   int splitCount;
-  // symmetric buffer
-  uint8_t* baseUCSymPtr;
-  uint8_t* baseMCSymPtr;
-  size_t baseStride;
-  size_t symAllocHead;
-  CUmemGenericAllocationHandle symMCHandle;
-  struct ncclIntruQueue<struct ncclSymRegTask, &ncclSymRegTask::next> symRegTaskQueue;
+
+  struct ncclSymrState symrState; // The symmetric runtime state
+  struct ncclSymkState symkState; // The symmetric kernels state (built on previous)
+
   uint64_t endMagic;
 };
 

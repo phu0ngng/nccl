@@ -30,8 +30,8 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
   int ncclMaxSharedMem = ncclShmemDynamicSize(cudaArch);
 
   for (int sym=0; sym <= 1; sym++) {
-    int kcount = sym==0 ? ncclDevKernelCount : ncclSymKernelCount;
-    void* const* kptrs = sym==0 ? ncclDevKernelList : ncclSymKernelList;
+    int kcount = sym==0 ? ncclDevKernelCount : ncclSymkKernelCount;
+    void* const* kptrs = sym==0 ? ncclDevKernelList : ncclSymkKernelList;
     for (int k=0; k < kcount; k++) {
       void* fn = kptrs[k];
       cudaFuncAttributes attr = {0};
@@ -339,49 +339,23 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   int fnOpTyIndices[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
   int fnOpTyCount = 0;
 
-  if (comm->nNodes == 1 && planner->nTasksColl == 1 && planner->nTasksP2p == 0) {
-    void* sendSymPtr;
-    void* recvSymPtr;
-    struct ncclReg* sendReg;
-    struct ncclReg* recvReg;
-    size_t size = task->count*ncclTypeSize(task->datatype);
-    NCCLCHECK(ncclRegFindSymmetric(comm, task->sendbuff, size, &sendSymPtr, &sendReg));
-    NCCLCHECK(ncclRegFindSymmetric(comm, task->recvbuff, size, &recvSymPtr, &recvReg));
-    bool symImplemented = ncclSymImplemented(task->func, task->opDev.op, task->datatype);
-    bool ceImplemented = ncclCeImplemented(task->func, task->opDev.op, task->datatype);
+  #warning "TODO: add back in CE dispatch"
+  if (comm->symmetricSupport && planner->nTasksColl == 1 && planner->nTasksP2p == 0) {
+    NCCLCHECK(ncclSymrFindWindow(comm, task->sendbuff, &task->sendWin));
+    NCCLCHECK(ncclSymrFindWindow(comm, task->recvbuff, &task->recvWin));
+    bool symImplemented = ncclSymkImplemented(task->func, task->opDev.op, task->datatype);
 
-    // CE collective
-    if (sendReg && recvReg && (sendReg->winFlags & recvReg->winFlags & NCCL_WIN_COLL_SYMMETRIC) && comm->config.CTAPolicy == NCCL_CTA_POLICY_ZERO && ceImplemented) {
-      // Initialize CE collective if not already initialized
-      if (comm->ceColl.baseUCSymReadyPtr == NULL) {
-        NCCLCHECK(ncclCeInit(comm));
-      }
-      task->sendbuff = sendSymPtr;
-      task->recvbuff = recvSymPtr;
-      ncclIntruQueueEnqueue(&planner->collTaskQueue, task);
-      planner->isCeColl = true;
-      return ncclSuccess;
-    }
+    if (task->sendWin && task->recvWin && (task->sendWin->winFlags & task->recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && symImplemented) {
+      enum ncclSymkKernelId kernel;
 
-    if (sendReg && recvReg && (sendReg->winFlags & recvReg->winFlags & NCCL_WIN_COLL_SYMMETRIC) && symImplemented) {
-      int collNetSupport = 0;
-      NCCLCHECK(getCollNetSupport(comm, task, &collNetSupport));
-      int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(task->opDev.op, task->datatype) || task->func == ncclFuncAllGather);
-
-      ncclSimInfo_t simInfo = NCCL_SIM_INFO_INITIALIZER;
-      NCCLCHECK(getAlgoInfo(comm, task, collNetSupport, nvlsSupport, 1, &simInfo));
-
-      enum ncclSymKernelId kernel;
       int nChannels, nWarps;
       float estTimeUs = 1.e18;
-      NCCLCHECK(ncclSymPickKernel(comm, task->func, task->opDev.op, task->datatype, task->count, &estTimeUs, &kernel, &nChannels, &nWarps));
+      NCCLCHECK(ncclSymkPickKernel(comm, task->func, task->opDev.op, task->datatype, task->count, &estTimeUs, &kernel, &nChannels, &nWarps));
 
       // We should only use symmetric kernel if it beats the asymmetric kernel. But the
       // perf model accuracy from asymmetric kernels is too inaccurate and reports too high
       // of a bandwidth. For now just always use symmetric if available.
-      if (kernel != ncclSymKernelId_Count) {
-        task->sendbuff = sendSymPtr;
-        task->recvbuff = recvSymPtr;
+      if (kernel != ncclSymkKernelId_Count) {
         task->devFuncId = (int)kernel;
         task->nMaxChannels = nChannels;
         task->nWarps = nWarps;
@@ -1479,24 +1453,17 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
 
         struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
         plan->isSymColl = true;
-        plan->kernelFn = ncclSymGetKernelPtr((ncclSymKernelId)task->devFuncId, task->opDev.op, task->datatype);
         plan->threadPerBlock = task->nWarps*WARP_SIZE;
         plan->channelMask = uint64_t(-1) >> (64-task->nMaxChannels);
 
-        plan->kernelArgsSize = sizeof(struct ncclSymDevArgs);
-        plan->kernelSymArgs = ncclMemoryStackAlloc<struct ncclSymDevArgs>(&comm->memScoped);
-        plan->kernelSymArgs->comm = comm->symDevComm;
-        plan->kernelSymArgs->rootRank = task->root;
-        plan->kernelSymArgs->redOpArg = task->opDev.scalarArg;
-        plan->kernelSymArgs->nElts = task->count;
-        plan->kernelSymArgs->input = (char*)task->sendbuff;
-        plan->kernelSymArgs->output = (char*)task->recvbuff;
+        NCCLCHECKGOTO(ncclSymkMakeLaunchArgs(comm, task, &comm->memScoped, &plan->kernelFn, &plan->kernelSymArgs, &plan->kernelArgsSize), result, failure);
+
         // Profiler
         plan->groupApiEventHandle = task->groupApiEventHandle;
         planner->nTasksColl -= 1;
         ncclIntruQueueEnqueue(&planner->planQueue, plan);
         INFO(NCCL_TUNING, "%s [Symmetric]: %ld Bytes -> Kernel %s nchannels %d nthreads %d",
-        ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), ncclSymKernelIdToString(task->devFuncId), task->nMaxChannels, plan->threadPerBlock);
+        ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), ncclSymkKernelIdToString(task->devFuncId), task->nMaxChannels, plan->threadPerBlock);
         nPlans += 1;
       } else {
         struct ncclKernelPlanBudget budget;

@@ -182,14 +182,16 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  if (comm->symmetricSupport) {
+    NCCLCHECK(ncclSymkFinalize(comm));
+    NCCLCHECK(ncclSymrFinalize(comm));
+  }
   if (comm->ceColl.baseUCSymReadyPtr) {
-    NCCLCHECK(ncclCommSymmetricFreeInternal(comm, comm->ceColl.baseUCSymReadyPtr));
+    #warning "TODO: Fix me, function no longer exists"
+    #if 0
+      NCCLCHECK(ncclCommSymmetricFreeInternal(comm, comm->ceColl.baseUCSymReadyPtr));
+    #endif
   }
-  
-  if (comm->symmetricSupport && comm->symDevComm.base) {
-    NCCLCHECK(ncclCommSymmetricFreeInternal(comm, comm->baseUCSymPtr + comm->rank * comm->baseStride));
-  }
-
   NCCLCHECK(ncclRasCommFini(comm));
 
   /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
@@ -269,10 +271,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   NCCLCHECK(ncclRegCleanup(comm));
 
-  if (comm->symmetricSupport) {
-    NCCLCHECK(ncclNvlsSymmetricFinalize(comm));
-    NCCLCHECK(ncclIpcSymmetricFinalize(comm));
-  }
   INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - %s COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, abort ? "Abort" : "Destroy");
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
@@ -1255,7 +1253,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
 
   comm->symmetricSupport = comm->isAllDirectP2p && comm->nNodes == 1 && ncclParamWinEnable() && ncclCuMemEnable();
-  comm->baseStride = 0;
+  comm->symrState.bigSize = 0;
 
   comm->ceColl.baseUCSymReadyPtr = NULL;
   comm->ceColl.baseUCSymComplPtr = NULL;

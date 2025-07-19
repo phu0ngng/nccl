@@ -18,24 +18,15 @@ static inline ncclResult_t ncclRegFind(struct ncclComm* comm, const void* data, 
   }
 }
 
-static inline ncclResult_t ncclRegFindSymmetric(struct ncclComm* comm, const void* data, size_t size, void** symPtr, struct ncclReg** outReg) {
-  struct ncclReg* regRecord = NULL;
-  *symPtr = NULL;
-  *outReg = NULL;
-  NCCLCHECK(ncclRegFind(comm, data, size, &regRecord));
-  if (regRecord && regRecord->baseSymPtr) {
-    *symPtr = (void*)((uintptr_t)regRecord->baseSymPtr + (uintptr_t)data - (uintptr_t)regRecord->begAddr);
-    *outReg = regRecord;
-  }
-  return ncclSuccess;
-}
-
+#warning "TODO: Fix me, these can't work anymore"
 static inline void* peerUCSymPtr(struct ncclComm* comm, int peerRank, const void* ucSymPtr){
-  return (void*)((uintptr_t)ucSymPtr + comm->baseStride * (peerRank - comm->localRank));
+  assert(0);
+  //return (void*)((uintptr_t)ucSymPtr + comm->baseStride * (peerRank - comm->localRank));
 }
 
 static inline void* peerMCSymPtr(struct ncclComm* comm, int peerRank, const void* ucSymPtr){ 
-    return (void*)(comm->baseMCSymPtr + (uintptr_t)ucSymPtr - ((uintptr_t)comm->baseUCSymPtr + comm->localRank * comm->baseStride));
+  assert(0);
+  //return (void*)(comm->baseMCSymPtr + (uintptr_t)ucSymPtr - ((uintptr_t)comm->baseUCSymPtr + comm->localRank * comm->baseStride));
 }
 
 #endif

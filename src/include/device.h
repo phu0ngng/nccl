@@ -10,7 +10,6 @@
 #include "nccl.h"
 #include "nccl_tuner.h"
 #include "bitops.h"
-#include "symmetric.h"
 #include <algorithm>
 #include <stdint.h>
 #include <sys/types.h>

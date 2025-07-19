@@ -47,7 +47,11 @@ endif
 define COMPILE_SYM
 @$(SAY) "Compiling" $2;\
  mkdir -p $(dir $1);\
- $(NVCC) $(NVCUFLAGS_SYM) $3 -dw $2 -o $1
+ if [[ -n "$3" ]]; then\
+ $(NVCC) $(NVCUFLAGS_SYM) $3 -dw $2 -o $1;\
+ else\
+ touch $2.empty.cu; $(NVCC) $(NVCUFLAGS_SYM) -dw $2.empty.cu -o $1; rm $2.empty.cu;\
+ fi
 endef
 
 DEPENDS.cu = $(NVCC) $(NVCUFLAGS) -M -dc $1

@@ -212,52 +212,23 @@ struct ncclGroupSymmetricJob {
   struct ncclComm* comm;
 };
 
-NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
-
 ncclResult_t ncclCommGroupRegisterSymmetric(struct ncclAsyncJob* job_) {
   struct ncclGroupSymmetricJob* job = (struct ncclGroupSymmetricJob*)job_;
   struct ncclComm* comm = job->comm;
   ncclResult_t ret = ncclSuccess;
 
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
-  if (comm->baseStride == 0) {
-    cudaStream_t hostStream;
-    // first time to allocate symmetric VA space.
-    // calling into this function means symmetric is supported.
-    struct ncclSymDevBase* symBase = NULL;
-    size_t size = ncclSymDevBase::size(comm->localRanks);
-    if (ncclParamWinStride() != -1) {
-      comm->baseStride = ncclParamWinStride();
-    } else {
-      size_t maxStride = 0;
-      for (int r = 0; r < comm->nRanks; ++r)
-        if (comm->peerInfo[r].totalGlobalMem > maxStride) maxStride = comm->peerInfo[r].totalGlobalMem;
-      comm->baseStride = maxStride;
-    }
-    INFO(NCCL_INIT, "rank %d base stride %zuGB total VM %zuGB", comm->rank, comm->baseStride >> 30, (comm->baseStride * comm->localRanks) >> 30);
-    NCCLCHECKGOTO(ncclIpcSymmetricInit(comm), ret, fail);
-    NCCLCHECKGOTO(ncclNvlsSymmetricInit(comm), ret, fail);
-    comm->symAllocHead = 0;
 
-    // Allocate symmetric memory for NCCL internal usage
-    NCCLCHECKGOTO(ncclCommSymmetricAllocInternal(comm, size, alignof(struct ncclSymDevBase), (void**)&symBase), ret, fail);
-    assert((void*)symBase == (void*)(comm->baseUCSymPtr + comm->localRank * comm->baseStride));
-    NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(), &comm->sharedRes->hostStream, /*concurrent=*/false, &hostStream), ret, fail);
-    CUDACHECKGOTO(cudaMemsetAsync(symBase, 0, size, hostStream), ret, fail);
-    CUDACHECKGOTO(cudaStreamSynchronize(hostStream), ret, fail);
-    NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->hostStream, /*concurrent=*/false), ret, fail);
-
-    comm->symDevComm.base = (struct ncclSymDevBase*)(comm->baseUCSymPtr + comm->localRank * comm->baseStride);
-    comm->symDevComm.baseMc = (struct ncclSymDevBase*)comm->baseMCSymPtr;
-    comm->symDevComm.nRanks = comm->localRanks;
-    comm->symDevComm.nRanks_rcp32 = idivRcp32(comm->localRanks);
-    comm->symDevComm.rank = comm->localRank;
-    comm->symDevComm.stride4G = comm->baseStride >> 32;
+  if (comm->symkState.symComm.windowTable == nullptr) {
+    NCCLCHECKGOTO(ncclSymkInit(comm), ret, fail);
   }
 
-  while (!ncclIntruQueueEmpty(&comm->symRegTaskQueue)) {
-    struct ncclSymRegTask* task = ncclIntruQueueDequeue(&comm->symRegTaskQueue);
-    NCCLCHECKGOTO(ncclCommSymmetricRegisterInternal(comm, task->buff, task->baseSize, task->alignment, task->memHandle, task->regHandle), ret, fail);
+  while (!ncclIntruQueueEmpty(&comm->symrState.regTaskQueue)) {
+    struct ncclSymrRegTask* task = ncclIntruQueueDequeue(&comm->symrState.regTaskQueue);
+    NCCLCHECKGOTO(ncclSymrRegisterInternal(comm, task->memHandle, task->memSize, task->memOffset,
+                                           task->userPtr, task->userSize, task->winFlags,
+                                           &task->winDev, task->localRegHandle, task->stream), ret, fail);
+    CUDACHECKGOTO(cudaStreamDestroy(task->stream), ret, fail);
     free(task);
   }
 
