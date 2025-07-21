@@ -582,6 +582,27 @@ Set to 1 to use NCCL_CTA_POLICY_EFFICIENCY policy.
 Set to 2 to use NCCL_CTA_POLICY_ZERO policy.
 For more explanation about NCCL policies, please see :ref:`cta_policy_flags`.
 
+NCCL_NETDEVS_POLICY
+---------------
+(since 2.28)
+
+The ``NCCL_NETDEVS_POLICY`` variable allows the user to set the policy for the assignment of network devices to the GPUs.
+For each GPU, NCCL detects automatically available network devices, taking into account their network bandwidth and the node topology.
+
+Value accepted
+^^^^^^^^^^^^^^
+
+If set to ``AUTO`` (default), NCCL also takes into account the other GPUs in the same communicator in order to assign network devices.
+In specific scenarios, this policy might lead to different GPUs from different communicators sharing the same network devices, and therefore impacts performance.
+
+If set to ``MAX:N``, NCCL uses up to N of the network devices available to each GPU.
+This is intended to be used when device sharing happens with ``AUTO`` and impacts the performance.
+
+If set to ``ALL``, NCCL will use all the available network devices for each GPU, disregarding other GPUs.
+
+
+
+
 NCCL_TOPO_FILE
 --------------
 (since 2.6)
