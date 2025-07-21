@@ -805,6 +805,49 @@ ncclResult_t ncclSymCommDestroy(
   return ncclSuccess;
 }
 
+
+// Get the corresponding pointer in another near rank's symmetric memory window
+ncclResult_t ncclSymrGetNearRankPtr(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, int nearRank, void** outPtr) {
+  if (winHost == nullptr || outPtr == nullptr) {
+    return ncclInvalidArgument;
+  }
+
+  struct ncclSymrState* symr = &comm->symrState;
+  
+  // Validate nearRank is within bounds
+  if (nearRank < 0 || nearRank >= symr->nearSize) {
+    return ncclInvalidArgument;
+  }
+
+  // Validate offset is within bounds
+  if (offset < 0 || offset >= winHost->size) {
+    return ncclInvalidArgument;
+  }
+
+  // Calculate the address with offset for the specified near rank 
+  *outPtr = (void*)((uintptr_t)symr->nearFlatBase + nearRank * symr->bigSize + winHost->bigOffset + offset);
+  return ncclSuccess;
+}
+
+// Get the multicast address for a given team
+ncclResult_t ncclSymrGetNearTeamPtrMC(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, struct ncclSymTeam nearTeam, void** outPtr){
+  if (winHost == nullptr || outPtr == nullptr) {
+    return ncclInvalidArgument;
+  }
+
+  if (!comm->nvlsSupport) {
+    return ncclInvalidUsage;
+  }
+
+  bool multimem = true;
+  struct ncclSymrTeam* tm;
+  NCCLCHECK(symTeamObtain(comm, nearTeam, multimem, &tm));
+    
+  // Return the base multicast address for this team with offset
+  *outPtr = (void*)((uintptr_t)tm->mcBasePtr + winHost->bigOffset + offset);
+  return ncclSuccess;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Find the least index strictly greater than arg.

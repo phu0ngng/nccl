@@ -64,4 +64,9 @@ ncclResult_t ncclSymrWindowRegisterInGroup(
   struct ncclComm* comm, void* ptr, size_t size, int winFlags, ncclWindow_t* outWinDev
 );
 
+// Get the corresponding pointer in another near rank's symmetric memory window
+ncclResult_t ncclSymrGetNearRankPtr(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, int nearRank, void** outPtr);
+
+// Get the multicast address for a given team
+ncclResult_t ncclSymrGetNearTeamPtrMC(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, struct ncclSymTeam nearTeam, void** outPtr);
 #endif
