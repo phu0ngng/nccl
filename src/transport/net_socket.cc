@@ -16,6 +16,8 @@
 #include <poll.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <mutex>
+#include <condition_variable>
 
 /* Init functions */
 static int ncclNetIfs = -1;
@@ -26,7 +28,7 @@ struct ncclNetSocketDev {
 };
 static struct ncclNetSocketDev ncclNetSocketDevs[MAX_IFS];
 
-pthread_mutex_t ncclNetSocketLock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex ncclNetSocketMutex;
 
 static ncclResult_t ncclNetSocketGetPciPath(char* devName, char** pciPath) {
   char devicePath[PATH_MAX];
@@ -49,14 +51,13 @@ ncclResult_t ncclNetSocketInit(void** ctx, uint64_t commId, ncclNetCommConfig_t*
   if (netRefCount++) return ncclSuccess;
   ncclProfilerFunction = profFunction;
   if (ncclNetIfs == -1) {
-    pthread_mutex_lock(&ncclNetSocketLock);
+    std::lock_guard<std::mutex> lock(ncclNetSocketMutex);
     if (ncclNetIfs == -1) {
       char names[MAX_IF_NAME_SIZE*MAX_IFS];
       union ncclSocketAddress addrs[MAX_IFS];
       NCCLCHECK(ncclFindInterfaces(names, addrs, MAX_IF_NAME_SIZE, MAX_IFS, &ncclNetIfs));
       if (ncclNetIfs <= 0) {
         WARN("NET/Socket : no interface found");
-        pthread_mutex_unlock(&ncclNetSocketLock);
         return ncclInternalError;
       } else {
         #define MAX_LINE_LEN (2047)
@@ -75,7 +76,6 @@ ncclResult_t ncclNetSocketInit(void** ctx, uint64_t commId, ncclNetCommConfig_t*
         INFO(NCCL_INIT|NCCL_NET,"NET/Socket : Using%s", line);
       }
     }
-    pthread_mutex_unlock(&ncclNetSocketLock);
   }
   return ncclSuccess;
 }
@@ -201,8 +201,8 @@ struct ncclNetSocketThreadResources {
   int stop;
   struct ncclNetSocketComm* comm;
   struct ncclProfilerInfo* pInfo;
-  pthread_mutex_t threadLock;
-  pthread_cond_t  threadCond;
+  std::mutex threadMutex;
+  std::condition_variable threadCond;
 };
 
 struct ncclNetSocketListenComm {
@@ -277,11 +277,8 @@ void* persistentSocketThread(void *args_) {
       } while (repeat);
     }
     if (idle) {
-      pthread_mutex_lock(&resource->threadLock);
-      while (mark == myQueue->next && resource->stop == 0) { // no new tasks, wait
-        pthread_cond_wait(&resource->threadCond, &resource->threadLock);
-      }
-      pthread_mutex_unlock(&resource->threadLock);
+      std::unique_lock<std::mutex> lock(resource->threadMutex);
+      resource->threadCond.wait(lock, [&] { return mark != myQueue->next || resource->stop; });
     }
     if (resource->stop) return NULL;
   }
@@ -388,7 +385,7 @@ ncclResult_t ncclNetSocketConnect(void* ctx, int dev, void* opaqueHandle, void**
   if (stage->state == ncclNetSocketCommStateConnect) goto socket_connect_check;
   if (stage->state == ncclNetSocketCommStateSend) goto socket_send;
 
-  NCCLCHECK(ncclCalloc(&comm, 1));
+  comm = new ncclNetSocketComm();
   stage->comm = comm;
   comm->nSocks = handle->nSocks;
   comm->nThreads = handle->nThreads;
@@ -430,7 +427,7 @@ ncclResult_t ncclNetSocketAccept(void* listenComm, void** recvComm, ncclNetDevic
   if (stage->state == ncclNetSocketCommStateAccept) goto socket_accept_check;
   if (stage->state == ncclNetSocketCommStateRecv) goto socket_recv;
 
-  NCCLCHECK(ncclCalloc(&rComm, 1));
+  rComm = new ncclNetSocketComm();
   stage->comm = rComm;
   rComm->nSocks = lComm->nSocks;
   rComm->nThreads = lComm->nThreads;
@@ -457,9 +454,9 @@ socket_recv:
     if (done == 0) return ncclSuccess;
 
     if (sendSockIdx == rComm->nSocks)
-      memcpy(&rComm->ctrlSock, sock, sizeof(struct ncclSocket));
+      rComm->ctrlSock = *sock;
     else
-      memcpy(rComm->socks+sendSockIdx, sock, sizeof(struct ncclSocket));
+      rComm->socks[sendSockIdx] = *sock;
     free(sock);
   }
   NCCLCHECK(ncclCalloc(&rComm->inlineData, MAX_REQUESTS * (SOCKET_CTRL_SIZE + ncclParamSocketInlineSize())));
@@ -509,8 +506,6 @@ ncclResult_t ncclNetSocketGetTask(struct ncclNetSocketComm* comm, struct ncclPro
 #ifdef NCCL_ENABLE_NET_PROFILING
     res->pInfo = pInfo;
 #endif
-    pthread_mutex_init(&res->threadLock, NULL);
-    pthread_cond_init(&res->threadCond, NULL);
     PTHREADCHECK(pthread_create(comm->helperThread+tid, NULL, persistentSocketThread, res), "pthread_create");
     ncclSetThreadName(comm->helperThread[tid], "NCCL Sock%c%1u%2u%2u", op == NCCL_SOCKET_SEND ? 'S' : 'R', comm->dev, tid, comm->cudaDev);
   }
@@ -525,10 +520,9 @@ ncclResult_t ncclNetSocketGetTask(struct ncclNetSocketComm* comm, struct ncclPro
     comm->nextSock = (comm->nextSock + 1) % comm->nSocks;
     r->used = 1;
     *req = r;
-    pthread_mutex_lock(&res->threadLock);
+    std::lock_guard<std::mutex> lock(res->threadMutex);
     queue->next = (queue->next+1)%queue->len;
-    pthread_cond_signal(&res->threadCond);
-    pthread_mutex_unlock(&res->threadLock);
+    res->threadCond.notify_one();
     return ncclSuccess;
   }
   WARN("NET/Socket : unable to allocate subtasks");
@@ -694,10 +688,11 @@ ncclResult_t ncclNetSocketClose(void* opaqueComm) {
     for (int i=0; i<comm->nThreads; i++) {
       struct ncclNetSocketThreadResources* res = comm->threadResources+i;
       if (comm->helperThread[i]) {
-        pthread_mutex_lock(&res->threadLock);
-        res->stop = 1;
-        pthread_cond_signal(&res->threadCond);
-        pthread_mutex_unlock(&res->threadLock);
+        {
+          std::lock_guard<std::mutex> lock(res->threadMutex);
+          res->stop = 1;
+          res->threadCond.notify_one();
+        }
         PTHREADCHECK(pthread_join(comm->helperThread[i], NULL), "pthread_join");
       }
       free(res->threadTaskQueue.tasks);
@@ -710,7 +705,7 @@ ncclResult_t ncclNetSocketClose(void* opaqueComm) {
       if (ready) NCCLCHECK(ncclSocketClose(&comm->socks[i]));
     }
     if(comm->inlineData) free(comm->inlineData);
-    free(comm);
+    delete comm;
   }
   return ncclSuccess;
 }
