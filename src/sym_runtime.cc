@@ -44,10 +44,10 @@ static void listRemove(Obj* list, int* count, int index);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-ncclResult_t ncclSymrInit(struct ncclComm* comm) {
+ncclResult_t ncclSymrInitOnce(struct ncclComm* comm) {
   ncclResult_t ret = ncclSuccess;
   struct ncclSymrState* symr = &comm->symrState;
-  memset(symr, 0, sizeof(*symr));
+  if (symr->bigSize != 0) return ncclSuccess;
 
   bool nearIsLocal = true;
   for (int i=0; i < comm->localRanks; i++) {
@@ -90,6 +90,8 @@ static void symTeamDestroyAll(struct ncclComm* comm); // Further down
 
 ncclResult_t ncclSymrFinalize(struct ncclComm* comm) {
   struct ncclSymrState* symr = &comm->symrState;
+  if (symr->bigSize == 0) return ncclSuccess;
+
   symTeamDestroyAll(comm);
   { // delete windowTable
     cudaStream_t stream;
@@ -393,7 +395,7 @@ static ncclResult_t symWindowTableInitOnce(struct ncclComm* comm, cudaStream_t s
 // On success we take callers reference on `mem`.
 static ncclResult_t symWindowCreate(
     struct ncclComm* comm, struct ncclSymrMemory* mem,
-    size_t memOffset, void* userPtr, size_t userSize, int winFlags, struct ncclReg* localRegHandle,
+    size_t memOffset, void* userPtr, size_t userSize, int winFlags, void* localReg,
     struct ncclWindow_vidmem** outWinDev, struct ncclSymrWindow** outWin,
     cudaStream_t stream
   ) {
@@ -402,24 +404,22 @@ static ncclResult_t symWindowCreate(
   struct ncclSymrWindow* win;
 
   win = (struct ncclSymrWindow*)malloc(sizeof(struct ncclSymrWindow));
+  memset(win, 0, sizeof(*win));
   win->memory = mem;
   win->size = userSize;
   win->bigOffset = mem->bigOffset + memOffset;
   win->winFlags = winFlags;
-  win->localRegHandle = localRegHandle;
+  win->localRegHandle = localReg;
   if (userPtr == nullptr) {
     // Null means caller has no VA and will use the near team flat VA address.
     win->userPtr = (char*)symr->nearFlatBase + (symr->nearSelf*symr->bigSize) + mem->bigOffset;
   } else {
     win->userPtr = userPtr;
   }
-  
-  struct ncclWindow_vidmem* winDev = (outWinDev ? *outWinDev : nullptr);
+
+  struct ncclWindow_vidmem* winDev;
   struct ncclWindow_vidmem* winDevHost;
-  if (winDev == nullptr)
-    NCCLCHECK(ncclShadowPoolAlloc(&symr->shadows, &winDev, &winDevHost, stream));
-  else
-    NCCLCHECK(ncclShadowPoolToHost(&symr->shadows, winDev, &winDevHost));
+  NCCLCHECK(ncclShadowPoolAlloc(&symr->shadows, &winDev, &winDevHost, stream));
   win->vidmem = winDev;
   winDevHost->nearFlatBase = (char*)symr->nearFlatBase + win->bigOffset;
   winDevHost->mcOffset4K = win->bigOffset>>12;
@@ -493,6 +493,7 @@ static ncclResult_t symWindowDestroy(struct ncclComm* comm, struct ncclWindow_vi
     }
   }
   NCCLCHECKGOTO(ncclShadowPoolFree(&symr->shadows, winDev, stream), ret, remove_winSorted);
+
   NCCLCHECKGOTO(ncclCommDeregister(comm, winHost->localRegHandle), ret, remove_winSorted);
 
 remove_winSorted:
@@ -505,45 +506,76 @@ fail:
   return ret;
 }
 
-ncclResult_t ncclSymrRegisterInternal(
+ncclResult_t ncclSymrWindowRegisterInGroup(
     struct ncclComm* comm,
-    CUmemGenericAllocationHandle memHandle, size_t memSize, size_t memOffset,
-    void* userPtr, size_t userSize, int winFlags,
-    struct ncclWindow_vidmem** outWinDev, struct ncclReg* localRegHandle, cudaStream_t stream
+    void* userPtr, size_t userSize, int winFlags, ncclWindow_t* outWinDev
   ) {
   ncclResult_t ret = ncclSuccess;
+  CUdeviceptr memAddr = 0;
+  size_t memSize = 0;
+  CUmemGenericAllocationHandle memHandle = 0x0;
+  size_t memOffset;
   struct ncclSymrMemory* mem = nullptr;
-  cudaStream_t newStream = nullptr;
+  cudaStream_t stream = nullptr;
+  void* localRegHandle = nullptr;
 
-  // Trade cumem handle for ncclSymStateMemmory*
-  NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, memSize, &mem), ret, fail);
-  memHandle = 0x0; // symMemoryObtain took our reference
+  NCCLCHECKGOTO(ncclCommRegister(comm, userPtr, userSize, &localRegHandle), ret, fail);
 
-  if (stream == nullptr) {
-    CUDACHECK(cudaStreamCreateWithFlags(&newStream, cudaStreamNonBlocking));
-    stream = newStream;
+  if (!comm->symmetricSupport) {
+    // We just return the local registration handle directly in this case, as there's no reason to allocate the
+    // ncclWindow_vidmem structure on the device, etc.
+    *outWinDev = reinterpret_cast<struct ncclWindow_vidmem*>(localRegHandle);
+    return ncclSuccess;
+  }
+  if (winFlags & NCCL_WIN_COLL_SYMMETRIC) {
+    // Defer symmetric kernel init until at least one window with that flag exists.
+    NCCLCHECKGOTO(ncclSymkInitOnce(comm), ret, fail);
   }
 
-  NCCLCHECKGOTO(symWindowCreate(comm, mem, memOffset, userPtr, userSize,
-                                winFlags, localRegHandle, outWinDev, nullptr, stream), ret, fail);
-  mem = nullptr; // symWindowCreate took our reference
+  // Get underlying cumem handle:
+  CUCHECKGOTO(cuMemGetAddressRange(&memAddr, &memSize, reinterpret_cast<CUdeviceptr>(userPtr)), ret, fail_locReg);
+  memOffset = reinterpret_cast<CUdeviceptr>(userPtr) - memAddr;
+  if (memOffset%NCCL_WIN_REQUIRED_ALIGNMENT != 0) {
+    WARN("Window address must be suitably aligned.");
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
 
-  CUDACHECKGOTO(cudaStreamSynchronize(stream), ret, fail_win);
+  CUCHECKGOTO(cuMemRetainAllocationHandle(&memHandle, reinterpret_cast<void*>(memAddr)), ret, fail_locReg);
+
+  // Trade cumem handle for ncclSymStateMemmory*
+  NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, memSize, &mem), ret, fail_locReg_memHandle);
+  memHandle = 0x0; // symMemoryObtain took our reference
+
+  CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail);
+
+  NCCLCHECKGOTO(symWindowCreate(
+      comm, mem, memOffset, userPtr, userSize, winFlags, localRegHandle, outWinDev, nullptr, stream
+    ), ret, fail_locReg_memHandle_mem_stream);
+  mem = nullptr; // symWindowCreate took our reference
+  
+  CUDACHECKGOTO(cudaStreamSynchronize(stream), ret, fail_locReg_memHandle_mem_stream_win);
 
   // symWindowCreate needs barrier.
-  NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xbeef), ret, fail_win);
+  NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xbeef), ret, fail_locReg_memHandle_mem_stream_win);
 
-exit:
-  if (newStream) cudaStreamDestroy(newStream);
+  cudaStreamDestroy(stream);
   return ret;
 
-fail_win:
+fail_locReg_memHandle_mem_stream_win:
   symWindowDestroy(comm, *outWinDev, stream);
   *outWinDev = nullptr;
   cudaStreamSynchronize(stream);
+fail_locReg_memHandle_mem_stream:
+  cudaStreamDestroy(stream);
+  symMemoryDropRef(comm, mem);
+fail_locReg_memHandle:
+  if (memHandle != 0x0) { CUCHECKIGNORE(cuMemRelease(memHandle)); }
+fail_locReg:
+  ncclCommDeregister(comm, localRegHandle);
 fail:
-  if (mem) symMemoryDropRef(comm, (struct ncclSymrMemory*)mem);
-  goto exit;
+  *outWinDev = nullptr;
+  return ret;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -555,13 +587,6 @@ ncclResult_t ncclCommWindowRegister(
   ) {
   ncclResult_t ret = ncclSuccess;
   int saveDev;
-  CUmemGenericAllocationHandle memHandle = 0;
-  CUdeviceptr memAddr = 0;
-  size_t memSize = 0;
-  size_t memOffset;
-  struct ncclReg* localRegHandle = nullptr;
-  cudaStream_t stream = nullptr;
-  struct ncclWindow_vidmem* winDev = nullptr;
   struct ncclSymrRegTask* task;
 
   if (userPtr == nullptr || userSize == 0 || !ncclParamLocalRegister() || !ncclCuMemEnable()) goto exit;
@@ -571,45 +596,13 @@ ncclResult_t ncclCommWindowRegister(
   NCCLCHECKGOTO(ncclCommEnsureReady(comm), ret, fail);
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
-  // Get underlying cumem handle:
-  CUCHECKGOTO(cuMemGetAddressRange(&memAddr, &memSize, reinterpret_cast<CUdeviceptr>(userPtr)), ret, fail);
-  memOffset = reinterpret_cast<CUdeviceptr>(userPtr) - memAddr;
-  if (memOffset%NCCL_WIN_REQUIRED_ALIGNMENT != 0) {
-    WARN("Window address must be suitably aligned.");
-    ret = ncclInvalidArgument;
-    goto fail;
-  }
-
-  NCCLCHECKGOTO(ncclCommRegister(comm, (void*)memAddr, memSize, (void**)&localRegHandle), ret, fail);
-
-  if (!comm->symmetricSupport) {
-    // We just return the local registration handle directly in this case, as there's no reason to allocate the
-    // ncclWindow_vidmem structure on the device, etc.
-    winDev = (struct ncclWindow_vidmem*)localRegHandle;
-    goto exit;
-  }
-
-  if (comm->symrState.bigSize == 0) {
-    NCCLCHECKGOTO(ncclSymrInit(comm), ret, fail);
-  }
-
-  CUCHECKGOTO(cuMemRetainAllocationHandle(&memHandle, reinterpret_cast<void*>(memAddr)), ret, fail);
-
-  CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail);
-
-  // Allocate the ncclWindow_t ahead of time so that we can return it to the caller.
-  NCCLCHECKGOTO(ncclShadowPoolAlloc<ncclWindow_vidmem>(&comm->symrState.shadows, &winDev, nullptr, stream), ret, fail);
+  NCCLCHECKGOTO(ncclSymrInitOnce(comm), ret, fail);
 
   NCCLCHECKGOTO(ncclCalloc(&task, 1), ret, fail);
-  task->memHandle = memHandle;
-  task->memSize = memSize;
-  task->memOffset = memOffset;
   task->userPtr = userPtr;
   task->userSize = userSize;
   task->winFlags = winFlags;
-  task->winDev = winDev;
-  task->localRegHandle = localRegHandle;
-  task->stream = stream;
+  task->outWinDev = outWinDev;
   ncclIntruQueueEnqueue(&comm->symrState.regTaskQueue, task);
   ncclGroupCommJoin(comm, ncclGroupTaskTypeSymRegister);
 
@@ -617,20 +610,8 @@ exit:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
   cudaSetDevice(saveDev);
-  if (outWinDev) *outWinDev = winDev;
   return ret;
-
 fail:
-  if (winDev) {
-    ncclShadowPoolFree(&comm->symrState.shadows, winDev, stream);
-    winDev = nullptr;
-  }
-  if (stream) {
-    cudaStreamSynchronize(stream);
-    cudaStreamDestroy(stream);
-  }
-  if (memHandle) { CUCHECKIGNORE(cuMemRelease(memHandle)); }
-  if (localRegHandle) ncclCommDeregister(comm, localRegHandle);
   goto exit;
 }
 
@@ -682,6 +663,7 @@ ncclResult_t ncclSymCommCreate(
   ncclResult_t ret = ncclSuccess;
   struct ncclSymrState* symr = &comm->symrState;
 
+  memset(outSymComm, 0, sizeof(*outSymComm));
   outSymComm->rank = comm->rank;
   outSymComm->nRanks = comm->nRanks;
   outSymComm->nRanks_rcp32 = idivRcp32(comm->nRanks);
@@ -701,6 +683,8 @@ ncclResult_t ncclSymCommCreate(
   struct ncclSymrMemory* mem;
   struct ncclSymrWindow* win;
   struct ncclWindow_vidmem* winHost;
+
+  NCCLCHECKGOTO(ncclSymrInitOnce(comm), ret, fail);
 
   NCCLCHECKGOTO(symTeamObtain(comm, near, &tmNear), ret, fail);
   outSymComm->nearMultimem.mcBasePtr = tmNear->mcBasePtr;
@@ -755,10 +739,9 @@ ncclResult_t ncclSymCommCreate(
     NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, bufSizeTotal, &mem), ret, fail);
     memHandle = 0x0; // Reference given to symMemoryObtain
 
-    outSymComm->resourceWindow = nullptr;
     NCCLCHECKGOTO(symWindowCreate( // Requires world barrier afterward.
-      comm, mem, /*memOffset=*/0, nullptr, bufSizeTotal, /*winFlags=*/0, /*localRegHandle=*/nullptr,
-      &outSymComm->resourceWindow, &win,
+      comm, mem, /*memOffset=*/0, nullptr, bufSizeTotal, /*winFlags=*/0,
+      /*localReg=*/nullptr, &outSymComm->resourceWindow, &win,
       stream), ret, fail);
     mem = nullptr; // Reference given to symWindowCreate
     NCCLCHECKGOTO(ncclShadowPoolToHost(&symr->shadows, win->vidmem, &winHost), ret, fail_stream_mem_win);

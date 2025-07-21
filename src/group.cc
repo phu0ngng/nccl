@@ -219,16 +219,11 @@ ncclResult_t ncclCommGroupRegisterSymmetric(struct ncclAsyncJob* job_) {
 
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
-  if (comm->symkState.symComm.windowTable == nullptr) {
-    NCCLCHECKGOTO(ncclSymkInit(comm), ret, fail);
-  }
-
   while (!ncclIntruQueueEmpty(&comm->symrState.regTaskQueue)) {
     struct ncclSymrRegTask* task = ncclIntruQueueDequeue(&comm->symrState.regTaskQueue);
-    NCCLCHECKGOTO(ncclSymrRegisterInternal(comm, task->memHandle, task->memSize, task->memOffset,
-                                           task->userPtr, task->userSize, task->winFlags,
-                                           &task->winDev, task->localRegHandle, task->stream), ret, fail);
-    CUDACHECKGOTO(cudaStreamDestroy(task->stream), ret, fail);
+    NCCLCHECKGOTO(ncclSymrWindowRegisterInGroup(
+      comm, task->userPtr, task->userSize, task->winFlags, task->outWinDev),
+      ret, fail);
     free(task);
   }
 

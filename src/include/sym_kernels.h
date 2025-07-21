@@ -44,11 +44,12 @@ enum ncclSymkKernelId {
 };
 
 struct ncclSymkState {
+  bool initialized;
   struct ncclSymComm symComm;
 };
 
 // We assume ncclComm contains a field: `ncclSymkState symkState`
-ncclResult_t ncclSymkInit(struct ncclComm* comm);
+ncclResult_t ncclSymkInitOnce(struct ncclComm* comm);
 ncclResult_t ncclSymkFinalize(struct ncclComm* comm);
 
 bool ncclSymkImplemented(ncclFunc_t fn, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty);

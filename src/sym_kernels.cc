@@ -196,19 +196,24 @@ static void queryModel(struct ncclComm* comm, ncclSymkKernelId k, size_t nBytes,
   }
 }
 
-ncclResult_t ncclSymkInit(struct ncclComm* comm) {
+ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
   struct ncclSymkState* symk = &comm->symkState;
-  struct ncclSymCommRequirements reqs = {};
-  reqs.nearMemBarrierCount = ncclSymkMaxBlocks;
-  reqs.nearLLA2ABlockCount = ncclSymkMaxBlocks;
-  reqs.nearLLA2ASlotCount = ncclSymLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);
-  NCCLCHECK(ncclSymCommCreate(comm, &reqs, &symk->symComm));
+  if (!symk->initialized) {
+    symk->initialized = true;
+    struct ncclSymCommRequirements reqs = {};
+    reqs.nearMemBarrierCount = ncclSymkMaxBlocks;
+    reqs.nearLLA2ABlockCount = ncclSymkMaxBlocks;
+    reqs.nearLLA2ASlotCount = ncclSymLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);
+    NCCLCHECK(ncclSymCommCreate(comm, &reqs, &symk->symComm));
+  }
   return ncclSuccess;
 }
 
 ncclResult_t ncclSymkFinalize(struct ncclComm* comm) {
   struct ncclSymkState* symk = &comm->symkState;
-  NCCLCHECK(ncclSymCommDestroy(comm, &symk->symComm));
+  if (symk->initialized) {
+    NCCLCHECK(ncclSymCommDestroy(comm, &symk->symComm));
+  }
   return ncclSuccess;
 }
 

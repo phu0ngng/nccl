@@ -17,7 +17,7 @@ struct ncclSymrWindow {
   size_t size;
   size_t bigOffset; // Offset in big VA space.
   int winFlags;
-  struct ncclReg* localRegHandle;
+  void* localRegHandle;
   struct ncclWindow_vidmem* vidmem;
 };
 struct ncclSymrWindowSorted;
@@ -25,15 +25,10 @@ struct ncclSymrTeam;
 
 struct ncclSymrRegTask {
   struct ncclSymrRegTask *next;
-  CUmemGenericAllocationHandle memHandle;
-  size_t memSize;
-  size_t memOffset;
   void* userPtr;
   size_t userSize;
   int winFlags;
-  struct ncclWindow_vidmem* winDev;
-  struct ncclReg* localRegHandle;
-  cudaStream_t stream;
+  ncclWindow_t* outWinDev;
 };
 
 struct ncclSymrState {
@@ -59,17 +54,14 @@ struct ncclSymrState {
 };
 
 // We assume ncclComm has a `ncclSymrState symState` member.
-ncclResult_t ncclSymrInit(struct ncclComm* comm);
+ncclResult_t ncclSymrInitOnce(struct ncclComm* comm);
 ncclResult_t ncclSymrFinalize(struct ncclComm* comm);
 
 // If found *outWinHost will be populated and *outWinId >= 0, otherwise *outWinId == -1
 ncclResult_t ncclSymrFindWindow(struct ncclComm* comm, void const* userPtr, struct ncclSymrWindow** outWin);
 
-ncclResult_t ncclSymrRegisterInternal(
-    struct ncclComm* comm,
-    CUmemGenericAllocationHandle memHandle, size_t memSize, size_t memOffset,
-    void* userPtr, size_t userSize, int winFlags,
-    struct ncclWindow_vidmem** outWinDev, struct ncclReg* localRegHandle, cudaStream_t stream
-  );
+ncclResult_t ncclSymrWindowRegisterInGroup(
+  struct ncclComm* comm, void* ptr, size_t size, int winFlags, ncclWindow_t* outWinDev
+);
 
 #endif
