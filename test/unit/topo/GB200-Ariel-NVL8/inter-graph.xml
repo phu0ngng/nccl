@@ -1,5 +1,5 @@
 <graphs version="1">
-  <graph id="0" pattern="4" crossnic="2" nchannels="16" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
+  <graph id="0" pattern="4" crossnic="0" nchannels="8" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="PXN" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
@@ -10,7 +10,7 @@
       <gpu dev="0x100000000000001"/>
       <gpu dev="0x100000000000000"/>
       <gpu dev="0x1"/>
-      <net dev="0x3"/>
+      <net dev="0"/>
     </channel>
     <channel>
       <net dev="0x3"/>
@@ -22,7 +22,7 @@
       <gpu dev="0x300000000000000"/>
       <gpu dev="0x300000000000001"/>
       <gpu dev="0"/>
-      <net dev="0"/>
+      <net dev="0x3"/>
     </channel>
     <channel>
       <net dev="0x100000000000004"/>
@@ -34,21 +34,21 @@
       <gpu dev="0x200000000000001"/>
       <gpu dev="0x200000000000000"/>
       <gpu dev="0x100000000000001"/>
-      <net dev="0x100000000000007"/>
-    </channel>
-    <channel>
-      <net dev="0x100000000000007"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
       <net dev="0x100000000000004"/>
     </channel>
     <channel>
+      <net dev="0x100000000000007"/>
+      <gpu dev="0x100000000000001"/>
+      <gpu dev="0x200000000000000"/>
+      <gpu dev="0x200000000000001"/>
+      <gpu dev="0x300000000000000"/>
+      <gpu dev="0x300000000000001"/>
+      <gpu dev="0"/>
+      <gpu dev="0x1"/>
+      <gpu dev="0x100000000000000"/>
+      <net dev="0x100000000000007"/>
+    </channel>
+    <channel>
       <net dev="0x200000000000008"/>
       <gpu dev="0x200000000000000"/>
       <gpu dev="0x100000000000001"/>
@@ -58,7 +58,7 @@
       <gpu dev="0x300000000000001"/>
       <gpu dev="0x300000000000000"/>
       <gpu dev="0x200000000000001"/>
-      <net dev="0x20000000000000b"/>
+      <net dev="0x200000000000008"/>
     </channel>
     <channel>
       <net dev="0x20000000000000b"/>
@@ -70,7 +70,7 @@
       <gpu dev="0x100000000000000"/>
       <gpu dev="0x100000000000001"/>
       <gpu dev="0x200000000000000"/>
-      <net dev="0x200000000000008"/>
+      <net dev="0x20000000000000b"/>
     </channel>
     <channel>
       <net dev="0x30000000000000c"/>
@@ -82,106 +82,10 @@
       <gpu dev="0x1"/>
       <gpu dev="0"/>
       <gpu dev="0x300000000000001"/>
-      <net dev="0x30000000000000f"/>
-    </channel>
-    <channel>
-      <net dev="0x30000000000000f"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
       <net dev="0x30000000000000c"/>
     </channel>
     <channel>
-      <net dev="0x1"/>
-      <gpu dev="0"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x1"/>
-      <net dev="0x2"/>
-    </channel>
-    <channel>
-      <net dev="0x2"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <net dev="0x1"/>
-    </channel>
-    <channel>
-      <net dev="0x100000000000005"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <net dev="0x100000000000006"/>
-    </channel>
-    <channel>
-      <net dev="0x100000000000006"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <net dev="0x100000000000005"/>
-    </channel>
-    <channel>
-      <net dev="0x200000000000009"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <net dev="0x20000000000000a"/>
-    </channel>
-    <channel>
-      <net dev="0x20000000000000a"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <net dev="0x200000000000009"/>
-    </channel>
-    <channel>
-      <net dev="0x30000000000000d"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0"/>
-      <gpu dev="0x300000000000001"/>
-      <net dev="0x30000000000000e"/>
-    </channel>
-    <channel>
-      <net dev="0x30000000000000e"/>
+      <net dev="0x30000000000000f"/>
       <gpu dev="0x300000000000001"/>
       <gpu dev="0"/>
       <gpu dev="0x1"/>
@@ -190,10 +94,10 @@
       <gpu dev="0x200000000000000"/>
       <gpu dev="0x200000000000001"/>
       <gpu dev="0x300000000000000"/>
-      <net dev="0x30000000000000d"/>
+      <net dev="0x30000000000000f"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="16" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
+  <graph id="1" pattern="3" crossnic="0" nchannels="8" speedintra="96" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
     <channel>
       <net dev="0"/>
       <gpu dev="0"/>
@@ -289,102 +193,6 @@
       <gpu dev="0x200000000000001"/>
       <gpu dev="0x300000000000000"/>
       <net dev="0x30000000000000f"/>
-    </channel>
-    <channel>
-      <net dev="0x1"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <net dev="0x1"/>
-    </channel>
-    <channel>
-      <net dev="0x2"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <net dev="0x2"/>
-    </channel>
-    <channel>
-      <net dev="0x100000000000005"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <net dev="0x100000000000005"/>
-    </channel>
-    <channel>
-      <net dev="0x100000000000006"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <net dev="0x100000000000006"/>
-    </channel>
-    <channel>
-      <net dev="0x200000000000009"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <net dev="0x200000000000009"/>
-    </channel>
-    <channel>
-      <net dev="0x20000000000000a"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <net dev="0x20000000000000a"/>
-    </channel>
-    <channel>
-      <net dev="0x30000000000000d"/>
-      <gpu dev="0x300000000000000"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <net dev="0x30000000000000d"/>
-    </channel>
-    <channel>
-      <net dev="0x30000000000000e"/>
-      <gpu dev="0x300000000000001"/>
-      <gpu dev="0"/>
-      <gpu dev="0x1"/>
-      <gpu dev="0x100000000000000"/>
-      <gpu dev="0x100000000000001"/>
-      <gpu dev="0x200000000000000"/>
-      <gpu dev="0x200000000000001"/>
-      <gpu dev="0x300000000000000"/>
-      <net dev="0x30000000000000e"/>
     </channel>
   </graph>
   <graph id="2" pattern="3" crossnic="0" nchannels="0" speedintra="0" speedinter="0" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="1"/>
