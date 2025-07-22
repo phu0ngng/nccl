@@ -566,7 +566,7 @@ ncclResult_t ncclSymrWindowRegisterInGroup(
 
   CUCHECKGOTO(cuMemRetainAllocationHandle(&memHandle, reinterpret_cast<void*>(memAddr)), ret, fail_locReg);
 
-  // Trade cumem handle for ncclSymStateMemmory*
+  // Trade cumem handle for ncclSymrMemory*
   NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, memSize, &mem), ret, fail_locReg_memHandle);
   memHandle = 0x0; // symMemoryObtain took our reference
 
