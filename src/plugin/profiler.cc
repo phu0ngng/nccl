@@ -419,7 +419,7 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     struct ncclTaskP2p* pt = ncclIntruQueueHead(&plan->p2pTaskQueue);
     while (pt) {
-      int enable = pt->eActivationMask & (ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh);
+      int enable = pt->eActivationMask & (ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin);
       if (enable) {
         ncclProfilerEventDescr_t eDescr = { 0 };
         eDescr.type = ncclProfileP2p;
@@ -500,18 +500,18 @@ ncclResult_t ncclProfilerStopProxyOpEvent(int s, struct ncclProxyArgs* args) {
 ncclResult_t ncclProfilerStartSendProxyStepEvent(int s, struct ncclProxyArgs* args, int stepId) {
   TIME_START_EVENT(proxyStepStart);
   struct ncclProxySubArgs* sub = &args->subs[s];
+  int step_ = DIVUP(stepId, args->sliceSteps);
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     if (sub->eActivationMask & (ncclProfileProxyStep | ncclProfileNetPlugin)) {
-      int step_ = DIVUP(stepId, args->sliceSteps);
       ncclProfilerEventDescr_t eDescr = { 0 };
       eDescr.type = ncclProfileProxyStep;
       eDescr.parentObj = sub->opEventHandle;
       eDescr.rank = sub->rank;
       eDescr.proxyStep.step = step_;
       ncclProfiler->startEvent(sub->profilerContext, &sub->pHandles[step_%NCCL_STEPS].stepEventHandle, &eDescr);
-      sub->pHandles[step_%NCCL_STEPS].subArgPtr = sub;
     }
   }
+  sub->pHandles[step_%NCCL_STEPS].subArgPtr = sub;
   TIME_STOP_EVENT(proxyStepStart);
   return ncclSuccess;
 }
@@ -519,18 +519,18 @@ ncclResult_t ncclProfilerStartSendProxyStepEvent(int s, struct ncclProxyArgs* ar
 ncclResult_t ncclProfilerStartRecvProxyStepEvent(int s, struct ncclProxyArgs* args, int stepId) {
   TIME_START_EVENT(proxyStepStart);
   struct ncclProxySubArgs* sub = &args->subs[s];
+  int step_ = DIVUP(stepId, args->sliceSteps);
   if (__builtin_expect(ncclProfiler != NULL, 0)) {
     if (sub->eActivationMask & (ncclProfileProxyStep | ncclProfileNetPlugin)) {
-      int step_ = DIVUP(stepId, args->sliceSteps);
       ncclProfilerEventDescr_t eDescr = { 0 };
       eDescr.type = ncclProfileProxyStep;
       eDescr.parentObj = sub->opEventHandle;
       eDescr.rank = sub->rank;
       eDescr.proxyStep.step = step_;
       ncclProfiler->startEvent(sub->profilerContext, &sub->pHandles[step_%NCCL_STEPS].stepEventHandle, &eDescr);
-      sub->pHandles[step_%NCCL_STEPS].subArgPtr = sub;
     }
   }
+  sub->pHandles[step_%NCCL_STEPS].subArgPtr = sub;
   TIME_STOP_EVENT(proxyStepStart);
   return ncclSuccess;
 }
