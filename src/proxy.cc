@@ -744,6 +744,7 @@ static ncclResult_t removeOp(struct ncclProxyProgressState* state, struct ncclPr
 static ncclResult_t progressOps(struct ncclProxyState* proxyState, struct ncclProxyProgressState* state, struct ncclProxyArgs* opStart, int* idle) {
   struct ncclProxyArgs* prevOp = NULL;
   struct ncclProxyArgs* op = opStart;
+  ncclResult_t status = ncclSuccess;
   while (op) {
     if (op->state == ncclProxyOpNone) return ncclInternalError;
     TIME_START(0); TIME_START(1);
@@ -751,6 +752,8 @@ static ncclResult_t progressOps(struct ncclProxyState* proxyState, struct ncclPr
     if (op->idle) { TIME_STOP(1); TIME_CANCEL(0); } else { TIME_CANCEL(1); TIME_STOP(0); }
     *idle &= op->idle;
     if (op->state == ncclProxyOpNone || ret != ncclSuccess) {
+      //track first error that occured
+      if (ret != ncclSuccess && status == ncclSuccess) status = ret;
       TIME_START(2);
       NCCLCHECK(removeOp(state, &op, &prevOp));
       TIME_STOP(2);
@@ -759,7 +762,7 @@ static ncclResult_t progressOps(struct ncclProxyState* proxyState, struct ncclPr
       op = op->next;
     }
   }
-  return ncclSuccess;
+  return status;
 }
 
 NCCL_PARAM(ProxyAppendBatchSize, "PROXY_APPEND_BATCH_SIZE", 16);
