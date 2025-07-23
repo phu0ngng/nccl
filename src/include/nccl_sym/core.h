@@ -97,7 +97,7 @@ template<typename Coop>
 NCCL_DEVICE_INLINE ncclWindow_t ncclSymFindWindow(Coop, ncclSymComm const&, void const *ptr);
 
 NCCL_DEVICE_INLINE void* ncclSymGetLocalPointer(ncclWindow_t w, size_t offset);
-NCCL_DEVICE_INLINE void* ncclSymGetNearPointer(ncclWindow_t w, size_t offset, int peer);
+NCCL_DEVICE_INLINE void* ncclSymGetNearPointer(ncclWindow_t w, size_t offset, int nearPeer);
 NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, int peer);
 NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, ncclSymTeam tm, int peer);
 NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclSymMultimemHandle mmHandle);
@@ -107,7 +107,7 @@ NCCL_DEVICE_INLINE void* ncclSymGetNearMultimemPointer(ncclWindow_t w, size_t of
 #if __CUDACC__
 // Convenience for combining ncclSymGet***Pointer() with resource handle.
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclSymComm const&, ncclSymResourceBufferHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearPointer(ncclSymComm const&, ncclSymResourceBufferHandle, int peer);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearPointer(ncclSymComm const&, ncclSymResourceBufferHandle, int nearPeer);
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclSymComm const&, ncclSymResourceBufferHandle, ncclSymTeam, int peer);
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm const&, ncclSymResourceBufferHandle, ncclSymMultimemHandle);
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearMultimemPointer(ncclSymComm const&, ncclSymResourceBufferHandle);

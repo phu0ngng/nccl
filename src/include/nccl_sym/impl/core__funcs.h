@@ -88,17 +88,16 @@ NCCL_HOST_DEVICE_INLINE int ncclSymTeamRankInDifference(ncclSymTeam parent, nccl
 NCCL_DEVICE_INLINE void* ncclSymGetLocalPointer(ncclWindow_t w, size_t offset) {
   char* base = nccl::utility::loadConst(&w->nearFlatBase);
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
-  int i = nccl::utility::loadConst(&w->nearRank);
-  return (void*)(nccl::utility::add4G(base, i*stride4G) + offset);
+  int nearRank = nccl::utility::loadConst(&w->nearRank);
+  return (void*)(nccl::utility::add4G(base, nearRank*stride4G) + offset);
 }
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetNearPointer(ncclWindow_t w, size_t offset, int peer) {
+NCCL_DEVICE_INLINE void* ncclSymGetNearPointer(ncclWindow_t w, size_t offset, int nearPeer) {
   char* base = nccl::utility::loadConst(&w->nearFlatBase);
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
-  int i = peer;
-  return (void*)(nccl::utility::add4G(base, i*stride4G) + offset);
+  return (void*)(nccl::utility::add4G(base, nearPeer*stride4G) + offset);
 }
 #endif
 
@@ -108,8 +107,8 @@ NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, in
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
   int worldRank = nccl::utility::loadConst(&w->worldRank);
   int nearRank = nccl::utility::loadConst(&w->nearRank);
-  int i = nearRank + (peer - worldRank);
-  return (void*)(nccl::utility::add4G(base, i*stride4G) + offset);
+  int nearPeer = nearRank + (peer - worldRank);
+  return (void*)(nccl::utility::add4G(base, nearPeer*stride4G) + offset);
 }
 #endif
 
@@ -118,8 +117,8 @@ NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, nc
   char* base = nccl::utility::loadConst(&w->nearFlatBase);
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
   int nearRank = nccl::utility::loadConst(&w->nearRank);
-  int i = nearRank + (peer - tm.rank)*tm.stride;
-  return (void*)(nccl::utility::add4G(base, i*stride4G) + offset);
+  int nearPeer = nearRank + (peer - tm.rank)*tm.stride;
+  return (void*)(nccl::utility::add4G(base, nearPeer*stride4G) + offset);
 }
 #endif
 
@@ -209,21 +208,20 @@ NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclSymComm const&
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, int peer) {
-  int r = peer;
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, int nearPeer) {
   void* nearFlatBase = comm.resourceWindow_inlined.nearFlatBase;
   uint32_t stride4G = comm.resourceWindow_inlined.stride4G;
-  void* local = nccl::utility::add4G(nearFlatBase, r*stride4G);
+  void* local = nccl::utility::add4G(nearFlatBase, nearPeer*stride4G);
   return (void*)(reinterpret_cast<char(*)[128]>(local) + h);
 }
 #endif
 
 #if __CUDACC__
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, ncclSymTeam team, int peer) {
-  int r = comm.nearRank + (peer - team.rank)*team.stride;
+  int nearPeer = comm.nearRank + (peer - team.rank)*team.stride;
   void* nearFlatBase = comm.resourceWindow_inlined.nearFlatBase;
   uint32_t stride4G = comm.resourceWindow_inlined.stride4G;
-  void* local = nccl::utility::add4G(nearFlatBase, r*stride4G);
+  void* local = nccl::utility::add4G(nearFlatBase, nearPeer*stride4G);
   return (void*)(reinterpret_cast<char(*)[128]>(local) + h);
 }
 #endif
