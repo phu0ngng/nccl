@@ -201,6 +201,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
   if (!symk->initialized) {
     symk->initialized = true;
     struct ncclSymCommRequirements reqs = {};
+    reqs.nearMultimem = comm->nvlsSupport;
     reqs.nearMemBarrierCount = ncclSymkMaxBlocks;
     reqs.nearLLA2ABlockCount = ncclSymkMaxBlocks;
     reqs.nearLLA2ASlotCount = ncclSymLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);

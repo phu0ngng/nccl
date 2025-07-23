@@ -181,7 +181,7 @@ fail:
 static ncclResult_t symBindTeamMemory(
     struct ncclComm* comm, struct ncclSymrTeam* tm, struct ncclSymrMemory* mem
   ) {
-  if (comm->nvlsSupport) {
+  if (comm->nvlsSupport && tm->mcBasePtr != nullptr) {
   #if CUDART_VERSION >= 12010
     INFO(NCCL_NVLS, "Binding multicast memory at big=%lx to team {%d x %d}", mem->bigOffset, tm->team.nRanks, tm->team.stride);
     CUCHECK(cuMulticastBindMem(tm->mcHandle, mem->bigOffset, mem->memHandle, 0, mem->size, 0));
@@ -193,7 +193,7 @@ static ncclResult_t symBindTeamMemory(
 static ncclResult_t symUnbindTeamMemory(
     struct ncclComm* comm, struct ncclSymrTeam* tm, struct ncclSymrMemory* mem
   ) {
-  if (comm->nvlsSupport) {
+  if (comm->nvlsSupport && tm->mcBasePtr != nullptr) {
   #if CUDART_VERSION >= 12010
     CUCHECK(cuMulticastUnbind(tm->mcHandle, comm->cudaDev, mem->bigOffset, mem->size));
   #endif
@@ -203,88 +203,106 @@ static ncclResult_t symUnbindTeamMemory(
 
 // Caller must barrier the team afterward.
 static ncclResult_t symTeamObtain(
-    struct ncclComm* comm, struct ncclSymTeam team,
+    struct ncclComm* comm, struct ncclSymTeam team, bool multimem,
     struct ncclSymrTeam** outTeam
   ) {
   ncclResult_t ret = ncclSuccess;
   struct ncclSymrState* symr = &comm->symrState;
   struct ncclSymrTeam* t = symr->teamHead;
-  while (t != nullptr) {
-    if (t->team.rank == team.rank && t->team.nRanks == team.nRanks && t->team.stride == team.stride) {
-      if (outTeam) *outTeam = t;
-      return ncclSuccess;
+  bool teamIsNew = false;
+  while (true) {
+    if (t == nullptr) {
+      teamIsNew = true;
+      t = (struct ncclSymrTeam*)malloc(sizeof(struct ncclSymrTeam) + team.nRanks*sizeof(int));
+      t->team = team;
+      t->mcHandle = 0x0;
+      t->mcBasePtr = nullptr;
+      for (int i=0; i < team.nRanks; i++) {
+        t->worldRankList[i] = comm->rank + (i - team.rank)*team.stride;
+      }
+      break;
+    } else if (t->team.rank == team.rank && t->team.nRanks == team.nRanks && t->team.stride == team.stride) {
+      if (!multimem || t->mcBasePtr != nullptr) {
+        // Matching team is sufficient
+        if (outTeam) *outTeam = t;
+        return ncclSuccess;
+      }
+      break; // Need to enable multimem
     }
   }
-  // New team
-  t = (struct ncclSymrTeam*)malloc(sizeof(struct ncclSymrTeam) + team.nRanks*sizeof(int));
-  t->team = team;
-  for (int i=0; i < team.nRanks; i++) {
-    t->worldRankList[i] = comm->rank + (i - team.rank)*team.stride;
-  }
 
-  CUmemGenericAllocationHandle mcHandle = 0;
-  CUdeviceptr mcAddr = 0;
-  if (comm->nvlsSupport) {
-  #if CUDART_VERSION >= 12010
-    CUmulticastObjectProp mcProp = {};
-    char shareableHandle[NVLS_HANDLE_SIZE];
-
-    mcProp.numDevices = team.nRanks;
-    mcProp.handleTypes = ncclCuMemHandleType;
-    mcProp.flags = 0;
-    mcProp.size = symr->bigSize;
-    if (team.rank == 0) {
-      NCCLCHECKGOTO(ncclNvlsGroupCreate(comm, &mcProp, team.rank, team.nRanks, &mcHandle, shareableHandle), ret, fail);
-      NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, t->worldRankList, team.rank, team.nRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail_mcHandle);
+  if (multimem) {
+    if (!comm->nvlsSupport) {
+      WARN("Multicast support requested for team but none available on system.");
+      ret = ncclInvalidArgument;
+      goto fail;
     } else {
-      NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, t->worldRankList, team.rank, team.nRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
-      NCCLCHECKGOTO(ncclNvlsGroupConnect(comm, shareableHandle, t->worldRankList[0], &mcHandle), ret, fail);
-    }
+    #if CUDART_VERSION >= 12010
+      CUmemGenericAllocationHandle mcHandle = 0;
+      CUdeviceptr mcAddr = 0;
+      CUmulticastObjectProp mcProp = {};
+      char shareableHandle[NVLS_HANDLE_SIZE];
 
-    CUCHECKGOTO(cuMulticastAddDevice(mcHandle, comm->cudaDev), ret, fail_mcHandle);
-    CUCHECKGOTO(cuMemAddressReserve(&mcAddr, symr->bigSize, NCCL_MAX_PAGE_SIZE, 0, 0), ret, fail_mcHandle);
-    CUCHECKGOTO(cuMemMap(mcAddr, symr->bigSize, 0, mcHandle, 0), ret, fail_mcHandle_mcAddr);
-    { CUmemAccessDesc accessDesc = {};
-      accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-      accessDesc.location.id = comm->cudaDev;
-      accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-      CUCHECKGOTO(cuMemSetAccess(mcAddr, symr->bigSize, &accessDesc, 1), ret, fail_mcHandle_mcAddr_unmap);
+      mcProp.numDevices = team.nRanks;
+      mcProp.handleTypes = ncclCuMemHandleType;
+      mcProp.flags = 0;
+      mcProp.size = symr->bigSize;
+      if (team.rank == 0) {
+        NCCLCHECKGOTO(ncclNvlsGroupCreate(comm, &mcProp, team.rank, team.nRanks, &mcHandle, shareableHandle), ret, fail);
+        NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, t->worldRankList, team.rank, team.nRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail_mcHandle);
+      } else {
+        NCCLCHECKGOTO(bootstrapIntraNodeBroadcast(comm->bootstrap, t->worldRankList, team.rank, team.nRanks, 0, shareableHandle, NVLS_HANDLE_SIZE), ret, fail);
+        NCCLCHECKGOTO(ncclNvlsGroupConnect(comm, shareableHandle, t->worldRankList[0], &mcHandle), ret, fail);
+      }
+
+      CUCHECKGOTO(cuMulticastAddDevice(mcHandle, comm->cudaDev), ret, fail_mcHandle);
+      CUCHECKGOTO(cuMemAddressReserve(&mcAddr, symr->bigSize, NCCL_MAX_PAGE_SIZE, 0, 0), ret, fail_mcHandle);
+      CUCHECKGOTO(cuMemMap(mcAddr, symr->bigSize, 0, mcHandle, 0), ret, fail_mcHandle_mcAddr);
+      { CUmemAccessDesc accessDesc = {};
+        accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+        accessDesc.location.id = comm->cudaDev;
+        accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+        CUCHECKGOTO(cuMemSetAccess(mcAddr, symr->bigSize, &accessDesc, 1), ret, fail_mcHandle_mcAddr_unmap);
+      }
+      t->mcHandle = mcHandle;
+      t->mcBasePtr = reinterpret_cast<void*>(mcAddr);
+
+      // Bind new team with all existing memories.
+      for (struct ncclSymrMemory* mem = symr->memHead; mem != nullptr; mem = mem->next) {
+        NCCLCHECKGOTO(symBindTeamMemory(comm, t, mem), ret, fail_mcHandle_mcAddr_unmap_mems);
+      }
+
+      if (false) { // Error labels:
+      fail_mcHandle_mcAddr_unmap_mems:
+        for (struct ncclSymrMemory* mem = symr->memHead; mem != nullptr; mem = mem->next) {
+          symUnbindTeamMemory(comm, t, mem);
+        }
+      fail_mcHandle_mcAddr_unmap:
+        CUCHECKIGNORE(cuMemUnmap(mcAddr, symr->bigSize));
+        goto fail_mcHandle_mcAddr; // silence unused label warning
+      fail_mcHandle_mcAddr:
+        CUCHECKIGNORE(cuMemAddressFree(mcAddr, symr->bigSize));
+        goto fail_mcHandle; // silence unused label warning
+      fail_mcHandle:
+        CUCHECKIGNORE(cuMemRelease(mcHandle));
+        goto fail; // silence unused label warning
+      }
+    #else
+      goto fail; // silence unused label warning
+    #endif
     }
-    t->mcHandle = mcHandle;
-    t->mcBasePtr = reinterpret_cast<void*>(mcAddr);
-  #else
-    goto fail_mcHandle_mcAddr_unmap; // silence unused label warning
-  #endif
-  } else {
-    t->mcHandle = 0x0;
-    t->mcBasePtr = nullptr;
   }
-  // Bind new team with all existing memories.
-  for (struct ncclSymrMemory* mem = symr->memHead; mem != nullptr; mem = mem->next) {
-    NCCLCHECKGOTO(symBindTeamMemory(comm, t, mem), ret, fail_mcHandle_mcAddr_unmap_mems);
+
+  if (teamIsNew) {
+     // Add to list
+    t->next = symr->teamHead;
+    symr->teamHead = t;
   }
-  // Add to list
-  t->next = symr->teamHead;
-  symr->teamHead = t;
-  
   if (outTeam) *outTeam = t;
   return ret;
 
-fail_mcHandle_mcAddr_unmap_mems:
-  for (struct ncclSymrMemory* mem = symr->memHead; mem != nullptr; mem = mem->next) {
-    symUnbindTeamMemory(comm, t, mem);
-  }
-fail_mcHandle_mcAddr_unmap:
-  CUCHECKIGNORE(cuMemUnmap(mcAddr, symr->bigSize));
-  goto fail_mcHandle_mcAddr; // silence unused label warning
-fail_mcHandle_mcAddr:
-  CUCHECKIGNORE(cuMemAddressFree(mcAddr, symr->bigSize));
-  goto fail_mcHandle; // silence unused label warning
-fail_mcHandle:
-  CUCHECKIGNORE(cuMemRelease(mcHandle));
-  goto fail; // silence unused label warning
 fail:
-  free(t);
+  if (teamIsNew) free(t);
   return ret;
 }
 
@@ -293,10 +311,10 @@ static void symTeamDestroyAll(struct ncclComm* comm) {
   while (symr->teamHead != nullptr) {
     struct ncclSymrTeam* t = symr->teamHead;
     symr->teamHead = t->next;
-    for (struct ncclSymrMemory* m = symr->memHead; m != nullptr; m = m->next) {
-      symUnbindTeamMemory(comm, t, m);
-    }
-    if (comm->nvlsSupport) {
+    if (t->mcBasePtr != nullptr) {
+      for (struct ncclSymrMemory* m = symr->memHead; m != nullptr; m = m->next) {
+        symUnbindTeamMemory(comm, t, m);
+      }
       CUdeviceptr mcAddr = reinterpret_cast<CUdeviceptr>(t->mcBasePtr);
       CUCHECKIGNORE(cuMemUnmap(mcAddr, symr->bigSize));
       CUCHECKIGNORE(cuMemAddressFree(mcAddr, symr->bigSize));
@@ -686,14 +704,14 @@ ncclResult_t ncclSymCommCreate(
 
   NCCLCHECKGOTO(ncclSymrInitOnce(comm), ret, fail);
 
-  NCCLCHECKGOTO(symTeamObtain(comm, near, &tmNear), ret, fail);
+  NCCLCHECKGOTO(symTeamObtain(comm, near, /*multicast=*/reqs->nearMultimem, &tmNear), ret, fail);
   outSymComm->nearMultimem.mcBasePtr = tmNear->mcBasePtr;
 
   { struct ncclSymTeamRequirements* tr = reqs->teamRequirementsList;
     while (tr != nullptr) {
       if (tr->multimem) {
         struct ncclSymrTeam* tm;
-        NCCLCHECKGOTO(symTeamObtain(comm, tr->team, &tm), ret, fail);
+        NCCLCHECKGOTO(symTeamObtain(comm, tr->team, tr->multimem, &tm), ret, fail);
         if (tr->outMultimemHandle != nullptr) tr->outMultimemHandle->mcBasePtr = tm->mcBasePtr;
       }
       tr = tr->next;

@@ -28,6 +28,8 @@ struct ncclSymCommRequirements {
   struct ncclSymResourceRequirements* resourceRequirementsList;
   struct ncclSymTeamRequirements* teamRequirementsList;
 
+  bool nearMultimem; // Enable multimem on near team
+
   int nearMemBarrierCount;
   ncclSymMemBarrierHandle* outNearMemBarrierHandle; // If non-null, target assigned during ncclSymCommCreate.
 
