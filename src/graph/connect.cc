@@ -232,7 +232,6 @@ static ncclResult_t connectCollNet(struct ncclComm* comm, struct ncclTopoGraph* 
     sprintf(line+strlen(line), "nUp %d nHeads %d ", nUp, nHeads);
     sprintf(line+strlen(line), "headRank %d out %d shift %d", channel->collnetDirect.headRank, channel->collnetDirect.out, channel->collnetDirect.shift);
     INFO(NCCL_GRAPH, "%s", line);
-    channel->collnetChain.depth = comm->nRanks/comm->nNodes;
   }
   free(heads);
   return ncclSuccess;
@@ -459,7 +458,14 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
       int collNetNchannels = std::min(MAXCHANNELS, nChannels+nChannels/2);
       nChannels = comm->nChannels = copyChannels(comm, nChannels, collNetNchannels, ringPrev, ringNext);
     }
-    NCCLCHECKGOTO(connectCollNet(comm, graphs[NCCL_ALGO_COLLNET_DIRECT]), ret, fail);
+
+    for (int c = 0; c < comm->nChannels; c++) {
+      comm->channels[c].collnetChain.depth = comm->nRanks/comm->nNodes;
+    }
+
+    if (comm->maxLocalRanks <= NCCL_MAX_DIRECT_ARITY+1) {
+      NCCLCHECKGOTO(connectCollNet(comm, graphs[NCCL_ALGO_COLLNET_DIRECT]), ret, fail);
+    }
   }
 
   // Use 4 compute channels per search channel to reach peak BW on <8 PPN
