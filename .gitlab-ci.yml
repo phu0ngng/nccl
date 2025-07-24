@@ -71,7 +71,7 @@ build-trace:
       when: always
     - when: never
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     NCCL_BUILD_TRACE: 1
   script:
@@ -102,7 +102,7 @@ build-ipp6:
       when: always
     - when: never
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   script:
     - docker/make.sh --ci-build ipp6-slurm,draco-oci,eos,pre-nyx
     - tar -cf - build | pigz --fast > build-ipp6.tar.gz
@@ -257,7 +257,7 @@ setup-AWS_H100_EFA:
       when: always
     - when: never
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   needs:
     - job: build-ipp6
       artifacts: false
@@ -688,7 +688,7 @@ unit_tests-AWS_H100_EFA:
   needs:
     - setup-AWS_H100_EFA
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -929,7 +929,7 @@ unit_tests-ipp6-a100:
       - build
     policy: pull
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -1205,7 +1205,7 @@ apitest-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,unit_tests-AWS_H100_EFA]
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -1391,7 +1391,7 @@ apitest-ipp6-a100:
       - build
     policy: pull
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -1681,7 +1681,7 @@ perftest_single-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,apitest-AWS_H100_EFA]
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -1857,7 +1857,7 @@ perftest-single-ipp6-a100:
       - build
     policy: pull
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -1999,7 +1999,7 @@ perftest_multi-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,perftest_single-AWS_H100_EFA]
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -2179,7 +2179,7 @@ perftest-multi-ipp6-a100:
       - build
     policy: pull
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -2295,7 +2295,7 @@ summarize-pipeline:
   rules:
     - when: always
   tags:
-    - ipp6-nccl
+    - ipp6-nccl-v2
   script:
     - ./test/scripts/gitlab-runner-summary.sh
 

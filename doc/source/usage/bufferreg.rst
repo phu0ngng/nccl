@@ -183,8 +183,8 @@ The following example shows how to register buffers into NCCL window and use it 
   CHECK(ncclAllgather((uint8_t*)src + 0x1000, (uint8_t*)dst + 0x2000, 1, ncclInt8, comm, stream));
   CHECK(cudaStreamSynchronize(stream));
 
-  CHECK(ncclCommWindowDeregister(src_win));
-  CHECK(ncclCommWindowDeregister(dst_win));
+  CHECK(ncclCommWindowDeregister(comm, src_win));
+  CHECK(ncclCommWindowDeregister(comm, dst_win));
 
   CHECK(ncclMemFree(src));
   CHECK(ncclMemFree(dst));

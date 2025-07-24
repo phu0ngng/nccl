@@ -21,7 +21,7 @@ ncclResult_t pluginInit(size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunct
 ```
 - **Purpose**: Initialize the plugin with communicator information
 - **Current Implementation**: Simple placeholder that returns success
-- **Parameters**: 
+- **Parameters**:
   - `nRanks`: Total number of ranks in the communicator
   - `nNodes`: Total number of nodes in the communicator
   - `logFunction`: NCCL debug logging function
@@ -34,7 +34,7 @@ ncclResult_t pluginGetCollInfo(void* context, ncclFunc_t collType, size_t nBytes
                               int regBuff, int* nChannels)
 ```
 - **Purpose**: Modify cost tables for collective operations
-- **Current Implementation**: 
+- **Current Implementation**:
   - Sets RING+SIMPLE algorithm to cost 0.0 (highest preference)
   - Sets channel count to 1
 - **Parameters**:
@@ -126,10 +126,10 @@ __hidden ncclResult_t pluginGetCollInfo(void* context, ncclFunc_t collType, size
     // Large message optimization
     table[NCCL_ALGO_RING][NCCL_PROTO_LL128] = 0.0;
   }
-  
+
   // Dynamic channel selection
   *nChannels = (nBytes > 1024*1024) ? 4 : 1;
-  
+
   return ncclSuccess;
 }
 ```
@@ -194,4 +194,4 @@ Choose the example plugin if you want:
 - [Parent Directory README](../README.md) - General tuner plugin development guide
 - [Example Plugin](../example/README.md) - Fully featured implementation
 
-This basic plugin provides the foundation you need to start developing custom NCCL tuner plugins. Extend it with your specific tuning logic and requirements. 
+This basic plugin provides the foundation you need to start developing custom NCCL tuner plugins. Extend it with your specific tuning logic and requirements.
