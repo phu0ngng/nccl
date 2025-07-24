@@ -21,7 +21,29 @@ static ncclCollNet_v10_t* ncclCollNet_v10;
 static int refCount[INDEX_NUMS];
 
 static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
-  return ncclNet_v10->getProperties(dev, (ncclNetProperties_v10_t *)props);
+  ncclNetProperties_v10_t props_v10;
+  NCCLCHECK(ncclNet_v10->getProperties(dev, &props_v10));
+  props->name = props_v10.name;
+  props->pciPath = props_v10.pciPath;
+  props->guid = props_v10.guid;
+  props->ptrSupport = props_v10.ptrSupport;
+  props->regIsGlobal = props_v10.regIsGlobal;
+  props->forceFlush = props_v10.forceFlush;
+  props->speed = props_v10.speed;
+  props->port = props_v10.port;
+  props->latency = props_v10.latency;
+  props->maxComms = props_v10.maxComms;
+  props->maxRecvs = props_v10.maxRecvs;
+  props->netDeviceType = props_v10.netDeviceType;
+  props->netDeviceVersion = props_v10.netDeviceVersion;
+  props->vProps.ndevs = props_v10.vProps.ndevs;
+  for (int i = 0; i < props->vProps.ndevs; i++) {
+    props->vProps.devs[i] = props_v10.vProps.devs[i];
+  }
+  props->maxP2pBytes = props_v10.maxP2pBytes;
+  props->maxCollBytes = props_v10.maxCollBytes;
+  props->maxMultiRequestSize = 1;
+  return ncclSuccess;
 }
 
 static ncclResult_t ncclNet_listen(void* ctx __attribute__((unused)),
@@ -87,7 +109,29 @@ ncclNet_t* getNcclNet_v10(void* lib) {
 }
 
 static ncclResult_t ncclCollNet_getProperties(int dev, ncclNetProperties_t* props) {
-  return ncclCollNet_v10->getProperties(dev, (ncclNetProperties_v10_t *)props);
+  ncclNetProperties_v10_t props_v10;
+  NCCLCHECK(ncclCollNet_v10->getProperties(dev, &props_v10));
+  props->name = props_v10.name;
+  props->pciPath = props_v10.pciPath;
+  props->guid = props_v10.guid;
+  props->ptrSupport = props_v10.ptrSupport;
+  props->regIsGlobal = props_v10.regIsGlobal;
+  props->forceFlush = props_v10.forceFlush;
+  props->speed = props_v10.speed;
+  props->port = props_v10.port;
+  props->latency = props_v10.latency;
+  props->maxComms = props_v10.maxComms;
+  props->maxRecvs = props_v10.maxRecvs;
+  props->netDeviceType = props_v10.netDeviceType;
+  props->netDeviceVersion = props_v10.netDeviceVersion;
+  props->vProps.ndevs = props_v10.vProps.ndevs;
+  for (int i = 0; i < props->vProps.ndevs; i++) {
+    props->vProps.devs[i] = props_v10.vProps.devs[i];
+  }
+  props->maxP2pBytes = props_v10.maxP2pBytes;
+  props->maxCollBytes = props_v10.maxCollBytes;
+  props->maxMultiRequestSize = 1;
+  return ncclSuccess;
 }
 
 static ncclResult_t ncclCollNet_listen(void* ctx __attribute__((unused)),
@@ -149,7 +193,7 @@ ncclCollNet_t* getNcclCollNet_v10(void* lib) {
   if (ncclCollNet_v10) {
     ncclCollNet.name = ncclCollNet_v10->name;
     ncclCollNet.init = ncclCollNet_init;
-    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v10)", ncclNet_v10->name);
+    INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v10)", ncclCollNet_v10->name);
     return &ncclCollNet;
   }
   INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v10 symbol.");

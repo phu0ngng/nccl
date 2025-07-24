@@ -41,6 +41,7 @@ static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
   props->vProps.devs[0] = dev;
   props->maxP2pBytes = MAX_NET_SIZE;
   props->maxCollBytes = MAX_COLLNET_SIZE;
+  props->maxMultiRequestSize = 1;
   return ncclSuccess;
 }
 
@@ -105,6 +106,7 @@ static ncclResult_t ncclCollNet_getProperties(int dev, ncclNetProperties_t* prop
   props->vProps.devs[0] = dev;
   props->maxP2pBytes = MAX_NET_SIZE;
   props->maxCollBytes = MAX_COLLNET_SIZE;
+  props->maxMultiRequestSize = 1;
   return ncclSuccess;
 }
 

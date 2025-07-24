@@ -36,6 +36,7 @@ typedef struct {
   ncclNetVDeviceProps_v11_t vProps;
   size_t maxP2pBytes;              // Max transfer size for point-to-point operations
   size_t maxCollBytes;             // Max transfer size for collective operations
+  int maxMultiRequestSize;         // Maximum number of requests supported in a single multi-request.
 } ncclNetProperties_v11_t;
 
 #define NCCL_NET_ATTR_UNDEF -1
