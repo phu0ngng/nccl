@@ -21,7 +21,29 @@ static ncclCollNet_v9_t* ncclCollNet_v9;
 static int refCount[INDEX_NUMS];
 
 static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
-  return ncclNet_v9->getProperties(dev, (ncclNetProperties_v9_t *)props);
+  ncclNetProperties_v9_t props_v9;
+  NCCLCHECK(ncclNet_v9->getProperties(dev, &props_v9));
+  props->name = props_v9.name;
+  props->pciPath = props_v9.pciPath;
+  props->guid = props_v9.guid;
+  props->ptrSupport = props_v9.ptrSupport;
+  props->regIsGlobal = props_v9.regIsGlobal;
+  props->forceFlush = props_v9.forceFlush;
+  props->speed = props_v9.speed;
+  props->port = props_v9.port;
+  props->latency = props_v9.latency;
+  props->maxComms = props_v9.maxComms;
+  props->maxRecvs = props_v9.maxRecvs;
+  props->netDeviceType = props_v9.netDeviceType;
+  props->netDeviceVersion = props_v9.netDeviceVersion;
+  props->vProps.ndevs = props_v9.vProps.ndevs;
+  for (int i = 0; i < props->vProps.ndevs; i++) {
+    props->vProps.devs[i] = props_v9.vProps.devs[i];
+  }
+  props->maxP2pBytes = props_v9.maxP2pBytes;
+  props->maxCollBytes = props_v9.maxCollBytes;
+  props->maxMultiRequestSize = 1;
+  return ncclSuccess;
 }
 
 static ncclResult_t ncclNet_isend(void* sendComm, void* data, size_t size, int tag, void* mhandle,
@@ -57,7 +79,29 @@ static ncclResult_t ncclNet_finalize(void* ctx __attribute__((unused))) {
 }
 
 static ncclResult_t ncclCollNet_getProperties(int dev, ncclNetProperties_t* props) {
-  return ncclCollNet_v9->getProperties(dev, (ncclNetProperties_v9_t *)props);
+  ncclNetProperties_v9_t props_v9;
+  NCCLCHECK(ncclCollNet_v9->getProperties(dev, &props_v9));
+  props->name = props_v9.name;
+  props->pciPath = props_v9.pciPath;
+  props->guid = props_v9.guid;
+  props->ptrSupport = props_v9.ptrSupport;
+  props->regIsGlobal = props_v9.regIsGlobal;
+  props->forceFlush = props_v9.forceFlush;
+  props->speed = props_v9.speed;
+  props->port = props_v9.port;
+  props->latency = props_v9.latency;
+  props->maxComms = props_v9.maxComms;
+  props->maxRecvs = props_v9.maxRecvs;
+  props->netDeviceType = props_v9.netDeviceType;
+  props->netDeviceVersion = props_v9.netDeviceVersion;
+  props->vProps.ndevs = props_v9.vProps.ndevs;
+  for (int i = 0; i < props->vProps.ndevs; i++) {
+    props->vProps.devs[i] = props_v9.vProps.devs[i];
+  }
+  props->maxP2pBytes = props_v9.maxP2pBytes;
+  props->maxCollBytes = props_v9.maxCollBytes;
+  props->maxMultiRequestSize = 1;
+  return ncclSuccess;
 }
 
 static ncclResult_t ncclCollNet_listen(void* ctx __attribute__((unused)),

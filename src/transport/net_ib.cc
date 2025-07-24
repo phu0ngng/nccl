@@ -883,6 +883,8 @@ ncclResult_t ncclIbGetPhysProperties(int dev, ncclNetProperties_t* props) {
   props->netDeviceType    = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   props->maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  props->maxCollBytes = MAX_COLLNET_SIZE;
+  props->maxMultiRequestSize = 1;
   return ncclSuccess;
 }
 
