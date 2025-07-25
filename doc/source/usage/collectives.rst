@@ -91,3 +91,49 @@ The ReduceScatter operation is impacted by a different rank to device mapping si
 
 
 Related links: :c:func:`ncclReduceScatter`
+
+.. _alltoall:
+
+AlltoAll
+--------
+
+In an AlltoAll operation between k ranks, each rank provides an input buffer of size k*N values, where the j-th chunk of N values is sent to destination rank j. Each rank receives an output buffer of size k*N values, where the i-th chunk of N values comes from source rank i.
+
+.. figure:: images/alltoall.png
+ :align: center
+
+ AlltoAll operation: exchanges data between all ranks, where each rank sends different data to every other rank and receives different data from every other rank.
+
+Related links: :c:func:`ncclAlltoAll`.
+
+.. _gather:
+
+Gather
+------
+
+The Gather operation gathers N values from k ranks into an output buffer on the root rank of size k*N.
+
+.. figure:: images/gather.png
+ :align: center
+
+ Gather operation: root rank receives data from all ranks.
+
+Important note: The root argument is one of the ranks, not a device number, and is therefore impacted by a different rank to device mapping.
+
+Related links: :c:func:`ncclGather`.
+
+.. _scatter:
+
+Scatter
+-------
+
+The Scatter operation distributes a total of N*k values from the root rank to k ranks, each rank receiving N values.
+
+.. figure:: images/scatter.png
+ :align: center
+
+ Scatter operation: root rank distributes data to all ranks.
+
+Important note: The root argument is one of the ranks, not a device number, and is therefore impacted by a different rank to device mapping.
+
+Related links: :c:func:`ncclScatter`.

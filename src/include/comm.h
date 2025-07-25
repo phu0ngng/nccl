@@ -377,7 +377,6 @@ struct ncclKernelPlanner {
   int nTasksP2pSend, nTasksP2pRecv;
   bool persistent;
   bool isSymColl;
-  bool isCeColl;
   // The list of user streams aggregated over all tasks present.
   struct ncclCudaStreamList* streams;
   // The most recent user stream. Ignored if streams==nullptr
@@ -393,6 +392,7 @@ struct ncclKernelPlanner {
   //////////////////////////////////////////////////////////////////////////////
 
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueue;
+  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collCeTaskQueue;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueue;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> tmpCollWorkQueue;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueue;
