@@ -15,8 +15,8 @@ ncclResult_t ncclShmClose(ncclShmHandle_t handle);
 ncclResult_t ncclShmUnlink(ncclShmHandle_t handle);
 
 struct ncclShmemCollBuff {
-  size_t *cnt[2];
-  void *ptr[2];
+  volatile size_t *cnt[2];
+  volatile void *ptr[2];
   int round;
   size_t maxTypeSize;
 };
