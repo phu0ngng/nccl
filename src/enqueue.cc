@@ -15,6 +15,8 @@
 #include "transport.h"
 #include "register_inline.h"
 #include "ce_coll.h"
+#include "nvtx.h"
+
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
 #include <cassert>
@@ -1322,7 +1324,7 @@ static ncclResult_t hostStreamPlanTask(struct ncclComm* comm, struct ncclKernelP
 }
 
 static void CUDART_CB hostStreamPlanCallback(void *plan_) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
   struct ncclKernelPlan* plan = (struct ncclKernelPlan*)plan_;
   ncclResult_t result = hostStreamPlanTask(plan->comm, plan);
   if (result != ncclSuccess) {

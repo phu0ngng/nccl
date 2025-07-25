@@ -7,10 +7,11 @@
 #include "comm.h"
 #include "transport.h"
 #include "group.h"
+#include "nvtx.h"
 
 NCCL_API(ncclResult_t, ncclMemAlloc, void **ptr, size_t size);
 ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
   ncclResult_t ret = ncclSuccess;
 
 #if CUDART_VERSION >= 12010
@@ -98,7 +99,7 @@ fail:
 
 NCCL_API(ncclResult_t, ncclMemFree, void *ptr);
 ncclResult_t  ncclMemFree(void *ptr) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
   ncclResult_t ret = ncclSuccess;
   int saveDevice;
 

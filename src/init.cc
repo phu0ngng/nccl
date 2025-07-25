@@ -33,6 +33,7 @@
 #include "utils.h"
 #include <mutex>
 #include "ce_coll.h"
+#include "nvtx.h"
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -2186,7 +2187,7 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
 NCCL_API(ncclResult_t, ncclCommDestroy, ncclComm_t comm);
 ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   if (comm == NULL) {
-    NVTX3_FUNC_RANGE_IN(nccl_domain);
+    NCCL_NVTX3_FUNC_RANGE;
     return ncclSuccess;
   }
 
@@ -2450,7 +2451,7 @@ ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
 
 NCCL_API(ncclResult_t, ncclCommCount, const ncclComm_t comm, int* count);
 ncclResult_t ncclCommCount(const ncclComm_t comm, int* count) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
 
   NCCLCHECK(CommCheck(comm, "CommCount", "comm"));
   NCCLCHECK(PtrCheck(count, "CommCount", "count"));
@@ -2464,7 +2465,7 @@ ncclResult_t ncclCommCount(const ncclComm_t comm, int* count) {
 
 NCCL_API(ncclResult_t, ncclCommCuDevice, const ncclComm_t comm, int* devid);
 ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int* devid) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
 
   NCCLCHECK(CommCheck(comm, "CommCuDevice", "comm"));
   NCCLCHECK(PtrCheck(devid, "CommCuDevice", "devid"));
@@ -2477,7 +2478,7 @@ ncclResult_t ncclCommCuDevice(const ncclComm_t comm, int* devid) {
 
 NCCL_API(ncclResult_t, ncclCommUserRank, const ncclComm_t comm, int* rank);
 ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
 
   NCCLCHECK(CommCheck(comm, "CommUserRank", "comm"));
   NCCLCHECK(PtrCheck(rank, "CommUserRank", "rank"));

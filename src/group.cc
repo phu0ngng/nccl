@@ -13,6 +13,7 @@
 #include "bootstrap.h"
 #include "ce_coll.h"
 #include "profiler.h"
+#include "nvtx.h"
 
 #define GROUP_MAX_RECLAIM_STEPS 10
 
@@ -92,7 +93,7 @@ ncclResult_t ncclAsyncJobComplete(struct ncclAsyncJob* job) {
 NCCL_API(ncclResult_t, ncclGroupStart);
 ncclResult_t ncclGroupStart() {
   ncclResult_t ret = ncclSuccess;
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
 
   NCCLCHECK(ncclGroupStartInternal());
   TRACE_CALL("ncclGroupStart()");
@@ -102,7 +103,7 @@ ncclResult_t ncclGroupStart() {
 NCCL_API(ncclResult_t, ncclGroupEnd);
 ncclResult_t ncclGroupEnd() {
   ncclResult_t ret = ncclSuccess;
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
   NCCLCHECKGOTO(ncclGroupEndInternal(), ret, exit);
   TRACE_CALL("ncclGroupEnd()");
 exit:
@@ -112,7 +113,7 @@ exit:
 NCCL_API(ncclResult_t, ncclGroupSimulateEnd, ncclSimInfo_t* simInfo);
 ncclResult_t ncclGroupSimulateEnd(ncclSimInfo_t* simInfo) {
   ncclResult_t ret = ncclSuccess;
-  NVTX3_FUNC_RANGE_IN(nccl_domain);
+  NCCL_NVTX3_FUNC_RANGE;
   NCCLCHECKGOTO(ncclGroupEndInternal(simInfo), ret, exit);
   TRACE_CALL("ncclGroupSimulateEnd()");
 exit:
