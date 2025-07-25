@@ -136,7 +136,7 @@ ncclResult_t ncclP2PPreconnectFunc(struct ncclAsyncJob* job_) {
   struct ncclPreconnectJob* job = (struct ncclPreconnectJob*)job_;
   struct ncclComm* comm = job->comm;
   CUDACHECK(cudaSetDevice(comm->cudaDev));
-  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  if (!job_->isThreadMain && CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
   NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 1));
   return ncclSuccess;
 }
@@ -193,7 +193,7 @@ ncclResult_t ncclPrepareTasksAndCollPreconnectFunc(struct ncclAsyncJob* job_) {
   bool algoNeedConnect[NCCL_NUM_ALGORITHMS];
   memset(algoNeedConnect, 0, sizeof(bool)*NCCL_NUM_ALGORITHMS);
   CUDACHECK(cudaSetDevice(comm->cudaDev));
-  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  if (!job_->isThreadMain && CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
   NCCLCHECK(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, job->simInfo));
   if (comm->cuMemSupport && needConnect) NCCLCHECK(ncclCollPreconnect(comm, algoNeedConnect));
   return ncclSuccess;
@@ -204,8 +204,8 @@ ncclResult_t ncclCollPreconnectFunc(struct ncclAsyncJob* job_) {
   struct ncclComm* comm = job->comm;
   ncclResult_t ret = ncclSuccess;
 
-  CUDACHECK(cudaSetDevice(comm->cudaDev));
-  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  if (!job_->isThreadMain) CUDACHECK(cudaSetDevice(comm->cudaDev));
+  if (!job_->isThreadMain && CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
   NCCLCHECKGOTO(ncclCollPreconnect(comm, job->algoNeedConnect), ret, fail);
 
 exit:
@@ -388,6 +388,12 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
 
   if (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueHead(asyncJobsMain);
+    if (job->next == nullptr) {
+      job->isThreadMain = true;
+      ncclAsyncJobMain(job);
+      job->state = ncclGroupJobJoined;
+      return job->result;
+    }
     do {
       PTHREADCHECKGOTO(pthread_create(&job->thread, nullptr, ncclAsyncJobMain, job), "pthread_create", ret, fail);
       job = job->next;
