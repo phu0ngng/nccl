@@ -10,6 +10,7 @@
 - [Proxy Affinity](items/id_b0d8ce49/Proxy_Affinity.md)
 - [Profiler API Events](items/id_ef8a4388/Profiler_API_Events.md)
 - [Multi Request API](items/id_ee13adc4/Multi_Request_API.md)
+- [NCCL alltoall/gather/scatter api](items/id_b1eda4f6/NCCL_alltoall_gather_scatter_api.md)
 <!-- V2_28_DO_NOT_MOVE -->
  
 <!------------------------------------->
