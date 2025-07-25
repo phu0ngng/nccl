@@ -265,7 +265,7 @@ static bool testBudget(
 
 ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
-  if (planner->isSymColl || planner->isCeColl) return ncclSuccess;
+  if (planner->isSymColl) return ncclSuccess;
   struct ncclTaskColl *task;
   task = ncclIntruQueueHead(&planner->collTaskQueue);
   while (task != nullptr) {
@@ -330,6 +330,14 @@ next:
 ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool* needConnect, ncclSimInfo_t* simInfo) {
   struct ncclKernelPlanner* planner = &comm->planner;
   planner->persistent = ncclCudaGraphValid(planner->capturingGraph);
+
+  // Check if CE collective needs initialization
+  if (!ncclIntruQueueEmpty(&planner->collCeTaskQueue)) {
+    if (comm->ceColl.baseUCSymReadyPtr == NULL) {
+      NCCLCHECK(ncclCeInit(comm));
+    }
+  }
+
   // Tasks from the sorter come out ordered size descending.
   struct ncclTaskColl* task = ncclTaskCollSorterDequeueAll(&planner->collSorter);
   // Tasks are assembled by (fn,op,ty) size ascending.
@@ -338,7 +346,6 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   int fnOpTyIndices[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
   int fnOpTyCount = 0;
 
-  #warning "TODO: add back in CE dispatch"
   if (comm->symmetricSupport && planner->nTasksColl == 1 && planner->nTasksP2p == 0) {
     NCCLCHECK(ncclSymrFindWindow(comm, task->sendbuff, &task->sendWin));
     NCCLCHECK(ncclSymrFindWindow(comm, task->recvbuff, &task->recvWin));
@@ -1421,7 +1428,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   planner->persistent = persistent;
   int nPlans = 0;
 
-  if (planner->nTasksColl + planner->nTasksP2p != 0) {
+  if (planner->nTasksColl + planner->nTasksP2p != 0 || !ncclIntruQueueEmpty(&planner->collCeTaskQueue)) {
     do {
       memset(&planner->wipPlan, 0, sizeof(planner->wipPlan));
 
@@ -1433,8 +1440,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
       plan->workStorageType = persistent ? ncclDevWorkStorageTypePersistent
                                          : ncclDevWorkStorageTypeFifo;
 
-      if (planner->isCeColl) {
-        struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
+      if (!ncclIntruQueueEmpty(&planner->collCeTaskQueue)) {
+        struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collCeTaskQueue);
         plan->isCeColl = true;
         plan->ceCollArgs = ncclMemoryStackAlloc<struct ncclCeCollArgs>(&comm->memScoped);
         plan->ceCollArgs->rootRank = task->root;
@@ -1443,9 +1450,12 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         plan->ceCollArgs->sendBuff = (uint8_t*)task->sendbuff;
         plan->ceCollArgs->recvBuff = (uint8_t*)task->recvbuff;
         plan->ceCollArgs->func = task->func;
+        plan->ceCollArgs->sendWin = task->sendWin;
+        plan->ceCollArgs->recvWin = task->recvWin;
 
-        planner->nTasksColl -= 1;
         ncclIntruQueueEnqueue(&planner->planQueue, plan);
+        ncclIntruQueueDequeue(&planner->collCeTaskQueue);
+        ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, task);
         nPlans += 1;
       } else if (planner->isSymColl) {
         plan->workStorageType = ncclDevWorkStorageTypeArgs;
@@ -1487,7 +1497,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
           nPlans += 1;
         }
       }
-    } while (planner->nTasksColl + planner->nTasksP2p != 0);
+    } while (planner->nTasksColl + planner->nTasksP2p != 0 || !ncclIntruQueueEmpty(&planner->collCeTaskQueue));
 
     struct ncclKernelPlan* planHead = ncclIntruQueueHead(&planner->planQueue);
     planner->unlaunchedPlansHead = planHead;
@@ -2497,6 +2507,45 @@ static ncclResult_t collTaskAppend(
   return ncclSuccess;
 }
 
+static ncclResult_t ceCollTaskAppend(
+    struct ncclComm* comm,
+    struct ncclInfo* info,
+    struct ncclSymrWindow* sendWin,
+    struct ncclSymrWindow* recvWin,
+    struct ncclDevRedOpFull opDev) {
+  struct ncclKernelPlanner *planner = &comm->planner;
+
+  // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
+  ncclGroupCommJoin(info->comm, ncclGroupTaskTypeCollective);
+  NCCLCHECK(ncclPlannerSetCapturingGraph(comm, info));
+  struct ncclTaskColl* t = ncclMemoryPoolAlloc<struct ncclTaskColl>(&comm->memPool_ncclTaskColl, &comm->memPermanent);
+
+  t->func = info->coll;
+  t->sendbuff = info->sendbuff;
+  t->recvbuff = info->recvbuff;
+  t->count = info->count;
+  t->root = info->root;
+  t->datatype = info->datatype;
+  size_t elementSize = ncclTypeSize(t->datatype);
+  if (t->func == ncclFuncAllGather || t->func == ncclFuncBroadcast) {
+    t->count *= elementSize;
+    t->datatype = ncclInt8;
+    elementSize = 1;
+  }
+  t->trafficBytes = t->count*elementSize*ncclFuncTrafficPerByte(t->func, comm->nRanks);
+  t->opHost = info->op;
+  t->opDev = opDev; // C++ struct assignment
+  t->chunkSteps = info->chunkSteps;
+  t->sliceSteps = info->sliceSteps;
+  t->eActivationMask = __atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED);
+  t->sendWin = sendWin;
+  t->recvWin = recvWin;
+
+  ncclIntruQueueEnqueue(&planner->collCeTaskQueue, t);
+
+  return ncclSuccess;
+}
+
 // Converts `info` to a task and adds it to `comm->planner`. The exception is with
 // single rank communicators, collectives are issued as `ncclMemcpyAsync`s and
 // thus don't need a task.
@@ -2524,34 +2573,46 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       NCCLCHECK(ncclLaunchOneRank(info->recvbuff, info->sendbuff, info->count, opDev, info->datatype, info->stream));
       return ncclSuccess;
     } else {
-
-      if (info->coll == ncclFuncAlltoAll) {
-        for (int r=0; r<comm->nRanks; r++) {
-          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, (void*)((char*)info->sendbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
-          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, (void*)((char*)info->recvbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
-        }
-      } else if (info->coll == ncclFuncGather){
-        size_t offset = 0;
-        NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, (void*)info->sendbuff, info->count, info->datatype, info->root));
-        if (comm->rank == info->root) {
+      struct ncclSymrWindow* sendWin;
+      struct ncclSymrWindow* recvWin;
+      ncclSymrFindWindow(comm, info->sendbuff, &sendWin);
+      ncclSymrFindWindow(comm, info->recvbuff, &recvWin);
+      bool ceImplemented = ncclCeImplemented(info->coll, info->op, info->datatype);
+      
+      // Append CE collective task if CE is supported and requested by user
+      if (comm->symmetricSupport && comm->nNodes == 1 && sendWin && recvWin && (sendWin->winFlags & recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && comm->config.CTAPolicy == NCCL_CTA_POLICY_ZERO && ceImplemented) {
+        NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, opDev));
+      } 
+      // Append kernel-based collective 
+      else {
+        if (info->coll == ncclFuncAlltoAll) {
           for (int r=0; r<comm->nRanks; r++) {
-            void* buff = (void*)((char*)info->recvbuff + offset);
-            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, buff, info->count, info->datatype, r));
-            offset += info->count * ncclTypeSize(info->datatype);
+            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, (void*)((char*)info->sendbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
+            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, (void*)((char*)info->recvbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
           }
-        }
-      } else if (info->coll == ncclFuncScatter) {
-        size_t offset = 0;
-        if (comm->rank == info->root) {
-          for (int r = 0; r < comm->nRanks; r++) {
-            void* buff = (void*)((char*)info->sendbuff + offset);
-            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, buff, info->count, info->datatype, r));
-            offset += info->count * ncclTypeSize(info->datatype);
+        } else if (info->coll == ncclFuncGather){
+          size_t offset = 0;
+          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, (void*)info->sendbuff, info->count, info->datatype, info->root));
+          if (comm->rank == info->root) {
+            for (int r=0; r<comm->nRanks; r++) {
+              void* buff = (void*)((char*)info->recvbuff + offset);
+              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, buff, info->count, info->datatype, r));
+              offset += info->count * ncclTypeSize(info->datatype);
+            }
           }
+        } else if (info->coll == ncclFuncScatter) {
+          size_t offset = 0;
+          if (comm->rank == info->root) {
+            for (int r = 0; r < comm->nRanks; r++) {
+              void* buff = (void*)((char*)info->sendbuff + offset);
+              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, buff, info->count, info->datatype, r));
+              offset += info->count * ncclTypeSize(info->datatype);
+            }
+          }
+          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, (void*)info->recvbuff, info->count, info->datatype, info->root));
+        } else {
+          NCCLCHECK(collTaskAppend(comm, info, opDev));
         }
-        NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, (void*)info->recvbuff, info->count, info->datatype, info->root));
-      } else {
-        NCCLCHECK(collTaskAppend(comm, info, opDev));
       }
     }
   }

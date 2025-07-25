@@ -187,12 +187,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
     NCCLCHECK(ncclSymkFinalize(comm));
     NCCLCHECK(ncclSymrFinalize(comm));
   }
-  if (comm->ceColl.baseUCSymReadyPtr) {
-    #warning "TODO: Fix me, function no longer exists"
-    #if 0
-      NCCLCHECK(ncclCommSymmetricFreeInternal(comm, comm->ceColl.baseUCSymReadyPtr));
-    #endif
-  }
   NCCLCHECK(ncclRasCommFini(comm));
 
   /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will

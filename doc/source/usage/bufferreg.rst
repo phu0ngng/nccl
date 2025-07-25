@@ -188,3 +188,46 @@ The following example shows how to register buffers into NCCL window and use it 
 
   CHECK(ncclMemFree(src));
   CHECK(ncclMemFree(dst));
+
+Zero-CTA Optimization
+------------------------
+
+Since NCCL version 2.28, NCCL supports zero-CTA optimization. Zero-CTA optimization aims to avoid the use of CTA for communication and to overlap communication and computation. 
+
+Current zero-CTA optimization supports using the Copy Engine (CE) to perform the communication. The following are the requirements to enable zero-CTA optimization with CE:
+
+ * CUDA driver version >= 12.5
+ * Collectives run within a single NVL or MNNVL domain (does not support network, e.g., IB/ROCE)
+ * The buffer is symmetrically registered with the NCCL window
+ * The communicator is configured with the ``NCCL_CTA_POLICY_ZERO`` flag (please see :ref:`cta_policy_flags`)
+ * Supported collectives are AlltoAll, AllGather, Scatter, and Gather
+
+The following example shows how to enable zero-CTA optimization:
+
+.. code:: C
+
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  // NCCL_CTA_POLICY_ZERO to enable zero-CTA optimization whenever possible
+  config.CTAPolicy = NCCL_CTA_POLICY_ZERO;
+  CHECK(ncclCommInitRankConfig(&comm, nranks, id, rank, &config));
+
+  void* src;
+  void* dst;
+  ncclWindow_t src_win;
+  ncclWindow_t dst_win;
+
+  CHECK(ncclMemAlloc(&src, src_size));
+  CHECK(ncclMemAlloc(&dst, dst_size));
+
+  // Register the buffers into NCCL symmetric window
+  CHECK(ncclCommWindowRegister(comm, src, src_size, &src_win, NCCL_WIN_COLL_SYMMETRIC));
+  CHECK(ncclCommWindowRegister(comm, dst, dst_size, &dst_win, NCCL_WIN_COLL_SYMMETRIC));
+
+  CHECK(ncclAllgather(src, dst, 1, ncclInt8, comm, stream));
+  CHECK(cudaStreamSynchronize(stream));
+
+  CHECK(ncclCommWindowDeregister(comm, src_win));
+  CHECK(ncclCommWindowDeregister(comm, dst_win));
+
+  CHECK(ncclMemFree(src));
+  CHECK(ncclMemFree(dst));

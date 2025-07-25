@@ -18,15 +18,5 @@ static inline ncclResult_t ncclRegFind(struct ncclComm* comm, const void* data, 
   }
 }
 
-#warning "TODO: Fix me, these can't work anymore"
-static inline void* peerUCSymPtr(struct ncclComm* comm, int peerRank, const void* ucSymPtr){
-  assert(0);
-  //return (void*)((uintptr_t)ucSymPtr + comm->baseStride * (peerRank - comm->localRank));
-}
-
-static inline void* peerMCSymPtr(struct ncclComm* comm, int peerRank, const void* ucSymPtr){ 
-  assert(0);
-  //return (void*)(comm->baseMCSymPtr + (uintptr_t)ucSymPtr - ((uintptr_t)comm->baseUCSymPtr + comm->localRank * comm->baseStride));
-}
 
 #endif
