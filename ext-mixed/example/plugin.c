@@ -68,7 +68,7 @@ __hidden ncclResult_t pluginCloseRecv(void* recvComm) { return ncclInternalError
 __hidden ncclResult_t pluginCloseListen(void* listenComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) { return ncclInternalError; }
 __hidden ncclResult_t pluginGetDeviceMr(void* comm, void* mhandle, void** dptr_mhandle) { return ncclInternalError; }
-__hidden ncclResult_t pluginMakeVDevice(void* ctx, int* d, ncclNetVDeviceProps_t* props) { return ncclInternalError; }
+__hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* props) { return ncclInternalError; }
 __hidden ncclResult_t pluginFinalize(void* ctx) { return ncclSuccess; }
 
 const ncclNet_v11_t ncclNetPlugin_v11 = {
@@ -97,7 +97,7 @@ const ncclNet_v11_t ncclNetPlugin_v11 = {
 
 #include "tuner.h"
 
-__hidden ncclResult_t tunerPluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction) { return ncclSuccess; }
+__hidden ncclResult_t tunerPluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, ncclTunerConstants_v5_t* constants) { return ncclSuccess; }
 
 __hidden ncclResult_t tunerPluginGetCollInfo(void* context, ncclFunc_t collType, size_t nBytes,
                               int numPipeOps, float** collCostTable, int numAlgo, int numProto,
