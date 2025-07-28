@@ -97,7 +97,7 @@ int test_plugin_init() {
   void* context = NULL;
 
   // Test successful initialization
-  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, NULL);
+  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, NULL, NULL);
   TEST_ASSERT(result == ncclSuccess, "Plugin init should succeed");
   TEST_ASSERT(context != NULL, "Context should be allocated");
 
@@ -122,7 +122,7 @@ int test_config_parsing_valid() {
   setenv("NCCL_TUNER_CONFIG_FILE", "test_valid.conf", 1);
 
   void* context = NULL;
-  ncclResult_t result = pluginInit(&context, 0, 16, 2, mock_logger, NULL);
+  ncclResult_t result = pluginInit(&context, 0, 16, 2, mock_logger, NULL, NULL);
   TEST_ASSERT(result == ncclSuccess, "Plugin init with valid config should succeed");
 
   // Clean up
@@ -143,7 +143,7 @@ int test_config_parsing_invalid() {
   setenv("NCCL_TUNER_CONFIG_FILE", "test_invalid.conf", 1);
 
   void* context = NULL;
-  ncclResult_t result = pluginInit(&context, 0, 8, 1, mock_logger, NULL);
+  ncclResult_t result = pluginInit(&context, 0, 8, 1, mock_logger, NULL, NULL);
   // Should still succeed but with no valid configs loaded
   TEST_ASSERT(result == ncclSuccess, "Plugin init should succeed even with invalid config");
 
@@ -164,7 +164,7 @@ int test_collective_matching() {
   setenv("NCCL_TUNER_CONFIG_FILE", "test_match.conf", 1);
 
   void* context = NULL;
-  pluginInit(&context, 0, 8, 1, mock_logger, NULL);
+  pluginInit(&context, 0, 8, 1, mock_logger, NULL, NULL);
 
   // Create mock cost table
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
@@ -225,7 +225,7 @@ int test_size_matching() {
   setenv("NCCL_TUNER_CONFIG_FILE", "test_size.conf", 1);
 
   void* context = NULL;
-  pluginInit(&context, 0, 8, 1, mock_logger, NULL);
+  pluginInit(&context, 0, 8, 1, mock_logger, NULL, NULL);
 
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -297,7 +297,7 @@ int test_topology_matching() {
 
   // Test with single node setup
   void* context1 = NULL;
-  pluginInit(&context1, 0, 8, 1, mock_logger, NULL);  // 8 ranks, 1 node
+  pluginInit(&context1, 0, 8, 1, mock_logger, NULL, NULL);  // 8 ranks, 1 node
 
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -319,7 +319,7 @@ int test_topology_matching() {
 
   // Test with 4 nodes, 32 ranks setup
   void* context2 = NULL;
-  pluginInit(&context2, 0, 32, 4, mock_logger, NULL);  // 32 ranks, 4 nodes
+  pluginInit(&context2, 0, 32, 4, mock_logger, NULL, NULL);  // 32 ranks, 4 nodes
 
   for (int i = 0; i < NCCL_NUM_ALGORITHMS; i++) {
     for (int j = 0; j < NCCL_NUM_PROTOCOLS; j++) {
@@ -348,7 +348,7 @@ int test_default_channels() {
   setenv("NCCL_TUNER_CONFIG_FILE", "test_default.conf", 1);
 
   void* context = NULL;
-  pluginInit(&context, 0, 8, 1, mock_logger, NULL);
+  pluginInit(&context, 0, 8, 1, mock_logger, NULL, NULL);
 
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -385,7 +385,7 @@ int test_regbuff_matching() {
   setenv("NCCL_TUNER_CONFIG_FILE", "test_regbuff.conf", 1);
 
   void* context = NULL;
-  pluginInit(&context, 0, 8, 1, mock_logger, NULL);
+  pluginInit(&context, 0, 8, 1, mock_logger, NULL, NULL);
 
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -453,7 +453,7 @@ int test_pipeops_matching() {
   setenv("NCCL_TUNER_CONFIG_FILE", "test_pipeops.conf", 1);
 
   void* context = NULL;
-  pluginInit(&context, 0, 8, 1, mock_logger, NULL);
+  pluginInit(&context, 0, 8, 1, mock_logger, NULL, NULL);
 
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -518,7 +518,7 @@ int test_no_match_fallback() {
   setenv("NCCL_TUNER_CONFIG_FILE", "test_fallback.conf", 1);
 
   void* context = NULL;
-  pluginInit(&context, 0, 8, 1, mock_logger, NULL);
+  pluginInit(&context, 0, 8, 1, mock_logger, NULL, NULL);
 
   float cost_table[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   float* cost_table_ptr[NCCL_NUM_ALGORITHMS];
@@ -592,7 +592,7 @@ int test_large_config() {
 
   // Initialize plugin with large config
   void* context = NULL;
-  ncclResult_t result = pluginInit(&context, 0, 16, 4, mock_logger, NULL);
+  ncclResult_t result = pluginInit(&context, 0, 16, 4, mock_logger, NULL, NULL);
   TEST_ASSERT(result == ncclSuccess, "Plugin init with large config should succeed");
   TEST_ASSERT(context != NULL, "Context should be allocated");
 
@@ -683,7 +683,7 @@ int test_very_large_config_stress() {
 
   // Test initialization with stress config
   void* context = NULL;
-  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, NULL);
+  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, NULL, NULL);
   TEST_ASSERT(result == ncclSuccess, "Plugin should handle very large config files");
 
   TunerContext* ctx = (TunerContext*)context;
@@ -725,7 +725,7 @@ int test_empty_config() {
   setenv("NCCL_TUNER_CONFIG_FILE", empty_config_file, 1);
 
   void* context = NULL;
-  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, NULL);
+  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, NULL, NULL);
   TEST_ASSERT(result == ncclSuccess, "Plugin should handle empty config files");
 
   TunerContext* ctx = (TunerContext*)context;
@@ -754,6 +754,32 @@ int test_empty_config() {
   unlink(empty_config_file);
   unsetenv("NCCL_TUNER_CONFIG_FILE");
 
+  TEST_PASS();
+}
+
+// Test NVLink domain info handling
+int test_nvl_domain_info() {
+  printf("Testing NVLink domain info handling...\n");
+
+  // Test NVLink domain structure with min/max ranks per domain
+  ncclNvlDomainInfo_v5_t nvl_domain = {
+    .nNvlDomains = 2, // 2 nodes = 2 domains
+    .minRanksPerNvlDomain = 3, // minimum ranks across all domains (bottleneck)
+    .maxRanksPerNvlDomain = 5  // maximum ranks across all domains (capacity)
+  };
+  
+  void* context = NULL;
+  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, &nvl_domain, NULL);
+  TEST_ASSERT(result == ncclSuccess, "Plugin init with NVLink domains should succeed");
+  
+  // Validate NVLD info structure
+  TEST_ASSERT(nvl_domain.nNvlDomains == 2, "Should have 2 domains (nodes)");
+  TEST_ASSERT(nvl_domain.minRanksPerNvlDomain == 3, "Should have minimum 3 ranks per domain");
+  TEST_ASSERT(nvl_domain.maxRanksPerNvlDomain == 5, "Should have maximum 5 ranks per domain");
+  
+  // Clean up
+  pluginFinalize(context);
+  printf("NVLink domain info test passed!\n");
   TEST_PASS();
 }
 
@@ -839,7 +865,7 @@ int test_tuner_constants() {
   };
 
   void* context = NULL;
-  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, &constants);
+  ncclResult_t result = pluginInit(&context, 0, 8, 2, mock_logger, NULL, &constants);
   TEST_ASSERT(result == ncclSuccess, "Plugin init with constants should succeed");
 
   // Test that the constants were set correctly
@@ -877,6 +903,7 @@ TestCase test_cases[] = {
   {"large-config", test_large_config, "Large configuration files (dynamic allocation)"},
   {"stress-config", test_very_large_config_stress, "Very large configuration stress test"},
   {"empty-config", test_empty_config, "Empty configuration file handling"},
+  {"nvl-domain", test_nvl_domain_info, "NVL domain info handling"},
   {"constants", test_tuner_constants, "Tuner constants initialization"},
   {NULL, NULL, NULL} // End marker
 };

@@ -62,6 +62,12 @@ typedef enum {
 #define NCCL_NUM_TUNING_SCALES 3
 
 typedef struct {
+  int nNvlDomains;                    // number of NVLink domains
+  int minRanksPerNvlDomain;           // minimum ranks across all NVLink domains
+  int maxRanksPerNvlDomain;           // maximum ranks across all NVLink domains
+} ncclNvlDomainInfo_v5_t;
+
+typedef struct {
   double baseLatencies [NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
   double hwLatencies [NCCL_NUM_HW_LINKS][NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
 
@@ -84,11 +90,13 @@ typedef struct {
   //   - nRanks: number of ranks in current communicator. Each communicator initialize its own tuner.
   //   - nNodes: number of nodes in current communicator.
   //   - logFunction: a logFunction can be useful to integrate logging together with NCCL core.
+  //   - nvlDomainInfo: NVL domain information struct
   // Outputs:
   //   - context: tuner context object
   // Input/Output:
   //   - constants: tuner constants
-  ncclResult_t (*init)(void** ctx, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, ncclTunerConstants_v5_t* constants);
+  ncclResult_t (*init)(void** ctx, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction,
+                      ncclNvlDomainInfo_v5_t* nvlDomainInfo, ncclTunerConstants_v5_t* constants);
 
   // Gets info (algo, protocol, number of ctas and threads) for a given collective.
   // Inputs:
@@ -122,6 +130,7 @@ typedef struct {
 } ncclTuner_v5_t;
 
 typedef ncclTuner_v5_t ncclTuner_t;
+typedef ncclNvlDomainInfo_v5_t ncclNvlDomainInfo_t;
 typedef ncclTunerConstants_v5_t ncclTunerConstants_t;
 
 #define NCCL_TUNER_PLUGIN_SYMBOL "ncclTunerPlugin_v5"

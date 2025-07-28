@@ -491,6 +491,7 @@ struct ncclComm {
   int localRank;
   int localRanks;
   int maxLocalRanks;
+  int minLocalRanks;
   int* rankToNode;
   int* rankToLocalRank;
   int* localRankToRank;
@@ -500,6 +501,9 @@ struct ncclComm {
   int MNNVL; // true when MNNVL is available
   struct cliqueInfo clique; // Our MNNVL clique information
   int cliqueRank; // Our rank within the MNNVL clique
+
+  // NVL Domain info
+  ncclNvlDomainInfo_v5_t nvlDomainInfo;
 
   bool checkPointers;
   bool dmaBufSupport;

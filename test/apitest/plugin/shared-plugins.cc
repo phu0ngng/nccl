@@ -216,7 +216,8 @@ extern "C" const ncclNet_t ncclNetPlugin_v11 = {
   .finalize = netPluginFinalize,
 };
 
-__hidden ncclResult_t tunerPluginInit(void** ctx, uint64_t commId, size_t nranks, size_t nnodes, ncclDebugLogger_t logFunction, ncclTunerConstants_v5_t* constants) {
+__hidden ncclResult_t tunerPluginInit(void** ctx, uint64_t commId, size_t nranks, size_t nnodes, ncclDebugLogger_t logFunction,
+                                     ncclNvlDomainInfo_v5_t* nvlDomainInfo, ncclTunerConstants_v5_t* constants) {
   int counter = __atomic_fetch_add(&tunerContextCounter, 1, __ATOMIC_RELAXED);
   __atomic_fetch_sub(&context[counter].devices, 1, __ATOMIC_RELAXED);
   //fprintf(stdout, "commId: %lu\n", commId);
@@ -241,7 +242,8 @@ const ncclTuner_t ncclTunerPlugin_v5 = {
 
 __hidden ncclResult_t profilerPluginInit(void** ctx, uint64_t commId, int* eActivationMask, const char* commName, int nnodes, int nranks, int rank, ncclDebugLogger_t logfn) {
   int counter = __atomic_fetch_add(&profilerContextCounter, 1, __ATOMIC_RELAXED);
-  __atomic_fetch_sub(&context[counter].devices, 1, __ATOMIC_RELAXED);
+  if (counter == MAX_CONTEXT_COUNT) return ncclInternalError;
+  context[counter].commId = commId;
   //fprintf(stdout, "commId: %lu\n", commId);
   //fprintf(stdout, "context[%d]: %lu\n", counter, context[counter].commId);
   assert(context[counter].commId == commId);
