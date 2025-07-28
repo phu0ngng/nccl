@@ -284,6 +284,7 @@ with open(os.path.join(gensrc, "sym_kernels_host.cc"), "w") as f:
 
 # Generate <gensrc>/rules.mk
 files_to_print += "rules.mk;"
+files_to_print += "sym_kernels_host.cc;"
 
 if os.environ.get("NCCL_USE_CMAKE", "0") == "1":
     print(files_to_print)
