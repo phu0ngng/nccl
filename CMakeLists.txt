@@ -10,7 +10,15 @@ string(REGEX REPLACE ".*NCCL_SUFFIX[ ]*:=[ ]*([a-zA-Z0-9]+).*" "\\1" NCCL_SUFFIX
 string(REGEX REPLACE ".*PKG_REVISION[ ]*:=[ ]*([0-9]+).*" "\\1" PKG_REVISION "${VERSION_CONTENT}")
 math(EXPR NCCL_VERSION_CODE "(${NCCL_MAJOR} * 10000) + (${NCCL_MINOR} * 100) + ${NCCL_PATCH}")
 
-add_compile_definitions(NCCL_USE_CMAKE)
+# Make version information available to C++ source files
+add_compile_definitions(
+    NCCL_USE_CMAKE
+    NCCL_MAJOR=${NCCL_MAJOR}
+    NCCL_MINOR=${NCCL_MINOR}
+    NCCL_PATCH=${NCCL_PATCH}
+    NCCL_VERSION_CODE=${NCCL_VERSION_CODE}
+)
+
 set(ENV{NCCL_USE_CMAKE} "1")
 
 project(NCCL VERSION ${NCCL_MAJOR}.${NCCL_MINOR}.${NCCL_PATCH}
@@ -35,21 +43,32 @@ find_package(CUDAToolkit REQUIRED)
 # CUDA version detection
 string(REGEX MATCH "([0-9]+\\.[0-9]+)" CUDA_VERSION "${CUDAToolkit_VERSION}")
 
-# CUDA architecture flags
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    message(STATUS "CMAKE_CUDA_ARCHITECTURES not defined, setting default values based on CUDA version")
+# Extract major and minor version numbers
+string(REGEX MATCH "([0-9]+)" CUDA_MAJOR "${CUDA_VERSION}")
+string(REGEX MATCH "([0-9]+)$" CUDA_MINOR "${CUDA_VERSION}")
+string(REGEX REPLACE ".*\\.([0-9]+)$" "\\1" CUDA_MINOR "${CUDA_VERSION}")
 
-    if(${CUDAToolkit_CUDA_MAJOR} EQUAL 9)
+# Add CUDA version definitions after find_package
+add_compile_definitions(
+    CUDA_MAJOR=${CUDA_MAJOR}
+    CUDA_MINOR=${CUDA_MINOR}
+)
+
+# CUDA architecture flags
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
+    message(STATUS "CMAKE_CUDA_ARCHITECTURES not defined or empty, setting default values based on CUDA version")
+
+    if(${CUDA_MAJOR} EQUAL 9)
         set(CMAKE_CUDA_ARCHITECTURES "35;50;60;61;70")
-    elseif(${CUDAToolkit_CUDA_MAJOR} EQUAL 10)
+    elseif(${CUDA_MAJOR} EQUAL 10)
         set(CMAKE_CUDA_ARCHITECTURES "35;50;60;61;70")
-    elseif(${CUDAToolkit_CUDA_MAJOR} EQUAL 11)
+    elseif(${CUDA_MAJOR} EQUAL 11)
         set(CMAKE_CUDA_ARCHITECTURES "35;50;60;61;70;80")
-    elseif(${CUDAToolkit_CUDA_MAJOR} EQUAL 12)
+    elseif(${CUDA_MAJOR} EQUAL 12)
         set(CMAKE_CUDA_ARCHITECTURES "35;50;60;61;70;80;90")
-    elseif(${CUDAToolkit_CUDA_MAJOR} EQUAL 13)
+    elseif(${CUDA_MAJOR} EQUAL 13)
         set(CMAKE_CUDA_ARCHITECTURES "35;50;60;61;70;80;90;100;120")
-    elseif(${CUDAToolkit_CUDA_MAJOR} GREATER 13)
+    elseif(${CUDA_MAJOR} GREATER 13)
         # For future CUDA versions, include all architectures up to the latest known
         set(CMAKE_CUDA_ARCHITECTURES "35;50;60;61;70;80;90;100;120")
     else()
