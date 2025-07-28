@@ -18,6 +18,7 @@
 
 typedef ncclTuner_v5_t ncclTuner_t;
 typedef ncclTunerConstants_v5_t ncclTunerConstants_t;
+typedef ncclNvlDomainInfo_v5_t ncclNvlDomainInfo_t;
 
 #define NCCL_TUNER_PLUGIN_SYMBOL "ncclTunerPlugin_v5"
 

@@ -154,6 +154,13 @@ for func in all_reduce_perf all_gather_perf broadcast_perf; do
   run_command "${func}_socket_net" $RUN_MODE $NGPUS "" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_NET=Socket" "$NCCL_HOME/test/perf/$func" "-b 8 -e 16M -f2 $opts -n 1"
 done
 
+# Test tuner plugin with MNNVL data
+if [ "$ENABLE_MNNVL_TUNER_PLUGIN" == "1" ]; then
+  for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf; do
+    run_command "tuner_plugin_mnnvl_test_${func}" $RUN_MODE $NGPUS "" "NCCL_TUNER_PLUGIN=$NCCL_HOME/test/unit/plugins/libnccl-tuner-example.so NCCL_DEBUG=INFO" "$NCCL_HOME/test/perf/${func}" "-b 8 -e 128M -f2 $opts -n 5"
+  done
+fi
+
 print_failed_commands
 end_junit_file
 ci_exit

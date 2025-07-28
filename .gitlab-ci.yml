@@ -1830,6 +1830,7 @@ perftest-single-pre-tyche:
     SYMMETRIC: 1
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
+    ENABLE_MNNVL_TUNER_PLUGIN: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2148,6 +2149,7 @@ perftest-multi-pre-tyche:
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+    ENABLE_MNNVL_TUNER_PLUGIN: 1
     # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable ring 1rpn registration tests
     NO_LOOPBACK_NETWORKING: 1
   script:

@@ -51,6 +51,7 @@ typedef struct {
   size_t nRanks;
   size_t nNodes;
   ncclDebugLogger_t logFunction;
+  ncclNvlDomainInfo_v5_t nvlDomainInfo;
 } TunerContext;
 
 // Parse collective type from string
@@ -289,7 +290,8 @@ static ncclResult_t loadConfig(TunerContext* ctx, const char* filename) {
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, ncclTunerConstants_v5_t* constants) {
+__hidden ncclResult_t pluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction,
+                                 ncclNvlDomainInfo_v5_t* nvlDomainInfo, ncclTunerConstants_v5_t* constants) {
 
   if (NULL != constants) {
     // NCCL constants tuning
@@ -306,7 +308,7 @@ __hidden ncclResult_t pluginInit(void** context, uint64_t commId, size_t nRanks,
     // Set NVLSTree base network latency to 24us
     constants->hwLatencies[NCCL_HW_NET][NCCL_ALGO_NVLS][NCCL_PROTO_SIMPLE] = 24.0;
   }
-
+  
   TunerContext* ctx = (TunerContext*)malloc(sizeof(TunerContext));
   if (!ctx) return ncclSystemError;
 
@@ -316,10 +318,16 @@ __hidden ncclResult_t pluginInit(void** context, uint64_t commId, size_t nRanks,
   ctx->nRanks = nRanks;
   ctx->nNodes = nNodes;
   ctx->logFunction = logFunction;
+  if (nvlDomainInfo) {
+    ctx->nvlDomainInfo = *nvlDomainInfo;
+  } else {
+    memset(&ctx->nvlDomainInfo, 0, sizeof(ncclNvlDomainInfo_v5_t));
+  }
 
   if (logFunction) {
     logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
-                "TUNER/ExamplePlugin: Initializing tuner for %zu nodes, %zu ranks", nNodes, nRanks);
+                "TUNER/ExamplePlugin: Initializing tuner for %zu nodes, %zu ranks, %d NVL domains", 
+                nNodes, nRanks, ctx->nvlDomainInfo.nNvlDomains);
   }
 
   // Try to load config file from environment variable or default location
