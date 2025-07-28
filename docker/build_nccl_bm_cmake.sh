@@ -38,6 +38,7 @@ if [ $build_status -eq 0 ]; then
     echo "INFO: CMake exited successfully"
 else
     echo "ERROR: CMake exited with $build_status"
+    exit $build_status
 fi
 
 rsync -a build $nccl_src/
