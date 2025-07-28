@@ -97,7 +97,7 @@ const ncclNet_v11_t ncclNetPlugin_v11 = {
 
 #include "tuner.h"
 
-__hidden ncclResult_t tunerPluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, ncclTunerConstants_v5_t* constants) { return ncclSuccess; }
+__hidden ncclResult_t tunerPluginInit(void** context, uint64_t commId, size_t nRanks, size_t nNodes, ncclDebugLogger_t logFunction, ncclNvlDomainInfo_v5_t* nvlDomainInfo, ncclTunerConstants_v5_t* constants) { return ncclSuccess; }
 
 __hidden ncclResult_t tunerPluginGetCollInfo(void* context, ncclFunc_t collType, size_t nBytes,
                               int numPipeOps, float** collCostTable, int numAlgo, int numProto,
