@@ -58,6 +58,8 @@ NCCL_PARAM(CollnetEnable, "COLLNET_ENABLE", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(CtaPolicy, "CTA_POLICY", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", NCCL_CONFIG_UNDEF_INT);
 
+extern int64_t ncclParamSingleProcMemRegEnable();
+
 static ncclResult_t commReclaim(ncclComm_t comm);
 
 // GDRCOPY support: Off by default
@@ -784,10 +786,21 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
           comm->intraNext = comm->peerInfo[i].comm;
         }
       }
+
+      if (comm->nvlsRegSupport) {
+        for (int j = i + 1; j < nranks; j++) {
+          if (comm->peerInfo[i].hostHash == comm->peerInfo[j].hostHash &&
+            comm->peerInfo[i].pidHash == comm->peerInfo[j].pidHash) {
+            comm->nvlsRegSupport = 0;
+            break;
+          }
+        }
+      }
     }
 
     // Buffer Registration is not supported with MNNVL
     if (comm->MNNVL) comm->nvlsRegSupport = 0;
+    else if (ncclParamSingleProcMemRegEnable()) comm->nvlsRegSupport = 1;
 
     TRACE(NCCL_INIT,"pidHash[%d] %lx intraProcRank %d intraProcRanks %d intraProcRank0 %d",
         rank, comm->peerInfo[rank].pidHash, intraProcRank, intraProcRanks, intraProcRank0);
