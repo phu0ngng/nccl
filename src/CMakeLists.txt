@@ -71,6 +71,7 @@ target_include_directories(nccl PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CUDAToolkit_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
 
 add_custom_command(
@@ -154,6 +155,7 @@ target_include_directories(nccl_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CUDAToolkit_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
 
 # Add dependency on nccl_header

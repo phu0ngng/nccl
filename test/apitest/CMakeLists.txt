@@ -134,6 +134,7 @@ foreach(plugin_source ${PLUGIN_SOURCES})
         ${CMAKE_SOURCE_DIR}/src/include
         ${CMAKE_SOURCE_DIR}/src/include/plugin
         ${CUDAToolkit_INCLUDE_DIRS}
+        ${CUDAToolkit_INCLUDE_DIRS}/cccl
     )
 
     # Set compiler flags
