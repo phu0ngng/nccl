@@ -1783,7 +1783,7 @@ perftest-single-pre-nyx:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
-    SLURM_TIME: 45
+    SLURM_TIME: 60
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
     NNODES: 1
@@ -1793,6 +1793,7 @@ perftest-single-pre-nyx:
     GRAPH: 0
     NCCL_HOME: build
     SYMMETRIC: 1
+    CE_COLL: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
   before_script:
     - tar -xzf build-ipp6.tar.gz
@@ -1830,6 +1831,7 @@ perftest-single-pre-tyche:
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
+    CE_COLL: 1
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENABLE_MNNVL_TUNER_PLUGIN: 1
@@ -2147,6 +2149,7 @@ perftest-multi-pre-tyche:
     MAX: "1G"
     NP: 4
     SYMMETRIC: 1
+    CE_COLL: 1
     GRAPH: 0
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
