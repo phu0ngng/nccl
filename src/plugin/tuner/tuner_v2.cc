@@ -63,9 +63,8 @@ ncclTuner_t* getNcclTuner_v2(void* lib) {
   if (ncclTuner_v2) {
     ncclTuner.name = ncclTuner_v2->name;
     ncclTuner.init = ncclTuner_init;
-    INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Using tuner plugin %s", ncclTuner_v2->name);
+    INFO(NCCL_INIT|NCCL_TUNING, "TUNER/Plugin: Using %s (v2)", ncclTuner_v2->name);
     return &ncclTuner;
   }
-  INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Failed to find ncclTunerPlugin_v2 symbol, using internal tuner instead.");
   return NULL;
 }

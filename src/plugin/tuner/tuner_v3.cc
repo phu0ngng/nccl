@@ -35,9 +35,8 @@ ncclTuner_t* getNcclTuner_v3(void* lib) {
   if (ncclTuner_v3) {
     ncclTuner.name = ncclTuner_v3->name;
     ncclTuner.init = ncclTuner_init;
-    INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Using tuner plugin %s", ncclTuner_v3->name);
+    INFO(NCCL_INIT|NCCL_TUNING, "TUNER/Plugin: Using %s (v3)", ncclTuner_v3->name);
     return &ncclTuner;
   }
-  INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Failed to find ncclTunerPlugin_v3 symbol.");
   return NULL;
 }

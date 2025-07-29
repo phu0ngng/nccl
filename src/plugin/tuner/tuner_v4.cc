@@ -9,7 +9,6 @@
 #include "debug.h"
 #include "checks.h"
 #include "nccl_tuner.h"
-#include "checks.h"
 
 static ncclTuner_v4_t* ncclTuner_v4;
 static ncclTuner_t ncclTuner;
@@ -32,9 +31,8 @@ ncclTuner_t* getNcclTuner_v4(void* lib) {
     ncclTuner.name = ncclTuner_v4->name;
     ncclTuner.init = ncclTuner_init;
 
-    INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Using tuner plugin %s", ncclTuner_v4->name);
+    INFO(NCCL_INIT|NCCL_TUNING, "TUNER/Plugin: Using %s (v4)", ncclTuner_v4->name);
     return &ncclTuner;
   }
-  INFO(NCCL_ENV|NCCL_TUNING, "TUNER/Plugin: Failed to find ncclTunerPlugin_v4 symbol.");
   return NULL;
 }

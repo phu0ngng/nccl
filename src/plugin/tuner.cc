@@ -35,6 +35,7 @@ enum {
 static int status = tunerPluginLoadReady;
 
 ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
+  const char* tunerName;
   // Initialize to nullptr by default if plugin tuner cannot be loaded.
   comm->tuner = nullptr;
   if (tunerPluginLoadFailed == status) {
@@ -52,12 +53,20 @@ ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
     goto exit;
   }
 
-  tunerPluginLib = ncclOpenTunerPluginLib(ncclGetEnv("NCCL_TUNER_PLUGIN"));
+  if ((tunerName = ncclGetEnv("NCCL_TUNER_PLUGIN")) != nullptr) {
+    INFO(NCCL_ENV|NCCL_TUNING, "NCCL_TUNER_PLUGIN set by environment to %s", tunerName);
+    if (strcasecmp(tunerName, "none") == 0)
+      goto fail;
+  }
+  tunerPluginLib = ncclOpenTunerPluginLib(tunerName);
   if (nullptr == tunerPluginLib) {
     tunerPluginLib = ncclGetNetPluginLib(ncclPluginTypeTuner);
     if (nullptr == tunerPluginLib) {
       goto fail;
     }
+    tunerName = nullptr;
+  } else if (ncclPluginLibPaths[ncclPluginTypeTuner]) {
+    tunerName = ncclPluginLibPaths[ncclPluginTypeTuner];
   }
 
   tunerSymbol = getNcclTuner_v5(tunerPluginLib);
@@ -71,8 +80,10 @@ ncclResult_t ncclTunerPluginLoad(struct ncclComm* comm) {
     tunerSymbol = getNcclTuner_v2(tunerPluginLib);
   }
   if (tunerSymbol == NULL) {
+    if (tunerName) INFO(NCCL_INIT|NCCL_TUNING, "External tuner plugin %s is unsupported", tunerName);
     goto fail;
   }
+  if (tunerName) INFO(NCCL_INIT|NCCL_TUNING, "Successfully loaded external tuner plugin %s", tunerName);
 
   comm->tuner = tunerSymbol;
   ++tunerPluginRefCount;
@@ -91,7 +102,7 @@ fail:
 ncclResult_t ncclTunerPluginUnload(struct ncclComm* comm) {
   std::lock_guard<std::mutex> lock(tunerPluginMutex);
   if (comm->tunerPluginLoaded && 0 == (--tunerPluginRefCount)) {
-    INFO(NCCL_TUNING, "TUNER/Plugin: Closing tuner: '%s'", tunerSymbol->name);
+    INFO(NCCL_INIT|NCCL_TUNING, "TUNER/Plugin: Closing tuner: '%s'", tunerSymbol->name);
     NCCLCHECK(ncclClosePluginLib(tunerPluginLib, ncclPluginTypeTuner));
     tunerPluginLib = nullptr;
     tunerSymbol = nullptr;

@@ -96,11 +96,15 @@ static ncclResult_t ncclNetPluginLoad(netPluginLib_t* pluginLib) {
   }
 
   // if we fail to find a net, exit
-  if (pluginLib->ncclNet == nullptr) goto fail;
+  if (pluginLib->ncclNet == nullptr) {
+    INFO(NCCL_INIT|NCCL_NET, "External network plugin %s is unsupported",
+         (ncclPluginLibPaths[ncclPluginTypeNet] ? ncclPluginLibPaths[ncclPluginTypeNet] : pluginLib->name));
+    goto fail;
+  }
 
   pluginLib->ncclNetPluginState = ncclNetPluginStateInitReady;
 
-  // load ncclColNet
+  // load ncclCollNet
   for (int i = 0; i < NCCL_NET_VERSION_COUNT; i++) {
     pluginLib->ncclCollNet = getNcclCollNet[i](pluginLib->dlHandle);
     if (pluginLib->ncclCollNet) break;
@@ -111,7 +115,8 @@ static ncclResult_t ncclNetPluginLoad(netPluginLib_t* pluginLib) {
   else
     pluginLib->ncclCollNetPluginState = ncclNetPluginStateInitReady;
 
-  INFO(NCCL_INIT|NCCL_NET, "Successfully loaded external plugin %s", pluginLib->name);
+  INFO(NCCL_INIT|NCCL_NET, "Successfully loaded external network plugin %s",
+       (ncclPluginLibPaths[ncclPluginTypeNet] ? ncclPluginLibPaths[ncclPluginTypeNet] : pluginLib->name));
 exit:
   return ncclSuccess;
 fail:
@@ -235,6 +240,9 @@ static void initPluginLibsOnceFunc() {
   memset(netPluginLibs, 0, NCCL_NET_MAX_PLUGINS * sizeof(netPluginLib_t));
   envNetPlugin = ncclGetEnv("NCCL_NET_PLUGIN");
   if (envNetPlugin) {
+    INFO(NCCL_ENV|NCCL_NET, "NCCL_NET_PLUGIN set by environment to %s", envNetPlugin);
+    if (strcasecmp(envNetPlugin, "none") == 0)
+      envNetPlugin = "";
     envNetPluginList = strdup(envNetPlugin);
     // Iterate over list until the list is empty
     netPluginName = strtok_r(envNetPluginList, ",", &savePtr);
@@ -242,7 +250,7 @@ static void initPluginLibsOnceFunc() {
       // We have 2 internal plugins (ib and socket)
       // So, we can have at most( NCCL_NET_MAX_PLUGINS - (NCCL_NET_NUM_INTERNAL_PLUGINS)) in the NCCL_NET_PLUGIN list
       if (pluginCounter >= (NCCL_NET_MAX_PLUGINS - (NCCL_NET_NUM_INTERNAL_PLUGINS))) {
-        INFO(NCCL_NET|NCCL_INIT,"NCCL_NET_PLUGIN list contains more than %d plugins, ignoring the rest", (NCCL_NET_MAX_PLUGINS - (NCCL_NET_NUM_INTERNAL_PLUGINS + 1)));
+        INFO(NCCL_NET|NCCL_ENV,"NCCL_NET_PLUGIN list contains more than %d plugins, ignoring the rest", (NCCL_NET_MAX_PLUGINS - (NCCL_NET_NUM_INTERNAL_PLUGINS + 1)));
         break;
       }
       // need to leave space for the name + "\n"
@@ -252,7 +260,7 @@ static void initPluginLibsOnceFunc() {
         strcpy(netPluginLibs[pluginCounter].name, netPluginName);
         pluginCounter++;
       } else {
-        INFO(NCCL_NET|NCCL_INIT,"NCCL_NET_PLUGIN list contains a plugin name %s longer than %d characters, ignoring it.", netPluginName, MAX_STR_LEN);
+        INFO(NCCL_NET|NCCL_ENV,"NCCL_NET_PLUGIN list contains a plugin name %s longer than %d characters, ignoring it.", netPluginName, MAX_STR_LEN);
       }
       netPluginName = strtok_r(nullptr, ",", &savePtr);
     }

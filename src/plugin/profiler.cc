@@ -40,6 +40,7 @@ static int profilerPluginStatus = profilerPluginLoadReady;
 static pid_t pid;
 
 static ncclResult_t ncclProfilerPluginLoad(void) {
+  const char* profilerName;
   if (profilerPluginLoadFailed == profilerPluginStatus) {
     return ncclSuccess;
   }
@@ -50,12 +51,20 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
     goto exit;
   }
 
-  profilerPluginLib = ncclOpenProfilerPluginLib(ncclGetEnv("NCCL_PROFILER_PLUGIN"));
+  if ((profilerName = ncclGetEnv("NCCL_PROFILER_PLUGIN")) != nullptr) {
+    INFO(NCCL_ENV, "NCCL_PROFILER_PLUGIN set by environment to %s", profilerName);
+    if (strcasecmp(profilerName, "none") == 0)
+      goto fail;
+  }
+  profilerPluginLib = ncclOpenProfilerPluginLib(profilerName);
   if (profilerPluginLib == nullptr) {
     profilerPluginLib = ncclGetNetPluginLib(ncclPluginTypeProfiler);
     if (nullptr == profilerPluginLib) {
       goto fail;
     }
+    profilerName = nullptr;
+  } else if (ncclPluginLibPaths[ncclPluginTypeProfiler]) {
+    profilerName = ncclPluginLibPaths[ncclPluginTypeProfiler];
   }
 
   ncclProfiler = getNcclProfiler_v5(profilerPluginLib);
@@ -72,8 +81,10 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
     ncclProfiler = getNcclProfiler_v1(profilerPluginLib);
   }
   if (ncclProfiler == NULL) {
+    if (profilerName) INFO(NCCL_INIT, "External profiler plugin %s is unsupported", profilerName);
     goto fail;
   }
+  if (profilerName) INFO(NCCL_INIT, "Successfully loaded external profiler plugin %s", profilerName);
 
   ++profilerPluginRefCount;
   profilerPluginStatus = profilerPluginLoadSuccess;
@@ -97,7 +108,7 @@ static ncclResult_t ncclProfilerPluginUnload(void) {
   std::lock_guard<std::mutex> lock(profilerMutex);
   if (0 == (--profilerPluginRefCount)) {
     if (__builtin_expect(ncclProfiler != NULL, 0)) {
-      INFO(NCCL_ENV, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
+      INFO(NCCL_INIT, "PROFILER/Plugin: Closing profiler plugin %s", ncclProfiler->name);
     }
     NCCLCHECK(ncclClosePluginLib(profilerPluginLib, ncclPluginTypeProfiler));
     profilerPluginLib = nullptr;

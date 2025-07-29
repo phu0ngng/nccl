@@ -108,9 +108,8 @@ ncclProfiler_t* getNcclProfiler_v2(void* lib) {
   if (ncclProfiler_v2) {
     ncclProfiler.name = ncclProfiler_v2->name;
     ncclProfiler.init = ncclProfiler_init;
-    INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: loaded %s", ncclProfiler_v2->name);
+    INFO(NCCL_INIT, "PROFILER/Plugin: Loaded %s (v2)", ncclProfiler_v2->name);
     return &ncclProfiler;
   }
-  INFO(NCCL_INIT|NCCL_ENV, "PROFILER/Plugin: failed to find ncclProfiler_v2");
   return NULL;
 }

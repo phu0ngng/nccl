@@ -104,7 +104,6 @@ ncclNet_t* getNcclNet_v10(void* lib) {
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded net plugin %s (v10)", ncclNet_v10->name);
     return &ncclNet;
   }
-  INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclNetPlugin_v10 symbol.");
   return nullptr;
 }
 
@@ -196,6 +195,5 @@ ncclCollNet_t* getNcclCollNet_v10(void* lib) {
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v10)", ncclCollNet_v10->name);
     return &ncclCollNet;
   }
-  INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Failed to find ncclCollNetPlugin_v10 symbol.");
   return nullptr;
 }
