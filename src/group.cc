@@ -126,87 +126,94 @@ struct ncclPreconnectJob {
   bool* algoNeedConnect;
 };
 
-ncclResult_t ncclP2PPreconnectFunc(struct ncclAsyncJob* job_) {
-  struct ncclPreconnectJob* job = (struct ncclPreconnectJob*)job_;
-  struct ncclComm* comm = job->comm;
-  CUDACHECK(cudaSetDevice(comm->cudaDev));
-  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
-  NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 1));
-  return ncclSuccess;
-}
-
-ncclResult_t ncclCollPreconnect(struct ncclComm* comm, bool* algoNeedConnect, bool needConnect) {
-  ncclResult_t ret = ncclSuccess;
-
-  if (!(comm->cuMemSupport && needConnect)) return ncclSuccess;
-
-  CUDACHECK(cudaSetDevice(comm->cudaDev));
-  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
-  for (int i = 0; i < NCCL_NUM_ALGORITHMS; ++i) {
-    if (algoNeedConnect[i]) {
-      switch (i) {
-        case NCCL_ALGO_RING: {
-          NCCLCHECKGOTO(ncclTransportRingConnect(comm), ret, fail);
-          break;
-        }
-        case NCCL_ALGO_TREE: {
-          NCCLCHECKGOTO(ncclTransportTreeConnect(comm), ret, fail);
-          break;
-        }
-        case NCCL_ALGO_NVLS: {
-          /* If we are using NVLS_TREE algo, we must mark NVLS algo to set up
-           * NVLS intra-node buffer */
-          NCCLCHECKGOTO(ncclNvlsBufferSetup(comm), ret, fail);
-          break;
-        }
-        case NCCL_ALGO_NVLS_TREE: {
-          NCCLCHECKGOTO(ncclNvlsTreeConnect(comm), ret, fail);
-          break;
-        }
-        case NCCL_ALGO_COLLNET_CHAIN: {
-          NCCLCHECKGOTO(ncclCollNetChainBufferSetup(comm), ret, fail);
-          break;
-        }
-        case NCCL_ALGO_COLLNET_DIRECT: {
-          NCCLCHECKGOTO(ncclCollNetDirectBufferSetup(comm), ret, fail);
-          break;
-        }
-        case NCCL_ALGO_PAT: {
-          NCCLCHECKGOTO(ncclTransportPatConnect(comm), ret, fail);
-          break;
-        }
-        // Yes, it's a dead code.  That's fine...
-        // coverity[dead_error_begin]
-        default: {
-          ret = ncclInternalError;
-          goto fail;
-        }
-      }
-    }
-  }
-
-exit:
-  return ret;
-fail:
-  goto exit;
-}
-
-struct ncclPrepareTasksJob {
+struct ncclPrepareTasksAndCollPreconnectJob {
   struct ncclAsyncJob base;
   struct ncclComm* comm;
   ncclSimInfo_t* simInfo;
 };
 
-ncclResult_t ncclCollPrepareTasksFunc(struct ncclAsyncJob* job_) {
-  struct ncclPrepareTasksJob* job = (struct ncclPrepareTasksJob*)job_;
-  bool needConnect = false;
-  bool algoNeedConnect[NCCL_NUM_ALGORITHMS];
-  memset(algoNeedConnect, 0, sizeof(bool) * NCCL_NUM_ALGORITHMS);
-  CUDACHECK(cudaSetDevice(job->comm->cudaDev));
-  NCCLCHECK(ncclPrepareTasks(job->comm, algoNeedConnect, &needConnect, job->simInfo));
-  NCCLCHECK(ncclCollPreconnect(job->comm, algoNeedConnect, needConnect));
+ncclResult_t ncclP2PPreconnectFunc(struct ncclAsyncJob* job_) {
+  struct ncclPreconnectJob* job = (struct ncclPreconnectJob*)job_;
+  struct ncclComm* comm = job->comm;
+  CUDACHECK(cudaSetDevice(comm->cudaDev));
+  if (!job_->isThreadMain && CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  NCCLCHECK(ncclTransportP2pSetup(comm, NULL, 1));
   return ncclSuccess;
-};
+}
+
+static ncclResult_t ncclCollPreconnect(struct ncclComm* comm, bool* algoNeedConnect) {
+  for (int i = 0; i < NCCL_NUM_ALGORITHMS; ++i) {
+    if (algoNeedConnect[i]) {
+      switch (i) {
+        case NCCL_ALGO_RING: {
+          NCCLCHECK(ncclTransportRingConnect(comm));
+          break;
+        }
+        case NCCL_ALGO_TREE: {
+          NCCLCHECK(ncclTransportTreeConnect(comm));
+          break;
+        }
+        case NCCL_ALGO_NVLS: {
+          /* If we are using NVLS_TREE algo, we must mark NVLS algo to set up
+           * NVLS intra-node buffer */
+          NCCLCHECK(ncclNvlsBufferSetup(comm));
+          break;
+        }
+        case NCCL_ALGO_NVLS_TREE: {
+          NCCLCHECK(ncclNvlsTreeConnect(comm));
+          break;
+        }
+        case NCCL_ALGO_COLLNET_CHAIN: {
+          NCCLCHECK(ncclCollNetChainBufferSetup(comm));
+          break;
+        }
+        case NCCL_ALGO_COLLNET_DIRECT: {
+          NCCLCHECK(ncclCollNetDirectBufferSetup(comm));
+          break;
+        }
+        case NCCL_ALGO_PAT: {
+          NCCLCHECK(ncclTransportPatConnect(comm));
+          break;
+        }
+        // Yes, it's a dead code.  That's fine...
+        // coverity[dead_error_begin]
+        default: {
+          NCCLCHECK(ncclInternalError);
+        }
+      }
+    }
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclPrepareTasksAndCollPreconnectFunc(struct ncclAsyncJob* job_) {
+  struct ncclPrepareTasksAndCollPreconnectJob* job = (ncclPrepareTasksAndCollPreconnectJob*)job_;
+  struct ncclComm* comm = job->comm;
+  bool needConnect;
+  bool algoNeedConnect[NCCL_NUM_ALGORITHMS];
+  memset(algoNeedConnect, 0, sizeof(bool)*NCCL_NUM_ALGORITHMS);
+  CUDACHECK(cudaSetDevice(comm->cudaDev));
+  if (!job_->isThreadMain && CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  NCCLCHECK(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, job->simInfo));
+  if (comm->cuMemSupport && needConnect) NCCLCHECK(ncclCollPreconnect(comm, algoNeedConnect));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclCollPreconnectFunc(struct ncclAsyncJob* job_) {
+  struct ncclPreconnectJob* job = (struct ncclPreconnectJob*)job_;
+  struct ncclComm* comm = job->comm;
+  ncclResult_t ret = ncclSuccess;
+
+  if (!job_->isThreadMain) CUDACHECK(cudaSetDevice(comm->cudaDev));
+  if (!job_->isThreadMain && CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  NCCLCHECKGOTO(ncclCollPreconnect(comm, job->algoNeedConnect), ret, fail);
+
+exit:
+  free(job->algoNeedConnect);
+  return ret;
+fail:
+  goto exit;
+}
 
 struct ncclGroupSymmetricJob {
   struct ncclAsyncJob base;
@@ -381,6 +388,12 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
 
   if (!ncclIntruQueueEmpty(asyncJobsMain)) {
     struct ncclAsyncJob* job = ncclIntruQueueHead(asyncJobsMain);
+    if (job->next == nullptr) {
+      job->isThreadMain = true;
+      ncclAsyncJobMain(job);
+      job->state = ncclGroupJobJoined;
+      return job->result;
+    }
     do {
       PTHREADCHECKGOTO(pthread_create(&job->thread, nullptr, ncclAsyncJobMain, job), "pthread_create", ret, fail);
       job = job->next;
@@ -431,6 +444,51 @@ exit:
   return ret;
 fail:
   goto exit;
+}
+
+NCCL_PARAM(SingleProcMemRegEnable, "SINGLE_PROC_MEM_REG_ENABLE", 0);
+
+static ncclResult_t ncclPrepareTasksAndCollPreconnect(struct ncclComm* comm, ncclSimInfo_t* simInfo, struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next>* asyncCollJobs) {
+  if (ncclParamSingleProcMemRegEnable()) {
+    struct ncclPrepareTasksAndCollPreconnectJob* job;
+    NCCLCHECK(ncclCalloc(&job, 1));
+    job->base.func = ncclPrepareTasksAndCollPreconnectFunc;
+    job->base.undo = nullptr;
+    job->base.destructor = free;
+    job->base.state = ncclGroupJobRunning;
+    job->base.abortFlag = comm->abortFlag;
+    job->base.abortFlagDev = comm->abortFlagDev;
+    job->comm = comm;
+    job->simInfo = simInfo;
+    ncclIntruQueueEnqueue(asyncCollJobs, &job->base);
+  } else {
+    bool needConnect = false;
+    bool algoNeedConnect[NCCL_NUM_ALGORITHMS];
+    memset(algoNeedConnect, 0, sizeof(bool) * NCCL_NUM_ALGORITHMS);
+
+    CUDACHECK(cudaSetDevice(comm->cudaDev));
+    NCCLCHECK(ncclPrepareTasks(comm, algoNeedConnect, &needConnect, simInfo));
+
+    if (comm->cuMemSupport && needConnect) {
+      ncclResult_t ret;
+      struct ncclPreconnectJob* job;
+      NCCLCHECK(ncclCalloc(&job, 1));
+      job->base.func = ncclCollPreconnectFunc;
+      job->base.undo = nullptr;
+      job->base.destructor = free;
+      job->base.state = ncclGroupJobRunning;
+      job->base.abortFlag = comm->abortFlag;
+      job->base.abortFlagDev = comm->abortFlagDev;
+      job->comm = comm;
+      if ((ret = ncclCalloc(&job->algoNeedConnect, NCCL_NUM_ALGORITHMS))) {
+        free(job);
+        NCCLCHECK(ret);
+      }
+      memcpy(job->algoNeedConnect, algoNeedConnect, sizeof(bool) * NCCL_NUM_ALGORITHMS);
+      ncclIntruQueueEnqueue(asyncCollJobs, &job->base);
+    }
+  }
+  return ncclSuccess;
 }
 
 static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInfo = NULL) {
@@ -507,19 +565,10 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
       // at the same time.
       comm = cliqueHead;
       do {
-        struct ncclPrepareTasksJob* job;
-        NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
-        job->base.func = ncclCollPrepareTasksFunc;
-        job->base.undo = nullptr;
-        job->base.destructor = free;
-        job->base.state = ncclGroupJobRunning;
-        job->base.abortFlag = comm->abortFlag;
-        job->base.abortFlagDev = comm->abortFlagDev;
-        job->comm = comm;
-        job->simInfo = simInfo;
-        ncclIntruQueueEnqueue(&asyncCollJobs, &job->base);
+        NCCLCHECKGOTO(ncclPrepareTasksAndCollPreconnect(comm, simInfo, &asyncCollJobs), ret, fail);
         comm = comm->groupNext[ncclGroupTaskTypeCollective];
       } while (comm != nullptr && comm->intraComm0 == cliqueHead->intraComm0);
+      // connect
       NCCLCHECKGOTO(asyncJobLaunch(&asyncCollJobs, groupAbortFlag), ret, fail);
       while (!ncclIntruQueueEmpty(&asyncCollJobs)) {
         struct ncclAsyncJob* job = ncclIntruQueueDequeue(&asyncCollJobs);
