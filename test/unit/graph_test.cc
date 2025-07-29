@@ -698,6 +698,14 @@ void checkPlatform(const char* platform, struct testParam* param, int* errors, i
 
 #define RUN(platform) checkPlatform(platform, &param, &errors, &warnings)
 
+#define RUN_PORT_RATIO(platform, r)                  \
+  do {                                               \
+    struct testParam p = param;                      \
+    p.portRatio = r;                                 \
+    p.intra = 0;                                     \
+    checkPlatform(platform, &p, &errors, &warnings); \
+  } while (0)
+
 #define RUN_FUSION(platform, level)                  \
   do {                                               \
     struct testParam p = param;                      \
@@ -840,7 +848,10 @@ int main(int argc, const char* argv[]) {
     }
     RUN("GB200-CX8-NVL4");
     RUN("GB200-CX8-NVL32");
-    RUN("GB300-CX8-NVL4");
+    {// GB300-NVL4
+      RUN("GB300-CX8-NVL4");               // IB
+      RUN_PORT_RATIO("GB300-CX8-NVL4", 2); // RoCE 2 ports
+    }
     RUN("GB300-CX8-NVL32");
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
