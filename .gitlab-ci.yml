@@ -7,6 +7,7 @@ stages:
   - perf_tests_single
   - perf_tests_multi
   - profiler_tests
+  - inspector_tests
   - replay_tests
   - summary
 
@@ -27,6 +28,7 @@ variables:
   RUN_ON_GP100: "1"
   RUN_UNIT_TESTS: "1"
   RUN_PROFILER_TESTS: "1"
+  RUN_INSPECTOR_TESTS: "1"
   RUN_API_TESTS: "1"
   RUN_PERF_TESTS_SINGLE: "1"
   RUN_PERF_TESTS_MULTIPLE: "1"
@@ -2251,6 +2253,42 @@ profiler-tests-A100:
 
 ##
 ## Stage: profiler_tests - Finish!
+##
+
+##
+## Stage: inspector_tests - Start...
+##
+
+inspector-tests-A100:
+  stage: inspector_tests
+  rules:
+    - if: $TRIGGER_PIPELINE == "default" && $RUN_ON_A100 == "1" && $RUN_INSPECTOR_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic"]
+  tags:
+    - a100pci
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "A100"
+    NNODES: 1
+    ENABLE_NVLS: 0
+    NGPUS: 4
+    NP: 4
+    NCCL_HOME: build-gc
+  script:
+    - ./test/scripts/ci/gitlab-runner-inspector.sh
+  artifacts:
+    when: always
+    paths:
+      - "inspector_logs_*"
+    expire_in: 48 hrs
+
+##
+## Stage: inspector_tests - Finish!
 ##
 
 ##
