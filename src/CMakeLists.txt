@@ -52,14 +52,6 @@ list(APPEND LIBSRCFILES
     ${SCHEDULER_SOURCES}
 )
 
-# # Set CUDA specific flags
-# set(CMAKE_CUDA_STANDARD 14)
-# set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda -Xptxas -maxrregcount=128")
-
-# Add CUDA architecture flags
-# set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90" CACHE STRING "CUDA architectures to build for")
-
 ###################### Create a shared NCCL library ############################
 add_library(nccl SHARED)
 
