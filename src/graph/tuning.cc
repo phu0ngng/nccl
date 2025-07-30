@@ -130,6 +130,14 @@ fail:
   goto exit;
 }
 
+// NVLS efficiency factor.
+static const float nvlsEfficiency[NCCL_NUM_COMPCAPS] = {
+  0.0f, // Volta
+  0.0f, // Ampere
+  0.85f, // Hopper
+  0.74f, // Blackwell
+};
+
 // Default tuner constants
 static const ncclTunerConstants_t ncclTunerConstantsDefaults = {
   .baseLatencies = {
@@ -185,8 +193,8 @@ static const ncclTunerConstants_t ncclTunerConstantsDefaults = {
   .perChMaxNVLSTreeBws = {
     {26.5, 18.5, 10.0}, /* Volta (N1/N2/N4) */
     {24.0, 23.6, 17.8}, /* Ampere (N1/N2/N4) */
-    {0.0, 37.1, 44.0}, /* Hopper (N1/N2/N4) */
-    {0.0, 2*41.4, 2*36.0} /* Blackwell (N1/N2/N4) */
+    {0.0, 57.7, 45.5}, /* Hopper (N1/N2/N4) */
+    {0.0, 96.0, 43.1} /* Blackwell (N1/N2/N4) */
   }
 };
 
@@ -274,15 +282,19 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
             && a == NCCL_ALGO_PAT && (p != NCCL_PROTO_SIMPLE || ncclPatEnable(comm) == 0)) continue;
         int collnet = (a == NCCL_ALGO_COLLNET_DIRECT || a == NCCL_ALGO_COLLNET_CHAIN) ? 1 : 0;
         float bw = nNodes <= 2 || collnet ? graphs[a]->bwIntra : graphs[a]->bwInter;
-        if (a == NCCL_ALGO_NVLS) {
-          if (coll == ncclFuncAllReduce) {
-            bw = std::min(graphs[a]->bwIntra, graphs[a]->bwInter);
-          } else {
-            // allgather and reducescatter
-            bw = std::min(graphs[a]->bwIntra * (ppn - 1.0f) / ppn, graphs[a]->bwInter * 0.9f);
+        if (a == NCCL_ALGO_NVLS_TREE || a == NCCL_ALGO_NVLS)
+        {
+          // NVLS/NVLStree needs at least 2 channels
+          if (graphs[a]->nChannels < 2 ) continue;
+          // Convert to NVLS busBW/channel
+          float intraBw = graphs[a]->bwIntra * nvlsEfficiency[compCapIndex] * (graphs[a]->nChannels - 1) / graphs[a]->nChannels  * 2;
+          if (!(coll == ncclFuncAllReduce)) {
+            intraBw *= (ppn - 1) / ppn;
           }
-        }
-        if (a == NCCL_ALGO_NVLS_TREE) bw = std::min(graphs[a]->bwIntra, std::min(nNodes <= 2 ? graphs[a]->bwInter : graphs[a]->bwInter/2, (float)perChMaxNVLSTreeBw));
+          // Handle 2 node case of NVLSTree
+          float interBw = graphs[a]->bwInter * ((nNodes <= 2 && a == NCCL_ALGO_NVLS_TREE) ? 2 : 1);
+          bw = std::min( {intraBw, interBw, a == NCCL_ALGO_NVLS_TREE ? (float)perChMaxNVLSTreeBw : std::numeric_limits<float>::max()} );
+        };
         float busBw = graphs[a]->nChannels * bw;
 
         // Various model refinements
@@ -330,8 +342,7 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
         // Convert bus BW to algorithm BW
         if (!(a != NCCL_ALGO_RING && (coll == ncclFuncAllGather || coll == ncclFuncReduceScatter))) {
           float ratio = 1.0f;
-          if (a == NCCL_ALGO_RING) ratio *= (1.0 * nRanks) / nsteps;
-          else if (a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) ratio *= 5.0/6.0;
+          if (a == NCCL_ALGO_RING || a == NCCL_ALGO_NVLS || a == NCCL_ALGO_NVLS_TREE) ratio *= (1.0 * nRanks) / nsteps;
           else ratio *= .5;
           busBw *= ratio;
         }

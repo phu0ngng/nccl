@@ -73,6 +73,15 @@ int algoProtoSupported(int a, int p, struct ncclTopoGraph** graphs) {
   return 1;
 }
 
+void keepGpus(struct ncclXml* xmlSystem) {
+  struct ncclXmlNode* node;
+  CHECK(xmlFindTag(xmlSystem, "gpu", &node));
+  while (node) {
+    CHECK(xmlSetAttrInt(node, "keep", 1));
+    CHECK(xmlFindNextTag(xmlSystem, "gpu", node, &node));
+  }
+}
+
 #define MAX_MNNVL_NODES 64
 
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
@@ -87,6 +96,8 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     free(xmlSystem);
     return;
   }
+  keepGpus(xmlSystem);
+  CHECK(ncclTopoTrimXml(xmlSystem));
   uint64_t hostHash = 0;
   {
     // Get the host_hash of the first CPU.
