@@ -30,9 +30,33 @@ ncclResult_t ncclCeInit(struct ncclComm* comm) {
   comm->ceColl.baseUCSymReadyPtr = (uint8_t*)comm->ceColl.ceSyncWin->userPtr + comm->ceColl.baseUCSymReadyOffset;
   comm->ceColl.baseUCSymComplPtr = (uint8_t*)comm->ceColl.ceSyncWin->userPtr + comm->ceColl.baseUCSymComplOffset;
   comm->ceColl.ceSeqNum = 0;
-  CUDACHECKGOTO(cudaStreamCreateWithFlags(&comm->ceColl.ceLocalCopyStream, cudaStreamNonBlocking), ret, fail);
-  CUDACHECKGOTO(cudaEventCreate(&comm->ceColl.ceLocalCopyEvent), ret, fail);
   INFO(NCCL_INIT, "Init CE, rank %d baseUCSymReadyPtr %p, baseUCSymComplPtr %p, seq num %d", comm->rank, comm->ceColl.baseUCSymReadyPtr, comm->ceColl.baseUCSymComplPtr, comm->ceColl.ceSeqNum);
+
+exit:
+  return ret;
+fail:
+  goto exit;
+}
+
+ncclResult_t ncclCeFinalize(struct ncclComm* comm) {
+  ncclResult_t ret = ncclSuccess;
+  
+  // Clean up ceInitTaskQueue
+  while (!ncclIntruQueueEmpty(&comm->ceInitTaskQueue)) {
+    struct ncclCeInitTask* task = ncclIntruQueueDequeue(&comm->ceInitTaskQueue);
+    free(task);
+  }
+  
+  // Clean up CE resources
+  if (comm->ceColl.baseUCSymReadyPtr != NULL) {
+    if (comm->ceColl.ceSyncWin && comm->ceColl.ceSyncWin->vidmem) {
+      NCCLCHECKGOTO(ncclCommWindowDeregister(comm, comm->ceColl.ceSyncWin->vidmem), ret, fail);
+      NCCLCHECKGOTO(ncclMemFree(comm->ceColl.ceSyncWin->userPtr), ret, fail);
+    }
+    comm->ceColl.baseUCSymReadyPtr = NULL;
+    comm->ceColl.baseUCSymComplPtr = NULL;
+    comm->ceColl.ceSyncWin = NULL;
+  }
 
 exit:
   return ret;

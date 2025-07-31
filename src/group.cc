@@ -235,6 +235,12 @@ ncclResult_t ncclCommGroupRegisterSymmetric(struct ncclAsyncJob* job_) {
     free(task);
   }
 
+  while (!ncclIntruQueueEmpty(&comm->ceInitTaskQueue)) {
+    struct ncclCeInitTask* task = ncclIntruQueueDequeue(&comm->ceInitTaskQueue);
+    NCCLCHECKGOTO(ncclCeInit(task->comm), ret, fail);
+    free(task);
+  }
+
 exit:
   return ret;
 fail:

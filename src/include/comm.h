@@ -649,7 +649,8 @@ struct ncclComm {
 
   // CE Collective
   struct ncclCeColl ceColl;
-
+  struct ncclIntruQueue<struct ncclCeInitTask, &ncclCeInitTask::next> ceInitTaskQueue;
+  
   // buffer registration cache
   struct ncclRegCache regCache;
   int isAllNvlink;
