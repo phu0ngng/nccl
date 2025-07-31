@@ -92,6 +92,11 @@ ncclResult_t ncclSymrFinalize(struct ncclComm* comm) {
   struct ncclSymrState* symr = &comm->symrState;
   if (symr->bigSize == 0) return ncclSuccess;
 
+  while (!ncclIntruQueueEmpty(&symr->regTaskQueue)) {
+    struct ncclSymrRegTask* task = ncclIntruQueueDequeue(&symr->regTaskQueue);
+    free(task);
+  }
+  
   symTeamDestroyAll(comm);
   { // delete windowTable
     cudaStream_t stream;

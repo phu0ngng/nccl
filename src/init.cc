@@ -185,6 +185,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  NCCLCHECK(ncclCeFinalize(comm));
+
   if (comm->symmetricSupport) {
     NCCLCHECK(ncclSymkFinalize(comm));
     NCCLCHECK(ncclSymrFinalize(comm));
@@ -415,6 +417,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
 
   ncclIntruQueueMpscConstruct(&comm->callbackQueue);
   ncclIntruQueueConstruct(&comm->legacyRegCleanupQueue);
+  ncclIntruQueueConstruct(&comm->ceInitTaskQueue);
 
   comm->regCache.pageSize = sysconf(_SC_PAGESIZE);
 

@@ -15,9 +15,12 @@ struct ncclCeColl {
   size_t baseUCSymReadyOffset;
   size_t baseUCSymComplOffset;
   uint32_t ceSeqNum;
-  cudaStream_t ceLocalCopyStream;
-  cudaEvent_t ceLocalCopyEvent;
   struct ncclSymrWindow* ceSyncWin;
+};
+
+struct ncclCeInitTask {
+  struct ncclCeInitTask *next;
+  struct ncclComm* comm;
 };
 
 struct alignas(16) ncclCeCollArgs {  
@@ -46,6 +49,8 @@ struct ncclCeBatchOpsParams {
 bool ncclCeImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty);
 
 ncclResult_t ncclCeInit(struct ncclComm* comm);
+
+ncclResult_t ncclCeFinalize(struct ncclComm* comm);
 
 ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isComplete, cudaStream_t stream);
 
