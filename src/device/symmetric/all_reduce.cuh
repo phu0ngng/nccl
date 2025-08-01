@@ -361,7 +361,7 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLDMC_AGxSTMC(ncclDevkDe
 template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevArgs const* args, bool multimem) {
   ncclDevkKernelStuff stuff(args);
-  ncclSymLLA2ASession<ncclCoopCta> lla2a(
+  ncclLLA2ASession<ncclCoopCta> lla2a(
     ncclCoopCta(), args->comm, ncclTeamTagLsa(),
     blockIdx.x, ncclDevkMaxThreads, multimem
   );

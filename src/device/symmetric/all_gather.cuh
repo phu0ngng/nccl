@@ -254,7 +254,7 @@ __device__ __forceinline__ void ncclDevkRun_AllGather_STMC(ncclDevkDevArgs const
 
 template<typename EltType>
 static __device__ void allgather_LL_body(
-    ncclDevkKernelStuff& stuff, ncclSymLLA2ASession<ncclCoopCta>& lla2a,
+    ncclDevkKernelStuff& stuff, ncclLLA2ASession<ncclCoopCta>& lla2a,
     EltType* input, EltType* output, int nElts, int nPacks, int nStrideElts
   ) {
   using Pack = BytePack<8>;
@@ -330,7 +330,7 @@ static __device__ void allgather_LL_body(
 
 static __device__ void ncclDevkRun_AllGather_LL_impl(ncclDevkDevArgs const* args, bool multimem) {
   ncclDevkKernelStuff stuff(args);
-  ncclSymLLA2ASession<ncclCoopCta> lla2a(
+  ncclLLA2ASession<ncclCoopCta> lla2a(
     ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*maxElts=*/ncclDevkMaxThreads, multimem
   );
 

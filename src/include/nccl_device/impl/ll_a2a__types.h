@@ -3,18 +3,18 @@
 #include "../ll_a2a.h"
 #include "core__types.h"
 
-struct ncclSymLLA2AHandle {
+struct ncclLLA2AHandle {
   ncclDevResourceHandle bufHandle;
   uint32_t nSlots;
 };
 
 #if __CUDACC__
 template<typename Coop>
-struct ncclSymLLA2ASession_internal {
+struct ncclLLA2ASession_internal {
   Coop coop;
   ncclDevComm const& comm;
   ncclTeam team;
-  ncclSymLLA2AHandle handle;
+  ncclLLA2AHandle handle;
   int block;
   int pitch;
   bool multimem;

@@ -12,7 +12,7 @@ struct ncclMultimemHandle;
 typedef uint32_t ncclDevResourceHandle;
 
 struct ncclLsaBarrierHandle;
-struct ncclSymLLA2AHandle;
+struct ncclLLA2AHandle;
 
 struct ncclTeam {
   int nRanks, rank, stride;
@@ -34,7 +34,7 @@ struct ncclDevCommRequirements {
   ncclLsaBarrierHandle* outLsaBarrierHandle; // If non-null, target assigned during ncclDevCommCreate.
 
   int lsaLLA2ABlockCount, lsaLLA2ASlotCount;
-  ncclSymLLA2AHandle* outLsaLLA2AHandle; // If non-null, target assigned during ncclDevCommCreate.
+  ncclLLA2AHandle* outLsaLLA2AHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 struct ncclDevResourceRequirements {
   struct ncclDevResourceRequirements* next;

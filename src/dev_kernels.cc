@@ -204,7 +204,7 @@ ncclResult_t ncclDevkInitOnce(struct ncclComm* comm) {
     reqs.multimem = comm->nvlsSupport;
     reqs.lsaBarrierCount = ncclDevkMaxBlocks;
     reqs.lsaLLA2ABlockCount = ncclDevkMaxBlocks;
-    reqs.lsaLLA2ASlotCount = ncclSymLLA2ACalcSlots(comm->nRanks*ncclDevkMaxThreads, ncclDevkLLMaxEltSize);
+    reqs.lsaLLA2ASlotCount = ncclLLA2ACalcSlots(comm->nRanks*ncclDevkMaxThreads, ncclDevkLLMaxEltSize);
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devk->devComm));
   }
   return ncclSuccess;

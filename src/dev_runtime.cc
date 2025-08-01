@@ -729,7 +729,7 @@ ncclResult_t ncclDevCommCreate(
   lsaBarReq.next = resReqsHead;
   resReqsHead = &lsaBarReq;
 
-  ncclSymLLA2ACreateRequirement(reqs->lsaLLA2ABlockCount, reqs->lsaLLA2ASlotCount, &outSymComm->lsaLLA2A, &lsaLLA2AReq);
+  ncclLLA2ACreateRequirement(reqs->lsaLLA2ABlockCount, reqs->lsaLLA2ASlotCount, &outSymComm->lsaLLA2A, &lsaLLA2AReq);
   lsaLLA2AReq.next = resReqsHead;
   resReqsHead = &lsaLLA2AReq;
 

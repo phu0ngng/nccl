@@ -323,7 +323,7 @@ __device__ __forceinline__ void ncclDevkRun_ReduceScatter_LDMC(ncclDevkDevArgs c
 // T is user type, EltType is the most aligned type
 template<typename T, typename Red, typename EltType>
 __device__ __forceinline__ void ncclDevkRun_ReduceScatter_LL_body(
-    ncclDevkKernelStuff& stuff, ncclSymLLA2ASession<ncclCoopCta>& lla2a,
+    ncclDevkKernelStuff& stuff, ncclLLA2ASession<ncclCoopCta>& lla2a,
     Red red, EltType* input, EltType* output, int nElts, int nPacks, int nStrideElts) {
   using Pack = BytePack<8>;
   using Acc = typename Red::EltType;
@@ -377,7 +377,7 @@ __device__ __forceinline__ void ncclDevkRun_ReduceScatter_LL_body(
 template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclDevkRun_ReduceScatter_LL(ncclDevkDevArgs const* args) {
   ncclDevkKernelStuff stuff(args);
-  ncclSymLLA2ASession<ncclCoopCta> lla2a(
+  ncclLLA2ASession<ncclCoopCta> lla2a(
     ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x, ncclDevkMaxThreads
   );
   Red<typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type> red(args->redOpArg);

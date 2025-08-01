@@ -6,12 +6,12 @@
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
+NCCL_DEVICE_INLINE ncclLLA2ASession<Coop>::ncclLLA2ASession(
     Coop coop, ncclDevComm const& comm, ncclTeam team,
-    ncclSymLLA2AHandle handle, uint32_t block, int maxElts,
+    ncclLLA2AHandle handle, uint32_t block, int maxElts,
     bool multimem, ncclMultimemHandle mmHandle
   ):
-  ncclSymLLA2ASession_internal<Coop>{
+  ncclLLA2ASession_internal<Coop>{
     coop, comm, team, handle, (int)block, /*pitch=*/maxElts,
     multimem, mmHandle, /*epoch=*/0, /*slotsOffset=*/0
   } {
@@ -24,12 +24,12 @@ NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
+NCCL_DEVICE_INLINE ncclLLA2ASession<Coop>::ncclLLA2ASession(
     Coop coop, ncclDevComm const& comm, ncclTeamTagLsa,
     uint32_t block, int maxElts,
     bool multimem
   ):
-  ncclSymLLA2ASession<Coop>(
+  ncclLLA2ASession<Coop>(
     coop, comm, ncclTeamLsa(comm), comm.lsaLLA2A,
     block, maxElts, multimem, comm.multimem
   ) {
@@ -38,7 +38,7 @@ NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::~ncclSymLLA2ASession() {
+NCCL_DEVICE_INLINE ncclLLA2ASession<Coop>::~ncclLLA2ASession() {
   uint4* line = (uint4*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   line += this->block*(1 + 2*this->handle.nSlots);
   if (this->coop.thread_rank() == 0) line->x = this->epoch - 2;
@@ -49,7 +49,7 @@ NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::~ncclSymLLA2ASession() {
 #if __CUDACC__
 template<typename Coop>
 template<typename T>
-NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::send(int peer, int elt, T data) {
+NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::send(int peer, int elt, T data) {
   using nccl::utility::divUp;
   union { T tmp; uint32_t u32[divUp(sizeof(T), 8)][2]; };
   tmp = data;
@@ -68,7 +68,7 @@ NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::send(int peer, int elt, T dat
 #if __CUDACC__
 template<typename Coop>
 template<typename T>
-NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::bcast(int elt, T data) {
+NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::bcast(int elt, T data) {
   using nccl::utility::divUp;
   if (this->multimem) {
     union { T tmp; uint32_t u32[divUp(sizeof(T),8)][2]; };
@@ -126,7 +126,7 @@ NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::bcast(int elt, T data) {
 #if __CUDACC__
 template<typename Coop>
 template<typename T>
-NCCL_DEVICE_INLINE T ncclSymLLA2ASession<Coop>::recv(int elt) {
+NCCL_DEVICE_INLINE T ncclLLA2ASession<Coop>::recv(int elt) {
   T ret[1];
   this->template recvUnrolled</*MinEltCount=*/1, /*MaxEltCount=*/1>(elt, 1, 0, ret);
   return ret[0];
@@ -136,7 +136,7 @@ NCCL_DEVICE_INLINE T ncclSymLLA2ASession<Coop>::recv(int elt) {
 #if __CUDACC__
 template<typename Coop>
 template<int MinEltCount, int MaxEltCount, typename T>
-NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::recvUnrolled(int eltStart, int eltCount, int eltStride, T(&elts)[MaxEltCount]) {
+NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::recvUnrolled(int eltStart, int eltCount, int eltStride, T(&elts)[MaxEltCount]) {
   using nccl::utility::divUp;
   uint4* buf = (uint4*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   buf += this->slotsOffset + eltStart;
@@ -187,7 +187,7 @@ NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::recvUnrolled(int eltStart, in
 #if __CUDACC__
 template<typename Coop>
 template<int Unroll, typename Elt, typename EltToAcc, typename Reduce>
-NCCL_DEVICE_INLINE auto ncclSymLLA2ASession<Coop>::recvReduce(
+NCCL_DEVICE_INLINE auto ncclLLA2ASession<Coop>::recvReduce(
     int eltStart, int eltCount, int eltStride, EltToAcc eltToAcc, Reduce reduce
   ) -> decltype(eltToAcc(nccl::utility::declval<Elt>())) {
   using Acc = decltype(eltToAcc(nccl::utility::declval<Elt>()));
@@ -218,7 +218,7 @@ NCCL_DEVICE_INLINE auto ncclSymLLA2ASession<Coop>::recvReduce(
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::endEpoch(Coop) {
+NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::endEpoch(Coop) {
   if (__builtin_expect(this->epoch >= -2u, false)) {
     this->coop.sync();
     uint4* buf = (uint4*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);

@@ -1,14 +1,14 @@
 #include "core.h"
 #include "nccl_device/impl/ll_a2a__funcs.h"
 
-NCCL_API_CXX(int, ncclSymLLA2ACalcSlots, int maxElts, int maxEltSize);
-int ncclSymLLA2ACalcSlots(int maxElts, int maxEltSize) {
+NCCL_API_CXX(int, ncclLLA2ACalcSlots, int maxElts, int maxEltSize);
+int ncclLLA2ACalcSlots(int maxElts, int maxEltSize) {
   return maxElts*divUp(maxEltSize, 8);
 }
 
-NCCL_API_CXX(ncclResult_t, ncclSymLLA2ACreateRequirement, int nBlocks, int nSlots, ncclSymLLA2AHandle* outHandle, ncclDevResourceRequirements* outReq);
-ncclResult_t ncclSymLLA2ACreateRequirement(
-    int nBlocks, int nSlots, ncclSymLLA2AHandle* outHandle,
+NCCL_API_CXX(ncclResult_t, ncclLLA2ACreateRequirement, int nBlocks, int nSlots, ncclLLA2AHandle* outHandle, ncclDevResourceRequirements* outReq);
+ncclResult_t ncclLLA2ACreateRequirement(
+    int nBlocks, int nSlots, ncclLLA2AHandle* outHandle,
     ncclDevResourceRequirements* outReq
   ) {
   outHandle->nSlots = nSlots;
