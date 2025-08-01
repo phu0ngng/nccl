@@ -5,7 +5,7 @@
 
 struct ncclLsaBarrierHandle;
 
-__host__ ncclResult_t ncclLsaBarrierCreateRequirement(ncclTeam, int nBarriers, ncclLsaBarrierHandle* outHandle, ncclSymResourceRequirements* outReq);
+__host__ ncclResult_t ncclLsaBarrierCreateRequirement(ncclTeam, int nBarriers, ncclLsaBarrierHandle* outHandle, ncclDevResourceRequirements* outReq);
 
 #if __CUDACC__
 template<typename Coop>

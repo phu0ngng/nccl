@@ -699,9 +699,9 @@ ncclResult_t ncclDevCommCreate(
   struct ncclSymrTeam* tmLsa;
   cudaStream_t stream;
   size_t bufSizeTotal;
-  struct ncclSymResourceRequirements* resReqsHead;
-  struct ncclSymResourceRequirements lsaBarReq;
-  struct ncclSymResourceRequirements lsaLLA2AReq;
+  struct ncclDevResourceRequirements* resReqsHead;
+  struct ncclDevResourceRequirements lsaBarReq;
+  struct ncclDevResourceRequirements lsaLLA2AReq;
   CUmemGenericAllocationHandle memHandle;
   struct ncclSymrMemory* mem;
   struct ncclSymrWindow* win;
@@ -733,7 +733,7 @@ ncclResult_t ncclDevCommCreate(
   lsaLLA2AReq.next = resReqsHead;
   resReqsHead = &lsaLLA2AReq;
 
-  { struct ncclSymResourceRequirements* rr = resReqsHead;
+  { struct ncclDevResourceRequirements* rr = resReqsHead;
     bufSizeTotal = 0;
     while (rr != nullptr) {
       bufSizeTotal = alignUp(bufSizeTotal, std::max<size_t>(128, rr->bufferAlign));
@@ -770,7 +770,7 @@ ncclResult_t ncclDevCommCreate(
     NCCLCHECKGOTO(ncclShadowPoolToHost(&symr->shadows, win->vidmem, &winHost), ret, fail_stream_mem_win);
     outSymComm->resourceWindow_inlined = *winHost;
 
-    struct ncclSymResourceRequirements* rr = resReqsHead;
+    struct ncclDevResourceRequirements* rr = resReqsHead;
     bufSizeTotal = 0; // Sum this again to assign positions to the constituent buffers.
     while (rr != nullptr) {
       bufSizeTotal = alignUp(bufSizeTotal, std::max<size_t>(128, rr->bufferAlign));

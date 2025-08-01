@@ -9,7 +9,7 @@ struct ncclTeam;
 // typedef struct ncclWindow_vidmem* ncclWindow_t; // in nccl.h
 struct ncclMultimemHandle;
 
-typedef uint32_t ncclSymResourceBufferHandle;
+typedef uint32_t ncclDevResourceHandle;
 
 struct ncclLsaBarrierHandle;
 struct ncclSymLLA2AHandle;
@@ -25,7 +25,7 @@ struct ncclTeamTagLsa {};
 struct ncclTeamTagRail {};
 
 struct ncclDevCommRequirements {
-  struct ncclSymResourceRequirements* resourceRequirementsList;
+  struct ncclDevResourceRequirements* resourceRequirementsList;
   struct ncclTeamRequirements* teamRequirementsList;
 
   bool multimem; // Enable multimem on lsa team
@@ -36,10 +36,10 @@ struct ncclDevCommRequirements {
   int lsaLLA2ABlockCount, lsaLLA2ASlotCount;
   ncclSymLLA2AHandle* outLsaLLA2AHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
-struct ncclSymResourceRequirements {
-  struct ncclSymResourceRequirements* next;
+struct ncclDevResourceRequirements {
+  struct ncclDevResourceRequirements* next;
   size_t bufferSize, bufferAlign;
-  ncclSymResourceBufferHandle* outBufferHandle; // If non-null, target assigned during ncclDevCommCreate.
+  ncclDevResourceHandle* outBufferHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 struct ncclTeamRequirements {
   struct ncclTeamRequirements* next;
@@ -83,10 +83,10 @@ NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamRail(ncclDevComm const&);
 __host__ ncclTeam ncclTeamRail(ncclComm_t);
 
 // Get offset of resource buffer within `comm.resourceWindow`.
-NCCL_HOST_DEVICE_INLINE size_t ncclSymGetResourceBufferOffset(ncclSymResourceBufferHandle);
+NCCL_HOST_DEVICE_INLINE size_t ncclSymGetResourceBufferOffset(ncclDevResourceHandle);
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE ncclSymPtr<char> ncclSymGetResourceBuffer(ncclDevComm const&, ncclSymResourceBufferHandle);
+NCCL_DEVICE_INLINE ncclSymPtr<char> ncclSymGetResourceBuffer(ncclDevComm const&, ncclDevResourceHandle);
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -106,11 +106,11 @@ NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset
 
 #if __CUDACC__
 // Convenience for combining ncclSymGet***Pointer() with resource handle.
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclDevComm const&, ncclSymResourceBufferHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLsaPointer(ncclDevComm const&, ncclSymResourceBufferHandle, int lsaPeer);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclDevComm const&, ncclSymResourceBufferHandle, ncclTeam, int peer);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclDevComm const&, ncclSymResourceBufferHandle, ncclMultimemHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclDevComm const&, ncclSymResourceBufferHandle);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclDevComm const&, ncclDevResourceHandle);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLsaPointer(ncclDevComm const&, ncclDevResourceHandle, int lsaPeer);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclDevComm const&, ncclDevResourceHandle, ncclTeam, int peer);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclDevComm const&, ncclDevResourceHandle, ncclMultimemHandle);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclDevComm const&, ncclDevResourceHandle);
 #endif
 
 #endif // _NCCL_DEVICE_CORE_H_

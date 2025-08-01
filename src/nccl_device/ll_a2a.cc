@@ -6,10 +6,10 @@ int ncclSymLLA2ACalcSlots(int maxElts, int maxEltSize) {
   return maxElts*divUp(maxEltSize, 8);
 }
 
-NCCL_API_CXX(ncclResult_t, ncclSymLLA2ACreateRequirement, int nBlocks, int nSlots, ncclSymLLA2AHandle* outHandle, ncclSymResourceRequirements* outReq);
+NCCL_API_CXX(ncclResult_t, ncclSymLLA2ACreateRequirement, int nBlocks, int nSlots, ncclSymLLA2AHandle* outHandle, ncclDevResourceRequirements* outReq);
 ncclResult_t ncclSymLLA2ACreateRequirement(
     int nBlocks, int nSlots, ncclSymLLA2AHandle* outHandle,
-    ncclSymResourceRequirements* outReq
+    ncclDevResourceRequirements* outReq
   ) {
   outHandle->nSlots = nSlots;
   memset(outReq, 0, sizeof(*outReq));

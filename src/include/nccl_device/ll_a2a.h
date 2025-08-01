@@ -6,7 +6,7 @@ struct ncclSymLLA2AHandle;
 
 __host__ int ncclSymLLA2ACalcSlots(int maxElts, int maxEltSize);
 
-__host__ ncclResult_t ncclSymLLA2ACreateRequirement(int nBlocks, int nSlots, ncclSymLLA2AHandle* outHandle, ncclSymResourceRequirements* outReq);
+__host__ ncclResult_t ncclSymLLA2ACreateRequirement(int nBlocks, int nSlots, ncclSymLLA2AHandle* outHandle, ncclDevResourceRequirements* outReq);
 
 #if __CUDACC__
 template<typename Coop>
