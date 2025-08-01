@@ -168,7 +168,7 @@ NCCL_DEVICE_INLINE ncclWindow_t ncclFindWindow(Coop coop, ncclDevComm const& com
 #if 0
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclMultimemHandle ncclSymFindMultimem(Coop coop, ncclDevComm const &comm, ncclTeam tm) {
+NCCL_DEVICE_INLINE ncclMultimemHandle ncclFindMultimem(Coop coop, ncclDevComm const &comm, ncclTeam tm) {
   using nccl::utility::loadConst;
   auto coalesced = ncclCoopCoalesced(coop);
   ncclDevComm::TeamTable* e = comm.teamTable;
