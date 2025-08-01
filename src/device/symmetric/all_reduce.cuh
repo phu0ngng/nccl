@@ -13,7 +13,7 @@ static __device__ __forceinline__ void allreduceDeep(
   using Acc = typename Red::EltType;
   using AccPack = BytePack<BytePerPack*sizeof(Acc)/sizeof(T)>;
 
-  ncclSymTeam world = ncclSymTeamWorld(stuff.comm);
+  ncclTeam world = ncclTeamWorld(stuff.comm);
   int wn = tn/WARP_SIZE;
   int w = t/WARP_SIZE;
   int lane = t%WARP_SIZE;
@@ -127,7 +127,7 @@ static __device__ __forceinline__ void allreduceEnds(
   ) {
   using Acc = typename Red::EltType;
 
-  ncclSymTeam world = ncclSymTeamWorld(stuff.comm);
+  ncclTeam world = ncclTeamWorld(stuff.comm);
   int const& rank = stuff.comm.rank;
   int const& nRanks = stuff.comm.nRanks;
 
@@ -256,7 +256,7 @@ template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLD_AGxST(ncclSymkDevArgs const* args) {
   ncclSymkKernelStuff stuff{args};
   ncclSymMemBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclSymTeamTagNear(), blockIdx.x
+    ncclCoopCta(), args->comm, ncclTeamTagNear(), blockIdx.x
   };
 
   int rank = args->comm.rank;
@@ -337,7 +337,7 @@ static __device__ void allreduceMultimem(
 template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLDMC_AGxSTMC(ncclSymkDevArgs const* args) {
   ncclSymMemBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclSymTeamTagNear(), blockIdx.x, /*multimem=*/true
+    ncclCoopCta(), args->comm, ncclTeamTagNear(), blockIdx.x, /*multimem=*/true
   };
   Red<typename ncclSymkAccumType<Red, T, /*nvls=*/true>::Type> red(args->redOpArg);
 
@@ -362,7 +362,7 @@ template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLL_R_impl(ncclSymkDevArgs const* args, bool multimem) {
   ncclSymkKernelStuff stuff(args);
   ncclSymLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), args->comm, ncclSymTeamTagNear(),
+    ncclCoopCta(), args->comm, ncclTeamTagNear(),
     blockIdx.x, ncclSymkMaxThreads, multimem
   );
   

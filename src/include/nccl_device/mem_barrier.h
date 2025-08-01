@@ -5,7 +5,7 @@
 
 struct ncclSymMemBarrierHandle;
 
-__host__ ncclResult_t ncclSymMemBarrierCreateRequirement(ncclSymTeam, int nBarriers, ncclSymMemBarrierHandle* outHandle, ncclSymResourceRequirements* outReq);
+__host__ ncclResult_t ncclSymMemBarrierCreateRequirement(ncclTeam, int nBarriers, ncclSymMemBarrierHandle* outHandle, ncclSymResourceRequirements* outReq);
 
 #if __CUDACC__
 template<typename Coop>
@@ -13,9 +13,9 @@ struct ncclSymMemBarrierSession_internal;
 
 template<typename Coop>
 struct ncclSymMemBarrierSession: ncclSymMemBarrierSession_internal<Coop> {
-  NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclSymTeam, ncclSymMemBarrierHandle, uint32_t index, bool multimem=false, ncclSymMultimemHandle mmHandle={});
+  NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclTeam, ncclSymMemBarrierHandle, uint32_t index, bool multimem=false, ncclSymMultimemHandle mmHandle={});
 
-  NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclSymTeamTagNear, uint32_t index, bool multimem=false);
+  NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclTeamTagNear, uint32_t index, bool multimem=false);
 
   NCCL_DEVICE_INLINE ~ncclSymMemBarrierSession();
 

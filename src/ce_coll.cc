@@ -101,7 +101,7 @@ ncclResult_t ncclPrepMCSync(struct ncclComm* comm, bool isComplete, CUstreamBatc
   void* mcDstPtr;
   void* dstPtr = isComplete ? (void*)&completePtrs[comm->rank] : (void*)&readyPtrs[comm->rank];
   size_t offset = (uint8_t*)dstPtr - (uint8_t*)comm->ceColl.ceSyncWin->userPtr;
-  NCCLCHECKGOTO(ncclSymrGetNearTeamPtrMC(comm, comm->ceColl.ceSyncWin, offset, ncclSymTeamNear(comm), &mcDstPtr), ret, fail);
+  NCCLCHECKGOTO(ncclSymrGetNearTeamPtrMC(comm, comm->ceColl.ceSyncWin, offset, ncclTeamNear(comm), &mcDstPtr), ret, fail);
   
   // Write our own ready/complete flag to the multi-cast address
   CUDACHECKGOTO(cudaMemcpyAsync(

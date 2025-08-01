@@ -13,7 +13,7 @@ template<typename Coop>
 struct ncclSymLLA2ASession_internal {
   Coop coop;
   ncclSymComm const& comm;
-  ncclSymTeam team;
+  ncclTeam team;
   ncclSymLLA2AHandle handle;
   int block;
   int pitch;

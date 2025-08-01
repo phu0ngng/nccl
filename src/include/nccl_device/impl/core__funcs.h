@@ -4,31 +4,31 @@
 #include "comm__types.h"
 #include "ptr__types.h"
 
-NCCL_HOST_DEVICE_INLINE ncclSymTeam ncclSymTeamWorld(ncclSymComm const &comm) {
-  ncclSymTeam ans;
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamWorld(ncclSymComm const &comm) {
+  ncclTeam ans;
   ans.nRanks = comm.nRanks;
   ans.rank = comm.rank;
   ans.stride = 1;
   return ans;
 }
 
-NCCL_HOST_DEVICE_INLINE ncclSymTeam ncclSymTeamNear(ncclSymComm const &comm) {
-  ncclSymTeam ans;
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamNear(ncclSymComm const &comm) {
+  ncclTeam ans;
   ans.nRanks = comm.nearSize;
   ans.rank = comm.nearRank;
   ans.stride = 1;
   return ans;
 }
 
-NCCL_HOST_DEVICE_INLINE ncclSymTeam ncclSymTeamRail(ncclSymComm const& comm) {
-  ncclSymTeam ans;
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamRail(ncclSymComm const& comm) {
+  ncclTeam ans;
   ans.nRanks = nccl::utility::idivFast32(comm.nRanks, comm.nearSize, comm.nearSize_rcp32);
   ans.rank = nccl::utility::idivFast32(comm.rank, comm.nearSize, comm.nearSize_rcp32);
   ans.stride = comm.nearSize;
   return ans;
 }
 
-NCCL_HOST_DEVICE_INLINE bool ncclSymTeamRankIsMember(ncclSymTeam a, ncclSymTeam b, int brank) {
+NCCL_HOST_DEVICE_INLINE bool ncclTeamRankIsMember(ncclTeam a, ncclTeam b, int brank) {
   int wrank = (brank - b.rank)*b.stride;
   uint32_t adelta = wrank/a.stride;
   uint32_t amod = wrank%a.stride;
@@ -36,7 +36,7 @@ NCCL_HOST_DEVICE_INLINE bool ncclSymTeamRankIsMember(ncclSymTeam a, ncclSymTeam 
   return 0 <= arank && arank < a.nRanks && amod == 0;
 }
 
-NCCL_HOST_DEVICE_INLINE int ncclSymTeamRankToTeam(ncclSymTeam a, ncclSymTeam b, int brank) {
+NCCL_HOST_DEVICE_INLINE int ncclTeamRankToTeam(ncclTeam a, ncclTeam b, int brank) {
   int wrank = (brank - b.rank)*b.stride;
   uint32_t adelta = wrank/a.stride;
   //uint32_t amod = wrank%a.stride;
@@ -44,31 +44,31 @@ NCCL_HOST_DEVICE_INLINE int ncclSymTeamRankToTeam(ncclSymTeam a, ncclSymTeam b, 
   return arank;
 }
 
-NCCL_HOST_DEVICE_INLINE int ncclSymTeamRankToWorld(ncclSymComm const& comm, ncclSymTeam tm, int rank) {
+NCCL_HOST_DEVICE_INLINE int ncclTeamRankToWorld(ncclSymComm const& comm, ncclTeam tm, int rank) {
   return comm.rank + (rank - tm.rank)*tm.stride;
 }
 
-NCCL_HOST_DEVICE_INLINE int ncclSymTeamRankToNear(ncclSymComm const& comm, ncclSymTeam tm, int rank) {
+NCCL_HOST_DEVICE_INLINE int ncclTeamRankToNear(ncclSymComm const& comm, ncclTeam tm, int rank) {
   return comm.nearRank + (rank - tm.rank)*tm.stride;
 }
 
-NCCL_HOST_DEVICE_INLINE ncclSymTeam ncclSymTeamInnerFactor(ncclSymTeam parent, int innerSize) {
-  ncclSymTeam ans;
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamInnerFactor(ncclTeam parent, int innerSize) {
+  ncclTeam ans;
   ans.nRanks = innerSize;
   ans.rank = parent.rank%innerSize;
   ans.stride = parent.stride;
   return ans;
 }
 
-NCCL_HOST_DEVICE_INLINE ncclSymTeam ncclSymTeamOuterFactor(ncclSymTeam parent, int innerSize) {
-  ncclSymTeam ans;
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamOuterFactor(ncclTeam parent, int innerSize) {
+  ncclTeam ans;
   ans.nRanks = parent.nRanks/innerSize;
   ans.rank = parent.rank/innerSize;
   ans.stride = parent.stride*innerSize;
   return ans;
 }
 
-NCCL_HOST_DEVICE_INLINE int ncclSymTeamRankInDifference(ncclSymTeam parent, ncclSymTeam subset, int index) {
+NCCL_HOST_DEVICE_INLINE int ncclTeamRankInDifference(ncclTeam parent, ncclTeam subset, int index) {
   int stride = subset.stride/parent.stride;
   int below = parent.rank - subset.rank*stride;
   if (stride < 0) {
@@ -113,7 +113,7 @@ NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, in
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, ncclSymTeam tm, int peer) {
+NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, ncclTeam tm, int peer) {
   char* base = nccl::utility::loadConst(&w->nearFlatBase);
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
   int nearRank = nccl::utility::loadConst(&w->nearRank);
@@ -168,14 +168,14 @@ NCCL_DEVICE_INLINE ncclWindow_t ncclSymFindWindow(Coop coop, ncclSymComm const& 
 #if 0
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclSymMultimemHandle ncclSymFindMultimem(Coop coop, ncclSymComm const &comm, ncclSymTeam tm) {
+NCCL_DEVICE_INLINE ncclSymMultimemHandle ncclSymFindMultimem(Coop coop, ncclSymComm const &comm, ncclTeam tm) {
   using nccl::utility::loadConst;
   auto coalesced = ncclCoopCoalesced(coop);
   ncclSymComm::TeamTable* e = comm.teamTable;
   while (true) {
     #pragma unroll 1
     for (int i=coalesced.thread_rank(); i < 32; i += coalesced.size()) {
-      ncclSymTeam tm1 = loadConst(&e->team[i]);
+      ncclTeam tm1 = loadConst(&e->team[i]);
       if (tm1.rank == tm.rank && tm1.nRanks == tm.nRanks && tm1.stride == tm.stride) {
         found = true;
         break;
@@ -217,7 +217,7 @@ NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearPointer(ncclSymComm const& 
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, ncclSymTeam team, int peer) {
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, ncclTeam team, int peer) {
   int nearPeer = comm.nearRank + (peer - team.rank)*team.stride;
   void* nearFlatBase = comm.resourceWindow_inlined.nearFlatBase;
   uint32_t stride4G = comm.resourceWindow_inlined.stride4G;

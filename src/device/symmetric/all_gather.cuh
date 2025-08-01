@@ -159,7 +159,7 @@ static __device__ void bcast(
 __device__ __forceinline__ void ncclSymkRun_AllGather_ST(ncclSymkDevArgs const* args) {
   ncclSymkKernelStuff stuff{args};
   ncclSymMemBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclSymTeamTagNear(), blockIdx.x
+    ncclCoopCta(), args->comm, ncclTeamTagNear(), blockIdx.x
   };
   int const& rank = args->comm.rank;
 
@@ -232,7 +232,7 @@ static __device__ void bcastMultimem(
 __device__ __forceinline__ void ncclSymkRun_AllGather_STMC(ncclSymkDevArgs const* args) {
   ncclSymkKernelStuff stuff{args};
   ncclSymMemBarrierSession<ncclCoopCta> bar(
-    ncclCoopCta(), args->comm, ncclSymTeamTagNear(), blockIdx.x, /*multimem=*/true
+    ncclCoopCta(), args->comm, ncclTeamTagNear(), blockIdx.x, /*multimem=*/true
   );
   int const& rank = args->comm.rank;
 
@@ -331,7 +331,7 @@ static __device__ void allgather_LL_body(
 static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevArgs const* args, bool multimem) {
   ncclSymkKernelStuff stuff(args);
   ncclSymLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), stuff.comm, ncclSymTeamTagNear(), blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem
+    ncclCoopCta(), stuff.comm, ncclTeamTagNear(), blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem
   );
 
   using Pack = BytePack<8>;

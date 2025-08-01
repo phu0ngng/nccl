@@ -23,7 +23,7 @@ struct ncclSymrWindowSorted {
 
 struct ncclSymrTeam {
   struct ncclSymrTeam* next;
-  struct ncclSymTeam team;
+  struct ncclTeam team;
   CUmemGenericAllocationHandle mcHandle;
   void* mcBasePtr;
   int worldRankList[];
@@ -208,7 +208,7 @@ static ncclResult_t symUnbindTeamMemory(
 
 // Caller must barrier the team afterward.
 static ncclResult_t symTeamObtain(
-    struct ncclComm* comm, struct ncclSymTeam team, bool multimem,
+    struct ncclComm* comm, struct ncclTeam team, bool multimem,
     struct ncclSymrTeam** outTeam
   ) {
   ncclResult_t ret = ncclSuccess;
@@ -694,8 +694,8 @@ ncclResult_t ncclSymCommCreate(
   outSymComm->nearSize = symr->nearSize;
   outSymComm->nearSize_rcp32 = idivRcp32(symr->nearSize);
 
-  struct ncclSymTeam world = ncclSymTeamWorld(comm);
-  struct ncclSymTeam near = ncclSymTeamInnerFactor(world, symr->nearSize);
+  struct ncclTeam world = ncclTeamWorld(comm);
+  struct ncclTeam near = ncclTeamInnerFactor(world, symr->nearSize);
   struct ncclSymrTeam* tmNear;
   cudaStream_t stream;
   size_t bufSizeTotal;
@@ -712,7 +712,7 @@ ncclResult_t ncclSymCommCreate(
   NCCLCHECKGOTO(symTeamObtain(comm, near, /*multicast=*/reqs->nearMultimem, &tmNear), ret, fail);
   outSymComm->nearMultimem.mcBasePtr = tmNear->mcBasePtr;
 
-  { struct ncclSymTeamRequirements* tr = reqs->teamRequirementsList;
+  { struct ncclTeamRequirements* tr = reqs->teamRequirementsList;
     while (tr != nullptr) {
       if (tr->multimem) {
         struct ncclSymrTeam* tm;
@@ -835,7 +835,7 @@ ncclResult_t ncclSymrGetNearRankPtr(struct ncclComm* comm, struct ncclSymrWindow
 }
 
 // Get the multicast address for a given team
-ncclResult_t ncclSymrGetNearTeamPtrMC(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, struct ncclSymTeam nearTeam, void** outPtr){
+ncclResult_t ncclSymrGetNearTeamPtrMC(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, struct ncclTeam nearTeam, void** outPtr){
   if (winHost == nullptr || outPtr == nullptr) {
     return ncclInvalidArgument;
   }

@@ -104,7 +104,7 @@ NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(int peer) const {
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(ncclSymTeam team, int peer) const {
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(ncclTeam team, int peer) const {
   return (T*)ncclSymGetPeerPointer(window, offset, team, peer);
 }
 #endif

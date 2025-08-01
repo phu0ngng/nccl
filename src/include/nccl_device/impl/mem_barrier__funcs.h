@@ -6,7 +6,7 @@
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
-    Coop coop, ncclSymComm const& comm, ncclSymTeam team,
+    Coop coop, ncclSymComm const& comm, ncclTeam team,
     ncclSymMemBarrierHandle handle, uint32_t index,
     bool multimem, ncclSymMultimemHandle mmHandle
   ):
@@ -21,9 +21,9 @@ NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
-    Coop coop, ncclSymComm const& comm, ncclSymTeamTagNear, uint32_t index, bool multimem
+    Coop coop, ncclSymComm const& comm, ncclTeamTagNear, uint32_t index, bool multimem
   ): ncclSymMemBarrierSession(
-    coop, comm, ncclSymTeamNear(comm), comm.nearMemBarrier, index, multimem, comm.nearMultimem
+    coop, comm, ncclTeamNear(comm), comm.nearMemBarrier, index, multimem, comm.nearMultimem
   ) {
 }
 #endif

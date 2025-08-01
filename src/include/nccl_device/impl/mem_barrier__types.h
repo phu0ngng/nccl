@@ -13,7 +13,7 @@ template<typename Coop>
 struct ncclSymMemBarrierSession_internal {
   Coop coop;
   ncclSymComm const& comm;
-  ncclSymTeam team;
+  ncclTeam team;
   ncclSymMemBarrierHandle handle;
   int index;
   bool multimem;
