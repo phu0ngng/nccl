@@ -1,7 +1,7 @@
 #ifndef NCCL_DEVICE_SYMMETRIC_PRIMITIVES_H_
 #define NCCL_DEVICE_SYMMETRIC_PRIMITIVES_H_
 
-#include "sym_kernels.h"
+#include "dev_kernels.h"
 #include "bitops.h"
 #include "collectives.h"
 #include "../op128.h"
@@ -25,15 +25,15 @@ static __device__ Int0 flattenIx(Int0 pos, Int1 size, Ints ...more) {
 }
 
 namespace {
-struct ncclSymkKernelStuff {
-  ncclSymComm const& comm;
+struct ncclDevkKernelStuff {
+  ncclDevComm const& comm;
   int nBlocks;
   uint32_t nRanks_rcp32;
   uint32_t nBlocks_rcp32;
   uint32_t nBlocks_nWarps_rcp32;
   uint32_t nRanks_nBlocks_rcp32;
 
-  __device__ ncclSymkKernelStuff(ncclSymkDevArgs const* args):
+  __device__ ncclDevkKernelStuff(ncclDevkDevArgs const* args):
     comm(args->comm) {
     nBlocks = gridDim.x;
     nRanks_rcp32 = args->comm.nRanks_rcp32;
@@ -45,17 +45,17 @@ struct ncclSymkKernelStuff {
 }
 
 template<template<typename> typename Red, typename T, bool nvls>
-struct ncclSymkAccumType { using Type = T; };
+struct ncclDevkAccumType { using Type = T; };
 
 // Only Red's whose opArg is invariant w.r.t. the datatype can have a different
 // accumulator type. At the moment this excludes integer min/max, sumpostdiv,
 // and premulsum.
-template<> struct ncclSymkAccumType<FuncSum, __half, false> { using Type = float; };
+template<> struct ncclDevkAccumType<FuncSum, __half, false> { using Type = float; };
 #if defined(__CUDA_BF16_TYPES_EXIST__)
-template<> struct ncclSymkAccumType<FuncSum, __nv_bfloat16, false> { using Type = float; };
+template<> struct ncclDevkAccumType<FuncSum, __nv_bfloat16, false> { using Type = float; };
 #endif
 #if defined(__CUDA_FP8_TYPES_EXIST__)
-template<> struct ncclSymkAccumType<FuncSum, __nv_fp8_e4m3, false> { using Type = float; };
-template<> struct ncclSymkAccumType<FuncSum, __nv_fp8_e5m2, false> { using Type = float; };
+template<> struct ncclDevkAccumType<FuncSum, __nv_fp8_e4m3, false> { using Type = float; };
+template<> struct ncclDevkAccumType<FuncSum, __nv_fp8_e5m2, false> { using Type = float; };
 #endif
 #endif

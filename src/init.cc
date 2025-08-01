@@ -188,8 +188,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   NCCLCHECK(ncclCeFinalize(comm));
 
   if (comm->symmetricSupport) {
-    NCCLCHECK(ncclSymkFinalize(comm));
-    NCCLCHECK(ncclSymrFinalize(comm));
+    NCCLCHECK(ncclDevkFinalize(comm));
+    NCCLCHECK(ncclDevrFinalize(comm));
   }
   NCCLCHECK(ncclRasCommFini(comm));
 
@@ -440,8 +440,8 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
 static ncclResult_t devCommSetup(ncclComm_t comm) {
   ncclResult_t ret = ncclSuccess;
   int nRanks = comm->nRanks;
-  struct ncclDevCommAndChannels tmpCommAndChans;
-  struct ncclDevCommAndChannels *devCommAndChans = NULL;
+  struct ncclKernelCommAndChannels tmpCommAndChans;
+  struct ncclKernelCommAndChannels *devCommAndChans = NULL;
   struct ncclNvmlCCStatus ccStatus;
   bool ccEnable;
   cudaStream_t deviceStream;
@@ -1280,7 +1280,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
 
   comm->symmetricSupport = comm->isAllDirectP2p && comm->nNodes == 1 && ncclParamWinEnable() && ncclCuMemEnable();
-  comm->symrState.bigSize = 0;
+  comm->devrState.bigSize = 0;
 
   comm->ceColl.baseUCSymReadyPtr = NULL;
   comm->ceColl.baseUCSymComplPtr = NULL;

@@ -1,24 +1,24 @@
-#ifndef _NCCL_SYM_LL_A2A__TYPES_H_
-#define _NCCL_SYM_LL_A2A__TYPES_H_
+#ifndef _NCCL_DEVICE_LL_A2A__TYPES_H_
+#define _NCCL_DEVICE_LL_A2A__TYPES_H_
 #include "../ll_a2a.h"
 #include "core__types.h"
 
-struct ncclSymLLA2AHandle {
-  ncclSymResourceBufferHandle bufHandle;
+struct ncclLLA2AHandle {
+  ncclDevResourceHandle bufHandle;
   uint32_t nSlots;
 };
 
 #if __CUDACC__
 template<typename Coop>
-struct ncclSymLLA2ASession_internal {
+struct ncclLLA2ASession_internal {
   Coop coop;
-  ncclSymComm const& comm;
-  ncclSymTeam team;
-  ncclSymLLA2AHandle handle;
+  ncclDevComm const& comm;
+  ncclTeam team;
+  ncclLLA2AHandle handle;
   int block;
   int pitch;
   bool multimem;
-  ncclSymMultimemHandle mmHandle;
+  ncclMultimemHandle mmHandle;
   uint32_t epoch;
   uint32_t slotsOffset;
 
@@ -28,4 +28,4 @@ struct ncclSymLLA2ASession_internal {
 };
 #endif
 
-#endif // _NCCL_SYM_LL_A2A__TYPES_H_
+#endif // _NCCL_DEVICE_LL_A2A__TYPES_H_

@@ -137,9 +137,9 @@ def kernel_gencode(k):
 
 def kernel_cname(k):
   if k.coll in reductions:
-    return paste("_", "ncclSymkDevKernel", k.coll, k.algo, k.red, k.ty)
+    return paste("_", "ncclDevkDevKernel", k.coll, k.algo, k.red, k.ty)
   else:
-    return paste("_", "ncclSymkDevKernel", k.coll, k.algo)
+    return paste("_", "ncclDevkDevKernel", k.coll, k.algo)
 
 def kernel_conds(k):
   cudart, arch, specific_sms = required_cuda(k)
@@ -156,30 +156,30 @@ def instantiate(k):
   cudart_cond, arch_cond = kernel_conds(k)
   if (cudart_cond, arch_cond) == (None, None):
     form_red_ty = (
-      "__global__ void {cname}(ncclSymkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
-      "  ncclSymkRun_{id}<{red}, {ty}>(&args);\n"
+      "__global__ void {cname}(ncclDevkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
+      "  ncclDevkRun_{id}<{red}, {ty}>(&args);\n"
       "}}"
     )
     form = (
-      "__global__ void {cname}(ncclSymkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
-      "  ncclSymkRun_{id}(&args);\n"
+      "__global__ void {cname}(ncclDevkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
+      "  ncclDevkRun_{id}(&args);\n"
       "}}"
     )
   else:
     form_red_ty = (
       "#if {cudart_cond}\n"
-      "  __global__ void {cname}(ncclSymkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
+      "  __global__ void {cname}(ncclDevkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
       "    #if {arch_cond}\n"
-      "      ncclSymkRun_{id}<{red}, {ty}>(&args);\n"
+      "      ncclDevkRun_{id}<{red}, {ty}>(&args);\n"
       "    #endif\n"
       "  }}\n"
       "#endif"
     )
     form = (
       "#if {cudart_cond}\n"
-      "  __global__ void {cname}(ncclSymkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
+      "  __global__ void {cname}(ncclDevkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
       "    #if {arch_cond}\n"
-      "      ncclSymkRun_{id}(&args);\n"
+      "      ncclDevkRun_{id}(&args);\n"
       "    #endif\n"
       "  }}\n"
       "#endif"
@@ -196,11 +196,11 @@ def instantiate(k):
 def prototype(k):
   cudart_cond, arch_cond = kernel_conds(k)
   if cudart_cond is None:
-    form = "__global__ void {cname}(ncclSymkDevArgs const);"
+    form = "__global__ void {cname}(ncclDevkDevArgs const);"
   else:
     form = (
       "#if {cudart_cond}\n"
-      "  __global__ void {cname}(ncclSymkDevArgs const);\n"
+      "  __global__ void {cname}(ncclDevkDevArgs const);\n"
       "#else\n"
       "  constexpr void* {cname} = nullptr;\n"
       "#endif"
@@ -232,15 +232,15 @@ files_to_print = ""
 for (fname, coll), ks in kernels_by_file.items():
   files_to_print += fname + ";"
   with open(os.path.join(gensrc, fname), "w") as f:
-    emitln(f, '#include "sym_kernels.h"')
+    emitln(f, '#include "dev_kernels.h"')
     emitln(f, '#include "symmetric/kernel.cuh"')
     emitln(f, '#include "symmetric/{coll}.cuh"'.format(coll=coll_to_lower[coll]))
     for k in ks:
       emitln(f, instantiate(k))
 
-# Generate <gensrc>/sym_kernels_host.cc
-with open(os.path.join(gensrc, "sym_kernels_host.cc"), "w") as f:
-  emitln(f, '#include "sym_kernels.h"')
+# Generate <gensrc>/dev_kernels_host.cc
+with open(os.path.join(gensrc, "dev_kernels_host.cc"), "w") as f:
+  emitln(f, '#include "dev_kernels.h"')
   emitln(f, '#include "device.h"')
   emitln(f, '')
 
@@ -248,19 +248,19 @@ with open(os.path.join(gensrc, "sym_kernels_host.cc"), "w") as f:
     emitln(f, prototype(k))
   emitln(f, '')
 
-  emitln(f, 'extern int const ncclSymkKernelCount = %d;' % len(list(enumerate_kernels())))
-  emitln(f, 'extern void* const ncclSymkKernelList[] = {')
+  emitln(f, 'extern int const ncclDevkKernelCount = %d;' % len(list(enumerate_kernels())))
+  emitln(f, 'extern void* const ncclDevkKernelList[] = {')
   for k in enumerate_kernels():
     emitln(f, '(void*){cname},'.format(cname=kernel_cname(k)))
   emitln(f, 'nullptr};')
   emitln(f, '')
 
-  emitln(f, 'void* ncclSymkGetKernelPtr(ncclSymkKernelId id, int red, ncclDataType_t ty) {')
+  emitln(f, 'void* ncclDevkGetKernelPtr(ncclDevkKernelId id, int red, ncclDataType_t ty) {')
   indents += 1
   emitln(f, 'switch (id) {')
   emitln(f, 'default: return nullptr;')
   for (coll, algo), coll_algo_ks in partition(enumerate_kernels(), lambda k: (k.coll, k.algo)).items():
-    emitln(f, 'case ncclSymkKernelId_'+coll+'_'+algo+':')
+    emitln(f, 'case ncclDevkKernelId_'+coll+'_'+algo+':')
     indents += 1
     if len(coll_algo_ks) == 1:
       emitln(f, 'return (void*)&'+kernel_cname(coll_algo_ks[0])+';')
@@ -284,14 +284,14 @@ with open(os.path.join(gensrc, "sym_kernels_host.cc"), "w") as f:
 
 # Generate <gensrc>/rules.mk
 files_to_print += "rules.mk;"
-files_to_print += "sym_kernels_host.cc;"
+files_to_print += "dev_kernels_host.cc;"
 
 if os.environ.get("NCCL_USE_CMAKE", "0") == "1":
     print(files_to_print)
 
 with open(os.path.join(gensrc, "rules.mk"), "w") as f:
   inst_names = sorted(set(kernel_fname(k) for k in enumerate_kernels()))
-  names = inst_names + ["sym_kernels_host.cc"]
+  names = inst_names + ["dev_kernels_host.cc"]
   f.write("LIB_OBJS_SYM_GEN = $(patsubst %,$(OBJDIR)/genobj/symmetric/%.o,{names})\n"
           .format(names=" ".join(names)))
   f.write("\n")

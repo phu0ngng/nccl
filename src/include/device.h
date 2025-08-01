@@ -228,7 +228,7 @@ struct ncclChannelPeer {
   int refCount;
 };
 
-struct ncclDevComm;
+struct ncclKernelComm;
 
 struct alignas(16) ncclDevWorkP2p {
   void *sendAddr, *recvAddr;
@@ -407,7 +407,7 @@ struct ncclDevProfiler {
   } data[MAX_PROFILER_EVENTS_PER_CHANNEL];
 };
 
-struct ncclDevComm {
+struct ncclKernelComm {
   int rank;
   int nRanks;
   int node;
@@ -430,8 +430,8 @@ struct ncclDevComm {
   struct ncclDevProfiler* workCompleted/*[MAXCHANNELS]*/;
 };
 
-struct alignas(16) ncclDevCommAndChannels {
-  struct ncclDevComm comm;
+struct alignas(16) ncclKernelCommAndChannels {
+  struct ncclKernelComm comm;
   struct ncclDevChannel channels[MAXCHANNELS];
 };
 
@@ -442,7 +442,7 @@ enum ncclDevWorkStorageType: uint8_t {
 };
 
 struct alignas(16) ncclDevKernelArgs {
-  struct ncclDevComm* comm;
+  struct ncclKernelComm* comm;
   uint64_t channelMask;
   enum ncclDevWorkStorageType workStorageType;
   uint32_t workMask;

@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_PTR_H_
-#define _NCCL_SYM_PTR_H_
+#ifndef _NCCL_DEVICE_PTR_H_
+#define _NCCL_DEVICE_PTR_H_
 #include "core.h"
 #include <stdint.h>
 
@@ -30,11 +30,11 @@ struct ncclSymPtr {
 
   #if __CUDACC__
   NCCL_DEVICE_INLINE T* localPtr() const;
-  NCCL_DEVICE_INLINE T* nearPtr(int peer) const;
+  NCCL_DEVICE_INLINE T* lsaPtr(int peer) const;
   NCCL_DEVICE_INLINE T* peerPtr(int peer) const;
-  NCCL_DEVICE_INLINE T* peerPtr(ncclSymTeam team, int peer) const;
-  NCCL_DEVICE_INLINE T* multimemPtr(ncclSymMultimemHandle mmHandle) const;
-  NCCL_DEVICE_INLINE T* nearMultimemPtr(ncclSymComm const&) const;
+  NCCL_DEVICE_INLINE T* peerPtr(ncclTeam team, int peer) const;
+  NCCL_DEVICE_INLINE T* multimemPtr(ncclMultimemHandle mmHandle) const;
+  NCCL_DEVICE_INLINE T* multimemPtr(ncclDevComm const&) const;
   #endif
 };
 

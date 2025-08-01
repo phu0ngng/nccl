@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_PTR__FUNCS_H_
-#define _NCCL_SYM_PTR__FUNCS_H_
+#ifndef _NCCL_DEVICE_PTR__FUNCS_H_
+#define _NCCL_DEVICE_PTR__FUNCS_H_
 #include "ptr__types.h"
 #include "core__funcs.h"
 #include "comm__types.h"
@@ -84,42 +84,42 @@ NCCL_HOST_DEVICE_INLINE ncclSymPtr<T>& ncclSymPtr<T>::operator-=(unsigned long l
 #if __CUDACC__
 template<typename T>
 NCCL_DEVICE_INLINE T* ncclSymPtr<T>::localPtr() const {
-  return (T*)ncclSymGetLocalPointer(window, offset);
+  return (T*)ncclGetLocalPointer(window, offset);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::nearPtr(int peer) const {
-  return (T*)ncclSymGetNearPointer(window, offset, peer);
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::lsaPtr(int peer) const {
+  return (T*)ncclGetLsaPointer(window, offset, peer);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
 NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(int peer) const {
-  return (T*)ncclSymGetPeerPointer(window, offset, peer);
+  return (T*)ncclGetPeerPointer(window, offset, peer);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(ncclSymTeam team, int peer) const {
-  return (T*)ncclSymGetPeerPointer(window, offset, team, peer);
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(ncclTeam team, int peer) const {
+  return (T*)ncclGetPeerPointer(window, offset, team, peer);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclSymMultimemHandle mmHandle) const {
-  return (T*)ncclSymGetMultimemPointer(window, offset, mmHandle);
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclMultimemHandle mmHandle) const {
+  return (T*)ncclGetMultimemPointer(window, offset, mmHandle);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::nearMultimemPtr(ncclSymComm const& comm) const {
-  return (T*)ncclSymGetNearMultimemPointer(window, offset, comm);
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclDevComm const& comm) const {
+  return (T*)ncclGetMultimemPointer(window, offset, comm);
 }
 #endif
 
@@ -145,4 +145,4 @@ NCCL_HOST_DEVICE_INLINE bool operator!=(ncclSymPtr<T> a, ncclSymPtr<T> b) {
   return a.window != b.window || a.offset != b.offset;
 }
 
-#endif // _NCCL_SYM_PTR__FUNCS_H_
+#endif // _NCCL_DEVICE_PTR__FUNCS_H_

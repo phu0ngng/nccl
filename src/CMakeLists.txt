@@ -13,8 +13,8 @@ set(LIBSRCFILES
     transport.cc
     mnnvl.cc
     allocator.cc
-    sym_kernels.cc
-    sym_runtime.cc
+    dev_kernels.cc
+    dev_runtime.cc
 )
 
 # Add compatibility shim if using static cudart
@@ -36,7 +36,7 @@ add_subdirectory(register)
 add_subdirectory(graph)
 add_subdirectory(plugin)
 add_subdirectory(device)
-add_subdirectory(nccl_sym)
+add_subdirectory(nccl_device)
 add_subdirectory(ras)
 
 # Add all source files

@@ -227,9 +227,9 @@ ncclResult_t ncclCommGroupRegisterSymmetric(struct ncclAsyncJob* job_) {
 
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
-  while (!ncclIntruQueueEmpty(&comm->symrState.regTaskQueue)) {
-    struct ncclSymrRegTask* task = ncclIntruQueueDequeue(&comm->symrState.regTaskQueue);
-    NCCLCHECKGOTO(ncclSymrWindowRegisterInGroup(
+  while (!ncclIntruQueueEmpty(&comm->devrState.regTaskQueue)) {
+    struct ncclDevrRegTask* task = ncclIntruQueueDequeue(&comm->devrState.regTaskQueue);
+    NCCLCHECKGOTO(ncclDevrWindowRegisterInGroup(
       comm, task->userPtr, task->userSize, task->winFlags, task->outWinDev),
       ret, fail);
     free(task);

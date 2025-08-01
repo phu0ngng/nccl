@@ -1,26 +1,26 @@
-#ifndef _NCCL_SYM_LL_A2A_H_
-#define _NCCL_SYM_LL_A2A_H_
+#ifndef _NCCL_DEVICE_LL_A2A_H_
+#define _NCCL_DEVICE_LL_A2A_H_
 #include "impl/core__types.h"
 
-struct ncclSymLLA2AHandle;
+struct ncclLLA2AHandle;
 
-__host__ int ncclSymLLA2ACalcSlots(int maxElts, int maxEltSize);
+__host__ int ncclLLA2ACalcSlots(int maxElts, int maxEltSize);
 
-__host__ ncclResult_t ncclSymLLA2ACreateRequirement(int nBlocks, int nSlots, ncclSymLLA2AHandle* outHandle, ncclSymResourceRequirements* outReq);
+__host__ ncclResult_t ncclLLA2ACreateRequirement(int nBlocks, int nSlots, ncclLLA2AHandle* outHandle, ncclDevResourceRequirements* outReq);
 
 #if __CUDACC__
 template<typename Coop>
-struct ncclSymLLA2ASession_internal;
+struct ncclLLA2ASession_internal;
 
 template<typename Coop>
-struct ncclSymLLA2ASession: ncclSymLLA2ASession_internal<Coop> {
-  NCCL_DEVICE_INLINE ncclSymLLA2ASession(Coop, ncclSymComm const&, ncclSymTeam, ncclSymLLA2AHandle, uint32_t block, int maxElts, bool multimem=false, ncclSymMultimemHandle mmHandle={});
+struct ncclLLA2ASession: ncclLLA2ASession_internal<Coop> {
+  NCCL_DEVICE_INLINE ncclLLA2ASession(Coop, ncclDevComm const&, ncclTeam, ncclLLA2AHandle, uint32_t block, int maxElts, bool multimem=false, ncclMultimemHandle mmHandle={});
 
-  NCCL_DEVICE_INLINE ncclSymLLA2ASession(Coop, ncclSymComm const&, ncclSymTeamTagNear, uint32_t block, int maxElts, bool multimem=false);
+  NCCL_DEVICE_INLINE ncclLLA2ASession(Coop, ncclDevComm const&, ncclTeamTagLsa, uint32_t block, int maxElts, bool multimem=false);
 
-  NCCL_DEVICE_INLINE ~ncclSymLLA2ASession();
+  NCCL_DEVICE_INLINE ~ncclLLA2ASession();
 
-  ncclSymLLA2ASession(ncclSymLLA2ASession const&) = delete; // Sessions are not copyable
+  ncclLLA2ASession(ncclLLA2ASession const&) = delete; // Sessions are not copyable
   
   template<typename T>
   NCCL_DEVICE_INLINE void send(int peer, int slot, T data);
@@ -46,4 +46,4 @@ struct ncclSymLLA2ASession: ncclSymLLA2ASession_internal<Coop> {
 };
 #endif
 
-#endif // _NCCL_SYM_LL_A2A_H_
+#endif // _NCCL_DEVICE_LL_A2A_H_

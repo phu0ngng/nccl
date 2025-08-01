@@ -18,8 +18,8 @@
 #include "graph.h"
 #include "profiler.h"
 #include "allocator.h"
-#include "sym_runtime.h"
-#include "sym_kernels.h"
+#include "dev_runtime.h"
+#include "dev_kernels.h"
 #include "ce_coll.h"
 
 #if CUDART_VERSION < 9000
@@ -207,8 +207,8 @@ struct ncclTaskColl {
   // number of elements in planner->ipcMemQueue associated with this collective
   int nCleanupQueueElts;
 
-  struct ncclSymrWindow* sendWin;
-  struct ncclSymrWindow* recvWin;
+  struct ncclDevrWindow* sendWin;
+  struct ncclDevrWindow* recvWin;
   void* sendMhandle;
   void* recvMhandle;
   void** sendNetHandles;
@@ -551,7 +551,7 @@ struct ncclComm {
   uint32_t destroyFlag;
 
   // Device side of the communicator (for cudaFree's)
-  struct ncclDevComm* devComm; // actually = &ncclDevCommAndChannels::comm
+  struct ncclKernelComm* devComm; // actually = &ncclKernelCommAndChannels::comm
 
   uint32_t workArgsBytes; // max size of kernel args
   uint32_t workFifoBytes; // size of workFifoBuf, power of 2
@@ -660,8 +660,8 @@ struct ncclComm {
   bool useGdr;
   int splitCount;
 
-  struct ncclSymrState symrState; // The symmetric runtime state
-  struct ncclSymkState symkState; // The symmetric kernels state (built on previous)
+  struct ncclDevrState devrState; // The symmetric runtime state
+  struct ncclDevkState devkState; // The symmetric kernels state (built on previous)
 
   uint64_t endMagic;
 };

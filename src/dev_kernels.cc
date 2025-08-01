@@ -1,11 +1,11 @@
-#include "sym_kernels.h"
+#include "dev_kernels.h"
 #include "comm.h"
 #include "device.h"
 #include "transport.h"
 #include <cmath>
 
 constexpr char const* kernelName[] = {
-  // Must align with enum ncclSymkKernelId definition in src/include/sym_kernels.h
+  // Must align with enum ncclDevkKernelId definition in src/include/dev_kernels.h
   "AllReduce_AGxLL_R",
   "AllReduce_AGxLLMC_R",
   "AllReduce_RSxLD_AGxST",
@@ -20,34 +20,34 @@ constexpr char const* kernelName[] = {
   "ReduceScatter_LDMC"
 };
 
-constexpr uint32_t kernelMask_STMC = 1<<ncclSymkKernelId_AllGather_LLMC |
-                                     1<<ncclSymkKernelId_AllGather_STMC |
-                                     1<<ncclSymkKernelId_AllReduce_AGxLLMC_R |
-                                     1<<ncclSymkKernelId_AllReduce_RSxLDMC_AGxSTMC |
-                                     1<<ncclSymkKernelId_ReduceScatter_LDMC;
+constexpr uint32_t kernelMask_STMC = 1<<ncclDevkKernelId_AllGather_LLMC |
+                                     1<<ncclDevkKernelId_AllGather_STMC |
+                                     1<<ncclDevkKernelId_AllReduce_AGxLLMC_R |
+                                     1<<ncclDevkKernelId_AllReduce_RSxLDMC_AGxSTMC |
+                                     1<<ncclDevkKernelId_ReduceScatter_LDMC;
 
-constexpr uint32_t kernelMask_LDMC = 1<<ncclSymkKernelId_AllReduce_RSxLDMC_AGxSTMC |
-                                     1<<ncclSymkKernelId_ReduceScatter_LDMC;
+constexpr uint32_t kernelMask_LDMC = 1<<ncclDevkKernelId_AllReduce_RSxLDMC_AGxSTMC |
+                                     1<<ncclDevkKernelId_ReduceScatter_LDMC;
 
-constexpr uint32_t kernelMask_LL = 1<<ncclSymkKernelId_AllReduce_AGxLL_R |
-                                   1<<ncclSymkKernelId_AllReduce_AGxLLMC_R |
-                                   1<<ncclSymkKernelId_AllGather_LL |
-                                   1<<ncclSymkKernelId_AllGather_LLMC |
-                                   1<<ncclSymkKernelId_ReduceScatter_LL;
+constexpr uint32_t kernelMask_LL = 1<<ncclDevkKernelId_AllReduce_AGxLL_R |
+                                   1<<ncclDevkKernelId_AllReduce_AGxLLMC_R |
+                                   1<<ncclDevkKernelId_AllGather_LL |
+                                   1<<ncclDevkKernelId_AllGather_LLMC |
+                                   1<<ncclDevkKernelId_ReduceScatter_LL;
 
-constexpr uint32_t kernelMask_AG = 1<<ncclSymkKernelId_AllGather_LL |
-                                   1<<ncclSymkKernelId_AllGather_LLMC |
-                                   1<<ncclSymkKernelId_AllGather_ST |
-                                   1<<ncclSymkKernelId_AllGather_STMC;
+constexpr uint32_t kernelMask_AG = 1<<ncclDevkKernelId_AllGather_LL |
+                                   1<<ncclDevkKernelId_AllGather_LLMC |
+                                   1<<ncclDevkKernelId_AllGather_ST |
+                                   1<<ncclDevkKernelId_AllGather_STMC;
 
-constexpr uint32_t kernelMask_AR = 1<<ncclSymkKernelId_AllReduce_AGxLLMC_R |
-                                   1<<ncclSymkKernelId_AllReduce_AGxLL_R |
-                                   1<<ncclSymkKernelId_AllReduce_RSxLDMC_AGxSTMC |
-                                   1<<ncclSymkKernelId_AllReduce_RSxLD_AGxST;
+constexpr uint32_t kernelMask_AR = 1<<ncclDevkKernelId_AllReduce_AGxLLMC_R |
+                                   1<<ncclDevkKernelId_AllReduce_AGxLL_R |
+                                   1<<ncclDevkKernelId_AllReduce_RSxLDMC_AGxSTMC |
+                                   1<<ncclDevkKernelId_AllReduce_RSxLD_AGxST;
 
-constexpr uint32_t kernelMask_RS = 1<<ncclSymkKernelId_ReduceScatter_LD |
-                                   1<<ncclSymkKernelId_ReduceScatter_LDMC |
-                                   1<<ncclSymkKernelId_ReduceScatter_LL;
+constexpr uint32_t kernelMask_RS = 1<<ncclDevkKernelId_ReduceScatter_LD |
+                                   1<<ncclDevkKernelId_ReduceScatter_LDMC |
+                                   1<<ncclDevkKernelId_ReduceScatter_LL;
 
 static uint32_t kernelMask_coll(ncclFunc_t coll) {
   switch (coll) {
@@ -64,13 +64,13 @@ static uint32_t kernelMask_user() {
   if (got == -1u) {
     // TODO: Enhance this to be a pattern match. I like regex's but we also have
     // the parseList() used by NCCL_ALGO/PROTO.
-    char const* name = ncclGetEnv("NCCL_SYM_KERNEL");
+    char const* name = ncclGetEnv("NCCL_DEVICE_KERNEL");
     if (name == nullptr || strcmp(name, "^") == 0) {
-      static_assert((int)ncclSymkKernelId_Count < 32, "Use more than 32 bits");
-      got = (1<<(int)ncclSymkKernelId_Count)-1;
+      static_assert((int)ncclDevkKernelId_Count < 32, "Use more than 32 bits");
+      got = (1<<(int)ncclDevkKernelId_Count)-1;
     } else {
       got = 0;
-      for (int k=0; k < (int)ncclSymkKernelId_Count; k++) {
+      for (int k=0; k < (int)ncclDevkKernelId_Count; k++) {
         if (strcmp(kernelName[k], name) == 0) {
           __atomic_store_n(&cache, 1<<k, __ATOMIC_RELAXED);
           got = 1<<k;
@@ -104,11 +104,11 @@ static double model(double busBytes, double baseLat, int nSMs, double smBw, doub
 // Given the kernel and bytes, return the minimum number of blocks to run on such that
 // perf is 99% of running at max blocks, and return the estimate runtime for that
 // block count.
-static void queryModel(struct ncclComm* comm, ncclSymkKernelId k, size_t nBytes, float* timeUs, int* nBlocks) {
+static void queryModel(struct ncclComm* comm, ncclDevkKernelId k, size_t nBytes, float* timeUs, int* nBlocks) {
   constexpr double LL_BusFactor = 9; // 2X the bytes, plus some processing, plus no unrolling
 
   int nRanks = comm->nRanks;
-  int nMaxBlocks = ncclSymkMaxBlocks;
+  int nMaxBlocks = ncclDevkMaxBlocks;
   int nMaxBlocksNvls = divUp((comm->cudaArch < 1000 ? 16 : 32), nRanks);
   size_t busBytes; // max(bytes sent, bytes received)
   double busMultiplier = 1;
@@ -118,45 +118,45 @@ static void queryModel(struct ncclComm* comm, ncclSymkKernelId k, size_t nBytes,
     busBytes = size_t(1)<<50;
     break;
 
-  case ncclSymkKernelId_AllReduce_AGxLL_R:
+  case ncclDevkKernelId_AllReduce_AGxLL_R:
     busBytes = nRanks*nBytes*LL_BusFactor;
     break;
-  case ncclSymkKernelId_AllReduce_AGxLLMC_R:
+  case ncclDevkKernelId_AllReduce_AGxLLMC_R:
     busBytes = nRanks*nBytes*LL_BusFactor;
     busMultiplier = 1.1; // To beat non-MC LL
     break;
-  case ncclSymkKernelId_AllReduce_RSxLD_AGxST:
+  case ncclDevkKernelId_AllReduce_RSxLD_AGxST:
     busBytes = 2*nBytes*(nRanks-1)/nRanks;
     break;
-  case ncclSymkKernelId_AllReduce_RSxLDMC_AGxSTMC:
+  case ncclDevkKernelId_AllReduce_RSxLDMC_AGxSTMC:
     busBytes = nBytes/nRanks + nBytes;
     busMultiplier = nRanks;
     nMaxBlocks = nMaxBlocksNvls;
     break;
 
-  case ncclSymkKernelId_AllGather_LL:
+  case ncclDevkKernelId_AllGather_LL:
     busBytes = nRanks*nBytes*LL_BusFactor;
     break;
-  case ncclSymkKernelId_AllGather_LLMC:
+  case ncclDevkKernelId_AllGather_LLMC:
     busBytes = nRanks*nBytes*LL_BusFactor;
     busMultiplier = 1.1; // To beat non-MC LL
     break;
-  case ncclSymkKernelId_AllGather_ST:
+  case ncclDevkKernelId_AllGather_ST:
     busBytes = (nRanks-1)*nBytes;
     break;
-  case ncclSymkKernelId_AllGather_STMC:
+  case ncclDevkKernelId_AllGather_STMC:
     busBytes = (nRanks-1)*nBytes; // Wrong. Should be nRanks*nBytes but we want to beat non-MC.
     busMultiplier = 0.55*nRanks;
     nMaxBlocks = nMaxBlocksNvls;
     break;
 
-  case ncclSymkKernelId_ReduceScatter_LL:
+  case ncclDevkKernelId_ReduceScatter_LL:
     busBytes = nRanks*nBytes*LL_BusFactor;
     break;
-  case ncclSymkKernelId_ReduceScatter_LD:
+  case ncclDevkKernelId_ReduceScatter_LD:
     busBytes = (nRanks-1)*nBytes;
     break;
-  case ncclSymkKernelId_ReduceScatter_LDMC:
+  case ncclDevkKernelId_ReduceScatter_LDMC:
     busBytes = (nRanks-1)*nBytes; // Wrong. Should be nRanks*nBytes but we want to beat non-MC.
     busMultiplier = 0.55*nRanks;
     nMaxBlocks = nMaxBlocksNvls;
@@ -166,7 +166,7 @@ static void queryModel(struct ncclComm* comm, ncclSymkKernelId k, size_t nBytes,
   nMaxBlocks = std::min<int>(nMaxBlocks, comm->config.maxCTAs);
   int nMinBlocks = comm->config.minCTAs;
 
-  int nUserCTAs = std::min<int>(ncclSymkMaxBlocks, ncclParamSymCTAs());
+  int nUserCTAs = std::min<int>(ncclDevkMaxBlocks, ncclParamSymCTAs());
   if (nUserCTAs > 0) nMinBlocks = nMaxBlocks = nUserCTAs;
 
   bool isLL = kernelMask_LL>>k & 1;
@@ -177,11 +177,11 @@ static void queryModel(struct ncclComm* comm, ncclSymkKernelId k, size_t nBytes,
   if (comm->cudaArch < 1000) {
     baseLat = isLL ? 4.5 : 7.8;
     smBw = isAR ? 65*GBps : 44*GBps;
-    peakBw = k == ncclSymkKernelId_AllReduce_RSxLDMC_AGxSTMC ? 480*GBps : 320*GBps;
+    peakBw = k == ncclDevkKernelId_AllReduce_RSxLDMC_AGxSTMC ? 480*GBps : 320*GBps;
   } else {
     baseLat = isLL ? (isAG ? 8.5 : 11) : (isAR ? 19.5 : 13.0);
     smBw = 55*GBps;
-    peakBw = k == ncclSymkKernelId_AllReduce_RSxLDMC_AGxSTMC ? 1000*GBps : 600*GBps;
+    peakBw = k == ncclDevkKernelId_AllReduce_RSxLDMC_AGxSTMC ? 1000*GBps : 600*GBps;
   }
   *nBlocks = nMaxBlocks;
   *timeUs = model(busBytes, baseLat, nMaxBlocks, smBw, busMultiplier, peakBw);
@@ -196,29 +196,29 @@ static void queryModel(struct ncclComm* comm, ncclSymkKernelId k, size_t nBytes,
   }
 }
 
-ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
-  struct ncclSymkState* symk = &comm->symkState;
-  if (!symk->initialized) {
-    symk->initialized = true;
-    struct ncclSymCommRequirements reqs = {};
-    reqs.nearMultimem = comm->nvlsSupport;
-    reqs.nearMemBarrierCount = ncclSymkMaxBlocks;
-    reqs.nearLLA2ABlockCount = ncclSymkMaxBlocks;
-    reqs.nearLLA2ASlotCount = ncclSymLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);
-    NCCLCHECK(ncclSymCommCreate(comm, &reqs, &symk->symComm));
+ncclResult_t ncclDevkInitOnce(struct ncclComm* comm) {
+  struct ncclDevkState* devk = &comm->devkState;
+  if (!devk->initialized) {
+    devk->initialized = true;
+    struct ncclDevCommRequirements reqs = {};
+    reqs.multimem = comm->nvlsSupport;
+    reqs.lsaBarrierCount = ncclDevkMaxBlocks;
+    reqs.lsaLLA2ABlockCount = ncclDevkMaxBlocks;
+    reqs.lsaLLA2ASlotCount = ncclLLA2ACalcSlots(comm->nRanks*ncclDevkMaxThreads, ncclDevkLLMaxEltSize);
+    NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devk->devComm));
   }
   return ncclSuccess;
 }
 
-ncclResult_t ncclSymkFinalize(struct ncclComm* comm) {
-  struct ncclSymkState* symk = &comm->symkState;
-  if (symk->initialized) {
-    NCCLCHECK(ncclSymCommDestroy(comm, &symk->symComm));
+ncclResult_t ncclDevkFinalize(struct ncclComm* comm) {
+  struct ncclDevkState* devk = &comm->devkState;
+  if (devk->initialized) {
+    NCCLCHECK(ncclDevCommDestroy(comm, &devk->devComm));
   }
   return ncclSuccess;
 }
 
-bool ncclSymkImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty) {
+bool ncclDevkImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty) {
   bool isFloat;
   switch (ty) {
   case ncclFloat64:
@@ -245,9 +245,9 @@ bool ncclSymkImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataTyp
   }
 }
 
-ncclResult_t ncclSymkPickKernel(
+ncclResult_t ncclDevkPickKernel(
     struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty, size_t nElts,
-    float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps
+    float* estTimeUs, ncclDevkKernelId* kernelId, int* nBlocks, int* nWarps
   ) {
   uint32_t kmask = kernelMask_coll(coll);
   kmask &= kernelMask_user();
@@ -287,14 +287,14 @@ ncclResult_t ncclSymkPickKernel(
   // to be at least 32 bytes per chunk)
   if (nBusBytes >= 32*(size_t(2)<<30)) kmask = 0;
 
-  ncclSymkKernelId bestKernel = ncclSymkKernelId_Count;
+  ncclDevkKernelId bestKernel = ncclDevkKernelId_Count;
   float bestTime = 1.e30f;
   int bestBlocks = 999;
 
   constexpr float smPenalty = .025f; // 2.5% percent increase in time per SM
   uint32_t kmaskRemain = kmask;
   while (kmaskRemain != 0) {
-    ncclSymkKernelId k = (ncclSymkKernelId)popFirstOneBit(&kmaskRemain);
+    ncclDevkKernelId k = (ncclDevkKernelId)popFirstOneBit(&kmaskRemain);
     float kTime;
     int kBlocks;
     queryModel(comm, k, nBytes, &kTime, &kBlocks);
@@ -306,29 +306,29 @@ ncclResult_t ncclSymkPickKernel(
   }
 
   *kernelId = bestKernel;
-  *estTimeUs = kmask==0 || kernelMask_user() == (1<<ncclSymkKernelId_Count)-1 ? bestTime : 0.0f;
+  *estTimeUs = kmask==0 || kernelMask_user() == (1<<ncclDevkKernelId_Count)-1 ? bestTime : 0.0f;
   *nBlocks = bestBlocks;
   *nWarps = 16;
   return ncclSuccess;
 }
 
-const char* ncclSymkKernelIdToString(int kernelId) {
-  if (kernelId < 0 || kernelId >= ncclSymkKernelId_Count) {
+const char* ncclDevkKernelIdToString(int kernelId) {
+  if (kernelId < 0 || kernelId >= ncclDevkKernelId_Count) {
     return "Unknown";
   }
   return kernelName[kernelId];
 }
 
-ncclResult_t ncclSymkMakeLaunchArgs(
+ncclResult_t ncclDevkMakeLaunchArgs(
     struct ncclComm* comm, struct ncclTaskColl* task, struct ncclMemoryStack* memArg,
     void** outKernelFn, void** outArg, size_t* outArgSize
   ) {
-  struct ncclSymkState* symk = &comm->symkState;
-  *outKernelFn = ncclSymkGetKernelPtr((ncclSymkKernelId)task->devFuncId, task->opDev.op, task->datatype);
-  *outArgSize = sizeof(struct ncclSymkDevArgs);
-  struct ncclSymkDevArgs* arg = ncclMemoryStackAlloc<struct ncclSymkDevArgs>(memArg);
+  struct ncclDevkState* devk = &comm->devkState;
+  *outKernelFn = ncclDevkGetKernelPtr((ncclDevkKernelId)task->devFuncId, task->opDev.op, task->datatype);
+  *outArgSize = sizeof(struct ncclDevkDevArgs);
+  struct ncclDevkDevArgs* arg = ncclMemoryStackAlloc<struct ncclDevkDevArgs>(memArg);
   *outArg = (void*)arg;
-  arg->comm = symk->symComm;
+  arg->comm = devk->devComm;
   arg->rootRank = task->root;
   arg->redOpArg = task->opDev.scalarArg;
   arg->nElts = task->count;
