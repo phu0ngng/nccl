@@ -245,7 +245,7 @@ __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, n
         __atomic_fetch_add(&ctx->p2pApiPoolBase, 1, __ATOMIC_RELAXED);
       }
       while (!profilerQueueEmpty(&event->kernelLaunchEvents)) {
-        struct kernelLaunch *kernelLaunchEvent = profilerQueueDequeue(&event->kernelLaunchEvents);
+        profilerQueueDequeue(&event->kernelLaunchEvents);
         __atomic_fetch_add(&ctx->kernelLaunchPoolBase, 1, __ATOMIC_RELAXED);
       }
     } else {
@@ -780,6 +780,8 @@ __hidden ncclResult_t exampleProfilerRecordEventState(void* eHandle, ncclProfile
         break;
       case ncclProfilerProxyStepRecvGPUWait:
         event->timestamp[PROXY_STEP_RECV_GPU_WAIT] = gettime() - startTime;
+        break;
+      default:
         break;
     }
   } else if (type == ncclProfileProxyCtrl) {

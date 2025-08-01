@@ -119,8 +119,8 @@ TEST_F(ncclGroup_test, aggregation_mixed_bag) {
       EXPECT_EQ(val32[op], ndev*op);
       EXPECT_EQ(val64[op], (ndev-1)*1ll<<32);
     }
-    ASSERT_EQ(ncclSuccess, cudaFree(buf32[i]));
-    ASSERT_EQ(ncclSuccess, cudaFree(buf64[i]));
+    ASSERT_EQ(cudaSuccess, cudaFree(buf32[i]));
+    ASSERT_EQ(cudaSuccess, cudaFree(buf64[i]));
   }
 };
 // EOF
