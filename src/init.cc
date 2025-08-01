@@ -440,8 +440,8 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
 static ncclResult_t devCommSetup(ncclComm_t comm) {
   ncclResult_t ret = ncclSuccess;
   int nRanks = comm->nRanks;
-  struct ncclDevCommAndChannels tmpCommAndChans;
-  struct ncclDevCommAndChannels *devCommAndChans = NULL;
+  struct ncclKernelCommAndChannels tmpCommAndChans;
+  struct ncclKernelCommAndChannels *devCommAndChans = NULL;
   struct ncclNvmlCCStatus ccStatus;
   bool ccEnable;
   cudaStream_t deviceStream;
