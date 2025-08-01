@@ -138,7 +138,7 @@ NCCL_DEVICE_INLINE void* ncclGetMultimemPointer(ncclWindow_t w, size_t offset, n
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclWindow_t ncclSymFindWindow(Coop coop, ncclDevComm const& comm, void const *ptr) {
+NCCL_DEVICE_INLINE ncclWindow_t ncclFindWindow(Coop coop, ncclDevComm const& comm, void const *ptr) {
   using nccl::utility::loadConst;
   auto coalesced = ncclCoopCoalesced(coop);
   ncclDevCommWindowTable* t = comm.windowTable;
