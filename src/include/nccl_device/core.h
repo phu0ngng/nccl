@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_CORE_H_
-#define _NCCL_SYM_CORE_H_
+#ifndef _NCCL_DEVICE_CORE_H_
+#define _NCCL_DEVICE_CORE_H_
 #include <nccl.h>
 #include "coop.h"
 #include "utility.h"
@@ -113,4 +113,4 @@ NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm con
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearMultimemPointer(ncclSymComm const&, ncclSymResourceBufferHandle);
 #endif
 
-#endif // _NCCL_SYM_CORE_H_
+#endif // _NCCL_DEVICE_CORE_H_

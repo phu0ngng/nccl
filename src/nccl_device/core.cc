@@ -1,6 +1,6 @@
 #include "core.h"
 #include "comm.h"
-#include "nccl_sym/impl/core__funcs.h"
+#include "nccl_device/impl/core__funcs.h"
 
 NCCL_API_CXX(ncclSymTeam, ncclSymTeamWorld, struct ncclComm* comm);
 ncclSymTeam ncclSymTeamWorld(struct ncclComm* comm) {

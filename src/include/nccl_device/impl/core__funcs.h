@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_CORE__FUNCS_H_
-#define _NCCL_SYM_CORE__FUNCS_H_
+#ifndef _NCCL_DEVICE_CORE__FUNCS_H_
+#define _NCCL_DEVICE_CORE__FUNCS_H_
 #include "core__types.h"
 #include "comm__types.h"
 #include "ptr__types.h"

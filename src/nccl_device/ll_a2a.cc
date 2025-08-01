@@ -1,5 +1,5 @@
 #include "core.h"
-#include "nccl_sym/impl/ll_a2a__funcs.h"
+#include "nccl_device/impl/ll_a2a__funcs.h"
 
 NCCL_API_CXX(int, ncclSymLLA2ACalcSlots, int maxElts, int maxEltSize);
 int ncclSymLLA2ACalcSlots(int maxElts, int maxEltSize) {

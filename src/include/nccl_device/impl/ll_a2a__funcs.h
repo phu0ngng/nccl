@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_LL_A2A__FUNCS_H_
-#define _NCCL_SYM_LL_A2A__FUNCS_H_
+#ifndef _NCCL_DEVICE_LL_A2A__FUNCS_H_
+#define _NCCL_DEVICE_LL_A2A__FUNCS_H_
 #include "ll_a2a__types.h"
 #include "comm__types.h"
 #include "../utility.h"
@@ -234,4 +234,4 @@ NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::endEpoch(Coop) {
 }
 #endif
 
-#endif // _NCCL_SYM_LL_A2A__FUNCS_H_
+#endif // _NCCL_DEVICE_LL_A2A__FUNCS_H_

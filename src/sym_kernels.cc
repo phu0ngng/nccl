@@ -64,7 +64,7 @@ static uint32_t kernelMask_user() {
   if (got == -1u) {
     // TODO: Enhance this to be a pattern match. I like regex's but we also have
     // the parseList() used by NCCL_ALGO/PROTO.
-    char const* name = ncclGetEnv("NCCL_SYM_KERNEL");
+    char const* name = ncclGetEnv("NCCL_DEVICE_KERNEL");
     if (name == nullptr || strcmp(name, "^") == 0) {
       static_assert((int)ncclSymkKernelId_Count < 32, "Use more than 32 bits");
       got = (1<<(int)ncclSymkKernelId_Count)-1;

@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_MEM_BARRIER__FUNCS_H_
-#define _NCCL_SYM_MEM_BARRIER__FUNCS_H_
+#ifndef _NCCL_DEVICE_MEM_BARRIER__FUNCS_H_
+#define _NCCL_DEVICE_MEM_BARRIER__FUNCS_H_
 #include "mem_barrier__types.h"
 #include "comm__types.h"
 
@@ -105,4 +105,4 @@ NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::sync(Coop coop, cuda::me
 }
 #endif
 
-#endif // _NCCL_SYM_MEM_BARRIER__FUNCS_H_
+#endif // _NCCL_DEVICE_MEM_BARRIER__FUNCS_H_

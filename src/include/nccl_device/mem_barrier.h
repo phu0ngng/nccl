@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_MEM_BARRIER_H_
-#define _NCCL_SYM_MEM_BARRIER_H_
+#ifndef _NCCL_DEVICE_MEM_BARRIER_H_
+#define _NCCL_DEVICE_MEM_BARRIER_H_
 #include "impl/core__types.h"
 #include <cuda/atomic>
 
@@ -27,4 +27,4 @@ struct ncclSymMemBarrierSession: ncclSymMemBarrierSession_internal<Coop> {
 };
 #endif
 
-#endif // _NCCL_SYM_MEM_BARRIER_H_
+#endif // _NCCL_DEVICE_MEM_BARRIER_H_

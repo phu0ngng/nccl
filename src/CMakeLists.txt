@@ -36,7 +36,7 @@ add_subdirectory(register)
 add_subdirectory(graph)
 add_subdirectory(plugin)
 add_subdirectory(device)
-add_subdirectory(nccl_sym)
+add_subdirectory(nccl_device)
 add_subdirectory(ras)
 
 # Add all source files

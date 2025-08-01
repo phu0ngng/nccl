@@ -10,7 +10,7 @@ The include dependencies should be acyclic for layers 1 and 2 since order matter
 can freely have cycles amongst itself ("impl/foo__funcs.h" and "impl/bar__funcs.h" can mutually include each other) since
 functions can be defined in any order once declared.
 
-Translation units should just include "nccl_sym.h" to ensure they get all the "impl/foo__funcs.h". But if a translation unit wants
+Translation units should just include "nccl_device.h" to ensure they get all the "impl/foo__funcs.h". But if a translation unit wants
 to be more specific as to which module it pulls in it should include "impl/foo__funcs.h".
 
 One of the nasty reasons this was required is because of C++ defaulted function parameters:

@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_PTR_H_
-#define _NCCL_SYM_PTR_H_
+#ifndef _NCCL_DEVICE_PTR_H_
+#define _NCCL_DEVICE_PTR_H_
 #include "core.h"
 #include <stdint.h>
 

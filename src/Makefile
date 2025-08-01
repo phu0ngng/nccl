@@ -7,8 +7,8 @@ include ../makefiles/common.mk
 include ../makefiles/version.mk
 
 ##### src files
-INCEXPORTS  := nccl.h nccl_sym.h \
-	$(patsubst include/%,%,$(wildcard include/nccl_sym/*.h include/nccl_sym/impl/*.h))
+INCEXPORTS  := nccl.h nccl_device.h \
+	$(patsubst include/%,%,$(wildcard include/nccl_device/*.h include/nccl_device/impl/*.h))
 
 LIBSRCFILES := \
 	bootstrap.cc channel.cc collectives.cc debug.cc enqueue.cc group.cc \
@@ -21,7 +21,7 @@ LIBSRCFILES := \
 	$(wildcard plugin/net/*.cc) \
 	$(wildcard plugin/tuner/*.cc) \
 	$(wildcard plugin/profiler/*.cc) \
-	$(wildcard nccl_sym/*.cc) \
+	$(wildcard nccl_device/*.cc) \
 	$(filter-out ras/client.cc,$(wildcard ras/*.cc))
 BINSRCFILES := ras/client.cc
 
@@ -126,14 +126,14 @@ $(INCDIR)/nccl_%.h : include/nccl_%.h
 	mkdir -p $(INCDIR)
 	install -m 644 $< $@
 
-$(INCDIR)/nccl_sym/%.h: include/nccl_sym/%.h
+$(INCDIR)/nccl_device/%.h: include/nccl_device/%.h
 	@printf "Grabbing   %-35s > %s\n" $< $@
-	mkdir -p $(INCDIR)/nccl_sym
+	mkdir -p $(INCDIR)/nccl_device
 	install -m 644 $< $@
 
-$(INCDIR)/nccl_sym/impl/%.h: include/nccl_sym/impl/%.h
+$(INCDIR)/nccl_device/impl/%.h: include/nccl_device/impl/%.h
 	@printf "Grabbing   %-35s > %s\n" $< $@
-	mkdir -p $(INCDIR)/nccl_sym/impl
+	mkdir -p $(INCDIR)/nccl_device/impl
 	install -m 644 $< $@
 
 $(PKGDIR)/%.pc : %.pc

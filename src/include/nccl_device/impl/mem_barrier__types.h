@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_MEM_BARRIER__TYPES_H_
-#define _NCCL_SYM_MEM_BARRIER__TYPES_H_
+#ifndef _NCCL_DEVICE_MEM_BARRIER__TYPES_H_
+#define _NCCL_DEVICE_MEM_BARRIER__TYPES_H_
 #include "../mem_barrier.h"
 #include "core__types.h"
 
@@ -37,4 +37,4 @@ struct ncclSymMemBarrierSession_internal {
 };
 #endif
 
-#endif // _NCCL_SYM_MEM_BARRIER__TYPES_H_
+#endif // _NCCL_DEVICE_MEM_BARRIER__TYPES_H_

@@ -1,7 +1,7 @@
-#ifndef NCCL_SYM_KERNELS_H_
-#define NCCL_SYM_KERNELS_H_
+#ifndef NCCL_DEVICE_KERNELS_H_
+#define NCCL_DEVICE_KERNELS_H_
 #include "nccl.h"
-#include "nccl_sym.h"
+#include "nccl_device.h"
 #include "nccl_common.h"
 
 ////////////////////////////////////////////////////////////////////////////////

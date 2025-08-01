@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_UTILITY_H_
-#define _NCCL_SYM_UTILITY_H_
+#ifndef _NCCL_DEVICE_UTILITY_H_
+#define _NCCL_DEVICE_UTILITY_H_
 
 #if __CUDACC__
   #define NCCL_DEVICE_INLINE __device__ __forceinline__

@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_PTR__FUNCS_H_
-#define _NCCL_SYM_PTR__FUNCS_H_
+#ifndef _NCCL_DEVICE_PTR__FUNCS_H_
+#define _NCCL_DEVICE_PTR__FUNCS_H_
 #include "ptr__types.h"
 #include "core__funcs.h"
 #include "comm__types.h"
@@ -145,4 +145,4 @@ NCCL_HOST_DEVICE_INLINE bool operator!=(ncclSymPtr<T> a, ncclSymPtr<T> b) {
   return a.window != b.window || a.offset != b.offset;
 }
 
-#endif // _NCCL_SYM_PTR__FUNCS_H_
+#endif // _NCCL_DEVICE_PTR__FUNCS_H_

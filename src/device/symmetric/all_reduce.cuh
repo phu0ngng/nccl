@@ -1,5 +1,5 @@
 #include "sym_kernels.h"
-#include "nccl_sym.h"
+#include "nccl_device.h"
 #include "kernel.cuh"
 #include "primitives.cuh"
 

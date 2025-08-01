@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_LL_A2A_H_
-#define _NCCL_SYM_LL_A2A_H_
+#ifndef _NCCL_DEVICE_LL_A2A_H_
+#define _NCCL_DEVICE_LL_A2A_H_
 #include "impl/core__types.h"
 
 struct ncclSymLLA2AHandle;
@@ -46,4 +46,4 @@ struct ncclSymLLA2ASession: ncclSymLLA2ASession_internal<Coop> {
 };
 #endif
 
-#endif // _NCCL_SYM_LL_A2A_H_
+#endif // _NCCL_DEVICE_LL_A2A_H_

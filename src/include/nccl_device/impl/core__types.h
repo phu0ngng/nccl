@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_CORE__TYPES_H_
-#define _NCCL_SYM_CORE__TYPES_H_
+#ifndef _NCCL_DEVICE_CORE__TYPES_H_
+#define _NCCL_DEVICE_CORE__TYPES_H_
 #include "../core.h"
 
 // nccl.h has: typedef ncclWindow_vidmem* ncclWindow_t;

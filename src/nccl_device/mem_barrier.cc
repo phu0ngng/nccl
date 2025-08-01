@@ -1,5 +1,5 @@
 #include "core.h"
-#include "nccl_sym/impl/mem_barrier__funcs.h"
+#include "nccl_device/impl/mem_barrier__funcs.h"
 
 NCCL_API_CXX(ncclResult_t, ncclSymMemBarrierCreateRequirement, ncclSymTeam team, int nBarriers, ncclSymMemBarrierHandle* outHandle, ncclSymResourceRequirements* outReq);
 ncclResult_t ncclSymMemBarrierCreateRequirement(

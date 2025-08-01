@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_COOP_H_
-#define _NCCL_SYM_COOP_H_
+#ifndef _NCCL_DEVICE_COOP_H_
+#define _NCCL_DEVICE_COOP_H_
 #include "utility.h"
 
 // ncclCoop[Foo]: NCCL's versions of CUDA's Cooperative Groups. They conform

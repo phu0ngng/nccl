@@ -1,5 +1,5 @@
-#ifndef _NCCL_SYM_COMM__TYPES_H_
-#define _NCCL_SYM_COMM__TYPES_H_
+#ifndef _NCCL_DEVICE_COMM__TYPES_H_
+#define _NCCL_DEVICE_COMM__TYPES_H_
 #include "../comm.h"
 #include "core__types.h"
 #include "mem_barrier__types.h"
@@ -29,4 +29,4 @@ struct ncclSymComm {
   ncclSymLLA2AHandle nearLLA2A;
 };
 
-#endif // _NCCL_SYM_COMM__TYPES_H_
+#endif // _NCCL_DEVICE_COMM__TYPES_H_
