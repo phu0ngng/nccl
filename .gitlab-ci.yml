@@ -14,24 +14,28 @@ variables:
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   BUILD_TRACE: "0"
+  # Toggle variables for clusters
   RUN_ON_AWS: "1"
-  RUN_ON_EOS: "1"
   RUN_ON_DRACO_OCI: "1"
+  RUN_ON_EOS: "1"
+  RUN_ON_IPP6: "1"
   RUN_ON_PRE_NYX: "1"
   RUN_ON_PRE_TYCHE: "1"
+  RUN_ON_THEIA: "1"
+  # Toggle variables for GC nodes
   RUN_ON_A100: "1"
   RUN_ON_P100: "1"
   RUN_ON_A40: "1"
   RUN_ON_P40: "1"
   RUN_ON_GP100: "1"
+  # Toggle variables by test type
   RUN_UNIT_TESTS: "1"
-  RUN_PROFILER_TESTS: "1"
   RUN_API_TESTS: "1"
   RUN_PERF_TESTS_SINGLE: "1"
   RUN_PERF_TESTS_MULTIPLE: "1"
-  PLANNED_RESERVED: "Reserved"
   RUN_DLFW_TESTS: "1"
-  RUN_ON_IPP6: "1"
+  RUN_PROFILER_TESTS: "1"
+  PLANNED_RESERVED: "Reserved"
   TRIGGER_PIPELINE: "default"
 
 default:
@@ -133,6 +137,26 @@ build-pre-tyche:
       - build-pre-tyche
     exclude:
       - build-pre-tyche/**/*.o
+    expire_in: 48 hrs
+
+build-theia:
+  stage: build
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1"
+      when: always
+    - when: never
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  script:
+    - docker/make.sh theia --baremetal-build
+    - mv build build-theia
+  artifacts:
+    paths:
+      - build-theia
+    exclude:
+      - build-theia/**/*.o
     expire_in: 48 hrs
 
 build-dlfw-pytorch-container:
@@ -938,6 +962,55 @@ unit_tests-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+unit_tests-theia:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-theia"]
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: gb300
+    NNODES: 1
+    NGPUS: 4
+    NP: 1
+    NCCL_HOME: build-theia
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    ENQUEUE_TESTS_ARGS: 1
+    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
+    ENQUEUE_TESTS_FIFO: 0
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 ##
 ## Stage: unit_tests - Finish!
 ##
@@ -1376,6 +1449,44 @@ apitest-ipp6-a100:
     API_TESTS_NETWORK: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+apitest-theia:
+  stage: api_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_API_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-theia"]
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: gb300
+    RUN_MODE: "SRUN_MPI"
+    NNODES: 1
+    NGPUS: 4
+    NP: 1
+    NCCL_HOME: build-theia
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -1853,6 +1964,42 @@ perftest-single-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+perftest-single-theia:
+  stage: perf_tests_single
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+      when: always
+    - when: never
+  needs: ["build-theia"]
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 45
+    SLURM_PARTITION: gb300
+    RUN_MODE: "SRUN_MPI"
+    NNODES: 1
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    GRAPH: 0
+    SYMMETRIC: 1
+    NCCL_HOME: build-theia
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 self-test-pytorch-container-eos:
   stage: perf_tests_single
   rules:
@@ -1942,7 +2089,6 @@ perftest-multi-eos:
     SKIP_FT_INIT: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
-    NNODES: $MULTI_PERFTEST_NODE_COUNT
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -2163,6 +2309,44 @@ perftest-multi-ipp6-a100:
     MAX: "1G"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-multi-theia:
+  stage: perf_tests_multi
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+      when: always
+    - when: never
+  needs: ["build-theia"]
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 45
+    SLURM_PARTITION: gb300
+    RUN_MODE: "SRUN_MPI"
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    SYMMETRIC: 1
+    GRAPH: 0
+    NCCL_HOME: build-theia
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh

@@ -56,5 +56,10 @@ function identify_cluster() {
     return
     fi
 
+    if [[ "$hostname" =~ .*lyris.*$ ]]; then
+        echo "theia"
+    return
+    fi
+
     echo "UNKNOWN"
 }
