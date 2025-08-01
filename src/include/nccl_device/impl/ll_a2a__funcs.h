@@ -15,7 +15,7 @@ NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
     coop, comm, team, handle, (int)block, /*pitch=*/maxElts,
     multimem, mmHandle, /*epoch=*/0, /*slotsOffset=*/0
   } {
-  uint4* line = (uint4*)ncclSymGetResourceBufferLocalPointer(comm, handle.bufHandle);
+  uint4* line = (uint4*)ncclGetResourceBufferLocalPointer(comm, handle.bufHandle);
   line += block*(1 + 2*handle.nSlots);
   this->epoch = line->x + 2;
   this->slotsOffset = this->calcSlotOffset();
@@ -39,7 +39,7 @@ NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::~ncclSymLLA2ASession() {
-  uint4* line = (uint4*)ncclSymGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
+  uint4* line = (uint4*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   line += this->block*(1 + 2*this->handle.nSlots);
   if (this->coop.thread_rank() == 0) line->x = this->epoch - 2;
   this->coop.sync();
@@ -53,7 +53,7 @@ NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::send(int peer, int elt, T dat
   using nccl::utility::divUp;
   union { T tmp; uint32_t u32[divUp(sizeof(T), 8)][2]; };
   tmp = data;
-  uint4* buf = (uint4*)ncclSymGetResourceBufferPeerPointer(this->comm, this->handle.bufHandle, this->team, peer);
+  uint4* buf = (uint4*)ncclGetResourceBufferPeerPointer(this->comm, this->handle.bufHandle, this->team, peer);
   buf += this->slotsOffset + elt;
   #pragma unroll
   for (int u=0; u < divUp(sizeof(T), 8); u++) {
@@ -73,7 +73,7 @@ NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::bcast(int elt, T data) {
   if (this->multimem) {
     union { T tmp; uint32_t u32[divUp(sizeof(T),8)][2]; };
     tmp = data;
-    uint4* bufmc = (uint4*)ncclSymGetResourceBufferMultimemPointer(this->comm, this->handle.bufHandle, this->mmHandle);
+    uint4* bufmc = (uint4*)ncclGetResourceBufferMultimemPointer(this->comm, this->handle.bufHandle, this->mmHandle);
     bufmc += this->slotsOffset + elt;
     #pragma unroll
     for (int u=0; u < divUp(sizeof(T), 8); u++) {
@@ -91,7 +91,7 @@ NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::bcast(int elt, T data) {
     for (; dr+8 <= this->team.nRanks; dr += 8) {
       #pragma unroll
       for (int ur=0; ur < 8; ur++) {
-        uint4* buf = (uint4*)ncclSymGetResourceBufferPeerPointer(this->comm, this->handle.bufHandle, this->team, r);
+        uint4* buf = (uint4*)ncclGetResourceBufferPeerPointer(this->comm, this->handle.bufHandle, this->team, r);
         buf += this->slotsOffset + elt;
         #pragma unroll
         for (int u=0; u < divUp(sizeof(T),8); u++) {
@@ -107,7 +107,7 @@ NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::bcast(int elt, T data) {
     #pragma unroll
     for (int ur=0; ur < 8; ur++, dr++) {
       if (dr == this->team.nRanks) break;
-      uint4* buf = (uint4*)ncclSymGetResourceBufferPeerPointer(this->comm, this->handle.bufHandle, this->team, r);
+      uint4* buf = (uint4*)ncclGetResourceBufferPeerPointer(this->comm, this->handle.bufHandle, this->team, r);
       buf += this->slotsOffset + elt;
       #pragma unroll
       for (int u=0; u < divUp(sizeof(T),8); u++) {
@@ -138,7 +138,7 @@ template<typename Coop>
 template<int MinEltCount, int MaxEltCount, typename T>
 NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::recvUnrolled(int eltStart, int eltCount, int eltStride, T(&elts)[MaxEltCount]) {
   using nccl::utility::divUp;
-  uint4* buf = (uint4*)ncclSymGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
+  uint4* buf = (uint4*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   buf += this->slotsOffset + eltStart;
 
   uint4 tmp[MaxEltCount][divUp(sizeof(T), 8)];
@@ -221,7 +221,7 @@ template<typename Coop>
 NCCL_DEVICE_INLINE void ncclSymLLA2ASession<Coop>::endEpoch(Coop) {
   if (__builtin_expect(this->epoch >= -2u, false)) {
     this->coop.sync();
-    uint4* buf = (uint4*)ncclSymGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
+    uint4* buf = (uint4*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
     buf += this->slotsOffset;
     #pragma unroll 4
     for (int i=this->coop.thread_rank(); i < this->handle.nSlots; i += this->coop.size()) {

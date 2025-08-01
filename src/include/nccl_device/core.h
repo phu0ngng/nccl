@@ -83,10 +83,10 @@ NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamRail(ncclDevComm const&);
 __host__ ncclTeam ncclTeamRail(ncclComm_t);
 
 // Get offset of resource buffer within `comm.resourceWindow`.
-NCCL_HOST_DEVICE_INLINE size_t ncclSymGetResourceBufferOffset(ncclDevResourceHandle);
+NCCL_HOST_DEVICE_INLINE size_t ncclGetResourceBufferOffset(ncclDevResourceHandle);
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE ncclSymPtr<char> ncclSymGetResourceBuffer(ncclDevComm const&, ncclDevResourceHandle);
+NCCL_DEVICE_INLINE ncclSymPtr<char> ncclGetResourceBuffer(ncclDevComm const&, ncclDevResourceHandle);
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -96,21 +96,21 @@ NCCL_DEVICE_INLINE ncclSymPtr<char> ncclSymGetResourceBuffer(ncclDevComm const&,
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclWindow_t ncclSymFindWindow(Coop, ncclDevComm const&, void const *ptr);
 
-NCCL_DEVICE_INLINE void* ncclSymGetLocalPointer(ncclWindow_t w, size_t offset);
-NCCL_DEVICE_INLINE void* ncclSymGetLsaPointer(ncclWindow_t w, size_t offset, int lsaPeer);
-NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, int peer);
-NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, ncclTeam tm, int peer);
-NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclMultimemHandle mmHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclDevComm const&);
+NCCL_DEVICE_INLINE void* ncclGetLocalPointer(ncclWindow_t w, size_t offset);
+NCCL_DEVICE_INLINE void* ncclGetLsaPointer(ncclWindow_t w, size_t offset, int lsaPeer);
+NCCL_DEVICE_INLINE void* ncclGetPeerPointer(ncclWindow_t w, size_t offset, int peer);
+NCCL_DEVICE_INLINE void* ncclGetPeerPointer(ncclWindow_t w, size_t offset, ncclTeam tm, int peer);
+NCCL_DEVICE_INLINE void* ncclGetMultimemPointer(ncclWindow_t w, size_t offset, ncclMultimemHandle mmHandle);
+NCCL_DEVICE_INLINE void* ncclGetMultimemPointer(ncclWindow_t w, size_t offset, ncclDevComm const&);
 #endif
 
 #if __CUDACC__
-// Convenience for combining ncclSymGet***Pointer() with resource handle.
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclDevComm const&, ncclDevResourceHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLsaPointer(ncclDevComm const&, ncclDevResourceHandle, int lsaPeer);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclDevComm const&, ncclDevResourceHandle, ncclTeam, int peer);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclDevComm const&, ncclDevResourceHandle, ncclMultimemHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclDevComm const&, ncclDevResourceHandle);
+// Convenience for combining ncclGet***Pointer() with resource handle.
+NCCL_DEVICE_INLINE void* ncclGetResourceBufferLocalPointer(ncclDevComm const&, ncclDevResourceHandle);
+NCCL_DEVICE_INLINE void* ncclGetResourceBufferLsaPointer(ncclDevComm const&, ncclDevResourceHandle, int lsaPeer);
+NCCL_DEVICE_INLINE void* ncclGetResourceBufferPeerPointer(ncclDevComm const&, ncclDevResourceHandle, ncclTeam, int peer);
+NCCL_DEVICE_INLINE void* ncclGetResourceBufferMultimemPointer(ncclDevComm const&, ncclDevResourceHandle, ncclMultimemHandle);
+NCCL_DEVICE_INLINE void* ncclGetResourceBufferMultimemPointer(ncclDevComm const&, ncclDevResourceHandle);
 #endif
 
 #endif // _NCCL_DEVICE_CORE_H_

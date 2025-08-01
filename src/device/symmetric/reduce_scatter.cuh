@@ -392,8 +392,8 @@ __device__ __forceinline__ void ncclSymkRun_ReduceScatter_LL(ncclSymkDevArgs con
   int nPacks = blockPackEnd - blockPackBegin;
   int nElts = nAllElts - blockPackBegin*EltPerPack;
   nElts = min(nElts, nPacks*EltPerPack);
-  T* input = (T*)ncclSymGetLocalPointer(args->inputWin, args->inputOff) + blockPackBegin*EltPerPack;
-  T* output = (T*)ncclSymGetLocalPointer(args->outputWin, args->outputOff) + blockPackBegin*EltPerPack;
+  T* input = (T*)ncclGetLocalPointer(args->inputWin, args->inputOff) + blockPackBegin*EltPerPack;
+  T* output = (T*)ncclGetLocalPointer(args->outputWin, args->outputOff) + blockPackBegin*EltPerPack;
 
   uint32_t lowBits = args->nElts*sizeof(T);
   lowBits |= (uint32_t)args->inputOff;

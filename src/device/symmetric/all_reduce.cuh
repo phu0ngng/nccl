@@ -389,8 +389,8 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLL_R_impl(ncclSymkDevAr
   nPacks = end - begin;
   nElts -= begin*EltPerPack;
   nElts = min(nElts, nPacks*EltPerPack);
-  T* input = (T*)ncclSymGetLocalPointer(args->inputWin, args->inputOff) + begin*EltPerPack;
-  T* output = (T*)ncclSymGetLocalPointer(args->outputWin, args->outputOff) + begin*EltPerPack;
+  T* input = (T*)ncclGetLocalPointer(args->inputWin, args->inputOff) + begin*EltPerPack;
+  T* output = (T*)ncclGetLocalPointer(args->outputWin, args->outputOff) + begin*EltPerPack;
 
   ncclCoopCta cta;
   int t = threadIdx.x;

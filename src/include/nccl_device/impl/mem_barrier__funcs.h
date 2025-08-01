@@ -13,7 +13,7 @@ NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
   ncclLsaBarrierSession_internal<Coop>{
     coop, comm, team, handle, (int)index, multimem, mmHandle, /*epoch=*/0
   } {
-  uint32_t* state = (uint32_t*)ncclSymGetResourceBufferLocalPointer(comm, handle.bufHandle);
+  uint32_t* state = (uint32_t*)ncclGetResourceBufferLocalPointer(comm, handle.bufHandle);
   this->epoch = state[(this->multimem ? 0 : 1)*this->handle.nBarriers + this->index];
 }
 #endif
@@ -31,7 +31,7 @@ NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::~ncclLsaBarrierSession() {
-  uint32_t* state = (uint32_t*)ncclSymGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
+  uint32_t* state = (uint32_t*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   if (this->coop.thread_rank() == 0) {
     state[(this->multimem ? 0 : 1)*this->handle.nBarriers + this->index] = this->epoch;
   }

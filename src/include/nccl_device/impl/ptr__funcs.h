@@ -84,42 +84,42 @@ NCCL_HOST_DEVICE_INLINE ncclSymPtr<T>& ncclSymPtr<T>::operator-=(unsigned long l
 #if __CUDACC__
 template<typename T>
 NCCL_DEVICE_INLINE T* ncclSymPtr<T>::localPtr() const {
-  return (T*)ncclSymGetLocalPointer(window, offset);
+  return (T*)ncclGetLocalPointer(window, offset);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
 NCCL_DEVICE_INLINE T* ncclSymPtr<T>::lsaPtr(int peer) const {
-  return (T*)ncclSymGetLsaPointer(window, offset, peer);
+  return (T*)ncclGetLsaPointer(window, offset, peer);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
 NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(int peer) const {
-  return (T*)ncclSymGetPeerPointer(window, offset, peer);
+  return (T*)ncclGetPeerPointer(window, offset, peer);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
 NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(ncclTeam team, int peer) const {
-  return (T*)ncclSymGetPeerPointer(window, offset, team, peer);
+  return (T*)ncclGetPeerPointer(window, offset, team, peer);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
 NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclMultimemHandle mmHandle) const {
-  return (T*)ncclSymGetMultimemPointer(window, offset, mmHandle);
+  return (T*)ncclGetMultimemPointer(window, offset, mmHandle);
 }
 #endif
 
 #if __CUDACC__
 template<typename T>
 NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclDevComm const& comm) const {
-  return (T*)ncclSymGetMultimemPointer(window, offset, comm);
+  return (T*)ncclGetMultimemPointer(window, offset, comm);
 }
 #endif
 
