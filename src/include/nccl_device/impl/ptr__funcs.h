@@ -118,7 +118,7 @@ NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclMultimemHandle mmHandle) co
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclSymComm const& comm) const {
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclDevComm const& comm) const {
   return (T*)ncclSymGetMultimemPointer(window, offset, comm);
 }
 #endif

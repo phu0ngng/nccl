@@ -16,7 +16,7 @@ constexpr __host__ __device__ int ncclSymkLLMaxSlots(int eltSize = ncclSymkLLMax
 }
 
 struct alignas(16) ncclSymkDevArgs {
-  struct ncclSymComm comm;
+  struct ncclDevComm comm;
   int rootRank;
   uint64_t redOpArg; // must be collectively uniform
   size_t nElts;
@@ -45,7 +45,7 @@ enum ncclSymkKernelId {
 
 struct ncclSymkState {
   bool initialized;
-  struct ncclSymComm symComm;
+  struct ncclDevComm devComm;
 };
 
 // We assume ncclComm contains a field: `ncclSymkState symkState`

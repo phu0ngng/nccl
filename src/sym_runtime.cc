@@ -101,11 +101,11 @@ ncclResult_t ncclSymrFinalize(struct ncclComm* comm) {
   { // delete windowTable
     cudaStream_t stream;
     if (cudaSuccess == cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking)) {
-      struct ncclSymCommWindowTable* tableDev = symr->windowTable;
+      struct ncclDevCommWindowTable* tableDev = symr->windowTable;
       while (tableDev != nullptr) {
-        struct ncclSymCommWindowTable* tableHost;
+        struct ncclDevCommWindowTable* tableHost;
         if (ncclSuccess != ncclShadowPoolToHost(&symr->shadows, tableDev, &tableHost)) break;
-        struct ncclSymCommWindowTable* next = tableHost->next;
+        struct ncclDevCommWindowTable* next = tableHost->next;
         ncclShadowPoolFree(&symr->shadows, tableDev, stream);
         tableDev = next;
       }
@@ -407,9 +407,9 @@ static void symMemoryDropRef(
 
 static ncclResult_t symWindowTableInitOnce(struct ncclComm* comm, cudaStream_t stream) {
   struct ncclSymrState* symr = &comm->symrState;
-  struct ncclSymCommWindowTable* tableDev = symr->windowTable;
+  struct ncclDevCommWindowTable* tableDev = symr->windowTable;
   if (tableDev == nullptr) { // Create on first need.
-    NCCLCHECK(ncclShadowPoolAlloc<ncclSymCommWindowTable>(&symr->shadows, &tableDev, nullptr, stream));
+    NCCLCHECK(ncclShadowPoolAlloc<ncclDevCommWindowTable>(&symr->shadows, &tableDev, nullptr, stream));
     symr->windowTable = tableDev;
   }
   return ncclSuccess;
@@ -453,8 +453,8 @@ static ncclResult_t symWindowCreate(
   CUDACHECK(cudaMemcpyAsync(winDev, winDevHost, sizeof(struct ncclWindow_vidmem), cudaMemcpyHostToDevice, stream));
 
   NCCLCHECK(symWindowTableInitOnce(comm, stream)); // ensure symr->windowTable exists
-  struct ncclSymCommWindowTable* tableDev = symr->windowTable;
-  struct ncclSymCommWindowTable* tableHost;
+  struct ncclDevCommWindowTable* tableDev = symr->windowTable;
+  struct ncclDevCommWindowTable* tableHost;
   NCCLCHECK(ncclShadowPoolToHost(&symr->shadows, tableDev, &tableHost));
   while (true) {
     int i = 0;
@@ -467,7 +467,7 @@ static ncclResult_t symWindowCreate(
       break;
     }
     if (tableHost->next == nullptr) {
-      NCCLCHECK(ncclShadowPoolAlloc<ncclSymCommWindowTable>(&symr->shadows, &tableHost->next, nullptr, stream));
+      NCCLCHECK(ncclShadowPoolAlloc<ncclDevCommWindowTable>(&symr->shadows, &tableHost->next, nullptr, stream));
       CUDACHECK(cudaMemcpyAsync(&tableDev->next, &tableHost->next, sizeof(tableHost->next), cudaMemcpyHostToDevice, stream));
     }
     tableDev = tableHost->next;
@@ -499,8 +499,8 @@ static ncclResult_t symWindowDestroy(struct ncclComm* comm, struct ncclWindow_vi
 
   symMemoryDropRef(comm, winHost->memory);
 
-  { struct ncclSymCommWindowTable* tableDev = symr->windowTable;
-    struct ncclSymCommWindowTable* tableHost;
+  { struct ncclDevCommWindowTable* tableDev = symr->windowTable;
+    struct ncclDevCommWindowTable* tableHost;
     NCCLCHECKGOTO(ncclShadowPoolToHost(&symr->shadows, tableDev, &tableHost), ret, remove_winSorted);
     while (true) {
       int i = 0;
@@ -678,10 +678,10 @@ ncclResult_t ncclSymrFindWindow(
   return ncclSuccess;
 }
 
-NCCL_API_CXX(ncclResult_t, ncclSymCommCreate, ncclComm_t comm, struct ncclSymCommRequirements const* reqs, struct ncclSymComm* outSymComm);
-ncclResult_t ncclSymCommCreate(
-    struct ncclComm* comm, struct ncclSymCommRequirements const* reqs,
-    struct ncclSymComm* outSymComm
+NCCL_API_CXX(ncclResult_t, ncclDevCommCreate, ncclComm_t comm, struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outSymComm);
+ncclResult_t ncclDevCommCreate(
+    struct ncclComm* comm, struct ncclDevCommRequirements const* reqs,
+    struct ncclDevComm* outSymComm
   ) {
   ncclResult_t ret = ncclSuccess;
   struct ncclSymrState* symr = &comm->symrState;
@@ -799,13 +799,13 @@ fail:
   return ret;
 }
 
-NCCL_API_CXX(ncclResult_t, ncclSymCommDestroy, ncclComm_t comm, struct ncclSymComm const* symComm);
-ncclResult_t ncclSymCommDestroy(
-    struct ncclComm* comm, struct ncclSymComm const* symComm
+NCCL_API_CXX(ncclResult_t, ncclDevCommDestroy, ncclComm_t comm, struct ncclDevComm const* devComm);
+ncclResult_t ncclDevCommDestroy(
+    struct ncclComm* comm, struct ncclDevComm const* devComm
   ) {
   //struct ncclSymrState* symr = &comm->symrState;
-  if (symComm->resourceWindow != nullptr) {
-    NCCLCHECK(ncclCommWindowDeregister(comm, symComm->resourceWindow));
+  if (devComm->resourceWindow != nullptr) {
+    NCCLCHECK(ncclCommWindowDeregister(comm, devComm->resourceWindow));
   }
   return ncclSuccess;
 }

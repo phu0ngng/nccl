@@ -13,9 +13,9 @@ struct ncclLsaBarrierSession_internal;
 
 template<typename Coop>
 struct ncclLsaBarrierSession: ncclLsaBarrierSession_internal<Coop> {
-  NCCL_DEVICE_INLINE ncclLsaBarrierSession(Coop, ncclSymComm const&, ncclTeam, ncclLsaBarrierHandle, uint32_t index, bool multimem=false, ncclMultimemHandle mmHandle={});
+  NCCL_DEVICE_INLINE ncclLsaBarrierSession(Coop, ncclDevComm const&, ncclTeam, ncclLsaBarrierHandle, uint32_t index, bool multimem=false, ncclMultimemHandle mmHandle={});
 
-  NCCL_DEVICE_INLINE ncclLsaBarrierSession(Coop, ncclSymComm const&, ncclTeamTagLsa, uint32_t index, bool multimem=false);
+  NCCL_DEVICE_INLINE ncclLsaBarrierSession(Coop, ncclDevComm const&, ncclTeamTagLsa, uint32_t index, bool multimem=false);
 
   NCCL_DEVICE_INLINE ~ncclLsaBarrierSession();
 

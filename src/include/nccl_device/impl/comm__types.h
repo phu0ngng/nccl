@@ -5,21 +5,21 @@
 #include "mem_barrier__types.h"
 #include "ll_a2a__types.h"
 
-struct ncclSymCommWindowTable {
+struct ncclDevCommWindowTable {
   struct Entry {
     uintptr_t base, size;
     ncclWindow_t window;
   } entries[32];
-  struct ncclSymCommWindowTable* next;
+  struct ncclDevCommWindowTable* next;
 };
 
-struct ncclSymComm {
+struct ncclDevComm {
   int rank, nRanks;
   uint32_t nRanks_rcp32;
   int lsaRank, lsaSize;
   uint32_t lsaSize_rcp32;
 
-  struct ncclSymCommWindowTable* windowTable;
+  struct ncclDevCommWindowTable* windowTable;
 
   ncclWindow_t resourceWindow;
   ncclWindow_vidmem resourceWindow_inlined;

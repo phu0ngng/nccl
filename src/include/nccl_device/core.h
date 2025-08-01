@@ -4,7 +4,7 @@
 #include "coop.h"
 #include "utility.h"
 
-struct ncclSymComm;
+struct ncclDevComm;
 struct ncclTeam;
 // typedef struct ncclWindow_vidmem* ncclWindow_t; // in nccl.h
 struct ncclMultimemHandle;
@@ -24,49 +24,49 @@ struct ncclTeamTagWorld {};
 struct ncclTeamTagLsa {};
 struct ncclTeamTagRail {};
 
-struct ncclSymCommRequirements {
+struct ncclDevCommRequirements {
   struct ncclSymResourceRequirements* resourceRequirementsList;
   struct ncclTeamRequirements* teamRequirementsList;
 
   bool multimem; // Enable multimem on lsa team
 
   int lsaBarrierCount;
-  ncclLsaBarrierHandle* outLsaBarrierHandle; // If non-null, target assigned during ncclSymCommCreate.
+  ncclLsaBarrierHandle* outLsaBarrierHandle; // If non-null, target assigned during ncclDevCommCreate.
 
   int lsaLLA2ABlockCount, lsaLLA2ASlotCount;
-  ncclSymLLA2AHandle* outLsaLLA2AHandle; // If non-null, target assigned during ncclSymCommCreate.
+  ncclSymLLA2AHandle* outLsaLLA2AHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 struct ncclSymResourceRequirements {
   struct ncclSymResourceRequirements* next;
   size_t bufferSize, bufferAlign;
-  ncclSymResourceBufferHandle* outBufferHandle; // If non-null, target assigned during ncclSymCommCreate.
+  ncclSymResourceBufferHandle* outBufferHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 struct ncclTeamRequirements {
   struct ncclTeamRequirements* next;
   struct ncclTeam team;
   bool multimem;
-  ncclMultimemHandle* outMultimemHandle; // If non-null, target assigned during ncclSymCommCreate.
+  ncclMultimemHandle* outMultimemHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 
-__host__ ncclResult_t ncclSymCommCreate(ncclComm_t, ncclSymCommRequirements const*, ncclSymComm* outDevComm);
-__host__ ncclResult_t ncclSymCommDestroy(ncclComm_t, ncclSymComm const* devComm);
+__host__ ncclResult_t ncclDevCommCreate(ncclComm_t, ncclDevCommRequirements const*, ncclDevComm* outDevComm);
+__host__ ncclResult_t ncclDevCommDestroy(ncclComm_t, ncclDevComm const* devComm);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Team API:
 
-NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamWorld(ncclSymComm const&);
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamWorld(ncclDevComm const&);
 __host__ ncclTeam ncclTeamWorld(ncclComm_t);
 
-NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamLsa(ncclSymComm const&);
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamLsa(ncclDevComm const&);
 __host__ ncclTeam ncclTeamLsa(ncclComm_t);
 
 NCCL_HOST_DEVICE_INLINE bool ncclTeamRankIsMember(ncclTeam a, ncclTeam b, int bPeer);
 NCCL_HOST_DEVICE_INLINE int ncclTeamRankToTeam(ncclTeam a, ncclTeam b, int bPeer);
 
-NCCL_HOST_DEVICE_INLINE int ncclTeamRankToWorld(ncclSymComm const&, ncclTeam, int rank);
+NCCL_HOST_DEVICE_INLINE int ncclTeamRankToWorld(ncclDevComm const&, ncclTeam, int rank);
 __host__ int ncclTeamRankToWorld(ncclComm_t, ncclTeam, int rank);
 
-NCCL_HOST_DEVICE_INLINE int ncclTeamRankToLsa(ncclSymComm const&, ncclTeam, int rank);
+NCCL_HOST_DEVICE_INLINE int ncclTeamRankToLsa(ncclDevComm const&, ncclTeam, int rank);
 __host__ int ncclTeamRankToLsa(ncclComm_t, ncclTeam, int rank);
 
 NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamInnerFactor(ncclTeam parent, int innerSize);
@@ -79,14 +79,14 @@ NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamOuterFactor(ncclTeam parent, int innerS
 NCCL_HOST_DEVICE_INLINE int ncclTeamRankInDifference(ncclTeam parent, ncclTeam subset, int index);
 
 // Equivalent to ncclTeamOuterFactor of lsa team.
-NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamRail(ncclSymComm const&);
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamRail(ncclDevComm const&);
 __host__ ncclTeam ncclTeamRail(ncclComm_t);
 
 // Get offset of resource buffer within `comm.resourceWindow`.
 NCCL_HOST_DEVICE_INLINE size_t ncclSymGetResourceBufferOffset(ncclSymResourceBufferHandle);
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE ncclSymPtr<char> ncclSymGetResourceBuffer(ncclSymComm const&, ncclSymResourceBufferHandle);
+NCCL_DEVICE_INLINE ncclSymPtr<char> ncclSymGetResourceBuffer(ncclDevComm const&, ncclSymResourceBufferHandle);
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -94,23 +94,23 @@ NCCL_DEVICE_INLINE ncclSymPtr<char> ncclSymGetResourceBuffer(ncclSymComm const&,
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclWindow_t ncclSymFindWindow(Coop, ncclSymComm const&, void const *ptr);
+NCCL_DEVICE_INLINE ncclWindow_t ncclSymFindWindow(Coop, ncclDevComm const&, void const *ptr);
 
 NCCL_DEVICE_INLINE void* ncclSymGetLocalPointer(ncclWindow_t w, size_t offset);
 NCCL_DEVICE_INLINE void* ncclSymGetLsaPointer(ncclWindow_t w, size_t offset, int lsaPeer);
 NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, int peer);
 NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, ncclTeam tm, int peer);
 NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclMultimemHandle mmHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclSymComm const&);
+NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclDevComm const&);
 #endif
 
 #if __CUDACC__
 // Convenience for combining ncclSymGet***Pointer() with resource handle.
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclSymComm const&, ncclSymResourceBufferHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLsaPointer(ncclSymComm const&, ncclSymResourceBufferHandle, int lsaPeer);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclSymComm const&, ncclSymResourceBufferHandle, ncclTeam, int peer);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm const&, ncclSymResourceBufferHandle, ncclMultimemHandle);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm const&, ncclSymResourceBufferHandle);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclDevComm const&, ncclSymResourceBufferHandle);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLsaPointer(ncclDevComm const&, ncclSymResourceBufferHandle, int lsaPeer);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclDevComm const&, ncclSymResourceBufferHandle, ncclTeam, int peer);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclDevComm const&, ncclSymResourceBufferHandle, ncclMultimemHandle);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclDevComm const&, ncclSymResourceBufferHandle);
 #endif
 
 #endif // _NCCL_DEVICE_CORE_H_

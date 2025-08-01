@@ -48,7 +48,7 @@ struct ncclSymrState {
   struct ncclSpace bigSpace; // allocates our big VA space.
   void* lsaFlatBase; // base ptr for all lsa ranks big VA's concatenated together: size = lsaRanks*bigSize
   struct ncclShadowPool shadows;
-  struct ncclSymCommWindowTable* windowTable;
+  struct ncclDevCommWindowTable* windowTable;
 
   struct ncclIntruQueue<struct ncclSymrRegTask, &ncclSymrRegTask::next> regTaskQueue;
 };

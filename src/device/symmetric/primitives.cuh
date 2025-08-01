@@ -26,7 +26,7 @@ static __device__ Int0 flattenIx(Int0 pos, Int1 size, Ints ...more) {
 
 namespace {
 struct ncclSymkKernelStuff {
-  ncclSymComm const& comm;
+  ncclDevComm const& comm;
   int nBlocks;
   uint32_t nRanks_rcp32;
   uint32_t nBlocks_rcp32;

@@ -6,7 +6,7 @@
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
-    Coop coop, ncclSymComm const& comm, ncclTeam team,
+    Coop coop, ncclDevComm const& comm, ncclTeam team,
     ncclLsaBarrierHandle handle, uint32_t index,
     bool multimem, ncclMultimemHandle mmHandle
   ):
@@ -21,7 +21,7 @@ NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
-    Coop coop, ncclSymComm const& comm, ncclTeamTagLsa, uint32_t index, bool multimem
+    Coop coop, ncclDevComm const& comm, ncclTeamTagLsa, uint32_t index, bool multimem
   ): ncclLsaBarrierSession(
     coop, comm, ncclTeamLsa(comm), comm.lsaBarrier, index, multimem, comm.multimem
   ) {

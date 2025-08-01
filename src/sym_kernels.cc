@@ -200,12 +200,12 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
   struct ncclSymkState* symk = &comm->symkState;
   if (!symk->initialized) {
     symk->initialized = true;
-    struct ncclSymCommRequirements reqs = {};
+    struct ncclDevCommRequirements reqs = {};
     reqs.multimem = comm->nvlsSupport;
     reqs.lsaBarrierCount = ncclSymkMaxBlocks;
     reqs.lsaLLA2ABlockCount = ncclSymkMaxBlocks;
     reqs.lsaLLA2ASlotCount = ncclSymLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);
-    NCCLCHECK(ncclSymCommCreate(comm, &reqs, &symk->symComm));
+    NCCLCHECK(ncclDevCommCreate(comm, &reqs, &symk->devComm));
   }
   return ncclSuccess;
 }
@@ -213,7 +213,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
 ncclResult_t ncclSymkFinalize(struct ncclComm* comm) {
   struct ncclSymkState* symk = &comm->symkState;
   if (symk->initialized) {
-    NCCLCHECK(ncclSymCommDestroy(comm, &symk->symComm));
+    NCCLCHECK(ncclDevCommDestroy(comm, &symk->devComm));
   }
   return ncclSuccess;
 }
@@ -328,7 +328,7 @@ ncclResult_t ncclSymkMakeLaunchArgs(
   *outArgSize = sizeof(struct ncclSymkDevArgs);
   struct ncclSymkDevArgs* arg = ncclMemoryStackAlloc<struct ncclSymkDevArgs>(memArg);
   *outArg = (void*)arg;
-  arg->comm = symk->symComm;
+  arg->comm = symk->devComm;
   arg->rootRank = task->root;
   arg->redOpArg = task->opDev.scalarArg;
   arg->nElts = task->count;

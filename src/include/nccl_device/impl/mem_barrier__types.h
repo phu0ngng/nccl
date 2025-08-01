@@ -12,7 +12,7 @@ struct ncclLsaBarrierHandle {
 template<typename Coop>
 struct ncclLsaBarrierSession_internal {
   Coop coop;
-  ncclSymComm const& comm;
+  ncclDevComm const& comm;
   ncclTeam team;
   ncclLsaBarrierHandle handle;
   int index;

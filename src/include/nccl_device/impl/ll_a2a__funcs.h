@@ -7,7 +7,7 @@
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
-    Coop coop, ncclSymComm const& comm, ncclTeam team,
+    Coop coop, ncclDevComm const& comm, ncclTeam team,
     ncclSymLLA2AHandle handle, uint32_t block, int maxElts,
     bool multimem, ncclMultimemHandle mmHandle
   ):
@@ -25,7 +25,7 @@ NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
-    Coop coop, ncclSymComm const& comm, ncclTeamTagLsa,
+    Coop coop, ncclDevComm const& comm, ncclTeamTagLsa,
     uint32_t block, int maxElts,
     bool multimem
   ):
