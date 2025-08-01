@@ -679,9 +679,16 @@ static ncclResult_t computeBuffSizes(struct ncclComm* comm) {
     comm->buffSizes[p] = envs[p] != -2 ? envs[p] : defaults[p];
   }
 
-  if (comm->nNodes > 1) comm->p2pChunkSize = ncclParamP2pNetChunkSize();
-  else if (comm->isAllNvlink) comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
-  else comm->p2pChunkSize = ncclParamP2pPciChunkSize();
+  if (comm->nNodes > 1) {
+    // GBx platforms only have 4 GPUs per host, which reduces the aggregation factor.
+    // Increase the ratio by a factor of 2 to compensate.
+    int ratio = (comm->cpuArch == NCCL_TOPO_CPU_ARCH_ARM && comm->minCompCap >= 100) ? 2 : 1;
+    comm->p2pChunkSize = ratio * ncclParamP2pNetChunkSize();
+  } else if (comm->isAllNvlink) {
+    comm->p2pChunkSize = ncclParamP2pNvlChunkSize();
+  } else {
+    comm->p2pChunkSize = ncclParamP2pPciChunkSize();
+  }
 
   // Make sure P2P chunksize is not larger than coll chunksize.
   if (comm->p2pChunkSize * NCCL_STEPS > comm->buffSizes[NCCL_PROTO_SIMPLE]) comm->p2pChunkSize = comm->buffSizes[NCCL_PROTO_SIMPLE]/NCCL_STEPS;
