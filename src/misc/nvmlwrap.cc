@@ -41,6 +41,7 @@ namespace {
   NCCL_NVML_FN(nvmlDeviceGetFieldValues, nvmlReturn_t, (nvmlDevice_t device, int valuesCount, nvmlFieldValue_t *values))
   // MNNVL support
   NCCL_NVML_FN(nvmlDeviceGetGpuFabricInfoV, nvmlReturn_t, (nvmlDevice_t device, nvmlGpuFabricInfoV_t *gpuFabricInfo))
+  NCCL_NVML_FN(nvmlDeviceGetPlatformInfo, nvmlReturn_t, (nvmlDevice_t device, nvmlPlatformInfo_t *platfromInfo))
   // CC support
   NCCL_NVML_FN(nvmlSystemGetConfComputeState, nvmlReturn_t, (nvmlConfComputeSystemState_t *state));
   NCCL_NVML_FN(nvmlSystemGetConfComputeSettings, nvmlReturn_t, (nvmlSystemConfComputeSettings_t *setting));
@@ -95,6 +96,7 @@ ncclResult_t ncclNvmlEnsureInitialized() {
       {(void**)&pfn_nvmlDeviceGetFieldValues, "nvmlDeviceGetFieldValues"},
       // MNNVL support
       {(void**)&pfn_nvmlDeviceGetGpuFabricInfoV, "nvmlDeviceGetGpuFabricInfoV"},
+      {(void**)&pfn_nvmlDeviceGetPlatformInfo, "nvmlDeviceGetPlatformInfo"},
       // CC support
       {(void**)&pfn_nvmlSystemGetConfComputeState, "nvmlSystemGetConfComputeState"},
       {(void**)&pfn_nvmlSystemGetConfComputeSettings, "nvmlSystemGetConfComputeSettings"}
@@ -297,6 +299,15 @@ ncclResult_t ncclNvmlDeviceGetGpuFabricInfoV(nvmlDevice_t device, nvmlGpuFabricI
   NVMLTRY(nvmlDeviceGetGpuFabricInfoV, device, gpuFabricInfo);
   return ncclSuccess;
 }
+
+ncclResult_t ncclNvmlDeviceGetPlatformInfo(nvmlDevice_t device, nvmlPlatformInfo_t *platformInfo) {
+  NCCLCHECK(ncclNvmlEnsureInitialized());
+  std::lock_guard<std::mutex> locked(lock);
+  platformInfo->version = nvmlPlatformInfo_v2;
+  NVMLTRY(nvmlDeviceGetPlatformInfo, device, platformInfo);
+  return ncclSuccess;
+}
+
 
 ncclResult_t ncclNvmlGetCCStatus(struct ncclNvmlCCStatus *status) {
   NCCLCHECK(ncclNvmlEnsureInitialized());

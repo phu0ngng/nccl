@@ -595,8 +595,16 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
         memcpy(info->fabricInfo.clusterUuid + sizeof(temp_uuid0), &temp_uuid1, sizeof(temp_uuid1));
       }
       memcpy(&uuid0, info->fabricInfo.clusterUuid, sizeof(uuid0));
-      memcpy(&uuid1, info->fabricInfo.clusterUuid + sizeof(uuid0), sizeof(uuid1)); 
-      if (ncclParamMNNVLCliqueId() != -1) info->fabricInfo.cliqueId = ncclParamMNNVLCliqueId();
+      memcpy(&uuid1, info->fabricInfo.clusterUuid + sizeof(uuid0), sizeof(uuid1));
+      if (ncclParamMNNVLCliqueId() == -2) {
+        nvmlPlatformInfo_t platformInfo = { 0 };
+        NCCLCHECK(ncclNvmlDeviceGetPlatformInfo(nvmlDev, &platformInfo));
+        INFO(NCCL_INIT, "MNNVL rack serial %s slot %d tray %d hostId %d peerType %d moduleId %d",
+             platformInfo.chassisSerialNumber, platformInfo.slotNumber, platformInfo.trayIndex,
+             platformInfo.hostId, platformInfo.peerType, platformInfo.moduleId);
+        // Use a hash of the Rack serial number to partition the NVLD clique
+        info->fabricInfo.cliqueId = getHash(platformInfo.chassisSerialNumber, sizeof(platformInfo.chassisSerialNumber));
+      } else if (ncclParamMNNVLCliqueId() != -1) info->fabricInfo.cliqueId = ncclParamMNNVLCliqueId();
       INFO(NCCL_INIT, "MNNVL busId 0x%lx fabric UUID %lx.%lx cliqueId 0x%x state %d healthMask 0x%x",
            info->busId,
            uuid0, uuid1,
