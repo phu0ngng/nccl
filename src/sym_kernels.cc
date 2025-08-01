@@ -201,10 +201,10 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
   if (!symk->initialized) {
     symk->initialized = true;
     struct ncclSymCommRequirements reqs = {};
-    reqs.nearMultimem = comm->nvlsSupport;
-    reqs.nearMemBarrierCount = ncclSymkMaxBlocks;
-    reqs.nearLLA2ABlockCount = ncclSymkMaxBlocks;
-    reqs.nearLLA2ASlotCount = ncclSymLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);
+    reqs.multimem = comm->nvlsSupport;
+    reqs.lsaBarrierCount = ncclSymkMaxBlocks;
+    reqs.lsaLLA2ABlockCount = ncclSymkMaxBlocks;
+    reqs.lsaLLA2ASlotCount = ncclSymLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);
     NCCLCHECK(ncclSymCommCreate(comm, &reqs, &symk->symComm));
   }
   return ncclSuccess;

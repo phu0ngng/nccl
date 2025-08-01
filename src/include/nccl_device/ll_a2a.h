@@ -16,7 +16,7 @@ template<typename Coop>
 struct ncclSymLLA2ASession: ncclSymLLA2ASession_internal<Coop> {
   NCCL_DEVICE_INLINE ncclSymLLA2ASession(Coop, ncclSymComm const&, ncclTeam, ncclSymLLA2AHandle, uint32_t block, int maxElts, bool multimem=false, ncclMultimemHandle mmHandle={});
 
-  NCCL_DEVICE_INLINE ncclSymLLA2ASession(Coop, ncclSymComm const&, ncclTeamTagNear, uint32_t block, int maxElts, bool multimem=false);
+  NCCL_DEVICE_INLINE ncclSymLLA2ASession(Coop, ncclSymComm const&, ncclTeamTagLsa, uint32_t block, int maxElts, bool multimem=false);
 
   NCCL_DEVICE_INLINE ~ncclSymLLA2ASession();
 

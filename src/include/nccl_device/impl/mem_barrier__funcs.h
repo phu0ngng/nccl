@@ -5,12 +5,12 @@
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
+NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
     Coop coop, ncclSymComm const& comm, ncclTeam team,
-    ncclSymMemBarrierHandle handle, uint32_t index,
+    ncclLsaBarrierHandle handle, uint32_t index,
     bool multimem, ncclMultimemHandle mmHandle
   ):
-  ncclSymMemBarrierSession_internal<Coop>{
+  ncclLsaBarrierSession_internal<Coop>{
     coop, comm, team, handle, (int)index, multimem, mmHandle, /*epoch=*/0
   } {
   uint32_t* state = (uint32_t*)ncclSymGetResourceBufferLocalPointer(comm, handle.bufHandle);
@@ -20,17 +20,17 @@ NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
-    Coop coop, ncclSymComm const& comm, ncclTeamTagNear, uint32_t index, bool multimem
-  ): ncclSymMemBarrierSession(
-    coop, comm, ncclTeamNear(comm), comm.nearMemBarrier, index, multimem, comm.nearMultimem
+NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
+    Coop coop, ncclSymComm const& comm, ncclTeamTagLsa, uint32_t index, bool multimem
+  ): ncclLsaBarrierSession(
+    coop, comm, ncclTeamLsa(comm), comm.lsaBarrier, index, multimem, comm.multimem
   ) {
 }
 #endif
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::~ncclSymMemBarrierSession() {
+NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::~ncclLsaBarrierSession() {
   uint32_t* state = (uint32_t*)ncclSymGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   if (this->coop.thread_rank() == 0) {
     state[(this->multimem ? 0 : 1)*this->handle.nBarriers + this->index] = this->epoch;
@@ -41,7 +41,7 @@ NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::~ncclSymMemBarrierSession() {
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::arrive(Coop, cuda::memory_order order) {
+NCCL_DEVICE_INLINE void ncclLsaBarrierSession<Coop>::arrive(Coop, cuda::memory_order order) {
   this->coop.sync();
   if (this->multimem) {
   #if __CUDA_ARCH__ >= 900
@@ -67,7 +67,7 @@ NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::arrive(Coop, cuda::memor
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::wait(Coop, cuda::memory_order order) {
+NCCL_DEVICE_INLINE void ncclLsaBarrierSession<Coop>::wait(Coop, cuda::memory_order order) {
   if (this->multimem) {
   #if __CUDA_ARCH__ >= 900
     if (this->coop.thread_rank() == 0) {
@@ -99,7 +99,7 @@ NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::wait(Coop, cuda::memory_
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE void ncclSymMemBarrierSession<Coop>::sync(Coop coop, cuda::memory_order order) {
+NCCL_DEVICE_INLINE void ncclLsaBarrierSession<Coop>::sync(Coop coop, cuda::memory_order order) {
   this->arrive(coop, order);
   this->wait(coop, order);
 }

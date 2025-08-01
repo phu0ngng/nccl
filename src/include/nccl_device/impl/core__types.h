@@ -6,8 +6,8 @@
 struct ncclWindow_vidmem {
   void* winHost;
   //ncclGinWindow_t ginWin;
-  char* nearFlatBase; // pointer to first byte for rank 0 of near team
-  int nearRank;
+  char* lsaFlatBase; // pointer to first byte for rank 0 of lsa team
+  int lsaRank;
   int worldRank;
   uint32_t stride4G;
   uint32_t mcOffset4K;

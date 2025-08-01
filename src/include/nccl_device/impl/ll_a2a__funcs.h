@@ -25,13 +25,13 @@ NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
 #if __CUDACC__
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
-    Coop coop, ncclSymComm const& comm, ncclTeamTagNear,
+    Coop coop, ncclSymComm const& comm, ncclTeamTagLsa,
     uint32_t block, int maxElts,
     bool multimem
   ):
   ncclSymLLA2ASession<Coop>(
-    coop, comm, ncclTeamNear(comm), comm.nearLLA2A,
-    block, maxElts, multimem, comm.nearMultimem
+    coop, comm, ncclTeamLsa(comm), comm.lsaLLA2A,
+    block, maxElts, multimem, comm.multimem
   ) {
 }
 #endif

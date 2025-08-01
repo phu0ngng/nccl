@@ -49,15 +49,15 @@ ncclResult_t ncclSymrInitOnce(struct ncclComm* comm) {
   struct ncclSymrState* symr = &comm->symrState;
   if (symr->bigSize != 0) return ncclSuccess;
 
-  bool nearIsLocal = true;
+  bool lsaIsLocal = true;
   for (int i=0; i < comm->localRanks; i++) {
-    nearIsLocal &= comm->localRankToRank[i] == comm->localRankToRank[0] + i;
+    lsaIsLocal &= comm->localRankToRank[i] == comm->localRankToRank[0] + i;
   }
-  symr->nearSelf = nearIsLocal ? comm->localRank : 0;
-  symr->nearSize = nearIsLocal ? comm->localRanks : 1;
-  symr->nearRankList = (int*)malloc(symr->nearSize*sizeof(int));
-  for (int i=0; i < symr->nearSize; i++) {
-    symr->nearRankList[i] = comm->rank + (i - symr->nearSelf);
+  symr->lsaSelf = lsaIsLocal ? comm->localRank : 0;
+  symr->lsaSize = lsaIsLocal ? comm->localRanks : 1;
+  symr->lsaRankList = (int*)malloc(symr->lsaSize*sizeof(int));
+  for (int i=0; i < symr->lsaSize; i++) {
+    symr->lsaRankList[i] = comm->rank + (i - symr->lsaSelf);
   }
 
   CUmemAllocationProp memProp = {};
@@ -65,7 +65,7 @@ ncclResult_t ncclSymrInitOnce(struct ncclComm* comm) {
   memProp.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   memProp.requestedHandleTypes = ncclCuMemHandleType;
   memProp.location.id = comm->cudaDev;
-  CUCHECKGOTO(cuMemGetAllocationGranularity(&symr->granularity, &memProp, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED), ret, fail_nearRankList);
+  CUCHECKGOTO(cuMemGetAllocationGranularity(&symr->granularity, &memProp, CU_MEM_ALLOC_GRANULARITY_RECOMMENDED), ret, fail_lsaRankList);
 
   symr->bigSize = ncclParamWinStride();
   if (-symr->bigSize <= 1) {
@@ -81,8 +81,8 @@ ncclResult_t ncclSymrInitOnce(struct ncclComm* comm) {
   ncclShadowPoolConstruct(&symr->shadows);
   return ncclSuccess;
 
-fail_nearRankList:
-  free(symr->nearRankList);
+fail_lsaRankList:
+  free(symr->lsaRankList);
   return ret;
 }
 
@@ -113,19 +113,19 @@ ncclResult_t ncclSymrFinalize(struct ncclComm* comm) {
       cudaStreamDestroy(stream);
     }
   }
-  CUdeviceptr flatAddr = reinterpret_cast<CUdeviceptr>(symr->nearFlatBase);
-  CUCHECKIGNORE(cuMemUnmap(flatAddr, symr->nearSize*symr->bigSize));
-  CUCHECKIGNORE(cuMemAddressFree(flatAddr, symr->nearSize*symr->bigSize));
+  CUdeviceptr flatAddr = reinterpret_cast<CUdeviceptr>(symr->lsaFlatBase);
+  CUCHECKIGNORE(cuMemUnmap(flatAddr, symr->lsaSize*symr->bigSize));
+  CUCHECKIGNORE(cuMemAddressFree(flatAddr, symr->lsaSize*symr->bigSize));
   ncclShadowPoolDestruct(&symr->shadows);
   ncclSpaceDestruct(&symr->bigSpace);
-  free(symr->nearRankList);
+  free(symr->lsaRankList);
   free(symr->winSorted);
   return ncclSuccess;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static ncclResult_t symMemoryMapNearTeam(
+static ncclResult_t symMemoryMapLsaTeam(
     struct ncclComm* comm, CUmemGenericAllocationHandle memHandle, size_t size, size_t bigOffset
   ) {
   ncclResult_t ret = ncclSuccess;
@@ -136,46 +136,46 @@ static ncclResult_t symMemoryMapNearTeam(
     CUmemFabricHandle fabricHandle;
   };
 
-  Message* messages = (Message*)calloc(symr->nearSize, sizeof(Message));
+  Message* messages = (Message*)calloc(symr->lsaSize, sizeof(Message));
   if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
-    messages[symr->nearSelf].memHandle = memHandle;
+    messages[symr->lsaSelf].memHandle = memHandle;
   } else {
-    CUCHECKGOTO(cuMemExportToShareableHandle(&messages[symr->nearSelf].fabricHandle, memHandle, ncclCuMemHandleType, 0), ret, fail);
+    CUCHECKGOTO(cuMemExportToShareableHandle(&messages[symr->lsaSelf].fabricHandle, memHandle, ncclCuMemHandleType, 0), ret, fail);
   }
 
-  NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, symr->nearRankList, symr->nearSelf, symr->nearSize, messages, sizeof(Message)), ret, fail);
+  NCCLCHECKGOTO(bootstrapIntraNodeAllGather(comm->bootstrap, symr->lsaRankList, symr->lsaSelf, symr->lsaSize, messages, sizeof(Message)), ret, fail);
 
-  if (symr->nearFlatBase == nullptr) { // Create on first need.
+  if (symr->lsaFlatBase == nullptr) { // Create on first need.
     CUdeviceptr addr;
-    CUCHECKGOTO(cuMemAddressReserve(&addr, symr->nearSize*symr->bigSize, NCCL_MAX_PAGE_SIZE, 0, 0), ret, fail);
-    symr->nearFlatBase = reinterpret_cast<void*>(addr);
+    CUCHECKGOTO(cuMemAddressReserve(&addr, symr->lsaSize*symr->bigSize, NCCL_MAX_PAGE_SIZE, 0, 0), ret, fail);
+    symr->lsaFlatBase = reinterpret_cast<void*>(addr);
   }
   accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   accessDesc.location.id = comm->cudaDev;
   accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-  for (int r = 0; r < symr->nearSize; r++) {
+  for (int r = 0; r < symr->lsaSize; r++) {
     CUmemGenericAllocationHandle impHandle;
-    if (r == symr->nearSelf) {
+    if (r == symr->lsaSelf) {
       impHandle = memHandle;
     } else {
       if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
         int fd = -1;
-        NCCLCHECKGOTO(ncclProxyClientGetFdBlocking(comm, symr->nearRankList[r], &messages[r], &fd), ret, fail);
+        NCCLCHECKGOTO(ncclProxyClientGetFdBlocking(comm, symr->lsaRankList[r], &messages[r], &fd), ret, fail);
         CUCHECKGOTO(cuMemImportFromShareableHandle(&impHandle, reinterpret_cast<void*>((uintptr_t)fd), ncclCuMemHandleType), ret, fail);
         SYSCHECKGOTO(close(fd), "close", ret, fail);
       } else {
         CUCHECKGOTO(cuMemImportFromShareableHandle(&impHandle, (void*)&messages[r].fabricHandle, ncclCuMemHandleType), ret, fail);
       }
     }
-    CUdeviceptr addr = reinterpret_cast<uintptr_t>((char*)symr->nearFlatBase + r*symr->bigSize + bigOffset);
+    CUdeviceptr addr = reinterpret_cast<uintptr_t>((char*)symr->lsaFlatBase + r*symr->bigSize + bigOffset);
     CUCHECKGOTO(cuMemMap(addr, size, 0, impHandle, 0), ret, fail);
     CUCHECKGOTO(cuMemSetAccess(addr, size, &accessDesc, 1), ret, fail);
-    if (r != symr->nearSelf) {
+    if (r != symr->lsaSelf) {
       CUCHECKGOTO(cuMemRelease(impHandle), ret, fail);
     }
   }
   // Ensure everyone has imported my mem handle.
-  NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, symr->nearRankList, symr->nearSelf, symr->nearSize, 0xbeef), ret, fail);
+  NCCLCHECKGOTO(bootstrapIntraNodeBarrier(comm->bootstrap, symr->lsaRankList, symr->lsaSelf, symr->lsaSize, 0xbeef), ret, fail);
 leave:
   free(messages);
   return ret;
@@ -358,8 +358,8 @@ static ncclResult_t symMemoryObtain(
   NCCLCHECKGOTO(ncclSpaceAlloc(&symr->bigSpace, symr->bigSize, size, symr->granularity, &bigOffset), ret, fail_mem);
   mem->bigOffset = bigOffset;
 
-  // Map unicast addresses into flat VA space for near team.
-  NCCLCHECKGOTO(symMemoryMapNearTeam(comm, memHandle, size, bigOffset), ret, fail_mem_space);
+  // Map unicast addresses into flat VA space for lsa team.
+  NCCLCHECKGOTO(symMemoryMapLsaTeam(comm, memHandle, size, bigOffset), ret, fail_mem_space);
 
   // Bind new memory with each existing team.
   for (struct ncclSymrTeam* t = symr->teamHead; t != nullptr; t = t->next) {
@@ -434,8 +434,8 @@ static ncclResult_t symWindowCreate(
   win->winFlags = winFlags;
   win->localRegHandle = localReg;
   if (userPtr == nullptr) {
-    // Null means caller has no VA and will use the near team flat VA address.
-    win->userPtr = (char*)symr->nearFlatBase + (symr->nearSelf*symr->bigSize) + mem->bigOffset;
+    // Null means caller has no VA and will use the lsa team flat VA address.
+    win->userPtr = (char*)symr->lsaFlatBase + (symr->lsaSelf*symr->bigSize) + mem->bigOffset;
   } else {
     win->userPtr = userPtr;
   }
@@ -444,10 +444,10 @@ static ncclResult_t symWindowCreate(
   struct ncclWindow_vidmem* winDevHost;
   NCCLCHECK(ncclShadowPoolAlloc(&symr->shadows, &winDev, &winDevHost, stream));
   win->vidmem = winDev;
-  winDevHost->nearFlatBase = (char*)symr->nearFlatBase + win->bigOffset;
+  winDevHost->lsaFlatBase = (char*)symr->lsaFlatBase + win->bigOffset;
   winDevHost->mcOffset4K = win->bigOffset>>12;
   winDevHost->stride4G = symr->bigSize>>32;
-  winDevHost->nearRank = symr->nearSelf;
+  winDevHost->lsaRank = symr->lsaSelf;
   winDevHost->worldRank = comm->rank;
   winDevHost->winHost = (void*)win;
   CUDACHECK(cudaMemcpyAsync(winDev, winDevHost, sizeof(struct ncclWindow_vidmem), cudaMemcpyHostToDevice, stream));
@@ -690,18 +690,18 @@ ncclResult_t ncclSymCommCreate(
   outSymComm->rank = comm->rank;
   outSymComm->nRanks = comm->nRanks;
   outSymComm->nRanks_rcp32 = idivRcp32(comm->nRanks);
-  outSymComm->nearRank = symr->nearSelf;
-  outSymComm->nearSize = symr->nearSize;
-  outSymComm->nearSize_rcp32 = idivRcp32(symr->nearSize);
+  outSymComm->lsaRank = symr->lsaSelf;
+  outSymComm->lsaSize = symr->lsaSize;
+  outSymComm->lsaSize_rcp32 = idivRcp32(symr->lsaSize);
 
   struct ncclTeam world = ncclTeamWorld(comm);
-  struct ncclTeam near = ncclTeamInnerFactor(world, symr->nearSize);
-  struct ncclSymrTeam* tmNear;
+  struct ncclTeam lsa = ncclTeamInnerFactor(world, symr->lsaSize);
+  struct ncclSymrTeam* tmLsa;
   cudaStream_t stream;
   size_t bufSizeTotal;
   struct ncclSymResourceRequirements* resReqsHead;
-  struct ncclSymResourceRequirements nearMemBarReq;
-  struct ncclSymResourceRequirements nearLLA2AReq;
+  struct ncclSymResourceRequirements lsaBarReq;
+  struct ncclSymResourceRequirements lsaLLA2AReq;
   CUmemGenericAllocationHandle memHandle;
   struct ncclSymrMemory* mem;
   struct ncclSymrWindow* win;
@@ -709,8 +709,8 @@ ncclResult_t ncclSymCommCreate(
 
   NCCLCHECKGOTO(ncclSymrInitOnce(comm), ret, fail);
 
-  NCCLCHECKGOTO(symTeamObtain(comm, near, /*multicast=*/reqs->nearMultimem, &tmNear), ret, fail);
-  outSymComm->nearMultimem.mcBasePtr = tmNear->mcBasePtr;
+  NCCLCHECKGOTO(symTeamObtain(comm, lsa, /*multicast=*/reqs->multimem, &tmLsa), ret, fail);
+  outSymComm->multimem.mcBasePtr = tmLsa->mcBasePtr;
 
   { struct ncclTeamRequirements* tr = reqs->teamRequirementsList;
     while (tr != nullptr) {
@@ -725,13 +725,13 @@ ncclResult_t ncclSymCommCreate(
 
   resReqsHead = reqs->resourceRequirementsList;
 
-  ncclSymMemBarrierCreateRequirement(near, reqs->nearMemBarrierCount, &outSymComm->nearMemBarrier, &nearMemBarReq);
-  nearMemBarReq.next = resReqsHead;
-  resReqsHead = &nearMemBarReq;
+  ncclLsaBarrierCreateRequirement(lsa, reqs->lsaBarrierCount, &outSymComm->lsaBarrier, &lsaBarReq);
+  lsaBarReq.next = resReqsHead;
+  resReqsHead = &lsaBarReq;
 
-  ncclSymLLA2ACreateRequirement(reqs->nearLLA2ABlockCount, reqs->nearLLA2ASlotCount, &outSymComm->nearLLA2A, &nearLLA2AReq);
-  nearLLA2AReq.next = resReqsHead;
-  resReqsHead = &nearLLA2AReq;
+  ncclSymLLA2ACreateRequirement(reqs->lsaLLA2ABlockCount, reqs->lsaLLA2ASlotCount, &outSymComm->lsaLLA2A, &lsaLLA2AReq);
+  lsaLLA2AReq.next = resReqsHead;
+  resReqsHead = &lsaLLA2AReq;
 
   { struct ncclSymResourceRequirements* rr = resReqsHead;
     bufSizeTotal = 0;
@@ -811,16 +811,16 @@ ncclResult_t ncclSymCommDestroy(
 }
 
 
-// Get the corresponding pointer in another near rank's symmetric memory window
-ncclResult_t ncclSymrGetNearRankPtr(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, int nearRank, void** outPtr) {
+// Get the corresponding pointer in another lsa rank's symmetric memory window
+ncclResult_t ncclSymrGetLsaRankPtr(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, int lsaRank, void** outPtr) {
   if (winHost == nullptr || outPtr == nullptr) {
     return ncclInvalidArgument;
   }
 
   struct ncclSymrState* symr = &comm->symrState;
   
-  // Validate nearRank is within bounds
-  if (nearRank < 0 || nearRank >= symr->nearSize) {
+  // Validate lsaRank is within bounds
+  if (lsaRank < 0 || lsaRank >= symr->lsaSize) {
     return ncclInvalidArgument;
   }
 
@@ -829,13 +829,13 @@ ncclResult_t ncclSymrGetNearRankPtr(struct ncclComm* comm, struct ncclSymrWindow
     return ncclInvalidArgument;
   }
 
-  // Calculate the address with offset for the specified near rank 
-  *outPtr = (void*)((uintptr_t)symr->nearFlatBase + nearRank * symr->bigSize + winHost->bigOffset + offset);
+  // Calculate the address with offset for the specified lsa rank 
+  *outPtr = (void*)((uintptr_t)symr->lsaFlatBase + lsaRank * symr->bigSize + winHost->bigOffset + offset);
   return ncclSuccess;
 }
 
 // Get the multicast address for a given team
-ncclResult_t ncclSymrGetNearTeamPtrMC(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, struct ncclTeam nearTeam, void** outPtr){
+ncclResult_t ncclSymrGetLsaTeamPtrMC(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, struct ncclTeam lsaTeam, void** outPtr){
   if (winHost == nullptr || outPtr == nullptr) {
     return ncclInvalidArgument;
   }
@@ -846,7 +846,7 @@ ncclResult_t ncclSymrGetNearTeamPtrMC(struct ncclComm* comm, struct ncclSymrWind
 
   bool multimem = true;
   struct ncclSymrTeam* tm;
-  NCCLCHECK(symTeamObtain(comm, nearTeam, multimem, &tm));
+  NCCLCHECK(symTeamObtain(comm, lsaTeam, multimem, &tm));
     
   // Return the base multicast address for this team with offset
   *outPtr = (void*)((uintptr_t)tm->mcBasePtr + winHost->bigOffset + offset);

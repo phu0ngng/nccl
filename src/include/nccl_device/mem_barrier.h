@@ -3,23 +3,23 @@
 #include "impl/core__types.h"
 #include <cuda/atomic>
 
-struct ncclSymMemBarrierHandle;
+struct ncclLsaBarrierHandle;
 
-__host__ ncclResult_t ncclSymMemBarrierCreateRequirement(ncclTeam, int nBarriers, ncclSymMemBarrierHandle* outHandle, ncclSymResourceRequirements* outReq);
+__host__ ncclResult_t ncclLsaBarrierCreateRequirement(ncclTeam, int nBarriers, ncclLsaBarrierHandle* outHandle, ncclSymResourceRequirements* outReq);
 
 #if __CUDACC__
 template<typename Coop>
-struct ncclSymMemBarrierSession_internal;
+struct ncclLsaBarrierSession_internal;
 
 template<typename Coop>
-struct ncclSymMemBarrierSession: ncclSymMemBarrierSession_internal<Coop> {
-  NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclTeam, ncclSymMemBarrierHandle, uint32_t index, bool multimem=false, ncclMultimemHandle mmHandle={});
+struct ncclLsaBarrierSession: ncclLsaBarrierSession_internal<Coop> {
+  NCCL_DEVICE_INLINE ncclLsaBarrierSession(Coop, ncclSymComm const&, ncclTeam, ncclLsaBarrierHandle, uint32_t index, bool multimem=false, ncclMultimemHandle mmHandle={});
 
-  NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclTeamTagNear, uint32_t index, bool multimem=false);
+  NCCL_DEVICE_INLINE ncclLsaBarrierSession(Coop, ncclSymComm const&, ncclTeamTagLsa, uint32_t index, bool multimem=false);
 
-  NCCL_DEVICE_INLINE ~ncclSymMemBarrierSession();
+  NCCL_DEVICE_INLINE ~ncclLsaBarrierSession();
 
-  ncclSymMemBarrierSession(ncclSymMemBarrierSession const&) = delete; // Sessions are not copyable
+  ncclLsaBarrierSession(ncclLsaBarrierSession const&) = delete; // Sessions are not copyable
 
   NCCL_DEVICE_INLINE void arrive(Coop, cuda::memory_order);
   NCCL_DEVICE_INLINE void wait(Coop, cuda::memory_order);

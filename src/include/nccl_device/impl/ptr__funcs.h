@@ -90,8 +90,8 @@ NCCL_DEVICE_INLINE T* ncclSymPtr<T>::localPtr() const {
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::nearPtr(int peer) const {
-  return (T*)ncclSymGetNearPointer(window, offset, peer);
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::lsaPtr(int peer) const {
+  return (T*)ncclSymGetLsaPointer(window, offset, peer);
 }
 #endif
 
@@ -118,8 +118,8 @@ NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclMultimemHandle mmHandle) co
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::nearMultimemPtr(ncclSymComm const& comm) const {
-  return (T*)ncclSymGetNearMultimemPointer(window, offset, comm);
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclSymComm const& comm) const {
+  return (T*)ncclSymGetMultimemPointer(window, offset, comm);
 }
 #endif
 

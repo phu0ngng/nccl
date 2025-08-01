@@ -1,9 +1,9 @@
 #include "core.h"
 #include "nccl_device/impl/mem_barrier__funcs.h"
 
-NCCL_API_CXX(ncclResult_t, ncclSymMemBarrierCreateRequirement, ncclTeam team, int nBarriers, ncclSymMemBarrierHandle* outHandle, ncclSymResourceRequirements* outReq);
-ncclResult_t ncclSymMemBarrierCreateRequirement(
-    ncclTeam team, int nBarriers, ncclSymMemBarrierHandle* outHandle,
+NCCL_API_CXX(ncclResult_t, ncclLsaBarrierCreateRequirement, ncclTeam team, int nBarriers, ncclLsaBarrierHandle* outHandle, ncclSymResourceRequirements* outReq);
+ncclResult_t ncclLsaBarrierCreateRequirement(
+    ncclTeam team, int nBarriers, ncclLsaBarrierHandle* outHandle,
     ncclSymResourceRequirements* outReq
   ) {
   memset(outReq, 0, sizeof(*outReq));

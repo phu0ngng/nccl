@@ -12,19 +12,19 @@ NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamWorld(ncclSymComm const &comm) {
   return ans;
 }
 
-NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamNear(ncclSymComm const &comm) {
+NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamLsa(ncclSymComm const &comm) {
   ncclTeam ans;
-  ans.nRanks = comm.nearSize;
-  ans.rank = comm.nearRank;
+  ans.nRanks = comm.lsaSize;
+  ans.rank = comm.lsaRank;
   ans.stride = 1;
   return ans;
 }
 
 NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamRail(ncclSymComm const& comm) {
   ncclTeam ans;
-  ans.nRanks = nccl::utility::idivFast32(comm.nRanks, comm.nearSize, comm.nearSize_rcp32);
-  ans.rank = nccl::utility::idivFast32(comm.rank, comm.nearSize, comm.nearSize_rcp32);
-  ans.stride = comm.nearSize;
+  ans.nRanks = nccl::utility::idivFast32(comm.nRanks, comm.lsaSize, comm.lsaSize_rcp32);
+  ans.rank = nccl::utility::idivFast32(comm.rank, comm.lsaSize, comm.lsaSize_rcp32);
+  ans.stride = comm.lsaSize;
   return ans;
 }
 
@@ -48,8 +48,8 @@ NCCL_HOST_DEVICE_INLINE int ncclTeamRankToWorld(ncclSymComm const& comm, ncclTea
   return comm.rank + (rank - tm.rank)*tm.stride;
 }
 
-NCCL_HOST_DEVICE_INLINE int ncclTeamRankToNear(ncclSymComm const& comm, ncclTeam tm, int rank) {
-  return comm.nearRank + (rank - tm.rank)*tm.stride;
+NCCL_HOST_DEVICE_INLINE int ncclTeamRankToLsa(ncclSymComm const& comm, ncclTeam tm, int rank) {
+  return comm.lsaRank + (rank - tm.rank)*tm.stride;
 }
 
 NCCL_HOST_DEVICE_INLINE ncclTeam ncclTeamInnerFactor(ncclTeam parent, int innerSize) {
@@ -86,39 +86,39 @@ NCCL_HOST_DEVICE_INLINE int ncclTeamRankInDifference(ncclTeam parent, ncclTeam s
 
 #if __CUDACC__
 NCCL_DEVICE_INLINE void* ncclSymGetLocalPointer(ncclWindow_t w, size_t offset) {
-  char* base = nccl::utility::loadConst(&w->nearFlatBase);
+  char* base = nccl::utility::loadConst(&w->lsaFlatBase);
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
-  int nearRank = nccl::utility::loadConst(&w->nearRank);
-  return (void*)(nccl::utility::add4G(base, nearRank*stride4G) + offset);
+  int lsaRank = nccl::utility::loadConst(&w->lsaRank);
+  return (void*)(nccl::utility::add4G(base, lsaRank*stride4G) + offset);
 }
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetNearPointer(ncclWindow_t w, size_t offset, int nearPeer) {
-  char* base = nccl::utility::loadConst(&w->nearFlatBase);
+NCCL_DEVICE_INLINE void* ncclSymGetLsaPointer(ncclWindow_t w, size_t offset, int lsaPeer) {
+  char* base = nccl::utility::loadConst(&w->lsaFlatBase);
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
-  return (void*)(nccl::utility::add4G(base, nearPeer*stride4G) + offset);
+  return (void*)(nccl::utility::add4G(base, lsaPeer*stride4G) + offset);
 }
 #endif
 
 #if __CUDACC__
 NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, int peer) {
-  char* base = nccl::utility::loadConst(&w->nearFlatBase);
+  char* base = nccl::utility::loadConst(&w->lsaFlatBase);
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
   int worldRank = nccl::utility::loadConst(&w->worldRank);
-  int nearRank = nccl::utility::loadConst(&w->nearRank);
-  int nearPeer = nearRank + (peer - worldRank);
-  return (void*)(nccl::utility::add4G(base, nearPeer*stride4G) + offset);
+  int lsaRank = nccl::utility::loadConst(&w->lsaRank);
+  int lsaPeer = lsaRank + (peer - worldRank);
+  return (void*)(nccl::utility::add4G(base, lsaPeer*stride4G) + offset);
 }
 #endif
 
 #if __CUDACC__
 NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, ncclTeam tm, int peer) {
-  char* base = nccl::utility::loadConst(&w->nearFlatBase);
+  char* base = nccl::utility::loadConst(&w->lsaFlatBase);
   uint32_t stride4G = nccl::utility::loadConst(&w->stride4G);
-  int nearRank = nccl::utility::loadConst(&w->nearRank);
-  int nearPeer = nearRank + (peer - tm.rank)*tm.stride;
-  return (void*)(nccl::utility::add4G(base, nearPeer*stride4G) + offset);
+  int lsaRank = nccl::utility::loadConst(&w->lsaRank);
+  int lsaPeer = lsaRank + (peer - tm.rank)*tm.stride;
+  return (void*)(nccl::utility::add4G(base, lsaPeer*stride4G) + offset);
 }
 #endif
 
@@ -131,8 +131,8 @@ NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetNearMultimemPointer(ncclWindow_t w, size_t offset, ncclSymComm const& comm) {
-  return ncclSymGetMultimemPointer(w, offset, comm.nearMultimem);
+NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclSymComm const& comm) {
+  return ncclSymGetMultimemPointer(w, offset, comm.multimem);
 }
 #endif
 
@@ -200,28 +200,28 @@ NCCL_HOST_DEVICE_INLINE size_t ncclSymGetResourceBufferOffset(ncclSymResourceBuf
 
 #if __CUDACC__
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h) {
-  void* nearFlatBase = comm.resourceWindow_inlined.nearFlatBase;
+  void* lsaFlatBase = comm.resourceWindow_inlined.lsaFlatBase;
   uint32_t stride4G = comm.resourceWindow_inlined.stride4G;
-  void* local = nccl::utility::add4G(nearFlatBase, comm.nearRank*stride4G);
+  void* local = nccl::utility::add4G(lsaFlatBase, comm.lsaRank*stride4G);
   return (void*)(reinterpret_cast<char(*)[128]>(local) + h);
 }
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, int nearPeer) {
-  void* nearFlatBase = comm.resourceWindow_inlined.nearFlatBase;
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLsaPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, int lsaPeer) {
+  void* lsaFlatBase = comm.resourceWindow_inlined.lsaFlatBase;
   uint32_t stride4G = comm.resourceWindow_inlined.stride4G;
-  void* local = nccl::utility::add4G(nearFlatBase, nearPeer*stride4G);
+  void* local = nccl::utility::add4G(lsaFlatBase, lsaPeer*stride4G);
   return (void*)(reinterpret_cast<char(*)[128]>(local) + h);
 }
 #endif
 
 #if __CUDACC__
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, ncclTeam team, int peer) {
-  int nearPeer = comm.nearRank + (peer - team.rank)*team.stride;
-  void* nearFlatBase = comm.resourceWindow_inlined.nearFlatBase;
+  int lsaPeer = comm.lsaRank + (peer - team.rank)*team.stride;
+  void* lsaFlatBase = comm.resourceWindow_inlined.lsaFlatBase;
   uint32_t stride4G = comm.resourceWindow_inlined.stride4G;
-  void* local = nccl::utility::add4G(nearFlatBase, nearPeer*stride4G);
+  void* local = nccl::utility::add4G(lsaFlatBase, lsaPeer*stride4G);
   return (void*)(reinterpret_cast<char(*)[128]>(local) + h);
 }
 #endif
@@ -236,8 +236,8 @@ NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm con
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearMultimemPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h) {
-  return ncclSymGetResourceBufferMultimemPointer(comm, h, comm.nearMultimem);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h) {
+  return ncclSymGetResourceBufferMultimemPointer(comm, h, comm.multimem);
 }
 #endif
 

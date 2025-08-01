@@ -3,18 +3,18 @@
 #include "../mem_barrier.h"
 #include "core__types.h"
 
-struct ncclSymMemBarrierHandle {
+struct ncclLsaBarrierHandle {
   ncclSymResourceBufferHandle bufHandle;
   int nBarriers;
 };
 
 #if __CUDACC__
 template<typename Coop>
-struct ncclSymMemBarrierSession_internal {
+struct ncclLsaBarrierSession_internal {
   Coop coop;
   ncclSymComm const& comm;
   ncclTeam team;
-  ncclSymMemBarrierHandle handle;
+  ncclLsaBarrierHandle handle;
   int index;
   bool multimem;
   ncclMultimemHandle mmHandle;

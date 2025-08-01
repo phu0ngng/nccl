@@ -32,12 +32,12 @@ struct ncclSymrRegTask {
 };
 
 struct ncclSymrState {
-  // Like localRank/localRanks except "near" ranks must be consecutive in the world
-  // and all near subsets have the same number of ranks. If any condition is
-  // false then the near team is just the singleton of self.
-  int nearSelf;
-  int nearSize;
-  int* nearRankList;
+  // Like localRank/localRanks except "lsa" ranks must be consecutive in the world
+  // and all lsa subsets have the same number of ranks. If any condition is
+  // false then the lsa team is just the singleton of self.
+  int lsaSelf;
+  int lsaSize;
+  int* lsaRankList;
 
   size_t granularity; // cuMemGetAllocationGranularity
   struct ncclSymrMemory* memHead;
@@ -46,7 +46,7 @@ struct ncclSymrState {
   struct ncclSymrTeam* teamHead;
   size_t bigSize; // size of our big logical space (128GB?)
   struct ncclSpace bigSpace; // allocates our big VA space.
-  void* nearFlatBase; // base ptr for all near ranks big VA's concatenated together: size = nearRanks*bigSize
+  void* lsaFlatBase; // base ptr for all lsa ranks big VA's concatenated together: size = lsaRanks*bigSize
   struct ncclShadowPool shadows;
   struct ncclSymCommWindowTable* windowTable;
 
@@ -64,9 +64,9 @@ ncclResult_t ncclSymrWindowRegisterInGroup(
   struct ncclComm* comm, void* ptr, size_t size, int winFlags, ncclWindow_t* outWinDev
 );
 
-// Get the corresponding pointer in another near rank's symmetric memory window
-ncclResult_t ncclSymrGetNearRankPtr(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, int nearRank, void** outPtr);
+// Get the corresponding pointer in another lsa rank's symmetric memory window
+ncclResult_t ncclSymrGetLsaRankPtr(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, int lsaRank, void** outPtr);
 
 // Get the multicast address for a given team
-ncclResult_t ncclSymrGetNearTeamPtrMC(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, struct ncclTeam nearTeam, void** outPtr);
+ncclResult_t ncclSymrGetLsaTeamPtrMC(struct ncclComm* comm, struct ncclSymrWindow* winHost, size_t offset, struct ncclTeam lsaTeam, void** outPtr);
 #endif

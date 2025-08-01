@@ -16,17 +16,17 @@ struct ncclSymCommWindowTable {
 struct ncclSymComm {
   int rank, nRanks;
   uint32_t nRanks_rcp32;
-  int nearRank, nearSize;
-  uint32_t nearSize_rcp32;
+  int lsaRank, lsaSize;
+  uint32_t lsaSize_rcp32;
 
   struct ncclSymCommWindowTable* windowTable;
 
   ncclWindow_t resourceWindow;
   ncclWindow_vidmem resourceWindow_inlined;
 
-  ncclMultimemHandle nearMultimem;
-  ncclSymMemBarrierHandle nearMemBarrier;
-  ncclSymLLA2AHandle nearLLA2A;
+  ncclMultimemHandle multimem;
+  ncclLsaBarrierHandle lsaBarrier;
+  ncclSymLLA2AHandle lsaLLA2A;
 };
 
 #endif // _NCCL_DEVICE_COMM__TYPES_H_

@@ -5,7 +5,7 @@
 template<int BytePerPack, int UnrollPacks, int UnrollPeers, typename T, typename Red>
 static __device__ void reduceDeep(
     ncclSymkKernelStuff const& stuff, int tn, int t,
-    bool waitNeeded, ncclSymMemBarrierSession<ncclCoopCta>& bar,
+    bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     Red red, ncclSymPtr<char> input, ncclSymPtr<char> output, int32_t nIters
   ) {
   using Pack = BytePack<BytePerPack>;
@@ -162,7 +162,7 @@ static __device__ void reduceEnds(
 template<typename Red, typename T>
 static __device__ void reduce(
     ncclSymkKernelStuff const& stuff, int tn, int t,
-    bool waitNeeded, ncclSymMemBarrierSession<ncclCoopCta>& bar,
+    bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     Red red, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
   int nRanks = stuff.comm.nRanks;
@@ -221,8 +221,8 @@ static __device__ void reduce(
 template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymkRun_ReduceScatter_LD(ncclSymkDevArgs const* args) {
   ncclSymkKernelStuff stuff{args};
-  ncclSymMemBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclTeamTagNear(), blockIdx.x
+  ncclLsaBarrierSession<ncclCoopCta> bar{
+    ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x
   };
   Red<typename ncclSymkAccumType<Red, T, /*nvls=*/false>::Type> red(args->redOpArg);
   int const& rank = args->comm.rank;
@@ -297,8 +297,8 @@ static __device__ void reduceMultimem(
 
 template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymkRun_ReduceScatter_LDMC(ncclSymkDevArgs const* args) {
-  ncclSymMemBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclTeamTagNear(), blockIdx.x, /*multimem=*/true
+  ncclLsaBarrierSession<ncclCoopCta> bar{
+    ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
   };
   Red<typename ncclSymkAccumType<Red, T, /*nvls=*/true>::Type> red(args->redOpArg);
 
@@ -312,7 +312,7 @@ __device__ __forceinline__ void ncclSymkRun_ReduceScatter_LDMC(ncclSymkDevArgs c
 
   reduceMultimem(
     tn, t, red,
-    ncclSymPtr<T>(args->inputWin, args->inputOff).multimemPtr(args->comm.nearMultimem) + args->comm.rank*args->nElts,
+    ncclSymPtr<T>(args->inputWin, args->inputOff).multimemPtr(args->comm.multimem) + args->comm.rank*args->nElts,
     ncclSymPtr<T>(args->outputWin, args->outputOff).localPtr(),
     args->nElts
   );
@@ -378,7 +378,7 @@ template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymkRun_ReduceScatter_LL(ncclSymkDevArgs const* args) {
   ncclSymkKernelStuff stuff(args);
   ncclSymLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), args->comm, ncclTeamTagNear(), blockIdx.x, ncclSymkMaxThreads
+    ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x, ncclSymkMaxThreads
   );
   Red<typename ncclSymkAccumType<Red, T, /*nvls=*/false>::Type> red(args->redOpArg);
   using Pack = BytePack<8>;

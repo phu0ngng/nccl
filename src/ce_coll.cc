@@ -101,7 +101,7 @@ ncclResult_t ncclPrepMCSync(struct ncclComm* comm, bool isComplete, CUstreamBatc
   void* mcDstPtr;
   void* dstPtr = isComplete ? (void*)&completePtrs[comm->rank] : (void*)&readyPtrs[comm->rank];
   size_t offset = (uint8_t*)dstPtr - (uint8_t*)comm->ceColl.ceSyncWin->userPtr;
-  NCCLCHECKGOTO(ncclSymrGetNearTeamPtrMC(comm, comm->ceColl.ceSyncWin, offset, ncclTeamNear(comm), &mcDstPtr), ret, fail);
+  NCCLCHECKGOTO(ncclSymrGetLsaTeamPtrMC(comm, comm->ceColl.ceSyncWin, offset, ncclTeamLsa(comm), &mcDstPtr), ret, fail);
   
   // Write our own ready/complete flag to the multi-cast address
   CUDACHECKGOTO(cudaMemcpyAsync(
@@ -146,7 +146,7 @@ ncclResult_t ncclPrepUCSync(struct ncclComm* comm, bool isComplete,
     void * peerDstPtr;
     void* dstPtr = isComplete ? (void*)&completePtrs[comm->rank] : (void*)&readyPtrs[comm->rank];
     size_t offset = (uint8_t*)dstPtr - (uint8_t*)comm->ceColl.ceSyncWin->userPtr;
-    NCCLCHECKGOTO(ncclSymrGetNearRankPtr(comm, comm->ceColl.ceSyncWin, offset, r, &peerDstPtr), ret, fail);
+    NCCLCHECKGOTO(ncclSymrGetLsaRankPtr(comm, comm->ceColl.ceSyncWin, offset, r, &peerDstPtr), ret, fail);
     batchParams[*opIdx] = {};
     batchParams[*opIdx].writeValue.operation = CU_STREAM_MEM_OP_WRITE_VALUE_32;
     batchParams[*opIdx].writeValue.address  = (CUdeviceptr)peerDstPtr;
@@ -347,7 +347,7 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   for (int r = 1; r < comm->nRanks; r++) {
     int targetRank = (comm->rank + r) % comm->nRanks;
     offset = myRecvBuff - (uint8_t*)args->recvWin->userPtr;  
-    NCCLCHECKGOTO(ncclSymrGetNearRankPtr(comm, args->recvWin, offset, targetRank, &peerRecvBuff), ret, fail);
+    NCCLCHECKGOTO(ncclSymrGetLsaRankPtr(comm, args->recvWin, offset, targetRank, &peerRecvBuff), ret, fail);
     batchOpsParams.srcs[batchOpsParams.numOps] = (void*)mySendBuff;
     batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerRecvBuff;
     batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
@@ -398,7 +398,7 @@ ncclResult_t ncclCeAlltoAll(struct ncclComm* comm, struct ncclCeCollArgs* args, 
     } else {
       // Remote copy to other ranks: send to rank dstRank's receive buffer at position comm->rank
       offset = dstPtr - (uint8_t*)args->recvWin->userPtr;
-      NCCLCHECKGOTO(ncclSymrGetNearRankPtr(comm, args->recvWin, offset, dstRank, &peerRecvBuff), ret, fail);
+      NCCLCHECKGOTO(ncclSymrGetLsaRankPtr(comm, args->recvWin, offset, dstRank, &peerRecvBuff), ret, fail);
       batchOpsParams.srcs[batchOpsParams.numOps] = (void*)srcPtr;
       batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerRecvBuff;
       batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
@@ -457,7 +457,7 @@ ncclResult_t ncclCeScatter(struct ncclComm* comm, struct ncclCeCollArgs* args, c
       uint8_t* dstPtr = isInPlace ? myRecvBuff + dstRank * chunkBytes : myRecvBuff;
 
       offset = dstPtr - (uint8_t*)args->recvWin->userPtr;
-      NCCLCHECKGOTO(ncclSymrGetNearRankPtr(comm, args->recvWin, offset, dstRank, &peerDstPtr), ret, fail);
+      NCCLCHECKGOTO(ncclSymrGetLsaRankPtr(comm, args->recvWin, offset, dstRank, &peerDstPtr), ret, fail);
       batchOpsParams.srcs[batchOpsParams.numOps] = (void*)srcPtr;
       batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerDstPtr;
       batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
@@ -509,7 +509,7 @@ ncclResult_t ncclCeGather(struct ncclComm* comm, struct ncclCeCollArgs* args, cu
     // Non-root ranks send their data to root's receive buffer
     uint8_t* rootRecvPtr = (uint8_t*)args->recvBuff + comm->rank * chunkBytes;
     offset = rootRecvPtr - (uint8_t*)args->recvWin->userPtr;
-    NCCLCHECKGOTO(ncclSymrGetNearRankPtr(comm, args->recvWin, offset, rootRank, &peerRecvBuff), ret, fail);
+    NCCLCHECKGOTO(ncclSymrGetLsaRankPtr(comm, args->recvWin, offset, rootRank, &peerRecvBuff), ret, fail);
     batchOpsParams.srcs[batchOpsParams.numOps] = (void*)mySendBuff;
     batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerRecvBuff;
     batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
