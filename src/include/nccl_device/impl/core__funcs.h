@@ -123,7 +123,7 @@ NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, nc
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclSymMultimemHandle mm) {
+NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclMultimemHandle mm) {
   void* ptr = mm.mcBasePtr;
   ptr = reinterpret_cast<char(*)[4096]>(ptr) + nccl::utility::loadConst(&w->mcOffset4K);
   return (void*)((char*)ptr + offset);
@@ -168,7 +168,7 @@ NCCL_DEVICE_INLINE ncclWindow_t ncclSymFindWindow(Coop coop, ncclSymComm const& 
 #if 0
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclSymMultimemHandle ncclSymFindMultimem(Coop coop, ncclSymComm const &comm, ncclTeam tm) {
+NCCL_DEVICE_INLINE ncclMultimemHandle ncclSymFindMultimem(Coop coop, ncclSymComm const &comm, ncclTeam tm) {
   using nccl::utility::loadConst;
   auto coalesced = ncclCoopCoalesced(coop);
   ncclSymComm::TeamTable* e = comm.teamTable;
@@ -184,7 +184,7 @@ NCCL_DEVICE_INLINE ncclSymMultimemHandle ncclSymFindMultimem(Coop coop, ncclSymC
     uint32_t mask = __ballot_sync(coalesced.laneMask(), found);
     if (mask != 0) {
       int index = __popc((mask-1) & coalesced.laneMask());
-      ncclSymMultimemHandle mm;
+      ncclMultimemHandle mm;
       mm.mcBaseAddr = loadConst(&e->mcBaseAddr[index]);
       return mm;
     }
@@ -227,7 +227,7 @@ NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclSymComm const& 
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, ncclSymMultimemHandle mm) {
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm const& comm, ncclSymResourceBufferHandle h, ncclMultimemHandle mm) {
   void* ptr = mm.mcBasePtr;
   ptr = reinterpret_cast<char(*)[4096]>(ptr) + comm.resourceWindow_inlined.mcOffset4K;
   ptr = reinterpret_cast<char(*)[128]>(ptr) + h;

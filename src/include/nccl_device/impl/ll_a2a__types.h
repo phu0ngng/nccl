@@ -18,7 +18,7 @@ struct ncclSymLLA2ASession_internal {
   int block;
   int pitch;
   bool multimem;
-  ncclSymMultimemHandle mmHandle;
+  ncclMultimemHandle mmHandle;
   uint32_t epoch;
   uint32_t slotsOffset;
 

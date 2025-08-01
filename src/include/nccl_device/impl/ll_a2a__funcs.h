@@ -9,7 +9,7 @@ template<typename Coop>
 NCCL_DEVICE_INLINE ncclSymLLA2ASession<Coop>::ncclSymLLA2ASession(
     Coop coop, ncclSymComm const& comm, ncclTeam team,
     ncclSymLLA2AHandle handle, uint32_t block, int maxElts,
-    bool multimem, ncclSymMultimemHandle mmHandle
+    bool multimem, ncclMultimemHandle mmHandle
   ):
   ncclSymLLA2ASession_internal<Coop>{
     coop, comm, team, handle, (int)block, /*pitch=*/maxElts,

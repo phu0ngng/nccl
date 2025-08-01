@@ -7,7 +7,7 @@
 struct ncclSymComm;
 struct ncclTeam;
 // typedef struct ncclWindow_vidmem* ncclWindow_t; // in nccl.h
-struct ncclSymMultimemHandle;
+struct ncclMultimemHandle;
 
 typedef uint32_t ncclSymResourceBufferHandle;
 
@@ -45,7 +45,7 @@ struct ncclTeamRequirements {
   struct ncclTeamRequirements* next;
   struct ncclTeam team;
   bool multimem;
-  ncclSymMultimemHandle* outMultimemHandle; // If non-null, target assigned during ncclSymCommCreate.
+  ncclMultimemHandle* outMultimemHandle; // If non-null, target assigned during ncclSymCommCreate.
 };
 
 __host__ ncclResult_t ncclSymCommCreate(ncclComm_t, ncclSymCommRequirements const*, ncclSymComm* outDevComm);
@@ -100,7 +100,7 @@ NCCL_DEVICE_INLINE void* ncclSymGetLocalPointer(ncclWindow_t w, size_t offset);
 NCCL_DEVICE_INLINE void* ncclSymGetNearPointer(ncclWindow_t w, size_t offset, int nearPeer);
 NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, int peer);
 NCCL_DEVICE_INLINE void* ncclSymGetPeerPointer(ncclWindow_t w, size_t offset, ncclTeam tm, int peer);
-NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclSymMultimemHandle mmHandle);
+NCCL_DEVICE_INLINE void* ncclSymGetMultimemPointer(ncclWindow_t w, size_t offset, ncclMultimemHandle mmHandle);
 NCCL_DEVICE_INLINE void* ncclSymGetNearMultimemPointer(ncclWindow_t w, size_t offset, ncclSymComm const&);
 #endif
 
@@ -109,7 +109,7 @@ NCCL_DEVICE_INLINE void* ncclSymGetNearMultimemPointer(ncclWindow_t w, size_t of
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferLocalPointer(ncclSymComm const&, ncclSymResourceBufferHandle);
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearPointer(ncclSymComm const&, ncclSymResourceBufferHandle, int nearPeer);
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferPeerPointer(ncclSymComm const&, ncclSymResourceBufferHandle, ncclTeam, int peer);
-NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm const&, ncclSymResourceBufferHandle, ncclSymMultimemHandle);
+NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferMultimemPointer(ncclSymComm const&, ncclSymResourceBufferHandle, ncclMultimemHandle);
 NCCL_DEVICE_INLINE void* ncclSymGetResourceBufferNearMultimemPointer(ncclSymComm const&, ncclSymResourceBufferHandle);
 #endif
 

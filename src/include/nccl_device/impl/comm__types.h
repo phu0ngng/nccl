@@ -24,7 +24,7 @@ struct ncclSymComm {
   ncclWindow_t resourceWindow;
   ncclWindow_vidmem resourceWindow_inlined;
 
-  ncclSymMultimemHandle nearMultimem;
+  ncclMultimemHandle nearMultimem;
   ncclSymMemBarrierHandle nearMemBarrier;
   ncclSymLLA2AHandle nearLLA2A;
 };

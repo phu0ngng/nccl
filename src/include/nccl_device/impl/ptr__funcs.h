@@ -111,7 +111,7 @@ NCCL_DEVICE_INLINE T* ncclSymPtr<T>::peerPtr(ncclTeam team, int peer) const {
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclSymMultimemHandle mmHandle) const {
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclMultimemHandle mmHandle) const {
   return (T*)ncclSymGetMultimemPointer(window, offset, mmHandle);
 }
 #endif

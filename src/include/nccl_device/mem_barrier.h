@@ -13,7 +13,7 @@ struct ncclSymMemBarrierSession_internal;
 
 template<typename Coop>
 struct ncclSymMemBarrierSession: ncclSymMemBarrierSession_internal<Coop> {
-  NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclTeam, ncclSymMemBarrierHandle, uint32_t index, bool multimem=false, ncclSymMultimemHandle mmHandle={});
+  NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclTeam, ncclSymMemBarrierHandle, uint32_t index, bool multimem=false, ncclMultimemHandle mmHandle={});
 
   NCCL_DEVICE_INLINE ncclSymMemBarrierSession(Coop, ncclSymComm const&, ncclTeamTagNear, uint32_t index, bool multimem=false);
 

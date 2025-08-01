@@ -8,7 +8,7 @@ template<typename Coop>
 NCCL_DEVICE_INLINE ncclSymMemBarrierSession<Coop>::ncclSymMemBarrierSession(
     Coop coop, ncclSymComm const& comm, ncclTeam team,
     ncclSymMemBarrierHandle handle, uint32_t index,
-    bool multimem, ncclSymMultimemHandle mmHandle
+    bool multimem, ncclMultimemHandle mmHandle
   ):
   ncclSymMemBarrierSession_internal<Coop>{
     coop, comm, team, handle, (int)index, multimem, mmHandle, /*epoch=*/0

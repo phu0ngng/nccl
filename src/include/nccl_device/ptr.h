@@ -33,7 +33,7 @@ struct ncclSymPtr {
   NCCL_DEVICE_INLINE T* nearPtr(int peer) const;
   NCCL_DEVICE_INLINE T* peerPtr(int peer) const;
   NCCL_DEVICE_INLINE T* peerPtr(ncclTeam team, int peer) const;
-  NCCL_DEVICE_INLINE T* multimemPtr(ncclSymMultimemHandle mmHandle) const;
+  NCCL_DEVICE_INLINE T* multimemPtr(ncclMultimemHandle mmHandle) const;
   NCCL_DEVICE_INLINE T* nearMultimemPtr(ncclSymComm const&) const;
   #endif
 };

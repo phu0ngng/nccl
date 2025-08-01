@@ -17,7 +17,7 @@ struct ncclSymMemBarrierSession_internal {
   ncclSymMemBarrierHandle handle;
   int index;
   bool multimem;
-  ncclSymMultimemHandle mmHandle;
+  ncclMultimemHandle mmHandle;
   uint32_t epoch;
 
   NCCL_DEVICE_INLINE uint32_t* mcInbox(bool multimem) {

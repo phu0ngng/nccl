@@ -13,7 +13,7 @@ struct ncclWindow_vidmem {
   uint32_t mcOffset4K;
 };
 
-struct ncclSymMultimemHandle {
+struct ncclMultimemHandle {
   void* mcBasePtr;
 };
 
