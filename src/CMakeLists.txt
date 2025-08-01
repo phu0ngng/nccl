@@ -13,8 +13,8 @@ set(LIBSRCFILES
     transport.cc
     mnnvl.cc
     allocator.cc
-    sym_kernels.cc
-    sym_runtime.cc
+    dev_kernels.cc
+    dev_runtime.cc
 )
 
 # Add compatibility shim if using static cudart

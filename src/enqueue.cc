@@ -32,8 +32,8 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
   int ncclMaxSharedMem = ncclShmemDynamicSize(cudaArch);
 
   for (int sym=0; sym <= 1; sym++) {
-    int kcount = sym==0 ? ncclDevKernelCount : ncclSymkKernelCount;
-    void* const* kptrs = sym==0 ? ncclDevKernelList : ncclSymkKernelList;
+    int kcount = sym==0 ? ncclDevKernelCount : ncclDevkKernelCount;
+    void* const* kptrs = sym==0 ? ncclDevKernelList : ncclDevkKernelList;
     for (int k=0; k < kcount; k++) {
       void* fn = kptrs[k];
       cudaFuncAttributes attr = {0};
@@ -340,21 +340,21 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   int fnOpTyCount = 0;
 
   if (comm->symmetricSupport && planner->nTasksColl == 1 && planner->nTasksP2p == 0) {
-    NCCLCHECK(ncclSymrFindWindow(comm, task->sendbuff, &task->sendWin));
-    NCCLCHECK(ncclSymrFindWindow(comm, task->recvbuff, &task->recvWin));
-    bool symImplemented = ncclSymkImplemented(task->func, task->opDev.op, task->datatype);
+    NCCLCHECK(ncclDevrFindWindow(comm, task->sendbuff, &task->sendWin));
+    NCCLCHECK(ncclDevrFindWindow(comm, task->recvbuff, &task->recvWin));
+    bool symImplemented = ncclDevkImplemented(task->func, task->opDev.op, task->datatype);
 
     if (task->sendWin && task->recvWin && (task->sendWin->winFlags & task->recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && symImplemented) {
-      enum ncclSymkKernelId kernel;
+      enum ncclDevkKernelId kernel;
 
       int nChannels, nWarps;
       float estTimeUs = 1.e18;
-      NCCLCHECK(ncclSymkPickKernel(comm, task->func, task->opDev.op, task->datatype, task->count, &estTimeUs, &kernel, &nChannels, &nWarps));
+      NCCLCHECK(ncclDevkPickKernel(comm, task->func, task->opDev.op, task->datatype, task->count, &estTimeUs, &kernel, &nChannels, &nWarps));
 
       // We should only use symmetric kernel if it beats the asymmetric kernel. But the
       // perf model accuracy from asymmetric kernels is too inaccurate and reports too high
       // of a bandwidth. For now just always use symmetric if available.
-      if (kernel != ncclSymkKernelId_Count) {
+      if (kernel != ncclDevkKernelId_Count) {
         task->devFuncId = (int)kernel;
         task->nMaxChannels = nChannels;
         task->nWarps = nWarps;
@@ -1458,14 +1458,14 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         plan->threadPerBlock = task->nWarps*WARP_SIZE;
         plan->channelMask = uint64_t(-1) >> (64-task->nMaxChannels);
 
-        NCCLCHECKGOTO(ncclSymkMakeLaunchArgs(comm, task, &comm->memScoped, &plan->kernelFn, &plan->kernelSymArgs, &plan->kernelArgsSize), result, failure);
+        NCCLCHECKGOTO(ncclDevkMakeLaunchArgs(comm, task, &comm->memScoped, &plan->kernelFn, &plan->kernelSymArgs, &plan->kernelArgsSize), result, failure);
 
         // Profiler
         plan->groupApiEventHandle = task->groupApiEventHandle;
         planner->nTasksColl -= 1;
         ncclIntruQueueEnqueue(&planner->planQueue, plan);
         INFO(NCCL_TUNING, "%s [Symmetric]: %ld Bytes -> Kernel %s nchannels %d nthreads %d",
-        ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), ncclSymkKernelIdToString(task->devFuncId), task->nMaxChannels, plan->threadPerBlock);
+        ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), ncclDevkKernelIdToString(task->devFuncId), task->nMaxChannels, plan->threadPerBlock);
         nPlans += 1;
       } else {
         struct ncclKernelPlanBudget budget;
@@ -2503,8 +2503,8 @@ static ncclResult_t collTaskAppend(
 static ncclResult_t ceCollTaskAppend(
     struct ncclComm* comm,
     struct ncclInfo* info,
-    struct ncclSymrWindow* sendWin,
-    struct ncclSymrWindow* recvWin,
+    struct ncclDevrWindow* sendWin,
+    struct ncclDevrWindow* recvWin,
     struct ncclDevRedOpFull opDev) {
   struct ncclKernelPlanner *planner = &comm->planner;
   
@@ -2575,10 +2575,10 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       NCCLCHECK(ncclLaunchOneRank(info->recvbuff, info->sendbuff, info->count, opDev, info->datatype, info->stream));
       return ncclSuccess;
     } else {
-      struct ncclSymrWindow* sendWin;
-      struct ncclSymrWindow* recvWin;
-      ncclSymrFindWindow(comm, info->sendbuff, &sendWin);
-      ncclSymrFindWindow(comm, info->recvbuff, &recvWin);
+      struct ncclDevrWindow* sendWin;
+      struct ncclDevrWindow* recvWin;
+      ncclDevrFindWindow(comm, info->sendbuff, &sendWin);
+      ncclDevrFindWindow(comm, info->recvbuff, &recvWin);
       bool ceImplemented = ncclCeImplemented(info->coll, info->op, info->datatype);
       
       // Append CE collective task if CE is supported and requested by user

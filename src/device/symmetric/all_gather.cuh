@@ -1,10 +1,10 @@
-#include "sym_kernels.h"
+#include "dev_kernels.h"
 #include "kernel.cuh"
 #include "primitives.cuh"
 
 template<int BytePerPack, int UnrollPacks, int UnrollPeers>
 static __device__ void bcastDeep(
-    ncclSymkKernelStuff const& stuff, int tn, int t,
+    ncclDevkKernelStuff const& stuff, int tn, int t,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     ncclSymPtr<char> input, ncclSymPtr<char> output, bool inPlace, int nIters
   ) {
@@ -67,7 +67,7 @@ static __device__ void bcastDeep(
 
 template<int UnrollPeers, typename T>
 static __device__ void bcastEnds(
-    ncclSymkKernelStuff const& stuff, int tn, int t,
+    ncclDevkKernelStuff const& stuff, int tn, int t,
     ncclSymPtr<T> input, ncclSymPtr<T> output, bool inPlace, size_t nElts, uint32_t nPreElts, size_t nSufElts
   ) {
   int const& rank = stuff.comm.rank;
@@ -100,7 +100,7 @@ static __device__ void bcastEnds(
 
 template<typename T>
 static __device__ void bcast(
-    ncclSymkKernelStuff const& stuff, int tn, int t,
+    ncclDevkKernelStuff const& stuff, int tn, int t,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
@@ -156,8 +156,8 @@ static __device__ void bcast(
   bcastEnds<UnrollPeers>(stuff, tn, t, input, output, inPlace, nElts, nPreBytes/sizeof(T), nSufElts);
 }
 
-__device__ __forceinline__ void ncclSymkRun_AllGather_ST(ncclSymkDevArgs const* args) {
-  ncclSymkKernelStuff stuff{args};
+__device__ __forceinline__ void ncclDevkRun_AllGather_ST(ncclDevkDevArgs const* args) {
+  ncclDevkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
     ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x
   };
@@ -181,7 +181,7 @@ __device__ __forceinline__ void ncclSymkRun_AllGather_ST(ncclSymkDevArgs const* 
 
 template<typename T>
 static __device__ void bcastMultimem(
-    ncclSymkKernelStuff& stuff, int tn, int t, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
+    ncclDevkKernelStuff& stuff, int tn, int t, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
   size_t nBytes = nElts*sizeof(T);
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input.localPtr());
@@ -229,8 +229,8 @@ static __device__ void bcastMultimem(
   }
 }
 
-__device__ __forceinline__ void ncclSymkRun_AllGather_STMC(ncclSymkDevArgs const* args) {
-  ncclSymkKernelStuff stuff{args};
+__device__ __forceinline__ void ncclDevkRun_AllGather_STMC(ncclDevkDevArgs const* args) {
+  ncclDevkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar(
     ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
   );
@@ -254,7 +254,7 @@ __device__ __forceinline__ void ncclSymkRun_AllGather_STMC(ncclSymkDevArgs const
 
 template<typename EltType>
 static __device__ void allgather_LL_body(
-    ncclSymkKernelStuff& stuff, ncclSymLLA2ASession<ncclCoopCta>& lla2a,
+    ncclDevkKernelStuff& stuff, ncclSymLLA2ASession<ncclCoopCta>& lla2a,
     EltType* input, EltType* output, int nElts, int nPacks, int nStrideElts
   ) {
   using Pack = BytePack<8>;
@@ -262,7 +262,7 @@ static __device__ void allgather_LL_body(
   int rank = stuff.comm.rank;
   int nRanks = stuff.comm.nRanks;
   int t = threadIdx.x;
-  constexpr int tn = ncclSymkMaxThreads;
+  constexpr int tn = ncclDevkMaxThreads;
 
   #pragma unroll 1
   while (0 < nElts) {
@@ -328,10 +328,10 @@ static __device__ void allgather_LL_body(
   }
 }
 
-static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevArgs const* args, bool multimem) {
-  ncclSymkKernelStuff stuff(args);
+static __device__ void ncclDevkRun_AllGather_LL_impl(ncclDevkDevArgs const* args, bool multimem) {
+  ncclDevkKernelStuff stuff(args);
   ncclSymLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem
+    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*maxElts=*/ncclDevkMaxThreads, multimem
   );
 
   using Pack = BytePack<8>;
@@ -360,10 +360,10 @@ static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevArgs const* args
   }
 }
 
-__device__ __forceinline__ void ncclSymkRun_AllGather_LL(ncclSymkDevArgs const* args) {
-  ncclSymkRun_AllGather_LL_impl(args, /*multimem=*/false);
+__device__ __forceinline__ void ncclDevkRun_AllGather_LL(ncclDevkDevArgs const* args) {
+  ncclDevkRun_AllGather_LL_impl(args, /*multimem=*/false);
 }
 
-__device__ __forceinline__ void ncclSymkRun_AllGather_LLMC(ncclSymkDevArgs const* args) {
-  ncclSymkRun_AllGather_LL_impl(args, /*multimem=*/true);
+__device__ __forceinline__ void ncclDevkRun_AllGather_LLMC(ncclDevkDevArgs const* args) {
+  ncclDevkRun_AllGather_LL_impl(args, /*multimem=*/true);
 }

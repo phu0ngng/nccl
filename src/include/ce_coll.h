@@ -15,7 +15,7 @@ struct ncclCeColl {
   size_t baseUCSymReadyOffset;
   size_t baseUCSymComplOffset;
   uint32_t ceSeqNum;
-  struct ncclSymrWindow* ceSyncWin;
+  struct ncclDevrWindow* ceSyncWin;
 };
 
 struct ncclCeInitTask {
@@ -30,8 +30,8 @@ struct alignas(16) ncclCeCollArgs {
   size_t eltSize;
   uint8_t* sendBuff;
   uint8_t* recvBuff;
-  struct ncclSymrWindow* sendWin;
-  struct ncclSymrWindow* recvWin;
+  struct ncclDevrWindow* sendWin;
+  struct ncclDevrWindow* recvWin;
 };
 
 struct ncclCeBatchOpsParams {

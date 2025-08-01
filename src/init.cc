@@ -188,8 +188,8 @@ static ncclResult_t commFree(ncclComm_t comm) {
   NCCLCHECK(ncclCeFinalize(comm));
 
   if (comm->symmetricSupport) {
-    NCCLCHECK(ncclSymkFinalize(comm));
-    NCCLCHECK(ncclSymrFinalize(comm));
+    NCCLCHECK(ncclDevkFinalize(comm));
+    NCCLCHECK(ncclDevrFinalize(comm));
   }
   NCCLCHECK(ncclRasCommFini(comm));
 
@@ -1280,7 +1280,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
 
   comm->symmetricSupport = comm->isAllDirectP2p && comm->nNodes == 1 && ncclParamWinEnable() && ncclCuMemEnable();
-  comm->symrState.bigSize = 0;
+  comm->devrState.bigSize = 0;
 
   comm->ceColl.baseUCSymReadyPtr = NULL;
   comm->ceColl.baseUCSymComplPtr = NULL;

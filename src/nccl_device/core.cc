@@ -14,8 +14,8 @@ ncclTeam ncclTeamWorld(struct ncclComm* comm) {
 NCCL_API_CXX(ncclTeam, ncclTeamLsa, struct ncclComm* comm);
 ncclTeam ncclTeamLsa(struct ncclComm* comm) {
   ncclTeam ans;
-  ans.nRanks = comm->symrState.lsaSize;
-  ans.rank = comm->symrState.lsaSelf;
+  ans.nRanks = comm->devrState.lsaSize;
+  ans.rank = comm->devrState.lsaSelf;
   ans.stride = 1;
   return ans;
 }
@@ -23,9 +23,9 @@ ncclTeam ncclTeamLsa(struct ncclComm* comm) {
 NCCL_API_CXX(ncclTeam, ncclTeamRail, struct ncclComm* comm);
 ncclTeam ncclTeamRail(struct ncclComm* comm) {
   ncclTeam ans;
-  ans.nRanks = comm->nRanks/comm->symrState.lsaSize;
-  ans.rank = comm->rank/comm->symrState.lsaSize;
-  ans.stride = comm->symrState.lsaSize;
+  ans.nRanks = comm->nRanks/comm->devrState.lsaSize;
+  ans.rank = comm->rank/comm->devrState.lsaSize;
+  ans.stride = comm->devrState.lsaSize;
   return ans;
 }
 
@@ -36,5 +36,5 @@ int ncclTeamRankToWorld(struct ncclComm* comm, ncclTeam team, int rank) {
 
 NCCL_API_CXX(int, ncclTeamRankToLsa, struct ncclComm* comm, ncclTeam team, int rank);
 int ncclTeamRankToLsa(struct ncclComm* comm, ncclTeam team, int rank) {
-  return comm->symrState.lsaSelf + (rank - team.rank)*team.stride;
+  return comm->devrState.lsaSelf + (rank - team.rank)*team.stride;
 }
