@@ -583,7 +583,7 @@ Set to 2 to use NCCL_CTA_POLICY_ZERO policy.
 For more explanation about NCCL policies, please see :ref:`cta_policy_flags`.
 
 NCCL_NETDEVS_POLICY
----------------
+-------------------
 (since 2.28)
 
 The ``NCCL_NETDEVS_POLICY`` variable allows the user to set the policy for the assignment of network devices to the GPUs.
