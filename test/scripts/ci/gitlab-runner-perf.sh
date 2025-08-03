@@ -49,6 +49,8 @@ then
     run_command "${func}_symm_memory_min_size_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-G 1 -w 1 -n 1 -b 1K -e 1K -d all -R 2"
     run_command "${func}_symm_memory_max_size_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-G 1 -w 1 -n 1 -b 16G -e 16G -d all -R 2"
     run_command "${func}_symm_memory_sweep_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -G 1 -R 2"
+    run_command "${func}_group_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -R 2 -n 5 -m 10"
+    run_command "${func}_large_group_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -R 2 -n 5 -m 100"
   done
 fi
 

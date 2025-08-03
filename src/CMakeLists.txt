@@ -38,6 +38,7 @@ add_subdirectory(plugin)
 add_subdirectory(device)
 add_subdirectory(nccl_device)
 add_subdirectory(ras)
+add_subdirectory(scheduler)
 
 # Add all source files
 list(APPEND LIBSRCFILES
@@ -48,6 +49,7 @@ list(APPEND LIBSRCFILES
     ${PLUGIN_SOURCES}
     ${RAS_SOURCES}
     ${SYM_SOURCES}
+    ${SCHEDULER_SOURCES}
 )
 
 # # Set CUDA specific flags

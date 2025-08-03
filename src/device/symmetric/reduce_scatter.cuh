@@ -161,12 +161,14 @@ static __device__ void reduceEnds(
 
 template<typename Red, typename T>
 static __device__ void reduce(
-    ncclDevkKernelStuff const& stuff, int tn, int t,
+    ncclDevkKernelStuff const& stuff, int tn, int t, int nBlocks,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     Red red, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
-  int nRanks = stuff.comm.nRanks;
-  int nBlocks = stuff.nBlocks;
+  int const& nRanks = stuff.comm.nRanks;
+  int const& nRanks_rcp32 = stuff.nRanks_rcp32;
+  uint32_t nBlocks_rcp32 = nccl::utility::idivRcp32_upto64(nBlocks);
+  uint32_t nRanks_nBlocks_rcp32 = nccl::utility::imulRcp32(nRanks, nRanks_rcp32, nBlocks, nBlocks_rcp32);
 
   uint32_t alignment = uint32_t(input.offset - output.offset);
   size_t nBytes = nElts*sizeof(T);
@@ -181,7 +183,7 @@ static __device__ void reduce(
     constexpr int BytePerPack = 16, UnrollPacks = 4, UnrollPeers = 2;
     constexpr int BytePerChunk = MinWarpPerBlock*UnrollPacks*WARP_SIZE*BytePerPack;
     uint32_t chunks = (nBytes-cursor)/BytePerChunk;
-    chunks -= imodFast32(chunks, nRanks*nBlocks, stuff.nRanks_nBlocks_rcp32);
+    chunks -= imodFast32(chunks, nRanks*nBlocks, nRanks_nBlocks_rcp32);
     if (chunks != 0) {
       uintptr_t cursorAfter = cursor + uintptr_t(chunks)*BytePerChunk;
       reduceDeep<BytePerPack, UnrollPacks, UnrollPeers, T>(
@@ -198,7 +200,7 @@ static __device__ void reduce(
     constexpr int BytePerPack = 4, UnrollPacks = 4, UnrollPeers = 4;
     constexpr int BytePerChunk = MinWarpPerBlock*UnrollPacks*WARP_SIZE*BytePerPack;
     uint32_t chunks = (nBytes-cursor)/BytePerChunk;
-    chunks -= imodFast32(chunks, nRanks*nBlocks, stuff.nRanks_nBlocks_rcp32);
+    chunks -= imodFast32(chunks, nRanks*nBlocks, nRanks_nBlocks_rcp32);
     if (chunks != 0) {
       uintptr_t cursorAfter = cursor + uintptr_t(chunks)*BytePerChunk;
       reduceDeep<(sizeof(T) <= BytePerPack ? BytePerPack : 0), UnrollPacks, UnrollPeers, T>(
@@ -219,26 +221,30 @@ static __device__ void reduce(
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_ReduceScatter_LD(ncclDevkDevArgs const* args) {
+__device__ __forceinline__ void ncclDevkRun_ReduceScatter_LD(ncclDevkDevWorkArgs const* args) {
   ncclDevkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x
+    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x
   };
-  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type> red(args->redOpArg);
-  int const& rank = args->comm.rank;
-
-  // Round robin warps over blocks.
-  int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
-                    blockIdx.x, gridDim.x,
-                    threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int tn = gridDim.x*blockDim.x;
+  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type> red(stuff.devWork->redOpArg);
+  int const& rank = stuff.comm.rank;
 
   bar.arrive(ncclCoopCta(), cuda::memory_order_relaxed);
 
-  reduce(stuff, tn, t, /*waitNeeded=*/true, bar, red,
-         ncclSymPtr<T>(args->inputWin, args->inputOff) + rank*args->nElts,
-         ncclSymPtr<T>(args->outputWin, args->outputOff),
-         args->nElts);
+  bool waitNeeded = true;
+  NCCL_DEVICEK_GROUP_START(stuff, T);
+
+  // Round robin warps over blocks.
+  int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
+                    ncclDevkGroupBlock, ncclDevkGroupNBlocks,
+                    threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
+  int tn = ncclDevkGroupNBlocks*blockDim.x;
+
+  reduce(stuff, tn, t, ncclDevkGroupNBlocks, waitNeeded, bar, red,
+         ncclDevkGroupInput + rank*ncclDevkGroupNElts, ncclDevkGroupOutput, ncclDevkGroupNElts);
+
+  waitNeeded = false;
+  NCCL_DEVICEK_GROUP_END;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 }
@@ -291,31 +297,36 @@ static __device__ void reduceMultimem(
     uintptr_t cursor = i < nPreBytes ? i : nBytes-nSufBytes+(i-nPreBytes);
     BytePack<sizeof(T)> val = applyLoadMultimem<Red, sizeof(T)>(red, inputUptr + cursor);
     *reinterpret_cast<BytePack<sizeof(T)>*>(outputUptr + cursor) = val;
-    cursor += tn*sizeof(T);
   }
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_ReduceScatter_LDMC(ncclDevkDevArgs const* args) {
+__device__ __forceinline__ void ncclDevkRun_ReduceScatter_LDMC(ncclDevkDevWorkArgs const* args) {
+  ncclDevkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
+    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
   };
-  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/true>::Type> red(args->redOpArg);
+  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/true>::Type> red(stuff.devWork->redOpArg);
 
-  // Round robin warps over blocks.
-  int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
-                    blockIdx.x, gridDim.x,
-                    threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int tn = gridDim.x*blockDim.x;
+  int const& rank = stuff.comm.rank;
+  auto const& multimem = stuff.comm.multimem;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
-  reduceMultimem(
-    tn, t, red,
-    ncclSymPtr<T>(args->inputWin, args->inputOff).multimemPtr(args->comm.multimem) + args->comm.rank*args->nElts,
-    ncclSymPtr<T>(args->outputWin, args->outputOff).localPtr(),
-    args->nElts
-  );
+  NCCL_DEVICEK_GROUP_START(stuff, T);
+
+  // Round robin warps over blocks.
+  int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
+                    ncclDevkGroupBlock, ncclDevkGroupNBlocks,
+                    threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
+  int tn = ncclDevkGroupNBlocks*blockDim.x;
+
+  reduceMultimem(tn, t, red,
+                 ncclDevkGroupInput.multimemPtr(multimem) + rank*ncclDevkGroupNElts,
+                 ncclDevkGroupOutput.localPtr(),
+                 ncclDevkGroupNElts);
+
+  NCCL_DEVICEK_GROUP_END;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 }
@@ -330,8 +341,8 @@ __device__ __forceinline__ void ncclDevkRun_ReduceScatter_LL_body(
   using AccPack = BytePack<8*sizeof(Acc)/sizeof(T)>;
   constexpr int EltPerPack = 8/sizeof(EltType);
 
-  int nRanks = stuff.comm.nRanks;
-  int rank = stuff.comm.rank;
+  int const& nRanks = stuff.comm.nRanks;
+  int const& rank = stuff.comm.rank;
   int t = threadIdx.x;
   constexpr int tn = ncclDevkMaxThreads;
   ncclCoopCta cta;
@@ -354,7 +365,7 @@ __device__ __forceinline__ void ncclDevkRun_ReduceScatter_LL_body(
     }
 
     if (t < nIterPacks) {
-      AccPack got = lla2a.template recvReduce</*Unroll=*/8, Pack>(
+      AccPack got = lla2a.template recvReduce</*Unroll=*/4, Pack>(
         /*slotStart=*/t, /*slotCount=*/nRanks, /*slotStride=*/nIterPacks,
         /*eltToAcc=*/[&] __device__ (Pack x)->AccPack {
           return applyCast<T, Acc>(x);
@@ -375,33 +386,33 @@ __device__ __forceinline__ void ncclDevkRun_ReduceScatter_LL_body(
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_ReduceScatter_LL(ncclDevkDevArgs const* args) {
-  ncclDevkKernelStuff stuff(args);
+__device__ __forceinline__ void ncclDevkRun_ReduceScatter_LL(ncclDevkDevWorkArgs const* args) {
+  ncclDevkKernelStuff stuff{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x, ncclDevkMaxThreads
+    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, ncclDevkMaxThreads
   );
-  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type> red(args->redOpArg);
+  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type> red(stuff.devWork->redOpArg);
   using Pack = BytePack<8>;
   constexpr int EltPerPack = 8/sizeof(T);
-  int nAllElts = args->nElts;
-  int nAllPacks = divUp(nAllElts, EltPerPack);
-  uint32_t nPackPerBlock, nPackModBlock;
-  idivmodFast32(&nPackPerBlock, &nPackModBlock, nAllPacks, stuff.nBlocks, stuff.nBlocks_rcp32);
-  int blockPackBegin = blockIdx.x*nPackPerBlock + minval<int>(blockIdx.x, nPackModBlock);
-  int blockPackEnd = blockPackBegin + nPackPerBlock + (blockIdx.x < nPackModBlock ? 1 : 0);
-  int nPacks = blockPackEnd - blockPackBegin;
-  int nElts = nAllElts - blockPackBegin*EltPerPack;
-  nElts = min(nElts, nPacks*EltPerPack);
-  T* input = (T*)ncclGetLocalPointer(args->inputWin, args->inputOff) + blockPackBegin*EltPerPack;
-  T* output = (T*)ncclGetLocalPointer(args->outputWin, args->outputOff) + blockPackBegin*EltPerPack;
 
-  uint32_t lowBits = args->nElts*sizeof(T);
-  lowBits |= (uint32_t)args->inputOff;
-  lowBits |= (uint32_t)args->outputOff;
+  NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, T);
+  
+  int nElts = ncclDevkGroupNElts;
+  int nAllElts = ncclDevkGroupNAllElts;
+  int nPacks = divUp(nElts, EltPerPack);
+
+  T* input = (T*)ncclDevkGroupInput.localPtr();
+  T* output = (T*)ncclDevkGroupOutput.localPtr();
+
+  uint32_t lowBits = nElts*sizeof(T);
+  lowBits |= (uintptr_t)input;
+  lowBits |= (uintptr_t)output;
   if (__builtin_expect(lowBits%8 == 0, true)) {
     ncclDevkRun_ReduceScatter_LL_body<T>(stuff, lla2a, red, (Pack*)input, (Pack*)output,
-      nPacks, nPacks, nAllElts/EltPerPack);
+                                         nPacks, nPacks, divUp(nAllElts, EltPerPack));
   } else {
     ncclDevkRun_ReduceScatter_LL_body<T>(stuff, lla2a, red, input, output, nElts, nPacks, nAllElts);
   }
+
+  NCCL_DEVICEK_GROUP_END;
 }
