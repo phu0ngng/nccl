@@ -201,8 +201,8 @@ struct ncclTaskColl {
   int32_t nMaxChannels:8;
   int32_t nWarps:8;
   int32_t algorithm:8, protocol:8;
-  uint32_t isCollnet:1, isNvls:1;
-  uint32_t devFuncId:30;
+  uint32_t isCollnet:1, isNvls:1, isSymLast:1;
+  uint32_t devFuncId:29;
   int regBufType;
   // number of elements in planner->ipcMemQueue associated with this collective
   int nCleanupQueueElts;
@@ -376,7 +376,6 @@ struct ncclKernelPlanner {
   int nTasksColl, nTasksP2p;
   int nTasksP2pSend, nTasksP2pRecv;
   bool persistent;
-  bool isSymColl;
   // The list of user streams aggregated over all tasks present.
   struct ncclCudaStreamList* streams;
   // The most recent user stream. Ignored if streams==nullptr
@@ -393,6 +392,7 @@ struct ncclKernelPlanner {
 
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueue;
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collCeTaskQueue;
+  struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collSymTaskQueue;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> collWorkQueue;
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> tmpCollWorkQueue;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> collCleanupQueue;

@@ -319,22 +319,16 @@ const char* ncclDevkKernelIdToString(int kernelId) {
   return kernelName[kernelId];
 }
 
-ncclResult_t ncclDevkMakeLaunchArgs(
-    struct ncclComm* comm, struct ncclTaskColl* task, struct ncclMemoryStack* memArg,
-    void** outKernelFn, void** outArg, size_t* outArgSize
-  ) {
-  struct ncclDevkState* devk = &comm->devkState;
-  *outKernelFn = ncclDevkGetKernelPtr((ncclDevkKernelId)task->devFuncId, task->opDev.op, task->datatype);
-  *outArgSize = sizeof(struct ncclDevkDevArgs);
-  struct ncclDevkDevArgs* arg = ncclMemoryStackAlloc<struct ncclDevkDevArgs>(memArg);
-  *outArg = (void*)arg;
-  arg->comm = devk->devComm;
-  arg->rootRank = task->root;
-  arg->redOpArg = task->opDev.scalarArg;
-  arg->nElts = task->count;
-  arg->inputWin = task->sendWin->vidmem;
-  arg->inputOff = (char*)task->sendbuff - (char*)task->sendWin->userPtr;
-  arg->outputWin = task->recvWin->vidmem;
-  arg->outputOff = (char*)task->recvbuff - (char*)task->recvWin->userPtr;
+/* this function fills in the devWork except nextWorkOffset */
+ncclResult_t ncclDevkMakeDevWork(struct ncclComm* comm, struct ncclTaskColl* task, struct ncclDevkDevWork* outDevWork) {
+  outDevWork->rootRank = task->root;
+  outDevWork->redOpArg = task->opDev.scalarArg;
+  outDevWork->nElts = task->count;
+  outDevWork->inputWin = task->sendWin->vidmem;
+  outDevWork->inputOff = (uint8_t*)task->sendbuff - (uint8_t*)task->sendWin->userPtr;
+  outDevWork->outputWin = task->recvWin->vidmem;
+  outDevWork->outputOff = (uint8_t*)task->recvbuff - (uint8_t*)task->recvWin->userPtr;
+  outDevWork->sChannelId = 0xffff;
+  outDevWork->nChannels = 0;
   return ncclSuccess;
 }

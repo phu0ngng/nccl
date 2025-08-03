@@ -22,6 +22,7 @@ LIBSRCFILES := \
 	$(wildcard plugin/tuner/*.cc) \
 	$(wildcard plugin/profiler/*.cc) \
 	$(wildcard nccl_device/*.cc) \
+	$(wildcard scheduler/*.cc) \
 	$(filter-out ras/client.cc,$(wildcard ras/*.cc))
 BINSRCFILES := ras/client.cc
 

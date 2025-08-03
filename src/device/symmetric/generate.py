@@ -156,30 +156,30 @@ def instantiate(k):
   cudart_cond, arch_cond = kernel_conds(k)
   if (cudart_cond, arch_cond) == (None, None):
     form_red_ty = (
-      "__global__ void {cname}(ncclDevkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
-      "  ncclDevkRun_{id}<{red}, {ty}>(&args);\n"
+      "__global__ void {cname}(ncclDevkDevWorkArgs4K NCCL_GRID_CONSTANT const args4K) {{\n"
+      "  ncclDevkRun_{id}<{red}, {ty}>(&args4K.args);\n"
       "}}"
     )
     form = (
-      "__global__ void {cname}(ncclDevkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
-      "  ncclDevkRun_{id}(&args);\n"
+      "__global__ void {cname}(ncclDevkDevWorkArgs4K NCCL_GRID_CONSTANT const args4K) {{\n"
+      "  ncclDevkRun_{id}(&args4K.args);\n"
       "}}"
     )
   else:
     form_red_ty = (
       "#if {cudart_cond}\n"
-      "  __global__ void {cname}(ncclDevkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
+      "  __global__ void {cname}(ncclDevkDevWorkArgs4K NCCL_GRID_CONSTANT const args4K) {{\n"
       "    #if {arch_cond}\n"
-      "      ncclDevkRun_{id}<{red}, {ty}>(&args);\n"
+      "      ncclDevkRun_{id}<{red}, {ty}>(&args4K.args);\n"
       "    #endif\n"
       "  }}\n"
       "#endif"
     )
     form = (
       "#if {cudart_cond}\n"
-      "  __global__ void {cname}(ncclDevkDevArgs NCCL_GRID_CONSTANT const args) {{\n"
+      "  __global__ void {cname}(ncclDevkDevWorkArgs4K NCCL_GRID_CONSTANT const args4K) {{\n"
       "    #if {arch_cond}\n"
-      "      ncclDevkRun_{id}(&args);\n"
+      "      ncclDevkRun_{id}(&args4K.args);\n"
       "    #endif\n"
       "  }}\n"
       "#endif"
@@ -196,11 +196,11 @@ def instantiate(k):
 def prototype(k):
   cudart_cond, arch_cond = kernel_conds(k)
   if cudart_cond is None:
-    form = "__global__ void {cname}(ncclDevkDevArgs const);"
+    form = "__global__ void {cname}(ncclDevkDevWorkArgs4K const);"
   else:
     form = (
       "#if {cudart_cond}\n"
-      "  __global__ void {cname}(ncclDevkDevArgs const);\n"
+      "  __global__ void {cname}(ncclDevkDevWorkArgs4K const);\n"
       "#else\n"
       "  constexpr void* {cname} = nullptr;\n"
       "#endif"

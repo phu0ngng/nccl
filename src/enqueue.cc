@@ -16,6 +16,7 @@
 #include "register_inline.h"
 #include "ce_coll.h"
 #include "nvtx.h"
+#include "scheduler.h"
 
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
@@ -166,6 +167,7 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   size_t workBytes = plan->workBytes;
   size_t batchBytes = plan->nWorkBatches*sizeof(struct ncclDevWorkBatch);
 
+  if (plan->isSymColl) return;
   plan->threadPerBlock = std::max(plan->threadPerBlock, NCCL_MIN_NTHREADS);
 
   // If we can fit everything into the kernel args we do so.
@@ -265,7 +267,6 @@ static bool testBudget(
 
 ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
-  if (planner->isSymColl) return ncclSuccess;
   struct ncclTaskColl *task;
   task = ncclIntruQueueHead(&planner->collTaskQueue);
   while (task != nullptr) {
@@ -339,30 +340,8 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   int fnOpTyIndices[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
   int fnOpTyCount = 0;
 
-  if (comm->symmetricSupport && planner->nTasksColl == 1 && planner->nTasksP2p == 0) {
-    NCCLCHECK(ncclDevrFindWindow(comm, task->sendbuff, &task->sendWin));
-    NCCLCHECK(ncclDevrFindWindow(comm, task->recvbuff, &task->recvWin));
-    bool symImplemented = ncclDevkImplemented(task->func, task->opDev.op, task->datatype);
-
-    if (task->sendWin && task->recvWin && (task->sendWin->winFlags & task->recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && symImplemented) {
-      enum ncclDevkKernelId kernel;
-
-      int nChannels, nWarps;
-      float estTimeUs = 1.e18;
-      NCCLCHECK(ncclDevkPickKernel(comm, task->func, task->opDev.op, task->datatype, task->count, &estTimeUs, &kernel, &nChannels, &nWarps));
-
-      // We should only use symmetric kernel if it beats the asymmetric kernel. But the
-      // perf model accuracy from asymmetric kernels is too inaccurate and reports too high
-      // of a bandwidth. For now just always use symmetric if available.
-      if (kernel != ncclDevkKernelId_Count) {
-        task->devFuncId = (int)kernel;
-        task->nMaxChannels = nChannels;
-        task->nWarps = nWarps;
-        ncclIntruQueueEnqueue(&planner->collTaskQueue, task);
-        planner->isSymColl = true;
-        return ncclSuccess;
-      }
-    }
+  if (comm->symmetricSupport) {
+    NCCLCHECK(ncclMakeSymmetricTaskList(comm, task, &planner->collSymTaskQueue, &task));
   }
 
   // Walk the size sorted tasks, binning them by (fn,op,ty).
@@ -1345,6 +1324,9 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
       CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
     }
   }
+  if (plan->isSymColl) {
+    free(plan->kernelSymArgs);
+  }
   // Free coll tasks
   struct ncclTaskColl* ct = ncclIntruQueueHead(&plan->collTaskQueue);
   while (ct != nullptr) {
@@ -1421,7 +1403,9 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   planner->persistent = persistent;
   int nPlans = 0;
 
-  if (planner->nTasksColl + planner->nTasksP2p != 0 || !ncclIntruQueueEmpty(&planner->collCeTaskQueue)) {
+  if (planner->nTasksColl + planner->nTasksP2p != 0 ||
+      !ncclIntruQueueEmpty(&planner->collSymTaskQueue) ||
+      !ncclIntruQueueEmpty(&planner->collCeTaskQueue)) {
     do {
       memset(&planner->wipPlan, 0, sizeof(planner->wipPlan));
 
@@ -1450,47 +1434,38 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         ncclIntruQueueDequeue(&planner->collCeTaskQueue);
         ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, task);
         nPlans += 1;
-      } else if (planner->isSymColl) {
-        plan->workStorageType = ncclDevWorkStorageTypeArgs;
-
-        struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
-        plan->isSymColl = true;
-        plan->threadPerBlock = task->nWarps*WARP_SIZE;
-        plan->channelMask = uint64_t(-1) >> (64-task->nMaxChannels);
-
-        NCCLCHECKGOTO(ncclDevkMakeLaunchArgs(comm, task, &comm->memScoped, &plan->kernelFn, &plan->kernelSymArgs, &plan->kernelArgsSize), result, failure);
-
-        // Profiler
-        plan->groupApiEventHandle = task->groupApiEventHandle;
-        planner->nTasksColl -= 1;
-        ncclIntruQueueEnqueue(&planner->planQueue, plan);
-        INFO(NCCL_TUNING, "%s [Symmetric]: %ld Bytes -> Kernel %s nchannels %d nthreads %d",
-        ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), ncclDevkKernelIdToString(task->devFuncId), task->nMaxChannels, plan->threadPerBlock);
-        nPlans += 1;
       } else {
-        struct ncclKernelPlanBudget budget;
-        budget.inArgsBytes = comm->workArgsBytes - sizeof(struct ncclDevKernelArgs);
-        // Non-persistent kernels fill up at most half of our fifo per kernel.
-        budget.outArgsBytes = plan->persistent ? (1<<30) : comm->workFifoBytes/2;
+	if (!ncclIntruQueueEmpty(&planner->collSymTaskQueue)) {
+          NCCLCHECKGOTO(ncclSymmetricTaskScheduler(comm, &planner->collSymTaskQueue, plan), result, failure);
+        }
+        else {
+          struct ncclKernelPlanBudget budget;
+          budget.inArgsBytes = comm->workArgsBytes - sizeof(struct ncclDevKernelArgs);
+          // Non-persistent kernels fill up at most half of our fifo per kernel.
+          budget.outArgsBytes = plan->persistent ? (1<<30) : comm->workFifoBytes/2;
 
-        // Drain coll tasks first. This is essential since we partition tasks based
-        // on the work budget and p2p work isn't collective. If we were to drain p2p
-        // first, the place where we cut the kernel could vary by rank which would
-        // cause the "shortest channel first" channel picker to have divergent results.
-        if (planner->nTasksColl != 0) {
-          NCCLCHECKGOTO(scheduleCollTasksToPlan(comm, plan, &budget), result, failure);
+          // Drain coll tasks first. This is essential since we partition tasks based
+          // on the work budget and p2p work isn't collective. If we were to drain p2p
+          // first, the place where we cut the kernel could vary by rank which would
+          // cause the "shortest channel first" channel picker to have divergent results.
+          if (planner->nTasksColl != 0) {
+            NCCLCHECKGOTO(scheduleCollTasksToPlan(comm, plan, &budget), result, failure);
+          }
+          // And only drain p2p tasks once colls are depleted.
+          if (planner->nTasksColl == 0 && planner->nTasksP2p != 0) {
+            NCCLCHECKGOTO(scheduleP2pTasksToPlan(comm, plan, &budget), result, failure);
+          }
         }
-        // And only drain p2p tasks once colls are depleted.
-        if (planner->nTasksColl == 0 && planner->nTasksP2p != 0) {
-          NCCLCHECKGOTO(scheduleP2pTasksToPlan(comm, plan, &budget), result, failure);
-        }
+
         finishPlan(comm, plan);
         if (plan->workBytes != 0) {
           ncclIntruQueueEnqueue(&planner->planQueue, plan);
           nPlans += 1;
         }
       }
-    } while (planner->nTasksColl + planner->nTasksP2p != 0 || !ncclIntruQueueEmpty(&planner->collCeTaskQueue));
+    } while (planner->nTasksColl + planner->nTasksP2p != 0 ||
+             !ncclIntruQueueEmpty(&planner->collSymTaskQueue) ||
+             !ncclIntruQueueEmpty(&planner->collCeTaskQueue));
 
     struct ncclKernelPlan* planHead = ncclIntruQueueHead(&planner->planQueue);
     planner->unlaunchedPlansHead = planHead;
@@ -1629,16 +1604,15 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     }
     #endif
     #if CUDART_VERSION >= 12030
-    bool capturing = ncclCudaGraphValid(planner->capturingGraph);
     enum ncclImplicitOrder implicitOrder;
-    NCCLCHECKGOTO(getImplicitOrder(&implicitOrder, capturing, driverVersion), ret, do_return);
+    NCCLCHECKGOTO(getImplicitOrder(&implicitOrder, plan->persistent, driverVersion), ret, do_return);
     if (implicitOrder == ncclImplicitOrderLaunch) {
       launchAttrs[attrs].id = CU_LAUNCH_ATTRIBUTE_LAUNCH_COMPLETION_EVENT;
       launchAttrs[attrs].value.launchCompletionEvent.event = comm->sharedRes->launchEvent;
       launchAttrs[attrs].value.launchCompletionEvent.flags = 0;
       attrs++;
     }
-    if (comm->planner.isSymColl && compCap >= 90 && driverVersion >= 12030) {
+    if (plan->isSymColl && compCap >= 90 && driverVersion >= 12030) {
       launchAttrs[attrs].id = CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION;
       launchAttrs[attrs].value.programmaticStreamSerializationAllowed = 1;
       attrs++;

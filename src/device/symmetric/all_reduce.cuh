@@ -104,7 +104,7 @@ static __device__ __forceinline__ void allreduceDeep(
           }
         }
       }
-      
+
       inpPacks += intptr_t(wn)*UnrollPacks*WARP_SIZE;
       outPacks += intptr_t(wn)*UnrollPacks*WARP_SIZE;
       nIters -= wn;
@@ -195,13 +195,15 @@ static __device__ __forceinline__ void allreduceEnds(
 
 template<typename Red, typename T>
 static __device__ void allreduce(
-    ncclDevkKernelStuff const& stuff, int tn, int t,
+    ncclDevkKernelStuff const& stuff, int tn, int t, int nBlocks,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     Red red, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
-  int nRanks = stuff.comm.nRanks;
-  int nBlocks = stuff.nBlocks;
+  int const& nRanks = stuff.comm.nRanks;
+  int const& nRanks_rcp32 = stuff.nRanks_rcp32;
   size_t nBytes = nElts*sizeof(T);
+  uint32_t nBlocks_rcp32 = nccl::utility::idivRcp32_upto64(nBlocks);
+  uint32_t nRanks_nBlocks_rcp32 = nccl::utility::imulRcp32(nRanks, nRanks_rcp32, nBlocks, nBlocks_rcp32);
 
   uint32_t nPreBytes = (16u - input.offset)%16u;
   nPreBytes = min((size_t)nPreBytes, nBytes);
@@ -213,7 +215,7 @@ static __device__ void allreduce(
     constexpr int BytePerPack = 16, UnrollPacks = 4, UnrollPeers = 2;
     constexpr int BytePerChunk = MinWarpPerBlock*UnrollPacks*WARP_SIZE*BytePerPack;
     uint32_t chunks = (nBytes-cursor)/BytePerChunk;
-    chunks -= imodFast32(chunks, nRanks*nBlocks, stuff.nRanks_nBlocks_rcp32);
+    chunks -= imodFast32(chunks, nRanks*nBlocks, nRanks_nBlocks_rcp32);
     if (chunks != 0) {
       uintptr_t cursorAfter = cursor + uintptr_t(chunks)*BytePerChunk;
       allreduceDeep<BytePerPack, UnrollPacks, UnrollPeers, T>(
@@ -231,7 +233,7 @@ static __device__ void allreduce(
     constexpr int BytePerPack = 4, UnrollPacks = 4, UnrollPeers = 4;
     constexpr int BytePerChunk = MinWarpPerBlock*UnrollPacks*WARP_SIZE*BytePerPack;
     uint32_t chunks = (nBytes-cursor)/BytePerChunk;
-    chunks -= imodFast32(chunks, nRanks*nBlocks, stuff.nRanks_nBlocks_rcp32);
+    chunks -= imodFast32(chunks, nRanks*nBlocks, nRanks_nBlocks_rcp32);
     if (chunks != 0) {
       uintptr_t cursorAfter = cursor + uintptr_t(chunks)*BytePerChunk;
       allreduceDeep<(sizeof(T) <= BytePerPack ? BytePerPack : 0), UnrollPacks, UnrollPeers, T>(
@@ -253,31 +255,34 @@ static __device__ void allreduce(
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLD_AGxST(ncclDevkDevArgs const* args) {
+__device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLD_AGxST(ncclDevkDevWorkArgs const* args) {
   ncclDevkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x
+    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x
   };
 
-  int rank = args->comm.rank;
-  int nRanks = args->comm.nRanks;
-  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type> red(args->redOpArg);
+  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type> red(stuff.devWork->redOpArg);
+
+  int const& rank = stuff.comm.rank;
+  int const& nRanks = stuff.comm.nRanks;
+
+  bar.arrive(ncclCoopCta(), cuda::memory_order_relaxed);
+
+  bool waitNeeded = true;
+  NCCL_DEVICEK_GROUP_START(stuff, T);
 
   // Threads numbered globally such that we round robin warps by rank then block.
   int gt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
                      rank, nRanks,
-                     blockIdx.x, gridDim.x,
+                     ncclDevkGroupBlock, ncclDevkGroupNBlocks,
                      threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int gtn = nRanks*gridDim.x*blockDim.x;
+  int gtn = nRanks*ncclDevkGroupNBlocks*blockDim.x;
 
-  bar.arrive(ncclCoopCta(), cuda::memory_order_relaxed);
+  allreduce(stuff, gtn, gt, ncclDevkGroupNBlocks, waitNeeded, bar, red,
+            ncclDevkGroupInput, ncclDevkGroupOutput, ncclDevkGroupNElts);
 
-  allreduce(
-    stuff, gtn, gt, /*waitNeeded=*/true, bar, red,
-    ncclSymPtr<T>(args->inputWin, args->inputOff),
-    ncclSymPtr<T>(args->outputWin, args->outputOff),
-    args->nElts
-  );
+  waitNeeded = false;
+  NCCL_DEVICEK_GROUP_END;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
@@ -330,67 +335,71 @@ static __device__ void allreduceMultimem(
     uintptr_t cursor = i < nPreBytes ? i : nBytes-nSufBytes+(i-nPreBytes);
     BytePack<sizeof(T)> val = applyLoadMultimem<Red, sizeof(T)>(red, inputUptr + cursor);
     multimem_st_global(outputUptr + cursor, val);
-    cursor += tn*sizeof(T);
   }
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLDMC_AGxSTMC(ncclDevkDevArgs const* args) {
+__device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLDMC_AGxSTMC(ncclDevkDevWorkArgs const* args) {
+  ncclDevkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), args->comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
+    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
   };
-  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/true>::Type> red(args->redOpArg);
+
+  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/true>::Type> red(stuff.devWork->redOpArg);
+
+  int const& rank = stuff.comm.rank;
+  int const& nRanks = stuff.comm.nRanks;
+  auto const& multimem = stuff.comm.multimem;
+
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
+
+  NCCL_DEVICEK_GROUP_START(stuff, T);
 
   // Threads numbered globally such that we round robin warps by rank then block.
   int gt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
-                     args->comm.rank, args->comm.nRanks,
-                     blockIdx.x, gridDim.x,
+                     rank, nRanks,
+                     ncclDevkGroupBlock, ncclDevkGroupNBlocks,
                      threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int gtn = args->comm.nRanks*gridDim.x*blockDim.x;
+  int gtn = nRanks*ncclDevkGroupNBlocks*blockDim.x;
 
-  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
-  allreduceMultimem(
-    gtn, gt, red,
-    ncclSymPtr<T>(args->inputWin, args->inputOff).multimemPtr(args->comm.multimem),
-    ncclSymPtr<T>(args->outputWin, args->outputOff).multimemPtr(args->comm.multimem),
-    args->nElts
-  );
+  allreduceMultimem(gtn, gt, red,
+                    ncclDevkGroupInput.multimemPtr(multimem),
+                    ncclDevkGroupOutput.multimemPtr(multimem),
+                    ncclDevkGroupNElts);
+
+  NCCL_DEVICEK_GROUP_END;
+
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevArgs const* args, bool multimem) {
-  ncclDevkKernelStuff stuff(args);
+__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevWorkArgs const* args, bool multimem) {
+  ncclDevkKernelStuff stuff{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), args->comm, ncclTeamTagLsa(),
+    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(),
     blockIdx.x, ncclDevkMaxThreads, multimem
   );
-  
-  int rank = args->comm.rank;
-  int nRanks = args->comm.nRanks;
+
+  int const& rank = stuff.comm.rank;
+  int const& nRanks = stuff.comm.nRanks;
   using Acc = typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type;
-  Red<Acc> red(args->redOpArg);
+  Red<Acc> red(stuff.devWork->redOpArg);
 
   using Pack = BytePack<8>;
   using AccPack = BytePack<8*sizeof(Acc)/sizeof(T)>;
   constexpr int EltPerPack = 8/sizeof(T);
-  int nElts = args->nElts;
+
+  NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, T);
+
+  int nElts = ncclDevkGroupNElts;
   int nPacks = divUp(nElts, EltPerPack);
 
+  T* input = (T*)ncclDevkGroupInput.localPtr();
+  T* output = (T*)ncclDevkGroupOutput.localPtr();
+
   bool packAligned = 8 <= alignof(T) || (
-      args->nElts*sizeof(T) | (uint32_t)args->inputOff | (uint32_t)args->outputOff
+      nElts*sizeof(T) | (uintptr_t)input | (uintptr_t)output
     )%8 == 0;
-
-  uint32_t nPackPerBlock, nPackModBlock;
-  idivmodFast32(&nPackPerBlock, &nPackModBlock, nPacks, stuff.nBlocks, stuff.nBlocks_rcp32);
-  int begin = blockIdx.x*nPackPerBlock + minval<int>(blockIdx.x, nPackModBlock);
-  int end = begin + nPackPerBlock + (blockIdx.x < nPackModBlock ? 1 : 0);
-
-  nPacks = end - begin;
-  nElts -= begin*EltPerPack;
-  nElts = min(nElts, nPacks*EltPerPack);
-  T* input = (T*)ncclGetLocalPointer(args->inputWin, args->inputOff) + begin*EltPerPack;
-  T* output = (T*)ncclGetLocalPointer(args->outputWin, args->outputOff) + begin*EltPerPack;
 
   ncclCoopCta cta;
   int t = threadIdx.x;
@@ -403,7 +412,7 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevAr
         int nIterPacks = min(nPacks, tn);
         Pack inp = loadPack<Pack>((Pack*)input, t, nPacks);
         lla2a.bcast(/*slot=*/nIterPacks*rank + t, inp);
-        AccPack out = lla2a.template recvReduce</*Unroll=*/8, Pack>(
+        AccPack out = lla2a.template recvReduce</*Unroll=*/4, Pack>(
           /*slotStart=*/t, /*slotCount=*/nRanks, /*slotStride=*/nIterPacks,
           /*eltToAcc=*/[&] __device__ (Pack x)->AccPack {
             return applyCast<T, Acc>(x);
@@ -427,7 +436,7 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevAr
         int nIterPacks = min(nPacks, tn);
         Pack inp = loadPack<Pack>(input, t*EltPerPack, nElts);
         lla2a.bcast(/*slot=*/nIterPacks*rank + t, inp);
-        AccPack out = lla2a.template recvReduce</*Unroll=*/8, Pack>(
+        AccPack out = lla2a.template recvReduce</*Unroll=*/4, Pack>(
           /*slotStart=*/t, /*slotCount=*/nRanks, /*slotStride=*/nIterPacks,
           /*eltToAcc=*/[&] __device__ (Pack x)->AccPack {
             return applyCast<T, Acc>(x);
@@ -446,14 +455,16 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevAr
       nPacks -= tn;
     }
   }
+
+  NCCL_DEVICEK_GROUP_END;
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R(ncclDevkDevArgs const* args) {
+__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R(ncclDevkDevWorkArgs const* args) {
   ncclDevkRun_AllReduce_AGxLL_R_impl<Red, T>(args, /*multimem=*/false);
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLLMC_R(ncclDevkDevArgs const* args) {
+__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLLMC_R(ncclDevkDevWorkArgs const* args) {
   ncclDevkRun_AllReduce_AGxLL_R_impl<Red, T>(args, /*multimem=*/true);
 }
