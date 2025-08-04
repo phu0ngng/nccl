@@ -930,6 +930,7 @@ static ncclResult_t addP2pToPlan(
     op->chunkSize = chunkSize[dir];
     op->reg = netRegistered[dir];
     op->coll = p2pTasks[dir] ? p2pTasks[dir]->func : 0;
+    op->collAPI = p2pTasks[dir] ? p2pTasks[dir]->collAPI : 0;
     op->task.p2p = p2pTasks[dir];
     op->rank = comm->rank;
     op->eActivationMask = p2pTasks[dir] ? p2pTasks[dir]->eActivationMask : 0;
@@ -940,7 +941,7 @@ static ncclResult_t addP2pToPlan(
   nChannelsMax = std::max(nChannels[0], nChannels[1]);
   // Determine how many peers this plan will target concurrently. Make a
   // simplifying assumption that each task targets a different peer.
-  // Each task is striped across 'p2pnChannels' of 'nChannelsMax' channels.
+  // Each task is striped across 'nChannelsMax' of 'p2pnChannels' channels.
   // Each channel runs up to NCCL_MAX_DEV_WORK_P2P_PER_BATCH tasks concurrently.
   int maxConcurrent;
   int concurrentTasks[2];
@@ -1038,7 +1039,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
   while (nChannelsMin*nRanks > comm->p2pnChannels && nChannelsMin > 1) nChannelsMin /= 2;
 
   // Save the total count of send/recv tasks in the plan
-  int planTotalTasks[2] = {comm->planner.nTasksP2pSend, comm->planner.nTasksP2pRecv};
+  int planTotalTasks[2] = {comm->planner.nTasksP2pRecv, comm->planner.nTasksP2pSend};
   while (comm->planner.nTasksP2p != 0) {
     for (int round=0; round < nRanks; round++) {
       int sendRank = comm->p2pSchedule[round].sendRank;
@@ -2127,6 +2128,7 @@ static ncclResult_t calcCollChunking(
   }
   proxyOp->pattern = pattern;
   proxyOp->coll = info->func;
+  proxyOp->collAPI = info->func;
   proxyOp->root = info->root;
   proxyOp->isOneRPN = comm->isOneRPN;
   // This is used by P2P to reduce the receive buffer size. We don't use it in collectives
@@ -2196,20 +2198,19 @@ static ncclResult_t calcCollChunking(
   case ncclPatternRingTwice:
   case ncclPatternPipelineFrom:
   case ncclPatternPipelineTo:
-  case ncclPatternTreeUp:
   case ncclPatternPatUp:
   case ncclPatternPatDown:
-    // No special treatment for root
     proxyOp->nPeers = 1;
     break;
+  case ncclPatternTreeUp:
   case ncclPatternTreeDown:
   case ncclPatternTreeUpDown:
-    proxyOp->nPeers = NCCL_MAX_TREE_ARITY;
+  case ncclPatternNvlsTree:
+    proxyOp->nPeers = (NCCL_MAX_TREE_ARITY - 1) * 2;
     break;
   case ncclPatternCollnetChain:
   case ncclPatternCollnetDirect:
   case ncclPatternNvls:
-  case ncclPatternNvlsTree:
   case ncclPatternProfiler:
     // Peer count hints unused
     break;
@@ -2352,6 +2353,7 @@ static ncclResult_t p2pTaskAppend(
     struct ncclComm* comm,
     struct ncclInfo* info,
     ncclFunc_t coll,
+    ncclFunc_t collAPI,
     void* buff,
     size_t count,
     ncclDataType_t datatype,
@@ -2375,6 +2377,7 @@ static ncclResult_t p2pTaskAppend(
 
   struct ncclTaskP2p* p2p = ncclMemoryPoolAlloc<struct ncclTaskP2p>(&comm->memPool_ncclTaskP2p, &comm->memPermanent);
   p2p->func = coll;
+  p2p->collAPI = collAPI;
   p2p->buff = buff;
   p2p->count = count;
   p2p->datatype = datatype;
@@ -2526,9 +2529,10 @@ static ncclResult_t ceCollTaskAppend(
 // single rank communicators, collectives are issued as `ncclMemcpyAsync`s and
 // thus don't need a task.
 static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
+  ncclFunc_t collAPI = info->coll;
 
   if (info->coll == ncclFuncSend || info->coll == ncclFuncRecv) {
-    NCCLCHECK(p2pTaskAppend(comm, info, info->coll, (void*)info->recvbuff, info->count, info->datatype, info->root));
+    NCCLCHECK(p2pTaskAppend(comm, info, info->coll, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root));
   } else {
     // Empty collectives can be discarded.
     if (info->count == 0) return ncclSuccess;
@@ -2563,16 +2567,16 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       else {
         if (info->coll == ncclFuncAlltoAll) {
           for (int r=0; r<comm->nRanks; r++) {
-            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, (void*)((char*)info->sendbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
-            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, (void*)((char*)info->recvbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
+            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, (void*)((char*)info->sendbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
+            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)((char*)info->recvbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
           }
         } else if (info->coll == ncclFuncGather){
           size_t offset = 0;
-          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, (void*)info->sendbuff, info->count, info->datatype, info->root));
+          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, (void*)info->sendbuff, info->count, info->datatype, info->root));
           if (comm->rank == info->root) {
             for (int r=0; r<comm->nRanks; r++) {
               void* buff = (void*)((char*)info->recvbuff + offset);
-              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, buff, info->count, info->datatype, r));
+              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, buff, info->count, info->datatype, r));
               offset += info->count * ncclTypeSize(info->datatype);
             }
           }
@@ -2581,11 +2585,11 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
           if (comm->rank == info->root) {
             for (int r = 0; r < comm->nRanks; r++) {
               void* buff = (void*)((char*)info->sendbuff + offset);
-              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, buff, info->count, info->datatype, r));
+              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, buff, info->count, info->datatype, r));
               offset += info->count * ncclTypeSize(info->datatype);
             }
           }
-          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, (void*)info->recvbuff, info->count, info->datatype, info->root));
+          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root));
         } else {
           NCCLCHECK(collTaskAppend(comm, info, opDev));
         }

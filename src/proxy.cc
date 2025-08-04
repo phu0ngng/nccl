@@ -415,6 +415,7 @@ static ncclResult_t ncclProxyOpToArgs(struct ncclProxyOp* op, struct ncclProxyAr
   args->pattern = op->pattern;
   args->protocol = op->protocol;
   args->coll = op->coll;
+  args->collAPI = op->collAPI;
   args->algorithm = op->algorithm;
   args->nChannels = op->nChannels;
   args->nPeers = op->nPeers;
@@ -1849,6 +1850,7 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
   comm->proxyState->listenSock = sock;
   comm->proxyState->peerAddresses = peerAddresses;
   comm->proxyState->peerAddressesUDS = peerAddressesUDS;
+  comm->proxyState->netAttr = NCCL_NET_ATTR_INIT;
 
   // UDS support
   NCCLCHECK(ncclIpcSocketInit(&comm->proxyState->ipcSock, comm->rank, peerAddressesUDS[comm->rank], comm->abortFlag));

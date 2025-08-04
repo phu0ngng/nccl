@@ -86,7 +86,6 @@ struct connectMap {
 struct sendNetResources {
   struct connectMap map;
   void* netSendComm;
-  ncclNetAttr_t netAttr;
   struct ncclSendMem* sendMem;
   struct ncclRecvMem* recvMem;
 
@@ -117,7 +116,6 @@ struct recvNetResources {
   struct connectMap map;
   void* netListenComm;
   void* netRecvComm;
-  ncclNetAttr_t netAttr;
   struct ncclSendMem* sendMem;
   struct ncclRecvMem* recvMem;
 
@@ -184,20 +182,28 @@ static_assert(sizeof(ncclNetHandle_t) + sizeof(int) <= CONNECT_SIZE, "Not large 
 // Common function to initialize network attributes from a ncclComm
 static void populateCommNetAttrs(struct ncclComm* comm, struct ncclConnector* conn, ncclNetAttr_t* netAttr) {
   *netAttr = NCCL_NET_ATTR_INIT;
-  netAttr->sendCommAttr.maxConcurrentPeers = comm->nRanks;
   netAttr->sendCommAttr.minConcurrentPeers = 1;
   netAttr->sendCommAttr.minFlowsPerPeer = 1;
 
-  netAttr->recvCommAttr.maxConcurrentPeers = comm->nRanks;
   netAttr->recvCommAttr.minConcurrentPeers = 1;
   netAttr->recvCommAttr.minFlowsPerPeer = 1;
 
   if (conn->p2pOnly) {
+    size_t maxConcPeers = comm->p2pnChannels * NCCL_MAX_DEV_WORK_P2P_PER_BATCH;
+    if (comm->nRanks < maxConcPeers) maxConcPeers = comm->nRanks;
+
+    netAttr->sendCommAttr.maxConcurrentPeers = maxConcPeers;
     netAttr->sendCommAttr.maxFlowsPerPeer = comm->p2pnChannelsPerPeer;
+    netAttr->recvCommAttr.maxConcurrentPeers = maxConcPeers;
     netAttr->recvCommAttr.maxFlowsPerPeer = comm->p2pnChannelsPerPeer;
-    netAttr->op = BIT(ncclFuncSend) | BIT(ncclFuncRecv);
+    netAttr->op = BIT(ncclFuncSend) | BIT(ncclFuncRecv) |
+                  BIT(ncclFuncAlltoAll) | BIT(ncclFuncScatter) | BIT(ncclFuncGather);
   } else {
+    size_t maxConcPeers = (NCCL_MAX_TREE_ARITY - 1) * 2;
+    if (comm->nRanks < maxConcPeers) maxConcPeers = comm->nRanks;
+    netAttr->sendCommAttr.maxConcurrentPeers = maxConcPeers;
     netAttr->sendCommAttr.maxFlowsPerPeer = comm->nChannels;
+    netAttr->recvCommAttr.maxConcurrentPeers = maxConcPeers;
     netAttr->recvCommAttr.maxFlowsPerPeer = comm->nChannels;
   }
 }
@@ -205,8 +211,10 @@ static void populateCommNetAttrs(struct ncclComm* comm, struct ncclConnector* co
 // Apply the netAttr to the netComm
 void setNetAttrs(struct ncclProxyState* proxyState, ncclNetAttr_t* netAttr)
 {
-  if (proxyState->ncclNet->setNetAttr)
+  if (proxyState->ncclNet->setNetAttr) {
     proxyState->ncclNet->setNetAttr(proxyState->netContext, netAttr);
+    proxyState->netAttr = *netAttr;
+  }
 }
 
 void printNetAttrs(ncclNetAttr_t* netAttr, const char *task)
@@ -222,40 +230,46 @@ void printNetAttrs(ncclNetAttr_t* netAttr, const char *task)
   ncclBitsToString(netAttr->algo, MASK(NCCL_NUM_ALGORITHMS), ncclAlgoToString, algoBuf, algoBufLen, "*");
   ncclBitsToString(netAttr->proto, MASK(NCCL_NUM_PROTOCOLS), ncclProtoToString, protoBuf, protoBufLen, "*");
 
-  INFO(NCCL_NET, "%s hints, send peers/flows: [%d-%d][%d-%d] recv peers/flows: [%d-%d][%d-%d] op: %s algo: %s proto: %s",
-       task, netAttr->sendCommAttr.minConcurrentPeers, netAttr->sendCommAttr.maxConcurrentPeers,
-       netAttr->sendCommAttr.minFlowsPerPeer, netAttr->sendCommAttr.maxFlowsPerPeer,
-       netAttr->recvCommAttr.minConcurrentPeers, netAttr->recvCommAttr.maxConcurrentPeers,
-       netAttr->recvCommAttr.minFlowsPerPeer, netAttr->recvCommAttr.maxFlowsPerPeer,
-       opBuf, algoBuf, protoBuf);
+  TRACE(NCCL_NET, "%s hints, send peers/flows: [%d-%d][%d-%d] recv peers/flows: [%d-%d][%d-%d] op: %s algo: %s proto: %s",
+        task, netAttr->sendCommAttr.minConcurrentPeers, netAttr->sendCommAttr.maxConcurrentPeers,
+        netAttr->sendCommAttr.minFlowsPerPeer, netAttr->sendCommAttr.maxFlowsPerPeer,
+        netAttr->recvCommAttr.minConcurrentPeers, netAttr->recvCommAttr.maxConcurrentPeers,
+        netAttr->recvCommAttr.minFlowsPerPeer, netAttr->recvCommAttr.maxFlowsPerPeer,
+        opBuf, algoBuf, protoBuf);
 }
 
 // Set the netAttr for a transfer operation
-void setXferNetAttrs(struct ncclProxyState* proxyState, ncclNetAttr_t* curAttrs, struct ncclProxyArgs* args, const char *task)
+void setXferNetAttrs(struct ncclProxyState* proxyState, struct ncclProxyArgs* args, int send)
 {
-  ncclNetAttr_t netAttr = NCCL_NET_ATTR_INIT;
+  ncclNetAttr_t netAttr;
 
   if (!proxyState->ncclNet->setNetAttr)
     return;
 
-  netAttr.sendCommAttr.maxConcurrentPeers = args->nPeers;
-  netAttr.sendCommAttr.minConcurrentPeers = args->nPeers;
-  netAttr.sendCommAttr.maxFlowsPerPeer = args->nChannels;
-  netAttr.sendCommAttr.minFlowsPerPeer = args->nChannels;
+  netAttr = proxyState->netAttr;
 
-  netAttr.recvCommAttr.maxConcurrentPeers = args->nPeers;
-  netAttr.recvCommAttr.minConcurrentPeers = args->nPeers;
-  netAttr.recvCommAttr.maxFlowsPerPeer = args->nChannels;
-  netAttr.recvCommAttr.minFlowsPerPeer = args->nChannels;
+  if (send) {
+    netAttr.sendCommAttr.maxConcurrentPeers = args->nPeers;
+    netAttr.sendCommAttr.minConcurrentPeers = args->nPeers;
+    netAttr.sendCommAttr.maxFlowsPerPeer = args->nChannels;
+    netAttr.sendCommAttr.minFlowsPerPeer = args->nChannels;
+  } else {
+    netAttr.recvCommAttr.maxConcurrentPeers = args->nPeers;
+    netAttr.recvCommAttr.minConcurrentPeers = args->nPeers;
+    netAttr.recvCommAttr.maxFlowsPerPeer = args->nChannels;
+    netAttr.recvCommAttr.minFlowsPerPeer = args->nChannels;
+  }
 
-  netAttr.op = BIT(args->coll);
-  netAttr.algo = BIT(args->algorithm);
-  netAttr.proto = BIT(args->protocol);
+  netAttr.op = BIT(args->collAPI);
+  // algo/proto are undefined for p2p
+  if (args->collAPI < NCCL_NUM_FUNCTIONS) {
+    netAttr.algo = BIT(args->algorithm);
+    netAttr.proto = BIT(args->protocol);
+  }
 
-  if (memcmp(curAttrs, &netAttr, sizeof(netAttr))) {
+  if (memcmp(&proxyState->netAttr, &netAttr, sizeof(netAttr))) {
     setNetAttrs(proxyState, &netAttr);
-    printNetAttrs(&netAttr, task);
-    *curAttrs = netAttr;
+    printNetAttrs(&netAttr, send ? "send" : "recv");
   }
 }
 
@@ -709,7 +723,6 @@ static ncclResult_t sendProxySetup(struct ncclProxyConnection* connection, struc
   resources->useGdr = req->useGdr;
   resources->channelId = req->channelId;
   resources->connIndex = req->connIndex;
-  resources->netAttr = NCCL_NET_ATTR_INIT;
   ncclNetProperties_t props;
   NCCLCHECK(proxyState->ncclNet->getProperties(req->netDev, &props));
   /* DMA-BUF support */
@@ -749,7 +762,6 @@ static ncclResult_t recvProxySetup(struct ncclProxyConnection* connection, struc
   resources->needFlush = req->needFlush;
   resources->channelId = req->channelId;
   resources->connIndex = req->connIndex;
-  resources->netAttr = NCCL_NET_ATTR_INIT;
   ncclNetProperties_t props;
   NCCLCHECK(proxyState->ncclNet->getProperties(req->netDev, &props));
   /* DMA-BUF support */
@@ -1203,6 +1215,7 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
 static_assert(NCCL_STEPS <= NCCL_NET_MAX_REQUESTS, "Not enough net requests to cover for steps");
 
 static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct ncclProxyArgs* args) {
+  int checkedNetAttr = 0;
   if (args->state == ncclProxyOpReady) {
     for (int s=0; s<args->nsubs; s++) {
       struct ncclProxySubArgs* sub = args->subs+s;
@@ -1215,7 +1228,6 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
       ncclProfilerRecordProxyOpEventState(s, args, ncclProfilerProxyOpInProgress_v4);
       if (!sub->reg)
         sub->sendMhandle = resources->mhandles[args->protocol];
-      setXferNetAttrs(proxyState, &resources->netAttr, args, "send");
     }
     args->state = ncclProxyOpProgress;
   }
@@ -1305,6 +1317,8 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             // since size is a plain integer.
             // coverity[use_invalid:FALSE]
             void* phandle = &sub->pHandles[DIVUP(transmittedStepId, args->sliceSteps)%NCCL_STEPS];
+            if (!checkedNetAttr++)
+              setXferNetAttrs(proxyState, args, 1);
             NCCLCHECK(proxyState->ncclNet->isend(resources->netSendComm, buff, size, resources->tpRank, sub->sendMhandle, phandle, sub->requests+buffSlot));
             if (sub->requests[buffSlot] != NULL) {
               TRACE(NCCL_NET, "sendProxy [%ld/%d/%d] Isend posted, req %p, buff %p, size %d, proto %d, myRank %d, channelId %d, mhandle %p", sub->transmitted, buffSlot, sub->nsteps, sub->requests[buffSlot], buff, size, p, proxyState->tpRank, sub->channelId, sub->sendMhandle);
@@ -1356,6 +1370,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
 }
 
 static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct ncclProxyArgs* args) {
+  int checkedNetAttr = 0;
   if (args->state == ncclProxyOpReady) {
     // Initialize subs and group them by same recvComm.
     void* recvComm;
@@ -1394,7 +1409,6 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
       ncclProfilerRecordProxyOpEventState(s, args, ncclProfilerProxyOpInProgress_v4);
       if (!sub->reg)
         sub->recvMhandle = resources->mhandles[args->protocol];
-      setXferNetAttrs(proxyState, &resources->netAttr, args, "recv");
     }
     args->state = ncclProxyOpProgress;
   }
@@ -1462,6 +1476,8 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
         struct recvNetResources* resources = (struct recvNetResources*) (subGroup->connection->transportResources);
         void** requestPtr = subGroup->requests+(step%NCCL_STEPS);
         bool ignoreCompletion = ncclParamNetOptionalRecvCompletion() && ((args->protocol == NCCL_PROTO_LL128) || (args->protocol == NCCL_PROTO_LL)) && (subCount == 1);
+        if (!checkedNetAttr++)
+          setXferNetAttrs(proxyState, args, 0);
         if (ignoreCompletion) *requestPtr = (void *)NCCL_NET_OPTIONAL_RECV_COMPLETION;
         NCCLCHECK(proxyState->ncclNet->irecv(resources->netRecvComm, subCount, ptrs, sizes, tags, mhandles, phandles, requestPtr));
         if (*requestPtr) {
