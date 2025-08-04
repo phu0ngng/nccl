@@ -18,8 +18,9 @@ IPP6_DOCKER_IMAGE_DIR="$IPP6_TOOLKIT_DIR/docker_sqsh"
 IPP6_PLANNED_RESERVED="Skip"
 
 IPP6_NCCL_SOCKET_IFNAME=""
-if [ -n "$SLURM_JOB_NODELIST" ]; then
-    # Dynamically get the N/S interface from Slurm allocation
+if [ -n "$SLURM_JOB_NODELIST" ] && [[ ! "$SLURM_JOB_NODELIST" =~ worker ]]; then
+    # Dynamically get the N/S interface from Slurm allocation.
+    # If the nodelist has a 'worker' node, then this is not applicable because the cpuonly partition was explicitly requested.
     # This assumes that the cluster config file is being sourced in after the allocation is granted
     nodename=$(srun hostname -s | head -n1)
     IPP6_NCCL_SOCKET_IFNAME=$(ssh $nodename 'ip route get 8.8.8.8' | sed -E 's/.*?dev (\S+) .*/\1/;t;d')

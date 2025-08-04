@@ -26,6 +26,7 @@ class ncclCommInitRankConfig_test : public ::testing::Test {
         gconfig.minCTAs = 2;
         gconfig.maxCTAs = 4;
         gconfig.cgaClusterSize = 0;
+        gconfig.nChannelsPerNetPeer = 4;
         gconfig.netName = "Socket";
     }
 
@@ -407,6 +408,108 @@ TEST_F(ncclCommInitRankConfig_test, nChannel_cga_allreduce) {
     free(comms);
 };
 
+TEST_F(ncclCommInitRankConfig_test, nChannelsPerNetPeer_basic) {
+  ncclUniqueId id;
+  ncclComm_t* comms;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+
+  config.nChannelsPerNetPeer = 13; // Will be set to the next power of 2. (16 in this case)
+  comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+  ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < ndev; ++i) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+  }
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+  for (int i = 0; i < ndev; ++i)
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+  free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, nChannelsPerNetPeer_invalid) {
+  ncclUniqueId id;
+  ncclComm_t* comms;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+
+  config.nChannelsPerNetPeer = 0; // Invalid value
+  comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+  ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < ndev; ++i) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(ncclInvalidArgument, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+  }
+  ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+
+  for (int i = 0; i < ndev; ++i)
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+  free(comms);
+}
+
+TEST_F(ncclCommInitRankConfig_test, nChannelsPerNetPeer_alltoall) {
+  ncclUniqueId id;
+  ncclComm_t* comms;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  void** sendbuffs;
+  void** recvbuffs;
+  float* tmpbuffs;
+  size_t cnt = 1 << 20;
+  size_t size = cnt * sizeof(float);
+  cudaStream_t* streams;
+  int nRanks;
+
+  sendbuffs = (void**)malloc(ndev * sizeof(void*));
+  recvbuffs = (void**)malloc(ndev * sizeof(void*));
+  tmpbuffs = (float*)malloc(size);
+  streams = (cudaStream_t*)malloc(ndev * sizeof(cudaStream_t));
+  for (int i = 0; i < cnt; ++i) tmpbuffs[i] = i;
+
+  config.nChannelsPerNetPeer = 13;
+  comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
+
+  ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+
+  for (int i = 0; i < ndev; ++i) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(cudaSuccess, cudaMalloc(&sendbuffs[i], size));
+    ASSERT_EQ(cudaSuccess, cudaMalloc(&recvbuffs[i], size));
+    ASSERT_EQ(cudaSuccess, cudaMemcpy(sendbuffs[i], tmpbuffs, size, cudaMemcpyDefault));
+    ASSERT_EQ(cudaSuccess, cudaStreamCreate(&streams[i]));
+    ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+  }
+
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+  ASSERT_EQ(ncclSuccess, ncclCommCount(comms[0], &nRanks));
+
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+
+  for (int i = 0; i < ndev; ++i) {
+    // Loop over all ranks and use send and receive operations to build an alltoall pattern
+    for (int j = 0; j < nRanks; ++j) {
+        // AlltoAll
+        ASSERT_EQ(ncclSuccess, ncclSend(sendbuffs[i], cnt, ncclFloat, j, comms[i], streams[i]));
+        ASSERT_EQ(ncclSuccess, ncclRecv(recvbuffs[i], cnt, ncclFloat, j, comms[i], streams[i]));
+    }
+  }
+
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+  for (int i = 0; i < ndev; ++i) {
+    ASSERT_EQ(cudaSuccess, cudaFree(sendbuffs[i]));
+    ASSERT_EQ(cudaSuccess, cudaFree(recvbuffs[i]));
+    ASSERT_EQ(cudaSuccess, cudaStreamDestroy(streams[i]));
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+  }
+  free(sendbuffs);
+  free(recvbuffs);
+  free(tmpbuffs);
+  free(comms);
+}
+
 TEST_F(ncclCommInitRankConfig_test, net_name_default) {
     ncclUniqueId id;
     ncclComm_t* comms;
@@ -450,7 +553,7 @@ TEST_F(ncclCommInitRankConfig_test, net_name_nonexist) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     config.netName = "NONEXIST";
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
@@ -477,8 +580,9 @@ TEST_F(ncclCommInitRankConfig_test, split_config) {
     config.cgaClusterSize = 4;
     config.minCTAs = 4;
     config.maxCTAs = 16;
-    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
-    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    config.nChannelsPerNetPeer = 15;
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
 
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -492,6 +596,7 @@ TEST_F(ncclCommInitRankConfig_test, split_config) {
     config.cgaClusterSize = 8;
     config.minCTAs = 8;
     config.maxCTAs = 8;
+    config.nChannelsPerNetPeer = 7;
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(ncclSuccess, ncclCommSplit(localComms[i], 0, ndev - i, &childComms[i], &config));
@@ -517,8 +622,8 @@ TEST_F(ncclCommInitRankConfig_test, split_share_invalid_net_name) {
     /* when split shares resource. user cannot specify a different netName for child comm from parent comm. */
     config.splitShare = 1;
     config.netName = "Socket";
-    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
-    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, localComms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
+    ASSERT_NE(nullptr, childComms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
 
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -548,12 +653,18 @@ TEST_F(ncclCommInitRankConfig_test, split_share_invalid_net_name) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_v7) {
+    if (getenv("NCCL_NET_PLUGIN")==nullptr) {
+      // GTEST_SKIP requires a more recent googletest version. For now, we'll just pass the test.
+      // GTEST_SKIP() << "Skipping test since NCCL_NET_PLUGIN is not defined.");
+      return;
+    }
+
     ncclComm_t *comms = NULL;
     ncclUniqueId id;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.netName = "ncclNetPlugin_v7";
 
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -570,12 +681,18 @@ TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_v7) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_int_sock) {
+    if (getenv("NCCL_NET_PLUGIN")==nullptr) {
+      // GTEST_SKIP requires a more recent googletest version. For now, we'll just pass the test.
+      // GTEST_SKIP() << "Skipping test since NCCL_NET_PLUGIN is not defined.");
+      return;
+    }
+
     ncclComm_t *comms = NULL;
     ncclUniqueId id;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.netName = "Socket";
 
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -593,14 +710,69 @@ TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_int_sock) {
 }
 
 TEST_F(ncclCommInitRankConfig_test, multi_net_plugin_ext_fail) {
+    if (getenv("NCCL_NET_PLUGIN")==nullptr) {
+      // GTEST_SKIP requires a more recent googletest version. For now, we'll just pass the test.
+      // GTEST_SKIP() << "Skipping test since NCCL_NET_PLUGIN is not defined.");
+      return;
+    }
+
     ncclComm_t *comms = NULL;
     ncclUniqueId id;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.netName = "ncclNetPlugin_v9";
 
-    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), ndev));
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
 
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        (void)ncclCommInitRankConfig(&comms[i], ndev, id, i, &config);
+    }
+    ASSERT_EQ(ncclInvalidUsage, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    }
+
+    free(comms);
+}
+
+// Test Description:
+// This test achieves two goals:
+//   1. it makes sure that the network plugin is initialized for every new comm
+//   2. it makes sure that all the plugins can be loaded from the same library
+TEST_F(ncclCommInitRankConfig_test, shared_plugin_lib) {
+    if (getenv("NCCL_NET_PLUGIN")==nullptr) {
+      // GTEST_SKIP requires a more recent googletest version. For now, we'll just pass the test.
+      // GTEST_SKIP() << "Skipping test since NCCL_NET_PLUGIN is not defined.");
+      return;
+    }
+
+    ncclComm_t *comms = nullptr;
+    ncclUniqueId id;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+    config.netName = "ncclNetPlugin_v11";
+
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+
+    // First comm initialization:
+    // All plugins are loaded from the same shared library
+    // All plugins initialize correctly the first time but the tuner and the profiler set the number of devices for network to 0
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        (void)ncclCommInitRankConfig(&comms[i], ndev, id, i, &config);
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    }
+
+    // Second comm initialization:
+    // Net plugin returns 0 devices, test fails with ncclInvalidArgument
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));

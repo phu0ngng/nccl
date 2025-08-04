@@ -2,6 +2,20 @@
 <!-- update with extra care -->
 # NCCL - PLC
 <!------------------------------------->
+## version 2.28
+ 
+- [Grouped Symmetric Kernels](items/id_4dd518cb/Grouped_Symmetric_Kernels.md)
+- [NCCLNet Shared Plugin Context](items/id_987f1052/NCCLNet_Shared_Plugin_Context.md)
+- [CE_Collectives](items/id_69ed1e63/CE_Collectives.md)
+- [Add CMake build system](items/id_E21995DB/Add_CMake_build_system.md)
+- [Proxy Affinity](items/id_b0d8ce49/Proxy_Affinity.md)
+- [Profiler API Events](items/id_ef8a4388/Profiler_API_Events.md)
+- [Multi Request API](items/id_ee13adc4/Multi_Request_API.md)
+- [NCCL alltoall/gather/scatter api](items/id_b1eda4f6/NCCL_alltoall_gather_scatter_api.md)
+<!-- V2_28_DO_NOT_MOVE -->
+ 
+<!------------------------------------->
+<!------------------------------------->
 ## version 2.27
 
 - [Symmetric API](items/id_52d22bee/Symmetric_API.md)

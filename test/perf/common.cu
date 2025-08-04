@@ -17,6 +17,7 @@
 #include <ctype.h>
 #include "cuda.h"
 #include "util.h"
+#include "plugin.h" // example profiler header
 
 #include "../verifiable/verifiable.h"
 
@@ -100,7 +101,13 @@ static int report_cputime = 0;
 static int out_of_place = 1;
 static int unalign = 0;
 static int trafficClass;
+static int profilerMask;
+static const char* profilerDumpDefault = "perftest";
+static char* profilerDump = (char *)profilerDumpDefault;
+static int profilerIters = INT_MAX;
+int tuning;
 
+static int ctaPolicy = 0;
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
 static int commblocking = NCCL_CONFIG_UNDEF_INT;
@@ -450,24 +457,40 @@ testResult_t testStreamSynchronize(int ngpus, cudaStream_t* streams, ncclComm_t*
           if (ncclAsyncErr != ncclSuccess) {
             // An asynchronous error happened. Stop the operation and destroy
             // the communicator
+            char hostname[1024];
+            getHostName(hostname, 1024);
+            printf(
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,12,10)
+              "\n%s: Async error detected: %s / %s %s:%d\n",
+#else
+              "\n%s: Async error detected: %s %s:%d\n",
+#endif
+              hostname,
+              ncclGetErrorString(ncclAsyncErr),
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,12,10)
+              ncclGetLastError(NULL),
+#endif
+              __FILE__, __LINE__);
+
             for (int id1 = 0; id1 < commNum; ++id1)
               for (int i = 0; i < ngpus; i++)
                 NCCLCHECK(ncclCommAbort(comms[id1][i]));
             // Abort the perf test
-            NCCLCHECK(ncclAsyncErr);
+            return testNcclError;
           }
 
           double delta = tim.elapsed();
           if (delta > timeout && timeout > 0) {
-            for (int id1 = 0; id1 < commNum; ++id1)
-              for (int i = 0; i < ngpus; i++)
-                NCCLCHECK(ncclCommAbort(comms[id1][i]));
             char hostname[1024];
             getHostName(hostname, 1024);
             printf("%s: Test timeout (%ds) %s:%d\n",
               hostname,
               timeout,
               __FILE__, __LINE__);
+
+            for (int id1 = 0; id1 < commNum; ++id1)
+              for (int i = 0; i < ngpus; i++)
+                NCCLCHECK(ncclCommAbort(comms[id1][i]));
             free(done);
             return testTimeout;
           }
@@ -663,13 +686,16 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 
   // Performance Benchmark
   timer tim;
+  int profilerIter = 0;
   for (int iter = 0; iter < actualIters; iter++) {
     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
 
     if (record) TESTCHECK(recordEvents(args, actualIters, iter));
 
     for (int aiter = 0; aiter < agg_iters; aiter++) {
+      if (profilerMask && profilerIter < profilerIters) exampleProfilerStart(profilerMask, profilerDump);
       TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
+      if (profilerMask && profilerIter++ < profilerIters) exampleProfilerStop();
     }
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
@@ -912,7 +938,7 @@ testResult_t threadInit(struct threadArgs* args) {
   config.blocking = commblocking;
   config.splitShare = split_share;
   config.trafficClass = trafficClass;
-
+  config.CTAPolicy = ctaPolicy;
   NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; ++i) {
     int rank = args->globalProc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
@@ -1232,13 +1258,15 @@ int main(int argc, char* argv[], char **envp) {
     {"simulate", required_argument, 0, 'E'},
     {"init_ids", required_argument, 0, 'I'},
     {"traffic_class", required_argument, 0, 'q'},
+    {"tuning", required_argument, 0, 'U'},
     {"help", no_argument, 0, 'h'},
+    {"cta_policy", required_argument, 0, 'x'},
     {}
   };
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1397,6 +1425,12 @@ int main(int argc, char* argv[], char **envp) {
       case 'q':
         trafficClass = (int)strtol(optarg, NULL, 0);
         break;
+      case 'U':
+        tuning = (int)strtol(optarg, NULL, 0);
+        break;
+      case 'x':
+        ctaPolicy = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1443,6 +1477,8 @@ int main(int argc, char* argv[], char **envp) {
             "[-A,--per_coll_perf <0/1/2> Report performance per-collective (default: 0 disable; 1 report per-collective performance and std deviation; 2: report only std deviation)] \n\t"
             "[-I,--init_ids <num ids> enable scalable API for ncclCommInitRank using <num ids> ncclUniqueIds (default: disabled; 0 is equivalent to 1 ncclUniqueId per 128 NCCL ranks; value must be >=0)] \n\t"
             "[-q,--traffic_class <tclass> set network traffic class] \n\t"
+            "[-U,--tuning <0/1> report NCCL tuning info (default: 0)] \n\t"
+            "[-x,--cta_policy <0/1/2> set CTA policy (default: 0)] \n\t"
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1455,6 +1491,26 @@ int main(int argc, char* argv[], char **envp) {
     return -1;
   }
 
+  // Let NCCL load the perftest profiler implementation
+  if (tuning) {
+    setenv("NCCL_PROFILER_PLUGIN", "STATIC_PLUGIN", 1);
+  } else {
+    const char* profilerMaskStr = getenv("NCCL_PERF_PROFILER_MASK");
+    if (profilerMaskStr) {
+      profilerMask = strtol(profilerMaskStr, nullptr, 0);
+    }
+    const char* profilerDumpStr = getenv("NCCL_PERF_PROFILER_DUMP");
+    if (profilerDumpStr) {
+      profilerDump = (char *)profilerDumpStr;
+    }
+    const char* profilerItersStr = getenv("NCCL_PERF_PROFILER_ITERS");
+    if (profilerItersStr) {
+      profilerIters = strtol(getenv("NCCL_PERF_PROFILER_ITERS"), nullptr, 0);
+    }
+    if (profilerMask != 0) {
+      setenv("NCCL_PROFILER_PLUGIN", "example", 1);
+    }
+  }
 #ifdef MPI_SUPPORT
   int provide;
   MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provide);
@@ -1613,20 +1669,6 @@ testResult_t run() {
 #ifdef MPI_SUPPORT
   MPI_Allreduce(MPI_IN_PLACE, &minCudaArch, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 #endif
-#if HAVE_FP8
-  if (minCudaArch < 900) { // Filter out fp8 on pre-Hopper hardware
-    int n = 0;
-    for (int i=0; i < test_typenum; i++) {
-      if (!(test_types[i] == ncclFloat8e4m3 || test_types[i] == ncclFloat8e5m2)) {
-        test_types[n] = test_types[i];
-        test_typenames[n] = test_typenames[i];
-        n += 1;
-      }
-    }
-    test_typenum = n;
-  };
-#endif
-
   char* ncclIdLocal;
   ncclUniqueId* ncclId;
   ncclComm_t globalComms[nThreads*nGpus];
@@ -1681,6 +1723,7 @@ testResult_t run() {
     config.splitShare = split_share;
     config.trafficClass = trafficClass;
     config.commName = "perftest";
+    config.CTAPolicy = ctaPolicy;
 
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < nGpus * nThreads; ++i) {
@@ -2006,4 +2049,12 @@ testResult_t run() {
     return testNumResults;
   else
     return testSuccess;
+}
+bool isFp8ValidForReductions(ncclDataType_t type) {
+#if HAVE_FP8
+  if ((type == ncclFloat8e4m3 || type == ncclFloat8e5m2) && minCudaArch < 900) {
+    return false;
+  }
+#endif
+  return true;
 }

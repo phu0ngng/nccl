@@ -33,7 +33,7 @@ jobs=$(eval "$NUM_BUILD_PROCS")
 
 echo "$(date +%T) : make starting"
 start=$(date +%s%N)
-make -j$jobs test.build MPI=1 WERROR=1 TRACE=$NCCL_BUILD_TRACE
+make -j$jobs test.build MPI=1 TRACE=$NCCL_BUILD_TRACE
 # make -j$jobs pkg.build
 
 build_status=$?

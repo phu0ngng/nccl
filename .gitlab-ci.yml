@@ -7,10 +7,12 @@ stages:
   - perf_tests_single
   - perf_tests_multi
   - profiler_tests
+  - inspector_tests
   - replay_tests
   - summary
 
 variables:
+  WERROR: 0
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   BUILD_TRACE: "0"
@@ -30,6 +32,8 @@ variables:
   RUN_ON_GP100: "1"
   # Toggle variables by test type
   RUN_UNIT_TESTS: "1"
+  RUN_PROFILER_TESTS: "1"
+  RUN_INSPECTOR_TESTS: "1"
   RUN_API_TESTS: "1"
   RUN_PERF_TESTS_SINGLE: "1"
   RUN_PERF_TESTS_MULTIPLE: "1"
@@ -177,6 +181,22 @@ build-dlfw-pytorch-container:
     paths:
       - build-dlfw
     expire_in: 48 hrs
+  allow_failure: false
+
+build-cmake:
+  stage: build
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default")
+      when: always
+    - when: never
+  tags:
+    - ipp6-nccl
+  variables:
+    SLURM_PARTITION: cpuonly
+    SLURM_TIME: 15
+  script:
+    # TODO (kartiki) - Invoke this via docker/make.sh
+    - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh
   allow_failure: false
 
 ##
@@ -387,6 +407,7 @@ unit_tests-P100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -432,6 +453,7 @@ unit_tests-P40:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -477,6 +499,7 @@ unit_tests-GP100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -522,6 +545,7 @@ unit_tests-A40-single:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -567,6 +591,7 @@ unit_tests-A40-dual:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -612,6 +637,7 @@ unit_tests-A100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -663,6 +689,7 @@ unit_tests-eos:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -709,6 +736,7 @@ unit_tests-AWS_H100_EFA:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -738,6 +766,7 @@ unit_tests-AWS_H100_EFA:
       export LOG_ALGO_RS_TESTS=$LOG_ALGO_RS_TESTS
       export LOG_ALGO_AG_TESTS=$LOG_ALGO_AG_TESTS
       export PLUGIN_LOADING_TESTS=$PLUGIN_LOADING_TESTS
+      export DEVICE_ID_TESTS=$DEVICE_ID_TESTS
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
@@ -792,6 +821,7 @@ unit_tests-draco_oci:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -844,6 +874,7 @@ unit_tests-pre-nyx:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -895,6 +926,7 @@ unit_tests-pre-tyche:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -935,6 +967,7 @@ unit_tests-ipp6-a100:
     NP: 1
     NCCL_HOME: build
     RUN_MODE: "MPI"
+    DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -948,6 +981,7 @@ unit_tests-ipp6-a100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    DEVICE_ID_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1597,7 +1631,7 @@ perftest-GP100:
     MAX: "1G"
     NNODES: 1
     ENABLE_NVLS: 0
-    GRAPH: 0
+    GRAPH: 2
     NGPUS: 8
     NP: 8
     NCCL_HOME: build-gc
@@ -1731,6 +1765,7 @@ perftest-single-eos:
     SLURM_TIME: 25
     RUN_MODE: "MPI"
     NNODES: 1
+    GRAPH: 0
     NGPUS: 8
     MAX: "1G"
     NP: 8
@@ -1861,7 +1896,7 @@ perftest-single-pre-nyx:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
-    SLURM_TIME: 45
+    SLURM_TIME: 60
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
     NNODES: 1
@@ -1871,6 +1906,7 @@ perftest-single-pre-nyx:
     GRAPH: 0
     NCCL_HOME: build
     SYMMETRIC: 1
+    CE_COLL: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
   before_script:
     - tar -xzf build-ipp6.tar.gz
@@ -1908,8 +1944,10 @@ perftest-single-pre-tyche:
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
+    CE_COLL: 1
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
+    ENABLE_MNNVL_TUNER_PLUGIN: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -1944,6 +1982,7 @@ perftest-single-ipp6-a100:
     SLURM_TIME: 30
     SLURM_PARTITION: a100-cicd
     NNODES: 1
+    GRAPH: 0
     NGPUS: 2
     NP: 2
     NCCL_HOME: build
@@ -2083,6 +2122,7 @@ perftest-multi-eos:
     OMPI_MCA_btl: "^openib"
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+    GRAPH: 0
     NGPUS: 8
     MAX: "1G"
     NP: 8
@@ -2259,10 +2299,12 @@ perftest-multi-pre-tyche:
     MAX: "1G"
     NP: 4
     SYMMETRIC: 1
+    CE_COLL: 1
     GRAPH: 0
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+    ENABLE_MNNVL_TUNER_PLUGIN: 1
     # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable ring 1rpn registration tests
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2301,6 +2343,7 @@ perftest-multi-ipp6-a100:
     SLURM_TIME: 30
     SLURM_PARTITION: a100-cicd
     NNODES: 2
+    GRAPH: 0
     NGPUS: 2
     NP: 2
     NCCL_HOME: build
@@ -2402,6 +2445,42 @@ profiler-tests-A100:
 
 ##
 ## Stage: profiler_tests - Finish!
+##
+
+##
+## Stage: inspector_tests - Start...
+##
+
+inspector-tests-A100:
+  stage: inspector_tests
+  rules:
+    - if: $TRIGGER_PIPELINE == "default" && $RUN_ON_A100 == "1" && $RUN_INSPECTOR_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic"]
+  tags:
+    - a100pci
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    SLURM_TIME: 10
+    RUN_MODE: "SALLOC_MPI"
+    SLURM_PARTITION: "A100"
+    NNODES: 1
+    ENABLE_NVLS: 0
+    NGPUS: 4
+    NP: 4
+    NCCL_HOME: build-gc
+  script:
+    - ./test/scripts/ci/gitlab-runner-inspector.sh
+  artifacts:
+    when: always
+    paths:
+      - "inspector_logs_*"
+    expire_in: 48 hrs
+
+##
+## Stage: inspector_tests - Finish!
 ##
 
 ##

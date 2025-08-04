@@ -13,6 +13,9 @@ NCCL provides the following collective communication primitives :
 * Reduce
 * AllGather
 * ReduceScatter
+* AlltoAll
+* Gather
+* Scatter
 
 Additionally, it allows for point-to-point send/receive communication which allows for scatter, gather, or all-to-all operations.
 

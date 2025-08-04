@@ -31,7 +31,7 @@ TEST_F(ncclDebugLogTest, timestampOnWarn) {
     overrideEnvVariable("NCCL_DEBUG", "INFO");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_LEVELS", "WARN");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_FORMAT", "[%F %T.%9f] ");
-    ncclResetDebugInit();
+    ncclResetDebugInitInternal();
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitRank(NULL, 0, commId, rank));    // bad nranks=0
     verifyResult(".*\n" TIMESTAMP_NS_REGEX " " REST_REGEX " init.cc:[0-9]* NCCL WARN improper usage of ncclCommInitRank: .*"
                  "\n" REST_REGEX " NCCL INFO init.cc.*");
@@ -40,7 +40,7 @@ TEST_F(ncclDebugLogTest, timestampOnWarn) {
 TEST_F(ncclDebugLogTest, timestampOnInfo) {
     overrideEnvVariable("NCCL_DEBUG", "INFO");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_LEVELS", "INFO");
-    ncclResetDebugInit();
+    ncclResetDebugInitInternal();
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitRank(NULL, 0, commId, rank));
     verifyResult(".*\n" REST_REGEX " init.cc:[0-9]* NCCL WARN improper usage of ncclCommInitRank: .*"
                  "\n" TIMESTAMP_REGEX " " REST_REGEX " NCCL INFO init.cc.*");
@@ -50,7 +50,7 @@ TEST_F(ncclDebugLogTest, timestampOnNotInfo) {
     overrideEnvVariable("NCCL_DEBUG", "INFO");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_LEVELS", "^INFO");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_FORMAT", "[%F %T.%3f] ");
-    ncclResetDebugInit();
+    ncclResetDebugInitInternal();
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitRank(NULL, 0, commId, rank));
     verifyResult(".*\n" TIMESTAMP_MS_REGEX " " REST_REGEX " init.cc:[0-9]* NCCL WARN improper usage of ncclCommInitRank: .*"
                  "\n" REST_REGEX " NCCL INFO init.cc.*");
@@ -59,7 +59,7 @@ TEST_F(ncclDebugLogTest, timestampOnNotInfo) {
 TEST_F(ncclDebugLogTest, timestampOnNotWarn) {
     overrideEnvVariable("NCCL_DEBUG", "INFO");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_LEVELS", "^WARN");
-    ncclResetDebugInit();
+    ncclResetDebugInitInternal();
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitRank(NULL, 0, commId, rank));
     verifyResult(".*\n" REST_REGEX " init.cc:[0-9]* NCCL WARN improper usage of ncclCommInitRank: .*"
                  "\n" TIMESTAMP_REGEX " " REST_REGEX " NCCL INFO init.cc.*");
@@ -68,7 +68,7 @@ TEST_F(ncclDebugLogTest, timestampOnNotWarn) {
 TEST_F(ncclDebugLogTest, timestampOnAll) {
     overrideEnvVariable("NCCL_DEBUG", "INFO");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_LEVELS", "ALL");
-    ncclResetDebugInit();
+    ncclResetDebugInitInternal();
     ASSERT_EQ(ncclInvalidArgument, ncclCommInitRank(NULL, 0, commId, rank));
     verifyResult(".*\n" TIMESTAMP_REGEX " " REST_REGEX " init.cc:[0-9]* NCCL WARN improper usage of ncclCommInitRank: .*"
                  "\n" TIMESTAMP_REGEX " " REST_REGEX " NCCL INFO init.cc.*");
@@ -77,7 +77,7 @@ TEST_F(ncclDebugLogTest, timestampOnAll) {
 TEST_F(ncclDebugLogTest, timestampOnTrace) {
     overrideEnvVariable("NCCL_DEBUG", "TRACE");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_LEVELS", "TRACE");
-    ncclResetDebugInit();
+    ncclResetDebugInitInternal();
     ncclUniqueId id;
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     verifyResult(".*" TIMESTAMP_REGEX " " "[^ :]*:[0-9]*:[0-9]*" " NCCL CALL ncclGetUniqueId\\(.*\\)\n.*");
@@ -86,7 +86,7 @@ TEST_F(ncclDebugLogTest, timestampOnTrace) {
 TEST_F(ncclDebugLogTest, timestampNotOnTrace) {
     overrideEnvVariable("NCCL_DEBUG", "TRACE");
     overrideEnvVariable("NCCL_DEBUG_TIMESTAMP_LEVELS", "^TRACE");
-    ncclResetDebugInit();
+    ncclResetDebugInitInternal();
     ncclUniqueId id;
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     verifyResult(".*" "[^ :]*:[0-9]*:[0-9]*" " NCCL CALL ncclGetUniqueId\\(.*\\)\n.*");

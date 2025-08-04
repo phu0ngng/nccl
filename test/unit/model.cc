@@ -73,6 +73,15 @@ int algoProtoSupported(int a, int p, struct ncclTopoGraph** graphs) {
   return 1;
 }
 
+void keepGpus(struct ncclXml* xmlSystem) {
+  struct ncclXmlNode* node;
+  CHECK(xmlFindTag(xmlSystem, "gpu", &node));
+  while (node) {
+    CHECK(xmlSetAttrInt(node, "keep", 1));
+    CHECK(xmlFindNextTag(xmlSystem, "gpu", node, &node));
+  }
+}
+
 #define MAX_MNNVL_NODES 64
 
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
@@ -87,7 +96,21 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     free(xmlSystem);
     return;
   }
-  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, 0));
+  keepGpus(xmlSystem);
+  CHECK(ncclTopoTrimXml(xmlSystem));
+  uint64_t hostHash = 0;
+  {
+    // Get the host_hash of the first CPU.
+    struct ncclXmlNode* cpuNode;
+    CHECK(xmlFindTag(xmlSystem, "cpu", &cpuNode));
+    if (cpuNode) {
+      const char* hostHashStr;
+      CHECK(xmlGetAttr(cpuNode, "host_hash", &hostHashStr));
+      if (hostHashStr)
+        hostHash = strtoull(hostHashStr, NULL, 16);
+    }
+  }
+  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, hostHash));
   free(xmlSystem);
 
   CHECK(ncclTopoComputePaths(system, NULL));
@@ -195,6 +218,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   int compCap = system->nodes[GPU].nodes[0].gpu.cudaCompCap;
   comm.minCompCap = compCap;
   struct ncclTopoGraph* graphs[NCCL_NUM_ALGORITHMS] = { &treeGraph, &ringGraph, &cNetGraph, &cNetGraph, &nvlsGraph, &nvlsGraph, &treeGraph };
+  CHECK(ncclTopoInitTunerConstants(&comm));
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, graphs));
 
   if (!compactMode) {

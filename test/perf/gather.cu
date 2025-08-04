@@ -56,14 +56,21 @@ testResult_t GatherRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDat
   size_t rankOffset = count * wordSize(type);
   if (count == 0) return testSuccess;
 
-  NCCLCHECK(ncclGroupStart());
-  NCCLCHECK(ncclSend(sendbuff, count, type, root, comm, stream));
-  if (rank == root) {
-    for (int r=0; r<nRanks; r++) {
-      NCCLCHECK(ncclRecv(((char*)recvbuff) + r * rankOffset, count, type, r, comm, stream));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+    NCCLCHECK_COMM_WAIT(ncclGather(sendbuff, recvbuff, count, type, root, comm, stream), comm);
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,7,0)
+    NCCLCHECK(ncclGroupStart());
+    NCCLCHECK(ncclSend(sendbuff, count, type, root, comm, stream));
+    if (rank == root) {
+      for (int r=0; r<nRanks; r++) {
+        NCCLCHECK(ncclRecv(((char*)recvbuff) + r * rankOffset, count, type, r, comm, stream));
+      }
     }
-  }
-  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+    NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+#else
+  printf("NCCL 2.7 or later is needed for gather. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
+  return testNcclError;
+#endif
   return testSuccess;
 }
 

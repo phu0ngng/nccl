@@ -201,6 +201,27 @@ needed, automatically falls back to the /dev/shm code.  In prior versions, the s
 specifying ``NCCL_CUMEM_HOST_ENABLE=0``.  We still recommend configuring the underlying system to ensure that cuMem host
 allocations work, as they provide improved reliability during communicator aborts.
 
+**********
+Stack size
+**********
+
+NCCL's graph search algorithm is highly recursive and, especially on MNNVL
+systems where many ranks are reachable via CUDA P2P, may temporarily require
+more than 2 MB of thread stack during communicator creation.  While the default
+Linux stack size limit (8 MB) is known to be sufficient, we've seen crashes
+if the limit is changed to ``unlimited``.  Due to an idiosyncracy of GNU libc
+(see the man page of ``pthread_create(3)``), such a setting results in a
+*decrease* of the stack size of NCCL's background threads to just 2 MB,
+which may not be sufficiently large.  Use ``ulimit -s`` in bash to print the
+current limit; if needed, reset it to 8192 KB using ``ulimit -s 8192`` (one
+also needs to ensure that the new setting is propagated to other nodes when
+launching a multi-node NCCL job).  Starting with version 2.28, NCCL queries the
+default stack size for newly launched threads and, if necessary, changes it to
+a safe value for the current job.  We still recommend that users on affected
+systems attempt to get the system-wide setting fixed as -- however well
+intentioned -- it is a potentially serious misconfiguration that could have
+negative effects extending beyond NCCL jobs.
+
 *****************
 Networking issues
 *****************

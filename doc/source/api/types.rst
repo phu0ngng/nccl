@@ -266,6 +266,15 @@ ncclConfig_t
   Set to a positive integer value. By default, NCCL will automatically determine the best number of CTAs based on
   the system configuration.
 
+ .. c:macro:: commName
+
+  Specify the user defined name for the communicator.
+  The communicator name can be used by NCCL to enrich logging and profiling.
+
+.. c:macro:: nChannelsPerNetPeer
+
+  Set the number of network channels to be used for pairwise communication. The value must be a positive integer and will be round up to the next power of 2. The default value is optimized for the AlltoAll communication pattern. Consider increasing the value to increase the bandwidth for send/recv communication.
+
 .. _ncclsiminfo:
 
 ncclSimInfo_t

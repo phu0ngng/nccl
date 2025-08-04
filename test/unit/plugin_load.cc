@@ -9,9 +9,9 @@
 #include "nccl_tuner.h"
 #include "nccl_profiler.h"
 
-#define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v10"
-#define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v4"
-#define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v4"
+#define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v11"
+#define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v5"
+#define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v5"
 
 enum test {
   ncclPluginNetRelPathTest,
@@ -82,9 +82,11 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
+            ncclClosePluginLib(handle, ncclPluginTypeNet);
             fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
+          ncclClosePluginLib(handle, ncclPluginTypeNet);
           fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }
@@ -115,9 +117,11 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
+            ncclClosePluginLib(handle, ncclPluginTypeTuner);
             fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
+          ncclClosePluginLib(handle, ncclPluginTypeTuner);
           fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }
@@ -138,9 +142,11 @@ static int test_plugin_load(enum test type) {
               fprintf(stdout, "%s: SUCCESS\n", testName[type]);
               return 0;
             }
+            ncclClosePluginLib(handle, ncclPluginTypeProfiler);
             fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
+          ncclClosePluginLib(handle, ncclPluginTypeProfiler);
           fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
           return 1;
         }

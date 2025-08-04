@@ -419,4 +419,5 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
 testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank, const char* ft_list);
 testResult_t threadLaunch(struct testThread* thread);
 
+bool isFp8ValidForReductions(ncclDataType_t type);
 #endif

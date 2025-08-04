@@ -24,6 +24,9 @@
 // Maximum number of requests per comm object
 #define NCCL_NET_MAX_REQUESTS 32
 
+#define NCCL_NET_MAX_DEVS_PER_NIC 4
+
+#include "net_v11.h"
 #include "net_v10.h"
 #include "net_v9.h"
 #include "net_v8.h"
@@ -34,13 +37,11 @@
 #include "net_v3.h"
 #include "net_v2.h"
 
-typedef ncclNetSGE_v10_t ncclNetSGE_t;
-typedef ncclNet_v10_t ncclNet_t;
-typedef ncclCollNet_v10_t ncclCollNet_t;
-typedef ncclNetProperties_v10_t ncclNetProperties_t;
-typedef ncclNetCommConfig_v10_t ncclNetCommConfig_t;
-typedef ncclNetVDeviceProps_v10_t ncclNetVDeviceProps_t;
-
-#define NCCL_NET_MAX_DEVS_PER_NIC NCCL_NET_MAX_DEVS_PER_NIC_V10
+typedef ncclNetSGE_v11_t ncclNetSGE_t;
+typedef ncclNet_v11_t ncclNet_t;
+typedef ncclCollNet_v11_t ncclCollNet_t;
+typedef ncclNetProperties_v11_t ncclNetProperties_t;
+typedef ncclNetCommConfig_v11_t ncclNetCommConfig_t;
+typedef ncclNetVDeviceProps_v11_t ncclNetVDeviceProps_t;
 
 #endif // end include guard

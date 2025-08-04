@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include <gtest/gtest.h>
+#include <nccl.h>
 #pragma once
 template <typename OP, typename DT>
 void freePP(OP op, DT**& ptr, const int len) {
@@ -196,6 +198,9 @@ class ncclShelveEnvTest : public ::testing::Test {
     }
 };
 
+extern "C"
+void  ncclResetDebugInitInternal();
+
 class ncclOutputTest : public ncclShelveEnvTest {
   // This class reroutes the output to a file so that the results can be verified against a regex.
   protected:
@@ -207,12 +212,12 @@ class ncclOutputTest : public ncclShelveEnvTest {
         overrideEnvVariable("NCCL_DEBUG", "INFO");
         overrideEnvVariable("NCCL_DEBUG_SUBSYS", "ENV");
         overrideEnvVariable("NCCL_DEBUG_FILE", logFileName);
-        ncclResetDebugInit();
+        ncclResetDebugInitInternal();
     }
     virtual void TearDown() override {
         remove(logFileName);
         ncclShelveEnvTest::TearDown();
-        ncclResetDebugInit();
+        ncclResetDebugInitInternal();
     }
     void verifyResult(const char* expectedRegex, bool expectMatch=true, int regexCompFlags=0, int regexExecFlags=0) {
         // This reads the entire file and searches for expectedRegex.
