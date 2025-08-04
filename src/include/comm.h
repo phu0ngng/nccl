@@ -231,6 +231,7 @@ struct ncclTaskColl {
 struct ncclTaskP2p {
   struct ncclTaskP2p* next;
   ncclFunc_t func;
+  ncclFunc_t collAPI;
   void* buff;
   size_t count;
   ncclDataType_t datatype;
