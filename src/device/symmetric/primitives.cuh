@@ -42,7 +42,7 @@ struct ncclSymkKernelStuff {
   template<typename T>
     __device__ void getWorkRange(int block,
                                  uint16_t& workLo, size_t& indexLo, uint16_t& workHi, size_t& indexHi) {
-    constexpr int EltPerCell = NCCL_DEVICE_KERNEL_CELL_SIZE / sizeof(T);
+    constexpr int EltPerCell = NCCL_SYM_KERNEL_CELL_SIZE / sizeof(T);
     uint32_t fracLo, fracHi;
 
     // Where the work begins
@@ -66,7 +66,7 @@ struct ncclSymkKernelStuff {
   template<typename T>
     __device__ void getWorkRangeFused(int blockIdx, int w,
                                       int& block, int& nBlocks, size_t& indexLo, size_t& indexHi) {
-    constexpr int EltPerCell = NCCL_DEVICE_KERNEL_CELL_SIZE / sizeof(T);
+    constexpr int EltPerCell = NCCL_SYM_KERNEL_CELL_SIZE / sizeof(T);
     struct ncclSymkDevWork const& dw = devWork[w];
     uint32_t fracLo, fracHi;
     int lastBlock;
@@ -84,9 +84,9 @@ struct ncclSymkKernelStuff {
 };
 }
 
-#ifndef NCCL_DEVICEK_GROUP_SINGLE_WORK
+#ifndef NCCL_SYMK_GROUP_SINGLE_WORK
 
-#define NCCL_DEVICEK_GROUP_START(stuff, type)           \
+#define NCCL_SYMK_GROUP_START(stuff, type)           \
   uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
   size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
   stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
@@ -114,7 +114,7 @@ struct ncclSymkKernelStuff {
                                          ncclSymkGroupDevWork.outputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
     const size_t ncclSymkGroupNElts = ncclSymkGroupCurrentIndexHi - ncclSymkGroupCurrentIndexLo
 
-#define NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, type) \
+#define NCCL_SYMK_GROUP_NOFUSE_START(stuff, type) \
   uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
   size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
   stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
@@ -132,14 +132,14 @@ struct ncclSymkKernelStuff {
                                          ncclSymkGroupDevWork.outputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
     const size_t ncclSymkGroupNElts = ncclSymkGroupCurrentIndexHi - ncclSymkGroupCurrentIndexLo
 
-#define NCCL_DEVICEK_GROUP_END \
+#define NCCL_SYMK_GROUP_END \
     ncclSymkGroupCurrentIndexLo = 0; \
   } \
   do {} while(0)
 
-#else // NCCL_DEVICEK_GROUP_SINGLE_WORK
+#else // NCCL_SYMK_GROUP_SINGLE_WORK
 
-#define NCCL_DEVICEK_GROUP_START(stuff, type) \
+#define NCCL_SYMK_GROUP_START(stuff, type) \
   struct ncclSymkDevWork const& ncclSymkGroupDevWork = stuff.devWork[0]; \
   size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
   int const& ncclSymkGroupBlock = blockIdx.x; \
@@ -148,7 +148,7 @@ struct ncclSymkKernelStuff {
   ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, ncclSymkGroupDevWork.outputOff); \
   size_t const& ncclSymkGroupNElts = ncclSymkGroupDevWork.nElts
 
-#define NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, type) \
+#define NCCL_SYMK_GROUP_NOFUSE_START(stuff, type) \
   uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
   size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
   stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
@@ -161,10 +161,10 @@ struct ncclSymkKernelStuff {
                                        ncclSymkGroupDevWork.outputOff + ncclSymkGroupIndexLo*sizeof(type)); \
   const size_t ncclSymkGroupNElts = ncclSymkGroupIndexHi - ncclSymkGroupIndexLo
 
-#define NCCL_DEVICEK_GROUP_END                     \
+#define NCCL_SYMK_GROUP_END                     \
   do {} while(0)
 
-#endif // NCCL_DEVICEK_GROUP_SINGLE_WORK
+#endif // NCCL_SYMK_GROUP_SINGLE_WORK
 
 template<template<typename> typename Red, typename T, bool nvls>
 struct ncclSymkAccumType { using Type = T; };

@@ -1,5 +1,5 @@
-#ifndef NCCL_DEVICE_KERNELS_H_
-#define NCCL_DEVICE_KERNELS_H_
+#ifndef NCCL_SYM_KERNELS_H_
+#define NCCL_SYM_KERNELS_H_
 #include "nccl.h"
 #include "nccl_device.h"
 #include "nccl_common.h"
@@ -8,7 +8,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // ncclSymk[Foo]: Kernels built on the device API
 
-#define NCCL_DEVICE_KERNEL_CELL_SIZE 1024 // no less than 16 bytes minimal cell size
+#define NCCL_SYM_KERNEL_CELL_SIZE 1024 // no less than 16 bytes minimal cell size
 
 constexpr int ncclSymkMaxBlocks = 64;
 constexpr int ncclSymkMaxThreads = 512;

@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
-#ifndef NCCL_DEVICEMETRIC_SCHED_H_
-#define NCCL_DEVICEMETRIC_SCHED_H_
+#ifndef NCCL_SYMMETRIC_SCHED_H_
+#define NCCL_SYMMETRIC_SCHED_H_
 
 #include "scheduler.h"
 
@@ -56,7 +56,7 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
       float estTimeUs = 1.e18;
       size_t count = 0;
       struct ncclTaskColl* headTask = task;
-      size_t cellCount = NCCL_DEVICE_KERNEL_CELL_SIZE / ncclTypeSize(headTask->datatype);
+      size_t cellCount = NCCL_SYM_KERNEL_CELL_SIZE / ncclTypeSize(headTask->datatype);
       // For now we assume higher kernel id means a kernel for larger data size
       while (task != nullptr) {
         nWorks++;
@@ -94,7 +94,7 @@ ncclResult_t ncclSymmetricTaskScheduler(struct ncclComm* comm, struct ncclIntruQ
   ssize_t remainCell = 0;
   ssize_t cellPerChannel = 0;
   int workCount = 0, workIndex = 0;
-  size_t cellCount = NCCL_DEVICE_KERNEL_CELL_SIZE / ncclTypeSize(headTask->datatype); // minimal cell size
+  size_t cellCount = NCCL_SYM_KERNEL_CELL_SIZE / ncclTypeSize(headTask->datatype); // minimal cell size
   ncclResult_t ret = ncclSuccess;
   int curChannel = 0;
   int curChannelWork = 0;
@@ -149,7 +149,7 @@ ncclResult_t ncclSymmetricTaskScheduler(struct ncclComm* comm, struct ncclIntruQ
           // the last segment of the task
           assert(devWork.nChannels > 0);
           // if the remaining cell is less than 1024 bytes, we can fuse the last channel
-          if ((remainCell - cellLeft) * NCCL_DEVICE_KERNEL_CELL_SIZE <= (1 << 10) || ncclIntruQueueEmpty(symTaskQueue)) devWork.nChannels++;
+          if ((remainCell - cellLeft) * NCCL_SYM_KERNEL_CELL_SIZE <= (1 << 10) || ncclIntruQueueEmpty(symTaskQueue)) devWork.nChannels++;
         } else {
           // middle segment of the task
           devWork.nChannels++;
@@ -215,4 +215,4 @@ fail:
   goto exit;
 }
 
-#endif // NCCL_DEVICEMETRIC_SCHED_H_
+#endif // NCCL_SYMMETRIC_SCHED_H_

@@ -167,7 +167,7 @@ __device__ __forceinline__ void ncclSymkRun_AllGather_ST(ncclSymkDevWorkArgs con
   bar.arrive(ncclCoopCta(), cuda::memory_order_relaxed);
 
   bool waitNeeded = true;
-  NCCL_DEVICEK_GROUP_START(stuff, char);
+  NCCL_SYMK_GROUP_START(stuff, char);
 
   // Threads numbered over rank.
   int bt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
@@ -179,7 +179,7 @@ __device__ __forceinline__ void ncclSymkRun_AllGather_ST(ncclSymkDevWorkArgs con
         ncclSymkGroupInput, ncclSymkGroupOutput + rank*ncclSymkGroupNAllElts, ncclSymkGroupNElts);
 
   waitNeeded = false;
-  NCCL_DEVICEK_GROUP_END;
+  NCCL_SYMK_GROUP_END;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
@@ -242,7 +242,7 @@ __device__ __forceinline__ void ncclSymkRun_AllGather_STMC(ncclSymkDevWorkArgs c
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
-  NCCL_DEVICEK_GROUP_START(stuff, char);
+  NCCL_SYMK_GROUP_START(stuff, char);
 
   // Round robin memory to blocks.
   int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
@@ -252,7 +252,7 @@ __device__ __forceinline__ void ncclSymkRun_AllGather_STMC(ncclSymkDevWorkArgs c
 
   bcastMultimem(stuff, tn, t, ncclSymkGroupInput, ncclSymkGroupOutput + rank*ncclSymkGroupNAllElts, ncclSymkGroupNElts);
 
-  NCCL_DEVICEK_GROUP_END;
+  NCCL_SYMK_GROUP_END;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
@@ -342,7 +342,7 @@ static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevWorkArgs const* 
   using Pack = BytePack<8>;
   constexpr int BytePerPack = 8;
 
-  NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, char);
+  NCCL_SYMK_GROUP_NOFUSE_START(stuff, char);
 
   int nElts = ncclSymkGroupNElts;
   int nAllElts = ncclSymkGroupNAllElts;
@@ -361,7 +361,7 @@ static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevWorkArgs const* 
     allgather_LL_body(stuff, lla2a, blockInput, blockOutput, nElts, nPacks, nAllElts);
   }
 
-  NCCL_DEVICEK_GROUP_END;
+  NCCL_SYMK_GROUP_END;
 }
 
 __device__ __forceinline__ void ncclSymkRun_AllGather_LL(ncclSymkDevWorkArgs const* args) {

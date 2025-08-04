@@ -269,7 +269,7 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLD_AGxST(ncclSymkDevWor
   bar.arrive(ncclCoopCta(), cuda::memory_order_relaxed);
 
   bool waitNeeded = true;
-  NCCL_DEVICEK_GROUP_START(stuff, T);
+  NCCL_SYMK_GROUP_START(stuff, T);
 
   // Threads numbered globally such that we round robin warps by rank then block.
   int gt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
@@ -282,7 +282,7 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLD_AGxST(ncclSymkDevWor
             ncclSymkGroupInput, ncclSymkGroupOutput, ncclSymkGroupNElts);
 
   waitNeeded = false;
-  NCCL_DEVICEK_GROUP_END;
+  NCCL_SYMK_GROUP_END;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
@@ -353,7 +353,7 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLDMC_AGxSTMC(ncclSymkDe
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
-  NCCL_DEVICEK_GROUP_START(stuff, T);
+  NCCL_SYMK_GROUP_START(stuff, T);
 
   // Threads numbered globally such that we round robin warps by rank then block.
   int gt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
@@ -367,7 +367,7 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLDMC_AGxSTMC(ncclSymkDe
                     ncclSymkGroupOutput.multimemPtr(multimem),
                     ncclSymkGroupNElts);
 
-  NCCL_DEVICEK_GROUP_END;
+  NCCL_SYMK_GROUP_END;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
@@ -389,7 +389,7 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLL_R_impl(ncclSymkDevWo
   using AccPack = BytePack<8*sizeof(Acc)/sizeof(T)>;
   constexpr int EltPerPack = 8/sizeof(T);
 
-  NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, T);
+  NCCL_SYMK_GROUP_NOFUSE_START(stuff, T);
 
   int nElts = ncclSymkGroupNElts;
   int nPacks = divUp(nElts, EltPerPack);
@@ -456,7 +456,7 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLL_R_impl(ncclSymkDevWo
     }
   }
 
-  NCCL_DEVICEK_GROUP_END;
+  NCCL_SYMK_GROUP_END;
 }
 
 template<template<typename> typename Red, typename T>
