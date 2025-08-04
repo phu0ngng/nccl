@@ -683,19 +683,8 @@ ncclResult_t ncclDevCommCreate(
     struct ncclComm* comm, struct ncclDevCommRequirements const* reqs,
     struct ncclDevComm* outSymComm
   ) {
-  ncclResult_t ret = ncclSuccess;
-  struct ncclDevrState* devr = &comm->devrState;
-
-  memset(outSymComm, 0, sizeof(*outSymComm));
-  outSymComm->rank = comm->rank;
-  outSymComm->nRanks = comm->nRanks;
-  outSymComm->nRanks_rcp32 = idivRcp32(comm->nRanks);
-  outSymComm->lsaRank = devr->lsaSelf;
-  outSymComm->lsaSize = devr->lsaSize;
-  outSymComm->lsaSize_rcp32 = idivRcp32(devr->lsaSize);
-
-  struct ncclTeam world = ncclTeamWorld(comm);
-  struct ncclTeam lsa = ncclTeamInnerFactor(world, devr->lsaSize);
+  struct ncclTeam world;
+  struct ncclTeam lsa;
   struct ncclDevrTeam* tmLsa;
   cudaStream_t stream;
   size_t bufSizeTotal;
@@ -706,8 +695,22 @@ ncclResult_t ncclDevCommCreate(
   struct ncclDevrMemory* mem;
   struct ncclDevrWindow* win;
   struct ncclWindow_vidmem* winHost;
+  struct ncclDevrState* devr;
+  ncclResult_t ret = ncclSuccess;
 
   NCCLCHECKGOTO(ncclDevrInitOnce(comm), ret, fail);
+  devr = &comm->devrState;
+
+  memset(outSymComm, 0, sizeof(*outSymComm));
+  outSymComm->rank = comm->rank;
+  outSymComm->nRanks = comm->nRanks;
+  outSymComm->nRanks_rcp32 = idivRcp32(comm->nRanks);
+  outSymComm->lsaRank = devr->lsaSelf;
+  outSymComm->lsaSize = devr->lsaSize;
+  outSymComm->lsaSize_rcp32 = idivRcp32(devr->lsaSize);
+
+  world = ncclTeamWorld(comm);
+  lsa = ncclTeamInnerFactor(world, devr->lsaSize);
 
   NCCLCHECKGOTO(symTeamObtain(comm, lsa, /*multicast=*/reqs->multimem, &tmLsa), ret, fail);
   outSymComm->multimem.mcBasePtr = tmLsa->mcBasePtr;
