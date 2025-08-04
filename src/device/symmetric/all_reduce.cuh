@@ -1,11 +1,11 @@
-#include "dev_kernels.h"
+#include "sym_kernels.h"
 #include "nccl_device.h"
 #include "kernel.cuh"
 #include "primitives.cuh"
 
 template<int BytePerPack, int UnrollPacks, int UnrollPeers, typename T, typename Red>
 static __device__ __forceinline__ void allreduceDeep(
-    ncclDevkKernelStuff const& stuff, int tn, int t,
+    ncclSymkKernelStuff const& stuff, int tn, int t,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     Red red, ncclSymPtr<char> input, ncclSymPtr<char> output, int32_t nIters
   ) {
@@ -121,7 +121,7 @@ static __device__ __forceinline__ void allreduceDeep(
 
 template<int UnrollPeers, typename Red, typename T>
 static __device__ __forceinline__ void allreduceEnds(
-    ncclDevkKernelStuff const& stuff, int tn, int t, Red red,
+    ncclSymkKernelStuff const& stuff, int tn, int t, Red red,
     ncclSymPtr<T> input, ncclSymPtr<T> output,
     size_t nElts, uint32_t nPreElts, size_t nSufElts
   ) {
@@ -195,7 +195,7 @@ static __device__ __forceinline__ void allreduceEnds(
 
 template<typename Red, typename T>
 static __device__ void allreduce(
-    ncclDevkKernelStuff const& stuff, int tn, int t, int nBlocks,
+    ncclSymkKernelStuff const& stuff, int tn, int t, int nBlocks,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     Red red, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
@@ -255,13 +255,13 @@ static __device__ void allreduce(
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLD_AGxST(ncclDevkDevWorkArgs const* args) {
-  ncclDevkKernelStuff stuff{args};
+__device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLD_AGxST(ncclSymkDevWorkArgs const* args) {
+  ncclSymkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
     ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x
   };
 
-  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type> red(stuff.devWork->redOpArg);
+  Red<typename ncclSymkAccumType<Red, T, /*nvls=*/false>::Type> red(stuff.devWork->redOpArg);
 
   int const& rank = stuff.comm.rank;
   int const& nRanks = stuff.comm.nRanks;
@@ -274,12 +274,12 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLD_AGxST(ncclDevkDevWor
   // Threads numbered globally such that we round robin warps by rank then block.
   int gt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
                      rank, nRanks,
-                     ncclDevkGroupBlock, ncclDevkGroupNBlocks,
+                     ncclSymkGroupBlock, ncclSymkGroupNBlocks,
                      threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int gtn = nRanks*ncclDevkGroupNBlocks*blockDim.x;
+  int gtn = nRanks*ncclSymkGroupNBlocks*blockDim.x;
 
-  allreduce(stuff, gtn, gt, ncclDevkGroupNBlocks, waitNeeded, bar, red,
-            ncclDevkGroupInput, ncclDevkGroupOutput, ncclDevkGroupNElts);
+  allreduce(stuff, gtn, gt, ncclSymkGroupNBlocks, waitNeeded, bar, red,
+            ncclSymkGroupInput, ncclSymkGroupOutput, ncclSymkGroupNElts);
 
   waitNeeded = false;
   NCCL_DEVICEK_GROUP_END;
@@ -339,13 +339,13 @@ static __device__ void allreduceMultimem(
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLDMC_AGxSTMC(ncclDevkDevWorkArgs const* args) {
-  ncclDevkKernelStuff stuff{args};
+__device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLDMC_AGxSTMC(ncclSymkDevWorkArgs const* args) {
+  ncclSymkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
     ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
   };
 
-  Red<typename ncclDevkAccumType<Red, T, /*nvls=*/true>::Type> red(stuff.devWork->redOpArg);
+  Red<typename ncclSymkAccumType<Red, T, /*nvls=*/true>::Type> red(stuff.devWork->redOpArg);
 
   int const& rank = stuff.comm.rank;
   int const& nRanks = stuff.comm.nRanks;
@@ -358,14 +358,14 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLDMC_AGxSTMC(ncclDevkDe
   // Threads numbered globally such that we round robin warps by rank then block.
   int gt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
                      rank, nRanks,
-                     ncclDevkGroupBlock, ncclDevkGroupNBlocks,
+                     ncclSymkGroupBlock, ncclSymkGroupNBlocks,
                      threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int gtn = nRanks*ncclDevkGroupNBlocks*blockDim.x;
+  int gtn = nRanks*ncclSymkGroupNBlocks*blockDim.x;
 
   allreduceMultimem(gtn, gt, red,
-                    ncclDevkGroupInput.multimemPtr(multimem),
-                    ncclDevkGroupOutput.multimemPtr(multimem),
-                    ncclDevkGroupNElts);
+                    ncclSymkGroupInput.multimemPtr(multimem),
+                    ncclSymkGroupOutput.multimemPtr(multimem),
+                    ncclSymkGroupNElts);
 
   NCCL_DEVICEK_GROUP_END;
 
@@ -373,16 +373,16 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_RSxLDMC_AGxSTMC(ncclDevkDe
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevWorkArgs const* args, bool multimem) {
-  ncclDevkKernelStuff stuff{args};
+__device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLL_R_impl(ncclSymkDevWorkArgs const* args, bool multimem) {
+  ncclSymkKernelStuff stuff{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
     ncclCoopCta(), stuff.comm, ncclTeamTagLsa(),
-    blockIdx.x, ncclDevkMaxThreads, multimem
+    blockIdx.x, ncclSymkMaxThreads, multimem
   );
 
   int const& rank = stuff.comm.rank;
   int const& nRanks = stuff.comm.nRanks;
-  using Acc = typename ncclDevkAccumType<Red, T, /*nvls=*/false>::Type;
+  using Acc = typename ncclSymkAccumType<Red, T, /*nvls=*/false>::Type;
   Red<Acc> red(stuff.devWork->redOpArg);
 
   using Pack = BytePack<8>;
@@ -391,11 +391,11 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevWo
 
   NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, T);
 
-  int nElts = ncclDevkGroupNElts;
+  int nElts = ncclSymkGroupNElts;
   int nPacks = divUp(nElts, EltPerPack);
 
-  T* input = (T*)ncclDevkGroupInput.localPtr();
-  T* output = (T*)ncclDevkGroupOutput.localPtr();
+  T* input = (T*)ncclSymkGroupInput.localPtr();
+  T* output = (T*)ncclSymkGroupOutput.localPtr();
 
   bool packAligned = 8 <= alignof(T) || (
       nElts*sizeof(T) | (uintptr_t)input | (uintptr_t)output
@@ -403,7 +403,7 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevWo
 
   ncclCoopCta cta;
   int t = threadIdx.x;
-  int tn = ncclDevkMaxThreads;
+  int tn = ncclSymkMaxThreads;
 
   if (__builtin_expect(packAligned, true)) {
     #pragma unroll 1
@@ -460,11 +460,11 @@ __device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R_impl(ncclDevkDevWo
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLL_R(ncclDevkDevWorkArgs const* args) {
-  ncclDevkRun_AllReduce_AGxLL_R_impl<Red, T>(args, /*multimem=*/false);
+__device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLL_R(ncclSymkDevWorkArgs const* args) {
+  ncclSymkRun_AllReduce_AGxLL_R_impl<Red, T>(args, /*multimem=*/false);
 }
 
 template<template<typename> typename Red, typename T>
-__device__ __forceinline__ void ncclDevkRun_AllReduce_AGxLLMC_R(ncclDevkDevWorkArgs const* args) {
-  ncclDevkRun_AllReduce_AGxLL_R_impl<Red, T>(args, /*multimem=*/true);
+__device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLLMC_R(ncclSymkDevWorkArgs const* args) {
+  ncclSymkRun_AllReduce_AGxLL_R_impl<Red, T>(args, /*multimem=*/true);
 }

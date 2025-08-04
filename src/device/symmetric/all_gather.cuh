@@ -1,10 +1,10 @@
-#include "dev_kernels.h"
+#include "sym_kernels.h"
 #include "kernel.cuh"
 #include "primitives.cuh"
 
 template<int BytePerPack, int UnrollPacks, int UnrollPeers>
 static __device__ void bcastDeep(
-    ncclDevkKernelStuff const& stuff, int tn, int t,
+    ncclSymkKernelStuff const& stuff, int tn, int t,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     ncclSymPtr<char> input, ncclSymPtr<char> output, bool inPlace, int nIters
   ) {
@@ -67,7 +67,7 @@ static __device__ void bcastDeep(
 
 template<int UnrollPeers, typename T>
 static __device__ void bcastEnds(
-    ncclDevkKernelStuff const& stuff, int tn, int t,
+    ncclSymkKernelStuff const& stuff, int tn, int t,
     ncclSymPtr<T> input, ncclSymPtr<T> output, bool inPlace, size_t nElts, uint32_t nPreElts, size_t nSufElts
   ) {
   int const& rank = stuff.comm.rank;
@@ -100,7 +100,7 @@ static __device__ void bcastEnds(
 
 template<typename T>
 static __device__ void bcast(
-    ncclDevkKernelStuff const& stuff, int tn, int t, int nBlocks,
+    ncclSymkKernelStuff const& stuff, int tn, int t, int nBlocks,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
@@ -157,8 +157,8 @@ static __device__ void bcast(
   bcastEnds<UnrollPeers>(stuff, tn, t, input, output, inPlace, nElts, nPreBytes/sizeof(T), nSufElts);
 }
 
-__device__ __forceinline__ void ncclDevkRun_AllGather_ST(ncclDevkDevWorkArgs const* args) {
-  ncclDevkKernelStuff stuff{args};
+__device__ __forceinline__ void ncclSymkRun_AllGather_ST(ncclSymkDevWorkArgs const* args) {
+  ncclSymkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
     ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x
   };
@@ -171,12 +171,12 @@ __device__ __forceinline__ void ncclDevkRun_AllGather_ST(ncclDevkDevWorkArgs con
 
   // Threads numbered over rank.
   int bt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
-                     ncclDevkGroupBlock, ncclDevkGroupNBlocks,
+                     ncclSymkGroupBlock, ncclSymkGroupNBlocks,
                      threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int btn = ncclDevkGroupNBlocks*blockDim.x;
+  int btn = ncclSymkGroupNBlocks*blockDim.x;
 
-  bcast(stuff, btn, bt, ncclDevkGroupNBlocks, waitNeeded, bar,
-        ncclDevkGroupInput, ncclDevkGroupOutput + rank*ncclDevkGroupNAllElts, ncclDevkGroupNElts);
+  bcast(stuff, btn, bt, ncclSymkGroupNBlocks, waitNeeded, bar,
+        ncclSymkGroupInput, ncclSymkGroupOutput + rank*ncclSymkGroupNAllElts, ncclSymkGroupNElts);
 
   waitNeeded = false;
   NCCL_DEVICEK_GROUP_END;
@@ -186,7 +186,7 @@ __device__ __forceinline__ void ncclDevkRun_AllGather_ST(ncclDevkDevWorkArgs con
 
 template<typename T>
 static __device__ void bcastMultimem(
-    ncclDevkKernelStuff& stuff, int tn, int t, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
+    ncclSymkKernelStuff& stuff, int tn, int t, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
   size_t nBytes = nElts*sizeof(T);
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input.localPtr());
@@ -233,8 +233,8 @@ static __device__ void bcastMultimem(
   }
 }
 
-__device__ __forceinline__ void ncclDevkRun_AllGather_STMC(ncclDevkDevWorkArgs const* args) {
-  ncclDevkKernelStuff stuff{args};
+__device__ __forceinline__ void ncclSymkRun_AllGather_STMC(ncclSymkDevWorkArgs const* args) {
+  ncclSymkKernelStuff stuff{args};
   ncclLsaBarrierSession<ncclCoopCta> bar(
     ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
   );
@@ -246,11 +246,11 @@ __device__ __forceinline__ void ncclDevkRun_AllGather_STMC(ncclDevkDevWorkArgs c
 
   // Round robin memory to blocks.
   int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
-                    ncclDevkGroupBlock, ncclDevkGroupNBlocks,
+                    ncclSymkGroupBlock, ncclSymkGroupNBlocks,
                     threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int tn = ncclDevkGroupNBlocks*blockDim.x;
+  int tn = ncclSymkGroupNBlocks*blockDim.x;
 
-  bcastMultimem(stuff, tn, t, ncclDevkGroupInput, ncclDevkGroupOutput + rank*ncclDevkGroupNAllElts, ncclDevkGroupNElts);
+  bcastMultimem(stuff, tn, t, ncclSymkGroupInput, ncclSymkGroupOutput + rank*ncclSymkGroupNAllElts, ncclSymkGroupNElts);
 
   NCCL_DEVICEK_GROUP_END;
 
@@ -259,7 +259,7 @@ __device__ __forceinline__ void ncclDevkRun_AllGather_STMC(ncclDevkDevWorkArgs c
 
 template<typename EltType>
 static __device__ void allgather_LL_body(
-    ncclDevkKernelStuff& stuff, ncclLLA2ASession<ncclCoopCta>& lla2a,
+    ncclSymkKernelStuff& stuff, ncclLLA2ASession<ncclCoopCta>& lla2a,
     EltType* input, EltType* output, int nElts, int nPacks, int nStrideElts
   ) {
   using Pack = BytePack<8>;
@@ -267,7 +267,7 @@ static __device__ void allgather_LL_body(
   int const& rank = stuff.comm.rank;
   int const& nRanks = stuff.comm.nRanks;
   int t = threadIdx.x;
-  constexpr int tn = ncclDevkMaxThreads;
+  constexpr int tn = ncclSymkMaxThreads;
 
   #pragma unroll 1
   while (0 < nElts) {
@@ -333,10 +333,10 @@ static __device__ void allgather_LL_body(
   }
 }
 
-static __device__ void ncclDevkRun_AllGather_LL_impl(ncclDevkDevWorkArgs const* args, bool multimem) {
-  ncclDevkKernelStuff stuff{args};
+static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevWorkArgs const* args, bool multimem) {
+  ncclSymkKernelStuff stuff{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*maxElts=*/ncclDevkMaxThreads, multimem
+    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem
   );
 
   using Pack = BytePack<8>;
@@ -344,12 +344,12 @@ static __device__ void ncclDevkRun_AllGather_LL_impl(ncclDevkDevWorkArgs const* 
 
   NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, char);
 
-  int nElts = ncclDevkGroupNElts;
-  int nAllElts = ncclDevkGroupNAllElts;
+  int nElts = ncclSymkGroupNElts;
+  int nAllElts = ncclSymkGroupNAllElts;
   int nPacks = divUp(nElts, BytePerPack);
 
-  char* blockInput = ncclDevkGroupInput.localPtr();
-  char* blockOutput = ncclDevkGroupOutput.localPtr();
+  char* blockInput = ncclSymkGroupInput.localPtr();
+  char* blockOutput = ncclSymkGroupOutput.localPtr();
 
   uint32_t lowBits = nElts;
   lowBits |= (uintptr_t)blockInput;
@@ -364,10 +364,10 @@ static __device__ void ncclDevkRun_AllGather_LL_impl(ncclDevkDevWorkArgs const* 
   NCCL_DEVICEK_GROUP_END;
 }
 
-__device__ __forceinline__ void ncclDevkRun_AllGather_LL(ncclDevkDevWorkArgs const* args) {
-  ncclDevkRun_AllGather_LL_impl(args, /*multimem=*/false);
+__device__ __forceinline__ void ncclSymkRun_AllGather_LL(ncclSymkDevWorkArgs const* args) {
+  ncclSymkRun_AllGather_LL_impl(args, /*multimem=*/false);
 }
 
-__device__ __forceinline__ void ncclDevkRun_AllGather_LLMC(ncclDevkDevWorkArgs const* args) {
-  ncclDevkRun_AllGather_LL_impl(args, /*multimem=*/true);
+__device__ __forceinline__ void ncclSymkRun_AllGather_LLMC(ncclSymkDevWorkArgs const* args) {
+  ncclSymkRun_AllGather_LL_impl(args, /*multimem=*/true);
 }

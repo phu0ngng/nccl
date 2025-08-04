@@ -33,8 +33,8 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
   int ncclMaxSharedMem = ncclShmemDynamicSize(cudaArch);
 
   for (int sym=0; sym <= 1; sym++) {
-    int kcount = sym==0 ? ncclDevKernelCount : ncclDevkKernelCount;
-    void* const* kptrs = sym==0 ? ncclDevKernelList : ncclDevkKernelList;
+    int kcount = sym==0 ? ncclDevKernelCount : ncclSymkKernelCount;
+    void* const* kptrs = sym==0 ? ncclDevKernelList : ncclSymkKernelList;
     for (int k=0; k < kcount; k++) {
       void* fn = kptrs[k];
       cudaFuncAttributes attr = {0};

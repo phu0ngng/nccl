@@ -19,7 +19,7 @@
 #include "profiler.h"
 #include "allocator.h"
 #include "dev_runtime.h"
-#include "dev_kernels.h"
+#include "sym_kernels.h"
 #include "ce_coll.h"
 
 #if CUDART_VERSION < 9000
@@ -661,7 +661,7 @@ struct ncclComm {
   int splitCount;
 
   struct ncclDevrState devrState; // The symmetric runtime state
-  struct ncclDevkState devkState; // The symmetric kernels state (built on previous)
+  struct ncclSymkState symkState; // The symmetric kernels state (built on previous)
 
   uint64_t endMagic;
 };

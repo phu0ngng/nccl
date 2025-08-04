@@ -552,7 +552,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
   }
   if (winFlags & NCCL_WIN_COLL_SYMMETRIC) {
     // Defer symmetric kernel init until at least one window with that flag exists.
-    NCCLCHECKGOTO(ncclDevkInitOnce(comm), ret, fail);
+    NCCLCHECKGOTO(ncclSymkInitOnce(comm), ret, fail);
   }
 
   // Get underlying cumem handle:

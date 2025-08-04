@@ -13,7 +13,7 @@ set(LIBSRCFILES
     transport.cc
     mnnvl.cc
     allocator.cc
-    dev_kernels.cc
+    sym_kernels.cc
     dev_runtime.cc
 )
 

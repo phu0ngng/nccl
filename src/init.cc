@@ -229,7 +229,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
   NCCLCHECK(ncclCeFinalize(comm));
 
   if (comm->symmetricSupport) {
-    NCCLCHECK(ncclDevkFinalize(comm));
+    NCCLCHECK(ncclSymkFinalize(comm));
     NCCLCHECK(ncclDevrFinalize(comm));
   }
   NCCLCHECK(ncclRasCommFini(comm));

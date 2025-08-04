@@ -1,7 +1,7 @@
 #ifndef NCCL_DEVICE_SYMMETRIC_PRIMITIVES_H_
 #define NCCL_DEVICE_SYMMETRIC_PRIMITIVES_H_
 
-#include "dev_kernels.h"
+#include "sym_kernels.h"
 #include "bitops.h"
 #include "collectives.h"
 #include "../op128.h"
@@ -25,13 +25,13 @@ static __device__ Int0 flattenIx(Int0 pos, Int1 size, Ints ...more) {
 }
 
 namespace {
-struct ncclDevkKernelStuff {
+struct ncclSymkKernelStuff {
   ncclDevComm const& comm;
-  struct ncclDevkChannelWorkRange* channelWorkRange;
-  struct ncclDevkDevWork* devWork;
+  struct ncclSymkChannelWorkRange* channelWorkRange;
+  struct ncclSymkDevWork* devWork;
   uint32_t nRanks_rcp32;
 
-  __device__ ncclDevkKernelStuff(ncclDevkDevWorkArgs const* args):
+  __device__ ncclSymkKernelStuff(ncclSymkDevWorkArgs const* args):
     comm(args->comm) {
     channelWorkRange = args->getWorkRange();
 
@@ -54,7 +54,7 @@ struct ncclDevkKernelStuff {
       workLo++;
       fracLo = 0;
     }
-    struct ncclDevkDevWork const& dw = devWork[workLo];
+    struct ncclSymkDevWork const& dw = devWork[workLo];
     indexLo = ((fracLo * divUp(dw.nElts, EltPerCell)) >> 16) * EltPerCell;
 
     // Where the work ends
@@ -67,7 +67,7 @@ struct ncclDevkKernelStuff {
     __device__ void getWorkRangeFused(int blockIdx, int w,
                                       int& block, int& nBlocks, size_t& indexLo, size_t& indexHi) {
     constexpr int EltPerCell = NCCL_DEVICE_KERNEL_CELL_SIZE / sizeof(T);
-    struct ncclDevkDevWork const& dw = devWork[w];
+    struct ncclSymkDevWork const& dw = devWork[w];
     uint32_t fracLo, fracHi;
     int lastBlock;
 
@@ -87,79 +87,79 @@ struct ncclDevkKernelStuff {
 #ifndef NCCL_DEVICEK_GROUP_SINGLE_WORK
 
 #define NCCL_DEVICEK_GROUP_START(stuff, type)           \
-  uint16_t ncclDevkGroupWorkLo, ncclDevkGroupWorkHi; \
-  size_t ncclDevkGroupIndexLo, ncclDevkGroupIndexHi; \
-  stuff.getWorkRange<type>(blockIdx.x, ncclDevkGroupWorkLo, ncclDevkGroupIndexLo, \
-                           ncclDevkGroupWorkHi, ncclDevkGroupIndexHi); \
-  size_t ncclDevkGroupCurrentIndexLo = ncclDevkGroupIndexLo; \
+  uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
+  size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
+  stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
+                           ncclSymkGroupWorkHi, ncclSymkGroupIndexHi); \
+  size_t ncclSymkGroupCurrentIndexLo = ncclSymkGroupIndexLo; \
   _Pragma("unroll 1") \
-  for (int ncclDevkGroupW = ncclDevkGroupWorkLo; ncclDevkGroupW <= ncclDevkGroupWorkHi; ncclDevkGroupW++) { \
-    struct ncclDevkDevWork const& ncclDevkGroupDevWork = stuff.devWork[ncclDevkGroupW]; \
-    size_t const& ncclDevkGroupNAllElts = ncclDevkGroupDevWork.nElts; \
-    size_t ncclDevkGroupCurrentIndexHi; \
-    int ncclDevkGroupBlock, ncclDevkGroupNBlocks; \
-    if (blockIdx.x >= ncclDevkGroupDevWork.sChannelId && \
-        blockIdx.x < ncclDevkGroupDevWork.sChannelId + ncclDevkGroupDevWork.nChannels) \
-      stuff.getWorkRangeFused<type>(blockIdx.x, ncclDevkGroupW, ncclDevkGroupBlock, ncclDevkGroupNBlocks, \
-                                    ncclDevkGroupCurrentIndexLo, ncclDevkGroupCurrentIndexHi); \
+  for (int ncclSymkGroupW = ncclSymkGroupWorkLo; ncclSymkGroupW <= ncclSymkGroupWorkHi; ncclSymkGroupW++) { \
+    struct ncclSymkDevWork const& ncclSymkGroupDevWork = stuff.devWork[ncclSymkGroupW]; \
+    size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
+    size_t ncclSymkGroupCurrentIndexHi; \
+    int ncclSymkGroupBlock, ncclSymkGroupNBlocks; \
+    if (blockIdx.x >= ncclSymkGroupDevWork.sChannelId && \
+        blockIdx.x < ncclSymkGroupDevWork.sChannelId + ncclSymkGroupDevWork.nChannels) \
+      stuff.getWorkRangeFused<type>(blockIdx.x, ncclSymkGroupW, ncclSymkGroupBlock, ncclSymkGroupNBlocks, \
+                                    ncclSymkGroupCurrentIndexLo, ncclSymkGroupCurrentIndexHi); \
     else { \
-      ncclDevkGroupCurrentIndexHi = (ncclDevkGroupW < ncclDevkGroupWorkHi) ? \
-        ncclDevkGroupNAllElts : ncclDevkGroupIndexHi; \
-      ncclDevkGroupBlock = 0; \
-      ncclDevkGroupNBlocks = 1; \
+      ncclSymkGroupCurrentIndexHi = (ncclSymkGroupW < ncclSymkGroupWorkHi) ? \
+        ncclSymkGroupNAllElts : ncclSymkGroupIndexHi; \
+      ncclSymkGroupBlock = 0; \
+      ncclSymkGroupNBlocks = 1; \
     } \
-    ncclSymPtr<type> ncclDevkGroupInput(ncclDevkGroupDevWork.inputWin, \
-                                        ncclDevkGroupDevWork.inputOff + ncclDevkGroupCurrentIndexLo*sizeof(type)); \
-    ncclSymPtr<type> ncclDevkGroupOutput(ncclDevkGroupDevWork.outputWin, \
-                                         ncclDevkGroupDevWork.outputOff + ncclDevkGroupCurrentIndexLo*sizeof(type)); \
-    const size_t ncclDevkGroupNElts = ncclDevkGroupCurrentIndexHi - ncclDevkGroupCurrentIndexLo
+    ncclSymPtr<type> ncclSymkGroupInput(ncclSymkGroupDevWork.inputWin, \
+                                        ncclSymkGroupDevWork.inputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
+    ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, \
+                                         ncclSymkGroupDevWork.outputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
+    const size_t ncclSymkGroupNElts = ncclSymkGroupCurrentIndexHi - ncclSymkGroupCurrentIndexLo
 
 #define NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, type) \
-  uint16_t ncclDevkGroupWorkLo, ncclDevkGroupWorkHi; \
-  size_t ncclDevkGroupIndexLo, ncclDevkGroupIndexHi; \
-  stuff.getWorkRange<type>(blockIdx.x, ncclDevkGroupWorkLo, ncclDevkGroupIndexLo, \
-                           ncclDevkGroupWorkHi, ncclDevkGroupIndexHi); \
-  size_t ncclDevkGroupCurrentIndexLo = ncclDevkGroupIndexLo; \
+  uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
+  size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
+  stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
+                           ncclSymkGroupWorkHi, ncclSymkGroupIndexHi); \
+  size_t ncclSymkGroupCurrentIndexLo = ncclSymkGroupIndexLo; \
   _Pragma("unroll 1") \
-  for (int ncclDevkGroupW = ncclDevkGroupWorkLo; ncclDevkGroupW <= ncclDevkGroupWorkHi; ncclDevkGroupW++) { \
-    struct ncclDevkDevWork& ncclDevkGroupDevWork = stuff.devWork[ncclDevkGroupW]; \
-    size_t const& ncclDevkGroupNAllElts = ncclDevkGroupDevWork.nElts; \
-    size_t ncclDevkGroupCurrentIndexHi = (ncclDevkGroupW < ncclDevkGroupWorkHi) ? \
-      ncclDevkGroupNAllElts : ncclDevkGroupIndexHi; \
-    ncclSymPtr<type> ncclDevkGroupInput(ncclDevkGroupDevWork.inputWin, \
-                                        ncclDevkGroupDevWork.inputOff + ncclDevkGroupCurrentIndexLo*sizeof(type)); \
-    ncclSymPtr<type> ncclDevkGroupOutput(ncclDevkGroupDevWork.outputWin, \
-                                         ncclDevkGroupDevWork.outputOff + ncclDevkGroupCurrentIndexLo*sizeof(type)); \
-    const size_t ncclDevkGroupNElts = ncclDevkGroupCurrentIndexHi - ncclDevkGroupCurrentIndexLo
+  for (int ncclSymkGroupW = ncclSymkGroupWorkLo; ncclSymkGroupW <= ncclSymkGroupWorkHi; ncclSymkGroupW++) { \
+    struct ncclSymkDevWork& ncclSymkGroupDevWork = stuff.devWork[ncclSymkGroupW]; \
+    size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
+    size_t ncclSymkGroupCurrentIndexHi = (ncclSymkGroupW < ncclSymkGroupWorkHi) ? \
+      ncclSymkGroupNAllElts : ncclSymkGroupIndexHi; \
+    ncclSymPtr<type> ncclSymkGroupInput(ncclSymkGroupDevWork.inputWin, \
+                                        ncclSymkGroupDevWork.inputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
+    ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, \
+                                         ncclSymkGroupDevWork.outputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
+    const size_t ncclSymkGroupNElts = ncclSymkGroupCurrentIndexHi - ncclSymkGroupCurrentIndexLo
 
 #define NCCL_DEVICEK_GROUP_END \
-    ncclDevkGroupCurrentIndexLo = 0; \
+    ncclSymkGroupCurrentIndexLo = 0; \
   } \
   do {} while(0)
 
 #else // NCCL_DEVICEK_GROUP_SINGLE_WORK
 
 #define NCCL_DEVICEK_GROUP_START(stuff, type) \
-  struct ncclDevkDevWork const& ncclDevkGroupDevWork = stuff.devWork[0]; \
-  size_t const& ncclDevkGroupNAllElts = ncclDevkGroupDevWork.nElts; \
-  int const& ncclDevkGroupBlock = blockIdx.x; \
-  int const& ncclDevkGroupNBlocks = gridDim.x; \
-  ncclSymPtr<type> ncclDevkGroupInput(ncclDevkGroupDevWork.inputWin, ncclDevkGroupDevWork.inputOff); \
-  ncclSymPtr<type> ncclDevkGroupOutput(ncclDevkGroupDevWork.outputWin, ncclDevkGroupDevWork.outputOff); \
-  size_t const& ncclDevkGroupNElts = ncclDevkGroupDevWork.nElts
+  struct ncclSymkDevWork const& ncclSymkGroupDevWork = stuff.devWork[0]; \
+  size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
+  int const& ncclSymkGroupBlock = blockIdx.x; \
+  int const& ncclSymkGroupNBlocks = gridDim.x; \
+  ncclSymPtr<type> ncclSymkGroupInput(ncclSymkGroupDevWork.inputWin, ncclSymkGroupDevWork.inputOff); \
+  ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, ncclSymkGroupDevWork.outputOff); \
+  size_t const& ncclSymkGroupNElts = ncclSymkGroupDevWork.nElts
 
 #define NCCL_DEVICEK_GROUP_NOFUSE_START(stuff, type) \
-  uint16_t ncclDevkGroupWorkLo, ncclDevkGroupWorkHi; \
-  size_t ncclDevkGroupIndexLo, ncclDevkGroupIndexHi; \
-  stuff.getWorkRange<type>(blockIdx.x, ncclDevkGroupWorkLo, ncclDevkGroupIndexLo, \
-                           ncclDevkGroupWorkHi, ncclDevkGroupIndexHi); \
-  struct ncclDevkDevWork const& ncclDevkGroupDevWork = stuff.devWork[ncclDevkGroupWorkLo]; \
-  size_t const& ncclDevkGroupNAllElts = ncclDevkGroupDevWork.nElts; \
-  ncclSymPtr<type> ncclDevkGroupInput(ncclDevkGroupDevWork.inputWin, \
-                                      ncclDevkGroupDevWork.inputOff + ncclDevkGroupIndexLo*sizeof(type)); \
-  ncclSymPtr<type> ncclDevkGroupOutput(ncclDevkGroupDevWork.outputWin, \
-                                       ncclDevkGroupDevWork.outputOff + ncclDevkGroupIndexLo*sizeof(type)); \
-  const size_t ncclDevkGroupNElts = ncclDevkGroupIndexHi - ncclDevkGroupIndexLo
+  uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
+  size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
+  stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
+                           ncclSymkGroupWorkHi, ncclSymkGroupIndexHi); \
+  struct ncclSymkDevWork const& ncclSymkGroupDevWork = stuff.devWork[ncclSymkGroupWorkLo]; \
+  size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
+  ncclSymPtr<type> ncclSymkGroupInput(ncclSymkGroupDevWork.inputWin, \
+                                      ncclSymkGroupDevWork.inputOff + ncclSymkGroupIndexLo*sizeof(type)); \
+  ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, \
+                                       ncclSymkGroupDevWork.outputOff + ncclSymkGroupIndexLo*sizeof(type)); \
+  const size_t ncclSymkGroupNElts = ncclSymkGroupIndexHi - ncclSymkGroupIndexLo
 
 #define NCCL_DEVICEK_GROUP_END                     \
   do {} while(0)
@@ -167,17 +167,17 @@ struct ncclDevkKernelStuff {
 #endif // NCCL_DEVICEK_GROUP_SINGLE_WORK
 
 template<template<typename> typename Red, typename T, bool nvls>
-struct ncclDevkAccumType { using Type = T; };
+struct ncclSymkAccumType { using Type = T; };
 
 // Only Red's whose opArg is invariant w.r.t. the datatype can have a different
 // accumulator type. At the moment this excludes integer min/max, sumpostdiv,
 // and premulsum.
-template<> struct ncclDevkAccumType<FuncSum, __half, false> { using Type = float; };
+template<> struct ncclSymkAccumType<FuncSum, __half, false> { using Type = float; };
 #if defined(__CUDA_BF16_TYPES_EXIST__)
-template<> struct ncclDevkAccumType<FuncSum, __nv_bfloat16, false> { using Type = float; };
+template<> struct ncclSymkAccumType<FuncSum, __nv_bfloat16, false> { using Type = float; };
 #endif
 #if defined(__CUDA_FP8_TYPES_EXIST__)
-template<> struct ncclDevkAccumType<FuncSum, __nv_fp8_e4m3, false> { using Type = float; };
-template<> struct ncclDevkAccumType<FuncSum, __nv_fp8_e5m2, false> { using Type = float; };
+template<> struct ncclSymkAccumType<FuncSum, __nv_fp8_e4m3, false> { using Type = float; };
+template<> struct ncclSymkAccumType<FuncSum, __nv_fp8_e5m2, false> { using Type = float; };
 #endif
 #endif
