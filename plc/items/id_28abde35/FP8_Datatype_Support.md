@@ -127,7 +127,7 @@ The usual data validation with "test/perf" with "-dall".
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - John Bachan
 
 </details>

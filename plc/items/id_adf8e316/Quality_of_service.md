@@ -56,11 +56,11 @@ https://nvbugspro.nvidia.com/bug/4915028
 To enable applications to configure QoS, we propose adding a new `trafficClass` field to the existing `ncclConfig_t` structure. The `trafficClass` is an integer that serves as an abstract representation of the QoS level for communicator network traffic. Applications can set this field using either a default value or a user-defined setting. The specific meaning of the `trafficClass` is determined by the network system administrator and the network stack implementor.
 
 ```
-struct { 
-  ... 
-  int splitShare; 
-  int trafficClass; // add trafficClass to communicator  
-} ncclConfig_t 
+struct {
+  ...
+  int splitShare;
+  int trafficClass; // add trafficClass to communicator
+} ncclConfig_t
 ```
 
 The NCCL core passes the `trafficClass` to the network plugin, ideally without modifying it. Thus, the context of the `trafficClass` is oblivious to the NCCL core.
@@ -146,7 +146,7 @@ Network plugin implementors can utilize the `trafficClass` value to set specific
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Zhenhao He <zhenhaoh@nvidia.com>
 
 </details>

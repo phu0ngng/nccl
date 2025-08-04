@@ -340,7 +340,7 @@ extern thread_local int is_main_thread;
 
 /* If NCCL version is not smaller than 2.14.0, we support nonblocking
  * communicator where the state of a communicator can be ncclInProgress.
- * We define NCCLCHECK_COMM_WAIT and NCCLCHECK_COMM_WAITBATCH macro for 
+ * We define NCCLCHECK_COMM_WAIT and NCCLCHECK_COMM_WAITBATCH macro for
  * convenience to wait on inprogress communicators. */
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
 static testResult_t waitCommState(ncclComm_t comm) {

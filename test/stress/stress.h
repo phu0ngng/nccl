@@ -160,7 +160,7 @@ static size_t wordSize(ncclDataType_t type) {
     case ncclInt64:
     case ncclUint64:
     case ncclDouble:
-    //case ncclFloat64: 
+    //case ncclFloat64:
       return 8;
     default: return 0;
   }

@@ -223,7 +223,7 @@ ncclResult_t ncclCeInitBatchOpsParams(struct ncclCeBatchOpsParams* params, int n
   params->dsts = nullptr;
   params->sizes = nullptr;
   params->numOps = 0;
-#if CUDART_VERSION >= 12080 
+#if CUDART_VERSION >= 12080
   params->attrs = nullptr;
   params->attrIdxs = nullptr;
   params->numAttrs = 0;
@@ -232,7 +232,7 @@ ncclResult_t ncclCeInitBatchOpsParams(struct ncclCeBatchOpsParams* params, int n
   NCCLCHECKGOTO(ncclCalloc(&params->srcs, nRanks), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&params->dsts, nRanks), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&params->sizes, nRanks), ret, fail);
-#if CUDART_VERSION >= 12080 
+#if CUDART_VERSION >= 12080
   NCCLCHECKGOTO(ncclCalloc(&params->attrs, nRanks), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&params->attrIdxs, nRanks), ret, fail);
 #endif
@@ -246,7 +246,7 @@ void ncclCeFreeBatchOpsParams(struct ncclCeBatchOpsParams* params) {
   if (params->srcs) free(params->srcs);
   if (params->dsts) free(params->dsts);
   if (params->sizes) free(params->sizes);
-#if CUDART_VERSION >= 12080 
+#if CUDART_VERSION >= 12080
   if (params->attrs) free(params->attrs);
   if (params->attrIdxs) free(params->attrIdxs);
 #endif
@@ -260,7 +260,7 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeBatchOpsPa
     return ncclSuccess;
   }
 
-  // Check if we are in a CUDA graph capture 
+  // Check if we are in a CUDA graph capture
   bool capturing = ncclCudaGraphValid(comm->planner.capturingGraph);
 
   int driverVersion;
@@ -281,7 +281,7 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeBatchOpsPa
   //--------------No graph capture--------------
   else {
     if (CUDART_VERSION >= 12080 && driverVersion >= 12080) {
-#if CUDART_VERSION >= 12080 
+#if CUDART_VERSION >= 12080
     // For CUDA 12.8+, use batch memory copy for better performance
     params->attrs[0] = {};
     params->attrs[0].srcAccessOrder = cudaMemcpySrcAccessOrderStream;
@@ -289,7 +289,7 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeBatchOpsPa
     params->attrIdxs[0] = 0;
     params->numAttrs = 1;
     
-    #if CUDART_VERSION >= 13000 
+    #if CUDART_VERSION >= 13000
     CUDACHECKGOTO(cudaMemcpyBatchAsync(
       params->dsts, params->srcs, params->sizes, params->numOps,
       params->attrs, params->attrIdxs, params->numAttrs, stream), ret, fail);
@@ -298,7 +298,7 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeBatchOpsPa
       params->dsts, params->srcs, params->sizes, params->numOps,
       params->attrs, params->attrIdxs, params->numAttrs, nullptr, stream), ret, fail);
     #endif
-#endif 
+#endif
     } else {
       // For older CUDA versions, fall back to individual transfers
       for (int i = 0; i < params->numOps; i++) {
@@ -346,7 +346,7 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   // Copy data to other ranks
   for (int r = 1; r < comm->nRanks; r++) {
     int targetRank = (comm->rank + r) % comm->nRanks;
-    offset = myRecvBuff - (uint8_t*)args->recvWin->userPtr;  
+    offset = myRecvBuff - (uint8_t*)args->recvWin->userPtr;
     NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, offset, targetRank, &peerRecvBuff), ret, fail);
     batchOpsParams.srcs[batchOpsParams.numOps] = (void*)mySendBuff;
     batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerRecvBuff;

@@ -6,8 +6,8 @@
 #include "bitops.h"
 
 // Memory operations per rank for different synchronization protocols
-#define NCCL_CE_SYNC_OPS_PER_RANK_MC 2  
-#define NCCL_CE_SYNC_OPS_PER_RANK_UC 3  
+#define NCCL_CE_SYNC_OPS_PER_RANK_MC 2
+#define NCCL_CE_SYNC_OPS_PER_RANK_UC 3
 
 struct ncclCeColl {
   uint8_t* baseUCSymReadyPtr;
@@ -23,7 +23,7 @@ struct ncclCeInitTask {
   struct ncclComm* comm;
 };
 
-struct alignas(16) ncclCeCollArgs {  
+struct alignas(16) ncclCeCollArgs {
   ncclFunc_t func;
   int rootRank;
   size_t nElts;
@@ -39,7 +39,7 @@ struct ncclCeBatchOpsParams {
   void** srcs;
   size_t* sizes;
   size_t numOps;
-#if CUDART_VERSION >= 12080 
+#if CUDART_VERSION >= 12080
   cudaMemcpyAttributes* attrs;
   size_t* attrIdxs;
   size_t numAttrs;

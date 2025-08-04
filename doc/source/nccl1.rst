@@ -11,7 +11,7 @@ GPUs.
 The following list summarizes the changes that may be required in usage of NCCL API when using an application that has a
 single thread that manages NCCL calls for multiple GPUs, and is ported from NCCL 1.x to 2.x:
 
-Initialization 
+Initialization
 --------------
 
 In versions 1.x, NCCL had to be initialized using ncclCommInitAll at a single thread or having one thread per GPU
@@ -29,7 +29,7 @@ guarded by the Group start and end API.
  ncclGroupEnd();
 
 
-Communication 
+Communication
 -------------
 
 In NCCL 2.x, the collective operation can be initiated for different devices by making calls in a loop, on a single
@@ -54,7 +54,7 @@ Counts provided as arguments are now of type size_t instead of integer.
 
 In-place usage for AllGather and ReduceScatter
 ----------------------------------------------
-For more information, see “In-place Operations”.  
+For more information, see “In-place Operations”.
 
 AllGather arguments order
 -------------------------

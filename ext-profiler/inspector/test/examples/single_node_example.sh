@@ -10,4 +10,4 @@ export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500
 
 # Run NCCL performance test with inspector enabled
 NCCL_DEBUG=WARN \
-./build/test/perf/all_reduce_perf -b 8 -e 16G -f 2 -g 8 
+./build/test/perf/all_reduce_perf -b 8 -e 16G -f 2 -g 8

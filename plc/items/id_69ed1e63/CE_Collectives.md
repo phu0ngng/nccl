@@ -19,16 +19,16 @@ CE-based collectives address this challenge by leveraging dedicated copy engines
 ### Key Functional Requirements for V2.28:
 
 1. **Use copy engine to minimize SM utilization**
-   - The goal is to reduce the SM utilization as much as possible by utilizing copy engines for the majority of data movement operations. We focus on host-initiated CUDA APIs like `cudaMemcpyAsync` that invoke hardware copy engines. 
+   - The goal is to reduce the SM utilization as much as possible by utilizing copy engines for the majority of data movement operations. We focus on host-initiated CUDA APIs like `cudaMemcpyAsync` that invoke hardware copy engines.
 
 2. **Exploit symmetric memory registration APIs in NCCL**
-   - Since NCCL 2.27, the `NCCL symmetric memory registration APIs` are available in the public release. And the CE-based collectives can be benefit from the symmetric memory registration APIs in NCCL to avoid staging buffer copies and to eliminate user buffer exchange. We plan to use the symmetric memory registration APIs in NCCL to ensure that collective buffers are registered and accessible within a global address space. This symmetric memory model enables direct CE-based operations without requiring explicit buffer address exchange prior to collective operations. 
+   - Since NCCL 2.27, the `NCCL symmetric memory registration APIs` are available in the public release. And the CE-based collectives can be benefit from the symmetric memory registration APIs in NCCL to avoid staging buffer copies and to eliminate user buffer exchange. We plan to use the symmetric memory registration APIs in NCCL to ensure that collective buffers are registered and accessible within a global address space. This symmetric memory model enables direct CE-based operations without requiring explicit buffer address exchange prior to collective operations.
 
 3. **Keep the two-sided semantic in NCCL CE collectives**
    - Even with the symmetric memory registration API, the CE-based collective still requires some synchronization becuase of two-sided semantic in NCCL collectives, i.e., the sender needs to know the readiness of the receiver and the receiver needs to know the completion of the data transfer process. Therefore, it requires the following synchronizations:
-      - **Readiness synchronization**: ensures receivers are prepared before data transfer begins. 
-      - **Completion synchronization**: confirms to receivers that data transfer has completed. 
-   - We propose to use GPU-resident synchronization by using CUDA stream memory operations: `cuStreamWriteValue32` and `cuStreamWaitValue32` to build synchronization primitives. These operations are in stream order, do not block the host CPU thread, and do not require GPU kernel launches as they are handled by the HOST engine in hardware. 
+      - **Readiness synchronization**: ensures receivers are prepared before data transfer begins.
+      - **Completion synchronization**: confirms to receivers that data transfer has completed.
+   - We propose to use GPU-resident synchronization by using CUDA stream memory operations: `cuStreamWriteValue32` and `cuStreamWaitValue32` to build synchronization primitives. These operations are in stream order, do not block the host CPU thread, and do not require GPU kernel launches as they are handled by the HOST engine in hardware.
 
 4. **Allow users to enable/disable CE-based collectives**
    - The use of CE-based collective should be incorporated into the NCCL tuning process. Besides, users should be able to choose to enable or disable CE-based collectives based on their specific requirements, particularly with respect to SM availability and the need for computation and communication overlap.
@@ -37,23 +37,23 @@ CE-based collectives address this challenge by leveraging dedicated copy engines
    - We plan to support non-arithmetic collectives (e.g., AllGather) in this release, as they can be efficiently implemented using copy engines. In this release, we do not support arithmetic collectives (e.g., AllReduce).
 
 6. **Support multi-node NVLink**
-   - CE-based collectives require operation within a single NVLink domain, as copy engines cannot move data across separate NVLink domains. As the NVL domain grows larger and scales across multiple nodes, our design needs to ensure compatibility with emerging multi-node NVLink cluster architectures. 
+   - CE-based collectives require operation within a single NVLink domain, as copy engines cannot move data across separate NVLink domains. As the NVL domain grows larger and scales across multiple nodes, our design needs to ensure compatibility with emerging multi-node NVLink cluster architectures.
 
 7. **Graph support of CE collectives**
-   - The CE-based collectives should be compatible with NCCL CUDA graph capture and execution. 
+   - The CE-based collectives should be compatible with NCCL CUDA graph capture and execution.
 
 
 ### Performance/Optimization Requirements for V2.28:
 The use of CE-based collectives involves trade-offs between performance and SM utilization. The overall performance goal is not to achieve lower latency and higher throughput across all message sizes compared to SM-based collectives. We accept that due to the launch and synchronization overheads, CE-based collectives may have higher latency for small messages. However, we still need optimize the latency for small messages and the throughput for large messages as much as possible. Such that CE-based collectives could be a appealing option for users who want to save SM usage.
 
 1. **Use batch APIs to optimize latency and throughput**
-   - One challenge is to address the inherently higher launch and synchronization overhead of CE operations compared to SM-based collectives and we aim to reduce the latency as much as possible and saturate the NVL bandwidth. 
-   - Since CUDA 12.8, there are newer APIs to invoke multiple CE operations in a batch to reduce the launching overhead (e.g., `cuMemcpyBatchAsync`). These APIs group multiple CE operations into a batch and launch them in a single call and potentially pipeline the CE operations, thus reducing the overhead of launching multiple CE operations and improving the throughput. 
+   - One challenge is to address the inherently higher launch and synchronization overhead of CE operations compared to SM-based collectives and we aim to reduce the latency as much as possible and saturate the NVL bandwidth.
+   - Since CUDA 12.8, there are newer APIs to invoke multiple CE operations in a batch to reduce the launching overhead (e.g., `cuMemcpyBatchAsync`). These APIs group multiple CE operations into a batch and launch them in a single call and potentially pipeline the CE operations, thus reducing the overhead of launching multiple CE operations and improving the throughput.
    - Similarly, we plan to use batch APIs (e.g., `cuStreamBatchMemOp`) for synchronization primitives to reduce the overhead of launching multiple synchronization operations.
 
 2. **Provide a fast path in NCCL core for enqueue and invocation of CE collectives**
    - The CE collectives are different than existing NCCL collectives in many different ways. For instance, it does not require SM kernel invocation, it does not require user buffer exchange, it does not use the same synchronization mechanism etc. This means that many of the existing NCCL core functionalities are not applicable to CE collectives and thus should be skipped in the CE collectives invocation path. This could be a potential performance overhead if we keep the existing NCCL core functionalities in the CE collectives invocation path.
-   - We plan to identify the NCCL core functionalities that are not applicable to CE collectives and provide a fast path in NCCL core for enqueue and invocation of CE collectives. 
+   - We plan to identify the NCCL core functionalities that are not applicable to CE collectives and provide a fast path in NCCL core for enqueue and invocation of CE collectives.
 
 3. **Use NVLS multi-cast to optimize synchronization**
     - The synchronization of multiple ranks involves operations such as broadcasting a flag value to all ranks. We plan to use NVLS multi-cast to optimize the synchronization overhead.
@@ -61,7 +61,7 @@ The use of CE-based collectives involves trade-offs between performance and SM u
 ### Optional and Beyond V2.28:
 
 1. **Support Send/Recv**
-   - Two-sided point-to-point APIs like `Send/Recv` require explicit buffer address exchange between peers since they typically do not follow symmetric memory semantics in real-world applications. This exchange typically requires host network operations to resolve peer addresses before CE operations can begin. The host thread must block while resolving addresses, adding latency overhead. Due to these performance implications and the extra complexity, we consider point-to-point support optional for V2.28. 
+   - Two-sided point-to-point APIs like `Send/Recv` require explicit buffer address exchange between peers since they typically do not follow symmetric memory semantics in real-world applications. This exchange typically requires host network operations to resolve peer addresses before CE operations can begin. The host thread must block while resolving addresses, adding latency overhead. Due to these performance implications and the extra complexity, we consider point-to-point support optional for V2.28.
 
 2. **Support Put/Get**
    - One-sided point-to-point APIs such as `Put/Get` provide a better integration mechanism for CE-based collectives since they eliminate the need for explicit buffer address exchange between peers. The one-sided semantics also remove the requirement for completion synchronization between sender and receiver. However, since Put/Get APIs are not yet available in the current NCCL release, we plan to implement support for them in V2.29.
@@ -70,7 +70,7 @@ The use of CE-based collectives involves trade-offs between performance and SM u
    - The Alltoall collective operation with symmetrically registered buffers could benefit from CE-based implementation to reduce SM utilization. However, since the NCCL Alltoall API is being developed in parallel for V2.28 release, we have decided to make CE-based Alltoall support optional for V2.28. It will be supported in V2.29 if it is not ready for V2.28.
 
 4. **Network support**
-   - There has been discussion on SM-reduction techniques for collectives that span across network, e.g., IB/RoCE. This is out of the scope for V2.28 and we plan to look into it in a future release. 
+   - There has been discussion on SM-reduction techniques for collectives that span across network, e.g., IB/RoCE. This is out of the scope for V2.28 and we plan to look into it in a future release.
 
 5. **Support arithmetic collectives**
    - Arithmetic collectives (e.g., AllReduce) is more complicated and requires additional reduction operations in the SM. We plan to support arithmetic collectives in the future, potentially using a hybrid approach where CE handles data movement and SMs perform reduction operations.
@@ -93,7 +93,7 @@ The use of CE-based collectives involves trade-offs between performance and SM u
 
 - CE collectives are built on top of symmetric memory and collective calls not using symmetric memory will not use CE collectives.
 
-- The initial implementation targets collectives that do not involve arithmetic operations on the data, such as AllGather. Support for arithmetic-based collectives, like AllReduce, is planned for future versions. 
+- The initial implementation targets collectives that do not involve arithmetic operations on the data, such as AllGather. Support for arithmetic-based collectives, like AllReduce, is planned for future versions.
 
 - The CE collectives relies on NCCL's symmetric memory registration APIs (since NCCL 2.27) and requires support for CUDA Virtual Memory Management (VMM).
 
@@ -141,7 +141,7 @@ CE-based collectives provide substantial benefits in environments where:
 
 CE-based collectives exploit symmetric user buffer registration for two critical reasons:
 
-- **Avoid Staging Buffer Copies**: host-initiated CE operations incur significant invocation and synchronization overhead and using CEs to operate on staging buffers degrades the performance. Direct operation on registered user buffers eliminates the need for additional staging buffer copies. 
+- **Avoid Staging Buffer Copies**: host-initiated CE operations incur significant invocation and synchronization overhead and using CEs to operate on staging buffers degrades the performance. Direct operation on registered user buffers eliminates the need for additional staging buffer copies.
 
 - **Eliminate SM-based Buffer Exchange**: even though pre-2.27 NCCL already provides non-symmetric user buffer registration and it can avoid staging buffer copies with the user buffer registration, it still requires mechanisms to exchange the user buffers between senders and receivers prior to the collective operations. And the existing user buffer exchange mechanisms requires NCCL proxy threads orchestration and SM kernel invocation. The SM-based user buffer exchange contradicts our goal of minimizing SM utilization. Using the symmetric memory registration APIs can avoid the need for user buffer exchange synchronization at all.
 
@@ -150,14 +150,14 @@ The figure below illustrates the uni-cast virtual address space layout used for 
 <img src="images/symmetric.png"  alt="Symmetric Memory"  width="400"/>
 
 #### 2. Peer Synchronization Mechanism
-Existing NCCL APIs have a two-sided semantic, i.e., the sender needs to know the readiness of the receiver and the receiver needs to know the completion of the data transfer process. Therefore, it requires the following synchronizations: 
+Existing NCCL APIs have a two-sided semantic, i.e., the sender needs to know the readiness of the receiver and the receiver needs to know the completion of the data transfer process. Therefore, it requires the following synchronizations:
 
 - **Readiness Synchronization**: Ensures receivers are prepared before data transfer begins
 - **Completion Synchronization**: Confirms to receivers that data transfer has completed
 
-Several approaches can be used to implement synchronization for CE-based collectives. Since we aim to enqueue both synchronization and CE operations into the CUDA stream in stream order, and to avoid using SM resources, new synchronization designs are needed. 
-  - One option is to use the CPU network, such as `NCCL proxy threads`, to synchronize readiness and completion. However, this approach requires blocking the host CPU thread before enqueuing CE operations, as CPU network operations are not in stream order with the CUDA stream. 
-  - Another option is to use SM GPU kernels for synchronization, similar to the mechanism in NCCL 2.27’s `symmetric kernel implementation` for symmetric memory models. However, this involves launching GPU kernels, which conflicts with our goal of minimizing SM usage. 
+Several approaches can be used to implement synchronization for CE-based collectives. Since we aim to enqueue both synchronization and CE operations into the CUDA stream in stream order, and to avoid using SM resources, new synchronization designs are needed.
+  - One option is to use the CPU network, such as `NCCL proxy threads`, to synchronize readiness and completion. However, this approach requires blocking the host CPU thread before enqueuing CE operations, as CPU network operations are not in stream order with the CUDA stream.
+  - Another option is to use SM GPU kernels for synchronization, similar to the mechanism in NCCL 2.27’s `symmetric kernel implementation` for symmetric memory models. However, this involves launching GPU kernels, which conflicts with our goal of minimizing SM usage.
   - The third option is to use CUDA `stream memory operations` such as `cuStreamWriteValue32` and `cuStreamWaitValue32` to build synchronization primitives. These operations are in stream order, do not block the host CPU thread, and do not require GPU kernel launches as they are handled by the HOST engine in hardware. They can target remote GPU memory locations within a single NVLink domain, work across multi-node configurations without requiring CPU-side networking for synchronization, and enable completely **GPU-resident Synchronization** for collective operations.
 
 We propose to use the third option by using CUDA stream memory operations. Here is the basic synchronization mechanism:
@@ -180,13 +180,13 @@ We define three synchronization mechanisms based on where polling occurs and how
   - One local write operation to its own memory
   - (nRank-1) remote wait operations on other peers' memory
   
-- **localPollSync**: Each peer performs:  
+- **localPollSync**: Each peer performs:
   - (nRank-1) remote write operations to other peers' memory
   - (nRank-1) local wait operations on its own memory
   - Benefit: Polling on local memory can reduce latency.
   - Drawback: Requires more total stream memory operations.
 
-- **multicastSync**: Each peer performs:  
+- **multicastSync**: Each peer performs:
   - Registers its ready/completion flags into a multicast group via CUDA multicast APIs
   - Performs 1 local write (cuStreamWriteValue32) to the multicast object, which broadcasts the value to all peers
   - Each peer then performs a local wait (cuStreamWaitValue32) on its own memory
@@ -201,7 +201,7 @@ NCCL APIs support CUDA graph capture and execution. For CE-based collectives, we
 
 To address this, we implement a toggle-based synchronization mechanism for CUDA graphs:
 
-   - Receiver sets ready flag to 1 using `cuStreamWriteValue32` 
+   - Receiver sets ready flag to 1 using `cuStreamWriteValue32`
    - Sender waits for ready flag value 1 using `cuStreamWaitValue32`
    - Sender resets ready flag to 0 using `cuStreamWriteValue32`
    - Sender performs data transfer via `cudaMemcpyAsync`
@@ -211,7 +211,7 @@ To address this, we implement a toggle-based synchronization mechanism for CUDA 
 
 This toggle approach ensures proper synchronization across multiple graph executions since flags alternate between 0 and 1 rather than using incrementing sequence numbers. However, this approach comes with the cost of additional synchronization operations. Therefore, we will use toggle-based synchronization only for CUDA graph capture and execution and use sequence-based synchronization for other cases.
 
-The figure below illustrates this synchronization mechanism for CUDA graph capture and execution. 
+The figure below illustrates this synchronization mechanism for CUDA graph capture and execution.
 
 <img src="images/synchronize_graph.png" alt="GraphSynchronization" width="400"/>
 
@@ -248,9 +248,9 @@ CE collective synchronization requires additional data structures to store the s
       uint32_t ceSeqNum;
       ...
     };
-    ```	
+    ```
 
-- The allocation of the new data structure could use the existing function `ncclCommSymmetricAllocInternal`. 
+- The allocation of the new data structure could use the existing function `ncclCommSymmetricAllocInternal`.
 
   ```cpp
   // initTransportsRank function in src/init.cc
@@ -302,7 +302,7 @@ We plan to use the existing CTA policy flags to enable and tune CE-based collect
 - First, when CE collective is better than all other kernels, e.g., large message size where CE has higher bandwidth, we should choose it by default and this should be baked into the tuning.
 - Second, for cases where using CE saves some SM with minor performance degradation, users could enable it by setting the `NCCL_CTA_POLICY_EFFICIENCY` , which is a flag already exists. If the flag is set, CE is just one of the methods of increasing the CTA efficiency and the use of it and tuning is decided by NCCL.
 - Third, we should also support cases where users want to use zero-SM CE collectives for sure, even with quite a lot of performance degradation. We plan to add a new flag `NCCL_CTA_POLICY_ZERO` to the existing policy for the communicator.  When it is set, CE implementation will be used whenever possible. Note that the fallback of `NCCL_CTA_POLICY_ZERO`  is `NCCL_CTA_POLICY_DEFAULT` , instead of `NCCL_CTA_POLICY_EFFICIENCY` . So if user runs AllReduce now which is not supported by CE, the tuning will use default tuning. However, users could concatenate multiple policies together, e.g., specify both `NCCL_CTA_POLICY_ZERO`  and `NCCL_CTA_POLICY_EFFICIENCY`  at the same time.
-- Since multiple policies could be specified at the same time, we need to clearly document the priority of these policies. E.g., `NCCL_CTA_POLICY_ZERO`  has higher priority than `NCCL_CTA_POLICY_EFFICIENCY` . 
+- Since multiple policies could be specified at the same time, we need to clearly document the priority of these policies. E.g., `NCCL_CTA_POLICY_ZERO`  has higher priority than `NCCL_CTA_POLICY_EFFICIENCY` .
 
 ```cpp
 NCCL Communicator CTA Policy Flags
@@ -321,7 +321,7 @@ NCCL Communicator CTA Policy Flags
 
 +.. c:macro:: NCCL_CTA_POLICY_ZERO
 +
-+  Use the CTA zero-CTA policy for NCCL communicator. In this policy, NCCL will use zero CTA whenever it can, even when that choice 
++  Use the CTA zero-CTA policy for NCCL communicator. In this policy, NCCL will use zero CTA whenever it can, even when that choice
 +  may sacrifice some performance. Select this mode when your application must preserve the maximum number of CTAs for compute kernels.
 ```
 ### 4. Update ncclKernelPlanner and ncclKernelPlan
@@ -330,7 +330,7 @@ Add a new field `isCeColl` to `ncclKernelPlanner` and `ncclKernelPlan` to indica
 ```cpp
 // src/include/comm.h
 struct ncclKernelPlanner {
-  ... 
+  ...
   struct ncclTaskCollSorter collSorter;
   struct Peer* peers/*[nRanks]*/;
   int nTasksColl, nTasksP2p;
@@ -351,8 +351,8 @@ struct ncclKernelPlan {
 ```
 
 ### 5. Update ncclPrepareTasks
-- The `ncclPrepareTasks` function is the entry point for the collective task planning and scheduling. We need to add a new path for CE-based collectives. The code snippet shows the added logic for CE-based collectives. 
-- Similar to the existing symmetric kernel path, the added logic for CE collectives path will be executed if the system is within a NVL domain, the number of collective tasks is 1, and there are no point-to-point tasks. The added logic checks if the send and recv buffers are both in the symmetric window, if the CE collectives flag is set, and if the collective operation is supported by CE. If all the conditions are met, the task will be enqueued to the planner's collTaskQueue with the flag `isCeColl` set to true. 
+- The `ncclPrepareTasks` function is the entry point for the collective task planning and scheduling. We need to add a new path for CE-based collectives. The code snippet shows the added logic for CE-based collectives.
+- Similar to the existing symmetric kernel path, the added logic for CE collectives path will be executed if the system is within a NVL domain, the number of collective tasks is 1, and there are no point-to-point tasks. The added logic checks if the send and recv buffers are both in the symmetric window, if the CE collectives flag is set, and if the collective operation is supported by CE. If all the conditions are met, the task will be enqueued to the planner's collTaskQueue with the flag `isCeColl` set to true.
 - If the collective path is chosen, the logic will exit early and therefore, the rest of the code will not be executed, including the symmetric kernel path and the CBD tuning logic which is not applicable to CE collectives. Moreover, by exiting early, the algoNeedConnect and needConnect flags will not be set to true, which means the preconnect functions will not be called.
 
 ```cpp
@@ -385,7 +385,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
       return ncclSuccess;
     }
   }
-//--------------------------------------------------------------  
+//--------------------------------------------------------------
 
   // Symmetric kernel path
   // ...
@@ -394,19 +394,19 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   // scheduling constraints (collnet x nvls).
   // ...
 }
-```	
+```
 
 ### 6. Update ncclTasksRegAndEnqueue
 Similar to symmetric kernel path, CE collective path will exit early because it does not need to build `ncclDevWorkColl` struct.
 
-```cpp	
+```cpp
 ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
   if (planner->isSymColl) return ncclSuccess;
   if (planner->isCeColl) return ncclSuccess; // Added for CE collective
   ...
 }
-```	
+```
 
 ### 7. Update ncclLaunchPrepare
 The `ncclLaunchPrepare` function is the entry point for kernel plan creation, task scheduling and stream synchronization. We need to add a new path for CE-based collectives. The logic is similar to the existing symmetric kernel path.
@@ -428,7 +428,7 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isCompltSync, cudaStream_
   uint32_t* completePtrs = (uint32_t*)comm->baseUCSymComplPtr;
 
   std::vector<CUstreamBatchMemOpParams> batchParams;
-  batchParams.reserve(comm->nRanks); 
+  batchParams.reserve(comm->nRanks);
 
   CUstreamBatchMemOpParams writeParams = {};
   writeParams.writeValue.operation = CU_STREAM_MEM_OP_WRITE_VALUE_32;
@@ -443,7 +443,7 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isCompltSync, cudaStream_
           params.waitValue.operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
           params.waitValue.address = (CUdeviceptr)(isCompltSync ? peerUCSymPtr(comm, comm->rank, &completePtrs[i]) : peerUCSymPtr(comm, comm->rank, &readyPtrs[i]));
           params.waitValue.value = currentSeq;
-          params.waitValue.flags = CU_STREAM_WAIT_VALUE_EQ;  
+          params.waitValue.flags = CU_STREAM_WAIT_VALUE_EQ;
           batchParams.push_back(params);
       }
   }
@@ -505,12 +505,12 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   attrs.flags = cudaMemcpyFlagPreferOverlapWithCompute;
 
   CUDACHECKGOTO(cudaMemcpyBatchAsync(
-    dsts.data(),    
+    dsts.data(),
     srcs.data(),
     sizes.data(),
     (size_t)comm->nRanks-1,
     &attrs,
-    attrIdxs.data(), 
+    attrIdxs.data(),
     1,  // Using one set of attributes
     nullptr,
     stream), ret, fail);
@@ -536,7 +536,7 @@ fail:
 
 The testing of the CE collectives could be added to the existing NCCL perf test suite. The test suit will add a new command line argument to specify the CE collectives flag `NCCL_CTA_POLICY_ZERO`, which will force the CE collectives to be used whenever possible.
 
-It should be tested on platforms and configurations that support CE collectives, e.g., Pre-Tyche and Pre-Nyx clusters. 
+It should be tested on platforms and configurations that support CE collectives, e.g., Pre-Tyche and Pre-Nyx clusters.
 
 The validation of the test result is done through the NCCL test suite.
 
@@ -544,7 +544,7 @@ The validation of the test result is done through the NCCL test suite.
 
 Here are some initial performance results of the CE allgather implementation. The results are collected from Pre-Nyx cluster.
 
-We are comparing NCCL allgather latency, bandwidth, and nChannels (SMs) between CE, symmetric kernel with unicast store, symmetric kernel with multicast and kernel without memory registration. The CE allgather peak bandwidth is larger than all other kernels as the CE transaction width (256B) is larger than NVL store transaction width (128B), so less packet header overhead The CE base latency is around 40 us, which includes the two NVLS-multicast synchronizations (ready and completion) and the CE invocations. We can save 3-32 SMs with CE, depends on what we are comparing against to. 
+We are comparing NCCL allgather latency, bandwidth, and nChannels (SMs) between CE, symmetric kernel with unicast store, symmetric kernel with multicast and kernel without memory registration. The CE allgather peak bandwidth is larger than all other kernels as the CE transaction width (256B) is larger than NVL store transaction width (128B), so less packet header overhead The CE base latency is around 40 us, which includes the two NVLS-multicast synchronizations (ready and completion) and the CE invocations. We can save 3-32 SMs with CE, depends on what we are comparing against to.
 
 <img src="images/latency.png" alt="AllGather latency" width="400"/>
 
@@ -559,7 +559,7 @@ We are comparing NCCL allgather latency, bandwidth, and nChannels (SMs) between 
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Zhenhao He
 
 </details>

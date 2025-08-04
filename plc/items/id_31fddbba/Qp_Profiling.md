@@ -147,7 +147,7 @@ implemented for the same network might have different event definitions but same
 have matching versions). Adding a vendor id to the pluginId could solve the problem. But a vendor
 could also have more than one plugin implementation (e.g., NCCL internal plugin and IB ext). A
 more functional pluginId could be a combination of network type + vendor id + plugin number +
-plugin version. 
+plugin version.
 
 <!-- ### System KPIs & Metrics -->
 <!-- ### Data Architecture -->

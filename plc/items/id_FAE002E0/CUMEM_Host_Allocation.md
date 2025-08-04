@@ -144,7 +144,7 @@ The NCCL collective/sendrecv performance will not be impacted. But it can increa
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Unmesh Deodhar
   - Kaiming Ouyang
 

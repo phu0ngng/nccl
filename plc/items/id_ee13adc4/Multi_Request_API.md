@@ -52,7 +52,7 @@ Within the plugin, these aspects can be optimized in different ways, including t
 
 ### Design
 
-The plugin, internally can decide when and how to optimize the execution of the send/recv requests within a group depending on internal state visible to the plugin. For example, the plugin can decide when you submit the requests based on the internal states of the SW/HW queues that it control and manages. 
+The plugin, internally can decide when and how to optimize the execution of the send/recv requests within a group depending on internal state visible to the plugin. For example, the plugin can decide when you submit the requests based on the internal states of the SW/HW queues that it control and manages.
 
 ### Interface Architecture
 
@@ -60,7 +60,7 @@ The NCCL plugin API is provided through the `irecv()`/`isend()` function's `requ
 
 Following a number of `isend()`/`irecv()` calls where the `request` parameter is set to `NCCL_NET_MULTI_REQUEST`, the user must make a final call to `isend()`/`irecv()` with a `request` parameter that differs from `NCCL_NET_MULTI_REQUEST`. This final call signals the finalization of the send/recv group to the plugin, prompting it to return a single request handle. This handle enables the user to test and progress the entire group of send/recv operations through a unified request handle. After a group is finalized, no more requests can be appended to it.
 
-For all intermediate `isend()`/`irecv()` operations within a group (defined as operations where the request parameter is equal to `NCCL_NET_MULTI_REQUEST`), the plugin shall return a NULL pointer instead of a request handle. A request handle is returned by the plugin only after the final call to `isend()`/`irecv()` with a `request` parameter that differs from `NCCL_NET_MULTI_REQUEST`. The last call to `isend()` might also not return a request handle if the Clear-to-Send (CTS) message for this send request has not arrived yet and user is expected to call to `isend()`/`irecv()` until it is returned with a handle. 
+For all intermediate `isend()`/`irecv()` operations within a group (defined as operations where the request parameter is equal to `NCCL_NET_MULTI_REQUEST`), the plugin shall return a NULL pointer instead of a request handle. A request handle is returned by the plugin only after the final call to `isend()`/`irecv()` with a `request` parameter that differs from `NCCL_NET_MULTI_REQUEST`. The last call to `isend()` might also not return a request handle if the Clear-to-Send (CTS) message for this send request has not arrived yet and user is expected to call to `isend()`/`irecv()` until it is returned with a handle.
 
 
 > **Note**
@@ -78,7 +78,7 @@ For all intermediate `isend()`/`irecv()` operations within a group (defined as o
 > isend(send_buffer4, request); // request is not NCCL_NET_MULTI_REQUEST. Handle is not returned.
 > isend(send_buffer5, request); // request is not NCCL_NET_MULTI_REQUEST. Handle was returned.
 > ```
-> 
+>
 > The buffers that would be sent are `send_buffer1`, `send_buffer2` and `send_buffer3`. Note that buffers `send_buffer4` and `send_buffer5` are not sent.
 
 The maximal number of send/recv requests within a single group is an queryable using `ncclIbGetProperties()` and reported by `maxMultiRequestSize`.

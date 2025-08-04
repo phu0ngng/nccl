@@ -65,4 +65,4 @@ do
         out_file=${NCCL_OUT_DIR}/nccl_test_alltoall_perf_${NUM_NODES}_${iter}_iter_algo_auto_proto_default_numqps_${num_qps}_${SLURM_JOB_ID}
 	srun --comment=sysctl-sys.kernel.numa_balancing=0,transparent_hugepage_defrag=never,transparent_hugepage=never --mpi=pmix -t 120 -N ${NUM_NODES} --ntasks-per-node 8 ${NCCL_TESTS_PATH}/alltoall_perf -b8 -e4G -f2 -c0 -n 5 -w 5 >& ${out_file}
     done
-done 
+done

@@ -47,7 +47,7 @@ NIC Fusion will automatically use the PCI paths in the provided topology, if spe
 NIC Fusion can always be disabled via NCCL_NET_MERGE_LEVEL=LOC. The environment variable NCCL_IB_MERGE_NICs=0 can also be set to force NCCL to not merge, although this will cause a ncclInvalidUsage error (this alone cannot make an application cleanly skip NIC fusion.) Therefore setting this in situations in which you don't want NICs to merge is good to enforce correctness, but NCCL_NET_MERGE_LEVEL=LOC is the preferred way.
 
 ### Assumptions, constraints and dependencies
-NIC Fusion will work best in the event where all fused NICs are closest to a single GPU. In the event that NICs are fused which span PCI distant switches, traffic between non-local GPUs and NICs will result in sub-optimal performance and tuning. NCCL may tune itself differently given a single big fused NIC as opposed to multiple small physical NICs. Maximizing performance is not necessarily solved in all situtations, and continuous investment must be made into the area. 
+NIC Fusion will work best in the event where all fused NICs are closest to a single GPU. In the event that NICs are fused which span PCI distant switches, traffic between non-local GPUs and NICs will result in sub-optimal performance and tuning. NCCL may tune itself differently given a single big fused NIC as opposed to multiple small physical NICs. Maximizing performance is not necessarily solved in all situtations, and continuous investment must be made into the area.
 
 ### Use Cases
 1. Dual-port / quad-port H100 systems
@@ -224,7 +224,7 @@ The performance should be on par with non-fused NICs. One caveat here is that wi
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Ben Williams (bewilliams@nvidia.com)
 
 </details>

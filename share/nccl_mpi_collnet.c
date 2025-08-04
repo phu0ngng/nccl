@@ -1,6 +1,6 @@
 /*************************************************************************
  *  Copyright (c) 2016, NVIDIA CORPORATION. All rights reserved.
- * 
+ *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions
  *  are met:
@@ -42,7 +42,7 @@
 // ncclCollNetMpiHook : make NCCL use MPI as inter-node communication system.
 // This function should be called after MPI_Init and before any NCCL call
 // (in particular ncclCommGetUniqueId and ncclCommInitRank).
-// If MPI is used concurrently with NCCL, it is recommended to create a 
+// If MPI is used concurrently with NCCL, it is recommended to create a
 // dedicated communicator for NCCL (usually a dup of MPI_COMM_WORLD).
 void ncclCollNetMpiHook(MPI_Comm comm);
 
@@ -147,7 +147,7 @@ collNetReq* ncclCollNetMpiGetRequest() {
   pthread_mutex_lock(&ncclCollNetMpiRequestsLock);
   for (int i=0; i<numRequests; i++) {
     if (ncclCollNetMpiRequestUsed[i] == 0) {
-      ncclCollNetMpiRequestUsed[i] = 1; 
+      ncclCollNetMpiRequestUsed[i] = 1;
       ncclCollNetMpiRequests[i].size = -1;
       pthread_mutex_unlock(&ncclCollNetMpiRequestsLock);
       return ncclCollNetMpiRequests + i;
@@ -160,7 +160,7 @@ collNetReq* ncclCollNetMpiGetRequest() {
   for (int i=0; i<numRequests; i++) {
     newRequests[i] = ncclCollNetMpiRequests[i];
     newUsed[i] = ncclCollNetMpiRequestUsed[i];
-  } 
+  }
   for (int i=numRequests; i<newNumRequests; i++)
     newUsed[i] = 0;
   free(ncclCollNetMpiRequests);

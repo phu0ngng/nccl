@@ -122,7 +122,7 @@ A new unit test has been added: test/unit/overlap_test. This test creates 32 com
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Tintin
   - Captain Haddock
 

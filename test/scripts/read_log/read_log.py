@@ -102,9 +102,9 @@ def extractFromLog(fileName,pattern,labels=None,nProcs=0, n_repeat=1,n_warmup=0,
             print(f"WARNING: wrong number of data ({n_data}) or processes ({nProcs}), considering {n_repeat} iterations with {nProcs} processes")
     nIter = n_repeat-n_warmup
     # results - per iterations
-    lres_avg = np.zeros([nIter,n_cols])  
-    lres_min = np.zeros([nIter,n_cols])  
-    lres_max = np.zeros([nIter,n_cols])  
+    lres_avg = np.zeros([nIter,n_cols])
+    lres_min = np.zeros([nIter,n_cols])
+    lres_max = np.zeros([nIter,n_cols])
     # the rolling sum^2 is used to get the CI over all the data
     nData = 0
     roll_sum = np.zeros([n_cols])

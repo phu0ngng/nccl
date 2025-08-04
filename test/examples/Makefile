@@ -44,7 +44,7 @@ ${DST_DIR}/%.o: %.cu
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) -c $<
 
-${DST_DIR}/%:${DST_DIR}/%.o 
+${DST_DIR}/%:${DST_DIR}/%.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS} -lcuda

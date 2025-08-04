@@ -10,7 +10,7 @@
 
 // NVL domain information struct
 typedef struct {
-  int nNvlDomains;                    // number of NVLink domains 
+  int nNvlDomains;                    // number of NVLink domains
   int minRanksPerNvlDomain;           // minimum ranks across all NVLink domains
   int maxRanksPerNvlDomain;           // maximum ranks across all NVLink domains
 } ncclNvlDomainInfo_v5_t;

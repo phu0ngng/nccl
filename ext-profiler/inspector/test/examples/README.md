@@ -39,4 +39,4 @@ All examples use these core NCCL Inspector environment variables:
 
 - These scripts use generic paths (`/path/to/...`) that need to be customized for your environment
 - The SLURM examples include cluster-specific configurations that may need adjustment
-- The training workload example is a template that requires customization for your specific training framework and model 
+- The training workload example is a template that requires customization for your specific training framework and model

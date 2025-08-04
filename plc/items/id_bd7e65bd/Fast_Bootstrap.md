@@ -45,7 +45,7 @@ At the end of `bootstrapInit`, each rank in the communicator has a local list of
 
 To do this, we proceed in two steps:
 1. *handshake*: with the root, where each rank sends its network address to the root. Once all the address are collected the root sens back to each rank the connection information of the next rank
-2. *ring*: with the next connection information, each process enters a ring-based allgather to gather the list of all the address 
+2. *ring*: with the next connection information, each process enters a ring-based allgather to gather the list of all the address
 
 #### point-to-point (p2p)
 The p2p interface allows the user to use the `peerAddresses` gathered during the `bootstrapInit` to communicate (send/recv) with a peer
@@ -175,14 +175,14 @@ The limit between the two groups is given by `(nRanks % nRoots) * (nRanks / nRoo
 Example: considering `17` ranks and `5` roots, `rmr = 2`, `rpr = 3`, `rlim = 2 * (4 + 1) = 8`:
 
 - rank `0`: `(0 % (3 + 1)) = 0`, returns `1` -> root created
-- rank `1`: `(1 % (3 + 1)) = 1`, returns `0` 
-- rank `2`: `(2 % (3 + 1)) = 2`, returns `0` 
-- rank `3`: `(3 % (3 + 1)) = 3`, returns `0` 
-- rank `4`: `(4 % (3 + 1)) = 0`, returns `1` -> root created 
-- rank `5`: `(5 % (3 + 1)) = 1`, returns `0` 
-- rank `6`: `(6 % (3 + 1)) = 2`, returns `0` 
-- rank `7`: `(7 % (3 + 1)) = 3`, returns `0` 
-- rank `8`: `((8 - 8) % 3) = 0`, returns `1` -> root created 
+- rank `1`: `(1 % (3 + 1)) = 1`, returns `0`
+- rank `2`: `(2 % (3 + 1)) = 2`, returns `0`
+- rank `3`: `(3 % (3 + 1)) = 3`, returns `0`
+- rank `4`: `(4 % (3 + 1)) = 0`, returns `1` -> root created
+- rank `5`: `(5 % (3 + 1)) = 1`, returns `0`
+- rank `6`: `(6 % (3 + 1)) = 2`, returns `0`
+- rank `7`: `(7 % (3 + 1)) = 3`, returns `0`
+- rank `8`: `((8 - 8) % 3) = 0`, returns `1` -> root created
 - rank `9`: `((9 - 8) % 3) = 1`, returns `0`
 - rank `10`: `((10 - 8) % 3) = 2`, returns `0`
 - rank `11`: `((11 - 8) % 3) = 0`, returns `1` -> root created
@@ -213,7 +213,7 @@ To do so, we need to do the following changes:
 
 - additionally to the peer's socket address, each rank will also send the listen handle of `ncclNet` to the root.
 - `ncclNet` is a non-blocking API, which requires to change the bootstrap API to be non-blocking as well. We introduce `boostrapIsend` and `bootstrapIrecv` which both return a bootstrap request. The later can then be used to check completion of the operation using `bootstrapWait`.
-- most of the `p2p` send call rely on the buffering of the data when sending. To reflect that behavior, we also provide `booststrapBsend` which is similar to `bootstrapIsend` but will copy the data locally before returning. The local copy of the data is then automatically free'd at completion. 
+- most of the `p2p` send call rely on the buffering of the data when sending. To reflect that behavior, we also provide `booststrapBsend` which is similar to `bootstrapIsend` but will copy the data locally before returning. The local copy of the data is then automatically free'd at completion.
 
 Internally, we abstract both the `socket` and the `ncclNet` usage behind the `p2p` API. Therefore we add a new layer of functions, `bootstrapInternal` to do the heavylifting
 
@@ -278,7 +278,7 @@ To reduce the waiting time for the connection information from the root, the roo
 Upon reception,
 
 - if the previous rank connection information has been received already, the root will directly send the information and not store it.
-- if the next rank connection information are available as well, the root will directly reply to the received rank 
+- if the next rank connection information are available as well, the root will directly reply to the received rank
 
 
 ### Known limitations and issues
@@ -390,7 +390,7 @@ def grubb_test_max(x,alpha):
 
 Then, one can read data from the `.time` files using this code sample, where we do the following:
 
-- compute the average time for each iteration `n_warmup` to `n_repeat` 
+- compute the average time for each iteration `n_warmup` to `n_repeat`
 - compute the min and max over each iteration for all the timing independently
 - remove the outliers iterations and compute the average over the iterations
 
@@ -421,7 +421,7 @@ def extract_numbers(file_name,n_repeat=1,n_warmup=0,n_cols=N_DATA,format="float"
             # get the number of lines per repetition and remove the warmups
             assert(n_data%n_repeat == 0)
             l_per_rep = int(len(content)/n_repeat)
-            res_avg = np.zeros([(n_repeat-n_warmup),n_cols])  
+            res_avg = np.zeros([(n_repeat-n_warmup),n_cols])
             # remove the warmup iterations
             for i in range(n_warmup,int(n_repeat)):
                 idx_min = int(i*l_per_rep)
@@ -499,7 +499,7 @@ When using multiple roots, we also reduce the time spent in the `bootstrap` part
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Thomas Gillis
 
 </details>

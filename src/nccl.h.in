@@ -454,7 +454,7 @@ ncclResult_t pncclAlltoAll(const void* sendbuff, void* recvbuff, size_t count,
  * On the root rank, data from rank i is placed at recvbuff + i*count.
  * On non-root ranks, recvbuff is not used.
  * root is the rank where data will be gathered.
- * 
+ *
  * In-place operations will happen if sendbuff == recvbuff + root * count.
  */
 ncclResult_t  ncclGather(const void* sendbuff, void* recvbuff, size_t count,
@@ -469,7 +469,7 @@ ncclResult_t pncclGather(const void* sendbuff, void* recvbuff, size_t count,
  * On non-root ranks, sendbuff is not used.
  * Each rank receives count elements into recvbuff.
  * root is the rank that will distribute the data.
- * 
+ *
  * In-place operations will happen if recvbuff == sendbuff + root * count.
  */
 ncclResult_t  ncclScatter(const void* sendbuff, void* recvbuff, size_t count,

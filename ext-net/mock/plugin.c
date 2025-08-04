@@ -280,17 +280,17 @@ __hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) 
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginCloseSend(void* sendComm) { 
+__hidden ncclResult_t pluginCloseSend(void* sendComm) {
   if (sendComm) free(sendComm);
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginCloseRecv(void* recvComm) { 
+__hidden ncclResult_t pluginCloseRecv(void* recvComm) {
   if (recvComm) free(recvComm);
   return ncclSuccess;
 }
 
-__hidden ncclResult_t pluginCloseListen(void* listenComm) { 
+__hidden ncclResult_t pluginCloseListen(void* listenComm) {
   if (listenComm) free(listenComm);
   return ncclSuccess;
 }

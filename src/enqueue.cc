@@ -2562,8 +2562,8 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       // Append CE collective task if CE is supported and requested by user
       if (comm->symmetricSupport && comm->nNodes == 1 && sendWin && recvWin && (sendWin->winFlags & recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && comm->config.CTAPolicy == NCCL_CTA_POLICY_ZERO && ceImplemented) {
         NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, opDev));
-      } 
-      // Append kernel-based collective 
+      }
+      // Append kernel-based collective
       else {
         if (info->coll == ncclFuncAlltoAll) {
           for (int r=0; r<comm->nRanks; r++) {

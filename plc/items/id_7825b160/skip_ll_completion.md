@@ -3,7 +3,7 @@
 
 ## Abstract
 
-NCCL core tells the net plugin when it will detect arrival of data by polling on the data buffer 
+NCCL core tells the net plugin when it will detect arrival of data by polling on the data buffer
 instead of completion of receive request. This is applicable when LL or LL128 protocols are used.
 This allows network plugin to optimize completions where appropriate.
 
@@ -23,8 +23,8 @@ https://nvbugspro.nvidia.com/bug/4225298
 ### Use Cases
 
 Knowing NCCL relies on LL/LL128 allows the network plugin to skip completion generation. This
-removes the need to use write with immediate operations and avoids fence overheads that come with it 
-when Adaptive Routing or out-of-order handling is enabled on CX-7 and older NICs. 
+removes the need to use write with immediate operations and avoids fence overheads that come with it
+when Adaptive Routing or out-of-order handling is enabled on CX-7 and older NICs.
 
 ### Platform Requirements
 
@@ -47,8 +47,8 @@ when Adaptive Routing or out-of-order handling is enabled on CX-7 and older NICs
  
 ### Proposed Design
 
-Image showing the fence enforced at the sender when Aadaptive routing is enabled on CX-7. Use of 
-LL128 removes the need for the write w/ imm to notify the target and hence removes the fence on 
+Image showing the fence enforced at the sender when Aadaptive routing is enabled on CX-7. Use of
+LL128 removes the need for the write w/ imm to notify the target and hence removes the fence on
 the QP.
 
 ![Fence enfored at Sender when AR is enabled](images/ar-fence.png)
@@ -76,7 +76,7 @@ expected to set a valid request pointer on return which NCCL can poll to check f
 
 https://gitlab-master.nvidia.com/nccl/nccl/-/merge\_requests/610/diffs
 
-### Commit list or MR 
+### Commit list or MR
 </details>
  
 <!-- ============================================================================================-->
@@ -128,7 +128,7 @@ https://gitlab-master.nvidia.com/nccl/nccl/-/merge\_requests/610/diffs
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Sreeram Potluri
 
 </details>

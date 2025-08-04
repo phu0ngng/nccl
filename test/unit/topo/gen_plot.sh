@@ -20,7 +20,7 @@ fi
 
 #if [ "$coll" == "" ]; then coll=AllReduce; fi
 #if [ "$mode" == "" ]; then mode=time; fi
-if [ "$gpus" == "" ]; then 
+if [ "$gpus" == "" ]; then
   gpus=1
   for g in `ls $platform/data/`; do
     if [ "$g" -gt "$gpus" ]; then gpus=$g; fi

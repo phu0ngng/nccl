@@ -55,7 +55,7 @@ dnl @category InstalledPackages
 dnl @author Steven G. Johnson <stevenj@alum.mit.edu>
 dnl @version 2006-05-29
 dnl @license GPLWithACException
-dnl 
+dnl
 dnl Checks for GCC shared/pthread inconsistency based on work by
 dnl Marcin Owsiany <marcin@owsiany.pl>
 

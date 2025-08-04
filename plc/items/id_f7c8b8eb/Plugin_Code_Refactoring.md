@@ -74,7 +74,7 @@ nccl
     +-tuner
     | +-{tuner_v2.cc,tuner_v3.cc}
     +-profiler
-      +-{profiler_v1.cc,profiler_v2.cc} 
+      +-{profiler_v1.cc,profiler_v2.cc}
 ```
 
 The compatibility layer for, e.g., the network plugin is now located in src/plugin/net. The network plugin
@@ -105,7 +105,7 @@ interfaces during build time.
 <!-- ============================================================================================-->
 
 ### Commit list or MR
-[Refactor plugin handling code](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/734) 
+[Refactor plugin handling code](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/734)
 </details>
  
 <!-- ============================================================================================-->
@@ -157,7 +157,7 @@ interfaces during build time.
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Giuseppe Congiu <gcongiu@nvidia.com>
 
 </details>

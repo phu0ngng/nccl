@@ -124,7 +124,7 @@ else
   gpuseq=$(seq 2 2 $maxgpu)
 fi
 for ngpus in $gpuseq; do
-  generate_perf $gpumodel $ngpus $mode $op 
+  generate_perf $gpumodel $ngpus $mode $op
 done
 }
 

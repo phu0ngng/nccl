@@ -11,7 +11,7 @@ ncclGroupStart
 
 .. c:function:: ncclResult_t ncclGroupStart()
  
- Start a group call. 
+ Start a group call.
  
  All subsequent calls to NCCL until ncclGroupEnd will not block due to inter-CPU synchronization.
 
@@ -20,10 +20,10 @@ ncclGroupEnd
 
 .. c:function:: ncclResult_t ncclGroupEnd()
  
- End a group call. 
+ End a group call.
  
  Returns when all operations since ncclGroupStart have been processed. This means the communication primitives
- have been enqueued to the provided streams, but are not necessarily complete. 
+ have been enqueued to the provided streams, but are not necessarily complete.
  
  When used with the ncclCommInitRank call, the ncclGroupEnd call waits for all communicators to be initialized.
 

@@ -14,8 +14,8 @@ Using NCCL is similar to using any other library in your code:
 
 5. Use NCCL collective communication primitives to perform data communication. You can familiarize yourself with the :ref:`api-label` documentation to maximize your usage performance.
 
-Collective communication primitives are common patterns of data transfer among a group of CUDA devices. A communication algorithm involves many processors that are communicating together.  
-Each CUDA device is identified within the communication group by a zero-based index or rank. Each rank uses a communicator object to refer to the collection of GPUs that are intended to work together. 
+Collective communication primitives are common patterns of data transfer among a group of CUDA devices. A communication algorithm involves many processors that are communicating together.
+Each CUDA device is identified within the communication group by a zero-based index or rank. Each rank uses a communicator object to refer to the collection of GPUs that are intended to work together.
 The creation of a communicator is the first step needed before launching any communication operation.
 
 .. toctree::

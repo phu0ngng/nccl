@@ -8,7 +8,7 @@
   #ifndef __host__
     #define __host__
   #endif
-  #define NCCL_DEVICE_INLINE 
+  #define NCCL_DEVICE_INLINE
   #define NCCL_HOST_DEVICE_INLINE inline __attribute__((always_inline))
 #endif
 

@@ -326,7 +326,7 @@ __hidden ncclResult_t pluginInit(void** context, uint64_t commId, size_t nRanks,
 
   if (logFunction) {
     logFunction(NCCL_LOG_INFO, NCCL_TUNING, __FILE__, __LINE__,
-                "TUNER/ExamplePlugin: Initializing tuner for %zu nodes, %zu ranks, %d NVL domains", 
+                "TUNER/ExamplePlugin: Initializing tuner for %zu nodes, %zu ranks, %d NVL domains",
                 nNodes, nRanks, ctx->nvlDomainInfo.nNvlDomains);
   }
 

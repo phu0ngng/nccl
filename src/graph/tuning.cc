@@ -146,7 +146,7 @@ static const ncclTunerConstants_t ncclTunerConstantsDefaults = {
     {    0,    0,    0 }, {    0,    0,    0 },  // NVLS, NVLS Tree
     {  8.0,  8.0,  8.0 }                         // PAT
     },
-  .hwLatencies = { 
+  .hwLatencies = {
   /* NVLINK */
   { { .6, 1.25, 4.0 }, { .6, 1.9, 3.4 }, /* Tree (LL/LL128/Simple), Ring (LL/LL128/Simple)*/
     {  0,    0, 3.7 }, {  0,   0,  2.8 }, /* CollNetDirect (LL/LL128/Simple), CollNetChain (LL/LL128/Simple)*/
@@ -168,8 +168,8 @@ static const ncclTunerConstants_t ncclTunerConstantsDefaults = {
   },
   .llMaxBws = {
      {39.0, 39.0, 20.4}, /* Volta-N1/Intel-N2/Intel-N4) */
-     {87.7, 22.5 /*avg of ring & tree*/, 19.0}, /* Ampere-N1/AMD-N2/AMD-N4) */   
-     {141.0, 45.0 /*avg of ring & tree*/, 35.0}, /* Hopper-N1/AMD-N2/AMD-N4) */   
+     {87.7, 22.5 /*avg of ring & tree*/, 19.0}, /* Ampere-N1/AMD-N2/AMD-N4) */
+     {141.0, 45.0 /*avg of ring & tree*/, 35.0}, /* Hopper-N1/AMD-N2/AMD-N4) */
      {2*141.0, 2*45.0 /*avg of ring & tree*/, 2*35.0}, /* Blackwell-N1/AMD-N2/AMD-N4) */
   },
   .perChMaxRingLL128Bws = {

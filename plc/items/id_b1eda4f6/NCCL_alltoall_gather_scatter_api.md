@@ -9,11 +9,11 @@ In this feature, we add the alltoall, gather and scatter host APIs and their bas
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
 
-Up to V2.27, NCCL library exposes no host-level collectives for alltoall, gather, or scatter. Users have to implement 
-these communication patterns in the user space, using NCCL send/recv APIs. Native host APIs bring several key benefits. First, users do 
-not need to implement these communication patterns in their application code. Second, NCCL core can perform further optimizations for these 
-communication patterns. One example is building the symmetric kernel for alltoall to directly operate on registered memory. Another example 
-is to use copy-engine to reduce the SM usage for these communication patterns. All of these optimizations rely on the native host APIs. 
+Up to V2.27, NCCL library exposes no host-level collectives for alltoall, gather, or scatter. Users have to implement
+these communication patterns in the user space, using NCCL send/recv APIs. Native host APIs bring several key benefits. First, users do
+not need to implement these communication patterns in their application code. Second, NCCL core can perform further optimizations for these
+communication patterns. One example is building the symmetric kernel for alltoall to directly operate on registered memory. Another example
+is to use copy-engine to reduce the SM usage for these communication patterns. All of these optimizations rely on the native host APIs.
 
 This proposal adds NCCL native host APIs for alltoall, gather, and scatter operations. The initial implementation will mirror how users currently implement these operations using NCCL send/recv APIs in their application code, but will be integrated directly into the NCCL core using the underlying P2P transport mechanism. This provides a cleaner, more efficient implementation while maintaining the same functionality. Other optimizations, such as symmetric kernel implementations and copy-engine collectives for alltoall/scatter/gather, will be discussed in separate proposals.
 
@@ -50,7 +50,7 @@ https://nvbugspro.nvidia.com/bug/5304035
 
 We propose the following APIs:
 
-```c  
+```c
 // Alltoall
 NCCL_API(ncclResult_t, ncclAlltoAll, const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, ncclComm* comm, cudaStream_t stream);
@@ -62,7 +62,7 @@ NCCL_API(ncclResult_t, ncclGather, const void* sendbuff, void* recvbuff, size_t 
 // Scatter
 NCCL_API(ncclResult_t, ncclScatter, const void* sendbuff, void* recvbuff, size_t count,
     ncclDataType_t datatype, int root, ncclComm* comm, cudaStream_t stream);
-```	
+```
 
 These APIs are designed to be similar to the existing NCCL APIs.
 
@@ -115,8 +115,8 @@ static void p2pTaskAppend(
 ```
 
 #### 3. Collective based on p2pTaskAppend
-The collective can be expressed as a sequence of p2pTaskAppend function calls. 
-Currently do not plan to create dedicated function wrapper for alltoall, scatter and gather. 
+The collective can be expressed as a sequence of p2pTaskAppend function calls.
+Currently do not plan to create dedicated function wrapper for alltoall, scatter and gather.
 
 ```c
 // Example scatter implemented with p2pTaskAppend
@@ -167,7 +167,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
 
     // Replace existing code with p2pTaskAppend
     p2pTaskAppend(comm, planner, info->coll, (void*)info->recvbuff, info->count, info->datatype, info->root);
-  } 
+  }
   // If it is collective call
   else {
     ...
@@ -175,12 +175,12 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     /* -------Added code section for alltoall, scatter and gather------------*/
     if (info->coll == ncclFuncAlltoall || info->coll == ncclFuncScatter || info->coll == ncclFuncGather) {
       // Collective implmented with p2pTaskAppend
-    } 
+    }
     /*------------------------------------------------------------------------*/
     
-    // Existing code that follows the normal ncclTaskColl path 
+    // Existing code that follows the normal ncclTaskColl path
     else {
-      ...  
+      ...
     }
   }
   
@@ -194,9 +194,9 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
     - Would require moving CE and symmetric kernel implementation checks to `taskAppend` in the future
     - Cannot reliably detect if an operation is standalone or part of a group during `taskAppend` because `taskAppend` is called during `ncclEnqueueCheck`, before we have complete group operation context
     - Existing CE/symmetric implementations assume specific conditions (single node, one collective task in the group, no P2P tasks in the group) that can only be verified after full operation group is enqueued
-    - Require checking when/how grouped ce/sym implementation will be supported or to refactorize the `ncclPrepareTasks` to serialize the ce/sym kernels if grouped sym/ce support is not in scope 
+    - Require checking when/how grouped ce/sym implementation will be supported or to refactorize the `ncclPrepareTasks` to serialize the ce/sym kernels if grouped sym/ce support is not in scope
 
-- **Option 2: Transition at ncclPrepareTasks**: 
+- **Option 2: Transition at ncclPrepareTasks**:
   We could handle the transition in `ncclPrepareTasks`, where CE and symmetric kernel implementation checks currently happen. This function:
   1. Takes sorted collective tasks from `ncclTaskCollSorterDequeueAll`(&planner->collSorter)
   2. Enqueues them into `planner->collTaskQueue`
@@ -234,7 +234,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   /*-------------------------------------------------------------------------*/
 
   // Existing code for ncclTaskColl
-  ... 
+  ...
 }
 ```
 
@@ -379,8 +379,8 @@ https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/1049
 
 In the perf test, we already have the alltoall, gather, scatter tests that implemented with NCCL send/recv
 APIs. We could either:
-  - Replace the existing tests implemented with NCCL send/recv APIs with the host native APIs. 
-  - Keep the old send/recv perf test and add extra test cases for the new host native APIs, and compare if there is perf degradation. 
+  - Replace the existing tests implemented with NCCL send/recv APIs with the host native APIs.
+  - Keep the old send/recv perf test and add extra test cases for the new host native APIs, and compare if there is perf degradation.
 
 
 </details>

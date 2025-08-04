@@ -22,7 +22,7 @@ This is because every NCCL call may have to block, waiting for other threads/ran
    ncclAllReduce(..., comm[i], stream[i]);
  }
 
-To define that these calls are part of the same collective operation, ncclGroupStart and ncclGroupEnd should be used: 
+To define that these calls are part of the same collective operation, ncclGroupStart and ncclGroupEnd should be used:
 
 .. code:: C
 
@@ -32,7 +32,7 @@ To define that these calls are part of the same collective operation, ncclGroupS
   }
   ncclGroupEnd();
 
-This will tell NCCL to treat all calls between ncclGroupStart and ncclGroupEnd as a single call to many devices. 
+This will tell NCCL to treat all calls between ncclGroupStart and ncclGroupEnd as a single call to many devices.
 
 Caution: When called inside a group, stream operations (like ncclAllReduce) can return without having enqueued the
 operation on the stream. Stream operations like cudaStreamSynchronize can therefore be called only after ncclGroupEnd
@@ -107,8 +107,8 @@ Group Operation Ordering Semantics
 -------------------------------------
 
 Although NCCL group allows different operations to be issued in one shot, users still need to guarantee the same
-issuing order of the operations among different GPUs no matter whether the operations are issued to the same or 
-different communicators. 
+issuing order of the operations among different GPUs no matter whether the operations are issued to the same or
+different communicators.
 
 For example, the following code provides the correct order of the operations. In this example, *comm0* and *comm1*
 are duplicated independent communicators that include rank 0 and 1.
@@ -172,11 +172,11 @@ However, changing the order of the any operations will lead to incorrect results
 Nonblocking Group Operation
 -------------------------------------
 
-If a communicator is marked as nonblocking through ncclCommInitRankConfig, the group functions become asynchronous 
-correspondingly. In this case, if users issue multiple NCCL operations in one group, returning from ncclGroupEnd() might 
-not mean the NCCL communication kernels have been issued to CUDA streams. If ncclGroupEnd() returns ncclSuccess, it means 
-NCCL kernels have been issued to streams; if it returns ncclInProgress, it means NCCL kernels are being issued to streams 
-in the background. It is users' responsibility to make sure the state of the communicator changes into ncclSuccess 
+If a communicator is marked as nonblocking through ncclCommInitRankConfig, the group functions become asynchronous
+correspondingly. In this case, if users issue multiple NCCL operations in one group, returning from ncclGroupEnd() might
+not mean the NCCL communication kernels have been issued to CUDA streams. If ncclGroupEnd() returns ncclSuccess, it means
+NCCL kernels have been issued to streams; if it returns ncclInProgress, it means NCCL kernels are being issued to streams
+in the background. It is users' responsibility to make sure the state of the communicator changes into ncclSuccess
 before calling related CUDA calls (e.g. cudaStreamSynchronize):
 
 .. code:: C

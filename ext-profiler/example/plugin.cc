@@ -186,8 +186,8 @@ __hidden ncclResult_t exampleProfilerFinalize(void* context) {
   INFO(NCCL_INIT, "PROFILER/Plugin: finalize commName: %s commHash: %lu nranks: %d rank: %d", ctx->commName ? ctx->commName : "", ctx->commHash, ctx->nranks, ctx->rank);
 
   // print last N groups/collectives/p2ps
-  // Note that since the v5 version of the profiler, group API events are now at the top of the hierarchy. 
-  // Legacy Group events from v4 are still emitted for compatibility purposes when using the v4 profiler but excluded from this example. 
+  // Note that since the v5 version of the profiler, group API events are now at the top of the hierarchy.
+  // Legacy Group events from v4 are still emitted for compatibility purposes when using the v4 profiler but excluded from this example.
   int start = (ctx->groupApiPoolIndex - groupApiPoolSize >= 0) ? ctx->groupApiPoolIndex - groupApiPoolSize : 0;
   int end = ctx->groupApiPoolIndex;
   for (int i = start; i < end; i++) {
@@ -701,7 +701,7 @@ __hidden ncclResult_t exampleProfilerStopEvent(void* eHandle) {
 
   uint64_t type = *(uint64_t *)eHandle;
   // Stopping API events, Kernel Launch events, collective/p2p task events
-  // in NCCL core do not mean that they are complete. It means that the 
+  // in NCCL core do not mean that they are complete. It means that the
   // operation was enqueued so we need to keep the events open
   if (type == ncclProfileGroupApi) {
     struct groupApi* event = (struct groupApi*) eHandle;

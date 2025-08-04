@@ -122,4 +122,4 @@ srun -l \
     --container-image "${IMAGE_PATH}" \
     --container-mounts "/home:/home,/path/to/shared:/path/to/shared" \
     --output="${LOGS_DIR}/%x_%j_${DATETIME}.log" \
-    sh -c "${run_cmd}" 
+    sh -c "${run_cmd}"

@@ -126,7 +126,7 @@ NCCL should load and use the v2/v3 tuner plugin as before the feature was added.
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Giuseppe Congiu <gcongiu@nvidia.com>
 
 </details>

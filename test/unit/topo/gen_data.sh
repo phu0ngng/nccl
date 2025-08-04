@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Typically launch with 
+# Typically launch with
 # salloc -N {nnodes} -n {nnodes x ngpus} ./gen_data.sh {ngpus} {nnodes} {topo}
 #
 # Don't forget to run make test.build before you can see the data using the model test :

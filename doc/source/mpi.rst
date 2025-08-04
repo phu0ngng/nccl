@@ -50,7 +50,7 @@ However, some implementation details in MPI can lead to issues when using NCCL i
 MPI Progress
 ------------
 
-MPI defines a notion of progress which means that MPI operations need the program to call MPI functions (potentially multiple times) to make progress and eventually complete. 
+MPI defines a notion of progress which means that MPI operations need the program to call MPI functions (potentially multiple times) to make progress and eventually complete.
 
 In some implementations, progress on one rank may need MPI to be called on another rank. While this is usually bad for performance, it can be argued that this is a valid MPI implementation.
 

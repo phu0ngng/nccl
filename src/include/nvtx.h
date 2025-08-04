@@ -143,7 +143,7 @@ class ncclOptionalNvtxPayloadRange {
  public:
   void push(const nvtx3::event_attributes& attr) noexcept {
     // pushed must not be true already, but it's too expensive to check
-    pushed = true;  
+    pushed = true;
     nvtxDomainRangePushEx(nvtx3::domain::get<nccl_domain>(), attr.get());
   }
 

@@ -832,7 +832,7 @@ ncclResult_t ncclDevrGetLsaRankPtr(struct ncclComm* comm, struct ncclDevrWindow*
     return ncclInvalidArgument;
   }
 
-  // Calculate the address with offset for the specified lsa rank 
+  // Calculate the address with offset for the specified lsa rank
   *outPtr = (void*)((uintptr_t)devr->lsaFlatBase + lsaRank * devr->bigSize + winHost->bigOffset + offset);
   return ncclSuccess;
 }

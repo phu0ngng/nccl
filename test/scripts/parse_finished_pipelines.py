@@ -38,7 +38,7 @@ try:
                 min_time = created
             print("{:<40} {:<12} {:<16} {:<20} {:<10}".format(item["ref"], item["id"], str(elapsed), created.strftime("%d-%m-%Y %H:%M:%S"), status))
 
-    overall_elapsed = datetime.now(gitlabTzInfo) - min_time 
+    overall_elapsed = datetime.now(gitlabTzInfo) - min_time
     print("\n{0} pipelines, {1} completed, {2} passed in the last day. {3} average completed time. {4} elapsed.\n".format(pipeline_count, completed_pipeline_count, succeeded_pipeline_count, sum_pipeline_time/completed_pipeline_count, overall_elapsed))
 
 except FileNotFoundError:

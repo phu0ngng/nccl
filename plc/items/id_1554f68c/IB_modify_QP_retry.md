@@ -109,7 +109,7 @@ This feature provides a retry capability in case of failure, together with impor
 <summary><h2>Signoff List</h2></summary>
 <!-- ============================================================================================-->
 
-Author(s): 
+Author(s):
   - Thomas Gillis
   - Marina Varshaver
   - Sreeram Potluri

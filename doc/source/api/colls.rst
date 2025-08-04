@@ -95,7 +95,7 @@ ncclGather
 
 .. c:function:: ncclResult_t  ncclGather(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream)
 
- Each rank sends ``count`` elements from ``sendbuff`` to the ``root`` rank. On the ``root`` rank, data from rank ``i`` is placed at ``recvbuff + i*count``. On non-root ranks, ``recvbuff`` is not used. 
+ Each rank sends ``count`` elements from ``sendbuff`` to the ``root`` rank. On the ``root`` rank, data from rank ``i`` is placed at ``recvbuff + i*count``. On non-root ranks, ``recvbuff`` is not used.
 
  Note: This assumes the receive count is equal to ``nranks*count``, which means that ``recvbuff`` should have a size of at least ``nranks*count`` elements.
 
@@ -108,7 +108,7 @@ ncclScatter
 
 .. c:function:: ncclResult_t  ncclScatter(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream)
 
- Each rank receives ``count`` elements from the ``root`` rank. On the ``root`` rank, ``count`` elements from ``sendbuff + i*count`` are sent to rank ``i``. On non-root ranks, ``sendbuff`` is not used. 
+ Each rank receives ``count`` elements from the ``root`` rank. On the ``root`` rank, ``count`` elements from ``sendbuff + i*count`` are sent to rank ``i``. On non-root ranks, ``sendbuff`` is not used.
 
  Note: This assumes the send count is equal to ``nranks*count``, which means that ``sendbuff`` should have a size of at least ``nranks*count`` elements.
 

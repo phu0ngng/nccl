@@ -32,7 +32,7 @@ The Broadcast operation copies an N-element buffer from the root rank to all the
 .. figure:: images/broadcast.png
  :align: center
  
- Broadcast operation: all ranks receive data from a “root” rank. 
+ Broadcast operation: all ranks receive data from a “root” rank.
 
 Important note: The root argument is one of the ranks, not a device number, and is therefore impacted by a different rank to device mapping.
 
@@ -68,7 +68,7 @@ The output is ordered by the rank index. The AllGather operation is therefore im
 .. figure:: images/allgather.png
  :align: center
  
- AllGather operation: each rank receives the aggregation of data from all ranks in the order of the ranks. 
+ AllGather operation: each rank receives the aggregation of data from all ranks in the order of the ranks.
 
 Note: Executing ReduceScatter, followed by AllGather, is equivalent to the AllReduce operation.
 

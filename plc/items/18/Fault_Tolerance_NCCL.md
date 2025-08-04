@@ -209,7 +209,7 @@ shown as follows:
       /* NCCL layer (i.e. users) which calls network plugin functions. */
       do {
         if (abortFlag == 1) return error;
-        /* when sComm return NULL, it means connection is not done. We need 
+        /* when sComm return NULL, it means connection is not done. We need
          * to call ncclNetConnect again. */
         ret = ncclNetConnect(dev, &handle, &sComm);
       } while(sComm == NULL);
@@ -281,7 +281,7 @@ it can be done as follows:
         /* time is out or initialization fails, just abort and restart. */
         ncclCommAbort(comm);
       } else {
-        /* free local resources; since state must be ncclSuccess, the successfuly local free 
+        /* free local resources; since state must be ncclSuccess, the successfuly local free
          * is guaranteed. */
         ret = ncclCommDestroy(comm);
       }
@@ -363,11 +363,11 @@ Four tests are added to api test:
 
 ,
 
-    ncclCommInitRankConfig_test 
+    ncclCommInitRankConfig_test
 
 ,
 
-    ncclConfig_test 
+    ncclConfig_test
 
 ,
 

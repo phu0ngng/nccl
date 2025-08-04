@@ -194,7 +194,7 @@ Typical code would look like :
 
       ncclGroupStart();
       for (int i=0; i<num_ops; i++) {
-        ncclAllReduce(sendbuffs[i], recvbuffs[i], counts[i], ncclFloat, ncclSum, 
+        ncclAllReduce(sendbuffs[i], recvbuffs[i], counts[i], ncclFloat, ncclSum,
         nccl_comm, stream);
       }
       ncclGroupEnd();
