@@ -1762,7 +1762,7 @@ perftest-single-eos:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 25
+    SLURM_TIME: 30
     RUN_MODE: "MPI"
     NNODES: 1
     GRAPH: 0
