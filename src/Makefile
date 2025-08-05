@@ -163,7 +163,7 @@ install : build
 	mkdir -p $(PREFIX)/bin
 	cp -P -v $(BUILDDIR)/lib/lib* $(PREFIX)/lib/
 	cp -P -v $(BUILDDIR)/lib/pkgconfig/* $(PREFIX)/lib/pkgconfig/
-	cp -v $(BUILDDIR)/include/* $(PREFIX)/include/
+	cp -v -r $(BUILDDIR)/include/* $(PREFIX)/include/
 	cp -v $(BUILDDIR)/bin/ncclras $(PREFIX)/bin/
 
 FILESTOFORMAT := $(shell find . -name ".\#*" -prune -o \( -name "*.cc" -o -name "*.h" \) -print | grep -v -E 'ibvwrap.h|nvmlwrap.h|gdrwrap.h|nccl.h')
