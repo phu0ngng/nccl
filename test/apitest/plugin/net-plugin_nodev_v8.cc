@@ -26,7 +26,7 @@ __hidden ncclResult_t pluginCloseRecv(void* recvComm) { return ncclInternalError
 __hidden ncclResult_t pluginCloseListen(void* listenComm) { return ncclInternalError; }
 __hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) { return ncclInternalError; }
 
-extern "C" const ncclNet_v8_t ncclNetPlugin_v8 = {
+extern "C" __attribute__((visibility("default"))) const ncclNet_v8_t ncclNetPlugin_v8 = {
   .name = "ncclNetPlugin_v8",
   .init = pluginInit,
   .devices = pluginDevices,

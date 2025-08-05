@@ -192,7 +192,7 @@ __hidden ncclResult_t netPluginFinalize(void *ctx) {
   return ncclSuccess;
 }
 
-extern "C" const ncclNet_t ncclNetPlugin_v11 = {
+extern "C" __attribute__((visibility("default"))) const ncclNet_t ncclNetPlugin_v11 = {
   .name = "ncclNetPlugin_v11",
   .init = netPluginInit,
   .devices = netPluginDevices,
@@ -233,7 +233,7 @@ __hidden ncclResult_t tunerPluginFinalize(void* ctx) {
   return ncclSuccess;
 }
 
-const ncclTuner_t ncclTunerPlugin_v5 = {
+extern "C" __attribute__((visibility("default"))) const ncclTuner_t ncclTunerPlugin_v5 = {
   .name = "ncclTunerPlugin_v5",
   .init = tunerPluginInit,
   .getCollInfo = tunerPluginGetCollInfo,
@@ -258,7 +258,7 @@ __hidden ncclResult_t profilerPluginStopEvent(void* eHandle) { return ncclSucces
 
 __hidden ncclResult_t profilerPluginFinalize(void* context) { return ncclSuccess; }
 
-const ncclProfiler_t ncclProfiler_v5 = {
+extern "C" __attribute__((visibility("default"))) const ncclProfiler_t ncclProfiler_v5 = {
   .name = "ncclProfilerPlugin_v5",
   .init = profilerPluginInit,
   .startEvent = profilerPluginStartEvent,

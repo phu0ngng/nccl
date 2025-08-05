@@ -121,7 +121,7 @@ __hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) 
   return ncclSuccess;
 }
 
-extern "C" const ncclNet_v8_t ncclNetPlugin_v8 = {
+extern "C" __attribute__((visibility("default"))) const ncclNet_v8_t ncclNetPlugin_v8 = {
   .name = "ncclNetPlugin_v8",
   .init = pluginInit,
   .devices = pluginDevices,
