@@ -56,3 +56,5 @@ target_include_directories(nccl_device PUBLIC
     ${CUDAToolkit_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
+
+add_dependencies(nccl_device nccl_header)
