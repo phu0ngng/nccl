@@ -222,10 +222,10 @@ The following code depicts a complete working example with multiple MPI processe
  } while(0)
 
 
- static uint64_t getHash(const char* string) {
+ static uint64_t getHash(const char* string, size_t n) {
    // Based on DJB2a, result = result * 33 ^ char
    uint64_t result = 5381;
-   for (int c = 0; string[c] != '\0'; c++){
+   for (size_t c = 0; c < n; c++){
      result = ((result << 5) + result) ^ string[c];
    }
    return result;
