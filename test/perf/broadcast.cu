@@ -46,19 +46,25 @@ void BroadcastGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
-testResult_t BroadcastRunColl(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  int rank;
-  NCCLCHECK(ncclCommUserRank(comm, &rank));
+testResult_t BroadcastRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
+  if (deviceImpl == 0) {
+    int rank;
+    NCCLCHECK(ncclCommUserRank(comm, &rank));
 
+    char* sptr = (char*)sendbuff + sendoffset;
+    char* rptr = (char*)recvbuff + recvoffset;
 #if NCCL_MAJOR >= 2 && NCCL_MINOR >= 2
-  NCCLCHECK_COMM_WAIT(ncclBroadcast(sendbuff, recvbuff, count, type, root, comm, stream), comm);
+    NCCLCHECK_COMM_WAIT(ncclBroadcast(sptr, rptr, count, type, root, comm, stream), comm);
 #else
-  if (rank == root) {
-    NCCLCHECK_COMM_WAIT(ncclBcast(sendbuff, count, type, root, comm, stream), comm);
-  } else {
-    NCCLCHECK_COMM_WAIT(ncclBcast(recvbuff, count, type, root, comm, stream), comm);
-  }
+    if (rank == root) {
+      NCCLCHECK_COMM_WAIT(ncclBcast(sptr, count, type, root, comm, stream), comm);
+    } else {
+      NCCLCHECK_COMM_WAIT(ncclBcast(rptr, count, type, root, comm, stream), comm);
+    }
 #endif
+  } else {
+    return testNotImplemented;
+  }
   return testSuccess;
 }
 

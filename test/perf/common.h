@@ -7,6 +7,9 @@
 #define __COMMON_H__
 
 #include "nccl.h"
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+#include "nccl_device.h"
+#endif
 #include <stdio.h>
 #include <cstdint>
 #include <algorithm>
@@ -81,7 +84,8 @@ typedef enum {
   testCudaError = 2,
   testNcclError = 3,
   testTimeout = 4,
-  testNumResults = 5
+  testNotImplemented = 5,
+  testNumResults = 6
 } testResult_t;
 
 // Relay errors up and trace
@@ -106,8 +110,8 @@ struct testColl {
   testResult_t (*initData)(struct threadArgs* args, ncclDataType_t type,
       ncclRedOp_t op, int root, int rep, int in_place);
   void (*getBw)(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks);
-  testResult_t (*runColl)(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type,
-      ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
+  testResult_t (*runColl)(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset,
+      size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implIndex);
 };
 extern struct testColl allReduceTest;
 extern struct testColl allGatherTest;
@@ -149,6 +153,9 @@ struct threadArgs {
   int nIds;
   ncclUniqueId* ncclId;
   ncclComm_t** comms;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+  ncclDevComm** devComms;
+#endif
   cudaStream_t* streams;
   cudaEvent_t* events;
   float* ms;
@@ -418,6 +425,38 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
 
 testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int ncclProcs, int localRank, const char* ft_list);
 testResult_t threadLaunch(struct testThread* thread);
+
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+template <typename F>
+testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
+  if (kernel == nullptr) return testNotImplemented;
+  ncclDevComm* devComm = (ncclDevComm*)comm;
+  ncclWindow_t sendwin = (ncclWindow_t)sendbuff;
+  ncclWindow_t recvwin = (ncclWindow_t)recvbuff;
+  kernel<<<16, 512, 0, stream>>>(sendwin, sendoffset, recvwin, recvoffset, count, root, *devComm);
+  return testSuccess;
+}
+
+#define SPECIALIZE_KERNEL(kernel, type, op) \
+  ( op != ncclSum ? nullptr : \
+   type == ncclInt8 ? kernel<int8_t> : \
+   type == ncclUint8 ? kernel<uint8_t> : \
+   type == ncclInt32 ? kernel<int32_t> : \
+   type == ncclUint32 ? kernel<uint32_t> : \
+   type == ncclInt64 ? kernel<int64_t> : \
+   type == ncclUint64 ? kernel<uint64_t> : \
+   type == ncclFloat16 ? kernel<half> : \
+   type == ncclFloat32 ? kernel<float> : \
+   type == ncclFloat64 ? kernel<double> : \
+   nullptr \
+  )
+#else
+template <typename F>
+testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
+  return testNotImplemented;
+}
+#define SPECIALIZE_KERNEL(kernel, type, op) nullptr
+#endif
 
 bool isFp8ValidForReductions(ncclDataType_t type);
 #endif
