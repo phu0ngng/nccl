@@ -51,7 +51,7 @@ ncclResult_t ncclCeFinalize(struct ncclComm* comm) {
   if (comm->ceColl.baseUCSymReadyPtr != NULL) {
     if (comm->ceColl.ceSyncWin && comm->ceColl.ceSyncWin->vidmem) {
       NCCLCHECKGOTO(ncclCommWindowDeregister(comm, comm->ceColl.ceSyncWin->vidmem), ret, fail);
-      NCCLCHECKGOTO(ncclMemFree(comm->ceColl.ceSyncWin->userPtr), ret, fail);
+      NCCLCHECKGOTO(ncclMemFree(comm->ceColl.baseUCSymReadyPtr), ret, fail);
     }
     comm->ceColl.baseUCSymReadyPtr = NULL;
     comm->ceColl.baseUCSymComplPtr = NULL;
