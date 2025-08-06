@@ -52,14 +52,6 @@ list(APPEND LIBSRCFILES
     ${SCHEDULER_SOURCES}
 )
 
-# # Set CUDA specific flags
-# set(CMAKE_CUDA_STANDARD 14)
-# set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda -Xptxas -maxrregcount=128")
-
-# Add CUDA architecture flags
-# set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90" CACHE STRING "CUDA architectures to build for")
-
 ###################### Create a shared NCCL library ############################
 add_library(nccl SHARED)
 
@@ -71,6 +63,7 @@ target_include_directories(nccl PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CUDAToolkit_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
 
 add_custom_command(
@@ -154,6 +147,7 @@ target_include_directories(nccl_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CUDAToolkit_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
 
 # Add dependency on nccl_header

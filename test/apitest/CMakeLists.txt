@@ -61,6 +61,8 @@ foreach(source ${API_TEST_SOURCES})
         ${CUDAToolkit_INCLUDE_DIRS}
     )
 
+    add_dependencies(${obj_name} nccl_header)
+
     # Set CUDA properties for the object library
     set_target_properties(${obj_name} PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
@@ -134,7 +136,10 @@ foreach(plugin_source ${PLUGIN_SOURCES})
         ${CMAKE_SOURCE_DIR}/src/include
         ${CMAKE_SOURCE_DIR}/src/include/plugin
         ${CUDAToolkit_INCLUDE_DIRS}
+        ${CUDAToolkit_INCLUDE_DIRS}/cccl
     )
+
+    add_dependencies(${plugin_name} nccl_header)
 
     # Set compiler flags
     set_target_properties(${plugin_name} PROPERTIES

@@ -58,7 +58,7 @@ TEST_F(ncclRedOpCreatePreMulSum_test, everything) {
     EXPECT_EQ(vals[2], float(3.0f*(ndev*ndev - ndev)/2));
     EXPECT_EQ(vals[3], float(4.0f*(ndev*ndev - ndev)/2));
 
-    ASSERT_EQ(ncclSuccess, cudaFree(buf[i]));
+    ASSERT_EQ(cudaSuccess, cudaFree(buf[i]));
 
     ASSERT_EQ(ncclSuccess, ncclRedOpDestroy(hostOp[i], comms[i]));
     ASSERT_EQ(ncclSuccess, ncclRedOpDestroy(devOp[i], comms[i]));
