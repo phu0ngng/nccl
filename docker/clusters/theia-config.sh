@@ -116,6 +116,12 @@ function get_build_command() {
 }
 
 # Test configs
+THEIA_NCCL_SOCKET_IFNAME="enP22p3s0f1np1"
+
+function get_nccl_socket_ifname() {
+    echo "$THEIA_NCCL_SOCKET_IFNAME"
+}
+
 function configure_test_env() {
     export UCX_TLS="tcp,self"
 
