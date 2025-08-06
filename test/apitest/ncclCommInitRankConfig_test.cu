@@ -786,3 +786,34 @@ TEST_F(ncclCommInitRankConfig_test, shared_plugin_lib) {
 
     free(comms);
 }
+
+TEST_F(ncclCommInitRankConfig_test, env_plugin) {
+    // Set environment variable to load the environment plugin
+    setenv("NCCL_ENV_PLUGIN", "libnccl-env-example.so", 1);
+
+    ncclComm_t *comms = NULL;
+    ncclUniqueId id;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+
+    ASSERT_NE(nullptr, comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t)));
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+
+    // Initialize communicators - this will trigger NCCL initialization
+    // which loads the environment plugin
+    ASSERT_EQ(ncclSuccess, ncclGroupStart());
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+        ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comms[i], ndev, id, i, &config));
+    }
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+    // Clean up communicators
+    for (int i = 0; i < ndev; ++i) {
+        ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
+    }
+
+    free(comms);
+
+    // Clean up environment variables
+    unsetenv("NCCL_ENV_PLUGIN");
+}

@@ -48,6 +48,9 @@ set(PLUGIN_SOURCES
     plugin/shared-plugins.cc
 )
 
+# Environment plugin source (built from ext-env/example)
+set(ENV_PLUGIN_SOURCE ${CMAKE_SOURCE_DIR}/ext-env/example/plugin.c)
+
 # Create object files for each CUDA source
 set(API_TEST_OBJECTS)
 foreach(source ${API_TEST_SOURCES})
@@ -153,6 +156,29 @@ foreach(plugin_source ${PLUGIN_SOURCES})
         POSITION_INDEPENDENT_CODE ON
     )
 endforeach()
+
+# Build environment plugin
+add_library(nccl-env-example SHARED ${ENV_PLUGIN_SOURCE})
+
+# Set output directory and properties for environment plugin
+set_target_properties(nccl-env-example PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/apitest/plugin
+    PREFIX "libnccl-"
+    SUFFIX ".so"
+    POSITION_INDEPENDENT_CODE ON
+)
+
+# Set include directories for environment plugin
+target_include_directories(nccl-env-example PRIVATE
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/include
+    ${CMAKE_SOURCE_DIR}/src/include/plugin
+    ${CMAKE_SOURCE_DIR}/ext-env/example/nccl
+    ${CUDAToolkit_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}/cccl
+)
+
+add_dependencies(nccl-env-example nccl_header)
 
 # Add test for static version
 add_test(NAME apitest_static

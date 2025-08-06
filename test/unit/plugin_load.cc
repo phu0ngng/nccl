@@ -8,21 +8,26 @@
 #include "nccl_net.h"
 #include "nccl_tuner.h"
 #include "nccl_profiler.h"
+#include "nccl_env.h"
 
 #define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v11"
 #define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v5"
 #define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v5"
+#define NCCL_ENV_PLUGIN_SYM "ncclEnvPlugin_v1"
 
 enum test {
   ncclPluginNetRelPathTest,
   ncclPluginTunerRelPathTest,
   ncclPluginProfilerRelPathTest,
+  ncclPluginEnvRelPathTest,
   ncclPluginNetAbsPathTest,
   ncclPluginTunerAbsPathTest,
   ncclPluginProfilerAbsPathTest,
+  ncclPluginEnvAbsPathTest,
   ncclPluginNetSuffixTest,
   ncclPluginTunerSuffixTest,
   ncclPluginProfilerSuffixTest,
+  ncclPluginEnvSuffixTest,
   ncclPluginNetStaticTest,
 };
 
@@ -30,9 +35,12 @@ const char* libName[] = {
   "libnccl-net-example.so",
   "libnccl-tuner-example.so",
   "libnccl-profiler-example.so",
+  "libnccl-env-example.so",
   "libnccl-net-example.so",
   "libnccl-tuner-example.so",
   "libnccl-profiler-example.so",
+  "libnccl-env-example.so",
+  "example",
   "example",
   "example",
   "example",
@@ -43,12 +51,15 @@ const char* testName[] = {
   "test_network_plugin_relpath",
   "test_tuner_plugin_relpath",
   "test_profiler_plugin_relpath",
+  "test_env_plugin_relpath",
   "test_network_plugin_abspath",
   "test_tuner_plugin_abspath",
   "test_profiler_plugin_abspath",
+  "test_env_plugin_abspath",
   "test_network_plugin_suffix",
   "test_tuner_plugin_suffix",
   "test_profiler_plugin_suffix",
+  "test_env_plugin_suffix",
   "test_network_plugin_static",
 };
 
@@ -154,6 +165,31 @@ static int test_plugin_load(enum test type) {
         return 1;
       }
       break;
+    case ncclPluginEnvRelPathTest:
+    case ncclPluginEnvAbsPathTest:
+    case ncclPluginEnvSuffixTest:
+      {
+        void* handle = ncclOpenEnvPluginLib(name);
+        if (handle) {
+          ncclEnv_t* sym = (ncclEnv_t*)dlsym(handle, NCCL_ENV_PLUGIN_SYM);
+          if (sym) {
+            if (strncmp(sym->name, "ncclEnvExample", strlen("ncclEnvExample")) == 0) {
+              ncclClosePluginLib(handle, ncclPluginTypeEnv);
+              fprintf(stdout, "%s: SUCCESS\n", testName[type]);
+              return 0;
+            }
+            ncclClosePluginLib(handle, ncclPluginTypeEnv);
+            fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
+            return 1;
+          }
+          ncclClosePluginLib(handle, ncclPluginTypeEnv);
+          fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
+          return 1;
+        }
+        fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
+        return 1;
+      }
+      break;
     default:;
   }
   return 1;
@@ -171,6 +207,9 @@ int main(void) {
   if (test_plugin_load(ncclPluginProfilerRelPathTest)) errors++;
   if (test_plugin_load(ncclPluginProfilerAbsPathTest)) errors++;
   if (test_plugin_load(ncclPluginProfilerSuffixTest)) errors++;
+  if (test_plugin_load(ncclPluginEnvRelPathTest)) errors++;
+  if (test_plugin_load(ncclPluginEnvAbsPathTest)) errors++;
+  if (test_plugin_load(ncclPluginEnvSuffixTest)) errors++;
   if (errors) {
     fprintf(stderr, "%d tests failed!\n", errors);
     return 1;

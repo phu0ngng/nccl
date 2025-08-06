@@ -38,7 +38,7 @@ DEP_FILES:= $(OBJ_FILES:%.o=%.d)
 
 LSB_RELEASE=$(shell lsb_release -is)
 #
-all:${EXE_FILES} net.build tuner.build profiler.build
+all:${EXE_FILES} net.build tuner.build profiler.build env.build
 	@printf "Syncing  %-35s > %s\n" topo ${DST_DIR}
 	rsync -q -av topo ${DST_DIR}
 
@@ -59,6 +59,9 @@ tuner.%:
 
 profiler.%:
 	${MAKE} -C $(BUILDDIR)/../ext-profiler/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+
+env.%:
+	${MAKE} -C $(BUILDDIR)/../ext-env/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 ${DST_DIR}/%.o:%.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
