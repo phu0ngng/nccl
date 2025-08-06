@@ -25,7 +25,6 @@ foreach(COLL IN LISTS COLLS)
     add_executable(${COLL}_perf ${COLL}.cu ${PERF_TEST_SOURCES})
     set_target_properties(${COLL}_perf PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/perf
-        CUDA_SEPARABLE_COMPILATION ON
     )
     # Set include directories
     target_include_directories(${COLL}_perf
@@ -34,6 +33,8 @@ foreach(COLL IN LISTS COLLS)
         ${CMAKE_SOURCE_DIR}/ext-profiler/example
     )
     if(MPI_FOUND)
+        add_compile_definitions(MPI_SUPPORT)
+        target_include_directories(${COLL}_perf PRIVATE ${MPI_CXX_INCLUDE_PATH})
         target_link_libraries(${COLL}_perf PRIVATE nccl ${CUDAToolkit_LIBRARIES} verifiable nccl-profiler-example ${MPI_CXX_LIBRARIES})
     else()
         target_link_libraries(${COLL}_perf PRIVATE nccl ${CUDAToolkit_LIBRARIES} verifiable nccl-profiler-example)
