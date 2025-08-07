@@ -11,7 +11,13 @@ NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
     bool multimem, ncclMultimemHandle mmHandle
   ):
   ncclLsaBarrierSession_internal<Coop>{
-    coop, comm, team, handle, (int)index, multimem, mmHandle, /*epoch=*/0
+    coop, comm, team, handle, (int)index,
+#if CUDART_VERSION >= 12060
+    multimem,
+#else // WAR for an issue with ptxas in CTK < 12.6
+    /*multimem=*/false,
+#endif
+    mmHandle, /*epoch=*/0
   } {
   uint32_t* state = (uint32_t*)ncclGetResourceBufferLocalPointer(comm, handle.bufHandle);
   this->epoch = state[(this->multimem ? 0 : 1)*this->handle.nBarriers + this->index];
