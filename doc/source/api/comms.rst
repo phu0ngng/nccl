@@ -217,8 +217,9 @@ ncclCommWindowRegister
 .. c:function:: ncclResult_t ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags)
 
 Collectively register local buffer *buff* with *size* under communicator *comm* into NCCL window. Since this is a collective call,
-every rank in the communicator needs to participate the registration, and *size* by default needs to be equal among the ranks. *win* is
-returned for future deregistration. See *buff* requirement and more instructions in :ref:`user_buffer_reg`. User can also pass
+every rank in the communicator needs to participate in the registration, and *size* by default needs to be equal among the ranks. *win* is
+returned for future deregistration (if called within a group, the value may not be filled in until ncclGroupEnd() has completed).
+See *buff* requirement and more instructions in :ref:`user_buffer_reg`. User can also pass
 different win flags to control the registration behavior. For more win flags information, please refer to :ref:`win_flags`.
 
 ncclCommWindowDeregister
