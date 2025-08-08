@@ -34,6 +34,35 @@ enum testType{
   TEST_INTER
 };
 
+struct testParam{
+  int ngpus;
+  bool inter;
+  bool intra;
+  bool dumpDiff;
+  bool dumpProcessedXml;
+  // split Mask
+  int splitMask;
+  int color;
+  // NIC fusion
+  int mergeLevel;
+  const char* forceMerge;
+  // multi-port systems
+  int portRatio;
+};
+
+#define TESTPARAM_INIT {\
+  /*ngpus=*/-1,\
+  /*inter=*/true,\
+  /*intra=*/true,\
+  /*dumpDiff=*/1,\
+  /*dumpProcessedXml=*/0,\
+  /*splitMask=*/ -1,\
+  /*color=*/0,\
+  /*mergeLevel=*/PATH_LOC,\
+  /*forceMerge=*/NULL,\
+  /*portRatio=*/1,\
+}
+
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, enum testType type, bool dumpDiff, int* errors, int* warnings) {
   if (ref->nChannels == 0 && out->nChannels == 0) return;
   if (memcmp(ref, out, sizeof(struct ncclTopoGraph)) != 0) {
@@ -171,12 +200,13 @@ void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
     snprintf(dev->pciPath, sizeof(dev->pciPath), "/sys/class/pci_bus/%.*s/%.*s", (int)strlen("0000:00"), busId, (int)strlen("0000:00:00.0"), busId);
     props->pciPath = dev->pciPath;
   }
+  INFO(NCCL_GRAPH | NCCL_NET, "%s: device %s:%d added with speed=%d, guid=0x%lx, pciPath=%s", __func__, props->name, props->port, props->speed, props->guid, props->pciPath);
 
   // It's assumed system.xml files won't have duplicate "dev" fields
   if (nPhysDevs < (devIndex + 1)) nPhysDevs = devIndex + 1;
 }
 
-void fakeNetPluginInit(struct ncclXml* xmlSystem) {
+void fakeNetPluginInit(struct ncclXml* xmlSystem, const struct testParam* param) {
   nPhysDevs = 0;
   nVirtualDevs = NCCL_UNDEF_DEV_COUNT;
   coll = 0;
@@ -294,31 +324,6 @@ void keepGpus(struct ncclXml* xmlSystem) {
   }
 }
 
-struct testParam{
-  int ngpus;
-  bool inter;
-  bool intra;
-  bool dumpDiff;
-  bool dumpProcessedXml;
-  // split Mask
-  int splitMask;
-  int color;
-  // NIC fusion
-  int mergeLevel;
-  const char* forceMerge;
-};
-
-#define TESTPARAM_INIT {\
-  /*ngpus=*/-1,\
-  /*inter=*/true,\
-  /*intra=*/true,\
-  /*dumpDiff=*/1,\
-  /*dumpProcessedXml=*/0,\
-  /*splitMask=*/ -1,\
-  /*color=*/0,\
-  /*mergeLevel=*/PATH_LOC,\
-  /*forceMerge=*/NULL\
-}
 
 void getTestParam(struct testParam* param) {
   // default parameters
@@ -347,6 +352,9 @@ void getTestParam(struct testParam* param) {
 
   str = getenv("NCCL_GRAPH_TEST_INTRA");
   if (str) param->intra = atoi(str) > 0;
+
+  str = getenv("NCCL_GRAPH_TEST_PORT_RATIO");
+  if (str) param->portRatio = atoi(str);
 }
 
 #define TIME_RING 0
@@ -355,6 +363,68 @@ void getTestParam(struct testParam* param) {
 #define TIME_NVLS 3
 #define TIME_TOTL 4
 #define TIME_SIZE 5
+
+#define MAX_TOPO_NODES 128
+
+static ncclResult_t xmlSplitNics(struct ncclXml* xmlSystem, int ratio){
+  if (ratio == 1) return ncclSuccess;
+
+  int listCount = 0;
+  struct ncclXmlNode* nodeList[MAX_TOPO_NODES];
+  {
+    // first list all the nets in the system to avoid counting new nets
+    struct ncclXmlNode* node;
+    CHECK(xmlFindTag(xmlSystem, "net", &node));
+    while (node) {
+      if (listCount >= MAX_TOPO_NODES) {
+        WARN("ERROR: too many networks devices in the topology for port duplication.");
+        return ncclInvalidArgument;
+      }
+      nodeList[listCount++] = node;
+      CHECK(xmlFindNextTag(xmlSystem, "net", node, &node));
+    }
+  }
+  for(int n=0; n<listCount; ++n){
+    const char *nameAttr;
+    int speed = -1, port = -1;
+    struct ncclXmlNode* node = nodeList[n];
+    CHECK(xmlGetAttrInt(node, "speed", &speed));
+    CHECK(xmlGetAttrIntDefault(node, "port", &port, 0));
+    CHECK(xmlGetAttr(node, "name", &nameAttr));
+    // copy the name to avoid recursive name modification
+    char* name = strdup(nameAttr);
+
+    // we need to get rid of the guid attr to avoid conflicts.
+    // Add NIC is supported without guid so it will not be an issue later.
+    int shift = 0;
+    for (int i = 0; i < node->nAttrs; ++i) {
+      if (strncmp(node->attrs[i].key, "guid", MAX_STR_LEN) == 0) {
+        shift = 1;
+      } else if (shift == 1) {
+        node->attrs[i - 1] = node->attrs[i];
+      }
+    }
+    node->nAttrs -= shift;
+
+    // add other nets
+    for (int i = 0; i < ratio; ++i) {
+      char subName[MAX_STR_LEN];
+      snprintf(subName, sizeof(subName), "%s-p%d", name, port + i);
+
+      struct ncclXmlNode* sub = node;
+      if (i > 0) CHECK(xmlAddNode(xmlSystem, node->parent, subName, &sub));
+      memcpy(sub, node, sizeof(struct ncclXmlNode));
+
+      // change the name, the speed, and the port, the rest stays the same
+      CHECK(xmlSetAttr(sub,"name",subName));
+      CHECK(xmlSetAttrInt(sub, "dev", n * ratio + i));
+      CHECK(xmlSetAttrInt(sub, "port", port + i));
+      CHECK(xmlSetAttrInt(sub, "speed", speed / ratio));
+    }
+    free(name);
+  }
+  return ncclSuccess;
+}
 
 void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, enum testType type, const struct testParam* param, int* errors, int* warnings) {
   struct ncclXml* xmlSystem;
@@ -370,7 +440,8 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   }
 
   // Inititalize a netState object for NIC fusion
-  fakeNetPluginInit(xmlSystem);
+  CHECK(xmlSplitNics(xmlSystem,param->portRatio));
+  fakeNetPluginInit(xmlSystem, param);
   struct ncclTopoNetInfo netInfo{};
   netInfo.coll = coll > 0;
   netInfo.netPluginIndex = 0;
@@ -567,6 +638,9 @@ static void buildGraphFilename(char* filename, size_t size, const char* topoDir,
   if (param->splitMask != -1) {
     snprintf(modifiers + strlen(modifiers), sizeof(modifiers) - strlen(modifiers), "-sm%d-c%d", param->splitMask, param->color);
   }
+  if(param->portRatio >1){
+    snprintf(modifiers + strlen(modifiers), sizeof(modifiers) - strlen(modifiers), "-pr%d", param->portRatio);
+  }
   // Then add any merge/force modifiers
   if (param->forceMerge != NULL) {
     snprintf(modifiers + strlen(modifiers), sizeof(modifiers) - strlen(modifiers), "-fm%s", param->forceMerge);
@@ -624,11 +698,19 @@ void checkPlatform(const char* platform, struct testParam* param, int* errors, i
 
 #define RUN(platform) checkPlatform(platform, &param, &errors, &warnings)
 
+#define RUN_PORT_RATIO(platform, r)                  \
+  do {                                               \
+    struct testParam p = param;                      \
+    p.portRatio = r;                                 \
+    p.intra = 0;                                     \
+    checkPlatform(platform, &p, &errors, &warnings); \
+  } while (0)
+
 #define RUN_FUSION(platform, level)                  \
   do {                                               \
     struct testParam p = param;                      \
     p.mergeLevel = level;                            \
-    p.intra = 0;                                   \
+    p.intra = 0;                                     \
     checkPlatform(platform, &p, &errors, &warnings); \
   } while (0)
 
@@ -766,7 +848,10 @@ int main(int argc, const char* argv[]) {
     }
     RUN("GB200-CX8-NVL4");
     RUN("GB200-CX8-NVL32");
-    RUN("GB300-CX8-NVL4");
+    {// GB300-NVL4
+      RUN("GB300-CX8-NVL4");               // IB
+      RUN_PORT_RATIO("GB300-CX8-NVL4", 2); // RoCE 2 ports
+    }
     RUN("GB300-CX8-NVL32");
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
