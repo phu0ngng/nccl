@@ -14,7 +14,7 @@ ifeq ($(MPI_IBM),1)
 NVCUFLAGS += -DMPI_SUPPORT
 NVLDFLAGS += -lmpi_ibm
 endif
-LIBRARIES += nccl-profiler-example nccl m stdc++
+LIBRARIES += nccl m stdc++
 NVLDFLAGS += -L$(NCCLDIR)/lib $(LIBRARIES:%=-l%) -lcuda
 RPATHS = $$ORIGIN
 

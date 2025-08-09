@@ -28,3 +28,5 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
 void writeResultHeader(bool report_cputime, bool simulate);
 void writeResultFooter(const int errors[], const double bw[], double check_avg_bw);
 void writeErrors();
+int ncclProfilerLoad(void);
+int ncclProfilerUnload(void);
