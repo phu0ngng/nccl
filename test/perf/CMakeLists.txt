@@ -31,6 +31,7 @@ foreach(COLL IN LISTS COLLS)
         PRIVATE
         ${CMAKE_BINARY_DIR}/include
         ${CMAKE_SOURCE_DIR}/ext-profiler/example
+        ${CMAKE_SOURCE_DIR}/ext-profiler/example/nccl
     )
     if(MPI_FOUND)
         add_compile_definitions(MPI_SUPPORT)

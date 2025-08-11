@@ -11,7 +11,7 @@
 // except some of the usual ones.
 
 #include "nccl.h"
-#include "nccl_profiler.h"
+#include "profiler.h"
 #include "util.h"
 #include <assert.h>
 #include <errno.h>
