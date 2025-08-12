@@ -40,6 +40,8 @@ add_subdirectory(nccl_device)
 add_subdirectory(ras)
 add_subdirectory(scheduler)
 
+add_compile_options(-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/=)
+
 # Add all source files
 list(APPEND LIBSRCFILES
     ${TRANSPORT_SOURCES}
