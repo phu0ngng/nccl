@@ -253,7 +253,7 @@ struct ncclProxyProgressState {
   ncclShmHandle_t handle;
   char opsPoolShmSuffix[6];
 
-  pthread_t thread;
+  std::thread thread;
   volatile int stop;
   struct ncclProxyPeer** localPeers;
   struct ncclSharedNetComms* netComms[NCCL_MAX_NETDEVS];
@@ -325,8 +325,8 @@ struct ncclProxyState {
   uint32_t* abortFlag;
   bool directMode;
   // Service threads
-  pthread_t thread;
-  pthread_t threadUDS;
+  std::thread thread;
+  std::thread threadUDS;
   struct ncclSocket* listenSock;
   struct ncclIpcSocket ipcSock;
   int stop;

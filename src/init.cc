@@ -237,11 +237,11 @@ static ncclResult_t commFree(ncclComm_t comm) {
   /* in commReclaim, we have guaranteed only last rank which calls ncclCommDestroy() will
    * free all intra-process communicators; therefore, we only need to focus on local
    * resource cleanup in commFree(). */
-  if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
-    PTHREADCHECK(pthread_join(comm->proxyState->thread, nullptr), "pthread_join");
-    if (comm->proxyState->threadUDS) {
+  if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread.joinable()) {
+    comm->proxyState->thread.join();
+    if (comm->proxyState->threadUDS.joinable()) {
       // UDS support
-      PTHREADCHECK(pthread_join(comm->proxyState->threadUDS, nullptr), "pthread_join");
+      comm->proxyState->threadUDS.join();
     }
   }
 

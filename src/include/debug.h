@@ -10,8 +10,7 @@
 #include "nccl.h"
 #include "nccl_common.h"
 #include <stdio.h>
-
-#include <pthread.h>
+#include <thread>
 
 // Conform to pthread and NVTX standard
 #define NCCL_THREAD_NAMELEN 16
@@ -56,7 +55,7 @@ extern char ncclLastError[];
 #define TRACE(...)
 #endif
 
-void ncclSetThreadName(pthread_t thread, const char *fmt, ...);
+void ncclSetThreadName(std::thread& thread, const char *fmt, ...);
 
 void ncclResetDebugInit();
 

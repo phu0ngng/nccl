@@ -42,7 +42,7 @@ static int rasInitRefCount = 0;
 // The RAS network listening socket of this RAS thread (random port).
 struct ncclSocket rasNetListeningSocket;
 
-static pthread_t rasThread;
+static std::thread rasThread;
 
 // Used for communication from regular NCCL threads to the RAS thread.
 static std::mutex rasNotificationMutex;
@@ -103,7 +103,7 @@ ncclResult_t ncclRasCommInit(struct ncclComm* comm, struct rasRankInit* myRank) 
 
       SYSCHECKGOTO(pipe(rasNotificationPipe), "pipe", ret, fail);
 
-      PTHREADCHECKGOTO(pthread_create(&rasThread, nullptr, &rasThreadMain, nullptr), "pthread_create", ret, fail);
+      rasThread = std::thread(rasThreadMain, nullptr);
       ncclSetThreadName(rasThread, "NCCL RAS");
 
       rasInitialized = true;
@@ -171,7 +171,7 @@ static void rasTerminate() {
   memset(&msg, '\0', sizeof(msg));
   msg.type = RAS_TERMINATE;
   if (rasLocalNotify(&msg) == ncclSuccess)
-    (void)pthread_join(rasThread, nullptr);
+    rasThread.join();
 }
 
 // Invoked by regular NCCL threads on every (non-split) comm initialization.  Provides info on all the ranks within
