@@ -117,6 +117,9 @@ __hidden ncclResult_t pluginCloseListen(void* listenComm) {
   free(listenComm);
   return ncclSuccess;
 }
+__hidden ncclResult_t pluginGetDeviceMr(void* comm, void* mhandle, void** dptr_mhandle) {
+  return ncclSuccess;
+}
 __hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) {
   return ncclSuccess;
 }
@@ -139,5 +142,6 @@ extern "C" __attribute__((visibility("default"))) const ncclNet_v8_t ncclNetPlug
   .closeSend = pluginCloseSend,
   .closeRecv = pluginCloseRecv,
   .closeListen = pluginCloseListen,
+  .getDeviceMr = pluginGetDeviceMr,
   .irecvConsumed = pluginIrecvConsumed,
 };
