@@ -36,7 +36,23 @@ typedef struct {
   ncclNetVDeviceProps_v11_t vProps;
   size_t maxP2pBytes;              // Max transfer size for point-to-point operations
   size_t maxCollBytes;             // Max transfer size for collective operations
+  int maxMultiRequestSize;         // Maximum number of requests supported in a single multi-request.
 } ncclNetProperties_v11_t;
+
+typedef struct {
+  int32_t maxConcurrentPeers;
+  int32_t minConcurrentPeers;
+  int32_t maxFlowsPerPeer;
+  int32_t minFlowsPerPeer;
+} ncclNetCommAttr_v11_t;
+
+typedef struct {
+  ncclNetCommAttr_v11_t sendCommAttr;
+  ncclNetCommAttr_v11_t recvCommAttr;
+  uint32_t op;
+  uint32_t algo;
+  uint32_t proto;
+} ncclNetAttr_v11_t;
 
 typedef struct {
   // Name of the network (mainly for logs)
@@ -97,6 +113,8 @@ typedef struct {
   ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_v11_t* props);
   // Finalize the network.
   ncclResult_t (*finalize)(void* ctx);
+
+  ncclResult_t (*setNetAttr)(void* ctx, ncclNetAttr_v11_t* netAttr);
 } ncclNet_v11_t;
 
 #endif // end include guard
