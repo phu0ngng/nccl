@@ -8,6 +8,7 @@
 #include "common.h"
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 #include "nccl_device.h"
+#include "vector_types.h"
 #endif
 
 void AlltoAllGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
@@ -54,9 +55,9 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 }
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-// Device implementation #1
+// Device implementation #1 - simple NVL kernel
 template <typename T>
-__global__ void alltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+__global__ void NvlAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
   ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
@@ -66,11 +67,74 @@ __global__ void alltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWind
   int nthreads = blockDim.x * gridDim.x;
   T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, rank);
 
-  for (int peer = 0; peer < nRanks; peer++) {
-    T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
-
-    for (size_t offset = tid; offset < count; offset += nthreads) {
+  for (size_t offset = tid; offset < count; offset += nthreads) {
+    for (int peer = 0; peer < nRanks; peer++) {
       T value = sendPtr[peer * count + offset];
+      T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+      recvPtr[rank * count + offset] = value;
+    }
+  }
+
+  bar.sync(ncclCoopCta(), cuda::memory_order_release);
+}
+
+// Device implementation #2 - optimized NVL kernel using vectorization and unrolling
+template <typename T>
+__global__ void NvlAlltoAllKernelOptimized(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
+
+  using TN = typename VectorTypeMapping<T>::Type;
+  constexpr int VECTOR_FACTOR = sizeof(TN) / sizeof(T);
+  constexpr int UNROLL_FACTOR = 128/sizeof(TN);
+  constexpr int PEER_UNROLL = 2;
+
+  int rank = devComm.rank, nRanks = devComm.nRanks;
+  int tid = threadIdx.x + blockDim.x * blockIdx.x;
+  int nthreads = blockDim.x * gridDim.x;
+
+  T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, rank);
+  size_t vector_count = count / VECTOR_FACTOR;
+  int elements_per_iteration = nthreads * UNROLL_FACTOR;
+
+  // main vectorized processing of elements
+  for (size_t base_offset = tid; base_offset < vector_count; base_offset += elements_per_iteration) {
+    // unroll a limited number of peers at a time
+    for (int peerBase = 0; peerBase < nRanks; peerBase += PEER_UNROLL) {
+      int peersInGroup = min(PEER_UNROLL, nRanks - peerBase);
+
+      #pragma unroll
+      for (int p = 0; p < peersInGroup; p++) {
+        int peer = peerBase + p;
+        TN* sendVecPtr = (TN*)(sendPtr + peer * count);
+        TN* recvVecPtr = (TN*)((T*)ncclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
+        TN values[UNROLL_FACTOR];
+
+        // split load/store into separate loops for better overlap and ILP
+        #pragma unroll
+        for (int i = 0; i < UNROLL_FACTOR; i++) {
+          size_t offset = base_offset + i * nthreads;
+          if (offset < vector_count) {
+            values[i] = sendVecPtr[offset];
+          }
+        }
+        #pragma unroll
+        for (int i = 0; i < UNROLL_FACTOR; i++) {
+          size_t offset = base_offset + i * nthreads;
+          if (offset < vector_count) {
+            recvVecPtr[offset] = values[i];
+          }
+        }
+      }
+    }
+  }
+
+  // handle any remaining elements not divisible by vectorization factor
+  size_t scalar_start = vector_count * VECTOR_FACTOR;
+  for (size_t offset = scalar_start + tid; offset < count; offset += nthreads) {
+    for (int peer = 0; peer < nRanks; peer++) {
+      T value = sendPtr[peer * count + offset];
+      T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
       recvPtr[rank * count + offset] = value;
     }
   }
@@ -100,10 +164,15 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
     return testNcclError;
 #endif
   } else {
-    if (deviceImpl == 1) {
-      TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(alltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
-    } else {
-      return testNotImplemented;
+    switch(deviceImpl) {
+      case 1:
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+        return testSuccess;
+      case 2:
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernelOptimized, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+        return testSuccess;
+      default:
+        return testNotImplemented;
     }
   }
   return testSuccess;
