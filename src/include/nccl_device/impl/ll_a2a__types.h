@@ -4,7 +4,7 @@
 #include "core__types.h"
 
 struct ncclLLA2AHandle {
-  ncclDevResourceHandle bufHandle;
+  ncclDevResourceHandle_t bufHandle;
   uint32_t nSlots;
 };
 

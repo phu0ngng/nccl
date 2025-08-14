@@ -4,6 +4,8 @@
 #include "core__funcs.h"
 #include "comm__types.h"
 
+#if __cplusplus
+
 template<typename T>
 NCCL_HOST_DEVICE_INLINE constexpr ncclSymPtr<T>::ncclSymPtr(ncclWindow_t window, size_t offset):
   window(window), offset(offset) {
@@ -145,4 +147,5 @@ NCCL_HOST_DEVICE_INLINE bool operator!=(ncclSymPtr<T> a, ncclSymPtr<T> b) {
   return a.window != b.window || a.offset != b.offset;
 }
 
+#endif // __cplusplus
 #endif // _NCCL_DEVICE_PTR__FUNCS_H_

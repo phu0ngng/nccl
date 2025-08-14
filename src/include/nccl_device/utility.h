@@ -12,12 +12,20 @@
   #define NCCL_HOST_DEVICE_INLINE inline __attribute__((always_inline))
 #endif
 
+#if __cplusplus
+#define NCCL_EXTERN_C extern "C"
+#else
+#define NCCL_EXTERN_C
+#endif
+
 #include <stdint.h>
+#include <stdbool.h>
 
 #if __CUDACC__
 #include <cuda/atomic>
 #endif
 
+#if __cplusplus
 namespace nccl {
 namespace utility {
 
@@ -334,5 +342,5 @@ struct Optional {
 };
 
 }}
-
+#endif // __cplusplus
 #endif

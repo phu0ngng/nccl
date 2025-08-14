@@ -1,11 +1,10 @@
 #ifndef _NCCL_DEVICE_MEM_BARRIER_H_
 #define _NCCL_DEVICE_MEM_BARRIER_H_
 #include "impl/core__types.h"
-#include <cuda/atomic>
 
 struct ncclLsaBarrierHandle;
 
-__host__ ncclResult_t ncclLsaBarrierCreateRequirement(ncclTeam, int nBarriers, ncclLsaBarrierHandle* outHandle, ncclDevResourceRequirements* outReq);
+NCCL_EXTERN_C __host__ ncclResult_t ncclLsaBarrierCreateRequirement(ncclTeam_t, int nBarriers, ncclLsaBarrierHandle_t* outHandle, ncclDevResourceRequirements_t* outReq);
 
 #if __CUDACC__
 template<typename Coop>

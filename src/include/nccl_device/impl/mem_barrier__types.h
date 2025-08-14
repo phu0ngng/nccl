@@ -4,7 +4,7 @@
 #include "core__types.h"
 
 struct ncclLsaBarrierHandle {
-  ncclDevResourceHandle bufHandle;
+  ncclDevResourceHandle_t bufHandle;
   int nBarriers;
 };
 
