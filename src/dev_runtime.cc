@@ -394,6 +394,10 @@ static void symMemoryDropRef(
     for (struct ncclDevrTeam* t = devr->teamHead; t != nullptr; t = t->next) {
       symUnbindTeamMemory(comm, t, mem);
     }
+    for (int r = 0; r < devr->lsaSize; r++) {
+      CUdeviceptr addr = reinterpret_cast<uintptr_t>((char*)devr->lsaFlatBase + r*devr->bigSize + mem->bigOffset);
+      CUCHECKIGNORE(cuMemUnmap(addr, mem->size));
+    }
     ncclSpaceFree(&devr->bigSpace, mem->bigOffset, mem->size);
     CUCHECKIGNORE(cuMemRelease(mem->memHandle));
 
