@@ -287,8 +287,11 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
           // NVLS/NVLStree needs at least 2 channels
           if (graphs[a]->nChannels < 2 ) continue;
           // Convert to NVLS busBW/channel
-          float intraBw = graphs[a]->bwIntra * nvlsEfficiency[compCapIndex] * (graphs[a]->nChannels - 1) / graphs[a]->nChannels  * 2;
-          if (!(coll == ncclFuncAllReduce)) {
+          float intraBw = graphs[a]->bwIntra * nvlsEfficiency[compCapIndex] * (graphs[a]->nChannels - 1) / graphs[a]->nChannels;
+	  // AllReduce pipelines two operations.
+          if (coll == ncclFuncAllReduce) {
+            intraBw *= 2.0f;
+          } else {
             intraBw *= (ppn - 1) / ppn;
           }
           // Handle 2 node case of NVLSTree
