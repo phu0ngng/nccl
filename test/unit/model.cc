@@ -189,7 +189,7 @@ void getTestParam(struct testParam* param) {
   const char* str = getenv("NCCL_MODEL_TEST_NGPUS");
   if (str) param->ngpus = atoi(str);
 
-  str = getenv("NCCL_MODEL_TEST_NNodes"); 
+  str = getenv("NCCL_MODEL_TEST_NNodes");
   if (str) param->nnodes = atoi(str);
 
   str = getenv("NCCL_MODEL_TEST_Platform");
@@ -328,8 +328,8 @@ void keepGpus(struct ncclXml* xmlSystem) {
 
 
 void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
-  
-  
+
+
   int ngpus = param.ngpus;
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
