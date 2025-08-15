@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <cstring>
+#include "err.h"
 #include "profiler.h"
 #include "queue.h"
 #include <cuda_runtime.h>

@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include <stdio.h>
+#include "err.h"
 #include "profiler.h"
 #include "event.h"
 #include "print_event.h"

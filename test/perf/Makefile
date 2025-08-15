@@ -5,7 +5,7 @@ include ../../makefiles/common.mk
 PROFDIR := $(abspath ../../ext-profiler/example)
 BUILDDIR := $(abspath ../../build)
 NCCLDIR := $(BUILDDIR)
-NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include -g -I$(PROFDIR)
+NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include -g -I$(PROFDIR)/nccl -I$(PROFDIR)
 ifeq ($(MPI), 1)
 NVCUFLAGS += -DMPI_SUPPORT -I$(MPI_HOME)/include
 NVLDFLAGS += -L$(MPI_HOME)/lib -lmpi

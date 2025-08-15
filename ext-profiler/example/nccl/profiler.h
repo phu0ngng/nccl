@@ -11,7 +11,6 @@
 #include <stdlib.h>
 
 #include "common.h"
-#include "err.h"
 
 enum {
   ncclProfileGroup          = (1 << 0),  // group event type
