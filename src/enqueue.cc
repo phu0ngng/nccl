@@ -1545,8 +1545,6 @@ ncclResult_t ncclLaunchKernelBefore_NoUncapturedCuda(struct ncclComm* comm, stru
 NCCL_PARAM(MemSyncDomain, "MEM_SYNC_DOMAIN", cudaLaunchMemSyncDomainRemote);
 #endif
 
-NCCL_PARAM(NvlinkUtilCentricSchedEnable, "NVLINK_UTIL_CENTRIC_SCHED_ENABLE", 0);
-
 ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   ncclResult_t ret = ncclSuccess;
   struct ncclKernelPlanner* planner = &comm->planner;
@@ -1622,7 +1620,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
     #if CUDART_VERSION >= 13000
     if (compCap >= 90 && driverVersion >= 13000) {
       launchAttrs[attrs].id = CU_LAUNCH_ATTRIBUTE_NVLINK_UTIL_CENTRIC_SCHEDULING;
-      launchAttrs[attrs].value.nvlinkUtilCentricScheduling = ncclParamNvlinkUtilCentricSchedEnable();
+      launchAttrs[attrs].value.nvlinkUtilCentricScheduling = comm->config.nvlinkCentricSched;
       attrs++;
     }
     #endif
