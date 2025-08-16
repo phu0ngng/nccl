@@ -411,7 +411,7 @@ void ncclResetDebugInit() {
 
 NCCL_PARAM(SetThreadName, "SET_THREAD_NAME", 0);
 
-void ncclSetThreadName(pthread_t thread, const char *fmt, ...) {
+void ncclSetThreadName(std::thread& thread, const char *fmt, ...) {
   // pthread_setname_np is nonstandard GNU extension
   // needs the following feature test macro
 #ifdef _GNU_SOURCE
@@ -421,6 +421,6 @@ void ncclSetThreadName(pthread_t thread, const char *fmt, ...) {
   va_start(vargs, fmt);
   vsnprintf(threadName, NCCL_THREAD_NAMELEN, fmt, vargs);
   va_end(vargs);
-  pthread_setname_np(thread, threadName);
+  pthread_setname_np(thread.native_handle(), threadName);
 #endif
 }
