@@ -1372,6 +1372,8 @@ NCCL_PARAM(MinCTAs, "MIN_CTAS", NCCL_CONFIG_UNDEF_INT);
 #define NCCL_MAX_CGA_CLUSTER_SIZE 8
 
 NCCL_PARAM(NChannelsPerNetPeer, "NCHANNELS_PER_NET_PEER", NCCL_CONFIG_UNDEF_INT);
+NCCL_PARAM(NvlinkUtilCentricSchedEnable, "NVLINK_UTIL_CENTRIC_SCHED_ENABLE", 0);
+
 
 #define NCCL_COMMINIT_FUNCNAME_LEN 128
 struct ncclCommInitRankAsyncJob {
@@ -1594,6 +1596,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int shrinkShareEnv;
   int nvlsCTAsEnv;
   int nChannelsPerNetPeerEnv;
+  int nvlinkUtilCentricSchedEnableEnv;
 
   /* override configuration with env variable. */
   blockingEnv = ncclParamCommBlocking();
@@ -1631,6 +1634,14 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
       INFO(NCCL_ENV, "NCCL_NCHANNELS_PER_NET_PEER %d is too low, leaving it set at %d", nChannelsPerNetPeerEnv, comm->config.nChannelsPerNetPeer);
     else
       comm->config.nChannelsPerNetPeer = nChannelsPerNetPeerEnv;
+  }
+
+  nvlinkUtilCentricSchedEnableEnv = ncclParamNvlinkUtilCentricSchedEnable();
+  if (nvlinkUtilCentricSchedEnableEnv != NCCL_CONFIG_UNDEF_INT) {
+    if (nvlinkUtilCentricSchedEnableEnv != 0 && nvlinkUtilCentricSchedEnableEnv != 1)
+      INFO(NCCL_ENV, "NCCL_NVLINK_UTIL_CENTRIC_SCHED_ENABLE %d is not valid, leaving it set at %d", nvlinkUtilCentricSchedEnableEnv, comm->config.nvlinkCentricSched);
+    else
+      comm->config.nvlinkCentricSched = nvlinkUtilCentricSchedEnableEnv;
   }
 
   envNetName = ncclGetEnv("NCCL_NET");
@@ -1709,6 +1720,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
     INFO(NCCL_ENV, "nvlsCTAs %d is not a valid value, NCCL will decide the default value automatically", comm->config.nvlsCTAs);
     comm->config.nvlsCTAs = NCCL_CONFIG_UNDEF_INT;
   }
+
   return ret;
 }
 
@@ -1762,6 +1774,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     }
     if (internalConfigPtr->version < NCCL_VERSION(2, 28, 0)) {
       internalConfigPtr->nChannelsPerNetPeer = defaultConfig.nChannelsPerNetPeer;
+      internalConfigPtr->nvlinkCentricSched = defaultConfig.nvlinkCentricSched;
     }
   }
 
@@ -1825,6 +1838,12 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     goto fail;
   }
 
+  if (internalConfigPtr->nvlinkCentricSched != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->nvlinkCentricSched != 0 && internalConfigPtr->nvlinkCentricSched != 1) {
+    WARN("Invalid config nvlinkCentricSched attribute value %d", internalConfigPtr->nvlinkCentricSched);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
   /* default config value can be tuned on different platform. */
   NCCL_CONFIG_DEFAULT(internalConfigPtr, blocking, NCCL_CONFIG_UNDEF_INT, 1, "Blocking", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, cgaClusterSize, NCCL_CONFIG_UNDEF_INT, 4, "CGA cluster size", "%d");
@@ -1840,6 +1859,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   NCCL_CONFIG_DEFAULT(internalConfigPtr, nvlsCTAs, NCCL_CONFIG_UNDEF_INT, NCCL_CONFIG_UNDEF_INT, "nvlsCTAs", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, nChannelsPerNetPeer, NCCL_CONFIG_UNDEF_INT,
                       NCCL_CONFIG_UNDEF_INT, "nChannelsPerNetPeer", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, nvlinkCentricSched, NCCL_CONFIG_UNDEF_INT, 0, "nvlinkCentricSched", "%d");
 
   /* assign config to communicator */
   comm->config.blocking = internalConfigPtr->blocking;
@@ -1855,6 +1875,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   comm->config.shrinkShare = internalConfigPtr->shrinkShare;
   comm->config.nvlsCTAs = internalConfigPtr->nvlsCTAs;
   comm->config.nChannelsPerNetPeer = internalConfigPtr->nChannelsPerNetPeer;
+  comm->config.nvlinkCentricSched = internalConfigPtr->nvlinkCentricSched;
   NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
 
 exit:

@@ -951,6 +951,8 @@ testResult_t threadInit(struct threadArgs* args) {
   config.splitShare = split_share;
   config.trafficClass = trafficClass;
   config.CTAPolicy = ctaPolicy;
+  config.nvlinkCentricSched = 1;
+
   NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < args->nGpus; ++i) {
     int rank = args->globalProc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
@@ -1763,6 +1765,7 @@ testResult_t run() {
     config.trafficClass = trafficClass;
     config.commName = "perftest";
     config.CTAPolicy = ctaPolicy;
+    config.nvlinkCentricSched = 1;
 
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < nGpus * nThreads; ++i) {
