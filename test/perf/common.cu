@@ -17,7 +17,6 @@
 #include <ctype.h>
 #include "cuda.h"
 #include "util.h"
-#include "plugin.h" // example profiler header
 
 #include "../verifiable/verifiable.h"
 
@@ -25,6 +24,10 @@
     (((x)+(y)-1)/(y))
 
 int test_ncclVersion = 0; // init'd with ncclGetVersion()
+
+// profiler start and stop
+extern int (*ncclProfilerStart)(int64_t profilerMask, const char* profilerDump);
+extern int (*ncclProfilerStop)(void);
 
 #if NCCL_MAJOR >= 2
   ncclDataType_t test_types[ncclNumTypes] = {
@@ -705,9 +708,9 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
     if (record) TESTCHECK(recordEvents(args, actualIters, iter));
 
     for (int aiter = 0; aiter < agg_iters; aiter++) {
-      if (profilerMask && profilerIter < profilerIters) exampleProfilerStart(profilerMask, profilerDump);
+      if (profilerMask && profilerIter < profilerIters) ncclProfilerStart(profilerMask, profilerDump);
       TESTCHECK(startColl(args, type, op, root, in_place, iter*agg_iters+aiter));
-      if (profilerMask && profilerIter++ < profilerIters) exampleProfilerStop();
+      if (profilerMask && profilerIter++ < profilerIters) ncclProfilerStop();
     }
     if (agg_iters>1) NCCLCHECK(ncclGroupEnd());
   }
@@ -1533,20 +1536,22 @@ int main(int argc, char* argv[], char **envp) {
   if (tuning) {
     setenv("NCCL_PROFILER_PLUGIN", "STATIC_PLUGIN", 1);
   } else {
-    const char* profilerMaskStr = getenv("NCCL_PERF_PROFILER_MASK");
-    if (profilerMaskStr) {
-      profilerMask = strtol(profilerMaskStr, nullptr, 0);
-    }
-    const char* profilerDumpStr = getenv("NCCL_PERF_PROFILER_DUMP");
-    if (profilerDumpStr) {
-      profilerDump = (char *)profilerDumpStr;
-    }
-    const char* profilerItersStr = getenv("NCCL_PERF_PROFILER_ITERS");
-    if (profilerItersStr) {
-      profilerIters = strtol(getenv("NCCL_PERF_PROFILER_ITERS"), nullptr, 0);
-    }
-    if (profilerMask != 0) {
-      setenv("NCCL_PROFILER_PLUGIN", "example", 1);
+    if (ncclProfilerLoad() == 0) {
+      const char* profilerMaskStr = getenv("NCCL_PERF_PROFILER_MASK");
+      if (profilerMaskStr) {
+        profilerMask = strtol(profilerMaskStr, nullptr, 0);
+      }
+      const char* profilerDumpStr = getenv("NCCL_PERF_PROFILER_DUMP");
+      if (profilerDumpStr) {
+        profilerDump = (char *)profilerDumpStr;
+      }
+      const char* profilerItersStr = getenv("NCCL_PERF_PROFILER_ITERS");
+      if (profilerItersStr) {
+        profilerIters = strtol(getenv("NCCL_PERF_PROFILER_ITERS"), nullptr, 0);
+      }
+      if (profilerMask != 0) {
+        setenv("NCCL_PROFILER_PLUGIN", "example", 1);
+      }
     }
   }
 #ifdef MPI_SUPPORT
@@ -1566,6 +1571,8 @@ int main(int argc, char* argv[], char **envp) {
   testResult_t result = run();
 
   outputFileFinalize(output_file_type);
+
+  ncclProfilerUnload();
 
   TESTCHECK(result);
 
