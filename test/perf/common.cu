@@ -1070,6 +1070,7 @@ testResult_t threadInit(struct threadArgs* args) {
         ncclDevCommRequirements reqs;
         memset(&reqs, 0, sizeof(reqs));
         reqs.lsaBarrierCount = 16;
+        reqs.multimem = true;
         NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
       }
 #endif
@@ -1886,6 +1887,7 @@ testResult_t run() {
           ncclDevCommRequirements reqs;
           memset(&reqs, 0, sizeof(reqs));
           reqs.lsaBarrierCount = 16;
+          reqs.multimem = true;
           NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
         }
 #endif
