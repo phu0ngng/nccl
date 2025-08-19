@@ -166,7 +166,10 @@ static ncclResult_t ncclNet_init(void** ctx __attribute__((unused)),
     uint64_t commId __attribute__((unused)),
     ncclNetCommConfig_t* config __attribute__((unused)),
     ncclDebugLogger_t logfn, ncclProfilerCallback_t proffn) {
-  if (refCount[NET_INDEX]++ > 0) return ncclSuccess;
+  // before ncclNet_v11 the net plugin was initialized only once. With ncclNet_v11 this is no longer the case.
+  // The compat layer preserves the ncclNet_v8 behavior using a refCount to track the number of times the plugin
+  // is initialized, and avoid initializing it multiple times.
+  if (refCount[NET_INDEX]++) return ncclSuccess;
   NCCLCHECK(ncclNet_v8->init(logfn));
   ncclNet.devices = ncclNet_v8->devices;
   ncclNet.getProperties = ncclNet_getProperties;
@@ -205,7 +208,10 @@ ncclNet_t* getNcclNet_v8(void* lib) {
 static ncclResult_t ncclCollNet_init(void** ctx __attribute__((unused)),
     uint64_t commId __attribute__((unused)),
     ncclDebugLogger_t logfn) {
-  if (refCount[COLLNET_INDEX]++ > 0) return ncclSuccess;
+  // before ncclCollNet_v11 the collnet plugin was initialized only once. With ncclCollNet_v11 this is no longer the case.
+  // The compat layer preserves the ncclCollNet_v8 behavior using a refCount to track the number of times the plugin
+  // is initialized, and avoid initializing it multiple times.
+  if (refCount[COLLNET_INDEX]++) return ncclSuccess;
   NCCLCHECK(ncclCollNet_v8->init(logfn));
   ncclCollNet.devices = ncclCollNet_v8->devices;
   ncclCollNet.getProperties = ncclCollNet_getProperties;
