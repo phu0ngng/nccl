@@ -39,6 +39,12 @@ template<typename Coop>
 NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::~ncclLsaBarrierSession() {
   uint32_t* state = (uint32_t*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   if (this->coop.thread_rank() == 0) {
+#if __CUDA_ARCH__ == 1200 && CUDART_VERSION < 13000
+    // WAR for a compiler issue with CTK < 13.0
+    if (this->index == 0)
+      state[(this->multimem ? 0 : 1)*this->handle.nBarriers] = this->epoch;
+    else
+#endif
     state[(this->multimem ? 0 : 1)*this->handle.nBarriers + this->index] = this->epoch;
   }
   this->coop.sync();
