@@ -55,16 +55,9 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 }
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-// Device implementation #1 - simple NVL kernel
+// shared scalar AlltoAll implementation used by both kernels
 template <typename T>
-__global__ void NvlAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
-  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
-
-  int rank = devComm.rank, nRanks = devComm.nRanks;
-
-  int tid = threadIdx.x + blockDim.x * blockIdx.x;
-  int nthreads = blockDim.x * gridDim.x;
+__device__ void AlltoAllScalarImpl(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int rank, int nRanks, int tid, int nthreads) {
   T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, rank);
 
   for (size_t offset = tid; offset < count; offset += nthreads) {
@@ -74,6 +67,19 @@ __global__ void NvlAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclW
       recvPtr[rank * count + offset] = value;
     }
   }
+}
+
+// Device implementation #1 - simple NVL kernel
+template <typename T>
+__global__ void NvlAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
+
+  int rank = devComm.rank, nRanks = devComm.nRanks;
+  int tid = threadIdx.x + blockDim.x * blockIdx.x;
+  int nthreads = blockDim.x * gridDim.x;
+
+  AlltoAllScalarImpl<T>(sendwin, sendoffset, recvwin, recvoffset, count, rank, nRanks, tid, nthreads);
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
@@ -94,57 +100,66 @@ __global__ void NvlAlltoAllKernelOptimized(ncclWindow_t sendwin, size_t sendoffs
   int nthreads = blockDim.x * gridDim.x;
 
   T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, rank);
-  size_t vector_count = count / VECTOR_FACTOR;
-  int elements_per_iteration = nthreads * UNROLL_FACTOR;
 
-  // round down vector_count to be divisible by elements_per_iteration
-  size_t aligned_vector_count = (vector_count / elements_per_iteration) * elements_per_iteration;
+  // alignment check: can we use vectorized operations?
+  bool canVectorize = (sizeof(TN) > sizeof(T)) &&  // Only if vectorization helps
+                      (reinterpret_cast<uintptr_t>(sendPtr) % sizeof(TN) == 0) &&  // Base aligned
+                      ((count * sizeof(T)) % sizeof(TN) == 0);  // Stride compatible
 
-  // process aligned vectorized elements without bounds checks
-  for (size_t base_offset = tid; base_offset < aligned_vector_count; base_offset += elements_per_iteration) {
-    // unroll a limited number of peers at a time
-    for (int peerBase = 0; peerBase < nRanks; peerBase += PEER_UNROLL) {
-      int peersInGroup = min(PEER_UNROLL, nRanks - peerBase);
+  if (canVectorize) {
+    size_t vector_count = count / VECTOR_FACTOR;
+    int elements_per_iteration = nthreads * UNROLL_FACTOR;
 
-      #pragma unroll
-      for (int p = 0; p < peersInGroup; p++) {
-        int peer = peerBase + p;
-        TN* sendVecPtr = (TN*)(sendPtr + peer * count);
-        TN* recvVecPtr = (TN*)((T*)ncclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
-        TN values[UNROLL_FACTOR];
+    // process aligned vectorized elements without bounds checks
+    size_t aligned_vector_count = (vector_count / elements_per_iteration) * elements_per_iteration;
+    for (size_t base_offset = tid; base_offset < aligned_vector_count; base_offset += elements_per_iteration) {
+      // unroll a limited number of peers at a time
+      for (int peerBase = 0; peerBase < nRanks; peerBase += PEER_UNROLL) {
+        int peersInGroup = min(PEER_UNROLL, nRanks - peerBase);
 
-        // split load/store into separate loops for better overlap and ILP
         #pragma unroll
-        for (int i = 0; i < UNROLL_FACTOR; i++) {
-          size_t offset = base_offset + i * nthreads;
-          values[i] = sendVecPtr[offset];
-        }
-        #pragma unroll
-        for (int i = 0; i < UNROLL_FACTOR; i++) {
-          size_t offset = base_offset + i * nthreads;
-          recvVecPtr[offset] = values[i];
+        for (int p = 0; p < peersInGroup; p++) {
+          int peer = peerBase + p;
+          TN* sendVecPtr = (TN*)(sendPtr + peer * count);
+          TN* recvVecPtr = (TN*)((T*)ncclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
+          TN values[UNROLL_FACTOR];
+
+          // split load/store into separate loops for better overlap and ILP
+          #pragma unroll
+          for (int i = 0; i < UNROLL_FACTOR; i++) {
+            size_t offset = base_offset + i * nthreads;
+            values[i] = sendVecPtr[offset];
+          }
+          #pragma unroll
+          for (int i = 0; i < UNROLL_FACTOR; i++) {
+            size_t offset = base_offset + i * nthreads;
+            recvVecPtr[offset] = values[i];
+          }
         }
       }
     }
-  }
 
-  // handle remaining vectorized elements that didn't fit in aligned chunks
-  for (size_t base_offset = aligned_vector_count + tid; base_offset < vector_count; base_offset += nthreads) {
-    for (int peer = 0; peer < nRanks; peer++) {
-      TN* sendVecPtr = (TN*)(sendPtr + peer * count);
-      TN* recvVecPtr = (TN*)((T*)ncclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
-      recvVecPtr[base_offset] = sendVecPtr[base_offset];
+    // handle remaining vectorized elements that didn't fit in aligned chunks
+    for (size_t base_offset = aligned_vector_count + tid; base_offset < vector_count; base_offset += nthreads) {
+      for (int peer = 0; peer < nRanks; peer++) {
+        TN* sendVecPtr = (TN*)(sendPtr + peer * count);
+        TN* recvVecPtr = (TN*)((T*)ncclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
+        recvVecPtr[base_offset] = sendVecPtr[base_offset];
+      }
     }
-  }
 
-  // handle any remaining elements not divisible by vectorization factor
-  size_t scalar_start = vector_count * VECTOR_FACTOR;
-  for (size_t offset = scalar_start + tid; offset < count; offset += nthreads) {
-    for (int peer = 0; peer < nRanks; peer++) {
-      T value = sendPtr[peer * count + offset];
-      T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
-      recvPtr[rank * count + offset] = value;
+    // handle any remaining elements not divisible by vectorization factor
+    size_t scalar_start = vector_count * VECTOR_FACTOR;
+    for (size_t offset = scalar_start + tid; offset < count; offset += nthreads) {
+      for (int peer = 0; peer < nRanks; peer++) {
+        T value = sendPtr[peer * count + offset];
+        T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+        recvPtr[rank * count + offset] = value;
+      }
     }
+  } else {
+    // simple scalar fallback for unaligned data (identical to simple kernel)
+    AlltoAllScalarImpl<T>(sendwin, sendoffset, recvwin, recvoffset, count, rank, nRanks, tid, nthreads);
   }
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
