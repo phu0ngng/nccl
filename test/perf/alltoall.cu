@@ -97,8 +97,11 @@ __global__ void NvlAlltoAllKernelOptimized(ncclWindow_t sendwin, size_t sendoffs
   size_t vector_count = count / VECTOR_FACTOR;
   int elements_per_iteration = nthreads * UNROLL_FACTOR;
 
-  // main vectorized processing of elements
-  for (size_t base_offset = tid; base_offset < vector_count; base_offset += elements_per_iteration) {
+  // round down vector_count to be divisible by elements_per_iteration
+  size_t aligned_vector_count = (vector_count / elements_per_iteration) * elements_per_iteration;
+
+  // process aligned vectorized elements without bounds checks
+  for (size_t base_offset = tid; base_offset < aligned_vector_count; base_offset += elements_per_iteration) {
     // unroll a limited number of peers at a time
     for (int peerBase = 0; peerBase < nRanks; peerBase += PEER_UNROLL) {
       int peersInGroup = min(PEER_UNROLL, nRanks - peerBase);
@@ -114,18 +117,23 @@ __global__ void NvlAlltoAllKernelOptimized(ncclWindow_t sendwin, size_t sendoffs
         #pragma unroll
         for (int i = 0; i < UNROLL_FACTOR; i++) {
           size_t offset = base_offset + i * nthreads;
-          if (offset < vector_count) {
-            values[i] = sendVecPtr[offset];
-          }
+          values[i] = sendVecPtr[offset];
         }
         #pragma unroll
         for (int i = 0; i < UNROLL_FACTOR; i++) {
           size_t offset = base_offset + i * nthreads;
-          if (offset < vector_count) {
-            recvVecPtr[offset] = values[i];
-          }
+          recvVecPtr[offset] = values[i];
         }
       }
+    }
+  }
+
+  // handle remaining vectorized elements that didn't fit in aligned chunks
+  for (size_t base_offset = aligned_vector_count + tid; base_offset < vector_count; base_offset += nthreads) {
+    for (int peer = 0; peer < nRanks; peer++) {
+      TN* sendVecPtr = (TN*)(sendPtr + peer * count);
+      TN* recvVecPtr = (TN*)((T*)ncclGetLsaPointer(recvwin, recvoffset, peer) + rank * count);
+      recvVecPtr[base_offset] = sendVecPtr[base_offset];
     }
   }
 
