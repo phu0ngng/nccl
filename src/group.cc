@@ -235,6 +235,15 @@ ncclResult_t ncclCommGroupRegisterSymmetric(struct ncclAsyncJob* job_) {
     free(task);
   }
 
+  while (!ncclIntruQueueEmpty(&comm->devrState.commCreateTaskQueue)) {
+    struct ncclDevrCommCreateTask* task = ncclIntruQueueDequeue(&comm->devrState.commCreateTaskQueue);
+    NCCLCHECKGOTO(ncclDevrCommCreateInternal(
+      comm, (struct ncclDevCommRequirements const*)task->reqs, task->outDevComm),
+      ret, fail);
+    freeDevCommRequirements(task->reqs); // free additional task memory for reqs
+    free(task);
+  }
+
   while (!ncclIntruQueueEmpty(&comm->ceInitTaskQueue)) {
     struct ncclCeInitTask* task = ncclIntruQueueDequeue(&comm->ceInitTaskQueue);
     NCCLCHECKGOTO(ncclCeInit(task->comm), ret, fail);

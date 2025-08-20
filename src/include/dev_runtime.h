@@ -37,6 +37,12 @@ struct ncclDevrRegTask {
   ncclWindow_t* outWinDev;
 };
 
+struct ncclDevrCommCreateTask {
+  struct ncclDevrCommCreateTask *next;
+  struct ncclDevCommRequirements* reqs;
+  struct ncclDevComm* outDevComm;
+};
+
 struct ncclDevrState {
   // Like localRank/localRanks except "lsa" ranks must be consecutive in the world
   // and all lsa subsets have the same number of ranks. If any condition is
@@ -57,6 +63,7 @@ struct ncclDevrState {
   struct ncclDevCommWindowTable* windowTable;
 
   struct ncclIntruQueue<struct ncclDevrRegTask, &ncclDevrRegTask::next> regTaskQueue;
+  struct ncclIntruQueue<struct ncclDevrCommCreateTask, &ncclDevrCommCreateTask::next> commCreateTaskQueue;
 };
 
 // We assume ncclComm has a `ncclDevrState symState` member.
@@ -68,6 +75,13 @@ ncclResult_t ncclDevrFindWindow(struct ncclComm* comm, void const* userPtr, stru
 
 ncclResult_t ncclDevrWindowRegisterInGroup(
   struct ncclComm* comm, void* ptr, size_t size, int winFlags, ncclWindow_t* outWinDev
+);
+
+ncclResult_t ncclDevrCommCreateInternal(
+  struct ncclComm* comm, struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm
+);
+void freeDevCommRequirements(
+  struct ncclDevCommRequirements* reqs
 );
 
 // Get the corresponding pointer in another lsa rank's symmetric memory window
