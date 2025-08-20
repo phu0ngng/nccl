@@ -84,9 +84,11 @@ union ncclSymkDevWorkArgs4K {
 ncclResult_t ncclSymkInitOnce(struct ncclComm* comm);
 ncclResult_t ncclSymkFinalize(struct ncclComm* comm);
 
-bool ncclSymkImplemented(ncclFunc_t fn, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty);
-
-ncclResult_t ncclSymkPickKernel(struct ncclComm* comm, ncclFunc_t fn, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty, size_t nElts, float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps);
+bool ncclSymkAvailable(struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red,
+                       ncclDataType_t ty, size_t nElts);
+ncclResult_t ncclSymkPickKernel(struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty,
+                                size_t nEltsTotal, size_t nEltsMax, int nWorks,
+                                float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps);
 
 ncclResult_t ncclSymkMakeDevWork(struct ncclComm* comm, struct ncclTaskColl* task, struct ncclSymkDevWork* outDevWork);
 

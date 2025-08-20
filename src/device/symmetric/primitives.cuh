@@ -25,13 +25,13 @@ static __device__ Int0 flattenIx(Int0 pos, Int1 size, Ints ...more) {
 }
 
 namespace {
-struct ncclSymkKernelStuff {
+struct ncclSymkArgsHandler {
   ncclDevComm const& comm;
   struct ncclSymkChannelWorkRange* channelWorkRange;
   struct ncclSymkDevWork* devWork;
   uint32_t nRanks_rcp32;
 
-  __device__ ncclSymkKernelStuff(ncclSymkDevWorkArgs const* args):
+  __device__ ncclSymkArgsHandler(ncclSymkDevWorkArgs const* args):
     comm(args->comm) {
     channelWorkRange = args->getWorkRange();
 
@@ -81,90 +81,52 @@ struct ncclSymkKernelStuff {
     fracHi = (channelWorkRange[lastBlock].workHi == w) ? channelWorkRange[lastBlock].fracHi + 1 : 0x10000;
     indexHi = min(((fracHi * divUp(dw.nElts, EltPerCell)) >> 16) * EltPerCell, dw.nElts);
   }
+
+  template<typename T, typename Fn>
+    __device__ void forEachWork(Fn const& fn) {
+      uint16_t workLo, workHi;
+      size_t indexLo, indexHi;
+
+      getWorkRange<T>(blockIdx.x, workLo, indexLo, workHi, indexHi);
+
+      size_t currentIndexLo = indexLo;
+      #pragma unroll 1
+      for (int w = workLo; w <= workHi; w++) {
+        struct ncclSymkDevWork const& dw = devWork[w];
+        size_t const& nAllElts = dw.nElts;
+        size_t currentIndexHi;
+        int block, nBlocks;
+        if (blockIdx.x >= dw.sChannelId && blockIdx.x < dw.sChannelId + dw.nChannels) {
+          getWorkRangeFused<T>(blockIdx.x, w, block, nBlocks, currentIndexLo, currentIndexHi);
+        } else {
+          currentIndexHi = (w < workHi) ? nAllElts : indexHi;
+          block = 0;
+          nBlocks = 1;
+        }
+
+        fn(block, nBlocks, currentIndexHi - currentIndexLo, nAllElts,
+           ncclSymPtr<T>(dw.inputWin, dw.inputOff) + currentIndexLo,
+           ncclSymPtr<T>(dw.outputWin, dw.outputOff) + currentIndexLo);
+
+        currentIndexLo = 0;
+      }
+  }
+
+  template<typename T, typename Fn>
+    __device__ void singleWork(Fn const& fn) {
+      uint16_t w;
+      size_t indexLo, indexHi;
+
+      getWorkRange<T>(blockIdx.x, w, indexLo, w, indexHi);
+
+      struct ncclSymkDevWork const& dw = devWork[w];
+
+      fn(indexHi - indexLo, dw.nElts,
+         ncclSymPtr<T>(dw.inputWin, dw.inputOff) + indexLo,
+         ncclSymPtr<T>(dw.outputWin, dw.outputOff) + indexLo);
+  }
 };
 }
-
-#ifndef NCCL_SYMK_GROUP_SINGLE_WORK
-
-#define NCCL_SYMK_GROUP_START(stuff, type)           \
-  uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
-  size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
-  stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
-                           ncclSymkGroupWorkHi, ncclSymkGroupIndexHi); \
-  size_t ncclSymkGroupCurrentIndexLo = ncclSymkGroupIndexLo; \
-  _Pragma("unroll 1") \
-  for (int ncclSymkGroupW = ncclSymkGroupWorkLo; ncclSymkGroupW <= ncclSymkGroupWorkHi; ncclSymkGroupW++) { \
-    struct ncclSymkDevWork const& ncclSymkGroupDevWork = stuff.devWork[ncclSymkGroupW]; \
-    size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
-    size_t ncclSymkGroupCurrentIndexHi; \
-    int ncclSymkGroupBlock, ncclSymkGroupNBlocks; \
-    if (blockIdx.x >= ncclSymkGroupDevWork.sChannelId && \
-        blockIdx.x < ncclSymkGroupDevWork.sChannelId + ncclSymkGroupDevWork.nChannels) \
-      stuff.getWorkRangeFused<type>(blockIdx.x, ncclSymkGroupW, ncclSymkGroupBlock, ncclSymkGroupNBlocks, \
-                                    ncclSymkGroupCurrentIndexLo, ncclSymkGroupCurrentIndexHi); \
-    else { \
-      ncclSymkGroupCurrentIndexHi = (ncclSymkGroupW < ncclSymkGroupWorkHi) ? \
-        ncclSymkGroupNAllElts : ncclSymkGroupIndexHi; \
-      ncclSymkGroupBlock = 0; \
-      ncclSymkGroupNBlocks = 1; \
-    } \
-    ncclSymPtr<type> ncclSymkGroupInput(ncclSymkGroupDevWork.inputWin, \
-                                        ncclSymkGroupDevWork.inputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
-    ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, \
-                                         ncclSymkGroupDevWork.outputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
-    const size_t ncclSymkGroupNElts = ncclSymkGroupCurrentIndexHi - ncclSymkGroupCurrentIndexLo
-
-#define NCCL_SYMK_GROUP_NOFUSE_START(stuff, type) \
-  uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
-  size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
-  stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
-                           ncclSymkGroupWorkHi, ncclSymkGroupIndexHi); \
-  size_t ncclSymkGroupCurrentIndexLo = ncclSymkGroupIndexLo; \
-  _Pragma("unroll 1") \
-  for (int ncclSymkGroupW = ncclSymkGroupWorkLo; ncclSymkGroupW <= ncclSymkGroupWorkHi; ncclSymkGroupW++) { \
-    struct ncclSymkDevWork& ncclSymkGroupDevWork = stuff.devWork[ncclSymkGroupW]; \
-    size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
-    size_t ncclSymkGroupCurrentIndexHi = (ncclSymkGroupW < ncclSymkGroupWorkHi) ? \
-      ncclSymkGroupNAllElts : ncclSymkGroupIndexHi; \
-    ncclSymPtr<type> ncclSymkGroupInput(ncclSymkGroupDevWork.inputWin, \
-                                        ncclSymkGroupDevWork.inputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
-    ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, \
-                                         ncclSymkGroupDevWork.outputOff + ncclSymkGroupCurrentIndexLo*sizeof(type)); \
-    const size_t ncclSymkGroupNElts = ncclSymkGroupCurrentIndexHi - ncclSymkGroupCurrentIndexLo
-
-#define NCCL_SYMK_GROUP_END \
-    ncclSymkGroupCurrentIndexLo = 0; \
-  } \
-  do {} while(0)
-
-#else // NCCL_SYMK_GROUP_SINGLE_WORK
-
-#define NCCL_SYMK_GROUP_START(stuff, type) \
-  struct ncclSymkDevWork const& ncclSymkGroupDevWork = stuff.devWork[0]; \
-  size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
-  int const& ncclSymkGroupBlock = blockIdx.x; \
-  int const& ncclSymkGroupNBlocks = gridDim.x; \
-  ncclSymPtr<type> ncclSymkGroupInput(ncclSymkGroupDevWork.inputWin, ncclSymkGroupDevWork.inputOff); \
-  ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, ncclSymkGroupDevWork.outputOff); \
-  size_t const& ncclSymkGroupNElts = ncclSymkGroupDevWork.nElts
-
-#define NCCL_SYMK_GROUP_NOFUSE_START(stuff, type) \
-  uint16_t ncclSymkGroupWorkLo, ncclSymkGroupWorkHi; \
-  size_t ncclSymkGroupIndexLo, ncclSymkGroupIndexHi; \
-  stuff.getWorkRange<type>(blockIdx.x, ncclSymkGroupWorkLo, ncclSymkGroupIndexLo, \
-                           ncclSymkGroupWorkHi, ncclSymkGroupIndexHi); \
-  struct ncclSymkDevWork const& ncclSymkGroupDevWork = stuff.devWork[ncclSymkGroupWorkLo]; \
-  size_t const& ncclSymkGroupNAllElts = ncclSymkGroupDevWork.nElts; \
-  ncclSymPtr<type> ncclSymkGroupInput(ncclSymkGroupDevWork.inputWin, \
-                                      ncclSymkGroupDevWork.inputOff + ncclSymkGroupIndexLo*sizeof(type)); \
-  ncclSymPtr<type> ncclSymkGroupOutput(ncclSymkGroupDevWork.outputWin, \
-                                       ncclSymkGroupDevWork.outputOff + ncclSymkGroupIndexLo*sizeof(type)); \
-  const size_t ncclSymkGroupNElts = ncclSymkGroupIndexHi - ncclSymkGroupIndexLo
-
-#define NCCL_SYMK_GROUP_END                     \
-  do {} while(0)
-
-#endif // NCCL_SYMK_GROUP_SINGLE_WORK
 
 template<template<typename> typename Red, typename T, bool nvls>
 struct ncclSymkAccumType { using Type = T; };

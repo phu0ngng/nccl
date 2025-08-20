@@ -218,7 +218,7 @@ ncclResult_t ncclSymkFinalize(struct ncclComm* comm) {
   return ncclSuccess;
 }
 
-bool ncclSymkImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty) {
+static bool ncclSymkImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty) {
   bool isFloat;
   switch (ty) {
   case ncclFloat64:
@@ -245,10 +245,7 @@ bool ncclSymkImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataTyp
   }
 }
 
-ncclResult_t ncclSymkPickKernel(
-    struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty, size_t nElts,
-    float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps
-  ) {
+static uint32_t ncclSymkMask(struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty, size_t nElts) {
   uint32_t kmask = kernelMask_coll(coll);
   kmask &= kernelMask_user();
 
@@ -287,9 +284,32 @@ ncclResult_t ncclSymkPickKernel(
   // to be at least 32 bytes per chunk)
   if (nBusBytes >= 32*(size_t(2)<<30)) kmask = 0;
 
+  return kmask;
+}
+
+bool ncclSymkAvailable(struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red,
+                       ncclDataType_t ty, size_t nElts) {
+  if (!ncclSymkImplemented(coll, red, ty))
+    return false;
+
+  return (ncclSymkMask(comm, coll, red, ty, nElts) != 0);
+}
+
+ncclResult_t ncclSymkPickKernel(
+    struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty,
+    size_t nEltsTotal, size_t nEltsMax, int nWorks,
+    float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps
+  ) {
+  uint32_t kmask = ncclSymkMask(comm, coll, red, ty, nEltsMax);
+
+  // We currently don't support grouping for LL kernels.
+  if (nWorks > 1)
+    kmask &= ~kernelMask_LL;
+
   ncclSymkKernelId bestKernel = ncclSymkKernelId_Count;
   float bestTime = 1.e30f;
   int bestBlocks = 999;
+  size_t nBytes = nEltsTotal*ncclTypeSize(ty);
 
   constexpr float smPenalty = .025f; // 2.5% percent increase in time per SM
   uint32_t kmaskRemain = kmask;
