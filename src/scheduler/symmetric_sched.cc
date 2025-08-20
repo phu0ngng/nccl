@@ -10,6 +10,7 @@
 #include "scheduler.h"
 
 ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskColl* task, struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next>* symTaskQueue, struct ncclTaskColl** remainTasksHead) {
+  ncclResult_t ret = ncclSuccess;
   int fnOpTySymCount = 0;
   struct ncclTaskColl* tasksSymByFnOpTy[ncclNumFuncs * ncclNumDevRedOps * ncclNumTypes];
   int fnOpTySymIndices[ncclNumFuncs * ncclNumDevRedOps * ncclNumTypes];
@@ -23,9 +24,9 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
     struct ncclTaskColl* next = task->next;
     NCCLCHECK(ncclDevrFindWindow(comm, task->sendbuff, &task->sendWin));
     NCCLCHECK(ncclDevrFindWindow(comm, task->recvbuff, &task->recvWin));
-    bool symImplemented = ncclSymkImplemented(task->func, task->opDev.op, task->datatype);
+    bool symAvailable = ncclSymkAvailable(comm, task->func, task->opDev.op, task->datatype, task->count);
 
-    if (task->sendWin && task->recvWin && (task->sendWin->winFlags & task->recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && symImplemented) {
+    if (task->sendWin && task->recvWin && (task->sendWin->winFlags & task->recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && symAvailable) {
       if (tasksSymByFnOpTy[index] == nullptr) fnOpTySymIndices[fnOpTySymCount++] = index;
       task->next = tasksSymByFnOpTy[index];
       tasksSymByFnOpTy[index] = task;
@@ -54,20 +55,32 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
       int nWarps = 0;
       int nWorks = 0;
       float estTimeUs = 1.e18;
-      size_t count = 0;
+      size_t countTotal = 0, countMax = 0;
       struct ncclTaskColl* headTask = task;
       size_t cellCount = NCCL_SYM_KERNEL_CELL_SIZE / ncclTypeSize(headTask->datatype);
       // For now we assume higher kernel id means a kernel for larger data size
       while (task != nullptr) {
+        size_t count;
         nWorks++;
-        count += alignUp(task->count, cellCount);
+        count = alignUp(task->count, cellCount);
+        countTotal += count;
+        if (count > countMax) countMax = count;
         if (ncclSymkDevWorkArgs::calcArgsSize(MAXCHANNELS, nWorks + 1) > comm->workArgsBytes || task->next == nullptr) {
           task->isSymLast = 1;
           break;
         }
         task = task->next;
       }
-      NCCLCHECK(ncclSymkPickKernel(comm, headTask->func, headTask->opDev.op, headTask->datatype, count, &estTimeUs, &kernelId, &nChannels, &nWarps));
+      NCCLCHECK(ncclSymkPickKernel(comm, headTask->func, headTask->opDev.op, headTask->datatype,
+                                   countTotal, countMax, nWorks,
+                                   &estTimeUs, &kernelId, &nChannels, &nWarps));
+      if (kernelId == ncclSymkKernelId_Count) {
+        char const* name = ncclGetEnv("NCCL_SYM_KERNEL");
+        WARN("Error: no symmetric kernel available for function %s.%s%s",
+             ncclFuncToString(headTask->func), (name ? " NCCL_SYM_KERNEL was set to " : ""), (name ? name: ""));
+        ret = (name ? ncclInvalidUsage : ncclInternalError);
+        goto fail;
+      }
       // set all symmetric tasks to the same kernel
       task = headTask;
       while (task != nullptr) {
@@ -82,7 +95,11 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
       }
     }
   }
-  return ncclSuccess;
+
+exit:
+  return ret;
+fail:
+  goto exit;
 }
 
 ncclResult_t ncclSymmetricTaskScheduler(struct ncclComm* comm, struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next>* symTaskQueue, struct ncclKernelPlan* plan) {

@@ -4,7 +4,7 @@
 
 template<int BytePerPack, int UnrollPacks, int UnrollPeers>
 static __device__ void bcastDeep(
-    ncclSymkKernelStuff const& stuff, int tn, int t,
+    ncclSymkArgsHandler const& handler, int tn, int t,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     ncclSymPtr<char> input, ncclSymPtr<char> output, bool inPlace, int nIters
   ) {
@@ -12,8 +12,8 @@ static __device__ void bcastDeep(
   int wn = tn/WARP_SIZE;
   int w = t/WARP_SIZE;
   int lane = t%WARP_SIZE;
-  int const& rank = stuff.comm.rank;
-  int const& nRanks = stuff.comm.nRanks;
+  int const& rank = handler.comm.rank;
+  int const& nRanks = handler.comm.nRanks;
 
   Pack* inpPacks = (Pack*)input.localPtr() + intptr_t(w)*UnrollPacks*WARP_SIZE + lane;
   ncclSymPtr<Pack> outPacks = (ncclSymPtr<Pack>)output + intptr_t(w)*UnrollPacks*WARP_SIZE + lane;
@@ -67,11 +67,11 @@ static __device__ void bcastDeep(
 
 template<int UnrollPeers, typename T>
 static __device__ void bcastEnds(
-    ncclSymkKernelStuff const& stuff, int tn, int t,
+    ncclSymkArgsHandler const& handler, int tn, int t,
     ncclSymPtr<T> input, ncclSymPtr<T> output, bool inPlace, size_t nElts, uint32_t nPreElts, size_t nSufElts
   ) {
-  int const& rank = stuff.comm.rank;
-  int const& nRanks = stuff.comm.nRanks;
+  int const& rank = handler.comm.rank;
+  int const& nRanks = handler.comm.nRanks;
   BytePack<sizeof(T)>* inpPacks = (BytePack<sizeof(T)>*)input.localPtr();
   ncclSymPtr<BytePack<sizeof(T)>> outPacks = (ncclSymPtr<BytePack<sizeof(T)>>)output;
   #pragma unroll 1
@@ -100,7 +100,7 @@ static __device__ void bcastEnds(
 
 template<typename T>
 static __device__ void bcast(
-    ncclSymkKernelStuff const& stuff, int tn, int t, int nBlocks,
+    ncclSymkArgsHandler const& handler, int tn, int t, int nBlocks,
     bool waitNeeded, ncclLsaBarrierSession<ncclCoopCta>& bar,
     ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
@@ -122,7 +122,7 @@ static __device__ void bcast(
     if (chunks != 0) {
       uintptr_t cursorAfter = cursor + uintptr_t(chunks)*BytePerChunk;
       bcastDeep<BytePerPack, UnrollPacks, UnrollPeers>(
-        stuff, tn, t, waitNeeded, bar,
+        handler, tn, t, waitNeeded, bar,
         (ncclSymPtr<char>)input + cursor,
         (ncclSymPtr<char>)output + cursor,
         inPlace, chunks*MinWarpPerBlock
@@ -140,7 +140,7 @@ static __device__ void bcast(
     if (chunks != 0) {
       uintptr_t cursorAfter = cursor + uintptr_t(chunks)*BytePerChunk;
       bcastDeep<(sizeof(T) <= BytePerPack ? BytePerPack : 0), UnrollPacks, UnrollPeers>(
-        stuff, tn, t, waitNeeded, bar,
+        handler, tn, t, waitNeeded, bar,
         (ncclSymPtr<char>)input + cursor,
         (ncclSymPtr<char>)output + cursor,
         inPlace, chunks*MinWarpPerBlock
@@ -154,43 +154,44 @@ static __device__ void bcast(
 
   constexpr int UnrollPeers = 8;
   size_t nSufElts = (nBytes-cursor)/sizeof(T);
-  bcastEnds<UnrollPeers>(stuff, tn, t, input, output, inPlace, nElts, nPreBytes/sizeof(T), nSufElts);
+  bcastEnds<UnrollPeers>(handler, tn, t, input, output, inPlace, nElts, nPreBytes/sizeof(T), nSufElts);
 }
 
 __device__ __forceinline__ void ncclSymkRun_AllGather_ST(ncclSymkDevWorkArgs const* args) {
-  ncclSymkKernelStuff stuff{args};
+  ncclSymkArgsHandler handler{args};
   ncclLsaBarrierSession<ncclCoopCta> bar{
-    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x
+    ncclCoopCta(), handler.comm, ncclTeamTagLsa(), blockIdx.x
   };
-  int const& rank = stuff.comm.rank;
+  int const& rank = handler.comm.rank;
 
   bar.arrive(ncclCoopCta(), cuda::memory_order_relaxed);
 
   bool waitNeeded = true;
-  NCCL_SYMK_GROUP_START(stuff, char);
+  handler.forEachWork<char>(
+      [&]__device__(int block, int nBlocks, size_t nElts, size_t nAllElts,
+                    ncclSymPtr<char> input, ncclSymPtr<char> output) {
+        // Threads numbered over rank.
+        int bt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
+                           block, nBlocks,
+                           threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
+        int btn = nBlocks*blockDim.x;
 
-  // Threads numbered over rank.
-  int bt = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
-                     ncclSymkGroupBlock, ncclSymkGroupNBlocks,
-                     threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int btn = ncclSymkGroupNBlocks*blockDim.x;
+        bcast(handler, btn, bt, nBlocks, waitNeeded, bar, input, output + rank*nAllElts, nElts);
 
-  bcast(stuff, btn, bt, ncclSymkGroupNBlocks, waitNeeded, bar,
-        ncclSymkGroupInput, ncclSymkGroupOutput + rank*ncclSymkGroupNAllElts, ncclSymkGroupNElts);
-
-  waitNeeded = false;
-  NCCL_SYMK_GROUP_END;
+        waitNeeded = false;
+      }
+    );
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
 
 template<typename T>
 static __device__ void bcastMultimem(
-    ncclSymkKernelStuff& stuff, int tn, int t, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
+    ncclSymkArgsHandler& handler, int tn, int t, ncclSymPtr<T> input, ncclSymPtr<T> output, size_t nElts
   ) {
   size_t nBytes = nElts*sizeof(T);
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input.localPtr());
-  uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output.multimemPtr(stuff.comm.multimem));
+  uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output.multimemPtr(handler.comm.multimem));
   uint32_t nPreBytes = (16 - input.offset)%16;
   nPreBytes = min((size_t)nPreBytes, nBytes);
   uintptr_t nSufBytes;
@@ -234,38 +235,39 @@ static __device__ void bcastMultimem(
 }
 
 __device__ __forceinline__ void ncclSymkRun_AllGather_STMC(ncclSymkDevWorkArgs const* args) {
-  ncclSymkKernelStuff stuff{args};
+  ncclSymkArgsHandler handler{args};
   ncclLsaBarrierSession<ncclCoopCta> bar(
-    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
+    ncclCoopCta(), handler.comm, ncclTeamTagLsa(), blockIdx.x, /*multimem=*/true
   );
-  int const& rank = stuff.comm.rank;
+  int const& rank = handler.comm.rank;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
-  NCCL_SYMK_GROUP_START(stuff, char);
+  handler.forEachWork<char>(
+      [&]__device__(int block, int nBlocks, size_t nElts, size_t nAllElts,
+                    ncclSymPtr<char> input, ncclSymPtr<char> output) {
+        // Round robin memory to blocks.
+        int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
+                          block, nBlocks,
+                          threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
+        int tn = nBlocks*blockDim.x;
 
-  // Round robin memory to blocks.
-  int t = flattenIx(threadIdx.x%WARP_SIZE, WARP_SIZE,
-                    ncclSymkGroupBlock, ncclSymkGroupNBlocks,
-                    threadIdx.x/WARP_SIZE, blockDim.x/WARP_SIZE);
-  int tn = ncclSymkGroupNBlocks*blockDim.x;
-
-  bcastMultimem(stuff, tn, t, ncclSymkGroupInput, ncclSymkGroupOutput + rank*ncclSymkGroupNAllElts, ncclSymkGroupNElts);
-
-  NCCL_SYMK_GROUP_END;
+        bcastMultimem(handler, tn, t, input, output + rank*nAllElts, nElts);
+      }
+    );
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
 
 template<typename EltType>
 static __device__ void allgather_LL_body(
-    ncclSymkKernelStuff& stuff, ncclLLA2ASession<ncclCoopCta>& lla2a,
+    ncclSymkArgsHandler& handler, ncclLLA2ASession<ncclCoopCta>& lla2a,
     EltType* input, EltType* output, int nElts, int nPacks, int nStrideElts
   ) {
   using Pack = BytePack<8>;
   constexpr int EltPerPack = 8/sizeof(EltType);
-  int const& rank = stuff.comm.rank;
-  int const& nRanks = stuff.comm.nRanks;
+  int const& rank = handler.comm.rank;
+  int const& nRanks = handler.comm.nRanks;
   int t = threadIdx.x;
   constexpr int tn = ncclSymkMaxThreads;
 
@@ -334,34 +336,34 @@ static __device__ void allgather_LL_body(
 }
 
 static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevWorkArgs const* args, bool multimem) {
-  ncclSymkKernelStuff stuff{args};
+  ncclSymkArgsHandler handler{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), stuff.comm, ncclTeamTagLsa(), blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem
+    ncclCoopCta(), handler.comm, ncclTeamTagLsa(), blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem
   );
 
   using Pack = BytePack<8>;
   constexpr int BytePerPack = 8;
 
-  NCCL_SYMK_GROUP_NOFUSE_START(stuff, char);
+  handler.singleWork<char>(
+      [&]__device__(int nElts, int nAllElts,
+                    ncclSymPtr<char> input, ncclSymPtr<char> output) {
+        int nPacks = divUp(nElts, BytePerPack);
 
-  int nElts = ncclSymkGroupNElts;
-  int nAllElts = ncclSymkGroupNAllElts;
-  int nPacks = divUp(nElts, BytePerPack);
+        char* blockInput = input.localPtr();
+        char* blockOutput = output.localPtr();
 
-  char* blockInput = ncclSymkGroupInput.localPtr();
-  char* blockOutput = ncclSymkGroupOutput.localPtr();
-
-  uint32_t lowBits = nElts;
-  lowBits |= (uintptr_t)blockInput;
-  lowBits |= (uintptr_t)blockOutput;
-  if (__builtin_expect(lowBits%8 == 0, true)) {
-    // NOTE: Specializing for 8-byte alignment in one case help at size=65K: 8.9us vs 5.6us
-    allgather_LL_body(stuff, lla2a, (BytePack<8>*)blockInput, (BytePack<8>*)blockOutput, nElts/8, nPacks, nAllElts/8);
-  } else {
-    allgather_LL_body(stuff, lla2a, blockInput, blockOutput, nElts, nPacks, nAllElts);
-  }
-
-  NCCL_SYMK_GROUP_END;
+        uint32_t lowBits = nElts;
+        lowBits |= (uintptr_t)blockInput;
+        lowBits |= (uintptr_t)blockOutput;
+        if (__builtin_expect(lowBits%8 == 0, true)) {
+          // NOTE: Specializing for 8-byte alignment in one case help at size=65K: 8.9us vs 5.6us
+          allgather_LL_body(handler, lla2a, (BytePack<8>*)blockInput, (BytePack<8>*)blockOutput,
+                            nElts/8, nPacks, nAllElts/8);
+        } else {
+          allgather_LL_body(handler, lla2a, blockInput, blockOutput, nElts, nPacks, nAllElts);
+        }
+      }
+    );
 }
 
 __device__ __forceinline__ void ncclSymkRun_AllGather_LL(ncclSymkDevWorkArgs const* args) {
