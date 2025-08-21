@@ -582,6 +582,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
         void* sendwin = args->sendRegHandles[id][i];
         void* recvwin = args->recvRegHandles[id][i];
+        CUDACHECK(cudaSetDevice(args->gpus[i]));
         TESTCHECK(args->collTest->runColl(
               (void*)(in_place ? recvwin : sendwin), shift + in_place ? args->sendInplaceOffset[id][i] * rank : 0,
               (void*)recvwin, shift + in_place ? args->recvInplaceOffset[id][i] * rank : 0,
