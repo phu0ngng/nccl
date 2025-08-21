@@ -51,6 +51,8 @@ struct testParam{
   const char* forceMerge;
   // multi-port systems
   int portRatio;
+  // multinode NVLDs
+  int nvldSize;
 };
 
 #define TESTPARAM_INIT {\
@@ -64,6 +66,7 @@ struct testParam{
   /*mergeLevel=*/PATH_LOC,\
   /*forceMerge=*/NULL,\
   /*portRatio=*/1,\
+  /*nvldSize=*/1,\
 }
 
 static void setStackSize(rlim_t size) {
@@ -135,7 +138,7 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
     }
   }
 }
-#define MAX_MNNVL_NODES 64
+#define MAX_MNNVL_NODES 72 /*max rank count per NVLD*/
 
 #define NCCL_PLUGIN_MAX_RECVS 8
 int max_requests = NCCL_NET_MAX_REQUESTS;
@@ -457,22 +460,24 @@ static ncclResult_t xmlSplitNics(struct ncclXml* xmlSystem, int ratio){
 }
 
 void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, enum testType type, const struct testParam* param, int* errors, int* warnings) {
-  struct ncclXml* xmlSystem;
   char* dumpFile = (char*)malloc(PATH_MAX);
-  INFO(NCCL_GRAPH, "Loading platform %s", platform);
-  CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES*NCCL_TOPO_XML_MAX_NODES));
-  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
-  struct ncclTopoSystem* system;
-  if (xmlSystem->maxIndex == 0) {
+  INFO(NCCL_GRAPH, "Loading platform %s - NVLD=%d", platform,param->nvldSize);
+  // load the local XML (might contain the entire NVLD for backward compatibility reasons with GB200/300 topologies)
+  struct ncclXml* xmlSystemLocal = NULL;
+  CHECK(xmlAlloc(&xmlSystemLocal, MAX_MNNVL_NODES * NCCL_TOPO_XML_MAX_NODES));
+  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystemLocal, 1));
+  if (xmlSystemLocal->maxIndex == 0) {
     printf("Error : no system in %s\n", xmlTopoFile);
     (*errors)++;
     free(dumpFile);
     return;
   }
+  // Initiate the fake plugin with all the devices.
+  // NIC duplication has to happen before the init.
+  CHECK(xmlSplitNics(xmlSystemLocal, param->portRatio));
+  fakeNetPluginInit(xmlSystemLocal, param);
 
-  // Inititalize a netState object for NIC fusion
-  CHECK(xmlSplitNics(xmlSystem,param->portRatio));
-  fakeNetPluginInit(xmlSystem, param);
+  // process the local node
   struct ncclTopoNetInfo netInfo{};
   netInfo.coll = coll > 0;
   netInfo.netPluginIndex = 0;
@@ -485,33 +490,75 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   netInfo.getProperties = fakeNetPluginGetProperties;
   netInfo.makeVDevice = fakeNetPluginMakeVDevice;
   netInfo.devices = fakeNetPluginDevices;
-  CHECK(ncclTopoProcessNet(xmlSystem, NULL, &netInfo));
+  CHECK(ncclTopoProcessNet(xmlSystemLocal, NULL, &netInfo));
   // We need to force all GPUs as keep="1" here to avoid trimming them
-  keepGpus(xmlSystem);
+  keepGpus(xmlSystemLocal);
   if (param->dumpProcessedXml) {
     snprintf(dumpFile, PATH_MAX, "%s.processed", xmlTopoFile);
-    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
+    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystemLocal));
   }
-  CHECK(ncclTopoTrimXml(xmlSystem));
+  CHECK(ncclTopoTrimXml(xmlSystemLocal));
   if (param->dumpProcessedXml) {
     snprintf(dumpFile, PATH_MAX, "%s.processed_trimmed", xmlTopoFile);
-    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
+    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystemLocal));
   }
-  uint64_t hostHash = 0;
-  {
-    // Get the host_hash of the first CPU.
-    struct ncclXmlNode* cpuNode;
-    CHECK(xmlFindTag(xmlSystem, "cpu", &cpuNode));
-    if (cpuNode) {
-      const char* hostHashStr;
-      CHECK(xmlGetAttr(cpuNode, "host_hash", &hostHashStr));
-      if (hostHashStr)
-        hostHash = strtoull(hostHashStr, NULL, 16);
+
+  // do the topo Fusion for MNNVL
+  uint64_t hostHash = getHostHash();
+  int rank = 0;
+  struct ncclXml* xmlSystem = NULL;
+  CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES * NCCL_TOPO_XML_MAX_NODES));
+  for (int i = 0; i < param->nvldSize; i++) {
+    // Replace the hostHash on all cpuNode with a unique one for each host in the NVLD.
+    struct ncclXmlNode* node = NULL;
+    CHECK(xmlFindTag(xmlSystemLocal, "cpu", &node));
+    while (node) {
+      CHECK(xmlGetAttrUint64Default(node, "host_hash", &hostHash, 0x0));
+      uint64_t hacc[2] = {1, 1};
+      eatHash(hacc, &hostHash);
+      eatHash(hacc, &i);
+      hostHash = digestHash(hacc);
+      CHECK(xmlSetAttrLong(node, "host_hash", hostHash));
+      CHECK(xmlFindNextTag(xmlSystemLocal, "cpu", node, &node));
+      INFO(NCCL_GRAPH,"host %d - cpu host_hash = 0x%lx",i,hostHash);
     }
+    // update the rank for each GPU
+    node = NULL;
+    CHECK(xmlFindTag(xmlSystemLocal, "gpu", &node));
+    while (node) {
+      CHECK(xmlSetAttrInt(node, "rank", rank++));
+      CHECK(xmlFindNextTag(xmlSystemLocal, "gpu", node, &node));
+    }
+    // Replace the guid for the net.
+    node = NULL;
+    CHECK(xmlFindTag(xmlSystemLocal, "net", &node));
+    while (node) {
+      uint64_t guid;
+      CHECK(xmlGetAttrUint64Default(node, "guid", &guid, 0x0));
+      uint64_t hacc[2] = {1, 1};
+      eatHash(hacc, &guid);
+      eatHash(hacc, &i);
+      guid = digestHash(hacc);
+      CHECK(xmlSetAttrLong(node, "guid", guid));
+      CHECK(xmlFindNextTag(xmlSystemLocal, "net", node, &node));
+    }
+    // add the new host to the topology
+    CHECK(ncclTopoFuseXml(xmlSystem, xmlSystemLocal));
   }
-  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, hostHash));
+  snprintf(dumpFile, PATH_MAX, "%s.topo_global", xmlTopoFile);
+  CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
+
+  // we assume to be the on the last host, so we can reuse the hostHash that was set last
+  struct ncclTopoSystem* system;
+  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, /*last known hash*/hostHash));
   free(xmlSystem);
-  system->inter = type == TEST_INTRA ? 0 : 1;
+  free(xmlSystemLocal);
+
+  system->inter = (type == TEST_INTRA) ? 0 : 1;
+  if (type == TEST_INTRA) {
+    for (int n=system->nodes[NET].count-1; n>=0; n--)
+      CHECK(ncclTopoRemoveNode(system, NET, n));
+  }
   // prune GPUs depending on the number of GPUs and splitMask
   if (param->ngpus != -1) {
     for (int g = system->nodes[GPU].count - 1; g >= param->ngpus; g--) CHECK(ncclTopoRemoveNode(system, GPU, g));
@@ -663,6 +710,9 @@ static void buildGraphFilename(char* filename, size_t size, const char* topoDir,
   // Start with base path and graph type
   char modifiers[256] = "";
 
+  if(param->nvldSize >1){
+    snprintf(modifiers + strlen(modifiers), sizeof(modifiers) - strlen(modifiers), "-NVLD%d", param->nvldSize);
+  }
   // First handle splitMask which affects communicator structure
   if (param->splitMask != -1) {
     snprintf(modifiers + strlen(modifiers), sizeof(modifiers) - strlen(modifiers), "-sm%d-c%d", param->splitMask, param->color);
@@ -688,6 +738,24 @@ static void buildGraphFilename(char* filename, size_t size, const char* topoDir,
 }
 
 void checkPlatform(const char* platform, struct testParam* param, int* errors, int* warnings) {
+  // recover the NVLD size and the system name from the platform name
+  int count = 0;
+  char * name = strdup(platform);
+  char *token = strtok(name, "-");
+  param->nvldSize = 1;
+  while (token != NULL) {
+    if (strncmp(token, "NVLD", strlen("NVLD")) == 0) {
+      param->nvldSize = atoi(token + strlen("NVLD"));
+      break;
+    } else {
+      if (count) count += 1;
+      count += strlen(token);
+    }
+    token = strtok(NULL, "-");
+  }
+  strncpy(name,platform,count);
+
+  // Build system topology file path
   char xmlTopoFile[PATH_MAX];
   char xmlGraphFile[PATH_MAX];
   char topoDir[1024];
@@ -697,6 +765,7 @@ void checkPlatform(const char* platform, struct testParam* param, int* errors, i
   } else {
     topoDir[0] = '\0';
   }
+  snprintf(xmlTopoFile, PATH_MAX, "%stopo/%s/system.xml", topoDir, name);
 
   // check for parameter correctness
   if (param->forceMerge && param->mergeLevel > PATH_PORT) {
@@ -704,18 +773,16 @@ void checkPlatform(const char* platform, struct testParam* param, int* errors, i
     param->forceMerge = NULL;
   }
 
-  // Build system topology file path
-  snprintf(xmlTopoFile, PATH_MAX, "%stopo/%s/system.xml", topoDir, platform);
-
-  // Check intra topology
+  // Check topologies
   if (param->intra) {
-    buildGraphFilename(xmlGraphFile, PATH_MAX, topoDir, platform, TEST_INTRA, param);
-    checkTopo(xmlTopoFile, xmlGraphFile, platform, TEST_INTRA, param, errors, warnings);
+    buildGraphFilename(xmlGraphFile, PATH_MAX, topoDir, name, TEST_INTRA, param);
+    checkTopo(xmlTopoFile, xmlGraphFile, name, TEST_INTRA, param, errors, warnings);
   }
   if (param->inter) {
-    buildGraphFilename(xmlGraphFile, PATH_MAX, topoDir, platform, TEST_INTER, param);
-    checkTopo(xmlTopoFile, xmlGraphFile, platform, TEST_INTER, param, errors, warnings);
+    buildGraphFilename(xmlGraphFile, PATH_MAX, topoDir, name, TEST_INTER, param);
+    checkTopo(xmlTopoFile, xmlGraphFile, name, TEST_INTER, param, errors, warnings);
   }
+  free(name);
 }
 
 #define RUN_INTRA(platform)                          \
@@ -784,6 +851,12 @@ void printHelpMessage() {
   printf("  platform : platform name (e.g. LOC-1G)\n");
   printf("  ngpus    : number of GPUs per node (default -1, all)\n");
   printf("  -h       : print this help message\n");
+  printf("\n");
+  printf("The name of the platform is given as <NAME>[-NVLD<X>], which indicates an NVLink domain of size <X>, where each host is <NAME>.\n");
+  printf("For example:\n");
+  printf(" - ./graph_test GB200 will consider an NVLink domain with a single host of GB200,\n");
+  printf(" - ./graph_test GB200-NVLD8 will consider an NVLink domain with 8 hosts of GB200 (equivalent to 32 GPUs)\n");
+  printf("\n");
   printf("Set NCCL_GRAPH_TEST_NGPUS=N to change the number of GPUs per node.\n");
   printf("Set NCCL_TOPO_DIR to override the default topo directory. This is necessary to invoke graph_test from an outside directory.\n");
   printf("Set NCCL_GRAPH_TEST_DUMP=0 to disable dumping of graph diffs.\n");
