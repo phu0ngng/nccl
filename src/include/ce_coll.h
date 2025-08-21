@@ -15,6 +15,7 @@ struct ncclCeColl {
   size_t baseUCSymReadyOffset;
   size_t baseUCSymComplOffset;
   uint32_t ceSeqNum;
+  bool useCompletePtr;
   struct ncclDevrWindow* ceSyncWin;
 };
 
@@ -52,7 +53,7 @@ ncclResult_t ncclCeInit(struct ncclComm* comm);
 
 ncclResult_t ncclCeFinalize(struct ncclComm* comm);
 
-ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isComplete, cudaStream_t stream);
+ncclResult_t ncclMemOpSync(struct ncclComm* comm, cudaStream_t stream);
 
 ncclResult_t ncclLaunchCeColl(struct ncclComm* comm, struct ncclKernelPlan* plan);
 

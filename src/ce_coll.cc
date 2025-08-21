@@ -30,7 +30,7 @@ ncclResult_t ncclCeInit(struct ncclComm* comm) {
   comm->ceColl.baseUCSymReadyPtr = (uint8_t*)comm->ceColl.ceSyncWin->userPtr + comm->ceColl.baseUCSymReadyOffset;
   comm->ceColl.baseUCSymComplPtr = (uint8_t*)comm->ceColl.ceSyncWin->userPtr + comm->ceColl.baseUCSymComplOffset;
   comm->ceColl.ceSeqNum = 0;
-  INFO(NCCL_INIT, "Init CE, rank %d baseUCSymReadyPtr %p, baseUCSymComplPtr %p, seq num %d", comm->rank, comm->ceColl.baseUCSymReadyPtr, comm->ceColl.baseUCSymComplPtr, comm->ceColl.ceSeqNum);
+  comm->ceColl.useCompletePtr = false;
 
 exit:
   return ret;
@@ -173,7 +173,7 @@ fail:
 }
 
 
-ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isComplete, cudaStream_t stream) {
+ncclResult_t ncclMemOpSync(struct ncclComm* comm, cudaStream_t stream) {
   ncclResult_t ret = ncclSuccess;
 
   // Get pointers to the ready and complete synchronization arrays
@@ -189,9 +189,9 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isComplete, cudaStream_t 
   NCCLCHECKGOTO(ncclCalloc(&batchParams, batchSize), ret, fail);
 
   if (comm->nvlsSupport) {
-    NCCLCHECKGOTO(ncclPrepMCSync(comm, isComplete, batchParams, &opIdx, stream), ret, fail);
+    NCCLCHECKGOTO(ncclPrepMCSync(comm, comm->ceColl.useCompletePtr, batchParams, &opIdx, stream), ret, fail);
   } else {
-    NCCLCHECKGOTO(ncclPrepUCSync(comm, isComplete, batchParams, &opIdx), ret, fail);
+    NCCLCHECKGOTO(ncclPrepUCSync(comm, comm->ceColl.useCompletePtr, batchParams, &opIdx), ret, fail);
   }
 
   // For CUDA graph capture, add reset operation
@@ -199,7 +199,7 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isComplete, cudaStream_t 
     for (int i = 0; i < comm->nRanks; i++) {
       batchParams[opIdx] = {};
       batchParams[opIdx].writeValue.operation = CU_STREAM_MEM_OP_WRITE_VALUE_32;
-      batchParams[opIdx].writeValue.address = (CUdeviceptr)(isComplete ? (void*)&completePtrs[i] : (void*)&readyPtrs[i]);
+      batchParams[opIdx].writeValue.address = (CUdeviceptr)(comm->ceColl.useCompletePtr ? (void*)&completePtrs[i] : (void*)&readyPtrs[i]);
       batchParams[opIdx].writeValue.value = 0;
       batchParams[opIdx].writeValue.flags = CU_STREAM_WRITE_VALUE_DEFAULT;
       opIdx++;
@@ -208,6 +208,9 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isComplete, cudaStream_t 
   
   // Execute all memory operations in a single batch
   CUCHECKGOTO(cuStreamBatchMemOp(stream, opIdx, batchParams, 0), ret, fail);
+
+  // Toggle the flag for next call
+  comm->ceColl.useCompletePtr = !comm->ceColl.useCompletePtr;
 
 exit:
   if (batchParams) free(batchParams);
@@ -333,7 +336,7 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   NCCLCHECKGOTO(ncclCeInitBatchOpsParams(&batchOpsParams, comm->nRanks), ret, fail);
 
   // Ensure all ranks are ready before starting transfers
-  NCCLCHECKGOTO(ncclMemOpSync(comm, false, stream), ret, fail);
+  NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
 
   // Copy own data to receive buffer if operation is out-of-place
   if (myRecvBuff != mySendBuff) {
@@ -358,8 +361,8 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   NCCLCHECKGOTO(ncclCeLaunchBatchOps(comm, &batchOpsParams, stream), ret, fail);
 
   // Ensure all transfers are complete across all ranks
-  NCCLCHECKGOTO(ncclMemOpSync(comm, true, stream), ret, fail);
-  
+  NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
+
 exit:
   ncclCeFreeBatchOpsParams(&batchOpsParams);
   return ret;
@@ -381,7 +384,7 @@ ncclResult_t ncclCeAlltoAll(struct ncclComm* comm, struct ncclCeCollArgs* args, 
   NCCLCHECKGOTO(ncclCeInitBatchOpsParams(&batchOpsParams, comm->nRanks * comm->nRanks), ret, fail);
 
   // Ensure all ranks are ready before starting transfers
-  NCCLCHECKGOTO(ncclMemOpSync(comm, false, stream), ret, fail);
+  NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
 
   // Copy data to other ranks: send data chunk for each destination rank
   for (int r = 0; r < comm->nRanks; r++) {
@@ -410,8 +413,8 @@ ncclResult_t ncclCeAlltoAll(struct ncclComm* comm, struct ncclCeCollArgs* args, 
   NCCLCHECKGOTO(ncclCeLaunchBatchOps(comm, &batchOpsParams, stream), ret, fail);
 
   // Ensure all transfers are complete across all ranks
-  NCCLCHECKGOTO(ncclMemOpSync(comm, true, stream), ret, fail);
-  
+  NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
+
 exit:
   ncclCeFreeBatchOpsParams(&batchOpsParams);
   return ret;
@@ -434,7 +437,7 @@ ncclResult_t ncclCeScatter(struct ncclComm* comm, struct ncclCeCollArgs* args, c
   NCCLCHECKGOTO(ncclCeInitBatchOpsParams(&batchOpsParams, comm->nRanks), ret, fail);
 
   // Ensure all ranks are ready before starting transfers
-  NCCLCHECKGOTO(ncclMemOpSync(comm, false, stream), ret, fail);
+  NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
 
   if (comm->rank == rootRank) {
     // Check if this is an in-place scatter operation
@@ -470,8 +473,8 @@ ncclResult_t ncclCeScatter(struct ncclComm* comm, struct ncclCeCollArgs* args, c
   NCCLCHECKGOTO(ncclCeLaunchBatchOps(comm, &batchOpsParams, stream), ret, fail);
 
   // Ensure all transfers are complete across all ranks
-  NCCLCHECKGOTO(ncclMemOpSync(comm, true, stream), ret, fail);
-  
+  NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
+
 exit:
   ncclCeFreeBatchOpsParams(&batchOpsParams);
   return ret;
@@ -494,7 +497,7 @@ ncclResult_t ncclCeGather(struct ncclComm* comm, struct ncclCeCollArgs* args, cu
   NCCLCHECKGOTO(ncclCeInitBatchOpsParams(&batchOpsParams, 1), ret, fail);
 
   // Ensure all ranks are ready before starting transfers
-  NCCLCHECKGOTO(ncclMemOpSync(comm, false, stream), ret, fail);
+  NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
 
   if (comm->rank == rootRank) {
     // Root rank copies its own data to the correct position in receive buffer
@@ -520,8 +523,8 @@ ncclResult_t ncclCeGather(struct ncclComm* comm, struct ncclCeCollArgs* args, cu
   NCCLCHECKGOTO(ncclCeLaunchBatchOps(comm, &batchOpsParams, stream), ret, fail);
 
   // Ensure all transfers are complete across all ranks
-  NCCLCHECKGOTO(ncclMemOpSync(comm, true, stream), ret, fail);
-  
+  NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
+
 exit:
   ncclCeFreeBatchOpsParams(&batchOpsParams);
   return ret;
