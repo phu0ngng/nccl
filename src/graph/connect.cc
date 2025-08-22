@@ -21,6 +21,7 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
   int localRanks = comm->topo->nodes[GPU].count;
   int nChannels = comm->nChannels;
 
+  topoRanks->crossNicRing = graphs[NCCL_ALGO_RING]->crossNic;
   topoRanks->nvlsHeadNum = 0;
   for (int c=0; c<nChannels; c++) {
     struct ncclChannel* channel = comm->channels+c;
@@ -388,17 +389,17 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
   NCCLCHECKGOTO(ncclCalloc(&treeToChild1, nNodes*MAXCHANNELS), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&nvlsHeads, nNodes*MAXCHANNELS), ret, fail);
 
-  // Alternate rings to avoid crossing rails
-  if (graphs[NCCL_ALGO_RING]->crossNic == 2 && (nChannels % 2) == 0) {
-    for (int r=0; r<comm->nRanks; r++) {
-      if (comm->rankToNode[r] % 2 == 1) {
-        // Exchange rings
-        for (int c=0; c<nChannels; c+=2) {
-          exchangeValues(allTopoRanks[r]->ringRecv+c, allTopoRanks[r]->ringRecv+(c^1));
-          exchangeValues(allTopoRanks[r]->ringSend+c, allTopoRanks[r]->ringSend+(c^1));
-          exchangeValues(allTopoRanks[r]->ringPrev+c, allTopoRanks[r]->ringPrev+(c^1));
-          exchangeValues(allTopoRanks[r]->ringNext+c, allTopoRanks[r]->ringNext+(c^1));
-        }
+  // Alternate rings to avoid crossing rails.
+  // CrossNic values could be not the same on all nodes as it depends on the number of net devs and the NVLink bandwidth.
+  // Therefore, it's only done if the rank obtained a solution with crossNic=2.
+  for (int r = 0; r < comm->nRanks; r++) {
+    if (allTopoRanks[r]->crossNicRing == 2 && (nChannels % 2) == 0 && (comm->rankToNode[r] % 2) == 1) {
+      // Exchange rings
+      for (int c=0; c<nChannels; c+=2) {
+        exchangeValues(allTopoRanks[r]->ringRecv+c, allTopoRanks[r]->ringRecv+(c^1));
+        exchangeValues(allTopoRanks[r]->ringSend+c, allTopoRanks[r]->ringSend+(c^1));
+        exchangeValues(allTopoRanks[r]->ringPrev+c, allTopoRanks[r]->ringPrev+(c^1));
+        exchangeValues(allTopoRanks[r]->ringNext+c, allTopoRanks[r]->ringNext+(c^1));
       }
     }
   }
