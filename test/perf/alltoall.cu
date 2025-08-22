@@ -40,7 +40,7 @@ testResult_t AlltoAllInitData(struct threadArgs* args, ncclDataType_t type, nccl
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   // We don't support in-place alltoall
   args->reportErrors = in_place ? 0 : 1;
   return testSuccess;
@@ -170,7 +170,7 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
   if (deviceImpl == 0) {
     char* sptr = (char*)sendbuff + sendoffset;
     char* rptr = (char*)recvbuff + recvoffset;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0) 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     NCCLCHECK_COMM_WAIT(ncclAlltoAll(sptr, rptr, count, type, comm, stream), comm);
 #elif NCCL_VERSION_CODE >= NCCL_VERSION(2,7,0)
     int nRanks;
@@ -189,10 +189,10 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
   } else {
     switch(deviceImpl) {
       case 1:
-        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 0));
         return testSuccess;
       case 2:
-        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernelOptimized, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernelOptimized, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 0));
         return testSuccess;
       default:
         return testNotImplemented;
