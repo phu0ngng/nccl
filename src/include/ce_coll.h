@@ -16,6 +16,8 @@ struct ncclCeColl {
   size_t baseUCSymComplOffset;
   uint32_t ceSeqNum;
   bool useCompletePtr;
+  uint32_t intraBatchSyncFreq;
+  uint64_t intraBatchSyncMsgThreshold;
   struct ncclDevrWindow* ceSyncWin;
 };
 
@@ -40,6 +42,7 @@ struct ncclCeBatchOpsParams {
   void** srcs;
   size_t* sizes;
   size_t numOps;
+  bool intraBatchSync;
 #if CUDART_VERSION >= 12080
   cudaMemcpyAttributes* attrs;
   size_t* attrIdxs;
