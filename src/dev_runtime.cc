@@ -616,10 +616,11 @@ ncclResult_t ncclCommWindowRegister(
   int saveDev;
   struct ncclDevrRegTask* task;
 
-  if (userPtr == nullptr || userSize == 0 || !ncclParamLocalRegister() || !ncclCuMemEnable()) goto exit;
-
   CUDACHECK(cudaGetDevice(&saveDev));
   NCCLCHECK(ncclGroupStartInternal());
+
+  if (userPtr == nullptr || userSize == 0 || !(comm->symmetricSupport || ncclParamLocalRegister())) goto exit;
+
   NCCLCHECKGOTO(ncclCommEnsureReady(comm), ret, fail);
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
@@ -701,6 +702,12 @@ ncclResult_t ncclDevCommCreate(
   struct ncclWindow_vidmem* winHost;
   struct ncclDevrState* devr;
   ncclResult_t ret = ncclSuccess;
+
+  if (!comm->symmetricSupport) {
+    WARN("Communicator does not support symmetric memory!");
+    ret = ncclInvalidUsage;
+    goto fail;
+  }
 
   NCCLCHECKGOTO(ncclDevrInitOnce(comm), ret, fail);
   devr = &comm->devrState;
