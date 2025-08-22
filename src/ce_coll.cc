@@ -8,6 +8,12 @@
 // Static constant for graph synchronization
 static const uint32_t GRAPH_SYNC_VALUE = 1;
 
+// Static constants for intra-batch synchronization to improve CE collective performance with large scale
+// Frequency of intra-batch synchronization
+static const uint32_t CE_COLL_INTRA_BATCH_SYNC_FREQ = 8;
+// Message threshold for intra-batch synchronization
+static const uint64_t CE_COLL_INTRA_BATCH_SYNC_MSG_THRESHOLD = 512*1024*1024;
+
 ncclResult_t ncclCeInit(struct ncclComm* comm) {
   ncclResult_t ret = ncclSuccess;
 
@@ -31,6 +37,9 @@ ncclResult_t ncclCeInit(struct ncclComm* comm) {
   comm->ceColl.baseUCSymComplPtr = (uint8_t*)comm->ceColl.ceSyncWin->userPtr + comm->ceColl.baseUCSymComplOffset;
   comm->ceColl.ceSeqNum = 0;
   comm->ceColl.useCompletePtr = false;
+  comm->ceColl.intraBatchSyncFreq = CE_COLL_INTRA_BATCH_SYNC_FREQ;
+  comm->ceColl.intraBatchSyncMsgThreshold = CE_COLL_INTRA_BATCH_SYNC_MSG_THRESHOLD;
+  INFO(NCCL_INIT, "Init CE, rank %d baseUCSymReadyPtr %p, baseUCSymComplPtr %p, seq num %d", comm->rank, comm->ceColl.baseUCSymReadyPtr, comm->ceColl.baseUCSymComplPtr, comm->ceColl.ceSeqNum);
 
 exit:
   return ret;
@@ -226,6 +235,7 @@ ncclResult_t ncclCeInitBatchOpsParams(struct ncclCeBatchOpsParams* params, int n
   params->dsts = nullptr;
   params->sizes = nullptr;
   params->numOps = 0;
+  params->intraBatchSync = false;
 #if CUDART_VERSION >= 12080
   params->attrs = nullptr;
   params->attrIdxs = nullptr;
@@ -279,6 +289,10 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeBatchOpsPa
         params->sizes[i],
         cudaMemcpyDeviceToDevice,
         stream), ret, fail);
+
+      if (params->intraBatchSync && ((i+1) % comm->ceColl.intraBatchSyncFreq == 0) && ((i+1) < params->numOps)) {
+        NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
+      }
     }
   }
   //--------------No graph capture--------------
@@ -291,16 +305,40 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeBatchOpsPa
     params->attrs[0].flags = cudaMemcpyFlagPreferOverlapWithCompute;
     params->attrIdxs[0] = 0;
     params->numAttrs = 1;
-    
-    #if CUDART_VERSION >= 13000
-    CUDACHECKGOTO(cudaMemcpyBatchAsync(
-      params->dsts, params->srcs, params->sizes, params->numOps,
-      params->attrs, params->attrIdxs, params->numAttrs, stream), ret, fail);
-    #else
-    CUDACHECKGOTO(cudaMemcpyBatchAsync(
-      params->dsts, params->srcs, params->sizes, params->numOps,
-      params->attrs, params->attrIdxs, params->numAttrs, nullptr, stream), ret, fail);
-    #endif
+
+    if (params->intraBatchSync) {
+      // Break into multiple batches with sync between them
+      int batchSize = comm->ceColl.intraBatchSyncFreq;
+      for (int i = 0; i < params->numOps; i += batchSize) {
+        int currentBatchSize = (i + batchSize <= params->numOps) ? batchSize : params->numOps - i;
+
+        #if CUDART_VERSION >= 13000
+        CUDACHECKGOTO(cudaMemcpyBatchAsync(
+          &params->dsts[i], &params->srcs[i], &params->sizes[i], currentBatchSize,
+          params->attrs, params->attrIdxs, params->numAttrs, stream), ret, fail);
+        #else
+        CUDACHECKGOTO(cudaMemcpyBatchAsync(
+          &params->dsts[i], &params->srcs[i], &params->sizes[i], currentBatchSize,
+          params->attrs, params->attrIdxs, params->numAttrs, nullptr, stream), ret, fail);
+        #endif
+
+        // Sync after each batch
+        if (i + batchSize < params->numOps) {
+          NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
+        }
+      }
+    } else {
+      // Use single batch for all operations
+      #if CUDART_VERSION >= 13000
+      CUDACHECKGOTO(cudaMemcpyBatchAsync(
+        params->dsts, params->srcs, params->sizes, params->numOps,
+        params->attrs, params->attrIdxs, params->numAttrs, stream), ret, fail);
+      #else
+      CUDACHECKGOTO(cudaMemcpyBatchAsync(
+        params->dsts, params->srcs, params->sizes, params->numOps,
+        params->attrs, params->attrIdxs, params->numAttrs, nullptr, stream), ret, fail);
+      #endif
+    }
 #endif
     } else {
       // For older CUDA versions, fall back to individual transfers
@@ -311,6 +349,10 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeBatchOpsPa
           params->sizes[i],
           cudaMemcpyDeviceToDevice,
           stream), ret, fail);
+
+        if (params->intraBatchSync && ((i+1) % comm->ceColl.intraBatchSyncFreq == 0) && ((i+1) < params->numOps)) {
+          NCCLCHECKGOTO(ncclMemOpSync(comm, stream), ret, fail);
+        }
       }
     }
   }
@@ -356,6 +398,9 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
     batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
     batchOpsParams.numOps++;
   }
+
+  // Check if we need to perform intra-batch synchronization
+  batchOpsParams.intraBatchSync = (batchOpsParams.numOps > comm->ceColl.intraBatchSyncFreq && chunkBytes*batchOpsParams.numOps >= comm->ceColl.intraBatchSyncMsgThreshold);
 
   // Launch the batch operations
   NCCLCHECKGOTO(ncclCeLaunchBatchOps(comm, &batchOpsParams, stream), ret, fail);
@@ -408,6 +453,9 @@ ncclResult_t ncclCeAlltoAll(struct ncclComm* comm, struct ncclCeCollArgs* args, 
       batchOpsParams.numOps++;
     }
   }
+
+  // Check if we need to perform intra-batch synchronization
+  batchOpsParams.intraBatchSync = (batchOpsParams.numOps > comm->ceColl.intraBatchSyncFreq && chunkBytes*batchOpsParams.numOps >= comm->ceColl.intraBatchSyncMsgThreshold);
 
   // Launch the batch operations
   NCCLCHECKGOTO(ncclCeLaunchBatchOps(comm, &batchOpsParams, stream), ret, fail);
