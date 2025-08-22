@@ -460,16 +460,20 @@ testResult_t AllReduceRunColl(void* sendbuff, size_t sendoffset, void* recvbuff,
     return testSuccess;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   case 1:
-    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceLsaKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceLsaKernel, type, op),
+               sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 0));
     return testSuccess;
   case 2:
-    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceLsaVectorizedKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceLsaVectorizedKernel, type, op),
+               sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 0));
     return testSuccess;
   case 3:
-    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceMultimemKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceMultimemKernel, type, op),
+               sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 1));
     return testSuccess;
   case 4:
-    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceMultimemVectorizedKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceMultimemVectorizedKernel, type, op),
+               sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 1));
     return testSuccess;
 #endif
   }

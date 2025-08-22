@@ -111,6 +111,9 @@ static int profilerIters = INT_MAX;
 int tuning;
 static int deviceImpl = 0;
 
+int deviceCtaCount = 16; // Default number of CTAs for device implementation
+bool deviceMultimemEnabled = false; // Track whether multimem was successfully enabled
+
 static int ctaPolicy = 0;
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
@@ -1069,9 +1072,18 @@ testResult_t threadInit(struct threadArgs* args) {
       if (deviceImpl) {
         ncclDevCommRequirements reqs;
         memset(&reqs, 0, sizeof(reqs));
-        reqs.lsaBarrierCount = 16;
+        reqs.lsaBarrierCount = deviceCtaCount;
+        // Try to create DevComm with multimem enabled first
         reqs.multimem = true;
-        NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
+        ncclResult_t result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
+        if (result == ncclSuccess) {
+          deviceMultimemEnabled = true;
+        } else {
+          // Fallback: try without multimem
+          reqs.multimem = false;
+          NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
+          deviceMultimemEnabled = false;
+        }
       }
 #endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
@@ -1286,6 +1298,8 @@ int main(int argc, char* argv[], char **envp) {
     {"traffic_class", required_argument, 0, 'q'},
     {"tuning", required_argument, 0, 'U'},
     {"device_implementation", required_argument, 0, 'D'},
+    {"device_cta_count", required_argument, 0, 'V'},
+
     {"help", no_argument, 0, 'h'},
     {"cta_policy", required_argument, 0, 'x'},
     {}
@@ -1293,7 +1307,7 @@ int main(int argc, char* argv[], char **envp) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1468,6 +1482,15 @@ int main(int argc, char* argv[], char **envp) {
         }
 #endif
         break;
+      case 'V':
+        deviceCtaCount = (int)strtol(optarg, NULL, 0);
+        if (deviceCtaCount <= 0 || deviceCtaCount > 128) {
+          fprintf(stderr, "device_cta_count (-V) must be positive and less than 128, got %d. "
+                  "Using default value 16.\n", deviceCtaCount);
+          deviceCtaCount = 16;
+        }
+        break;
+
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1517,6 +1540,8 @@ int main(int argc, char* argv[], char **envp) {
             "[-U,--tuning <0/1> report NCCL tuning info (default: 0)] \n\t"
             "[-x,--cta_policy <0/1/2> set CTA policy (default: 0)] \n\t"
             "[-D,--device_implementation <implementation number> enable device implementation (default: 0, use NCCL implementation; requires -R 2 if > 0)] \n\t"
+            "[-V,--device_cta_count <number> set number of CTAs for device implementation (default: 16)] \n\t"
+
             "[-h,--help]\n",
           basename(argv[0]));
         return 0;
@@ -1886,9 +1911,19 @@ testResult_t run() {
         if (deviceImpl) {
           ncclDevCommRequirements reqs;
           memset(&reqs, 0, sizeof(reqs));
-          reqs.lsaBarrierCount = 16;
+          reqs.lsaBarrierCount = deviceCtaCount;
+
+          // Try to create DevComm with multimem enabled first
           reqs.multimem = true;
-          NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
+          ncclResult_t result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
+          if (result == ncclSuccess) {
+            deviceMultimemEnabled = true;
+          } else {
+            // Fallback: try without multimem
+            reqs.multimem = false;
+            NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
+            deviceMultimemEnabled = false;
+          }
         }
 #endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
