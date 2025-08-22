@@ -114,8 +114,11 @@ ncclResult_t ncclShmOpen(char* shmPath, size_t shmPathSize, size_t shmSize, void
   }
 
   if (devShmPtr) {
+    cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
+    CUDACHECKGOTO(cudaThreadExchangeStreamCaptureMode(&mode), ret, fail);
     CUDACHECKGOTO(cudaHostRegister((void*)hptr, realShmSize, cudaHostRegisterPortable | cudaHostRegisterMapped), ret, fail);
     CUDACHECKGOTO(cudaHostGetDevicePointer(&dptr, (void*)hptr, 0), ret, fail);
+    CUDACHECKGOTO(cudaThreadExchangeStreamCaptureMode(&mode), ret, fail);
   }
 
   shmHandleInit(fd, shmPath, shmSize, realShmSize, hptr, dptr, create, tmphandle);
