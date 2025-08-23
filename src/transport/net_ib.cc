@@ -670,17 +670,19 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
           continue;
         }
         enum ncclIbProvider ibProvider = IB_PROVIDER_NONE;
-        char dataDirectDevicePath[PATH_MAX];
+        char dataDirectDevicePath[PATH_MAX] = "/sys";
         int dataDirectSupported = 0;
         int skipNetDevForDataDirect = 0;
         if (wrap_mlx5dv_is_supported(devices[d])) {
           ibProvider = IB_PROVIDER_MLX5;
-          snprintf(dataDirectDevicePath, PATH_MAX, "/sys");
-          if((ncclMlx5dvDmaBufCapable(context)) && (wrap_mlx5dv_get_data_direct_sysfs_path(context, dataDirectDevicePath + 4, PATH_MAX - 4) == ncclSuccess)) {
-            INFO(NCCL_INIT|NCCL_NET, "NET/IB: Data Direct DMA Interface is detected for device:%s", devices[d]->name);
-            // Now check whether Data Direct has been disabled by the user
-            if(ncclParamIbDataDirect() == 1) { dataDirectSupported = 1; skipNetDevForDataDirect = 1; }
-            if(ncclParamIbDataDirect() == 2) { dataDirectSupported = 1; skipNetDevForDataDirect = 0; }
+          if (ncclMlx5dvDmaBufCapable(context)){
+            if (wrap_mlx5dv_get_data_direct_sysfs_path(context, dataDirectDevicePath + strlen(dataDirectDevicePath), sizeof(dataDirectDevicePath) - strlen(dataDirectDevicePath)) == ncclSuccess) {
+              INFO(NCCL_INIT | NCCL_NET, "NET/IB: Data Direct DMA Interface is detected for device %s", devices[d]->name);
+              if (ncclParamIbDataDirect() == 1) { dataDirectSupported = 1; skipNetDevForDataDirect = 1;}
+              if (ncclParamIbDataDirect() == 2) { dataDirectSupported = 1; skipNetDevForDataDirect = 0;}
+            } else {
+              INFO(NCCL_NET, "NET/IB: Data Direct DMA Interface failed to be detected for device %s", devices[d]->name);
+            }
           }
         }
         int nPorts = 0;

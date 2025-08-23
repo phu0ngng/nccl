@@ -29,7 +29,7 @@ ncclResult_t wrap_mlx5dv_symbols(void) {
 /* CHECK_NOT_NULL: helper macro to check for NULL symbol */
 #define CHECK_NOT_NULL(container, internal_name) \
   if (container.internal_name == NULL) { \
-     WARN("lib wrapper not initialized."); \
+     WARN("NET/MLX5: lib wrapper not initialized."); \
      return ncclInternalError; \
   }
 
@@ -37,16 +37,7 @@ ncclResult_t wrap_mlx5dv_symbols(void) {
   CHECK_NOT_NULL(container, internal_name); \
   retval = container.call; \
   if (retval == error_retval) { \
-    WARN("Call to " name " failed with error %s", strerror(errno)); \
-    return ncclSystemError; \
-  } \
-  return ncclSuccess;
-
-#define MLX5DV_INT_CHECK_RET_ERRNO(container, internal_name, call, success_retval, name) \
-  CHECK_NOT_NULL(container, internal_name); \
-  int ret = container.call; \
-  if (ret != success_retval) { \
-    INFO(NCCL_NET, "Call to " name " failed with error %s errno %d", strerror(ret), ret); \
+    WARN("NET/MLX5: Call to " name " failed with error %s", strerror(errno)); \
     return ncclSystemError; \
   } \
   return ncclSuccess;
@@ -58,8 +49,13 @@ bool wrap_mlx5dv_is_supported(struct ibv_device *device) {
   return mlx5dvSymbols.mlx5dv_internal_is_supported(device);
 }
 
-ncclResult_t wrap_mlx5dv_get_data_direct_sysfs_path(struct ibv_context *context, char *buf, size_t buf_len) {
-  MLX5DV_INT_CHECK_RET_ERRNO(mlx5dvSymbols, mlx5dv_internal_get_data_direct_sysfs_path, mlx5dv_internal_get_data_direct_sysfs_path(context, buf, buf_len), 0, "mlx5dv_get_data_direct_sysfs_path");
+ncclResult_t wrap_mlx5dv_get_data_direct_sysfs_path(struct ibv_context* context, char* buf, size_t buf_len) {
+  CHECK_NOT_NULL(mlx5dvSymbols, mlx5dv_internal_get_data_direct_sysfs_path);
+  int ret = mlx5dvSymbols.mlx5dv_internal_get_data_direct_sysfs_path(context, buf, buf_len);
+  if (ret == 0) return ncclSuccess;
+  /* ENODEV can happen if the devices is not accessible but it's not an error */
+  if (ret != ENODEV) INFO(NCCL_NET, "NET/MLX5: Call to mlx5dv_internal_get_data_direct_sysfs_path failed with error %s errno %d", strerror(ret), ret);
+  return ncclSystemError;
 }
 
 /* DMA-BUF support */
