@@ -201,6 +201,10 @@ __hidden ncclResult_t exampleProfilerFinalize(void* context) {
   }
 
   free(ctx->groupPool);
+  free(ctx->collApiPool);
+  free(ctx->p2pApiPool);
+  free(ctx->kernelLaunchPool);
+  free(ctx->groupApiPool);
   free(ctx->collPool);
   free(ctx->p2pPool);
   free(ctx->proxyCtrlPool);

@@ -10,7 +10,9 @@
 #include <string.h>
 
 #define __hidden __attribute__((visibility("hidden")))
+
 #define NCCL_PLUGIN_MAX_RECVS 1
+#define NCCL_MAX_NET_SIZE_BYTES (1*1024*1024*1024*1024L) //1TB
 
 struct pluginListenComm {
   int dev;
@@ -34,14 +36,15 @@ struct pluginMemHandle {
   int data;
 };
 
-__hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction) { return ncclSuccess; }
+__hidden ncclResult_t pluginInit(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) { return ncclSuccess; }
 __hidden ncclResult_t pluginDevices(int* ndev) { *ndev = 1; return ncclSuccess; }
-__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v8_t* props) {
-  props->name = (char *)"ncclNetPlugin_v8";
+__hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v10_t* props) {
+  props->name = (char *)"ncclNetPlugin_v10";
   props->pciPath = NULL;
   props->guid = 0;
   props->ptrSupport = NCCL_PTR_HOST;
   props->regIsGlobal = 0;
+  props->forceFlush = 0;
   props->speed = 100000;
   props->port = 0;
   props->latency = 0;
@@ -49,6 +52,10 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v8_t* props
   props->maxRecvs = NCCL_PLUGIN_MAX_RECVS;
   props->netDeviceType = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
+  props->vProps.ndevs = 1;
+  props->vProps.devs[0] = dev;
+  props->maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  props->maxCollBytes = NCCL_MAX_NET_SIZE_BYTES;
   return ncclSuccess;
 }
 __hidden ncclResult_t pluginListen(int dev, void* handle, void** listenComm) {
@@ -57,7 +64,7 @@ __hidden ncclResult_t pluginListen(int dev, void* handle, void** listenComm) {
   *listenComm = comm;
   return ncclSuccess;
 }
-__hidden ncclResult_t pluginConnect(int dev, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
+__hidden ncclResult_t pluginConnect(int dev, ncclNetCommConfig_v10_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_t** sendDevComm) {
   struct pluginSendComm* comm = (struct pluginSendComm*)malloc(sizeof(*comm));
   *sendComm = comm;
   return ncclSuccess;
@@ -79,7 +86,7 @@ __hidden ncclResult_t pluginDeregMr(void* collComm, void* mhandle) {
   free(mhandle);
   return ncclSuccess;
 }
-__hidden ncclResult_t pluginIsend(void* sendComm, void* data, int size, int tag, void* mhandle, void** request) {
+__hidden ncclResult_t pluginIsend(void* sendComm, void* data, size_t size, int tag, void* mhandle, void* phandle, void** request) {
   struct pluginRequest* r = (struct pluginRequest*)malloc(sizeof(*r));
   r->sizes[0] = size;
   r->tags[0] = tag;
@@ -87,7 +94,7 @@ __hidden ncclResult_t pluginIsend(void* sendComm, void* data, int size, int tag,
   *request = r;
   return ncclSuccess;
 }
-__hidden ncclResult_t pluginIrecv(void* recvComm, int n, void** data, int* sizes, int* tags, void** mhandles, void** request) {
+__hidden ncclResult_t pluginIrecv(void* recvComm, int n, void** data, size_t* sizes, int* tags, void** mhandles, void** phandles, void** request) {
   struct pluginRequest* r = (struct pluginRequest*)malloc(sizeof(*r));
   r->ntags = n;
   memcpy(r->sizes, sizes, sizeof(int)*n);
@@ -117,15 +124,18 @@ __hidden ncclResult_t pluginCloseListen(void* listenComm) {
   free(listenComm);
   return ncclSuccess;
 }
-__hidden ncclResult_t pluginGetDeviceMr(void* comm, void* mhandle, void** dptr_mhandle) {
-  return ncclSuccess;
-}
 __hidden ncclResult_t pluginIrecvConsumed(void* recvComm, int n, void* request) {
   return ncclSuccess;
 }
+__hidden ncclResult_t pluginGetDeviceMr(void* comm, void* mhandle, void** dptr_mhandle) {
+  return ncclSuccess;
+}
+__hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_v10_t* props) {
+  return ncclSuccess;
+}
 
-extern "C" __attribute__((visibility("default"))) const ncclNet_v8_t ncclNetPlugin_v8 = {
-  .name = "ncclNetPlugin_v8",
+extern "C" __attribute__((visibility("default"))) const ncclNet_v10_t ncclNetPlugin_v10 = {
+  .name = "ncclNetPlugin_v10",
   .init = pluginInit,
   .devices = pluginDevices,
   .getProperties = pluginGetProperties,
@@ -144,4 +154,5 @@ extern "C" __attribute__((visibility("default"))) const ncclNet_v8_t ncclNetPlug
   .closeListen = pluginCloseListen,
   .getDeviceMr = pluginGetDeviceMr,
   .irecvConsumed = pluginIrecvConsumed,
+  .makeVDevice   = pluginMakeVDevice,
 };

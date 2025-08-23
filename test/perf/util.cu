@@ -913,3 +913,25 @@ ncclProfiler_t ncclProfiler_v5 {
   .recordEventState = ncclProfilerRecordEventState,
   .finalize = ncclProfilerFinalize,
 };
+
+int (*ncclProfilerStart)(int64_t profilerMask, const char* profilerDump);
+int (*ncclProfilerStop)(void);
+
+static void* libHandle;
+
+int ncclProfilerLoad(void) {
+  void* libHandle = dlopen("libnccl-profiler-example.so", RTLD_NOW | RTLD_LOCAL);
+  if (libHandle) {
+    ncclProfilerStart = (int(*)(int64_t, const char*))dlsym(libHandle, "exampleProfilerStart");
+    ncclProfilerStop  = (int(*)(void))dlsym(libHandle, "exampleProfilerStop");
+    if (ncclProfilerStart && ncclProfilerStop) return 0;
+  }
+  return 1;
+}
+
+int ncclProfilerUnload(void) {
+  if (libHandle) dlclose(libHandle);
+  ncclProfilerStart = nullptr;
+  ncclProfilerStop = nullptr;
+  return 0;
+}

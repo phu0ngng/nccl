@@ -24,6 +24,11 @@ set(ENV{NCCL_USE_CMAKE} "1")
 project(NCCL VERSION ${NCCL_MAJOR}.${NCCL_MINOR}.${NCCL_PATCH}
         LANGUAGES CUDA CXX C)
 
+# Make CMAKE_BUILD_TYPE to release by default if not set
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release")
+endif()
+
 option(VERBOSE "Enable verbose output" OFF)
 option(KEEP "Keep intermediate files" OFF)
 option(DEBUG "Enable debug build" OFF)
