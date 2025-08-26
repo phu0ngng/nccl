@@ -53,8 +53,9 @@ ncclResult_t wrap_mlx5dv_get_data_direct_sysfs_path(struct ibv_context* context,
   CHECK_NOT_NULL(mlx5dvSymbols, mlx5dv_internal_get_data_direct_sysfs_path);
   int ret = mlx5dvSymbols.mlx5dv_internal_get_data_direct_sysfs_path(context, buf, buf_len);
   if (ret == 0) return ncclSuccess;
-  /* ENODEV can happen if the devices is not accessible but it's not an error */
-  if (ret != ENODEV) INFO(NCCL_NET, "NET/MLX5: Call to mlx5dv_internal_get_data_direct_sysfs_path failed with error %s errno %d", strerror(ret), ret);
+  /* ENODEV can happen if the devices is not data-direct but mlx5 is used. It's not an error*/
+  if (ret == ENODEV) return ncclInvalidArgument;
+  INFO(NCCL_NET, "NET/MLX5: Call to mlx5dv_internal_get_data_direct_sysfs_path failed with error %s errno %d", strerror(ret), ret);
   return ncclSystemError;
 }
 
