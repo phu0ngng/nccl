@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef NCCL_DEVICE_RUNTIME_H_
 #define NCCL_DEVICE_RUNTIME_H_
 #include "nccl.h"

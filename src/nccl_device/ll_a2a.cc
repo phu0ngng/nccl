@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #include "core.h"
 #include "nccl_device/impl/ll_a2a__funcs.h"
 

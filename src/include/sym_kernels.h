@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef NCCL_SYM_KERNELS_H_
 #define NCCL_SYM_KERNELS_H_
 #include "nccl.h"
