@@ -98,12 +98,12 @@ static ncclResult_t addProxyOpIfNeeded(struct ncclComm* comm, struct ncclKernelP
 static void addWorkBatchToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int channelId,
     enum ncclDevWorkType workType, int devFuncId, uint32_t workOffset,
-    int p2pRound = -1
+    int p2pRound = -1, bool newBatch = false
   ) {
   ncclKernelPlanner::WipPlan::Channel* chan = &comm->planner.wipPlan.channels[channelId];
   size_t workSize = ncclDevWorkSize(workType);
   // Conditions causing us to create a new blank batch.
-  bool newBatch = (chan->workBatchQueue.tail == nullptr);
+  newBatch = (chan->workBatchQueue.tail == nullptr);
   struct ncclDevWorkBatch* batch = nullptr;
   if (!newBatch) {
     batch = &chan->workBatchQueue.tail->batch;
@@ -114,7 +114,7 @@ static void addWorkBatchToPlan(
     // account for all extension batches being fused together which is why
     // wipBatch.workBytes and wipBatch.nP2ps aren't reset to 0 for a new extension
     // batch further down.
-    newBatch |= NCCL_MAX_DEV_WORK_BATCH_BYTES < chan->wipBatch.workBytes + workSize;
+    newBatch |= ncclMaxDevWorkBatchBytes(comm->cudaArch) < chan->wipBatch.workBytes + workSize;
     if (workType == ncclDevWorkTypeP2p) {
       newBatch |= chan->wipBatch.nP2ps == NCCL_MAX_DEV_WORK_P2P_PER_BATCH;
       for (int i=0; i < chan->wipBatch.nP2ps; i++) {

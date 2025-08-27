@@ -355,7 +355,11 @@ enum ncclDevWorkType: uint8_t {
 
 constexpr size_t ncclDevWorkSize(enum ncclDevWorkType type) {
   return type == ncclDevWorkTypeP2p ? sizeof(ncclDevWorkP2p) :
-         type == ncclDevWorkTypeColl ? sizeof(ncclDevWorkColl) : sizeof(ncclDevWorkCollReg);
+
+__host__ __device__ constexpr int ncclMaxDevWorkBatchBytes(int cudaArch = NCCL_CUDA_ARCH) {
+  return cudaArch < 700 ? (1<<10) :
+         cudaArch < 800 ? (16<<10) :
+                          (32<<10);
 }
 
 #define NCCL_MAX_DEV_WORK_BATCH_BYTES 1024
