@@ -375,8 +375,8 @@ template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLL_R_impl(ncclSymkDevWorkArgs const* args, bool multimem) {
   ncclSymkArgsHandler handler{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), handler.comm, ncclTeamTagLsa(),
-    blockIdx.x, ncclSymkMaxThreads, multimem
+    ncclCoopCta(), handler.comm, ncclTeamLsa(handler.comm), handler.lsaLLA2A,
+    blockIdx.x, ncclSymkMaxThreads, multimem, handler.comm.multimem
   );
 
   int const& rank = handler.comm.rank;

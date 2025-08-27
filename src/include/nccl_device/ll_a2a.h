@@ -22,8 +22,6 @@ template<typename Coop>
 struct ncclLLA2ASession: ncclLLA2ASession_internal<Coop> {
   NCCL_DEVICE_INLINE ncclLLA2ASession(Coop, ncclDevComm const&, ncclTeam, ncclLLA2AHandle, uint32_t block, int maxElts, bool multimem=false, ncclMultimemHandle mmHandle={});
 
-  NCCL_DEVICE_INLINE ncclLLA2ASession(Coop, ncclDevComm const&, ncclTeamTagLsa, uint32_t block, int maxElts, bool multimem=false);
-
   NCCL_DEVICE_INLINE ~ncclLLA2ASession();
 
   ncclLLA2ASession(ncclLLA2ASession const&) = delete; // Sessions are not copyable

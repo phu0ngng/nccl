@@ -209,9 +209,16 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
     struct ncclDevCommRequirements reqs = {};
     reqs.multimem = comm->nvlsSupport;
     reqs.lsaBarrierCount = ncclSymkMaxBlocks;
-    reqs.lsaLLA2ABlockCount = ncclSymkMaxBlocks;
-    reqs.lsaLLA2ASlotCount = ncclLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);
-    NCCLCHECK(ncclDevrCommCreateInternal(comm, (struct ncclDevCommRequirements const*)&reqs, &symk->devComm));
+
+    struct ncclDevResourceRequirements lla2aReq;
+    ncclLLA2ACreateRequirement(
+      ncclSymkMaxBlocks, ncclLLA2ACalcSlots(ncclTeamLsa(comm).nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize),
+      &symk->kcomm.lsaLLA2A, &lla2aReq
+    );
+    lla2aReq.next = reqs.resourceRequirementsList;
+    reqs.resourceRequirementsList = &lla2aReq;
+
+    NCCLCHECK(ncclDevrCommCreateInternal(comm, &reqs, &symk->kcomm.devComm));
   }
   return ncclSuccess;
 }
@@ -219,7 +226,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
 ncclResult_t ncclSymkFinalize(struct ncclComm* comm) {
   struct ncclSymkState* symk = &comm->symkState;
   if (symk->initialized) {
-    NCCLCHECK(ncclDevCommDestroy(comm, &symk->devComm));
+    NCCLCHECK(ncclDevCommDestroy(comm, &symk->kcomm.devComm));
   }
   return ncclSuccess;
 }

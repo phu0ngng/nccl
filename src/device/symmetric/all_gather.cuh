@@ -338,7 +338,7 @@ static __device__ void allgather_LL_body(
 static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevWorkArgs const* args, bool multimem) {
   ncclSymkArgsHandler handler{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), handler.comm, ncclTeamTagLsa(), blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem
+    ncclCoopCta(), handler.comm, ncclTeamLsa(handler.comm), handler.lsaLLA2A, blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem, handler.comm.multimem
   );
 
   using Pack = BytePack<8>;

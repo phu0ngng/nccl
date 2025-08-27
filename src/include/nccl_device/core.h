@@ -60,10 +60,6 @@ struct ncclDevCommRequirements {
   bool multimem; // Enable multimem on lsa team
 
   int lsaBarrierCount;
-  ncclLsaBarrierHandle_t* outLsaBarrierHandle; // If non-null, target assigned during ncclDevCommCreate.
-
-  int lsaLLA2ABlockCount, lsaLLA2ASlotCount;
-  ncclLLA2AHandle_t* outLsaLLA2AHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 
 struct ncclDevResourceRequirements {
