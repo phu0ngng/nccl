@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef NCCL_REGISTER_INLINE_H_
 #define NCCL_REGISTER_INLINE_H_
 
