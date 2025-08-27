@@ -8,6 +8,7 @@ fi
 ncclsymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep "^nccl"`
 pncclsymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep "^pnccl"`
 othersymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep -v "^nccl" | grep -v "^pnccl"`
+no_pncclsymbol="ncclResetDebugInitInternal"
 errors=""
 
 sym_ok() {
@@ -28,6 +29,17 @@ while [ "$ncclsymbols" != "" ]; do
   ncclsymbols=$@
   set -- $pncclsymbols
   found=0
+  for no_p in $no_pncclsymbol; do
+    if [ "$no_p" == "$ncclsym" ]; then
+       found=1
+       break
+    fi
+  done
+  if [ "$found" == "1" ]; then
+    echo -e "\e[32m\e[1m  [OK]\e[0m\t $ncclsym [profiling symbol waived]"
+    continue;
+  fi
+
   for pncclsym in $pncclsymbols; do
     if [ "`echo $pncclsym | cut -c 2-`" == "$ncclsym" ]; then
       found=1
@@ -38,6 +50,7 @@ while [ "$ncclsymbols" != "" ]; do
     echo -e "\e[32m\e[1m  [OK]\e[0m\t $ncclsym p$ncclsym"
   else
     echo -e "\e[31m\e[1m [FAIL]\e[0m\t $ncclsym"
+    errors="$errors $ncclsym"
   fi
 done
 
