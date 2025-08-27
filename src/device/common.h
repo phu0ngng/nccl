@@ -172,6 +172,14 @@ __device__ __forceinline__ void loadWorkBatchToShmem(
       packInWork = tid%(workSize/16);
       dstWork = tid/(workSize/16);
       break;
+#ifdef ALLGATHERV_IMPL
+    case (int)ncclDevWorkTypeBcast:
+      workSize = sizeof(struct ncclDevWorkBcast);
+      nPacks = nWorks*(workSize/16);
+      packInWork = tid%(workSize/16);
+      dstWork = tid/(workSize/16);
+      break;
+#endif
     case (int)ncclDevWorkTypeCollReg:
     default:
       workSize = sizeof(struct ncclDevWorkCollReg);

@@ -19,6 +19,7 @@ RDMA_CORE ?= 0
 NET_PROFILER ?= 0
 MLX5DV ?= 0
 MAX_EXT_NET_PLUGINS ?= 0
+ALLGATHERV_ENABLE ?= 0  # set to 1 to use new allgatherv implementation
 
 NVCC = $(CUDA_HOME)/bin/nvcc
 
@@ -96,10 +97,10 @@ NVLDFLAGS   += ${GCOV_FLAGS:%=-Xcompiler %}
 ########## GCOV ##########
 
 ifeq ($(DEBUG), 0)
-NVCUFLAGS += -O3
+NVCUFLAGS += -O3 -lineinfo
 CXXFLAGS  += -O3 -g
 else
-NVCUFLAGS += -O0 -G -g
+NVCUFLAGS += -O0 -G -g -lineinfo
 CXXFLAGS  += -O0 -g -ggdb3
 endif
 
@@ -157,4 +158,9 @@ endif
 
 ifneq ($(MAX_EXT_NET_PLUGINS), 0)
 CXXFLAGS += -DNCCL_NET_MAX_PLUGINS=$(MAX_EXT_NET_PLUGINS)
+endif
+
+ifeq ($(ALLGATHERV_ENABLE), 1)
+CXXFLAGS += -DALLGATHERV_IMPL
+NVCUFLAGS += -DALLGATHERV_IMPL
 endif

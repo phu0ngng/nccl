@@ -175,6 +175,10 @@ struct ncclRing {
   // devices. Ordered from current device.
   int* userRanks;
 
+#ifdef ALLGATHERV_IMPL
+  // Maps a user rank to an internal ring index.
+  int* rankToIndex;  // inverse lookup of userRanks, setup in setupChannel
+#endif
   int index; // This rank's index in the ring
 };
 
@@ -304,6 +308,25 @@ struct alignas(16) ncclDevWorkColl {
   uint64_t redOpArg;
 };
 
+// Extend ncclDevWorkColl for broadcast optimization (allgatherv)
+#ifdef ALLGATHERV_IMPL
+struct alignas(16) ncclDevWorkBcastBase {
+  int rank;
+  int root;
+  void *sendbuff;
+  void* recvbuff;
+  uint64_t redOpArg;
+};
+
+struct alignas(16) ncclDevWorkBcast {
+  struct ncclDevWorkBcastBase coll;
+  int ringDepth;
+  size_t bytes;  // bytes of this work
+  size_t bytes_done;
+  int nr_roots;
+  size_t chunksize;
+};
+#endif
 
 __host__ __device__ constexpr int ncclProtoGrainSize(int proto) {
   return proto == NCCL_PROTO_LL ? 16 :
@@ -350,11 +373,21 @@ struct alignas(16) ncclDevWorkCollReg {
 enum ncclDevWorkType: uint8_t {
   ncclDevWorkTypeP2p,
   ncclDevWorkTypeColl,
-  ncclDevWorkTypeCollReg
+  ncclDevWorkTypeCollReg,
+#ifdef ALLGATHERV_IMPL
+  ncclDevWorkTypeBcast,  // for batched broadcast
+#endif
 };
 
 constexpr size_t ncclDevWorkSize(enum ncclDevWorkType type) {
   return type == ncclDevWorkTypeP2p ? sizeof(ncclDevWorkP2p) :
+         type == ncclDevWorkTypeColl ? sizeof(ncclDevWorkColl) :
+         type == ncclDevWorkTypeCollReg ? sizeof(ncclDevWorkCollReg) :
+#ifdef ALLGATHERV_IMPL
+         type == ncclDevWorkTypeBcast ? sizeof(ncclDevWorkBcast) :
+#endif
+         0;
+}
 
 __host__ __device__ constexpr int ncclMaxDevWorkBatchBytes(int cudaArch = NCCL_CUDA_ARCH) {
   return cudaArch < 700 ? (1<<10) :

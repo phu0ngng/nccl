@@ -89,6 +89,9 @@ struct ncclProxyOp {
   union {
     struct ncclTaskColl* coll;
     struct ncclTaskP2p* p2p;
+#ifdef ALLGATHERV_IMPL
+    struct ncclTaskBcast* bcast;
+#endif
   } task;
 
   // Profiler work counter increment flag. Set to 'true' if the profiler work counter for this channel needs increment.

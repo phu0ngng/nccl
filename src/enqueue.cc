@@ -1345,6 +1345,15 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
     ncclMemoryPoolFree(&comm->memPool_ncclTaskP2p, pt);
     pt = pt1;
   }
+#ifdef ALLGATHERV_IMPL
+  // Free bcast tasks
+  struct ncclTaskBcast* bt = ncclIntruQueueHead(&plan->bcastTaskQueue);
+  while (bt != nullptr) {
+    struct ncclTaskBcast* bt1 = bt->next;
+    ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, bt);
+    bt = bt1;
+  }
+#endif
   // Free proxy ops
   struct ncclProxyOp* q = ncclIntruQueueHead(&plan->proxyOpQueue);
   while (q != nullptr) {

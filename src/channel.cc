@@ -53,6 +53,9 @@ ncclResult_t initChannel(struct ncclComm* comm, int channelId) {
   }
 
   channel->ring.userRanks = ncclMemoryStackAlloc<int>(&comm->memPermanent, nRanks);
+#ifdef ALLGATHERV_IMPL
+  channel->ring.rankToIndex = ncclMemoryStackAlloc<int>(&comm->memPermanent, nRanks);
+#endif
   NCCLCHECK(ncclCudaCallocAsync(&channel->devRingUserRanks, nRanks, deviceStream));
   ncclCommPushCudaFree(comm, channel->devRingUserRanks);
 

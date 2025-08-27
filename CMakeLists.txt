@@ -42,6 +42,7 @@ option(RDMA_CORE "Enable RDMA core" OFF)
 option(NET_PROFILER "Enable network profiler" OFF)
 option(MLX5DV "Enable MLX5DV" OFF)
 option(MAX_EXT_NET_PLUGINS "Maximum external network plugins" 0)
+option(ALLGATHERV_ENABLE "Enable allgatherv optimization" OFF)
 
 find_package(CUDAToolkit REQUIRED)
 
@@ -146,6 +147,10 @@ endif()
 
 if(MAX_EXT_NET_PLUGINS GREATER 0)
     add_definitions(-DNCCL_NET_MAX_PLUGINS=${MAX_EXT_NET_PLUGINS})
+endif()
+
+if(ALLGATHERV_ENABLE)
+    add_definitions(-DALLGATHERV_IMPL)
 endif()
 
 # Library dependencies

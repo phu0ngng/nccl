@@ -366,6 +366,11 @@ static void groupCleanup(struct ncclComm** groupCommHeadPtr, struct ncclIntruQue
           memset(&comm->planner, 0, sizeof(comm->planner));
           comm->planner.peers = tmp;
           if (comm->planner.peers != NULL) memset(comm->planner.peers, 0, comm->nRanks * sizeof(comm->planner.peers[0]));
+#ifdef ALLGATHERV_IMPL
+          // reset bcast_info
+          comm->planner.bcast_info.minBcastPeer = INT_MAX;
+          comm->planner.bcast_info.maxBcastPeer = INT_MIN;
+#endif
         }
       }
 

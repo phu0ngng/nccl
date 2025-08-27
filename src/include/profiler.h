@@ -13,6 +13,7 @@
 struct ncclProxyArgs;
 struct ncclKernelPlan;
 struct ncclTaskColl;
+struct ncclTaskBcast;
 struct ncclTaskP2p;
 struct ncclInfo;
 struct ncclComm;
