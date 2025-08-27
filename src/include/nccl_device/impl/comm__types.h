@@ -5,6 +5,8 @@
 #include "mem_barrier__types.h"
 #include "ll_a2a__types.h"
 
+struct ncclDevCommWindowTable;
+#if __cplusplus
 struct ncclDevCommWindowTable {
   struct Entry {
     uintptr_t base, size;
@@ -12,6 +14,7 @@ struct ncclDevCommWindowTable {
   } entries[32];
   struct ncclDevCommWindowTable* next;
 };
+#endif
 
 struct ncclDevComm {
   int rank, nRanks;
@@ -22,11 +25,11 @@ struct ncclDevComm {
   struct ncclDevCommWindowTable* windowTable;
 
   ncclWindow_t resourceWindow;
-  ncclWindow_vidmem resourceWindow_inlined;
+  struct ncclWindow_vidmem resourceWindow_inlined;
 
-  ncclMultimemHandle multimem;
-  ncclLsaBarrierHandle lsaBarrier;
-  ncclLLA2AHandle lsaLLA2A;
+  ncclMultimemHandle_t multimem;
+  ncclLsaBarrierHandle_t lsaBarrier;
+  ncclLLA2AHandle_t lsaLLA2A;
 };
 
 #endif // _NCCL_DEVICE_COMM__TYPES_H_

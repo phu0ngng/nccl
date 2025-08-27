@@ -12,7 +12,7 @@
 #if CUDART_VERSION >= 11000
 #include <cuda_bf16.h>
 #endif
-#if CUDART_VERSION >= 11080
+#if __cplusplus && CUDART_VERSION >= 11080
 #include <cuda_fp8.h>
 #endif
 
@@ -29,6 +29,7 @@ extern "C" {
 #endif
 
 #include <limits.h>
+
 /* Opaque handle to communicator */
 typedef struct ncclComm* ncclComm_t;
 typedef struct ncclWindow_vidmem* ncclWindow_t;

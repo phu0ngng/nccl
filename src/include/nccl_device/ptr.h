@@ -3,6 +3,7 @@
 #include "core.h"
 #include <stdint.h>
 
+#if __cplusplus
 template<typename T>
 struct ncclSymPtr {
   using ElementType = T;
@@ -49,5 +50,6 @@ template<typename T, typename Int>
 NCCL_HOST_DEVICE_INLINE ncclSymPtr<T> operator==(ncclSymPtr<T> a, ncclSymPtr<T> b);
 template<typename T, typename Int>
 NCCL_HOST_DEVICE_INLINE ncclSymPtr<T> operator!=(ncclSymPtr<T> a, ncclSymPtr<T> b);
+#endif
 
 #endif

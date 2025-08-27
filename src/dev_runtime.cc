@@ -3,6 +3,7 @@
 #include "device.h"
 #include "transport.h"
 #include "group.h"
+#include "nccl_device.h"
 
 NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
 
@@ -683,9 +684,9 @@ ncclResult_t ncclDevrFindWindow(
   return ncclSuccess;
 }
 
-NCCL_API_CXX(ncclResult_t, ncclDevCommCreate, ncclComm_t comm, struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outSymComm);
+NCCL_API(ncclResult_t, ncclDevCommCreate, ncclComm_t comm, ncclDevCommRequirements_t const* reqs, ncclDevComm_t* outSymComm);
 ncclResult_t ncclDevCommCreate(
-    struct ncclComm* comm, struct ncclDevCommRequirements const* reqs,
+    ncclComm_t comm, struct ncclDevCommRequirements const* reqs,
     struct ncclDevComm* outSymComm
   ) {
   struct ncclTeam world;
@@ -813,7 +814,7 @@ fail:
   return ret;
 }
 
-NCCL_API_CXX(ncclResult_t, ncclDevCommDestroy, ncclComm_t comm, struct ncclDevComm const* devComm);
+NCCL_API(ncclResult_t, ncclDevCommDestroy, ncclComm_t comm, ncclDevComm_t const* devComm);
 ncclResult_t ncclDevCommDestroy(
     struct ncclComm* comm, struct ncclDevComm const* devComm
   ) {
