@@ -269,7 +269,7 @@ static void rasClientEnqueueMsg(struct rasClient* client, char* msg, size_t msgL
 // Terminates a connection with a RAS client.
 static void rasClientTerminate(struct rasClient* client) {
   (void)close(client->sock);
-  rasPfds[client->pfd].fd = -1;
+  rasPfds[client->pfd].fd = NCCL_INVALID_SOCKET;
   rasPfds[client->pfd].events = rasPfds[client->pfd].revents = 0;
   while (struct rasMsgMeta* meta = ncclIntruQueueTryDequeue(&client->sendQ)) {
     free(meta);

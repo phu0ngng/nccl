@@ -15,6 +15,7 @@
 #include "nccl.h"
 #include "utils.h"
 #include "ras_internal.h"
+#include "os.h"
 
 // Type of a notification from a local NCCL thread.
 typedef enum {
@@ -642,7 +643,7 @@ static void* rasThreadMain(void*) {
           struct rasSocket* sock;
           for (sock = rasSocketsHead; sock;) {
             struct rasSocket* sockNext = sock->next;
-            if (rasPfds[pollIdx].fd == sock->sock.fd) {
+            if (rasPfds[pollIdx].fd == sock->sock.socketDescriptor) {
               rasSockEventLoop(sock, pollIdx);
               break;
             }
@@ -685,17 +686,17 @@ exit:
 ncclResult_t rasGetNewPollEntry(int* index) {
   int i;
   for (i = 0; i < nRasPfds; i++)
-    if (rasPfds[i].fd == -1)
+    if (rasPfds[i].fd == NCCL_INVALID_SOCKET)
       break;
   if (i == nRasPfds) {
     NCCLCHECK(ncclRealloc(&rasPfds, nRasPfds, nRasPfds+RAS_INCREMENT));
     nRasPfds += RAS_INCREMENT;
     for (int j = i; j < nRasPfds; j++)
-      rasPfds[j].fd = -1;
+      rasPfds[j].fd = NCCL_INVALID_SOCKET;
   }
 
   memset(rasPfds+i, '\0', sizeof(*rasPfds));
-  rasPfds[i].fd = -1;
+  rasPfds[i].fd = NCCL_INVALID_SOCKET;
 
   *index = i;
   return ncclSuccess;

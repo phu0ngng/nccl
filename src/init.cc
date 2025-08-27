@@ -27,7 +27,7 @@
 #include <mutex>
 #include "ce_coll.h"
 #include "nvtx.h"
-#include "os/os.h"
+#include "os.h"
 #include "env.h"
 
 #define STR2(v) #v

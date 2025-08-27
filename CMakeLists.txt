@@ -43,6 +43,17 @@ option(NET_PROFILER "Enable network profiler" OFF)
 option(MLX5DV "Enable MLX5DV" OFF)
 option(MAX_EXT_NET_PLUGINS "Maximum external network plugins" 0)
 
+# Detect OS
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(NCCL_OS_WINDOWS ON)
+    add_definitions(-DNCCL_OS_WINDOWS)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(NCCL_OS_LINUX ON)
+    add_definitions(-DNCCL_OS_LINUX)
+else()
+    message(FATAL_ERROR "Unsupported OS: ${CMAKE_SYSTEM_NAME}")
+endif()
+
 find_package(CUDAToolkit REQUIRED)
 
 # CUDA version detection
@@ -138,17 +149,6 @@ if(MLX5DV)
     if(MLX5_LIBRARY)
         list(APPEND EXTRA_LIBS ${MLX5_LIBRARY})
     endif()
-endif()
-
-# Detect OS
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set(NCCL_OS_WINDOWS ON)
-    add_definitions(-DNCCL_OS_WINDOWS)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(NCCL_OS_LINUX ON)
-    add_definitions(-DNCCL_OS_LINUX)
-else()
-    message(FATAL_ERROR "Unsupported OS: ${CMAKE_SYSTEM_NAME}")
 endif()
 
 if(NET_PROFILER)

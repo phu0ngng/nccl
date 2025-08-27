@@ -196,7 +196,7 @@ static ncclResult_t GetSocketAddrFromString(union socketAddress* ua, const char*
   return ncclSuccess;
 }
 
-static int findInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNameMaxSize, int maxIfs) {
+static int ncclFindInterfaces(char* ifNames, union socketAddress *ifAddrs, int ifNameMaxSize, int maxIfs) {
   int nIfs = 0;
   // Allow user to force the INET socket family selection
   int sock_family = envSocketFamily();
