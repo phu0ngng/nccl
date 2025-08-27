@@ -1626,8 +1626,8 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int ch
     return ncclInternalError;
   }
 
-  static pthread_once_t once = PTHREAD_ONCE_INIT;
-  pthread_once(&once,getNetDevsPolicyOnce);
+  static std::once_flag onceFlag;
+  std::call_once(onceFlag, getNetDevsPolicyOnce);
   int netsPerGpu = 0;
   if (netDevsPolicy == NETDEVS_POLICY_AUTO) {
     int localGpus[NCCL_TOPO_MAX_NODES];

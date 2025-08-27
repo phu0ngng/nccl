@@ -21,6 +21,7 @@
 #include <sys/time.h>
 #include <sched.h>
 #include <algorithm>
+#include <mutex>
 
 #define NCCL_MAX_PROXY_CONNECTIONS (NCCL_MAX_LOCAL_RANKS+1)
 
@@ -911,7 +912,7 @@ NCCL_PARAM(ProxyDumpSignal, "PROXY_DUMP_SIGNAL", -1);
 NCCL_PARAM(ProgressAppendOpFreq, "PROGRESS_APPENDOP_FREQ", 8);
 
 static cpu_set_t proxyCpuset;
-static pthread_once_t proxyCpusetOnce = PTHREAD_ONCE_INIT;
+static std::once_flag proxyCpusetOnceFlag;
 void proxyCpusetOnceFunc() {
   const char* setEnv = ncclGetEnv("NCCL_PROXY_CPUSET");
   if (setEnv) {
@@ -1607,7 +1608,7 @@ void* ncclProxyService(void* _args) {
   struct ncclProxyState* proxyState =  (struct ncclProxyState*) _args;
 
   // set the thread affinity before setting the cuda context
-  pthread_once(&proxyCpusetOnce,proxyCpusetOnceFunc);
+  std::call_once(proxyCpusetOnceFlag, proxyCpusetOnceFunc);
   if (CPU_COUNT(&proxyCpuset)) sched_setaffinity(0, sizeof(cpu_set_t), &proxyCpuset);
   INFO(NCCL_INIT, "[Proxy Service] Device %d CPU core %d", proxyState->cudaDev, sched_getcpu());
 
@@ -1801,7 +1802,7 @@ void* ncclProxyServiceUDS(void* _args) {
   struct pollfd pollfds[1];
 
   // set the thread affinity before setting the cuda context
-  pthread_once(&proxyCpusetOnce,proxyCpusetOnceFunc);
+  std::call_once(proxyCpusetOnceFlag, proxyCpusetOnceFunc);
   if (CPU_COUNT(&proxyCpuset)) sched_setaffinity(0, sizeof(cpu_set_t), &proxyCpuset);
   INFO(NCCL_INIT, "[Proxy Service UDS] Device %d CPU core %d", proxyState->cudaDev, sched_getcpu());
 
