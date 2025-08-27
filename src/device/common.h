@@ -269,6 +269,12 @@ struct RunWorkBatch;
 template<typename T, typename RedOp>
 struct RunWorkBatch<ncclFuncSendRecv, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE>;
 
+#ifdef ALLGATHERV_IMPL
+// Specialized for broadcast in broadcast.h
+template<typename T, typename RedOp, int Proto>
+struct RunWorkBatch<ncclFuncBroadcast, T, RedOp, NCCL_ALGO_RING, Proto>;
+#endif
+
 // Specialized here for non-P2p (Coll and CollReg)
 template<ncclFunc_t Fn, typename T, typename RedOp, int Algo, int Proto>
 struct RunWorkBatch {
