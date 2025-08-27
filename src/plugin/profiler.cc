@@ -14,6 +14,7 @@
 #include "transport.h"
 #include "plugin.h"
 #include <mutex>
+#include "os.h"
 
 extern ncclProfiler_t* getNcclProfiler_v1(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v2(void* lib);
@@ -93,7 +94,7 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
   // This is attached to the proxyOp event descriptor
   // so the plugin can figure out if the parent event
   // is in the same address space or not
-  pid = getpid();
+  pid = ncclOsGetpid();
 
 exit:
   return ncclSuccess;

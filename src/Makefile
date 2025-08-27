@@ -26,6 +26,12 @@ LIBSRCFILES := \
 	$(filter-out ras/client.cc,$(wildcard ras/*.cc))
 BINSRCFILES := ras/client.cc
 
+ifeq ($(NCCL_OS_LINUX), 1)
+	LIBSRCFILES += os/linux.cc
+else ifeq ($(NCCL_OS_WINDOWS), 1)
+	LIBSRCFILES += os/windows.cc
+endif
+
 ##### lib files
 LIBNAME     := libnccl.so
 STATICLIBNAME := libnccl_static.a
@@ -145,8 +151,8 @@ $(PKGDIR)/%.pc : %.pc
 $(OBJDIR)/%.o : %.cc $(INCTARGETS)
 	@printf "Compiling  %-35s > %s\n" $< $@
 	mkdir -p `dirname $@`
-	$(CXX) -I. -I$(INCDIR) $(CXXFLAGS) -Iinclude -I$(INCPLUGIN) -c $< -o $@
-	@$(CXX) -I. -I$(INCDIR) $(CXXFLAGS) -Iinclude -I$(INCPLUGIN) -M $< > $(@:%.o=%.d.tmp)
+	$(CXX) -I. -I$(INCDIR) $(CXXFLAGS) -Iinclude -Iinclude/os -I$(INCPLUGIN) -c $< -o $@
+	@$(CXX) -I. -I$(INCDIR) $(CXXFLAGS) -Iinclude -Iinclude/os -I$(INCPLUGIN) -M $< > $(@:%.o=%.d.tmp)
 	@sed "0,/^.*:/s//$(subst /,\/,$@):/" $(@:%.o=%.d.tmp) > $(@:%.o=%.d)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(@:%.o=%.d.tmp) | fmt -1 | \
                 sed -e 's/^ *//' -e 's/$$/:/' >> $(@:%.o=%.d)

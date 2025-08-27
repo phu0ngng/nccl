@@ -16,6 +16,7 @@
 #include <chrono>
 #include "param.h"
 #include <mutex>
+#include "os.h"
 
 #define NCCL_DEBUG_RESET_TRIGGERED (-2)
 
@@ -210,7 +211,7 @@ static void ncclDebugInit() {
 
   // Cache pid and hostname
   getHostName(hostname, 1024, '.');
-  pid = getpid();
+  pid = ncclOsGetpid();
 
   /* Parse and expand the NCCL_DEBUG_FILE path and
    * then create the debug file. But don't bother unless the
