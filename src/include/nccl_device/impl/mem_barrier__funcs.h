@@ -35,7 +35,7 @@ template<typename Coop>
 NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
     Coop coop, ncclDevComm const& comm, ncclTeamTagLsa, uint32_t index, bool multimem
   ): ncclLsaBarrierSession(
-    coop, comm, ncclTeamLsa(comm), comm.lsaBarrier, index, multimem, comm.multimem
+    coop, comm, ncclTeamLsa(comm), comm.lsaBarrier, index, multimem, comm.lsaMultimem
   ) {
 }
 #endif

@@ -148,8 +148,8 @@ NCCL_DEVICE_INLINE void* ncclGetMultimemPointer(ncclWindow_t w, size_t offset, n
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclGetMultimemPointer(ncclWindow_t w, size_t offset, ncclDevComm const& comm) {
-  return ncclGetMultimemPointer(w, offset, comm.multimem);
+NCCL_DEVICE_INLINE void* ncclGetLsaMultimemPointer(ncclWindow_t w, size_t offset, ncclDevComm const& comm) {
+  return ncclGetMultimemPointer(w, offset, comm.lsaMultimem);
 }
 #endif
 
@@ -225,8 +225,8 @@ NCCL_DEVICE_INLINE void* ncclGetResourceBufferMultimemPointer(ncclDevComm const&
 #endif
 
 #if __CUDACC__
-NCCL_DEVICE_INLINE void* ncclGetResourceBufferMultimemPointer(ncclDevComm const& comm, ncclDevResourceHandle h) {
-  return ncclGetResourceBufferMultimemPointer(comm, h, comm.multimem);
+NCCL_DEVICE_INLINE void* ncclGetResourceBufferLsaMultimemPointer(ncclDevComm const& comm, ncclDevResourceHandle h) {
+  return ncclGetResourceBufferMultimemPointer(comm, h, comm.lsaMultimem);
 }
 #endif
 

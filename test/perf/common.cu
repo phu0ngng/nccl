@@ -1075,13 +1075,13 @@ testResult_t threadInit(struct threadArgs* args) {
         memset(&reqs, 0, sizeof(reqs));
         reqs.lsaBarrierCount = deviceCtaCount;
         // Try to create DevComm with multimem enabled first
-        reqs.multimem = true;
+        reqs.lsaMultimem = true;
         ncclResult_t result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
         if (result == ncclSuccess) {
           deviceMultimemEnabled = true;
         } else {
           // Fallback: try without multimem
-          reqs.multimem = false;
+          reqs.lsaMultimem = false;
           NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
           deviceMultimemEnabled = false;
         }
@@ -1915,13 +1915,13 @@ testResult_t run() {
           reqs.lsaBarrierCount = deviceCtaCount;
 
           // Try to create DevComm with multimem enabled first
-          reqs.multimem = true;
+          reqs.lsaMultimem = true;
           ncclResult_t result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
           if (result == ncclSuccess) {
             deviceMultimemEnabled = true;
           } else {
             // Fallback: try without multimem
-            reqs.multimem = false;
+            reqs.lsaMultimem = false;
             NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
             deviceMultimemEnabled = false;
           }

@@ -33,7 +33,7 @@ struct ncclDevComm {
   ncclWindow_t resourceWindow;
   struct ncclWindow_vidmem resourceWindow_inlined;
 
-  ncclMultimemHandle_t multimem;
+  ncclMultimemHandle_t lsaMultimem;
   ncclLsaBarrierHandle_t lsaBarrier;
 };
 
