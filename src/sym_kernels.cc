@@ -207,7 +207,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
   if (!symk->initialized) {
     symk->initialized = true;
     struct ncclDevCommRequirements reqs = {};
-    reqs.multimem = comm->nvlsSupport;
+    reqs.lsaMultimem = comm->nvlsSupport;
     reqs.lsaBarrierCount = ncclSymkMaxBlocks;
 
     struct ncclDevResourceRequirements lla2aReq;

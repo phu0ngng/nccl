@@ -350,7 +350,7 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_RSxLDMC_AGxSTMC(ncclSymkDe
 
   int const& rank = handler.comm.rank;
   int const& nRanks = handler.comm.nRanks;
-  auto const& multimem = handler.comm.multimem;
+  auto const& multimem = handler.comm.lsaMultimem;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
@@ -376,7 +376,7 @@ __device__ __forceinline__ void ncclSymkRun_AllReduce_AGxLL_R_impl(ncclSymkDevWo
   ncclSymkArgsHandler handler{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
     ncclCoopCta(), handler.comm, ncclTeamLsa(handler.comm), handler.lsaLLA2A,
-    blockIdx.x, ncclSymkMaxThreads, multimem, handler.comm.multimem
+    blockIdx.x, ncclSymkMaxThreads, multimem, handler.comm.lsaMultimem
   );
 
   int const& rank = handler.comm.rank;

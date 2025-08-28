@@ -296,7 +296,7 @@ __global__ void allReduceLsaVectorizedKernel(ncclWindow_t sendwin, size_t sendof
  */
 template <typename T>
 __global__ void allReduceMultimemKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x, true, devComm.multimem };
+  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamTagLsa(), blockIdx.x, true };
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
   const int rank = devComm.rank, nRanks = devComm.nRanks;
@@ -304,8 +304,8 @@ __global__ void allReduceMultimemKernel(ncclWindow_t sendwin, size_t sendoffset,
   const int globalTid = threadIdx.x + blockDim.x * (rank + blockIdx.x * nRanks);
   const int globalNthreads = blockDim.x * gridDim.x * nRanks;
 
-  T* send_ptr = reinterpret_cast<T*>(ncclGetMultimemPointer(sendwin, sendoffset, devComm.multimem));
-  T* recv_ptr = reinterpret_cast<T*>(ncclGetMultimemPointer(recvwin, recvoffset, devComm.multimem));
+  T* send_ptr = reinterpret_cast<T*>(ncclGetLsaMultimemPointer(sendwin, sendoffset, devComm));
+  T* recv_ptr = reinterpret_cast<T*>(ncclGetLsaMultimemPointer(recvwin, recvoffset, devComm));
   for (size_t offset=globalTid; offset < count; offset += globalNthreads) {
     if (offset < count) {
       T v = multimemLoadSum<T,T>(send_ptr + offset);
@@ -345,7 +345,7 @@ __global__ void allReduceMultimemKernel(ncclWindow_t sendwin, size_t sendoffset,
  */
 template <typename T>
 __global__ void allReduceMultimemVectorizedKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x, true, devComm.multimem };
+  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamTagLsa(), blockIdx.x, true };
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
@@ -376,8 +376,8 @@ __global__ void allReduceMultimemVectorizedKernel(ncclWindow_t sendwin, size_t s
   const int warp_lane_offset = warp_offset + lane_offset;
 
   // Multimem pointers that handle scalar access for misaligned and remainder elements
-  T* send_ptr = reinterpret_cast<T*>(ncclGetMultimemPointer(sendwin, sendoffset, devComm.multimem));
-  T* recv_ptr = reinterpret_cast<T*>(ncclGetMultimemPointer(recvwin, recvoffset, devComm.multimem));
+  T* send_ptr = reinterpret_cast<T*>(ncclGetLsaMultimemPointer(sendwin, sendoffset, devComm));
+  T* recv_ptr = reinterpret_cast<T*>(ncclGetLsaMultimemPointer(recvwin, recvoffset, devComm));
 
   // Handle misaligned elements first using scalar operations
   if (alignment_offset > 0) {
@@ -388,8 +388,8 @@ __global__ void allReduceMultimemVectorizedKernel(ncclWindow_t sendwin, size_t s
   }
 
   // separate TN* for 2 reasons. a) alignment offset, b) pointer arithmetic with the vectorized type
-  TN* send_ptrN = reinterpret_cast<TN*>(ncclGetMultimemPointer(sendwin, sendoffset+alignment_offset*sizeof(T), devComm.multimem));
-  TN* recv_ptrN = reinterpret_cast<TN*>(ncclGetMultimemPointer(recvwin, recvoffset+alignment_offset*sizeof(T), devComm.multimem));
+  TN* send_ptrN = reinterpret_cast<TN*>(ncclGetLsaMultimemPointer(sendwin, sendoffset+alignment_offset*sizeof(T), devComm));
+  TN* recv_ptrN = reinterpret_cast<TN*>(ncclGetLsaMultimemPointer(recvwin, recvoffset+alignment_offset*sizeof(T), devComm));
 
   // Handle vectorized memory that can be handled in whole chunks (no if)
   for (int block = 0; block < num_blocks; block += 1) {

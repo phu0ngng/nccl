@@ -310,7 +310,7 @@ __device__ __forceinline__ void ncclSymkRun_ReduceScatter_LDMC(ncclSymkDevWorkAr
   Red<typename ncclSymkAccumType<Red, T, /*nvls=*/true>::Type> red(handler.devWork->redOpArg);
 
   int const& rank = handler.comm.rank;
-  auto const& multimem = handler.comm.multimem;
+  auto const& multimem = handler.comm.lsaMultimem;
 
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 

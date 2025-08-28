@@ -191,7 +191,7 @@ static __device__ void bcastMultimem(
   ) {
   size_t nBytes = nElts*sizeof(T);
   uintptr_t inputUptr = reinterpret_cast<uintptr_t>(input.localPtr());
-  uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output.multimemPtr(handler.comm.multimem));
+  uintptr_t outputUptr = reinterpret_cast<uintptr_t>(output.multimemPtr(handler.comm.lsaMultimem));
   uint32_t nPreBytes = (16 - input.offset)%16;
   nPreBytes = min((size_t)nPreBytes, nBytes);
   uintptr_t nSufBytes;
@@ -338,7 +338,7 @@ static __device__ void allgather_LL_body(
 static __device__ void ncclSymkRun_AllGather_LL_impl(ncclSymkDevWorkArgs const* args, bool multimem) {
   ncclSymkArgsHandler handler{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), handler.comm, ncclTeamLsa(handler.comm), handler.lsaLLA2A, blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem, handler.comm.multimem
+    ncclCoopCta(), handler.comm, ncclTeamLsa(handler.comm), handler.lsaLLA2A, blockIdx.x, /*maxElts=*/ncclSymkMaxThreads, multimem, handler.comm.lsaMultimem
   );
 
   using Pack = BytePack<8>;

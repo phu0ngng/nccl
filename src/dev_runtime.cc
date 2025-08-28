@@ -697,8 +697,8 @@ ncclResult_t ncclDevrCommCreateInternal(
   outDevComm->lsaSize = devr->lsaSize;
   outDevComm->lsaSize_rcp32 = idivRcp32(devr->lsaSize);
 
-  NCCLCHECKGOTO(symTeamObtain(comm, lsa, /*multicast=*/reqs->multimem, &tmLsa), ret, fail);
-  outDevComm->multimem.mcBasePtr = tmLsa->mcBasePtr;
+  NCCLCHECKGOTO(symTeamObtain(comm, lsa, /*multicast=*/reqs->lsaMultimem, &tmLsa), ret, fail);
+  outDevComm->lsaMultimem.mcBasePtr = tmLsa->mcBasePtr;
 
   { struct ncclTeamRequirements* tr = reqs->teamRequirementsList;
     while (tr != nullptr) {
