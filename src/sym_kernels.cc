@@ -211,7 +211,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
     reqs.lsaBarrierCount = ncclSymkMaxBlocks;
     reqs.lsaLLA2ABlockCount = ncclSymkMaxBlocks;
     reqs.lsaLLA2ASlotCount = ncclLLA2ACalcSlots(comm->nRanks*ncclSymkMaxThreads, ncclSymkLLMaxEltSize);
-    NCCLCHECK(ncclDevCommCreate(comm, &reqs, &symk->devComm));
+    NCCLCHECK(ncclDevrCommCreateInternal(comm, (struct ncclDevCommRequirements const*)&reqs, &symk->devComm));
   }
   return ncclSuccess;
 }
