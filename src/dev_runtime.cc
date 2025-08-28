@@ -683,7 +683,6 @@ ncclResult_t ncclDevrCommCreateInternal(
   size_t bufSizeTotal;
   struct ncclDevResourceRequirements* resReqsHead;
   struct ncclDevResourceRequirements lsaBarReq;
-  struct ncclDevResourceRequirements lsaLLA2AReq;
   cudaStream_t stream = nullptr;
   CUmemGenericAllocationHandle memHandle = 0x0;
   struct ncclDevrMemory* mem = nullptr;
@@ -717,10 +716,6 @@ ncclResult_t ncclDevrCommCreateInternal(
   ncclLsaBarrierCreateRequirement(lsa, reqs->lsaBarrierCount, &outDevComm->lsaBarrier, &lsaBarReq);
   lsaBarReq.next = resReqsHead;
   resReqsHead = &lsaBarReq;
-
-  ncclLLA2ACreateRequirement(reqs->lsaLLA2ABlockCount, reqs->lsaLLA2ASlotCount, &outDevComm->lsaLLA2A, &lsaLLA2AReq);
-  lsaLLA2AReq.next = resReqsHead;
-  resReqsHead = &lsaLLA2AReq;
 
   { struct ncclDevResourceRequirements* rr = resReqsHead;
     bufSizeTotal = 0;

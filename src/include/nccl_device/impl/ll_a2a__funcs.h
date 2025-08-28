@@ -30,20 +30,6 @@ NCCL_DEVICE_INLINE ncclLLA2ASession<Coop>::ncclLLA2ASession(
 
 #if __CUDACC__
 template<typename Coop>
-NCCL_DEVICE_INLINE ncclLLA2ASession<Coop>::ncclLLA2ASession(
-    Coop coop, ncclDevComm const& comm, ncclTeamTagLsa,
-    uint32_t block, int maxElts,
-    bool multimem
-  ):
-  ncclLLA2ASession<Coop>(
-    coop, comm, ncclTeamLsa(comm), comm.lsaLLA2A,
-    block, maxElts, multimem, comm.multimem
-  ) {
-}
-#endif
-
-#if __CUDACC__
-template<typename Coop>
 NCCL_DEVICE_INLINE ncclLLA2ASession<Coop>::~ncclLLA2ASession() {
   uint4* line = (uint4*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   line += this->block*(1 + 2*this->handle.nSlots);

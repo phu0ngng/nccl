@@ -27,12 +27,14 @@ static __device__ Int0 flattenIx(Int0 pos, Int1 size, Ints ...more) {
 namespace {
 struct ncclSymkArgsHandler {
   ncclDevComm const& comm;
+  ncclLLA2AHandle const& lsaLLA2A;
   struct ncclSymkChannelWorkRange* channelWorkRange;
   struct ncclSymkDevWork* devWork;
   uint32_t nRanks_rcp32;
 
   __device__ ncclSymkArgsHandler(ncclSymkDevWorkArgs const* args):
-    comm(args->comm) {
+    comm(args->kcomm.devComm),
+    lsaLLA2A(args->kcomm.lsaLLA2A) {
     channelWorkRange = args->getWorkRange();
 
     devWork = args->getWorks(args->nMaxChannels);

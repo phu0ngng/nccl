@@ -35,7 +35,6 @@ struct ncclDevComm {
 
   ncclMultimemHandle_t multimem;
   ncclLsaBarrierHandle_t lsaBarrier;
-  ncclLLA2AHandle_t lsaLLA2A;
 };
 
 #endif // _NCCL_DEVICE_COMM__TYPES_H_

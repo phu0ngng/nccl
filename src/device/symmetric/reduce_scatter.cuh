@@ -388,7 +388,7 @@ template<template<typename> typename Red, typename T>
 __device__ __forceinline__ void ncclSymkRun_ReduceScatter_LL(ncclSymkDevWorkArgs const* args) {
   ncclSymkArgsHandler handler{args};
   ncclLLA2ASession<ncclCoopCta> lla2a(
-    ncclCoopCta(), handler.comm, ncclTeamTagLsa(), blockIdx.x, ncclSymkMaxThreads
+    ncclCoopCta(), handler.comm, ncclTeamLsa(handler.comm), handler.lsaLLA2A, blockIdx.x, ncclSymkMaxThreads
   );
   Red<typename ncclSymkAccumType<Red, T, /*nvls=*/false>::Type> red(handler.devWork->redOpArg);
   using Pack = BytePack<8>;
