@@ -1069,24 +1069,6 @@ testResult_t threadInit(struct threadArgs* args) {
       ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
       CUDACHECK(cudaSetDevice(args->gpus[i]));
       TESTCHECK(AllocateBuffs(args->sendbuffs[id] + i, sendBytes, args->recvbuffs[id] + i, recvBytes, args->expected[id] + i, (size_t)maxBytes, &allocBytes));
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-      if (deviceImpl) {
-        ncclDevCommRequirements reqs;
-        memset(&reqs, 0, sizeof(reqs));
-        reqs.lsaBarrierCount = deviceCtaCount;
-        // Try to create DevComm with multimem enabled first
-        reqs.lsaMultimem = true;
-        ncclResult_t result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
-        if (result == ncclSuccess) {
-          deviceMultimemEnabled = true;
-        } else {
-          // Fallback: try without multimem
-          reqs.lsaMultimem = false;
-          NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
-          deviceMultimemEnabled = false;
-        }
-      }
-#endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
       if (local_register & SYMMETRIC_REGISTER_ALL) {
         NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, (ncclWindow_t*)&args->sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
@@ -1102,6 +1084,61 @@ testResult_t threadInit(struct threadArgs* args) {
     }
   }
   NCCLCHECK(ncclGroupEnd());
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+  /* Create device communicators with multimem fallback */
+  if (deviceImpl) {
+    // Duplicate comms so our checks here do not affect the originals
+    ncclComm_t tmpComms[args->commNum][args->nGpus];
+    memset(tmpComms, 0, sizeof(tmpComms));
+    NCCLCHECK(ncclGroupStart());
+    for (int id = 0; id < args->commNum; ++id) {
+      for (int i = 0; i < args->nGpus; i++) {
+        int rank;
+        NCCLCHECK(ncclCommUserRank(args->comms[id][i], &rank));
+        NCCLCHECK(ncclCommSplit(args->comms[id][i], 0, rank, &tmpComms[id][i], NULL));
+      }
+    }
+    NCCLCHECK(ncclGroupEnd());
+
+    // Check multimem support on the duplicated comms
+    bool checkMultimemFailed = false;
+    ncclResult_t result;
+    ncclDevComm tmpDevComms[args->commNum][args->nGpus];
+    memset(tmpDevComms, 0, sizeof(tmpDevComms));
+    NCCLCHECK(ncclGroupStart());
+    for (int id = 0; id < args->commNum; ++id) {
+      for (int i = 0; i < args->nGpus; i++) {
+        ncclDevCommRequirements reqs;
+        memset(&reqs, 0, sizeof(reqs));
+        reqs.lsaBarrierCount = deviceCtaCount;
+        reqs.lsaMultimem = true;
+        result = ncclDevCommCreate(tmpComms[id][i], &reqs, &tmpDevComms[id][i]);
+        if (result != ncclInProgress && result != ncclSuccess) {
+          checkMultimemFailed = true;
+        }
+      }
+    }
+    result = ncclGroupEnd();
+    if (result != ncclSuccess) checkMultimemFailed = true;
+    deviceMultimemEnabled = !checkMultimemFailed;
+
+    // Create final dev comms with correct multimem setting and cleanup temps
+    NCCLCHECK(ncclGroupStart());
+    for (int id = 0; id < args->commNum; ++id) {
+      for (int i = 0; i < args->nGpus; i++) {
+        ncclDevCommRequirements reqs;
+        memset(&reqs, 0, sizeof(reqs));
+        reqs.lsaBarrierCount = deviceCtaCount;
+        reqs.lsaMultimem = deviceMultimemEnabled;
+        NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
+        NCCLCHECK(ncclDevCommDestroy(tmpComms[id][i], &tmpDevComms[id][i]));
+        NCCLCHECK(ncclCommDestroy(tmpComms[id][i]));
+      }
+    }
+    NCCLCHECK(ncclGroupEnd());
+  }
+#endif
+
   TESTCHECK(threadRunTests(args));
 
   return testSuccess;
@@ -1908,25 +1945,6 @@ testResult_t run() {
         ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
         CUDACHECK(cudaSetDevice(gpus[i]));
         TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-        if (deviceImpl) {
-          ncclDevCommRequirements reqs;
-          memset(&reqs, 0, sizeof(reqs));
-          reqs.lsaBarrierCount = deviceCtaCount;
-
-          // Try to create DevComm with multimem enabled first
-          reqs.lsaMultimem = true;
-          ncclResult_t result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
-          if (result == ncclSuccess) {
-            deviceMultimemEnabled = true;
-          } else {
-            // Fallback: try without multimem
-            reqs.lsaMultimem = false;
-            NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
-            deviceMultimemEnabled = false;
-          }
-        }
-#endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
         if (local_register & SYMMETRIC_REGISTER_ALL) {
           NCCLCHECK(ncclCommWindowRegister(comms[id][i], sendbuffs[id][i], allocBytes, (ncclWindow_t*)&sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
@@ -1942,6 +1960,61 @@ testResult_t run() {
       }
     }
     NCCLCHECK(ncclGroupEnd());
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+  /* Create device communicators with multimem fallback */
+  if (deviceImpl) {
+    // Duplicate comms so our checks here do not affect the originals
+    ncclComm_t tmpComms[commNum][nGpus * nThreads];
+    memset(tmpComms, 0, sizeof(tmpComms));
+    NCCLCHECK(ncclGroupStart());
+    for (int id = 0; id < commNum; ++id) {
+      for (int i = 0; i < nGpus * nThreads; i++) {
+        int rank;
+        NCCLCHECK(ncclCommUserRank(comms[id][i], &rank));
+        NCCLCHECK(ncclCommSplit(comms[id][i], 0, rank, &tmpComms[id][i], NULL));
+      }
+    }
+    NCCLCHECK(ncclGroupEnd());
+
+    // Check multimem support on the duplicated comms
+    bool checkMultimemFailed = false;
+    ncclResult_t result;
+    ncclDevComm tmpDevComms[commNum][nGpus * nThreads];
+    memset(tmpDevComms, 0, sizeof(tmpDevComms));
+    NCCLCHECK(ncclGroupStart());
+    for (int id = 0; id < commNum; ++id) {
+      for (int i = 0; i < nGpus * nThreads; i++) {
+        ncclDevCommRequirements reqs;
+        memset(&reqs, 0, sizeof(reqs));
+        reqs.lsaBarrierCount = deviceCtaCount;
+        reqs.lsaMultimem = true;
+        result = ncclDevCommCreate(tmpComms[id][i], &reqs, &tmpDevComms[id][i]);
+        if (result != ncclInProgress && result != ncclSuccess) {
+          checkMultimemFailed = true;
+        }
+      }
+    }
+    result = ncclGroupEnd();
+    if (result != ncclSuccess) checkMultimemFailed = true;
+    deviceMultimemEnabled = !checkMultimemFailed;
+
+    // Create final dev comms with correct multimem setting and cleanup temps
+    NCCLCHECK(ncclGroupStart());
+    for (int id = 0; id < commNum; ++id) {
+      for (int i = 0; i < nGpus * nThreads; i++) {
+        ncclDevCommRequirements reqs;
+        memset(&reqs, 0, sizeof(reqs));
+        reqs.lsaBarrierCount = deviceCtaCount;
+        reqs.lsaMultimem = deviceMultimemEnabled;
+        NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
+        NCCLCHECK(ncclDevCommDestroy(tmpComms[id][i], &tmpDevComms[id][i]));
+        NCCLCHECK(ncclCommDestroy(tmpComms[id][i]));
+      }
+    }
+    NCCLCHECK(ncclGroupEnd());
+  }
+#endif
+
   }
 
   int errors[nThreads];
