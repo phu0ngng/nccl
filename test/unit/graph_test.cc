@@ -806,6 +806,8 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-2-Delta");
     RUN_MULTI4("Redstone");
     RUN("GCP-NV");
+    RUN("AWS-P5-H100");
+    RUN("AWS-P5en-H100");
     RUN("AWS-NV");
     RUN("AWS-NV-EFA");
     RUN("Azure");
