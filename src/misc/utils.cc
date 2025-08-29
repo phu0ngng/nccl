@@ -192,7 +192,7 @@ bool matchIfList(const char* string, int port, struct netIf* ifList, int listSiz
   return false;
 }
 
-__thread struct ncclThreadSignal ncclThreadSignalLocalInstance = ncclThreadSignalStaticInitializer();
+thread_local struct ncclThreadSignal ncclThreadSignalLocalInstance;
 
 void* ncclMemoryStack::allocateSpilled(struct ncclMemoryStack* me, size_t size, size_t align) {
   // `me->hunks` points to the top of the stack non-empty hunks. Hunks above

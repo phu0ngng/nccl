@@ -13,6 +13,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <stdint.h>
+#include <mutex>
 
 // ncclCudaContext: wraps a CUDA context with per-context state.
 struct ncclCudaContext;
@@ -119,7 +120,7 @@ struct ncclStrongStream {
 #if CUDART_VERSION >= 11030
   // This stream ever appeared in a graph capture.
   bool everCaptured;
-  pthread_mutex_t lock;
+  std::mutex mutex;
   struct ncclStrongStreamCapture* captureHead;
   // The event used to establish order between graphs and streams. During acquire
   // this event is waited on, during release it is recorded to.
