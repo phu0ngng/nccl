@@ -1,0 +1,10 @@
+# Private requirements for Kibana integration wrapper
+# These dependencies are only available internally
+
+# Core dependencies (same as public version)
+pandas>=1.3.0
+tqdm>=4.60.0
+duckdb>=0.8.0
+matplotlib>=3.3.0
+pyarrow>=5.0.0
+numpy<2.0.0
