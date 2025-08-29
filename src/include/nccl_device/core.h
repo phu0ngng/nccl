@@ -130,9 +130,6 @@ NCCL_DEVICE_INLINE ncclSymPtr<char> ncclGetResourceBuffer(ncclDevComm const&, nc
 // Window API:
 
 #if __CUDACC__
-template<typename Coop>
-NCCL_DEVICE_INLINE ncclWindow_t ncclFindWindow(Coop, ncclDevComm const&, void const *ptr);
-
 NCCL_DEVICE_INLINE void* ncclGetLocalPointer(ncclWindow_t w, size_t offset);
 NCCL_DEVICE_INLINE void* ncclGetLsaPointer(ncclWindow_t w, size_t offset, int peer);
 NCCL_DEVICE_INLINE void* ncclGetPeerPointer(ncclWindow_t w, size_t offset, int peer);
