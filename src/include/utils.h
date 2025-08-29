@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <new>
 #include <type_traits>
+#include <mutex>
+#include <condition_variable>
 
 int ncclCudaCompCap();
 
@@ -152,22 +154,16 @@ void ncclIntruQueueTransfer(ncclIntruQueue<T,next> *dst, ncclIntruQueue<T,next> 
 
 
 ////////////////////////////////////////////////////////////////////////////////
-/* ncclThreadSignal: Couples a pthread mutex and cond together. The "mutex"
+/* ncclThreadSignal: Couples a std::mutex and std::condition_variable together. The "mutex"
  * and "cond" fields are part of the public interface.
  */
 struct ncclThreadSignal {
-  pthread_mutex_t mutex;
-  pthread_cond_t cond;
+  std::mutex mutex;
+  std::condition_variable cond;
 };
 
-// returns {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER}
-constexpr ncclThreadSignal ncclThreadSignalStaticInitializer();
-
-void ncclThreadSignalConstruct(struct ncclThreadSignal* me);
-void ncclThreadSignalDestruct(struct ncclThreadSignal* me);
-
 // A convenience instance per-thread.
-extern __thread struct ncclThreadSignal ncclThreadSignalLocalInstance;
+extern thread_local struct ncclThreadSignal ncclThreadSignalLocalInstance;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -426,22 +422,6 @@ void ncclIntruQueueTransfer(ncclIntruQueue<T,next> *dst, ncclIntruQueue<T,next> 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-constexpr ncclThreadSignal ncclThreadSignalStaticInitializer() {
-  return {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER};
-}
-
-inline void ncclThreadSignalConstruct(struct ncclThreadSignal* me) {
-  pthread_mutex_init(&me->mutex, nullptr);
-  pthread_cond_init(&me->cond, nullptr);
-}
-
-inline void ncclThreadSignalDestruct(struct ncclThreadSignal* me) {
-  pthread_mutex_destroy(&me->mutex);
-  pthread_cond_destroy(&me->cond);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 template<typename T, T *T::*next>
 struct ncclIntruQueueMpsc {
   T* head;
@@ -473,9 +453,10 @@ bool ncclIntruQueueMpscEnqueue(ncclIntruQueueMpsc<T,next>* me, T* x) {
     // This lock/unlock is essential to ensure we don't race ahead of the consumer
     // and signal the cond before they begin waiting on it.
     struct ncclThreadSignal* waiting = me->waiting;
-    pthread_mutex_lock(&waiting->mutex);
-    pthread_mutex_unlock(&waiting->mutex);
-    pthread_cond_broadcast(&waiting->cond);
+    {
+      std::unique_lock<std::mutex> lock(waiting->mutex);
+    }
+    waiting->cond.notify_all();
   }
   return utail != 0x2; // not abandoned
 }
@@ -490,15 +471,14 @@ T* ncclIntruQueueMpscDequeueAll(ncclIntruQueueMpsc<T,next>* me, bool waitSome) {
     do {
       if (clockNano()-t0 >= 10*1000) { // spin for first 10us
         struct ncclThreadSignal* waitSignal = &ncclThreadSignalLocalInstance;
-        pthread_mutex_lock(&waitSignal->mutex);
+        std::unique_lock<std::mutex> lock(waitSignal->mutex);
         uintptr_t expected = sleeping ? 0x1 : 0x0;
         uintptr_t desired = 0x1;
         me->waiting = waitSignal; // release done by successful compare exchange
         if (__atomic_compare_exchange_n(&me->tail, &expected, desired, /*weak=*/true, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
           sleeping = true;
-          pthread_cond_wait(&waitSignal->cond, &waitSignal->mutex);
+          waitSignal->cond.wait(lock);
         }
-        pthread_mutex_unlock(&waitSignal->mutex);
       }
       head = __atomic_load_n(&me->head, __ATOMIC_RELAXED);
     } while (head == nullptr);

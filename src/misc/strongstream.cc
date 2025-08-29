@@ -9,6 +9,7 @@
 #include "checks.h"
 #include "param.h"
 #include <mutex>
+#include <memory>
 
 #if CUDART_VERSION >= 13000
 #define cudaStreamGetCaptureInfo_v3 cudaStreamGetCaptureInfo
@@ -39,7 +40,7 @@ ncclResult_t ncclCudaContextTrack(struct ncclCudaContext** out) {
   struct ncclCudaContext* p = cxtListHead;
   while (1) {
     if (p == nullptr) {
-      p = (struct ncclCudaContext*)calloc(1, sizeof(struct ncclCudaContext));
+      p = new ncclCudaContext{};
       p->refCount = 1;
       p->hcontext = hcontext;
       p->next = cxtListHead;
@@ -66,7 +67,7 @@ void ncclCudaContextDrop(struct ncclCudaContext* cxt) {
     *pp = cxt->next; // remove from list
     // Destroy resources held in cxt
     ncclStrongStreamDestruct(&cxt->launchOrder);
-    free(cxt);
+    delete cxt;
   }
 }
 
@@ -132,7 +133,6 @@ ncclResult_t ncclStrongStreamConstruct(struct ncclStrongStream* ss) {
   #if CUDART_VERSION >= 11030
     ss->everCaptured = false;
     ss->captureHead = nullptr;
-    pthread_mutex_init(&ss->lock, nullptr);
     CUDACHECK(cudaEventCreateWithFlags(&ss->serialEvent, cudaEventDisableTiming));
   #endif
   return ncclSuccess;
@@ -149,7 +149,6 @@ ncclResult_t ncclStrongStreamDestruct(struct ncclStrongStream* ss) {
       cap = next;
     }
     CUDACHECK(cudaEventDestroy(ss->serialEvent));
-    pthread_mutex_destroy(&ss->lock);
   #endif
   return ncclSuccess;
 }
@@ -178,7 +177,8 @@ ncclResult_t ncclStrongStreamAcquire(
       __atomic_store_n(&ss->everCaptured, true, __ATOMIC_RELAXED);
 
       ncclResult_t ret = ncclSuccess;
-      if (concurrent) pthread_mutex_lock(&ss->lock);
+      std::unique_lock<std::mutex> lock(ss->mutex, std::defer_lock);
+      if (concurrent) lock.lock();
 
       // Look for capture in our list of active captures.
       struct ncclStrongStreamCapture** pcap = &ss->captureHead;
@@ -189,7 +189,6 @@ ncclResult_t ncclStrongStreamAcquire(
         if (cap->graphId == graph.graphId) { // Capture node already exists.
           *workStream = cap->captureStream;
           cap->acquiredBy = localThreadId();
-          if (concurrent) pthread_mutex_unlock(&ss->lock);
           return ncclSuccess;
         } else {
           cudaStreamCaptureStatus status;
@@ -220,7 +219,7 @@ ncclResult_t ncclStrongStreamAcquire(
       ss->captureHead = cap;
 
     do_unlock:
-      if (concurrent) pthread_mutex_unlock(&ss->lock);
+      if (concurrent) lock.unlock();
       if (ret != ncclSuccess) return ret;
 
       *workStream = cap->captureStream;
@@ -257,11 +256,11 @@ ncclResult_t ncclStrongStreamAcquiredWorkStream(
     if (graph.graphId == ULLONG_MAX) {
       *workStream = ss->liveStream;
     } else {
-      if (concurrent) pthread_mutex_lock(&ss->lock);
+      std::unique_lock<std::mutex> lock(ss->mutex, std::defer_lock);
+      if (concurrent) lock.lock();
       struct ncclStrongStreamCapture* cap = ss->captureHead;
       while (cap->graphId != graph.graphId) cap = cap->next;
       *workStream = cap->captureStream;
-      if (concurrent) pthread_mutex_unlock(&ss->lock);
     }
   #else
     *workStream = ss->liveStream
@@ -284,10 +283,11 @@ ncclResult_t ncclStrongStreamRelease(
           return ncclInvalidUsage;
         }
       } else {
-        if (concurrent) pthread_mutex_lock(&ss->lock);
+        std::unique_lock<std::mutex> lock(ss->mutex, std::defer_lock);
+        if (concurrent) lock.lock();
         struct ncclStrongStreamCapture* cap = ss->captureHead;
         while (cap->graphId != graph.graphId) cap = cap->next;
-        if (concurrent) pthread_mutex_unlock(&ss->lock);
+        if (concurrent) lock.unlock();
 
         // Add event record node with dependencies added further down.
         cudaGraphNode_t recordNode;
