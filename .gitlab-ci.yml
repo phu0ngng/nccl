@@ -117,11 +117,6 @@ build-ipp6:
     paths:
       - build-ipp6.tar.gz
     expire_in: 48 hrs
-  cache:
-    key: "$CI_COMMIT_SHORT_SHA"
-    paths:
-      - build
-    policy: push
 
 build-pre-tyche:
   stage: build
@@ -287,17 +282,14 @@ setup-AWS_H100_EFA:
     - ipp6-nccl-v2
   needs:
     - job: build-ipp6
-      artifacts: false
-  cache:
-    key: "$CI_COMMIT_SHORT_SHA"
-    paths:
-      - build
-    policy: pull
   variables:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
-    - rsync -I -c -a --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
+    - set -e
+    - rsync -I -c -aP --inplace --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
 
 ##
 ## Stage: setup - Finish!
@@ -949,12 +941,6 @@ unit_tests-ipp6-a100:
     - when: never
   needs:
     - job: build-ipp6
-      artifacts: false
-  cache:
-    key: "$CI_COMMIT_SHORT_SHA"
-    paths:
-      - build
-    policy: pull
   tags:
     - ipp6-nccl-v2
   variables:
@@ -982,6 +968,8 @@ unit_tests-ipp6-a100:
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
     DEVICE_ID_TESTS: 1
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1460,12 +1448,6 @@ apitest-ipp6-a100:
     - when: never
   needs:
     - job: build-ipp6
-      artifacts: false
-  cache:
-    key: "$CI_COMMIT_SHORT_SHA"
-    paths:
-      - build
-    policy: pull
   tags:
     - ipp6-nccl-v2
   variables:
@@ -1481,6 +1463,8 @@ apitest-ipp6-a100:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1968,12 +1952,6 @@ perftest-single-ipp6-a100:
     - when: never
   needs:
     - job: build-ipp6
-      artifacts: false
-  cache:
-    key: "$CI_COMMIT_SHORT_SHA"
-    paths:
-      - build
-    policy: pull
   tags:
     - ipp6-nccl-v2
   variables:
@@ -1989,6 +1967,8 @@ perftest-single-ipp6-a100:
     RUN_MODE: "MPI"
     SYMMETRIC: 1
     MAX: "1G"
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2329,12 +2309,6 @@ perftest-multi-ipp6-a100:
     - when: never
   needs:
     - job: build-ipp6
-      artifacts: false
-  cache:
-    key: "$CI_COMMIT_SHORT_SHA"
-    paths:
-      - build
-    policy: pull
   tags:
     - ipp6-nccl-v2
   variables:
@@ -2350,6 +2324,8 @@ perftest-multi-ipp6-a100:
     RUN_MODE: "MPI"
     SYMMETRIC: 1
     MAX: "1G"
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
