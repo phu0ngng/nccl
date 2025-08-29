@@ -26,6 +26,7 @@ CU_FILES := align_test.cu  #kernel_test.cu
 #CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
 CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
 KCU_FILES := align_test.cu #kernel_test.cu
+CU_FILES += devapi_window_stress.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu put_signal_ping_pong_gin.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu
@@ -229,6 +230,11 @@ ${DST_DIR}/put_signal_ping_pong_gin: ${DST_DIR}/put_signal_ping_pong_gin.o ${DLI
 	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
 
 ${DST_DIR}/put_gin_alltoall: ${DST_DIR}/put_gin_alltoall.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_window_stress: ${DST_DIR}/devapi_window_stress.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
