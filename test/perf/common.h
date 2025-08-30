@@ -442,7 +442,7 @@ testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset,
   }
 
   // Only check mcBasePtr if multimem is active for this kernel
-  if (useMultimem && devComm->multimem.mcBasePtr == nullptr) {
+  if (useMultimem && devComm->lsaMultimem.mcBasePtr == nullptr) {
     printf("[KERNEL_LAUNCH_ERROR] Device kernel requires multimem, which may not be available.\n");
     return testInternalError;
   }

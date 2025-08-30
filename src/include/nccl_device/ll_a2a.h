@@ -1,12 +1,18 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef _NCCL_DEVICE_LL_A2A_H_
 #define _NCCL_DEVICE_LL_A2A_H_
 #include "impl/core__types.h"
 
 struct ncclLLA2AHandle;
 
-__host__ int ncclLLA2ACalcSlots(int maxElts, int maxEltSize);
+NCCL_EXTERN_C __host__ int ncclLLA2ACalcSlots(int maxElts, int maxEltSize);
 
-__host__ ncclResult_t ncclLLA2ACreateRequirement(int nBlocks, int nSlots, ncclLLA2AHandle* outHandle, ncclDevResourceRequirements* outReq);
+NCCL_EXTERN_C __host__ ncclResult_t ncclLLA2ACreateRequirement(int nBlocks, int nSlots, ncclLLA2AHandle_t* outHandle, ncclDevResourceRequirements_t* outReq);
 
 #if __CUDACC__
 template<typename Coop>
@@ -15,8 +21,6 @@ struct ncclLLA2ASession_internal;
 template<typename Coop>
 struct ncclLLA2ASession: ncclLLA2ASession_internal<Coop> {
   NCCL_DEVICE_INLINE ncclLLA2ASession(Coop, ncclDevComm const&, ncclTeam, ncclLLA2AHandle, uint32_t block, int maxElts, bool multimem=false, ncclMultimemHandle mmHandle={});
-
-  NCCL_DEVICE_INLINE ncclLLA2ASession(Coop, ncclDevComm const&, ncclTeamTagLsa, uint32_t block, int maxElts, bool multimem=false);
 
   NCCL_DEVICE_INLINE ~ncclLLA2ASession();
 

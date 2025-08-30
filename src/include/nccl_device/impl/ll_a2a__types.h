@@ -1,10 +1,16 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef _NCCL_DEVICE_LL_A2A__TYPES_H_
 #define _NCCL_DEVICE_LL_A2A__TYPES_H_
 #include "../ll_a2a.h"
 #include "core__types.h"
 
 struct ncclLLA2AHandle {
-  ncclDevResourceHandle bufHandle;
+  ncclDevResourceHandle_t bufHandle;
   uint32_t nSlots;
 };
 

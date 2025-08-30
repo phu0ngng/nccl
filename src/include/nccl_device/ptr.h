@@ -1,8 +1,15 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef _NCCL_DEVICE_PTR_H_
 #define _NCCL_DEVICE_PTR_H_
 #include "core.h"
 #include <stdint.h>
 
+#if __cplusplus
 template<typename T>
 struct ncclSymPtr {
   using ElementType = T;
@@ -34,7 +41,7 @@ struct ncclSymPtr {
   NCCL_DEVICE_INLINE T* peerPtr(int peer) const;
   NCCL_DEVICE_INLINE T* peerPtr(ncclTeam team, int peer) const;
   NCCL_DEVICE_INLINE T* multimemPtr(ncclMultimemHandle mmHandle) const;
-  NCCL_DEVICE_INLINE T* multimemPtr(ncclDevComm const&) const;
+  NCCL_DEVICE_INLINE T* lsaMultimemPtr(ncclDevComm const&) const;
   #endif
 };
 
@@ -49,5 +56,6 @@ template<typename T, typename Int>
 NCCL_HOST_DEVICE_INLINE ncclSymPtr<T> operator==(ncclSymPtr<T> a, ncclSymPtr<T> b);
 template<typename T, typename Int>
 NCCL_HOST_DEVICE_INLINE ncclSymPtr<T> operator!=(ncclSymPtr<T> a, ncclSymPtr<T> b);
+#endif
 
 #endif

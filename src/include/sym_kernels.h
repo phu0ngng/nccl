@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef NCCL_SYM_KERNELS_H_
 #define NCCL_SYM_KERNELS_H_
 #include "nccl.h"
@@ -37,9 +43,14 @@ enum ncclSymkKernelId {
   ncclSymkKernelId_Count
 };
 
+struct ncclSymkDevComm {
+  struct ncclDevComm devComm;
+  struct ncclLLA2AHandle lsaLLA2A;
+};
+
 struct ncclSymkState {
   bool initialized;
-  struct ncclDevComm devComm;
+  struct ncclSymkDevComm kcomm;
 };
 
 struct ncclSymkChannelWorkRange {
@@ -58,7 +69,7 @@ struct alignas(16) ncclSymkDevWork {
 };
 
 struct alignas(16) ncclSymkDevWorkArgs {
-  struct ncclDevComm comm;
+  struct ncclSymkDevComm kcomm;
   int nMaxChannels;
   // starting of channelWorkRange will be aligned to 16 bytes
   // channelWorkRange[nChannels];

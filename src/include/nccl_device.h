@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #include "nccl_device/impl/comm__funcs.h"
 #include "nccl_device/coop.h"
 #include "nccl_device/impl/core__funcs.h"

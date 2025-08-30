@@ -149,6 +149,9 @@ static ncclResult_t findInterfaces(const char* prefixList, char* names, union nc
     if (family != AF_INET && family != AF_INET6)
       continue;
 
+    /* Only consider running interfaces, i.e. UP and physically attached. */
+    if (!(interface->ifa_flags & IFF_RUNNING)) continue;
+
     TRACE(NCCL_INIT|NCCL_NET,"Found interface %s:%s", interface->ifa_name, ncclSocketToString((union ncclSocketAddress *) interface->ifa_addr, line));
 
     /* Allow the caller to force the socket family type */

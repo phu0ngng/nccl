@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef _NCCL_DEVICE_LL_A2A__FUNCS_H_
 #define _NCCL_DEVICE_LL_A2A__FUNCS_H_
 #include "ll_a2a__types.h"
@@ -19,20 +25,6 @@ NCCL_DEVICE_INLINE ncclLLA2ASession<Coop>::ncclLLA2ASession(
   line += block*(1 + 2*handle.nSlots);
   this->epoch = line->x + 2;
   this->slotsOffset = this->calcSlotOffset();
-}
-#endif
-
-#if __CUDACC__
-template<typename Coop>
-NCCL_DEVICE_INLINE ncclLLA2ASession<Coop>::ncclLLA2ASession(
-    Coop coop, ncclDevComm const& comm, ncclTeamTagLsa,
-    uint32_t block, int maxElts,
-    bool multimem
-  ):
-  ncclLLA2ASession<Coop>(
-    coop, comm, ncclTeamLsa(comm), comm.lsaLLA2A,
-    block, maxElts, multimem, comm.multimem
-  ) {
 }
 #endif
 

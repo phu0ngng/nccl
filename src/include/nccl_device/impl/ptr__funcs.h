@@ -1,8 +1,16 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef _NCCL_DEVICE_PTR__FUNCS_H_
 #define _NCCL_DEVICE_PTR__FUNCS_H_
 #include "ptr__types.h"
 #include "core__funcs.h"
 #include "comm__types.h"
+
+#if __cplusplus
 
 template<typename T>
 NCCL_HOST_DEVICE_INLINE constexpr ncclSymPtr<T>::ncclSymPtr(ncclWindow_t window, size_t offset):
@@ -118,8 +126,8 @@ NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclMultimemHandle mmHandle) co
 
 #if __CUDACC__
 template<typename T>
-NCCL_DEVICE_INLINE T* ncclSymPtr<T>::multimemPtr(ncclDevComm const& comm) const {
-  return (T*)ncclGetMultimemPointer(window, offset, comm);
+NCCL_DEVICE_INLINE T* ncclSymPtr<T>::lsaMultimemPtr(ncclDevComm const& comm) const {
+  return (T*)ncclGetLsaMultimemPointer(window, offset, comm);
 }
 #endif
 
@@ -145,4 +153,5 @@ NCCL_HOST_DEVICE_INLINE bool operator!=(ncclSymPtr<T> a, ncclSymPtr<T> b) {
   return a.window != b.window || a.offset != b.offset;
 }
 
+#endif // __cplusplus
 #endif // _NCCL_DEVICE_PTR__FUNCS_H_

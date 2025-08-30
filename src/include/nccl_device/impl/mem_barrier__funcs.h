@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef _NCCL_DEVICE_MEM_BARRIER__FUNCS_H_
 #define _NCCL_DEVICE_MEM_BARRIER__FUNCS_H_
 #include "mem_barrier__types.h"
@@ -29,7 +35,7 @@ template<typename Coop>
 NCCL_DEVICE_INLINE ncclLsaBarrierSession<Coop>::ncclLsaBarrierSession(
     Coop coop, ncclDevComm const& comm, ncclTeamTagLsa, uint32_t index, bool multimem
   ): ncclLsaBarrierSession(
-    coop, comm, ncclTeamLsa(comm), comm.lsaBarrier, index, multimem, comm.multimem
+    coop, comm, ncclTeamLsa(comm), comm.lsaBarrier, index, multimem, comm.lsaMultimem
   ) {
 }
 #endif

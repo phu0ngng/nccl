@@ -1,8 +1,15 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #include "dev_runtime.h"
 #include "comm.h"
 #include "device.h"
 #include "transport.h"
 #include "group.h"
+#include "nccl_device.h"
 
 NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
 
@@ -605,6 +612,177 @@ fail:
   return ret;
 }
 
+static ncclResult_t deepCopyDevCommRequirements(
+    struct ncclDevCommRequirements const* src,
+    struct ncclDevCommRequirements** dst
+) {
+  ncclResult_t ret = ncclSuccess;
+  struct ncclDevResourceRequirements **dstRes;
+  struct ncclTeamRequirements **dstTeam;
+
+  NCCLCHECK(ncclCalloc(dst, 1));
+
+  /* copy the entire struct now and update linked lists later */
+  **dst = *src;
+
+  dstRes = &(*dst)->resourceRequirementsList;
+  for (struct ncclDevResourceRequirements* rr = src->resourceRequirementsList; rr != nullptr; rr = rr->next) {
+    NCCLCHECKGOTO(ncclCalloc(dstRes, 1), ret, fail);
+    (*dstRes)->bufferSize = rr->bufferSize;
+    (*dstRes)->bufferAlign = rr->bufferAlign;
+    (*dstRes)->outBufferHandle = rr->outBufferHandle;
+    dstRes = &(*dstRes)->next;
+  }
+
+  dstTeam = &(*dst)->teamRequirementsList;
+  for (struct ncclTeamRequirements* tr = src->teamRequirementsList; tr != nullptr; tr = tr->next) {
+    NCCLCHECKGOTO(ncclCalloc(dstTeam, 1), ret, fail);
+    (*dstTeam)->team = tr->team;
+    (*dstTeam)->multimem = tr->multimem;
+    (*dstTeam)->outMultimemHandle = tr->outMultimemHandle;
+    dstTeam = &(*dstTeam)->next;
+  }
+
+exit:
+  return ret;
+fail:
+  freeDevCommRequirements(*dst);
+  *dst = nullptr;
+  goto exit;
+}
+
+void freeDevCommRequirements(
+    struct ncclDevCommRequirements* reqs
+) {
+  if (reqs) {
+    while (reqs->resourceRequirementsList) {
+      struct ncclDevResourceRequirements* rr_next = reqs->resourceRequirementsList->next;
+      free(reqs->resourceRequirementsList);
+      reqs->resourceRequirementsList = rr_next;
+    }
+
+    while (reqs->teamRequirementsList) {
+      struct ncclTeamRequirements* tr_next = reqs->teamRequirementsList->next;
+      free(reqs->teamRequirementsList);
+      reqs->teamRequirementsList = tr_next;
+    }
+
+    free(reqs);
+  }
+}
+
+ncclResult_t ncclDevrCommCreateInternal(
+    struct ncclComm* comm,
+    struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm
+  ) {
+  ncclResult_t ret = ncclSuccess;
+  struct ncclDevrState* devr = &comm->devrState;
+  struct ncclTeam world = ncclTeamWorld(comm);
+  struct ncclTeam lsa = ncclTeamInnerFactor(world, devr->lsaSize);
+  struct ncclDevrTeam* tmLsa;
+  size_t bufSizeTotal;
+  struct ncclDevResourceRequirements* resReqsHead;
+  struct ncclDevResourceRequirements lsaBarReq;
+  cudaStream_t stream = nullptr;
+  CUmemGenericAllocationHandle memHandle = 0x0;
+  struct ncclDevrMemory* mem = nullptr;
+  struct ncclDevrWindow* win = nullptr;
+  struct ncclWindow_vidmem* winHost = nullptr;
+
+  memset(outDevComm, 0, sizeof(*outDevComm));
+  outDevComm->rank = comm->rank;
+  outDevComm->nRanks = comm->nRanks;
+  outDevComm->nRanks_rcp32 = idivRcp32(comm->nRanks);
+  outDevComm->lsaRank = devr->lsaSelf;
+  outDevComm->lsaSize = devr->lsaSize;
+  outDevComm->lsaSize_rcp32 = idivRcp32(devr->lsaSize);
+
+  NCCLCHECKGOTO(symTeamObtain(comm, lsa, /*multicast=*/reqs->lsaMultimem, &tmLsa), ret, fail);
+  outDevComm->lsaMultimem.mcBasePtr = tmLsa->mcBasePtr;
+
+  { struct ncclTeamRequirements* tr = reqs->teamRequirementsList;
+    while (tr != nullptr) {
+      if (tr->multimem) {
+        struct ncclDevrTeam* tm;
+        NCCLCHECKGOTO(symTeamObtain(comm, tr->team, tr->multimem, &tm), ret, fail);
+        if (tr->outMultimemHandle != nullptr) tr->outMultimemHandle->mcBasePtr = tm->mcBasePtr;
+      }
+      tr = tr->next;
+    }
+  }
+
+  resReqsHead = reqs->resourceRequirementsList;
+
+  ncclLsaBarrierCreateRequirement(lsa, reqs->lsaBarrierCount, &outDevComm->lsaBarrier, &lsaBarReq);
+  lsaBarReq.next = resReqsHead;
+  resReqsHead = &lsaBarReq;
+
+  { struct ncclDevResourceRequirements* rr = resReqsHead;
+    bufSizeTotal = 0;
+    while (rr != nullptr) {
+      bufSizeTotal = alignUp(bufSizeTotal, std::max<size_t>(128, rr->bufferAlign));
+      if (rr->outBufferHandle != nullptr) *rr->outBufferHandle = bufSizeTotal/128;
+      bufSizeTotal += rr->bufferSize;
+      rr = rr->next;
+    }
+    bufSizeTotal = alignUp(bufSizeTotal, devr->granularity);
+  }
+
+  CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail);
+
+  NCCLCHECKGOTO(symWindowTableInitOnce(comm, stream), ret, fail); // ensure devr->windowTable exists
+  outDevComm->windowTable = comm->devrState.windowTable;
+
+  if (bufSizeTotal == 0) {
+    outDevComm->resourceWindow = nullptr;
+    outDevComm->resourceWindow_inlined = {};
+  } else {
+    CUmemAllocationProp memProp = {};
+    memProp.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+    memProp.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    memProp.requestedHandleTypes = ncclCuMemHandleType;
+    memProp.location.id = comm->cudaDev;
+
+    CUCHECKGOTO(cuMemCreate(&memHandle, bufSizeTotal, &memProp, 0), ret, fail);
+
+    NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, bufSizeTotal, &mem), ret, fail);
+    memHandle = 0x0; // Reference given to symMemoryObtain
+
+    NCCLCHECKGOTO(symWindowCreate( // Requires world barrier afterward.
+      comm, mem, /*memOffset=*/0, nullptr, bufSizeTotal, /*winFlags=*/0,
+      /*localReg=*/nullptr, &outDevComm->resourceWindow, &win,
+      stream), ret, fail);
+    mem = nullptr; // Reference given to symWindowCreate
+    NCCLCHECKGOTO(ncclShadowPoolToHost(&comm->devrState.shadows, win->vidmem, &winHost), ret, fail);
+    outDevComm->resourceWindow_inlined = *winHost;
+
+    CUDACHECKGOTO(cudaMemsetAsync(win->userPtr, 0, bufSizeTotal, stream), ret, fail);
+  }
+
+  CUDACHECKGOTO(cudaStreamSynchronize(stream), ret, fail);
+
+  NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xbeef), ret, fail);
+
+  cudaStreamDestroy(stream);
+  return ret;
+
+fail:
+  if (win != nullptr) {
+    symWindowDestroy(comm, win->vidmem, stream);
+    cudaStreamSynchronize(stream);
+  }
+  if (mem != nullptr) {
+    symMemoryDropRef(comm, mem);
+  }
+  if (memHandle != 0x0) {
+    CUCHECKIGNORE(cuMemRelease(memHandle));
+  }
+  if (stream != nullptr) {
+    cudaStreamDestroy(stream);
+  }
+  return ret;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 NCCL_API(ncclResult_t, ncclCommWindowRegister, ncclComm_t comm, void* ptr, size_t size, ncclWindow_t* win, int winFlags);
@@ -683,25 +861,17 @@ ncclResult_t ncclDevrFindWindow(
   return ncclSuccess;
 }
 
-NCCL_API_CXX(ncclResult_t, ncclDevCommCreate, ncclComm_t comm, struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outSymComm);
+NCCL_API(ncclResult_t, ncclDevCommCreate, ncclComm_t comm, ncclDevCommRequirements_t const* reqs, ncclDevComm_t* outDevComm);
 ncclResult_t ncclDevCommCreate(
-    struct ncclComm* comm, struct ncclDevCommRequirements const* reqs,
-    struct ncclDevComm* outSymComm
+    ncclComm_t comm, struct ncclDevCommRequirements const* reqs,
+    struct ncclDevComm* outDevComm
   ) {
-  struct ncclTeam world;
-  struct ncclTeam lsa;
-  struct ncclDevrTeam* tmLsa;
-  cudaStream_t stream;
-  size_t bufSizeTotal;
-  struct ncclDevResourceRequirements* resReqsHead;
-  struct ncclDevResourceRequirements lsaBarReq;
-  struct ncclDevResourceRequirements lsaLLA2AReq;
-  CUmemGenericAllocationHandle memHandle;
-  struct ncclDevrMemory* mem;
-  struct ncclDevrWindow* win;
-  struct ncclWindow_vidmem* winHost;
-  struct ncclDevrState* devr;
   ncclResult_t ret = ncclSuccess;
+  int saveDev;
+  struct ncclDevrCommCreateTask* task = nullptr;
+
+  CUDACHECK(cudaGetDevice(&saveDev));
+  NCCLCHECK(ncclGroupStartInternal());
 
   if (!comm->symmetricSupport) {
     WARN("Communicator does not support symmetric memory!");
@@ -709,111 +879,29 @@ ncclResult_t ncclDevCommCreate(
     goto fail;
   }
 
+  NCCLCHECKGOTO(ncclCommEnsureReady(comm), ret, fail);
+  CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
+
   NCCLCHECKGOTO(ncclDevrInitOnce(comm), ret, fail);
-  devr = &comm->devrState;
 
-  memset(outSymComm, 0, sizeof(*outSymComm));
-  outSymComm->rank = comm->rank;
-  outSymComm->nRanks = comm->nRanks;
-  outSymComm->nRanks_rcp32 = idivRcp32(comm->nRanks);
-  outSymComm->lsaRank = devr->lsaSelf;
-  outSymComm->lsaSize = devr->lsaSize;
-  outSymComm->lsaSize_rcp32 = idivRcp32(devr->lsaSize);
+  NCCLCHECKGOTO(ncclCalloc(&task, 1), ret, fail);
+  // reqs must be deep copied to the task so background threads can safely access it
+  NCCLCHECKGOTO(deepCopyDevCommRequirements(reqs, &task->reqs), ret, fail);
+  task->outDevComm = outDevComm;
+  ncclIntruQueueEnqueue(&comm->devrState.commCreateTaskQueue, task);
+  ncclGroupCommJoin(comm, ncclGroupTaskTypeSymRegister);
 
-  world = ncclTeamWorld(comm);
-  lsa = ncclTeamInnerFactor(world, devr->lsaSize);
-
-  NCCLCHECKGOTO(symTeamObtain(comm, lsa, /*multicast=*/reqs->multimem, &tmLsa), ret, fail);
-  outSymComm->multimem.mcBasePtr = tmLsa->mcBasePtr;
-
-  { struct ncclTeamRequirements* tr = reqs->teamRequirementsList;
-    while (tr != nullptr) {
-      if (tr->multimem) {
-        struct ncclDevrTeam* tm;
-        NCCLCHECKGOTO(symTeamObtain(comm, tr->team, tr->multimem, &tm), ret, fail);
-        if (tr->outMultimemHandle != nullptr) tr->outMultimemHandle->mcBasePtr = tm->mcBasePtr;
-      }
-      tr = tr->next;
-    }
-  }
-
-  resReqsHead = reqs->resourceRequirementsList;
-
-  ncclLsaBarrierCreateRequirement(lsa, reqs->lsaBarrierCount, &outSymComm->lsaBarrier, &lsaBarReq);
-  lsaBarReq.next = resReqsHead;
-  resReqsHead = &lsaBarReq;
-
-  ncclLLA2ACreateRequirement(reqs->lsaLLA2ABlockCount, reqs->lsaLLA2ASlotCount, &outSymComm->lsaLLA2A, &lsaLLA2AReq);
-  lsaLLA2AReq.next = resReqsHead;
-  resReqsHead = &lsaLLA2AReq;
-
-  { struct ncclDevResourceRequirements* rr = resReqsHead;
-    bufSizeTotal = 0;
-    while (rr != nullptr) {
-      bufSizeTotal = alignUp(bufSizeTotal, std::max<size_t>(128, rr->bufferAlign));
-      bufSizeTotal += rr->bufferSize;
-      rr = rr->next;
-    }
-    bufSizeTotal = alignUp(bufSizeTotal, devr->granularity);
-  }
-
-  CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail);
-
-  NCCLCHECKGOTO(symWindowTableInitOnce(comm, stream), ret, fail_stream); // ensure devr->windowTable exists
-  outSymComm->windowTable = devr->windowTable;
-
-  if (bufSizeTotal == 0) {
-    outSymComm->resourceWindow = nullptr;
-    outSymComm->resourceWindow_inlined = {};
-  } else {
-    CUmemAllocationProp memProp = {};
-    memProp.type = CU_MEM_ALLOCATION_TYPE_PINNED;
-    memProp.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    memProp.requestedHandleTypes = ncclCuMemHandleType;
-    memProp.location.id = comm->cudaDev;
-    CUCHECKGOTO(cuMemCreate(&memHandle, bufSizeTotal, &memProp, 0), ret, fail);
-
-    NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, bufSizeTotal, &mem), ret, fail);
-    memHandle = 0x0; // Reference given to symMemoryObtain
-
-    NCCLCHECKGOTO(symWindowCreate( // Requires world barrier afterward.
-      comm, mem, /*memOffset=*/0, nullptr, bufSizeTotal, /*winFlags=*/0,
-      /*localReg=*/nullptr, &outSymComm->resourceWindow, &win,
-      stream), ret, fail);
-    mem = nullptr; // Reference given to symWindowCreate
-    NCCLCHECKGOTO(ncclShadowPoolToHost(&devr->shadows, win->vidmem, &winHost), ret, fail_stream_mem_win);
-    outSymComm->resourceWindow_inlined = *winHost;
-
-    struct ncclDevResourceRequirements* rr = resReqsHead;
-    bufSizeTotal = 0; // Sum this again to assign positions to the constituent buffers.
-    while (rr != nullptr) {
-      bufSizeTotal = alignUp(bufSizeTotal, std::max<size_t>(128, rr->bufferAlign));
-      if (rr->outBufferHandle != nullptr) *rr->outBufferHandle = bufSizeTotal/128;
-      bufSizeTotal += rr->bufferSize;
-      rr = rr->next;
-    }
-    bufSizeTotal = alignUp(bufSizeTotal, devr->granularity);
-
-    CUDACHECKGOTO(cudaMemsetAsync(win->userPtr, 0, bufSizeTotal, stream), ret, fail);
-  }
-
-  CUDACHECKGOTO(cudaStreamSynchronize(stream), ret, fail);
-  
-  NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xbeef), ret, fail_stream_mem_win);
-  CUDACHECKGOTO(cudaStreamDestroy(stream), ret, fail);
+exit:
+  ncclGroupErrCheck(ret);
+  NCCLCHECK(ncclGroupEndInternal());
+  cudaSetDevice(saveDev);
   return ret;
-
-fail_stream_mem_win:
-  symWindowDestroy(comm, win->vidmem, stream);
-  cudaStreamSynchronize(stream);
-  symMemoryDropRef(comm, mem);
-fail_stream:
-  cudaStreamDestroy(stream);
 fail:
-  return ret;
+  free(task);
+  goto exit;
 }
 
-NCCL_API_CXX(ncclResult_t, ncclDevCommDestroy, ncclComm_t comm, struct ncclDevComm const* devComm);
+NCCL_API(ncclResult_t, ncclDevCommDestroy, ncclComm_t comm, ncclDevComm_t const* devComm);
 ncclResult_t ncclDevCommDestroy(
     struct ncclComm* comm, struct ncclDevComm const* devComm
   ) {

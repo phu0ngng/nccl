@@ -1,3 +1,9 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef _NCCL_DEVICE_UTILITY_H_
 #define _NCCL_DEVICE_UTILITY_H_
 
@@ -12,12 +18,20 @@
   #define NCCL_HOST_DEVICE_INLINE inline __attribute__((always_inline))
 #endif
 
+#if __cplusplus
+#define NCCL_EXTERN_C extern "C"
+#else
+#define NCCL_EXTERN_C
+#endif
+
 #include <stdint.h>
+#include <stdbool.h>
 
 #if __CUDACC__
 #include <cuda/atomic>
 #endif
 
+#if __cplusplus
 namespace nccl {
 namespace utility {
 
@@ -334,5 +348,5 @@ struct Optional {
 };
 
 }}
-
+#endif // __cplusplus
 #endif

@@ -582,6 +582,7 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
         void* sendwin = args->sendRegHandles[id][i];
         void* recvwin = args->recvRegHandles[id][i];
+        CUDACHECK(cudaSetDevice(args->gpus[i]));
         TESTCHECK(args->collTest->runColl(
               (void*)(in_place ? recvwin : sendwin), shift + in_place ? args->sendInplaceOffset[id][i] * rank : 0,
               (void*)recvwin, shift + in_place ? args->recvInplaceOffset[id][i] * rank : 0,
@@ -1074,13 +1075,13 @@ testResult_t threadInit(struct threadArgs* args) {
         memset(&reqs, 0, sizeof(reqs));
         reqs.lsaBarrierCount = deviceCtaCount;
         // Try to create DevComm with multimem enabled first
-        reqs.multimem = true;
+        reqs.lsaMultimem = true;
         ncclResult_t result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
         if (result == ncclSuccess) {
           deviceMultimemEnabled = true;
         } else {
           // Fallback: try without multimem
-          reqs.multimem = false;
+          reqs.lsaMultimem = false;
           NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
           deviceMultimemEnabled = false;
         }
@@ -1914,13 +1915,13 @@ testResult_t run() {
           reqs.lsaBarrierCount = deviceCtaCount;
 
           // Try to create DevComm with multimem enabled first
-          reqs.multimem = true;
+          reqs.lsaMultimem = true;
           ncclResult_t result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
           if (result == ncclSuccess) {
             deviceMultimemEnabled = true;
           } else {
             // Fallback: try without multimem
-            reqs.multimem = false;
+            reqs.lsaMultimem = false;
             NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
             deviceMultimemEnabled = false;
           }

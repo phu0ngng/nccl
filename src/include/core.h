@@ -16,6 +16,7 @@
 
 #ifdef PROFAPI
 #define NCCL_API(ret, func, args...)        \
+    extern "C"                              \
     __attribute__ ((visibility("default"))) \
     __attribute__ ((alias(#func)))          \
     ret p##func (args);                     \
@@ -29,10 +30,6 @@
     __attribute__ ((visibility("default"))) \
     ret func(args)
 #endif // end PROFAPI
-
-#define NCCL_API_CXX(ret, func, args...)    \
-    __attribute__ ((visibility("default"))) \
-    ret func(args)
 
 #include "debug.h"
 #include "checks.h"

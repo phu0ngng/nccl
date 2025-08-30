@@ -1,10 +1,16 @@
+/*************************************************************************
+ * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+
 #ifndef _NCCL_DEVICE_MEM_BARRIER__TYPES_H_
 #define _NCCL_DEVICE_MEM_BARRIER__TYPES_H_
 #include "../mem_barrier.h"
 #include "core__types.h"
 
 struct ncclLsaBarrierHandle {
-  ncclDevResourceHandle bufHandle;
+  ncclDevResourceHandle_t bufHandle;
   int nBarriers;
 };
 

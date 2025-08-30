@@ -4,9 +4,7 @@ The NCCL Inspector is a plugin for the NVIDIA Collective Communications Library 
 
 ## Related Documentation
 
-- **[Utils](utils/README.md)** - Utility scripts and tools for building and managing the inspector plugin
-- **[Performance Exporter](exporter/elastic/README.md)** - Tool for analyzing and visualizing NCCL performance data from inspector logs
-- **[Test Directory](test/)** - Test files and examples for the inspector plugin
+- **[Performance Exporter](exporter/example/README.md)** - Tool for analyzing and visualizing NCCL performance data from inspector logs
 
 ## Folder Location
 
@@ -126,7 +124,7 @@ Each output file contains JSON objects with the following structure:
     "git_rev": "",
     "rec_mechanism": "profiler_plugin",
     "dump_timestamp_us": 1748030377748202,
-    "hostname": "cw-dfw-h100-002-243-012",
+    "hostname": "example-hostname",
     "pid": 1639453
   },
   "coll_perf": {
@@ -163,7 +161,7 @@ This will include additional event trace information in the JSON output, showing
     "git_rev": "9019a1912-dirty",
     "rec_mechanism": "nccl_profiler_interface",
     "dump_timestamp_us": 1752867229276385,
-    "hostname": "cw-dfw-h100-004-021-003",
+    "hostname": "example-hostname",
     "pid": 438776
   },
   "coll_perf": {
