@@ -84,6 +84,24 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 100 milliseconds, any positive value is valid.
 
+NCCL_SOCKET_POLL_TIMEOUT_MSEC
+-----------------------------
+(since 2.28)
+
+The ``NCCL_SOCKET_POLL_TIMEOUT_MSEC`` variable specifies a timeout in
+milliseconds for a poll which can reduce the CPU usage during
+bootstrap. Normally NCCL will retry the operation until it completes.
+Polling in between attempts should reduce load on the CPU so that it
+can engage in activities that might make the operation able to complete
+sooner.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Non-negative integer. The old behavior corredponds to 0 (the default).
+If 0, it will not poll, but keep trying to progress the socket
+operation without pause. If non-zero, it will poll for up that amount
+of time before trying to progress the operation again.
+
 NCCL_SOCKET_NTHREADS
 --------------------
 (since 2.4.8)

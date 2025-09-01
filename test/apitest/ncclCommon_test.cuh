@@ -160,6 +160,7 @@ typedef ::testing::Types<char>
 
 class ncclShelveEnvTest : public ::testing::Test {
   // Allows testing NCCL when an environment variable needs to be temporarily changed.
+  // Note: Parameters that use NCCL_PARAM are cached upon first access.
   private:
     std::map<std::string, std::string> oldValues;
   protected:
