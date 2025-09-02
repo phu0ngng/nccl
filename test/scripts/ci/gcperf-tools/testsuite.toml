@@ -1,0 +1,24 @@
+# NCCL Test Configuration
+description = "Sample testset"
+library_name = "nccl"
+
+[common]
+path = "${NCCL_TEST_PATH}"
+
+[common.sweep_envs]
+NCCL_DEBUG = "WARN"
+
+[common.sweep_args]
+-t = 1
+-g = 1
+-f = 2
+-n = 20
+-w = 5
+-b = "8"
+-e = "16G"
+-d = "float"
+-R = 0
+
+[[test]]
+name = "all_reduce"
+binary = "all_reduce_perf"
