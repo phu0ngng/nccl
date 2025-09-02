@@ -15,6 +15,7 @@
 #include "param.h"
 #include "ras.h"
 #include <mutex>
+#include "os.h"
 #include <thread>
 
 #define BOOTSTRAP_N_CHECK_ABORT           10000
@@ -732,7 +733,7 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm) {
     // The RAS thread will take care of freeing the memory allocated below.
     NCCLCHECK(ncclCalloc(&rasRanks, nranks));
     memcpy(&rasRanks[rank].addr, &bootstrapNetIfAddr, sizeof(rasRanks[rank].addr));
-    rasRanks[rank].pid = getpid();
+    rasRanks[rank].pid = ncclOsGetpid();
     rasRanks[rank].cudaDev = comm->cudaDev;
     rasRanks[rank].nvmlDev = comm->nvmlDev;
     rasRanks[rank].hostHash = getHostHash();

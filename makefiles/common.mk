@@ -158,3 +158,12 @@ endif
 ifneq ($(MAX_EXT_NET_PLUGINS), 0)
 CXXFLAGS += -DNCCL_NET_MAX_PLUGINS=$(MAX_EXT_NET_PLUGINS)
 endif
+
+# Detect OS Linux or Windows
+ifeq ($(shell uname -s), Linux)
+  NCCL_OS_LINUX := 1
+  CXXFLAGS += -DNCCL_OS_LINUX=1
+else ifeq ($(shell uname -s), Windows)
+  NCCL_OS_WINDOWS := 1
+  CXXFLAGS += -DNCCL_OS_WINDOWS=1
+endif

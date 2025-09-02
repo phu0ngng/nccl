@@ -140,6 +140,17 @@ if(MLX5DV)
     endif()
 endif()
 
+# Detect OS
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(NCCL_OS_WINDOWS ON)
+    add_definitions(-DNCCL_OS_WINDOWS)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(NCCL_OS_LINUX ON)
+    add_definitions(-DNCCL_OS_LINUX)
+else()
+    message(FATAL_ERROR "Unsupported OS: ${CMAKE_SYSTEM_NAME}")
+endif()
+
 if(NET_PROFILER)
     add_definitions(-DNCCL_ENABLE_NET_PROFILING=1)
 endif()

@@ -6,6 +6,7 @@
 
 #include "utils.h"
 #include "core.h"
+#include "os.h"
 
 #include "nvmlwrap.h"
 
@@ -122,7 +123,7 @@ uint64_t getHostHash(void) {
 uint64_t getPidHash(void) {
   char pname[1024];
   // Start off with our pid ($$)
-  sprintf(pname, "%ld", (long) getpid());
+  sprintf(pname, "%ld", (long) ncclOsGetpid());
   int plen = strlen(pname);
   int len = readlink("/proc/self/ns/pid", pname+plen, sizeof(pname)-1-plen);
   if (len < 0) len = 0;

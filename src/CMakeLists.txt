@@ -39,6 +39,7 @@ add_subdirectory(device)
 add_subdirectory(nccl_device)
 add_subdirectory(ras)
 add_subdirectory(scheduler)
+add_subdirectory(os)
 
 add_compile_options(-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/=)
 
@@ -52,6 +53,7 @@ list(APPEND LIBSRCFILES
     ${RAS_SOURCES}
     ${SYM_SOURCES}
     ${SCHEDULER_SOURCES}
+    ${OS_SOURCES}
 )
 
 ###################### Create a shared NCCL library ############################
@@ -64,6 +66,7 @@ target_include_directories(nccl PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/device
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/os
     ${CUDAToolkit_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
@@ -148,6 +151,7 @@ target_include_directories(nccl_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/device
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/os
     ${CUDAToolkit_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
