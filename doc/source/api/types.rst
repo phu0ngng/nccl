@@ -184,7 +184,7 @@ ncclScalarResidence_t
 .. _ncclconfig:
 
 ncclConfig_t
----------------------
+------------
 
 .. c:type:: ncclConfig_t
 
@@ -278,7 +278,7 @@ ncclConfig_t
 .. _ncclsiminfo:
 
 ncclSimInfo_t
----------------------
+-------------
 
 .. c:type:: ncclSimInfo_t
 
