@@ -1168,6 +1168,16 @@ when the NIC preferred by the destination is not accessible through PCI switches
 of 2 (default) will cause PXN to always be used, even if the NIC is connected through PCI switches,
 storing data from all GPUs within the node on an intermediate GPU to maximize aggregation.
 
+NCCL_PXN_C2C
+------------
+(since 2.27)
+
+Allow NCCL to use the PXN mechanism if the peer GPU is connected through C2C + PCIe to the targeted NIC.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 1 (since NCCL 2.28; it was 0 in NCCL 2.27). Set to 1 to enable and to 0 to disable.
+
 NCCL_RUNTIME_CONNECT
 --------------------
 (since 2.22)
