@@ -15,3 +15,4 @@ The following sections describe the NCCL methods and operations.
  api/types
  api/ops
  api/flags
+ api/device

@@ -155,6 +155,8 @@ For advanced users, if you want to create your own memory allocator for NVLS UB,
 
 For general buffer registration with VMM API, the allocator needs to satisfy the same requirements as NVLS UB allocators.
 
+.. _window_reg:
+
 Window Registration
 -------------------
 

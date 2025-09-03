@@ -651,6 +651,8 @@ Values accepted
 ^^^^^^^^^^^^^^^
 Define and set to 1 to disable direct GPU-to-GPU (P2P) communication.
 
+.. _env_NCCL_P2P_LEVEL:
+
 NCCL_P2P_LEVEL
 --------------
 (since 2.3.4)
@@ -899,6 +901,8 @@ Sets the default Memory Sync Domain for NCCL kernels (CUDA 12.0 & sm90 and later
 Values accepted
 ^^^^^^^^^^^^^^^
 Default value is ``cudaLaunchMemSyncDomainRemote`` (1). Currently supported values are 0 and 1.
+
+.. _env_NCCL_CUMEM_ENABLE:
 
 NCCL_CUMEM_ENABLE
 -----------------
@@ -1346,6 +1350,8 @@ Set the minimal number of CTAs the NCCL should use. Setting this environment var
 Values accepted
 ^^^^^^^^^^^^^^^
 Set to a positive integer value up to 64 (32 prior to 2.25). Default value is undefined.
+
+.. _env_NCCL_NVLS_ENABLE:
 
 NCCL_NVLS_ENABLE
 ----------------
