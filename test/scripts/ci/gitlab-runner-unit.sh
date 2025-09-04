@@ -11,6 +11,7 @@ get_slurm_planned_time
 
 # Args for run_command
 # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
+export LD_LIBRARY_PATH_BACKUP=$LD_LIBRARY_PATH
 
 if [[ ${ENQUEUE_TESTS_ARGS} -eq 1 ]] ; then
   run_command "enqueue_tests_args" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=512" "$NCCL_HOME/test/unit/enqueue_test" ""
@@ -99,13 +100,16 @@ else
   echo -e "Disabled PAT Log Algo AG TESTS test\n\n"
 fi
 
+# Plugin Load Tests
 export LD_LIBRARY_PATH=$NCCL_HOME/test/unit/plugins
-
 if [[ ${PLUGIN_LOADING_TESTS} ]] ; then
   run_command "plugin_loading_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/plugin_load" ""
 else
   echo -e "Disabled Plugin Loading TESTS test\n\n"
 fi
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH_BACKUP
+
+# More unit test
 
 print_failed_commands
 end_junit_file

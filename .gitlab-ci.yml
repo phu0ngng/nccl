@@ -65,7 +65,7 @@ workflow:
     # For merge requests only (regardless of source branch)
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && $CI_PIPELINE_SOURCE == 'merge_request_event'
     # For scheduled and manual triggers
-    - if: $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web'
+    - if: $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_PIPELINE_SOURCE == 'api'
 
 ##
 ## Stage: build - Start...
