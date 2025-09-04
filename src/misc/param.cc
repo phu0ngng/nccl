@@ -14,7 +14,6 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <mutex>
 #include <pwd.h>
 
