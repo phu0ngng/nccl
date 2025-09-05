@@ -114,7 +114,6 @@ static int deviceImpl = 0;
 int deviceCtaCount = 16; // Default number of CTAs for device implementation
 bool deviceMultimemEnabled = false; // Track whether multimem was successfully enabled
 
-static int ctaPolicy = 0;
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
 static int commblocking = NCCL_CONFIG_UNDEF_INT;
@@ -125,11 +124,11 @@ static int split_share = NCCL_CONFIG_UNDEF_INT;
 static int split_comm = 0;
 static char* splitMaskEnv = NULL;
 static int commNum = 1;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-#define LOCAL_REGISTER_SEND 0x1
-#define LOCAL_REGISTER_RECV 0x2
-#define SYMMETRIC_REGISTER_ALL 0x4
+#define LOCAL_REGISTER 1
+#define SYMMETRIC_REGISTER 2
 static int local_register = 0;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+static int ctaPolicy = -1;
 #endif
 static int per_coll_perf = 0;
 static int simulate = 0;
@@ -953,16 +952,23 @@ testResult_t threadInit(struct threadArgs* args) {
   int nranks = args->totalProcs * args->nThreads * args->nGpus;
   ncclComm_t globalComms[args->nGpus];
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = commblocking;
   config.splitShare = split_share;
   config.trafficClass = trafficClass;
-  config.CTAPolicy = ctaPolicy;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+  if (ctaPolicy >= 0)
+    config.CTAPolicy = ctaPolicy;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   config.nvlinkCentricSched = 1;
+#endif
+#endif
+#endif
 
   NCCLCHECK(ncclGroupStart());
-  for (int i = 0; i < args->nGpus; ++i) {
-    int rank = args->globalProc * args->nThreads * args->nGpus + args->thread * args->nGpus + i;
+  for (int i=0; i<args->nGpus; i++) {
+    int rank = args->globalProc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
     CUDACHECK(cudaSetDevice(args->gpus[i]));
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,23,0)
     if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
@@ -971,7 +977,7 @@ testResult_t threadInit(struct threadArgs* args) {
       NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
     }
 #else
-      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
+    NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
 #endif
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
@@ -1037,7 +1043,7 @@ testResult_t threadInit(struct threadArgs* args) {
   } else if (split_comm == 1) {
     /* duplicate globalcomm. */
     NCCLCHECK(ncclGroupStart());
-    for (int i = 0; i < args->nGpus; ++i) {
+    for (int i = 0; i < args->nGpus; i++) {
       NCCLCHECK(ncclCommSplit(globalComms[i], 0, 0, &args->comms[0][i], &config));
     }
     NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
@@ -1049,12 +1055,12 @@ testResult_t threadInit(struct threadArgs* args) {
   if (split_comm) {
     /* destroy global NCCL communicators */
     NCCLCHECK(ncclGroupStart());
-    for (int i = 0; i < args->nGpus; ++i) {
+    for (int i = 0; i < args->nGpus; i++) {
       NCCLCHECK(ncclCommFinalize(globalComms[i]));
     }
     NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
 
-    for (int i = 0; i < args->nGpus; ++i)
+    for (int i = 0; i < args->nGpus; i++)
       NCCLCHECK(ncclCommDestroy(globalComms[i]));
   }
 
@@ -1069,17 +1075,20 @@ testResult_t threadInit(struct threadArgs* args) {
       ncclTestEngine.getBuffSize(&sendBytes, &recvBytes, (size_t)maxBytes, (size_t)nranks);
       CUDACHECK(cudaSetDevice(args->gpus[i]));
       TESTCHECK(AllocateBuffs(args->sendbuffs[id] + i, sendBytes, args->recvbuffs[id] + i, recvBytes, args->expected[id] + i, (size_t)maxBytes, &allocBytes));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-      if (local_register & SYMMETRIC_REGISTER_ALL) {
+      if (local_register == SYMMETRIC_REGISTER) {
         NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, (ncclWindow_t*)&args->sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
         NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, (ncclWindow_t*)&args->recvRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
-      } else {
-        if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, &args->sendRegHandles[id][i]));
-        if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, &args->recvRegHandles[id][i]));
+      } else
+      {
+        if (local_register) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, &args->sendRegHandles[id][i]));
+        if (local_register) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, &args->recvRegHandles[id][i]));
       }
-#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-      if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, &args->sendRegHandles[id][i]));
-      if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, &args->recvRegHandles[id][i]));
+#else
+      if (local_register) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, &args->sendRegHandles[id][i]));
+      if (local_register) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, &args->recvRegHandles[id][i]));
+#endif
 #endif
     }
   }
@@ -1253,7 +1262,7 @@ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, s
 #else
     CUDACHECK(cudaMalloc(sendbuff, nbytes));
     CUDACHECK(cudaMalloc(recvbuff, nbytes));
-    if (datacheck) NCCLCHECK(cudaMalloc(expected, recvBytes));
+    if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
 #endif
     CUDACHECK(cudaMemset(*sendbuff, 0, nbytes));
     CUDACHECK(cudaMemset(*recvbuff, 0, nbytes));
@@ -1330,6 +1339,7 @@ int main(int argc, char* argv[], char **envp) {
     {"split_share", required_argument, 0, 'S'},
     {"split_comm", required_argument, 0, 'P'},
     {"local_register", required_argument, 0, 'R'},
+    {"cta_policy", required_argument, 0, 'x'},
     {"per_coll_perf", required_argument, 0, 'A'},
     {"simulate", required_argument, 0, 'E'},
     {"init_ids", required_argument, 0, 'I'},
@@ -1339,7 +1349,6 @@ int main(int argc, char* argv[], char **envp) {
     {"device_cta_count", required_argument, 0, 'V'},
 
     {"help", no_argument, 0, 'h'},
-    {"cta_policy", required_argument, 0, 'x'},
     {}
   };
 
@@ -1374,7 +1383,12 @@ int main(int argc, char* argv[], char **envp) {
         maxBytes = (size_t)parsed;
         break;
       case 'i':
-        stepBytes = strtol(optarg, NULL, 0);
+        parsed = parsesize(optarg);
+        if (parsed < 0) {
+          fprintf(stderr, "invalid size specified for 'stepBytes'\n");
+          return -1;
+        }
+        stepBytes = (size_t)parsed;
         break;
       case 'f':
         stepFactor = strtol(optarg, NULL, 0);
@@ -1459,8 +1473,20 @@ int main(int argc, char* argv[], char **envp) {
       case 'a':
         average = (int)strtol(optarg, NULL, 0);
         break;
+      case 'R':
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+        local_register = (int)strtol(optarg, NULL, 0);
+        if (local_register == SYMMETRIC_REGISTER && test_ncclVersion < NCCL_VERSION(2,27,0)) {
+          printf("Option -R 2 (symmetric) is not supported before NCCL 2.27. Defaulting to local registration\n");
+          local_register = LOCAL_REGISTER;
+        }
+#else
+        printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
+#endif
+        break;
       case 'B':
         commblocking = (int)strtol(optarg, NULL, 0);
+        break;
       case 'F':
         ft_test = (int)strtol(optarg, NULL, 0);
         break;
@@ -1481,20 +1507,6 @@ int main(int argc, char* argv[], char **envp) {
       case 'P':
         split_comm = (int)strtol(optarg, NULL, 0);
         break;
-      case 'R':
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-        if (optarg[0] == 's') local_register = LOCAL_REGISTER_SEND;
-        else if (optarg[0] == 'r') local_register = LOCAL_REGISTER_RECV;
-        else if (optarg[0] == 'a' || (int)strtol(optarg, NULL, 0) == 1) local_register = LOCAL_REGISTER_SEND|LOCAL_REGISTER_RECV;
-        else if ((int)strtol(optarg, NULL, 0) == 2) local_register = SYMMETRIC_REGISTER_ALL;
-#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-        if (optarg[0] == 's') local_register = LOCAL_REGISTER_SEND;
-        else if (optarg[0] == 'r') local_register = LOCAL_REGISTER_RECV;
-        else if ((optarg[0] == 'a') || ((int)strtol(optarg, NULL, 0))) local_register = LOCAL_REGISTER_SEND|LOCAL_REGISTER_RECV;
-#else
-        printf("Option -R (register) is not supported before NCCL 2.19. Ignoring\n");
-#endif // NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-        break;
       case 'A':
         per_coll_perf = (int)strtol(optarg, NULL, 0);
         break;
@@ -1508,27 +1520,37 @@ int main(int argc, char* argv[], char **envp) {
         tuning = (int)strtol(optarg, NULL, 0);
         break;
       case 'x':
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
         ctaPolicy = (int)strtol(optarg, NULL, 0);
-        break;
-      case 'D':
-        deviceImpl = (int)strtol(optarg, NULL, 0);
-#if NCCL_VERSION_CODE < NCCL_VERSION(2,28,0)
-        if (deviceImpl > 0) {
-          fprintf(stderr, "device implementation (-D > 0) requires NCCL >= 2.28.0, but this build uses NCCL %d.%d\n",
-                  NCCL_MAJOR, NCCL_MINOR);
-          return -1;
+        if (ctaPolicy > 1 && test_ncclVersion < NCCL_VERSION(2,28,0)) {
+          printf("Option -x (cta_policy) %d is not supported before NCCL 2.28. Ignoring\n", ctaPolicy);
+          ctaPolicy = -1;
         }
+#else
+        printf("Option -x (cta_policy) is not supported before NCCL 2.27. Ignoring\n");
 #endif
         break;
-      case 'V':
-        deviceCtaCount = (int)strtol(optarg, NULL, 0);
-        if (deviceCtaCount <= 0 || deviceCtaCount > 128) {
-          fprintf(stderr, "device_cta_count (-V) must be positive and less than 128, got %d. "
-                  "Using default value 16.\n", deviceCtaCount);
-          deviceCtaCount = 16;
+      case 'D':
+        if (test_ncclVersion >= NCCL_VERSION(2,28,0)) {
+          deviceImpl = (int)strtol(optarg, NULL, 0);
+        } else {
+          fprintf(stderr, "Option -D (device implementation) requires NCCL >= 2.28.0\n");
+          return -1;
         }
         break;
-
+      case 'V':
+        if (test_ncclVersion >= NCCL_VERSION(2,28,0)) {
+          deviceCtaCount = (int)strtol(optarg, NULL, 0);
+          if (deviceCtaCount <= 0 || deviceCtaCount > 128) {
+            fprintf(stderr, "device_cta_count (-V) must be positive and less than 128, got %d. "
+                    "Using default value 16.\n", deviceCtaCount);
+            deviceCtaCount = 16;
+          }
+        } else {
+          fprintf(stderr, "Option -V (device CTA count) requires NCCL >= 2.28.0\n");
+          return -1;
+        }
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1565,18 +1587,18 @@ int main(int argc, char* argv[], char **envp) {
             "[-u,--unalign <index of first element>] \n\t"
             "[-J,--output_file <file> write output to filepath, if accessible. Infer type from suffix (only json supported presently.)] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
+            "[-R,--local_register <0/1/2> enable local (1) or symmetric (2) buffer registration on send buffers/recv buffers/all buffers (default: disable(0))] \n\t"
+            "[-x,--cta_policy <0/1/2> set CTA policy (NCCL_CTA_POLICY_DEFAULT (0), NCCL_CTA_POLICY_EFFICIENCY (1), NCCL_CTA_POLICY_ZERO (2)) (default: do not set)] \n\t"
             "[-B,--commblocking <0/1> enable blocking communicator (default: 1)] \n\t"
             "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
             "[-L,--ft_list <init/allreduce/alltoall/finalize/split/all> only enable specified fault tolerance test (default: all)] \n\t"
             "[-s,--tbytes total bytes allowed to transmit (default: unlimited); tbytes would limit #iterations] \n\t"
             "[-S,--split_share <0/1> enable shared resources during communicator split (default: 0)] \n\t"
             "[-P,--split_comm <0/1/2> enable communicator split (default: 0 disable; 1 dup global comm; 2 three split patterns)] \n\t"
-            "[-R,--local_register <s/r/a/1/2> enable local (s/r/a/1) or symmetric (2) buffer registration on send buffers/recv buffers/all buffers (default: disable)] \n\t"
             "[-A,--per_coll_perf <0/1/2> Report performance per-collective (default: 0 disable; 1 report per-collective performance and std deviation; 2: report only std deviation)] \n\t"
             "[-I,--init_ids <num ids> enable scalable API for ncclCommInitRank using <num ids> ncclUniqueIds (default: disabled; 0 is equivalent to 1 ncclUniqueId per 128 NCCL ranks; value must be >=0)] \n\t"
             "[-q,--traffic_class <tclass> set network traffic class] \n\t"
             "[-U,--tuning <0/1> report NCCL tuning info (default: 0)] \n\t"
-            "[-x,--cta_policy <0/1/2> set CTA policy (default: 0)] \n\t"
             "[-D,--device_implementation <implementation number> enable device implementation (default: 0, use NCCL implementation; requires -R 2 if > 0)] \n\t"
             "[-V,--device_cta_count <number> set number of CTAs for device implementation (default: 16)] \n\t"
 
@@ -1591,7 +1613,7 @@ int main(int argc, char* argv[], char **envp) {
            (unsigned long long)maxBytes);
     return -1;
   }
-  if (deviceImpl > 0 && !(local_register & SYMMETRIC_REGISTER_ALL)) {
+  if (deviceImpl > 0 && (local_register != SYMMETRIC_REGISTER)) {
     fprintf(stderr, "device implementation (-D > 0) requires enabling symmetric memory registration (-R 2)\n");
     return -1;
   }
@@ -1830,16 +1852,22 @@ testResult_t run() {
 #endif
   if (!parallel_init) {
     //if parallel init is not selected, use main thread to initialize NCCL
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = commblocking;
     config.splitShare = split_share;
     config.trafficClass = trafficClass;
     config.commName = "perftest";
-    config.CTAPolicy = ctaPolicy;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+    if (ctaPolicy >= 0)
+      config.CTAPolicy = ctaPolicy;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     config.nvlinkCentricSched = 1;
-
+#endif
+#endif
+#endif
     NCCLCHECK(ncclGroupStart());
-    for (int i = 0; i < nGpus * nThreads; ++i) {
+    for (int i=0; i<nGpus*nThreads; i++) {
       CUDACHECK(cudaSetDevice(gpus[i]));
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2, 23, 0)
       if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
@@ -1914,7 +1942,7 @@ testResult_t run() {
     } else if (split_comm == 1) {
       /* duplicate globalcomm. */
       NCCLCHECK(ncclGroupStart());
-      for (int i = 0; i < nGpus * nThreads; ++i) {
+      for (int i = 0; i < nGpus * nThreads; i++) {
         NCCLCHECK(ncclCommSplit(globalComms[i], 0, 0, &comms[0][i], &config));
       }
       NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
@@ -1926,7 +1954,7 @@ testResult_t run() {
     if (split_comm || splitMaskEnv) {
       /* destroy global NCCL communicators */
       NCCLCHECK(ncclGroupStart());
-      for (int i = 0; i < nGpus * nThreads; ++i) {
+      for (int i = 0; i < nGpus * nThreads; i++) {
         NCCLCHECK(ncclCommFinalize(globalComms[i]));
       }
       NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
@@ -1946,16 +1974,16 @@ testResult_t run() {
         CUDACHECK(cudaSetDevice(gpus[i]));
         TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-        if (local_register & SYMMETRIC_REGISTER_ALL) {
+        if (local_register == SYMMETRIC_REGISTER) {
           NCCLCHECK(ncclCommWindowRegister(comms[id][i], sendbuffs[id][i], allocBytes, (ncclWindow_t*)&sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
           NCCLCHECK(ncclCommWindowRegister(comms[id][i], recvbuffs[id][i], allocBytes, (ncclWindow_t*)&recvRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
         } else {
-          if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
-          if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
+          if (local_register == LOCAL_REGISTER) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
+          if (local_register == LOCAL_REGISTER) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
         }
 #elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-        if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
-        if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
+        if (local_register == LOCAL_REGISTER) NCCLCHECK(ncclCommRegister(comms[id][i], sendbuffs[id][i], allocBytes, &sendRegHandles[id][i]));
+        if (local_register == LOCAL_REGISTER) NCCLCHECK(ncclCommRegister(comms[id][i], recvbuffs[id][i], allocBytes, &recvRegHandles[id][i]));
 #endif
       }
     }
@@ -2167,17 +2195,17 @@ testResult_t run() {
   // Free off CUDA allocated memory
   for (int id = 0; id < commNum; ++id) {
     for (int i=0; i<nGpus*nThreads; i++) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-      if (local_register & SYMMETRIC_REGISTER_ALL) {
+      if (test_ncclVersion >= NCCL_VERSION(2,27,0) && (local_register == SYMMETRIC_REGISTER)) {
         NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)sendRegHandles[id][i]));
         NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)recvRegHandles[id][i]));
-      } else {
-        if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
-        if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
+      } else
+#endif
+      {
+        if (local_register) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
+        if (local_register) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       }
-#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
-      if (local_register & LOCAL_REGISTER_SEND) NCCLCHECK(ncclCommDeregister(comms[id][i], sendRegHandles[id][i]));
-      if (local_register & LOCAL_REGISTER_RECV) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
 #endif
       NCCLCHECK(ncclCommDestroy(comms[id][i]));
     }
