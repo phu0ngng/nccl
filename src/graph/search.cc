@@ -496,14 +496,14 @@ static ncclResult_t ncclTopoPrefNetsChannelFirst(struct ncclTopoSystem* system, 
   return ncclSuccess;
 }
 
-// Build a sorted list of the NETs to try.
+// Build a sorted list of the NETs to try, the list will follow the NETDEVS_POLICY set by the user.
 //
-// "gpu" can be set to -1 to build a list suitable for all GPUs (search start) or to a given gpu
-//  index when trying to get back to the NIC.
+// The value of "gpu" can be set to -1 to build a list suitable for all GPUs (for example for the search start).
+// The value of "gpu" can be set to the desired index when trying to get back to the NIC.
 //
 // The list is built the following way:
-// 1. Select NETs starting with those close to GPU(s), based on paths[n].type.
-// 2. add other NETs satisfying typeInter but not already in the list.
+// 1. First gather the preferred NETs for each of the GPU(s), based on the NETDEVS_POLICY and the connection.
+// 2. If the NETDEV_policy allows it, add all the other NETs satisfying typeInter but not already in the list of preferred NETs.
 NCCL_PARAM(ScatterEnable, "MNNVL_SCATTER_NETS_ENABLE", 1);
 ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, int gpu, int nets[NCCL_TOPO_MAX_NODES], int* netCountRet) {
   ncclResult_t ret = ncclSuccess;
@@ -518,9 +518,19 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
     NCCLCHECK(ncclTopoPrefNetsChannelFirst(system, gpu, nets, &netCount));
   }
 
+  // Get the maximum of network devices allowed, depending on the policy.
+  // If the policy is not MAX, then allow all devices.
+  int maxDevCount = 0;
+  enum netDevsPolicy netDevsPolicy;
+  NCCLCHECK(ncclTopoGetNetDevsPolicy(&netDevsPolicy, &maxDevCount));
+  if (gpu == -1) maxDevCount *= system->nodes[GPU].count;
+  if (netDevsPolicy != NETDEVS_POLICY_MAX) maxDevCount = NCCL_TOPO_MAX_NODES;
+  if (netCount >= maxDevCount) goto exit;
+
   // Then add others satisfying typeInter
   for (int t=0; t <= typeInter; t++) {
     for (int g = 0; g < system->nodes[GPU].count; g++) {
+      // do not consider this GPU is it's not the GPU we asked for
       if (gpu != -1 && gpu != g) continue;
       int localNetCount = 0, localNets[MAXCHANNELS];
       struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
@@ -532,12 +542,14 @@ ncclResult_t ncclTopoSelectNets(struct ncclTopoSystem* system, int typeInter, in
       for (int i=0; i<localNetCount; i++) {
         int n = localNets[i];
         int found = 0;
-        while (found<netCount && nets[found] != n) found++;
+        while (found < netCount && nets[found] != n) found++;
         if (found == netCount) nets[netCount++] = n;
+        if (netCount >= maxDevCount) goto exit;
       }
     }
   }
 
+exit:
   *netCountRet = netCount;
   return ret;
 }
