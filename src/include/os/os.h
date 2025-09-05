@@ -4,8 +4,8 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
- #ifndef NCCL_OS_H_
- #define NCCL_OS_H_
+#ifndef NCCL_OS_H_
+#define NCCL_OS_H_
 
 #include "nccl.h"
 

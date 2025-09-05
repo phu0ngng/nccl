@@ -7,10 +7,10 @@
 #include "os/os.h"
 
 uint64_t ncclOsGetpid() {
-    return (uint64_t)GetCurrentProcessId();
+  return (uint64_t)GetCurrentProcessId();
 }
 
 ncclResult_t ncclOsSetCpuStackSize() {
-    printf("ncclOsSetCpuStackSize: Not implemented on Windows\n");
-    return ncclSuccess;
+  // Not implemented on Windows
+  return ncclSuccess;
 }
