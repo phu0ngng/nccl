@@ -25,6 +25,7 @@
 #include "param.h"
 #include <pthread.h>
 #include <sys/resource.h>
+#include <atomic>
 
 // Process Management
 uint64_t ncclOsGetpid() {

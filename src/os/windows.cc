@@ -12,6 +12,7 @@
 #include "os.h"
 #include "checks.h"
 #include "param.h"
+#include <atomic>
 
 // Windows-specific definitions for constants not available in Windows
 #ifndef IFNAMSIZ
