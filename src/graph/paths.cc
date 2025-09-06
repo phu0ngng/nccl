@@ -697,13 +697,16 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
     }
   }
   // update the GPU -> NIC path in the case of C2C + PHB
-  for (int n = 0; n < system->nodes[NET].count; n++) {
-    struct ncclTopoNode* netNode = system->nodes[NET].nodes + n;
-    for (int g = 0; g < system->nodes[GPU].count; g++) {
-      struct ncclTopoNode* gpuNode = system->nodes[GPU].nodes + g;
-      int c;
-      NCCLCHECK(ncclGetLocalCpu(system, g, &c));
-      if (c == -1) continue;
+  // P2C is only set when the NET is the closest to the GPU. Otherwise PXN connections should be preferred
+  for (int g = 0; g < system->nodes[GPU].count; g++) {
+    struct ncclTopoNode* gpuNode = system->nodes[GPU].nodes + g;
+    int c = 1, localNetCount = 0, localNet[NCCL_TOPO_MAX_NODES];
+    NCCLCHECK(ncclGetLocalCpu(system, g, &c));
+    if (c == -1) continue;
+    NCCLCHECK(ncclTopoGetLocal(system, GPU, g, NET, localNet, &localNetCount, /*pathType=*/NULL));
+    for (int l = 0; l < localNetCount; l++) {
+      int n = localNet[l];
+      struct ncclTopoNode* netNode = system->nodes[NET].nodes + n;
       if (mergePathType(gpuNode->paths[CPU][c].type, netNode->paths[CPU][c].type) == PATH_P2C) {
         gpuNode->paths[NET][n].type = std::min(PATH_P2C, gpuNode->paths[NET][n].type);
         netNode->paths[GPU][g].type = std::min(PATH_P2C, netNode->paths[GPU][g].type);
