@@ -29,6 +29,7 @@ ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu
 endif
+CU_FILES += register_memcpyTest.cu
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%) $(CC_FILES:%.cc=${DST_DIR}/%)
 KEXE_FILES:= $(KCU_FILES:%.cu=${DST_DIR}/%)
@@ -82,6 +83,12 @@ ${DST_DIR}/align_test: ${DST_DIR}/align_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -lcudart
+
+${DST_DIR}/register_memcpyTest: ${DST_DIR}/register_memcpyTest.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS} ${GTEST_LIBS}
+
 #
 #${DST_DIR}/nccl_mpi.o: ../../share/nccl_mpi.c
 #	@printf "Compiling   %-35s > %s\n" $< $@
