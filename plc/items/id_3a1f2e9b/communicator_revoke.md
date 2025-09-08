@@ -3,7 +3,7 @@
 
 ## Abstract
 
-The Communicator Revoke feature allows NCCL to cancel or quiesce ongoing device-side NCCL activities on a communicator without destroying it or reclaiming its resources. Revoke sets abort flags so device work exits promptly, waits for in-flight kernels to finish, and then clears the flags so the communicator remains in a quiesced state for further management operations such as finalize, destroy, split, or shrink. It is not intended for launching new collective operations on the revoked communicator. Revoke supports optional cross-rank coordination via a global barrier and works in both blocking and non-blocking modes based on `ncclConfig_t::blocking`.
+The Communicator Revoke feature allows NCCL to promptly stop ongoing device-side NCCL activities on a communicator without destroying it or reclaiming its resources. Revoke immediately sets abort flags to signal device work to exit, marks the communicator as revoked to prevent new collective operations, and asynchronously handles cleanup of in-flight kernels. After completion, the communicator remains available for management operations such as finalize, destroy, split, or shrink, but rejects new collective operations. Revoke behavior (blocking vs non-blocking) is controlled by the communicator's `ncclConfig_t::blocking` setting.
 
 <!-- ============================================================================================-->
 <details>
@@ -18,6 +18,8 @@ The Communicator Revoke feature allows NCCL to cancel or quiesce ongoing device-
 
 Long-running distributed jobs may need to promptly stop outstanding NCCL operations on a communicator without tearing it down. Typical scenarios include fault mitigation, fast recovery before a `ncclCommShrink`, or ensuring clean progress before `ncclCommFinalize`/`ncclCommDestroy`. Revoke provides a lightweight, explicit mechanism to cancel in-flight work and restore the communicator to a consistent, usable state.
 
+**Key difference from `ncclCommAbort`**: Unlike abort, revoke preserves the communicator and its resources for potential reuse. Specifically, revoke allows bootstrap resources to be reused in subsequent operations like `ncclCommShrink`, whereas abort destroys the communicator entirely, requiring complete reinitialization. This makes revoke particularly valuable for fault recovery scenarios where you want to remove failed ranks via shrink operations without the overhead of full communicator recreation.
+
 ### User Experience
 
 Revoke is called on an existing communicator:
@@ -25,13 +27,10 @@ Revoke is called on an existing communicator:
 ```c
 // Local revoke (device sync only)
 ncclResult_t r = ncclCommRevoke(comm, NCCL_REVOKE_DEFAULT);
-
-// Or coordinated revoke with a cross-rank barrier
-ncclResult_t r2 = ncclCommRevoke(comm, NCCL_REVOKE_GLOBAL);
 ```
 
 Behavior is governed by the communicator configuration:
-- When `config.blocking == 1`: the call blocks until revoke completes (including the optional barrier).
+- When `config.blocking == 1`: the call blocks until revoke completes.
 - When `config.blocking == 0`: the call returns `ncclInProgress` and the revoke proceeds asynchronously. Applications should poll `ncclCommGetAsyncError` until it returns `ncclSuccess` before issuing operations that depend on revoke completion.
 
 #### Common flows and examples
@@ -40,7 +39,7 @@ Behavior is governed by the communicator configuration:
 
 ```c
 // Quiesce, then split safely
-ncclCommRevoke(comm, NCCL_REVOKE_DEFAULT); // or NCCL_REVOKE_GLOBAL
+ncclCommRevoke(comm, NCCL_REVOKE_DEFAULT);
 ncclGroupStart();
 ncclCommSplit(comm, color, key, &newcomm, NULL);
 ncclGroupEnd();
@@ -49,7 +48,7 @@ ncclGroupEnd();
 - Revoke then Split (non-blocking):
 
 ```c
-ncclResult_t r = ncclCommRevoke(comm, NCCL_REVOKE_DEFAULT); // or GLOBAL
+ncclResult_t r = ncclCommRevoke(comm, NCCL_REVOKE_DEFAULT);
 // r is ncclInProgress or ncclSuccess
 ncclResult_t st;
 do { ncclCommGetAsyncError(comm, &st); } while (st == ncclInProgress);
@@ -67,11 +66,21 @@ ncclCommAbort(comm);
 ncclResult_t err = ncclCommRevoke(comm, NCCL_REVOKE_DEFAULT);
 ```
 
+- Prohibited: Collective operations on revoked communicator
+
+```c
+ncclCommRevoke(comm, NCCL_REVOKE_DEFAULT);
+// Next call is invalid; communicator is revoked
+// returns ncclInvalidUsage
+ncclResult_t err = ncclAllReduce(sendbuff, recvbuff, count, ncclFloat, ncclSum, comm, stream);
+```
+
 ### Assumptions, constraints and dependencies
 
-- The communicator must not be in the middle of finalize or destroy; revoke will return `ncclInvalidArgument` if `finalizeCalled` or `destroyFlag` is set.
-- When using `NCCL_REVOKE_GLOBAL` in blocking mode, all ranks must call concurrently; otherwise, the global barrier may deadlock. In non-blocking mode, the barrier is handled by a background job.
-- Revoke does not free or reinitialize resources; it only stops ongoing work and clears abort flags.
+- **State Requirements**: The communicator must not be finalizing, destroyed, or already revoked. Attempts to revoke in these states return `ncclInvalidArgument`.
+- **Flag Validation**: Only `NCCL_REVOKE_DEFAULT` (0) is supported for `revokeFlags`. Other values return `ncclInvalidArgument`.
+- **Resource Preservation**: Revoke does not free or reinitialize communicator resources; it only quiesces ongoing operations.
+- **Post-Revoke State**: Once revoked, the communicator permanently rejects new collective operations with `ncclInvalidUsage`. The communicator can still be used for management operations like finalize, destroy, split, or shrink.
 
 ### Use Cases
 
@@ -101,26 +110,30 @@ ncclResult_t ncclCommRevoke(ncclComm_t comm, int revokeFlags);
 
 Parameters:
 - `comm`: Target communicator.
-- `revokeFlags`: Bitmask of behavior flags. Supported flags:
-  - `NCCL_REVOKE_DEFAULT`: Local revoke (device sync only).
-  - `NCCL_REVOKE_GLOBAL`: Include cross-rank barrier after local revoke.
+- `revokeFlags`: Must be `NCCL_REVOKE_DEFAULT` (0). Reserved for future use.
+
+Return Values:
+- `ncclSuccess`: Revoke completed successfully (blocking mode) or revoke initiated successfully (non-blocking mode).
+- `ncclInProgress`: Revoke is proceeding asynchronously (non-blocking mode only).
+- `ncclInvalidArgument`: Invalid revokeFlags, communicator is finalizing/destroyed, or communicator already revoked.
 
 #### Behavior
 
-1. Set abort flags to request device-side NCCL activities to stop.
-2. Ensure communicator is ready, then synchronize the internal device stream so in-flight kernels complete.
-3. Clear abort flags so the communicator becomes usable again.
-4. Optionally, perform a cross-rank barrier when `NCCL_REVOKE_GLOBAL` is set.
+1. Validates arguments and communicator state (returns error if finalizing, destroyed, or already revoked).
+2. Sets abort flags to signal device-side NCCL activities to stop immediately.
+3. Marks the communicator as revoked to prevent new collective operations.
+4. Initiates asynchronous cleanup that synchronizes with in-flight kernels and clears abort flags.
 
-Blocking vs Non-blocking:
-- Controlled by `ncclConfig_t::blocking` on the communicator.
-- Non-blocking returns `ncclInProgress` immediately and performs the revoke steps in a background job; applications should poll `ncclCommGetAsyncError`.
+**Blocking vs Non-blocking behavior** (controlled by `ncclConfig_t::blocking` on the communicator):
+- **Blocking mode** (`config.blocking = 1`): Function returns `ncclSuccess` when revoke operation completes.
+- **Non-blocking mode** (`config.blocking = 0`): Function returns immediately with `ncclSuccess` or `ncclInProgress`. Applications must poll `ncclCommGetAsyncError` until it returns `ncclSuccess` to confirm completion.
 
-#### Internal Architecture
+#### Design Architecture
 
-- A shared implementation (`ncclCommRevokeImpl`) performs the core steps: set abort flags, sync device stream, clear abort flags, optional barrier.
-- For non-blocking mode, an async job encapsulates that implementation and reports completion via `ncclCommSetAsyncError`.
-- The function rejects calls if a finalize or destroy is in progress to avoid undefined states.
+- **Immediate Response**: The function validates state and sets abort signals immediately, allowing fast cancellation of ongoing operations.
+- **Asynchronous Cleanup**: Stream synchronization and final cleanup occur asynchronously to avoid blocking the calling thread unnecessarily.
+- **State Protection**: Strict state validation prevents revoke operations on communicators that are already being destroyed or have been previously revoked.
+- **Post-Revoke Enforcement**: Once revoked, the communicator rejects new collective operations with `ncclInvalidUsage` to ensure clean state management.
 
 #### Interactions
 
@@ -137,7 +150,7 @@ Blocking vs Non-blocking:
 
 ### Commit list or MR
 
-- Implementation is in `src/init.cc` (`ncclCommRevoke`, async job, and `ncclCommRevokeImpl`).
+- MR1226: [https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/1226](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/1226)
 
 </details>
 
@@ -148,7 +161,7 @@ Blocking vs Non-blocking:
 
 ### Objectives and Timeline
 
-Validate both blocking and non-blocking modes; verify local and global revoke paths; ensure correct rejection during finalize/destroy.
+Validate both blocking and non-blocking modes; verify local revoke path; ensure correct rejection during finalize/destroy.
 
 ### Validation
 
@@ -159,19 +172,21 @@ Validate both blocking and non-blocking modes; verify local and global revoke pa
 #### What to run?
 
 1. Unit tests: `test/apitest/ncclCommRevoke_test.cu`
-   - Blocking/non-blocking with `NCCL_REVOKE_DEFAULT` and `NCCL_REVOKE_GLOBAL`
+   - Blocking and non-blocking modes (controlled by `ncclConfig_t::blocking`)
    - NULL communicator no-op
    - Rejection when finalizing or after abort/destroy
+   - Verification that collective operations return `ncclInvalidUsage` after revoke
 
 2. Fault-tolerance tests: `test/perf/ft_test.cu`
    - Revoke to cancel ongoing work; optionally follow with shrink (`revoke_shrink`)
+
 
 ```bash
 # Example: run revoke API tests
 ./build/test/apitest/apitest --gtest_filter=ncclCommRevoke*
 
 # Example: run FT tests focused on revoke flows
-./build/test/perf/all_reduce_perf -B 0 -F 1 -L "revoke,revoke_shrink"
+./build/test/perf/all_reduce_perf -B 0 -F 1 -L "revoke,revoke_shrink,revoke_split"
 ```
 
 #### Expected output?
