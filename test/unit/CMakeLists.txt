@@ -13,6 +13,7 @@ set(UNIT_TEST_SOURCES
     ft_test.cc
     overlap_test.cc
     plugin_load.cc
+    register_memcpyTest.cu
 )
 
 # MPI-dependent sources
