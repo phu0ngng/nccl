@@ -31,26 +31,26 @@
 ncclComm_t* test_setup(int* nVis) {
     (void) setenv("NCCL_P2P_USE_CUDA_MEMCPY", "1", 1);
     (void) setenv("NCCL_CHECK_POINTERS", "1", 0);
-    
+
     cudaError_t cuda_result = cudaGetDeviceCount(nVis);
     if (cuda_result != cudaSuccess) {
         std::cerr << "SETUP FAILED: cudaGetDeviceCount returned " << cuda_result << std::endl;
         exit(1);
     }
-    
+
     ncclComm_t* comms = (ncclComm_t*)calloc(sizeof(ncclComm_t), *nVis);
     if (comms == nullptr) {
         std::cerr << "SETUP FAILED: calloc returned nullptr" << std::endl;
         exit(1);
     }
-    
+
     ncclResult_t nccl_result = ncclCommInitAll(comms, *nVis, NULL);
     if (nccl_result != ncclSuccess) {
         std::cerr << "SETUP FAILED: ncclCommInitAll returned " << nccl_result << std::endl;
         free(comms);
         exit(1);
     }
-    
+
     return comms;
 }
 
@@ -72,29 +72,29 @@ void test_useMemcpy_skip_registration(ncclComm_t* comms) {
     ASSERT_EQ(ncclSuccess, ncclCommRegister(comms[0], buff, size, &handle));
     // When useMemcpy is enabled, registration should be skipped and handle should be NULL
     ASSERT_EQ((void *)nullptr, handle);
-    
+
     // Test deregistration with NULL handle (should succeed)
     ASSERT_EQ(ncclSuccess, ncclCommDeregister(comms[0], handle));
-    
+
     ASSERT_EQ(cudaSuccess, cudaFree(buff));
 }
 
 // Main function to run the test
 int main(int argc, char** argv) {
     std::cout << "Running register_memcpyTest..." << std::endl;
-    
+
     int nVis = 0;
     ncclComm_t* comms = nullptr;
-    
+
     std::cout << "Setting up test..." << std::endl;
     comms = test_setup(&nVis);
-    
+
     std::cout << "Running test_useMemcpy_skip_registration..." << std::endl;
     test_useMemcpy_skip_registration(comms);
-    
+
     std::cout << "Cleaning up test..." << std::endl;
     test_teardown(comms);
-    
+
     std::cout << "All tests PASSED!" << std::endl;
     return 0;
 }
