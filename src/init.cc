@@ -20,21 +20,14 @@
 #include "ras.h"
 #include "profiler.h"
 #include "mnnvl.h"
-#include <fcntl.h>
-#include <string.h>
-#include <errno.h>
-#include <assert.h>
-#include <dlfcn.h>
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/resource.h>
-#include <unistd.h>
 #include "param.h"
 #include "nvtx_payload_schemas.h"
 #include "utils.h"
 #include <mutex>
 #include "ce_coll.h"
 #include "nvtx.h"
+#include "os/os.h"
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -77,39 +70,10 @@ ncclResult_t initGdrCopy() {
   return ncclSuccess;
 }
 
-// The default Linux stack size (8MB) is safe.
-#define SAFE_STACK_SIZE (8192*1024)
 
 static ncclResult_t setCpuStackSize() {
   if (ncclParamSetCpuStackSize() != 0) {
-    // Query the stack size used for newly launched threads.
-    pthread_attr_t attr;
-    size_t stackSize;
-    PTHREADCHECK(pthread_attr_init(&attr), "pthread_attr_init");
-    PTHREADCHECK(pthread_attr_getstacksize(&attr, &stackSize), "pthread_attr_getstacksize");
-
-    if (stackSize < SAFE_STACK_SIZE) {
-      // GNU libc normally uses RLIMIT_STACK as the default pthread stack size, unless it's set to "unlimited" --
-      // in that case a fallback value of 2MB (!) is used.
-
-      // Query the actual resource limit so that we can distinguish between the settings of 2MB and unlimited.
-      struct rlimit stackLimit;
-      char buf[30];
-      SYSCHECK(getrlimit(RLIMIT_STACK, &stackLimit), "getrlimit");
-      if (stackLimit.rlim_cur == RLIM_INFINITY)
-        strcpy(buf, "unlimited");
-      else
-        snprintf(buf, sizeof(buf), "%ldKB", stackLimit.rlim_cur/1024);
-      INFO(NCCL_INIT|NCCL_ENV, "Stack size limit (%s) is unsafe; will use %dKB for newly launched threads",
-           buf, SAFE_STACK_SIZE/1024);
-
-      // Change the default pthread stack size (via a nonportable API, which will become necessary if we switch
-      // to C++ threads).
-      PTHREADCHECK(pthread_attr_setstacksize(&attr, SAFE_STACK_SIZE), "pthread_attr_setstacksize");
-      PTHREADCHECK(pthread_setattr_default_np(&attr), "pthread_setattr_default_np");
-    }
-
-    PTHREADCHECK(pthread_attr_destroy(&attr), "pthread_attr_destroy");
+    return ncclOsSetCpuStackSize();
   }
 
   return ncclSuccess;
