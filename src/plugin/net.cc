@@ -155,10 +155,14 @@ ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, in
 
 static ncclResult_t ncclNetPluginInit(struct ncclComm* comm, netPluginLib_t* pluginLib) {
   int ndev;
+  // Init must be called for each new comm to set the right context
   if (pluginLib->ncclNetPluginState >= ncclNetPluginStateInitReady && pluginLib->ncclNet) {
     ncclNetCommConfig_t commConfig = {};
     commConfig.trafficClass = comm->config.trafficClass == NCCL_CONFIG_UNDEF_INT ? NCCL_NET_TRAFFIC_CLASS_UNDEF : comm->config.trafficClass;
     if (pluginLib->ncclNet->init(&comm->netContext, comm->commHash, &commConfig, ncclDebugLog, ncclProfilerCallback) != ncclSuccess) goto fail;
+  }
+  // Detection of the devices is only done when the plugin is being initialized the first time
+  if (pluginLib->ncclNetPluginState == ncclNetPluginStateInitReady && pluginLib->ncclNet) {
     if (pluginLib->ncclNet->devices(&ndev) != ncclSuccess || ndev <= 0) goto fail;
     pluginLib->netPhysDevs = ndev;
     pluginLib->netVirtDevs = NCCL_UNDEF_DEV_COUNT;
@@ -166,9 +170,13 @@ static ncclResult_t ncclNetPluginInit(struct ncclComm* comm, netPluginLib_t* plu
   pluginLib->ncclNetPluginState = ncclNetPluginStateEnabled;
   INFO(NCCL_INIT|NCCL_NET, "Initialized NET plugin %s", pluginLib->ncclNet->name);
 
+  // Init must be called for each new comm to set the right context
   if (pluginLib->ncclCollNetPluginState >= ncclNetPluginStateInitReady && pluginLib->ncclCollNet) {
     if (pluginLib->ncclCollNet->init(&comm->collNetContext, comm->commHash, ncclDebugLog) != ncclSuccess) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
-    else if (pluginLib->ncclCollNet->devices(&ndev) != ncclSuccess || ndev <= 0) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
+  }
+  // Detection of the devices is only done when the plugin is being initialized the first time
+  if (pluginLib->ncclCollNetPluginState == ncclNetPluginStateInitReady && pluginLib->ncclCollNet) {
+    if (pluginLib->ncclCollNet->devices(&ndev) != ncclSuccess || ndev <= 0) pluginLib->ncclCollNetPluginState = ncclNetPluginStateDisabled;
     else {
       pluginLib->collNetPhysDevs = ndev;
       pluginLib->collNetVirtDevs = NCCL_UNDEF_DEV_COUNT;
@@ -289,6 +297,7 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
       NCCLCHECK(ncclNetPluginLoad(&netPluginLibs[pluginIndex]));
     }
     if (netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateInitReady) {
+      // plugin init must be done by all comms to setup the context, therefore we use ">="
       NCCLCHECK(ncclNetPluginInit(comm, &netPluginLibs[pluginIndex]));
     }
     if (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateEnabled) {
