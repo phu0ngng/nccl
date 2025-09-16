@@ -32,10 +32,19 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
   int carveout = ncclParamL1SharedMemoryCarveout();
   int ncclMaxSharedMem = ncclShmemDynamicSize(cudaArch);
 
+  int driverVersion;
+  NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
+
   for (int sym=0; sym <= 1; sym++) {
     int kcount = sym==0 ? ncclDevKernelCount : ncclSymkKernelCount;
-    void* const* kptrs = sym==0 ? ncclDevKernelList : ncclSymkKernelList;
+    void* * kptrs = sym==0 ? ncclDevKernelList : ncclSymkKernelList;
+    int* krequires = sym==0 ? ncclDevKernelRequirements : ncclSymkKernelRequirements;
     for (int k=0; k < kcount; k++) {
+      if (driverVersion < krequires[k]) {
+        INFO(NCCL_INIT, "Skipping sym=%d, k=%d, which requires driver %d (have %d).",
+             sym, k, krequires[k], driverVersion);
+        kptrs[k] = nullptr;
+      }
       void* fn = kptrs[k];
       cudaFuncAttributes attr = {0};
       if (fn == nullptr) continue;
@@ -2447,7 +2456,7 @@ static ncclResult_t collTaskAppend(
   NCCLCHECK(ncclProfilerStartGroupApiEvent(info, isGraphCaptured));
   NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupStartApiStop));
   NCCLCHECK(ncclProfilerStartCollApiEvent(info, isGraphCaptured));
-  
+
   struct ncclTaskColl* t = ncclMemoryPoolAlloc<struct ncclTaskColl>(&comm->memPool_ncclTaskColl, &comm->memPermanent);
   t->func = info->coll;
   t->sendbuff = info->sendbuff;
@@ -2484,7 +2493,7 @@ static ncclResult_t ceCollTaskAppend(
     struct ncclDevrWindow* recvWin,
     struct ncclDevRedOpFull opDev) {
   struct ncclKernelPlanner *planner = &comm->planner;
-  
+
   // Check if CE needs initialization
   if (comm->ceColl.baseUCSymReadyPtr == NULL && ncclIntruQueueEmpty(&comm->ceInitTaskQueue)) {
     struct ncclCeInitTask* ceTask;
@@ -2536,7 +2545,6 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
   } else {
     // Empty collectives can be discarded.
     if (info->count == 0) return ncclSuccess;
-
     if (info->datatype == ncclFloat8e4m3 || info->datatype == ncclFloat8e5m2) {
       if (comm->minCompCap < 90 && info->coll != ncclFuncAllGather && info->coll != ncclFuncBroadcast && info->coll != ncclFuncAlltoAll && info->coll != ncclFuncScatter && info->coll != ncclFuncGather) {
         WARN("FP8 reduction support begins with sm90 capable devices.");
@@ -2558,7 +2566,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       ncclDevrFindWindow(comm, info->sendbuff, &sendWin);
       ncclDevrFindWindow(comm, info->recvbuff, &recvWin);
       bool ceImplemented = ncclCeImplemented(info->coll, info->op, info->datatype);
-      
+
       // Append CE collective task if CE is supported and requested by user
       if (comm->symmetricSupport && comm->nNodes == 1 && sendWin && recvWin && (sendWin->winFlags & recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && comm->config.CTAPolicy == NCCL_CTA_POLICY_ZERO && ceImplemented) {
         NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, opDev));
