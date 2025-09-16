@@ -1187,11 +1187,26 @@ done:
   }
 
   if (graph->nChannels == 0 && graph->collNet == 0 && graph->pattern != NCCL_TOPO_PATTERN_NVLS) {
+    int nets[NCCL_TOPO_MAX_NODES];
+    int netCount;
+
     INFO(NCCL_GRAPH, "Could not find a path for pattern %d, falling back to simple order", graph->pattern);
     for (int i=0; i<ngpus; i++) graph->intra[i] = system->nodes[GPU].nodes[i].gpu.rank;
-    graph->inter[0] = graph->inter[1] = 0;
-    graph->bwIntra = graph->bwInter = 0.1;
-    graph->typeIntra = graph->typeInter = PATH_SYS;
+    graph->bwIntra = 0.1;
+    graph->typeIntra = PATH_SYS;
+
+    NCCLCHECK(ncclTopoSelectNets(system, /*typeInter =*/-1, /*gpu =*/0, nets, &netCount));
+    graph->inter[0] = (netCount > 0 ? system->nodes[NET].nodes[nets[0]].id : -1);
+    NCCLCHECK(ncclTopoSelectNets(system, /*typeInter =*/-1, /*gpu =*/ngpus-1, nets, &netCount));
+    graph->inter[1] = (netCount > 0 ? system->nodes[NET].nodes[nets[0]].id : -1);
+    if (graph->inter[0] != -1 && graph->inter[1] != -1) {
+      graph->bwInter = 0.1;
+      graph->typeInter = PATH_SYS;
+    } else {
+      graph->inter[0] = graph->inter[1] = -1;
+      graph->bwInter = 0;
+      graph->typeInter = PATH_DIS;
+    }
     graph->nChannels = 1;
   }
   return ncclSuccess;
