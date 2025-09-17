@@ -11,7 +11,6 @@
 #include "param.h"
 #include "profiler/net_socket.h"
 
-#include <pthread.h>
 #include <stdlib.h>
 #include <poll.h>
 #include <limits.h>
