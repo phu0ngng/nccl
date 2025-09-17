@@ -161,6 +161,49 @@ static void ncclIbDevFatalError(struct ncclIbDev* dev) {
   ncclIbStatsFatalError(&dev->stats);
 }
 
+// Helper function to convert IB work completion status to string
+static const char* ibvWcStatusStr(enum ibv_wc_status status) {
+  switch (status) {
+    case IBV_WC_SUCCESS:            return "IBV_WC_SUCCESS";
+    case IBV_WC_LOC_LEN_ERR:        return "IBV_WC_LOC_LEN_ERR";
+    case IBV_WC_LOC_QP_OP_ERR:      return "IBV_WC_LOC_QP_OP_ERR";
+    case IBV_WC_LOC_EEC_OP_ERR:     return "IBV_WC_LOC_EEC_OP_ERR";
+    case IBV_WC_LOC_PROT_ERR:       return "IBV_WC_LOC_PROT_ERR";
+    case IBV_WC_WR_FLUSH_ERR:       return "IBV_WC_WR_FLUSH_ERR";
+    case IBV_WC_MW_BIND_ERR:        return "IBV_WC_MW_BIND_ERR";
+    case IBV_WC_BAD_RESP_ERR:       return "IBV_WC_BAD_RESP_ERR";
+    case IBV_WC_LOC_ACCESS_ERR:     return "IBV_WC_LOC_ACCESS_ERR";
+    case IBV_WC_REM_INV_REQ_ERR:    return "IBV_WC_REM_INV_REQ_ERR";
+    case IBV_WC_REM_ACCESS_ERR:     return "IBV_WC_REM_ACCESS_ERR";
+    case IBV_WC_REM_OP_ERR:         return "IBV_WC_REM_OP_ERR";
+    case IBV_WC_RETRY_EXC_ERR:      return "IBV_WC_RETRY_EXC_ERR";
+    case IBV_WC_RNR_RETRY_EXC_ERR:  return "IBV_WC_RNR_RETRY_EXC_ERR";
+    case IBV_WC_LOC_RDD_VIOL_ERR:   return "IBV_WC_LOC_RDD_VIOL_ERR";
+    case IBV_WC_REM_INV_RD_REQ_ERR: return "IBV_WC_REM_INV_RD_REQ_ERR";
+    case IBV_WC_REM_ABORT_ERR:      return "IBV_WC_REM_ABORT_ERR";
+    case IBV_WC_INV_EECN_ERR:       return "IBV_WC_INV_EECN_ERR";
+    case IBV_WC_INV_EEC_STATE_ERR:  return "IBV_WC_INV_EEC_STATE_ERR";
+    case IBV_WC_FATAL_ERR:          return "IBV_WC_FATAL_ERR";
+    case IBV_WC_RESP_TIMEOUT_ERR:   return "IBV_WC_RESP_TIMEOUT_ERR";
+    case IBV_WC_GENERAL_ERR:        return "IBV_WC_GENERAL_ERR";
+    default:                        return "UNKNOWN_STATUS";
+  }
+}
+
+// Helper function to convert IB work completion opcode to string
+static const char* ibvWcOpcodeStr(enum ibv_wc_opcode opcode) {
+  switch (opcode) {
+    case IBV_WC_SEND:               return "IBV_WC_SEND";
+    case IBV_WC_RDMA_WRITE:         return "IBV_WC_RDMA_WRITE";
+    case IBV_WC_RDMA_READ:          return "IBV_WC_RDMA_READ";
+    case IBV_WC_COMP_SWAP:          return "IBV_WC_COMP_SWAP";
+    case IBV_WC_FETCH_ADD:          return "IBV_WC_FETCH_ADD";
+    case IBV_WC_BIND_MW:            return "IBV_WC_BIND_MW";
+    case IBV_WC_RECV:               return "IBV_WC_RECV";
+    case IBV_WC_RECV_RDMA_WITH_IMM: return "IBV_WC_RECV_RDMA_WITH_IMM";
+    default:                        return "UNKNOWN_OPCODE";
+  }
+}
 pthread_t ncclIbAsyncThread;
 static void* ncclIbAsyncThreadMain(void* args) {
   struct ncclIbDev* dev = (struct ncclIbDev*)args;
@@ -209,7 +252,7 @@ static void* ncclIbAsyncThreadMain(void* args) {
     case IBV_EVENT_CLIENT_REREGISTER:
     case IBV_EVENT_SRQ_LIMIT_REACHED:
       // the above are non-fatal
-      WARN("NET/IB : %s:%d Got async error event: %s", dev->devName, dev->portNum, str);
+      WARN("NET/IB : %s:%d Got non-fatal async event: %s(%d)", dev->devName, dev->portNum, str, event.event_type);
       break;
     case IBV_EVENT_COMM_EST:
       break;
@@ -2467,8 +2510,15 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
 
             char line[SOCKET_NAME_MAXLEN+1];
             char *hcaName = r->devBases[i]->pd->context->device->name;
-            WARN("NET/IB: Got completion from peer %s with status=%d opcode=%d len=%u vendor err %u (%s)%s%s%s%s hca %s",
-                ncclSocketToString(&addr, line), wc->status, wc->opcode, wc->byte_len, wc->vendor_err, reqTypeStr[r->type],
+            int reqSize = wc->byte_len;
+            struct ncclIbRequest* req = r->base->reqs+(wc->wr_id & 0xff);
+            if (req && req->type == NCCL_NET_IB_REQ_SEND) {
+              // For Send use the request size as WC byte_len is not reliable
+              reqSize = req->send.size;
+            }
+            WARN("NET/IB: Got completion from peer %s with status=%s(%d) opcode=%s(%d) reqSize=%d vendor_err=%u req_type=%s%s%s%s%s hca %s",
+                ncclSocketToString(&addr, line), ibvWcStatusStr(wc->status), wc->status,
+                ibvWcOpcodeStr(wc->opcode), wc->opcode, reqSize, wc->vendor_err, reqTypeStr[r->type],
                 localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString, hcaName);
             return ncclRemoteError;
           }
