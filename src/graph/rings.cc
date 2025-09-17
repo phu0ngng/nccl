@@ -4,8 +4,6 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
- #include <vector>
-
 #include "core.h"
 
 void dumpLine(int* values, int nranks, const char* prefix) {
@@ -27,7 +25,12 @@ void dumpLine(int* values, int nranks, const char* prefix) {
   INFO(NCCL_INIT, "%s", line);
 }
 
-int ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
+ncclResult_t ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int* next) {
+  ncclResult_t ret = ncclSuccess;
+  uint64_t* rankFound;
+  int rankFoundSize = DIVUP(nranks, 64);
+  NCCLCHECK(ncclCalloc(&rankFound, rankFoundSize));
+
   for (int r=0; r<nrings; r++) {
     char prefix[40];
     /*sprintf(prefix, "[%d] Channel %d Prev : ", rank, r);
@@ -35,10 +38,9 @@ int ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int*
     sprintf(prefix, "[%d] Channel %d Next : ", rank, r);
     dumpLine(next+r*nranks, nranks, prefix);*/
 
-    std::vector<bool> rankBitSet(nranks, false);
     int current = rank;
     for (int i=0; i<nranks; i++) {
-      rankBitSet[current] = true;
+      rankFound[current/64] |= (1<<(current%64));
       rings[r*nranks+i] = current;
       current = next[r*nranks+current];
     }
@@ -46,15 +48,23 @@ int ncclBuildRings(int nrings, int* rings, int rank, int nranks, int* prev, int*
     if (rank == 0) dumpLine(rings+r*nranks, nranks, prefix);
     if (current != rank) {
       WARN("Error : ring %d does not loop back to start (%d != %d)", r, current, rank);
-      return ncclInternalError;
+      ret = ncclInternalError;
+      goto end;
     }
     // Check that all ranks are there
     for (int i=0; i<nranks; i++) {
-      if (!rankBitSet[i]) {
+      uint64_t bits = rankFound[i/64], mask = 1<<(i%64);
+      // Fast check 64 ranks at a time
+      if (mask == 1 && bits == 0xffffffffffffffff) { i += 63; continue; }
+      if ((bits & mask) == 0) {
         WARN("Error : ring %d does not contain rank %d", r, i);
-        return ncclInternalError;
+        ret = ncclInternalError;
+        goto end;
       }
     }
+    memset(rankFound, 0, rankFoundSize*sizeof(uint64_t));
   }
-  return ncclSuccess;
+end:
+  free(rankFound);
+  return ret;
 }
