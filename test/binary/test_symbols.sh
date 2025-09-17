@@ -5,6 +5,12 @@ if [ "$lib" == "" ]; then
   lib=`dirname $0`/../../lib/libnccl.so
 fi
 
+# check if lib exists
+if [ ! -f $lib ]; then
+  echo -e "\e[31m\e[1m [FAILED]\e[0m : Library not found.\e[0m"
+  exit 1
+fi
+
 ncclsymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep "^nccl"`
 pncclsymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep "^pnccl"`
 othersymbols=`nm --dynamic --defined-only $lib | cut -c 20- | grep -v "^nccl" | grep -v "^pnccl"`
