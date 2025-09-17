@@ -462,6 +462,8 @@ hostname and *%p* is replaced with the process PID. This does not accept the ``~
 Values accepted
 ^^^^^^^^^^^^^^^
 The default output file is *stdout* unless this environment variable is set.
+The filename can also be set to ``/dev/stdout`` or ``/dev/stderr`` to direct NCCL debug logging
+output to those predefined I/O streams. This also has the effect of making the output line buffered.
 
 Setting ``NCCL_DEBUG_FILE`` will cause NCCL to create and overwrite any previous files of that name.
 
