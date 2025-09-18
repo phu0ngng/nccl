@@ -3,7 +3,7 @@
 
 ## Abstract
 
-The Communicator Revoke feature allows NCCL to promptly stop ongoing device-side NCCL activities on a communicator without destroying it or reclaiming its resources. Revoke immediately sets abort flags to signal device work to exit, marks the communicator as revoked to prevent new collective operations, and asynchronously handles cleanup of in-flight kernels. After completion, the communicator remains available for management operations such as finalize, destroy, split, or shrink, but rejects new collective operations. Revoke behavior (blocking vs non-blocking) is controlled by the communicator's `ncclConfig_t::blocking` setting.
+The Communicator Revoke feature allows NCCL to promptly stop ongoing NCCL activities for a communicator without destroying it or reclaiming its resources.
 
 <!-- ============================================================================================-->
 <details>
@@ -16,7 +16,7 @@ The Communicator Revoke feature allows NCCL to promptly stop ongoing device-side
 
 ### Feature context and focus
 
-Long-running distributed jobs may need to promptly stop outstanding NCCL operations on a communicator without tearing it down. Typical scenarios include fault mitigation, fast recovery before a `ncclCommShrink`, or ensuring clean progress before `ncclCommFinalize`/`ncclCommDestroy`. Revoke provides a lightweight, explicit mechanism to cancel in-flight work and restore the communicator to a consistent, usable state.
+Long-running distributed jobs may need to promptly stop outstanding NCCL operations on a communicator without tearing it down. Typical scenarios include fault mitigation, fast recovery before a `ncclCommShrink`, or ensuring clean progress before `ncclCommDestroy`. Revoke provides a lightweight, explicit mechanism to cancel in-flight work and restore the communicator to a consistent, usable state.
 
 **Key difference from `ncclCommAbort`**: Unlike abort, revoke preserves the communicator and its resources for potential reuse. Specifically, revoke allows bootstrap resources to be reused in subsequent operations like `ncclCommShrink`, whereas abort destroys the communicator entirely, requiring complete reinitialization. This makes revoke particularly valuable for fault recovery scenarios where you want to remove failed ranks via shrink operations without the overhead of full communicator recreation.
 
@@ -25,7 +25,6 @@ Long-running distributed jobs may need to promptly stop outstanding NCCL operati
 Revoke is called on an existing communicator:
 
 ```c
-// Local revoke (device sync only)
 ncclResult_t r = ncclCommRevoke(comm, NCCL_REVOKE_DEFAULT);
 ```
 
@@ -80,13 +79,13 @@ ncclResult_t err = ncclAllReduce(sendbuff, recvbuff, count, ncclFloat, ncclSum, 
 - **State Requirements**: The communicator must not be finalizing, destroyed, or already revoked. Attempts to revoke in these states return `ncclInvalidArgument`.
 - **Flag Validation**: Only `NCCL_REVOKE_DEFAULT` (0) is supported for `revokeFlags`. Other values return `ncclInvalidArgument`.
 - **Resource Preservation**: Revoke does not free or reinitialize communicator resources; it only quiesces ongoing operations.
-- **Post-Revoke State**: Once revoked, the communicator permanently rejects new collective operations with `ncclInvalidUsage`. The communicator can still be used for management operations like finalize, destroy, split, or shrink.
+- **Post-Revoke State**: Once revoked, the communicator permanently rejects new collective operations with `ncclInvalidUsage`. The communicator can still be used for management operations like destroy, split, or shrink.
 
 ### Use Cases
 
 1. Ensure no in-flight NCCL operations before a critical phase transition.
 2. Quiesce a communicator before `ncclCommShrink` to remove failed or undesired ranks.
-3. Stabilize a communicator after detecting transient errors, then continue or finalize.
+3. Stabilize a communicator after detecting transient errors, then continue or destroy.
 
 ### Platform Requirements
 
@@ -120,7 +119,7 @@ Return Values:
 #### Behavior
 
 1. Validates arguments and communicator state (returns error if finalizing, destroyed, or already revoked).
-2. Sets abort flags to signal device-side NCCL activities to stop immediately.
+2. Sets abort flags to signal all NCCL activities to stop immediately.
 3. Marks the communicator as revoked to prevent new collective operations.
 4. Initiates asynchronous cleanup that synchronizes with in-flight kernels and clears abort flags.
 
@@ -138,8 +137,8 @@ Return Values:
 #### Interactions
 
 - Revoke + Shrink: A common flow is to call revoke to quiesce the communicator, then call `ncclCommShrink` to remove failed ranks and continue.
-- Revoke + Split: After revoke completes, splitting the communicator via `ncclCommSplit` is safe (no outstanding ops).
-- Revoke + Finalize/Destroy: After revoke completes, applications can safely proceed to finalize/destroy if desired.
+- Revoke + Split: After revoke completes, splitting the communicator via `ncclCommSplit` is safe (no outstanding ops). Resource sharing is disabled when the parent is revoked.
+- Revoke + Finalize/Destroy: After revoke completes, applications can safely proceed to destroy if desired. Finalize is not supported after revoke.
 
 </details>
 
