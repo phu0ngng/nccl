@@ -548,7 +548,7 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   struct localRegData* regData = NULL;
   cudaPointerAttributes attr;
   size_t ucgran, mcgran, ucsize = 0, mcsize = 0;
-  bool bindComplete = false;
+  bool bindComplete = false, mapComplete = false;
 
   NCCLCHECKGOTO(ncclCalloc(&regData, comm->localRanks), ret, fail);
 
@@ -596,6 +596,10 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
     if ((regData[i].reg.state & NVLS_REG_POSSIBLE) == 0) {
       goto fail;
     }
+    // We need to check whether the offsets are the same among ranks.
+    if (i > 0 && regData[i].offset != regData[i - 1].offset) {
+      goto fail;
+    }
     /* get minimal reg size of nvls buffers */
     if (minSize > regData[i].reg.regUCSize)
       minSize = regData[i].reg.regUCSize;
@@ -640,7 +644,12 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   CUCHECKGOTO(cuMemAddressReserve(&regPtr, mcsize, mcgran, 0U, 0), ret, fail);
   // Map the VA locally
   CUCHECKGOTO(cuMemMap(regPtr, mcsize, 0, mcHandle, 0), ret, fail);
+  mapComplete = true;
   CUCHECKGOTO(cuMemSetAccess(regPtr, mcsize, &comm->nvlsResources->accessDesc, 1), ret, fail);
+
+  /* get all buffer addresses */
+  regRecord->caddrs[comm->localRank] = regRecord->begAddr;
+  NCCLCHECKGOTO(ncclShmemAllgather(comm, &comm->nvlsResources->nvlsShmem, regRecord->caddrs + comm->localRank, regRecord->caddrs, sizeof(uintptr_t)), ret, fail);
 
   regRecord->regAddr = regPtr;
   regRecord->regUCSize = ucsize;
@@ -648,17 +657,6 @@ ncclResult_t tryRegisterBuffer(struct ncclComm *comm, uintptr_t userBuff, size_t
   regRecord->dev = comm->nvlsResources->dev;
   regRecord->mcHandle = mcHandle;
   regRecord->state |= NVLS_REG_COMPLETE;
-  // Since registration is complete, from this point on failures don't trigger an immediate cleanup.
-  /* get all buffer addresses */
-  regRecord->caddrs[comm->localRank] = regRecord->begAddr;
-  NCCLCHECKGOTO(ncclShmemAllgather(comm, &comm->nvlsResources->nvlsShmem, regRecord->caddrs + comm->localRank, regRecord->caddrs, sizeof(uintptr_t)), ret, fail_initialized);
-
-  /* Although registration is done, we still need to check whether the offsets are same among ranks. */
-  for (int i = 0; i < comm->localRanks - 1; ++i) {
-    if (regData[i].offset != regData[i + 1].offset) {
-      goto fail_initialized;
-    }
-  }
 
   *regAddr = (uintptr_t)regPtr + regData[comm->localRank].offset;
   *regUsed = 1;
@@ -667,14 +665,13 @@ exit:
   return ret;
 fail:
   if (regPtr) {
-    CUCALL(cuMemUnmap(regPtr, mcsize));
+    if (mapComplete) CUCALL(cuMemUnmap(regPtr, mcsize));
     CUCALL(cuMemAddressFree(regPtr, mcsize));
   }
   if (mcHandle) {
     if (bindComplete) CUCALL(cuMulticastUnbind(mcHandle, comm->nvlsResources->dev, 0/*mcOffset*/, ucsize));
     CUCALL(cuMemRelease(mcHandle));
   }
-fail_initialized:
   *regUsed = 0;
   goto exit;
 }
