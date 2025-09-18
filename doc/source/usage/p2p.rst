@@ -18,7 +18,8 @@ all-to-all or communication with neighbors in an N-dimensional space.
 Point-to-point calls within a group will be blocking until that group of calls completes,
 but calls within a group can be seen as progressing independently, hence should never block
 each other. It is therefore important to merge calls that need to progress concurrently to
-avoid deadlocks.
+avoid deadlocks. The only exception is point-to-point calls within a group targeting the
+*same* peer, which are executed in order.
 
 Below are a few examples of classic point-to-point communication patterns used by parallel
 applications. NCCL semantics allow for all variants with different sizes,
