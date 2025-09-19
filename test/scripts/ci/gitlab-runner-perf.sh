@@ -17,6 +17,12 @@ split_range="-b 8 -e 1G -f 2"
 enable_local_register="-R 1"
 enable_graph_register="-G 1"
 enable_parallel_init="-p 1"
+if [ -z "$MAX_GROUP" ]; then
+  range_group=$range
+else
+  range_group="-b 8 -e $MAX_GROUP -f 2"
+fi
+
 
 # Args for run_command
 # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
@@ -49,8 +55,8 @@ then
     run_command "${func}_symm_memory_min_size_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-G 1 -w 1 -n 1 -b 1K -e 1K -d all -R 2"
     run_command "${func}_symm_memory_max_size_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-G 1 -w 1 -n 1 -b 16G -e 16G -d all -R 2"
     run_command "${func}_symm_memory_sweep_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -G 1 -R 2"
-    run_command "${func}_group_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -R 2 -n 5 -m 10"
-    run_command "${func}_large_group_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -R 2 -n 5 -m 100"
+    run_command "${func}_group_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range_group $opts -R 2 -n 1 -m 10"
+    run_command "${func}_large_group_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range_group $opts -R 2 -n 1 -m 100"
   done
 fi
 
