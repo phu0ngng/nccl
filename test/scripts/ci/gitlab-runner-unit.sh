@@ -131,11 +131,6 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH_BACKUP
 
 if [[ "${GIN_TESTS}" -eq 1 ]] ; then
   export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$MPI_HOME/lib:$NCCL_HOME/lib:$LD_LIBRARY_PATH"
-  export UCX_IB_DM_COUNT=0
-  export NCCL_SHM_DISABLE=1
-  export NCCL_P2P_DISABLE=1
-  export NCCL_DEBUG=0
-  export NCCL_DEBUG_SUBSYS=NET
   export DOCA_GPUNETIO_LITE_DEBUG=0
 
   run_gin_test_suite "auto"
