@@ -136,6 +136,9 @@ foreach(plugin_source ${PLUGIN_SOURCES})
 
     # Set include directories for plugins (prioritize extension paths)
     target_include_directories(${plugin_name} PRIVATE
+        ${CMAKE_SOURCE_DIR}/ext-net/example/nccl
+        ${CMAKE_SOURCE_DIR}/ext-profiler/example/nccl
+        ${CMAKE_SOURCE_DIR}/ext-tuner/example/nccl
         ${CMAKE_BINARY_DIR}/include
         ${CMAKE_SOURCE_DIR}/src/include
         ${CMAKE_SOURCE_DIR}/src/include/plugin
@@ -148,15 +151,6 @@ foreach(plugin_source ${PLUGIN_SOURCES})
     # Set compiler flags
     set_target_properties(${plugin_name} PROPERTIES
         POSITION_INDEPENDENT_CODE ON
-    )
-
-    # Set compile options for plugins (prioritize extension paths)
-    target_compile_options(${plugin_name} PRIVATE
-        -I${CMAKE_SOURCE_DIR}/ext-net/example/nccl
-        -I${CMAKE_SOURCE_DIR}/ext-profiler/example/nccl
-        -I${CMAKE_SOURCE_DIR}/ext-tuner/example/nccl
-        -I${CMAKE_SOURCE_DIR}/src/include
-        -I${CMAKE_SOURCE_DIR}/src/include/plugin
     )
 endforeach()
 

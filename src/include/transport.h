@@ -168,4 +168,13 @@ ncclResult_t ncclNvlsGroupCreate(struct ncclComm *comm, CUmulticastObjectProp *p
 ncclResult_t ncclNvlsGroupConnect(struct ncclComm *comm, char *shareableHandle, int rank, CUmemGenericAllocationHandle *mcHandle);
 #endif
 
+ncclResult_t ncclIpcSymmetricInit(struct ncclComm* comm);
+ncclResult_t ncclIpcMapSymmetric(struct ncclComm* comm, size_t offset, size_t size, CUmemGenericAllocationHandle memHandle, void** symPtr);
+ncclResult_t ncclIpcFreeSymmetric(struct ncclComm* comm, size_t size, void* symPtr);
+ncclResult_t ncclIpcSymmetricFinalize(struct ncclComm* comm);
+ncclResult_t ncclNvlsSymmetricInit(struct ncclComm* comm);
+ncclResult_t ncclNvlsMapSymmetric(struct ncclComm* comm, size_t offset, size_t ucsize, void* ucaddr);
+ncclResult_t ncclNvlsFreeSymmetric(struct ncclComm* comm, size_t ucsize, void* ucaddr);
+ncclResult_t ncclNvlsSymmetricFinalize(struct ncclComm* comm);
+
 #endif
