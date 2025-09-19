@@ -23,11 +23,12 @@ NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu  #kernel_test.cu
-CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
+#CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
 KCU_FILES := align_test.cu #kernel_test.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
-CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu
+CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu put_signal_ping_pong_gin.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu
 endif
 CU_FILES += register_memcpyTest.cu
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
@@ -100,6 +101,21 @@ ${DST_DIR}/ft_abort_rank0: ${DST_DIR}/ft_abort_rank0.o ${DLIB}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
 
+${DST_DIR}/multiproc_gin: ${DST_DIR}/multiproc_gin.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/put_signal_ping_pong_gin: ${DST_DIR}/put_signal_ping_pong_gin.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/put_helloworld_gin: ${DST_DIR}/put_helloworld_gin.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
+
 ${DST_DIR}/ft_test: ${DST_DIR}/ft_test.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
@@ -164,10 +180,10 @@ ${DST_DIR}/coll_leak_test_multi: ${DST_DIR}/coll_leak_test_multi.o
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
 
-${DST_DIR}/channel_test: ${DST_DIR}/channel_test.o
-	@printf "Linking  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl
+#${DST_DIR}/channel_test: ${DST_DIR}/channel_test.o
+#	@printf "Linking  %-35s > %s\n" $< $@
+#	@mkdir -p ${DST_DIR}
+#	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl
 
 ${DST_DIR}/enqueue_test: ${DST_DIR}/enqueue_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
@@ -185,6 +201,41 @@ ${DST_DIR}/plugin_load: ${DST_DIR}/plugin_load.o
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl
 
 ${DST_DIR}/device_id_test: ${DST_DIR}/device_id_test.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_uts: ${DST_DIR}/devapi_uts.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_signal_ring: ${DST_DIR}/devapi_signal_ring.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_barrier: ${DST_DIR}/devapi_barrier.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_data_ring: ${DST_DIR}/devapi_data_ring.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_data_ring2: ${DST_DIR}/devapi_data_ring2.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/gin_data_ring: ${DST_DIR}/gin_data_ring.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/put_gin_alltoall: ${DST_DIR}/put_gin_alltoall.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}

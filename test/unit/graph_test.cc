@@ -480,10 +480,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, hostHash));
   free(xmlSystem);
-  if (type == TEST_INTRA) {
-    for (int n=system->nodes[NET].count-1; n>=0; n--)
-      CHECK(ncclTopoRemoveNode(system, NET, n));
-  }
+  system->inter = type == TEST_INTRA ? 0 : 1;
   // prune GPUs depending on the number of GPUs and splitMask
   if (param->ngpus != -1) {
     for (int g = system->nodes[GPU].count - 1; g >= param->ngpus; g--) CHECK(ncclTopoRemoveNode(system, GPU, g));
