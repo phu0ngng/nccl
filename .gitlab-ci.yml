@@ -14,6 +14,7 @@ stages:
 
 variables:
   WERROR: 0
+  CHECK_SYMBOLS: "1"  # nvbug 5479096
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   BUILD_TRACE: "0"
