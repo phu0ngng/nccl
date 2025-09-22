@@ -37,12 +37,13 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
 
   for (int sym=0; sym <= 1; sym++) {
     int kcount = sym==0 ? ncclDevKernelCount : ncclSymkKernelCount;
-    void* * kptrs = sym==0 ? ncclDevKernelList : ncclSymkKernelList;
+    void** kptrs = sym==0 ? ncclDevKernelList : ncclSymkKernelList;
     int* krequires = sym==0 ? ncclDevKernelRequirements : ncclSymkKernelRequirements;
     for (int k=0; k < kcount; k++) {
       if (driverVersion < krequires[k]) {
-        INFO(NCCL_INIT, "Skipping sym=%d, k=%d, which requires driver %d (have %d).",
-             sym, k, krequires[k], driverVersion);
+        INFO(NCCL_INIT, "ncclInitKernelsForDevice is skipping %s index %d which requires driver %d (have %d).",
+             sym ? "ncclSymkKernelRequirements" : "ncclDevKernelRequirements",
+             k, krequires[k], driverVersion);
         kptrs[k] = nullptr;
       }
       void* fn = kptrs[k];
