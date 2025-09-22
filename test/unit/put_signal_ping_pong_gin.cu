@@ -38,7 +38,7 @@ __global__ void ping_pong_kernel(
     void *sendbuff, ncclGinWindow_t ginHandle_src,
     void *recvbuff, ncclGinWindow_t ginHandle_dst,
     ncclGinSignal_t signal_id,
-    int nelems, int pe, int iter) {
+    size_t nelems, int pe, int iter) {
 
 #if CUDA_VERSION >= 12020 && __CUDA_ARCH__ >= 700
     __shared__ ncclGinDescriptorSmem desc;
@@ -49,7 +49,7 @@ __global__ void ping_pong_kernel(
     thread_block_tile<32> warp = tiled_partition<32>(block);
     thread_block_tile<1> thread = this_thread();
 
-    if (DEBUG) printf("[Rank %d] Starting kernel with %d iterations, nelems=%d, signal_id=%u\n", pe, iter, nelems, signal_id);
+    if (DEBUG) printf("[Rank %d] Starting kernel with %d iterations, nelems=%llu, signal_id=%u\n", pe, iter, nelems, signal_id);
 
     uint64_t current_signal_value = 0; 
     for (i = 1; i <= iter; i++) {
@@ -66,7 +66,7 @@ __global__ void ping_pong_kernel(
               do current_signal_value = ref.load(cuda::memory_order_acquire);
               while (current_signal_value < expected_signal_value);
             }
-            if (DEBUG) printf("[Rank %d] Received signal (signal_id=%u, expected_value=%lu) current_signal_value=%lu, sending data (peer=%d, nelems=%d, signal_id=%u)\n", pe, signal_id, expected_signal_value, current_signal_value, peer, nelems, signal_id);
+            if (DEBUG) printf("[Rank %d] Received signal (signal_id=%u, expected_value=%lu) current_signal_value=%lu, sending data (peer=%d, nelems=%llu, signal_id=%u)\n", pe, signal_id, expected_signal_value, current_signal_value, peer, nelems, signal_id);
 
             // Put data with counted signal
             if (DEBUG) printf("[Rank %d] About to call ncclGinPut with signal (hasSignal=true, signalOp=ncclGinSignalAdd, signalVal=%lu)\n", pe, expected_signal_value);
@@ -80,7 +80,7 @@ __global__ void ping_pong_kernel(
             if (DEBUG) printf("[Rank %d] Sent data with signal\n", pe);
 
         } else {   // Rank 0
-            if (DEBUG) printf("[Rank %d] Sending data with signal (peer=%d, nelems=%d, signal_id=%u, signal_value=%lu)\n", pe, peer, nelems, signal_id, expected_signal_value);
+            if (DEBUG) printf("[Rank %d] Sending data with signal (peer=%d, nelems=%llu, signal_id=%u, signal_value=%lu)\n", pe, peer, nelems, signal_id, expected_signal_value);
 
             // Put data with counted signal
             if (DEBUG) printf("[Rank %d] About to call ncclGinPut with signal (hasSignal=true, signalOp=ncclGinSignalAdd, signalVal=%lu)\n", pe, expected_signal_value);
@@ -221,8 +221,8 @@ int main(int argc, char* argv[]) {
     // Run tests for different message sizes  
     for (size_t size = args.begin_size; size <= args.end_size; size *= 2) {
 
-        int nelems = size / sizeof(int);
-        if (DEBUG) printf("[Rank %d] Testing size %zu bytes (%d elements, %zu actual bytes)\n", myRank, size, nelems, nelems * sizeof(int));
+        size_t nelems = size / sizeof(int);
+        if (DEBUG) printf("[Rank %d] Testing size %zu bytes (%zu elements, %zu actual bytes)\n", myRank, size, nelems, nelems * sizeof(int));
 
         if (args.verify && nelems > 0) {
             int* h_sendbuff = (int*)malloc(nelems * sizeof(int));
@@ -270,7 +270,7 @@ int main(int argc, char* argv[]) {
             
             // Print before/after values for last index
             printf("\n=== VERIFICATION FOR SIZE %zu BYTES ===\n", size);
-            printf("[Rank %d] Buffer values at last index [%d]:\n", myRank, nelems-1);
+            printf("[Rank %d] Buffer values at last index [%zu]:\n", myRank, nelems-1);
             printf("[Rank %d]   sendbuff: before=0x%X (%d) -> after=0x%X (%d)\n", 
                    myRank, h_sendbuff_orig[nelems-1], h_sendbuff_orig[nelems-1], 
                    h_sendbuff[nelems-1], h_sendbuff[nelems-1]);

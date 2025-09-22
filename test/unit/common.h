@@ -41,10 +41,10 @@ static void parse_cli_args(int argc, char* argv[], cli_args_t* args) {
                 args->normal_iters = atoi(optarg);
                 break;
             case 'b':
-                args->begin_size = atoi(optarg);
+                args->begin_size = atoll(optarg);
                 break;
             case 'e':
-                args->end_size = atoi(optarg);
+                args->end_size = atoll(optarg);
                 break;
             default:
                 fprintf(stderr, "Usage: %s [-v] [-w warmup_iters] [-i normal_iters] [-b begin_size] [-e end_size]\n", argv[0]);
