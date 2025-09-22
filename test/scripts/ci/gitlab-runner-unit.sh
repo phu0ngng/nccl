@@ -16,6 +16,7 @@ export LD_LIBRARY_PATH_BACKUP=$LD_LIBRARY_PATH
 function run_gin_test_suite() {
   local backend_label="$1"
   run_command "gin_test_${backend_label}_put_signal_ping_pong_gin" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/put_signal_ping_pong_gin" "-v"
+  run_command "gin_test_${backend_label}_put_signal_ping_pong_gin_4GiB" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/put_signal_ping_pong_gin" "-v -b $((4 * 1024 * 1024 * 1024)) -e $((4 * 1024 * 1024 * 1024)) -w 1 -i 1"
   run_command "gin_test_${backend_label}_put_gin_alltoall" "$RUN_MODE" ${NP} "--oversubscribe" "" "$NCCL_HOME/test/unit/put_gin_alltoall" ""
   run_command "gin_test_${backend_label}_devapi_barrier" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_barrier" ""
   run_command "gin_test_${backend_label}_devapi_data_ring" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_data_ring" ""
