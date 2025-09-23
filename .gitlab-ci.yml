@@ -1080,6 +1080,7 @@ unit_tests-gin-A100:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   script:
     - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1117,6 +1118,7 @@ unit_tests-gin-A40-single:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   script:
     - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1160,6 +1162,7 @@ unit_tests-gin-ipp6-a100:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 0 # Disable due to https://nvbugspro.nvidia.com/bug/5534804
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -1202,6 +1205,7 @@ unit_tests-gin-pre-nyx:
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -1244,6 +1248,7 @@ unit_tests-gin-pre-tyche:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   script:
     - source docker/clusters/pre-tyche-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1287,6 +1292,7 @@ unit_tests-gin-eos:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
