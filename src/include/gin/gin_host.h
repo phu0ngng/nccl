@@ -11,7 +11,7 @@
 #include "nccl.h"
 #include "nccl_net.h"
 #include "nccl_device/gin/gin_device_host_common.h"
-#include <pthread.h>
+#include <thread>
 
 struct ncclGinState {
   ncclGin_t* ncclGin;
