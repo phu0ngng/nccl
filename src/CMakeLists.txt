@@ -40,6 +40,7 @@ add_subdirectory(nccl_device)
 add_subdirectory(ras)
 add_subdirectory(scheduler)
 add_subdirectory(os)
+add_subdirectory(gin)
 
 add_compile_options(-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/=)
 
@@ -54,6 +55,8 @@ list(APPEND LIBSRCFILES
     ${SYM_SOURCES}
     ${SCHEDULER_SOURCES}
     ${OS_SOURCES}
+    ${GIN_SOURCES}
+    ${DOCA_SOURCES}
 )
 
 ###################### Create a shared NCCL library ############################
@@ -68,6 +71,7 @@ target_include_directories(nccl PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CMAKE_CURRENT_SOURCE_DIR}/include/os
     ${CUDAToolkit_INCLUDE_DIRS}
+    ${DOCA_HOME}/include
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
 
@@ -83,9 +87,25 @@ add_custom_command(
     BYPRODUCTS ${CMAKE_BINARY_DIR}/include/nccl.h
 )
 
-add_custom_target(nccl_header DEPENDS ${CMAKE_BINARY_DIR}/include/nccl.h)
+file(GLOB_RECURSE SRC_DEVICE_HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/include/nccl_device/*.h)
+
+# Copy all device header files to the destination
+foreach(HEADER_FILE ${SRC_DEVICE_HEADERS})
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${HEADER_FILE} ${CMAKE_BINARY_DIR}/${HEADER_FILE} COPYONLY)
+    list(APPEND DEVICE_HEADERS ${CMAKE_BINARY_DIR}/${HEADER_FILE})
+endforeach()
+
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/nccl_device.h ${CMAKE_BINARY_DIR}/include/nccl_device.h COPYONLY)
+
+add_custom_target(nccl_header DEPENDS
+    ${CMAKE_BINARY_DIR}/include/nccl.h
+    ${CMAKE_BINARY_DIR}/include/nccl_device.h
+    ${DEVICE_HEADERS}
+    ${DEVICE_DOCA_HEADERS}
+)
 
 add_dependencies(nccl nccl_header)
+add_dependencies(nccl_device nccl_header)
 
 # Set version and output name
 set_target_properties(nccl PROPERTIES
@@ -153,6 +173,7 @@ target_include_directories(nccl_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CMAKE_CURRENT_SOURCE_DIR}/include/os
     ${CUDAToolkit_INCLUDE_DIRS}
+    transport/gdaki/doca-gpunetio/include
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
 

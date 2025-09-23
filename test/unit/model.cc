@@ -374,10 +374,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   free(xmlSystem);
 
   CHECK(ncclTopoComputePaths(system, NULL));
-  if (param.nnodes == 1) {
-    for (int n=system->nodes[NET].count-1; n>=0; n--)
-      CHECK(ncclTopoRemoveNode(system, NET, n));
-  }
+  system->inter = param.nnodes == 1 ? 0 : 1;
 
   if (ngpus == -1 ) {
     ngpus = system->nodes[GPU].count;

@@ -421,6 +421,12 @@ function load_cluster_ci_variables() {
     if function_exists get_planned_reserved; then
         PLANNED_RESERVED=$(get_planned_reserved)
     fi
+    if function_exists get_cluster_name; then
+        CLUSTER_NAME=$(get_cluster_name)
+    fi
+    if function_exists get_gcperf_tools_path; then
+        GCPERF_TOOLS_PATH=$(get_gcperf_tools_path)
+    fi
 
     export NCCL_PROFILER_PLUGIN=none
 
@@ -431,6 +437,8 @@ function load_cluster_ci_variables() {
     echo "MPI_PARAMS=$MPI_PARAMS"
     echo "PATH=$PATH"
     echo "MPIRUN_SKIP_PPN=$MPIRUN_SKIP_PPN"
+    echo "CLUSTER_NAME=$CLUSTER_NAME"
+    echo "GCPERF_TOOLS_PATH=$GCPERF_TOOLS_PATH"
 }
 
 function ci_exit() {

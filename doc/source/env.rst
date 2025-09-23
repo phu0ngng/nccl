@@ -480,6 +480,8 @@ hostname and *%p* is replaced with the process PID. This does not accept the ``~
 Values accepted
 ^^^^^^^^^^^^^^^
 The default output file is *stdout* unless this environment variable is set.
+The filename can also be set to ``/dev/stdout`` or ``/dev/stderr`` to direct NCCL debug logging
+output to those predefined I/O streams. This also has the effect of making the output line buffered.
 
 Setting ``NCCL_DEBUG_FILE`` will cause NCCL to create and overwrite any previous files of that name.
 
@@ -668,6 +670,8 @@ The ``NCCL_P2P_DISABLE`` variable disables the peer to peer (P2P) transport, whi
 Values accepted
 ^^^^^^^^^^^^^^^
 Define and set to 1 to disable direct GPU-to-GPU (P2P) communication.
+
+.. _env_NCCL_P2P_LEVEL:
 
 NCCL_P2P_LEVEL
 --------------
@@ -917,6 +921,8 @@ Sets the default Memory Sync Domain for NCCL kernels (CUDA 12.0 & sm90 and later
 Values accepted
 ^^^^^^^^^^^^^^^
 Default value is ``cudaLaunchMemSyncDomainRemote`` (1). Currently supported values are 0 and 1.
+
+.. _env_NCCL_CUMEM_ENABLE:
 
 NCCL_CUMEM_ENABLE
 -----------------
@@ -1182,6 +1188,16 @@ when the NIC preferred by the destination is not accessible through PCI switches
 of 2 (default) will cause PXN to always be used, even if the NIC is connected through PCI switches,
 storing data from all GPUs within the node on an intermediate GPU to maximize aggregation.
 
+NCCL_PXN_C2C
+------------
+(since 2.27)
+
+Allow NCCL to use the PXN mechanism if the peer GPU is connected through C2C + PCIe to the targeted NIC.
+
+Value accepted
+^^^^^^^^^^^^^^
+Default is 1 (since NCCL 2.28; it was 0 in NCCL 2.27). Set to 1 to enable and to 0 to disable.
+
 NCCL_RUNTIME_CONNECT
 --------------------
 (since 2.22)
@@ -1364,6 +1380,8 @@ Set the minimal number of CTAs the NCCL should use. Setting this environment var
 Values accepted
 ^^^^^^^^^^^^^^^
 Set to a positive integer value up to 64 (32 prior to 2.25). Default value is undefined.
+
+.. _env_NCCL_NVLS_ENABLE:
 
 NCCL_NVLS_ENABLE
 ----------------

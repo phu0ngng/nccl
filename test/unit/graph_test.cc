@@ -480,10 +480,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   }
   CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, hostHash));
   free(xmlSystem);
-  if (type == TEST_INTRA) {
-    for (int n=system->nodes[NET].count-1; n>=0; n--)
-      CHECK(ncclTopoRemoveNode(system, NET, n));
-  }
+  system->inter = type == TEST_INTRA ? 0 : 1;
   // prune GPUs depending on the number of GPUs and splitMask
   if (param->ngpus != -1) {
     for (int g = system->nodes[GPU].count - 1; g >= param->ngpus; g--) CHECK(ncclTopoRemoveNode(system, GPU, g));
@@ -806,6 +803,8 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-2-Delta");
     RUN_MULTI4("Redstone");
     RUN("GCP-NV");
+    RUN("AWS-P5-H100");
+    RUN("AWS-P5en-H100");
     RUN("AWS-NV");
     RUN("AWS-NV-EFA");
     RUN("Azure");

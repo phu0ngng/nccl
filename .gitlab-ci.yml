@@ -6,6 +6,7 @@ stages:
   - api_tests
   - perf_tests_single
   - perf_tests_multi
+  - perf_regression
   - profiler_tests
   - inspector_tests
   - replay_tests
@@ -37,6 +38,7 @@ variables:
   RUN_API_TESTS: "1"
   RUN_PERF_TESTS_SINGLE: "1"
   RUN_PERF_TESTS_MULTIPLE: "1"
+  RUN_PERF_REGRESSION: "1"
   RUN_DLFW_TESTS: "1"
   RUN_PROFILER_TESTS: "1"
   PLANNED_RESERVED: "Reserved"
@@ -63,7 +65,7 @@ workflow:
     # For merge requests only (regardless of source branch)
     - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && $CI_PIPELINE_SOURCE == 'merge_request_event'
     # For scheduled and manual triggers
-    - if: $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web'
+    - if: $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_PIPELINE_SOURCE == 'api'
 
 ##
 ## Stage: build - Start...
@@ -102,10 +104,28 @@ build-classic:
       - build-gc/**/*.o
     expire_in: 48 hrs
 
+build-classic-gin:
+  stage: build
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1")
+      when: always
+    - when: never
+  tags:
+    - build-with-docker
+  script:
+    - docker/make.sh gc-classic-gin
+    - mv build build-gc
+  artifacts:
+    paths:
+      - build-gc
+    exclude:
+      - build-gc/**/*.o
+    expire_in: 48 hrs
+
 build-ipp6:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1")
+    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
   tags:
@@ -399,6 +419,7 @@ unit_tests-P100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -445,6 +466,7 @@ unit_tests-P40:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -491,6 +513,7 @@ unit_tests-GP100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -537,6 +560,7 @@ unit_tests-A40-single:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -583,6 +607,7 @@ unit_tests-A40-dual:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -629,6 +654,7 @@ unit_tests-A100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -681,6 +707,7 @@ unit_tests-eos:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
@@ -728,6 +755,7 @@ unit_tests-AWS_H100_EFA:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   before_script:
     - |
@@ -813,6 +841,7 @@ unit_tests-draco_oci:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
@@ -866,6 +895,7 @@ unit_tests-pre-nyx:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
@@ -918,6 +948,7 @@ unit_tests-pre-tyche:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -967,6 +998,7 @@ unit_tests-ipp6-a100:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
@@ -983,6 +1015,242 @@ unit_tests-ipp6-a100:
     reports:
       junit: junit_results.xml
     expire_in: 48 hrs
+
+unit_tests-gin-A100:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic-gin"]
+  tags:
+    - a100pci
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-gin-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: "A100"
+    NNODES: 1
+    NGPUS: 8
+    NP: 4
+    NCCL_HOME: build-gc
+    RUN_MODE: "SALLOC_MPI"
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_GPU_SM: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+  script:
+    - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-gin-A40-single:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-classic-gin"]
+  tags:
+    - a40
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-gin-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: "A40"
+    NNODES: 1
+    NGPUS: 2
+    NP: 2
+    NCCL_HOME: build-gc
+    RUN_MODE: "SALLOC_MPI"
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_GPU_SM: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+  script:
+    - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-gin-ipp6-a100:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs:
+    - job: build-ipp6
+  cache:
+    key: "$CI_COMMIT_SHORT_SHA"
+    paths:
+      - build
+    policy: pull
+  tags:
+    - ipp6-nccl-v2
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: a100-cicd
+    NNODES: 1
+    NGPUS: 2
+    NP: 2
+    NCCL_HOME: build
+    RUN_MODE: "MPI"
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_GPU_SM: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
+  script:
+    - source docker/clusters/ipp6-slurm-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-gin-pre-nyx:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs:
+    - build-ipp6
+  tags:
+    - prenyx
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: batch
+    NNODES: 1
+    NGPUS: 4
+    NP: 4
+    NCCL_HOME: build
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
+  script:
+    - source docker/clusters/pre-nyx-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-gin-pre-tyche:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs: ["build-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: batch
+    NNODES: 1
+    NGPUS: 4
+    NP: 4
+    NCCL_HOME: build-pre-tyche
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_GPU_SM: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+  script:
+    - source docker/clusters/pre-tyche-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-gin-eos:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs:
+    - build-ipp6
+  tags:
+    - nccl-eos
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    SLURM_TIME: 20
+    NNODES: 1
+    NGPUS: 4
+    NP: 4
+    NCCL_HOME: build
+    RUN_MODE: "MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_GPU_SM: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
+  script:
+    - source docker/clusters/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
 
 unit_tests-theia:
   stage: unit_tests
@@ -1019,6 +1287,7 @@ unit_tests-theia:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -2380,6 +2649,41 @@ perftest-multi-theia:
 
 ##
 ## Stage: perf_tests_multi - Finish!
+##
+
+##
+## Stage: perf-regression - Start...
+##
+
+perf-regression-eos:
+  stage: perf_regression
+  rules:
+    - if: ($CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web') && $RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1"
+      when: always
+    - when: never
+  needs:
+    - build-ipp6
+  tags:
+    - nccl-eos
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    SLURM_TIME: 60
+    NCCL_HOME: build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
+  script:
+    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  artifacts:
+    when: always
+    paths:
+      - "perfregression/results.csv"
+    expire_in: 48 hrs
+
+##
+## Stage: perf-regression - Finish!
 ##
 
 ##

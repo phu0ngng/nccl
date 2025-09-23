@@ -111,3 +111,11 @@ function get_planned_reserved() {
 function configure_test_env() {
     echo ""
 }
+
+function get_cluster_name() {
+    echo "EOS"
+}
+
+function get_gcperf_tools_path() {
+    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/gcperf-tools"
+}

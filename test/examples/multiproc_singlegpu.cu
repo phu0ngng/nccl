@@ -109,7 +109,7 @@ int main(int argc, char* argv[])
   CUDACHECK(cudaFree(recvbuff));
 
   //finalizing NCCL
-  ncclCommDestroy(comm);
+  NCCLCHECK(ncclCommDestroy(comm));
 
   //finalizing MPI
   MPICHECK(MPI_Finalize());
