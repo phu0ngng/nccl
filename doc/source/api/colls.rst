@@ -88,6 +88,8 @@ ncclAlltoAll
 
  Note: This assumes the both total send and receive count is equal to ``nranks*count``, which means that ``sendbuff`` and ``recvbuff`` should have a size of at least ``nranks*count`` elements.
 
+ In-place operation is currently not supported.
+
 Related links: :ref:`alltoall`.
 
 ncclGather

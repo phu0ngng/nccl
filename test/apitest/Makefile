@@ -44,7 +44,11 @@ all:${DST_DIR}/apitest ${DST_DIR}/apitest_static \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v9.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v10.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v11.so   \
-    ${DST_DIR}/plugin/libnccl-shared-plugins.so
+    ${DST_DIR}/plugin/libnccl-shared-plugins.so \
+    ${DST_DIR}/plugin/libnccl-env-example.so
+
+env.%:
+	${MAKE} -C $(BUILDDIR)/../ext-env/example $* BUILDDIR=$(DST_DIR)/plugin/libnccl-env-example.so
 
 clean:gtest.clean
 	rm -rf ${DST_DIR}
@@ -71,3 +75,6 @@ ${DST_DIR}/plugin/libnccl-%.so: plugin/%.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}/plugin
 	${CXX} -I${SRCDIR}/ext-net/example/nccl -I${SRCDIR}/ext-profiler/example/nccl -I${SRCDIR}/ext-tuner/example/nccl -fPIC -fvisibility=default -shared -o $@ $^
+
+${DST_DIR}/plugin/libnccl-env-example.so: env.build
+	@echo "Environment plugin built via env.build target"

@@ -937,7 +937,7 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, int size, int type, void **mhandle,
+ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int type, void **mhandle,
                                   void **ginHandle) {
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)collComm;
 
@@ -970,7 +970,7 @@ ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, int size, int type
   gdaki_mhandle->gdaki_mhandle_hd_mhandle = gdaki_mhandle_hd_mhandle;
   gdaki_mhandle->rkeys_hd_mhandle = rkeys_hd_mhandle;
 
-  INFO(NCCL_NET, "[%d] Registered MR: data=%p, size=%d, lkey(be32)=%#x, rkey(be32)=%#x",
+  INFO(NCCL_NET, "[%d] Registered MR: data=%p, size=%zu, lkey(be32)=%#x, rkey(be32)=%#x",
        cComm->rank, data, size, htobe32(mr->lkey), htobe32(mr->rkey));
 
   *mhandle = (void *)gdaki_mhandle;

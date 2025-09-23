@@ -431,6 +431,27 @@ Values accepted
 
 Plugin suffix, plugin file name, or "none".
 
+NCCL_ENV_PLUGIN
+---------------
+(since 2.28)
+
+The ``NCCL_ENV_PLUGIN`` variable can be used to let NCCL load an external environment plugin. Set it to either a library name
+or a suffix string to choose among multiple NCCL environment plugins. This setting will cause NCCL to look for the environment
+plugin library using the following strategy:
+ - If ``NCCL_ENV_PLUGIN`` is set to a library name, attempt loading that library (e.g.
+   ``NCCL_ENV_PLUGIN=/path/to/library/libfoo.so`` will cause NCCL to try load ``/path/to/library/libfoo.so``);
+ - If ``NCCL_ENV_PLUGIN`` is set to a suffix string, attempt loading ``libnccl-env-<NCCL_ENV_PLUGIN>.so`` (e.g.
+   ``NCCL_ENV_PLUGIN=foo`` will cause NCCL to try load ``libnccl-env-foo.so`` from the system library path);
+ - If ``NCCL_ENV_PLUGIN`` is not set, attempt loading the default ``libnccl-env.so`` library from the system library path;
+ - If ``NCCL_ENV_PLUGIN`` is set to "none", explicitly disable the external plugin and use the internal one;
+ - If no plugin was found (neither user defined nor default) or the variable is set to "none", use the internal environment
+   plugin.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Plugin library name (e.g., ``/path/to/library/libfoo.so``), suffix (e.g., ``foo``), or "none".
+
 NCCL_IGNORE_CPU_AFFINITY
 ------------------------
 (since 2.4.6)

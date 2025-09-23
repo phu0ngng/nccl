@@ -28,6 +28,7 @@
 #include "ce_coll.h"
 #include "nvtx.h"
 #include "os/os.h"
+#include "env.h"
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -83,7 +84,6 @@ static ncclResult_t initResult = ncclSuccess;
 static std::once_flag initOnceFlag;
 
 static void initOnceFunc() {
-  initEnv();
   setCpuStackSize();
   initGdrCopy();
   // Always initialize bootstrap network
@@ -98,6 +98,19 @@ static ncclResult_t ncclInit() {
   return initResult;
 }
 
+static ncclResult_t envInitResult = ncclSuccess;
+static std::once_flag envInitOnceFlag;
+
+static void envInitOnceFunc() {
+  NCCLCHECKGOTO(ncclEnvPluginInit(), envInitResult, exit);
+exit:;
+}
+
+ncclResult_t ncclInitEnv() {
+  std::call_once(envInitOnceFlag, envInitOnceFunc);
+  return envInitResult;
+}
+
 NCCL_API(ncclResult_t, ncclGetVersion, int* version);
 ncclResult_t ncclGetVersion(int* version) {
   if (version == NULL) return ncclInvalidArgument;
@@ -107,6 +120,7 @@ ncclResult_t ncclGetVersion(int* version) {
 
 NCCL_API(ncclResult_t, ncclGetUniqueId, ncclUniqueId* out);
 ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
+  NCCLCHECK(ncclInitEnv());
   NCCLCHECK(ncclInit());
   NCCLCHECK(PtrCheck(out, "GetUniqueId", "out"));
   struct ncclBootstrapHandle handle;
@@ -1963,6 +1977,7 @@ fail:
 
 NCCL_API(ncclResult_t, ncclCommInitRank, ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank);
 ncclResult_t ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank) {
+  NCCLCHECK(ncclInitEnv());
   NVTX3_RANGE(NcclNvtxParamsCommInitRank)
   // Load the CUDA driver and dlsym hooks (can fail on old drivers)
   (void)ncclCudaLibraryInit();
@@ -2062,6 +2077,7 @@ ncclResult_t ncclCommInitRankConfig(ncclComm_t *newcomm, int nranks, ncclUniqueI
   ncclConfig_t internalConfig = NCCL_CONFIG_INITIALIZER;
   ncclConfig_t *internalConfigPtr = NULL;
 
+  NCCLCHECK(ncclInitEnv());
   NVTX3_RANGE(NcclNvtxParamsCommInitRankConfig);
 
   NCCLCHECK(ncclGroupStartInternal());
@@ -2093,6 +2109,7 @@ fail:
 
 NCCL_API(ncclResult_t, ncclCommInitRankScalable, ncclComm_t* newcomm, int nranks, int myrank, int nId, ncclUniqueId* commId, ncclConfig_t* config);
 ncclResult_t ncclCommInitRankScalable(ncclComm_t* newcomm, int nranks, int myrank, int nId, ncclUniqueId* commId, ncclConfig_t* config) {
+  NCCLCHECK(ncclInitEnv());
   NVTX3_RANGE(NcclNvtxParamsCommInitRankScalable);
 
   int cudaDev;

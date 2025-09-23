@@ -120,5 +120,15 @@ else
     eval "$(get_build_command_bm)"
 fi
 
+make_result=$?
+if [ "$make_result" -ne 0 ]; then
+    exit $make_result
+fi
+
+# check symbols
+if [ "$CHECK_SYMBOLS" -eq 1 ]; then
+    test/binary/test_symbols.sh build/lib/libnccl.so
+fi
+
 exit_code=$?
 exit $exit_code
