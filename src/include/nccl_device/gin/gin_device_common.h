@@ -20,7 +20,11 @@
 #endif
 
 #ifndef NCCL_GIN_GDAKI_ENABLE
+#if CUDA_VERSION >= 12020 && __CUDA_ARCH__ >= 700
 #define NCCL_GIN_GDAKI_ENABLE 1
+#else
+#define NCCL_GIN_GDAKI_ENABLE 0
+#endif
 #endif
 
 #define NCCL_GIN_BACKEND_MASK_ALL                                               \
