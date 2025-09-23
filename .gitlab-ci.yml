@@ -2844,6 +2844,8 @@ perf-regression-eos:
     when: always
     paths:
       - "perfregression/results.csv"
+      - "perfregression/report.pdf"
+      - "perfregression/regression_report.xlsx"
     expire_in: 48 hrs
 
 ##

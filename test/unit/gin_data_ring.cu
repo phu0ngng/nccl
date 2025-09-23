@@ -5,8 +5,12 @@
 #include "nccl_device.h"
 #include "gin/gin_host.h"
 #include "nccl_device/gin/gin_device_api.h"
+
+#include "comm.h" // Needed to extract GIN handle from communicator.
+#undef NCCLCHECK  // Undefine CHECK macros which comm.h brings, to
+#undef CUDACHECK  // avoid conflict with the ones in common.h below.
+
 #include "common.h"
-#include "comm.h"
 #include <cassert>
 
 //constexpr int BlockPerRank = 4;
