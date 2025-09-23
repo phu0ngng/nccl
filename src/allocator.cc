@@ -34,7 +34,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
   if (ncclCuMemEnable()) {
     size_t handleSize = size;
     int requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
-#if CUDART_VERSION >= 12010
+#if CUDART_VERSION >= 12030
     // Query device to see if FABRIC handle support is available
     flag = 0;
     (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));
@@ -52,7 +52,7 @@ ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
     CUDACHECK(cudaGetDeviceCount(&dcnt));
     ALIGN_SIZE(handleSize, memGran);
 
-#if CUDART_VERSION >= 12010
+#if CUDART_VERSION >= 12030
     if (requestedHandleTypes & CU_MEM_HANDLE_TYPE_FABRIC) {
       /* First try cuMemCreate() with FABRIC handle support and then remove if it fails */
       CUresult err = CUPFN(cuMemCreate(&handle, handleSize, &memprop, 0));
