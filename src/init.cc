@@ -1647,6 +1647,8 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
 
   cgaClusterSizeEnv = ncclParamCGAClusterSize();
   if (0 <= cgaClusterSizeEnv && cgaClusterSizeEnv <= NCCL_MAX_CGA_CLUSTER_SIZE) {
+    if (comm->config.cgaClusterSize != NCCL_CONFIG_UNDEF_INT)
+      INFO(NCCL_ENV, "Comm config cgaClusterSize reset to NCCL_MAX_CGA_CLUSTER_SIZE=%d", cgaClusterSizeEnv);
     comm->config.cgaClusterSize = cgaClusterSizeEnv;
   } else if (cgaClusterSizeEnv > NCCL_MAX_CGA_CLUSTER_SIZE) {
     INFO(NCCL_ENV, "NCCL_CGA_CLUSTER_SIZE value %d is too big. Limiting value to %d.", cgaClusterSizeEnv, NCCL_MAX_CGA_CLUSTER_SIZE);
@@ -1657,16 +1659,22 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   if (minCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
     if (minCTAsEnv <= 0)
       INFO(NCCL_ENV, "NCCL_MIN_CTAS %d is too low, leaving it set at %d", minCTAsEnv, comm->config.minCTAs);
-    else
+    else {
+      if (comm->config.minCTAs != NCCL_CONFIG_UNDEF_INT)
+        INFO(NCCL_ENV, "Comm config minCTAs reset to NCCL_MIN_CTAS=%d", minCTAsEnv);
       comm->config.minCTAs = minCTAsEnv;
+    }
   }
 
   maxCTAsEnv = ncclParamMaxCTAs();
   if (maxCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
     if (maxCTAsEnv <= 0)
       INFO(NCCL_ENV, "NCCL_MAX_CTAS %d is too low, leaving it set at %d", maxCTAsEnv, comm->config.maxCTAs);
-    else
+    else {
+      if (comm->config.maxCTAs != NCCL_CONFIG_UNDEF_INT)
+        INFO(NCCL_ENV, "Comm config maxCTAs reset to NCCL_MAX_CTAS=%d", maxCTAsEnv);
       comm->config.maxCTAs = maxCTAsEnv;
+    }
   }
 
   /* override configuration with env variable. */
@@ -1674,22 +1682,30 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   if (nChannelsPerNetPeerEnv != NCCL_CONFIG_UNDEF_INT) {
     if (nChannelsPerNetPeerEnv <= 0)
       INFO(NCCL_ENV, "NCCL_NCHANNELS_PER_NET_PEER %d is too low, leaving it set at %d", nChannelsPerNetPeerEnv, comm->config.nChannelsPerNetPeer);
-    else
+    else {
+      if (comm->config.nChannelsPerNetPeer != NCCL_CONFIG_UNDEF_INT)
+        INFO(NCCL_ENV, "Comm config nChannelsPerNetPeer reset to NCCL_NCHANNELS_PER_NET_PEER=%d", nChannelsPerNetPeerEnv);
       comm->config.nChannelsPerNetPeer = nChannelsPerNetPeerEnv;
+    }
   }
 
   nvlinkUtilCentricSchedEnableEnv = ncclParamNvlinkUtilCentricSchedEnable();
   if (nvlinkUtilCentricSchedEnableEnv != NCCL_CONFIG_UNDEF_INT) {
     if (nvlinkUtilCentricSchedEnableEnv != 0 && nvlinkUtilCentricSchedEnableEnv != 1)
       INFO(NCCL_ENV, "NCCL_NVLINK_UTIL_CENTRIC_SCHED_ENABLE %d is not valid, leaving it set at %d", nvlinkUtilCentricSchedEnableEnv, comm->config.nvlinkCentricSched);
-    else
+    else {
+      if (comm->config.nvlinkCentricSched != NCCL_CONFIG_UNDEF_INT)
+        INFO(NCCL_ENV, "Comm config nvlinkCentricSched reset to NCCL_NVLINK_UTIL_CENTRIC_SCHED_ENABLE=%d", nvlinkUtilCentricSchedEnableEnv);
       comm->config.nvlinkCentricSched = nvlinkUtilCentricSchedEnableEnv;
+    }
   }
 
   envNetName = ncclGetEnv("NCCL_NET");
   if (envNetName)
     tmpNetName = envNetName;
   if (tmpNetName != NULL) {
+    if (comm->config.netName != NCCL_CONFIG_UNDEF_PTR)
+      INFO(NCCL_ENV, "Comm config netName reset to NCCL_NET=%s", tmpNetName);
     int netNameLen = strlen(tmpNetName) + 1;
     comm->config.netName = (char*)malloc(netNameLen);
     memcpy((void*)comm->config.netName, tmpNetName, netNameLen);
@@ -1699,10 +1715,14 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
 
   splitShareEnv = ncclParamCommSplitShareResources();
   if (splitShareEnv != NCCL_CONFIG_UNDEF_INT) {
+    if (comm->config.splitShare != NCCL_CONFIG_UNDEF_INT)
+      INFO(NCCL_ENV, "Comm config splitShare reset to NCCL_COMM_SPLIT_SHARE_RESOURCES=%d", splitShareEnv);
     comm->config.splitShare = splitShareEnv;
   }
   shrinkShareEnv = ncclParamCommShrinkShareResources();
   if (shrinkShareEnv != NCCL_CONFIG_UNDEF_INT) {
+    if (comm->config.shrinkShare != NCCL_CONFIG_UNDEF_INT)
+      INFO(NCCL_ENV, "Comm config shrinkShare reset to NCCL_COMM_SHRINK_SHARE_RESOURCES=%d", shrinkShareEnv);
     comm->config.shrinkShare = shrinkShareEnv;
   }
 
@@ -1712,6 +1732,8 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   if (collnetEnableEnv != NULL) {
     int collnetEnableInt = (int)strtol(collnetEnableEnv, NULL, 0);
     if (collnetEnableInt != NCCL_CONFIG_UNDEF_INT) {
+      if (comm->config.collnetEnable != NCCL_CONFIG_UNDEF_INT)
+        INFO(NCCL_ENV, "Comm config collnetEnable reset to NCCL_COLLNET_ENABLE=%d", collnetEnableInt);
       comm->config.collnetEnable = collnetEnableInt;
       INFO(NCCL_ENV, "NCCL_COLLNET_ENABLE set by environment to %d.", collnetEnableInt);
     }
@@ -1719,11 +1741,15 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
 
   ctaPolicyEnv = ncclParamCtaPolicy();
   if (ctaPolicyEnv != NCCL_CONFIG_UNDEF_INT) {
+    if (comm->config.CTAPolicy != NCCL_CONFIG_UNDEF_INT)
+      INFO(NCCL_ENV, "Comm config CTAPolicy reset to NCCL_CTA_POLICY=%d", ctaPolicyEnv);
     comm->config.CTAPolicy = ctaPolicyEnv;
   }
 
   nvlsCTAsEnv = ncclParamNvlsChannels();
   if (nvlsCTAsEnv != NCCL_CONFIG_UNDEF_INT) {
+    if (comm->config.nvlsCTAs != NCCL_CONFIG_UNDEF_INT)
+      INFO(NCCL_ENV, "Comm config nvlsCTAs reset to NCCL_NVLS_NCHANNELS=%d", nvlsCTAsEnv);
     comm->config.nvlsCTAs = nvlsCTAsEnv;
   }
 
