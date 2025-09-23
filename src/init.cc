@@ -1247,7 +1247,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Profiler plugin context has to be initialized before proxy thread
   NCCLCHECK(ncclProfilerPluginInit(comm));
 
-  NCCLCHECKGOTO(ncclTransportCheckP2pType(comm, &comm->isAllDirectP2p, &comm->directMode), ret, fail);
+  NCCLCHECKGOTO(ncclTransportCheckP2pType(comm, &comm->isAllDirectP2p, &comm->directMode, &comm->isAllCudaP2p), ret, fail);
   // Launch proxy service thread, after this, the proxy calls can be used.
   if (parent && parent->shareResources) {
     comm->proxyState = parent->sharedRes->proxyState;
@@ -1370,7 +1370,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   }
 
-  comm->symmetricSupport = (comm->localRanks == 1 || comm->isAllDirectP2p) && ncclParamWinEnable() && ncclCuMemEnable();
+  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable();
   comm->devrState.bigSize = 0;
 
   comm->ceColl.baseUCSymReadyPtr = NULL;
