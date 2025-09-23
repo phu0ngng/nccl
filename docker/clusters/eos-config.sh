@@ -117,5 +117,6 @@ function get_cluster_name() {
 }
 
 function get_gcperf_tools_path() {
-    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/gcperf-tools"
+    # TODO: Return to the prod gcperf-tools package once it is updated with regression-check
+    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/gcperf-tools-staging"
 }
