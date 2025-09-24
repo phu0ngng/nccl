@@ -205,10 +205,6 @@ struct ncclIbRemSizesFifo {
   int elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   uint64_t addr;
   uint32_t rkeys[NCCL_IB_MAX_DEVS_PER_NIC];
-  struct ibv_mr* mrs[NCCL_IB_MAX_DEVS_PER_NIC];
-  // Gather elements so sender could spare the allocation of SGE list on the
-  // stack.
-  struct ibv_sge sges[NCCL_IB_MAX_DEVS_PER_NIC];
 };
 
 // A per-dev struct for netIbSendComm
@@ -216,6 +212,8 @@ struct alignas(8) ncclIbSendCommDev {
   struct ncclIbNetCommDevBase base;
   struct ibv_mr* fifoMr;
   struct ibv_mr* putSignalScratchpadMr;
+  struct ibv_mr* sizesFifoMr;
+  struct ibv_sge sge;
 };
 
 
@@ -277,10 +275,6 @@ struct ncclIbRemFifo {
   struct ncclIbSendFifo elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   uint64_t addr;
   uint32_t rkeys[NCCL_IB_MAX_DEVS_PER_NIC];
-  struct ibv_mr* mrs[NCCL_IB_MAX_DEVS_PER_NIC];
-  // Gather elements so receiver could spare the allocation of SGE list on the
-  // stack.
-  struct ibv_sge sges[NCCL_IB_MAX_DEVS_PER_NIC];
   uint32_t flags;
 };
 
@@ -289,6 +283,7 @@ struct alignas(16) ncclIbRecvCommDev {
   struct ncclIbGpuFlush gpuFlush;
   struct ibv_mr* fifoMr;
   struct ibv_mr* sizesFifoMr;
+  struct ibv_sge sge;
 };
 
 struct ncclIbRecvComm {

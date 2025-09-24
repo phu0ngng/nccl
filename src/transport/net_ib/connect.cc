@@ -656,8 +656,9 @@ ib_connect:
     comm->remSizesFifo.rkeys[i] = remMeta.devs[i].fifoRkey;
   }
   for (int i=0; i < comm->base.vProps.ndevs; i++) {
-    NCCLCHECKGOTO(wrap_ibv_reg_mr(comm->remSizesFifo.mrs+i, comm->devs[i].base.pd, &comm->remSizesFifo.elems, sizeof(int)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    comm->remSizesFifo.sges[i].lkey = comm->remSizesFifo.mrs[i]->lkey;
+    ncclIbSendCommDev* commDev = comm->devs + i;
+    NCCLCHECKGOTO(wrap_ibv_reg_mr(&commDev->sizesFifoMr, comm->devs[i].base.pd, &comm->remSizesFifo.elems, sizeof(int)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    comm->devs[i].sge.lkey = comm->devs[i].sizesFifoMr->lkey;
   }
   comm->base.nRemDevs = remMeta.ndevs;
 
@@ -930,8 +931,14 @@ ib_recv:
   }
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
-    NCCLCHECKGOTO(wrap_ibv_reg_mr(rComm->remFifo.mrs+i, rCommDev->base.pd, &rComm->remFifo.elems, sizeof(struct ncclIbSendFifo)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    rComm->remFifo.sges[i].lkey = rComm->remFifo.mrs[i]->lkey;
+  
+    NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->fifoMr, rCommDev->base.pd, &rComm->remFifo.elems, sizeof(struct ncclIbSendFifo)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    rCommDev->sge.lkey = rCommDev->fifoMr->lkey;
+
+    // Prepare sizes fifo
+    NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->sizesFifoMr, rCommDev->base.pd, rComm->sizesFifo, sizeof(int)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    meta.devs[i].fifoRkey = rCommDev->sizesFifoMr->rkey;
+
   }
   if (ncclParamIbUseInline()) rComm->remFifo.flags = IBV_SEND_INLINE;
 
@@ -964,10 +971,6 @@ ib_recv:
     meta.devs[i].gid.global.subnet_prefix       = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
     meta.devs[i].gid.global.interface_id        = rCommDev->base.gidInfo.localGid.global.interface_id;
     meta.devs[i].mtu                            = ibDev->portAttr.active_mtu;
-
-    // Prepare sizes fifo
-    NCCLCHECKGOTO(wrap_ibv_reg_mr(&rComm->devs[i].sizesFifoMr, rComm->devs[i].base.pd, rComm->sizesFifo, sizeof(int)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    meta.devs[i].fifoRkey = rComm->devs[i].sizesFifoMr->rkey;
   }
   meta.fifoAddr = (uint64_t)rComm->sizesFifo;
   meta.sl = remMeta.sl;
@@ -1024,7 +1027,7 @@ ncclResult_t ncclIbCloseSend(void* sendComm) {
     for (int i = 0; i < comm->base.vProps.ndevs; i++) {
       struct ncclIbSendCommDev* commDev = comm->devs + i;
       if (commDev->fifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->fifoMr));
-      if (comm->remSizesFifo.mrs[i] != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->remSizesFifo.mrs[i]));
+      if (commDev->sizesFifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->sizesFifoMr));
       if (commDev->putSignalScratchpadMr != NULL)
         NCCLCHECK(wrap_ibv_dereg_mr(commDev->putSignalScratchpadMr));
       NCCLCHECK(ncclIbDestroyBase(&commDev->base));

@@ -123,7 +123,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       // Populating the correct gather information based on the device and
       // slot used.
       // Note that the lkey is already correct from the initialization phase.
-      lastWr->sg_list = &comm->remSizesFifo.sges[devIndex];
+      lastWr->sg_list = &(comm->devs[devIndex].sge);
       lastWr->sg_list[0].addr = (uint64_t)(comm->remSizesFifo.elems[slot]);
       lastWr->sg_list[0].length = nreqs*sizeof(int);
       // Populate the correct RKey based on the device used
@@ -294,7 +294,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
 
   // Populating the correct gather information based on the device and user
   // provided information
-  wr.sg_list = &comm->remFifo.sges[ctsQp->devIndex];
+  wr.sg_list = &(comm->devs[ctsQp->devIndex].sge);
   wr.sg_list[0].addr = (uint64_t)localElem;
   wr.sg_list[0].length = n*sizeof(struct ncclIbSendFifo);
   wr.num_sge = 1;
