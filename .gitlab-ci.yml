@@ -2913,7 +2913,7 @@ perftest-multi-theia:
 perf-regression-eos:
   stage: perf_regression
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web') && $RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1"
+    - if: ($CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'api' || $CI_PIPELINE_SOURCE == 'web') && $RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1"
       when: always
     - when: never
   needs:
