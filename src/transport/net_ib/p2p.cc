@@ -540,6 +540,34 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
   return ncclSuccess;
 }
 
+// Log the details of a completion with error. The provided devIndex is the index
+// of the IB device on which the completion was received.
+static ncclResult_t ncclIbLogCompletionWithError(struct ncclIbRequest* r, struct ibv_wc* wc, int devIndex) {
+  union ncclSocketAddress addr;
+  ncclSocketGetAddr(r->sock, &addr);
+  char localGidString[INET6_ADDRSTRLEN] = "";
+  char remoteGidString[INET6_ADDRSTRLEN] = "";
+  const char* localGidStr = NULL, *remoteGidStr = NULL;
+  if (r->devBases[devIndex]->gidInfo.link_layer == IBV_LINK_LAYER_ETHERNET) {
+    localGidStr = ibvGetGidStr(&r->devBases[devIndex]->gidInfo.localGid, localGidString, sizeof(localGidString));
+    remoteGidStr = ibvGetGidStr(&r->base->remDevs[devIndex].remoteGid, remoteGidString, sizeof(remoteGidString));
+  }
+
+  char line[SOCKET_NAME_MAXLEN+1];
+  char *hcaName = r->devBases[devIndex]->pd->context->device->name;
+  int reqSize = wc->byte_len;
+  struct ncclIbRequest* req = r->base->reqs+(wc->wr_id & 0xff);
+  if (req && req->type == NCCL_NET_IB_REQ_SEND) {
+    // For Send use the request size as WC byte_len is not reliable
+    reqSize = req->send.size;
+  }
+  WARN("NET/IB: Got completion from peer %s with status=%s(%d) opcode=%s(%d) reqSize=%d vendor_err=%u req_type=%s%s%s%s%s hca %s",
+      ncclSocketToString(&addr, line), ibvWcStatusStr(wc->status), wc->status,
+      ibvWcOpcodeStr(wc->opcode), wc->opcode, reqSize, wc->vendor_err, ncclIbReqTypeStr[r->type],
+      localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString, hcaName);
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
@@ -565,28 +593,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
         for (int w=0; w<wrDone; w++) {
           struct ibv_wc *wc = wcs+w;
           if (wc->status != IBV_WC_SUCCESS) {
-            union ncclSocketAddress addr;
-            ncclSocketGetAddr(r->sock, &addr);
-            char localGidString[INET6_ADDRSTRLEN] = "";
-            char remoteGidString[INET6_ADDRSTRLEN] = "";
-            const char* localGidStr = NULL, *remoteGidStr = NULL;
-            if (r->devBases[i]->gidInfo.link_layer == IBV_LINK_LAYER_ETHERNET) {
-              localGidStr = ibvGetGidStr(&r->devBases[i]->gidInfo.localGid, localGidString, sizeof(localGidString));
-              remoteGidStr = ibvGetGidStr(&r->base->remDevs[i].remoteGid, remoteGidString, sizeof(remoteGidString));
-            }
-
-            char line[SOCKET_NAME_MAXLEN+1];
-            char *hcaName = r->devBases[i]->pd->context->device->name;
-            int reqSize = wc->byte_len;
-            struct ncclIbRequest* req = r->base->reqs+(wc->wr_id & 0xff);
-            if (req && req->type == NCCL_NET_IB_REQ_SEND) {
-              // For Send use the request size as WC byte_len is not reliable
-              reqSize = req->send.size;
-            }
-            WARN("NET/IB: Got completion from peer %s with status=%s(%d) opcode=%s(%d) reqSize=%d vendor_err=%u req_type=%s%s%s%s%s hca %s",
-                ncclSocketToString(&addr, line), ibvWcStatusStr(wc->status), wc->status,
-                ibvWcOpcodeStr(wc->opcode), wc->opcode, reqSize, wc->vendor_err, ncclIbReqTypeStr[r->type],
-                localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString, hcaName);
+            ncclIbLogCompletionWithError(r, wc, i);
             return ncclRemoteError;
           }
 
