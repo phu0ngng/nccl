@@ -1892,10 +1892,12 @@ perftest-P100:
     RUN_MODE: "MPI"
     SLURM_PARTITION: "P100"
     MAX: "1G"
+    MAX_GROUP: "128M"
     NNODES: 1
     ENABLE_NVLS: 0
     GRAPH: 0
     NGPUS: 8
+    SYMMETRIC: 1
     NCCL_HOME: build-gc
     SALLOC: "salloc --exclusive -t 00:30:00 -N ${NNODES} -n ${NGPUS} -p ${SLURM_PARTITION}"
     NO_LOOPBACK_NETWORKING: 1
@@ -1928,11 +1930,13 @@ perftest-P40:
     RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "P40"
     MAX: "1G"
+    MAX_GROUP: "128M"
     NNODES: 1
     ENABLE_NVLS: 0
     GRAPH: 0
     NGPUS: 8
     NP: 8
+    SYMMETRIC: 1
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -1969,6 +1973,7 @@ perftest-GP100:
     GRAPH: 2
     NGPUS: 8
     NP: 8
+    SYMMETRIC: 1
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2032,6 +2037,7 @@ perftest-A40:
     GRAPH: 0
     NGPUS: 2
     NP: 2
+    SYMMETRIC: 1
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2068,6 +2074,7 @@ perftest-A100:
     GRAPH: 0
     NGPUS: 8
     NP: 8
+    SYMMETRIC: 1
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
