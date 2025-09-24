@@ -6,7 +6,7 @@ IPP6_GPU_ARCHS="80,86,89,90"
 
 IPP6_OS_VERSION="20.04"
 IPP6_CUDA_VERSION="12.8.0"
-IPP6_BUILD_TOOLS_VERSION="1.0.1"
+IPP6_BUILD_TOOLS_VERSION="1.1.0"
 IPP6_BUILD_IMAGE_VERSION="${IPP6_BUILD_TOOLS_VERSION}-c${IPP6_CUDA_VERSION}-u${IPP6_OS_VERSION}"
 
 IPP6_TOOLKIT_DIR="/storage/toolkits"
@@ -67,7 +67,7 @@ function get_build_command() {
         --exclusive \
         --container-image=$build_tools_image \
         --container-mounts=${current_dir}:/nccl \
-        /nccl/docker/build_nccl.sh"
+        /nccl/docker/build_nccl.sh --enable-ccache"
 }
 
 function get_cuda_home() {

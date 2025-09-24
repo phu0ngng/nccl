@@ -133,7 +133,7 @@ build-ipp6:
   tags:
     - ipp6-nccl-v2
   script:
-    - docker/make.sh --ci-build ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx
+    - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx
     - tar -cf - build | pigz --fast > build-ipp6.tar.gz
   artifacts:
     paths:
