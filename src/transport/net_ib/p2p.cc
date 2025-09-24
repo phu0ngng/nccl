@@ -628,9 +628,9 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
     struct ibv_wc wcs[4];
 
     for (int i = 0; i < NCCL_IB_MAX_DEVS_PER_NIC; i++) {
-      TIME_START(3);
       // If we expect any completions from this device's CQ
       if (r->events[i]) {
+        TIME_START(3);
         NCCLCHECK(wrap_ibv_poll_cq(r->devBases[i]->cq, 4, wcs, &wrDone));
         totalWrDone += wrDone;
         if (wrDone == 0) { TIME_CANCEL(3); } else { TIME_STOP(3); }
