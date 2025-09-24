@@ -205,7 +205,6 @@ struct ncclIbRemSizesFifo {
   int elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   uint64_t addr;
   uint32_t rkeys[NCCL_IB_MAX_DEVS_PER_NIC];
-  uint32_t flags;
   struct ibv_mr* mrs[NCCL_IB_MAX_DEVS_PER_NIC];
   struct ibv_sge sge;
 };
