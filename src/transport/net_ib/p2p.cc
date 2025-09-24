@@ -501,6 +501,15 @@ static const char* ibvWcOpcodeStr(enum ibv_wc_opcode opcode) {
   }
 }
 
+static inline ncclResult_t ncclIbRequestRetrieveAsIndex(ncclIbRequest* reqs, uint32_t reqIndex, ncclIbRequest** req) {
+  if (reqIndex < 0 || reqIndex >= NET_IB_MAX_REQUESTS) {
+    WARN("NET/IB: %s: Invalid request index %d. Not in the range [%d, %d). Cannot retrieve request.", __func__, reqIndex, 0, NET_IB_MAX_REQUESTS);
+    return ncclInternalError;
+  }
+  *req = &reqs[reqIndex];
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
@@ -574,7 +583,9 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
 
           union ncclSocketAddress addr;
           ncclSocketGetAddr(r->sock, &addr);
-          struct ncclIbRequest* req = r->base->reqs+(wc->wr_id & 0xff);
+
+          struct ncclIbRequest* req = NULL;
+          NCCLCHECK(ncclIbRequestRetrieveAsIndex(r->base->reqs, wc->wr_id & 0xff, &req));
 
           #ifdef ENABLE_TRACE
           char line[SOCKET_NAME_MAXLEN+1];
@@ -583,7 +594,8 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
           #endif
           if (req && req->type == NCCL_NET_IB_REQ_SEND) {
             for (int j = 0; j < req->nreqs; j++) {
-              struct ncclIbRequest* sendReq = r->base->reqs+((wc->wr_id >> (j*8)) & 0xff);
+              struct ncclIbRequest* sendReq = NULL;
+              NCCLCHECK(ncclIbRequestRetrieveAsIndex(r->base->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
               if ((sendReq->events[i] <= 0)) {
                 WARN("NET/IB: sendReq(%p)->events={%d,%d,%d,%d}, i=%d, j=%d <= 0", sendReq, sendReq->events[0], sendReq->events[1], sendReq->events[2], sendReq->events[3], i, j);
                 return ncclInternalError;
