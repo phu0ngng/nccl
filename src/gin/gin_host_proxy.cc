@@ -488,6 +488,7 @@ ncclResult_t ncclGinProxyProgress(ncclGin_t *ginComm, void *ginCtx) {
       if (ret) ctx->hasError = ret;
       NCCLCHECK(ret);
     }
+    if (ginComm->ginProgress) ginComm->ginProgress(ctx->collComm);
   }
 
   return ncclSuccess;
