@@ -41,7 +41,7 @@ NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 0);
 
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
-  volatile struct ncclIbSendFifo* slots = comm->fifo[slot];
+  volatile struct ncclIbSendFifo* slots = comm->ctsFifo[slot];
   int nreqs = slots[0].nreqs;
   if (nreqs > NCCL_NET_IB_MAX_RECVS) return ncclInternalError;
 
@@ -68,7 +68,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   if (nreqs == 1) {
     immData = reqs[0]->send.size;
   } else {
-    int* sizes = comm->remSizesFifo.elems[slot];
+    int* sizes = comm->remCmplsRecords.elems[slot];
     for (int r=0; r<nreqs; r++) sizes[r] = reqs[r]->send.size;
   }
 
@@ -81,7 +81,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     memset(lastWr, 0, sizeof(struct ibv_send_wr));
     if (nreqs > 1) {
       // Write remote sizes Fifo
-      lastWr->wr.rdma.remote_addr = comm->remSizesFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(int);
+      lastWr->wr.rdma.remote_addr = comm->remCmplsRecords.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(int);
       lastWr->num_sge = 1;
     }
   }
@@ -124,10 +124,10 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       // slot used.
       // Note that the lkey is already correct from the initialization phase.
       lastWr->sg_list = &(comm->devs[devIndex].sge);
-      lastWr->sg_list[0].addr = (uint64_t)(comm->remSizesFifo.elems[slot]);
+      lastWr->sg_list[0].addr = (uint64_t)(comm->remCmplsRecords.elems[slot]);
       lastWr->sg_list[0].length = nreqs*sizeof(int);
       // Populate the correct RKey based on the device used
-      lastWr->wr.rdma.rkey = comm->remSizesFifo.rkeys[devIndex];
+      lastWr->wr.rdma.rkey = comm->remCmplsRecords.rkeys[devIndex];
     }
 
     struct ibv_send_wr* bad_wr;
@@ -184,7 +184,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
 
   int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
-  slots = comm->fifo[slot];
+  slots = comm->ctsFifo[slot];
   uint64_t idx = comm->base.fifoHead+1;
   if (slots[0].idx != idx) { *request = NULL; return ncclSuccess; }
   nreqs = slots[0].nreqs;
@@ -265,9 +265,9 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   memset(&wr, 0, sizeof(wr));
 
   int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
-  req->recv.sizes = comm->sizesFifo[slot];
+  req->recv.sizes = comm->cmplsRecords[slot];
   for (int i=0; i<n; i++) req->recv.sizes[i] = 0;
-  struct ncclIbSendFifo* localElem = comm->remFifo.elems[slot];
+  struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
 
   // Select the next devIndex (local) and QP to use for posting this CTS message
   // Since QPs are initialized by striping across devIndex, we can simply assign this to the same value
@@ -287,7 +287,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
     localElem[i].tag = tags[i];
     localElem[i].idx = comm->base.fifoHead+1;
   }
-  wr.wr.rdma.remote_addr = comm->remFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo);
+  wr.wr.rdma.remote_addr = comm->remCtsFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo);
 
   // Lookup the correct rkey
   wr.wr.rdma.rkey = comm->base.remDevs[ctsQp->remDevIdx].rkey;
@@ -300,7 +300,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   wr.num_sge = 1;
 
   wr.opcode = IBV_WR_RDMA_WRITE;
-  wr.send_flags = comm->remFifo.flags; // IBV_SEND_INLINE
+  wr.send_flags = comm->remCtsFifo.flags; // IBV_SEND_INLINE
 
   // We need to occasionally post a request with the IBV_SEND_SIGNALED flag, otherwise
   // the send queue will never empty.
@@ -323,8 +323,8 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   //    polling it will empty the Send Queue, can be posted)
   //  - The status of all posted Send Request is considered unknown
   //
-  // slot == devIndex - When writing to fifo slot N, and this QP lives on device index N, it should send signalled.
-  // This works out that each fifo posting QP gets drained
+  // slot == devIndex - When writing to CTS FIFO slot N, and this QP lives on device index N, it should send signalled.
+  // This works out that each CTS posting QP gets drained
   if (slot == ctsQp->devIndex) {
     wr.send_flags |= IBV_SEND_SIGNALED;
     wr.wr_id = req - comm->base.reqs;

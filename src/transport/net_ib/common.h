@@ -202,7 +202,7 @@ struct ncclIbQp {
 #define NET_IB_MAX_REQUESTS (NCCL_NET_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS)
 static_assert(NET_IB_MAX_REQUESTS <= 256, "request id are encoded in wr_id and we need up to 8 requests ids per completion");
 
-struct ncclIbRemSizesFifo {
+struct ncclIbRemCompletionsRecords {
   int elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   uint64_t addr;
   uint32_t rkeys[NCCL_IB_MAX_DEVS_PER_NIC];
@@ -211,9 +211,9 @@ struct ncclIbRemSizesFifo {
 // A per-dev struct for netIbSendComm
 struct alignas(8) ncclIbSendCommDev {
   struct ncclIbNetCommDevBase base;
-  struct ibv_mr* fifoMr;
+  struct ibv_mr* ctsFifoMr;
   struct ibv_mr* putSignalScratchpadMr;
-  struct ibv_mr* sizesFifoMr;
+  struct ibv_mr* cmplsRecordsMr;
   struct ibv_sge sge;
 };
 
@@ -246,22 +246,22 @@ struct alignas(32) ncclIbNetCommBase {
 
 struct ncclIbSendComm {
   struct ncclIbNetCommBase base;
-  // Start with fifo and ibv structs as they have alignment restrictions
-  struct ncclIbSendFifo fifo[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  // Start with CTS FIFO and ibv structs as they have alignment restrictions
+  struct ncclIbSendFifo ctsFifo[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ibv_sge sges[NCCL_NET_IB_MAX_RECVS];
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS + 1];
   // Each dev correlates to a mergedIbDev
   struct ncclIbSendCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
   struct ncclIbRequest* fifoReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
-  struct ncclIbRemSizesFifo remSizesFifo;
+  struct ncclIbRemCompletionsRecords remCmplsRecords;
   int ar; // Use adaptive routing when all merged devices have it enabled
   uint64_t putSignalScratchpad;
 };
 // The SendFifo needs to be 32-byte aligned and each element needs
 // to be a 32-byte multiple, so that an entry does not get split and
 // written out of order when IB Relaxed Ordering is enabled
-static_assert((sizeof(struct ncclIbNetCommBase) % 32) == 0, "ncclIbNetCommBase size must be 32-byte multiple to ensure fifo is at proper offset");
-static_assert((offsetof(struct ncclIbSendComm, fifo) % 32) == 0, "ncclIbSendComm fifo must be 32-byte aligned");
+static_assert((sizeof(struct ncclIbNetCommBase) % 32) == 0, "ncclIbNetCommBase size must be 32-byte multiple to ensure ctsFifo is at proper offset");
+static_assert((offsetof(struct ncclIbSendComm, ctsFifo) % 32) == 0, "ncclIbSendComm ctsFifo must be 32-byte aligned");
 static_assert((sizeof(struct ncclIbSendFifo) % 32) == 0, "ncclIbSendFifo element size must be 32-byte multiples");
 static_assert((offsetof(struct ncclIbSendComm, sges) % 32) == 0, "sges must be 32-byte aligned");
 static_assert((offsetof(struct ncclIbSendComm, wrs) % 32) == 0, "wrs must be 32-byte aligned");
@@ -272,7 +272,7 @@ struct ncclIbGpuFlush {
   struct ncclIbQp qp;
 };
 
-struct ncclIbRemFifo {
+struct ncclIbRemCtsFifo {
   struct ncclIbSendFifo elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   uint64_t addr;
   uint32_t rkeys[NCCL_IB_MAX_DEVS_PER_NIC];
@@ -282,20 +282,20 @@ struct ncclIbRemFifo {
 struct alignas(16) ncclIbRecvCommDev {
   struct ncclIbNetCommDevBase base;
   struct ncclIbGpuFlush gpuFlush;
-  struct ibv_mr* fifoMr;
-  struct ibv_mr* sizesFifoMr;
+  struct ibv_mr* ctsFifoMr;
+  struct ibv_mr* cmplsRecordsMr;
   struct ibv_sge sge;
 };
 
 struct ncclIbRecvComm {
   struct ncclIbNetCommBase base;
   struct ncclIbRecvCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
-  struct ncclIbRemFifo remFifo;
-  int sizesFifo[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  struct ncclIbRemCtsFifo remCtsFifo;
+  int cmplsRecords[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   int gpuFlushHostMem;
   int flushEnabled;
 };
-static_assert((offsetof(struct ncclIbRecvComm, remFifo) % 32) == 0, "ncclIbRecvComm fifo must be 32-byte aligned");
+static_assert((offsetof(struct ncclIbRecvComm, remCtsFifo) % 32) == 0, "ncclIbRecvComm ctsFifo must be 32-byte aligned");
 
 struct ncclIbListenComm {
   int dev;
