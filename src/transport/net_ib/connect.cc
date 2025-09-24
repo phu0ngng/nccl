@@ -494,6 +494,34 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
   return ncclSuccess;
 }
 
+static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, int dev, struct ncclIbConnectionMetadata* remMeta) {
+  for (int q = 0; q < comm->base.nqps; q++) {
+    struct ncclIbQpInfo* remQpInfo   = remMeta->qpInfo + q;
+    struct ncclIbDevInfo* remDevInfo = remMeta->devs + remQpInfo->devIndex;
+
+    // Assign per-QP remDev
+    comm->base.qps[q].remDevIdx = remQpInfo->devIndex;
+    int devIndex = comm->base.qps[q].devIndex;
+    ncclIbSendCommDev* commDev = comm->devs + devIndex;
+
+    struct ibv_qp* qp = comm->base.qps[q].qp;
+    if (remQpInfo->ece_supported) {
+      struct ncclIbQp* nqp = comm->base.qps + q;
+      int ibDevN = comm->devs[nqp->devIndex].base.ibDevN;
+      struct ncclIbDev* ibDev = ncclIbDevs + ibDevN;
+      INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
+        ibDevN, ibDev->portNum, qp->qp_num, remMeta->qpInfo[q].ece_supported, remMeta->qpInfo[q].ece.vendor_id, remMeta->qpInfo[q].ece.options, remMeta->qpInfo[q].ece.comp_mask);
+      NCCLCHECK(wrap_ibv_set_ece(qp, &remQpInfo->ece, &remQpInfo->ece_supported));
+    }
+
+    ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
+    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
+    NCCLCHECK(ncclIbRtrQp(qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta->tc, remMeta->sl));
+    NCCLCHECK(ncclIbRtsQp(qp));
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbConnect(void* ctx, int dev, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   ncclResult_t ret = ncclSuccess;
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
@@ -696,30 +724,7 @@ ib_connect:
   }
   comm->base.nRemDevs = remMeta.ndevs;
 
-  for (int q = 0; q < comm->base.nqps; q++) {
-    struct ncclIbQpInfo* remQpInfo   = remMeta.qpInfo + q;
-    struct ncclIbDevInfo* remDevInfo = remMeta.devs + remQpInfo->devIndex;
-
-    // Assign per-QP remDev
-    comm->base.qps[q].remDevIdx = remQpInfo->devIndex;
-    int devIndex = comm->base.qps[q].devIndex;
-    ncclIbSendCommDev* commDev = comm->devs + devIndex;
-
-    struct ibv_qp* qp = comm->base.qps[q].qp;
-    if (remQpInfo->ece_supported) {
-      struct ncclIbQp* nqp = comm->base.qps + q;
-      int ibDevN = comm->devs[nqp->devIndex].base.ibDevN;
-      struct ncclIbDev* ibDev = ncclIbDevs + ibDevN;
-      INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
-        ibDevN, ibDev->portNum, qp->qp_num, remMeta.qpInfo[q].ece_supported, remMeta.qpInfo[q].ece.vendor_id, remMeta.qpInfo[q].ece.options, remMeta.qpInfo[q].ece.comp_mask);
-      NCCLCHECKGOTO(wrap_ibv_set_ece(qp, &remQpInfo->ece, &remQpInfo->ece_supported), ret, fail);
-    }
-
-    ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
-    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
-    NCCLCHECKGOTO(ncclIbRtrQp(qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta.tc, remMeta.sl), ret, fail);
-    NCCLCHECKGOTO(ncclIbRtsQp(qp), ret, fail);
-  }
+  NCCLCHECKGOTO(ncclIbSenderQpsToRts(comm, dev, &remMeta), ret, fail);
 
   comm->base.nDataQps = std::max(comm->base.vProps.ndevs, comm->base.nRemDevs);
 
