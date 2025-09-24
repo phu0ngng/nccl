@@ -417,9 +417,7 @@ NCCL_ENV_PLUGIN
 ---------------
 (since 2.28)
 
-The ``NCCL_ENV_PLUGIN`` variable can be used to let NCCL load an external environment plugin. Set it to either a library name
-or a suffix string to choose among multiple NCCL environment plugins. This setting will cause NCCL to look for the environment
-plugin library using the following strategy:
+The ``NCCL_ENV_PLUGIN`` variable can be used to let NCCL load an external environment plugin. Set it to either a library name or a suffix string to choose among multiple NCCL environment plugins. This setting will cause NCCL to look for the environment plugin library using the following strategy:
  - If ``NCCL_ENV_PLUGIN`` is set to a library name, attempt loading that library (e.g.
    ``NCCL_ENV_PLUGIN=/path/to/library/libfoo.so`` will cause NCCL to try load ``/path/to/library/libfoo.so``);
  - If ``NCCL_ENV_PLUGIN`` is set to a suffix string, attempt loading ``libnccl-env-<NCCL_ENV_PLUGIN>.so`` (e.g.
