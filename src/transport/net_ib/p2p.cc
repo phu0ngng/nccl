@@ -510,34 +510,43 @@ static inline ncclResult_t ncclIbRequestRetrieveAsIndex(ncclIbRequest* reqs, uin
   return ncclSuccess;
 }
 
+static inline bool ncclIbRequestIsComplete(struct ncclIbRequest *request) {
+  return (request->events[0] == 0 && request->events[1] == 0 && request->events[2] == 0 && request->events[3] == 0);
+}
+
+static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* done, int* sizes) {
+  TRACE(NCCL_NET, "r=%p done", r);
+  *done = 1;
+  if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
+    for (int i=0; i<r->nreqs; i++) {
+      sizes[i] = r->recv.sizes[i];
+#ifdef NCCL_ENABLE_NET_PROFILING
+      for (int j = 0; j < r->pInfo[i].nEventHandles; j++) {
+        NCCLCHECK(ncclProfilerFunction(&r->pInfo[i].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
+      }
+#endif
+    }
+  }
+  if (sizes && r->type == NCCL_NET_IB_REQ_SEND) {
+    sizes[0] = r->send.size;
+#ifdef NCCL_ENABLE_NET_PROFILING
+    for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
+      NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
+    }
+#endif
+  }
+  // Stop all remaining Qp events for this event
+  NCCLCHECK(ncclIbFreeRequest(r));
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
   while (1) {
     NCCLCHECK(ncclIbStatsCheckFatalCount(&r->base->stats,__func__));
-    if (r->events[0] == 0 && r->events[1] == 0 && r->events[2] == 0 && r->events[3] == 0) {
-      TRACE(NCCL_NET, "r=%p done", r);
-      *done = 1;
-      if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
-        for (int i=0; i<r->nreqs; i++) {
-          sizes[i] = r->recv.sizes[i];
-#ifdef NCCL_ENABLE_NET_PROFILING
-          for (int j = 0; j < r->pInfo[i].nEventHandles; j++) {
-            NCCLCHECK(ncclProfilerFunction(&r->pInfo[i].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
-          }
-#endif
-        }
-      }
-      if (sizes && r->type == NCCL_NET_IB_REQ_SEND) {
-        sizes[0] = r->send.size;
-#ifdef NCCL_ENABLE_NET_PROFILING
-        for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
-          NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
-        }
-#endif
-      }
-      // Stop all remaining Qp events for this event
-      NCCLCHECK(ncclIbFreeRequest(r));
+    if (ncclIbRequestIsComplete(r)) {
+      NCCLCHECK(ncclIbRequestComplete(r, done, sizes));
       return ncclSuccess;
     }
 
