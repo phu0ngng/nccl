@@ -455,6 +455,27 @@ fail:
 #define NCCL_IB_SL_DEFAULT 0
 #define NCCL_IB_TC_DEFAULT 0
 
+static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbConnectionMetadata* meta) {
+  int devIndex = 0;
+  for (int q = 0; q < comm->base.nqps; q++) {
+    ncclIbSendCommDev* commDev = comm->devs + devIndex;
+    ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
+    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &commDev->base, IBV_ACCESS_REMOTE_WRITE, &comm->base.stats, comm->base.qps + q));
+    comm->base.qps[q].devIndex = devIndex;
+    meta->qpInfo[q].qpn      = comm->base.qps[q].qp->qp_num;
+    meta->qpInfo[q].devIndex = comm->base.qps[q].devIndex;
+
+    if (ncclParamIbEceEnable()) {
+      // Query ece capabilities (enhanced connection establishment)
+      NCCLCHECK(wrap_ibv_query_ece(comm->base.qps[q].qp, &meta->qpInfo[q].ece, &meta->qpInfo[q].ece_supported));
+    } else {
+      meta->qpInfo[q].ece_supported = 0;
+    }
+    devIndex = (devIndex + 1) % comm->base.vProps.ndevs;
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbConnect(void* ctx, int dev, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   ncclResult_t ret = ncclSuccess;
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
@@ -537,25 +558,8 @@ ib_recv_dev_list:
   memset(&meta, 0, sizeof(meta));
   meta.ndevs = comm->base.vProps.ndevs;
 
-  // Alternate QPs between devices
-  int devIndex;
-  devIndex = 0;
-  for (int q = 0; q < comm->base.nqps; q++) {
-    ncclIbSendCommDev* commDev = comm->devs + devIndex;
-    ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
-    NCCLCHECKGOTO(ncclIbCreateQp(ibDev->portNum, &commDev->base, IBV_ACCESS_REMOTE_WRITE, &comm->base.stats, comm->base.qps + q), ret, fail);
-    comm->base.qps[q].devIndex = devIndex;
-    meta.qpInfo[q].qpn      = comm->base.qps[q].qp->qp_num;
-    meta.qpInfo[q].devIndex = comm->base.qps[q].devIndex;
-
-    if (ncclParamIbEceEnable()) {
-      // Query ece capabilities (enhanced connection establishment)
-      NCCLCHECKGOTO(wrap_ibv_query_ece(comm->base.qps[q].qp, &meta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
-    } else {
-      meta.qpInfo[q].ece_supported = 0;
-    }
-    devIndex = (devIndex + 1) % comm->base.vProps.ndevs;
-  }
+  // Create QPs on the sender side
+  NCCLCHECKGOTO(ncclIbSenderQpsCreate(comm, &meta), ret, fail);
 
   for (int i = 0; i < comm->base.vProps.ndevs; i++) {
     ncclIbSendCommDev* commDev = comm->devs + i;
