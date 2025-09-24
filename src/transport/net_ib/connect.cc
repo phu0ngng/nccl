@@ -494,30 +494,34 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
   return ncclSuccess;
 }
 
+// The function modifies the QPs on the sender side to RTR and RTS states. It
+// uses the remote metadata (remMeta) provided to the function to get the remote
+// QPs' information. The remote metadata is expected to be obtained from the
+// remote side (receiver) as part of the connection establishment process.
+// Note that if ECE is supported, the function sets up the reduced ECE (which
+// was delivered from the receiver side) on the QPs before modifying the QPs
+// to RTR.
 static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, int dev, struct ncclIbConnectionMetadata* remMeta) {
-  for (int q = 0; q < comm->base.nqps; q++) {
-    struct ncclIbQpInfo* remQpInfo   = remMeta->qpInfo + q;
-    struct ncclIbDevInfo* remDevInfo = remMeta->devs + remQpInfo->devIndex;
+  uint nqps = comm->base.nqps;
+  for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
+    ncclIbQp* localQp = &comm->base.qps[qpIndex];
+    ncclIbSendCommDev* commDev = &comm->devs[localQp->devIndex];
+    ncclIbDev* ibDev = &ncclIbDevs[commDev->base.ibDevN];
+    ncclIbQpInfo* remQpInfo   = &remMeta->qpInfo[qpIndex];
+    ncclIbDevInfo* remDevInfo = &remMeta->devs[remQpInfo->devIndex];
 
-    // Assign per-QP remDev
-    comm->base.qps[q].remDevIdx = remQpInfo->devIndex;
-    int devIndex = comm->base.qps[q].devIndex;
-    ncclIbSendCommDev* commDev = comm->devs + devIndex;
+    localQp->remDevIdx = remQpInfo->devIndex;
 
-    struct ibv_qp* qp = comm->base.qps[q].qp;
     if (remQpInfo->ece_supported) {
-      struct ncclIbQp* nqp = comm->base.qps + q;
-      int ibDevN = comm->devs[nqp->devIndex].base.ibDevN;
-      struct ncclIbDev* ibDev = ncclIbDevs + ibDevN;
+      // Set the reduced ECE received from the receiver side
       INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
-        ibDevN, ibDev->portNum, qp->qp_num, remMeta->qpInfo[q].ece_supported, remMeta->qpInfo[q].ece.vendor_id, remMeta->qpInfo[q].ece.options, remMeta->qpInfo[q].ece.comp_mask);
-      NCCLCHECK(wrap_ibv_set_ece(qp, &remQpInfo->ece, &remQpInfo->ece_supported));
+        commDev->base.ibDevN, ibDev->portNum, localQp->qp->qp_num, remQpInfo->ece_supported, remQpInfo->ece.vendor_id, remQpInfo->ece.options, remQpInfo->ece.comp_mask);
+      NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &remQpInfo->ece_supported));
     }
 
-    ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
-    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
-    NCCLCHECK(ncclIbRtrQp(qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta->tc, remMeta->sl));
-    NCCLCHECK(ncclIbRtsQp(qp));
+    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu); // TODO: This is bad practice!
+    NCCLCHECK(ncclIbRtrQp(localQp->qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta->tc, remMeta->sl));
+    NCCLCHECK(ncclIbRtsQp(localQp->qp));
   }
   return ncclSuccess;
 }
