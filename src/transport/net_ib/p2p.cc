@@ -70,8 +70,6 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   } else {
     int* sizes = comm->remSizesFifo.elems[slot];
     for (int r=0; r<nreqs; r++) sizes[r] = reqs[r]->send.size;
-    comm->remSizesFifo.sge.addr = (uint64_t)sizes;
-    comm->remSizesFifo.sge.length = nreqs*sizeof(int);
   }
 
   struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
@@ -85,7 +83,6 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       // Write remote sizes Fifo
       lastWr->wr.rdma.remote_addr = comm->remSizesFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(int);
       lastWr->num_sge = 1;
-      lastWr->sg_list = &comm->remSizesFifo.sge;
     }
   }
   lastWr->wr_id = wr_id;
@@ -123,8 +120,13 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     }
 
     if (nreqs > 1) {
-      // Also make sure lastWr writes remote sizes using the right lkey
-      comm->remSizesFifo.sge.lkey = comm->remSizesFifo.mrs[devIndex]->lkey;
+      // Populating the correct gather information based on the device and
+      // slot used.
+      // Note that the lkey is already correct from the initialization phase.
+      lastWr->sg_list = &comm->remSizesFifo.sges[devIndex];
+      lastWr->sg_list[0].addr = (uint64_t)(comm->remSizesFifo.elems[slot]);
+      lastWr->sg_list[0].length = nreqs*sizeof(int);
+      // Populate the correct RKey based on the device used
       lastWr->wr.rdma.rkey = comm->remSizesFifo.rkeys[devIndex];
     }
 
@@ -290,10 +292,11 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   // Lookup the correct fifoRkey
   wr.wr.rdma.rkey = comm->base.remDevs[ctsQp->remDevIdx].fifoRkey;
 
-  // Set the correct sge properties
-  comm->devs[ctsQp->devIndex].fifoSge.addr   = (uint64_t)localElem;
-  comm->devs[ctsQp->devIndex].fifoSge.length = n*sizeof(struct ncclIbSendFifo);
-  wr.sg_list = &comm->devs[ctsQp->devIndex].fifoSge;
+  // Populating the correct gather information based on the device and user
+  // provided information
+  wr.sg_list = &comm->remFifo.sges[ctsQp->devIndex];
+  wr.sg_list[0].addr = (uint64_t)localElem;
+  wr.sg_list[0].length = n*sizeof(struct ncclIbSendFifo);
   wr.num_sge = 1;
 
   wr.opcode = IBV_WR_RDMA_WRITE;

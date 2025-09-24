@@ -648,14 +648,16 @@ ib_connect:
     comm->base.remDevs[i] = remMeta.devs[i];
     comm->base.remDevs[i].remoteGid.global.interface_id = comm->base.remDevs[i].gid.global.interface_id;
     comm->base.remDevs[i].remoteGid.global.subnet_prefix = comm->base.remDevs[i].gid.global.subnet_prefix;
-
-    // Retain remote sizes fifo info and prepare RDMA ops
-    comm->remSizesFifo.rkeys[i] = remMeta.devs[i].fifoRkey;
-    comm->remSizesFifo.addr = remMeta.fifoAddr;
   }
 
+  comm->remSizesFifo.addr = remMeta.fifoAddr;
+  for (int i = 0; i < remMeta.ndevs; i++) {
+    // Retain remote sizes fifo info and prepare RDMA ops
+    comm->remSizesFifo.rkeys[i] = remMeta.devs[i].fifoRkey;
+  }
   for (int i=0; i < comm->base.vProps.ndevs; i++) {
     NCCLCHECKGOTO(wrap_ibv_reg_mr(comm->remSizesFifo.mrs+i, comm->devs[i].base.pd, &comm->remSizesFifo.elems, sizeof(int)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    comm->remSizesFifo.sges[i].lkey = comm->remSizesFifo.mrs[i]->lkey;
   }
   comm->base.nRemDevs = remMeta.ndevs;
 
@@ -921,15 +923,21 @@ ib_recv:
   rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
                             && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
 
+  // Retain remote fifo info and prepare my RDMA ops
+  rComm->remFifo.addr = remMeta.fifoAddr;
+  for (int i = 0; i < remMeta.ndevs; i++) {
+    rComm->remFifo.rkeys[i] = remMeta.devs[i].fifoRkey;
+  }
+  for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
+    rCommDev = rComm->devs + i;
+    NCCLCHECKGOTO(wrap_ibv_reg_mr(rComm->remFifo.mrs+i, rCommDev->base.pd, &rComm->remFifo.elems, sizeof(struct ncclIbSendFifo)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    rComm->remFifo.sges[i].lkey = rComm->remFifo.mrs[i]->lkey;
+  }
+  if (ncclParamIbUseInline()) rComm->remFifo.flags = IBV_SEND_INLINE;
+
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
     ibDev = ncclIbDevs + rCommDev->base.ibDevN;
-
-    // Retain remote fifo info and prepare my RDMA ops
-    rComm->remFifo.addr = remMeta.fifoAddr;
-    NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->fifoMr, rCommDev->base.pd, &rComm->remFifo.elems, sizeof(struct ncclIbSendFifo)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    rCommDev->fifoSge.lkey = rCommDev->fifoMr->lkey;
-    if (ncclParamIbUseInline()) rComm->remFifo.flags = IBV_SEND_INLINE;
 
     // Allocate Flush dummy buffer for GPU Direct RDMA
     if (rComm->flushEnabled) {
