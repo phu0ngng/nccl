@@ -564,6 +564,55 @@ static ncclResult_t ncclIbLogCompletionWithError(struct ncclIbNetCommBase* commB
   return ncclSuccess;
 }
 
+static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbRequest* r, struct ibv_wc* wc, int devIndex) {
+  union ncclSocketAddress addr;
+  ncclSocketGetAddr(r->sock, &addr);
+
+  struct ncclIbRequest* req = NULL;
+  NCCLCHECK(ncclIbRequestRetrieveAsIndex(r->base->reqs, wc->wr_id & 0xff, &req));
+
+  #ifdef ENABLE_TRACE
+  char line[SOCKET_NAME_MAXLEN+1];
+  TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, devIndex=%d",
+    ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], devIndex);
+  #endif
+  if (req && req->type == NCCL_NET_IB_REQ_SEND) {
+    for (int j = 0; j < req->nreqs; j++) {
+      struct ncclIbRequest* sendReq = NULL;
+      NCCLCHECK(ncclIbRequestRetrieveAsIndex(r->base->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
+      if ((sendReq->events[devIndex] <= 0)) {
+        WARN("NET/IB: sendReq(%p)->events={%d,%d,%d,%d}, i=%d, j=%d <= 0", sendReq, sendReq->events[0], sendReq->events[1], sendReq->events[2], sendReq->events[3], devIndex, j);
+        return ncclInternalError;
+      }
+      sendReq->events[devIndex]--;
+#ifdef NCCL_ENABLE_NET_PROFILING
+      // Stop Qp event for sendReq
+      int qpIndex = getReqQpIndex(sendReq, j, wc->qp_num);
+      NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
+#endif
+    }
+  } else {
+    if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+      if (req->type != NCCL_NET_IB_REQ_RECV) {
+        WARN("NET/IB: wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM and req->type=%d", req->type);
+        return ncclInternalError;
+      }
+      if (req->nreqs == 1) {
+        req->recv.sizes[0] = wc->imm_data;
+      }
+    }
+    req->events[devIndex]--;
+#ifdef NCCL_ENABLE_NET_PROFILING
+    // Stop Qp event for workFifo
+    for (int j = 0; j < req->nreqs; j++) {
+      int qpIndex = getReqQpIndex(req, j, wc->qp_num);
+      NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
+    }
+#endif
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
@@ -592,52 +641,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             ncclIbLogCompletionWithError(r->base, wc, i);
             return ncclRemoteError;
           }
-
-          union ncclSocketAddress addr;
-          ncclSocketGetAddr(r->sock, &addr);
-
-          struct ncclIbRequest* req = NULL;
-          NCCLCHECK(ncclIbRequestRetrieveAsIndex(r->base->reqs, wc->wr_id & 0xff, &req));
-
-          #ifdef ENABLE_TRACE
-          char line[SOCKET_NAME_MAXLEN+1];
-          TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, i=%d",
-            ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], i);
-          #endif
-          if (req && req->type == NCCL_NET_IB_REQ_SEND) {
-            for (int j = 0; j < req->nreqs; j++) {
-              struct ncclIbRequest* sendReq = NULL;
-              NCCLCHECK(ncclIbRequestRetrieveAsIndex(r->base->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
-              if ((sendReq->events[i] <= 0)) {
-                WARN("NET/IB: sendReq(%p)->events={%d,%d,%d,%d}, i=%d, j=%d <= 0", sendReq, sendReq->events[0], sendReq->events[1], sendReq->events[2], sendReq->events[3], i, j);
-                return ncclInternalError;
-              }
-              sendReq->events[i]--;
-#ifdef NCCL_ENABLE_NET_PROFILING
-              // Stop Qp event for sendReq
-              int qpIndex = getReqQpIndex(sendReq, j, wc->qp_num);
-              NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
-#endif
-            }
-          } else {
-            if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
-              if (req->type != NCCL_NET_IB_REQ_RECV) {
-                WARN("NET/IB: wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM and req->type=%d", req->type);
-                return ncclInternalError;
-              }
-              if (req->nreqs == 1) {
-                req->recv.sizes[0] = wc->imm_data;
-              }
-            }
-            req->events[i]--;
-#ifdef NCCL_ENABLE_NET_PROFILING
-            // Stop Qp event for workFifo
-            for (int j = 0; j < req->nreqs; j++) {
-              int qpIndex = getReqQpIndex(req, j, wc->qp_num);
-              NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
-            }
-#endif
-          }
+          NCCLCHECK(ncclIbCompletionEventProcess(r, wc, i));
         }
         // Once the IB fatal event is reported in the async thread, we want to propagate this error
         // to communicator and prevent further polling to reduce error pollution.
