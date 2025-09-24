@@ -794,51 +794,54 @@ ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePro
   return ncclSuccess;
 }
 
-// Setup QPs on the receiver side using information from the sender side
-// (remMeta) and populating the local information (meta) to be sent back to the
-// sender side. 
+// The function creates and modifies QPs to RTS state on the receiver side 
+// using remote information from the sender side (remMeta). It also populates
+// the remote metadata structure, provided to the function (remMeta), with the
+// QPs' information so that data structure could be delivered to the remote
+// side (sender) as part of the connection establishment process.
 static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct ncclIbConnectionMetadata* remMeta, struct ncclIbConnectionMetadata* meta) {
-  // Stripe QP creation across merged devs
-  // Make sure to get correct remote peer dev and QP info
-  struct ncclIbDevInfo* remDevInfo;
-  struct ncclIbQp* qp;
-  int remDevIndex;
-  int devIndex;
-  devIndex = 0;
-  for (int q = 0; q < rComm->base.nqps; q++) {
-    remDevIndex = remMeta->qpInfo[q].devIndex;
-    remDevInfo = remMeta->devs + remDevIndex;
-    qp = rComm->base.qps+q;
-    ncclIbRecvCommDev* rCommDev = rComm->devs + devIndex;
-    qp->remDevIdx = remDevIndex;
+  uint nqps = rComm->base.nqps;
+  for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
+    // The QPs are created in a "striped" manner across the available devices.
+    // For example, if there are 2 devices and 4 QPs, the QPs will be created
+    // on the devices as follows:
+    // Dev0 -> QP0, QP2
+    // Dev1 -> QP1, QP3
+    uint devIndex = qpIndex % rComm->base.vProps.ndevs;
+    ncclIbRecvCommDev* rCommDev = &rComm->devs[devIndex];
+    ncclIbDev* ibDev = &ncclIbDevs[rCommDev->base.ibDevN];
+    ncclIbQpInfo* remQpInfo = &remMeta->qpInfo[qpIndex];
+    ncclIbQpInfo* localQpInfo = &meta->qpInfo[qpIndex];
+    int remDevIndex = remQpInfo->devIndex;
+    ncclIbDevInfo* remDevInfo = &remMeta->devs[remDevIndex];
+    ncclIbQp* localQp = &rComm->base.qps[qpIndex];
 
-    // Local ibDevN
-    int ibDevN = rComm->devs[devIndex].base.ibDevN;
-    ncclIbDev* ibDev = ncclIbDevs + ibDevN;
-    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC, &rComm->base.stats, qp));
-    qp->devIndex = devIndex;
-    devIndex = (devIndex + 1) % rComm->base.vProps.ndevs;
+    localQp->remDevIdx = remDevIndex;
+    localQp->devIndex = devIndex;
 
-    meta->qpInfo[q].qpn      = rComm->base.qps[q].qp->qp_num;
-    meta->qpInfo[q].devIndex = rComm->base.qps[q].devIndex;
+    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC, &rComm->base.stats, localQp));
+    
+    localQpInfo->qpn      = localQp->qp->qp_num;
+    localQpInfo->devIndex = localQp->devIndex;
 
-    // Set the ece (enhanced connection establishment) on this QP before RTR
-    if (remMeta->qpInfo[q].ece_supported) {
-      // Coverity suspects a copy-paste error below due to the use of remMeta in one argument and meta in another.
-      // However, this has been confirmed to be intentional.
+    // Set ECE (enhanced connection establishment) on before RTR
+    if (remQpInfo->ece_supported) {
       // coverity[copy_paste_error]
-      NCCLCHECK(wrap_ibv_set_ece(qp->qp, &remMeta->qpInfo[q].ece, &meta->qpInfo[q].ece_supported));
+      NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &localQpInfo->ece_supported));
     } else {
-      meta->qpInfo[q].ece_supported = 0;
+      localQpInfo->ece_supported = 0;
     }
 
-    NCCLCHECK(ncclIbRtrQp(qp->qp, &rCommDev->base.gidInfo, remMeta->qpInfo[q].qpn, remDevInfo, true, remMeta->tc, remMeta->sl));
-    NCCLCHECK(ncclIbRtsQp(qp->qp));
+    // Reduce the local MTU to match the remote MTU if needed
+    ibDev->portAttr.active_mtu = std::min(ibDev->portAttr.active_mtu, remDevInfo->mtu);
 
-    // Query the reduced ece for this QP (matching enhancements between the requestor and the responder)
-    // Store this in our own qpInfo for returning to the requestor
-    if (remMeta->qpInfo[q].ece_supported && meta->qpInfo[q].ece_supported) {
-      NCCLCHECK(wrap_ibv_query_ece(qp->qp, &meta->qpInfo[q].ece, &meta->qpInfo[q].ece_supported));
+    NCCLCHECK(ncclIbRtrQp(localQp->qp, &rCommDev->base.gidInfo, remQpInfo->qpn, remDevInfo, true, remMeta->tc, remMeta->sl));
+    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+
+    // Query the reduced ECE by the device and storing it in the local QP info
+    // to return it to the requestor (sender).
+    if (remQpInfo->ece_supported && localQpInfo->ece_supported) {
+      NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
     }
   }
   return ncclSuccess;
