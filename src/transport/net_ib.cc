@@ -2867,7 +2867,7 @@ ncclResult_t ncclGinIbCloseColl(void* collComm) {
   return ncclSuccess;
 }
 
-#include "gin/gin_host_gdaki.h"
+#include "gdaki/gin_host_gdaki.h"
 
 static int ncclGinIbGdakiNDevs = 0;
 int ncclGinIbGdakiDevIndexes[MAX_IB_DEVS];

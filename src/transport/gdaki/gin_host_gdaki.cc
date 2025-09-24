@@ -15,7 +15,7 @@
 #include "ibvwrap.h"
 #include "mlx5/mlx5dvwrap.h"
 #include "gin/gin_host.h"
-#include "gin/gin_host_gdaki.h"
+#include "gin_host_gdaki.h"
 #include "plugin/nccl_net.h"
 #include "param.h"
 
