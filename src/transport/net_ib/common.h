@@ -117,6 +117,12 @@ struct ncclIbDevInfo {
 
   // The key used for remote access to the addr exchanged by the peers
   // in ncclIbConnectionMetadata::addr
+  // This member is populated differently on the sender and on the receiver
+  // side.
+  // The sender side populates this member with the RKey obtained after it
+  // registered the CTS FIFO (on the specific device).
+  // The receiver side populates this member with the RKey obtained after it
+  // registered the completion records structure (on the specific device).
   uint32_t rkey;
 
   //remote dev info
@@ -202,9 +208,18 @@ struct ncclIbQp {
 #define NET_IB_MAX_REQUESTS (NCCL_NET_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS)
 static_assert(NET_IB_MAX_REQUESTS <= 256, "request id are encoded in wr_id and we need up to 8 requests ids per completion");
 
+// Structure to describe the completion records on the sender side.
 struct ncclIbRemCompletionsRecords {
+  // A "shadow" structure of the receiver's completion records in which the
+  // sender tracks the completion records locally on its side. Sender uses this
+  // memory to place the records it writes/reads to/from the receiver's
+  // completion records.
   int elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  // Address in memory of the completion records structure on the receiver side.
   uint64_t addr;
+  // Array of RKeys (one RKey per device) from which the sender chooses the
+  // RKey (depending on the device being used) when it accesses the receiver's
+  // completion records structure.
   uint32_t rkeys[NCCL_IB_MAX_DEVS_PER_NIC];
 };
 
@@ -247,12 +262,20 @@ struct alignas(32) ncclIbNetCommBase {
 struct ncclIbSendComm {
   struct ncclIbNetCommBase base;
   // Start with CTS FIFO and ibv structs as they have alignment restrictions
+
+  // CTS FIFO from which the sender reads the Clear-to-Send (CTS) messages that
+  // are written by the receiver (The receiver side writes into it upon
+  // issuing a (multi-)receive request). Each row in the 2D array corresponds
+  // to a single CTS message but can describe multiple recv-requests issued
+  // on the receiver side.
   struct ncclIbSendFifo ctsFifo[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ibv_sge sges[NCCL_NET_IB_MAX_RECVS];
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS + 1];
   // Each dev correlates to a mergedIbDev
   struct ncclIbSendCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
   struct ncclIbRequest* fifoReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  // Structure to hold all the related structures regarding the completions
+  // records structure.
   struct ncclIbRemCompletionsRecords remCmplsRecords;
   int ar; // Use adaptive routing when all merged devices have it enabled
   uint64_t putSignalScratchpad;
@@ -272,9 +295,18 @@ struct ncclIbGpuFlush {
   struct ncclIbQp qp;
 };
 
+// This structure describes the FIFO which the receiver uses when it sends CTS
+// messages to the sender.
 struct ncclIbRemCtsFifo {
+  // A "shadow" structure of the sender's CTS FIFO in which the receiver tracks
+  // the CTS FIFO locally on its side. Receiver uses this memory to place the
+  // CTS messages and populates the RDMA message "gather address" with the
+  // memory of the CTS message that is sent.
   struct ncclIbSendFifo elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   uint64_t addr;
+  // Array of RKeys (one RKey per device) from which the receiver chooses the
+  // RKey (depending on the device being used) when it posts a CTS to the
+  // sender
   uint32_t rkeys[NCCL_IB_MAX_DEVS_PER_NIC];
   uint32_t flags;
 };
@@ -282,15 +314,30 @@ struct ncclIbRemCtsFifo {
 struct alignas(16) ncclIbRecvCommDev {
   struct ncclIbNetCommDevBase base;
   struct ncclIbGpuFlush gpuFlush;
+  // MR that is obtained after registering the "shadow" CTS FIFO on the
+  // receiver's side. The LKey of this MR allows RDMA operations on the receiver
+  // side to gather CTS messages (formatted by the receiver) and write them to
+  // the sender's CTS FIFO.
   struct ibv_mr* ctsFifoMr;
+  // MR that is obtained after registering the completion records on the
+  // receiver side. The RKey of this MR is provided to the sender side, to allow
+  // the sender side to access receiver's completion records using RDMA
+  // operations.
   struct ibv_mr* cmplsRecordsMr;
+  // SGE to avoid allocation of SGE structures on the stack when receiver
+  // posts RDMA operations. The SGE is populated by the address of the memory
+  // in which the CTS message formatted on the receiver is placed.
   struct ibv_sge sge;
 };
 
 struct ncclIbRecvComm {
   struct ncclIbNetCommBase base;
   struct ncclIbRecvCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
+  // Structure to hold all the related structures regarding the CTS FIFO
+  // structure.
   struct ncclIbRemCtsFifo remCtsFifo;
+  // Structure to hold all the completion records of all the outstanding
+  // receive requests on the receiver side.
   int cmplsRecords[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   int gpuFlushHostMem;
   int flushEnabled;

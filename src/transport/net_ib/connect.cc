@@ -28,13 +28,23 @@ struct ncclIbQpInfo {
   int devIndex;
 };
 
-// Struct containing everything needed to establish connections
+// Structure used to hold information needed to establish the communication
+// between the sender and receiver.
+// The structure is populated during the connection establishment phase and
+// populated by each side of the connection before being sent to the remote
+// peer. The remote peer uses the information passed to it from its peer to
+// create and initialize its local resources.
 struct ncclIbConnectionMetadata {
   struct ncclIbQpInfo qpInfo[NCCL_IB_MAX_QPS];
   struct ncclIbDevInfo devs[NCCL_IB_MAX_DEVS_PER_NIC];
   char devName[MAX_MERGED_DEV_NAME];
   // An address for a registered memory to be accessed by the peer. The address
   // can be accessed using RDMA using the key specified in ncclIbDevInfo::rkey.
+  // The sender side gets in this member, from the receiver, the address of the
+  // memory to which the sender writes the sizes of the data transfers that
+  // the sender sends.
+  // The receiver side gets in this member, from the sender, the address of the
+  // memory to which the receiver writes the CTS messages.
   uint64_t addr;
   int ndevs;
   int tc;
