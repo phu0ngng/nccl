@@ -115,8 +115,9 @@ struct ncclIbDevInfo {
   // For RoCE and IB Rounter
   union ibv_gid gid;
 
-  // FIFO RDMA info
-  uint32_t fifoRkey;
+  // The key used for remote access to the addr exchanged by the peers
+  // in ncclIbConnectionMetadata::addr
+  uint32_t rkey;
 
   //remote dev info
   union ibv_gid remoteGid;

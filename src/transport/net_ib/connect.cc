@@ -33,7 +33,9 @@ struct ncclIbConnectionMetadata {
   struct ncclIbQpInfo qpInfo[NCCL_IB_MAX_QPS];
   struct ncclIbDevInfo devs[NCCL_IB_MAX_DEVS_PER_NIC];
   char devName[MAX_MERGED_DEV_NAME];
-  uint64_t fifoAddr;
+  // An address for a registered memory to be accessed by the peer. The address
+  // can be accessed using RDMA using the key specified in ncclIbDevInfo::rkey.
+  uint64_t addr;
   int ndevs;
   int tc;
   int sl;
@@ -560,7 +562,7 @@ ib_recv_dev_list:
 
     // Prepare my fifo
     NCCLCHECKGOTO(wrap_ibv_reg_mr(&commDev->fifoMr, commDev->base.pd, comm->fifo, sizeof(struct ncclIbSendFifo)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    devInfo->fifoRkey = commDev->fifoMr->rkey;
+    devInfo->rkey = commDev->fifoMr->rkey;
 
     // Pack local GID info
     devInfo->link_layer = commDev->base.gidInfo.link_layer = ibDev->portAttr.link_layer;
@@ -602,7 +604,7 @@ ib_recv_dev_list:
     }
   }
   config = (ncclNetCommConfig_t*)ctx;
-  meta.fifoAddr = (uint64_t)comm->fifo;
+  meta.addr = (uint64_t)comm->fifo;
   meta.sl = (ncclParamIbSl() != -1) ? ncclParamIbSl() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_SL_DEFAULT;
   meta.tc = (ncclParamIbTc() != -1) ? ncclParamIbTc() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_TC_DEFAULT;
   strncpy(meta.devName, mergedDev->devName, MAX_MERGED_DEV_NAME);
@@ -650,10 +652,10 @@ ib_connect:
     comm->base.remDevs[i].remoteGid.global.subnet_prefix = comm->base.remDevs[i].gid.global.subnet_prefix;
   }
 
-  comm->remSizesFifo.addr = remMeta.fifoAddr;
+  comm->remSizesFifo.addr = remMeta.addr;
   for (int i = 0; i < remMeta.ndevs; i++) {
     // Retain remote sizes fifo info and prepare RDMA ops
-    comm->remSizesFifo.rkeys[i] = remMeta.devs[i].fifoRkey;
+    comm->remSizesFifo.rkeys[i] = remMeta.devs[i].rkey;
   }
   for (int i=0; i < comm->base.vProps.ndevs; i++) {
     ncclIbSendCommDev* commDev = comm->devs + i;
@@ -925,9 +927,9 @@ ib_recv:
                             && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
 
   // Retain remote fifo info and prepare my RDMA ops
-  rComm->remFifo.addr = remMeta.fifoAddr;
+  rComm->remFifo.addr = remMeta.addr;
   for (int i = 0; i < remMeta.ndevs; i++) {
-    rComm->remFifo.rkeys[i] = remMeta.devs[i].fifoRkey;
+    rComm->remFifo.rkeys[i] = remMeta.devs[i].rkey;
   }
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
@@ -937,7 +939,7 @@ ib_recv:
 
     // Prepare sizes fifo
     NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->sizesFifoMr, rCommDev->base.pd, rComm->sizesFifo, sizeof(int)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    meta.devs[i].fifoRkey = rCommDev->sizesFifoMr->rkey;
+    meta.devs[i].rkey = rCommDev->sizesFifoMr->rkey;
 
   }
   if (ncclParamIbUseInline()) rComm->remFifo.flags = IBV_SEND_INLINE;
@@ -972,7 +974,7 @@ ib_recv:
     meta.devs[i].gid.global.interface_id        = rCommDev->base.gidInfo.localGid.global.interface_id;
     meta.devs[i].mtu                            = ibDev->portAttr.active_mtu;
   }
-  meta.fifoAddr = (uint64_t)rComm->sizesFifo;
+  meta.addr = (uint64_t)rComm->sizesFifo;
   meta.sl = remMeta.sl;
   meta.tc = remMeta.tc;
 

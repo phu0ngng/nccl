@@ -289,8 +289,8 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   }
   wr.wr.rdma.remote_addr = comm->remFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo);
 
-  // Lookup the correct fifoRkey
-  wr.wr.rdma.rkey = comm->base.remDevs[ctsQp->remDevIdx].fifoRkey;
+  // Lookup the correct rkey
+  wr.wr.rdma.rkey = comm->base.remDevs[ctsQp->remDevIdx].rkey;
 
   // Populating the correct gather information based on the device and user
   // provided information
