@@ -36,6 +36,7 @@ target_cluster_arg="$build_cluster_tag"
 make_clean=0
 baremetal_build=0
 ci_build=0
+use_build_cluster_image=0
 
 for arg in "$@"
 do
@@ -46,6 +47,8 @@ do
                            ;;
         --ci-build) ci_build=1
                  ;;
+        --use-build-cluster-image) use_build_cluster_image=1
+                                   ;;
         --help|-h) usage
                    ;;
         *) target_cluster_arg="$arg"
@@ -69,8 +72,11 @@ for target_cluster_tag in $target_cluster_tags; do
         gpu_arch_list="$(get_gpu_archs),$gpu_arch_list"
     fi
 
-    # For container builds, make sure all build image versions are the same
-    if [ "$baremetal_build" -eq 0 ]; then
+    # If --use-build-cluster-image is not set, then the build image is pulled from the target cluster(s)
+    # If there are multiple targets, the versions must be the exact same to ensure the artifacts are produced correctly for all
+    # If --use-build-cluster-image is set, then the build image is pulled from the build cluster, and the target cluster build images are ignored 
+    # This should be used cautiously as it may result in artifacts being incompatible with the target clusters, but is useful if the build cluster has a newer image than the target clusters
+    if [ "$baremetal_build" -eq 0 ] && [ "$use_build_cluster_image" -eq 0 ]; then
         if [ -z "$build_image_version" ]; then
             build_image_version="$(get_build_image_version)"
         else
@@ -87,6 +93,10 @@ export NVCC_GENCODE="$(get_nvcc_gencodes $gpu_arch_list)"
 # reload the config with build cluster data
 if [[ "$target_cluster_arg" != "$build_cluster_tag" ]]; then
     source_cluster_config $build_cluster_tag
+fi
+
+if [ "$use_build_cluster_image" -eq 1 ]; then
+    build_image_version="$(get_build_image_version)"
 fi
 
 if [[ $make_clean == 1 && -d "build" ]]; then
@@ -114,7 +124,7 @@ if [ "$baremetal_build" -eq 0 ]; then
     # Disable GPU detection to allow enroot to launch this on CPU-only nodes
     # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html#gpu-enumeration
     export NVIDIA_VISIBLE_DEVICES=void
-
+    
     eval "$(get_build_command $current_dir $build_image_version)"
 else
     eval "$(get_build_command_bm)"
