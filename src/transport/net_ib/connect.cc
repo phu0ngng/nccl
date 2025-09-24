@@ -455,23 +455,41 @@ fail:
 #define NCCL_IB_SL_DEFAULT 0
 #define NCCL_IB_TC_DEFAULT 0
 
+// The function creates and initializes QPs (modifies the QPs to INIT) on the
+// sender side. Afterwards it populates the metadata structure, provided to the
+// function (meta), with the QPs' information. Note that after the QPs'
+// creation, the QPs are also queried for ECE support and the metadata structure
+// is updated accordingly. The meta data structure is then expected to be
+// delivered to the remote side (receiver) as part of the connection
+// establishment process.
 static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbConnectionMetadata* meta) {
-  int devIndex = 0;
-  for (int q = 0; q < comm->base.nqps; q++) {
-    ncclIbSendCommDev* commDev = comm->devs + devIndex;
-    ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
-    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &commDev->base, IBV_ACCESS_REMOTE_WRITE, &comm->base.stats, comm->base.qps + q));
-    comm->base.qps[q].devIndex = devIndex;
-    meta->qpInfo[q].qpn      = comm->base.qps[q].qp->qp_num;
-    meta->qpInfo[q].devIndex = comm->base.qps[q].devIndex;
+  uint nqps = comm->base.nqps;
+  for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
+    // The QPs are created in a "striped" manner across the available devices.
+    // For example, if there are 2 devices and 4 QPs, the QPs will be created
+    // on the devices as follows:
+    // Dev0 -> QP0, QP2
+    // Dev1 -> QP1, QP3
+    uint devIndex = qpIndex % comm->base.vProps.ndevs;
+    ncclIbSendCommDev* commDev = &comm->devs[devIndex];
+    ncclIbDev* ibDev = &ncclIbDevs[commDev->base.ibDevN];
+    ncclIbQp* localQp = &comm->base.qps[qpIndex];
+    ncclIbQpInfo* localQpInfo = &meta->qpInfo[qpIndex];
+    int qpAccessFlags = IBV_ACCESS_REMOTE_WRITE;
+
+    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &commDev->base, qpAccessFlags, &comm->base.stats, localQp));
+    localQp->devIndex = devIndex;
+
+    // Populate the metadata that will be delivered to the remote peer
+    localQpInfo->qpn      = localQp->qp->qp_num;
+    localQpInfo->devIndex = localQp->devIndex;
 
     if (ncclParamIbEceEnable()) {
-      // Query ece capabilities (enhanced connection establishment)
-      NCCLCHECK(wrap_ibv_query_ece(comm->base.qps[q].qp, &meta->qpInfo[q].ece, &meta->qpInfo[q].ece_supported));
+      // Query ECE (Enhanced Connection Establishment) capabilities
+      NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
     } else {
-      meta->qpInfo[q].ece_supported = 0;
+      localQpInfo->ece_supported = 0;
     }
-    devIndex = (devIndex + 1) % comm->base.vProps.ndevs;
   }
   return ncclSuccess;
 }
