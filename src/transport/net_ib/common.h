@@ -259,6 +259,8 @@ struct alignas(32) ncclIbNetCommBase {
   struct ncclIbStats stats;
 };
 
+struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, int devIndex);
+
 struct ncclIbSendComm {
   struct ncclIbNetCommBase base;
   // Start with CTS FIFO and ibv structs as they have alignment restrictions

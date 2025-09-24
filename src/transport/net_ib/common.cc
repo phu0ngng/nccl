@@ -27,6 +27,16 @@ ncclResult_t ncclIbStatsCheckFatalCount(struct ncclIbStats* stat, const char* fu
   return ncclSuccess;
 }
 
+struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, int devIndex) {
+  if (base->isSend) {
+    struct ncclIbSendComm* sComm = (struct ncclIbSendComm*) base;
+    return &sComm->devs[devIndex].base;
+  } else {
+    struct ncclIbRecvComm* rComm = (struct ncclIbRecvComm*) base;
+    return &rComm->devs[devIndex].base;
+  }
+}
+
 std::thread ncclIbAsyncThread;
 void* ncclIbAsyncThreadMain(void* args) {
   struct ncclIbDev* dev = (struct ncclIbDev*)args;
