@@ -201,6 +201,8 @@ typedef struct {
   // Create a group for GIN operations. handles have been created
   // using listen() above. rank indicates caller's rank in the collective network.
   ncclResult_t (*connect)(void* ctx, void* handles[], int nranks, int rank, void* listenComm, void** collComm);
+  // Create device-side GIN context. devHandle will be passed to device code.
+  // This function is not used in GIN_PROXY mode.
   ncclResult_t (*createContext)(void* collComm, int nSignals, int nCounters, void** ginCtx, ncclNetDeviceHandle_v11_t** devHandle);
   // Collective memory registration
   ncclResult_t (*regMrSym)(void* collComm, void* data, size_t size, int type, uint64_t mrFlags, void** mhandle, void **ginHandle);
@@ -222,10 +224,10 @@ typedef struct {
   // Test whether a request is complete.
   ncclResult_t (*test)(void* collComm, void* request, int* done);
 
-  // Progress for proxy operation
-  ncclResult_t (*ginProgress)(void* ginCtx);
+  // Progress function. Will be called if non-NULL in GIN_PROXY mode, or if devHandle.needsProxyProgress=1.
+  ncclResult_t (*ginProgress)(void* collComm);
 
-  // Query the last error for the GIN support
+  // Query the last error for the GIN support. Particularly important when ginProgress is not used, to report errors.
   ncclResult_t (*queryLastError)(void* ginCtx, bool *hasError);
 
   // Finalize the GIN support
