@@ -564,12 +564,12 @@ static ncclResult_t ncclIbLogCompletionWithError(struct ncclIbNetCommBase* commB
   return ncclSuccess;
 }
 
-static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbRequest* r, struct ibv_wc* wc, int devIndex) {
+static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase* commBase, struct ibv_wc* wc, int devIndex) {
   union ncclSocketAddress addr;
-  ncclSocketGetAddr(r->sock, &addr);
+  ncclSocketGetAddr(&commBase->sock, &addr);
 
   struct ncclIbRequest* req = NULL;
-  NCCLCHECK(ncclIbRequestRetrieveAsIndex(r->base->reqs, wc->wr_id & 0xff, &req));
+  NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, wc->wr_id & 0xff, &req));
 
   #ifdef ENABLE_TRACE
   char line[SOCKET_NAME_MAXLEN+1];
@@ -579,7 +579,7 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbRequest* r,
   if (req && req->type == NCCL_NET_IB_REQ_SEND) {
     for (int j = 0; j < req->nreqs; j++) {
       struct ncclIbRequest* sendReq = NULL;
-      NCCLCHECK(ncclIbRequestRetrieveAsIndex(r->base->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
+      NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
       if ((sendReq->events[devIndex] <= 0)) {
         WARN("NET/IB: sendReq(%p)->events={%d,%d,%d,%d}, i=%d, j=%d <= 0", sendReq, sendReq->events[0], sendReq->events[1], sendReq->events[2], sendReq->events[3], devIndex, j);
         return ncclInternalError;
@@ -641,7 +641,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
             ncclIbLogCompletionWithError(r->base, wc, i);
             return ncclRemoteError;
           }
-          NCCLCHECK(ncclIbCompletionEventProcess(r, wc, i));
+          NCCLCHECK(ncclIbCompletionEventProcess(r->base, wc, i));
         }
         // Once the IB fatal event is reported in the async thread, we want to propagate this error
         // to communicator and prevent further polling to reduce error pollution.
