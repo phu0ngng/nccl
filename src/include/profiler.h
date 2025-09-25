@@ -45,7 +45,7 @@ typedef struct ncclProfilerApiState {
   void *collApiEventHandle;
 } ncclProfilerApiState_t;
 
-extern __thread ncclProfilerApiState_t ncclProfilerApiState;
+extern thread_local ncclProfilerApiState_t ncclProfilerApiState;
 
 extern int ncclProfilerEventMask;
 

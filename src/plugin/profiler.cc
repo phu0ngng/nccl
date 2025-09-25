@@ -27,8 +27,8 @@ static int profilerPluginRefCount;
 static void* profilerPluginLib;
 static ncclProfiler_t* ncclProfiler;
 
-extern __thread int ncclGroupDepth;
-__thread ncclProfilerApiState_t ncclProfilerApiState;
+extern thread_local int ncclGroupDepth;
+thread_local ncclProfilerApiState_t ncclProfilerApiState;
 
 #define MAX_STR_LEN 256
 

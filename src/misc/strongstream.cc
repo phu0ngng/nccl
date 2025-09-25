@@ -157,7 +157,7 @@ NCCL_PARAM(GraphMixingSupport, "GRAPH_MIXING_SUPPORT", 1)
 NCCL_PARAM(LaunchRaceFatal, "LAUNCH_RACE_FATAL", 1);
 constexpr char const* launchRaceFatalMsg = "Fatal: host threads racing to launch NCCL on same device.";
 
-static __thread char threadIdMarker;
+static thread_local char threadIdMarker;
 static void* localThreadId() { return &threadIdMarker; }
 
 ncclResult_t ncclStrongStreamAcquire(

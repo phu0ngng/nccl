@@ -37,7 +37,7 @@ static std::mutex ncclDebugMutex;
 static std::chrono::steady_clock::time_point ncclEpoch;
 static bool ncclWarnSetDebugInfo = false;
 
-static __thread int tid = -1;
+static thread_local int tid = -1;
 
 typedef const char* (*ncclGetEnvFunc_t)(const char*);
 
