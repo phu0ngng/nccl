@@ -62,12 +62,14 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 #endif
   }
 
-  // Write size as immediate data. In the case of multi-send, only write
-  // 0 or 1 as size to indicate whether there was data sent or received.
-  uint32_t immData = 0;
-  if (nreqs == 1) {
-    immData = reqs[0]->send.size;
-  } else {
+  // When nreqs==1, the Immediate Data carries the size of the send request.
+  // In case of a multi-send (nreqs>1), the Immediate Data is ignored by the
+  // receiver, as the size of the send request is written by the sender side
+  // directly to the remote completion records array. Therefore, always
+  // assigning the Immediate Data with the size, does not harm, and when it's
+  // not required - it's ignored by the receiver side.
+  uint32_t immData = reqs[0]->send.size;
+  if (nreqs > 1) {
     int* sizes = comm->remCmplsRecords.elems[slot];
     for (int r=0; r<nreqs; r++) sizes[r] = reqs[r]->send.size;
   }
