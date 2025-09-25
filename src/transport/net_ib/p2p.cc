@@ -32,7 +32,8 @@ ncclResult_t ncclIbFreeRequest(struct ncclIbRequest* r) {
   return ncclSuccess;
 }
 
-void ncclIbAddEvent(struct ncclIbRequest* req, int devIndex, struct ncclIbNetCommDevBase* base) {
+void ncclIbAddEvent(struct ncclIbRequest* req, int devIndex) {
+  struct ncclIbNetCommDevBase* base = ncclIbGetNetCommDevBase(req->base, devIndex);
   req->events[devIndex]++;
   req->devBases[devIndex] = base;
 }
@@ -100,7 +101,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     int devIndex = qp->devIndex;
     for (int r=0; r<nreqs; r++) {
       // Track this event for completion
-      //ncclIbAddEvent(reqs[r], devIndex, &comm->devs[devIndex].base);
+      //ncclIbAddEvent(reqs[r], devIndex);
 
       // Select proper rkey (needed even for 0-size send)
       comm->wrs[r].wr.rdma.rkey = slots[r].rkeys[qp->remDevIdx];
@@ -225,7 +226,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     while (nEvents > 0) {
       ncclIbQp* qp = comm->base.qps + qpIndex;
       int devIndex = qp->devIndex;
-      ncclIbAddEvent(req, devIndex, &comm->devs[devIndex].base);
+      ncclIbAddEvent(req, devIndex);
       // Track the valid lkey for this RDMA_Write
       req->send.lkeys[devIndex] = mhandleWrapper->mrs[devIndex]->lkey;
       nEvents--;
@@ -328,7 +329,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   if (slot == ctsQp->devIndex) {
     wr.send_flags |= IBV_SEND_SIGNALED;
     wr.wr_id = req - comm->base.reqs;
-    ncclIbAddEvent(req, ctsQp->devIndex, &comm->devs[ctsQp->devIndex].base);
+    ncclIbAddEvent(req, ctsQp->devIndex);
   }
 
   struct ibv_send_wr* bad_wr;
@@ -375,7 +376,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
   struct ibv_recv_wr* bad_wr;
   for (int i = 0; i < nqps; i++) {
     struct ncclIbQp* qp = comm->base.qps + comm->base.qpIndex;
-    ncclIbAddEvent(req, qp->devIndex, &comm->devs[qp->devIndex].base);
+    ncclIbAddEvent(req, qp->devIndex);
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
     for (int r = 0; r < n; r++) {
@@ -438,7 +439,7 @@ ncclResult_t ncclIbIflush(void* recvComm, int n, void** data, int* sizes, void**
     NCCLCHECK(wrap_ibv_post_send(comm->devs[i].gpuFlush.qp.qp, &wr, &bad_wr));
     TIME_STOP(4);
 
-    ncclIbAddEvent(req, i, &comm->devs[i].base);
+    ncclIbAddEvent(req, i);
   }
 
   *request = req;
