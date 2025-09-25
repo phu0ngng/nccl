@@ -356,10 +356,6 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
   for (int r = 0; r < n && phandles; r++) req->pInfo[r].nEventHandles = 0;
 #endif
 
-  for (int i = 0; i < comm->base.vProps.ndevs; i++) {
-    req->devBases[i] = &comm->devs[i].base;
-  }
-
   struct ibv_recv_wr wr;
   memset(&wr, 0, sizeof(wr));
   wr.wr_id = req - comm->base.reqs;
