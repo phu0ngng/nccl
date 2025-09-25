@@ -40,10 +40,9 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
     void** kptrs = sym==0 ? ncclDevKernelList : ncclSymkKernelList;
     int* krequires = sym==0 ? ncclDevKernelRequirements : ncclSymkKernelRequirements;
     for (int k=0; k < kcount; k++) {
-      if (driverVersion < krequires[k]) {
-        INFO(NCCL_INIT, "ncclInitKernelsForDevice is skipping %s index %d which requires driver %d (have %d).",
-             sym ? "ncclSymkKernelRequirements" : "ncclDevKernelRequirements",
-             k, krequires[k], driverVersion);
+      if (kptrs[k] != nullptr && driverVersion < krequires[k]) {
+        INFO(NCCL_INIT, "Skipping %skernel %d which requires driver %d",
+             sym ? "symmetric " : "", k, krequires[k]);
         kptrs[k] = nullptr;
       }
       void* fn = kptrs[k];
@@ -2546,6 +2545,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
   } else {
     // Empty collectives can be discarded.
     if (info->count == 0) return ncclSuccess;
+
     if (info->datatype == ncclFloat8e4m3 || info->datatype == ncclFloat8e5m2) {
       if (comm->minCompCap < 90 && info->coll != ncclFuncAllGather && info->coll != ncclFuncBroadcast && info->coll != ncclFuncAlltoAll && info->coll != ncclFuncScatter && info->coll != ncclFuncGather) {
         WARN("FP8 reduction support begins with sm90 capable devices.");
