@@ -504,7 +504,7 @@ T* ncclIntruQueueMpscDequeueAll(ncclIntruQueueMpsc<T,next>* me, bool waitSome) {
     while (true) {
       x1 = __atomic_load_n(&(x->*next), __ATOMIC_RELAXED);
       if (x1 != nullptr) break;
-      if (++spins == 1024) { spins = 1024-1; sched_yield(); }
+      if (++spins == 1024) { spins = 1024-1; std::this_thread::yield(); }
     }
     x = x1;
   }
@@ -522,7 +522,7 @@ T* ncclIntruQueueMpscAbandon(ncclIntruQueueMpsc<T,next>* me) {
     while (true) {
       head = __atomic_load_n(&me->head, __ATOMIC_RELAXED);
       if (head != nullptr) break;
-      if (++spins == 1024) { spins = 1024-1; sched_yield(); }
+      if (++spins == 1024) { spins = 1024-1; std::this_thread::yield(); }
     }
     __atomic_store_n(&me->head, nullptr, __ATOMIC_RELAXED);
     uintptr_t utail = __atomic_exchange_n(&me->tail, 0x2, __ATOMIC_ACQ_REL);
@@ -534,7 +534,7 @@ T* ncclIntruQueueMpscAbandon(ncclIntruQueueMpsc<T,next>* me) {
       while (true) {
         x1 = __atomic_load_n(&(x->*next), __ATOMIC_RELAXED);
         if (x1 != nullptr) break;
-        if (++spins == 1024) { spins = 1024-1; sched_yield(); }
+        if (++spins == 1024) { spins = 1024-1; std::this_thread::yield(); }
       }
       x = x1;
     }
