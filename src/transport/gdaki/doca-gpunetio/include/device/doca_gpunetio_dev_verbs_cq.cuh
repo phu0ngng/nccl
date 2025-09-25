@@ -112,12 +112,32 @@ __device__ static __forceinline__ int doca_priv_gpu_dev_verbs_poll_one_cq_at(
     if (cons_index < cqe_ci) return 0;
     if (cons_index >= cqe_ci + cqe_num) return EBUSY;
 
-    uint8_t opown = doca_gpu_dev_verbs_load_relaxed_sys_global((uint8_t *)&cqe64->op_own);
-    uint8_t opcode = opown >> DOCA_GPUNETIO_VERBS_MLX5_CQE_OPCODE_SHIFT;
+    uint8_t opown;
+    uint8_t opcode;
+    bool observed_completion;
 
-    bool observed_completion =
+#if __CUDA_ARCH__ >= 900
+    opown = doca_gpu_dev_verbs_load_relaxed_sys_global((uint8_t *)&cqe64->op_own);
+
+    observed_completion =
         !((opown & DOCA_GPUNETIO_IB_MLX5_CQE_OWNER_MASK) ^ !!(cons_index & cqe_num));
+#else
+    uint32_t cqe_chunk;
+    uint16_t wqe_counter;
+
+    cqe_chunk = doca_gpu_dev_verbs_load_relaxed_sys_global((uint32_t *)&cqe64->wqe_counter);
+    cqe_chunk = doca_gpu_dev_verbs_bswap32(cqe_chunk);
+    wqe_counter = cqe_chunk >> 16;
+    opown = cqe_chunk & 0xff;
+
+    observed_completion =
+        !((opown & DOCA_GPUNETIO_IB_MLX5_CQE_OWNER_MASK) ^ !!(cons_index & cqe_num)) &&
+        (wqe_counter == ((uint32_t)cons_index & 0xffff));
+#endif
+
     if (!observed_completion) return EBUSY;
+
+    opcode = opown >> DOCA_GPUNETIO_VERBS_MLX5_CQE_OPCODE_SHIFT;
 
 #if DOCA_GPUNETIO_VERBS_ENABLE_DEBUG == 1
     if (opcode == DOCA_GPUNETIO_IB_MLX5_CQE_REQ_ERR) doca_gpu_dev_verbs_cq_print_cqe_err(cqe64);
@@ -169,15 +189,30 @@ __device__ static __forceinline__ int doca_priv_gpu_dev_verbs_poll_cq_at(
     uint8_t opown;
     uint8_t opcode;
     uint64_t cqe_ci;
-
+#if __CUDA_ARCH__ >= 900
     do {
         cqe_ci = doca_gpu_dev_verbs_load_relaxed<resource_sharing_mode>(&cq->cqe_ci);
-        [[unlikely]] if (cons_index < cqe_ci)
-            return 0;
+        [[unlikely]] if (cons_index < cqe_ci) return 0;
         opown = doca_gpu_dev_verbs_load_relaxed_sys_global((uint8_t *)&cqe64->op_own);
     } while ((cons_index >= cqe_ci + cqe_num) ||
              ((cqe_ci <= cons_index) &&
               ((opown & DOCA_GPUNETIO_IB_MLX5_CQE_OWNER_MASK) ^ !!(cons_index & cqe_num))));
+#else
+    uint32_t cqe_chunk;
+    uint16_t wqe_counter;
+
+    do {
+        cqe_ci = doca_gpu_dev_verbs_load_relaxed<resource_sharing_mode>(&cq->cqe_ci);
+        [[unlikely]] if (cons_index < cqe_ci) return 0;
+        cqe_chunk = doca_gpu_dev_verbs_load_relaxed_sys_global((uint32_t *)&cqe64->wqe_counter);
+        cqe_chunk = doca_gpu_dev_verbs_bswap32(cqe_chunk);
+        wqe_counter = cqe_chunk >> 16;
+        opown = cqe_chunk & 0xff;
+    } while ((cons_index >= cqe_ci + cqe_num) ||
+             ((cqe_ci <= cons_index) &&
+              (((opown & DOCA_GPUNETIO_IB_MLX5_CQE_OWNER_MASK) ^ !!(cons_index & cqe_num)) ||
+               (wqe_counter != ((uint32_t)cons_index & 0xffff)))));
+#endif
 
     opcode = opown >> DOCA_GPUNETIO_VERBS_MLX5_CQE_OPCODE_SHIFT;
 
