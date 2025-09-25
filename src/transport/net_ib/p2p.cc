@@ -227,8 +227,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
       ncclIbQp* qp = comm->base.qps + qpIndex;
       int devIndex = qp->devIndex;
       ncclIbAddEvent(req, devIndex);
-      // Track the valid lkey for this RDMA_Write
-      req->send.lkeys[devIndex] = mhandleWrapper->mrs[devIndex]->lkey;
       nEvents--;
       // Don't update comm->base.qpIndex yet, we need to run through this same set of QPs inside ncclIbMultiSend()
       qpIndex = (qpIndex+1)%comm->base.nqps;
