@@ -6,10 +6,12 @@
 
 #include <cstdarg>
 #include <cstddef>
+#include <ctime>
 
 #include "alloc.h"
 #include "checks.h"
 #include "comm.h"
+#include "compiler.h"
 #include "nccl.h"
 #include "utils.h"
 #include "ras_internal.h"
@@ -136,7 +138,6 @@ static int rasAuxCommRanksValueCompare(const void* p1, const void* p2);
 static const char* rasGpuToString(int cudaDev, int nvmlDev, char* buf, size_t size);
 static const char* rasCommRankGpuToString(const struct rasCollComms::comm::rank* rank, char* buf, size_t size);
 static const char* ncclErrorToString(ncclResult_t err);
-static const char* ncclSocketToHost(const union ncclSocketAddress* addr, char* buf, size_t size);
 static bool rasCountIsOutlier(int count, bool verbose, int totalCount = -1);
 
 // CUDA version information - shared across functions.
@@ -227,7 +228,8 @@ static ncclResult_t getNewClientEntry(struct rasClient** pClient) {
   client->sock = client->pfd = -1;
   ncclIntruQueueConstruct(&client->sendQ);
   client->timeout =  RAS_COLLECTIVE_LEG_TIMEOUT;
-  client->outputFormat = RAS_OUTPUT_TEXT;  // Initialize to default TEXT format.
+  client->outputFormat = RAS_OUTPUT_TEXT;
+  client->monitorMask = 0; // Not in monitor mode.
 
   if (rasClientsHead) {
     rasClientsTail->next = client;
@@ -405,6 +407,49 @@ void rasClientEventLoop(struct rasClient* client, int pollIdx) {
         client->status = RAS_CLIENT_INIT;
         client->verbose = 1;
         (void)rasClientRun(client);
+      } else if (strcasecmp(cmd, "monitor") == 0 || strncasecmp(cmd, "monitor ", strlen("monitor ")) == 0) {
+        // Parse optional event groups after MONITOR command.
+        char* eventSpec = cmd + strlen("monitor");
+        while (*eventSpec == ' ') eventSpec++;
+        bool parseError = false;
+        const char* errorToken = nullptr;
+        uint8_t newMask = 0;
+        if (*eventSpec) {
+          // Event groups specified, parse them.
+          char* savePtr = nullptr;
+          char* token = strtok_r(eventSpec, ",", &savePtr);
+          while (token) {
+            if (strcasecmp(token, "lifecycle") == 0) {
+              newMask |= RAS_EVENT_LIFECYCLE;
+            } else if (strcasecmp(token, "trace") == 0) {
+              newMask |= RAS_EVENT_TRACE;
+            } else if (strcasecmp(token, "all") == 0) {
+              newMask |= RAS_EVENT_ALL;
+            } else {
+              errorToken = token;
+              parseError = true;
+              break;
+            }
+            token = strtok_r(nullptr, ",", &savePtr);
+          } // while (token)
+        }
+        if (parseError) {
+          snprintf(rasLine, sizeof(rasLine), "ERROR: Invalid event group '%s'\n", errorToken);
+        } else {
+          if (newMask != 0) {
+            client->monitorMask = newMask;
+          } else {
+            client->monitorMask = RAS_EVENT_LIFECYCLE;
+          }
+          strcpy(rasLine, "OK\n");
+        }
+        msgLen = strlen(rasLine);
+        if (rasClientAllocMsg(&msg, msgLen) != ncclSuccess) {
+          rasClientTerminate(client);
+          return;
+        }
+        memcpy(msg, rasLine, msgLen);
+        rasClientEnqueueMsg(client, msg, msgLen);
       } else {
         snprintf(rasLine, sizeof(rasLine), "ERROR: Unknown command %s\n", cmd);
         msgLen = strlen(rasLine);
@@ -2046,7 +2091,7 @@ static const char* ncclErrorToString(ncclResult_t err) {
 }
 
 // Converts the IP number of a NCCL address to a string (the port part is ignored and no DNS resolution is attempted).
-static const char* ncclSocketToHost(const union ncclSocketAddress* addr, char* buf, size_t size) {
+const char* ncclSocketToHost(const union ncclSocketAddress* addr, char* buf, size_t size) {
   if (addr->sa.sa_family > 0)
     return inet_ntop(addr->sa.sa_family,
                      (addr->sa.sa_family == AF_INET ? (void*)&addr->sin.sin_addr : (void*)&addr->sin6.sin6_addr),
@@ -2142,6 +2187,120 @@ static bool rasCountIsOutlier(int count, bool verbose, int totalCount) {
   } else {
     return count <= RAS_CLIENT_DETAIL_THRESHOLD &&
            (totalCount == -1 || count <= totalCount * RAS_CLIENT_OUTLIER_FRACTION);
+  }
+}
+
+// Notifies all connected monitoring clients about an event.
+// Iterates through the client list and sends formatted notifications to clients
+// whose monitor mask matches the event group.
+void rasClientsNotifyEvent(rasEventGroup group, const struct rasEventNotification* event) {
+  char* msg;
+  char formattedNotification[2048];
+  time_t currentTime;
+  struct tm timeInfo;
+  char timeStr[64];
+  int msgLen;
+  time(&currentTime);
+  localtime_r(&currentTime, &timeInfo);
+  strftime(timeStr, sizeof(timeStr), "%F %T", &timeInfo);
+  for (struct rasClient* client = rasClientsHead; client; client = client->next) {
+    if (client->status == RAS_CLIENT_CONNECTED && (client->monitorMask & group)) {
+      if (client->outputFormat == RAS_OUTPUT_JSON) {
+        const char* groupStr = (group == RAS_EVENT_LIFECYCLE) ? "LIFECYCLE" : "TRACE";
+        const struct rasPeerInfo* peer = event->peerInfo;
+        if (peer == nullptr && event->peerAddr) {
+          int peerIdx = rasPeerFind(event->peerAddr);
+          if (peerIdx >= 0) {
+            peer = rasPeers + peerIdx;
+          }
+        }
+        if (peer) {
+          char hostBuf[SOCKET_NAME_MAXLEN+1];
+          char cudaDevs[256], nvmlDevs[256];
+          ncclSocketToHost(&peer->addr, hostBuf, sizeof(hostBuf));
+          // Build cuda_devs array.
+          int offset = 0;
+          snprintf(cudaDevs + offset, sizeof(cudaDevs) - offset, "[");
+          offset = strlen(cudaDevs);
+          for (int i = 0; i < sizeof(peer->cudaDevs)*8; i++) {
+            if (peer->cudaDevs & (1ULL << i)) {
+              snprintf(cudaDevs + offset, sizeof(cudaDevs) - offset, "%s%d", (offset > 1 ? "," : ""), i);
+              offset = strlen(cudaDevs);
+            }
+          }
+          snprintf(cudaDevs + offset, sizeof(cudaDevs) - offset, "]");
+          // Build nvml_devs array.
+          offset = 0;
+          snprintf(nvmlDevs + offset, sizeof(nvmlDevs) - offset, "[");
+          offset = strlen(nvmlDevs);
+          for (int i = 0; i < sizeof(peer->nvmlDevs)*8; i++) {
+            if (peer->nvmlDevs & (1ULL << i)) {
+              snprintf(nvmlDevs + offset, sizeof(nvmlDevs) - offset, "%s%d", (offset > 1 ? "," : ""), i);
+              offset = strlen(nvmlDevs);
+            }
+          }
+          snprintf(nvmlDevs + offset, sizeof(nvmlDevs) - offset, "]");
+          snprintf(formattedNotification, sizeof(formattedNotification),
+                   "{\n"
+                   "  \"timestamp\": \"%s\",\n"
+                   "  \"group\": \"%s\",\n"
+                   "  \"event\": \"%s\",\n"
+                   "  \"peer\": {\n"
+                   "    \"host\": \"%s\",\n"
+                   "    \"pid\": %d,\n"
+                   "    \"cuda_devs\": %s,\n"
+                   "    \"nvml_devs\": %s\n"
+                   "  },\n"
+                   "  \"details\": \"%s\"\n"
+                   "}\n",
+                   timeStr, groupStr, event->eventType, hostBuf, peer->pid, cudaDevs, nvmlDevs, event->details);
+        } else if (event->peerAddr) {
+          // Peer not found, just use address.
+          char addrStr[SOCKET_NAME_MAXLEN+1];
+          ncclSocketToString(event->peerAddr, addrStr, sizeof(addrStr));
+          snprintf(formattedNotification, sizeof(formattedNotification),
+                   "{\n"
+                   "  \"timestamp\": \"%s\",\n"
+                   "  \"group\": \"%s\",\n"
+                   "  \"event\": \"%s\",\n"
+                   "  \"peer\": {\n"
+                   "    \"addr\": \"%s\"\n"
+                   "  },\n"
+                   "  \"details\": \"%s\"\n"
+                   "}\n",
+                   timeStr, groupStr, event->eventType, addrStr, event->details);
+        } else {
+          snprintf(formattedNotification, sizeof(formattedNotification),
+                   "{\n"
+                   "  \"timestamp\": \"%s\",\n"
+                   "  \"group\": \"%s\",\n"
+                   "  \"event\": \"%s\",\n"
+                   "  \"details\": \"%s\"\n"
+                   "}\n",
+                   timeStr, groupStr, event->eventType, event->details);
+        }
+      } else { // client->outputFormat == RAS_OUTPUT_TEXT
+        char peerStr[512] = "";
+        if (event->peerInfo) {
+          rasPeerInfoToString(event->peerInfo, peerStr, sizeof(peerStr));
+        } else if (event->peerAddr) {
+          rasPeerToString(event->peerAddr, peerStr, sizeof(peerStr));
+        }
+        if (strlen(peerStr) > 0) {
+          snprintf(formattedNotification, sizeof(formattedNotification),
+                   "[%s] %s: %s %s\n", timeStr, event->eventType, peerStr, event->details);
+        } else {
+          snprintf(formattedNotification, sizeof(formattedNotification),
+                   "[%s] %s: %s\n", timeStr, event->eventType, event->details);
+        }
+      }
+
+      msgLen = strlen(formattedNotification);
+      if (rasClientAllocMsg(&msg, msgLen) == ncclSuccess) {
+        memcpy(msg, formattedNotification, msgLen);
+        rasClientEnqueueMsg(client, msg, msgLen);
+      }
+    }
   }
 }
 

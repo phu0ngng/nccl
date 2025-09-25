@@ -227,9 +227,20 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
       if (!sockTerminated && !ncclIntruQueueEmpty(&conn->sendQ) && conn->sock->status == RAS_SOCK_READY) {
         if (now - std::max(conn->sock->lastSendTime,
                            ncclIntruQueueHead(&conn->sendQ)->enqueueTime) > RAS_STUCK_TIMEOUT) {
+          char details[256];
+          long timeoutSecs = (now - std::max(conn->sock->lastSendTime, ncclIntruQueueHead(&conn->sendQ)->enqueueTime)) / CLOCK_UNITS_PER_SEC;
+          snprintf(details, sizeof(details),
+                   "send operation stuck for %lds, terminating connection", timeoutSecs);
+          struct rasEventNotification event = {
+            .eventType = "PEER_SEND_STUCK",
+            .details = details,
+            .peerInfo = nullptr,
+            .peerAddr = &conn->addr
+          };
+          rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+
           INFO(NCCL_RAS, "RAS send stuck timeout error (%lds) on socket connection with %s",
-               (now - std::max(conn->sock->lastSendTime, ncclIntruQueueHead(&conn->sendQ)->enqueueTime)) /
-               CLOCK_UNITS_PER_SEC, ncclSocketToString(&conn->addr, rasLine));
+               timeoutSecs, ncclSocketToString(&conn->addr, rasLine));
           rasSocketTerminate(conn->sock, /*finalize*/false, RAS_STUCK_TIMEOUT);
           // We will retry below in the same loop.
         } else {
@@ -248,6 +259,18 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
       // so that we don't try again.
       if (now - conn->startRetryTime > RAS_PEER_DEAD_TIMEOUT) {
         struct rasCollRequest bCast;
+        char details[256];
+        snprintf(details, sizeof(details),
+                 "peer failed to respond for %lds, declaring dead",
+                 (now-conn->startRetryTime)/CLOCK_UNITS_PER_SEC);
+        struct rasEventNotification event = {
+          .eventType = "PEER_TIMEOUT_DEAD",
+          .details = details,
+          .peerInfo = nullptr,
+          .peerAddr = &conn->addr
+        };
+        rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+
         INFO(NCCL_RAS, "RAS connect retry timeout (%lds) on socket connection with %s",
              (now-conn->startRetryTime)/CLOCK_UNITS_PER_SEC, ncclSocketToString(&conn->addr, rasLine));
 
@@ -271,6 +294,17 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
         // to establish fallback connections.
         if (now - conn->startRetryTime > RAS_CONNECT_WARN) {
           if (!conn->experiencingDelays) {
+            char details[256];
+            snprintf(details, sizeof(details),
+                     "peer not responding for %lds (connect timeout)",
+                     (now - conn->startRetryTime) / CLOCK_UNITS_PER_SEC);
+            struct rasEventNotification event = {
+              .eventType = "PEER_UNRESPONSIVE",
+              .details = details,
+              .peerInfo = nullptr,
+              .peerAddr = &conn->addr
+            };
+            rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
             INFO(NCCL_RAS, "RAS connect timeout warning (%lds) on socket connection with %s",
                  (now-conn->startRetryTime) / CLOCK_UNITS_PER_SEC, ncclSocketToString(&conn->addr, rasLine));
 
@@ -292,6 +326,19 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
         // We retry once a second.
         if (conn->sock == nullptr) {
           if (now - conn->lastRetryTime > RAS_CONNECT_RETRY) {
+            if (conn->lastRetryTime == 0) {
+              char details[256];
+              snprintf(details, sizeof(details),
+                       "connection attempt timed out after %lds, attempting reconnect",
+                       (now - conn->startRetryTime) / CLOCK_UNITS_PER_SEC);
+              struct rasEventNotification event = {
+                .eventType = "PEER_RETRY",
+                .details = details,
+                .peerInfo = nullptr,
+                .peerAddr = &conn->addr
+              };
+              rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+            }
             INFO(NCCL_RAS, "RAS trying to reconnect with %s (experiencingDelays %d, startRetryTime %.2fs)",
                  ncclSocketToString(&conn->addr, rasLine), conn->experiencingDelays,
                  (conn->startRetryTime ? (now-conn->startRetryTime)/1e9 : 0.0));
@@ -428,10 +475,33 @@ void rasSocksHandleTimeouts(int64_t now, int64_t* nextWakeup) {
     if (sock->status == RAS_SOCK_CONNECTING || sock->status == RAS_SOCK_HANDSHAKE) {
       // For socket connections that are still being established, give up on the ones that take too long to initialize.
       if (now - sock->createTime > RAS_STUCK_TIMEOUT) {
+        char details[256];
         if (sock->conn == nullptr) {
+          snprintf(details, sizeof(details),
+                   "handshake completion timed out after %lds (incoming connection)",
+                   (now-sock->createTime)/CLOCK_UNITS_PER_SEC);
+          struct rasEventNotification event = {
+            .eventType = "PEER_INIT_TIMEOUT",
+            .details = details,
+            .peerInfo = nullptr,
+            .peerAddr = &sock->sock.addr
+          };
+          rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+
           INFO(NCCL_RAS, "RAS init timeout error (%lds) on incoming socket connection from %s",
                (now-sock->createTime)/CLOCK_UNITS_PER_SEC, ncclSocketToString(&sock->sock.addr, rasLine));
         } else {
+          snprintf(details, sizeof(details),
+                   "handshake completion timed out after %lds (outgoing connection)",
+                   (now-sock->createTime)/CLOCK_UNITS_PER_SEC);
+          struct rasEventNotification event = {
+            .eventType = "PEER_INIT_TIMEOUT",
+            .details = details,
+            .peerInfo = nullptr,
+            .peerAddr = &sock->sock.addr
+          };
+          rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+
           INFO(NCCL_RAS, "RAS init timeout error (%lds) on socket connection with %s "
                "(experiencingDelays %d, startRetryTime %.2fs, socket status %d)",
                (now-sock->createTime)/CLOCK_UNITS_PER_SEC, ncclSocketToString(&sock->sock.addr, rasLine),
@@ -618,6 +688,14 @@ void rasSockEventLoop(struct rasSocket* sock, int pollIdx) {
         rasSocketTerminate(sock);
         // We may retry further down.
       } else if (closed) {
+        struct rasEventNotification event = {
+          .eventType = "PEER_DISCONNECTED",
+          .details = "peer closed connection during send operation",
+          .peerInfo = nullptr,
+          .peerAddr = &sock->sock.addr
+        };
+        rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+
         INFO(NCCL_RAS, "RAS socket connection with %s closed by peer on send; terminating it",
              ncclSocketToString(&sock->sock.addr, rasLine));
         rasSocketTerminate(sock);
@@ -648,6 +726,17 @@ void rasSockEventLoop(struct rasSocket* sock, int pollIdx) {
             socketType = "new";
           else
             socketType = "current";
+          char details[256];
+          snprintf(details, sizeof(details),
+                   "peer closed %s connection during receive operation", socketType);
+          struct rasEventNotification event = {
+            .eventType = "PEER_DISCONNECTED",
+            .details = details,
+            .peerInfo = nullptr,
+            .peerAddr = &sock->sock.addr
+          };
+          rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+
           INFO(NCCL_RAS, "RAS %s socket connection with %s closed by peer on receive; terminating it",
                socketType, ncclSocketToString(&sock->sock.addr, rasLine));
           rasSocketTerminate(sock, /*finalize*/true);
@@ -744,6 +833,17 @@ static void rasConnHandleNetTimeouts(struct rasConnection* conn, int64_t now, in
       // For short timeouts print a warning but also pessimistically immediately try to establish fallback connections.
       if (now - conn->sock->lastRecvTime > RAS_KEEPALIVE_TIMEOUT_WARN) {
         if (!conn->experiencingDelays) {
+          char details[256];
+          snprintf(details, sizeof(details),
+                   "peer not responding for %lds (keepalive warning)",
+                   (now - conn->sock->lastRecvTime) / CLOCK_UNITS_PER_SEC);
+          struct rasEventNotification event = {
+            .eventType = "PEER_UNRESPONSIVE",
+            .details = details,
+            .peerInfo = nullptr,
+            .peerAddr = &conn->addr
+          };
+          rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
           INFO(NCCL_RAS, "RAS keep-alive timeout warning (%lds) on socket connection with %s",
                (now-conn->sock->lastRecvTime) / CLOCK_UNITS_PER_SEC, ncclSocketToString(&conn->addr, rasLine));
 
@@ -762,6 +862,18 @@ static void rasConnHandleNetTimeouts(struct rasConnection* conn, int64_t now, in
 
       // For long timeouts we need to act.
       if (now - conn->sock->lastRecvTime > RAS_KEEPALIVE_TIMEOUT_ERROR) {
+        char details[256];
+        snprintf(details, sizeof(details),
+                 "keepalive timeout after %lds, terminating connection",
+                 (now-conn->sock->lastRecvTime) / CLOCK_UNITS_PER_SEC);
+        struct rasEventNotification event = {
+          .eventType = "PEER_KEEPALIVE_TIMEOUT",
+          .details = details,
+          .peerInfo = nullptr,
+          .peerAddr = &conn->addr
+        };
+        rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+
         INFO(NCCL_RAS, "RAS keep-alive timeout error (%lds) on socket connection with %s",
              (now-conn->sock->lastRecvTime) / CLOCK_UNITS_PER_SEC, ncclSocketToString(&conn->addr, rasLine));
         rasSocketTerminate(conn->sock, /*finalize*/true, RAS_KEEPALIVE_TIMEOUT_ERROR);
@@ -1000,6 +1112,24 @@ static void rasConnResume(struct rasConnection* conn) {
          (conn->experiencingDelays && conn->startRetryTime == 0 ? "recovered" : "established"),
          ncclSocketToString(&conn->addr, rasLine), (ncclIntruQueueEmpty(&conn->sendQ) ? "" : "not "),
          conn->experiencingDelays, (conn->startRetryTime ? (clockNano()-conn->startRetryTime)/1e9 : 0.0));
+
+    if (conn->experiencingDelays) {
+      struct rasEventNotification event = {
+        .eventType = "PEER_RECOVERED",
+        .details = "peer responding again",
+        .peerInfo = nullptr,
+        .peerAddr = &conn->addr
+      };
+      rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+    } else {
+      struct rasEventNotification event = {
+        .eventType = "PEER_CONNECTED",
+        .details = "connection established successfully",
+        .peerInfo = nullptr,
+        .peerAddr = &conn->addr
+      };
+      rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+    }
 
     conn->experiencingDelays = false;
 

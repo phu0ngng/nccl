@@ -479,6 +479,16 @@ static ncclResult_t rasMsgHandleConnInit(const struct rasMsg* msg, struct rasSoc
   sock->status = RAS_SOCK_READY;
   // rasConnResume will reset any experiencingDelays, startRetryTime, etc.
 
+  {
+    struct rasEventNotification event = {
+      .eventType = "PEER_CONNECTING",
+      .details = "",
+      .peerInfo = nullptr,
+      .peerAddr = &msg->connInit.listeningAddr
+    };
+    rasClientsNotifyEvent(RAS_EVENT_TRACE, &event);
+  }
+
   conn->sock = sock;
   sock->conn = conn;
   memcpy(&sock->sock.addr, &msg->connInit.listeningAddr, sizeof(sock->sock.addr));
