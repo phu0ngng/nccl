@@ -23,7 +23,7 @@
 struct testParam{
   int ngpus;
   int nnodes;
-  const char* platform;
+  char* platform;
   ncclFunc_t function;
   int compactMode;
   int dispMode;
@@ -45,8 +45,7 @@ struct testParam{
 
 struct testParam param;
 int coll = 0;
-const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna", "Viking", "Umbriel", "GB200-NVL72", "GB200-NVL72" };
-const int platform_ngpus[] = { -1, -1, -1, -1, -1, -1, 64};
+const char* platforms[] = { "DGX-1V", "DGX-2V", "Luna", "Viking", "Umbriel" };
 
 int strConvert(const char* option, const char* dict[], int nvalues, const char* str) {
   for (int i=0; i<nvalues; i++) {
@@ -77,7 +76,7 @@ int stats[RESET] = { 0, 0, 0, 0 };
   float v = val; \
   if (param.dispMode > 0  && v != -1.0) v = size / v; \
   if (param.dispMode == 2 && v != -1.0) { \
-    float nranks = nnodes*ngpus; \
+    float nranks = param.nnodes*param.ngpus; \
     if (param.function == ncclFuncAllReduce) v *= 2*(nranks-1)/nranks; \
     if (param.function == ncclFuncReduceScatter) v *= (nranks-1)/nranks; \
     if (param.function == ncclFuncAllGather) v *= (nranks-1)/nranks; \
@@ -328,8 +327,10 @@ void keepGpus(struct ncclXml* xmlSystem) {
 
 
 
-void runTopo(const char* xmlTopoFile, const char* platform, int nnodes, int ngpus) {
+void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
 
+
+  int ngpus = param.ngpus;
   struct ncclXml* xmlSystem;
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES*NCCL_TOPO_XML_MAX_NODES));
@@ -373,7 +374,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes, int ngpu
   free(xmlSystem);
 
   CHECK(ncclTopoComputePaths(system, NULL));
-  system->inter = nnodes == 1 ? 0 : 1;
+  system->inter = param.nnodes == 1 ? 0 : 1;
 
   if (ngpus == -1 ) {
     ngpus = system->nodes[GPU].count;
@@ -447,10 +448,10 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes, int ngpu
   for (int i=0; i<M+1; i++) fds[i] = -1;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     int i = a*NCCL_NUM_PROTOCOLS+p;
-    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[param.function], ncclAlgoStr[a], ncclProtoStr[p]);
+    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", param.platform, ngpus, param.nnodes, ncclFuncStr[param.function], ncclAlgoStr[a], ncclProtoStr[p]);
     fds[i] = open(path, O_RDONLY);
   }
-  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[param.function]);
+  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", param.platform, ngpus, param.nnodes, ncclFuncStr[param.function]);
   fds[M] = open(path, O_RDONLY);
   float score = 0.0;
   int npoints = 0;
@@ -478,7 +479,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes, int ngpu
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, graphs));
 
   if (!param.compactMode) {
-    printf("%s/%dx%d, %s\n", platform, nnodes, ngpus, ncclFuncStr[param.function]);
+    printf("%s/%dx%d, %s\n", param.platform, param.nnodes, ngpus, ncclFuncStr[param.function]);
     printf("-----------+");
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       if (algoProtoSupported(a, p, graphs) == 0) continue;
@@ -509,8 +510,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes, int ngpu
     }
     printf("-------------------------------+"); printf("\n");
   } else {
-    
-    printf("%10s/%5dx%5d |", platform, nnodes, ngpus);
+    printf("%10s/%5dx%5d |", param.platform, param.nnodes, ngpus);
   }
 
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
@@ -631,15 +631,15 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes, int ngpu
 
 #define COMPACT_SEPARATOR printf("-----------------------+------------------------------+--------\n")
 
-void runPlatform(const char* platform, int ngpus) {
+void runPlatform(const char* platform) {
   char xmlTopoFile[1024];
   sprintf(xmlTopoFile, "topo/%s/system.xml", platform);
   if (param.nnodes == -1) {
     for (int n=1; n<=128; n<<=1) {
-      runTopo(xmlTopoFile, platform, n, ngpus);
+      runTopo(xmlTopoFile, platform, n);
     }
   } else {
-    runTopo(xmlTopoFile, platform, param.nnodes, ngpus);
+    runTopo(xmlTopoFile, platform, param.nnodes);
   }
   if (param.compactMode) COMPACT_SEPARATOR;
 }
@@ -714,10 +714,10 @@ int main(int argc, char* argv[]) {
   }
 
   if (param.platform) {
-    runPlatform(param.platform, param.ngpus);
+    runPlatform(param.platform);
   } else {
     for (int p=0; p<sizeof(platforms)/sizeof(platforms[0]); p++) {
-      runPlatform(platforms[p], platform_ngpus[p]);
+      runPlatform(platforms[p]);
     }
   }
 
