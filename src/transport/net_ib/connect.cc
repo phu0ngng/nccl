@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "connect.h"
 #include "common.h"
 
 NCCL_PARAM(IbGidIndex, "IB_GID_INDEX", -1);
@@ -346,29 +347,26 @@ ncclResult_t ncclIbGetGidIndex(struct ibv_context *context, uint8_t portNum, str
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbCreateQp(uint8_t ib_port, struct ncclIbNetCommDevBase* base, int access_flags, void* qp_context, struct ncclIbQp* qp) {
+ncclResult_t ncclIbCreateQp(struct ncclIbQpCreateAttr* createQpAttrs, void* qp_context, struct ncclIbQp* qp) {
   struct ibv_qp_init_attr qpInitAttr;
   memset(&qpInitAttr, 0, sizeof(struct ibv_qp_init_attr));
   qpInitAttr.qp_context = qp_context;
-  qpInitAttr.send_cq = base->cq;
-  qpInitAttr.recv_cq = base->cq;
-  qpInitAttr.qp_type = IBV_QPT_RC;
-  // We might send 2 messages per send (RDMA and RDMA_WITH_IMM)
-  qpInitAttr.cap.max_send_wr = 2*NET_IB_MAX_REQUESTS;
-  qpInitAttr.cap.max_recv_wr = NET_IB_MAX_REQUESTS;
+  qpInitAttr.send_cq = createQpAttrs->cq;
+  qpInitAttr.recv_cq = createQpAttrs->cq;
+  qpInitAttr.qp_type = createQpAttrs->type;
+  qpInitAttr.cap.max_recv_wr = createQpAttrs->maxRecvWorkRequest;
+  qpInitAttr.cap.max_send_wr = createQpAttrs->maxSendWorkRequest;
   qpInitAttr.cap.max_send_sge = 1;
   qpInitAttr.cap.max_recv_sge = 1;
   qpInitAttr.cap.max_inline_data = ncclParamIbUseInline() ? sizeof(struct ncclIbSendFifo) : 0;
-  NCCLCHECK(wrap_ibv_create_qp(&qp->qp, base->pd, &qpInitAttr));
+  NCCLCHECK(wrap_ibv_create_qp(&qp->qp, createQpAttrs->pd, &qpInitAttr));
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_INIT;
   qpAttr.pkey_index = ncclParamIbPkey();
-  qpAttr.port_num = ib_port;
-  qpAttr.qp_access_flags = access_flags;
+  qpAttr.port_num = createQpAttrs->ibPort;
+  qpAttr.qp_access_flags = createQpAttrs->accessFlags;
   NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS));
-  TRACE(NCCL_NET, "NET/IB : ncclIbCreateQp port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qpn=%u pkey=%u pd=%p",
-    ib_port, base->ibDevN, ncclIbDevs[base->ibDevN].devName, ncclNIbDevs, ncclNMergedIbDevs, qp->qp->qp_num, qpAttr.pkey_index, base->pd);
   return ncclSuccess;
 }
 
@@ -464,6 +462,12 @@ fail:
 // establishment process.
 static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbConnectionMetadata* meta) {
   uint nqps = comm->base.nqps;
+  struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+  qpCreateAttrs.type = IBV_QPT_RC;
+  qpCreateAttrs.accessFlags = IBV_ACCESS_REMOTE_WRITE;
+  qpCreateAttrs.maxRecvWorkRequest = 0;
+  // Send requests are sent using at most 2 messages (RDMA Write and RDMA Write with Immediate)
+  qpCreateAttrs.maxSendWorkRequest = 2*NET_IB_MAX_REQUESTS;
   for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
     // The QPs are created in a "striped" manner across the available devices.
     // For example, if there are 2 devices and 4 QPs, the QPs will be created
@@ -475,9 +479,21 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     ncclIbDev* ibDev = &ncclIbDevs[commDev->base.ibDevN];
     ncclIbQp* localQp = &comm->base.qps[qpIndex];
     ncclIbQpInfo* localQpInfo = &meta->qpInfo[qpIndex];
-    int qpAccessFlags = IBV_ACCESS_REMOTE_WRITE;
 
-    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &commDev->base, qpAccessFlags, &comm->base.stats, localQp));
+    qpCreateAttrs.ibPort = ibDev->portNum;
+    qpCreateAttrs.cq = commDev->base.cq;
+    qpCreateAttrs.pd = commDev->base.pd;
+    NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &comm->base.stats, localQp));
+    TRACE(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qpn=%u pkey=%u pd=%p",
+        __func__,
+        ibDev->portNum, 
+        commDev->base.ibDevN, 
+        ncclIbDevs[commDev->base.ibDevN].devName, 
+        ncclNIbDevs, 
+        ncclNMergedIbDevs, 
+        localQp->qp->qp_num, 
+        (uint16_t)ncclParamIbPkey(),
+        commDev->base.pd);
     localQp->devIndex = devIndex;
 
     // Populate the metadata that will be delivered to the remote peer
@@ -802,6 +818,15 @@ ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePro
 // side (sender) as part of the connection establishment process.
 static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct ncclIbConnectionMetadata* remMeta, struct ncclIbConnectionMetadata* meta) {
   uint nqps = rComm->base.nqps;
+  struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+  qpCreateAttrs.type = IBV_QPT_RC;
+  // Remote Atomic operations are used for GIN!
+  qpCreateAttrs.accessFlags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
+  qpCreateAttrs.maxRecvWorkRequest = NET_IB_MAX_REQUESTS;
+  // CTS messages are posted using send work requests.
+  // Note that because only specific CTS messages are signaled, the send queue
+  // size needs to be double the number of max requests.
+  qpCreateAttrs.maxSendWorkRequest = 2*NET_IB_MAX_REQUESTS;
   for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
     // The QPs are created in a "striped" manner across the available devices.
     // For example, if there are 2 devices and 4 QPs, the QPs will be created
@@ -820,7 +845,20 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     localQp->remDevIdx = remDevIndex;
     localQp->devIndex = devIndex;
 
-    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC, &rComm->base.stats, localQp));
+    qpCreateAttrs.ibPort = ibDev->portNum;
+    qpCreateAttrs.cq = rCommDev->base.cq;
+    qpCreateAttrs.pd = rCommDev->base.pd;
+    NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, localQp));
+    TRACE(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qpn=%u pkey=%u pd=%p",
+        __func__,
+        ibDev->portNum, 
+        rCommDev->base.ibDevN, 
+        ncclIbDevs[rCommDev->base.ibDevN].devName, 
+        ncclNIbDevs, 
+        ncclNMergedIbDevs, 
+        localQp->qp->qp_num, 
+        (uint16_t)ncclParamIbPkey(),
+        rCommDev->base.pd);
 
     localQpInfo->qpn      = localQp->qp->qp_num;
     localQpInfo->devIndex = localQp->devIndex;
@@ -1038,7 +1076,26 @@ ib_recv:
       rCommDev->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlushHostMem;
       rCommDev->gpuFlush.sge.length = 1;
       rCommDev->gpuFlush.sge.lkey = rCommDev->gpuFlush.hostMr->lkey;
-      NCCLCHECKGOTO(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ, &rComm->base.stats, &rCommDev->gpuFlush.qp), ret, fail);
+
+      struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+      qpCreateAttrs.type = IBV_QPT_RC;
+      qpCreateAttrs.ibPort = ibDev->portNum;
+      qpCreateAttrs.cq = rCommDev->base.cq;
+      qpCreateAttrs.pd = rCommDev->base.pd;
+      qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ;
+      qpCreateAttrs.maxRecvWorkRequest = 0;
+      qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
+      NCCLCHECKGOTO(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp), ret, fail);
+      TRACE(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qpn=%u pkey=%u pd=%p",
+          __func__,
+          ibDev->portNum, 
+          rCommDev->base.ibDevN, 
+          ncclIbDevs[rCommDev->base.ibDevN].devName, 
+          ncclNIbDevs, 
+          ncclNMergedIbDevs, 
+          rCommDev->gpuFlush.qp.qp->qp_num, 
+          (uint16_t)ncclParamIbPkey(),
+          rCommDev->base.pd);
       struct ncclIbDevInfo devInfo;
       devInfo.lid         = ibDev->portAttr.lid;
       devInfo.link_layer  = ibDev->portAttr.link_layer;
