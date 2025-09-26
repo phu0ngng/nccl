@@ -15,7 +15,7 @@
 #include "ibvwrap.h"
 #include "mlx5/mlx5dvwrap.h"
 #include "gin/gin_host.h"
-#include "gin/gin_host_gdaki.h"
+#include "gin_host_gdaki.h"
 #include "plugin/nccl_net.h"
 #include "param.h"
 
@@ -999,8 +999,9 @@ ncclResult_t ncclGinGdakiDeregMrSym(void *collComm, void *mhandle) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclGinGdakiProgress(void *ginCtx) {
-  struct gdaki_context *gdakiCtx = (struct gdaki_context *)ginCtx;
+ncclResult_t ncclGinGdakiProgress(void *collComm) {
+  struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)collComm;
+  struct gdaki_context *gdakiCtx = (struct gdaki_context *)cComm->ginCtx;
   const int ncontexts = 1;
   const int nranks = gdakiCtx->collComm->nranks;
   const int nqpsPerRank = ncontexts;

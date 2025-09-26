@@ -2867,7 +2867,7 @@ ncclResult_t ncclGinIbCloseColl(void* collComm) {
   return ncclSuccess;
 }
 
-#include "gin/gin_host_gdaki.h"
+#include "gdaki/gin_host_gdaki.h"
 
 static int ncclGinIbGdakiNDevs = 0;
 int ncclGinIbGdakiDevIndexes[MAX_IB_DEVS];
@@ -2918,9 +2918,9 @@ ncclResult_t ncclGinIbGdakiDestroyContext(void* ginCtx) {
   return ncclGinGdakiDestroyContext(ginCtx);
 }
 
-ncclResult_t ncclGinIbGdakiProgress(void *ginCtx)
+ncclResult_t ncclGinIbGdakiProgress(void *collComm)
 {
-  return ncclGinGdakiProgress(ginCtx);
+  return ncclGinGdakiProgress(collComm);
 }
 
 ncclResult_t ncclGinIbGdakiQueryLastError(void *ginCtx, bool *hasError) {
