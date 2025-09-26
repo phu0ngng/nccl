@@ -104,21 +104,6 @@ ${DST_DIR}/ft_abort_rank0: ${DST_DIR}/ft_abort_rank0.o ${DLIB}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
 
-${DST_DIR}/multiproc_gin: ${DST_DIR}/multiproc_gin.o ${DLIB}
-	@printf "Linking  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
-
-${DST_DIR}/put_signal_ping_pong_gin: ${DST_DIR}/put_signal_ping_pong_gin.o ${DLIB}
-	@printf "Linking  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
-
-${DST_DIR}/put_helloworld_gin: ${DST_DIR}/put_helloworld_gin.o ${DLIB}
-	@printf "Linking  %-35s > %s\n" $< $@
-	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
-
 ${DST_DIR}/ft_test: ${DST_DIR}/ft_test.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
@@ -237,6 +222,11 @@ ${DST_DIR}/gin_data_ring: ${DST_DIR}/gin_data_ring.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/put_signal_ping_pong_gin: ${DST_DIR}/put_signal_ping_pong_gin.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
 
 ${DST_DIR}/put_gin_alltoall: ${DST_DIR}/put_gin_alltoall.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@

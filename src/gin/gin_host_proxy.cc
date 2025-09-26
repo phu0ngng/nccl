@@ -192,7 +192,7 @@ static int proxyGinPollGfd(struct ginProxyCtx *ctx, ginProxyHostGpuCtx *hostGpuC
   (*state)->request = NULL;
 
   TRACE(NCCL_NET,
-        "GFD to target PE %d raw idx: %u, idx: %u - op: %d, size: %lu, srcOff: %lu, dstOff: %lu, "
+        "GFD to target PE %d raw idx: %u, idx: %u - op: %#lx, size: %lu, srcOff: %lu, dstOff: %lu, "
         "srcHandle: %lu, dstHandle: %lu, counterId: %u, signalId: %u, stateIdx: %u",
         targetRank, hostGpuCtx->sis[targetRank], idx, gfd->qword[ncclGinProxyGfdHeader].header.op,
         gfd->qword[ncclGinProxyGfdHeader].header.size,
