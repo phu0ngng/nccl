@@ -306,7 +306,7 @@ struct gdaki_context {
   struct ibv_device *ib_dev;
   struct ibv_context *ib_ctx;    /* DOCA Verbs Context */
   struct ibv_pd *ib_pd;          /* local protection domain */
-  struct doca_verbs_ah *ah; /* DOCA Verbs address handle */
+  struct doca_verbs_ah_attr *ah; /* DOCA Verbs address handle */
   struct doca_verbs_gid gid;
 
   union ibv_gid rgid;
@@ -390,27 +390,27 @@ static ncclResult_t gdakiCreateVerbsAh(struct gdaki_context *ctx, int ib_sl, int
   ncclResult_t status = ncclSuccess;
   doca_error_t docaStatus = DOCA_SUCCESS;
 
-  DOCACHECK(doca_verbs_ah_create(ctx->ib_ctx, &ctx->ah));
-  DOCACHECK(doca_verbs_ah_set_sl(ctx->ah, ib_sl));
-  DOCACHECK(doca_verbs_ah_set_traffic_class(ctx->ah, ib_tc));
+  DOCACHECK(doca_verbs_ah_attr_create(ctx->ib_ctx, &ctx->ah));
+  DOCACHECK(doca_verbs_ah_attr_set_sl(ctx->ah, ib_sl));
+  DOCACHECK(doca_verbs_ah_attr_set_traffic_class(ctx->ah, ib_tc));
 
   if (ctx->port_attr.link_layer == 1) {
-    DOCACHECKGOTO(doca_verbs_ah_set_addr_type(ctx->ah, DOCA_VERBS_ADDR_TYPE_IB_NO_GRH),
+    DOCACHECKGOTO(doca_verbs_ah_attr_set_addr_type(ctx->ah, DOCA_VERBS_ADDR_TYPE_IB_NO_GRH),
                   docaStatus, status, destroy_verbs_ah);
   } else {
-    DOCACHECKGOTO(doca_verbs_ah_set_addr_type(ctx->ah, DOCA_VERBS_ADDR_TYPE_IPv4),
+    DOCACHECKGOTO(doca_verbs_ah_attr_set_addr_type(ctx->ah, DOCA_VERBS_ADDR_TYPE_IPv4),
                   docaStatus, status, destroy_verbs_ah);
   }
 
   // set_port_num?
-  DOCACHECKGOTO(doca_verbs_ah_set_sgid_index(ctx->ah, ib_gid_index), docaStatus, status,
+  DOCACHECKGOTO(doca_verbs_ah_attr_set_sgid_index(ctx->ah, ib_gid_index), docaStatus, status,
                 destroy_verbs_ah);
-  DOCACHECKGOTO(doca_verbs_ah_set_hop_limit(ctx->ah, 255), docaStatus, status, destroy_verbs_ah);
+  DOCACHECKGOTO(doca_verbs_ah_attr_set_hop_limit(ctx->ah, 255), docaStatus, status, destroy_verbs_ah);
 
   return ncclSuccess;
 
 destroy_verbs_ah:
-  DOCACHECK(doca_verbs_ah_destroy(ctx->ah));
+  DOCACHECK(doca_verbs_ah_attr_destroy(ctx->ah));
   return status;
 }
 
@@ -420,8 +420,8 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
   doca_error_t docaStatus = DOCA_SUCCESS;
   struct doca_verbs_qp_attr *verbs_qp_attr = nullptr;
 
-  DOCACHECK(doca_verbs_ah_set_gid(ctx->ah, exch_info->vgid));
-  DOCACHECK(doca_verbs_ah_set_dlid(ctx->ah, exch_info->lid));
+  DOCACHECK(doca_verbs_ah_attr_set_gid(ctx->ah, exch_info->vgid));
+  DOCACHECK(doca_verbs_ah_attr_set_dlid(ctx->ah, exch_info->lid));
   DOCACHECK(doca_verbs_qp_attr_create(&verbs_qp_attr));
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_path_mtu(verbs_qp_attr, DOCA_VERBS_MTU_SIZE_4K_BYTES),
@@ -920,7 +920,7 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
   }
 
   if (gdaki_ctx->ah) {
-    DOCACHECK(doca_verbs_ah_destroy(gdaki_ctx->ah));
+    DOCACHECK(doca_verbs_ah_attr_destroy(gdaki_ctx->ah));
   }
 
   if (gdaki_ctx->gdev) {
