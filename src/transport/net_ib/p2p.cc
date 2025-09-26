@@ -89,7 +89,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   }
   lastWr->wr_id = wr_id;
   lastWr->opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-  lastWr->imm_data = immData;
+  lastWr->imm_data = htobe32(immData);
   lastWr->next = NULL;
   lastWr->send_flags = IBV_SEND_SIGNALED;
 
@@ -587,7 +587,7 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         return ncclInternalError;
       }
       if (req->nreqs == 1) {
-        req->recv.sizes[0] = wc->imm_data;
+        req->recv.sizes[0] = be32toh(wc->imm_data);
       }
     }
     req->events[devIndex]--;
