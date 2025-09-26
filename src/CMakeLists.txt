@@ -131,6 +131,11 @@ target_link_libraries(nccl
     ${EXTRA_LIBS}
 )
 
+# Add version script for symbol visibility control
+target_link_options(nccl PRIVATE
+    "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libnccl.map"
+)
+
 # Set output directories for nccl shared library
 set_target_properties(nccl PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
