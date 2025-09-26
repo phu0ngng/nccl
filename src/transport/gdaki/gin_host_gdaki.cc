@@ -146,7 +146,7 @@ static ncclResult_t gdakiRegMr(struct ibv_mr **mr, struct ibv_pd *pd, void *addr
   if (!force_strict_ordering && gdakiRelaxedOrderingEnabled())
     access |= IBV_ACCESS_RELAXED_ORDERING;
 
-  status = gdakiRegMrDmaBuf(mr, pd, addr, length, access);
+  NOWARN(status = gdakiRegMrDmaBuf(mr, pd, addr, length, access), NCCL_NET);
   if (status == ncclSuccess) return ncclSuccess;
 
   NCCLCHECK(wrap_ibv_reg_mr_iova2(mr, pd, addr, length, 0, access));
