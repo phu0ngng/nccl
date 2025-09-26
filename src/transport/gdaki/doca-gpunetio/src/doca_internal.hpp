@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <syslog.h>
+#include <linux/types.h>
 
 #include "host/doca_error.h"
 #include "doca_gpunetio_config.h"

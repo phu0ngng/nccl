@@ -41,14 +41,14 @@
 
 #include "doca_gpunetio_log.hpp"
 
-static const char *doca_gpu_log_level_strings[] = {"EMERG",   "ALERT",  "CRIT", "ERR",
+static const char *doca_gpu_log_level_strings[] = {"EMERG", "ALERT", "CRIT", "ERR",
                                                    "WARNING", "NOTICE", "INFO", "DEBUG"};
 
 void doca_gpu_log_print(int log_level, const char *file, int line, const char *func,
                         const char *fmt, ...) {
     static int cur_log_level = -1;
     if (cur_log_level < 0) {
-        const char *debug_env = getenv("DOCA_GPUNETIO_DEBUG");
+        const char *debug_env = getenv("DOCA_GPUNETIO_LOG");
         if (debug_env != NULL) {
             int env_log_level = atoi(debug_env);
             if (env_log_level >= 0 &&
