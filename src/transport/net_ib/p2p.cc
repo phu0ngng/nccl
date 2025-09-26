@@ -8,7 +8,14 @@
 #include "common.h"
 #include "compiler.h"
 
+enum ncclIbRequestMatchingScheme {
+  BY_INDEX=0,
+  BY_ID=1,
+};
+
 NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
+// By default, use ncclIbRequestMatchingScheme::BY_INDEX matching scheme.
+NCCL_PARAM(IbReceiverSideMatchingScheme, "IB_RECEIVER_SIDE_MATCHING_SCHEME", 0);
 
 const char* ncclIbReqTypeStr[] = { "Unused", "Send", "Recv", "Flush", "IPut" };
 
@@ -41,7 +48,7 @@ void ncclIbAddEvent(struct ncclIbRequest* req, int devIndex) {
 }
 
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
-  struct ncclIbRequest** reqs = comm->fifoReqs[slot];
+  struct ncclIbRequest** reqs = comm->sendReqs[slot];
   volatile struct ncclIbSendFifo* slots = comm->ctsFifo[slot];
   int nreqs = slots[0].nreqs;
   if (nreqs > NCCL_NET_IB_MAX_RECVS) return ncclInternalError;
@@ -63,13 +70,14 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 #endif
   }
 
-  // When nreqs==1, the Immediate Data carries the size of the send request.
-  // In case of a multi-send (nreqs>1), the Immediate Data is ignored by the
-  // receiver, as the size of the send request is written by the sender side
-  // directly to the remote completion records array. Therefore, always
-  // assigning the Immediate Data with the size, does not harm, and when it's
-  // not required - it's ignored by the receiver side.
-  uint32_t immData = reqs[0]->send.size;
+  // For ID-based matching scheme, immData carries the request ID.
+  // For index-based matching scheme, immData carries the send size:
+  // - nreqs == 1 
+  //      It's the send size.
+  // - nreqs > 1
+  //      Send size is still sent but receiver ignores it since the sizes are
+  //      written to directly to remote completion records array
+  uint32_t immData = ncclParamIbReceiverSideMatchingScheme() == BY_ID ? reqs[0]->id : reqs[0]->send.size;
   if (nreqs > 1) {
     int* sizes = comm->remCmplsRecords.elems[slot];
     for (int r=0; r<nreqs; r++) sizes[r] = reqs[r]->send.size;
@@ -77,9 +85,8 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
   struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
   if (nreqs > 1 || (comm->ar && reqs[0]->send.size > ncclParamIbArThreshold())) {
-    // When using ADAPTIVE_ROUTING, send the bulk of the data first as an
-    // RDMA_WRITE, then a 0-byte RDMA_WRITE_WITH_IMM to trigger a remote
-    // completion.
+    // When Adaptive Routing is enabled, send the bulk of the data first as an
+    // RDMA Write.
     lastWr++;
     memset(lastWr, 0, sizeof(struct ibv_send_wr));
     if (nreqs > 1) {
@@ -100,7 +107,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   int qpIndex = -1;
   ncclIbQp* qp = NULL;
   for (int i = 0; i < nqps; i++) {
-    NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, comm->base.fifoHead, i, &qp, &qpIndex));
+    NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, reqs[0]->id, i, &qp, &qpIndex));
     int devIndex = qp->devIndex;
     for (int r=0; r<nreqs; r++) {
       // Track this event for completion
@@ -184,7 +191,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
   volatile struct ncclIbSendFifo* slots;
 
   int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
-  struct ncclIbRequest** reqs = comm->fifoReqs[slot];
+  struct ncclIbRequest** reqs = comm->sendReqs[slot];
   slots = comm->ctsFifo[slot];
   uint64_t idx = comm->base.fifoHead+1;
   if (slots[0].idx != idx) { *request = NULL; return ncclSuccess; }
@@ -208,6 +215,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
 
     struct ncclIbRequest* req;
     NCCLCHECK(ncclIbGetRequest(&comm->base, &req));
+    req->id = (uint32_t)(comm->base.fifoHead % UINT32_MAX);
     req->type = NCCL_NET_IB_REQ_SEND;
     req->sock = &comm->base.sock;
     req->base = &comm->base;
@@ -224,7 +232,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     int qpIndex = -1;
     ncclIbQp* qp = NULL;
     for (int i = 0; i < nqps; i++) {
-      NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, comm->base.fifoHead, i, &qp, &qpIndex));
+      NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, req->id, i, &qp, &qpIndex));
       ncclIbAddEvent(req, qp->devIndex);
     }
 
@@ -260,12 +268,13 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   memset(&wr, 0, sizeof(wr));
 
   int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
+  req->recv.aggSize = -1;
   req->recv.sizes = comm->cmplsRecords[slot];
-  for (int i=0; i<n; i++) req->recv.sizes[i] = 0;
+  for (int i=0; i<n; i++) req->recv.sizes[i] = -1;
   struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
 
   ncclIbQp* ctsQp = NULL;;
-  NCCLCHECK(ncclIbRecvCommGetQpForCts(comm, comm->base.fifoHead, &ctsQp));
+  NCCLCHECK(ncclIbRecvCommGetQpForCts(comm, req->id, &ctsQp));
 
   for (int i=0; i<n; i++) {
     localElem[i].addr = (uint64_t)data[i];
@@ -343,12 +352,16 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->base, &req));
+  req->id = (uint32_t)(comm->base.fifoHead % UINT32_MAX);
   req->type = NCCL_NET_IB_REQ_RECV;
   req->sock = &comm->base.sock;
   req->nreqs = n;
 #ifdef NCCL_ENABLE_NET_PROFILING
   for (int r = 0; r < n && phandles; r++) req->pInfo[r].nEventHandles = 0;
 #endif
+
+  // Store the request in a table for easy retrieval by ID.
+  comm->recvReqs[req->id % NET_IB_MAX_REQUESTS] = req;
 
   struct ibv_recv_wr wr;
   memset(&wr, 0, sizeof(wr));
@@ -365,7 +378,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
   int qpIndex = -1;
   ncclIbQp* qp = NULL;
   for (int i = 0; i < nqps; i++) {
-    NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, comm->base.fifoHead, i, &qp, &qpIndex));
+    NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, req->id, i, &qp, &qpIndex));
     ncclIbAddEvent(req, qp->devIndex);
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
@@ -500,6 +513,29 @@ static inline ncclResult_t ncclIbRequestRetrieveAsIndex(ncclIbRequest* reqs, uin
   return ncclSuccess;
 }
 
+static inline ncclResult_t ncclIbRequestRetrieveFromCompletion(struct ncclIbNetCommBase* base, ibv_wc* wc, ncclIbRequest** req) {
+  assert(req != NULL);
+  assert(wc != NULL);
+
+  // In case of a completion with error, there is no guarantee that all fields
+  // of the completion are valid.
+  assert(wc->status == IBV_WC_SUCCESS);
+
+  INFO(NCCL_NET, "NET/IB: %s: Retreiving a request (side=%s) (wr_id=%ld, opcode=%s)", __func__, base->isSend ? "send" : "recv", wc->wr_id, ibvWcOpcodeStr(wc->opcode));
+
+  if (!base->isSend && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM && ncclParamIbReceiverSideMatchingScheme() == BY_ID) {
+    INFO(NCCL_NET, "NET/IB: %s: Retreiving a receive request (wr_id=%ld, imm_data=%d, byte_len=%d)", __func__, wc->wr_id, be32toh(wc->imm_data), wc->byte_len);
+    struct ncclIbRecvComm* recvComm = (struct ncclIbRecvComm*)base;
+    *req = recvComm->recvReqs[be32toh(wc->imm_data) % NET_IB_MAX_REQUESTS];
+  } else {
+    // For senders, or for other types of completions on receivers, the request ID
+    // is assumed to be in the lower 8 bits of wr_id.
+    NCCLCHECK(ncclIbRequestRetrieveAsIndex(base->reqs, wc->wr_id & 0xff, req));
+  }
+  INFO(NCCL_NET, "NET/IB: %s: Retrieved request (request=%p, type=%d, id=%d)", __func__, *req, (*req)->type, (*req)->id);
+  return ncclSuccess;
+}
+
 static inline bool ncclIbRequestIsComplete(struct ncclIbRequest *request) {
   return (request->events[0] == 0 && request->events[1] == 0 && request->events[2] == 0 && request->events[3] == 0);
 }
@@ -508,8 +544,9 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
   TRACE(NCCL_NET, "r=%p done", r);
   *done = 1;
   if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
+    int *sizesToReport = (r->recv.aggSize != -1) ? &(r->recv.aggSize) : r->recv.sizes;
     for (int i=0; i<r->nreqs; i++) {
-      sizes[i] = r->recv.sizes[i];
+      sizes[i] = sizesToReport[i];
 #ifdef NCCL_ENABLE_NET_PROFILING
       for (int j = 0; j < r->pInfo[i].nEventHandles; j++) {
         NCCLCHECK(ncclProfilerFunction(&r->pInfo[i].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
@@ -559,7 +596,7 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
   ncclSocketGetAddr(&commBase->sock, &addr);
 
   struct ncclIbRequest* req = NULL;
-  NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, wc->wr_id & 0xff, &req));
+  NCCLCHECK(ncclIbRequestRetrieveFromCompletion(commBase, wc, &req));
 
   #ifdef ENABLE_TRACE
   char line[SOCKET_NAME_MAXLEN+1];
@@ -588,7 +625,47 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         return ncclInternalError;
       }
       if (req->nreqs == 1) {
-        req->recv.sizes[0] = be32toh(wc->imm_data);
+        if (ncclParamIbReceiverSideMatchingScheme() == BY_ID) {
+          // The below logic makes sure that any size (including zero-sized)
+          // send messages can be sent over any number of QPs, where each QP
+          // can send arbitrary portion of the send request.
+          if (req->recv.sizes[0] != -1) {
+            // The sender wrote to the completion records the size of the send
+            // request. Therefore, the size should be retreived directly from
+            // there and be assigned to the recv.aggSize.
+            req->recv.aggSize = req->recv.sizes[0];
+          } else {
+            // The sender did not write to the completion records. Therefore,
+            // the send request was not split into The send RDMA Write followed
+            // by RDMA Write with immediate.
+            // In order to support zero-sized messages and the case where a send
+            // request was sent over multiple QPs and each QP delivered a portion
+            // of the data, the logic below first checks if the receiver already
+            // received a completion or not.
+            if (req->recv.aggSize == -1) {
+              // If recv.aggSize == -1, it means that it is the first completion
+              // for this request. Therefore, the whatever value in the
+              // work completion (wc->byte_len) is *assigned* to the recv.aggSize
+              // and *not added* to the recv.aggSize. This is done in this way,
+              // in order to support the case of zero-sized send requests. Note
+              // that if the send request was zero-sized, the wc->byte_len is
+              // zero, so adding the wc->byte_len would be incorrect since the
+              // recv.aggSize would remain -1 although the size to that might
+              // need to be reported to the user is 0.
+              req->recv.aggSize = wc->byte_len;
+            } else {
+              // In this case, the receiver already got a previous completion for
+              // this request (for example can happen when using multiple
+              // QPs) and the current completion is not the first one. In
+              // order to support zero-sized data transfer, the recv.aggSize is
+              // **added** with the size reported in the work completion 
+              // (wc->byte_len).
+              req->recv.aggSize+= wc->byte_len;
+            }
+          }          
+        } else {
+          req->recv.aggSize = be32toh(wc->imm_data);
+        }
       }
     }
     req->events[devIndex]--;

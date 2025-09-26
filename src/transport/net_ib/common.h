@@ -173,6 +173,7 @@ struct ncclIbRequest {
 #ifdef NCCL_ENABLE_NET_PROFILING
   struct ncclProfilerInfo pInfo[NCCL_NET_IB_MAX_RECVS];
 #endif
+  uint32_t id;
   int nreqs;
   union {
     struct {
@@ -183,6 +184,9 @@ struct ncclIbRequest {
     } send;
     struct {
       int* sizes;
+      // Aggregates the size of a send request when sender does not write to the
+      // completion records array.
+      int aggSize;
     } recv;
     struct {
       int rank;
@@ -314,9 +318,11 @@ struct ncclIbSendComm {
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS + 1];
   // Each dev correlates to a mergedIbDev
   struct ncclIbSendCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
-  struct ncclIbRequest* fifoReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
-  // Structure to hold all the related structures regarding the completions
-  // records structure.
+  // Array of pointers to store the send requests for faster access. The 
+  // pointers are pointing into requests stored in ncclIbNetCommBase::reqs[] 
+  // array. The requests are inserted to this array based on the "slot" they
+  // are associated with.
+  struct ncclIbRequest* sendReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ncclIbRemCompletionsRecords remCmplsRecords;
   int ar; // Use adaptive routing when all merged devices have it enabled
   uint64_t putSignalScratchpad;
@@ -374,6 +380,11 @@ struct alignas(16) ncclIbRecvCommDev {
 struct ncclIbRecvComm {
   struct ncclIbNetCommBase base;
   struct ncclIbRecvCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
+  // Array of pointers to store the recv requests to allow faster access. The
+  // pointers are pointing into requests stored in ncclIbNetCommBase::reqs[]
+  // array. The requests are inserted to this array using a hash (modulo) on
+  // their ID.
+  struct ncclIbRequest* recvReqs[NET_IB_MAX_REQUESTS];
   // Structure to hold all the related structures regarding the CTS FIFO
   // structure.
   struct ncclIbRemCtsFifo remCtsFifo;
