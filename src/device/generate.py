@@ -269,7 +269,7 @@ with open(os.path.join(gensrc, "host_table.cc"), "w") as f:
 
   # List of all kernel function pointers.
   out("extern int const ncclDevKernelCount = %d;\n" % len(kernel_funcs))
-  out("extern void* ncclDevKernelList[] = {\n")
+  out("void* ncclDevKernelList[] = {\n")
   index = 0
   for kfn in kernel_funcs:
     cudart, _ = required_cuda(*kfn)
