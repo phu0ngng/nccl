@@ -365,17 +365,17 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   if (str) sscanf(str, "0x%lx", &net->net.asic);
   else net->net.asic = dev;
 
-  ncclDebugNoWarn = NCCL_GRAPH;
   int mbps;
-  NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "speed", &mbps, 0));
+  NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "speed", &mbps, 0), NCCL_GRAPH);
   if (mbps <= 0) mbps = 10000; // Some NICs define speed = -1
   net->net.bw = mbps / 8000.0;
-  if (xmlGetAttrFloat(xmlNet, "latency", &net->net.latency) != ncclSuccess) net->net.latency = 0;
-  NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "port", &net->net.port, 0));
-  NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "gdr", &net->net.gdrSupport, 0));
-  NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "maxconn", &net->net.maxChannels, MAXCHANNELS));
-  NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "coll", &net->net.collSupport, 0));
-  ncclDebugNoWarn = 0;
+  ncclResult_t ret;
+  NOWARN(ret = xmlGetAttrFloat(xmlNet, "latency", &net->net.latency), NCCL_GRAPH);
+  if (ret != ncclSuccess) net->net.latency = 0;
+  NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "port", &net->net.port, 0), NCCL_GRAPH);
+  NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "gdr", &net->net.gdrSupport, 0), NCCL_GRAPH);
+  NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "maxconn", &net->net.maxChannels, MAXCHANNELS), NCCL_GRAPH);
+  NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "coll", &net->net.collSupport, 0), NCCL_GRAPH);
 
   NCCLCHECK(ncclTopoConnectNodes(nic, net, LINK_NET, net->net.bw));
   NCCLCHECK(ncclTopoConnectNodes(net, nic, LINK_NET, net->net.bw));
@@ -998,7 +998,8 @@ ncclResult_t ncclTopoMakeVnic(struct ncclXml* xml, struct ncclTopoNetInfo* netIn
 
   // Trigger the merge, then get the new device's properties
   int vDevIndex = 0;
-  ncclResult_t ret = netInfo->makeVDevice(&vDevIndex, vProps);
+  ncclResult_t ret;
+  NOWARN(ret = netInfo->makeVDevice(&vDevIndex, vProps), NCCL_GRAPH|NCCL_INIT|NCCL_NET);
   if (ret != ncclSuccess) {
     INFO(NCCL_GRAPH|NCCL_INIT|NCCL_NET, "TOPO/NET : Tried merging multiple devices together and failed. vProps={ndevs=%d, devs=[%d %d %d %d]}. Set NCCL_NET_MERGE_LEVEL=LOC to disable NIC fusion.",
       vProps->ndevs, vProps->devs[0], vProps->devs[1], vProps->devs[2], vProps->devs[3]);

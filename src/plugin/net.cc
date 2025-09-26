@@ -452,8 +452,7 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
     char* gpuPtr = NULL;
     void* mHandle = NULL;
     ncclResult_t ret;
-    ncclDebugNoWarn = NCCL_NET;
-    NCCLCHECKGOTO(comm->ncclNet->listen(comm->netContext, dev, &handle, &lComm), ret, cleanup1);
+    NCCLCHECKGOTONOWARN(comm->ncclNet->listen(comm->netContext, dev, &handle, &lComm), ret, cleanup1, NCCL_NET);
 
     bool connected;
     connected = false;
@@ -465,22 +464,22 @@ ncclResult_t ncclGpuGdrSupport(struct ncclComm* comm, int* gdrSupport) {
       }
 
       if (sComm == NULL)
-        NCCLCHECKGOTO(comm->ncclNet->connect(comm->netContext, dev, &handle, &sComm, NULL), ret, cleanup2);
+        NCCLCHECKGOTONOWARN(comm->ncclNet->connect(comm->netContext, dev, &handle, &sComm, NULL), ret, cleanup2, NCCL_NET);
 
       if (rComm == NULL)
-        NCCLCHECKGOTO(comm->ncclNet->accept(lComm, &rComm, NULL), ret, cleanup2);
+        NCCLCHECKGOTONOWARN(comm->ncclNet->accept(lComm, &rComm, NULL), ret, cleanup2, NCCL_NET);
 
       connected = (rComm != NULL) && (sComm != NULL);
     }
 
-    NCCLCHECKGOTO(ncclCudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup2);
-    if (comm->ncclNet->regMr(sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle) == ncclSuccess) {
-      NCCLCHECK(comm->ncclNet->deregMr(sComm, mHandle));
-      NCCLCHECK(comm->ncclNet->regMr(rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle));
-      NCCLCHECK(comm->ncclNet->deregMr(rComm, mHandle));
+    NCCLCHECKGOTONOWARN(ncclCudaMalloc(&gpuPtr, GPU_BUF_SIZE), ret, cleanup2, NCCL_NET);
+    NOWARN(ret = comm->ncclNet->regMr(sComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle), NCCL_NET);
+    if (ret == ncclSuccess) {
+      NCCLCHECKNOWARN(comm->ncclNet->deregMr(sComm, mHandle), NCCL_NET);
+      NCCLCHECKNOWARN(comm->ncclNet->regMr(rComm, gpuPtr, GPU_BUF_SIZE, NCCL_PTR_CUDA, &mHandle), NCCL_NET);
+      NCCLCHECKNOWARN(comm->ncclNet->deregMr(rComm, mHandle), NCCL_NET);
       gdrSupportMatrix[comm->cudaDev] = 1;
     }
-    ncclDebugNoWarn = 0;
     NCCLCHECK(ncclCudaFree(gpuPtr));
 cleanup2:
     if (rComm != NULL)
