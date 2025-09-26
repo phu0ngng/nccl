@@ -45,21 +45,17 @@ static ncclResult_t ncclEnvPluginLoad(void) {
   }
   envPluginLib = ncclOpenEnvPluginLib(envName);
   if (nullptr == envPluginLib) {
-    envPluginLib = ncclGetNetPluginLib(ncclPluginTypeEnv);
-    if (nullptr == envPluginLib) {
-      goto fail;
-    }
-    envName = nullptr;
+    goto fail;
   } else if (ncclPluginLibPaths[ncclPluginTypeEnv]) {
     envName = ncclPluginLibPaths[ncclPluginTypeEnv];
   }
 
   ncclEnvPlugins[EXT_ENV_PLUGIN] = getNcclEnv_v1(envPluginLib);
   if (nullptr == ncclEnvPlugins[EXT_ENV_PLUGIN]) {
-    if (envName) INFO(NCCL_INIT, "External env plugin %s is unsupported", envName);
+    INFO(NCCL_INIT, "External env plugin %s is unsupported", envName);
     goto fail;
   }
-  if (envName) INFO(NCCL_INIT, "Successfully loaded external env plugin %s", envName);
+  INFO(NCCL_INIT, "Successfully loaded external env plugin %s", envName);
 
   envPluginStatus = envPluginLoadSuccess;
 
