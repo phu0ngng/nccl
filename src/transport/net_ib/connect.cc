@@ -694,8 +694,6 @@ ib_connect:
 
   memcpy(&remMeta, stage->buffer, sizeof(ncclIbConnectionMetadata));
 
-  comm->base.nRemDevs = remMeta.ndevs;
-
   // ensure that the remote devices have the same link layer than the local devices used in the connection.
   if (comm->base.vProps.ndevs > 0) {
     int ibDev0 = comm->devs[0].base.ibDevN;
@@ -709,24 +707,27 @@ ib_connect:
     }
   }
 
-  // Copy remDevInfo for things like remGidInfo, remCmplsRecordsFifoAddr, etc.
-  for (int i = 0; i < remMeta.ndevs; i++) {
+  // Store the number of remote devices
+  comm->base.nRemDevs = remMeta.ndevs;
+
+  // Store the remote GID information per-device provided by the remote peer
+  for (int i = 0; i < comm->base.nRemDevs; i++) {
     comm->base.remDevs[i] = remMeta.devs[i];
     comm->base.remDevs[i].remoteGid.global.interface_id = comm->base.remDevs[i].gid.global.interface_id;
     comm->base.remDevs[i].remoteGid.global.subnet_prefix = comm->base.remDevs[i].gid.global.subnet_prefix;
   }
 
-  // Retain remote completion records info and prepare RDMA ops
+  // Store the completion records info provided by the remote
   comm->remCmplsRecords.addr = remMeta.addr;
-  for (int i = 0; i < remMeta.ndevs; i++) {
+  for (int i = 0; i < comm->base.nRemDevs; i++) {
     comm->remCmplsRecords.rkeys[i] = remMeta.devs[i].rkey;
   }
+
   for (int i=0; i < comm->base.vProps.ndevs; i++) {
     ncclIbSendCommDev* commDev = comm->devs + i;
     NCCLCHECKGOTO(wrap_ibv_reg_mr(&commDev->cmplsRecordsMr, comm->devs[i].base.pd, &comm->remCmplsRecords.elems, sizeof(comm->remCmplsRecords.elems), IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
     comm->devs[i].sge.lkey = comm->devs[i].cmplsRecordsMr->lkey;
   }
-  comm->base.nRemDevs = remMeta.ndevs;
 
   NCCLCHECKGOTO(ncclIbSenderQpsToRts(comm, dev, &remMeta), ret, fail);
 
@@ -952,10 +953,10 @@ ib_recv:
   struct ncclIbRecvCommDev* rCommDev;
 
   mergedDev = ncclIbMergedDevs + lComm->dev;
-  rComm->base.nRemDevs = remMeta.ndevs;
-  if (rComm->base.nRemDevs != rComm->base.vProps.ndevs) {
+
+  if (remMeta.ndevs != rComm->base.vProps.ndevs) {
     INFO(NCCL_NET, "NET/IB : Local mergedDev %s has a different number of devices=%d as remote %s %d",
-      mergedDev->devName, rComm->base.vProps.ndevs, remMeta.devName, rComm->base.nRemDevs);
+      mergedDev->devName, rComm->base.vProps.ndevs, remMeta.devName, remMeta.ndevs);
   }
 
   // Metadata to send back to requestor (sender)
@@ -977,11 +978,9 @@ ib_recv:
     }
   }
 
-  // Copy remGidInfo, remCtsFifoAddr, etc.
+  // Before assigning information about remote devices provided by the remote,
+  // ensure that they are compatible with local devices
   for (int i = 0; i < remMeta.ndevs; i++) {
-    rComm->base.remDevs[i] = remMeta.devs[i];
-    rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
-    rComm->base.remDevs[i].remoteGid.global.subnet_prefix = rComm->base.remDevs[i].gid.global.subnet_prefix;
     if (remMeta.devs[i].link_layer != link_layer) {
       int ibDev0 = rComm->devs[0].base.ibDevN;
       WARN("NET/IB : Remote %s device is incompatible with the local [%d]%s:%d/%s. Try selecting NICs of only one link type using NCCL_IB_HCA",
@@ -990,31 +989,42 @@ ib_recv:
     }
   }
 
+  // Store the number of remote devices provided by the remote peer
+  rComm->base.nRemDevs = remMeta.ndevs;
+
+  // Store the remote GID information per-device provided by the remote peer
+  for (int i = 0; i < rComm->base.nRemDevs; i++) {
+    rComm->base.remDevs[i] = remMeta.devs[i];
+    rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
+    rComm->base.remDevs[i].remoteGid.global.subnet_prefix = rComm->base.remDevs[i].gid.global.subnet_prefix;
+  }
+
   NCCLCHECKGOTO(ncclIbReceiverQpsCreateToRts(rComm, &remMeta, &meta), ret, fail);
   if (rComm->prepostReceiveWorkRequests) {
     NCCLCHECKGOTO(ncclIbReceiverPrePostReceiveWorkRequests(rComm), ret, fail);
   }
 
-  rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
-                            && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
-
-  // Retain remote CTS FIFO info and prepare my RDMA ops
+  // Store the remote CTS FIFO info provided by the remote peer
   rComm->remCtsFifo.addr = remMeta.addr;
-  for (int i = 0; i < remMeta.ndevs; i++) {
+  for (int i = 0; i < rComm->base.nRemDevs; i++) {
     rComm->remCtsFifo.rkeys[i] = remMeta.devs[i].rkey;
   }
+
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
 
     NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->ctsFifoMr, rCommDev->base.pd, &rComm->remCtsFifo.elems, sizeof(rComm->remCtsFifo.elems), IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
     rCommDev->sge.lkey = rCommDev->ctsFifoMr->lkey;
 
-    // Prepare completion records
+    // Register completion records
     NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->cmplsRecordsMr, rCommDev->base.pd, &rComm->cmplsRecords, sizeof(rComm->cmplsRecords), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
     meta.devs[i].rkey = rCommDev->cmplsRecordsMr->rkey;
 
   }
   if (ncclParamIbUseInline()) rComm->remCtsFifo.flags = IBV_SEND_INLINE;
+
+  rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
+                            && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
 
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
