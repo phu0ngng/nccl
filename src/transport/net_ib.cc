@@ -2967,7 +2967,7 @@ ncclResult_t ncclGinIbProxyRegMrSymDmaBuf(void* collComm, void* data, size_t siz
   struct ncclIbGinProxyMrHandle *ginMrHandle;
   NCCLCHECK(ncclCalloc(&ginMrHandle, 1));
 
-  NCCLCHECK(ncclIbRegMrDmaBufInternal(cComm->recvComm, data, size, type, offset, fd, mr_flags, (void **)&ginMrHandle->mrHandle));
+  NCCLCHECKNOWARN(ncclIbRegMrDmaBufInternal(cComm->recvComm, data, size, type, offset, fd, mr_flags, (void **)&ginMrHandle->mrHandle), NCCL_NET);
 
   NCCLCHECK(ncclCalloc(&ginMrHandle->base_vas, cComm->nranks));
   NCCLCHECK(ncclCalloc(&ginMrHandle->rkeys, cComm->nranks));
