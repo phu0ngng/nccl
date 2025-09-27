@@ -229,8 +229,6 @@ fail:
 }
 
 static ncclResult_t ncclNetPluginAssignToComm(struct ncclComm* comm, int pluginIndex, bool* isAssigned) {
-  const char* netName = comm->config.netName;
-  if (netName && strcasecmp(netName, netPluginLibs[pluginIndex].ncclNet->name) != 0) goto fail;
   if (ncclSuccess != ncclNetCheckDeviceVersion(comm, netPluginLibs[pluginIndex].ncclNet, 0)) goto fail;
 
   if (netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateEnabled) {
@@ -335,6 +333,16 @@ static void initPluginLibsOnceFunc() {
   pluginCount = pluginCounter;
 }
 
+static ncclResult_t ncclNetPluginFinalize(struct ncclComm* comm, int pluginIndex) {
+  NCCLCHECK(netPluginLibs[pluginIndex].ncclNet->finalize(comm->netContext));
+  if (netPluginLibs[pluginIndex].ncclCollNet) NCCLCHECK(netPluginLibs[pluginIndex].ncclCollNet->finalize(comm->collNetContext));
+  netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
+  if (pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) {
+    NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[pluginIndex]));
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclNetInit(struct ncclComm* comm) {
   bool ncclNetPluginInitialized = false;
   std::call_once(initPluginLibsOnceFlag, initPluginLibsOnceFunc);
@@ -343,18 +351,22 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
     if ((pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) && (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateLoadReady)) {
       NCCLCHECK(ncclNetPluginLoad(&netPluginLibs[pluginIndex]));
     }
-    if (netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateInitReady) {
+    if ((netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateInitReady)
+        && (!comm->config.netName || (strcasecmp(comm->config.netName, netPluginLibs[pluginIndex].ncclNet->name) == 0))) {
       // plugin init must be done by all comms to setup the context, therefore we use ">="
       NCCLCHECK(ncclNetPluginInit(comm, &netPluginLibs[pluginIndex]));
-    }
-    if (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateEnabled) {
-      bool isAssigned = false;
-      NCCLCHECK(ncclNetPluginAssignToComm(comm, pluginIndex, &isAssigned));
-      if (isAssigned) {
-        // If one external plugin is assigned to a comm, then disable all other external plugins
-        ncclNetPluginDisableOtherExternal(pluginIndex);
-        ncclNetPluginInitialized = true;
-        break;
+      if (netPluginLibs[pluginIndex].ncclNetPluginState == ncclNetPluginStateEnabled) {
+        bool isAssigned = false;
+        NCCLCHECK(ncclNetPluginAssignToComm(comm, pluginIndex, &isAssigned));
+        if (isAssigned) {
+          // If one external plugin is assigned to a comm, then disable all other external plugins
+          ncclNetPluginDisableOtherExternal(pluginIndex);
+          ncclNetPluginInitialized = true;
+          break;
+        }
+        else {
+          ncclNetPluginFinalize(comm, pluginIndex);
+        }
       }
     }
   }
@@ -366,12 +378,7 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
 ncclResult_t ncclNetFinalize(struct ncclComm* comm) {
   int pluginIndex = comm->netPluginIndex;
   std::lock_guard<std::mutex> lock(netPluginMutex);
-  NCCLCHECK(comm->ncclNet->finalize(comm->netContext));
-  if (comm->collNetContext) NCCLCHECK(comm->ncclCollNet->finalize(comm->collNetContext));
-  netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
-  for (int i = 0; i < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS); i++) {
-    NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[i]));
-  }
+  NCCLCHECK(ncclNetPluginFinalize(comm, pluginIndex));
   return ncclSuccess;
 }
 
