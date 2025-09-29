@@ -379,6 +379,17 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "maxconn", &net->net.maxChannels, MAXCHANNELS), NCCL_GRAPH);
   NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "coll", &net->net.collSupport, 0), NCCL_GRAPH);
 
+  // build the PCI id using the parent PCI link
+  uint64_t hacc[2] = {1, 1};
+  const char* busId = NULL;
+  struct ncclXmlNode* parent = xmlNet->parent;
+  while (parent != NULL && strcmp(parent->name, "pci") != 0) parent = parent->parent;
+  if (parent) NCCLCHECK(xmlGetAttr(parent, "busid", &busId));
+  // If we fail to find the PCIe path, we use the GUID instead.
+  if (busId) eatHash(hacc, busId, strlen(busId));
+  else eatHash(hacc, &net->net.asic);
+  net->net.pciId = digestHash(hacc);
+
   NCCLCHECK(ncclTopoConnectNodes(nic, net, LINK_NET, net->net.bw));
   NCCLCHECK(ncclTopoConnectNodes(net, nic, LINK_NET, net->net.bw));
   return ncclSuccess;

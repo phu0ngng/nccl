@@ -138,6 +138,7 @@ struct ncclTopoNode {
     }gpu;
     struct {
       int dev; // Plugin dev number
+      uint64_t pciId;
       uint64_t asic;
       int port;
       float bw;
