@@ -17,6 +17,7 @@ set(API_TEST_SOURCES
     ncclCudaGraph_test.cu
     ncclCommon_test.cu
     ncclCommAbort_test.cu
+    ncclCommRevoke_test.cu
     ncclRedOpCreatePreMulSum.cu
     ncclGetUniqueId_test.cu
     ncclCommSplit_test.cu

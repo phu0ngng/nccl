@@ -305,7 +305,7 @@ The Shrink operation handles resources differently from Split, with the resource
 ```c
 // Set the shareResource field, this is used throughout the init and must be reset every time.
 // If we shrink, we only reuse resources if we are not shrinking due to an error.
-comm->shareResources = isShrink ? (mode != ncclShrinkModeError && comm->config.shrinkShare) : comm->config.splitShare;
+comm->shareResources = !comm->revokedFlag && (isShrink ? (mode != ncclShrinkModeError && comm->config.shrinkShare) : comm->config.splitShare);
 if (comm->shareResources) {
   childComm->abortFlag = comm->abortFlag;
   childComm->abortFlagDev = comm->abortFlagDev;
@@ -326,10 +326,11 @@ if (comm->shareResources) {
 The resource sharing behavior depends on several factors:
 
 1. **Operation type and mode**:
-   - For Split operations: Resource sharing is controlled by `comm->config.splitShare`
+   - For Split operations: Resource sharing is controlled by `comm->config.splitShare`, but disabled if the parent is revoked
    - For Shrink operations: Resource sharing is only allowed when:
      - Not in error mode (`mode != ncclShrinkModeError`)
      - Sharing is explicitly enabled via `comm->config.shrinkShare`
+     - The parent communicator is not revoked
 
 2. **Resource sharing configuration**:
    - `splitShare`: Controls resource sharing for Split operations

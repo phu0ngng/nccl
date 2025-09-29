@@ -126,6 +126,17 @@ On the other hand, when using *NCCL_SHRINK_ABORT*, NCCL will automatically abort
 ncclCommFinalize
 ----------------
 
+ncclCommRevoke
+--------------
+
+.. c:function:: ncclResult_t ncclCommRevoke(ncclComm_t comm, int revokeFlags)
+
+Revokes in-flight operations on a communicator without destroying resources. Successful return may be *ncclInProgress* (non-blocking) while revocation completes asynchronously; applications can query *ncclCommGetAsyncError* until it returns *ncclSuccess*.
+
+*revokeFlags* must be set to *NCCL_REVOKE_DEFAULT* (0). Other values are reserved for future use.
+
+After revoke completes, the communicator is quiesced and safe for destroy, split, and shrink. Launching new collectives on a revoked communicator returns *ncclInvalidUsage*. Calling *ncclCommFinalize* after revoke is not supported. Resource sharing via *splitShare*/*shrinkShare* is disabled when the parent communicator is revoked.
+
 .. c:function:: ncclResult_t ncclCommFinalize(ncclComm_t comm)
 
 Finalize a communicator object *comm*. When the communicator is marked as nonblocking, *ncclCommFinalize* is a
