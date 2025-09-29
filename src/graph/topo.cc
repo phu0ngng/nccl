@@ -357,13 +357,15 @@ ncclResult_t ncclTopoAddNet(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
   int dev;
   NCCLCHECK(xmlGetAttrInt(xmlNet, "dev", &dev));
 
+  int64_t netId = NCCL_TOPO_ID(systemId, dev);
   struct ncclTopoNode* net;
-  NCCLCHECK(ncclTopoCreateNode(system, &net, NET, NCCL_TOPO_ID(systemId, dev)));
+  NCCLCHECK(ncclTopoCreateNode(system, &net, NET, netId));
   net->net.dev = dev;
   const char* str;
+  // if not guid is present use the net->id unique id instead, which will be unique within the node/NVLD
   NCCLCHECK(xmlGetAttr(xmlNet, "guid", &str));
-  if (str) sscanf(str, "0x%lx", &net->net.asic);
-  else net->net.asic = dev;
+  net->net.asic = (str) ? strtoull(str, NULL, 16) : netId;
+
 
   int mbps;
   NCCLCHECKNOWARN(xmlGetAttrIntDefault(xmlNet, "speed", &mbps, 0), NCCL_GRAPH);
