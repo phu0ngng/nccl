@@ -147,7 +147,7 @@ struct ncclGinApi_PutValue<NCCL_NET_DEVICE_GIN_GDAKI> {
       }
 
       if (hasSignal) {
-        doca_gpu_dev_verbs_p_signal<DOCA_GPUNETIO_VERBS_SIGNAL_OP_ADD>(
+        doca_gpu_dev_verbs_p_signal<T, DOCA_GPUNETIO_VERBS_SIGNAL_OP_ADD>(
           qp, raddr, srcVal, sig_raddr, sig_laddr, signalOpArg);
       } else {
         doca_gpu_dev_verbs_p(qp, raddr, srcVal);
