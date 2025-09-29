@@ -241,6 +241,8 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
       req->send.lkeys[i] = mhandleWrapper->mrs[i]->lkey;
     }
 
+    INFO(NCCL_NET, "NET/IB: %s: Send request (comm=%p, request=%p, slot=%d, reqIdx=%d, nreqs=%d, tag=%x, size=%ld, data=0x%016" PRIx64 ", mhandle=%p, size=%ld, id=%d)", __func__, req->base, req, slot, r, nreqs, tag, size, (uint64_t)data, mhandle, size, req->id);
+
     *request = reqs[r] = req;
 
     // If this is a multi-recv, send only when all requests have matched.
@@ -333,6 +335,8 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
     ncclIbAddEvent(req, ctsQp->devIndex);
   }
 
+  INFO(NCCL_NET, "NET/IB: %s: Posting CTS: req=%p, comm=%p, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d", __func__, req, req->base, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags);
+
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(ctsQp->qp, &wr, &bad_wr));
   comm->base.fifoHead++;
@@ -356,6 +360,9 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
   req->type = NCCL_NET_IB_REQ_RECV;
   req->sock = &comm->base.sock;
   req->nreqs = n;
+
+  INFO(NCCL_NET, "NET/IB: %s: Recv request (request=%p, comm=%p, nreqs=%d, tag[0]=%x, comm=%p, id=%d)", __func__, req, req->base, n, tags[0], req->base, req->id);
+
 #ifdef NCCL_ENABLE_NET_PROFILING
   for (int r = 0; r < n && phandles; r++) req->pInfo[r].nEventHandles = 0;
 #endif
@@ -527,7 +534,7 @@ static inline ncclResult_t ncclIbRequestRetrieveFromCompletion(struct ncclIbNetC
     // is assumed to be in the lower 8 bits of wr_id.
     NCCLCHECK(ncclIbRequestRetrieveAsIndex(base->reqs, wc->wr_id & 0xff, req));
   }
-  INFO(NCCL_NET, "NET/IB: %s: Retrieved request (request=%p, type=%d, id=%d)", __func__, *req, (*req)->type, (*req)->id);
+  INFO(NCCL_NET, "NET/IB: %s: Retrieved request (request=%p, comm=%p, type=%s, id=%d)", __func__, *req, (*req)->base, ncclIbReqTypeStr[(*req)->type], (*req)->id);
   return ncclSuccess;
 }
 
@@ -539,6 +546,7 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
   TRACE(NCCL_NET, "r=%p done", r);
   *done = 1;
   if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
+    INFO(NCCL_NET, "NET/IB: %s: Recv request completed (request=%p, comm=%p, type=%s, nreqs=%d, id=%d)", __func__, r, r->base, ncclIbReqTypeStr[r->type], r->nreqs, r->id);
     int *sizesToReport = (r->nreqs > 1 || r->recv.sizes[0] > 0) ? r->recv.sizes : &(r->recv.aggSize);
     for (int i=0; i<r->nreqs; i++) {
       sizes[i] = sizesToReport[i];
@@ -550,6 +558,7 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
     }
   }
   if (sizes && r->type == NCCL_NET_IB_REQ_SEND) {
+    INFO(NCCL_NET, "NET/IB: %s: Send request completed (request=%p, comm=%p, id=%d)", __func__, r, r->base, r->id);
     sizes[0] = r->send.size;
 #ifdef NCCL_ENABLE_NET_PROFILING
     for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
@@ -616,7 +625,8 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
   } else {
     if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
       if (req->type != NCCL_NET_IB_REQ_RECV) {
-        WARN("NET/IB: wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM and req->type=%d", req->type);
+        WARN("NET/IB: wc->opcode=%s and req->type=%s", ibvWcOpcodeStr(wc->opcode), ncclIbReqTypeStr[req->type]);
+        assert(false);
         return ncclInternalError;
       }
       if (req->nreqs == 1) {
