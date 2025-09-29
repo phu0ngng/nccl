@@ -848,6 +848,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   }
 
   if (devr->ginEnabled) {
+    outDevComm->ginContextCount = nGinContexts;
     outDevComm->ginSignalCount = ginSignalTotal;
     outDevComm->ginCounterCount = ginCounterTotal;
     NCCLCHECKGOTO(ncclGinAllocSignalsCounters(comm,
