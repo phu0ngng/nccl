@@ -849,6 +849,20 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
   return ncclSuccess;
 }
 
+ncclResult_t ncclIbReceiverPrePostReceiveWorkRequests(struct ncclIbRecvComm* recvComm) {
+  int nRecvWorkRequestsPerQp = NET_IB_MAX_REQUESTS;
+  int nqps = recvComm->base.nqps; 
+  INFO(NCCL_NET, "NET/IB: %s: Pre-posting %d Receive WQEs on every QP out of %d QPs", __func__, nRecvWorkRequestsPerQp, nqps);
+  for (int i = 0; i < nqps; i++) {
+    struct ncclIbQp* dataQp = &recvComm->base.qps[i];
+    for (int j = 0; j < nRecvWorkRequestsPerQp; j++) {
+      NCCLCHECK(ncclIbPostRecvWorkRequest(dataQp->qp, &recvComm->ibRecvWorkRequest));
+    }
+  }
+  INFO(NCCL_NET, "NET/IB: %s: Pre-posted %d Receive WQEs on every QP out of %d QPs", __func__, nRecvWorkRequestsPerQp, nqps);
+  return ncclSuccess;
+}
+
 NCCL_PARAM(IbGdrFlushDisable, "GDR_FLUSH_DISABLE", 0);
 
 ncclResult_t ncclIbAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** /*recvDevComm*/) {
@@ -876,6 +890,7 @@ ncclResult_t ncclIbAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle
   }
 
   NCCLCHECK(ncclIbMalloc((void**)&rComm, sizeof(struct ncclIbRecvComm)));
+  NCCLCHECKGOTO(ncclIbRecvCommInit(rComm), ret, fail);
   NCCLCHECKGOTO(ncclIbStatsInit(&rComm->base.stats), ret, fail);
   stage->comm = rComm;
   stage->state = ncclIbCommStateAccept;
@@ -979,6 +994,9 @@ ib_recv:
   }
 
   NCCLCHECKGOTO(ncclIbReceiverQpsCreateToRts(rComm, &remMeta, &meta), ret, fail);
+  if (rComm->prepostReceiveWorkRequests) {
+    NCCLCHECKGOTO(ncclIbReceiverPrePostReceiveWorkRequests(rComm), ret, fail);
+  }
 
   rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
                             && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;

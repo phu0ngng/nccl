@@ -363,23 +363,19 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
   // Store the request in a table for easy retrieval by ID.
   comm->recvReqs[req->id % NET_IB_MAX_REQUESTS] = req;
 
-  struct ibv_recv_wr wr;
-  memset(&wr, 0, sizeof(wr));
-  wr.wr_id = req - comm->base.reqs;
-  wr.sg_list = NULL;
-  wr.num_sge = 0;
-
   TIME_START(1);
-
   const int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
-
-  // Post recvs
-  struct ibv_recv_wr* bad_wr;
   int qpIndex = -1;
   ncclIbQp* qp = NULL;
   for (int i = 0; i < nqps; i++) {
     NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, req->id, i, &qp, &qpIndex));
     ncclIbAddEvent(req, qp->devIndex);
+    if (comm->prepostReceiveWorkRequests) {
+      continue;
+    }
+    // Post receive work request on the QP
+    comm->ibRecvWorkRequest.wr_id = req - comm->base.reqs;
+    NCCLCHECK(ncclIbPostRecvWorkRequest(qp->qp, &comm->ibRecvWorkRequest));
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
     for (int r = 0; r < n; r++) {
@@ -390,13 +386,12 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
       int64_t pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       req->pInfo[r].data.type = ncclProfileQp;
       req->pInfo[r].data.qp.device = qp->devIndex;
-      req->pInfo[r].data.qp.wr_id = wr.wr_id;
+      req->pInfo[r].data.qp.wr_id = comm->ibRecvWorkRequest.wr_id;
       req->pInfo[r].data.qp.qpNum = qp->qp->qp_num;
       NCCLCHECK(ncclProfilerFunction(&req->pInfo[r].qpEventHandles[nEventHandles], ncclProfilerNetEventStart, phandles[r], pluginId, &req->pInfo[r].data));
       req->pInfo[r].nEventHandles++;
     }
 #endif
-    NCCLCHECK(wrap_ibv_post_recv(qp->qp, &wr, &bad_wr));
   }
 
   TIME_STOP(1);
@@ -630,6 +625,13 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         } else if (req->recv.sizes[0] == 0) {
           req->recv.aggSize+= wc->byte_len;
         }
+      }
+      struct ncclIbRecvComm* recvComm = (struct ncclIbRecvComm*)commBase;
+      if (recvComm->prepostReceiveWorkRequests) {
+        // Post another receive work request on the QP
+        ncclIbQp* qp = NULL;
+        ncclIbCommBaseGetQpByQpNum(commBase, devIndex, wc->qp_num, &qp, NULL);
+        ncclIbPostRecvWorkRequest(qp->qp, &recvComm->ibRecvWorkRequest);
       }
     }
     req->events[devIndex]--;
