@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <mutex>
 
 #include "doca_verbs_net_wrapper.h"
 #include "host/doca_error.h"
@@ -106,7 +107,6 @@ static ibv_query_qp_func_t real_ibv_query_qp = NULL;
 /* *********** Library Handle *********** */
 
 static void *ibverbs_handle = NULL;
-static int ibverbs_initialized = 0;
 
 /* *********** Helper Functions *********** */
 
@@ -115,11 +115,7 @@ static int ibverbs_initialized = 0;
  *
  * @return 0 on success, -1 on failure
  */
-static int init_ibverbs_library(void) {
-    if (ibverbs_initialized) {
-        return 0;
-    }
-
+static void doca_verbs_wrapper_init_once(int *ret) {
     /* Try to open the IB Verbs library */
     ibverbs_handle = dlopen("libibverbs.so.1", RTLD_LAZY);
     if (!ibverbs_handle) {
@@ -127,7 +123,8 @@ static int init_ibverbs_library(void) {
     }
     if (!ibverbs_handle) {
         fprintf(stderr, "Failed to load libibverbs: %s\n", dlerror());
-        return -1;
+        *ret = -1;
+        return;
     }
 
     /* Load all function pointers */
@@ -168,11 +165,18 @@ static int init_ibverbs_library(void) {
         fprintf(stderr, "Failed to load IB Verbs functions: %s\n", dlerror());
         dlclose(ibverbs_handle);
         ibverbs_handle = NULL;
-        return -1;
+        *ret = -1;
+        return;
     }
 
-    ibverbs_initialized = 1;
-    return 0;
+    *ret = 0;
+}
+
+static int init_ibverbs_library(void) {
+    int ret = 0;
+    static std::once_flag once;
+    std::call_once(once, doca_verbs_wrapper_init_once, &ret);
+    return ret;
 }
 
 /* *********** Wrapper Implementations *********** */

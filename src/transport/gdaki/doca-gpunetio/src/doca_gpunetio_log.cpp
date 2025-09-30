@@ -41,7 +41,7 @@
 
 #include "doca_gpunetio_log.hpp"
 
-static const char *doca_gpu_log_level_strings[] = {"EMERG", "ALERT", "CRIT", "ERR",
+static const char *doca_gpu_log_level_strings[] = {"EMERG",   "ALERT",  "CRIT", "ERR",
                                                    "WARNING", "NOTICE", "INFO", "DEBUG"};
 
 void doca_gpu_log_print(int log_level, const char *file, int line, const char *func,

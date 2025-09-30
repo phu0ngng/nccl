@@ -2371,7 +2371,8 @@ uint16_t doca_verbs_qp_attr_get_min_rnr_timer(const struct doca_verbs_qp_attr *v
     return verbs_qp_attr->min_rnr_timer;
 }
 
-doca_error_t doca_verbs_ah_attr_create(struct ibv_context *context, struct doca_verbs_ah_attr **verbs_ah) {
+doca_error_t doca_verbs_ah_attr_create(struct ibv_context *context,
+                                       struct doca_verbs_ah_attr **verbs_ah) {
     if (context == nullptr) {
         DOCA_LOG(LOG_ERR, "Failed to create verbs_ah: parameter context is NULL");
         return DOCA_ERROR_INVALID_VALUE;
@@ -2404,7 +2405,8 @@ doca_error_t doca_verbs_ah_attr_destroy(struct doca_verbs_ah_attr *verbs_ah) {
     return DOCA_SUCCESS;
 }
 
-doca_error_t doca_verbs_ah_attr_set_gid(struct doca_verbs_ah_attr *verbs_ah, struct doca_verbs_gid gid) {
+doca_error_t doca_verbs_ah_attr_set_gid(struct doca_verbs_ah_attr *verbs_ah,
+                                        struct doca_verbs_gid gid) {
     if (verbs_ah == nullptr) {
         DOCA_LOG(LOG_ERR, "Failed to set gid: parameter verbs_ah is NULL");
         return DOCA_ERROR_INVALID_VALUE;
@@ -2427,7 +2429,7 @@ struct doca_verbs_gid doca_verbs_ah_get_gid(const struct doca_verbs_ah_attr *ver
 }
 
 doca_error_t doca_verbs_ah_attr_set_addr_type(struct doca_verbs_ah_attr *verbs_ah,
-                                         enum doca_verbs_addr_type addr_type) {
+                                              enum doca_verbs_addr_type addr_type) {
     if (verbs_ah == nullptr) {
         DOCA_LOG(LOG_ERR, "Failed to set addr_type: parameter verbs_ah is NULL");
         return DOCA_ERROR_INVALID_VALUE;
@@ -2487,7 +2489,8 @@ uint8_t doca_verbs_ah_get_sl(const struct doca_verbs_ah_attr *verbs_ah) {
     return verbs_ah->sl;
 }
 
-doca_error_t doca_verbs_ah_attr_set_sgid_index(struct doca_verbs_ah_attr *verbs_ah, uint8_t sgid_index) {
+doca_error_t doca_verbs_ah_attr_set_sgid_index(struct doca_verbs_ah_attr *verbs_ah,
+                                               uint8_t sgid_index) {
     if (verbs_ah == nullptr) {
         DOCA_LOG(LOG_ERR, "Failed to set sgid_index: parameter verbs_ah is NULL");
         return DOCA_ERROR_INVALID_VALUE;
@@ -2507,7 +2510,8 @@ uint8_t doca_verbs_ah_get_sgid_index(const struct doca_verbs_ah_attr *verbs_ah) 
     return verbs_ah->sgid_index;
 }
 
-doca_error_t doca_verbs_ah_attr_set_static_rate(struct doca_verbs_ah_attr *verbs_ah, uint8_t static_rate) {
+doca_error_t doca_verbs_ah_attr_set_static_rate(struct doca_verbs_ah_attr *verbs_ah,
+                                                uint8_t static_rate) {
     if (verbs_ah == nullptr) {
         DOCA_LOG(LOG_ERR, "Failed to set static_rate: parameter verbs_ah is NULL");
         return DOCA_ERROR_INVALID_VALUE;
@@ -2527,7 +2531,8 @@ uint8_t doca_verbs_ah_get_static_rate(const struct doca_verbs_ah_attr *verbs_ah)
     return verbs_ah->static_rate;
 }
 
-doca_error_t doca_verbs_ah_attr_set_hop_limit(struct doca_verbs_ah_attr *verbs_ah, uint8_t hop_limit) {
+doca_error_t doca_verbs_ah_attr_set_hop_limit(struct doca_verbs_ah_attr *verbs_ah,
+                                              uint8_t hop_limit) {
     if (verbs_ah == nullptr) {
         DOCA_LOG(LOG_ERR, "Failed to set hop_limit: parameter verbs_ah is NULL");
         return DOCA_ERROR_INVALID_VALUE;
@@ -2548,7 +2553,7 @@ uint8_t doca_verbs_ah_get_hop_limit(const struct doca_verbs_ah_attr *verbs_ah) {
 }
 
 doca_error_t doca_verbs_ah_attr_set_traffic_class(struct doca_verbs_ah_attr *verbs_ah,
-                                             uint8_t traffic_class) {
+                                                  uint8_t traffic_class) {
     if (verbs_ah == nullptr) {
         DOCA_LOG(LOG_ERR, "Failed to set traffic_class: parameter verbs_ah is NULL");
         return DOCA_ERROR_INVALID_VALUE;
