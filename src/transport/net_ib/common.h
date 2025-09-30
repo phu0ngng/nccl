@@ -425,7 +425,9 @@ struct ncclIbRecvComm {
 };
 static_assert((offsetof(struct ncclIbRecvComm, remCtsFifo) % 32) == 0, "ncclIbRecvComm ctsFifo must be 32-byte aligned");
 
+ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend);
 ncclResult_t ncclIbRecvCommInit(struct ncclIbRecvComm* recvComm);
+ncclResult_t ncclIbSendCommInit(struct ncclIbSendComm* sendComm);
 
 struct ncclIbListenComm {
   int dev;

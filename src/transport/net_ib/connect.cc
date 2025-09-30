@@ -17,7 +17,6 @@ NCCL_PARAM(IbSl, "IB_SL", -1);
 NCCL_PARAM(IbTc, "IB_TC", -1);
 NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
 NCCL_PARAM(IbEceEnable,"IB_ECE_ENABLE",1);
-NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 0);
 
 // Per-QP connection metatdata
 struct ncclIbQpInfo {
@@ -549,6 +548,7 @@ ncclResult_t ncclIbConnect(void* ctx, int dev, void* opaqueHandle, void** sendCo
   stage->buffer = NULL;
 
   NCCLCHECK(ncclIbMalloc((void**)&comm, sizeof(struct ncclIbSendComm)));
+  NCCLCHECKGOTO(ncclIbSendCommInit(comm), ret, fail);
   NCCLCHECKGOTO(ncclIbStatsInit(&comm->base.stats), ret, fail);
   NCCLCHECKGOTO(ncclSocketInit(&comm->base.sock, &handle->connectAddr, handle->magic, ncclSocketTypeNetIb, NULL, 1), ret, fail);
   stage->comm = comm;
@@ -569,7 +569,6 @@ ib_connect_check:
 
   mergedDev = ncclIbMergedDevs + dev;
   comm->base.vProps = mergedDev->vProps;
-  comm->base.isSend = true;
   stage->state = ncclIbCommStateSendDevList;
   stage->offset = 0;
   struct ncclIbConnectionMetadata meta;
@@ -734,7 +733,6 @@ ib_connect:
   comm->base.nDataQps = std::max(comm->base.vProps.ndevs, comm->base.nRemDevs);
 
   comm->base.ready = 1;
-  comm->base.splitDataOnQps = ncclParamIbSplitDataOnQps();
   stage->state = ncclIbCommStateConnected;
   stage->offset = 0;
 
@@ -925,7 +923,6 @@ ib_recv_dev_list:
   NCCLCHECK(ncclIbCheckVProps(&mergedDev->vProps, &remoteVProps));
   rComm->base.vProps = mergedDev->vProps;
   memcpy(stage->buffer, &rComm->base.vProps, sizeof(ncclNetVDeviceProps_t));
-  rComm->base.isSend = false;
   int localNqps, remoteNqps;
   localNqps  = ncclParamIbQpsPerConn() * rComm->base.vProps.ndevs; // We must have at least 1 qp per-device
   remoteNqps = ncclParamIbQpsPerConn() * remoteVProps.ndevs;
@@ -1076,8 +1073,6 @@ ib_send:
 ib_recv_ready:
   NCCLCHECKGOTO(ncclSocketProgress(NCCL_SOCKET_RECV,  &rComm->base.sock, &rComm->base.ready, sizeof(int), &stage->offset), ret, fail);
   if (stage->offset != sizeof(int)) return ncclSuccess;
-
-  rComm->base.splitDataOnQps = ncclParamIbSplitDataOnQps();
 
   *recvComm = rComm;
 exit:
