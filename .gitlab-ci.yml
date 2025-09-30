@@ -85,8 +85,8 @@ workflow:
       # Enable auto cancel for redundant pipelines, cancel all jobs that are interruptible
       auto_cancel:
         on_new_commit: interruptible
-    # Enable pipeline trigger on commits made to designated branches and disable auto-cancel via new commits. Run the post-submit phase.
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
+    # Enable pipeline trigger on commits made to designated branches and disable auto-cancel via new commits. Run the post-submit phase. However, do all this only when it's not a scheduled pipeline as we have a separate condition for those.
+    - if: ($CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH) && $CI_PIPELINE_SOURCE != 'schedule'
       variables:
         TRIGGER_PIPELINE: "post-submit"
     # Enable pipeline trigger via shcedules, and kick off the nightly flow.
