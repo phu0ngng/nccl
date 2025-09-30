@@ -12,6 +12,8 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
+#include <mutex>
+
 #include "ibvwrap.h"
 #include "mlx5/mlx5dvwrap.h"
 #include "gin/gin_host.h"
@@ -65,6 +67,9 @@ static const int NCCL_IB_TC_DEFAULT = 0;
 static inline bool gdakiRelaxedOrderingEnabled() {
   static bool hasCheckedRelaxedOrdering = false;
   static bool relaxedOrderingEnabled = false;
+
+  static std::mutex lockMutex;
+  std::lock_guard<std::mutex> lock(lockMutex);
 
   if (!hasCheckedRelaxedOrdering) {
     int roMode = ncclParamIbPciRelaxedOrdering();
