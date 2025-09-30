@@ -76,7 +76,8 @@ __device__ static __forceinline__ void doca_gpu_dev_verbs_put_thread(
                 DOCA_GPUNETIO_IB_MLX5_WQE_CTRL_CQ_UPDATE, 0,
                 raddr.addr + (i * DOCA_GPUNETIO_VERBS_MAX_TRANSFER_SIZE), raddr.key,
                 laddr.addr + (i * DOCA_GPUNETIO_VERBS_MAX_TRANSFER_SIZE), laddr.key, size_);
-        } else {
+        }
+        else {
             doca_gpu_dev_verbs_wqe_prepare_nop(qp, wqe_ptr, wqe_idx,
                                                DOCA_GPUNETIO_IB_MLX5_WQE_CTRL_CQ_UPDATE);
         }
@@ -278,7 +279,8 @@ __device__ static __forceinline__ void doca_gpu_dev_verbs_put_signal_thread(
                 DOCA_GPUNETIO_IB_MLX5_WQE_CTRL_CQ_UPDATE, 0,
                 raddr.addr + (i * DOCA_GPUNETIO_VERBS_MAX_TRANSFER_SIZE), raddr.key,
                 laddr.addr + (i * DOCA_GPUNETIO_VERBS_MAX_TRANSFER_SIZE), laddr.key, size_);
-        } else {
+        }
+        else {
             doca_gpu_dev_verbs_wqe_prepare_nop(qp, wqe_ptr, wqe_idx,
                                                DOCA_GPUNETIO_IB_MLX5_WQE_CTRL_CQ_UPDATE);
         }
@@ -487,8 +489,7 @@ template <enum doca_gpu_dev_verbs_resource_sharing_mode resource_sharing_mode =
 __device__ static __forceinline__ void doca_gpu_dev_verbs_wait(struct doca_gpu_dev_verbs_qp *qp) {
     uint64_t ticket =
         doca_gpu_dev_verbs_atomic_read<uint64_t, resource_sharing_mode>(&qp->sq_rsvd_index);
-    [[unlikely]] if (ticket == 0)
-        return;
+    [[unlikely]] if (ticket == 0) return;
     --ticket;
     doca_gpu_dev_verbs_poll_cq_at<resource_sharing_mode>(doca_gpu_dev_verbs_qp_get_cq_sq(qp),
                                                          ticket);

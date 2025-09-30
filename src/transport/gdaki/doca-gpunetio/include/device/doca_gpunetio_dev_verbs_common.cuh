@@ -55,7 +55,7 @@
 #if CUDA_VERSION >= 12020
 #define DOCA_GPUNETIO_VERBS_HAS_STORE_RELAXED_MMIO 1
 #else
-#warning "warning: doca_gpunetio should be used with a CUDA version > 12020."
+#warning "warning: doca_gpunetio should be used with a CUDA version >= 12020."
 #endif
 
 #if CUDA_VERSION >= 12080 && __CUDA_ARCH__ >= 900
@@ -365,6 +365,13 @@ __device__ static __forceinline__ uint8_t doca_gpu_dev_verbs_load_relaxed_sys_gl
     uint16_t ret;
     asm volatile("ld.relaxed.sys.global.L1::no_allocate.b8 %0, [%1];" : "=h"(ret) : "l"(ptr));
     return (uint8_t)ret;
+}
+
+__device__ static __forceinline__ uint32_t
+doca_gpu_dev_verbs_load_relaxed_sys_global(uint32_t *ptr) {
+    uint32_t ret;
+    asm volatile("ld.relaxed.sys.global.L1::no_allocate.b32 %0, [%1];" : "=r"(ret) : "l"(ptr));
+    return ret;
 }
 
 __device__ static __forceinline__ uint64_t
