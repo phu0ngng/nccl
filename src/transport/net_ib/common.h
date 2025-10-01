@@ -392,11 +392,11 @@ struct ncclIbListenComm {
 };
 
 static ncclResult_t ncclIbStatsInit(struct ncclIbStats* stat) {
-  __atomic_store_n(&stat->fatalErrorCount, 0, __ATOMIC_RELAXED);
+  COMPILER_ATOMIC_STORE(&stat->fatalErrorCount, 0, std::memory_order_relaxed);
   return ncclSuccess;
 }
 static void ncclIbStatsFatalError(struct ncclIbStats* stat){
-  __atomic_fetch_add(&stat->fatalErrorCount, 1, __ATOMIC_RELAXED);
+  COMPILER_ATOMIC_FETCH_ADD(&stat->fatalErrorCount, 1, std::memory_order_relaxed);
 }
 static void ncclIbQpFatalError(struct ibv_qp* qp) {
   ncclIbStatsFatalError((struct ncclIbStats*)qp->qp_context);

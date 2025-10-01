@@ -169,12 +169,12 @@ ncclResult_t ncclStrongStreamAcquire(
     if (graph.graphId == ULLONG_MAX) {
       *workStream = ss->liveStream;
       ss->liveAcquiredBy = localThreadId();
-      if (mixing && __atomic_load_n(&ss->everCaptured, __ATOMIC_RELAXED)) {
+      if (mixing && COMPILER_ATOMIC_LOAD(&ss->everCaptured, std::memory_order_relaxed)) {
         CUDACHECK(cudaStreamWaitEvent(ss->liveStream, ss->serialEvent, 0));
       }
     } else {
       bool firstCapture = !ss->everCaptured;
-      __atomic_store_n(&ss->everCaptured, true, __ATOMIC_RELAXED);
+      COMPILER_ATOMIC_STORE(&ss->everCaptured, true, std::memory_order_relaxed);
 
       ncclResult_t ret = ncclSuccess;
       std::unique_lock<std::mutex> lock(ss->mutex, std::defer_lock);
@@ -275,7 +275,7 @@ ncclResult_t ncclStrongStreamRelease(
     bool mixing = ncclParamGraphMixingSupport();
     if (mixing) {
       if (graph.graphId == ULLONG_MAX) {
-        if (__atomic_load_n(&ss->everCaptured, __ATOMIC_RELAXED)) {
+        if (COMPILER_ATOMIC_LOAD(&ss->everCaptured, std::memory_order_relaxed)) {
           CUDACHECK(cudaEventRecord(ss->serialEvent, ss->liveStream));
         }
         if (ss->liveAcquiredBy != localThreadId() && ncclParamLaunchRaceFatal()) {

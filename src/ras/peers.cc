@@ -9,6 +9,7 @@
 #include "comm.h"
 #include "nccl.h"
 #include "ras_internal.h"
+#include "compiler.h"
 
 
 // All the known peer NCCL processes. The array is sorted by addr to ensure locality (within a node and hopefully
@@ -996,7 +997,7 @@ static void rasDeadPeersDump() {
 static char* rasPeerDump(const struct rasPeerInfo* peer, char* result, size_t nres) {
   char line[SOCKET_NAME_MAXLEN+1], line2[1024];
   snprintf(result, nres, "socket %s, pid %d, GPU%s %s", ncclSocketToString(&peer->addr, line), peer->pid,
-           (__builtin_popcountll(peer->cudaDevs) > 1 ? "s" : ""),
+           (COMPILER_POPCOUNT64(peer->cudaDevs) > 1 ? "s" : ""),
            rasGpuDevsToString(peer->cudaDevs, peer->nvmlDevs, line2, sizeof(line2)));
   return result;
 }

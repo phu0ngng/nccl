@@ -728,12 +728,12 @@ inline void ncclCommIntraBarrierIn(struct ncclComm* comm, uint32_t x) {
     comm->intraBarrierGate = (uint64_t(x)<<32) | (phase^1);
   } else {
     struct ncclComm* comm0 = comm->intraComm0;
-    uint64_t count = __atomic_add_fetch(&comm0->intraBarrierCounter, (uint64_t(x)<<32) + 1, __ATOMIC_RELEASE);
+    uint64_t count = COMPILER_ATOMIC_ADD_FETCH(&comm0->intraBarrierCounter, (uint64_t(x)<<32) + 1, std::memory_order_release);
     if (uint32_t(count) == uint32_t(comm->intraRanks)) {
       // Reset.
-      __atomic_store_n(&comm0->intraBarrierCounter, 0, __ATOMIC_RELAXED);
+      COMPILER_ATOMIC_STORE(&comm0->intraBarrierCounter, 0, std::memory_order_relaxed);
       // Release everyone.
-      __atomic_store_n(&comm0->intraBarrierGate, (count>>32<<32) | (phase^1), __ATOMIC_RELEASE);
+      COMPILER_ATOMIC_STORE(&comm0->intraBarrierGate, (count>>32<<32) | (phase^1), std::memory_order_release);
     }
   }
 }
@@ -743,16 +743,16 @@ inline uint32_t ncclCommIntraBarrierOut(struct ncclComm* comm) {
   struct ncclComm* comm0 = comm->intraComm0;
   comm->intraBarrierPhase ^= 1;
   uint32_t phase = comm->intraBarrierPhase;
-  uint64_t gate = __atomic_load_n(&comm0->intraBarrierGate, __ATOMIC_RELAXED);
+  uint64_t gate = COMPILER_ATOMIC_LOAD(&comm0->intraBarrierGate, std::memory_order_relaxed);
   if ((gate & 1) != phase) {
     uint64_t t0 = clockNano();
     do {
       // Spin vigorously for first 5us.
       if (clockNano()-t0 >= 5*1000) std::this_thread::yield();
-      gate = __atomic_load_n(&comm0->intraBarrierGate, __ATOMIC_RELAXED);
+      gate = COMPILER_ATOMIC_LOAD(&comm0->intraBarrierGate, std::memory_order_relaxed);
     } while ((gate & 1) != phase);
   }
-  if (comm->intraRanks != 1) __atomic_thread_fence(__ATOMIC_ACQUIRE);
+  if (comm->intraRanks != 1) std::atomic_thread_fence(std::memory_order_acquire);
   return gate>>32;
 }
 

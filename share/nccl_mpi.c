@@ -29,6 +29,7 @@
 
 #include "mpi.h"
 #include "nccl_net.h"
+#include "compiler.h"
 
 /************************************************************************
  * This is an example using the NCCL network API to use MPI for
@@ -191,7 +192,7 @@ struct ncclMpiSendComm {
 static int mpiTag = 1;
 static void getTag(int *tag) {
   int val = mpiTag;
-  while (__sync_val_compare_and_swap(&mpiTag, val, val+1) != val) {
+  while (COMPILER_ATOMIC_COMPARE_EXCHANGE(&mpiTag, &val, val+1, std::memory_order_seq_cst, std::memory_order_seq_cst) != val) {
    val++;
   }
   *tag = val;

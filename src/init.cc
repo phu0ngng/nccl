@@ -18,6 +18,7 @@
 #include "argcheck.h"
 #include "tuner.h"
 #include "ras.h"
+#include "compiler.h"
 #include "profiler.h"
 #include "mnnvl.h"
 #include <sys/stat.h>
@@ -337,7 +338,7 @@ static ncclResult_t dmaBufSupported(struct ncclComm* comm) {
 ncclResult_t ncclCommEnsureReady(ncclComm_t comm) {
   /* comm must be ready, or error will be reported */
   ncclResult_t ret = ncclSuccess;
-  if (__atomic_load_n(comm->abortFlag, __ATOMIC_ACQUIRE)) {
+  if (COMPILER_ATOMIC_LOAD(comm->abortFlag, std::memory_order_acquire)) {
     ncclGroupJobAbort(comm->groupJob);
   } else {
     NCCLCHECK(ncclCommGetAsyncError(comm, &ret));
@@ -862,7 +863,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(ncclCalloc(&comm->peerInfo, nranks+1), ret, fail); // Extra rank to represent CollNet root
   NCCLCHECKGOTO(fillInfo(comm, comm->peerInfo+rank, comm->commHash), ret, fail);
   NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, comm->peerInfo, sizeof(struct ncclPeerInfo)), ret, fail);
-  __atomic_store_n(&comm->peerInfoValid, true, __ATOMIC_RELEASE);
+  COMPILER_ATOMIC_STORE(&comm->peerInfoValid, true, std::memory_order_release);
 
   comm->cuMemSupport = 1;
   for (int i = 0; i < nranks; i++) {
@@ -1344,7 +1345,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
     // In theory we could be racing with other communicators not associated with
     // this one if the user is connecting to multiple ncclUniqueId's concurrently.
-    modeOld = __atomic_exchange_n(&ncclParamLaunchMode, mode, __ATOMIC_RELAXED);
+    modeOld = COMPILER_ATOMIC_EXCHANGE(&ncclParamLaunchMode, mode, std::memory_order_relaxed);
     if (modeOld == ncclLaunchModeInvalid && str && str[0]!='\0') {
       INFO(NCCL_ENV, "NCCL_LAUNCH_MODE set by environment to %s", mode == ncclLaunchModeParallel ? "PARALLEL" : "GROUP");
     }
@@ -1570,7 +1571,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   // Trace this call for replay tool
   if (job->parent) {
     /* unlink child abort flag. */
-    __atomic_store_n(&job->parent->childAbortFlag, NULL, __ATOMIC_RELEASE);
+    COMPILER_ATOMIC_STORE(&job->parent->childAbortFlag, NULL, std::memory_order_release);
     TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)", job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
     INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p splitCount %d color %d key %d - Init COMPLETE", job->funcName,
          comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->splitCount, job->color, job->key);
@@ -1593,7 +1594,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
 exit:
   if (job->newcomm) {
     /* assign it to user pointer. */
-    __atomic_store_n(job->newcomm, comm, __ATOMIC_RELEASE);
+    COMPILER_ATOMIC_STORE(job->newcomm, comm, std::memory_order_release);
   }
   free(parentRanks);
   return res;
@@ -2114,7 +2115,7 @@ ncclResult_t ncclCommSetAsyncError(ncclComm_t comm, ncclResult_t nextState) {
     return ncclInvalidArgument;
   }
 
-  __atomic_store_n(&comm->asyncResult, nextState, __ATOMIC_RELEASE);
+  COMPILER_ATOMIC_STORE(&comm->asyncResult, nextState, std::memory_order_release);
   return ncclSuccess;
 }
 
@@ -2296,7 +2297,7 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_) {
     int *finalizeRankCnt = &intracomm0->finalizeRankCnt;
 
     assert(intracomm0 != NULL && finalizeRankCnt != NULL);
-    curRankCnt = __atomic_add_fetch(finalizeRankCnt, 1, __ATOMIC_ACQ_REL);
+    curRankCnt = COMPILER_ATOMIC_ADD_FETCH(finalizeRankCnt, 1, std::memory_order_acq_rel);
     if (curRankCnt == intraRanks) {
       ncclComm_t curIntraComm;
       ncclComm_t nextIntraComm = intracomm0;
@@ -2376,11 +2377,11 @@ fail:
 static ncclResult_t setCommAbortFlags(ncclComm_t comm, int value) {
   // Set abort flags
   if (comm->childAbortFlag != nullptr) {
-    __atomic_store_n(comm->childAbortFlag, value, __ATOMIC_RELEASE);
-    __atomic_store_n(comm->childAbortFlagDev, value, __ATOMIC_RELEASE);
+    COMPILER_ATOMIC_STORE(comm->childAbortFlag, value, std::memory_order_release);
+    COMPILER_ATOMIC_STORE(comm->childAbortFlagDev, value, std::memory_order_release);
   }
-  __atomic_store_n(comm->abortFlag, value, __ATOMIC_RELEASE);
-  __atomic_store_n(comm->abortFlagDev, value, __ATOMIC_RELEASE);
+  COMPILER_ATOMIC_STORE(comm->abortFlag, value, std::memory_order_release);
+  COMPILER_ATOMIC_STORE(comm->abortFlagDev, value, std::memory_order_release);
   return ncclSuccess;
 }
 
@@ -2688,14 +2689,14 @@ ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   NCCLCHECK(CommCheck(comm, "ncclGetAsyncError", "comm"));
   NCCLCHECK(PtrCheck(asyncError, "ncclGetAsyncError", "asyncError"));
 
-  *asyncError = __atomic_load_n(&comm->asyncResult, __ATOMIC_ACQUIRE);
-  if (*asyncError == ncclSuccess && comm->proxyState) *asyncError = __atomic_load_n(&comm->proxyState->asyncResult, __ATOMIC_ACQUIRE);
+  *asyncError = COMPILER_ATOMIC_LOAD(&comm->asyncResult, std::memory_order_acquire);
+  if (*asyncError == ncclSuccess && comm->proxyState) *asyncError = COMPILER_ATOMIC_LOAD(&comm->proxyState->asyncResult, std::memory_order_acquire);
 
   /* Check gin status */
   if (*asyncError == ncclSuccess && comm->sharedRes && comm->sharedRes->ginState.ncclGin) {
     struct ncclGinState* ginState = &comm->sharedRes->ginState;
     // Gin progress thread status
-    if (ginState->needsProxyProgress) *asyncError = __atomic_load_n(&comm->sharedRes->ginState.asyncResult, __ATOMIC_ACQUIRE);
+    if (ginState->needsProxyProgress) *asyncError = COMPILER_ATOMIC_LOAD(&comm->sharedRes->ginState.asyncResult, std::memory_order_acquire);
     // Gin side errors, also works when we have no GIN progress thread.
     if (*asyncError == ncclSuccess) {
       bool ginError;

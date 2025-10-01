@@ -8,6 +8,7 @@
 #include "shmutils.h"
 #include "shm.h"
 #include "transport.h"
+#include "compiler.h"
 
 #define SHM_PATH_MAX 128
 #define SHM_HANDLE_TYPE ncclCuMemHandleType
@@ -373,7 +374,7 @@ static ncclResult_t shmSendProxyProgress(struct ncclProxyState* proxyState, stru
           CUDACHECK(cudaMemcpyAsync(resources->shmFifo+buffSlot*stepSize, resources->devFifo+buffSlot*stepSize, size, cudaMemcpyDeviceToHost, resources->stream));
           CUDACHECK(cudaEventRecord(resources->events[buffSlot], resources->stream));
           resources->recvMem->connFifo[buffSlot].size = size;
-          __sync_synchronize(); // make sure connFifo[].size is visible
+          std::atomic_thread_fence(std::memory_order_seq_cst); // make sure connFifo[].size is visible
           sub->transmitted += args->sliceSteps;
         }
       }

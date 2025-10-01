@@ -177,7 +177,7 @@ static inline cudaError_t cuda_clear(cudaError_t err) {
     if (ncclDebugNoWarn == 0) INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, RES);    \
     return ncclInternalError;             \
   }                                       \
-  if (__atomic_load(tmpAbortFlag, __ATOMIC_ACQUIRE)) NEQCHECK(*tmpAbortFlag, 0); \
+  if (COMPILER_ATOMIC_LOAD(tmpAbortFlag, std::memory_order_acquire)) NEQCHECK(*tmpAbortFlag, 0); \
 } while (!(cond))
 
 #define NCCLWAITGOTO(call, cond, abortFlagPtr, RES, label) do { \
@@ -187,7 +187,7 @@ static inline cudaError_t cuda_clear(cudaError_t err) {
     if (ncclDebugNoWarn == 0) INFO(NCCL_ALL,"%s:%d -> %d", __FILE__, __LINE__, RES);    \
     goto label;                           \
   }                                       \
-  if (__atomic_load(tmpAbortFlag, __ATOMIC_ACQUIRE)) NEQCHECKGOTO(*tmpAbortFlag, 0, RES, label); \
+  if (COMPILER_ATOMIC_LOAD(tmpAbortFlag, std::memory_order_acquire)) NEQCHECKGOTO(*tmpAbortFlag, 0, RES, label); \
 } while (!(cond))
 
 #define NCCLCHECKTHREAD(a, args) do { \

@@ -91,7 +91,7 @@ ncclResult_t ncclEnvPluginInit(void) {
   ncclEnvPlugin = (envPluginLoadSuccess == envPluginStatus) ? ncclEnvPlugins[EXT_ENV_PLUGIN] : ncclEnvPlugins[INT_ENV_PLUGIN];
   NCCLCHECK(ncclEnvPlugin->init(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH, NCCL_SUFFIX));
   atexit(ncclEnvPluginFinalize);
-  __atomic_store_n(&initialized, true, __ATOMIC_RELEASE);
+  COMPILER_ATOMIC_STORE(&initialized, true, std::memory_order_release);
   return ncclSuccess;
 }
 
@@ -107,5 +107,5 @@ const char* ncclEnvPluginGetEnv(const char* name) {
 }
 
 bool ncclEnvPluginInitialized(void) {
-  return __atomic_load_n(&initialized, __ATOMIC_ACQUIRE);
+  return COMPILER_ATOMIC_LOAD(&initialized, std::memory_order_acquire);
 }
