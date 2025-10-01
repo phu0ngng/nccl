@@ -1,7 +1,7 @@
 # InfiniBand Port Fusion
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -68,10 +68,10 @@ N/A
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Problem Statement
 
 Dual port CX-6 RoCE NICs, which are physically a single 200 Gbs device,
@@ -112,7 +112,7 @@ criteria to be considered one merged device.
               return i;
             }
           }
-        
+
           // No match found
           return ncclNMergedIbDevs;
         }
@@ -237,16 +237,16 @@ None.
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -321,4 +321,4 @@ None.
 
 ### Signoff list
 </details>
- 
+

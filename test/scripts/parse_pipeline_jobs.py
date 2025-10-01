@@ -8,7 +8,7 @@ try:
     # Open and read the JSON file
     with open(json_file_path, 'r') as file:
         json_data = json.load(file)
-    
+
     gitlabTzInfo = timezone(timedelta(hours=-7))
 
     # Print header

@@ -1,7 +1,7 @@
 # CUDA_GRAPH
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -73,10 +73,10 @@ N/A
 
 Author : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 The goal is to have NCCL support CUDA graph when user uses CUDA graph at
@@ -215,16 +215,16 @@ None.
 
 Author : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -300,4 +300,4 @@ None.
 
 ### Signoff list
 </details>
- 
+

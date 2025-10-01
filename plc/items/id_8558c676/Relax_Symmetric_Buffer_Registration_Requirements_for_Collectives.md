@@ -19,7 +19,7 @@ https://nvbugspro.nvidia.com/bug/5441348
 
 ### User Experience
 Users only need to symmetrically register src or dst buffer, and NCCL will automatically pick optimal
-and feasible symmetric kernels for them. 
+and feasible symmetric kernels for them.
 
 ### Assumptions, constraints and dependencies
 NA

@@ -11,7 +11,7 @@ The set of tests covered in this PLC is a minimal subset of available NCCL APIs 
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
-The examples are categorized into "basic examples" and "advanced features". To learn the general use of NCCL new users are guided through self-contained examples highlighting all necessary steps to create a running NCCL application. 
+The examples are categorized into "basic examples" and "advanced features". To learn the general use of NCCL new users are guided through self-contained examples highlighting all necessary steps to create a running NCCL application.
 For users exploring specific features we show each "advanced feature" separately for easier readability.
 
 ### NVbugs / Jira Tickets

@@ -104,7 +104,7 @@ TEST_F(ncclCommFinalize_test, user_finalize_wait) {
             (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
         }
         ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
-        
+
         waitCommsReady(comms, nVis);
 
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -119,7 +119,7 @@ TEST_F(ncclCommFinalize_test, user_finalize_wait) {
 
         free(comms);
     }
-    
+
     SUCCEED();
 }
 
@@ -140,7 +140,7 @@ TEST_F(ncclCommFinalize_test, user_finalize) {
         ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
         waitCommsReady(comms, nVis);
-        
+
         ASSERT_EQ(ncclSuccess, ncclGroupStart());
         for (int i = 0; i < nVis; ++i)
             (void) ncclCommFinalize(comms[i]);
@@ -180,7 +180,7 @@ TEST_F(ncclCommFinalize_test, user_no_finalize) {
 
         free(comms);
     }
-    
+
     SUCCEED();
 }
 
@@ -195,7 +195,7 @@ TEST_F(ncclCommFinalize_test, one_gpu_per_thread) {
     volatile ncclUniqueId gid;
     volatile int ret, abortFlag;
     pthread_barrier_t barrier;
-    
+
     ret = 0;
     abortFlag = 0;
     pthread_barrier_init(&barrier, NULL, nVis);
@@ -270,7 +270,7 @@ TEST_F(ncclCommFinalize_test, double_finalize) {
         (void) ncclCommInitRankConfig(&comms[i], nVis, id, i, &config);
     }
     ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
-    
+
     waitCommsReady(comms, nVis);
 
     ASSERT_EQ(ncclSuccess, ncclGroupStart());

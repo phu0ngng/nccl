@@ -57,7 +57,7 @@ static void getHostName(char* hostname, int maxlen) {
   }
 }
 
-int main(int argc, char* argv[]) 
+int main(int argc, char* argv[])
 {
   int size = 32*1024*1024;
 
@@ -103,7 +103,7 @@ int main(int argc, char* argv[])
   CUDACHECK(cudaMalloc(&recvbuff, size * sizeof(float)));
   CUDACHECK(cudaStreamCreate(&s));
 
-  //initializing NCCL 
+  //initializing NCCL
   NCCLCHECK(ncclCommInitRank(&comm, nRanks, id, myRank));
 
   //communicating using NCCL

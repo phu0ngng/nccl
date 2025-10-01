@@ -11,7 +11,7 @@ This allows network plugin to optimize completions where appropriate.
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 
 https://nvbugspro.nvidia.com/bug/4225298
@@ -39,12 +39,12 @@ when Adaptive Routing or out-of-order handling is enabled on CX-7 and older NICs
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 Image showing the fence enforced at the sender when Aadaptive routing is enabled on CX-7. Use of
@@ -62,7 +62,7 @@ the QP.
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -78,7 +78,7 @@ https://gitlab-master.nvidia.com/nccl/nccl/-/merge\_requests/610/diffs
 
 ### Commit list or MR
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -93,7 +93,7 @@ https://gitlab-master.nvidia.com/nccl/nccl/-/merge\_requests/610/diffs
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -122,7 +122,7 @@ https://gitlab-master.nvidia.com/nccl/nccl/-/merge\_requests/610/diffs
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

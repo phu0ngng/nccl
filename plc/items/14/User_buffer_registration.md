@@ -1,7 +1,7 @@
 # User buffer registration
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -77,10 +77,10 @@ N/A
 
 Author : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 Algorithms like CollNet have few steps. In multi-process case, a copy
@@ -244,19 +244,19 @@ None.
 
 Author : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 Merge request !42 : CollNet with buffer registration
 
 Merge request !44 : CollNet: support registration in avg or pre-scale
 operations
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -339,4 +339,4 @@ None.
 
 Author : Ke Wen
 </details>
- 
+

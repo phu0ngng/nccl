@@ -34,7 +34,7 @@ testResult_t BroadcastInitData(struct threadArgs* args, ncclDataType_t type, ncc
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 

@@ -27,7 +27,7 @@ while [ -d items/$item ]; do
   title=$(ggrep -o -P '(?<=\: ).*(?=</title>)' ${folder}/index.html | sed 's/\// /')
   title_name=${title// /_}
   output=${folder}/${title_name}.md
-  
+
   echo "new markdown file: ${output} for feature: ${title}"
   # generate the main title
   echo "# ${title}" > ${output}
@@ -36,9 +36,9 @@ while [ -d items/$item ]; do
   to_md_pandoc "Design" ${folder}/design.html
   to_md_pandoc "Coding" ${folder}/coding.html ${folder}/coding.list
   to_md_pandoc "Testing" ${folder}/testing.html
-  
+
   echo "- [${title}](${output})" >> ${root}
-  
+
   #-------------------------------------
   item=`expr $item + 1`;
 done

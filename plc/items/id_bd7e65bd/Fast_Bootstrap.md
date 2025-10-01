@@ -19,7 +19,7 @@ With this feature we aim to improve the performance and provide a solution to th
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 
 The initialization time is a main issue for clients as they are looking at large scale runs.
@@ -75,12 +75,12 @@ Collective communications come with two flavors: the communicator-wide one, and 
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed improvements
 
 This feature proposes three improvements over the current implementation:
@@ -302,7 +302,7 @@ To avoid that issue, we recommend the tests to be run with the environment varia
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -311,9 +311,9 @@ To avoid that issue, we recommend the tests to be run with the environment varia
 ### Commit list or MR
 
 commit list can be found in the [Gitlab MR](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/475)
- 
+
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -464,7 +464,7 @@ When using multiple roots, we also reduce the time spent in the `bootstrap` part
 
 
 
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -493,7 +493,7 @@ When using multiple roots, we also reduce the time spent in the `bootstrap` part
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

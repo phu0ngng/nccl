@@ -8,7 +8,7 @@ Users want to launch NCCL ops in parallel on different communicators. This can d
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 https://nvbugspro.nvidia.com/bug/5002430
 https://nvbugspro.nvidia.com/bug/4999399
@@ -33,12 +33,12 @@ Relaxed NCCL semantics to make more programs deadlock free. Many users were usin
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 We now track state per CUcontext_t so the new struct ncclCudaContext has been added. This struct holds
@@ -61,16 +61,16 @@ Getting ncclStrongStream to work with launch order events involved a refactor th
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
 <!-- ============================================================================================-->
 
 ### Commit list or MR
- 
+
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -87,7 +87,7 @@ A new unit test has been added: test/unit/overlap_test. This test creates 32 com
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -116,7 +116,7 @@ A new unit test has been added: test/unit/overlap_test. This test creates 32 com
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

@@ -17,7 +17,7 @@ where out[i] = in0[i]+in1[i]+…+in(k-1)[i].
 
 .. figure:: images/allreduce.png
  :align: center
- 
+
  All-Reduce operation: each rank receives the reduction of input values across ranks.
 
 Related links: :c:func:`ncclAllReduce`.
@@ -31,7 +31,7 @@ The Broadcast operation copies an N-element buffer from the root rank to all the
 
 .. figure:: images/broadcast.png
  :align: center
- 
+
  Broadcast operation: all ranks receive data from a “root” rank.
 
 Important note: The root argument is one of the ranks, not a device number, and is therefore impacted by a different rank to device mapping.
@@ -47,7 +47,7 @@ The Reduce operation performs the same operation as AllReduce, but stores the re
 
 .. figure:: images/reduce.png
  :align: center
- 
+
  Reduce operation: one rank receives the reduction of input values across ranks.
 
 Important note: The root argument is one of the ranks (not a device number), and is therefore impacted by a different rank to device mapping.
@@ -67,7 +67,7 @@ The output is ordered by the rank index. The AllGather operation is therefore im
 
 .. figure:: images/allgather.png
  :align: center
- 
+
  AllGather operation: each rank receives the aggregation of data from all ranks in the order of the ranks.
 
 Note: Executing ReduceScatter, followed by AllGather, is equivalent to the AllReduce operation.

@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
   bufReq.outBufferHandle = &hBuf;
   bufReq.next = reqs.resourceRequirementsList;
   reqs.resourceRequirementsList = &bufReq;
-  
+
   NCCLCHECK(ncclDevCommCreate(comm, &reqs, &dcomm));
 
   // run kernel

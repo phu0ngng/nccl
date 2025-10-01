@@ -34,7 +34,7 @@ testResult_t ScatterInitData(struct threadArgs* args, ncclDataType_t type, ncclR
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 

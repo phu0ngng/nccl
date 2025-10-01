@@ -22,7 +22,7 @@ testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncc
   void* data;
   for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
-      CUDACHECK(cudaSetDevice(args->gpus[i]));  
+      CUDACHECK(cudaSetDevice(args->gpus[i]));
       sendcount = args->sendBytes[id][i] / wordSize(type);
       NCCLCHECK(ncclCommUserRank(args->comms[id][i], &rank));
       NCCLCHECK(ncclCommCount(args->comms[id][i], &nranks));
@@ -35,7 +35,7 @@ testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncc
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 

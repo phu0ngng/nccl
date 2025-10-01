@@ -80,7 +80,7 @@ then
   # you can delete it when you have real images stored in the images dir
   mkdir -p ${folder}/images
   touch ${folder}/images/dummy
-  
+
   # reference the file in the main index, find the right location and add the feature at the bottom of the list
   root=$(pwd)/"index.md"
   ${MYSED} -i "s/${vkey}/- \[${title}\]\(${output_grep}\)\n${vkey}/" ${root}

@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
   pid_t pid = fork();
   if (pid == -1) {
     perror("fork failed");
-    exit(EXIT_FAILURE); 
+    exit(EXIT_FAILURE);
   }
   {
     int nVis = 0;
@@ -134,7 +134,7 @@ int main(int argc, char* argv[]) {
   CUDACHECK(cudaSetDevice(myrank));
 
   ncclComm_t comm;
-  NCCLCHECK(ncclCommInitRank(&comm, 2, ncclId, myrank)); 
+  NCCLCHECK(ncclCommInitRank(&comm, 2, ncclId, myrank));
 
   {
     int cudaDev;

@@ -50,7 +50,7 @@ int checkOp(int collective, int rank, int nranks, int* ptr, int size) {
       }
       break;
     case 4 : // ReduceScatter
-      for (int v=0; v<size/nranks; v++) if (ptr[v] != sum) errors++; 
+      for (int v=0; v<size/nranks; v++) if (ptr[v] != sum) errors++;
       break;
   }
   return errors;

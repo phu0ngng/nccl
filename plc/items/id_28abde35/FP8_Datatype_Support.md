@@ -38,12 +38,12 @@ Run time: GPU must be sm90.
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 Example of an image
@@ -62,7 +62,7 @@ Example of an image
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -73,7 +73,7 @@ Example of an image
 MR 617: https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/617
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -92,7 +92,7 @@ MR 617: https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/617
 The usual data validation with "test/perf" with "-dall".
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -121,7 +121,7 @@ The usual data validation with "test/perf" with "-dall".
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

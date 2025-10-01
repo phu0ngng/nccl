@@ -1,7 +1,7 @@
 # Enqueue Refactor for CUDA Graphs
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 The launch system needed a rewrite to support CUDA graphs in the
@@ -72,10 +72,10 @@ N/A
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 The launch system needed a rewrite to support CUDA graphs in the
@@ -285,16 +285,16 @@ None.
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -372,4 +372,4 @@ None.
 
 ### Signoff list
 </details>
- 
+

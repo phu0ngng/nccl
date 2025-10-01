@@ -76,7 +76,7 @@ for iter in $(seq 1 $OUTER_ITERS); do
               echo "$(date +\"%T\") $LOG_NAME"
               $MPI_HOME/bin/mpirun --map-by ppr:$nps:node $MPI_PARAMS ~/nccl/build/test/perf/$func -b8 -e $SIZE_MAX -R$UB -f2 > $LOG_NAME
             done
-    
+
             if [[ "$nps" == "1" ]]; then
               for NCCL_ALGO in PAT; do
                 LOG_NAME="LOG_${func}_N${SLURM_JOB_NUM_NODES}n${LOG_NPS}_iter-${iter}_NCCL_ALGO-${NCCL_ALGO}_NCCL_PROTO-${NCCL_PROTO}_UB-${UB}_$LOG_STRING"

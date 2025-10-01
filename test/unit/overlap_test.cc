@@ -41,7 +41,7 @@ void* rankMain(void *arg) {
   cudaStream_t stream[nComms];
   ncclComm_t comm[nComms];
   char* buffer;
-  
+
   CUDACHECK(cudaSetDevice(rank));
   CUDACHECK(cudaMalloc(&buffer, 1<<20));
   CUDACHECK(cudaMemset(buffer, rank, 1<<20));
@@ -58,7 +58,7 @@ void* rankMain(void *arg) {
     NCCLCHECK(ncclCommInitRank(&comm[c], nRanks, uid[c], rank));
   }
   if (rank == 0) printf("Comms initialized\n");
-    
+
 
   cudaGraph_t graph[nComms];
   cudaGraphExec_t gexec[nComms];
@@ -69,7 +69,7 @@ void* rankMain(void *arg) {
     CUDACHECK(cudaStreamEndCapture(stream[c], &graph[c]));
     CUDACHECK(cudaGraphInstantiate(&gexec[c], graph[c], nullptr, nullptr, 0));
   }
-  
+
   for (int i=0; i < 10; i++) {
     if (rank == 0) printf("Launching round %d\n", i);
     for (int c=0; c < nComms; c++) {
@@ -97,9 +97,9 @@ void* rankMain(void *arg) {
 int main(int argn, char** argv) {
   setlinebuf(stdout);
   CUDACHECK(cudaGetDeviceCount(&nRanks));
-  
+
   printf("Overlap test: nranks=%d\n", nRanks);
-  
+
   pthread_t threads[64];
   for (int r=0; r < nRanks; r++) {
     pthread_create(&threads[r], nullptr, rankMain, reinterpret_cast<void*>(intptr_t(r)));
@@ -107,7 +107,7 @@ int main(int argn, char** argv) {
   for (int r=0; r < nRanks; r++) {
     pthread_join(threads[r], nullptr);
   }
-  
+
   printf("SUCCESS\n");
   return 0;
 }

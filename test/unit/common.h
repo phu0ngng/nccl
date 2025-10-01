@@ -117,7 +117,7 @@ static void initialize_and_verify_data(int *data_d, int mype, int iter, size_t s
 static bool verify_data_pattern(int *data_d, int mype, int iter, size_t size, int nelems) {
     int *host_data = (int *)malloc(size);
     CUDACHECK(cudaMemcpy(host_data, data_d, size, cudaMemcpyDeviceToHost));
-    
+
     // Verify data pattern
     bool verification_passed = true;
     for (int j = 0; j < nelems; j++) {
@@ -130,11 +130,11 @@ static bool verify_data_pattern(int *data_d, int mype, int iter, size_t size, in
             break;
         }
     }
-    
+
     if (verification_passed) {
         printf("PE %d: Data verification passed for size %zu\n", mype, size);
     }
-    
+
     free(host_data);
     return verification_passed;
 }
@@ -151,10 +151,10 @@ static inline void initialize(int* sendbuff, int* recvbuff, int rank, int nelems
 static inline bool verify(int* sendbuff, int* recvbuff, int nelems, int rank) {
     // After ping-pong, recvbuff should contain the peer's original sendbuff data
     int expected_received_val = 0x100 + (!rank);  // Peer's original send value
-    
+
     for (int i = 0; i < nelems; ++i) {
         if (recvbuff[i] != expected_received_val) {
-            printf("[Rank %d] ✗ VERIFICATION FAILED at index %d: expected=0x%X (%d), got=0x%X (%d)\n", 
+            printf("[Rank %d] ✗ VERIFICATION FAILED at index %d: expected=0x%X (%d), got=0x%X (%d)\n",
                    rank, i, expected_received_val, expected_received_val, recvbuff[i], recvbuff[i]);
             return false;
         }
@@ -163,4 +163,4 @@ static inline bool verify(int* sendbuff, int* recvbuff, int nelems, int rank) {
     return true;
 }
 
-#endif // COMMON_H 
+#endif // COMMON_H

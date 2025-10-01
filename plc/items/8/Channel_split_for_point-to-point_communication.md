@@ -1,7 +1,7 @@
 # Channel split for point-to-point communication
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -73,10 +73,10 @@ N/A
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 The high alltoall latency comes from the serialization of operations.
@@ -147,10 +147,10 @@ None.
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 - nccl@e8c2c70152ab182f5c77e013c79d2608bc987e8c
 - nccl@99ec5f1ea3426e46190398c5c3f7cb5636144b84
@@ -182,10 +182,10 @@ Author : Sylvain Jeaugey
 - nccl@80b29b8ae259c77880602a2f090ef300c250ee66
 - nccl@b770b3e3a3ef86d7d8b8dd7f41b9e117bd627c41
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -268,4 +268,4 @@ None.
 
 Author : Sylvain Jeaugey
 </details>
- 
+

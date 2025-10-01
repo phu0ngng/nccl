@@ -28,7 +28,7 @@
   }                                                 \
 } while(0)
 
-int main(int argc, char* argv[]) 
+int main(int argc, char* argv[])
 {
   ncclComm_t comms[4];
 
@@ -68,7 +68,7 @@ int main(int argc, char* argv[])
   //initializing NCCL
   NCCLCHECK(ncclCommInitAll(comms, nDev, devs));
 
-  //calling NCCL communication API. Group API is required when using 
+  //calling NCCL communication API. Group API is required when using
   //multiple devices per thread
   NCCLCHECK(ncclGroupStart());
   for (int i = 0; i < nDev; ++i)
