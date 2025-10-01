@@ -2385,15 +2385,12 @@ static ncclResult_t commRevokeAsync(struct ncclAsyncJob* job_) {
     if ((_tmpret = ncclProxyStop(comm)) != ncclSuccess) {
       WARN("ncclProxyStop: comm %p (rank = %d) destroys proxy resource error %d", comm, comm->rank, _tmpret);
     }
-    if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread) {
-      PTHREADCHECK(pthread_join(comm->proxyState->thread, nullptr), "pthread_join");
-      if (comm->proxyState->threadUDS) {
+    if (comm->proxyState && comm->proxyRefCountOld == 0 && comm->proxyState->thread.joinable()) {
+      comm->proxyState->thread.join();
+      if (comm->proxyState->threadUDS.joinable()) {
         // UDS support
-        PTHREADCHECK(pthread_join(comm->proxyState->threadUDS, nullptr), "pthread_join");
+        comm->proxyState->threadUDS.join();
       }
-      // Mark threads as joined so later cleanup (e.g., commFree) won't join again
-      comm->proxyState->thread = 0;
-      comm->proxyState->threadUDS = 0;
     }
   }
   NCCLCHECKGOTO(setCommAbortFlags(comm, 0), res, exit);
