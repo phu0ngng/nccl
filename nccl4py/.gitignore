@@ -1,0 +1,20 @@
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Cython compiled outputs
+nccl/bindings/
+
+# Generated package files
+nccl/_version.py
+
+# Stamps
+**/.stamp
+
+__pycache__
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

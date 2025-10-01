@@ -9,7 +9,7 @@ default: src.build
 install: src.install
 BUILDDIR ?= $(abspath ./build)
 ABSBUILDDIR := $(abspath $(BUILDDIR))
-TARGETS := src test pkg
+TARGETS := src test pkg nccl4py
 clean: ${TARGETS:%=%.clean}
 test.build: src.build
 examples.build: src.build
@@ -33,6 +33,9 @@ examples: src.build
 
 pkg.%:
 	${MAKE} -C pkg $* BUILDDIR=${ABSBUILDDIR}
+
+nccl4py.%:
+	${MAKE} -C nccl4py $* BUILDDIR=${ABSBUILDDIR}
 
 pkg.debian.prep: lic
 pkg.txz.prep: lic
