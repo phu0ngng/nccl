@@ -502,14 +502,14 @@ static ncclResult_t symWindowCreate(
 
   NCCLCHECK(symWindowTableInitOnce(comm, stream)); // ensure devr->windowTable exists
   struct ncclDevCommWindowTable* tableDev = devr->windowTable;
-  struct ncclDevCommWindowTable* tableHost;
-  NCCLCHECK(ncclShadowPoolToHost(&devr->shadows, tableDev, &tableHost));
   while (true) {
+    struct ncclDevCommWindowTable* tableHost;
+    NCCLCHECK(ncclShadowPoolToHost(&devr->shadows, tableDev, &tableHost));
     int i = 0;
     while (i < 32 && tableHost->entries[i].window != nullptr) i += 1;
     if (i < 32) {
       tableHost->entries[i].base = userAddr;
-      tableHost->entries[i].size = userAddr + userSize;
+      tableHost->entries[i].size = userSize;
       tableHost->entries[i].window = winDev;
       CUDACHECK(cudaMemcpyAsync(&tableDev->entries[i], &tableHost->entries[i], sizeof(tableHost->entries[i]), cudaMemcpyHostToDevice, stream));
       break;
@@ -519,7 +519,6 @@ static ncclResult_t symWindowCreate(
       CUDACHECK(cudaMemcpyAsync(&tableDev->next, &tableHost->next, sizeof(tableHost->next), cudaMemcpyHostToDevice, stream));
     }
     tableDev = tableHost->next;
-    NCCLCHECK(ncclShadowPoolToHost(&devr->shadows, tableHost->next, &tableHost));
   }
 
   { // insert into winSorted[]
@@ -548,9 +547,9 @@ static ncclResult_t symWindowDestroy(struct ncclComm* comm, struct ncclWindow_vi
   symMemoryDropRef(comm, winHost->memory);
 
   { struct ncclDevCommWindowTable* tableDev = devr->windowTable;
-    struct ncclDevCommWindowTable* tableHost;
-    NCCLCHECKGOTO(ncclShadowPoolToHost(&devr->shadows, tableDev, &tableHost), ret, remove_winSorted);
     while (true) {
+      struct ncclDevCommWindowTable* tableHost;
+      NCCLCHECKGOTO(ncclShadowPoolToHost(&devr->shadows, tableDev, &tableHost), ret, remove_winSorted);
       int i = 0;
       while (i < 32 && tableHost->entries[i].window != winDev) i += 1;
       if (i < 32) {
@@ -560,7 +559,6 @@ static ncclResult_t symWindowDestroy(struct ncclComm* comm, struct ncclWindow_vi
       }
       if (tableHost->next == nullptr) break; // Error didn't find window in table
       tableDev = tableHost->next;
-      NCCLCHECKGOTO(ncclShadowPoolToHost(&devr->shadows, tableHost->next, &tableHost), ret, remove_winSorted);
     }
   }
   NCCLCHECKGOTO(ncclShadowPoolFree(&devr->shadows, winDev, stream), ret, remove_winSorted);

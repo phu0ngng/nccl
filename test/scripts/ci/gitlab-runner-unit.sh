@@ -157,6 +157,12 @@ else
   echo -e "Disabled GIN_TESTS test\n\n"
 fi
 
+if [[ ${DEVAPI_WINDOW_STRESS_TESTS} ]] ; then
+  run_command "devapi_window_stress_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_window_stress" ""
+else
+  echo -e "Disabled DevAPI Window Stress TESTS test\n\n"
+fi
+
 print_failed_commands
 end_junit_file
 ci_exit
