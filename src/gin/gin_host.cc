@@ -28,7 +28,7 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
         if (ginState->ginType == NCCL_NET_DEVICE_GIN_PROXY) {
           ret = ncclGinProxyProgress(ginState->ncclGin, ginState->ginCtx[n]);
         } else {
-          ret = ginState->ncclGin->ginProgress(ginState->ginCtx[n]);
+          ret = ginState->ncclGin->ginProgress(ginState->ginComms[n]);
         }
         if (ret != ncclSuccess) {
           __atomic_store_n(&ginState->asyncResult, ret, __ATOMIC_RELEASE);

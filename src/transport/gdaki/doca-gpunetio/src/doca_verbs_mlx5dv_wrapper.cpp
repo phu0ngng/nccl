@@ -42,6 +42,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <endian.h>
+#include <mutex>
+
 #include "host/doca_error.h"
 
 /* *********** dlopen Function Pointers *********** */
@@ -91,14 +93,11 @@ static mlx5dv_query_device_func_t mlx5dv_query_device_func = NULL;
 
 /* *********** dlopen Initialization *********** */
 
-static int doca_verbs_wrapper_init_dlopen(void) {
-    if (mlx5dv_handle != NULL) {
-        return 0; /* Already initialized */
-    }
-
+static void doca_verbs_wrapper_init_once(int *ret) {
     mlx5dv_handle = dlopen("libmlx5.so", RTLD_LAZY);
     if (!mlx5dv_handle) {
-        return -1; /* Failed to load library */
+        *ret = -1; /* Failed to load library */
+        return;
     }
 
     /* Load function pointers */
@@ -137,10 +136,18 @@ static int doca_verbs_wrapper_init_dlopen(void) {
         !mlx5dv_query_device_func) {
         dlclose(mlx5dv_handle);
         mlx5dv_handle = NULL;
-        return -1; /* Failed to load some functions */
+        *ret = -1; /* Failed to load some functions */
+        return;
     }
 
-    return 0;
+    *ret = 0;
+}
+
+static int doca_verbs_wrapper_init_dlopen(void) {
+    int ret = 0;
+    static std::once_flag once;
+    std::call_once(once, doca_verbs_wrapper_init_once, &ret);
+    return ret;
 }
 
 /* *********** Wrapper Implementation with dlopen *********** */

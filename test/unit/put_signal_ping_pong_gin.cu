@@ -119,7 +119,7 @@ __global__ void ping_pong_kernel(
 
 #ifndef WRITE_ONCE
 #define WRITE_ONCE(x, v) do { \
-    (*(volatile typeof(x) *)&(x)) = (v);
+    (*(volatile typeof(x) *)&(x)) = (v); \
 } while (0)
 #endif
 

@@ -38,7 +38,7 @@
 #include "host/doca_verbs.h"
 #include "doca_verbs_uar.hpp"
 
-struct doca_verbs_ah {
+struct doca_verbs_ah_attr {
     struct doca_verbs_gid gid {};
     enum doca_verbs_addr_type addr_type { DOCA_VERBS_ADDR_TYPE_IPv4 };
     uint32_t dlid{};
@@ -84,7 +84,7 @@ struct doca_verbs_qp_attr {
     int allow_remote_write{};
     int allow_remote_read{};
     enum doca_verbs_qp_atomic_type allow_remote_atomic {};
-    doca_verbs_ah *ah_attr{};
+    doca_verbs_ah_attr *ah_attr{};
     uint16_t pkey_index{};
     uint16_t port_num{};
     uint8_t ack_timeout{};

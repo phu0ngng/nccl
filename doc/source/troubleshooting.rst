@@ -135,8 +135,13 @@ machine or container, make sure /sys is properly mounted. Having /sys expose a v
 result in sub-optimal performance.
 
 *************
-Shared memory
+Memory issues
 *************
+
+.. _cuMem_host_allocations:
+
+Shared memory
+-------------
 
 To communicate between processes and even between threads of a process, NCCL creates shared memory segments,
 traditionally
@@ -150,8 +155,7 @@ will show a message similar to this:
 
  NCCL WARN Error: failed to extend /dev/shm/nccl-03v824 to 4194660 bytes
 
-Docker
-------
+**Docker**
 
 In particular, Docker containers default to limited shared and pinned memory resources. When using NCCL inside a
 container, please make sure to adjust the shared memory size inside the container, for example by adding the following
@@ -161,8 +165,7 @@ arguments to the docker launch command line:
 
  --shm-size=1g --ulimit memlock=-1
 
-Systemd
--------
+**Systemd**
 
 When running jobs using mpirun or SLURM, systemd may remove files in shared memory when it detects that the
 corresponding user is not logged in, in an attempt to clean up old temporary files. This can cause NCCL to crash
@@ -186,10 +189,7 @@ Once updated, the daemons should be restarted with:
 
  sudo systemctl restart systemd-logind
 
-.. _cuMem_host_allocations:
-
-cuMem host allocations
-----------------------
+**cuMem host allocations**
 
 Starting with version 2.23, NCCL supports an alternative shared memory mechanism using cuMem host allocations.  From
 NCCL 2.24, if CUDA driver >= 12.6 and CUDA runtime >= 12.2, it is enabled by default in favor of /dev/shm.
@@ -201,9 +201,15 @@ needed, automatically falls back to the /dev/shm code.  In prior versions, the s
 specifying ``NCCL_CUMEM_HOST_ENABLE=0``.  We still recommend configuring the underlying system to ensure that cuMem host
 allocations work, as they provide improved reliability during communicator aborts.
 
-**********
+cuMem host allocations may fail on systems without CUDA P2P connectivity if CUDA driver version prior to 13.0 is being
+used.  Furthermore, `CUDA Forward Compatibility
+<https://docs.nvidia.com/deploy/cuda-compatibility/forward-compatibility.html>`_ feature can affect NCCL's ability to
+accurately determine the current driver version, resulting in cuMem host allocations being enabled on older drivers than
+intended.  We continue to investigate additional mechanisms to detect such circumstances; in the meantime, use
+``NCCL_CUMEM_HOST_ENABLE=0`` to deactivate this feature if it causes issues.
+
 Stack size
-**********
+----------
 
 NCCL's graph search algorithm is highly recursive and, especially on MNNVL
 systems where many ranks are reachable via CUDA P2P, may temporarily require
@@ -221,6 +227,13 @@ a safe value for the current job.  We still recommend that users on affected
 systems attempt to get the system-wide setting fixed as -- however well
 intentioned -- it is a potentially serious misconfiguration that could have
 negative effects extending beyond NCCL jobs.
+
+Unified Memory (UVM)
+--------------------
+
+Starting with version 2.23, NCCL utilizes CUDA memory pools to optimize graph capturing. This feature relies on UVM
+being available.  While UVM may not be on by default in some VM setups, it can typically be enabled through a
+configuration change.
 
 *****************
 Networking issues

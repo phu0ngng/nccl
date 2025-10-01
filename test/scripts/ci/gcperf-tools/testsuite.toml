@@ -1,5 +1,5 @@
 # NCCL Test Configuration
-description = "Sample testset"
+description = "NCCL PerfRegression Testsuite"
 library_name = "nccl"
 
 [common]
@@ -22,3 +22,31 @@ NCCL_DEBUG = "WARN"
 [[test]]
 name = "all_reduce"
 binary = "all_reduce_perf"
+
+[[test]]
+name = "alltoall"
+binary = "alltoall_perf"
+
+[[test]]
+name = "all_gather"
+binary = "all_gather_perf"
+
+[[test]]
+name = "broadcast"
+binary = "broadcast_perf"
+
+[[test]]
+name = "reduce"
+binary = "reduce_perf"
+
+[[test]]
+name = "reduce_scatter"
+binary = "reduce_scatter_perf"
+
+[[test]]
+name = "gather"
+binary = "gather_perf"
+
+[[test]]
+name = "sendrecv"
+binary = "sendrecv_perf"

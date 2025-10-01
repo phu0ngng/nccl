@@ -17,57 +17,83 @@ variables:
   CHECK_SYMBOLS: "0"  # nvbug 5479096
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
-  BUILD_TRACE: "0"
-  # Toggle variables for clusters
-  RUN_ON_AWS: "1"
-  RUN_ON_DRACO_OCI: "1"
-  RUN_ON_EOS: "1"
-  RUN_ON_IPP6: "1"
-  RUN_ON_CW_DFW: "1"
-  RUN_ON_PRE_NYX: "1"
-  RUN_ON_PRE_TYCHE: "1"
-  RUN_ON_THEIA: "1"
-  # Toggle variables for GC nodes
-  RUN_ON_A100: "1"
-  RUN_ON_P100: "1"
-  RUN_ON_A40: "1"
-  RUN_ON_P40: "1"
-  RUN_ON_GP100: "1"
-  # Toggle variables by test type
-  RUN_UNIT_TESTS: "1"
-  RUN_PROFILER_TESTS: "1"
-  RUN_INSPECTOR_TESTS: "1"
-  RUN_API_TESTS: "1"
-  RUN_PERF_TESTS_SINGLE: "1"
-  RUN_PERF_TESTS_MULTIPLE: "1"
-  RUN_PERF_REGRESSION: "1"
-  RUN_DLFW_TESTS: "1"
-  RUN_PROFILER_TESTS: "1"
   PLANNED_RESERVED: "Reserved"
-  TRIGGER_PIPELINE: "default"
+  ##
+  # Default pipeline flow to be triggered
+  TRIGGER_PIPELINE: "pre-submit"
+  ##
+  # Force toggle variables
+  # Set to '1' to force trigger jobs associated with the variable
+  # By default, they will be set to 0 and jobs will be triggered based on the TRIGGER_PIPELINE variable
+  #
+  # Toggle variable for build jobs
+  BUILD_TRACE: "0"
+  BUILD_CMAKE: "0"
+  # Toggle variables for clusters
+  RUN_ON_AWS: "0"
+  RUN_ON_CW_DFW: "0"
+  RUN_ON_DRACO_OCI: "0"
+  RUN_ON_EOS: "0"
+  RUN_ON_IPP6: "0"
+  RUN_ON_PRE_NYX: "0"
+  RUN_ON_PRE_TYCHE: "0"
+  RUN_ON_THEIA: "0"
+  # Toggle variables for GC nodes
+  RUN_ON_A100: "0"
+  RUN_ON_P100: "0"
+  RUN_ON_A40: "0"
+  RUN_ON_P40: "0"
+  RUN_ON_GP100: "0"
+  # Toggle variables by test type
+  RUN_UNIT_TESTS: "0"
+  RUN_API_TESTS: "0"
+  RUN_PERF_TESTS_SINGLE: "0"
+  RUN_PERF_TESTS_MULTIPLE: "0"
+  RUN_DLFW_TESTS: "0"
+  RUN_PROFILER_TESTS: "0"
+  RUN_INSPECTOR_TESTS: "0"
+  RUN_REPLAY_TESTS: "0"
+  RUN_PERF_REGRESSION: "0"
 
 default:
   # set all jobs to interruptible by default
   interruptible: true
 
-# Run our CI on:
-# - Every commit to master
-# - Every commit to a merge request
-# - Schedules (nightlies and weeklies)
-# - Merge requests without "Draft:" in the title
+##
+# CI Control flow - The following rules dictate when CI should run and which specific flow should it use.
+# 
+# The 3 specific flows are controlled using the `TRIGGER_PIPELINE` pipeline variable:
+# - 'pre-submit': Run this for the 'express' experience, intended to provide a quick validation for the commit. This is the default flow.
+# - 'post-submit': Run this for a more comprehensive validation including pre-submit validation.
+# - 'nightly': Run this to kick off an exhaustive validation including the post-submit validation.
+#
+# Overview of rules:
+# - For any cases that are not explicitly defined within any conditions, the pipeline will not trigger at all.
+# - Run the default pre-submit flow on pipelines triggered commits that are part of open MRs (not marked as 'Draft').
+# - Run the post-submit flow on pipelines triggered by commits made to designated branches: master, next, stable, release branch (controlled via `NCCL_RELEASE_BRANCH` pipeline variable).
+# - Run the nightly flow on scheduled pipelines.
+# - For pipelines triggered via the web UI, run the default pre-submit flow. However, by not modifying `TRIGGER_PIPELINE`, any flow can be triggered via the override mechanism.
+# - Auto-cancel via new commits is disabled on pipelines on triggered by commits on designated branches and scheduled pipelines.
+##
 workflow:
-  # when cancelling a redundant pipeline, cancel all jobs that are interruptible
+  # Disable auto cancel for redundant pipelines by default
   auto_cancel:
-    on_new_commit: interruptible
+    on_new_commit: none
   rules:
-    # For designated branches only
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
+    # Enable pipeline trigger upon commits made to open MRs, via web UI or via an API call. Run the default pre-submit flow unless TRIGGER_PIPELINE is overridden explicitly.
+    - if: ($CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && $CI_PIPELINE_SOURCE == 'merge_request_event') || $CI_PIPELINE_SOURCE == 'web' || $CI_PIPELINE_SOURCE == 'api'
+      # Enable auto cancel for redundant pipelines, cancel all jobs that are interruptible
       auto_cancel:
-        on_new_commit: none
-    # For merge requests only (regardless of source branch)
-    - if: $CI_MERGE_REQUEST_TITLE !~ /^Draft:/ && $CI_PIPELINE_SOURCE == 'merge_request_event'
-    # For scheduled and manual triggers
-    - if: $CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web' || $CI_PIPELINE_SOURCE == 'api'
+        on_new_commit: interruptible
+    # Enable pipeline trigger on commits made to designated branches and disable auto-cancel via new commits. Run the post-submit phase. However, do all this only when it's not a scheduled pipeline as we have a separate condition for those.
+    - if: ($CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH) && $CI_PIPELINE_SOURCE != 'schedule'
+      variables:
+        TRIGGER_PIPELINE: "post-submit"
+    # Enable pipeline trigger via shcedules, and kick off the nightly flow.
+    - if: $CI_PIPELINE_SOURCE == 'schedule'
+      variables:
+        TRIGGER_PIPELINE: "nightly"
+    - when: never
 
 ##
 ## Stage: build - Start...
@@ -78,7 +104,7 @@ workflow:
 build-trace:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && ($BUILD_TRACE == "1" || $CI_PIPELINE_SOURCE == 'schedule')
+    - if: $TRIGGER_PIPELINE == "nightly" || $BUILD_TRACE == "1"
       when: always
     - when: never
   tags:
@@ -91,7 +117,7 @@ build-trace:
 build-classic:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || (($RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
       when: always
     - when: never
   tags:
@@ -109,7 +135,7 @@ build-classic:
 build-classic-gin:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || (($RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
       when: always
     - when: never
   tags:
@@ -127,13 +153,13 @@ build-classic-gin:
 build-ipp6:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
       when: always
     - when: never
   tags:
     - ipp6-nccl-v2
   script:
-    - docker/make.sh --ci-build ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx
+    - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx
     - tar -cf - build | pigz --fast > build-ipp6.tar.gz
   artifacts:
     paths:
@@ -143,7 +169,7 @@ build-ipp6:
 build-pre-tyche:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
       when: always
     - when: never
   tags:
@@ -163,7 +189,7 @@ build-pre-tyche:
 build-theia:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
       when: always
     - when: never
   tags:
@@ -183,7 +209,7 @@ build-theia:
 build-dlfw-pytorch-container:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_DLFW_TESTS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_DLFW_TESTS == "1")
       when: always
     - when: never
   tags:
@@ -203,7 +229,7 @@ build-dlfw-pytorch-container:
 build-cmake:
   stage: build
   rules:
-    - if: ($TRIGGER_PIPELINE == "default")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || $BUILD_CMAKE == "1"
       when: always
     - when: never
   tags:
@@ -230,9 +256,7 @@ QA-team-ci:
   stage: setup
   dependencies: []
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && ($CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH)
-      when: always
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event' && $CI_MERGE_REQUEST_TITLE !~ /^Draft:/
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/
       when: always
     - when: never
   tags:
@@ -243,7 +267,7 @@ QA-team-ci:
 fairshare-eos:
   stage: setup
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_DLFW_TESTS == "1"))
       when: always
     - when: never
   needs: []
@@ -257,8 +281,8 @@ fairshare-eos:
 fairshare-cw-dfw:
   stage: setup
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_CW_DFW == "1"
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
+    #   when: always
     - when: never
   needs: []
   variables:
@@ -271,7 +295,7 @@ fairshare-cw-dfw:
 fairshare-draco-oci:
   stage: setup
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
       when: always
     - when: never
   needs: []
@@ -283,7 +307,7 @@ fairshare-draco-oci:
 setup-AWS_H100_EFA:
   stage: setup
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
       when: always
     - when: never
   tags:
@@ -310,7 +334,7 @@ setup-AWS_H100_EFA:
 health-P100:
   stage: health
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_P100 == "1" || ($RUN_ON_P40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"))
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_REPLAY_TESTS == "1"))
       when: always
     - when: never
   needs: []
@@ -322,7 +346,7 @@ health-P100:
 health-P40:
   stage: health
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && ($RUN_ON_P40 == "1" || ($RUN_ON_P100 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"))
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1"))
       when: always
     - when: never
   needs: []
@@ -334,7 +358,7 @@ health-P40:
 health-GP100:
   stage: health
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_GP100 == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1"))
       when: always
     - when: never
   needs: []
@@ -346,7 +370,7 @@ health-GP100:
 health-A40:
   stage: health
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
       when: always
     - when: never
   needs: []
@@ -358,7 +382,7 @@ health-A40:
 health-A100:
   stage: health
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PROFILER_TESTS == "1" || $RUN_INSPECTOR_TESTS == "1"))
       when: always
     - when: never
   needs: []
@@ -378,7 +402,7 @@ health-A100:
 unit_tests-P100:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic","health-P100"]
@@ -409,6 +433,7 @@ unit_tests-P100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -425,7 +450,7 @@ unit_tests-P100:
 unit_tests-P40:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P40 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic","health-P40"]
@@ -456,6 +481,7 @@ unit_tests-P40:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -472,7 +498,7 @@ unit_tests-P40:
 unit_tests-GP100:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_GP100 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic","health-GP100"]
@@ -503,6 +529,7 @@ unit_tests-GP100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -519,7 +546,7 @@ unit_tests-GP100:
 unit_tests-A40-single:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic","health-A40"]
@@ -550,6 +577,7 @@ unit_tests-A40-single:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -566,7 +594,7 @@ unit_tests-A40-single:
 unit_tests-A40-dual:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-A40"]
@@ -613,7 +641,7 @@ unit_tests-A40-dual:
 unit_tests-A100:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic","health-A100"]
@@ -644,6 +672,7 @@ unit_tests-A100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -660,7 +689,7 @@ unit_tests-A100:
 unit_tests-eos:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -678,7 +707,6 @@ unit_tests-eos:
     NCCL_HOME: build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
-    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
     ENQUEUE_TESTS_ARGS: 1
@@ -697,6 +725,7 @@ unit_tests-eos:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -716,8 +745,8 @@ unit_tests-eos:
 unit_tests-cw-dfw:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1"
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -734,6 +763,7 @@ unit_tests-cw-dfw:
     NCCL_HOME: build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
     ENQUEUE_TESTS_ARGS: 1
@@ -753,7 +783,7 @@ unit_tests-cw-dfw:
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -769,7 +799,7 @@ unit_tests-cw-dfw:
 unit_tests-AWS_H100_EFA:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -798,6 +828,7 @@ unit_tests-AWS_H100_EFA:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -852,8 +883,8 @@ unit_tests-draco_oci:
   stage: unit_tests
   rules:
     # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
-    #    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1" && $RUN_UNIT_TESTS == "1"
-    #      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_UNIT_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -884,6 +915,7 @@ unit_tests-draco_oci:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -903,7 +935,7 @@ unit_tests-draco_oci:
 unit_tests-pre-nyx:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -938,6 +970,7 @@ unit_tests-pre-nyx:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -957,7 +990,7 @@ unit_tests-pre-nyx:
 unit_tests-pre-tyche:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -991,6 +1024,7 @@ unit_tests-pre-tyche:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1008,7 +1042,7 @@ unit_tests-pre-tyche:
 unit_tests-ipp6-a100:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -1040,7 +1074,7 @@ unit_tests-ipp6-a100:
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
-    DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -1060,7 +1094,7 @@ unit_tests-ipp6-a100:
 unit_tests-gin-A100:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic-gin"]
@@ -1080,6 +1114,7 @@ unit_tests-gin-A100:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   script:
     - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1097,7 +1132,7 @@ unit_tests-gin-A100:
 unit_tests-gin-A40-single:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic-gin"]
@@ -1117,6 +1152,7 @@ unit_tests-gin-A40-single:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   script:
     - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1134,7 +1170,7 @@ unit_tests-gin-A40-single:
 unit_tests-gin-ipp6-a100:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -1160,6 +1196,7 @@ unit_tests-gin-ipp6-a100:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 0 # Disable due to https://nvbugspro.nvidia.com/bug/5534804
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -1180,7 +1217,7 @@ unit_tests-gin-ipp6-a100:
 unit_tests-gin-pre-nyx:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -1202,6 +1239,7 @@ unit_tests-gin-pre-nyx:
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -1222,7 +1260,7 @@ unit_tests-gin-pre-nyx:
 unit_tests-gin-pre-tyche:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -1244,6 +1282,7 @@ unit_tests-gin-pre-tyche:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   script:
     - source docker/clusters/pre-tyche-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1262,7 +1301,7 @@ unit_tests-gin-pre-tyche:
 unit_tests-gin-eos:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -1280,23 +1319,34 @@ unit_tests-gin-eos:
     NCCL_HOME: build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
-    CI_BUILDS_DIR: "/project/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
     - source docker/clusters/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 unit_tests-theia:
   stage: unit_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs: ["build-theia"]
@@ -1329,9 +1379,90 @@ unit_tests-theia:
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+##
+## Examples Validation Tests
+##
+
+examples-validation-theia:
+  stage: unit_tests
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1")
+      when: always
+    - when: never
+  needs: ["build-theia"]
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 10
+    SLURM_PARTITION: gb300
+    RUN_MODE: "SRUN_MPI"
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    SYMMETRIC: 1
+    GRAPH: 0
+    NCCL_HOME: build-theia
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: 1
+    EXAMPLES_TESTS_BASIC_ONLY: 0
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:examples-validation::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-examples.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+examples-validation-ipp6-a100:
+  stage: unit_tests
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+      when: always
+    - when: never
+  needs:
+    - job: build-ipp6
+  tags:
+    - ipp6-nccl-v2
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
+    SLURM_TIME: 15
+    SLURM_PARTITION: a100-cicd
+    NNODES: 1
+    NGPUS: 2
+    NP: 1
+    NCCL_HOME: build
+    RUN_MODE: "MPI"
+    EXAMPLES_TESTS_BASIC_ONLY: 0
+  before_script:
+    - pigz -dc build-ipp6.tar.gz | tar -xf -
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-examples.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1354,7 +1485,7 @@ unit_tests-theia:
 apitest-P100:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-P100"]
@@ -1389,7 +1520,7 @@ apitest-P100:
 apitest-P40:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P40 == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-P40"]
@@ -1424,7 +1555,7 @@ apitest-P40:
 apitest-GP100:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_GP100 == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-GP100"]
@@ -1462,7 +1593,7 @@ apitest-GP100:
 apitest-A40:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-A40"]
@@ -1497,7 +1628,7 @@ apitest-A40:
 apitest-A100:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-A100"]
@@ -1532,7 +1663,7 @@ apitest-A100:
 apitest-eos:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -1573,8 +1704,8 @@ apitest-eos:
 apitest-cw-dfw:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1"
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -1590,6 +1721,7 @@ apitest-cw-dfw:
     NP: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
     CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     API_TESTS_DEFAULT: 1
@@ -1598,7 +1730,7 @@ apitest-cw-dfw:
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -1614,7 +1746,7 @@ apitest-cw-dfw:
 apitest-AWS_H100_EFA:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -1675,8 +1807,8 @@ apitest-draco_oci:
   stage: api_tests
   rules:
     # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
-    #    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1" && $RUN_API_TESTS == "1"
-    #      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_API_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -1715,7 +1847,7 @@ apitest-draco_oci:
 apitest-pre-nyx:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -1756,7 +1888,7 @@ apitest-pre-nyx:
 apitest-pre-tyche:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -1794,7 +1926,7 @@ apitest-pre-tyche:
 apitest-ipp6-a100:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs:
@@ -1833,7 +1965,7 @@ apitest-ipp6-a100:
 apitest-theia:
   stage: api_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_API_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs: ["build-theia"]
@@ -1879,7 +2011,7 @@ apitest-theia:
 perftest-P100:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-P100"]
@@ -1917,7 +2049,7 @@ perftest-P100:
 perftest-P40:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-P40"]
@@ -1955,7 +2087,7 @@ perftest-P40:
 perftest-GP100:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_GP100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-GP100"]
@@ -1992,7 +2124,7 @@ perftest-GP100:
 nic-fusion-A40:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs: [build-classic, apitest-A40]
@@ -2019,7 +2151,7 @@ nic-fusion-A40:
 perftest-A40:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-A40"]
@@ -2056,7 +2188,7 @@ perftest-A40:
 perftest-A100:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-A100"]
@@ -2093,7 +2225,7 @@ perftest-A100:
 perftest-single-eos:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs:
@@ -2132,8 +2264,8 @@ perftest-single-eos:
 perftest-single-cw-dfw:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1"
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -2154,10 +2286,11 @@ perftest-single-cw-dfw:
     SKIP_FT_INIT: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   artifacts:
     when: always
@@ -2171,7 +2304,7 @@ perftest-single-cw-dfw:
 perftest_single-AWS_H100_EFA:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs:
@@ -2227,7 +2360,7 @@ perftest_single-AWS_H100_EFA:
 perftest_single-draco_oci:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs:
@@ -2266,7 +2399,7 @@ perftest_single-draco_oci:
 perftest-single-pre-nyx:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs:
@@ -2306,7 +2439,7 @@ perftest-single-pre-nyx:
 perftest-single-pre-tyche:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -2344,7 +2477,7 @@ perftest-single-pre-tyche:
 perftest-single-ipp6-a100:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs:
@@ -2383,7 +2516,7 @@ perftest-single-ipp6-a100:
 perftest-single-theia:
   stage: perf_tests_single
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs: ["build-theia"]
@@ -2419,7 +2552,7 @@ perftest-single-theia:
 self-test-pytorch-container-eos:
   stage: perf_tests_single
   rules:
-    - if: $TRIGGER_PIPELINE == "default" && $RUN_DLFW_TESTS == "1" && $RUN_ON_EOS == "1" && $CI_PIPELINE_SOURCE != 'merge_request_event'
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_DLFW_TESTS == "1")
       when: always
     - when: never
   tags:
@@ -2446,7 +2579,7 @@ self-test-pytorch-container-eos:
 multi-perftest-A40:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs: ["build-classic", "health-A40"]
@@ -2482,7 +2615,7 @@ multi-perftest-A40:
 perftest-multi-eos:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_EOS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs:
@@ -2525,8 +2658,8 @@ perftest-multi-eos:
 perftest-multi-cw-dfw:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -2549,10 +2682,11 @@ perftest-multi-cw-dfw:
     SKIP_FT_INIT: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -2568,7 +2702,7 @@ perftest-multi-cw-dfw:
 perftest_multi-AWS_H100_EFA:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_AWS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs:
@@ -2624,7 +2758,7 @@ perftest_multi-AWS_H100_EFA:
 perftest_multi-draco_oci:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs:
@@ -2662,7 +2796,7 @@ perftest_multi-draco_oci:
 perftest-multi-pre-nyx:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs:
@@ -2702,7 +2836,7 @@ perftest-multi-pre-nyx:
 perftest-multi-pre-tyche:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -2744,7 +2878,7 @@ perftest-multi-pre-tyche:
 perftest-multi-ipp6-a100:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs:
@@ -2783,7 +2917,7 @@ perftest-multi-ipp6-a100:
 perftest-multi-theia:
   stage: perf_tests_multi
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs: ["build-theia"]
@@ -2829,7 +2963,7 @@ perftest-multi-theia:
 perf-regression-eos:
   stage: perf_regression
   rules:
-    - if: ($CI_PIPELINE_SOURCE == 'schedule' || $CI_PIPELINE_SOURCE == 'web') && $RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
   needs:
@@ -2866,7 +3000,7 @@ perf-regression-eos:
 profiler-tests-A100:
   stage: profiler_tests
   rules:
-    - if: $TRIGGER_PIPELINE == "default" && $RUN_ON_A100 == "1" && $RUN_PROFILER_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_PROFILER_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic"]
@@ -2907,7 +3041,7 @@ profiler-tests-A100:
 inspector-tests-A100:
   stage: inspector_tests
   rules:
-    - if: $TRIGGER_PIPELINE == "default" && $RUN_ON_A100 == "1" && $RUN_INSPECTOR_TESTS == "1"
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_INSPECTOR_TESTS == "1")
       when: always
     - when: never
   needs: ["build-classic"]
@@ -2943,7 +3077,7 @@ inspector-tests-A100:
 replay-multi-gc:
   stage: replay_tests
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_P100 == "1"
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_REPLAY_TESTS == "1")
       when: always
     - when: never
   needs: [build-classic]

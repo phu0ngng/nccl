@@ -11,3 +11,14 @@ junits/
 /coverage/
 tags
 *.swp
+
+# Example build artifacts
+*.o
+examples/**/multiple_devices_single_process
+examples/**/one_device_per_pthread
+examples/**/one_device_per_process_mpi
+examples/**/ring_pattern
+examples/**/allreduce
+examples/**/allreduce_ub
+examples/**/allreduce_sm
+examples/**/allreduce_device_api

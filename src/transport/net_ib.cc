@@ -2692,8 +2692,7 @@ ncclResult_t ncclGinIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFun
 }
 
 ncclResult_t ncclGinIbFinalize(void *ctx) {
-  ncclNetIb.finalize(ctx);
-  return ncclSuccess;
+  return ncclNetIb.finalize(ctx);
 }
 
 static ncclResult_t ncclGinIbAllGather(struct ncclGinIbCollComm *cComm, void *srcBuf, void *recvBuf, size_t len) {
@@ -2867,34 +2866,43 @@ ncclResult_t ncclGinIbCloseColl(void* collComm) {
   return ncclSuccess;
 }
 
-#include "gin/gin_host_gdaki.h"
+#include "gdaki/gin_host_gdaki.h"
 
-static int ncclGinIbGdakiNDevs = 0;
+static std::mutex ncclGinIbGdakiLockMutex;
+static int ncclGinIbGdakiNDevs = -1;
 int ncclGinIbGdakiDevIndexes[MAX_IB_DEVS];
 
 ncclResult_t ncclGinIbGdakiInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
   NCCLCHECK(ncclGinIbInit(ctx, commId, logFunction));
-  for (int i = 0; i < ncclNIbDevs; i++) {
-    if (ncclIbDevs[i].ibProvider == IB_PROVIDER_MLX5) {
-      ncclGinIbGdakiDevIndexes[ncclGinIbGdakiNDevs] = i;
-      ++ncclGinIbGdakiNDevs;
+  std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
+  if (ncclGinIbGdakiNDevs == -1) {
+    int ndevs = 0;
+    for (int i = 0; i < ncclNIbDevs; i++) {
+      if (ncclIbDevs[i].ibProvider == IB_PROVIDER_MLX5) {
+        ncclGinIbGdakiDevIndexes[ndevs] = i;
+        ++ndevs;
+      }
     }
+    ncclGinIbGdakiNDevs = ndevs;
   }
   return ncclSuccess;
 }
 
 ncclResult_t ncclGinIbGdakiDevices(int* ndev) {
+  std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
   *ndev = ncclGinIbGdakiNDevs;
   return ncclSuccess;
 }
 
 ncclResult_t ncclGinIbGdakiGetProperties(int dev, ncclNetProperties_t* props) {
+  std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
   NCCLCHECK(ncclNetIb.getProperties(ncclGinIbGdakiDevIndexes[dev], props));
   props->netDeviceType = NCCL_NET_DEVICE_GIN_GDAKI;
   return ncclSuccess;
 }
 
 ncclResult_t ncclGinIbGdakiListen(void* ctx, int dev, void* opaqueHandle, void** listenComm) {
+  std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
   return ncclNetIb.listen(ctx, ncclGinIbGdakiDevIndexes[dev], opaqueHandle, listenComm);
 }
 
@@ -2918,9 +2926,9 @@ ncclResult_t ncclGinIbGdakiDestroyContext(void* ginCtx) {
   return ncclGinGdakiDestroyContext(ginCtx);
 }
 
-ncclResult_t ncclGinIbGdakiProgress(void *ginCtx)
+ncclResult_t ncclGinIbGdakiProgress(void *collComm)
 {
-  return ncclGinGdakiProgress(ginCtx);
+  return ncclGinGdakiProgress(collComm);
 }
 
 ncclResult_t ncclGinIbGdakiQueryLastError(void *ginCtx, bool *hasError) {
@@ -2967,7 +2975,7 @@ ncclResult_t ncclGinIbProxyRegMrSymDmaBuf(void* collComm, void* data, size_t siz
   struct ncclIbGinProxyMrHandle *ginMrHandle;
   NCCLCHECK(ncclCalloc(&ginMrHandle, 1));
 
-  NCCLCHECK(ncclIbRegMrDmaBufInternal(cComm->recvComm, data, size, type, offset, fd, mr_flags, (void **)&ginMrHandle->mrHandle));
+  NCCLCHECKNOWARN(ncclIbRegMrDmaBufInternal(cComm->recvComm, data, size, type, offset, fd, mr_flags, (void **)&ginMrHandle->mrHandle), NCCL_NET);
 
   NCCLCHECK(ncclCalloc(&ginMrHandle->base_vas, cComm->nranks));
   NCCLCHECK(ncclCalloc(&ginMrHandle->rkeys, cComm->nranks));

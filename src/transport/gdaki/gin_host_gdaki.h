@@ -22,7 +22,7 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include "nccl.h"
-#include "gin_host.h"
+#include "gin/gin_host.h"
 
 ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters,
                                        void **outGinCtx, ncclNetDeviceHandle_v11_t **outDevHandle);

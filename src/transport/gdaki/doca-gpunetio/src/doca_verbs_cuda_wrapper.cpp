@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/syslog.h>
+#include <mutex>
 
 #include "doca_verbs_cuda_wrapper.h"
 #include "doca_gpunetio_log.hpp"
@@ -43,11 +44,13 @@ typedef CUresult (*cuPointerSetAttribute_t)(const void *value, CUpointer_attribu
 typedef CUresult (*cuMemGetHandleForAddressRange_t)(int *pHandle, CUdeviceptr dptr, size_t size,
                                                     CUmemRangeHandleType handleType,
                                                     unsigned long long flags);
+typedef CUresult (*cuCtxGetCurrent_t)(CUcontext *pctx);
 
 /* Global function pointers */
 cuDeviceGetAttribute_t p_cuDeviceGetAttribute = nullptr;
 cuPointerSetAttribute_t p_cuPointerSetAttribute = nullptr;
 cuMemGetHandleForAddressRange_t p_cuMemGetHandleForAddressRange = nullptr;
+cuCtxGetCurrent_t p_cuCtxGetCurrent = nullptr;
 
 static void *cuda_handle = nullptr;
 
@@ -61,18 +64,15 @@ static void *get_cuda_symbol(const char *symbol_name) {
     return symbol;
 }
 
-static int init_cuda_wrapper(void) {
-    if (cuda_handle) {
-        return 0;
-    }
-
+static void doca_verbs_wrapper_init_once(int *ret) {
     /* Open libcuda.so */
     cuda_handle = dlopen("libcuda.so", RTLD_LAZY);
     if (!cuda_handle) {
         cuda_handle = dlopen("libcuda.so.1", RTLD_LAZY);
         if (!cuda_handle) {
             DOCA_LOG(LOG_ERR, "Failed to open libcuda: %s\n", dlerror());
-            return -1;
+            *ret = -1;
+            return;
         }
     }
 
@@ -81,16 +81,26 @@ static int init_cuda_wrapper(void) {
     p_cuPointerSetAttribute = (cuPointerSetAttribute_t)get_cuda_symbol("cuPointerSetAttribute");
     p_cuMemGetHandleForAddressRange =
         (cuMemGetHandleForAddressRange_t)get_cuda_symbol("cuMemGetHandleForAddressRange");
+    p_cuCtxGetCurrent = (cuCtxGetCurrent_t)get_cuda_symbol("cuCtxGetCurrent");
 
     /* Check if all symbols were found */
-    if (!p_cuDeviceGetAttribute || !p_cuPointerSetAttribute || !p_cuMemGetHandleForAddressRange) {
+    if (!p_cuDeviceGetAttribute || !p_cuPointerSetAttribute || !p_cuMemGetHandleForAddressRange ||
+        !p_cuCtxGetCurrent) {
         DOCA_LOG(LOG_ERR, "Failed to get all required CUDA symbols\n");
         dlclose(cuda_handle);
         cuda_handle = nullptr;
-        return -1;
+        *ret = -1;
+        return;
     }
 
-    return 0;
+    *ret = 0;
+}
+
+static int init_cuda_wrapper(void) {
+    int ret = 0;
+    static std::once_flag once;
+    std::call_once(once, doca_verbs_wrapper_init_once, &ret);
+    return ret;
 }
 
 /* Wrapper function implementations */
@@ -111,4 +121,9 @@ CUresult doca_verbs_wrapper_cuMemGetHandleForAddressRange(int *pHandle, CUdevice
                                                           unsigned long long flags) {
     if (init_cuda_wrapper() != 0) return CUDA_ERROR_NOT_INITIALIZED;
     return p_cuMemGetHandleForAddressRange(pHandle, dptr, size, handleType, flags);
+}
+
+CUresult doca_verbs_wrapper_cuCtxGetCurrent(CUcontext *pctx) {
+    if (init_cuda_wrapper() != 0) return CUDA_ERROR_NOT_INITIALIZED;
+    return p_cuCtxGetCurrent(pctx);
 }

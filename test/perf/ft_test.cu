@@ -16,7 +16,10 @@ enum {
   FT_TEST_SPLIT = 4,
   FT_TEST_SHRINK = 5,
   FT_TEST_ABORT = 6,
-  FT_TEST_NUM = 7,
+  FT_TEST_REVOKE = 7,
+  FT_TEST_REVOKE_SHRINK = 8,
+  FT_TEST_REVOKE_SPLIT = 9,
+  FT_TEST_NUM = 10,
 };
 
 #define PRINT if (is_main_thread) printf
@@ -25,6 +28,11 @@ enum {
 #define NUM_SLEEP_CASES 5
 int sleepTimes[NUM_SLEEP_CASES] = { 10, 100, 10000, 1000000, 2000000}; /* sleep in us */
 size_t size = 32 * 1024 * 1024;
+
+// Revoke test can take a long time, so only run first and last sleep cases
+static inline int ft_should_run_revoke_sleep(int sleepId) {
+  return (sleepId == 0 || sleepId == NUM_SLEEP_CASES);
+}
 
 static testResult_t checkCommsState(ncclComm_t* comms, int nGpus, ncclResult_t stateStart, ncclResult_t stateExpect) {
   ncclResult_t state;
@@ -89,7 +97,6 @@ static testResult_t distributeFTInitTest(struct threadArgs* args) {
   cudaStream_t* streams = args->streams;
   char** hostbuffs = (char**)args->hostbuffs;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-  ncclResult_t ret;
   ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
@@ -104,8 +111,10 @@ static testResult_t distributeFTInitTest(struct threadArgs* args) {
     CUDACHECK(cudaSetDevice(dev));
     NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
   }
-  ret = ncclGroupEnd();
-  assert(ret == ncclSuccess || ret == ncclInProgress);
+  {
+    ncclResult_t ret = ncclGroupEnd();
+    assert(ret == ncclSuccess || ret == ncclInProgress);
+  }
 
   if (sleepId < NUM_SLEEP_CASES) {
     usleep(sleepTimes[sleepId]);
@@ -156,7 +165,6 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
   cudaStream_t* streams = args->streams;
   char** hostbuffs = (char**)args->hostbuffs;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-  ncclResult_t ret;
   ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
@@ -180,8 +188,10 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
     int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
     NCCLCHECK(ncclCommSplit(comms[j], rank & 1, rank, &splitComms[j], &config));
   }
-  ret = ncclGroupEnd();
-  assert(ret == ncclSuccess || ret == ncclInProgress);
+  {
+    ncclResult_t ret = ncclGroupEnd();
+    assert(ret == ncclSuccess || ret == ncclInProgress);
+  }
 
   if (sleepId < NUM_SLEEP_CASES) {
     usleep(sleepTimes[sleepId]);
@@ -243,7 +253,6 @@ static testResult_t distributeFTAllreduceTest(struct threadArgs* args) {
   cudaStream_t* streams = args->streams;
   char** hostbuffs = (char**)args->hostbuffs;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-  ncclResult_t ret;
   ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
@@ -264,8 +273,10 @@ static testResult_t distributeFTAllreduceTest(struct threadArgs* args) {
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; ++j)
     NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], size, ncclInt8, ncclProd, comms[j], streams[j]));
-  ret = ncclGroupEnd();
-  assert(ret == ncclSuccess || ret == ncclInProgress);
+  {
+    ncclResult_t ret = ncclGroupEnd();
+    assert(ret == ncclSuccess || ret == ncclInProgress);
+  }
 
   if (sleepId < NUM_SLEEP_CASES) {
     usleep(sleepTimes[sleepId]);
@@ -310,7 +321,6 @@ static testResult_t distributeFTAlltoAllTest(struct threadArgs* args) {
   cudaStream_t* streams = args->streams;
   char** hostbuffs = (char**)args->hostbuffs;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-  ncclResult_t ret;
   ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
@@ -340,8 +350,10 @@ static testResult_t distributeFTAlltoAllTest(struct threadArgs* args) {
       NCCLCHECK(ncclRecv(((char*)recvbuffs[j]) + k * count, count, ncclChar, k, comms[j], streams[j]));
     }
   }
-  ret = ncclGroupEnd();
-  assert(ret == ncclSuccess || ret == ncclInProgress);
+  {
+    ncclResult_t ret = ncclGroupEnd();
+    assert(ret == ncclSuccess || ret == ncclInProgress);
+  }
 
   if (sleepId < NUM_SLEEP_CASES) {
     usleep(sleepTimes[sleepId]);
@@ -385,7 +397,6 @@ static testResult_t distributeFTFinalizeTest(struct threadArgs* args) {
   void** recvbuffs = args->recvbuffs[0];
   cudaStream_t* streams = args->streams;
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-  ncclResult_t ret;
   ncclComm_t* comms = args->comms[0];
   int nGpus = args->nGpus;
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
@@ -413,8 +424,10 @@ static testResult_t distributeFTFinalizeTest(struct threadArgs* args) {
   for (int j = 0; j < nGpus; ++j) {
     NCCLCHECK(ncclCommFinalize(comms[j]));
   }
-  ret = ncclGroupEnd();
-  assert(ret == ncclSuccess || ret == ncclInProgress);
+  {
+    ncclResult_t ret = ncclGroupEnd();
+    assert(ret == ncclSuccess || ret == ncclInProgress);
+  }
 
   if (sleepId < NUM_SLEEP_CASES) {
     usleep(sleepTimes[sleepId]);
@@ -427,6 +440,282 @@ static testResult_t distributeFTFinalizeTest(struct threadArgs* args) {
   }
 
 exit:
+  return testSuccess;
+}
+
+static testResult_t distributeFTRevokeTest(struct threadArgs* args) {
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
+  cudaStream_t* streams = args->streams;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  ncclComm_t* comms = args->comms[0];
+  int nGpus = args->nGpus;
+  int totalGpus = args->nProcs * args->nThreads * args->nGpus;
+  int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
+  int sleepId = args->sleepId;
+
+  if (!ft_should_run_revoke_sleep(sleepId)) return testSuccess;
+
+  config.blocking = 0;
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    int dev = sDev + j;
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
+    CUDACHECK(cudaSetDevice(dev));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  // Launch a collective to have ongoing work
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j)
+    NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], size, ncclInt8, ncclProd, comms[j], streams[j]));
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+  if (sleepId < NUM_SLEEP_CASES) {
+    usleep(sleepTimes[sleepId]);
+  }
+  // Revoke staged across nodes
+#ifdef MPI_SUPPORT
+  if (args->proc == 0) {
+    for (int j = 0; j < nGpus; ++j) {
+      ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+      assert(rv == ncclSuccess || rv == ncclInProgress);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  } else {
+    MPI_Barrier(MPI_COMM_WORLD);
+    for (int j = 0; j < nGpus; ++j) {
+      ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+      assert(rv == ncclSuccess || rv == ncclInProgress);
+    }
+  }
+#else
+  for (int j = 0; j < nGpus; ++j) {
+    ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+    assert(rv == ncclSuccess || rv == ncclInProgress);
+  }
+#endif
+  TESTCHECK(checkCommsState(comms, nGpus, ncclInProgress, ncclSuccess));
+  // Destroy after revoke completes
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    NCCLCHECK(ncclCommDestroy(comms[j]));
+  }
+  NCCLCHECK(ncclGroupEnd());
+  return testSuccess;
+}
+
+// Demonstrate: revoke cancels ongoing work and we can then shrink the communicator set
+static testResult_t distributeFTRevokeThenShrinkTest(struct threadArgs* args) {
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
+  cudaStream_t* streams = args->streams;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  ncclComm_t* comms = args->comms[0];
+  int nGpus = args->nGpus;
+  int totalGpus = args->nProcs * args->nThreads * args->nGpus;
+  int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
+  int sleepId = args->sleepId;
+  int badIdx = 1;
+
+  if (!ft_should_run_revoke_sleep(sleepId)) return testSuccess;
+  if (totalGpus <= 1) return testSuccess;
+
+  config.blocking = 0;
+  // Init base comms
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    int dev = sDev + j;
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
+    CUDACHECK(cudaSetDevice(dev));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  // Launch some collective work
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j)
+    NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], size, ncclInt8, ncclProd, comms[j], streams[j]));
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  if (sleepId < NUM_SLEEP_CASES) {
+    usleep(sleepTimes[sleepId]);
+  }
+
+  // Revoke staged across nodes
+#ifdef MPI_SUPPORT
+  if (args->proc == 0) {
+    for (int j = 0; j < nGpus; ++j) {
+      ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+      assert(rv == ncclSuccess || rv == ncclInProgress);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  } else {
+    MPI_Barrier(MPI_COMM_WORLD);
+    for (int j = 0; j < nGpus; ++j) {
+      ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+      assert(rv == ncclSuccess || rv == ncclInProgress);
+    }
+  }
+#else
+  for (int j = 0; j < nGpus; ++j) {
+    ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+    assert(rv == ncclSuccess || rv == ncclInProgress);
+  }
+#endif
+  // Wait revoke completion across ranks, then Shrink should succeed
+  TESTCHECK(checkCommsState(comms, nGpus, ncclInProgress, ncclSuccess));
+
+  // Now shrink out one rank (badIdx), then cleanly destroy others
+  ncclComm_t* shrinkComms = (ncclComm_t*)malloc(sizeof(ncclComm_t) * nGpus);
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    ncclConfig_t shrinkConfig = NCCL_CONFIG_INITIALIZER;
+    shrinkConfig.blocking = 0;
+    NCCLCHECK(ncclCommShrink(comms[j], &badIdx, 1, &shrinkComms[j], &shrinkConfig, NCCL_SHRINK_DEFAULT));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) {
+      NCCLCHECK(ncclCommDestroy(comms[j]));
+      comms[j] = NULL;
+    } else {
+      NCCLCHECK(ncclCommDestroy(comms[j]));
+      comms[j] = shrinkComms[j];
+    }
+  }
+  NCCLCHECK(ncclGroupEnd());
+
+  // Optionally run a quick collective on the shrunk comms to ensure they are usable
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], 1024, ncclInt8, ncclSum, comms[j], streams[j]));
+  }
+  // Build a filtered list of valid communicators for the batch wait (exclude badIdx)
+  int numValidComms = 0;
+  ncclComm_t validComms[nGpus];
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    validComms[numValidComms++] = comms[j];
+  }
+  // Ensure the grouped allreduce completes successfully before synchronizing streams
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), validComms, numValidComms);
+  for (int j = 0; j < nGpus; ++j) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    CUDACHECK(cudaStreamSynchronize(streams[j]));
+  }
+
+  // Cleanup
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; j++) {
+    int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
+    if (rank == badIdx) continue;
+    if (comms[j]) { NCCLCHECK(ncclCommDestroy(comms[j])); }
+  }
+  NCCLCHECK(ncclGroupEnd());
+  free(shrinkComms);
+  return testSuccess;
+}
+
+// Demonstrate: revoke cancels ongoing work and then we can split the communicator
+static testResult_t distributeFTRevokeThenSplitTest(struct threadArgs* args) {
+  void** sendbuffs = args->sendbuffs[0];
+  void** recvbuffs = args->recvbuffs[0];
+  cudaStream_t* streams = args->streams;
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  ncclComm_t* comms = args->comms[0];
+  int nGpus = args->nGpus;
+  int totalGpus = args->nProcs * args->nThreads * args->nGpus;
+  int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
+  int sleepId = args->sleepId;
+
+  if (!ft_should_run_revoke_sleep(sleepId)) return testSuccess;
+
+  config.blocking = 0;
+  // Init base comms
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    int dev = sDev + j;
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
+    CUDACHECK(cudaSetDevice(dev));
+    NCCLCHECK(ncclCommInitRankConfig(&comms[j], totalGpus, *args->ncclId, rank, &config));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  // Launch some collective work
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], 1024, ncclInt8, ncclSum, comms[j], streams[j]));
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  if (sleepId < NUM_SLEEP_CASES) {
+    usleep(sleepTimes[sleepId]);
+  }
+
+  // Revoke staged across nodes
+#ifdef MPI_SUPPORT
+  if (args->proc == 0) {
+    for (int j = 0; j < nGpus; ++j) {
+      ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+      assert(rv == ncclSuccess || rv == ncclInProgress);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  } else {
+    MPI_Barrier(MPI_COMM_WORLD);
+    for (int j = 0; j < nGpus; ++j) {
+      ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+      assert(rv == ncclSuccess || rv == ncclInProgress);
+    }
+  }
+#else
+  for (int j = 0; j < nGpus; ++j) {
+    ncclResult_t rv = ncclCommRevoke(comms[j], NCCL_REVOKE_DEFAULT);
+    assert(rv == ncclSuccess || rv == ncclInProgress);
+  }
+#endif
+  TESTCHECK(checkCommsState(comms, nGpus, ncclInProgress, ncclSuccess));
+
+  // Split into two groups (even/odd ranks)
+  ncclComm_t* splitComms = (ncclComm_t*)malloc(sizeof(ncclComm_t) * nGpus);
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    int rank = args->proc * args->nThreads * args->nGpus + args->thread * args->nGpus + j;
+    int color = rank & 1;
+    NCCLCHECK(ncclCommSplit(comms[j], color, rank, &splitComms[j], NULL));
+  }
+  /* For non-blocking communicators, group end may return ncclInProgress.
+   * Wait on the parent comms to complete the group job (which produces splitComms).
+   */
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
+
+  // Quick collective on split comms (only ranks where splitComms != NULL)
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    if (splitComms[j]) {
+      NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], 1, ncclInt32, ncclSum, splitComms[j], streams[j]));
+    }
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), splitComms, nGpus);
+  for (int j = 0; j < nGpus; ++j) CUDACHECK(cudaStreamSynchronize(streams[j]));
+  
+  // Cleanup
+  NCCLCHECK(ncclGroupStart());
+  for (int j = 0; j < nGpus; ++j) {
+    if (splitComms[j]) { NCCLCHECK(ncclCommDestroy(splitComms[j])); }
+    NCCLCHECK(ncclCommDestroy(comms[j]));
+  }
+  NCCLCHECK(ncclGroupEnd());
+  free(splitComms);
   return testSuccess;
 }
 
@@ -613,8 +902,8 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
   int sDev = localRank * localnGpus;
   int totalGpus = ncclProcs * nThreads;
   int testEnable[FT_TEST_NUM];
-  const char* testName[FT_TEST_NUM] = {"init", "allreduce", "alltoall", "finalize", "split", "shrink", "abort"};
-  threadFunc_t testFuncs[FT_TEST_NUM] = {distributeFTInitTest, distributeFTAllreduceTest, distributeFTAlltoAllTest, distributeFTFinalizeTest, distributeFTCommSplitTest, distributeFTShrinkTest, commAbortHangTest};
+  const char* testName[FT_TEST_NUM] = {"init", "allreduce", "alltoall", "finalize", "split", "shrink", "abort", "revoke", "revoke_shrink", "revoke_split"};
+  threadFunc_t testFuncs[FT_TEST_NUM] = {distributeFTInitTest, distributeFTAllreduceTest, distributeFTAlltoAllTest, distributeFTFinalizeTest, distributeFTCommSplitTest, distributeFTShrinkTest, commAbortHangTest, distributeFTRevokeTest, distributeFTRevokeThenShrinkTest, distributeFTRevokeThenSplitTest};
 
   if (ft_list != NULL) {
     /* users only set a subset of ft tests. */
@@ -641,6 +930,12 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
         testEnable[FT_TEST_SHRINK] = 1;
       } else if (strcmp(token, "abort") == 0) {
         testEnable[FT_TEST_ABORT] = 1;
+      } else if (strcmp(token, "revoke") == 0) {
+        testEnable[FT_TEST_REVOKE] = 1;
+      } else if (strcmp(token, "revoke_shrink") == 0) {
+        testEnable[FT_TEST_REVOKE_SHRINK] = 1;
+      } else if (strcmp(token, "revoke_split") == 0) {
+        testEnable[FT_TEST_REVOKE_SPLIT] = 1;
       } else if (strcmp(token, "all") == 0) {
         for (int i = 0; i < FT_TEST_NUM; ++i) testEnable[i] = 1;
       } else {

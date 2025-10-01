@@ -48,7 +48,7 @@ void doca_gpu_log_print(int log_level, const char *file, int line, const char *f
                         const char *fmt, ...) {
     static int cur_log_level = -1;
     if (cur_log_level < 0) {
-        const char *debug_env = getenv("DOCA_GPUNETIO_DEBUG");
+        const char *debug_env = getenv("DOCA_GPUNETIO_LOG");
         if (debug_env != NULL) {
             int env_log_level = atoi(debug_env);
             if (env_log_level >= 0 &&
