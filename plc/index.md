@@ -15,6 +15,7 @@
 - [NCCL alltoall/gather/scatter api](items/id_b1eda4f6/NCCL_alltoall_gather_scatter_api.md)
 - [Relax Symmetric Buffer Registration Requirements for Collectives](items/id_8558c676/Relax_Symmetric_Buffer_Registration_Requirements_for_Collectives.md)
 - [NCCL examples](items/id_302f5bf1/NCCL_examples.md)
+- [Communicator Revoke](items/id_3a1f2e9b/communicator_revoke.md)
 <!-- V2_28_DO_NOT_MOVE -->
  
 <!------------------------------------->

@@ -91,12 +91,10 @@ doca_error_t doca_verbs_cq::create_cq_obj(uint32_t uar_id, uint32_t log_nb_cqes,
     DEVX_SET(create_cq_in, create_in, cq_context.uar_page, uar_id);
     DEVX_SET(create_cq_in, create_in, cq_umem_id, wq_umem_id);
     DEVX_SET(create_cq_in, create_in, cq_umem_valid, 1);
-    DEVX_SET(create_cq_in, create_in, cq_umem_offset, 0x0);
+    DEVX_SET64(create_cq_in, create_in, cq_umem_offset, 0x0);
     DEVX_SET(create_cq_in, create_in, cq_context.dbr_umem_id, db_umem_id);
     DEVX_SET(create_cq_in, create_in, cq_context.dbr_umem_valid, 1);
-    // DEVX_SET64(create_cq_in, create_in, cq_context.dbr_addr, 0x0);  // DBR offset
     DEVX_SET64(create_cq_in, create_in, cq_context.dbr_addr, db_umem_offset);
-    // MLX5_SET64(create_cq_in, in, e_mtt_pointer_or_cq_umem_offset, external_umem_offset);
 
     uint32_t element_id;
     auto ret = doca_verbs_wrapper_mlx5dv_devx_query_eqn(m_ibv_ctx, 0, &element_id);

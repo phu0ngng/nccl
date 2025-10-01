@@ -43,7 +43,7 @@ typedef ncclCoopTile<32> ncclCoopWarp;
 #if __CUDACC__
 struct ncclCoopLanes { // Some lanes of this warp.
   uint32_t lmask;
-  
+
   NCCL_DEVICE_INLINE constexpr ncclCoopLanes(uint32_t lmask=-1u): lmask(lmask) {}
 
   NCCL_DEVICE_INLINE int thread_rank() const {
@@ -71,7 +71,7 @@ struct ncclCoopWarpSpan {
   NCCL_DEVICE_INLINE constexpr ncclCoopWarpSpan(int warp0, int nWarps, int id):
     warp0(warp0), nWarps(nWarps), id(id) {
   }
-  
+
   NCCL_DEVICE_INLINE int thread_rank() const {
     return threadIdx.x - 32*warp0;
   }

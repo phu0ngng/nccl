@@ -78,7 +78,7 @@ struct doca_verbs_srq_init_attr;
 /**
  * Opaque structure representing a DOCA Verbs AH instance.
  */
-struct doca_verbs_ah;
+struct doca_verbs_ah_attr;
 /**
  * Opaque structure representing a DOCA UMEM instance.
  */
@@ -1106,7 +1106,7 @@ enum doca_verbs_qp_atomic_type doca_verbs_qp_attr_get_allow_remote_atomic(
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
 doca_error_t doca_verbs_qp_attr_set_ah_attr(struct doca_verbs_qp_attr *verbs_qp_attr,
-                                            struct doca_verbs_ah *ah_attr);
+                                            struct doca_verbs_ah_attr *ah_attr);
 
 /**
  * @brief Get ah_attr attribute from verbs_qp_attr
@@ -1117,7 +1117,7 @@ doca_error_t doca_verbs_qp_attr_set_ah_attr(struct doca_verbs_qp_attr *verbs_qp_
  * @return
  * ah_attr attribute.
  */
-struct doca_verbs_ah *doca_verbs_qp_attr_get_ah_attr(
+struct doca_verbs_ah_attr *doca_verbs_qp_attr_get_ah_attr(
     const struct doca_verbs_qp_attr *verbs_qp_attr);
 
 /**
@@ -1296,7 +1296,8 @@ uint16_t doca_verbs_qp_attr_get_min_rnr_timer(const struct doca_verbs_qp_attr *v
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  * - DOCA_ERROR_NO_MEMORY - failed to allocate resources.
  */
-doca_error_t doca_verbs_ah_create(struct ibv_context *context, struct doca_verbs_ah **verbs_ah);
+doca_error_t doca_verbs_ah_attr_create(struct ibv_context *context,
+                                       struct doca_verbs_ah_attr **verbs_ah);
 
 /**
  * @brief Destroy a DOCA Verbs AH instance.
@@ -1309,7 +1310,7 @@ doca_error_t doca_verbs_ah_create(struct ibv_context *context, struct doca_verbs
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_destroy(struct doca_verbs_ah *verbs_ah);
+doca_error_t doca_verbs_ah_attr_destroy(struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Set gid attribute for verbs_ah.
@@ -1324,7 +1325,8 @@ doca_error_t doca_verbs_ah_destroy(struct doca_verbs_ah *verbs_ah);
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_set_gid(struct doca_verbs_ah *verbs_ah, struct doca_verbs_gid gid);
+doca_error_t doca_verbs_ah_attr_set_gid(struct doca_verbs_ah_attr *verbs_ah,
+                                        struct doca_verbs_gid gid);
 
 /**
  * @brief Get gid attribute from verbs_ah.
@@ -1335,7 +1337,7 @@ doca_error_t doca_verbs_ah_set_gid(struct doca_verbs_ah *verbs_ah, struct doca_v
  * @return
  * gid attribute.
  */
-struct doca_verbs_gid doca_verbs_ah_get_gid(const struct doca_verbs_ah *verbs_ah);
+struct doca_verbs_gid doca_verbs_ah_get_gid(const struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Set addr_type attribute for verbs_ah.
@@ -1350,8 +1352,8 @@ struct doca_verbs_gid doca_verbs_ah_get_gid(const struct doca_verbs_ah *verbs_ah
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_set_addr_type(struct doca_verbs_ah *verbs_ah,
-                                         enum doca_verbs_addr_type addr_type);
+doca_error_t doca_verbs_ah_attr_set_addr_type(struct doca_verbs_ah_attr *verbs_ah,
+                                              enum doca_verbs_addr_type addr_type);
 
 /**
  * @brief Get addr_type attribute from verbs_ah.
@@ -1362,7 +1364,7 @@ doca_error_t doca_verbs_ah_set_addr_type(struct doca_verbs_ah *verbs_ah,
  * @return
  * addr_type attribute.
  */
-enum doca_verbs_addr_type doca_verbs_ah_get_addr_type(const struct doca_verbs_ah *verbs_ah);
+enum doca_verbs_addr_type doca_verbs_ah_get_addr_type(const struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Set dlid attribute for verbs_ah.
@@ -1377,7 +1379,7 @@ enum doca_verbs_addr_type doca_verbs_ah_get_addr_type(const struct doca_verbs_ah
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_set_dlid(struct doca_verbs_ah *verbs_ah, uint32_t dlid);
+doca_error_t doca_verbs_ah_attr_set_dlid(struct doca_verbs_ah_attr *verbs_ah, uint32_t dlid);
 
 /**
  * @brief Get dlid attribute from verbs_ah.
@@ -1388,7 +1390,7 @@ doca_error_t doca_verbs_ah_set_dlid(struct doca_verbs_ah *verbs_ah, uint32_t dli
  * @return
  * dlid attribute.
  */
-uint32_t doca_verbs_ah_get_dlid(const struct doca_verbs_ah *verbs_ah);
+uint32_t doca_verbs_ah_get_dlid(const struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Set sl attribute for verbs_ah.
@@ -1403,7 +1405,7 @@ uint32_t doca_verbs_ah_get_dlid(const struct doca_verbs_ah *verbs_ah);
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_set_sl(struct doca_verbs_ah *verbs_ah, uint8_t sl);
+doca_error_t doca_verbs_ah_attr_set_sl(struct doca_verbs_ah_attr *verbs_ah, uint8_t sl);
 
 /**
  * @brief Get sl attribute from verbs_ah.
@@ -1414,7 +1416,7 @@ doca_error_t doca_verbs_ah_set_sl(struct doca_verbs_ah *verbs_ah, uint8_t sl);
  * @return
  * sl attribute.
  */
-uint8_t doca_verbs_ah_get_sl(const struct doca_verbs_ah *verbs_ah);
+uint8_t doca_verbs_ah_get_sl(const struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Set sgid_index attribute for verbs_ah.
@@ -1429,7 +1431,8 @@ uint8_t doca_verbs_ah_get_sl(const struct doca_verbs_ah *verbs_ah);
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_set_sgid_index(struct doca_verbs_ah *verbs_ah, uint8_t sgid_index);
+doca_error_t doca_verbs_ah_attr_set_sgid_index(struct doca_verbs_ah_attr *verbs_ah,
+                                               uint8_t sgid_index);
 
 /**
  * @brief Get sgid_index attribute from verbs_ah.
@@ -1440,7 +1443,7 @@ doca_error_t doca_verbs_ah_set_sgid_index(struct doca_verbs_ah *verbs_ah, uint8_
  * @return
  * sgid_index attribute.
  */
-uint8_t doca_verbs_ah_get_sgid_index(const struct doca_verbs_ah *verbs_ah);
+uint8_t doca_verbs_ah_get_sgid_index(const struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Set static_rate attribute for verbs_ah.
@@ -1455,7 +1458,8 @@ uint8_t doca_verbs_ah_get_sgid_index(const struct doca_verbs_ah *verbs_ah);
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_set_static_rate(struct doca_verbs_ah *verbs_ah, uint8_t static_rate);
+doca_error_t doca_verbs_ah_attr_set_static_rate(struct doca_verbs_ah_attr *verbs_ah,
+                                                uint8_t static_rate);
 
 /**
  * @brief Get static_rate attribute from verbs_ah.
@@ -1466,7 +1470,7 @@ doca_error_t doca_verbs_ah_set_static_rate(struct doca_verbs_ah *verbs_ah, uint8
  * @return
  * static_rate attribute.
  */
-uint8_t doca_verbs_ah_get_static_rate(const struct doca_verbs_ah *verbs_ah);
+uint8_t doca_verbs_ah_get_static_rate(const struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Set hop_limit attribute for verbs_ah.
@@ -1481,7 +1485,8 @@ uint8_t doca_verbs_ah_get_static_rate(const struct doca_verbs_ah *verbs_ah);
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_set_hop_limit(struct doca_verbs_ah *verbs_ah, uint8_t hop_limit);
+doca_error_t doca_verbs_ah_attr_set_hop_limit(struct doca_verbs_ah_attr *verbs_ah,
+                                              uint8_t hop_limit);
 
 /**
  * @brief Get hop_limit attribute from verbs_ah.
@@ -1492,7 +1497,7 @@ doca_error_t doca_verbs_ah_set_hop_limit(struct doca_verbs_ah *verbs_ah, uint8_t
  * @return
  * hop_limit attribute.
  */
-uint8_t doca_verbs_ah_get_hop_limit(const struct doca_verbs_ah *verbs_ah);
+uint8_t doca_verbs_ah_get_hop_limit(const struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Set traffic_class attribute for verbs_ah.
@@ -1507,7 +1512,8 @@ uint8_t doca_verbs_ah_get_hop_limit(const struct doca_verbs_ah *verbs_ah);
  * doca_error code - in case of failure:
  * - DOCA_ERROR_INVALID_VALUE - received invalid input.
  */
-doca_error_t doca_verbs_ah_set_traffic_class(struct doca_verbs_ah *verbs_ah, uint8_t traffic_class);
+doca_error_t doca_verbs_ah_attr_set_traffic_class(struct doca_verbs_ah_attr *verbs_ah,
+                                                  uint8_t traffic_class);
 
 /**
  * @brief Get traffic_class attribute from verbs_ah.
@@ -1518,7 +1524,7 @@ doca_error_t doca_verbs_ah_set_traffic_class(struct doca_verbs_ah *verbs_ah, uin
  * @return
  * traffic_class attribute.
  */
-uint8_t doca_verbs_ah_get_traffic_class(const struct doca_verbs_ah *verbs_ah);
+uint8_t doca_verbs_ah_get_traffic_class(const struct doca_verbs_ah_attr *verbs_ah);
 
 /**
  * @brief Create a DOCA Verbs Queue Pair instance.

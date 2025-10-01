@@ -59,6 +59,8 @@ typedef enum CUdevice_attribute_enum {
         124, /**< Device supports buffer sharing with dma_buf mechanism. */
 } CUdevice_attribute;
 
+typedef void *CUcontext;
+
 /* Wrapper function declarations */
 CUresult doca_verbs_wrapper_cuDeviceGetAttribute(int *pi, CUdevice_attribute attrib, CUdevice dev);
 CUresult doca_verbs_wrapper_cuPointerSetAttribute(const void *value, CUpointer_attribute attribute,
@@ -67,6 +69,7 @@ CUresult doca_verbs_wrapper_cuMemGetHandleForAddressRange(int *pHandle, CUdevice
                                                           size_t size,
                                                           CUmemRangeHandleType handleType,
                                                           unsigned long long flags);
+CUresult doca_verbs_wrapper_cuCtxGetCurrent(CUcontext *pctx);
 
 /* Initialization function */
 int doca_cuda_wrapper_init(void);
@@ -79,6 +82,7 @@ int doca_cuda_wrapper_init(void);
 #define doca_verbs_wrapper_cuDeviceGetAttribute cuDeviceGetAttribute
 #define doca_verbs_wrapper_cuPointerSetAttribute cuPointerSetAttribute
 #define doca_verbs_wrapper_cuMemGetHandleForAddressRange cuMemGetHandleForAddressRange
+#define doca_verbs_wrapper_cuCtxGetCurrent cuCtxGetCurrent
 
 /* No initialization needed when wrapper is not enabled */
 #define doca_cuda_wrapper_init() 0

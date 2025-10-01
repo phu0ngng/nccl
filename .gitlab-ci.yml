@@ -85,8 +85,8 @@ workflow:
       # Enable auto cancel for redundant pipelines, cancel all jobs that are interruptible
       auto_cancel:
         on_new_commit: interruptible
-    # Enable pipeline trigger on commits made to designated branches and disable auto-cancel via new commits. Run the post-submit phase.
-    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH
+    # Enable pipeline trigger on commits made to designated branches and disable auto-cancel via new commits. Run the post-submit phase. However, do all this only when it's not a scheduled pipeline as we have a separate condition for those.
+    - if: ($CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "next" || $CI_COMMIT_BRANCH == "stable" || $CI_COMMIT_BRANCH == $NCCL_RELEASE_BRANCH) && $CI_PIPELINE_SOURCE != 'schedule'
       variables:
         TRIGGER_PIPELINE: "post-submit"
     # Enable pipeline trigger via shcedules, and kick off the nightly flow.
@@ -281,8 +281,8 @@ fairshare-eos:
 fairshare-cw-dfw:
   stage: setup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
+    #   when: always
     - when: never
   needs: []
   variables:
@@ -433,6 +433,7 @@ unit_tests-P100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -480,6 +481,7 @@ unit_tests-P40:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -527,6 +529,7 @@ unit_tests-GP100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -574,6 +577,7 @@ unit_tests-A40-single:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -668,6 +672,7 @@ unit_tests-A100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -720,6 +725,7 @@ unit_tests-eos:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -739,8 +745,8 @@ unit_tests-eos:
 unit_tests-cw-dfw:
   stage: unit_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -757,6 +763,7 @@ unit_tests-cw-dfw:
     NCCL_HOME: build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
     ENQUEUE_TESTS_ARGS: 1
@@ -776,7 +783,7 @@ unit_tests-cw-dfw:
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -821,6 +828,7 @@ unit_tests-AWS_H100_EFA:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -907,6 +915,7 @@ unit_tests-draco_oci:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -961,6 +970,7 @@ unit_tests-pre-nyx:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -1014,6 +1024,7 @@ unit_tests-pre-tyche:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1063,6 +1074,7 @@ unit_tests-ipp6-a100:
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
@@ -1367,6 +1379,7 @@ unit_tests-theia:
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1691,8 +1704,8 @@ apitest-eos:
 apitest-cw-dfw:
   stage: api_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -1708,6 +1721,7 @@ apitest-cw-dfw:
     NP: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
     CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     API_TESTS_DEFAULT: 1
@@ -1716,7 +1730,7 @@ apitest-cw-dfw:
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -2243,8 +2257,8 @@ perftest-single-eos:
 perftest-single-cw-dfw:
   stage: perf_tests_single
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -2265,10 +2279,11 @@ perftest-single-cw-dfw:
     SKIP_FT_INIT: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   artifacts:
     when: always
@@ -2636,8 +2651,8 @@ perftest-multi-eos:
 perftest-multi-cw-dfw:
   stage: perf_tests_multi
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -2660,10 +2675,11 @@ perftest-multi-cw-dfw:
     SKIP_FT_INIT: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
