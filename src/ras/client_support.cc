@@ -990,7 +990,8 @@ static ncclResult_t rasClientRunComms(struct rasClient* client) {
     if (maxCommSize < comm->commNRanks)
       maxCommSize = comm->commNRanks;
     auxComms[commIdx].comm = comm;
-    comm = (struct rasCollComms::comm*)(((char*)(comm+1)) + comm->nRanks * sizeof(*comm->ranks));
+    comm = (struct rasCollComms::comm*)(((char*)(comm+1)) + comm->nRanks * sizeof(*comm->ranks) +
+                                        comm->nMissingRanks * sizeof(struct rasCollCommsMissingRank));
   }
   NCCLCHECKGOTO(ncclCalloc(&auxCommRanks, maxCommSize), ret, fail);
   TRACE(NCCL_RAS, "RAS: maxCommSize %d", maxCommSize);
