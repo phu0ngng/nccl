@@ -95,7 +95,7 @@ ncclResult_t ncclDevrInitOnce(struct ncclComm* comm) {
   }
   devr->bigSize = alignUp(devr->bigSize, size_t(1)<<32);
   INFO(NCCL_INIT, "Symmetric VA size=%ldGB", (long)devr->bigSize>>30);
-  
+
   ncclSpaceConstruct(&devr->bigSpace);
   ncclShadowPoolConstruct(&devr->shadows);
   return ncclSuccess;
@@ -115,7 +115,7 @@ ncclResult_t ncclDevrFinalize(struct ncclComm* comm) {
     struct ncclDevrRegTask* task = ncclIntruQueueDequeue(&devr->regTaskQueue);
     free(task);
   }
-  
+
   symTeamDestroyAll(comm);
   { // delete windowTable
     cudaStream_t stream;
@@ -380,7 +380,7 @@ static ncclResult_t symMemoryObtain(
   mem->memHandle = memHandle;
   mem->primaryAddr = memAddr;
   mem->size = size;
- 
+
   // Grab offset in the big space.
   NCCLCHECKGOTO(ncclSpaceAlloc(&devr->bigSpace, devr->bigSize, size, devr->granularity, &bigOffset), ret, fail_mem);
   mem->bigOffset = bigOffset;
@@ -622,7 +622,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
       comm, mem, memOffset, userPtr, userSize, winFlags, localRegHandle, outWinDev, nullptr, stream
     ), ret, fail_locReg_memHandle_mem_stream);
   mem = nullptr; // symWindowCreate took our reference
-  
+
   CUDACHECKGOTO(cudaStreamSynchronize(stream), ret, fail_locReg_memHandle_mem_stream_win);
 
   // symWindowCreate needs barrier.
@@ -1028,7 +1028,7 @@ ncclResult_t ncclDevrGetLsaRankPtr(struct ncclComm* comm, struct ncclDevrWindow*
   }
 
   struct ncclDevrState* devr = &comm->devrState;
-  
+
   // Validate lsaRank is within bounds
   if (lsaRank < 0 || lsaRank >= devr->lsaSize) {
     return ncclInvalidArgument;
@@ -1057,7 +1057,7 @@ ncclResult_t ncclDevrGetLsaTeamPtrMC(struct ncclComm* comm, struct ncclDevrWindo
   bool multimem = true;
   struct ncclDevrTeam* tm;
   NCCLCHECK(symTeamObtain(comm, lsaTeam, multimem, &tm));
-    
+
   // Return the base multicast address for this team with offset
   *outPtr = (void*)((uintptr_t)tm->mcBasePtr + winHost->bigOffset + offset);
   return ncclSuccess;

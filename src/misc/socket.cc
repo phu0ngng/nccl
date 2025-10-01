@@ -907,7 +907,7 @@ ncclResult_t ncclSocketMultiOp(struct ncclSocketOp* ops, int numOps) {
     WARN("ncclSocketMultiOp: invalid arguments ops=%p numOps=%d", ops, numOps);
     return ncclInvalidArgument;
   }
-  
+
   for (int i = 0; i < numOps; i++) {
     if (ops[i].sock == NULL) {
       WARN("ncclSocketMultiOp: invalid socket at index %d", i);
