@@ -33,8 +33,6 @@
 static char ncclIbIfName[MAX_IF_NAME_SIZE+1];
 static union ncclSocketAddress ncclIbIfAddr;
 
-static ncclNetCommConfig_t ibContext;
-
 struct ncclIbMr {
   uintptr_t addr;
   size_t pages;
@@ -668,8 +666,9 @@ ncclResult_t ncclIbSetNetAttr(void *ctx, ncclNetAttr_t *netAttr) {
 static ncclProfilerCallback_t ncclProfilerFunction;
 
 ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
-  if (netRefCount++) return ncclSuccess;
   ncclResult_t ret = ncclSuccess;
+  ncclNetCommConfig_t* netCommConfig = nullptr;
+  if (netRefCount++) goto exit;
   ncclProfilerFunction = profFunction;
   if (ncclParamIbDisable()) return ncclInternalError;
   static int shownIbHcaEnv = 0;
@@ -838,11 +837,12 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
 
   }
 exit:
-  ibContext.trafficClass = config->trafficClass;
-  *ctx = &ibContext;
+  NCCLCHECK(ncclCalloc(&netCommConfig, 1));
+  netCommConfig->trafficClass = config->trafficClass;
+  *ctx = (void *)netCommConfig;
   return ret;
 fail:
-  goto exit;
+  return ret;
 }
 
 ncclResult_t ncclIbDevices(int* ndev) {
@@ -2646,6 +2646,7 @@ ncclResult_t ncclIbCloseListen(void* listenComm) {
 }
 
 ncclResult_t ncclIbFinalize(void* ctx) {
+  free(ctx);
   netRefCount--;
   return ncclSuccess;
 }
