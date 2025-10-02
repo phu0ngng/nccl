@@ -699,10 +699,18 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
   int len = 0;
   const char* envstr = getenv("NCCL_TESTS_DEVICE");
   const int gpu0 = envstr ? atoi(envstr) : -1;
+  int available_devices;
+  CUDACHECK(cudaGetDeviceCount(&available_devices));
   for (int i=0; i<nThreads*nGpus; i++) {
     const int cudaDev = (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i;
     const int rank = proc*nThreads*nGpus+i;
     cudaDeviceProp prop;
+    if (cudaDev >= available_devices) {
+      fprintf(stderr, "Invalid number of GPUs: %d requested but only %d were found.\n",
+              (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + nThreads*nGpus, available_devices);
+      fprintf(stderr, "Please check the number of processes and GPUs per process.\n");
+      return testNotImplemented;
+    }
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
     if (len < MAX_LINE) {
       len += snprintf(line+len, MAX_LINE-len, "#  Rank %2d Group %2d Pid %6d on %10s device %2d [%04x:%02x:%02x] %s\n",
