@@ -178,7 +178,7 @@ target_include_directories(nccl_static PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CMAKE_CURRENT_SOURCE_DIR}/include/os
     ${CUDAToolkit_INCLUDE_DIRS}
-    transport/gdaki/doca-gpunetio/include
+    transport/net_ib/gdaki/doca-gpunetio/include
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )
 

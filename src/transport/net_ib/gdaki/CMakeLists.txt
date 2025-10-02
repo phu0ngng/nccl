@@ -1,6 +1,6 @@
 # DOCA
 # Allow users to specify DOCA_HOME via cmake -DDOCA_HOME=<path>
-# Default to transport/gdaki/doca-gpunetio if not specified
+# Default to transport/net_ib/gdaki/doca-gpunetio if not specified
 if(NOT DEFINED DOCA_HOME)
     set(DOCA_HOME ${CMAKE_CURRENT_SOURCE_DIR}/doca-gpunetio)
 endif()

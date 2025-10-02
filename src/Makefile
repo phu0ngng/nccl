@@ -16,7 +16,8 @@ LIBSRCFILES := \
 	$(wildcard graph/*.cc) \
 	$(wildcard misc/*.cc) \
 	$(wildcard transport/*.cc) \
-	$(wildcard transport/gdaki/*.cc) \
+	$(wildcard transport/net_ib/*.cc) \
+	$(wildcard transport/net_ib/gdaki/*.cc) \
 	$(wildcard register/*.cc) \
 	$(wildcard plugin/*.cc) \
 	$(wildcard plugin/net/*.cc) \
@@ -72,9 +73,9 @@ INCPLUGIN  := include/plugin
 DEVMANIFEST := $(BUILDDIR)/obj/device/manifest
 
 # DOCA GPUNetIO definitions
-DOCA_HOME        ?= transport/gdaki/doca-gpunetio
+DOCA_HOME        ?= transport/net_ib/gdaki/doca-gpunetio
 DOCA_INC_INSTALL := $(INCDIR)/nccl_device/gin/gdaki/doca_gpunetio
-DOCA_OBJDIR      := $(OBJDIR)/transport/gdaki/doca-gpunetio
+DOCA_OBJDIR      := $(OBJDIR)/transport/net_ib/gdaki/doca-gpunetio
 DOCA_INCLUDES    := $(DOCA_HOME)/include/doca_gpunetio_device.h $(wildcard $(DOCA_HOME)/include/common/*.h) $(wildcard $(DOCA_HOME)/include/device/*.cuh)
 DOCA_INCTARGETS  := $(DOCA_INCLUDES:$(DOCA_HOME)/include/%=$(DOCA_INC_INSTALL)/%)
 INCTARGETS       += $(DOCA_INCTARGETS)
