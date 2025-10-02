@@ -23,7 +23,7 @@
 
 #include "doca_gpunetio_host.h"
 #include "nccl_device/gin/gdaki/gin_gdaki_device_host_common.h"
-#include "../net_ib_gin.h"
+#include "../gin.h"
 
 #define DOCACHECK(call)                                       \
   do {                                                        \
