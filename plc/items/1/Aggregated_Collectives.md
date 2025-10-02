@@ -1,7 +1,7 @@
 # Aggregated Collectives
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -108,10 +108,10 @@ Author : Sylvain Jeaugey
 
 Reviewer : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 #### High level design
@@ -232,10 +232,10 @@ Author : Sylvain Jeaugey
 
 Reviewer : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 - nccl@a507a4349462250944995142422c709dbb2e703a
 - nccl@015f6fa1d4ba08dc6dc9d636fd28cba8f0e4ed3d
@@ -285,10 +285,10 @@ Reviewer : Ke Wen
 - nccl@efbeb86fe05f9254969482475e8e29a4f7b2aa76
 - nccl@de8af9156a1500b6094944481e61e9b37513cf8a
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -377,4 +377,4 @@ None.
 
 Author : Sylvain Jeaugey Reviewer : Ke Wen
 </details>
- 
+

@@ -51,12 +51,12 @@ __global__ void ping_pong_kernel(
 
     if (DEBUG) printf("[Rank %d] Starting kernel with %d iterations, nelems=%llu, signal_id=%u\n", pe, iter, nelems, signal_id);
 
-    uint64_t current_signal_value = 0; 
+    uint64_t current_signal_value = 0;
     for (i = 1; i <= iter; i++) {
         if (DEBUG) printf("[Rank %d] Starting iteration %d\n", pe, i);
-        
+
         uint64_t expected_signal_value = i;
-        
+
         if (pe) {  // Rank 1
             if (DEBUG) printf("[Rank %d] Waiting for signal from peer (signal_id=%u, expected_value=%lu) current_signal_value=%lu\n", pe, signal_id, expected_signal_value, current_signal_value);
 
@@ -192,9 +192,9 @@ int main(int argc, char* argv[]) {
     gctx.handle = comm->sharedRes->ginState.ginDevHandles[0]->handle;
     gctx.rank = myRank;
     gctx.nRanks = nRanks;
-    
+
     ncclGinSignal_t signalIDs = 0;
-    
+
     if (DEBUG) printf("[Rank %d] Allocating %zu bytes\n", myRank, args.end_size);
 
     // Timing setup
@@ -218,7 +218,7 @@ int main(int argc, char* argv[]) {
         printf("size(B)     latency (us)\n");
     }
 
-    // Run tests for different message sizes  
+    // Run tests for different message sizes
     for (size_t size = args.begin_size; size <= args.end_size; size *= 2) {
 
         size_t nelems = size / sizeof(int);
@@ -261,34 +261,34 @@ int main(int argc, char* argv[]) {
             int* h_sendbuff_orig = (int*)malloc(nelems * sizeof(int));
             int* h_recvbuff_orig = (int*)malloc(nelems * sizeof(int));
             initialize(h_sendbuff_orig, h_recvbuff_orig, myRank, nelems);
-            
+
             // Get current values from GPU
             int* h_sendbuff = (int*)malloc(nelems * sizeof(int));
             int* h_recvbuff = (int*)malloc(nelems * sizeof(int));
             CUDACHECK(cudaMemcpy(h_sendbuff, sendbuff, nelems * sizeof(int), cudaMemcpyDeviceToHost));
             CUDACHECK(cudaMemcpy(h_recvbuff, recvbuff, nelems * sizeof(int), cudaMemcpyDeviceToHost));
-            
+
             // Print before/after values for last index
             printf("\n=== VERIFICATION FOR SIZE %zu BYTES ===\n", size);
             printf("[Rank %d] Buffer values at last index [%zu]:\n", myRank, nelems-1);
-            printf("[Rank %d]   sendbuff: before=0x%X (%d) -> after=0x%X (%d)\n", 
-                   myRank, h_sendbuff_orig[nelems-1], h_sendbuff_orig[nelems-1], 
+            printf("[Rank %d]   sendbuff: before=0x%X (%d) -> after=0x%X (%d)\n",
+                   myRank, h_sendbuff_orig[nelems-1], h_sendbuff_orig[nelems-1],
                    h_sendbuff[nelems-1], h_sendbuff[nelems-1]);
-            printf("[Rank %d]   recvbuff: before=0x%X (%d) -> after=0x%X (%d)\n", 
-                   myRank, h_recvbuff_orig[nelems-1], h_recvbuff_orig[nelems-1], 
+            printf("[Rank %d]   recvbuff: before=0x%X (%d) -> after=0x%X (%d)\n",
+                   myRank, h_recvbuff_orig[nelems-1], h_recvbuff_orig[nelems-1],
                    h_recvbuff[nelems-1], h_recvbuff[nelems-1]);
-            printf("[Rank %d] Expected to receive: 0x%X (%d) from peer\n", 
+            printf("[Rank %d] Expected to receive: 0x%X (%d) from peer\n",
                    myRank, 0x100 + (!myRank), 0x100 + (!myRank));
-            
+
             bool verification_result = verify(h_sendbuff, h_recvbuff, nelems, myRank);
             printf("[Rank %d] %s\n", myRank, verification_result ? "✓ PASS" : "✗ FAIL");
             printf("=====================================\n");
-            
+
             free(h_sendbuff_orig);
             free(h_recvbuff_orig);
             free(h_sendbuff);
             free(h_recvbuff);
-            
+
             // Reset GPU buffers for next message size iteration
             int* h_sendbuff_reset = (int*)malloc(nelems * sizeof(int));
             int* h_recvbuff_reset = (int*)malloc(nelems * sizeof(int));
@@ -323,4 +323,4 @@ int main(int argc, char* argv[]) {
     MPICHECK(MPI_Finalize());
 
     return 0;
-} 
+}

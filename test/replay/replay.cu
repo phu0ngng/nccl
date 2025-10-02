@@ -1241,7 +1241,7 @@ void progressThread(std::future<void> exit_future, std::future<void> parsing_fut
       // Loop over completed operations
       bool allOpsFinished = true;
       int head = opTimerCircularBuffer.head % opTimerCircularBuffer.length;
-      while (opTimerCircularBuffer.data[head].start < progressThreadTimes[1] && 
+      while (opTimerCircularBuffer.data[head].start < progressThreadTimes[1] &&
              head != opTimerCircularBuffer.tail) {
 
         OpTimer* opTimer = opTimerCircularBuffer.data + head;
@@ -1257,9 +1257,9 @@ void progressThread(std::future<void> exit_future, std::future<void> parsing_fut
           // tEnd is least recent of: the ending point of this op, or progressThreadTimes[i + 1] (the start of this period)
           std::chrono::high_resolution_clock::time_point tEnd = opTimer->end;
           if (progressThreadTimes[1] < tEnd) {
-            tEnd = progressThreadTimes[1]; 
+            tEnd = progressThreadTimes[1];
           }
-  
+
           std::chrono::duration<uint64_t, std::nano> thisTimePeriodDuration = tEnd - tStart;
           double scaledBusBw = opTimer->busBw * ((double) thisTimePeriodDuration.count() / progressThreadDuration.count());
           aggBusBws[0] += scaledBusBw;
@@ -1287,7 +1287,7 @@ void progressThread(std::future<void> exit_future, std::future<void> parsing_fut
       }
 
       if (allOpsFinished) {
-        // Update the head 
+        // Update the head
         opTimerCircularBuffer.head = head;
         fprintf(stderr, "[%u] %s rank 0 data_ops progress: [ %lu posted / %lu completed / %lu total / %lf busBw ]\n",
           getpid(), getCurrentTimestamp(progressThreadTimes[1]).c_str(), postedOps[0], completedOps[0], data_op_call_count, aggBusBws[0]);
@@ -1584,9 +1584,9 @@ void invokeCall(CallHeader const &hdr, CallNcclGroupStart const &body) {
 
 void invokeCall(CallHeader const &hdr, CallNcclGroupEnd const &body) {
   if (opt_verbose) fprintf(stderr, "[%u] Waiting to unlock groupEnd for mpi_rank_me=%d group_seq=%d\n", getpid(), mpi_rank_me, body.group_seq);
-  
+
   std::unique_lock<std::mutex> vc_locked = rank_group_seq_table[mpi_rank_me].lock(body.group_seq);
-  
+
   wrap_ncclGroupEnd(hdr.line_number);
 }
 
@@ -1782,14 +1782,14 @@ void invokeCall(CallHeader const &hdr, CallDataOp const &body) {
     dptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.dptr, my_op_id);
 
     NCCL_CHECK(ncclScatter(sptr, dptr, body.elt_n, (ncclDataType_t)body.elt_ty, body.root, vc->comm, stream_nccl));
-    verify_elt_ix0 = rank_me * body.elt_n;  
-    verify_elt_n = body.elt_n;              
-    verify_rank_n = 1;                      
+    verify_elt_ix0 = rank_me * body.elt_n;
+    verify_elt_n = body.elt_n;
+    verify_rank_n = 1;
     break;
   case CallCode::gather:
     call_name = "Gather";
     seed = hashOf(vc->vunique, vc->coll_seq++);
-    
+
     sptr = CudaHelp::allocate(device, body.elt_n*elt_sz, body.sptr, my_op_id);
 
     if (!opt_measure_performance) {
@@ -2281,7 +2281,7 @@ struct CallCodeSizeHashFn
         std::size_t h1 = std::hash<int>()((int) c.code);
         std::size_t h2 = std::hash<int>()(c.elt_n);
         std::size_t h3 = std::hash<int>()(c.elt_ty);
- 
+
         return h1 ^ h2 ^ h3;
     }
 };
@@ -2470,7 +2470,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
             char buffer[5];
             if (fieldsMismatched)
               snprintf(buffer, 5, "!!! ");
-            else 
+            else
               snprintf(buffer, 5, "    ");
 
             fprintf(stderr, "%snccl%s. rank=%u line_number=%lu op_counter=%lu elt_n=%lu elt_ty=%u red_op=%u root=%u\n",
@@ -2520,7 +2520,7 @@ void preCheck(std::unordered_map<uint64_t, std::shared_ptr<GlobalCommMap>>& vuni
       if (failed_op_check && !opt_disable_check_failure) {
         terminatePrecheck();
       }
-      
+
       // Reset this iterator to check running over bounds
       it = globalMap->data_ops_map.begin();
       op_counter++;
@@ -2641,7 +2641,7 @@ std::unordered_map<uint64_t, std::unordered_set<uint64_t>>& vuniqueToHostHashMap
     RankSizeStatsMap rankSizeMap;
     size_t rankZeroCollectives = 0;
     size_t totalCollectiveCalls = 0;
-    
+
     auto it = globalMap->data_ops_map.begin();
     while (it != globalMap->data_ops_map.end()) {
       int rank = it->first;
@@ -3039,7 +3039,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
         if(matched >= 9) {
           if (call.elt_n <= 0) {
             if (opt_verbose) {
-              fprintf(stderr, "Skipping operation with zero element count: %s elt_n=%ld line=%zu\n", 
+              fprintf(stderr, "Skipping operation with zero element count: %s elt_n=%ld line=%zu\n",
                       coll_name, call.elt_n, line_counter);
             }
             parsedLinesSkipped.fetch_add(1);
@@ -3112,7 +3112,7 @@ ByteBuffer loadDebugCallTrace(std::string const &path) {
     signal_precheck.set_value();
 
     printf("[%u] Rank %d done pre-processing trace.\n", getpid(), mpi_rank_me);
-    
+
     if (!opt_check_only) {
       printf("[%u] Dispersing to %d ranks on %zu physical hosts\n",
         getpid(), mpi_rank_n, vhosts.size());
@@ -3257,7 +3257,7 @@ int main(int arg_n, char **args) {
     mpi_rank_me = 0;
     phost_me = 0;
     rank_to_phost.reset(new int[mpi_rank_n]);
-    
+
     // Make up mappings to say ranks 0-15 are on phost 0, ranks 16-31 are on phost 1, etc.
     for(int r=0; r < mpi_rank_n; r++)
       rank_to_phost[r] = r / 16;

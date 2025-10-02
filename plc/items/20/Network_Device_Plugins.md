@@ -1,7 +1,7 @@
 # Network Device Plugins
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 The primary motivation of implementing network device plugins in NCCL is
@@ -77,10 +77,10 @@ N/A
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 NCCL network device plugins are a new feature which allow both internal
@@ -419,10 +419,10 @@ None.
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 \* commit 02e19ee29a50716b92610fcb0e8713fe560e281e \| Author: Ben
 Williams \| Date: Wed Jun 28 12:51:21 2023 -0700 \| \| PLC design
 updates \| \* commit 6ad7be8dc3b285243729c55f7ea9a9371039ebb3 \| Author:
@@ -519,10 +519,10 @@ compilation errors \| \| \| \* \| \| commit
 \| Date: Tue May 9 09:33:11 2023 -0700 \| \| \| \| Preliminary net
 nevice plugin changes \| \|
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -602,4 +602,4 @@ None.
 
 ### Signoff list
 </details>
- 
+

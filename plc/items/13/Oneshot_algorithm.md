@@ -1,7 +1,7 @@
 # Oneshot algorithm
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -73,10 +73,10 @@ N/A
 
 Author : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 Each GPU close to the NIC will become a reduce agent. All other GPUs
@@ -155,16 +155,16 @@ None.
 
 Author : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 Merge request !14 "Oneshot" on GitLab
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -247,4 +247,4 @@ None.
 
 Author : Ke Wen
 </details>
- 
+

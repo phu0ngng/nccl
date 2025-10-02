@@ -13,7 +13,7 @@ while [ "$1" != "" ]; do
 vers="$vers / $1"
 shift
 done
- 
+
 ngpus=8
 gpumodels=`ls $base/results`
 

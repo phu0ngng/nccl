@@ -281,7 +281,7 @@ int main(int argc, char* argv[]) {
   printf("\n");
   if (errors || avg_bw < check_avg_bw)
     exit(EXIT_FAILURE);
-  else 
+  else
     exit(EXIT_SUCCESS);
 }
 

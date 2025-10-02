@@ -33,7 +33,7 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
   int down_rank = (b+1)%bn / gridDim.x;
   int down_block = (b+1)%bn % gridDim.x;
   auto acq = cuda::memory_order_acquire;
-  
+
   const int sendOff = 0;
   const int recvOff = gridDim.x*BufElts;
   unsigned sigData0 = 0;
@@ -66,7 +66,7 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
       while (ref.load(acq) < 1+round) continue;
     }
     __syncthreads();
-    
+
     // Send data downstream in chunks.
     int nChunks = min(BufElts, 1 + (round*0xdeadbeefu >> (32-10)));
     int chunkElts = BufElts/nChunks;
@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
   uint32_t sigs;
   NCCLCHECK(ncclGinAllocSignalsCounters(comm, 2*BlockPerRank, &sigs, 0, nullptr));
   assert(sigs == 0);
-  
+
   // Allocate and register symmetric memory
   void *buf;
   size_t bufSize = 2*BlockPerRank*BufElts*sizeof(int);

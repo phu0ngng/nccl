@@ -423,7 +423,7 @@ int main(int argc, char* argv[]) {
 
   reference = (char*)malloc(1<<MAX_POW2);
   results = (char*)malloc(1<<MAX_POW2);
- 
+
   struct timeval tv;
   gettimeofday(&tv, NULL);
   int sec_now = tv.tv_sec;

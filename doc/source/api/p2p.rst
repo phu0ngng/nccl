@@ -10,11 +10,11 @@ ncclSend
 --------
 
 .. c:function:: ncclResult_t ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer, ncclComm_t comm, cudaStream_t stream)
- 
+
  Send data from ``sendbuff`` to rank ``peer``.
- 
+
  Rank ``peer`` needs to call ncclRecv with the same ``datatype`` and the same ``count`` as this rank.
- 
+
  This operation is blocking for the GPU. If multiple :c:func:`ncclSend` and :c:func:`ncclRecv` operations
  need to progress concurrently to complete, they must be fused within a :c:func:`ncclGroupStart`/
  :c:func:`ncclGroupEnd` section.
@@ -25,11 +25,11 @@ ncclRecv
 --------
 
 .. c:function:: ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int peer, ncclComm_t comm, cudaStream_t stream)
- 
+
  Receive data from rank ``peer`` into ``recvbuff``.
- 
+
  Rank ``peer`` needs to call ncclSend with the same ``datatype`` and the same ``count`` as this rank.
- 
+
  This operation is blocking for the GPU. If multiple :c:func:`ncclSend` and :c:func:`ncclRecv` operations
  need to progress concurrently to complete, they must be fused within a :c:func:`ncclGroupStart`/
  :c:func:`ncclGroupEnd` section.

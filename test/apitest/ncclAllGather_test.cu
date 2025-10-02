@@ -224,7 +224,7 @@ TYPED_TEST(ncclAllGather_test, aggregate_one_level_group_call) {
 TYPED_TEST(ncclAllGather_test, multi_split_share) {
     ncclComm_t* localComms = NULL;
     ncclComm_t* comms2;
-    
+
     localComms = ncclCommon_getSplitShareComms();
     comms2 = (ncclComm_t*)calloc(this->nVis, sizeof(ncclComm_t));
 

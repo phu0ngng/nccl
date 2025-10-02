@@ -1,7 +1,7 @@
 # Shared buffers for network communication
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -70,10 +70,10 @@ N/A
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 As we scale, we will have more peers than we can process in parallel.
@@ -142,10 +142,10 @@ None.
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 - nccl@34d415f426484e7cd876a0e4eb365cf247bb9aff
 - nccl@2c1b576ad1d8d168b4245c258bde08a99154f712
@@ -155,10 +155,10 @@ Author : Sylvain Jeaugey
 - nccl@405fa0ca99caf41bc49cfa8828a44d883510c1de
 - nccl@60d1154bc7798b4fa35e75237b3affddb176b086
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -241,4 +241,4 @@ None.
 
 Author : Sylvain Jeaugey
 </details>
- 
+

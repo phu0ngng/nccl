@@ -36,7 +36,7 @@ testResult_t ReduceInitData(struct threadArgs* args, ncclDataType_t type, ncclRe
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 

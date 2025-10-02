@@ -43,12 +43,12 @@ Added a new API: `ncclResult_t  ncclGroupSimulateEnd(ncclSimInfo _t* simInfo);`
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 NCCL's internal tuner determines the best algo/proto combination and the estimated time for the operation.
 For group operations, instead of calling `ncclGroupEnd()` as before, the caller will call `ncclGroupSimulateEnd(ncclSimInfo_t*)` and send
@@ -73,7 +73,7 @@ This structure will be passed to `ncclGroupSimulateEnd`
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -88,7 +88,7 @@ f074465f96af4a5addaa98ab5c5ed2b3939b823a
 690aea32eaab0479225ea975f3037bac278a00e9
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -167,7 +167,7 @@ Estimated time taken for an operation is measured and displayed.
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

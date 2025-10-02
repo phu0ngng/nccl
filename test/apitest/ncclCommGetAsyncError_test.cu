@@ -50,7 +50,7 @@ TEST_F(ncclCommGetAsyncError_test, basic) {
         ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
         waitCommsReady(comms, nVis);
-        
+
         for (int i = 0; i < nVis; ++i) {
             ASSERT_EQ(ncclSuccess, ncclCommGetAsyncError(comms[i], &state));
             ASSERT_EQ(ncclSuccess, state);
@@ -94,7 +94,7 @@ TEST_F(ncclCommGetAsyncError_test, null_state) {
     ASSERT_NE(0, expectMask & (1 << ncclGroupEnd()));
 
     waitCommsReady(comms, nVis);
-    
+
     ASSERT_EQ(ncclInvalidArgument, ncclCommGetAsyncError(comms[0], NULL));
     for (int i = 0; i < nVis; ++i) {
         ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));

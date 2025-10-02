@@ -44,12 +44,12 @@ NA
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 New allocation function `ncclCuMemHostAlloc` is added to allocate pinned host memory with CUMEM API.
 The function will automatically detect the CPU id that is closest to the current GPU and allocate
@@ -77,7 +77,7 @@ all connections, free buffers, and exit without waiting.
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -86,7 +86,7 @@ all connections, free buffers, and exit without waiting.
 ### Commit list or MR
  https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/504
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -138,7 +138,7 @@ The NCCL collective/sendrecv performance will not be impacted. But it can increa
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

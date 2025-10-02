@@ -129,12 +129,12 @@ CE-based collectives provide substantial benefits in environments where:
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 #### 1. Symmetric Memory Registration
@@ -179,7 +179,7 @@ We define three synchronization mechanisms based on where polling occurs and how
 - **remotePollSync**: Each peer performs:
   - One local write operation to its own memory
   - (nRank-1) remote wait operations on other peers' memory
-  
+
 - **localPollSync**: Each peer performs:
   - (nRank-1) remote write operations to other peers' memory
   - (nRank-1) local wait operations on its own memory
@@ -227,7 +227,7 @@ The figure below illustrates this synchronization mechanism for CUDA graph captu
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -362,7 +362,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   planner->persistent = ncclCudaGraphValid(planner->capturingGraph);
   // Tasks from the sorter come out ordered size descending.
   struct ncclTaskColl* task = ncclTaskCollSorterDequeueAll(&planner->collSorter);
-  
+
   ...
 
   //-----------Added logic for CE collective path--------------------
@@ -447,7 +447,7 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, bool isCompltSync, cudaStream_
           batchParams.push_back(params);
       }
   }
-  
+
   // Execute the batch operation with nRanks operations (1 write + (nRanks-1) waits)
   CUCHECKGOTO(cuStreamBatchMemOp(stream, comm->nRanks, batchParams.data(), 0), ret, fail);
 
@@ -469,7 +469,7 @@ fail:
 // CE-based AllGather implementation with batched memory copy
 ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args, cudaStream_t stream) {
   ncclResult_t ret = ncclSuccess;
-  
+
   // Calculate the size of each rank's data chunk
   const size_t bytes = args->nElts * args->eltSize;
   uint8_t* mySendBuff = (uint8_t*)args->sendBuff;
@@ -480,7 +480,7 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   std::vector<size_t> sizes(comm->nRanks-1, bytes);
   std::vector<size_t> attrIdxs(comm->nRanks-1, 0);
   cudaMemcpyAttributes attrs = {};
-  
+
   // Synchronization to ensure all ranks are ready
   NCCLCHECKGOTO(ncclMemOpSync(comm, false, stream), ret, fail);
 
@@ -517,7 +517,7 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
 
   // Synchronization to ensure all transfers are complete
   NCCLCHECKGOTO(ncclMemOpSync(comm, true, stream), ret, fail);
-  
+
 exit:
   return ret;
 fail:
@@ -526,9 +526,9 @@ fail:
 ```
 
 ### Commit list or MR
- 
+
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -553,7 +553,7 @@ We are comparing NCCL allgather latency, bandwidth, and nChannels (SMs) between 
 <img src="images/nChannel.png" alt="SM utilization" width="400"/>
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

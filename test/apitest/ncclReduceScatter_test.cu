@@ -35,7 +35,7 @@ TYPED_TEST(ncclReduceScatter_test, pinned_mem) {
             }
             ASSERT_EQ(ncclSuccess, ncclGroupEnd());
         }
-    }  
+    }
 };
 TYPED_TEST(ncclReduceScatter_test, stream_null) {
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -248,7 +248,7 @@ TYPED_TEST(ncclReduceScatter_test, aggregate_one_level_group_call) {
 TYPED_TEST(ncclReduceScatter_test, multi_split_share) {
     ncclComm_t* localComms = NULL;
     ncclComm_t* comms2;
-    
+
     localComms = ncclCommon_getSplitShareComms();
     comms2 = (ncclComm_t*)calloc(this->nVis, sizeof(ncclComm_t));
 

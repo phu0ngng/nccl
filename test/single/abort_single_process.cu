@@ -169,7 +169,7 @@ int main(int argc, char* argv[]) {
 
   if (false)
     exit(EXIT_FAILURE);
-  else 
+  else
     exit(EXIT_SUCCESS);
 }
 

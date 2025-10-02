@@ -72,7 +72,7 @@ Platform/NodesxGPUs, Function
 **Legend:**
 - (Blue): Model accuracy > 110% (model too optimistic)
 - (Green): Model accuracy 95-110% (acceptable)
-- (Yellow): Model accuracy 80-95% (model too pessimistic) 
+- (Yellow): Model accuracy 80-95% (model too pessimistic)
 - (Red): Model accuracy < 80% (significant error)
 
 ## Environment Variables

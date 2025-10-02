@@ -707,7 +707,7 @@ static testResult_t distributeFTRevokeThenSplitTest(struct threadArgs* args) {
   }
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), splitComms, nGpus);
   for (int j = 0; j < nGpus; ++j) CUDACHECK(cudaStreamSynchronize(streams[j]));
-  
+
   // Cleanup
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; ++j) {

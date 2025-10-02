@@ -4,7 +4,7 @@
 
 <!------------------------------------->
 ## version 2.28
- 
+
 - [Grouped Symmetric Kernels](items/id_4dd518cb/Grouped_Symmetric_Kernels.md)
 - [NCCLNet Shared Plugin Context](items/id_987f1052/NCCLNet_Shared_Plugin_Context.md)
 - [CE_Collectives](items/id_69ed1e63/CE_Collectives.md)
@@ -17,7 +17,7 @@
 - [NCCL examples](items/id_302f5bf1/NCCL_examples.md)
 - [Communicator Revoke](items/id_3a1f2e9b/communicator_revoke.md)
 <!-- V2_28_DO_NOT_MOVE -->
- 
+
 <!------------------------------------->
 <!------------------------------------->
 ## version 2.27

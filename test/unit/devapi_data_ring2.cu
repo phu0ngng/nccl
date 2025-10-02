@@ -34,7 +34,7 @@ __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hbuf, int kern
   unsigned sigFree0 = gridDim.x;
   unsigned counter = blockIdx.x;
   uint64_t counterShadow = 0;
-  
+
   ncclGin net(comm, 0);
   uint32_t roundLo = 10*kernelNum;
   uint32_t roundHi = 10*kernelNum + 10;
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
   bufReq.outBufferHandle = &hBuf;
   bufReq.next = reqs.resourceRequirementsList;
   reqs.resourceRequirementsList = &bufReq;
-  
+
   NCCLCHECK(ncclDevCommCreate(comm, &reqs, &dcomm));
 
   // run kernel
@@ -145,7 +145,7 @@ int main(int argc, char** argv) {
   }
   CUDACHECK(cudaStreamSynchronize(stream));
   printf("[MPI Rank %d] Completed kernels\n", rank);
-  
+
   // cleanup
   NCCLCHECK(ncclDevCommDestroy(comm, &dcomm));
   NCCLCHECK(ncclCommFinalize(comm));

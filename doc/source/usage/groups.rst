@@ -199,7 +199,7 @@ before calling related CUDA calls (e.g. cudaStreamSynchronize):
     /* Errors happen */
     reportErrorAndRestart();
  }
- 
+
  for (int g=0; g<ngpus; g++) {
    cudaStreamSynchronize(streams[g]);
  }

@@ -57,12 +57,12 @@ static void getHostName(char* hostname, int maxlen) {
   }
 }
 
-int main(int argc, char* argv[]) 
+int main(int argc, char* argv[])
 {
   int size = 32*1024*1024;
 
   int myRank, nRanks, localRank = 0;
-  
+
   //initializing MPI
   MPICHECK(MPI_Init(&argc, &argv));
   MPICHECK(MPI_Comm_rank(MPI_COMM_WORLD, &myRank));
@@ -98,12 +98,12 @@ int main(int argc, char* argv[])
 
   ncclUniqueId id;
   ncclComm_t comms[nDev];
-  
+
   //generating NCCL unique ID at one process and broadcasting it to all
   if (myRank == 0) ncclGetUniqueId(&id);
   MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
 
-  //initializing NCCL, group API is required around ncclCommInitRank as it is 
+  //initializing NCCL, group API is required around ncclCommInitRank as it is
   //called across multiple GPUs in each thread/process
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<nDev; i++) {
@@ -112,7 +112,7 @@ int main(int argc, char* argv[])
   }
   NCCLCHECK(ncclGroupEnd());
 
-  //calling NCCL communication API. Group API is required when using 
+  //calling NCCL communication API. Group API is required when using
   //multiple devices per thread/process
   NCCLCHECK(ncclGroupStart());
   for (int i=0; i<nDev; i++)

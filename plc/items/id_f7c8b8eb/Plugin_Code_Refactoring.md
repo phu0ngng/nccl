@@ -18,7 +18,7 @@ name is also used to identify the version of the plugin selected (encoded in the
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 [Generate NCCL Plugin Code Automatically](https://nvbugspro.nvidia.com/bug/4912557)
 
@@ -41,12 +41,12 @@ name is also used to identify the version of the plugin selected (encoded in the
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 Instead of having all the compatibility layer code in the same file as the plugin load/init code, place
 compatibility code into separate files named net\_vX.cc and move those files to a separate plugin dir
@@ -98,7 +98,7 @@ interfaces during build time.
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -107,7 +107,7 @@ interfaces during build time.
 ### Commit list or MR
 [Refactor plugin handling code](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/734)
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -122,7 +122,7 @@ interfaces during build time.
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -151,7 +151,7 @@ interfaces during build time.
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

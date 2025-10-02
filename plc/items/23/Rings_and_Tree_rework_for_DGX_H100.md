@@ -1,7 +1,7 @@
 # Rings and Tree rework for DGX H100
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Introduction
 
 #### Overview
@@ -57,10 +57,10 @@ Dual node ring allreduce on DGX H100 should work at SOL, i.e. 390GB/s.
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Design
 
 #### Alternate cross-nic rings
@@ -147,17 +147,17 @@ nothing to do (as it would be a leaf in the tree).
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 [MR
 12345](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/12345)
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Introduction
 
 #### Test strategy
@@ -206,4 +206,4 @@ improve on allreduce on 2 DGX H100.
 
 Author : Sylvain Jeaugey
 </details>
- 
+

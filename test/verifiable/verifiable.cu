@@ -1304,7 +1304,7 @@ cudaError_t ncclVerifiableVerify(
     floating |= elt_ty == ncclFloat8e4m3;
     floating |= elt_ty == ncclFloat8e5m2;
   #endif
-  
+
   unsigned tolerance = 0;
   #if HAVE_ncclAvg
   if (floating && red_op == ncclAvg) {

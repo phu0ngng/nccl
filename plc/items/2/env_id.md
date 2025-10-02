@@ -1,7 +1,7 @@
 # env_id
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -76,10 +76,10 @@ N/A
 
 Author : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 #### High level design
@@ -227,10 +227,10 @@ None.
 
 Author : Ke Wen
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 - nccl@a2c0c76d47815226556cb74bbe2c0789af3e0d6c
 - nccl@726101e6dfbf9417fb6d85bd60c4b7b18da14a8d
@@ -264,10 +264,10 @@ Author : Ke Wen
 - nccl@7cdf5f2a56b98c1e83f2e639d77562f5dbdcd45a
 - nccl@addf167a606e935c1ed90adb16e003fe95249d5d
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -362,4 +362,4 @@ None.
 
 Author : Ke Wen
 </details>
- 
+
