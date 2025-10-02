@@ -745,7 +745,7 @@ inline uint32_t ncclCommIntraBarrierOut(struct ncclComm* comm) {
     uint64_t t0 = clockNano();
     do {
       // Spin vigorously for first 5us.
-      if (clockNano()-t0 >= 5*1000) sched_yield();
+      if (clockNano()-t0 >= 5*1000) std::this_thread::yield();
       gate = __atomic_load_n(&comm0->intraBarrierGate, __ATOMIC_RELAXED);
     } while ((gate & 1) != phase);
   }

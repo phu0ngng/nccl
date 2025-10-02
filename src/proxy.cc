@@ -494,7 +494,7 @@ static ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyCon
     proxyOps->freeOp = op->next;
   } else {
     int freeOp;
-    while ((freeOp = pool->freeOps[tpLocalRank]) == -1) sched_yield();
+    while ((freeOp = pool->freeOps[tpLocalRank]) == -1) std::this_thread::yield();
     int freeOpNew;
     while ((freeOpNew = __sync_val_compare_and_swap(pool->freeOps+tpLocalRank, freeOp, -1)) != freeOp) freeOp = freeOpNew;
     opIndex = freeOp;
@@ -991,7 +991,7 @@ void* ncclProxyProgress(void *proxyState_) {
         INFO(NCCL_ALL,"%s:%d -> %d [Progress Thread]", __FILE__, __LINE__, ret);
       }
       if (added == 0) {
-        sched_yield(); // No request progressed. Let others run.
+        std::this_thread::yield(); // No request progressed. Let others run.
       }
     }
     lastIdle = idle;
