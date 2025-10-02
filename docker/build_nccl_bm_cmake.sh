@@ -31,7 +31,7 @@ gpu_arch_list="80"
 
 echo "Starting CMake Build..."
 
-cmake -DCMAKE_CUDA_ARCHITECTURES=$gpu_arch_list -B build/ && cmake --build build/ --parallel
+cmake -DCMAKE_CUDA_ARCHITECTURES=$gpu_arch_list -B build/ -DBUILD_TESTS=ON && cmake --build build/ --parallel
 
 build_status=$?
 if [ $build_status -eq 0 ]; then

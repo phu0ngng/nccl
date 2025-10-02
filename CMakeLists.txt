@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25) # ipp6 is using 3.28
+cmake_minimum_required(VERSION 3.25)
 
 # Version information
 # Read makefiles/version.mk file
@@ -29,6 +29,14 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
 
+# Package building options
+option(BUILD_DEBIAN_PACKAGE "Build Debian package" OFF)
+option(BUILD_REDHAT_PACKAGE "Build Redhat package" OFF)
+option(BUILD_TXZ_PACKAGE "Build TXZ package" OFF)
+option(BUILD_CONDA_PACKAGE "Build Conda package" OFF)
+option(BUILD_SRCTXZ_PACKAGE "Build source tarball package" OFF)
+option(BUILD_DOC_PACKAGE "Build documentation package" OFF)
+option(BUILD_PACKAGES "Build all packages" OFF)
 option(VERBOSE "Enable verbose output" OFF)
 option(KEEP "Keep intermediate files" OFF)
 option(DEBUG "Enable debug build" OFF)
@@ -42,6 +50,7 @@ option(RDMA_CORE "Enable RDMA core" OFF)
 option(NET_PROFILER "Enable network profiler" OFF)
 option(MLX5DV "Enable MLX5DV" OFF)
 option(MAX_EXT_NET_PLUGINS "Maximum external network plugins" 0)
+option(BUILD_TESTS "Build tests" OFF)
 
 # Detect OS
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -180,4 +189,32 @@ add_subdirectory(ext-net)
 add_subdirectory(ext-profiler/example)
 add_subdirectory(ext-tuner/example)
 add_subdirectory(src)
-add_subdirectory(test)
+
+if(BUILD_TESTS)
+  add_subdirectory(test)
+endif()
+
+# Add package building subdirectories
+if(BUILD_DEBIAN_PACKAGE OR BUILD_PACKAGES)
+  add_subdirectory(pkg/debian)
+endif()
+
+if(BUILD_REDHAT_PACKAGE OR BUILD_PACKAGES)
+  add_subdirectory(pkg/redhat)
+endif()
+
+if(BUILD_TXZ_PACKAGE OR BUILD_PACKAGES)
+  add_subdirectory(pkg/txz)
+endif()
+
+if(BUILD_CONDA_PACKAGE OR BUILD_PACKAGES)
+  add_subdirectory(pkg/conda)
+endif()
+
+if(BUILD_SRCTXZ_PACKAGE OR BUILD_PACKAGES)
+  add_subdirectory(pkg/srctxz)
+endif()
+
+if(BUILD_DOC_PACKAGE OR BUILD_PACKAGES)
+  add_subdirectory(pkg/doc)
+endif()
