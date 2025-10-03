@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "p2p.h"
 #include "common.h"
 
 NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
@@ -37,8 +38,6 @@ void ncclIbAddEvent(struct ncclIbRequest* req, int devIndex) {
   req->events[devIndex]++;
   req->devBases[devIndex] = base;
 }
-
-NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 0);
 
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
@@ -94,10 +93,11 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
   // Multi-QP: make sure IB writes are multiples of 128B so that LL and LL128 protocols still work
   const int align = 128;
-  int nqps = ncclParamIbSplitDataOnQps() ? comm->base.nqps : comm->base.nDataQps;
+  int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
+  int qpIndex = -1;
+  ncclIbQp* qp = NULL;
   for (int i = 0; i < nqps; i++) {
-    int qpIndex = comm->base.qpIndex;
-    ncclIbQp* qp = comm->base.qps + qpIndex;
+    NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, comm->base.fifoHead, i, &qp, &qpIndex));
     int devIndex = qp->devIndex;
     for (int r=0; r<nreqs; r++) {
       // Track this event for completion
@@ -135,7 +135,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 #ifdef NCCL_ENABLE_NET_PROFILING
     // QP profiling loop
     for (int r=0; r<nreqs; r++) {
-      // Store comm qpIndex for this request
+      // Store the qpIndex for this request
       int nEventHandles = reqs[r]->pInfo[0].nEventHandles;
       assert(nEventHandles < MAX_QPS_PER_REQ);
       reqs[r]->pInfo[0].qpIndex[nEventHandles] = qpIndex;
@@ -160,9 +160,6 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       comm->sges[r].addr += chunkSize;
       comm->wrs[r].wr.rdma.remote_addr += chunkSize;
     }
-
-    // Select the next qpIndex
-    comm->base.qpIndex = (comm->base.qpIndex+1) % comm->base.nqps;
   }
 
   return ncclSuccess;
@@ -220,16 +217,12 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
 #endif
 
     // Populate events
-    int nEvents = ncclParamIbSplitDataOnQps() ? comm->base.nqps : comm->base.nDataQps;
-    int qpIndex = comm->base.qpIndex;
-    // Count down
-    while (nEvents > 0) {
-      ncclIbQp* qp = comm->base.qps + qpIndex;
-      int devIndex = qp->devIndex;
-      ncclIbAddEvent(req, devIndex);
-      nEvents--;
-      // Don't update comm->base.qpIndex yet, we need to run through this same set of QPs inside ncclIbMultiSend()
-      qpIndex = (qpIndex+1)%comm->base.nqps;
+    int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
+    int qpIndex = -1;
+    ncclIbQp* qp = NULL;
+    for (int i = 0; i < nqps; i++) {
+      NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, comm->base.fifoHead, i, &qp, &qpIndex));
+      ncclIbAddEvent(req, qp->devIndex);
     }
 
     // Store all lkeys
@@ -268,10 +261,8 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   for (int i=0; i<n; i++) req->recv.sizes[i] = 0;
   struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
 
-  // Select the next devIndex (local) and QP to use for posting this CTS message
-  // Since QPs are initialized by striping across devIndex, we can simply assign this to the same value
-  ncclIbQp* ctsQp = comm->base.qps + comm->base.devIndex;
-  comm->base.devIndex = (comm->base.devIndex + 1) % comm->base.vProps.ndevs;
+  ncclIbQp* ctsQp = NULL;;
+  NCCLCHECK(ncclIbRecvCommGetQpForCts(comm, comm->base.fifoHead, &ctsQp));
 
   for (int i=0; i<n; i++) {
     localElem[i].addr = (uint64_t)data[i];
@@ -363,20 +354,22 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
   wr.num_sge = 0;
 
   TIME_START(1);
-  // Select either all QPs, or one qp per-device
-  const int nqps = ncclParamIbSplitDataOnQps() ? comm->base.nqps : comm->base.nDataQps;
+
+  const int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
 
   // Post recvs
   struct ibv_recv_wr* bad_wr;
+  int qpIndex = -1;
+  ncclIbQp* qp = NULL;
   for (int i = 0; i < nqps; i++) {
-    struct ncclIbQp* qp = comm->base.qps + comm->base.qpIndex;
+    NCCLCHECK(ncclIbCommBaseGetQpForRequest(&comm->base, comm->base.fifoHead, i, &qp, &qpIndex));
     ncclIbAddEvent(req, qp->devIndex);
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
     for (int r = 0; r < n; r++) {
       int nEventHandles = req->pInfo[r].nEventHandles;
       assert(nEventHandles < MAX_QPS_PER_REQ);
-      req->pInfo[r].qpIndex[nEventHandles] = comm->base.qpIndex;
+      req->pInfo[r].qpIndex[nEventHandles] = qpIndex;
       // Store info for profiler
       int64_t pluginId = NCCL_PROFILER_NET_TYPE_IB | NCCL_PROFILER_NET_IB_VER;
       req->pInfo[r].data.type = ncclProfileQp;
@@ -388,7 +381,6 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
     }
 #endif
     NCCLCHECK(wrap_ibv_post_recv(qp->qp, &wr, &bad_wr));
-    comm->base.qpIndex = (comm->base.qpIndex+1)%comm->base.nqps;
   }
 
   TIME_STOP(1);

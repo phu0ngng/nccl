@@ -17,6 +17,7 @@ NCCL_PARAM(IbSl, "IB_SL", -1);
 NCCL_PARAM(IbTc, "IB_TC", -1);
 NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
 NCCL_PARAM(IbEceEnable,"IB_ECE_ENABLE",1);
+NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 0);
 
 // Per-QP connection metatdata
 struct ncclIbQpInfo {
@@ -733,6 +734,7 @@ ib_connect:
   comm->base.nDataQps = std::max(comm->base.vProps.ndevs, comm->base.nRemDevs);
 
   comm->base.ready = 1;
+  comm->base.splitDataOnQps = ncclParamIbSplitDataOnQps();
   stage->state = ncclIbCommStateConnected;
   stage->offset = 0;
 
@@ -1056,6 +1058,8 @@ ib_send:
 ib_recv_ready:
   NCCLCHECKGOTO(ncclSocketProgress(NCCL_SOCKET_RECV,  &rComm->base.sock, &rComm->base.ready, sizeof(int), &stage->offset), ret, fail);
   if (stage->offset != sizeof(int)) return ncclSuccess;
+
+  rComm->base.splitDataOnQps = ncclParamIbSplitDataOnQps();
 
   *recvComm = rComm;
 exit:

@@ -210,7 +210,10 @@ struct ncclIbSendFifo {
 
 struct ncclIbQp {
   struct ibv_qp* qp;
+  // The index of the device on which this QP was created on.
   int devIndex;
+  // The index of the device on the remote side to which this QP is connected
+  // to.
   int remDevIdx;
 };
 
@@ -257,8 +260,7 @@ struct alignas(32) ncclIbNetCommBase {
   struct ncclIbQp qps[NCCL_IB_MAX_QPS];
   uint64_t fifoHead;
   int nqps;
-  int qpIndex;
-  int devIndex;
+  int splitDataOnQps;
   struct ncclSocket sock;
   int ready;
   // Track necessary remDevInfo here
@@ -270,6 +272,33 @@ struct alignas(32) ncclIbNetCommBase {
 };
 
 struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, int devIndex);
+
+// qpIndex is the index relative to a device.
+static inline ncclResult_t ncclIbCommBaseGetQpByIndex(struct ncclIbNetCommBase* commBase, int devIndex, int qpIndex, ncclIbQp** qp) {
+  assert(devIndex >= 0 && devIndex < commBase->vProps.ndevs);
+  assert(qpIndex >= 0 && qpIndex < commBase->nDataQps);
+  *qp = &(commBase->qps[commBase->nDataQps*qpIndex + devIndex]);
+  return ncclSuccess;
+}
+
+// The function selects the QP to be used for the request. The QP selected
+// based on the request ID and also based on the provided QP index. A request
+// can be posted on multiple QPs. For example, if a request is posted on 4
+// QPs, this function should be called 4 times, each time with a different 
+// qpIndex, ranging from 0 to 3.
+// The function outputs the selected QP in the outQp argument and populates the
+// outQpIndex argument with the index of the selected QP which is used for
+// profiling reasons mainly.
+static inline ncclResult_t ncclIbCommBaseGetQpForRequest(struct ncclIbNetCommBase* baseComm, const uint32_t id, const uint8_t qpIndex, ncclIbQp** outQp, int* outQpIndex) {
+  *outQpIndex = (id + qpIndex) % baseComm->nqps;
+  *outQp = &(baseComm->qps[*outQpIndex]);
+  assert(*outQp != NULL);
+  return ncclSuccess;
+}
+
+static inline int ncclIbCommBaseGetNqpsPerRequest(struct ncclIbNetCommBase* baseComm) {
+  return (baseComm->splitDataOnQps == 1) ? baseComm->nqps : baseComm->nDataQps;
+}
 
 struct ncclIbSendComm {
   struct ncclIbNetCommBase base;
