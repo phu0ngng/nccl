@@ -736,13 +736,13 @@ ncclResult_t ncclDevrCommCreateInternal(
 
   if (ginActivated) {
     NCCLCHECKGOTO(ncclGinConnectOnce(comm), ret, fail);
-    nGinContexts = comm->sharedRes->ginState.ginCommCount;
     // Register all preexisting memories with GIN. Update the windows later when
     // we have a stream.
     for (struct ncclDevrMemory* mem = devr->memHead; mem != nullptr; mem = mem->next) {
       NCCLCHECKGOTO(symMemoryRegisterGin(comm, mem), ret, fail);
     }
   }
+  if (devr->ginEnabled) nGinContexts = comm->sharedRes->ginState.ginCommCount;
 
   memset(outDevComm, 0, sizeof(*outDevComm));
   outDevComm->rank = comm->rank;
