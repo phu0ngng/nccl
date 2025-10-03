@@ -1137,8 +1137,9 @@ testResult_t threadInit(struct threadArgs* args) {
       for (int i = 0; i < args->nGpus; i++) {
         ncclDevCommRequirements reqs;
         memset(&reqs, 0, sizeof(reqs));
-        reqs.lsaBarrierCount = deviceCtaCount;
         reqs.lsaMultimem = deviceMultimemEnabled;
+        reqs.barrierCount = deviceCtaCount;
+        reqs.ginSignalCount = deviceCtaCount;
         NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
         NCCLCHECK(ncclDevCommDestroy(tmpComms[id][i], &tmpDevComms[id][i]));
         NCCLCHECK(ncclCommDestroy(tmpComms[id][i]));
@@ -2032,8 +2033,9 @@ testResult_t run() {
       for (int i = 0; i < nGpus * nThreads; i++) {
         ncclDevCommRequirements reqs;
         memset(&reqs, 0, sizeof(reqs));
-        reqs.lsaBarrierCount = deviceCtaCount;
         reqs.lsaMultimem = deviceMultimemEnabled;
+        reqs.barrierCount = deviceCtaCount;
+        reqs.ginSignalCount = deviceCtaCount;
         NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
         NCCLCHECK(ncclDevCommDestroy(tmpComms[id][i], &tmpDevComms[id][i]));
         NCCLCHECK(ncclCommDestroy(tmpComms[id][i]));
