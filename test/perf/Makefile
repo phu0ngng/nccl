@@ -155,7 +155,7 @@ ${DST_DIR}/nccl_mpi_collnet.o: ../../share/nccl_mpi_collnet.c
 ${DST_DIR}/%_perf:${DST_DIR}/%.o $(COMMON_OBJS) $(TEST_VERIFIABLE_LIBSO)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $< $(COMMON_OBJS) $(NVLDFLAGS)
+	$(NVCC) -o $@ $(NVCUFLAGS) $< $(COMMON_OBJS) $(NVLDFLAGS) -Xlinker --export-dynamic
 
 ${DST_DIR}/replay-coll: ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(TEST_VERIFIABLE_LIBSO)
 	@printf "Linking  %-35s > %s\n" $< $@
