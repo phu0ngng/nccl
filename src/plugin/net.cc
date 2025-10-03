@@ -336,6 +336,7 @@ static void initPluginLibsOnceFunc() {
 static ncclResult_t ncclNetPluginFinalize(struct ncclComm* comm, int pluginIndex) {
   NCCLCHECK(netPluginLibs[pluginIndex].ncclNet->finalize(comm->netContext));
   if (netPluginLibs[pluginIndex].ncclCollNet && netPluginLibs[pluginIndex].ncclCollNetPluginState == ncclNetPluginStateEnabled) NCCLCHECK(netPluginLibs[pluginIndex].ncclCollNet->finalize(comm->collNetContext));
+  if (netPluginLibs[pluginIndex].ncclGin && netPluginLibs[pluginIndex].ncclGinPluginState == ncclNetPluginStateEnabled) NCCLCHECK(netPluginLibs[pluginIndex].ncclGin->finalize(comm->netContext));
   netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
   if (pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) {
     NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[pluginIndex]));
