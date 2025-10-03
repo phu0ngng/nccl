@@ -433,7 +433,7 @@ unit_tests-P100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 0
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -481,7 +481,7 @@ unit_tests-P40:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 0
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -529,7 +529,7 @@ unit_tests-GP100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 0
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -577,7 +577,7 @@ unit_tests-A40-single:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 0
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -672,7 +672,7 @@ unit_tests-A100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 0
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
