@@ -133,7 +133,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
       ret, fail);
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
                   fail);
-    NCCLCHECKGOTO(ginState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank,
+    NCCLCHECKGOTO(ginState->ncclGin->connect(comm->ginContext, handles, comm->nRanks, comm->rank,
                                              listenComm, ginState->ginComms + n),
                   ret, fail);
     if (ginState->ginType == NCCL_NET_DEVICE_GIN_PROXY) {
