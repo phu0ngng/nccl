@@ -230,7 +230,9 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
     lla2aReq.next = reqs.resourceRequirementsList;
     reqs.resourceRequirementsList = &lla2aReq;
 
-    NCCLCHECK(ncclDevrCommCreateInternal(comm, &reqs, &symk->kcomm.devComm));
+    if (comm->nNodes == 1) {
+      NCCLCHECK(ncclDevrCommCreateInternal(comm, &reqs, &symk->kcomm.devComm));
+    }
   }
   return ncclSuccess;
 }
