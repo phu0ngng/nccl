@@ -50,7 +50,10 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
       if (fn == nullptr) continue;
 
       cudaError_t errcode = cudaFuncGetAttributes(&attr, fn);
-      if (errcode != cudaSuccess) continue; // Silently ignore failures
+      if (errcode != cudaSuccess) {
+		  cudaGetLastError(); // Drain error code
+		  continue; // Silently ignore failures
+	  }
       if (maxStackSize) {
         if (attr.localSizeBytes > *maxStackSize) *maxStackSize = attr.localSizeBytes;
       }

@@ -554,6 +554,25 @@ exit:
   return ret;
 }
 
+NCCL_PARAM(MnnvlRailPerHost, "MNNVL_RAIL_PER_HOST", 0);
+
+static bool ncclTopoSearchCheckNet(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoNode* startNet, int n, int step) {
+  struct ncclTopoNode* net = system->nodes[NET].nodes+n;
+  if (graph->pattern == NCCL_TOPO_PATTERN_TREE && net->id != startNet->id) return false; // Trees are symmetric
+  if (graph->pattern == NCCL_TOPO_PATTERN_RING && graph->crossNic == 2) {
+    if (graph->nChannels & 1 && net->id != graph->inter[(graph->nChannels - 1) * 2]) return false;
+  } else if (graph->crossNic == 0) {
+    if (ncclParamMnnvlRailPerHost() && NCCL_TOPO_ID_SYSTEM_ID(net->id) != NCCL_TOPO_ID_SYSTEM_ID(startNet->id)) {
+      // Different hosts in an MNNVL system: rail are per host and identified with the PCI id.
+      if (net->net.pciId != startNet->net.pciId || net->net.port != startNet->net.port) return false;
+    } else {
+      if (net->net.asic != startNet->net.asic || net->net.port != startNet->net.port) return false;
+    }
+  }
+  if (graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE && step != 0 && net->id != graph->inter[graph->nChannels*2+1]) return false;
+  return true;
+}
+
 ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopoGraph* graph, struct ncclTopoGraph* saveGraph, struct ncclTopoNode* gpu, int step, int backToNet, int backToFirstRank, int forcedOrder, int *time) {
   if ((*time) <= 0) return ncclSuccess;
   (*time)--;
@@ -587,24 +606,17 @@ ncclResult_t ncclTopoSearchRecGpu(struct ncclTopoSystem* system, struct ncclTopo
       NCCLCHECK(ncclTopoSelectNets(system, graph->typeInter, g, nets, &netCount));
       for (int i=0; i<netCount; i++) {
         int n = nets[i];
-        struct ncclTopoNode* net = system->nodes[NET].nodes+n;
-        if (graph->pattern == NCCL_TOPO_PATTERN_TREE && net->id != startNet->id) continue; // Trees are symmetric
-        if (graph->pattern == NCCL_TOPO_PATTERN_RING && graph->crossNic == 2) {
-          if (graph->nChannels & 1 && net->id != graph->inter[(graph->nChannels-1)*2]) continue;
-        } else {
-          if (graph->crossNic == 0 && (net->net.asic != startNet->net.asic || net->net.port != startNet->net.port)) continue;
-        }
-
+        if (!ncclTopoSearchCheckNet(system, graph, startNet, n, step)) continue;
         // Balanced Tree : count half of the bandwidth on first two GPUs
         int nextBackToNet = -1;
         float bwInterSave = graph->bwInter;
         if (graph->pattern == NCCL_TOPO_PATTERN_BALANCED_TREE) {
           // Count half of the bandwidth on each of the first two GPUs
           if (step == 0) nextBackToNet = 1;
-          else if (net->id != graph->inter[graph->nChannels*2+1]) continue;
           graph->bwInter /= 2;
         }
 
+        struct ncclTopoNode* net;
         NCCLCHECK(ncclTopoFollowPath(system, graph, GPU, g, NET, n, 1, &net));
         graph->bwInter = bwInterSave;
         if (net) {

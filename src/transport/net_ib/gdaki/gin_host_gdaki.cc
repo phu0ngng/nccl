@@ -266,7 +266,7 @@ class GdakiGlobalGPUBufferTable {
 
   ncclResult_t allocate_elements(unsigned int num_elements, unsigned int *out_start_idx) {
     if (this->next_unused_idx + num_elements > this->num_elements) {
-      INFO(NCCL_NET | NCCL_ALLOC, "Not enough space to get elements");
+      WARN("Not enough space to get elements");
       return ncclInvalidUsage;
     }
 
@@ -355,9 +355,9 @@ static ncclResult_t gdakiFindDevice(char *ibDevName, struct ibv_device **outIbDe
   NCCLCHECK(wrap_ibv_get_device_list(&devList, &numOfDevice));
 
   if (numOfDevice <= 0) {
-    INFO(NCCL_NET, "No network devices that support GDAKI found");
+    WARN("No network devices that support GDAKI found");
     status = ncclSystemError;
-    goto out;
+    goto fail;
   }
 
   for (int i = 0; i < numOfDevice; ++i) {
@@ -368,17 +368,18 @@ static ncclResult_t gdakiFindDevice(char *ibDevName, struct ibv_device **outIbDe
     }
   }
   if (!ibDev) {
-    INFO(NCCL_NET, "IB device %s not found", ibDevName);
+    WARN("IB device %s not found", ibDevName);
     status = ncclInvalidArgument;
-    goto out;
+    goto fail;
   }
-
-  NCCLCHECK(wrap_ibv_free_device_list(devList));
 
   *outIbDev = ibDev;
 
-out:
+exit:
   return status;
+fail:
+  NCCLCHECK(wrap_ibv_free_device_list(devList));
+  goto exit;
 }
 
 static void gdakiFillExchInfo(struct gdaki_exch_info *exch_info, struct gdaki_context *gdaki_ctx,
