@@ -20,9 +20,9 @@ NCCL_PARAM(GinCounterPoolSize, "GIN_COUNTER_POOL_SIZE", 64 << 10);
 void* ncclGinProgress(struct ncclGinState* ginState_) {
   struct ncclGinState* ginState = (struct ncclGinState*)ginState_;
   while (1) {
-    pthread_mutex_lock(&ginState->threadLock);
+    std::unique_lock<std::mutex> lock(ginState->mutex);
     if (ginState->ginProgress == 1) {
-      pthread_mutex_unlock(&ginState->threadLock);
+      lock.unlock();
       for (int n=0; n<ginState->ginCommCount; n++) {
         ncclResult_t ret;
         if (ginState->ginType == NCCL_NET_DEVICE_GIN_PROXY) {
@@ -37,15 +37,12 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
           return NULL;
         }
       }
-      sched_yield();
+      std::this_thread::yield();
     } else if (ginState->ginProgress == -1) {
-      pthread_mutex_unlock(&ginState->threadLock);
       return NULL;
     } else if (ginState->ginProgress == 0) {
-      pthread_cond_wait(&ginState->threadCond, &ginState->threadLock);
-      pthread_mutex_unlock(&ginState->threadLock);
+      ginState->cond.wait(lock);
     } else {
-      pthread_mutex_unlock(&ginState->threadLock);
       INFO(NCCL_ALL,"%s:%d -> [GIN Progress Thread] state unknown %d", __FILE__, __LINE__, ginState->ginProgress);
       ginState->ginProgress = -2;
       return NULL;
@@ -161,8 +158,6 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
   }
   if (ginState->needsProxyProgress) {
     ginState->ginProgress = 1;
-    pthread_mutex_init(&ginState->threadLock, NULL);
-    pthread_cond_init(&ginState->threadCond, NULL);
     ginState->thread = std::thread(ncclGinProgress, ginState);
     ncclSetThreadName(ginState->thread, "NCCL GIN Progress%2d", comm->cudaDev);
   }
@@ -185,10 +180,11 @@ ncclResult_t ncclGinFinalize(struct ncclComm* comm) {
   if (!ginState->connected) return ncclSuccess;
 
   if (ginState->needsProxyProgress) {
-    pthread_mutex_lock(&ginState->threadLock);
-    comm->sharedRes->ginState.ginProgress = -1;
-    pthread_cond_signal(&ginState->threadCond);
-    pthread_mutex_unlock(&ginState->threadLock);
+    {
+      std::lock_guard<std::mutex> lock(ginState->mutex);
+      comm->sharedRes->ginState.ginProgress = -1;
+      ginState->cond.notify_one();
+    }
     ginState->thread.join();
   }
 
