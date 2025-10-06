@@ -203,7 +203,6 @@ static_assert(NET_IB_MAX_REQUESTS <= 256, "request id are encoded in wr_id and w
 
 struct ncclIbRemSizesFifo {
   int elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
-  uint64_t fifoTail;
   uint64_t addr;
   uint32_t rkeys[NCCL_IB_MAX_DEVS_PER_NIC];
   uint32_t flags;
@@ -231,6 +230,7 @@ struct alignas(32) ncclIbNetCommBase {
   bool isSend;
   struct ncclIbRequest reqs[NET_IB_MAX_REQUESTS];
   struct ncclIbQp qps[NCCL_IB_MAX_QPS];
+  uint64_t fifoHead;
   int nqps;
   int qpIndex;
   int devIndex;
@@ -254,7 +254,6 @@ struct ncclIbSendComm {
   struct ncclIbSendCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
   struct ncclIbRequest* fifoReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ncclIbRemSizesFifo remSizesFifo;
-  uint64_t fifoHead;
   int ar; // Use adaptive routing when all merged devices have it enabled
   uint64_t putSignalScratchpad;
 };
@@ -275,7 +274,6 @@ struct ncclIbGpuFlush {
 
 struct ncclIbRemFifo {
   struct ncclIbSendFifo elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
-  uint64_t fifoTail;
   uint64_t addr;
   uint32_t flags;
 };

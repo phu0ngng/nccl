@@ -180,10 +180,10 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
   int nreqs = 0;
   volatile struct ncclIbSendFifo* slots;
 
-  int slot = (comm->fifoHead) % NET_IB_MAX_REQUESTS;
+  int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
   struct ncclIbRequest** reqs = comm->fifoReqs[slot];
   slots = comm->fifo[slot];
-  uint64_t idx = comm->fifoHead+1;
+  uint64_t idx = comm->base.fifoHead+1;
   if (slots[0].idx != idx) { *request = NULL; return ncclSuccess; }
   nreqs = slots[0].nreqs;
   // Wait until all data has arrived
@@ -249,7 +249,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     // Clear slots[0]->nreqs, as well as other fields to help debugging and sanity checks
     memset((void*)slots, 0, sizeof(struct ncclIbSendFifo));
     memset(reqs, 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
-    comm->fifoHead++;
+    comm->base.fifoHead++;
     TIME_STOP(0);
     return ncclSuccess;
   }
@@ -262,7 +262,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   struct ibv_send_wr wr;
   memset(&wr, 0, sizeof(wr));
 
-  int slot = comm->remFifo.fifoTail%NET_IB_MAX_REQUESTS;
+  int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
   req->recv.sizes = comm->sizesFifo[slot];
   for (int i=0; i<n; i++) req->recv.sizes[i] = 0;
   struct ncclIbSendFifo* localElem = comm->remFifo.elems[slot];
@@ -283,7 +283,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
     localElem[i].nreqs = n;
     localElem[i].size = sizes[i]; // Sanity/Debugging
     localElem[i].tag = tags[i];
-    localElem[i].idx = comm->remFifo.fifoTail+1;
+    localElem[i].idx = comm->base.fifoHead+1;
   }
   wr.wr.rdma.remote_addr = comm->remFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo);
 
@@ -330,7 +330,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
 
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(ctsQp->qp, &wr, &bad_wr));
-  comm->remFifo.fifoTail++;
+  comm->base.fifoHead++;
 
   return ncclSuccess;
 }
