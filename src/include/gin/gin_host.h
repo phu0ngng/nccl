@@ -12,6 +12,8 @@
 #include "nccl_net.h"
 #include "nccl_device/gin/gin_device_host_common.h"
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 
 struct ncclGinState {
   ncclGin_t* ncclGin;
@@ -25,8 +27,8 @@ struct ncclGinState {
   int needsProxyProgress;  // Whether we need to progress GIN operations with the proxy
   int ginProgress;         // GIN progress is enabled
   std::thread thread;
-  pthread_mutex_t threadLock;
-  pthread_cond_t threadCond;
+  std::mutex mutex;
+  std::condition_variable cond;
   ncclResult_t asyncResult;
 
   int signalSpaceSize;
