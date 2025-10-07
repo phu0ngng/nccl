@@ -44,6 +44,12 @@ gcperf-tools convert --input tarball:${RESULTS_TARBALL} --output results.csv --c
 echo "Generating PDF report..."
 gcperf-tools report -i results.csv -o report.pdf
 
+# Upload results to Postgres DB
+echo "Uploading results to Postgres DB..."
+gcperf-tools upload -i tarball:${RESULTS_TARBALL} \
+    --db-url postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@swgpu-gpucomms-dev-rw.db.nvidia.com:5432/gpu_comms \
+    --db-schema perf_regression
+
 set +e
 # Grab the most recent result from RESULTS_DIR if it exists
 PREVIOUS_RESULT=""
