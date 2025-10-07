@@ -2698,9 +2698,10 @@ const int NCCL_GIN_IB_ALLTOALL_TAG = 0xa1;
 
 ncclResult_t ncclGinIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
   ncclNetCommConfig_t* netCommConfig = nullptr;
+  NCCLCHECK(ncclIbInitDevices(logFunction, nullptr));
   NCCLCHECK(ncclCalloc(&netCommConfig, 1));
   *ctx = netCommConfig;
-  return ncclIbInitDevices(logFunction, NULL);
+  return ncclSuccess;
 }
 
 ncclResult_t ncclGinIbFinalize(void *ctx) {
