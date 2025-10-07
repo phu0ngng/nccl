@@ -416,14 +416,6 @@ static ncclResult_t sharedBuffersInit(struct ncclCollNetSharedRes* collNet, int 
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersGet(struct ncclCollNetSharedRes* collNet, int type, int slot, int channel, int* offset) {
-  // Use different pools for different channels and also separate send/recv.
-  int slotSize = collNet->buffSize / NCCL_STEPS;
-  int globalSlot = (type * NCCL_STEPS + slot) * collNet->nChannels + channel;
-  *offset = slotSize * globalSlot;
-  return ncclSuccess;
-}
-
 static ncclResult_t sharedBuffersDestroy(struct ncclCollNetSharedRes* collNet) {
   if (collNet->size == 0) return ncclSuccess;
   NCCLCHECK(ncclCudaFree(collNet->cudaBuff));
