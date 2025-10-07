@@ -3,6 +3,14 @@
 # NCCL - PLC
 
 <!------------------------------------->
+## version 2.29
+ 
+- [NCCL Zero-SM Put API](items/id_63e03463/NCCL_Zero-SM_Put_API.md)
+<!-- V2_29_DO_NOT_MOVE -->
+ 
+<!------------------------------------->
+
+<!------------------------------------->
 ## version 2.28
 
 - [Grouped Symmetric Kernels](items/id_4dd518cb/Grouped_Symmetric_Kernels.md)
