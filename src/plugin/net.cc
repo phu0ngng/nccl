@@ -209,7 +209,7 @@ static ncclResult_t ncclNetPluginInit(struct ncclComm* comm, netPluginLib_t* plu
         pluginLib->ncclGin = &ncclGinIbProxy;
       }
     }
-    if (pluginLib->ncclGin->init(&comm->netContext, comm->commHash, ncclDebugLog) != ncclSuccess) pluginLib->ncclGinPluginState = ncclNetPluginStateDisabled;
+    if (pluginLib->ncclGin->init(&comm->ginContext, comm->commHash, ncclDebugLog) != ncclSuccess) pluginLib->ncclGinPluginState = ncclNetPluginStateDisabled;
     else if (pluginLib->ncclGin->devices(&ndev) != ncclSuccess || ndev <= 0) pluginLib->ncclGinPluginState = ncclNetPluginStateDisabled;
     else {
       pluginLib->ncclGinPluginState = ncclNetPluginStateEnabled;
@@ -336,7 +336,7 @@ static void initPluginLibsOnceFunc() {
 static ncclResult_t ncclNetPluginFinalize(struct ncclComm* comm, int pluginIndex) {
   NCCLCHECK(netPluginLibs[pluginIndex].ncclNet->finalize(comm->netContext));
   if (netPluginLibs[pluginIndex].ncclCollNet && netPluginLibs[pluginIndex].ncclCollNetPluginState == ncclNetPluginStateEnabled) NCCLCHECK(netPluginLibs[pluginIndex].ncclCollNet->finalize(comm->collNetContext));
-  if (netPluginLibs[pluginIndex].ncclGin && netPluginLibs[pluginIndex].ncclGinPluginState == ncclNetPluginStateEnabled) NCCLCHECK(netPluginLibs[pluginIndex].ncclGin->finalize(comm->netContext));
+  if (netPluginLibs[pluginIndex].ncclGin && netPluginLibs[pluginIndex].ncclGinPluginState == ncclNetPluginStateEnabled) NCCLCHECK(netPluginLibs[pluginIndex].ncclGin->finalize(comm->ginContext));
   netPluginLibs[pluginIndex].ncclNetPluginRefCount--;
   if (pluginIndex < (pluginCount - NCCL_NET_NUM_INTERNAL_PLUGINS)) {
     NCCLCHECK(ncclNetPluginUnload(&netPluginLibs[pluginIndex]));
@@ -374,6 +374,24 @@ ncclResult_t ncclNetInit(struct ncclComm* comm) {
   if (ncclNetPluginInitialized) return ncclSuccess;
   WARN("Failed to initialize any NET plugin");
   return ncclInvalidUsage;
+}
+
+ncclResult_t ncclNetInitFromParent(struct ncclComm* comm, struct ncclComm* parent) {
+  ncclResult_t ret = ncclSuccess;
+  comm->netContext = parent->netContext;
+  comm->collNetContext = parent->collNetContext;
+  comm->ginContext = parent->ginContext;
+  comm->ncclNet = parent->ncclNet;
+  comm->ncclCollNet = parent->ncclCollNet;
+  comm->netPluginIndex = parent->netPluginIndex;
+  if (comm->config.netName != NCCL_CONFIG_UNDEF_PTR && strcasecmp(comm->config.netName, parent->config.netName)) {
+    WARN("Comm config netName (%s) does not match the parent (%s)", comm->config.netName, parent->config.netName);
+    ret = ncclInvalidUsage;
+  }
+  if (comm->config.trafficClass != NCCL_CONFIG_UNDEF_INT && comm->config.trafficClass != parent->config.trafficClass) {
+    INFO(NCCL_INIT, "Comm config trafficClass (%d) does not match the parent (%d)", comm->config.trafficClass, parent->config.trafficClass);
+  }
+  return ret;
 }
 
 ncclResult_t ncclNetFinalize(struct ncclComm* comm) {

@@ -448,6 +448,7 @@ struct ncclComm {
 
   ncclNet_t* ncclNet;
   void* netContext;
+  void* ginContext;
   int netPluginIndex;
   int ncclNetVer;
   ncclNetDeviceType netDeviceType;

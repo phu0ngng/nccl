@@ -251,8 +251,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
   // GIN may use proxy. We need to finalize it before destroying the proxy.
   NCCLCHECK(ncclGinFinalize(comm));
 
+  int sharedResRefCount = 0;
   if (comm->sharedRes) {
-    if (ncclAtomicRefCountDecrement(&comm->sharedRes->refCount) == 0) {
+    sharedResRefCount = ncclAtomicRefCountDecrement(&comm->sharedRes->refCount);
+    if (sharedResRefCount == 0) {
       for (int c=0; c<MAXCHANNELS; c++) {
         if (comm->sharedRes->peers[c]) free(comm->sharedRes->peers[c]);
         if (comm->sharedRes->devPeers[c]) ncclCudaFree(comm->sharedRes->devPeers[c]);
@@ -296,7 +298,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   NCCLCHECK(ncclProfilerPluginFinalize(comm));
-  NCCLCHECK(ncclNetFinalize(comm));
+  if (sharedResRefCount == 0) NCCLCHECK(ncclNetFinalize(comm));
   ncclCudaContextDrop(comm->context);
   free(comm);
 
@@ -379,12 +381,13 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
     CUDACHECK(cudaEventCreateWithFlags(&sharedRes->scratchEvent, cudaEventDisableTiming));
     comm->sharedRes = sharedRes;
     sharedRes->refCount = 1;
+    NCCLCHECK(ncclNetInit(comm));
   } else {
     comm->sharedRes = parent->sharedRes;
     ncclAtomicRefCountIncrement(&parent->sharedRes->refCount);
+    NCCLCHECK(ncclNetInitFromParent(comm, parent));
   }
 
-  NCCLCHECK(ncclNetInit(comm));
   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);
 
   if (parent && parent->shareResources) {

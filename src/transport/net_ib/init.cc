@@ -10,8 +10,6 @@ NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
 NCCL_PARAM(IbDataDirect,"IB_DATA_DIRECT",1);
 
-static ncclNetCommConfig_t ibContext;
-
 static std::mutex ncclIbMutex;
 
 // With ncclNet_v11_t the NCCL core initializes the network plugin per-communicator
@@ -186,8 +184,9 @@ const char* ibProviderName[] = {
 };
 
 ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
-  if (netRefCount++) return ncclSuccess;
   ncclResult_t ret = ncclSuccess;
+  ncclNetCommConfig_t* netCommConfig = nullptr;
+  if (netRefCount++) goto exit;
   ncclProfilerFunction = profFunction;
   if (ncclParamIbDisable()) return ncclInternalError;
   static int shownIbHcaEnv = 0;
@@ -356,11 +355,12 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
 
   }
 exit:
-  ibContext.trafficClass = config->trafficClass;
-  *ctx = &ibContext;
+  NCCLCHECK(ncclCalloc(&netCommConfig, 1));
+  netCommConfig->trafficClass = config->trafficClass;
+  *ctx = (void *)netCommConfig;
   return ret;
 fail:
-  goto exit;
+  return ret;
 }
 
 ncclResult_t ncclIbDevices(int* ndev) {
@@ -414,6 +414,7 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
 }
 
 ncclResult_t ncclIbFinalize(void* ctx) {
+  free(ctx);
   netRefCount--;
   return ncclSuccess;
 }
