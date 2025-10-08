@@ -665,10 +665,14 @@ ncclResult_t ncclIbSetNetAttr(void *ctx, ncclNetAttr_t *netAttr) {
 
 static ncclProfilerCallback_t ncclProfilerFunction;
 
-ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+static ncclResult_t ncclIbFinalizeDevices(void) {
+  netRefCount--;
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   ncclResult_t ret = ncclSuccess;
-  ncclNetCommConfig_t* netCommConfig = nullptr;
-  if (netRefCount++) goto exit;
+  if (netRefCount++) return ret;
   ncclProfilerFunction = profFunction;
   if (ncclParamIbDisable()) return ncclInternalError;
   static int shownIbHcaEnv = 0;
@@ -837,11 +841,18 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
 
   }
 exit:
+  return ret;
+fail:
+  goto exit;
+}
+
+ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  ncclResult_t ret = ncclSuccess;
+  ncclNetCommConfig_t* netCommConfig = nullptr;
+  NCCLCHECK(ncclIbInitDevices(logFunction, profFunction));
   NCCLCHECK(ncclCalloc(&netCommConfig, 1));
   netCommConfig->trafficClass = config->trafficClass;
   *ctx = (void *)netCommConfig;
-  return ret;
-fail:
   return ret;
 }
 
@@ -2647,8 +2658,7 @@ ncclResult_t ncclIbCloseListen(void* listenComm) {
 
 ncclResult_t ncclIbFinalize(void* ctx) {
   free(ctx);
-  netRefCount--;
-  return ncclSuccess;
+  return ncclIbFinalizeDevices();
 }
 
 ncclNet_t ncclNetIb = {
@@ -2687,13 +2697,16 @@ const int NCCL_GIN_IB_ALLGATHER_TAG = 0xa0;
 const int NCCL_GIN_IB_ALLTOALL_TAG = 0xa1;
 
 ncclResult_t ncclGinIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
-  ncclNetCommConfig_t config;
-  memset(&config, 0, sizeof(ncclNetCommConfig_t));
-  return ncclIbInit(ctx, commId, &config, logFunction, NULL);
+  ncclNetCommConfig_t* netCommConfig = nullptr;
+  NCCLCHECK(ncclIbInitDevices(logFunction, nullptr));
+  NCCLCHECK(ncclCalloc(&netCommConfig, 1));
+  *ctx = netCommConfig;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclGinIbFinalize(void *ctx) {
-  return ncclNetIb.finalize(ctx);
+  if (ctx) free(ctx);
+  return ncclIbFinalizeDevices();
 }
 
 static ncclResult_t ncclGinIbAllGather(struct ncclGinIbCollComm *cComm, void *srcBuf, void *recvBuf, size_t len) {
