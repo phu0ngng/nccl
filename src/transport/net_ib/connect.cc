@@ -80,7 +80,7 @@ struct ncclIbHandle {
 
 NCCL_PARAM(IbQpsPerConn, "IB_QPS_PER_CONNECTION", 1);
 
-ncclResult_t ncclIbInitCommDevBase(int ibDevN, struct ncclIbNetCommDevBase* base, void* cq_context) {
+ncclResult_t ncclIbInitCommDevBase(int ibDevN, struct ncclIbNetCommDevBase* base, void* cq_context, int cqSize) {
   base->ibDevN = ibDevN;
   ncclIbDev* ibDev = ncclIbDevs + ibDevN;
   {
@@ -91,8 +91,7 @@ ncclResult_t ncclIbInitCommDevBase(int ibDevN, struct ncclIbNetCommDevBase* base
     base->pd = ibDev->pd;
   }
 
-  // Recv requests can generate 2 completions (one for the post FIFO, one for the Recv).
-  NCCLCHECK(wrap_ibv_create_cq(&base->cq, ibDev->context, 2*NET_IB_MAX_REQUESTS*ncclParamIbQpsPerConn(), cq_context, NULL, 0));
+  NCCLCHECK(wrap_ibv_create_cq(&base->cq, ibDev->context, cqSize, cq_context, NULL, 0));
 
   return ncclSuccess;
 }
@@ -617,9 +616,13 @@ ib_recv_dev_list:
 
   // Init PD, Ctx for each IB device
   comm->ar = 1; // Set to 1 for logic
+  // Sender's CQ size needs to accomodate the upper bound of number of send
+  // requests multiplied by the number of QPs used per request.
+  int cqSize;
+  cqSize = NET_IB_MAX_REQUESTS*ncclParamIbQpsPerConn();
   for (int i = 0; i < comm->base.vProps.ndevs; i++) {
-    int ibDevN = comm->base.vProps.devs[i];
-    NCCLCHECKGOTO(ncclIbInitCommDevBase(ibDevN, &comm->devs[i].base, &comm->base.stats), ret, fail);
+    int ibDevN = comm->base.vProps.devs[i];  
+    NCCLCHECKGOTO(ncclIbInitCommDevBase(ibDevN, &comm->devs[i].base, &comm->base.stats, cqSize), ret, fail);
     comm->ar = comm->ar && ncclIbDevs[ibDevN].ar; // ADAPTIVE_ROUTING - if all merged devs have it enabled
   }
 
@@ -1002,10 +1005,15 @@ ib_recv:
   // Metadata to send back to requestor (sender)
   struct ncclIbConnectionMetadata meta;
   memset(&meta, 0, sizeof(meta));
+  // Receiver's CQ size needs to accomodate receive requests that can generate
+  // up to 2 completions (one for the CTS message and one for the completion 
+  // of a receive request) per QP, in the worst case.
+  int cqSize;
+  cqSize = 2*NET_IB_MAX_REQUESTS*ncclParamIbQpsPerConn();
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
     ibDevN = rComm->base.vProps.devs[i];
-    NCCLCHECKGOTO(ncclIbInitCommDevBase(ibDevN, &rCommDev->base, &rComm->base.stats), ret, fail);
+    NCCLCHECKGOTO(ncclIbInitCommDevBase(ibDevN, &rCommDev->base, &rComm->base.stats, cqSize), ret, fail);
     ibDev = ncclIbDevs + ibDevN;
     NCCLCHECKGOTO(ncclIbGetGidIndex(ibDev->context, ibDev->portNum, &ibDev->portAttr, &rCommDev->base.gidInfo.localGidIndex), ret, fail);
     NCCLCHECKGOTO(wrap_ibv_query_gid(ibDev->context, ibDev->portNum, rCommDev->base.gidInfo.localGidIndex, &rCommDev->base.gidInfo.localGid), ret, fail);
