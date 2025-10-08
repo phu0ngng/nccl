@@ -79,7 +79,18 @@ cp results.csv ${RESULTS_DIR}/${DATE_SUFFIX}.csv
 echo "Performance regression check completed with exit code: $REGRESSION_CODE"
 echo "See job artifacts for more detailed results"
 
-# TODO: Handle different exit codes from gcperf-tools regression-check
-# Different codes will correspond to different levels of regressions
-# exit $REGRESSION_CODE
-exit 0
+# Handle different exit codes from gcperf-tools regression-check
+# Exit with 1 if REGRESSION_CODE is in [1, 66, 67], otherwise exit with 0
+# 
+# Exit codes from gcperf-tools regression-check:
+# 0  - SUCCESS: No regressions detected
+# 1  - ERROR: No matching test configurations found between baseline and candidate datasets
+# 64 - LOW_REGRESSIONS: Low severity regressions
+# 65 - MEDIUM_REGRESSIONS: Medium severity regressions
+# 66 - HIGH_REGRESSIONS: High severity regressions
+# 67 - CRITICAL_REGRESSIONS: Critical performance degradations
+if [[ $REGRESSION_CODE -eq 1 || $REGRESSION_CODE -eq 66 || $REGRESSION_CODE -eq 67 ]]; then
+    exit 1
+else
+    exit 0
+fi
