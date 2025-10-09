@@ -597,6 +597,8 @@ ib_recv_dev_list:
   remoteNqps = ncclParamIbQpsPerConn() * remoteVProps.ndevs;
   comm->base.nqps = remoteNqps > localNqps ? remoteNqps : localNqps; // Select max nqps (local or remote)
 
+  comm->base.nDataQps = std::max(comm->base.vProps.ndevs, remoteVProps.ndevs);
+
   // Init PD, Ctx for each IB device
   comm->ar = 1; // Set to 1 for logic
   for (int i = 0; i < comm->base.vProps.ndevs; i++) {
@@ -730,8 +732,6 @@ ib_connect:
   }
 
   NCCLCHECKGOTO(ncclIbSenderQpsToRts(comm, dev, &remMeta), ret, fail);
-
-  comm->base.nDataQps = std::max(comm->base.vProps.ndevs, comm->base.nRemDevs);
 
   comm->base.ready = 1;
   stage->state = ncclIbCommStateConnected;
@@ -929,6 +929,8 @@ ib_recv_dev_list:
   remoteNqps = ncclParamIbQpsPerConn() * remoteVProps.ndevs;
   rComm->base.nqps = remoteNqps > localNqps ? remoteNqps : localNqps; // Select max nqps (local or remote)
 
+  rComm->base.nDataQps = std::max(rComm->base.vProps.ndevs, remoteVProps.ndevs);
+
   stage->offset = 0;
   stage->state = ncclIbCommStateSendDevList;
 
@@ -1062,7 +1064,6 @@ ib_recv:
 
   meta.ndevs = rComm->base.vProps.ndevs;
   strncpy(meta.devName, mergedDev->devName, MAX_MERGED_DEV_NAME);
-  rComm->base.nDataQps = std::max(rComm->base.vProps.ndevs, rComm->base.nRemDevs);
 
   stage->state = ncclIbCommStateSend;
   stage->offset = 0;
