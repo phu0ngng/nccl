@@ -794,6 +794,56 @@ ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePro
   return ncclSuccess;
 }
 
+// Setup QPs on the receiver side using information from the sender side
+// (remMeta) and populating the local information (meta) to be sent back to the
+// sender side. 
+static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct ncclIbConnectionMetadata* remMeta, struct ncclIbConnectionMetadata* meta) {
+  // Stripe QP creation across merged devs
+  // Make sure to get correct remote peer dev and QP info
+  struct ncclIbDevInfo* remDevInfo;
+  struct ncclIbQp* qp;
+  int remDevIndex;
+  int devIndex;
+  devIndex = 0;
+  for (int q = 0; q < rComm->base.nqps; q++) {
+    remDevIndex = remMeta->qpInfo[q].devIndex;
+    remDevInfo = remMeta->devs + remDevIndex;
+    qp = rComm->base.qps+q;
+    ncclIbRecvCommDev* rCommDev = rComm->devs + devIndex;
+    qp->remDevIdx = remDevIndex;
+
+    // Local ibDevN
+    int ibDevN = rComm->devs[devIndex].base.ibDevN;
+    ncclIbDev* ibDev = ncclIbDevs + ibDevN;
+    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC, &rComm->base.stats, qp));
+    qp->devIndex = devIndex;
+    devIndex = (devIndex + 1) % rComm->base.vProps.ndevs;
+
+    meta->qpInfo[q].qpn      = rComm->base.qps[q].qp->qp_num;
+    meta->qpInfo[q].devIndex = rComm->base.qps[q].devIndex;
+
+    // Set the ece (enhanced connection establishment) on this QP before RTR
+    if (remMeta->qpInfo[q].ece_supported) {
+      // Coverity suspects a copy-paste error below due to the use of remMeta in one argument and meta in another.
+      // However, this has been confirmed to be intentional.
+      // coverity[copy_paste_error]
+      NCCLCHECK(wrap_ibv_set_ece(qp->qp, &remMeta->qpInfo[q].ece, &meta->qpInfo[q].ece_supported));
+    } else {
+      meta->qpInfo[q].ece_supported = 0;
+    }
+
+    NCCLCHECK(ncclIbRtrQp(qp->qp, &rCommDev->base.gidInfo, remMeta->qpInfo[q].qpn, remDevInfo, true, remMeta->tc, remMeta->sl));
+    NCCLCHECK(ncclIbRtsQp(qp->qp));
+
+    // Query the reduced ece for this QP (matching enhancements between the requestor and the responder)
+    // Store this in our own qpInfo for returning to the requestor
+    if (remMeta->qpInfo[q].ece_supported && meta->qpInfo[q].ece_supported) {
+      NCCLCHECK(wrap_ibv_query_ece(qp->qp, &meta->qpInfo[q].ece, &meta->qpInfo[q].ece_supported));
+    }
+  }
+  return ncclSuccess;
+}
+
 NCCL_PARAM(IbGdrFlushDisable, "GDR_FLUSH_DISABLE", 0);
 
 ncclResult_t ncclIbAccept(void* listenComm, void** recvComm, ncclNetDeviceHandle_t** /*recvDevComm*/) {
@@ -883,8 +933,6 @@ ib_recv:
   struct ncclIbDev* ibDev;
   int ibDevN;
   struct ncclIbRecvCommDev* rCommDev;
-  struct ncclIbDevInfo* remDevInfo;
-  struct ncclIbQp* qp;
 
   mergedDev = ncclIbMergedDevs + lComm->dev;
   rComm->base.nRemDevs = remMeta.ndevs;
@@ -912,7 +960,7 @@ ib_recv:
     }
   }
 
-  // Copy remDevInfo for things like remGidInfo, remCtsFifoAddr, etc.
+  // Copy remGidInfo, remCtsFifoAddr, etc.
   for (int i = 0; i < remMeta.ndevs; i++) {
     rComm->base.remDevs[i] = remMeta.devs[i];
     rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
@@ -925,44 +973,7 @@ ib_recv:
     }
   }
 
-  // Stripe QP creation across merged devs
-  // Make sure to get correct remote peer dev and QP info
-  int remDevIndex;
-  int devIndex;
-  devIndex = 0;
-  for (int q = 0; q < rComm->base.nqps; q++) {
-    remDevIndex = remMeta.qpInfo[q].devIndex;
-    remDevInfo = remMeta.devs + remDevIndex;
-    qp = rComm->base.qps+q;
-    rCommDev = rComm->devs + devIndex;
-    qp->remDevIdx = remDevIndex;
-
-    // Local ibDevN
-    ibDevN = rComm->devs[devIndex].base.ibDevN;
-    ibDev = ncclIbDevs + ibDevN;
-    NCCLCHECKGOTO(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC, &rComm->base.stats, qp), ret, fail);
-    qp->devIndex = devIndex;
-    devIndex = (devIndex + 1) % rComm->base.vProps.ndevs;
-
-    // Set the ece (enhanced connection establishment) on this QP before RTR
-    if (remMeta.qpInfo[q].ece_supported) {
-      // Coverity suspects a copy-paste error below due to the use of remMeta in one argument and meta in another.
-      // However, this has been confirmed to be intentional.
-      // coverity[copy_paste_error]
-      NCCLCHECKGOTO(wrap_ibv_set_ece(qp->qp, &remMeta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
-    } else {
-      meta.qpInfo[q].ece_supported = 0;
-    }
-
-    NCCLCHECKGOTO(ncclIbRtrQp(qp->qp, &rCommDev->base.gidInfo, remMeta.qpInfo[q].qpn, remDevInfo, true, remMeta.tc, remMeta.sl), ret, fail);
-    NCCLCHECKGOTO(ncclIbRtsQp(qp->qp), ret, fail);
-
-    // Query the reduced ece for this QP (matching enhancements between the requestor and the responder)
-    // Store this in our own qpInfo for returning to the requestor
-    if (remMeta.qpInfo[q].ece_supported && meta.qpInfo[q].ece_supported) {
-      NCCLCHECKGOTO(wrap_ibv_query_ece(qp->qp, &meta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
-    }
-  }
+  NCCLCHECKGOTO(ncclIbReceiverQpsCreateToRts(rComm, &remMeta, &meta), ret, fail);
 
   rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
                             && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
@@ -1019,10 +1030,6 @@ ib_recv:
   meta.sl = remMeta.sl;
   meta.tc = remMeta.tc;
 
-  for (int q = 0; q < rComm->base.nqps; q++) {
-    meta.qpInfo[q].qpn      = rComm->base.qps[q].qp->qp_num;
-    meta.qpInfo[q].devIndex = rComm->base.qps[q].devIndex;
-  }
   meta.ndevs = rComm->base.vProps.ndevs;
   strncpy(meta.devName, mergedDev->devName, MAX_MERGED_DEV_NAME);
   rComm->base.nDataQps = std::max(rComm->base.vProps.ndevs, rComm->base.nRemDevs);
