@@ -85,12 +85,16 @@ typedef enum {
   testNcclError = 3,
   testTimeout = 4,
   testNotImplemented = 5,
-  testNumResults = 6
+  testSkipped = 6,
+  testNumResults = 7
 } testResult_t;
 
 // Relay errors up and trace
 #define TESTCHECK(cmd) do {                         \
   testResult_t r = cmd;                             \
+  if (r == testSkipped) {                           \
+    return testSkipped;                             \
+  }                                                 \
   if (r!= testSuccess) {                            \
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \

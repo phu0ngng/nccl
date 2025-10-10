@@ -113,6 +113,8 @@ static int deviceImpl = 0;
 
 int deviceCtaCount = 16; // Default number of CTAs for device implementation
 
+static const char* testSkipReason = NULL;
+
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
 static int commblocking = NCCL_CONFIG_UNDEF_INT;
@@ -1095,22 +1097,30 @@ testResult_t threadInit(struct threadArgs* args) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   /* Create device communicators based on test-specific requirements */
   if (deviceImpl) {
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     ncclDevCommRequirements reqs;
     if (!ncclTestEngine.getDevCommRequirements ||
         !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
-      fprintf(stderr, "Device implementation %d is not supported\n", deviceImpl);
-      return testInternalError;
+      fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
+      return testNotImplemented;
     }
 
+    ncclResult_t result;
     NCCLCHECK(ncclGroupStart());
     for (int id = 0; id < args->commNum; ++id) {
       for (int i = 0; i < args->nGpus; i++) {
-        NCCLCHECK(ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i));
+        result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
+        if (result != ncclSuccess && result != ncclInProgress) {
+          testSkipReason = "Required device API features not available on this hardware";
+          NCCLCHECK(ncclGroupEnd());
+          return testSkipped;
+        }
       }
     }
-    NCCLCHECK(ncclGroupEnd());
-#endif
+    result = ncclGroupEnd();
+    if (result != ncclSuccess) {
+      testSkipReason = "Required device API features not available on this hardware";
+      return testSkipped;
+    }
   }
 #endif
 
@@ -1626,6 +1636,16 @@ int main(int argc, char* argv[], char **envp) {
 
   ncclProfilerUnload();
 
+  if (result == testSkipped) {
+    if (is_main_proc) {
+      printf("# TEST SKIPPED: %s\n", testSkipReason ? testSkipReason : "Unknown reason");
+    }
+  #ifdef MPI_SUPPORT
+    MPI_Finalize();
+  #endif
+    return 0;
+  }
+
   TESTCHECK(result);
 
   return 0;
@@ -1960,17 +1980,27 @@ testResult_t run() {
       ncclDevCommRequirements reqs;
       if (!ncclTestEngine.getDevCommRequirements ||
           !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
-        fprintf(stderr, "Device implementation %d is not supported\n", deviceImpl);
-        return testInternalError;
+        fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
+        return testNotImplemented;
       }
 
+      ncclResult_t result;
       NCCLCHECK(ncclGroupStart());
       for (int id = 0; id < commNum; ++id) {
         for (int i = 0; i < nGpus * nThreads; i++) {
-          NCCLCHECK(ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i));
+          result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
+          if (result != ncclSuccess && result != ncclInProgress) {
+            testSkipReason = "Required device API features not available on this hardware";
+            NCCLCHECK(ncclGroupEnd());
+            return testSkipped;
+          }
         }
       }
-      NCCLCHECK(ncclGroupEnd());
+      result = ncclGroupEnd();
+      if (result != ncclSuccess) {
+        testSkipReason = "Required device API features not available on this hardware";
+        return testSkipped;
+      }
     }
 #endif
   }
@@ -2080,7 +2110,9 @@ testResult_t run() {
   // Wait for other threads and accumulate stats and errors
   for (int t=nThreads-1; t>=0; t--) {
     if (t) pthread_join(threads[t].thread, NULL);
-    TESTCHECK(threads[t].ret);
+    if (threads[t].ret != testSkipped) {
+      TESTCHECK(threads[t].ret);
+    }
     if (t) {
       errors[0] += errors[t];
       bw[0] += bw[t];
@@ -2089,7 +2121,9 @@ testResult_t run() {
     if (side_comp) {
        compThreads[t].args.compThreadStop = 1;
        pthread_join(compThreads[t].thread, NULL);
-       TESTCHECK(compThreads[t].ret);
+       if (compThreads[t].ret != testSkipped) {
+         TESTCHECK(compThreads[t].ret);
+       }
     }
     for (int id = 0; id < commNum; ++id) {
       free(threads[t].args.sendBytes[id]);
