@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "ras_internal.h"
+#include "os.h"
 
 // Links forming the backbone of the RAS network (currently a ring).
 struct rasLink rasNextLink = {1}, rasPrevLink = {-1};
@@ -135,7 +136,7 @@ static void rasConnOpen(struct rasConnection* conn) {
 
   conn->sock = sock;
   sock->conn = conn;
-  rasPfds[sock->pfd].fd = sock->sock.fd;
+  rasPfds[sock->pfd].fd = sock->sock.socketDescriptor;
 
   // We ignore the possibly ready status of the socket at this point and consider it CONNECTING because
   // there are other things we want to do before sending the CONNINIT, such as adding the connection to
@@ -214,7 +215,7 @@ void rasConnsHandleTimeouts(int64_t now, int64_t* nextWakeup) {
             if (!ready && conn->sock->sock.state == ncclSocketStateConnecting)
               *nextWakeup = std::min(*nextWakeup, conn->sock->lastSendTime+RAS_CONNECT_RETRY);
             else
-              rasPfds[conn->sock->pfd].fd = conn->sock->sock.fd; // Enable the handling via the main loop.
+              rasPfds[conn->sock->pfd].fd = conn->sock->sock.socketDescriptor; // Enable the handling via the main loop.
           } // if (ncclSocketReady)
         } else {
           *nextWakeup = std::min(*nextWakeup, conn->sock->lastSendTime+RAS_CONNECT_RETRY);
@@ -362,11 +363,11 @@ ncclResult_t rasNetAcceptNewSocket() {
   NCCLCHECKGOTO(ncclSocketAccept(&sock->sock, &rasNetListeningSocket), ret, fail);
   NCCLCHECKGOTO(ncclSocketReady(&sock->sock, &ready), ret, fail);
 
-  if (sock->sock.fd == -1)
+  if (sock->sock.socketDescriptor == NCCL_INVALID_SOCKET)
     goto fail; // We'll return ncclSuccess, but we need to clean up the incomplete socket first.
 
   NCCLCHECKGOTO(rasGetNewPollEntry(&sock->pfd), ret, fail);
-  rasPfds[sock->pfd].fd = sock->sock.fd;
+  rasPfds[sock->pfd].fd = sock->sock.socketDescriptor;
   rasPfds[sock->pfd].events = POLLIN; // Initially we'll just wait for a handshake from the other side.  This also
                                       // helps the code tell the sides apart.
   sock->status = RAS_SOCK_CONNECTING;
@@ -545,7 +546,7 @@ void rasSocketTerminate(struct rasSocket* sock, bool finalize, uint64_t startRet
     // Either the caller requested finalization or we cannot receive on it.
     (void)ncclSocketClose(&sock->sock);
     if (sock->pfd != -1) {
-      rasPfds[sock->pfd].fd = -1;
+      rasPfds[sock->pfd].fd = NCCL_INVALID_SOCKET;
       rasPfds[sock->pfd].events = rasPfds[sock->pfd].revents = 0;
     }
     free(sock->recvMsg);

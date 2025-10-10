@@ -169,8 +169,10 @@ CXXFLAGS += -DNCCL_GIN_PROXY_ENABLE=1
 # Detect OS Linux or Windows
 ifeq ($(shell uname -s), Linux)
   NCCL_OS_LINUX := 1
-  CXXFLAGS += -DNCCL_OS_LINUX=1
+  CXXFLAGS += -DNCCL_OS_LINUX
+  NVCUFLAGS += -DNCCL_OS_LINUX
 else ifeq ($(shell uname -s), Windows)
   NCCL_OS_WINDOWS := 1
-  CXXFLAGS += -DNCCL_OS_WINDOWS=1
+  CXXFLAGS += -DNCCL_OS_WINDOWS
+  NVCUFLAGS += -DNCCL_OS_WINDOWS
 endif

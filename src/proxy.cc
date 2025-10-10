@@ -14,6 +14,7 @@
 #include "profiler.h"
 #include "transport.h"
 #include "cpuset.h"
+#include "os.h"
 
 #include <sys/syscall.h>
 #include <assert.h>
@@ -1628,7 +1629,7 @@ void* ncclProxyService(void* _args) {
   struct ncclProxyLocalPeer peers[NCCL_MAX_PROXY_CONNECTIONS];
   memset(&peers, 0, sizeof(struct ncclProxyLocalPeer)*NCCL_MAX_PROXY_CONNECTIONS);
   for (int s=0; s<NCCL_MAX_PROXY_CONNECTIONS; s++) {
-    pollfds[s].fd = -1;
+    pollfds[s].fd = NCCL_INVALID_SOCKET;
     pollfds[s].events = POLLHUP|POLLIN;
   }
   if (ncclSocketGetFd(proxyState->listenSock, &pollfds[NCCL_MAX_PROXY_CONNECTIONS].fd) != ncclSuccess) {
@@ -1686,7 +1687,7 @@ void* ncclProxyService(void* _args) {
       int closeConn = 0;
       int type = 0;
       ncclResult_t res = ncclSuccess;
-      if (pollfds[s].fd == -1) continue;
+      if (pollfds[s].fd == NCCL_INVALID_SOCKET) continue;
 
       // Progress all ops for this ncclProxyLocalPeer
       if (stop == PROXY_ABORT && ncclCuMemEnable() && ncclCuMemHostEnable() && !proxyState->directMode && __atomic_load_n(&proxyState->stop, __ATOMIC_ACQUIRE)) closeConn = 1;
@@ -1750,7 +1751,7 @@ void* ncclProxyService(void* _args) {
           asyncProxyOpDequeue(peer, op);
           asyncOpCount--;
         }
-        pollfds[s].fd = -1;
+        pollfds[s].fd = NCCL_INVALID_SOCKET;
         npeers--;
       }
     }

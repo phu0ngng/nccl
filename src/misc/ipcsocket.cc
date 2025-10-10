@@ -6,6 +6,7 @@
 
 #include "ipcsocket.h"
 #include "utils.h"
+#include "os.h"
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -19,7 +20,7 @@
  * Create a Unix Domain Socket
  */
 ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, volatile uint32_t* abortFlag) {
-  int fd = -1;
+  int fd = NCCL_INVALID_SOCKET;
   struct sockaddr_un cliaddr;
   char temp[NCCL_IPC_SOCKNAME_LEN] = "";
 
@@ -27,7 +28,7 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
     return ncclInternalError;
   }
 
-  handle->fd = -1;
+  handle->fd = NCCL_INVALID_SOCKET;
   handle->socketName[0] = '\0';
   if ((fd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) {
     WARN("UDS: Socket creation error : %s (%d)", strerror(errno), errno);
@@ -76,7 +77,7 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
 
 ncclResult_t ncclIpcSocketGetFd(struct ncclIpcSocket* handle, int* fd) {
   if (handle == NULL) {
-    WARN("ncclSocketGetFd: pass NULL socket");
+    WARN("ncclIpcSocketGetFd: pass NULL socket");
     return ncclInvalidArgument;
   }
   if (fd) *fd = handle->fd;

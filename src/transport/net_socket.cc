@@ -10,6 +10,7 @@
 #include "net.h"
 #include "param.h"
 #include "profiler/net_socket.h"
+#include "os.h"
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -251,7 +252,7 @@ void* persistentSocketThread(void *args_) {
             if (!eHandle[i+j]) {
               ncclProfilerNetSockDescr_v1_t data;
               data.type = ncclProfileSocket;
-              data.sock.fd = r->sock->fd;
+              data.sock.fd = r->sock->socketDescriptor;
               data.sock.op = r->op;
               data.sock.length = r->size;
               ncclProfilerFunction(&eHandle[i+j], ncclProfilerNetEventStart, resource->pInfo->pHandle, NCCL_PROFILER_NET_TYPE_SOCK | 1, &data);
@@ -617,7 +618,7 @@ ncclResult_t ncclNetSocketTest(void* request, int* done, int* size) {
       if (!r->pInfo.eHandle) {
         ncclProfilerNetSockDescr_v1_t data;
         data.type = ncclProfileSocket;
-        data.sock.fd = r->ctrlSock->fd;
+        data.sock.fd = r->ctrlSock->socketDescriptor;
         data.sock.op = r->op;
         data.sock.length = r->size;
         ncclProfilerFunction(&r->pInfo.eHandle, ncclProfilerNetEventStart, r->pInfo.pHandle, NCCL_PROFILER_NET_TYPE_SOCK | 1, &data);
