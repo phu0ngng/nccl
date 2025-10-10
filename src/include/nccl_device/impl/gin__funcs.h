@@ -64,7 +64,7 @@ NCCL_DEVICE_INLINE constexpr bool ncclGin_isSignal(RemoteAction) { return false;
 template<typename RemoteAction>
 NCCL_DEVICE_INLINE constexpr ncclGinSignal_t ncclGin_getSignalId(ncclGin const&, RemoteAction) { return -1u; }
 template<typename RemoteAction>
-NCCL_DEVICE_INLINE constexpr ncclGinSignalOp_t ncclGin_getSignalOp(RemoteAction) { return 0; }
+NCCL_DEVICE_INLINE constexpr ncclGinSignalOp_t ncclGin_getSignalOp(RemoteAction) { return (ncclGinSignalOp_t)0; }
 template<typename RemoteAction>
 NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(RemoteAction) { return 0; }
 #endif
