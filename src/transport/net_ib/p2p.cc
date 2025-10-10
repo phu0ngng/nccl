@@ -323,32 +323,12 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, size_t* sizes, int* tags, void** mhandles, struct ncclIbRequest* req) {
-  struct ibv_send_wr wr;
-  memset(&wr, 0, sizeof(wr));
-
-  int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
-  req->recv.aggSize = 0;
-  req->recv.sizes = comm->cmplsRecords[slot];
-  memset(req->recv.sizes, 0, sizeof(int)*n);
-  struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
-
+ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, struct ncclIbRequest* req, int slot) {
   ncclIbQp* ctsQp = NULL;;
   NCCLCHECK(ncclIbRecvCommGetQpForCts(comm, req->id, &ctsQp));
 
-  for (int i=0; i<n; i++) {
-    localElem[i].addr = (uint64_t)data[i];
-    struct ncclIbMrHandle* mhandleWrapper = (struct ncclIbMrHandle*) mhandles[i];
-
-    // Send all applicable rkeys
-    for (int j = 0; j < comm->base.vProps.ndevs; j++)
-      localElem[i].rkeys[j] = mhandleWrapper->mrs[j]->rkey;
-
-    localElem[i].nreqs = n;
-    localElem[i].size = sizes[i]; // Sanity/Debugging
-    localElem[i].tag = tags[i];
-    localElem[i].idx = comm->base.fifoHead+1;
-  }
+  struct ibv_send_wr wr;
+  memset(&wr, 0, sizeof(wr));
   wr.wr.rdma.remote_addr = comm->remCtsFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo);
 
   // Lookup the correct rkey
@@ -356,9 +336,10 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
 
   // Populating the correct gather information based on the device and user
   // provided information
+  struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
   wr.sg_list = &(comm->devs[ctsQp->devIndex].sge);
   wr.sg_list[0].addr = (uint64_t)localElem;
-  wr.sg_list[0].length = n*sizeof(struct ncclIbSendFifo);
+  wr.sg_list[0].length = req->nreqs*sizeof(struct ncclIbSendFifo);
   wr.num_sge = 1;
 
   wr.opcode = IBV_WR_RDMA_WRITE;
@@ -397,7 +378,6 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
 
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(ctsQp->qp, &wr, &bad_wr));
-  comm->base.fifoHead++;
 
   INFO(NCCL_NET, "NET/IB: %s: CTS posted (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d)", __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags);
 
@@ -416,6 +396,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->base, &req));
+  int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
   req->id = (uint32_t)(comm->base.fifoHead % UINT32_MAX);
   req->type = NCCL_NET_IB_REQ_RECV;
   req->sock = &comm->base.sock;
@@ -460,12 +441,29 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
     }
 #endif
   }
-
   TIME_STOP(1);
+
+  req->recv.aggSize = 0;
+  req->recv.sizes = comm->cmplsRecords[slot];
+  memset(req->recv.sizes, 0, sizeof(int)*n);
+  struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
+  for (int i=0; i<n; i++) {
+    localElem[i].addr = (uint64_t)data[i];
+    struct ncclIbMrHandle* mhandleWrapper = (struct ncclIbMrHandle*) mhandles[i];
+    // Send all applicable rkeys
+    for (int j = 0; j < comm->base.vProps.ndevs; j++) {
+      localElem[i].rkeys[j] = mhandleWrapper->mrs[j]->rkey;
+    }
+    localElem[i].nreqs = n;
+    localElem[i].size = sizes[i]; // Sanity/Debugging
+    localElem[i].tag = tags[i];
+    localElem[i].idx = comm->base.fifoHead+1;
+  }
 
   // Post to FIFO to notify sender
   TIME_START(2);
-  NCCLCHECK(ncclIbPostFifo(comm, n, data, sizes, tags, mhandles, req));
+  NCCLCHECK(ncclIbPostFifo(comm, req, slot));
+  comm->base.fifoHead++;
   TIME_STOP(2);
 
   *request = req;
