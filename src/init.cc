@@ -2618,7 +2618,7 @@ exit:
   (void)ncclGroupErrCheck(res);
   NCCLCHECK(ncclGroupEndInternal());
 
-  if (*newcomm) NVTX3_RANGE_ADD_PAYLOAD(CommShrink, NcclNvtxParamsCommShrinkSchema, NVTX3_PAYLOAD(comm->commHash, comm->nRanks, comm->rank, comm->cudaDev, excludeRanksCount));
+  if (newcomm && *newcomm) NVTX3_RANGE_ADD_PAYLOAD(CommShrink, NcclNvtxParamsCommShrinkSchema, NVTX3_PAYLOAD(comm->commHash, comm->nRanks, comm->rank, comm->cudaDev, excludeRanksCount));
 
   return res;
 }
@@ -2635,7 +2635,7 @@ exit:
   (void)ncclGroupErrCheck(res);
   NCCLCHECK(ncclGroupEndInternal());
 
-  if (*newcomm)
+  if (newcomm && *newcomm)
     NVTX3_RANGE_ADD_PAYLOAD(CommSplit, NcclNvtxParamsCommSplitSchema, NVTX3_PAYLOAD((*newcomm)->commHash, comm->commHash, comm->nRanks, comm->rank, comm->cudaDev, color, key));
 
   return res;
