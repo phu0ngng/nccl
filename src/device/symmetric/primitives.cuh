@@ -56,13 +56,14 @@ struct ncclSymkArgsHandler {
       workLo++;
       fracLo = 0;
     }
-    struct ncclSymkDevWork const& dw = devWork[workLo];
-    indexLo = ((fracLo * divUp(dw.nElts, EltPerCell)) >> 16) * EltPerCell;
+    struct ncclSymkDevWork const& dwLo = devWork[workLo];
+    indexLo = ((fracLo * divUp(dwLo.nElts, EltPerCell)) >> 16) * EltPerCell;
 
     // Where the work ends
     workHi = channelWorkRange[block].workHi;
     fracHi = channelWorkRange[block].fracHi + 1;
-    indexHi = min(((fracHi * divUp(dw.nElts, EltPerCell)) >> 16) * EltPerCell, dw.nElts);
+    struct ncclSymkDevWork const& dwHi = devWork[workHi];
+    indexHi = min(((fracHi * divUp(dwHi.nElts, EltPerCell)) >> 16) * EltPerCell, dwHi.nElts);
   }
 
   template<typename T>
