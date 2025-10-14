@@ -60,7 +60,11 @@ if [ -d "${RESULTS_DIR}" ] && [ "$(ls -A ${RESULTS_DIR}/*.csv 2>/dev/null)" ]; t
     echo "Most recent previous result: ${PREVIOUS_RESULT}"
     # Run comparison using gcperf-tools
     echo "Running regression check..."
-    gcperf-tools regression-check --output regression_report.xlsx --baseline ${PREVIOUS_RESULT} results.csv
+    gcperf-tools regression-check \
+        --output regression_report.xlsx \
+        --baseline ${PREVIOUS_RESULT} \
+        --regression-config ../test/scripts/ci/gcperf-tools/regression.toml \
+        results.csv
     REGRESSION_CODE=$?
 else
     echo "No previous results found in ${RESULTS_DIR}"
