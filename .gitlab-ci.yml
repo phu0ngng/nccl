@@ -281,8 +281,8 @@ fairshare-eos:
 fairshare-cw-dfw:
   stage: setup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
+    #   when: always
     - when: never
   needs: []
   variables:
@@ -745,8 +745,8 @@ unit_tests-eos:
 unit_tests-cw-dfw:
   stage: unit_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -1704,8 +1704,8 @@ apitest-eos:
 apitest-cw-dfw:
   stage: api_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -2257,8 +2257,8 @@ perftest-single-eos:
 perftest-single-cw-dfw:
   stage: perf_tests_single
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
@@ -2651,8 +2651,8 @@ perftest-multi-eos:
 perftest-multi-cw-dfw:
   stage: perf_tests_multi
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    #   when: always
     - when: never
   needs:
     - build-ipp6
