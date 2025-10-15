@@ -13,13 +13,16 @@ const int NCCL_GIN_IB_ALLGATHER_TAG = 0xa0;
 const int NCCL_GIN_IB_ALLTOALL_TAG = 0xa1;
 
 ncclResult_t ncclGinIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
-  ncclNetCommConfig_t config;
-  memset(&config, 0, sizeof(ncclNetCommConfig_t));
-  return ncclIbInit(ctx, commId, &config, logFunction, NULL);
+  ncclNetCommConfig_t* netCommConfig = nullptr;
+  NCCLCHECK(ncclIbInitDevices(logFunction, nullptr));
+  NCCLCHECK(ncclCalloc(&netCommConfig, 1));
+  *ctx = netCommConfig;
+  return ncclSuccess;
 }
 
 ncclResult_t ncclGinIbFinalize(void *ctx) {
-  return ncclNetIb.finalize(ctx);
+  if (ctx) free(ctx);
+  return ncclIbFinalizeDevices();
 }
 
 static ncclResult_t ncclGinIbAllGather(struct ncclGinIbCollComm *cComm, void *srcBuf, void *recvBuf, size_t len) {

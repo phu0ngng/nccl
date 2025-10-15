@@ -183,10 +183,14 @@ const char* ibProviderName[] = {
   "Mlx5",
 };
 
-ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+ncclResult_t ncclIbFinalizeDevices(void) {
+  netRefCount--;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   ncclResult_t ret = ncclSuccess;
-  ncclNetCommConfig_t* netCommConfig = nullptr;
-  if (netRefCount++) goto exit;
+  if (netRefCount++) return ret;
   ncclProfilerFunction = profFunction;
   if (ncclParamIbDisable()) return ncclInternalError;
   static int shownIbHcaEnv = 0;
@@ -355,11 +359,18 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
 
   }
 exit:
+  return ret;
+fail:
+  goto exit;
+}
+
+ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  ncclResult_t ret = ncclSuccess;
+  ncclNetCommConfig_t* netCommConfig = nullptr;
+  NCCLCHECK(ncclIbInitDevices(logFunction, profFunction));
   NCCLCHECK(ncclCalloc(&netCommConfig, 1));
   netCommConfig->trafficClass = config->trafficClass;
   *ctx = (void *)netCommConfig;
-  return ret;
-fail:
   return ret;
 }
 
@@ -415,6 +426,5 @@ ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props) {
 
 ncclResult_t ncclIbFinalize(void* ctx) {
   free(ctx);
-  netRefCount--;
-  return ncclSuccess;
+  return ncclIbFinalizeDevices();
 }
