@@ -73,7 +73,7 @@ else
 fi
 
 if [[ ${GRAPH_TESTS_DEFAULT} -eq 1 ]] ; then
-  run_command "graph_test_default" "$RUN_MODE" 1 "--oversubscribe" "TOPO_DIR=$NCCL_HOME/test/unit/" "$NCCL_HOME/test/unit/graph_test" ""
+  run_command "graph_test_default" "$RUN_MODE" 1 "--oversubscribe" "NCCL_TOPO_DIR=$NCCL_HOME/test/unit/" "$NCCL_HOME/test/unit/graph_test" ""
 else
   echo -e "Disabled Graph TESTS Default test\n\n"
 fi
