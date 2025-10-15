@@ -37,7 +37,7 @@ extern int cudaGraphLaunches;
 extern int tuning;
 
 static FILE *json_report_fp;
-static bool write_json;
+static thread_local bool write_json;
 
 typedef enum {
   JSON_NONE, // A pseudo-state meaning that the document is empty
