@@ -4,6 +4,7 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+#include "checks.h"
 #include "comm.h"
 #include "graph.h"
 #include "utils.h"
@@ -97,11 +98,12 @@ NCCL_PARAM(LegacyCudaRegister, "LEGACY_CUDA_REGISTER", 0);
 /* Convert a PCI busId string into a local cudaDev device index (cf. CUDA_VISIBLE_DEVICES) */
 static int busIdToCudaDev(int64_t busId) {
   int ndev;
-  if (cudaGetDeviceCount(&ndev) != cudaSuccess)
+  if (!CUDASUCCESS(cudaGetDeviceCount(&ndev)))
     return -1;
   for (int i = 0; i < ndev; i++) {
     char devBusIdStr[NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE];
-    if (cudaDeviceGetPCIBusId(devBusIdStr, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, i) != cudaSuccess)
+    if (!CUDASUCCESS(cudaDeviceGetPCIBusId(
+            devBusIdStr, NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE, i)))
       return -1;
     int64_t devBusId;
     NCCLCHECK(busIdToInt64(devBusIdStr, &devBusId));
@@ -162,7 +164,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph
 
   // Check that CUDA can do P2P
   int p2p;
-  if (cudaDeviceCanAccessPeer(&p2p, cudaDev1, cudaDev2) != cudaSuccess) {
+  if (!CUDASUCCESS(cudaDeviceCanAccessPeer(&p2p, cudaDev1, cudaDev2))) {
     INFO(NCCL_INIT|NCCL_P2P,"peer query failed between dev %d(=%lx) and dev %d(=%lx)",
          cudaDev1, info1->busId, cudaDev2, info2->busId);
     *ret = 0;
@@ -181,7 +183,7 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph
     char *dummy;
     cudaIpcMemHandle_t ipc;
     NCCLCHECK(ncclCudaMalloc(&dummy, CUDA_IPC_MIN));
-    if (cudaIpcGetMemHandle(&ipc, dummy) != cudaSuccess) {
+    if (!CUDASUCCESS(cudaIpcGetMemHandle(&ipc, dummy))) {
       INFO(NCCL_INIT|NCCL_P2P,"Legacy IPC not supported");
       *ret = 0;
     }
@@ -784,7 +786,7 @@ static ncclResult_t p2pSendProxyProgress(struct ncclProxyState* proxyState, stru
       }
       if (sub->done < sub->transmitted) {
         int buffSlot = (sub->base+sub->done)%NCCL_STEPS;
-        cudaError_t res = cudaEventQuery(resources->events[buffSlot]);
+        cudaError_t res = CUDACLEARERROR(cudaEventQuery(resources->events[buffSlot]));
         if (res != cudaErrorNotReady) CUDACHECK(res);
         if (res == cudaSuccess) {
           sub->done += args->sliceSteps;

@@ -16,10 +16,10 @@
 // Get current Compute Capability
 int ncclCudaCompCap() {
   int cudaDev;
-  if (cudaGetDevice(&cudaDev) != cudaSuccess) return 0;
+  if (!CUDASUCCESS(cudaGetDevice(&cudaDev))) return 0;
   int ccMajor, ccMinor;
-  if (cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev) != cudaSuccess) return 0;
-  if (cudaDeviceGetAttribute(&ccMinor, cudaDevAttrComputeCapabilityMinor, cudaDev) != cudaSuccess) return 0;
+  if (!CUDASUCCESS(cudaDeviceGetAttribute(&ccMajor, cudaDevAttrComputeCapabilityMajor, cudaDev))) return 0;
+  if (!CUDASUCCESS(cudaDeviceGetAttribute(&ccMinor, cudaDevAttrComputeCapabilityMinor, cudaDev))) return 0;
   return ccMajor*10+ccMinor;
 }
 
