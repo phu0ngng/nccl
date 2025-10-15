@@ -988,6 +988,17 @@ ncclResult_t ncclDevrFindWindow(
   return ncclSuccess;
 }
 
+NCCL_API(ncclResult_t, ncclCommQueryProperties, ncclComm_t, ncclCommProperties_t*);
+ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* props) {
+  if (comm == nullptr || props == nullptr) {
+    WARN("Cannot query communicator info: null argument");
+    return ncclInvalidArgument;
+  }
+  props->multimemSupport = comm->nvlsSupport;
+  props->ginSupport = comm->sharedRes->ginState.ncclGin != nullptr;
+  return ncclSuccess;
+}
+
 NCCL_API(ncclResult_t, ncclDevCommCreate, ncclComm_t comm, ncclDevCommRequirements_t const* reqs, ncclDevComm_t* outDevComm);
 ncclResult_t ncclDevCommCreate(
     ncclComm_t comm, struct ncclDevCommRequirements const* reqs,
