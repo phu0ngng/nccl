@@ -407,6 +407,8 @@ struct alignas(16) ncclIbRecvCommDev {
   struct ibv_sge sge;
 };
 
+#define NCCL_IB_RECV_WR_ID_DUMMY UINT64_MAX
+
 struct ncclIbRecvComm {
   struct ncclIbNetCommBase base;
   struct ncclIbRecvCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
