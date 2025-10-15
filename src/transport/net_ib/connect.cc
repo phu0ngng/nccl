@@ -19,39 +19,6 @@ NCCL_PARAM(IbTc, "IB_TC", -1);
 NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
 NCCL_PARAM(IbEceEnable,"IB_ECE_ENABLE",1);
 
-// Per-QP connection metatdata
-struct ncclIbQpInfo {
-  uint32_t qpn;
-
-  // Fields needed for ece (enhanced connection establishment)
-  struct ibv_ece ece;
-  int ece_supported;
-  int devIndex;
-};
-
-// Structure used to hold information needed to establish the communication
-// between the sender and receiver.
-// The structure is populated during the connection establishment phase and
-// populated by each side of the connection before being sent to the remote
-// peer. The remote peer uses the information passed to it from its peer to
-// create and initialize its local resources.
-struct ncclIbConnectionMetadata {
-  struct ncclIbQpInfo qpInfo[NCCL_IB_MAX_QPS];
-  struct ncclIbDevInfo devs[NCCL_IB_MAX_DEVS_PER_NIC];
-  char devName[MAX_MERGED_DEV_NAME];
-  // An address for a registered memory to be accessed by the peer. The address
-  // can be accessed using RDMA using the key specified in ncclIbDevInfo::rkey.
-  // The sender side gets in this member, from the receiver, the address of the
-  // memory to which the sender writes the sizes of the data transfers that
-  // the sender sends.
-  // The receiver side gets in this member, from the sender, the address of the
-  // memory to which the receiver writes the CTS messages.
-  uint64_t addr;
-  int ndevs;
-  int tc;
-  int sl;
-};
-
 enum ncclIbCommState {
   ncclIbCommStateStart = 0,
   ncclIbCommStateConnect = 1,
