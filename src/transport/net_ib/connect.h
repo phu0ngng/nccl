@@ -57,4 +57,8 @@ struct ncclIbConnectionMetadata {
   int sl;
 };
 
+ncclResult_t ncclIbCreateQp(struct ncclIbQpCreateAttr* createQpAttrs, void* qp_context, struct ncclIbQp* qp);
+ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint32_t dest_qp_num, struct ncclIbDevInfo* info, bool fifoTc, int tc, int sl);
+ncclResult_t ncclIbRtsQp(struct ibv_qp* qp);
+
 #endif // NET_IB_CONNECT_H_
