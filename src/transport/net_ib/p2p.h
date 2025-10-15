@@ -9,6 +9,9 @@
 
 #include "common.h"
 
+ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, struct ncclIbRequest* req, int slot);
+ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot);
+
 static inline ncclResult_t ncclIbRecvCommGetQpForCts(struct ncclIbRecvComm* recvComm, uint32_t id, ncclIbQp** qp) {
   int devIndex = id % recvComm->base.vProps.ndevs;
   // CTS message is always posted the first QP on the device
