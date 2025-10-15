@@ -791,7 +791,11 @@ doca_error_t doca_gpu_verbs_unexport_qp(struct doca_gpu *gpu_dev,
 
     if (qp_gverbs->cpu_db) doca_gpu_mem_free(gpu_dev, qp_gverbs->cpu_db);
 
-    if (qp_gverbs->qp_cpu) free(qp_gverbs->qp_cpu);
+    if (qp_gverbs->qp_cpu) {
+        if (qp_gverbs->qp_cpu->nic_handler != DOCA_GPUNETIO_VERBS_NIC_HANDLER_CPU_PROXY)
+            doca_gpu_verbs_unexport_uar(qp_gverbs->qp_cpu->sq_db);
+        free(qp_gverbs->qp_cpu);
+    }
 
     if (qp_gverbs->qp_gpu) {
         doca_gpu_mem_free(gpu_dev, qp_gverbs->qp_gpu);

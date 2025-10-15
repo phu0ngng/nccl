@@ -12,17 +12,24 @@ int get_device() {
 }
 
 int main() {
-  int num_devices = 2;
-  int devs[2] = { 0, 1 };
-  ncclComm_t comms[2];
+  int deviceCount;
+  cudaError_t error = cudaGetDeviceCount(&deviceCount);
+  assert(error == cudaSuccess);
+
+  if (deviceCount < 2) {
+    printf("Skip this test on a single GPU platform [WAIVE]\n");
+    return 0;
+  }
+  ncclComm_t* comms = (ncclComm_t*)malloc(deviceCount * sizeof(ncclComm_t));
+  assert(comms != NULL);
   ncclResult_t res;
   int prev_dev, after_dev;
 
-  res = ncclCommInitAll(comms, num_devices, devs);
+  res = ncclCommInitAll(comms, deviceCount, NULL);
   assert(res == ncclSuccess);
   prev_dev = get_device();
 
-  for (int i = 0; i < num_devices; ++i) {
+  for (int i = 0; i < deviceCount; ++i) {
     res = ncclCommDestroy(comms[i]);
     assert(res == ncclSuccess);
   }
@@ -34,5 +41,6 @@ int main() {
   } else {
     printf("Check device ID after ncclCommDestroy [PASS]\n");
   }
+  free(comms);
   return 0;
 }

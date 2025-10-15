@@ -202,8 +202,12 @@ static ncclResult_t ncclNetPluginInit(struct ncclComm* comm, netPluginLib_t* plu
 
   if (pluginLib->ncclGinPluginState == ncclNetPluginStateInitReady && pluginLib->ncclGin) {
     if ((ncclParamGinType() == -1) && (pluginLib->ncclGin == (ncclGin_t *)-1)) {
-      if ((ncclGinIbGdaki.init(&comm->netContext, comm->commHash, ncclDebugLog) == ncclSuccess) && (ncclGinIbGdaki.devices(&ndev) == ncclSuccess) && (ndev > 0)) {
-        pluginLib->ncclGin = &ncclGinIbGdaki;
+      void* throwAwayContext = nullptr;
+      if (ncclGinIbGdaki.init(&throwAwayContext, comm->commHash, ncclDebugLog) == ncclSuccess) {
+        if (ncclGinIbGdaki.devices(&ndev) == ncclSuccess && ndev > 0) {
+          pluginLib->ncclGin = &ncclGinIbGdaki;
+        }
+        ncclGinIbGdaki.finalize(throwAwayContext);
       }
       else {
         pluginLib->ncclGin = &ncclGinIbProxy;

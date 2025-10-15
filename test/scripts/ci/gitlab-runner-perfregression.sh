@@ -44,6 +44,12 @@ gcperf-tools convert --input tarball:${RESULTS_TARBALL} --output results.csv --c
 echo "Generating PDF report..."
 gcperf-tools report -i results.csv -o report.pdf
 
+# Upload results to Postgres DB
+echo "Uploading results to Postgres DB..."
+gcperf-tools upload -i tarball:${RESULTS_TARBALL} \
+    --db-url postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@swgpu-gpucomms-dev-rw.db.nvidia.com:5432/gpu_comms \
+    --db-schema perf_regression
+
 set +e
 # Grab the most recent result from RESULTS_DIR if it exists
 PREVIOUS_RESULT=""
@@ -54,7 +60,11 @@ if [ -d "${RESULTS_DIR}" ] && [ "$(ls -A ${RESULTS_DIR}/*.csv 2>/dev/null)" ]; t
     echo "Most recent previous result: ${PREVIOUS_RESULT}"
     # Run comparison using gcperf-tools
     echo "Running regression check..."
-    gcperf-tools regression-check --output regression_report.xlsx --baseline ${PREVIOUS_RESULT} results.csv
+    gcperf-tools regression-check \
+        --output regression_report.xlsx \
+        --baseline ${PREVIOUS_RESULT} \
+        --regression-config ../test/scripts/ci/gcperf-tools/regression.toml \
+        results.csv
     REGRESSION_CODE=$?
 else
     echo "No previous results found in ${RESULTS_DIR}"
@@ -73,7 +83,18 @@ cp results.csv ${RESULTS_DIR}/${DATE_SUFFIX}.csv
 echo "Performance regression check completed with exit code: $REGRESSION_CODE"
 echo "See job artifacts for more detailed results"
 
-# TODO: Handle different exit codes from gcperf-tools regression-check
-# Different codes will correspond to different levels of regressions
-# exit $REGRESSION_CODE
-exit 0
+# Handle different exit codes from gcperf-tools regression-check
+# Exit with 1 if REGRESSION_CODE is in [1, 66, 67], otherwise exit with 0
+# 
+# Exit codes from gcperf-tools regression-check:
+# 0  - SUCCESS: No regressions detected
+# 1  - ERROR: No matching test configurations found between baseline and candidate datasets
+# 64 - LOW_REGRESSIONS: Low severity regressions
+# 65 - MEDIUM_REGRESSIONS: Medium severity regressions
+# 66 - HIGH_REGRESSIONS: High severity regressions
+# 67 - CRITICAL_REGRESSIONS: Critical performance degradations
+if [[ $REGRESSION_CODE -eq 1 || $REGRESSION_CODE -eq 66 || $REGRESSION_CODE -eq 67 ]]; then
+    exit 1
+else
+    exit 0
+fi

@@ -338,6 +338,7 @@ ncclResult_t ncclIbFreeRequest(struct ncclIbRequest* r);
 ncclResult_t ncclIbRegMrDmaBufInternal(void* comm, void* data, size_t size, int type, uint64_t offset, int fd, uint64_t mrFlags, void** mhandle);
 
 // Net IB plugin entry functions.
+ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction);
 ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction);
 ncclResult_t ncclIbDevices(int* ndev);
 ncclResult_t ncclIbGetProperties(int dev, ncclNetProperties_t* props);
@@ -355,6 +356,7 @@ ncclResult_t ncclIbCloseSend(void* sendComm);
 ncclResult_t ncclIbCloseRecv(void* recvComm);
 ncclResult_t ncclIbCloseListen(void* listenComm);
 ncclResult_t ncclIbMakeVDevice(int* d, ncclNetVDeviceProps_t* props);
+ncclResult_t ncclIbFinalizeDevices(void);
 ncclResult_t ncclIbFinalize(void* ctx);
 ncclResult_t ncclIbSetNetAttr(void *ctx, ncclNetAttr_t *netAttr);
 

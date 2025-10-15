@@ -1,0 +1,30 @@
+[regression_check]
+# Severity thresholds (percentage change)
+thresholds = [
+    { name = "critical", value = 20.0 },  # >= 20% change
+    { name = "high", value = 15.0 },      # >= 15% change
+    { name = "medium", value = 10.0 },    # >= 10% change
+    { name = "low", value = 5.0 }         # >= 5% change
+]
+
+# Statistical settings
+noise_threshold = 1.0  # Ignore changes < 1%
+
+# Fields to ignore (metadata that can differ)
+ignore = ["id", "description", "timestamp"]
+
+# Fields that must match exactly for fair comparison
+enforce = ["tool", "library", "num_nodes", "test_result.size"]
+
+# Fields to report if different but don't affect comparison
+report = ["library_version", "cluster_name", "container"]
+
+# Performance metrics to analyze
+performance_columns = [
+    { name = "test_result.out_of_place.bus_bw", direction = "higher_is_better" },
+    { name = "test_result.out_of_place.alg_bw", direction = "higher_is_better" },
+    { name = "test_result.out_of_place.time", direction = "lower_is_better" },
+    { name = "test_result.in_place.bus_bw", direction = "higher_is_better" },
+    { name = "test_result.in_place.alg_bw", direction = "higher_is_better" },
+    { name = "test_result.in_place.time", direction = "lower_is_better" }
+]
