@@ -946,7 +946,7 @@ void* ncclProxyProgress(void *proxyState_) {
 
   if (setProxyThreadContext(proxyState)) {
     INFO(NCCL_INIT, "[Proxy Progress] Set CUDA context on device %d", proxyState->cudaDev);
-  } else if (cudaSetDevice(proxyState->cudaDev) != cudaSuccess) {
+  } else if (!CUDASUCCESS(cudaSetDevice(proxyState->cudaDev))) {
     WARN("[Proxy Progress] Failed to set CUDA device %d", proxyState->cudaDev);
   }
 
@@ -1615,7 +1615,7 @@ void* ncclProxyService(void* _args) {
 
   if (setProxyThreadContext(proxyState)) {
     INFO(NCCL_INIT, "[Proxy Service] Created CUDA context on device %d", proxyState->cudaDev);
-  } else if (cudaSetDevice(proxyState->cudaDev) != cudaSuccess) {
+  } else if (!CUDASUCCESS(cudaSetDevice(proxyState->cudaDev))) {
     WARN("[Proxy Service] Failed to set CUDA device %d", proxyState->cudaDev);
   }
 
@@ -1809,7 +1809,7 @@ void* ncclProxyServiceUDS(void* _args) {
 
   if (setProxyThreadContext(proxyState)) {
     INFO(NCCL_INIT, "[Proxy Service UDS] Set CUDA context on device %d", proxyState->cudaDev);
-  } else if (cudaSetDevice(proxyState->cudaDev) != cudaSuccess) {
+  } else if (!CUDASUCCESS(cudaSetDevice(proxyState->cudaDev))) {
     WARN("[Proxy Service UDS] Failed to set CUDA device %d", proxyState->cudaDev);
   }
 

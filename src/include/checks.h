@@ -10,31 +10,49 @@
 #include "debug.h"
 
 // Check CUDA RT calls
-#define CUDACHECK(cmd) do {                                 \
-    cudaError_t err = cmd;                                  \
-    if( err != cudaSuccess ) {                              \
-        WARN("Cuda failure '%s'", cudaGetErrorString(err)); \
-        return ncclUnhandledCudaError;                      \
-    }                                                       \
-} while(false)
+#define CUDACHECK(cmd)                                                         \
+  do {                                                                         \
+    cudaError_t err = cmd;                                                     \
+    if (err != cudaSuccess) {                                                  \
+      WARN("Cuda failure '%s'", cudaGetErrorString(err));                      \
+      (void)cudaGetLastError();                                                \
+      return ncclUnhandledCudaError;                                           \
+    }                                                                          \
+  } while (false)
 
-#define CUDACHECKGOTO(cmd, RES, label) do {                 \
-    cudaError_t err = cmd;                                  \
-    if( err != cudaSuccess ) {                              \
-        WARN("Cuda failure '%s'", cudaGetErrorString(err)); \
-        RES = ncclUnhandledCudaError;                       \
-        goto label;                                         \
-    }                                                       \
-} while(false)
+#define CUDACHECKGOTO(cmd, RES, label)                                         \
+  do {                                                                         \
+    cudaError_t err = cmd;                                                     \
+    if (err != cudaSuccess) {                                                  \
+      WARN("Cuda failure '%s'", cudaGetErrorString(err));                      \
+      (void)cudaGetLastError();                                                \
+      RES = ncclUnhandledCudaError;                                            \
+      goto label;                                                              \
+    }                                                                          \
+  } while (false)
 
 // Report failure but clear error and continue
-#define CUDACHECKIGNORE(cmd) do {  \
-    cudaError_t err = cmd;         \
-    if( err != cudaSuccess ) {     \
-        INFO(NCCL_ALL,"%s:%d Cuda failure '%s'", __FILE__, __LINE__, cudaGetErrorString(err)); \
-        (void) cudaGetLastError(); \
-    }                              \
-} while(false)
+#define CUDACHECKIGNORE(cmd)                                                   \
+  do {                                                                         \
+    cudaError_t err = cmd;                                                     \
+    if (err != cudaSuccess) {                                                  \
+      INFO(NCCL_ALL, "%s:%d Cuda failure '%s'", __FILE__, __LINE__,            \
+           cudaGetErrorString(err));                                           \
+      (void)cudaGetLastError();                                                \
+    }                                                                          \
+  } while (false)
+
+// Use inline function to clear CUDA error inside expressions
+static inline cudaError_t cuda_clear(cudaError_t err) {
+  if (err != cudaSuccess)
+    (void)cudaGetLastError();
+  return err;
+}
+
+// Check if cudaSuccess & clear CUDA error
+#define CUDASUCCESS(cmd) cuda_clear(cmd) == cudaSuccess
+// Clear CUDA error, return CUDA return code
+#define CUDACLEARERROR(cmd) cuda_clear(cmd)
 
 #include <errno.h>
 // Check system calls

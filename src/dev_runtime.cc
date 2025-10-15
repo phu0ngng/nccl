@@ -119,7 +119,7 @@ ncclResult_t ncclDevrFinalize(struct ncclComm* comm) {
   symTeamDestroyAll(comm);
   { // delete windowTable
     cudaStream_t stream;
-    if (cudaSuccess == cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking)) {
+    if (CUDASUCCESS(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking))) {
       struct ncclDevCommWindowTable* tableDev = devr->windowTable;
       while (tableDev != nullptr) {
         struct ncclDevCommWindowTable* tableHost;
