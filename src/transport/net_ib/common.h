@@ -319,7 +319,12 @@ static inline ncclResult_t ncclIbCommBaseGetQpByQpNum(struct ncclIbNetCommBase* 
   return ncclInternalError;
 }
 
+// Each request is transfered over all devices, and depending on the
+// "splitDataOnQps" configuration parameter, a request may be transffered over
+// a single QP per device or on all QPs of each device.
 static inline int ncclIbCommBaseGetNqpsPerRequest(struct ncclIbNetCommBase* baseComm) {
+  assert(baseComm->nDataQps != -1);
+  assert(baseComm->nqps != -1);
   return (baseComm->splitDataOnQps == 1) ? baseComm->nqps : baseComm->nDataQps;
 }
 
