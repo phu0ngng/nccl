@@ -17,6 +17,8 @@
 #include <errno.h>
 // external profiler symbols
 #include <dlfcn.h>
+#include <sstream>
+#include <iomanip>
 
 #define PRINT if (is_main_thread) printf
 
@@ -806,9 +808,8 @@ void writeResultFooter(const int errors[], const double bw[], double check_avg_b
     jsonFinishList();
   }
 
-  PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
-  PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
-  PRINT("#\n");
+  PRINT("# %-20s : %d %s\n", "Out of bounds values", errors[0], errors[0] ? "FAILED" : "OK");
+  PRINT("# %-20s : %g %s\n", "Avg bus bandwidth", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
 
   if(write_json) {
     jsonKey("out_of_bounds");
@@ -822,6 +823,46 @@ void writeResultFooter(const int errors[], const double bw[], double check_avg_b
     jsonKey("okay");       check_avg_bw == -1 ? jsonStr("unchecked") : jsonBool(bw[0] >= check_avg_bw*(0.9));
     jsonFinishObject();
   }
+}
+
+std::string getMemString(double amount) {
+  std::string postfix = " B";
+  if (abs(amount) >= 1024.0*1024.0*1024.0) {
+    postfix = " GB";
+    amount /= 1024.0 * 1024.0 * 1024.0;
+  } else if (abs(amount) >= 1024.0*1024.0) {
+    postfix = " MB";
+    amount /= 1024.0 * 1024.0;
+  } else if (abs(amount) >= 1024.0) {
+    postfix = " KB";
+    amount /= 1024.0;
+  }
+  int precision = 0;
+  if (abs(amount) < 10.0) {
+    precision = 2;
+  } else if (abs(amount) < 100.0) {
+    precision = 1;
+  }
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(precision) << amount << postfix;
+  return ss.str();
+}
+
+void writeMemInfo(memInfo_t* memInfos, int numMemInfos) {
+
+  std::stringstream ss;
+  uint64_t maxAmount = 0;
+  for (int i = 0; i < numMemInfos; i++) {
+    ss << memInfos[i].name << " " 
+      << getMemString(memInfos[i].amount) 
+      << " ";
+    if (i < numMemInfos - 1) {
+      ss << "| ";
+    }
+    maxAmount += memInfos[i].amount;
+  }
+  ss << "| Total  " << getMemString(maxAmount);
+  PRINT("# %-20s : %s\n", "GPU memory usage", ss.str().c_str());
 }
 
 // Write out remaining errors to stdout/json.
@@ -838,6 +879,10 @@ void writeErrors() {
     }
     jsonFinishList();
   }
+}
+
+void finalizeFooter() {
+  PRINT("#\n");
 }
 
 static int profilerContext;

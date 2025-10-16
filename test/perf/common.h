@@ -187,6 +187,10 @@ struct threadArgs {
   int sleepId;
   void** hostbuffs;
 
+  int64_t* initGpuMem;
+  int64_t* bufferMemory;
+  int64_t* devMemUsed;
+
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
   void*** sendRegHandles;
   void*** recvRegHandles;
