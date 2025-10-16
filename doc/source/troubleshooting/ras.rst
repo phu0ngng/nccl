@@ -56,7 +56,7 @@ Here's an example output from a job that is progressing normally:
 
   Job summary
   ===========
-  
+
     Nodes  Processes         GPUs  Processes     GPUs
   (total)   per node  per process    (total)  (total)
         4          8            1         32       32
@@ -67,7 +67,7 @@ We've got a job consisting of 32 GPUs (1 GPU per process) running on 4 nodes.
 
   Communicators... (0.00s)
   =============
-  
+
   Group     Comms     Nodes     Ranks     Ranks     Ranks    Status  Errors
       #  in group  per comm  per node  per comm  in group
       0         8         4         1         4        32   RUNNING      OK
@@ -91,7 +91,7 @@ severity):
 
   Warnings
   ========
-  
+
   #0-0 (27a079b828ff1a75) MISMATCH
     Communicator ranks have different collective operation counts
     26 ranks have launched up to operation 6650
@@ -130,7 +130,7 @@ Similar effects can sometimes be observed during communicator initialization or 
       2         1         4         1         4         4      INIT      OK
 
   [...]
-  
+
   #0-0 (9e17999afaa87dbb) MISMATCH
     Communicator ranks have different status
     26 ranks have status UNKNOWN
@@ -158,25 +158,25 @@ Here's an excerpt from an invocation right after artificially creating a problem
 
   Communicators... (2.05s)
   =============
-  
+
   Group     Comms     Nodes     Ranks     Ranks     Ranks    Status  Errors
       #  in group  per comm  per node  per comm  in group
       0         1         4       7-8        32        32   RUNNING  INCOMPLETE
-  
+
   Errors
   ======
-  
+
   INCOMPLETE
     Missing communicator data from 1 job process
     Process 3487984 on node 172.16.64.213 managing GPU 5
-  
+
   #0-0 (cf264af53edbe986) INCOMPLETE
     Missing communicator data from 1 rank
     The missing rank: 21
-  
+
   Warnings
   ========
-  
+
   TIMEOUT
     Encountered 2 communication timeouts while gathering communicator data
 
@@ -192,11 +192,11 @@ will declare the process dead (permanently):
 
   Errors
   ======
-  
+
   DEAD
     1 job process is considered dead (unreachable via the RAS network)
     Process 3487984 on node 172.16.64.213 managing GPU 5
-  
+
   #0-0 (cf264af53edbe986) INCOMPLETE
     Missing communicator data from 1 rank
     The missing rank: 21
