@@ -55,6 +55,26 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 }
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+// set devComm reqs for alltoall device kernels
+bool AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs) {
+  if (!reqs) return false;
+  memset(reqs, 0, sizeof(*reqs));
+
+  switch(deviceImpl) {
+    case 1: // NvlAlltoAllKernel
+    case 2: // NvlAlltoAllKernelOptimized
+      reqs->lsaBarrierCount = deviceCtaCount;
+      return true;
+    case 3: // GinAlltoAllKernel
+    case 4: // HybridAlltoAllKernel (LSA+GIN)
+      reqs->barrierCount = deviceCtaCount;
+      reqs->ginSignalCount = deviceCtaCount;
+      return true;
+    default:
+      return false;
+  }
+}
+
 // shared scalar AlltoAll implementation used by both kernels
 template <typename T>
 __device__ void AlltoAllScalarImpl(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int rank, int nRanks, int tid, int nthreads) {
@@ -267,16 +287,16 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
   } else {
     switch(deviceImpl) {
       case 1:
-        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 0));
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
       case 2:
-        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernelOptimized, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 0));
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernelOptimized, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
       case 3:
-        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(GinAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 0));
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(GinAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
       case 4:
-        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(HybridAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, 0));
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(HybridAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
       default:
         return testNotImplemented;
@@ -321,8 +341,11 @@ testResult_t AlltoAllRunTest(struct threadArgs* args, int root, ncclDataType_t t
 }
 
 struct testEngine alltoAllEngine = {
-  AlltoAllGetBuffSize,
-  AlltoAllRunTest
+  .getBuffSize = AlltoAllGetBuffSize,
+  .runTest = AlltoAllRunTest,
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+  .getDevCommRequirements = AlltoAllGetDevCommRequirements
+#endif
 };
 
 #pragma weak ncclTestEngine=alltoAllEngine
