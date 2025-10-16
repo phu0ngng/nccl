@@ -232,7 +232,7 @@ Unified Memory (UVM)
 --------------------
 
 Starting with version 2.23, NCCL utilizes CUDA memory pools to optimize graph capturing. This feature relies on UVM
-being available.  While UVM may not be on by default in some VM setups, it can typically be enabled through a
+being available.  While UVM may not be on by default in some virtual machine (VM) setups, it can typically be enabled through a
 configuration change.
 
 *****************

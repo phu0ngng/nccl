@@ -115,8 +115,8 @@ testResult_t ReduceScatterRunTest(struct threadArgs* args, int root, ncclDataTyp
 }
 
 struct testEngine reduceScatterEngine = {
-  ReduceScatterGetBuffSize,
-  ReduceScatterRunTest
+  .getBuffSize = ReduceScatterGetBuffSize,
+  .runTest = ReduceScatterRunTest
 };
 
 #pragma weak ncclTestEngine=reduceScatterEngine
