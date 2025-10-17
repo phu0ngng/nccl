@@ -2080,8 +2080,7 @@ static ncclResult_t calcCollChunking(
 
   // Compute directFlags of work struct.
   if (info->algorithm == NCCL_ALGO_COLLNET_DIRECT) {
-    // Set direct direction for broadcast-gather (read or write)
-    *outDirectFlags = (nBytes/nChannels <= 1024 * 4) ? NCCL_P2P_READ : NCCL_P2P_WRITE;
+    *outDirectFlags = NCCL_P2P_WRITE;
   } else {
     *outDirectFlags = 0;
   }

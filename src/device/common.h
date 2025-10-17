@@ -37,6 +37,7 @@ struct ncclShmemGroup {
     unpackGroupShmem unpack;
   } devicePlugin;
   int32_t dstSizes[NCCL_MAX_ARITY+1];
+  uint64_t redOpArgs;
 };
 
 struct ncclShmemData {
@@ -55,7 +56,6 @@ struct ncclShmemData {
   uint64_t workCounter;
   bool profilerEnabled;
   struct ncclShmemGroup groups[NCCL_MAX_GROUPS];
-  uint64_t redOpArgs[NCCL_MAX_NVLS_ARITY+1];
 
   alignas(16) char workStorage[1024];
 

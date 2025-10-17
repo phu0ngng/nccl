@@ -198,7 +198,7 @@ ncclResult_t ncclRegisterCollBuffers(
       struct ncclChannel* channel = comm->channels;
       int ipcSendRegFlag = 0, ipcRecvRegFlag = 0, netSendRegFlag = 0, netRecvRegFlag = 0;
       void *sendHandle = NULL, *recvHandle = NULL;
-      if (info->func != ncclFuncReduceScatter && comm->isAllDirectP2p) {
+      if (info->func != ncclFuncReduceScatter && info->func != ncclFuncAllReduce && comm->isAllDirectP2p) {
         for (int r = 0; r < NCCL_MAX_DIRECT_ARITY; ++r) {
           for (int down = 0; down < 2; ++down) {
             int peer = down ? channel->collnetDirect.down[r] : channel->collnetDirect.up[r];
