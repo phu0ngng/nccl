@@ -833,6 +833,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int cpuArch;
     int cpuVendor;
     int localRanks;
+    int p2pnChannelsPerPeer;
   };
 
   int nChannelsOrig;
@@ -1030,6 +1031,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     NCCLCHECKGOTO(ncclTopoDumpGraphs(comm->topo, 5, dumpGraphs), ret, fail);
   }
 
+  // Compute nChannels per peer for p2p
+  NCCLCHECKGOTO(ncclTopoComputeP2pChannelsPerPeer(comm), ret, fail);
+
   // Because timers[[TIMER_INIT_ALLGATHER] already contains the timing of the first allgather,
   // we temporarily store the start time of the subsequent one in an as-of-yet unused CONNECT timer.
   timers[TIMER_INIT_CONNECT] = clockNano();
@@ -1049,6 +1053,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   allGather3Data[rank].cpuArch = comm->cpuArch;
   allGather3Data[rank].cpuVendor = comm->cpuVendor;
+  allGather3Data[rank].p2pnChannelsPerPeer = comm->p2pnChannelsPerPeer;
 
   comm->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
@@ -1148,6 +1153,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       graphs[a]->crossNic = std::max(allGather3Data[i].graphInfo[a].crossNic, graphs[a]->crossNic);
     }
     comm->maxTreePattern = std::max(comm->maxTreePattern, allGather3Data[i].graphInfo[NCCL_ALGO_TREE].pattern);
+    comm->p2pnChannelsPerPeer = std::min(comm->p2pnChannelsPerPeer, allGather3Data[i].p2pnChannelsPerPeer);
   }
   if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->config.collnetEnable = 0;
   if (graphs[NCCL_ALGO_NVLS]->nChannels == 0) comm->nvlsSupport = comm->nvlsChannels = 0;
@@ -1189,8 +1195,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   INFO(NCCL_INIT, "Trees%s", line);
 
   NCCLCHECKGOTO(computeBuffSizes(comm), ret, fail);
-
-  // Compute nChannels per peer for p2p
   NCCLCHECKGOTO(ncclTopoComputeP2pChannels(comm), ret, fail);
 
   /* until now, all info of comm should be known. We can initialize shared resources and
