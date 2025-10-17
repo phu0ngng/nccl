@@ -128,11 +128,14 @@ static void addWorkBatchToPlan(
     // batch further down.
     newBatch |= NCCL_MAX_DEV_WORK_BATCH_BYTES < chan->wipBatch.workBytes + workSize;
     if (workType == ncclDevWorkTypeP2p) {
-      // Align the p2p GPU ops to the number of peers we process at once.
-      // This enforces uniform batching accross ranks in the communicator and prevents hangs.
-      newBatch |= (p2pRound % NCCL_MAX_DEV_WORK_P2P_PER_BATCH) == 0;
-      for (int i=0; i < chan->wipBatch.nP2ps; i++) {
+      // We only allow NCCL_MAX_DEV_WORK_P2P_PER_BATCH ops per batch.
+      newBatch |= chan->wipBatch.nP2ps == NCCL_MAX_DEV_WORK_P2P_PER_BATCH;
+      for (int i = 0; i < chan->wipBatch.nP2ps; i++) {
+        // Do not allow the same round twice in the same batch.
         newBatch |= p2pRound == chan->wipBatch.p2pRounds[i];
+        // Make sure we only aggregate p2p operations within the same p2p round epoch (one epoch is NCCL_MAX_DEV_WORK_P2P_PER_BATCH ops).
+        // This enforces uniform batching accross ranks in the communicator and prevents hangs.
+        newBatch |= (p2pRound / NCCL_MAX_DEV_WORK_P2P_PER_BATCH) != (chan->wipBatch.p2pRounds[i] / NCCL_MAX_DEV_WORK_P2P_PER_BATCH);
       }
     }
   }
