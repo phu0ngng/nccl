@@ -816,6 +816,7 @@ void ncclTopoFree(struct ncclTopoSystem* system) {
   free(system);
 }
 
+NCCL_PARAM(P2pPerChannelNetBw, "P2P_PER_CHANNEL_NET_BW", /*GB/s*/14);
 
 static ncclResult_t ncclTopoGetNchannels(struct ncclComm* comm, int g /*local gpu index*/, int peerRank, int* nChannels) {
   int peer;
@@ -839,17 +840,12 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclComm* comm, int g /*local gp
     // Remote rank, use network
     int nNetChannels = comm->config.nChannelsPerNetPeer;
     if (nNetChannels == NCCL_CONFIG_UNDEF_INT) {
-       //start from 2 channels per NIC and reduce with scale
-       nNetChannels = 2;
-
-       // check if we need to use more than one NIC, hence more than one channel
-       int netCountByBw = 1, nChannelsMax = nNetChannels;
-       NCCLCHECK(getLocalNetCountByBw(system, g, &netCountByBw));
-       // Avoid overloading channels with 8+ operations as we loose the sync warp, hence a bit of bandwidth.
-       while (nChannelsMax*comm->nRanks > comm->p2pnChannels*4 && nChannelsMax > 1) nChannelsMax /= 2;
-
-       //allow upto channels requires to drive the NICs
-       nNetChannels = std::max(netCountByBw, nChannelsMax);
+      float netBw = 0.0;
+      int netCount = 0;
+      NCCLCHECK(getLocalNetCountByBw(system, g, &netCount, &netBw));
+      // We use at least 1 channel per NIC, and more if needed to meet the bw requirement.
+      nNetChannels = 2;
+      if (netCount > 0) nNetChannels = std::max(netCount, divUp((int)netBw, (int)ncclParamP2pPerChannelNetBw()));
     }
     *nChannels = nNetChannels;
   }
@@ -859,6 +855,21 @@ static ncclResult_t ncclTopoGetNchannels(struct ncclComm* comm, int g /*local gp
 NCCL_PARAM(MinP2pNChannels, "MIN_P2P_NCHANNELS", 1);
 NCCL_PARAM(MaxP2pNChannels, "MAX_P2P_NCHANNELS", MAXCHANNELS);
 extern int64_t ncclParamWorkArgsBytes();
+
+ncclResult_t ncclTopoComputeP2pChannelsPerPeer(struct ncclComm* comm) {
+  int g = 0;
+  while (comm->topo->nodes[GPU].nodes[g].gpu.rank != comm->rank) g++;
+  if (g == comm->topo->nodes[GPU].count) return ncclInternalError;
+
+  int minChannels = MAXCHANNELS;
+  for (int r = 0; r < comm->nRanks; r++) {
+    int nChannels;
+    NCCLCHECK(ncclTopoGetNchannels(comm, g, r, &nChannels));
+    if (nChannels >= 0) minChannels = std::min(minChannels, nChannels);
+  }
+  comm->p2pnChannelsPerPeer = minChannels;
+  return ncclSuccess;
+}
 
 ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
   /* here we already honor comm->max/minCTAs for p2pnChannels. */
@@ -870,23 +881,13 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
     comm->p2pnChannels = std::max(comm->p2pnChannels, (int)ncclParamMinP2pNChannels());
   }
 
-  int minChannels = comm->p2pnChannels;
-  // We need to loop through all local GPUs to have a global picture
-  for (int g=0; g<comm->topo->nodes[GPU].count; g++) {
-    for (int r=0; r<comm->nRanks; r++) {
-      int nChannels;
-      NCCLCHECK(ncclTopoGetNchannels(comm, g, r, &nChannels));
-      if (nChannels >= 0) minChannels = std::min(minChannels, nChannels);
-    }
-  }
-
-  // Make nChannelsPerPeer and nChannels powers of 2. This is relied on when
-  // mapping p2p peers to channels.
-  comm->p2pnChannelsPerPeer = pow2Up(minChannels);
+  // Make nChannelsPerPeer and nChannels powers of 2. This is relied on when mapping p2p peers to channels.
+  comm->p2pnChannelsPerPeer = pow2Up(comm->p2pnChannelsPerPeer);
   comm->p2pnChannels = pow2Up(comm->p2pnChannels);
-
   comm->p2pnChannels = std::min(comm->p2pnChannels, pow2Down(ncclDevMaxChannelsForArgsBytes(ncclParamWorkArgsBytes())));
-  comm->p2pnChannelsPerPeer = std::min(comm->p2pnChannelsPerPeer, comm->p2pnChannels);
+
+  // if we have many nodes, reduce the number of channels per node to avoid going above p2pnChannels.
+  while (comm->p2pnChannelsPerPeer * divUp(comm->nRanks, NCCL_MAX_DEV_WORK_P2P_PER_BATCH) > comm->p2pnChannels && comm->p2pnChannelsPerPeer > 1) comm->p2pnChannelsPerPeer /= 2;
 
   // Init channels that weren't used so far
   for (int c=comm->nChannels; c<comm->p2pnChannels; c++) NCCLCHECK(initChannel(comm, c));

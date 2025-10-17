@@ -1573,26 +1573,31 @@ ncclResult_t ncclTopoGetLocal(struct ncclTopoSystem* system, int type, int index
   return ncclSuccess;
 }
 
-ncclResult_t getLocalNetCountByBw(struct ncclTopoSystem* system, int gpu, int *count) {
-  int localNetCount = 0, netCountByBw = 0;
-  int localNets[NCCL_TOPO_MAX_NODES];
-  float totalNetBw = 0, gpuBw = 0;
+ncclResult_t getLocalNetCountByBw(struct ncclTopoSystem* system, int gpu, int *count, float* bw) {
+  // Assuming BW to CPU reflects the GPU bandwidth via P2P or C2C.
+  // Caveat, this could be wrong if there is a PCIe switch, and a narrower link to the CPU.
+  int c;
+  NCCLCHECK(ncclGetLocalCpu(system, gpu, &c));
+  float gpuBw = system->nodes[GPU].nodes[gpu].paths[CPU][c].bw;
+  int rank = system->nodes[GPU].nodes[gpu].gpu.rank;
 
-  for (int l=0; l<system->nodes[GPU].nodes[gpu].nlinks; l++) {
-    //assuming BW to CPU reflects the GPU bandwidth via P2P or C2C
-    //caveat, this could be wrong if there is a PCIe switch,
-    //and a narrower link to the CPU
-    if (system->nodes[GPU].nodes[gpu].links[l].remNode->type == CPU) {
-       gpuBw = system->nodes[GPU].nodes[gpu].links[l].bw;
-    }
-  }
+  int netCountByBw = 0;
+  float totalNetBw = 0;
+  int64_t firstNetId = 0;
+  for (int c = 0; c < MAXCHANNELS; c++) {
+    int net;
+    int64_t netId;
+    NCCLCHECK(ncclTopoGetLocalNet(system, rank, c, &netId, NULL));
+    NCCLCHECK(ncclTopoIdToIndex(system, NET, netId, &net));
+    if(c == 0) firstNetId = netId;
+    else if(firstNetId == netId) break;
 
-  NCCLCHECK(ncclTopoGetLocal(system, GPU, gpu, NET, localNets, &localNetCount, NULL));
-  for (int l=0; (l < localNetCount) && (totalNetBw < gpuBw); l++, netCountByBw++) {
-     totalNetBw += system->nodes[GPU].nodes[gpu].paths[NET][localNets[l]].bw;
+    totalNetBw += system->nodes[GPU].nodes[gpu].paths[NET][net].bw;
+    netCountByBw++;
+    if(totalNetBw >= gpuBw) break;
   }
   *count = netCountByBw;
-
+  *bw = totalNetBw;
   return ncclSuccess;
 }
 
