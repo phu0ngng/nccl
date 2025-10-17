@@ -890,8 +890,13 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
   comm->p2pnChannels = pow2Up(comm->p2pnChannels);
   comm->p2pnChannels = std::min(comm->p2pnChannels, pow2Down(ncclDevMaxChannelsForArgsBytes(ncclParamWorkArgsBytes())));
 
-  // if we have many nodes, reduce the number of channels per node to avoid going above p2pnChannels.
-  while (comm->p2pnChannelsPerPeer * divUp(comm->nRanks, NCCL_MAX_DEV_WORK_P2P_PER_BATCH) > comm->p2pnChannels && comm->p2pnChannelsPerPeer > 1) comm->p2pnChannelsPerPeer /= 2;
+  if (comm->nNodes > 1 && comm->config.nChannelsPerNetPeer == NCCL_CONFIG_UNDEF_INT) {
+    // In the case of >1 NVLD (and the user didn't set nChannelsPerNetPeer), the network is the botteneck.
+    // Reduce the number of channels per host to avoid going above p2pnChannels to fit all the peers within a single round.
+    while (comm->p2pnChannelsPerPeer * divUp(comm->nRanks, NCCL_MAX_DEV_WORK_P2P_PER_BATCH) > comm->p2pnChannels && comm->p2pnChannelsPerPeer > 1) comm->p2pnChannelsPerPeer /= 2;
+  } else {
+    comm->p2pnChannelsPerPeer = std::min(comm->p2pnChannels, comm->p2pnChannelsPerPeer);
+  }
 
   // Init channels that weren't used so far
   for (int c=comm->nChannels; c<comm->p2pnChannels; c++) NCCLCHECK(initChannel(comm, c));
