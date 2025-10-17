@@ -2172,6 +2172,11 @@ testResult_t run() {
         if (local_register) NCCLCHECK(ncclCommDeregister(comms[id][i], recvRegHandles[id][i]));
       }
 #endif
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+      if (deviceImpl) {
+        NCCLCHECK(ncclDevCommDestroy(comms[id][i], devComms[id]+i*nGpus));
+      }
+#endif
       NCCLCHECK(ncclCommDestroy(comms[id][i]));
     }
   }
