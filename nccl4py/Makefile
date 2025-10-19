@@ -13,7 +13,7 @@ DIST_DIR           := $(BUILDDIR)/dist
 
 # CUDA home is only used to provide headers for cython
 CUDA_HOME       ?= /usr/local/cuda
-CUDA_VARIANTS   := 11 12 13
+CUDA_VARIANTS   := 12 13
 PYTHON_VERSIONS := 3.10 3.11 3.12 3.13
 
 # manylinux repair configuration

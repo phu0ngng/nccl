@@ -93,11 +93,6 @@ BASE_REQ = [
     "cuda.core==0.3.0",
 ]
 
-DEPS_CU11 = BASE_REQ + [
-    "nvidia-nccl-cu11",
-    "numpy==1.24.3",
-    "cuda-python>=11.0,<12.0",
-]
 DEPS_CU12 = BASE_REQ + [
     "nvidia-nccl-cu12",
     "numpy",
@@ -110,7 +105,6 @@ DEPS_CU13 = BASE_REQ + [
 ]
 
 VARIANT_TO_REQ = {
-    "11": DEPS_CU11,
     "12": DEPS_CU12,
     "13": DEPS_CU13,
 }
