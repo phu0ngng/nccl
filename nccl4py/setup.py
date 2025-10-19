@@ -90,17 +90,16 @@ compiler_directives = {"embedsignature": True, "show_performance_hints": True}
 
 BASE_REQ = [
     "packaging",
+    "numpy",
     "cuda.core==0.4.0",
 ]
 
 DEPS_CU12 = BASE_REQ + [
     "nvidia-nccl-cu12",
-    "numpy",
     "cuda-python>=12.0,<13.0",
 ]
 DEPS_CU13 = BASE_REQ + [
     "nvidia-nccl-cu13",
-    "numpy",
     "cuda-python>=13.0,<14.0",
 ]
 
