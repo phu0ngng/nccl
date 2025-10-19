@@ -1,8 +1,8 @@
 # GitLab cybind source
-GITLAB_HOST    := gitlab-master.nvidia.com
 CYBIND_PROJ_ID := 106982
 CYBIND_COMMIT  := 01e0f5b44e168578e87eb1773199fcba9daa664f
-ARCHIVE_URL    := https://$(GITLAB_HOST)/api/v4/projects/$(CYBIND_PROJ_ID)/repository/archive.tar.gz?sha=$(CYBIND_COMMIT)
+CYBIND_ARCHIVE_URL := https://gitlab-master.nvidia.com/api/v4/projects/$(CYBIND_PROJ_ID)/repository/archive.tar.gz?sha=$(CYBIND_COMMIT)
+CYBIND_SSH_URL     := ssh://git@gitlab-master.nvidia.com:12051/leof/cybind.git
 
 NCCL4PY_ASSETS_DIR   := $(NCCL4PY_DIR)/build_assets
 
@@ -15,9 +15,6 @@ CYBIND_OUTPUT_DIR      := $(EXTERNALS_DIR)/cybind/out
 CYBIND_DIR_STAMP       := $(CYBIND_DIR)/makefile.stamp
 CYBIND_OUTPUT_STAMP    := $(CYBIND_OUTPUT_DIR)/makefile.stamp
 
-# Auth header value for GitLab API (no -H and no nested quotes)
-TOKEN_HEADER = $(strip $(if $(GITLAB_TOKEN),PRIVATE-TOKEN: $(GITLAB_TOKEN),$(if $(CI_JOB_TOKEN),JOB-TOKEN: $(CI_JOB_TOKEN),)))
-
 .PHONY: generate_bindings
 
 # Bridge rule: ensure the generated NCCL header exists by invoking src/Makefile
@@ -25,11 +22,15 @@ $(NCCL_HEADER):
 	$(MAKE) -C $(NCCL_DIR) $(NCCL_HEADER)
 
 $(CYBIND_DIR_STAMP):
-	@if [ -z "$(TOKEN_HEADER)" ]; then echo "ERROR: Please export GITLAB_TOKEN or CI_JOB_TOKEN for $(GITLAB_HOST)"; exit 1; fi
-	@rm -rf "$(CYBIND_DIR)"; mkdir -p "$(CYBIND_DIR)"
-	@echo "Downloading and extracting cybind archive..."
-	@mkdir -p "$(CYBIND_DIR)"
-	@curl -fsSL -H "$(TOKEN_HEADER)" "$(ARCHIVE_URL)" | tar -xz -C "$(CYBIND_DIR)" --strip-components=1
+	@rm -rf "$(CYBIND_DIR)"
+	@if [ -n "$(GITLAB_TOKEN)" ]; then \
+		mkdir -p "$(CYBIND_DIR)"; \
+		echo "Downloading cybind archive using GITLAB_TOKEN..."; \
+		curl -fsSL -H "PRIVATE-TOKEN: $(GITLAB_TOKEN)" "$(CYBIND_ARCHIVE_URL)" | tar -xz -C "$(CYBIND_DIR)" --strip-components=1; \
+	else \
+		git clone "$(CYBIND_SSH_URL)" "$(CYBIND_DIR)"; \
+		cd "$(CYBIND_DIR)" && git switch --detach "$(CYBIND_COMMIT)"; \
+	fi
 	@touch "$(CYBIND_DIR_STAMP)"
 
 $(CYBIND_OUTPUT_STAMP): $(CYBIND_DIR_STAMP) $(shell find $(NCCL4PY_ASSETS_DIR)/cybind -type f -name '*.py' -o -name '*.pyx' -o -name '*.pxd') $(NCCL_HEADER)
