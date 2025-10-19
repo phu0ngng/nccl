@@ -90,7 +90,7 @@ compiler_directives = {"embedsignature": True, "show_performance_hints": True}
 
 BASE_REQ = [
     "packaging",
-    "cuda.core==0.3.0",
+    "cuda.core==0.4.0",
 ]
 
 DEPS_CU12 = BASE_REQ + [
