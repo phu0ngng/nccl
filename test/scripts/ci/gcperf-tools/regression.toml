@@ -23,8 +23,6 @@ report = ["library_version", "cluster_name", "container"]
 performance_columns = [
     { name = "test_result.out_of_place.bus_bw", direction = "higher_is_better" },
     { name = "test_result.out_of_place.alg_bw", direction = "higher_is_better" },
-    { name = "test_result.out_of_place.time", direction = "lower_is_better" },
     { name = "test_result.in_place.bus_bw", direction = "higher_is_better" },
-    { name = "test_result.in_place.alg_bw", direction = "higher_is_better" },
-    { name = "test_result.in_place.time", direction = "lower_is_better" }
+    { name = "test_result.in_place.alg_bw", direction = "higher_is_better" }
 ]
