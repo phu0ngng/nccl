@@ -11,10 +11,10 @@ thresholds = [
 noise_threshold = 1.0  # Ignore changes < 1%
 
 # Fields to ignore (metadata that can differ)
-ignore = ["id", "description", "timestamp"]
+ignore = ["id", "description", "created_timestamp"]
 
 # Fields that must match exactly for fair comparison
-enforce = ["tool", "library", "num_nodes", "test_result.size"]
+enforce = ["tool", "tool_binary", "library", "num_nodes", "test_result.size"]
 
 # Fields to report if different but don't affect comparison
 report = ["library_version", "cluster_name", "container"]
