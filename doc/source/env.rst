@@ -1413,9 +1413,9 @@ Values accepted
 ^^^^^^^^^^^^^^^
 0: Disable the use of NVLink SHARP. No NVLink SHARP resources will be allocated.
 
-1: Enable NVLink SHARP. NCCL initialization will fail if the NVLink SHARP resources cannot be allocated.
+1: Enable NVLink SHARP. NCCL initialization will fail if the NVLink SHARP is not supported or NVLink SHARP resources cannot be allocated.
 
-2: Automatic detection of NVLink SHARP support. Will *not* fail if NVLS is unsupported or if NVLink SHARP resources cannot be allocated.
+2: Automatic detection of NVLink SHARP support. Will *not* fail if NVLS is unsupported, but will fail if NVLink SHARP resources cannot be allocated.
 
 NCCL_IB_MERGE_NICS
 ------------------

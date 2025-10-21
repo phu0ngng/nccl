@@ -224,6 +224,7 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, const CUmemAccessDesc
   char shareableHandle[NVLS_HANDLE_SIZE];
   CUmulticastObjectProp mcprop;
   CUmemAllocationProp ucprop;
+  CUresult err;
   ncclResult_t ret = ncclSuccess;
   size_t mcsize;
   size_t ucsize;
@@ -275,22 +276,14 @@ static ncclResult_t nvlsAllocateMem(struct ncclComm* comm, const CUmemAccessDesc
   // Bind physical memory to the Multicast group
   // NB: It will block until all ranks have been added to the Group
   // This is where we normally see issues if the system NVLS/Multicast support is broken
-  {
-    CUresult err = CUPFN(cuMulticastBindMem(*mcHandle, 0/*mcOffset*/, *ucHandle, 0/*memOffset*/, ucsize, 0/*flags*/));
-    if (err != CUDA_SUCCESS) {
-      const char *errStr;						\
-      (void) pfn_cuGetErrorString(err, &errStr);			\
-      if (ncclParamNvlsEnable() == 1) {
-        // Fail the job as NVLS support is not available
-        WARN("Failed to bind NVLink SHARP (NVLS) Multicast memory of size %ld : CUDA error %d '%s'.\nThis is usually caused by a system or configuration error in the Fabric Manager or NVSwitches.\nDo not force-enable NVLS (NCCL_NVLS_ENABLE=1) if you wish to avoid this error in the future.", ucsize, err, errStr );
-        ret = ncclUnhandledCudaError;
-      } else {
-        // Continue without NVLS support (returns ncclSuccess)
-        INFO(NCCL_INIT|NCCL_NVLS, "Failed to bind NVLink SHARP (NVLS) Multicast memory of size %ld : CUDA error %d '%s'. Proceeding without NVLS support.", ucsize, err, errStr);
-      }
-      comm->nvlsSupport = comm->nvlsChannels = 0;
-      goto fail3;
-   }
+  err = CUPFN(cuMulticastBindMem(*mcHandle, 0/*mcOffset*/, *ucHandle, 0/*memOffset*/, ucsize, 0/*flags*/));
+  if (err != CUDA_SUCCESS) {
+    const char *errStr;                                                 \
+    (void) pfn_cuGetErrorString(err, &errStr);                          \
+    // Fail the job as NVLS support is not functional
+    WARN("Failed to bind NVLink SHARP (NVLS) Multicast memory of size %ld : CUDA error %d '%s'.\nThis is usually caused by a system or configuration error in the Fabric Manager or NVSwitches.\nDisable NVLS (NCCL_NVLS_ENABLE=0) if you wish to avoid this error in the future.", ucsize, err, errStr );
+    ret = ncclUnhandledCudaError;
+    goto fail3;
   }
 
   // Map mc virtual address
