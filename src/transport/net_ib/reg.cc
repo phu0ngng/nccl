@@ -59,16 +59,6 @@ ncclResult_t ncclIbRegMrDmaBufInternal2(ncclIbNetCommDevBase* base, void* data, 
   return ncclSuccess;
 }
 
-struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, int devIndex) {
-  if (base->isSend) {
-    struct ncclIbSendComm* sComm = (struct ncclIbSendComm*) base;
-    return &sComm->devs[devIndex].base;
-  } else {
-    struct ncclIbRecvComm* rComm = (struct ncclIbRecvComm*) base;
-    return &rComm->devs[devIndex].base;
-  }
-}
-
 /* DMA-BUF support */
 ncclResult_t ncclIbRegMrDmaBufInternal(void* comm, void* data, size_t size, int type, uint64_t offset, int fd, uint64_t mrFlags, void** mhandle) {
   ncclResult_t ret = ncclSuccess;

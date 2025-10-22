@@ -501,127 +501,156 @@ static const char* ibvWcOpcodeStr(enum ibv_wc_opcode opcode) {
   }
 }
 
+static inline ncclResult_t ncclIbRequestRetrieveAsIndex(ncclIbRequest* reqs, uint32_t reqIndex, ncclIbRequest** req) {
+  if (reqIndex < 0 || reqIndex >= NET_IB_MAX_REQUESTS) {
+    WARN("NET/IB: %s: Invalid request index %d. Not in the range [%d, %d). Cannot retrieve request.", __func__, reqIndex, 0, NET_IB_MAX_REQUESTS);
+    return ncclInternalError;
+  }
+  *req = &reqs[reqIndex];
+  return ncclSuccess;
+}
+
+static inline bool ncclIbRequestIsComplete(struct ncclIbRequest *request) {
+  return (request->events[0] == 0 && request->events[1] == 0 && request->events[2] == 0 && request->events[3] == 0);
+}
+
+static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* done, int* sizes) {
+  TRACE(NCCL_NET, "r=%p done", r);
+  *done = 1;
+  if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
+    for (int i=0; i<r->nreqs; i++) {
+      sizes[i] = r->recv.sizes[i];
+#ifdef NCCL_ENABLE_NET_PROFILING
+      for (int j = 0; j < r->pInfo[i].nEventHandles; j++) {
+        NCCLCHECK(ncclProfilerFunction(&r->pInfo[i].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
+      }
+#endif
+    }
+  }
+  if (sizes && r->type == NCCL_NET_IB_REQ_SEND) {
+    sizes[0] = r->send.size;
+#ifdef NCCL_ENABLE_NET_PROFILING
+    for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
+      NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
+    }
+#endif
+  }
+  // Stop all remaining Qp events for this event
+  NCCLCHECK(ncclIbFreeRequest(r));
+  return ncclSuccess;
+}
+
+// Log the details of a completion with error. The provided devIndex is the index
+// of the IB device on which the completion was received.
+static ncclResult_t ncclIbLogCompletionWithError(struct ncclIbNetCommBase* commBase, struct ibv_wc* wc, int devIndex) {
+  struct ncclIbNetCommDevBase* devBase = ncclIbGetNetCommDevBase(commBase, devIndex);
+  char localGidString[INET6_ADDRSTRLEN] = "";
+  char remoteGidString[INET6_ADDRSTRLEN] = "";
+  const char* localGidStr = NULL, *remoteGidStr = NULL;
+  if (devBase->gidInfo.link_layer == IBV_LINK_LAYER_ETHERNET) {
+    localGidStr = ibvGetGidStr(&devBase->gidInfo.localGid, localGidString, sizeof(localGidString));
+    remoteGidStr = ibvGetGidStr(&commBase->remDevs[devIndex].remoteGid, remoteGidString, sizeof(remoteGidString));
+  }
+
+  char sockStr[SOCKET_NAME_MAXLEN+1];
+  union ncclSocketAddress addr;
+  ncclSocketGetAddr(&commBase->sock, &addr);
+  ncclSocketToString(&addr, sockStr);
+  char *hcaName = devBase->pd->context->device->name;
+  WARN("NET/IB: Got completion from peer %s with status=%s(%d) opcode=%s(%d) vendor_err=%u %s%s%s%s hca %s",
+      sockStr, ibvWcStatusStr(wc->status), wc->status,
+      ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->vendor_err,
+      localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString, hcaName);
+  return ncclSuccess;
+}
+
+static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase* commBase, struct ibv_wc* wc, int devIndex) {
+  union ncclSocketAddress addr;
+  ncclSocketGetAddr(&commBase->sock, &addr);
+
+  struct ncclIbRequest* req = NULL;
+  NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, wc->wr_id & 0xff, &req));
+
+  #ifdef ENABLE_TRACE
+  char line[SOCKET_NAME_MAXLEN+1];
+  TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, devIndex=%d",
+    ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], devIndex);
+  #endif
+  if (req && req->type == NCCL_NET_IB_REQ_SEND) {
+    for (int j = 0; j < req->nreqs; j++) {
+      struct ncclIbRequest* sendReq = NULL;
+      NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
+      if ((sendReq->events[devIndex] <= 0)) {
+        WARN("NET/IB: sendReq(%p)->events={%d,%d,%d,%d}, i=%d, j=%d <= 0", sendReq, sendReq->events[0], sendReq->events[1], sendReq->events[2], sendReq->events[3], devIndex, j);
+        return ncclInternalError;
+      }
+      sendReq->events[devIndex]--;
+#ifdef NCCL_ENABLE_NET_PROFILING
+      // Stop Qp event for sendReq
+      int qpIndex = getReqQpIndex(sendReq, j, wc->qp_num);
+      NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
+#endif
+    }
+  } else {
+    if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+      if (req->type != NCCL_NET_IB_REQ_RECV) {
+        WARN("NET/IB: wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM and req->type=%d", req->type);
+        return ncclInternalError;
+      }
+      if (req->nreqs == 1) {
+        req->recv.sizes[0] = wc->imm_data;
+      }
+    }
+    req->events[devIndex]--;
+#ifdef NCCL_ENABLE_NET_PROFILING
+    // Stop Qp event for workFifo
+    for (int j = 0; j < req->nreqs; j++) {
+      int qpIndex = getReqQpIndex(req, j, wc->qp_num);
+      NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
+    }
+#endif
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
   struct ncclIbRequest *r = (struct ncclIbRequest*)request;
   *done = 0;
-  while (1) {
+  int totalWrDone = 0;
+  int wrDone = 0;
+  struct ibv_wc wcs[4];
+  do {
     NCCLCHECK(ncclIbStatsCheckFatalCount(&r->base->stats,__func__));
-    if (r->events[0] == 0 && r->events[1] == 0 && r->events[2] == 0 && r->events[3] == 0) {
-      TRACE(NCCL_NET, "r=%p done", r);
-      *done = 1;
-      if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
-        for (int i=0; i<r->nreqs; i++) {
-          sizes[i] = r->recv.sizes[i];
-#ifdef NCCL_ENABLE_NET_PROFILING
-          for (int j = 0; j < r->pInfo[i].nEventHandles; j++) {
-            NCCLCHECK(ncclProfilerFunction(&r->pInfo[i].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
-          }
-#endif
-        }
-      }
-      if (sizes && r->type == NCCL_NET_IB_REQ_SEND) {
-        sizes[0] = r->send.size;
-#ifdef NCCL_ENABLE_NET_PROFILING
-        for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
-          NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
-        }
-#endif
-      }
-      // Stop all remaining Qp events for this event
-      NCCLCHECK(ncclIbFreeRequest(r));
+    if (ncclIbRequestIsComplete(r)) {
+      NCCLCHECK(ncclIbRequestComplete(r, done, sizes));
       return ncclSuccess;
     }
 
-    int totalWrDone = 0;
-    int wrDone = 0;
-    struct ibv_wc wcs[4];
-
+    totalWrDone = 0;
     for (int i = 0; i < NCCL_IB_MAX_DEVS_PER_NIC; i++) {
-      TIME_START(3);
       // If we expect any completions from this device's CQ
-      if (r->events[i]) {
-        NCCLCHECK(wrap_ibv_poll_cq(r->devBases[i]->cq, 4, wcs, &wrDone));
-        totalWrDone += wrDone;
-        if (wrDone == 0) { TIME_CANCEL(3); } else { TIME_STOP(3); }
-        if (wrDone == 0) continue;
-        for (int w=0; w<wrDone; w++) {
-          struct ibv_wc *wc = wcs+w;
-          if (wc->status != IBV_WC_SUCCESS) {
-            union ncclSocketAddress addr;
-            ncclSocketGetAddr(r->sock, &addr);
-            char localGidString[INET6_ADDRSTRLEN] = "";
-            char remoteGidString[INET6_ADDRSTRLEN] = "";
-            const char* localGidStr = NULL, *remoteGidStr = NULL;
-            if (r->devBases[i]->gidInfo.link_layer == IBV_LINK_LAYER_ETHERNET) {
-              localGidStr = ibvGetGidStr(&r->devBases[i]->gidInfo.localGid, localGidString, sizeof(localGidString));
-              remoteGidStr = ibvGetGidStr(&r->base->remDevs[i].remoteGid, remoteGidString, sizeof(remoteGidString));
-            }
-
-            char line[SOCKET_NAME_MAXLEN+1];
-            char *hcaName = r->devBases[i]->pd->context->device->name;
-            int reqSize = wc->byte_len;
-            struct ncclIbRequest* req = r->base->reqs+(wc->wr_id & 0xff);
-            if (req && req->type == NCCL_NET_IB_REQ_SEND) {
-              // For Send use the request size as WC byte_len is not reliable
-              reqSize = req->send.size;
-            }
-            WARN("NET/IB: Got completion from peer %s with status=%s(%d) opcode=%s(%d) reqSize=%d vendor_err=%u req_type=%s%s%s%s%s hca %s",
-                ncclSocketToString(&addr, line), ibvWcStatusStr(wc->status), wc->status,
-                ibvWcOpcodeStr(wc->opcode), wc->opcode, reqSize, wc->vendor_err, ncclIbReqTypeStr[r->type],
-                localGidStr ?  " localGid ":"", localGidString, remoteGidStr ? " remoteGids":"", remoteGidString, hcaName);
-            return ncclRemoteError;
-          }
-
-          union ncclSocketAddress addr;
-          ncclSocketGetAddr(r->sock, &addr);
-          struct ncclIbRequest* req = r->base->reqs+(wc->wr_id & 0xff);
-
-          #ifdef ENABLE_TRACE
-          char line[SOCKET_NAME_MAXLEN+1];
-          TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, i=%d",
-            ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], i);
-          #endif
-          if (req && req->type == NCCL_NET_IB_REQ_SEND) {
-            for (int j = 0; j < req->nreqs; j++) {
-              struct ncclIbRequest* sendReq = r->base->reqs+((wc->wr_id >> (j*8)) & 0xff);
-              if ((sendReq->events[i] <= 0)) {
-                WARN("NET/IB: sendReq(%p)->events={%d,%d,%d,%d}, i=%d, j=%d <= 0", sendReq, sendReq->events[0], sendReq->events[1], sendReq->events[2], sendReq->events[3], i, j);
-                return ncclInternalError;
-              }
-              sendReq->events[i]--;
-#ifdef NCCL_ENABLE_NET_PROFILING
-              // Stop Qp event for sendReq
-              int qpIndex = getReqQpIndex(sendReq, j, wc->qp_num);
-              NCCLCHECK(ncclProfilerFunction(&sendReq->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
-#endif
-            }
-          } else {
-            if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
-              if (req->type != NCCL_NET_IB_REQ_RECV) {
-                WARN("NET/IB: wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM and req->type=%d", req->type);
-                return ncclInternalError;
-              }
-              if (req->nreqs == 1) {
-                req->recv.sizes[0] = wc->imm_data;
-              }
-            }
-            req->events[i]--;
-#ifdef NCCL_ENABLE_NET_PROFILING
-            // Stop Qp event for workFifo
-            for (int j = 0; j < req->nreqs; j++) {
-              int qpIndex = getReqQpIndex(req, j, wc->qp_num);
-              NCCLCHECK(ncclProfilerFunction(&req->pInfo[j].qpEventHandles[qpIndex], ncclProfilerNetEventStop, NULL, 0, NULL));
-            }
-#endif
-          }
-        }
-        // Once the IB fatal event is reported in the async thread, we want to propagate this error
-        // to communicator and prevent further polling to reduce error pollution.
-        NCCLCHECK(ncclIbStatsCheckFatalCount(&ncclIbDevs[r->devBases[i]->ibDevN].stats,__func__));
+      if (r->events[i] == 0) {
+        continue;
       }
+      TIME_START(3);
+      NCCLCHECK(wrap_ibv_poll_cq(r->devBases[i]->cq, 4, wcs, &wrDone));
+      if (wrDone == 0) { TIME_CANCEL(3); } else { TIME_STOP(3); }
+      if (wrDone == 0) continue;
+      totalWrDone += wrDone;
+      for (int w=0; w<wrDone; w++) {
+        struct ibv_wc *wc = wcs+w;
+        if (wc->status != IBV_WC_SUCCESS) {
+          ncclIbLogCompletionWithError(r->base, wc, i);
+          return ncclRemoteError;
+        }
+        NCCLCHECK(ncclIbCompletionEventProcess(r->base, wc, i));
+      }
+      // Once the IB fatal event is reported in the async thread, we want to propagate this error
+      // to communicator and prevent further polling to reduce error pollution.
+      NCCLCHECK(ncclIbStatsCheckFatalCount(&ncclIbDevs[r->devBases[i]->ibDevN].stats,__func__));
     }
+  } while (totalWrDone > 0);
 
-    // If no CQEs found on any device, return and come back later
-    if (totalWrDone == 0) return ncclSuccess;
-  }
+  // If no (more) CQEs found on any device, return and come back later
+  return ncclSuccess;
 }
