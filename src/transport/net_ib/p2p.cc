@@ -311,9 +311,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     TIME_START(0);
     NCCLCHECK(ncclIbMultiSend(comm, slot));
 
-    // Clear slots[0]->nreqs, as well as other fields to help debugging and sanity checks
-    memset((void*)slots, 0, sizeof(struct ncclIbSendFifo));
-    memset(reqs, 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
     comm->base.fifoHead++;
     TIME_STOP(0);
     return ncclSuccess;
@@ -565,14 +562,19 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
 #endif
     }
   }
-  if (sizes && r->type == NCCL_NET_IB_REQ_SEND) {
+  if (r->type == NCCL_NET_IB_REQ_SEND) {
     TRACE(NCCL_NET, "NET/IB: %s: Send request completed (req=%p, comm=%p, id=%d)", __func__, r, r->base, r->id);
-    sizes[0] = r->send.size;
-#ifdef NCCL_ENABLE_NET_PROFILING
-    for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
-      NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
+    if (sizes) {
+      sizes[0] = r->send.size;
+  #ifdef NCCL_ENABLE_NET_PROFILING
+      for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
+        NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
+      }
+  #endif
     }
-#endif
+    int slot = r->id % NET_IB_MAX_REQUESTS;
+    struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)r->base;
+    memset(&sendComm->sendReqs[slot], 0, sizeof(sendComm->sendReqs[slot]));
   }
   // Stop all remaining Qp events for this event
   NCCLCHECK(ncclIbFreeRequest(r));
