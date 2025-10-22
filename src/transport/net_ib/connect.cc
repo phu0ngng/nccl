@@ -28,12 +28,24 @@ struct ncclIbQpInfo {
   int devIndex;
 };
 
-// Struct containing everything needed to establish connections
+// Structure used to hold information needed to establish the communication
+// between the sender and receiver.
+// The structure is populated during the connection establishment phase and
+// populated by each side of the connection before being sent to the remote
+// peer. The remote peer uses the information passed to it from its peer to
+// create and initialize its local resources.
 struct ncclIbConnectionMetadata {
   struct ncclIbQpInfo qpInfo[NCCL_IB_MAX_QPS];
   struct ncclIbDevInfo devs[NCCL_IB_MAX_DEVS_PER_NIC];
   char devName[MAX_MERGED_DEV_NAME];
-  uint64_t fifoAddr;
+  // An address for a registered memory to be accessed by the peer. The address
+  // can be accessed using RDMA using the key specified in ncclIbDevInfo::rkey.
+  // The sender side gets in this member, from the receiver, the address of the
+  // memory to which the sender writes the sizes of the data transfers that
+  // the sender sends.
+  // The receiver side gets in this member, from the sender, the address of the
+  // memory to which the receiver writes the CTS messages.
+  uint64_t addr;
   int ndevs;
   int tc;
   int sl;
@@ -443,6 +455,77 @@ fail:
 #define NCCL_IB_SL_DEFAULT 0
 #define NCCL_IB_TC_DEFAULT 0
 
+// The function creates and initializes QPs (modifies the QPs to INIT) on the
+// sender side. Afterwards it populates the metadata structure, provided to the
+// function (meta), with the QPs' information. Note that after the QPs'
+// creation, the QPs are also queried for ECE support and the metadata structure
+// is updated accordingly. The meta data structure is then expected to be
+// delivered to the remote side (receiver) as part of the connection
+// establishment process.
+static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbConnectionMetadata* meta) {
+  uint nqps = comm->base.nqps;
+  for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
+    // The QPs are created in a "striped" manner across the available devices.
+    // For example, if there are 2 devices and 4 QPs, the QPs will be created
+    // on the devices as follows:
+    // Dev0 -> QP0, QP2
+    // Dev1 -> QP1, QP3
+    uint devIndex = qpIndex % comm->base.vProps.ndevs;
+    ncclIbSendCommDev* commDev = &comm->devs[devIndex];
+    ncclIbDev* ibDev = &ncclIbDevs[commDev->base.ibDevN];
+    ncclIbQp* localQp = &comm->base.qps[qpIndex];
+    ncclIbQpInfo* localQpInfo = &meta->qpInfo[qpIndex];
+    int qpAccessFlags = IBV_ACCESS_REMOTE_WRITE;
+
+    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &commDev->base, qpAccessFlags, &comm->base.stats, localQp));
+    localQp->devIndex = devIndex;
+
+    // Populate the metadata that will be delivered to the remote peer
+    localQpInfo->qpn      = localQp->qp->qp_num;
+    localQpInfo->devIndex = localQp->devIndex;
+
+    if (ncclParamIbEceEnable()) {
+      // Query ECE (Enhanced Connection Establishment) capabilities
+      NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
+    } else {
+      localQpInfo->ece_supported = 0;
+    }
+  }
+  return ncclSuccess;
+}
+
+// The function modifies the QPs on the sender side to RTR and RTS states. It
+// uses the remote metadata (remMeta) provided to the function to get the remote
+// QPs' information. The remote metadata is expected to be obtained from the
+// remote side (receiver) as part of the connection establishment process.
+// Note that if ECE is supported, the function sets up the reduced ECE (which
+// was delivered from the receiver side) on the QPs before modifying the QPs
+// to RTR.
+static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, int dev, struct ncclIbConnectionMetadata* remMeta) {
+  uint nqps = comm->base.nqps;
+  for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
+    ncclIbQp* localQp = &comm->base.qps[qpIndex];
+    ncclIbSendCommDev* commDev = &comm->devs[localQp->devIndex];
+    ncclIbDev* ibDev = &ncclIbDevs[commDev->base.ibDevN];
+    ncclIbQpInfo* remQpInfo   = &remMeta->qpInfo[qpIndex];
+    ncclIbDevInfo* remDevInfo = &remMeta->devs[remQpInfo->devIndex];
+
+    localQp->remDevIdx = remQpInfo->devIndex;
+
+    if (remQpInfo->ece_supported) {
+      // Set the reduced ECE received from the receiver side
+      INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
+        commDev->base.ibDevN, ibDev->portNum, localQp->qp->qp_num, remQpInfo->ece_supported, remQpInfo->ece.vendor_id, remQpInfo->ece.options, remQpInfo->ece.comp_mask);
+      NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &remQpInfo->ece_supported));
+    }
+
+    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu); // TODO: This is bad practice!
+    NCCLCHECK(ncclIbRtrQp(localQp->qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta->tc, remMeta->sl));
+    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclIbConnect(void* ctx, int dev, void* opaqueHandle, void** sendComm, ncclNetDeviceHandle_t** /*sendDevComm*/) {
   ncclResult_t ret = ncclSuccess;
   struct ncclIbHandle* handle = (struct ncclIbHandle*) opaqueHandle;
@@ -525,25 +608,8 @@ ib_recv_dev_list:
   memset(&meta, 0, sizeof(meta));
   meta.ndevs = comm->base.vProps.ndevs;
 
-  // Alternate QPs between devices
-  int devIndex;
-  devIndex = 0;
-  for (int q = 0; q < comm->base.nqps; q++) {
-    ncclIbSendCommDev* commDev = comm->devs + devIndex;
-    ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
-    NCCLCHECKGOTO(ncclIbCreateQp(ibDev->portNum, &commDev->base, IBV_ACCESS_REMOTE_WRITE, &comm->base.stats, comm->base.qps + q), ret, fail);
-    comm->base.qps[q].devIndex = devIndex;
-    meta.qpInfo[q].qpn      = comm->base.qps[q].qp->qp_num;
-    meta.qpInfo[q].devIndex = comm->base.qps[q].devIndex;
-
-    if (ncclParamIbEceEnable()) {
-      // Query ece capabilities (enhanced connection establishment)
-      NCCLCHECKGOTO(wrap_ibv_query_ece(comm->base.qps[q].qp, &meta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
-    } else {
-      meta.qpInfo[q].ece_supported = 0;
-    }
-    devIndex = (devIndex + 1) % comm->base.vProps.ndevs;
-  }
+  // Create QPs on the sender side
+  NCCLCHECKGOTO(ncclIbSenderQpsCreate(comm, &meta), ret, fail);
 
   for (int i = 0; i < comm->base.vProps.ndevs; i++) {
     ncclIbSendCommDev* commDev = comm->devs + i;
@@ -558,9 +624,9 @@ ib_recv_dev_list:
     // Prepare GIN Put Signal scratchpad (for RDMA Atomic result)
     NCCLCHECKGOTO(wrap_ibv_reg_mr(&commDev->putSignalScratchpadMr, commDev->base.pd, &comm->putSignalScratchpad, sizeof(comm->putSignalScratchpad), IBV_ACCESS_LOCAL_WRITE), ret, fail);
 
-    // Prepare my fifo
-    NCCLCHECKGOTO(wrap_ibv_reg_mr(&commDev->fifoMr, commDev->base.pd, comm->fifo, sizeof(struct ncclIbSendFifo)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    devInfo->fifoRkey = commDev->fifoMr->rkey;
+    // Prepare my CTS FIFO
+    NCCLCHECKGOTO(wrap_ibv_reg_mr(&commDev->ctsFifoMr, commDev->base.pd, comm->ctsFifo, sizeof(comm->ctsFifo), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    devInfo->rkey = commDev->ctsFifoMr->rkey;
 
     // Pack local GID info
     devInfo->link_layer = commDev->base.gidInfo.link_layer = ibDev->portAttr.link_layer;
@@ -574,16 +640,16 @@ ib_recv_dev_list:
       // Print just the QPs for this dev
       if (comm->base.qps[q].devIndex == i) {
         if (devInfo->link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
-          INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d LID %d subnet-prefix %lu  FLID %d fifoRkey=0x%x fifoLkey=0x%x",
+          INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d LID %d subnet-prefix %lu  FLID %d ctsFifoRkey=0x%x ctsFifoLkey=0x%x",
                comm->base.vProps.ndevs > 2 ? "NCCL MergedDev" : "NCCL Dev",
                dev, commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn, devInfo->mtu, devInfo->lid,
-               (uint64_t)devInfo->gid.global.subnet_prefix, ncclIbExtractFlid(&devInfo->gid), devInfo->fifoRkey, commDev->fifoMr->lkey);
+               (uint64_t)devInfo->gid.global.subnet_prefix, ncclIbExtractFlid(&devInfo->gid), commDev->ctsFifoMr->rkey, commDev->ctsFifoMr->lkey);
         } else { // RoCE
-          INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX) fifoRkey=0x%x fifoLkey=0x%x",
+          INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX) ctsFifoRkey=0x%x ctsFifoLkey=0x%x",
                comm->base.vProps.ndevs > 2 ? "NCCL MergedDev" : "NCCL Dev", dev,
                commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn, devInfo->mtu,
                (int64_t)commDev->base.gidInfo.localGidIndex,
-               (uint64_t)devInfo->gid.global.subnet_prefix, devInfo->gid.global.interface_id, devInfo->fifoRkey, commDev->fifoMr->lkey);
+               (uint64_t)devInfo->gid.global.subnet_prefix, devInfo->gid.global.interface_id, commDev->ctsFifoMr->rkey, commDev->ctsFifoMr->lkey);
         }
         // Log ECE info
         if (meta.qpInfo[q].ece_supported) {
@@ -602,7 +668,7 @@ ib_recv_dev_list:
     }
   }
   config = (ncclNetCommConfig_t*)ctx;
-  meta.fifoAddr = (uint64_t)comm->fifo;
+  meta.addr = (uint64_t)comm->ctsFifo;
   meta.sl = (ncclParamIbSl() != -1) ? ncclParamIbSl() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_SL_DEFAULT;
   meta.tc = (ncclParamIbTc() != -1) ? ncclParamIbTc() : (config && config->trafficClass != NCCL_NET_TRAFFIC_CLASS_UNDEF) ? config->trafficClass : NCCL_IB_TC_DEFAULT;
   strncpy(meta.devName, mergedDev->devName, MAX_MERGED_DEV_NAME);
@@ -643,46 +709,26 @@ ib_connect:
     }
   }
 
-  // Copy remDevInfo for things like remGidInfo, remFifoAddr, etc.
+  // Copy remDevInfo for things like remGidInfo, remCmplsRecordsFifoAddr, etc.
   for (int i = 0; i < remMeta.ndevs; i++) {
     comm->base.remDevs[i] = remMeta.devs[i];
     comm->base.remDevs[i].remoteGid.global.interface_id = comm->base.remDevs[i].gid.global.interface_id;
     comm->base.remDevs[i].remoteGid.global.subnet_prefix = comm->base.remDevs[i].gid.global.subnet_prefix;
-
-    // Retain remote sizes fifo info and prepare RDMA ops
-    comm->remSizesFifo.rkeys[i] = remMeta.devs[i].fifoRkey;
-    comm->remSizesFifo.addr = remMeta.fifoAddr;
   }
 
+  // Retain remote completion records info and prepare RDMA ops
+  comm->remCmplsRecords.addr = remMeta.addr;
+  for (int i = 0; i < remMeta.ndevs; i++) {
+    comm->remCmplsRecords.rkeys[i] = remMeta.devs[i].rkey;
+  }
   for (int i=0; i < comm->base.vProps.ndevs; i++) {
-    NCCLCHECKGOTO(wrap_ibv_reg_mr(comm->remSizesFifo.mrs+i, comm->devs[i].base.pd, &comm->remSizesFifo.elems, sizeof(int)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    ncclIbSendCommDev* commDev = comm->devs + i;
+    NCCLCHECKGOTO(wrap_ibv_reg_mr(&commDev->cmplsRecordsMr, comm->devs[i].base.pd, &comm->remCmplsRecords.elems, sizeof(comm->remCmplsRecords.elems), IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    comm->devs[i].sge.lkey = comm->devs[i].cmplsRecordsMr->lkey;
   }
   comm->base.nRemDevs = remMeta.ndevs;
 
-  for (int q = 0; q < comm->base.nqps; q++) {
-    struct ncclIbQpInfo* remQpInfo   = remMeta.qpInfo + q;
-    struct ncclIbDevInfo* remDevInfo = remMeta.devs + remQpInfo->devIndex;
-
-    // Assign per-QP remDev
-    comm->base.qps[q].remDevIdx = remQpInfo->devIndex;
-    int devIndex = comm->base.qps[q].devIndex;
-    ncclIbSendCommDev* commDev = comm->devs + devIndex;
-
-    struct ibv_qp* qp = comm->base.qps[q].qp;
-    if (remQpInfo->ece_supported) {
-      struct ncclIbQp* nqp = comm->base.qps + q;
-      int ibDevN = comm->devs[nqp->devIndex].base.ibDevN;
-      struct ncclIbDev* ibDev = ncclIbDevs + ibDevN;
-      INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
-        ibDevN, ibDev->portNum, qp->qp_num, remMeta.qpInfo[q].ece_supported, remMeta.qpInfo[q].ece.vendor_id, remMeta.qpInfo[q].ece.options, remMeta.qpInfo[q].ece.comp_mask);
-      NCCLCHECKGOTO(wrap_ibv_set_ece(qp, &remQpInfo->ece, &remQpInfo->ece_supported), ret, fail);
-    }
-
-    ncclIbDev* ibDev = ncclIbDevs + commDev->base.ibDevN;
-    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
-    NCCLCHECKGOTO(ncclIbRtrQp(qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta.tc, remMeta.sl), ret, fail);
-    NCCLCHECKGOTO(ncclIbRtsQp(qp), ret, fail);
-  }
+  NCCLCHECKGOTO(ncclIbSenderQpsToRts(comm, dev, &remMeta), ret, fail);
 
   comm->base.nDataQps = std::max(comm->base.vProps.ndevs, comm->base.nRemDevs);
 
@@ -745,6 +791,59 @@ ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePro
     INFO(NCCL_NET, "NET/IB : There are mismatched physical devices between local (%s) and remote (%s). To disable this warning, set NCCL_IB_WARN_RAIL_LOCAL=0", local, remote);
   }
 
+  return ncclSuccess;
+}
+
+// The function creates and modifies QPs to RTS state on the receiver side 
+// using remote information from the sender side (remMeta). It also populates
+// the remote metadata structure, provided to the function (remMeta), with the
+// QPs' information so that data structure could be delivered to the remote
+// side (sender) as part of the connection establishment process.
+static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct ncclIbConnectionMetadata* remMeta, struct ncclIbConnectionMetadata* meta) {
+  uint nqps = rComm->base.nqps;
+  for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
+    // The QPs are created in a "striped" manner across the available devices.
+    // For example, if there are 2 devices and 4 QPs, the QPs will be created
+    // on the devices as follows:
+    // Dev0 -> QP0, QP2
+    // Dev1 -> QP1, QP3
+    uint devIndex = qpIndex % rComm->base.vProps.ndevs;
+    ncclIbRecvCommDev* rCommDev = &rComm->devs[devIndex];
+    ncclIbDev* ibDev = &ncclIbDevs[rCommDev->base.ibDevN];
+    ncclIbQpInfo* remQpInfo = &remMeta->qpInfo[qpIndex];
+    ncclIbQpInfo* localQpInfo = &meta->qpInfo[qpIndex];
+    int remDevIndex = remQpInfo->devIndex;
+    ncclIbDevInfo* remDevInfo = &remMeta->devs[remDevIndex];
+    ncclIbQp* localQp = &rComm->base.qps[qpIndex];
+
+    localQp->remDevIdx = remDevIndex;
+    localQp->devIndex = devIndex;
+
+    NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC, &rComm->base.stats, localQp));
+    
+    localQpInfo->qpn      = localQp->qp->qp_num;
+    localQpInfo->devIndex = localQp->devIndex;
+
+    // Set ECE (enhanced connection establishment) on before RTR
+    if (remQpInfo->ece_supported) {
+      // coverity[copy_paste_error]
+      NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &localQpInfo->ece_supported));
+    } else {
+      localQpInfo->ece_supported = 0;
+    }
+
+    // Reduce the local MTU to match the remote MTU if needed
+    ibDev->portAttr.active_mtu = std::min(ibDev->portAttr.active_mtu, remDevInfo->mtu);
+
+    NCCLCHECK(ncclIbRtrQp(localQp->qp, &rCommDev->base.gidInfo, remQpInfo->qpn, remDevInfo, true, remMeta->tc, remMeta->sl));
+    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+
+    // Query the reduced ECE by the device and storing it in the local QP info
+    // to return it to the requestor (sender).
+    if (remQpInfo->ece_supported && localQpInfo->ece_supported) {
+      NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
+    }
+  }
   return ncclSuccess;
 }
 
@@ -837,8 +936,6 @@ ib_recv:
   struct ncclIbDev* ibDev;
   int ibDevN;
   struct ncclIbRecvCommDev* rCommDev;
-  struct ncclIbDevInfo* remDevInfo;
-  struct ncclIbQp* qp;
 
   mergedDev = ncclIbMergedDevs + lComm->dev;
   rComm->base.nRemDevs = remMeta.ndevs;
@@ -866,7 +963,7 @@ ib_recv:
     }
   }
 
-  // Copy remDevInfo for things like remGidInfo, remFifoAddr, etc.
+  // Copy remGidInfo, remCtsFifoAddr, etc.
   for (int i = 0; i < remMeta.ndevs; i++) {
     rComm->base.remDevs[i] = remMeta.devs[i];
     rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
@@ -879,57 +976,32 @@ ib_recv:
     }
   }
 
-  // Stripe QP creation across merged devs
-  // Make sure to get correct remote peer dev and QP info
-  int remDevIndex;
-  int devIndex;
-  devIndex = 0;
-  for (int q = 0; q < rComm->base.nqps; q++) {
-    remDevIndex = remMeta.qpInfo[q].devIndex;
-    remDevInfo = remMeta.devs + remDevIndex;
-    qp = rComm->base.qps+q;
-    rCommDev = rComm->devs + devIndex;
-    qp->remDevIdx = remDevIndex;
-
-    // Local ibDevN
-    ibDevN = rComm->devs[devIndex].base.ibDevN;
-    ibDev = ncclIbDevs + ibDevN;
-    NCCLCHECKGOTO(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC, &rComm->base.stats, qp), ret, fail);
-    qp->devIndex = devIndex;
-    devIndex = (devIndex + 1) % rComm->base.vProps.ndevs;
-
-    // Set the ece (enhanced connection establishment) on this QP before RTR
-    if (remMeta.qpInfo[q].ece_supported) {
-      // Coverity suspects a copy-paste error below due to the use of remMeta in one argument and meta in another.
-      // However, this has been confirmed to be intentional.
-      // coverity[copy_paste_error]
-      NCCLCHECKGOTO(wrap_ibv_set_ece(qp->qp, &remMeta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
-    } else {
-      meta.qpInfo[q].ece_supported = 0;
-    }
-
-    NCCLCHECKGOTO(ncclIbRtrQp(qp->qp, &rCommDev->base.gidInfo, remMeta.qpInfo[q].qpn, remDevInfo, true, remMeta.tc, remMeta.sl), ret, fail);
-    NCCLCHECKGOTO(ncclIbRtsQp(qp->qp), ret, fail);
-
-    // Query the reduced ece for this QP (matching enhancements between the requestor and the responder)
-    // Store this in our own qpInfo for returning to the requestor
-    if (remMeta.qpInfo[q].ece_supported && meta.qpInfo[q].ece_supported) {
-      NCCLCHECKGOTO(wrap_ibv_query_ece(qp->qp, &meta.qpInfo[q].ece, &meta.qpInfo[q].ece_supported), ret, fail);
-    }
-  }
+  NCCLCHECKGOTO(ncclIbReceiverQpsCreateToRts(rComm, &remMeta, &meta), ret, fail);
 
   rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
                             && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
 
+  // Retain remote CTS FIFO info and prepare my RDMA ops
+  rComm->remCtsFifo.addr = remMeta.addr;
+  for (int i = 0; i < remMeta.ndevs; i++) {
+    rComm->remCtsFifo.rkeys[i] = remMeta.devs[i].rkey;
+  }
+  for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
+    rCommDev = rComm->devs + i;
+  
+    NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->ctsFifoMr, rCommDev->base.pd, &rComm->remCtsFifo.elems, sizeof(rComm->remCtsFifo.elems), IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    rCommDev->sge.lkey = rCommDev->ctsFifoMr->lkey;
+    
+    // Prepare completion records
+    NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->cmplsRecordsMr, rCommDev->base.pd, &rComm->cmplsRecords, sizeof(rComm->cmplsRecords), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
+    meta.devs[i].rkey = rCommDev->cmplsRecordsMr->rkey;
+
+  }
+  if (ncclParamIbUseInline()) rComm->remCtsFifo.flags = IBV_SEND_INLINE;
+
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
     ibDev = ncclIbDevs + rCommDev->base.ibDevN;
-
-    // Retain remote fifo info and prepare my RDMA ops
-    rComm->remFifo.addr = remMeta.fifoAddr;
-    NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->fifoMr, rCommDev->base.pd, &rComm->remFifo.elems, sizeof(struct ncclIbSendFifo)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    rCommDev->fifoSge.lkey = rCommDev->fifoMr->lkey;
-    if (ncclParamIbUseInline()) rComm->remFifo.flags = IBV_SEND_INLINE;
 
     // Allocate Flush dummy buffer for GPU Direct RDMA
     if (rComm->flushEnabled) {
@@ -956,19 +1028,11 @@ ib_recv:
     meta.devs[i].gid.global.subnet_prefix       = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
     meta.devs[i].gid.global.interface_id        = rCommDev->base.gidInfo.localGid.global.interface_id;
     meta.devs[i].mtu                            = ibDev->portAttr.active_mtu;
-
-    // Prepare sizes fifo
-    NCCLCHECKGOTO(wrap_ibv_reg_mr(&rComm->devs[i].sizesFifoMr, rComm->devs[i].base.pd, rComm->sizesFifo, sizeof(int)*NET_IB_MAX_REQUESTS*NCCL_NET_IB_MAX_RECVS, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
-    meta.devs[i].fifoRkey = rComm->devs[i].sizesFifoMr->rkey;
   }
-  meta.fifoAddr = (uint64_t)rComm->sizesFifo;
+  meta.addr = (uint64_t)rComm->cmplsRecords;
   meta.sl = remMeta.sl;
   meta.tc = remMeta.tc;
 
-  for (int q = 0; q < rComm->base.nqps; q++) {
-    meta.qpInfo[q].qpn      = rComm->base.qps[q].qp->qp_num;
-    meta.qpInfo[q].devIndex = rComm->base.qps[q].devIndex;
-  }
   meta.ndevs = rComm->base.vProps.ndevs;
   strncpy(meta.devName, mergedDev->devName, MAX_MERGED_DEV_NAME);
   rComm->base.nDataQps = std::max(rComm->base.vProps.ndevs, rComm->base.nRemDevs);
@@ -1015,8 +1079,8 @@ ncclResult_t ncclIbCloseSend(void* sendComm) {
 
     for (int i = 0; i < comm->base.vProps.ndevs; i++) {
       struct ncclIbSendCommDev* commDev = comm->devs + i;
-      if (commDev->fifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->fifoMr));
-      if (comm->remSizesFifo.mrs[i] != NULL) NCCLCHECK(wrap_ibv_dereg_mr(comm->remSizesFifo.mrs[i]));
+      if (commDev->ctsFifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->ctsFifoMr));
+      if (commDev->cmplsRecordsMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->cmplsRecordsMr));
       if (commDev->putSignalScratchpadMr != NULL)
         NCCLCHECK(wrap_ibv_dereg_mr(commDev->putSignalScratchpadMr));
       NCCLCHECK(ncclIbDestroyBase(&commDev->base));
@@ -1042,8 +1106,8 @@ ncclResult_t ncclIbCloseRecv(void* recvComm) {
         if (commDev->gpuFlush.qp.qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(commDev->gpuFlush.qp.qp));
         if (commDev->gpuFlush.hostMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->gpuFlush.hostMr));
       }
-      if (commDev->fifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->fifoMr));
-      if (commDev->sizesFifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->sizesFifoMr));
+      if (commDev->ctsFifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->ctsFifoMr));
+      if (commDev->cmplsRecordsMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->cmplsRecordsMr));
       NCCLCHECK(ncclIbDestroyBase(&commDev->base));
     }
     free(comm);
