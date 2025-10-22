@@ -710,8 +710,7 @@ unit_tests-eos:
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
     ENQUEUE_TESTS_ARGS: 1
-    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
-    ENQUEUE_TESTS_FIFO: 0
+    ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
     MEMLEAK_TESTS_DEFAULT: 1
     MEMLEAK_TESTS_NO_P2P: 1
@@ -955,8 +954,7 @@ unit_tests-pre-nyx:
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
-    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
-    ENQUEUE_TESTS_FIFO: 0
+    ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
     MEMLEAK_TESTS_DEFAULT: 1
     MEMLEAK_TESTS_NO_P2P: 1
@@ -1009,8 +1007,7 @@ unit_tests-pre-tyche:
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
-    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
-    ENQUEUE_TESTS_FIFO: 0
+    ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
     MEMLEAK_TESTS_DEFAULT: 1
     MEMLEAK_TESTS_NO_P2P: 1
@@ -1365,8 +1362,7 @@ unit_tests-theia:
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
-    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable the enqueue_test_fifo unit test
-    ENQUEUE_TESTS_FIFO: 0
+    ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
     MEMLEAK_TESTS_DEFAULT: 1
     MEMLEAK_TESTS_NO_P2P: 1
