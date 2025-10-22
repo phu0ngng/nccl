@@ -108,6 +108,8 @@ On AWS, the default value is 8; in other cases, the default value is 1.
 
 For generic 100G networks, this value can be manually set to 4. However, the product of ``NCCL_SOCKET_NTHREADS`` and ``NCCL_NSOCKS_PERTHREAD`` cannot exceed 64. See also ``NCCL_SOCKET_NTHREADS``.
 
+.. _env_NCCL_CROSS_NIC:
+
 NCCL_CROSS_NIC
 --------------
 The ``NCCL_CROSS_NIC`` variable controls whether NCCL should allow rings/trees to use different NICs,
