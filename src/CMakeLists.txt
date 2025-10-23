@@ -115,6 +115,18 @@ set_target_properties(nccl PROPERTIES
     PREFIX "lib"
 )
 
+#
+# Generate git_version.h
+#
+set(GIT_VERSION_FILE "${CMAKE_BINARY_DIR}/include/git_version.h")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include")
+add_custom_target(generate_git_version ALL
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/src/misc/generate_git_version.py ${GIT_VERSION_FILE}
+  COMMENT "Checking git version"
+  BYPRODUCTS ${GIT_VERSION_FILE}
+)
+add_dependencies(nccl generate_git_version)
+
 # Set CUDA specific flags
 set_target_properties(nccl PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
@@ -184,6 +196,7 @@ target_include_directories(nccl_static PUBLIC
 
 # Add dependency on nccl_header
 add_dependencies(nccl_static nccl_header)
+add_dependencies(nccl_static generate_git_version)
 
 # Link libraries
 target_link_libraries(nccl_static
