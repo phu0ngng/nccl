@@ -367,3 +367,16 @@ const char* ibvWcOpcodeStr(enum ibv_wc_opcode opcode) {
     default:                        return "UNKNOWN_OPCODE";
   }
 }
+
+const char* ibvWrOpcodeStr(enum ibv_wr_opcode opcode) {
+  switch (opcode) {
+    case IBV_WR_RDMA_WRITE:          return "IBV_WR_RDMA_WRITE";
+    case IBV_WR_RDMA_WRITE_WITH_IMM: return "IBV_WR_RDMA_WRITE_WITH_IMM";
+    case IBV_WR_SEND:                return "IBV_WR_SEND";
+    case IBV_WR_SEND_WITH_IMM:       return "IBV_WR_SEND_WITH_IMM";
+    case IBV_WR_RDMA_READ:           return "IBV_WR_RDMA_READ";
+    case IBV_WR_ATOMIC_CMP_AND_SWP:  return "IBV_WR_ATOMIC_CMP_AND_SWP";
+    case IBV_WR_ATOMIC_FETCH_AND_ADD: return "IBV_WR_ATOMIC_FETCH_AND_ADD";
+    default:                          return "UNKNOWN_OPCODE";
+  }
+}

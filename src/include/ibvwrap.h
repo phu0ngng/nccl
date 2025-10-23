@@ -107,4 +107,7 @@ const char* ibvWcStatusStr(enum ibv_wc_status status);
 // Helper function to convert IB work completion opcode to string
 const char* ibvWcOpcodeStr(enum ibv_wc_opcode opcode);
 
+// Helper function to convert IB work request opcode to string
+const char* ibvWrOpcodeStr(enum ibv_wr_opcode opcode);
+
 #endif //End include guard

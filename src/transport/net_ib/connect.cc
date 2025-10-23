@@ -483,7 +483,7 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     qpCreateAttrs.cq = commDev->base.cq;
     qpCreateAttrs.pd = commDev->base.pd;
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &comm->base.stats, localQp));
-    TRACE(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qpn=%u pkey=%u pd=%p",
+    INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
         __func__,
         ibDev->portNum, 
         commDev->base.ibDevN, 
@@ -529,8 +529,7 @@ static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, int dev, struct n
 
     if (remQpInfo->ece_supported) {
       // Set the reduced ECE received from the receiver side
-      INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
-        commDev->base.ibDevN, ibDev->portNum, localQp->qp->qp_num, remQpInfo->ece_supported, remQpInfo->ece.vendor_id, remQpInfo->ece.options, remQpInfo->ece.comp_mask);
+      INFO(NCCL_NET,"NET/IB: %s: Set ECE: IbDev %d Port %d qp_num %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}", __func__, commDev->base.ibDevN, ibDev->portNum, localQp->qp->qp_num, remQpInfo->ece_supported, remQpInfo->ece.vendor_id, remQpInfo->ece.options, remQpInfo->ece.comp_mask);
       NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &remQpInfo->ece_supported));
     }
 
@@ -661,12 +660,12 @@ ib_recv_dev_list:
       // Print just the QPs for this dev
       if (comm->base.qps[q].devIndex == i) {
         if (devInfo->link_layer == IBV_LINK_LAYER_INFINIBAND) { // IB
-          INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d LID %d subnet-prefix %lu  FLID %d ctsFifoRkey=0x%x ctsFifoLkey=0x%x",
+          INFO(NCCL_NET,"NET/IB: %s: %s %d IbDev %d Port %d qp_num %d mtu %d LID %d subnet-prefix %lu  FLID %d ctsFifoRkey=0x%x ctsFifoLkey=0x%x", __func__,
                comm->base.vProps.ndevs > 2 ? "NCCL MergedDev" : "NCCL Dev",
                dev, commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn, devInfo->mtu, devInfo->lid,
                (uint64_t)devInfo->gid.global.subnet_prefix, ncclIbExtractFlid(&devInfo->gid), commDev->ctsFifoMr->rkey, commDev->ctsFifoMr->lkey);
         } else { // RoCE
-          INFO(NCCL_NET,"NET/IB: %s %d IbDev %d Port %d qpn %d mtu %d GID %ld (%lX/%lX) ctsFifoRkey=0x%x ctsFifoLkey=0x%x",
+          INFO(NCCL_NET,"NET/IB: %s: %s %d IbDev %d Port %d qp_num %d mtu %d GID %ld (%lX/%lX) ctsFifoRkey=0x%x ctsFifoLkey=0x%x", __func__,
                comm->base.vProps.ndevs > 2 ? "NCCL MergedDev" : "NCCL Dev", dev,
                commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn, devInfo->mtu,
                (int64_t)commDev->base.gidInfo.localGidIndex,
@@ -674,7 +673,7 @@ ib_recv_dev_list:
         }
         // Log ECE info
         if (meta.qpInfo[q].ece_supported) {
-          INFO(NCCL_NET,"NET/IB: IbDev %d Port %d qpn %d query_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}",
+          INFO(NCCL_NET,"NET/IB: %s: IbDev %d Port %d qp_num %d query_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}", __func__,
                commDev->base.ibDevN, ibDev->portNum, meta.qpInfo[q].qpn,
                meta.qpInfo[q].ece_supported, meta.qpInfo[q].ece.vendor_id, meta.qpInfo[q].ece.options, meta.qpInfo[q].ece.comp_mask);
         }
@@ -852,7 +851,7 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     qpCreateAttrs.cq = rCommDev->base.cq;
     qpCreateAttrs.pd = rCommDev->base.pd;
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, localQp));
-    TRACE(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qpn=%u pkey=%u pd=%p",
+    INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
         __func__,
         ibDev->portNum, 
         rCommDev->base.ibDevN, 
@@ -1094,7 +1093,7 @@ ib_recv:
       qpCreateAttrs.maxRecvWorkRequest = 0;
       qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
       NCCLCHECKGOTO(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp), ret, fail);
-      TRACE(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qpn=%u pkey=%u pd=%p",
+      INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
           __func__,
           ibDev->portNum, 
           rCommDev->base.ibDevN, 
