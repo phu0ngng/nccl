@@ -72,6 +72,12 @@ INCPLUGIN  := include/plugin
 
 DEVMANIFEST := $(BUILDDIR)/obj/device/manifest
 
+
+GIT_VERSION_FILE := $(BUILDDIR)/include/git_version.h
+$(GIT_VERSION_FILE): ALWAYS_REBUILD
+	@mkdir -p $(dir $@)
+	@./misc/generate_git_version.py $@
+
 # DOCA GPUNetIO definitions
 DOCA_HOME        ?= transport/net_ib/gdaki/doca-gpunetio
 DOCA_INC_INSTALL := $(INCDIR)/nccl_device/gin/gdaki/doca_gpunetio
@@ -96,7 +102,7 @@ $(DEVMANIFEST): ALWAYS_REBUILD $(INCTARGETS)
 	$(MAKE) -C ./device
 
 # Empty target to force rebuild
-ALWAYS_REBUILD:
+.PHONY: ALWAYS_REBUILD
 
 -include $(DEPFILES)
 $(LIBDIR)/$(LIBTARGET) $(LIBDIR)/$(STATICLIBTARGET) : $(LIBOBJ)
@@ -203,6 +209,8 @@ $(OBJDIR)/%.o : %.cc $(INCTARGETS)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(@:%.o=%.d.tmp) | fmt -1 | \
                 sed -e 's/^ *//' -e 's/$$/:/' >> $(@:%.o=%.d)
 	@rm -f $(@:%.o=%.d.tmp)
+
+$(OBJDIR)/misc/git_version.o: $(GIT_VERSION_FILE)
 
 $(DOCA_OBJDIR)/%.o : $(DOCA_HOME)/src/%.cpp
 	@printf "Compiling  %-35s > %s\n" $< $@
