@@ -377,7 +377,6 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, struct ncclIbRequest* r
   if (slot == ctsQp->devIndex) {
     wr.send_flags |= IBV_SEND_SIGNALED;
     wr.wr_id = req - comm->base.reqs;
-    ncclIbAddEvent(req, ctsQp->devIndex);
   }
 
   INFO(NCCL_NET, "NET/IB: %s: Posting a CTS (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d, qp_num=%d)", __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qp->qp_num);
@@ -664,8 +663,10 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         ncclIbCommBaseGetQpByQpNum(commBase, devIndex, wc->qp_num, &qp, NULL);
         ncclIbPostRecvWorkRequest(qp->qp, &recvComm->ibRecvWorkRequest);
       }
+      req->events[devIndex]--;
     } else if (req && req->type == NCCL_NET_IB_REQ_FLUSH) {
       INFO(NCCL_NET, "NET/IB: %s: Got completion for a flush request (req=%p, comm=%p, id=%d, devIndex=%d)", __func__, req, req->base, req->id, devIndex);
+      req->events[devIndex]--;
     } else if (req && wc->opcode == IBV_WC_RDMA_WRITE) {
       // This is a CTS completion
       INFO(NCCL_NET, "NET/IB: %s: Got completion for a CTS (req=%p, comm=%p, id=%d, devIndex=%d)", __func__, req, req->base, req->id, devIndex);
@@ -673,7 +674,6 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
       WARN("NET/IB: %s: Unknown completion (req=%p, comm=%p, id=%d, devIndex=%d, opcode=%d)", __func__, req, commBase, req ? req->id : -1, devIndex, wc->opcode);
       return ncclInternalError;
     }
-    req->events[devIndex]--;
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Stop Qp event for workFifo
     for (int j = 0; j < req->nreqs; j++) {
