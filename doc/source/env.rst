@@ -1531,3 +1531,16 @@ Attempt to catch host threads racing to launch to the same device and if so retu
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 1 (enabled); set to 0 to disable.
+
+
+NCCL_IPC_USE_ABSTRACT_SOCKET
+----------------------------
+(since 2.29)
+
+Use the Linux Abstract Socket mechanism when creating Unix Domain Sockets (UDS) for intra-node CUDA IPC handle exchange.
+This is enabled by default, but having it enabled can prevent intra-node GPU communication when using multiple containers in certain situations (e.g. different network namespaces).
+
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1 (enabled); set to 0 to disable.
