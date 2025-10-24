@@ -8,6 +8,7 @@
 #include "transport.h"
 #include "group.h"
 #include "nvtx.h"
+#include "utils.h"
 
 NCCL_API(ncclResult_t, ncclMemAlloc, void **ptr, size_t size);
 ncclResult_t  ncclMemAlloc(void **ptr, size_t size) {
@@ -317,15 +318,8 @@ ncclResult_t ncclShadowPoolDestruct(struct ncclShadowPool* pool) {
   return ncclSuccess;
 }
 
-static int hashBucket(int hbits, void* devObj) {
-  uintptr_t h = reinterpret_cast<uintptr_t>(devObj);
-  h ^= h>>32;
-  h *= 0x9e3779b97f4a7c13;
-  return (uint64_t)h >> (64-hbits);
-}
-
 static void hashInsert(struct ncclShadowPool* pool, struct ncclShadowObject* obj) {
-  int b = hashBucket(pool->hbits, obj->devObj);
+  uint64_t b = ncclHashPointer(pool->hbits, obj->devObj);
   obj->next = pool->table[b];
   pool->table[b] = obj;
 }
@@ -423,7 +417,7 @@ ncclResult_t ncclShadowPoolAlloc(
 ncclResult_t ncclShadowPoolFree(struct ncclShadowPool* pool, void* devObj, cudaStream_t stream) {
   if (devObj == nullptr) return ncclSuccess;
 
-  int b = hashBucket(pool->hbits, devObj);
+  uint64_t b = ncclHashPointer(pool->hbits, devObj);
   struct ncclShadowObject** pobj = &pool->table[b];
   while (true) {
     if (*pobj == nullptr) {
@@ -456,7 +450,7 @@ ncclResult_t ncclShadowPoolToHost(struct ncclShadowPool* pool, void* devObj, voi
     return ncclSuccess;
   }
 
-  int b = hashBucket(pool->hbits, devObj);
+  uint64_t b = ncclHashPointer(pool->hbits, devObj);
   struct ncclShadowObject* obj = pool->table[b];
   while (true) {
     if (obj == nullptr) {

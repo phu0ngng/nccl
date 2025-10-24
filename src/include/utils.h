@@ -543,4 +543,143 @@ T* ncclIntruQueueMpscAbandon(ncclIntruQueueMpsc<T,next>* me) {
 }
 
 ncclResult_t ncclBitsToString(uint32_t bits, uint32_t mask, const char* (*toStr)(int), char *buf, size_t bufLen, const char *wildcard);
+
+////////////////////////////////////////////////////////////////////////////////
+// Hash function for pointer types (shared by address map implementations)
+uint64_t ncclHashPointer(int hbits, void* key);
+
+////////////////////////////////////////////////////////////////////////////////
+// Intrusive address map implementation (avoids per-entry allocations)
+
+/*
+ * ncclIntruAddressMap Usage Contract
+ * ===================================
+ *
+ * OVERVIEW:
+ *   - Intrusive map that stores next-pointers directly in user objects
+ *   - Avoids separate malloc per entry (only allocates bucket table)
+ *   - Uses C++ templates for type safety with type-erased implementation
+ *
+ * CONSTRUCTION:
+ *   - POD type with automatic zero-initialization for static/global instances
+ *   - Example (global): static ncclIntruAddressMap<Obj, void*, &Obj::key, &Obj::next> globalMap;
+ *   - Example (local): ncclIntruAddressMap<Obj, void*, &Obj::key, &Obj::next> localMap = {};
+ *   - Zero-initialization works: ncclIntruAddressMap<...> map = {};
+ *
+ * DESTRUCTION:
+ *   - NO explicit destructor function is provided
+ *   - The map automatically cleans up internal memory when the last entry is removed
+ *   - When count reaches 0, the internal table is freed and the map returns to
+ *     zero-initialized state, making destruction trivial (no-op)
+ *
+ * USER RESPONSIBILITY:
+ *   - Caller MUST remove all inserted objects before abandoning the map
+ *   - Failure to remove all objects will leak memory (the internal bucket table)
+ *   - Objects must outlive their presence in the map
+ *   - Key and next-pointer fields are modified by the map
+ *   - Delete/free objects separately after removing from map
+ *
+ * THREAD SAFETY:
+ *   - This data structure is NOT thread-safe
+ *   - Caller must provide external synchronization
+ *
+ * USAGE VALIDATION:
+ *   Compile-time checks (via static_assert):
+ *   - Key type size must be <= sizeof(uintptr_t)
+ *
+ *   Runtime checks (returns ncclInvalidUsage with WARN):
+ *   - Map pointer must not be NULL
+ *   - Object pointer must not be NULL (for Insert/Find operations)
+ *   - Key size must be valid (0 < keySize <= sizeof(uintptr_t))
+ */
+
+// Untyped internal structure
+struct ncclIntruAddressMap_untyped {
+  int hbits;  // log2 of table size
+  int count;  // number of entries
+  void** table;
+};
+
+// Typed wrapper (uses composition for C compatibility)
+template<typename Obj, typename Key, Key Obj::*keyField, Obj* Obj::*nextField>
+struct ncclIntruAddressMap {
+  // Compile-time checks for valid usage
+  static_assert(sizeof(Key) <= sizeof(uintptr_t),
+    "ncclIntruAddressMap: Key type size must be <= sizeof(uintptr_t). "
+    "Keys larger than a pointer cannot be safely converted to uintptr_t.");
+
+  ncclIntruAddressMap_untyped base;
+};
+
+// Destructor (optional - only needed if entries remain in map)
+// Note: Map auto-cleans when last entry is removed, so this is only needed
+// if abandoning a non-empty map to avoid leaking the bucket table.
+template<typename Obj, typename Key, Key Obj::*keyField, Obj* Obj::*nextField>
+static inline void ncclIntruAddressMapDestruct(struct ncclIntruAddressMap<Obj, Key, keyField, nextField>* map) {
+  if (map->base.table != nullptr) {
+    free(map->base.table);
+    map->base.table = nullptr;
+  }
+  map->base.hbits = 0;
+  map->base.count = 0;
+}
+
+// Internal untyped function prototypes
+ncclResult_t ncclIntruAddressMapInsert_untyped(
+  struct ncclIntruAddressMap_untyped* map,
+  int keySize, int keyFieldOffset, int nextFieldOffset,
+  uintptr_t key, void* object);
+
+ncclResult_t ncclIntruAddressMapFind_untyped(
+  struct ncclIntruAddressMap_untyped* map,
+  int keySize, int keyFieldOffset, int nextFieldOffset,
+  uintptr_t key, void** object);
+
+ncclResult_t ncclIntruAddressMapRemove_untyped(
+  struct ncclIntruAddressMap_untyped* map,
+  int keySize, int keyFieldOffset, int nextFieldOffset,
+  uintptr_t key);
+
+// Typed template implementations (type-erasing wrappers)
+template<typename Obj, typename Key, Key Obj::*keyField, Obj* Obj::*nextField>
+static inline ncclResult_t ncclIntruAddressMapInsert(
+    struct ncclIntruAddressMap<Obj, Key, keyField, nextField>* map,
+    Key key, Obj* object) {
+  Obj dummy;
+  // Using offsetof macro would be better except it won't work with non-C types,
+  // like those that involve inheritance.
+  int keyFieldOffset = (char*)&(dummy.*keyField) - (char*)&dummy;
+  int nextFieldOffset = (char*)&(dummy.*nextField) - (char*)&dummy;
+  return ncclIntruAddressMapInsert_untyped(
+    &map->base, (int)sizeof(Key), keyFieldOffset, nextFieldOffset,
+    reinterpret_cast<uintptr_t>(key), object);
+}
+
+template<typename Obj, typename Key, Key Obj::*keyField, Obj* Obj::*nextField>
+static inline ncclResult_t ncclIntruAddressMapFind(
+    struct ncclIntruAddressMap<Obj, Key, keyField, nextField>* map,
+    Key key, Obj** object) {
+  Obj dummy;
+  int keyFieldOffset = (char*)&(dummy.*keyField) - (char*)&dummy;
+  int nextFieldOffset = (char*)&(dummy.*nextField) - (char*)&dummy;
+  void* tmp;
+  ncclResult_t ret = ncclIntruAddressMapFind_untyped(
+    &map->base, (int)sizeof(Key), keyFieldOffset, nextFieldOffset,
+    reinterpret_cast<uintptr_t>(key), &tmp);
+  *object = (Obj*)tmp;
+  return ret;
+}
+
+template<typename Obj, typename Key, Key Obj::*keyField, Obj* Obj::*nextField>
+static inline ncclResult_t ncclIntruAddressMapRemove(
+    struct ncclIntruAddressMap<Obj, Key, keyField, nextField>* map,
+    Key key) {
+  Obj dummy;
+  int keyFieldOffset = (char*)&(dummy.*keyField) - (char*)&dummy;
+  int nextFieldOffset = (char*)&(dummy.*nextField) - (char*)&dummy;
+  return ncclIntruAddressMapRemove_untyped(
+    &map->base, (int)sizeof(Key), keyFieldOffset, nextFieldOffset,
+    reinterpret_cast<uintptr_t>(key));
+}
+
 #endif
