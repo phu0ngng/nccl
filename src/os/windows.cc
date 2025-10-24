@@ -523,3 +523,7 @@ ncclResult_t ncclSocketClose(struct ncclSocket* sock, bool wait) {
   }
   return ncclSuccess;
 }
+
+void ncclOsSetMutexCondShared(std::mutex &mutex, std::condition_variable &cond) {
+  // Not implemented on Windows
+}

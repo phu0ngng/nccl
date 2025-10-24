@@ -444,3 +444,19 @@ ncclResult_t ncclSocketClose(struct ncclSocket* sock, bool wait) {
   }
   return ncclSuccess;
 }
+
+void ncclOsSetMutexCondShared(std::mutex &mutex, std::condition_variable &cond) {
+  pthread_mutexattr_t mutexAttr;
+  pthread_mutexattr_init(&mutexAttr);
+  pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
+  pthread_mutex_t* mutexHandle = mutex.native_handle();
+  pthread_mutex_init(mutexHandle, &mutexAttr);
+  pthread_mutexattr_destroy(&mutexAttr);
+
+  pthread_condattr_t condAttr;
+  pthread_condattr_init(&condAttr);
+  pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
+  pthread_cond_t* condHandle = cond.native_handle();
+  pthread_cond_init(condHandle, &condAttr);
+  pthread_condattr_destroy(&condAttr);
+}

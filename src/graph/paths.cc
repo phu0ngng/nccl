@@ -594,6 +594,7 @@ NCCL_PARAM(PxnDisable, "PXN_DISABLE", 0);
 // Net v4 plugins don't have non-blocking connect/accept. We can't therefore use
 // remote proxies without risking deadlocks
 int ncclPxnDisable(struct ncclComm* comm) {
+#if defined(NCCL_OS_LINUX)
   static int pxnDisable = -1;
   if (pxnDisable == -1) {
     if (comm && comm->ncclNetVer == 4) {
@@ -604,6 +605,9 @@ int ncclPxnDisable(struct ncclComm* comm) {
     }
   }
   return pxnDisable;
+#else
+  return 1;
+#endif
 }
 
 ncclResult_t ncclTopoGetPxnRanks(struct ncclComm* comm, int** intermediateRanks, int* nranks) {
