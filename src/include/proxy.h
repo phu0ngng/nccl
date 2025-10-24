@@ -12,11 +12,13 @@
 #include "socket.h"
 #include "ipcsocket.h"
 #include "nccl_net.h"
-#include <pthread.h>
 #include "shmutils.h"
 #include "p2p.h"
 #include "collectives.h"
 #include "gin/gin_host.h"
+
+#include <mutex>
+#include <condition_variable>
 
 typedef enum : uint8_t {
   ncclPatternRing,
@@ -210,8 +212,8 @@ struct ncclProxyOpsPool {
   volatile int nextOps;
   volatile int nextOpsEnd;
   volatile int freeOps[NCCL_MAX_LOCAL_RANKS];
-  pthread_mutex_t mutex;
-  pthread_cond_t cond;
+  std::mutex mutex;
+  std::condition_variable cond;
 };
 
 struct ncclProxyOps {

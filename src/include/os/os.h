@@ -9,7 +9,9 @@
 
 #include "nccl.h"
 
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 
 #ifdef NCCL_OS_WINDOWS
 #include <windows.h>
@@ -48,4 +50,6 @@ ncclResult_t ncclOsSocketResetFd(struct ncclSocket* sock);
 void ncclOsSocketResetAccept(struct ncclSocket* sock);
 ncclResult_t ncclOsSocketTryAccept(struct ncclSocket* sock);
 
-#endif /* NCCL_OS_H */
+void ncclOsSetMutexCondShared(std::mutex &mutex, std::condition_variable &cond);
+
+#endif

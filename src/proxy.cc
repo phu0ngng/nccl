@@ -468,15 +468,14 @@ static ncclResult_t ProxyAppend(struct ncclProxyProgressState* state, struct ncc
 }
 
 ncclResult_t ncclProxyPost(struct ncclProxyOpsPool* pool, int nextOps, int nextOpsEnd) {
-  pthread_mutex_lock(&pool->mutex);
+  std::lock_guard<std::mutex> lock(pool->mutex);
   if (pool->nextOps == -1) {
     pool->nextOps = nextOps;
-    pthread_cond_signal(&pool->cond);
+    pool->cond.notify_one();
   } else {
     pool->ops[pool->nextOpsEnd].next = nextOps;
   }
   pool->nextOpsEnd = nextOpsEnd;
-  pthread_mutex_unlock(&pool->mutex);
   return ncclSuccess;
 }
 
@@ -787,21 +786,23 @@ static ncclResult_t ncclProxyGetPostedOps(struct ncclProxyState* proxyState, int
   void* eHandle;
   // If we have ops to progress, no need to block waiting for something to arrive or even wait for the lock
   // to be available. Exit, continue progress, and come back later.
-  if (state->active != NULL && (pool->nextOps == -1 || pthread_mutex_trylock(&pool->mutex) != 0)) return ncclSuccess;
+  {
+    std::unique_lock<std::mutex> lock(pool->mutex, std::defer_lock);
+    if (state->active != NULL && (pool->nextOps == -1 || !lock.try_lock())) return ncclSuccess;
 
-  if (state->active == NULL) {
-    pthread_mutex_lock(&pool->mutex);
-    if (pool->nextOps == -1 && !state->stop) {
-      ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
-      ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlSleep);
-      pthread_cond_wait(&pool->cond, &pool->mutex);
-      ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlWakeup);
-      ncclProfilerStopProxyCtrlEvent(eHandle);
+    if (state->active == NULL) {
+      lock.lock();
+      if (pool->nextOps == -1 && !state->stop) {
+        ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
+        ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlSleep);
+        pool->cond.wait(lock);
+        ncclProfilerRecordProxyCtrlEventState(eHandle, 0, ncclProfilerProxyCtrlWakeup);
+        ncclProfilerStopProxyCtrlEvent(eHandle);
+      }
     }
+    state->nextOps = pool->nextOps;
+    pool->nextOps = pool->nextOpsEnd = -1;
   }
-  state->nextOps = pool->nextOps;
-  pool->nextOps = pool->nextOpsEnd = -1;
-  pthread_mutex_unlock(&pool->mutex);
 
 process_nextops:
   ncclProfilerStartProxyCtrlEvent(proxyState->profilerContext, &eHandle);
@@ -1030,10 +1031,11 @@ ncclResult_t ncclProxyProgressDestroy(struct ncclProxyState* proxyState) {
 
   // Request the proxy to stop and then wake it
   if (state->opsPool) {
-    pthread_mutex_lock(&state->opsPool->mutex);
-    state->stop = 1;
-    pthread_cond_signal(&state->opsPool->cond);
-    pthread_mutex_unlock(&state->opsPool->mutex);
+    {
+      std::lock_guard<std::mutex> lock(state->opsPool->mutex);
+      state->stop = 1;
+      state->opsPool->cond.notify_one();
+    }
     state->thread.join();
   }
 
@@ -1383,17 +1385,8 @@ static ncclResult_t proxyProgressInit(struct ncclProxyState* proxyState) {
       pool->ops[(r+1)*MAX_OPS_PER_PEER-1].next = -1;
     }
 
-    // Setup mutex/cond to work inter-process
-    pthread_mutexattr_t mutexAttr;
-    pthread_mutexattr_init(&mutexAttr);
-    pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
-    pthread_mutex_init(&pool->mutex, &mutexAttr);
-    pthread_mutexattr_destroy(&mutexAttr);
-    pthread_condattr_t condAttr;
-    pthread_condattr_init(&condAttr);
-    pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
-    pthread_cond_init(&pool->cond, &condAttr);
-    pthread_condattr_destroy(&condAttr);
+    ncclOsSetMutexCondShared(pool->mutex, pool->cond);
+
     state->opsPool = pool;
 
     memcpy(state->opsPoolShmSuffix, shmPath+sizeof("/dev/shm/nccl-")-1, sizeof("XXXXXX")-1);
@@ -1861,7 +1854,7 @@ ncclResult_t ncclProxyInit(struct ncclComm* comm, struct ncclSocket* sock, union
 
 ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
   /* proxyState is shared among parent comm and split comms. comm->proxyState->thread is
-   * pthread_join()'d by commFree() in init.cc when the refCount reduces down to 0. */
+   * join()'d by commFree() in init.cc when the refCount reduces down to 0. */
   struct ncclProxyState* proxyState = comm->proxyState;
   if (proxyState->refCount == 1) {
     /* we have to make sure all following fields in comm have been initialized. */
