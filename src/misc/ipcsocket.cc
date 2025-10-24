@@ -7,12 +7,12 @@
 #include "ipcsocket.h"
 #include "utils.h"
 #include "os.h"
+#include "param.h"
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 
-// Enable Linux abstract socket naming
-#define USE_ABSTRACT_SOCKET
+NCCL_PARAM(IpcUseAbstractSocket, "IPC_USE_ABSTRACT_SOCKET", 1);
 
 #define NCCL_IPC_SOCKNAME_STR "/tmp/nccl-socket-%d-%lx"
 
@@ -45,16 +45,19 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
     close(fd);
     return ncclInternalError;
   }
-#ifndef USE_ABSTRACT_SOCKET
-  unlink(temp);
-#endif
 
-  TRACE(NCCL_INIT, "UDS: Creating socket %s", temp);
+  int useAbstractSocket = ncclParamIpcUseAbstractSocket();
+  if (!useAbstractSocket) {
+    // For regular Unix domain sockets, unlink any existing socket file
+    (void) unlink(temp);
+  }
+
+  TRACE(NCCL_INIT|NCCL_P2P, "UDS: Creating socket %s%s", temp, useAbstractSocket ? " (abstract)" : "");
 
   strncpy(cliaddr.sun_path, temp, len);
-#ifdef USE_ABSTRACT_SOCKET
-  cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
-#endif
+  if (useAbstractSocket) {
+    cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
+  }
   if (bind(fd, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0) {
     WARN("UDS: Binding to socket %s failed : %s (%d)", temp, strerror(errno), errno);
     close(fd);
@@ -91,11 +94,10 @@ ncclResult_t ncclIpcSocketClose(ncclIpcSocket *handle) {
   if (handle->fd <= 0) {
     return ncclSuccess;
   }
-#ifndef USE_ABSTRACT_SOCKET
-  if (handle->socketName[0] != '\0') {
-    unlink(handle->socketName);
+  int useAbstractSocket = ncclParamIpcUseAbstractSocket();
+  if (!useAbstractSocket) {
+    (void) unlink(handle->socketName);
   }
-#endif
   close(handle->fd);
 
   return ncclSuccess;
@@ -184,9 +186,10 @@ ncclResult_t ncclIpcSocketSendMsg(ncclIpcSocket *handle, void *hdr, int hdrLen, 
   }
   (void) strncpy(cliaddr.sun_path, temp, len);
 
-#ifdef USE_ABSTRACT_SOCKET
-  cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
-#endif
+  int useAbstractSocket = ncclParamIpcUseAbstractSocket();
+  if (useAbstractSocket) {
+    cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
+  }
 
   TRACE(NCCL_INIT, "UDS: Sending hdr %p len %d fd %d to UDS socket %s", hdr, hdrLen, sendFd, temp);
 
