@@ -37,7 +37,9 @@ Creates a new device communicator (see :c:type:`ncclDevComm`) corresponding to t
 to also provide a filled-in list of requirements via the *reqs* argument (see :c:type:`ncclDevCommRequirements`); the
 function will allocate any necessary resources to meet them.  The function can fail and return an error code if the
 communicator does not support symmetric memory or if the list of requirements cannot be met (e.g., if the multimem
-capability is requested on a system lacking the necessary hardware support).
+capability is requested on a system lacking the necessary hardware support). Since this is a collective call,
+every rank in the communicator needs to participate. If called within a group, *outDevComm* may not be filled
+in until ``ncclGroupEnd()`` has completed.
 
 Note that this is a *host-side* function.
 
