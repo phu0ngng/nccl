@@ -14,6 +14,7 @@ set(UNIT_TEST_SOURCES
     overlap_test.cc
     plugin_load.cc
     register_memcpyTest.cu
+    intrusive_map_test.cc
 )
 
 # MPI-dependent sources
@@ -22,6 +23,8 @@ if(MPI_FOUND)
         comm_leak_test_multi.cu
         coll_leak_test_multi.cu
         ft_abort_rank0.cu
+        lsa_pointer_test.cu
+        lsa_multimem_pointer_test.cu
     )
 endif()
 

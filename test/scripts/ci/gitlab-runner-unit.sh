@@ -91,13 +91,31 @@ fi
 if [[ ${DEVICE_ID_TESTS} -eq 1 ]] ; then
   run_command "device_id_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/device_id_test" ""
 else
-  "Disabled Device ID TESTS test\n\n"
+  echo -e "Disabled Device ID TESTS test\n\n"
+fi
+
+if [[ ${LSA_POINTER_TESTS} -eq 1 ]] ; then
+  run_command "lsa_pointer_tests" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/lsa_pointer_test" ""
+else
+  echo -e "Disabled LSA Pointer TESTS test\n\n"
+fi
+
+if [[ ${LSA_MULTIMEM_POINTER_TESTS} -eq 1 ]] ; then
+  run_command "lsa_multimem_pointer_tests" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/lsa_multimem_pointer_test" ""
+else
+  echo -e "Disabled LSA Multimem Pointer TESTS test\n\n"
 fi
 
 if [[ ${REGISTER_MEMCPY_TESTS} -eq 1 ]] ; then
   run_command "register_memcpy_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/register_memcpyTest" ""
 else
   echo -e "Disabled Register Memcpy TESTS test\n\n"
+fi
+
+if [[ ${HASHTABLE_TESTS} -eq 1 ]] ; then
+  run_command "intrusive_map_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/intrusive_map_test" ""
+else
+  echo -e "Disabled Intrusive Map TESTS test\n\n"
 fi
 
 export NCCL_DEBUG=$NCCL_DEBUG_OLD

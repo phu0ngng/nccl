@@ -10,8 +10,15 @@
 #include "transport.h"
 #include "group.h"
 #include "nccl_device.h"
+#include "utils.h"
+#include <mutex>
 
 NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
+
+// Global window map using intrusive address map
+// Uses ncclDevrWindow directly (vidmem as key, next pointer embedded in struct)
+static std::mutex ncclWindowMapMutex;
+static ncclIntruAddressMap<ncclDevrWindow, struct ncclWindow_vidmem*, &ncclDevrWindow::vidmem, &ncclDevrWindow::next> ncclWindowMap;
 
 // Complete types from src/include/dev_runtime.h
 struct ncclDevrMemory {
@@ -570,6 +577,12 @@ remove_winSorted:
     i -= 1; // least upper bound is just after ours.
     listRemove(devr->winSorted, &devr->winSortedCount, i);
   }
+  // Remove the just deallocated window from the table storing the communicator pointer
+  {
+    std::lock_guard<std::mutex> lock(ncclWindowMapMutex);
+    NCCLCHECKGOTO(ncclIntruAddressMapRemove(&ncclWindowMap, winDev), ret, fail);
+  }
+
   free(winHost);
 fail:
   return ret;
@@ -587,6 +600,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
   struct ncclDevrMemory* mem = nullptr;
   cudaStream_t stream = nullptr;
   void* localRegHandle = nullptr;
+  struct ncclDevrWindow* winHost = nullptr;
 
   NCCLCHECKGOTO(ncclCommRegister(comm, userPtr, userSize, &localRegHandle), ret, fail);
 
@@ -619,7 +633,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
   CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail);
 
   NCCLCHECKGOTO(symWindowCreate(
-      comm, mem, memOffset, userPtr, userSize, winFlags, localRegHandle, outWinDev, nullptr, stream
+      comm, mem, memOffset, userPtr, userSize, winFlags, localRegHandle, outWinDev, &winHost, stream
     ), ret, fail_locReg_memHandle_mem_stream);
   mem = nullptr; // symWindowCreate took our reference
 
@@ -627,6 +641,17 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
 
   // symWindowCreate needs barrier.
   NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xbeef), ret, fail_locReg_memHandle_mem_stream_win);
+
+  {
+    std::lock_guard<std::mutex> lock(ncclWindowMapMutex);
+    // Set intrusive map fields directly on winHost
+    winHost->comm = comm;
+    winHost->next = nullptr;  // Initialize next pointer
+    // Since windows are unique and belong to a single communicator,
+    // it is not necessary to check if the insert would overwrite existing entries
+    NCCLCHECKGOTO(ncclIntruAddressMapInsert(&ncclWindowMap, *outWinDev, winHost), ret, fail_locReg_memHandle_mem_stream_win);
+    INFO(NCCL_ALLOC, "Inserted window %p into address map, ret=%d", *outWinDev, ret);
+  }
 
   cudaStreamDestroy(stream);
   return ret;
@@ -1051,6 +1076,7 @@ ncclResult_t ncclDevrGetLsaTeamPtrMC(struct ncclComm* comm, struct ncclDevrWindo
   }
 
   if (!comm->nvlsSupport) {
+    WARN("Multimem pointer requested but system does not support multimem.");
     return ncclInvalidUsage;
   }
 
@@ -1063,6 +1089,138 @@ ncclResult_t ncclDevrGetLsaTeamPtrMC(struct ncclComm* comm, struct ncclDevrWindo
   return ncclSuccess;
 }
 
+static ncclResult_t findCommAndHostWindowFromDeviceWindow(ncclWindow_t devWindow, ncclComm_t* foundComm, ncclDevrWindow** hostWindow) {
+  struct ncclDevrWindow* winHost = nullptr;
+  std::lock_guard<std::mutex> lock(ncclWindowMapMutex);
+  NCCLCHECK(ncclIntruAddressMapFind(&ncclWindowMap, devWindow, &winHost));
+  if (winHost == nullptr) {
+    WARN("Could not find communicator matching window %p (map hbits=%d count=%d)",
+         devWindow, ncclWindowMap.base.hbits, ncclWindowMap.base.count);
+    return ncclInvalidArgument;
+  }
+
+  *foundComm = winHost->comm;
+  *hostWindow = winHost;
+
+  return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclGetMultimemDevicePointer, ncclWindow_t window, size_t offset, ncclMultimemHandle multimem, void** outPtr);
+ncclResult_t ncclGetMultimemDevicePointer (ncclWindow_t window, size_t offset, ncclMultimemHandle multimem, void** outPtr) {
+  if (window == nullptr || outPtr == nullptr || multimem.mcBasePtr == nullptr) {
+    WARN("window %p needs to be a valid ncclWindow_t not nullptr"
+         " and outPtr %p needs to be a valid pointer to store the output not nullptr"
+         " and MCBasePtr %p needs to be valid.",
+         window, outPtr, multimem.mcBasePtr);
+    return ncclInvalidArgument;
+  }
+
+  ncclComm_t comm = nullptr;
+  struct ncclDevrWindow* winHost = nullptr;
+
+  NCCLCHECK(findCommAndHostWindowFromDeviceWindow(window, &comm, &winHost));
+
+  if (!comm->nvlsSupport) {
+    *outPtr = nullptr;
+    return ncclSuccess;
+  }
+  *outPtr = (void*)((uintptr_t)multimem.mcBasePtr + winHost->bigOffset + offset);
+  return ncclSuccess;
+}
+
+
+NCCL_API(ncclResult_t, ncclGetLsaMultimemDevicePointer, ncclWindow_t window, size_t offset, void** outPtr);
+ncclResult_t ncclGetLsaMultimemDevicePointer(ncclWindow_t window, size_t offset, void** outPtr) {
+  if (window == nullptr || outPtr == nullptr) {
+    WARN("window %p needs to be a valid ncclWindow_t not nullptr and outPtr %p needs to be a valid pointer to store the output not nullptr",
+         window, outPtr);
+    return ncclInvalidArgument;
+  }
+
+  ncclComm_t comm = nullptr;
+  struct ncclDevrWindow* winHost = nullptr;
+  ncclTeam lsaTeam;
+
+  NCCLCHECK(findCommAndHostWindowFromDeviceWindow(window, &comm, &winHost));
+
+  lsaTeam = ncclTeamLsa(comm);
+  ncclResult_t ret = ncclSuccess;
+  NOWARN(ret = ncclDevrGetLsaTeamPtrMC(comm, winHost, offset, lsaTeam, outPtr), NCCL_NVLS);
+  if (ret == ncclInvalidUsage) {
+    *outPtr = nullptr;
+    return ncclSuccess;
+  }
+  return ret;
+}
+
+NCCL_API(ncclResult_t, ncclGetLsaDevicePointer, ncclWindow_t window, size_t offset, int lsaRank, void** outPtr);
+ncclResult_t ncclGetLsaDevicePointer(ncclWindow_t window, size_t offset, int lsaRank, void** outPtr) {
+  if (window == nullptr || outPtr == nullptr) {
+    WARN("window %p needs to be a valid ncclWindow_t not nullptr and outPtr %p needs to be a valid pointer to store the output not nullptr",
+         window, outPtr);
+    return ncclInvalidArgument;
+  }
+
+  ncclComm_t comm = nullptr;
+  struct ncclDevrState* devr;
+  struct ncclDevrWindow* winHost = nullptr;
+
+  // Get the host version of the device window
+  NCCLCHECK(findCommAndHostWindowFromDeviceWindow(window, &comm, &winHost));
+
+  devr = &comm->devrState;
+  if (lsaRank < 0 || lsaRank >= devr->lsaSize) {
+    WARN("The provided lsaRank %d is not in the valid lsaSize of [0,%d] for the provided window %p.",
+         lsaRank, devr->lsaSize, window);
+    return ncclInvalidArgument; // In this case the user should know what the lsa size is.
+  }
+
+  NCCLCHECK(ncclDevrGetLsaRankPtr(comm, winHost, offset, lsaRank, outPtr));
+
+  return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclGetPeerDevicePointer, ncclWindow_t window, size_t offset, int peer, void** outPtr);
+ncclResult_t ncclGetPeerDevicePointer(ncclWindow_t window, size_t offset, int peer, void** outPtr) {
+  if (window == nullptr || outPtr == nullptr) {
+    WARN("window %p needs to be a valid ncclWindow_t not nullptr and outPtr %p needs to be a valid pointer to store the output not nullptr",
+         window, outPtr);
+    return ncclInvalidArgument;
+  }
+
+  ncclComm_t comm = nullptr;
+  struct ncclDevrState* devr;
+  struct ncclDevrWindow* winHost = nullptr;
+  int lsaRank;
+  ncclTeam_t worldTeam;
+  ncclTeam_t lsaTeam;
+
+  // Get the host version of the device window
+  NCCLCHECK(findCommAndHostWindowFromDeviceWindow(window, &comm, &winHost));
+  // Validate peer rank is within bounds
+  if (peer < 0 || peer >= comm->nRanks) {
+    WARN("peer %d is not within valid range of ranks %d.", peer, comm->nRanks);
+    return ncclInvalidArgument;
+  }
+
+  devr = &comm->devrState;
+  worldTeam = ncclTeamWorld(comm);
+  lsaTeam = ncclTeamLsa(comm);
+
+  // Convert world rank to LSA team rank
+  lsaRank = ncclTeamRankToTeam(lsaTeam, worldTeam, peer);
+
+  // Validate the converted LSA rank is within bounds
+  if (lsaRank < 0 || lsaRank >= devr->lsaSize) {
+    // We return a nullptr if peer is not reachable. Same as device side
+    *outPtr = nullptr;
+    return ncclSuccess;
+  }
+
+  NCCLCHECK(ncclDevrGetLsaRankPtr(comm, winHost, offset, lsaRank, outPtr));
+
+  return ncclSuccess;
+}
 ////////////////////////////////////////////////////////////////////////////////
 
 // Find the least index strictly greater than arg.
@@ -1100,4 +1258,3 @@ static void listRemove(Obj* list, int* count, int index) {
   }
   *count -= 1;
 }
-

@@ -24,7 +24,9 @@ struct ncclDevrWindow {
   size_t bigOffset; // Offset in big VA space.
   int winFlags;
   void* localRegHandle;
-  struct ncclWindow_vidmem* vidmem;
+  struct ncclWindow_vidmem* vidmem; // key for intrusive map
+  struct ncclDevrWindow* next; // next for intrusive map
+  struct ncclComm* comm; // comm for intrusive map window <> comm look up
 };
 struct ncclDevrWindowSorted;
 struct ncclDevrTeam;
