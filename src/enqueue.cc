@@ -254,11 +254,6 @@ static void finishPlan(struct ncclComm* comm, struct ncclKernelPlan* plan) {
 
 NCCL_PARAM(GraphRegister, "GRAPH_REGISTER", 1);
 
-static ncclResult_t getCollNetSupport(struct ncclComm* comm, struct ncclTaskColl* task, int* collNetSupport);
-static ncclResult_t getAlgoInfo(
-  struct ncclComm* comm, struct ncclTaskColl* task,
-  int collNetSupport, int nvlsSupport, int numPipeOps, ncclSimInfo_t* simInfo = NULL
-);
 static ncclResult_t calcCollChunking(
   struct ncclComm* comm, struct ncclTaskColl* task, int nChannels, size_t nBytes,
   /*outputs*/uint32_t* outChunkSize, uint32_t* outDirectFlags, struct ncclProxyOp* proxyOp
@@ -377,7 +372,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   for (int cursor=0; cursor < fnOpTyCount; cursor++) {
     struct ncclTaskColl* aggBeg = tasksByFnOpTy[fnOpTyIndices[cursor]];
     int collNetSupport = 0;
-    NCCLCHECK(getCollNetSupport(comm, aggBeg, &collNetSupport));
+    NCCLCHECK(ncclGetCollNetSupport(comm, aggBeg, &collNetSupport));
     int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(aggBeg->opDev.op, aggBeg->datatype) || aggBeg->func == ncclFuncAllGather);
     // Crudely estimate number of tasks per channel. This is using the wrong number
     // of channels for NVLS algos, but knowing the algo requires having this value,
@@ -393,7 +388,7 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
         aggEnd = aggEnd->next;
       }
 
-      NCCLCHECK(getAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nTasksPerChannel, simInfo));
+      NCCLCHECK(ncclGetAlgoInfo(comm, &agg, collNetSupport, nvlsSupport, nTasksPerChannel, simInfo));
       agg.devFuncId = ncclDevFuncId(agg.func, agg.opDev.op, agg.datatype, agg.algorithm, agg.protocol);
 
       int isCollnet=0, isNvls=0;
@@ -849,40 +844,42 @@ static ncclResult_t addP2pToPlan(
     chunkSize[dir] = chunkDataSize[dir];
     if (protocol[dir] == NCCL_PROTO_LL) chunkSize[dir] *= 2;
 
-    if (network[dir]) {
-      bool pxnUsed = !ncclPxnDisable(comm) && comm->isAllNvlink && comm->maxLocalRanks > 1;
-      if (bytes[dir] > 0 && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE && (!pxnUsed)) {
+    if (p2pTasks[dir] && p2pTasks[dir]->allowUB) {
+      if (network[dir]) {
+        bool pxnUsed = !ncclPxnDisable(comm) && comm->isAllNvlink && comm->maxLocalRanks > 1;
+        if (bytes[dir] > 0 && proxySameProcess[dir] && protocol[dir] == NCCL_PROTO_SIMPLE && (!pxnUsed)) {
+          int regFlag = 0;
+          NCCLCHECKGOTO(ncclCalloc(&handles[dir], nChannelsMax), ret, cleanup);
+          for (int part = 0; part < nChannelsMax; part++) {
+            int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, part);
+            struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
+            int peerRank = dir ? sendRank : recvRank;
+            struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
+              : &channelPeers[peerRank]->recv[connIndex];
+              if (conn->conn.flags & NCCL_DIRECT_NIC)
+                ncclRegisterP2pNetBuffer(comm, addrs[dir], bytes[dir], conn, &regFlag, &handles[dir][part], &plan->cleanupQueue);
+              if (!regFlag) break;
+          }
+          netRegistered[dir] = regFlag ? true : false;
+        }
+      } else if (bytes[dir] > 0 && addrs[dir] && protocol[dir] == NCCL_PROTO_SIMPLE && !selfSend) {
+        int peerRank = dir ? sendRank : recvRank;
         int regFlag = 0;
-        NCCLCHECKGOTO(ncclCalloc(&handles[dir], nChannelsMax), ret, cleanup);
-        for (int part = 0; part < nChannelsMax; part++) {
-          int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, part);
-          struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
-          int peerRank = dir ? sendRank : recvRank;
-          struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
-            : &channelPeers[peerRank]->recv[connIndex];
-          if (conn->conn.flags & NCCL_DIRECT_NIC)
-            ncclRegisterP2pNetBuffer(comm, addrs[dir], bytes[dir], conn, &regFlag, &handles[dir][part], &plan->cleanupQueue);
-          if (!regFlag) break;
-        }
-        netRegistered[dir] = regFlag ? true : false;
+        int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, 0);
+        struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
+        struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
+          : &channelPeers[peerRank]->recv[connIndex];
+          void* regAddr = NULL;
+          if (conn->conn.flags & (NCCL_P2P_WRITE | NCCL_P2P_READ)) {
+            // We require users registering buffers on both sides
+            NCCLCHECKGOTO(ncclRegisterP2pIpcBuffer(comm, addrs[dir], bytes[dir], peerRank, &regFlag, &regAddr, &plan->cleanupQueue), ret, cleanup);
+            if (regFlag) {
+              if (dir == 0 && (conn->conn.flags & NCCL_P2P_WRITE)) recvAddr = regAddr;
+              else if (dir == 1 && (conn->conn.flags & NCCL_P2P_READ)) sendAddr = regAddr;
+            }
+          }
+          ipcRegistered[dir] = regFlag ? true : false;
       }
-    } else if (bytes[dir] > 0 && addrs[dir] && protocol[dir] == NCCL_PROTO_SIMPLE && !selfSend) {
-      int peerRank = dir ? sendRank : recvRank;
-      int regFlag = 0;
-      int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, 0);
-      struct ncclChannelPeer** channelPeers = comm->channels[channelId].peers;
-      struct ncclConnector* conn = dir ? &channelPeers[peerRank]->send[connIndex]
-        : &channelPeers[peerRank]->recv[connIndex];
-      void* regAddr = NULL;
-      if (conn->conn.flags & (NCCL_P2P_WRITE | NCCL_P2P_READ)) {
-        // We require users registering buffers on both sides
-        NCCLCHECKGOTO(ncclRegisterP2pIpcBuffer(comm, addrs[dir], bytes[dir], peerRank, &regFlag, &regAddr, &plan->cleanupQueue), ret, cleanup);
-        if (regFlag) {
-          if (dir == 0 && (conn->conn.flags & NCCL_P2P_WRITE)) recvAddr = regAddr;
-          else if (dir == 1 && (conn->conn.flags & NCCL_P2P_READ)) sendAddr = regAddr;
-        }
-      }
-      ipcRegistered[dir] = regFlag ? true : false;
     }
 
     if (bytes[dir] == -1) nChannels[dir] = 0;
@@ -1450,7 +1447,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, task);
         nPlans += 1;
       } else {
-	if (!ncclIntruQueueEmpty(&planner->collSymTaskQueue)) {
+        if (!ncclIntruQueueEmpty(&planner->collSymTaskQueue)) {
           NCCLCHECKGOTO(ncclSymmetricTaskScheduler(comm, &planner->collSymTaskQueue, plan), result, failure);
         }
         else {
@@ -1748,7 +1745,7 @@ ncclResult_t ncclLaunchFinish(struct ncclComm* comm) {
 /* Enqueueing system : computation of kernel and proxy operations parameters */
 /*****************************************************************************/
 
-static inline ncclResult_t getCollNetSupport(
+ncclResult_t ncclGetCollNetSupport(
     struct ncclComm* comm, struct ncclTaskColl* info, int* collNetSupport
   ) {
   // Translate ncclAvg and PreMulSum
@@ -1912,7 +1909,7 @@ static ncclResult_t topoGetAlgoInfo(
 // Call the plugin first. Let it set algo+proto, and/or nChannels.
 // Then, topoGetAlgoInfo will set algo/proto if not set, then nChannels and nThreads based on algo/proto.
 // Finally, nChannels will be overriden by the plugin setting.
-static ncclResult_t getAlgoInfo(
+ncclResult_t ncclGetAlgoInfo(
     struct ncclComm* comm, struct ncclTaskColl* info,
     int collNetSupport, int nvlsSupport, int numPipeOps, ncclSimInfo_t* simInfo/* = NULL*/
   ) {
@@ -2370,7 +2367,7 @@ static ncclResult_t p2pTaskAppend(
     void* buff,
     size_t count,
     ncclDataType_t datatype,
-    int peer) {
+    int peer, bool allowUB) {
   struct ncclKernelPlanner *planner = &comm->planner;
 
   // Determine peer and basic parameters.
@@ -2396,6 +2393,7 @@ static ncclResult_t p2pTaskAppend(
   p2p->datatype = datatype;
   p2p->root = peer;
   p2p->bytes = nBytes;
+  p2p->allowUB = allowUB;
   p2p->eActivationMask = ncclProfilerApiState.eActivationMask;
   p2p->groupApiEventHandle = ncclProfilerApiState.groupApiEventHandle;
   p2p->p2pApiEventHandle = ncclProfilerApiState.p2pApiEventHandle;
@@ -2545,7 +2543,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
   ncclFunc_t collAPI = info->coll;
 
   if (info->coll == ncclFuncSend || info->coll == ncclFuncRecv) {
-    NCCLCHECK(p2pTaskAppend(comm, info, info->coll, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root));
+    NCCLCHECK(p2pTaskAppend(comm, info, info->coll, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root, true));
   } else {
     // Empty collectives can be discarded.
     if (info->count == 0) return ncclSuccess;
@@ -2571,38 +2569,59 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       ncclDevrFindWindow(comm, info->sendbuff, &sendWin);
       ncclDevrFindWindow(comm, info->recvbuff, &recvWin);
       bool ceImplemented = ncclCeImplemented(info->coll, info->op, info->datatype);
-
+      bool ceSymReg = true;
       // Append CE collective task if CE is supported and requested by user
-      if (comm->symmetricSupport && comm->nNodes == 1 && sendWin && recvWin && (sendWin->winFlags & recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC) && comm->config.CTAPolicy == NCCL_CTA_POLICY_ZERO && ceImplemented) {
+      ncclSymRegType_t winRegType;
+      NCCLCHECK(ncclGetSymRegType(sendWin, recvWin, &winRegType));
+      if (info->coll == ncclFuncAlltoAll || info->coll == ncclFuncAllGather || info->coll == ncclFuncScatter || info->coll == ncclFuncGather) {
+        if (winRegType != ncclSymSendRegRecvReg && winRegType != ncclSymSendNonregRecvReg) ceSymReg = false;
+      }
+      if (comm->symmetricSupport && comm->nNodes == 1 && ceSymReg && comm->config.CTAPolicy == NCCL_CTA_POLICY_ZERO && ceImplemented) {
         NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, opDev));
       }
       // Append kernel-based collective
       else {
+        // currently legacy sendrecv needs src and dst buffers to be registered
+        // we cannot allow UB if alltoall/scatter/gather fallback to legacy sendrecv
+        // when src or dst buffers are not registered
+        struct ncclReg* sendReg = NULL;
+        struct ncclReg* recvReg = NULL;
+        bool allowUB = false;
+        bool captured = false;
+        struct ncclCudaGraph graph;
+        // For cuda graph checking
+        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream));
+        captured = ncclCudaGraphValid(graph);
         if (info->coll == ncclFuncAlltoAll) {
+          NCCLCHECK(ncclRegFind(comm, info->sendbuff, comm->nRanks * info->count * ncclTypeSize(info->datatype), &sendReg));
+          NCCLCHECK(ncclRegFind(comm, info->recvbuff, comm->nRanks * info->count * ncclTypeSize(info->datatype), &recvReg));
+          allowUB = captured || (sendReg != NULL && recvReg != NULL);
           for (int r=0; r<comm->nRanks; r++) {
-            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, (void*)((char*)info->sendbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
-            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)((char*)info->recvbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r));
+            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, (void*)((char*)info->sendbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r, allowUB));
+            NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)((char*)info->recvbuff+r*info->count*ncclTypeSize(info->datatype)), info->count, info->datatype, r, allowUB));
           }
         } else if (info->coll == ncclFuncGather){
           size_t offset = 0;
-          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, (void*)info->sendbuff, info->count, info->datatype, info->root));
+          allowUB = captured;
+          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, (void*)info->sendbuff, info->count, info->datatype, info->root, allowUB));
           if (comm->rank == info->root) {
             for (int r=0; r<comm->nRanks; r++) {
               void* buff = (void*)((char*)info->recvbuff + offset);
-              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, buff, info->count, info->datatype, r));
+              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, buff, info->count, info->datatype, r, allowUB));
               offset += info->count * ncclTypeSize(info->datatype);
             }
           }
         } else if (info->coll == ncclFuncScatter) {
           size_t offset = 0;
+          allowUB = captured;
           if (comm->rank == info->root) {
             for (int r = 0; r < comm->nRanks; r++) {
               void* buff = (void*)((char*)info->sendbuff + offset);
-              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, buff, info->count, info->datatype, r));
+              NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncSend, collAPI, buff, info->count, info->datatype, r, allowUB));
               offset += info->count * ncclTypeSize(info->datatype);
             }
           }
-          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root));
+          NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root, allowUB));
         } else {
           NCCLCHECK(collTaskAppend(comm, info, opDev));
         }

@@ -67,6 +67,10 @@ constexpr uint32_t kernelMask_LSA = 1<<ncclSymkKernelId_AllReduce_AGxLL_R |
                                     1<<ncclSymkKernelId_ReduceScatter_LD |
                                     1<<ncclSymkKernelId_ReduceScatter_LDMC;
 
+int ncclSymkLLKernelMask() {
+  return kernelMask_LL;
+}
+
 static uint32_t kernelMask_coll(ncclFunc_t coll) {
   switch (coll) {
   case ncclFuncAllGather: return kernelMask_AG;
@@ -326,14 +330,23 @@ bool ncclSymkAvailable(struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp
 
 ncclResult_t ncclSymkPickKernel(
     struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty,
-    size_t nEltsTotal, size_t nEltsMax, int nWorks,
-    float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps
+    size_t nEltsTotal, size_t nEltsMax, int nWorks, ncclSymRegType_t winRegType,
+    float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps, bool* forced
   ) {
   uint32_t kmask = ncclSymkMask(comm, coll, red, ty, nEltsMax);
-
+  
+  *forced = !(kernelMask_user() == (1<<(int)ncclSymkKernelId_Count)-1);
   // We currently don't support grouping for LL kernels.
   if (nWorks > 1)
     kmask &= ~kernelMask_LL;
+
+  if (coll == ncclFuncAllReduce) {
+    if (winRegType != ncclSymSendRegRecvReg) kmask &= kernelMask_LL;
+  } else if (coll == ncclFuncAllGather) {
+    if (winRegType != ncclSymSendRegRecvReg && winRegType != ncclSymSendNonregRecvReg) kmask &= kernelMask_LL;
+  } else if (coll == ncclFuncReduceScatter) {
+    if (winRegType != ncclSymSendRegRecvReg && winRegType != ncclSymSendRegRecvNonreg) kmask &= kernelMask_LL;
+  }
 
   ncclSymkKernelId bestKernel = ncclSymkKernelId_Count;
   float bestTime = 1.e30f;
@@ -373,11 +386,30 @@ ncclResult_t ncclSymkMakeDevWork(struct ncclComm* comm, struct ncclTaskColl* tas
   outDevWork->rootRank = task->root;
   outDevWork->redOpArg = task->opDev.scalarArg;
   outDevWork->nElts = task->count;
-  outDevWork->inputWin = task->sendWin->vidmem;
-  outDevWork->inputOff = (uint8_t*)task->sendbuff - (uint8_t*)task->sendWin->userPtr;
-  outDevWork->outputWin = task->recvWin->vidmem;
-  outDevWork->outputOff = (uint8_t*)task->recvbuff - (uint8_t*)task->recvWin->userPtr;
+  outDevWork->inputWin = task->sendWin ? task->sendWin->vidmem : nullptr;
+  outDevWork->inputOff = task->sendWin ? (uint8_t*)task->sendbuff - (uint8_t*)task->sendWin->userPtr : (size_t)task->sendbuff;
+  outDevWork->outputWin = task->recvWin ? task->recvWin->vidmem : nullptr;
+  outDevWork->outputOff = task->recvWin ? (uint8_t*)task->recvbuff - (uint8_t*)task->recvWin->userPtr : (size_t)task->recvbuff;
   outDevWork->sChannelId = 0xffff;
   outDevWork->nChannels = 0;
+  return ncclSuccess;
+}
+
+
+ncclResult_t ncclGetSymRegType(struct ncclDevrWindow* sendWin, struct ncclDevrWindow* recvWin, ncclSymRegType_t* winRegType) {
+  bool isSendSymmReg = false;
+  bool isRecvSymmReg = false;
+  if (sendWin && (sendWin->winFlags & NCCL_WIN_COLL_SYMMETRIC)) isSendSymmReg = true;
+  if (recvWin && (recvWin->winFlags & NCCL_WIN_COLL_SYMMETRIC)) isRecvSymmReg = true;
+  // determine the registration type
+  if (!isSendSymmReg && !isRecvSymmReg) {
+    *winRegType = ncclSymSendNonregRecvNonreg;
+  } else if (isSendSymmReg && !isRecvSymmReg) {
+    *winRegType = ncclSymSendRegRecvNonreg;
+  } else if (!isSendSymmReg && isRecvSymmReg) {
+    *winRegType = ncclSymSendNonregRecvReg;
+  } else if (isSendSymmReg && isRecvSymmReg) {
+    *winRegType = ncclSymSendRegRecvReg;
+  }
   return ncclSuccess;
 }

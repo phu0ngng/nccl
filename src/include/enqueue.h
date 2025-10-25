@@ -37,4 +37,10 @@ static inline size_t ncclFuncMaxSendRecvCount(ncclFunc_t func, int nRanks, size_
   return func == ncclFuncAllGather || func == ncclFuncReduceScatter ? nRanks*count : count;
 }
 
+ncclResult_t ncclGetCollNetSupport(struct ncclComm* comm, struct ncclTaskColl* task, int* collNetSupport);
+ncclResult_t ncclGetAlgoInfo(
+  struct ncclComm* comm, struct ncclTaskColl* task,
+  int collNetSupport, int nvlsSupport, int numPipeOps, ncclSimInfo_t* simInfo = NULL
+);
+
 #endif // End include guard

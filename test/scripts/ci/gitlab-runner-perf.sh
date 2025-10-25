@@ -11,6 +11,7 @@ get_slurm_planned_time
 
 opts="-w 1 -G $GRAPH -s 512M"
 range="-b 8 -e $MAX -f 2"
+small_msg_range="-b 8 -e 16K -f 2"
 enable_ft="-B 0 -F 1"
 enable_split_test="-S 1 -P 1"
 split_range="-b 8 -e 1G -f 2"
@@ -38,6 +39,8 @@ then
     run_command "${func}_ce_nvls_disable" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=0" "$NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 0 -R 2 -x 2"
     run_command "${func}_ce_graph_nvls_enable" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 1 -R 2 -x 2"
     run_command "${func}_ce_graph_nvls_disable" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=0" "$NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 1 -R 2 -x 2"
+    run_command "${func}_ce_send_reg" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 1 -R 3 -x 2"
+    run_command "${func}_ce_recv_reg" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 1 -R 4 -x 2"
     if [ "$NNODES" == "1" ];
     then
       run_command "${func}_ce_single_proc_nvls_enable" $RUN_MODE 1 "" "NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-t 1 -g $NGPUS -b 128 -e 8G -f 2 -G 0 -R 2 -x 2"
@@ -57,6 +60,9 @@ then
     run_command "${func}_symm_memory_sweep_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -G 1 -R 2"
     run_command "${func}_group_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range_group $opts -R 2 -n 1 -m 10"
     run_command "${func}_large_group_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range_group $opts -R 2 -n 1 -m 100"
+    run_command "${func}_ll_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$small_msg_range $opts -n 1"
+    run_command "${func}_send_reg_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -n 1 -R 3"
+    run_command "${func}_recv_reg_symm_kernel" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts -n 1 -R 4"
   done
 fi
 
