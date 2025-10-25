@@ -202,6 +202,7 @@ struct ncclTaskColl {
 
   struct ncclDevrWindow* sendWin;
   struct ncclDevrWindow* recvWin;
+  ncclSymRegType_t winRegType;
   void* sendMhandle;
   void* recvMhandle;
   void** sendNetHandles;
@@ -230,6 +231,7 @@ struct ncclTaskP2p {
   ncclDataType_t datatype;
   int root;
   size_t bytes;
+  bool allowUB;
 
   // Profiler plugin
   int eActivationMask;

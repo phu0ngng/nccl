@@ -28,7 +28,7 @@ function run_gin_test_suite() {
 }
 
 if [[ ${ENQUEUE_TESTS_ARGS} -eq 1 ]] ; then
-  run_command "enqueue_tests_args" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=512" "$NCCL_HOME/test/unit/enqueue_test" ""
+  run_command "enqueue_tests_args" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=1024" "$NCCL_HOME/test/unit/enqueue_test" ""
 else
   echo -e "Disabled Enqueue TESTS Args test\n\n"
 fi
@@ -73,7 +73,7 @@ else
 fi
 
 if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]]; then
-  run_command "ft_abort_rank0" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
+  run_command "ft_abort_rank0" "$RUN_MODE" 2 "--oversubscribe" "NCCL_WIN_ENABLE=0" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
 fi
 
 if [[ ${FT_TESTS_NO_P2P} -eq 1 ]] ; then

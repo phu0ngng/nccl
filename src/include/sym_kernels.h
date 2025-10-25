@@ -91,6 +91,14 @@ union ncclSymkDevWorkArgs4K {
   char buf4K[4096];
 };
 
+typedef enum {
+  ncclSymSendNonregRecvNonreg = 0,
+  ncclSymSendNonregRecvReg = 1,
+  ncclSymSendRegRecvNonreg = 2,
+  ncclSymSendRegRecvReg = 3,
+  ncclNumSymRegTypes = 4
+} ncclSymRegType_t;
+
 // We assume ncclComm contains a field: `ncclSymkState symkState`
 ncclResult_t ncclSymkInitOnce(struct ncclComm* comm);
 ncclResult_t ncclSymkFinalize(struct ncclComm* comm);
@@ -98,8 +106,8 @@ ncclResult_t ncclSymkFinalize(struct ncclComm* comm);
 bool ncclSymkAvailable(struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red,
                        ncclDataType_t ty, size_t nElts);
 ncclResult_t ncclSymkPickKernel(struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty,
-                                size_t nEltsTotal, size_t nEltsMax, int nWorks,
-                                float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps);
+                                size_t nEltsTotal, size_t nEltsMax, int nWorks, ncclSymRegType_t winRegType,
+                                float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps, bool* forced);
 
 ncclResult_t ncclSymkMakeDevWork(struct ncclComm* comm, struct ncclTaskColl* task, struct ncclSymkDevWork* outDevWork);
 
@@ -109,5 +117,8 @@ extern void* ncclSymkKernelList[];
 extern int ncclSymkKernelRequirements[/*ncclSymkKernelCount*/];
 void* ncclSymkGetKernelPtr(ncclSymkKernelId kernelId, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty);
 const char* ncclSymkKernelIdToString(int kernelId);
+ncclResult_t ncclGetSymRegType(struct ncclDevrWindow* sendWin, struct ncclDevrWindow* recvWin, ncclSymRegType_t* winRegType);
+
+int ncclSymkLLKernelMask();
 
 #endif
