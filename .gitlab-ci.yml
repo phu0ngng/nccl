@@ -2164,6 +2164,9 @@ perftest-A40:
     GRAPH: 0
     NGPUS: 2
     NP: 2
+    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this fix is merged.
+    DEVICE_API: 0
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2200,6 +2203,9 @@ perftest-A100:
     GRAPH: 0
     NGPUS: 8
     NP: 8
+    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this fix is merged.
+    DEVICE_API: 0
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2372,6 +2378,8 @@ perftest_single-draco_oci:
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
+    # Disable this test currently as it's affected by this GIN proxy bug: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
@@ -2591,6 +2599,9 @@ multi-perftest-A40:
     GRAPH: 0
     NGPUS: 2
     NP: 2
+    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this fix is merged.
+    DEVICE_API: 0
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2771,6 +2782,8 @@ perftest_multi-draco_oci:
     NP: 8
     GRAPH: 0
     SKIP_FT_INIT: 1
+    # Disable this test currently as it's affected by this GIN proxy bug: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
