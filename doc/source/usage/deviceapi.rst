@@ -11,13 +11,13 @@ Device API
 Device API consists of the following modules:
 
  * **LSA (Load/Store Accessible)** -- for communication between devices accessible via memory load/store operations,
-   using CUDA P2P.  This includes devices connected over NVLink and some devices connected over PCIe (the latter are
-   currently limited to devices with P2P connectivity (as indicated by ``nvidia-smi topo -p2p p``), subject to the
-   :ref:`env_NCCL_P2P_LEVEL` distance check).
+   using CUDA P2P.  This includes devices connected over NVLink and some devices connected over PCIe, so long as they
+   have P2P connectivity with each other (as indicated by ``nvidia-smi topo -p2p p``).  Up to NCCL 2.28.3, the
+   availability of LSA was also subject to the :ref:`env_NCCL_P2P_LEVEL` distance check, but that is no longer the case
+   with newer versions.
  * **Multimem** -- for communication between devices using the hardware multicast feature provided by
    NVLink SHARP (available on some datacenter GPUs since the Hopper generation).
- * **GIN (GPU-Initiated Networking)** -- for communication over the network.  This module is under active development
-   and will not be covered here at this time.
+ * **GIN (GPU-Initiated Networking)** -- for communication over the network (since NCCL 2.28.7).
 
 The device API relies on symmetric memory (see :ref:`window_reg`), which in turn depends on GPU virtual memory
 management (see :ref:`env_NCCL_CUMEM_ENABLE`) and optionally -- for multimem support -- on NVLink SHARP (see
@@ -26,7 +26,8 @@ management (see :ref:`env_NCCL_CUMEM_ENABLE`) and optionally -- for multimem sup
 Host-Side Setup
 ---------------
 
-To perform communication from the device, a device communicator needs to be created using :c:func:`ncclDevCommCreate`.
+To perform communication from the device kernel, a device communicator needs to be created first, using
+:c:func:`ncclDevCommCreate`.
 Data transfer operations on buffers require symmetric memory windows (see :ref:`window_reg`).  A custom
 communication kernel can then be launched using the standard CUDA syntax.  The code excerpt below demonstrates
 these steps:
@@ -53,18 +54,18 @@ these steps:
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devComm));
 
     /* Launch user kernel */
-    customKernel<<<nCTAs, 256>>>(devComm, win);
+    customKernel<<<nCTAs, 512>>>(devComm, win);
     [...]
   }
 
 Depending on the kernel and application requirements, the same window can be used for input and output, or multiple
 windows may be needed.  When creating a device communicator, the resources that the kernel will need should be specified
-via the requirements list (see :c:type:`ncclDevCommRequirements`).  In the
-above example we specify just the number of barriers that the kernel will need, in this case one for each CTA the kernel
-is to be launched on (16, each CTA running 256 threads).
+via the requirements list (see :c:type:`ncclDevCommRequirements`).  In the above example we specify just the number of
+barriers that our LSA kernel will need, in this case one for each CTA the kernel
+is to be launched on (16, each CTA running 512 threads).
 
-Simple Device Kernel
---------------------
+Simple LSA Kernel
+-----------------
 
 .. code:: C
 
@@ -79,11 +80,11 @@ Simple Device Kernel
 
     for (size_t o = globalTid; o < count; o += globalNthreads) {
       T v = 0;
-      for (int peer=0; peer<nRanks; peer++) {
+      for (int peer = 0; peer < nRanks; peer++) {
         T* inputPtr = (T*)ncclGetLsaPointer(win, offset, peer);
         v += inputPtr[o];
       }
-      for (int peer=0; peer<nRanks; peer++) {
+      for (int peer = 0; peer < nRanks; peer++) {
         T* outputPtr = (T*)ncclGetLsaPointer(win, offset, peer);
         outputPtr[o] = v;
       }
@@ -100,15 +101,18 @@ The start of the buffer is specified as a (byte-based) *offset* within the previ
 
 Before the kernel can start processing data, it needs to ensure that all participants are ready.  It creates a memory
 barrier session *bar* (see :c:type:`ncclLsaBarrierSession`) and uses it to synchronize across all the threads of the CTA
-(*ncclCoopCta*) and the ranks of the communicator (*devComm*).  *ncclTeamTagLsa* indicates the subset of ranks the
-barrier will apply to and *blockIdx.x* is the CTA's local index, used to select the barrier.
+(*ncclCoopCta()*; see :ref:`devapi_coops`) and the ranks of the communicator (*devComm*).  *ncclTeamTagLsa* indicates
+the subset of ranks the barrier will apply to (see :ref:`devapi_teams`) -- this kernel assumes that all ranks are
+LSA-connected. *blockIdx.x* is the CTA's local index, used to select the barrier.
 
 The kernel then calculates a globally unique index for each thread as well as the overall thread count, and can finally
-start processing data, using an all-to-all communication pattern.  In each iteration, every participating thread loads a
-single input element of each communicator rank.  :c:func:`ncclGetLsaPointer` is used to calculate the locally-accessible
+start processing data, using an all-to-all communication pattern.  In each iteration of the outer loop, every
+participating thread loads a single input element from each communicator rank (the first inner loop).
+:c:func:`ncclGetLsaPointer` is used to calculate the locally-accessible
 address of the start of the buffer within each rank (remote device memory was previously mapped into the local address
-space -- see :ref:`window_reg`).  Extracted input data is accumulated and then stored back at each rank.  Before the
-kernel terminates, another memory synchronization needs to take place to ensure that all the threads have finished
+space -- see :ref:`window_reg`).  Extracted input data is accumulated and the result is stored back at each rank (the
+second inner loop).  Before the
+kernel terminates, another memory synchronization needs to take place to ensure that all participants have finished
 processing their data.
 
 Note that this simple implementation would likely fall short of achieving the peak bandwidth, as it utilizes neither
@@ -151,21 +155,39 @@ Within the device kernel, we can switch the memory barrier to a multimem-optimiz
 to the constructor.  The processing loop is actually simpler with multimem: :c:func:`ncclGetLsaMultimemPointer` needs to
 be invoked just once per kernel.  The returned multicast memory pointer enables access to the device memory of all the
 ranks of the communicator without having to iterate over them, and the data can be reduced in hardware.  To keep this
-example simple, the implementations of ``multimem_sum`` and ``multimem_st`` are not included. Those need to be
+example simple, the implementations of ``multimem_sum`` and ``multimem_st`` are not included; they need to be
 implemented using PTX, e.g., ``multimem.ld_reduce.global.add`` and ``multimem.st.global``.
+
+.. _devapi_coops:
 
 Thread Groups
 -------------
 
-Many functions in the device API take a thread cooperative group as input to indicate which threads within the CTA will take part in the operation. NCCL provides three predefined ones: ``ncclCoopThread()``, ``ncclCoopWarp()`` and ``ncclCoopCta()``.
+Many functions in the device API take a thread cooperative group as input to indicate which threads within the CTA will
+take part in the operation. NCCL provides three predefined ones: ``ncclCoopThread()``, ``ncclCoopWarp()``, and (the most
+commonly used) ``ncclCoopCta()``.
 
-Users may also pass CUDA cooperative groups, or any class which provides ``thread_rank()``, ``size()`` and ``sync()`` functions.
+Users may also pass CUDA cooperative groups, or any class which provides ``thread_rank()``, ``size()``, and ``sync()``
+methods.
+
+.. _devapi_teams:
 
 Teams
 -----
 
-To address remote ranks or perform barriers, NCCL refers to subsets of ranks within the global communicator as "teams".
-NCCL provides three predefined ones: ``ncclTeamWorld()``, ``ncclTeamLsa()``, and ``ncclTeamRail()``.
+To address remote ranks or perform barriers, NCCL refers to subsets of ranks within a communicator as "teams".
+NCCL provides three predefined ones:
+
+ * ``ncclTeamWorld()`` -- the "world" team, encompassing all the ranks of a given communicator.
+ * ``ncclTeamLsa()`` -- all the peers accessible from the local rank using load/store operations.
+ * ``ncclTeamRail()`` -- the set of peers directly accessible from the local rank over the network, assuming that the
+   network fabric is rail-optimized (see :ref:`env_NCCL_CROSS_NIC`).
+
+The ``ncclTeam`` structure contains fairly self-explanatory elements ``nRanks``, ``rank``, and ``stride``.  The device
+API contains functions to verify team membership, convert rank numbers between teams, etc.  The world and LSA teams are
+always contiguous (stride ``1``), whereas the rail team is typically not -- its stride equals the size of the LSA team
+(the assumption is thus that each rank *n* within the local LSA team has direct network connectivity with corresponding
+ranks *n* of all remote LSA teams).
 
 Host-Accessible Device Pointer Functions
 ----------------------------------------
@@ -175,7 +197,7 @@ memory regions.
 
 The four functions are :c:func:`ncclGetLsaMultimemDevicePointer` (multimem base pointer), :c:func:`ncclGetMultimemDevicePointer` (multimem base pointer with custom handle), :c:func:`ncclGetLsaDevicePointer` (LSA peer pointer),
 and :c:func:`ncclGetPeerDevicePointer` (world rank peer pointer). Functions automatically discover the associated communicator
-from the window object and return ``ncclResult_t`` error codes. 
+from the window object and return ``ncclResult_t`` error codes.
 
 Usage Example:
 .. code:: C
@@ -220,3 +242,78 @@ Usage Example:
 
 Important notes: Pointer lifetime is limited to the shorter of Window and Communicator lifetime. Functions should be called once
 and pointers cached for reuse. For detailed function documentation, see :ref:`device_api_host_functions`.
+
+GIN Device Kernel
+-----------------
+
+.. code-block:: C
+  :emphasize-lines: 4-6,12-34
+
+  int main() {
+    [...]
+    memset(&reqs, 0, sizeof(ncclDevCommRequirements));
+    int nCTAs = 1;
+    reqs.railGinBarrierCount = nCTAs;
+    reqs.ginSignalCount = 1;
+    NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devComm));
+    [...]
+  }
+
+  template <typename T>
+  __global__ void ginAlltoAllKernel(ncclDevComm devComm, ncclWindow_t win,
+                                    size_t inputOffset, size_t outputOffset, size_t count) {
+    int ginContext = 0;
+    ncclGinSignal_t signalIndex = 0;
+    ncclGin gin { devComm, ginContext };
+    uint64_t signalValue = gin.readSignal(signalIndex);
+
+    ncclGinBarrierSession<ncclCoopCta> bar { ncclCoopCta(), gin, ncclTeamWorld(devComm),
+                                             devComm.railGinBarrier, blockIdx.x };
+    bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+
+    const int rank = devComm.rank, nRanks = devComm.nRanks;
+    const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const int nThreads = blockDim.x * gridDim.x;
+
+    const size_t size = count * sizeof(T);
+    for (int peer = tid; peer < nRanks; peer += nThreads) {
+      gin.put(ncclTeamWorld(devComm), peer, win, outputOffset + rank * size,
+              win, inputOffset + peer * size, size, ncclGin_SignalInc{signalIndex});
+    }
+
+    gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + nRanks);
+    gin.flush(ncclCoopCta());
+  }
+
+The above code excerpt demonstrates modifications needed to the earlier host code to enable GIN support, available since
+NCCL 2.28.7 (the lines with critical changes are highlighted), and also includes a GIN AlltoAll kernel.  On the host
+side, compared to the LSA kernels, we request a launch on just a single CTA (because our kernel doesn't have much to do)
+and we set :c:macro:`railGinBarrierCount` and :c:macro:`ginSignalCount` to request GIN-specific barriers and signals
+(:c:func:`ncclDevCommCreate` will fail if GIN support is unavailable).  As with LSA barriers, we need as many of them as
+CTAs, but signals (used for completion notifications) can be shared between CTAs so, for this simple example, we'll use
+just one per rank (for performance-oriented kernels, keeping signals exclusive to each CTA can improve performance).
+
+On the device side, GIN API centers around the :c:type:`ncclGin` object, initialized using the device communicator and a
+GIN
+context index (``0`` will do for this simple example but, for performance-oriented kernels, using multiple contexts can
+provide a performance boost).  To avoid race conditions, the initial value of the signal must be read *prior to* the
+synchronizing barrier.  GIN-specific barriers look much like their LSA counterparts, being local to each CTA, but
+communicating over the network, not memory.  *ncclTeamWorld* indicates all the ranks of a communicator (this kernel
+assumes
+that all the ranks can reach one another over the network, which in general need not be the case -- see
+:ref:`env_NCCL_CROSS_NIC`).
+
+Unlike with the AllReduce kernels, for AlltoAll the calculated thread index needs to be unique only locally within each
+rank.  This is then used to determine the destination peer.  The main GIN data transfer operation is the one-sided
+:c:func:`put`, here launched in parallel on all participating threads, one per each destination peer (the loop is needed
+merely if the total rank count exceeds the local thread count -- this is why we launched on just a single CTA).
+:c:func:`put` takes the usual arguments such as the destination rank and buffer address, the source buffer, and the
+transfer size.  It also accepts several optional arguments; the above example takes advantage of the *remoteAction*,
+requesting that the destination peer increments the value of its local signal once the payload has been settled.
+
+Once the local signal has been incremented by *nRanks*, we know that every peer has deposited their data in this rank's
+output buffer and thus that the buffer is ready; :c:func:`waitSignal` can be used to block until that happens.  Before
+terminating, the kernel still needs to :c:func:`flush` all the previously initiated outgoing :c:func:`put` operations --
+while that does not guarantee remote completion, it does ensure that the local input buffer is safe to reuse.  We can
+skip an explicit barrier at the end, since :c:func:`waitSignal` and :c:func:`flush` together ensure that nobody else is
+using this rank's buffers.

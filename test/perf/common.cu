@@ -1115,7 +1115,7 @@ testResult_t threadInit(struct threadArgs* args) {
     for (int id = 0; id < args->commNum; ++id) {
       for (int i = 0; i < args->nGpus; i++) {
         result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
-        if (result != ncclSuccess && result != ncclInProgress) {
+        if (result != ncclSuccess) {
           testSkipReason = "Required device API features not available on this hardware";
           NCCLCHECK(ncclGroupEnd());
           return testSkipped;
@@ -1123,7 +1123,11 @@ testResult_t threadInit(struct threadArgs* args) {
       }
     }
     result = ncclGroupEnd();
-    if (result != ncclSuccess) {
+    if (result == ncclInProgress) {
+      for (int id = 0; id < args->commNum; ++id) {
+        TESTCHECK(waitCommStateBatch(args->comms[id], args->nGpus));
+      }
+    } else if (result != ncclSuccess) {
       testSkipReason = "Required device API features not available on this hardware";
       return testSkipped;
     }
@@ -2000,7 +2004,7 @@ testResult_t run() {
       for (int id = 0; id < commNum; ++id) {
         for (int i = 0; i < nGpus * nThreads; i++) {
           result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
-          if (result != ncclSuccess && result != ncclInProgress) {
+          if (result != ncclSuccess) {
             testSkipReason = "Required device API features not available on this hardware";
             NCCLCHECK(ncclGroupEnd());
             return testSkipped;
@@ -2008,7 +2012,11 @@ testResult_t run() {
         }
       }
       result = ncclGroupEnd();
-      if (result != ncclSuccess) {
+      if (result == ncclInProgress) {
+        for (int id = 0; id < commNum; ++id) {
+          TESTCHECK(waitCommStateBatch(comms[id], nGpus * nThreads));
+        }
+      } else if (result != ncclSuccess) {
         testSkipReason = "Required device API features not available on this hardware";
         return testSkipped;
       }
@@ -2190,7 +2198,7 @@ testResult_t run() {
 #endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
       if (deviceImpl) {
-        NCCLCHECK(ncclDevCommDestroy(comms[id][i], devComms[id]+i*nGpus));
+        NCCLCHECK(ncclDevCommDestroy(comms[id][i], devComms[id]+i));
       }
 #endif
       NCCLCHECK(ncclCommDestroy(comms[id][i]));

@@ -66,6 +66,36 @@ then
   done
 fi
 
+if [ "$DEVICE_API" != "0" ]; then
+  if [ "$NNODES" == "1" ]; then
+    # lsa tests
+    for impl in 1 2; do
+      run_command "all_reduce_perf_device_lsa_${impl}" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -R 2 -D $impl"
+      if [ "$NGPUS" -ge "3" ]; then
+        run_command "all_reduce_perf_device_lsa_${impl}_multithread" $RUN_MODE 1 "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -t $NGPUS -g 1 -R 2 -D $impl"
+        run_command "all_reduce_perf_device_lsa_${impl}_multigpu" $RUN_MODE 1 "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -t 1 -g $NGPUS -R 2 -D $impl"
+      fi
+    done
+    for impl in 1 2; do
+      run_command "alltoall_perf_device_lsa_${impl}" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/alltoall_perf" "$range $opts -R 2 -D $impl"
+    done
+    # multimem tests
+    for impl in 3 4; do
+      run_command "all_reduce_perf_device_multimem_${impl}" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -R 2 -D $impl"
+    done
+  fi
+  # gin tests
+  for impl in 3; do
+    # try proxy and gdaki
+    run_command "alltoall_perf_device_gin_proxy_${impl}" $RUN_MODE $NGPUS "" "NCCL_GIN_TYPE=2" "$NCCL_HOME/test/perf/alltoall_perf" "$range $opts -R 2 -D $impl"
+    run_command "alltoall_perf_device_gin_gdaki_${impl}" $RUN_MODE $NGPUS "" "NCCL_GIN_TYPE=3" "$NCCL_HOME/test/perf/alltoall_perf" "$range $opts -R 2 -D $impl"
+  done
+  # hybrid (lsa/gin) tests
+  for impl in 4; do
+    run_command "alltoall_perf_device_hybrid_${impl}" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/alltoall_perf" "$range $opts -R 2 -D $impl"
+  done
+fi
+
 if [ "$NGPUS" -ge "3" ];
 then
   for func in all_reduce_perf alltoall_perf; do

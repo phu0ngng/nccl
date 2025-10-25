@@ -2419,6 +2419,7 @@ perftest_single-draco_oci:
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
+    DEVICE_API: 0
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
@@ -2776,6 +2777,7 @@ perftest_multi-AWS_H100_EFA:
       export CI_JOB_NAME=${CI_JOB_NAME}
       export JUNIT=$JUNIT
       export SKIP_FT_FINALIZE=1
+      export DEVICE_API=0
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
@@ -2816,6 +2818,7 @@ perftest_multi-draco_oci:
     NP: 8
     GRAPH: 0
     SKIP_FT_INIT: 1
+    DEVICE_API: 0
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
