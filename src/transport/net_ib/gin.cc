@@ -226,14 +226,27 @@ ncclResult_t ncclGinIbGdakiDevices(int* ndev) {
 
 ncclResult_t ncclGinIbGdakiGetProperties(int dev, ncclNetProperties_t* props) {
   std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
-  NCCLCHECK(ncclNetIb.getProperties(ncclGinIbGdakiDevIndexes[dev], props));
+  if (dev >= ncclGinIbGdakiNDevs) {
+    WARN("NET/IB : Requested properties for GIN GDAKI NIC %d, only %d GIN GDAKI NICs have been created", dev, ncclGinIbGdakiNDevs);
+    return ncclInvalidUsage;
+  }
+  NCCLCHECK(ncclIbGetPhysProperties(ncclGinIbGdakiDevIndexes[dev], props));
   props->netDeviceType = NCCL_NET_DEVICE_GIN_GDAKI;
+  props->vProps.ndevs = 1;
+  props->vProps.devs[0] = dev;
   return ncclSuccess;
 }
 
 ncclResult_t ncclGinIbGdakiListen(void* ctx, int dev, void* opaqueHandle, void** listenComm) {
   std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
   return ncclNetIb.listen(ctx, ncclGinIbGdakiDevIndexes[dev], opaqueHandle, listenComm);
+}
+
+ncclResult_t ncclGinIbGdakiConnect(void* ctx, void* handles[], int nranks, int rank, void* listenComm, void** collComm) {
+  ncclResult_t status = ncclGinIbConnect(ctx, handles, nranks, rank, listenComm, collComm);
+  struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)*collComm;
+  cComm->getProperties = (ncclResult_t(*)(int dev, void *props))ncclGinIbGdakiGetProperties;
+  return status;
 }
 
 ncclResult_t ncclGinIbGdakiCreateContext(void* collComm, int nSignals, int nCounters, void **ginCtx, ncclNetDeviceHandle_v11_t** devHandle) {
@@ -271,7 +284,7 @@ ncclGin_t ncclGinIbGdaki = {
   ncclGinIbGdakiDevices,
   ncclGinIbGdakiGetProperties,
   ncclGinIbGdakiListen,
-  ncclGinIbConnect,
+  ncclGinIbGdakiConnect,
   ncclGinIbGdakiCreateContext,
   ncclGinIbGdakiRegMrSym,
   NULL, // regMrSymDmaBuf
