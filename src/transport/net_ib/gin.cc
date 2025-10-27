@@ -246,6 +246,7 @@ ncclResult_t ncclGinIbGdakiConnect(void* ctx, void* handles[], int nranks, int r
   ncclResult_t status = ncclGinIbConnect(ctx, handles, nranks, rank, listenComm, collComm);
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)*collComm;
   cComm->getProperties = (ncclResult_t(*)(int dev, void *props))ncclGinIbGdakiGetProperties;
+  cComm->ibvCtx = ncclIbDevs[ncclGinIbGdakiDevIndexes[cComm->dev]].context;
   return status;
 }
 
