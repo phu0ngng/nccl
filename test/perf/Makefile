@@ -91,7 +91,7 @@ DST_DIR := $(BUILDDIR)/test/perf
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 COLLS := all_reduce all_gather broadcast reduce_scatter reduce alltoall gather scatter sendrecv hypercube
-EXTRA_COLLS := all_gatherv reduce_scatterv
+EXTRA_COLLS := all_gatherv reduce_scatterv comm_ops
 COLL_OBJS := $(COLLS:%=${DST_DIR}/%.o)
 BIN_FILES := $(COLLS:%=${DST_DIR}/%_perf) $(EXTRA_COLLS:%=${DST_DIR}/%_perf) ${DST_DIR}/replay-coll
 ifeq ($(MPI_COLLNET), 1)
@@ -163,6 +163,11 @@ ${DST_DIR}/replay-coll: ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(T
 	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(NVLDFLAGS)
 
 ${DST_DIR}/%_perf_mpi_collnet: ${DST_DIR}/%.o ${DST_DIR}/common_mpi_collnet.o ${DST_DIR}/nccl_mpi_collnet.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ $(NVLDFLAGS)
+
+${DST_DIR}/comm_ops_perf: ${DST_DIR}/comm_ops.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ $(NVLDFLAGS)
