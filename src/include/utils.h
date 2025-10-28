@@ -682,4 +682,14 @@ static inline ncclResult_t ncclIntruAddressMapRemove(
     reinterpret_cast<uintptr_t>(key));
 }
 
+inline ncclResult_t ncclThreadJoin(std::thread& thread) {
+  try {
+    thread.join();
+    return ncclSuccess;
+  } catch (const std::exception& e) {
+    WARN("Thread join failed: %s", e.what());
+    return ncclSystemError;
+  }
+}
+
 #endif
