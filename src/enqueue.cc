@@ -1273,7 +1273,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
 
       // Acquire deviceStream. Since the user's graph will be launched later and it also
       // acquires the deviceStream, it will observe this upload.
-      NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), result, fail);
+      NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(comm->config.graphUsageMode), &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), result, fail);
 
       CUDACHECKGOTO(cudaMallocAsync(&fifoBufDev, workBytes, comm->memPool, deviceStream), result, fail);
       plan->workBufPersistent = fifoBufDev;
@@ -1291,7 +1291,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       cleanup->hostBuf = fifoBufHost;
       ncclIntruQueueEnqueue(&comm->eventCallbackQueue, (struct ncclCommEventCallback *)cleanup);
 
-      NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false), result, fail);
+      NCCLCHECKGOTO(ncclStrongStreamRelease(ncclCudaGraphNone(comm->config.graphUsageMode), &comm->sharedRes->deviceStream, /*concurrent=*/false), result, fail);
       NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm, /*waitSome=*/false), result, fail);
 
     finish_scope:
@@ -2420,7 +2420,7 @@ static ncclResult_t ncclPlannerSetCapturingGraph(struct ncclComm* comm, struct n
     while (true) {
       if (l == nullptr) { // Got to the end, this must be a new stream.
         struct ncclCudaGraph graph;
-        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream));
+        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream, comm->config.graphUsageMode));
         if (planner->streams != nullptr && !ncclCudaGraphSame(planner->capturingGraph, graph)) {
           WARN("Streams given to a communicator within a NCCL group must either be all uncaptured or all captured by the same graph.");
           return ncclInvalidUsage;
@@ -2702,7 +2702,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
         bool captured = false;
         struct ncclCudaGraph graph;
         // For cuda graph checking
-        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream));
+        NCCLCHECK(ncclCudaGetCapturingGraph(&graph, info->stream, comm->config.graphUsageMode));
         captured = ncclCudaGraphValid(graph);
         if (info->coll == ncclFuncAlltoAll) {
           NCCLCHECK(ncclRegFind(comm, info->sendbuff, comm->nRanks * info->count * ncclTypeSize(info->datatype), &sendReg));

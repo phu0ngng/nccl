@@ -74,7 +74,7 @@ void ncclCudaContextDrop(struct ncclCudaContext* cxt) {
 ////////////////////////////////////////////////////////////////////////////////
 
 ncclResult_t ncclCudaGetCapturingGraph(
-    struct ncclCudaGraph* graph, cudaStream_t stream
+    struct ncclCudaGraph* graph, cudaStream_t stream, int graphUsageMode
   ) {
   #if CUDART_VERSION >= 10000 // cudaStreamGetCaptureInfo
     int driver;
@@ -86,6 +86,7 @@ ncclResult_t ncclCudaGetCapturingGraph(
         graph->origin = nullptr;
         graph->graph = nullptr;
         graph->graphId = ULLONG_MAX;
+        graph->graphUsageMode = graphUsageMode;
       #endif
       if (status != cudaStreamCaptureStatusNone) {
         WARN("NCCL cannot be captured in a graph if either it wasn't built with CUDA runtime >= 11.3 or if the installed CUDA driver < R465.");
@@ -106,6 +107,7 @@ ncclResult_t ncclCudaGetCapturingGraph(
         } else {
           graph->origin = stream;
         }
+        graph->graphUsageMode = graphUsageMode;
       #endif
     }
   #endif
@@ -153,7 +155,6 @@ ncclResult_t ncclStrongStreamDestruct(struct ncclStrongStream* ss) {
   return ncclSuccess;
 }
 
-NCCL_PARAM(GraphMixingSupport, "GRAPH_MIXING_SUPPORT", 1)
 NCCL_PARAM(LaunchRaceFatal, "LAUNCH_RACE_FATAL", 1);
 constexpr char const* launchRaceFatalMsg = "Fatal: host threads racing to launch NCCL on same device.";
 
@@ -165,7 +166,7 @@ ncclResult_t ncclStrongStreamAcquire(
    cudaStream_t* workStream
   ) {
   #if CUDART_VERSION >= 11030
-    bool mixing = ncclParamGraphMixingSupport();
+    bool mixing = graph.graphUsageMode == 2;
     if (graph.graphId == ULLONG_MAX) {
       *workStream = ss->liveStream;
       ss->liveAcquiredBy = localThreadId();
@@ -272,7 +273,7 @@ ncclResult_t ncclStrongStreamRelease(
     struct ncclCudaGraph graph, struct ncclStrongStream* ss, bool concurrent
   ) {
   #if CUDART_VERSION >= 11030
-    bool mixing = ncclParamGraphMixingSupport();
+    bool mixing = graph.graphUsageMode == 2;
     if (mixing) {
       if (graph.graphId == ULLONG_MAX) {
         if (COMPILER_ATOMIC_LOAD(&ss->everCaptured, std::memory_order_relaxed)) {

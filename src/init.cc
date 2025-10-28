@@ -531,7 +531,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   cudaStream_t deviceStream;
 
   memset(&tmpCommAndChans, '\0', sizeof(tmpCommAndChans));
-  NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), ret, fail);
+  NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(comm->config.graphUsageMode), &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), ret, fail);
   NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, deviceStream), ret, fail);
   ncclCommPushCudaFree(comm, devCommAndChans);
   NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.rankToLocalRank, comm->nRanks, deviceStream), ret, fail);
@@ -615,7 +615,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 
   NCCLCHECKGOTO(ncclCudaMemcpyAsync(devCommAndChans, &tmpCommAndChans, 1, deviceStream), ret, fail);
 exit:
-  NCCLCHECK(ncclStrongStreamRelease(ncclCudaGraphNone(), &comm->sharedRes->deviceStream, /*concurrent=*/false));
+  NCCLCHECK(ncclStrongStreamRelease(ncclCudaGraphNone(comm->config.graphUsageMode), &comm->sharedRes->deviceStream, /*concurrent=*/false));
   NCCLCHECK(ncclStrongStreamSynchronize(&comm->sharedRes->deviceStream));
   return ret;
 fail:
@@ -1457,7 +1457,7 @@ NCCL_PARAM(MinCTAs, "MIN_CTAS", NCCL_CONFIG_UNDEF_INT);
 
 NCCL_PARAM(NChannelsPerNetPeer, "NCHANNELS_PER_NET_PEER", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(NvlinkUtilCentricSchedEnable, "NVLINK_UTIL_CENTRIC_SCHED_ENABLE", NCCL_CONFIG_UNDEF_INT);
-
+NCCL_PARAM(GraphMixingSupport, "GRAPH_MIXING_SUPPORT", NCCL_CONFIG_UNDEF_INT)
 
 #define NCCL_COMMINIT_FUNCNAME_LEN 128
 struct ncclCommInitRankAsyncJob {
@@ -1704,6 +1704,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int nvlsCTAsEnv;
   int nChannelsPerNetPeerEnv;
   int nvlinkUtilCentricSchedEnableEnv;
+  int graphMixingSupportEnv;
 
   /* override configuration with env variable. */
   blockingEnv = ncclParamCommBlocking();
@@ -1762,6 +1763,18 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
       if (comm->config.nvlinkCentricSched != NCCL_CONFIG_UNDEF_INT)
         INFO(NCCL_ENV, "Comm config nvlinkCentricSched reset to NCCL_NVLINK_UTIL_CENTRIC_SCHED_ENABLE=%d", nvlinkUtilCentricSchedEnableEnv);
       comm->config.nvlinkCentricSched = nvlinkUtilCentricSchedEnableEnv;
+    }
+  }
+
+  graphMixingSupportEnv = ncclParamGraphMixingSupport();
+  if (graphMixingSupportEnv != NCCL_CONFIG_UNDEF_INT) {
+    if (graphMixingSupportEnv != 0 && graphMixingSupportEnv != 1) {
+      INFO(NCCL_ENV, "NCCL_GRAPH_MIXING_SUPPORT %d is not valid, leaving it set at %d", graphMixingSupportEnv, comm->config.graphUsageMode);
+    } else {
+      if (comm->config.graphUsageMode != NCCL_CONFIG_UNDEF_INT) {
+        INFO(NCCL_ENV, "Comm config graphUsageMode reset to %d by NCCL_GRAPH_MIXING_SUPPORT=%d", graphMixingSupportEnv == 1 ? 2 : 0, graphMixingSupportEnv);
+      }
+      comm->config.graphUsageMode = graphMixingSupportEnv == 1 ? 2 : 0;
     }
   }
 
@@ -1917,6 +1930,10 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
       internalConfigPtr->nChannelsPerNetPeer = defaultConfig.nChannelsPerNetPeer;
       internalConfigPtr->nvlinkCentricSched = defaultConfig.nvlinkCentricSched;
     }
+
+    if (internalConfigPtr->version < NCCL_VERSION(2, 29, 0)) {
+      internalConfigPtr->graphUsageMode = defaultConfig.graphUsageMode;
+    }
   }
 
   /* check input config attributes, -1 means user-undefined and we should use default value from NCCL. */
@@ -1986,6 +2003,12 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     goto fail;
   }
 
+  if (internalConfigPtr->graphUsageMode != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->graphUsageMode != 0 && internalConfigPtr->graphUsageMode != 1 && internalConfigPtr->graphUsageMode != 2) {
+    WARN("Invalig config graphUsageMode attribute value %d", internalConfigPtr->graphUsageMode);
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
   /* default config value can be tuned on different platform. */
   NCCL_CONFIG_DEFAULT(internalConfigPtr, blocking, NCCL_CONFIG_UNDEF_INT, 1, "Blocking", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, cgaClusterSize, NCCL_CONFIG_UNDEF_INT, 4, "CGA cluster size", "%d");
@@ -2002,6 +2025,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   NCCL_CONFIG_DEFAULT(internalConfigPtr, nChannelsPerNetPeer, NCCL_CONFIG_UNDEF_INT,
                       NCCL_CONFIG_UNDEF_INT, "nChannelsPerNetPeer", "%d");
   NCCL_CONFIG_DEFAULT(internalConfigPtr, nvlinkCentricSched, NCCL_CONFIG_UNDEF_INT, 0, "nvlinkCentricSched", "%d");
+  NCCL_CONFIG_DEFAULT(internalConfigPtr, graphUsageMode, NCCL_CONFIG_UNDEF_INT, 2, "graphUsageMode", "%d");
 
   /* assign config to communicator */
   comm->config.blocking = internalConfigPtr->blocking;
@@ -2018,6 +2042,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
   comm->config.nvlsCTAs = internalConfigPtr->nvlsCTAs;
   comm->config.nChannelsPerNetPeer = internalConfigPtr->nChannelsPerNetPeer;
   comm->config.nvlinkCentricSched = internalConfigPtr->nvlinkCentricSched;
+  comm->config.graphUsageMode = internalConfigPtr->graphUsageMode;
   NCCLCHECKGOTO(envConfigOverride(comm), ret, fail);
 
 exit:
