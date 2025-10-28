@@ -125,3 +125,11 @@ function configure_test_env() {
     # --mca btl_tcp_if_include <socket>
     export OMPI_MCA_btl_tcp_if_include=$PRETYCHE_NCCL_SOCKET_IFNAME
 }
+
+function get_cluster_name() {
+    echo "PreTyche"
+}
+
+function get_gcperf_tools_path() {
+    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/gcperf-tools"
+}
