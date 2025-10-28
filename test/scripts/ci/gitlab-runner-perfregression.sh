@@ -11,13 +11,22 @@ get_slurm_planned_time
 # Use gcperf-tools venv
 source ${GCPERF_TOOLS_PATH}/venv/bin/activate
 
+# Set nodes based on pipeline type
+NNODES=4
+if [[ $TRIGGER_PIPELINE == "weekly" ]]; then
+    NNODES=50
+fi
+echo "Running perf regression with ${NNODES} nodes"
+
 # Set gcperf-tools variables
+GOLDEN_BRANCH="master"
+CURRENT_BRANCH="${CI_COMMIT_BRANCH//\//.}"
 OUTDIR="perfregression"
 SBATCH_FILE="perfregression.sbatch"
 SYSTEMS_TOML="test/scripts/ci/gcperf-tools/systems.toml"
 USER_TOML="test/scripts/ci/gcperf-tools/gitlab-runner.toml"
 TESTSET_TOML="test/scripts/ci/gcperf-tools/testsuite.toml"
-RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${CI_COMMIT_BRANCH//\//.}
+RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${GOLDEN_BRANCH//\//.}/${NNODES}_node
 
 mkdir -p ${OUTDIR}
 
@@ -33,7 +42,7 @@ gcperf-tools generate-job-script \
 # Submit the job
 cd perfregression
 echo "Submitting job script..."
-sbatch --wait -N ${NNODES} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CI_COMMIT_BRANCH//\//.}" -t ${SLURM_TIME} ${SBATCH_FILE}
+sbatch --wait -N ${NNODES} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
 
 # Convert results to CSV
 echo "Converting results to CSV..."
@@ -71,14 +80,17 @@ else
     echo "Skipping regression check"
 fi
 
-# Copy results.csv to RESULTS_DIR with date format
-# Get current date in MM_DD_YY format
-DATE_SUFFIX=$(date +%m_%d_%y)
-# Ensure RESULTS_DIR exists
-mkdir -p ${RESULTS_DIR}
-# Copy and rename results.csv to RESULTS_DIR
-echo "Copying results.csv to ${RESULTS_DIR}/${DATE_SUFFIX}.csv"
-cp results.csv ${RESULTS_DIR}/${DATE_SUFFIX}.csv
+if [[ $CURRENT_BRANCH == $GOLDEN_BRANCH ]] && [[ $TRIGGER_PIPELINE != "pre-submit" ]]; then
+    echo "Detected on golden branch, copying results to ${RESULTS_DIR}"
+    # Copy results.csv to RESULTS_DIR with date format
+    # Get current date in MM_DD_YY format
+    DATE_SUFFIX=$(date +%m_%d_%y)
+    # Ensure RESULTS_DIR exists
+    mkdir -p ${RESULTS_DIR}
+    # Copy and rename results.csv to RESULTS_DIR
+    echo "Copying results.csv to ${RESULTS_DIR}/${DATE_SUFFIX}.csv"
+    cp results.csv ${RESULTS_DIR}/${DATE_SUFFIX}.csv
+fi
 
 echo "Performance regression check completed with exit code: $REGRESSION_CODE"
 echo "See job artifacts for more detailed results"

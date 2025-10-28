@@ -153,7 +153,7 @@ build-classic-gin:
 build-ipp6:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
       when: always
     - when: never
   tags:
@@ -169,7 +169,7 @@ build-ipp6:
 build-pre-tyche:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_PRE_TYCHE == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
       when: always
     - when: never
   tags:
@@ -2972,7 +2972,7 @@ perftest-multi-theia:
 perf-regression-eos:
   stage: perf_regression
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
   needs:
@@ -2986,7 +2986,6 @@ perf-regression-eos:
     SLURM_TIME: 60
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
-    NNODES: 4
   before_script:
     - tar -xzf build-ipp6.tar.gz
   script:
@@ -3002,7 +3001,7 @@ perf-regression-eos:
 perf-regression-pre-tyche:
   stage: perf_regression
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_REGRESSION == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
   needs: ["build-pre-tyche"]
@@ -3015,7 +3014,6 @@ perf-regression-pre-tyche:
     SLURM_TIME: 60
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
-    NNODES: 4
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
   artifacts:
