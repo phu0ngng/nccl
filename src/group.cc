@@ -17,12 +17,12 @@
 
 #define GROUP_MAX_RECLAIM_STEPS 10
 
-__thread int ncclGroupDepth = 0; // depth of ncclGroupStart nesting
-__thread ncclResult_t ncclGroupError = ncclSuccess;
-__thread struct ncclComm* ncclGroupCommHead[ncclGroupTaskTypeNum] = {nullptr};
-__thread struct ncclComm* ncclGroupCommPreconnectHead = nullptr;
-__thread struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> ncclAsyncJobs;
-__thread int ncclGroupBlocking = -1; /* default mode */
+thread_local int ncclGroupDepth = 0; // depth of ncclGroupStart nesting
+thread_local ncclResult_t ncclGroupError = ncclSuccess;
+thread_local struct ncclComm* ncclGroupCommHead[ncclGroupTaskTypeNum] = {nullptr};
+thread_local struct ncclComm* ncclGroupCommPreconnectHead = nullptr;
+thread_local struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next> ncclAsyncJobs;
+thread_local int ncclGroupBlocking = -1; /* default mode */
 void* ncclAsyncJobMain(void* arg);
 
 ncclResult_t ncclAsyncLaunch(
@@ -81,7 +81,7 @@ void* ncclAsyncJobMain(void* arg) {
 
 ncclResult_t ncclAsyncJobComplete(struct ncclAsyncJob* job) {
   ncclResult_t ret;
-  PTHREADCHECK(pthread_join(job->thread, NULL), "pthread_join");
+  NCCLCHECK(ncclThreadJoin(job->thread));
   if (job->result != ncclSuccess) {
     WARN("ncclAsyncJobComplete: job %p failed, job error %d", job, job->result);
   }
@@ -410,7 +410,7 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
       return job->result;
     }
     do {
-      PTHREADCHECKGOTO(pthread_create(&job->thread, nullptr, ncclAsyncJobMain, job), "pthread_create", ret, fail);
+      STDTHREADCREATE(job->thread, ncclAsyncJobMain, job);
       job = job->next;
     } while (job != nullptr);
 
@@ -423,8 +423,8 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
           jobsDone = false;
         } else if (state == ncclGroupJobDone) {
           int err;
-          if ((err = pthread_join(job->thread, nullptr)) != 0) {
-            WARN("Error waiting for pthread_join: %s", strerror(err));
+          if ((err = ncclThreadJoin(job->thread)) != ncclSuccess) {
+            WARN("asyncJobLaunch: failed to join thread for job");
             ret = ncclSystemError;
           }
           job->state = ncclGroupJobJoined;
@@ -463,13 +463,28 @@ fail:
 
 NCCL_PARAM(SingleProcMemRegEnable, "SINGLE_PROC_MEM_REG_ENABLE", 0);
 
+static void ncclPrepareTasksAndCollPreconnectJobFree(void* _job) {
+  struct ncclPrepareTasksAndCollPreconnectJob* job = (struct ncclPrepareTasksAndCollPreconnectJob*)_job;
+  delete job;
+}
+
+static void ncclPreconnectJobFree(void* _job) {
+  struct ncclPreconnectJob* job = (struct ncclPreconnectJob*)_job;
+  delete job;
+}
+
+static void ncclGroupSymmetricJobFree(void* _job) {
+  struct ncclGroupSymmetricJob* job = (struct ncclGroupSymmetricJob*)_job;
+  delete job;
+}
+
 static ncclResult_t ncclPrepareTasksAndCollPreconnect(struct ncclComm* comm, ncclSimInfo_t* simInfo, struct ncclIntruQueue<struct ncclAsyncJob, &ncclAsyncJob::next>* asyncCollJobs) {
   if (ncclParamSingleProcMemRegEnable()) {
     struct ncclPrepareTasksAndCollPreconnectJob* job;
-    NCCLCHECK(ncclCalloc(&job, 1));
+    NEW_NOTHROW(job, ncclPrepareTasksAndCollPreconnectJob);
     job->base.func = ncclPrepareTasksAndCollPreconnectFunc;
     job->base.undo = nullptr;
-    job->base.destructor = free;
+    job->base.destructor = ncclPrepareTasksAndCollPreconnectJobFree;
     job->base.state = ncclGroupJobRunning;
     job->base.abortFlag = comm->abortFlag;
     job->base.abortFlagDev = comm->abortFlagDev;
@@ -487,16 +502,16 @@ static ncclResult_t ncclPrepareTasksAndCollPreconnect(struct ncclComm* comm, ncc
     if (comm->cuMemSupport && needConnect) {
       ncclResult_t ret;
       struct ncclPreconnectJob* job;
-      NCCLCHECK(ncclCalloc(&job, 1));
+      NEW_NOTHROW(job, ncclPreconnectJob);
       job->base.func = ncclCollPreconnectFunc;
       job->base.undo = nullptr;
-      job->base.destructor = free;
+      job->base.destructor = ncclPreconnectJobFree;
       job->base.state = ncclGroupJobRunning;
       job->base.abortFlag = comm->abortFlag;
       job->base.abortFlagDev = comm->abortFlagDev;
       job->comm = comm;
       if ((ret = ncclCalloc(&job->algoNeedConnect, NCCL_NUM_ALGORITHMS))) {
-        free(job);
+        delete job;
         NCCLCHECK(ret);
       }
       memcpy(job->algoNeedConnect, algoNeedConnect, sizeof(bool) * NCCL_NUM_ALGORITHMS);
@@ -518,10 +533,10 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
     struct ncclComm* comm = groupCommPreconnectHeadMain;
     do {
       struct ncclPreconnectJob* job;
-      NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
+      NEW_NOTHROW_GOTO(job, ncclPreconnectJob, ret, fail);
       job->base.func = ncclP2PPreconnectFunc;
       job->base.undo = nullptr;
-      job->base.destructor = free;
+      job->base.destructor = ncclPreconnectJobFree;
       job->base.state = ncclGroupJobRunning;
       job->base.abortFlag = comm->abortFlag;
       job->base.abortFlagDev = comm->abortFlagDev;
@@ -547,10 +562,10 @@ static ncclResult_t groupLaunch(struct ncclAsyncJob *job_, ncclSimInfo_t* simInf
         comm = cliqueHead;
         do {
           struct ncclGroupSymmetricJob* job;
-          NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
+          NEW_NOTHROW_GOTO(job, ncclGroupSymmetricJob, ret, fail);
           job->base.func = ncclCommGroupRegisterSymmetric;
           job->base.undo = nullptr;
-          job->base.destructor = free;
+          job->base.destructor = ncclGroupSymmetricJobFree;
           job->base.state = ncclGroupJobRunning;
           job->base.abortFlag = comm->abortFlag;
           job->base.abortFlagDev = comm->abortFlagDev;
@@ -689,7 +704,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
     }
   }
 
-  NCCLCHECKGOTO(ncclCalloc(&groupJob, 1), ret, fail);
+  NEW_NOTHROW_GOTO(groupJob, ncclGroupJob, ret, fail);
   ncclIntruQueueConstruct(&groupJob->asyncJobs);
   groupJob->groupRefCount = 0;
   groupJob->nonBlockingInit = false;
@@ -733,7 +748,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       }
 
       groupJob->base.func = groupLaunchNonBlocking;
-      PTHREADCHECKGOTO(pthread_create(&groupJob->base.thread, NULL, ncclAsyncJobMain, (void*)&groupJob->base), "pthread_create", ret, fail);
+      STDTHREADCREATE_GOTO(groupJob->base.thread, ncclAsyncJobMain, ret, fail, &groupJob->base);
       groupJob->nonBlockingInit = true;
       ret = ncclInProgress;
     } else {
@@ -743,7 +758,7 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       NCCLCHECKGOTO(groupLaunch(&groupJob->base, internalSimInfoPtr), ret, fail);
       CUDACHECKGOTO(cudaSetDevice(savedDev), ret, fail);
       if (simInfo) memcpy((void*)simInfo, (void*)internalSimInfoPtr, realSize);
-      free(groupJob);
+      delete groupJob;
     }
   }
   /* Reset the job state for the next group call. */
@@ -756,7 +771,7 @@ exit:
 fail:
   if (groupJob) {
     groupCleanup(groupJob->groupCommHead, &groupJob->asyncJobs, ret);
-    free(groupJob);
+    delete groupJob;
   } else {
     groupCleanup(ncclGroupCommHead, &ncclAsyncJobs, ret);
   }
@@ -771,7 +786,7 @@ ncclResult_t ncclGroupJobComplete(struct ncclGroupJob* groupJob) {
       ret = ncclAsyncJobComplete(&groupJob->base);
     }
     if (ncclAtomicRefCountDecrement(&groupJob->groupRefCount) == 0) {
-      free(groupJob);
+      delete groupJob;
     }
   }
   return ret;
@@ -784,7 +799,7 @@ ncclResult_t ncclGroupJobAbort(struct ncclGroupJob* groupJob) {
       ncclAsyncJobComplete(&groupJob->base);
     }
     if (ncclAtomicRefCountDecrement(&groupJob->groupRefCount) == 0) {
-      free(groupJob);
+      delete groupJob;
     }
   }
   return ncclSuccess;

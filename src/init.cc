@@ -56,7 +56,7 @@ NCCL_PARAM(SetCpuStackSize, "SET_CPU_STACK_SIZE", 1);
 
 extern int64_t ncclParamSingleProcMemRegEnable();
 
-static ncclResult_t commReclaim(ncclComm_t comm);
+static ncclResult_t commReclaim(struct ncclAsyncJob* job_);
 
 // GDRCOPY support: Off by default
 NCCL_PARAM(GdrCopyEnable, "GDRCOPY_ENABLE", 0);
@@ -370,7 +370,8 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   comm->nRanks = ndev;
 
   if (parent == NULL || !parent->shareResources) {
-    struct ncclSharedResources* sharedRes = new ncclSharedResources{};
+    struct ncclSharedResources* sharedRes;
+    NEW_NOTHROW(sharedRes, ncclSharedResources);
     /* most of attributes are assigned later in initTransportsRank(). */
     sharedRes->owner = comm;
     sharedRes->tpNRanks = comm->nRanks;
@@ -1414,6 +1415,11 @@ struct ncclCommFinalizeAsyncJob {
   ncclComm_t comm;
 };
 
+static void ncclCommFinalizeAsyncJobFree(void* _job) {
+  struct ncclCommFinalizeAsyncJob* job = (struct ncclCommFinalizeAsyncJob*)_job;
+  delete job;
+}
+
 NCCL_PARAM(CommSplitShareResources, "COMM_SPLIT_SHARE_RESOURCES", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(CommShrinkShareResources, "COMM_SHRINK_SHARE_RESOURCES", NCCL_CONFIG_UNDEF_INT);
 
@@ -1927,7 +1933,7 @@ fail:
 static void ncclCommInitJobFree(void* _job) {
   struct ncclCommInitRankAsyncJob* job = (struct ncclCommInitRankAsyncJob*)_job;
   free(job->commId);
-  free(_job);
+  delete job;
 }
 
 static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId, ncclUniqueId* commId, int myrank, int cudaDev, ncclConfig_t *config, const char funcName[]) {
@@ -1969,7 +1975,7 @@ static ncclResult_t ncclCommInitRankDev(ncclComm_t* newcomm, int nranks, int nId
   comm->initState = ncclInProgress;
   *newcomm = comm;
 
-  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  NEW_NOTHROW_GOTO(job, ncclCommInitRankAsyncJob, res, fail);
   job->nId = nId;
   job->comm = comm;
   job->nranks = nranks;
@@ -2250,9 +2256,9 @@ ncclResult_t ncclCommFinalize(ncclComm_t comm) {
 
   comm->finalizeCalled = true;
   /* launch async thread to finalize comm. */
-  NCCLCHECKGOTO(ncclCalloc(&job, 1), ret, fail);
+  NEW_NOTHROW_GOTO(job, ncclCommFinalizeAsyncJob, ret, fail);
   job->comm = comm;
-  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commDestroySync, NULL, free, comm), ret, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commDestroySync, nullptr, ncclCommFinalizeAsyncJobFree, comm), ret, fail);
 
 exit:
   ncclGroupErrCheck(ret);
@@ -2348,9 +2354,9 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   comm->destroyFlag = 1;
   /* init thread must be joined before we destroy the comm. */
   NCCLCHECK(ncclCommEnsureReady(comm));
-  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  NEW_NOTHROW_GOTO(job, ncclCommFinalizeAsyncJob, res, fail);
   job->comm = comm;
-  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, nullptr, ncclCommFinalizeAsyncJobFree, comm), res, fail);
 
 exit:
   ncclGroupErrCheck(res);
@@ -2444,9 +2450,9 @@ ncclResult_t ncclCommRevoke(ncclComm_t comm, int revokeFlags) {
     NVTX3_PAYLOAD(comm->commHash, nranks, rank, cudaDev));
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
 
-  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  NEW_NOTHROW_GOTO(job, ncclCommRevokeAsyncJob, res, fail);
   job->comm = comm;
-  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commRevokeAsync, NULL, free, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commRevokeAsync, nullptr, ncclCommFinalizeAsyncJobFree, comm), res, fail);
 
 exit:
   ncclGroupErrCheck(res);
@@ -2494,9 +2500,9 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
 
   TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
 
-  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  NEW_NOTHROW_GOTO(job, ncclCommFinalizeAsyncJob, res, fail);
   job->comm = comm;
-  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, NULL, free, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, commReclaim, nullptr, ncclCommFinalizeAsyncJobFree, comm), res, fail);
 
 exit:
   ncclGroupErrCheck(res);
@@ -2509,7 +2515,7 @@ fail:
 static void childCommCleanupJob(void* job) {
   struct ncclCommInitRankAsyncJob* initJob = (struct ncclCommInitRankAsyncJob*)job;
   if (initJob->excludeRanksList) free(initJob->excludeRanksList);
-  free(job);
+  delete initJob;
 }
 
 // initializing a child communicator (for both split and shrink)
@@ -2571,7 +2577,7 @@ static ncclResult_t ncclCommInitChildComm(ncclComm_t comm, ncclComm_t* newcomm, 
     childComm->initState = ncclInternalError;
   }
 
-  NCCLCHECKGOTO(ncclCalloc(&job, 1), res, fail);
+  NEW_NOTHROW_GOTO(job, ncclCommInitRankAsyncJob, res, fail);
   job->comm = childComm;
   job->newcomm = newcomm;
   job->parent = comm;
@@ -2589,7 +2595,7 @@ static ncclResult_t ncclCommInitChildComm(ncclComm_t comm, ncclComm_t* newcomm, 
   }
   job->cudaDev = comm->cudaDev;
   snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "%s", caller);
-  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, /*undo=*/NULL, /*destructor=*/childCommCleanupJob, comm), res, fail);
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, /*undo=*/nullptr, /*destructor=*/childCommCleanupJob, comm), res, fail);
 
 exit:
   (void)cudaSetDevice(oldDev);
