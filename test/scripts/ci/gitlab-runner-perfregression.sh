@@ -14,7 +14,7 @@ source ${GCPERF_TOOLS_PATH}/venv/bin/activate
 # Set gcperf-tools variables
 OUTDIR="perfregression"
 SBATCH_FILE="perfregression.sbatch"
-SYSTEMS_TOML="${GCPERF_TOOLS_PATH}/configs/systems.toml"
+SYSTEMS_TOML="test/scripts/ci/gcperf-tools/systems.toml"
 USER_TOML="test/scripts/ci/gcperf-tools/gitlab-runner.toml"
 TESTSET_TOML="test/scripts/ci/gcperf-tools/testsuite.toml"
 RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${CI_COMMIT_BRANCH//\//.}
@@ -33,7 +33,7 @@ gcperf-tools generate-job-script \
 # Submit the job
 cd perfregression
 echo "Submitting job script..."
-sbatch --wait -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CI_COMMIT_BRANCH//\//.}" -t ${SLURM_TIME} ${SBATCH_FILE}
+sbatch --wait -N ${NNODES} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CI_COMMIT_BRANCH//\//.}" -t ${SLURM_TIME} ${SBATCH_FILE}
 
 # Convert results to CSV
 echo "Converting results to CSV..."
