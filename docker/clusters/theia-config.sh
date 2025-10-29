@@ -134,4 +134,7 @@ function configure_test_env() {
 
     # MPI params
     export OMPI_MCA_coll_hcoll_enable=0
+
+    # WAR for failing GIN examples on Theia
+    export NCCL_GIN_TYPE=2
 }
