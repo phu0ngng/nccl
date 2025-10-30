@@ -12,8 +12,11 @@ readme = "README.md"
 dev = [
     "pytest>=6.0",
     "pytest-cov",
+    "pytest-mpi",
+    "mpi4py",
     "ruff",
     "pyright",
+    "ml-dtypes",
 ]
 
 [build-system]
