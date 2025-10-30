@@ -13,6 +13,7 @@
 #include "checks.h"
 #include "param.h"
 #include <atomic>
+#include <nmmintrin.h>
 
 // Windows-specific definitions for constants not available in Windows
 #ifndef IFNAMSIZ
@@ -526,4 +527,48 @@ ncclResult_t ncclSocketClose(struct ncclSocket* sock, bool wait) {
 
 void ncclOsSetMutexCondShared(std::mutex &mutex, std::condition_variable &cond) {
   // Not implemented on Windows
+}
+
+void ncclOsCpuZero(ncclAffinity& affinity) {
+  affinity = 0;
+}
+
+int ncclOsCpuCount(const ncclAffinity affinity) {
+  return _mm_popcnt_u64(affinity);
+}
+
+void ncclOsCpuSet(ncclAffinity& affinity, int cpu) {
+  affinity |= (1ULL << cpu);
+}
+
+bool ncclOsCpuIsSet(const ncclAffinity affinity, int cpu) {
+  return (affinity & (1ULL << cpu)) != 0;
+}
+
+ncclAffinity ncclOsCpuAnd(const ncclAffinity& a, const ncclAffinity& b) {
+  return a & b;
+}
+
+ncclResult_t ncclOsGetAffinity(ncclAffinity* affinity) {
+  DWORD_PTR processAffinityMask, systemAffinityMask;
+  BOOL result = GetProcessAffinityMask(GetCurrentProcess(), &processAffinityMask, &systemAffinityMask);
+  if (result == FALSE) {
+    WARN("GetProcessAffinityMask failed with error: %ld", GetLastError());
+    return ncclSystemError;
+  }
+  *affinity = processAffinityMask;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity) {
+  BOOL result = SetProcessAffinityMask(GetCurrentProcess(), affinity);
+  if (result == FALSE) {
+    WARN("SetProcessAffinityMask failed with error: %ld", GetLastError());
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+int ncclOsGetCpu() {
+  return GetCurrentProcessorNumber();
 }

@@ -52,4 +52,19 @@ ncclResult_t ncclOsSocketTryAccept(struct ncclSocket* sock);
 
 void ncclOsSetMutexCondShared(std::mutex &mutex, std::condition_variable &cond);
 
+/* Affinity functions */
+#ifdef NCCL_OS_LINUX
+typedef cpu_set_t ncclAffinity;
+#elif defined(NCCL_OS_WINDOWS)
+typedef DWORD_PTR ncclAffinity;
+#endif
+void ncclOsCpuZero(ncclAffinity& affinity);
+int ncclOsCpuCount(const ncclAffinity affinity);
+void ncclOsCpuSet(ncclAffinity& affinity, int cpu);
+bool ncclOsCpuIsSet(const ncclAffinity affinity, int cpu);
+ncclAffinity ncclOsCpuAnd(const ncclAffinity& a, const ncclAffinity& b);
+ncclResult_t ncclOsGetAffinity(ncclAffinity* affinity);
+ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity);
+int ncclOsGetCpu();
+
 #endif
