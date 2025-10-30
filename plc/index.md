@@ -164,6 +164,7 @@
 
 - [CUDA_GRAPH](items/11/CUDA_GRAPH.md)
 - [Oneshot algorithm](items/13/Oneshot_algorithm.md)
+- [NCCL4Py](items/id_eb5665f4/NCCL4Py.md)
 <!-- V2_9_DO_NOT_MOVE -->
 
 <!------------------------------------->

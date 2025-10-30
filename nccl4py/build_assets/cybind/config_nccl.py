@@ -1,4 +1,3 @@
-# TODO: write the config spec
 {
     'nccl': {
         # lowpp module, the rest is auto-computed based on the layout rule
@@ -64,8 +63,6 @@
             },
             'ncclCommInitAll': {
                 "pyargs": {"devlist": "SEQ",},
-                "return": "comm",
-                "except?": 0,
             },
 
             # Finalize / destroy / abort
@@ -82,7 +79,7 @@
                 "except?": 0,
             },
             'ncclCommShrink': {
-                "pyargs": {"excludeRanksList": "NSEQ",},
+                "pyargs": {"excludeRanksList": "SEQ",},
                 "return": "newcomm",
                 "except?": 0,
             },

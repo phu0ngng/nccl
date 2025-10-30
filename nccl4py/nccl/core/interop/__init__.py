@@ -9,17 +9,14 @@
 # See COPYRIGHT.txt for license information
 
 """
-NCCL4Py: Python bindings for NVIDIA Collective Communications Library (NCCL).
+NCCL4Py interop modules: PyTorch and CuPy integration.
 
-NCCL4Py provides Pythonic access to NCCL for efficient multi-GPU and multi-node
-communication. It supports all NCCL collective operations, point-to-point
-communication, and advanced features like buffer registration and custom reduction
-operators.
+This module provides utilities for integrating NCCL4Py with PyTorch and CuPy:
+- Memory allocation backed by NCCL allocator
+- Buffer resolution utilities
 """
 
-from nccl._version import __version__, __version_tuple__
+import nccl.core.interop.cupy as cupy
+import nccl.core.interop.torch as torch
 
-__all__ = [
-    "__version__",
-    "__version_tuple__",
-]
+__all__ = ["cupy", "torch"]
