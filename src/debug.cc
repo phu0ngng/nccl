@@ -386,6 +386,8 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
     auto delta = std::chrono::steady_clock::now() - ncclEpoch;
     double timestamp = std::chrono::duration_cast<std::chrono::duration<double>>(delta).count()*1000;
     len += snprintf(buffer+len, sizeof(buffer)-len, "[%d] %f %s:%d NCCL TRACE %s\n", cudaDev, timestamp, filefunc, line, fmt);
+  } else {
+    len += snprintf(buffer+len, sizeof(buffer)-len, "%s\n", fmt);
   }
 
   // If the prefixed format string overflows, make sure it is still terminated with a newline.
