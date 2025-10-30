@@ -9,6 +9,7 @@
 
 #include "nccl.h"
 #include "device.h"
+#include "os/os.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -54,7 +55,7 @@ ncclResult_t ncclGetLocalCpu(struct ncclTopoSystem* system, int gpu, int* retCpu
 ncclResult_t ncclGetUserP2pLevel(int* level);
 
 // Find CPU affinity
-ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu_set_t* affinity);
+ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, ncclAffinity* affinity);
 
 #define NCCL_TOPO_CPU_ARCH_X86 1
 #define NCCL_TOPO_CPU_ARCH_POWER 2

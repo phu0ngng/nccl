@@ -11,6 +11,7 @@
 #include "core.h"
 #include "xml.h"
 #include "net.h"
+#include "os.h"
 
 #define LOC_BW 5000.0
 #define SM60_NVLINK_BW 18.0
@@ -152,7 +153,7 @@ struct ncclTopoNode {
       int arch;
       int vendor;
       int model;
-      cpu_set_t affinity;
+      ncclAffinity affinity;
     }cpu;
     struct {
       uint64_t device;

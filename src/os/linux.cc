@@ -460,3 +460,47 @@ void ncclOsSetMutexCondShared(std::mutex &mutex, std::condition_variable &cond) 
   pthread_cond_init(condHandle, &condAttr);
   pthread_condattr_destroy(&condAttr);
 }
+
+void ncclOsCpuZero(ncclAffinity& affinity) {
+  CPU_ZERO(&affinity);
+}
+
+int ncclOsCpuCount(const ncclAffinity affinity) {
+  return CPU_COUNT(&affinity);
+}
+
+void ncclOsCpuSet(ncclAffinity& affinity, int cpu) {
+  CPU_SET(cpu, &affinity);
+}
+
+bool ncclOsCpuIsSet(const ncclAffinity affinity, int cpu) {
+  return CPU_ISSET(cpu, &affinity);
+}
+
+ncclAffinity ncclOsCpuAnd(const ncclAffinity& a, const ncclAffinity& b) {
+  ncclAffinity result;
+  CPU_AND(&result, &a, &b);
+  return result;
+}
+
+ncclResult_t ncclOsGetAffinity(ncclAffinity* affinity) {
+  int result = sched_getaffinity(0, sizeof(ncclAffinity), affinity);
+  if (result == -1) {
+    WARN("sched_getaffinity failed with error: %s", strerror(errno));
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity) {
+  int result = sched_setaffinity(0, sizeof(ncclAffinity), &affinity);
+  if (result == -1) {
+    WARN("sched_setaffinity failed with error: %s", strerror(errno));
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+int ncclOsGetCpu() {
+  return sched_getcpu();
+}

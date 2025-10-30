@@ -913,7 +913,7 @@ exit:
 NCCL_PARAM(ProxyDumpSignal, "PROXY_DUMP_SIGNAL", -1);
 NCCL_PARAM(ProgressAppendOpFreq, "PROGRESS_APPENDOP_FREQ", 8);
 
-static cpu_set_t proxyCpuset;
+static ncclAffinity proxyCpuset;
 static std::once_flag proxyCpusetOnceFlag;
 void proxyCpusetOnceFunc() {
   const char* setEnv = ncclGetEnv("NCCL_PROXY_CPUSET");
@@ -925,8 +925,8 @@ void proxyCpusetOnceFunc() {
     }
     // debug info
     char msg[1024] = {0};
-    cpu_set_t currSet;
-    sched_getaffinity(0, sizeof(cpu_set_t), &currSet);
+    ncclAffinity currSet;
+    ncclOsGetAffinity(&currSet);
     (void)ncclCpusetToStrList(&currSet, msg, sizeof(msg));
     snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), " changed to ");
     (void)ncclCpusetToStrList(&proxyCpuset, msg + strlen(msg), sizeof(msg) - strlen(msg));
@@ -935,7 +935,7 @@ void proxyCpusetOnceFunc() {
   }
   // if we arrive here we have either no env or we have failed to decode it
 fail:
-  CPU_ZERO(&proxyCpuset);
+  ncclOsCpuZero(proxyCpuset);
   return;
 }
 
@@ -943,7 +943,7 @@ void* ncclProxyProgress(void *proxyState_) {
   struct ncclProxyState* proxyState = (struct ncclProxyState*)proxyState_;
 
   // This thread is created by proxyService, therefore setting the affinity is not needed.
-  INFO(NCCL_INIT, "[Proxy Progress] Device %d CPU core %d", proxyState->cudaDev, sched_getcpu());
+  INFO(NCCL_INIT, "[Proxy Progress] Device %d CPU core %d", proxyState->cudaDev, ncclOsGetCpu());
 
   if (setProxyThreadContext(proxyState)) {
     INFO(NCCL_INIT, "[Proxy Progress] Set CUDA context on device %d", proxyState->cudaDev);
@@ -1603,8 +1603,8 @@ void* ncclProxyService(void* _args) {
 
   // set the thread affinity before setting the cuda context
   std::call_once(proxyCpusetOnceFlag, proxyCpusetOnceFunc);
-  if (CPU_COUNT(&proxyCpuset)) sched_setaffinity(0, sizeof(cpu_set_t), &proxyCpuset);
-  INFO(NCCL_INIT, "[Proxy Service] Device %d CPU core %d", proxyState->cudaDev, sched_getcpu());
+  if (ncclOsCpuCount(proxyCpuset)) ncclOsSetAffinity(proxyCpuset);
+  INFO(NCCL_INIT, "[Proxy Service] Device %d CPU core %d", proxyState->cudaDev, ncclOsGetCpu());
 
   if (setProxyThreadContext(proxyState)) {
     INFO(NCCL_INIT, "[Proxy Service] Created CUDA context on device %d", proxyState->cudaDev);
@@ -1797,8 +1797,8 @@ void* ncclProxyServiceUDS(void* _args) {
 
   // set the thread affinity before setting the cuda context
   std::call_once(proxyCpusetOnceFlag, proxyCpusetOnceFunc);
-  if (CPU_COUNT(&proxyCpuset)) sched_setaffinity(0, sizeof(cpu_set_t), &proxyCpuset);
-  INFO(NCCL_INIT, "[Proxy Service UDS] Device %d CPU core %d", proxyState->cudaDev, sched_getcpu());
+  if (ncclOsCpuCount(proxyCpuset)) ncclOsSetAffinity(proxyCpuset);
+  INFO(NCCL_INIT, "[Proxy Service UDS] Device %d CPU core %d", proxyState->cudaDev, ncclOsGetCpu());
 
   if (setProxyThreadContext(proxyState)) {
     INFO(NCCL_INIT, "[Proxy Service UDS] Set CUDA context on device %d", proxyState->cudaDev);

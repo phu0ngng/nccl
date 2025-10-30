@@ -1730,7 +1730,7 @@ ncclResult_t ncclTopoCpuType(struct ncclTopoSystem* system, int* arch, int* vend
 
 NCCL_PARAM(IgnoreCpuAffinity, "IGNORE_CPU_AFFINITY", 0);
 
-ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu_set_t* affinity) {
+ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, ncclAffinity* affinity) {
   struct ncclTopoNode* cpu = NULL, *gpu = NULL;
   int gpuIndex, cpuIndex;
   NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpuIndex, /*showWarn=*/true));
@@ -1739,27 +1739,27 @@ ncclResult_t ncclTopoGetCpuAffinity(struct ncclTopoSystem* system, int rank, cpu
   cpu = system->nodes[CPU].nodes+cpuIndex;
 
   // Query the CPU affinity set we were provided
-  cpu_set_t mask;
-  SYSCHECK(sched_getaffinity(0, sizeof(cpu_set_t), &mask), "sched_getaffinity");
+  ncclAffinity mask;
+  NCCLCHECK(ncclOsGetAffinity(&mask));
 
   // Get the affinity of the CPU close to our GPU.
-  cpu_set_t cpuMask = cpu->cpu.affinity;
+  ncclAffinity cpuMask = cpu->cpu.affinity;
 
   // Get the final affinity
-  cpu_set_t finalMask;
+  ncclAffinity finalMask;
   if (ncclParamIgnoreCpuAffinity())
     // Ignore the CPU affinity set and use the GPU one instead
     finalMask = cpuMask;
   else
     // Use a subset of the GPU affinity set
-    CPU_AND(&finalMask, &mask, &cpuMask);
+    finalMask = ncclOsCpuAnd(mask, cpuMask);
 
-  memcpy(affinity, &finalMask, sizeof(cpu_set_t));
+  memcpy(affinity, &finalMask, sizeof(ncclAffinity));
 
   // display the final affinity
   char msg[1024] = "";
   snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), "Affinity for GPU %d is ", gpu->gpu.dev);
-  if (CPU_COUNT(&finalMask)) {
+  if (ncclOsCpuCount(finalMask)) {
     (void)ncclCpusetToRangeStr(&finalMask, msg + strlen(msg), sizeof(msg) - strlen(msg));
   } else {
     snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), "empty, ignoring");

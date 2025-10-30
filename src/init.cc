@@ -811,7 +811,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   int rank = comm->rank;
   int nranks = comm->nRanks;
   int nNodes = 1;
-  cpu_set_t affinitySave;
+  ncclAffinity affinitySave;
   struct ncclTopoGraph* ringGraph = &comm->graphs[NCCL_ALGO_RING];
   struct ncclTopoGraph* treeGraph = &comm->graphs[NCCL_ALGO_TREE];
   struct ncclTopoGraph* collNetChainGraph = &comm->graphs[NCCL_ALGO_COLLNET_CHAIN];
@@ -964,9 +964,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // Set Affinity to a CPU local the our GPU, so that all memory we allocate
   // on the host is local.
   NCCLCHECKGOTO(ncclTopoGetCpuAffinity(comm->topo, comm->rank, &comm->cpuAffinity), ret, fail);
-  if (CPU_COUNT(&comm->cpuAffinity)) {
-    sched_getaffinity(0, sizeof(cpu_set_t), &affinitySave);
-    sched_setaffinity(0, sizeof(cpu_set_t), &comm->cpuAffinity);
+  if (ncclOsCpuCount(comm->cpuAffinity)) {
+    NCCLCHECKGOTO(ncclOsGetAffinity(&affinitySave), ret, fail);
+    NCCLCHECKGOTO(ncclOsSetAffinity(comm->cpuAffinity), ret, fail);
   }
 
   // Determine local CollNet support
@@ -1362,7 +1362,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   TRACE(NCCL_INIT, "rank %d nranks %d - DONE", rank, nranks);
 
 exit:
-  if (CPU_COUNT(&comm->cpuAffinity)) sched_setaffinity(0, sizeof(cpu_set_t), &affinitySave);
+  if (ncclOsCpuCount(comm->cpuAffinity)) ncclOsSetAffinity(comm->cpuAffinity);
   /* If split resource is shared, we are not able to unlink the proxy ops pool here since the child comm can
    * attach the proxy ops pool of parent at any time; otherwise, unlink it here to make sure the pool will be
    * properly cleaned up. */
