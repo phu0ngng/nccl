@@ -21,6 +21,7 @@ NET_PROFILER ?= 0
 MLX5DV ?= 0
 MAX_EXT_NET_PLUGINS ?= 0
 EMIT_LLVM_IR ?= 0
+TMA ?= 0
 
 NVCC ?= $(CUDA_HOME)/bin/nvcc
 
@@ -190,4 +191,10 @@ ifneq ($(NCCL_GIT_BRANCH),)
 endif
 ifneq ($(NCCL_GIT_COMMIT_HASH),)
   CXXFLAGS += -DNCCL_GIT_COMMIT_HASH='"$(NCCL_GIT_COMMIT_HASH)"'
+endif
+
+# Check if TMA is enabled
+ifneq ($(TMA), 0)
+  NVCUFLAGS_SYM += -DENABLE_TMA
+  CXXFLAGS += -DENABLE_TMA
 endif

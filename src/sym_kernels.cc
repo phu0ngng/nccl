@@ -81,7 +81,16 @@ constexpr uint32_t kernelMask_Gin = 1<<ncclSymkKernelId_ReduceScatter_RailA2A_Ls
                                     1<<ncclSymkKernelId_ReduceScatter_RailA2A_LsaLDMC |
                                     1<<ncclSymkKernelId_AllGather_RailRing_LsaSTMC;
 
-constexpr uint32_t kernelMask_DynamicSmem = kernelMask_Gin & kernelMask_RS;
+constexpr uint32_t kernelMask_DynamicSmem = (kernelMask_Gin & kernelMask_RS) |
+#if defined(ENABLE_TMA)
+                                            1<<ncclSymkKernelId_AllGather_ST |
+                                            1<<ncclSymkKernelId_AllGather_STMC |
+                                            1<<ncclSymkKernelId_ReduceScatter_LD |
+                                            1<<ncclSymkKernelId_AllReduce_RSxLD_AGxST |
+                                            1<<ncclSymkKernelId_AllGather_RailRing_LsaSTMC;
+#else
+                                            0;
+#endif
 
 int ncclSymkLLKernelMask() {
   return kernelMask_LL;

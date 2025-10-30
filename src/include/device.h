@@ -545,6 +545,10 @@ __host__ __device__ constexpr int ncclShmemScratchWarpSize(int cudaArch = NCCL_C
     ) + 15) & -16; // pad to 16 bytes
 }
 
+__host__ __device__ constexpr int ncclTmaShmemScratchWarpSize(void) {
+  return 10 << 10;
+}
+
 // The amount of dynamic shmem per block
 __host__ __device__ constexpr int ncclShmemDynamicSize(int cudaArch = NCCL_CUDA_ARCH) {
   return cudaArch < 700 ? 0 : ncclShmemScratchWarpSize(cudaArch)*(NCCL_MAX_NTHREADS/WARP_SIZE);
