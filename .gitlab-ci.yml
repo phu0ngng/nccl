@@ -61,7 +61,7 @@ default:
 
 ##
 # CI Control flow - The following rules dictate when CI should run and which specific flow should it use.
-# 
+#
 # The 3 specific flows are controlled using the `TRIGGER_PIPELINE` pipeline variable:
 # - 'pre-submit': Run this for the 'express' experience, intended to provide a quick validation for the commit. This is the default flow.
 # - 'post-submit': Run this for a more comprehensive validation including pre-submit validation.
@@ -2210,6 +2210,9 @@ perftest-A40:
     NGPUS: 2
     NP: 2
     SYMMETRIC: 1
+    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this fix is merged.
+    DEVICE_API: 0
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2247,6 +2250,9 @@ perftest-A100:
     NGPUS: 8
     NP: 8
     SYMMETRIC: 1
+    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this fix is merged.
+    DEVICE_API: 0
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2419,6 +2425,8 @@ perftest_single-draco_oci:
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
+    # Disable this test currently as it's affected by this GIN proxy bug: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
@@ -2638,6 +2646,9 @@ multi-perftest-A40:
     GRAPH: 0
     NGPUS: 2
     NP: 2
+    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this fix is merged.
+    DEVICE_API: 0
     NCCL_HOME: build-gc
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2818,6 +2829,8 @@ perftest_multi-draco_oci:
     NP: 8
     GRAPH: 0
     SKIP_FT_INIT: 1
+    # Disable this test currently as it's affected by this GIN proxy bug: https://nvbugspro.nvidia.com/bug/5536500
+    # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
