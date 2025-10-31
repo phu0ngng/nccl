@@ -11,13 +11,6 @@ get_slurm_planned_time
 # Use gcperf-tools venv
 source ${GCPERF_TOOLS_PATH}/venv/bin/activate
 
-# Set nodes based on pipeline type
-NNODES=4
-if [[ $TRIGGER_PIPELINE == "weekly" ]]; then
-    NNODES=50
-fi
-echo "Running perf regression with ${NNODES} nodes"
-
 # Set gcperf-tools variables
 GOLDEN_BRANCH="master"
 CURRENT_BRANCH="${CI_COMMIT_BRANCH//\//.}"
@@ -26,7 +19,21 @@ SBATCH_FILE="perfregression.sbatch"
 SYSTEMS_TOML="test/scripts/ci/gcperf-tools/systems.toml"
 USER_TOML="test/scripts/ci/gcperf-tools/gitlab-runner.toml"
 TESTSET_TOML="test/scripts/ci/gcperf-tools/testsuite.toml"
+
+# Set nodes based on pipeline type
+NNODES=4
+if [[ $TRIGGER_PIPELINE == "weekly" ]]; then
+    NNODES=64
+fi
+echo "Running perf regression with ${NNODES} nodes"
+
+# Set results directory
 RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${GOLDEN_BRANCH//\//.}/${NNODES}_node
+
+EXTRA_SLURM_ARGS=""
+if [[ $NNODES -gt 16 ]] && [[ $CLUSTER_NAME == "PreTyche" ]]; then
+    EXTRA_SLURM_ARGS="--segment 16"
+fi
 
 mkdir -p ${OUTDIR}
 
@@ -42,7 +49,7 @@ gcperf-tools generate-job-script \
 # Submit the job
 cd perfregression
 echo "Submitting job script..."
-sbatch --wait -N ${NNODES} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
+sbatch --wait -N ${NNODES} ${EXTRA_SLURM_ARGS} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
 
 # Convert results to CSV
 echo "Converting results to CSV..."
