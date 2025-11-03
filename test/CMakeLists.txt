@@ -9,6 +9,7 @@ set(GTEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/googletest/googletest)
 # Add include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/port_failure_emu/include
     ${GTEST_DIR}/include
     ${GTEST_DIR}
 )
@@ -31,6 +32,7 @@ add_subdirectory(examples)
 add_subdirectory(binary)
 add_subdirectory(stress)
 add_subdirectory(verifiable)
+add_subdirectory(port_failure_emu)
 
 # Add MPI-dependent directories if MPI is found
 if(MPI_FOUND)
