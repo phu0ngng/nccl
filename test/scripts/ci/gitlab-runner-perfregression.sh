@@ -31,8 +31,15 @@ echo "Running perf regression with ${NNODES} nodes"
 RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${GOLDEN_BRANCH//\//.}/${NNODES}_node
 
 EXTRA_SLURM_ARGS=""
-if [[ $NNODES -gt 16 ]] && [[ $CLUSTER_NAME == "PreTyche" ]]; then
-    EXTRA_SLURM_ARGS="--segment 16"
+if [[ $CLUSTER_NAME == "PreTyche" ]]; then
+    if [[ $NNODES -ge 16 ]]; then
+        EXTRA_SLURM_ARGS="--segment 16"
+    elif [[ $NNODES -ge 4 ]]; then
+        EXTRA_SLURM_ARGS="--segment 4"
+    elif [[ $NNODES -ge 2 ]]; then
+        EXTRA_SLURM_ARGS="--segment 2"
+    fi
+    # Single node (NNODES == 1) gets no segment arg
 fi
 
 mkdir -p ${OUTDIR}
