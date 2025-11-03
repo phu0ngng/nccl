@@ -1,3 +1,8 @@
+/*************************************************************************
+ * Copyright (c) 2016-2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
 // This contains an utlities to handle output both to stdout and to
 // json files.
 //
@@ -39,7 +44,11 @@ extern int cudaGraphLaunches;
 extern int tuning;
 
 static FILE *json_report_fp;
-static bool write_json;
+static thread_local bool write_json;
+
+#define JSON_FILE_VERSION 1
+
+#define TIME_STRING_FORMAT "%Y-%m-%d %H:%M:%S"
 
 typedef enum {
   JSON_NONE, // A pseudo-state meaning that the document is empty
@@ -50,7 +59,7 @@ typedef enum {
   JSON_LIST_SOME,
 } json_state_t;
 
-// We use these statics to mantain a stack of states where we are writing.
+// We use these statics to maintain a stack of states where we are writing.
 // the init_json_output function gets this set up, and it's the finalize_json_output function's job to clean this up.
 json_state_t *states = nullptr;
 size_t state_cap = 0; // Allocated stack capacity
@@ -308,7 +317,7 @@ void formatNow(char *buff, int len) {
   time(&now);
   struct tm *timeinfo = localtime(&now);
 
-  strftime(buff, len, "%Y-%m-%d %H:%M:%S", timeinfo);
+  strftime(buff, len, TIME_STRING_FORMAT, timeinfo);
 }
 
 // We provide some status line to stdout.
@@ -350,12 +359,14 @@ void jsonOutputInit(const char *in_path,
     json_report_fp = fopen(try_path, "wx");
   }
 
-  printf("# Writing Json output to %s\n", try_path);
+  printf("# Writing JSON output to %s\n", try_path);
   free(try_path);
 
   write_json = true;
 
   jsonStartObject(); // will be closed finalize_json_output
+
+  jsonKey("version"); jsonInt(JSON_FILE_VERSION);
 
   jsonKey("start_time");
   {
@@ -644,7 +655,7 @@ void writeBenchmarkLineBody(double timeUsec, double totalTime, double algBw, dou
     jsonKey(out_of_place ? "out_of_place" : "in_place");
     jsonStartObject();
     jsonKey(report_cputime ? "cpu_time" : "time"); jsonDouble(timeUsec);
-    jsonKey("alg_bw");                            jsonDouble(algBw);
+    jsonKey("alg_bw");                             jsonDouble(algBw);
     jsonKey("bus_bw");                             jsonDouble(busBw);
     jsonKey("nwrong");                             (reportErrors ? jsonDouble((double)wrongElts) : jsonNull());
     jsonKey("side_comp_bw");                       (side_comp == 1 ? jsonDouble(sideBw) : jsonNull());
@@ -870,6 +881,8 @@ void writeErrors() {
   const char *error = ncclGetLastError(NULL);
   if(error && strlen(error) > 0) {
     PRINT("# error: %s\n", error);
+  } else {
+    PRINT("\n");
   }
   if(write_json) {
     jsonKey("errors");

@@ -1,4 +1,10 @@
-#pragma once
+/*************************************************************************
+ * Copyright (c) 2016-2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
+#ifndef __UTIL_H__
+#define __UTIL_H__
 
 #include "common.h"
 
@@ -37,3 +43,5 @@ void writeMemInfo(memInfo_t* memInfos, int numMemInfos);
 void writeErrors();
 int ncclProfilerLoad(void);
 int ncclProfilerUnload(void);
+
+#endif
