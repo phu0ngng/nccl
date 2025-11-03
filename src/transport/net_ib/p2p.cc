@@ -393,7 +393,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
     ncclIbAddEvent(req, ctsQp->devIndex);
   }
 
-  INFO(NCCL_NET, "NET/IB: %s: Posting a CTS (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d)", __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags);
+  INFO(NCCL_NET, "NET/IB: %s: Posting a CTS (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d, qp_num=%d)", __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qp->qp_num);
 
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(ctsQp->qp, &wr, &bad_wr));
