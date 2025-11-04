@@ -2,7 +2,7 @@ include pyproject.toml
 include setup.py
 include README.md
 
-# Include Cython sources and headers for sdist
+# Include Cython sources and headers for sdist only
 include nccl/bindings/_internal/*.pyx
 include nccl/bindings/_internal/*.pxd
 include nccl/bindings/*.pxd
@@ -11,8 +11,6 @@ include nccl/bindings/*.pyx
 # Typing markers and stubs
 include nccl/bindings/*.pyi
 
-# Be liberal: include everything under the package
-recursive-include nccl *
-
+# Exclude build artifacts and cache
 prune nccl/__pycache__
-global-exclude __pycache__/* *.pyc *.pyo *.stamp
+global-exclude __pycache__/* *.pyc *.pyo *.stamp *.cpp *.c

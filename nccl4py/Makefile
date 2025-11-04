@@ -24,16 +24,14 @@ AUDITWHEEL_PLAT ?= manylinux_2_34_$(shell uname -m)
 
 all: build
 
-NCCL4PY_BINDINGS_STAMP := $(NCCL4PY_BINDINGS_DIR)/makefile.stamp
--include $(NCCL4PY_DIR)/makefiles/run_cybind.mk
-
-dev: $(NCCL4PY_BINDINGS_STAMP)
+dev:
 	@cd $(NCCL4PY_DIR) && $(UV) sync --extra dev && $(UV) pip install -e .[dev]
 
 
 NCCL4PY_FILES := \
 	nccl/__init__.py \
 	nccl/core/*.py \
+	nccl/core/interop/*.py \
 	nccl/bindings/*.pyx \
 	nccl/bindings/*.pxd \
 	nccl/bindings/*.py \
@@ -44,7 +42,7 @@ NCCL4PY_FILES := \
 BUILD_DIR = $(BUILDDIR)/nccl4py_cu$*
 OUT_DIR = $(DIST_DIR)/nccl4py_cu$*
 
-$(CUDA_VARIANTS:%=$(DIST_DIR)/nccl4py_cu%/makefile.stamp): $(DIST_DIR)/nccl4py_cu%/makefile.stamp : $(NCCL4PY_BINDINGS_STAMP) $(wildcard $(NCCL4PY_DIR)/nccl/core/*.py)
+$(CUDA_VARIANTS:%=$(DIST_DIR)/nccl4py_cu%/makefile.stamp): $(DIST_DIR)/nccl4py_cu%/makefile.stamp : $(wildcard $(NCCL4PY_DIR)/nccl/core/*.py)
 	mkdir -p "$(BUILD_DIR)"
 	cp "$(NCCL4PY_DIR)/nccl4py_cu$*/pyproject.toml" "$(NCCL4PY_DIR)/nccl4py_cu$*/setup.py" "$(NCCL4PY_DIR)/MANIFEST.in" "$(NCCL4PY_DIR)/README.md" "$(BUILD_DIR)/"
 	cd "$(NCCL4PY_DIR)"; cp --parents $(NCCL4PY_FILES) "$(BUILD_DIR)/"
@@ -62,11 +60,11 @@ $(CUDA_VARIANTS:%=nccl4py_cu%): nccl4py_cu%: $(DIST_DIR)/nccl4py_cu%/makefile.st
 build: $(CUDA_VARIANTS:%=nccl4py_cu%)
 
 clean:
-	@rm -rf $(EXTERNALS_DIR) \
-	        $(DIST_DIR) \
+	@rm -rf $(DIST_DIR) \
 			$(BUILDDIR)/nccl4py_cu* \
-			$(NCCL4PY_BINDINGS_DIR) \
 			$(NCCL4PY_DIR)/*.egg-info \
 			$(NCCL4PY_DIR)/build \
 			$(NCCL4PY_DIR)/nccl/_version.py
-
+	@find $(NCCL4PY_DIR) -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	@find $(NCCL4PY_DIR) -type f -name "*.pyc" -delete 2>/dev/null || true
+	@find $(NCCL4PY_BINDINGS_DIR) -type f \( -name "*.so" -o -name "*.cpp" -o -name "*.c" \) -delete 2>/dev/null || true
