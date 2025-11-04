@@ -664,6 +664,14 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         ncclIbCommBaseGetQpByQpNum(commBase, devIndex, wc->qp_num, &qp, NULL);
         ncclIbPostRecvWorkRequest(qp->qp, &recvComm->ibRecvWorkRequest);
       }
+    } else if (req && req->type == NCCL_NET_IB_REQ_FLUSH) {
+      INFO(NCCL_NET, "NET/IB: %s: Got completion for a flush request (req=%p, comm=%p, id=%d, devIndex=%d)", __func__, req, req->base, req->id, devIndex);
+    } else if (req && wc->opcode == IBV_WC_RDMA_WRITE) {
+      // This is a CTS completion
+      INFO(NCCL_NET, "NET/IB: %s: Got completion for a CTS (req=%p, comm=%p, id=%d, devIndex=%d)", __func__, req, req->base, req->id, devIndex);
+    } else {
+      WARN("NET/IB: %s: Unknown completion (req=%p, comm=%p, id=%d, devIndex=%d, opcode=%d)", __func__, req, commBase, req ? req->id : -1, devIndex, wc->opcode);
+      return ncclInternalError;
     }
     req->events[devIndex]--;
 #ifdef NCCL_ENABLE_NET_PROFILING
