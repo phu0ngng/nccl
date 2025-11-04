@@ -31,12 +31,12 @@ make [MPI=1] [MPI_HOME=<path-to-mpi>] [NCCL_HOME=<path-to-nccl>] [CUDA_HOME=<pat
 
 ### Run when compiled for pthreads (default)
 ```bash
-[NTHREADS=N] ./gin_alltoall_hybrid_device_api
+[NTHREADS=N] ./alltoall_hybrid
 ```
 
 ### Run when compiled for MPI
 ```bash
-mpirun -np <num_processes> ./gin_alltoall_hybrid_device_api
+mpirun -np <num_processes> ./alltoall_hybrid
 ```
 
 ## Code Walk-through
@@ -119,10 +119,10 @@ make
 ### Run with pthread mode (default)
 ```bash
 # Run with all available GPUs
-./gin_alltoall_hybrid_device_api
+./alltoall_hybrid
 
 # Run with specific number of GPUs
-NTHREADS=4 ./gin_alltoall_hybrid_device_api
+NTHREADS=4 ./alltoall_hybrid
 ```
 
 ### Run with MPI mode
@@ -131,7 +131,7 @@ NTHREADS=4 ./gin_alltoall_hybrid_device_api
 make MPI=1
 
 # Run with MPI across multiple nodes
-mpirun -np 4 --hostfile hosts ./gin_alltoall_hybrid_device_api
+mpirun -np 4 --hostfile hosts ./alltoall_hybrid
 ```
 
 ### Test
@@ -173,15 +173,14 @@ Hybrid AlltoAll result: PASSED
 
 ## When to Use
 
-- **Multi-node training**: Mixed local/remote communication patterns
-- **Large-scale inference**: Optimized for various topologies
+- **Multi-node usage**: Mixed local/remote communication patterns
 - **Production workloads**: Where performance is critical
 - **Heterogeneous clusters**: Different node configurations
 
 ## Performance Considerations
 
 **Advantages:**
-- **Reduced Latency**: LSA provides ultra-low latency for local communication
+- **Reduced Latency**: LSA provides low latency for local communication
 - **Optimal Bandwidth**: GIN efficiently handles remote communication
 - **Reduced Network Load**: Local traffic stays off the network
 - **Scalable Design**: Efficient across different node configurations
@@ -199,12 +198,6 @@ Hybrid AlltoAll result: PASSED
 
 ### Issue: Hybrid synchronization failures
 **Solution:** Ensure both `lsaBarrierCount` and `railGinBarrierCount` match the number of thread blocks in kernel launch configuration
-
-### Issue: Peer classification errors
-**Solution:** Verify LSA team setup and ensure symmetric memory allocation is properly configured for all ranks
-
-### Issue: Mixed communication performance issues
-**Solution:** Profile LSA vs GIN usage patterns and optimize barrier configurations for your specific topology
 
 ## Performance Notes
 

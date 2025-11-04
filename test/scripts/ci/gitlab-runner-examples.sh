@@ -90,9 +90,9 @@ if [[ "${EXAMPLES_TESTS_BASIC_ONLY}" != "1" ]]; then
     then
         example_dirs+=(
             "05_symmetric_memory/01_allreduce"
-            "06_device_api/01_allreduce"
-            "06_device_api/02_gin_alltoall_pure"
-            "06_device_api/03_gin_alltoall_hybrid"
+            "06_device_api/01_allreduce_lsa"
+            "06_device_api/02_alltoall_gin"
+            "06_device_api/03_alltoall_hybrid"
         )
     fi
 fi
