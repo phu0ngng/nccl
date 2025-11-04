@@ -32,12 +32,12 @@ make [MPI=1] [MPI_HOME=<path-to-mpi>] [NCCL_HOME=<path-to-nccl>] [CUDA_HOME=<pat
 
 ### Run when compiled for pthreads (default)
 ```bash
-[NTHREADS=N] ./gin_alltoall_pure_device_api
+[NTHREADS=N] ./alltoall_gin
 ```
 
 ### Run when compiled for MPI
 ```bash
-mpirun -np <num_processes> ./gin_alltoall_pure_device_api
+mpirun -np <num_processes> ./alltoall_gin
 ```
 
 ## Code Walk-through
@@ -131,9 +131,7 @@ Pure GIN AlltoAll result: PASSED
 ## When to Use
 
 - **Multi-node environments**: When ranks cannot use LSA
-- **Testing network performance**: Without local optimizations  
-- **Understanding the baseline GIN communication patterns**
-- **Scenarios where all communication must go through the network**
+- **Testing network performance**: Without local optimizations
 
 ## Performance Considerations
 
@@ -147,7 +145,7 @@ Pure GIN AlltoAll result: PASSED
 ### Issue: Deadlock at util_broadcast
 **Solution:** Ensure you're running with multiple GPUs/processes
 ```bash
-NTHREADS=2 ./gin_alltoall_pure_device_api  # For 2 GPUs
+NTHREADS=2 ./alltoall_gin  # For 2 GPUs
 ```
 
 ### Issue: CUDA out of memory
@@ -172,7 +170,6 @@ The example uses comprehensive error checking for CUDA, NCCL, and GIN operations
 ## Next Steps
 
 After understanding this example, explore:
-- **Custom network protocols**: Implement specialized communication patterns using GIN
 - **Performance optimization**: Fine-tune GIN context usage and signal management
 - **Hybrid approaches**: Combine GIN with LSA for topology-aware optimizations
 - **Integration with compute**: Fuse network communication with computation kernels
