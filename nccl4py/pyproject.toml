@@ -39,7 +39,7 @@ exclude = ["__pycache__"]
 "nccl.bindings" = ["*.pyi"]
 
 [tool.setuptools.exclude-package-data]
-"*" = ["__pycache__/*", "*.py[co]", "*.stamp"]
+"*" = ["__pycache__/*", "*.py[co]", "*.stamp", "*.pyx", "*.pxd", "*.cpp", "*.c"]
 
 [tool.setuptools_scm]
 version_file = "nccl/_version.py"

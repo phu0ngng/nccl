@@ -4,7 +4,8 @@ dist/
 *.egg-info/
 
 # Cython compiled outputs
-nccl/bindings/
+nccl/bindings/**/*.cpp
+nccl/bindings/**/*.so
 
 # Generated package files
 nccl/_version.py
