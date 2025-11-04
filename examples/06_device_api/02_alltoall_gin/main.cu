@@ -238,9 +238,9 @@ void* pureGinAlltoAll(int my_rank, int total_ranks, int local_device, int device
   NCCLCHECK(ncclMemFree(d_recvbuff));
 
   // Standard NCCL cleanup
-  CUDACHECK(cudaStreamDestroy(stream));
   NCCLCHECK(ncclCommFinalize(comm));
   NCCLCHECK(ncclCommDestroy(comm));
+  CUDACHECK(cudaStreamDestroy(stream));
 
   return NULL;
 }
