@@ -609,7 +609,7 @@
       <gpu dev="0x1100000000000002"/>
     </channel>
   </graph>
-  <graph id="1" pattern="1" crossnic="0" nchannels="16" speedintra="40" speedinter="40" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
+  <graph id="1" pattern="1" crossnic="0" nchannels="16" speedintra="45" speedinter="45" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
     <channel>
       <gpu dev="0"/>
       <gpu dev="0x2"/>
@@ -1219,7 +1219,7 @@
       <gpu dev="0x1100000000000002"/>
     </channel>
   </graph>
-  <graph id="2" pattern="3" crossnic="0" nchannels="16" speedintra="40" speedinter="40" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
+  <graph id="2" pattern="3" crossnic="0" nchannels="16" speedintra="45" speedinter="45" latencyinter="0" typeintra="NVL" typeinter="PIX" samechannels="0">
     <channel>
       <gpu dev="0"/>
       <gpu dev="0x2"/>
