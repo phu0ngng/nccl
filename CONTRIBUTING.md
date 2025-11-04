@@ -91,7 +91,6 @@ NCCL follows these coding conventions:
 **CUDA-Specific**
 - Minimize register usage in performance-critical kernels
 - Avoid warp divergence where possible
-- Use `__restrict__` for non-aliasing pointers
 - Document kernel launch configurations and occupancy considerations
 - Prefer `cudaLaunchKernel` over `<<<>>>` syntax
 
