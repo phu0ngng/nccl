@@ -2,24 +2,6 @@
 
 Thank you for your interest in contributing to NCCL! We appreciate the time and effort you're putting into helping improve the library. This document will help guide you through the contribution process.
 
-## Getting Started
-
-1. **Fork the Repository**: Fork https://github.com/NVIDIA/nccl and clone your fork locally.
-
-2. **Build NCCL**: 
-   ```bash
-   cd nccl
-   make -j src.build [ CUDA_HOME=<path to cuda install> ]
-   ```
-
-3. **Create a Branch**: Create a feature branch for your work.
-   ```bash
-   git checkout -b <my-feature-branch>
-   git add <files-to-commit>
-   git commit --message <descriptive-message>
-   git push origin <my-feature-branch> --set-upstream
-   ```
-
 ## Before You Start
 
 To help ensure your contribution can be accepted smoothly:
@@ -28,12 +10,27 @@ To help ensure your contribution can be accepted smoothly:
 - **Check existing issues** to see if someone else is already working on something similar.
 - **Ask questions** if you're unsure about anything. We're happy to help!
 
+## Getting Started
+
+1. **Fork the Repository**: Fork https://github.com/NVIDIA/nccl and clone your fork locally.
+
+2. **Create a Branch**: Create a feature branch for your work.
+   ```bash
+   git checkout -b <my-feature-branch>
+   ```
+
+3. **Commit your Changes**: Commit and push into feature branch
+   ```bash
+   git add <files-to-commit>
+   git commit --message <descriptive-message>
+   git push origin <my-feature-branch> --set-upstream
+   ```
 ## What We're Looking For
 
 We welcome contributions in the following areas:
 
 - **Bug fixes**: Reproducible bugs with clear fixes are always appreciated
-- **Performance improvements**: Optimizations that are applicable across a range of systems
+- **Performance improvements**: Targeted optimizations, guarded by appropriate checks
 - **TODO TRUE?? Platform support**: Extending NCCL to new platforms, network fabrics, or GPU architectures
 - **Documentation**: Improvements to README, comments, or usage examples
 
@@ -96,6 +93,7 @@ NCCL follows these coding conventions:
 - Avoid warp divergence where possible
 - Use `__restrict__` for non-aliasing pointers
 - Document kernel launch configurations and occupancy considerations
+- Prefer `cudaLaunchKernel` over `<<<>>>` syntax
 
 **Memory Management**
 - Always check return values for memory allocations
@@ -123,16 +121,16 @@ Robust testing is essential for NCCL:
 - **Multi-GPU testing**: Test on various GPU counts (2, 4, 8 GPUs)
 - **Collective operations**: Verify all affected collectives (AllReduce, Broadcast, etc.)
 
-**Performance Testing**
+**Performance Testing (for performance optimization PRs)**
 - Run performance benchmarks before and after your changes
 - Use `nccl-tests` (https://github.com/NVIDIA/nccl-tests) for standardized benchmarks
 - Document performance impact in your PR
 
-**Platform Testing**
+**Platform Testing (for platform specific PRs)**
 - Test on relevant GPU architectures (Ampere, Hopper, etc.)
 - If you don't have access to specific hardware, mention this in your PR
 
-## Pull Request Guidelines
+## Pull Request Guidelines # ()WE COULD ALSO CREATE A PR TEMPLATE WITH THIS INFO)
 
 **Before Submitting**
 1. Rebase your branch on the latest master branch
