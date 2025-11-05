@@ -24,7 +24,9 @@ extern const char* ncclFuncToString(ncclFunc_t fn);
  *   Converts bytes to human-readable format (KB, MB, GB, etc.).
  *
  * Thread Safety:
- *   Thread-safe (writes to provided buffer).
+ *
+ *   Not thread-safe. Onus of thread safety is on the caller/owner of
+ *   the buffer.
  *
  * Input:
  *   size_t bytes - number of bytes.
@@ -82,11 +84,9 @@ inspectorResult_t inspectorPromCacheStaticLabels(struct inspectorCommInfo* commI
   gethostname(hostname, sizeof(hostname)-1);
   hostname[sizeof(hostname)-1] = '\0';
 
-  // Format GPU device ID with prefix
   char gpuDeviceStr[16];
   snprintf(gpuDeviceStr, sizeof(gpuDeviceStr), "GPU%d", commInfo->cudaDeviceId);
 
-  // Cache static parts: comm_id, hostname, rank, job info, nranks, n_nodes, gpu_device_id
   int ret = snprintf(commInfo->cachedStaticLabels, sizeof(commInfo->cachedStaticLabels),
                      "comm_id=\"%s\",hostname=\"%s\",rank=\"%d\","
                      "slurm_job=\"%s\",slurm_job_id=\"%s\",nranks=\"%d\","
@@ -113,7 +113,9 @@ inspectorResult_t inspectorPromCacheStaticLabels(struct inspectorCommInfo* commI
  *   Uses cached static labels and only adds dynamic parts (collective, timestamp, etc).
  *
  * Thread Safety:
- *   Thread-safe (writes to provided buffer).
+ *
+ *   Not thread-safe. Onus of thread safety is on the caller/owner of
+ *   the buffer.
  *
  * Input:
  *   char* labels - output buffer for formatted labels.
@@ -131,15 +133,13 @@ static inspectorResult_t inspectorPromGetLabels(char* labels,
                                                 size_t labelSize,
                                                 struct inspectorCommInfo* commInfo,
                                                 struct inspectorCompletedCollInfo* collInfo) {
-  // Get current timestamp as UTC datetime string
   char datetimeStr[32];
   INS_CHK(inspectorGetTimeUTC(datetimeStr, sizeof(datetimeStr)));
 
-  // Convert message size to human-readable format
   char msgSizeStr[32];
   inspectorFormatHumanReadableSize(collInfo->msgSizeBytes, msgSizeStr, sizeof(msgSizeStr));
 
-  // Combine cached static labels with dynamic parts (collective, coll_sn, timestamp, message_size)
+
   int ret = snprintf(labels, labelSize,
                      "%s,collective=\"%s\",coll_sn=\"%lu\",timestamp=\"%s\",message_size=\"%s\"",
                      commInfo->cachedStaticLabels,
@@ -157,12 +157,14 @@ static inspectorResult_t inspectorPromGetLabels(char* labels,
 /*
  * Description:
  *
- *   Generates GPU-specific Prometheus filename using pre-computed device UUID.
- *   Each GPU gets its own file containing metrics from all communicators
- *   using that GPU.
+ *   Generates GPU-specific Prometheus filename using pre-computed
+ *   device UUID.  Each GPU gets its own file containing metrics from
+ *   all communicators using that GPU.
  *
  * Thread Safety:
- *   Thread-safe (writes to provided buffer).
+ *
+ *   Not thread-safe. Onus of thread safety is on the caller/owner of
+ *   the buffer.
  *
  * Input:
  *   const char* baseFilename - base output file path.
@@ -180,7 +182,6 @@ static inspectorResult_t inspectorPromGetFilename(const char* baseFilename,
                                                   const char* deviceUuidStr,
                                                   char* output,
                                                   size_t outputSize) {
-  // Generate filename with UUID (one file per GPU, aggregates all communicators)
   snprintf(output, outputSize,
            "%s/nccl_inspector_metrics_%s.prom",
            baseFilename, deviceUuidStr);
@@ -195,7 +196,9 @@ static inspectorResult_t inspectorPromGetFilename(const char* baseFilename,
  *   Writes Prometheus metrics for a completed collective to a file.
  *
  * Thread Safety:
- *   Thread-safe (each process writes to its own file).
+ *
+ *   Not thread-safe. Onus of thread safety is on the caller/owner of
+ *   the file handle.
  *
  * Input:
  *   const char* filename - output file path.
@@ -218,13 +221,11 @@ static inspectorResult_t inspectorPromWriteCollInfo(FILE* file,
   char labels[512];
   memset(labels, 0, sizeof(labels));
 
-  // Format labels once
   INS_CHK(inspectorPromGetLabels(labels,
                                  sizeof(labels),
                                  commInfo,
                                  collInfo));
 
-  // Buffer all metrics into a single write for better performance
   char buffer[2048];
   int written = snprintf(buffer, sizeof(buffer),
                          "nccl_algorithm_bandwidth_gbs{%s} %.6g\n"
@@ -238,12 +239,10 @@ static inspectorResult_t inspectorPromWriteCollInfo(FILE* file,
     return inspectorMemoryError;
   }
 
-  // Single write for all metrics
   if (fwrite(buffer, 1, written, file) != (size_t)written) {
     return inspectorFileOpenError;
   }
 
-  // Flush to ensure data is written (but don't close)
   fflush(file);
   return inspectorSuccess;
 }
@@ -399,12 +398,11 @@ uint64_t inspectorPromValidateInterval(uint64_t interval) {
       MIN_PROM_INTERVAL, interval);
     return MIN_PROM_INTERVAL;
   } else if (interval == 0) {
-    // Default to 30 seconds for Prometheus if not specified
     INFO_INSPECTOR(
       "NCCL Inspector: Using default interval of %lu microseconds for Prometheus dump",
       MIN_PROM_INTERVAL);
     return MIN_PROM_INTERVAL;
   }
 
-  return interval; // Use as-is if >= minimum
+  return interval;
 }

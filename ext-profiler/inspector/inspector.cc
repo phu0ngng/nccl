@@ -104,7 +104,9 @@ uint64_t inspectorGetTime() {
  *   Wrapper around inspectorGetTime() that returns formatted UTC datetime string.
  *
  * Thread Safety:
- *   Thread-safe (gmtime and strftime are used safely with local buffers).
+ *
+ *   Not thread-safe. Onus of thread safety is on the caller/owner of
+ *   the buffer.
  *
  * Input:
  *   char* buffer - output buffer for datetime string.
@@ -222,7 +224,6 @@ const char* ncclFuncToString(ncclFunc_t fn) {
 
 struct inspectorDumpThread;
 static inspectorDumpThread* dumper = nullptr;
-
 
 #define UNUSED(x) (void)(x)
 
@@ -501,6 +502,7 @@ static inline inspectorResult_t inspectorCompletedColl(jsonFileOutput* jfo,
 
   return inspectorSuccess;
 }
+
 
 /*
  * Description:
