@@ -599,6 +599,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignalFollowShadow(Coop
     #pragma unroll 1
     do after64 = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
     while (!nccl::utility::rollingLessEq(before64 + leastDelta, after64, bits));
+    this->_signalShadows[signal] = after64;
   }
   if (ncclCoopWithinWarp(coop) && bits <= 32) { // do a single __shfl_sync instead of 2
     uint32_t mask = uint32_t(-1)>>(32-bits);
