@@ -111,6 +111,7 @@ NCCL follows these coding conventions:
 
 **Code Formatting**
 - We recommend using `clang-format` for C/C++ code formatting
+- Avoid trailing white-spaces
 - Try to match the existing style in files you're modifying
 
 ## Testing TODO : NOT SURE IF WE WANT ANY OF THIS
@@ -150,8 +151,24 @@ Robust testing is essential for NCCL:
 **Commit Messages**
 - Use imperative mood: "Add feature" not "Added feature"
 - First line: brief summary (50 chars or less)
-- Blank line, then detailed explanation if needed
+- Second line blank
+- Detailed explanation including the Problem, Solution, and any Limitations
 - Reference issue numbers: "Fixes #123"
+
+An example commit message is:
+```
+Comment          | Commit message
+-----------------|--------------------------------------------------------
+Title            | Fix crash in proxy on systems with more than 2 GPUs
+Blank line       | 
+Problem          | When a system has more than 2 GPUs, the table we use to
+                 | store addresses overflows.
+Solution         | This fix increases the size of the table to the maximum
+                 | number of GPUs we can have within a node.
+Limitations and  | We may want to make the table size dynamic to save
+Caveats          | memory, but since it is a part of a struct, it is easier
+                 | for now to keep the code simple.
+```
 
 **Signed Commits**
 All commits must be signed off to certify you have the right to submit the code:
@@ -171,7 +188,7 @@ After you submit a PR:
 3. **Iteration**: Address feedback and update your PR
 4. **Approval**: Once approved, we'll merge your contribution
 
-Please be patient during review. We aim to provide initial feedback within a week.
+Please be patient during review. We aim to provide initial feedback within a week. Feel free to ping us if we take much longer than that.
 
 ## Communication
 
@@ -189,6 +206,6 @@ We're committed to helping contributors succeed!
 
 ## Thank You
 
-Every contribution, whether it's a bug fix, feature, documentation improvement, or even a question that leads to better documentation, makes NCCL better for everyone. We truly appreciate your time and effort in contributing to NCCL.
+We truly appreciate your time and effort in contributing to NCCL.
 
 Happy coding!
