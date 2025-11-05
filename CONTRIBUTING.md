@@ -95,7 +95,7 @@ NCCL follows these coding conventions:
 - Prefer `cudaLaunchKernel` over `<<<>>>` syntax
 
 **Return Codes**
-- NCCL functions should return a ncclResult_t 
+- NCCL functions should return a `ncclResult_t`
 - All function calls should be guarded by `NCCLCHECK` or similar macro
 - All external function calls should be guarded with `CUDACHECK`, `SYSCHECK`, `PTHREADCHECK`, etc.
 
@@ -114,39 +114,11 @@ NCCL follows these coding conventions:
 - Avoid trailing white-spaces
 - Try to match the existing style in files you're modifying
 
-## Testing TODO : NOT SURE IF WE WANT ANY OF THIS
-
-Robust testing is essential for NCCL:
-
-**Required Testing**
-- **Correctness tests**: Verify your changes don't break existing functionality
-  ```bash
-  make test
-  ```
-- **Multi-GPU testing**: Test on various GPU counts (2, 4, 8 GPUs)
-- **Collective operations**: Verify all affected collectives (AllReduce, Broadcast, etc.)
-
-**Performance Testing (for performance optimization PRs)**
-- Run performance benchmarks before and after your changes
-- Use `nccl-tests` (https://github.com/NVIDIA/nccl-tests) for standardized benchmarks
-- Document performance impact in your PR
-
-**Platform Testing (for platform specific PRs)**
-- Test on relevant GPU architectures (Ampere, Hopper, etc.)
-- If you don't have access to specific hardware, mention this in your PR
-
-## Pull Request Guidelines # ()WE COULD ALSO CREATE A PR TEMPLATE WITH THIS INFO)
+## Pull Request Guidelines
 
 **Before Submitting**
 1. Rebase your branch on the latest master branch
 2. Run `make` to ensure clean build with no warnings
-
-**PR Description**
-- Clearly describe what the PR does and why
-- Reference any related issues
-- Include benchmark results for performance changes
-- Note any breaking changes or API modifications
-- List what testing you've performed
 
 **Commit Messages**
 - Use imperative mood: "Add feature" not "Added feature"
