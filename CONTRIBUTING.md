@@ -22,7 +22,7 @@ To help ensure your contribution can be accepted smoothly:
 3. **Commit your Changes**: Commit and push into feature branch
    ```bash
    git add <files-to-commit>
-   git commit --message <descriptive-message>
+   git commit --message <descriptive message, see below>
    git push origin <my-feature-branch> --set-upstream
    ```
 ## What We're Looking For
@@ -31,7 +31,7 @@ We welcome contributions in the following areas:
 
 - **Bug fixes**: Reproducible bugs with clear fixes are always appreciated
 - **Performance improvements**: Targeted optimizations, guarded by appropriate checks
-- **TODO TRUE?? Platform support**: Extending NCCL to new platforms, network fabrics, or GPU architectures
+- **Platform support**: Extending NCCL to new platforms, network fabrics, or PCI bridges
 - **Documentation**: Improvements to README, comments, or usage examples
 
 ## Making Your Contribution Successful
@@ -94,8 +94,13 @@ NCCL follows these coding conventions:
 - Document kernel launch configurations and occupancy considerations
 - Prefer `cudaLaunchKernel` over `<<<>>>` syntax
 
+**Return Codes**
+- NCCL functions should return a ncclResult_t 
+- All function calls should be guarded by `NCCLCHECK` or similar macro
+- All external function calls should be guarded with `CUDACHECK`, `SYSCHECK`, `PTHREADCHECK`, etc.
+
 **Memory Management**
-- Always check return values for memory allocations
+- Always allocate memory through NCCL alloc functions, e.g. `ncclCalloc()`
 - Use appropriate memory fences for synchronization
 - Free resources in reverse order of allocation
 
