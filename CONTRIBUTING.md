@@ -68,8 +68,8 @@ If you're proposing a substantial new feature (e.g., new collective operations, 
 1. **Open an issue** describing the feature and use case
 2. **Discussion phase**: We'll discuss whether it fits NCCL's direction
 3. **Document Design**: Document the proposed architecture, a testing and validation plan as well as any known performance impact.
-4. **Review and approval**: The design will be reviewed by NCCL maintainers
-5. **Implementation**: Once approved, proceed with implementation
+4. **Review**: The design will be reviewed by NCCL maintainers
+5. **Implementation**: We recommend that you wait with the implementation until the review has concluded. Once there's a mutual agreement on the approach, proceed with implementation
 6. **Pull request**: Submit your PR referencing the original issue and design doc
 
 
