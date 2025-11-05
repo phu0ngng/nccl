@@ -32,14 +32,15 @@ RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${GOLDEN_BRANCH//\//.}/${NNODES
 
 EXTRA_SLURM_ARGS=""
 if [[ $CLUSTER_NAME == "PreTyche" ]]; then
+    export NVLD_SIZE="1"
     if [[ $NNODES -ge 16 ]]; then
-        EXTRA_SLURM_ARGS="--segment 16"
+        export NVLD_SIZE="16"
     elif [[ $NNODES -ge 4 ]]; then
-        EXTRA_SLURM_ARGS="--segment 4"
+        export NVLD_SIZE="4"
     elif [[ $NNODES -ge 2 ]]; then
-        EXTRA_SLURM_ARGS="--segment 2"
+        export NVLD_SIZE="2"
     fi
-    # Single node (NNODES == 1) gets no segment arg
+    EXTRA_SLURM_ARGS="--segment=${NVLD_SIZE}"
 fi
 
 mkdir -p ${OUTDIR}
