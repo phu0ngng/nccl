@@ -112,6 +112,12 @@ else
   echo -e "Disabled Register Memcpy TESTS test\n\n"
 fi
 
+if [[ ${REGISTER_MIX_A2A_AR_TESTS} -eq 1 ]] ; then
+  run_command "register_mix_a2a_ar_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/register_mix_a2a_ar" ""
+else
+  echo -e "Disabled Register Mix A2A AR TESTS test\n\n"
+fi
+
 if [[ ${HASHTABLE_TESTS} -eq 1 ]] ; then
   run_command "intrusive_map_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/intrusive_map_test" ""
 else
