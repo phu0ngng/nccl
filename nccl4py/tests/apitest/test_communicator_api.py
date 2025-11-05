@@ -365,13 +365,7 @@ def test_finalize(uid_shared, rank_info):
 @pytest.mark.mpi
 def test_register_buffer_api(nccl_comm):
     """Test register_buffer with real NCCL."""
-
-    # cuda.core has a bug that causes segfault when using raw cuda.core buffer
-    # https://github.com/NVIDIA/cuda-python/pull/1190
-    if not HAS_CUPY:
-        pytest.skip("CuPy not installed")
-
-    buf = nccl.cupy.empty(256, dtype='float32')  # 256 * 4 bytes = 1024 bytes
+    buf = nccl.mem_alloc(1024)
 
     handle = nccl_comm.register_buffer(buf)
     assert handle.is_valid

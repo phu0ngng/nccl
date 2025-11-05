@@ -193,3 +193,28 @@ def test_cupy_empty_allocates_with_nccl():
     array_f = nccl_cupy.empty((5, 5), dtype='float64', order='F')
     assert array_f.flags['F_CONTIGUOUS']
 
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
+def test_register_tensor_buffer(nccl_comm):
+    """Test register_buffer with real NCCL."""
+    import nccl.core.interop.torch as nccl_torch
+    buf = nccl_torch.empty(100, dtype=torch.float32)
+
+    handle = nccl_comm.register_buffer(buf)
+    assert handle.is_valid
+
+    handle.close()
+    assert not handle.is_valid
+
+
+@pytest.mark.skipif(not HAS_CUPY, reason="CuPy not installed")
+def test_register_cupy_buffer(nccl_comm):
+    """Test register_buffer with real NCCL."""
+    import nccl.core.interop.cupy as nccl_cupy
+    buf = nccl_cupy.empty(100, dtype='float32')
+
+    handle = nccl_comm.register_buffer(buf)
+    assert handle.is_valid
+
+    handle.close()
+    assert not handle.is_valid
