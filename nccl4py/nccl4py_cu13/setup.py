@@ -91,7 +91,7 @@ compiler_directives = {"embedsignature": True, "show_performance_hints": True}
 BASE_REQ = [
     "packaging",
     "numpy",
-    "cuda.core==0.4.0",
+    "cuda.core==0.4.1",
 ]
 
 
