@@ -84,11 +84,13 @@ hpcx_unload
 NCCL_HOME = "${CI_PROJECT_DIR}/build"
 NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build/test/perf"
 LD_LIBRARY_PATH = '''${NCCL_HOME}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}'''
+NVLD_SIZE="${NVLD_SIZE}"
 
 [PreTyche]
 sbatch = [
-    "--account=coreai_libraries_nccl",
-    "-p batch"
+    "--account coreai_libraries_nccl",
+    "-p 36x2-a01r",
+    "--cpus-per-task 36"
 ]
 
 CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-12.8.0"
