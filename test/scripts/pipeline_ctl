@@ -31,7 +31,7 @@ Options:
   -d, --dry-run          Print configuration to terminal and exit
 
 Custom Pipeline Options:
-  -s, --system LIST      Comma-separated list of systems to run tests on (options: aws, eos, cw-dfw, draco-oci, pre-nyx, pre-tyche, a100, a40, p100, p40, gp100, ipp6)
+  -s, --system LIST      Comma-separated list of systems to run tests on (options: aws, eos, cw-dfw, draco-oci, pre-nyx, pre-tyche, theia, a100, a40, p100, p40, gp100, ipp6)
   -t, --test LIST        Comma-separated list of test types (options: unit-tests, api-tests, perf-tests-single, perf-tests-multiple, perf-regression, profiler-tests, dlfw-tests )
   -B, --build SCRIPT     Custom build script path (unsupported)
   -S, --setup SCRIPT     Custom setup script path (unsupported)
@@ -175,12 +175,12 @@ while [[ $# -gt 0 ]] ; do
       shift 2
       ;;
     -s|--system)
-      avail_systems=( aws eos cw-dfw draco-oci pre-nyx pre-tyche a100 a40 p100 p40 gp100 ipp6 )
+      avail_systems=( aws eos cw-dfw draco-oci pre-nyx pre-tyche theia a100 a40 p100 p40 gp100 ipp6 )
       target_systems="$2"
       local_vars=","
       IFS=',' read -ra systems <<< "$target_systems"
       for system in "${systems[@]}"; do
-        if [[ ! "$system" =~ ^(aws|eos|cw-dfw|draco-oci|pre-nyx|pre-tyche|a100|a40|p100|p40|gp100|ipp6)$ ]]; then
+        if [[ ! "$system" =~ ^(aws|eos|cw-dfw|draco-oci|pre-nyx|pre-tyche|theia|a100|a40|p100|p40|gp100|ipp6)$ ]]; then
           echo "Error: invalid system '$system'"
           usage
         else

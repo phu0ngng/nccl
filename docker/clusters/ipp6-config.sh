@@ -5,12 +5,12 @@
 IPP6_GPU_ARCHS="80,86,89"
 
 IPP6_OS_VERSION="20.04"
-IPP6_CUDA_VERSION="12.6.1"
-IPP6_BUILD_TOOLS_VERSION="1.0.1"
+IPP6_CUDA_VERSION="12.8.0"
+IPP6_BUILD_TOOLS_VERSION="2.0.0"
 IPP6_BUILD_IMAGE_VERSION="${IPP6_BUILD_TOOLS_VERSION}-c${IPP6_CUDA_VERSION}-u${IPP6_OS_VERSION}"
 
 #   Parameters for building on ipp6
-DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_build_tools"
+DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools"
 
 #   Relevant paths for bare metal
 IPP6_TOOLKIT_DIR="/nfs_mnt1/toolkits"
@@ -65,7 +65,7 @@ function get_build_command() {
         --user ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} \
         -v ${current_dir}:/nccl \
         $build_tools_image \
-        /nccl/docker/build_nccl.sh"
+        /nccl/docker/build_nccl.sh --enable-ccache"
 }
 
 function get_cuda_home() {

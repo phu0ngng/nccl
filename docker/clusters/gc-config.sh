@@ -5,13 +5,13 @@
 GC_GPU_ARCHS="60,70,80"
 
 GC_OS_VERSION="20.04"
-GC_CUDA_VERSION="12.6.1"
-GC_BUILD_TOOLS_VERSION="1.0.1"
+GC_CUDA_VERSION="12.8.0"
+GC_BUILD_TOOLS_VERSION="2.0.0"
 GC_BUILD_IMAGE_VERSION="${GC_BUILD_TOOLS_VERSION}-c${GC_CUDA_VERSION}-u${GC_OS_VERSION}"
 
 # Using gc
 #   Parameters for building on gc
-DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_build_tools"
+DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools"
 
 #   Relevant paths for bare metal
 GC_OPENMPI_HOME="/home/nvshmem_shared/openmpi"
@@ -69,7 +69,7 @@ function get_build_command() {
         --user ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} \
         -v ${current_dir}:/nccl \
         $build_tools_image \
-        /nccl/docker/build_nccl.sh"
+        /nccl/docker/build_nccl.sh --enable-ccache"
 }
 
 function get_cuda_home() {
