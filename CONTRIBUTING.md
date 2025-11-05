@@ -12,7 +12,7 @@ To help ensure your contribution can be accepted smoothly:
 
 ## Getting Started
 
-1. **Fork the Repository**: Fork https://github.com/NVIDIA/nccl and clone your fork locally.
+1. **Fork the Repository**: Fork [https://github.com/NVIDIA/nccl](https://github.com/NVIDIA/nccl) and clone your fork locally.
 
 2. **Create a Branch**: Create a feature branch for your work.
    ```bash
@@ -38,18 +38,18 @@ We welcome contributions in the following areas:
 
 To help us review and integrate your contribution efficiently:
 
-**Scope and Focus**
+### Scope and Focus
 - Keep changes focused on a single issue or feature
 - Break large changes into smaller, reviewable pieces when possible
 - Avoid mixing unrelated changes (e.g., bug fix + formatting changes) in one PR
 
-**Quality Standards**
+### Quality Standards
 - Ensure your code compiles without warnings
 - Test thoroughly on relevant hardware configurations
 - Performance claims should be backed by measurements
 - Public API changes require discussion (see below)
 
-**Common Challenges**
+### Common Challenges
 
 Some types of contributions require extra discussion before we can accept them:
 
@@ -77,50 +77,50 @@ If you're proposing a substantial new feature (e.g., new collective operations, 
 
 NCCL follows these coding conventions:
 
-**General Guidelines**
+### General Guidelines
 - Use 2 spaces for indentation (no tabs)
 - Maximum line length: 100 characters
 - Follow K&R brace style for C/CUDA code
 - Use clear, descriptive variable names
 
-**Naming Conventions**
+### Naming Conventions
 - Functions and variables: `ncclCamelCase`
 - Macros and constants: `UPPER_CASE_WITH_UNDERSCORES`
 - Struct/type names: `ncclFooBar`
 
-**CUDA-Specific**
+### CUDA-Specific
 - Minimize register usage in performance-critical kernels
 - Avoid warp divergence where possible
 - Document kernel launch configurations and occupancy considerations
 - Prefer `cudaLaunchKernel` over `<<<>>>` syntax
 
-**Return Codes**
+### Return Codes
 - NCCL functions should return a `ncclResult_t`
 - All function calls should be guarded by `NCCLCHECK` or similar macro
 - All external function calls should be guarded with `CUDACHECK`, `SYSCHECK`, `PTHREADCHECK`, etc.
 
-**Memory Management**
+### Memory Management
 - Always allocate memory through NCCL alloc functions, e.g. `ncclCalloc()`
 - Use appropriate memory fences for synchronization
 - Free resources in reverse order of allocation
 
-**Comments and Documentation**
+### Comments and Documentation
 - Write clear comments for complex algorithms
 - Document assumptions and invariants
 - Explain "why" not just "what" for non-obvious code
 
-**Code Formatting**
+### Code Formatting
 - We recommend using `clang-format` for C/C++ code formatting
 - Avoid trailing white-spaces
 - Try to match the existing style in files you're modifying
 
 ## Pull Request Guidelines
 
-**Before Submitting**
+### Before Submitting
 1. Rebase your branch on the latest master branch
 2. Run `make` to ensure clean build with no warnings
 
-**Commit Messages**
+### Commit Messages
 - Use imperative mood: "Add feature" not "Added feature"
 - First line: brief summary (50 chars or less)
 - Second line blank
@@ -128,7 +128,7 @@ NCCL follows these coding conventions:
 - Reference issue numbers: "Fixes #123"
 
 An example commit message is:
-```
+```text
 Comment          | Commit message
 -----------------|--------------------------------------------------------
 Title            | Fix crash in proxy on systems with more than 2 GPUs
@@ -142,7 +142,7 @@ Caveats          | memory, but since it is a part of a struct, it is easier
                  | for now to keep the code simple.
 ```
 
-**Signed Commits**
+### Signed Commits
 All commits must be signed off to certify you have the right to submit the code:
 ```bash
 git commit -s -m "Your commit message"
