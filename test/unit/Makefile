@@ -30,7 +30,7 @@ CU_FILES += devapi_window_stress.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 
-CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu put_signal_ping_pong_gin.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu lsa_pointer_test.cu lsa_multimem_pointer_test.cu
+CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu put_signal_ping_pong_gin.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_barrier_lsa.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu lsa_pointer_test.cu lsa_multimem_pointer_test.cu
 endif
 CU_FILES += register_memcpyTest.cu
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
@@ -43,6 +43,14 @@ LSB_RELEASE=$(shell lsb_release -is)
 all:${EXE_FILES} net.build tuner.build profiler.build env.build
 	@printf "Syncing  %-35s > %s\n" topo ${DST_DIR}
 	rsync -q -av topo ${DST_DIR}
+
+# Conditionally include IR tests in all target when EMIT_LLVM_IR is set
+ifneq ($(EMIT_LLVM_IR), 0)
+all: ir_tests
+endif
+
+# Target for IR tests
+ir_tests: ${DST_DIR}/devapi_barrier_lsa_ir ${DST_DIR}/devapi_barrier_gin_ir ${DST_DIR}/devapi_data_ring_ir ${DST_DIR}/devapi_data_ring2_ir ${DST_DIR}/devapi_signal_ring_ir
 
 kernel: ${KEXE_FILES}
 
@@ -65,6 +73,29 @@ profiler.%:
 env.%:
 	${MAKE} -C $(BUILDDIR)/../ext-env/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
+# Generic IR build flow using pattern rules
+IR_OBJDIR := ${BUILDDIR}/obj/test_ir
+
+# Keep intermediate IR files
+# .PRECIOUS: ${IR_OBJDIR}/%.bc.unoptimized ${IR_OBJDIR}/%.bc.optimized ${IR_OBJDIR}/%.ll ${IR_OBJDIR}/%.ptx ${IR_OBJDIR}/%.unlinked.cubin
+
+# Toolchain
+CLANG ?= clang
+LLVM_LINK ?= llvm-link
+OPT ?= opt
+LLC ?= llc
+PTXAS ?= ptxas
+NVLINK ?= ${CUDA_HOME}/bin/nvlink
+
+# Architecture and includes
+IR_SM ?= sm_90
+IR_PTX_MATTR ?= ptx90
+IR_STD ?= -std=c++17
+IR_NCCL_INCLUDES := -I${BUILDDIR}/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I ../../src/include/plugin -I$(CUDA_INC) -I$(CUDA_INC)/cccl
+
+# Device bitcode lib
+NCCL_DEVICE_BC := ${BUILDDIR}/lib/libnccl_device.bc
+
 ${DST_DIR}/%.o:%.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
@@ -79,6 +110,44 @@ ${DST_DIR}/%.o:%.cu
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) --compile -o $@ $(SRCINC) $(NVCUFLAGS) $<
+
+# Ensure nccl device bc exists; build via ir make if missing
+${NCCL_DEVICE_BC}:
+	@${MAKE} -C ../../ir EMIT_LLVM_IR=1 BUILDDIR=${BUILDDIR}
+
+# Pattern rule: .cu → .bc.unoptimized (clang)
+${IR_OBJDIR}/%.bc.unoptimized: %.cu ${BUILDDIR}/include/nccl_device.h | ${NCCL_DEVICE_BC}
+	@printf "IR clang   %-35s > %s\n" $< $@
+	@mkdir -p ${IR_OBJDIR}
+	$(CLANG) -c -emit-llvm $(IR_STD) -x cuda \
+		--cuda-path=$(CUDA_HOME) --cuda-device-only --cuda-gpu-arch=$(IR_SM) \
+		-DNCCL_HOSTLIB_ONLY -D__clang_llvm_bitcode_lib__ $(IR_NCCL_INCLUDES) $< -o $@
+
+# Pattern rule: .bc.unoptimized → .bc.optimized (llvm-link)
+${IR_OBJDIR}/%.bc.optimized: ${IR_OBJDIR}/%.bc.unoptimized ${NCCL_DEVICE_BC}
+	@printf "IR link    %-35s > %s\n" $< $@
+	$(LLVM_LINK) --only-needed $^ -o $@
+
+# Pattern rule: .bc.optimized → .ll (opt)
+${IR_OBJDIR}/%.ll: ${IR_OBJDIR}/%.bc.optimized
+	@printf "IR opt     %-35s > %s\n" $< $@
+	$(OPT) -passes='default<O3>,wholeprogramdevirt,inline,mem2reg,function-attrs,ipsccp,globalopt,globaldce,instcombine,loop-unroll,simplifycfg' $< -S -o $@
+
+# Pattern rule: .ll → .ptx (llc)
+${IR_OBJDIR}/%.ptx: ${IR_OBJDIR}/%.ll
+	@printf "IR llc     %-35s > %s\n" $< $@
+	$(LLC) -O3 --disable-tail-calls -mcpu=$(IR_SM) -mattr=$(IR_PTX_MATTR) -o $@ $<
+
+# Pattern rule: .ptx → .unlinked.cubin (ptxas)
+${IR_OBJDIR}/%.unlinked.cubin: ${IR_OBJDIR}/%.ptx
+	@printf "IR ptxas   %-35s > %s\n" $< $@
+	$(PTXAS) -c -arch=$(IR_SM) $< -o $@
+
+# Pattern rule: .unlinked.cubin → .cubin (nvlink)
+${DST_DIR}/%.cubin: ${IR_OBJDIR}/%.unlinked.cubin
+	@printf "IR nvlink  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	${NVLINK} -arch=$(IR_SM) $< -o $@
 #
 ${DST_DIR}/kernel_test: ${DST_DIR}/kernel_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
@@ -220,20 +289,75 @@ ${DST_DIR}/devapi_signal_ring: ${DST_DIR}/devapi_signal_ring.o ${DLIB}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
 
+${DST_DIR}/devapi_signal_ring_ir.o: devapi_signal_ring.cu
+	@printf "Compiling  %-35s > %s (USE_IR)\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) --compile -o $@ $(SRCINC) $(NVCUFLAGS) -DUSE_IR $<
+
+${DST_DIR}/devapi_signal_ring_ir: ${DST_DIR}/devapi_signal_ring_ir.o ${DLIB} ${DST_DIR}/devapi_signal_ring_ir.cubin
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/devapi_signal_ring_ir.o ${DLIB} ${DLIBFLAGS} -lcuda
+
+${DST_DIR}/devapi_barrier_lsa: ${DST_DIR}/devapi_barrier_lsa.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_barrier_lsa_ir.o: devapi_barrier_lsa.cu
+	@printf "Compiling  %-35s > %s (USE_IR)\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) --compile -o $@ $(SRCINC) $(NVCUFLAGS) -DUSE_IR $<
+
+${DST_DIR}/devapi_barrier_lsa_ir: ${DST_DIR}/devapi_barrier_lsa_ir.o ${DLIB} ${DST_DIR}/devapi_barrier_lsa_ir.cubin
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/devapi_barrier_lsa_ir.o ${DLIB} ${DLIBFLAGS} -lcuda
+
 ${DST_DIR}/devapi_barrier: ${DST_DIR}/devapi_barrier.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_barrier_gin_ir.o: devapi_barrier.cu
+	@printf "Compiling  %-35s > %s (USE_IR)\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) --compile -o $@ $(SRCINC) $(NVCUFLAGS) -DUSE_IR $<
+
+${DST_DIR}/devapi_barrier_gin_ir: ${DST_DIR}/devapi_barrier_gin_ir.o ${DLIB} ${DST_DIR}/devapi_barrier_gin_ir.cubin
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/devapi_barrier_gin_ir.o ${DLIB} ${DLIBFLAGS} -lcuda
 
 ${DST_DIR}/devapi_data_ring: ${DST_DIR}/devapi_data_ring.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
 
+${DST_DIR}/devapi_data_ring_ir.o: devapi_data_ring.cu
+	@printf "Compiling  %-35s > %s (USE_IR)\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) --compile -o $@ $(SRCINC) $(NVCUFLAGS) -DUSE_IR $<
+
+${DST_DIR}/devapi_data_ring_ir: ${DST_DIR}/devapi_data_ring_ir.o ${DLIB} ${DST_DIR}/devapi_data_ring_ir.cubin
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/devapi_data_ring_ir.o ${DLIB} ${DLIBFLAGS} -lcuda
+
 ${DST_DIR}/devapi_data_ring2: ${DST_DIR}/devapi_data_ring2.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_data_ring2_ir.o: devapi_data_ring2.cu
+	@printf "Compiling  %-35s > %s (USE_IR)\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) --compile -o $@ $(SRCINC) $(NVCUFLAGS) -DUSE_IR $<
+
+${DST_DIR}/devapi_data_ring2_ir: ${DST_DIR}/devapi_data_ring2_ir.o ${DLIB} ${DST_DIR}/devapi_data_ring2_ir.cubin
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/devapi_data_ring2_ir.o ${DLIB} ${DLIBFLAGS} -lcuda
 
 ${DST_DIR}/gin_data_ring: ${DST_DIR}/gin_data_ring.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@

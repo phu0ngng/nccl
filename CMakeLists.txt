@@ -51,6 +51,7 @@ option(NET_PROFILER "Enable network profiler" OFF)
 option(MLX5DV "Enable MLX5DV" OFF)
 option(MAX_EXT_NET_PLUGINS "Maximum external network plugins" 0)
 option(BUILD_TESTS "Build tests" OFF)
+option(EMIT_LLVM_IR "Generate LLVM IR for device APIs" OFF)
 
 # Detect OS
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -171,6 +172,9 @@ endif()
 add_definitions(-DDOCA_VERBS_USE_CUDA_WRAPPER)
 add_definitions(-DDOCA_VERBS_USE_NET_WRAPPER)
 add_definitions(-DNCCL_GIN_PROXY_ENABLE=1)
+if(EMIT_LLVM_IR)
+    add_definitions(-DEMIT_LLVM_IR=1)
+endif()
 
 # Library dependencies
 find_library(RT_LIBRARY NAMES rt)
@@ -217,4 +221,11 @@ endif()
 
 if(BUILD_DOC_PACKAGE OR BUILD_PACKAGES)
   add_subdirectory(pkg/doc)
+endif()
+
+if(EMIT_LLVM_IR)
+    add_subdirectory(ir)
+    add_dependencies(llvm_ir nccl_header)
+    add_custom_target(nccl_with_ir ALL DEPENDS nccl llvm_ir)
+    message(STATUS "LLVM IR generation will be included in default build")
 endif()

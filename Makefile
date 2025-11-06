@@ -6,6 +6,11 @@
 .PHONY: all clean
 
 default: src.build
+ifneq ($(EMIT_LLVM_IR), 0)
+default: ir.build
+TARGETS += ir
+endif
+
 install: src.install
 BUILDDIR ?= $(abspath ./build)
 ABSBUILDDIR := $(abspath $(BUILDDIR))
@@ -39,3 +44,10 @@ nccl4py.%:
 
 pkg.debian.prep: lic
 pkg.txz.prep: lic
+
+# IR generation requires src.build first
+ir.build: src.build
+	${MAKE} -C ir llvm_ir BUILDDIR=${ABSBUILDDIR}
+
+ir.clean:
+	${MAKE} -C ir clean BUILDDIR=${ABSBUILDDIR}

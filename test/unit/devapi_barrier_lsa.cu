@@ -11,18 +11,23 @@
 #endif
 
 #ifndef USE_IR
-__global__ void runDevice(ncclDevComm comm) {
+extern "C" __global__ void runDevice(ncclDevComm comm) {
 #if __CUDA_ARCH__ >= 700
-  int t = threadIdx.x;
-  ncclTeam world = ncclTeamWorld(comm);
-  ncclGin net(comm, 0);
-  ncclBarrierSession<ncclCoopCta> bar(ncclCoopCta(), ncclTeamTagWorld(), net, blockIdx.x);
-  for (int round=0; round < 10; round++) {
-    bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
-    if (t==0 && blockIdx.x==0 && world.rank == round%world.nRanks) {
-      printf("Round %d\n", round);
+    // Compute LSA team on device
+    ncclTeam team = ncclTeamLsa(comm);
+
+    ncclLsaBarrierHandle handle = comm.lsaBarrier;
+    ncclMultimemHandle mmHandle{}; // unused when multimem=false
+
+    ncclLsaBarrierSession<ncclCoopCta> bar {ncclCoopCta(), comm, team, handle, blockIdx.x, /*multimem=*/false, mmHandle};
+
+    // Barrier rounds
+    for (int round = 0; round < 10; ++round) {
+        bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
+        if (threadIdx.x == 0 && blockIdx.x == 0 && team.rank == (round % team.nRanks)) {
+            printf("Round %d\n", round);
+        }
     }
-  }
 #endif
 }
 #else
@@ -67,17 +72,18 @@ int main(int argc, char** argv) {
 
   ncclDevComm dcomm;
   { ncclDevCommRequirements reqs = {};
-    reqs.barrierCount = 16;
-    reqs.ginForceEnable = true;
+    reqs.lsaBarrierCount = 16;
+    reqs.lsaMultimem = false;
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &dcomm));
   }
+
   // run kernel
   printf("[MPI Rank %d] Starting kernel\n", rank);
 
 #ifdef USE_IR
   // IR path: load kernel from cubin and launch
   CUmodule mymodule = NULL;
-  init_cumodule(&mymodule, "devapi_barrier_gin_ir.cubin");
+  init_cumodule(&mymodule, "devapi_barrier_lsa_ir.cubin");
   CUfunction kernel;
   init_test_case_kernel(mymodule, &kernel, "runDevice");
   
