@@ -8,6 +8,11 @@
 
 #include "common.h"
 
+struct memInfo_t {
+  int64_t amount;
+  const char* name;
+};
+
 // Try to set up JSON file output. If MPI is used, only rank 0 will proceed.
 // This should be called by only a single thread.
 // If 'in_path' is NULL, we stop.
@@ -33,6 +38,8 @@ void writeBenchmarkLineBody(double timeUsec, double totalTime, double algBw, dou
 testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int totalProcs, int color, const char hostname[]);
 void writeResultHeader(bool report_cputime, bool simulate);
 void writeResultFooter(const int errors[], const double bw[], double check_avg_bw);
+void finalizeFooter();
+void writeMemInfo(memInfo_t* memInfos, int numMemInfos);
 void writeErrors();
 int ncclProfilerLoad(void);
 int ncclProfilerUnload(void);

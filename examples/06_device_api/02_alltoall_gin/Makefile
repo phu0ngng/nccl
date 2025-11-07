@@ -9,7 +9,7 @@ include ../../../makefiles/common.mk
 include ../../../makefiles/examples.mk
 
 # Target executable
-TARGET = allreduce_device_api
+TARGET = alltoall_gin
 
 # Common utilities
 COMMON_INC = ../../common/include
@@ -68,8 +68,11 @@ install: $(TARGET)
 
 # Help
 help:
-	@echo "NCCL Example: Device API Allreduce"
+	@echo "NCCL Example: Pure GIN AlltoAll Device API"
 	@echo "=============================================="
+	@echo ""
+	@echo "This example demonstrates pure GPU-Initiated Networking (GIN)"
+	@echo "for AlltoAll operations without LSA optimizations."
 	@echo ""
 	@echo "Targets:"
 	@echo "  all       - Build the example (default)"

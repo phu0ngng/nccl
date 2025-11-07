@@ -16,7 +16,7 @@ PRETYCHE_OPENMPI_VERSION="5.0.6"
 PRETYCHE_OPENMPI_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/openmpi-${PRETYCHE_OPENMPI_VERSION}"
 
 PRETYCHE_OS_VERSION="20.04"
-PRETYCHE_BUILD_TOOLS_VERSION="1.0.1"
+PRETYCHE_BUILD_TOOLS_VERSION="2.0.0"
 PRETYCHE_BUILD_IMAGE_VERSION="${PRETYCHE_BUILD_TOOLS_VERSION}-c${PRETYCHE_CUDA_VERSION}-u${PRETYCHE_OS_VERSION}"
 PRETYCHE_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 
@@ -77,11 +77,15 @@ function get_build_command() {
         -c 64 \
         --container-image=$build_tools_image \
         --container-mounts=${current_dir}:/nccl \
-        /nccl/docker/build_nccl.sh"
+        /nccl/docker/build_nccl.sh --enable-ccache"
 }
 
 function get_cuda_home() {
     echo "$PRETYCHE_CUDA_HOME"
+}
+
+function get_ccache_bin() {
+    echo "$PRETYCHE_TOOLKIT_DIR/ccache/ccache-4.12.1-linux-aarch64/ccache"
 }
 
 function get_openmpi_home() {
@@ -124,4 +128,12 @@ function configure_test_env() {
 
     # --mca btl_tcp_if_include <socket>
     export OMPI_MCA_btl_tcp_if_include=$PRETYCHE_NCCL_SOCKET_IFNAME
+}
+
+function get_cluster_name() {
+    echo "PreTyche"
+}
+
+function get_gcperf_tools_path() {
+    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/gcperf-tools"
 }

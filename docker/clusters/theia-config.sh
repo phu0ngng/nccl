@@ -28,6 +28,10 @@ function get_cuda_home() {
     echo "$THEIA_CUDA_HOME"
 }
 
+function get_ccache_bin() {
+    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/ccache/ccache-4.12.1-linux-aarch64/ccache"
+}
+
 function get_extra_ld_library_path() {
     echo "$THEIA_CUDA_HOME/lib64"
 }
@@ -82,7 +86,7 @@ function get_build_command_bm() {
 
 # Container build config
 # Note: This doesn't work at the moment as the CTK in the image doesn't recognize gencode 103
-THEIA_BUILD_TOOLS_VERSION="1.0.3"
+THEIA_BUILD_TOOLS_VERSION="2.0.0"
 THEIA_BUILD_TOOLS_CUDA_VERSION="12.8.0"
 THEIA_BUILD_TOOLS_OS_VERSION="20.04"
 THEIA_BUILD_TOOLS_IMAGE_VERSION="${THEIA_BUILD_TOOLS_VERSION}-c${THEIA_BUILD_TOOLS_CUDA_VERSION}-u${THEIA_BUILD_TOOLS_OS_VERSION}"
@@ -112,7 +116,7 @@ function get_build_command() {
         -c 64 \
         --container-image=$build_tools_image \
         --container-mounts=${current_dir}:/nccl \
-        /nccl/docker/build_nccl.sh"
+        /nccl/docker/build_nccl.sh --enable-ccache"
 }
 
 # Test configs
@@ -134,4 +138,7 @@ function configure_test_env() {
 
     # MPI params
     export OMPI_MCA_coll_hcoll_enable=0
+
+    # WAR for failing GIN examples on Theia
+    export NCCL_GIN_TYPE=2
 }

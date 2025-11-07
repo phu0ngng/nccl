@@ -108,7 +108,7 @@ build-trace:
       when: always
     - when: never
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     NCCL_BUILD_TRACE: 1
   script:
@@ -153,11 +153,11 @@ build-classic-gin:
 build-ipp6:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
       when: always
     - when: never
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   script:
     - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx
     - tar -cf - build | pigz --fast > build-ipp6.tar.gz
@@ -169,7 +169,7 @@ build-ipp6:
 build-pre-tyche:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_PRE_TYCHE == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
       when: always
     - when: never
   tags:
@@ -311,7 +311,7 @@ setup-AWS_H100_EFA:
       when: always
     - when: never
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   needs:
     - job: build-ipp6
   variables:
@@ -826,7 +826,7 @@ unit_tests-AWS_H100_EFA:
   needs:
     - setup-AWS_H100_EFA
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -1080,7 +1080,7 @@ unit_tests-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -1218,7 +1218,7 @@ unit_tests-gin-ipp6-a100:
       - build
     policy: pull
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -1486,7 +1486,7 @@ examples-validation-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -1792,7 +1792,7 @@ apitest-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,unit_tests-AWS_H100_EFA]
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -1972,7 +1972,7 @@ apitest-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -2356,7 +2356,7 @@ perftest_single-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,apitest-AWS_H100_EFA]
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -2532,7 +2532,7 @@ perftest-single-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -2760,7 +2760,7 @@ perftest_multi-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,perftest_single-AWS_H100_EFA]
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -2940,7 +2940,7 @@ perftest-multi-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -3019,7 +3019,7 @@ perftest-multi-theia:
 perf-regression-eos:
   stage: perf_regression
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
   needs:
@@ -3035,6 +3035,32 @@ perf-regression-eos:
     SLURM_ACCOUNT: coreai_libraries_nccl
   before_script:
     - tar -xzf build-ipp6.tar.gz
+  script:
+    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  artifacts:
+    when: always
+    paths:
+      - "perfregression/results.csv"
+      - "perfregression/report.pdf"
+      - "perfregression/regression_report.xlsx"
+    expire_in: 48 hrs
+
+perf-regression-pre-tyche:
+  stage: perf_regression
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_REGRESSION == "1")
+      when: always
+    - when: never
+  needs: ["build-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    SLURM_TIME: 60
+    NCCL_HOME: build-pre-tyche
+    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
   artifacts:
@@ -3170,7 +3196,7 @@ summarize-pipeline:
   rules:
     - when: always
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl-v3
   script:
     - ./test/scripts/gitlab-runner-summary.sh
 

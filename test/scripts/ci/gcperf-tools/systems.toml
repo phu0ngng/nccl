@@ -1,0 +1,224 @@
+[common]
+
+[common.run_params]
+sbatch = [
+    "--exclusive",
+    "--mem=0",
+    "--mail-type=FAIL",
+    "--output=%x_%j.out",
+    "--comment=sysctl-sys.kernel.numa_balancing=0,transparent_hugepage_defrag=never,transparent_hugepage=never"
+]
+
+srun = [
+    "-N ${SLURM_JOB_NUM_NODES}",
+    "--mpi=pmix",
+    "--cpu-bind=none"
+]
+
+openmpi = [
+    "-np ${LOG_NPS}",
+    "-N ${nps}",
+    "--map-by ppr:${nps}:node",
+    "--oversubscribe",
+    "--mca btl tcp,self",
+    "--mca btl_tcp_if_include $TCP_IF_INCLUDE",
+    "--mca coll_hcoll_enable 0",
+    "-x LD_LIBRARY_PATH",
+    "-x UCX_TLS=rc,sm",
+    "-x UCX_NET_DEVICES=$UCX_NET_DEVICE",
+    "--bind-to none"
+]
+
+mpich = []
+
+# Define system-specific parameters
+# the list of one run_param will be merged with the list of the corresponding run_param in common
+# the duplicated element will be removed
+
+[CW-DFW]
+
+[CW-DFW.labels]
+name = "CW-DFW"
+network = "IB"
+switch = "Quantum2"
+nic = "CX7"
+gpu_type = "H100-DGX"
+
+[CW-DFW.run_params]
+sbatch = [
+    "--gres=gpu:8",
+    "--ntasks-per-node=8"
+]
+openmpi = [
+    "TCP_IF_INCLUDE=eth3",
+    "UCX_NET_DEVICE=mlx5_0:1"
+]
+nccl = [
+    "NCCL_DEBUG=WARN",
+    "NCCL_NET=IB"
+]
+
+[EOS]
+
+[EOS.labels]
+name = "EOS"
+network = "IB"
+switch = "Quantum2"
+nic = "CX7"
+gpu_type = "H100-DGX"
+
+[EOS.run_params]
+sbatch = [
+    "--ntasks-per-node=8"
+]
+openmpi = [
+    "TCP_IF_INCLUDE=eth3",
+    "UCX_NET_DEVICE=mlx5_0:1"
+]
+nccl = [
+    "NCCL_DEBUG=WARN",
+    "NCCL_NET=IB"
+]
+
+[IL-1]
+
+[IL-1.labels]
+name = "IL-1"
+network = "RoCE"
+switch = "SpectrumX"
+nic = "CX7"
+gpu_type = "H100-HGX"
+
+[IL-1.run_params]
+sbatch = [
+    "--gres=gpu:8",
+    "--ntasks-per-node=8"
+]
+openmpi = [
+    "TCP_IF_INCLUDE=eno8303"
+]
+nccl = [
+    "NCCL_DEBUG=WARN",
+    "NCCL_NET=IB",
+    "NCCL_IB_TC=96",
+    "NCCL_NET_PLUGIN=none",
+    "NCCL_IB_ADAPTIVE_ROUTING=1",
+    "NCCL_IB_HCA==mlx5_0:1,mlx5_3:1,mlx5_4:1,mlx5_5:1,mlx5_6:1,mlx5_9:1,mlx5_10:1,mlx5_11:1",
+    "NCCL_SOCKET_IFNAME=enp156s0f0np0"
+]
+#    "NCCL_IB_SPLIT_DATA_ON_QPS=0", #default, remove
+#    "NCCL_IB_ADAPTIVE_ROUTING=1", #off by default on RoCE, turn on to test the SpectrumX Adaptive Routing support
+#    "NCCL_IB_HCA==mlx5_0:1,mlx5_3:1,mlx5_4:1,mlx5_5:1,mlx5_6:1,mlx5_9:1,mlx5_10:1,mlx5_11:1",
+#    "NCCL_SOCKET_IFNAME=enp156s0f0np0"
+
+[OCI-NRT]
+
+[OCI-NRT.labels]
+name = "OCI-NRT"
+network = "RoCE"
+switch = "Tomahawk"
+nic = "CX7"
+gpu_type = "H100-DGX"
+
+[OCI-NRT.run_params]
+sbatch = [
+    "--gres=gpu:8",
+    "--ntasks-per-node=8"
+]
+openmpi = [
+]
+nccl = [
+    "NCCL_DEBUG=WARN",
+    "NCCL_IB_SL=0",
+    "NCCL_IB_TC=41",
+    "NCCL_IB_HCA==mlx5_0,mlx5_1,mlx5_3,mlx5_4,mlx5_5,mlx5_6,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_12,mlx5_13,mlx5_14,mlx5_15,mlx5_16,mlx5_17",
+    "NCCL_NET_PLUGIN=none",
+    "NCCL_IB_QPS_PER_CONNECTION=$USER_NCCL_IB_QPS_PER_CONNECTION",
+    "NCCL_TUNER_PLUGIN=none",
+    "OMPI_MCA_btl=tcp,self",
+    "OMPI_MCA_btl_tcp_if_include=eth0",
+    "UCX_NET_DEVICES=mlx4_2:1",
+    "UCX_TLS=rc,sm",
+    "OMPI_MCA_coll_hcoll_enable=0"
+]
+#    "RX_QUEUE_LEN=8192", #not sure what this is for
+#    "IB_RX_QUEUE_LEN=8192", #not sure what this is for
+#    "NCCL_IB_TIMEOUT=20", #do not reduce timeout  
+#    "NCCL_NET_PLUGIN=none", #to avoid accidentally using HPCX plugin
+#    "NCCL_IB_QPS_PER_CONNECTION=4", #reduce this to 1 for alltoall in test config
+#    #"NCCL_IB_QPS_PER_CONNECTION=2", #for nodes >256 https://nvbugs/4946221 
+
+#Fix this: common openmpi_params don't apply here. especially the UCX_TLS
+[PreNyx]
+
+[PreNyx.labels]
+name = "PreNyx"
+network = "IB"
+switch = "Quantum2"
+nic = "CX7"
+gpu_type = "B200"
+
+[PreNyx.run_params]
+sbatch = [
+    "--ntasks-per-node=8"
+]
+openmpi = [
+    "UCX_TLS=tcp",
+    "UCX_NET_DEVICE=$TCP_DEVICE",
+    "TCP_IF_INCLUDE=$TCP_DEVICE"
+]
+nccl = [
+    "NCCL_DEBUG=WARN",
+    "NCCL_NET=IB"
+]
+
+[PreTyche]
+
+[PreTyche.labels]
+name = "PreTyche"
+network = "IB"
+switch = "Quantum3"
+nic = "CX7"
+gpu_type = "B200"
+
+[PreTyche.run_params]
+sbatch = [
+    "--ntasks-per-node=4"
+]
+
+nccl = [
+    "NCCL_DEBUG=WARN",
+    "NCCL_NET=IB",
+    "NCCL_IB_HCA==mlx5_0,mlx5_1,mlx5_4,mlx5_5",
+    "NCCL_IB_SL=1"
+]
+#IB SHARP may not work on PreTyche yet
+#NCCL_NET_GDR_C2C=1 is default in 2.27
+
+[AWS-IAD]
+
+[AWS-IAD.labels]
+name = "AWS-IAD"
+network = "EFA"
+switch = "AWS-SWITCH"
+nic = "Ethernet"
+gpu_type = "H100-DGX"
+
+[AWS-IAD.run_params]
+sbatch = [
+    "--gres=gpu:8",
+    "--ntasks-per-node=8"
+]
+
+nccl = [
+    "OMPI_MCA_btl=tcp,self",
+    "OMPI_MCA_btl_tcp_if_exclude=lo,docker0",
+    "OMPI_MCA_coll_hcoll_enable=0",
+    "FI_EFA_USE_ZCPY_RX=0",
+    "FI_PROVIDER=efa",
+    "FI_EFA_USE_DEVICE_RDMA=1",
+    "NCCL_DEBUG=WARN",
+    "NCCL_BUFFSIZE=8388608",
+    "NCCL_P2P_NET_CHUNKSIZE=524288",
+    "NCCL_TUNER_PLUGIN=${AWS_OFI_NCCL}/lib/libnccl-ofi-tuner.so"
+]

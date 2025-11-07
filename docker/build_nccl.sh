@@ -59,6 +59,8 @@ fi
 
 # Setup ccache
 if [[ "$ENABLE_CCACHE" -eq 1 && -x "$(command -v ccache)" ]]; then
+  echo "INFO: Enabling ccache"
+  echo "INFO: ccache version: $(ccache --version)"
   # Create directory to store ccache symlinks
   mkdir -p $tempdir/bin
   ln -s $(which ccache) $tempdir/bin/gcc
@@ -71,9 +73,7 @@ if [[ "$ENABLE_CCACHE" -eq 1 && -x "$(command -v ccache)" ]]; then
   # Add temp bin to PATH
   export PATH=$tempdir/bin:$PATH
   # Set ccache variables
-  export CCACHE_REMOTE_STORAGE='redis://10.86.144.44:32633'
-  export CCACHE_SECONDARY_STORAGE=$CCACHE_REMOTE_STORAGE
-  export CCACHE_REMOTE_ONLY=true
+  source docker/ccache-vars.sh
   export CCACHE_BASEDIR=$nccl_build_workspace
   export CCACHE_DIR=$tempdir/ccache
 fi

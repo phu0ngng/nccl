@@ -1,3 +1,8 @@
+/*************************************************************************
+ * Copyright (c) 2016-2025, NVIDIA CORPORATION. All rights reserved.
+ *
+ * See LICENSE.txt for license information
+ ************************************************************************/
 // This contains an utlities to handle output both to stdout and to
 // json files.
 //
@@ -17,6 +22,8 @@
 #include <errno.h>
 // external profiler symbols
 #include <dlfcn.h>
+#include <sstream>
+#include <iomanip>
 
 #define PRINT if (is_main_thread) printf
 
@@ -39,6 +46,10 @@ extern int tuning;
 static FILE *json_report_fp;
 static thread_local bool write_json;
 
+#define JSON_FILE_VERSION 1
+
+#define TIME_STRING_FORMAT "%Y-%m-%d %H:%M:%S"
+
 typedef enum {
   JSON_NONE, // A pseudo-state meaning that the document is empty
   JSON_KEY,
@@ -48,7 +59,7 @@ typedef enum {
   JSON_LIST_SOME,
 } json_state_t;
 
-// We use these statics to mantain a stack of states where we are writing.
+// We use these statics to maintain a stack of states where we are writing.
 // the init_json_output function gets this set up, and it's the finalize_json_output function's job to clean this up.
 json_state_t *states = nullptr;
 size_t state_cap = 0; // Allocated stack capacity
@@ -306,7 +317,7 @@ void formatNow(char *buff, int len) {
   time(&now);
   struct tm *timeinfo = localtime(&now);
 
-  strftime(buff, len, "%Y-%m-%d %H:%M:%S", timeinfo);
+  strftime(buff, len, TIME_STRING_FORMAT, timeinfo);
 }
 
 // We provide some status line to stdout.
@@ -348,12 +359,14 @@ void jsonOutputInit(const char *in_path,
     json_report_fp = fopen(try_path, "wx");
   }
 
-  printf("# Writing Json output to %s\n", try_path);
+  printf("# Writing JSON output to %s\n", try_path);
   free(try_path);
 
   write_json = true;
 
   jsonStartObject(); // will be closed finalize_json_output
+
+  jsonKey("version"); jsonInt(JSON_FILE_VERSION);
 
   jsonKey("start_time");
   {
@@ -642,7 +655,7 @@ void writeBenchmarkLineBody(double timeUsec, double totalTime, double algBw, dou
     jsonKey(out_of_place ? "out_of_place" : "in_place");
     jsonStartObject();
     jsonKey(report_cputime ? "cpu_time" : "time"); jsonDouble(timeUsec);
-    jsonKey("alg_bw");                            jsonDouble(algBw);
+    jsonKey("alg_bw");                             jsonDouble(algBw);
     jsonKey("bus_bw");                             jsonDouble(busBw);
     jsonKey("nwrong");                             (reportErrors ? jsonDouble((double)wrongElts) : jsonNull());
     jsonKey("side_comp_bw");                       (side_comp == 1 ? jsonDouble(sideBw) : jsonNull());
@@ -806,9 +819,8 @@ void writeResultFooter(const int errors[], const double bw[], double check_avg_b
     jsonFinishList();
   }
 
-  PRINT("# Out of bounds values : %d %s\n", errors[0], errors[0] ? "FAILED" : "OK");
-  PRINT("# Avg bus bandwidth    : %g %s\n", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
-  PRINT("#\n");
+  PRINT("# %-20s : %d %s\n", "Out of bounds values", errors[0], errors[0] ? "FAILED" : "OK");
+  PRINT("# %-20s : %g %s\n", "Avg bus bandwidth", bw[0], check_avg_bw == -1 ? "" : (bw[0] < check_avg_bw*(0.9) ? "FAILED" : "OK"));
 
   if(write_json) {
     jsonKey("out_of_bounds");
@@ -824,11 +836,53 @@ void writeResultFooter(const int errors[], const double bw[], double check_avg_b
   }
 }
 
+std::string getMemString(double amount) {
+  std::string postfix = " B";
+  if (abs(amount) >= 1024.0*1024.0*1024.0) {
+    postfix = " GB";
+    amount /= 1024.0 * 1024.0 * 1024.0;
+  } else if (abs(amount) >= 1024.0*1024.0) {
+    postfix = " MB";
+    amount /= 1024.0 * 1024.0;
+  } else if (abs(amount) >= 1024.0) {
+    postfix = " KB";
+    amount /= 1024.0;
+  }
+  int precision = 0;
+  if (abs(amount) < 10.0) {
+    precision = 2;
+  } else if (abs(amount) < 100.0) {
+    precision = 1;
+  }
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(precision) << amount << postfix;
+  return ss.str();
+}
+
+void writeMemInfo(memInfo_t* memInfos, int numMemInfos) {
+
+  std::stringstream ss;
+  uint64_t maxAmount = 0;
+  for (int i = 0; i < numMemInfos; i++) {
+    ss << memInfos[i].name << " " 
+      << getMemString(memInfos[i].amount) 
+      << " ";
+    if (i < numMemInfos - 1) {
+      ss << "| ";
+    }
+    maxAmount += memInfos[i].amount;
+  }
+  ss << "| Total  " << getMemString(maxAmount);
+  PRINT("# %-20s : %s\n", "GPU memory usage", ss.str().c_str());
+}
+
 // Write out remaining errors to stdout/json.
 void writeErrors() {
   const char *error = ncclGetLastError(NULL);
   if(error && strlen(error) > 0) {
     PRINT("# error: %s\n", error);
+  } else {
+    PRINT("\n");
   }
   if(write_json) {
     jsonKey("errors");
@@ -838,6 +892,10 @@ void writeErrors() {
     }
     jsonFinishList();
   }
+}
+
+void finalizeFooter() {
+  PRINT("#\n");
 }
 
 static int profilerContext;

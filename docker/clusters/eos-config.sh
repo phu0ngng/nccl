@@ -7,7 +7,7 @@ EOS_GPU_ARCHS="90"
 
 EOS_OS_VERSION="20.04"
 EOS_CUDA_VERSION="12.8.0"
-EOS_BUILD_TOOLS_VERSION="1.0.1"
+EOS_BUILD_TOOLS_VERSION="2.0.0"
 EOS_BUILD_IMAGE_VERSION="${EOS_BUILD_TOOLS_VERSION}-c${EOS_CUDA_VERSION}-u${EOS_OS_VERSION}"
 
 EOS_OPENMPI_VERSION="4.1.5rc2"
@@ -73,7 +73,7 @@ function get_build_command() {
 	-c 48 \
         --container-image=$build_tools_image \
         --container-mounts=${current_dir}:/nccl \
-        /nccl/docker/build_nccl.sh"
+        /nccl/docker/build_nccl.sh --enable-ccache"
 }
 
 function get_cuda_home() {

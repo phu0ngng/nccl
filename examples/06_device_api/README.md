@@ -10,7 +10,7 @@ enabling users to perform inter-GPU communication within their own kernels.
 
 ## Examples
 
-### [01_allreduce](01_allreduce/)
+### [01_allreduce_lsa](01_allreduce_lsa/)
 **AllReduce with Device Kernel Implementation**
 - **Pattern**: GPU kernel performs collectives using device communicators
 - **API**: `ncclDevCommCreate`, `ncclCommWindowRegister`, device-side LSA
@@ -22,6 +22,28 @@ enabling users to perform inter-GPU communication within their own kernels.
   - Symmetric memory windows for peer memory access
   - Device kernels coordinating via LSA barriers
   - Host launches kernel; kernel performs AllReduce on-device
+
+### [02_alltoall_gin](02_alltoall_gin/)
+**Pure GIN AlltoAll - Network-Only Communication**
+- **Pattern**: GPU kernel performs AlltoAll using only GIN for all peers
+- **API**: `ncclDevCommCreate` with GIN support, `ncclGin`, GIN barriers and signals
+- **Use case**: Multi-node AlltoAll with consistent network-based communication
+- **Key features**:
+  - Pure GIN implementation (no LSA optimizations)
+  - Network barriers for cross-node synchronization
+  - Signal-based completion detection
+  - Baseline network performance measurements
+
+### [03_alltoall_hybrid](03_alltoall_hybrid/)
+**Hybrid AlltoAll - Optimized Communication**
+- **Pattern**: GPU kernel performs AlltoAll using LSA for local peers, GIN for remote
+- **API**: `ncclDevCommCreate` with both LSA and GIN support, peer classification
+- **Use case**: Multi-node AlltoAll with optimal performance across topologies
+- **Key features**:
+  - Hybrid implementation for optimal performance
+  - Intelligent peer classification (local vs remote)
+  - Combined LSA and GIN synchronization
+  - Production-ready optimized communication patterns
 
 ## Choosing the Right Pattern
 
@@ -51,14 +73,24 @@ myAllReduceKernel<<<grid, block>>>(win, devComm);
 ### **Quick Start**
 ```shell
 # Build example by directory name
-make 01_allreduce
+make 01_allreduce_lsa
+make 02_alltoall_gin
+make 03_alltoall_hybrid
 ```
 
 ### **Individual Examples**
 ```shell
 # Build and run the device API AllReduce
-cd 01_allreduce && make
-./allreduce_device_api
+cd 01_allreduce_lsa && make
+./allreduce_lsa
+
+# Build and run the Pure GIN AlltoAll example
+cd 02_alltoall_gin && make
+./allreduce_gin
+
+# Build and run the Hybrid AlltoAll example
+cd 03_alltoall_hybrid && make
+./allreduce_hybrid
 ```
 
 ## References

@@ -127,6 +127,7 @@ if [ "$baremetal_build" -eq 0 ]; then
 
     eval "$(get_build_command $current_dir $build_image_version)"
 else
+    export ENABLE_CCACHE=1
     eval "$(get_build_command_bm)"
 fi
 

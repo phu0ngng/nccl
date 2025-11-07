@@ -10,7 +10,7 @@ GCCL_GPU_ARCHS="70,80"
 
 GCCL_OS_VERSION="20.04"
 GCCL_CUDA_VERSION="12.8.0"
-GCCL_BUILD_TOOLS_VERSION="1.0.3"
+GCCL_BUILD_TOOLS_VERSION="2.0.0"
 GCCL_BUILD_IMAGE_VERSION="${GCCL_BUILD_TOOLS_VERSION}-c${GCCL_CUDA_VERSION}-u${GCCL_OS_VERSION}"
 
 # Also build container uses this openmpi
@@ -19,7 +19,7 @@ GCCL_PLANNED_RESERVED="Reserved"
 
 # Using gc
 #   Parameters for building on gc
-DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools/nccl_build_tools"
+DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools"
 
 #   Relevant paths for bare metal
 GCCL_OPENMPI_HOME="/opt/mpi/openmpi-${GCCL_OPENMPI_VERSION}"

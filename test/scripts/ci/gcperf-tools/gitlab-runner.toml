@@ -16,7 +16,6 @@
 [EOS]
 CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-12.8.0"
 sbatch = [
-    "--ntasks-per-node=8",
     "--account=coreai_libraries_nccl"
 ]
 
@@ -85,3 +84,17 @@ hpcx_unload
 NCCL_HOME = "${CI_PROJECT_DIR}/build"
 NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build/test/perf"
 LD_LIBRARY_PATH = '''${NCCL_HOME}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}'''
+NVLD_SIZE="${NVLD_SIZE}"
+
+[PreTyche]
+sbatch = [
+    "--account coreai_libraries_nccl",
+    "-p 36x2-a01r",
+    "--cpus-per-task 36"
+]
+
+CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-12.8.0"
+NCCL_HOME = "${CI_PROJECT_DIR}/build-pre-tyche"
+NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build-pre-tyche/test/perf"
+MPI_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/openmpi-5.0.6"
+LD_LIBRARY_PATH = "${CUDA_HOME}/lib64:${MPI_HOME}/lib:${NCCL_HOME}/lib:${CUDA_HOME}/lib${LD_LIBRARY_PATH:+:LD_LIBRARY_PATH}"

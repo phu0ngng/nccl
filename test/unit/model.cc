@@ -374,7 +374,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   free(xmlSystem);
 
   CHECK(ncclTopoComputePaths(system, NULL));
-  system->inter = param.nnodes == 1 ? 0 : 1;
+  system->inter = nnodes == 1 ? 0 : 1;
 
   if (ngpus == -1 ) {
     ngpus = system->nodes[GPU].count;
@@ -448,10 +448,10 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   for (int i=0; i<M+1; i++) fds[i] = -1;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
     int i = a*NCCL_NUM_PROTOCOLS+p;
-    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", param.platform, ngpus, param.nnodes, ncclFuncStr[param.function], ncclAlgoStr[a], ncclProtoStr[p]);
+    sprintf(path, "topo/%s/data/%d/%d/%s/%s/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[param.function], ncclAlgoStr[a], ncclProtoStr[p]);
     fds[i] = open(path, O_RDONLY);
   }
-  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", param.platform, ngpus, param.nnodes, ncclFuncStr[param.function]);
+  sprintf(path, "topo/%s/data/%d/%d/%s/time.txt", platform, ngpus, nnodes, ncclFuncStr[param.function]);
   fds[M] = open(path, O_RDONLY);
   float score = 0.0;
   int npoints = 0;
@@ -479,7 +479,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   CHECK(ncclTopoTuneModel(&comm, compCap, compCap, graphs));
 
   if (!param.compactMode) {
-    printf("%s/%dx%d, %s\n", param.platform, param.nnodes, ngpus, ncclFuncStr[param.function]);
+    printf("%s/%dx%d, %s\n", platform, nnodes, ngpus, ncclFuncStr[param.function]);
     printf("-----------+");
     for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
       if (algoProtoSupported(a, p, graphs) == 0) continue;
@@ -510,7 +510,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
     }
     printf("-------------------------------+"); printf("\n");
   } else {
-    printf("%10s/%5dx%5d |", param.platform, param.nnodes, ngpus);
+    printf("%10s/%5dx%5d |", platform, nnodes, ngpus);
   }
 
   for (ssize_t size=8; size<(2LL<<32); size<<=1) {
