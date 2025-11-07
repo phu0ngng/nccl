@@ -110,7 +110,6 @@ NCCL follows these coding conventions:
 - Explain "why" not just "what" for non-obvious code
 
 ### Code Formatting
-- We recommend using `clang-format` for C/C++ code formatting
 - Avoid trailing white-spaces
 - Try to match the existing style in files you're modifying
 
