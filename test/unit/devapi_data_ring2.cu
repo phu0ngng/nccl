@@ -6,6 +6,10 @@
 
 #include <cassert>
 
+#ifdef USE_IR
+#include <cuda.h>
+#endif
+
 //constexpr int BlockPerRank = 1;
 constexpr int BlockPerRank = 16;
 
@@ -16,6 +20,7 @@ constexpr int BufElts = 1<<20;
 constexpr bool Prints = false;
 //constexpr bool Prints = true;
 
+#ifndef USE_IR
 __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hbuf, int kernelNum) {
 #if __CUDA_ARCH__ >= 700
   int t = threadIdx.x;
@@ -92,6 +97,9 @@ __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hbuf, int kern
   if (t==0) net.resetCounter(counter);
 #endif
 }
+#else
+extern "C" __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hbuf, int kernelNum);
+#endif
 
 int main(int argc, char** argv) {
   int rank, nRanks;
@@ -116,8 +124,14 @@ int main(int argc, char** argv) {
   MPICHECK(MPI_Bcast((void*)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
 
   CUDACHECK(cudaSetDevice(dev));
+
+#ifdef USE_IR
+  CUstream stream;
+  CU_CHECK(cuStreamCreate(&stream, 0));
+#else
   cudaStream_t stream;
   CUDACHECK(cudaStreamCreate(&stream));
+#endif
 
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = 1;
@@ -140,13 +154,36 @@ int main(int argc, char** argv) {
 
   // run kernel
   printf("[MPI Rank %d] Starting kernels\n", rank);
+
+#ifdef USE_IR
+  // IR path: load kernel from cubin and launch
+  CUmodule mymodule = NULL;
+  init_cumodule(&mymodule, "devapi_data_ring2_ir.cubin");
+  CUfunction kernel;
+  init_test_case_kernel(mymodule, &kernel, "runDevice");
+  
+  for (int kernelNum=0; kernelNum < 100; kernelNum++) {
+    void* args[] = {&dcomm, &hBuf, &kernelNum};
+    CU_CHECK(cuLaunchKernel(kernel, BlockPerRank, 1, 1, 512, 1, 1, 0, stream, args, NULL));
+  }
+  CU_CHECK(cuStreamSynchronize(stream));
+#else
   for (int kernelNum=0; kernelNum < 100; kernelNum++) {
     runDevice<<<BlockPerRank, 512, 0, stream>>>(dcomm, hBuf, kernelNum);
   }
   CUDACHECK(cudaStreamSynchronize(stream));
+#endif
+
   printf("[MPI Rank %d] Completed kernels\n", rank);
 
   // cleanup
+#ifdef USE_IR
+  fini_cumodule(&mymodule);
+  CU_CHECK(cuStreamDestroy(stream));
+#else
+  CUDACHECK(cudaStreamDestroy(stream));
+#endif
+
   NCCLCHECK(ncclDevCommDestroy(comm, &dcomm));
   NCCLCHECK(ncclCommFinalize(comm));
   NCCLCHECK(ncclCommDestroy(comm));
