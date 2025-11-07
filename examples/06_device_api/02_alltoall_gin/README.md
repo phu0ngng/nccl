@@ -11,7 +11,7 @@ This example demonstrates NCCL's GPU-Initiated Networking (GIN) capabilities for
 This example showcases **pure GIN communication** where all data exchange happens through the network, without any Load Store Access (LSA) optimizations. This is particularly useful for:
 
 - Multi-node environments where ranks cannot use LSA
-- Testing network performance without local optimizations  
+- Testing network performance without local optimizations
 - Understanding the baseline GIN communication patterns
 - Scenarios where all communication must go through the network
 
@@ -50,7 +50,7 @@ ncclDevComm devComm;
 ncclDevCommRequirements reqs;
 memset(&reqs, 0, sizeof(reqs));
 // GIN barriers enable cross-node synchronization over the network
-reqs.railGinBarrierCount = NCCL_DEVICE_CTA_COUNT;  
+reqs.railGinBarrierCount = NCCL_DEVICE_CTA_COUNT;
 // GIN signals provide completion notifications for asynchronous operations
 reqs.ginSignalCount = 1;
 
@@ -75,7 +75,7 @@ GIN barriers enable cross-node synchronization from device code over the network
 
 ```cpp
 // GIN barriers coordinate GPU threads across different nodes over network
-ncclGinBarrierSession<ncclCoopCta> bar { 
+ncclGinBarrierSession<ncclCoopCta> bar {
     ncclCoopCta(),                    // Barrier scope: entire CTA (thread block)
     gin,                              // GIN context for network operations
     ncclTeamWorld(devComm),          // Team spanning all ranks

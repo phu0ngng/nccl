@@ -16,7 +16,7 @@ This example showcases **hybrid communication** that intelligently selects the o
 ## What This Example Does
 
 1. **Creates hybrid device communicators** using `ncclDevCommCreate` with both LSA and GIN support for optimal peer communication
-2. **Registers symmetric memory windows** with `ncclCommWindowRegister` for both LSA direct access and GIN network operations  
+2. **Registers symmetric memory windows** with `ncclCommWindowRegister` for both LSA direct access and GIN network operations
 3. **Launches GPU kernel** that performs AlltoAll operations using LSA for local peers and GIN for remote peers
 4. **Demonstrates hybrid synchronization** coordinating both LSA barriers and GIN signals for correctness
 
@@ -50,7 +50,7 @@ ncclDevCommRequirements reqs;
 memset(&reqs, 0, sizeof(reqs));
 // LSA barriers enable direct memory access coordination for local peers
 reqs.lsaBarrierCount = NCCL_DEVICE_CTA_COUNT;
-// GIN barriers enable cross-node synchronization over the network  
+// GIN barriers enable cross-node synchronization over the network
 reqs.railGinBarrierCount = NCCL_DEVICE_CTA_COUNT;
 // GIN signals provide completion notifications for asynchronous network operations
 reqs.ginSignalCount = 1;
@@ -76,7 +76,7 @@ Hybrid barriers coordinate both local LSA operations and remote GIN operations. 
 
 ```cpp
 // Hybrid barriers coordinate both LSA and GIN operations across all ranks
-ncclBarrierSession<ncclCoopCta> bar { 
+ncclBarrierSession<ncclCoopCta> bar {
     ncclCoopCta(),              // Barrier scope: entire CTA (thread block)
     ncclTeamTagWorld(),         // Team spanning all ranks (local + remote)
     gin,                        // GIN context for network coordination
