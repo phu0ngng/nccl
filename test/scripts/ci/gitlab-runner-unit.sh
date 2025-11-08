@@ -181,6 +181,14 @@ else
   echo -e "Disabled DevAPI Window Stress TESTS test\n\n"
 fi
 
+# binary tests
+if [ "$CHECK_SYMBOLS" -eq 1 ]; then
+    run_command "test_symbols" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/binary/test_symbols.sh" "$NCCL_HOME/lib/libnccl.so"
+else
+    echo -e "Disabled Test Symbols test\n\n"
+fi
+
+
 print_failed_commands
 end_junit_file
 ci_exit

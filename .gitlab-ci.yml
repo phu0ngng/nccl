@@ -14,7 +14,7 @@ stages:
 
 variables:
   WERROR: 0
-  CHECK_SYMBOLS: "0"  # nvbug 5479096
+  CHECK_SYMBOLS: "0"  # nvbug 5479096. Only runs on ipp6
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   PLANNED_RESERVED: "Reserved"
@@ -1112,6 +1112,7 @@ unit_tests-ipp6-a100:
     HASHTABLE_TESTS: 1
     LSA_POINTER_TESTS: 0
     LSA_MULTIMEM_POINTER_TESTS: 0
+    CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
   before_script:
     - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
