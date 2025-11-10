@@ -7,6 +7,7 @@
 include ../makefiles/common.mk
 # LLVM IR generation
 
+ifneq ($(EMIT_LLVM_IR), 0)
 # Source and target files
 LLVM_SRC := nccl_device_wrapper__impl.h
 BUILDDIR ?= $(abspath ../build)
@@ -95,8 +96,15 @@ llvm_ir: $(FINAL_BC) $(OPTIMIZED_BC) $(WRAPPER_HEADER)
 	@echo "  LLVM IR (Human-readable): $(LLVM_IR_FILE)"
 	@echo "  Final BC: $(FINAL_BC)"
 	@echo "  Wrapper Header: $(WRAPPER_HEADER)"
+else
+llvm_ir:
+	@echo "LLVM IR generation disabled (EMIT_LLVM_IR=0)"
+
+endif
+
+build: llvm_ir
 
 clean:
 	rm -rf $(OBJDIR) $(FINAL_BC) $(WRAPPER_HEADER)
 
-.PHONY: llvm_ir clean
+.PHONY: llvm_ir build clean

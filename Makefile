@@ -6,18 +6,16 @@
 .PHONY: all clean
 
 default: src.build
-ifneq ($(EMIT_LLVM_IR), 0)
 default: ir.build
-TARGETS += ir
-endif
 
 install: src.install
 BUILDDIR ?= $(abspath ./build)
 ABSBUILDDIR := $(abspath $(BUILDDIR))
-TARGETS := src test pkg nccl4py
+TARGETS := src test pkg nccl4py ir
 clean: ${TARGETS:%=%.clean}
 test.build: src.build
 examples.build: src.build
+ir.build: src.build
 LICENSE_FILES := LICENSE.txt
 LICENSE_TARGETS := $(LICENSE_FILES:%=$(BUILDDIR)/%)
 lic: $(LICENSE_TARGETS)
@@ -42,12 +40,9 @@ pkg.%:
 nccl4py.%:
 	${MAKE} -C nccl4py $* BUILDDIR=${ABSBUILDDIR}
 
+# IR generation requires src.build first
+ir.%:
+	${MAKE} -C ir $* BUILDDIR=${ABSBUILDDIR}
+
 pkg.debian.prep: lic
 pkg.txz.prep: lic
-
-# IR generation requires src.build first
-ir.build: src.build
-	${MAKE} -C ir llvm_ir BUILDDIR=${ABSBUILDDIR}
-
-ir.clean:
-	${MAKE} -C ir clean BUILDDIR=${ABSBUILDDIR}
