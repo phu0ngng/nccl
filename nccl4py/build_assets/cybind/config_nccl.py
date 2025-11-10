@@ -176,13 +176,9 @@
         # use this to control the type apprearance at the lowpp level
         # this is used as WAR for current codegen limitations
         'types': {
-            "ncclUniqueId": "AUTO_LOWPP_ARRAY",
-            # Note: ncclConfig_t has members appended across versions, while technically
-            # it is an ABI-breaking change, as long as we only allocate 1 struct at a time
-            # at run time we are fine. NCCL_CONFIG_INITIALIZER needs to be manually
-            # implemented in pure Python to initialize this struct.
-            "ncclConfig_t": "AUTO_LOWPP_ARRAY",
-            "ncclSimInfo_t": "AUTO_LOWPP_ARRAY",
+            "ncclUniqueId": "AUTO_LOWPP_CLASS",
+            "ncclConfig_t": "AUTO_LOWPP_CLASS",
+            "ncclSimInfo_t": "AUTO_LOWPP_CLASS",
         },
         # map the enum values to their expected dtypes
         # this is very library-specific and needs the library developer to fill in
