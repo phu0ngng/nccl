@@ -1,7 +1,7 @@
 """API tests for NCCL collective operations.
 
-Tests all collective operations (all_reduce, broadcast, reduce, all_gather,
-reduce_scatter, all_to_all, gather, scatter) with real NCCL across multiple ranks.
+Tests all collective operations (reduce, broadcast, gather,
+reduce_scatter, alltoall, scatter) with real NCCL across multiple ranks.
 Validates data correctness by initializing with known values and checking results.
 """
 import pytest
@@ -172,7 +172,7 @@ def test_send_recv(nccl_comm, rank_info, allocator):
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
 def test_all_reduce(nccl_comm, rank_info, allocator):
-    """Test all_reduce with different buffer allocators."""
+    """Test reduce (AllReduce mode) with different buffer allocators."""
     count = 10
 
     # Prepare send data and expected result as lists
@@ -184,20 +184,20 @@ def test_all_reduce(nccl_comm, rank_info, allocator):
     recv_data = _allocate_empty_buffer(count, "float32", allocator)
     expected = np.array(expected_list, dtype=np.float32)
 
-    # Perform all_reduce
-    nccl_comm.all_reduce(send_data, recv_data, nccl.SUM)
+    # Perform reduce (AllReduce mode: root=None)
+    nccl_comm.reduce(send_data, recv_data, nccl.SUM)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator}: expected {expected}, got {result}"
 
-    # Perform all_reduce with explicit stream
-    nccl_comm.all_reduce(send_data, recv_data, nccl.SUM, stream=0)
+    # Perform reduce with explicit stream
+    nccl_comm.reduce(send_data, recv_data, nccl.SUM, stream=0)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator} (stream=0): expected {expected}, got {result}"
 
-    # Perform in-place all_reduce
-    nccl_comm.all_reduce(send_data, send_data, nccl.SUM)
+    # Perform in-place reduce
+    nccl_comm.reduce(send_data, send_data, nccl.SUM)
     _sync(allocator)
     result = _to_numpy(send_data)
     assert np.array_equal(result, expected), f"{allocator} (in-place): expected {expected}, got {result}"
@@ -301,7 +301,7 @@ def test_reduce(nccl_comm, rank_info, allocator):
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
 def test_all_gather(nccl_comm, rank_info, allocator):
-    """Test all_gather with different allocators."""
+    """Test gather (AllGather mode) with different allocators."""
     count = 10
 
     # Prepare send data and expected result as lists
@@ -316,22 +316,22 @@ def test_all_gather(nccl_comm, rank_info, allocator):
     recv_data = _allocate_empty_buffer(count * rank_info.nccl_size, "float32", allocator)
     expected = np.array(expected_list, dtype=np.float32)
 
-    # Perform all_gather
-    nccl_comm.all_gather(send_data, recv_data)
+    # Perform gather (AllGather mode: root=None)
+    nccl_comm.gather(send_data, recv_data)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator}: expected {expected}, got {result}"
 
-    # Perform all_gather with explicit stream
-    nccl_comm.all_gather(send_data, recv_data, stream=0)
+    # Perform gather with explicit stream
+    nccl_comm.gather(send_data, recv_data, stream=0)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator} (stream=0): expected {expected}, got {result}"
 
-    # Perform in-place all_gather: sendbuf == recvbuf + rank * sendcount
+    # Perform in-place gather: sendbuf == recvbuf + rank * sendcount
     in_place_send_data = recv_data[rank_info.nccl_rank * count : (rank_info.nccl_rank + 1) * count]
     in_place_send_data[:] = send_data
-    nccl_comm.all_gather(in_place_send_data, recv_data)
+    nccl_comm.gather(in_place_send_data, recv_data)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator} (in-place): expected {expected}, got {result}"
@@ -375,7 +375,7 @@ def test_reduce_scatter(nccl_comm, rank_info, allocator):
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
 def test_all_to_all(nccl_comm, rank_info, allocator):
-    """Test all_to_all with different allocators."""
+    """Test alltoall with different allocators."""
     count = 10
 
     # Prepare send data: each rank sends different data to each peer
@@ -396,14 +396,14 @@ def test_all_to_all(nccl_comm, rank_info, allocator):
     recv_data = _allocate_empty_buffer(count * rank_info.nccl_size, "float32", allocator)
     expected = np.array(expected_list, dtype=np.float32)
 
-    # Perform all_to_all
-    nccl_comm.all_to_all(send_data, recv_data)
+    # Perform alltoall
+    nccl_comm.alltoall(send_data, recv_data)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator}: expected {expected}, got {result}"
 
-    # Perform all_to_all with explicit stream
-    nccl_comm.all_to_all(send_data, recv_data, stream=0)
+    # Perform alltoall with explicit stream
+    nccl_comm.alltoall(send_data, recv_data, stream=0)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator} (stream=0): expected {expected}, got {result}"
@@ -520,7 +520,7 @@ def test_scatter(nccl_comm, rank_info, allocator):
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
 def test_sliced_buffer(nccl_comm, rank_info, allocator):
-    """Test sliced buffers and dtype override with all_reduce."""
+    """Test sliced buffers and dtype override with reduce (AllReduce mode)."""
 
     # Create base array with rank-specific data
     base_data = [rank_info.nccl_rank * 100 + i for i in range(20)]
@@ -529,7 +529,7 @@ def test_sliced_buffer(nccl_comm, rank_info, allocator):
     # Test 1: full_array - Use full array, count = 20
     recv_buf = _allocate_empty_buffer(20, "float32", allocator)
     expected = np.array([sum(r * 100 + i for r in range(rank_info.nccl_size)) for i in range(20)], dtype=np.float32)
-    nccl_comm.all_reduce(full_array, recv_buf, nccl.SUM)
+    nccl_comm.reduce(full_array, recv_buf, nccl.SUM)
     _sync(allocator)
     result = _to_numpy(recv_buf)
     assert np.array_equal(result, expected), f"{allocator} (full_array): expected {expected}, got {result}"
@@ -538,7 +538,7 @@ def test_sliced_buffer(nccl_comm, rank_info, allocator):
     send_slice = full_array[0:10]
     recv_buf = _allocate_empty_buffer(10, "float32", allocator)
     expected = np.array([sum(r * 100 + i for r in range(rank_info.nccl_size)) for i in range(10)], dtype=np.float32)
-    nccl_comm.all_reduce(send_slice, recv_buf, nccl.SUM)
+    nccl_comm.reduce(send_slice, recv_buf, nccl.SUM)
     _sync(allocator)
     result = _to_numpy(recv_buf)
     assert np.array_equal(result, expected), f"{allocator} (slice_from_zero): expected {expected}, got {result}"
@@ -547,7 +547,7 @@ def test_sliced_buffer(nccl_comm, rank_info, allocator):
     send_slice = full_array[5:15]
     recv_buf = _allocate_empty_buffer(10, "float32", allocator)
     expected = np.array([sum(r * 100 + (i + 5) for r in range(rank_info.nccl_size)) for i in range(10)], dtype=np.float32)
-    nccl_comm.all_reduce(send_slice, recv_buf, nccl.SUM)
+    nccl_comm.reduce(send_slice, recv_buf, nccl.SUM)
     _sync(allocator)
     result = _to_numpy(recv_buf)
     assert np.array_equal(result, expected), f"{allocator} (slice_from_middle): expected {expected}, got {result}"

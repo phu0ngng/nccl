@@ -146,7 +146,7 @@ def test_split_with_value_validation(nccl_comm, rank_info):
     send_data[0] = nccl_comm.rank
     expected[0] = 0 + (rank_info.nccl_size - 1) * rank_info.nccl_size / 2
 
-    nccl_comm.all_reduce(send_data, recv_data, nccl.SUM)
+    nccl_comm.reduce(send_data, recv_data, nccl.SUM)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
     assert np.array_equal(result, expected)
@@ -166,7 +166,7 @@ def test_split_with_value_validation(nccl_comm, rank_info):
         last_rank = rank_info.nccl_size - 1 if rank_info.nccl_size % 2 == 0 else rank_info.nccl_size - 2
         expected[0] = (first_rank + last_rank) * sub.nranks / 2
 
-    sub.all_reduce(send_data, recv_data, nccl.SUM)
+    sub.reduce(send_data, recv_data, nccl.SUM)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
     assert np.array_equal(result, expected), f"rank {rank_info.nccl_rank}: expected {expected}, got {result}"
@@ -222,7 +222,7 @@ def test_shrink_with_value_validation(nccl_comm, rank_info):
     send_data[0] = nccl_comm.rank
     expected[0] = 0 + (rank_info.nccl_size - 1) * rank_info.nccl_size / 2
 
-    nccl_comm.all_reduce(send_data, recv_data, nccl.SUM)
+    nccl_comm.reduce(send_data, recv_data, nccl.SUM)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
     assert np.array_equal(result, expected)
@@ -235,7 +235,7 @@ def test_shrink_with_value_validation(nccl_comm, rank_info):
         assert sub.is_valid
         expected[0] = expected[0] - sum(exclude_ranks)
 
-        sub.all_reduce(send_data, recv_data, nccl.SUM)
+        sub.reduce(send_data, recv_data, nccl.SUM)
         cp.cuda.Stream.null.synchronize()
         result = recv_data.get()
         assert np.array_equal(result, expected), f"rank {rank_info.nccl_rank}: expected {expected}, got {result}"
@@ -444,14 +444,14 @@ def test_custom_op(nccl_comm, rank_info, scalar_type):
     send_data[0] = nccl_comm.rank
     expected[0] = 0 + (rank_info.nccl_size - 1) * rank_info.nccl_size / 2
 
-    nccl_comm.all_reduce(send_data, recv_data, nccl.SUM)
+    nccl_comm.reduce(send_data, recv_data, nccl.SUM)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
     assert np.array_equal(result, expected)
 
     op = nccl_comm.create_pre_mul_sum(scalar, datatype=scalar_dtype)
     expected = expected * scalar_for_expected
-    nccl_comm.all_reduce(send_data, recv_data, op)
+    nccl_comm.reduce(send_data, recv_data, op)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
     assert np.array_equal(result, expected), f"rank {rank_info.nccl_rank}, scalar_type {scalar_type}: expected {expected}, got {result}"
