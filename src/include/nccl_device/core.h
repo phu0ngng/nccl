@@ -59,6 +59,9 @@ typedef struct ncclDevResourceRequirements ncclDevResourceRequirements_t;
 struct ncclTeamRequirements;
 typedef struct ncclTeamRequirements ncclTeamRequirements_t;
 
+struct ncclCommProperties;
+typedef struct ncclCommProperties ncclCommProperties_t;
+
 struct ncclDevCommRequirements {
   ncclDevResourceRequirements_t* resourceRequirementsList;
   ncclTeamRequirements_t* teamRequirementsList;
@@ -94,6 +97,12 @@ struct ncclTeamRequirements {
   ncclMultimemHandle_t* outMultimemHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 
+struct ncclCommProperties {
+  bool multimemSupport;
+  bool ginSupport;
+};
+
+NCCL_EXTERN_C __host__ ncclResult_t ncclCommQueryProperties(ncclComm_t, ncclCommProperties_t*);
 NCCL_EXTERN_C __host__ ncclResult_t ncclDevCommCreate(ncclComm_t, ncclDevCommRequirements_t const*, ncclDevComm_t* outDevComm);
 NCCL_EXTERN_C __host__ ncclResult_t ncclDevCommDestroy(ncclComm_t, ncclDevComm_t const* devComm);
 
