@@ -633,7 +633,7 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
   for (int commIdx = 0; commIdx < nNcclComms; commIdx++) {
     if (ncclComms[commIdx] == nullptr) // nullptr's are always at the end after sorting.
       break;
-    if (!__atomic_load_n(&ncclComms[commIdx]->peerInfoValid, __ATOMIC_ACQUIRE)) {
+    if (!COMPILER_ATOMIC_LOAD(&ncclComms[commIdx]->peerInfoValid, std::memory_order_acquire)) {
       // Critical data is not yet initialized -- ignore the communicator.
       continue;
     }
@@ -682,7 +682,7 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
   // collCommIdx counts rasCollComms::comm (comm); commIdx indexes ncclComms.
   for (int collCommIdx = 0, commIdx = 0; collCommIdx < nComms; collCommIdx++) {
     struct ncclComm* ncclComm = ncclComms[commIdx];
-    if (!__atomic_load_n(&ncclComm->peerInfoValid, __ATOMIC_ACQUIRE))
+    if (!COMPILER_ATOMIC_LOAD(&ncclComm->peerInfoValid, std::memory_order_acquire))
       continue;
 
     if ((char*)(comm+1) - (char*)commsData > *pNData) {
@@ -718,18 +718,18 @@ static ncclResult_t rasCollCommsInit(struct rasCollRequest** pReq, size_t* pReqL
       rank->peerIdx = 0;
       memcpy(rank->collOpCounts, ncclComm->seqNumber, sizeof(rank->collOpCounts));
       rank->status.initState = ncclComm->initState;
-      rank->status.asyncError = __atomic_load_n(&ncclComm->asyncResult, __ATOMIC_ACQUIRE);
+      rank->status.asyncError = COMPILER_ATOMIC_LOAD(&ncclComm->asyncResult, std::memory_order_acquire);
       if (rank->status.asyncError == ncclSuccess && ncclComm->proxyState)
-        rank->status.asyncError = __atomic_load_n(&ncclComm->proxyState->asyncResult, __ATOMIC_ACQUIRE);
+        rank->status.asyncError = COMPILER_ATOMIC_LOAD(&ncclComm->proxyState->asyncResult, std::memory_order_acquire);
       rank->status.finalizeCalled = (ncclComm->finalizeCalled != 0);
       rank->status.destroyFlag = (ncclComm->destroyFlag != 0);
-      rank->status.abortFlag = (__atomic_load_n(ncclComm->abortFlag, __ATOMIC_ACQUIRE) != 0);
+      rank->status.abortFlag = (COMPILER_ATOMIC_LOAD(ncclComm->abortFlag, std::memory_order_acquire) != 0);
       rank->cudaDev = ncclComm->cudaDev;
       rank->nvmlDev = ncclComm->nvmlDev;
       comm->nRanks++;
     } // for (commIdx)
 
-    if (__atomic_load_n(&ncclComm->peerInfoValid, __ATOMIC_ACQUIRE) && firstNewSkipMissingIdx != -1 &&
+    if (COMPILER_ATOMIC_LOAD(&ncclComm->peerInfoValid, std::memory_order_acquire) && firstNewSkipMissingIdx != -1 &&
         memcmp(req->comms.skipMissingRanksComms+firstNewSkipMissingIdx, &comm->commId, sizeof(comm->commId)) == 0) {
       // Fill in the missingRanks array that follows the comm->ranks.
       struct rasCollCommsMissingRank* missingRanks = (struct rasCollCommsMissingRank*)(comm->ranks+comm->nRanks);

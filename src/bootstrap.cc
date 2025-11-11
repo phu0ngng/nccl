@@ -133,7 +133,7 @@ enum bootstrapInterface_t { findSubnetIf = -1, dontCareIf = -2 };
 // check abort function
 static ncclResult_t checkAbort(volatile uint32_t* flag, int* cntr) {
   if ((*cntr % BOOTSTRAP_N_CHECK_ABORT) == 0) {
-    if (flag && __atomic_load_n(flag, __ATOMIC_ACQUIRE)) {
+    if (flag && COMPILER_ATOMIC_LOAD(flag, std::memory_order_acquire)) {
       TRACE(NCCL_BOOTSTRAP, "bootstrap: abort called");
       return ncclInternalError;
     }
@@ -1182,7 +1182,7 @@ ncclResult_t bootstrapClose(void* commState) {
   // close unexpected and return an error if we are not aborting and still operations in the pipe
   if (state->unexpectedConnections != NULL) {
     unexpectedFree(state);
-    if (__atomic_load_n(state->abortFlag, __ATOMIC_ACQUIRE) == 0) {
+    if (COMPILER_ATOMIC_LOAD(state->abortFlag, std::memory_order_acquire) == 0) {
       WARN("Unexpected connections are not empty");
       return ncclInternalError;
     }

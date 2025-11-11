@@ -17,6 +17,7 @@
 #include "ce_coll.h"
 #include "nvtx.h"
 #include "scheduler.h"
+#include "compiler.h"
 
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
@@ -1197,8 +1198,8 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     char* src = (char*)(workNode+1);
     for (int n = workNode->size; n != 0; n -= 16) {
       memcpy(
-        __builtin_assume_aligned(dst + (fifoCursor & fifoMask), 16),
-        __builtin_assume_aligned(src, 16),
+        COMPILER_ASSUME_ALIGNED(dst + (fifoCursor & fifoMask), 16),
+        COMPILER_ASSUME_ALIGNED(src, 16),
         16
       );
       fifoCursor += 16;
@@ -2527,7 +2528,7 @@ static ncclResult_t ceCollTaskAppend(
   t->opDev = opDev; // C++ struct assignment
   t->chunkSteps = info->chunkSteps;
   t->sliceSteps = info->sliceSteps;
-  t->eActivationMask = __atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED);
+  t->eActivationMask = COMPILER_ATOMIC_LOAD(&ncclProfilerEventMask, std::memory_order_relaxed);
   t->sendWin = sendWin;
   t->recvWin = recvWin;
 

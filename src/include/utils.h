@@ -11,6 +11,7 @@
 #include "alloc.h"
 #include "bitops.h"
 #include "checks.h"
+#include "compiler.h"
 #include <stdint.h>
 #include <time.h>
 #include <sched.h>
@@ -83,12 +84,12 @@ static inline int gcd(int a, int b) {
 
 template<typename Int>
 inline void ncclAtomicRefCountIncrement(Int* refs) {
-  __atomic_fetch_add(refs, 1, __ATOMIC_RELAXED);
+  COMPILER_ATOMIC_FETCH_ADD(refs, 1, std::memory_order_relaxed);
 }
 
 template<typename Int>
 inline Int ncclAtomicRefCountDecrement(Int* refs) {
-  return __atomic_sub_fetch(refs, 1, __ATOMIC_ACQ_REL);
+  return COMPILER_ATOMIC_SUB_FETCH(refs, 1, std::memory_order_acq_rel);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -235,7 +236,7 @@ inline void ncclMemoryStackConstruct(struct ncclMemoryStack* me) {
 inline void* ncclMemoryStack::allocate(struct ncclMemoryStack* me, size_t size, size_t align) {
   uintptr_t o = (me->topFrame.bumper + align-1) & -uintptr_t(align);
   void* obj;
-  if (__builtin_expect(o + size <= me->topFrame.end, true)) {
+  if (COMPILER_EXPECT(o + size <= me->topFrame.end, true)) {
     me->topFrame.bumper = o + size;
     obj = reinterpret_cast<void*>(o);
   } else {
@@ -305,7 +306,7 @@ template<typename T>
 inline T* ncclMemoryPoolAlloc(struct ncclMemoryPool* me, struct ncclMemoryStack* backing) {
   using Cell = ncclMemoryPool::Cell;
   Cell* cell;
-  if (__builtin_expect(me->head != nullptr, true)) {
+  if (COMPILER_EXPECT(me->head != nullptr, true)) {
     cell = me->head;
     me->head = cell->next;
   } else {
@@ -448,18 +449,18 @@ void ncclIntruQueueMpscConstruct(struct ncclIntruQueueMpsc<T,next>* me) {
 
 template<typename T, T *T::*next>
 bool ncclIntruQueueMpscEmpty(struct ncclIntruQueueMpsc<T,next>* me) {
-  return __atomic_load_n(&me->tail, __ATOMIC_RELAXED) <= 0x2;
+  return COMPILER_ATOMIC_LOAD(&me->tail, std::memory_order_relaxed) <= 0x2;
 }
 
 template<typename T, T *T::*next>
 bool ncclIntruQueueMpscEnqueue(ncclIntruQueueMpsc<T,next>* me, T* x) {
-  __atomic_store_n(&(x->*next), nullptr, __ATOMIC_RELAXED);
-  uintptr_t utail = __atomic_exchange_n(&me->tail, reinterpret_cast<uintptr_t>(x), __ATOMIC_ACQ_REL);
+  COMPILER_ATOMIC_STORE(&(x->*next), nullptr, std::memory_order_relaxed);
+  uintptr_t utail = COMPILER_ATOMIC_EXCHANGE(&me->tail, reinterpret_cast<uintptr_t>(x), std::memory_order_acq_rel);
   T* prev = reinterpret_cast<T*>(utail);
   T** prevNext = utail <= 0x2 ? &me->head : &(prev->*next);
-  __atomic_store_n(prevNext, x, __ATOMIC_RELAXED);
+  COMPILER_ATOMIC_STORE(prevNext, x, std::memory_order_relaxed);
   if (utail == 0x1) { // waiting
-    __atomic_thread_fence(__ATOMIC_ACQUIRE); // to see me->waiting
+    std::atomic_thread_fence(std::memory_order_acquire); // to see me->waiting
     // This lock/unlock is essential to ensure we don't race ahead of the consumer
     // and signal the cond before they begin waiting on it.
     struct ncclThreadSignal* waiting = me->waiting;
@@ -473,7 +474,7 @@ bool ncclIntruQueueMpscEnqueue(ncclIntruQueueMpsc<T,next>* me, T* x) {
 
 template<typename T, T *T::*next>
 T* ncclIntruQueueMpscDequeueAll(ncclIntruQueueMpsc<T,next>* me, bool waitSome) {
-  T* head = __atomic_load_n(&me->head, __ATOMIC_RELAXED);
+  T* head = COMPILER_ATOMIC_LOAD(&me->head, std::memory_order_relaxed);
   if (head == nullptr) {
     if (!waitSome) return nullptr;
     uint64_t t0 = clockNano();
@@ -485,24 +486,24 @@ T* ncclIntruQueueMpscDequeueAll(ncclIntruQueueMpsc<T,next>* me, bool waitSome) {
         uintptr_t expected = sleeping ? 0x1 : 0x0;
         uintptr_t desired = 0x1;
         me->waiting = waitSignal; // release done by successful compare exchange
-        if (__atomic_compare_exchange_n(&me->tail, &expected, desired, /*weak=*/true, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+        if (COMPILER_ATOMIC_COMPARE_EXCHANGE(&me->tail, &expected, desired, std::memory_order_release, std::memory_order_relaxed)) {
           sleeping = true;
           waitSignal->cond.wait(lock);
         }
       }
-      head = __atomic_load_n(&me->head, __ATOMIC_RELAXED);
+      head = COMPILER_ATOMIC_LOAD(&me->head, std::memory_order_relaxed);
     } while (head == nullptr);
   }
 
-  __atomic_store_n(&me->head, nullptr, __ATOMIC_RELAXED);
-  uintptr_t utail = __atomic_exchange_n(&me->tail, 0x0, __ATOMIC_ACQ_REL);
+  COMPILER_ATOMIC_STORE(&me->head, nullptr, std::memory_order_relaxed);
+  uintptr_t utail = COMPILER_ATOMIC_EXCHANGE(&me->tail, 0x0, std::memory_order_acq_rel);
   T* tail = utail <= 0x2 ? nullptr : reinterpret_cast<T*>(utail);
   T *x = head;
   while (x != tail) {
     T *x1;
     int spins = 0;
     while (true) {
-      x1 = __atomic_load_n(&(x->*next), __ATOMIC_RELAXED);
+      x1 = COMPILER_ATOMIC_LOAD(&(x->*next), std::memory_order_relaxed);
       if (x1 != nullptr) break;
       if (++spins == 1024) { spins = 1024-1; std::this_thread::yield(); }
     }
@@ -514,25 +515,25 @@ T* ncclIntruQueueMpscDequeueAll(ncclIntruQueueMpsc<T,next>* me, bool waitSome) {
 template<typename T, T *T::*next>
 T* ncclIntruQueueMpscAbandon(ncclIntruQueueMpsc<T,next>* me) {
   uintptr_t expected = 0x0;
-  if (__atomic_compare_exchange_n(&me->tail, &expected, /*desired=*/0x2, /*weak=*/true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+  if (COMPILER_ATOMIC_COMPARE_EXCHANGE(&me->tail, &expected, /*desired=*/0x2, std::memory_order_relaxed, std::memory_order_relaxed)) {
     return nullptr;
   } else {
     int spins = 0;
     T* head;
     while (true) {
-      head = __atomic_load_n(&me->head, __ATOMIC_RELAXED);
+      head = COMPILER_ATOMIC_LOAD(&me->head, std::memory_order_relaxed);
       if (head != nullptr) break;
       if (++spins == 1024) { spins = 1024-1; std::this_thread::yield(); }
     }
-    __atomic_store_n(&me->head, nullptr, __ATOMIC_RELAXED);
-    uintptr_t utail = __atomic_exchange_n(&me->tail, 0x2, __ATOMIC_ACQ_REL);
+    COMPILER_ATOMIC_STORE(&me->head, nullptr, std::memory_order_relaxed);
+    uintptr_t utail = COMPILER_ATOMIC_EXCHANGE(&me->tail, 0x2, std::memory_order_acq_rel);
     T* tail = utail <= 0x2 ? nullptr : reinterpret_cast<T*>(utail);
     T *x = head;
     while (x != tail) {
       T *x1;
       spins = 0;
       while (true) {
-        x1 = __atomic_load_n(&(x->*next), __ATOMIC_RELAXED);
+        x1 = COMPILER_ATOMIC_LOAD(&(x->*next), std::memory_order_relaxed);
         if (x1 != nullptr) break;
         if (++spins == 1024) { spins = 1024-1; std::this_thread::yield(); }
       }

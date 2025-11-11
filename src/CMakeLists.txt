@@ -8,7 +8,6 @@ set(LIBSRCFILES
     enqueue.cc
     group.cc
     init.cc
-    init_nvtx.cc
     proxy.cc
     transport.cc
     mnnvl.cc
@@ -16,6 +15,11 @@ set(LIBSRCFILES
     sym_kernels.cc
     dev_runtime.cc
 )
+
+# Add NVTX support if enabled
+if(NVTX)
+    list(APPEND LIBSRCFILES init_nvtx.cc)
+endif()
 
 # Add compatibility shim if using static cudart
 if(CUDARTLIB STREQUAL "cudart_static")

@@ -76,7 +76,7 @@ void initEnv() {
 void ncclLoadParam(char const* env, int64_t deftVal, int64_t uninitialized, int64_t* cache) {
   static std::mutex mutex;
   std::lock_guard<std::mutex> lock(mutex);
-  if (__atomic_load_n(cache, __ATOMIC_RELAXED) == uninitialized) {
+  if (COMPILER_ATOMIC_LOAD(cache, std::memory_order_relaxed) == uninitialized) {
     const char* str = ncclGetEnv(env);
     int64_t value = deftVal;
     if (str && strlen(str) > 0) {
@@ -89,7 +89,7 @@ void ncclLoadParam(char const* env, int64_t deftVal, int64_t uninitialized, int6
         INFO(NCCL_ENV,"%s set by environment to %lld.", env, (long long)value);
       }
     }
-    __atomic_store_n(cache, value, __ATOMIC_RELAXED);
+    COMPILER_ATOMIC_STORE(cache, value, std::memory_order_relaxed);
   }
 }
 

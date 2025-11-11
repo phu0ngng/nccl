@@ -82,7 +82,7 @@ static uint32_t kernelMask_coll(ncclFunc_t coll) {
 
 static uint32_t kernelMask_user() {
   static uint32_t cache = -1u;
-  uint32_t got = __atomic_load_n(&cache, __ATOMIC_RELAXED);
+  uint32_t got = COMPILER_ATOMIC_LOAD(&cache, std::memory_order_relaxed);
   if (got == -1u) {
     // TODO: Enhance this to be a pattern match. I like regex's but we also have
     // the parseList() used by NCCL_ALGO/PROTO.
@@ -94,13 +94,13 @@ static uint32_t kernelMask_user() {
       got = 0;
       for (int k=0; k < (int)ncclSymkKernelId_Count; k++) {
         if (strcmp(kernelName[k], name) == 0) {
-          __atomic_store_n(&cache, 1<<k, __ATOMIC_RELAXED);
+          COMPILER_ATOMIC_STORE(&cache, 1<<k, std::memory_order_relaxed);
           got = 1<<k;
           break;
         }
       }
     }
-    __atomic_store_n(&cache, got, __ATOMIC_RELAXED);
+    COMPILER_ATOMIC_STORE(&cache, got, std::memory_order_relaxed);
   }
   return got;
 }

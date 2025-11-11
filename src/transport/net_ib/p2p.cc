@@ -6,6 +6,7 @@
 
 #include "p2p.h"
 #include "common.h"
+#include "compiler.h"
 
 NCCL_PARAM(IbArThreshold, "IB_AR_THRESHOLD", 8192);
 
@@ -190,7 +191,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
   nreqs = slots[0].nreqs;
   // Wait until all data has arrived
   for (int r=1; r<nreqs; r++) while(slots[r].idx != idx);
-  __sync_synchronize(); // order the nreqsPtr load against tag/rkey/addr loads below
+  std::atomic_thread_fence(std::memory_order_seq_cst); // order the nreqsPtr load against tag/rkey/addr loads below
   for (int r=0; r<nreqs; r++) {
     if (reqs[r] != NULL || slots[r].tag != tag) continue;
 

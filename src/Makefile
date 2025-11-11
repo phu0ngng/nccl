@@ -12,7 +12,7 @@ INCEXPORTS  := nccl.h nccl_device.h \
 
 LIBSRCFILES := \
 	bootstrap.cc channel.cc collectives.cc debug.cc enqueue.cc group.cc \
-	init.cc init_nvtx.cc proxy.cc transport.cc mnnvl.cc allocator.cc dev_runtime.cc sym_kernels.cc ce_coll.cc \
+	init.cc proxy.cc transport.cc mnnvl.cc allocator.cc dev_runtime.cc sym_kernels.cc ce_coll.cc \
 	$(wildcard graph/*.cc) \
 	$(wildcard misc/*.cc) \
 	$(wildcard transport/*.cc) \
@@ -34,6 +34,10 @@ ifeq ($(NCCL_OS_LINUX), 1)
 	LIBSRCFILES += os/linux.cc
 else ifeq ($(NCCL_OS_WINDOWS), 1)
 	LIBSRCFILES += os/windows.cc
+endif
+
+ifneq ($(NVTX), 0)
+	LIBSRCFILES += init_nvtx.cc
 endif
 
 ##### lib files

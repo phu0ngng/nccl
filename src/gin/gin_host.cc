@@ -11,6 +11,7 @@
 #include "register_inline.h"
 #include "gin/gin_host.h"
 #include "gin/gin_host_proxy.h"
+#include "compiler.h"
 
 NCCL_PARAM(GinEnable, "GIN_ENABLE", 1);
 NCCL_PARAM(GinType, "GIN_TYPE", -1);
@@ -31,7 +32,7 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
           ret = ginState->ncclGin->ginProgress(ginState->ginComms[n]);
         }
         if (ret != ncclSuccess) {
-          __atomic_store_n(&ginState->asyncResult, ret, __ATOMIC_RELEASE);
+          COMPILER_ATOMIC_STORE(&ginState->asyncResult, ret, std::memory_order_release);
           INFO(NCCL_ALL,"%s:%d -> %d [GIN Progress Thread]", __FILE__, __LINE__, ret);
           ginState->ginProgress = -2;
           return NULL;

@@ -14,6 +14,7 @@
 #include "ce_coll.h"
 #include "profiler.h"
 #include "nvtx.h"
+#include "compiler.h"
 
 #define GROUP_MAX_RECLAIM_STEPS 10
 
@@ -75,7 +76,7 @@ void* ncclAsyncJobMain(void* arg) {
   if (job->result != ncclSuccess) {
     INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, job->result);
   }
-  __atomic_store_n(&job->state, ncclGroupJobDone, __ATOMIC_RELEASE);
+  COMPILER_ATOMIC_STORE(&job->state, ncclGroupJobDone, std::memory_order_release);
   return arg;
 }
 
@@ -418,7 +419,7 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
       jobsDone = true;
       job = ncclIntruQueueHead(asyncJobsMain);
       do {
-        ncclGroupJobState_t state = __atomic_load_n(&job->state, __ATOMIC_ACQUIRE);
+        ncclGroupJobState_t state = COMPILER_ATOMIC_LOAD(&job->state, std::memory_order_acquire);
         if (state == ncclGroupJobRunning) {
           jobsDone = false;
         } else if (state == ncclGroupJobDone) {
@@ -437,12 +438,12 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
           assert(state == ncclGroupJobJoined);
         }
 
-        if (!job->destroyFlag && (__atomic_load_n(groupAbortFlag, __ATOMIC_ACQUIRE) || errorJobAbortFlag == true)) {
-          __atomic_store_n(job->abortFlag, 1, __ATOMIC_RELEASE);
-          __atomic_store_n(job->abortFlagDev, 1, __ATOMIC_RELEASE);
+        if (!job->destroyFlag && (COMPILER_ATOMIC_LOAD(groupAbortFlag, std::memory_order_acquire) || errorJobAbortFlag == true)) {
+          COMPILER_ATOMIC_STORE(job->abortFlag, 1, std::memory_order_release);
+          COMPILER_ATOMIC_STORE(job->abortFlagDev, 1, std::memory_order_release);
           if (job->childAbortFlag) {
-            __atomic_store_n(job->childAbortFlag, 1, __ATOMIC_RELEASE);
-            __atomic_store_n(job->childAbortFlagDev, 1, __ATOMIC_RELEASE);
+            COMPILER_ATOMIC_STORE(job->childAbortFlag, 1, std::memory_order_release);
+            COMPILER_ATOMIC_STORE(job->childAbortFlagDev, 1, std::memory_order_release);
           }
         }
 
@@ -782,7 +783,7 @@ fail:
 ncclResult_t ncclGroupJobComplete(struct ncclGroupJob* groupJob) {
   ncclResult_t ret = ncclSuccess;
   if (groupJob && groupJob->nonBlockingInit) {
-    if (!__atomic_exchange_n(&groupJob->joined, true, __ATOMIC_ACQ_REL)) {
+    if (!COMPILER_ATOMIC_EXCHANGE(&groupJob->joined, true, std::memory_order_acq_rel)) {
       ret = ncclAsyncJobComplete(&groupJob->base);
     }
     if (ncclAtomicRefCountDecrement(&groupJob->groupRefCount) == 0) {
@@ -794,8 +795,8 @@ ncclResult_t ncclGroupJobComplete(struct ncclGroupJob* groupJob) {
 
 ncclResult_t ncclGroupJobAbort(struct ncclGroupJob* groupJob) {
   if (groupJob && groupJob->nonBlockingInit) {
-    if (!__atomic_exchange_n(&groupJob->joined, true, __ATOMIC_ACQ_REL)) {
-      __atomic_store_n(&groupJob->abortFlag, true, __ATOMIC_RELAXED);
+    if (!COMPILER_ATOMIC_EXCHANGE(&groupJob->joined, true, std::memory_order_acq_rel)) {
+      COMPILER_ATOMIC_STORE(&groupJob->abortFlag, true, std::memory_order_relaxed);
       ncclAsyncJobComplete(&groupJob->base);
     }
     if (ncclAtomicRefCountDecrement(&groupJob->groupRefCount) == 0) {

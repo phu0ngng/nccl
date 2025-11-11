@@ -15,6 +15,7 @@
 #include "profiler.h"
 #include "transport.h"
 #include "shm.h"
+#include "compiler.h"
 #include <assert.h>
 #include "register_inline.h"
 
@@ -1255,7 +1256,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             int offset;
             NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset, NULL));
             resources->recvMem->connFifo[buffSlot].offset = offset;
-            __sync_synchronize();
+            std::atomic_thread_fence(std::memory_order_seq_cst);
           }
           volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
           sub->posted += args->sliceSteps;
@@ -1340,7 +1341,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         if (done) {
           // Make sure size is reset to -1 before we update the head.
           connFifo[buffSlot].size = -1;
-          __sync_synchronize();
+          std::atomic_thread_fence(std::memory_order_seq_cst);
           TRACE(NCCL_NET, "sendProxy [%ld/%d/%d] request %p done", sub->done, buffSlot, sub->nsteps, sub->requests[buffSlot]);
           sub->done += args->sliceSteps;
           ncclProfilerStopProxyStepEvent(s, args, doneStepId);
@@ -1584,7 +1585,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
             sub->transmitted += args->sliceSteps;
             ncclProfilerRecordProxyStepEventState(s+i, args, transmittedStepId, ncclProfilerProxyStepRecvGPUWait);
             if (step < sub->nsteps) {
-              __sync_synchronize();
+              std::atomic_thread_fence(std::memory_order_seq_cst);
               struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
               volatile uint64_t* recvTail = resources->gdcSync ? resources->gdcSync : &resources->recvMem->tail;
               *recvTail = sub->base + sub->transmitted;
