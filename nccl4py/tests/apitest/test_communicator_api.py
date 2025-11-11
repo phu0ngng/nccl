@@ -7,6 +7,7 @@ from cuda.core.experimental import Device
 
 import nccl.bindings as nccl_bindings
 import nccl.core as nccl
+from conftest import requires_nccl_version
 
 try:
     import cupy as cp
@@ -86,6 +87,7 @@ def test_init_with_invalid_config(uid_shared, rank_info, invalid_config, expecte
     comm.destroy()
 
 
+@requires_nccl_version("2.18.1")
 @pytest.mark.mpi
 @pytest.mark.parametrize(
     "color, key, expect_invalid, expected_nranks_fn",
@@ -133,6 +135,7 @@ def test_split(uid_shared, rank_info, color, key, expect_invalid, expected_nrank
     base.destroy()
 
 
+@requires_nccl_version("2.18.1")
 @pytest.mark.mpi(min_size=4)
 def test_split_with_value_validation(nccl_comm, rank_info):
     """Test split with value validation."""
@@ -174,6 +177,7 @@ def test_split_with_value_validation(nccl_comm, rank_info):
     sub.destroy()
 
 
+@requires_nccl_version("2.27.3")
 @pytest.mark.mpi(min_size=4)
 @pytest.mark.parametrize(
     "exclude_ranks, config, flag, expect_error",
@@ -209,6 +213,7 @@ def test_shrink(uid_shared, rank_info, exclude_ranks, config, flag, expect_error
     base.destroy()
 
 
+@requires_nccl_version("2.27.3")
 @pytest.mark.mpi(min_size=4)
 def test_shrink_with_value_validation(nccl_comm, rank_info):
     """Test split with value validation."""
@@ -243,6 +248,7 @@ def test_shrink_with_value_validation(nccl_comm, rank_info):
         sub.destroy()
 
 
+@requires_nccl_version("2.23.4")
 @pytest.mark.mpi(min_size=4)
 def test_init_rank_scalable(rank_info):
     device = Device(rank_info.nccl_local_rank)
@@ -362,6 +368,7 @@ def test_finalize(uid_shared, rank_info):
     comm.destroy()
 
 
+@requires_nccl_version("2.19.3")
 @pytest.mark.mpi
 def test_register_buffer_api(nccl_comm):
     """Test register_buffer with real NCCL."""
@@ -374,6 +381,7 @@ def test_register_buffer_api(nccl_comm):
     assert not handle.is_valid
 
 
+@requires_nccl_version("2.27.3")
 @pytest.mark.mpi
 def test_register_window_api(nccl_comm):
     """Test register_window with real NCCL."""
