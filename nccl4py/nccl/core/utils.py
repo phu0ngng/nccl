@@ -26,6 +26,9 @@ from nccl import bindings as _nccl_bindings
 __all__ = ["Version", "get_version", "UniqueId", "get_unique_id", "get_error_string"]
 
 
+_version_cache = None
+
+
 class Version:
     """
     Version information for NCCL4Py and NCCL library.
@@ -70,8 +73,10 @@ def get_version() -> Version:
     Returns:
         ``Version``: Version object containing NCCL and NCCL4Py version information.
     """
-    v = int(_nccl_bindings.get_version())
-    return Version(v)
+    global _version_cache
+    if _version_cache is None:
+        _version_cache = Version(int(_nccl_bindings.get_version()))
+    return _version_cache
 
 
 class UniqueId:
