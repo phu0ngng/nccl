@@ -536,7 +536,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   ringGraph.crossNic = crossNic;
   ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
-  ringGraph.maxChannels = 16;
+  ringGraph.maxChannels = MAXCHANNELS/2;
 
   struct ncclTopoGraph treeGraph;
   memset(&treeGraph, 0, sizeof(treeGraph));
