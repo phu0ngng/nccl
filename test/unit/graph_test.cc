@@ -1,8 +1,11 @@
 #include "topo.h"
 #include "xml.h"
 #include "nccl_net.h"
+#include <cstdio>
+#include <cstdlib>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 
 #define ERROR(fmt, ...) do { \
@@ -61,6 +64,23 @@ struct testParam{
   /*mergeLevel=*/PATH_LOC,\
   /*forceMerge=*/NULL,\
   /*portRatio=*/1,\
+}
+
+static void setStackSize(rlim_t size) {
+  int res = 0;
+  size_t max = 0;
+  struct rlimit rl;
+  if ((res = getrlimit(RLIMIT_STACK, &rl)) != 0) goto fail;
+  if ((max = rl.rlim_max) < size) goto fail;
+  if (rl.rlim_cur < size) {
+    rl.rlim_cur = size;
+    printf("setting stack size to %ld/%ld\n", size, rl.rlim_max);
+    if ((res = setrlimit(RLIMIT_STACK, &rl)) != 0) goto fail;
+  }
+  return;
+fail:
+  printf("Failed to set the stack size to %ld kiB (max size = %ld kiB). Please run 'ulimit -s %ld' and try again.\n", size / 1024, max / 1024, size / 1024);
+  exit(1);
 }
 
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, enum testType type, bool dumpDiff, int* errors, int* warnings) {
@@ -135,8 +155,17 @@ struct mockVDev {
   ncclNetVDeviceProps_t vProps;
   int used;
 };
-mockVDev mockVDevs[MAX_MOCK_VDEVS];
-ncclNetProperties_t mockProps[MAX_MOCK_VDEVS];
+mockVDev* mockVDevs;
+ncclNetProperties_t* mockProps;
+
+static void allocateMock() {
+  mockVDevs = (struct mockVDev*)calloc(MAX_MOCK_VDEVS, sizeof(mockVDev));
+  mockProps = (ncclNetProperties_t*)calloc(MAX_MOCK_VDEVS, sizeof(ncclNetProperties_t));
+}
+static void freeMock() {
+  free(mockVDevs);
+  free(mockProps);
+}
 
 void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
   int devIndex;
@@ -370,7 +399,7 @@ static ncclResult_t xmlSplitNics(struct ncclXml* xmlSystem, int ratio){
   if (ratio == 1) return ncclSuccess;
 
   int listCount = 0;
-  struct ncclXmlNode* nodeList[MAX_TOPO_NODES];
+  struct ncclXmlNode** nodeList = (struct ncclXmlNode**)calloc(MAX_TOPO_NODES,sizeof(struct ncclXmlNode*));
   {
     // first list all the nets in the system to avoid counting new nets
     struct ncclXmlNode* node;
@@ -423,12 +452,13 @@ static ncclResult_t xmlSplitNics(struct ncclXml* xmlSystem, int ratio){
     }
     free(name);
   }
+  free(nodeList);
   return ncclSuccess;
 }
 
 void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, enum testType type, const struct testParam* param, int* errors, int* warnings) {
   struct ncclXml* xmlSystem;
-  char dumpFile[PATH_MAX];
+  char* dumpFile = (char*)malloc(PATH_MAX);
   INFO(NCCL_GRAPH, "Loading platform %s", platform);
   CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES*NCCL_TOPO_XML_MAX_NODES));
   CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
@@ -436,6 +466,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   if (xmlSystem->maxIndex == 0) {
     printf("Error : no system in %s\n", xmlTopoFile);
     (*errors)++;
+    free(dumpFile);
     return;
   }
 
@@ -458,12 +489,12 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   // We need to force all GPUs as keep="1" here to avoid trimming them
   keepGpus(xmlSystem);
   if (param->dumpProcessedXml) {
-    snprintf(dumpFile, sizeof(dumpFile), "%s.processed", xmlTopoFile);
+    snprintf(dumpFile, PATH_MAX, "%s.processed", xmlTopoFile);
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
   }
   CHECK(ncclTopoTrimXml(xmlSystem));
   if (param->dumpProcessedXml) {
-    snprintf(dumpFile, sizeof(dumpFile), "%s.processed_trimmed", xmlTopoFile);
+    snprintf(dumpFile, PATH_MAX, "%s.processed_trimmed", xmlTopoFile);
     CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
   }
   uint64_t hostHash = 0;
@@ -603,7 +634,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
       nvlsGraph.nChannels, nvlsGraph.bwIntra, nvlsGraph.bwInter);
 
   if (err || warn || incompleteRef) {
-    snprintf(dumpFile, sizeof(dumpFile), "%s.dump", xmlGraphFile);
+    snprintf(dumpFile, PATH_MAX, "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
     CHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
     struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &cNetGraph, &nvlsGraph };
@@ -622,6 +653,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   } else
     printf("     OK %5ld ms\n", computeTime[TIME_TOTL] / 1000);
   ncclTopoFree(system);
+  free(dumpFile);
   *errors += err;
   *warnings += warn;
 }
@@ -766,8 +798,10 @@ void printHelpMessage() {
 }
 
 int main(int argc, const char* argv[]) {
+  setStackSize(16*1024*1024); // 16MiB
   setenv("NCCL_IGNORE_DISABLED_P2P", "2", 0); // Disable hardware health checks (NVML)
   setlinebuf(stdout);
+  allocateMock();
 
   struct testParam param;
   getTestParam(&param);
@@ -858,5 +892,6 @@ int main(int argc, const char* argv[]) {
     RUN("DGX-B300-RoCE");
   }
   printf("%d errors, %d warnings (%s)\n", errors, warnings, (errors || warnings) ? "FAILED" : "PASSED");
+  freeMock();
   return (errors || warnings) ? 1 : 0;
 }
