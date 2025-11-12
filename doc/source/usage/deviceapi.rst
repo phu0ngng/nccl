@@ -47,8 +47,7 @@ these steps:
 
     /* Get device communicator */
     ncclDevComm devComm;
-    ncclDevCommRequirements reqs;
-    memset(&reqs, 0, sizeof(ncclDevCommRequirements));
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     int nCTAs = 16;
     reqs.lsaBarrierCount = nCTAs;
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devComm));
@@ -126,7 +125,7 @@ Multimem Device Kernel
 
   int main() {
     [...]
-    memset(&reqs, 0, sizeof(ncclDevCommRequirements));
+    reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     int nCTAs = 16;
     reqs.lsaBarrierCount = nCTAs;
     reqs.lsaMultimem = true;
@@ -251,7 +250,7 @@ GIN Device Kernel
 
   int main() {
     [...]
-    memset(&reqs, 0, sizeof(ncclDevCommRequirements));
+    reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     int nCTAs = 1;
     reqs.railGinBarrierCount = nCTAs;
     reqs.ginSignalCount = 1;

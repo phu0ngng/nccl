@@ -60,7 +60,7 @@ ncclDevCommRequirements
 .. c:type:: ncclDevCommRequirements
 
 A host-side structure specifying the list of requirements when creating device communicators (see
-:c:type:`ncclDevComm`).
+:c:type:`ncclDevComm`). Since NCCL 2.29, this struct must be initialized using ``NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER``.
 
  .. c:macro:: lsaMultimem
 
