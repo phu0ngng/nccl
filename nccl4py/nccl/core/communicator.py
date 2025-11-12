@@ -890,6 +890,42 @@ class Communicator:
         )
 
     # --- Collective Communication Operations ---
+    def allreduce(
+        self,
+        sendbuf: NcclBufferSpec,
+        recvbuf: NcclBufferSpec,
+        op: NcclRedOp | CustomRedOp,
+        stream: NcclStreamSpec | None = None,
+    ) -> None:
+        """
+        Reduces data arrays of length count in sendbuf using the specified operation and leaves identical copies of the result in each recvbuf.
+
+        All ranks receive the same reduced result in their receive buffers after this collective operation completes.
+
+        This is a shortcut for ``reduce(sendbuf, recvbuf, op, root=None, stream=stream)``.
+
+        Args:
+            - sendbuf (NcclBufferSpec): Source buffer specification containing data to be reduced.
+            - recvbuf (NcclBufferSpec): Destination buffer specification that will receive the reduced result.
+            - op (NcclRedOp | CustomRedOp): Reduction operator to apply (e.g., SUM, MAX, MIN, AVG, PROD, or custom operator).
+            - stream (NcclStreamSpec, optional): CUDA stream for the operation. Defaults to None (uses default stream).
+
+        Raises:
+            - ``NcclInvalid``: If send and receive buffers have mismatched dtypes, mismatched counts, buffers on wrong device, invalid buffer specifications, or communicator is not initialized.
+
+        Notes:
+            - Both send and receive buffers must have matching data types.
+            - Element count is inferred from the sendbuf specification: count = sendcount.
+            - Requires recvcount >= sendcount.
+            - In-place operation occurs when sendbuf and recvbuf resolve to the same device memory address.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclallreduce
+        """
+        self._check_valid("allreduce")
+
+        self.reduce(sendbuf, recvbuf, op, stream=stream)
+
     def broadcast(
         self,
         sendbuf: NcclBufferSpec | Any,
@@ -1030,6 +1066,41 @@ class Communicator:
                 int(self._comm),
                 get_stream_ptr(stream),
             )
+
+    def allgather(
+        self,
+        sendbuf: NcclBufferSpec,
+        recvbuf: NcclBufferSpec,
+        stream: NcclStreamSpec | None = None,
+    ) -> None:
+        """
+        Gathers sendcount values from all ranks and leaves identical copies of the result in each recvbuf, receiving data from rank i at offset i*sendcount.
+
+        All ranks receive the same concatenated result containing data from all ranks.
+
+        This is a shortcut for ``gather(sendbuf, recvbuf, root=None, stream=stream)``.
+
+        Args:
+            - sendbuf (NcclBufferSpec): Source buffer specification containing sendcount elements.
+            - recvbuf (NcclBufferSpec): Destination buffer specification (must have size at least nranks*sendcount elements).
+            - stream (NcclStreamSpec, optional): CUDA stream for the operation. Defaults to None (uses default stream).
+
+        Raises:
+            - ``NcclInvalid``: If send and receive buffers have mismatched dtypes, recvbuf is too small, buffers on wrong device, invalid buffer specifications, or communicator is not initialized.
+
+        Notes:
+            - Both send and receive buffers must have matching data types.
+            - Element count is inferred from the sendbuf specification: count = sendcount.
+            - Requires recvcount >= nranks * sendcount.
+            - Data from rank i is placed at recvbuf + i*sendcount.
+            - In-place operation occurs when sendbuf resolves to device memory address: recvbuf_address + rank*sendcount.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclallgather
+        """
+        self._check_valid("allgather")
+
+        self.gather(sendbuf, recvbuf, stream=stream)
 
     def reduce_scatter(
         self,
