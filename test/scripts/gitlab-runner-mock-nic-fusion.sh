@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ -z "$NCCL_HOME" ]; then
-  export NCCL_HOME="${PWD}/build-gc"
+  export NCCL_HOME="${PWD}/build"
 fi
 
 export OPAL_PREFIX=$MPI_HOME
