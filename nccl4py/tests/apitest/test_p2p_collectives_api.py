@@ -184,20 +184,20 @@ def test_all_reduce(nccl_comm, rank_info, allocator):
     recv_data = _allocate_empty_buffer(count, "float32", allocator)
     expected = np.array(expected_list, dtype=np.float32)
 
-    # Perform reduce (AllReduce mode: root=None)
-    nccl_comm.reduce(send_data, recv_data, nccl.SUM)
+    # Perform AllReduce
+    nccl_comm.allreduce(send_data, recv_data, nccl.SUM)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator}: expected {expected}, got {result}"
 
-    # Perform reduce with explicit stream
-    nccl_comm.reduce(send_data, recv_data, nccl.SUM, stream=0)
+    # Perform AllReduce with explicit stream
+    nccl_comm.allreduce(send_data, recv_data, nccl.SUM, stream=0)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator} (stream=0): expected {expected}, got {result}"
 
-    # Perform in-place reduce
-    nccl_comm.reduce(send_data, send_data, nccl.SUM)
+    # Perform in-place AllReduce
+    nccl_comm.allreduce(send_data, send_data, nccl.SUM)
     _sync(allocator)
     result = _to_numpy(send_data)
     assert np.array_equal(result, expected), f"{allocator} (in-place): expected {expected}, got {result}"
@@ -316,22 +316,22 @@ def test_all_gather(nccl_comm, rank_info, allocator):
     recv_data = _allocate_empty_buffer(count * rank_info.nccl_size, "float32", allocator)
     expected = np.array(expected_list, dtype=np.float32)
 
-    # Perform gather (AllGather mode: root=None)
-    nccl_comm.gather(send_data, recv_data)
+    # Perform AllGather
+    nccl_comm.allgather(send_data, recv_data)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator}: expected {expected}, got {result}"
 
-    # Perform gather with explicit stream
-    nccl_comm.gather(send_data, recv_data, stream=0)
+    # Perform AllGather with explicit stream
+    nccl_comm.allgather(send_data, recv_data, stream=0)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator} (stream=0): expected {expected}, got {result}"
 
-    # Perform in-place gather: sendbuf == recvbuf + rank * sendcount
+    # Perform in-place AllGather: sendbuf == recvbuf + rank * sendcount
     in_place_send_data = recv_data[rank_info.nccl_rank * count : (rank_info.nccl_rank + 1) * count]
     in_place_send_data[:] = send_data
-    nccl_comm.gather(in_place_send_data, recv_data)
+    nccl_comm.allgather(in_place_send_data, recv_data)
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.array_equal(result, expected), f"{allocator} (in-place): expected {expected}, got {result}"
