@@ -36,6 +36,8 @@ uint64_t ncclOsGetpid();
 void ncclOsSleep(unsigned int time_msec);
 ncclResult_t ncclOsSetCpuStackSize();
 
+void ncclOsSetEnv(const char* name, const char* value);
+
 /* Socket functions */
 bool ncclOsSocketIsValid(struct ncclSocket* sock);
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sock);

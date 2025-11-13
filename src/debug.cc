@@ -61,7 +61,7 @@ static ncclResult_t getHostNameForLog(char* hostname, int maxlen, const char del
 
 // This function must be called with ncclDebugLock locked!
 static void ncclDebugInit() {
-  ncclGetEnvFunc_t getEnvFunc = ncclEnvPluginInitialized() ? ncclGetEnv : (ncclGetEnvFunc_t)getenv;
+  ncclGetEnvFunc_t getEnvFunc = ncclEnvPluginInitialized() ? ncclGetEnv : (ncclGetEnvFunc_t)std::getenv;
   const char* nccl_debug = getEnvFunc("NCCL_DEBUG");
   int tempNcclDebugLevel = -1;
   uint64_t tempNcclDebugMask = NCCL_INIT | NCCL_BOOTSTRAP | NCCL_ENV; // Default debug sub-system mask

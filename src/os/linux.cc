@@ -66,6 +66,10 @@ ncclResult_t ncclOsSetCpuStackSize() {
   return ncclSuccess;
 }
 
+void ncclOsSetEnv(const char* name, const char* value) {
+  setenv(name, value, 0);
+}
+
 void ncclOsSleep(unsigned int time_msec) {
   const long c_1e6 = 1e6;
   struct timespec tv = (struct timespec){

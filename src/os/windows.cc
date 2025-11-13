@@ -29,6 +29,20 @@ ncclResult_t ncclOsSetCpuStackSize() {
   return ncclSuccess;
 }
 
+void ncclOsSetEnv(const char* name, const char* value) {
+  // Check if the environment variable already has the desired value before overriding.
+  // MSDN documents the maximum environment variable size as 32767 characters
+  // https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables
+  char existingValue[32767];
+  DWORD result = GetEnvironmentVariableA(name, existingValue, sizeof(existingValue));
+  if (result == 0) {
+    BOOL res = SetEnvironmentVariableA(name, value);
+    if (!res) {
+      WARN("Failed to set environment variable %s to %s: error %lu", name, value, GetLastError());
+    }
+  }
+}
+
 void ncclOsSleep(unsigned int time_msec) {
   Sleep((DWORD)time_msec);
 }
