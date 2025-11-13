@@ -37,7 +37,7 @@ static ncclResult_t ncclEnvPluginLoad(void) {
   const char* envName;
   if (envPluginStatus != envPluginLoadReady) goto exit;
 
-  if ((envName = getenv("NCCL_ENV_PLUGIN")) != nullptr) {
+  if ((envName = std::getenv("NCCL_ENV_PLUGIN")) != nullptr) {
     INFO(NCCL_ENV, "NCCL_ENV_PLUGIN set by environment to %s", envName);
     if (strcasecmp(envName, "none") == 0) {
       goto fail;
