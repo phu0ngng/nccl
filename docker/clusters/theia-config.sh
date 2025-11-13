@@ -142,3 +142,11 @@ function configure_test_env() {
     # WAR for failing GIN examples on Theia
     export NCCL_GIN_TYPE=2
 }
+
+function get_cluster_name() {
+    echo "Lyris"
+}
+
+function get_gcperf_tools_path() {
+    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/gcperf-tools"
+}
