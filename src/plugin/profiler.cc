@@ -22,6 +22,7 @@ extern ncclProfiler_t* getNcclProfiler_v2(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v3(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v4(void* lib);
 extern ncclProfiler_t* getNcclProfiler_v5(void* lib);
+extern ncclProfiler_t* getNcclProfiler_v6(void* lib);
 
 static std::mutex profilerMutex;
 static int profilerPluginRefCount;
@@ -69,7 +70,10 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
     profilerName = ncclPluginLibPaths[ncclPluginTypeProfiler];
   }
 
-  ncclProfiler = getNcclProfiler_v5(profilerPluginLib);
+  ncclProfiler = getNcclProfiler_v6(profilerPluginLib);
+  if (ncclProfiler == nullptr) {
+    ncclProfiler = getNcclProfiler_v5(profilerPluginLib);
+  }
   if (ncclProfiler == nullptr) {
     ncclProfiler = getNcclProfiler_v4(profilerPluginLib);
   }
@@ -147,36 +151,36 @@ static double proxyStepStartTs[2], proxyStepStopTs[2];
 static double proxyCtrlStartTs[2], proxyCtrlStopTs[2];
 static double proxyOpRecordTs[2], proxyStepRecordTs[2], proxyCtrlRecordTs[2];
 
-#define TIME_START_EVENT(event) do { \
-  (event ## Count)++; \
-  (event ## Ts)[0] = gettime(); \
-} while(0)
+#define TIME_START_EVENT(event) do {            \
+    (event ## Count)++;                         \
+    (event ## Ts)[0] = gettime();               \
+  } while(0)
 
-#define TIME_STOP_EVENT(event) do { \
-  double val = gettime() - (event ## Ts)[0]; \
-  (event ## Ts)[1] += val; \
-} while(0)
+#define TIME_STOP_EVENT(event) do {             \
+    double val = gettime() - (event ## Ts)[0];  \
+    (event ## Ts)[1] += val;                    \
+  } while(0)
 
-#define TIME_PRINT_EVENTS(name) do { \
-  printf("%s ", name); \
-  if (elapsedCount)         printf("[elapsed] %g/%ld = %g ", elapsedTs[1], elapsedCount, elapsedTs[1]/elapsedCount); \
-  if (initCount)            printf("[init] %g/%ld = %g ", initTs[1], initCount, initTs[1]/initCount); \
-  if (finalizeCount)        printf("[finalize] %g/%ld = %g ", finalizeTs[1], finalizeCount, finalizeTs[1]/finalizeCount); \
-  if (groupStartCount)      printf("[groupStart] %g/%ld = %g ", groupStartTs[1], groupStartCount, groupStartTs[1]/groupStartCount); \
-  if (groupStopCount)       printf("[groupStop] %g/%ld = %g ", groupStopTs[1], groupStopCount, groupStopTs[1]/groupStopCount); \
-  if (taskStartCount)       printf("[taskStart] %g/%ld = %g ", taskStartTs[1], taskStartCount, taskStartTs[1]/taskStartCount); \
-  if (taskStopCount)        printf("[taskStop] %g/%ld = %g ", taskStopTs[1], taskStopCount, taskStopTs[1]/taskStopCount); \
-  if (proxyOpStartCount)    printf("[proxyOpStart] %g/%ld = %g ", proxyOpStartTs[1], proxyOpStartCount, proxyOpStartTs[1]/proxyOpStartCount); \
-  if (proxyOpStopCount)     printf("[proxyOpStop] %g/%ld = %g ", proxyOpStopTs[1], proxyOpStopCount, proxyOpStopTs[1]/proxyOpStopCount); \
-  if (proxyStepStartCount)  printf("[proxyStepStart] %g/%ld = %g ", proxyStepStartTs[1], proxyStepStartCount, proxyStepStartTs[1]/proxyStepStartCount); \
-  if (proxyStepStopCount)   printf("[proxyStepStop] %g/%ld = %g ", proxyStepStopTs[1], proxyStepStopCount, proxyStepStopTs[1]/proxyStepStopCount); \
-  if (proxyCtrlStartCount)  printf("[proxyCtrlStart] %g/%ld = %g ", proxyCtrlStartTs[1], proxyCtrlStartCount, proxyCtrlStartTs[1]/proxyCtrlStartCount); \
-  if (proxyCtrlStopCount)   printf("[proxyCtrlStop] %g/%ld = %g ", proxyCtrlStopTs[1], proxyCtrlStopCount, proxyCtrlStopTs[1]/proxyCtrlStopCount); \
-  if (proxyOpRecordCount)   printf("[proxyOpRecord] %g/%ld = %g ", proxyOpRecordTs[1], proxyOpRecordCount, proxyOpRecordTs[1]/proxyOpRecordCount); \
-  if (proxyStepRecordCount) printf("[proxyStepRecord] %g/%ld = %g ", proxyStepRecordTs[1], proxyStepRecordCount, proxyStepRecordTs[1]/proxyStepRecordCount); \
-  if (proxyCtrlRecordCount) printf("[proxyCtrlRecord] %g/%ld = %g", proxyCtrlRecordTs[1], proxyCtrlRecordCount, proxyCtrlRecordTs[1]/proxyCtrlRecordCount); \
-  printf("\n"); \
-} while(0)
+#define TIME_PRINT_EVENTS(name) do {                                    \
+    printf("%s ", name);                                                \
+    if (elapsedCount)         printf("[elapsed] %g/%ld = %g ", elapsedTs[1], elapsedCount, elapsedTs[1]/elapsedCount); \
+    if (initCount)            printf("[init] %g/%ld = %g ", initTs[1], initCount, initTs[1]/initCount); \
+    if (finalizeCount)        printf("[finalize] %g/%ld = %g ", finalizeTs[1], finalizeCount, finalizeTs[1]/finalizeCount); \
+    if (groupStartCount)      printf("[groupStart] %g/%ld = %g ", groupStartTs[1], groupStartCount, groupStartTs[1]/groupStartCount); \
+    if (groupStopCount)       printf("[groupStop] %g/%ld = %g ", groupStopTs[1], groupStopCount, groupStopTs[1]/groupStopCount); \
+    if (taskStartCount)       printf("[taskStart] %g/%ld = %g ", taskStartTs[1], taskStartCount, taskStartTs[1]/taskStartCount); \
+    if (taskStopCount)        printf("[taskStop] %g/%ld = %g ", taskStopTs[1], taskStopCount, taskStopTs[1]/taskStopCount); \
+    if (proxyOpStartCount)    printf("[proxyOpStart] %g/%ld = %g ", proxyOpStartTs[1], proxyOpStartCount, proxyOpStartTs[1]/proxyOpStartCount); \
+    if (proxyOpStopCount)     printf("[proxyOpStop] %g/%ld = %g ", proxyOpStopTs[1], proxyOpStopCount, proxyOpStopTs[1]/proxyOpStopCount); \
+    if (proxyStepStartCount)  printf("[proxyStepStart] %g/%ld = %g ", proxyStepStartTs[1], proxyStepStartCount, proxyStepStartTs[1]/proxyStepStartCount); \
+    if (proxyStepStopCount)   printf("[proxyStepStop] %g/%ld = %g ", proxyStepStopTs[1], proxyStepStopCount, proxyStepStopTs[1]/proxyStepStopCount); \
+    if (proxyCtrlStartCount)  printf("[proxyCtrlStart] %g/%ld = %g ", proxyCtrlStartTs[1], proxyCtrlStartCount, proxyCtrlStartTs[1]/proxyCtrlStartCount); \
+    if (proxyCtrlStopCount)   printf("[proxyCtrlStop] %g/%ld = %g ", proxyCtrlStopTs[1], proxyCtrlStopCount, proxyCtrlStopTs[1]/proxyCtrlStopCount); \
+    if (proxyOpRecordCount)   printf("[proxyOpRecord] %g/%ld = %g ", proxyOpRecordTs[1], proxyOpRecordCount, proxyOpRecordTs[1]/proxyOpRecordCount); \
+    if (proxyStepRecordCount) printf("[proxyStepRecord] %g/%ld = %g ", proxyStepRecordTs[1], proxyStepRecordCount, proxyStepRecordTs[1]/proxyStepRecordCount); \
+    if (proxyCtrlRecordCount) printf("[proxyCtrlRecord] %g/%ld = %g", proxyCtrlRecordTs[1], proxyCtrlRecordCount, proxyCtrlRecordTs[1]/proxyCtrlRecordCount); \
+    printf("\n");                                                       \
+  } while(0)
 #else
 #define TIME_START_EVENT(event) do {} while(0)
 #define TIME_STOP_EVENT(event)  do {} while(0)
@@ -185,6 +189,30 @@ static double proxyOpRecordTs[2], proxyStepRecordTs[2], proxyCtrlRecordTs[2];
 
 
 int ncclProfilerEventMask;       // Set by profiler
+
+// Print enabled profiler event types
+static void printProfilerEventMask(int mask) {
+  if (!mask) return;
+
+  char enabled[512] = {0};
+  int pos = 0;
+  if (mask & ncclProfileGroup)        pos += sprintf(enabled + pos, "Group ");
+  if (mask & ncclProfileColl)         pos += sprintf(enabled + pos, "Coll ");
+  if (mask & ncclProfileP2p)          pos += sprintf(enabled + pos, "P2p ");
+  if (mask & ncclProfileProxyOp)      pos += sprintf(enabled + pos, "ProxyOp ");
+  if (mask & ncclProfileProxyStep)    pos += sprintf(enabled + pos, "ProxyStep ");
+  if (mask & ncclProfileProxyCtrl)    pos += sprintf(enabled + pos, "ProxyCtrl ");
+  if (mask & ncclProfileKernelCh)     pos += sprintf(enabled + pos, "KernelCh ");
+  if (mask & ncclProfileNetPlugin)    pos += sprintf(enabled + pos, "NetPlugin ");
+  if (mask & ncclProfileGroupApi)     pos += sprintf(enabled + pos, "GroupApi ");
+  if (mask & ncclProfileCollApi)      pos += sprintf(enabled + pos, "CollApi ");
+  if (mask & ncclProfileP2pApi)       pos += sprintf(enabled + pos, "P2pApi ");
+  if (mask & ncclProfileKernelLaunch) pos += sprintf(enabled + pos, "KernelLaunch ");
+  if (mask & ncclProfileCeColl)       pos += sprintf(enabled + pos, "CeColl ");
+  if (mask & ncclProfileCeSync)       pos += sprintf(enabled + pos, "CeSync ");
+  if (mask & ncclProfileCeBatch)      pos += sprintf(enabled + pos, "CeBatch ");
+  INFO(NCCL_INIT, "Profiler event mask: 0x%x (%d) - Enabled: %s", mask, mask, enabled);
+}
 
 ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm) {
   TIME_START_EVENT(elapsed);
@@ -195,6 +223,8 @@ ncclResult_t ncclProfilerPluginInit(struct ncclComm* comm) {
     if (err) {
       INFO(NCCL_INIT, "Profiler init failed with error '%d': %s. Continue without profiler.", err, strerror(errno));
     }
+
+    printProfilerEventMask(ncclProfilerEventMask);
   }
   TIME_STOP_EVENT(init);
   return ncclSuccess;
@@ -218,7 +248,8 @@ ncclResult_t ncclProfilerStartGroupApiEvent(struct ncclInfo* info, bool isGraphC
   eDescr.groupApi.graphCaptured = isGraphCaptured;
 
   ncclProfilerApiState.eActivationMask = COMPILER_ATOMIC_LOAD(&ncclProfilerEventMask, std::memory_order_relaxed);
-  int groupApiMask = ncclProfileGroupApi | ncclProfileP2pApi | ncclProfileCollApi | ncclProfileKernelLaunch | ncclProfileGroup | ncclProfileColl | ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin;
+  int groupApiMask = ncclProfileGroupApi | ncclProfileP2pApi | ncclProfileCollApi | ncclProfileKernelLaunch | ncclProfileGroup | ncclProfileColl | ncclProfileP2p | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin | ncclProfileCeColl | ncclProfileCeSync | ncclProfileCeBatch;
+
   // Only count outermost groups when emitting group API events
   if (COMPILER_EXPECT(ncclProfiler != NULL, 0) && (ncclProfilerApiState.eActivationMask & groupApiMask)) {
     if (ncclProfilerApiState.profilerGroupDepth == 0) {
@@ -291,7 +322,7 @@ ncclResult_t ncclProfilerStartCollApiEvent(struct ncclInfo *info, bool isGraphCa
   eDescr.collApi.stream = (void *) info->stream;
   eDescr.collApi.root = info->root;
   eDescr.collApi.graphCaptured = isGraphCaptured;
-  int collApiMask = ncclProfileCollApi | ncclProfileColl | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin;
+  int collApiMask = ncclProfileCollApi | ncclProfileColl | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin | ncclProfileCeColl | ncclProfileCeSync | ncclProfileCeBatch;
   if (COMPILER_EXPECT(ncclProfiler != NULL, 0) && (ncclProfilerApiState.eActivationMask & collApiMask)) {
     ncclProfiler->startEvent(info->comm->profilerContext, &ncclProfilerApiState.collApiEventHandle, &eDescr);
   }
@@ -715,3 +746,154 @@ ncclResult_t ncclProfilerCallback(void** eHandle, int type, void* pHandle, int64
   }
   return ncclSuccess;
 }
+
+// ============================================================================
+// CE Profiler Functions (Simple Wrappers)
+// ============================================================================
+
+/*
+ * CE Collective start event - calls plugin startEvent callback
+ */
+ncclResult_t ncclProfilerStartCeCollEvent(struct ncclComm* comm, struct ncclCeCollArgs* args, cudaStream_t stream) {
+  if (__builtin_expect(ncclProfiler == NULL, 1)) {
+    return ncclSuccess;
+  }
+
+  // Check if CE Coll events are enabled (or child events CeSync/CeBatch which need CeColl)
+  int ceCollMask = ncclProfileCeColl | ncclProfileCeSync | ncclProfileCeBatch;
+  if (!(__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ceCollMask)) {
+    return ncclSuccess;
+  }
+
+  ncclProfilerEventDescr_t eDescr = { 0 };
+  eDescr.type = ncclProfileCeColl;
+  eDescr.parentObj = args->collApiEventHandle;
+  eDescr.rank = comm->rank;
+
+  eDescr.ceColl.seqNumber = comm->ceColl.ceSeqNum;
+  eDescr.ceColl.func = ncclFuncToString(args->func);
+  eDescr.ceColl.sendBuff = args->sendBuff;
+  eDescr.ceColl.recvBuff = args->recvBuff;
+  eDescr.ceColl.count = args->nElts;
+  eDescr.ceColl.root = args->rootRank;
+  eDescr.ceColl.datatype = ncclDatatypeToString(args->datatype);
+  eDescr.ceColl.syncStrategy = comm->nvlsSupport ? "MC" : "UC";
+  eDescr.ceColl.intraBatchSync = false;
+  eDescr.ceColl.batchSize = 0;
+  eDescr.ceColl.numBatches = 0;
+  eDescr.ceColl.ceSeqNum = comm->ceColl.ceSeqNum;
+  eDescr.ceColl.stream = (void*)stream;
+
+  ncclProfiler->startEvent(comm->profilerContext, &args->ceCollProfHandle, &eDescr);
+  return ncclSuccess;
+}
+
+/*
+ * CE Collective stop event - calls plugin stopEvent callback
+ */
+ncclResult_t ncclProfilerStopCeCollEvent(struct ncclComm* comm, struct ncclCeCollArgs* args, cudaStream_t stream) {
+  if (__builtin_expect(ncclProfiler == NULL, 1)
+      || !args->ceCollProfHandle) {
+    return ncclSuccess;
+  }
+
+  ncclProfiler->stopEvent(args->ceCollProfHandle);
+  return ncclSuccess;
+}
+
+/*
+ * CE Sync start event - calls plugin startEvent callback
+ */
+ncclResult_t ncclProfilerStartCeSyncEvent(struct ncclComm* comm, struct ncclCeCollArgs* args,
+                                          cudaStream_t stream, void** ceSyncHandle) {
+  if (__builtin_expect(ncclProfiler == NULL, 1)) {
+    return ncclSuccess;
+  }
+
+  if (!args->ceCollProfHandle) {
+    return ncclSuccess;
+  }
+
+  // CeSync only needs to check if it's enabled; parent CeColl is implicitly started via ceCollMask
+  if (!(__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ncclProfileCeSync)) {
+    return ncclSuccess;
+  }
+
+  ncclProfilerEventDescr_t eDescr = { 0 };
+  eDescr.type = ncclProfileCeSync;
+  eDescr.parentObj = args->ceCollProfHandle;
+  eDescr.rank = comm->rank;
+
+  eDescr.ceCollSync.isComplete = comm->ceColl.useCompletePtr;
+  eDescr.ceCollSync.nRanks = comm->nRanks;
+
+  ncclProfiler->startEvent(comm->profilerContext, ceSyncHandle, &eDescr);
+  return ncclSuccess;
+}
+
+/*
+ * CE Sync stop event - calls plugin stopEvent callback
+ */
+ncclResult_t ncclProfilerStopCeSyncEvent(struct ncclComm* comm, void* ceSyncHandle,
+                                         cudaStream_t stream) {
+  if (__builtin_expect(ncclProfiler == NULL, 1)
+      || !ceSyncHandle) {
+    return ncclSuccess;
+  }
+
+  ncclProfiler->stopEvent(ceSyncHandle);
+  return ncclSuccess;
+}
+
+/*
+ * CE Batch start event - calls plugin startEvent callback
+ */
+ncclResult_t ncclProfilerStartCeBatchEvent(struct ncclComm* comm,
+                                           struct ncclCeCollArgs* args,
+                                           struct ncclCeBatchOpsParams* params,
+                                           cudaStream_t stream,
+                                           void** ceBatchHandle) {
+  if (__builtin_expect(ncclProfiler == NULL, 1)) {
+    return ncclSuccess;
+  }
+
+  if (!args->ceCollProfHandle) {
+    return ncclSuccess;
+  }
+
+  // CeBatch only needs to check if it's enabled; parent CeColl is implicitly started via ceCollMask
+  if (!(__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ncclProfileCeBatch)) {
+    return ncclSuccess;
+  }
+
+  ncclProfilerEventDescr_t eDescr = { 0 };
+  eDescr.type = ncclProfileCeBatch;
+  eDescr.parentObj = args->ceCollProfHandle;
+  eDescr.rank = comm->rank;
+
+  eDescr.ceCollBatch.numOps = params->numOps;
+
+  size_t totalBytes = 0;
+  for (int i = 0; i < params->numOps; i++) {
+    totalBytes += params->sizes[i];
+  }
+  eDescr.ceCollBatch.totalBytes = totalBytes;
+  eDescr.ceCollBatch.useIntraSync = params->intraBatchSync;
+
+  ncclProfiler->startEvent(comm->profilerContext, ceBatchHandle, &eDescr);
+  return ncclSuccess;
+}
+
+/*
+ * CE Batch stop event - calls plugin stopEvent callback
+ */
+ncclResult_t ncclProfilerStopCeBatchEvent(struct ncclComm* comm, void* ceBatchHandle, cudaStream_t stream) {
+  if (__builtin_expect(ncclProfiler == NULL, 1)
+      || !ceBatchHandle) {
+    return ncclSuccess;
+  }
+
+  ncclProfiler->stopEvent(ceBatchHandle);
+  return ncclSuccess;
+}
+

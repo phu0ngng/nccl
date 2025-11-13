@@ -1435,6 +1435,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         plan->isCeColl = true;
         plan->ceCollArgs = ncclMemoryStackAlloc<struct ncclCeCollArgs>(&comm->memScoped);
         plan->ceCollArgs->rootRank = task->root;
+        plan->ceCollArgs->datatype = task->datatype;
         plan->ceCollArgs->nElts = task->count;
         plan->ceCollArgs->eltSize = ncclTypeSize(task->datatype);
         plan->ceCollArgs->sendBuff = (uint8_t*)task->sendbuff;
@@ -1442,6 +1443,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         plan->ceCollArgs->func = task->func;
         plan->ceCollArgs->sendWin = task->sendWin;
         plan->ceCollArgs->recvWin = task->recvWin;
+        plan->ceCollArgs->collApiEventHandle = task->collApiEventHandle;
 
         ncclIntruQueueEnqueue(&planner->planQueue, plan);
         ncclIntruQueueDequeue(&planner->collCeTaskQueue);
@@ -2508,7 +2510,13 @@ static ncclResult_t ceCollTaskAppend(
 
   // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
   ncclGroupCommJoin(info->comm, ncclGroupTaskTypeCollective);
+  // Set capturing graph. Called here so that profiler can emit a group API event with this information
   NCCLCHECK(ncclPlannerSetCapturingGraph(comm, info));
+  bool isGraphCaptured = ncclCudaGraphValid(planner->capturingGraph);
+  NCCLCHECK(ncclProfilerStartGroupApiEvent(info, isGraphCaptured));
+  NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupStartApiStop));
+  NCCLCHECK(ncclProfilerStartCollApiEvent(info, isGraphCaptured));
+
   struct ncclTaskColl* t = ncclMemoryPoolAlloc<struct ncclTaskColl>(&comm->memPool_ncclTaskColl, &comm->memPermanent);
 
   t->func = info->coll;
@@ -2529,11 +2537,14 @@ static ncclResult_t ceCollTaskAppend(
   t->chunkSteps = info->chunkSteps;
   t->sliceSteps = info->sliceSteps;
   t->eActivationMask = COMPILER_ATOMIC_LOAD(&ncclProfilerEventMask, std::memory_order_relaxed);
+  t->groupApiEventHandle = ncclProfilerApiState.groupApiEventHandle;
+  t->collApiEventHandle = ncclProfilerApiState.collApiEventHandle;
   t->sendWin = sendWin;
   t->recvWin = recvWin;
 
   ncclIntruQueueEnqueue(&planner->collCeTaskQueue, t);
 
+  ncclProfilerStopCollApiEvent();
   return ncclSuccess;
 }
 
