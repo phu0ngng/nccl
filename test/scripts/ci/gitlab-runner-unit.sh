@@ -139,9 +139,10 @@ else
 fi
 
 # Plugin Load Tests
-export LD_LIBRARY_PATH=$NCCL_HOME/test/unit/plugins
+# Prepend plugins directory to LD_LIBRARY_PATH (don't replace it, or we lose CUDA libs)
+export LD_LIBRARY_PATH=$NCCL_HOME/test/unit/plugins:$LD_LIBRARY_PATH_BACKUP
 if [[ ${PLUGIN_LOADING_TESTS} ]] ; then
-  run_command "plugin_loading_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/plugin_load" ""
+  run_command "plugin_loading_tests" "$RUN_MODE" 1 "--oversubscribe" "NCCL_DEBUG=INFO" "$NCCL_HOME/test/unit/plugin_load" ""
 else
   echo -e "Disabled Plugin Loading TESTS test\n\n"
 fi

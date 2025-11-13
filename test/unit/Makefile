@@ -257,7 +257,7 @@ ${DST_DIR}/overlap_test: ${DST_DIR}/overlap_test.o
 ${DST_DIR}/plugin_load: ${DST_DIR}/plugin_load.o
 	@printf "Linking %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl -lcudart
 
 ${DST_DIR}/device_id_test: ${DST_DIR}/device_id_test.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@

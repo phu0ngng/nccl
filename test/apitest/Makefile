@@ -16,7 +16,7 @@ PLUGIN_SRC:= $(basename $(wildcard plugin/*.cc))
 PLUGIN_OBJ:= $(PLUGIN_SRC:%.cc=${DST_DIR}/plugin/libnccl-%.so)
 
 ### cc
-NVCUFLAGS += -I${NCCLDIR}/include/ -include nccl.h ${CPPFLAGS} ${GTEST_CPPFLAGS} -g
+NVCUFLAGS += -I${NCCLDIR}/include/ -I$(CUDA_INC) -include nccl.h ${CPPFLAGS} ${GTEST_CPPFLAGS} -g
 ### ld
 LIBDIR := ${NCCLDIR}/lib
 NVLDFLAGS := -L${LIBDIR} ${NVLDFLAGS} ${GTEST_LIBS}
@@ -74,7 +74,7 @@ ${DST_DIR}/%.o: %.cu
 ${DST_DIR}/plugin/libnccl-%.so: plugin/%.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}/plugin
-	${CXX} -I${SRCDIR}/ext-net/example/nccl -I${SRCDIR}/ext-profiler/example/nccl -I${SRCDIR}/ext-tuner/example/nccl -fPIC -fvisibility=default -shared -o $@ $^
+	${CXX} -I${SRCDIR}/ext-net/example/nccl -I${SRCDIR}/ext-profiler/example/nccl -I${SRCDIR}/ext-tuner/example/nccl -I$(CUDA_INC) -fPIC -fvisibility=default -shared -o $@ $^
 
 ${DST_DIR}/plugin/libnccl-env-example.so: env.build
 	@echo "Environment plugin built via env.build target"
