@@ -27,13 +27,7 @@ unique_id_dtype = _numpy.dtype([
 
 
 cdef class UniqueId:
-    """Empty-initialize an array of `ncclUniqueId`.
-
-    The resulting object is of length `size` and of dtype `unique_id_dtype`.
-    If default-constructed, the instance represents a single struct.
-
-    Args:
-        size (int): number of structs, default=1.
+    """Empty-initialize an instance of `ncclUniqueId`.
 
 
     .. seealso:: `ncclUniqueId`
@@ -41,17 +35,14 @@ cdef class UniqueId:
     cdef:
         readonly object _data
 
-    def __init__(self, size=1):
-        arr = _numpy.empty(size, dtype=unique_id_dtype)
+    def __init__(self):
+        arr = _numpy.empty(1, dtype=unique_id_dtype)
         self._data = arr.view(_numpy.recarray)
         assert self._data.itemsize == sizeof(ncclUniqueId), \
             f"itemsize {self._data.itemsize} mismatches struct size {sizeof(ncclUniqueId)}"
 
     def __repr__(self):
-        if self._data.size > 1:
-            return f"<{__name__}.UniqueId_Array_{self._data.size} object at {hex(id(self))}>"
-        else:
-            return f"<{__name__}.UniqueId object at {hex(id(self))}>"
+        return f"<{__name__}.UniqueId object at {hex(id(self))}>"
 
     @property
     def ptr(self):
@@ -59,13 +50,7 @@ cdef class UniqueId:
         return self._data.ctypes.data
 
     def __int__(self):
-        if self._data.size > 1:
-            raise TypeError("int() argument must be a bytes-like object of size 1. "
-                            "To get the pointer address of an array, use .ptr")
         return self._data.ctypes.data
-
-    def __len__(self):
-        return self._data.size
 
     def __eq__(self, other):
         if not isinstance(other, UniqueId):
@@ -75,19 +60,6 @@ cdef class UniqueId:
         if self._data.dtype != other._data.dtype:
             return False
         return bool((self._data == other._data).all())
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            size = self._data.size
-            if key >= size or key <= -(size+1):
-                raise IndexError("index is out of bounds")
-            if key < 0:
-                key += size
-            return UniqueId.from_data(self._data[key:key+1])
-        out = self._data[key]
-        if isinstance(out, _numpy.recarray) and out.dtype == unique_id_dtype:
-            return UniqueId.from_data(out)
-        return out
 
     def __setitem__(self, key, val):
         self._data[key] = val
@@ -111,12 +83,11 @@ cdef class UniqueId:
         return obj
 
     @staticmethod
-    def from_ptr(intptr_t ptr, size_t size=1, bint readonly=False):
+    def from_ptr(intptr_t ptr, bint readonly=False):
         """Create an UniqueId instance wrapping the given pointer.
 
         Args:
             ptr (intptr_t): pointer address as Python :class:`int` to the data.
-            size (int): number of structs, default=1.
             readonly (bool): whether the data is read-only (to the user). default is `False`.
         """
         if ptr == 0:
@@ -124,8 +95,8 @@ cdef class UniqueId:
         cdef UniqueId obj = UniqueId.__new__(UniqueId)
         cdef flag = _buffer.PyBUF_READ if readonly else _buffer.PyBUF_WRITE
         cdef object buf = PyMemoryView_FromMemory(
-            <char*>ptr, sizeof(ncclUniqueId) * size, flag)
-        data = _numpy.ndarray((size,), buffer=buf,
+            <char*>ptr, sizeof(ncclUniqueId), flag)
+        data = _numpy.ndarray((1,), buffer=buf,
                               dtype=unique_id_dtype)
         obj._data = data.view(_numpy.recarray)
 
@@ -154,13 +125,7 @@ config_dtype = _numpy.dtype([
 
 
 cdef class Config:
-    """Empty-initialize an array of `ncclConfig_t`.
-
-    The resulting object is of length `size` and of dtype `config_dtype`.
-    If default-constructed, the instance represents a single struct.
-
-    Args:
-        size (int): number of structs, default=1.
+    """Empty-initialize an instance of `ncclConfig_t`.
 
 
     .. seealso:: `ncclConfig_t`
@@ -169,18 +134,15 @@ cdef class Config:
         readonly object _data
         dict _holder
 
-    def __init__(self, size=1):
-        arr = _numpy.empty(size, dtype=config_dtype)
+    def __init__(self):
+        arr = _numpy.empty(1, dtype=config_dtype)
         self._data = arr.view(_numpy.recarray)
         assert self._data.itemsize == sizeof(ncclConfig_t), \
             f"itemsize {self._data.itemsize} mismatches struct size {sizeof(ncclConfig_t)}"
         self._holder = {}
 
     def __repr__(self):
-        if self._data.size > 1:
-            return f"<{__name__}.Config_Array_{self._data.size} object at {hex(id(self))}>"
-        else:
-            return f"<{__name__}.Config object at {hex(id(self))}>"
+        return f"<{__name__}.Config object at {hex(id(self))}>"
 
     @property
     def ptr(self):
@@ -188,13 +150,7 @@ cdef class Config:
         return self._data.ctypes.data
 
     def __int__(self):
-        if self._data.size > 1:
-            raise TypeError("int() argument must be a bytes-like object of size 1. "
-                            "To get the pointer address of an array, use .ptr")
         return self._data.ctypes.data
-
-    def __len__(self):
-        return self._data.size
 
     def __eq__(self, other):
         if not isinstance(other, Config):
@@ -207,10 +163,8 @@ cdef class Config:
 
     @property
     def size_(self):
-        """Union[~_numpy.uint64, int]: """
-        if self._data.size == 1:
-            return int(self._data.size_[0])
-        return self._data.size_
+        """int: """
+        return int(self._data.size_[0])
 
     @size_.setter
     def size_(self, val):
@@ -218,10 +172,8 @@ cdef class Config:
 
     @property
     def magic(self):
-        """Union[~_numpy.uint32, int]: """
-        if self._data.size == 1:
-            return int(self._data.magic[0])
-        return self._data.magic
+        """int: """
+        return int(self._data.magic[0])
 
     @magic.setter
     def magic(self, val):
@@ -229,10 +181,8 @@ cdef class Config:
 
     @property
     def version(self):
-        """Union[~_numpy.uint32, int]: """
-        if self._data.size == 1:
-            return int(self._data.version[0])
-        return self._data.version
+        """int: """
+        return int(self._data.version[0])
 
     @version.setter
     def version(self, val):
@@ -240,10 +190,8 @@ cdef class Config:
 
     @property
     def blocking(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.blocking[0])
-        return self._data.blocking
+        """int: """
+        return int(self._data.blocking[0])
 
     @blocking.setter
     def blocking(self, val):
@@ -251,10 +199,8 @@ cdef class Config:
 
     @property
     def cga_cluster_size(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.cga_cluster_size[0])
-        return self._data.cga_cluster_size
+        """int: """
+        return int(self._data.cga_cluster_size[0])
 
     @cga_cluster_size.setter
     def cga_cluster_size(self, val):
@@ -262,10 +208,8 @@ cdef class Config:
 
     @property
     def min_ctas(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.min_ctas[0])
-        return self._data.min_ctas
+        """int: """
+        return int(self._data.min_ctas[0])
 
     @min_ctas.setter
     def min_ctas(self, val):
@@ -273,10 +217,8 @@ cdef class Config:
 
     @property
     def max_ctas(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.max_ctas[0])
-        return self._data.max_ctas
+        """int: """
+        return int(self._data.max_ctas[0])
 
     @max_ctas.setter
     def max_ctas(self, val):
@@ -284,35 +226,29 @@ cdef class Config:
 
     @property
     def net_name(self):
-        """Union[~_numpy.intp, str]: """
+        """str: """
         cdef char* ptr
         cdef bytes buf
-        if self._data.size == 1:
-            ptr = <char*><intptr_t>(int(self._data.net_name[0]))
-            if ptr:
-                buf = ptr
-                return buf.decode()
-            return ""
-        return self._data.net_name
+        ptr = <char*><intptr_t>(int(self._data.net_name[0]))
+        if ptr:
+           buf = ptr
+           return buf.decode()
+        return ""
 
     @net_name.setter
     def net_name(self, val):
         cdef char* ptr
         cdef bytes buf
-        if self._data.size == 1:
-            buf = val.encode()
-            ptr = buf
-            self._holder["net_name"] = buf
-            self._data.net_name = <intptr_t>ptr
-            return
-        self._data.net_name = val
+        buf = val.encode()
+        ptr = buf
+        self._holder["net_name"] = buf
+        self._data.net_name = <intptr_t>ptr
+        return
 
     @property
     def split_share(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.split_share[0])
-        return self._data.split_share
+        """int: """
+        return int(self._data.split_share[0])
 
     @split_share.setter
     def split_share(self, val):
@@ -320,10 +256,8 @@ cdef class Config:
 
     @property
     def traffic_class(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.traffic_class[0])
-        return self._data.traffic_class
+        """int: """
+        return int(self._data.traffic_class[0])
 
     @traffic_class.setter
     def traffic_class(self, val):
@@ -331,35 +265,29 @@ cdef class Config:
 
     @property
     def comm_name(self):
-        """Union[~_numpy.intp, str]: """
+        """str: """
         cdef char* ptr
         cdef bytes buf
-        if self._data.size == 1:
-            ptr = <char*><intptr_t>(int(self._data.comm_name[0]))
-            if ptr:
-                buf = ptr
-                return buf.decode()
-            return ""
-        return self._data.comm_name
+        ptr = <char*><intptr_t>(int(self._data.comm_name[0]))
+        if ptr:
+           buf = ptr
+           return buf.decode()
+        return ""
 
     @comm_name.setter
     def comm_name(self, val):
         cdef char* ptr
         cdef bytes buf
-        if self._data.size == 1:
-            buf = val.encode()
-            ptr = buf
-            self._holder["comm_name"] = buf
-            self._data.comm_name = <intptr_t>ptr
-            return
-        self._data.comm_name = val
+        buf = val.encode()
+        ptr = buf
+        self._holder["comm_name"] = buf
+        self._data.comm_name = <intptr_t>ptr
+        return
 
     @property
     def collnet_enable(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.collnet_enable[0])
-        return self._data.collnet_enable
+        """int: """
+        return int(self._data.collnet_enable[0])
 
     @collnet_enable.setter
     def collnet_enable(self, val):
@@ -367,10 +295,8 @@ cdef class Config:
 
     @property
     def cta_policy(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.cta_policy[0])
-        return self._data.cta_policy
+        """int: """
+        return int(self._data.cta_policy[0])
 
     @cta_policy.setter
     def cta_policy(self, val):
@@ -378,10 +304,8 @@ cdef class Config:
 
     @property
     def shrink_share(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.shrink_share[0])
-        return self._data.shrink_share
+        """int: """
+        return int(self._data.shrink_share[0])
 
     @shrink_share.setter
     def shrink_share(self, val):
@@ -389,10 +313,8 @@ cdef class Config:
 
     @property
     def nvls_ctas(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.nvls_ctas[0])
-        return self._data.nvls_ctas
+        """int: """
+        return int(self._data.nvls_ctas[0])
 
     @nvls_ctas.setter
     def nvls_ctas(self, val):
@@ -400,10 +322,8 @@ cdef class Config:
 
     @property
     def n_channels_per_net_peer(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.n_channels_per_net_peer[0])
-        return self._data.n_channels_per_net_peer
+        """int: """
+        return int(self._data.n_channels_per_net_peer[0])
 
     @n_channels_per_net_peer.setter
     def n_channels_per_net_peer(self, val):
@@ -411,27 +331,12 @@ cdef class Config:
 
     @property
     def nvlink_centric_sched(self):
-        """Union[~_numpy.int32, int]: """
-        if self._data.size == 1:
-            return int(self._data.nvlink_centric_sched[0])
-        return self._data.nvlink_centric_sched
+        """int: """
+        return int(self._data.nvlink_centric_sched[0])
 
     @nvlink_centric_sched.setter
     def nvlink_centric_sched(self, val):
         self._data.nvlink_centric_sched = val
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            size = self._data.size
-            if key >= size or key <= -(size+1):
-                raise IndexError("index is out of bounds")
-            if key < 0:
-                key += size
-            return Config.from_data(self._data[key:key+1])
-        out = self._data[key]
-        if isinstance(out, _numpy.recarray) and out.dtype == config_dtype:
-            return Config.from_data(out)
-        return out
 
     def __setitem__(self, key, val):
         self._data[key] = val
@@ -455,12 +360,11 @@ cdef class Config:
         return obj
 
     @staticmethod
-    def from_ptr(intptr_t ptr, size_t size=1, bint readonly=False):
+    def from_ptr(intptr_t ptr, bint readonly=False):
         """Create an Config instance wrapping the given pointer.
 
         Args:
             ptr (intptr_t): pointer address as Python :class:`int` to the data.
-            size (int): number of structs, default=1.
             readonly (bool): whether the data is read-only (to the user). default is `False`.
         """
         if ptr == 0:
@@ -468,8 +372,8 @@ cdef class Config:
         cdef Config obj = Config.__new__(Config)
         cdef flag = _buffer.PyBUF_READ if readonly else _buffer.PyBUF_WRITE
         cdef object buf = PyMemoryView_FromMemory(
-            <char*>ptr, sizeof(ncclConfig_t) * size, flag)
-        data = _numpy.ndarray((size,), buffer=buf,
+            <char*>ptr, sizeof(ncclConfig_t), flag)
+        data = _numpy.ndarray((1,), buffer=buf,
                               dtype=config_dtype)
         obj._data = data.view(_numpy.recarray)
 
@@ -485,13 +389,7 @@ sim_info_dtype = _numpy.dtype([
 
 
 cdef class SimInfo:
-    """Empty-initialize an array of `ncclSimInfo_t`.
-
-    The resulting object is of length `size` and of dtype `sim_info_dtype`.
-    If default-constructed, the instance represents a single struct.
-
-    Args:
-        size (int): number of structs, default=1.
+    """Empty-initialize an instance of `ncclSimInfo_t`.
 
 
     .. seealso:: `ncclSimInfo_t`
@@ -499,17 +397,14 @@ cdef class SimInfo:
     cdef:
         readonly object _data
 
-    def __init__(self, size=1):
-        arr = _numpy.empty(size, dtype=sim_info_dtype)
+    def __init__(self):
+        arr = _numpy.empty(1, dtype=sim_info_dtype)
         self._data = arr.view(_numpy.recarray)
         assert self._data.itemsize == sizeof(ncclSimInfo_t), \
             f"itemsize {self._data.itemsize} mismatches struct size {sizeof(ncclSimInfo_t)}"
 
     def __repr__(self):
-        if self._data.size > 1:
-            return f"<{__name__}.SimInfo_Array_{self._data.size} object at {hex(id(self))}>"
-        else:
-            return f"<{__name__}.SimInfo object at {hex(id(self))}>"
+        return f"<{__name__}.SimInfo object at {hex(id(self))}>"
 
     @property
     def ptr(self):
@@ -517,13 +412,7 @@ cdef class SimInfo:
         return self._data.ctypes.data
 
     def __int__(self):
-        if self._data.size > 1:
-            raise TypeError("int() argument must be a bytes-like object of size 1. "
-                            "To get the pointer address of an array, use .ptr")
         return self._data.ctypes.data
-
-    def __len__(self):
-        return self._data.size
 
     def __eq__(self, other):
         if not isinstance(other, SimInfo):
@@ -536,10 +425,8 @@ cdef class SimInfo:
 
     @property
     def size_(self):
-        """Union[~_numpy.uint64, int]: """
-        if self._data.size == 1:
-            return int(self._data.size_[0])
-        return self._data.size_
+        """int: """
+        return int(self._data.size_[0])
 
     @size_.setter
     def size_(self, val):
@@ -547,10 +434,8 @@ cdef class SimInfo:
 
     @property
     def magic(self):
-        """Union[~_numpy.uint32, int]: """
-        if self._data.size == 1:
-            return int(self._data.magic[0])
-        return self._data.magic
+        """int: """
+        return int(self._data.magic[0])
 
     @magic.setter
     def magic(self, val):
@@ -558,10 +443,8 @@ cdef class SimInfo:
 
     @property
     def version(self):
-        """Union[~_numpy.uint32, int]: """
-        if self._data.size == 1:
-            return int(self._data.version[0])
-        return self._data.version
+        """int: """
+        return int(self._data.version[0])
 
     @version.setter
     def version(self, val):
@@ -569,27 +452,12 @@ cdef class SimInfo:
 
     @property
     def estimated_time(self):
-        """Union[~_numpy.float32, float]: """
-        if self._data.size == 1:
-            return float(self._data.estimated_time[0])
-        return self._data.estimated_time
+        """float: """
+        return float(self._data.estimated_time[0])
 
     @estimated_time.setter
     def estimated_time(self, val):
         self._data.estimated_time = val
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            size = self._data.size
-            if key >= size or key <= -(size+1):
-                raise IndexError("index is out of bounds")
-            if key < 0:
-                key += size
-            return SimInfo.from_data(self._data[key:key+1])
-        out = self._data[key]
-        if isinstance(out, _numpy.recarray) and out.dtype == sim_info_dtype:
-            return SimInfo.from_data(out)
-        return out
 
     def __setitem__(self, key, val):
         self._data[key] = val
@@ -613,12 +481,11 @@ cdef class SimInfo:
         return obj
 
     @staticmethod
-    def from_ptr(intptr_t ptr, size_t size=1, bint readonly=False):
+    def from_ptr(intptr_t ptr, bint readonly=False):
         """Create an SimInfo instance wrapping the given pointer.
 
         Args:
             ptr (intptr_t): pointer address as Python :class:`int` to the data.
-            size (int): number of structs, default=1.
             readonly (bool): whether the data is read-only (to the user). default is `False`.
         """
         if ptr == 0:
@@ -626,8 +493,8 @@ cdef class SimInfo:
         cdef SimInfo obj = SimInfo.__new__(SimInfo)
         cdef flag = _buffer.PyBUF_READ if readonly else _buffer.PyBUF_WRITE
         cdef object buf = PyMemoryView_FromMemory(
-            <char*>ptr, sizeof(ncclSimInfo_t) * size, flag)
-        data = _numpy.ndarray((size,), buffer=buf,
+            <char*>ptr, sizeof(ncclSimInfo_t), flag)
+        data = _numpy.ndarray((1,), buffer=buf,
                               dtype=sim_info_dtype)
         obj._data = data.view(_numpy.recarray)
 
