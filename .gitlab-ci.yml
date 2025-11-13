@@ -18,6 +18,7 @@ variables:
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   PLANNED_RESERVED: "Reserved"
+  FF_USE_FASTZIP: "true"
   ##
   # Default pipeline flow to be triggered
   TRIGGER_PIPELINE: "pre-submit"
@@ -114,42 +115,6 @@ build-trace:
   script:
     - docker/make.sh ipp6-slurm
 
-build-classic:
-  stage: build
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || (($RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
-      when: always
-    - when: never
-  tags:
-    - build-with-docker
-  script:
-    - docker/make.sh gc-classic
-    - mv build build-gc
-  artifacts:
-    paths:
-      - build-gc
-    exclude:
-      - build-gc/**/*.o
-    expire_in: 48 hrs
-
-build-classic-gin:
-  stage: build
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || (($RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P100 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
-      when: always
-    - when: never
-  tags:
-    - build-with-docker
-  script:
-    - docker/make.sh gc-classic-gin
-    - mv build build-gc
-  artifacts:
-    paths:
-      - build-gc
-    exclude:
-      - build-gc/**/*.o
-    expire_in: 48 hrs
-
 build-ipp6:
   stage: build
   rules:
@@ -159,11 +124,12 @@ build-ipp6:
   tags:
     - ipp6-nccl-v3
   script:
-    - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx
-    - tar -cf - build | pigz --fast > build-ipp6.tar.gz
+    - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
   artifacts:
     paths:
-      - build-ipp6.tar.gz
+      - build
+    exclude:
+      - build/**/*.o
     expire_in: 48 hrs
 
 build-pre-tyche:
@@ -317,8 +283,6 @@ setup-AWS_H100_EFA:
   variables:
     AWS_HEAD_NODE: aws-pcluster-head
     AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - set -e
     - rsync -I -c -aP --inplace --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
@@ -405,7 +369,7 @@ unit_tests-P100:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic","health-P100"]
+  needs: ["build-ipp6","health-P100"]
   tags:
     - p100
   variables:
@@ -416,7 +380,7 @@ unit_tests-P100:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -456,7 +420,7 @@ unit_tests-P40:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic","health-P40"]
+  needs: ["build-ipp6","health-P40"]
   tags:
     - p40
   variables:
@@ -467,7 +431,7 @@ unit_tests-P40:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -507,7 +471,7 @@ unit_tests-GP100:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic","health-GP100"]
+  needs: ["build-ipp6","health-GP100"]
   tags:
     - gp100
   variables:
@@ -518,7 +482,7 @@ unit_tests-GP100:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -558,7 +522,7 @@ unit_tests-A40-single:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic","health-A40"]
+  needs: ["build-ipp6","health-A40"]
   tags:
     - a40
   variables:
@@ -569,7 +533,7 @@ unit_tests-A40-single:
     NNODES: 1
     NGPUS: 1
     NP: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -609,7 +573,7 @@ unit_tests-A40-dual:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-A40"]
+  needs: ["build-ipp6", "health-A40"]
   tags:
     - a40
   variables:
@@ -620,7 +584,7 @@ unit_tests-A40-dual:
     NNODES: 1
     NGPUS: 2
     NP: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -659,7 +623,7 @@ unit_tests-A100:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic","health-A100"]
+  needs: ["build-ipp6","health-A100"]
   tags:
     - a100pci
   variables:
@@ -670,7 +634,7 @@ unit_tests-A100:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -746,8 +710,6 @@ unit_tests-eos:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -801,8 +763,6 @@ unit_tests-cw-dfw:
     PLUGIN_LOADING_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -944,8 +904,6 @@ unit_tests-draco_oci:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1001,8 +959,6 @@ unit_tests-pre-nyx:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1113,8 +1069,6 @@ unit_tests-ipp6-a100:
     LSA_POINTER_TESTS: 0
     LSA_MULTIMEM_POINTER_TESTS: 0
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1135,7 +1089,7 @@ unit_tests-gin-A100:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic-gin"]
+  needs: ["build-ipp6"]
   tags:
     - a100pci
   variables:
@@ -1146,7 +1100,7 @@ unit_tests-gin-A100:
     NNODES: 1
     NGPUS: 8
     NP: 4
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     RUN_MODE: "SALLOC_MPI"
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_GPU_SM: 1
@@ -1173,7 +1127,7 @@ unit_tests-gin-A40-single:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic-gin"]
+  needs: ["build-ipp6"]
   tags:
     - a40
   variables:
@@ -1184,7 +1138,7 @@ unit_tests-gin-A40-single:
     NNODES: 1
     NGPUS: 2
     NP: 2
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     RUN_MODE: "SALLOC_MPI"
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_GPU_SM: 1
@@ -1235,8 +1189,6 @@ unit_tests-gin-ipp6-a100:
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 0 # Disable due to https://nvbugspro.nvidia.com/bug/5534804
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - source docker/clusters/ipp6-slurm-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1278,8 +1230,6 @@ unit_tests-gin-pre-nyx:
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - source docker/clusters/pre-nyx-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1364,8 +1314,6 @@ unit_tests-gin-eos:
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - source docker/clusters/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
@@ -1499,8 +1447,6 @@ examples-validation-ipp6-a100:
     NCCL_HOME: build
     RUN_MODE: "MPI"
     EXAMPLES_TESTS_BASIC_ONLY: 0
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-examples.sh
@@ -1529,7 +1475,7 @@ apitest-P100:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-P100"]
+  needs: ["build-ipp6", "health-P100"]
   tags:
     - p100
   variables:
@@ -1541,7 +1487,7 @@ apitest-P100:
     NNODES: 1
     NGPUS: 8
     NP:    1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -1564,7 +1510,7 @@ apitest-P40:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-P40"]
+  needs: ["build-ipp6", "health-P40"]
   tags:
     - p40
   variables:
@@ -1576,7 +1522,7 @@ apitest-P40:
     NNODES: 1
     NGPUS: 8
     NP:    1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -1599,7 +1545,7 @@ apitest-GP100:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-GP100"]
+  needs: ["build-ipp6", "health-GP100"]
   tags:
     - gp100
   variables:
@@ -1611,7 +1557,7 @@ apitest-GP100:
     NNODES: 1
     NGPUS: 8
     NP:    1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     # The NIC direct is not symmetric for rank 0 and 7; graph registration for sendrecv on rank 0 would
     # succeed but would fail on rank 7, this can cause hang.
     NCCL_GRAPH_REGISTER: 0
@@ -1637,7 +1583,7 @@ apitest-A40:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-A40"]
+  needs: ["build-ipp6", "health-A40"]
   tags:
     - a40
   variables:
@@ -1649,7 +1595,7 @@ apitest-A40:
     NNODES: 1
     NGPUS: 2
     NP:    1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -1672,7 +1618,7 @@ apitest-A100:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-A100"]
+  needs: ["build-ipp6", "health-A100"]
   tags:
     - a100pci
   variables:
@@ -1684,7 +1630,7 @@ apitest-A100:
     NNODES: 1
     NGPUS: 8
     NP:    1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -1726,8 +1672,6 @@ apitest-eos:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1768,8 +1712,6 @@ apitest-cw-dfw:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1869,8 +1811,6 @@ apitest-draco_oci:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1910,8 +1850,6 @@ apitest-pre-nyx:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1987,8 +1925,6 @@ apitest-ipp6-a100:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2055,7 +1991,7 @@ perftest-P100:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-P100"]
+  needs: ["build-ipp6", "health-P100"]
   tags:
     - p100
   variables:
@@ -2071,7 +2007,7 @@ perftest-P100:
     GRAPH: 0
     NGPUS: 8
     SYMMETRIC: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     SALLOC: "salloc --exclusive -t 00:30:00 -N ${NNODES} -n ${NGPUS} -p ${SLURM_PARTITION}"
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2093,7 +2029,7 @@ perftest-P40:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-P40"]
+  needs: ["build-ipp6", "health-P40"]
   tags:
     - p40
   variables:
@@ -2110,7 +2046,7 @@ perftest-P40:
     NGPUS: 8
     NP: 8
     SYMMETRIC: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2131,7 +2067,7 @@ perftest-GP100:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-GP100"]
+  needs: ["build-ipp6", "health-GP100"]
   tags:
     - gp100
   variables:
@@ -2147,7 +2083,7 @@ perftest-GP100:
     NGPUS: 8
     NP: 8
     SYMMETRIC: 1
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2168,12 +2104,12 @@ nic-fusion-A40:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: [build-classic, apitest-A40]
+  needs: [build-ipp6, apitest-A40]
   tags:
     - a40
   variables:
     NCCL_DEBUG: "WARN"
-    MPI_HOME: "/opt/mpi/openmpi-1.10.7"
+    MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
     NGPUS: 2
@@ -2195,7 +2131,7 @@ perftest-A40:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-A40"]
+  needs: ["build-ipp6", "health-A40"]
   tags:
     - a40
   variables:
@@ -2214,7 +2150,7 @@ perftest-A40:
     # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
     # TODO: re-enable device API tests after this fix is merged.
     DEVICE_API: 0
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2235,7 +2171,7 @@ perftest-A100:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-A100"]
+  needs: ["build-ipp6", "health-A100"]
   tags:
     - a100pci
   variables:
@@ -2254,7 +2190,7 @@ perftest-A100:
     # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
     # TODO: re-enable device API tests after this fix is merged.
     DEVICE_API: 0
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2294,8 +2230,6 @@ perftest-single-eos:
     SKIP_FT_INIT: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2334,8 +2268,6 @@ perftest-single-cw-dfw:
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_PARTITION: backfill
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2432,8 +2364,6 @@ perftest_single-draco_oci:
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --gpus-per-node ${NGPUS} -n ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2472,8 +2402,6 @@ perftest-single-pre-nyx:
     SYMMETRIC: 1
     CE_COLL: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2547,8 +2475,6 @@ perftest-single-ipp6-a100:
     RUN_MODE: "MPI"
     SYMMETRIC: 1
     MAX: "1G"
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2632,7 +2558,7 @@ multi-perftest-A40:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
-  needs: ["build-classic", "health-A40"]
+  needs: ["build-ipp6", "health-A40"]
   tags:
     - a40
   variables:
@@ -2650,7 +2576,7 @@ multi-perftest-A40:
     # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
     # TODO: re-enable device API tests after this fix is merged.
     DEVICE_API: 0
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2692,8 +2618,6 @@ perftest-multi-eos:
     SKIP_FT_INIT: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2736,8 +2660,6 @@ perftest-multi-cw-dfw:
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_PARTITION: backfill
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2836,8 +2758,6 @@ perftest_multi-draco_oci:
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --gpus-per-node ${NGPUS} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2874,8 +2794,6 @@ perftest-multi-pre-nyx:
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2955,8 +2873,6 @@ perftest-multi-ipp6-a100:
     RUN_MODE: "MPI"
     SYMMETRIC: 1
     MAX: "1G"
-  before_script:
-    - pigz -dc build-ipp6.tar.gz | tar -xf -
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -3034,8 +2950,6 @@ perf-regression-eos:
     SLURM_TIME: 60
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
   artifacts:
@@ -3086,7 +3000,7 @@ profiler-tests-A100:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_PROFILER_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic"]
+  needs: ["build-ipp6"]
   tags:
     - a100pci
   variables:
@@ -3099,7 +3013,7 @@ profiler-tests-A100:
     ENABLE_NVLS: 0
     NGPUS: 4
     NP: 4
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
   script:
     - ./test/scripts/ci/gitlab-runner-profiler.sh
   after_script:
@@ -3127,7 +3041,7 @@ inspector-tests-A100:
     - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_INSPECTOR_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-classic"]
+  needs: ["build-ipp6"]
   tags:
     - a100pci
   variables:
@@ -3140,7 +3054,7 @@ inspector-tests-A100:
     ENABLE_NVLS: 0
     NGPUS: 4
     NP: 4
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
   script:
     - ./test/scripts/ci/gitlab-runner-inspector.sh
   artifacts:
@@ -3163,12 +3077,12 @@ replay-multi-gc:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_REPLAY_TESTS == "1")
       when: always
     - when: never
-  needs: [build-classic]
+  needs: [build-ipp6]
   tags:
     - p100
   variables:
     NCCL_IB_HCA: "mlx5_0"
-    NCCL_HOME: build-gc
+    NCCL_HOME: build
     NCCL_DEBUG: "WARN"
     SALLOC_RESNET: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
     SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"

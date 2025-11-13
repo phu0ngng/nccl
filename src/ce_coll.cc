@@ -329,26 +329,62 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeCollArgs* 
     params->numAttrs = 1;
 
     if (params->intraBatchSync) {
-      // Break into multiple batches with sync between them
-      int batchSize = comm->ceColl.intraBatchSyncFreq;
-      for (int i = 0; i < params->numOps; i += batchSize) {
-        int currentBatchSize = (i + batchSize <= params->numOps) ? batchSize : params->numOps - i;
+      // Find the maximum transfer size to determine number of rounds
+      size_t maxSize = 0;
+      size_t totalSize = 0;
+      for (int i = 0; i < params->numOps; i++) {
+        if (params->sizes[i] > maxSize) {
+          maxSize = params->sizes[i];
+        }
+        totalSize += params->sizes[i];
+      }
 
+      size_t chunkSize = comm->ceColl.intraBatchSyncMsgThreshold / params->numOps;
+      int numRounds = (maxSize + chunkSize - 1) / chunkSize;
+
+      // Allocate temporary arrays for all chunked operations
+      void** tmpDsts = nullptr;
+      void** tmpSrcs = nullptr;
+      size_t* tmpSizes = nullptr;
+      NCCLCHECKGOTO(ncclCalloc(&tmpDsts, params->numOps * numRounds), ret, fail);
+      NCCLCHECKGOTO(ncclCalloc(&tmpSrcs, params->numOps * numRounds), ret, fail);
+      NCCLCHECKGOTO(ncclCalloc(&tmpSizes, params->numOps * numRounds), ret, fail);
+
+      int opIdx = 0;
+      for (int round = 0; round < numRounds; round++) {
+        size_t offset = round * chunkSize;
+        // Prepare chunk transfers for this round
+        for (int i = 0; i < params->numOps; i++) {
+          int index = (i+round) % params->numOps;
+          if (offset < params->sizes[index]) {
+            size_t remainingSize = params->sizes[index] - offset;
+            size_t currentChunkSize = (remainingSize > chunkSize) ? chunkSize : remainingSize;
+
+            tmpDsts[opIdx] = (void*)((uint8_t*)params->dsts[index] + offset);
+            tmpSrcs[opIdx] = (void*)((uint8_t*)params->srcs[index] + offset);
+            tmpSizes[opIdx] = currentChunkSize;
+            opIdx++;
+          }
+        }
+      }
+
+      // Launch a single batch for all chunks
+      if (opIdx > 0) {
         #if CUDART_VERSION >= 13000
         CUDACHECKGOTO(cudaMemcpyBatchAsync(
-          &params->dsts[i], &params->srcs[i], &params->sizes[i], currentBatchSize,
+          tmpDsts, tmpSrcs, tmpSizes, opIdx,
           params->attrs, params->attrIdxs, params->numAttrs, stream), ret, fail);
         #else
         CUDACHECKGOTO(cudaMemcpyBatchAsync(
-          &params->dsts[i], &params->srcs[i], &params->sizes[i], currentBatchSize,
+          tmpDsts, tmpSrcs, tmpSizes, opIdx,
           params->attrs, params->attrIdxs, params->numAttrs, nullptr, stream), ret, fail);
         #endif
-
-        // Sync after each batch
-        if (i + batchSize < params->numOps) {
-          NCCLCHECKGOTO(ncclMemOpSync(comm, args, stream), ret, fail);
-        }
       }
+
+      // Free temporary arrays
+      if (tmpDsts) free(tmpDsts);
+      if (tmpSrcs) free(tmpSrcs);
+      if (tmpSizes) free(tmpSizes);
     } else {
       // Use single batch for all operations
       #if CUDART_VERSION >= 13000
@@ -451,7 +487,7 @@ ncclResult_t ncclCeAlltoAll(struct ncclComm* comm, struct ncclCeCollArgs* args, 
   void* peerRecvBuff;
   size_t offset;
   struct ncclCeBatchOpsParams batchOpsParams = {};
-  NCCLCHECKGOTO(ncclCeInitBatchOpsParams(&batchOpsParams, comm->nRanks * comm->nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCeInitBatchOpsParams(&batchOpsParams, comm->nRanks), ret, fail);
 
   // Ensure all ranks are ready before starting transfers
   NCCLCHECKGOTO(ncclMemOpSync(comm, args, stream), ret, fail);
