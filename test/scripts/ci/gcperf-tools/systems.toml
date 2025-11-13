@@ -195,6 +195,27 @@ nccl = [
 #IB SHARP may not work on PreTyche yet
 #NCCL_NET_GDR_C2C=1 is default in 2.27
 
+[Lyris]
+
+[Lyris.labels]
+name = "Lyris"
+network = "IB"
+switch = "Quantum3"
+nic = "CX8"
+gpu_type = "GB300"
+
+[Lyris.run_params]
+sbatch = [
+    "--ntasks-per-node=4"
+]
+
+nccl = [
+    "NCCL_DEBUG=WARN",
+    "NCCL_NET=IB",
+    "NCCL_IB_HCA==mlx5_0,mlx5_1,mlx5_2,mlx5_3",
+    "NCCL_IB_SL=1"
+]
+
 [AWS-IAD]
 
 [AWS-IAD.labels]

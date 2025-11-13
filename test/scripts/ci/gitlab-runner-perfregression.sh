@@ -31,7 +31,7 @@ echo "Running perf regression with ${NNODES} nodes"
 RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${GOLDEN_BRANCH//\//.}/${NNODES}_node
 
 EXTRA_SLURM_ARGS=""
-if [[ $CLUSTER_NAME == "PreTyche" ]]; then
+if [[ $CLUSTER_NAME == "PreTyche" || $CLUSTER_NAME == "Lyris" ]]; then
     export NVLD_SIZE="1"
     if [[ $NNODES -ge 16 ]]; then
         export NVLD_SIZE="16"
