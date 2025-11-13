@@ -88,8 +88,13 @@ PTXAS ?= ptxas
 NVLINK ?= ${CUDA_HOME}/bin/nvlink
 
 # Architecture and includes
-IR_SM ?= sm_90
-IR_PTX_MATTR ?= ptx82
+ifeq ($(shell test "0$(CUDA_MAJOR)" -lt 12; echo $$?),0)
+	IR_SM ?= sm_70
+	IR_PTX_MATTR ?= ptx78
+else
+	IR_SM ?= sm_90
+	IR_PTX_MATTR ?= ptx82
+endif
 IR_STD ?= -std=c++17
 IR_NCCL_INCLUDES := -I${BUILDDIR}/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I ../../src/include/plugin -I$(CUDA_INC) -I$(CUDA_INC)/cccl
 
