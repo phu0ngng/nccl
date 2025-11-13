@@ -89,7 +89,7 @@ NVLINK ?= ${CUDA_HOME}/bin/nvlink
 
 # Architecture and includes
 IR_SM ?= sm_90
-IR_PTX_MATTR ?= ptx90
+IR_PTX_MATTR ?= ptx82
 IR_STD ?= -std=c++17
 IR_NCCL_INCLUDES := -I${BUILDDIR}/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I ../../src/include/plugin -I$(CUDA_INC) -I$(CUDA_INC)/cccl
 
