@@ -33,14 +33,6 @@ NCCL_DEVICE_INLINE void flush(ncclGinProxyGpuCtx_t* proxyCtx, uint32_t pe, cuda:
   while (!rollingLessEq<uint32_t>(p, ci.load(ord))) continue;
 }
 
-#if defined(__clang__)
-NCCL_DEVICE_INLINE void __stwt(uint4* addr, const uint4& val)
-{
-  asm volatile("st.wt.global.v4.u32 [%0], {%1,%2,%3,%4};" \
-                :: "l"(addr), "r"(val.x), "r"(val.y), "r"(val.z), "r"(val.w));
-}
-#endif
-
 template <typename Coop>
 NCCL_DEVICE_INLINE void postGfd(Coop coop, ncclGinProxyGpuCtx_t* proxyCtx, ncclGinProxyGfd_t* gfd,
                                 uint32_t pe) {
