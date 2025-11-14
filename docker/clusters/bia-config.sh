@@ -5,7 +5,6 @@
 # Targeting build to run on BIA
 
 # BIA GPU Type: B300 
-# TODO(chricao): Find out the arch number
 BIA_GPU_ARCHS="103"
 
 ## CUDA Config
