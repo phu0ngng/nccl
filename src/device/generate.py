@@ -342,29 +342,30 @@ for name in sorted(name_to_funcs.keys()):
 files += "device_table.cu;"
 files += "host_table.cc"
 
-# Do not print files when running make
+# Output file list for CMake (excludes rules.mk since it's not generated for CMake)
 if os.environ.get("NCCL_USE_CMAKE", "0") == "1":
     print(files)
 
-# Generate <gensrc>/rules.mk
-with open(os.path.join(gensrc, "rules.mk"), "w") as f:
-  out = f.write
-  impl_names = sorted(name_to_funcs.keys())
-  names = impl_names + ["host_table.cc", "device_table.cu"]
-  out("LIB_OBJS_GEN = $(patsubst %,$(OBJDIR)/genobj/%.o,{names})\n"
-      .format(names=" ".join(names)))
-  out("\n")
+# Generate <gensrc>/rules.mk (only needed for Makefile builds, not CMake)
+if os.environ.get("NCCL_USE_CMAKE", "0") != "1":
+  with open(os.path.join(gensrc, "rules.mk"), "w") as f:
+    out = f.write
+    impl_names = sorted(name_to_funcs.keys())
+    names = impl_names + ["host_table.cc", "device_table.cu"]
+    out("LIB_OBJS_GEN = $(patsubst %,$(OBJDIR)/genobj/%.o,{names})\n"
+        .format(names=" ".join(names)))
+    out("\n")
 
-  # For each <coll>_<op>_<ty>.cu compile to a .cu.o file. Notice the dependencies
-  # come from the suffix-erased file (e.g. 'gensrc/all_reduce.cu')
-  for name in impl_names:
-    coll = name_to_funcs[name][0]
-    out(
-      "$(OBJDIR)/genobj/{name}.o: $(OBJDIR)/gensrc $(OBJDIR)/genobj/{lower_coll}.cu.d\n"
-      "\t" "$(call COMPILE,$@,$(OBJDIR)/gensrc/{name})\n"
-      "\n"
-      .format(name=name, lower_coll=coll_camel_to_lower[coll])
-    )
+    # For each <coll>_<op>_<ty>.cu compile to a .cu.o file. Notice the dependencies
+    # come from the suffix-erased file (e.g. 'gensrc/all_reduce.cu')
+    for name in impl_names:
+      coll = name_to_funcs[name][0]
+      out(
+        "$(OBJDIR)/genobj/{name}.o: $(OBJDIR)/gensrc $(OBJDIR)/genobj/{lower_coll}.cu.d\n"
+        "\t" "$(call COMPILE,$@,$(OBJDIR)/gensrc/{name})\n"
+        "\n"
+        .format(name=name, lower_coll=coll_camel_to_lower[coll])
+      )
 
 # Add the suffix-erased .cu's which are used only for dependency scraping.
 for coll in set(coll for (coll,_,_,_,_) in primary_funcs if coll!="Nop"):
