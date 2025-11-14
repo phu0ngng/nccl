@@ -32,6 +32,7 @@ ncclResult_t getBusId(int cudaDev, int64_t *busId);
 ncclResult_t getHostName(char* hostname, int maxlen, const char delim);
 uint64_t getHostHash();
 uint64_t getPidHash();
+uint64_t hashCombine(uint64_t baseHash, uint64_t value);
 ncclResult_t getRandomData(void* buffer, size_t bytes);
 
 struct netIf {

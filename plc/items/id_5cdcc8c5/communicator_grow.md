@@ -124,6 +124,10 @@ Ways to send the grow ID to new ranks only:
 - **Root coordination**: Only root calls `ncclCommGetUniqueId()`, sends uniqueId to NEW ranks only
 - **Root identification**: Root existing rank passes &uniqueId; non-root existing ranks pass NULL
 - **Per-communicator unique ID**: Uses `ncclCommGetUniqueId()` API for per-communicator coordination
+- **UID usage constraints**:
+  - Each UID can only be used once - cannot reuse a UID after it has been consumed by a grow operation
+  - Cannot generate a second UID via `ncclCommGetUniqueId()` while a previous UID is still unconsumed
+  - Must wait for the grow operation to complete before calling `ncclCommGetUniqueId()` again
 - Rank numbering: new ranks are assigned sequential numbers after existing ranks
 - OOB communication is required to distribute the `uniqueId` to NEW ranks only
 - The feature works with NCCL's group API for synchronized operations
@@ -144,15 +148,15 @@ if (additionalResourcesAvailable()) {
     NCCLCHECK(ncclCommGetUniqueId(trainingComm, &uniqueId));
     // Send uniqueId to new ranks only (OOB)
   }
-  
+
   ncclComm_t newTrainingComm;
   // newTotalRanks = currentRanks + newWorkerCount
   NCCLCHECK(ncclCommGrow(trainingComm, /*nRanks=*/newTotalRanks, &uniqueId, -1, &newTrainingComm, NULL));
-  
+
   // Destroy old communicator and use new one
   NCCLCHECK(ncclCommDestroy(trainingComm));
   trainingComm = newTrainingComm;
-  
+
   // Continue training
   continueTrainingWithExpandedComm(trainingComm);
 }
@@ -165,21 +169,21 @@ if (additionalResourcesAvailable()) {
 if (workloadRequiresMoreResources()) {
   int additionalRanks = calculateRequiredRanks();
   ncclUniqueId uniqueId;
-  
+
   if (myRank == rootRank) {
     NCCLCHECK(ncclCommGetUniqueId(computeComm, &uniqueId));
     requestAdditionalResources(additionalRanks, &uniqueId);
     // Send uniqueId to new ranks only (OOB)
   }
-  
+
   ncclComm_t newComputeComm;
   // newTotalRanks = currentRanks + additionalRanks
   NCCLCHECK(ncclCommGrow(computeComm, /*nRanks=*/newTotalRanks, &uniqueId, -1, &newComputeComm, NULL));
-  
+
   // Switch to expanded communicator
   NCCLCHECK(ncclCommDestroy(computeComm));
   computeComm = newComputeComm;
-  
+
   redistributeWorkload(computeComm);
 }
 ```
@@ -248,7 +252,7 @@ This approach follows established code reuse patterns for consistency and resour
 The implementation maximizes reuse of existing NCCL infrastructure:
 
 **Bootstrap Reuse:**
-- OPTIMIZATION: Only new ranks connect to root during coordination; all ranks participate in creating the new communicator  
+- OPTIMIZATION: Only new ranks connect to root during coordination; all ranks participate in creating the new communicator
 - Reuses existing bootstrap patterns (see MR)
 - Uses existing proxy setup and UDS handling patterns
 
@@ -344,7 +348,7 @@ The implementation of the Grow feature includes:
 ```
 ncclCommGrow Test Results:
 ✓ Existing rank initialization: PASS
-✓ Root ID generation: PASS  
+✓ Root ID generation: PASS
 ✓ Grow operation completion: PASS
 ✓ Expanded communicator verification: PASS
 ✓ New communicator size: 4 ranks (expected: 4)

@@ -152,6 +152,106 @@ Note that:
 
 Related link: :c:func:`ncclCommShrink`
 
+Growing a communicator
+----------------------
+
+The :c:func:`ncclCommGrow` function allows you to create a new communicator by adding new ranks to an existing one.
+This is useful when you need to dynamically scale up your computation by adding more GPUs or nodes to a running collective operation.
+
+Growing a communicator involves coordination between existing ranks (from the parent communicator) and new ranks (joining the communicator).
+The process requires a coordinator rank from the existing communicator to generate a unique identifier using :c:func:`ncclCommGetUniqueId`,
+which is then distributed to all new ranks through an out-of-band mechanism (e.g., MPI, sockets, or shared memory).
+
+The following example demonstrates how to grow a 4-rank communicator to 8 ranks:
+
+.. code:: C
+
+  // Step 1: Coordinator (e.g., rank 0) generates the grow identifier
+  ncclUniqueId growId;
+  if (myRank == 0) {
+    ncclResult_t res = ncclCommGetUniqueId(comm, &growId);
+    if (res != ncclSuccess) {
+      // Handle error
+    }
+    // Distribute growId to all new ranks using out-of-band communication
+    // (e.g., MPI_Send, sockets, shared memory, etc.)
+  }
+
+  // Step 2: All existing ranks call ncclCommGrow
+  ncclComm_t newcomm;
+  ncclResult_t res = ncclCommGrow(comm, 8, NULL, -1, &newcomm, NULL);
+  if (res != ncclSuccess) {
+    // Handle error
+  }
+
+  // Step 3: New ranks (4-7) call ncclCommGrow with the received growId
+  cudaSetDevice(myDevice);
+  ncclComm_t newcomm;
+  ncclResult_t res = ncclCommGrow(NULL, 8, &growId, myNewRank, &newcomm, NULL);
+
+  // Step 4: Wait for grow operation to complete (if non-blocking)
+  ncclResult_t asyncErr;
+  do {
+    res = ncclCommGetAsyncError(newcomm, &asyncErr);
+  } while (asyncErr == ncclInProgress);
+
+  // Step 5: Use the new communicator for collective operations
+  // ...
+
+  // Step 6: Existing ranks should destroy the parent communicator
+  ncclCommDestroy(comm);
+
+  // Step 7: When done, destroy the new communicator
+  ncclCommDestroy(newcomm);
+
+For non-blocking grow operations with error handling:
+
+.. code:: C
+
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  config.blocking = 0;  // Non-blocking mode
+
+  // Existing ranks
+  ncclComm_t newcomm;
+  ncclResult_t res = ncclCommGrow(comm, 8, NULL, -1, &newcomm, &config);
+  
+  // Poll for completion
+  ncclResult_t asyncErr;
+  do {
+    res = ncclCommGetAsyncError(newcomm, &asyncErr);
+    if (res != ncclSuccess) {
+      // Handle error
+      ncclCommAbort(newcomm);
+      break;
+    }
+    // Handle timeouts or other events
+  } while (asyncErr == ncclInProgress);
+
+  if (asyncErr == ncclSuccess) {
+    // Grow completed successfully
+    // Destroy parent communicator
+    ncclCommDestroy(comm);
+  }
+
+Important considerations:
+
+1. **Coordinator selection**: Any rank from the existing communicator can be the coordinator. The coordinator calls :c:func:`ncclCommGetUniqueId` to generate the grow identifier.
+
+2. **Rank assignment**: Existing ranks retain their original rank numbers in the new communicator. New ranks must be assigned ranks starting from the size of the parent communicator.
+
+3. **Out-of-band communication**: The grow identifier must be distributed from the coordinator to all new ranks using a communication mechanism outside of NCCL (e.g., MPI, sockets, shared files).
+
+4. **Parent communicator cleanup**: After the grow operation completes successfully, existing ranks should destroy the parent communicator using :c:func:`ncclCommDestroy` to free resources.
+
+5. **No outstanding operations**: There should not be any outstanding NCCL operations on the parent communicator when calling :c:func:`ncclCommGrow` to avoid potential deadlocks.
+
+6. **Configuration inheritance**: The new communicator inherits the configuration from the parent communicator for existing ranks. New ranks use the provided configuration or default settings.
+
+Related links:
+
+* :c:func:`ncclCommGrow`
+* :c:func:`ncclCommGetUniqueId`
+
 Creating more communicators
 ---------------------------
 

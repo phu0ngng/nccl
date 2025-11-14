@@ -4,12 +4,13 @@
 
 <!------------------------------------->
 ## version 2.29
- 
+
 - [NCCL Zero-SM Put API](items/id_63e03463/NCCL_Zero-SM_Put_API.md)
 - [Host accessible Multimem LSA pointers](items/id_FCF38D36/Host_accessible_Multimem_LSA_pointers.md)
 - [LLVM IR for NCCL Device APIs](items/id_e395f665/LLVM_IR_for_NCCL_Device_APIs.md)
+- [Communicator Grow](items/id_5cdcc8c5/communicator_grow.md)
 <!-- V2_29_DO_NOT_MOVE -->
- 
+
 <!------------------------------------->
 
 <!------------------------------------->

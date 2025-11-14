@@ -78,6 +78,16 @@ NCCL_NVTX_DEFINE_STRUCT_WITH_SCHEMA_ENTRIES(NcclNvtxParamsCommShrink, static con
   )
 )
 
+NCCL_NVTX_DEFINE_STRUCT_WITH_SCHEMA_ENTRIES(NcclNvtxParamsCommGrow, static constexpr,
+  NCCL_NVTX_PAYLOAD_ENTRIES(
+    (uint64_t, newcomm, TYPE_UINT64, nccl_nvtxCommStr),
+    (uint64_t, parentcomm, TYPE_UINT64, "Parent NCCL communicator ID"),
+    (int, nranks, TYPE_INT, nccl_nvtxNranksStr),
+    (int, myrank, TYPE_INT, nccl_nvtxRankStr),
+    (int, cudaDev, TYPE_INT, nccl_nvtxCudaDevStr)
+  )
+)
+
 NCCL_NVTX_DEFINE_STRUCT_WITH_SCHEMA_ENTRIES(NcclNvtxParamsCommFinalize, static constexpr,
   NCCL_NVTX_PAYLOAD_ENTRIES(
     (uint64_t, comm, TYPE_UINT64, nccl_nvtxCommStr)

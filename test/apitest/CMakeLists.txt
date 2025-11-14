@@ -31,6 +31,7 @@ set(API_TEST_SOURCES
     ncclGetVersion_test.cu
     ncclBcast_test.cu
     ncclCommQueryProperties_test.cu
+    ncclCommGrow_test.cu
 )
 
 # Plugin source files

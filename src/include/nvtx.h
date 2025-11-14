@@ -38,6 +38,7 @@
 #define NVTX_SID_Gather               17
 #define NVTX_SID_Scatter              18
 #define NVTX_SID_CommRevoke           19 // same schema as NVTX_SID_CommInitRank
+#define NVTX_SID_CommGrow             20
 // When adding new schema IDs, DO NOT re-use/overlap with the enum schema ID below!
 
 // Define static schema ID for the reduction operation.
