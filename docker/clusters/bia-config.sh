@@ -6,7 +6,7 @@
 
 # BIA GPU Type: B300 
 # TODO(chricao): Find out the arch number
-BIA_GPU_ARCHS=""
+BIA_GPU_ARCHS="103"
 
 # NCCL CI deps
 BIA_CUDA_VERSION="13.0"
