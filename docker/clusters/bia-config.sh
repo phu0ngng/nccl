@@ -8,26 +8,27 @@
 # TODO(chricao): Find out the arch number
 BIA_GPU_ARCHS="103"
 
-# NCCL CI deps
-BIA_CUDA_VERSION="13.0"
+## CUDA Config
+BIA_CUDA_MAJOR_VERSION="13"
+BIA_CUDA_MINOR_VERSION="0"
+BIA_CUDA_VERSION="${BIA_CUDA_MAJOR_VERSION}.${BIA_CUDA_MINOR_VERSION}"
 BIA_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${BIA_CUDA_VERSION}"
 
-# TODO: need to set up openmpi, docker image
-# PRETYCHE_OPENMPI_VERSION="5.0.6"
-# PRETYCHE_OPENMPI_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/openmpi-${PRETYCHE_OPENMPI_VERSION}"
-
-# PRETYCHE_OS_VERSION="20.04"
-# PRETYCHE_BUILD_TOOLS_VERSION="2.0.0"
-# PRETYCHE_BUILD_IMAGE_VERSION="${PRETYCHE_BUILD_TOOLS_VERSION}-c${PRETYCHE_CUDA_VERSION}-u${PRETYCHE_OS_VERSION}"
-# PRETYCHE_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
+# Container build config
+# Note: This doesn't work at the moment as the CTK in the image doesn't recognize gencode 103
+BIA_BUILD_TOOLS_VERSION="2.0.0"
+BIA_BUILD_TOOLS_CUDA_VERSION="12.8.0"
+BIA_BUILD_TOOLS_OS_VERSION="20.04"
+BIA_BUILD_TOOLS_IMAGE_VERSION="${THEIA_BUILD_TOOLS_VERSION}-c${THEIA_BUILD_TOOLS_CUDA_VERSION}-u${THEIA_BUILD_TOOLS_OS_VERSION}"
+BIA_BUILD_TOOLS_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 
 # Slurm account for executing jobs
-PRETYCHE_SLURM_ACCOUNT="coreai_libraries_nccl"
+BIA_SLURM_ACCOUNT="coreai_libraries_nccl"
 
 # Use with sacct on to get Slurm wait times
-PRETYCHE_PLANNED_RESERVED="Planned"
+BIA_PLANNED_RESERVED="Planned"
 
-PRETYCHE_NCCL_SOCKET_IFNAME="enP6p3s0f1np1"
+BIA_NCCL_SOCKET_IFNAME="enP6p3s0f1np1"
 
 # Target configs
 function get_gpu_archs() {
@@ -35,7 +36,7 @@ function get_gpu_archs() {
 }
 
 function get_slurm_account() {
-    echo "$PRETYCHE_SLURM_ACCOUNT"
+    echo "$BIA_SLURM_ACCOUNT"
 }
 
 function get_num_build_procs() {
@@ -44,7 +45,7 @@ function get_num_build_procs() {
 }
 
 function get_build_image_version() {
-    echo ${PRETYCHE_BUILD_IMAGE_VERSION}
+    echo ${BIA_BUILD_TOOLS_IMAGE_VERSION}
 }
 
 function get_build_tools_image() {
@@ -54,8 +55,8 @@ function get_build_tools_image() {
 
 function get_build_command_bm() {
     echo "srun \
-            --account=$PRETYCHE_SLURM_ACCOUNT \
-            -J $PRETYCHE_SLURM_ACCOUNT-ci:nccl-build \
+            --account=$BIA_SLURM_ACCOUNT \
+            -J $BIA_SLURM_ACCOUNT-ci:nccl-build \
             -t 00:10:00 \
             -n 1 \
             -c 64 \
@@ -70,8 +71,8 @@ function get_build_command() {
 
     # ask for a lot of cores - otherwise we get 2
     echo "srun \
-        --account=$PRETYCHE_SLURM_ACCOUNT \
-        -J ${PRETYCHE_SLURM_ACCOUNT}-ci:nccl-build \
+        --account=$BIA_SLURM_ACCOUNT \
+        -J ${BIA_SLURM_ACCOUNT}-ci:nccl-build \
         -p batch \
         -t 00:10:00 \
         -n 1 \
@@ -82,19 +83,32 @@ function get_build_command() {
 }
 
 function get_cuda_home() {
-    echo "$PRETYCHE_CUDA_HOME"
+    echo "$BIA_CUDA_HOME"
 }
 
 function get_ccache_bin() {
-    echo "$PRETYCHE_TOOLKIT_DIR/ccache/ccache-4.12.1-linux-aarch64/ccache"
-}
-
-function get_openmpi_home() {
-    echo "$PRETYCHE_OPENMPI_HOME"
+    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/ccache-4.12.1-linux-x86_64/ccache"
 }
 
 function get_extra_ld_library_path() {
-    echo "$PRETYCHE_CUDA_HOME/lib64:$PRETYCHE_OPENMPI_HOME/lib"
+    echo "$BIA_CUDA_HOME/lib64"
+}
+
+function get_extra_path() {
+    echo "$BIA_CUDA_HOME/bin"
+}
+
+
+## MPI config
+BIA_HPCX_TOOLKIT_VERSION="2.24.1"
+BIA_HPCX_TOOLKIT="/lustre/fsw/coreai_libraries_nccl/toolkits/hpcx-v${BIA_HPCX_TOOLKIT_VERSION}-gcc-doca_ofed-ubuntu24.04-cuda${BIA_CUDA_MAJOR_VERSION}-x86_64"
+
+# Call utility function to set MPI env config
+source $BIA_HPCX_TOOLKIT/hpcx-mt-init.sh && hpcx_load
+
+function get_openmpi_home() {
+    # $MPI_HOME is set when `hpcx_load` is called
+    echo "$MPI_HOME"
 }
 
 function get_mpi_params() {
@@ -102,40 +116,24 @@ function get_mpi_params() {
     echo ""
 }
 
-function get_extra_path() {
-    echo "$PRETYCHE_CUDA_HOME/bin:$PRETYCHE_OPENMPI_HOME/bin"
-}
 
 function get_planned_reserved() {
-    echo "$PRETYCHE_PLANNED_RESERVED"
+    echo "$BIA_PLANNED_RESERVED"
 }
 
 function configure_test_env() {
-    export UCX_NET_DEVICES=$PRETYCHE_NCCL_SOCKET_IFNAME
-    export UCX_TLS=tcp
+    export UCX_TLS="tcp,self"
 
-    # Note: These are the E/W IB interfaces on Pre-Tyche
-    export NCCL_IB_HCA="mlx5_0,mlx5_1,mlx5_4,mlx5_5"
+    # # Note: These are the E/W IB interfaces on Pre-Tyche
+    # export NCCL_IB_HCA="mlx5_0,mlx5_1,mlx5_4,mlx5_5"
 
     # MPI params
-    # --oversubscribe
-    export OMPI_MCA_rmaps_oversubscribe=1
+    export OMPI_MCA_coll_hcoll_enable=0
 
-    # --bind-to none
-    export OMPI_MCA_rmaps_binding_policy=none
-
-    # --mca btl tcp,self
-    export OMPI_MCA_btl="tcp,self"
-
-    # --mca btl_tcp_if_include <socket>
-    export OMPI_MCA_btl_tcp_if_include=$PRETYCHE_NCCL_SOCKET_IFNAME
+    # WAR for failing GIN examples on Theia
+    export NCCL_GIN_TYPE=2
 }
 
 function get_cluster_name() {
     echo "BIA"
 }
-
-# TODO(chricao) Need to add gcperf-tools
-# function get_gcperf_tools_path() {
-#     echo "/lustre/fsw/coreai_libraries_nccl/toolkits/gcperf-tools"
-# }
