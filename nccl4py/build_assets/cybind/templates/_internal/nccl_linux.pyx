@@ -6,32 +6,18 @@
 
 from libc.stdint cimport intptr_t
 
+import threading
+
 from .utils import FunctionNotFoundError, NotSupportedError
 
-
-###############################################################################
-# Extern
-###############################################################################
-
-cdef extern from "<dlfcn.h>" nogil:
-    void* dlopen(const char*, int)
-    char* dlerror()
-    void* dlsym(void*, const char*)
-    int dlclose(void*)
-
-    enum:
-        RTLD_LAZY
-        RTLD_NOW
-        RTLD_GLOBAL
-        RTLD_LOCAL
-
-    const void* RTLD_DEFAULT 'RTLD_DEFAULT'
+${snippet_linux_externs_pxd}
 
 
 ###############################################################################
 # Wrapper init
 ###############################################################################
 
+cdef object __symbol_lock = threading.Lock()
 cdef bint __py_${libname}_init = False
 
 $wrapper_init
@@ -52,12 +38,17 @@ cdef int _check_or_init_${libname}() except -1 nogil:
     if __py_${libname}_init:
         return 0
 
-    # Load function
     cdef void* handle = NULL
-${set_wrapper}
 
-    __py_${libname}_init = True
-    return 0
+    with gil, __symbol_lock:
+        # Recheck the flag after obtaining the locks
+        if __py_${libname}_init:
+            return 0
+
+        # Load function
+${set_wrapper}
+        __py_${libname}_init = True
+        return 0
 
 
 cdef dict func_ptrs = None
