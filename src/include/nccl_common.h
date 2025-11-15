@@ -68,7 +68,8 @@ typedef enum {
   ncclFuncAlltoAll = 8,
   ncclFuncScatter = 9,
   ncclFuncGather = 10,
-  ncclNumFuncs = 11
+  ncclFuncAllGatherV = 11,
+  ncclNumFuncs = 12
 } ncclFunc_t;
 
 

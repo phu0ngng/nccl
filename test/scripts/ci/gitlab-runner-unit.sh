@@ -190,6 +190,50 @@ else
 fi
 
 
+# tests w/o allgatherv enabled
+export NCCL_ALLGATHERV_ENABLE=0
+if [[ ${ENQUEUE_TESTS_ARGS} -eq 1 ]] ; then
+  run_command "enqueue_tests_args" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=1024" "$NCCL_HOME/test/unit/enqueue_test" ""
+else
+  echo -e "Disabled Enqueue TESTS Args test\n\n"
+fi
+
+if [[ ${ENQUEUE_TESTS_FIFO} -eq 1 ]] ; then
+  run_command "enqueue_tests_fifo" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=1024" "$NCCL_HOME/test/unit/enqueue_test" ""
+else
+  echo -e "Disabled Enqueue TESTS Fifo test\n\n"
+fi
+
+
+NCCL_DEBUG_OLD=$NCCL_DEBUG
+export NCCL_DEBUG=VERSION
+
+if [[ ${FT_TESTS_DEFAULT} -eq 1 ]] ; then
+  run_command "ft_test_default_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/ft_test" ""
+else
+  echo -e "Disabled FT TESTS Default test\n\n"
+fi
+
+if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]]; then
+  run_command "ft_abort_rank0_allgatherv" "$RUN_MODE" 2 "--oversubscribe" "NCCL_WIN_ENABLE=0" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
+fi
+
+if [[ ${FT_TESTS_NO_P2P} -eq 1 ]] ; then
+  run_command "ft_test_no_p2p_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/unit/ft_test" ""
+else
+  echo -e "Disabled FT TESTS no_p2p test\n\n"
+fi
+
+if [[ ${FT_TESTS_NETWORK} -eq 1 ]] ; then
+  run_command "ft_test_network_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/unit/ft_test" ""
+else
+  echo -e "Disabled FT TESTS network test\n\n"
+fi
+
+export NCCL_DEBUG=$NCCL_DEBUG_OLD
+unset NCCL_ALLGATHERV_ENABLE
+
+
 print_failed_commands
 end_junit_file
 ci_exit

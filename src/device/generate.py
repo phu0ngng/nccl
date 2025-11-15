@@ -4,7 +4,7 @@ import sys
 import shutil
 
 # Order of redops, tys, protos, algos must match src/include/device.h
-all_colls =  ["Broadcast","Reduce","AllGather","ReduceScatter","AllReduce","SendRecv"]
+all_colls =  ["Broadcast","Reduce","AllGather","AllGatherV", "ReduceScatter","AllReduce","SendRecv"]
 all_redops = ["Sum","Prod","MinMax","PreMulSum","SumPostDiv"]
 all_tys =    ["i8","u8","i32","u32","i64","u64","f16","f32","f64","bf16","f8e4m3","f8e5m2"]
 all_protos = ["LL","LL128","SIMPLE"]
@@ -79,6 +79,7 @@ else:
 
 algos_of_coll = {
   "AllGather":     ["RING","COLLNET_DIRECT","NVLS","PAT"],
+  "AllGatherV":    ["RING"],
   "AllReduce":     ["TREE","RING","COLLNET_DIRECT","COLLNET_CHAIN","NVLS","NVLS_TREE"],
   "Broadcast":     ["RING"],
   "Reduce":        ["RING"],
@@ -88,6 +89,7 @@ algos_of_coll = {
 
 coll_camel_to_lower = {
   "AllGather":     "all_gather",
+  "AllGatherV":    "all_gather_v",
   "AllReduce":     "all_reduce",
   "Broadcast":     "broadcast",
   "Reduce":        "reduce",
@@ -147,7 +149,7 @@ def best_kernel(coll, redop, ty, algo, proto):
     # Modify this logic to control how many kernels are specialized.
     if coll=="Nop": return ("Generic", None, None, None, None)
     if coll=="SendRecv": return ("SendRecv", None, None, None, None)
-    if coll in ("AllGather","Broadcast"): return (coll, None, None, "RING", "LL")
+    if coll in ("AllGather","Broadcast","AllGatherV"): return (coll, None, None, "RING", "LL")
     return (coll, "Sum", ty, ("TREE" if algo=="TREE" else "RING"), "LL")
   # Need to ensure kernel is specialize for a primary function
   kfn = equivalent_primary(*best(coll, redop, ty, algo, proto))
@@ -158,7 +160,7 @@ def best_kernel(coll, redop, ty, algo, proto):
 # Order rows are enumerated must match formula of `ncclDevFuncId()`:
 def enumerate_func_rows():
   yield ("SendRecv", None, None, None, None)
-  for coll in ("AllGather", "Broadcast"):
+  for coll in ("AllGather", "Broadcast", "AllGatherV"):
     algos = algos_of_coll[coll]
     for algo in algos:
       for proto in all_protos:

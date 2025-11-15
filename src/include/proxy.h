@@ -52,6 +52,11 @@ union ncclProxyOpSpecifics {
     size_t sizePerRank;
     int nNodes, node;
   } collnetDirect;
+  struct {
+    int sendSlices;
+    int recvSlices;
+    int stepSize;
+  } bcast;
 };
 
 struct ncclProxyOp {

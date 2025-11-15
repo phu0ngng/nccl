@@ -52,6 +52,12 @@ export NCCL_NET_PLUGIN="libnccl-shared-plugins.so"
 run_api_test "" "${sharedPluginTest}"
 unset NCCL_NET_PLUGIN
 
+
+# run w/o allgatherv
+export NCCL_ALLGATHERV_ENABLE=0
+run_api_test "" ""
+unset NCCL_ALLGATHERV_ENABLE
+
 print_failed_commands
 end_junit_file
 ci_exit

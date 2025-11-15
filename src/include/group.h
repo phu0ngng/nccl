@@ -127,6 +127,8 @@ inline void ncclGroupCommJoin(struct ncclComm* comm, int type) {
       ncclKernelPlanner::Peer* tmp = comm->planner.peers;
       memset(&comm->planner, 0, sizeof(comm->planner));
       comm->planner.peers = tmp;
+      comm->planner.bcast_info.minBcastPeer = INT_MAX;
+      comm->planner.bcast_info.maxBcastPeer = INT_MIN;
     }
   }
   ncclGroupBlocking = comm->config.blocking;

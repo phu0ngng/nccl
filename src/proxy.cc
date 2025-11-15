@@ -588,6 +588,7 @@ static ncclResult_t SaveProxy(struct ncclComm* comm, struct ncclChannel* channel
 // ncclProxySaveOp for this op.
 ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool* justInquire) {
   struct ncclChannel* channel = &comm->channels[op->channelId];
+  bool needProxy = false;
   if (justInquire) *justInquire = false;
   switch (op->pattern) {
   case ncclPatternRing:
@@ -595,12 +596,19 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
   case ncclPatternPipelineFrom:
   case ncclPatternPipelineTo: {
       struct ncclRing* ring = &channel->ring;
-      if (NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks)) {
-        NCCLCHECK(SaveProxy(comm, channel, proxyRecv, ring->prev, op, 0, justInquire));
+      needProxy = NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks);
+      if (op->coll == ncclFuncAllGatherV && op->pattern == ncclPatternRing) {
+        op->nsteps = op->specifics.bcast.recvSlices;
+        if (op->nsteps == 0) needProxy = false;
       }
-      if (NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks)) {
-        NCCLCHECK(SaveProxy(comm, channel, proxySend, ring->next, op, 0, justInquire));
+      if (needProxy) NCCLCHECK(SaveProxy(comm, channel, proxyRecv, ring->prev, op, 0, justInquire));
+
+      needProxy = NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks);
+      if (op->coll == ncclFuncAllGatherV && op->pattern == ncclPatternRing) {
+        op->nsteps = op->specifics.bcast.sendSlices;
+        if (op->nsteps == 0) needProxy = false;
       }
+      if (needProxy) NCCLCHECK(SaveProxy(comm, channel, proxySend, ring->next, op, 0, justInquire));
     } break;
   case ncclPatternTreeUp:
   case ncclPatternTreeDown:

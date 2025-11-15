@@ -28,7 +28,7 @@ fi
 # Args for run_command
 # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
 
-for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf; do
+for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf all_gatherv_perf; do
   run_command "${func}_all_sizes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts"
 done
 
@@ -130,7 +130,7 @@ for func in all_reduce_perf reduce_perf reduce_scatter_perf; do
   run_command "${func}_all_ops_dtypes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$rangetype $opts"
 done
 
-for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf hypercube_perf; do
+for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf hypercube_perf all_gatherv_perf; do
   run_command "${func}_split_share_all_sizes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$split_range $opts $enable_split_test -n 1"
 done
 
@@ -219,6 +219,43 @@ if [ "$ENABLE_MNNVL_TUNER_PLUGIN" == "1" ]; then
     run_command "tuner_plugin_mnnvl_test_${func}" $RUN_MODE $NGPUS "" "NCCL_TUNER_PLUGIN=$NCCL_HOME/test/unit/plugins/libnccl-tuner-example.so NCCL_DEBUG=INFO" "$NCCL_HOME/test/perf/${func}" "-b 8 -e 128M -f2 $opts -n 5"
   done
 fi
+
+# tests w/o allgatherv enabled
+export NCCL_ALLGATHERV_ENABLE=0
+for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf all_gatherv_perf; do
+  run_command "${func}_all_sizes_allgatherv" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts"
+done
+
+for func in all_gatherv_perf broadcast_perf; do
+  run_command "${func}_ring_local_registration_all_sizes_allgatherv" $RUN_MODE $NGPUS "" "NCCL_ALGO=Ring" "$NCCL_HOME/test/perf/$func" "$range $opts $enable_local_register -n 1"
+done
+
+for func in all_gatherv_perf broadcast_perf; do
+  run_command "${func}_ring_graph_registration_all_types_allgatherv" $RUN_MODE $NGPUS "" "NCCL_ALGO=Ring" "$NCCL_HOME/test/perf/$func" "-b 1G -e 1G -n 5 -w 5 -d all $enable_graph_register"
+done
+
+if [ "$NO_LOOPBACK_NETWORKING" != "1" ]
+then
+    for func in all_gatherv_perf broadcast_perf; do
+    run_command "${func}_ring_1rpn_graph_registration_all_types_allgatherv" $RUN_MODE $NGPUS "" "NCCL_ALGO=Ring NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/perf/$func" "-b $MAX -e $MAX -n 5 -w 5 -d all $enable_graph_register"
+    run_command "${func}_ring_1rpn_local_registration_all_types_allgatherv" $RUN_MODE $NGPUS "" "NCCL_ALGO=Ring NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/perf/$func" "$range $opts $enable_local_register"
+    done
+else
+  echo "Skipping Ring 1RPN registration tests for allgatherv..."
+fi
+
+# allgatherv socket NET testing
+for func in all_gatherv_perf broadcast_perf; do
+  run_command "${func}_socket_net_allgatherv" $RUN_MODE $NGPUS "" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_NET=Socket" "$NCCL_HOME/test/perf/$func" "-b 8 -e 16M -f2 $opts -n 1"
+done
+
+# allgatherv Test tuner plugin with MNNVL data
+if [ "$ENABLE_MNNVL_TUNER_PLUGIN" == "1" ]; then
+  for func in all_gatherv_perf broadcast_perf; do
+    run_command "tuner_plugin_mnnvl_test_${func}_allgatherv" $RUN_MODE $NGPUS "" "NCCL_TUNER_PLUGIN=$NCCL_HOME/test/unit/plugins/libnccl-tuner-example.so NCCL_DEBUG=INFO" "$NCCL_HOME/test/perf/${func}" "-b 8 -e 128M -f2 $opts -n 5"
+  done
+fi
+unset NCCL_ALLGATHERV_ENABLE
 
 print_failed_commands
 end_junit_file
