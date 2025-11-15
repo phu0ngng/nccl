@@ -222,6 +222,28 @@ struct ncclTaskColl {
   uint8_t nChannels;
 };
 
+
+struct ncclTaskBcast {
+  struct ncclTaskBcast* next;
+  ncclFunc_t func;
+  void* recvbuff;
+  const void* sendbuff;
+  size_t count;
+  ncclDataType_t datatype;
+  int root;
+  int ringDepth;
+
+  // what computes after...
+  int32_t algorithm:8, protocol:8;
+
+  // Profiler plugin
+  int eActivationMask;
+  void* groupApiEventHandle;
+  void* collApiEventHandle;
+  void* eventHandle;
+  uint8_t nChannels;
+};
+
 struct ncclTaskP2p {
   struct ncclTaskP2p* next;
   ncclFunc_t func;
@@ -268,12 +290,14 @@ struct ncclKernelPlan {
 
   int collOpCount; // Number of collectives in this plan.
   int nWorkBatches; // Number of work batches.
+  int nTasksBcast; // Number of bcast tasks in this plan.
   size_t workBytes; // Sum size of all work (in the fifo) in bytes.
   struct ncclIntruQueue<struct ncclWorkList, &ncclWorkList::next> workQueue;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> cleanupQueue;
   void* workBufPersistent;
 
   struct ncclIntruQueue<struct ncclTaskP2p, &ncclTaskP2p::next> p2pTaskQueue;
+  struct ncclIntruQueue<struct ncclTaskBcast, &ncclTaskBcast::next> bcastTaskQueue;
   struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next> collTaskQueue;
   struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
 
@@ -366,11 +390,19 @@ struct ncclKernelPlanner {
     bool sendSeen, recvSeen;
     struct ncclIntruQueue<struct ncclTaskP2p, &ncclTaskP2p::next> sendQueue;
     struct ncclIntruQueue<struct ncclTaskP2p, &ncclTaskP2p::next> recvQueue;
+    struct ncclIntruQueue<struct ncclTaskBcast, &ncclTaskBcast::next> bcastQueue;
   };
   struct ncclTaskCollSorter collSorter;
   struct Peer* peers/*[nRanks]*/;
-  int nTasksColl, nTasksP2p;
+  int nTasksColl, nTasksP2p, nTasksBcast;
   int nTasksP2pSend, nTasksP2pRecv;
+
+  struct {
+    int minBcastPeer;  /* initialized to INT_MAX */
+    int maxBcastPeer;  /* initialized to INT_MIN */
+    int BcastPeers;  /* initialized to 0 */
+  } bcast_info;
+
   bool persistent;
   // The list of user streams aggregated over all tasks present.
   struct ncclCudaStreamList* streams;
@@ -402,9 +434,11 @@ struct ncclKernelPlanner {
       struct {
         int workBytes; // Sum size of work metadata referenced by this batch.
         int nP2ps; // Number of p2p works in this batch
+        int nBcasts; // Number of bcast works in this batch
         int p2pRounds[NCCL_MAX_DEV_WORK_P2P_PER_BATCH]; // which rounds are present in this batch.
       } wipBatch; // work-in-progress batch which will be next tail of workBatchQueue
       int nWorkBatchesP2p; // number of p2p batches for this channel.
+      int nWorkBatchesBcast; // number of bcast batches for this channel.
       struct ncclIntruQueue<struct ncclWorkBatchList, &ncclWorkBatchList::next> workBatchQueue;
       struct ncclIntruQueue<struct ncclProxyOp, &ncclProxyOp::enqNext> proxyOpQueue;
     } channels[MAXCHANNELS];
@@ -593,6 +627,7 @@ struct ncclComm {
   struct ncclNvlsSharedRes* nvlsResources;
 
   // pools backed by comm->memPermanent
+  struct ncclMemoryPool memPool_ncclTaskBcast;
   struct ncclMemoryPool memPool_ncclTaskColl;
   struct ncclMemoryPool memPool_ncclTaskP2p;
   struct ncclMemoryPool memPool_ncclProxyOp;
@@ -607,6 +642,7 @@ struct ncclComm {
   struct P2pSchedulePair { int sendRank; int recvRank; } *p2pSchedule;
 
   struct ncclKernelPlanner planner;
+  void* ringTasks; // An array of nRanks pointers used in ring sorting rooted collectives (bcast)
 
   cudaMemPool_t memPool;
   // Queue of events and associated callbacks for cleaning up asynchronous work.

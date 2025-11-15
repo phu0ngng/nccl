@@ -2390,7 +2390,7 @@ perftest-single-pre-nyx:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
-    SLURM_TIME: 60
+    SLURM_TIME: 80
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
     NNODES: 1

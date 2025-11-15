@@ -434,6 +434,10 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
 
   // Mark channels as non initialized.
   for (int c=0; c < MAXCHANNELS; c++) comm->channels[c].id = -1;
+  // for bcast: init the ringTasks and min/max bcast peer
+  comm->ringTasks = ncclMemoryStackAlloc<void*>(&comm->memPermanent, comm->nRanks);
+  comm->planner.bcast_info.minBcastPeer = INT_MAX;
+  comm->planner.bcast_info.maxBcastPeer = INT_MIN;
 
   if (comm->topParentRanks == NULL) {
     NCCLCHECK(ncclCalloc(&comm->topParentRanks, comm->nRanks));
@@ -657,6 +661,7 @@ static ncclResult_t setupChannel(struct ncclComm* comm, int channelId, int rank,
   ring->index = (ixRank-ixZero + nranks)%nranks;
   for (int i=0; i<nranks; i++) {
     ring->userRanks[i] = ringRanks[(i+ixRank)%nranks];
+    ring->rankToIndex[ring->userRanks[i]] = i;
   }
   return ncclSuccess;
 }
@@ -1243,7 +1248,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   comm->p2pSchedule = ncclMemoryStackAlloc<ncclComm::P2pSchedulePair>(&comm->memPermanent, comm->nRanks);
   comm->planner.peers = ncclMemoryStackAlloc<ncclKernelPlanner::Peer>(&comm->memPermanent, comm->nRanks);
   NCCLCHECK(ncclP2pSchedule(comm));
-
+  // initialize non-zero fields.
+  comm->planner.bcast_info.minBcastPeer = INT_MAX;
+  comm->planner.bcast_info.maxBcastPeer = INT_MIN;
   comm->runtimeConn = comm->cuMemSupport && ncclParamRuntimeConnect();
   if (comm->runtimeConn) {
     for (int c=0; c<comm->nChannels; c++) {
