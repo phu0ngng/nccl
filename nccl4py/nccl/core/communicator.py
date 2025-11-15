@@ -458,7 +458,7 @@ class Communicator:
     NCCL Communicator for collective and point-to-point operations.
 
     A Communicator represents a group of ranks that can perform collective
-    operations (like all_reduce, broadcast) and point-to-point operations (send/recv).
+    operations (like reduce, broadcast) and point-to-point operations (send/recv).
     Each rank in the communicator has a unique ID (0 to nranks-1).
 
     Attributes:
@@ -846,7 +846,7 @@ class Communicator:
 
     # --- Point-to-Point Communication ---
     def send(
-        self, sendbuf: NcclBufferSpec, peer: int, stream: NcclStreamSpec | None = None
+        self, sendbuf: NcclBufferSpec, peer: int, *, stream: NcclStreamSpec | None = None
     ) -> None:
         """
         Sends a buffer to a peer rank using this communicator.
@@ -868,7 +868,7 @@ class Communicator:
         )
 
     def recv(
-        self, recvbuf: NcclBufferSpec, peer: int, stream: NcclStreamSpec | None = None
+        self, recvbuf: NcclBufferSpec, peer: int, *, stream: NcclStreamSpec | None = None
     ) -> None:
         """
         Receives data into a buffer from a peer rank using this communicator.
@@ -890,7 +890,7 @@ class Communicator:
         )
 
     # --- Collective Communication Operations ---
-    def all_reduce(
+    def allreduce(
         self,
         sendbuf: NcclBufferSpec,
         recvbuf: NcclBufferSpec,
@@ -901,6 +901,8 @@ class Communicator:
         Reduces data arrays of length count in sendbuf using the specified operation and leaves identical copies of the result in each recvbuf.
 
         All ranks receive the same reduced result in their receive buffers after this collective operation completes.
+
+        This is a shortcut for ``reduce(sendbuf, recvbuf, op, root=None, stream=stream)``.
 
         Args:
             - sendbuf (NcclBufferSpec): Source buffer specification containing data to be reduced.
@@ -920,35 +922,16 @@ class Communicator:
         See Also:
             https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclallreduce
         """
-        self._check_valid("all_reduce")
+        self._check_valid("allreduce")
 
-        s, r = NcclBuffer(sendbuf), NcclBuffer(recvbuf)
-        self._validate_buffer_device(s, "sendbuf")
-        self._validate_buffer_device(r, "recvbuf")
-
-        if s.dtype != r.dtype:
-            raise NcclInvalid(
-                f"Dtype mismatch: sendbuf has dtype {s.dtype}, recvbuf has dtype {r.dtype}"
-            )
-        if r.count < s.count:
-            raise NcclInvalid(
-                f"Buffer count mismatch: recvbuf must have at least {s.count} elements, got {r.count}"
-            )
-
-        s_ptr = s.ptr
-        r_ptr = r.ptr
-        count = s.count
-        dtype = s.dtype
-
-        _nccl_bindings.all_reduce(
-            s_ptr, r_ptr, count, int(dtype), int(op), int(self._comm), get_stream_ptr(stream)
-        )
+        self.reduce(sendbuf, recvbuf, op, stream=stream)
 
     def broadcast(
         self,
         sendbuf: NcclBufferSpec | Any,
         recvbuf: NcclBufferSpec,
         root: int,
+        *,
         stream: NcclStreamSpec | None = None,
     ) -> None:
         """
@@ -957,7 +940,7 @@ class Communicator:
         The sendbuf is only used on the root rank and is ignored for other ranks.
 
         Args:
-            - sendbuf (NcclBufferSpec | Any): Source buffer specification (only used on root rank, automatically set to recvbuf on other ranks).
+            - sendbuf (NcclBufferSpec | Any): Source buffer specification (only used on root rank).
             - recvbuf (NcclBufferSpec): Destination buffer specification that will receive the broadcast data.
             - root (int): Root rank that broadcasts the data (must be between 0 and nranks-1).
             - stream (NcclStreamSpec, optional): CUDA stream for the operation. Defaults to None (uses default stream).
@@ -1007,41 +990,51 @@ class Communicator:
         sendbuf: NcclBufferSpec,
         recvbuf: NcclBufferSpec | Any,
         op: NcclRedOp | CustomRedOp,
-        root: int,
+        root: int | None = None,
+        *,
         stream: NcclStreamSpec | None = None,
     ) -> None:
         """
-        Reduces data arrays of length count in sendbuf into recvbuf on the root rank using the specified operation.
+        Reduces data arrays of length count in sendbuf using the specified operation.
 
-        The recvbuf is only used on the root rank and is ignored for other ranks.
+        This method supports two modes of operation:
+
+        1. **AllReduce Mode** (root=None): Reduces data and leaves identical copies of the result in each rank's recvbuf.
+           All ranks receive the same reduced result after the collective operation completes.
+
+        2. **Reduce Mode** (root specified): Reduces data and places the result only in recvbuf on the specified root rank.
+           The recvbuf is only used on the root rank and is ignored for other ranks.
 
         Args:
             - sendbuf (NcclBufferSpec): Source buffer specification containing data to be reduced.
-            - recvbuf (NcclBufferSpec | Any): Destination buffer specification (only used on root rank, automatically set to sendbuf on other ranks).
+            - recvbuf (NcclBufferSpec | Any): Destination buffer specification that will receive the reduced result.
+              In Reduce Mode (root specified), only used on root rank.
             - op (NcclRedOp | CustomRedOp): Reduction operator to apply (e.g., SUM, MAX, MIN, AVG, PROD, or custom operator).
-            - root (int): Root rank that receives the reduced result (must be between 0 and nranks-1).
+            - root (int | None, optional): Root rank that receives the reduced result (must be between 0 and nranks-1).
+              If None, performs an all-reduce where all ranks receive the result. Defaults to None.
             - stream (NcclStreamSpec, optional): CUDA stream for the operation. Defaults to None (uses default stream).
 
         Raises:
             - ``NcclInvalid``: If send and receive buffers have mismatched dtypes, mismatched counts, buffers on wrong device, invalid buffer specifications, or communicator is not initialized.
 
         Notes:
-            - On root rank, both send and receive buffers must have matching data types.
+            - Both send and receive buffers must have matching data types if receive buffer is used.
             - Element count is inferred from the sendbuf specification: count = sendcount.
-            - On root rank, requires recvcount >= sendcount.
+            - In All-Reduce Mode: All ranks must have recvcount >= sendcount.
+            - In Reduce Mode: Only root rank requires recvcount >= sendcount.
             - In-place operation occurs when sendbuf and recvbuf resolve to the same device memory address.
 
         See Also:
-            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclreduce
+            - All-Reduce Mode: https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclallreduce
+            - Reduce Mode: https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclreduce
         """
         self._check_valid("reduce")
 
-        s, r = None, None
-        if root == self._rank:
+        s, r = NcclBuffer(sendbuf), None
+        self._validate_buffer_device(s, "sendbuf")
+        if root is None or root == self._rank:
             r = NcclBuffer(recvbuf)
             self._validate_buffer_device(r, "recvbuf")
-        s = NcclBuffer(sendbuf)
-        self._validate_buffer_device(s, "sendbuf")
 
         if r is not None:
             if s.dtype != r.dtype:
@@ -1058,18 +1051,23 @@ class Communicator:
         count = s.count
         dtype = s.dtype
 
-        _nccl_bindings.reduce(
-            s_ptr,
-            r_ptr,
-            count,
-            int(dtype),
-            int(op),
-            int(root),
-            int(self._comm),
-            get_stream_ptr(stream),
-        )
+        if root is None:
+            _nccl_bindings.all_reduce(
+                s_ptr, r_ptr, count, int(dtype), int(op), int(self._comm), get_stream_ptr(stream)
+            )
+        else:
+            _nccl_bindings.reduce(
+                s_ptr,
+                r_ptr,
+                count,
+                int(dtype),
+                int(op),
+                int(root),
+                int(self._comm),
+                get_stream_ptr(stream),
+            )
 
-    def all_gather(
+    def allgather(
         self,
         sendbuf: NcclBufferSpec,
         recvbuf: NcclBufferSpec,
@@ -1079,6 +1077,8 @@ class Communicator:
         Gathers sendcount values from all ranks and leaves identical copies of the result in each recvbuf, receiving data from rank i at offset i*sendcount.
 
         All ranks receive the same concatenated result containing data from all ranks.
+
+        This is a shortcut for ``gather(sendbuf, recvbuf, root=None, stream=stream)``.
 
         Args:
             - sendbuf (NcclBufferSpec): Source buffer specification containing sendcount elements.
@@ -1098,36 +1098,16 @@ class Communicator:
         See Also:
             https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclallgather
         """
-        self._check_valid("all_gather")
+        self._check_valid("allgather")
 
-        s, r = NcclBuffer(sendbuf), NcclBuffer(recvbuf)
-        self._validate_buffer_device(s, "sendbuf")
-        self._validate_buffer_device(r, "recvbuf")
-
-        if s.dtype != r.dtype:
-            raise NcclInvalid(
-                f"Dtype mismatch: sendbuf has dtype {s.dtype}, recvbuf has dtype {r.dtype}"
-            )
-        expected_recv_count = self._nranks * s.count
-        if r.count < expected_recv_count:
-            raise NcclInvalid(
-                f"Buffer count mismatch: recvbuf must have at least {expected_recv_count} elements (nranks * sendcount), got {r.count}"
-            )
-
-        s_ptr = s.ptr
-        r_ptr = r.ptr
-        count = s.count
-        dtype = s.dtype
-
-        _nccl_bindings.all_gather(
-            s_ptr, r_ptr, count, int(dtype), int(self._comm), get_stream_ptr(stream)
-        )
+        self.gather(sendbuf, recvbuf, stream=stream)
 
     def reduce_scatter(
         self,
         sendbuf: NcclBufferSpec,
         recvbuf: NcclBufferSpec,
         op: NcclRedOp | CustomRedOp,
+        *,
         stream: NcclStreamSpec | None = None,
     ) -> None:
         """
@@ -1183,10 +1163,11 @@ class Communicator:
             s_ptr, r_ptr, count, int(dtype), int(op), int(self._comm), get_stream_ptr(stream)
         )
 
-    def all_to_all(
+    def alltoall(
         self,
         sendbuf: NcclBufferSpec,
         recvbuf: NcclBufferSpec,
+        *,
         stream: NcclStreamSpec | None = None,
     ) -> None:
         """
@@ -1211,7 +1192,7 @@ class Communicator:
         See Also:
             https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclalltoall
         """
-        self._check_valid("all_to_all")
+        self._check_valid("alltoall")
 
         s, r = NcclBuffer(sendbuf), NcclBuffer(recvbuf)
         self._validate_buffer_device(s, "sendbuf")
@@ -1244,41 +1225,52 @@ class Communicator:
         self,
         sendbuf: NcclBufferSpec,
         recvbuf: NcclBufferSpec | Any,
-        root: int,
+        root: int | None = None,
+        *,
         stream: NcclStreamSpec | None = None,
     ) -> None:
         """
-        Each rank sends count elements from sendbuf to the root rank. On the root rank, data from rank i is placed at recvbuf + i*count.
+        Gathers sendcount values from all ranks.
 
-        On non-root ranks, recvbuf is not used.
+        This method supports two modes of operation:
+
+        1. **AllGather Mode** (root=None): Gathers values from all ranks and leaves identical copies of the result in each recvbuf.
+           All ranks receive the same concatenated result containing data from all ranks.
+
+        2. **Gather Mode** (root specified): Gathers values from all ranks to the specified root rank.
+           The recvbuf is only used on the root rank and is ignored for other ranks.
 
         Args:
-            - sendbuf (NcclBufferSpec): Source buffer specification containing count elements.
-            - recvbuf (NcclBufferSpec | Any): Destination buffer specification (only used on root rank, must have size at least nranks*count elements; automatically set to sendbuf on other ranks).
-            - root (int): Root rank that receives the gathered data (must be between 0 and nranks-1).
+            - sendbuf (NcclBufferSpec): Source buffer specification containing sendcount elements.
+            - recvbuf (NcclBufferSpec | Any): Destination buffer specification (must have size at least nranks*sendcount elements).
+              In Gather Mode (root specified), only used on root rank.
+            - root (int | None, optional): Root rank that receives the gathered data (must be between 0 and nranks-1).
+              If None, performs an all-gather where all ranks receive the result. Defaults to None.
             - stream (NcclStreamSpec, optional): CUDA stream for the operation. Defaults to None (uses default stream).
 
         Raises:
-            - ``NcclInvalid``: If send and receive buffers have mismatched dtypes, recvbuf is too small on root rank, buffers on wrong device, invalid buffer specifications, or communicator is not initialized.
+            - ``NcclInvalid``: If send and receive buffers have mismatched dtypes, recvbuf is too small, buffers on wrong device, invalid buffer specifications, or communicator is not initialized.
 
         Notes:
-            - On root rank, both send and receive buffers must have matching data types.
+            - Both send and receive buffers must have matching data types if receive buffer is used.
             - Element count is inferred from the sendbuf specification: count = sendcount.
-            - On root rank, requires recvcount >= nranks * count.
-            - On root rank, data from rank i is placed at recvbuf + i*count.
-            - In-place operation occurs when sendbuf resolves to device memory address: recvbuf_address + root*count.
+            - In AllGather Mode: All ranks must have recvcount >= nranks * sendcount.
+            - In Gather Mode: Only root rank requires recvcount >= nranks * sendcount.
+            - Data from rank i is placed at recvbuf + i*sendcount.
+            - In AllGather Mode, in-place operation occurs when sendbuf resolves to device memory address: recvbuf_address + rank*sendcount.
+            - In Gather Mode, in-place operation occurs when sendbuf resolves to device memory address: recvbuf_address + root*sendcount.
 
         See Also:
-            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclgather
+            - AllGather Mode: https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclallgather
+            - Gather Mode: https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclgather
         """
         self._check_valid("gather")
 
-        s, r = None, None
-        if root == self._rank:
+        s, r = NcclBuffer(sendbuf), None
+        self._validate_buffer_device(s, "sendbuf")
+        if root is None or root == self._rank:
             r = NcclBuffer(recvbuf)
             self._validate_buffer_device(r, "recvbuf")
-        s = NcclBuffer(sendbuf)
-        self._validate_buffer_device(s, "sendbuf")
 
         if r is not None:
             if r.dtype != s.dtype:
@@ -1296,15 +1288,21 @@ class Communicator:
         count = s.count
         dtype = s.dtype
 
-        _nccl_bindings.gather(
-            s_ptr, r_ptr, count, int(dtype), int(root), int(self._comm), get_stream_ptr(stream)
-        )
+        if root is None:
+            _nccl_bindings.all_gather(
+                s_ptr, r_ptr, count, int(dtype), int(self._comm), get_stream_ptr(stream)
+            )
+        else:
+            _nccl_bindings.gather(
+                s_ptr, r_ptr, count, int(dtype), int(root), int(self._comm), get_stream_ptr(stream)
+            )
 
     def scatter(
         self,
         sendbuf: NcclBufferSpec | Any,
         recvbuf: NcclBufferSpec,
         root: int,
+        *,
         stream: NcclStreamSpec | None = None,
     ) -> None:
         """
@@ -1313,7 +1311,7 @@ class Communicator:
         On non-root ranks, sendbuf is not used.
 
         Args:
-            - sendbuf (NcclBufferSpec | Any): Source buffer specification (only used on root rank, must have size at least nranks*count elements; automatically set to recvbuf on other ranks).
+            - sendbuf (NcclBufferSpec | Any): Source buffer specification (only used on root rank, must have size at least nranks*count elements).
             - recvbuf (NcclBufferSpec): Destination buffer specification containing count elements.
             - root (int): Root rank that scatters the data (must be between 0 and nranks-1).
             - stream (NcclStreamSpec, optional): CUDA stream for the operation. Defaults to None (uses default stream).
@@ -1580,7 +1578,7 @@ class Communicator:
         Queries the progress and potential errors of asynchronous NCCL operations.
 
         Operations without a stream argument (e.g., finalize) are complete when they return ncclSuccess.
-        Operations with a stream argument (e.g., all_reduce) return ncclSuccess when posted but may
+        Operations with a stream argument (e.g., reduce) return ncclSuccess when posted but may
         report errors through this method until completed. If any NCCL function returns ncclInProgress,
         users must query communicator state until it becomes ncclSuccess before calling another NCCL function.
 
