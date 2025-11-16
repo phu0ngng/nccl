@@ -2023,7 +2023,7 @@ ncclResult_t ncclGetAlgoInfo(
   } else {
     NCCLCHECK(topoGetAlgoInfo(comm, info, nBytes, (float **)collCostTable, simInfo));
     // NCCL_CTA_POLICY_EFFICIENCY requires user (non-symmetric) buffer registration (currently unsupported with MNNVL)
-    if (comm->config.CTAPolicy == NCCL_CTA_POLICY_EFFICIENCY && ncclGetEnv("NCCL_ALGO") == NULL && ncclGetEnv("NCCL_PROTO") == NULL && !comm->MNNVL) {
+    if ((comm->config.CTAPolicy & NCCL_CTA_POLICY_EFFICIENCY) && ncclGetEnv("NCCL_ALGO") == NULL && ncclGetEnv("NCCL_PROTO") == NULL && !comm->MNNVL) {
       // make algorithm selection based on buffer registration
       // there can be other specialized policies for algorithms and protocols pickup in the future
       NCCLCHECK(ncclRegFind(comm, info->sendbuff, sendbuffSize, &regSendBuf));
@@ -2688,7 +2688,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       if (info->coll == ncclFuncAlltoAll || info->coll == ncclFuncAllGather || info->coll == ncclFuncScatter || info->coll == ncclFuncGather) {
         if (winRegType != ncclSymSendRegRecvReg && winRegType != ncclSymSendNonregRecvReg) ceSymReg = false;
       }
-      if (comm->symmetricSupport && comm->nNodes == 1 && ceSymReg && comm->config.CTAPolicy == NCCL_CTA_POLICY_ZERO && ceImplemented) {
+      if (comm->symmetricSupport && comm->nNodes == 1 && ceSymReg && (comm->config.CTAPolicy & NCCL_CTA_POLICY_ZERO) && ceImplemented) {
         NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, opDev));
       }
       // Append kernel-based collective

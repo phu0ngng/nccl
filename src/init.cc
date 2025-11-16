@@ -51,11 +51,65 @@ NCCL_PARAM(CommBlocking, "COMM_BLOCKING", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(RuntimeConnect, "RUNTIME_CONNECT", 1);
 NCCL_PARAM(WinEnable, "WIN_ENABLE", 1);
 NCCL_PARAM(CollnetEnable, "COLLNET_ENABLE", NCCL_CONFIG_UNDEF_INT);
-NCCL_PARAM(CtaPolicy, "CTA_POLICY", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(SetCpuStackSize, "SET_CPU_STACK_SIZE", 1);
 
 extern int64_t ncclParamSingleProcMemRegEnable();
+
+
+static bool ctaPolicyIsValid(int ctaPolicy) {
+  int availCtaPolicies[3] = {NCCL_CTA_POLICY_DEFAULT, NCCL_CTA_POLICY_EFFICIENCY, NCCL_CTA_POLICY_ZERO};
+  int maxPolicy = 0;
+  for (int i = 0; i < 3; ++i) {
+    maxPolicy |= availCtaPolicies[i];
+  }
+  return ctaPolicy >= 0 && ctaPolicy <= maxPolicy;
+}
+
+static int ctaPolicyEnv = NCCL_CONFIG_UNDEF_INT;
+static void getEnvCtaPolicyOnce(){
+  const char* env = ncclGetEnv("NCCL_CTA_POLICY");
+  if (env == NULL) return;
+
+  // support the old CTA Policy assignment (only valid for 0-9)
+  if (isdigit(env[0])) {
+    switch (env[0]) {
+    case '0':
+      ctaPolicyEnv = NCCL_CTA_POLICY_DEFAULT;
+      break;
+    case '1':
+      ctaPolicyEnv = NCCL_CTA_POLICY_EFFICIENCY;
+      break;
+    case '2':
+      ctaPolicyEnv = NCCL_CTA_POLICY_ZERO;
+      break;
+    default:
+      INFO(NCCL_ENV, "Unknown CTA policy; the legacy usage of NCCL_CTA_POLICY only supports the value of 0 (DEFAULT), 1 (EFFICIENCY), or 2 (ZERO). Using DEFAULT instead.");
+    };
+  } else {
+    // newer way allows the user to combine the modes
+    char* str = strdup(env);
+    char* token = strtok(str, "|");
+    while (token) {
+      int tokenPolicy = NCCL_CONFIG_UNDEF_INT;
+      if (strcasecmp(token, "DEFAULT")==0) tokenPolicy = NCCL_CTA_POLICY_DEFAULT;
+      else if (strcasecmp(token, "EFFICIENCY")==0) tokenPolicy = NCCL_CTA_POLICY_EFFICIENCY;
+      else if (strcasecmp(token, "ZERO")==0) tokenPolicy = NCCL_CTA_POLICY_ZERO;
+      else INFO(NCCL_ENV, "Unknown CTA policy %s passed as environment variable. Ignoring.", token);
+      if (tokenPolicy != NCCL_CONFIG_UNDEF_INT) {
+        if (ctaPolicyEnv == NCCL_CONFIG_UNDEF_INT) ctaPolicyEnv = tokenPolicy;
+        else ctaPolicyEnv |= tokenPolicy;
+      }
+      token = strtok(NULL, "|");
+    }
+    if (ctaPolicyEnv == NCCL_CONFIG_UNDEF_INT) {
+      INFO(NCCL_ENV, "No valid CTA policies found in NCCL_CTA_POLICY=%s.", env);
+    } else {
+      INFO(NCCL_ENV, "Parsed environment variable NCCL_CTA_POLICY=%s to %d", env, ctaPolicyEnv);
+    }
+    free(str);
+  }
+}
 
 static ncclResult_t commReclaim(struct ncclAsyncJob* job_);
 
@@ -1627,7 +1681,6 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int maxCTAsEnv;
   int splitShareEnv;
   const char* collnetEnableEnv;
-  int ctaPolicyEnv;
   int shrinkShareEnv;
   int nvlsCTAsEnv;
   int nChannelsPerNetPeerEnv;
@@ -1732,7 +1785,8 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
     }
   }
 
-  ctaPolicyEnv = ncclParamCtaPolicy();
+  static pthread_once_t onceEnvCtaPolicy = PTHREAD_ONCE_INIT;
+  pthread_once(&onceEnvCtaPolicy, getEnvCtaPolicyOnce);
   if (ctaPolicyEnv != NCCL_CONFIG_UNDEF_INT) {
     if (comm->config.CTAPolicy != NCCL_CONFIG_UNDEF_INT)
       INFO(NCCL_ENV, "Comm config CTAPolicy reset to NCCL_CTA_POLICY=%d", ctaPolicyEnv);
@@ -1772,7 +1826,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
     comm->config.collnetEnable = 0;
   }
 
-  if (comm->config.CTAPolicy < NCCL_CTA_POLICY_DEFAULT || comm->config.CTAPolicy > NCCL_CTA_POLICY_ZERO) {
+  if (!ctaPolicyIsValid(comm->config.CTAPolicy)) {
     INFO(NCCL_ENV, "CTAPolicy %d is not a valid value, set it to %d", comm->config.CTAPolicy, NCCL_CTA_POLICY_DEFAULT);
     comm->config.CTAPolicy = NCCL_CTA_POLICY_DEFAULT;
   }
@@ -1781,6 +1835,13 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
     INFO(NCCL_ENV, "nvlsCTAs %d is not a valid value, NCCL will decide the default value automatically", comm->config.nvlsCTAs);
     comm->config.nvlsCTAs = NCCL_CONFIG_UNDEF_INT;
   }
+
+  // If POLICY_ZERO and POLICY_EFFICIENCY are set in CTAPolicy, unset POLICY_EFFICIENCY.
+  if ((comm->config.CTAPolicy & NCCL_CTA_POLICY_ZERO) &&
+      (comm->config.CTAPolicy & NCCL_CTA_POLICY_EFFICIENCY)) {
+    WARN("Both NCCL_CTA_POLICY_ZERO and NCCL_CTA_POLICY_EFFICIENCY are set in CTAPolicy (%d). Unsetting POLICY_EFFICIENCY.", comm->config.CTAPolicy);
+    comm->config.CTAPolicy &= ~NCCL_CTA_POLICY_EFFICIENCY;
+  } 
 
   return ret;
 }
@@ -1874,11 +1935,12 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     goto fail;
   }
 
-  if (internalConfigPtr->CTAPolicy != NCCL_CONFIG_UNDEF_INT && (internalConfigPtr->CTAPolicy < NCCL_CTA_POLICY_DEFAULT ||
-    internalConfigPtr->CTAPolicy > NCCL_CTA_POLICY_ZERO)) {
-    WARN("Invalid config policy attribute value %d", internalConfigPtr->CTAPolicy);
-    ret = ncclInvalidArgument;
-    goto fail;
+  if (internalConfigPtr->CTAPolicy != NCCL_CONFIG_UNDEF_INT) {
+    if (!ctaPolicyIsValid(internalConfigPtr->CTAPolicy)) {
+      WARN("Invalid config policy attribute value %d", internalConfigPtr->CTAPolicy);
+      ret = ncclInvalidArgument;
+      goto fail;
+    }
   }
 
   if (internalConfigPtr->shrinkShare != NCCL_CONFIG_UNDEF_INT && internalConfigPtr->shrinkShare != 0 && internalConfigPtr->shrinkShare != 1) {

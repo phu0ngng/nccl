@@ -611,16 +611,18 @@ Default is 2, define and set to an integer.
 
 NCCL_CTA_POLICY
 ---------------
-(since 2.27)
+(since 2.29, legacy values since 2.27)
 
 The ``NCCL_CTA_POLICY`` variable allows the user to set the policy for the NCCL communicator.
 
 Value accepted
 ^^^^^^^^^^^^^^
+Set to ``DEFAULT`` (or ``0``, legacy) to use ``NCCL_CTA_POLICY_DEFAULT`` policy (default).
+Set to ``EFFICIENCY`` (or ``1``, legacy) to use ``NCCL_CTA_POLICY_EFFICIENCY`` policy.
+Set to ``ZERO`` (or ``2``, legacy) to use ``NCCL_CTA_POLICY_ZERO`` policy.
 
-Set to 0 to use NCCL_CTA_POLICY_DEFAULT policy (default);
-Set to 1 to use NCCL_CTA_POLICY_EFFICIENCY policy.
-Set to 2 to use NCCL_CTA_POLICY_ZERO policy.
+Set multiple non-legacy policies with the ``|`` operator.
+
 For more explanation about NCCL policies, please see :ref:`cta_policy_flags`.
 
 NCCL_NETDEVS_POLICY
