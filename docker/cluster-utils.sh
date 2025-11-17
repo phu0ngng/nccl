@@ -61,5 +61,10 @@ function identify_cluster() {
     return
     fi
 
+    if [[ "$hostname" =~ .*bia.*$ ]]; then
+        echo "bia"
+    return
+    fi
+
     echo "UNKNOWN"
 }
