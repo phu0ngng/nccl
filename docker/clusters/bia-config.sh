@@ -123,9 +123,6 @@ function get_planned_reserved() {
 function configure_test_env() {
     export UCX_TLS="tcp,self"
 
-    # # Note: These are the E/W IB interfaces on Pre-Tyche
-    # export NCCL_IB_HCA="mlx5_0,mlx5_1,mlx5_4,mlx5_5"
-
     # MPI params
     export OMPI_MCA_coll_hcoll_enable=0
 
