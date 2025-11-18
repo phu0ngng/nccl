@@ -173,6 +173,26 @@ build-theia:
       - build-theia/**/*.o
     expire_in: 48 hrs
 
+build-bia:
+  stage: build
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1")
+      when: always
+    - when: never
+  tags:
+    - bia
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  script:
+    - docker/make.sh bia --baremetal-build
+    - mv build build-bia
+  artifacts:
+    paths:
+      - build-bia
+    exclude:
+      - build-bia/**/*.o
+    expire_in: 48 hrs
+
 build-dlfw-pytorch-container:
   stage: build
   rules:
@@ -1349,7 +1369,7 @@ unit_tests-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-bia"]
   tags:
     - bia
   variables:
@@ -1361,7 +1381,7 @@ unit_tests-bia:
     NNODES: 1
     NGPUS: 4
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: build-bia
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
