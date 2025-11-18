@@ -16,8 +16,8 @@ BIA_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${BIA_CUDA_VERSIO
 # Container build config
 # Note: This doesn't work at the moment as the CTK in the image doesn't recognize gencode 103
 BIA_BUILD_TOOLS_VERSION="2.0.0"
-BIA_BUILD_TOOLS_CUDA_VERSION="12.8.0"
-BIA_BUILD_TOOLS_OS_VERSION="20.04"
+BIA_BUILD_TOOLS_CUDA_VERSION="13.0.2"
+BIA_BUILD_TOOLS_OS_VERSION="24.04"
 BIA_BUILD_TOOLS_IMAGE_VERSION="${THEIA_BUILD_TOOLS_VERSION}-c${THEIA_BUILD_TOOLS_CUDA_VERSION}-u${THEIA_BUILD_TOOLS_OS_VERSION}"
 BIA_BUILD_TOOLS_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 
