@@ -3022,6 +3022,44 @@ perftest-multi-theia:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+perftest-multi-bia:
+  stage: perf_tests_multi
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+      when: always
+    - when: never
+  needs: ["build-bia"]
+  tags:
+    - bia
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
+    SLURM_TIME: 45
+    SLURM_PARTITION: batch
+    RUN_MODE: "SRUN_MPI"
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    SYMMETRIC: 1
+    GRAPH: 0
+    NCCL_HOME: build-bia
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 ##
 ## Stage: perf_tests_multi - Finish!
 ##
