@@ -445,7 +445,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitCounter(
     uint64_t got;
     #pragma unroll 1
     do got = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    while (!nccl::utility::rollingLessEq(least, got));
+    while (!nccl::utility::rollingLessEq(least, got, bits));
   }
   coop.sync();
 }
@@ -465,7 +465,7 @@ NCCL_DEVICE_INLINE void ncclGinWaitCounter(
     uint64_t got;
     #pragma unroll 1
     do got = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    while (!nccl::utility::rollingLessEq(least, got));
+    while (!nccl::utility::rollingLessEq(least, got, bits));
   }
   coop.sync();
 }
