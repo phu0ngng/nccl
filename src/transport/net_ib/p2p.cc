@@ -268,9 +268,9 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   memset(&wr, 0, sizeof(wr));
 
   int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
-  req->recv.aggSize = -1;
+  req->recv.aggSize = 0;
   req->recv.sizes = comm->cmplsRecords[slot];
-  for (int i=0; i<n; i++) req->recv.sizes[i] = -1;
+  memset(req->recv.sizes, 0, sizeof(int)*n);
   struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
 
   ncclIbQp* ctsQp = NULL;;
@@ -544,7 +544,7 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
   TRACE(NCCL_NET, "r=%p done", r);
   *done = 1;
   if (sizes && r->type == NCCL_NET_IB_REQ_RECV) {
-    int *sizesToReport = (r->recv.aggSize != -1) ? &(r->recv.aggSize) : r->recv.sizes;
+    int *sizesToReport = (r->nreqs > 1 || r->recv.sizes[0] > 0) ? r->recv.sizes : &(r->recv.aggSize);
     for (int i=0; i<r->nreqs; i++) {
       sizes[i] = sizesToReport[i];
 #ifdef NCCL_ENABLE_NET_PROFILING
@@ -625,46 +625,10 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         return ncclInternalError;
       }
       if (req->nreqs == 1) {
-        if (ncclParamIbReceiverSideMatchingScheme() == BY_ID) {
-          // The below logic makes sure that any size (including zero-sized)
-          // send messages can be sent over any number of QPs, where each QP
-          // can send arbitrary portion of the send request.
-          if (req->recv.sizes[0] != -1) {
-            // The sender wrote to the completion records the size of the send
-            // request. Therefore, the size should be retreived directly from
-            // there and be assigned to the recv.aggSize.
-            req->recv.aggSize = req->recv.sizes[0];
-          } else {
-            // The sender did not write to the completion records. Therefore,
-            // the send request was not split into The send RDMA Write followed
-            // by RDMA Write with immediate.
-            // In order to support zero-sized messages and the case where a send
-            // request was sent over multiple QPs and each QP delivered a portion
-            // of the data, the logic below first checks if the receiver already
-            // received a completion or not.
-            if (req->recv.aggSize == -1) {
-              // If recv.aggSize == -1, it means that it is the first completion
-              // for this request. Therefore, the whatever value in the
-              // work completion (wc->byte_len) is *assigned* to the recv.aggSize
-              // and *not added* to the recv.aggSize. This is done in this way,
-              // in order to support the case of zero-sized send requests. Note
-              // that if the send request was zero-sized, the wc->byte_len is
-              // zero, so adding the wc->byte_len would be incorrect since the
-              // recv.aggSize would remain -1 although the size to that might
-              // need to be reported to the user is 0.
-              req->recv.aggSize = wc->byte_len;
-            } else {
-              // In this case, the receiver already got a previous completion for
-              // this request (for example can happen when using multiple
-              // QPs) and the current completion is not the first one. In
-              // order to support zero-sized data transfer, the recv.aggSize is
-              // **added** with the size reported in the work completion 
-              // (wc->byte_len).
-              req->recv.aggSize+= wc->byte_len;
-            }
-          }          
-        } else {
-          req->recv.aggSize = be32toh(wc->imm_data);
+        if (ncclParamIbReceiverSideMatchingScheme() == BY_INDEX) {
+          req->recv.sizes[0] = be32toh(wc->imm_data);
+        } else if (req->recv.sizes[0] == 0) {
+          req->recv.aggSize+= wc->byte_len;
         }
       }
     }
