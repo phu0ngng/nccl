@@ -155,7 +155,7 @@ build-pre-tyche:
 build-theia:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_THEIA == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
       when: always
     - when: never
   tags:

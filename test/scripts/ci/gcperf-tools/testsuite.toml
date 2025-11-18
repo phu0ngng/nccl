@@ -17,7 +17,7 @@ NCCL_DEBUG = "WARN"
 -b = "1G"
 -e = "16G"
 -d = "float"
--R = 0
+-R = [0, 1, 2]
 
 [[test]]
 name = "all_reduce"
