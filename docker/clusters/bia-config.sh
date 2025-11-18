@@ -5,7 +5,8 @@
 # Targeting build to run on BIA
 
 # BIA GPU Type: B300 
-BIA_GPU_ARCHS="103"
+# 103 will trigger unsupported error, use 120 as David Addison suggested
+BIA_GPU_ARCHS="120"
 
 ## CUDA Config
 BIA_CUDA_MAJOR_VERSION="13"
