@@ -179,7 +179,7 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
   NCCLCHECK(ncclInit());
   NCCLCHECK(PtrCheck(out, "GetUniqueId", "out"));
   struct ncclBootstrapHandle handle;
-  NCCLCHECK(bootstrapGetUniqueId(&handle));
+  NCCLCHECK(bootstrapGetUniqueId(&handle, NULL));
   // ncclUniqueId and bootstrapHandle don't have the same size and alignment
   // reset to 0 to avoid undefined data
   memset(out, 0, sizeof(*out));
@@ -1471,12 +1471,14 @@ struct ncclCommInitRankAsyncJob {
   // for ncclCommSplit
   struct ncclComm* parent;
   int color, key;
-  int splitCount;
+  int childCount;
   // For Shrink
   int* excludeRanksList;
   int excludeRanksCount;
   // name of the function calling
   char funcName[NCCL_COMMINIT_FUNCNAME_LEN];
+  // For grow operations
+  bool isGrow;
 };
 
 struct ncclCommFinalizeAsyncJob {
@@ -1584,7 +1586,8 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   }
   timers[TIMER_INIT_KERNELS] = clockNano() - timers[TIMER_INIT_KERNELS];
 
-  if (job->parent) {
+  if (job->parent && !job->isGrow) {
+    // SPLIT/SHRINK: use bootstrapSplit
     NCCLCHECKGOTO(ncclCalloc(&parentRanks, job->parent->nRanks), res, fail);
     if (job->excludeRanksCount) {
       NCCLCHECKGOTO(getParentRanks(job->parent->nRanks, job->parent->rank, job->excludeRanksList, job->excludeRanksCount, &job->nranks, &job->myrank, parentRanks), res, fail);
@@ -1596,29 +1599,41 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     // child hash obtained from (parent hash, split count, color)
     uint64_t hacc[2] = {1, 1};
     eatHash(hacc, &job->parent->commHash);
-    eatHash(hacc, &job->splitCount);
+    eatHash(hacc, &job->childCount);
     eatHash(hacc, &job->color);
     comm->commHash = digestHash(hacc);
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, job->parent, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
-    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p splitCount %d color %d key %d- Init START", job->funcName,
-         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->splitCount, job->color, job->key);
+    comm->isGrow = false;
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p childCount %d color %d key %d- Init START", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->childCount, job->color, job->key);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
     NCCLCHECKGOTO(bootstrapSplit(comm->commHash, comm, job->parent, job->color, job->key, parentRanks), res, fail);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano() - timers[TIMER_INIT_BOOTSTRAP];
     // debug info, no commId was used
     commIdHash = 0;
   } else {
-    // obtain a unique hash using the first commId
-    comm->commHash = commIdHash = getHash(job->commId->internal, NCCL_UNIQUE_ID_BYTES);
+    // GROW or NORMAL INIT: use bootstrapInit
+    if (job->isGrow) {
+      struct ncclBootstrapHandle* growHandle = (struct ncclBootstrapHandle*)job->commId;
+      uint64_t baseMagic = growHandle ? growHandle->magic : hashCombine(job->parent->magic, job->parent->childCount);
+      comm->commHash = commIdHash = hashCombine(baseMagic, job->nranks);
+      INFO(NCCL_INIT, "Rank %d: Generated commHash 0x%lx from baseMagic 0x%lx and newNRanks %d",
+           job->myrank, comm->commHash, baseMagic, job->nranks);
+    } else {
+      // obtain a unique hash using the first commId
+      comm->commHash = commIdHash = getHash(job->commId->internal, NCCL_UNIQUE_ID_BYTES);
+    }
     timers[TIMER_INIT_ALLOC] = clockNano();
     NCCLCHECKGOTO(commAlloc(comm, NULL, job->nranks, job->myrank), res, fail);
     timers[TIMER_INIT_ALLOC] = clockNano() - timers[TIMER_INIT_ALLOC];
-    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START", job->funcName,
-         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, commIdHash);
+
+    comm->isGrow = job->isGrow;
+    INFO(NCCL_INIT, "[Rank %d] %s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx commId 0x%llx - Init START",
+         job->myrank, job->funcName, comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, commIdHash);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano();
-    NCCLCHECKGOTO(bootstrapInit(job->nId, (struct ncclBootstrapHandle*)job->commId, comm), res, fail);
+    NCCLCHECKGOTO(bootstrapInit(job->nId, (struct ncclBootstrapHandle*)job->commId, comm, job->parent), res, fail);
     timers[TIMER_INIT_BOOTSTRAP] = clockNano() - timers[TIMER_INIT_BOOTSTRAP];
   }
   comm->cudaArch = cudaArch;
@@ -1633,9 +1648,13 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   if (job->parent) {
     /* unlink child abort flag. */
     COMPILER_ATOMIC_STORE(&job->parent->childAbortFlag, NULL, std::memory_order_release);
-    TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)", job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
-    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p splitCount %d color %d key %d - Init COMPLETE", job->funcName,
-         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->splitCount, job->color, job->key);
+    if (job->isGrow) {
+      TRACE_CALL("ncclCommGrow(%p, %d, %p)", job->parent, comm->nRanks, comm);
+    } else {
+      TRACE_CALL("ncclCommSplit(%p, %d, %d, %p, %d, %d)", job->parent, job->color, job->key, comm, comm->rank, comm->nRanks);
+    }
+    INFO(NCCL_INIT, "%s comm %p rank %d nranks %d cudaDev %d nvmlDev %d busId %lx parent %p childCount %d color %d key %d - Init COMPLETE", job->funcName,
+         comm, comm->rank, comm->nRanks, comm->cudaDev, comm->nvmlDev, comm->busId, job->parent, job->childCount, job->color, job->key);
   } else {
     // the name for the replay tool is ncclCommInitRank for all the variations
     TRACE_CALL("ncclCommInitRank(%p, %d, 0x%llx, %d, %d)", comm, comm->nRanks, commIdHash, comm->rank, comm->cudaDev);
@@ -1657,7 +1676,7 @@ exit:
     /* assign it to user pointer. */
     COMPILER_ATOMIC_STORE(job->newcomm, comm, std::memory_order_release);
   }
-  free(parentRanks);
+  if (parentRanks) free(parentRanks);
   return res;
 fail:
   comm->initState = res;
@@ -2666,8 +2685,8 @@ static ncclResult_t ncclCommInitChildComm(ncclComm_t comm, ncclComm_t* newcomm, 
     NCCLCHECKGOTO(ncclCalloc(&job->excludeRanksList, excludeRanksCount), res, fail);
     memcpy(job->excludeRanksList, excludeRanksList, excludeRanksCount * sizeof(int));
   } else {
-    // each split has to lead to a unique comm, so increment the splitCount
-    job->splitCount = ++comm->splitCount;
+    // each split has to lead to a unique comm, so increment the childCount
+    job->childCount = ++comm->childCount;
     job->excludeRanksList = NULL;
   }
   job->cudaDev = comm->cudaDev;
@@ -2710,6 +2729,187 @@ exit:
   if (newcomm && *newcomm) NVTX3_RANGE_ADD_PAYLOAD(CommShrink, NcclNvtxParamsCommShrinkSchema, NVTX3_PAYLOAD(comm->commHash, comm->nRanks, comm->rank, comm->cudaDev, excludeRanksCount));
 
   return res;
+}
+
+NCCL_API(ncclResult_t, ncclCommGetUniqueId, ncclComm_t comm, ncclUniqueId* uniqueId);
+ncclResult_t ncclCommGetUniqueId(ncclComm_t comm, ncclUniqueId* uniqueId) {
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
+  NCCLCHECK(ncclCommEnsureReady(comm));
+  NCCLCHECK(PtrCheck(uniqueId, "CommGetUniqueId", "uniqueId"));
+
+  struct ncclBootstrapHandle growHandle;
+  NCCLCHECK(bootstrapGetUniqueId(&growHandle, comm));
+  
+  // Broadcast the grow handle to boundary ranks (rank 0 and N-1)
+  NCCLCHECK(bcastGrowHandle(&growHandle, comm, /*isRoot=*/true));
+
+  memset(uniqueId, 0, sizeof(ncclUniqueId));
+  memcpy(uniqueId, &growHandle, sizeof(growHandle));
+  return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclCommGrow, ncclComm_t comm, int nRanks, const ncclUniqueId* uniqueId, int rank, ncclComm_t* newcomm, ncclConfig_t* config);
+ncclResult_t ncclCommGrow(ncclComm_t comm, int nRanks, const ncclUniqueId* uniqueId, int rank, ncclComm_t* newcomm, ncclConfig_t* config) {
+  NVTX3_RANGE(NcclNvtxParamsCommGrow)
+
+  if (newcomm == NULL) return ncclInvalidArgument;
+  if (nRanks <= 0) {
+    WARN("ncclCommGrow: total ranks must be positive, got %d", nRanks);
+    return ncclInvalidArgument;
+  }
+  if (comm && nRanks <= comm->nRanks) {
+    WARN("ncclCommGrow: total ranks %d is less than current ranks %d", nRanks, comm->nRanks);
+    return ncclInvalidArgument;
+  }
+
+  ncclResult_t res = ncclSuccess;
+  bool isExistingRank = (comm != NULL);
+  struct ncclCommInitRankAsyncJob *job = NULL;
+  ncclComm_t newComm = NULL;
+  struct ncclBootstrapHandle recvHandle;
+
+  *newcomm = NULL;  // Initialize output parameter early in case of early errors
+
+  NCCLCHECK(ncclGroupStartInternal());
+
+  if (isExistingRank) {
+    NCCLCHECKGOTO(CommCheck(comm, __func__, "comm"), res, exit);
+    NCCLCHECKGOTO(ncclCommEnsureReady(comm), res, exit);
+    if (rank != -1) {
+      WARN("ncclCommGrow: existing ranks must pass rank=-1, got %d", rank);
+      res = ncclInvalidArgument;
+      goto exit;
+    }
+
+    // each grow/shrink/split has to lead to a unique comm->magic value, increment before using to be consistent with ncclCommInitChildComm
+    ++comm->childCount;
+
+    // Only boundary ranks (0 and N-1) receive grow handle from coordinator
+    if (comm->rank == 0 || comm->rank == comm->nRanks - 1) {
+      NCCLCHECKGOTO(bcastGrowHandle(&recvHandle, comm, /*isRoot=*/false), res, exit);
+      // verify the magic is the same as the one computed by the root
+      if (recvHandle.magic != hashCombine(comm->magic, comm->childCount)) {
+        WARN("ncclCommGrow: magic mismatch computed by the root, got %lx expected %lx",
+          recvHandle.magic, hashCombine(comm->magic, comm->childCount));
+        res = ncclInvalidArgument;
+        goto exit;
+      }
+      uniqueId = (const ncclUniqueId*)&recvHandle;
+    }
+  } else {
+    // New ranks: validate parameters
+    if (rank < 0) {
+      WARN("ncclCommGrow: new ranks must pass valid rank >= 0, got %d", rank);
+      res = ncclInvalidArgument;
+      goto exit;
+    }
+    if (uniqueId == NULL) {
+      WARN("ncclCommGrow: new ranks must pass non-NULL uniqueId");
+      res = ncclInvalidArgument;
+      goto exit;
+    }
+    if (rank >= nRanks) {
+      WARN("ncclCommGrow: new rank %d exceeds total ranks %d", rank, nRanks);
+      res = ncclInvalidArgument;
+      goto exit;
+    }
+
+    // Initialize NCCL and CUDA for new ranks (same sequence as ncclCommInitRank)
+    NCCLCHECKGOTO(ncclInitEnv(), res, exit);  // Environment plugins
+    (void)ncclCudaLibraryInit();               // CUDA driver and dlsym hooks
+    NCCLCHECKGOTO(ncclInit(), res, exit);      // Bootstrap network, CPU stack, GDR
+    if (ncclDebugLevel > NCCL_LOG_WARN || (ncclDebugLevel != NCCL_LOG_NONE && rank == 0)) {
+      static std::once_flag once;
+      std::call_once(once, showVersion);       // Version display
+    }
+    CUDACHECKGOTO(cudaFree(NULL), res, exit);  // CUDA runtime initialization
+  }
+
+  INFO(NCCL_INIT, "ncclCommGrow: %s rank creating new communicator with %d total ranks",
+       isExistingRank ? "existing" : "new", nRanks);
+
+  // All ranks allocate a NEW comm structure for the grown communicator
+  NCCLCHECKGOTO(ncclCalloc(&newComm, 1), res, fail);
+  newComm->startMagic = newComm->endMagic = NCCL_MAGIC;
+
+  // All ranks allocate fresh resources for grown communicator
+  NCCLCHECKGOTO(ncclCalloc(&newComm->abortFlag, 1), res, fail);
+  NCCLCHECKGOTO(ncclCudaHostCalloc(&newComm->abortFlagDev, 1), res, fail);
+  NCCLCHECKGOTO(ncclCalloc(&newComm->abortFlagRefCount, 1), res, fail);
+  *newComm->abortFlagRefCount = 1;
+
+  // Configure the new communicator
+  if (isExistingRank && config == NULL) {
+    NCCLCHECKGOTO(copyCommConfig(newComm, comm), res, fail);
+  } else {
+    NCCLCHECKGOTO(parseCommConfig(newComm, config), res, fail);
+  }
+
+  newComm->initState = ncclInProgress;
+  *newcomm = newComm;
+
+  NEW_NOTHROW_GOTO(job, ncclCommInitRankAsyncJob, res, fail);
+  job->nId = (uniqueId != NULL) ? 1 : 0;
+  if (job->nId == 1) {
+    NCCLCHECKGOTO(ncclCalloc(&job->commId, 1), res, fail);
+  }
+  snprintf(job->funcName, NCCL_COMMINIT_FUNCNAME_LEN, "ncclCommGrow");
+
+  if (isExistingRank) {
+    // Existing rank: new comm, parent is old comm
+    job->parent = comm;
+    job->cudaDev = comm->cudaDev;
+    job->myrank = comm->rank;  // Keep same rank in expanded comm
+  } else {
+    // New rank: new comm, no parent
+    int device;
+    CUDACHECK(cudaGetDevice(&device));
+    job->parent = NULL;
+    job->cudaDev = device;
+    job->myrank = rank;
+  }
+
+  // All ranks use the newly allocated comm
+  job->comm = newComm;
+
+  if (job->nId == 1) memcpy(job->commId, uniqueId, sizeof(ncclUniqueId));
+  job->nranks = nRanks;
+  job->newcomm = newcomm;
+  job->isGrow = 1;
+  job->color = 0;
+  job->key = job->myrank;
+  NCCLCHECKGOTO(ncclAsyncLaunch((struct ncclAsyncJob*)job, ncclCommInitRankFunc, NULL, childCommCleanupJob, newComm), res, fail);
+
+exit:
+  if (*newcomm) {
+    uint64_t parentHash = isExistingRank ? comm->commHash : 0;
+    NVTX3_RANGE_ADD_PAYLOAD(CommGrow, NcclNvtxParamsCommGrowSchema, 
+      NVTX3_PAYLOAD((*newcomm)->commHash, parentHash, nRanks, (*newcomm)->rank, (*newcomm)->cudaDev));
+  }
+  (void)ncclGroupErrCheck(res);
+  NCCLCHECK(ncclGroupEndInternal());
+  return res;
+
+fail:
+  if (job) {
+    if (job->commId) {
+      free(job->commId);
+      job->commId = NULL;
+    }
+    delete job;
+  }
+  // Clean up newly allocated comm on failure
+  if (newComm) {
+    // Only free abort resources if we allocated them (not shared)
+    if (!isExistingRank || !comm->shareResources) {
+      free(newComm->abortFlag);
+      if (newComm->abortFlagDev) (void)ncclCudaHostFree((void*)newComm->abortFlagDev);
+      free(newComm->abortFlagRefCount);
+    }
+    free(newComm);
+    if (newcomm) *newcomm = NULL;
+  }
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclCommSplit, ncclComm_t comm, int color, int key, ncclComm_t *newcomm, ncclConfig_t *config);

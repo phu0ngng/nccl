@@ -114,6 +114,13 @@ uint64_t getHostHash(void) {
   return hostHashValue;
 }
 
+uint64_t hashCombine(uint64_t baseHash, uint64_t value) {
+  uint64_t hacc[2] = {1, 1};
+  eatHash(hacc, &baseHash);
+  eatHash(hacc, &value);
+  return digestHash(hacc);
+}
+
 /* Generate a hash of the unique identifying string for this process
  * that will be unique for both bare-metal and container instances
  * Equivalent of a hash of;

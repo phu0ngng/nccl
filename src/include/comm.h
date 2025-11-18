@@ -491,6 +491,7 @@ struct ncclComm {
   ncclCollNet_t* ncclCollNet;
   void* collNetContext;
   void* bootstrap;
+  bool isGrow; // true if this comm is created via ncclCommGrow
   // Bitmasks for ncclTransportP2pSetup
   uint64_t* connectSend;
   uint64_t* connectRecv;
@@ -694,7 +695,7 @@ struct ncclComm {
   int symmetricSupport;
   bool useNetPXN;
   bool useGdr;
-  int splitCount;
+  int childCount;
 
   struct ncclDevrState devrState; // The symmetric runtime state
   struct ncclSymkState symkState; // The symmetric kernels state (built on previous)
