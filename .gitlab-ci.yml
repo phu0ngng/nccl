@@ -1363,55 +1363,55 @@ unit_tests-theia:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-# unit_tests-bia:
-#   stage: unit_tests
-#   rules:
-#     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1")
-#       when: always
-#     - when: never
-#   needs: ["build-bia"]
-#   tags:
-#     - bia
-#   variables:
-#     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-#     NCCL_DEBUG: "WARN"
-#     CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
-#     SLURM_TIME: 20
-#     SLURM_PARTITION: batch
-#     NNODES: 1
-#     NGPUS: 4
-#     NP: 1
-#     NCCL_HOME: build-bia
-#     RUN_MODE: "SRUN_MPI"
-#     SLURM_ACCOUNT: coreai_libraries_nccl
-#     ENQUEUE_TESTS_ARGS: 1
-#     ENQUEUE_TESTS_FIFO: 0
-#     GRAPH_TESTS_DEFAULT: 1
-#     MEMLEAK_TESTS_DEFAULT: 1
-#     MEMLEAK_TESTS_NO_P2P: 1
-#     MEMLEAK_TESTS_NETWORK: 1
-#     FT_TESTS_DEFAULT: 1
-#     FT_TESTS_NO_P2P: 1
-#     FT_TESTS_NETWORK: 1
-#     PLUGIN_TESTS_NET_TUNER: 1
-#     LOG_ALGO_RS_TESTS: 1
-#     LOG_ALGO_AG_TESTS: 1
-#     PLUGIN_LOADING_TESTS: 1
-#     REGISTER_MEMCPY_TESTS: 1
-#     DEVAPI_WINDOW_STRESS_TESTS: 1
-#   script:
-#     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
-#     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
-#   after_script:
-#     - ./test/scripts/ci/finalize-junit.sh
-#   artifacts:
-#     when: always
-#     paths:
-#       - "failed/**"
-#       - "junit_results.xml"
-#     reports:
-#       junit: junit_results.xml
-#     expire_in: 48 hrs
+unit_tests-bia:
+  stage: unit_tests
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1")
+      when: always
+    - when: never
+  needs: ["build-bia"]
+  tags:
+    - bia
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: batch
+    NNODES: 1
+    NGPUS: 4
+    NP: 1
+    NCCL_HOME: build-bia
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 0
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
 
 ##
 ## Examples Validation Tests
