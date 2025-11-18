@@ -24,7 +24,7 @@ NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu  #kernel_test.cu
 #CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
-CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc intrusive_map_test.cc
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc intrusive_map_test.cc register_mix_a2a_ar.cc
 KCU_FILES := align_test.cu #kernel_test.cu
 CU_FILES += devapi_window_stress.cu
 ifeq ($(MPI),1)
@@ -240,6 +240,11 @@ ${DST_DIR}/comm_leak_test_multi: ${DST_DIR}/comm_leak_test_multi.o
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
 
 ${DST_DIR}/coll_leak_test_multi: ${DST_DIR}/coll_leak_test_multi.o
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
+
+${DST_DIR}/register_mix_a2a_ar: ${DST_DIR}/register_mix_a2a_ar.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^
