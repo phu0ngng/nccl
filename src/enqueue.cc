@@ -2844,15 +2844,11 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       struct ncclDevrWindow* recvWin;
       ncclDevrFindWindow(comm, info->sendbuff, &sendWin);
       ncclDevrFindWindow(comm, info->recvbuff, &recvWin);
-      bool ceImplemented = ncclCeImplemented(info->coll, info->op, info->datatype);
-      bool ceSymReg = true;
       // Append CE collective task if CE is supported and requested by user
       ncclSymRegType_t winRegType;
       NCCLCHECK(ncclGetSymRegType(sendWin, recvWin, &winRegType));
-      if (info->coll == ncclFuncAlltoAll || info->coll == ncclFuncAllGather || info->coll == ncclFuncScatter || info->coll == ncclFuncGather) {
-        if (winRegType != ncclSymSendRegRecvReg && winRegType != ncclSymSendNonregRecvReg) ceSymReg = false;
-      }
-      if (comm->symmetricSupport && comm->nNodes == 1 && ceSymReg && (comm->config.CTAPolicy & NCCL_CTA_POLICY_ZERO) && ceImplemented) {
+      bool ceAvailable = ncclCeAvailable(comm, info->coll, info->op, info->datatype, winRegType);
+      if ((comm->config.CTAPolicy & NCCL_CTA_POLICY_ZERO) && ceAvailable) {
         NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, opDev));
       }
       // Append kernel-based collective
@@ -2898,6 +2894,9 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
             }
           }
           NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root, allowUB));
+        } else if (ceAvailable && comm->symmetricSupport && info->coll == ncclFuncAllGather && info->count > 8*1024*1024 && comm->minCompCap >= 100) {
+          // Use CE for Allgather on Blackwell with size > 8MB
+          NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, opDev));
         } else {
           NCCLCHECK(collTaskAppend(comm, info, opDev));
         }
