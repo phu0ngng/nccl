@@ -2013,7 +2013,7 @@ apitest-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-bia"]
   tags:
     - bia
   variables:
@@ -2025,7 +2025,7 @@ apitest-bia:
     NNODES: 1
     NGPUS: 4
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: build-bia
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
@@ -2592,7 +2592,7 @@ perftest-single-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-bia"]
   tags:
     - bia
   variables:
@@ -2608,7 +2608,7 @@ perftest-single-bia:
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
-    NCCL_HOME: build
+    NCCL_HOME: build-bia
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -3028,7 +3028,7 @@ perftest-multi-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs: ["build-bia"]
   tags:
     - bia
   variables:
@@ -3043,7 +3043,7 @@ perftest-multi-bia:
     NP: 4
     SYMMETRIC: 1
     GRAPH: 0
-    NCCL_HOME: build
+    NCCL_HOME: build-bia
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
   script:
