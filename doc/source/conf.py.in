@@ -16,6 +16,7 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('..'))
 import sphinx_rtd_theme
+import sphinx
 import re
 import subprocess
 import os
@@ -48,6 +49,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.ifconfig',
     'sphinx.ext.extlinks',
+    'sphinx_rtd_theme',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -67,7 +69,7 @@ master_doc = 'index'
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = 'en-US'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -85,7 +87,6 @@ highlight_language = 'c++'
 # a list of builtin themes.
 #
 html_theme = 'sphinx_rtd_theme'
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -169,12 +170,15 @@ texinfo_documents = [
      'Miscellaneous'),
 ]
 
-
-# Fix text wrapping in tables
-# html_static_path = ['_static']
-
-html_context = {
-    'css_files': [
-        '_static/theme_overrides.css',  # override wide tables in RTD theme
-        ],
-     }
+# Fix text wrapping in tables with theme_overrides.css
+if sphinx.version_info[0] > 3:
+    html_static_path = ['_static']
+    html_css_files = ['theme_overrides.css']
+else:
+    html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
+    # using html_context like this breaks the theme's own css in later sphinx versions.
+    html_context = {
+        'css_files': [
+            '_static/theme_overrides.css',  # override wide tables in RTD theme
+            ],
+        }
