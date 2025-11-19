@@ -50,7 +50,7 @@ As mentioned above, this feature is intended to support the "expandable segments
 
 #### 1. Utility functions (added to src/include/alloc.h)
 
-Add multi-segment specific functions for freeing reserved memory (ncclCuMemFreeAddrMultiSegment, ncclCuMemFreeMultiSegment, ncclCudaFreeMultiSegment) and address range querying (ncclCuMemGetAddressRange). Stub fallbacks included for older CUDA versions. The implementation for ncclCuMemGetAddressRange is shown below. The other functions follow a similar pattern of using cuMemGetAddressRange.
+We modify existing functions for freeing reserved memory (ncclCuMemFreeAddr, ncclCuMemFree, ncclCudaFree) to include a numSegments parameter (default 1) to support freeing multi-segment memory. We also add a function for address range querying (ncclCuMemGetAddressRange) that supports multi-segment memory as a replacement for cuMemGetAddressRange. The implementation for ncclCuMemGetAddressRange is shown below. The other functions follow a similar pattern of using cuMemGetAddressRange.
 
 ```c
 // Get the base and size of all segments that span a given user buffer
