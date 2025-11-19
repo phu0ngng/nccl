@@ -30,7 +30,7 @@ CU_FILES += devapi_window_stress.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 
-CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu put_signal_ping_pong_gin.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_barrier_lsa.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu lsa_pointer_test.cu lsa_multimem_pointer_test.cu
+CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu put_signal_ping_pong_gin.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_barrier_lsa.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu lsa_pointer_test.cu lsa_multimem_pointer_test.cu multi_segment_test.cu
 endif
 CU_FILES += register_memcpyTest.cu
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
@@ -268,6 +268,11 @@ ${DST_DIR}/plugin_load: ${DST_DIR}/plugin_load.o
 	@printf "Linking %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -ldl -lcudart
+
+${DST_DIR}/multi_segment_test: ${DST_DIR}/multi_segment_test.o
+	@printf "Linking %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -lcudart -lcuda
 
 ${DST_DIR}/device_id_test: ${DST_DIR}/device_id_test.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@

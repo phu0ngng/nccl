@@ -790,11 +790,9 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
     NCCLCHECK(ncclRegFind(comm, sendbuff, sendbuffSize, &sendRegRecord));
     NCCLCHECK(ncclRegLocalIsValid(sendRegRecord, &sendIsValid));
     if (sendIsValid) {
-      CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)sendbuff));
-      if ((uint64_t)baseSend + baseSendSize < (uint64_t)sendbuff + sendbuffSize) {
-        // the virtual address is backed by multiple physical memory regions, just fall back to non-UB path
-        goto exit;
-      }
+      int numSegments = 0;
+      NCCLCHECK(ncclCuMemGetAddressRange((CUdeviceptr) sendbuff, sendbuffSize, (CUdeviceptr*)&baseSend, &baseSendSize, &numSegments));
+      if (numSegments > 1 && !ncclParamMultiSegmentRegister()) goto exit;
     }
   } else {
     sendIsValid = true;
@@ -804,11 +802,9 @@ ncclResult_t ncclNvlsLocalRegisterBuffer(struct ncclComm *comm, const void *send
     NCCLCHECK(ncclRegFind(comm, recvbuff, recvbuffSize, &recvRegRecord));
     NCCLCHECK(ncclRegLocalIsValid(recvRegRecord, &recvIsValid));
     if (recvIsValid) {
-      CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseRecv, &baseRecvSize, (CUdeviceptr)recvbuff));
-      if ((uint64_t)baseRecv + baseRecvSize < (uint64_t)recvbuff + recvbuffSize) {
-        // the virtual address is backed by multiple physical memory regions, just fall back to non-UB path
-        goto exit;
-      }
+      int numSegments = 0;
+      NCCLCHECK(ncclCuMemGetAddressRange((CUdeviceptr) recvbuff, recvbuffSize, (CUdeviceptr *)&baseRecv, &baseRecvSize, &numSegments));
+      if (numSegments > 1 && !ncclParamMultiSegmentRegister()) goto exit;
     }
   } else {
     recvIsValid = true;
@@ -850,20 +846,16 @@ ncclResult_t ncclNvlsGraphRegisterBuffer(
 
   *outRegBufUsed = 0;
   if (sendbuff) {
-    CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseSend, &baseSendSize, (CUdeviceptr)sendbuff));
-    if ((uint64_t)baseSend + baseSendSize < (uint64_t)sendbuff + sendbuffSize) {
-      // the virtual address is backed by multiple physical memory regions, just fall back to non-UB path
-      goto exit;
-    }
+    int numSegments = 0;
+    NCCLCHECK(ncclCuMemGetAddressRange((CUdeviceptr) sendbuff, sendbuffSize, (CUdeviceptr*)&baseSend, &baseSendSize, &numSegments));
+    if (numSegments > 1 && !ncclParamMultiSegmentRegister()) goto exit;
     NCCLCHECK(ncclCommGraphRegister(comm, baseSend, baseSendSize, (void**)&sendRegRecord));
   }
 
   if (recvbuff) {
-    CUCHECK(cuMemGetAddressRange((CUdeviceptr *)&baseRecv, &baseRecvSize, (CUdeviceptr)recvbuff));
-    if ((uint64_t)baseRecv + baseRecvSize < (uint64_t)recvbuff + recvbuffSize) {
-      // the virtual address is backed by multiple physical memory regions, just fall back to non-UB path
-      goto exit;
-    }
+    int numSegments = 0;
+    NCCLCHECK(ncclCuMemGetAddressRange((CUdeviceptr) recvbuff, recvbuffSize, (CUdeviceptr*)&baseRecv, &baseRecvSize, &numSegments));
+    if (numSegments > 1 && !ncclParamMultiSegmentRegister()) goto exit;
     NCCLCHECK(ncclCommGraphRegister(comm, baseRecv, baseRecvSize, (void**)&recvRegRecord));
   }
 

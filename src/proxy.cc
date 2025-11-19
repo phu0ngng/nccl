@@ -1253,6 +1253,19 @@ error:
   return ret;
 }
 
+ncclResult_t ncclProxyClientBatchQueryFdBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, int* localFds, int* rmtFds, int numSegments) {
+  ncclResult_t ret = ncclSuccess;
+  for (int segment = 0; segment < numSegments; segment++) {
+    NCCLCHECKGOTO(ncclProxyCallBlockingUDS(comm, proxyConn, ncclProxyMsgQueryFd, NULL, 0, (void*) &rmtFds[segment], sizeof(int), &localFds[segment], NULL), ret, fail);
+    // We have now received the converted fd for a segment over UDS
+    INFO(NCCL_PROXY, "UDS: ClientQueryFdBatch localFd %d tpRank %d remote fd %d sameProcess %d segment %d", localFds[segment], proxyConn->tpRank, rmtFds[segment], proxyConn->sameProcess, segment);
+  }
+exit:
+  return ret;
+fail:
+  goto exit;
+}
+
 ncclResult_t ncclProxyClientQueryFdBlocking(struct ncclComm* comm, struct ncclProxyConnector* proxyConn, int localFd, int* rmtFd) {
   ncclResult_t ret = ncclSuccess;
   NCCLCHECKGOTO(ncclProxyCallBlockingUDS(comm, proxyConn, ncclProxyMsgQueryFd, NULL, 0, (void*)rmtFd, sizeof(int), &localFd, NULL), ret, fail);
