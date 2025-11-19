@@ -1,16 +1,16 @@
-include pyproject.toml
-include setup.py
-include README.md
+# Include nccl package with all source files
+recursive-include nccl *.pyx *.pxd
 
-# Include Cython sources and headers for sdist only
-include nccl/bindings/_internal/*.pyx
-include nccl/bindings/_internal/*.pxd
-include nccl/bindings/*.pxd
-include nccl/bindings/*.pyx
+# Exclude directories not needed in sdist
+prune tests
+prune examples
+prune build_assets
+prune *.egg-info
 
-# Typing markers and stubs
-include nccl/bindings/*.pyi
+# Exclude development files from root and subdirectoriese x
+exclude Makefile
+exclude uv.lock
+global-exclude .gitignore .gitattributes
 
-# Exclude build artifacts and cache
-prune nccl/__pycache__
-global-exclude __pycache__/* *.pyc *.pyo *.stamp *.cpp *.c
+# Exclude compiled/generated files
+global-exclude *.so *.cpp *.c

@@ -1,19 +1,21 @@
 import os
+import re
+import subprocess
 from pathlib import Path
 
 from Cython.Build import cythonize
 from setuptools import setup, Extension
 
 
-CUDA_VARIANT = os.environ.get("CUDA_VARIANT")
+# Check CUDA_HOME is set and is a valid directory
+CUDA_HOME = os.environ.get("CUDA_HOME")
+if not CUDA_HOME:
+    raise SystemExit("Error: CUDA_HOME is not set")
 
-CUDA_HOME = os.environ.get("CUDA_HOME", "/usr/local/cuda")
-CUDA_INC = str(Path(CUDA_HOME, "include"))
-if not Path(CUDA_INC).exists():
-    raise SystemExit(
-        f"CUDA include directory not found: {CUDA_INC}\n"
-        f"Set CUDA_HOME=/path/to/cuda"
-    )
+cuda_path = Path(CUDA_HOME)
+if not cuda_path.exists() or not cuda_path.is_dir():
+    raise SystemExit(f"Error: CUDA_HOME does not exist or is not a directory: {CUDA_HOME}")
+CUDA_INC = str(cuda_path / "include")
 
 ext_modules = [
     "nccl.bindings.nccl"
@@ -88,28 +90,6 @@ ext_modules = [e for ext in ext_modules for e in calculate_modules(ext)]
 compiler_directives = {"embedsignature": True, "show_performance_hints": True}
 
 
-BASE_REQ = [
-    "packaging",
-    "numpy",
-    "cuda.core==0.4.1",
-]
-
-DEPS_CU12 = BASE_REQ + [
-    "nvidia-nccl-cu12",
-    "cuda-python>=12.0,<13.0",
-]
-DEPS_CU13 = BASE_REQ + [
-    "nvidia-nccl-cu13",
-    "cuda-python>=13.0,<14.0",
-]
-
-VARIANT_TO_REQ = {
-    "12": DEPS_CU12,
-    "13": DEPS_CU13,
-}
-INSTALL_REQUIRES = VARIANT_TO_REQ.get((CUDA_VARIANT or "").strip(), DEPS_CU12)
-
-
 setup(
     ext_modules=cythonize(
         ext_modules,
@@ -119,5 +99,4 @@ setup(
     ),
     zip_safe=False,
     options={"build_ext": {"inplace": False}},
-    install_requires=INSTALL_REQUIRES,
 )
