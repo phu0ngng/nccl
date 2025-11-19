@@ -1602,7 +1602,7 @@ apitest-GP100:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
-    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5672713
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -1638,7 +1638,6 @@ apitest-A40:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
-    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -2129,7 +2128,7 @@ perftest-GP100:
     SYMMETRIC: 1
     NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
-    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5672713
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
