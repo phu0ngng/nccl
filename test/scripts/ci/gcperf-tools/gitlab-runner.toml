@@ -93,7 +93,7 @@ sbatch = [
     "--cpus-per-task 36"
 ]
 
-CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-12.8.0"
+CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-13.0"
 NCCL_HOME = "${CI_PROJECT_DIR}/build-pre-tyche"
 NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build-pre-tyche/test/perf"
 MPI_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/openmpi-5.0.6"
@@ -106,10 +106,10 @@ sbatch = [
     "--cpus-per-task 36"
 ]
 
-CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-12.9"
+CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-13.0"
 NCCL_HOME = "${CI_PROJECT_DIR}/build-theia"
 NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build-theia/test/perf"
-HPCX_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/hpcx-v2.23-cuda12"
+HPCX_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/hpcx-v2.24-cuda13"
 LD_LIBRARY_PATH = '''${CUDA_HOME}/lib64:${NCCL_HOME}/lib:${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}'''
 
 prologue_commands = '''
