@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as _np
 from packaging.version import Version as _Version
 
-from nccl._version import version
+from nccl._version import __version__
 from nccl import bindings as _nccl_bindings
 
 __all__ = ["Version", "get_version", "UniqueId", "get_unique_id", "get_error_string"]
@@ -56,7 +56,7 @@ class Version:
             patch = v % 100
 
         self.nccl_version = _Version(f"{major}.{minor}.{patch}")
-        self.nccl4py_version = _Version(version)
+        self.nccl4py_version = _Version(__version__)
 
     def __repr__(self) -> str:
         return f"""
