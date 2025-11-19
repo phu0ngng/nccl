@@ -76,7 +76,6 @@ void AllReduceGetBw(size_t count, int typesize, double sec, double* algBw, doubl
 // set devComm reqs for allreduce device kernels
 bool AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs) {
   if (!reqs) return false;
-  memset(reqs, 0, sizeof(*reqs));
 
   switch(deviceImpl) {
     case 1: // allReduceLsaKernel

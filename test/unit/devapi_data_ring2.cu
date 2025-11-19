@@ -138,7 +138,7 @@ int main(int argc, char** argv) {
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
 
   ncclDevComm dcomm;
-  ncclDevCommRequirements reqs = {};
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = 2*BlockPerRank;
   reqs.ginCounterCount = BlockPerRank;
   reqs.ginForceEnable = true;

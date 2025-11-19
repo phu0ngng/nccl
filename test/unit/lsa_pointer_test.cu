@@ -142,8 +142,7 @@ int testLsaPointers(int my_rank, int total_ranks, int local_device) {
 
     // Create device communicator (without multimem requirement)
     ncclDevComm devComm;
-    ncclDevCommRequirements reqs;
-    memset(&reqs, 0, sizeof(reqs));
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.lsaBarrierCount = NCCL_DEVICE_CTA_COUNT;
     reqs.lsaMultimem = false; // Basic LSA, no multimem required
     NCCL_TRY(ncclDevCommCreate(comm, &reqs, &devComm));

@@ -121,11 +121,10 @@ int testLsaMultimemPointers(int my_rank, int total_ranks, int local_device) {
 
     // Create device communicator with team requirements to get multimem handle
     ncclDevComm devComm;
-    ncclDevCommRequirements reqs;
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     ncclTeamRequirements teamReqs;
     ncclMultimemHandle multimemHandle;
 
-    memset(&reqs, 0, sizeof(reqs));
     memset(&teamReqs, 0, sizeof(teamReqs));
     memset(&multimemHandle, 0, sizeof(multimemHandle));
 

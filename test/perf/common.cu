@@ -1145,7 +1145,7 @@ testResult_t threadInit(struct threadArgs* args) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   /* Create device communicators based on test-specific requirements */
   if (deviceImpl) {
-    ncclDevCommRequirements reqs;
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     if (!ncclTestEngine.getDevCommRequirements ||
         !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
       fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
@@ -2077,7 +2077,7 @@ testResult_t run() {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     /* Create device communicators based on test-specific requirements */
     if (deviceImpl) {
-      ncclDevCommRequirements reqs;
+      ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
       if (!ncclTestEngine.getDevCommRequirements ||
           !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
         fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
