@@ -1962,7 +1962,7 @@ static void jsonWriteMissingRank(int rank, const char* host, int pid, int cudaDe
   rasOutAppend("          \"host\": \"%s\",\n", host);
   rasOutAppend("          \"pid\": %d,\n", pid);
   rasOutAppend("          \"cuda_dev\": %d,\n", cudaDev);
-  rasOutAppend("          \"nvml_dev\": %d\n", nvmlDev);
+  rasOutAppend("          \"nvml_dev\": %d,\n", nvmlDev);
 
   // Status object.
   rasOutAppend("          \"status\": {\n");
