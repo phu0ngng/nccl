@@ -94,6 +94,7 @@ struct p2pCuMemProxyInfo {
 #include <sys/types.h>
 
 NCCL_PARAM(LegacyCudaRegister, "LEGACY_CUDA_REGISTER", 0);
+#define NCCL_P2P_MAX_PHYSICAL_SEGMENTS 8192
 
 /* Convert a PCI busId string into a local cudaDev device index (cf. CUDA_VISIBLE_DEVICES) */
 static int busIdToCudaDev(int64_t busId) {
@@ -806,12 +807,117 @@ static ncclResult_t p2pSendProxyProgress(struct ncclProxyState* proxyState, stru
   return ncclSuccess;
 }
 
+ncclResult_t ipcHandleMultiSegmentRegistration(CUdeviceptr userBuff, size_t userBuffSize, ncclComm* comm, struct ncclProxyConnector* proxyConn, size_t* totalMappedBufferSize, int* numSegments, struct p2pIpcExpInfo** ipcInfos) {
+  ncclResult_t ret = ncclSuccess;
+  *totalMappedBufferSize = 0;
+  *numSegments = 0;
+  CUdeviceptr userBuffStart = userBuff;
+  CUdeviceptr userBuffEnd = userBuffStart + userBuffSize;
+  CUdeviceptr mappedPtrEnd = userBuffStart;
+  CUdeviceptr tmpBase;
+  size_t tmpBaseSize;
+  CUmemGenericAllocationHandle* segmentHandles = nullptr;
+  int* expFds = nullptr;
+  int *impFds = nullptr;
+  int capacity = 2;
+  // Minimum of two segments in this codepath
+  NCCLCHECK(ncclCalloc(ipcInfos, capacity));
+  if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+    NCCLCHECK(ncclCalloc(&expFds, capacity));
+    for (int idx = 0; idx < capacity; idx++) {
+      expFds[idx] = -1;
+    }
+  }
+  NCCLCHECK(ncclCalloc(&segmentHandles, capacity));
+
+  while (mappedPtrEnd < userBuffEnd) {
+    int segment = *numSegments;
+    if (segment == capacity) {
+      capacity = capacity * 2;
+      NCCLCHECKGOTO(ncclRealloc(ipcInfos, segment, capacity), ret, fail);
+      if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+        NCCLCHECKGOTO(ncclRealloc(&expFds, segment, capacity), ret, fail);
+        for (int idx = segment; idx < capacity; idx++) {
+          expFds[idx] = -1;
+        }
+      }
+      NCCLCHECKGOTO(ncclRealloc(&segmentHandles, segment, capacity), ret, fail);
+    }
+    struct p2pIpcExpInfo* ipcInfo = *ipcInfos + segment;
+    CUCHECKGOTO(cuMemGetAddressRange(&tmpBase, &tmpBaseSize, mappedPtrEnd), ret, fail);
+    ipcInfo->size = tmpBaseSize;
+    CUCHECKGOTO(cuMemRetainAllocationHandle(&segmentHandles[segment], (void *) tmpBase), ret, fail);
+    // Increment numSegments here so that retained handles are released if exporting a segment fails
+    *numSegments = *numSegments + 1;
+    if (*numSegments > NCCL_P2P_MAX_PHYSICAL_SEGMENTS) {
+      INFO(NCCL_REG, "Number of segments exceeded maximum number of supported physical segments for p2p (%d). Skipping multi-segment registration.", NCCL_P2P_MAX_PHYSICAL_SEGMENTS);
+      ret = ncclInternalError;
+      goto fail;
+    }
+    if (proxyConn->sameProcess) {
+      memcpy(&ipcInfo->ipcDesc.memHandle, &segmentHandles[segment], sizeof(CUmemGenericAllocationHandle));
+    } else {
+      if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+        CUCHECKGOTO(cuMemExportToShareableHandle(&expFds[segment], segmentHandles[segment], ncclCuMemHandleType, 0), ret, fail);
+      } else {
+        CUCHECKGOTO(cuMemExportToShareableHandle(&ipcInfo->ipcDesc.cuDesc.handle, segmentHandles[segment], ncclCuMemHandleType, 0), ret, fail);
+      }
+    }
+
+    *totalMappedBufferSize += tmpBaseSize;
+    mappedPtrEnd = tmpBase + tmpBaseSize;
+  }
+
+  if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+    NCCLCHECKGOTO(ncclCalloc(&impFds, *numSegments), ret, fail);
+    NCCLCHECKGOTO(ncclProxyClientBatchQueryFdBlocking(comm, proxyConn, expFds, impFds, *numSegments), ret, fail);
+  }
+  for (int segment = 0; segment < *numSegments; segment++) {
+    struct p2pIpcExpInfo* ipcInfo = *ipcInfos + segment;
+     if (!proxyConn->sameProcess) {
+      if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+        ipcInfo->impFd = impFds[segment];
+        close(expFds[segment]);
+        expFds[segment] = -1;
+      }
+    }
+    CUCHECKGOTO(cuMemRelease(segmentHandles[segment]), ret, fail);
+  }
+
+  TRACE(NCCL_REG, "Populated multi-segment IPC infos. totalMappedBufferSize : %zu, Num segments : %d", *totalMappedBufferSize, *numSegments);
+
+exit:
+  free(expFds);
+  free(impFds);
+  free(segmentHandles);
+  return ret;
+fail:
+  if (ipcInfos && *ipcInfos) {
+    free(*ipcInfos);
+    *ipcInfos = nullptr;
+  }
+  for (int segment = 0; segment < *numSegments; segment++) {
+    if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+      if (expFds[segment] != -1) {
+        close(expFds[segment]);
+        expFds[segment] = -1;
+      }
+    }
+    CUCHECKIGNORE(cuMemRelease(segmentHandles[segment]));
+  }
+  goto exit;
+}
+
+
 static ncclResult_t ipcRegisterBuffer(ncclComm* comm, const void* userbuff, size_t buffSize, int* peerRanks, int nPeers, ncclIpcRegType type, struct ncclReg* regRecord, int* regBufFlag, uintptr_t* offsetOut, uintptr_t** peerRmtAddrsOut, bool* isLegacyIpc) {
-ncclResult_t ret = ncclSuccess;
+
+  ncclResult_t ret = ncclSuccess;
+  struct p2pIpcExpInfo* ipcInfo = nullptr;
   struct ncclIpcRegInfo* newInfo = NULL;
   uintptr_t* peerRmtAddrs = NULL;
   int legacyIpcCap = 0;
   size_t baseSize = 0;
+  size_t totalMappedSize = 0;
   void* baseAddr = NULL;
   bool needUpdate = false;
 
@@ -829,16 +935,26 @@ ncclResult_t ret = ncclSuccess;
         // We already have IPC info for peerLocalRank, no need to register it, we can reuse it
         *regBufFlag = 1;
         if (isLegacyIpc) *isLegacyIpc = regRecord->ipcInfos[peerLocalRank]->impInfo.legacyIpcCap;
-        INFO(NCCL_REG, "rank %d - IPC reuse buffer %p size %ld (baseAddr %p size %ld) to peer %d regAddr %p", comm->rank, userbuff, buffSize, (void*)regRecord->begAddr, regRecord->endAddr - regRecord->begAddr, peerRank, regRecord->ipcInfos[peerLocalRank]->impInfo.rmtRegAddr);
+        INFO(NCCL_REG, "rank %d - IPC reuse buffer %p size %zu (baseAddr %p size %zu numSegments %d) to peer %d regAddr %p", comm->rank, userbuff, buffSize, (void*)regRecord->begAddr, regRecord->endAddr - regRecord->begAddr, regRecord->ipcInfos[peerLocalRank]->impInfo.numSegments, peerRank, regRecord->ipcInfos[peerLocalRank]->impInfo.rmtRegAddr);
       } else {
         // Register buffer with peerLocalRank
         struct ncclProxyConnector* proxyConn = NULL;
-        struct p2pIpcExpInfo ipcInfo;
+        int numSegments = 1;
+        bool multiSegment = false;
 
         if (baseAddr == NULL) {
           CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr*)&baseAddr, &baseSize, (CUdeviceptr)userbuff), ret, fail);
           CUCHECKGOTO(cuPointerGetAttribute((void*)&legacyIpcCap, CU_POINTER_ATTRIBUTE_IS_LEGACY_CUDA_IPC_CAPABLE, (CUdeviceptr)baseAddr), ret, fail);
         }
+
+        if ((uint64_t)baseAddr + baseSize < (uint64_t)userbuff + buffSize) multiSegment = true;
+        if (multiSegment && (!ncclCuMemEnable() || !ncclParamMultiSegmentRegister())) goto exit;
+
+        if (!multiSegment) {
+          NCCLCHECKGOTO(ncclCalloc(&ipcInfo, 1), ret, fail);
+          totalMappedSize = baseSize;
+        }
+
         if (comm->gproxyConn[peerRank].initialized == false)
           NCCLCHECKGOTO(ncclProxyConnect(comm, TRANSPORT_P2P, 1, peerRank, &comm->gproxyConn[peerRank]), ret, fail);
         proxyConn = &comm->gproxyConn[peerRank];
@@ -846,40 +962,44 @@ ncclResult_t ret = ncclSuccess;
         // Get the mem handle for that buffer. It may have been allocated through cudaMalloc in which case we'll
         // get the CUDA legacy mem handle, or through cuMem*.
         if (ncclCuMemEnable()) {
-          CUmemGenericAllocationHandle handle;
-          if (CUPFN(cuMemRetainAllocationHandle(&handle, baseAddr)) != CUDA_SUCCESS) {
-            // if cuMem* export fails, retry legacy export
-            if (comm->directMode || !ncclParamLegacyCudaRegister()) goto fail;
-            CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
-            ipcInfo.legacyIpcCap = true;
-            if (isLegacyIpc) *isLegacyIpc = true;
+          if (multiSegment) {
+            NCCLCHECKGOTO(ipcHandleMultiSegmentRegistration((CUdeviceptr) userbuff, buffSize, comm, proxyConn, &totalMappedSize, &numSegments, &ipcInfo), ret, fail);
           } else {
-            ipcInfo.legacyIpcCap = false;
-            if (isLegacyIpc) *isLegacyIpc = false;
-            // cuMem* export to file descriptor or fabric handle
-            if (proxyConn->sameProcess) {
-              memcpy(&ipcInfo.ipcDesc.memHandle, &handle, sizeof(CUmemGenericAllocationHandle));
+            CUmemGenericAllocationHandle handle;
+            if (CUPFN(cuMemRetainAllocationHandle(&handle, baseAddr)) != CUDA_SUCCESS) {
+              // if cuMem* export fails, retry legacy export
+              if (comm->directMode || !ncclParamLegacyCudaRegister()) goto fail;
+              CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo->ipcDesc.devIpc, baseAddr), ret, fail);
+              ipcInfo->legacyIpcCap = true;
+              if (isLegacyIpc) *isLegacyIpc = true;
             } else {
-              if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
-                int expFd = -1;
-                CUCHECKGOTO(cuMemExportToShareableHandle(&expFd, handle, ncclCuMemHandleType, 0), ret, fail);
-                NCCLCHECKGOTO(ncclProxyClientQueryFdBlocking(comm, proxyConn, expFd, &ipcInfo.impFd), ret, fail);
-                SYSCHECKGOTO(close(expFd), "close", ret, fail);
+              ipcInfo->legacyIpcCap = false;
+              if (isLegacyIpc) *isLegacyIpc = false;
+              // cuMem* export to file descriptor or fabric handle
+              if (proxyConn->sameProcess) {
+                memcpy(&ipcInfo->ipcDesc.memHandle, &handle, sizeof(CUmemGenericAllocationHandle));
               } else {
-                // Allow this to silently fail for cases where the user buff cannot be registered
-                if (CUPFN(cuMemExportToShareableHandle(&ipcInfo.ipcDesc.cuDesc.handle, handle, ncclCuMemHandleType, 0)) != CUDA_SUCCESS) {
-                  CUCHECKGOTO(cuMemRelease(handle), ret, fail);
-                  goto fail;
+                if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+                  int expFd = -1;
+                  CUCHECKGOTO(cuMemExportToShareableHandle(&expFd, handle, ncclCuMemHandleType, 0), ret, fail);
+                  NCCLCHECKGOTO(ncclProxyClientQueryFdBlocking(comm, proxyConn, expFd, &ipcInfo->impFd), ret, fail);
+                  SYSCHECKGOTO(close(expFd), "close", ret, fail);
+                } else {
+                  // Allow this to silently fail for cases where the user buff cannot be registered
+                  if (CUPFN(cuMemExportToShareableHandle(&ipcInfo->ipcDesc.cuDesc.handle, handle, ncclCuMemHandleType, 0)) != CUDA_SUCCESS) {
+                    CUCHECKGOTO(cuMemRelease(handle), ret, fail);
+                    goto fail;
+                  }
                 }
               }
+              CUCHECKGOTO(cuMemRelease(handle), ret, fail);
             }
-            CUCHECKGOTO(cuMemRelease(handle), ret, fail);
           }
         } else if (legacyIpcCap) {
           // legacy export
           if (comm->directMode || !ncclParamLegacyCudaRegister()) goto fail;
-          CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo.ipcDesc.devIpc, baseAddr), ret, fail);
-          ipcInfo.legacyIpcCap = true;
+          CUDACHECKGOTO(cudaIpcGetMemHandle(&ipcInfo->ipcDesc.devIpc, baseAddr), ret, fail);
+          ipcInfo->legacyIpcCap = true;
           if (isLegacyIpc) *isLegacyIpc = true;
         } else {
           // nothing works, just return
@@ -887,13 +1007,15 @@ ncclResult_t ret = ncclSuccess;
         }
 
         void* rmtRegAddr = NULL;
-        ipcInfo.size = baseSize;
-        ipcInfo.offset = regRecord->begAddr - (uintptr_t)baseAddr;
+        if (!multiSegment) {
+          ipcInfo->size = totalMappedSize;
+        }
+        ipcInfo->offset = regRecord->begAddr - (uintptr_t)baseAddr;
         // Now ipcInfo contains all necessary registration info. Start to register buffer on proxy side
         // and get the remote register address back.
         if (proxyConn) {
-          INFO(NCCL_REG, "rank %d - IPC registering buffer %p size %ld (baseAddr %p size %ld) to peer %d", comm->rank, userbuff, buffSize, (void*)regRecord->begAddr, ipcInfo.size, peerRank);
-          NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyConn, ncclProxyMsgRegister, &ipcInfo, sizeof(p2pIpcExpInfo), &rmtRegAddr, sizeof(void*)), ret, fail);
+          INFO(NCCL_REG, "rank %d - IPC registering buffer %p size %zu (baseAddr %p totalSize %zu numSegments %d) to peer %d", comm->rank, userbuff, buffSize, (void*)regRecord->begAddr, totalMappedSize, numSegments, peerRank);
+          NCCLCHECKGOTO(ncclProxyCallBlocking(comm, proxyConn, ncclProxyMsgRegister, ipcInfo, sizeof(p2pIpcExpInfo) * numSegments, &rmtRegAddr, sizeof(void*)), ret, fail);
         }
         if (rmtRegAddr) {
           NCCLCHECKGOTO(ncclCalloc(&newInfo, 1), ret, fail);
@@ -902,8 +1024,9 @@ ncclResult_t ret = ncclSuccess;
           newInfo->peerRank = peerRank;
           newInfo->baseAddr = baseAddr;
           newInfo->impInfo.rmtRegAddr = rmtRegAddr;
-          newInfo->impInfo.offset = ipcInfo.offset;
-          newInfo->impInfo.legacyIpcCap = ipcInfo.legacyIpcCap;
+          newInfo->impInfo.offset = ipcInfo->offset;
+          newInfo->impInfo.legacyIpcCap = ipcInfo->legacyIpcCap;
+          newInfo->impInfo.numSegments = numSegments;
           newInfo->ipcProxyconn = proxyConn;
           regRecord->ipcInfos[peerLocalRank] = newInfo;
           if (regRecord->regIpcAddrs.hostPeerRmtAddrs == NULL) {
@@ -912,7 +1035,7 @@ ncclResult_t ret = ncclSuccess;
           regRecord->regIpcAddrs.hostPeerRmtAddrs[peerLocalRank] = (uintptr_t)rmtRegAddr;
           needUpdate = true;
           *regBufFlag = 1;
-          INFO(NCCL_REG, "rank %d - IPC register buffer %p size %ld (baseAddr %p size %ld) to peer %d regAddr %p offsetOut %ld", comm->rank, userbuff, buffSize, (void*)regRecord->begAddr, ipcInfo.size, peerRank, rmtRegAddr, (uintptr_t)userbuff - regRecord->begAddr);
+          INFO(NCCL_REG, "rank %d - IPC register buffer %p size %zu (baseAddr %p totalSize %zu numSegments %d) to peer %d regAddr %p offsetOut %ld", comm->rank, userbuff, buffSize, (void*)regRecord->begAddr, totalMappedSize, numSegments, peerRank, rmtRegAddr, (uintptr_t)userbuff - regRecord->begAddr);
         }
       }
     }
@@ -942,6 +1065,7 @@ ncclResult_t ret = ncclSuccess;
     }
   }
 exit:
+  free(ipcInfo);
   return ret;
 fail:
   *regBufFlag = 0;
@@ -956,9 +1080,6 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
   ncclResult_t ret = ncclSuccess;
   struct ncclReg *regRecord = NULL;
   bool isValid = false;
-  void *baseAddr = NULL;
-  size_t baseSize = 0;
-
   *regBufFlag = 0;
   *offsetOut = 0;
   *peerRmtAddrsOut = NULL;
@@ -966,8 +1087,6 @@ ncclResult_t ncclIpcLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
     NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
     NCCLCHECKGOTO(ncclRegLocalIsValid(regRecord, &isValid), ret, fail);
     if (isValid) {
-      CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&baseAddr, &baseSize, (CUdeviceptr)userbuff), ret, fail);
-      if ((uint64_t)baseAddr + baseSize < (uint64_t)userbuff + buffSize) goto exit;
       NCCLCHECKGOTO(ipcRegisterBuffer(comm, userbuff, buffSize, peerRanks, nPeers, type, regRecord, regBufFlag, offsetOut, peerRmtAddrsOut, NULL), ret, fail);
     }
   }
@@ -1006,8 +1125,7 @@ ncclResult_t ncclIpcGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
   *offsetOut = 0;
   *peerRmtAddrsOut = NULL;
   if (comm && userbuff && buffSize > 0 && nPeers > 0) {
-    CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr*)&baseAddr, &baseSize, (CUdeviceptr)userbuff), ret, fail);
-    if ((uint64_t)baseAddr + baseSize < (uint64_t)userbuff + buffSize) goto exit;
+    NCCLCHECKGOTO(ncclCuMemGetAddressRange((CUdeviceptr) userbuff, buffSize, (CUdeviceptr*)&baseAddr, &baseSize, NULL), ret, fail);
     NCCLCHECKGOTO(ncclCommGraphRegister(comm, baseAddr, baseSize, (void**)&regRecord), ret, fail);
     NCCLCHECKGOTO(ipcRegisterBuffer(comm, userbuff, buffSize, peerRanks, nPeers, type, regRecord, regBufFlag, offsetOut, peerRmtAddrsOut, &isLegacyIpc), ret, fail);
     if (*regBufFlag) {
@@ -1047,14 +1165,22 @@ static ncclResult_t p2pProxyRegister(struct ncclProxyConnection* connection, str
   struct p2pIpcExpInfo* ipcExpInfo = (struct p2pIpcExpInfo*)reqBuff;
   void* regAddr = NULL;
   ncclResult_t ret = ncclSuccess;
-  bool mapped = false;
-  bool imported = false;
-  CUmemGenericAllocationHandle handle;
-
-  assert(sizeof(struct p2pIpcExpInfo) == reqSize);
+  assert(reqSize % sizeof(struct p2pIpcExpInfo) == 0);
+  int numSegments = reqSize/sizeof(struct p2pIpcExpInfo);
+  bool* mapped = nullptr;
+  bool* imported = nullptr;
+  CUmemGenericAllocationHandle* segmentHandles = nullptr;
+  size_t totalSize = 0;
+  NCCLCHECKGOTO(ncclCalloc(&segmentHandles, numSegments), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&mapped, numSegments), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&imported, numSegments), ret, fail);
+  for (int segment = 0; segment < numSegments; segment++) {
+    totalSize += ipcExpInfo[segment].size;
+  }
   assert(sizeof(void*) == respSize);
 
-  INFO(NCCL_REG, "Proxy rank %d register reqBuff %p size %ld offset %ld legacyIpcCap %d sameProcess %d", proxyState->tpRank, reqBuff, ipcExpInfo->size, ipcExpInfo->offset, ipcExpInfo->legacyIpcCap, connection->sameProcess);
+  INFO(NCCL_REG, "Proxy rank %d register reqBuff %p size %zu offset %ld legacyIpcCap %d sameProcess %d, totalSize : %zu", proxyState->tpRank, reqBuff, ipcExpInfo->size, ipcExpInfo->offset, ipcExpInfo->legacyIpcCap, connection->sameProcess, totalSize);
+
 
   // request peer passes all necessary buffer info to import. The proxy thread would register
   // the buffer locally and return register addr back
@@ -1063,41 +1189,55 @@ static ncclResult_t p2pProxyRegister(struct ncclProxyConnection* connection, str
     CUDACHECKGOTO(cudaIpcOpenMemHandle(&regAddr, ipcExpInfo->ipcDesc.devIpc, cudaIpcMemLazyEnablePeerAccess), ret, fail);
     regAddr = (void*)((uintptr_t)regAddr + ipcExpInfo->offset);
   } else {
-    // cuMem import
-    if (connection->sameProcess) {
-      // if proxy is same process as request peer, we just need to map the handle.
-      memcpy(&handle, &ipcExpInfo->ipcDesc.memHandle, sizeof(CUmemGenericAllocationHandle));
-    } else {
-      if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
-        CUCHECKGOTO(cuMemImportFromShareableHandle(&handle, (void*)(uintptr_t)ipcExpInfo->impFd, ncclCuMemHandleType), ret, fail);
-        SYSCHECKGOTO(close(ipcExpInfo->impFd), "close", ret, fail);
+    CUCHECKGOTO(cuMemAddressReserve((CUdeviceptr*)&regAddr, totalSize, /* alignment */ 0, /* addr */ 0, /* flags */ 0), ret, fail);
+    size_t offset = 0;
+    for (int segment = 0; segment < numSegments; segment++) {
+      // cuMem import
+      if (connection->sameProcess) {
+        // if proxy is same process as request peer, we just need to map the handle.
+        memcpy(&segmentHandles[segment], &ipcExpInfo[segment].ipcDesc.memHandle, sizeof(CUmemGenericAllocationHandle));
       } else {
-        CUCHECKGOTO(cuMemImportFromShareableHandle(&handle, (void*)&ipcExpInfo->ipcDesc.cuDesc, ncclCuMemHandleType), ret, fail);
+        if (ncclCuMemHandleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+          CUCHECKGOTO(cuMemImportFromShareableHandle(&segmentHandles[segment], (void*)(uintptr_t)ipcExpInfo[segment].impFd, ncclCuMemHandleType), ret, fail);
+          SYSCHECKGOTO(close(ipcExpInfo[segment].impFd), "close", ret, fail);
+        } else {
+          CUCHECKGOTO(cuMemImportFromShareableHandle(&segmentHandles[segment], (void*)&ipcExpInfo[segment].ipcDesc.cuDesc.handle, ncclCuMemHandleType), ret, fail);
+        }
       }
+      imported[segment] = true;
+      CUCHECKGOTO(cuMemMap((CUdeviceptr)regAddr + offset, ipcExpInfo[segment].size, /* offset */ 0, segmentHandles[segment], /* flags */ 0), ret, fail);
+      offset += ipcExpInfo[segment].size;
+      mapped[segment] = true;
     }
-    imported = true;
-    CUCHECKGOTO(cuMemAddressReserve((CUdeviceptr*)&regAddr, ipcExpInfo->size, /* alignment */ 0, /* addr */ 0, /* flags */ 0), ret, fail);
-    CUCHECKGOTO(cuMemMap((CUdeviceptr)regAddr, ipcExpInfo->size, /* offset */ 0, handle, /* flags */ 0), ret, fail);
-    mapped = true;
     // Allow access by the local GPU
     CUmemAccessDesc accessDesc = {};
     accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
     accessDesc.location.id = proxyState->cudaDev;
     accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-    CUCHECKGOTO(cuMemSetAccess((CUdeviceptr)regAddr, ipcExpInfo->size, &accessDesc, 1), ret, fail);
-    regAddr = (void*)((uintptr_t)regAddr + ipcExpInfo->offset);
+    CUCHECKGOTO(cuMemSetAccess((CUdeviceptr)regAddr, totalSize, &accessDesc, 1), ret, fail);
+    regAddr = (void*)((uintptr_t)regAddr + ipcExpInfo[0].offset);
   }
   INFO(NCCL_REG, "Proxy rank %d register success regAddr %p size %ld offset %ld legacyIpcCap %d sameProcess %d", proxyState->tpRank, regAddr, ipcExpInfo->size, ipcExpInfo->offset, ipcExpInfo->legacyIpcCap, connection->sameProcess);
 
 exit:
   memcpy(respBuff, (void*)&regAddr, sizeof(void*));
   *done = 1;
+  free(mapped);
+  free(imported);
+  free(segmentHandles);
   return ret;
 fail:
   if (!ipcExpInfo->legacyIpcCap) {
-    if (mapped) CUCHECK(cuMemUnmap((CUdeviceptr)regAddr, ipcExpInfo->size));
-    if (regAddr) CUCHECK(cuMemAddressFree((CUdeviceptr)regAddr, ipcExpInfo->size));
-    if (imported) CUCHECK(cuMemRelease(handle));
+      size_t offset = 0;
+      for (int segment = 0; segment < numSegments; segment++) {
+        if (mapped[segment]) {
+          CUCHECKIGNORE(cuMemUnmap((CUdeviceptr)regAddr + offset, ipcExpInfo[segment].size));
+        }
+        if (imported[segment]) {
+          CUCHECKIGNORE(cuMemRelease(segmentHandles[segment]));
+        }
+      }
+    if (regAddr) CUCHECKIGNORE(cuMemAddressFree((CUdeviceptr)regAddr, totalSize));
   }
   regAddr = NULL;
   goto exit;
@@ -1111,10 +1251,18 @@ static ncclResult_t p2pProxyDeregister(struct ncclProxyConnection* connection, s
   if (ipcInfo->legacyIpcCap) {
     CUDACHECKGOTO(cudaIpcCloseMemHandle((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
   } else {
-    if (connection->sameProcess) {
-      NCCLCHECKGOTO(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
+    if (ipcInfo->numSegments > 1) {
+      if (connection->sameProcess) {
+        NCCLCHECKGOTO(ncclCuMemFreeAddrMultiSegment((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), ipcInfo->numSegments), ret, fail);
+      } else {
+        NCCLCHECKGOTO(ncclCudaFreeMultiSegment((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), ipcInfo->numSegments), ret, fail);
+      }
     } else {
-      NCCLCHECKGOTO(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
+      if (connection->sameProcess) {
+        NCCLCHECKGOTO(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
+      } else {
+        NCCLCHECKGOTO(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
+      }
     }
   }
 

@@ -131,6 +131,18 @@ else
   echo -e "Disabled Net/Tuner TESTS Mixed test\n\n"
 fi
 
+if [[ ${MULTI_SEGMENT_REG_TESTS} -eq 1 ]] ; then
+  export NCCL_DEBUG=INFO
+  run_command "multi_segment_test_ib" "$RUN_MODE" 2 "--oversubscribe" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_MULTI_SEGMENT_REGISTER=1 NCCL_PXN_DISABLE=1 NCCL_WIN_ENABLE=0 NCCL_PROTO=SIMPLE NCCL_ALGO=ring NCCL_DEBUG_SUBSYS=REG" "$NCCL_HOME/test/unit/multi_segment_test" ""
+  run_command "multi_segment_test_p2p" "$RUN_MODE" 2 "--oversubscribe" "NCCL_MULTI_SEGMENT_REGISTER=1 NCCL_PXN_DISABLE=1 NCCL_WIN_ENABLE=0 NCCL_PROTO=SIMPLE NCCL_ALGO=ring NCCL_DEBUG_SUBSYS=REG" "$NCCL_HOME/test/unit/multi_segment_test" ""
+  run_command "multi_segment_test_disabled" "$RUN_MODE" 2 "--oversubscribe" "NCCL_MULTI_SEGMENT_REGISTER=0 NCCL_PXN_DISABLE=1 NCCL_WIN_ENABLE=0 NCCL_PROTO=SIMPLE NCCL_ALGO=ring NCCL_DEBUG_SUBSYS=REG" "$NCCL_HOME/test/unit/multi_segment_test" ""
+  #reset this back to old
+  export NCCL_DEBUG=$NCCL_DEBUG_OLD
+else
+  echo -e "Disabled Multi-segment registration tests\n\n"
+fi
+
+
 # PAT / Log Algo Tests
 if [[ ${LOG_ALGO_RS_TESTS} -eq 1 ]] ; then
   run_command "log_algo_rs_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/log_algo" "rs 128"
