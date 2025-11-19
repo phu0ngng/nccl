@@ -6,16 +6,16 @@
 
 # Pre-Tyche GPU Type: GB200
 # https://confluence.nvidia.com/display/DSE/Pre-Tyche+Hardware
-PRETYCHE_GPU_ARCHS="100,120"
+PRETYCHE_GPU_ARCHS="100"
 
 # NCCL CI deps
-PRETYCHE_CUDA_VERSION="12.8.0"
-PRETYCHE_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${PRETYCHE_CUDA_VERSION}"
+PRETYCHE_CUDA_VERSION="13.0.2"
+PRETYCHE_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-13.0"
 
 PRETYCHE_OPENMPI_VERSION="5.0.6"
 PRETYCHE_OPENMPI_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/openmpi-${PRETYCHE_OPENMPI_VERSION}"
 
-PRETYCHE_OS_VERSION="20.04"
+PRETYCHE_OS_VERSION="24.04"
 PRETYCHE_BUILD_TOOLS_VERSION="2.0.0"
 PRETYCHE_BUILD_IMAGE_VERSION="${PRETYCHE_BUILD_TOOLS_VERSION}-c${PRETYCHE_CUDA_VERSION}-u${PRETYCHE_OS_VERSION}"
 PRETYCHE_DOCKER_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"

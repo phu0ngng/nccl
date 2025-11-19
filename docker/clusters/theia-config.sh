@@ -19,8 +19,8 @@ function get_planned_reserved() {
 }
 
 ## CUDA Config
-THEIA_CUDA_MAJOR_VERSION="12"
-THEIA_CUDA_MINOR_VERSION="9"
+THEIA_CUDA_MAJOR_VERSION="13"
+THEIA_CUDA_MINOR_VERSION="0"
 THEIA_CUDA_VERSION="${THEIA_CUDA_MAJOR_VERSION}.${THEIA_CUDA_MINOR_VERSION}"
 THEIA_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${THEIA_CUDA_VERSION}"
 
@@ -41,7 +41,7 @@ function get_extra_path() {
 }
 
 ## MPI config
-THEIA_HPCX_TOOLKIT_VERSION="2.23"
+THEIA_HPCX_TOOLKIT_VERSION="2.24"
 THEIA_HPCX_TOOLKIT="/lustre/fsw/coreai_libraries_nccl/toolkits/hpcx-v${THEIA_HPCX_TOOLKIT_VERSION}-cuda${THEIA_CUDA_MAJOR_VERSION}"
 
 # Call utility function to set MPI env config
@@ -87,8 +87,8 @@ function get_build_command_bm() {
 # Container build config
 # Note: This doesn't work at the moment as the CTK in the image doesn't recognize gencode 103
 THEIA_BUILD_TOOLS_VERSION="2.0.0"
-THEIA_BUILD_TOOLS_CUDA_VERSION="12.8.0"
-THEIA_BUILD_TOOLS_OS_VERSION="20.04"
+THEIA_BUILD_TOOLS_CUDA_VERSION="13.0.2"
+THEIA_BUILD_TOOLS_OS_VERSION="24.04"
 THEIA_BUILD_TOOLS_IMAGE_VERSION="${THEIA_BUILD_TOOLS_VERSION}-c${THEIA_BUILD_TOOLS_CUDA_VERSION}-u${THEIA_BUILD_TOOLS_OS_VERSION}"
 THEIA_BUILD_TOOLS_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 
