@@ -520,17 +520,7 @@ doca_error_t doca_gpu_verbs_can_gpu_register_uar(void *db, bool *out_can_registe
     return DOCA_SUCCESS;
 }
 
-struct pair_ptr_cucontext_hash {
-    std::size_t operator()(const std::pair<void *, CUcontext> &p) const noexcept {
-        // Hash the pointer and the CUcontext (which is also a pointer type)
-        std::size_t h1 = std::hash<void *>{}(p.first);
-        std::size_t h2 = std::hash<CUcontext>{}(p.second);
-        // Combine the two hashes
-        return h1 ^ (h2 << 1);
-    }
-};
-static std::unordered_map<std::pair<void *, CUcontext>, unsigned int, pair_ptr_cucontext_hash>
-    registered_uar_refcount;
+static std::unordered_map<void *, unsigned int> registered_uar_refcount;
 static std::mutex registered_uar_mutex;
 
 doca_error_t doca_gpu_verbs_export_uar(uint64_t *sq_db, uint64_t **uar_addr_gpu) {
@@ -538,21 +528,12 @@ doca_error_t doca_gpu_verbs_export_uar(uint64_t *sq_db, uint64_t **uar_addr_gpu)
 
     void *ptr = nullptr;
     cudaError_t cuda_status = cudaSuccess;
-    CUresult cuda_drv_status = CUDA_SUCCESS;
     bool registered = false;
-    CUcontext current_ctx = nullptr;
-    std::pair<void *, CUcontext> uar_key;
+    void *uar_key;
 
     if (sq_db == nullptr || uar_addr_gpu == nullptr) return DOCA_ERROR_INVALID_VALUE;
 
-    // Get current CUDA context
-    cuda_drv_status = doca_verbs_wrapper_cuCtxGetCurrent(&current_ctx);
-    if (cuda_drv_status != CUDA_SUCCESS) {
-        DOCA_LOG(LOG_ERR, "Failed to get current CUDA context (err %d)", cuda_drv_status);
-        return DOCA_ERROR_DRIVER;
-    }
-
-    uar_key = std::make_pair((void *)sq_db, current_ctx);
+    uar_key = (void *)sq_db;
     if (registered_uar_refcount.find(uar_key) == registered_uar_refcount.end()) {
         registered_uar_refcount[uar_key] = 0;
     }
@@ -596,24 +577,14 @@ out:
 doca_error_t doca_gpu_verbs_unexport_uar(uint64_t *uar_addr_gpu) {
     std::lock_guard<std::mutex> lock(registered_uar_mutex);
 
-    CUcontext current_ctx = nullptr;
-    CUresult cuda_drv_status = CUDA_SUCCESS;
     cudaError_t cuda_status = cudaSuccess;
-    std::pair<void *, CUcontext> uar_key;
+    void *uar_key;
 
     if (uar_addr_gpu == nullptr) return DOCA_ERROR_INVALID_VALUE;
 
-    // Get current CUDA context
-    cuda_drv_status = doca_verbs_wrapper_cuCtxGetCurrent(&current_ctx);
-    if (cuda_drv_status != CUDA_SUCCESS) {
-        DOCA_LOG(LOG_ERR, "Failed to get current CUDA context (err %d)", cuda_drv_status);
-        return DOCA_ERROR_DRIVER;
-    }
-
-    uar_key = std::make_pair((void *)uar_addr_gpu, current_ctx);
+    uar_key = (void *)uar_addr_gpu;
     if (registered_uar_refcount.find(uar_key) == registered_uar_refcount.end()) {
-        DOCA_LOG(LOG_ERR, "UAR address %p with context %p not found in registered_uar_refcount",
-                 uar_addr_gpu, current_ctx);
+        DOCA_LOG(LOG_ERR, "UAR address %p not found in registered_uar_refcount", uar_addr_gpu);
         return DOCA_ERROR_INVALID_VALUE;
     }
     registered_uar_refcount[uar_key]--;
