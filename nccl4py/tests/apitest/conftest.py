@@ -2,10 +2,16 @@ import os
 import shutil
 import socket
 from dataclasses import dataclass
+from packaging.version import Version as _Version
 from mpi4py import MPI
 import pytest
 
 import nccl.core as nccl
+
+
+# Global NCCL library version for test skipping
+# Initialized once at test collection time
+NCCL_LIB_VERSION = nccl.get_version().nccl_version
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -87,3 +93,26 @@ def nccl_comm(uid_shared, rank_info):
     yield comm
 
     comm.destroy()
+
+
+def requires_nccl_version(min_version):
+    """
+    Helper to create skipif marker for NCCL version requirements.
+
+    Args:
+        min_version (str): Minimum required NCCL version (e.g., "2.19.0")
+
+    Returns:
+        pytest.mark.skipif: Pytest marker that skips test if NCCL version is too old
+
+    Example:
+        @requires_nccl_version("2.19.0")
+        def test_window_api(nccl_comm):
+            # Test code that requires NCCL >= 2.19.0
+            ...
+    """
+    return pytest.mark.skipif(
+        NCCL_LIB_VERSION < _Version(min_version),
+        reason=f"Requires NCCL >= {min_version} (found {NCCL_LIB_VERSION})"
+    )
+

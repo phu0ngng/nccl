@@ -8,6 +8,7 @@ import pytest
 import numpy as np
 
 import nccl.core as nccl
+from conftest import requires_nccl_version
 
 try:
     import cupy as cp
@@ -372,6 +373,7 @@ def test_reduce_scatter(nccl_comm, rank_info, allocator):
     assert np.array_equal(result, expected), f"{allocator} (in-place): expected {expected}, got {result}"
 
 
+@requires_nccl_version("2.28.3")
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
 def test_all_to_all(nccl_comm, rank_info, allocator):
@@ -409,6 +411,7 @@ def test_all_to_all(nccl_comm, rank_info, allocator):
     assert np.array_equal(result, expected), f"{allocator} (stream=0): expected {expected}, got {result}"
 
 
+@requires_nccl_version("2.28.3")
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
 def test_gather(nccl_comm, rank_info, allocator):
@@ -464,6 +467,7 @@ def test_gather(nccl_comm, rank_info, allocator):
         assert np.array_equal(result, expected), f"{allocator} (in-place): expected {expected}, got {result}"
 
 
+@requires_nccl_version("2.28.3")
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
 def test_scatter(nccl_comm, rank_info, allocator):

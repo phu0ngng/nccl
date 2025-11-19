@@ -1,6 +1,7 @@
 """API tests for interop module - requires GPU."""
 import pytest
 import numpy as np
+from conftest import requires_nccl_version
 
 try:
     import torch
@@ -194,6 +195,7 @@ def test_cupy_empty_allocates_with_nccl():
     assert array_f.flags['F_CONTIGUOUS']
 
 
+@requires_nccl_version("2.19.3")
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not installed")
 def test_register_tensor_buffer(nccl_comm):
     """Test register_buffer with real NCCL."""
@@ -207,6 +209,7 @@ def test_register_tensor_buffer(nccl_comm):
     assert not handle.is_valid
 
 
+@requires_nccl_version("2.19.3")
 @pytest.mark.skipif(not HAS_CUPY, reason="CuPy not installed")
 def test_register_cupy_buffer(nccl_comm):
     """Test register_buffer with real NCCL."""
