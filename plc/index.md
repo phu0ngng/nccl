@@ -5,6 +5,7 @@
 <!------------------------------------->
 ## version 2.29
 
+- [NCCL4Py](items/id_eb5665f4/NCCL4Py.md)
 - [NCCL Zero-SM Put API](items/id_63e03463/NCCL_Zero-SM_Put_API.md)
 - [Host accessible Multimem LSA pointers](items/id_FCF38D36/Host_accessible_Multimem_LSA_pointers.md)
 - [LLVM IR for NCCL Device APIs](items/id_e395f665/LLVM_IR_for_NCCL_Device_APIs.md)
@@ -166,7 +167,6 @@
 
 - [CUDA_GRAPH](items/11/CUDA_GRAPH.md)
 - [Oneshot algorithm](items/13/Oneshot_algorithm.md)
-- [NCCL4Py](items/id_eb5665f4/NCCL4Py.md)
 <!-- V2_9_DO_NOT_MOVE -->
 
 <!------------------------------------->
