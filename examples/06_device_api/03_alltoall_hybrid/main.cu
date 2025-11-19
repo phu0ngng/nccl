@@ -188,8 +188,7 @@ void* hybridAlltoAll(int my_rank, int total_ranks, int local_device, int devices
 
   // Create device communicator with both LSA and GIN support
   ncclDevComm devComm;
-  ncclDevCommRequirements reqs;
-  memset(&reqs, 0, sizeof(reqs));
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.lsaBarrierCount = NCCL_DEVICE_CTA_COUNT;  // LSA barriers for local synchronization
   reqs.railGinBarrierCount = NCCL_DEVICE_CTA_COUNT;  // GIN barriers for network synchronization
   reqs.ginSignalCount = 1;  // GIN signals for completion detection

@@ -222,7 +222,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
   struct ncclSymkState* symk = &comm->symkState;
   if (!symk->initialized) {
     symk->initialized = true;
-    struct ncclDevCommRequirements reqs = {};
+    struct ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.lsaMultimem = comm->nvlsSupport;
     reqs.lsaBarrierCount = ncclSymkMaxBlocks;
 

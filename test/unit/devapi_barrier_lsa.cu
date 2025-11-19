@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
 
   ncclDevComm dcomm;
-  { ncclDevCommRequirements reqs = {};
+  { ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.lsaBarrierCount = 16;
     reqs.lsaMultimem = false;
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &dcomm));

@@ -10,6 +10,7 @@ class ncclCommQueryProperties_test : public ncclCommon_test<char> {
       ncclCommon_test<char>::SetUp();
       comms = ncclCommon_getComms(&nVis);
       devComms = (ncclDevComm_t*)calloc(nVis, sizeof(ncclDevComm_t));
+      ASSERT_NE(nullptr, devComms);
     }
     void TearDown() override {
       if (devComms != nullptr) {
@@ -24,12 +25,17 @@ class ncclCommQueryProperties_test : public ncclCommon_test<char> {
 };
 
 TEST_F(ncclCommQueryProperties_test, basic) {
-  ncclCommProperties_t props;
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
   ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comms[0], &props));
 }
 
-TEST_F(ncclCommQueryProperties_test, null_comm) {
+TEST_F(ncclCommQueryProperties_test, test_unitialized_props) {
   ncclCommProperties_t props;
+  ASSERT_EQ(ncclInvalidUsage, ncclCommQueryProperties(comms[0], &props));
+}
+
+TEST_F(ncclCommQueryProperties_test, null_comm) {
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
   ASSERT_EQ(ncclInvalidArgument, ncclCommQueryProperties(nullptr, &props));
 }
 
@@ -38,9 +44,9 @@ TEST_F(ncclCommQueryProperties_test, null_props) {
 }
 
 TEST_F(ncclCommQueryProperties_test, test_gin_support) {
-  ncclCommProperties_t props;
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
   ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comms[0], &props));
-  ncclDevCommRequirements ginReqs = {};
+  ncclDevCommRequirements ginReqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   ginReqs.ginForceEnable = true;
 
   // We expect devComm creation to fail if we request gin resource but gin is not supported
@@ -58,10 +64,10 @@ TEST_F(ncclCommQueryProperties_test, test_gin_support) {
 
 
 TEST_F(ncclCommQueryProperties_test, test_multimem_support) {
-  ncclCommProperties_t props;
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
   ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comms[0], &props));
 
-  ncclDevCommRequirements nvlsReqs = {};
+  ncclDevCommRequirements nvlsReqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   nvlsReqs.lsaMultimem = true;
 
   // We expect devComm creation to fail if we request multimem resource but multimem is not supported

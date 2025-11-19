@@ -63,6 +63,12 @@ struct ncclCommProperties;
 typedef struct ncclCommProperties ncclCommProperties_t;
 
 struct ncclDevCommRequirements {
+  /* attributes that users should never touch. */
+  size_t size;
+  unsigned int magic;
+  unsigned int version;
+
+  /* attributes that users are able to customize. */
   ncclDevResourceRequirements_t* resourceRequirementsList;
   ncclTeamRequirements_t* teamRequirementsList;
 
@@ -79,6 +85,24 @@ struct ncclDevCommRequirements {
   int ginSignalCount; // Guaranteed to start at id=0
   int ginCounterCount; // Guaranteed to start at id=0
 };
+
+#define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                 \
+    sizeof(ncclDevCommRequirements_t),                /* size */               \
+    NCCL_API_MAGIC,                                   /* magic */              \
+    NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH), /* version */            \
+    nullptr,                                     /* resourceRequirementsList*/ \
+    nullptr,                                     /* teamRequirementsList */    \
+    false,                                       /* lsaMultimem */             \
+    0,                                           /* barrierCount */            \
+    0,                                           /* lsaBarrierCount */         \
+    0,                                           /* railGinBarrierCount */     \
+    0,                                           /* lsaLLA2ABlockCount */      \
+    0,                                           /* lsaLLA2ASlotCount */       \
+    0,                                           /* ginForceEnable */          \
+    0,                                           /* ginContextCount */         \
+    0,                                           /* ginSignalCount */          \
+    0,                                           /* ginCounterCount */         \
+}
 
 struct ncclDevResourceRequirements {
   ncclDevResourceRequirements_t* next;
@@ -97,7 +121,19 @@ struct ncclTeamRequirements {
   ncclMultimemHandle_t* outMultimemHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 
+#define NCCL_COMM_PROPERTIES_INITIALIZER {                               \
+  sizeof(ncclCommProperties_t),                    /* size */            \
+  NCCL_API_MAGIC,                                    /* magic */           \
+  NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH),  /* version */         \
+}
+
 struct ncclCommProperties {
+  /* internal use only */
+  size_t size;
+  unsigned int magic;
+  unsigned int version;
+
+  /* attributes for users. */
   bool multimemSupport;
   bool ginSupport;
 };

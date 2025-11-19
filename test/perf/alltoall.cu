@@ -58,7 +58,6 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 // set devComm reqs for alltoall device kernels
 bool AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs) {
   if (!reqs) return false;
-  memset(reqs, 0, sizeof(*reqs));
 
   switch(deviceImpl) {
     case 1: // NvlAlltoAllKernel

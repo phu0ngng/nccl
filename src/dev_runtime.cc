@@ -14,6 +14,7 @@
 #include <mutex>
 
 NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
+NCCL_PARAM(EnableVersionCheck, "ENABLE_VERSION_CHECK", 1);
 
 // Global window map using intrusive address map
 // Uses ncclDevrWindow directly (vidmem as key, next pointer embedded in struct)
@@ -988,12 +989,30 @@ ncclResult_t ncclDevrFindWindow(
   return ncclSuccess;
 }
 
+// Returns ncclInvalidUsage if the compiled version is greater than the runtime version and NCCL_ALLOW_OLD_VERSION is not set
+static ncclResult_t validateNcclVersion(int compiledVersion) {
+  int runtimeVersion;
+  NCCLCHECK(ncclGetVersion(&runtimeVersion));
+  if (compiledVersion > runtimeVersion && ncclParamEnableVersionCheck()) {
+    WARN("NCCL library version is too old. This application was compiled with NCCL version %d, but is running with NCCL library version %d.", compiledVersion, runtimeVersion);
+    return ncclInvalidUsage;
+  }
+  return ncclSuccess;
+}
+
 NCCL_API(ncclResult_t, ncclCommQueryProperties, ncclComm_t, ncclCommProperties_t*);
 ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* props) {
   if (comm == nullptr || props == nullptr) {
     WARN("Cannot query communicator info: null argument");
     return ncclInvalidArgument;
   }
+
+  if (props->magic != NCCL_API_MAGIC) {
+    WARN("Cannot get communicator properties: ncclCommProperties_t argument must be initialized via NCCL_COMM_PROPERTIES_INITIALIZER");
+    return ncclInvalidUsage;
+  }
+
+  NCCLCHECK(validateNcclVersion(props->version));
   props->multimemSupport = comm->nvlsSupport;
   props->ginSupport = comm->sharedRes->ginState.ncclGin != nullptr;
   return ncclSuccess;
@@ -1004,6 +1023,22 @@ ncclResult_t ncclDevCommCreate(
     ncclComm_t comm, struct ncclDevCommRequirements const* reqs,
     struct ncclDevComm* outDevComm
   ) {
+  if (reqs == nullptr) {
+    WARN("Cannot create device communicator: reqs argument is null");
+    return ncclInvalidArgument;
+  }
+  if (reqs->magic != NCCL_API_MAGIC) {
+    WARN("Cannot create device communicator: ncclDevCommRequirements_t argument must be initialized via NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER");
+    return ncclInvalidUsage;
+  }
+
+  NCCLCHECK(validateNcclVersion(reqs->version));
+
+  if (comm == nullptr) {
+    WARN("Cannot create device communicator: comm argument is null");
+    return ncclInvalidArgument;
+  }
+
   ncclResult_t ret = ncclSuccess;
   int saveDev;
   struct ncclDevrCommCreateTask* task = nullptr;

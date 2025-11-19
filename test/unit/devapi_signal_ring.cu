@@ -65,7 +65,8 @@ int main(int argc, char** argv) {
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
 
   ncclDevComm dcomm;
-  { ncclDevCommRequirements reqs = {};
+  { 
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.ginSignalCount = 1;
     reqs.ginForceEnable = true;
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &dcomm));

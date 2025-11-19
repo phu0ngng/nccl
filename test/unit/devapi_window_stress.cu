@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
   ncclDevComm dcomm[2];
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r < 2; r++) {
-    ncclDevCommRequirements reqs = {};
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     NCCLCHECK(ncclDevCommCreate(comm[r], &reqs, &dcomm[r]));
   }
   NCCLCHECK(ncclGroupEnd());

@@ -380,7 +380,7 @@ int main(int argc, char** argv) {
   NCCLCHECK(ncclCommWindowRegister(comm, buf, winSize, &win, 0));
 
   Args args;
-  { ncclDevCommRequirements reqs = {};
+  { ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.ginSignalCount = 2*BlockPerRank; // barrier signals
     reqs.ginSignalCount += BlockPerRank*nGlobalBlocks; // inbox signals
     reqs.ginForceEnable = true;

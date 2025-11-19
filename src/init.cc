@@ -1885,7 +1885,7 @@ static ncclResult_t parseCommConfig(ncclComm_t comm, ncclConfig_t *config) {
     memcpy((void*)&realSize, (void*)config, sizeof(size_t));
     realSize = realSize > sizeof(ncclConfig_t) ? sizeof(ncclConfig_t) : realSize;
     memcpy((void*)internalConfigPtr, (void*)config, realSize);
-    if (internalConfigPtr->magic != 0xcafebeef) {
+    if (internalConfigPtr->magic != NCCL_API_MAGIC) {
       WARN("ncclConfig_t argument not initialized via NCCL_CONFIG_INITIALIZER");
       ret = ncclInvalidArgument;
       goto fail;
