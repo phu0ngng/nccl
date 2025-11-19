@@ -399,9 +399,9 @@ unit_tests-P100:
     REGISTER_MIX_A2A_AR_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 0
-    LSA_POINTER_TESTS: 0
-    LSA_MULTIMEM_POINTER_TESTS: 0
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -451,9 +451,9 @@ unit_tests-P40:
     REGISTER_MIX_A2A_AR_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 0
-    LSA_POINTER_TESTS: 0
-    LSA_MULTIMEM_POINTER_TESTS: 0
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -503,9 +503,9 @@ unit_tests-GP100:
     REGISTER_MIX_A2A_AR_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 0
-    LSA_POINTER_TESTS: 0
-    LSA_MULTIMEM_POINTER_TESTS: 0
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -555,9 +555,9 @@ unit_tests-A40-single:
     REGISTER_MIX_A2A_AR_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 0
-    LSA_POINTER_TESTS: 0
-    LSA_MULTIMEM_POINTER_TESTS: 0
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -607,8 +607,9 @@ unit_tests-A40-dual:
     REGISTER_MIX_A2A_AR_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-    LSA_POINTER_TESTS: 0
-    LSA_MULTIMEM_POINTER_TESTS: 0
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -658,9 +659,9 @@ unit_tests-A100:
     REGISTER_MIX_A2A_AR_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 0
-    LSA_POINTER_TESTS: 0
-    LSA_MULTIMEM_POINTER_TESTS: 0
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -768,8 +769,12 @@ unit_tests-cw-dfw:
     LOG_ALGO_RS_TESTS: 1
     LOG_ALGO_AG_TESTS: 1
     PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -819,8 +824,8 @@ unit_tests-AWS_H100_EFA:
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
-    LSA_POINTER_TESTS: 0
-    LSA_MULTIMEM_POINTER_TESTS: 0
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # NVLS support is unstable so we disable it.
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -837,6 +842,7 @@ unit_tests-AWS_H100_EFA:
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
       export JUNIT=$JUNIT
+      export NCCL_NVLS_ENABLE=0
       export ENQUEUE_TESTS_ARGS=$ENQUEUE_TESTS_ARGS
       export ENQUEUE_TESTS_FIFO=$ENQUEUE_TESTS_FIFO
       export GRAPH_TESTS_DEFAULT=$GRAPH_TESTS_DEFAULT
@@ -850,8 +856,12 @@ unit_tests-AWS_H100_EFA:
       export LOG_ALGO_RS_TESTS=$LOG_ALGO_RS_TESTS
       export LOG_ALGO_AG_TESTS=$LOG_ALGO_AG_TESTS
       export PLUGIN_LOADING_TESTS=$PLUGIN_LOADING_TESTS
+      export REGISTER_MEMCPY_TESTS=$REGISTER_MEMCPY_TESTS
       export DEVICE_ID_TESTS=$DEVICE_ID_TESTS
       export HASHTABLE_TESTS=$HASHTABLE_TESTS
+      export DEVAPI_WINDOW_STRESS_TESTS=$DEVAPI_WINDOW_STRESS_TESTS
+      export LSA_POINTER_TESTS=$LSA_POINTER_TESTS
+      export LSA_MULTIMEM_POINTER_TESTS=$LSA_MULTIMEM_POINTER_TESTS
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
@@ -912,7 +922,7 @@ unit_tests-draco_oci:
     HASHTABLE_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
-    LSA_MULTIMEM_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Cluster lacks NVLS support.
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1058,8 +1068,6 @@ unit_tests-ipp6-a100:
     NP: 1
     NCCL_HOME: build
     RUN_MODE: "MPI"
-    DEVICE_ID_TESTS: 1
-    HASHTABLE_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -1075,11 +1083,11 @@ unit_tests-ipp6-a100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     REGISTER_MIX_A2A_AR_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-    LSA_POINTER_TESTS: 0
-    LSA_MULTIMEM_POINTER_TESTS: 0
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1118,7 +1126,7 @@ unit_tests-gin-A100:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
-    GIN_TESTS_LARGE_SIZE: 1
+    GIN_TESTS_LARGE_SIZE: 0 # Disable due to https://nvbugspro.nvidia.com/bug/5385457
   script:
     - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1200,7 +1208,7 @@ unit_tests-gin-ipp6-a100:
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
-    GIN_TESTS_LARGE_SIZE: 0 # Disable due to https://nvbugspro.nvidia.com/bug/5534804
+    GIN_TESTS_LARGE_SIZE: 1
   script:
     - source docker/clusters/ipp6-slurm-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1377,9 +1385,9 @@ unit_tests-theia:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     REGISTER_MIX_A2A_AR_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
   script:
@@ -1504,6 +1512,7 @@ apitest-P100:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -1539,6 +1548,7 @@ apitest-P40:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -1577,6 +1587,7 @@ apitest-GP100:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -1612,6 +1623,7 @@ apitest-A40:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -2011,7 +2023,7 @@ perftest-P100:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "MPI"
+    RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: "P100"
     MAX: "1G"
     MAX_GROUP: "128M"
@@ -2019,10 +2031,11 @@ perftest-P100:
     ENABLE_NVLS: 0
     GRAPH: 0
     NGPUS: 8
+    NP: 8
     SYMMETRIC: 1
     NCCL_HOME: build
-    SALLOC: "salloc --exclusive -t 00:30:00 -N ${NNODES} -n ${NGPUS} -p ${SLURM_PARTITION}"
     NO_LOOPBACK_NETWORKING: 1
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
   script:
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -2061,6 +2074,7 @@ perftest-P40:
     SYMMETRIC: 1
     NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -2095,9 +2109,12 @@ perftest-GP100:
     GRAPH: 2
     NGPUS: 8
     NP: 8
+    # Symmetric memory is not actually supported on this node but we want to
+    # test that NCCL falls back gracefully.
     SYMMETRIC: 1
     NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
+    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5668856
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
@@ -2160,9 +2177,6 @@ perftest-A40:
     NGPUS: 2
     NP: 2
     SYMMETRIC: 1
-    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
-    # TODO: re-enable device API tests after this fix is merged.
-    DEVICE_API: 0
     NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2200,9 +2214,6 @@ perftest-A100:
     NGPUS: 8
     NP: 8
     SYMMETRIC: 1
-    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
-    # TODO: re-enable device API tests after this fix is merged.
-    DEVICE_API: 0
     NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2371,7 +2382,7 @@ perftest_single-draco_oci:
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
-    # Disable this test currently as it's affected by this GIN proxy bug: https://nvbugspro.nvidia.com/bug/5536500
+    # Disable this test currently as it's affected by the GIN proxy bug
     # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
     NCCL_HOME: build
@@ -2586,9 +2597,6 @@ multi-perftest-A40:
     GRAPH: 0
     NGPUS: 2
     NP: 2
-    # GC uses CUDA 11 currently which doesn't support NCCL symmetric memory registration: https://nvbugspro.nvidia.com/bug/5536500
-    # TODO: re-enable device API tests after this fix is merged.
-    DEVICE_API: 0
     NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2724,7 +2732,7 @@ perftest_multi-AWS_H100_EFA:
       export CI_JOB_NAME=${CI_JOB_NAME}
       export JUNIT=$JUNIT
       export SKIP_FT_FINALIZE=1
-      export DEVICE_API=0
+      export DEVICE_API=0 # No EFA support in GIN
       $TEST_CMD
       EOF
     - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
@@ -2765,7 +2773,7 @@ perftest_multi-draco_oci:
     NP: 8
     GRAPH: 0
     SKIP_FT_INIT: 1
-    # Disable this test currently as it's affected by this GIN proxy bug: https://nvbugspro.nvidia.com/bug/5536500
+    # Disable this test currently as it's affected by the GIN proxy bug
     # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
     NCCL_HOME: build
@@ -2847,8 +2855,6 @@ perftest-multi-pre-tyche:
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     ENABLE_MNNVL_TUNER_PLUGIN: 1
-    # Remove this once https://nvbugspro.nvidia.com/bug/5129632 is fixed to enable ring 1rpn registration tests
-    NO_LOOPBACK_NETWORKING: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
