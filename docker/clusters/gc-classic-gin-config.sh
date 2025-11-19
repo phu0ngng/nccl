@@ -20,7 +20,7 @@ GCCL_PLANNED_RESERVED="Reserved"
 DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools"
 
 #   Relevant paths for bare metal
-GCCL_OPENMPI_HOME="/home/nvshmem_shared/openmpi"
+GCCL_OPENMPI_HOME="/opt/mpi/openmpi-4.0.0"
 GCCL_ACTUAL_CUDA_VERSION="12.8"
 GCCL_CUDA_HOME="/usr/local/cuda-${GCCL_ACTUAL_CUDA_VERSION}"
 
