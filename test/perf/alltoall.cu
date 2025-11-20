@@ -56,7 +56,7 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
 // set devComm reqs for alltoall device kernels
-testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclCommProperties* commProperties) {
+testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclCommProperties* commProperties, const char** testSkipReason) {
   if (!reqs || !commProperties) return testInternalError;
 
   switch(deviceImpl) {
@@ -66,8 +66,8 @@ testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequireme
       return testSuccess;
     case 3: // GinAlltoAllKernel
     case 4: // HybridAlltoAllKernel (LSA+GIN)
-      if (!commProperties->ginSupport) {
-        fprintf(stderr, "This test requires GIN support, but GIN support is not enabled for this communicator.\n");
+      if (commProperties->ginType == NCCL_GIN_TYPE_NONE) {
+        *testSkipReason = "This test requires GIN support, but GIN support is not enabled for this communicator.\n";
         return testSkipped;
       }
       reqs->barrierCount = deviceCtaCount;

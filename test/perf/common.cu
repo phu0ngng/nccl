@@ -1153,10 +1153,13 @@ testResult_t threadInit(struct threadArgs* args) {
   if (deviceImpl) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
     ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
-    if (!ncclTestEngine.getDevCommRequirements) return testNotImplemented;
+    if (!ncclTestEngine.getDevCommRequirements) {
+      fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
+      return testNotImplemented;
+    }
     ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
     NCCLCHECK(ncclCommQueryProperties(args->comms[0][0], &commProperties));
-    TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties));
+    TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
 #else
     ncclDevCommRequirements reqs = {};
     if (!ncclTestEngine.getDevCommRequirements ||
@@ -1173,7 +1176,7 @@ testResult_t threadInit(struct threadArgs* args) {
         result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
         if (result != ncclSuccess) {
           NCCLCHECK(ncclGroupEnd());
-          return testInternalError;
+          return testNcclError;
         }
       }
     }
@@ -1183,7 +1186,7 @@ testResult_t threadInit(struct threadArgs* args) {
         TESTCHECK(waitCommStateBatch(args->comms[id], args->nGpus));
       }
     } else if (result != ncclSuccess) {
-      return testInternalError;
+      return testNcclError;
     }
   }
   // Capture memory used by test buffers
@@ -2097,14 +2100,18 @@ testResult_t run() {
     if (deviceImpl) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
       ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
-      if (!ncclTestEngine.getDevCommRequirements) return testNotImplemented;
+      if (!ncclTestEngine.getDevCommRequirements) {
+        fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
+        return testNotImplemented;
+      }
       ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
       NCCLCHECK(ncclCommQueryProperties(comms[0][0], &commProperties));
-      TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties));
+      TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
 #else
       ncclDevCommRequirements reqs = {};
       if (!ncclTestEngine.getDevCommRequirements ||
         !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
+        fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
         return testNotImplemented;
       }
 #endif
@@ -2116,7 +2123,7 @@ testResult_t run() {
           result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
           if (result != ncclSuccess) {
             NCCLCHECK(ncclGroupEnd());
-            return testInternalError;
+            return testNcclError;
           }
         }
       }
@@ -2126,7 +2133,7 @@ testResult_t run() {
           TESTCHECK(waitCommStateBatch(comms[id], nGpus * nThreads));
         }
       } else if (result != ncclSuccess) {
-        return testInternalError;
+        return testNcclError;
       }
     }
     int64_t deviceCommMaxMem = 0;
