@@ -301,6 +301,9 @@ ncclResult_t ncclProfilerStartP2pApiEvent(struct ncclInfo *info, bool isGraphCap
   if (COMPILER_EXPECT(ncclProfiler != NULL, 0) && (ncclProfilerApiState.eActivationMask & p2pApiMask)) {
     ncclProfiler->startEvent(info->comm->profilerContext, &ncclProfilerApiState.p2pApiEventHandle, &eDescr);
   }
+  if (isGraphCaptured && info->comm->config.graphUsageMode == 0) {
+    INFO(NCCL_P2P | NCCL_ENV, "Comm config graphUsageMode is set to %d but the user is capturing graphs on the stream. Violating graphUsageMode semantics can lead to hangs!", info->comm->config.graphUsageMode);
+  }
   return ncclSuccess;
 }
 
@@ -325,6 +328,9 @@ ncclResult_t ncclProfilerStartCollApiEvent(struct ncclInfo *info, bool isGraphCa
   int collApiMask = ncclProfileCollApi | ncclProfileColl | ncclProfileProxyOp | ncclProfileProxyStep | ncclProfileKernelCh | ncclProfileNetPlugin | ncclProfileCeColl | ncclProfileCeSync | ncclProfileCeBatch;
   if (COMPILER_EXPECT(ncclProfiler != NULL, 0) && (ncclProfilerApiState.eActivationMask & collApiMask)) {
     ncclProfiler->startEvent(info->comm->profilerContext, &ncclProfilerApiState.collApiEventHandle, &eDescr);
+  }
+  if (isGraphCaptured && info->comm->config.graphUsageMode == 0) {
+    INFO(NCCL_COLL | NCCL_ENV, "Comm config graphUsageMode is set to %d but the user is capturing graphs on the stream. Violating graphUsageMode semantics can lead to hangs!", info->comm->config.graphUsageMode);
   }
   return ncclSuccess;
 }
