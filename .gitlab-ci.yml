@@ -125,7 +125,7 @@ build-ipp6:
   tags:
     - ipp6-nccl-v3
   script:
-    - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic,bia
+    - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
   artifacts:
     paths:
       - build
