@@ -30,7 +30,7 @@ from pathlib import Path
 
 
 # cybind repository configuration
-CYBIND_COMMIT = "01e0f5b44e168578e87eb1773199fcba9daa664f"
+CYBIND_COMMIT = "7244c5c3c2a6e0b7802a2ce136414b82dc43bafb"
 CYBIND_SSH_URL = "ssh://git@gitlab-master.nvidia.com:12051/leof/cybind.git"
 
 # Global logger - will be configured in main()
@@ -99,7 +99,7 @@ def prepare_cybind_assets(
     """
     # Copy config_nccl.py
     config_src = nccl4py_assets_dir / "cybind" / "config_nccl.py"
-    config_dst = cybind_dir / "assets" / "configs" / "config_nccl.py"
+    config_dst = cybind_dir / "cybind" / "assets" / "configs" / "config_nccl.py"
 
     if not config_src.exists():
         raise FileNotFoundError(f"Config file not found: {config_src}")
@@ -109,7 +109,7 @@ def prepare_cybind_assets(
 
     # Copy templates
     templates_src = nccl4py_assets_dir / "cybind" / "templates"
-    templates_dst = cybind_dir / "assets" / "templates" / "nccl4py" / "bindings"
+    templates_dst = cybind_dir / "cybind" / "assets" / "templates" / "nccl4py" / "bindings"
 
     if not templates_src.exists():
         raise FileNotFoundError(f"Templates directory not found: {templates_src}")

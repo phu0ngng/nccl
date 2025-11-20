@@ -588,37 +588,37 @@ cpdef inline check_status(int status):
 cpdef intptr_t mem_alloc(size_t size) except? 0:
     cdef void* ptr
     with nogil:
-        status = ncclMemAlloc(&ptr, size)
-    check_status(status)
+        __status__ = ncclMemAlloc(&ptr, size)
+    check_status(__status__)
     return <intptr_t>ptr
 
 
 cpdef mem_free(intptr_t ptr):
     with nogil:
-        status = ncclMemFree(<void*>ptr)
-    check_status(status)
+        __status__ = ncclMemFree(<void*>ptr)
+    check_status(__status__)
 
 
 cpdef int get_version() except? -1:
     cdef int version
     with nogil:
-        status = ncclGetVersion(&version)
-    check_status(status)
+        __status__ = ncclGetVersion(&version)
+    check_status(__status__)
     return version
 
 
 cpdef get_unique_id(intptr_t unique_id):
     with nogil:
-        status = ncclGetUniqueId(<ncclUniqueId*>unique_id)
-    check_status(status)
+        __status__ = ncclGetUniqueId(<ncclUniqueId*>unique_id)
+    check_status(__status__)
 
 
 cpdef intptr_t comm_init_rank_config(int nranks, comm_id, int rank, intptr_t config) except? 0:
     cdef void* _comm_id_ = get_buffer_pointer(comm_id, -1, readonly=False)
     cdef Comm comm
     with nogil:
-        status = ncclCommInitRankConfig(&comm, nranks, (<ncclUniqueId*>(_comm_id_))[0], rank, <ncclConfig_t*>config)
-    check_status(status)
+        __status__ = ncclCommInitRankConfig(&comm, nranks, (<ncclUniqueId*>(_comm_id_))[0], rank, <ncclConfig_t*>config)
+    check_status(__status__)
     return <intptr_t>comm
 
 
@@ -626,8 +626,8 @@ cpdef intptr_t comm_init_rank(int nranks, comm_id, int rank) except? 0:
     cdef void* _comm_id_ = get_buffer_pointer(comm_id, -1, readonly=False)
     cdef Comm comm
     with nogil:
-        status = ncclCommInitRank(&comm, nranks, (<ncclUniqueId*>(_comm_id_))[0], rank)
-    check_status(status)
+        __status__ = ncclCommInitRank(&comm, nranks, (<ncclUniqueId*>(_comm_id_))[0], rank)
+    check_status(__status__)
     return <intptr_t>comm
 
 
@@ -635,33 +635,33 @@ cpdef comm_init_all(intptr_t comm, int ndev, devlist):
     cdef nullable_unique_ptr[ vector[int] ] _devlist_
     get_resource_ptr[int](_devlist_, devlist, <int*>NULL)
     with nogil:
-        status = ncclCommInitAll(<Comm*>comm, ndev, <const int*>(_devlist_.data()))
-    check_status(status)
+        __status__ = ncclCommInitAll(<Comm*>comm, ndev, <const int*>(_devlist_.data()))
+    check_status(__status__)
 
 
 cpdef comm_finalize(intptr_t comm):
     with nogil:
-        status = ncclCommFinalize(<Comm>comm)
-    check_status(status)
+        __status__ = ncclCommFinalize(<Comm>comm)
+    check_status(__status__)
 
 
 cpdef comm_destroy(intptr_t comm):
     with nogil:
-        status = ncclCommDestroy(<Comm>comm)
-    check_status(status)
+        __status__ = ncclCommDestroy(<Comm>comm)
+    check_status(__status__)
 
 
 cpdef comm_abort(intptr_t comm):
     with nogil:
-        status = ncclCommAbort(<Comm>comm)
-    check_status(status)
+        __status__ = ncclCommAbort(<Comm>comm)
+    check_status(__status__)
 
 
 cpdef intptr_t comm_split(intptr_t comm, int color, int key, intptr_t config) except? 0:
     cdef Comm newcomm
     with nogil:
-        status = ncclCommSplit(<Comm>comm, color, key, &newcomm, <ncclConfig_t*>config)
-    check_status(status)
+        __status__ = ncclCommSplit(<Comm>comm, color, key, &newcomm, <ncclConfig_t*>config)
+    check_status(__status__)
     return <intptr_t>newcomm
 
 
@@ -670,8 +670,8 @@ cpdef intptr_t comm_shrink(intptr_t comm, exclude_ranks_list, int exclude_ranks_
     get_resource_ptr[int](_exclude_ranks_list_, exclude_ranks_list, <int*>NULL)
     cdef Comm newcomm
     with nogil:
-        status = ncclCommShrink(<Comm>comm, <int*>(_exclude_ranks_list_.data()), exclude_ranks_count, &newcomm, <ncclConfig_t*>config, shrink_flags)
-    check_status(status)
+        __status__ = ncclCommShrink(<Comm>comm, <int*>(_exclude_ranks_list_.data()), exclude_ranks_count, &newcomm, <ncclConfig_t*>config, shrink_flags)
+    check_status(__status__)
     return <intptr_t>newcomm
 
 
@@ -680,8 +680,8 @@ cpdef intptr_t comm_init_rank_scalable(int nranks, int myrank, int n_id, comm_id
     get_nested_resource_ptr[ncclUniqueId](_comm_ids_, comm_ids, <ncclUniqueId*>NULL)
     cdef Comm newcomm
     with nogil:
-        status = ncclCommInitRankScalable(&newcomm, nranks, myrank, n_id, <ncclUniqueId*>(_comm_ids_.ptrs.data()), <ncclConfig_t*>config)
-    check_status(status)
+        __status__ = ncclCommInitRankScalable(&newcomm, nranks, myrank, n_id, <ncclUniqueId*>(_comm_ids_.ptrs.data()), <ncclConfig_t*>config)
+    check_status(__status__)
     return <intptr_t>newcomm
 
 
@@ -700,156 +700,156 @@ cpdef str get_last_error(intptr_t comm):
 cpdef int comm_get_async_error(intptr_t comm) except? -1:
     cdef _Result async_error
     with nogil:
-        status = ncclCommGetAsyncError(<Comm>comm, &async_error)
-    check_status(status)
+        __status__ = ncclCommGetAsyncError(<Comm>comm, &async_error)
+    check_status(__status__)
     return <int>async_error
 
 
 cpdef int comm_count(intptr_t comm) except? -1:
     cdef int count
     with nogil:
-        status = ncclCommCount(<const Comm>comm, &count)
-    check_status(status)
+        __status__ = ncclCommCount(<const Comm>comm, &count)
+    check_status(__status__)
     return count
 
 
 cpdef int comm_cu_device(intptr_t comm) except? -1:
     cdef int device
     with nogil:
-        status = ncclCommCuDevice(<const Comm>comm, &device)
-    check_status(status)
+        __status__ = ncclCommCuDevice(<const Comm>comm, &device)
+    check_status(__status__)
     return device
 
 
 cpdef int comm_user_rank(intptr_t comm) except? -1:
     cdef int rank
     with nogil:
-        status = ncclCommUserRank(<const Comm>comm, &rank)
-    check_status(status)
+        __status__ = ncclCommUserRank(<const Comm>comm, &rank)
+    check_status(__status__)
     return rank
 
 
 cpdef intptr_t comm_register(intptr_t comm, intptr_t buff, size_t size) except? 0:
     cdef void* handle
     with nogil:
-        status = ncclCommRegister(<const Comm>comm, <void*>buff, size, &handle)
-    check_status(status)
+        __status__ = ncclCommRegister(<const Comm>comm, <void*>buff, size, &handle)
+    check_status(__status__)
     return <intptr_t>handle
 
 
 cpdef comm_deregister(intptr_t comm, intptr_t handle):
     with nogil:
-        status = ncclCommDeregister(<const Comm>comm, <void*>handle)
-    check_status(status)
+        __status__ = ncclCommDeregister(<const Comm>comm, <void*>handle)
+    check_status(__status__)
 
 
 cpdef intptr_t comm_window_register(intptr_t comm, intptr_t buff, size_t size, int win_flags) except? 0:
     cdef Window win
     with nogil:
-        status = ncclCommWindowRegister(<Comm>comm, <void*>buff, size, &win, win_flags)
-    check_status(status)
+        __status__ = ncclCommWindowRegister(<Comm>comm, <void*>buff, size, &win, win_flags)
+    check_status(__status__)
     return <intptr_t>win
 
 
 cpdef comm_window_deregister(intptr_t comm, intptr_t win):
     with nogil:
-        status = ncclCommWindowDeregister(<Comm>comm, <Window>win)
-    check_status(status)
+        __status__ = ncclCommWindowDeregister(<Comm>comm, <Window>win)
+    check_status(__status__)
 
 
 cpdef int red_op_create_pre_mul_sum(intptr_t scalar, int datatype, int residence, intptr_t comm) except? -1:
     cdef _RedOp op
     with nogil:
-        status = ncclRedOpCreatePreMulSum(&op, <void*>scalar, <_DataType>datatype, <_ScalarResidence>residence, <Comm>comm)
-    check_status(status)
+        __status__ = ncclRedOpCreatePreMulSum(&op, <void*>scalar, <_DataType>datatype, <_ScalarResidence>residence, <Comm>comm)
+    check_status(__status__)
     return <int>op
 
 
 cpdef red_op_destroy(int op, intptr_t comm):
     with nogil:
-        status = ncclRedOpDestroy(<_RedOp>op, <Comm>comm)
-    check_status(status)
+        __status__ = ncclRedOpDestroy(<_RedOp>op, <Comm>comm)
+    check_status(__status__)
 
 
 cpdef reduce(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, int root, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclReduce(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, root, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclReduce(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, root, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef bcast(intptr_t buff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclBcast(<void*>buff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclBcast(<void*>buff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef broadcast(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclBroadcast(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclBroadcast(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef all_reduce(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclAllReduce(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclAllReduce(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef reduce_scatter(intptr_t sendbuff, intptr_t recvbuff, size_t recvcount, int datatype, int op, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclReduceScatter(<const void*>sendbuff, <void*>recvbuff, recvcount, <_DataType>datatype, <_RedOp>op, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclReduceScatter(<const void*>sendbuff, <void*>recvbuff, recvcount, <_DataType>datatype, <_RedOp>op, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef all_gather(intptr_t sendbuff, intptr_t recvbuff, size_t sendcount, int datatype, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclAllGather(<const void*>sendbuff, <void*>recvbuff, sendcount, <_DataType>datatype, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclAllGather(<const void*>sendbuff, <void*>recvbuff, sendcount, <_DataType>datatype, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef allto_all(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclAlltoAll(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclAlltoAll(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef gather(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclGather(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclGather(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef scatter(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclScatter(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclScatter(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef send(intptr_t sendbuff, size_t count, int datatype, int peer, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclSend(<const void*>sendbuff, count, <_DataType>datatype, peer, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclSend(<const void*>sendbuff, count, <_DataType>datatype, peer, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef recv(intptr_t recvbuff, size_t count, int datatype, int peer, intptr_t comm, intptr_t stream):
     with nogil:
-        status = ncclRecv(<void*>recvbuff, count, <_DataType>datatype, peer, <Comm>comm, <Stream>stream)
-    check_status(status)
+        __status__ = ncclRecv(<void*>recvbuff, count, <_DataType>datatype, peer, <Comm>comm, <Stream>stream)
+    check_status(__status__)
 
 
 cpdef group_start():
     with nogil:
-        status = ncclGroupStart()
-    check_status(status)
+        __status__ = ncclGroupStart()
+    check_status(__status__)
 
 
 cpdef group_end():
     with nogil:
-        status = ncclGroupEnd()
-    check_status(status)
+        __status__ = ncclGroupEnd()
+    check_status(__status__)
 
 
 cpdef group_simulate_end(intptr_t sim_info):
     with nogil:
-        status = ncclGroupSimulateEnd(<ncclSimInfo_t*>sim_info)
-    check_status(status)
+        __status__ = ncclGroupSimulateEnd(<ncclSimInfo_t*>sim_info)
+    check_status(__status__)

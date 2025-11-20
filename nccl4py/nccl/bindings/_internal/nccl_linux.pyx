@@ -6,12 +6,16 @@
 
 from libc.stdint cimport intptr_t
 
+import threading
+
 from .utils import FunctionNotFoundError, NotSupportedError
 
 
 ###############################################################################
 # Extern
 ###############################################################################
+
+# You must 'from .utils import NotSupportedError' before using this template
 
 cdef extern from "<dlfcn.h>" nogil:
     void* dlopen(const char*, int)
@@ -27,11 +31,31 @@ cdef extern from "<dlfcn.h>" nogil:
 
     const void* RTLD_DEFAULT 'RTLD_DEFAULT'
 
+cdef int get_cuda_version():
+    cdef void* handle = NULL
+    cdef int err, driver_ver = 0
+
+    # Load driver to check version
+    handle = dlopen('libcuda.so.1', RTLD_NOW | RTLD_GLOBAL)
+    if handle == NULL:
+        err_msg = dlerror()
+        raise NotSupportedError(f'CUDA driver is not found ({err_msg.decode()})')
+    cuDriverGetVersion = dlsym(handle, "cuDriverGetVersion")
+    if cuDriverGetVersion == NULL:
+        raise RuntimeError('Did not find cuDriverGetVersion symbol in libcuda.so.1')
+    err = (<int (*)(int*) noexcept nogil>cuDriverGetVersion)(&driver_ver)
+    if err != 0:
+        raise RuntimeError(f'cuDriverGetVersion returned error code {err}')
+
+    return driver_ver
+
+
 
 ###############################################################################
 # Wrapper init
 ###############################################################################
 
+cdef object __symbol_lock = threading.Lock()
 cdef bint __py_nccl_init = False
 
 cdef void* __ncclMemAlloc = NULL
@@ -90,283 +114,288 @@ cdef int _check_or_init_nccl() except -1 nogil:
     if __py_nccl_init:
         return 0
 
-    # Load function
     cdef void* handle = NULL
-    global __ncclMemAlloc
-    __ncclMemAlloc = dlsym(RTLD_DEFAULT, 'ncclMemAlloc')
-    if __ncclMemAlloc == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclMemAlloc = dlsym(handle, 'ncclMemAlloc')
 
-    global __ncclMemFree
-    __ncclMemFree = dlsym(RTLD_DEFAULT, 'ncclMemFree')
-    if __ncclMemFree == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclMemFree = dlsym(handle, 'ncclMemFree')
+    with gil, __symbol_lock:
+        # Recheck the flag after obtaining the locks
+        if __py_nccl_init:
+            return 0
 
-    global __ncclGetVersion
-    __ncclGetVersion = dlsym(RTLD_DEFAULT, 'ncclGetVersion')
-    if __ncclGetVersion == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclGetVersion = dlsym(handle, 'ncclGetVersion')
+        # Load function
+        global __ncclMemAlloc
+        __ncclMemAlloc = dlsym(RTLD_DEFAULT, 'ncclMemAlloc')
+        if __ncclMemAlloc == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclMemAlloc = dlsym(handle, 'ncclMemAlloc')
 
-    global __ncclGetUniqueId
-    __ncclGetUniqueId = dlsym(RTLD_DEFAULT, 'ncclGetUniqueId')
-    if __ncclGetUniqueId == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclGetUniqueId = dlsym(handle, 'ncclGetUniqueId')
+        global __ncclMemFree
+        __ncclMemFree = dlsym(RTLD_DEFAULT, 'ncclMemFree')
+        if __ncclMemFree == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclMemFree = dlsym(handle, 'ncclMemFree')
 
-    global __ncclCommInitRankConfig
-    __ncclCommInitRankConfig = dlsym(RTLD_DEFAULT, 'ncclCommInitRankConfig')
-    if __ncclCommInitRankConfig == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommInitRankConfig = dlsym(handle, 'ncclCommInitRankConfig')
+        global __ncclGetVersion
+        __ncclGetVersion = dlsym(RTLD_DEFAULT, 'ncclGetVersion')
+        if __ncclGetVersion == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetVersion = dlsym(handle, 'ncclGetVersion')
 
-    global __ncclCommInitRank
-    __ncclCommInitRank = dlsym(RTLD_DEFAULT, 'ncclCommInitRank')
-    if __ncclCommInitRank == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommInitRank = dlsym(handle, 'ncclCommInitRank')
+        global __ncclGetUniqueId
+        __ncclGetUniqueId = dlsym(RTLD_DEFAULT, 'ncclGetUniqueId')
+        if __ncclGetUniqueId == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetUniqueId = dlsym(handle, 'ncclGetUniqueId')
 
-    global __ncclCommInitAll
-    __ncclCommInitAll = dlsym(RTLD_DEFAULT, 'ncclCommInitAll')
-    if __ncclCommInitAll == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommInitAll = dlsym(handle, 'ncclCommInitAll')
+        global __ncclCommInitRankConfig
+        __ncclCommInitRankConfig = dlsym(RTLD_DEFAULT, 'ncclCommInitRankConfig')
+        if __ncclCommInitRankConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommInitRankConfig = dlsym(handle, 'ncclCommInitRankConfig')
 
-    global __ncclCommFinalize
-    __ncclCommFinalize = dlsym(RTLD_DEFAULT, 'ncclCommFinalize')
-    if __ncclCommFinalize == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommFinalize = dlsym(handle, 'ncclCommFinalize')
+        global __ncclCommInitRank
+        __ncclCommInitRank = dlsym(RTLD_DEFAULT, 'ncclCommInitRank')
+        if __ncclCommInitRank == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommInitRank = dlsym(handle, 'ncclCommInitRank')
 
-    global __ncclCommDestroy
-    __ncclCommDestroy = dlsym(RTLD_DEFAULT, 'ncclCommDestroy')
-    if __ncclCommDestroy == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommDestroy = dlsym(handle, 'ncclCommDestroy')
+        global __ncclCommInitAll
+        __ncclCommInitAll = dlsym(RTLD_DEFAULT, 'ncclCommInitAll')
+        if __ncclCommInitAll == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommInitAll = dlsym(handle, 'ncclCommInitAll')
 
-    global __ncclCommAbort
-    __ncclCommAbort = dlsym(RTLD_DEFAULT, 'ncclCommAbort')
-    if __ncclCommAbort == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommAbort = dlsym(handle, 'ncclCommAbort')
+        global __ncclCommFinalize
+        __ncclCommFinalize = dlsym(RTLD_DEFAULT, 'ncclCommFinalize')
+        if __ncclCommFinalize == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommFinalize = dlsym(handle, 'ncclCommFinalize')
 
-    global __ncclCommSplit
-    __ncclCommSplit = dlsym(RTLD_DEFAULT, 'ncclCommSplit')
-    if __ncclCommSplit == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommSplit = dlsym(handle, 'ncclCommSplit')
+        global __ncclCommDestroy
+        __ncclCommDestroy = dlsym(RTLD_DEFAULT, 'ncclCommDestroy')
+        if __ncclCommDestroy == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommDestroy = dlsym(handle, 'ncclCommDestroy')
 
-    global __ncclCommShrink
-    __ncclCommShrink = dlsym(RTLD_DEFAULT, 'ncclCommShrink')
-    if __ncclCommShrink == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommShrink = dlsym(handle, 'ncclCommShrink')
+        global __ncclCommAbort
+        __ncclCommAbort = dlsym(RTLD_DEFAULT, 'ncclCommAbort')
+        if __ncclCommAbort == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommAbort = dlsym(handle, 'ncclCommAbort')
 
-    global __ncclCommInitRankScalable
-    __ncclCommInitRankScalable = dlsym(RTLD_DEFAULT, 'ncclCommInitRankScalable')
-    if __ncclCommInitRankScalable == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommInitRankScalable = dlsym(handle, 'ncclCommInitRankScalable')
+        global __ncclCommSplit
+        __ncclCommSplit = dlsym(RTLD_DEFAULT, 'ncclCommSplit')
+        if __ncclCommSplit == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommSplit = dlsym(handle, 'ncclCommSplit')
 
-    global __ncclGetErrorString
-    __ncclGetErrorString = dlsym(RTLD_DEFAULT, 'ncclGetErrorString')
-    if __ncclGetErrorString == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclGetErrorString = dlsym(handle, 'ncclGetErrorString')
+        global __ncclCommShrink
+        __ncclCommShrink = dlsym(RTLD_DEFAULT, 'ncclCommShrink')
+        if __ncclCommShrink == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommShrink = dlsym(handle, 'ncclCommShrink')
 
-    global __ncclGetLastError
-    __ncclGetLastError = dlsym(RTLD_DEFAULT, 'ncclGetLastError')
-    if __ncclGetLastError == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclGetLastError = dlsym(handle, 'ncclGetLastError')
+        global __ncclCommInitRankScalable
+        __ncclCommInitRankScalable = dlsym(RTLD_DEFAULT, 'ncclCommInitRankScalable')
+        if __ncclCommInitRankScalable == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommInitRankScalable = dlsym(handle, 'ncclCommInitRankScalable')
 
-    global __ncclCommGetAsyncError
-    __ncclCommGetAsyncError = dlsym(RTLD_DEFAULT, 'ncclCommGetAsyncError')
-    if __ncclCommGetAsyncError == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommGetAsyncError = dlsym(handle, 'ncclCommGetAsyncError')
+        global __ncclGetErrorString
+        __ncclGetErrorString = dlsym(RTLD_DEFAULT, 'ncclGetErrorString')
+        if __ncclGetErrorString == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetErrorString = dlsym(handle, 'ncclGetErrorString')
 
-    global __ncclCommCount
-    __ncclCommCount = dlsym(RTLD_DEFAULT, 'ncclCommCount')
-    if __ncclCommCount == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommCount = dlsym(handle, 'ncclCommCount')
+        global __ncclGetLastError
+        __ncclGetLastError = dlsym(RTLD_DEFAULT, 'ncclGetLastError')
+        if __ncclGetLastError == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetLastError = dlsym(handle, 'ncclGetLastError')
 
-    global __ncclCommCuDevice
-    __ncclCommCuDevice = dlsym(RTLD_DEFAULT, 'ncclCommCuDevice')
-    if __ncclCommCuDevice == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommCuDevice = dlsym(handle, 'ncclCommCuDevice')
+        global __ncclCommGetAsyncError
+        __ncclCommGetAsyncError = dlsym(RTLD_DEFAULT, 'ncclCommGetAsyncError')
+        if __ncclCommGetAsyncError == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommGetAsyncError = dlsym(handle, 'ncclCommGetAsyncError')
 
-    global __ncclCommUserRank
-    __ncclCommUserRank = dlsym(RTLD_DEFAULT, 'ncclCommUserRank')
-    if __ncclCommUserRank == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommUserRank = dlsym(handle, 'ncclCommUserRank')
+        global __ncclCommCount
+        __ncclCommCount = dlsym(RTLD_DEFAULT, 'ncclCommCount')
+        if __ncclCommCount == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommCount = dlsym(handle, 'ncclCommCount')
 
-    global __ncclCommRegister
-    __ncclCommRegister = dlsym(RTLD_DEFAULT, 'ncclCommRegister')
-    if __ncclCommRegister == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommRegister = dlsym(handle, 'ncclCommRegister')
+        global __ncclCommCuDevice
+        __ncclCommCuDevice = dlsym(RTLD_DEFAULT, 'ncclCommCuDevice')
+        if __ncclCommCuDevice == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommCuDevice = dlsym(handle, 'ncclCommCuDevice')
 
-    global __ncclCommDeregister
-    __ncclCommDeregister = dlsym(RTLD_DEFAULT, 'ncclCommDeregister')
-    if __ncclCommDeregister == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommDeregister = dlsym(handle, 'ncclCommDeregister')
+        global __ncclCommUserRank
+        __ncclCommUserRank = dlsym(RTLD_DEFAULT, 'ncclCommUserRank')
+        if __ncclCommUserRank == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommUserRank = dlsym(handle, 'ncclCommUserRank')
 
-    global __ncclCommWindowRegister
-    __ncclCommWindowRegister = dlsym(RTLD_DEFAULT, 'ncclCommWindowRegister')
-    if __ncclCommWindowRegister == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommWindowRegister = dlsym(handle, 'ncclCommWindowRegister')
+        global __ncclCommRegister
+        __ncclCommRegister = dlsym(RTLD_DEFAULT, 'ncclCommRegister')
+        if __ncclCommRegister == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommRegister = dlsym(handle, 'ncclCommRegister')
 
-    global __ncclCommWindowDeregister
-    __ncclCommWindowDeregister = dlsym(RTLD_DEFAULT, 'ncclCommWindowDeregister')
-    if __ncclCommWindowDeregister == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclCommWindowDeregister = dlsym(handle, 'ncclCommWindowDeregister')
+        global __ncclCommDeregister
+        __ncclCommDeregister = dlsym(RTLD_DEFAULT, 'ncclCommDeregister')
+        if __ncclCommDeregister == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommDeregister = dlsym(handle, 'ncclCommDeregister')
 
-    global __ncclRedOpCreatePreMulSum
-    __ncclRedOpCreatePreMulSum = dlsym(RTLD_DEFAULT, 'ncclRedOpCreatePreMulSum')
-    if __ncclRedOpCreatePreMulSum == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclRedOpCreatePreMulSum = dlsym(handle, 'ncclRedOpCreatePreMulSum')
+        global __ncclCommWindowRegister
+        __ncclCommWindowRegister = dlsym(RTLD_DEFAULT, 'ncclCommWindowRegister')
+        if __ncclCommWindowRegister == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommWindowRegister = dlsym(handle, 'ncclCommWindowRegister')
 
-    global __ncclRedOpDestroy
-    __ncclRedOpDestroy = dlsym(RTLD_DEFAULT, 'ncclRedOpDestroy')
-    if __ncclRedOpDestroy == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclRedOpDestroy = dlsym(handle, 'ncclRedOpDestroy')
+        global __ncclCommWindowDeregister
+        __ncclCommWindowDeregister = dlsym(RTLD_DEFAULT, 'ncclCommWindowDeregister')
+        if __ncclCommWindowDeregister == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommWindowDeregister = dlsym(handle, 'ncclCommWindowDeregister')
 
-    global __ncclReduce
-    __ncclReduce = dlsym(RTLD_DEFAULT, 'ncclReduce')
-    if __ncclReduce == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclReduce = dlsym(handle, 'ncclReduce')
+        global __ncclRedOpCreatePreMulSum
+        __ncclRedOpCreatePreMulSum = dlsym(RTLD_DEFAULT, 'ncclRedOpCreatePreMulSum')
+        if __ncclRedOpCreatePreMulSum == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclRedOpCreatePreMulSum = dlsym(handle, 'ncclRedOpCreatePreMulSum')
 
-    global __ncclBcast
-    __ncclBcast = dlsym(RTLD_DEFAULT, 'ncclBcast')
-    if __ncclBcast == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclBcast = dlsym(handle, 'ncclBcast')
+        global __ncclRedOpDestroy
+        __ncclRedOpDestroy = dlsym(RTLD_DEFAULT, 'ncclRedOpDestroy')
+        if __ncclRedOpDestroy == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclRedOpDestroy = dlsym(handle, 'ncclRedOpDestroy')
 
-    global __ncclBroadcast
-    __ncclBroadcast = dlsym(RTLD_DEFAULT, 'ncclBroadcast')
-    if __ncclBroadcast == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclBroadcast = dlsym(handle, 'ncclBroadcast')
+        global __ncclReduce
+        __ncclReduce = dlsym(RTLD_DEFAULT, 'ncclReduce')
+        if __ncclReduce == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclReduce = dlsym(handle, 'ncclReduce')
 
-    global __ncclAllReduce
-    __ncclAllReduce = dlsym(RTLD_DEFAULT, 'ncclAllReduce')
-    if __ncclAllReduce == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclAllReduce = dlsym(handle, 'ncclAllReduce')
+        global __ncclBcast
+        __ncclBcast = dlsym(RTLD_DEFAULT, 'ncclBcast')
+        if __ncclBcast == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclBcast = dlsym(handle, 'ncclBcast')
 
-    global __ncclReduceScatter
-    __ncclReduceScatter = dlsym(RTLD_DEFAULT, 'ncclReduceScatter')
-    if __ncclReduceScatter == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclReduceScatter = dlsym(handle, 'ncclReduceScatter')
+        global __ncclBroadcast
+        __ncclBroadcast = dlsym(RTLD_DEFAULT, 'ncclBroadcast')
+        if __ncclBroadcast == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclBroadcast = dlsym(handle, 'ncclBroadcast')
 
-    global __ncclAllGather
-    __ncclAllGather = dlsym(RTLD_DEFAULT, 'ncclAllGather')
-    if __ncclAllGather == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclAllGather = dlsym(handle, 'ncclAllGather')
+        global __ncclAllReduce
+        __ncclAllReduce = dlsym(RTLD_DEFAULT, 'ncclAllReduce')
+        if __ncclAllReduce == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclAllReduce = dlsym(handle, 'ncclAllReduce')
 
-    global __ncclAlltoAll
-    __ncclAlltoAll = dlsym(RTLD_DEFAULT, 'ncclAlltoAll')
-    if __ncclAlltoAll == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclAlltoAll = dlsym(handle, 'ncclAlltoAll')
+        global __ncclReduceScatter
+        __ncclReduceScatter = dlsym(RTLD_DEFAULT, 'ncclReduceScatter')
+        if __ncclReduceScatter == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclReduceScatter = dlsym(handle, 'ncclReduceScatter')
 
-    global __ncclGather
-    __ncclGather = dlsym(RTLD_DEFAULT, 'ncclGather')
-    if __ncclGather == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclGather = dlsym(handle, 'ncclGather')
+        global __ncclAllGather
+        __ncclAllGather = dlsym(RTLD_DEFAULT, 'ncclAllGather')
+        if __ncclAllGather == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclAllGather = dlsym(handle, 'ncclAllGather')
 
-    global __ncclScatter
-    __ncclScatter = dlsym(RTLD_DEFAULT, 'ncclScatter')
-    if __ncclScatter == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclScatter = dlsym(handle, 'ncclScatter')
+        global __ncclAlltoAll
+        __ncclAlltoAll = dlsym(RTLD_DEFAULT, 'ncclAlltoAll')
+        if __ncclAlltoAll == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclAlltoAll = dlsym(handle, 'ncclAlltoAll')
 
-    global __ncclSend
-    __ncclSend = dlsym(RTLD_DEFAULT, 'ncclSend')
-    if __ncclSend == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclSend = dlsym(handle, 'ncclSend')
+        global __ncclGather
+        __ncclGather = dlsym(RTLD_DEFAULT, 'ncclGather')
+        if __ncclGather == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGather = dlsym(handle, 'ncclGather')
 
-    global __ncclRecv
-    __ncclRecv = dlsym(RTLD_DEFAULT, 'ncclRecv')
-    if __ncclRecv == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclRecv = dlsym(handle, 'ncclRecv')
+        global __ncclScatter
+        __ncclScatter = dlsym(RTLD_DEFAULT, 'ncclScatter')
+        if __ncclScatter == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclScatter = dlsym(handle, 'ncclScatter')
 
-    global __ncclGroupStart
-    __ncclGroupStart = dlsym(RTLD_DEFAULT, 'ncclGroupStart')
-    if __ncclGroupStart == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclGroupStart = dlsym(handle, 'ncclGroupStart')
+        global __ncclSend
+        __ncclSend = dlsym(RTLD_DEFAULT, 'ncclSend')
+        if __ncclSend == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclSend = dlsym(handle, 'ncclSend')
 
-    global __ncclGroupEnd
-    __ncclGroupEnd = dlsym(RTLD_DEFAULT, 'ncclGroupEnd')
-    if __ncclGroupEnd == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclGroupEnd = dlsym(handle, 'ncclGroupEnd')
+        global __ncclRecv
+        __ncclRecv = dlsym(RTLD_DEFAULT, 'ncclRecv')
+        if __ncclRecv == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclRecv = dlsym(handle, 'ncclRecv')
 
-    global __ncclGroupSimulateEnd
-    __ncclGroupSimulateEnd = dlsym(RTLD_DEFAULT, 'ncclGroupSimulateEnd')
-    if __ncclGroupSimulateEnd == NULL:
-        if handle == NULL:
-            handle = load_library()
-        __ncclGroupSimulateEnd = dlsym(handle, 'ncclGroupSimulateEnd')
+        global __ncclGroupStart
+        __ncclGroupStart = dlsym(RTLD_DEFAULT, 'ncclGroupStart')
+        if __ncclGroupStart == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGroupStart = dlsym(handle, 'ncclGroupStart')
 
-    __py_nccl_init = True
-    return 0
+        global __ncclGroupEnd
+        __ncclGroupEnd = dlsym(RTLD_DEFAULT, 'ncclGroupEnd')
+        if __ncclGroupEnd == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGroupEnd = dlsym(handle, 'ncclGroupEnd')
+
+        global __ncclGroupSimulateEnd
+        __ncclGroupSimulateEnd = dlsym(RTLD_DEFAULT, 'ncclGroupSimulateEnd')
+        if __ncclGroupSimulateEnd == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGroupSimulateEnd = dlsym(handle, 'ncclGroupSimulateEnd')
+        __py_nccl_init = True
+        return 0
 
 
 cdef dict func_ptrs = None
