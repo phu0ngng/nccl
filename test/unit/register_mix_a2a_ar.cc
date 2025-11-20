@@ -77,6 +77,9 @@ int main(int argc, char** argv) {
   NCCLCHECKGOTO(ncclGroupEnd(), nccl_result, fail);
 
   for (int i = 0; i < nVis; i++) {
+    CUDACHECKGOTO(cudaStreamSynchronize(streams[i]), cuda_result, fail);
+  }
+  for (int i = 0; i < nVis; i++) {
     NCCLCHECKGOTO(ncclCommDeregister(comms[i], handles[i]), nccl_result, fail);
     NCCLCHECKGOTO(ncclMemFree(send_buffs[i]), nccl_result, fail);
     NCCLCHECKGOTO(ncclMemFree(recv_buffs[i]), nccl_result, fail);
