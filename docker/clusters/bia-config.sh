@@ -5,7 +5,6 @@
 # Targeting build to run on BIA
 
 # BIA GPU Type: B300 
-# 100, 110, 120 can build but seen errors in tests
 BIA_GPU_ARCHS="103"
 
 ## CUDA Config
@@ -19,7 +18,7 @@ BIA_CUDA_HOME="/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-${BIA_CUDA_VERSIO
 BIA_BUILD_TOOLS_VERSION="2.0.0"
 BIA_BUILD_TOOLS_CUDA_VERSION="13.0.2"
 BIA_BUILD_TOOLS_OS_VERSION="24.04"
-BIA_BUILD_TOOLS_IMAGE_VERSION="${THEIA_BUILD_TOOLS_VERSION}-c${THEIA_BUILD_TOOLS_CUDA_VERSION}-u${THEIA_BUILD_TOOLS_OS_VERSION}"
+BIA_BUILD_TOOLS_IMAGE_VERSION="${BIA_BUILD_TOOLS_VERSION}-c${BIA_BUILD_TOOLS_CUDA_VERSION}-u${BIA_BUILD_TOOLS_OS_VERSION}"
 BIA_BUILD_TOOLS_IMAGE_DIR="/lustre/fsw/coreai_libraries_nccl/toolkits/docker_sqsh"
 
 # Slurm account for executing jobs
@@ -50,7 +49,7 @@ function get_build_image_version() {
 
 function get_build_tools_image() {
     build_image_version="$1"
-    echo "$PRETYCHE_DOCKER_IMAGE_DIR/nccl_build_tools-${build_image_version}.sqsh"
+    echo "$BIA_BUILD_TOOLS_IMAGE_DIR/nccl_build_tools-${build_image_version}.sqsh"
 }
 
 function get_build_command_bm() {
