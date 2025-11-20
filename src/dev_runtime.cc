@@ -11,6 +11,7 @@
 #include "group.h"
 #include "nccl_device.h"
 #include "utils.h"
+#include "gin/gin_host.h"
 #include <mutex>
 
 NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
@@ -881,7 +882,7 @@ ncclResult_t ncclDevrCommCreateInternal(
     ), ret, fail_stream_mem_win);
 
     for (int ctx=0; ctx < nGinContexts; ctx++) {
-      outDevComm->ginTypes[ctx] = (int)comm->sharedRes->ginState.ginDevHandles[ctx]->netDeviceType;
+      outDevComm->ginNetDeviceTypes[ctx] = (int)comm->sharedRes->ginState.ginDevHandles[ctx]->netDeviceType;
       outDevComm->ginHandles[ctx] = comm->sharedRes->ginState.ginDevHandles[ctx]->handle;
     }
   }
@@ -1013,8 +1014,13 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   }
 
   NCCLCHECK(validateNcclVersion(props->version));
+  
+  props->rank = comm->rank;
+  props->nRanks = comm->nRanks;
+  props->cudaDev = comm->cudaDev;
+  props->nvmlDev = comm->nvmlDev;
   props->multimemSupport = comm->nvlsSupport;
-  props->ginSupport = comm->sharedRes->ginState.ncclGin != nullptr;
+  NCCLCHECK(getGinType(comm, &props->ginType));
   return ncclSuccess;
 }
 

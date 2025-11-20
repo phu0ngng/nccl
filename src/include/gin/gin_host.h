@@ -19,7 +19,7 @@ struct ncclGinState {
   ncclGin_t* ncclGin;
   void* ginInstance;
   bool connected;
-  int ginType;
+  ncclGinType_t ginType;
   int ginCommCount;
   void* ginComms[NCCL_GIN_MAX_CONTEXTS];
   void* ginCtx[NCCL_GIN_MAX_CONTEXTS];
@@ -38,6 +38,9 @@ struct ncclGinState {
 };
 
 extern int64_t ncclParamGinType();
+
+// Get the GIN type from comm
+ncclResult_t getGinType(struct ncclComm* comm, ncclGinType_t* ginType);
 
 // FIXME change to ncclGinState instead of ncclComm, no need to pass comm
 ncclResult_t ncclGinConnectOnce(struct ncclComm* comm);
