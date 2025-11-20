@@ -327,9 +327,9 @@ static void initPluginLibsOnceFunc() {
   netPluginLibs[pluginCounter].ncclGin = NULL;
   if (ncclParamGinType() == -1)
     netPluginLibs[pluginCounter].ncclGin = (ncclGin_t *)-1;
-  else if (ncclParamGinType() == NCCL_NET_DEVICE_GIN_PROXY)
+  else if (ncclParamGinType() == NCCL_GIN_TYPE_PROXY)
     netPluginLibs[pluginCounter].ncclGin = &ncclGinIbProxy;
-  else if (ncclParamGinType() == NCCL_NET_DEVICE_GIN_GDAKI)
+  else if (ncclParamGinType() == NCCL_GIN_TYPE_GDAKI)
     netPluginLibs[pluginCounter].ncclGin = &ncclGinIbGdaki;
   netPluginLibs[pluginCounter].ncclNetPluginState = ncclNetPluginStateInitReady;
   netPluginLibs[pluginCounter].ncclGinPluginState = netPluginLibs[pluginCounter].ncclGin ? ncclNetPluginStateInitReady : ncclNetPluginStateLoadFailed;

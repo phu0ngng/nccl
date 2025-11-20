@@ -25,7 +25,7 @@ NCCL_DEVICE_INLINE void ncclGinInitCommon(GinType* gin, ncclDevComm const& comm,
     ? uint32_t(contextIndex)%3 // 3 is only non power of 2
     : contextIndex & (comm.ginContextCount-1); // powers of 2
 
-  gin->_ginBackend = comm.ginTypes[gin->contextId];
+  gin->_ginBackend = comm.ginNetDeviceTypes[gin->contextId];
   gin->_ginHandle = comm.ginHandles[gin->contextId];
   gin->_signalShadows = comm.ginSignalShadows + gin->contextId*comm.ginSignalCount;
 }

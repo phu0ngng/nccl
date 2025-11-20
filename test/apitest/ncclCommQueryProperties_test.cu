@@ -27,6 +27,10 @@ class ncclCommQueryProperties_test : public ncclCommon_test<char> {
 TEST_F(ncclCommQueryProperties_test, basic) {
   ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
   ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comms[0], &props));
+  ASSERT_EQ(props.rank, 0);
+  ASSERT_EQ(props.nRanks, nVis);
+  ASSERT_EQ(props.cudaDev, 0);
+  ASSERT_LT(props.nvmlDev, nVis);
 }
 
 TEST_F(ncclCommQueryProperties_test, test_unitialized_props) {
@@ -50,7 +54,7 @@ TEST_F(ncclCommQueryProperties_test, test_gin_support) {
   ginReqs.ginForceEnable = true;
 
   // We expect devComm creation to fail if we request gin resource but gin is not supported
-  bool expectSuccess = props.ginSupport;
+  bool expectSuccess = props.ginType != NCCL_GIN_TYPE_NONE;
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(ncclSuccess, ncclDevCommCreate(comms[i], &ginReqs, &devComms[i]));
