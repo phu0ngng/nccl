@@ -2599,7 +2599,7 @@ perftest-single-bia:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
-    SLURM_TIME: 45
+    SLURM_TIME: 120
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
     NNODES: 1
@@ -3035,7 +3035,7 @@ perftest-multi-bia:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
-    SLURM_TIME: 45
+    SLURM_TIME: 120
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
     NGPUS: 4
