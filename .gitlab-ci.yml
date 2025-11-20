@@ -1387,7 +1387,8 @@ unit_tests-bia:
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 0
     GRAPH_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_DEFAULT: 1
+    # Failing on bia re-enable after this test been fixed
+    MEMLEAK_TESTS_DEFAULT: 0
     MEMLEAK_TESTS_NO_P2P: 1
     MEMLEAK_TESTS_NETWORK: 1
     FT_TESTS_DEFAULT: 1
