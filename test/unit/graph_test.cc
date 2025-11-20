@@ -851,6 +851,7 @@ void printHelpMessage() {
   printf("  platform : platform name (e.g. LOC-1G)\n");
   printf("  ngpus    : number of GPUs per node (default -1, all)\n");
   printf("  -h       : print this help message\n");
+  printf("  -v       : enable the verbose mode, equivalent to NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=GRAPH\n");
   printf("\n");
   printf("The name of the platform is given as <NAME>[-NVLD<X>], which indicates an NVLink domain of size <X>, where each host is <NAME>.\n");
   printf("For example:\n");
@@ -861,7 +862,7 @@ void printHelpMessage() {
   printf("Set NCCL_TOPO_DIR to override the default topo directory. This is necessary to invoke graph_test from an outside directory.\n");
   printf("Set NCCL_GRAPH_TEST_DUMP=0 to disable dumping of graph diffs.\n");
   printf("Set NCCL_GRAPH_TEST_DUMP_SYSTEM_XML=1 to dump the processed system XML from NIC Fusion and then the fully trimmed system XML.\n");
-  printf("Set NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=GRAPH to get standard NCCL logs of your scenario.\n");
+  printf("Set NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=GRAPH to get standard NCCL logs of your scenario. This is equivalent to using the -v flag.\n");
   printf("Set NCCL_TESTS_SPLIT_MASK=0xA to only get the graph for the communicator with the color 0 (unless changed, see NCCL_GRAPH_TEST_COLOR) in the case of NCCL_TESTS_SPLIT_MASK=0xA.\n");
   printf("Set NCCL_GRAPH_TEST_COLOR=0xA to change the color that is considered when using NCCL_TESTS_SPLIT_MASK.\n");
   printf("Set NCCL_NET_FORCE_MERGE to force the merge between devices, see NCCL documentation.\n");
@@ -870,23 +871,51 @@ void printHelpMessage() {
   printf("Set NCCL_GRAPH_TEST_INTRA=0/1 to enable the INTRA test.\n");
 }
 
+static void parseArgs(int argc, const char* argv[], const char** platform, const char** ngpusArg) {
+  bool verboseMode = false;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-v") == 0) {
+      verboseMode = true;
+    } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printHelpMessage();
+      exit(0);
+    } else if (*platform == NULL) {
+      *platform = argv[i];
+    } else if (*ngpusArg == NULL) {
+      *ngpusArg = argv[i];
+    }
+  }
+  // Set verbose mode environment variables
+  if (verboseMode) {
+    setenv("NCCL_DEBUG", "INFO", 1);
+    // Append GRAPH to existing NCCL_DEBUG_SUBSYS or set it
+    const char* existingSubsys = getenv("NCCL_DEBUG_SUBSYS");
+    if (existingSubsys && strlen(existingSubsys) > 0) {
+      char newSubsys[1024];
+      snprintf(newSubsys, sizeof(newSubsys), "%s,GRAPH", existingSubsys);
+      setenv("NCCL_DEBUG_SUBSYS", newSubsys, 1);
+    } else {
+      setenv("NCCL_DEBUG_SUBSYS", "GRAPH", 1);
+    }
+  }
+}
+
 int main(int argc, const char* argv[]) {
-  setStackSize(16*1024*1024); // 16MiB
   setenv("NCCL_IGNORE_DISABLED_P2P", "2", 0); // Disable hardware health checks (NVML)
   setlinebuf(stdout);
-  allocateMock();
+  const char* platform = NULL;
+  const char* ngpusArg = NULL;
+  parseArgs(argc, argv, &platform, &ngpusArg); // Parse command line arguments
+  setStackSize(16 * 1024 * 1024);              // set stack size to 16MiB to avoid stack overflow with large NVLDs
 
   struct testParam param;
   getTestParam(&param);
+  allocateMock();
 
   int errors = 0, warnings = 0;
-  if (argc > 1) {
-    if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
-      printHelpMessage();
-      return 0;
-    }
-    if (argc > 2) param.ngpus = atoi(argv[2]);
-    checkPlatform(argv[1], &param, &errors, &warnings);
+  if (platform != NULL) {
+    if (ngpusArg != NULL) param.ngpus = atoi(ngpusArg);
+    checkPlatform(platform, &param, &errors, &warnings);
   } else {
     RUN("LOC-1G");
     RUN("PCI-1R");
