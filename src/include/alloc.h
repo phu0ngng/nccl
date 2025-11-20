@@ -194,13 +194,17 @@ static inline ncclResult_t ncclCuMemAllocAddr(void **ptr, CUmemGenericAllocation
   return result;
 }
 
-static inline ncclResult_t ncclCuMemFreeAddr(void *ptr) {
+static inline ncclResult_t ncclCuMemFreeAddr(void *ptr, int numSegments = 1) {
   if (ptr == NULL) return ncclSuccess;
   ncclResult_t result = ncclSuccess;
-  size_t size = 0;
-  CUCHECK(cuMemGetAddressRange(NULL, &size, (CUdeviceptr)ptr));
-  CUCHECK(cuMemUnmap((CUdeviceptr)ptr, size));
-  CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, size));
+  size_t totalSize = 0;
+  for (int segment = 0; segment < numSegments; segment++) {
+    size_t segmentSize = 0;
+    CUCHECK(cuMemGetAddressRange(NULL, &segmentSize, (CUdeviceptr)ptr + totalSize));
+    CUCHECK(cuMemUnmap((CUdeviceptr)ptr + totalSize, segmentSize));
+    totalSize += segmentSize;
+  }
+  CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, totalSize));
   return result;
 }
 
@@ -240,36 +244,7 @@ static inline ncclResult_t ncclCuMemAlloc(void **ptr, CUmemGenericAllocationHand
   return result;
 }
 
-static inline ncclResult_t ncclCuMemFree(void *ptr) {
-  if (ptr == NULL) return ncclSuccess;
-  ncclResult_t result = ncclSuccess;
-  CUmemGenericAllocationHandle handle;
-  size_t size = 0;
-  CUCHECK(cuMemRetainAllocationHandle(&handle, ptr));
-  CUCHECK(cuMemRelease(handle));
-  CUCHECK(cuMemGetAddressRange(NULL, &size, (CUdeviceptr)ptr));
-  TRACE(NCCL_ALLOC, "CuMem Free Size %zu pointer %p handle 0x%llx", size, ptr, handle);
-  CUCHECK(cuMemUnmap((CUdeviceptr)ptr, size));
-  CUCHECK(cuMemRelease(handle));
-  CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, size));
-  return result;
-}
-
-static inline ncclResult_t ncclCuMemFreeAddrMultiSegment(void *ptr, int numSegments) {
-  if (ptr == NULL) return ncclSuccess;
-  ncclResult_t result = ncclSuccess;
-  size_t totalSize = 0;
-  for (int segment = 0; segment < numSegments; segment++) {
-    size_t segmentSize = 0;
-    CUCHECK(cuMemGetAddressRange(NULL, &segmentSize, (CUdeviceptr)ptr + totalSize));
-    CUCHECK(cuMemUnmap((CUdeviceptr)ptr + totalSize, segmentSize));
-    totalSize += segmentSize;
-  }
-  CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, totalSize));
-  return result;
-}
-
-static inline ncclResult_t ncclCuMemFreeMultiSegment(void *ptr, int numSegments) {
+static inline ncclResult_t ncclCuMemFree(void *ptr, int numSegments = 1) {
   if (ptr == NULL) return ncclSuccess;
   ncclResult_t result = ncclSuccess;
   size_t totalSize = 0;
@@ -279,7 +254,7 @@ static inline ncclResult_t ncclCuMemFreeMultiSegment(void *ptr, int numSegments)
     CUCHECK(cuMemRetainAllocationHandle(&handle, (void*) ((char *) ptr + totalSize)));
     CUCHECK(cuMemRelease(handle));
     CUCHECK(cuMemGetAddressRange(NULL, &segmentSize, (CUdeviceptr)ptr + totalSize));
-    TRACE(NCCL_ALLOC, "CuMem Free Multi segment Unmap Size %zu pointer %p handle 0x%llx", segmentSize, ptr, handle);
+    TRACE(NCCL_ALLOC, "CuMem Free Size %zu pointer %p handle 0x%llx segment %d numSegments %d", segmentSize, ptr, handle, segment, numSegments);
     CUCHECK(cuMemUnmap((CUdeviceptr)ptr + totalSize, segmentSize));
     CUCHECK(cuMemRelease(handle));
     totalSize += segmentSize;
@@ -321,7 +296,7 @@ static inline ncclResult_t ncclCuMemAlloc(void **ptr, void *handlep, int type, s
   WARN("CUMEM not supported prior to CUDA 11.3");
   return ncclInternalError;
 }
-static inline ncclResult_t ncclCuMemFree(void *ptr) {
+static inline ncclResult_t ncclCuMemFree(void *ptr, int numSegments = 1) {
   WARN("CUMEM not supported prior to CUDA 11.3");
   return ncclInternalError;
 }
@@ -331,22 +306,12 @@ static inline ncclResult_t ncclCuMemAllocAddr(void **ptr, CUmemGenericAllocation
   return ncclInternalError;
 }
 
-static inline ncclResult_t ncclCuMemFreeAddr(void *ptr) {
+static inline ncclResult_t ncclCuMemFreeAddr(void *ptr, int numSegments = 1) {
   WARN("CUMEM not supported prior to CUDA 11.3");
   return ncclInternalError;
 }
 
 static inline ncclResult_t ncclCuMemGetAddressRange(CUdeviceptr userBuff, size_t userBuffSize, CUdeviceptr* mappedPtrBase, size_t* totalMappedBufferSize, int* numSegments) {
-  WARN("CUMEM not supported prior to CUDA 11.3");
-  return ncclInternalError;
-}
-
-static inline ncclResult_t ncclCuMemFreeAddrMultiSegment(void *ptr, int numSegments) {
-  WARN("CUMEM not supported prior to CUDA 11.3");
-  return ncclInternalError;
-}
-
-static inline ncclResult_t ncclCuMemFreeMultiSegment(void *ptr, int numSegments) {
   WARN("CUMEM not supported prior to CUDA 11.3");
   return ncclInternalError;
 }
@@ -451,31 +416,20 @@ finish:
 }
 
 template <typename T>
-ncclResult_t ncclCudaFreeMultiSegment(T* ptr, int numSegments) {
-  ncclResult_t result = ncclSuccess;
-  cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
-  TRACE(NCCL_ALLOC, "Cuda Free Multi segment pointer %p", ptr);
-  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  if (!ncclCuMemEnable()) {
-    result = ncclUnhandledCudaError;
-    goto finish;
-  }
-  NCCLCHECKGOTO(ncclCuMemFreeMultiSegment((void *)ptr, numSegments), result, finish);
-finish:
-  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
-  return result;
-}
-
-template <typename T>
-ncclResult_t ncclCudaFree(T* ptr) {
+ncclResult_t ncclCudaFree(T* ptr, int numSegments = 1) {
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   TRACE(NCCL_ALLOC, "Cuda Free pointer %p", ptr);
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (ncclCuMemEnable()) {
-    NCCLCHECKGOTO(ncclCuMemFree((void *)ptr), result, finish);
+    NCCLCHECKGOTO(ncclCuMemFree((void *)ptr, numSegments), result, finish);
   } else {
-    CUDACHECKGOTO(cudaFree(ptr), result, finish);
+    if (numSegments > 1) {
+      result = ncclUnhandledCudaError;
+      goto finish;
+    } else {
+      CUDACHECKGOTO(cudaFree(ptr), result, finish);
+    }
   }
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));

@@ -1251,18 +1251,10 @@ static ncclResult_t p2pProxyDeregister(struct ncclProxyConnection* connection, s
   if (ipcInfo->legacyIpcCap) {
     CUDACHECKGOTO(cudaIpcCloseMemHandle((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
   } else {
-    if (ipcInfo->numSegments > 1) {
-      if (connection->sameProcess) {
-        NCCLCHECKGOTO(ncclCuMemFreeAddrMultiSegment((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), ipcInfo->numSegments), ret, fail);
-      } else {
-        NCCLCHECKGOTO(ncclCudaFreeMultiSegment((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), ipcInfo->numSegments), ret, fail);
-      }
+    if (connection->sameProcess) {
+      NCCLCHECKGOTO(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), ipcInfo->numSegments), ret, fail);
     } else {
-      if (connection->sameProcess) {
-        NCCLCHECKGOTO(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
-      } else {
-        NCCLCHECKGOTO(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
-      }
+      NCCLCHECKGOTO(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), ipcInfo->numSegments), ret, fail);
     }
   }
 
