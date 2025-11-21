@@ -7,6 +7,7 @@
 #include "alloc.h"
 #include "checks.h"
 #include "comm.h"
+#include "compiler.h"
 #include "nccl.h"
 #include "ras_internal.h"
 #include "compiler.h"
@@ -59,6 +60,7 @@ static int rasRanksCompare(const void* e1, const void* e2);
 static void rasPeersDump();
 static void rasDeadPeersDump();
 static char* rasPeerDump(const struct rasPeerInfo* peer, char* result, size_t nres);
+static void rasNewPeerNotify(const struct rasPeerInfo* peer);
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -255,6 +257,7 @@ static ncclResult_t rasPeersUpdate(struct rasPeerInfo* rankPeers, int* nRankPeer
             // Add new entry to newRasPeers.
             if (newPeerIdx < newNRasPeers) {
               memcpy(newRasPeer, rankPeer, sizeof(*newRasPeer));
+              rasNewPeerNotify(rankPeer);
             } else {
               INFO(NCCL_RAS, "RAS new peer %s but there's no room for it: newPeerIdx %d, newNRasPeers %d, "
                    "nRasPeers %d -- internal error?",
@@ -309,6 +312,7 @@ static ncclResult_t rasPeersUpdate(struct rasPeerInfo* rankPeers, int* nRankPeer
         // No more rasPeers -- add a new entry based on rank.
         if (newPeerIdx < newNRasPeers) {
           memcpy(newRasPeer, rankPeer, sizeof(*newRasPeer));
+          rasNewPeerNotify(rankPeer);
         } else {
           INFO(NCCL_RAS, "RAS new peer %s but there's no room for it: newPeerIdx %d, newNRasPeers %d, "
                "nRasPeers %d -- internal error?",
@@ -593,6 +597,7 @@ ncclResult_t rasMsgHandlePeersUpdate(struct rasMsg* msg, struct rasSocket* sock)
     INFO(NCCL_RAS, "RAS finished local processing of peersUpdate "
          "(new nRasPeers %d, nRasDeadPeers %d, nPeers %d, nDeadPeers %d)",
          nRasPeers, nRasDeadPeers, msg->peersUpdate.nPeers, msg->peersUpdate.nDeadPeers);
+
     if (msg->peersUpdate.nPeers > 0)
       rasPeersDump();
     if (msg->peersUpdate.nDeadPeers > 0)
@@ -796,8 +801,41 @@ ncclResult_t rasPeerDeclareDead(const union ncclSocketAddress* addr) {
 
     INFO(NCCL_RAS, "RAS declaring peer %s as DEAD; rasDeadPeersHash 0x%lx",
          ncclSocketToString(addr, rasLine), rasDeadPeersHash);
+
+    struct rasEventNotification event = {
+      .eventType = "PEER_DEAD",
+      .details = "",
+      .peerInfo = nullptr,
+      .peerAddr = addr
+    };
+    rasClientsNotifyEvent(RAS_EVENT_LIFECYCLE, &event);
   }
   return ncclSuccess;
+}
+
+// Formats a peer description from a rasPeerInfo struct (format: "Process <pid> on node <host> managing GPU[s] <gpus>").
+const char* rasPeerInfoToString(const struct rasPeerInfo* peer, char* buf, size_t size) {
+  char hostBuf[SOCKET_NAME_MAXLEN+1];
+  char gpuBuf[1024];
+
+  ncclSocketToHost(&peer->addr, hostBuf, sizeof(hostBuf));
+
+  snprintf(buf, size, "Process %d on node %s managing GPU%s %s",
+           peer->pid, hostBuf,
+           (COMPILER_POPCOUNT64(peer->cudaDevs) > 1 ? "s" : ""),
+           rasGpuDevsToString(peer->cudaDevs, peer->nvmlDevs, gpuBuf, sizeof(gpuBuf)));
+  return buf;
+}
+
+// Notifies monitoring clients about a new peer joining the job.
+static void rasNewPeerNotify(const struct rasPeerInfo* peer) {
+  struct rasEventNotification event = {
+    .eventType = "PEER_NEW",
+    .details = "",
+    .peerInfo = peer,
+    .peerAddr = nullptr
+  };
+  rasClientsNotifyEvent(RAS_EVENT_LIFECYCLE, &event);
 }
 
 // Invoked when an incoming RAS_MSG_PEERSUPDATE includes info on dead peers.  Updates the rasDeadPeers array.
@@ -841,6 +879,13 @@ static ncclResult_t rasDeadPeersUpdate(union ncclSocketAddress* updatePeers, int
       oldPeersIdx++;
     if (cmp > 0) {
       rasConnDisconnect(updatePeers+updatePeersIdx);
+      struct rasEventNotification event = {
+        .eventType = "PEER_DEAD",
+        .details = "",
+        .peerInfo = nullptr,
+        .peerAddr = updatePeers+updatePeersIdx
+      };
+      rasClientsNotifyEvent(RAS_EVENT_LIFECYCLE, &event);
     }
     if (cmp >= 0)
       updatePeersIdx++;
@@ -1000,6 +1045,20 @@ static char* rasPeerDump(const struct rasPeerInfo* peer, char* result, size_t nr
            (COMPILER_POPCOUNT64(peer->cudaDevs) > 1 ? "s" : ""),
            rasGpuDevsToString(peer->cudaDevs, peer->nvmlDevs, line2, sizeof(line2)));
   return result;
+}
+
+// Formats a peer description by looking up the address in the global peers array.
+// Returns the formatted peer description, or just the address if the peer is not found.
+const char* rasPeerToString(const union ncclSocketAddress* addr, char* buf, size_t size) {
+  char hostBuf[SOCKET_NAME_MAXLEN+1];
+  int peerIdx = rasPeerFind(addr);
+  if (peerIdx >= 0) {
+    const struct rasPeerInfo* peer = rasPeers + peerIdx;
+    return rasPeerInfoToString(peer, buf, size);
+  } else {
+    snprintf(buf, size, "%s", ncclSocketToString(addr, hostBuf, sizeof(hostBuf)));
+  }
+  return buf;
 }
 
 // Invoked during RAS termination to release all the allocated resources.
