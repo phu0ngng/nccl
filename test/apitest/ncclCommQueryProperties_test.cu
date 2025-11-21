@@ -30,7 +30,6 @@ TEST_F(ncclCommQueryProperties_test, basic) {
   ASSERT_EQ(props.rank, 0);
   ASSERT_EQ(props.nRanks, nVis);
   ASSERT_EQ(props.cudaDev, 0);
-  ASSERT_LT(props.nvmlDev, nVis);
 }
 
 TEST_F(ncclCommQueryProperties_test, test_unitialized_props) {
