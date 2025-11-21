@@ -184,7 +184,7 @@ build-bia:
   variables:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   script:
-    - docker/make.sh bia --baremetal-build
+    - docker/make.sh bia
     - mv build build-bia
   artifacts:
     paths:
