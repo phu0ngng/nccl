@@ -989,6 +989,7 @@ int main(int argc, const char* argv[]) {
       RUN_PORT_RATIO("GB300-CX8-NVL4", 2); // RoCE 2 ports
     }
     RUN("GB300-CX8-NVL32");
+    RUN("GB300WS");
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
     RUN("DGX-B300-RoCE");
