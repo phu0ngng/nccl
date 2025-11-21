@@ -87,6 +87,9 @@ static ncclResult_t ncclIbPrintWr(struct ibv_send_wr* wr, char* wrStr) {
 }
 #endif // ENABLE_TRACE
 
+// The alignment for IB writes that is required to make LL and LL128 protocols work
+#define IB_WRITE_CHUNK_ALIGNMENT 128
+
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   struct ncclIbRequest** reqs = comm->sendReqs[slot];
   volatile struct ncclIbSendFifo* slots = comm->ctsFifo[slot];
@@ -95,6 +98,12 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
   INFO(NCCL_NET, "NET/IB: %s: Posting a send request (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d)", __func__, reqs[0], reqs[0]->base, reqs[0]->id, slot, nreqs);
 
+  // Every request is chunked equally across all QPs that are used to transfer
+  // the request (in case of a single QP, the chunk is the size of the request).
+  // The chunk size of each request determined solely by the send size and the
+  // number of QPs used to transfer the request.
+  int chunkSizes[NCCL_NET_IB_MAX_RECVS] = {0};
+  int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
   uint64_t wr_id = 0ULL;
   for (int r=0; r<nreqs; r++) {
     struct ibv_send_wr* wr = comm->wrs+r;
@@ -110,6 +119,11 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 #ifdef NCCL_ENABLE_NET_PROFILING
     reqs[r]->pInfo[0].nEventHandles = 0;
 #endif
+  
+    chunkSizes[r] = DIVUP(DIVUP(reqs[r]->send.size, nqps), IB_WRITE_CHUNK_ALIGNMENT) * IB_WRITE_CHUNK_ALIGNMENT;
+    sge->length = chunkSizes[r];
+    wr->sg_list = sge;
+    wr->num_sge = 1;
   }
 
   // For ID-based matching scheme, immData carries the request ID.
@@ -139,9 +153,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   lastWr->next = NULL;
   lastWr->send_flags = IBV_SEND_SIGNALED;
 
-  // Multi-QP: make sure IB writes are multiples of 128B so that LL and LL128 protocols still work
-  const int align = 128;
-  int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
+  uint32_t sendOffsets[NCCL_NET_IB_MAX_RECVS] = {0};
   int qpIndex = -1;
   ncclIbQp* qp = NULL;
   for (int i = 0; i < nqps; i++) {
@@ -154,17 +166,14 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       // Select proper rkey (needed even for 0-size send)
       comm->wrs[r].wr.rdma.rkey = slots[r].rkeys[qp->remDevIdx];
 
-      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, nqps), align) * align;
-      int length = std::min(reqs[r]->send.size-reqs[r]->send.offset, chunkSize);
+      // Check the data left to send. If the send is too small, it might be
+      // that on the current QP there is no data left to be sent.
+      int length = std::min(reqs[r]->send.size-sendOffsets[r], chunkSizes[r]);
       if (length <= 0) {
-        comm->wrs[r].sg_list = NULL;
         comm->wrs[r].num_sge = 0;
       } else {
-        // Select proper lkey
-        comm->sges[r].lkey = reqs[r]->send.lkeys[devIndex];
-        comm->sges[r].length = length;
-        comm->wrs[r].sg_list = comm->sges+r;
-        comm->wrs[r].num_sge = 1;
+        comm->wrs[r].sg_list->lkey = reqs[r]->send.lkeys[devIndex];
+        comm->wrs[r].sg_list->length = length;
       }
     }
 
@@ -217,10 +226,10 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     NCCLCHECK(wrap_ibv_post_send(qp->qp, comm->wrs, &bad_wr));
 
     for (int r=0; r<nreqs; r++) {
-      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, nqps), align) * align;
-      reqs[r]->send.offset += chunkSize;
-      comm->sges[r].addr += chunkSize;
-      comm->wrs[r].wr.rdma.remote_addr += chunkSize;
+      // Update the send offset and addresses for the next chunk
+      sendOffsets[r] = std::min<uint32_t>(sendOffsets[r] + chunkSizes[r], reqs[r]->send.size);
+      comm->wrs[r].sg_list->addr += chunkSizes[r];
+      comm->wrs[r].wr.rdma.remote_addr += chunkSizes[r];
     }
   }
 
@@ -276,7 +285,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     req->nreqs = nreqs;
     req->send.size = size;
     req->send.data = data;
-    req->send.offset = 0;
 #ifdef NCCL_ENABLE_NET_PROFILING
     req->pInfo[0].pHandle = phandle;
 #endif

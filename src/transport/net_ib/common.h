@@ -180,7 +180,6 @@ struct ncclIbRequest {
       int size;
       void* data;
       uint32_t lkeys[NCCL_IB_MAX_DEVS_PER_NIC];
-      int offset;
     } send;
     struct {
       int* sizes;
