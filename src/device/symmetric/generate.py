@@ -293,25 +293,26 @@ with open(os.path.join(gensrc, "sym_kernels_host.cc"), "w") as f:
   indents -= 1
   emitln(f, '}')
 
-# Generate <gensrc>/rules.mk
-files_to_print += "rules.mk;"
+# Output file list for CMake (excludes rules.mk since it's not generated for CMake)
 files_to_print += "sym_kernels_host.cc;"
-
 if os.environ.get("NCCL_USE_CMAKE", "0") == "1":
   print(files_to_print)
 
-with open(os.path.join(gensrc, "rules.mk"), "w") as f:
-  inst_names = sorted(set(kernel_fname(k) for k in enumerate_kernels()))
-  names = inst_names + ["sym_kernels_host.cc"]
-  f.write("LIB_OBJS_SYM_GEN = $(patsubst %,$(OBJDIR)/genobj/symmetric/%.o,{names})\n"
-          .format(names=" ".join(names)))
-  f.write("\n")
+# Generate <gensrc>/rules.mk (only needed for Makefile builds, not CMake)
+if os.environ.get("NCCL_USE_CMAKE", "0") != "1":
+  with open(os.path.join(gensrc, "rules.mk"), "w") as f:
+    inst_names = sorted(set(kernel_fname(k) for k in enumerate_kernels()))
+    names = inst_names + ["sym_kernels_host.cc"]
+    f.write("LIB_OBJS_SYM_GEN = $(patsubst %,$(OBJDIR)/genobj/symmetric/%.o,{names})\n"
+            .format(names=" ".join(names)))
+    f.write("\n")
 
-  inst_names = sorted(set((kernel_fname(k), kernel_fbase(k), kernel_gencode(k)) for k in enumerate_kernels()))
-  for fname, fbase, gencode in inst_names:
-    f.write(
-      "$(OBJDIR)/genobj/symmetric/{fname}.o: $(OBJDIR)/gensrc/symmetric $(OBJDIR)/genobj/symmetric/{fbase}.cu.d\n"
-      "\t" "$(call COMPILE_SYM,$@,$(OBJDIR)/gensrc/symmetric/{fname},{gencode})\n"
-      "\n"
-      .format(fname=fname, fbase=fbase, gencode=gencode)
-    )
+    inst_names = sorted(set((kernel_fname(k), kernel_fbase(k), kernel_gencode(k)) for k in enumerate_kernels()))
+    for fname, fbase, gencode in inst_names:
+      f.write(
+        "$(OBJDIR)/genobj/symmetric/{fname}.o: $(OBJDIR)/gensrc/symmetric $(OBJDIR)/genobj/symmetric/{fbase}.cu.d\n"
+        "\t" "$(call COMPILE_SYM,$@,$(OBJDIR)/gensrc/symmetric/{fname},{gencode})\n"
+        "\n"
+        .format(fname=fname, fbase=fbase, gencode=gencode)
+      )
+
