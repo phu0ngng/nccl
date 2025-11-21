@@ -121,12 +121,6 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   //      written to directly to remote completion records array
   uint32_t immData = ncclParamIbReceiverSideMatchingScheme() == BY_ID ? reqs[0]->id : reqs[0]->send.size;
 
-  // In case the sender will write the sizes directly to the receiver, prepare
-  // the source buffer which will hold the sizes.
-  for (int r=0; r<nreqs ; r++) {
-    comm->remCmplsRecords.elems[slot][r] = reqs[r]->send.size;
-  }
-
   struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
   if (nreqs > 1 || (comm->ar && reqs[0]->send.size > ncclParamIbArThreshold())) {
     // When Adaptive Routing is enabled, send the bulk of the data first as an
@@ -300,6 +294,11 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     for (int i = 0; i < comm->base.vProps.ndevs; i++) {
       req->send.lkeys[i] = mhandleWrapper->mrs[i]->lkey;
     }
+
+    // In case the sender will write the size of the send directly to the
+    // receiver's memory, prepare the source buffer which will hold the sizes
+    // and be sent to the receiver.
+    comm->remCmplsRecords.elems[slot][r] = req->send.size;
 
     INFO(NCCL_NET, "NET/IB: %s: Send request created (req=%p, comm=%p, id=%d, slot=%d, reqIdx=%d, nreqs=%d, tag=%x, size=%ld, data=0x%016" PRIx64 ", mhandle=%p, size=%ld, )", __func__, req, req->base, req->id, slot, r, nreqs, tag, size, (uint64_t)data, mhandle, size);
 
