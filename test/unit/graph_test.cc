@@ -802,6 +802,7 @@ int main(int argc, const char* argv[]) {
     RUN_MULTI8("Luna-SHARP");
     RUN("DGX-2-Delta");
     RUN_MULTI4("Redstone");
+    RUN_MULTI4("Cineca");
     RUN("GCP-NV");
     RUN("AWS-P5-H100");
     RUN("AWS-P5en-H100");
