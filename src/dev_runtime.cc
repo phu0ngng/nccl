@@ -603,6 +603,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
   cudaStream_t stream = nullptr;
   void* localRegHandle = nullptr;
   struct ncclDevrWindow* winHost = nullptr;
+  int numSegments = 0;
 
   NCCLCHECKGOTO(ncclCommRegister(comm, userPtr, userSize, &localRegHandle), ret, fail);
 
@@ -617,8 +618,15 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
     NCCLCHECKGOTO(ncclSymkInitOnce(comm), ret, fail);
   }
 
-  // Get underlying cumem handle:
-  CUCHECKGOTO(cuMemGetAddressRange(&memAddr, &memSize, reinterpret_cast<CUdeviceptr>(userPtr)), ret, fail_locReg);
+  // Get underlying cumem base address and number of mapped physical segments that userPtr spans
+  NCCLCHECKGOTO(ncclCuMemGetAddressRange(reinterpret_cast<CUdeviceptr>(userPtr), userSize, &memAddr, &memSize, &numSegments), ret, fail_locReg);
+
+  if (numSegments > 1) {
+    WARN("Window registration of addresses that span multiple physical segments is currently not supported.");
+    ret = ncclInvalidArgument;
+    goto fail;
+  }
+
   memOffset = reinterpret_cast<CUdeviceptr>(userPtr) - memAddr;
   if (memOffset%NCCL_WIN_REQUIRED_ALIGNMENT != 0) {
     WARN("Window address must be suitably aligned.");
