@@ -120,9 +120,11 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   //      Send size is still sent but receiver ignores it since the sizes are
   //      written to directly to remote completion records array
   uint32_t immData = ncclParamIbReceiverSideMatchingScheme() == BY_ID ? reqs[0]->id : reqs[0]->send.size;
-  if (nreqs > 1) {
-    int* sizes = comm->remCmplsRecords.elems[slot];
-    for (int r=0; r<nreqs; r++) sizes[r] = reqs[r]->send.size;
+
+  // In case the sender will write the sizes directly to the receiver, prepare
+  // the source buffer which will hold the sizes.
+  for (int r=0; r<nreqs ; r++) {
+    comm->remCmplsRecords.elems[slot][r] = reqs[r]->send.size;
   }
 
   struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
