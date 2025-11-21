@@ -1151,12 +1151,23 @@ testResult_t threadInit(struct threadArgs* args) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   /* Create device communicators based on test-specific requirements */
   if (deviceImpl) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
     ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    if (!ncclTestEngine.getDevCommRequirements) {
+      fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
+      return testNotImplemented;
+    }
+    ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+    NCCLCHECK(ncclCommQueryProperties(args->comms[0][0], &commProperties));
+    TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
+#else
+    ncclDevCommRequirements reqs = {};
     if (!ncclTestEngine.getDevCommRequirements ||
         !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
       fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
       return testNotImplemented;
     }
+#endif
 
     ncclResult_t result;
     NCCLCHECK(ncclGroupStart());
@@ -1164,9 +1175,8 @@ testResult_t threadInit(struct threadArgs* args) {
       for (int i = 0; i < args->nGpus; i++) {
         result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
         if (result != ncclSuccess) {
-          testSkipReason = "Required device API features not available on this hardware";
           NCCLCHECK(ncclGroupEnd());
-          return testSkipped;
+          return testNcclError;
         }
       }
     }
@@ -1176,8 +1186,7 @@ testResult_t threadInit(struct threadArgs* args) {
         TESTCHECK(waitCommStateBatch(args->comms[id], args->nGpus));
       }
     } else if (result != ncclSuccess) {
-      testSkipReason = "Required device API features not available on this hardware";
-      return testSkipped;
+      return testNcclError;
     }
   }
   // Capture memory used by test buffers
@@ -2089,12 +2098,23 @@ testResult_t run() {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     /* Create device communicators based on test-specific requirements */
     if (deviceImpl) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
       ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
-      if (!ncclTestEngine.getDevCommRequirements ||
-          !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
+      if (!ncclTestEngine.getDevCommRequirements) {
         fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
         return testNotImplemented;
       }
+      ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+      NCCLCHECK(ncclCommQueryProperties(comms[0][0], &commProperties));
+      TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
+#else
+      ncclDevCommRequirements reqs = {};
+      if (!ncclTestEngine.getDevCommRequirements ||
+        !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
+        fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
+        return testNotImplemented;
+      }
+#endif
 
       ncclResult_t result;
       NCCLCHECK(ncclGroupStart());
@@ -2102,9 +2122,8 @@ testResult_t run() {
         for (int i = 0; i < nGpus * nThreads; i++) {
           result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
           if (result != ncclSuccess) {
-            testSkipReason = "Required device API features not available on this hardware";
             NCCLCHECK(ncclGroupEnd());
-            return testSkipped;
+            return testNcclError;
           }
         }
       }
@@ -2114,8 +2133,7 @@ testResult_t run() {
           TESTCHECK(waitCommStateBatch(comms[id], nGpus * nThreads));
         }
       } else if (result != ncclSuccess) {
-        testSkipReason = "Required device API features not available on this hardware";
-        return testSkipped;
+        return testNcclError;
       }
     }
     int64_t deviceCommMaxMem = 0;
