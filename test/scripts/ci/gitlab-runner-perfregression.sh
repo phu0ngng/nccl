@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e  # Exit on error
+set -xe  # Exit on error
 source test/scripts/ci/ci-utils.sh
 
 load_test_ci_variables
@@ -95,7 +95,7 @@ else
     echo "Skipping regression check"
 fi
 
-if [[ $CURRENT_BRANCH == $GOLDEN_BRANCH ]] && [[ $TRIGGER_PIPELINE != "pre-submit" ]]; then
+if [[ $CURRENT_BRANCH == $GOLDEN_BRANCH ]] && [[ $TRIGGER_PIPELINE =~ nightly|weekly ]]; then
     echo "Detected on golden branch, copying results to ${RESULTS_DIR}"
     # Copy results.csv to RESULTS_DIR with date format
     # Get current date in MM_DD_YY format
@@ -121,6 +121,45 @@ echo "See job artifacts for more detailed results"
 # 66 - HIGH_REGRESSIONS: High severity regressions
 # 67 - CRITICAL_REGRESSIONS: Critical performance degradations
 if [[ $REGRESSION_CODE -eq 1 || $REGRESSION_CODE -eq 66 || $REGRESSION_CODE -eq 67 ]]; then
+    if [[ $CURRENT_BRANCH == $GOLDEN_BRANCH ]] && [[ $TRIGGER_PIPELINE =~ nightly|weekly ]]; then
+        # Create NvBug for the regression
+        echo "Creating NvBug for the regression..."
+        DATE_STRING=$(date +%m/%d/%y)
+        DESCRIPTION="Performance regression detected on $DATE_STRING <br />\n Cluster: $CLUSTER_NAME <br />\n Nodes: $NNODES <br />\n Branch: $CURRENT_BRANCH <br />\n Commit: $CI_COMMIT_SHA <br />\n <a href="$CI_JOB_URL">See job artifacts for more details</a>"
+        BUG_JSON="{
+            \"BugId\": 0,
+            \"BugAction\": {
+                \"Value\": \"Dev - Open - To fix\"
+            },
+            \"Disposition\": {
+                \"Value\": \"Open issue\"
+            },
+            \"IsRestrictedAccess\": 0,
+            \"ApplicationDivisionID\": 1,
+            \"BugTypeID\": 6,
+            \"BugType\": \"Software\",
+            \"Priority\": {
+                \"Value\": \"Unprioritized\"
+            },
+            \"Severity\": {
+                \"Value\": \"5-Performance\"
+            },
+            \"Synopsis\": \"NCCL Performance Regression - $CURRENT_BRANCH - $CLUSTER_NAME - $DATE_STRING\",
+            \"Description\": \"$DESCRIPTION\",
+            \"ModuleInfo\": {\"Value\": \"GPUComms_DevOps\"},
+            \"Origin\": \"Engineering\",
+            \"BusinessUnits\": \"Tesla\",
+            \"GeographicOrigin\": \"US, CA, Santa Clara\",
+            \"Engineer\": \"$GITLAB_USER_EMAIL\",
+            \"ARB\": [{\"Value\": \"$GITLAB_USER_EMAIL\"}]
+        }"
+        RESPONSE=$(curl -s -X POST "https://nvbugsapi.nvidia.com/nvbugswebserviceapi/api/Bug/SaveBug" \
+            -H "Authorization: Bearer $NVAUTH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BUG_JSON")
+        BUG_NUMBER=$(echo "$RESPONSE" | grep -o '"ReturnValue":[0-9]*' | cut -d':' -f2)
+        echo "Successfully created NvBug: https://nvbugspro.nvidia.com/bug/$BUG_NUMBER"
+    fi
     exit 1
 else
     exit 0
