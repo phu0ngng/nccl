@@ -98,11 +98,6 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
   INFO(NCCL_NET, "NET/IB: %s: Posting a send request (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d)", __func__, reqs[0], reqs[0]->base, reqs[0]->id, slot, nreqs);
 
-  // Every request is chunked equally across all QPs that are used to transfer
-  // the request (in case of a single QP, the chunk is the size of the request).
-  // The chunk size of each request determined solely by the send size and the
-  // number of QPs used to transfer the request.
-  int chunkSizes[NCCL_NET_IB_MAX_RECVS] = {0};
   int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
   uint64_t wr_id = 0ULL;
   for (int r=0; r<nreqs; r++) {
@@ -120,8 +115,13 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     reqs[r]->pInfo[0].nEventHandles = 0;
 #endif
   
-    chunkSizes[r] = DIVUP(DIVUP(reqs[r]->send.size, nqps), IB_WRITE_CHUNK_ALIGNMENT) * IB_WRITE_CHUNK_ALIGNMENT;
-    sge->length = chunkSizes[r];
+    // Every request is chunked equally across all QPs that are used to transfer
+    // the request (in case of a single QP, the chunk is the size of the request).
+    // The chunk size of each request determined solely by the send size and the
+    // number of QPs used to transfer the request. If the send size is not big
+    // enough, starting from some QP there might be no data left to send and the
+    // length will be zeroed.
+    sge->length = DIVUP(DIVUP(reqs[r]->send.size, nqps), IB_WRITE_CHUNK_ALIGNMENT) * IB_WRITE_CHUNK_ALIGNMENT;
     wr->sg_list = sge;
     wr->num_sge = 1;
   }
@@ -168,12 +168,11 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
       // Check the data left to send. If the send is too small, it might be
       // that on the current QP there is no data left to be sent.
-      int length = std::min(reqs[r]->send.size-sendOffsets[r], chunkSizes[r]);
-      if (length <= 0) {
+      comm->wrs[r].sg_list->length = std::min(reqs[r]->send.size-sendOffsets[r], comm->wrs[r].sg_list->length);
+      if (comm->wrs[r].sg_list->length == 0) {
         comm->wrs[r].num_sge = 0;
       } else {
         comm->wrs[r].sg_list->lkey = reqs[r]->send.lkeys[devIndex];
-        comm->wrs[r].sg_list->length = length;
       }
     }
 
@@ -225,11 +224,12 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 #endif // ENABLE_TRACE
     NCCLCHECK(wrap_ibv_post_send(qp->qp, comm->wrs, &bad_wr));
 
+    // Update the send offset and addresses for the next QP according to the
+    // actual data size that was sent on the current QP, for every request
     for (int r=0; r<nreqs; r++) {
-      // Update the send offset and addresses for the next chunk
-      sendOffsets[r] = std::min<uint32_t>(sendOffsets[r] + chunkSizes[r], reqs[r]->send.size);
-      comm->wrs[r].sg_list->addr += chunkSizes[r];
-      comm->wrs[r].wr.rdma.remote_addr += chunkSizes[r];
+      sendOffsets[r] = std::min<uint32_t>(sendOffsets[r] + comm->wrs[r].sg_list->length, reqs[r]->send.size);
+      comm->wrs[r].sg_list->addr += comm->wrs[r].sg_list->length;
+      comm->wrs[r].wr.rdma.remote_addr += comm->wrs[r].sg_list->length;
     }
   }
 
