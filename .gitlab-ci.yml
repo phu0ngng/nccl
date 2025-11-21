@@ -2640,7 +2640,7 @@ perftest-multi-eos:
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 30
+    SLURM_TIME: 60
     RUN_MODE: "MPI"
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_IB_SL: "1"
@@ -2652,6 +2652,7 @@ perftest-multi-eos:
     MAX: "1G"
     NP: 8
     SKIP_FT_INIT: 1
+    SYMMETRIC: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
@@ -2693,6 +2694,7 @@ perftest-multi-cw-dfw:
     MAX: "1G"
     NP: 8
     SKIP_FT_INIT: 1
+    SYMMETRIC: 1
     NCCL_HOME: build
     SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_PARTITION: backfill
@@ -2820,7 +2822,7 @@ perftest-multi-pre-nyx:
     CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
-    SLURM_TIME: 45
+    SLURM_TIME: 60
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
     NGPUS: 8
@@ -2828,6 +2830,7 @@ perftest-multi-pre-nyx:
     NP: 8
     GRAPH: 0
     NCCL_HOME: build
+    SYMMETRIC: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
   script:

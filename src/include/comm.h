@@ -481,6 +481,7 @@ struct ncclComm {
   struct ncclProxyConnector* gproxyConn;
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> legacyRegCleanupQueue;
   bool peerInfoValid;
+  float minNetBw;
 
   ncclNet_t* ncclNet;
   void* netContext;
