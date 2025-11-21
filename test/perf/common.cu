@@ -996,6 +996,12 @@ testResult_t threadInit(struct threadArgs* args) {
     config.CTAPolicy = ctaPolicy;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   config.nvlinkCentricSched = 1;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+  if (cudaGraphLaunches >= 1)
+    config.graphUsageMode = 1;
+  else
+    config.graphUsageMode = 0;
+#endif
 #endif
 #endif
 #endif
@@ -1925,6 +1931,12 @@ testResult_t run() {
       config.CTAPolicy = ctaPolicy;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     config.nvlinkCentricSched = 1;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+    if (cudaGraphLaunches >= 1)
+      config.graphUsageMode = 1;
+    else
+      config.graphUsageMode = 0;
+#endif
 #endif
 #endif
 #endif

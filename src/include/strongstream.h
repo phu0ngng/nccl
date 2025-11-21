@@ -31,15 +31,17 @@ struct ncclCudaGraph {
   cudaStream_t origin;
   cudaGraph_t graph;
   unsigned long long graphId;
+  int graphUsageMode;
 #endif
 };
 
-inline struct ncclCudaGraph ncclCudaGraphNone() {
+inline struct ncclCudaGraph ncclCudaGraphNone(int graphUsageMode) {
   struct ncclCudaGraph tmp;
   #if CUDART_VERSION >= 11030
     tmp.origin = nullptr;
     tmp.graph = nullptr;
     tmp.graphId = ULLONG_MAX;
+    tmp.graphUsageMode = graphUsageMode;
   #endif
   return tmp;
 }
@@ -60,7 +62,7 @@ inline bool ncclCudaGraphSame(struct ncclCudaGraph a, struct ncclCudaGraph b) {
   #endif
 }
 
-ncclResult_t ncclCudaGetCapturingGraph(struct ncclCudaGraph* graph, cudaStream_t stream);
+ncclResult_t ncclCudaGetCapturingGraph(struct ncclCudaGraph* graph, cudaStream_t stream, int graphUsageMode);
 ncclResult_t ncclCudaGraphAddDestructor(struct ncclCudaGraph graph, cudaHostFn_t fn, void* arg);
 
 /* ncclStrongStream: An abstraction over CUDA streams that do not lose their

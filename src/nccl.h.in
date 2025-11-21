@@ -97,6 +97,7 @@ typedef struct ncclConfig_v22800 {
   int nvlsCTAs;
   int nChannelsPerNetPeer;
   int nvlinkCentricSched;
+  int graphUsageMode;
 } ncclConfig_t;
 
 /* Config initializer must be assigned to initialize config structure when it is created.
@@ -119,6 +120,7 @@ typedef struct ncclConfig_v22800 {
   NCCL_CONFIG_UNDEF_INT,                    /* nvlsCTAs */              \
   NCCL_CONFIG_UNDEF_INT,                    /* nChannelsPerNetPeer */   \
   NCCL_CONFIG_UNDEF_INT,                    /* nvlinkCentricSched */    \
+  NCCL_CONFIG_UNDEF_INT,                    /* graphUsageMode */        \
 }
 
 /* This struct will be used by ncclGroupSimulateEnd() API to query information about simulation. */
