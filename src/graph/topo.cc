@@ -17,6 +17,7 @@
 #include "cpuset.h"
 #include "bootstrap.h"
 #include <mutex>
+#include <float.h>
 
 #define BUSID_SIZE (sizeof("0000:00:00.0"))
 #define BUSID_REDUCED_SIZE (sizeof("0000:00"))
@@ -350,6 +351,16 @@ static ncclResult_t ncclTopoSort(struct ncclTopoNode* node, struct ncclTopoNode*
 // 4. SYS (already the case)
 ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
   for (int n=0; n<system->nodes[CPU].count; n++) NCCLCHECK(ncclTopoSort(system->nodes[CPU].nodes+n, NULL));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclTopoGetMinNetBw(struct ncclTopoSystem* system, float* bw) {
+  float minBw = FLT_MAX;
+  for (int n = 0; n < system->nodes[NET].count; n++) {
+    struct ncclTopoNode* net = system->nodes[NET].nodes + n;
+    if (net->net.bw < minBw) minBw = net->net.bw;
+  }
+  *bw = minBw;
   return ncclSuccess;
 }
 

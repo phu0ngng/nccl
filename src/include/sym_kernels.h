@@ -10,6 +10,7 @@
 #include "nccl_device.h"
 #include "nccl_common.h"
 #include "device.h"
+#include "../device/symmetric/gin_scratch__types.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // ncclSymk[Foo]: Kernels built on the device API
@@ -35,10 +36,12 @@ enum ncclSymkKernelId {
   ncclSymkKernelId_AllGather_LLMC,
   ncclSymkKernelId_AllGather_ST,
   ncclSymkKernelId_AllGather_STMC,
-
+  
   ncclSymkKernelId_ReduceScatter_LL,
   ncclSymkKernelId_ReduceScatter_LD,
   ncclSymkKernelId_ReduceScatter_LDMC,
+
+  ncclSymkKernelId_AllGather_GinHier_MCRing,
 
   ncclSymkKernelId_Count
 };
@@ -46,6 +49,7 @@ enum ncclSymkKernelId {
 struct ncclSymkDevComm {
   struct ncclDevComm devComm;
   struct ncclLLA2AHandle lsaLLA2A;
+  struct ncclGinSyncHandle ginSyncHandle;
 };
 
 struct ncclSymkState {
@@ -121,4 +125,6 @@ ncclResult_t ncclGetSymRegType(struct ncclDevrWindow* sendWin, struct ncclDevrWi
 
 int ncclSymkLLKernelMask();
 
+constexpr int ncclSymkGinWorldBufSize = 16<<10;
+constexpr int ncclSymkGinRailBufSize = 4<<20;
 #endif
