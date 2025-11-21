@@ -176,7 +176,7 @@ build-theia:
 build-bia:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1")
       when: always
     - when: never
   tags:
