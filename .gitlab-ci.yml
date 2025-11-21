@@ -1387,7 +1387,7 @@ unit_tests-bia:
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 0
     GRAPH_TESTS_DEFAULT: 1
-    # Failing on bia re-enable after these test been fixed
+    # Failing on bia re-enable after https://nvbugspro.nvidia.com/bug/5680492 been fixed
     MEMLEAK_TESTS_DEFAULT: 0
     MEMLEAK_TESTS_NO_P2P: 0
     MEMLEAK_TESTS_NETWORK: 0
@@ -3024,6 +3024,7 @@ perftest-multi-theia:
     expire_in: 48 hrs
 
 # Timeout after 120 min
+# Re-enable after resovle https://nvbugspro.nvidia.com/bug/5680492
 perftest-multi-bia:
   stage: perf_tests_multi
   rules:
