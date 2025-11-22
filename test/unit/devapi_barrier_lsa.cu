@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
   init_cumodule(&mymodule, "devapi_barrier_lsa_ir.cubin");
   CUfunction kernel;
   init_test_case_kernel(mymodule, &kernel, "runDevice");
-  
+
   void* args[] = {&dcomm};
   CU_CHECK(cuLaunchKernel(kernel, 16, 1, 1, 512, 1, 1, 0, stream, args, NULL));
   CU_CHECK(cuStreamSynchronize(stream));

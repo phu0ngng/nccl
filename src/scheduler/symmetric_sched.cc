@@ -34,7 +34,7 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
       NCCLCHECK(ncclDevrFindWindow(comm, task->sendbuff, &task->sendWin));
       NCCLCHECK(ncclDevrFindWindow(comm, task->recvbuff, &task->recvWin));
       NCCLCHECK(ncclGetSymRegType(task->sendWin, task->recvWin, &task->winRegType));
-      
+
       index = (((int)task->func * ncclNumDevRedOps + (int)task->opDev.op) * ncclNumTypes + (int)task->datatype) * ncclNumSymRegTypes + (int)task->winRegType;
       if (tasksSymByFnOpTy[index] == nullptr) fnOpTySymIndices[fnOpTySymCount++] = index;
       task->next = tasksSymByFnOpTy[index];
@@ -135,7 +135,7 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
       if (isLLKernel && headTask->winRegType == ncclSymSendNonregRecvNonreg) {
         NCCLCHECK(ncclSymkInitOnce(comm));
       }
-      
+
       // set all symmetric tasks to the same kernel
       while (task != nullptr) {
         struct ncclTaskColl* next = task->next;

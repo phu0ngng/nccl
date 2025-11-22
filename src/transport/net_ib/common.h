@@ -284,7 +284,7 @@ static inline ncclResult_t ncclIbCommBaseGetQpByIndex(struct ncclIbNetCommBase* 
 // The function selects the QP to be used for the request. The QP selected
 // based on the request ID and also based on the provided QP index. A request
 // can be posted on multiple QPs. For example, if a request is posted on 4
-// QPs, this function should be called 4 times, each time with a different 
+// QPs, this function should be called 4 times, each time with a different
 // qpIndex, ranging from 0 to 3.
 // The function outputs the selected QP in the outQp argument and populates the
 // outQpIndex argument with the index of the selected QP which is used for

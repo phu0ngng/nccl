@@ -796,7 +796,7 @@ ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePro
   return ncclSuccess;
 }
 
-// The function creates and modifies QPs to RTS state on the receiver side 
+// The function creates and modifies QPs to RTS state on the receiver side
 // using remote information from the sender side (remMeta). It also populates
 // the remote metadata structure, provided to the function (remMeta), with the
 // QPs' information so that data structure could be delivered to the remote
@@ -822,7 +822,7 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     localQp->devIndex = devIndex;
 
     NCCLCHECK(ncclIbCreateQp(ibDev->portNum, &rCommDev->base, IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC, &rComm->base.stats, localQp));
-    
+
     localQpInfo->qpn      = localQp->qp->qp_num;
     localQpInfo->devIndex = localQp->devIndex;
 
@@ -990,10 +990,10 @@ ib_recv:
   }
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
-  
+
     NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->ctsFifoMr, rCommDev->base.pd, &rComm->remCtsFifo.elems, sizeof(rComm->remCtsFifo.elems), IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
     rCommDev->sge.lkey = rCommDev->ctsFifoMr->lkey;
-    
+
     // Prepare completion records
     NCCLCHECKGOTO(wrap_ibv_reg_mr(&rCommDev->cmplsRecordsMr, rCommDev->base.pd, &rComm->cmplsRecords, sizeof(rComm->cmplsRecords), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_REMOTE_READ), ret, fail);
     meta.devs[i].rkey = rCommDev->cmplsRecordsMr->rkey;

@@ -853,7 +853,7 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
   void** sendbuffs = args->sendbuffs[0];
   void** recvbuffs = args->recvbuffs[0];
   cudaStream_t* streams = args->streams;
-  
+
   // Declare variables used in goto cleanup paths at the top
   ncclResult_t groupEndResult = ncclSuccess;
   int waitCount = 0;
@@ -865,16 +865,16 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
   // Start with half the GPUs
   int oldN = totalGpus / 2;
   if (oldN == 0) oldN = 1;
-  
+
   // Check if buffers exist (for MPSG mode: new ranks might not have buffers)
   bool hasBuffers = (sendbuffs && sendbuffs[0] && recvbuffs && recvbuffs[0] && streams && streams[0]);
   int myRank = args->proc * args->nThreads * nGpus + args->thread * nGpus;
-  
+
   // Allocate grown comms early (before any goto)
   ncclComm_t* grownComms = (ncclComm_t*)malloc(sizeof(ncclComm_t) * nGpus);
   if (grownComms == NULL) return testNcclError;
   memset(grownComms, 0, sizeof(ncclComm_t) * nGpus);
-  
+
   // Initialize first half of ranks
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; j++) {
@@ -890,7 +890,7 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
   // Get grow UniqueId from rank 0
   ncclUniqueId growId;
   memset(&growId, 0, sizeof(ncclUniqueId));
-  
+
   if (myRank == 0) {
     // Only rank 0 (which is in existing ranks) calls this
     if (comms[0] == NULL) {
@@ -899,7 +899,7 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
     }
     NCCLCHECK(ncclCommGetUniqueId(comms[0], &growId));
   }
-  
+
 #ifdef MPI_SUPPORT
   extern pthread_mutex_t mpiLock;
   pthread_mutex_lock(&mpiLock);
@@ -913,7 +913,7 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    
+
     if (rank < oldN) {
       // Existing rank
       const ncclUniqueId* uid = (rank == 0) ? &growId : NULL;
@@ -923,14 +923,14 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
       NCCLCHECK(ncclCommGrow(NULL, totalGpus, &growId, rank, &grownComms[j], NULL));
     }
   }
-  
+
   groupEndResult = ncclGroupEnd();
-  
+
   if (groupEndResult != ncclSuccess && groupEndResult != ncclInProgress) {
     ret = testNcclError;
     goto cleanup;
   }
-  
+
   // Wait for async completion
   waitCount = 0;
   do {
@@ -938,24 +938,24 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
       ret = testNcclError;
       goto cleanup;
     }
-    
+
     ncclResult_t checkRes = ncclCommGetAsyncError(grownComms[0], &asyncErr);
     if (checkRes != ncclSuccess) {
       ret = testNcclError;
       goto cleanup;
     }
-    
+
     if (asyncErr == ncclInProgress) {
       waitCount++;
       usleep(100);
     }
   } while (asyncErr == ncclInProgress && waitCount < 100000);
-  
+
   if (asyncErr != ncclSuccess) {
     ret = testNcclError;
     goto cleanup;
   }
-  
+
   // Verify grown comms were created
   for (int j = 0; j < nGpus; j++) {
     if (grownComms[j] == NULL) {
@@ -965,7 +965,7 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
   }
 
   // Run AllReduce on grown comm (only if buffers exist)
-  
+
   if (hasBuffers) {
     for (int j = 0; j < nGpus; j++) {
       int dev = sDev + j;
@@ -1038,7 +1038,7 @@ static testResult_t distributeFTShrinkGrowTest(struct threadArgs* args) {
   if (totalGpus <= 2) return testSuccess;  // Need at least 3 ranks for this test
 
   config.blocking = 0;
-  
+
   // Step 1: Init all communicators
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; ++j) {
@@ -1056,17 +1056,17 @@ static testResult_t distributeFTShrinkGrowTest(struct threadArgs* args) {
   // Step 2: Shrink to remove the bad rank
   ncclComm_t* shrinkComms = (ncclComm_t*)malloc(sizeof(ncclComm_t) * nGpus);
   memset(shrinkComms, 0, sizeof(ncclComm_t) * nGpus);
-  
+
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; j++) {
     int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
     if (rank == badIdx) continue;  // Bad rank doesn't participate
-    
+
     int dev = sDev + j;
     CUDACHECK(cudaSetDevice(dev));
     NCCLCHECK(ncclCommShrink(comms[j], &badIdx, 1, &shrinkComms[j], &config, NCCL_SHRINK_ABORT));
   }
-  
+
   // Build filtered list of original comms for batch wait (exclude badIdx)
   int numValidComms = 0;
   ncclComm_t validComms[nGpus];
@@ -1116,7 +1116,7 @@ static testResult_t distributeFTShrinkGrowTest(struct threadArgs* args) {
     int dev = sDev + j;
     int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
     CUDACHECK(cudaSetDevice(dev));
-    
+
     if (rank == badIdx) {
       // Bad rank joins as new rank
       NCCLCHECK(ncclCommGrow(NULL, totalGpus, &growId, totalGpus - 1, &grownComms[j], &config));

@@ -9,7 +9,7 @@ This feature enables NCCL registration to support multiple segments of physical 
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
-The primary motivation for this feature is to more effectively support the "expandable segments" mode in Pytorch. This mode enables pytorch to allocate segments of memory and extend them as needed, while providing a contiguous VA space for buffers. Expandable segments reduces memory fragmentation for important workloads (LLAMA pre-training, DeepSeek inference, DLRM) as it enables finer grained re-use of memory. Previous versions of NCCL only supported registering one physical segment. Passing multiple segments resulted in NCCL skipping registration to avoid IMA issues. 
+The primary motivation for this feature is to more effectively support the "expandable segments" mode in Pytorch. This mode enables pytorch to allocate segments of memory and extend them as needed, while providing a contiguous VA space for buffers. Expandable segments reduces memory fragmentation for important workloads (LLAMA pre-training, DeepSeek inference, DLRM) as it enables finer grained re-use of memory. Previous versions of NCCL only supported registering one physical segment. Passing multiple segments resulted in NCCL skipping registration to avoid IMA issues.
 
 ### NVbugs / Jira Tickets
 https://nvbugspro.nvidia.com/bug/5529614
@@ -90,7 +90,7 @@ We introduce a new function "ipcHandleMultiSegmentRegistration" to handle multi-
 
 For handles of type CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR, we introduce a new function ncclProxyClientBatchQueryFdBlocking to convert the local file descriptors for each segment so that it can be sent to the remote process using UDS.
 
-Changes to p2pProxyRegister - Modified to handle "numSegments" instances struct p2pIpcExpInfo. We reserve address for the total size of all segments (using cuMemAddressReserve), map each segment individually (using cuMemMap), and then setaccess for p2p for the entire buffer at the end. 
+Changes to p2pProxyRegister - Modified to handle "numSegments" instances struct p2pIpcExpInfo. We reserve address for the total size of all segments (using cuMemAddressReserve), map each segment individually (using cuMemMap), and then setaccess for p2p for the entire buffer at the end.
 
 Changes to p2pProxyDeregister - Modified to call the multi-segment versions of the free "utility" functions defined above. We add a numSegments field to the ncclIpcImpInfo struct to indicate the number of segments in the buffer, so that it can be used here to free the correct number of segments.
 

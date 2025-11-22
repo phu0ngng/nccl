@@ -18,11 +18,11 @@ extern "C" __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hbu
   // Get local pointer for direct memory access
   int* sbuf_local = (int*)ncclGetResourceBufferLocalPointer(comm, hbuf);
   int* rbuf_local = sbuf_local + gridDim.x*BufElts;
-  
+
   // Get window and offset for GIN operations
   ncclWindow_t bufWindow = comm.resourceWindow;
   size_t bufBaseOffset = ncclGetResourceBufferOffset(hbuf);
-  
+
   unsigned sigData0 = 0;
   unsigned sigFree0 = gridDim.x;
 
@@ -66,7 +66,7 @@ extern "C" __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hbu
                     /*isDescriptor=*/false, /*descriptor=*/nullptr,
                     cuda::thread_scope_thread, cuda::thread_scope_device);
     }
-    
+
     // Wait for downstream to give us free space
     if (Prints) if (t==0) printf("[%d:%d] round=%d Send free signal\n", world.rank, blockIdx.x, round);
     ncclGinWaitSignal(net, *coop, sigFree0 + blockIdx.x, round+1, 64, cuda::memory_order_acquire);
@@ -77,7 +77,7 @@ extern "C" __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hbu
     int chunkElts = BufElts/nChunks;
     nChunks = (BufElts + chunkElts-1)/chunkElts;
     if (Prints) if (t==0) printf("[%d:%d] round=%d Sending %d chunks\n", world.rank, blockIdx.x, round, nChunks);
-    
+
     #pragma unroll 1
     for (int i=t; i < nChunks; i += tn) {
       ncclWindow_t dstWnd = bufWindow;
@@ -94,7 +94,7 @@ extern "C" __global__ void runDevice(ncclDevComm comm, ncclDevResourceHandle hbu
                  /*isDescriptor=*/false, /*descriptor=*/nullptr,
                  cuda::thread_scope_thread, cuda::thread_scope_device);
     }
-    
+
     if (Prints) if (t==0) printf("[%d:%d] round=%d wait chunks\n", world.rank, blockIdx.x, round);
     // Wait for all chunks from upstream
     ncclGinWaitSignal(net, *coop, sigData0 + blockIdx.x, accum + nChunks, 64, cuda::memory_order_acquire);

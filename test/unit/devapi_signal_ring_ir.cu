@@ -30,9 +30,9 @@ extern "C" __global__ void runDevice(ncclDevComm comm) {
                     /*isDescriptor=*/false, /*descriptor=*/nullptr,
                     cuda::thread_scope_thread, cuda::thread_scope_device);
     }
-    
+
     ncclGinWaitSignal(net, *coop, /*signal=*/0, /*least=*/round+1, /*bits=*/64, cuda::memory_order_acquire);
-    
+
     if (world.rank == round % world.nRanks && t==0) {
       if (Prints) printf("[Rank %d] Round %d\n", world.rank, round);
     }

@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
   init_cumodule(&mymodule, "devapi_data_ring_ir.cubin");
   CUfunction kernel;
   init_test_case_kernel(mymodule, &kernel, "runDevice");
-  
+
   void* args[] = {&dcomm, &hBuf};
   CU_CHECK(cuLaunchKernel(kernel, BlockPerRank, 1, 1, 512, 1, 1, 0, stream, args, NULL));
   CU_CHECK(cuStreamSynchronize(stream));

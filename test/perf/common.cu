@@ -1588,7 +1588,7 @@ int main(int argc, char* argv[], char **envp) {
       case 'R':
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
         local_register = (int)strtol(optarg, NULL, 0);
-        if (((local_register == SYMMETRIC_REGISTER) || (local_register == SYMMETRIC_REGISTER_SEND) || (local_register == SYMMETRIC_REGISTER_RECV)) && 
+        if (((local_register == SYMMETRIC_REGISTER) || (local_register == SYMMETRIC_REGISTER_SEND) || (local_register == SYMMETRIC_REGISTER_RECV)) &&
           test_ncclVersion < NCCL_VERSION(2, 27, 0)) {
           printf("Option -R 2/3/4 (symmetric) is not supported before NCCL 2.27. Defaulting to local registration\n");
           local_register = LOCAL_REGISTER;

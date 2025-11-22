@@ -1041,7 +1041,7 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   }
 
   NCCLCHECK(validateNcclVersion(props->version));
-  
+
   props->rank = comm->rank;
   props->nRanks = comm->nRanks;
   props->cudaDev = comm->cudaDev;

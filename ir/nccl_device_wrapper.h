@@ -13,16 +13,16 @@
 #include "nccl_device.h"
 
 /* Struct definitions */
-struct ncclLsaBarrierSession_C { 
-    ncclLsaBarrierSession<ncclCoopAny> bar; 
+struct ncclLsaBarrierSession_C {
+    ncclLsaBarrierSession<ncclCoopAny> bar;
 };
 
-struct ncclGinBarrierSession_C { 
-    ncclGinBarrierSession<ncclCoopAny> bar; 
+struct ncclGinBarrierSession_C {
+    ncclGinBarrierSession<ncclCoopAny> bar;
 };
 
-struct ncclBarrierSession_C { 
-    ncclBarrierSession<ncclCoopAny> bar; 
+struct ncclBarrierSession_C {
+    ncclBarrierSession<ncclCoopAny> bar;
 };
 
 /* Peer pointer API */

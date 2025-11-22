@@ -160,7 +160,7 @@ When the signal update completes on the remote peer, it guarantees delivery of b
 
 ### API Option 1
 
-We propose the following host-initiated `ncclPut` API definition. The API operates asynchronously with respect to the CPU host thread and adheres to CUDA stream semantics. The `ctx` parameter provides operation context for the Put request. The `localbuff` source buffer does not require registration in the symmetric window. The target buffer address is determined by `peeroffset` within the `win` object registered by the target peer. Signal operations are configured through `signalWin`, `signalOffset`, `signalType`, and `signalValue` parameters, enabling the passive side to verify data arrival. Signaling can be disabled by passing `NULL` to the `signalWin` parameter. When signalWin is NULL, the signalOffset, signalType, and signalValue parameters are ignored. 
+We propose the following host-initiated `ncclPut` API definition. The API operates asynchronously with respect to the CPU host thread and adheres to CUDA stream semantics. The `ctx` parameter provides operation context for the Put request. The `localbuff` source buffer does not require registration in the symmetric window. The target buffer address is determined by `peeroffset` within the `win` object registered by the target peer. Signal operations are configured through `signalWin`, `signalOffset`, `signalType`, and `signalValue` parameters, enabling the passive side to verify data arrival. Signaling can be disabled by passing `NULL` to the `signalWin` parameter. When signalWin is NULL, the signalOffset, signalType, and signalValue parameters are ignored.
 
 Unlike the device-initiated Put API, which includes a `counter` argument for the origin rank to verify completion, this host-initiated API does not include such an argument. Instead, completion can be verified using `cudaStreamSynchronize` from the host.
 
@@ -243,7 +243,7 @@ if (rank == 0) {
   int ctx = 0;                     // Context identifier
   size_t signal_offset = 0;        // Signal at beginning of signal window
   uint64_t expected_value = 1;     // Expected signal value
-  
+
   // Wait for signal
   NCCLCHECK(ncclWaitSignal(ctx, signalWindow, signal_offset, expected_value, stream));
 
@@ -268,13 +268,13 @@ This limitation forces a choice between these approaches to update the `ncclComm
 
 3. **Enhanced Registration API**: Extend `ncclCommWindowRegister` with new flags that allow users to specify different memory ordering requirements at registration time.
 
-**Signal Race Conditions**: In this API, signal memory registration through `ncclCommWindowRegister` is not bound to any specific communication context, allowing users to associate the same signal address with multiple contexts. Since different contexts map to different queue pairs (as explained earlier), and queue pairs may be distributed across multiple NICs in multi-NIC systems, this enables different NICs to target the same signal location simultaneously. This creates a race condition when NICs use non-atomic operations. Concurrent read-modify-write operations from multiple NICs can corrupt each other's updates, leading to inconsistent signaling state. The problem is particularly severe with current hardware: many NICs including ConnectX-7 and ConnectX-8 use read-modify-write operations instead of PCIe atomics in their default firmware configurations. Users can inadvertently trigger these races by reusing the same signal address across operations that utilize different contexts, which may be handled by different NICs. 
+**Signal Race Conditions**: In this API, signal memory registration through `ncclCommWindowRegister` is not bound to any specific communication context, allowing users to associate the same signal address with multiple contexts. Since different contexts map to different queue pairs (as explained earlier), and queue pairs may be distributed across multiple NICs in multi-NIC systems, this enables different NICs to target the same signal location simultaneously. This creates a race condition when NICs use non-atomic operations. Concurrent read-modify-write operations from multiple NICs can corrupt each other's updates, leading to inconsistent signaling state. The problem is particularly severe with current hardware: many NICs including ConnectX-7 and ConnectX-8 use read-modify-write operations instead of PCIe atomics in their default firmware configurations. Users can inadvertently trigger these races by reusing the same signal address across operations that utilize different contexts, which may be handled by different NICs.
 
 ### API Option 2
 
-Previous options require users to explicitly manage signaling behavior, including choosing signal operations (e.g., `ncclSignalInc` or `ncclSignalSet`). This option abstracts signaling configuration from the user by providing a simplified semantics: 
+Previous options require users to explicitly manage signaling behavior, including choosing signal operations (e.g., `ncclSignalInc` or `ncclSignalSet`). This option abstracts signaling configuration from the user by providing a simplified semantics:
 
-- **Put operations**: Use flexible signaling modes to control signal behavior  
+- **Put operations**: Use flexible signaling modes to control signal behavior
 - **Wait operations**: Wait for `nsignals` number of signals from `peers`
 
 The benefit of this approach is to provide flexible signaling semantics while allowing NCCL to optimize the underlying implementation for NVL and network. Users can choose between aggregated signaling (for barrier-like patterns) and distinct signaling (when peer identity matters), while NCCL handles the hardware-specific optimizations automatically.
@@ -291,7 +291,7 @@ typedef enum {
  *
  * One-sided communication operation that writes data from the local buffer to a
  * remote peer's registered memory window without explicit participation from the
- * target process. 
+ * target process.
  *
  * Parameters:
  *   ctx          - Context identifier for the operation
@@ -339,7 +339,7 @@ ncclResult_t ncclSignal(int ctx, int peer, ncclSignalMode_t signalMode, ncclComm
 /*
  * Wait for signals from multiple peers
  *
- * Waits for specified number of signals from each peer. This provides flexible 
+ * Waits for specified number of signals from each peer. This provides flexible
  * synchronization patterns for multi-peer communication while allowing NCCL to
  * optimize signal counters based on transport types (network vs NVL).
  *
@@ -383,7 +383,7 @@ To enable optimal implementations, we propose two signal modes that serve as hin
 The `NCCL_SIGNAL_DISTINCT` mode is essential for communication patterns where **peer identity matters** and specific ordering between peers must be maintained. This is required when:
 
 - Operations depend on knowing which specific peer sent a signal
-- Sequential processing requires data from specific peers in a particular order  
+- Sequential processing requires data from specific peers in a particular order
 - Point-to-point coordination between designated neighbors is needed
 
 **Multi-step Ring Data Transfer Example:**
@@ -394,7 +394,7 @@ The following example demonstrates a ring-based data transfer algorithm where ea
 // Register memory window for data transfers
 cudaMalloc(&dataBuffer, bufferSize);
 ncclWindow_t dataWindow;
-NCCLCHECK(ncclCommWindowRegister(comm, dataBuffer, bufferSize, &dataWindow, 
+NCCLCHECK(ncclCommWindowRegister(comm, dataBuffer, bufferSize, &dataWindow,
                                 NCCL_WIN_COLL_SYMMETRIC));
 
 // Calculate ring topology
@@ -411,20 +411,20 @@ cudaMalloc(&send_buf, chunk_size);
 for (int step = 0; step < nranks; step++) {
     // Step 1: Process recv_buf and populate send_buf
     processDataKernel<<<blocks, threads, 0, stream>>>(recv_buf, send_buf, chunk_size);
-    
+
     // Step 2: Send signal upstream to indicate ready to receive
     ncclSignal(ctx, upstream_rank, NCCL_SIGNAL_DISTINCT, comm, stream);
-    
+
     // Step 3: Wait for downstream to give us free space (ready signal)
     int downstream_peer = downstream_rank;
     int nsignals_downstream = 1;
     ncclWaitSignal(ctx, &downstream_peer, &nsignals_downstream, 1, NCCL_SIGNAL_DISTINCT, comm, stream);
-    
+
     // Step 4: Send data downstream with completion signal
     size_t elements = chunk_size / sizeof(float);
-    ncclPut(ctx, send_buf, elements, ncclFloat32, downstream_rank, 
+    ncclPut(ctx, send_buf, elements, ncclFloat32, downstream_rank,
             step * chunk_size, dataWindow, NCCL_SIGNAL_DISTINCT, comm, stream);
-    
+
     // Step 5: Wait for data from upstream
     int upstream_peer = upstream_rank;
     int nsignals_upstream = 1;
@@ -458,21 +458,21 @@ if (rank != 0) {
 
 } else if (rank == 0) {
   int ctx = 0;
-  
+
   // Create arrays for all sending peers (ranks 1 through nranks-1)
   int *sending_peers = (int*)malloc((nranks - 1) * sizeof(int));
   int *nsignals_per_peer = (int*)malloc((nranks - 1) * sizeof(int));
-  
+
   for (int i = 0; i < nranks - 1; i++) {
     sending_peers[i] = i + 1;  // Ranks 1, 2, ..., nranks-1
     nsignals_per_peer[i] = 1;  // Expect 1 signal from each peer
   }
-  
+
   // Wait for ALL senders to complete - order doesn't matter
   // NCCL can optimize this using a shared counter for all peers
-  NCCLCHECK(ncclWaitSignal(ctx, sending_peers, nsignals_per_peer, nranks - 1, 
+  NCCLCHECK(ncclWaitSignal(ctx, sending_peers, nsignals_per_peer, nranks - 1,
                           NCCL_SIGNAL_AGGREGATE, comm, stream));
-  
+
   // Process gathered data (all data is now available)
   gather_process_kernel<<<blocks, threads, 0, stream>>>(d_recvbuf);
 

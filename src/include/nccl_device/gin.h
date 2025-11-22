@@ -44,13 +44,13 @@ using ncclGin = ncclGin_BackendMask<NCCL_GIN_BACKEND_MASK_ALL>;
 struct ncclGin_C {
   ncclDevComm const& comm;
   uint32_t nContexts:8, contextId:8, _ginBackend:8;
-  
+
   //////////////////////////////////////////////////////////////////////////////
   // internal:
   void* _ginHandle;
   uint64_t* _signalShadows;
   unsigned backendMask;
-  
+
   NCCL_DEVICE_INLINE ncclGin_C(ncclDevComm const& comm_, unsigned backendMask_, int contextIndex);
 };
 

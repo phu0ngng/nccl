@@ -27,7 +27,7 @@ else
 	BITCODE_LIB_ARCH ?= sm_90
 endif
 
-# Notes: 
+# Notes:
 # Device API code follows C++17
 # Error in GIN code while compiling with c++17
 BITCODE_CXX_STD ?= gnu++17

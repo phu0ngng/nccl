@@ -3,7 +3,7 @@
 extern "C" __global__ void runDevice(ncclDevComm comm) {
 #if __CUDA_ARCH__ >= 700
   int t = threadIdx.x;
-  
+
   // Compute world team on device
   ncclTeam world = ncclTeamWorld(comm);
 
@@ -24,7 +24,7 @@ extern "C" __global__ void runDevice(ncclDevComm comm) {
   ncclLsaBarrierHandle innerHandle = comm.lsaBarrier;
   ncclGinBarrierHandle outerHandle = comm.railGinBarrier;
   ncclMultimemHandle mmHandle{}; // unused when multimem=false
-  
+
   ncclBarrierSessionInit(
       session,
       *coop,

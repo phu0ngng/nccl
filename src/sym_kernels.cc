@@ -398,7 +398,7 @@ ncclResult_t ncclSymkPickKernel(
     float* estTimeUs, ncclSymkKernelId* kernelId, int* nBlocks, int* nWarps, bool* forced
   ) {
   uint32_t kmask = ncclSymkMask(comm, coll, red, ty, nEltsMax);
-  
+
   *forced = !(kernelMask_user() == (1<<(int)ncclSymkKernelId_Count)-1);
   // We currently don't support grouping for LL kernels.
   if (nWorks > 1)

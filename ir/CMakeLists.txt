@@ -31,7 +31,7 @@ find_program(LLVM_DIS_EXECUTABLE llvm-dis REQUIRED)
 find_program(LLVM_AS_EXECUTABLE llvm-as REQUIRED)
 
 # Include paths
-set(NCCL_INCLUDES 
+set(NCCL_INCLUDES
     -I${CMAKE_BINARY_DIR}/include
     -I${CMAKE_SOURCE_DIR}/src/include
     -I${CMAKE_SOURCE_DIR}/src/include/nccl_device

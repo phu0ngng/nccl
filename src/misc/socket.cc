@@ -116,7 +116,7 @@ ncclResult_t ncclSocketListen(struct ncclSocket* sock) {
 #endif
 
   SYSCHECK(listen(sock->socketDescriptor, 16384), "listen");
-  
+
   // Set acceptSocketDescriptor to the same value as socketDescriptor for listening sockets
   sock->acceptSocketDescriptor = sock->socketDescriptor;
   sock->state = ncclSocketStateReady;

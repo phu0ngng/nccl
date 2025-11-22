@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
 
   ncclDevComm dcomm;
-  { 
+  {
     ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.ginSignalCount = 1;
     reqs.ginForceEnable = true;
@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
   init_cumodule(&mymodule, "devapi_signal_ring_ir.cubin");
   CUfunction kernel;
   init_test_case_kernel(mymodule, &kernel, "runDevice");
-  
+
   void* args[] = {&dcomm};
   CU_CHECK(cuLaunchKernel(kernel, 1, 1, 1, 512, 1, 1, 0, stream, args, NULL));
   CU_CHECK(cuStreamSynchronize(stream));

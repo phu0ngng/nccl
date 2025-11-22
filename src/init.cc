@@ -1897,7 +1897,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
       (comm->config.CTAPolicy & NCCL_CTA_POLICY_EFFICIENCY)) {
     WARN("Both NCCL_CTA_POLICY_ZERO and NCCL_CTA_POLICY_EFFICIENCY are set in CTAPolicy (%d). Unsetting POLICY_EFFICIENCY.", comm->config.CTAPolicy);
     comm->config.CTAPolicy &= ~NCCL_CTA_POLICY_EFFICIENCY;
-  } 
+  }
 
   return ret;
 }
@@ -2797,7 +2797,7 @@ ncclResult_t ncclCommGetUniqueId(ncclComm_t comm, ncclUniqueId* uniqueId) {
 
   struct ncclBootstrapHandle growHandle;
   NCCLCHECK(bootstrapGetUniqueId(&growHandle, comm));
-  
+
   // Broadcast the grow handle to boundary ranks (rank 0 and N-1)
   NCCLCHECK(bcastGrowHandle(&growHandle, comm, /*isRoot=*/true));
 
@@ -2941,7 +2941,7 @@ ncclResult_t ncclCommGrow(ncclComm_t comm, int nRanks, const ncclUniqueId* uniqu
 exit:
   if (*newcomm) {
     uint64_t parentHash = isExistingRank ? comm->commHash : 0;
-    NVTX3_RANGE_ADD_PAYLOAD(CommGrow, NcclNvtxParamsCommGrowSchema, 
+    NVTX3_RANGE_ADD_PAYLOAD(CommGrow, NcclNvtxParamsCommGrowSchema,
       NVTX3_PAYLOAD((*newcomm)->commHash, parentHash, nRanks, (*newcomm)->rank, (*newcomm)->cudaDev));
   }
   (void)ncclGroupErrCheck(res);

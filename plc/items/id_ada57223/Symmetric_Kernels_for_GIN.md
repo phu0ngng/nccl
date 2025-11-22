@@ -98,13 +98,13 @@ fp8 is deemed out of scope.
 In order to use scale out AG symmetric kernels, we require users to symmetrically register
 both src and dst buffers. Once buffers are registered and multi-node environment is detected,
 scale-out kernels will be automatically picked. We assume each GPU has a local NIC or at least
-can access a NIC in this implementation. 
+can access a NIC in this implementation.
 
-We provide 3 different algorithms for allgather. 
+We provide 3 different algorithms for allgather.
 
 The first one is Ring + NVLS (`ncclSymkRun_AllGather_GinHier_MCRing`). We split block into 2 parts;
 the first part contains 1 warp which is used to issue GIN put on the rail, and the second part contains
-the rest of warps to receive data from network and perform NVLS ops. The ring is built based on the 
+the rest of warps to receive data from network and perform NVLS ops. The ring is built based on the
 previous and next peer relative to my rank; for each round, each rank will load all its data received
 from previous peer and put to next peer's dst buffer (except the first round where rank will directly
 send its own src data).
@@ -201,11 +201,11 @@ chunkSize now might not be optimal and can be tuned in the future
 ### Performance
 The bandwidth on CW 8 DGX H100 nodes is as follows:
 
-![AG Scale Out Bus Bandwidth on CW](images/AG_Scale_Out_Perf_Sweep_All.png) 
+![AG Scale Out Bus Bandwidth on CW](images/AG_Scale_Out_Perf_Sweep_All.png)
 
 The corresponding latency on CW 8 DGX H100 nodes is as follows:
 
-![AG Scale Out Bus Bandwidth on CW](images/AG_Scale_Out_Perf_Sweep_Latency.png) 
+![AG Scale Out Bus Bandwidth on CW](images/AG_Scale_Out_Perf_Sweep_Latency.png)
 
 #### What is measured?
 

@@ -214,7 +214,7 @@ For non-blocking grow operations with error handling:
   // Existing ranks
   ncclComm_t newcomm;
   ncclResult_t res = ncclCommGrow(comm, 8, NULL, -1, &newcomm, &config);
-  
+
   // Poll for completion
   ncclResult_t asyncErr;
   do {

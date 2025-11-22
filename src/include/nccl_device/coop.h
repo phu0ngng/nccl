@@ -25,25 +25,25 @@ struct ncclCoopAny {
   };
 
   template<typename Impl>
-  __device__ static int thread_rank(void const* o) { 
-    return static_cast<Impl const*>(o)->thread_rank(); 
+  __device__ static int thread_rank(void const* o) {
+    return static_cast<Impl const*>(o)->thread_rank();
   }
   template<typename Impl>
-  __device__ static int size(void const* o) { 
-    return static_cast<Impl const*>(o)->size(); 
+  __device__ static int size(void const* o) {
+    return static_cast<Impl const*>(o)->size();
   }
   template<typename Impl>
-  __device__ static void sync(void* o) { 
-    static_cast<Impl*>(o)->sync(); 
+  __device__ static void sync(void* o) {
+    static_cast<Impl*>(o)->sync();
   }
 
   template<typename Impl>
   __device__ static VTable const* get_vtable() {
     static_assert(sizeof(Impl) <= sizeof(Storage), "Incompatible coop type size");
     static_assert(alignof(Impl) <= alignof(Storage), "Incompatible coop type alignment");
-    static constexpr VTable v = { 
-      &thread_rank<Impl>, 
-      &size<Impl>, 
+    static constexpr VTable v = {
+      &thread_rank<Impl>,
+      &size<Impl>,
       &sync<Impl>
     };
     return &v;
