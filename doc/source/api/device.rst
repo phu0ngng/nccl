@@ -166,6 +166,8 @@ ncclGetLsaMultimemPointer
 Returns a multicast memory pointer associated with the window *w* and device communicator *devComm*.  *offset*
 is byte-based.  Availability of multicast memory is hardware-dependent.
 
+.. _device_api_host_functions:
+
 Host-Accessible Device Pointer Functions
 ========================================
 

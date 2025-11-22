@@ -199,6 +199,7 @@ and :c:func:`ncclGetPeerDevicePointer` (world rank peer pointer). Functions auto
 from the window object and return ``ncclResult_t`` error codes.
 
 Usage Example:
+
 .. code:: C
 
   int main() {
