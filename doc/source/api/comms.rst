@@ -163,8 +163,8 @@ After the grow operation completes, the parent communicator should be destroyed 
 
 1. Coordinator rank calls *ncclCommGetUniqueId* to generate the grow identifier
 2. Coordinator distributes the *uniqueId* to all new ranks (out-of-band)
-3. All existing ranks call *ncclCommGrow* with *comm*=parent, *rank*=-1, *uniqueId*=NULL (except for Coordinator rank which passes the *uniqueId*)
-4. All new ranks call *ncclCommGrow* with *comm*=NULL, *rank*=new_rank, *uniqueId*=received_id
+3. All existing ranks call *ncclCommGrow* with *comm*\=parent, *rank*\=-1, *uniqueId*\=NULL (except for Coordinator rank which passes the *uniqueId*)
+4. All new ranks call *ncclCommGrow* with *comm*\=NULL, *rank*\=new_rank, *uniqueId*\=received_id
 
 ncclCommFinalize
 ----------------
