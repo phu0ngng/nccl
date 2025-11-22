@@ -50,8 +50,46 @@ void SendRecvGetBw(size_t count, int typesize, double sec, double* algBw, double
   *busBw = baseBw * factor;
 }
 
-testResult_t SendRecvRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
-  if (deviceImpl == 0) {
+/*
+ * SendRecv implementation using RMA host put APIs
+ */
+testResult_t SendRecvRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                            size_t count, ncclDataType_t type, ncclComm_t comm, cudaStream_t stream) {
+  int rank, nranks;
+  NCCLCHECK(ncclCommUserRank(comm, &rank));
+  NCCLCHECK(ncclCommCount(comm, &nranks));
+
+  // Calculate peers in ring topology
+  int recvPeer = (rank - 1 + nranks) % nranks;
+  int sendPeer = (rank + 1) % nranks;
+
+  ncclWindow_t sendWin = (ncclWindow_t)sendWindow;
+  ncclWindow_t recvWin = (ncclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  NCCLCHECK(ncclWinGetUserPtr(comm, sendWin, &sendPtr));
+  NCCLCHECK(ncclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  int ctx = 0;
+
+  NCCLCHECK(ncclGroupStart());
+
+  // Put my data to next peer's receive buffer
+  NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, sendPeer,
+                    recvWin, recvoffset, NCCL_SIGNAL, ctx, comm, stream));
+
+  // Wait for signal from previous peer
+  int nsignals = 1;
+  NCCLCHECK(ncclWaitSignal(1, &recvPeer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
+  return testSuccess;
+}
+
+testResult_t SendRecvRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
+  if (implementation == 0) {
     int nRanks;
     NCCLCHECK(ncclCommCount(comm, &nRanks));
     int rank;
@@ -65,6 +103,9 @@ testResult_t SendRecvRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
     NCCLCHECK(ncclSend(sptr, count, type, sendPeer, comm, stream));
     NCCLCHECK(ncclRecv(rptr, count, type, recvPeer, comm, stream));
     NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+  } else if (implementation == HOST_RMA_IMPL) {
+    // RMA host put implementation
+    TESTCHECK(SendRecvRmaPut(sendbuff, sendoffset, recvbuff, recvoffset, count, type, comm, stream));
   } else {
     return testNotImplemented;
   }

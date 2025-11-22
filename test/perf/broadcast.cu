@@ -46,8 +46,46 @@ void BroadcastGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
-testResult_t BroadcastRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
-  if (deviceImpl == 0) {
+/*
+ * Broadcast implementation using RMA host put APIs
+ */
+testResult_t BroadcastRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                             size_t count, ncclDataType_t type, int root, ncclComm_t comm, cudaStream_t stream) {
+  int rank, nranks;
+  NCCLCHECK(ncclCommUserRank(comm, &rank));
+  NCCLCHECK(ncclCommCount(comm, &nranks));
+
+  ncclWindow_t sendWin = (ncclWindow_t)sendWindow;
+  ncclWindow_t recvWin = (ncclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  NCCLCHECK(ncclWinGetUserPtr(comm, sendWin, &sendPtr));
+  NCCLCHECK(ncclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  int ctx = 0;
+
+  NCCLCHECK(ncclGroupStart());
+
+  if (rank == root) {
+    // Root puts data to all ranks (including itself)
+    for (int peer = 0; peer < nranks; peer++) {
+      NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, peer,
+                        recvWin, recvoffset, NCCL_SIGNAL, ctx, comm, stream));
+    }
+  }
+
+  // All ranks wait for signal from root
+  int nsignals = 1;
+  NCCLCHECK(ncclWaitSignal(1, &root, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
+  return testSuccess;
+}
+
+testResult_t BroadcastRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
+  if (implementation == 0) {
     int rank;
     NCCLCHECK(ncclCommUserRank(comm, &rank));
 
@@ -62,6 +100,9 @@ testResult_t BroadcastRunColl(void* sendbuff, size_t sendoffset, void* recvbuff,
       NCCLCHECK_COMM_WAIT(ncclBcast(rptr, count, type, root, comm, stream), comm);
     }
 #endif
+  } else if (implementation == HOST_RMA_IMPL) {
+    // RMA host put implementation
+    TESTCHECK(BroadcastRmaPut(sendbuff, sendoffset, recvbuff, recvoffset, count, type, root, comm, stream));
   } else {
     return testNotImplemented;
   }

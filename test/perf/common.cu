@@ -111,6 +111,7 @@ static int profilerIters = INT_MAX;
 int tuning;
 int memory_report = 0;
 static int deviceImpl = 0;
+static int hostRmaImpl = 0;
 
 int deviceCtaCount = 16; // Default number of CTAs for device implementation
 
@@ -316,6 +317,44 @@ void Barrier(struct threadArgs *args) {
   }
   pthread_mutex_unlock(&lock[epoch]);
   epoch ^= 1;
+}
+
+testResult_t barrierRmaSignal(ncclComm_t comm, cudaStream_t stream) {
+  int rank, nranks;
+  NCCLCHECK(ncclCommUserRank(comm, &rank));
+  NCCLCHECK(ncclCommCount(comm, &nranks));
+
+  int ctx = 0;
+
+  int* peers = (int*)malloc(sizeof(int) * (nranks - 1));
+  int* nsignals = (int*)malloc(sizeof(int) * (nranks - 1));
+  if (peers == NULL || nsignals == NULL) {
+    free(peers);
+    free(nsignals);
+    return testInternalError;
+  }
+
+  int peerIdx = 0;
+  for (int i = 0; i < nranks; i++) {
+    if (i != rank) {
+      peers[peerIdx] = i;
+      nsignals[peerIdx] = 1;
+      peerIdx++;
+    }
+  }
+
+  for (int i = 0; i < nranks; i++) {
+    if (i != rank) {
+      NCCLCHECK(ncclSignal(i, NCCL_SIGNAL, ctx, comm, stream));
+    }
+  }
+
+  NCCLCHECK(ncclWaitSignal(nranks - 1, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+
+  free(peers);
+  free(nsignals);
+
+  return testSuccess;
 }
 
 // Inter-thread/process barrier+allreduce. The quality of the return value
@@ -576,6 +615,17 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       }
 #endif
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+      if (hostRmaImpl) {
+        void* sendwin = args->sendRegHandles[id][i];
+        void* recvwin = args->recvRegHandles[id][i];
+        CUDACHECK(cudaSetDevice(args->gpus[i]));
+        TESTCHECK(args->collTest->runColl(
+              (void*)(in_place ? recvwin : sendwin), shift + (in_place ? args->sendInplaceOffset[id][i] * rank : 0),
+              (void*)recvwin, shift + in_place ? args->recvInplaceOffset[id][i] * rank : 0,
+              count, type, op, root, args->comms[id][i], args->streams[i], HOST_RMA_IMPL));
+      } else
+#endif
       if (deviceImpl == 0) {
         TESTCHECK(args->collTest->runColl(
               (void*)(in_place ? recvBuff : sendBuff), in_place ? args->sendInplaceOffset[id][i] * rank : 0,
@@ -780,6 +830,13 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   for (int c = 0; c < datacheck; c++) {
       // Initialize sendbuffs, recvbuffs and expected
       TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
+
+      // Ensure GPU buffer initialization completes across all ranks before validation
+      for (int i = 0; i < args->nGpus; i++) {
+        CUDACHECK(cudaSetDevice(args->gpus[i]));
+        CUDACHECK(cudaStreamSynchronize(args->streams[i]));
+      }
+      Barrier(args);  // MPI barrier to ensure all ranks' GPUs are ready
 
 #if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
@@ -1401,6 +1458,7 @@ int main(int argc, char* argv[], char **envp) {
     {"device_implementation", required_argument, 0, 'D'},
     {"device_cta_count", required_argument, 0, 'V'},
     {"memory", required_argument, 0, 'M'},
+    {"host_rma_implementation", no_argument, 0, 'H'},
 
     {"help", no_argument, 0, 'h'},
     {}
@@ -1408,7 +1466,7 @@ int main(int argc, char* argv[], char **envp) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:M:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:M:H", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1609,6 +1667,14 @@ int main(int argc, char* argv[], char **envp) {
           return -1;
         }
         break;
+      case 'H':
+        if (test_ncclVersion >= NCCL_VERSION(2,29,0)) {
+          hostRmaImpl = 1;
+        } else {
+          fprintf(stderr, "Option -H (host RMA implementation) requires NCCL >= 2.29.0\n");
+          return -1;
+        }
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1659,6 +1725,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-U,--tuning <0/1> report NCCL tuning info (default: 0)] \n\t"
             "[-D,--device_implementation <implementation number> enable device implementation (default: 0, use NCCL implementation; requires -R 2 if > 0)] \n\t"
             "[-V,--device_cta_count <number> set number of CTAs for device implementation (default: 16)] \n\t"
+            "[-H,--host_rma_implementation enable Host RMA API implementations (requires -R 2)] \n\t"
             "[-M,--memory_report <0/1> enable memory usage report (default: 0)] \n\t"
 
             "[-h,--help]\n",
@@ -1672,8 +1739,16 @@ int main(int argc, char* argv[], char **envp) {
            (unsigned long long)maxBytes);
     return -1;
   }
+  if (hostRmaImpl && deviceImpl > 0) {
+    fprintf(stderr, "Cannot use both -H (host RMA implementation) and -D (device implementation) at the same time\n");
+    return -1;
+  }
   if (deviceImpl > 0 && (local_register != SYMMETRIC_REGISTER)) {
     fprintf(stderr, "device implementation (-D > 0) requires enabling symmetric memory registration (-R 2)\n");
+    return -1;
+  }
+  if (hostRmaImpl && (local_register != SYMMETRIC_REGISTER)) {
+    fprintf(stderr, "host RMA implementation (-H) requires enabling symmetric memory registration (-R 2)\n");
     return -1;
   }
 

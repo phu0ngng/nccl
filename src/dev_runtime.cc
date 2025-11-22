@@ -6,6 +6,7 @@
 
 #include "dev_runtime.h"
 #include "comm.h"
+#include "rma/rma.h"
 #include "device.h"
 #include "transport.h"
 #include "group.h"
@@ -32,6 +33,8 @@ struct ncclDevrMemory {
   size_t bigOffset; // offset in big VA space
   void* ginHostWins[NCCL_GIN_MAX_CONTEXTS];
   ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONTEXTS];
+  void* rmaHostWins[NCCL_GIN_MAX_CONTEXTS];
+  ncclGinWindow_t rmaDevWins[NCCL_GIN_MAX_CONTEXTS];
 };
 
 struct ncclDevrWindowSorted {
@@ -363,6 +366,12 @@ static ncclResult_t symMemoryRegisterGin(struct ncclComm* comm, struct ncclDevrM
   return ncclSuccess;
 }
 
+static ncclResult_t symMemoryRegisterRma(struct ncclComm* comm, struct ncclDevrMemory* mem) {
+  NCCLCHECK(ncclRmaProxyConnectOnce(comm));
+  NCCLCHECK(ncclRmaProxyRegister(comm, mem->primaryAddr, mem->size, mem->rmaHostWins, mem->rmaDevWins));
+  return ncclSuccess;
+}
+
 // On success we take caller's reference on memHandle.
 // Due to multicast binds for each pre-exiting team, this function requires
 // caller do a world barrier before returning to user.
@@ -411,6 +420,13 @@ static ncclResult_t symMemoryObtain(
     NCCLCHECKGOTO(symMemoryRegisterGin(comm, mem), ret, fail_mem_space_teams);
   }
 
+  // ginEnabled is set in ncclDevrCommCreateInternal, which might not be called for RMA proxy
+  // so we introduce rmaProxyEnabled to track if RMA proxy is enabled
+  devr->rmaProxyEnabled = comm->nNodes > 1 && comm->config.numRmaCtx > 0 && comm->rmaState.rmaProxyState.ncclGin != NULL;
+  if (devr->rmaProxyEnabled) {
+    NCCLCHECKGOTO(symMemoryRegisterRma(comm, mem), ret, fail_mem_space_teams);
+  }
+
   // Add to list of mems.
   mem->next = devr->memHead;
   devr->memHead = mem;
@@ -439,6 +455,9 @@ static void symMemoryDropRef(
     struct ncclDevrState* devr = &comm->devrState;
     if (devr->ginEnabled) {
       ncclGinDeregister(comm, mem->ginHostWins);
+    }
+    if (devr->rmaProxyEnabled) {
+      ncclRmaProxyDeregister(comm, mem->rmaHostWins);
     }
     for (struct ncclDevrTeam* t = devr->teamHead; t != nullptr; t = t->next) {
       symUnbindTeamMemory(comm, t, mem);
@@ -1105,6 +1124,24 @@ ncclResult_t ncclDevCommDestroy(
   return ncclSuccess;
 }
 
+NCCL_API(ncclResult_t, ncclWinGetUserPtr, ncclComm_t comm, ncclWindow_t win, void** outUserPtr);
+ncclResult_t ncclWinGetUserPtr(struct ncclComm* comm, struct ncclWindow_vidmem* win, void** outUserPtr) {
+  if (comm == nullptr || win == nullptr || outUserPtr == nullptr) {
+    return ncclInvalidArgument;
+  }
+
+  struct ncclDevrWindow* winHost = NULL;
+  struct ncclWindow_vidmem* winDevHost = NULL;
+  NCCLCHECK(ncclShadowPoolToHost(&comm->devrState.shadows, win, &winDevHost));
+
+  winHost = (struct ncclDevrWindow*)winDevHost->winHost;
+  if (winHost == nullptr) {
+    return ncclInternalError;
+  }
+
+  *outUserPtr = winHost->userPtr;
+  return ncclSuccess;
+}
 
 // Get the corresponding pointer in another lsa rank's symmetric memory window
 ncclResult_t ncclDevrGetLsaRankPtr(struct ncclComm* comm, struct ncclDevrWindow* winHost, size_t offset, int lsaRank, void** outPtr) {
@@ -1127,6 +1164,17 @@ ncclResult_t ncclDevrGetLsaRankPtr(struct ncclComm* comm, struct ncclDevrWindow*
   // Calculate the address with offset for the specified lsa rank
   *outPtr = (void*)((uintptr_t)devr->lsaFlatBase + lsaRank * devr->bigSize + winHost->bigOffset + offset);
   return ncclSuccess;
+}
+
+// Get the RMA device window handle for a specific context
+ncclGinWindow_t ncclDevrGetRmaDevWin(struct ncclDevrWindow* winHost, int ctx) {
+  if (winHost == nullptr || winHost->memory == nullptr) {
+    return nullptr;
+  }
+  if (ctx < 0 || ctx >= NCCL_GIN_MAX_CONTEXTS) {
+    return nullptr;
+  }
+  return winHost->memory->rmaDevWins[ctx];
 }
 
 // Get the multicast address for a given team

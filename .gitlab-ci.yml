@@ -991,6 +991,7 @@ unit_tests-pre-nyx:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
+    RMA_SINGLE_NODE_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1047,6 +1048,7 @@ unit_tests-pre-tyche:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
+    RMA_SINGLE_NODE_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1405,8 +1407,122 @@ unit_tests-theia:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
+    RMA_SINGLE_NODE_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-rma-pre-nyx:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs: [build-ipp6]
+  tags:
+    - prenyx
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: batch
+    NNODES: 4
+    NGPUS: 4
+    NP: 4
+    NCCL_HOME: build
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    RMA_MULTINODE_TESTS: 1
+  before_script:
+    - tar -xzf build-ipp6.tar.gz
+  script:
+    - source docker/clusters/pre-nyx-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:rma-unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-rma-pre-tyche:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs: [build-pre-tyche]
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: batch
+    NNODES: 4
+    NGPUS: 4
+    NP: 4
+    NCCL_HOME: build-pre-tyche
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    RMA_MULTINODE_TESTS: 1
+  script:
+    - source docker/clusters/pre-tyche-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:rma-unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-rma-theia:
+  stage: unit_tests
+  rules:
+    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+    - when: never
+  needs: [build-theia]
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: gb300
+    NNODES: 4
+    NGPUS: 4
+    NP: 4
+    NCCL_HOME: build-theia
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    RMA_MULTINODE_TESTS: 1
+  script:
+    - source docker/clusters/theia-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:rma-unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -2439,6 +2555,7 @@ perftest-single-pre-nyx:
     NCCL_HOME: build
     SYMMETRIC: 1
     CE_COLL: 1
+    RMA: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2475,6 +2592,7 @@ perftest-single-pre-tyche:
     GRAPH: 0
     SYMMETRIC: 1
     CE_COLL: 1
+    RMA: 1
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENABLE_MNNVL_TUNER_PLUGIN: 1
@@ -2549,6 +2667,7 @@ perftest-single-theia:
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
+    RMA: 1
     NCCL_HOME: build-theia
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
@@ -2832,6 +2951,7 @@ perftest-multi-pre-nyx:
     SYMMETRIC: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+    RMA: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2867,6 +2987,7 @@ perftest-multi-pre-tyche:
     NP: 4
     SYMMETRIC: 1
     CE_COLL: 1
+    RMA: 1
     GRAPH: 0
     NCCL_HOME: build-pre-tyche
     SLURM_ACCOUNT: coreai_libraries_nccl
@@ -2943,6 +3064,7 @@ perftest-multi-theia:
     MAX: "1G"
     NP: 4
     SYMMETRIC: 1
+    RMA: 1
     GRAPH: 0
     NCCL_HOME: build-theia
     SLURM_ACCOUNT: coreai_libraries_nccl
