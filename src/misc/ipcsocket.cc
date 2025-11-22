@@ -54,7 +54,7 @@ ncclResult_t ncclIpcSocketInit(ncclIpcSocket *handle, int rank, uint64_t hash, v
 
   TRACE(NCCL_INIT|NCCL_P2P, "UDS: Creating socket %s%s", temp, useAbstractSocket ? " (abstract)" : "");
 
-  strncpy(cliaddr.sun_path, temp, len);
+  strcpy(cliaddr.sun_path, temp);
   if (useAbstractSocket) {
     cliaddr.sun_path[0] = '\0'; // Linux abstract socket trick
   }
@@ -184,7 +184,7 @@ ncclResult_t ncclIpcSocketSendMsg(ncclIpcSocket *handle, void *hdr, int hdrLen, 
     WARN("UDS: Cannot connect to provided name for socket. Name too large");
     return ncclInternalError;
   }
-  (void) strncpy(cliaddr.sun_path, temp, len);
+  strcpy(cliaddr.sun_path, temp);
 
   int useAbstractSocket = ncclParamIpcUseAbstractSocket();
   if (useAbstractSocket) {
