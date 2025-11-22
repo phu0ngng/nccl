@@ -1,5 +1,6 @@
 stages:
   - build
+  - downstream
   - setup
   - health
   - unit_tests
@@ -55,6 +56,7 @@ variables:
   RUN_INSPECTOR_TESTS: "0"
   RUN_REPLAY_TESTS: "0"
   RUN_PERF_REGRESSION: "0"
+  RUN_NCCL4PY_CI: "0"
 
 default:
   # set all jobs to interruptible by default
@@ -210,6 +212,28 @@ build-cmake:
 
 ##
 ## Stage: build - Finish!
+##
+
+##
+## Stage: downstream - Start...
+##
+
+nccl4py_ci:
+  stage: downstream
+  needs:
+    - build-ipp6
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_NCCL4PY_CI == "1")
+      when: always
+    - when: never
+  trigger:
+    include: nccl4py/.gitlab-ci.yml
+    strategy: depend
+  variables:
+    PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+
+##
+## Stage: downstream - Finish!
 ##
 
 ##
