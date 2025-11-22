@@ -25,6 +25,15 @@ if(MPI_FOUND)
         ft_abort_rank0.cu
         lsa_pointer_test.cu
         lsa_multimem_pointer_test.cu
+        put_signal_ping_pong_gin.cu
+        put_signal_ping_pong_rma.cu
+        devapi_uts.cu
+        devapi_signal_ring.cu
+        devapi_barrier.cu
+        devapi_data_ring.cu
+        devapi_data_ring2.cu
+        gin_data_ring.cu
+        put_gin_alltoall.cu
     )
 endif()
 

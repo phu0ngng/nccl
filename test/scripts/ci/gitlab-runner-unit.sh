@@ -27,6 +27,32 @@ function run_gin_test_suite() {
   run_command "gin_test_${backend_label}_devapi_uts" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_uts" ""
 }
 
+function run_rma_test_suite() {
+  local ppn="$1"  # processes per node
+  # Ring: ppn × NNODES GPUs
+  run_command "rma_test_multinode_${ppn}ppn_put_signal_ring" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ring_rma" "-v 1"
+  # Alltoall: ppn × NNODES GPUs
+  run_command "rma_test_multinode_${ppn}ppn_put_signal_alltoall" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_alltoall_rma" "-v 1"
+}
+
+# RMA multi-node tests
+if [[ ${RMA_MULTINODE_TESTS} -eq 1 ]] && [[ ${NNODES} -gt 1 ]]; then
+  # Run with 1 process per node
+  run_rma_test_suite 1
+
+  # Run with NGPUS processes per node
+  if [[ ${NGPUS} -gt 1 ]]; then
+    run_rma_test_suite ${NGPUS}
+  fi
+fi
+
+# RMA single-node tests
+if [[ ${RMA_SINGLE_NODE_TESTS} -eq 1 ]] && [[ ${NNODES} -eq 1 ]]; then
+  run_command "rma_test_single_node_ping_pong" "$RUN_MODE" 2 "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ping_pong_rma" "-v 1"
+  run_command "rma_test_single_node_ring" "$RUN_MODE" ${NGPUS} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ring_rma" "-v 1"
+  run_command "rma_test_single_node_alltoall" "$RUN_MODE" ${NGPUS} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_alltoall_rma" "-v 1"
+fi
+
 if [[ ${ENQUEUE_TESTS_ARGS} -eq 1 ]] ; then
   run_command "enqueue_tests_args" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=1024" "$NCCL_HOME/test/unit/enqueue_test" ""
 else
@@ -72,7 +98,7 @@ else
   echo -e "Disabled FT TESTS Default test\n\n"
 fi
 
-if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]]; then
+if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]] && [[ ${RMA_MULTINODE_TESTS} -ne 1 ]]; then
   run_command "ft_abort_rank0" "$RUN_MODE" 2 "--oversubscribe" "NCCL_WIN_ENABLE=0" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
 fi
 

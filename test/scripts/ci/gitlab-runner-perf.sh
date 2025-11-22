@@ -32,6 +32,25 @@ for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_g
   run_command "${func}_all_sizes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$range $opts"
 done
 
+if [ "$RMA" == "1" ];
+then
+  for func in all_gather_perf alltoall_perf broadcast_perf gather_perf scatter_perf; do
+    if [ "$NNODES" == "1" ];
+    then
+      run_command "${func}_single_rma" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 0 -R 2 -H"
+    fi
+    if [ "$NNODES" -gt "1" ];
+    then
+      run_command "${func}_multi_rma" $RUN_MODE 1 "" "NCCL_NET=IB" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 0 -R 2 -H"
+      if [ "$NGPUS" -gt "1" ];
+      then
+        run_command "${func}_multi_rma" $RUN_MODE $NGPUS "" "NCCL_NET=IB" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 0 -R 2 -H"
+      fi
+    fi
+  done
+fi
+
+
 if [ "$CE_COLL" == "1" ];
 then
   for func in all_gather_perf alltoall_perf scatter_perf gather_perf; do
