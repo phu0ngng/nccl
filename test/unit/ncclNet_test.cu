@@ -14,9 +14,9 @@
 #define USE_SOCKET 1
 #define USE_IB 1
 
-extern ncclNet_t ncclNetSocket; 
-extern ncclNet_t ncclNetIb; 
-extern ncclNet_t ncclMpi; 
+extern ncclNet_t ncclNetSocket;
+extern ncclNet_t ncclNetIb;
+extern ncclNet_t ncclMpi;
 
 int Socket_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, int dev, int rank, int nranks, MPI_Comm comm){
   if(!rank) INFO(INIT,"Socket tester");
@@ -25,7 +25,7 @@ int Socket_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, in
   if(rank==0){
     for(int rnk=1; rnk<nranks; rnk++){
       char listenHandle[NCCL_NET_HANDLE_MAXSIZE];
-      char *listenComm; 
+      char *listenComm;
       if(net->listen(0, (void *)listenHandle, (void **)&listenComm)){ failed=1; goto out; }
       //INFO(INIT,"%d listen", rank);
       if(MPI_Send(listenHandle, NCCL_NET_HANDLE_MAXSIZE, MPI_BYTE, rnk, 0, comm)){ failed=1; goto out; }
@@ -67,7 +67,7 @@ int Socket_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, in
     if(net->connect(0, connectHandle, (void **)&sendComm)){ failed=1; goto out; }
     //INFO(INIT,"%d connect", rank);
 
-    /*pong*/  
+    /*pong*/
     int type = 0;
     type |= NCCL_PTR_HOST;
     char *request;
@@ -85,7 +85,7 @@ int Socket_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, in
     *duration = (end.tv_sec - start.tv_sec)*1000000 + (end.tv_usec - start.tv_usec);
     if(net->closeSend(sendComm)){ failed=1; goto out; }
     //INFO(INIT,"%d closeSend", rank);
-  } 
+  }
 
 out:
   return failed;
@@ -98,7 +98,7 @@ int IB_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, int de
   if(rank==0){
     for(int rnk=1; rnk<nranks; rnk++){
       char listenHandle[NCCL_NET_HANDLE_MAXSIZE];
-      char *listenComm; 
+      char *listenComm;
       if(net->listen(0, (void *)listenHandle, (void **)&listenComm)){ failed=1; goto out; }
       //INFO(INIT,"%d listen", rank);
 
@@ -141,7 +141,7 @@ int IB_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, int de
     if(net->connect(0, connectHandle, (void **)&sendComm)){ failed=1; goto out; }
     //INFO(INIT,"%d connect", rank);
 
-    /*pong*/  
+    /*pong*/
     int type = 0;
     type |= NCCL_PTR_HOST;
     char *request;
@@ -159,7 +159,7 @@ int IB_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, int de
     *duration = (end.tv_sec - start.tv_sec)*1000000 + (end.tv_usec - start.tv_usec);
     if(net->closeSend(sendComm)){ failed=1; goto out; }
     //INFO(INIT,"%d closeSend", rank);
-  } 
+  }
 
 out:
   return failed;
@@ -177,7 +177,7 @@ int MPI_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, int d
   if(rank==0){
     for(int rnk=1; rnk<nranks; rnk++){
       char listenHandle[NCCL_NET_HANDLE_MAXSIZE];
-      char *listenComm; 
+      char *listenComm;
       if(net->listen(0, (void *)listenHandle, (void **)&listenComm)){ failed=1; goto out; }
       INFO(INIT,"%d listen", rank);
 
@@ -220,7 +220,7 @@ int MPI_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, int d
     if(net->connect(0, connectHandle, (void **)&sendComm)){ failed=1; goto out; }
     INFO(INIT,"%d connect", rank);
 
-    /*pong*/  
+    /*pong*/
     int type = 0;
     type |= NCCL_PTR_HOST;
     char *request;
@@ -239,7 +239,7 @@ int MPI_tester(ncclNet_t *net, char *data, size_t bytes, size_t *duration, int d
 
     if(net->closeSend(sendComm)){ failed=1; goto out; }
     INFO(INIT,"%d closeSend", rank);
-  } 
+  }
 
 out:
   return failed;
@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
 
 #if defined(USE_SOCKET) || defined(USE_IB)
   for(int i=0; i<sizeof(nets)/sizeof(nets[0]); i++){
-    ncclNet_t *net = nets[i]; 
+    ncclNet_t *net = nets[i];
     if(!rank) INFO(INIT,"ncclNet %s selected ", net->name);
     for(size_t bytes=1; bytes<=MAX_SIZE; bytes*=32){
       if(!rank) INFO(INIT,"Send/Recv %zu bytes", bytes);

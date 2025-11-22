@@ -122,6 +122,49 @@ The *shrinkFlags* parameter controls the behavior of the operation. Use *NCCL_SH
 Specifically, when using *NCCL_SHRINK_DEFAULT*, there should not be any outstanding NCCL operations on the *comm* to avoid potential deadlocks. Further, if the parent communicator has the flag config.shrinkShare set to 1, NCCL will reuse the parent communicator resources.
 On the other hand, when using *NCCL_SHRINK_ABORT*, NCCL will automatically abort any outstanding operations on the parent communicator, and no resources will be shared between the parent and the newly created communicator.
 
+ncclCommGetUniqueId
+-------------------
+
+.. c:function:: ncclResult_t ncclCommGetUniqueId(ncclComm_t comm, ncclUniqueId* uniqueId)
+
+The *ncclCommGetUniqueId* function generates a unique identifier for growing an existing communicator.
+This function must be called by one rank (the coordinator) from the existing communicator, which will then distribute the *uniqueId* to all new ranks that will join the communicator via *ncclCommGrow*.
+The coordinator rank broadcasts the grow handle internally to boundary ranks (rank 0 and rank N-1) of the existing communicator to ensure proper coordination during the grow operation.
+This function should only be called when there are no outstanding NCCL operations on the communicator.
+
+ncclCommGrow
+------------
+
+.. c:function:: ncclResult_t ncclCommGrow(ncclComm_t comm, int nRanks, const ncclUniqueId* uniqueId, int rank, ncclComm_t* newcomm, ncclConfig_t* config)
+
+The *ncclCommGrow* function creates a new communicator by adding new ranks to an existing communicator.
+It must be called by both existing ranks (from the parent communicator) and new ranks (joining the communicator).
+
+**For existing ranks:**
+
+- *comm* should be the parent communicator
+- *rank* must be set to *-1* (existing ranks retain their original rank in the new communicator)
+- *uniqueId* should be *NULL* (existing ranks receive coordination information internally)
+- The function creates *newcomm* with the same rank as in the parent communicator
+
+**For new ranks:**
+
+- *comm* should be *NULL*
+- *rank* must be set to the desired rank in the new communicator (must be >= parent communicator size)
+- *uniqueId* must be the unique identifier obtained from *ncclCommGetUniqueId* called by the coordinator
+
+The *nRanks* parameter specifies the total number of ranks in the new communicator and must be greater than the size of the parent communicator.
+If the new communicator needs a special configuration, it can be passed as *config*; otherwise, setting config to NULL will make the new communicator inherit the configuration of the parent communicator (for existing ranks) or use default configuration (for new ranks).
+
+There should not be any outstanding NCCL operations on the parent communicator when calling this function to avoid potential deadlocks.
+After the grow operation completes, the parent communicator should be destroyed using *ncclCommDestroy* to free resources.
+
+**Example workflow:**
+
+1. Coordinator rank calls *ncclCommGetUniqueId* to generate the grow identifier
+2. Coordinator distributes the *uniqueId* to all new ranks (out-of-band)
+3. All existing ranks call *ncclCommGrow* with *comm*=parent, *rank*=-1, *uniqueId*=NULL (except for Coordinator rank which passes the *uniqueId*)
+4. All new ranks call *ncclCommGrow* with *comm*=NULL, *rank*=new_rank, *uniqueId*=received_id
 
 ncclCommFinalize
 ----------------

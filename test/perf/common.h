@@ -24,6 +24,8 @@
 // For nccl.h < 2.13 since we define a weak fallback
 extern "C" char const* ncclGetLastError(ncclComm_t comm);
 
+#define HOST_RMA_IMPL 10
+
 #define CUCHECK(cmd) do {                           \
   CUresult err = cmd;                               \
   if( err != CUDA_SUCCESS ) {                       \
@@ -128,7 +130,9 @@ struct testEngine {
   void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);
   testResult_t (*runTest)(struct threadArgs* args, int root, ncclDataType_t type,
       const char* typeName, ncclRedOp_t op, const char* opName);
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+  testResult_t (*getDevCommRequirements)(int deviceImpl, ncclDevCommRequirements* reqs, ncclCommProperties* commProperties, const char** testSkipReason);
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   bool (*getDevCommRequirements)(int deviceImpl, ncclDevCommRequirements* reqs);
 #endif
 };
@@ -207,6 +211,7 @@ struct testThread {
 
 // Provided by common.cu
 extern void Barrier(struct threadArgs* args);
+extern testResult_t barrierRmaSignal(ncclComm_t comm, cudaStream_t stream);
 extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
 extern testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks);
 extern testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks, const int rank);

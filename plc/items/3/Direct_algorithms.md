@@ -1,7 +1,7 @@
 # Direct algorithms (canceled)
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -78,10 +78,10 @@ N/A
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 #### Overview
@@ -150,10 +150,10 @@ None.
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 - nccl@18ce724bf51c3e480ce2da4e251c80b3176b38ef
 - nccl@0818f0763985ab4d0c112eea574dd82aba304b20
@@ -169,10 +169,10 @@ Author : Sylvain Jeaugey
 - nccl@0d5253158c13cae7fc73574dd217ec80d11ffc3a
 - nccl@f6761c446ec38204be4affd96663dd4d2b69d2f7
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -260,4 +260,4 @@ None.
 
 Author : Sylvain Jeaugey
 </details>
- 
+

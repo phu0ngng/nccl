@@ -14,7 +14,7 @@ GC_BUILD_IMAGE_VERSION="${GC_BUILD_TOOLS_VERSION}-c${GC_CUDA_VERSION}-u${GC_OS_V
 DOCKER_BUILD_TOOLS_REPO="gitlab-master.nvidia.com:5005/gpucomms/nccl_docker_tools"
 
 #   Relevant paths for bare metal
-GC_OPENMPI_HOME="/home/nvshmem_shared/openmpi"
+GC_OPENMPI_HOME="/opt/mpi/openmpi-4.0.0"
 GC_CUDA_HOME="/usr/local/cuda"
 
 #   Parameters for running in a container

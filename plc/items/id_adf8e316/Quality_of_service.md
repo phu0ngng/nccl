@@ -45,12 +45,12 @@ https://nvbugspro.nvidia.com/bug/4915028
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 To enable applications to configure QoS, we propose adding a new `trafficClass` field to the existing `ncclConfig_t` structure. The `trafficClass` is an integer that serves as an abstract representation of the QoS level for communicator network traffic. Applications can set this field using either a default value or a user-defined setting. The specific meaning of the `trafficClass` is determined by the network system administrator and the network stack implementor.
@@ -87,16 +87,16 @@ Network plugin implementors can utilize the `trafficClass` value to set specific
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
 <!-- ============================================================================================-->
 
 ### Commit list or MR
- 
+
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -111,7 +111,7 @@ Network plugin implementors can utilize the `trafficClass` value to set specific
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -140,7 +140,7 @@ Network plugin implementors can utilize the `trafficClass` value to set specific
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

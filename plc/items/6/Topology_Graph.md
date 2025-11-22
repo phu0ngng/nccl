@@ -1,7 +1,7 @@
 # Topology Graph
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -79,10 +79,10 @@ N/A
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 We replace the old ring creation system by a new system based on graphs.
@@ -176,16 +176,16 @@ None.
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -260,4 +260,4 @@ None.
 
 ### Signoff list
 </details>
- 
+

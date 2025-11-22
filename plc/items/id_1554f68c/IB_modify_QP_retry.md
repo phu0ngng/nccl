@@ -10,7 +10,7 @@ This feature provides a retry capability in case of failure, together with impor
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 
 ### User Experience
@@ -23,12 +23,12 @@ This feature provides a retry capability in case of failure, together with impor
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 
@@ -47,7 +47,7 @@ This feature provides a retry capability in case of failure, together with impor
 <!-- <!-- ### Operational Considerations --> -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -57,9 +57,9 @@ This feature provides a retry capability in case of failure, together with impor
 
 - [MR 592](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/592)
 - [MR 655](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/655)
- 
+
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -74,7 +74,7 @@ This feature provides a retry capability in case of failure, together with impor
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -103,7 +103,7 @@ This feature provides a retry capability in case of failure, together with impor
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

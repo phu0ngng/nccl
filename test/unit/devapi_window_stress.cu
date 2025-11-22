@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
   ncclDevComm dcomm[2];
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r < 2; r++) {
-    ncclDevCommRequirements reqs = {};
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     NCCLCHECK(ncclDevCommCreate(comm[r], &reqs, &dcomm[r]));
   }
   NCCLCHECK(ncclGroupEnd());
@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
 
   ncclWindow_t wins[2][WinCount] = {};
   uint64_t rng = 0;
-  
+
   int nIters = 4*WinCount;
   for (int iter=0; iter <  nIters; iter++) {
     NCCLCHECK(ncclGroupStart());
@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
       }
     }
   }
-  
+
   printf("Launching kernels\n");
   if (Prints) {
     printf("Launching dumpWins\n");
@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
     CUDACHECK(cudaStreamSynchronize(stream[r]));
   }
   printf("Completed kernels\n");
-  
+
   // cleanup
   NCCLCHECK(ncclGroupStart());
   for (int w=0; w < WinCount; w++) {
@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
     NCCLCHECK(ncclDevCommDestroy(comm[r], &dcomm[r]));
   }
   NCCLCHECK(ncclGroupEnd());
-  
+
   NCCLCHECK(ncclGroupStart());
   for (int r=0; r < 2; r++) {
     NCCLCHECK(ncclCommDestroy(comm[r]));

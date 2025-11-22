@@ -1,0 +1,203 @@
+stages:
+  - build
+  - unit-tests
+  - setup
+  - apitests
+
+variables:
+  # Common
+  NCCL4PY_CUDA12_TARGET: cu12
+  NCCL4PY_CUDA13_TARGET: cu13
+  NCCL4PY_PYTHON310_TARGET: cp310
+  NCCL4PY_PYTHON311_TARGET: cp311
+  NCCL4PY_PYTHON312_TARGET: cp312
+  NCCL4PY_PYTHON313_TARGET: cp313
+  NCCL4PY_PYTHON314_TARGET: cp314
+  NCCL4PY_PYTHON_TARGETS: "$NCCL4PY_PYTHON310_TARGET,$NCCL4PY_PYTHON311_TARGET,$NCCL4PY_PYTHON312_TARGET,$NCCL4PY_PYTHON313_TARGET,$NCCL4PY_PYTHON314_TARGET"
+  # IPP6
+  IPP6_CUDA12_HOME: /storage/toolkits/cuda-12.9
+  IPP6_CUDA13_HOME: /storage/toolkits/cuda-13.0
+  IPP6_WORKSPACE_DIR: /storage/gitlab-runner/nccl4py/$CI_COMMIT_SHORT_SHA
+  IPP6_NCCL_HOME: $IPP6_WORKSPACE_DIR/nccl
+  IPP6_NCCL4PY_CUDA12_HOME: $IPP6_WORKSPACE_DIR/$NCCL4PY_CUDA12_TARGET
+  IPP6_NCCL4PY_CUDA13_HOME: $IPP6_WORKSPACE_DIR/$NCCL4PY_CUDA13_TARGET
+
+# Allow pipeline to be triggered only via the parent
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+    - when: never
+
+##
+## Stage: build - Start...
+##
+
+build_wheels:
+  stage: build
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+    CIBW_CACHE_PATH: /storage/gitlab-runner/.cache/cibuildwheel
+  tags:
+    - ipp6-nccl-v2
+  script:
+    - module load uv
+    - set -x
+    - |
+      srun \
+      -p cpuonly \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:build-wheels \
+      -t 10 \
+      -N 1 \
+      --exclusive \
+      nccl4py/build_assets/build_wheels.sh
+  artifacts:
+    paths:
+      - build/dist/nccl4py-*.whl
+    expire_in: 48 hrs
+
+##
+## Stage: build - Finish!
+##
+
+.make_dev: &make_dev_step
+  before_script:
+  - |
+    module load uv
+    pushd nccl4py
+    make dev
+
+##
+## Stage: unit_tests - Start...
+##
+
+unit_tests:
+  stage: unit-tests
+  needs: []
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+  tags:
+    - ipp6-nccl-v2
+  <<: *make_dev_step
+  script:
+    - set -x
+    - |
+      srun \
+      -p cpuonly \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:unit_tests \
+      -t 10 \
+      -N 1 \
+      --exclusive \
+      uv run pytest -v tests/unit_tests/
+
+##
+## Stage: unit_tests - Finish!
+##
+
+##
+## Stage: setup - Start...
+##
+
+setup_nccl-ipp6:
+  stage: setup
+  tags:
+    - ipp6-nccl-v2
+  needs:
+    - pipeline: $PARENT_PIPELINE_ID
+      job: build-ipp6
+  variables:
+    GIT_STRATEGY: none
+    NCCL_HOME: $IPP6_NCCL_HOME
+  script:
+    - set -x
+    - |
+      echo "Configuring NCCL under $NCCL_HOME"
+      mkdir -p $NCCL_HOME
+      mv build/* $NCCL_HOME/
+      ls -lrt $NCCL_HOME
+
+.base_setup_nccl4py_job-ipp6:
+  stage: setup
+  tags:
+    - ipp6-nccl-v2
+  needs:
+    - build_wheels
+  script:
+    - set -x
+    - |
+      echo "Configuring NCCL4PY for $NCCL4PY_CUDA_TARGET under $NCCL4PY_HOME"
+      srun \
+      -p cpuonly \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:setup-nccl4py:$NCCL4PY_CUDA_TARGET \
+      -t 10 \
+      -N 1 \
+      --exclusive \
+      nccl4py/ci/setup_nccl4py.sh
+
+setup_nccl4py_cu12-ipp6:
+  extends: .base_setup_nccl4py_job-ipp6
+  variables:
+    NCCL4PY_HOME: $IPP6_NCCL4PY_CUDA12_HOME
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA12_TARGET
+
+setup_nccl4py_cu13-ipp6:
+  extends: .base_setup_nccl4py_job-ipp6
+  variables:
+    NCCL4PY_HOME: $IPP6_NCCL4PY_CUDA13_HOME
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA13_TARGET
+
+##
+## Stage: setup - Finish!
+##
+
+##
+## Stage: apitests - Start...
+##
+.base_api_tests_job-ipp6:
+  stage: apitests
+  needs:
+    - setup_nccl-ipp6
+  tags:
+    - ipp6-nccl-v2
+  <<: *make_dev_step
+  script:
+    - set -x
+    - |
+      mkdir -p apitest_logs/${NCCL4PY_CUDA_TARGET}
+
+      test -f $NCCL_HOME/lib/libnccl.so
+      export LD_PRELOAD=${NCCL_HOME}/lib/libnccl.so
+
+      srun \
+      -p l40s-cicd \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:apitests:$NCCL4PY_CUDA_TARGET \
+      --export=ALL,NCCL_P2P_DISABLE=1,NCCL_IB_DISABLE=1 \
+      -t 10 \
+      -N 2 \
+      --exclusive \
+      -n 4 \
+      --ntasks-per-node=2 \
+      --mpi=pmix \
+      uv run pytest -v --with-mpi --basetemp=apitest_logs/${NCCL4PY_CUDA_TARGET} tests/apitest/
+  artifacts:
+    when: always
+    paths:
+      - nccl4py/apitest_logs
+    expire_in: 48 hrs
+
+apitests_cu12-ipp6:
+  extends: .base_api_tests_job-ipp6
+  variables:
+    CUDA_HOME: $IPP6_CUDA12_HOME
+    NCCL_HOME: $IPP6_NCCL_HOME
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA12_TARGET
+
+apitests_cu13-ipp6:
+  extends: .base_api_tests_job-ipp6
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+    NCCL_HOME: $IPP6_NCCL_HOME
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA13_TARGET
+
+##
+## Stage: apitests - Finish!
+##

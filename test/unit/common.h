@@ -5,10 +5,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <cuda.h>
 #include "cuda_runtime.h"
 #include "nccl.h"
 #include "mpi.h"
 #include <stdbool.h>
+#include <libgen.h>
+#include <string.h>
 
 // CLI argument structure
 typedef struct {
@@ -81,6 +84,17 @@ static void parse_cli_args(int argc, char* argv[], cli_args_t* args) {
   }                                                 \
 } while(0)
 
+#define CU_CHECK(call) do {                         \
+    CUresult err = call;                            \
+    if (err != CUDA_SUCCESS) {                      \
+        const char* errStr;                         \
+        cuGetErrorString(err, &errStr);             \
+        printf("CUDA error at %s:%d  '%s'\n",       \
+            __FILE__, __LINE__, errStr);            \
+        exit(EXIT_FAILURE);                         \
+    }                                               \
+} while(0)
+
 // Helper functions
 static uint64_t getHostHash(const char* string) {
   uint64_t result = 5381;
@@ -101,6 +115,32 @@ static void getHostName(char* hostname, int maxlen) {
   }
 }
 
+// IR utility functions for loading and managing CUDA modules
+static void init_cumodule(CUmodule* module, const char* cubin_name) {
+  char exe_path[1000];
+  size_t count = readlink("/proc/self/exe", exe_path, 1000);
+  exe_path[count] = '\0';
+
+  char* exe_dir = dirname(exe_path);
+  char cubin_path[1000];
+  strcpy(cubin_path, exe_dir);
+  strcat(cubin_path, "/");
+  strcat(cubin_path, cubin_name);
+  printf("CUBIN Selected: %s\n", cubin_path);
+  CU_CHECK(cuModuleLoad(module, cubin_path));
+}
+
+static void fini_cumodule(CUmodule* module) {
+  if (*module != NULL) {
+    CU_CHECK(cuModuleUnload(*module));
+    *module = NULL;
+  }
+}
+
+static void init_test_case_kernel(CUmodule module, CUfunction* kernel, const char* kernel_name) {
+  CU_CHECK(cuModuleGetFunction(kernel, module, kernel_name));
+}
+
 // Data verification functions
 static void initialize_and_verify_data(int *data_d, int mype, int iter, size_t size, int nelems) {
     // Initialize data with expected pattern
@@ -117,7 +157,7 @@ static void initialize_and_verify_data(int *data_d, int mype, int iter, size_t s
 static bool verify_data_pattern(int *data_d, int mype, int iter, size_t size, int nelems) {
     int *host_data = (int *)malloc(size);
     CUDACHECK(cudaMemcpy(host_data, data_d, size, cudaMemcpyDeviceToHost));
-    
+
     // Verify data pattern
     bool verification_passed = true;
     for (int j = 0; j < nelems; j++) {
@@ -130,11 +170,11 @@ static bool verify_data_pattern(int *data_d, int mype, int iter, size_t size, in
             break;
         }
     }
-    
+
     if (verification_passed) {
         printf("PE %d: Data verification passed for size %zu\n", mype, size);
     }
-    
+
     free(host_data);
     return verification_passed;
 }
@@ -151,10 +191,10 @@ static inline void initialize(int* sendbuff, int* recvbuff, int rank, int nelems
 static inline bool verify(int* sendbuff, int* recvbuff, int nelems, int rank) {
     // After ping-pong, recvbuff should contain the peer's original sendbuff data
     int expected_received_val = 0x100 + (!rank);  // Peer's original send value
-    
+
     for (int i = 0; i < nelems; ++i) {
         if (recvbuff[i] != expected_received_val) {
-            printf("[Rank %d] ✗ VERIFICATION FAILED at index %d: expected=0x%X (%d), got=0x%X (%d)\n", 
+            printf("[Rank %d] ✗ VERIFICATION FAILED at index %d: expected=0x%X (%d), got=0x%X (%d)\n",
                    rank, i, expected_received_val, expected_received_val, recvbuff[i], recvbuff[i]);
             return false;
         }
@@ -163,4 +203,4 @@ static inline bool verify(int* sendbuff, int* recvbuff, int nelems, int rank) {
     return true;
 }
 
-#endif // COMMON_H 
+#endif // COMMON_H

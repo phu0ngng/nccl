@@ -23,7 +23,7 @@ static bool isPow2(int value) {
   while(value % 2 == 0) {
     value >>= 1;
   }
-  if (value == 1) 
+  if (value == 1)
     return true;
   else
     return false;
@@ -50,7 +50,7 @@ testResult_t HyperCubeInitData(struct threadArgs* args, ncclDataType_t type, ncc
       NCCLCHECK(ncclCommUserRank(args->comms[id][i], &rank));
       NCCLCHECK(ncclCommCount(args->comms[id][i], &nranks));
       CUDACHECK(cudaMemset(args->recvbuffs[id][i], 0, args->expectedBytes[id][i]));
-      
+
       if (isPow2(nranks)) {
         data = in_place ? ((char*)args->recvbuffs[id][i]) + rank * args->sendBytes[id][i] : args->sendbuffs[id][i];
         TESTCHECK(InitData(data, sendcount, 0, type, ncclSum, 33 * rep + rank, 1, 0));
@@ -63,7 +63,7 @@ testResult_t HyperCubeInitData(struct threadArgs* args, ncclDataType_t type, ncc
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 

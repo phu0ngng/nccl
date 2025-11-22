@@ -33,7 +33,6 @@ NCCL_DEVICE_INLINE void flush(ncclGinProxyGpuCtx_t* proxyCtx, uint32_t pe, cuda:
   while (!rollingLessEq<uint32_t>(p, ci.load(ord))) continue;
 }
 
-
 template <typename Coop>
 NCCL_DEVICE_INLINE void postGfd(Coop coop, ncclGinProxyGpuCtx_t* proxyCtx, ncclGinProxyGfd_t* gfd,
                                 uint32_t pe) {

@@ -111,6 +111,7 @@ static int profilerIters = INT_MAX;
 int tuning;
 int memory_report = 0;
 static int deviceImpl = 0;
+static int hostRmaImpl = 0;
 
 int deviceCtaCount = 16; // Default number of CTAs for device implementation
 
@@ -128,6 +129,8 @@ static char* splitMaskEnv = NULL;
 static int commNum = 1;
 #define LOCAL_REGISTER 1
 #define SYMMETRIC_REGISTER 2
+#define SYMMETRIC_REGISTER_SEND 3
+#define SYMMETRIC_REGISTER_RECV 4
 static int local_register = 0;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
 static int ctaPolicy = -1;
@@ -314,6 +317,44 @@ void Barrier(struct threadArgs *args) {
   }
   pthread_mutex_unlock(&lock[epoch]);
   epoch ^= 1;
+}
+
+testResult_t barrierRmaSignal(ncclComm_t comm, cudaStream_t stream) {
+  int rank, nranks;
+  NCCLCHECK(ncclCommUserRank(comm, &rank));
+  NCCLCHECK(ncclCommCount(comm, &nranks));
+
+  int ctx = 0;
+
+  int* peers = (int*)malloc(sizeof(int) * (nranks - 1));
+  int* nsignals = (int*)malloc(sizeof(int) * (nranks - 1));
+  if (peers == NULL || nsignals == NULL) {
+    free(peers);
+    free(nsignals);
+    return testInternalError;
+  }
+
+  int peerIdx = 0;
+  for (int i = 0; i < nranks; i++) {
+    if (i != rank) {
+      peers[peerIdx] = i;
+      nsignals[peerIdx] = 1;
+      peerIdx++;
+    }
+  }
+
+  for (int i = 0; i < nranks; i++) {
+    if (i != rank) {
+      NCCLCHECK(ncclSignal(i, NCCL_SIGNAL, ctx, comm, stream));
+    }
+  }
+
+  NCCLCHECK(ncclWaitSignal(nranks - 1, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+
+  free(peers);
+  free(nsignals);
+
+  return testSuccess;
 }
 
 // Inter-thread/process barrier+allreduce. The quality of the return value
@@ -574,6 +615,17 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
       }
 #endif
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+      if (hostRmaImpl) {
+        void* sendwin = args->sendRegHandles[id][i];
+        void* recvwin = args->recvRegHandles[id][i];
+        CUDACHECK(cudaSetDevice(args->gpus[i]));
+        TESTCHECK(args->collTest->runColl(
+              (void*)(in_place ? recvwin : sendwin), shift + (in_place ? args->sendInplaceOffset[id][i] * rank : 0),
+              (void*)recvwin, shift + in_place ? args->recvInplaceOffset[id][i] * rank : 0,
+              count, type, op, root, args->comms[id][i], args->streams[i], HOST_RMA_IMPL));
+      } else
+#endif
       if (deviceImpl == 0) {
         TESTCHECK(args->collTest->runColl(
               (void*)(in_place ? recvBuff : sendBuff), in_place ? args->sendInplaceOffset[id][i] * rank : 0,
@@ -778,6 +830,13 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
   for (int c = 0; c < datacheck; c++) {
       // Initialize sendbuffs, recvbuffs and expected
       TESTCHECK(args->collTest->initData(args, type, op, root, rep, in_place));
+
+      // Ensure GPU buffer initialization completes across all ranks before validation
+      for (int i = 0; i < args->nGpus; i++) {
+        CUDACHECK(cudaSetDevice(args->gpus[i]));
+        CUDACHECK(cudaStreamSynchronize(args->streams[i]));
+      }
+      Barrier(args);  // MPI barrier to ensure all ranks' GPUs are ready
 
 #if CUDART_VERSION >= 11030
       if (cudaGraphLaunches >= 1) {
@@ -994,6 +1053,12 @@ testResult_t threadInit(struct threadArgs* args) {
     config.CTAPolicy = ctaPolicy;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   config.nvlinkCentricSched = 1;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+  if (cudaGraphLaunches >= 1)
+    config.graphUsageMode = 1;
+  else
+    config.graphUsageMode = 0;
+#endif
 #endif
 #endif
 #endif
@@ -1115,11 +1180,14 @@ testResult_t threadInit(struct threadArgs* args) {
       TESTCHECK(AllocateBuffs(args->sendbuffs[id] + i, sendBytes, args->recvbuffs[id] + i, recvBytes, args->expected[id] + i, (size_t)maxBytes, &allocBytes));
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-      if (local_register == SYMMETRIC_REGISTER) {
+      if (local_register == SYMMETRIC_REGISTER_SEND) {
+        NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, (ncclWindow_t*)&args->sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
+      } else if (local_register == SYMMETRIC_REGISTER_RECV) {
+        NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, (ncclWindow_t*)&args->recvRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
+      } else if (local_register == SYMMETRIC_REGISTER) {
         NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, (ncclWindow_t*)&args->sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
         NCCLCHECK(ncclCommWindowRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, (ncclWindow_t*)&args->recvRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
-      } else
-      {
+      } else {
         if (local_register) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->sendbuffs[id][i], allocBytes, &args->sendRegHandles[id][i]));
         if (local_register) NCCLCHECK(ncclCommRegister(args->comms[id][i], args->recvbuffs[id][i], allocBytes, &args->recvRegHandles[id][i]));
       }
@@ -1140,12 +1208,23 @@ testResult_t threadInit(struct threadArgs* args) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   /* Create device communicators based on test-specific requirements */
   if (deviceImpl) {
-    ncclDevCommRequirements reqs;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    if (!ncclTestEngine.getDevCommRequirements) {
+      fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
+      return testNotImplemented;
+    }
+    ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+    NCCLCHECK(ncclCommQueryProperties(args->comms[0][0], &commProperties));
+    TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
+#else
+    ncclDevCommRequirements reqs = {};
     if (!ncclTestEngine.getDevCommRequirements ||
         !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
       fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
       return testNotImplemented;
     }
+#endif
 
     ncclResult_t result;
     NCCLCHECK(ncclGroupStart());
@@ -1153,9 +1232,8 @@ testResult_t threadInit(struct threadArgs* args) {
       for (int i = 0; i < args->nGpus; i++) {
         result = ncclDevCommCreate(args->comms[id][i], &reqs, args->devComms[id]+i);
         if (result != ncclSuccess) {
-          testSkipReason = "Required device API features not available on this hardware";
           NCCLCHECK(ncclGroupEnd());
-          return testSkipped;
+          return testNcclError;
         }
       }
     }
@@ -1165,8 +1243,7 @@ testResult_t threadInit(struct threadArgs* args) {
         TESTCHECK(waitCommStateBatch(args->comms[id], args->nGpus));
       }
     } else if (result != ncclSuccess) {
-      testSkipReason = "Required device API features not available on this hardware";
-      return testSkipped;
+      return testNcclError;
     }
   }
   // Capture memory used by test buffers
@@ -1381,6 +1458,7 @@ int main(int argc, char* argv[], char **envp) {
     {"device_implementation", required_argument, 0, 'D'},
     {"device_cta_count", required_argument, 0, 'V'},
     {"memory", required_argument, 0, 'M'},
+    {"host_rma_implementation", no_argument, 0, 'H'},
 
     {"help", no_argument, 0, 'h'},
     {}
@@ -1388,7 +1466,7 @@ int main(int argc, char* argv[], char **envp) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:M:", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:M:H", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1510,8 +1588,9 @@ int main(int argc, char* argv[], char **envp) {
       case 'R':
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
         local_register = (int)strtol(optarg, NULL, 0);
-        if (local_register == SYMMETRIC_REGISTER && test_ncclVersion < NCCL_VERSION(2,27,0)) {
-          printf("Option -R 2 (symmetric) is not supported before NCCL 2.27. Defaulting to local registration\n");
+        if (((local_register == SYMMETRIC_REGISTER) || (local_register == SYMMETRIC_REGISTER_SEND) || (local_register == SYMMETRIC_REGISTER_RECV)) &&
+          test_ncclVersion < NCCL_VERSION(2, 27, 0)) {
+          printf("Option -R 2/3/4 (symmetric) is not supported before NCCL 2.27. Defaulting to local registration\n");
           local_register = LOCAL_REGISTER;
         }
 #else
@@ -1588,6 +1667,14 @@ int main(int argc, char* argv[], char **envp) {
           return -1;
         }
         break;
+      case 'H':
+        if (test_ncclVersion >= NCCL_VERSION(2,29,0)) {
+          hostRmaImpl = 1;
+        } else {
+          fprintf(stderr, "Option -H (host RMA implementation) requires NCCL >= 2.29.0\n");
+          return -1;
+        }
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1624,7 +1711,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-u,--unalign <index of first element>] \n\t"
             "[-J,--output_file <file> write output to filepath, if accessible. Infer type from suffix (only json supported presently.)] \n\t"
             "[-a,--average <0/1/2/3> report average iteration time <0=RANK0/1=AVG/2=MIN/3=MAX>] \n\t"
-            "[-R,--local_register <0/1/2> enable local (1) or symmetric (2) buffer registration on send buffers/recv buffers/all buffers (default: disable(0))] \n\t"
+            "[-R,--local_register <0/1/2/3/4> enable local (1) or symmetric (2/3/4) buffer registration on send buffers (3)/recv buffers (4)/all buffers (1/2) (default: disable 0)] \n\t"
             "[-x,--cta_policy <0/1/2> set CTA policy (NCCL_CTA_POLICY_DEFAULT (0), NCCL_CTA_POLICY_EFFICIENCY (1), NCCL_CTA_POLICY_ZERO (2)) (default: do not set)] \n\t"
             "[-B,--commblocking <0/1> enable blocking communicator (default: 1)] \n\t"
             "[-F,--ft_test <0/1> enable fault tolerance test (default: 0)] \n\t"
@@ -1638,6 +1725,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-U,--tuning <0/1> report NCCL tuning info (default: 0)] \n\t"
             "[-D,--device_implementation <implementation number> enable device implementation (default: 0, use NCCL implementation; requires -R 2 if > 0)] \n\t"
             "[-V,--device_cta_count <number> set number of CTAs for device implementation (default: 16)] \n\t"
+            "[-H,--host_rma_implementation enable Host RMA API implementations (requires -R 2)] \n\t"
             "[-M,--memory_report <0/1> enable memory usage report (default: 0)] \n\t"
 
             "[-h,--help]\n",
@@ -1651,8 +1739,16 @@ int main(int argc, char* argv[], char **envp) {
            (unsigned long long)maxBytes);
     return -1;
   }
+  if (hostRmaImpl && deviceImpl > 0) {
+    fprintf(stderr, "Cannot use both -H (host RMA implementation) and -D (device implementation) at the same time\n");
+    return -1;
+  }
   if (deviceImpl > 0 && (local_register != SYMMETRIC_REGISTER)) {
     fprintf(stderr, "device implementation (-D > 0) requires enabling symmetric memory registration (-R 2)\n");
+    return -1;
+  }
+  if (hostRmaImpl && (local_register != SYMMETRIC_REGISTER)) {
+    fprintf(stderr, "host RMA implementation (-H) requires enabling symmetric memory registration (-R 2)\n");
     return -1;
   }
 
@@ -1919,6 +2015,12 @@ testResult_t run() {
       config.CTAPolicy = ctaPolicy;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     config.nvlinkCentricSched = 1;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+    if (cudaGraphLaunches >= 1)
+      config.graphUsageMode = 1;
+    else
+      config.graphUsageMode = 0;
+#endif
 #endif
 #endif
 #endif
@@ -2040,7 +2142,11 @@ testResult_t run() {
         CUDACHECK(cudaSetDevice(gpus[i]));
         TESTCHECK(AllocateBuffs(sendbuffs[id] + i, sendBytes, recvbuffs[id] + i, recvBytes, expected[id] + i, (size_t)maxBytes, &allocBytes));
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-        if (local_register == SYMMETRIC_REGISTER) {
+        if (local_register == SYMMETRIC_REGISTER_SEND) {
+          NCCLCHECK(ncclCommWindowRegister(comms[id][i], sendbuffs[id][i], allocBytes, (ncclWindow_t*)&sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
+        } else if (local_register == SYMMETRIC_REGISTER_RECV) {
+          NCCLCHECK(ncclCommWindowRegister(comms[id][i], recvbuffs[id][i], allocBytes, (ncclWindow_t*)&recvRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
+        } else if (local_register == SYMMETRIC_REGISTER) {
           NCCLCHECK(ncclCommWindowRegister(comms[id][i], sendbuffs[id][i], allocBytes, (ncclWindow_t*)&sendRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
           NCCLCHECK(ncclCommWindowRegister(comms[id][i], recvbuffs[id][i], allocBytes, (ncclWindow_t*)&recvRegHandles[id][i], NCCL_WIN_COLL_SYMMETRIC));
         } else {
@@ -2067,12 +2173,23 @@ testResult_t run() {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     /* Create device communicators based on test-specific requirements */
     if (deviceImpl) {
-      ncclDevCommRequirements reqs;
-      if (!ncclTestEngine.getDevCommRequirements ||
-          !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+      ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+      if (!ncclTestEngine.getDevCommRequirements) {
         fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
         return testNotImplemented;
       }
+      ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+      NCCLCHECK(ncclCommQueryProperties(comms[0][0], &commProperties));
+      TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
+#else
+      ncclDevCommRequirements reqs = {};
+      if (!ncclTestEngine.getDevCommRequirements ||
+        !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
+        fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
+        return testNotImplemented;
+      }
+#endif
 
       ncclResult_t result;
       NCCLCHECK(ncclGroupStart());
@@ -2080,9 +2197,8 @@ testResult_t run() {
         for (int i = 0; i < nGpus * nThreads; i++) {
           result = ncclDevCommCreate(comms[id][i], &reqs, devComms[id]+i);
           if (result != ncclSuccess) {
-            testSkipReason = "Required device API features not available on this hardware";
             NCCLCHECK(ncclGroupEnd());
-            return testSkipped;
+            return testNcclError;
           }
         }
       }
@@ -2092,8 +2208,7 @@ testResult_t run() {
           TESTCHECK(waitCommStateBatch(comms[id], nGpus * nThreads));
         }
       } else if (result != ncclSuccess) {
-        testSkipReason = "Required device API features not available on this hardware";
-        return testSkipped;
+        return testNcclError;
       }
     }
     int64_t deviceCommMaxMem = 0;
@@ -2275,9 +2390,15 @@ testResult_t run() {
     for (int i=0; i<nGpus*nThreads; i++) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-      if (test_ncclVersion >= NCCL_VERSION(2,27,0) && (local_register == SYMMETRIC_REGISTER)) {
-        NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)sendRegHandles[id][i]));
-        NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)recvRegHandles[id][i]));
+      if (test_ncclVersion >= NCCL_VERSION(2,27,0) && !(local_register == LOCAL_REGISTER)) {
+        if (local_register == SYMMETRIC_REGISTER_SEND) {
+          NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)sendRegHandles[id][i]));
+        } else if (local_register == SYMMETRIC_REGISTER_RECV) {
+          NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)recvRegHandles[id][i]));
+        } else if (local_register == SYMMETRIC_REGISTER) {
+          NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)sendRegHandles[id][i]));
+          NCCLCHECK(ncclCommWindowDeregister(comms[id][i], (ncclWindow_t)recvRegHandles[id][i]));
+        }
       } else
 #endif
       {

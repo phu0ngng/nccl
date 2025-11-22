@@ -1,7 +1,7 @@
 # One hop nvlink network communication (PXN)
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -115,10 +115,10 @@ N/A
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 #### Overview
@@ -257,10 +257,10 @@ None.
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 - nccl@922a3db687111ddf78bd2d781c2e8801b29fbd01
 - nccl@30793a6f2a32f419629f1907171813fdddd65c3f
@@ -394,10 +394,10 @@ None.
 - nccl@93917b051774eac9e52b08670526eb62c92896c6
 - nccl@e32122a6df3c3dbea84963b696a4cfb29da2481f
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -477,4 +477,4 @@ None.
 
 ### Signoff list
 </details>
- 
+

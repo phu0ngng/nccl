@@ -37,7 +37,7 @@ testResult_t AllGathervInitData(struct threadArgs* args, ncclDataType_t type, nc
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 

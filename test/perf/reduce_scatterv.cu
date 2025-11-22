@@ -39,7 +39,7 @@ testResult_t ReduceScattervInitData(struct threadArgs* args, ncclDataType_t type
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 

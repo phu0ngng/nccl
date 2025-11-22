@@ -84,6 +84,24 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 100 milliseconds, any positive value is valid.
 
+NCCL_SOCKET_POLL_TIMEOUT_MSEC
+-----------------------------
+(since 2.28)
+
+The ``NCCL_SOCKET_POLL_TIMEOUT_MSEC`` variable specifies a timeout in
+milliseconds for a poll which can reduce the CPU usage during
+bootstrap. Normally NCCL will retry the operation until it completes.
+Polling in between attempts should reduce load on the CPU so that it
+can engage in activities that might make the operation able to complete
+sooner.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Non-negative integer. The old behavior corredponds to 0 (the default).
+If 0, it will not poll, but keep trying to progress the socket
+operation without pause. If non-zero, it will poll for up that amount
+of time before trying to progress the operation again.
+
 NCCL_SOCKET_NTHREADS
 --------------------
 (since 2.4.8)
@@ -593,16 +611,18 @@ Default is 2, define and set to an integer.
 
 NCCL_CTA_POLICY
 ---------------
-(since 2.27)
+(since 2.29, legacy values since 2.27)
 
 The ``NCCL_CTA_POLICY`` variable allows the user to set the policy for the NCCL communicator.
 
 Value accepted
 ^^^^^^^^^^^^^^
+Set to ``DEFAULT`` (or ``0``, legacy) to use ``NCCL_CTA_POLICY_DEFAULT`` policy (default).
+Set to ``EFFICIENCY`` (or ``1``, legacy) to use ``NCCL_CTA_POLICY_EFFICIENCY`` policy.
+Set to ``ZERO`` (or ``2``, legacy) to use ``NCCL_CTA_POLICY_ZERO`` policy.
 
-Set to 0 to use NCCL_CTA_POLICY_DEFAULT policy (default);
-Set to 1 to use NCCL_CTA_POLICY_EFFICIENCY policy.
-Set to 2 to use NCCL_CTA_POLICY_ZERO policy.
+Set multiple non-legacy policies with the ``|`` operator.
+
 For more explanation about NCCL policies, please see :ref:`cta_policy_flags`.
 
 NCCL_NETDEVS_POLICY
@@ -1397,9 +1417,9 @@ Values accepted
 ^^^^^^^^^^^^^^^
 0: Disable the use of NVLink SHARP. No NVLink SHARP resources will be allocated.
 
-1: Enable NVLink SHARP. NCCL initialization will fail if the NVLink SHARP resources cannot be allocated.
+1: Enable NVLink SHARP. NCCL initialization will fail if the NVLink SHARP is not supported or NVLink SHARP resources cannot be allocated.
 
-2: Automatic detection of NVLink SHARP support. Will *not* fail if NVLS is unsupported or if NVLink SHARP resources cannot be allocated.
+2: Automatic detection of NVLink SHARP support. Will *not* fail if NVLS is unsupported, but will fail if NVLink SHARP resources cannot be allocated.
 
 NCCL_IB_MERGE_NICS
 ------------------
@@ -1511,6 +1531,19 @@ NCCL_LAUNCH_RACE_FATAL
 (since 2.26)
 
 Attempt to catch host threads racing to launch to the same device and if so return a fatal error. Such a race would violate the determinacy of the program order relied upon by NCCL_LAUNCH_ORDER_IMPLICIT.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1 (enabled); set to 0 to disable.
+
+
+NCCL_IPC_USE_ABSTRACT_SOCKET
+----------------------------
+(since 2.29)
+
+Use the Linux Abstract Socket mechanism when creating Unix Domain Sockets (UDS) for intra-node CUDA IPC handle exchange.
+This is enabled by default, but having it enabled can prevent intra-node GPU communication when using multiple containers in certain situations (e.g. different network namespaces).
+
 
 Values accepted
 ^^^^^^^^^^^^^^^

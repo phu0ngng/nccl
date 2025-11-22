@@ -1,7 +1,7 @@
 # Fault Tolerance NCCL
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -77,10 +77,10 @@ N/A
 
 Author : Kaiming Ouyang
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 #### User perspective design
@@ -271,7 +271,7 @@ it can be done as follows:
       do {
         ret = ncclCommGetAsyncError(comm, &state);
       } while(state == ncclInProgress && !timeout());
-      
+
       if (initTimeout() == true || state == ncclCommError) {
         abortFlag = true;
       }
@@ -315,16 +315,16 @@ None.
 
 Author : Kaiming Ouyang
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -437,4 +437,4 @@ None.
 
 Author : Kaiming Ouyang
 </details>
- 
+

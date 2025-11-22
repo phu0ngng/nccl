@@ -108,7 +108,7 @@ void runHost(int rank, int nBlocks, Hash* outSums, int* outMaxPileSize, int* out
   }
   *outMaxPileSize = 0;
   *outMaxInboxSize = 0;
-  
+
   int gen = 0;
   do {
     for (int b=0; b < nBlocks; b++) pileSize[b] = 0;
@@ -222,7 +222,7 @@ __global__ void runDevice(Args args) {
     }
     pileTail += getRootCount(bme);
   }
-  
+
   int gen = 0;
   #pragma unroll 1
   while (1) {
@@ -364,8 +364,8 @@ int main(int argc, char** argv) {
   cudaStream_t stream;
   CUDACHECK(cudaStreamCreate(&stream));
 
-  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;                  
-  config.blocking = 1;                                               
+  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+  config.blocking = 1;
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
 
   void* buf;
@@ -376,11 +376,11 @@ int main(int argc, char** argv) {
   ncclMemAlloc(&buf, winSize);
   CUDACHECK(cudaMemset(buf, 0, winSize));
 
-  ncclWindow_t win; 
+  ncclWindow_t win;
   NCCLCHECK(ncclCommWindowRegister(comm, buf, winSize, &win, 0));
 
   Args args;
-  { ncclDevCommRequirements reqs = {};
+  { ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.ginSignalCount = 2*BlockPerRank; // barrier signals
     reqs.ginSignalCount += BlockPerRank*nGlobalBlocks; // inbox signals
     reqs.ginForceEnable = true;

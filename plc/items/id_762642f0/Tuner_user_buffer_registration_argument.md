@@ -13,7 +13,7 @@ their buffer.
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 [NVBugs - RFE](https://nvbugswb.nvidia.com/NVBugs5/redir.aspx?url=/4852002)
 
@@ -36,12 +36,12 @@ their buffer.
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 The tuner plugin `getCollInfo` function is extended with a user buffer registration hint. The hint is
 set to one if the following conditions is met: either both send and recv buffer have been registered
@@ -60,7 +60,7 @@ locally using `ncclCommRegister`, or NCCL is under graph capturing and `NCCL_GRA
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -70,7 +70,7 @@ locally using `ncclCommRegister`, or NCCL is under graph capturing and `NCCL_GRA
 [MR 598](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/598)
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -91,7 +91,7 @@ Run NCCL with an older v2/v3 tuner plugin.
 #### Expected output?
 Unit tests for the ext-mixed plugin should pass.
 NCCL should load and use the v2/v3 tuner plugin as before the feature was added.
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -120,7 +120,7 @@ NCCL should load and use the v2/v3 tuner plugin as before the feature was added.
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

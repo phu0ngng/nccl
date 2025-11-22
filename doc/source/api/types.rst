@@ -276,6 +276,10 @@ ncclConfig_t
 
   Set the number of network channels to be used for pairwise communication. The value must be a positive integer and will be round up to the next power of 2. The default value is optimized for the AlltoAll communication pattern. Consider increasing the value to increase the bandwidth for send/recv communication.
 
+ .. c:macro:: graphUsageMode
+
+  Set the graph usage mode for the communicator. It support three possible values: 0 (no graphs), 1 (one graph) and 2 (either multiple graphs or mix of graph and non-graph). The default value is 2.
+
 .. _ncclsiminfo:
 
 ncclSimInfo_t
@@ -300,3 +304,18 @@ ncclWindow_t
 .. c:type:: ncclWindow_t
 
   NCCL window object for window registration and deregistration.
+
+ncclSignalMode_t
+----------------
+
+.. c:type:: ncclSignalMode_t
+
+  Defines the signaling behavior for one-sided RMA operations.
+
+  .. c:macro:: NCCL_SIGNAL_NONE
+
+    No signaling operation.
+
+  .. c:macro:: NCCL_SIGNAL
+
+    Default signal operation.

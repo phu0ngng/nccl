@@ -119,7 +119,7 @@ TEST_F(ncclCommInitRankConfig_test, blocking) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     config.blocking = 1;
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
@@ -200,7 +200,7 @@ TEST_F(ncclCommInitRankConfig_test, cta_basic) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     config.minCTAs = 8;
     config.maxCTAs = 16;
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
@@ -214,7 +214,7 @@ TEST_F(ncclCommInitRankConfig_test, cta_basic) {
 
     for (int i = 0; i < ndev; ++i)
         ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
-    
+
     /* equal minCTAs and maxCTAs */
     config.minCTAs = 16;
     config.maxCTAs = 16;
@@ -235,7 +235,7 @@ TEST_F(ncclCommInitRankConfig_test, cta_large) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     config.minCTAs = 64;
     config.maxCTAs = 128;
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
@@ -256,7 +256,7 @@ TEST_F(ncclCommInitRankConfig_test, cta_invalid) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     config.minCTAs = 0;
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
@@ -299,7 +299,7 @@ TEST_F(ncclCommInitRankConfig_test, cga_basic) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     config.cgaClusterSize = 8;
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
@@ -319,7 +319,7 @@ TEST_F(ncclCommInitRankConfig_test, cga_warn) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     config.cgaClusterSize = 16; /* we should only use maximal 8 CGA group size */
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
@@ -339,7 +339,7 @@ TEST_F(ncclCommInitRankConfig_test, cta_less_than_cga) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     config.cgaClusterSize = 8;
     config.minCTAs = 1;
     config.maxCTAs = 1;
@@ -367,7 +367,7 @@ TEST_F(ncclCommInitRankConfig_test, nChannel_cga_allreduce) {
     size_t cnt = 1 << 20;
     size_t size = cnt * sizeof(float);
     cudaStream_t* streams;
-    
+
     sendbuffs = (void**)malloc(ndev * sizeof(void*));
     recvbuffs = (void**)malloc(ndev * sizeof(void*));
     tmpbuffs = (float*)malloc(size);
@@ -395,7 +395,7 @@ TEST_F(ncclCommInitRankConfig_test, nChannel_cga_allreduce) {
                     ncclAllReduce(sendbuffs[i], recvbuffs[i], cnt, ncclFloat, ncclSum, comms[i], streams[i]));
     }
     ASSERT_EQ(ncclSuccess, ncclGroupEnd());
-    
+
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaFree(sendbuffs[i]));
         ASSERT_EQ(cudaSuccess, cudaFree(recvbuffs[i]));
@@ -514,7 +514,7 @@ TEST_F(ncclCommInitRankConfig_test, net_name_default) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -533,7 +533,7 @@ TEST_F(ncclCommInitRankConfig_test, net_name_internal) {
     ncclUniqueId id;
     ncclComm_t* comms;
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    
+
     comms = (ncclComm_t*)calloc(ndev, sizeof(ncclComm_t));
     config.netName = "Socket";
     ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
@@ -609,7 +609,7 @@ TEST_F(ncclCommInitRankConfig_test, split_config) {
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(ncclSuccess, ncclCommDestroy(childComms[i]));
     }
-    
+
     free(localComms);
     free(childComms);
 }
@@ -647,7 +647,7 @@ TEST_F(ncclCommInitRankConfig_test, split_share_invalid_net_name) {
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(ncclSuccess, ncclCommAbort(childComms[i]));
     }
-    
+
     free(localComms);
     free(childComms);
 }

@@ -1,7 +1,7 @@
 # User buffer registration for send recv operations
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Introduction
 
 #### Overview
@@ -81,10 +81,10 @@ and provide better rail locality.
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Design
 
 #### Memory registration cache
@@ -146,17 +146,17 @@ RDMA_WRITE_WITH_IMMEDIATE operation at the end of each multi-send.
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 [MR 335 - User buffer reg for
 p2p](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/335)
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Introduction
 
 #### Test strategy
@@ -212,4 +212,4 @@ The perf tests run with -R 1 are part of the non-regression testing.
 
 Author : Sylvain Jeaugey
 </details>
- 
+

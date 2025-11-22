@@ -12,8 +12,10 @@ get_slurm_planned_time
 source ${GCPERF_TOOLS_PATH}/venv/bin/activate
 
 # Set gcperf-tools variables
-GOLDEN_BRANCH="master"
 CURRENT_BRANCH="${CI_COMMIT_BRANCH//\//.}"
+# CI_MERGE_REQUEST_TARGET_BRANCH_NAME will be empty post-merge, so use CURRENT_BRANCH
+TARGET_BRANCH="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME//\//.}"
+GOLDEN_BRANCH="${TARGET_BRANCH:-CURRENT_BRANCH}"
 OUTDIR="perfregression"
 SBATCH_FILE="perfregression.sbatch"
 SYSTEMS_TOML="test/scripts/ci/gcperf-tools/systems.toml"
@@ -28,7 +30,7 @@ fi
 echo "Running perf regression with ${NNODES} nodes"
 
 # Set results directory
-RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${GOLDEN_BRANCH//\//.}/${NNODES}_node
+RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${GOLDEN_BRANCH}/${NNODES}_node
 
 EXTRA_SLURM_ARGS=""
 if [[ $CLUSTER_NAME == "PreTyche" || $CLUSTER_NAME == "Lyris" ]]; then

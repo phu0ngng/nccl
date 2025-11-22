@@ -71,7 +71,7 @@ void segfault_handler(int sig) {
     segvLogPrinted = true;
   }
   pthread_mutex_unlock(&mutex);
-  
+
   exit(1);
 }
 
@@ -211,7 +211,7 @@ void ncclCommon_getBuff(void*** sendbuffs, void*** recvbuffs, void*** sendbuffs_
     sbuffs_pinned_device = NULL;
     rbuffs_pinned_device = NULL;
   }
-  
+
   *streams = cuda_streams;
 }
 

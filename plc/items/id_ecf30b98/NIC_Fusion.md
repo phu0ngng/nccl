@@ -58,12 +58,12 @@ NIC Fusion will work best in the event where all fused NICs are closest to a sin
 Multiple NICs per system.
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### Proposed Design
 
 The point at which physical NICs are enumerated and virtual NICs (fused NICs) are emitted from the network plugin in NCCL was formerly at the same point - during network plugin initialization. This was fine given the former assumptions of port fusion in NCCL, but given the new requirements, the NCCL core needs more information from the topology to make this decision. Therefore, three major changes have occured:
@@ -152,7 +152,7 @@ typedef ncclNetProperties_v9_t ncclNetProperties_t;
 makeVDevice() instructs the network plugin to create a new virtual device based on the specified devices, and will write the newly created device index to *d.
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
@@ -162,7 +162,7 @@ makeVDevice() instructs the network plugin to create a new virtual device based 
  - [Gitlab Merge Request](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/496)
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -188,7 +188,7 @@ Standard benchmark suite (QA dual-node perf)
 1. For non-fused systems - identical performance to before
 2. For force-merged systems - functional correctness
 3. For fused systems - Either identical performance to before or good performance with improved NCCL tuning and algorithm selection.
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -218,7 +218,7 @@ The performance should be on par with non-fused NICs. One caveat here is that wi
 
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

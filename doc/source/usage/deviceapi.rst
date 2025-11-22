@@ -47,8 +47,7 @@ these steps:
 
     /* Get device communicator */
     ncclDevComm devComm;
-    ncclDevCommRequirements reqs;
-    memset(&reqs, 0, sizeof(ncclDevCommRequirements));
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     int nCTAs = 16;
     reqs.lsaBarrierCount = nCTAs;
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devComm));
@@ -126,7 +125,7 @@ Multimem Device Kernel
 
   int main() {
     [...]
-    memset(&reqs, 0, sizeof(ncclDevCommRequirements));
+    reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     int nCTAs = 16;
     reqs.lsaBarrierCount = nCTAs;
     reqs.lsaMultimem = true;
@@ -189,6 +188,61 @@ always contiguous (stride ``1``), whereas the rail team is typically not -- its 
 (the assumption is thus that each rank *n* within the local LSA team has direct network connectivity with corresponding
 ranks *n* of all remote LSA teams).
 
+Host-Accessible Device Pointer Functions
+----------------------------------------
+
+Starting with version 2.29, NCCL provides host-accessible functions that enable host code to obtain pointers to LSA
+memory regions.
+
+The four functions are :c:func:`ncclGetLsaMultimemDevicePointer` (multimem base pointer), :c:func:`ncclGetMultimemDevicePointer` (multimem base pointer with custom handle), :c:func:`ncclGetLsaDevicePointer` (LSA peer pointer),
+and :c:func:`ncclGetPeerDevicePointer` (world rank peer pointer). Functions automatically discover the associated communicator
+from the window object and return ``ncclResult_t`` error codes.
+
+Usage Example:
+
+.. code:: C
+
+  int main() {
+    [...]
+    // Allocate symmetric memory buffer
+    char* buffer;
+    size_t size = 256 * 1024 * 1024;  // 256 MB buffer
+    NCCLCHECK(ncclMemAlloc((void**)&buffer, size));
+
+    // Create window with the allocated buffer
+    ncclWindow_t win;
+    NCCLCHECK(ncclCommWindowRegister(comm, buffer, size, &win, NCCL_WIN_COLL_SYMMETRIC));
+
+    // Get host-accessible pointers
+    void* multimemPtr;
+    void* lsaPtr;
+    void* peerPtr;
+
+    // Get multimem pointer (returns nullptr if multimem not supported)
+    NCCLCHECK(ncclGetLsaMultimemDevicePointer(win, 0, &multimemPtr));
+    if (multimemPtr == nullptr) {
+        // Multimem not available, use fallback
+    }
+
+    // Get LSA pointer for peer 1
+    NCCLCHECK(ncclGetLsaDevicePointer(win, 0, 1, &lsaPtr));
+
+    // Get peer pointer for world rank 2
+    NCCLCHECK(ncclGetPeerDevicePointer(win, 0, 2, &peerPtr));
+
+    // Use pointers in custom kernels or legacy code
+    customKernel<<<nCTAs, 256>>>(multimemPtr, lsaPtr, peerPtr);
+
+    // Cleanup
+    NCCLCHECK(ncclCommWindowDeregister(comm, &win));
+    // Device pointers are invalidated after window deregistration
+    NCCLCHECK(ncclMemFree(buffer));
+    [...]
+  }
+
+Important notes: Pointer lifetime is limited to the shorter of Window and Communicator lifetime. Functions should be called once
+and pointers cached for reuse. For detailed function documentation, see :ref:`device_api_host_functions`.
+
 GIN Device Kernel
 -----------------
 
@@ -197,7 +251,7 @@ GIN Device Kernel
 
   int main() {
     [...]
-    memset(&reqs, 0, sizeof(ncclDevCommRequirements));
+    reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     int nCTAs = 1;
     reqs.railGinBarrierCount = nCTAs;
     reqs.ginSignalCount = 1;

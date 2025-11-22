@@ -12,7 +12,7 @@ of Net and CollNet plugins.
 <details>
 <summary><h2>Motivation and requirements</h2></summary>
 <!-- ============================================================================================-->
- 
+
 ### NVbugs / Jira Tickets
 
 https://nvbugspro.nvidia.com/bug/4713708
@@ -55,7 +55,7 @@ reducing the number of SMs used to one (only used for control).
 <!-- ### Virtualization Requirements -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Design</h2></summary>
@@ -66,7 +66,7 @@ also defines a constant NCCL\_MAX\_NET\_SIZE\_BYTES that declares the max
 size that NCCL core can support. Operation splitting logic in NCCL core takes
 the dynamically queried max bytes into account instead of predefined
 constants.
- 
+
 ### Proposed Design
 
 ### Interface Architecture
@@ -79,16 +79,16 @@ constants.
 <!-- ### Operational Considerations -->
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Coding</h2></summary>
 <!-- ============================================================================================-->
 
 https://gitlab-master.nvidia.com/nccl/nccl/-/merge\_requests/586
- 
+
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Testing and Validation</h2></summary>
@@ -103,7 +103,7 @@ https://gitlab-master.nvidia.com/nccl/nccl/-/merge\_requests/586
 #### What to run?
 
 #### Expected output?
- 
+
 <!-- #### Code Coverage Goal Defined -->
 <!-- #### KPI Coverage Goals Defined (performance, stress, stability, throughput, latency) -->
 <!-- #### Requirement Coverage Goal Defined -->
@@ -133,7 +133,7 @@ https://gitlab-master.nvidia.com/nccl/nccl/-/merge\_requests/586
 <img src="images/collnet-nccl-perf.png" width="700" height="300" />
 
 </details>
- 
+
 <!-- ============================================================================================-->
 <details>
 <summary><h2>Signoff List</h2></summary>

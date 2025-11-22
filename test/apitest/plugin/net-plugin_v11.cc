@@ -40,10 +40,10 @@ struct pluginContext {
   int data;
 };
 
-__hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclNetCommConfig_v11_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) { 
+__hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclNetCommConfig_v11_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   struct pluginContext* context = (struct pluginContext*)malloc(sizeof(*context));
   *ctx = context;
-  return ncclSuccess; 
+  return ncclSuccess;
 }
 __hidden ncclResult_t pluginDevices(int* ndev) { *ndev = 1; return ncclSuccess; }
 __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_v11_t* props) {

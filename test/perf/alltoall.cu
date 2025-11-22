@@ -54,11 +54,94 @@ void AlltoAllGetBw(size_t count, int typesize, double sec, double* algBw, double
   *busBw = baseBw * factor;
 }
 
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+/*
+ * AlltoAll implementation using RMA host put APIs
+ */
+testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                            size_t count, ncclDataType_t type, ncclComm_t comm, cudaStream_t stream) {
+  int rank, nranks;
+  NCCLCHECK(ncclCommUserRank(comm, &rank));
+  NCCLCHECK(ncclCommCount(comm, &nranks));
+
+  ncclWindow_t sendWin = (ncclWindow_t)sendWindow;
+  ncclWindow_t recvWin = (ncclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  NCCLCHECK(ncclWinGetUserPtr(comm, sendWin, &sendPtr));
+  NCCLCHECK(ncclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  // Calculate element size and bytes per chunk
+  size_t eltSize = wordSize(type);
+  size_t chunkBytes = count * eltSize;
+
+  // Use RMA context 0
+  int ctx = 0;
+
+  // Allocate arrays for wait signal operation
+  int* peers = (int*)malloc(sizeof(int) * (nranks));
+  int* nsignals = (int*)malloc(sizeof(int) * (nranks));
+  if (peers == NULL || nsignals == NULL) {
+    free(peers);
+    free(nsignals);
+    return testInternalError;
+  }
+
+  for (int i = 0; i < nranks; i++) {
+    peers[i] = i;
+    nsignals[i] = 1;
+  }
+
+  NCCLCHECK(ncclGroupStart());
+
+  // Send each chunk to its destination peer
+  for (int peer = 0; peer < nranks; peer++) {
+    int targetRank = (rank + peer) % nranks;
+    void* srcPtr = (char*)sendPtr + sendoffset + targetRank * chunkBytes;
+    size_t dstOffset = recvoffset + rank * chunkBytes;
+
+    NCCLCHECK(ncclPut(srcPtr, count, type, targetRank,
+                      recvWin, dstOffset, NCCL_SIGNAL, ctx, comm, stream));
+  }
+
+  // Wait for signals from all peers to ensure all data has been written
+  NCCLCHECK(ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
+  // Free allocated memory
+  free(peers);
+  free(nsignals);
+
+  return testSuccess;
+}
+
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
 // set devComm reqs for alltoall device kernels
+testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclCommProperties* commProperties, const char** testSkipReason) {
+  if (!reqs || !commProperties) return testInternalError;
+
+  switch(deviceImpl) {
+    case 1: // NvlAlltoAllKernel
+    case 2: // NvlAlltoAllKernelOptimized
+      reqs->lsaBarrierCount = deviceCtaCount;
+      return testSuccess;
+    case 3: // GinAlltoAllKernel
+    case 4: // HybridAlltoAllKernel (LSA+GIN)
+      if (commProperties->ginType == NCCL_GIN_TYPE_NONE) {
+        *testSkipReason = "This test requires GIN support, but GIN support is not enabled for this communicator.\n";
+        return testSkipped;
+      }
+      reqs->barrierCount = deviceCtaCount;
+      reqs->ginSignalCount = deviceCtaCount;
+      return testSuccess;
+    default:
+      return testNotImplemented;
+  }
+}
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 bool AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs) {
   if (!reqs) return false;
-  memset(reqs, 0, sizeof(*reqs));
 
   switch(deviceImpl) {
     case 1: // NvlAlltoAllKernel
@@ -74,7 +157,9 @@ bool AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* req
       return false;
   }
 }
+#endif
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 // shared scalar AlltoAll implementation used by both kernels
 template <typename T>
 __device__ void AlltoAllScalarImpl(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int rank, int nRanks, int tid, int nthreads) {
@@ -264,8 +349,8 @@ __global__ void HybridAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, nc
 }
 #endif
 
-testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
-  if (deviceImpl == 0) {
+testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
+  if (implementation == 0) {
     char* sptr = (char*)sendbuff + sendoffset;
     char* rptr = (char*)recvbuff + recvoffset;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
@@ -285,7 +370,7 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
     return testNcclError;
 #endif
   } else {
-    switch(deviceImpl) {
+    switch(implementation) {
       case 1:
         TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
@@ -297,6 +382,10 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
         return testSuccess;
       case 4:
         TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(HybridAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+        return testSuccess;
+      case HOST_RMA_IMPL:
+        // RMA host put implementation
+        TESTCHECK(AlltoAllRmaPut(sendbuff, sendoffset, recvbuff, recvoffset, count, type, comm, stream));
         return testSuccess;
       default:
         return testNotImplemented;

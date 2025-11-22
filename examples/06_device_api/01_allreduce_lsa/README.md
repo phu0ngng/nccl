@@ -61,7 +61,7 @@ synchronization.
 
 ```cpp
 ncclDevComm devComm;
-ncclDevCommRequirements reqs;
+ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
 // Allocate one barrier per CTA we intend to launch
 reqs.lsaBarrierCount = NCCL_DEVICE_CTA_COUNT;
 

@@ -36,7 +36,7 @@ testResult_t GatherInitData(struct threadArgs* args, ncclDataType_t type, ncclRe
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 
@@ -48,8 +48,62 @@ void GatherGetBw(size_t count, int typesize, double sec, double* algBw, double* 
   *busBw = baseBw * factor;
 }
 
-testResult_t GatherRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
-  if (deviceImpl == 0) {
+/*
+ * Gather implementation using RMA host put APIs
+ */
+testResult_t GatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                          size_t count, ncclDataType_t type, int root, ncclComm_t comm, cudaStream_t stream) {
+  int rank, nranks;
+  NCCLCHECK(ncclCommUserRank(comm, &rank));
+  NCCLCHECK(ncclCommCount(comm, &nranks));
+
+  ncclWindow_t sendWin = (ncclWindow_t)sendWindow;
+  ncclWindow_t recvWin = (ncclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  NCCLCHECK(ncclWinGetUserPtr(comm, sendWin, &sendPtr));
+  NCCLCHECK(ncclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  size_t eltSize = wordSize(type);
+  size_t chunkBytes = count * eltSize;
+  int ctx = 0;
+
+  NCCLCHECK(ncclGroupStart());
+
+  // Each rank puts its data to root at offset [myRank*chunkBytes]
+  size_t dstOffset = recvoffset + rank * chunkBytes;
+  NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, root,
+                    recvWin, dstOffset, NCCL_SIGNAL, ctx, comm, stream));
+
+  if (rank == root) {
+    // Root waits for signals from all ranks
+    int* peers = (int*)malloc(sizeof(int) * nranks);
+    int* nsignals = (int*)malloc(sizeof(int) * nranks);
+    if (peers == NULL || nsignals == NULL) {
+      free(peers);
+      free(nsignals);
+      return testInternalError;
+    }
+
+    for (int i = 0; i < nranks; i++) {
+      peers[i] = i;
+      nsignals[i] = 1;
+    }
+
+    NCCLCHECK(ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+
+    free(peers);
+    free(nsignals);
+  }
+
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
+  return testSuccess;
+}
+
+testResult_t GatherRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
+  if (implementation == 0) {
     int nRanks;
     NCCLCHECK(ncclCommCount(comm, &nRanks));
     int rank;
@@ -74,6 +128,9 @@ testResult_t GatherRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, si
     printf("NCCL 2.7 or later is needed for gather. This test was compiled with %d.%d.\n", NCCL_MAJOR, NCCL_MINOR);
     return testNcclError;
 #endif
+  } else if (implementation == HOST_RMA_IMPL) {
+    // RMA host put implementation
+    TESTCHECK(GatherRmaPut(sendbuff, sendoffset, recvbuff, recvoffset, count, type, root, comm, stream));
   } else {
     return testNotImplemented;
   }

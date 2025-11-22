@@ -22,7 +22,7 @@ testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncc
   void* data;
   for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
-      CUDACHECK(cudaSetDevice(args->gpus[i]));  
+      CUDACHECK(cudaSetDevice(args->gpus[i]));
       sendcount = args->sendBytes[id][i] / wordSize(type);
       NCCLCHECK(ncclCommUserRank(args->comms[id][i], &rank));
       NCCLCHECK(ncclCommCount(args->comms[id][i], &nranks));
@@ -35,7 +35,7 @@ testResult_t AllGatherInitData(struct threadArgs* args, ncclDataType_t type, ncc
       CUDACHECK(cudaDeviceSynchronize());
     }
   }
-  
+
   return testSuccess;
 }
 
@@ -47,15 +47,99 @@ void AllGatherGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
-testResult_t AllGatherRunColl(void* sendbuff,  size_t sendoffset,void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
-  if (deviceImpl == 0) {
-    char* sptr = (char*)sendbuff + sendoffset;
-    char* rptr = (char*)recvbuff + recvoffset;
+/*
+ * AllGather implementation using RMA host put APIs
+ */
+testResult_t AllGatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow, size_t recvoffset,
+                             size_t count, ncclDataType_t type, ncclComm_t comm, cudaStream_t stream) {
+  int rank, nranks;
+  NCCLCHECK(ncclCommUserRank(comm, &rank));
+  NCCLCHECK(ncclCommCount(comm, &nranks));
+
+  ncclWindow_t sendWin = (ncclWindow_t)sendWindow;
+  ncclWindow_t recvWin = (ncclWindow_t)recvWindow;
+
+  void* sendPtr = NULL;
+  void* recvPtr = NULL;
+  NCCLCHECK(ncclWinGetUserPtr(comm, sendWin, &sendPtr));
+  NCCLCHECK(ncclWinGetUserPtr(comm, recvWin, &recvPtr));
+
+  // Calculate element size and total bytes to transfer
+  size_t eltSize = wordSize(type);
+  size_t bytes = count * eltSize;
+
+  // Use RMA context 0
+  int ctx = 0;
+
+  // Check if it is in-place
+  bool isInPlace = ((char*)sendPtr + sendoffset == (char*)recvPtr + recvoffset + rank * bytes);
+
+  // Calculate where this rank's data should go in each peer's receive buffer
+  // In allgather, rank i's data goes to offset: recvoffset + rank * bytes
+  size_t peerWinOffset = recvoffset + rank * bytes;
+
+  // Allocate arrays for wait signal operation
+  int* peers = (int*)malloc(sizeof(int) * nranks);
+  int* nsignals = (int*)malloc(sizeof(int) * nranks);
+  if (peers == NULL || nsignals == NULL) {
+    free(peers);
+    free(nsignals);
+    return testInternalError;
+  }
+
+  int peerIdx = 0;
+  for (int i = 0; i < nranks; i++) {
+    // Skip waiting for signal from ourselves if in-place
+    if (isInPlace && i == rank) {
+      continue;
+    }
+    peers[peerIdx] = i;
+    nsignals[peerIdx] = 1;  // Expect 1 signal from each peer
+    peerIdx++;
+  }
+
+  NCCLCHECK(ncclGroupStart());
+
+  // Send each chunk to its destination peer
+  for (int peer = 0; peer < nranks; peer++) {
+    int targetRank = (rank + peer) % nranks;
+    // Skip sending to self if in-place
+    if (isInPlace && targetRank == rank) {
+      continue;
+    }
+    NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, targetRank,
+                      recvWin, peerWinOffset, NCCL_SIGNAL, ctx, comm, stream));
+  }
+
+  // Wait for signals from all peers to ensure all data has been written
+  NCCLCHECK(ncclWaitSignal(peerIdx, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
+  // Free allocated memory
+  free(peers);
+  free(nsignals);
+
+  return testSuccess;
+}
+
+testResult_t AllGatherRunColl(void* sendbuff,  size_t sendoffset,void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
+
+  char* sptr = (char*)sendbuff + sendoffset;
+  char* rptr = (char*)recvbuff + recvoffset;
+
+  switch (implementation) {
+  case 0:
+    // NCCL built-in AllGather
     NCCLCHECK_COMM_WAIT(ncclAllGather(sptr, rptr, count, type, comm, stream), comm);
-  } else {
+    return testSuccess;
+  case HOST_RMA_IMPL:
+    // RMA host put implementation
+    TESTCHECK(AllGatherRmaPut(sendbuff, sendoffset, recvbuff, recvoffset, count, type, comm, stream));
+    return testSuccess;
+  default:
     return testNotImplemented;
   }
-  return testSuccess;
 }
 
 struct testColl allGatherTest = {

@@ -10,6 +10,7 @@
 #include "socket.h"
 #include "utils.h"
 #include "param.h"
+#include "compiler.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -101,7 +102,7 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
     wrap_ibv_fork_init();
     if (ncclNIbDevs == -1) {
       ncclNIbDevs = 0;
-      if (findInterfaces(ncclIbIfName, &ncclIbIfAddr, MAX_IF_NAME_SIZE, 1) != 1) {
+      if (ncclFindInterfaces(ncclIbIfName, &ncclIbIfAddr, MAX_IF_NAME_SIZE, 1) != 1) {
         WARN("NET/IB : No IP interface found.");
         return ncclInternalError;
       }
@@ -649,7 +650,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   wr.send_flags = IBV_SEND_SIGNALED;
 
 #if USE_RDMA_WRITE
-  __sync_synchronize(); // order the readyPtr load against rkey load below
+  std::atomic_thread_fence(std::memory_order_seq_cst); // order the readyPtr load against rkey load below
   // Sanity checks to catch user collective call count/size mismatches
   // plus any potential programming errors
   if (size > slot->size || slot->size <= 0 || slot->addr == 0 || slot->rkey == 0 || slot->seq != comm->fifoHead) {
@@ -661,7 +662,7 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, int size, void* mhandle, vo
   wr.wr.rdma.remote_addr = slot->addr;
   wr.wr.rdma.rkey = slot->rkey;
   wr.imm_data = size; // Send the message size via imm_data
-  __sync_synchronize();
+  std::atomic_thread_fence(std::memory_order_seq_cst);
 #endif
   // We must clear slot->ready, but reset other fields to aid
   // debugging and sanity checks

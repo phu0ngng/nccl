@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2016, NVIDIA CORPORATION. All rights reserved.
  *
  * See LICENSE.txt for license information
- * 
+ *
  * replay-coll - This test will replay collectives from the specified format found in replay-coll.log
  * This is NOT to be confused with the NCCL diagnostic replay tool
  ************************************************************************/

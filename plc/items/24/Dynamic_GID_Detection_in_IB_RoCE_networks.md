@@ -1,7 +1,7 @@
 # Dynamic GID Detection in IB RoCE networks
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Introduction
 
 None.
@@ -52,10 +52,10 @@ Clusters with RoCE HCAs.
 
 Author : Giuseppe Congiu
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Problem Statement
 
 GIDs are 128-bits integer values used in RoCE HCAs to identify (along
@@ -172,17 +172,17 @@ version.
 
 Author : Giuseppe Congiu
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 [MR
 359](https://gitlab-master.nvidia.com/nccl/nccl/-/merge_requests/359)
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Introduction
 
 #### Test strategy
@@ -197,4 +197,4 @@ None
 
 Author : Giuseppe Congiu
 </details>
- 
+

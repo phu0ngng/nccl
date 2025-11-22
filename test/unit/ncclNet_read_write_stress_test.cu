@@ -14,8 +14,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-extern ncclNet_t ncclNetSocket; 
-extern ncclNet_t ncclNetIb; 
+extern ncclNet_t ncclNetSocket;
+extern ncclNet_t ncclNetIb;
 
 #define MAX_REQUESTS 128
 #define USE_SOCKET 1
@@ -40,7 +40,7 @@ int tester(ncclNet_t *net, char *data, char *data_d, size_t bytes, int type, int
   std::uniform_int_distribution<int> uni(READ, WRITE);
   MPI_Barrier(MPI_COMM_WORLD);
   if(rank==0){
-   char *listenComm, *sendComm[nranks+1], *recvComm[nranks+1]; 
+   char *listenComm, *sendComm[nranks+1], *recvComm[nranks+1];
    char *request[2*nranks*MAX_REQUESTS];
    if(net->devices(&ndev, &scores)){failed=1; goto out; }
    INFO(INIT,"Rank %d ndev %d scores : ", rank, ndev);
@@ -151,7 +151,7 @@ int tester(ncclNet_t *net, char *data, char *data_d, size_t bytes, int type, int
             }
     }//for rnk<nranks
   }else{
-    char *listenComm, *sendComm, *recvComm; 
+    char *listenComm, *sendComm, *recvComm;
     char *request[2*MAX_REQUESTS];
     if(net->devices(&ndev, &scores)){failed=1; goto out; }
     INFO(INIT,"Rank %d ndev %d scores : ", rank, ndev);
@@ -172,7 +172,7 @@ int tester(ncclNet_t *net, char *data, char *data_d, size_t bytes, int type, int
 
     if(type == NCCL_PTR_HOST) {
       if(net->irecv(recvComm, data, bytes, type, (void **)&request[cnt++])){ failed=1; goto out; }
-    } else if (type == NCCL_PTR_CUDA){ 
+    } else if (type == NCCL_PTR_CUDA){
       if(net->irecv(recvComm, data_d, bytes, type, (void **)&request[cnt++])){ failed=1; goto out; }
     }
     INFO(INIT,"Rank %d posted first recv", rank);
@@ -309,7 +309,7 @@ int main(int argc, char *argv[]) {
   ncclNet_t *nets[] = {&ncclNetIb};
 #endif
   for(int i=0; i<sizeof(nets)/sizeof(nets[0]); i++){
-    ncclNet_t *net = nets[i]; 
+    ncclNet_t *net = nets[i];
     if(!rank) INFO(INIT,"net->name %s", net->name);
     if (!strcmp(net->name, "Socket")) {
       int type = NCCL_PTR_HOST;

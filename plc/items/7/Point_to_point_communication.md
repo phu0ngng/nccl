@@ -1,7 +1,7 @@
 # Point to point communication
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -89,10 +89,10 @@ N/A
 
 Author : Sylvain Jeaugey
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 #### Pairwise approach
@@ -182,10 +182,10 @@ None.
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 - nccl@b6431d1a1cbb00c5d62a661cec93185697ef8620
 - nccl@d255f667283175dca91179f299c862b540fc2934
@@ -246,10 +246,10 @@ None.
 - nccl@0ff8d55eef0ec85c66df575b1411aeb9f3927e02
 - nccl@7fdabd66082c1006f775723a2b122f17ef3938a6
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -335,4 +335,4 @@ None.
 
 Author : Sylvain Jeaugey
 </details>
- 
+

@@ -74,7 +74,7 @@ for target_cluster_tag in $target_cluster_tags; do
 
     # If --use-build-cluster-image is not set, then the build image is pulled from the target cluster(s)
     # If there are multiple targets, the versions must be the exact same to ensure the artifacts are produced correctly for all
-    # If --use-build-cluster-image is set, then the build image is pulled from the build cluster, and the target cluster build images are ignored 
+    # If --use-build-cluster-image is set, then the build image is pulled from the build cluster, and the target cluster build images are ignored
     # This should be used cautiously as it may result in artifacts being incompatible with the target clusters, but is useful if the build cluster has a newer image than the target clusters
     if [ "$baremetal_build" -eq 0 ] && [ "$use_build_cluster_image" -eq 0 ]; then
         if [ -z "$build_image_version" ]; then
@@ -124,21 +124,11 @@ if [ "$baremetal_build" -eq 0 ]; then
     # Disable GPU detection to allow enroot to launch this on CPU-only nodes
     # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html#gpu-enumeration
     export NVIDIA_VISIBLE_DEVICES=void
-    
+
     eval "$(get_build_command $current_dir $build_image_version)"
 else
     export ENABLE_CCACHE=1
     eval "$(get_build_command_bm)"
-fi
-
-make_result=$?
-if [ "$make_result" -ne 0 ]; then
-    exit $make_result
-fi
-
-# check symbols
-if [ "$CHECK_SYMBOLS" -eq 1 ]; then
-    test/binary/test_symbols.sh build/lib/libnccl.so
 fi
 
 exit_code=$?

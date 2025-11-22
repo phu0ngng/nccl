@@ -306,6 +306,48 @@ function parse_store_coredumps() {
     done
 }
 
+# Validate tests that require special processing (grepping output etc.)
+function validate_test() {
+    local label=$1
+    local stdout=$2
+    local origreturn=$3
+
+    # If the job already failed, then don't perform extra validation and return original value
+    if [ $origreturn -ne 0 ]; then
+      return $origreturn
+    fi
+
+    #multi_segment_test_disabled: Must not find "IPC register buffer"
+    if [[ "$label" == *"multi_segment_test_disabled"* ]]; then
+        if echo "$stdout" | grep -q "IPC register buffer"; then
+            return 1
+        else
+            return 0
+        fi
+    fi
+
+    # multi_segment_test_p2p: Must find both "IPC register buffer" AND "numSegments 4"
+    if [[ "$label" == *"multi_segment_test_p2p"* ]]; then
+        if echo "$stdout" | grep -q "IPC register buffer" && echo "$stdout" | grep -q "numSegments 4"; then
+            return 0
+        else
+            return 1
+        fi
+    fi
+
+    # multi_segment_test_ib: Must find "NET register userbuff"
+    if [[ "$label" == *"multi_segment_test_ib"* ]]; then
+        if echo "$stdout" | grep -q "NET register userbuff"; then
+            return 0
+        else
+            return 1
+        fi
+    fi
+
+    # Default case
+    return $origreturn
+}
+
 # Add a label and command line
 function run_command() {
     label="$1"
@@ -332,6 +374,9 @@ function run_command() {
         echo "$stdout"
         let runtime=$((end - start))/1000000000
         echo "Command took $runtime s with retcode $ret"
+        # call validate_test to override return value in cases where we need special processing
+        validate_test "$label" "$stdout" $ret
+        ret=$?
         if [ $ret -ne 0 ]; then
             failed_commands+=(["$label"]="$run_mode_cmd $cmd")
             rerun_failed_command_with_logging $label "$run_mode_cmd $cmd"

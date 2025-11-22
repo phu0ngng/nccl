@@ -39,9 +39,14 @@ run_api_test(){
 # list of tests with a special config
 multinetTests="ncclCommInitRankConfig_test.multi_net_plugin_*"
 sharedPluginTest="ncclCommInitRankConfig_test.shared_plugin_lib"
+gtestFilter="-${multinetTests}:${sharedPluginTest}"
+
+if [[ ${DEVICE_API} -eq 0 ]] ; then
+  gtestFilter="${gtestFilter}:ncclCommQueryProperties_test.test_gin_support:ncclCommQueryProperties_test.test_multimem_support"
+fi
 
 # run all tests except the ones with a special config
-run_api_test "" "-${multinetTests}:${sharedPluginTest}"
+run_api_test "" "${gtestFilter}"
 
 # run multinet tests with special config
 export NCCL_NET_PLUGIN="plugin_nodev_v6,plugin_v7,plugin_nodev_v8,plugin_nodev_v9,plugin_nodev_v10,plugin_nodev_v11"
@@ -51,6 +56,12 @@ unset NCCL_NET_PLUGIN
 export NCCL_NET_PLUGIN="libnccl-shared-plugins.so"
 run_api_test "" "${sharedPluginTest}"
 unset NCCL_NET_PLUGIN
+
+
+# run w/o allgatherv
+export NCCL_ALLGATHERV_ENABLE=0
+run_api_test "" ""
+unset NCCL_ALLGATHERV_ENABLE
 
 print_failed_commands
 end_junit_file

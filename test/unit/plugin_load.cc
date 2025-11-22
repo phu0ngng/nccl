@@ -4,6 +4,10 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <string.h>
+#include <unistd.h>
 #include "plugin.h"
 #include "nccl_net.h"
 #include "nccl_tuner.h"
@@ -12,7 +16,7 @@
 
 #define NCCL_NET_PLUGIN_SYM "ncclNetPlugin_v11"
 #define NCCL_TUNER_PLUGIN_SYM "ncclTunerPlugin_v5"
-#define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v5"
+#define NCCL_PROFILER_PLUGIN_SYM "ncclProfiler_v6"
 #define NCCL_ENV_PLUGIN_SYM "ncclEnvPlugin_v1"
 
 enum test {
@@ -62,6 +66,55 @@ const char* testName[] = {
   "test_env_plugin_suffix",
   "test_network_plugin_static",
 };
+
+static void list_directory_contents(const char* path) {
+  fprintf(stdout, "\n=== Listing directory: %s ===\n", path);
+
+  DIR* dir = opendir(path);
+  if (dir == NULL) {
+    fprintf(stderr, "ERROR: Cannot open directory '%s': %s\n", path, strerror(errno));
+    return;
+  }
+
+  struct dirent* entry;
+  struct stat file_stat;
+  char full_path[PATH_MAX];
+  int file_count = 0;
+
+  while ((entry = readdir(dir)) != NULL) {
+    // Skip . and ..
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+      continue;
+    }
+
+    snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+
+    if (stat(full_path, &file_stat) == 0) {
+      char perms[11];
+      snprintf(perms, sizeof(perms), "%c%c%c%c%c%c%c%c%c%c",
+        S_ISDIR(file_stat.st_mode) ? 'd' : '-',
+        (file_stat.st_mode & S_IRUSR) ? 'r' : '-',
+        (file_stat.st_mode & S_IWUSR) ? 'w' : '-',
+        (file_stat.st_mode & S_IXUSR) ? 'x' : '-',
+        (file_stat.st_mode & S_IRGRP) ? 'r' : '-',
+        (file_stat.st_mode & S_IWGRP) ? 'w' : '-',
+        (file_stat.st_mode & S_IXGRP) ? 'x' : '-',
+        (file_stat.st_mode & S_IROTH) ? 'r' : '-',
+        (file_stat.st_mode & S_IWOTH) ? 'w' : '-',
+        (file_stat.st_mode & S_IXOTH) ? 'x' : '-');
+
+      fprintf(stdout, "  %s  %8ld  %s\n", perms, (long)file_stat.st_size, entry->d_name);
+      file_count++;
+    } else {
+      fprintf(stdout, "  ??????????  %8s  %s (stat failed: %s)\n", "?", entry->d_name, strerror(errno));
+      file_count++;
+    }
+  }
+
+  closedir(dir);
+  fprintf(stdout, "Total files: %d\n", file_count);
+  fprintf(stdout, "=== End of directory listing ===\n\n");
+}
 
 static int test_plugin_load(enum test type) {
   char name[PATH_MAX] = {};
@@ -144,6 +197,8 @@ static int test_plugin_load(enum test type) {
     case ncclPluginProfilerAbsPathTest:
     case ncclPluginProfilerSuffixTest:
       {
+        // Clear any previous dlerror
+        dlerror();
         void* handle = ncclOpenProfilerPluginLib(name);
         if (handle) {
           ncclProfiler_t* sym = (ncclProfiler_t*)dlsym(handle, NCCL_PROFILER_PLUGIN_SYM);
@@ -157,11 +212,14 @@ static int test_plugin_load(enum test type) {
             fprintf(stderr, "%s: plugin name not found (path: %s)\n", testName[type], name);
             return 1;
           }
+          const char* err = dlerror();
           ncclClosePluginLib(handle, ncclPluginTypeProfiler);
-          fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
+          fprintf(stderr, "%s: dlsym failed: %s (path: %s)\n", testName[type], err ? err : "unknown error", name);
           return 1;
         }
-        fprintf(stderr, "%s: %s (path: %s)\n", testName[type], strerror(errno), name);
+        // Get detailed error from dlopen
+        const char* err = dlerror();
+        fprintf(stderr, "%s: dlopen failed: %s (path: %s)\n", testName[type], err ? err : strerror(errno), name);
         return 1;
       }
       break;
@@ -212,6 +270,54 @@ int main(void) {
   if (test_plugin_load(ncclPluginEnvSuffixTest)) errors++;
   if (errors) {
     fprintf(stderr, "%d tests failed!\n", errors);
+
+    // Print diagnostic information to help debug the failure
+    fprintf(stderr, "\n=== DIAGNOSTIC INFORMATION ===\n");
+
+    // Current working directory
+    char cwd[PATH_MAX];
+    fprintf(stderr, "Current working directory: ");
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+      fprintf(stderr, "%s\n", cwd);
+    } else {
+      fprintf(stderr, "Unable to get current directory\n");
+    }
+
+    // Check LD_LIBRARY_PATH
+    const char* ld_path = getenv("LD_LIBRARY_PATH");
+    fprintf(stderr, "LD_LIBRARY_PATH: %s\n", ld_path ? ld_path : "(not set)");
+
+    // Check NCCL_HOME
+    const char* nccl_home = getenv("NCCL_HOME");
+    fprintf(stderr, "NCCL_HOME: %s\n\n", nccl_home ? nccl_home : "(not set)");
+
+    // List the plugins directory where we expect to find the .so files
+    if (nccl_home) {
+      char plugins_dir[PATH_MAX];
+      snprintf(plugins_dir, sizeof(plugins_dir), "%s/test/unit/plugins", nccl_home);
+      list_directory_contents(plugins_dir);
+    } else {
+      fprintf(stderr, "WARNING: NCCL_HOME not set, cannot list plugins directory\n");
+    }
+
+    // Also check if LD_LIBRARY_PATH points to a directory
+    if (ld_path && strlen(ld_path) > 0) {
+      // Parse the first directory in LD_LIBRARY_PATH
+      char first_dir[PATH_MAX];
+      const char* colon = strchr(ld_path, ':');
+      if (colon) {
+        size_t len = colon - ld_path;
+        if (len < PATH_MAX) {
+          strncpy(first_dir, ld_path, len);
+          first_dir[len] = '\0';
+          list_directory_contents(first_dir);
+        }
+      } else {
+        list_directory_contents(ld_path);
+      }
+    }
+
+    fprintf(stderr, "=== END DIAGNOSTIC INFORMATION ===\n");
     return 1;
   }
   fprintf(stdout, "All tests successfull!\n");

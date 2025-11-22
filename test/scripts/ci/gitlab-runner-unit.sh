@@ -27,8 +27,34 @@ function run_gin_test_suite() {
   run_command "gin_test_${backend_label}_devapi_uts" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_uts" ""
 }
 
+function run_rma_test_suite() {
+  local ppn="$1"  # processes per node
+  # Ring: ppn × NNODES GPUs
+  run_command "rma_test_multinode_${ppn}ppn_put_signal_ring" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ring_rma" "-v 1"
+  # Alltoall: ppn × NNODES GPUs
+  run_command "rma_test_multinode_${ppn}ppn_put_signal_alltoall" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_alltoall_rma" "-v 1"
+}
+
+# RMA multi-node tests
+if [[ ${RMA_MULTINODE_TESTS} -eq 1 ]] && [[ ${NNODES} -gt 1 ]]; then
+  # Run with 1 process per node
+  run_rma_test_suite 1
+
+  # Run with NGPUS processes per node
+  if [[ ${NGPUS} -gt 1 ]]; then
+    run_rma_test_suite ${NGPUS}
+  fi
+fi
+
+# RMA single-node tests
+if [[ ${RMA_SINGLE_NODE_TESTS} -eq 1 ]] && [[ ${NNODES} -eq 1 ]]; then
+  run_command "rma_test_single_node_ping_pong" "$RUN_MODE" 2 "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ping_pong_rma" "-v 1"
+  run_command "rma_test_single_node_ring" "$RUN_MODE" ${NGPUS} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ring_rma" "-v 1"
+  run_command "rma_test_single_node_alltoall" "$RUN_MODE" ${NGPUS} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_alltoall_rma" "-v 1"
+fi
+
 if [[ ${ENQUEUE_TESTS_ARGS} -eq 1 ]] ; then
-  run_command "enqueue_tests_args" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=512" "$NCCL_HOME/test/unit/enqueue_test" ""
+  run_command "enqueue_tests_args" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=1024" "$NCCL_HOME/test/unit/enqueue_test" ""
 else
   echo -e "Disabled Enqueue TESTS Args test\n\n"
 fi
@@ -72,8 +98,8 @@ else
   echo -e "Disabled FT TESTS Default test\n\n"
 fi
 
-if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]]; then
-  run_command "ft_abort_rank0" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
+if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]] && [[ ${RMA_MULTINODE_TESTS} -ne 1 ]]; then
+  run_command "ft_abort_rank0" "$RUN_MODE" 2 "--oversubscribe" "NCCL_WIN_ENABLE=0" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
 fi
 
 if [[ ${FT_TESTS_NO_P2P} -eq 1 ]] ; then
@@ -91,7 +117,19 @@ fi
 if [[ ${DEVICE_ID_TESTS} -eq 1 ]] ; then
   run_command "device_id_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/device_id_test" ""
 else
-  "Disabled Device ID TESTS test\n\n"
+  echo -e "Disabled Device ID TESTS test\n\n"
+fi
+
+if [[ ${LSA_POINTER_TESTS} -eq 1 ]] ; then
+  run_command "lsa_pointer_tests" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/lsa_pointer_test" ""
+else
+  echo -e "Disabled LSA Pointer TESTS test\n\n"
+fi
+
+if [[ ${LSA_MULTIMEM_POINTER_TESTS} -eq 1 ]] ; then
+  run_command "lsa_multimem_pointer_tests" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/lsa_multimem_pointer_test" ""
+else
+  echo -e "Disabled LSA Multimem Pointer TESTS test\n\n"
 fi
 
 if [[ ${REGISTER_MEMCPY_TESTS} -eq 1 ]] ; then
@@ -100,12 +138,36 @@ else
   echo -e "Disabled Register Memcpy TESTS test\n\n"
 fi
 
+if [[ ${REGISTER_MIX_A2A_AR_TESTS} -eq 1 ]] ; then
+  run_command "register_mix_a2a_ar_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/register_mix_a2a_ar" ""
+else
+  echo -e "Disabled Register Mix A2A AR TESTS test\n\n"
+fi
+
+if [[ ${HASHTABLE_TESTS} -eq 1 ]] ; then
+  run_command "intrusive_map_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/intrusive_map_test" ""
+else
+  echo -e "Disabled Intrusive Map TESTS test\n\n"
+fi
+
 export NCCL_DEBUG=$NCCL_DEBUG_OLD
 if [[ ${PLUGIN_TESTS_NET_TUNER} -eq 1 ]] ; then
   run_command "make_mixed_tuner" "CMD" 1 "" "" "make" "-C ext-mixed/example test"
 else
   echo -e "Disabled Net/Tuner TESTS Mixed test\n\n"
 fi
+
+if [[ ${MULTI_SEGMENT_REG_TESTS} -eq 1 ]] ; then
+  export NCCL_DEBUG=INFO
+  run_command "multi_segment_test_ib" "$RUN_MODE" 2 "--oversubscribe" "NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1 NCCL_MULTI_SEGMENT_REGISTER=1 NCCL_PXN_DISABLE=1 NCCL_WIN_ENABLE=0 NCCL_PROTO=SIMPLE NCCL_ALGO=ring NCCL_DEBUG_SUBSYS=REG" "$NCCL_HOME/test/unit/multi_segment_test" ""
+  run_command "multi_segment_test_p2p" "$RUN_MODE" 2 "--oversubscribe" "NCCL_MULTI_SEGMENT_REGISTER=1 NCCL_PXN_DISABLE=1 NCCL_WIN_ENABLE=0 NCCL_PROTO=SIMPLE NCCL_ALGO=ring NCCL_DEBUG_SUBSYS=REG" "$NCCL_HOME/test/unit/multi_segment_test" ""
+  run_command "multi_segment_test_disabled" "$RUN_MODE" 2 "--oversubscribe" "NCCL_MULTI_SEGMENT_REGISTER=0 NCCL_PXN_DISABLE=1 NCCL_WIN_ENABLE=0 NCCL_PROTO=SIMPLE NCCL_ALGO=ring NCCL_DEBUG_SUBSYS=REG" "$NCCL_HOME/test/unit/multi_segment_test" ""
+  #reset this back to old
+  export NCCL_DEBUG=$NCCL_DEBUG_OLD
+else
+  echo -e "Disabled Multi-segment registration tests\n\n"
+fi
+
 
 # PAT / Log Algo Tests
 if [[ ${LOG_ALGO_RS_TESTS} -eq 1 ]] ; then
@@ -121,9 +183,10 @@ else
 fi
 
 # Plugin Load Tests
-export LD_LIBRARY_PATH=$NCCL_HOME/test/unit/plugins
+# Prepend plugins directory to LD_LIBRARY_PATH (don't replace it, or we lose CUDA libs)
+export LD_LIBRARY_PATH=$NCCL_HOME/test/unit/plugins:$LD_LIBRARY_PATH_BACKUP
 if [[ ${PLUGIN_LOADING_TESTS} ]] ; then
-  run_command "plugin_loading_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/plugin_load" ""
+  run_command "plugin_loading_tests" "$RUN_MODE" 1 "--oversubscribe" "NCCL_DEBUG=INFO" "$NCCL_HOME/test/unit/plugin_load" ""
 else
   echo -e "Disabled Plugin Loading TESTS test\n\n"
 fi
@@ -162,6 +225,58 @@ if [[ ${DEVAPI_WINDOW_STRESS_TESTS} -eq 1 ]] ; then
 else
   echo -e "Disabled DevAPI Window Stress TESTS test\n\n"
 fi
+
+# binary tests
+if [ "$CHECK_SYMBOLS" -eq 1 ]; then
+    run_command "test_symbols" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/binary/test_symbols.sh" "$NCCL_HOME/lib/libnccl.so"
+else
+    echo -e "Disabled Test Symbols test\n\n"
+fi
+
+
+# tests w/o allgatherv enabled
+export NCCL_ALLGATHERV_ENABLE=0
+if [[ ${ENQUEUE_TESTS_ARGS} -eq 1 ]] ; then
+  run_command "enqueue_tests_args" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=0 NCCL_WORK_ARGS_BYTES=1024" "$NCCL_HOME/test/unit/enqueue_test" ""
+else
+  echo -e "Disabled Enqueue TESTS Args test\n\n"
+fi
+
+if [[ ${ENQUEUE_TESTS_FIFO} -eq 1 ]] ; then
+  run_command "enqueue_tests_fifo" "$RUN_MODE" 1 "--oversubscribe" "NCCL_WORK_FIFO_BYTES=1024" "$NCCL_HOME/test/unit/enqueue_test" ""
+else
+  echo -e "Disabled Enqueue TESTS Fifo test\n\n"
+fi
+
+
+NCCL_DEBUG_OLD=$NCCL_DEBUG
+export NCCL_DEBUG=VERSION
+
+if [[ ${FT_TESTS_DEFAULT} -eq 1 ]] ; then
+  run_command "ft_test_default_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/ft_test" ""
+else
+  echo -e "Disabled FT TESTS Default test\n\n"
+fi
+
+if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]]; then
+  run_command "ft_abort_rank0_allgatherv" "$RUN_MODE" 2 "--oversubscribe" "NCCL_WIN_ENABLE=0" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
+fi
+
+if [[ ${FT_TESTS_NO_P2P} -eq 1 ]] ; then
+  run_command "ft_test_no_p2p_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/unit/ft_test" ""
+else
+  echo -e "Disabled FT TESTS no_p2p test\n\n"
+fi
+
+if [[ ${FT_TESTS_NETWORK} -eq 1 ]] ; then
+  run_command "ft_test_network_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/unit/ft_test" ""
+else
+  echo -e "Disabled FT TESTS network test\n\n"
+fi
+
+export NCCL_DEBUG=$NCCL_DEBUG_OLD
+unset NCCL_ALLGATHERV_ENABLE
+
 
 print_failed_commands
 end_junit_file

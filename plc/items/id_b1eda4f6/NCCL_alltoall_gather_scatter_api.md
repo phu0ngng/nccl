@@ -122,7 +122,7 @@ Currently do not plan to create dedicated function wrapper for alltoall, scatter
 // Example scatter implemented with p2pTaskAppend
 if (coll == ncclFuncScatter) {
   size_t offset = 0;
-  
+
   if (rank == root) {
     // Root sends different chunks to each rank
     // self-send handled down stream after calling p2pTaskAppend
@@ -154,7 +154,7 @@ There are several options for the transition points:
   - Advantages:
     - Early transition allows for cleaner pipeline handling
     - Natural place to construct P2P tasks since task creation already happens here
-    
+
 ```c
 // enqueue.cc
 static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
@@ -177,13 +177,13 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       // Collective implmented with p2pTaskAppend
     }
     /*------------------------------------------------------------------------*/
-    
+
     // Existing code that follows the normal ncclTaskColl path
     else {
       ...
     }
   }
-  
+
   ...
 
   return ncclSuccess;
@@ -200,7 +200,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
   We could handle the transition in `ncclPrepareTasks`, where CE and symmetric kernel implementation checks currently happen. This function:
   1. Takes sorted collective tasks from `ncclTaskCollSorterDequeueAll`(&planner->collSorter)
   2. Enqueues them into `planner->collTaskQueue`
-  
+
   To implement this approach, we would need to add the following in the `ncclPrepareTasks`:
   1. Add checks to identify which tasks should be converted to P2P tasks
   2. Convert applicable tasks to `ncclTaskP2p`

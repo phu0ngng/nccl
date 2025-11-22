@@ -1,7 +1,7 @@
 # Prescale Sum
 <details>
 <summary><h2>Requirements</h2></summary>
- 
+
 ### Project Context and Purpose
 
 NCCL provides fast inter-GPU communication for parallel applications.
@@ -68,10 +68,10 @@ N/A
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Design</h2></summary>
- 
+
 ### Proposed Design
 
 The goal is to allow users to pre-multiply inputs to summation
@@ -140,16 +140,16 @@ None.
 
 ### Signoff list
 </details>
- 
+
 <details>
 <summary><h2>Coding</h2></summary>
- 
+
 
 </details>
- 
+
 <details>
 <summary><h2>Testing</h2></summary>
- 
+
 ### Objectives and Timeline
 
 #### Code Coverage Goal Defined
@@ -225,4 +225,4 @@ None.
 
 ### Signoff list
 </details>
- 
+

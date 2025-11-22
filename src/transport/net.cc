@@ -15,6 +15,7 @@
 #include "profiler.h"
 #include "transport.h"
 #include "shm.h"
+#include "compiler.h"
 #include <assert.h>
 #include "register_inline.h"
 
@@ -1255,7 +1256,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
             int offset;
             NCCLCHECK(sharedBuffersGet(proxyState, sub->channelId, sharedBuffSlot*args->nsubs+s, &offset, NULL));
             resources->recvMem->connFifo[buffSlot].offset = offset;
-            __sync_synchronize();
+            std::atomic_thread_fence(std::memory_order_seq_cst);
           }
           volatile uint64_t* sendHead = resources->gdcSync ? resources->gdcSync : &resources->sendMem->head;
           sub->posted += args->sliceSteps;
@@ -1340,7 +1341,7 @@ static ncclResult_t sendProxyProgress(struct ncclProxyState* proxyState, struct 
         if (done) {
           // Make sure size is reset to -1 before we update the head.
           connFifo[buffSlot].size = -1;
-          __sync_synchronize();
+          std::atomic_thread_fence(std::memory_order_seq_cst);
           TRACE(NCCL_NET, "sendProxy [%ld/%d/%d] request %p done", sub->done, buffSlot, sub->nsteps, sub->requests[buffSlot]);
           sub->done += args->sliceSteps;
           ncclProfilerStopProxyStepEvent(s, args, doneStepId);
@@ -1464,7 +1465,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
             ptrs[subCount] = localBuff+buffSlot*stepSize;
             sizes[subCount] = stepSize*args->sliceSteps;
           }
-          if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
+          // if (sub->nbytes < sizes[subCount]) sizes[subCount] = sub->nbytes;
           tags[subCount] = resources->tpRemoteRank;
           mhandles[subCount] = sub->recvMhandle;
           phandles[subCount] = &sub->pHandles[DIVUP(postedStepId, args->sliceSteps)%NCCL_STEPS];
@@ -1584,7 +1585,7 @@ static ncclResult_t recvProxyProgress(struct ncclProxyState* proxyState, struct 
             sub->transmitted += args->sliceSteps;
             ncclProfilerRecordProxyStepEventState(s+i, args, transmittedStepId, ncclProfilerProxyStepRecvGPUWait);
             if (step < sub->nsteps) {
-              __sync_synchronize();
+              std::atomic_thread_fence(std::memory_order_seq_cst);
               struct recvNetResources* resources = (struct recvNetResources*) (sub->connection->transportResources);
               volatile uint64_t* recvTail = resources->gdcSync ? resources->gdcSync : &resources->recvMem->tail;
               *recvTail = sub->base + sub->transmitted;
@@ -1717,8 +1718,9 @@ ncclResult_t ncclNetLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
     NCCLCHECKGOTO(ncclRegFind(comm, userbuff, buffSize, &regRecord), ret, fail);
     NCCLCHECKGOTO(ncclRegLocalIsValid(regRecord, &isValid), ret, fail);
     if (isValid) {
-      CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&base, &baseSize, (CUdeviceptr)userbuff), ret, fail);
-      if ((uint64_t)base + baseSize < (uint64_t)userbuff + buffSize) goto exit;
+      int numSegments = 0;
+      NCCLCHECK(ncclCuMemGetAddressRange((CUdeviceptr) userbuff, buffSize, (CUdeviceptr*)&base, &baseSize, &numSegments));
+      if (numSegments > 1 && !ncclParamMultiSegmentRegister()) goto exit;
       NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
     }
   }
@@ -1752,8 +1754,9 @@ ncclResult_t ncclNetGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
 
   *outRegBufFlag = 0;
   if (comm && userbuff && buffSize > 0 && nPeers > 0) {
-    CUCHECKGOTO(cuMemGetAddressRange((CUdeviceptr *)&base, &baseSize, (CUdeviceptr)userbuff), ret, fail);
-    if ((uint64_t)base + baseSize < (uint64_t)userbuff + buffSize) goto exit;
+    int numSegments = 0;
+    NCCLCHECK(ncclCuMemGetAddressRange((CUdeviceptr) userbuff, buffSize, (CUdeviceptr*)&base, &baseSize, &numSegments));
+    if (numSegments > 1 && !ncclParamMultiSegmentRegister()) goto exit;
     NCCLCHECKGOTO(ncclCommGraphRegister(comm, base, baseSize, (void**)&regRecord), ret, fail);
     NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
     if (*outRegBufFlag) {
