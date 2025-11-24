@@ -23,6 +23,7 @@
 #include <cstring> // std::memcpy
 #include <cinttypes> // PRIx64
 #include <cassert>
+#include <cfloat> // FLT_MAX
 
 NCCL_PARAM(L1SharedMemoryCarveout, "L1_SHARED_MEMORY_CARVEOUT", 0);
 NCCL_PARAM(AllgathervEnable, "ALLGATHERV_ENABLE", 1);
@@ -1910,7 +1911,7 @@ static ncclResult_t topoGetAlgoInfo(
   ) {
   float (*table)[NCCL_NUM_PROTOCOLS] = (float (*)[NCCL_NUM_PROTOCOLS])collCostTable;
 
-  float minTime = 3600000000.0;
+  float minTime = FLT_MAX;
   int algorithm = info->algorithm = NCCL_ALGO_UNDEF;
   int protocol = info->protocol = NCCL_PROTO_UNDEF;
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
