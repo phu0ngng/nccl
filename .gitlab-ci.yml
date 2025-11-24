@@ -3333,7 +3333,7 @@ perftest-multi-bia:
 perf-regression-eos:
   stage: perf_regression
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
   needs:
