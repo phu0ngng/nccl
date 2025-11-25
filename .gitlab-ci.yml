@@ -112,7 +112,7 @@ build-trace:
       when: always
     - when: never
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     NCCL_BUILD_TRACE: 1
   script:
@@ -125,7 +125,7 @@ build-ipp6:
       when: always
     - when: never
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   script:
     - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
   artifacts:
@@ -322,7 +322,7 @@ setup-AWS_H100_EFA:
       when: always
     - when: never
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   needs:
     - job: build-ipp6
   variables:
@@ -375,30 +375,6 @@ health-GP100:
     - gp100
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-health-check.sh
-
-health-A40:
-  stage: health
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
-      when: always
-    - when: never
-  needs: []
-  tags:
-    - a40
-  script:
-    - srun --exclusive -t 00:02:00 -N 3 -c 2 -pA40 ./test/scripts/gitlab-runner-health-check.sh
-
-health-A100:
-  stage: health
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PROFILER_TESTS == "1" || $RUN_INSPECTOR_TESTS == "1"))
-      when: always
-    - when: never
-  needs: []
-  tags:
-    - a100pci
-  script:
-    - srun --exclusive -t 00:02:00 -n 1 -c 8 -pA100 ./test/scripts/gitlab-runner-health-check.sh
 
 ##
 ## Stage: health - Finish!
@@ -567,165 +543,6 @@ unit_tests-GP100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-A40-single:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6","health-A40"]
-  tags:
-    - a40
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    SLURM_PARTITION: "A40"
-    NNODES: 1
-    NGPUS: 1
-    NP: 1
-    NCCL_HOME: build
-    RUN_MODE: "SALLOC_MPI"
-    ENQUEUE_TESTS_ARGS: 1
-    ENQUEUE_TESTS_FIFO: 1
-    GRAPH_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_DEFAULT: 0
-    MEMLEAK_TESTS_NO_P2P: 1
-    MEMLEAK_TESTS_NETWORK: 0
-    FT_TESTS_DEFAULT: 1
-    FT_TESTS_NO_P2P: 1
-    FT_TESTS_NETWORK: 1
-    PLUGIN_TESTS_NET_TUNER: 1
-    MULTI_SEGMENT_REG_TESTS: 0
-    LOG_ALGO_RS_TESTS: 1
-    LOG_ALGO_AG_TESTS: 1
-    PLUGIN_LOADING_TESTS: 1
-    REGISTER_MEMCPY_TESTS: 1
-    REGISTER_MIX_A2A_AR_TESTS: 1
-    DEVICE_ID_TESTS: 1
-    HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
-    LSA_POINTER_TESTS: 1
-    LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
-  script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-A40-dual:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6", "health-A40"]
-  tags:
-    - a40
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    SLURM_PARTITION: "A40"
-    NNODES: 1
-    NGPUS: 2
-    NP: 1
-    NCCL_HOME: build
-    RUN_MODE: "SALLOC_MPI"
-    ENQUEUE_TESTS_ARGS: 1
-    ENQUEUE_TESTS_FIFO: 1
-    GRAPH_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_NO_P2P: 1
-    MEMLEAK_TESTS_NETWORK: 0
-    FT_TESTS_DEFAULT: 1
-    FT_TESTS_NO_P2P: 1
-    FT_TESTS_NETWORK: 1
-    PLUGIN_TESTS_NET_TUNER: 1
-    MULTI_SEGMENT_REG_TESTS: 0
-    LOG_ALGO_RS_TESTS: 1
-    LOG_ALGO_AG_TESTS: 1
-    PLUGIN_LOADING_TESTS: 1
-    REGISTER_MEMCPY_TESTS: 1
-    REGISTER_MIX_A2A_AR_TESTS: 1
-    DEVICE_ID_TESTS: 1
-    HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
-    LSA_POINTER_TESTS: 1
-    LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
-  script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-A100:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6","health-A100"]
-  tags:
-    - a100pci
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    SLURM_PARTITION: "A100"
-    NNODES: 1
-    NGPUS: 8
-    NP: 1
-    NCCL_HOME: build
-    RUN_MODE: "SALLOC_MPI"
-    ENQUEUE_TESTS_ARGS: 1
-    ENQUEUE_TESTS_FIFO: 1
-    GRAPH_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_NO_P2P: 1
-    MEMLEAK_TESTS_NETWORK: 0
-    FT_TESTS_DEFAULT: 1
-    FT_TESTS_NO_P2P: 1
-    FT_TESTS_NETWORK: 1
-    PLUGIN_TESTS_NET_TUNER: 1
-    MULTI_SEGMENT_REG_TESTS: 0
-    LOG_ALGO_RS_TESTS: 1
-    LOG_ALGO_AG_TESTS: 1
-    PLUGIN_LOADING_TESTS: 1
-    REGISTER_MEMCPY_TESTS: 1
-    REGISTER_MIX_A2A_AR_TESTS: 1
-    DEVICE_ID_TESTS: 1
-    HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
-    LSA_POINTER_TESTS: 1
-    LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
-  script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
 unit_tests-eos:
   stage: unit_tests
   rules:
@@ -853,7 +670,7 @@ unit_tests-AWS_H100_EFA:
   needs:
     - setup-AWS_H100_EFA
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -1112,26 +929,27 @@ unit_tests-pre-tyche:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-ipp6-a100:
+unit_tests-ipp6-a40:
   stage: unit_tests
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs:
-    - job: build-ipp6
+  needs: ["build-ipp6"]
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
-    SLURM_TIME: 20
-    SLURM_PARTITION: a100-cicd
+    SLURM_TIME: 10
+    SLURM_PARTITION: "a40-cicd"
     NNODES: 1
-    NGPUS: 2
+    NGPUS: 1
     NP: 1
     NCCL_HOME: build
-    RUN_MODE: "MPI"
+    RUN_MODE: "SRUN_MPI"
+    OMPI_MCA_btl: "^openib"
+    DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -1148,12 +966,10 @@ unit_tests-ipp6-a100:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     REGISTER_MIX_A2A_AR_TESTS: 1
-    DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
-    LSA_POINTER_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 0
+    LSA_POINTER_TESTS: 0
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
-    CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1168,71 +984,51 @@ unit_tests-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-gin-A100:
+unit_tests-ipp6-a100:
   stage: unit_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_UNIT_TESTS == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs:
+    - job: build-ipp6
   tags:
-    - a100pci
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-gin-config.sh"
-    SLURM_TIME: 10
-    SLURM_PARTITION: "A100"
-    NNODES: 1
-    NGPUS: 8
-    NP: 4
-    NCCL_HOME: build
-    RUN_MODE: "SALLOC_MPI"
-    GIN_TESTS: 1
-    GIN_TESTS_GDAKI_GPU_SM: 1
-    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
-    GIN_TESTS_CPU_PROXY: 1
-    GIN_TESTS_LARGE_SIZE: 0 # Disable due to https://nvbugspro.nvidia.com/bug/5385457
-  script:
-    - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-gin-A40-single:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6"]
-  tags:
-    - a40
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-gin-config.sh"
-    SLURM_TIME: 10
-    SLURM_PARTITION: "A40"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: a100-cicd
     NNODES: 1
     NGPUS: 2
-    NP: 2
+    NP: 1
     NCCL_HOME: build
-    RUN_MODE: "SALLOC_MPI"
-    GIN_TESTS: 1
-    GIN_TESTS_GDAKI_GPU_SM: 1
-    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
-    GIN_TESTS_CPU_PROXY: 1
-    GIN_TESTS_LARGE_SIZE: 1
+    RUN_MODE: "SRUN_MPI"
+    DEVICE_ID_TESTS: 1
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    MULTI_SEGMENT_REG_TESTS: 0
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
+    REGISTER_MIX_A2A_AR_TESTS: 1
+    HASHTABLE_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
+    CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
   script:
-    - source docker/clusters/gc-classic-gin-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - ./test/scripts/ci/gitlab-runner-unit.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1258,7 +1054,7 @@ unit_tests-gin-ipp6-a100:
       - build
     policy: pull
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -1268,14 +1064,13 @@ unit_tests-gin-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: build
-    RUN_MODE: "MPI"
+    RUN_MODE: "SRUN_MPI"
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 1
   script:
-    - source docker/clusters/ipp6-slurm-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -1693,7 +1488,7 @@ examples-validation-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -1703,7 +1498,7 @@ examples-validation-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: build
-    RUN_MODE: "MPI"
+    RUN_MODE: "SRUN_MPI"
     EXAMPLES_TESTS_BASIC_ONLY: 0
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1838,76 +1633,6 @@ apitest-GP100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-apitest-A40:
-  stage: api_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_API_TESTS == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6", "health-A40"]
-  tags:
-    - a40
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "A40"
-    NNODES: 1
-    NGPUS: 2
-    NP:    1
-    NCCL_HOME: build
-    API_TESTS_DEFAULT: 1
-    API_TESTS_NO_P2P: 1
-    API_TESTS_NETWORK: 1
-  script:
-    - ./test/scripts/ci/gitlab-runner-api.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-apitest-A100:
-  stage: api_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_API_TESTS == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6", "health-A100"]
-  tags:
-    - a100pci
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "A100"
-    NNODES: 1
-    NGPUS: 8
-    NP:    1
-    NCCL_HOME: build
-    API_TESTS_DEFAULT: 1
-    API_TESTS_NO_P2P: 1
-    API_TESTS_NETWORK: 1
-  script:
-    - ./test/scripts/ci/gitlab-runner-api.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
 apitest-eos:
   stage: api_tests
   rules:
@@ -1998,7 +1723,7 @@ apitest-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,unit_tests-AWS_H100_EFA]
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -2167,6 +1892,43 @@ apitest-pre-tyche:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+apitest-ipp6-a40:
+  stage: api_tests
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
+      when: always
+    - when: never
+  needs:
+    - job: build-ipp6
+  tags:
+    - ipp6-nccl
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: a40-cicd
+    NNODES: 1
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: build
+    RUN_MODE: "SRUN_MPI"
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 apitest-ipp6-a100:
   stage: api_tests
   rules:
@@ -2176,7 +1938,7 @@ apitest-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -2186,7 +1948,7 @@ apitest-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: build
-    RUN_MODE: "MPI"
+    RUN_MODE: "SRUN_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -2411,10 +2173,10 @@ perftest-GP100:
 nic-fusion-A40:
   stage: perf_tests_single
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: [build-ipp6, apitest-A40]
+  needs: [build-ipp6]
   tags:
     - a40
   variables:
@@ -2433,80 +2195,6 @@ nic-fusion-A40:
     when: always
     paths:
       - "**/core.*.*"
-    expire_in: 48 hrs
-
-perftest-A40:
-  stage: perf_tests_single
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6", "health-A40"]
-  tags:
-    - a40
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "A40"
-    MAX: "1G"
-    NNODES: 1
-    ENABLE_NVLS: 0
-    GRAPH: 0
-    NGPUS: 2
-    NP: 2
-    SYMMETRIC: 1
-    NCCL_HOME: build
-    NO_LOOPBACK_NETWORKING: 1
-  script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-perftest-A100:
-  stage: perf_tests_single
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6", "health-A100"]
-  tags:
-    - a100pci
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "A100"
-    MAX: "256M"
-    NNODES: 1
-    ENABLE_NVLS: 0
-    GRAPH: 0
-    NGPUS: 8
-    NP: 8
-    SYMMETRIC: 1
-    NCCL_HOME: build
-    NO_LOOPBACK_NETWORKING: 1
-  script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
     expire_in: 48 hrs
 
 perftest-single-eos:
@@ -2595,7 +2283,7 @@ perftest_single-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,apitest-AWS_H100_EFA]
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -2762,6 +2450,43 @@ perftest-single-pre-tyche:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+perftest-single-ipp6-a40:
+  stage: perf_tests_single
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+      when: always
+    - when: never
+  needs:
+    - job: build-ipp6
+  tags:
+    - ipp6-nccl
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: a40-cicd
+    NNODES: 1
+    GRAPH: 0
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: build
+    RUN_MODE: "SRUN_MPI"
+    SYMMETRIC: 1
+    MAX: "1G"
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 perftest-single-ipp6-a100:
   stage: perf_tests_single
   rules:
@@ -2771,7 +2496,7 @@ perftest-single-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -2782,7 +2507,7 @@ perftest-single-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: build
-    RUN_MODE: "MPI"
+    RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
@@ -2902,42 +2627,6 @@ self-test-pytorch-container-eos:
 ## Stage: perf_tests_multi - Start...
 ##
 
-multi-perftest-A40:
-  stage: perf_tests_multi
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
-      when: always
-    - when: never
-  needs: ["build-ipp6", "health-A40"]
-  tags:
-    - a40
-  variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "A40"
-    MAX: "1G"
-    NNODES: 2
-    ENABLE_NVLS: 0
-    GRAPH: 0
-    NGPUS: 2
-    NP: 2
-    NCCL_HOME: build
-    NO_LOOPBACK_NETWORKING: 1
-  script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
 perftest-multi-eos:
   stage: perf_tests_multi
   rules:
@@ -3034,7 +2723,7 @@ perftest_multi-AWS_H100_EFA:
   needs:
     - [setup-AWS_H100_EFA,perftest_single-AWS_H100_EFA]
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     GIT_STRATEGY: none
     AWS_HEAD_NODE: aws-pcluster-head
@@ -3204,6 +2893,43 @@ perftest-multi-pre-tyche:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+perftest-multi-ipp6-a40:
+  stage: perf_tests_multi
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+      when: always
+    - when: never
+  needs:
+    - job: build-ipp6
+  tags:
+    - ipp6-nccl
+  variables:
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: a40-cicd
+    NNODES: 2
+    GRAPH: 0
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: build
+    RUN_MODE: "SRUN_MPI"
+    SYMMETRIC: 1
+    MAX: "1G"
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 perftest-multi-ipp6-a100:
   stage: perf_tests_multi
   rules:
@@ -3213,7 +2939,7 @@ perftest-multi-ipp6-a100:
   needs:
     - job: build-ipp6
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
@@ -3224,7 +2950,7 @@ perftest-multi-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: build
-    RUN_MODE: "MPI"
+    RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
@@ -3420,28 +3146,30 @@ perf-regression-theia:
 ## Stage: profiler_tests - Start...
 ##
 
-profiler-tests-A100:
+profiler-tests-ipp6-a100:
   stage: profiler_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_PROFILER_TESTS == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PROFILER_TESTS == "1")
       when: always
     - when: never
   needs: ["build-ipp6"]
   tags:
-    - a100pci
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "A100"
+    RUN_MODE: "MPI"
+    SLURM_PARTITION: a100-cicd
     NNODES: 1
     ENABLE_NVLS: 0
-    NGPUS: 4
-    NP: 4
+    OMPI_MCA_btl: "^openib"
+    NGPUS: 2
+    NP: 2
     NCCL_HOME: build
   script:
-    - ./test/scripts/ci/gitlab-runner-profiler.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-profiler.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3461,28 +3189,30 @@ profiler-tests-A100:
 ## Stage: inspector_tests - Start...
 ##
 
-inspector-tests-A100:
+inspector-tests-ipp6-a100:
   stage: inspector_tests
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/ || ($RUN_ON_A100 == "1" && $RUN_INSPECTOR_TESTS == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_INSPECTOR_TESTS == "1")
       when: always
     - when: never
   needs: ["build-ipp6"]
   tags:
-    - a100pci
+    - ipp6-nccl
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "A100"
+    RUN_MODE: "MPI"
+    SLURM_PARTITION: a100-cicd
     NNODES: 1
     ENABLE_NVLS: 0
-    NGPUS: 4
-    NP: 4
+    OMPI_MCA_btl: "^openib"
+    NGPUS: 2
+    NP: 2
     NCCL_HOME: build
   script:
-    - ./test/scripts/ci/gitlab-runner-inspector.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-inspector.sh
   artifacts:
     when: always
     paths:
@@ -3491,40 +3221,6 @@ inspector-tests-A100:
 
 ##
 ## Stage: inspector_tests - Finish!
-##
-
-##
-## Stage: replay_tests - Start...
-##
-
-replay-multi-gc:
-  stage: replay_tests
-  rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_REPLAY_TESTS == "1")
-      when: always
-    - when: never
-  needs: [build-ipp6]
-  tags:
-    - p100
-  variables:
-    NCCL_IB_HCA: "mlx5_0"
-    NCCL_HOME: build
-    NCCL_DEBUG: "WARN"
-    SALLOC_RESNET: "salloc --exclusive -t 00:05:00 -N 2 -n 8 -w gc[01-02]"
-    SALLOC_SELF_MULTI: "salloc --exclusive -t 00:05:00 -N 2 -n 16 -w gc[01-02]"
-    SALLOC_SELF_SINGLE: "salloc --exclusive -t 00:05:00 -N 1 -n 8 -pP100"
-  script:
-    - source docker/clusters/gc-classic-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - SALLOC=$SALLOC_RESNET ./test/scripts/gitlab-runner-replay-test.sh test/replay/traces/resnet_2x4_trace.txt
-    - ./test/scripts/gitlab-runner-replay-self-test.sh
-  artifacts:
-    when: always
-    paths:
-      - "**/core.*.*"
-    expire_in: 48 hrs
-
-##
-## Stage: replay_tests - Finish!
 ##
 
 ##
@@ -3537,7 +3233,7 @@ summarize-pipeline:
   rules:
     - when: always
   tags:
-    - ipp6-nccl-v3
+    - ipp6-nccl
   script:
     - ./test/scripts/gitlab-runner-summary.sh
 
