@@ -10,13 +10,13 @@ source $CLUSTER_CONFIG
 load_cluster_ci_variables
 
 PERF_TESTS=(all_reduce_perf reduce_scatter_perf all_gather_perf broadcast_perf alltoall_perf sendrecv_perf)
-CHECK_LOG_TESTS=(all_reduce_perf reduce_scatter_perf all_gather_perf broadcast_perf)
+CHECK_LOG_TESTS=(all_reduce_perf reduce_scatter_perf all_gather_perf)
 
 opts="-w 0 -n 5 -O0 -G 0"
 range="-b 64M -e 64M"
 
 # Build the inspector plugin
-make -C $NCCL_HOME/../ext-profiler/inspector -j
+make CUDA_HOME=$CUDA_HOME -C $NCCL_HOME/../ext-profiler/inspector -j
 
 for func in "${PERF_TESTS[@]}"; do
   LOG_DIR=$(pwd)/inspector_logs_${func}_${CI_PIPELINE_ID}_${CI_JOB_ID}

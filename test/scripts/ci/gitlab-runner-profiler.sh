@@ -19,7 +19,7 @@ range="-b 64M -e 64M"
 # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
 
 # Build the example profiler plugin
-make -C $NCCL_HOME/../ext-profiler/example
+make CUDA_HOME=$CUDA_HOME -C $NCCL_HOME/../ext-profiler/example
 
 # Inter-node tests: enable all the events in NCCL and dump events to a trace file (one per rank)
 # Alltoall exercises the group path in the kernel profiler
