@@ -855,6 +855,7 @@ int main(int argc, const char* argv[]) {
     RUN("GB300-CX8-NVL32");
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
+    RUN("DGX-B300-RoCE");
   }
   printf("%d errors, %d warnings (%s)\n", errors, warnings, (errors || warnings) ? "FAILED" : "PASSED");
   return (errors || warnings) ? 1 : 0;
