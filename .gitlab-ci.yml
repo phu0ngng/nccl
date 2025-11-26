@@ -3008,12 +3008,11 @@ perftest-multi-theia:
     expire_in: 48 hrs
 
 # Timeout after 120 min
-# Re-enable after resovle https://nvbugspro.nvidia.com/bug/5680492
 perftest-multi-bia:
   stage: perf_tests_multi
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
-    #   when: always
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+      when: always
     - when: never
   needs: ["build-bia"]
   tags:
@@ -3029,9 +3028,13 @@ perftest-multi-bia:
     NGPUS: 4
     MAX: "1G"
     NP: 4
-    SYMMETRIC: 1
+    # Re-enable after resovle https://nvbugspro.nvidia.com/bug/5680492
+    SYMMETRIC: 0
+    DEVICE_API: 0
     GRAPH: 0
     NCCL_HOME: build-bia
+    SKIP_FT_TEST: 1
+    SKIP_NIC_FUSION: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
   script:
