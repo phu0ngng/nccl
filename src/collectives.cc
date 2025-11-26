@@ -23,7 +23,7 @@ const char* ncclFuncToString(ncclFunc_t fn) {
   case ncclFuncScatter: return "Scatter";
   case ncclFuncSendRecv: return "SendRecv";
   case ncclFuncSend: return "Send";
-  case ncclFuncPut: return "Put";
+  case ncclFuncPutSignal: return "PutSignal";
   case ncclFuncSignal: return "Signal";
   case ncclFuncWaitSignal: return "WaitSignal";
   default: return "Invalid";
@@ -218,14 +218,14 @@ ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int
   return ncclEnqueueCheck(&info);
 }
 
-NCCL_API(ncclResult_t, ncclPut, const void* localbuff, size_t count, ncclDataType_t datatype,
-  int peer, ncclWindow_t peerWin, size_t peerWinOffset, ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream);
-ncclResult_t ncclPut(const void* localbuff, size_t count, ncclDataType_t datatype,
+NCCL_API(ncclResult_t, ncclPutSignal, const void* localbuff, size_t count, ncclDataType_t datatype,
+    int peer, ncclWindow_t peerWin, size_t peerWinOffset, ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype,
   int peer, ncclWindow_t peerWin, size_t peerWinOffset, ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream) {
-NVTX3_FUNC_WITH_PARAMS(Put, NcclNvtxParamsPut,
+NVTX3_FUNC_WITH_PARAMS(PutSignal, NcclNvtxParamsPut,
   NVTX3_PAYLOAD(comm ? comm->commHash : 0, count * ncclTypeSize(datatype), peer, ctx));
 
-struct ncclInfo info = { ncclFuncPut, "Put",
+struct ncclInfo info = { ncclFuncPutSignal, "PutSignal",
   localbuff, NULL, count, datatype, ncclSum, peer, comm, stream, /* Args */
   1, 1, /* chunkSteps, sliceSteps */
   peerWinOffset, peerWin, signalMode, ctx, /* peerWinOffset, peerWin, signalMode, ctx */

@@ -90,7 +90,7 @@ ncclResult_t ncclLaunchRma(struct ncclComm* comm, struct ncclKernelPlan* plan) {
   cudaStream_t stream = comm->planner.streams->stream;
 
   switch (plan->rmaArgs->func) {
-    case ncclFuncPut:
+    case ncclFuncPutSignal:
       NCCLCHECKGOTO(ncclRmaPut(comm, plan, stream), ret, fail);
       break;
     case ncclFuncSignal:
@@ -110,7 +110,7 @@ fail:
 }
 
 static inline bool isRmaPutOrSignal(ncclFunc_t func) {
-  return (func == ncclFuncPut || func == ncclFuncSignal);
+  return (func == ncclFuncPutSignal || func == ncclFuncSignal);
 }
 
 // Check if two RMA tasks can be batched together

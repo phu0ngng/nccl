@@ -113,7 +113,7 @@ to be pre-registered using :c:func:`ncclCommWindowRegister`.
 Put and wait (ping-pong)
 ------------------------
 
-A detailed ping-pong pattern using :c:func:`ncclPut` with signaling and :c:func:`ncclWaitSignal`.
+A detailed ping-pong pattern using :c:func:`ncclPutSignal` with signaling and :c:func:`ncclWaitSignal`.
 This example shows the full setup including memory allocation and window registration:
 
 .. code:: C
@@ -135,11 +135,11 @@ This example shows the full setup including memory allocation and window registr
  if (rank == 0) {
    // Rank 0: wait then put
    NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
-   NCCLCHECK(ncclPut(sendbuff, count, datatype, peer, recvWindow, 0,
+   NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
                      NCCL_SIGNAL, ctx, comm, stream));
  } else {
    // Rank 1: put then wait
-   NCCLCHECK(ncclPut(sendbuff, count, datatype, peer, recvWindow, 0,
+   NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
                      NCCL_SIGNAL, ctx, comm, stream));
    NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
  }
@@ -178,10 +178,10 @@ Each rank signals to all other ranks and waits for signals from all ranks:
 All-to-all
 ----------
 
-An all-to-all operation using :c:func:`ncclPut`.
+An all-to-all operation using :c:func:`ncclPutSignal`.
 Each rank sends data to all other ranks and waits for signals from all ranks.
 User needs to register the memory window for each peer using :c:func:`ncclCommWindowRegister` in advance.
-User needs to guarantee the buffers are ready before calling :c:func:`ncclPut`.
+User needs to guarantee the buffers are ready before calling :c:func:`ncclPutSignal`.
 This could be done with the barrier shown above.
 
 .. code:: C
@@ -197,7 +197,7 @@ This could be done with the barrier shown above.
 
  ncclGroupStart();
  for (int r = 0; r < nranks; r++) {
-   ncclPut(sendbuff[r], count, datatype, r, window, offset[r],
+   ncclPutSignal(sendbuff[r], count, datatype, r, window, offset[r],
            NCCL_SIGNAL, comm, stream);
  }
  ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, comm, stream);

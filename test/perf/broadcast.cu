@@ -70,7 +70,7 @@ testResult_t BroadcastRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
   if (rank == root) {
     // Root puts data to all ranks (including itself)
     for (int peer = 0; peer < nranks; peer++) {
-      NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, peer,
+      NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, peer,
                         recvWin, recvoffset, NCCL_SIGNAL, ctx, comm, stream));
     }
   }

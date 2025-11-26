@@ -76,7 +76,7 @@ testResult_t SendRecvRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
   NCCLCHECK(ncclGroupStart());
 
   // Put my data to next peer's receive buffer
-  NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, sendPeer,
+  NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, sendPeer,
                     recvWin, recvoffset, NCCL_SIGNAL, ctx, comm, stream));
 
   // Wait for signal from previous peer

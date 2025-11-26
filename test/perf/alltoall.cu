@@ -100,7 +100,7 @@ testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
     void* srcPtr = (char*)sendPtr + sendoffset + targetRank * chunkBytes;
     size_t dstOffset = recvoffset + rank * chunkBytes;
 
-    NCCLCHECK(ncclPut(srcPtr, count, type, targetRank,
+    NCCLCHECK(ncclPutSignal(srcPtr, count, type, targetRank,
                       recvWin, dstOffset, NCCL_SIGNAL, ctx, comm, stream));
   }
 

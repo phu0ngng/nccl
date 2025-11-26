@@ -585,11 +585,11 @@ typedef enum {
  * Returns:
  *   ncclSuccess on successful enqueue, error code otherwise
  */
-ncclResult_t ncclPut(const void* localbuff, size_t count, ncclDataType_t datatype,
+ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype,
     int peer, ncclWindow_t peerWin, size_t peerWinOffset,
     ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream);
 
-ncclResult_t pncclPut(const void* localbuff, size_t count, ncclDataType_t datatype,
+ncclResult_t pncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype,
     int peer, ncclWindow_t peerWin, size_t peerWinOffset,
     ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream);
 

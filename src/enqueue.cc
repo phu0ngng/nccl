@@ -2667,7 +2667,7 @@ static ncclResult_t rmaTaskAppend(
   void const* srcBuff = info->sendbuff;
 
   if (!comm->symmetricSupport){
-    WARN("ncclPut: symmetric support is not enabled");
+    WARN("ncclPutSignal: symmetric support is not enabled");
     return ncclInvalidArgument;
   }
 
@@ -2682,10 +2682,10 @@ static ncclResult_t rmaTaskAppend(
   struct ncclDevrWindow* srcWinHost = NULL;
   size_t srcWinOffset = 0;
 
-  if (info->coll == ncclFuncPut) {
+  if (info->coll == ncclFuncPutSignal) {
     // Validate peer window with detailed debugging
     if (info->peerWin == NULL) {
-      WARN("ncclPut: peerWin is NULL");
+      WARN("ncclPutSignal: peerWin is NULL");
       return ncclInvalidArgument;
     }
 
@@ -2695,12 +2695,12 @@ static ncclResult_t rmaTaskAppend(
 
     // Validate source buffer and window
     if (srcBuff == NULL) {
-      WARN("ncclPut: srcBuff is NULL");
+      WARN("ncclPutSignal: srcBuff is NULL");
       return ncclInvalidArgument;
     }
     NCCLCHECK(ncclDevrFindWindow(comm, srcBuff, &srcWinHost));
     if (srcWinHost == NULL || !(srcWinHost->winFlags & NCCL_WIN_COLL_SYMMETRIC)) {
-      WARN("ncclPut: srcWinHost is not in a valid symmetric window");
+      WARN("ncclPutSignal: srcWinHost is not in a valid symmetric window");
       return ncclInvalidArgument;
     }
     srcWinOffset = (char*)srcBuff - (char*)srcWinHost->userPtr;
@@ -2746,7 +2746,7 @@ static ncclResult_t rmaTaskAppend(
 
   // Determine if we need to split the operation
   int numChunks = 1;
-  if (info->coll == ncclFuncPut && totalBytes > chunkSize) {
+  if (info->coll == ncclFuncPutSignal && totalBytes > chunkSize) {
     numChunks = (totalBytes + chunkSize - 1) / chunkSize;
   }
 
@@ -2819,7 +2819,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
 
   if (info->coll == ncclFuncSend || info->coll == ncclFuncRecv) {
     NCCLCHECK(p2pTaskAppend(comm, info, info->coll, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root, true));
-  } else if (info->coll == ncclFuncPut || info->coll == ncclFuncSignal || info->coll == ncclFuncWaitSignal) {
+  } else if (info->coll == ncclFuncPutSignal || info->coll == ncclFuncSignal || info->coll == ncclFuncWaitSignal) {
     NCCLCHECK(rmaTaskAppend(comm, info));
   } else {
     // Empty collectives can be discarded.

@@ -107,7 +107,7 @@ testResult_t AllGatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
     if (isInPlace && targetRank == rank) {
       continue;
     }
-    NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, targetRank,
+    NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, targetRank,
                       recvWin, peerWinOffset, NCCL_SIGNAL, ctx, comm, stream));
   }
 

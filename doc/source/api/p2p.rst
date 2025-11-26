@@ -48,10 +48,10 @@ One-sided Remote Memory Access (RMA) operations enable ranks to directly access 
 explicit participation from the target process. These operations require the target memory to be
 pre-registered within a symmetric memory window using :c:func:`ncclCommWindowRegister`.
 
-ncclPut
--------
+ncclPutSignal
+-------------
 
-.. c:function:: ncclResult_t ncclPut(const void* localbuff, size_t count, ncclDataType_t datatype, int peer, ncclWindow_t peerWin, size_t peerWinOffset, ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype, int peer, ncclWindow_t peerWin, size_t peerWinOffset, ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream)
 
  Write data from ``localbuff`` to rank ``peer``'s registered memory window at offset ``peerWinOffset``.
 

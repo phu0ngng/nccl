@@ -218,7 +218,7 @@ static ncclResult_t host_alltoall(
             if (DEBUG) printf("[Rank %d] Iteration %d: Sending data with signal to rank %d at offset %zu\n",
                             myRank, i, peer, remote_offset);
 
-            NCCLCHECK(ncclPut(sendbuff, nelems_per_rank, ncclInt, peer,
+            NCCLCHECK(ncclPutSignal(sendbuff, nelems_per_rank, ncclInt, peer,
                             recvWindow, remote_offset, signal_type, ctx, comm, stream));
         }
 
