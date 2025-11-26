@@ -51,33 +51,28 @@ pre-registered within a symmetric memory window using :c:func:`ncclCommWindowReg
 ncclPutSignal
 -------------
 
-.. c:function:: ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype, int peer, ncclWindow_t peerWin, size_t peerWinOffset, ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype, int peer, ncclWindow_t peerWin, size_t peerWinOffset, int ctx, ncclComm_t comm, cudaStream_t stream)
 
  Write data from ``localbuff`` to rank ``peer``'s registered memory window at offset ``peerWinOffset``.
 
  The target memory window ``peerWin`` must be registered using :c:func:`ncclCommWindowRegister`.
- The ``signalMode`` controls signaling behavior (see :c:type:`ncclSignalMode_t`).
  The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.
 
 ncclSignal
 ----------
 
-.. c:function:: ncclResult_t ncclSignal(int peer, ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclSignal(int peer, int ctx, ncclComm_t comm, cudaStream_t stream)
 
  Send a signal to rank ``peer`` without transferring data.
 
- The ``signalMode`` controls signaling behavior (see :c:type:`ncclSignalMode_t`).
- ``NCCL_SIGNAL_NONE`` is not valid for this operation.
  The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.
 
 ncclWaitSignal
 --------------
 
-.. c:function:: ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, ncclSignalMode_t signalMode, int ctx, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, int ctx, ncclComm_t comm, cudaStream_t stream)
 
  Wait for signals from multiple peers.
 
  Wait for ``nsignals[i]`` number of signals from rank ``peers[i]`` for each peer.
- The ``signalMode`` controls signaling behavior (see :c:type:`ncclSignalMode_t`).
- ``NCCL_SIGNAL_NONE`` is not valid for this operation.
  The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.

@@ -2711,15 +2711,10 @@ static ncclResult_t rmaTaskAppend(
       WARN("ncclSignal: count must be 0");
       return ncclInvalidArgument;
     }
-    // Check if signalMode is valid
-    if (info->signalMode == NCCL_SIGNAL_NONE) {
-      WARN("ncclSignal: signalMode is none");
-      return ncclInvalidArgument;
-    }
   }
   else if (info->coll == ncclFuncWaitSignal) {
-    // Check if signalMode, peers and nsignals are valid
-    if (info->signalMode == NCCL_SIGNAL_NONE || info->peers == NULL || info->nsignals == NULL || info->npeers == 0) {
+    // Check if peers and nsignals are valid
+    if (info->peers == NULL || info->nsignals == NULL || info->npeers == 0) {
       WARN("ncclWaitSignal: invalid arguments");
       return ncclInvalidArgument;
     }
@@ -2776,7 +2771,7 @@ static ncclResult_t rmaTaskAppend(
     // Signal handling: only the last chunk gets the signal
     bool isLastChunk = (chunkIdx == numChunks - 1);
     if (isLastChunk) {
-      t->signalMode = info->signalMode;
+      t->signalMode = NCCL_SIGNAL;
 
       // Copy the peers and nsignals arrays if present
       if (info->peers != NULL && info->nsignals != NULL && info->npeers > 0) {

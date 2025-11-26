@@ -345,11 +345,11 @@ testResult_t barrierRmaSignal(ncclComm_t comm, cudaStream_t stream) {
 
   for (int i = 0; i < nranks; i++) {
     if (i != rank) {
-      NCCLCHECK(ncclSignal(i, NCCL_SIGNAL, ctx, comm, stream));
+      NCCLCHECK(ncclSignal(i, ctx, comm, stream));
     }
   }
 
-  NCCLCHECK(ncclWaitSignal(nranks - 1, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+  NCCLCHECK(ncclWaitSignal(nranks - 1, peers, nsignals, ctx, comm, stream));
 
   free(peers);
   free(nsignals);

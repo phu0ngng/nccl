@@ -198,14 +198,13 @@ static void reset_buffers(void *sendbuff, void *recvbuff, int nelems_per_rank, i
 static ncclResult_t host_alltoall(
     ncclComm_t comm, int ctx,
     void *sendbuff, void *recvbuff, ncclWindow_t recvWindow,
-    int nelems_per_rank, int iter, ncclSignalMode_t signal_type, cudaStream_t stream) {
+    int nelems_per_rank, int iter, cudaStream_t stream) {
 
     int nRanks = comm->nRanks;
     int myRank = comm->rank;
 
-    const char* signal_name = "NCCL_SIGNAL";
-    if (DEBUG) printf("[Rank %d/%d] Starting host alltoall with %d iterations, nelems_per_rank=%d, signal_type=%s\n",
-                      myRank, nRanks, iter, nelems_per_rank, signal_name);
+    if (DEBUG) printf("[Rank %d/%d] Starting host alltoall with %d iterations, nelems_per_rank=%d\n",
+                      myRank, nRanks, iter, nelems_per_rank);
 
     for (int i = 1; i <= iter; i++) {
         if (DEBUG) printf("[Rank %d] Starting iteration %d\n", myRank, i);
@@ -219,7 +218,7 @@ static ncclResult_t host_alltoall(
                             myRank, i, peer, remote_offset);
 
             NCCLCHECK(ncclPutSignal(sendbuff, nelems_per_rank, ncclInt, peer,
-                            recvWindow, remote_offset, signal_type, ctx, comm, stream));
+                            recvWindow, remote_offset, ctx, comm, stream));
         }
 
         if (DEBUG) printf("[Rank %d] Iteration %d: Waiting for signals from all ranks\n", myRank, i);
@@ -233,7 +232,7 @@ static ncclResult_t host_alltoall(
             nsignals_list[peer] = 1;
         }
 
-        NCCLCHECK(ncclWaitSignal(nRanks, peer_list, nsignals_list, signal_type, ctx, comm, stream));
+        NCCLCHECK(ncclWaitSignal(nRanks, peer_list, nsignals_list, ctx, comm, stream));
 
         if (DEBUG) printf("[Rank %d] Iteration %d: Received signals from all %d ranks\n", myRank, i, nRanks);
 
@@ -333,14 +332,9 @@ int main(int argc, char* argv[]) {
     CUDACHECK(cudaEventCreate(&start));
     CUDACHECK(cudaEventCreate(&stop));
 
-    // Use NCCL_SIGNAL mode
-    ncclSignalMode_t signal_mode = NCCL_SIGNAL;
-    const char* signal_name = "NCCL_SIGNAL";
-
     if (myRank == 0) {
         printf("Note: This test measures all-to-all latency with %d ranks\n", nRanks);
         printf("Each rank sends to all %d ranks (including itself) and receives from all %d ranks\n", nRanks, nRanks);
-        printf("Signal mode: %s\n", signal_name);
         if (args.verify) {
             printf("Data verification enabled\n");
         }
@@ -370,7 +364,7 @@ int main(int argc, char* argv[]) {
             reset_buffers(sendbuff, recvbuff, nelems_per_rank, nRanks, myRank);
         }
 
-        if (DEBUG && myRank == 0) printf("Testing %s\n", signal_name);
+        if (DEBUG && myRank == 0) printf("Testing all-to-all RMA\n");
 
         MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
 
@@ -378,7 +372,7 @@ int main(int argc, char* argv[]) {
         if (args.warmup_iters > 0) {
             if (DEBUG) printf("[Rank %d] Running warmup\n", myRank);
             NCCLCHECK(host_alltoall(comm, ctx, sendbuff, recvbuff, recvWindow, nelems_per_rank,
-                                   args.warmup_iters, signal_mode, stream));
+                                   args.warmup_iters, stream));
             CUDACHECK(cudaStreamSynchronize(stream));
             MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
         }
@@ -387,7 +381,7 @@ int main(int argc, char* argv[]) {
         if (DEBUG) printf("[Rank %d] Running measurement\n", myRank);
         CUDACHECK(cudaEventRecord(start, stream));
         NCCLCHECK(host_alltoall(comm, ctx, sendbuff, recvbuff, recvWindow, nelems_per_rank,
-                               args.normal_iters, signal_mode, stream));
+                               args.normal_iters, stream));
         CUDACHECK(cudaEventRecord(stop, stream));
         CUDACHECK_DEBUG(cudaStreamSynchronize(stream), myRank);
         MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
@@ -399,7 +393,7 @@ int main(int argc, char* argv[]) {
         // Verify results
         int verification_result = 1;
         if (args.verify && nelems_per_rank > 0) {
-            verification_result = verify_alltoall(recvbuff, nelems_per_rank, nRanks, myRank, size, signal_name);
+            verification_result = verify_alltoall(recvbuff, nelems_per_rank, nRanks, myRank, size, "RMA");
             if (!verification_result) {
                 all_tests_passed = 0;
             }

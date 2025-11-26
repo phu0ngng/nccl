@@ -134,14 +134,14 @@ This example shows the full setup including memory allocation and window registr
 
  if (rank == 0) {
    // Rank 0: wait then put
-   NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+   NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, ctx, comm, stream));
    NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
-                     NCCL_SIGNAL, ctx, comm, stream));
+                     ctx, comm, stream));
  } else {
    // Rank 1: put then wait
    NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
-                     NCCL_SIGNAL, ctx, comm, stream));
-   NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+                     ctx, comm, stream));
+   NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, ctx, comm, stream));
  }
 
  CUDACHECK(cudaStreamSynchronize(stream));
@@ -170,9 +170,9 @@ Each rank signals to all other ranks and waits for signals from all ranks:
 
  ncclGroupStart();
  for (int r = 0; r < nranks; r++) {
-   ncclSignal(r, NCCL_SIGNAL, comm, stream);
+   ncclSignal(r, ctx, comm, stream);
  }
- ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, comm, stream);
+ ncclWaitSignal(nranks, peers, nsignals, ctx, comm, stream);
  ncclGroupEnd();
 
 All-to-all
@@ -198,8 +198,8 @@ This could be done with the barrier shown above.
  ncclGroupStart();
  for (int r = 0; r < nranks; r++) {
    ncclPutSignal(sendbuff[r], count, datatype, r, window, offset[r],
-           NCCL_SIGNAL, comm, stream);
+           ctx, comm, stream);
  }
- ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, comm, stream);
+ ncclWaitSignal(nranks, peers, nsignals, ctx, comm, stream);
  ncclGroupEnd();
 

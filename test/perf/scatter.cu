@@ -84,14 +84,14 @@ testResult_t ScatterRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow
       size_t srcOffset = peer * chunkBytes;
       size_t dstOffset = isInPlace ? (recvoffset + (peer - rank) * chunkBytes) : recvoffset;
       NCCLCHECK(ncclPutSignal((char*)sendPtr + srcOffset, count, type, peer,
-                        recvWin, dstOffset, NCCL_SIGNAL, ctx, comm, stream));
+                        recvWin, dstOffset, ctx, comm, stream));
     }
   }
 
   // All ranks wait for signal from root (except root itself if in-place)
   if (rank != root || !isInPlace) {
     int nsignals = 1;
-    NCCLCHECK(ncclWaitSignal(1, &root, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+    NCCLCHECK(ncclWaitSignal(1, &root, &nsignals, ctx, comm, stream));
   }
 
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);

@@ -108,11 +108,11 @@ testResult_t AllGatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
       continue;
     }
     NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, targetRank,
-                      recvWin, peerWinOffset, NCCL_SIGNAL, ctx, comm, stream));
+                      recvWin, peerWinOffset, ctx, comm, stream));
   }
 
   // Wait for signals from all peers to ensure all data has been written
-  NCCLCHECK(ncclWaitSignal(peerIdx, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+  NCCLCHECK(ncclWaitSignal(peerIdx, peers, nsignals, ctx, comm, stream));
 
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 

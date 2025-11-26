@@ -57,13 +57,13 @@ static ncclResult_t host_ping_pong(
 
             // Wait for signal from peer
             int nsignals = 1;
-            NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+            NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, ctx, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Received signal, sending data to peer\n", comm->rank);
 
             // Put data with signal to peer's receive buffer
             NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
-                             NCCL_SIGNAL, ctx, comm, stream));
+                             ctx, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Sent data with signal\n", comm->rank);
 
@@ -72,13 +72,13 @@ static ncclResult_t host_ping_pong(
 
             // Put data with signal to peer's receive buffer
             NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
-                             NCCL_SIGNAL, ctx, comm, stream));
+                             ctx, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Sent data, waiting for signal from peer\n", comm->rank);
 
             // Wait for signal from peer
             int nsignals = 1;
-            NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+            NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, ctx, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Received signal from peer\n", comm->rank);
         }

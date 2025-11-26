@@ -71,13 +71,13 @@ testResult_t BroadcastRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
     // Root puts data to all ranks (including itself)
     for (int peer = 0; peer < nranks; peer++) {
       NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, peer,
-                        recvWin, recvoffset, NCCL_SIGNAL, ctx, comm, stream));
+                        recvWin, recvoffset, ctx, comm, stream));
     }
   }
 
   // All ranks wait for signal from root
   int nsignals = 1;
-  NCCLCHECK(ncclWaitSignal(1, &root, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+  NCCLCHECK(ncclWaitSignal(1, &root, &nsignals, ctx, comm, stream));
 
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
