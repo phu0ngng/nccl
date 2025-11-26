@@ -43,13 +43,13 @@ ncclResult_t ncclScheduleBcastTasksToPlan(
     }
 
     // find best protocol
-    struct ncclTaskColl tcoll = {
-      .func = ncclFuncAllGather,
-      .count = maxBcastBytes,
-      .datatype = ncclInt8,
-      .algorithm = NCCL_ALGO_RING,
-      .protocol = NCCL_PROTO_UNDEF,
-    };
+    struct ncclTaskColl tcoll;
+    memset(&tcoll, 0, sizeof(tcoll));
+    tcoll.func = ncclFuncAllGather;
+    tcoll.count = maxBcastBytes;
+    tcoll.datatype = ncclInt8;
+    tcoll.algorithm = NCCL_ALGO_RING;
+    tcoll.protocol = NCCL_PROTO_UNDEF;
     NCCLCHECK(ncclGetAlgoInfo(comm, &tcoll, /*collNetSupport=*/0, /*nvlsSupport=*/0, /*nTasksPerChannel=*/1, /*simInfo=*/nullptr));
 
     // calculate chunk size
