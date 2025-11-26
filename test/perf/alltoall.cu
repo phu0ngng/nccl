@@ -101,11 +101,11 @@ testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
     size_t dstOffset = recvoffset + rank * chunkBytes;
 
     NCCLCHECK(ncclPutSignal(srcPtr, count, type, targetRank,
-                      recvWin, dstOffset, ctx, comm, stream));
+                      recvWin, dstOffset, 0, ctx, comm, stream));
   }
 
   // Wait for signals from all peers to ensure all data has been written
-  NCCLCHECK(ncclWaitSignal(nranks, peers, nsignals, ctx, comm, stream));
+  NCCLCHECK(ncclWaitSignal(nranks, peers, nsignals, 0, ctx, comm, stream));
 
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 

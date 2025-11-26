@@ -51,28 +51,31 @@ pre-registered within a symmetric memory window using :c:func:`ncclCommWindowReg
 ncclPutSignal
 -------------
 
-.. c:function:: ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype, int peer, ncclWindow_t peerWin, size_t peerWinOffset, int ctx, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype, int peer, ncclWindow_t peerWin, size_t peerWinOffset, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream)
 
  Write data from ``localbuff`` to rank ``peer``'s registered memory window at offset ``peerWinOffset``.
 
  The target memory window ``peerWin`` must be registered using :c:func:`ncclCommWindowRegister`.
+ The ``sigIdx`` is the signal index identifier for the operation. It must be set to 0 for now.
  The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.
 
 ncclSignal
 ----------
 
-.. c:function:: ncclResult_t ncclSignal(int peer, int ctx, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclSignal(int peer, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream)
 
  Send a signal to rank ``peer`` without transferring data.
 
+ The ``sigIdx`` is the signal index identifier for the operation. It must be set to 0 for now.
  The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.
 
 ncclWaitSignal
 --------------
 
-.. c:function:: ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, int ctx, ncclComm_t comm, cudaStream_t stream)
+.. c:function:: ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream)
 
  Wait for signals from multiple peers.
 
  Wait for ``nsignals[i]`` number of signals from rank ``peers[i]`` for each peer.
+ The ``sigIdx`` is the signal index identifier for the operation. It must be set to 0 for now.
  The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.

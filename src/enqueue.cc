@@ -2677,6 +2677,12 @@ static ncclResult_t rmaTaskAppend(
     return ncclInvalidArgument;
   }
 
+  // Check if signal index is valid (must be 0 for now)
+  if (info->sigIdx != 0) {
+    WARN("Signal index %d is invalid (must be 0)", info->sigIdx);
+    return ncclInvalidArgument;
+  }
+
   // Initialize window pointers - only needed for Put and Signal
   struct ncclDevrWindow* peerWinHost = NULL;
   struct ncclDevrWindow* srcWinHost = NULL;

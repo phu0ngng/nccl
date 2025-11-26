@@ -31,6 +31,7 @@ struct ncclInfo {
   // One-sided ops
   size_t peerWinOffset;
   ncclWindow_t peerWin;
+  int sigIdx;
   int ctx;
   int* peers;
   int* nsignals;

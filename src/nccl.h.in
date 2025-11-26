@@ -569,6 +569,7 @@ ncclResult_t  ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, in
  *   peer         - Target rank to write data to
  *   peerWin      - Memory window object registered by the target peer
  *   peerWinOffset- Offset in bytes from the start of peer's registered window
+ *   sigIdx       - Signal index identifier for the operation
  *   ctx          - Context identifier for the operation
  *   comm         - NCCL communicator
  *   stream       - CUDA stream to enqueue the operation on
@@ -578,11 +579,11 @@ ncclResult_t  ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, in
  */
 ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype,
     int peer, ncclWindow_t peerWin, size_t peerWinOffset,
-    int ctx, ncclComm_t comm, cudaStream_t stream);
+    int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
 
 ncclResult_t pncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype,
     int peer, ncclWindow_t peerWin, size_t peerWinOffset,
-    int ctx, ncclComm_t comm, cudaStream_t stream);
+    int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
 
 /*
  * Signal
@@ -591,6 +592,7 @@ ncclResult_t pncclPutSignal(const void* localbuff, size_t count, ncclDataType_t 
  *
  * Parameters:
  *   peer         - Target rank to send signal to
+ *   sigIdx       - Signal index identifier for the operation
  *   ctx          - Context identifier for the operation
  *   comm         - NCCL communicator
  *   stream       - CUDA stream to enqueue the operation on
@@ -598,8 +600,8 @@ ncclResult_t pncclPutSignal(const void* localbuff, size_t count, ncclDataType_t 
  * Returns:
  *   ncclSuccess on successful signal enqueue, error code otherwise
  */
-ncclResult_t ncclSignal(int peer, int ctx, ncclComm_t comm, cudaStream_t stream);
-ncclResult_t pncclSignal(int peer, int ctx, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t ncclSignal(int peer, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t pncclSignal(int peer, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
 
 /*
  * Wait Signal
@@ -611,6 +613,7 @@ ncclResult_t pncclSignal(int peer, int ctx, ncclComm_t comm, cudaStream_t stream
  *   peers        - Array of peer ranks to wait signals from
  *   nsignals     - Array of signal counts, where nsignals[i] is the number of
  *                  signals to wait for from peers[i]
+ *   sigIdx       - Signal index identifier for the operation
  *   ctx          - Context identifier for the operation
  *   comm         - NCCL communicator
  *   stream       - CUDA stream to enqueue the operation on
@@ -618,8 +621,8 @@ ncclResult_t pncclSignal(int peer, int ctx, ncclComm_t comm, cudaStream_t stream
  * Returns:
  *   ncclSuccess when all required signals received, error code otherwise
  */
-ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, int ctx, ncclComm_t comm, cudaStream_t stream);
-ncclResult_t pncclWaitSignal(int npeers, int* peers, int* nsignals, int ctx, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t pncclWaitSignal(int npeers, int* peers, int* nsignals, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
 
 /*
  * Group semantics

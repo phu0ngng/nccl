@@ -74,7 +74,7 @@ testResult_t GatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow,
   // Each rank puts its data to root at offset [myRank*chunkBytes]
   size_t dstOffset = recvoffset + rank * chunkBytes;
   NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, root,
-                    recvWin, dstOffset, ctx, comm, stream));
+                    recvWin, dstOffset, 0, ctx, comm, stream));
 
   if (rank == root) {
     // Root waits for signals from all ranks
@@ -91,7 +91,7 @@ testResult_t GatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow,
       nsignals[i] = 1;
     }
 
-    NCCLCHECK(ncclWaitSignal(nranks, peers, nsignals, ctx, comm, stream));
+    NCCLCHECK(ncclWaitSignal(nranks, peers, nsignals, 0, ctx, comm, stream));
 
     free(peers);
     free(nsignals);

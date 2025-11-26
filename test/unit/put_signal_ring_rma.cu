@@ -61,13 +61,13 @@ static ncclResult_t host_ring(
         // Each rank sends to downstream peer
         if (DEBUG) printf("[Rank %d] Sending data with signal to downstream rank %d\n", myRank, downstream);
         NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, downstream, recvWindow, 0,
-                         ctx, comm, stream));
+                         0, ctx, comm, stream));
 
         if (DEBUG) printf("[Rank %d] Waiting for signal from upstream rank %d\n", myRank, upstream);
 
         // Each rank waits for signal from upstream peer
         int nsignals = 1;
-        NCCLCHECK(ncclWaitSignal(1, &upstream, &nsignals, ctx, comm, stream));
+        NCCLCHECK(ncclWaitSignal(1, &upstream, &nsignals, 0, ctx, comm, stream));
 
         if (DEBUG) printf("[Rank %d] Received signal from upstream rank %d\n", myRank, upstream);
 
