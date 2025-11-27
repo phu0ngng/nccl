@@ -2683,6 +2683,12 @@ static ncclResult_t rmaTaskAppend(
     return ncclInvalidArgument;
   }
 
+  // Check if flags is valid
+  if (info->flags != 0) {
+    WARN("Flags %u is invalid (must be 0)", info->flags);
+    return ncclInvalidArgument;
+  }
+
   // Initialize window pointers - only needed for Put and Signal
   struct ncclDevrWindow* peerWinHost = NULL;
   struct ncclDevrWindow* srcWinHost = NULL;

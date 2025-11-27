@@ -84,7 +84,7 @@ testResult_t ScatterRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow
       size_t srcOffset = peer * chunkBytes;
       size_t dstOffset = isInPlace ? (recvoffset + (peer - rank) * chunkBytes) : recvoffset;
       NCCLCHECK(ncclPutSignal((char*)sendPtr + srcOffset, count, type, peer,
-                        recvWin, dstOffset, 0, ctx, comm, stream));
+                        recvWin, dstOffset, 0, ctx, 0, comm, stream));
     }
   }
 

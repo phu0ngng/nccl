@@ -218,7 +218,7 @@ static ncclResult_t host_alltoall(
                             myRank, i, peer, remote_offset);
 
             NCCLCHECK(ncclPutSignal(sendbuff, nelems_per_rank, ncclInt, peer,
-                            recvWindow, remote_offset, 0, ctx, comm, stream));
+                            recvWindow, remote_offset, 0, ctx, 0, comm, stream));
         }
 
         if (DEBUG) printf("[Rank %d] Iteration %d: Waiting for signals from all ranks\n", myRank, i);

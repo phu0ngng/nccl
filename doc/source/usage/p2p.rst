@@ -136,11 +136,11 @@ This example shows the full setup including memory allocation and window registr
    // Rank 0: wait then put
    NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, 0, ctx, comm, stream));
    NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
-                     0, ctx, comm, stream));
+                     0, ctx, 0, comm, stream));
  } else {
    // Rank 1: put then wait
    NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
-                     0, ctx, comm, stream));
+                     0, ctx, 0, comm, stream));
    NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, 0, ctx, comm, stream));
  }
 
@@ -170,7 +170,7 @@ Each rank signals to all other ranks and waits for signals from all ranks:
 
  ncclGroupStart();
  for (int r = 0; r < nranks; r++) {
-   ncclSignal(r, 0, ctx, comm, stream);
+   ncclSignal(r, 0, ctx, 0, comm, stream);
  }
  ncclWaitSignal(nranks, peers, nsignals, 0, ctx, comm, stream);
  ncclGroupEnd();
@@ -198,7 +198,7 @@ This could be done with the barrier shown above.
  ncclGroupStart();
  for (int r = 0; r < nranks; r++) {
    ncclPutSignal(sendbuff[r], count, datatype, r, window, offset[r],
-           0, ctx, comm, stream);
+           0, ctx, 0, comm, stream);
  }
  ncclWaitSignal(nranks, peers, nsignals, 0, ctx, comm, stream);
  ncclGroupEnd();

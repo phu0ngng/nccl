@@ -219,29 +219,29 @@ ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, int
 }
 
 NCCL_API(ncclResult_t, ncclPutSignal, const void* localbuff, size_t count, ncclDataType_t datatype,
-    int peer, ncclWindow_t peerWin, size_t peerWinOffset, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
+    int peer, ncclWindow_t peerWin, size_t peerWinOffset, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream);
 ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype,
-  int peer, ncclWindow_t peerWin, size_t peerWinOffset, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream) {
+  int peer, ncclWindow_t peerWin, size_t peerWinOffset, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream) {
 NVTX3_FUNC_WITH_PARAMS(PutSignal, NcclNvtxParamsPut,
   NVTX3_PAYLOAD(comm ? comm->commHash : 0, count * ncclTypeSize(datatype), peer, ctx));
 
 struct ncclInfo info = { ncclFuncPutSignal, "PutSignal",
   localbuff, NULL, count, datatype, ncclSum, peer, comm, stream, /* Args */
   1, 1, /* chunkSteps, sliceSteps */
-  peerWinOffset, peerWin, sigIdx, ctx, /* peerWinOffset, peerWin, sigIdx, ctx */
+  peerWinOffset, peerWin, sigIdx, ctx, flags, /* peerWinOffset, peerWin, sigIdx, ctx, flags */
   NULL, NULL, 0 }; /* peers, nsignals, npeers */
 return ncclEnqueueCheck(&info);
 }
 
-NCCL_API(ncclResult_t, ncclSignal, int peer, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
-ncclResult_t ncclSignal(int peer, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream) {
+NCCL_API(ncclResult_t, ncclSignal, int peer, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t ncclSignal(int peer, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream) {
 NVTX3_FUNC_WITH_PARAMS(Signal, NcclNvtxParamsSignal,
   NVTX3_PAYLOAD(comm ? comm->commHash : 0, peer, ctx));
 
 struct ncclInfo info = { ncclFuncSignal, "Signal",
   NULL, NULL, 0, ncclInt8, ncclSum, peer, comm, stream, /* Args */
   1, 1, /* chunkSteps, sliceSteps */
-  0, NULL, sigIdx, ctx, /* peerWinOffset, peerWin, sigIdx, ctx */
+  0, NULL, sigIdx, ctx, flags, /* peerWinOffset, peerWin, sigIdx, ctx, flags */
   NULL, NULL, 0 }; /* peers, nsignals, npeers */
 return ncclEnqueueCheck(&info);
 }
@@ -254,7 +254,7 @@ NVTX3_FUNC_WITH_PARAMS(WaitSignal, NcclNvtxParamsWaitSignal,
 struct ncclInfo info = { ncclFuncWaitSignal, "WaitSignal",
   NULL, NULL, 0, ncclInt32, ncclSum, 0, comm, stream, /* Args */
   1, 1, /* chunkSteps, sliceSteps */
-  0, NULL, sigIdx, ctx, /* peerWinOffset, peerWin, sigIdx, ctx */
+  0, NULL, sigIdx, ctx, 0, /* peerWinOffset, peerWin, sigIdx, ctx, flags */
   peers, nsignals, npeers }; /* peers, nsignals, npeers */
 return ncclEnqueueCheck(&info);
 }

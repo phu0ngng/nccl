@@ -571,6 +571,7 @@ ncclResult_t  ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, in
  *   peerWinOffset- Offset in bytes from the start of peer's registered window
  *   sigIdx       - Signal index identifier for the operation
  *   ctx          - Context identifier for the operation
+ *   flags        - Reserved for future use
  *   comm         - NCCL communicator
  *   stream       - CUDA stream to enqueue the operation on
  *
@@ -579,11 +580,11 @@ ncclResult_t  ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype, in
  */
 ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype,
     int peer, ncclWindow_t peerWin, size_t peerWinOffset,
-    int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
+    int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream);
 
 ncclResult_t pncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype,
     int peer, ncclWindow_t peerWin, size_t peerWinOffset,
-    int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
+    int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream);
 
 /*
  * Signal
@@ -594,14 +595,15 @@ ncclResult_t pncclPutSignal(const void* localbuff, size_t count, ncclDataType_t 
  *   peer         - Target rank to send signal to
  *   sigIdx       - Signal index identifier for the operation
  *   ctx          - Context identifier for the operation
+ *   flags        - Reserved for future use
  *   comm         - NCCL communicator
  *   stream       - CUDA stream to enqueue the operation on
  *
  * Returns:
  *   ncclSuccess on successful signal enqueue, error code otherwise
  */
-ncclResult_t ncclSignal(int peer, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
-ncclResult_t pncclSignal(int peer, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t ncclSignal(int peer, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t pncclSignal(int peer, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream);
 
 /*
  * Wait Signal

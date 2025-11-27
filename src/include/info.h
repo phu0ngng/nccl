@@ -33,6 +33,7 @@ struct ncclInfo {
   ncclWindow_t peerWin;
   int sigIdx;
   int ctx;
+  unsigned int flags;
   int* peers;
   int* nsignals;
   int npeers;
