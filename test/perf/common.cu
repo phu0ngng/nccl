@@ -326,20 +326,19 @@ testResult_t barrierRmaSignal(ncclComm_t comm, cudaStream_t stream) {
 
   int ctx = 0;
 
-  int* peers = (int*)malloc(sizeof(int) * (nranks - 1));
-  int* nsignals = (int*)malloc(sizeof(int) * (nranks - 1));
-  if (peers == NULL || nsignals == NULL) {
-    free(peers);
-    free(nsignals);
+  ncclWaitSignalDesc_t* waitDescs = (ncclWaitSignalDesc_t*)malloc(sizeof(ncclWaitSignalDesc_t) * (nranks - 1));
+  if (waitDescs == NULL) {
     return testInternalError;
   }
 
-  int peerIdx = 0;
+  int descIdx = 0;
   for (int i = 0; i < nranks; i++) {
     if (i != rank) {
-      peers[peerIdx] = i;
-      nsignals[peerIdx] = 1;
-      peerIdx++;
+      waitDescs[descIdx].opCnt = 1;
+      waitDescs[descIdx].peer = i;
+      waitDescs[descIdx].sigIdx = 0;
+      waitDescs[descIdx].ctx = ctx;
+      descIdx++;
     }
   }
 
@@ -349,10 +348,9 @@ testResult_t barrierRmaSignal(ncclComm_t comm, cudaStream_t stream) {
     }
   }
 
-  NCCLCHECK(ncclWaitSignal(nranks - 1, peers, nsignals, 0, ctx, comm, stream));
+  NCCLCHECK(ncclWaitSignal(nranks - 1, waitDescs, comm, stream));
 
-  free(peers);
-  free(nsignals);
+  free(waitDescs);
 
   return testSuccess;
 }

@@ -78,24 +78,23 @@ testResult_t AllGatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
   // In allgather, rank i's data goes to offset: recvoffset + rank * bytes
   size_t peerWinOffset = recvoffset + rank * bytes;
 
-  // Allocate arrays for wait signal operation
-  int* peers = (int*)malloc(sizeof(int) * nranks);
-  int* nsignals = (int*)malloc(sizeof(int) * nranks);
-  if (peers == NULL || nsignals == NULL) {
-    free(peers);
-    free(nsignals);
+  // Build descriptors array for signal waiting
+  ncclWaitSignalDesc_t* waitDescs = (ncclWaitSignalDesc_t*)malloc(sizeof(ncclWaitSignalDesc_t) * nranks);
+  if (waitDescs == NULL) {
     return testInternalError;
   }
 
-  int peerIdx = 0;
+  int descIdx = 0;
   for (int i = 0; i < nranks; i++) {
     // Skip waiting for signal from ourselves if in-place
     if (isInPlace && i == rank) {
       continue;
     }
-    peers[peerIdx] = i;
-    nsignals[peerIdx] = 1;  // Expect 1 signal from each peer
-    peerIdx++;
+    waitDescs[descIdx].opCnt = 1;  // Expect 1 signal from each peer
+    waitDescs[descIdx].peer = i;
+    waitDescs[descIdx].sigIdx = 0;
+    waitDescs[descIdx].ctx = ctx;
+    descIdx++;
   }
 
   NCCLCHECK(ncclGroupStart());
@@ -112,13 +111,12 @@ testResult_t AllGatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
   }
 
   // Wait for signals from all peers to ensure all data has been written
-  NCCLCHECK(ncclWaitSignal(peerIdx, peers, nsignals, 0, ctx, comm, stream));
+  NCCLCHECK(ncclWaitSignal(descIdx, waitDescs, comm, stream));
 
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
   // Free allocated memory
-  free(peers);
-  free(nsignals);
+  free(waitDescs);
 
   return testSuccess;
 }

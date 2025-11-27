@@ -229,7 +229,7 @@ struct ncclInfo info = { ncclFuncPutSignal, "PutSignal",
   localbuff, NULL, count, datatype, ncclSum, peer, comm, stream, /* Args */
   1, 1, /* chunkSteps, sliceSteps */
   peerWinOffset, peerWin, sigIdx, ctx, flags, /* peerWinOffset, peerWin, sigIdx, ctx, flags */
-  NULL, NULL, 0 }; /* peers, nsignals, npeers */
+  0, NULL }; /* nDesc, signalDescs */
 return ncclEnqueueCheck(&info);
 }
 
@@ -242,19 +242,19 @@ struct ncclInfo info = { ncclFuncSignal, "Signal",
   NULL, NULL, 0, ncclInt8, ncclSum, peer, comm, stream, /* Args */
   1, 1, /* chunkSteps, sliceSteps */
   0, NULL, sigIdx, ctx, flags, /* peerWinOffset, peerWin, sigIdx, ctx, flags */
-  NULL, NULL, 0 }; /* peers, nsignals, npeers */
+  0, NULL }; /* nDesc, signalDescs */
 return ncclEnqueueCheck(&info);
 }
 
-NCCL_API(ncclResult_t, ncclWaitSignal, int npeers, int* peers, int* nsignals, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
-ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream) {
+NCCL_API(ncclResult_t, ncclWaitSignal, int nDesc, ncclWaitSignalDesc_t* signalDescs, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t ncclWaitSignal(int nDesc, ncclWaitSignalDesc_t* signalDescs, ncclComm_t comm, cudaStream_t stream) {
 NVTX3_FUNC_WITH_PARAMS(WaitSignal, NcclNvtxParamsWaitSignal,
-  NVTX3_PAYLOAD(comm ? comm->commHash : 0, npeers, ctx));
+  NVTX3_PAYLOAD(comm ? comm->commHash : 0, nDesc, 0));
 
 struct ncclInfo info = { ncclFuncWaitSignal, "WaitSignal",
   NULL, NULL, 0, ncclInt32, ncclSum, 0, comm, stream, /* Args */
   1, 1, /* chunkSteps, sliceSteps */
-  0, NULL, sigIdx, ctx, 0, /* peerWinOffset, peerWin, sigIdx, ctx, flags */
-  peers, nsignals, npeers }; /* peers, nsignals, npeers */
+  0, NULL, 0, 0, 0, /* peerWinOffset, peerWin, sigIdx, ctx, flags */
+  nDesc, signalDescs }; /* nDesc, signalDescs */
 return ncclEnqueueCheck(&info);
 }

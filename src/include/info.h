@@ -34,9 +34,9 @@ struct ncclInfo {
   int sigIdx;
   int ctx;
   unsigned int flags;
-  int* peers;
-  int* nsignals;
-  int npeers;
+  // WaitSignal descriptors
+  int nDesc;
+  ncclWaitSignalDesc_t* signalDescs;
 };
 
 #endif

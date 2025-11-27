@@ -606,25 +606,36 @@ ncclResult_t ncclSignal(int peer, int sigIdx, int ctx, unsigned int flags, ncclC
 ncclResult_t pncclSignal(int peer, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream);
 
 /*
+ * Wait Signal Descriptor
+ *
+ * Describes how many signal operations to wait for
+ * from a particular rank on a given signal index and context.
+ */
+typedef struct {
+  int opCnt;    // Number of signal operations to wait for
+  int peer;     // Target peer to wait for signals from
+  int sigIdx;   // Signal index identifier
+  int ctx;      // Context identifier
+} ncclWaitSignalDesc_t;
+
+/*
  * Wait Signal
  *
- * Waits for specified number of signals from each peer.
+ * Waits for signals as described in the signal descriptor array.
  *
  * Parameters:
- *   npeers       - Number of peers (length of both peers and nsignals arrays)
- *   peers        - Array of peer ranks to wait signals from
- *   nsignals     - Array of signal counts, where nsignals[i] is the number of
- *                  signals to wait for from peers[i]
- *   sigIdx       - Signal index identifier for the operation
- *   ctx          - Context identifier for the operation
+ *   nDesc        - Number of signal descriptors in the array
+ *   signalDescs  - Array of descriptors specifying the signals to wait for.
+ *                  Each descriptor indicates how many signals to expect from
+ *                  a specific peer on a particular signal index and context.
  *   comm         - NCCL communicator
  *   stream       - CUDA stream to enqueue the operation on
  *
  * Returns:
  *   ncclSuccess when all required signals received, error code otherwise
  */
-ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
-ncclResult_t pncclWaitSignal(int npeers, int* peers, int* nsignals, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t ncclWaitSignal(int nDesc, ncclWaitSignalDesc_t* signalDescs, ncclComm_t comm, cudaStream_t stream);
+ncclResult_t pncclWaitSignal(int nDesc, ncclWaitSignalDesc_t* signalDescs, ncclComm_t comm, cudaStream_t stream);
 
 /*
  * Group semantics

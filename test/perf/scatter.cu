@@ -90,8 +90,8 @@ testResult_t ScatterRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow
 
   // All ranks wait for signal from root (except root itself if in-place)
   if (rank != root || !isInPlace) {
-    int nsignals = 1;
-    NCCLCHECK(ncclWaitSignal(1, &root, &nsignals, 0, ctx, comm, stream));
+    ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = root, .sigIdx = 0, .ctx = ctx};
+    NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
   }
 
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);

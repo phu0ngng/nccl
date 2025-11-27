@@ -224,15 +224,15 @@ static ncclResult_t host_alltoall(
         if (DEBUG) printf("[Rank %d] Iteration %d: Waiting for signals from all ranks\n", myRank, i);
 
         // Wait for signals from all ranks (including itself)
-        int peer_list[nRanks];
-        int nsignals_list[nRanks];
+        ncclWaitSignalDesc_t waitDescs[nRanks];
         for (int peer = 0; peer < nRanks; peer++) {
-            peer_list[peer] = peer;
-            // Each put generates 1 signal
-            nsignals_list[peer] = 1;
+            waitDescs[peer].opCnt = 1;  // Each put generates 1 signal
+            waitDescs[peer].peer = peer;
+            waitDescs[peer].sigIdx = 0;
+            waitDescs[peer].ctx = ctx;
         }
 
-        NCCLCHECK(ncclWaitSignal(nRanks, peer_list, nsignals_list, 0, ctx, comm, stream));
+        NCCLCHECK(ncclWaitSignal(nRanks, waitDescs, comm, stream));
 
         if (DEBUG) printf("[Rank %d] Iteration %d: Received signals from all %d ranks\n", myRank, i, nRanks);
 

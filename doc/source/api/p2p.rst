@@ -74,10 +74,31 @@ ncclSignal
 ncclWaitSignal
 --------------
 
-.. c:function:: ncclResult_t ncclWaitSignal(int npeers, int* peers, int* nsignals, int sigIdx, int ctx, ncclComm_t comm, cudaStream_t stream)
+.. c:type:: ncclWaitSignalDesc_t
 
- Wait for signals from multiple peers.
+ Descriptor that specifies how many signal operations to wait for
+ from a particular rank on a given signal index and context.
 
- Wait for ``nsignals[i]`` number of signals from rank ``peers[i]`` for each peer.
- The ``sigIdx`` is the signal index identifier for the operation. It must be set to 0 for now.
- The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.
+ .. c:member:: int opCnt
+
+  Number of signal operations to wait for.
+
+ .. c:member:: int peer
+
+  Target peer to wait for signals from.
+
+ .. c:member:: int sigIdx
+
+  Signal index identifier. Must be set to 0 for now.
+
+ .. c:member:: int ctx
+
+  Context identifier. Must be set to 0 for now.
+
+.. c:function:: ncclResult_t ncclWaitSignal(int nDesc, ncclWaitSignalDesc_t* signalDescs, ncclComm_t comm, cudaStream_t stream)
+
+ Wait for signals as described in the signal descriptor array.
+
+ The ``nDesc`` parameter specifies the number of signal descriptors in the ``signalDescs`` array.
+ Each descriptor indicates how many signals (``opCnt``) to expect from a specific ``peer``
+ on a particular signal index (``sigIdx``) and context (``ctx``).

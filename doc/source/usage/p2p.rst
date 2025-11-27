@@ -130,18 +130,18 @@ This example shows the full setup including memory allocation and window registr
 
  int ctx = 0;
  int peer = (rank == 0) ? 1 : 0;
- int nsignals = 1;
+ ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = peer, .sigIdx = 0, .ctx = ctx};
 
  if (rank == 0) {
    // Rank 0: wait then put
-   NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, 0, ctx, comm, stream));
+   NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
    NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
                      0, ctx, 0, comm, stream));
  } else {
    // Rank 1: put then wait
    NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
                      0, ctx, 0, comm, stream));
-   NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, 0, ctx, comm, stream));
+   NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
  }
 
  CUDACHECK(cudaStreamSynchronize(stream));
@@ -161,18 +161,19 @@ Each rank signals to all other ranks and waits for signals from all ranks:
 
 .. code:: C
 
- int *peers = malloc(nranks * sizeof(int));
- int *nsignals = malloc(nranks * sizeof(int));
+ ncclWaitSignalDesc_t *waitDescs = malloc(nranks * sizeof(ncclWaitSignalDesc_t));
  for (int r = 0; r < nranks; r++) {
-   peers[r] = r;
-   nsignals[r] = 1;
+   waitDescs[r].opCnt = 1;
+   waitDescs[r].peer = r;
+   waitDescs[r].sigIdx = 0;
+   waitDescs[r].ctx = ctx;
  }
 
  ncclGroupStart();
  for (int r = 0; r < nranks; r++) {
    ncclSignal(r, 0, ctx, 0, comm, stream);
  }
- ncclWaitSignal(nranks, peers, nsignals, 0, ctx, comm, stream);
+ ncclWaitSignal(nranks, waitDescs, comm, stream);
  ncclGroupEnd();
 
 All-to-all
@@ -187,12 +188,13 @@ This could be done with the barrier shown above.
 .. code:: C
 
  size_t offset[nranks];
- int *peers = malloc(nranks * sizeof(int));
- int *nsignals = malloc(nranks * sizeof(int));
+ ncclWaitSignalDesc_t *waitDescs = malloc(nranks * sizeof(ncclWaitSignalDesc_t));
  for (int r = 0; r < nranks; r++) {
    offset[r] = r * count * wordSize(datatype);
-   peers[r] = r;
-   nsignals[r] = 1;
+   waitDescs[r].opCnt = 1;
+   waitDescs[r].peer = r;
+   waitDescs[r].sigIdx = 0;
+   waitDescs[r].ctx = ctx;
  }
 
  ncclGroupStart();
@@ -200,6 +202,6 @@ This could be done with the barrier shown above.
    ncclPutSignal(sendbuff[r], count, datatype, r, window, offset[r],
            0, ctx, 0, comm, stream);
  }
- ncclWaitSignal(nranks, peers, nsignals, 0, ctx, comm, stream);
+ ncclWaitSignal(nranks, waitDescs, comm, stream);
  ncclGroupEnd();
 
