@@ -173,8 +173,9 @@ Each rank signals to all other ranks and waits for signals from all ranks:
  for (int r = 0; r < nranks; r++) {
    ncclSignal(r, 0, ctx, 0, comm, stream);
  }
- ncclWaitSignal(nranks, waitDescs, comm, stream);
  ncclGroupEnd();
+
+ ncclWaitSignal(nranks, waitDescs, comm, stream);
 
 All-to-all
 ----------
@@ -202,6 +203,7 @@ This could be done with the barrier shown above.
    ncclPutSignal(sendbuff[r], count, datatype, r, window, offset[r],
            0, ctx, 0, comm, stream);
  }
- ncclWaitSignal(nranks, waitDescs, comm, stream);
  ncclGroupEnd();
+
+ ncclWaitSignal(nranks, waitDescs, comm, stream);
 

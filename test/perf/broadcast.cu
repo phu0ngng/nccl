@@ -75,11 +75,11 @@ testResult_t BroadcastRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
     }
   }
 
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
   // All ranks wait for signal from root
   ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = root, .sigIdx = 0, .ctx = ctx};
   NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
-
-  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
   return testSuccess;
 }

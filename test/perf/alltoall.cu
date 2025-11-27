@@ -103,10 +103,10 @@ testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
                       recvWin, dstOffset, 0, ctx, 0, comm, stream));
   }
 
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
   // Wait for signals from all peers to ensure all data has been written
   NCCLCHECK(ncclWaitSignal(nranks, waitDescs, comm, stream));
-
-  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
   // Free allocated memory
   free(waitDescs);

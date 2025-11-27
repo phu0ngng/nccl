@@ -76,6 +76,8 @@ testResult_t GatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow,
   NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, root,
                     recvWin, dstOffset, 0, ctx, 0, comm, stream));
 
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
   if (rank == root) {
     // Root waits for signals from all ranks
     ncclWaitSignalDesc_t* waitDescs = (ncclWaitSignalDesc_t*)malloc(sizeof(ncclWaitSignalDesc_t) * nranks);
@@ -94,8 +96,6 @@ testResult_t GatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow,
 
     free(waitDescs);
   }
-
-  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
   return testSuccess;
 }
