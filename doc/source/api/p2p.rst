@@ -53,12 +53,23 @@ ncclPutSignal
 
 .. c:function:: ncclResult_t ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype, int peer, ncclWindow_t peerWin, size_t peerWinOffset, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream)
 
- Write data from ``localbuff`` to rank ``peer``'s registered memory window at offset ``peerWinOffset``.
+ Write data from ``localbuff`` to rank ``peer``'s registered memory window ``peerWin`` at offset ``peerWinOffset``
+ and subsequently updating a remote signal.
 
  The target memory window ``peerWin`` must be registered using :c:func:`ncclCommWindowRegister`.
+
  The ``sigIdx`` is the signal index identifier for the operation. It must be set to 0 for now.
+
  The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.
- The ``flags`` parameter is reserved for future use and must be set to 0.
+
+ The ``flags`` parameter is reserved for future use. It must be set to 0 for now.
+
+ The return of :c:func:`ncclPutSignal` to the CPU thread indicates that the operation has been successfully enqueued to the CUDA stream.
+ At the completion of :c:func:`ncclPutSignal` on the CUDA stream, the ``localbuff`` is safe to reuse or modify.
+ When a signal is updated on the remote peer, it guarantees that the data from the corresponding :c:func:`ncclPutSignal` operation has been delivered to the remote memory.
+ All prior :c:func:`ncclPutSignal` and :c:func:`ncclSignal` operations to the same peer and context have also completed their signal updates.
+
+Related links: :ref:`point-to-point`.
 
 ncclSignal
 ----------
@@ -68,8 +79,15 @@ ncclSignal
  Send a signal to rank ``peer`` without transferring data.
 
  The ``sigIdx`` is the signal index identifier for the operation. It must be set to 0 for now.
+
  The ``ctx`` is the context identifier for the operation. It must be set to 0 for now.
- The ``flags`` parameter is reserved for future use and must be set to 0.
+
+ The ``flags`` parameter is reserved for future use. It must be set to 0 for now.
+
+ When a signal is updated on the remote peer, all prior :c:func:`ncclPutSignal` and :c:func:`ncclSignal` operations
+ to the same peer and context have also completed their signal updates.
+
+Related links: :ref:`point-to-point`.
 
 ncclWaitSignal
 --------------
@@ -102,3 +120,8 @@ ncclWaitSignal
  The ``nDesc`` parameter specifies the number of signal descriptors in the ``signalDescs`` array.
  Each descriptor indicates how many signals (``opCnt``) to expect from a specific ``peer``
  on a particular signal index (``sigIdx``) and context (``ctx``).
+
+ The return of :c:func:`ncclWaitSignal` to the CPU thread indicates that the operation has been successfully enqueued to the CUDA stream.
+ At the completion of :c:func:`ncclWaitSignal` on the CUDA stream, all specified signal operations have been received and the corresponding data is visible in local memory.
+
+Related links: :ref:`point-to-point`.
