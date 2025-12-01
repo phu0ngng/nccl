@@ -437,8 +437,7 @@ ncclResult_t ncclRmaProxyRegister(struct ncclComm* comm, void* address, size_t s
     ncclGinWindow_t rmaDevWins[NCCL_GIN_MAX_CONTEXTS]){
       struct ncclRmaProxyState* rmaProxyState = &comm->rmaState.rmaProxyState;
       for (int n = 0; n < rmaProxyState->ginCommCount; n++) {
-          struct ncclRmaProxyCtx* ctx = (struct ncclRmaProxyCtx*)rmaProxyState->rmaProxyCtxs[n];
-          NCCLCHECK(ncclRmaProxyRegMrSym(rmaProxyState->ncclGin, ctx->ginCollComm, ctx->props, address, size,
+          NCCLCHECK(ncclRmaProxyRegMrSym(rmaProxyState->ncclGin, rmaProxyState->ginComms[n], rmaProxyState->props[n], address, size,
                                          NCCL_PTR_CUDA, 0, &rmaHostWins[n], &rmaDevWins[n]));
         if (rmaHostWins[n] == NULL) {
           WARN("rank %d - GIN Symmetric register failed: buff %p, size %ld", comm->rank, address, size);
