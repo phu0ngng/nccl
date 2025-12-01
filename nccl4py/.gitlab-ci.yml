@@ -3,6 +3,7 @@ stages:
   - unit-tests
   - setup
   - apitests
+  - teardown
 
 variables:
   # Common
@@ -17,7 +18,7 @@ variables:
   # IPP6
   IPP6_CUDA12_HOME: /storage/toolkits/cuda-12.9
   IPP6_CUDA13_HOME: /storage/toolkits/cuda-13.0
-  IPP6_WORKSPACE_DIR: /storage/gitlab-runner/nccl4py/$CI_COMMIT_SHORT_SHA
+  IPP6_WORKSPACE_DIR: /storage/gitlab-runner/nccl4py/$CI_PIPELINE_ID
   IPP6_NCCL_HOME: $IPP6_WORKSPACE_DIR/nccl
   IPP6_NCCL4PY_CUDA12_HOME: $IPP6_WORKSPACE_DIR/$NCCL4PY_CUDA12_TARGET
   IPP6_NCCL4PY_CUDA13_HOME: $IPP6_WORKSPACE_DIR/$NCCL4PY_CUDA13_TARGET
@@ -38,7 +39,7 @@ build_wheels:
     CUDA_HOME: $IPP6_CUDA13_HOME
     CIBW_CACHE_PATH: /storage/gitlab-runner/.cache/cibuildwheel
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl
   script:
     - module load uv
     - set -x
@@ -76,7 +77,7 @@ unit_tests:
   variables:
     CUDA_HOME: $IPP6_CUDA13_HOME
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl
   <<: *make_dev_step
   script:
     - set -x
@@ -100,7 +101,7 @@ unit_tests:
 setup_nccl-ipp6:
   stage: setup
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl
   needs:
     - pipeline: $PARENT_PIPELINE_ID
       job: build-ipp6
@@ -118,7 +119,7 @@ setup_nccl-ipp6:
 .base_setup_nccl4py_job-ipp6:
   stage: setup
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl
   needs:
     - build_wheels
   script:
@@ -152,12 +153,13 @@ setup_nccl4py_cu13-ipp6:
 ##
 ## Stage: apitests - Start...
 ##
+
 .base_api_tests_job-ipp6:
   stage: apitests
   needs:
     - setup_nccl-ipp6
   tags:
-    - ipp6-nccl-v2
+    - ipp6-nccl
   <<: *make_dev_step
   script:
     - set -x
@@ -200,4 +202,28 @@ apitests_cu13-ipp6:
 
 ##
 ## Stage: apitests - Finish!
+##
+
+##
+## Stage: teardown - Start...
+##
+
+teardown-ipp6:
+  stage: teardown
+  tags:
+    - ipp6-nccl
+  needs:
+    - job: apitests_cu12-ipp6
+      artifacts: false
+    - job: apitests_cu13-ipp6
+      artifacts: false
+  rules:
+    - when: always
+  variables:
+    WORKSPACE_DIR: $IPP6_WORKSPACE_DIR
+  script:
+    - rm -rf $WORKSPACE_DIR
+
+##
+## Stage: teardown - Finish!
 ##

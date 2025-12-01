@@ -121,7 +121,7 @@ build-trace:
 build-ipp6:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1" || $RUN_NCCL4PY_CI == "1"))
       when: always
     - when: never
   tags:
