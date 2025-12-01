@@ -503,7 +503,10 @@ doca_error_t doca_gpu_dmabuf_fd(struct doca_gpu *gpu_dev, void *memptr_gpu, size
 #endif
 }
 
+static std::mutex registered_uar_mutex;
+
 doca_error_t doca_gpu_verbs_can_gpu_register_uar(void *db, bool *out_can_register) {
+    std::lock_guard<std::mutex> lock(registered_uar_mutex);
     cudaError_t cuda_status = cudaSuccess;
 
     if (db == nullptr || out_can_register == nullptr) return DOCA_ERROR_INVALID_VALUE;
@@ -521,7 +524,6 @@ doca_error_t doca_gpu_verbs_can_gpu_register_uar(void *db, bool *out_can_registe
 }
 
 static std::unordered_map<void *, unsigned int> registered_uar_refcount;
-static std::mutex registered_uar_mutex;
 
 doca_error_t doca_gpu_verbs_export_uar(uint64_t *sq_db, uint64_t **uar_addr_gpu) {
     std::lock_guard<std::mutex> lock(registered_uar_mutex);
