@@ -217,8 +217,6 @@ teardown-ipp6:
       artifacts: false
     - job: apitests_cu13-ipp6
       artifacts: false
-  rules:
-    - when: always
   variables:
     WORKSPACE_DIR: $IPP6_WORKSPACE_DIR
   script:
