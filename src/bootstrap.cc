@@ -17,6 +17,7 @@
 #include <mutex>
 #include "os.h"
 #include <thread>
+#include <chrono>
 
 #define BOOTSTRAP_N_CHECK_ABORT           10000
 #define BOOTSTRAP_TAG_CONNECT             (0x1 << 31)
@@ -758,12 +759,8 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm, s
     // for socket the message rate in microsec
     double msg_rate = ncclParamStaggerRate() / 1.0e6;
     long musec = localIdFromRoot(rank, curr_root, nranks, nHandles, offset) / msg_rate;
-    struct timespec tv;
-    long c_1e6 = 1e6;
-    tv.tv_sec = musec / c_1e6;
-    tv.tv_nsec = 1e3 * (musec % c_1e6);
     TRACE(NCCL_BOOTSTRAP, "rank %d delaying connection to root by %ld microsec", rank, musec);
-    (void)nanosleep(&tv, NULL);
+    std::this_thread::sleep_for(std::chrono::microseconds(musec));
   }
   BOOTSTRAP_PROF_CLOSE(timers[BOOTSTRAP_INIT_TIME_DELAY]);
 

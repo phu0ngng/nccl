@@ -13,6 +13,8 @@
 #include "checks.h"
 #include "param.h"
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <nmmintrin.h>
 
 // Windows-specific definitions for constants not available in Windows
@@ -41,10 +43,6 @@ void ncclOsSetEnv(const char* name, const char* value) {
       WARN("Failed to set environment variable %s to %s: error %lu", name, value, GetLastError());
     }
   }
-}
-
-void ncclOsSleep(unsigned int time_msec) {
-  Sleep((DWORD)time_msec);
 }
 
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sockDescriptor) {
@@ -182,7 +180,7 @@ static ncclResult_t socketConnectCheck(struct ncclSocket* sock, int errCode, con
       INFO(NCCL_NET|NCCL_INIT, "%s: connect to %s returned %s, retrying (%d/%ld) after sleep for %u msec",
            funcName, ncclSocketToString(&sock->addr, line), getWSAErrorMessage(errCode),
            sock->errorRetries, ncclParamRetryCnt(), sleepTime);
-      ncclOsSleep(sleepTime);
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepTime));
     }
     NCCLCHECK(ncclOsSocketResetFd(sock)); /* in case of failure in connect, socket state is unspecified */
     sock->state = ncclSocketStateConnecting;

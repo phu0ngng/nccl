@@ -7,7 +7,9 @@
 #include "ibvwrap.h"
 #include <sys/types.h>
 #include <unistd.h>
+#include <chrono>
 #include <mutex>
+#include <thread>
 
 #ifdef NCCL_BUILD_RDMA_CORE
 #include <infiniband/verbs.h>
@@ -296,8 +298,7 @@ ncclResult_t wrap_ibv_modify_qp(struct ibv_qp* qp, struct ibv_qp_attr* attr, int
       ibvModifyQpLog(qp, attr->qp_state, attr, attr_mask, qpMsg, sizeof(qpMsg));
       INFO(NCCL_NET, "Call to ibv_modify_qp failed with %d %s, %s, retrying %d/%d after %u msec of sleep", ret, strerror(ret), qpMsg, attempts, maxCnt, sleepTime);
       // sleep before retrying
-      struct timespec tv = {.tv_sec = sleepTime / 1000, .tv_nsec = (sleepTime % 1000) * ((long)1e6)};
-      nanosleep(&tv, NULL);
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepTime));
     }
     ret = ibvSymbols.ibv_internal_modify_qp(qp, attr, attr_mask);
     attempts++;

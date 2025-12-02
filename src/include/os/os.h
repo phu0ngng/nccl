@@ -33,7 +33,6 @@ typedef SOCKET ncclSocketDescriptor;
 #endif
 
 uint64_t ncclOsGetpid();
-void ncclOsSleep(unsigned int time_msec);
 ncclResult_t ncclOsSetCpuStackSize();
 
 void ncclOsSetEnv(const char* name, const char* value);

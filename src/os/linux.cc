@@ -70,15 +70,6 @@ void ncclOsSetEnv(const char* name, const char* value) {
   setenv(name, value, 0);
 }
 
-void ncclOsSleep(unsigned int time_msec) {
-  const long c_1e6 = 1e6;
-  struct timespec tv = (struct timespec){
-    .tv_sec = time_msec / 1000,
-    .tv_nsec = (time_msec % 1000) * c_1e6,
-  };
-  nanosleep(&tv, NULL);
-}
-
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sockDescriptor) {
   return sockDescriptor >= 0;
 }
@@ -204,7 +195,7 @@ static ncclResult_t socketConnectCheck(struct ncclSocket* sock, int errCode, con
       INFO(NCCL_NET|NCCL_INIT, "%s: connect to %s returned %s, retrying (%d/%ld) after sleep for %u msec",
            funcName, ncclSocketToString(&sock->addr, line), strerror(errCode),
            sock->errorRetries, ncclParamRetryCnt(), sleepTime);
-      ncclOsSleep(sleepTime);
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepTime));
     }
     NCCLCHECK(ncclOsSocketResetFd(sock)); /* in case of failure in connect, socket state is unspecified */
     sock->state = ncclSocketStateConnecting;
