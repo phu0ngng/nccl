@@ -109,7 +109,7 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
       if (forced) {
         needFallback = isLLKernel && isOneThreadMultiGpus && headTask->winRegType == ncclSymSendNonregRecvNonreg;
       } else {
-        needFallback = isLLKernel && (isOneThreadMultiGpus || !isLegacyLLKernel) && headTask->winRegType == ncclSymSendNonregRecvNonreg;
+        needFallback = isLLKernel && (isOneThreadMultiGpus || !isLegacyLLKernel);
       }
 
       if (kernelId == ncclSymkKernelId_Count || needFallback) {
