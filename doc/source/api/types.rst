@@ -304,18 +304,3 @@ ncclWindow_t
 .. c:type:: ncclWindow_t
 
   NCCL window object for window registration and deregistration.
-
-ncclSignalMode_t
-----------------
-
-.. c:type:: ncclSignalMode_t
-
-  Defines the signaling behavior for one-sided RMA operations.
-
-  .. c:macro:: NCCL_SIGNAL_NONE
-
-    No signaling operation.
-
-  .. c:macro:: NCCL_SIGNAL
-
-    Default signal operation.

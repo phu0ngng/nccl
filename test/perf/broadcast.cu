@@ -70,16 +70,16 @@ testResult_t BroadcastRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
   if (rank == root) {
     // Root puts data to all ranks (including itself)
     for (int peer = 0; peer < nranks; peer++) {
-      NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, peer,
-                        recvWin, recvoffset, NCCL_SIGNAL, ctx, comm, stream));
+      NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, peer,
+                        recvWin, recvoffset, 0, ctx, 0, comm, stream));
     }
   }
 
-  // All ranks wait for signal from root
-  int nsignals = 1;
-  NCCLCHECK(ncclWaitSignal(1, &root, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
-
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
+
+  // All ranks wait for signal from root
+  ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = root, .sigIdx = 0, .ctx = ctx};
+  NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
 
   return testSuccess;
 }

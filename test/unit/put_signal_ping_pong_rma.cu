@@ -56,14 +56,14 @@ static ncclResult_t host_ping_pong(
             if (DEBUG) printf("[Rank %d] Waiting for signal from peer (iteration %d)\n", comm->rank, i);
 
             // Wait for signal from peer
-            int nsignals = 1;
-            NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+            ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = peer, .sigIdx = 0, .ctx = ctx};
+            NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Received signal, sending data to peer\n", comm->rank);
 
             // Put data with signal to peer's receive buffer
-            NCCLCHECK(ncclPut(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
-                             NCCL_SIGNAL, ctx, comm, stream));
+            NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
+                            0, ctx, 0, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Sent data with signal\n", comm->rank);
 
@@ -71,14 +71,14 @@ static ncclResult_t host_ping_pong(
             if (DEBUG) printf("[Rank %d] Sending data with signal to peer\n", comm->rank);
 
             // Put data with signal to peer's receive buffer
-            NCCLCHECK(ncclPut(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
-                             NCCL_SIGNAL, ctx, comm, stream));
+            NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
+                            0, ctx, 0, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Sent data, waiting for signal from peer\n", comm->rank);
 
             // Wait for signal from peer
-            int nsignals = 1;
-            NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+            ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = peer, .sigIdx = 0, .ctx = ctx};
+            NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Received signal from peer\n", comm->rank);
         }

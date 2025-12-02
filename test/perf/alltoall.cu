@@ -78,18 +78,17 @@ testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
   // Use RMA context 0
   int ctx = 0;
 
-  // Allocate arrays for wait signal operation
-  int* peers = (int*)malloc(sizeof(int) * (nranks));
-  int* nsignals = (int*)malloc(sizeof(int) * (nranks));
-  if (peers == NULL || nsignals == NULL) {
-    free(peers);
-    free(nsignals);
+  // Allocate array for wait signal descriptors
+  ncclWaitSignalDesc_t* waitDescs = (ncclWaitSignalDesc_t*)malloc(sizeof(ncclWaitSignalDesc_t) * nranks);
+  if (waitDescs == NULL) {
     return testInternalError;
   }
 
   for (int i = 0; i < nranks; i++) {
-    peers[i] = i;
-    nsignals[i] = 1;
+    waitDescs[i].opCnt = 1;
+    waitDescs[i].peer = i;
+    waitDescs[i].sigIdx = 0;
+    waitDescs[i].ctx = ctx;
   }
 
   NCCLCHECK(ncclGroupStart());
@@ -100,18 +99,17 @@ testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
     void* srcPtr = (char*)sendPtr + sendoffset + targetRank * chunkBytes;
     size_t dstOffset = recvoffset + rank * chunkBytes;
 
-    NCCLCHECK(ncclPut(srcPtr, count, type, targetRank,
-                      recvWin, dstOffset, NCCL_SIGNAL, ctx, comm, stream));
+    NCCLCHECK(ncclPutSignal(srcPtr, count, type, targetRank,
+                      recvWin, dstOffset, 0, ctx, 0, comm, stream));
   }
-
-  // Wait for signals from all peers to ensure all data has been written
-  NCCLCHECK(ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
 
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
+  // Wait for signals from all peers to ensure all data has been written
+  NCCLCHECK(ncclWaitSignal(nranks, waitDescs, comm, stream));
+
   // Free allocated memory
-  free(peers);
-  free(nsignals);
+  free(waitDescs);
 
   return testSuccess;
 }

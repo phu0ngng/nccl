@@ -31,11 +31,12 @@ struct ncclInfo {
   // One-sided ops
   size_t peerWinOffset;
   ncclWindow_t peerWin;
-  ncclSignalMode_t signalMode;
+  int sigIdx;
   int ctx;
-  int* peers;
-  int* nsignals;
-  int npeers;
+  unsigned int flags;
+  // WaitSignal descriptors
+  int nDesc;
+  ncclWaitSignalDesc_t* signalDescs;
 };
 
 #endif
