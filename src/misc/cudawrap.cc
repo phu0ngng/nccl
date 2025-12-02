@@ -311,3 +311,19 @@ ncclResult_t ncclCudaLibraryInit() {
   std::call_once(initOnceFlag, initOnceFunc);
   return initResult;
 }
+
+// Wrapper for cuStreamBatchMemOp that handles the 255 operations per call limit
+ncclResult_t ncclCuStreamBatchMemOp(cudaStream_t stream, unsigned int numOps, CUstreamBatchMemOpParams* batchParams) {
+  ncclResult_t ret = ncclSuccess;
+  const unsigned int maxOpsPerBatch = 255;
+
+  for (unsigned int offset = 0; offset < numOps; offset += maxOpsPerBatch) {
+    unsigned int opsInThisChunk = (numOps - offset < maxOpsPerBatch) ? (numOps - offset) : maxOpsPerBatch;
+    CUCHECKGOTO(cuStreamBatchMemOp(stream, opsInThisChunk, &batchParams[offset], 0), ret, fail);
+  }
+
+exit:
+  return ret;
+fail:
+  goto exit;
+}
