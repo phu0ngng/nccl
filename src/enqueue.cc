@@ -863,7 +863,6 @@ static ncclResult_t addP2pToPlan(
     }
   }
 
-  ssize_t thresholdLL = nChannelsMax*ncclParamP2pLLThreshold();
   ssize_t paramChunkSize = ncclParamChunkSize();
   // Arrays indexed by dir where recv=0, send=1:
   int nChannels[2];
@@ -876,7 +875,27 @@ static ncclResult_t addP2pToPlan(
   bool ipcRegistered[2] = {false, false};
 
   for (int dir=0; dir < 2; dir++) { // 0=recv, 1=send
-    if (bytes[dir] != -1) protoLL[dir] &= bytes[dir] <= thresholdLL;
+    // Assume SIMPLE protocol to start with to determine number of channels
+    stepSize[dir] = comm->p2pChunkSize;
+
+    if (bytes[dir] == -1) nChannels[dir] = 0;
+    else if (bytes[dir] == 0) nChannels[dir] = 1;
+    else {
+      ssize_t minPartSize = comm->nNodes > 1 ? stepSize[dir]/2 : stepSize[dir]/8;
+      ssize_t maxPartSize = comm->nNodes > 1 ? stepSize[dir]   : stepSize[dir]*32;
+      nChannels[dir] = std::min<int>(nChannelsMin, divUp(bytes[dir], minPartSize));
+      size_t partSize = std::max(minPartSize, divUp(bytes[dir], nChannels[dir]));
+      while (partSize > maxPartSize && nChannels[dir] <= nChannelsMax/2) {
+        nChannels[dir] *= 2;
+        partSize = divUp(bytes[dir], nChannels[dir]);
+      }
+    }
+    // Update number of channels propagated to the profiler
+    if (p2pTasks[dir]) p2pTasks[dir]->nChannels = nChannels[dir];
+
+    // Select protocol (LL vs SIMPLE) used based on payload per channel
+    if (bytes[dir] != -1)
+      protoLL[dir] &= bytes[dir] <= nChannels[dir] * ncclParamP2pLLThreshold();
     protocol[dir] = protoLL[dir] ? NCCL_PROTO_LL : NCCL_PROTO_SIMPLE;
 
     stepSize[dir] = comm->buffSizes[protocol[dir]]/NCCL_STEPS;
@@ -934,21 +953,6 @@ static ncclResult_t addP2pToPlan(
           ipcRegistered[dir] = regFlag ? true : false;
       }
     }
-
-    if (bytes[dir] == -1) nChannels[dir] = 0;
-    else if (bytes[dir] == 0) nChannels[dir] = 1;
-    else {
-      ssize_t minPartSize = comm->nNodes > 1 ? stepSize[dir]/2 : stepSize[dir]/8;
-      ssize_t maxPartSize = comm->nNodes > 1 ? stepSize[dir]   : stepSize[dir]*32;
-      nChannels[dir] = std::min<int>(nChannelsMin, divUp(bytes[dir], minPartSize));
-      size_t partSize = std::max(minPartSize, divUp(bytes[dir], nChannels[dir]));
-      while (partSize > maxPartSize && nChannels[dir] <= nChannelsMax/2) {
-        nChannels[dir] *= 2;
-        partSize = divUp(bytes[dir], nChannels[dir]);
-      }
-    }
-    // Update number of channels propagated to the profiler
-    if (p2pTasks[dir]) p2pTasks[dir]->nChannels = nChannels[dir];
   }
 
   struct ncclWorkList* workNode;
