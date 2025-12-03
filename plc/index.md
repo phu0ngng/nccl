@@ -12,6 +12,8 @@
 - [Communicator Grow](items/id_5cdcc8c5/communicator_grow.md)
 - [Multi-segment registration support](items/id_1752ab10/Multi-segment_registration_support.md)
 - [Symmetric Kernels for GIN](items/id_ada57223/Symmetric_Kernels_for_GIN.md)
+- [ID-based matching scheme](items/id_4bde6b8f/ID-based_matching_scheme.md)
+- [Pre-posting Receive WQEs](items/id_14cfa49d/Pre-posting_Receive_WQEs.md)
 <!-- V2_29_DO_NOT_MOVE -->
 
 <!------------------------------------->

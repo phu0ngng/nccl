@@ -173,6 +173,7 @@ struct ncclIbRequest {
 #ifdef NCCL_ENABLE_NET_PROFILING
   struct ncclProfilerInfo pInfo[NCCL_NET_IB_MAX_RECVS];
 #endif
+  uint32_t id;
   int nreqs;
   union {
     struct {
@@ -183,6 +184,9 @@ struct ncclIbRequest {
     } send;
     struct {
       int* sizes;
+      // Aggregates the size of a send request when sender does not write to the
+      // completion records array.
+      int aggSize;
     } recv;
     struct {
       int rank;
@@ -296,8 +300,34 @@ static inline ncclResult_t ncclIbCommBaseGetQpForRequest(struct ncclIbNetCommBas
   return ncclSuccess;
 }
 
+// Get a QP object from a QP number. If not NULL, qpIndex will also return the
+// index of the QP in the ncclIbNetCommBase::qps[] array.
+static inline ncclResult_t ncclIbCommBaseGetQpByQpNum(struct ncclIbNetCommBase* commBase, int devIndex, uint32_t qpNum, ncclIbQp** qp, int* qpIndex) {
+  assert(commBase->nDataQps != 0);
+  assert(devIndex >= 0 && devIndex < commBase->vProps.ndevs);
+  assert(qp != NULL);
+  TRACE(NCCL_NET, "NET/IB: %s: Looking for QP num %u on devIndex %d among %d QPs", __func__, qpNum, devIndex, commBase->nDataQps);
+  for (int qpIndexInDev = 0; qpIndexInDev < commBase->nDataQps; qpIndexInDev++) {
+    ncclIbCommBaseGetQpByIndex(commBase, devIndex, qpIndexInDev, qp);
+    if ((*qp)->qp->qp_num == qpNum) {
+      if (qpIndex != NULL) {
+        *qpIndex = *qp - commBase->qps;
+      }
+      return ncclSuccess;
+    }
+  }
+  *qp = NULL;
+  return ncclInternalError;
+}
+
 static inline int ncclIbCommBaseGetNqpsPerRequest(struct ncclIbNetCommBase* baseComm) {
   return (baseComm->splitDataOnQps == 1) ? baseComm->nqps : baseComm->nDataQps;
+}
+
+static inline ncclResult_t ncclIbPostRecvWorkRequest(struct ibv_qp* qp, struct ibv_recv_wr* wr) {
+  struct ibv_recv_wr* bad_wr;
+  NCCLCHECK(wrap_ibv_post_recv(qp, wr, &bad_wr));
+  return ncclSuccess;
 }
 
 struct ncclIbSendComm {
@@ -314,9 +344,11 @@ struct ncclIbSendComm {
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS + 1];
   // Each dev correlates to a mergedIbDev
   struct ncclIbSendCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
-  struct ncclIbRequest* fifoReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
-  // Structure to hold all the related structures regarding the completions
-  // records structure.
+  // Array of pointers to store the send requests for faster access. The 
+  // pointers are pointing into requests stored in ncclIbNetCommBase::reqs[] 
+  // array. The requests are inserted to this array based on the "slot" they
+  // are associated with.
+  struct ncclIbRequest* sendReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   struct ncclIbRemCompletionsRecords remCmplsRecords;
   int ar; // Use adaptive routing when all merged devices have it enabled
   uint64_t putSignalScratchpad;
@@ -374,6 +406,11 @@ struct alignas(16) ncclIbRecvCommDev {
 struct ncclIbRecvComm {
   struct ncclIbNetCommBase base;
   struct ncclIbRecvCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
+  // Array of pointers to store the recv requests to allow faster access. The
+  // pointers are pointing into requests stored in ncclIbNetCommBase::reqs[]
+  // array. The requests are inserted to this array using a hash (modulo) on
+  // their ID.
+  struct ncclIbRequest* recvReqs[NET_IB_MAX_REQUESTS];
   // Structure to hold all the related structures regarding the CTS FIFO
   // structure.
   struct ncclIbRemCtsFifo remCtsFifo;
@@ -382,8 +419,14 @@ struct ncclIbRecvComm {
   int cmplsRecords[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
   int gpuFlushHostMem;
   int flushEnabled;
+  bool prepostReceiveWorkRequests;
+  // To avoid allocation and memset on the data-path a single structure is used
+  // and only the wr_id is updated before posting a receive work request.
+  struct ibv_recv_wr ibRecvWorkRequest;
 };
 static_assert((offsetof(struct ncclIbRecvComm, remCtsFifo) % 32) == 0, "ncclIbRecvComm ctsFifo must be 32-byte aligned");
+
+ncclResult_t ncclIbRecvCommInit(struct ncclIbRecvComm* recvComm);
 
 struct ncclIbListenComm {
   int dev;
