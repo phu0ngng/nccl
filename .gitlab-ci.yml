@@ -3084,7 +3084,7 @@ perf-regression-eos:
     paths:
       - "perfregression/results.csv"
       - "perfregression/report.pdf"
-      - "perfregression/regression_report.xlsx"
+      - "perfregression/*.xlsx"
     expire_in: 48 hrs
 
 perf-regression-pre-tyche:
@@ -3111,7 +3111,7 @@ perf-regression-pre-tyche:
     paths:
       - "perfregression/results.csv"
       - "perfregression/report.pdf"
-      - "perfregression/regression_report.xlsx"
+      - "perfregression/*.xlsx"
     expire_in: 48 hrs
 
 perf-regression-theia:
@@ -3138,7 +3138,7 @@ perf-regression-theia:
     paths:
       - "perfregression/results.csv"
       - "perfregression/report.pdf"
-      - "perfregression/regression_report.xlsx"
+      - "perfregression/*.xlsx"
     expire_in: 48 hrs
 
 ##
