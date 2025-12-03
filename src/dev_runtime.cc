@@ -144,9 +144,11 @@ ncclResult_t ncclDevrFinalize(struct ncclComm* comm) {
       cudaStreamDestroy(stream);
     }
   }
-  CUdeviceptr flatAddr = reinterpret_cast<CUdeviceptr>(devr->lsaFlatBase);
-  CUCHECKIGNORE(cuMemUnmap(flatAddr, devr->lsaSize*devr->bigSize));
-  CUCHECKIGNORE(cuMemAddressFree(flatAddr, devr->lsaSize*devr->bigSize));
+  if (devr->lsaFlatBase != nullptr) {
+    CUdeviceptr flatAddr = reinterpret_cast<CUdeviceptr>(devr->lsaFlatBase);
+    CUCHECKIGNORE(cuMemUnmap(flatAddr, devr->lsaSize*devr->bigSize));
+    CUCHECKIGNORE(cuMemAddressFree(flatAddr, devr->lsaSize*devr->bigSize));
+  }
   ncclShadowPoolDestruct(&devr->shadows);
   ncclSpaceDestruct(&devr->bigSpace);
   free(devr->lsaRankList);
