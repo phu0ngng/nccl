@@ -882,10 +882,7 @@ void inspectorDumpThread::stopThread() {
   inspectorLockWr(&guard);
   run = false;
   inspectorUnlockRWLock(&guard);
-  struct timespec ts;
-  ts.tv_sec = 0;
-  ts.tv_nsec = 1000000; // 1ms
-  nanosleep(&ts, NULL);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
   INFO_INSPECTOR( "NCCL Inspector inspectorDumpThread: stopped");
 }
 
