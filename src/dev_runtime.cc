@@ -783,7 +783,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   struct ncclWindow_vidmem* winHost = nullptr;
   size_t ginSignalShadowsOffset = 0;
 
-  if (comm->nNodes > 1 || reqs->ginForceEnable || reqs->ginCounterCount != 0 || reqs->ginSignalCount != 0) {
+  if ((reqs->ginForceEnable || reqs->ginCounterCount != 0 || reqs->ginSignalCount != 0) && comm->ginSupport) {
     ginActivated = !devr->ginEnabled;
     devr->ginEnabled = true;
   }

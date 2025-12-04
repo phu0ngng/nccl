@@ -909,6 +909,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int cpuVendor;
     int localRanks;
     int p2pnChannelsPerPeer;
+    bool nicFused;
   };
 
   int nChannelsOrig;
@@ -921,6 +922,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   int* pxnPeers = NULL;
   int *topParentLocalRanks = NULL;
   int p2pLevel = -1;
+  bool globalNicFused = false;
 
   timers[TIMER_INIT_ALLGATHER] = clockNano();
   // AllGather1 - begin
@@ -1129,6 +1131,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   allGather3Data[rank].cpuArch = comm->cpuArch;
   allGather3Data[rank].cpuVendor = comm->cpuVendor;
   allGather3Data[rank].p2pnChannelsPerPeer = comm->p2pnChannelsPerPeer;
+  NCCLCHECKGOTO(ncclTopoCheckNicFused(comm, &allGather3Data[rank].nicFused), ret, fail);
 
   comm->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
@@ -1158,6 +1161,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     if (comm->cpuVendor != allGather3Data[r].cpuVendor &&
         comm->cpuVendor != NCCL_TOPO_CPU_VENDOR_MIXED) {
       comm->cpuVendor = NCCL_TOPO_CPU_VENDOR_MIXED;
+    }
+    if (allGather3Data[r].nicFused) {
+      globalNicFused = true;
     }
   }
 
@@ -1427,7 +1433,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   }
 
-  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable();
+  bool crossNicSupported;
+  NCCLCHECKGOTO(ncclTopoCheckCrossNicSupport(&crossNicSupported), ret, fail);
+  comm->ginSupport = comm->sharedRes->ginState.ncclGin != nullptr && crossNicSupported && !globalNicFused;
+  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->ginSupport || comm->nNodes == 1);
   comm->devrState.bigSize = 0;
 
   comm->ceColl.baseUCSymReadyPtr = NULL;

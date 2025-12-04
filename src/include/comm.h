@@ -738,6 +738,7 @@ struct ncclComm {
   int symmetricSupport;
   bool useNetPXN;
   bool useGdr;
+  bool ginSupport;
   int childCount;
 
   struct ncclDevrState devrState; // The symmetric runtime state
