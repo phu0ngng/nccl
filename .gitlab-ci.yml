@@ -11,6 +11,7 @@ stages:
   - profiler_tests
   - inspector_tests
   - replay_tests
+  - cleanup
   - summary
 
 variables:
@@ -20,6 +21,8 @@ variables:
   CUDA_VERSION: "11.7"
   PLANNED_RESERVED: "Reserved"
   FF_USE_FASTZIP: "true"
+  FF_ENABLE_JOB_CLEANUP: "true"
+  GIT_STRATEGY: clone
   ##
   # Default pipeline flow to be triggered
   TRIGGER_PIPELINE: "pre-submit"
@@ -58,6 +61,36 @@ variables:
   RUN_REPLAY_TESTS: "0"
   RUN_PERF_REGRESSION: "0"
   RUN_NCCL4PY_CI: "0"
+  ##
+  # Cluster-specific paths
+  # Used by setup and test jobs to install/reference build artifacts
+  #
+  # EOS cluster
+  EOS_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  EOS_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  EOS_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # CW-DFW cluster
+  CW_DFW_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  CW_DFW_CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+  CW_DFW_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+  # DRACO-OCI cluster
+  DRACO_OCI_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
+  # PRE-NYX cluster
+  PRE_NYX_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  PRE_NYX_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  PRE_NYX_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # PRE-TYCHE cluster
+  PRE_TYCHE_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  PRE_TYCHE_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  PRE_TYCHE_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # THEIA cluster
+  THEIA_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  THEIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  THEIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # BIA cluster
+  BIA_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  BIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  BIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
 
 default:
   # set all jobs to interruptible by default
@@ -98,6 +131,8 @@ workflow:
       variables:
         TRIGGER_PIPELINE: "nightly"
     - when: never
+
+include: .gitlab-template.yml
 
 ##
 ## Stage: build - Start...
@@ -144,7 +179,7 @@ build-pre-tyche:
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
   script:
     - docker/make.sh pre-tyche
     - mv build build-pre-tyche
@@ -164,7 +199,7 @@ build-theia:
   tags:
     - lyris
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
   script:
     - docker/make.sh theia --baremetal-build
     - mv build build-theia
@@ -184,7 +219,7 @@ build-bia:
   tags:
     - bia
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
   script:
     - docker/make.sh bia
     - mv build build-bia
@@ -283,7 +318,7 @@ fairshare-eos:
     - when: never
   needs: []
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
   tags:
     - nccl-eos
   script:
@@ -297,7 +332,7 @@ fairshare-cw-dfw:
     - when: never
   needs: []
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
   tags:
     - nccl-cw-dfw
   script:
@@ -331,6 +366,104 @@ setup-AWS_H100_EFA:
   script:
     - set -e
     - rsync -I -c -aP --inplace --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
+
+setup-pre-nyx:
+  stage: setup
+  extends:
+    - .pre-nyx
+    - .setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.pre-nyx, rules]
+  needs: ["build-ipp6"]
+  variables:
+    BUILD_DIR: "build"
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
+
+setup-pre-tyche:
+  stage: setup
+  extends:
+    - .pre-tyche
+    - .setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.pre-tyche, rules]
+  needs: ["build-pre-tyche"]
+  variables:
+    BUILD_DIR: "build-pre-tyche"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+
+setup-theia:
+  stage: setup
+  extends:
+    - .theia
+    - .setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.theia, rules]
+  needs: ["build-theia"]
+  variables:
+    BUILD_DIR: "build-theia"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+
+setup-bia:
+  stage: setup
+  extends:
+    - .bia
+    - .setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.bia, rules]
+  needs: ["build-bia"]
+  variables:
+    BUILD_DIR: "build-bia"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+
+setup-eos:
+  stage: setup
+  extends:
+    - .eos
+    - .setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.eos, rules]
+  needs: ["build-ipp6"]
+  variables:
+    BUILD_DIR: "build"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+
+setup-cw-dfw:
+  stage: setup
+  extends:
+    - .cw-dfw
+    - .setup
+  rules:
+    # - !reference [.pre_submit, rules]
+    # - !reference [.cw-dfw, rules]
+    - when: never
+  needs: ["build-ipp6"]
+  variables:
+    BUILD_DIR: "build"
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+
+setup-draco-oci:
+  stage: setup
+  extends:
+    - .draco-oci
+    - .setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.draco-oci, rules]
+  needs: ["build-ipp6"]
+  variables:
+    BUILD_DIR: "build"
+    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
 
 ##
 ## Stage: setup - Finish!
@@ -550,19 +683,20 @@ unit_tests-eos:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-eos
   tags:
     - nccl-eos
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 20
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
@@ -609,19 +743,20 @@ unit_tests-cw-dfw:
     #   when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-cw-dfw
   tags:
     - nccl-cw-dfw
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 20
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_PARTITION: backfill
@@ -764,17 +899,18 @@ unit_tests-draco_oci:
     #   when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-eos
   tags:
     - draco-oci-iad
   variables:
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 10
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
@@ -819,12 +955,13 @@ unit_tests-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-pre-nyx
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 20
@@ -832,7 +969,7 @@ unit_tests-pre-nyx:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
@@ -877,12 +1014,13 @@ unit_tests-pre-tyche:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-pre-tyche"]
+  needs: ["setup-pre-tyche"]
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 20
@@ -890,7 +1028,7 @@ unit_tests-pre-tyche:
     NNODES: 1
     NGPUS: 4
     NP: 1
-    NCCL_HOME: build-pre-tyche
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
@@ -1091,12 +1229,13 @@ unit_tests-gin-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-pre-nyx
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 20
@@ -1104,7 +1243,7 @@ unit_tests-gin-pre-nyx:
     NNODES: 1
     NGPUS: 4
     NP: 4
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     GIN_TESTS: 1
@@ -1132,12 +1271,13 @@ unit_tests-gin-pre-tyche:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-pre-tyche"]
+  needs: ["setup-pre-tyche"]
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 20
@@ -1145,7 +1285,7 @@ unit_tests-gin-pre-tyche:
     NNODES: 1
     NGPUS: 4
     NP: 4
-    NCCL_HOME: build-pre-tyche
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     GIN_TESTS: 1
@@ -1175,19 +1315,20 @@ unit_tests-gin-eos:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-eos
   tags:
     - nccl-eos
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 20
     NNODES: 1
     NGPUS: 4
     NP: 4
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
@@ -1218,12 +1359,13 @@ unit_tests-theia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-theia"]
+  needs: ["setup-theia"]
   tags:
     - lyris
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 20
@@ -1231,7 +1373,7 @@ unit_tests-theia:
     NNODES: 1
     NGPUS: 4
     NP: 1
-    NCCL_HOME: build-theia
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
@@ -1276,12 +1418,13 @@ unit_tests-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-bia"]
+  needs: ["setup-bia"]
   tags:
     - bia
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 20
@@ -1289,7 +1432,7 @@ unit_tests-bia:
     NNODES: 1
     NGPUS: 4
     NP: 1
-    NCCL_HOME: build-bia
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
@@ -1328,11 +1471,12 @@ unit_tests-rma-pre-nyx:
     - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
-  needs: [build-ipp6]
+  needs: [setup-pre-nyx]
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 20
@@ -1340,7 +1484,7 @@ unit_tests-rma-pre-nyx:
     NNODES: 4
     NGPUS: 4
     NP: 4
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     RMA_MULTINODE_TESTS: 1
@@ -1367,11 +1511,12 @@ unit_tests-rma-pre-tyche:
     - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
-  needs: [build-pre-tyche]
+  needs: [setup-pre-tyche]
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 20
@@ -1379,7 +1524,7 @@ unit_tests-rma-pre-tyche:
     NNODES: 4
     NGPUS: 4
     NP: 4
-    NCCL_HOME: build-pre-tyche
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     RMA_MULTINODE_TESTS: 1
@@ -1404,11 +1549,12 @@ unit_tests-rma-theia:
     - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
-  needs: [build-theia]
+  needs: [setup-theia]
   tags:
     - lyris
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 20
@@ -1416,7 +1562,7 @@ unit_tests-rma-theia:
     NNODES: 4
     NGPUS: 4
     NP: 4
-    NCCL_HOME: build-theia
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     RMA_MULTINODE_TESTS: 1
@@ -1445,12 +1591,13 @@ examples-validation-theia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-theia"]
+  needs: ["setup-theia"]
   tags:
     - lyris
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 10
@@ -1461,7 +1608,7 @@ examples-validation-theia:
     NP: 4
     SYMMETRIC: 1
     GRAPH: 0
-    NCCL_HOME: build-theia
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: 1
     EXAMPLES_TESTS_BASIC_ONLY: 0
@@ -1638,10 +1785,11 @@ apitest-eos:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-eos
   tags:
     - nccl-eos
   variables:
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 30
@@ -1649,10 +1797,10 @@ apitest-eos:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
@@ -1678,10 +1826,11 @@ apitest-cw-dfw:
     #   when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-cw-dfw
   tags:
     - nccl-cw-dfw
   variables:
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 60
@@ -1689,11 +1838,11 @@ apitest-cw-dfw:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_PARTITION: backfill
-    CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
     SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
@@ -1780,11 +1929,12 @@ apitest-draco_oci:
     #   when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-draco-oci
     - unit_tests-draco_oci
   tags:
     - draco-oci-iad
   variables:
+    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 20
@@ -1792,7 +1942,7 @@ apitest-draco_oci:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
@@ -1818,12 +1968,13 @@ apitest-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-pre-nyx
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 30
@@ -1832,7 +1983,7 @@ apitest-pre-nyx:
     NNODES: 1
     NGPUS: 8
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
@@ -1857,12 +2008,13 @@ apitest-pre-tyche:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-pre-tyche"]
+  needs: ["setup-pre-tyche"]
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 30
@@ -1871,7 +2023,7 @@ apitest-pre-tyche:
     NNODES: 1
     NGPUS: 4
     NP: 1
-    NCCL_HOME: build-pre-tyche
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
@@ -1970,12 +2122,13 @@ apitest-theia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-theia"]
+  needs: ["setup-theia"]
   tags:
     - lyris
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 30
@@ -1984,7 +2137,7 @@ apitest-theia:
     NNODES: 1
     NGPUS: 4
     NP: 1
-    NCCL_HOME: build-theia
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
@@ -2009,12 +2162,13 @@ apitest-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-bia"]
+  needs: ["setup-bia"]
   tags:
     - bia
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 30
@@ -2022,7 +2176,7 @@ apitest-bia:
     NNODES: 1
     NGPUS: 4
     NP: 1
-    NCCL_HOME: build-bia
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
@@ -2174,7 +2328,7 @@ nic-fusion-A40:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: [build-ipp6]
+  needs: ["build-ipp6"]
   tags:
     - a40
   variables:
@@ -2202,12 +2356,13 @@ perftest-single-eos:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-eos
   tags:
     - nccl-eos
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 40
@@ -2219,7 +2374,7 @@ perftest-single-eos:
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
@@ -2240,12 +2395,13 @@ perftest-single-cw-dfw:
     #   when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-cw-dfw
   tags:
     - nccl-cw-dfw
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 60
@@ -2257,7 +2413,7 @@ perftest-single-cw-dfw:
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_PARTITION: backfill
   script:
@@ -2335,10 +2491,11 @@ perftest_single-draco_oci:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-draco-oci
   tags:
     - draco-oci-iad
   variables:
+    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 30
@@ -2353,7 +2510,7 @@ perftest_single-draco_oci:
     # Disable this test currently as it's affected by the GIN proxy bug
     # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2375,12 +2532,13 @@ perftest-single-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-pre-nyx
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 80
@@ -2391,7 +2549,7 @@ perftest-single-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SYMMETRIC: 1
     CE_COLL: 1
     RMA: 1
@@ -2414,12 +2572,13 @@ perftest-single-pre-tyche:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-pre-tyche"]
+  needs: ["setup-pre-tyche"]
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 45
@@ -2433,7 +2592,7 @@ perftest-single-pre-tyche:
     SYMMETRIC: 1
     CE_COLL: 1
     RMA: 1
-    NCCL_HOME: build-pre-tyche
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     ENABLE_MNNVL_TUNER_PLUGIN: 1
   script:
@@ -2528,12 +2687,13 @@ perftest-single-theia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-theia"]
+  needs: ["setup-theia"]
   tags:
     - lyris
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 45
@@ -2546,7 +2706,7 @@ perftest-single-theia:
     GRAPH: 0
     SYMMETRIC: 1
     RMA: 1
-    NCCL_HOME: build-theia
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2566,12 +2726,13 @@ perftest-single-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
-  needs: ["build-bia"]
+  needs: ["setup-bia"]
   tags:
     - bia
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 120
@@ -2583,7 +2744,7 @@ perftest-single-bia:
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
-    NCCL_HOME: build-bia
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2610,8 +2771,8 @@ self-test-pytorch-container-eos:
   parallel: 4
   variables:
     CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
   script:
     - chmod +x test/scripts/dlfw/*.sh
     - srun -N1 --exclusive -t60 -A coreai_libraries_nccl -J coreai_libraries_nccl-bewilliams.test-cont --container-image="$CONTAINER" --container-mounts=$(pwd):/workspace/nccl /workspace/nccl/test/scripts/dlfw/run_dlfw_selftest.sh
@@ -2632,16 +2793,17 @@ perftest-multi-eos:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-eos
   tags:
     - nccl-eos
   variables:
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 60
     RUN_MODE: "MPI"
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
@@ -2652,7 +2814,7 @@ perftest-multi-eos:
     NP: 8
     SKIP_FT_INIT: 1
     SYMMETRIC: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
@@ -2675,16 +2837,17 @@ perftest-multi-cw-dfw:
     #   when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-cw-dfw
   tags:
     - nccl-cw-dfw
   variables:
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 60
     RUN_MODE: "MPI"
-    CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
     NCCL_IB_SL: "1"
     OMPI_MCA_btl: "^openib"
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include enp90s0f0np0"
@@ -2695,7 +2858,7 @@ perftest-multi-cw-dfw:
     NP: 8
     SKIP_FT_INIT: 1
     SYMMETRIC: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_PARTITION: backfill
   script:
@@ -2776,10 +2939,11 @@ perftest_multi-draco_oci:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-draco-oci
   tags:
     - draco-oci-iad
   variables:
+    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 30
@@ -2793,7 +2957,7 @@ perftest_multi-draco_oci:
     # Disable this test currently as it's affected by the GIN proxy bug
     # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
   script:
@@ -2815,12 +2979,13 @@ perftest-multi-pre-nyx:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-pre-nyx
   tags:
     - prenyx
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 60
@@ -2830,7 +2995,7 @@ perftest-multi-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SYMMETRIC: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
@@ -2855,12 +3020,13 @@ perftest-multi-pre-tyche:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
-  needs: ["build-pre-tyche"]
+  needs: ["setup-pre-tyche"]
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 45
@@ -2873,7 +3039,7 @@ perftest-multi-pre-tyche:
     CE_COLL: 1
     RMA: 1
     GRAPH: 0
-    NCCL_HOME: build-pre-tyche
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     ENABLE_MNNVL_TUNER_PLUGIN: 1
@@ -2971,12 +3137,13 @@ perftest-multi-theia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
-  needs: ["build-theia"]
+  needs: ["setup-theia"]
   tags:
     - lyris
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 45
@@ -2988,7 +3155,7 @@ perftest-multi-theia:
     SYMMETRIC: 1
     RMA: 1
     GRAPH: 0
-    NCCL_HOME: build-theia
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
   script:
@@ -3012,12 +3179,13 @@ perftest-multi-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
-  needs: ["build-bia"]
+  needs: ["setup-bia"]
   tags:
     - bia
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 120
@@ -3030,7 +3198,7 @@ perftest-multi-bia:
     SYMMETRIC: 0
     DEVICE_API: 0
     GRAPH: 0
-    NCCL_HOME: build-bia
+    NCCL_HOME: ${INSTALL_DIR}/build
     SKIP_FT_TEST: 1
     SKIP_NIC_FUSION: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
@@ -3064,16 +3232,17 @@ perf-regression-eos:
       when: always
     - when: never
   needs:
-    - build-ipp6
+    - setup-eos
   tags:
     - nccl-eos
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 60
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
@@ -3091,16 +3260,17 @@ perf-regression-pre-tyche:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
-  needs: ["build-pre-tyche"]
+  needs: ["setup-pre-tyche"]
   tags:
     - ptyche
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 60
-    NCCL_HOME: build-pre-tyche
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
@@ -3118,16 +3288,17 @@ perf-regression-theia:
     - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
-  needs: ["build-theia"]
+  needs: ["setup-theia"]
   tags:
     - lyris
   variables:
-    CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-    ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 60
-    NCCL_HOME: build-theia
+    NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
@@ -3240,4 +3411,206 @@ summarize-pipeline:
 
 ##
 ## Stage: summary - Finish!
+##
+
+##
+## Stage: cleanup - Start...
+##
+
+# Cleanup jobs - Remove install directories to free up space
+cleanup-eos:
+  extends:
+    - .cleanup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.eos, rules]
+  tags:
+    - nccl-eos
+  needs:
+    - job: fairshare-eos
+      optional: true
+    - job: setup-eos
+      optional: true
+    - job: unit_tests-eos
+      optional: true
+    - job: unit_tests-gin-eos
+      optional: true
+    - job: apitest-eos
+      optional: true
+    - job: perftest-single-eos
+      optional: true
+    - job: self-test-pytorch-container-eos
+      optional: true
+    - job: perftest-multi-eos
+      optional: true
+    - job: perf-regression-eos
+      optional: true
+  variables:
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+
+cleanup-cw-dfw:
+  stage: cleanup
+  extends:
+    - .cleanup
+  rules:
+    # - !reference [.pre_submit, rules]
+    # - !reference [.cw-dfw, rules]
+    - when: never
+  tags:
+    - nccl-cw-dfw
+  needs:
+    - job: fairshare-cw-dfw
+      optional: true
+    - job: setup-cw-dfw
+      optional: true
+    - job: unit_tests-cw-dfw
+      optional: true
+    - job: apitest-cw-dfw
+      optional: true
+    - job: perftest-single-cw-dfw
+      optional: true
+    - job: perftest-multi-cw-dfw
+      optional: true
+  variables:
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+
+cleanup-draco-oci:
+  stage: cleanup
+  extends:
+    - .cleanup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.draco-oci, rules]
+  tags:
+    - draco-oci-iad
+  needs:
+    - job: fairshare-draco-oci
+      optional: true
+    - job: setup-draco-oci
+      optional: true
+    - job: unit_tests-draco_oci
+      optional: true
+    - job: apitest-draco_oci
+      optional: true
+    - job: perftest_single-draco_oci
+      optional: true
+    - job: perftest_multi-draco_oci
+      optional: true
+  variables:
+    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+
+cleanup-pre-nyx:
+  extends:
+    - .cleanup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.pre-nyx, rules]
+  tags:
+    - prenyx
+  needs:
+    - job: setup-pre-nyx
+      optional: true
+    - job: unit_tests-pre-nyx
+      optional: true
+    - job: unit_tests-gin-pre-nyx
+      optional: true
+    - job: unit_tests-rma-pre-nyx
+      optional: true
+    - job: apitest-pre-nyx
+      optional: true
+    - job: perftest-single-pre-nyx
+      optional: true
+    - job: perftest-multi-pre-nyx
+      optional: true
+  variables:
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+
+cleanup-pre-tyche:
+  stage: cleanup
+  extends:
+    - .cleanup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.pre-tyche, rules]
+  tags:
+    - ptyche
+  needs:
+    - job: build-pre-tyche
+      optional: true
+    - job: setup-pre-tyche
+      optional: true
+    - job: unit_tests-pre-tyche
+      optional: true
+    - job: unit_tests-gin-pre-tyche
+      optional: true
+    - job: unit_tests-rma-pre-tyche
+      optional: true
+    - job: apitest-pre-tyche
+      optional: true
+    - job: perftest-single-pre-tyche
+      optional: true
+    - job: perftest-multi-pre-tyche
+      optional: true
+    - job: perf-regression-pre-tyche
+      optional: true
+  variables:
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+
+cleanup-theia:
+  stage: cleanup
+  extends:
+    - .cleanup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.theia, rules]
+  tags:
+    - lyris
+  needs:
+    - job: build-theia
+      optional: true
+    - job: setup-theia
+      optional: true
+    - job: unit_tests-theia
+      optional: true
+    - job: unit_tests-rma-theia
+      optional: true
+    - job: examples-validation-theia
+      optional: true
+    - job: apitest-theia
+      optional: true
+    - job: perftest-single-theia
+      optional: true
+    - job: perftest-multi-theia
+      optional: true
+    - job: perf-regression-theia
+      optional: true
+  variables:
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+
+cleanup-bia:
+  extends:
+    - .cleanup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.bia, rules]
+  tags:
+    - bia
+  needs:
+    - job: build-bia
+      optional: true
+    - job: setup-bia
+      optional: true
+    - job: unit_tests-bia
+      optional: true
+    - job: apitest-bia
+      optional: true
+    - job: perftest-single-bia
+      optional: true
+    - job: perftest-multi-bia
+      optional: true
+  variables:
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+
+##
+## Stage: cleanup - Finish!
 ##
