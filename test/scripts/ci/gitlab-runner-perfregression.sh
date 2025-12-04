@@ -133,7 +133,7 @@ gcperf-tools generate-job-script \
 # Submit the job
 cd perfregression
 echo "Submitting job script..."
-sbatch --wait -N ${NNODES} ${EXTRA_SLURM_ARGS} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
+sbatch --wait --export=ALL -N ${NNODES} ${EXTRA_SLURM_ARGS} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
 
 # Convert results to CSV
 echo "Converting results to CSV..."

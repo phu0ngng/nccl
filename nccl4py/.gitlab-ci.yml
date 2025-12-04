@@ -168,6 +168,9 @@ setup_nccl4py_cu13-ipp6:
 
       test -f $NCCL_HOME/lib/libnccl.so
       export LD_PRELOAD=${NCCL_HOME}/lib/libnccl.so
+      export OMPI_MCA_rmaps_oversubscribe=1
+      export OMPI_MCA_rmaps_binding_policy=none
+      export OMPI_MCA_btl="tcp,self"
 
       srun \
       -p l40s-cicd \
