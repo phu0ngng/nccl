@@ -302,6 +302,29 @@ if [ "$ENABLE_MNNVL_TUNER_PLUGIN" == "1" ]; then
 fi
 unset NCCL_ALLGATHERV_ENABLE
 
+if [ "$SKIP_COMM_MGT_TESTS" != "1" ]; then
+# run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
+  run_command "comm_ops_perf_init"       $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "init"
+  run_command "comm_ops_perf_init_abort" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "init --abort"
+
+  run_command "comm_ops_perf_split"       $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "split"
+  run_command "comm_ops_perf_split_share" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "split --share"
+  run_command "comm_ops_perf_split_abort" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "split --abort"
+
+  run_command "comm_ops_perf_shrink"       $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "shrink"
+  run_command "comm_ops_perf_shrink_share" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "shrink --share"
+  run_command "comm_ops_perf_shrink_abort" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "shrink --abort"
+
+  if [ "${WORKAROUND_NVBUG_5793707}" == "1" ]; then
+      export NCCL_NET_MERGE_LEVEL=LOC
+  fi
+  run_command "comm_ops_perf_grow"       $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "grow"
+  run_command "comm_ops_perf_grow_abort" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "grow --abort"
+  if [ "${WORKAROUND_NVBUG_5793707}" == "1" ]; then
+    unset NCCL_NET_MERGE_LEVEL
+  fi
+fi
+
 print_failed_commands
 end_junit_file
 ci_exit
