@@ -775,7 +775,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   size_t bufSizeTotal;
   int nGinContexts = 0;
   int ginSignalTotal = 0, ginCounterTotal = 0;
-  struct ncclDevResourceRequirements* resReqsHead;
+  struct ncclDevResourceRequirements* resReqsHead = reqs->resourceRequirementsList;
   struct ncclDevResourceRequirements lsaBarReq;
   cudaStream_t stream = nullptr;
   struct ncclDevResourceRequirements railGinBarrierReq;
@@ -784,8 +784,17 @@ ncclResult_t ncclDevrCommCreateInternal(
   struct ncclDevrWindow* win = nullptr;
   struct ncclWindow_vidmem* winHost = nullptr;
   size_t ginSignalShadowsOffset = 0;
+  bool userRequestedGin = reqs->ginForceEnable || reqs->ginSignalCount > 0 || reqs->ginCounterCount > 0;
 
-  if ((reqs->ginForceEnable || reqs->ginCounterCount != 0 || reqs->ginSignalCount != 0) && comm->ginSupport) {
+  {
+    struct ncclDevResourceRequirements* rr = resReqsHead;
+    while (!userRequestedGin && rr != nullptr) {
+      userRequestedGin = rr->ginSignalCount > 0 || rr->ginCounterCount > 0;
+      rr = rr->next;
+    }
+  }
+
+  if (userRequestedGin && comm->ginSupport) {
     ginActivated = !devr->ginEnabled;
     devr->ginEnabled = true;
   }
