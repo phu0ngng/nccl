@@ -263,7 +263,7 @@ build-cmake:
     SLURM_TIME: 15
   script:
     # TODO (kartiki) - Invoke this via docker/make.sh
-    - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh
+    - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh --ci-build
   allow_failure: false
 
 ##
