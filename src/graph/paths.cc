@@ -949,10 +949,20 @@ ncclResult_t ncclTopoGetGpuMaxPath(struct ncclTopoSystem* system, int type, int*
   return ncclSuccess;
 }
 
+// Check whether the system is all GPUs directly or indirectly connected to each other
+// through NVLink and C2C.
 ncclResult_t ncclTopoPathAllNVLink(struct ncclTopoSystem* system, int* allNvLink) {
   int maxPath;
   NCCLCHECK(ncclTopoGetGpuMaxPath(system, GPU, &maxPath));
   *allNvLink = maxPath >= PATH_PIX ? 0 : 1;
+  return ncclSuccess;
+}
+
+// Check whether the system is all GPUs connected directly to each other through NVLink/NVSwitch.
+ncclResult_t ncclTopoPathAllDirectNVLink(struct ncclTopoSystem* system, bool* directNvlink) {
+  int maxPath;
+  NCCLCHECK(ncclTopoGetGpuMaxPath(system, GPU, &maxPath));
+  *directNvlink = maxPath == PATH_NVL;
   return ncclSuccess;
 }
 

@@ -1434,6 +1434,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   }
 
   bool crossNicSupported;
+  NCCLCHECKGOTO(ncclTopoPathAllDirectNVLink(comm->topo, &comm->isAllDirectNvlink), ret, fail);
   NCCLCHECKGOTO(ncclTopoCheckCrossNicSupport(&crossNicSupported), ret, fail);
   comm->ginSupport = comm->sharedRes->ginState.ncclGin != nullptr && crossNicSupported && !globalNicFused;
   comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->ginSupport || comm->nNodes == 1);
