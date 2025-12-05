@@ -137,4 +137,7 @@ inline ncclResult_t ncclCudaDriverVersion(int* driver) {
   *driver = version;
   return ncclSuccess;
 }
+
+ncclResult_t ncclCuStreamBatchMemOp(cudaStream_t stream, unsigned int numOps, CUstreamBatchMemOpParams* batchParams);
+
 #endif

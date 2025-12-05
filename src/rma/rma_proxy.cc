@@ -732,7 +732,7 @@ ncclResult_t ncclRmaPutProxy(struct ncclComm* comm, struct ncclKernelPlan* plan,
   }
 
   // Execute both operations in a single batch after all Descs are enqueued
-  CUCHECKGOTO(cuStreamBatchMemOp(stream, 2*nRmaTasksProxy, batchParams, 0), ret, fail);
+  NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, 2*nRmaTasksProxy, batchParams), ret, fail);
 
 exit:
   if (batchParams) free(batchParams);
@@ -790,7 +790,7 @@ ncclResult_t ncclRmaWaitSignalProxy(struct ncclComm* comm, struct ncclKernelPlan
     }
 
     // Execute all wait operations in a single batch
-    CUCHECKGOTO(cuStreamBatchMemOp(stream, opIdx, batchParams, 0), ret, fail);
+    NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, opIdx, batchParams), ret, fail);
   }
 
   // Free the task
