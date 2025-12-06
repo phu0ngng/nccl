@@ -270,16 +270,17 @@ class ncclCommGrow_test : public ::testing::Test {
 };
 
 TEST_F(ncclCommGrow_test, basic_grow_single) {
-  if (nVis < 3) return;
+  int oldN = nVis-1;
+  if (oldN < 1) return;
 
   std::vector<ncclComm_t> comms;
-  initCommsWithConfig(comms, 2);
-  growCommsWithConfig(comms, 2, 3);
+  initCommsWithConfig(comms, oldN);
+  growCommsWithConfig(comms, oldN, nVis);
 }
 
 TEST_F(ncclCommGrow_test, basic_grow_multi) {
-  if (nVis < 4) return;
-  int oldN = 2;
+  int oldN = nVis-2;
+  if (oldN < 1) return;
 
   std::vector<ncclComm_t> comms;
   initCommsWithConfig(comms, oldN, /*blocking=*/false);
@@ -306,7 +307,7 @@ TEST_F(ncclCommGrow_test, sequential_grows) {
 // Test grow + allreduce (non-blocking mode)
 TEST_F(ncclCommGrow_test, allreduce_after_grow) {
   int oldN = nVis / 2;
-  if (oldN < 2) return;
+  if (oldN < 1) return;
 
   std::vector<ncclComm_t> comms;
   initCommsWithConfig(comms, oldN, /*blocking=*/false);
@@ -319,10 +320,11 @@ TEST_F(ncclCommGrow_test, allreduce_after_grow) {
 }
 
 TEST_F(ncclCommGrow_test, invalid_operations) {
-  if (nVis < 3) return;
+  int oldN = nVis-1;
+  if (oldN < 1) return;
 
   std::vector<ncclComm_t> comms;
-  initCommsWithConfig(comms, 2);
+  initCommsWithConfig(comms, oldN);
 
   ncclUniqueId growId;
   ASSERT_EQ(ncclSuccess, ncclCommGetUniqueId(comms[0], &growId));
@@ -335,12 +337,12 @@ TEST_F(ncclCommGrow_test, invalid_operations) {
   ASSERT_EQ(ncclInvalidArgument, ncclCommGrow(comms[0], 1, &growId, -1, &newcomm, NULL));
 
   // Existing rank passing explicit rank instead of -1 should fail
-  ASSERT_EQ(ncclInvalidArgument, ncclCommGrow(comms[0], 3, &growId, 0, &newcomm, NULL));
+  ASSERT_EQ(ncclInvalidArgument, ncclCommGrow(comms[0], nVis, &growId, 0, &newcomm, NULL));
 
   // New rank passing NULL uniqueId should fail
-  ASSERT_EQ(ncclInvalidArgument, ncclCommGrow(NULL, 3, NULL, 0, &newcomm, NULL));
+  ASSERT_EQ(ncclInvalidArgument, ncclCommGrow(NULL, nVis, NULL, 0, &newcomm, NULL));
 
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < oldN; ++i) {
     ASSERT_EQ(ncclSuccess, ncclCommDestroy(comms[i]));
   }
 }
@@ -348,7 +350,7 @@ TEST_F(ncclCommGrow_test, invalid_operations) {
 // Nonblocking grow
 TEST_F(ncclCommGrow_test, nonblocking_grow) {
   int oldN = nVis / 2;
-  if (oldN < 2) return;
+  if (oldN < 1) return;
 
   // Init nonblocking and grow (auto-cleaned by helper)
   std::vector<ncclComm_t> comms;
@@ -380,17 +382,15 @@ TEST_F(ncclCommGrow_test, grow_then_split) {
 
 // Grow then shrink
 TEST_F(ncclCommGrow_test, grow_then_shrink) {
-  if (nVis < 3) return;
+  int oldN = nVis-1;
+  if (oldN < 1) return;
 
-  // Init 2 GPUs and grow to 3 (helper verifies and destroys old comms)
   std::vector<ncclComm_t> comms;
-  initCommsWithConfig(comms, 2);
+  initCommsWithConfig(comms, oldN);
 
-  std::vector<ncclComm_t> grownComms;
-  growCommsWithConfig(comms, 2, 3, &grownComms);
+  growCommsWithConfig(comms, oldN, nVis, &allGrownComms);
 
-  // Shrink back to 2 (exclude rank 2, helper verifies and auto-destroys all comms)
-  std::vector<int> excludeRanks = {2};
-  shrinkCommsWithConfig(grownComms, excludeRanks);
+  std::vector<int> excludeRanks = {oldN};
+  shrinkCommsWithConfig(allGrownComms, excludeRanks);
 }
 
