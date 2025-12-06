@@ -1048,6 +1048,7 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   props->nRanks = comm->nRanks;
   props->cudaDev = comm->cudaDev;
   props->nvmlDev = comm->nvmlDev;
+  props->deviceApiSupport = comm->symmetricSupport;
   props->multimemSupport = comm->nvlsSupport;
   NCCLCHECK(getGinType(comm, &props->ginType));
   return ncclSuccess;

@@ -144,6 +144,7 @@ struct ncclCommProperties {
   int nRanks;
   int cudaDev;
   int nvmlDev;
+  bool deviceApiSupport;
   bool multimemSupport;
   ncclGinType_t ginType;
 };
