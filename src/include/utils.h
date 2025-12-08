@@ -20,6 +20,7 @@
 #include <type_traits>
 #include <mutex>
 #include <condition_variable>
+#include <random>
 
 int ncclCudaCompCap();
 
@@ -59,16 +60,25 @@ inline uint64_t clockNano() {
   return uint64_t(ts.tv_sec)*1000*1000*1000 + ts.tv_nsec;
 }
 
-/* get any bytes of random data from /dev/urandom, return ncclSuccess (0) if it succeeds. */
+/* get any bytes of random data from system RNG, return ncclSuccess (0) if it succeeds. */
 inline ncclResult_t getRandomData(void* buffer, size_t bytes) {
-  ncclResult_t ret = ncclSuccess;
   if (bytes > 0) {
-    const size_t one = 1UL;
-    FILE* fp = fopen("/dev/urandom", "r");
-    if (buffer == NULL || fp == NULL || fread(buffer, bytes, one, fp) != one) ret = ncclSystemError;
-    if (fp) fclose(fp);
+    if (buffer == NULL) {
+      WARN("getRandomData: buffer is NULL");
+      return ncclSystemError;
+    }
+    try {
+      std::random_device rd;
+      unsigned char* buf = static_cast<unsigned char*>(buffer);
+      for (size_t i = 0; i < bytes; ++i) {
+        buf[i] = static_cast<unsigned char>(rd());
+      }
+    } catch (const std::exception& e) {
+      WARN("getRandomData: std::random_device failed: %s", e.what());
+      return ncclSystemError;
+    }
   }
-  return ret;
+  return ncclSuccess;
 }
 
 static inline int gcd(int a, int b) {
