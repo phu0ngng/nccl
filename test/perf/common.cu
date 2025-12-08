@@ -1218,6 +1218,10 @@ testResult_t threadInit(struct threadArgs* args) {
     }
     ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
     NCCLCHECK(ncclCommQueryProperties(args->comms[0][0], &commProperties));
+    if (!commProperties.deviceApiSupport) {
+      testSkipReason = "Device API is not supported on this system\n";
+      return testSkipped;
+    }
     TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
 #else
     ncclDevCommRequirements reqs = {};
@@ -2183,6 +2187,10 @@ testResult_t run() {
       }
       ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
       NCCLCHECK(ncclCommQueryProperties(comms[0][0], &commProperties));
+      if (!commProperties.deviceApiSupport) {
+        testSkipReason = "Device API is not supported on this system\n";
+        return testSkipped;
+      }
       TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
 #else
       ncclDevCommRequirements reqs = {};
