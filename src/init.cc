@@ -1438,6 +1438,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(ncclTopoCheckCrossNicSupport(&crossNicSupported), ret, fail);
   comm->ginSupport = comm->sharedRes->ginState.ncclGin != nullptr && crossNicSupported && !globalNicFused;
   comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->ginSupport || comm->nNodes == 1);
+  if (!comm->symmetricSupport) {
+    INFO(NCCL_INIT, "Symmetric memory is not supported. cuMemEnable %d, "
+      "ginSupport %d, globalNicFused %d", ncclCuMemEnable(), comm->ginSupport, globalNicFused);
+  }
   comm->devrState.bigSize = 0;
 
   comm->ceColl.baseUCSymReadyPtr = NULL;
