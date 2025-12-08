@@ -3,7 +3,7 @@ stages:
   - unit-tests
   - setup
   - apitests
-  - teardown
+  - cleanup
 
 variables:
   # Common
@@ -18,10 +18,11 @@ variables:
   # IPP6
   IPP6_CUDA12_HOME: /storage/toolkits/cuda-12.9
   IPP6_CUDA13_HOME: /storage/toolkits/cuda-13.0
-  IPP6_WORKSPACE_DIR: /storage/gitlab-runner/nccl4py/$CI_PIPELINE_ID
-  IPP6_NCCL_HOME: $IPP6_WORKSPACE_DIR/nccl
-  IPP6_NCCL4PY_CUDA12_HOME: $IPP6_WORKSPACE_DIR/$NCCL4PY_CUDA12_TARGET
-  IPP6_NCCL4PY_CUDA13_HOME: $IPP6_WORKSPACE_DIR/$NCCL4PY_CUDA13_TARGET
+  IPP6_WORKSPACE_DIR: /storage/gitlab-runner/nccl/install/${PARENT_PIPELINE_ID}
+  IPP6_NCCL_HOME: $IPP6_WORKSPACE_DIR/build
+  IPP6_NCCL4PY_HOME: ${IPP6_WORKSPACE_DIR}/nccl4py/${CI_PIPELINE_ID}
+  IPP6_NCCL4PY_CUDA12_HOME: $IPP6_NCCL4PY_HOME/$NCCL4PY_CUDA12_TARGET
+  IPP6_NCCL4PY_CUDA13_HOME: $IPP6_NCCL4PY_HOME/$NCCL4PY_CUDA13_TARGET
 
 # Allow pipeline to be triggered only via the parent
 workflow:
@@ -98,24 +99,6 @@ unit_tests:
 ## Stage: setup - Start...
 ##
 
-setup_nccl-ipp6:
-  stage: setup
-  tags:
-    - ipp6-nccl
-  needs:
-    - pipeline: $PARENT_PIPELINE_ID
-      job: build-ipp6
-  variables:
-    GIT_STRATEGY: none
-    NCCL_HOME: $IPP6_NCCL_HOME
-  script:
-    - set -x
-    - |
-      echo "Configuring NCCL under $NCCL_HOME"
-      mkdir -p $NCCL_HOME
-      mv build/* $NCCL_HOME/
-      ls -lrt $NCCL_HOME
-
 .base_setup_nccl4py_job-ipp6:
   stage: setup
   tags:
@@ -157,7 +140,8 @@ setup_nccl4py_cu13-ipp6:
 .base_api_tests_job-ipp6:
   stage: apitests
   needs:
-    - setup_nccl-ipp6
+    - pipeline: $PARENT_PIPELINE_ID
+      job: setup-ipp6
   tags:
     - ipp6-nccl
   <<: *make_dev_step
@@ -173,14 +157,14 @@ setup_nccl4py_cu13-ipp6:
       export OMPI_MCA_btl="tcp,self"
 
       srun \
-      -p l40s-cicd \
+      -p ${SLURM_PARTITION} \
       -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:apitests:$NCCL4PY_CUDA_TARGET \
       --export=ALL,NCCL_P2P_DISABLE=1,NCCL_IB_DISABLE=1 \
-      -t 10 \
-      -N 2 \
+      -t ${SLURM_TIME} \
+      -N ${NNODES} \
       --exclusive \
-      -n 4 \
-      --ntasks-per-node=2 \
+      -n ${NP} \
+      --ntasks-per-node=${NGPUS} \
       --mpi=pmix \
       uv run pytest -v --with-mpi --basetemp=apitest_logs/${NCCL4PY_CUDA_TARGET} tests/apitest/
   artifacts:
@@ -189,42 +173,80 @@ setup_nccl4py_cu13-ipp6:
       - nccl4py/apitest_logs
     expire_in: 48 hrs
 
-apitests_cu12-ipp6:
+apitests_cu12-single-l40s-ipp6:
   extends: .base_api_tests_job-ipp6
   variables:
     CUDA_HOME: $IPP6_CUDA12_HOME
     NCCL_HOME: $IPP6_NCCL_HOME
     NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA12_TARGET
+    SLURM_PARTITION: l40s-cicd
+    SLURM_TIME: 10
+    NNODES: 1
+    NP: 2
+    NGPUS: 2
 
-apitests_cu13-ipp6:
+apitests_cu13-single-l40s-ipp6:
   extends: .base_api_tests_job-ipp6
   variables:
     CUDA_HOME: $IPP6_CUDA13_HOME
     NCCL_HOME: $IPP6_NCCL_HOME
     NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA13_TARGET
+    SLURM_PARTITION: l40s-cicd
+    SLURM_TIME: 10
+    NNODES: 1
+    NP: 2
+    NGPUS: 2
+
+apitests_cu12-dual-l40s-ipp6:
+  extends: .base_api_tests_job-ipp6
+  variables:
+    CUDA_HOME: $IPP6_CUDA12_HOME
+    NCCL_HOME: $IPP6_NCCL_HOME
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA12_TARGET
+    SLURM_PARTITION: l40s-cicd
+    SLURM_TIME: 10
+    NNODES: 2
+    NP: 4
+    NGPUS: 2
+
+apitests_cu13-dual-l40s-ipp6:
+  extends: .base_api_tests_job-ipp6
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+    NCCL_HOME: $IPP6_NCCL_HOME
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA13_TARGET
+    SLURM_PARTITION: l40s-cicd
+    SLURM_TIME: 10
+    NNODES: 2
+    NP: 4
+    NGPUS: 2
 
 ##
 ## Stage: apitests - Finish!
 ##
 
 ##
-## Stage: teardown - Start...
+## Stage: cleanup - Start...
 ##
 
-teardown-ipp6:
-  stage: teardown
+cleanup-ipp6:
+  stage: cleanup
   tags:
     - ipp6-nccl
   needs:
-    - job: apitests_cu12-ipp6
+    - job: apitests_cu12-single-l40s-ipp6
       artifacts: false
-    - job: apitests_cu13-ipp6
+    - job: apitests_cu13-single-l40s-ipp6
+      artifacts: false
+    - job: apitests_cu12-dual-l40s-ipp6
+      artifacts: false
+    - job: apitests_cu13-dual-l40s-ipp6
       artifacts: false
   variables:
-    WORKSPACE_DIR: $IPP6_WORKSPACE_DIR
+    NCCL4PY_HOME: $IPP6_NCCL4PY_HOME
   script:
-    - rm -rf $WORKSPACE_DIR
+    - rm -rf $NCCL4PY_HOME
 
 ##
-## Stage: teardown - Finish!
+## Stage: cleanup - Finish!
 ##
