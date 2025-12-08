@@ -1,7 +1,7 @@
 stages:
   - build
-  - downstream
   - setup
+  - downstream
   - health
   - unit_tests
   - api_tests
@@ -58,7 +58,6 @@ variables:
   RUN_DLFW_TESTS: "0"
   RUN_PROFILER_TESTS: "0"
   RUN_INSPECTOR_TESTS: "0"
-  RUN_REPLAY_TESTS: "0"
   RUN_PERF_REGRESSION: "0"
   RUN_NCCL4PY_CI: "0"
   ##
@@ -91,6 +90,8 @@ variables:
   BIA_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
   BIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   BIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # IPP6 cluster
+  IPP6_INSTALL_DIR: "/storage/gitlab-runner/nccl/install/${CI_PIPELINE_ID}"
 
 default:
   # set all jobs to interruptible by default
@@ -156,11 +157,14 @@ build-trace:
 build-ipp6:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1" || $RUN_NCCL4PY_CI == "1"))
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1" || $RUN_NCCL4PY_CI == "1" || $RUN_PROFILER_TESTS == "1" || $RUN_INSPECTOR_TESTS == "1"))
       when: always
     - when: never
   tags:
     - ipp6-nccl
+  variables:
+    INSTALL_DIR: $IPP6_INSTALL_DIR
+    BUILD_DIR: build
   script:
     - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
   artifacts:
@@ -271,44 +275,8 @@ build-cmake:
 ##
 
 ##
-## Stage: downstream - Start...
-##
-
-nccl4py_ci:
-  stage: downstream
-  needs:
-    - build-ipp6
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_NCCL4PY_CI == "1")
-      when: always
-    - when: never
-  trigger:
-    include: nccl4py/.gitlab-ci.yml
-    strategy: depend
-  variables:
-    PARENT_PIPELINE_ID: $CI_PIPELINE_ID
-
-##
-## Stage: downstream - Finish!
-##
-
-##
 ## Stage: setup - Start...
 ##
-
-# Kicks off an independent CI pipeline on QA nodes
-# https://gitlab-master.nvidia.com/xiaojingl/comms_lib_auto/-/blob/main/NCCL_CI/ci_perftest.sh?ref_type=heads
-QA-team-ci:
-  stage: setup
-  dependencies: []
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly)$/
-      when: always
-    - when: never
-  tags:
-    - cqa_host_runner
-  script:
-    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
 
 fairshare-eos:
   stage: setup
@@ -465,9 +433,57 @@ setup-draco-oci:
     BUILD_DIR: "build"
     INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
 
+setup-ipp6:
+  stage: setup
+  extends:
+    - .ipp6
+    - .setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.ipp6, rules]
+  needs: ["build-ipp6"]
+  variables:
+    BUILD_DIR: "build"
+    INSTALL_DIR: "${IPP6_INSTALL_DIR}"
+
 ##
 ## Stage: setup - Finish!
 ##
+
+##
+## Stage: downstream - Start...
+##
+
+# Kicks off an independent CI pipeline on QA nodes
+# https://gitlab-master.nvidia.com/xiaojingl/comms_lib_auto/-/blob/main/NCCL_CI/ci_perftest.sh?ref_type=heads
+QA-team-ci:
+  stage: downstream
+  dependencies: []
+  rules:
+    - !reference [.post_submit, rules]
+  tags:
+    - cqa_host_runner
+  script:
+    - bash $CI_BUILDS_DIR/CI/ci_perftest.sh
+
+nccl4py_ci:
+  stage: downstream
+  needs:
+    - setup-ipp6
+  rules:
+    - !reference [.pre_submit, rules]
+    - if: $RUN_ON_IPP6 == "1" && $RUN_NCCL4PY_CI == "1"
+      when: always
+  trigger:
+    include: nccl4py/.gitlab-ci.yml
+    strategy: depend
+  variables:
+    PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+
+##
+## Stage: downstream - Finish!
+##
+
 
 ##
 ## Stage: health - Start...
@@ -476,7 +492,7 @@ setup-draco-oci:
 health-P100:
   stage: health
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_REPLAY_TESTS == "1"))
+    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
       when: always
     - when: never
   needs: []
@@ -899,7 +915,7 @@ unit_tests-draco_oci:
     #   when: always
     - when: never
   needs:
-    - setup-eos
+    - setup-draco-oci
   tags:
     - draco-oci-iad
   variables:
@@ -1073,10 +1089,12 @@ unit_tests-ipp6-a40:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs:
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
@@ -1084,7 +1102,7 @@ unit_tests-ipp6-a40:
     NNODES: 1
     NGPUS: 1
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     OMPI_MCA_btl: "^openib"
     DEVICE_ID_TESTS: 1
@@ -1129,10 +1147,11 @@ unit_tests-ipp6-a100:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 20
@@ -1140,7 +1159,7 @@ unit_tests-ipp6-a100:
     NNODES: 1
     NGPUS: 2
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
@@ -1185,15 +1204,11 @@ unit_tests-gin-ipp6-a100:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
-  cache:
-    key: "$CI_COMMIT_SHORT_SHA"
-    paths:
-      - build
-    policy: pull
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 20
@@ -1201,7 +1216,7 @@ unit_tests-gin-ipp6-a100:
     NNODES: 1
     NGPUS: 2
     NP: 2
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_GPU_SM: 1
@@ -1488,8 +1503,6 @@ unit_tests-rma-pre-nyx:
     RUN_MODE: "SRUN_MPI"
     SLURM_ACCOUNT: coreai_libraries_nccl
     RMA_MULTINODE_TESTS: 1
-  before_script:
-    - tar -xzf build-ipp6.tar.gz
   script:
     - source docker/clusters/pre-nyx-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:rma-unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
@@ -1633,10 +1646,11 @@ examples-validation-ipp6-a100:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 15
@@ -1644,7 +1658,7 @@ examples-validation-ipp6-a100:
     NNODES: 1
     NGPUS: 2
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     EXAMPLES_TESTS_BASIC_ONLY: 0
   script:
@@ -2049,10 +2063,11 @@ apitest-ipp6-a40:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
@@ -2060,7 +2075,7 @@ apitest-ipp6-a40:
     NNODES: 1
     NGPUS: 1
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
@@ -2086,10 +2101,11 @@ apitest-ipp6-a100:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
@@ -2097,7 +2113,7 @@ apitest-ipp6-a100:
     NNODES: 1
     NGPUS: 2
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
@@ -2614,10 +2630,11 @@ perftest-single-ipp6-a40:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
@@ -2626,7 +2643,7 @@ perftest-single-ipp6-a40:
     GRAPH: 0
     NGPUS: 1
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
@@ -2651,10 +2668,11 @@ perftest-single-ipp6-a100:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
@@ -2663,7 +2681,7 @@ perftest-single-ipp6-a100:
     GRAPH: 0
     NGPUS: 2
     NP: 2
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
@@ -3064,10 +3082,11 @@ perftest-multi-ipp6-a40:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
@@ -3076,7 +3095,7 @@ perftest-multi-ipp6-a40:
     GRAPH: 0
     NGPUS: 1
     NP: 1
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
@@ -3101,10 +3120,11 @@ perftest-multi-ipp6-a100:
       when: always
     - when: never
   needs:
-    - job: build-ipp6
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
@@ -3113,7 +3133,7 @@ perftest-multi-ipp6-a100:
     GRAPH: 0
     NGPUS: 2
     NP: 2
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
     RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
@@ -3324,10 +3344,12 @@ profiler-tests-ipp6-a100:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PROFILER_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs:
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
@@ -3338,7 +3360,7 @@ profiler-tests-ipp6-a100:
     OMPI_MCA_btl: "^openib"
     NGPUS: 2
     NP: 2
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-profiler.sh
@@ -3367,10 +3389,12 @@ inspector-tests-ipp6-a100:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_INSPECTOR_TESTS == "1")
       when: always
     - when: never
-  needs: ["build-ipp6"]
+  needs:
+    - setup-ipp6
   tags:
     - ipp6-nccl
   variables:
+    INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
@@ -3381,7 +3405,8 @@ inspector-tests-ipp6-a100:
     OMPI_MCA_btl: "^openib"
     NGPUS: 2
     NP: 2
-    NCCL_HOME: build
+    NCCL_HOME: ${INSTALL_DIR}/build
+    NCCL_SRC: ${CI_PROJECT_DIR}
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-inspector.sh
@@ -3610,6 +3635,48 @@ cleanup-bia:
       optional: true
   variables:
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
+
+cleanup-ipp6:
+  extends:
+    - .cleanup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.ipp6, rules]
+  tags:
+    - bia
+  needs:
+    - job: build-ipp6
+      optional: true
+    - job: setup-ipp6
+      optional: true
+    - job: nccl4py_ci
+      optional: true
+    - job: unit_tests-ipp6-a40
+      optional: true
+    - job: unit_tests-ipp6-a100
+      optional: true
+    - job: unit_tests-gin-ipp6-a100
+      optional: true
+    - job: examples-validation-ipp6-a100
+      optional: true
+    - job: apitest-ipp6-a40
+      optional: true
+    - job: apitest-ipp6-a100
+      optional: true
+    - job: perftest-single-ipp6-a40
+      optional: true
+    - job: perftest-single-ipp6-a100
+      optional: true
+    - job: perftest-multi-ipp6-a40
+      optional: true
+    - job: perftest-multi-ipp6-a100
+      optional: true
+    - job: profiler-tests-ipp6-a100
+      optional: true
+    - job: inspector-tests-ipp6-a100
+      optional: true
+  variables:
+    INSTALL_DIR: "${IPP6_INSTALL_DIR}"
 
 ##
 ## Stage: cleanup - Finish!
