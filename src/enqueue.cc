@@ -2680,6 +2680,11 @@ static ncclResult_t rmaTaskAppend(
     return ncclInvalidArgument;
   }
 
+  if (!comm->rmaProxySupport) {
+    WARN("ncclPutSignal: RMA proxy support is not enabled");
+    return ncclInvalidArgument;
+  }
+
   // Check if context is valid (must be 0 for now)
   if (info->ctx != 0) {
     WARN("Context %d is invalid (must be 0)", info->ctx);
