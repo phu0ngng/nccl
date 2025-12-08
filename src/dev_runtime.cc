@@ -1134,6 +1134,11 @@ ncclResult_t ncclWinGetUserPtr(struct ncclComm* comm, struct ncclWindow_vidmem* 
   NCCLCHECK(PtrCheck(win, __func__, "win"));
   NCCLCHECK(PtrCheck(outUserPtr, __func__, "outUserPtr"));
 
+  if (!comm->symmetricSupport) {
+    WARN("Symmetric registration is not supported in this communicator.");
+    return ncclInvalidUsage;
+  }
+
   struct ncclDevrWindow* winHost = NULL;
   struct ncclWindow_vidmem* winDevHost = NULL;
   NCCLCHECK(ncclShadowPoolToHost(&comm->devrState.shadows, win, &winDevHost));
