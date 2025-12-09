@@ -693,8 +693,20 @@ ncclResult_t ncclIbResiliencySenderQpsToRts(struct ncclIbResiliency* resCtx, str
     // finding the correct remote device information is done by checking the
     // remote QP info.
     ncclIbDevInfo* remDevInfo = &remInfo->devs[remQpInfo->devIndex];
-    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu); // TODO: This is bad practice!
-    NCCLCHECK(ncclIbRtrQp(localQp->qp, &sendCommDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remInfo->tc, remInfo->sl));
+
+    struct ncclIbQpRtrAttr* rtrAttr = &localQp->rtrAttr;
+    rtrAttr->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
+    rtrAttr->linkLayer = remDevInfo->link_layer;
+    rtrAttr->tc = (remDevInfo->link_layer == IBV_LINK_LAYER_ETHERNET) ? remInfo->tc : -1;
+    rtrAttr->sl = remInfo->sl;
+    rtrAttr->remoteQpNum = remQpInfo->qpn;
+    rtrAttr->remoteLid = remDevInfo->lid;
+    rtrAttr->remoteGid = remDevInfo->gid;
+    rtrAttr->localIbPort = remDevInfo->ib_port;
+    rtrAttr->localGid = sendCommDev->base.gidInfo.localGid;
+    rtrAttr->localGidIndex = sendCommDev->base.gidInfo.localGidIndex;    
+    NCCLCHECK(ncclIbRtrQp(localQp->qp, rtrAttr));
+
     NCCLCHECK(ncclIbRtsQp(localQp->qp));
   }
   return ncclSuccess;
@@ -727,7 +739,18 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
 
     ncclIbQpInfo* remQpInfo = &remInfo->resiliencyInfo.probingQpsInfo[localQpIndex];
     ncclIbDevInfo* remDevInfo = &remInfo->devs[remQpInfo->devIndex];
-    NCCLCHECK(ncclIbRtrQp(localQp->qp, &recvCommDev->base.gidInfo, remQpInfo->qpn, remDevInfo, true, remInfo->tc, remInfo->sl));
+    struct ncclIbQpRtrAttr* rtrAttr = &localQp->rtrAttr; 
+    rtrAttr->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
+    rtrAttr->linkLayer = remDevInfo->link_layer;
+    rtrAttr->tc = (remDevInfo->link_layer == IBV_LINK_LAYER_ETHERNET) ? remInfo->tc : -1;
+    rtrAttr->sl = remInfo->sl;
+    rtrAttr->remoteQpNum = remQpInfo->qpn;
+    rtrAttr->remoteLid = remDevInfo->lid;
+    rtrAttr->remoteGid = remDevInfo->gid;
+    rtrAttr->localIbPort = remDevInfo->ib_port;
+    rtrAttr->localGid = recvCommDev->base.gidInfo.localGid;
+    rtrAttr->localGidIndex = recvCommDev->base.gidInfo.localGidIndex;  
+    NCCLCHECK(ncclIbRtrQp(localQp->qp, rtrAttr));
     NCCLCHECK(ncclIbRtsQp(localQp->qp));
   }
   return ncclSuccess;

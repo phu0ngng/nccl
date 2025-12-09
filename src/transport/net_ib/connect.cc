@@ -338,48 +338,48 @@ ncclResult_t ncclIbCreateQp(struct ncclIbQpCreateAttr* createQpAttrs, void* qp_c
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint32_t dest_qp_num, struct ncclIbDevInfo* info, bool fifoTc, int tc, int sl) {
+ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbQpRtrAttr* rtrAttr) {
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTR;
-  qpAttr.path_mtu = info->mtu;
-  qpAttr.dest_qp_num = dest_qp_num;
+  qpAttr.path_mtu = rtrAttr->mtu;
+  qpAttr.dest_qp_num = rtrAttr->remoteQpNum;
   qpAttr.rq_psn = 0;
   qpAttr.max_dest_rd_atomic = 1;
   qpAttr.min_rnr_timer = 12;
-  if (info->link_layer == IBV_LINK_LAYER_ETHERNET) {
+  if (rtrAttr->linkLayer == IBV_LINK_LAYER_ETHERNET) {
     qpAttr.ah_attr.is_global = 1;
-    qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
-    qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
+    qpAttr.ah_attr.grh.dgid.global.subnet_prefix = rtrAttr->remoteGid.global.subnet_prefix;
+    qpAttr.ah_attr.grh.dgid.global.interface_id = rtrAttr->remoteGid.global.interface_id;
     qpAttr.ah_attr.grh.flow_label = 0;
-    qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
+    qpAttr.ah_attr.grh.sgid_index = rtrAttr->localGidIndex;
     qpAttr.ah_attr.grh.hop_limit = 255;
-    qpAttr.ah_attr.grh.traffic_class = fifoTc && ncclParamIbFifoTc() != -1 ? ncclParamIbFifoTc() : tc;
+    qpAttr.ah_attr.grh.traffic_class = rtrAttr->tc;
   } else {
     //pick lid if subnet prefixs are same, FLID if they are not
-    if (ncclIbExtractLocalSubnetPrefix(sGidInfo->localGid.global.subnet_prefix) ==
-        ncclIbExtractLocalSubnetPrefix(info->gid.global.subnet_prefix)) {
+    if (ncclIbExtractLocalSubnetPrefix(rtrAttr->localGid.global.subnet_prefix) ==
+        ncclIbExtractLocalSubnetPrefix(rtrAttr->remoteGid.global.subnet_prefix)) {
       qpAttr.ah_attr.is_global = 0;
-      qpAttr.ah_attr.dlid = info->lid;
+      qpAttr.ah_attr.dlid = rtrAttr->remoteLid;
     } else {
-      uint16_t flid = ncclIbExtractFlid(&info->gid);
+      uint16_t flid = ncclIbExtractFlid(&rtrAttr->remoteGid);
       if (flid == 0) {
         WARN("Warning: remote FLID configured as zero even when endpoints are on different subnets, using dlid as fallback");
-        qpAttr.ah_attr.dlid = info->lid;
+        qpAttr.ah_attr.dlid = rtrAttr->remoteLid;
       } else {
-        qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
+        qpAttr.ah_attr.dlid = ncclIbExtractFlid(&rtrAttr->remoteGid);
       }
       qpAttr.ah_attr.is_global = 1;
-      qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
-      qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
-      qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
+      qpAttr.ah_attr.grh.dgid.global.subnet_prefix = rtrAttr->remoteGid.global.subnet_prefix;
+      qpAttr.ah_attr.grh.dgid.global.interface_id = rtrAttr->remoteGid.global.interface_id;
+      qpAttr.ah_attr.grh.sgid_index = rtrAttr->localGidIndex;
       qpAttr.ah_attr.grh.hop_limit = 255;
     }
   }
-  qpAttr.ah_attr.sl = sl;
+  qpAttr.ah_attr.sl = rtrAttr->sl;
   qpAttr.ah_attr.src_path_bits = 0;
-  qpAttr.ah_attr.port_num = info->ib_port;
-  TRACE(NCCL_NET, "NET/IB: %s: qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", __func__, qp->qp_num, qpAttr.path_mtu, qpAttr.dest_qp_num, info->link_layer, qpAttr.ah_attr.port_num, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
+  qpAttr.ah_attr.port_num = rtrAttr->localIbPort;
+  TRACE(NCCL_NET, "NET/IB: %s: qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", __func__, qp->qp_num, qpAttr.path_mtu, qpAttr.dest_qp_num, rtrAttr->linkLayer, qpAttr.ah_attr.port_num, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
   return ncclSuccess;
 }
@@ -520,8 +520,18 @@ static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, struct ncclIbConn
       localQp->ece = {0};
     }
 
-    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu); // TODO: This is bad practice!
-    NCCLCHECK(ncclIbRtrQp(localQp->qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta->tc, remMeta->sl));
+    struct ncclIbQpRtrAttr *rtrAttr = &localQp->rtrAttr;
+    rtrAttr->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
+    rtrAttr->linkLayer = remDevInfo->link_layer;
+    rtrAttr->tc = remDevInfo->link_layer == IBV_LINK_LAYER_ETHERNET ? remMeta->tc : -1;
+    rtrAttr->sl = remMeta->sl;
+    rtrAttr->remoteQpNum = remQpInfo->qpn;
+    rtrAttr->remoteLid = remDevInfo->lid;
+    rtrAttr->remoteGid = remDevInfo->gid;
+    rtrAttr->localIbPort = remDevInfo->ib_port;
+    rtrAttr->localGid = commDev->base.gidInfo.localGid;
+    rtrAttr->localGidIndex = commDev->base.gidInfo.localGidIndex;
+    NCCLCHECK(ncclIbRtrQp(localQp->qp, &localQp->rtrAttr));
     NCCLCHECK(ncclIbRtsQp(localQp->qp));
   }
 
@@ -888,7 +898,18 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     // Reduce the local MTU to match the remote MTU if needed
     ibDev->portAttr.active_mtu = std::min(ibDev->portAttr.active_mtu, remDevInfo->mtu);
 
-    NCCLCHECK(ncclIbRtrQp(localQp->qp, &rCommDev->base.gidInfo, remQpInfo->qpn, remDevInfo, true, remMeta->tc, remMeta->sl));
+    struct ncclIbQpRtrAttr *rtrAttr = &localQp->rtrAttr;
+    rtrAttr->mtu = ibDev->portAttr.active_mtu;
+    rtrAttr->linkLayer = remDevInfo->link_layer;
+    rtrAttr->tc = (remDevInfo->link_layer == IBV_LINK_LAYER_ETHERNET && ncclParamIbFifoTc() != -1) ? ncclParamIbFifoTc() : remMeta->tc;
+    rtrAttr->sl = remMeta->sl;
+    rtrAttr->remoteQpNum = remQpInfo->qpn;
+    rtrAttr->remoteLid = remDevInfo->lid;
+    rtrAttr->remoteGid = remDevInfo->gid;
+    rtrAttr->localIbPort = remDevInfo->ib_port;
+    rtrAttr->localGid = rCommDev->base.gidInfo.localGid;
+    rtrAttr->localGidIndex = rCommDev->base.gidInfo.localGidIndex;
+    NCCLCHECK(ncclIbRtrQp(localQp->qp, rtrAttr));
     NCCLCHECK(ncclIbRtsQp(localQp->qp));
 
     // Query the reduced ECE by the device and storing it in the local QP info
@@ -928,14 +949,21 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
           rCommDev->gpuFlush.qp.qp->qp_num,
           (uint16_t)ncclParamIbPkey(),
           rCommDev->base.pd);
-      struct ncclIbDevInfo devInfo;
-      devInfo.lid         = ibDev->portAttr.lid;
-      devInfo.link_layer  = ibDev->portAttr.link_layer;
-      devInfo.ib_port     = ibDev->portNum;
-      devInfo.gid.global.subnet_prefix        = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
-      devInfo.gid.global.interface_id         = rCommDev->base.gidInfo.localGid.global.interface_id;
-      devInfo.mtu         = ibDev->portAttr.active_mtu;
-      NCCLCHECK(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, &rCommDev->base.gidInfo, rCommDev->gpuFlush.qp.qp->qp_num, &devInfo, false, remMeta->tc, remMeta->sl));
+  
+      struct ncclIbQpRtrAttr *rtrAttr = &rCommDev->gpuFlush.qp.rtrAttr;
+      rtrAttr->mtu = ibDev->portAttr.active_mtu;
+      rtrAttr->linkLayer = ibDev->portAttr.link_layer;
+      // TODO: Flush QP is a "loopback QP" (connected to itself), so it should
+      // not use any information from the remote side during configuration.
+      rtrAttr->tc = ibDev->portAttr.link_layer == IBV_LINK_LAYER_ETHERNET ? remMeta->tc : -1;
+      rtrAttr->sl = remMeta->sl;
+      rtrAttr->remoteQpNum = rCommDev->gpuFlush.qp.qp->qp_num;
+      rtrAttr->remoteLid = ibDev->portAttr.lid;
+      rtrAttr->remoteGid = rCommDev->base.gidInfo.localGid;
+      rtrAttr->localIbPort = ibDev->portNum;
+      rtrAttr->localGid = rCommDev->base.gidInfo.localGid;
+      rtrAttr->localGidIndex = rCommDev->base.gidInfo.localGidIndex;
+      NCCLCHECK(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, rtrAttr));
       NCCLCHECK(ncclIbRtsQp(rCommDev->gpuFlush.qp.qp));
     }
   }

@@ -236,6 +236,21 @@ struct ncclIbSendFifo {
   char padding[16];
 };
 
+struct ncclIbQpRtrAttr {
+  enum ibv_mtu mtu;
+  uint8_t linkLayer;
+  uint8_t tc;
+  int sl;
+
+  uint32_t remoteQpNum;
+  uint32_t remoteLid;
+  union ibv_gid remoteGid;
+
+  uint8_t localIbPort;
+  union ibv_gid localGid;
+  int32_t localGidIndex;
+};
+
 struct ncclIbQp {
   struct ibv_qp* qp;
   // The index of the device on which this QP was created on.
@@ -245,6 +260,10 @@ struct ncclIbQp {
   // Note: This is the reduced ECE exchanged between the sender and receiver.
   struct ibv_ece ece;
   int eceSupported;
+
+  // Stores the attributes used to configure the QP to allow QP restore after
+  // failure.
+  struct ncclIbQpRtrAttr rtrAttr;
 
   // The index of the device on the remote side to which this QP is connected
   // to.
