@@ -265,7 +265,7 @@ void ceProfilerRegisterContext(struct context* ctx) {
   }
 
   // Resize registry if needed
-  if (ceProfilerCtxt.contextCount >= ceProfilerCtxt.contextCapacity) {
+  if (ceProfilerCtxt.contextCount > ceProfilerCtxt.contextCapacity) {
     int newCapacity = ceProfilerCtxt.contextCapacity * 2;
     struct context** newRegistry = (struct context**)calloc(newCapacity, sizeof(struct context*));
     if (newRegistry) {
