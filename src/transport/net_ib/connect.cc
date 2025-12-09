@@ -356,22 +356,22 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint
   } else {
     //pick lid if subnet prefixs are same, FLID if they are not
     if (ncclIbExtractLocalSubnetPrefix(sGidInfo->localGid.global.subnet_prefix) ==
-		    ncclIbExtractLocalSubnetPrefix(info->gid.global.subnet_prefix)) {
-        qpAttr.ah_attr.is_global = 0;
-        qpAttr.ah_attr.dlid = info->lid;
+        ncclIbExtractLocalSubnetPrefix(info->gid.global.subnet_prefix)) {
+      qpAttr.ah_attr.is_global = 0;
+      qpAttr.ah_attr.dlid = info->lid;
     } else {
-	uint16_t flid = ncclIbExtractFlid(&info->gid);
-        if (flid == 0) {
-          WARN("Warning: remote FLID configured as zero even when endpoints are on different subnets, using dlid as fallback");
-          qpAttr.ah_attr.dlid = info->lid;
-	} else {
-          qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
-	}
-        qpAttr.ah_attr.is_global = 1;
-        qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
-        qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
-        qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
-	qpAttr.ah_attr.grh.hop_limit = 255;
+      uint16_t flid = ncclIbExtractFlid(&info->gid);
+      if (flid == 0) {
+        WARN("Warning: remote FLID configured as zero even when endpoints are on different subnets, using dlid as fallback");
+        qpAttr.ah_attr.dlid = info->lid;
+      } else {
+        qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
+      }
+      qpAttr.ah_attr.is_global = 1;
+      qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
+      qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
+      qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
+      qpAttr.ah_attr.grh.hop_limit = 255;
     }
   }
   qpAttr.ah_attr.sl = sl;
