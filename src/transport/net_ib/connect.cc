@@ -469,10 +469,17 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     localQpInfo->devIndex = localQp->devIndex;
 
     if (ncclParamIbEceEnable()) {
-      // Query ECE (Enhanced Connection Establishment) capabilities
-      NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
+      // Query ECE (Enhanced Connection Establishment) capabilities and
+      // populate the initial ECE into the metadata structure that is sent to
+      // the remote (receiver) side.
+      NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQp->eceSupported));
+      localQpInfo->ece_supported = localQp->eceSupported;
     } else {
+      // Declare to the remote side that ECE is not supported
       localQpInfo->ece_supported = 0;
+      // Store locally that ECE is not supported
+      localQp->ece = {0};
+      localQp->eceSupported = 0;
     }
   }
 
@@ -501,10 +508,16 @@ static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, struct ncclIbConn
 
     localQp->remDevIdx = remQpInfo->devIndex;
 
-    if (remQpInfo->ece_supported) {
-      // Set the reduced ECE received from the receiver side
+    if (localQp->eceSupported && remQpInfo->ece_supported) {
       INFO(NCCL_NET,"NET/IB: %s: Set ECE: IbDev %d Port %d qp_num %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}", __func__, commDev->base.ibDevN, ibDev->portNum, localQp->qp->qp_num, remQpInfo->ece_supported, remQpInfo->ece.vendor_id, remQpInfo->ece.options, remQpInfo->ece.comp_mask);
-      NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &remQpInfo->ece_supported));
+      // Set the reduced ECE received from the receiver side
+      NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &localQp->eceSupported));
+      // Store the reduced ECE locally as well
+      localQp->ece = remQpInfo->ece;
+    } else {
+      // If remote does not support ECE, disable it locally as well
+      localQp->eceSupported = 0;
+      localQp->ece = {0};
     }
 
     remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu); // TODO: This is bad practice!
@@ -862,12 +875,14 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     localQpInfo->qpn      = localQp->qp->qp_num;
     localQpInfo->devIndex = localQp->devIndex;
 
-    // Set ECE (enhanced connection establishment) on before RTR
     if (remQpInfo->ece_supported) {
+      // Set the ECE received from the remote (sender) side.
       // coverity[copy_paste_error]
       NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &localQpInfo->ece_supported));
     } else {
       localQpInfo->ece_supported = 0;
+      localQp->ece = {0};
+      localQp->eceSupported = 0;
     }
 
     // Reduce the local MTU to match the remote MTU if needed
@@ -880,6 +895,12 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     // to return it to the requestor (sender).
     if (remQpInfo->ece_supported && localQpInfo->ece_supported) {
       NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
+      // Store the reduced ECE locally as well
+      localQp->ece = localQpInfo->ece;
+      localQp->eceSupported = localQpInfo->ece_supported;
+    } else {
+      localQp->ece = {0};
+      localQp->eceSupported = 0;
     }
   }
 

@@ -46,6 +46,8 @@ ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend)
     baseComm->qps[i].devIndex= -1;
     baseComm->qps[i].remDevIdx= -1;
     baseComm->activeQps[i] = &baseComm->qps[i];
+    baseComm->qps[i].eceSupported = 0;
+    baseComm->qps[i].ece = {0};
   }
   baseComm->nqps = -1;
   baseComm->splitDataOnQps = ncclParamIbSplitDataOnQps();

@@ -240,6 +240,12 @@ struct ncclIbQp {
   struct ibv_qp* qp;
   // The index of the device on which this QP was created on.
   int devIndex;
+
+  // The ECE (enhanced connection establishment) used on this QP.
+  // Note: This is the reduced ECE exchanged between the sender and receiver.
+  struct ibv_ece ece;
+  int eceSupported;
+
   // The index of the device on the remote side to which this QP is connected
   // to.
   int remDevIdx;
