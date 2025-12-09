@@ -629,12 +629,6 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
 
   NCCLCHECKGOTO(ncclCommRegister(comm, userPtr, userSize, &localRegHandle), ret, fail);
 
-  if (!comm->symmetricSupport) {
-    // We just return the local registration handle directly in this case, as there's no reason to allocate the
-    // ncclWindow_vidmem structure on the device, etc.
-    *outWinDev = reinterpret_cast<struct ncclWindow_vidmem*>(localRegHandle);
-    return ncclSuccess;
-  }
   if (winFlags & NCCL_WIN_COLL_SYMMETRIC) {
     // Defer symmetric kernel init until at least one window with that flag exists.
     NCCLCHECKGOTO(ncclSymkInitOnce(comm), ret, fail);
@@ -963,9 +957,8 @@ ncclResult_t ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, nc
     return ncclInvalidArgument;
   }
 
-  if (!(comm->symmetricSupport || ncclParamLocalRegister())) {
-    WARN("Window register not supported on this platform\n");
-    return ncclInvalidUsage;
+  if (!comm->symmetricSupport) {
+    return ncclSuccess;
   }
 
   ncclResult_t ret = ncclSuccess;
@@ -1006,10 +999,6 @@ ncclResult_t ncclCommWindowDeregister(struct ncclComm* comm, struct ncclWindow_v
 
   if (winDev == nullptr) goto exit;
 
-  if (!comm->symmetricSupport) {
-    NCCLCHECKGOTO(ncclCommDeregister(comm, winDev), ret, fail);
-    goto exit;
-  }
   CUDACHECKGOTO(cudaGetDevice(&saveDev), ret, fail);
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
   CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail_dev);
