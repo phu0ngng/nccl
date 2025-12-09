@@ -852,6 +852,43 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
       NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
     }
   }
+
+  if (rComm->flushEnabled) {
+    for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
+      ncclIbRecvCommDev* rCommDev = &rComm->devs[i];
+      ncclIbDev* ibDev = &ncclIbDevs[rCommDev->base.ibDevN];
+
+      struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+      qpCreateAttrs.type = IBV_QPT_RC;
+      qpCreateAttrs.ibPort = ibDev->portNum;
+      qpCreateAttrs.cq = rCommDev->base.cq;
+      qpCreateAttrs.pd = rCommDev->base.pd;
+      qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ;
+      qpCreateAttrs.maxRecvWorkRequest = 0;
+      qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
+      NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp));
+      INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
+          __func__,
+          ibDev->portNum, 
+          rCommDev->base.ibDevN, 
+          ncclIbDevs[rCommDev->base.ibDevN].devName, 
+          ncclNIbDevs, 
+          ncclNMergedIbDevs, 
+          rCommDev->gpuFlush.qp.qp->qp_num, 
+          (uint16_t)ncclParamIbPkey(),
+          rCommDev->base.pd);
+      struct ncclIbDevInfo devInfo;
+      devInfo.lid         = ibDev->portAttr.lid;
+      devInfo.link_layer  = ibDev->portAttr.link_layer;
+      devInfo.ib_port     = ibDev->portNum;
+      devInfo.gid.global.subnet_prefix        = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
+      devInfo.gid.global.interface_id         = rCommDev->base.gidInfo.localGid.global.interface_id;
+      devInfo.mtu         = ibDev->portAttr.active_mtu;
+      NCCLCHECK(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, &rCommDev->base.gidInfo, rCommDev->gpuFlush.qp.qp->qp_num, &devInfo, false, remMeta->tc, remMeta->sl));
+      NCCLCHECK(ncclIbRtsQp(rCommDev->gpuFlush.qp.qp));
+    }
+  }
+
   return ncclSuccess;
 }
 
@@ -1011,6 +1048,11 @@ ib_recv:
     rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
     rComm->base.remDevs[i].remoteGid.global.subnet_prefix = rComm->base.remDevs[i].gid.global.subnet_prefix;
   }
+  
+  // Determine if Flush is enabled for this Comm. Must be done before creating
+  // QPs. If Flush is enabled, extra QPs will be created for Flush operations.
+  rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
+                            && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
 
   NCCLCHECKGOTO(ncclIbReceiverQpsCreateToRts(rComm, &remMeta, &meta), ret, fail);
   if (rComm->prepostReceiveWorkRequests) {
@@ -1036,9 +1078,6 @@ ib_recv:
   }
   if (ncclParamIbUseInline()) rComm->remCtsFifo.flags = IBV_SEND_INLINE;
 
-  rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
-                            && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
-
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
     ibDev = ncclIbDevs + rCommDev->base.ibDevN;
@@ -1049,35 +1088,6 @@ ib_recv:
       rCommDev->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlushHostMem;
       rCommDev->gpuFlush.sge.length = 1;
       rCommDev->gpuFlush.sge.lkey = rCommDev->gpuFlush.hostMr->lkey;
-
-      struct ncclIbQpCreateAttr qpCreateAttrs = {0};
-      qpCreateAttrs.type = IBV_QPT_RC;
-      qpCreateAttrs.ibPort = ibDev->portNum;
-      qpCreateAttrs.cq = rCommDev->base.cq;
-      qpCreateAttrs.pd = rCommDev->base.pd;
-      qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ;
-      qpCreateAttrs.maxRecvWorkRequest = 0;
-      qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
-      NCCLCHECKGOTO(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp), ret, fail);
-      INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
-          __func__,
-          ibDev->portNum, 
-          rCommDev->base.ibDevN, 
-          ncclIbDevs[rCommDev->base.ibDevN].devName, 
-          ncclNIbDevs, 
-          ncclNMergedIbDevs, 
-          rCommDev->gpuFlush.qp.qp->qp_num, 
-          (uint16_t)ncclParamIbPkey(),
-          rCommDev->base.pd);
-      struct ncclIbDevInfo devInfo;
-      devInfo.lid         = ibDev->portAttr.lid;
-      devInfo.link_layer  = ibDev->portAttr.link_layer;
-      devInfo.ib_port     = ibDev->portNum;
-      devInfo.gid.global.subnet_prefix        = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
-      devInfo.gid.global.interface_id         = rCommDev->base.gidInfo.localGid.global.interface_id;
-      devInfo.mtu         = ibDev->portAttr.active_mtu;
-      NCCLCHECKGOTO(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, &rCommDev->base.gidInfo, rCommDev->gpuFlush.qp.qp->qp_num, &devInfo, false, remMeta.tc, remMeta.sl), ret, fail);
-      NCCLCHECKGOTO(ncclIbRtsQp(rCommDev->gpuFlush.qp.qp), ret, fail);
     }
 
     // Fill Handle
