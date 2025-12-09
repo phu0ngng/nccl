@@ -483,7 +483,7 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
 // Note that if ECE is supported, the function sets up the reduced ECE (which
 // was delivered from the receiver side) on the QPs before modifying the QPs
 // to RTR.
-static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, int dev, struct ncclIbConnectionMetadata* remMeta) {
+static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, struct ncclIbConnectionMetadata* remMeta) {
   uint nqps = comm->base.nqps;
   for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
     ncclIbQp* localQp = &comm->base.qps[qpIndex];
@@ -716,7 +716,7 @@ ib_connect:
     comm->devs[i].sge.lkey = comm->devs[i].cmplsRecordsMr->lkey;
   }
 
-  NCCLCHECKGOTO(ncclIbSenderQpsToRts(comm, dev, &remMeta), ret, fail);
+  NCCLCHECKGOTO(ncclIbSenderQpsToRts(comm, &remMeta), ret, fail);
 
   comm->base.ready = 1;
   stage->state = ncclIbCommStateConnected;
