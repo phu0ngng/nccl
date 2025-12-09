@@ -953,16 +953,13 @@ fail:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-NCCL_API(ncclResult_t, ncclCommWindowRegister, ncclComm_t comm, void* ptr, size_t size, ncclWindow_t* win, int winFlags);
-ncclResult_t ncclCommWindowRegister(
-    struct ncclComm* comm, void* userPtr, size_t userSize,
-    struct ncclWindow_vidmem** outWinDev, int winFlags
-  ) {
+NCCL_API(ncclResult_t, ncclCommWindowRegister, ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags);
+ncclResult_t ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags) {
   NCCLCHECK(CommCheck(comm, __func__, "comm"));
-  NCCLCHECK(PtrCheck(outWinDev, __func__, "win"));
-  *outWinDev = nullptr;
-  if (userPtr == nullptr || userSize <= 0) {
-    WARN("%s: invalid pointer %p / size %zu\n", __func__, userPtr, userSize);
+  NCCLCHECK(PtrCheck(win, __func__, "win"));
+  *win = nullptr;
+  if (buff == nullptr || size <= 0) {
+    WARN("%s: invalid pointer %p / size %zu\n", __func__, buff, size);
     return ncclInvalidArgument;
   }
 
@@ -984,10 +981,10 @@ ncclResult_t ncclCommWindowRegister(
   NCCLCHECKGOTO(ncclDevrInitOnce(comm), ret, fail);
 
   NCCLCHECKGOTO(ncclCalloc(&task, 1), ret, fail);
-  task->userPtr = userPtr;
-  task->userSize = userSize;
+  task->userPtr = buff;
+  task->userSize = size;
   task->winFlags = winFlags;
-  task->outWinDev = outWinDev;
+  task->outWinDev = win;
   ncclIntruQueueEnqueue(&comm->devrState.regTaskQueue, task);
   ncclGroupCommJoin(comm, ncclGroupTaskTypeSymRegister);
 
