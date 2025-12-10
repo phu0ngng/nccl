@@ -435,9 +435,9 @@ fail:
 // establishment process.
 static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbConnectionMetadata* meta) {
   uint nqps = comm->base.nqps;
-  struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+  struct ncclIbQpCreateAttr qpCreateAttrs;
+  memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
   qpCreateAttrs.type = IBV_QPT_RC;
-  qpCreateAttrs.accessFlags = IBV_ACCESS_REMOTE_WRITE;
   qpCreateAttrs.maxRecvWorkRequest = 0;
   // Send requests are sent using at most 2 messages (RDMA Write and RDMA Write with Immediate)
   qpCreateAttrs.maxSendWorkRequest = 2*NET_IB_MAX_REQUESTS;
@@ -453,7 +453,6 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     ncclIbQp* localQp = &comm->base.qps[qpIndex];
     ncclIbQpInfo* localQpInfo = &meta->qpInfo[qpIndex];
 
-    qpCreateAttrs.ibPort = ibDev->portNum;
     qpCreateAttrs.cq = commDev->base.cq;
     qpCreateAttrs.pd = commDev->base.pd;
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &comm->base.stats, localQp));
@@ -848,10 +847,10 @@ ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePro
 // side (sender) as part of the connection establishment process.
 static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct ncclIbConnectionMetadata* remMeta, struct ncclIbConnectionMetadata* meta) {
   uint nqps = rComm->base.nqps;
-  struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+  struct ncclIbQpCreateAttr qpCreateAttrs;
+  memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
   qpCreateAttrs.type = IBV_QPT_RC;
   // Remote Atomic operations are used for GIN!
-  qpCreateAttrs.accessFlags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
   qpCreateAttrs.maxRecvWorkRequest = NET_IB_MAX_REQUESTS;
   // CTS messages are posted using send work requests.
   // Note that because only specific CTS messages are signaled, the send queue
@@ -877,7 +876,6 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     localQp->remDevIdx = remDevIndex;
     localQp->devIndex = devIndex;
 
-    qpCreateAttrs.ibPort = ibDev->portNum;
     qpCreateAttrs.cq = rCommDev->base.cq;
     qpCreateAttrs.pd = rCommDev->base.pd;
     if (rComm->base.resiliency) {
@@ -952,12 +950,11 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
       ncclIbRecvCommDev* rCommDev = &rComm->devs[i];
       ncclIbDev* ibDev = &ncclIbDevs[rCommDev->base.ibDevN];
 
-      struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+      struct ncclIbQpCreateAttr qpCreateAttrs;
+      memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
       qpCreateAttrs.type = IBV_QPT_RC;
-      qpCreateAttrs.ibPort = ibDev->portNum;
       qpCreateAttrs.cq = rCommDev->base.cq;
       qpCreateAttrs.pd = rCommDev->base.pd;
-      qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ;
       qpCreateAttrs.maxRecvWorkRequest = 0;
       qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
       NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp));

@@ -655,9 +655,10 @@ ncclResult_t ncclIbResiliencyDeviceNumSet(struct ncclIbResiliency* resCtx, int n
 ncclResult_t ncclIbResiliencySenderCreateQps(struct ncclIbResiliency* resCtx, struct ncclIbResiliencyInfo* localResiliencyInfo) {
   ncclIbSendComm* sendComm = (ncclIbSendComm*)resCtx->baseComm;
   void* qpContext = (void*)&sendComm->base.stats;
-  struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+  struct ncclIbQpCreateAttr qpCreateAttrs;
+
+  memset(&qpCreateAttrs, 0, sizeof(qpCreateAttrs));
   qpCreateAttrs.type = IBV_QPT_RC;
-  qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE;
   qpCreateAttrs.maxRecvWorkRequest = 0;
   // Every send request can initiate at most one probing request.
   qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
@@ -667,7 +668,6 @@ ncclResult_t ncclIbResiliencySenderCreateQps(struct ncclIbResiliency* resCtx, st
     ncclIbSendCommDev* sendCommDev = &sendComm->devs[localDevIndex];
     ncclIbDev* ibDev = &ncclIbDevs[sendCommDev->base.ibDevN];
     ncclIbQp* localQp = &resCtx->probingQps[localQpIndex];
-    qpCreateAttrs.ibPort = ibDev->portNum;
     qpCreateAttrs.cq = resCtx->devs[localDevIndex].probingCq;
     qpCreateAttrs.pd = sendCommDev->base.pd;
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, qpContext, localQp));
@@ -725,9 +725,10 @@ ncclResult_t ncclIbResiliencySenderQpsToRts(struct ncclIbResiliency* resCtx, str
 ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* resCtx, struct ncclIbConnectionMetadata* remInfo, struct ncclIbResiliencyInfo* localResiliencyInfo) {
   ncclIbRecvComm* recvComm = (ncclIbRecvComm*)resCtx->baseComm;
   void* qpContext = (void*)&recvComm->base.stats;
-  struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+  struct ncclIbQpCreateAttr qpCreateAttrs;
+
+  memset(&qpCreateAttrs, 0, sizeof(qpCreateAttrs));
   qpCreateAttrs.type = IBV_QPT_RC;
-  qpCreateAttrs.accessFlags = IBV_ACCESS_REMOTE_READ;
   qpCreateAttrs.maxRecvWorkRequest = 0;
   qpCreateAttrs.maxSendWorkRequest = 0;
   for (int localQpIndex = 0; localQpIndex < resCtx->nProbingQps; localQpIndex++) {
@@ -738,7 +739,6 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
     ncclIbRecvCommDev* recvCommDev = &recvComm->devs[localDevIndex];
     ncclIbDev* ibDev = &ncclIbDevs[recvCommDev->base.ibDevN];
     ncclIbQp* localQp = &resCtx->probingQps[localQpIndex];
-    qpCreateAttrs.ibPort = ibDev->portNum;
     qpCreateAttrs.cq = resCtx->devs[localDevIndex].probingCq;
     qpCreateAttrs.pd = recvCommDev->base.pd;
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, qpContext, localQp));

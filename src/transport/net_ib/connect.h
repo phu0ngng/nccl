@@ -12,9 +12,7 @@
 #include "ibvwrap.h"
 
 struct ncclIbQpCreateAttr {
-  uint8_t ibPort;
   enum ibv_qp_type type;
-  unsigned int accessFlags;
   struct ibv_cq* cq;
   struct ibv_pd* pd;
   uint32_t maxRecvWorkRequest;
