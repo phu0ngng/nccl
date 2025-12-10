@@ -3643,7 +3643,7 @@ cleanup-ipp6:
     - !reference [.pre_submit, rules]
     - !reference [.ipp6, rules]
   tags:
-    - bia
+    - ipp6-nccl
   needs:
     - job: build-ipp6
       optional: true
