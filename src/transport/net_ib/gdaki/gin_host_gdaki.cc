@@ -558,7 +558,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   NCCLCHECKGOTO(counters_table->exchange_info(cComm), status, out);
   NCCLCHECKGOTO(signals_table->exchange_info(cComm), status, out);
 
-  gdaki_ctx->port_num = props.port;
+  gdaki_ctx->port_num = 1; // assume 1 for mlx5 devices
   NCCLCHECKGOTO(wrap_ibv_query_port(gdaki_ctx->ib_ctx, gdaki_ctx->port_num, &gdaki_ctx->port_attr),
                 status, out);
 
