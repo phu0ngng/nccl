@@ -13,6 +13,7 @@
 #include "nccl_device.h"
 #include "utils.h"
 #include "gin/gin_host.h"
+#include "argcheck.h"
 #include <mutex>
 
 NCCL_PARAM(WinStride, "WIN_STRIDE", -1);
@@ -628,12 +629,6 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
 
   NCCLCHECKGOTO(ncclCommRegister(comm, userPtr, userSize, &localRegHandle), ret, fail);
 
-  if (!comm->symmetricSupport) {
-    // We just return the local registration handle directly in this case, as there's no reason to allocate the
-    // ncclWindow_vidmem structure on the device, etc.
-    *outWinDev = reinterpret_cast<struct ncclWindow_vidmem*>(localRegHandle);
-    return ncclSuccess;
-  }
   if (winFlags & NCCL_WIN_COLL_SYMMETRIC) {
     // Defer symmetric kernel init until at least one window with that flag exists.
     NCCLCHECKGOTO(ncclSymkInitOnce(comm), ret, fail);
@@ -952,11 +947,20 @@ fail:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-NCCL_API(ncclResult_t, ncclCommWindowRegister, ncclComm_t comm, void* ptr, size_t size, ncclWindow_t* win, int winFlags);
-ncclResult_t ncclCommWindowRegister(
-    struct ncclComm* comm, void* userPtr, size_t userSize,
-    struct ncclWindow_vidmem** outWinDev, int winFlags
-  ) {
+NCCL_API(ncclResult_t, ncclCommWindowRegister, ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags);
+ncclResult_t ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags) {
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
+  NCCLCHECK(PtrCheck(win, __func__, "win"));
+  *win = nullptr;
+  if (buff == nullptr || size <= 0) {
+    WARN("%s: invalid pointer %p / size %zu\n", __func__, buff, size);
+    return ncclInvalidArgument;
+  }
+
+  if (!comm->symmetricSupport) {
+    return ncclSuccess;
+  }
+
   ncclResult_t ret = ncclSuccess;
   int saveDev;
   struct ncclDevrRegTask* task;
@@ -964,18 +968,16 @@ ncclResult_t ncclCommWindowRegister(
   CUDACHECK(cudaGetDevice(&saveDev));
   NCCLCHECK(ncclGroupStartInternal());
 
-  if (userPtr == nullptr || userSize == 0 || !(comm->symmetricSupport || ncclParamLocalRegister())) goto exit;
-
   NCCLCHECKGOTO(ncclCommEnsureReady(comm), ret, fail);
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
   NCCLCHECKGOTO(ncclDevrInitOnce(comm), ret, fail);
 
   NCCLCHECKGOTO(ncclCalloc(&task, 1), ret, fail);
-  task->userPtr = userPtr;
-  task->userSize = userSize;
+  task->userPtr = buff;
+  task->userSize = size;
   task->winFlags = winFlags;
-  task->outWinDev = outWinDev;
+  task->outWinDev = win;
   ncclIntruQueueEnqueue(&comm->devrState.regTaskQueue, task);
   ncclGroupCommJoin(comm, ncclGroupTaskTypeSymRegister);
 
@@ -990,16 +992,13 @@ fail:
 
 NCCL_API(ncclResult_t, ncclCommWindowDeregister, ncclComm_t comm, ncclWindow_t win);
 ncclResult_t ncclCommWindowDeregister(struct ncclComm* comm, struct ncclWindow_vidmem* winDev) {
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
   ncclResult_t ret = ncclSuccess;
   int saveDev;
   cudaStream_t stream;
 
   if (winDev == nullptr) goto exit;
 
-  if (!comm->symmetricSupport) {
-    NCCLCHECKGOTO(ncclCommDeregister(comm, winDev), ret, fail);
-    goto exit;
-  }
   CUDACHECKGOTO(cudaGetDevice(&saveDev), ret, fail);
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
   CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail_dev);
@@ -1041,10 +1040,8 @@ static ncclResult_t validateNcclVersion(int compiledVersion) {
 
 NCCL_API(ncclResult_t, ncclCommQueryProperties, ncclComm_t, ncclCommProperties_t*);
 ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* props) {
-  if (comm == nullptr || props == nullptr) {
-    WARN("Cannot query communicator info: null argument");
-    return ncclInvalidArgument;
-  }
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
+  NCCLCHECK(PtrCheck(props, __func__, "props"));
 
   if (props->magic != NCCL_API_MAGIC) {
     WARN("Cannot get communicator properties: ncclCommProperties_t argument must be initialized via NCCL_COMM_PROPERTIES_INITIALIZER");
@@ -1068,21 +1065,14 @@ ncclResult_t ncclDevCommCreate(
     ncclComm_t comm, struct ncclDevCommRequirements const* reqs,
     struct ncclDevComm* outDevComm
   ) {
-  if (reqs == nullptr) {
-    WARN("Cannot create device communicator: reqs argument is null");
-    return ncclInvalidArgument;
-  }
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
+  NCCLCHECK(PtrCheck(reqs, __func__, "reqs"));
   if (reqs->magic != NCCL_API_MAGIC) {
     WARN("Cannot create device communicator: ncclDevCommRequirements_t argument must be initialized via NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER");
     return ncclInvalidUsage;
   }
 
   NCCLCHECK(validateNcclVersion(reqs->version));
-
-  if (comm == nullptr) {
-    WARN("Cannot create device communicator: comm argument is null");
-    return ncclInvalidArgument;
-  }
 
   ncclResult_t ret = ncclSuccess;
   int saveDev;
@@ -1123,6 +1113,8 @@ NCCL_API(ncclResult_t, ncclDevCommDestroy, ncclComm_t comm, ncclDevComm_t const*
 ncclResult_t ncclDevCommDestroy(
     struct ncclComm* comm, struct ncclDevComm const* devComm
   ) {
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
+  NCCLCHECK(PtrCheck(devComm, __func__, "devComm"));
   struct ncclDevrState* devr = &comm->devrState;
   if (devr->ginEnabled) {
     ncclGinFreeSignalsCounters(comm,
@@ -1138,9 +1130,9 @@ ncclResult_t ncclDevCommDestroy(
 
 NCCL_API(ncclResult_t, ncclWinGetUserPtr, ncclComm_t comm, ncclWindow_t win, void** outUserPtr);
 ncclResult_t ncclWinGetUserPtr(struct ncclComm* comm, struct ncclWindow_vidmem* win, void** outUserPtr) {
-  if (comm == nullptr || win == nullptr || outUserPtr == nullptr) {
-    return ncclInvalidArgument;
-  }
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
+  NCCLCHECK(PtrCheck(win, __func__, "win"));
+  NCCLCHECK(PtrCheck(outUserPtr, __func__, "outUserPtr"));
 
   struct ncclDevrWindow* winHost = NULL;
   struct ncclWindow_vidmem* winDevHost = NULL;
@@ -1148,6 +1140,7 @@ ncclResult_t ncclWinGetUserPtr(struct ncclComm* comm, struct ncclWindow_vidmem* 
 
   winHost = (struct ncclDevrWindow*)winDevHost->winHost;
   if (winHost == nullptr) {
+    WARN("window has a NULL user pointer");
     return ncclInternalError;
   }
 
@@ -1157,9 +1150,8 @@ ncclResult_t ncclWinGetUserPtr(struct ncclComm* comm, struct ncclWindow_vidmem* 
 
 // Get the corresponding pointer in another lsa rank's symmetric memory window
 ncclResult_t ncclDevrGetLsaRankPtr(struct ncclComm* comm, struct ncclDevrWindow* winHost, size_t offset, int lsaRank, void** outPtr) {
-  if (winHost == nullptr || outPtr == nullptr) {
-    return ncclInvalidArgument;
-  }
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
+  NCCLCHECK(PtrCheck(outPtr, __func__, "outPtr"));
 
   struct ncclDevrState* devr = &comm->devrState;
 
@@ -1191,9 +1183,7 @@ ncclGinWindow_t ncclDevrGetRmaDevWin(struct ncclDevrWindow* winHost, int ctx) {
 
 // Get the multicast address for a given team
 ncclResult_t ncclDevrGetLsaTeamPtrMC(struct ncclComm* comm, struct ncclDevrWindow* winHost, size_t offset, struct ncclTeam lsaTeam, void** outPtr){
-  if (winHost == nullptr || outPtr == nullptr) {
-    return ncclInvalidArgument;
-  }
+  if (winHost == nullptr || outPtr == nullptr) return ncclInternalError;
 
   if (!comm->nvlsSupport) {
     WARN("Multimem pointer requested but system does not support multimem.");
@@ -1227,11 +1217,10 @@ static ncclResult_t findCommAndHostWindowFromDeviceWindow(ncclWindow_t devWindow
 
 NCCL_API(ncclResult_t, ncclGetMultimemDevicePointer, ncclWindow_t window, size_t offset, ncclMultimemHandle multimem, void** outPtr);
 ncclResult_t ncclGetMultimemDevicePointer (ncclWindow_t window, size_t offset, ncclMultimemHandle multimem, void** outPtr) {
-  if (window == nullptr || outPtr == nullptr || multimem.mcBasePtr == nullptr) {
-    WARN("window %p needs to be a valid ncclWindow_t not nullptr"
-         " and outPtr %p needs to be a valid pointer to store the output not nullptr"
-         " and MCBasePtr %p needs to be valid.",
-         window, outPtr, multimem.mcBasePtr);
+  NCCLCHECK(PtrCheck(window, __func__, "window"));
+  NCCLCHECK(PtrCheck(outPtr, __func__, "outPtr"));
+  if (multimem.mcBasePtr == nullptr) {
+    WARN("MCBasePtr %p needs to be valid.", multimem.mcBasePtr);
     return ncclInvalidArgument;
   }
 
@@ -1251,35 +1240,27 @@ ncclResult_t ncclGetMultimemDevicePointer (ncclWindow_t window, size_t offset, n
 
 NCCL_API(ncclResult_t, ncclGetLsaMultimemDevicePointer, ncclWindow_t window, size_t offset, void** outPtr);
 ncclResult_t ncclGetLsaMultimemDevicePointer(ncclWindow_t window, size_t offset, void** outPtr) {
-  if (window == nullptr || outPtr == nullptr) {
-    WARN("window %p needs to be a valid ncclWindow_t not nullptr and outPtr %p needs to be a valid pointer to store the output not nullptr",
-         window, outPtr);
-    return ncclInvalidArgument;
-  }
+  NCCLCHECK(PtrCheck(window, __func__, "window"));
+  NCCLCHECK(PtrCheck(outPtr, __func__, "outPtr"));
 
   ncclComm_t comm = nullptr;
   struct ncclDevrWindow* winHost = nullptr;
-  ncclTeam lsaTeam;
 
   NCCLCHECK(findCommAndHostWindowFromDeviceWindow(window, &comm, &winHost));
 
-  lsaTeam = ncclTeamLsa(comm);
-  ncclResult_t ret = ncclSuccess;
-  NOWARN(ret = ncclDevrGetLsaTeamPtrMC(comm, winHost, offset, lsaTeam, outPtr), NCCL_NVLS);
-  if (ret == ncclInvalidUsage) {
+  if (comm->nvlsSupport == 0) {
     *outPtr = nullptr;
     return ncclSuccess;
   }
-  return ret;
+
+  NCCLCHECK(ncclDevrGetLsaTeamPtrMC(comm, winHost, offset, ncclTeamLsa(comm), outPtr));
+  return ncclSuccess;
 }
 
 NCCL_API(ncclResult_t, ncclGetLsaDevicePointer, ncclWindow_t window, size_t offset, int lsaRank, void** outPtr);
 ncclResult_t ncclGetLsaDevicePointer(ncclWindow_t window, size_t offset, int lsaRank, void** outPtr) {
-  if (window == nullptr || outPtr == nullptr) {
-    WARN("window %p needs to be a valid ncclWindow_t not nullptr and outPtr %p needs to be a valid pointer to store the output not nullptr",
-         window, outPtr);
-    return ncclInvalidArgument;
-  }
+  NCCLCHECK(PtrCheck(window, __func__, "window"));
+  NCCLCHECK(PtrCheck(outPtr, __func__, "outPtr"));
 
   ncclComm_t comm = nullptr;
   struct ncclDevrState* devr;
@@ -1302,11 +1283,8 @@ ncclResult_t ncclGetLsaDevicePointer(ncclWindow_t window, size_t offset, int lsa
 
 NCCL_API(ncclResult_t, ncclGetPeerDevicePointer, ncclWindow_t window, size_t offset, int peer, void** outPtr);
 ncclResult_t ncclGetPeerDevicePointer(ncclWindow_t window, size_t offset, int peer, void** outPtr) {
-  if (window == nullptr || outPtr == nullptr) {
-    WARN("window %p needs to be a valid ncclWindow_t not nullptr and outPtr %p needs to be a valid pointer to store the output not nullptr",
-         window, outPtr);
-    return ncclInvalidArgument;
-  }
+  NCCLCHECK(PtrCheck(window, __func__, "window"));
+  NCCLCHECK(PtrCheck(outPtr, __func__, "outPtr"));
 
   ncclComm_t comm = nullptr;
   struct ncclDevrState* devr;
