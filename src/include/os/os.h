@@ -11,6 +11,7 @@
 
 #include <condition_variable>
 #include <cstdint>
+#include <ctime>
 #include <mutex>
 
 #ifdef NCCL_OS_WINDOWS
@@ -34,6 +35,7 @@ typedef SOCKET ncclSocketDescriptor;
 
 uint64_t ncclOsGetpid();
 ncclResult_t ncclOsSetCpuStackSize();
+std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf);
 
 void ncclOsSetEnv(const char* name, const char* value);
 

@@ -32,6 +32,10 @@ uint64_t ncclOsGetpid() {
   return (uint64_t)getpid();
 }
 
+std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf) {
+  return localtime_r(timer, buf);
+}
+
 // The default Linux stack size (8MB) is safe.
 #define SAFE_STACK_SIZE (8192*1024)
 

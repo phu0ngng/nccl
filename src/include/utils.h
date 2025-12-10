@@ -14,13 +14,13 @@
 #include "compiler.h"
 #include <stdint.h>
 #include <time.h>
-#include <sched.h>
 #include <algorithm>
 #include <new>
 #include <type_traits>
 #include <mutex>
 #include <condition_variable>
 #include <random>
+#include <chrono>
 
 int ncclCudaCompCap();
 
@@ -55,9 +55,16 @@ static int compareInts(const void *a, const void *b) {
 }
 
 inline uint64_t clockNano() {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return uint64_t(ts.tv_sec)*1000*1000*1000 + ts.tv_nsec;
+  auto now = std::chrono::steady_clock::now();
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+}
+
+inline void clockRealtime(struct timespec* ts) {
+  using namespace std::chrono;
+  auto now = system_clock::now();
+  auto secs = time_point_cast<seconds>(now);
+  ts->tv_sec = secs.time_since_epoch().count();
+  ts->tv_nsec = duration_cast<nanoseconds>(now - secs).count();
 }
 
 /* get any bytes of random data from system RNG, return ncclSuccess (0) if it succeeds. */
