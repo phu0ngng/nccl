@@ -236,6 +236,13 @@ struct ncclIbSendFifo {
   char padding[16];
 };
 
+struct ncclIbQpInitAttr {
+  ibv_qp_state state;
+  int pkeyIndex;
+  uint8_t portNum;
+  int qpAccessFlags;
+};
+
 struct ncclIbQpRtrAttr {
   enum ibv_mtu mtu;
   uint8_t linkLayer;
@@ -263,6 +270,7 @@ struct ncclIbQp {
 
   // Stores the attributes used to configure the QP to allow QP restore after
   // failure.
+  struct ncclIbQpInitAttr initAttr;
   struct ncclIbQpRtrAttr rtrAttr;
 
   // The index of the device on the remote side to which this QP is connected

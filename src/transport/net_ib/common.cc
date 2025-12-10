@@ -48,6 +48,7 @@ ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend)
     baseComm->activeQps[i] = &baseComm->qps[i];
     baseComm->qps[i].eceSupported = 0;
     baseComm->qps[i].ece = {0};
+    memset(&baseComm->qps[i].initAttr, 0, sizeof(baseComm->qps[i].initAttr));
     memset(&baseComm->qps[i].rtrAttr, 0, sizeof(baseComm->qps[i].rtrAttr));
   }
   baseComm->nqps = -1;

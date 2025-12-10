@@ -13,6 +13,8 @@ NCCL_PARAM(IbResiliencyPortFailover, "IB_RESILIENCY_PORT_FAILOVER", 0);
 NCCL_PARAM(IbResiliencyPortFailoverMaxAttempts, "IB_RESILIENCY_PORT_FAILOVER_MAX_ATTEMPTS", 1);
 NCCL_PARAM(IbResiliencyPortFailoverProbeDelay, "IB_RESILIENCY_PORT_FAILOVER_PROBE_DELAY", 10); // In milliseconds
 
+extern int64_t ncclParamIbPkey();
+
 #define MSEC_TO_NSEC 1000000ULL
 
 // Checks if the error indicated in the given work completion is fatal or not.
@@ -655,7 +657,6 @@ ncclResult_t ncclIbResiliencySenderCreateQps(struct ncclIbResiliency* resCtx, st
   void* qpContext = (void*)&sendComm->base.stats;
   struct ncclIbQpCreateAttr qpCreateAttrs = {0};
   qpCreateAttrs.type = IBV_QPT_RC;
-  // Probing QPs on the sender side do not require any remote permissions.
   qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE;
   qpCreateAttrs.maxRecvWorkRequest = 0;
   // Every send request can initiate at most one probing request.
@@ -674,6 +675,15 @@ ncclResult_t ncclIbResiliencySenderCreateQps(struct ncclIbResiliency* resCtx, st
     ncclIbQpInfo* localQpInfo = &localResiliencyInfo->probingQpsInfo[localQpIndex];
     localQpInfo->qpn = localQp->qp->qp_num;
     localQpInfo->devIndex = localDevIndex;
+
+    // Transition the QP to INIT state
+    struct ncclIbQpInitAttr* initAttr = &localQp->initAttr;
+    initAttr->state = IBV_QPS_INIT;
+    initAttr->pkeyIndex = ncclParamIbPkey();
+    initAttr->portNum = ibDev->portNum;
+    // Probing QPs on the sender side do not require any remote permissions.
+    initAttr->qpAccessFlags = IBV_ACCESS_LOCAL_WRITE;
+    NCCLCHECK(ncclIbInitQp(localQp));
   }
   return ncclSuccess;
 }
@@ -717,8 +727,6 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
   void* qpContext = (void*)&recvComm->base.stats;
   struct ncclIbQpCreateAttr qpCreateAttrs = {0};
   qpCreateAttrs.type = IBV_QPT_RC;
-  // On the receiver side, probing QPs do not need to send/receive any messages.
-  // They are only used as targets of RDMA Read operations.
   qpCreateAttrs.accessFlags = IBV_ACCESS_REMOTE_READ;
   qpCreateAttrs.maxRecvWorkRequest = 0;
   qpCreateAttrs.maxSendWorkRequest = 0;
@@ -736,6 +744,16 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, qpContext, localQp));
     localResiliencyInfo->probingQpsInfo[localQpIndex].qpn = localQp->qp->qp_num;
     localResiliencyInfo->probingQpsInfo[localQpIndex].devIndex = localDevIndex;
+
+    // Transition the QP to INIT state
+    struct ncclIbQpInitAttr* initAttr = &localQp->initAttr;
+    initAttr->state = IBV_QPS_INIT;
+    initAttr->pkeyIndex = ncclParamIbPkey();
+    initAttr->portNum = ibDev->portNum;
+    // On the receiver side, probing QPs do not need to send/receive any messages.
+    // They are only used as targets of RDMA Read operations.
+    initAttr->qpAccessFlags = IBV_ACCESS_REMOTE_READ;
+    NCCLCHECK(ncclIbInitQp(localQp));
 
     ncclIbQpInfo* remQpInfo = &remInfo->resiliencyInfo.probingQpsInfo[localQpIndex];
     ncclIbDevInfo* remDevInfo = &remInfo->devs[remQpInfo->devIndex];
