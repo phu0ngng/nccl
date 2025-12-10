@@ -652,7 +652,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->pidHash=getPidHash()+commHash;
   info->cuMemSupport = ncclCuMemEnable();
   CUDACHECK(cudaGetDeviceProperties(&prop, comm->cudaDev));
-  info->totalGlobalMem = ROUNDUP(prop.totalGlobalMem, (1L << 32));
+  info->totalGlobalMem = ROUNDUP(prop.totalGlobalMem, (1LL << 32));
 
   // Get the device MAJOR:MINOR of /dev/shm so we can use that
   // information to decide whether we can use SHM for inter-process
@@ -1386,11 +1386,11 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
           int channelId;
           channelId = ncclP2pChannelForPart(comm->p2pnChannels, sendBase, c);
           if (comm->channels[channelId].peers[peer]->send[1].connected == 0) {
-            comm->connectSend[peer] |= (1UL<<channelId);
+            comm->connectSend[peer] |= (1ULL<<channelId);
           }
           channelId = ncclP2pChannelForPart(comm->p2pnChannels, recvBase, c);
           if (comm->channels[channelId].peers[peer]->recv[1].connected == 0) {
-            comm->connectRecv[peer] |= (1UL<<channelId);
+            comm->connectRecv[peer] |= (1ULL<<channelId);
           }
         }
       }
