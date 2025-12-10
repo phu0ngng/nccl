@@ -333,7 +333,7 @@ struct gdaki_context {
     struct ibv_mr *mr;
     CUmemGenericAllocationHandle mhandle;
   } sink_buffer;
-  struct timespec last_error_query_time;
+  uint64_t last_error_query_time;
 
   struct ncclGinIbCollComm *collComm;
   ncclNetDeviceHandle_v11_t *devHandle;
@@ -993,15 +993,11 @@ ncclResult_t ncclGinGdakiQueryLastError(void *ginCtx, bool *hasError) {
   const int nqpsForComm = nqpsPerRank * nranks;  // Number of QPs for communication
 
   // We throttle the frequency of these queries since they can easily take 250us.
-  struct timespec ts;
-  if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
-    if (ts.tv_sec - gdakiCtx->last_error_query_time.tv_sec +
-          (ts.tv_nsec - gdakiCtx->last_error_query_time.tv_nsec) / 1e9 <
-        ncclParamGinErrorQuerySec()) {
-      goto exit;
-    }
-    gdakiCtx->last_error_query_time = ts;
+  uint64_t now = clockNano();
+  if ((now - gdakiCtx->last_error_query_time) / 1e9 < ncclParamGinErrorQuerySec()) {
+    goto exit;
   }
+  gdakiCtx->last_error_query_time = now;
 
   for (int qpIdx = 0; qpIdx < nqpsForComm; qpIdx++) {
     struct doca_gpu_verbs_qp *qp = gdakiCtx->gqps[qpIdx]->qp_gverbs;

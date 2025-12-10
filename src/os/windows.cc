@@ -26,6 +26,10 @@ uint64_t ncclOsGetpid() {
   return (uint64_t)GetCurrentProcessId();
 }
 
+std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf) {
+  return localtime_s(buf, timer) == 0 ? buf : nullptr;
+}
+
 ncclResult_t ncclOsSetCpuStackSize() {
   // Not implemented on Windows
   return ncclSuccess;
