@@ -950,7 +950,6 @@ inspectorResult_t inspectorDumpThread::inspectorStateDumpProm(const char* output
 void* inspectorDumpThread::dumpMain(void* arg) {
   inspectorDumpThread* dumper = (inspectorDumpThread*)arg;
   inspectorResult_t res = inspectorSuccess;
-  auto sampleInterval = std::chrono::microseconds(dumper->sampleIntervalUsecs);
 
   while (dumper->run) {
     inspectorLockWr(&dumper->guard);
@@ -965,7 +964,7 @@ void* inspectorDumpThread::dumpMain(void* arg) {
     }
     inspectorUnlockRWLock(&dumper->guard);
 
-    std::this_thread::sleep_for(sampleInterval);
+    std::this_thread::sleep_for(std::chrono::microseconds(dumper->sampleIntervalUsecs));
   }
 
   return 0;
