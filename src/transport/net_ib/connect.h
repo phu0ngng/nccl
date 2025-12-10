@@ -65,6 +65,6 @@ struct ncclIbConnectionMetadata {
 ncclResult_t ncclIbCreateQp(struct ncclIbQpCreateAttr* createQpAttrs, void* qp_context, struct ncclIbQp* qp);
 ncclResult_t ncclIbInitQp(struct ncclIbQp* qp);
 ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbQpRtrAttr* rtrAttr);
-ncclResult_t ncclIbRtsQp(struct ibv_qp* qp);
+ncclResult_t ncclIbRtsQp(struct ncclIbQp* qp);
 
 #endif // NET_IB_CONNECT_H_

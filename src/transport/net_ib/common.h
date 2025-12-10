@@ -258,6 +258,11 @@ struct ncclIbQpRtrAttr {
   int32_t localGidIndex;
 };
 
+struct ncclIbQpRtsAttr {
+  int timeout;
+  int retryCnt;
+};
+
 struct ncclIbQp {
   struct ibv_qp* qp;
   // The index of the device on which this QP was created on.
@@ -272,6 +277,7 @@ struct ncclIbQp {
   // failure.
   struct ncclIbQpInitAttr initAttr;
   struct ncclIbQpRtrAttr rtrAttr;
+  struct ncclIbQpRtsAttr rtsAttr;
 
   // The index of the device on the remote side to which this QP is connected
   // to.

@@ -50,6 +50,7 @@ ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend)
     baseComm->qps[i].ece = {0};
     memset(&baseComm->qps[i].initAttr, 0, sizeof(baseComm->qps[i].initAttr));
     memset(&baseComm->qps[i].rtrAttr, 0, sizeof(baseComm->qps[i].rtrAttr));
+    memset(&baseComm->qps[i].rtsAttr, 0, sizeof(baseComm->qps[i].rtsAttr));
   }
   baseComm->nqps = -1;
   baseComm->splitDataOnQps = ncclParamIbSplitDataOnQps();

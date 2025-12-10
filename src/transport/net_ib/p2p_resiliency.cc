@@ -14,6 +14,8 @@ NCCL_PARAM(IbResiliencyPortFailoverMaxAttempts, "IB_RESILIENCY_PORT_FAILOVER_MAX
 NCCL_PARAM(IbResiliencyPortFailoverProbeDelay, "IB_RESILIENCY_PORT_FAILOVER_PROBE_DELAY", 10); // In milliseconds
 
 extern int64_t ncclParamIbPkey();
+extern int64_t ncclParamIbRetryCnt();
+extern int64_t ncclParamIbTimeout();
 
 #define MSEC_TO_NSEC 1000000ULL
 
@@ -717,7 +719,10 @@ ncclResult_t ncclIbResiliencySenderQpsToRts(struct ncclIbResiliency* resCtx, str
     rtrAttr->localGidIndex = sendCommDev->base.gidInfo.localGidIndex;    
     NCCLCHECK(ncclIbRtrQp(localQp->qp, rtrAttr));
 
-    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+    struct ncclIbQpRtsAttr* rtsAttr = &localQp->rtsAttr;
+    rtsAttr->timeout = ncclParamIbTimeout();
+    rtsAttr->retryCnt = ncclParamIbRetryCnt();
+    NCCLCHECK(ncclIbRtsQp(localQp));
   }
   return ncclSuccess;
 }
@@ -769,7 +774,11 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
     rtrAttr->localGid = recvCommDev->base.gidInfo.localGid;
     rtrAttr->localGidIndex = recvCommDev->base.gidInfo.localGidIndex;  
     NCCLCHECK(ncclIbRtrQp(localQp->qp, rtrAttr));
-    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+
+    struct ncclIbQpRtsAttr* rtsAttr = &localQp->rtsAttr;
+    rtsAttr->timeout = ncclParamIbTimeout();
+    rtsAttr->retryCnt = ncclParamIbRetryCnt();
+    NCCLCHECK(ncclIbRtsQp(localQp));
   }
   return ncclSuccess;
 }

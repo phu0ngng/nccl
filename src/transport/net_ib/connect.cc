@@ -389,16 +389,17 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbQpRtrAttr* rtrAttr) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbRtsQp(struct ibv_qp* qp) {
+ncclResult_t ncclIbRtsQp(struct ncclIbQp* qp) {
+  struct ncclIbQpRtsAttr* rtsAttr = &qp->rtsAttr;
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTS;
-  qpAttr.timeout = ncclParamIbTimeout();
-  qpAttr.retry_cnt = ncclParamIbRetryCnt();
+  qpAttr.timeout = rtsAttr->timeout;
+  qpAttr.retry_cnt = rtsAttr->retryCnt;
   qpAttr.rnr_retry = 7;
   qpAttr.sq_psn = 0;
   qpAttr.max_rd_atomic = 1;
-  NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC));
+  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC));
   return ncclSuccess;
 }
 
@@ -544,7 +545,10 @@ static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, struct ncclIbConn
     rtrAttr->localGid = commDev->base.gidInfo.localGid;
     rtrAttr->localGidIndex = commDev->base.gidInfo.localGidIndex;
     NCCLCHECK(ncclIbRtrQp(localQp->qp, &localQp->rtrAttr));
-    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+    struct ncclIbQpRtsAttr* rtsAttr = &localQp->rtsAttr;
+    rtsAttr->timeout = ncclParamIbTimeout();
+    rtsAttr->retryCnt = ncclParamIbRetryCnt();
+    NCCLCHECK(ncclIbRtsQp(localQp));
   }
 
   if (comm->base.resiliency) {
@@ -930,7 +934,10 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     rtrAttr->localGid = rCommDev->base.gidInfo.localGid;
     rtrAttr->localGidIndex = rCommDev->base.gidInfo.localGidIndex;
     NCCLCHECK(ncclIbRtrQp(localQp->qp, rtrAttr));
-    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+    struct ncclIbQpRtsAttr* rtsAttr = &localQp->rtsAttr;
+    rtsAttr->timeout = ncclParamIbTimeout();
+    rtsAttr->retryCnt = ncclParamIbRetryCnt();
+    NCCLCHECK(ncclIbRtsQp(localQp));
 
     // Query the reduced ECE by the device and storing it in the local QP info
     // to return it to the requestor (sender).
@@ -993,7 +1000,10 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
       rtrAttr->localGid = rCommDev->base.gidInfo.localGid;
       rtrAttr->localGidIndex = rCommDev->base.gidInfo.localGidIndex;
       NCCLCHECK(ncclIbRtrQp(flushQp->qp, rtrAttr));
-      NCCLCHECK(ncclIbRtsQp(flushQp->qp));
+      struct ncclIbQpRtsAttr* rtsAttr = &flushQp->rtsAttr;
+      rtsAttr->timeout = ncclParamIbTimeout();
+      rtsAttr->retryCnt = ncclParamIbRetryCnt();
+      NCCLCHECK(ncclIbRtsQp(flushQp));
     }
   }
 
