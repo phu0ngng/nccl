@@ -571,7 +571,7 @@ static ncclResult_t scheduleCollTasksToPlan(
   int nChannels[2*2] = {0, 0, 0, 0}; // [collnet][nvls]
   int const nMaxChannels[2*2] = {comm->nChannels, comm->nvlsChannels, // [collnet][nvls]
                                  comm->nChannels, std::min(comm->nChannels, comm->nvlsChannels)};
-  constexpr size_t MinTrafficPerChannel = 16 << 10; // 16K traffic as minimal
+  constexpr size_t MinTrafficPerChannel = 32 << 10; // 32K traffic as minimal
   do {
     size_t workBytes = 0;
     struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
@@ -604,7 +604,7 @@ static ncclResult_t scheduleCollTasksToPlan(
 
     int kind = 2*task->isCollnet + task->isNvls;
     if (kind != kindPrev) {
-      trafficPerChannel = std::max<size_t>(MinTrafficPerChannel, trafficBytes[kind]/nChannels[kind]);
+      trafficPerChannel = divUp(trafficBytes[kind] / nChannels[kind], 16) * 16;
       kindPrev = kind;
       channelId = 0;
       currentTraffic = 0;
