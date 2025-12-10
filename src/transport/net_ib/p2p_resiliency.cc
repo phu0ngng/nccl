@@ -7,7 +7,7 @@
 
 #include "p2p_resiliency.h"
 #include "p2p.h" // For replay (ncclIbMultiSend() and ncclIbPostFifo())
-#include "connect.h" // For ncclIbCreateQp()
+#include "connect.h" // For ncclIbQpCreate()
 
 NCCL_PARAM(IbResiliencyPortFailover, "IB_RESILIENCY_PORT_FAILOVER", 0);
 NCCL_PARAM(IbResiliencyPortFailoverMaxAttempts, "IB_RESILIENCY_PORT_FAILOVER_MAX_ATTEMPTS", 1);
@@ -672,7 +672,8 @@ ncclResult_t ncclIbResiliencySenderCreateQps(struct ncclIbResiliency* resCtx, st
     ncclIbQp* localQp = &resCtx->probingQps[localQpIndex];
     qpCreateAttrs.cq = resCtx->devs[localDevIndex].probingCq;
     qpCreateAttrs.pd = sendCommDev->base.pd;
-    NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, qpContext, localQp));
+    qpCreateAttrs.qpContext = qpContext;
+    NCCLCHECK(ncclIbQpCreate(localQp, &qpCreateAttrs));
     // Populate the info that will be delivered to the remote receiver peer
     ncclIbQpInfo* localQpInfo = &localResiliencyInfo->probingQpsInfo[localQpIndex];
     localQpInfo->qpn = localQp->qp->qp_num;
@@ -685,7 +686,7 @@ ncclResult_t ncclIbResiliencySenderCreateQps(struct ncclIbResiliency* resCtx, st
     initAttr->portNum = ibDev->portNum;
     // Probing QPs on the sender side do not require any remote permissions.
     initAttr->qpAccessFlags = IBV_ACCESS_LOCAL_WRITE;
-    NCCLCHECK(ncclIbInitQp(localQp));
+    NCCLCHECK(ncclIbQpInit(localQp));
   }
   return ncclSuccess;
 }
@@ -717,12 +718,12 @@ ncclResult_t ncclIbResiliencySenderQpsToRts(struct ncclIbResiliency* resCtx, str
     rtrAttr->localIbPort = remDevInfo->ib_port;
     rtrAttr->localGid = sendCommDev->base.gidInfo.localGid;
     rtrAttr->localGidIndex = sendCommDev->base.gidInfo.localGidIndex;    
-    NCCLCHECK(ncclIbRtrQp(localQp->qp, rtrAttr));
+    NCCLCHECK(ncclIbQpRtr(localQp));
 
     struct ncclIbQpRtsAttr* rtsAttr = &localQp->rtsAttr;
     rtsAttr->timeout = ncclParamIbTimeout();
     rtsAttr->retryCnt = ncclParamIbRetryCnt();
-    NCCLCHECK(ncclIbRtsQp(localQp));
+    NCCLCHECK(ncclIbQpRts(localQp));
   }
   return ncclSuccess;
 }
@@ -746,7 +747,9 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
     ncclIbQp* localQp = &resCtx->probingQps[localQpIndex];
     qpCreateAttrs.cq = resCtx->devs[localDevIndex].probingCq;
     qpCreateAttrs.pd = recvCommDev->base.pd;
-    NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, qpContext, localQp));
+    qpCreateAttrs.qpContext = qpContext;
+    qpCreateAttrs.qpContext = qpContext;
+    NCCLCHECK(ncclIbQpCreate(localQp, &qpCreateAttrs));
     localResiliencyInfo->probingQpsInfo[localQpIndex].qpn = localQp->qp->qp_num;
     localResiliencyInfo->probingQpsInfo[localQpIndex].devIndex = localDevIndex;
 
@@ -758,7 +761,7 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
     // On the receiver side, probing QPs do not need to send/receive any messages.
     // They are only used as targets of RDMA Read operations.
     initAttr->qpAccessFlags = IBV_ACCESS_REMOTE_READ;
-    NCCLCHECK(ncclIbInitQp(localQp));
+    NCCLCHECK(ncclIbQpInit(localQp));
 
     ncclIbQpInfo* remQpInfo = &remInfo->resiliencyInfo.probingQpsInfo[localQpIndex];
     ncclIbDevInfo* remDevInfo = &remInfo->devs[remQpInfo->devIndex];
@@ -773,12 +776,12 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
     rtrAttr->localIbPort = remDevInfo->ib_port;
     rtrAttr->localGid = recvCommDev->base.gidInfo.localGid;
     rtrAttr->localGidIndex = recvCommDev->base.gidInfo.localGidIndex;  
-    NCCLCHECK(ncclIbRtrQp(localQp->qp, rtrAttr));
+    NCCLCHECK(ncclIbQpRtr(localQp));
 
     struct ncclIbQpRtsAttr* rtsAttr = &localQp->rtsAttr;
     rtsAttr->timeout = ncclParamIbTimeout();
     rtsAttr->retryCnt = ncclParamIbRetryCnt();
-    NCCLCHECK(ncclIbRtsQp(localQp));
+    NCCLCHECK(ncclIbQpRts(localQp));
   }
   return ncclSuccess;
 }

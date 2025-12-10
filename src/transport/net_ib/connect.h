@@ -12,6 +12,7 @@
 #include "ibvwrap.h"
 
 struct ncclIbQpCreateAttr {
+  void* qpContext;
   enum ibv_qp_type type;
   struct ibv_cq* cq;
   struct ibv_pd* pd;
@@ -62,9 +63,9 @@ struct ncclIbConnectionMetadata {
   int sl;
 };
 
-ncclResult_t ncclIbCreateQp(struct ncclIbQpCreateAttr* createQpAttrs, void* qp_context, struct ncclIbQp* qp);
-ncclResult_t ncclIbInitQp(struct ncclIbQp* qp);
-ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbQpRtrAttr* rtrAttr);
-ncclResult_t ncclIbRtsQp(struct ncclIbQp* qp);
+ncclResult_t ncclIbQpCreate(struct ncclIbQp* qp, struct ncclIbQpCreateAttr* createQpAttrs);
+ncclResult_t ncclIbQpInit(struct ncclIbQp* qp);
+ncclResult_t ncclIbQpRtr(struct ncclIbQp* qp);
+ncclResult_t ncclIbQpRts(struct ncclIbQp* qp);
 
 #endif // NET_IB_CONNECT_H_
