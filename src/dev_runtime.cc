@@ -425,7 +425,7 @@ static ncclResult_t symMemoryObtain(
 
   // ginEnabled is set in ncclDevrCommCreateInternal, which might not be called for RMA proxy
   // so we introduce rmaProxyEnabled to track if RMA proxy is enabled
-  devr->rmaProxyEnabled = comm->nNodes > 1 && comm->config.numRmaCtx > 0 && comm->rmaState.rmaProxyState.ncclGin != NULL;
+  devr->rmaProxyEnabled = comm->nNodes > 1 && comm->config.numRmaCtx > 0 && comm->rmaProxySupport;
   if (devr->rmaProxyEnabled) {
     NCCLCHECKGOTO(symMemoryRegisterRma(comm, mem), ret, fail_mem_space_teams);
   }
@@ -1133,6 +1133,12 @@ ncclResult_t ncclWinGetUserPtr(struct ncclComm* comm, struct ncclWindow_vidmem* 
   NCCLCHECK(CommCheck(comm, __func__, "comm"));
   NCCLCHECK(PtrCheck(win, __func__, "win"));
   NCCLCHECK(PtrCheck(outUserPtr, __func__, "outUserPtr"));
+
+  if (!comm->symmetricSupport) {
+    INFO(NCCL_INIT, "Symmetric registration is not supported in this communicator.");
+    *outUserPtr = nullptr;
+    return ncclSuccess;
+  }
 
   struct ncclDevrWindow* winHost = NULL;
   struct ncclWindow_vidmem* winDevHost = NULL;
