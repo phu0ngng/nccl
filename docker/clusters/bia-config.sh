@@ -4,7 +4,7 @@
 #
 # Targeting build to run on BIA
 
-# BIA GPU Type: B300 
+# BIA GPU Type: B300
 BIA_GPU_ARCHS="103"
 
 ## CUDA Config

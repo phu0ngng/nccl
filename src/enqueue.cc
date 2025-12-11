@@ -1178,7 +1178,7 @@ static ncclResult_t waitWorkFifoAvailable(struct ncclComm* comm, uint32_t desire
       if (__atomic_load_n(comm->abortFlag, __ATOMIC_ACQUIRE)) {
         return ncclInternalError;
       }
-      
+
       NCCLCHECK(ncclCommPollEventCallbacks(comm, /*waitSome=*/true));
       hasRoom = (desiredProduced - comm->workFifoConsumed) <= comm->workFifoBytes;
       if (hasRoom) break;
