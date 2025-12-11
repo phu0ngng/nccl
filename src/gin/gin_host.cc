@@ -22,7 +22,7 @@ ncclResult_t getGinType(struct ncclComm* comm, ncclGinType_t* ginType) {
   if (comm == nullptr || ginType == nullptr) {
     return ncclInternalError;
   }
-  if (comm->sharedRes->ginState.ncclGin == nullptr) {
+  if (!comm->ginSupport) {
     *ginType = NCCL_GIN_TYPE_NONE;
     return ncclSuccess;
   }

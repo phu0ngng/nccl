@@ -192,6 +192,7 @@ add_subdirectory(ext-mixed/example)
 add_subdirectory(ext-net)
 add_subdirectory(ext-profiler/example)
 add_subdirectory(ext-tuner/example)
+add_subdirectory(ext-env/example)
 add_subdirectory(src)
 
 if(BUILD_TESTS)

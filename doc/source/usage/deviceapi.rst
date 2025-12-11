@@ -19,9 +19,19 @@ Device API consists of the following modules:
    NVLink SHARP (available on some datacenter GPUs since the Hopper generation).
  * **GIN (GPU-Initiated Networking)** -- for communication over the network (since NCCL 2.28.7).
 
+Requirements
+------------
+
 The device API relies on symmetric memory (see :ref:`window_reg`), which in turn depends on GPU virtual memory
 management (see :ref:`env_NCCL_CUMEM_ENABLE`) and optionally -- for multimem support -- on NVLink SHARP (see
 :ref:`env_NCCL_NVLS_ENABLE`).
+
+GIN bootstrap currently requires that all ranks have access to all other ranks. It is not compatible with
+network configurations that do not allow cross-rail connections.
+
+Using the host RMA API requires CUDA 12.5 or greater.
+
+Building with EMIT_LLVM_IR=1 (to generate readable LLCM intermediate representation code) requires CUDA 12.
 
 Host-Side Setup
 ---------------

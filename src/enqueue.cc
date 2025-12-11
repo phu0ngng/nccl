@@ -571,7 +571,7 @@ static ncclResult_t scheduleCollTasksToPlan(
   int nChannels[2*2] = {0, 0, 0, 0}; // [collnet][nvls]
   int const nMaxChannels[2*2] = {comm->nChannels, comm->nvlsChannels, // [collnet][nvls]
                                  comm->nChannels, std::min(comm->nChannels, comm->nvlsChannels)};
-  constexpr size_t MinTrafficPerChannel = 16 << 10; // 16K traffic as minimal
+  constexpr size_t MinTrafficPerChannel = 32 << 10; // 32K traffic as minimal
   do {
     size_t workBytes = 0;
     struct ncclTaskColl* task = ncclIntruQueueHead(&planner->collTaskQueue);
@@ -604,7 +604,7 @@ static ncclResult_t scheduleCollTasksToPlan(
 
     int kind = 2*task->isCollnet + task->isNvls;
     if (kind != kindPrev) {
-      trafficPerChannel = std::max<size_t>(MinTrafficPerChannel, trafficBytes[kind]/nChannels[kind]);
+      trafficPerChannel = divUp(trafficBytes[kind] / nChannels[kind], 16) * 16;
       kindPrev = kind;
       channelId = 0;
       currentTraffic = 0;
@@ -863,7 +863,6 @@ static ncclResult_t addP2pToPlan(
     }
   }
 
-  ssize_t thresholdLL = nChannelsMax*ncclParamP2pLLThreshold();
   ssize_t paramChunkSize = ncclParamChunkSize();
   // Arrays indexed by dir where recv=0, send=1:
   int nChannels[2];
@@ -876,7 +875,27 @@ static ncclResult_t addP2pToPlan(
   bool ipcRegistered[2] = {false, false};
 
   for (int dir=0; dir < 2; dir++) { // 0=recv, 1=send
-    if (bytes[dir] != -1) protoLL[dir] &= bytes[dir] <= thresholdLL;
+    // Assume SIMPLE protocol to start with to determine number of channels
+    stepSize[dir] = comm->p2pChunkSize;
+
+    if (bytes[dir] == -1) nChannels[dir] = 0;
+    else if (bytes[dir] == 0) nChannels[dir] = 1;
+    else {
+      ssize_t minPartSize = comm->nNodes > 1 ? stepSize[dir]/2 : stepSize[dir]/8;
+      ssize_t maxPartSize = comm->nNodes > 1 ? stepSize[dir]   : stepSize[dir]*32;
+      nChannels[dir] = std::min<int>(nChannelsMin, divUp(bytes[dir], minPartSize));
+      size_t partSize = std::max(minPartSize, divUp(bytes[dir], nChannels[dir]));
+      while (partSize > maxPartSize && nChannels[dir] <= nChannelsMax/2) {
+        nChannels[dir] *= 2;
+        partSize = divUp(bytes[dir], nChannels[dir]);
+      }
+    }
+    // Update number of channels propagated to the profiler
+    if (p2pTasks[dir]) p2pTasks[dir]->nChannels = nChannels[dir];
+
+    // Select protocol (LL vs SIMPLE) used based on payload per channel
+    if (bytes[dir] != -1)
+      protoLL[dir] &= bytes[dir] <= nChannels[dir] * ncclParamP2pLLThreshold();
     protocol[dir] = protoLL[dir] ? NCCL_PROTO_LL : NCCL_PROTO_SIMPLE;
 
     stepSize[dir] = comm->buffSizes[protocol[dir]]/NCCL_STEPS;
@@ -934,21 +953,6 @@ static ncclResult_t addP2pToPlan(
           ipcRegistered[dir] = regFlag ? true : false;
       }
     }
-
-    if (bytes[dir] == -1) nChannels[dir] = 0;
-    else if (bytes[dir] == 0) nChannels[dir] = 1;
-    else {
-      ssize_t minPartSize = comm->nNodes > 1 ? stepSize[dir]/2 : stepSize[dir]/8;
-      ssize_t maxPartSize = comm->nNodes > 1 ? stepSize[dir]   : stepSize[dir]*32;
-      nChannels[dir] = std::min<int>(nChannelsMin, divUp(bytes[dir], minPartSize));
-      size_t partSize = std::max(minPartSize, divUp(bytes[dir], nChannels[dir]));
-      while (partSize > maxPartSize && nChannels[dir] <= nChannelsMax/2) {
-        nChannels[dir] *= 2;
-        partSize = divUp(bytes[dir], nChannels[dir]);
-      }
-    }
-    // Update number of channels propagated to the profiler
-    if (p2pTasks[dir]) p2pTasks[dir]->nChannels = nChannels[dir];
   }
 
   struct ncclWorkList* workNode;
@@ -1174,7 +1178,7 @@ static ncclResult_t waitWorkFifoAvailable(struct ncclComm* comm, uint32_t desire
       if (__atomic_load_n(comm->abortFlag, __ATOMIC_ACQUIRE)) {
         return ncclInternalError;
       }
-      
+
       NCCLCHECK(ncclCommPollEventCallbacks(comm, /*waitSome=*/true));
       hasRoom = (desiredProduced - comm->workFifoConsumed) <= comm->workFifoBytes;
       if (hasRoom) break;
@@ -2672,7 +2676,12 @@ static ncclResult_t rmaTaskAppend(
   void const* srcBuff = info->sendbuff;
 
   if (!comm->symmetricSupport){
-    WARN("ncclPutSignal: symmetric support is not enabled");
+    WARN("One sided RMA: symmetric registration is not supported in this communicator.");
+    return ncclInvalidArgument;
+  }
+
+  if (!comm->rmaProxySupport) {
+    WARN("One sided RMA: RMA proxy is not supported in this communicator.");
     return ncclInvalidArgument;
   }
 
@@ -2941,7 +2950,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
             }
           }
           NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root, allowUB));
-        } else if (ceAvailable && comm->symmetricSupport && info->coll == ncclFuncAllGather && info->count > ncclParamSymCeThreshold() && comm->minCompCap >= 100) {
+        } else if (ceAvailable && comm->symmetricSupport && info->coll == ncclFuncAllGather && info->count > ncclParamSymCeThreshold() && comm->minCompCap >= 100 && comm->isAllDirectNvlink) {
           // Use CE for Allgather on Blackwell with size > 8MB
           NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, opDev));
         } else {

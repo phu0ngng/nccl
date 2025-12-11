@@ -99,7 +99,7 @@ struct ncclDevCommRequirements {
     0,                                           /* lsaLLA2ABlockCount */      \
     0,                                           /* lsaLLA2ASlotCount */       \
     0,                                           /* ginForceEnable */          \
-    0,                                           /* ginContextCount */         \
+    4,                                           /* ginContextCount */         \
     0,                                           /* ginSignalCount */          \
     0,                                           /* ginCounterCount */         \
 }
@@ -144,6 +144,7 @@ struct ncclCommProperties {
   int nRanks;
   int cudaDev;
   int nvmlDev;
+  bool deviceApiSupport;
   bool multimemSupport;
   ncclGinType_t ginType;
 };

@@ -233,7 +233,7 @@ int main(int argc, char* argv[]) {
   CUDACHECK(cudaMemcpy(sendbuf, h_data, totalSize, cudaMemcpyHostToDevice));
 
   cudaStream_t stream;
-  CUDACHECK(cudaStreamCreate(&stream));
+  CUDACHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
 
   // Initialize NCCL
   ncclUniqueId id;

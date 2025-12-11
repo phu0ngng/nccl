@@ -126,8 +126,7 @@
 
             # Windows
             'ncclCommWindowRegister': {
-                "return": "win",
-                "except?": 0,
+                "return": "win"
             },
             'ncclCommWindowDeregister': {
             },

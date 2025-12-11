@@ -149,6 +149,8 @@ struct recvNetResources {
 struct netRegInfo {
   uintptr_t buffer;
   size_t size;
+  // Number of physical mapped segments that a buffer spans
+  int numSegments;
 };
 
 /* Determine if two peers can communicate with NET */
@@ -1646,7 +1648,7 @@ ncclResult_t ncclNetDeregBuffer(struct ncclComm* comm, struct ncclProxyConnector
   return ncclSuccess;
 }
 
-static ncclResult_t netRegisterBuffer(ncclComm* comm, const void* userbuff, size_t buffSize, struct ncclConnector** peerConns, int nPeers, struct ncclReg* regRecord, int* outRegBufFlag, void** outHandle) {
+static ncclResult_t netRegisterBuffer(ncclComm* comm, const void* userbuff, size_t buffSize, struct ncclConnector** peerConns, int nPeers, struct ncclReg* regRecord, int* outRegBufFlag, void** outHandle, int numSegments) {
   ncclResult_t ret = ncclSuccess;
   int gdrFlag = 1;
 
@@ -1671,7 +1673,7 @@ static ncclResult_t netRegisterBuffer(ncclComm* comm, const void* userbuff, size
         outHandle[p] = netHandle->handle;
         INFO(NCCL_REG, "rank %d - NET reuse buffer %p size %ld (baseAddr %p size %ld) handle %p", comm->rank, userbuff, buffSize, (void*)regRecord->begAddr, regRecord->endAddr - regRecord->begAddr, netHandle->handle);
       } else {
-        struct netRegInfo info = { regRecord->begAddr, regRecord->endAddr - regRecord->begAddr };
+        struct netRegInfo info = { regRecord->begAddr, regRecord->endAddr - regRecord->begAddr, numSegments};
         void* handle = NULL;
 
         if (peerConn->conn.flags & NCCL_DIRECT_NIC) {
@@ -1721,7 +1723,7 @@ ncclResult_t ncclNetLocalRegisterBuffer(ncclComm* comm, const void* userbuff, si
       int numSegments = 0;
       NCCLCHECK(ncclCuMemGetAddressRange((CUdeviceptr) userbuff, buffSize, (CUdeviceptr*)&base, &baseSize, &numSegments));
       if (numSegments > 1 && !ncclParamMultiSegmentRegister()) goto exit;
-      NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
+      NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle, numSegments), ret, fail);
     }
   }
 
@@ -1758,7 +1760,7 @@ ncclResult_t ncclNetGraphRegisterBuffer(ncclComm* comm, const void* userbuff, si
     NCCLCHECK(ncclCuMemGetAddressRange((CUdeviceptr) userbuff, buffSize, (CUdeviceptr*)&base, &baseSize, &numSegments));
     if (numSegments > 1 && !ncclParamMultiSegmentRegister()) goto exit;
     NCCLCHECKGOTO(ncclCommGraphRegister(comm, base, baseSize, (void**)&regRecord), ret, fail);
-    NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle), ret, fail);
+    NCCLCHECKGOTO(netRegisterBuffer(comm, userbuff, buffSize, peerConns, nPeers, regRecord, outRegBufFlag, outHandle, numSegments), ret, fail);
     if (*outRegBufFlag) {
       NCCLCHECKGOTO(ncclCalloc(&record, 1), ret, fail);
       record->base.fn = cleanupNet;
@@ -1780,8 +1782,10 @@ fail:
 static ncclResult_t sendProxyRegBuffer(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   void* handle;
   struct netRegInfo* info = (struct netRegInfo*)reqBuff;
+  int numSegments = info->numSegments;
   struct sendNetResources* resources = (struct sendNetResources*)(connection->transportResources);
-  ncclResult_t ret = ncclSuccess;
+  // The value of ret is ignored
+  ncclResult_t ret;
   bool needReg = true;
 
   assert(reqSize == sizeof(struct netRegInfo));
@@ -1799,7 +1803,13 @@ static ncclResult_t sendProxyRegBuffer(struct ncclProxyConnection* connection, s
 peermem:
 #endif
   if (needReg) {
-    NCCLCHECKGOTO(proxyState->ncclNet->regMr(resources->netSendComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, &handle), ret, fail);
+    // Non-dmabuf regMr does not support multiple physical segments
+    if (numSegments > 1) {
+      INFO(NCCL_NET|NCCL_REG, "Buffer %p (size %zu, numSegments %d) not registered as DMABuf is not available. Non-DMABuf registration currently does not support multiple segments.", (void *)info->buffer, info->size, numSegments);
+      goto fail;
+    } else {
+      NCCLCHECKGOTO(proxyState->ncclNet->regMr(resources->netSendComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, &handle), ret, fail);
+    }
   }
 
 exit:
@@ -1814,8 +1824,10 @@ fail:
 static ncclResult_t recvProxyRegBuffer(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, void* respBuff, int respSize, int* done) {
   void* handle;
   struct netRegInfo* info = (struct netRegInfo*)reqBuff;
+  int numSegments = info->numSegments;
   struct recvNetResources* resources = (struct recvNetResources*)(connection->transportResources);
-  ncclResult_t ret = ncclSuccess;
+  // The value of ret is ignored
+  ncclResult_t ret;
   bool needReg = true;
 
   assert(reqSize == sizeof(struct netRegInfo));
@@ -1833,7 +1845,13 @@ static ncclResult_t recvProxyRegBuffer(struct ncclProxyConnection* connection, s
 peermem:
 #endif
   if (needReg) {
-    NCCLCHECKGOTO(proxyState->ncclNet->regMr(resources->netRecvComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, &handle), ret, fail);
+    // Non-dmabuf regMr does not support multiple physical segments
+    if (numSegments > 1) {
+      INFO(NCCL_NET|NCCL_REG, "Buffer %p (size %zu, numSegments %d) not registered as DMABuf is not available. Non-DMABuf registration currently does not support multiple segments.", (void *)info->buffer, info->size, numSegments);
+      goto fail;
+    } else {
+      NCCLCHECKGOTO(proxyState->ncclNet->regMr(resources->netRecvComm, (void*)info->buffer, info->size, NCCL_PTR_CUDA, &handle), ret, fail);
+    }
   }
 
 exit:

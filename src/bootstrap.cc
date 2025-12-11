@@ -472,6 +472,8 @@ ncclResult_t bcastGrowHandle(struct ncclBootstrapHandle* handle, struct ncclComm
     return ncclInvalidArgument;
   }
 
+  // Single rank parent already has the handle, no need to broadcast
+  if (parent->nRanks == 1) return ncclSuccess;
   if (isRoot) {
     NCCLCHECK(bootstrapSend(parent->bootstrap, 0, BOOTSTRAP_TAG_GROW_BOUNDARY, handle, sizeof(struct ncclBootstrapHandle)));
     NCCLCHECK(bootstrapSend(parent->bootstrap, parent->nRanks - 1, BOOTSTRAP_TAG_GROW_BOUNDARY, handle, sizeof(struct ncclBootstrapHandle)));
@@ -776,8 +778,8 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm, s
     NCCLCHECK(bootstrapSend(parent->bootstrap, rank - 1, 0, &info.connectInfo, sizeof(info.connectInfo)));
   }
   // if needed, send the connection info to the previous root
-  // commGrow is a special case of multiroot
-  if ((comm->isGrow || nHandles > 1) && isFirstFromRoot(rank, curr_root, nranks, nHandles, offset)) {
+  // commGrow with more than = 1 rank in the parent comm is a special case of multiroot
+  if (((comm->isGrow && parent && (parent->nRanks > 1)) || nHandles > 1) && isFirstFromRoot(rank, curr_root, nranks, nHandles, offset)) {
     int prev_rank = BOOTSTRAP_PID(rank - 1, nranks);
     int prev_root = rootIdFromRank(prev_rank, nranks, nHandles, offset);
     info.rank = prev_rank + 1; // my rank as seen by the previous root

@@ -864,8 +864,8 @@ void writeMemInfo(memInfo_t* memInfos, int numMemInfos) {
   std::stringstream ss;
   uint64_t maxAmount = 0;
   for (int i = 0; i < numMemInfos; i++) {
-    ss << memInfos[i].name << " " 
-      << getMemString(memInfos[i].amount) 
+    ss << memInfos[i].name << " "
+      << getMemString(memInfos[i].amount)
       << " ";
     if (i < numMemInfos - 1) {
       ss << "| ";

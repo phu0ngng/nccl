@@ -133,7 +133,7 @@ gcperf-tools generate-job-script \
 # Submit the job
 cd perfregression
 echo "Submitting job script..."
-sbatch --wait -N ${NNODES} ${EXTRA_SLURM_ARGS} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
+sbatch --wait --export=ALL -N ${NNODES} ${EXTRA_SLURM_ARGS} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
 
 # Convert results to CSV
 echo "Converting results to CSV..."
@@ -173,7 +173,7 @@ echo "See job artifacts for detailed reports."
 
 # Handle different exit codes from gcperf-tools regression-check
 # Exit with 1 if REGRESSION_CODE is in [1, 66, 67], otherwise exit with 0
-# 
+#
 # Exit codes from gcperf-tools regression-check:
 # 0  - SUCCESS: No regressions detected
 # 1  - ERROR: No matching test configurations found between baseline and candidate datasets
@@ -184,7 +184,7 @@ echo "See job artifacts for detailed reports."
 
 create_nvbug() {
     local target_branch=$1
-    
+
     echo "Creating NvBug for regression compared to ${target_branch}..."
     DATE_STRING=$(date +%m/%d/%y)
     DESCRIPTION="Performance regression detected on $DATE_STRING <br />\n Cluster: $CLUSTER_NAME <br />\n Nodes: $NNODES <br />\n Branch: $CURRENT_BRANCH <br />\n Commit: $CI_COMMIT_SHA <br />\n Compared to: ${target_branch} <br />\n <a href=\"$CI_JOB_URL\">See job artifacts for more details</a>"
