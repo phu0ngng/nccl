@@ -321,3 +321,109 @@ With NCCL 2.21 and later releases, this environment variable should *not* be set
 Users may also need to set ``NCCL_IB_TC`` when using RoCE based networks. Refer to your vendor's documentation for the values this should be set to.
 
 .. highlight:: c++
+
+
+MPI
+---
+
+Before running NCCL with MPI (e.g. ``mpirun <my_application>``), running a simple MPI test can help verify whether the nodes are able to communicate properly.
+
+You can do this is two steps. First make sure an application can be launched in parallel:
+
+.. code:: shell
+
+ # Open MPI based MPIs:
+ mpirun -np <number of processes> -N <processes per node> "hostname"
+
+ # MPICH based MPIs:
+ mpirun -np <number of processes> -ppn <processes per node> "hostname"
+
+
+Second, make sure MPI can be initialized and run a simple reduction:
+
+.. code:: shell
+
+ wget https://raw.githubusercontent.com/pmodels/mpich/main/examples/cpi.c
+ mpicc -o cpi cpi.c
+ mpirun -np <number of processes> -N <processes per node> ./cpi
+
+
+Open MPI based MPIs (e.g. NVIDIA HPC-X)
+---------------------------------------
+
+Many NCCL-based applications are compiled with MPI to utilize its parallel launcher and broadcast mechanisms during startup. In cluster environments, if MPI is not correctly configured, the ``mpirun`` command may fail to start applications, hang, or produce errors. The following guidelines will help you troubleshoot common MPI-related startup and connectivity issues. These setting assume an environment in which variables are automatically forwarded to each MPI rank (e.g. SLURM cluster). If you are unsure you can explicitly forward the variables through ``mpirun -x VARIABLE_NAME=<variable_value>`` instead of ``export VARIABLE_NAME=<variable_value>``.
+
+These settings will not have any impact on NCCL performance, but if MPI is used frequently for communications, then application performance may be impacted.
+
+Network interface selection
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If the application hangs at startup or displays a segmentation fault in ``libmpi.so``, MPI may be selecting an incorrect network interface. You can list active and connected interfaces with:
+
+.. code:: shell
+
+   ip -br link | grep LOWER_UP | grep ' UP '
+
+Usually, only a subset of interfaces (such as ``eth*``, ``en*``, or ``ib*``) are connected to the network. Loopback (``lo``) and container-related interfaces are typically not suitable. If your administrator has specified ``NCCL_SOCKET_IFNAME``, use the same interface with MPI by setting:
+
+.. code:: shell
+
+   export OMPI_MCA_btl_tcp_if_include=<interface-name>
+
+Alternatively, to exclude interfaces that are usually not connected to the network (used for loopback or containers):
+
+.. code:: shell
+
+   export OMPI_MCA_btl_tcp_if_exclude=lo,docker0,virbr0
+
+Note: Do not use include and exclude options simultaneously.
+
+PMIx Data Store selection
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There has been an issue (see https://github.com/open-mpi/ompi/issues/7516) with an PMIx component in Open MPI in the past. This has since been fixed, but can still occur if you MPI is based on an odler version. If the application reports an error similar to
+
+.. code:: shell
+
+   PMIX ERROR: ERROR in file gds_ds12_lock_pthread.c
+
+You can force a different GDS component through ``export PMIX_MCA_gds=hash``.
+
+UCX and HPC-X considerations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+HPC-X commonly utilizes the Unified Communication X (UCX) library. If you encounter UCX warnings such as:
+
+.. code:: shell
+
+   UCX  WARN  network device 'XXX' is not available, please use one or more of: YYY, ...
+
+set the device explicitly:
+
+.. code:: shell
+
+   export UCX_NET_DEVICES=YYY
+
+For UCX error messages like:
+
+.. code:: shell
+
+   UCX  ERROR   no active messages transport to <no debug data>: Unsupported operation
+   Error: Failed to resolve UCX endpoint
+
+try simplifying the UCX transport selection:
+
+.. code:: shell
+
+   export UCX_TLS=self,sm,tcp
+
+If necessary, you can disable UCX components and revert to basic TCP communication:
+
+.. code:: shell
+
+   export OMPI_MCA_pml=^ucx
+   export OMPI_MCA_coll_hcoll_enable=0
+   export OMPI_MCA_coll=^ucc
+   export OMPI_MCA_btl=self,tcp
+
+
