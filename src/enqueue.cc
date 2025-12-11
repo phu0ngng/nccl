@@ -2556,7 +2556,12 @@ static ncclResult_t collTaskAppend(
   ncclGroupCommJoin(info->comm, ncclGroupTaskTypeCollective);
   // Set capturing graph. Called here so that profiler can emit a group API event with this information
   NCCLCHECK(ncclPlannerSetCapturingGraph(comm, info));
+
   bool isGraphCaptured = ncclCudaGraphValid(planner->capturingGraph);
+  NCCLCHECK(ncclProfilerStartGroupApiEvent(info, isGraphCaptured));
+  NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupStartApiStop));
+  NCCLCHECK(ncclProfilerStartCollApiEvent(info, isGraphCaptured));
+
   if (info->coll == ncclFuncBroadcast && ncclParamAllgathervEnable()) {
     // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
     struct ncclTaskBcast* t = ncclMemoryPoolAlloc<struct ncclTaskBcast>(&comm->memPool_ncclTaskBcast, &comm->memPermanent);
@@ -2579,9 +2584,6 @@ static ncclResult_t collTaskAppend(
     planner->nTasksBcast += 1;
   }
   else {
-  NCCLCHECK(ncclProfilerStartGroupApiEvent(info, isGraphCaptured));
-  NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupStartApiStop));
-  NCCLCHECK(ncclProfilerStartCollApiEvent(info, isGraphCaptured));
   struct ncclTaskColl* t = ncclMemoryPoolAlloc<struct ncclTaskColl>(&comm->memPool_ncclTaskColl, &comm->memPermanent);
   t->func = info->coll;
   t->sendbuff = info->sendbuff;
