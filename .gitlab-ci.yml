@@ -143,12 +143,12 @@ include: .gitlab-template.yml
 # this is a special build-time setting to increase log verbosity
 build-trace:
   stage: build
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE == "nightly" || $BUILD_TRACE == "1"
       when: always
     - when: never
-  tags:
-    - ipp6-nccl
   variables:
     NCCL_BUILD_TRACE: 1
   script:
@@ -156,17 +156,18 @@ build-trace:
 
 build-ipp6:
   stage: build
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1" || $RUN_NCCL4PY_CI == "1" || $RUN_PROFILER_TESTS == "1" || $RUN_INSPECTOR_TESTS == "1"))
       when: always
     - when: never
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: $IPP6_INSTALL_DIR
     BUILD_DIR: build
   script:
     - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
+  retry: 2
   artifacts:
     paths:
       - build
@@ -217,7 +218,7 @@ build-theia:
 build-bia:
   stage: build
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_BIA == "1")
       when: always
     - when: never
   tags:
@@ -256,15 +257,16 @@ build-dlfw-pytorch-container:
 
 build-cmake:
   stage: build
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || $BUILD_CMAKE == "1"
       when: always
     - when: never
-  tags:
-    - ipp6-nccl
   variables:
     SLURM_PARTITION: cpuonly
     SLURM_TIME: 15
+  retry: 2
   script:
     # TODO (kartiki) - Invoke this via docker/make.sh
     - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh --ci-build
@@ -411,9 +413,8 @@ setup-cw-dfw:
     - .cw-dfw
     - .setup
   rules:
-    # - !reference [.pre_submit, rules]
-    # - !reference [.cw-dfw, rules]
-    - when: never
+    - !reference [.pre_submit, rules]
+    - !reference [.cw-dfw, rules]
   needs: ["build-ipp6"]
   variables:
     BUILD_DIR: "build"
@@ -1085,14 +1086,14 @@ unit_tests-pre-tyche:
 
 unit_tests-ipp6-a40:
   stage: unit_tests
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -1103,7 +1104,7 @@ unit_tests-ipp6-a40:
     NGPUS: 1
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     OMPI_MCA_btl: "^openib"
     DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
@@ -1127,8 +1128,7 @@ unit_tests-ipp6-a40:
     LSA_POINTER_TESTS: 0
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1142,14 +1142,14 @@ unit_tests-ipp6-a40:
 
 unit_tests-ipp6-a100:
   stage: unit_tests
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -1160,7 +1160,7 @@ unit_tests-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -1184,8 +1184,7 @@ unit_tests-ipp6-a100:
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1199,14 +1198,14 @@ unit_tests-ipp6-a100:
 
 unit_tests-gin-ipp6-a100:
   stage: unit_tests
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -1217,15 +1216,14 @@ unit_tests-gin-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 1
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+    - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1641,14 +1639,14 @@ examples-validation-theia:
 
 examples-validation-ipp6-a100:
   stage: unit_tests
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -1659,11 +1657,10 @@ examples-validation-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     EXAMPLES_TESTS_BASIC_ONLY: 0
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-examples.sh
+    - ./test/scripts/ci/gitlab-runner-examples.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2058,14 +2055,14 @@ apitest-pre-tyche:
 
 apitest-ipp6-a40:
   stage: api_tests
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -2076,13 +2073,12 @@ apitest-ipp6-a40:
     NGPUS: 1
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+    - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2096,14 +2092,14 @@ apitest-ipp6-a40:
 
 apitest-ipp6-a100:
   stage: api_tests
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -2114,13 +2110,12 @@ apitest-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+    - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2503,7 +2498,7 @@ perftest_single-AWS_H100_EFA:
 perftest_single-draco_oci:
   stage: perf_tests_single
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs:
@@ -2625,14 +2620,14 @@ perftest-single-pre-tyche:
 
 perftest-single-ipp6-a40:
   stage: perf_tests_single
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -2644,12 +2639,11 @@ perftest-single-ipp6-a40:
     NGPUS: 1
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+    - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2663,14 +2657,14 @@ perftest-single-ipp6-a40:
 
 perftest-single-ipp6-a100:
   stage: perf_tests_single
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -2682,12 +2676,11 @@ perftest-single-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+    - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2953,7 +2946,7 @@ perftest_multi-AWS_H100_EFA:
 perftest_multi-draco_oci:
   stage: perf_tests_multi
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs:
@@ -3077,14 +3070,14 @@ perftest-multi-pre-tyche:
 
 perftest-multi-ipp6-a40:
   stage: perf_tests_multi
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -3096,12 +3089,11 @@ perftest-multi-ipp6-a40:
     NGPUS: 1
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+    - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3115,14 +3107,14 @@ perftest-multi-ipp6-a40:
 
 perftest-multi-ipp6-a100:
   stage: perf_tests_multi
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
@@ -3134,12 +3126,11 @@ perftest-multi-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
+    RUN_MODE: "SALLOC_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+    - ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3248,8 +3239,8 @@ perftest-multi-bia:
 perf-regression-eos:
   stage: perf_regression
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
+    #   when: always
     - when: never
   needs:
     - setup-eos
@@ -3261,6 +3252,35 @@ perf-regression-eos:
     ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    SLURM_TIME: 60
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  script:
+    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  artifacts:
+    when: always
+    paths:
+      - "perfregression/results.csv"
+      - "perfregression/report.pdf"
+      - "perfregression/*.xlsx"
+    expire_in: 48 hrs
+
+perf-regression-cw-dfw:
+  stage: perf_regression
+  rules:
+    # - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_REGRESSION == "1")
+    #   when: always
+    - when: never
+  needs:
+    - setup-cw-dfw
+  tags:
+    - nccl-cw-dfw
+  variables:
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 60
     NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
@@ -3340,20 +3360,20 @@ perf-regression-theia:
 
 profiler-tests-ipp6-a100:
   stage: profiler_tests
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PROFILER_TESTS == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "MPI"
+    RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: a100-cicd
     NNODES: 1
     ENABLE_NVLS: 0
@@ -3362,8 +3382,7 @@ profiler-tests-ipp6-a100:
     NP: 2
     NCCL_HOME: ${INSTALL_DIR}/build
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-profiler.sh
+    - ./test/scripts/ci/gitlab-runner-profiler.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3385,20 +3404,20 @@ profiler-tests-ipp6-a100:
 
 inspector-tests-ipp6-a100:
   stage: inspector_tests
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_INSPECTOR_TESTS == "1")
       when: always
     - when: never
   needs:
     - setup-ipp6
-  tags:
-    - ipp6-nccl
   variables:
     INSTALL_DIR: ${IPP6_INSTALL_DIR}
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "MPI"
+    RUN_MODE: "SALLOC_MPI"
     SLURM_PARTITION: a100-cicd
     NNODES: 1
     ENABLE_NVLS: 0
@@ -3408,8 +3427,7 @@ inspector-tests-ipp6-a100:
     NCCL_HOME: ${INSTALL_DIR}/build
     NCCL_SRC: ${CI_PROJECT_DIR}
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "${CI_JOB_NAME}::${GITLAB_USER_LOGIN}::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-inspector.sh
+    - ./test/scripts/ci/gitlab-runner-inspector.sh
   artifacts:
     when: always
     paths:
@@ -3447,8 +3465,10 @@ cleanup-eos:
   extends:
     - .cleanup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.eos, rules]
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_EOS == "1"
+      when: on_success
   tags:
     - nccl-eos
   needs:
@@ -3478,9 +3498,10 @@ cleanup-cw-dfw:
   extends:
     - .cleanup
   rules:
-    # - !reference [.pre_submit, rules]
-    # - !reference [.cw-dfw, rules]
-    - when: never
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_CW_DFW == "1"
+      when: on_success
   tags:
     - nccl-cw-dfw
   needs:
@@ -3496,6 +3517,8 @@ cleanup-cw-dfw:
       optional: true
     - job: perftest-multi-cw-dfw
       optional: true
+    - job: perf-regression-cw-dfw
+      optional: true
   variables:
     INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
 
@@ -3504,8 +3527,10 @@ cleanup-draco-oci:
   extends:
     - .cleanup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.draco-oci, rules]
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_DRACO_OCI == "1"
+      when: on_success
   tags:
     - draco-oci-iad
   needs:
@@ -3528,8 +3553,10 @@ cleanup-pre-nyx:
   extends:
     - .cleanup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.pre-nyx, rules]
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: on_success
   tags:
     - prenyx
   needs:
@@ -3555,8 +3582,10 @@ cleanup-pre-tyche:
   extends:
     - .cleanup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.pre-tyche, rules]
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: on_success
   tags:
     - ptyche
   needs:
@@ -3586,8 +3615,10 @@ cleanup-theia:
   extends:
     - .cleanup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.theia, rules]
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_THEIA == "1"
+      when: on_success
   tags:
     - lyris
   needs:
@@ -3616,8 +3647,10 @@ cleanup-bia:
   extends:
     - .cleanup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.bia, rules]
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_BIA == "1"
+      when: on_success
   tags:
     - bia
   needs:
@@ -3640,13 +3673,13 @@ cleanup-ipp6:
   extends:
     - .cleanup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.ipp6, rules]
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_IPP6 == "1"
+      when: on_success
   tags:
     - ipp6-nccl
   needs:
-    - job: build-ipp6
-      optional: true
     - job: setup-ipp6
       optional: true
     - job: nccl4py_ci
