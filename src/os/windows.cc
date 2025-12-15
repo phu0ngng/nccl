@@ -96,12 +96,15 @@ ncclResult_t ncclOsSocketTryAccept(struct ncclSocket* sock) {
   } else {
     int wsaError = WSAGetLastError();
     if (wsaError == WSAEINPROGRESS) {
+      // Connection in progress, retry with backoff
       if (++sock->errorRetries == ncclParamRetryCnt()) {
         WARN("ncclOsSocketTryAccept: exceeded error retry count after %d attempts, %s", sock->errorRetries, getWSAErrorMessage(wsaError));
         return ncclSystemError;
       }
       INFO(NCCL_NET|NCCL_INIT, "Call to accept returned %s, retrying", getWSAErrorMessage(wsaError));
-    } else {
+    } else if (wsaError != WSAEINTR && wsaError != WSAEWOULDBLOCK) {
+      // WSAEWOULDBLOCK (10035) is expected for non-blocking accept - means no pending connection yet
+      // WSAEINTR means interrupted, both are normal and we just return success to try again later
       WARN("ncclOsSocketTryAccept: Accept failed: %s", getWSAErrorMessage(wsaError));
       return ncclSystemError;
     }
@@ -158,7 +161,15 @@ void ncclOsSocketResetAccept(struct ncclSocket* sock) {
 ncclResult_t ncclOsSocketResetFd(struct ncclSocket* sock) {
   ncclResult_t ret = ncclSuccess;
   SOCKET newSocket = INVALID_SOCKET;
-  SYSCHECKGOTO(newSocket = socket(sock->sa.sa_family, SOCK_STREAM, 0), "socket", ret, cleanup);
+
+  newSocket = socket(sock->addr.sa.sa_family, SOCK_STREAM, 0);
+  if (newSocket == INVALID_SOCKET) {
+      int wsaError = WSAGetLastError();
+      WARN("ncclOsSocketResetFd: socket() failed with error %d: %s", wsaError, getWSAErrorMessage(wsaError));
+      ret = ncclSystemError;
+      goto cleanup;
+  }
+
   // if socket is valid, close it and replace with new socket
   if (ncclOsSocketIsValid(sock)) {
     (void)closesocket(sock->socketDescriptor);
@@ -179,9 +190,11 @@ static ncclResult_t socketConnectCheck(struct ncclSocket* sock, int errCode, con
   char line[SOCKET_NAME_MAXLEN+1];
   if (errCode == 0) {
     sock->state = ncclSocketStateConnected;
-  } else if (errCode == WSAEINPROGRESS) {
+  } else if (errCode == WSAEINPROGRESS || errCode == WSAEWOULDBLOCK) {
+    // WSAEWOULDBLOCK (10035) on Windows for non-blocking connect() is equivalent to
+    // EINPROGRESS on Linux - it means connection is in progress, poll for completion
     sock->state = ncclSocketStateConnectPolling;
-  } else if (errCode == WSAEINTR || errCode == WSAEWOULDBLOCK || errCode == WSAEAGAIN ||
+  } else if (errCode == WSAEINTR || errCode == WSAEAGAIN ||
              errCode == WSAETIMEDOUT || errCode == WSAEHOSTUNREACH || errCode == WSAECONNREFUSED) {
     if (sock->customRetry == 0) {
       if (sock->errorRetries++ == ncclParamRetryCnt()) {
@@ -259,13 +272,17 @@ ncclResult_t ncclOsSocketProgressOpt(int op, struct ncclSocket* sock, void* ptr,
       return ncclSuccess;
     }
     if (bytes == SOCKET_ERROR) {
-      if (WSAGetLastError() == WSAECONNRESET) {
+      const int wsaError = WSAGetLastError();
+      if (wsaError == WSAECONNRESET) {
         *closed = 1;
         return ncclSuccess;
       }
-      if (WSAGetLastError() != WSAEINPROGRESS) {
-        WARN("ncclOsSocketProgressOpt: Call to %s %s failed : %u", (op == NCCL_SOCKET_RECV ? "recv from" : "send to"),
-              ncclSocketToString(&sock->addr, line), WSAGetLastError());
+      // WSAEWOULDBLOCK (10035) is expected for non-blocking sockets - means "try again later"
+      // WSAEINPROGRESS (10036) means operation is in progress
+      // WSAEINTR means interrupted by signal
+      if (wsaError != WSAEWOULDBLOCK && wsaError != WSAEINPROGRESS && wsaError != WSAEINTR) {
+        WARN("ncclOsSocketProgressOpt: Call to %s %s failed : %d (%s)", (op == NCCL_SOCKET_RECV ? "recv from" : "send to"),
+              ncclSocketToString(&sock->addr, line), wsaError, getWSAErrorMessage(wsaError));
         return ncclRemoteError;
       } else {
         bytes = 0;
