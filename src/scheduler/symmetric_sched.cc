@@ -11,6 +11,8 @@
 
 extern int64_t ncclParamSingleProcMemRegEnable();
 
+NCCL_PARAM(SymNoWinEnable, "SYM_NOWIN_ENABLE", 0);
+
 ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskColl* task, struct ncclIntruQueue<struct ncclTaskColl, &ncclTaskColl::next>* symTaskQueue, struct ncclTaskColl** remainTasksHead) {
   ncclResult_t ret = ncclSuccess;
   int fnOpTySymCount = 0;
@@ -109,7 +111,8 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
       if (forced) {
         needFallback = isLLKernel && isOneThreadMultiGpus && headTask->winRegType == ncclSymSendNonregRecvNonreg;
       } else {
-        needFallback = isLLKernel && (isOneThreadMultiGpus || !isLegacyLLKernel);
+        needFallback = isLLKernel && (isOneThreadMultiGpus || !isLegacyLLKernel ||
+                       (headTask->winRegType == ncclSymSendNonregRecvNonreg && !ncclParamSymNoWinEnable()));
       }
 
       if (kernelId == ncclSymkKernelId_Count || needFallback) {
