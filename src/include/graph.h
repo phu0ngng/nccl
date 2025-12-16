@@ -89,8 +89,8 @@ enum netDevsPolicy {
 };
 ncclResult_t ncclTopoGetNetDevsPolicy(enum netDevsPolicy* policy, int* policyNum);
 
-// Allows for up to 32 NICs per node on GB200-NVL72
-#define NCCL_TOPO_MAX_NODES 576
+// Allows for up to 576 GPUs (e.g., NVLD144) with headroom for internal operations
+#define NCCL_TOPO_MAX_NODES 640
 ncclResult_t ncclTopoGetLocal(struct ncclTopoSystem* system, int type, int index, int resultType, int locals[NCCL_TOPO_MAX_NODES], int* localCount, int* pathType);
 
 // Init search. Needs to be done before calling ncclTopoCompute
