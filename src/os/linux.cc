@@ -32,6 +32,10 @@ uint64_t ncclOsGetpid() {
   return (uint64_t)getpid();
 }
 
+std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf) {
+  return localtime_r(timer, buf);
+}
+
 // The default Linux stack size (8MB) is safe.
 #define SAFE_STACK_SIZE (8192*1024)
 
@@ -68,15 +72,6 @@ ncclResult_t ncclOsSetCpuStackSize() {
 
 void ncclOsSetEnv(const char* name, const char* value) {
   setenv(name, value, 0);
-}
-
-void ncclOsSleep(unsigned int time_msec) {
-  const long c_1e6 = 1e6;
-  struct timespec tv = (struct timespec){
-    .tv_sec = time_msec / 1000,
-    .tv_nsec = (time_msec % 1000) * c_1e6,
-  };
-  nanosleep(&tv, NULL);
 }
 
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sockDescriptor) {
@@ -204,7 +199,7 @@ static ncclResult_t socketConnectCheck(struct ncclSocket* sock, int errCode, con
       INFO(NCCL_NET|NCCL_INIT, "%s: connect to %s returned %s, retrying (%d/%ld) after sleep for %u msec",
            funcName, ncclSocketToString(&sock->addr, line), strerror(errCode),
            sock->errorRetries, ncclParamRetryCnt(), sleepTime);
-      ncclOsSleep(sleepTime);
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepTime));
     }
     NCCLCHECK(ncclOsSocketResetFd(sock)); /* in case of failure in connect, socket state is unspecified */
     sock->state = ncclSocketStateConnecting;

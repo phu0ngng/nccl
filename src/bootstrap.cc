@@ -17,6 +17,7 @@
 #include <mutex>
 #include "os.h"
 #include <thread>
+#include <chrono>
 
 #define BOOTSTRAP_N_CHECK_ABORT           10000
 #define BOOTSTRAP_TAG_CONNECT             (0x1 << 31)
@@ -471,6 +472,8 @@ ncclResult_t bcastGrowHandle(struct ncclBootstrapHandle* handle, struct ncclComm
     return ncclInvalidArgument;
   }
 
+  // Single rank parent already has the handle, no need to broadcast
+  if (parent->nRanks == 1) return ncclSuccess;
   if (isRoot) {
     NCCLCHECK(bootstrapSend(parent->bootstrap, 0, BOOTSTRAP_TAG_GROW_BOUNDARY, handle, sizeof(struct ncclBootstrapHandle)));
     NCCLCHECK(bootstrapSend(parent->bootstrap, parent->nRanks - 1, BOOTSTRAP_TAG_GROW_BOUNDARY, handle, sizeof(struct ncclBootstrapHandle)));
@@ -758,12 +761,8 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm, s
     // for socket the message rate in microsec
     double msg_rate = ncclParamStaggerRate() / 1.0e6;
     long musec = localIdFromRoot(rank, curr_root, nranks, nHandles, offset) / msg_rate;
-    struct timespec tv;
-    long c_1e6 = 1e6;
-    tv.tv_sec = musec / c_1e6;
-    tv.tv_nsec = 1e3 * (musec % c_1e6);
     TRACE(NCCL_BOOTSTRAP, "rank %d delaying connection to root by %ld microsec", rank, musec);
-    (void)nanosleep(&tv, NULL);
+    std::this_thread::sleep_for(std::chrono::microseconds(musec));
   }
   BOOTSTRAP_PROF_CLOSE(timers[BOOTSTRAP_INIT_TIME_DELAY]);
 
@@ -779,8 +778,8 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm, s
     NCCLCHECK(bootstrapSend(parent->bootstrap, rank - 1, 0, &info.connectInfo, sizeof(info.connectInfo)));
   }
   // if needed, send the connection info to the previous root
-  // commGrow is a special case of multiroot
-  if ((comm->isGrow || nHandles > 1) && isFirstFromRoot(rank, curr_root, nranks, nHandles, offset)) {
+  // commGrow with more than = 1 rank in the parent comm is a special case of multiroot
+  if (((comm->isGrow && parent && (parent->nRanks > 1)) || nHandles > 1) && isFirstFromRoot(rank, curr_root, nranks, nHandles, offset)) {
     int prev_rank = BOOTSTRAP_PID(rank - 1, nranks);
     int prev_root = rootIdFromRank(prev_rank, nranks, nHandles, offset);
     info.rank = prev_rank + 1; // my rank as seen by the previous root

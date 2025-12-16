@@ -11,19 +11,23 @@ IPP6_BUILD_IMAGE_VERSION="${IPP6_BUILD_TOOLS_VERSION}-c${IPP6_CUDA_VERSION}-u${I
 
 IPP6_TOOLKIT_DIR="/storage/toolkits"
 IPP6_CUDA_HOME="$IPP6_TOOLKIT_DIR/cuda-$IPP6_CUDA_VERSION"
-IPP6_OPENMPI_HOME="/cm/shared/apps/openmpi4/gcc/4.1.5"
+IPP6_OPENMPI_HOME="/cm/shared/apps/openmpi4/gcc/4.1.8"
 
 IPP6_DOCKER_IMAGE_DIR="$IPP6_TOOLKIT_DIR/docker_sqsh"
 
 IPP6_PLANNED_RESERVED="Skip"
 
-IPP6_NCCL_SOCKET_IFNAME=""
-if [ -n "$SLURM_JOB_NODELIST" ] && [[ ! "$SLURM_JOB_NODELIST" =~ worker ]]; then
-    # Dynamically get the N/S interface from Slurm allocation.
-    # If the nodelist has a 'worker' node, then this is not applicable because the cpuonly partition was explicitly requested.
-    # This assumes that the cluster config file is being sourced in after the allocation is granted
-    nodename=$(srun hostname -s | head -n1)
-    IPP6_NCCL_SOCKET_IFNAME=$(ssh $nodename 'ip route get 8.8.8.8' | sed -E 's/.*?dev (\S+) .*/\1/;t;d')
+# Set interface name based on partition
+# Use a100 interface as default
+IPP6_NCCL_SOCKET_IFNAME="enp134s0np0"
+if [[ "$SLURM_PARTITION" =~ ^a100 ]]; then
+    IPP6_NCCL_SOCKET_IFNAME="enp134s0np0"
+elif [[ "$SLURM_PARTITION" =~ ^a40 ]]; then
+    IPP6_NCCL_SOCKET_IFNAME="enp65s0np0"
+elif [[ "$SLURM_PARTITION" =~ ^l40s ]]; then
+    IPP6_NCCL_SOCKET_IFNAME="ens255f0np0"
+elif [[ "$SLURM_PARTITION" =~ ^h100 ]]; then
+    IPP6_NCCL_SOCKET_IFNAME="ens255np0"
 fi
 
 # Target configs
@@ -101,6 +105,11 @@ function get_mpi_params() {
 function configure_test_env() {
     export UCX_NET_DEVICES=$IPP6_NCCL_SOCKET_IFNAME
     export UCX_TLS=tcp
+    export OMPI_MCA_btl="^openib"
+    export OMPI_MCA_rmaps_oversubscribe=1
+    export OMPI_MCA_rmaps_binding_policy=none
+    export OMPI_MCA_btl="tcp,self"
+    export OMPI_MCA_btl_tcp_if_include=$IPP6_NCCL_SOCKET_IFNAME
 
     # Note: These are the E/W IB interfaces on Pre-Nyx
     # export NCCL_IB_HCA="=mlx5_4,mlx5_7,mlx5_8,mlx5_9,mlx5_10,mlx5_13,mlx5_14,mlx5_15"

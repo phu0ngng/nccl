@@ -1,0 +1,137 @@
+.pre_submit:
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: always
+
+.post_submit:
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly|weekly)$/
+      when: always
+
+.nightly:
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/
+      when: always
+
+.weekly:
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(weekly)$/
+      when: always
+
+.ipp6:
+  rules:
+    - if: $RUN_ON_IPP6 == "1"
+      when: always
+  tags:
+    - ipp6-nccl
+  variables:
+    GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}" # Use a unique path for each job to avoid conflicts
+
+.eos:
+  rules:
+    - if: $RUN_ON_EOS == "1"
+      when: always
+  tags:
+    - nccl-eos
+
+.cw-dfw:
+  rules:
+    - if: $RUN_ON_CW_DFW == "1"
+      when: always
+  tags:
+    - nccl-cw-dfw
+
+.draco-oci:
+  rules:
+    - if: $RUN_ON_DRACO_OCI == "1"
+      when: always
+  tags:
+    - draco-oci-iad
+
+.pre-nyx:
+  rules:
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+  tags:
+    - prenyx
+
+.pre-tyche:
+  rules:
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+  tags:
+    - ptyche
+
+.theia:
+  rules:
+    - if: $RUN_ON_THEIA == "1"
+      when: always
+  tags:
+    - lyris
+
+.bia:
+  rules:
+    - if: $RUN_ON_BIA == "1"
+      when: always
+  tags:
+    - bia
+
+.gc-a40:
+  rules:
+    - if: $RUN_ON_A40 == "1"
+      when: always
+  tags:
+    - a40
+
+.gc-a100:
+  rules:
+    - if: $RUN_ON_A100 == "1"
+      when: always
+  tags:
+    - a100
+
+.gc-p100:
+  rules:
+    - if: $RUN_ON_P100 == "1"
+      when: always
+  tags:
+    - p100
+
+.gc-p40:
+  rules:
+    - if: $RUN_ON_P40 == "1"
+      when: always
+  tags:
+    - p40
+
+.gc-gp100:
+  rules:
+    - if: $RUN_ON_GP100 == "1"
+      when: always
+  tags:
+    - gp100
+
+.aws:
+  rules:
+    - if: $RUN_ON_AWS == "1"
+      when: always
+  tags:
+    - ipp6-nccl
+
+.setup:
+  stage: setup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - mkdir -p $INSTALL_DIR
+    - cp -r $BUILD_DIR $INSTALL_DIR/build
+
+.cleanup:
+  stage: cleanup
+  dependencies: []
+  when: on_success
+  allow_failure: true
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - rm -rf $INSTALL_DIR

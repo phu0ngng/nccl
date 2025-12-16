@@ -152,7 +152,7 @@ def test_split_with_value_validation(nccl_comm, rank_info):
     nccl_comm.reduce(send_data, recv_data, nccl.SUM)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
-    assert np.array_equal(result, expected)
+    assert np.allclose(result, expected)
 
     # Split into two groups
     color = rank_info.nccl_rank % 2
@@ -172,7 +172,7 @@ def test_split_with_value_validation(nccl_comm, rank_info):
     sub.reduce(send_data, recv_data, nccl.SUM)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
-    assert np.array_equal(result, expected), f"rank {rank_info.nccl_rank}: expected {expected}, got {result}"
+    assert np.allclose(result, expected), f"rank {rank_info.nccl_rank}: expected {expected}, got {result}"
 
     sub.destroy()
 
@@ -230,7 +230,7 @@ def test_shrink_with_value_validation(nccl_comm, rank_info):
     nccl_comm.reduce(send_data, recv_data, nccl.SUM)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
-    assert np.array_equal(result, expected)
+    assert np.allclose(result, expected)
 
     # Shrink group
     exclude_ranks = [0, 1]
@@ -243,7 +243,7 @@ def test_shrink_with_value_validation(nccl_comm, rank_info):
         sub.reduce(send_data, recv_data, nccl.SUM)
         cp.cuda.Stream.null.synchronize()
         result = recv_data.get()
-        assert np.array_equal(result, expected), f"rank {rank_info.nccl_rank}: expected {expected}, got {result}"
+        assert np.allclose(result, expected), f"rank {rank_info.nccl_rank}: expected {expected}, got {result}"
 
         sub.destroy()
 
@@ -407,6 +407,12 @@ def test_custom_op(nccl_comm, rank_info, scalar_type):
     if not HAS_CUPY:
         pytest.skip("CuPy not installed, skip test_split_with_value_validation")
 
+    def _assert_result_matches(actual, expected_array, *, msg=None):
+        if actual.dtype.kind in {"f", "c"} or expected_array.dtype.kind in {"f", "c"}:
+            assert np.allclose(actual, expected_array), msg
+        else:
+            assert np.array_equal(actual, expected_array), msg
+
     if scalar_type == "int":
         send_data = nccl.cupy.empty(1, dtype="int32")
         recv_data = nccl.cupy.empty(1, dtype="int32")
@@ -455,12 +461,12 @@ def test_custom_op(nccl_comm, rank_info, scalar_type):
     nccl_comm.reduce(send_data, recv_data, nccl.SUM)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
-    assert np.array_equal(result, expected)
+    _assert_result_matches(result, expected)
 
     op = nccl_comm.create_pre_mul_sum(scalar, datatype=scalar_dtype)
     expected = expected * scalar_for_expected
     nccl_comm.reduce(send_data, recv_data, op)
     cp.cuda.Stream.null.synchronize()
     result = recv_data.get()
-    assert np.array_equal(result, expected), f"rank {rank_info.nccl_rank}, scalar_type {scalar_type}: expected {expected}, got {result}"
+    _assert_result_matches(result, expected, msg=f"rank {rank_info.nccl_rank}, scalar_type {scalar_type}: expected {expected}, got {result}")
     op.close()

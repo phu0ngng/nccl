@@ -98,6 +98,26 @@ bool ncclCeImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_
   return false;
 }
 
+bool ncclCeAvailable(struct ncclComm* comm, ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty, ncclSymRegType_t winRegType) {
+  if (!ncclCeImplemented(coll, red, ty)) {
+    TRACE(NCCL_TUNING, "Skipping CE collective: not implemented");
+    return false;
+  }
+  if (comm->nNodes > 1) {
+    TRACE(NCCL_TUNING, "Skipping CE collective: comm is not a single node");
+    return false;
+  }
+  if (!comm->symmetricSupport) {
+    TRACE(NCCL_TUNING, "Skipping CE collective: symmetric support is not enabled");
+    return false;
+  }
+  if (winRegType != ncclSymSendRegRecvReg && winRegType != ncclSymSendNonregRecvReg) {
+    TRACE(NCCL_TUNING, "Skipping CE collective: window registration type %d is not supported", winRegType);
+    return false;
+  }
+  return true;
+}
+
 ncclResult_t ncclPrepMCSync(struct ncclComm* comm, bool isComplete, CUstreamBatchMemOpParams* batchParams, size_t* opIdx, cudaStream_t stream) {
   ncclResult_t ret = ncclSuccess;
 
@@ -145,7 +165,7 @@ fail:
 
 ncclResult_t ncclPrepUCSync(struct ncclComm* comm, bool isComplete,
                                CUstreamBatchMemOpParams* batchParams,
-                               size_t* opIdx) {
+                               size_t* opIdx, cudaStream_t stream) {
   ncclResult_t ret = ncclSuccess;
 
   uint32_t* readyPtrs    = (uint32_t*)comm->ceColl.baseUCSymReadyPtr;
@@ -154,20 +174,18 @@ ncclResult_t ncclPrepUCSync(struct ncclComm* comm, bool isComplete,
   bool capturing = ncclCudaGraphValid(comm->planner.capturingGraph);
   uint32_t currentSeq = ++comm->ceColl.ceSeqNum;
 
-  // Write our own ready/complete flag to remote ranks
-  uint32_t waitValue = capturing ? GRAPH_SYNC_VALUE : currentSeq;
+  // Write our own ready/complete flag to remote ranks using cudaMemcpyAsync
   for (int r = 0; r < comm->nRanks; ++r) {
     if (r == comm->rank) continue;
     void * peerDstPtr;
     void* dstPtr = isComplete ? (void*)&completePtrs[comm->rank] : (void*)&readyPtrs[comm->rank];
     size_t offset = (uint8_t*)dstPtr - (uint8_t*)comm->ceColl.ceSyncWin->userPtr;
     NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, comm->ceColl.ceSyncWin, offset, r, &peerDstPtr), ret, fail);
-    batchParams[*opIdx] = {};
-    batchParams[*opIdx].writeValue.operation = CU_STREAM_MEM_OP_WRITE_VALUE_32;
-    batchParams[*opIdx].writeValue.address  = (CUdeviceptr)peerDstPtr;
-    batchParams[*opIdx].writeValue.value = waitValue;
-    batchParams[*opIdx].writeValue.flags = CU_STREAM_WRITE_VALUE_DEFAULT;
-    (*opIdx)++;
+    if (capturing) {
+      CUDACHECKGOTO(cudaMemcpyAsync(peerDstPtr, &GRAPH_SYNC_VALUE, sizeof(uint32_t), cudaMemcpyHostToDevice, stream), ret, fail);
+    } else {
+      CUDACHECKGOTO(cudaMemcpyAsync(peerDstPtr, &currentSeq, sizeof(uint32_t), cudaMemcpyHostToDevice, stream), ret, fail);
+    }
   }
 
   // Add local wait operations for every other rank
@@ -176,7 +194,7 @@ ncclResult_t ncclPrepUCSync(struct ncclComm* comm, bool isComplete,
     batchParams[*opIdx] = {};
     batchParams[*opIdx].waitValue.operation = CU_STREAM_MEM_OP_WAIT_VALUE_32;
     batchParams[*opIdx].waitValue.address  = (CUdeviceptr)(isComplete ? (void*)&completePtrs[r] : (void*)&readyPtrs[r]);
-    batchParams[*opIdx].waitValue.value = waitValue;
+    batchParams[*opIdx].waitValue.value = capturing ? GRAPH_SYNC_VALUE : currentSeq;
     batchParams[*opIdx].waitValue.flags = CU_STREAM_WAIT_VALUE_EQ;
     (*opIdx)++;
   }
@@ -211,7 +229,7 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, struct ncclCeCollArgs* args, c
   if (comm->nvlsSupport) {
     NCCLCHECKGOTO(ncclPrepMCSync(comm, comm->ceColl.useCompletePtr, batchParams, &opIdx, stream), ret, fail);
   } else {
-    NCCLCHECKGOTO(ncclPrepUCSync(comm, comm->ceColl.useCompletePtr, batchParams, &opIdx), ret, fail);
+    NCCLCHECKGOTO(ncclPrepUCSync(comm, comm->ceColl.useCompletePtr, batchParams, &opIdx, stream), ret, fail);
   }
 
   // For CUDA graph capture, add reset operation
@@ -227,7 +245,7 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, struct ncclCeCollArgs* args, c
   }
 
   // Execute all memory operations in a single batch
-  CUCHECKGOTO(cuStreamBatchMemOp(stream, opIdx, batchParams, 0), ret, fail);
+  NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, opIdx, batchParams), ret, fail);
 
   // Toggle the flag for next call
   comm->ceColl.useCompletePtr = !comm->ceColl.useCompletePtr;

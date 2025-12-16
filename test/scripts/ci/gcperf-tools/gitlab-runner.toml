@@ -21,10 +21,10 @@ sbatch = [
 
 [EOS.baremetal]
 [EOS.baremetal.nccl]
-NCCL_HOME = "${CI_PROJECT_DIR}/build"
-NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build/test/perf"
+NCCL_HOME = "${INSTALL_DIR}/build"
+NCCL_TEST_PATH = "${INSTALL_DIR}/build/test/perf"
 HPCX_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/hpcx-v2.18-gcc-mlnx_ofed-ubuntu22.04-cuda12-x86_64"
-LD_LIBRARY_PATH = "${CI_PROJECT_DIR}/build/lib:${CUDA_HOME}/lib64:${CUDA_HOME}/lib:${LD_LIBRARY_PATH}"
+LD_LIBRARY_PATH = "${INSTALL_DIR}/build/lib:${CUDA_HOME}/lib64:${CUDA_HOME}/lib:${LD_LIBRARY_PATH}"
 
 prologue_commands = '''
 source $HPCX_HOME/hpcx-init.sh
@@ -43,8 +43,8 @@ hpcx_unload
 
 [EOS.container]
 [EOS.container.nccl]
-NCCL_HOME = "${CI_PROJECT_DIR}/build"
-NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build/test/perf"
+NCCL_HOME = "${INSTALL_DIR}/build"
+NCCL_TEST_PATH = "${INSTALL_DIR}/build/test/perf"
 LD_LIBRARY_PATH = '''${NCCL_HOME}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}'''
 pyxis = [
     "--container-image=nvcr.io/nvidia/nvhpc:23.1-devel-cuda-12.1",
@@ -58,8 +58,8 @@ sbatch = [
 
 [CW-DFW.baremetal]
 [CW-DFW.baremetal.nccl]
-NCCL_HOME = "${CI_PROJECT_DIR}/build"
-NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build/test/perf"
+NCCL_HOME = "${INSTALL_DIR}/build"
+NCCL_TEST_PATH = "${INSTALL_DIR}/build/test/perf"
 # MPI_HOME = "/cm/shared/apps/openmpi4/gcc/4.1.5"
 HPCX_HOME = "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/toolkits/hpcx-v2.18"
 LD_LIBRARY_PATH = '''${CUDA_HOME}/lib64:${NCCL_HOME}/lib:${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}'''
@@ -81,8 +81,8 @@ hpcx_unload
 
 [CW-DFW.container]
 [CW-DFW.container.nccl]
-NCCL_HOME = "${CI_PROJECT_DIR}/build"
-NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build/test/perf"
+NCCL_HOME = "${INSTALL_DIR}/build"
+NCCL_TEST_PATH = "${INSTALL_DIR}/build/test/perf"
 LD_LIBRARY_PATH = '''${NCCL_HOME}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}'''
 NVLD_SIZE="${NVLD_SIZE}"
 
@@ -94,8 +94,8 @@ sbatch = [
 ]
 
 CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-13.0"
-NCCL_HOME = "${CI_PROJECT_DIR}/build-pre-tyche"
-NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build-pre-tyche/test/perf"
+NCCL_HOME = "${INSTALL_DIR}/build"
+NCCL_TEST_PATH = "${INSTALL_DIR}/build/test/perf"
 MPI_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/openmpi-5.0.6"
 LD_LIBRARY_PATH = "${CUDA_HOME}/lib64:${MPI_HOME}/lib:${NCCL_HOME}/lib:${CUDA_HOME}/lib${LD_LIBRARY_PATH:+:LD_LIBRARY_PATH}"
 
@@ -107,8 +107,8 @@ sbatch = [
 ]
 
 CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-13.0"
-NCCL_HOME = "${CI_PROJECT_DIR}/build-theia"
-NCCL_TEST_PATH = "${CI_PROJECT_DIR}/build-theia/test/perf"
+NCCL_HOME = "${INSTALL_DIR}/build"
+NCCL_TEST_PATH = "${INSTALL_DIR}/build/test/perf"
 HPCX_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/hpcx-v2.24-cuda13"
 LD_LIBRARY_PATH = '''${CUDA_HOME}/lib64:${NCCL_HOME}/lib:${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}'''
 

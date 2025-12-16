@@ -735,9 +735,12 @@ struct ncclComm {
   int isAllNvlink;
   bool isAllDirectP2p; // Subject to NCCL_P2P_LEVEL (for local ranks only).
   bool isAllCudaP2p; // Raw CUDA capability (for local ranks only).
+  bool isAllDirectNvlink; // All GPUs are directly connected to each other through NVLink.
   int symmetricSupport;
   bool useNetPXN;
   bool useGdr;
+  bool ginSupport;
+  bool rmaProxySupport;
   int childCount;
 
   struct ncclDevrState devrState; // The symmetric runtime state

@@ -73,31 +73,29 @@ testResult_t GatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWindow,
 
   // Each rank puts its data to root at offset [myRank*chunkBytes]
   size_t dstOffset = recvoffset + rank * chunkBytes;
-  NCCLCHECK(ncclPut((char*)sendPtr + sendoffset, count, type, root,
-                    recvWin, dstOffset, NCCL_SIGNAL, ctx, comm, stream));
+  NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, root,
+                    recvWin, dstOffset, 0, ctx, 0, comm, stream));
+
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
   if (rank == root) {
     // Root waits for signals from all ranks
-    int* peers = (int*)malloc(sizeof(int) * nranks);
-    int* nsignals = (int*)malloc(sizeof(int) * nranks);
-    if (peers == NULL || nsignals == NULL) {
-      free(peers);
-      free(nsignals);
+    ncclWaitSignalDesc_t* waitDescs = (ncclWaitSignalDesc_t*)malloc(sizeof(ncclWaitSignalDesc_t) * nranks);
+    if (waitDescs == NULL) {
       return testInternalError;
     }
 
     for (int i = 0; i < nranks; i++) {
-      peers[i] = i;
-      nsignals[i] = 1;
+      waitDescs[i].opCnt = 1;
+      waitDescs[i].peer = i;
+      waitDescs[i].sigIdx = 0;
+      waitDescs[i].ctx = ctx;
     }
 
-    NCCLCHECK(ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+    NCCLCHECK(ncclWaitSignal(nranks, waitDescs, comm, stream));
 
-    free(peers);
-    free(nsignals);
+    free(waitDescs);
   }
-
-  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
   return testSuccess;
 }

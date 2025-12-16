@@ -1035,7 +1035,7 @@ static testResult_t distributeFTShrinkGrowTest(struct threadArgs* args) {
   int badIdx = 1;  // Rank 1 will be removed
 
   if (!ft_should_run_revoke_sleep(sleepId)) return testSuccess;
-  if (totalGpus <= 2) return testSuccess;  // Need at least 3 ranks for this test
+  if (totalGpus < 2) return testSuccess;  // Need at least 2 ranks for this test
 
   config.blocking = 0;
 

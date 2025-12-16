@@ -233,7 +233,7 @@ ncclResult_t ncclRmaWaitSignalCe(struct ncclComm* comm, struct ncclKernelPlan* p
     }
 
     // Execute all wait operations in a single batch
-    CUCHECKGOTO(cuStreamBatchMemOp(stream, opIdx, batchParams, 0), ret, fail);
+    NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, opIdx, batchParams), ret, fail);
   }
 
   // Free the task

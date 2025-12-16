@@ -17,6 +17,7 @@ int ncclIbRelaxedOrderingEnabled = 0;
 
 ncclProfilerCallback_t ncclProfilerFunction;
 
+NCCL_PARAM(IbPrepostReceiveWorkRequests, "IB_PREPOST_RECEIVE_WORK_REQUESTS", 0);
 NCCL_PARAM(IbAsyncEvents,"IB_RETURN_ASYNC_EVENTS",1);
 
 ncclResult_t ncclIbStatsCheckFatalCount(struct ncclIbStats* stat, const char* funcName) {
@@ -35,6 +36,20 @@ struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, in
     struct ncclIbRecvComm* rComm = (struct ncclIbRecvComm*) base;
     return &rComm->devs[devIndex].base;
   }
+}
+
+#define NCCL_IB_RECV_WR_ID_DUMMY UINT64_MAX
+
+ncclResult_t ncclIbRecvCommInit(struct ncclIbRecvComm* recvComm) {
+  recvComm->ibRecvWorkRequest = {
+    .wr_id = NCCL_IB_RECV_WR_ID_DUMMY,
+    .next = NULL,
+    .sg_list = NULL,
+    .num_sge = 0
+  };
+  recvComm->prepostReceiveWorkRequests = (ncclParamIbPrepostReceiveWorkRequests() == 1);
+  INFO(NCCL_NET, "NET/IB: %s: Receive work requests will be %s", __func__, recvComm->prepostReceiveWorkRequests ? "pre-posted" : "posted on-demand");
+  return ncclSuccess;
 }
 
 std::thread ncclIbAsyncThread;

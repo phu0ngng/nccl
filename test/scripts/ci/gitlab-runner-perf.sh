@@ -216,16 +216,33 @@ else
   echo "WARNING : Skipping abort FT test"
 fi
 
-run_command "ft_test_skip_init_${SKIP_FT_INIT}_skip_finalize_${SKIP_FT_FINALIZE}" $RUN_MODE $NGPUS "" "NCCL_SOCKET_RETRY_SLEEP_MSEC=1" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts $enable_ft"
-# https://nvbugspro.nvidia.com/bug/4934665
-# run_command "ft_test_1ppn_skip_ft_init_$SKIP_FT_INIT" $RUN_MODE 1 "-x NCCL_SOCKET_RETRY_SLEEP_MSEC=1 " "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -t $NGPUS $enable_ft"
+if [ "$SKIP_FT_TEST" != "1" ]
+then
+  # Mark as 0 for clarity of test label
+  SKIP_FT_TEST=0
+  run_command "ft_test_skip_init_${SKIP_FT_INIT}_skip_finalize_${SKIP_FT_FINALIZE}" $RUN_MODE $NGPUS "" "NCCL_SOCKET_RETRY_SLEEP_MSEC=1" "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts $enable_ft"
+  # https://nvbugspro.nvidia.com/bug/4934665
+  # run_command "ft_test_1ppn_skip_ft_init_$SKIP_FT_INIT" $RUN_MODE 1 "-x NCCL_SOCKET_RETRY_SLEEP_MSEC=1 " "$NCCL_HOME/test/perf/all_reduce_perf" "$range $opts -t $NGPUS $enable_ft"
+else
+  echo "WARNING : Skipping all FT test"
+fi
+
 
 export NCCL_DEBUG=$NCCL_DEBUG_OLD
 
-for func in all_reduce_perf alltoall_perf; do
-  run_command "${func}_nic_fusion_phb"      $RUN_MODE $NGPUS "" "NCCL_NET_MERGE_LEVEL=PHB" "$NCCL_HOME/test/perf/$func" "-b 8 -e 128M -f2 $opts -n 1"
-  run_command "${func}_nic_fusion_phb_1ppn" $RUN_MODE 1      "" "NCCL_NET_MERGE_LEVEL=PHB" "$NCCL_HOME/test/perf/$func" "-b 8 -e 128M -f2 $opts -t $NGPUS -n 1"
-done
+
+if [ "$SKIP_NIC_FUSION" != "1" ]
+then
+  # Mark as 0 for clarity of test label
+  SKIP_NIC_FUSION=0
+  for func in all_reduce_perf alltoall_perf; do
+    run_command "${func}_nic_fusion_phb"      $RUN_MODE $NGPUS "" "NCCL_NET_MERGE_LEVEL=PHB" "$NCCL_HOME/test/perf/$func" "-b 8 -e 128M -f2 $opts -n 1"
+    run_command "${func}_nic_fusion_phb_1ppn" $RUN_MODE 1      "" "NCCL_NET_MERGE_LEVEL=PHB" "$NCCL_HOME/test/perf/$func" "-b 8 -e 128M -f2 $opts -t $NGPUS -n 1"
+  done
+else
+  echo "WARNING : Skipping NIC fusion test"
+fi
+
 
 # socket NET testing
 for func in all_reduce_perf all_gather_perf broadcast_perf; do

@@ -19,6 +19,8 @@ TEST_F(ncclMemAlloc_test, basic) {
 
     cudaDeviceProp prop;
     ASSERT_EQ(cudaSuccess, cudaGetDeviceProperties(&prop, dev));
+    // Skip on Integrated GPUs, as trying to allocate all memory will cause an OOM.
+    if (prop.integrated) return;
     const size_t totalMem = prop.totalGlobalMem;
 
     std::vector<void*> allocations;

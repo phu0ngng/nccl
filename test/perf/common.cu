@@ -326,33 +326,35 @@ testResult_t barrierRmaSignal(ncclComm_t comm, cudaStream_t stream) {
 
   int ctx = 0;
 
-  int* peers = (int*)malloc(sizeof(int) * (nranks - 1));
-  int* nsignals = (int*)malloc(sizeof(int) * (nranks - 1));
-  if (peers == NULL || nsignals == NULL) {
-    free(peers);
-    free(nsignals);
+  ncclWaitSignalDesc_t* waitDescs = (ncclWaitSignalDesc_t*)malloc(sizeof(ncclWaitSignalDesc_t) * (nranks - 1));
+  if (waitDescs == NULL) {
     return testInternalError;
   }
 
-  int peerIdx = 0;
+  int descIdx = 0;
   for (int i = 0; i < nranks; i++) {
     if (i != rank) {
-      peers[peerIdx] = i;
-      nsignals[peerIdx] = 1;
-      peerIdx++;
+      waitDescs[descIdx].opCnt = 1;
+      waitDescs[descIdx].peer = i;
+      waitDescs[descIdx].sigIdx = 0;
+      waitDescs[descIdx].ctx = ctx;
+      descIdx++;
     }
   }
 
+  NCCLCHECK(ncclGroupStart());
+
   for (int i = 0; i < nranks; i++) {
     if (i != rank) {
-      NCCLCHECK(ncclSignal(i, NCCL_SIGNAL, ctx, comm, stream));
+      NCCLCHECK(ncclSignal(i, 0, ctx, 0, comm, stream));
     }
   }
 
-  NCCLCHECK(ncclWaitSignal(nranks - 1, peers, nsignals, NCCL_SIGNAL, ctx, comm, stream));
+  NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
-  free(peers);
-  free(nsignals);
+  NCCLCHECK(ncclWaitSignal(nranks - 1, waitDescs, comm, stream));
+
+  free(waitDescs);
 
   return testSuccess;
 }
@@ -1216,6 +1218,10 @@ testResult_t threadInit(struct threadArgs* args) {
     }
     ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
     NCCLCHECK(ncclCommQueryProperties(args->comms[0][0], &commProperties));
+    if (!commProperties.deviceApiSupport) {
+      testSkipReason = "Device API is not supported on this system\n";
+      return testSkipped;
+    }
     TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
 #else
     ncclDevCommRequirements reqs = {};
@@ -2181,6 +2187,10 @@ testResult_t run() {
       }
       ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
       NCCLCHECK(ncclCommQueryProperties(comms[0][0], &commProperties));
+      if (!commProperties.deviceApiSupport) {
+        testSkipReason = "Device API is not supported on this system\n";
+        return testSkipped;
+      }
       TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
 #else
       ncclDevCommRequirements reqs = {};

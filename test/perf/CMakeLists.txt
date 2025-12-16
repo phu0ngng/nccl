@@ -9,8 +9,10 @@ set(PERF_TEST_SOURCES
 set(COLLS
     all_reduce
     all_gather
+    all_gatherv
     broadcast
     reduce_scatter
+    reduce_scatterv
     reduce
     alltoall
     gather

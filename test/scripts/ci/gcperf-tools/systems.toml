@@ -143,10 +143,10 @@ nccl = [
 ]
 #    "RX_QUEUE_LEN=8192", #not sure what this is for
 #    "IB_RX_QUEUE_LEN=8192", #not sure what this is for
-#    "NCCL_IB_TIMEOUT=20", #do not reduce timeout  
+#    "NCCL_IB_TIMEOUT=20", #do not reduce timeout
 #    "NCCL_NET_PLUGIN=none", #to avoid accidentally using HPCX plugin
 #    "NCCL_IB_QPS_PER_CONNECTION=4", #reduce this to 1 for alltoall in test config
-#    #"NCCL_IB_QPS_PER_CONNECTION=2", #for nodes >256 https://nvbugs/4946221 
+#    #"NCCL_IB_QPS_PER_CONNECTION=2", #for nodes >256 https://nvbugs/4946221
 
 #Fix this: common openmpi_params don't apply here. especially the UCX_TLS
 [PreNyx]

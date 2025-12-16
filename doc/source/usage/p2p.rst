@@ -106,14 +106,24 @@ One-sided communication
 ========================
 
 (Since NCCL 2.29)
-One-sided communication enables ranks to directly write to remote memory
-without explicit participation from the target process. These operations require the target memory
-to be pre-registered using :c:func:`ncclCommWindowRegister`.
+One-sided communication enables a rank to write data to remote memory using :c:func:`ncclPutSignal`
+without requiring the target rank to issue a matching operation. The target memory must be pre-registered
+using :c:func:`ncclCommWindowRegister`. Point-to-point synchronization can be achieved by having the
+target rank call :c:func:`ncclWaitSignal` to wait for signals.
 
-Put and wait (ping-pong)
+Multiple :c:func:`ncclPutSignal` calls can be grouped using :c:func:`ncclGroupStart` and
+:c:func:`ncclGroupEnd`. Operations to different peers or contexts within a group may execute
+concurrently and complete in any order. The completion of :c:func:`ncclGroupEnd` guarantees that
+all operations in the group have achieved completion.
+Operations to the same peer and context are executed in order: both data delivery and signal
+updates on the remote peer follow the program order.
+
+Below are a few examples of classic one-sided communication patterns used by parallel applications.
+
+PutSignal and WaitSignal
 ------------------------
 
-A detailed ping-pong pattern using :c:func:`ncclPut` with signaling and :c:func:`ncclWaitSignal`.
+A ping-pong pattern using :c:func:`ncclPutSignal` and :c:func:`ncclWaitSignal`.
 This example shows the full setup including memory allocation and window registration:
 
 .. code:: C
@@ -128,20 +138,19 @@ This example shows the full setup including memory allocation and window registr
  NCCLCHECK(ncclCommWindowRegister(comm, sendbuff, size, &sendWindow, NCCL_WIN_COLL_SYMMETRIC));
  NCCLCHECK(ncclCommWindowRegister(comm, recvbuff, size, &recvWindow, NCCL_WIN_COLL_SYMMETRIC));
 
- int ctx = 0;
  int peer = (rank == 0) ? 1 : 0;
- int nsignals = 1;
+ ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = peer, .sigIdx = 0, .ctx = ctx};
 
  if (rank == 0) {
    // Rank 0: wait then put
-   NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
-   NCCLCHECK(ncclPut(sendbuff, count, datatype, peer, recvWindow, 0,
-                     NCCL_SIGNAL, ctx, comm, stream));
+   NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
+   NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
+                     0, 0, 0, comm, stream));
  } else {
    // Rank 1: put then wait
-   NCCLCHECK(ncclPut(sendbuff, count, datatype, peer, recvWindow, 0,
-                     NCCL_SIGNAL, ctx, comm, stream));
-   NCCLCHECK(ncclWaitSignal(1, &peer, &nsignals, NCCL_SIGNAL, ctx, comm, stream));
+   NCCLCHECK(ncclPutSignal(sendbuff, count, datatype, peer, recvWindow, 0,
+                     0, 0, 0, comm, stream));
+   NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
  }
 
  CUDACHECK(cudaStreamSynchronize(stream));
@@ -161,45 +170,49 @@ Each rank signals to all other ranks and waits for signals from all ranks:
 
 .. code:: C
 
- int *peers = malloc(nranks * sizeof(int));
- int *nsignals = malloc(nranks * sizeof(int));
+ ncclWaitSignalDesc_t *waitDescs = malloc(nranks * sizeof(ncclWaitSignalDesc_t));
  for (int r = 0; r < nranks; r++) {
-   peers[r] = r;
-   nsignals[r] = 1;
+   waitDescs[r].opCnt = 1;
+   waitDescs[r].peer = r;
+   waitDescs[r].sigIdx = 0;
+   waitDescs[r].ctx = 0;
  }
 
  ncclGroupStart();
  for (int r = 0; r < nranks; r++) {
-   ncclSignal(r, NCCL_SIGNAL, comm, stream);
+   ncclSignal(r, 0, 0, 0, comm, stream);
  }
- ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, comm, stream);
  ncclGroupEnd();
+
+ ncclWaitSignal(nranks, waitDescs, comm, stream);
 
 All-to-all
 ----------
 
-An all-to-all operation using :c:func:`ncclPut`.
+An all-to-all operation using :c:func:`ncclPutSignal`.
 Each rank sends data to all other ranks and waits for signals from all ranks.
 User needs to register the memory window for each peer using :c:func:`ncclCommWindowRegister` in advance.
-User needs to guarantee the buffers are ready before calling :c:func:`ncclPut`.
+User needs to guarantee the buffers are ready before calling :c:func:`ncclPutSignal`.
 This could be done with the barrier shown above.
 
 .. code:: C
 
  size_t offset[nranks];
- int *peers = malloc(nranks * sizeof(int));
- int *nsignals = malloc(nranks * sizeof(int));
+ ncclWaitSignalDesc_t *waitDescs = malloc(nranks * sizeof(ncclWaitSignalDesc_t));
  for (int r = 0; r < nranks; r++) {
    offset[r] = r * count * wordSize(datatype);
-   peers[r] = r;
-   nsignals[r] = 1;
+   waitDescs[r].opCnt = 1;
+   waitDescs[r].peer = r;
+   waitDescs[r].sigIdx = 0;
+   waitDescs[r].ctx = 0;
  }
 
  ncclGroupStart();
  for (int r = 0; r < nranks; r++) {
-   ncclPut(sendbuff[r], count, datatype, r, window, offset[r],
-           NCCL_SIGNAL, comm, stream);
+   ncclPutSignal(sendbuff[r], count, datatype, r, window, offset[r],
+           0, 0, 0, comm, stream);
  }
- ncclWaitSignal(nranks, peers, nsignals, NCCL_SIGNAL, comm, stream);
  ncclGroupEnd();
+
+ ncclWaitSignal(nranks, waitDescs, comm, stream);
 

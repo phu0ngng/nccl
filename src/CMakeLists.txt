@@ -47,7 +47,9 @@ add_subdirectory(os)
 add_subdirectory(gin)
 add_subdirectory(rma)
 
-add_compile_options(-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/=)
+if(NCCL_OS_LINUX)
+    add_compile_options(-fmacro-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/=)
+endif()
 
 # Add all source files
 list(APPEND LIBSRCFILES

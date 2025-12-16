@@ -8,6 +8,14 @@ if [ ! -d "docker" ]; then
   exit 1
 fi
 
+for arg in "$@"
+do
+    case $arg in
+        --ci-build) ci_build=1
+                 ;;
+    esac
+done
+
 nccl_src=$(pwd)
 rm -rf $nccl_src/build
 
@@ -41,7 +49,10 @@ else
     exit $build_status
 fi
 
-rsync -a build $nccl_src/
+if [ $ci_build -eq 0 ]; then
+    # Skipt this step to avoid unnecessary transfer of files to NFS in CI.
+    rsync -a build $nccl_src/
+fi
 
 # Cleanup temp directory
 popd

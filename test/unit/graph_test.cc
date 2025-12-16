@@ -1,8 +1,11 @@
 #include "topo.h"
 #include "xml.h"
 #include "nccl_net.h"
+#include <cstdio>
+#include <cstdlib>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <fcntl.h>
 
 #define ERROR(fmt, ...) do { \
@@ -48,6 +51,8 @@ struct testParam{
   const char* forceMerge;
   // multi-port systems
   int portRatio;
+  // multinode NVLDs
+  int nvldSize;
 };
 
 #define TESTPARAM_INIT {\
@@ -61,6 +66,24 @@ struct testParam{
   /*mergeLevel=*/PATH_LOC,\
   /*forceMerge=*/NULL,\
   /*portRatio=*/1,\
+  /*nvldSize=*/1,\
+}
+
+static void setStackSize(rlim_t size) {
+  int res = 0;
+  size_t max = 0;
+  struct rlimit rl;
+  if ((res = getrlimit(RLIMIT_STACK, &rl)) != 0) goto fail;
+  if ((max = rl.rlim_max) < size) goto fail;
+  if (rl.rlim_cur < size) {
+    rl.rlim_cur = size;
+    printf("setting stack size to %ld/%ld\n", size, rl.rlim_max);
+    if ((res = setrlimit(RLIMIT_STACK, &rl)) != 0) goto fail;
+  }
+  return;
+fail:
+  printf("Failed to set the stack size to %ld kiB (max size = %ld kiB). Please run 'ulimit -s %ld' and try again.\n", size / 1024, max / 1024, size / 1024);
+  exit(1);
 }
 
 void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngpus, enum testType type, bool dumpDiff, int* errors, int* warnings) {
@@ -115,7 +138,7 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
     }
   }
 }
-#define MAX_MNNVL_NODES 64
+#define MAX_MNNVL_NODES 72 /*max rank count per NVLD*/
 
 #define NCCL_PLUGIN_MAX_RECVS 8
 int max_requests = NCCL_NET_MAX_REQUESTS;
@@ -135,8 +158,17 @@ struct mockVDev {
   ncclNetVDeviceProps_t vProps;
   int used;
 };
-mockVDev mockVDevs[MAX_MOCK_VDEVS];
-ncclNetProperties_t mockProps[MAX_MOCK_VDEVS];
+mockVDev* mockVDevs;
+ncclNetProperties_t* mockProps;
+
+static void allocateMock() {
+  mockVDevs = (struct mockVDev*)calloc(MAX_MOCK_VDEVS, sizeof(mockVDev));
+  mockProps = (ncclNetProperties_t*)calloc(MAX_MOCK_VDEVS, sizeof(ncclNetProperties_t));
+}
+static void freeMock() {
+  free(mockVDevs);
+  free(mockProps);
+}
 
 void fakeNetPluginAddNetNode(struct ncclXmlNode* node) {
   int devIndex;
@@ -370,7 +402,7 @@ static ncclResult_t xmlSplitNics(struct ncclXml* xmlSystem, int ratio){
   if (ratio == 1) return ncclSuccess;
 
   int listCount = 0;
-  struct ncclXmlNode* nodeList[MAX_TOPO_NODES];
+  struct ncclXmlNode** nodeList = (struct ncclXmlNode**)calloc(MAX_TOPO_NODES,sizeof(struct ncclXmlNode*));
   {
     // first list all the nets in the system to avoid counting new nets
     struct ncclXmlNode* node;
@@ -423,25 +455,29 @@ static ncclResult_t xmlSplitNics(struct ncclXml* xmlSystem, int ratio){
     }
     free(name);
   }
+  free(nodeList);
   return ncclSuccess;
 }
 
 void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* platform, enum testType type, const struct testParam* param, int* errors, int* warnings) {
-  struct ncclXml* xmlSystem;
-  char dumpFile[PATH_MAX];
-  INFO(NCCL_GRAPH, "Loading platform %s", platform);
-  CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES*NCCL_TOPO_XML_MAX_NODES));
-  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystem, 1));
-  struct ncclTopoSystem* system;
-  if (xmlSystem->maxIndex == 0) {
+  char* dumpFile = (char*)malloc(PATH_MAX);
+  INFO(NCCL_GRAPH, "Loading platform %s - NVLD=%d", platform,param->nvldSize);
+  // load the local XML (might contain the entire NVLD for backward compatibility reasons with GB200/300 topologies)
+  struct ncclXml* xmlSystemLocal = NULL;
+  CHECK(xmlAlloc(&xmlSystemLocal, MAX_MNNVL_NODES * NCCL_TOPO_XML_MAX_NODES));
+  CHECK(ncclTopoGetXmlFromFile(xmlTopoFile, xmlSystemLocal, 1));
+  if (xmlSystemLocal->maxIndex == 0) {
     printf("Error : no system in %s\n", xmlTopoFile);
     (*errors)++;
+    free(dumpFile);
     return;
   }
+  // Initiate the fake plugin with all the devices.
+  // NIC duplication has to happen before the init.
+  CHECK(xmlSplitNics(xmlSystemLocal, param->portRatio));
+  fakeNetPluginInit(xmlSystemLocal, param);
 
-  // Inititalize a netState object for NIC fusion
-  CHECK(xmlSplitNics(xmlSystem,param->portRatio));
-  fakeNetPluginInit(xmlSystem, param);
+  // process the local node
   struct ncclTopoNetInfo netInfo{};
   netInfo.coll = coll > 0;
   netInfo.netPluginIndex = 0;
@@ -454,33 +490,75 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   netInfo.getProperties = fakeNetPluginGetProperties;
   netInfo.makeVDevice = fakeNetPluginMakeVDevice;
   netInfo.devices = fakeNetPluginDevices;
-  CHECK(ncclTopoProcessNet(xmlSystem, NULL, &netInfo));
+  CHECK(ncclTopoProcessNet(xmlSystemLocal, NULL, &netInfo));
   // We need to force all GPUs as keep="1" here to avoid trimming them
-  keepGpus(xmlSystem);
+  keepGpus(xmlSystemLocal);
   if (param->dumpProcessedXml) {
-    snprintf(dumpFile, sizeof(dumpFile), "%s.processed", xmlTopoFile);
-    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
+    snprintf(dumpFile, PATH_MAX, "%s.processed", xmlTopoFile);
+    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystemLocal));
   }
-  CHECK(ncclTopoTrimXml(xmlSystem));
+  CHECK(ncclTopoTrimXml(xmlSystemLocal));
   if (param->dumpProcessedXml) {
-    snprintf(dumpFile, sizeof(dumpFile), "%s.processed_trimmed", xmlTopoFile);
-    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
+    snprintf(dumpFile, PATH_MAX, "%s.processed_trimmed", xmlTopoFile);
+    CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystemLocal));
   }
-  uint64_t hostHash = 0;
-  {
-    // Get the host_hash of the first CPU.
-    struct ncclXmlNode* cpuNode;
-    CHECK(xmlFindTag(xmlSystem, "cpu", &cpuNode));
-    if (cpuNode) {
-      const char* hostHashStr;
-      CHECK(xmlGetAttr(cpuNode, "host_hash", &hostHashStr));
-      if (hostHashStr)
-        hostHash = strtoull(hostHashStr, NULL, 16);
+
+  // do the topo Fusion for MNNVL
+  uint64_t hostHash = getHostHash();
+  int rank = 0;
+  struct ncclXml* xmlSystem = NULL;
+  CHECK(xmlAlloc(&xmlSystem, MAX_MNNVL_NODES * NCCL_TOPO_XML_MAX_NODES));
+  for (int i = 0; i < param->nvldSize; i++) {
+    // Replace the hostHash on all cpuNode with a unique one for each host in the NVLD.
+    struct ncclXmlNode* node = NULL;
+    CHECK(xmlFindTag(xmlSystemLocal, "cpu", &node));
+    while (node) {
+      CHECK(xmlGetAttrUint64Default(node, "host_hash", &hostHash, 0x0));
+      uint64_t hacc[2] = {1, 1};
+      eatHash(hacc, &hostHash);
+      eatHash(hacc, &i);
+      hostHash = digestHash(hacc);
+      CHECK(xmlSetAttrLong(node, "host_hash", hostHash));
+      CHECK(xmlFindNextTag(xmlSystemLocal, "cpu", node, &node));
+      INFO(NCCL_GRAPH,"host %d - cpu host_hash = 0x%lx",i,hostHash);
     }
+    // update the rank for each GPU
+    node = NULL;
+    CHECK(xmlFindTag(xmlSystemLocal, "gpu", &node));
+    while (node) {
+      CHECK(xmlSetAttrInt(node, "rank", rank++));
+      CHECK(xmlFindNextTag(xmlSystemLocal, "gpu", node, &node));
+    }
+    // Replace the guid for the net.
+    node = NULL;
+    CHECK(xmlFindTag(xmlSystemLocal, "net", &node));
+    while (node) {
+      uint64_t guid;
+      CHECK(xmlGetAttrUint64Default(node, "guid", &guid, 0x0));
+      uint64_t hacc[2] = {1, 1};
+      eatHash(hacc, &guid);
+      eatHash(hacc, &i);
+      guid = digestHash(hacc);
+      CHECK(xmlSetAttrLong(node, "guid", guid));
+      CHECK(xmlFindNextTag(xmlSystemLocal, "net", node, &node));
+    }
+    // add the new host to the topology
+    CHECK(ncclTopoFuseXml(xmlSystem, xmlSystemLocal));
   }
-  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, hostHash));
+  snprintf(dumpFile, PATH_MAX, "%s.topo_global", xmlTopoFile);
+  CHECK(ncclTopoDumpXmlToFile(dumpFile, xmlSystem));
+
+  // we assume to be the on the last host, so we can reuse the hostHash that was set last
+  struct ncclTopoSystem* system;
+  CHECK(ncclTopoGetSystemFromXml(xmlSystem, &system, /*last known hash*/hostHash));
   free(xmlSystem);
-  system->inter = type == TEST_INTRA ? 0 : 1;
+  free(xmlSystemLocal);
+
+  system->inter = (type == TEST_INTRA) ? 0 : 1;
+  if (type == TEST_INTRA) {
+    for (int n=system->nodes[NET].count-1; n>=0; n--)
+      CHECK(ncclTopoRemoveNode(system, NET, n));
+  }
   // prune GPUs depending on the number of GPUs and splitMask
   if (param->ngpus != -1) {
     for (int g = system->nodes[GPU].count - 1; g >= param->ngpus; g--) CHECK(ncclTopoRemoveNode(system, GPU, g));
@@ -505,7 +583,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   ringGraph.crossNic = crossNic;
   ringGraph.collNet = 0;
   ringGraph.minChannels = 1;
-  ringGraph.maxChannels = 16;
+  ringGraph.maxChannels = MAXCHANNELS/2;
 
   struct ncclTopoGraph treeGraph;
   memset(&treeGraph, 0, sizeof(treeGraph));
@@ -603,7 +681,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
       nvlsGraph.nChannels, nvlsGraph.bwIntra, nvlsGraph.bwInter);
 
   if (err || warn || incompleteRef) {
-    snprintf(dumpFile, sizeof(dumpFile), "%s.dump", xmlGraphFile);
+    snprintf(dumpFile, PATH_MAX, "%s.dump", xmlGraphFile);
     struct ncclXml* xml;
     CHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
     struct ncclTopoGraph* graphs[4] = { &ringGraph, &treeGraph, &cNetGraph, &nvlsGraph };
@@ -622,6 +700,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   } else
     printf("     OK %5ld ms\n", computeTime[TIME_TOTL] / 1000);
   ncclTopoFree(system);
+  free(dumpFile);
   *errors += err;
   *warnings += warn;
 }
@@ -631,6 +710,9 @@ static void buildGraphFilename(char* filename, size_t size, const char* topoDir,
   // Start with base path and graph type
   char modifiers[256] = "";
 
+  if(param->nvldSize >1){
+    snprintf(modifiers + strlen(modifiers), sizeof(modifiers) - strlen(modifiers), "-NVLD%d", param->nvldSize);
+  }
   // First handle splitMask which affects communicator structure
   if (param->splitMask != -1) {
     snprintf(modifiers + strlen(modifiers), sizeof(modifiers) - strlen(modifiers), "-sm%d-c%d", param->splitMask, param->color);
@@ -656,6 +738,24 @@ static void buildGraphFilename(char* filename, size_t size, const char* topoDir,
 }
 
 void checkPlatform(const char* platform, struct testParam* param, int* errors, int* warnings) {
+  // recover the NVLD size and the system name from the platform name
+  int count = 0;
+  char * name = strdup(platform);
+  char *token = strtok(name, "-");
+  param->nvldSize = 1;
+  while (token != NULL) {
+    if (strncmp(token, "NVLD", strlen("NVLD")) == 0) {
+      param->nvldSize = atoi(token + strlen("NVLD"));
+      break;
+    } else {
+      if (count) count += 1;
+      count += strlen(token);
+    }
+    token = strtok(NULL, "-");
+  }
+  strncpy(name,platform,count);
+
+  // Build system topology file path
   char xmlTopoFile[PATH_MAX];
   char xmlGraphFile[PATH_MAX];
   char topoDir[1024];
@@ -665,6 +765,7 @@ void checkPlatform(const char* platform, struct testParam* param, int* errors, i
   } else {
     topoDir[0] = '\0';
   }
+  snprintf(xmlTopoFile, PATH_MAX, "%stopo/%s/system.xml", topoDir, name);
 
   // check for parameter correctness
   if (param->forceMerge && param->mergeLevel > PATH_PORT) {
@@ -672,18 +773,16 @@ void checkPlatform(const char* platform, struct testParam* param, int* errors, i
     param->forceMerge = NULL;
   }
 
-  // Build system topology file path
-  snprintf(xmlTopoFile, PATH_MAX, "%stopo/%s/system.xml", topoDir, platform);
-
-  // Check intra topology
+  // Check topologies
   if (param->intra) {
-    buildGraphFilename(xmlGraphFile, PATH_MAX, topoDir, platform, TEST_INTRA, param);
-    checkTopo(xmlTopoFile, xmlGraphFile, platform, TEST_INTRA, param, errors, warnings);
+    buildGraphFilename(xmlGraphFile, PATH_MAX, topoDir, name, TEST_INTRA, param);
+    checkTopo(xmlTopoFile, xmlGraphFile, name, TEST_INTRA, param, errors, warnings);
   }
   if (param->inter) {
-    buildGraphFilename(xmlGraphFile, PATH_MAX, topoDir, platform, TEST_INTER, param);
-    checkTopo(xmlTopoFile, xmlGraphFile, platform, TEST_INTER, param, errors, warnings);
+    buildGraphFilename(xmlGraphFile, PATH_MAX, topoDir, name, TEST_INTER, param);
+    checkTopo(xmlTopoFile, xmlGraphFile, name, TEST_INTER, param, errors, warnings);
   }
+  free(name);
 }
 
 #define RUN_INTRA(platform)                          \
@@ -752,11 +851,18 @@ void printHelpMessage() {
   printf("  platform : platform name (e.g. LOC-1G)\n");
   printf("  ngpus    : number of GPUs per node (default -1, all)\n");
   printf("  -h       : print this help message\n");
+  printf("  -v       : enable the verbose mode, equivalent to NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=GRAPH\n");
+  printf("\n");
+  printf("The name of the platform is given as <NAME>[-NVLD<X>], which indicates an NVLink domain of size <X>, where each host is <NAME>.\n");
+  printf("For example:\n");
+  printf(" - ./graph_test GB200 will consider an NVLink domain with a single host of GB200,\n");
+  printf(" - ./graph_test GB200-NVLD8 will consider an NVLink domain with 8 hosts of GB200 (equivalent to 32 GPUs)\n");
+  printf("\n");
   printf("Set NCCL_GRAPH_TEST_NGPUS=N to change the number of GPUs per node.\n");
   printf("Set NCCL_TOPO_DIR to override the default topo directory. This is necessary to invoke graph_test from an outside directory.\n");
   printf("Set NCCL_GRAPH_TEST_DUMP=0 to disable dumping of graph diffs.\n");
   printf("Set NCCL_GRAPH_TEST_DUMP_SYSTEM_XML=1 to dump the processed system XML from NIC Fusion and then the fully trimmed system XML.\n");
-  printf("Set NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=GRAPH to get standard NCCL logs of your scenario.\n");
+  printf("Set NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=GRAPH to get standard NCCL logs of your scenario. This is equivalent to using the -v flag.\n");
   printf("Set NCCL_TESTS_SPLIT_MASK=0xA to only get the graph for the communicator with the color 0 (unless changed, see NCCL_GRAPH_TEST_COLOR) in the case of NCCL_TESTS_SPLIT_MASK=0xA.\n");
   printf("Set NCCL_GRAPH_TEST_COLOR=0xA to change the color that is considered when using NCCL_TESTS_SPLIT_MASK.\n");
   printf("Set NCCL_NET_FORCE_MERGE to force the merge between devices, see NCCL documentation.\n");
@@ -765,21 +871,51 @@ void printHelpMessage() {
   printf("Set NCCL_GRAPH_TEST_INTRA=0/1 to enable the INTRA test.\n");
 }
 
+static void parseArgs(int argc, const char* argv[], const char** platform, const char** ngpusArg) {
+  bool verboseMode = false;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-v") == 0) {
+      verboseMode = true;
+    } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+      printHelpMessage();
+      exit(0);
+    } else if (*platform == NULL) {
+      *platform = argv[i];
+    } else if (*ngpusArg == NULL) {
+      *ngpusArg = argv[i];
+    }
+  }
+  // Set verbose mode environment variables
+  if (verboseMode) {
+    setenv("NCCL_DEBUG", "INFO", 1);
+    // Append GRAPH to existing NCCL_DEBUG_SUBSYS or set it
+    const char* existingSubsys = getenv("NCCL_DEBUG_SUBSYS");
+    if (existingSubsys && strlen(existingSubsys) > 0) {
+      char newSubsys[1024];
+      snprintf(newSubsys, sizeof(newSubsys), "%s,GRAPH", existingSubsys);
+      setenv("NCCL_DEBUG_SUBSYS", newSubsys, 1);
+    } else {
+      setenv("NCCL_DEBUG_SUBSYS", "GRAPH", 1);
+    }
+  }
+}
+
 int main(int argc, const char* argv[]) {
   setenv("NCCL_IGNORE_DISABLED_P2P", "2", 0); // Disable hardware health checks (NVML)
   setlinebuf(stdout);
+  const char* platform = NULL;
+  const char* ngpusArg = NULL;
+  parseArgs(argc, argv, &platform, &ngpusArg); // Parse command line arguments
+  setStackSize(16 * 1024 * 1024);              // set stack size to 16MiB to avoid stack overflow with large NVLDs
 
   struct testParam param;
   getTestParam(&param);
+  allocateMock();
 
   int errors = 0, warnings = 0;
-  if (argc > 1) {
-    if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
-      printHelpMessage();
-      return 0;
-    }
-    if (argc > 2) param.ngpus = atoi(argv[2]);
-    checkPlatform(argv[1], &param, &errors, &warnings);
+  if (platform != NULL) {
+    if (ngpusArg != NULL) param.ngpus = atoi(ngpusArg);
+    checkPlatform(platform, &param, &errors, &warnings);
   } else {
     RUN("LOC-1G");
     RUN("PCI-1R");
@@ -853,9 +989,12 @@ int main(int argc, const char* argv[]) {
       RUN_PORT_RATIO("GB300-CX8-NVL4", 2); // RoCE 2 ports
     }
     RUN("GB300-CX8-NVL32");
+    RUN("GB300WS");
     RUN("DGX-Spark");
     RUN("DGX-Spark-flat");
+    RUN("DGX-B300-RoCE");
   }
   printf("%d errors, %d warnings (%s)\n", errors, warnings, (errors || warnings) ? "FAILED" : "PASSED");
+  freeMock();
   return (errors || warnings) ? 1 : 0;
 }

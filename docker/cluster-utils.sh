@@ -46,13 +46,8 @@ function identify_cluster() {
     return
     fi
 
-    if [[ "$hostname" =~ k8s-m* ]]; then
-        echo "ipp6-slurm"
-	return
-    fi
-
     if [[ "$(hostname -f)" =~ pdx02.us.nvidia.com$ ]]; then
-        echo "ipp6"
+        echo "ipp6-slurm"
     return
     fi
 

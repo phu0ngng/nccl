@@ -21,15 +21,15 @@ extern "C" __global__ void runDevice(ncclDevComm comm) {
   alignas(ncclBarrierSession_C) unsigned char sess_storage[sizeof(ncclBarrierSession_C)];
   ncclBarrierSession_C* session = reinterpret_cast<ncclBarrierSession_C*>(sess_storage);
 
-  ncclLsaBarrierHandle innerHandle = comm.lsaBarrier;
-  ncclGinBarrierHandle outerHandle = comm.railGinBarrier;
+  ncclLsaBarrierHandle innerHandle = net->comm.lsaBarrier;
+  ncclGinBarrierHandle outerHandle = net->comm.railGinBarrier;
   ncclMultimemHandle mmHandle{}; // unused when multimem=false
 
   ncclBarrierSessionInit(
       session,
       *coop,
-      world,  // innerTeam
-      world,  // outerTeam
+      ncclTeamLsa(net->comm),  // innerTeam
+      ncclTeamRail(net->comm),  // outerTeam
       *net,
       innerHandle,
       outerHandle,
