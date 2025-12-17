@@ -303,6 +303,26 @@ if [ "$ENABLE_MNNVL_TUNER_PLUGIN" == "1" ]; then
 fi
 unset NCCL_ALLGATHERV_ENABLE
 
+if [ "$NNODES" == "1" ]; then
+  # alltoallv_perf smoke tests (including generated pattern and matrix file mode)
+  run_command "alltoallv_perf_generated_uniform" $RUN_MODE $NGPUS "" "ALLTOALLV_SPREAD=0.0" "$NCCL_HOME/test/perf/alltoallv_perf" "-w 1 -n 1 -b 1M -e 64M -f 2"
+  run_command "alltoallv_perf_generated_weighted" $RUN_MODE $NGPUS "" "ALLTOALLV_SPREAD=1.0" "$NCCL_HOME/test/perf/alltoallv_perf" "-w 1 -n 1 -b 1M -e 64M -f 2"
+
+  a2av_matrix_file="$(mktemp "$(pwd)/alltoallv_ci_traffic_matrix.XXXXXX")"
+  cat >"$a2av_matrix_file" <<'EOF'
+    0 8388608 0 0 8388608 0 0 0
+    0 0 8388608 0 0 8388608 0 0
+    0 0 0 8388608 0 0 8388608 0
+    0 0 0 0 8388608 0 0 8388608
+    8388608 0 0 0 0 8388608 0 0
+    0 8388608 0 0 0 0 8388608 0
+    0 0 8388608 0 0 0 0 8388608
+    8388608 0 0 8388608 0 0 0 0
+EOF
+  run_command "alltoallv_perf_matrix_file" $RUN_MODE $NGPUS "" "ALLTOALLV_MATRIX_FILE=$a2av_matrix_file" "$NCCL_HOME/test/perf/alltoallv_perf" "-w 1 -n 1 -b 16M -e 16M -f 2"
+  rm -f "$a2av_matrix_file"
+fi
+
 if [ "$SKIP_COMM_MGT_TESTS" != "1" ]; then
 # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
   run_command "comm_ops_perf_init"       $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/comm_ops_perf" "init"

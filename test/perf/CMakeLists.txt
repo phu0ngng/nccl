@@ -60,6 +60,7 @@ set(COLLS
     reduce_scatterv
     reduce
     alltoall
+    alltoallv
     gather
     scatter
     sendrecv
