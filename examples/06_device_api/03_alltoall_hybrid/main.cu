@@ -145,6 +145,22 @@ void* hybridAlltoAll(int my_rank, int total_ranks, int local_device, int devices
   NCCLCHECK(ncclCommInitRank(&comm, total_ranks, nccl_unique_id, my_rank));
   printf("  Rank %d initialized NCCL communicator for %d total ranks\n", my_rank, total_ranks);
 
+  // Check for Device API and GIN support
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  NCCLCHECK(ncclCommQueryProperties(comm, &props));
+  if (!props.deviceApiSupport) {
+    printf("ERROR: rank %d communicator does not support Device API!\n", my_rank);
+    NCCLCHECK(ncclCommFinalize(comm));
+    NCCLCHECK(ncclCommDestroy(comm));
+    return NULL;
+  }
+  if (props.ginType == NCCL_GIN_TYPE_NONE) {
+    printf("ERROR: rank %d communicator does not support GIN!\n", my_rank);
+    NCCLCHECK(ncclCommFinalize(comm));
+    NCCLCHECK(ncclCommDestroy(comm));
+    return NULL;
+  }
+
   // Allocate memory for AlltoAll operation
   size_t count = 1024; // Elements per rank
   size_t total_elements = count * total_ranks;
