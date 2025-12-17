@@ -696,6 +696,8 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
     }
   }
 
+  info->supportedGinType = comm->sharedRes->ginState.ginType;
+
   return ncclSuccess;
 }
 
