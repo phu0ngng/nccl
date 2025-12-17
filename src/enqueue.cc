@@ -2562,7 +2562,7 @@ static ncclResult_t collTaskAppend(
   NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupStartApiStop));
   NCCLCHECK(ncclProfilerStartCollApiEvent(info, isGraphCaptured));
 
-  if (info->coll == ncclFuncBroadcast && ncclParamAllgathervEnable()) {
+  if (info->coll == ncclFuncBroadcast && ncclParamAllgathervEnable() && !comm->ccEnable) {
     // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
     struct ncclTaskBcast* t = ncclMemoryPoolAlloc<struct ncclTaskBcast>(&comm->memPool_ncclTaskBcast, &comm->memPermanent);
     t->func = ncclFuncAllGatherV;

@@ -576,6 +576,7 @@ struct ncclComm {
 
   bool checkPointers;
   bool dmaBufSupport;
+  bool ccEnable;
 
   // Counter for tracking CUDA launches (P2P and collectives included)
   uint64_t opCount;
