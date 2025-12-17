@@ -23,18 +23,18 @@ static int initialized;             // initialization counter for profiler
 static double startTime;            // profiler start time
 
 static const int defaultEActivationMask = ncclProfileColl | ncclProfileP2p;
-static const int defaultGroupApiPoolSize = 256;
-static const int defaultCollApiPoolSize = 256;
-static const int defaultP2pApiPoolSize = 256;
-static const int defaultKernelLaunchPoolSize = 256;
-static const int defaultGroupPoolSize = 256;
-static const int defaultCeCollPoolSize = 256;
-static const int defaultCeSyncPoolSize = 256;
-static const int defaultCeBatchPoolSize = 256;
-static const int defaultCollPoolSize = 256;
-static const int defaultP2pPoolSize = 256;
+static const int defaultGroupApiPoolSize = 8;
+static const int defaultCollApiPoolSize = 8;
+static const int defaultP2pApiPoolSize = 8;
+static const int defaultKernelLaunchPoolSize = 8;
+static const int defaultGroupPoolSize = 8;
+static const int defaultCeCollPoolSize = 8;
+static const int defaultCeSyncPoolSize = 8;
+static const int defaultCeBatchPoolSize = 8;
+static const int defaultCollPoolSize = 8;
+static const int defaultP2pPoolSize = 8;
 static const int defaultProxyCtrlPoolSize = 16;
-static const int defaultDetachPoolSize = 256;
+static const int defaultDetachPoolSize = 8;
 
 static int groupApiPoolSize;
 static int collApiPoolSize;
@@ -197,7 +197,9 @@ static ncclResult_t initGlobalProfiler(int* eActivationMask) {
   pid = getpid();
   startTime = gettime();
 
-  if (*eActivationMask & (ncclProfileCeColl | ncclProfileCeSync | ncclProfileCeBatch)) {
+  // Only start CE poller thread if CE events are enabled AND at least one CE pool is allocated
+  if ((*eActivationMask & (ncclProfileCeColl | ncclProfileCeSync | ncclProfileCeBatch)) &&
+      (ceCollPoolSize > 0 || ceSyncPoolSize > 0 || ceBatchPoolSize > 0)) {
     ncclResult_t ret = ceProfilerInitGlobal();
     if (ret != ncclSuccess) {
       return ret;
@@ -212,7 +214,11 @@ __hidden ncclResult_t exampleProfilerInit(void** context, uint64_t commId,
                                           const char* commName, int nNodes,
                                           int nranks, int rank,
                                           ncclDebugLogger_t logfn) {
-  pthread_mutex_lock(&lock);
+  if (pthread_mutex_trylock(&lock) != 0) {
+    *context = NULL;
+    return ncclSuccess;
+  }
+
   if (__atomic_fetch_add(&initialized, 1, __ATOMIC_RELAXED) == 0) {
     ncclResult_t ret = initGlobalProfiler(eActivationMask);
     if (ret != ncclSuccess) {
@@ -236,13 +242,13 @@ __hidden ncclResult_t exampleProfilerInit(void** context, uint64_t commId,
        "PROFILER/Plugin: init commName: %s commHash: %lu nranks: %d rank: %d",
        commName ? commName : "", commId, nranks, rank);
 
-  ceProfilerRegisterContext(ctx);
-
   ncclResult_t ret = allocateContextPools(ctx);
   if (ret != ncclSuccess) {
     free(ctx);
     return ret;
   }
+
+  ceProfilerRegisterContext(ctx);
 
   *context = ctx;
   return ncclSuccess;
@@ -326,6 +332,10 @@ static void finalizeGlobalProfiler(FILE* fh) {
 
 __hidden ncclResult_t exampleProfilerFinalize(void* context) {
   struct context* ctx = (struct context *)context;
+
+  if (ctx == NULL) {
+    return ncclSuccess;
+  }
   char filename[PATH_MAX] = { 0 };
   FILE* fh = openTraceFile(ctx, filename, sizeof(filename));
 
@@ -369,6 +379,9 @@ __hidden void updateEvent(void* handle);
 __hidden ncclResult_t exampleProfilerStartEvent(void* context, void** eHandle, ncclProfilerEventDescr_t* eDescr) {
   *eHandle = NULL;
   struct context* ctx = (struct context *)context;
+  if (ctx == NULL) {
+    return ncclSuccess;
+  }
   if (eDescr->type == ncclProfileGroupApi) {
     struct groupApi* event;
     int groupApiId = __atomic_fetch_add(&ctx->groupApiPoolIndex, 1, __ATOMIC_RELAXED);
@@ -975,6 +988,10 @@ __attribute__((visibility("default"))) int exampleProfilerStop(void) {
 __hidden ncclResult_t exampleProfilerStartEvent_v6(void* context, void** eHandle, ncclProfilerEventDescr_v6_t* eDescr) {
   struct context* ctx = (struct context*)context;
 
+  if (ctx == NULL) {
+    *eHandle = NULL;
+    return ncclSuccess;
+  }
   if (eDescr->type == ncclProfileCeColl) {
     return ceProfilerStartCeCollEvent(ctx, eHandle, eDescr, startTime);
   }
