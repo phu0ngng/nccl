@@ -18,11 +18,11 @@ NCCL_PARAM(GinType, "GIN_TYPE", -1);
 NCCL_PARAM(GinSignalPoolSize, "GIN_SIGNAL_POOL_SIZE", 64 << 10);
 NCCL_PARAM(GinCounterPoolSize, "GIN_COUNTER_POOL_SIZE", 64 << 10);
 
-ncclResult_t getGinType(struct ncclComm* comm, ncclGinType_t* ginType) {
+ncclResult_t getGlobalGinType(struct ncclComm* comm, ncclGinType_t* ginType) {
   if (comm == nullptr || ginType == nullptr) {
     return ncclInternalError;
   }
-  if (!comm->ginSupport) {
+  if (!comm->globalGinSupport) {
     *ginType = NCCL_GIN_TYPE_NONE;
     return ncclSuccess;
   }

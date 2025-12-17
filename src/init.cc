@@ -919,6 +919,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   int *topParentLocalRanks = NULL;
   int p2pLevel = -1;
   bool globalNicFused = false;
+  bool globalGinSupport = true;
 
   timers[TIMER_INIT_ALLGATHER] = clockNano();
   // AllGather1 - begin
@@ -942,6 +943,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
       ret = ncclInvalidUsage;
       goto fail;
     }
+    globalGinSupport &= (comm->peerInfo[i].supportedGinType == comm->sharedRes->ginState.ginType);
   }
   // AllGather1 - end
   timers[TIMER_INIT_ALLGATHER] = clockNano() - timers[TIMER_INIT_ALLGATHER];
@@ -1432,12 +1434,12 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   bool crossNicSupported;
   NCCLCHECKGOTO(ncclTopoPathAllDirectNVLink(comm->topo, &comm->isAllDirectNvlink), ret, fail);
   NCCLCHECKGOTO(ncclTopoCheckCrossNicSupport(&crossNicSupported), ret, fail);
-  comm->ginSupport = comm->sharedRes->ginState.ncclGin != nullptr && crossNicSupported && !globalNicFused;
+  comm->globalGinSupport = globalGinSupport && crossNicSupported && !globalNicFused;
   comm->rmaProxySupport = comm->rmaState.rmaProxyState.ncclGin != nullptr && crossNicSupported && !globalNicFused;
-  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->ginSupport || comm->nNodes == 1);
+  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->globalGinSupport || comm->nNodes == 1);
   if (!comm->symmetricSupport) {
     INFO(NCCL_INIT, "Symmetric memory is not supported. cuMemEnable %d, "
-      "ginSupport %d, globalNicFused %d", ncclCuMemEnable(), comm->ginSupport, globalNicFused);
+      "globalGinSupport %d, globalNicFused %d", ncclCuMemEnable(), comm->globalGinSupport, globalNicFused);
   }
   comm->devrState.bigSize = 0;
 

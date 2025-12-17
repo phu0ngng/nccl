@@ -789,7 +789,7 @@ ncclResult_t ncclDevrCommCreateInternal(
     }
   }
 
-  if (userRequestedGin && comm->ginSupport) {
+  if (userRequestedGin && comm->globalGinSupport) {
     ginActivated = !devr->ginEnabled;
     devr->ginEnabled = true;
   }
@@ -1056,7 +1056,7 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   props->nvmlDev = comm->nvmlDev;
   props->deviceApiSupport = comm->symmetricSupport;
   props->multimemSupport = comm->nvlsSupport;
-  NCCLCHECK(getGinType(comm, &props->ginType));
+  NCCLCHECK(getGlobalGinType(comm, &props->ginType));
   return ncclSuccess;
 }
 

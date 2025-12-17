@@ -46,7 +46,7 @@ extern int64_t ncclParamGinType();
 ncclResult_t setLocalGinType(struct ncclComm* comm);
 // Get the GIN type from comm. ginType is set to the GIN type that can be used
 // by the comm to communicate with other nodes.
-ncclResult_t getGinType(struct ncclComm* comm, ncclGinType_t* ginType);
+ncclResult_t getGlobalGinType(struct ncclComm* comm, ncclGinType_t* ginType);
 
 // FIXME change to ncclGinState instead of ncclComm, no need to pass comm
 ncclResult_t ncclGinConnectOnce(struct ncclComm* comm);

@@ -741,7 +741,7 @@ struct ncclComm {
   int symmetricSupport;
   bool useNetPXN;
   bool useGdr;
-  bool ginSupport;
+  bool globalGinSupport;
   bool rmaProxySupport;
   int childCount;
 
