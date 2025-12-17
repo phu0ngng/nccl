@@ -2682,7 +2682,7 @@ static ncclResult_t rmaTaskAppend(
     return ncclInvalidArgument;
   }
 
-  if (!comm->rmaProxySupport) {
+  if (!comm->rmaProxySupport && comm->nNodes > 1) {
     WARN("One sided RMA: RMA proxy is not supported in this communicator.");
     return ncclInvalidArgument;
   }
