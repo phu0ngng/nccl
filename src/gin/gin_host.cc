@@ -113,6 +113,11 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
     return ncclInternalError;
   }
 
+  if (!comm->symmetricSupport) {
+    WARN("Communicator does not support symmetric memory!");
+    return ncclInternalError;
+  }
+
   if ((ncclParamGinType() != -1) && (ginState->ginType != ncclParamGinType())) {
     WARN("GIN-capable device type mismatch.");
     return ncclInternalError;
