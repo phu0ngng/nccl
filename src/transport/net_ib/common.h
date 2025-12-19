@@ -278,10 +278,10 @@ struct alignas(32) ncclIbNetCommBase {
 struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, int devIndex);
 
 // qpIndex is the index relative to a device.
+// For example, if a device has 2 QPs, qpIndex can be 0 or 1.
 static inline ncclResult_t ncclIbCommBaseGetQpByIndex(struct ncclIbNetCommBase* commBase, int devIndex, int qpIndex, ncclIbQp** qp) {
   assert(devIndex >= 0 && devIndex < commBase->vProps.ndevs);
-  assert(qpIndex >= 0 && qpIndex < commBase->nDataQps);
-  *qp = &(commBase->qps[commBase->nDataQps*qpIndex + devIndex]);
+  *qp = &(commBase->qps[commBase->vProps.ndevs*qpIndex + devIndex]);
   return ncclSuccess;
 }
 
@@ -303,11 +303,10 @@ static inline ncclResult_t ncclIbCommBaseGetQpForRequest(struct ncclIbNetCommBas
 // Get a QP object from a QP number. If not NULL, qpIndex will also return the
 // index of the QP in the ncclIbNetCommBase::qps[] array.
 static inline ncclResult_t ncclIbCommBaseGetQpByQpNum(struct ncclIbNetCommBase* commBase, int devIndex, uint32_t qpNum, ncclIbQp** qp, int* qpIndex) {
-  assert(commBase->nDataQps != 0);
   assert(devIndex >= 0 && devIndex < commBase->vProps.ndevs);
   assert(qp != NULL);
-  TRACE(NCCL_NET, "NET/IB: %s: Looking for QP num %u on devIndex %d among %d QPs", __func__, qpNum, devIndex, commBase->nDataQps);
-  for (int qpIndexInDev = 0; qpIndexInDev < commBase->nDataQps; qpIndexInDev++) {
+  TRACE(NCCL_NET, "NET/IB: %s: Looking for QP num %u on devIndex %d among %d QPs", __func__, qpNum, devIndex, commBase->nqps / commBase->vProps.ndevs);
+  for (int qpIndexInDev = 0; qpIndexInDev < (commBase->nqps / commBase->vProps.ndevs); qpIndexInDev++) {
     ncclIbCommBaseGetQpByIndex(commBase, devIndex, qpIndexInDev, qp);
     if ((*qp)->qp->qp_num == qpNum) {
       if (qpIndex != NULL) {
