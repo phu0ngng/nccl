@@ -34,6 +34,7 @@ variables:
   # Toggle variable for build jobs
   BUILD_TRACE: "0"
   BUILD_CMAKE: "0"
+  BUILD_DOCS: "0"
   # Toggle variables for clusters
   RUN_ON_AWS: "0"
   RUN_ON_CW_DFW: "0"
@@ -173,6 +174,24 @@ build-ipp6:
       - build
     exclude:
       - build/**/*.o
+    expire_in: 48 hrs
+
+build-docs:
+  stage: build
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || $BUILD_DOCS == "1"
+      when: always
+    - when: never
+  tags:
+    - ipp6-nccl-v3
+  variables:
+    NVIDIA_VISIBLE_DEVICES: void
+  script:
+    - source docker/clusters/ipp6-slurm-config.sh
+    - eval "$(get_docs_build_command $(realpath .) $(get_build_image_version))"
+  artifacts:
+    paths:
+      - build/pkg/doc/*.zip
     expire_in: 48 hrs
 
 build-pre-tyche:

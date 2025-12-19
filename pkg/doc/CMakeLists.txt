@@ -23,6 +23,9 @@ endforeach()
 # Find all non-.in files in doc source
 file(GLOB_RECURSE DOCCOPY_FILES RELATIVE ${DOCSRC} "${DOCSRC}/*")
 list(FILTER DOCCOPY_FILES EXCLUDE REGEX "\\.in$")
+# Exclude virtual environment and other build artifacts
+list(FILTER DOCCOPY_FILES EXCLUDE REGEX "^\\.venv/")
+list(FILTER DOCCOPY_FILES EXCLUDE REGEX "/\\.venv/")
 
 # Custom target for doc package preparation
 add_custom_target(doc_prep ALL
@@ -65,8 +68,6 @@ endforeach()
 # Build the package
 add_custom_target(doc_build
   COMMAND ${MAKE_EXECUTABLE} -C ${DOCPREPDIR} html
-  COMMAND ${CMAKE_COMMAND} -E remove_directory ${DOCPREPDIR}/html
-  COMMAND mv ${DOCPREPDIR}/../html ${DOCPREPDIR}
   COMMAND ${CMAKE_COMMAND} -E make_directory ${PKGDIR}
   COMMAND cd ${DOCPREPDIR} && ${ZIP_EXECUTABLE} -r ${PKGDIR}/nccl-doc_${NCCL_MAJOR}.${NCCL_MINOR}.${NCCL_PATCH}${NCCL_SUFFIX}-${PKG_REVISION}.zip html
   WORKING_DIRECTORY ${DOCPREPDIR}
