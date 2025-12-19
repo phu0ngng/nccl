@@ -33,7 +33,9 @@ typedef int ncclSocketDescriptor;
 typedef SOCKET ncclSocketDescriptor;
 #endif
 
-uint64_t ncclOsGetpid();
+uint64_t ncclOsGetPid();
+uint64_t ncclOsGetTid();
+size_t ncclOsGetPageSize();
 ncclResult_t ncclOsSetCpuStackSize();
 std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf);
 

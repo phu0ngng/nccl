@@ -25,15 +25,24 @@
 #include "param.h"
 #include <pthread.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <atomic>
 
 // Process Management
-uint64_t ncclOsGetpid() {
+uint64_t ncclOsGetPid() {
   return (uint64_t)getpid();
 }
 
 std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf) {
   return localtime_r(timer, buf);
+}
+
+uint64_t ncclOsGetTid() {
+  return (uint64_t)syscall(SYS_gettid);
+}
+
+size_t ncclOsGetPageSize() {
+  return (size_t)sysconf(_SC_PAGESIZE);
 }
 
 // The default Linux stack size (8MB) is safe.

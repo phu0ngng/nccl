@@ -508,7 +508,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   ncclIntruQueueConstruct(&comm->legacyRegCleanupQueue);
   ncclIntruQueueConstruct(&comm->ceInitTaskQueue);
 
-  comm->regCache.pageSize = sysconf(_SC_PAGESIZE);
+  comm->regCache.pageSize = ncclOsGetPageSize();
 
   do {
     cudaMemPoolProps props = {};

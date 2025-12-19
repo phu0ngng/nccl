@@ -235,7 +235,7 @@ static void ncclDebugInit() {
 
   // Cache pid and hostname
   getHostNameForLog(hostname, 1024, '.');
-  pid = ncclOsGetpid();
+  pid = ncclOsGetPid();
 
   /* Parse and expand the NCCL_DEBUG_FILE path and
    * then create the debug file. But don't bother unless the
@@ -320,7 +320,7 @@ void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char *file
   }
 
   if (tid == -1) {
-    tid = syscall(SYS_gettid);
+    tid = ncclOsGetTid();
   }
 
   char buffer[1024];
