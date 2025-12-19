@@ -20,6 +20,8 @@ variables:
   NCCL4PY_PYTHON314_TARGET: cp314
   NCCL4PY_PYTHON_TARGETS: "$NCCL4PY_PYTHON310_TARGET,$NCCL4PY_PYTHON311_TARGET,$NCCL4PY_PYTHON312_TARGET,$NCCL4PY_PYTHON313_TARGET,$NCCL4PY_PYTHON314_TARGET"
   SLURM_ACCOUNT: coreai_libraries_nccl
+  UV_INDEX_URL: https://urm.nvidia.com/artifactory/api/pypi/pypi-remote/simple
+  PIP_INDEX_URL: https://urm.nvidia.com/artifactory/api/pypi/pypi-remote/simple
   # CW-DFW
   CW_DFW_SLURM_PARTITION: batch_short
   CW_DFW_SLURM_PARTITION_CPU: cpu

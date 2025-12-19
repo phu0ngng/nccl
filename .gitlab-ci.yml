@@ -178,12 +178,12 @@ build-ipp6:
 
 build-docs:
   stage: build
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || $BUILD_DOCS == "1"
       when: always
     - when: never
-  tags:
-    - ipp6-nccl-v3
   variables:
     NVIDIA_VISIBLE_DEVICES: void
   script:
@@ -256,12 +256,12 @@ build-bia:
 
 build-dlfw-pytorch-container:
   stage: build
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_DLFW_TESTS == "1")
       when: always
     - when: never
-  tags:
-    - build-with-docker
   variables:
     CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
   script:
