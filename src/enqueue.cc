@@ -109,6 +109,8 @@ ncclResult_t ncclAddProxyOpIfNeeded(struct ncclComm* comm, struct ncclKernelPlan
   return ncclSuccess;
 }
 
+NCCL_PARAM(P2pEpochEnable, "P2P_EPOCH_ENABLE", 1);
+
 void ncclAddWorkBatchToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int channelId,
     enum ncclDevWorkType workType, int devFuncId, uint32_t workOffset,
@@ -129,7 +131,7 @@ void ncclAddWorkBatchToPlan(
     // wipBatch.workBytes and wipBatch.nP2ps aren't reset to 0 for a new extension
     // batch further down.
     if (workType == ncclDevWorkTypeP2p) {
-      newBatch |= chan->wipBatch.p2pEpoch != p2pEpoch;
+      if (ncclParamP2pEpochEnable()) newBatch |= chan->wipBatch.p2pEpoch != p2pEpoch;
       // We only allow NCCL_MAX_DEV_WORK_P2P_PER_BATCH ops per batch.
       newBatch |= chan->wipBatch.nP2ps == NCCL_MAX_DEV_WORK_P2P_PER_BATCH;
       for (int i = 0; i < chan->wipBatch.nP2ps; i++) {
