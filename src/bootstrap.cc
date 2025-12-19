@@ -833,7 +833,7 @@ ncclResult_t bootstrapInit(int nHandles, void* handles, struct ncclComm* comm, s
     // The RAS thread will take care of freeing the memory allocated below.
     NCCLCHECK(ncclCalloc(&rasRanks, nranks));
     memcpy(&rasRanks[rank].addr, &bootstrapNetIfAddr, sizeof(rasRanks[rank].addr));
-    rasRanks[rank].pid = ncclOsGetpid();
+    rasRanks[rank].pid = ncclOsGetPid();
     rasRanks[rank].cudaDev = comm->cudaDev;
     rasRanks[rank].nvmlDev = comm->nvmlDev;
     rasRanks[rank].hostHash = getHostHash();

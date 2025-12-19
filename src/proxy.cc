@@ -960,7 +960,7 @@ void* ncclProxyProgress(void *proxyState_) {
   ncclLastProxyState = state;
   char threadName[NCCL_THREAD_NAMELEN];
   snprintf(threadName, NCCL_THREAD_NAMELEN, "NCCL Progress%2d", proxyState->cudaDev);
-  nvtxNameOsThreadA(syscall(SYS_gettid), threadName);
+  nvtxNameOsThreadA(ncclOsGetTid(), threadName);
 
   int lastIdle = 0;
   /* Too frequent call of ncclProxyGetPostedOps() will result in perf regression for small message

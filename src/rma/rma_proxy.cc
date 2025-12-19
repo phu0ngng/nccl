@@ -99,7 +99,7 @@ static ncclResult_t getDmaBufFd(void *addr, size_t length, int *fd,
   if (ncclParamDmaBufEnable() == 0) return ncclInvalidUsage;
 
 #if CUDA_VERSION >= 11070
-  static size_t hostPageSize = sysconf(_SC_PAGESIZE);
+  static size_t hostPageSize = ncclOsGetPageSize();
   size_t alignedSize = length;
   ALIGN_SIZE(alignedSize, hostPageSize);
 

@@ -12,7 +12,7 @@
 #include "bitops.h"
 #include "utils.h"
 #include "p2p.h"
-#include <sys/mman.h>
+#include "os.h"
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -441,7 +441,7 @@ finish:
 // and if they are shared, that could cause a crash in a child process
 inline ncclResult_t ncclIbMallocDebug(void** ptr, size_t size, const char *filefunc, int line) {
   if (size > 0) {
-    long page_size = sysconf(_SC_PAGESIZE);
+    long page_size = ncclOsGetPageSize();
     if (page_size < 0) return ncclSystemError;
     void* p;
     int size_aligned = ROUNDUP(size, page_size);
