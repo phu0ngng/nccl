@@ -1399,7 +1399,7 @@ class Communicator:
 
     def register_window(
         self, buffer: NcclBufferSpec, flags: WindowFlag | None = None
-    ) -> RegisteredWindowHandle:
+    ) -> RegisteredWindowHandle | None:
         """
         Collectively registers a local buffer into an NCCL window for optimized communication.
 
@@ -1412,7 +1412,9 @@ class Communicator:
             - flags (WindowFlag, optional): Window registration flags to control behavior. Defaults to None.
 
         Returns:
-            ``RegisteredWindowHandle``: Resource handle that can be closed manually or automatically when the communicator is destroyed / aborted.
+            ``RegisteredWindowHandle``: Resource handle that can be closed manually or
+            automatically when the communicator is destroyed / aborted, or ``None`` if
+            NCCL returns a NULL handle (e.g., window unsupported on a platform).
 
         Raises:
             - ``NcclInvalid``: If buffer is on wrong device or communicator is not initialized.
@@ -1434,6 +1436,9 @@ class Communicator:
         size = nccl_buf.count * nccl_buf.dtype.itemsize
 
         resource = RegisteredWindowHandle(self._comm, buffer_ptr, size, flags)
+        if resource.handle == 0:
+            return None
+
         self._resources.append(resource)
         return resource
 

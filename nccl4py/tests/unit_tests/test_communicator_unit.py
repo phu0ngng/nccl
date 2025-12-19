@@ -29,16 +29,8 @@ def _setup_comm_with_mocked_bindings(monkeypatch, calls):
         def red_op_destroy(op, comm_ptr):
             pass
 
-    # Mock CustomRedOp to avoid calling real NCCL bindings
-    class FakeCustomRedOp:
-        def __init__(self, comm_ptr, scalar_ptr, datatype, residence):
-            calls["create"] = (scalar_ptr, datatype.value, residence, comm_ptr)
-            self._closed = False
-        def close(self):
-            self._closed = True
-
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
-    monkeypatch.setattr("nccl.core.communicator.CustomRedOp", FakeCustomRedOp)
+    monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
 
     comm = Communicator.__new__(Communicator)
     comm._comm = 0xC
@@ -176,15 +168,8 @@ def test_register_buffer_accepts_ncclbufferspec(monkeypatch):
         def comm_deregister(comm_ptr, handle):
             pass
 
-    # Mock RegisteredBufferHandle to avoid real NCCL calls
-    class FakeRegHandle:
-        def __init__(self, comm_ptr, buf_ptr, size):
-            calls["reg"] = (comm_ptr, buf_ptr, size)
-        def close(self):
-            pass
-
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
-    monkeypatch.setattr("nccl.core.communicator.RegisteredBufferHandle", FakeRegHandle)
+    monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
     monkeypatch.setattr(
         "nccl.core.buffer._resolve_buffer",
         lambda buf, s: View(
@@ -219,15 +204,8 @@ def test_register_window_accepts_ncclbufferspec_and_flags(monkeypatch):
         def comm_window_deregister(comm_ptr, handle):
             pass
 
-    # Mock RegisteredWindowHandle to avoid real NCCL calls
-    class FakeWinHandle:
-        def __init__(self, comm_ptr, buf_ptr, size, flags):
-            calls["reg"] = (comm_ptr, buf_ptr, size, flags.value if flags else 0)
-        def close(self):
-            pass
-
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
-    monkeypatch.setattr("nccl.core.communicator.RegisteredWindowHandle", FakeWinHandle)
+    monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
     monkeypatch.setattr(
         "nccl.core.buffer._resolve_buffer",
         lambda buf, s: View(
@@ -252,6 +230,40 @@ def test_register_window_accepts_ncclbufferspec_and_flags(monkeypatch):
     calls["reg"] = None
     win2 = comm.register_window(DLPackBuf(), flags=WindowFlag.CollSymmetric)
     assert calls["reg"] == (0xC, 0x2000, 40, int(WindowFlag.CollSymmetric))
+
+
+def test_register_window_returns_none_on_null_handle(monkeypatch):
+    """register_window returns None and skips resource tracking on NULL handle."""
+
+    class B:
+        @staticmethod
+        def comm_window_register(comm_ptr, buf_ptr, size, flags):
+            return 0  # NULL handle
+        @staticmethod
+        def comm_window_deregister(comm_ptr, handle):
+            pass
+
+    monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
+    monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
+    monkeypatch.setattr(
+        "nccl.core.buffer._resolve_buffer",
+        lambda buf, s: View(
+            ptr=0x2000, shape=(5,), dtype=np.dtype("float64"),
+            device_id=0, strides=None, is_device_accessible=True,
+            readonly=False, exporting_obj=buf
+        )
+    )
+
+    comm = Communicator.__new__(Communicator)
+    comm._comm = 0xC
+    comm._device = FakeDevice(0)
+    comm._rank = 0
+    comm._nranks = 2
+    comm._resources = []
+
+    win = comm.register_window(CAIBuf())
+    assert win is None
+    assert comm._resources == []
 
 
 def test_buffer_device_validation(monkeypatch):
@@ -294,8 +306,16 @@ def test_buffer_device_validation(monkeypatch):
     )
 
     # Mock the actual registration call to avoid errors
-    monkeypatch.setattr("nccl.core.communicator.RegisteredBufferHandle",
-                       lambda comm, ptr, size: type("FakeHandle", (), {"close": lambda self: None})())
+    class B:
+        @staticmethod
+        def comm_register(comm_ptr, buf_ptr, size):
+            return 0xAA
+        @staticmethod
+        def comm_deregister(comm_ptr, handle):
+            pass
+
+    monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
+    monkeypatch.setattr("nccl.core.resources._nccl_bindings", B)
 
     # Should not raise with correct device
     handle = comm.register_buffer(CAIBuf())
