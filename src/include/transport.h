@@ -55,6 +55,7 @@ struct ncclPeerInfo {
   int cuMemSupport;
   int version;
   ncclGinType_t supportedGinType;
+  bool crossNicSupport;
 };
 
 #define CONNECT_SIZE 256
