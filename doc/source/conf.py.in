@@ -76,6 +76,9 @@ language = 'en-US'
 # This pattern also affects html_static_path and html_extra_path .
 exclude_patterns = [u'_build', 'Thumbs.db', '.DS_Store', '**.ipynb_checkpoints']
 
+# Suppress duplicate C declaration warnings (rank/nRanks appear in multiple structs)
+suppress_warnings = ['c.duplicated']
+
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
 highlight_language = 'c++'
