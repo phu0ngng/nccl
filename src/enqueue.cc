@@ -1540,6 +1540,12 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         plan->ceCollArgs->recvWin = task->recvWin;
         plan->ceCollArgs->collApiEventHandle = task->collApiEventHandle;
 
+        if (comm->rank == 0) {
+          const char* nvlsSync = comm->nvlsSupport ? "; CE synchronization with NVLS" : "";
+          INFO(NCCL_TUNING, "%s [Copy Engine]: %ld Bytes -> cudaMemcpy%s",
+            ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), nvlsSync);
+        }
+
         ncclIntruQueueEnqueue(&planner->planQueue, plan);
         ncclIntruQueueDequeue(&planner->collCeTaskQueue);
         ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, task);
