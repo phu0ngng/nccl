@@ -48,7 +48,8 @@ Sample Output
 -------------
 
 This section contains excerpts of the RAS status output.  Please note that the exact format and scope of the information
-being made available is expected to evolve; the excerpts are provided for illustrative purposes only.
+being made available varies from release to release; the excerpts are provided for illustrative purposes only.  For a
+more machine-friendly format, see :ref:`ras_json` below.
 
 Here's an example output from a job that is progressing normally:
 
@@ -108,7 +109,8 @@ summary output and ``<y>`` is the communicator number within the group, both sta
 only one (32-GPU) communicator so, unsurprisingly, the identifier is ``#0-0``).  The identifier is followed by a
 communicator hash, which is a value that can be found in NCCL's regular debug output as well, and the rank information.
 RAS groups together the ranks with the same relevant property (the count of issued collective operations in
-this case).  If a group constitutes an outlier, RAS prints additional information about each group member.  By default
+this case; starting with NCCL 2.26, this is broken down per collective operation type).  If a group constitutes an
+outlier, RAS prints additional information about each group member.  By default
 this is done if the group size is at most 25% of the total *and* the group has no more than 10 members; enabling verbose
 output relaxes this to under 50% of the total and lifts the group size limit.
 
@@ -149,7 +151,8 @@ initialized seven (group ``#1``)).  The
 32-GPU communicator (``#0-0``) is being torn down, with two ranks in the middle of `ncclCommFinalize`, four ranks that
 have *not* called `ncclCommFinalize` yet, and the remaining 26 ranks "unknown" -- meaning that they didn't provide any
 information about that communicator when RAS was collecting data, simply because their call to `ncclCommFinalize` has
-already completed so they are in fact no longer that communicator's members.  Again, as long as the situation is
+already completed so they are in fact no longer that communicator's members (NCCL 2.26 and later print ``NOCOMM``
+instead).  Again, as long as the situation is
 resolved when the query is repeated, it can be ignored.
 
 Here's an excerpt from an invocation right after artificially creating a problem with one of the job processes:
@@ -203,5 +206,134 @@ will declare the process dead (permanently):
 
 RAS will simply stop attempting to communicate with such processes over the RAS network anymore, leaving it up to the
 user to determine if any additional action is warranted.
+
+.. _ras_json:
+
+JSON Output
+-----------
+
+Starting with NCCL 2.28.7, RAS can generate output in JSON format to support machine-parsable metrics collection.
+
+The ``ncclras`` binary gains an additional option ``-f`` followed by an argument: ``text`` or ``json``, with ``text``
+being the default.  The equivalent wire-level protocol command is ``SET FORMAT <format>``.  Sample output can be found
+below:
+
+.. code::
+
+  {
+    "nccl_version": "2.29.1",
+    "cuda_runtime_version": 13000,
+    "cuda_driver_version": 13000,
+    "timestamp": "2025-12-19 13:06:53",
+    "communicators_count": 1,
+    "communicators": [
+      {
+        "hash": "0xae94423cfbb2ef4a",
+        "secondary_hash": "0xb7e7187447156001:0xb8242ed28a71381e",
+        "size": 2,
+        "ranks_count": 1,
+        "missing_ranks_count": 1,
+        "ranks": [
+          {
+            "rank": 0,
+            "host": "172.16.64.245",
+            "pid": 1524344,
+            "cuda_dev": 0,
+            "nvml_dev": 0,
+            "status": {
+              "init_state": 0,
+              "async_error": 0,
+              "finalize_called": false,
+              "destroy_flag": false,
+              "abort_flag": false
+            },
+            "collective_counts": {
+              "Broadcast": 0,
+              "Reduce": 0,
+              "AllGather": 0,
+              "ReduceScatter": 0,
+              "AllReduce": 0
+            }
+          }
+        ],
+        "missing_ranks": [
+          {
+            "rank": 1,
+            "host": "172.16.64.245",
+            "pid": 1524345,
+            "cuda_dev": 1,
+            "nvml_dev": 1,
+            "status": {
+              "unresponsive": true,
+              "considered_dead": false
+            }
+          }
+        ]
+      }
+    ],
+    "ras": {
+      "collection_time_sec": 0.000,
+      "timeouts_count": 0
+    }
+  }
+
+As can be observed, the JSON output is considerably more verbose than the text one (which is optimized for human
+consumption).  It is essentially a dump of all raw data collected by RAS; the analysis and interpretation is left to the
+consumer.
+
+Most of the fields should be fairly self-explanatory, with the possible exception of:
+
+* ``secondary_hash``: can be used in conjunction with ``hash`` to create a communicator identifier that is guaranteed to
+  be unique (which ``hash`` by itself is not, although in practice collisions are highly unlikely).
+* ``nvml_dev``: normally the same as ``cuda_dev``, unless `CUDA_VISIBLE_DEVICES` is being used (in which case
+  ``cuda_dev`` may not be unique among ranks on a single node, whereas ``nvml_dev`` always is).
+* ``init_state``: ``0`` (`ncclSuccess`) if a rank is fully initialized, ``7`` (`ncclInProgress`) if initialization is
+  still ongoing; any other value indicates an error.
+* ``async_error``: the value that would be returned if the rank called `ncclGetAsyncError`.
+* ``unresponsive``: `true` if RAS was unable to reach the rank when collecting data -- this is the most common
+  reason why a rank would be considered missing.  There are, however, corner cases during communicator initialization
+  and termination when a process may be reachable but does not consider itself to be a member of a given communicator.
+
+Monitoring Mode
+---------------
+
+Starting with NCCL 2.29, RAS adds a monitoring mode for real-time status updates.
+
+The ``ncclras`` binary gains an additional option ``-m`` that switches it to monitoring mode.  The equivalent wire-level
+protocol command is ``MONITOR``.
+
+When in monitoring mode, the RAS client prints a welcome message and does not terminate until it is interrupted or the
+job finishes:
+
+.. code::
+
+  RAS Monitor Mode - watching for peer changes (Ctrl+C to exit)...
+  ================================================================
+
+A sample event of interest could be a process being declared dead:
+
+.. code::
+
+   [2025-12-19 13:07:07] PEER_DEAD: Process 1524345 on node 172.16.64.245 managing GPU 1
+
+Monitoring mode can also be used in conjunction with JSON output:
+
+.. code::
+
+  {
+    "timestamp": "2025-12-19 13:07:07",
+    "group": "LIFECYCLE",
+    "event": "PEER_DEAD",
+    "peer": {
+      "host": "172.16.64.245",
+      "pid": 1524345,
+      "cuda_devs": [1],
+      "nvml_devs": [1]
+    },
+    "details": ""
+  }
+
+Unlike in the previously shown communicator output (where each rank was printed separately), here the entity of concern
+is a `process` so ``cuda_devs`` and ``nvml_devs`` need to be arrays (since a process can manage multiple GPUs).
 
 .. highlight:: shell
