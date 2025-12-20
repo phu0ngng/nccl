@@ -14,9 +14,12 @@ A structure describing a device communicator, as created on the host side using 
 structure is used primarily on the device side; elements that could be of particular interest include:
 
  .. c:member:: int rank
+
+ The rank within the communicator.
+
  .. c:member:: int nRanks
 
- Rank and size of the communicator.
+ The size of the communicator.
 
  .. c:member:: int lsaRank
  .. c:member:: int lsaSize
@@ -35,11 +38,10 @@ ncclDevCommCreate
 Creates a new device communicator (see :c:type:`ncclDevComm`) corresponding to the supplied host-side communicator
 *comm*.  The result is returned in the *outDevComm* buffer (which needs to be supplied by the caller).  The caller needs
 to also provide a filled-in list of requirements via the *reqs* argument (see :c:type:`ncclDevCommRequirements`); the
-function will allocate any necessary resources to meet them.  The function can fail and return an error code if the
-communicator does not support symmetric memory or if the list of requirements cannot be met (e.g., if the multimem
-capability is requested on a system lacking the necessary hardware support). Since this is a collective call,
-every rank in the communicator needs to participate. If called within a group, *outDevComm* may not be filled
-in until ``ncclGroupEnd()`` has completed.
+function will allocate any necessary resources to meet them. It is recommended to call :c:func:`ncclCommQueryProperties`
+before calling the function; the function will fail if the specified requirements are not supported. Since this is a
+collective call, every rank in the communicator needs to participate.  If called within a group, *outDevComm* may not be 
+filled in until ``ncclGroupEnd()`` has completed.
 
 Note that this is a *host-side* function.
 
@@ -95,6 +97,70 @@ A host-side structure specifying the list of requirements when creating device c
 
  Specifies a list of requirements for particular teams.  This is best set to NULL for now.
 
+
+ncclCommQueryProperties
+-----------------------
+
+.. c:function:: ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* props)
+
+Exposes communicator properties by filling in *props*. Before calling this function, *props* must be initialized using ``NCCL_COMM_PROPERTIES_INITIALIZER``. Introduced in NCCL 2.29.
+
+Note that this is a *host-side* function.
+
+ncclCommProperties_t
+--------------------
+
+.. c:type:: ncclCommProperties_t
+
+A structure describing the properties of the communicator. Introduced in NCCL 2.29. Properties include:
+
+ .. c:member:: int rank
+
+ Rank within the communicator.
+
+ .. c:member:: int nRanks
+
+ Size of the communicator.
+
+ .. c:member:: int cudaDev
+
+ CUDA device index.
+
+ .. c:member:: int nvmlDev
+
+ NVML device index.
+
+ .. c:member:: bool deviceApiSupport
+
+ Whether the device API is supported. If false, a :c:type:`ncclDevComm` cannot be created.
+
+ .. c:member:: bool multimemSupport
+
+ Whether ranks in the same LSA team can communicate using multimem. If false, a :c:type:`ncclDevComm` cannot be created with multimem resources.
+
+ .. c:member:: ncclGinType_t ginType
+
+ The GIN type supported by the communicator. If equal to :c:macro:`NCCL_GIN_TYPE_NONE`, a :c:type:`ncclDevComm` cannot be created with GIN resources.
+
+
+ncclGinType_t
+-------------
+
+.. c:type:: ncclGinType_t
+
+GIN type. Communication between different GIN types is not supported. Possible values include:
+
+ .. c:macro:: NCCL_GIN_TYPE_NONE
+
+   GIN is not supported.
+
+ .. c:macro:: NCCL_GIN_TYPE_PROXY
+
+   Host Proxy GIN type.
+
+ .. c:macro:: NCCL_GIN_TYPE_GDAKI
+
+   GPUDirect Async Kernel-Initiated (GDAKI) GIN type.
 
 LSA
 ===
