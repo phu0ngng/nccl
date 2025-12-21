@@ -665,8 +665,30 @@ ncclResult_t ncclRmaPutProxy(struct ncclComm* comm, struct ncclKernelPlan* plan,
   CUstreamBatchMemOpParams* batchParams = NULL;
   NCCLCHECK(ncclCalloc(&batchParams, 2*nRmaTasksProxy));
 
+  int batchIdx = 0;
+
   for (int i = 0; i < nRmaTasksProxy; i++) {
     struct ncclTaskRma* task = ncclIntruQueueHead(&plan->rmaTaskQueueProxy);
+    int peer = task->peer;
+
+    // Check for available slot in the circular buffer
+    uint32_t pi = __atomic_load_n(&rmaProxyCtx->pis[peer], __ATOMIC_RELAXED);
+    uint32_t ci = __atomic_load_n(&rmaProxyCtx->cis[peer], __ATOMIC_ACQUIRE);
+
+    // If queue is full, flush pending batch ops to allow progress thread to free slots
+    while ((pi - ci) >= rmaProxyCtx->queueSize) {
+      if (batchIdx > 0) {
+        NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, batchIdx, batchParams), ret, fail);
+        NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, batchIdx, batchParams+nRmaTasksProxy), ret, fail);
+        batchIdx = 0;
+      }
+      // Yield to allow progress thread to run and process pending entries
+      std::this_thread::yield();
+      // Re-read both PI and CI to get fresh values
+      pi = __atomic_load_n(&rmaProxyCtx->pis[peer], __ATOMIC_RELAXED);
+      ci = __atomic_load_n(&rmaProxyCtx->cis[peer], __ATOMIC_ACQUIRE);
+    }
+
     ncclIntruQueueDequeue(&plan->rmaTaskQueueProxy);
 
     assert(task->ctx == ctx);
@@ -696,29 +718,19 @@ ncclResult_t ncclRmaPutProxy(struct ncclComm* comm, struct ncclKernelPlan* plan,
     }
 
     // Prepare the readySeq write operation
-    batchParams[i].writeValue.operation = CU_STREAM_MEM_OP_WRITE_VALUE_64;
-    batchParams[i].writeValue.address = (CUdeviceptr)&rmaProxyCtx->readySeqsDev[task->peer];
-    batchParams[i].writeValue.value = desc->seq;
-    batchParams[i].writeValue.flags = CU_STREAM_WRITE_VALUE_DEFAULT;
+    batchParams[batchIdx].writeValue.operation = CU_STREAM_MEM_OP_WRITE_VALUE_64;
+    batchParams[batchIdx].writeValue.address = (CUdeviceptr)&rmaProxyCtx->readySeqsDev[task->peer];
+    batchParams[batchIdx].writeValue.value = desc->seq;
+    batchParams[batchIdx].writeValue.flags = CU_STREAM_WRITE_VALUE_DEFAULT;
 
     // Prepare the doneSeq wait operation
-    batchParams[i+nRmaTasksProxy].waitValue.operation = CU_STREAM_MEM_OP_WAIT_VALUE_64;
-    batchParams[i+nRmaTasksProxy].waitValue.address = (CUdeviceptr)&rmaProxyCtx->doneSeqsDev[task->peer];
-    batchParams[i+nRmaTasksProxy].waitValue.value = desc->seq;
-    batchParams[i+nRmaTasksProxy].waitValue.flags = CU_STREAM_WAIT_VALUE_GEQ;
+    batchParams[batchIdx+nRmaTasksProxy].waitValue.operation = CU_STREAM_MEM_OP_WAIT_VALUE_64;
+    batchParams[batchIdx+nRmaTasksProxy].waitValue.address = (CUdeviceptr)&rmaProxyCtx->doneSeqsDev[task->peer];
+    batchParams[batchIdx+nRmaTasksProxy].waitValue.value = desc->seq;
+    batchParams[batchIdx+nRmaTasksProxy].waitValue.flags = CU_STREAM_WAIT_VALUE_GEQ;
 
     INFO(NCCL_COLL, "ncclRmaPutProxy enqueued Desc: rank=%d peer=%d ctx=%d size=%ld signalMode=%d readySeq=%lu doneSeq=%lu",
       comm->rank, task->peer, ctx, task->count * ncclTypeSize(task->datatype), task->signalMode, (uint64_t)desc->seq, (uint64_t)desc->seq);
-
-    // Lock-free enqueue to the circular buffer
-    int peer = task->peer;
-    uint32_t pi = __atomic_load_n(&rmaProxyCtx->pis[peer], __ATOMIC_RELAXED);
-    uint32_t ci = __atomic_load_n(&rmaProxyCtx->cis[peer], __ATOMIC_ACQUIRE);
-
-    // Spin if queue is full (wait for consumer to advance CI)
-    while ((pi - ci) >= rmaProxyCtx->queueSize) {
-      ci = __atomic_load_n(&rmaProxyCtx->cis[peer], __ATOMIC_ACQUIRE);
-    }
 
     // Write descriptor to queue
     uint32_t idx = pi & (rmaProxyCtx->queueSize - 1);
@@ -726,13 +738,19 @@ ncclResult_t ncclRmaPutProxy(struct ncclComm* comm, struct ncclKernelPlan* plan,
 
     // Advance PI with RELEASE to ensure descriptor write is visible
     __atomic_store_n(&rmaProxyCtx->pis[peer], pi + 1, __ATOMIC_RELEASE);
+    batchIdx++;
 
     // Free the task
     ncclMemoryPoolFree(&comm->memPool_ncclTaskRma, task);
   }
 
-  // Execute both operations in a single batch after all Descs are enqueued
-  NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, 2*nRmaTasksProxy, batchParams), ret, fail);
+  // Execute ready operations (readySeq writes) first, then done operations (doneSeq waits)
+  if (batchIdx == nRmaTasksProxy) {
+    NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, 2*batchIdx, batchParams), ret, fail);
+  } else {
+    NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, batchIdx, batchParams), ret, fail);
+    NCCLCHECKGOTO(ncclCuStreamBatchMemOp(stream, batchIdx, batchParams+nRmaTasksProxy), ret, fail);
+  }
 
 exit:
   if (batchParams) free(batchParams);

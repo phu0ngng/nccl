@@ -8,6 +8,7 @@
 
 #ifdef USE_IR
 #include <cuda.h>
+#include "cumod_common.h"
 #endif
 
 //constexpr int BlockPerRank = 1;
@@ -151,9 +152,9 @@ int main(int argc, char** argv) {
 #ifdef USE_IR
   // IR path: load kernel from cubin and launch
   CUmodule mymodule = NULL;
-  init_cumodule(&mymodule, "devapi_data_ring_ir.cubin");
+  initCumodule(&mymodule, "devapi_data_ring_ir.cubin");
   CUfunction kernel;
-  init_test_case_kernel(mymodule, &kernel, "runDevice");
+  initTestCaseKernel(mymodule, &kernel, "runDevice");
 
   void* args[] = {&dcomm, &hBuf};
   CU_CHECK(cuLaunchKernel(kernel, BlockPerRank, 1, 1, 512, 1, 1, 0, stream, args, NULL));
@@ -167,7 +168,7 @@ int main(int argc, char** argv) {
 
   // cleanup
 #ifdef USE_IR
-  fini_cumodule(&mymodule);
+  finiCumodule(&mymodule);
   CU_CHECK(cuStreamDestroy(stream));
 #else
   CUDACHECK(cudaStreamDestroy(stream));

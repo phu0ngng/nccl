@@ -119,6 +119,7 @@ ncclResult_t ncclGinIbConnect(void* ctx, void* handles[], int nranks, int rank, 
   struct ncclGinIbCollComm *cComm = nullptr;
   int next;
 
+  *collComm = NULL;
   NCCLCHECK(ncclIbMalloc((void **)&cComm, sizeof(*cComm)));
   NCCLCHECK(ncclIbMalloc((void**)&cComm->fullSendComm, sizeof(void *) * nranks));
   NCCLCHECK(ncclIbMalloc((void**)&cComm->fullRecvComm, sizeof(void *) * nranks));
@@ -243,11 +244,13 @@ ncclResult_t ncclGinIbGdakiListen(void* ctx, int dev, void* opaqueHandle, void**
 }
 
 ncclResult_t ncclGinIbGdakiConnect(void* ctx, void* handles[], int nranks, int rank, void* listenComm, void** collComm) {
-  ncclResult_t status = ncclGinIbConnect(ctx, handles, nranks, rank, listenComm, collComm);
+  NCCLCHECK(ncclGinIbConnect(ctx, handles, nranks, rank, listenComm, collComm));
+
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)*collComm;
   cComm->getProperties = (ncclResult_t(*)(int dev, void *props))ncclGinIbGdakiGetProperties;
   cComm->ibvCtx = ncclIbDevs[ncclGinIbGdakiDevIndexes[cComm->dev]].context;
-  return status;
+
+  return ncclSuccess;
 }
 
 ncclResult_t ncclGinIbGdakiCreateContext(void* collComm, int nSignals, int nCounters, void **ginCtx, ncclNetDeviceHandle_v11_t** devHandle) {

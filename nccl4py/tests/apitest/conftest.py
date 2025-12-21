@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import shutil
 import socket
 from dataclasses import dataclass
@@ -19,8 +20,14 @@ def setup_nccl(tmp_path_factory):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
 
-    logdir = tmp_path_factory.mktemp("nccl_logs") if rank == 0 else None
-    logdir = comm.bcast(logdir, root=0)
+    root_dir = str(tmp_path_factory.mktemp("nccl_logs")) if rank == 0 else None
+    root_dir = comm.bcast(root_dir, root=0)
+    root_dir = Path(root_dir)
+
+    logdir = root_dir / f"rank{rank}"
+    logdir.mkdir(parents=True, exist_ok=True)
+
+    comm.Barrier()
 
     os.environ["NCCL_DEBUG"] = "INFO"
     os.environ["NCCL_DEBUG_SUBSYS"] = "INIT,ENV,GRAPH,BOOTSTRAP"

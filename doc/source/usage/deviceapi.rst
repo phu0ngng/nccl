@@ -26,8 +26,15 @@ The device API relies on symmetric memory (see :ref:`window_reg`), which in turn
 management (see :ref:`env_NCCL_CUMEM_ENABLE`) and optionally -- for multimem support -- on NVLink SHARP (see
 :ref:`env_NCCL_NVLS_ENABLE`).
 
-GIN bootstrap currently requires that all ranks have access to all other ranks. It is not compatible with
-network configurations that do not allow cross-rail connections.
+GIN has the following requirements:
+
+* CUDA 12.2 or later when compiling the GPU code
+* NVIDIA GPUs: Volta or newer. NVIDIA GPU drivers >= 510.40.3
+* NVIDIA NICs: CX4 or newer. rdma-core >= 44.0
+* GPU Direct RDMA: GIN host proxy requires DMA-BUF or nvidia-peermem support. GIN GDAKI requires DMA-BUF with kernel version >= 6.1 or nvidia-peermem support
+* Network topology: Requires full NIC connectivity. Does not support topologies where NICs cannot communicate across rails. Also does not support ``NCCL_CROSS_NIC=0``.
+* Fused NICs are not supported. To use GIN on dual-port NICs, set ``NCCL_IB_MERGE_NICS=0``
+
 
 Using the host RMA API requires CUDA 12.5 or greater.
 

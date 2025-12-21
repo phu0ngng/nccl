@@ -109,10 +109,12 @@ ncclResult_t ncclAddProxyOpIfNeeded(struct ncclComm* comm, struct ncclKernelPlan
   return ncclSuccess;
 }
 
+NCCL_PARAM(P2pEpochEnable, "P2P_EPOCH_ENABLE", 1);
+
 void ncclAddWorkBatchToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan, int channelId,
     enum ncclDevWorkType workType, int devFuncId, uint32_t workOffset,
-    int p2pRound, bool newBatch
+    int p2pEpoch, int p2pRound, bool newBatch
   ) {
   size_t workSize = ncclDevWorkSize(workType);
   ncclKernelPlanner::WipPlan::Channel* chan = &comm->planner.wipPlan.channels[channelId];
@@ -129,12 +131,13 @@ void ncclAddWorkBatchToPlan(
     // wipBatch.workBytes and wipBatch.nP2ps aren't reset to 0 for a new extension
     // batch further down.
     if (workType == ncclDevWorkTypeP2p) {
+      if (ncclParamP2pEpochEnable()) newBatch |= chan->wipBatch.p2pEpoch != p2pEpoch;
       // We only allow NCCL_MAX_DEV_WORK_P2P_PER_BATCH ops per batch.
       newBatch |= chan->wipBatch.nP2ps == NCCL_MAX_DEV_WORK_P2P_PER_BATCH;
       for (int i = 0; i < chan->wipBatch.nP2ps; i++) {
-        // Do not allow the same round twice in the same batch.
+        // Do not allow the same round twice in the same batch, it would use the same connection.
         newBatch |= p2pRound == chan->wipBatch.p2pRounds[i];
-        // Make sure we only aggregate p2p operations within the same p2p round epoch (one epoch is NCCL_MAX_DEV_WORK_P2P_PER_BATCH ops).
+        // Make sure we only aggregate p2p operations within the same p2p group (one group is NCCL_MAX_DEV_WORK_P2P_PER_BATCH ops).
         // This enforces uniform batching accross ranks in the communicator and prevents hangs.
         newBatch |= (p2pRound / NCCL_MAX_DEV_WORK_P2P_PER_BATCH) != (chan->wipBatch.p2pRounds[i] / NCCL_MAX_DEV_WORK_P2P_PER_BATCH);
       }
@@ -182,8 +185,7 @@ void ncclAddWorkBatchToPlan(
   batch->offsetBitset |= 1ull<<(offset/workSize);
   chan->wipBatch.workBytes += workSize;
   if (workType == ncclDevWorkTypeP2p) {
-    // We need to ensure that a single batch doesn't have multiple p2p's
-    // of the same round since they would use the same connections.
+    chan->wipBatch.p2pEpoch = p2pEpoch;
     chan->wipBatch.p2pRounds[chan->wipBatch.nP2ps++] = p2pRound;
   }
   if (workType == ncclDevWorkTypeBcast) {
@@ -830,7 +832,7 @@ NCCL_PARAM(ChunkSize, "CHUNK_SIZE", 0);
 // No-op's are encoded with a -1 size.
 static ncclResult_t addP2pToPlan(
     struct ncclComm* comm, struct ncclKernelPlan* plan,
-    int nChannelsMin, int nChannelsMax, int p2pRound,
+    int nChannelsMin, int nChannelsMax, int p2pEpoch, int p2pRound,
     int sendRank, void* sendAddr, ssize_t sendBytes,
     int recvRank, void* recvAddr, ssize_t recvBytes,
     const int planTotalTasks[], struct ncclTaskP2p** p2pTasks
@@ -1021,7 +1023,7 @@ static ncclResult_t addP2pToPlan(
     int channelId = ncclP2pChannelForPart(comm->p2pnChannels, base, part);
     plan->channelMask |= uint64_t(1)<<channelId;
     // Add batch first.
-    ncclAddWorkBatchToPlan(comm, plan, channelId, ncclDevWorkTypeP2p, ncclDevFuncId_P2p(), workOffset, p2pRound);
+    ncclAddWorkBatchToPlan(comm, plan, channelId, ncclDevWorkTypeP2p, ncclDevFuncId_P2p(), workOffset, p2pEpoch, p2pRound);
     for (int dir=0; dir < nProxyOps; dir++) {
       // Partition steps across channels.
       int nParts = dir ? work->nSendChannels : work->nRecvChannels;
@@ -1087,9 +1089,7 @@ static int calcP2pChannelCount(size_t totalSize, int minChannels, int maxChannel
   return nChannels;
 }
 
-static ncclResult_t scheduleP2pTasksToPlan(
-    struct ncclComm* comm, struct ncclKernelPlan* plan, struct ncclKernelPlanBudget* budget
-  ) {
+static ncclResult_t scheduleP2pTasksToPlan(struct ncclComm* comm, int* p2pEpoch, struct ncclKernelPlan* plan, struct ncclKernelPlanBudget* budget) {
   int nRanks = comm->nRanks;
   struct ncclKernelPlanner::Peer* peers = comm->planner.peers;
 
@@ -1109,6 +1109,8 @@ static ncclResult_t scheduleP2pTasksToPlan(
   // Save the total count of send/recv tasks in the plan
   int planTotalTasks[2] = {comm->planner.nTasksP2pRecv, comm->planner.nTasksP2pSend};
   while (comm->planner.nTasksP2p != 0) {
+    // increment before to avoid issue when the budget is too small and we exit early
+    (*p2pEpoch)++;
     for (int round=0; round < nRanks; round++) {
       int sendRank = comm->p2pSchedule[round].sendRank;
       int recvRank = comm->p2pSchedule[round].recvRank;
@@ -1146,7 +1148,7 @@ static ncclResult_t scheduleP2pTasksToPlan(
           return ncclSuccess;
         }
         struct ncclTaskP2p* p2pTasks[2] = { recv, send };
-        NCCLCHECK(addP2pToPlan(comm, plan, nChannelsMin, nChannelsMax, round, sendRank, sendBuff, sendBytes, recvRank, recvBuff, recvBytes, planTotalTasks, p2pTasks));
+        NCCLCHECK(addP2pToPlan(comm, plan, nChannelsMin, nChannelsMax, *p2pEpoch, round, sendRank, sendBuff, sendBytes, recvRank, recvBuff, recvBytes, planTotalTasks, p2pTasks));
         if (send != nullptr) {
           ncclIntruQueueDequeue(&peers[sendRank].sendQueue);
           // Profiler - We can overwrite groupAPI event handles here since all operations here belong to the same group
@@ -1502,7 +1504,10 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
   bool persistent = ncclCudaGraphValid(planner->capturingGraph);
   planner->persistent = persistent;
-  int nPlans = 0;
+  // Operations from different plans will not be batched together. A new batch will be created for each new plan that is used to schedule the ops (see ncclAddWorkBatchToPlan).
+  // For p2p ops, we further guarantee that ops from different epochs will not be batched together (to avoid hangs).
+  // The p2pEpoch value is incremented in scheduleP2pTasksToPlan and its value is carried over from one plan to another (even if not strictly required)
+  int nPlans = 0, p2pEpoch=0;
 
   if (planner->nTasksColl + planner->nTasksP2p + planner->nTasksBcast != 0 ||
       !ncclIntruQueueEmpty(&planner->collSymTaskQueue) ||
@@ -1540,6 +1545,12 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         plan->ceCollArgs->recvWin = task->recvWin;
         plan->ceCollArgs->collApiEventHandle = task->collApiEventHandle;
 
+        if (comm->rank == 0) {
+          const char* nvlsSync = comm->nvlsSupport ? "; CE synchronization with NVLS" : "";
+          INFO(NCCL_TUNING, "%s [Copy Engine]: %ld Bytes -> cudaMemcpy%s",
+            ncclFuncToString(task->func), task->count * ncclTypeSize(task->datatype), nvlsSync);
+        }
+
         ncclIntruQueueEnqueue(&planner->planQueue, plan);
         ncclIntruQueueDequeue(&planner->collCeTaskQueue);
         ncclMemoryPoolFree(&comm->memPool_ncclTaskColl, task);
@@ -1566,7 +1577,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
           }
           // And only drain p2p tasks once colls are depleted.
           if (planner->nTasksColl == 0 && planner->nTasksBcast == 0 && planner->nTasksP2p != 0) {
-            NCCLCHECKGOTO(scheduleP2pTasksToPlan(comm, plan, &budget), result, failure);
+            NCCLCHECKGOTO(scheduleP2pTasksToPlan(comm, &p2pEpoch, plan, &budget), result, failure);
           }
         }
 
@@ -2562,7 +2573,7 @@ static ncclResult_t collTaskAppend(
   NCCLCHECK(ncclProfilerRecordGroupApiEventState(ncclProfilerGroupStartApiStop));
   NCCLCHECK(ncclProfilerStartCollApiEvent(info, isGraphCaptured));
 
-  if (info->coll == ncclFuncBroadcast && ncclParamAllgathervEnable()) {
+  if (info->coll == ncclFuncBroadcast && ncclParamAllgathervEnable() && !comm->ccEnable) {
     // Must be in thread local group before tasks can be alloc'd in `comm->memScoped`.
     struct ncclTaskBcast* t = ncclMemoryPoolAlloc<struct ncclTaskBcast>(&comm->memPool_ncclTaskBcast, &comm->memPermanent);
     t->func = ncclFuncAllGatherV;
@@ -2682,7 +2693,7 @@ static ncclResult_t rmaTaskAppend(
     return ncclInvalidArgument;
   }
 
-  if (!comm->rmaProxySupport) {
+  if (!comm->rmaProxySupport && comm->nNodes > 1) {
     WARN("One sided RMA: RMA proxy is not supported in this communicator.");
     return ncclInvalidArgument;
   }

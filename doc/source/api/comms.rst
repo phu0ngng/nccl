@@ -30,7 +30,7 @@ The ncclGetVersion function returns the version number of the currently linked N
 The NCCL version number is returned in *version* and encoded as an integer which includes the
 :c:macro:`NCCL_MAJOR`, :c:macro:`NCCL_MINOR` and :c:macro:`NCCL_PATCH` levels.
 The version number returned will be the same as the :c:macro:`NCCL_VERSION_CODE` defined in *nccl.h*.
-NCCL version numbers can be compared using the supplied macro; :c:macro:`NCCL_VERSION(MAJOR,MINOR,PATCH)`
+NCCL version numbers can be compared using the supplied macro :c:macro:`NCCL_VERSION` as ``NCCL_VERSION(MAJOR,MINOR,PATCH)``
 
 ncclGetUniqueId
 ---------------

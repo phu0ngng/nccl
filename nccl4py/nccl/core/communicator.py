@@ -33,7 +33,7 @@ from nccl.core.constants import (
     CommShrinkFlag,
     WindowFlag,
 )
-from nccl.core.cuda import get_stream_ptr
+from nccl.core.cuda import get_stream_ptr, get_cuda_device
 from nccl.core.resources import (
     CommResource,
     RegisteredBufferHandle,
@@ -482,15 +482,12 @@ class Communicator:
             Unlike the class method ``init()``, this constructor allows ptr=0 for
             creating sentinel communicators (e.g., when ``split()`` excludes a rank).
         """
-        if ptr is None or not isinstance(ptr, int):
-            raise NcclInvalid("communicator ptr must be an integer")
         self._comm: int = int(ptr)
         self._resources: list[CommResource] = []
 
-        if ptr != 0:
-            self._nranks = int(_nccl_bindings.comm_count(self._comm))
-            self._device = Device(int(_nccl_bindings.comm_cu_device(self._comm)))
-            self._rank = int(_nccl_bindings.comm_user_rank(self._comm))
+        self._nranks = int(_nccl_bindings.comm_count(self._comm)) if ptr != 0 else None
+        self._device = Device(int(_nccl_bindings.comm_cu_device(self._comm))) if ptr != 0 else None
+        self._rank = int(_nccl_bindings.comm_user_rank(self._comm)) if ptr != 0 else None
 
     def _check_valid(self, operation: str) -> None:
         """
@@ -533,7 +530,7 @@ class Communicator:
         if self._comm == 0:
             return "<Communicator: invalid (ptr=0)>"
         try:
-            return f"<Communicator: rank={self._rank}/{self._nranks}, device={self._device.device_id}, ptr={self._comm:#x}>"
+            return f"<Communicator: rank={self.rank}/{self.nranks}, device={self.device.device_id}, ptr={self._comm:#x}>"
         except RuntimeError:
             # If we can't get properties, just show the pointer
             return f"<Communicator: ptr={self._comm:#x}>"
@@ -588,7 +585,12 @@ class Communicator:
         else:
             raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
 
-        return cls(comm_ptr)
+        comm = cls(comm_ptr)
+        # reassign the values in case init() is called inside a group
+        comm._nranks = int(nranks)
+        comm._device = get_cuda_device()
+        comm._rank = int(rank)
+        return comm
 
     # --- Communicator APIs ---
     def split(self, color: int, key: int, config: NCCLConfig | None = None) -> Communicator:
@@ -627,8 +629,7 @@ class Communicator:
         cfg_ptr = 0 if config is None else config.ptr
         comm_ptr = _nccl_bindings.comm_split(self._comm, int(color), int(key), cfg_ptr)
 
-        sub_comm = Communicator(comm_ptr)
-        return sub_comm
+        return Communicator(comm_ptr)
 
     def shrink(
         self,
@@ -802,8 +803,8 @@ class Communicator:
             https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/comms.html#ncclcommcount
         """
         self._check_valid("get nranks")
-        if not hasattr(self, "_nranks"):
-            raise NcclInvalid("Cannot get nranks: Communicator not properly initialized")
+        if self._nranks is None:
+            self._nranks = int(_nccl_bindings.comm_count(self._comm))
         return self._nranks
 
     @property
@@ -821,8 +822,8 @@ class Communicator:
             https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/comms.html#ncclcommcudevice
         """
         self._check_valid("get device")
-        if not hasattr(self, "_device"):
-            raise NcclInvalid("Cannot get device: Communicator not properly initialized")
+        if self._device is None:
+            self._device = get_cuda_device()
         return self._device
 
     @property
@@ -840,8 +841,8 @@ class Communicator:
             https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/comms.html#ncclcommuserrank
         """
         self._check_valid("get rank")
-        if not hasattr(self, "_rank"):
-            raise NcclInvalid("Cannot get rank: Communicator not properly initialized")
+        if self._rank is None:
+            self._rank = int(_nccl_bindings.comm_user_rank(self._comm))
         return self._rank
 
     # --- Point-to-Point Communication ---
@@ -960,7 +961,7 @@ class Communicator:
         self._check_valid("broadcast")
 
         s, r = None, None
-        if root == self._rank:
+        if root == self.rank:
             s = NcclBuffer(sendbuf)
             self._validate_buffer_device(s, "sendbuf")
         r = NcclBuffer(recvbuf)
@@ -1032,7 +1033,7 @@ class Communicator:
 
         s, r = NcclBuffer(sendbuf), None
         self._validate_buffer_device(s, "sendbuf")
-        if root is None or root == self._rank:
+        if root is None or root == self.rank:
             r = NcclBuffer(recvbuf)
             self._validate_buffer_device(r, "recvbuf")
 
@@ -1144,10 +1145,10 @@ class Communicator:
             raise NcclInvalid(
                 f"Dtype mismatch: sendbuf has dtype {s.dtype}, recvbuf has dtype {r.dtype}"
             )
-        per_rank_count = s.count // self._nranks
+        per_rank_count = s.count // self.nranks
         if per_rank_count < 1:
             raise NcclInvalid(
-                f"Buffer count mismatch: sendbuf must have at least {self._nranks} elements (nranks), got {s.count}"
+                f"Buffer count mismatch: sendbuf must have at least {self.nranks} elements (nranks), got {s.count}"
             )
         if r.count < per_rank_count:
             raise NcclInvalid(
@@ -1202,10 +1203,10 @@ class Communicator:
             raise NcclInvalid(
                 f"Dtype mismatch: sendbuf has dtype {s.dtype}, recvbuf has dtype {r.dtype}"
             )
-        per_rank_count = s.count // self._nranks
+        per_rank_count = s.count // self.nranks
         if per_rank_count < 1:
             raise NcclInvalid(
-                f"Buffer count mismatch: sendbuf must have at least {self._nranks} elements (nranks), got {s.count}"
+                f"Buffer count mismatch: sendbuf must have at least {self.nranks} elements (nranks), got {s.count}"
             )
         if r.count < s.count:
             raise NcclInvalid(
@@ -1268,7 +1269,7 @@ class Communicator:
 
         s, r = NcclBuffer(sendbuf), None
         self._validate_buffer_device(s, "sendbuf")
-        if root is None or root == self._rank:
+        if root is None or root == self.rank:
             r = NcclBuffer(recvbuf)
             self._validate_buffer_device(r, "recvbuf")
 
@@ -1277,7 +1278,7 @@ class Communicator:
                 raise NcclInvalid(
                     f"Dtype mismatch: sendbuf has dtype {s.dtype}, recvbuf has dtype {r.dtype}"
                 )
-            expected_recv_count = self._nranks * s.count
+            expected_recv_count = self.nranks * s.count
             if r.count < expected_recv_count:
                 raise NcclInvalid(
                     f"Buffer count mismatch: recvbuf must have at least {expected_recv_count} elements (nranks * sendcount), got {r.count}"
@@ -1332,7 +1333,7 @@ class Communicator:
         self._check_valid("scatter")
 
         s, r = None, None
-        if root == self._rank:
+        if root == self.rank:
             s = NcclBuffer(sendbuf)
             self._validate_buffer_device(s, "sendbuf")
         r = NcclBuffer(recvbuf)
@@ -1343,10 +1344,10 @@ class Communicator:
                 raise NcclInvalid(
                     f"Dtype mismatch: sendbuf has dtype {s.dtype}, recvbuf has dtype {r.dtype}"
                 )
-            per_rank_count = s.count // self._nranks
+            per_rank_count = s.count // self.nranks
             if per_rank_count < 1:
                 raise NcclInvalid(
-                    f"Buffer count mismatch: sendbuf must have at least {self._nranks} elements (nranks), got {s.count}"
+                    f"Buffer count mismatch: sendbuf must have at least {self.nranks} elements (nranks), got {s.count}"
                 )
             if r.count != per_rank_count:
                 raise NcclInvalid(
@@ -1398,7 +1399,7 @@ class Communicator:
 
     def register_window(
         self, buffer: NcclBufferSpec, flags: WindowFlag | None = None
-    ) -> RegisteredWindowHandle:
+    ) -> RegisteredWindowHandle | None:
         """
         Collectively registers a local buffer into an NCCL window for optimized communication.
 
@@ -1411,7 +1412,9 @@ class Communicator:
             - flags (WindowFlag, optional): Window registration flags to control behavior. Defaults to None.
 
         Returns:
-            ``RegisteredWindowHandle``: Resource handle that can be closed manually or automatically when the communicator is destroyed / aborted.
+            ``RegisteredWindowHandle``: Resource handle that can be closed manually or
+            automatically when the communicator is destroyed / aborted, or ``None`` if
+            NCCL returns a NULL handle (e.g., window unsupported on a platform).
 
         Raises:
             - ``NcclInvalid``: If buffer is on wrong device or communicator is not initialized.
@@ -1433,6 +1436,9 @@ class Communicator:
         size = nccl_buf.count * nccl_buf.dtype.itemsize
 
         resource = RegisteredWindowHandle(self._comm, buffer_ptr, size, flags)
+        if resource.handle == 0:
+            return None
+
         self._resources.append(resource)
         return resource
 

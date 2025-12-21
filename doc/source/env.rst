@@ -1411,15 +1411,16 @@ NCCL_NVLS_ENABLE
 (since 2.17)
 
 Enable the use of NVLink SHARP (NVLS). NVLink SHARP is available in third-generation NVSwitch systems (NVLink4) with Hopper and later GPU architectures, allowing collectives such as ``ncclAllReduce`` to be offloaded to the NVSwitch domain.
-The default value is 2, so NVLS will be disabled automatically on systems which do not support the feature.
+The default value is 2.
 
 Values accepted
 ^^^^^^^^^^^^^^^
 0: Disable the use of NVLink SHARP. No NVLink SHARP resources will be allocated.
 
-1: Enable NVLink SHARP. NCCL initialization will fail if the NVLink SHARP is not supported or NVLink SHARP resources cannot be allocated.
+1: Enable NVLink SHARP. NCCL initialization will not fail if NVLink SHARP is not supported on a given system, but it will fail if the NVLink SHARP resources cannot be allocated.
 
-2: Automatic detection of NVLink SHARP support. Will *not* fail if NVLS is unsupported, but will fail if NVLink SHARP resources cannot be allocated.
+2: (Default) Same as 1: not failing if there is no support, but failing if resources could not be allocated. In versions 2.27 and 2.28, NCCL tried to silently fall back on other transports if NVLS resource allocation failed. This, however, could result in a hang if the allocation failed on just some of the ranks, so in 2.29 the behavior reverted to pre-2.27 (i.e., same as 1). Future versions may re-enable the silent fallback if it can be made to work reliably.
+
 
 NCCL_IB_MERGE_NICS
 ------------------

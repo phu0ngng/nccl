@@ -1216,7 +1216,7 @@ testResult_t threadInit(struct threadArgs* args) {
       fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
       return testNotImplemented;
     }
-    ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+    ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
     NCCLCHECK(ncclCommQueryProperties(args->comms[0][0], &commProperties));
     if (!commProperties.deviceApiSupport) {
       testSkipReason = "Device API is not supported on this system\n";
@@ -2185,7 +2185,7 @@ testResult_t run() {
         fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
         return testNotImplemented;
       }
-      ncclCommProperties commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+      ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
       NCCLCHECK(ncclCommQueryProperties(comms[0][0], &commProperties));
       if (!commProperties.deviceApiSupport) {
         testSkipReason = "Device API is not supported on this system\n";

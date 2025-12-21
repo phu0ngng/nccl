@@ -5,12 +5,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
-#include <cuda.h>
 #include "cuda_runtime.h"
 #include "nccl.h"
 #include "mpi.h"
 #include <stdbool.h>
-#include <libgen.h>
 #include <string.h>
 
 // CLI argument structure
@@ -84,17 +82,6 @@ static void parse_cli_args(int argc, char* argv[], cli_args_t* args) {
   }                                                 \
 } while(0)
 
-#define CU_CHECK(call) do {                         \
-    CUresult err = call;                            \
-    if (err != CUDA_SUCCESS) {                      \
-        const char* errStr;                         \
-        cuGetErrorString(err, &errStr);             \
-        printf("CUDA error at %s:%d  '%s'\n",       \
-            __FILE__, __LINE__, errStr);            \
-        exit(EXIT_FAILURE);                         \
-    }                                               \
-} while(0)
-
 // Helper functions
 static uint64_t getHostHash(const char* string) {
   uint64_t result = 5381;
@@ -113,32 +100,6 @@ static void getHostName(char* hostname, int maxlen) {
         return;
     }
   }
-}
-
-// IR utility functions for loading and managing CUDA modules
-static void init_cumodule(CUmodule* module, const char* cubin_name) {
-  char exe_path[1000];
-  size_t count = readlink("/proc/self/exe", exe_path, 1000);
-  exe_path[count] = '\0';
-
-  char* exe_dir = dirname(exe_path);
-  char cubin_path[1000];
-  strcpy(cubin_path, exe_dir);
-  strcat(cubin_path, "/");
-  strcat(cubin_path, cubin_name);
-  printf("CUBIN Selected: %s\n", cubin_path);
-  CU_CHECK(cuModuleLoad(module, cubin_path));
-}
-
-static void fini_cumodule(CUmodule* module) {
-  if (*module != NULL) {
-    CU_CHECK(cuModuleUnload(*module));
-    *module = NULL;
-  }
-}
-
-static void init_test_case_kernel(CUmodule module, CUfunction* kernel, const char* kernel_name) {
-  CU_CHECK(cuModuleGetFunction(kernel, module, kernel_name));
 }
 
 // Data verification functions
