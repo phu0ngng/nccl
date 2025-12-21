@@ -27,6 +27,58 @@
 
 static const bool DEBUG = false;
 
+// Local CLI argument structure with num_puts extension
+typedef struct {
+    int verify;          // -v flag
+    int warmup_iters;    // -w flag
+    int normal_iters;    // -i flag
+    size_t begin_size;   // -b flag
+    size_t end_size;     // -e flag
+    int num_puts;        // -N flag: number of puts per group
+} local_cli_args_t;
+
+// Local function to parse CLI arguments with -N support
+static void parse_local_cli_args(int argc, char* argv[], local_cli_args_t* args) {
+    // Default values
+    args->verify = 0;
+    args->warmup_iters = 50;
+    args->normal_iters = 500;
+    args->begin_size = sizeof(int);
+    args->end_size = 4 * 1024 * 1024;  // 4MB
+    args->num_puts = 1;  // Default to 1 put per group
+
+    int opt;
+    while ((opt = getopt(argc, argv, "vw:i:b:e:N:")) != -1) {
+        switch (opt) {
+            case 'v':
+                args->verify = 1;
+                break;
+            case 'w':
+                args->warmup_iters = atoi(optarg);
+                break;
+            case 'i':
+                args->normal_iters = atoi(optarg);
+                break;
+            case 'b':
+                args->begin_size = atoll(optarg);
+                break;
+            case 'e':
+                args->end_size = atoll(optarg);
+                break;
+            case 'N':
+                args->num_puts = atoi(optarg);
+                if (args->num_puts < 1) {
+                    fprintf(stderr, "Error: num_puts must be >= 1\n");
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            default:
+                fprintf(stderr, "Usage: %s [-v] [-w warmup_iters] [-i normal_iters] [-b begin_size] [-e end_size] [-N num_puts]\n", argv[0]);
+                exit(EXIT_FAILURE);
+        }
+    }
+}
+
 // Test-specific initialization values
 #define SEND_VALUE_BASE 0x100
 #define RECV_VALUE_BASE 0x200
@@ -43,41 +95,52 @@ static void initialize_buffers(int* sendbuff, int* recvbuff, int rank, int nelem
 static ncclResult_t host_ping_pong(
     ncclComm_t comm, int ctx,
     void *sendbuff, void *recvbuff, ncclWindow_t recvWindow,
-    int nelems, int iter, cudaStream_t stream) {
+    int nelems, int iter, int num_puts, cudaStream_t stream) {
 
     int peer = !comm->rank;
 
-    if (DEBUG) printf("[Rank %d] Starting host ping-pong with %d iterations, nelems=%d\n", comm->rank, iter, nelems);
+    if (DEBUG) printf("[Rank %d] Starting host ping-pong with %d iterations, nelems=%d, num_puts=%d\n",
+                      comm->rank, iter, nelems, num_puts);
 
     for (int i = 1; i <= iter; i++) {
         if (DEBUG) printf("[Rank %d] Starting iteration %d\n", comm->rank, i);
 
         if (comm->rank) {  // Rank 1: wait then put
-            if (DEBUG) printf("[Rank %d] Waiting for signal from peer (iteration %d)\n", comm->rank, i);
+            if (DEBUG) printf("[Rank %d] Waiting for %d signals from peer (iteration %d)\n", comm->rank, num_puts, i);
 
-            // Wait for signal from peer
-            ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = peer, .sigIdx = 0, .ctx = ctx};
+            // Wait for multiple signals from peer (one per put)
+            ncclWaitSignalDesc_t waitDesc = {.opCnt = num_puts, .peer = peer, .sigIdx = 0, .ctx = ctx};
             NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
 
-            if (DEBUG) printf("[Rank %d] Received signal, sending data to peer\n", comm->rank);
+            if (DEBUG) printf("[Rank %d] Received signal, sending %d puts to peer\n", comm->rank, num_puts);
 
-            // Put data with signal to peer's receive buffer
-            NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
-                            0, ctx, 0, comm, stream));
+            // Group multiple puts together
+            NCCLCHECK(ncclGroupStart());
+            for (int p = 0; p < num_puts; p++) {
+                // Put data with signal to peer's receive buffer
+                NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
+                                0, ctx, 0, comm, stream));
+            }
+            NCCLCHECK(ncclGroupEnd());
 
-            if (DEBUG) printf("[Rank %d] Sent data with signal\n", comm->rank);
+            if (DEBUG) printf("[Rank %d] Sent %d puts with signal\n", comm->rank, num_puts);
 
         } else {   // Rank 0: put then wait
-            if (DEBUG) printf("[Rank %d] Sending data with signal to peer\n", comm->rank);
+            if (DEBUG) printf("[Rank %d] Sending %d puts with signal to peer\n", comm->rank, num_puts);
 
-            // Put data with signal to peer's receive buffer
-            NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
-                            0, ctx, 0, comm, stream));
+            // Group multiple puts together
+            NCCLCHECK(ncclGroupStart());
+            for (int p = 0; p < num_puts; p++) {
+                // Put data with signal to peer's receive buffer
+                NCCLCHECK(ncclPutSignal(sendbuff, nelems, ncclInt, peer, recvWindow, 0,
+                                0, ctx, 0, comm, stream));
+            }
+            NCCLCHECK(ncclGroupEnd());
 
-            if (DEBUG) printf("[Rank %d] Sent data, waiting for signal from peer\n", comm->rank);
+            if (DEBUG) printf("[Rank %d] Sent %d puts, waiting for %d signals from peer\n", comm->rank, num_puts, num_puts);
 
-            // Wait for signal from peer
-            ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = peer, .sigIdx = 0, .ctx = ctx};
+            // Wait for multiple signals from peer (one per put)
+            ncclWaitSignalDesc_t waitDesc = {.opCnt = num_puts, .peer = peer, .sigIdx = 0, .ctx = ctx};
             NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
 
             if (DEBUG) printf("[Rank %d] Received signal from peer\n", comm->rank);
@@ -105,8 +168,8 @@ static ncclResult_t host_ping_pong(
 int main(int argc, char* argv[]) {
     setlinebuf(stdout);
     int myRank, nRanks, localRank = 0;
-    cli_args_t args;
-    parse_cli_args(argc, argv, &args);
+    local_cli_args_t args;
+    parse_local_cli_args(argc, argv, &args);
 
     // Initialize MPI
     MPICHECK(MPI_Init(&argc, &argv));
@@ -183,6 +246,7 @@ int main(int argc, char* argv[]) {
         printf("Warmup iterations: %d\n", args.warmup_iters);
         printf("Normal iterations: %d\n", args.normal_iters);
         printf("Message size range: %zu to %zu bytes\n", args.begin_size, args.end_size);
+        printf("Number of grouped puts per iteration: %d\n", args.num_puts);
     }
 
     // Print header once before running tests
@@ -212,7 +276,7 @@ int main(int argc, char* argv[]) {
         // Warmup phase
         if (args.warmup_iters > 0) {
             if (DEBUG) printf("[Rank %d] Running warmup\n", myRank);
-            NCCLCHECK(host_ping_pong(comm, ctx, sendbuff, recvbuff, recvWindow, nelems, args.warmup_iters, stream));
+            NCCLCHECK(host_ping_pong(comm, ctx, sendbuff, recvbuff, recvWindow, nelems, args.warmup_iters, args.num_puts, stream));
             if (DEBUG) printf("[Rank %d] Ran warmup\n", myRank);
             MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
             if (DEBUG) printf("[Rank %d] Ran warmup (after MPI_Barrier)\n", myRank);
@@ -221,7 +285,7 @@ int main(int argc, char* argv[]) {
         // Measurement phase
         if (DEBUG) printf("[Rank %d] Running measurement\n", myRank);
         CUDACHECK(cudaEventRecord(start, stream));
-        NCCLCHECK(host_ping_pong(comm, ctx, sendbuff, recvbuff, recvWindow, nelems, args.normal_iters, stream));
+        NCCLCHECK(host_ping_pong(comm, ctx, sendbuff, recvbuff, recvWindow, nelems, args.normal_iters, args.num_puts, stream));
         CUDACHECK(cudaEventRecord(stop, stream));
         CUDACHECK_DEBUG(cudaStreamSynchronize(stream), myRank);
         MPICHECK(MPI_Barrier(MPI_COMM_WORLD));

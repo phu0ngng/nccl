@@ -33,6 +33,8 @@ function run_rma_test_suite() {
   run_command "rma_test_multinode_${ppn}ppn_put_signal_ring" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ring_rma" "-v 1"
   # Alltoall: ppn × NNODES GPUs
   run_command "rma_test_multinode_${ppn}ppn_put_signal_alltoall" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_alltoall_rma" "-v 1"
+  # Ping-pong with large group
+  run_command "rma_test_multinode_${ppn}ppn_put_signal_ping_pong_large_group" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ping_pong_rma" "-v 1 -b 1024000 -e 1024000 -N 512"
 }
 
 # RMA multi-node tests

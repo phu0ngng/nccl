@@ -99,7 +99,7 @@ static ncclResult_t ncclProfilerPluginLoad(void) {
   // This is attached to the proxyOp event descriptor
   // so the plugin can figure out if the parent event
   // is in the same address space or not
-  pid = ncclOsGetpid();
+  pid = ncclOsGetPid();
 
 exit:
   return ncclSuccess;
@@ -761,36 +761,32 @@ ncclResult_t ncclProfilerCallback(void** eHandle, int type, void* pHandle, int64
  * CE Collective start event - calls plugin startEvent callback
  */
 ncclResult_t ncclProfilerStartCeCollEvent(struct ncclComm* comm, struct ncclCeCollArgs* args, cudaStream_t stream) {
-  if (__builtin_expect(ncclProfiler == NULL, 1)) {
-    return ncclSuccess;
+  if (COMPILER_EXPECT(ncclProfiler != NULL, 0)) {
+    // Check if CE Coll events are enabled (or child events CeSync/CeBatch which need CeColl)
+    int ceCollMask = ncclProfileCeColl | ncclProfileCeSync | ncclProfileCeBatch;
+    if (__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ceCollMask) {
+      ncclProfilerEventDescr_t eDescr = { 0 };
+      eDescr.type = ncclProfileCeColl;
+      eDescr.parentObj = args->collApiEventHandle;
+      eDescr.rank = comm->rank;
+
+      eDescr.ceColl.seqNumber = comm->ceColl.ceSeqNum;
+      eDescr.ceColl.func = ncclFuncToString(args->func);
+      eDescr.ceColl.sendBuff = args->sendBuff;
+      eDescr.ceColl.recvBuff = args->recvBuff;
+      eDescr.ceColl.count = args->nElts;
+      eDescr.ceColl.root = args->rootRank;
+      eDescr.ceColl.datatype = ncclDatatypeToString(args->datatype);
+      eDescr.ceColl.syncStrategy = comm->nvlsSupport ? "MC" : "UC";
+      eDescr.ceColl.intraBatchSync = false;
+      eDescr.ceColl.batchSize = 0;
+      eDescr.ceColl.numBatches = 0;
+      eDescr.ceColl.ceSeqNum = comm->ceColl.ceSeqNum;
+      eDescr.ceColl.stream = (void*)stream;
+
+      ncclProfiler->startEvent(comm->profilerContext, &args->ceCollProfHandle, &eDescr);
+    }
   }
-
-  // Check if CE Coll events are enabled (or child events CeSync/CeBatch which need CeColl)
-  int ceCollMask = ncclProfileCeColl | ncclProfileCeSync | ncclProfileCeBatch;
-  if (!(__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ceCollMask)) {
-    return ncclSuccess;
-  }
-
-  ncclProfilerEventDescr_t eDescr = { 0 };
-  eDescr.type = ncclProfileCeColl;
-  eDescr.parentObj = args->collApiEventHandle;
-  eDescr.rank = comm->rank;
-
-  eDescr.ceColl.seqNumber = comm->ceColl.ceSeqNum;
-  eDescr.ceColl.func = ncclFuncToString(args->func);
-  eDescr.ceColl.sendBuff = args->sendBuff;
-  eDescr.ceColl.recvBuff = args->recvBuff;
-  eDescr.ceColl.count = args->nElts;
-  eDescr.ceColl.root = args->rootRank;
-  eDescr.ceColl.datatype = ncclDatatypeToString(args->datatype);
-  eDescr.ceColl.syncStrategy = comm->nvlsSupport ? "MC" : "UC";
-  eDescr.ceColl.intraBatchSync = false;
-  eDescr.ceColl.batchSize = 0;
-  eDescr.ceColl.numBatches = 0;
-  eDescr.ceColl.ceSeqNum = comm->ceColl.ceSeqNum;
-  eDescr.ceColl.stream = (void*)stream;
-
-  ncclProfiler->startEvent(comm->profilerContext, &args->ceCollProfHandle, &eDescr);
   return ncclSuccess;
 }
 
@@ -798,12 +794,11 @@ ncclResult_t ncclProfilerStartCeCollEvent(struct ncclComm* comm, struct ncclCeCo
  * CE Collective stop event - calls plugin stopEvent callback
  */
 ncclResult_t ncclProfilerStopCeCollEvent(struct ncclComm* comm, struct ncclCeCollArgs* args, cudaStream_t stream) {
-  if (__builtin_expect(ncclProfiler == NULL, 1)
-      || !args->ceCollProfHandle) {
-    return ncclSuccess;
+  if (COMPILER_EXPECT(ncclProfiler != NULL, 0)) {
+    if (args && args->ceCollProfHandle) {
+      ncclProfiler->stopEvent(args->ceCollProfHandle);
+    }
   }
-
-  ncclProfiler->stopEvent(args->ceCollProfHandle);
   return ncclSuccess;
 }
 
@@ -812,28 +807,20 @@ ncclResult_t ncclProfilerStopCeCollEvent(struct ncclComm* comm, struct ncclCeCol
  */
 ncclResult_t ncclProfilerStartCeSyncEvent(struct ncclComm* comm, struct ncclCeCollArgs* args,
                                           cudaStream_t stream, void** ceSyncHandle) {
-  if (__builtin_expect(ncclProfiler == NULL, 1)) {
-    return ncclSuccess;
+  if (COMPILER_EXPECT(ncclProfiler != NULL, 0)) {
+    if (args && args->ceCollProfHandle && (__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ncclProfileCeSync)) {
+      // CeSync only needs to check if it's enabled; parent CeColl is implicitly started via ceCollMask
+      ncclProfilerEventDescr_t eDescr = { 0 };
+      eDescr.type = ncclProfileCeSync;
+      eDescr.parentObj = args->ceCollProfHandle;
+      eDescr.rank = comm->rank;
+
+      eDescr.ceCollSync.isComplete = comm->ceColl.useCompletePtr;
+      eDescr.ceCollSync.nRanks = comm->nRanks;
+
+      ncclProfiler->startEvent(comm->profilerContext, ceSyncHandle, &eDescr);
+    }
   }
-
-  if (!args->ceCollProfHandle) {
-    return ncclSuccess;
-  }
-
-  // CeSync only needs to check if it's enabled; parent CeColl is implicitly started via ceCollMask
-  if (!(__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ncclProfileCeSync)) {
-    return ncclSuccess;
-  }
-
-  ncclProfilerEventDescr_t eDescr = { 0 };
-  eDescr.type = ncclProfileCeSync;
-  eDescr.parentObj = args->ceCollProfHandle;
-  eDescr.rank = comm->rank;
-
-  eDescr.ceCollSync.isComplete = comm->ceColl.useCompletePtr;
-  eDescr.ceCollSync.nRanks = comm->nRanks;
-
-  ncclProfiler->startEvent(comm->profilerContext, ceSyncHandle, &eDescr);
   return ncclSuccess;
 }
 
@@ -842,12 +829,9 @@ ncclResult_t ncclProfilerStartCeSyncEvent(struct ncclComm* comm, struct ncclCeCo
  */
 ncclResult_t ncclProfilerStopCeSyncEvent(struct ncclComm* comm, void* ceSyncHandle,
                                          cudaStream_t stream) {
-  if (__builtin_expect(ncclProfiler == NULL, 1)
-      || !ceSyncHandle) {
-    return ncclSuccess;
+  if (COMPILER_EXPECT(ncclProfiler != NULL, 0) && ceSyncHandle) {
+    ncclProfiler->stopEvent(ceSyncHandle);
   }
-
-  ncclProfiler->stopEvent(ceSyncHandle);
   return ncclSuccess;
 }
 
@@ -859,34 +843,28 @@ ncclResult_t ncclProfilerStartCeBatchEvent(struct ncclComm* comm,
                                            struct ncclCeBatchOpsParams* params,
                                            cudaStream_t stream,
                                            void** ceBatchHandle) {
-  if (__builtin_expect(ncclProfiler == NULL, 1)) {
-    return ncclSuccess;
+  if (COMPILER_EXPECT(ncclProfiler != NULL, 0)) {
+    if (args && args->ceCollProfHandle) {
+      // CeBatch only needs to check if it's enabled; parent CeColl is implicitly started via ceCollMask
+      if (__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ncclProfileCeBatch) {
+        ncclProfilerEventDescr_t eDescr = { 0 };
+        eDescr.type = ncclProfileCeBatch;
+        eDescr.parentObj = args->ceCollProfHandle;
+        eDescr.rank = comm->rank;
+
+        eDescr.ceCollBatch.numOps = params->numOps;
+
+        size_t totalBytes = 0;
+        for (int i = 0; i < params->numOps; i++) {
+          totalBytes += params->sizes[i];
+        }
+        eDescr.ceCollBatch.totalBytes = totalBytes;
+        eDescr.ceCollBatch.useIntraSync = params->intraBatchSync;
+
+        ncclProfiler->startEvent(comm->profilerContext, ceBatchHandle, &eDescr);
+      }
+    }
   }
-
-  if (!args->ceCollProfHandle) {
-    return ncclSuccess;
-  }
-
-  // CeBatch only needs to check if it's enabled; parent CeColl is implicitly started via ceCollMask
-  if (!(__atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED) & ncclProfileCeBatch)) {
-    return ncclSuccess;
-  }
-
-  ncclProfilerEventDescr_t eDescr = { 0 };
-  eDescr.type = ncclProfileCeBatch;
-  eDescr.parentObj = args->ceCollProfHandle;
-  eDescr.rank = comm->rank;
-
-  eDescr.ceCollBatch.numOps = params->numOps;
-
-  size_t totalBytes = 0;
-  for (int i = 0; i < params->numOps; i++) {
-    totalBytes += params->sizes[i];
-  }
-  eDescr.ceCollBatch.totalBytes = totalBytes;
-  eDescr.ceCollBatch.useIntraSync = params->intraBatchSync;
-
-  ncclProfiler->startEvent(comm->profilerContext, ceBatchHandle, &eDescr);
   return ncclSuccess;
 }
 
@@ -894,12 +872,9 @@ ncclResult_t ncclProfilerStartCeBatchEvent(struct ncclComm* comm,
  * CE Batch stop event - calls plugin stopEvent callback
  */
 ncclResult_t ncclProfilerStopCeBatchEvent(struct ncclComm* comm, void* ceBatchHandle, cudaStream_t stream) {
-  if (__builtin_expect(ncclProfiler == NULL, 1)
-      || !ceBatchHandle) {
-    return ncclSuccess;
+  if (COMPILER_EXPECT(ncclProfiler != NULL, 0) && ceBatchHandle) {
+    ncclProfiler->stopEvent(ceBatchHandle);
   }
-
-  ncclProfiler->stopEvent(ceBatchHandle);
   return ncclSuccess;
 }
 

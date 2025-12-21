@@ -74,6 +74,23 @@ function get_build_command() {
         /nccl/docker/build_nccl.sh --enable-ccache"
 }
 
+function get_docs_build_command() {
+    current_dir="$1"
+    build_image_version="$2"
+
+    build_tools_image="$(get_build_tools_image $build_image_version)"
+
+    echo "srun \
+        -p cpuonly \
+        -J nccl:docs-build \
+        -t 00:10:00 \
+        -n 1 \
+        --exclusive \
+        --container-image=$build_tools_image \
+        --container-mounts=${current_dir}:/nccl \
+        make -C /nccl pkg.doc.build"
+}
+
 function get_cuda_home() {
     echo "$IPP6_CUDA_HOME"
 }

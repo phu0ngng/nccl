@@ -31,6 +31,9 @@ export UV_PYTHON_PREFERENCE="only-managed"
 
 echo "--- Starting NCCL4py Setup ---"
 
+echo "--- Pip Config ---"
+pip config list
+
 IFS=',' read -r -a python_targets <<< "$NCCL4PY_PYTHON_TARGETS"
 
 # Initialize venvs using uv with the appropriate Python version

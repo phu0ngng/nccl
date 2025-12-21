@@ -22,12 +22,22 @@
 #define IFNAMSIZ 16
 #endif
 
-uint64_t ncclOsGetpid() {
+uint64_t ncclOsGetPid() {
   return (uint64_t)GetCurrentProcessId();
 }
 
 std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf) {
   return localtime_s(buf, timer) == 0 ? buf : nullptr;
+}
+
+uint64_t ncclOsGetTid() {
+  return (uint64_t)GetCurrentThreadId();
+}
+
+size_t ncclOsGetPageSize() {
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+  return (size_t)si.dwPageSize;
 }
 
 ncclResult_t ncclOsSetCpuStackSize() {

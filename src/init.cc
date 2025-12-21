@@ -508,7 +508,7 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   ncclIntruQueueConstruct(&comm->legacyRegCleanupQueue);
   ncclIntruQueueConstruct(&comm->ceInitTaskQueue);
 
-  comm->regCache.pageSize = sysconf(_SC_PAGESIZE);
+  comm->regCache.pageSize = ncclOsGetPageSize();
 
   do {
     cudaMemPoolProps props = {};
@@ -559,6 +559,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 
   memset(&ccStatus, 0, sizeof(ccStatus));
   ccEnable = (ncclSuccess == ncclNvmlGetCCStatus(&ccStatus)) && (ccStatus.CCEnabled || ccStatus.multiGpuProtectedPCIE || ccStatus.multiGpuNVLE);
+  comm->ccEnable = ccEnable;
   if (ccEnable) {
     comm->workFifoBytes = 0;
   } else {

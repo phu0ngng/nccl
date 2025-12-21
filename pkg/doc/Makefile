@@ -11,9 +11,9 @@ DOCSRC  := $(abspath ../../doc/)
 DOCPREPDIR  := $(BUILDDIR)/doc
 PKGDIR  := $(BUILDDIR)/pkg/doc
 
-DOCGEN_IN  := $(shell (cd $(DOCSRC); find . -name "*.in" -type f))
+DOCGEN_IN  := $(shell (cd $(DOCSRC); find . -name "*.in" -type f -print -o -path './.venv' -prune))
 DOCGEN     := $(DOCGEN_IN:.in=)
-DOCCOPY    := $(shell (cd $(DOCSRC); find . -not -name "*.in" -type f))
+DOCCOPY    := $(shell (cd $(DOCSRC); find . -not -name "*.in" -type f -print -o -path './.venv' -prune))
 DOCTARGETS := $(patsubst ./%, $(DOCPREPDIR)/%, $(DOCGEN)) $(patsubst ./%, $(DOCPREPDIR)/%, $(DOCCOPY))
 
 PKG_ARCH   := $(shell uname -m)

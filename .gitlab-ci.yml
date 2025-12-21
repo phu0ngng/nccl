@@ -34,6 +34,7 @@ variables:
   # Toggle variable for build jobs
   BUILD_TRACE: "0"
   BUILD_CMAKE: "0"
+  BUILD_DOCS: "0"
   # Toggle variables for clusters
   RUN_ON_AWS: "0"
   RUN_ON_CW_DFW: "0"
@@ -175,6 +176,24 @@ build-ipp6:
       - build/**/*.o
     expire_in: 48 hrs
 
+build-docs:
+  stage: build
+  extends:
+    - .ipp6
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || $BUILD_DOCS == "1"
+      when: always
+    - when: never
+  variables:
+    NVIDIA_VISIBLE_DEVICES: void
+  script:
+    - source docker/clusters/ipp6-slurm-config.sh
+    - eval "$(get_docs_build_command $(realpath .) $(get_build_image_version))"
+  artifacts:
+    paths:
+      - build/pkg/doc/*.zip
+    expire_in: 48 hrs
+
 build-pre-tyche:
   stage: build
   rules:
@@ -237,12 +256,12 @@ build-bia:
 
 build-dlfw-pytorch-container:
   stage: build
+  extends:
+    - .ipp6
   rules:
     - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_DLFW_TESTS == "1")
       when: always
     - when: never
-  tags:
-    - build-with-docker
   variables:
     CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
   script:
@@ -1774,7 +1793,7 @@ apitest-GP100:
     NCCL_GRAPH_REGISTER: 0
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
-    API_TESTS_NETWORK: 1
+    API_TESTS_NETWORK: 0 # https://nvbugspro.nvidia.com/bug/5747368
     DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5682588
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
