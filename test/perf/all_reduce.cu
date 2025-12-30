@@ -74,8 +74,13 @@ void AllReduceGetBw(size_t count, int typesize, double sec, double* algBw, doubl
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
 // set devComm reqs for allreduce device kernels
-testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclCommProperties_t* commProperties, const char** testSkipReason) {
-  if (!reqs || !commProperties) return testInternalError;
+testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclComm_t comm, const char** testSkipReason) {
+  if (!reqs || !comm) return testInternalError;
+
+  ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+  if (ncclCommQueryProperties(comm, &commProperties) != ncclSuccess) {
+    return testNcclError;
+  }
 
   switch(deviceImpl) {
     case 1: // allReduceLsaKernel
@@ -84,7 +89,7 @@ testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirem
       return testSuccess;
     case 3: // allReduceMultimemKernel
     case 4: // allReduceMultimemVectorizedKernel
-      if (!commProperties->multimemSupport) {
+      if (!commProperties.multimemSupport) {
         *testSkipReason = "This test requires multimem support, but multimem support is not enabled for this communicator.\n";
         return testSkipped;
       }
@@ -97,7 +102,7 @@ testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirem
 }
 #elif NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 bool AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs) {
-  if (!reqs) return false;
+  if (!reqs || !comm) return false;
 
   switch(deviceImpl) {
     case 1: // allReduceLsaKernel
