@@ -127,6 +127,12 @@ testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequireme
   switch(deviceImpl) {
     case 1: // NvlAlltoAllKernel
     case 2: // NvlAlltoAllKernelOptimized
+      if (commProperties.nRanks != ncclTeamLsa(comm).nRanks) {
+        *testSkipReason =
+            "DeviceImplementation 1 and 2 requires CUDA P2P connectivity across all ranks. Not all "
+            "ranks of this communicator have P2P connectivity.\n";
+        return testSkipped;
+      }
       reqs->lsaBarrierCount = deviceCtaCount;
       return testSuccess;
     case 3: // GinAlltoAllKernel
@@ -144,7 +150,7 @@ testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequireme
 }
 #elif NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 bool AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs) {
-  if (!reqs || !comm) return false;
+  if (!reqs) return false;
 
   switch(deviceImpl) {
     case 1: // NvlAlltoAllKernel

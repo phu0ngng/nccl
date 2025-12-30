@@ -1238,7 +1238,7 @@ testResult_t threadInit(struct threadArgs* args) {
 #else
     ncclDevCommRequirements reqs = {};
     if (!ncclTestEngine.getDevCommRequirements ||
-        !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs) {
+        !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
       fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
       return testNotImplemented;
     }

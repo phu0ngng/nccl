@@ -82,6 +82,13 @@ testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirem
     return testNcclError;
   }
 
+  if (deviceImpl > 0 && commProperties.nRanks != ncclTeamLsa(comm).nRanks) {
+    *testSkipReason = "DeviceImplementation > 1 requires CUDA P2P connectivity "
+                      "across all ranks. Not all ranks of this communicator "
+                      "have P2P connectivity.\n";
+    return testSkipped;
+  }
+
   switch(deviceImpl) {
     case 1: // allReduceLsaKernel
     case 2: // allReduceLsaVectorizedKernel
@@ -102,7 +109,7 @@ testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirem
 }
 #elif NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 bool AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs) {
-  if (!reqs || !comm) return false;
+  if (!reqs) return false;
 
   switch(deviceImpl) {
     case 1: // allReduceLsaKernel
