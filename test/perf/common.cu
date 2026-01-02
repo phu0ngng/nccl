@@ -214,6 +214,48 @@ static void outputFileFinalize(output_file_type_t output_file_type) {
   }
 }
 
+void initConfig(ncclConfig_t* config) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
+  *config = NCCL_CONFIG_INITIALIZER;
+  config->blocking = commblocking;
+  config->splitShare = split_share;
+  config->trafficClass = trafficClass;
+  config->commName = "perftest";
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+  if (ctaPolicy >= 0)
+    config->CTAPolicy = ctaPolicy;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+  config->nvlinkCentricSched = 1;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+  if (cudaGraphLaunches >= 1)
+    config->graphUsageMode = 1;
+  else
+    config->graphUsageMode = 0;
+#endif
+#endif
+#endif
+#endif
+}
+
+// Initializes NCCL communicators.
+testResult_t initComms(ncclComm_t* comms, int nComms, int firstRank, int nRanks, int* cudaDevs, int nIds, ncclUniqueId* ncclId, ncclConfig_t* config) {
+NCCLCHECK(ncclGroupStart());
+  for (int i=0; i<nComms; i++) {
+    CUDACHECK(cudaSetDevice(cudaDevs[i]));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2, 23, 0)
+    if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
+      NCCLCHECK(ncclCommInitRankScalable(comms + i, nRanks, firstRank + i, nIds, ncclId, config));
+    } else {
+      NCCLCHECK(ncclCommInitRankConfig(comms + i, nRanks, *ncclId, firstRank + i, config));
+    }
+#else
+    NCCLCHECK(ncclCommInitRankConfig(comms + i, nRanks, *ncclId, firstRank + i, config));
+#endif
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nComms);
+  return testSuccess;
+}
+
 // Side computation constants
 #define COMP_SIZE (1 << 22)
 #define NUM_BLOCKS 64
@@ -1045,41 +1087,11 @@ testResult_t threadInit(struct threadArgs* args) {
     getGPUMemoryInfo(nullptr, &initFreeGpuMem[g]);
   }
 
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
-  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-  config.blocking = commblocking;
-  config.splitShare = split_share;
-  config.trafficClass = trafficClass;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-  if (ctaPolicy >= 0)
-    config.CTAPolicy = ctaPolicy;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-  config.nvlinkCentricSched = 1;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
-  if (cudaGraphLaunches >= 1)
-    config.graphUsageMode = 1;
-  else
-    config.graphUsageMode = 0;
-#endif
-#endif
-#endif
-#endif
+  const int firstRank = args->globalProc*args->nThreads*args->nGpus + args->thread*args->nGpus;
+  ncclConfig_t config;
+  initConfig(&config);
+  TESTCHECK(initComms(globalComms, args->nGpus, firstRank, nranks, args->gpus, args->nIds, args->ncclId, &config));
 
-  NCCLCHECK(ncclGroupStart());
-  for (int i=0; i<args->nGpus; i++) {
-    int rank = args->globalProc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    CUDACHECK(cudaSetDevice(args->gpus[i]));
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,23,0)
-    if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
-      NCCLCHECK(ncclCommInitRankScalable(globalComms + i, nranks, rank, args->nIds, args->ncclId, &config));
-    } else {
-      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
-    }
-#else
-    NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
-#endif
-  }
-  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
   /* split comm if required. */
   if (splitMaskEnv) {
     /* split based on split mask */
@@ -2010,40 +2022,9 @@ testResult_t run() {
       getGPUMemoryInfo(nullptr, &initFreeGpuMem[g]);
     }
     //if parallel init is not selected, use main thread to initialize NCCL
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
-    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    config.blocking = commblocking;
-    config.splitShare = split_share;
-    config.trafficClass = trafficClass;
-    config.commName = "perftest";
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-    if (ctaPolicy >= 0)
-      config.CTAPolicy = ctaPolicy;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-    config.nvlinkCentricSched = 1;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
-    if (cudaGraphLaunches >= 1)
-      config.graphUsageMode = 1;
-    else
-      config.graphUsageMode = 0;
-#endif
-#endif
-#endif
-#endif
-    NCCLCHECK(ncclGroupStart());
-    for (int i=0; i<nGpus*nThreads; i++) {
-      CUDACHECK(cudaSetDevice(gpus[i]));
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2, 23, 0)
-      if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
-        NCCLCHECK(ncclCommInitRankScalable(globalComms + i, nranks, proc * nThreads * nGpus + i, nIds, ncclId, &config));
-      } else {
-        NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *ncclId, proc * nThreads * nGpus + i, &config));
-      }
-#else
-      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *ncclId, proc * nThreads * nGpus + i, &config));
-#endif
-    }
-    NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
+    ncclConfig_t config;
+    initConfig(&config);
+    TESTCHECK(initComms(globalComms, nGpus*nThreads, proc * nThreads * nGpus, nranks, gpus, nIds, ncclId, &config));
     /* split comm if required. */
     if (splitMaskEnv) {
       /* split based on split mask */

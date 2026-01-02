@@ -129,5 +129,9 @@ function configure_test_env() {
 }
 
 function get_cluster_name() {
-    echo "BIA"
+    echo "Bia"
+}
+
+function get_gcperf_tools_path() {
+    echo "/lustre/fsw/coreai_libraries_nccl/toolkits/gcperf-tools"
 }

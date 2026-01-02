@@ -43,10 +43,14 @@ save_results() {
 }
 
 # Use gcperf-tools venv
-source ${GCPERF_TOOLS_PATH}/venv/bin/activate
+# TODO: Switch from /venv-next/ to /venv/ once gcperf-tools release is updated with
+# https://gitlab-master.nvidia.com/gpucomms/perf-data-tools/-/commits/rc_and_err_improvements
+# venv-next is using gcperf-tools manually built from the branch above on each cluster
+source ${GCPERF_TOOLS_PATH}/venv-next/bin/activate
 
 # Set gcperf-tools variables
-CURRENT_BRANCH="${CI_COMMIT_BRANCH//\//.}"
+CURRENT_BRANCH="${CI_COMMIT_BRANCH:-${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-UNKNOWN}}"
+CURRENT_BRANCH="${CURRENT_BRANCH//\//.}"
 # CI_MERGE_REQUEST_TARGET_BRANCH_NAME will be empty post-merge, so use CURRENT_BRANCH
 TARGET_BRANCH="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME//\//.}"
 COMPARISON_BRANCH="${TARGET_BRANCH:-CURRENT_BRANCH}"
@@ -89,7 +93,7 @@ COMPARISON_RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${COMPARISON_BRANCH}
 BASELINE_RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${BASELINE_BRANCH}/${NNODES}_node
 
 EXTRA_SLURM_ARGS=""
-if [[ $CLUSTER_NAME == "PreTyche" || $CLUSTER_NAME == "Lyris" ]]; then
+if [[ $CLUSTER_NAME =~ "PreTyche|Lyris|Bia" ]]; then
     export NVLD_SIZE="1"
     if [[ $NNODES -ge 16 ]]; then
         export NVLD_SIZE="16"
@@ -226,7 +230,7 @@ create_nvbug() {
 EXIT_CODE=0
 
 # Check release branch regression
-if [[ $REGRESSION_CODE -eq 1 || $REGRESSION_CODE -eq 66 || $REGRESSION_CODE -eq 67 ]]; then
+if [[ $REGRESSION_CODE -eq 1 || $REGRESSION_CODE -eq 65 || $REGRESSION_CODE -eq 66 || $REGRESSION_CODE -eq 67 ]]; then
     EXIT_CODE=1
     if [[ $CREATE_NVBUG_ON_FAILURE -eq 1 ]]; then
         create_nvbug "$COMPARISON_BRANCH"
@@ -235,7 +239,7 @@ fi
 
 # Check baseline branch regression
 if [[ $COMPARE_TO_BASELINE -eq 1 ]]; then
-    if [[ $BASELINE_REGRESSION_CODE -eq 1 || $BASELINE_REGRESSION_CODE -eq 66 || $BASELINE_REGRESSION_CODE -eq 67 ]]; then
+    if [[ $BASELINE_REGRESSION_CODE -eq 1 || $BASELINE_REGRESSION_CODE -eq 65 || $BASELINE_REGRESSION_CODE -eq 66 || $BASELINE_REGRESSION_CODE -eq 67 ]]; then
         EXIT_CODE=1
         if [[ $CREATE_NVBUG_ON_FAILURE -eq 1 ]]; then
             create_nvbug "$BASELINE_BRANCH"
