@@ -50,12 +50,13 @@ sbatch = [
     "--ntasks-per-node=8"
 ]
 openmpi = [
-    "TCP_IF_INCLUDE=eth3",
+    "TCP_IF_INCLUDE=enp90s0np0",
     "UCX_NET_DEVICE=mlx5_0:1"
 ]
 nccl = [
     "NCCL_DEBUG=WARN",
-    "NCCL_NET=IB"
+    "NCCL_NET=IB",
+    "NCCL_SOCKET_IFNAME=enp90s0np0"
 ]
 
 [EOS]
@@ -214,6 +215,31 @@ nccl = [
     "NCCL_NET=IB",
     "NCCL_IB_HCA==mlx5_0,mlx5_1,mlx5_2,mlx5_3",
     "NCCL_IB_SL=1"
+]
+
+[Bia]
+
+[Bia.labels]
+name = "Bia"
+network = "RoCE"
+switch = "SpectrumX"
+nic = "CX8"
+gpu_type = "B300"
+
+[Bia.run_params]
+sbatch = [
+    "--ntasks-per-node=8"
+]
+
+nccl = [
+    "NCCL_DEBUG=WARN",
+    "NCCL_IB_TC=96",
+    "NCCL_IB_AR=1",
+    "NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_6,mlx5_7,mlx5_10,mlx5_11,mlx5_12,mlx5_13,mlx5_14,mlx5_15,mlx5_16,mlx5_17,mlx5_20,mlx5_21,mlx5_22,mlx5_23",
+    "NCCL_GDRCOPY_ENABLE=1",
+    "NCCL_GDRCOPY_SYNC_ENABLE=1",
+    "OMPI_MCA_coll_hcoll_enable=0",
+    "UCX_TLS=tcp,self"
 ]
 
 [AWS-IAD]
