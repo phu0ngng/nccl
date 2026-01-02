@@ -120,3 +120,24 @@ hpcx_load
 epilogue_commands = '''
 hpcx_unload
 '''
+
+[Bia]
+sbatch = [
+    "--account coreai_libraries_nccl",
+    "-p batch"
+]
+
+CUDA_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/cuda-13.0"
+NCCL_HOME = "${INSTALL_DIR}/build"
+NCCL_TEST_PATH = "${INSTALL_DIR}/build/test/perf"
+HPCX_HOME = "/lustre/fsw/coreai_libraries_nccl/toolkits/hpcx-v2.24.1-gcc-doca_ofed-ubuntu24.04-cuda13-x86_64"
+LD_LIBRARY_PATH = '''${CUDA_HOME}/lib64:${NCCL_HOME}/lib:${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}'''
+
+prologue_commands = '''
+source $HPCX_HOME/hpcx-init.sh
+hpcx_load
+'''
+
+epilogue_commands = '''
+hpcx_unload
+'''
