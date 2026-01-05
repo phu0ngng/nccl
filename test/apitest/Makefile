@@ -46,6 +46,7 @@ all:${DST_DIR}/apitest ${DST_DIR}/apitest_static \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v11.so   \
     ${DST_DIR}/plugin/libnccl-shared-plugins.so \
     ${DST_DIR}/plugin/libnccl-env-plugin.so \
+    ${DST_DIR}/plugin/libnccl-net-plugin-init-once.so \
     device_api
 
 device_api:

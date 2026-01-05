@@ -50,7 +50,9 @@ run_device_api_test(){
 # list of tests with a special config
 multinetTests="ncclCommInitRankConfig_test.multi_net_plugin_*"
 sharedPluginTest="ncclCommInitRankConfig_test.shared_plugin_lib"
-gtestFilter="-${multinetTests}:${sharedPluginTest}"
+initOnceTest="ncclCommInitRankConfig_test.init_net_dev_once"
+splitOnceTest="ncclCommSplit_test.init_net_dev_once"
+gtestFilter="-${multinetTests}:${sharedPluginTest}:${initOnceTest}:${splitOnceTest}"
 
 if [[ ${DEVICE_API} -eq 0 ]] ; then
   gtestFilter="${gtestFilter}:ncclCommQueryProperties_test.test_gin_support:ncclCommQueryProperties_test.test_multimem_support:ncclCommWindowRegister_test.*"
@@ -70,6 +72,10 @@ export NCCL_NET_PLUGIN="libnccl-shared-plugins.so"
 run_api_test "" "${sharedPluginTest}"
 unset NCCL_NET_PLUGIN
 
+export NCCL_NET_PLUGIN="libnccl-net-plugin-init-once.so"
+run_api_test "" "${initOnceTest}"
+run_api_test "" "${splitOnceTest}"
+unset NCCL_NET_PLUGIN
 
 # run w/o allgatherv
 export NCCL_ALLGATHERV_ENABLE=0
