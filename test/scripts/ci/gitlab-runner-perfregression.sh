@@ -137,7 +137,14 @@ gcperf-tools generate-job-script \
 # Submit the job
 cd perfregression
 echo "Submitting job script..."
+set +e
 sbatch --wait --export=ALL -N ${NNODES} ${EXTRA_SLURM_ARGS} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
+JOB_EXIT_CODE=$?
+if [[ $JOB_EXIT_CODE -ne 0 ]]; then
+    echo "Job submission failed with exit code: $JOB_EXIT_CODE"
+    exit 33 # Custom exit code for job submission failure
+fi
+set -e
 
 # Convert results to CSV
 echo "Converting results to CSV..."
