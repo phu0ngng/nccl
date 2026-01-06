@@ -53,7 +53,7 @@ CURRENT_BRANCH="${CI_COMMIT_BRANCH:-${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-UNKNO
 CURRENT_BRANCH="${CURRENT_BRANCH//\//.}"
 # CI_MERGE_REQUEST_TARGET_BRANCH_NAME will be empty post-merge, so use CURRENT_BRANCH
 TARGET_BRANCH="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME//\//.}"
-COMPARISON_BRANCH="${TARGET_BRANCH:-CURRENT_BRANCH}"
+COMPARISON_BRANCH="${TARGET_BRANCH:-${CURRENT_BRANCH}}"
 BASELINE_BRANCH="${CI_DEFAULT_BRANCH:-master}"
 OUTDIR="perfregression"
 SBATCH_FILE="perfregression.sbatch"
@@ -142,6 +142,7 @@ sbatch --wait --export=ALL -N ${NNODES} ${EXTRA_SLURM_ARGS} -J "${SLURM_ACCOUNT}
 JOB_EXIT_CODE=$?
 if [[ $JOB_EXIT_CODE -ne 0 ]]; then
     echo "Job submission failed with exit code: $JOB_EXIT_CODE"
+    cat *.out # Dump logs for debugging
     exit 33 # Custom exit code for job submission failure
 fi
 set -e
