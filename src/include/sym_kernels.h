@@ -126,5 +126,5 @@ ncclResult_t ncclGetSymRegType(struct ncclDevrWindow* sendWin, struct ncclDevrWi
 int ncclSymkLLKernelMask();
 
 constexpr int ncclSymkGinWorldBufSize = 16<<10;
-constexpr int ncclSymkGinRailBufSize = 4<<20;
+constexpr int ncclSymkGinRailBufSize = 1<<20;
 #endif
