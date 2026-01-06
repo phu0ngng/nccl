@@ -124,8 +124,8 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
   }
 
   int nLocalNets;
-  int64_t localNets[NCCL_TOPO_MAX_NODES];
-  NCCLCHECK(ncclTopoGetLocalNets(comm->topo, comm->rank, localNets, &nLocalNets));
+  int localNetDevs[NCCL_TOPO_MAX_NODES];
+  NCCLCHECK(ncclTopoGetLocalNets(comm->topo, comm->rank, localNetDevs, &nLocalNets));
 
   void** handles = NULL;
   char* allHandles = NULL;
@@ -150,7 +150,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
   for (int n = 0; n < ginState->ginCommCount; n++) {
     void* listenComm;
     NCCLCHECKGOTO(
-      ginState->ncclGin->listen(ginState->ginInstance, localNets[n%nLocalNets],
+      ginState->ncclGin->listen(ginState->ginInstance, localNetDevs[n%nLocalNets],
                                 allHandles + NCCL_NET_HANDLE_MAXSIZE * comm->rank, &listenComm),
       ret, fail);
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
@@ -159,7 +159,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
                                              listenComm, ginState->ginComms + n),
                   ret, fail);
     if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
-      NCCLCHECKGOTO(ncclGinProxyCreateContext(comm, ginState->ginComms[n], localNets[n%nLocalNets],
+      NCCLCHECKGOTO(ncclGinProxyCreateContext(comm, ginState->ginComms[n], localNetDevs[n%nLocalNets],
                                               ginState->signalSpaceSize, ginState->counterSpaceSize,
                                               &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
                     ret, fail);
