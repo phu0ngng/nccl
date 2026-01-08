@@ -762,6 +762,19 @@ void freeDevCommRequirements(
   }
 }
 
+bool ncclGinResourcesRequested(struct ncclDevCommRequirements const* reqs) {
+  bool requestedGinResources = reqs->ginSignalCount > 0 || reqs->ginCounterCount > 0 ||
+                               reqs->barrierCount > 0 || reqs->railGinBarrierCount > 0;
+
+  struct ncclDevResourceRequirements* node = reqs->resourceRequirementsList;
+  while (!requestedGinResources && node != nullptr) {
+    requestedGinResources = node->ginSignalCount > 0 || node->ginCounterCount > 0;
+    node = node->next;
+  }
+
+  return requestedGinResources;
+}
+
 ncclResult_t ncclDevrCommCreateInternal(
     struct ncclComm* comm,
     struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm
@@ -784,17 +797,34 @@ ncclResult_t ncclDevrCommCreateInternal(
   struct ncclDevrWindow* win = nullptr;
   struct ncclWindow_vidmem* winHost = nullptr;
   size_t ginSignalShadowsOffset = 0;
-  bool userRequestedGin = reqs->ginForceEnable || reqs->ginSignalCount > 0 || reqs->ginCounterCount > 0;
 
-  {
-    struct ncclDevResourceRequirements* rr = resReqsHead;
-    while (!userRequestedGin && rr != nullptr) {
-      userRequestedGin = rr->ginSignalCount > 0 || rr->ginCounterCount > 0;
-      rr = rr->next;
-    }
+  // Default to NCCL_GIN_CONNECTION_NONE for backward compatibility
+  ncclGinConnectionType_t ginConnectionType = NCCL_GIN_CONNECTION_NONE;
+  if (reqs->version >= NCCL_VERSION(2, 29, 3)) {
+    ginConnectionType = reqs->ginConnectionType;
   }
 
-  if (userRequestedGin && comm->globalGinSupport) {
+  if (reqs->ginForceEnable) {
+    INFO(NCCL_INIT,
+         "ginForceEnable set to true, defaulting ginConnectionType to NCCL_GIN_CONNECTION_FULL");
+    INFO(NCCL_INIT,
+         "ginForceEnable is being deprecated in favor of explicitly setting ginConnectionType!");
+    ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  }
+
+  bool requestedGinResources = ncclGinResourcesRequested(reqs);
+
+  if (requestedGinResources) {
+    if (ginConnectionType == NCCL_GIN_CONNECTION_NONE) {
+      WARN("User requested GIN resources but did not request GIN to be enabled!");
+      return ncclInvalidArgument;
+    }
+
+    if (!comm->globalGinSupport) {
+      WARN("User requested GIN resources but not all ranks in the communicator support GIN");
+      return ncclInvalidArgument;
+    }
+
     ginActivated = !devr->ginEnabled;
     devr->ginEnabled = true;
   }

@@ -62,6 +62,11 @@ typedef struct ncclTeamRequirements ncclTeamRequirements_t;
 struct ncclCommProperties;
 typedef struct ncclCommProperties ncclCommProperties_t;
 
+typedef enum {
+  NCCL_GIN_CONNECTION_NONE,
+  NCCL_GIN_CONNECTION_FULL,
+} ncclGinConnectionType_t;
+
 struct ncclDevCommRequirements {
   /* attributes that users should never touch. */
   size_t size;
@@ -84,6 +89,7 @@ struct ncclDevCommRequirements {
   int ginContextCount; // This is a hint, the actual context count in the devcomm may not match.
   int ginSignalCount; // Guaranteed to start at id=0
   int ginCounterCount; // Guaranteed to start at id=0
+  ncclGinConnectionType_t ginConnectionType;
 };
 
 #define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                 \
@@ -98,10 +104,11 @@ struct ncclDevCommRequirements {
     0,                                           /* railGinBarrierCount */     \
     0,                                           /* lsaLLA2ABlockCount */      \
     0,                                           /* lsaLLA2ASlotCount */       \
-    0,                                           /* ginForceEnable */          \
+    false,                                       /* ginForceEnable */          \
     4,                                           /* ginContextCount */         \
     0,                                           /* ginSignalCount */          \
     0,                                           /* ginCounterCount */         \
+    NCCL_GIN_CONNECTION_NONE,                    /* ginConnectionType */       \
 }
 
 struct ncclDevResourceRequirements {

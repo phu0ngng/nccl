@@ -383,7 +383,7 @@ int main(int argc, char** argv) {
   { ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.ginSignalCount = 2*BlockPerRank; // barrier signals
     reqs.ginSignalCount += BlockPerRank*nGlobalBlocks; // inbox signals
-    reqs.ginForceEnable = true;
+    reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &args.comm));
   }
   args.pileBase = ncclSymPtr<Hash>(win, 0);

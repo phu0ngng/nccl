@@ -78,7 +78,7 @@ TEST_F(ncclCommQueryProperties_test, test_gin_support) {
   }
 
   ncclDevCommRequirements ginReqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  ginReqs.ginForceEnable = true;
+  ginReqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
 
   // We expect devComm creation to fail if we request gin resource but gin is not supported
   bool expectSuccess = props.ginType != NCCL_GIN_TYPE_NONE;
