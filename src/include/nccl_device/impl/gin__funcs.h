@@ -150,7 +150,7 @@ NCCL_DEVICE_INLINE void ncclGinPut(
     bool isCounter, ncclGinCounter_t counterId,
     ncclCoopAny coop,
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-    cuda::thread_scope requiredRelease,  cuda::thread_scope givenRelease
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
   ) {
   using nccl::utility::loadConst;
   ncclGinCtx ctx = ncclGin_C_makeCtx(net);
@@ -191,7 +191,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::put(
     RemoteAction remoteAction, LocalAction localAction,
     Coop coop,
     DescriptorSmem descriptor,
-    cuda::thread_scope requiredRelease,  cuda::thread_scope givenRelease
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
   ) const {
   using nccl::utility::loadConst;
   ncclGinCtx_M<beMask> ctx = this->_makeCtx();
@@ -234,12 +234,12 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::put(
     RemoteAction remoteAction, LocalAction localAction,
     Coop coop,
     DescriptorSmem descriptor,
-    cuda::thread_scope requiredRelease,
-    cuda::thread_scope givenRelease
+    cuda::thread_scope givenRelease,
+    cuda::thread_scope requiredRelease
   ) const {
   this->put(
     team, peer, dstElts.window, dstElts.offset, srcElts.window, srcElts.offset, nElts*sizeof(T),
-    remoteAction, localAction, coop, descriptor, requiredRelease, givenRelease
+    remoteAction, localAction, coop, descriptor, givenRelease, requiredRelease
   );
 }
 #endif
@@ -258,8 +258,8 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
     RemoteAction remoteAction,
     Coop coop,
     DescriptorSmem descriptor,
-    cuda::thread_scope requiredRelease,
-    cuda::thread_scope givenRelease
+    cuda::thread_scope givenRelease,
+    cuda::thread_scope requiredRelease
   ) const {
   static_assert(sizeof(T) <= 8, "Required: sizeof(T) <= 8");
   using nccl::utility::loadConst;
@@ -290,7 +290,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
     bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
     ncclCoopAny coop,
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-    cuda::thread_scope requiredRelease, cuda::thread_scope givenRelease
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
   ) {
   using nccl::utility::loadConst;
   coop.sync();
@@ -349,11 +349,11 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
     RemoteAction remoteAction,
     Coop coop,
     DescriptorSmem descriptor,
-    cuda::thread_scope requiredRelease,
-    cuda::thread_scope givenRelease
+    cuda::thread_scope givenRelease,
+    cuda::thread_scope requiredRelease
   ) const {
   this->putValue(
-    team, peer, dst.window, dst.offset, value, remoteAction, coop, descriptor, requiredRelease, givenRelease
+    team, peer, dst.window, dst.offset, value, remoteAction, coop, descriptor, givenRelease, requiredRelease
   );
 }
 #endif
@@ -363,8 +363,8 @@ template<unsigned beMask>
 template<typename RemoteAction, typename Coop, typename DescriptorSmem>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::signal(
     ncclTeam team, int peer, RemoteAction action, Coop coop, DescriptorSmem descriptor,
-    cuda::thread_scope requiredRelease,
-    cuda::thread_scope givenRelease
+    cuda::thread_scope givenRelease,
+    cuda::thread_scope requiredRelease
   ) const {
   coop.sync();
   if (coop.thread_rank() == 0) {
@@ -390,7 +390,7 @@ NCCL_DEVICE_INLINE void ncclGinSignal(
     bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
     ncclCoopAny coop,
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-    cuda::thread_scope requiredRelease, cuda::thread_scope givenRelease
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
   ) {
   coop.sync();
   if (coop.thread_rank() == 0) {

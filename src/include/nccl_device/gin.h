@@ -67,7 +67,7 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPut(
   bool isCounter, ncclGinCounter_t counterId,
   ncclCoopAny coop,
   bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-  cuda::thread_scope requiredRelease,  cuda::thread_scope givenRelease);
+  cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease);
 
 NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinSignal(
   ncclGin_C* net,
@@ -75,7 +75,7 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinSignal(
   bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
   ncclCoopAny coop,
   bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-  cuda::thread_scope requiredRelease, cuda::thread_scope givenRelease);
+  cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease);
 
 NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinFlush(
   ncclGin_C* net,
@@ -126,7 +126,7 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutValue(
   bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
   ncclCoopAny coop,
   bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-  cuda::thread_scope requiredRelease, cuda::thread_scope givenRelease);
+  cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease);
 
 NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE uint64_t* ncclGinGetSignalShadowPtr(
   ncclGin_C* net,
@@ -160,8 +160,8 @@ struct ncclGin_BackendMask {
     LocalAction localAction = ncclGin_None{},
     Coop coop = ncclCoopThread{},
     DescriptorSmem descriptor = ncclGin_None{},
-    cuda::thread_scope alreadyReleased = cuda::thread_scope_thread,
-    cuda::thread_scope expected_scope = cuda::thread_scope_device
+    cuda::thread_scope givenRelease = cuda::thread_scope_thread,
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device
   ) const;
 
   template<
@@ -184,8 +184,8 @@ struct ncclGin_BackendMask {
     LocalAction localAction = ncclGin_None{},
     Coop coop = ncclCoopThread{},
     DescriptorSmem descriptor = ncclGin_None{},
-    cuda::thread_scope alreadyReleased = cuda::thread_scope_thread,
-    cuda::thread_scope expected_scope = cuda::thread_scope_device
+    cuda::thread_scope givenRelease = cuda::thread_scope_thread,
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device
   ) const;
 
   template<
@@ -201,8 +201,8 @@ struct ncclGin_BackendMask {
     RemoteAction remoteAction = ncclGin_None{},
     Coop coop = ncclCoopThread{},
     DescriptorSmem descriptor = ncclGin_None{},
-    cuda::thread_scope alreadyReleased = cuda::thread_scope_thread,
-    cuda::thread_scope expected_scope = cuda::thread_scope_device
+    cuda::thread_scope givenRelease = cuda::thread_scope_thread,
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device
   ) const;
 
   template<
@@ -218,8 +218,8 @@ struct ncclGin_BackendMask {
     RemoteAction remoteAction = ncclGin_None{},
     Coop coop = ncclCoopThread{},
     DescriptorSmem descriptor = ncclGin_None{},
-    cuda::thread_scope alreadyReleased = cuda::thread_scope_thread,
-    cuda::thread_scope expected_scope = cuda::thread_scope_device
+    cuda::thread_scope givenRelease = cuda::thread_scope_thread,
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device
   ) const;
 
   template<typename RemoteAction,
@@ -229,8 +229,8 @@ struct ncclGin_BackendMask {
     ncclTeam, int peer, RemoteAction remoteAction,
     Coop coop = ncclCoopThread(),
     DescriptorSmem descriptor = ncclGin_None{},
-    cuda::thread_scope alreadyReleased = cuda::thread_scope_thread,
-    cuda::thread_scope expected_scope = cuda::thread_scope_device
+    cuda::thread_scope givenRelease = cuda::thread_scope_thread,
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device
   ) const;
 
   // All source buffers from put's from any thread in this coop will be safe to reuse.
