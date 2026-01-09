@@ -81,6 +81,7 @@ target_include_directories(nccl PUBLIC
     ${CUDAToolkit_INCLUDE_DIRS}
     ${DOCA_HOME}/include
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
+    ${CMAKE_BINARY_DIR}/obj/include
 )
 
 add_custom_command(
@@ -123,16 +124,26 @@ set_target_properties(nccl PROPERTIES
 )
 
 #
-# Generate git_version.h
+# Generate nccl_git_version.h
 #
-set(GIT_VERSION_FILE "${CMAKE_BINARY_DIR}/include/git_version.h")
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include")
+set(GIT_VERSION_FILE "${CMAKE_BINARY_DIR}/obj/include/nccl_git_version.h")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/obj/include")
 add_custom_target(generate_git_version ALL
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/src/misc/generate_git_version.py ${GIT_VERSION_FILE}
   COMMENT "Checking git version"
   BYPRODUCTS ${GIT_VERSION_FILE}
 )
 add_dependencies(nccl generate_git_version)
+
+# Git version overrides (set via cmake -DNCCL_GIT_BRANCH=xxx -DNCCL_GIT_COMMIT_HASH=yyy)
+set(NCCL_GIT_BRANCH "" CACHE STRING "Override git branch name")
+set(NCCL_GIT_COMMIT_HASH "" CACHE STRING "Override git commit hash")
+if(NCCL_GIT_BRANCH)
+    target_compile_definitions(nccl PRIVATE NCCL_GIT_BRANCH="${NCCL_GIT_BRANCH}")
+endif()
+if(NCCL_GIT_COMMIT_HASH)
+    target_compile_definitions(nccl PRIVATE NCCL_GIT_COMMIT_HASH="${NCCL_GIT_COMMIT_HASH}")
+endif()
 
 # Set CUDA specific flags
 set_target_properties(nccl PROPERTIES
@@ -199,11 +210,20 @@ target_include_directories(nccl_static PUBLIC
     ${CUDAToolkit_INCLUDE_DIRS}
     transport/net_ib/gdaki/doca-gpunetio/include
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
+    ${CMAKE_BINARY_DIR}/obj/include
 )
 
 # Add dependency on nccl_header
 add_dependencies(nccl_static nccl_header)
 add_dependencies(nccl_static generate_git_version)
+
+# Git version overrides for static lib
+if(NCCL_GIT_BRANCH)
+    target_compile_definitions(nccl_static PRIVATE NCCL_GIT_BRANCH="${NCCL_GIT_BRANCH}")
+endif()
+if(NCCL_GIT_COMMIT_HASH)
+    target_compile_definitions(nccl_static PRIVATE NCCL_GIT_COMMIT_HASH="${NCCL_GIT_COMMIT_HASH}")
+endif()
 
 # Link libraries
 target_link_libraries(nccl_static
