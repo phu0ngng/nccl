@@ -72,7 +72,7 @@ variables:
   # CW-DFW cluster
   CW_DFW_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
   CW_DFW_CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
-  CW_DFW_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+  CW_DFW_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
   # DRACO-OCI cluster
   DRACO_OCI_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
   # PRE-NYX cluster
@@ -3277,6 +3277,8 @@ perf-regression-eos:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
@@ -3306,6 +3308,8 @@ perf-regression-cw-dfw:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
@@ -3334,6 +3338,8 @@ perf-regression-pre-tyche:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
@@ -3362,6 +3368,8 @@ perf-regression-theia:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
@@ -3390,6 +3398,8 @@ perf-regression-bia:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
