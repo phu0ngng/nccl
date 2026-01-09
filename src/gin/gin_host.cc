@@ -125,7 +125,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
 
   int nLocalNets;
   int localNetDevs[NCCL_TOPO_MAX_NODES];
-  NCCLCHECK(ncclTopoGetLocalNets(comm->topo, comm->rank, localNetDevs, &nLocalNets));
+  NCCLCHECK(ncclTopoGetLocalNets(comm, localNetDevs, &nLocalNets));
 
   void** handles = NULL;
   char* allHandles = NULL;

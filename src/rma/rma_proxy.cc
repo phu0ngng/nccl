@@ -519,7 +519,7 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
 
   int ginCommCount;
   int localNetDevs[NCCL_TOPO_MAX_NODES];
-  NCCLCHECK(ncclTopoGetLocalNets(comm->topo, comm->rank, localNetDevs, &rmaProxyState->ginCommCount));
+  NCCLCHECK(ncclTopoGetLocalNets(comm, localNetDevs, &rmaProxyState->ginCommCount));
   ginCommCount = std::min<int>(rmaProxyState->ginCommCount, NCCL_GIN_MAX_CONTEXTS);
   ginCommCount = std::min<int>(ginCommCount, ndev);
 

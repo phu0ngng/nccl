@@ -1686,9 +1686,10 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int ch
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetLocalNets(struct ncclTopoSystem* system, int rank, int* localNetDevs, int* localNetCount) {
+ncclResult_t ncclTopoGetLocalNets(struct ncclComm* comm, int* localNetDevs, int* localNetCount) {
+  struct ncclTopoSystem* system = comm->topo;
   int gpu;
-  NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpu, /*showWarn=*/true));
+  NCCLCHECK(ncclTopoRankToIndex(system, comm->rank, &gpu, /*showWarn=*/true));
   int localNetIndexes[NCCL_TOPO_MAX_NODES];
   NCCLCHECK(ncclTopoGetLocal(system, GPU, gpu, NET, localNetIndexes, localNetCount, NULL));
 
