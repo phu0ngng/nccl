@@ -127,10 +127,12 @@ ncclCommGetUniqueId
 
 .. c:function:: ncclResult_t ncclCommGetUniqueId(ncclComm_t comm, ncclUniqueId* uniqueId)
 
-The *ncclCommGetUniqueId* function generates a unique identifier for growing an existing communicator.
-This function must be called by one rank (the coordinator) from the existing communicator, which will then distribute the *uniqueId* to all new ranks that will join the communicator via *ncclCommGrow*.
-The coordinator rank broadcasts the grow handle internally to boundary ranks (rank 0 and rank N-1) of the existing communicator to ensure proper coordination during the grow operation.
-This function should only be called when there are no outstanding NCCL operations on the communicator.
+The *ncclCommGetUniqueId* function generates a unique identifier for growing an
+existing communicator exactly once. This function must be called by only one
+rank (the coordinator) before each grow operation on the existing communicator.
+The coordinator is responsible for distributing the *uniqueId* to all new ranks
+before they join the communicator via *ncclCommGrow*. This function should only
+be called when there are no outstanding NCCL operations on the communicator.
 
 ncclCommGrow
 ------------
