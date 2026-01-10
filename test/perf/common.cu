@@ -1234,7 +1234,7 @@ testResult_t threadInit(struct threadArgs* args) {
       testSkipReason = "Device API is not supported on this system\n";
       return testSkipped;
     }
-    TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
+    TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, args->comms[0][0], &testSkipReason));
 #else
     ncclDevCommRequirements reqs = {};
     if (!ncclTestEngine.getDevCommRequirements ||
@@ -2172,11 +2172,11 @@ testResult_t run() {
         testSkipReason = "Device API is not supported on this system\n";
         return testSkipped;
       }
-      TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
+      TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, comms[0][0], &testSkipReason));
 #else
       ncclDevCommRequirements reqs = {};
       if (!ncclTestEngine.getDevCommRequirements ||
-        !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
+          !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
         fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
         return testNotImplemented;
       }

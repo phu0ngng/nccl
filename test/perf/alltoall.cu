@@ -116,17 +116,28 @@ testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
 // set devComm reqs for alltoall device kernels
-testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclCommProperties_t* commProperties, const char** testSkipReason) {
-  if (!reqs || !commProperties) return testInternalError;
+testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclComm_t comm, const char** testSkipReason) {
+  if (!reqs || !comm) return testInternalError;
+
+  ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+  if (ncclCommQueryProperties(comm, &commProperties) != ncclSuccess) {
+    return testNcclError;
+  }
 
   switch(deviceImpl) {
     case 1: // NvlAlltoAllKernel
     case 2: // NvlAlltoAllKernelOptimized
+      if (commProperties.nRanks != ncclTeamLsa(comm).nRanks) {
+        *testSkipReason =
+            "DeviceImplementation 1 and 2 requires CUDA P2P connectivity across all ranks. Not all "
+            "ranks of this communicator have P2P connectivity.\n";
+        return testSkipped;
+      }
       reqs->lsaBarrierCount = deviceCtaCount;
       return testSuccess;
     case 3: // GinAlltoAllKernel
     case 4: // HybridAlltoAllKernel (LSA+GIN)
-      if (commProperties->ginType == NCCL_GIN_TYPE_NONE) {
+      if (commProperties.ginType == NCCL_GIN_TYPE_NONE) {
         *testSkipReason = "This test requires GIN support, but GIN support is not enabled for this communicator.\n";
         return testSkipped;
       }
