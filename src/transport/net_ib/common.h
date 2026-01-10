@@ -343,8 +343,8 @@ struct ncclIbSendComm {
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS + 1];
   // Each dev correlates to a mergedIbDev
   struct ncclIbSendCommDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
-  // Array of pointers to store the send requests for faster access. The 
-  // pointers are pointing into requests stored in ncclIbNetCommBase::reqs[] 
+  // Array of pointers to store the send requests for faster access. The
+  // pointers are pointing into requests stored in ncclIbNetCommBase::reqs[]
   // array. The requests are inserted to this array based on the "slot" they
   // are associated with.
   struct ncclIbRequest* sendReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];

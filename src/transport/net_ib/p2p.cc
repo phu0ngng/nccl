@@ -72,7 +72,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
   // For ID-based matching scheme, immData carries the request ID.
   // For index-based matching scheme, immData carries the send size:
-  // - nreqs == 1 
+  // - nreqs == 1
   //      It's the send size.
   // - nreqs > 1
   //      Send size is still sent but receiver ignores it since the sizes are

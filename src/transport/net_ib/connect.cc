@@ -851,7 +851,7 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
 
 ncclResult_t ncclIbReceiverPrePostReceiveWorkRequests(struct ncclIbRecvComm* recvComm) {
   int nRecvWorkRequestsPerQp = NET_IB_MAX_REQUESTS;
-  int nqps = recvComm->base.nqps; 
+  int nqps = recvComm->base.nqps;
   INFO(NCCL_NET, "NET/IB: %s: Pre-posting %d Receive WQEs on every QP out of %d QPs", __func__, nRecvWorkRequestsPerQp, nqps);
   for (int i = 0; i < nqps; i++) {
     struct ncclIbQp* dataQp = &recvComm->base.qps[i];
