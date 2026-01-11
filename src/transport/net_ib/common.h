@@ -319,7 +319,12 @@ static inline ncclResult_t ncclIbCommBaseGetQpByQpNum(struct ncclIbNetCommBase* 
   return ncclInternalError;
 }
 
+// Each request is transfered over all devices, and depending on the
+// "splitDataOnQps" configuration parameter, a request may be transffered over
+// a single QP per device or on all QPs of each device.
 static inline int ncclIbCommBaseGetNqpsPerRequest(struct ncclIbNetCommBase* baseComm) {
+  assert(baseComm->nDataQps != -1);
+  assert(baseComm->nqps != -1);
   return (baseComm->splitDataOnQps == 1) ? baseComm->nqps : baseComm->nDataQps;
 }
 
@@ -425,7 +430,9 @@ struct ncclIbRecvComm {
 };
 static_assert((offsetof(struct ncclIbRecvComm, remCtsFifo) % 32) == 0, "ncclIbRecvComm ctsFifo must be 32-byte aligned");
 
+ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend);
 ncclResult_t ncclIbRecvCommInit(struct ncclIbRecvComm* recvComm);
+ncclResult_t ncclIbSendCommInit(struct ncclIbSendComm* sendComm);
 
 struct ncclIbListenComm {
   int dev;
