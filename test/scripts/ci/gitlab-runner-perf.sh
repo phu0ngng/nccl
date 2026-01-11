@@ -149,6 +149,11 @@ for func in all_reduce_perf reduce_perf reduce_scatter_perf; do
   run_command "${func}_all_ops_dtypes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$rangetype $opts"
 done
 
+if [ "$NNODES" == "1" ] && [ "$NGPUS" == 1 ]; then
+  rangetype="-b 2164744 -e $((8 * 2164744)) -o all -n 5 -f 2"
+  run_command "all_reduce_perf_one_rank_non_blocknum_mult_all_opts_dtypes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/all_reduce_perf" "$rangetype $opts"
+fi
+
 for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf hypercube_perf all_gatherv_perf; do
   run_command "${func}_split_share_all_sizes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$split_range $opts $enable_split_test -n 1"
 done
