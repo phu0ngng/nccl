@@ -619,7 +619,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
   ncclResult_t ret = ncclSuccess;
   CUdeviceptr memAddr = 0;
   size_t memSize = 0;
-  CUmemGenericAllocationHandle memHandle = 0x0;
+  CUmemGenericAllocationHandle memHandle = 0x0ULL;
   size_t memOffset;
   struct ncclDevrMemory* mem = nullptr;
   cudaStream_t stream = nullptr;
@@ -631,7 +631,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
 
   if (winFlags & NCCL_WIN_COLL_SYMMETRIC) {
     // Defer symmetric kernel init until at least one window with that flag exists.
-    NCCLCHECKGOTO(ncclSymkInitOnce(comm), ret, fail);
+    NCCLCHECKGOTO(ncclSymkInitOnce(comm), ret, fail_locReg);
   }
 
   // Get underlying cumem base address and number of mapped physical segments that userPtr spans
@@ -640,14 +640,14 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
   if (numSegments > 1) {
     WARN("Window registration of addresses that span multiple physical segments is currently not supported.");
     ret = ncclInvalidArgument;
-    goto fail;
+    goto fail_locReg;
   }
 
   memOffset = reinterpret_cast<CUdeviceptr>(userPtr) - memAddr;
   if (memOffset%NCCL_WIN_REQUIRED_ALIGNMENT != 0) {
     WARN("Window address must be suitably aligned.");
     ret = ncclInvalidArgument;
-    goto fail;
+    goto fail_locReg;
   }
 
   CUCHECKGOTO(cuMemRetainAllocationHandle(&memHandle, reinterpret_cast<void*>(memAddr)), ret, fail_locReg);
@@ -656,7 +656,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
   NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, (void*)memAddr, memSize, &mem), ret, fail_locReg_memHandle);
   memHandle = 0x0; // symMemoryObtain took our reference
 
-  CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail);
+  CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail_locReg_memHandle_mem);
 
   NCCLCHECKGOTO(symWindowCreate(
       comm, mem, memOffset, userPtr, userSize, winFlags, localRegHandle, outWinDev, &winHost, stream
@@ -688,9 +688,10 @@ fail_locReg_memHandle_mem_stream_win:
   cudaStreamSynchronize(stream);
 fail_locReg_memHandle_mem_stream:
   cudaStreamDestroy(stream);
+fail_locReg_memHandle_mem:
   symMemoryDropRef(comm, mem);
 fail_locReg_memHandle:
-  if (memHandle != 0x0) { CUCHECKIGNORE(cuMemRelease(memHandle)); }
+  if (memHandle != 0x0ULL) { CUCHECKIGNORE(cuMemRelease(memHandle)); }
 fail_locReg:
   ncclCommDeregister(comm, localRegHandle);
 fail:
