@@ -262,37 +262,65 @@ fail:
 ncclResult_t ncclCeInitBatchOpsParams(struct ncclCeBatchOpsParams* params, int nRanks) {
   ncclResult_t ret = ncclSuccess;
 
-  params->srcs = nullptr;
-  params->dsts = nullptr;
-  params->sizes = nullptr;
+  void** srcs = nullptr;
+  void** dsts = nullptr;
+  size_t* sizes = nullptr;
+#if CUDART_VERSION >= 12080
+  cudaMemcpyAttributes* attrs = nullptr;
+  size_t* attrIdxs = nullptr;
+#endif
+
+  NCCLCHECKGOTO(ncclCalloc(&srcs, nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&dsts, nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&sizes, nRanks), ret, fail);
+#if CUDART_VERSION >= 12080
+  NCCLCHECKGOTO(ncclCalloc(&attrs, nRanks), ret, fail);
+  NCCLCHECKGOTO(ncclCalloc(&attrIdxs, nRanks), ret, fail);
+#endif
+
+exit:
+  params->srcs = srcs;
+  params->dsts = dsts;
+  params->sizes = sizes;
   params->numOps = 0;
   params->intraBatchSync = false;
 #if CUDART_VERSION >= 12080
-  params->attrs = nullptr;
-  params->attrIdxs = nullptr;
+  params->attrs = attrs;
+  params->attrIdxs = attrIdxs;
   params->numAttrs = 0;
 #endif
-
-  NCCLCHECKGOTO(ncclCalloc(&params->srcs, nRanks), ret, fail);
-  NCCLCHECKGOTO(ncclCalloc(&params->dsts, nRanks), ret, fail);
-  NCCLCHECKGOTO(ncclCalloc(&params->sizes, nRanks), ret, fail);
-#if CUDART_VERSION >= 12080
-  NCCLCHECKGOTO(ncclCalloc(&params->attrs, nRanks), ret, fail);
-  NCCLCHECKGOTO(ncclCalloc(&params->attrIdxs, nRanks), ret, fail);
-#endif
-exit:
   return ret;
 fail:
+  if (srcs) free(srcs);
+  srcs = nullptr;
+  if (dsts) free(dsts);
+  dsts = nullptr;
+  if (sizes) free(sizes);
+  sizes = nullptr;
+#if CUDART_VERSION >= 12080
+  if (attrs) free(attrs);
+  attrs = nullptr;
+  if (attrIdxs) free(attrIdxs);
+  attrIdxs = nullptr;
+#endif
   goto exit;
 }
 
 void ncclCeFreeBatchOpsParams(struct ncclCeBatchOpsParams* params) {
   if (params->srcs) free(params->srcs);
+  params->srcs = nullptr;
   if (params->dsts) free(params->dsts);
+  params->dsts = nullptr;
   if (params->sizes) free(params->sizes);
+  params->sizes = nullptr;
+  params->numOps = 0;
+  params->intraBatchSync = false;
 #if CUDART_VERSION >= 12080
   if (params->attrs) free(params->attrs);
+  params->attrs = nullptr;
   if (params->attrIdxs) free(params->attrIdxs);
+  params->attrIdxs = nullptr;
+  params->numAttrs = 0;
 #endif
 }
 
