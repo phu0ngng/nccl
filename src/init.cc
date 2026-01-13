@@ -129,19 +129,11 @@ ncclResult_t initGdrCopy() {
 }
 
 
-static ncclResult_t setCpuStackSize() {
-  if (ncclParamSetCpuStackSize() != 0) {
-    return ncclOsSetCpuStackSize();
-  }
-
-  return ncclSuccess;
-}
-
 static ncclResult_t initResult = ncclSuccess;
 static std::once_flag initOnceFlag;
 
 static void initOnceFunc() {
-  setCpuStackSize();
+  NCCLCHECKGOTO(ncclOsInitialize(), initResult, exit);
   initGdrCopy();
   // Always initialize bootstrap network
   NCCLCHECKGOTO(bootstrapNetInit(), initResult, exit);
