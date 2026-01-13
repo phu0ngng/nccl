@@ -61,11 +61,35 @@ struct ncclGinApi_Put {
 };
 
 template <ncclNetDeviceType backend>
+struct ncclGinApi_PutVASignal {
+  template <typename Coop>
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, bool hasWins,
+    ncclGinWindow_t dstWin, size_t dstOff, ncclGinWindow_t srcWin,
+    size_t srcOff, size_t bytes, bool hasSignal,
+    ncclGinWindow_t signalWindow, size_t signalOffset, ncclGinSignalOp_t signalOp,
+    uint64_t signalOpArg, bool hasCounter,
+    ncclGinCounter_t counterId, bool hasDescriptor,
+    ncclGinDescriptorSmem* descriptor,
+    cuda::thread_scope required, cuda::thread_scope given);
+};
+
+template <ncclNetDeviceType backend>
 struct ncclGinApi_PutValue {
   template <typename Coop, typename T>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, ncclGinWindow_t dstWin,
                                       size_t dstOff, T srcData, bool hasSignal,
                                       ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp,
+                                      uint64_t signalOpArg, bool hasDescriptor,
+                                      ncclGinDescriptorSmem* descriptor,
+                                      cuda::thread_scope required, cuda::thread_scope given);
+};
+
+template <ncclNetDeviceType backend>
+struct ncclGinApi_PutValueVASignal {
+  template <typename Coop, typename T>
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, ncclGinWindow_t dstWin,
+                                      size_t dstOff, T srcData, bool hasSignal,
+                                      ncclGinWindow_t signalWindow, size_t signalOffset, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
                                       cuda::thread_scope required, cuda::thread_scope given);
@@ -85,6 +109,10 @@ struct ncclGinApi_ResetSignal {
   NCCL_DEVICE_INLINE static void call(ncclGinCtx, ncclGinSignal_t signalId);
 };
 
+template <ncclNetDeviceType backend>
+struct ncclGinApi_ResetVASignal {
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx, ncclWindow_t signalWindow, size_t signalOffset);
+};
 template <ncclNetDeviceType backend>
 struct ncclGinApi_ResetCounter {
   NCCL_DEVICE_INLINE static void call(ncclGinCtx, ncclGinCounter_t counterId);

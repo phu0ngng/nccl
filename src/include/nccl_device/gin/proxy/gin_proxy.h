@@ -196,6 +196,14 @@ struct ncclGinApi_ResetSignal<NCCL_NET_DEVICE_GIN_PROXY> {
 };
 
 template <>
+struct ncclGinApi_ResetVASignal<NCCL_NET_DEVICE_GIN_PROXY> {
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclWindow_t signalWindow, size_t signalOffset) {
+    uint64_t* signal = (uint64_t*)ncclGetLocalPointer(signalWindow, signalOffset);
+    *signal = 0;
+  }
+};
+
+template <>
 struct ncclGinApi_Flush<NCCL_NET_DEVICE_GIN_PROXY> {
   template <typename Coop>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord) {
@@ -223,6 +231,34 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_PROXY> {
     nccl::gin::proxy::put<Coop, uint64_t>(
       coop, desc, (ncclGinProxyGpuCtx_t*)ctx.handle, peer, dstWin, dstOff, 0, false, srcWin, srcOff,
       bytes, hasSignal, signalId, signalOp, signalOpArg, hasCounter, counterId, required, given);
+  }
+};
+
+template <>
+struct ncclGinApi_PutVASignal<NCCL_NET_DEVICE_GIN_PROXY> {
+  template <typename Coop>
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, bool hasWins,
+                                      ncclGinWindow_t dstWin, size_t dstOff, ncclGinWindow_t srcWin,
+                                      size_t srcOff, size_t bytes, bool hasSignal,
+                                      ncclGinWindow_t signalWindow, size_t signalOffset, ncclGinSignalOp_t signalOp,
+                                      uint64_t signalOpArg, bool hasCounter,
+                                      ncclGinCounter_t counterId, bool hasDescriptor,
+                                      ncclGinDescriptorSmem* descriptor,
+                                      cuda::thread_scope required, cuda::thread_scope given) {
+      __builtin_unreachable();
+  }
+};
+
+template <>
+struct ncclGinApi_PutValueVASignal<NCCL_NET_DEVICE_GIN_PROXY> {
+  template <typename Coop, typename T>
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, int peer, ncclGinWindow_t dstWin,
+                                      size_t dstOff, T srcVal, bool hasSignal,
+                                      ncclGinWindow_t signalWindow, size_t signalOffset, ncclGinSignalOp_t signalOp,
+                                      uint64_t signalOpArg, bool hasDescriptor,
+                                      ncclGinDescriptorSmem* descriptor,
+                                      cuda::thread_scope required, cuda::thread_scope given) {
+    __builtin_unreachable();
   }
 };
 
