@@ -123,6 +123,22 @@ void* pureGinAlltoAll(int my_rank, int total_ranks, int local_device, int device
   NCCLCHECK(ncclCommInitRank(&comm, total_ranks, nccl_unique_id, my_rank));
   printf("  Rank %d initialized NCCL communicator for %d total ranks\n", my_rank, total_ranks);
 
+  // Check for Device API and GIN support
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  NCCLCHECK(ncclCommQueryProperties(comm, &props));
+  if (!props.deviceApiSupport) {
+    printf("ERROR: rank %d communicator does not support Device API!\n", my_rank);
+    NCCLCHECK(ncclCommFinalize(comm));
+    NCCLCHECK(ncclCommDestroy(comm));
+    return NULL;
+  }
+  if (props.ginType == NCCL_GIN_TYPE_NONE) {
+    printf("ERROR: rank %d communicator does not support GIN!\n", my_rank);
+    NCCLCHECK(ncclCommFinalize(comm));
+    NCCLCHECK(ncclCommDestroy(comm));
+    return NULL;
+  }
+
   // Allocate memory for AlltoAll operation
   size_t count = 1024; // Elements per rank
   size_t total_elements = count * total_ranks;
@@ -185,8 +201,8 @@ void* pureGinAlltoAll(int my_rank, int total_ranks, int local_device, int device
     printf("\n=== Executing Pure GIN AlltoAll ===\n");
   }
 
-    // Clear receive buffer
-    CUDACHECK(cudaMemset(d_recvbuff, 0, size_bytes));
+  // Clear receive buffer
+  CUDACHECK(cudaMemset(d_recvbuff, 0, size_bytes));
 
   // Launch pure GIN AlltoAll kernel
   PureGinAlltoAllKernel<float><<<NCCL_DEVICE_CTA_COUNT, NCCL_DEVICE_THREADS_PER_CTA, 0, stream>>>(
