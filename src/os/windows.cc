@@ -40,11 +40,6 @@ size_t ncclOsGetPageSize() {
   return (size_t)si.dwPageSize;
 }
 
-ncclResult_t ncclOsSetCpuStackSize() {
-  // Not implemented on Windows
-  return ncclSuccess;
-}
-
 void ncclOsSetEnv(const char* name, const char* value) {
   // Check if the environment variable already has the desired value before overriding.
   // MSDN documents the maximum environment variable size as 32767 characters
@@ -57,6 +52,19 @@ void ncclOsSetEnv(const char* name, const char* value) {
       WARN("Failed to set environment variable %s to %s: error %lu", name, value, GetLastError());
     }
   }
+}
+
+ncclResult_t ncclOsInitialize() {
+  // Windows Winsock initialization
+  WSADATA wsaData;
+  int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+  if (result != 0) {
+    WARN("WSAStartup failed with error: %d", result);
+    return ncclSystemError;
+  }
+  INFO(NCCL_INIT|NCCL_NET, "WSAStartup succeeded, Winsock version %d.%d",
+       LOBYTE(wsaData.wVersion), HIBYTE(wsaData.wVersion));
+  return ncclSuccess;
 }
 
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sockDescriptor) {
