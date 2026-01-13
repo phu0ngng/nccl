@@ -75,6 +75,7 @@ variables:
   CW_DFW_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
   # DRACO-OCI cluster
   DRACO_OCI_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
+  DRACO_OCI_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
   # PRE-NYX cluster
   PRE_NYX_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
   PRE_NYX_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
@@ -446,7 +447,7 @@ setup-draco-oci:
     - .draco-oci
     - .setup
   rules:
-    - !reference [.pre_submit, rules]
+    - !reference [.nightly, rules]
     - !reference [.draco-oci, rules]
   needs: ["build-ipp6"]
   variables:
@@ -939,9 +940,10 @@ unit_tests-draco_oci:
   tags:
     - draco-oci-iad
   variables:
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 10
     NNODES: 1
     NGPUS: 8
@@ -1965,6 +1967,7 @@ apitest-draco_oci:
     - draco-oci-iad
   variables:
     INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 20
@@ -2526,6 +2529,7 @@ perftest_single-draco_oci:
     - draco-oci-iad
   variables:
     INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 30
@@ -2974,6 +2978,7 @@ perftest_multi-draco_oci:
     - draco-oci-iad
   variables:
     INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 30
@@ -3585,7 +3590,7 @@ cleanup-draco-oci:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/
       when: on_success
     - if: $RUN_ON_DRACO_OCI == "1"
       when: on_success
