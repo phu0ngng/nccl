@@ -50,8 +50,7 @@ sbatch = [
     "--ntasks-per-node=8"
 ]
 openmpi = [
-    "TCP_IF_INCLUDE=enp90s0np0",
-    "UCX_NET_DEVICE=mlx5_0:1"
+    "TCP_IF_INCLUDE=enp90s0np0"
 ]
 nccl = [
     "NCCL_DEBUG=WARN",

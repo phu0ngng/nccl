@@ -228,16 +228,17 @@ create_nvbug() {
         \"ARB\": [{\"Value\": \"$GITLAB_USER_EMAIL\"}]
     }"
     RESPONSE=$(curl -s -X POST "https://nvbugsapi.nvidia.com/nvbugswebserviceapi/api/Bug/SaveBug" \
-        -H "Authorization: Bearer $NVAUTH_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$BUG_JSON")
+    -H "Authorization: Bearer $NVAUTH_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$BUG_JSON")
+    echo "RESPONSE: $RESPONSE"
     BUG_NUMBER=$(echo "$RESPONSE" | grep -o '"ReturnValue":[0-9]*' | cut -d':' -f2)
     echo "Successfully created NvBug: https://nvbugspro.nvidia.com/bug/$BUG_NUMBER"
 }
 
 EXIT_CODE=0
 
-# Check release branch regression
+# Check target branch regression
 if [[ $REGRESSION_CODE -eq 1 || $REGRESSION_CODE -eq 65 || $REGRESSION_CODE -eq 66 || $REGRESSION_CODE -eq 67 ]]; then
     EXIT_CODE=1
     if [[ $CREATE_NVBUG_ON_FAILURE -eq 1 ]]; then

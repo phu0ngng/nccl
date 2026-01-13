@@ -3295,8 +3295,8 @@ perf-regression-eos:
 perf-regression-cw-dfw:
   stage: perf_regression
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_REGRESSION == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_REGRESSION == "1")
+    #   when: always
     - when: never
   needs:
     - setup-cw-dfw
