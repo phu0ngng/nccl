@@ -71,15 +71,20 @@ list(APPEND LIBSRCFILES
 add_library(nccl SHARED)
 
 target_sources(nccl PRIVATE ${LIBSRCFILES})
+target_sources(nccl PRIVATE $<TARGET_OBJECTS:nccl_device>)
 
 # Include directories
-target_include_directories(nccl PUBLIC
+target_include_directories(nccl
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/device
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CMAKE_CURRENT_SOURCE_DIR}/include/os
-    ${CUDAToolkit_INCLUDE_DIRS}
     ${DOCA_HOME}/include
+    ${CUDAToolkit_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
     ${CMAKE_BINARY_DIR}/obj/include
 )
@@ -156,11 +161,9 @@ set_target_properties(nccl PROPERTIES
 # Link libraries
 target_link_libraries(nccl
     PRIVATE
-    nccl_device
-    pthread
-    rt
-    dl
-    ${CUDAToolkit_LIBRARIES}
+    Threads::Threads
+    ${CMAKE_DL_LIBS}
+    CUDA::cudart
     ${EXTRA_LIBS}
 )
 
@@ -179,8 +182,11 @@ set(RAS_BINSRCFILES ras/client.cc)
 
 add_executable(ncclras ${RAS_BINSRCFILES})
 
-target_include_directories(ncclras PUBLIC
-    ${CMAKE_BINARY_DIR}/include
+target_include_directories(ncclras
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE
     ${CUDAToolkit_INCLUDE_DIRS}
 )
 
@@ -189,8 +195,7 @@ add_dependencies(ncclras nccl_header)
 target_link_libraries(ncclras
     PRIVATE
     pthread
-    rt
-    dl
+    ${CMAKE_DL_LIBS}
 )
 
 # Set output directory for ncclras executable
@@ -200,15 +205,20 @@ set_target_properties(ncclras PROPERTIES
 
 ###################### Create a static NCCL library ############################
 add_library(nccl_static STATIC ${LIBSRCFILES})
+target_sources(nccl_static PRIVATE $<TARGET_OBJECTS:nccl_device>)
 
 # Include directories
-target_include_directories(nccl_static PUBLIC
+target_include_directories(nccl_static
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/device
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
     ${CMAKE_CURRENT_SOURCE_DIR}/include/os
-    ${CUDAToolkit_INCLUDE_DIRS}
     transport/net_ib/gdaki/doca-gpunetio/include
+    ${CUDAToolkit_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
     ${CMAKE_BINARY_DIR}/obj/include
 )
@@ -227,12 +237,10 @@ endif()
 
 # Link libraries
 target_link_libraries(nccl_static
-    PRIVATE
-    nccl_device
-    pthread
-    rt
-    dl
-    ${CUDAToolkit_LIBRARIES}
+    PUBLIC
+    Threads::Threads
+    ${CMAKE_DL_LIBS}
+    CUDA::cudart
     ${EXTRA_LIBS}
 )
 
@@ -247,4 +255,27 @@ set_target_properties(nccl_static PROPERTIES
 # Set output directory for nccl_static library
 set_target_properties(nccl_static PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)
+
+###################### Install targets / headers / pkg-config ############################
+install(TARGETS nccl nccl_static
+  EXPORT NCCLTargets
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+)
+
+# Install tools, but do not export them as linkable imported targets.
+install(TARGETS ncclras
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+
+# Install generated + copied public headers from the build tree.
+install(DIRECTORY "${CMAKE_BINARY_DIR}/include/"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+
+# Install pkg-config metadata generated during configure.
+install(FILES "${CMAKE_BINARY_DIR}/lib/pkgconfig/nccl.pc"
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
 )

@@ -24,6 +24,8 @@ set(ENV{NCCL_USE_CMAKE} "1")
 project(NCCL VERSION ${NCCL_MAJOR}.${NCCL_MINOR}.${NCCL_PATCH}
         LANGUAGES CUDA CXX C)
 
+include(GNUInstallDirs)
+
 # Make CMAKE_BUILD_TYPE to release by default if not set
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
@@ -76,6 +78,7 @@ else()
 endif()
 
 find_package(CUDAToolkit REQUIRED)
+find_package(Threads REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # CUDA version detection
@@ -193,7 +196,7 @@ if(RDMA_CORE)
     add_definitions(-DNCCL_BUILD_RDMA_CORE=1)
     find_library(VERBS_LIBRARY NAMES verbs)
     if(VERBS_LIBRARY)
-        list(APPEND EXTRA_LIBS ${VERBS_LIBRARY})
+        list(APPEND EXTRA_LIBS verbs)
     endif()
 endif()
 
@@ -201,7 +204,7 @@ if(MLX5DV)
     add_definitions(-DNCCL_BUILD_MLX5DV=1)
     find_library(MLX5_LIBRARY NAMES mlx5)
     if(MLX5_LIBRARY)
-        list(APPEND EXTRA_LIBS ${MLX5_LIBRARY})
+        list(APPEND EXTRA_LIBS mlx5)
     endif()
 endif()
 
@@ -223,7 +226,7 @@ endif()
 # Library dependencies
 find_library(RT_LIBRARY NAMES rt)
 if(RT_LIBRARY)
-    list(APPEND EXTRA_LIBS ${RT_LIBRARY})
+    list(APPEND EXTRA_LIBS rt)
 endif()
 
 # Debug/Release specific flags
@@ -280,3 +283,40 @@ if(EMIT_LLVM_IR)
     add_custom_target(nccl_with_ir ALL DEPENDS nccl llvm_ir)
     message(STATUS "LLVM IR generation will be included in default build")
 endif()
+
+###################### CMake package config for find_package(NCCL) ######################
+include(CMakePackageConfigHelpers)
+
+set(NCCL_CMAKE_CONFIG_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/NCCL")
+
+# Export installed targets (NCCL::nccl, NCCL::nccl_static)
+install(EXPORT NCCLTargets
+  FILE NCCLTargets.cmake
+  NAMESPACE NCCL::
+  DESTINATION "${NCCL_CMAKE_CONFIG_DIR}"
+)
+
+# Generate & install NCCLConfig.cmake / NCCLConfigVersion.cmake
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/NCCLConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/NCCLConfig.cmake"
+  INSTALL_DESTINATION "${NCCL_CMAKE_CONFIG_DIR}"
+)
+
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/NCCLConfigVersion.cmake"
+  VERSION "${PROJECT_VERSION}"
+  COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/NCCLConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/NCCLConfigVersion.cmake"
+  DESTINATION "${NCCL_CMAKE_CONFIG_DIR}"
+)
+
+# Also export targets for build-tree usage (optional convenience).
+export(EXPORT NCCLTargets
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/NCCLTargets.cmake"
+  NAMESPACE NCCL::
+)
