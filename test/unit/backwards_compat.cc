@@ -55,3 +55,42 @@ void ncclWindow_vidmem_backwards_compat_test() {
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclWindow_vidmem) == 72);
 }
+
+void ncclDevCommRequirements_backwards_compat_test() {
+  // To ensure backwards compatibility, edit this test only according to the instructions above.
+  static_assert(offsetof(ncclDevCommRequirements_t, size) == 0);
+  static_assert(offsetof(ncclDevCommRequirements_t, magic) == 8);
+  static_assert(offsetof(ncclDevCommRequirements_t, version) == 12);
+  static_assert(offsetof(ncclDevCommRequirements_t, resourceRequirementsList) == 16);
+  static_assert(offsetof(ncclDevCommRequirements_t, teamRequirementsList) == 24);
+  static_assert(offsetof(ncclDevCommRequirements_t, lsaMultimem) == 32);
+  static_assert(offsetof(ncclDevCommRequirements_t, barrierCount) == 36);
+  static_assert(offsetof(ncclDevCommRequirements_t, lsaBarrierCount) == 40);
+  static_assert(offsetof(ncclDevCommRequirements_t, railGinBarrierCount) == 44);
+  static_assert(offsetof(ncclDevCommRequirements_t, lsaLLA2ABlockCount) == 48);
+  static_assert(offsetof(ncclDevCommRequirements_t, lsaLLA2ASlotCount) == 52);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginForceEnable) == 56);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginContextCount) == 60);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginSignalCount) == 64);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginCounterCount) == 68);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclDevCommRequirements_t) == 72);
+}
+
+void ncclCommProperties_backwards_compat_test() {
+  // To ensure backwards compatibility, edit this test only according to the instructions above.
+  static_assert(offsetof(ncclCommProperties_t, size) == 0);
+  static_assert(offsetof(ncclCommProperties_t, magic) == 8);
+  static_assert(offsetof(ncclCommProperties_t, version) == 12);
+  static_assert(offsetof(ncclCommProperties_t, rank) == 16);
+  static_assert(offsetof(ncclCommProperties_t, nRanks) == 20);
+  static_assert(offsetof(ncclCommProperties_t, cudaDev) == 24);
+  static_assert(offsetof(ncclCommProperties_t, nvmlDev) == 28);
+  static_assert(offsetof(ncclCommProperties_t, deviceApiSupport) == 32);
+  static_assert(offsetof(ncclCommProperties_t, multimemSupport) == 33);
+  static_assert(offsetof(ncclCommProperties_t, ginType) == 34);
+
+  // This check prompts users to update the test. Edit according to the instructions above.
+  static_assert(sizeof(ncclCommProperties_t) == 40);
+}
