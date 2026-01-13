@@ -163,16 +163,20 @@ static void queryModel_gin(struct ncclComm* comm, ncclSymkKernelId k, size_t nBy
   *nBlocks = 0;
   switch (k) {
     case ncclSymkKernelId_AllGather_GinHier_MCRing: {
-        int requiredBlocks = (int)std::min(DIVUP(nBytes, railChunkSize), (size_t)ncclSymkMaxBlocks);
-        int factor = comm->compCap >= 100 ? 32 : 16;
-        int maxBlocks = DIVUP(factor, comm->nvlsResources->nHeads);
+        int nMaxBlocks = divUp((comm->cudaArch < 1000 ? 16 : 32), comm->nvlsResources->nHeads);
+        nMaxBlocks = std::min<int>(nMaxBlocks, comm->config.maxCTAs);
+        int nMinBlocks = comm->config.minCTAs;
+        int nUserCTAs = std::min<int>(ncclSymkMaxBlocks, ncclParamSymCTAs());
+        if (nUserCTAs > 0) nMinBlocks = nMaxBlocks = nUserCTAs;
+
+        int requiredBlocks = DIVUP(nBytes, railChunkSize);
         float intraBw = nvlinkBws[compCapIndex];
         float interBw = comm->minNetBw;
         float intraTime = (float)(nBytes * comm->nRanks) / intraBw;
         float interTime = (float)(nBytes * (rail.nRanks - 1)) / interBw;
         uint32_t steps = DIVUP(nBytes, railChunkSize) * (rail.nRanks - 1);
         *timeUs = steps * netLatency + std::max(intraTime, interTime);
-        *nBlocks = std::max(comm->config.minCTAs, std::min(comm->config.maxCTAs, std::min(requiredBlocks, maxBlocks)));
+        *nBlocks = std::max(nMinBlocks, std::min(nMaxBlocks, requiredBlocks));
         break;
       }
   default: break;
