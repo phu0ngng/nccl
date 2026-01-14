@@ -23,10 +23,10 @@ static const uint64_t CE_COLL_INTRA_BATCH_SYNC_MSG_THRESHOLD = 512*1024*1024;
 ncclResult_t ncclCeInit(struct ncclComm* comm) {
   ncclResult_t ret = ncclSuccess;
 
-  uint8_t* ceDevBase;
+  uint8_t* ceDevBase = nullptr;
   size_t ceDevBaseSize = alignUp(comm->nRanks*sizeof(uint32_t), 16) * 2;
-  ncclWindow_vidmem* ceWinDev;
-  ncclWindow_vidmem* ceWinDevHost;
+  ncclWindow_vidmem* ceWinDev = nullptr;
+  ncclWindow_vidmem* ceWinDevHost = nullptr;
 
   // Ensure symmetric memory runtime is initialized
   NCCLCHECKGOTO(ncclDevrInitOnce(comm), ret, fail);
@@ -50,6 +50,9 @@ ncclResult_t ncclCeInit(struct ncclComm* comm) {
 exit:
   return ret;
 fail:
+  // Clean up partial initialization - both functions handle null safely
+  ncclCommWindowDeregister(comm, ceWinDev);
+  ncclMemFree(ceDevBase);
   goto exit;
 }
 
@@ -62,21 +65,16 @@ ncclResult_t ncclCeFinalize(struct ncclComm* comm) {
     free(task);
   }
 
-  // Clean up CE resources
-  if (comm->ceColl.baseUCSymReadyPtr != NULL) {
-    if (comm->ceColl.ceSyncWin && comm->ceColl.ceSyncWin->vidmem) {
-      NCCLCHECKGOTO(ncclCommWindowDeregister(comm, comm->ceColl.ceSyncWin->vidmem), ret, fail);
-      NCCLCHECKGOTO(ncclMemFree(comm->ceColl.baseUCSymReadyPtr), ret, fail);
-    }
-    comm->ceColl.baseUCSymReadyPtr = NULL;
-    comm->ceColl.baseUCSymComplPtr = NULL;
-    comm->ceColl.ceSyncWin = NULL;
-  }
+  // Clean up CE resources - continue cleanup even on errors to avoid leaks
+  // Note: both functions handle null safely
+  NCCLCHECKIGNORE(ncclCommWindowDeregister(comm, comm->ceColl.ceSyncWin ? comm->ceColl.ceSyncWin->vidmem : nullptr), ret);
+  NCCLCHECKIGNORE(ncclMemFree(comm->ceColl.baseUCSymReadyPtr), ret);
 
-exit:
+  comm->ceColl.baseUCSymReadyPtr = nullptr;
+  comm->ceColl.baseUCSymComplPtr = nullptr;
+  comm->ceColl.ceSyncWin = nullptr;
+
   return ret;
-fail:
-  goto exit;
 }
 
 bool ncclCeImplemented(ncclFunc_t coll, int/*ncclDevRedOp_t*/ red, ncclDataType_t ty) {
