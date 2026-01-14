@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "p2p.h"
 #include "os.h"
+#include <memory>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +29,19 @@ template<typename T>
 constexpr size_t ncclSizeOfT() { return sizeof(T); }
 template<>
 constexpr size_t ncclSizeOfT<void>() { return 1; }
+
+// C++14-compatible wrapper that captures function pointers through template parameters.
+template <typename FunctionPtr, FunctionPtr Function>
+struct ncclDeleterWrapper {
+  template <typename... Args>
+  constexpr auto operator()(Args &&...args) const { return Function(std::forward<Args>(args)...); }
+}; // struct ncclDeleterWrapper
+
+using ncclDeleterFree = ncclDeleterWrapper<decltype(&std::free), std::free>;
+template <typename T>
+using ncclUniquePtr = std::unique_ptr<T, ncclDeleterFree>;
+template <typename T>
+using ncclUniqueArrayPtr = std::unique_ptr<T[], ncclDeleterFree>;
 
 #if CUDART_VERSION >= 12020
 
@@ -144,6 +158,23 @@ ncclResult_t ncclCallocDebug(T** ptr, size_t nelem, const char *filefunc, int li
   }
   return ncclSuccess;
 }
+
+template <typename T>
+ncclResult_t ncclCallocDebug(ncclUniquePtr<T>& ptr, size_t nelem, const char *filefunc, int line) {
+  typename ncclUniquePtr<T>::pointer p = nullptr;
+  ncclResult_t result = ncclCallocDebug(&p, nelem, filefunc, line);
+  ptr.reset(p);
+  return result;
+}
+
+template <typename T>
+ncclResult_t ncclCallocDebug(ncclUniqueArrayPtr<T>& ptr, size_t nelem, const char *filefunc, int line) {
+  typename ncclUniqueArrayPtr<T>::pointer p = nullptr;
+  ncclResult_t result = ncclCallocDebug(&p, nelem, filefunc, line);
+  ptr.reset(p);
+  return result;
+}
+
 #define ncclCalloc(...) ncclCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
 
 template <typename T>
