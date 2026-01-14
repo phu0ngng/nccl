@@ -197,3 +197,5 @@ add_custom_target(test_apitest
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/test/apitest
     COMMENT "Running apitest"
 )
+
+add_subdirectory(device_api)
