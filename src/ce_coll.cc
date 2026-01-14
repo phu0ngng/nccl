@@ -386,13 +386,17 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeCollArgs* 
       size_t chunkSize = comm->ceColl.intraBatchSyncMsgThreshold / params->numOps;
       int numRounds = (maxSize + chunkSize - 1) / chunkSize;
 
+      size_t numTmpOps = params->numOps * numRounds;
+
       // Allocate temporary arrays for all chunked operations
-      void** tmpDsts = nullptr;
-      void** tmpSrcs = nullptr;
-      size_t* tmpSizes = nullptr;
-      NCCLCHECKGOTO(ncclCalloc(&tmpDsts, params->numOps * numRounds), ret, fail);
-      NCCLCHECKGOTO(ncclCalloc(&tmpSrcs, params->numOps * numRounds), ret, fail);
-      NCCLCHECKGOTO(ncclCalloc(&tmpSizes, params->numOps * numRounds), ret, fail);
+      // Use ncclUniqueArrayPtr for automatic cleanup on any exit path
+      ncclUniqueArrayPtr<void*> tmpDsts{nullptr};
+      ncclUniqueArrayPtr<void*> tmpSrcs{nullptr};
+      ncclUniqueArrayPtr<size_t> tmpSizes{nullptr};
+
+      NCCLCHECKGOTO(ncclCalloc(tmpDsts, numTmpOps), ret, fail);
+      NCCLCHECKGOTO(ncclCalloc(tmpSrcs, numTmpOps), ret, fail);
+      NCCLCHECKGOTO(ncclCalloc(tmpSizes, numTmpOps), ret, fail);
 
       int opIdx = 0;
       for (int round = 0; round < numRounds; round++) {
@@ -416,19 +420,14 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeCollArgs* 
       if (opIdx > 0) {
         #if CUDART_VERSION >= 13000
         CUDACHECKGOTO(cudaMemcpyBatchAsync(
-          tmpDsts, tmpSrcs, tmpSizes, opIdx,
+          tmpDsts.get(), tmpSrcs.get(), tmpSizes.get(), opIdx,
           params->attrs, params->attrIdxs, params->numAttrs, stream), ret, fail);
         #else
         CUDACHECKGOTO(cudaMemcpyBatchAsync(
-          tmpDsts, tmpSrcs, tmpSizes, opIdx,
+          tmpDsts.get(), tmpSrcs.get(), tmpSizes.get(), opIdx,
           params->attrs, params->attrIdxs, params->numAttrs, nullptr, stream), ret, fail);
         #endif
       }
-
-      // Free temporary arrays
-      if (tmpDsts) free(tmpDsts);
-      if (tmpSrcs) free(tmpSrcs);
-      if (tmpSizes) free(tmpSizes);
     } else {
       // Use single batch for all operations
       #if CUDART_VERSION >= 13000
