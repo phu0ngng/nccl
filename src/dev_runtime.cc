@@ -6,6 +6,7 @@
 
 #include "dev_runtime.h"
 #include "comm.h"
+#include "nccl_device/core.h"
 #include "rma/rma.h"
 #include "device.h"
 #include "transport.h"
@@ -91,6 +92,7 @@ ncclResult_t ncclDevrInitOnce(struct ncclComm* comm) {
   for (int i=0; i < devr->lsaSize; i++) {
     devr->lsaRankList[i] = comm->rank + (i - devr->lsaSelf);
   }
+  devr->nLsaTeams = comm->nRanks / devr->lsaSize;
 
   CUmemAllocationProp memProp = {};
   memProp.type = CU_MEM_ALLOCATION_TYPE_PINNED;
@@ -1058,6 +1060,12 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   props->deviceApiSupport = comm->symmetricSupport;
   props->multimemSupport = comm->nvlsSupport;
   NCCLCHECK(getGlobalGinType(comm, &props->ginType));
+
+  // Preferring to call ncclDevrInitOnce directly instead to calling ncclTeam* functions because
+  // we can propagate the result of ncclDevrInitOnce back to the caller.
+  NCCLCHECK(ncclDevrInitOnce(comm));
+  props->nLsaTeams = comm->devrState.nLsaTeams;
+
   return ncclSuccess;
 }
 

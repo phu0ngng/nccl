@@ -90,6 +90,7 @@ void ncclCommProperties_backwards_compat_test() {
   static_assert(offsetof(ncclCommProperties_t, deviceApiSupport) == 32);
   static_assert(offsetof(ncclCommProperties_t, multimemSupport) == 33);
   static_assert(offsetof(ncclCommProperties_t, ginType) == 34);
+  static_assert(offsetof(ncclCommProperties_t, nLsaTeams) == 36);
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclCommProperties_t) == 40);
