@@ -783,6 +783,9 @@ ncclResult_t ncclGroupEndInternal(ncclSimInfo_t* simInfo) {
       if (simInfo) memcpy((void*)simInfo, (void*)internalSimInfoPtr, realSize);
       delete groupJob;
     }
+  } else {
+    // Free when not needed (single rank case)
+    delete groupJob;
   }
   /* Reset the job state for the next group call. */
   groupLocalResetJobState();
