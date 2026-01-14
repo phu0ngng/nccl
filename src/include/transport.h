@@ -54,6 +54,8 @@ struct ncclPeerInfo {
   nvmlGpuFabricInfoV_t fabricInfo;
   int cuMemSupport;
   int version;
+  ncclGinType_t supportedGinType;
+  bool crossNicSupport;
 };
 
 #define CONNECT_SIZE 256

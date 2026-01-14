@@ -249,6 +249,8 @@ fail:
 }
 
 static ncclResult_t ncclNetPluginAssignToComm(struct ncclComm* comm, int pluginIndex, bool* isAssigned) {
+  ncclResult_t ret = ncclSuccess;
+
   if (ncclSuccess != ncclNetCheckDeviceVersion(comm, netPluginLibs[pluginIndex].ncclNet, 0)) goto fail;
 
   if (netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateEnabled) {
@@ -264,6 +266,8 @@ static ncclResult_t ncclNetPluginAssignToComm(struct ncclComm* comm, int pluginI
     if (netPluginLibs[pluginIndex].ncclGinPluginState >= ncclNetPluginStateEnabled) {
       INFO(NCCL_INIT|NCCL_NET, "Assigned GIN plugin %s to comm", netPluginLibs[pluginIndex].ncclGin->name);
       comm->sharedRes->ginState.ncclGin = netPluginLibs[pluginIndex].ncclGin;
+
+      NCCLCHECKGOTO(setLocalGinType(comm), ret, fail);
     }
     if (netPluginLibs[pluginIndex].ncclRmaPluginState >= ncclNetPluginStateEnabled) {
       INFO(NCCL_INIT|NCCL_NET, "Assigned RMA plugin %s to comm", netPluginLibs[pluginIndex].ncclRma->name);
@@ -271,7 +275,7 @@ static ncclResult_t ncclNetPluginAssignToComm(struct ncclComm* comm, int pluginI
     }
   }
 exit:
-  return ncclSuccess;
+  return ret;
 fail:
   *isAssigned = false;
   netPluginLibs[pluginIndex].ncclNetPluginState = ncclNetPluginStateEnabled;
