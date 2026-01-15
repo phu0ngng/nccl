@@ -518,8 +518,8 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
   }
 
   int ginCommCount;
-  int64_t localNets[NCCL_TOPO_MAX_NODES];
-  NCCLCHECK(ncclTopoGetLocalNets(comm->topo, comm->rank, localNets, &rmaProxyState->ginCommCount));
+  int localNetDevs[NCCL_TOPO_MAX_NODES];
+  NCCLCHECK(ncclTopoGetLocalNets(comm, localNetDevs, &rmaProxyState->ginCommCount));
   ginCommCount = std::min<int>(rmaProxyState->ginCommCount, NCCL_GIN_MAX_CONTEXTS);
   ginCommCount = std::min<int>(ginCommCount, ndev);
 
@@ -551,7 +551,7 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
   for (int n = 0; n < ginCommCount; n++) {
     void* listenComm;
     NCCLCHECKGOTO(
-      rmaProxyState->ncclGin->listen(rmaProxyState->ginInstance, localNets[n],
+      rmaProxyState->ncclGin->listen(rmaProxyState->ginInstance, localNetDevs[n],
                                 allHandles + NCCL_NET_HANDLE_MAXSIZE * comm->rank, &listenComm),
       ret, fail);
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
@@ -559,7 +559,7 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
     NCCLCHECKGOTO(rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank,
                                              listenComm, rmaProxyState->ginComms + n),
                   ret, fail);
-    NCCLCHECKGOTO(rmaProxyState->ncclGin->getProperties(localNets[n], &rmaProxyState->props[n]), ret, fail);
+    NCCLCHECKGOTO(rmaProxyState->ncclGin->getProperties(localNetDevs[n], &rmaProxyState->props[n]), ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->closeListen(listenComm), ret, fail);
   }
   free(handles);
