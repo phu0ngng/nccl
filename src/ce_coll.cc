@@ -215,14 +215,14 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, struct ncclCeCollArgs* args, c
   // Allocate enough slots for all possible ops
   size_t batchSize = (comm->nvlsSupport ? NCCL_CE_SYNC_OPS_PER_RANK_MC : NCCL_CE_SYNC_OPS_PER_RANK_UC) * comm->nRanks;
   size_t opIdx = 0;
-
-  // Prepare batch memory operations for synchronization
   CUstreamBatchMemOpParams* batchParams = nullptr;
-  NCCLCHECKGOTO(ncclCalloc(&batchParams, batchSize), ret, fail);
 
   // Start CE sync profiling
   NCCLCHECKGOTO(ncclProfilerStartCeSyncEvent(comm, args, stream, &ceSyncHandle),
                 ret, fail);
+
+  // Prepare batch memory operations for synchronization
+  NCCLCHECKGOTO(ncclCalloc(&batchParams, batchSize), ret, fail);
 
   if (comm->nvlsSupport) {
     NCCLCHECKGOTO(ncclPrepMCSync(comm, comm->ceColl.useCompletePtr, batchParams, &opIdx, stream), ret, fail);
@@ -248,11 +248,9 @@ ncclResult_t ncclMemOpSync(struct ncclComm* comm, struct ncclCeCollArgs* args, c
   // Toggle the flag for next call
   comm->ceColl.useCompletePtr = !comm->ceColl.useCompletePtr;
 
-  // Stop CE sync profiling
-  NCCLCHECKGOTO(ncclProfilerStopCeSyncEvent(comm, ceSyncHandle, stream),
-                ret, fail);
-
 exit:
+  // Stop CE sync profiling - always attempt if started, even on error
+  ncclProfilerStopCeSyncEvent(comm, ceSyncHandle, stream);
   if (batchParams) free(batchParams);
   return ret;
 fail:
@@ -331,19 +329,17 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeCollArgs* 
   int driverVersion;
   void* ceBatchHandle = NULL;
 
+  // Start CE batch profiling
+  NCCLCHECKGOTO(ncclProfilerStartCeBatchEvent(comm, args, params, stream, &ceBatchHandle),
+                ret, fail);
+
   // Check if there are any operations to perform
-  if (params->numOps == 0) {
-    return ncclSuccess;
-  }
+  if (params->numOps == 0) goto exit;
 
   // Check if we are in a CUDA graph capture
   capturing = ncclCudaGraphValid(comm->planner.capturingGraph);
 
   NCCLCHECKGOTO(ncclCudaDriverVersion(&driverVersion), ret, fail);
-
-  // Start CE batch profiling
-  NCCLCHECKGOTO(ncclProfilerStartCeBatchEvent(comm, args, params, stream, &ceBatchHandle),
-                ret, fail);
 
   //--------------Graph capture--------------
   // cudaMemcpyBatchAsync is not supported during CUDA graph capture
@@ -458,11 +454,9 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeCollArgs* 
     }
   }
 
-  // Stop CE batch profiling
-  NCCLCHECKGOTO(ncclProfilerStopCeBatchEvent(comm, ceBatchHandle, stream),
-                ret, fail);
-
 exit:
+  // Stop CE batch profiling - always attempt if started, even on error
+  ncclProfilerStopCeBatchEvent(comm, ceBatchHandle, stream);
   return ret;
 fail:
   goto exit;
@@ -712,11 +706,9 @@ ncclResult_t ncclLaunchCeColl(struct ncclComm* comm, struct ncclKernelPlan* plan
       ret = ncclInvalidUsage;
   }
 
-  // Stop CE collective profiling
-  NCCLCHECKGOTO(ncclProfilerStopCeCollEvent(comm, args, stream),
-                ret, fail);
-
 exit:
+  // Stop CE collective profiling - always attempt if started, even on error
+  ncclProfilerStopCeCollEvent(comm, args, stream);
   return ret;
 fail:
   goto exit;
