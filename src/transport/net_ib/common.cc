@@ -39,8 +39,6 @@ struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, in
   }
 }
 
-#define NCCL_IB_RECV_WR_ID_DUMMY UINT64_MAX
-
 ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend) {
   for (int i = 0; i < NCCL_IB_MAX_QPS; i++) {
     baseComm->qps[i].devIndex= -1;

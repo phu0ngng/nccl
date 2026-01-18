@@ -180,7 +180,6 @@ struct ncclIbRequest {
       int size;
       void* data;
       uint32_t lkeys[NCCL_IB_MAX_DEVS_PER_NIC];
-      int offset;
     } send;
     struct {
       int* sizes;
@@ -406,6 +405,8 @@ struct alignas(16) ncclIbRecvCommDev {
   // in which the CTS message formatted on the receiver is placed.
   struct ibv_sge sge;
 };
+
+#define NCCL_IB_RECV_WR_ID_DUMMY UINT64_MAX
 
 struct ncclIbRecvComm {
   struct ncclIbNetCommBase base;

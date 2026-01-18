@@ -19,39 +19,6 @@ NCCL_PARAM(IbTc, "IB_TC", -1);
 NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
 NCCL_PARAM(IbEceEnable,"IB_ECE_ENABLE",1);
 
-// Per-QP connection metatdata
-struct ncclIbQpInfo {
-  uint32_t qpn;
-
-  // Fields needed for ece (enhanced connection establishment)
-  struct ibv_ece ece;
-  int ece_supported;
-  int devIndex;
-};
-
-// Structure used to hold information needed to establish the communication
-// between the sender and receiver.
-// The structure is populated during the connection establishment phase and
-// populated by each side of the connection before being sent to the remote
-// peer. The remote peer uses the information passed to it from its peer to
-// create and initialize its local resources.
-struct ncclIbConnectionMetadata {
-  struct ncclIbQpInfo qpInfo[NCCL_IB_MAX_QPS];
-  struct ncclIbDevInfo devs[NCCL_IB_MAX_DEVS_PER_NIC];
-  char devName[MAX_MERGED_DEV_NAME];
-  // An address for a registered memory to be accessed by the peer. The address
-  // can be accessed using RDMA using the key specified in ncclIbDevInfo::rkey.
-  // The sender side gets in this member, from the receiver, the address of the
-  // memory to which the sender writes the sizes of the data transfers that
-  // the sender sends.
-  // The receiver side gets in this member, from the sender, the address of the
-  // memory to which the receiver writes the CTS messages.
-  uint64_t addr;
-  int ndevs;
-  int tc;
-  int sl;
-};
-
 enum ncclIbCommState {
   ncclIbCommStateStart = 0,
   ncclIbCommStateConnect = 1,
@@ -389,28 +356,28 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint
   } else {
     //pick lid if subnet prefixs are same, FLID if they are not
     if (ncclIbExtractLocalSubnetPrefix(sGidInfo->localGid.global.subnet_prefix) ==
-		    ncclIbExtractLocalSubnetPrefix(info->gid.global.subnet_prefix)) {
-        qpAttr.ah_attr.is_global = 0;
-        qpAttr.ah_attr.dlid = info->lid;
+        ncclIbExtractLocalSubnetPrefix(info->gid.global.subnet_prefix)) {
+      qpAttr.ah_attr.is_global = 0;
+      qpAttr.ah_attr.dlid = info->lid;
     } else {
-	uint16_t flid = ncclIbExtractFlid(&info->gid);
-        if (flid == 0) {
-          WARN("Warning: remote FLID configured as zero even when endpoints are on different subnets, using dlid as fallback");
-          qpAttr.ah_attr.dlid = info->lid;
-	} else {
-          qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
-	}
-        qpAttr.ah_attr.is_global = 1;
-        qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
-        qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
-        qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
-	qpAttr.ah_attr.grh.hop_limit = 255;
+      uint16_t flid = ncclIbExtractFlid(&info->gid);
+      if (flid == 0) {
+        WARN("Warning: remote FLID configured as zero even when endpoints are on different subnets, using dlid as fallback");
+        qpAttr.ah_attr.dlid = info->lid;
+      } else {
+        qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
+      }
+      qpAttr.ah_attr.is_global = 1;
+      qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
+      qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
+      qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
+      qpAttr.ah_attr.grh.hop_limit = 255;
     }
   }
   qpAttr.ah_attr.sl = sl;
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = info->ib_port;
-  TRACE(NCCL_NET, "NET/IB : ncclIbRtrQp qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", qp->qp_num, info->mtu, dest_qp_num, info->link_layer, info->ib_port, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
+  TRACE(NCCL_NET, "NET/IB: %s: qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", __func__, qp->qp_num, qpAttr.path_mtu, qpAttr.dest_qp_num, info->link_layer, qpAttr.ah_attr.port_num, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
   return ncclSuccess;
 }
@@ -516,7 +483,7 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
 // Note that if ECE is supported, the function sets up the reduced ECE (which
 // was delivered from the receiver side) on the QPs before modifying the QPs
 // to RTR.
-static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, int dev, struct ncclIbConnectionMetadata* remMeta) {
+static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, struct ncclIbConnectionMetadata* remMeta) {
   uint nqps = comm->base.nqps;
   for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
     ncclIbQp* localQp = &comm->base.qps[qpIndex];
@@ -749,7 +716,7 @@ ib_connect:
     comm->devs[i].sge.lkey = comm->devs[i].cmplsRecordsMr->lkey;
   }
 
-  NCCLCHECKGOTO(ncclIbSenderQpsToRts(comm, dev, &remMeta), ret, fail);
+  NCCLCHECKGOTO(ncclIbSenderQpsToRts(comm, &remMeta), ret, fail);
 
   comm->base.ready = 1;
   stage->state = ncclIbCommStateConnected;
@@ -885,6 +852,43 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
       NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
     }
   }
+
+  if (rComm->flushEnabled) {
+    for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
+      ncclIbRecvCommDev* rCommDev = &rComm->devs[i];
+      ncclIbDev* ibDev = &ncclIbDevs[rCommDev->base.ibDevN];
+
+      struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+      qpCreateAttrs.type = IBV_QPT_RC;
+      qpCreateAttrs.ibPort = ibDev->portNum;
+      qpCreateAttrs.cq = rCommDev->base.cq;
+      qpCreateAttrs.pd = rCommDev->base.pd;
+      qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ;
+      qpCreateAttrs.maxRecvWorkRequest = 0;
+      qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
+      NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp));
+      INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
+          __func__,
+          ibDev->portNum, 
+          rCommDev->base.ibDevN, 
+          ncclIbDevs[rCommDev->base.ibDevN].devName, 
+          ncclNIbDevs, 
+          ncclNMergedIbDevs, 
+          rCommDev->gpuFlush.qp.qp->qp_num, 
+          (uint16_t)ncclParamIbPkey(),
+          rCommDev->base.pd);
+      struct ncclIbDevInfo devInfo;
+      devInfo.lid         = ibDev->portAttr.lid;
+      devInfo.link_layer  = ibDev->portAttr.link_layer;
+      devInfo.ib_port     = ibDev->portNum;
+      devInfo.gid.global.subnet_prefix        = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
+      devInfo.gid.global.interface_id         = rCommDev->base.gidInfo.localGid.global.interface_id;
+      devInfo.mtu         = ibDev->portAttr.active_mtu;
+      NCCLCHECK(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, &rCommDev->base.gidInfo, rCommDev->gpuFlush.qp.qp->qp_num, &devInfo, false, remMeta->tc, remMeta->sl));
+      NCCLCHECK(ncclIbRtsQp(rCommDev->gpuFlush.qp.qp));
+    }
+  }
+
   return ncclSuccess;
 }
 
@@ -1044,6 +1048,11 @@ ib_recv:
     rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
     rComm->base.remDevs[i].remoteGid.global.subnet_prefix = rComm->base.remDevs[i].gid.global.subnet_prefix;
   }
+  
+  // Determine if Flush is enabled for this Comm. Must be done before creating
+  // QPs. If Flush is enabled, extra QPs will be created for Flush operations.
+  rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
+                            && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
 
   NCCLCHECKGOTO(ncclIbReceiverQpsCreateToRts(rComm, &remMeta, &meta), ret, fail);
   if (rComm->prepostReceiveWorkRequests) {
@@ -1069,9 +1078,6 @@ ib_recv:
   }
   if (ncclParamIbUseInline()) rComm->remCtsFifo.flags = IBV_SEND_INLINE;
 
-  rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)
-                            && (ncclParamIbGdrFlushDisable() == 0)) ? 1 : 0;
-
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
     ibDev = ncclIbDevs + rCommDev->base.ibDevN;
@@ -1082,35 +1088,6 @@ ib_recv:
       rCommDev->gpuFlush.sge.addr = (uint64_t)&rComm->gpuFlushHostMem;
       rCommDev->gpuFlush.sge.length = 1;
       rCommDev->gpuFlush.sge.lkey = rCommDev->gpuFlush.hostMr->lkey;
-
-      struct ncclIbQpCreateAttr qpCreateAttrs = {0};
-      qpCreateAttrs.type = IBV_QPT_RC;
-      qpCreateAttrs.ibPort = ibDev->portNum;
-      qpCreateAttrs.cq = rCommDev->base.cq;
-      qpCreateAttrs.pd = rCommDev->base.pd;
-      qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ;
-      qpCreateAttrs.maxRecvWorkRequest = 0;
-      qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
-      NCCLCHECKGOTO(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp), ret, fail);
-      INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
-          __func__,
-          ibDev->portNum, 
-          rCommDev->base.ibDevN, 
-          ncclIbDevs[rCommDev->base.ibDevN].devName, 
-          ncclNIbDevs, 
-          ncclNMergedIbDevs, 
-          rCommDev->gpuFlush.qp.qp->qp_num, 
-          (uint16_t)ncclParamIbPkey(),
-          rCommDev->base.pd);
-      struct ncclIbDevInfo devInfo;
-      devInfo.lid         = ibDev->portAttr.lid;
-      devInfo.link_layer  = ibDev->portAttr.link_layer;
-      devInfo.ib_port     = ibDev->portNum;
-      devInfo.gid.global.subnet_prefix        = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
-      devInfo.gid.global.interface_id         = rCommDev->base.gidInfo.localGid.global.interface_id;
-      devInfo.mtu         = ibDev->portAttr.active_mtu;
-      NCCLCHECKGOTO(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, &rCommDev->base.gidInfo, rCommDev->gpuFlush.qp.qp->qp_num, &devInfo, false, remMeta.tc, remMeta.sl), ret, fail);
-      NCCLCHECKGOTO(ncclIbRtsQp(rCommDev->gpuFlush.qp.qp), ret, fail);
     }
 
     // Fill Handle

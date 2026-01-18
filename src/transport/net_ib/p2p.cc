@@ -87,6 +87,9 @@ static ncclResult_t ncclIbPrintWr(struct ibv_send_wr* wr, char* wrStr) {
 }
 #endif // ENABLE_TRACE
 
+// The alignment for IB writes that is required to make LL and LL128 protocols work
+#define IB_WRITE_CHUNK_ALIGNMENT 128
+
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   struct ncclIbRequest** reqs = comm->sendReqs[slot];
   volatile struct ncclIbSendFifo* slots = comm->ctsFifo[slot];
@@ -95,6 +98,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 
   INFO(NCCL_NET, "NET/IB: %s: Posting a send request (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d)", __func__, reqs[0], reqs[0]->base, reqs[0]->id, slot, nreqs);
 
+  int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
   uint64_t wr_id = 0ULL;
   for (int r=0; r<nreqs; r++) {
     struct ibv_send_wr* wr = comm->wrs+r;
@@ -110,6 +114,16 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 #ifdef NCCL_ENABLE_NET_PROFILING
     reqs[r]->pInfo[0].nEventHandles = 0;
 #endif
+  
+    // Every request is chunked equally across all QPs that are used to transfer
+    // the request (in case of a single QP, the chunk is the size of the request).
+    // The chunk size of each request determined solely by the send size and the
+    // number of QPs used to transfer the request. If the send size is not big
+    // enough, starting from some QP there might be no data left to send and the
+    // length will be zeroed.
+    sge->length = DIVUP(DIVUP(reqs[r]->send.size, nqps), IB_WRITE_CHUNK_ALIGNMENT) * IB_WRITE_CHUNK_ALIGNMENT;
+    wr->sg_list = sge;
+    wr->num_sge = 1;
   }
 
   // For ID-based matching scheme, immData carries the request ID.
@@ -120,10 +134,6 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   //      Send size is still sent but receiver ignores it since the sizes are
   //      written to directly to remote completion records array
   uint32_t immData = ncclParamIbReceiverSideMatchingScheme() == BY_ID ? reqs[0]->id : reqs[0]->send.size;
-  if (nreqs > 1) {
-    int* sizes = comm->remCmplsRecords.elems[slot];
-    for (int r=0; r<nreqs; r++) sizes[r] = reqs[r]->send.size;
-  }
 
   struct ibv_send_wr* lastWr = comm->wrs+nreqs-1;
   if (nreqs > 1 || (comm->ar && reqs[0]->send.size > ncclParamIbArThreshold())) {
@@ -143,9 +153,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
   lastWr->next = NULL;
   lastWr->send_flags = IBV_SEND_SIGNALED;
 
-  // Multi-QP: make sure IB writes are multiples of 128B so that LL and LL128 protocols still work
-  const int align = 128;
-  int nqps = ncclIbCommBaseGetNqpsPerRequest(&comm->base);
+  uint32_t sendOffsets[NCCL_NET_IB_MAX_RECVS] = {0};
   int qpIndex = -1;
   ncclIbQp* qp = NULL;
   for (int i = 0; i < nqps; i++) {
@@ -158,17 +166,13 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       // Select proper rkey (needed even for 0-size send)
       comm->wrs[r].wr.rdma.rkey = slots[r].rkeys[qp->remDevIdx];
 
-      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, nqps), align) * align;
-      int length = std::min(reqs[r]->send.size-reqs[r]->send.offset, chunkSize);
-      if (length <= 0) {
-        comm->wrs[r].sg_list = NULL;
+      // Check the data left to send. If the send is too small, it might be
+      // that on the current QP there is no data left to be sent.
+      comm->wrs[r].sg_list->length = std::min(reqs[r]->send.size-sendOffsets[r], comm->wrs[r].sg_list->length);
+      if (comm->wrs[r].sg_list->length == 0) {
         comm->wrs[r].num_sge = 0;
       } else {
-        // Select proper lkey
-        comm->sges[r].lkey = reqs[r]->send.lkeys[devIndex];
-        comm->sges[r].length = length;
-        comm->wrs[r].sg_list = comm->sges+r;
-        comm->wrs[r].num_sge = 1;
+        comm->wrs[r].sg_list->lkey = reqs[r]->send.lkeys[devIndex];
       }
     }
 
@@ -220,11 +224,12 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 #endif // ENABLE_TRACE
     NCCLCHECK(wrap_ibv_post_send(qp->qp, comm->wrs, &bad_wr));
 
+    // Update the send offset and addresses for the next QP according to the
+    // actual data size that was sent on the current QP, for every request
     for (int r=0; r<nreqs; r++) {
-      int chunkSize = DIVUP(DIVUP(reqs[r]->send.size, nqps), align) * align;
-      reqs[r]->send.offset += chunkSize;
-      comm->sges[r].addr += chunkSize;
-      comm->wrs[r].wr.rdma.remote_addr += chunkSize;
+      sendOffsets[r] = std::min<uint32_t>(sendOffsets[r] + comm->wrs[r].sg_list->length, reqs[r]->send.size);
+      comm->wrs[r].sg_list->addr += comm->wrs[r].sg_list->length;
+      comm->wrs[r].wr.rdma.remote_addr += comm->wrs[r].sg_list->length;
     }
   }
 
@@ -280,7 +285,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     req->nreqs = nreqs;
     req->send.size = size;
     req->send.data = data;
-    req->send.offset = 0;
 #ifdef NCCL_ENABLE_NET_PROFILING
     req->pInfo[0].pHandle = phandle;
 #endif
@@ -299,6 +303,11 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
       req->send.lkeys[i] = mhandleWrapper->mrs[i]->lkey;
     }
 
+    // In case the sender will write the size of the send directly to the
+    // receiver's memory, prepare the source buffer which will hold the sizes
+    // and be sent to the receiver.
+    comm->remCmplsRecords.elems[slot][r] = req->send.size;
+
     INFO(NCCL_NET, "NET/IB: %s: Send request created (req=%p, comm=%p, id=%d, slot=%d, reqIdx=%d, nreqs=%d, tag=%x, size=%ld, data=0x%016" PRIx64 ", mhandle=%p, size=%ld, )", __func__, req, req->base, req->id, slot, r, nreqs, tag, size, (uint64_t)data, mhandle, size);
 
     *request = reqs[r] = req;
@@ -311,9 +320,6 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
     TIME_START(0);
     NCCLCHECK(ncclIbMultiSend(comm, slot));
 
-    // Clear slots[0]->nreqs, as well as other fields to help debugging and sanity checks
-    memset((void*)slots, 0, sizeof(struct ncclIbSendFifo));
-    memset(reqs, 0, NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbRequest*));
     comm->base.fifoHead++;
     TIME_STOP(0);
     return ncclSuccess;
@@ -323,32 +329,12 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, size_t* sizes, int* tags, void** mhandles, struct ncclIbRequest* req) {
-  struct ibv_send_wr wr;
-  memset(&wr, 0, sizeof(wr));
-
-  int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
-  req->recv.aggSize = 0;
-  req->recv.sizes = comm->cmplsRecords[slot];
-  memset(req->recv.sizes, 0, sizeof(int)*n);
-  struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
-
+ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, struct ncclIbRequest* req, int slot) {
   ncclIbQp* ctsQp = NULL;;
   NCCLCHECK(ncclIbRecvCommGetQpForCts(comm, req->id, &ctsQp));
 
-  for (int i=0; i<n; i++) {
-    localElem[i].addr = (uint64_t)data[i];
-    struct ncclIbMrHandle* mhandleWrapper = (struct ncclIbMrHandle*) mhandles[i];
-
-    // Send all applicable rkeys
-    for (int j = 0; j < comm->base.vProps.ndevs; j++)
-      localElem[i].rkeys[j] = mhandleWrapper->mrs[j]->rkey;
-
-    localElem[i].nreqs = n;
-    localElem[i].size = sizes[i]; // Sanity/Debugging
-    localElem[i].tag = tags[i];
-    localElem[i].idx = comm->base.fifoHead+1;
-  }
+  struct ibv_send_wr wr;
+  memset(&wr, 0, sizeof(wr));
   wr.wr.rdma.remote_addr = comm->remCtsFifo.addr + slot*NCCL_NET_IB_MAX_RECVS*sizeof(struct ncclIbSendFifo);
 
   // Lookup the correct rkey
@@ -356,9 +342,10 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
 
   // Populating the correct gather information based on the device and user
   // provided information
+  struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
   wr.sg_list = &(comm->devs[ctsQp->devIndex].sge);
   wr.sg_list[0].addr = (uint64_t)localElem;
-  wr.sg_list[0].length = n*sizeof(struct ncclIbSendFifo);
+  wr.sg_list[0].length = req->nreqs*sizeof(struct ncclIbSendFifo);
   wr.num_sge = 1;
 
   wr.opcode = IBV_WR_RDMA_WRITE;
@@ -390,14 +377,12 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, siz
   if (slot == ctsQp->devIndex) {
     wr.send_flags |= IBV_SEND_SIGNALED;
     wr.wr_id = req - comm->base.reqs;
-    ncclIbAddEvent(req, ctsQp->devIndex);
   }
 
   INFO(NCCL_NET, "NET/IB: %s: Posting a CTS (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d, qp_num=%d)", __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qp->qp_num);
 
   struct ibv_send_wr* bad_wr;
   NCCLCHECK(wrap_ibv_post_send(ctsQp->qp, &wr, &bad_wr));
-  comm->base.fifoHead++;
 
   INFO(NCCL_NET, "NET/IB: %s: CTS posted (req=%p, comm=%p, id=%d, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d)", __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags);
 
@@ -416,6 +401,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
 
   struct ncclIbRequest* req;
   NCCLCHECK(ncclIbGetRequest(&comm->base, &req));
+  int slot = comm->base.fifoHead % NET_IB_MAX_REQUESTS;
   req->id = (uint32_t)(comm->base.fifoHead % UINT32_MAX);
   req->type = NCCL_NET_IB_REQ_RECV;
   req->sock = &comm->base.sock;
@@ -460,12 +446,29 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
     }
 #endif
   }
-
   TIME_STOP(1);
+
+  req->recv.aggSize = 0;
+  req->recv.sizes = comm->cmplsRecords[slot];
+  memset(req->recv.sizes, 0, sizeof(int)*n);
+  struct ncclIbSendFifo* localElem = comm->remCtsFifo.elems[slot];
+  for (int i=0; i<n; i++) {
+    localElem[i].addr = (uint64_t)data[i];
+    struct ncclIbMrHandle* mhandleWrapper = (struct ncclIbMrHandle*) mhandles[i];
+    // Send all applicable rkeys
+    for (int j = 0; j < comm->base.vProps.ndevs; j++) {
+      localElem[i].rkeys[j] = mhandleWrapper->mrs[j]->rkey;
+    }
+    localElem[i].nreqs = n;
+    localElem[i].size = sizes[i]; // Sanity/Debugging
+    localElem[i].tag = tags[i];
+    localElem[i].idx = comm->base.fifoHead+1;
+  }
 
   // Post to FIFO to notify sender
   TIME_START(2);
-  NCCLCHECK(ncclIbPostFifo(comm, n, data, sizes, tags, mhandles, req));
+  NCCLCHECK(ncclIbPostFifo(comm, req, slot));
+  comm->base.fifoHead++;
   TIME_STOP(2);
 
   *request = req;
@@ -525,15 +528,6 @@ static int getReqQpIndex(struct ncclIbRequest* req, int request, int qpNumber) {
 }
 #endif
 
-static inline ncclResult_t ncclIbRequestRetrieveAsIndex(ncclIbRequest* reqs, uint32_t reqIndex, ncclIbRequest** req) {
-  if (reqIndex < 0 || reqIndex >= NET_IB_MAX_REQUESTS) {
-    WARN("NET/IB: %s: Invalid request index %d. Not in the range [%d, %d). Cannot retrieve request.", __func__, reqIndex, 0, NET_IB_MAX_REQUESTS);
-    return ncclInternalError;
-  }
-  *req = &reqs[reqIndex];
-  return ncclSuccess;
-}
-
 static inline ncclResult_t ncclIbRequestRetrieveFromCompletion(struct ncclIbNetCommBase* base, ibv_wc* wc, ncclIbRequest** req) {
   assert(req != NULL);
   assert(wc != NULL);
@@ -576,14 +570,19 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
 #endif
     }
   }
-  if (sizes && r->type == NCCL_NET_IB_REQ_SEND) {
+  if (r->type == NCCL_NET_IB_REQ_SEND) {
     TRACE(NCCL_NET, "NET/IB: %s: Send request completed (req=%p, comm=%p, id=%d)", __func__, r, r->base, r->id);
-    sizes[0] = r->send.size;
-#ifdef NCCL_ENABLE_NET_PROFILING
-    for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
-      NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
+    if (sizes) {
+      sizes[0] = r->send.size;
+  #ifdef NCCL_ENABLE_NET_PROFILING
+      for (int j = 0; j < r->pInfo[0].nEventHandles; j++) {
+        NCCLCHECK(ncclProfilerFunction(&r->pInfo[0].qpEventHandles[j], ncclProfilerNetEventStop, NULL, 0, NULL));
+      }
+  #endif
     }
-#endif
+    int slot = r->id % NET_IB_MAX_REQUESTS;
+    struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)r->base;
+    memset(&sendComm->sendReqs[slot], 0, sizeof(sendComm->sendReqs[slot]));
   }
   // Stop all remaining Qp events for this event
   NCCLCHECK(ncclIbFreeRequest(r));
@@ -664,8 +663,10 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         ncclIbCommBaseGetQpByQpNum(commBase, devIndex, wc->qp_num, &qp, NULL);
         ncclIbPostRecvWorkRequest(qp->qp, &recvComm->ibRecvWorkRequest);
       }
+      req->events[devIndex]--;
     } else if (req && req->type == NCCL_NET_IB_REQ_FLUSH) {
       INFO(NCCL_NET, "NET/IB: %s: Got completion for a flush request (req=%p, comm=%p, id=%d, devIndex=%d)", __func__, req, req->base, req->id, devIndex);
+      req->events[devIndex]--;
     } else if (req && wc->opcode == IBV_WC_RDMA_WRITE) {
       // This is a CTS completion
       INFO(NCCL_NET, "NET/IB: %s: Got completion for a CTS (req=%p, comm=%p, id=%d, devIndex=%d)", __func__, req, req->base, req->id, devIndex);
@@ -673,7 +674,6 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
       WARN("NET/IB: %s: Unknown completion (req=%p, comm=%p, id=%d, devIndex=%d, opcode=%d)", __func__, req, commBase, req ? req->id : -1, devIndex, wc->opcode);
       return ncclInternalError;
     }
-    req->events[devIndex]--;
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Stop Qp event for workFifo
     for (int j = 0; j < req->nreqs; j++) {
