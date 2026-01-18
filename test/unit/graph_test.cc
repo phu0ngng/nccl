@@ -694,7 +694,9 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     printf(" %s %5ld ms\n", (err || warn) ? "FAILED" : "  WARN", computeTime[TIME_TOTL] / 1000);
     printf("Dumping computed graph to %s\n", dumpFile);
   } else if (computeTime[TIME_TOTL] > 1e6) {
-    bool tooSlow = computeTime[TIME_TOTL] > 5e6;
+    const char* timeoutStr = getenv("NCCL_GRAPH_TEST_WARN_TIMEOUT");
+    double tooSlowThreshold = (timeoutStr ? atof(timeoutStr) : 5.0) * 1e6;
+    bool tooSlow = computeTime[TIME_TOTL] > tooSlowThreshold;
     printf("   %sSLOW %5ld ms (ring: %ld ms + tree: %ld ms + collNet: %ld ms + nvls %ld ms)\n", tooSlow ? "TOO " : "",\
            computeTime[TIME_TOTL] / 1000, \
            computeTime[TIME_RING] / 1000, computeTime[TIME_TREE] / 1000, computeTime[TIME_CNET] / 1000, computeTime[TIME_NVLS] / 1000);
