@@ -51,7 +51,13 @@ foreach(TEST_SOURCE ${UNIT_TEST_SOURCES})
     target_include_directories(${TEST_NAME}
         PRIVATE
         ${CMAKE_BINARY_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/src/include/plugin
+        ${CMAKE_SOURCE_DIR}/src/include/os
+        ${CMAKE_SOURCE_DIR}/src/device
         ${CMAKE_SOURCE_DIR}/src/graph/
+        ${CUDAToolkit_INCLUDE_DIRS}
+        ${CUDAToolkit_INCLUDE_DIRS}/cccl
     )
     set_target_properties(${TEST_NAME} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/unit
