@@ -3,7 +3,7 @@
 
 ## Abstract
 
-The ReduceCopy API provides 33 device-side functions for reduce, copy (broadcast), and combined reduce-copy operations in NCCL, simplifying custom kernel development while maintaining flexibility and performance.
+The ReduceCopy API provides 39 device-side functions for reduce, copy (broadcast), and combined reduce-copy operations in NCCL, simplifying custom kernel development while maintaining flexibility and performance.
 
 ### Key Features
 
@@ -102,7 +102,7 @@ However, that version is not part of the API, since we want the memory explictly
 
 Note: Memory model (LSA/Multimem) is explicit in API signatures despite similar internal optimization patterns.
 
-#### API Structure (33 Total Functions)
+#### API Structure (39 Total Functions)
 
 **Series 1.x - Generic ReduceCopy** (2 functions)
 - Custom reduction operations via explicit `RedOp` parameter
@@ -115,14 +115,14 @@ Note: Memory model (LSA/Multimem) is explicit in API signatures despite similar 
 - All LSA/Multimem combinations
 - Foundation for convenience APIs
 
-**Series 3.x - ReduceSum** (8 functions)
-- N->1 reduction: LSA (4 variations), Multimem (2), Local (2)
+**Series 3.x - ReduceSum** (10 functions)
+- N->1 reduction: LSA (5 variations), Multimem (3), Local (2)
 
-**Series 4.x - Copy (Broadcast)** (8 functions)
+**Series 4.x - Copy (Broadcast)** (10 functions)
 - 1->N copy: Same structure as ReduceSum for consistency
 
-**Series 5.x - ReduceSumCopy** (11 functions)
-- N->M combined: LSA (4), Multimem (2), Mixed (4), Local (1)
+**Series 5.x - ReduceSumCopy** (13 functions)
+- N->M combined: LSA (5), Multimem (3), Mixed (4), Local (1)
 
 ### Interface Architecture
 
@@ -133,12 +133,12 @@ template<
   typename T,              // Element type (float, half, int, etc.)
   typename Coop,           // Cooperation level (ncclCoopCta, ncclCoopThread)
   typename IntCount,       // Count type (int, size_t, etc.)
-  int UNROLL=8*16/sizeof(T) // Performance tuning parameter
+  int UNROLL=4*16/sizeof(T) // Performance tuning parameter
 >
 ```
 
 **UNROLL Parameter:**
-- Default: `8*16/sizeof(T)` = 128 bytes worth of elements (similar to internal implementation)
+- Default: `4*16/sizeof(T)` = 64 bytes worth of elements (similar to internal implementation)
 - Higher values: Better performance, more registers
 - Lower values: Lower register pressure, better occupancy
 - Users can override for specific use cases
@@ -187,7 +187,7 @@ bar.sync()
 
 #### 4. Combined Unrolling and Vectorization
 
-Single `UNROLL` parameter controls both for API simplicity. Internally optimized for vector loads/stores with sensible default (128 bytes).
+Single `UNROLL` parameter controls both for API simplicity. Internally optimized for vector loads/stores with sensible default (64 bytes).
 
 #### 5. Precision Handling
 
@@ -334,7 +334,14 @@ Based on design review discussions, the following decisions were made:
 - [ ] Configurable precision (fixed relationships for now)
 - [ ] Low-latency version
 - [ ] Barriers intertwined with API
-- [ ] Use case where ncclCoopCta stores non-continguous memory per thread on stack (RMS out of order) 
+- [ ] Use case where ncclCoopCta stores non-continguous memory per thread on stack (RMS out of order)
+
+#### Notes on Architecture Support and Error Handling
+This implementation prioritizes compile-time validation where possible, but multi-architecture builds impose limits on how far `static_assert` can be used. In particular, if any compiled target lacks a required feature (notably FP8 multimem), a strict compile-time error would fail the entire build.
+Core NCCL mitigates this via separate kernel builds and runtime dispatch based on availability; the device API cannot impose that build structure on downstream users.
+Given that constraint, unsupported feature paths use runtime `assert` so multi-arch builds remain valid and supported configurations compile successfully. If a non-supported operation is executed at runtime, the kernel will terminate with a device-side assert.
+This is not ideal from a UX perspective, but it is currently the most practical tradeoff without controlling the user build.
+For perf tests, the build flow was adjusted to record which architectures were compiled and perform runtime dispatch based on that knowledge, allowing graceful skips on unsupported systems. The same approach is planned for the API tests. When device-side error reporting becomes available, this should be revisited to replace runtime asserts with structured error handling.
 
 #### Naming Conventions
 - `ReduceCopy` -> Combined operation
@@ -342,6 +349,33 @@ Based on design review discussions, the following decisions were made:
 - `Lsa` -> Load Store Accessible memory
 - `Multimem` -> Multimem memory
 - `Local` -> Thread-local operations
+
+### Implementation Macros
+
+The implementation uses the following macro for conditional C++17 `if constexpr` support:
+
+```cpp
+// Macro for conditional constexpr support
+#if defined(__cpp_if_constexpr) && __cpp_if_constexpr >= 201606
+#define NCCL_IF_CONSTEXPR constexpr
+#else
+#define NCCL_IF_CONSTEXPR
+#endif
+```
+
+This macro is used throughout the implementation to enable compile-time branch elimination when C++17 is available, while maintaining compatibility with earlier C++ standards. The macro is defined in `reduce_copy__impl.h` and undefined at the end of the file to avoid polluting the global namespace.
+
+The implementation also uses an explicit opt-in macro for unsafe device code:
+
+```cpp
+// Permit unsafe device code in NCCL device API
+// Users must define this at compile time, e.g. -DNCCL_DEVICE_PERMIT_EXPERIMENTAL_CODE=1
+#define NCCL_DEVICE_PERMIT_EXPERIMENTAL_CODE 1
+```
+
+This macro is required because two behaviors rely on ISA characteristics that may change in future architectures:
+1) Loading outside of the user-specified range and discarding the extra bytes (acceptable today due to known cache line sizes).
+2) Issuing non-multimem instructions on multimem addresses for small (<32-bit) stores, relying on identical SASS encodings.
 
 ### Future Possible Enhancements
 
@@ -384,27 +418,33 @@ See the comprehensive API reference table and function definitions below.
 | 3.1 | ReduceSum | LSA | Lambda | `srcLambda, nSrc, dstPtr` |
 | 3.2a | ReduceSum | LSA | ncclSymPtr | `src, dstPtr, team` |
 | 3.2b | ReduceSum | LSA | ncclDevComm_t | `src, dstPtr, devComm` |
-| 3.2c | ReduceSum | LSA | ncclWindow_t | `window, offset, dstPtr, devComm` |
+| 3.2c | ReduceSum | LSA | ncclWindow_t + ncclTeam | `window, offset, dstPtr, team` |
+| 3.2d | ReduceSum | LSA | ncclWindow_t + ncclDevComm_t | `window, offset, dstPtr, devComm` |
 | 3.3a | ReduceSum | Multimem | ncclSymPtr | `src, dstPtr, multimemHandle` |
 | 3.3b | ReduceSum | Multimem | Raw pointer | `mcSrcPtr, dstPtr` |
+| 3.3c | ReduceSum | Multimem | ncclWindow_t | `window, offset, dstPtr, multimemHandle` |
 | 3.4 | ReduceSum | Local | Lambda | `srcLambda, nSrc, dstPtr` |
 | 3.5 | ReduceSum | Local | Strided | `nSrc, basePtr, displ, dstPtr` |
 | **[4.x](#series-4x)** | **Copy (1->N)** | | | |
 | 4.1 | Copy | LSA | Lambda | `srcPtr, dstLambda, nDst` |
 | 4.2a | Copy | LSA | ncclSymPtr | `srcPtr, dst, team` |
 | 4.2b | Copy | LSA | ncclDevComm_t | `srcPtr, dst, devComm` |
-| 4.2c | Copy | LSA | ncclWindow_t | `srcPtr, window, offset, devComm` |
+| 4.2c | Copy | LSA | ncclWindow_t + ncclTeam | `srcPtr, window, offset, team` |
+| 4.2d | Copy | LSA | ncclWindow_t + ncclDevComm_t | `srcPtr, window, offset, devComm` |
 | 4.3a | Copy | Multimem | ncclSymPtr | `srcPtr, dst, multimemHandle` |
 | 4.3b | Copy | Multimem | Raw pointer | `srcPtr, mcDstPtr` |
+| 4.3c | Copy | Multimem | ncclWindow_t | `srcPtr, window, offset, multimemHandle` |
 | 4.4 | Copy | Local | Lambda | `srcPtr, dstLambda, nDst` |
 | 4.5 | Copy | Local | Strided | `srcPtr, nDst, basePtr, displ` |
 | **[5.x](#series-5x)** | **ReduceSumCopy (N->M)** | | | |
 | 5.1a | ReduceSumCopy | LSA | Same team | `src, dst, team` |
 | 5.1b | ReduceSumCopy | LSA | ncclDevComm_t | `src, dst, devComm` |
-| 5.1c | ReduceSumCopy | LSA | ncclWindow_t | `srcWindow, srcOffset, dstWindow, dstOffset, devComm` |
-| 5.1d | ReduceSumCopy | LSA | Different teams | `src, srcTeam, dst, dstTeam` |
+| 5.1c | ReduceSumCopy | LSA | ncclWindow_t + ncclTeam | `srcWindow, srcOffset, dstWindow, dstOffset, team` |
+| 5.1d | ReduceSumCopy | LSA | ncclWindow_t + ncclDevComm_t | `srcWindow, srcOffset, dstWindow, dstOffset, devComm` |
+| 5.1e | ReduceSumCopy | LSA | Different teams | `src, srcTeam, dst, dstTeam` |
 | 5.2a | ReduceSumCopy | Multimem | ncclSymPtr | `src, srcHandle, dst, dstHandle` |
 | 5.2b | ReduceSumCopy | Multimem | Raw pointer | `mcSrcPtr, mcDstPtr` |
+| 5.2c | ReduceSumCopy | Multimem | ncclWindow_t | `srcWindow, srcOffset, srcHandle, dstWindow, dstOffset, dstHandle` |
 | 5.3a | ReduceSumCopy | LSA->Multimem | ncclSymPtr | `src, srcTeam, dst, dstHandle` |
 | 5.3b | ReduceSumCopy | LSA->Multimem | Raw dst | `src, srcTeam, mcDstPtr` |
 | 5.3c | ReduceSumCopy | Multimem->LSA | ncclSymPtr | `src, srcHandle, dst, dstTeam` |
@@ -413,7 +453,7 @@ See the comprehensive API reference table and function definitions below.
 
 **Notes:**
 - All functions take `Coop coop`, `IntCount count` parameters (omitted from table for brevity)
-- Template parameters: `T, Coop, IntCount, UNROLL=8*16/sizeof(T)` (with additional lambda types where applicable)
+- Template parameters: `T, Coop, IntCount, UNROLL=4*16/sizeof(T)` (with additional lambda types where applicable)
 - Generic versions (1.x) also include `RedOp redOp` parameter
 - Lambda versions provide maximum flexibility; concrete versions are convenience wrappers
 
@@ -477,8 +517,8 @@ All functions follow this canonical order:
 
 ```cpp
 // Generic everything reduce-copy: not public API (implementation detail)
-template <typename T, typename Coop, bool srcMultimem, bool dstMultimem, 
-          typename SrcLambda, typename DstLambda, typename RedOp, 
+template <typename T, typename Coop, bool srcMultimem, bool dstMultimem,
+          typename SrcLambda, typename DstLambda, typename RedOp,
           typename IntCount, int UNROLL>
 __device__ __inline__ void reduceCopy(Coop coop,
                                       SrcLambda srcLambda, int nSrc,
@@ -496,7 +536,7 @@ Lambda-based versions with explicit `RedOp` parameter. Only LSA sources supporte
 
 ```cpp
 // [ID 1.1] LSA <-> LSA version
-template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename RedOp, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename RedOp, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceLsaCopy(Coop coop,
                                              SrcLambda srcLambda, int nSrc,
                                              DstLambda dstLambda, int nDst,
@@ -516,7 +556,7 @@ struct ncclOpSum {
 // Therefore, only LSA source versions are provided here for generic ReduceCopy
 
 // [ID 1.2] LSA <-> Multimem version
-template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename RedOp, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename RedOp, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceMultimemCopy(Coop coop,
                                                   SrcLambda srcLambda, int nSrc,
                                                   DstLambda dstLambda, int nDst,
@@ -538,7 +578,7 @@ Lambda-based versions with `ncclOpSum<T>` baked in. All LSA/Multimem combination
 
 ```cpp
 // [ID 2.1] LSA <-> LSA ReduceSum version
-template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumLsaCopy(Coop coop,
                                                 SrcLambda srcLambda, int nSrc,
                                                 DstLambda dstLambda, int nDst,
@@ -547,7 +587,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumLsaCopy(Coop coop,
 }
 
 // [ID 2.2] LSA <-> Multimem ReduceSum version
-template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(Coop coop,
                                                      SrcLambda srcLambda, int nSrc,
                                                      DstLambda dstLambda, int nDst,
@@ -556,7 +596,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(Coop coop,
 }
 
 // [ID 2.3] Multimem <-> LSA ReduceSum version
-template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(Coop coop,
                                                      SrcLambda srcLambda, int nSrc,
                                                      DstLambda dstLambda, int nDst,
@@ -565,7 +605,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(Coop coop,
 }
 
 // [ID 2.4] Multimem <-> Multimem ReduceSum version
-template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename SrcLambda, typename DstLambda, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumMultimemCopy(Coop coop,
                                                           SrcLambda srcLambda, int nSrc,
                                                           DstLambda dstLambda, int nDst,
@@ -583,7 +623,7 @@ Specialized for reducing from N sources to 1 destination. Includes LSA, Multimem
 
 ```cpp
 // [ID 3.1] LSA ReduceSum: N sources -> 1 local destination (lambda-based)
-template<typename T, typename Coop, typename SrcLambda, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename SrcLambda, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(Coop coop,
                                          SrcLambda srcLambda, int nSrc,
                                          T* dstPtr,
@@ -598,7 +638,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSum(Coop coop,
 // Concrete pointer versions
 
 // [ID 3.2a] LSA ReduceSum: N sources from team -> 1 local destination (with ncclSymPtr)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(Coop coop,
                                          ncclSymPtr<T> src,
                                          T* dstPtr,
@@ -608,25 +648,39 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSum(Coop coop,
   auto srcLambda = [=] __device__ (int i) -> T* {
     return src.peerPtr(team, i);
   };
-  
+
   ncclLsaReduceSum<T, Coop, decltype(srcLambda), IntCount, UNROLL>(coop, srcLambda, team.nRanks, dstPtr, count);
 }
 
 // [ID 3.2b] LSA ReduceSum: N sources from devComm -> 1 local destination (with ncclDevComm_t)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(Coop coop,
                                          ncclSymPtr<T> src,
                                          T* dstPtr,
                                          IntCount count,
                                          ncclDevComm_t devComm) {
   // Extract team from devComm
-  ncclTeam team = ncclDevCommGetTeam(devComm);
-  
+  ncclTeam team = ncclTeamLsa(devComm);
+
   ncclLsaReduceSum<T, Coop, IntCount, UNROLL>(coop, src, dstPtr, count, team);
 }
 
-// [ID 3.2c] LSA ReduceSum: N sources from window+offset -> 1 local destination (with ncclWindow_t)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+// [ID 3.2c] LSA ReduceSum: N sources from window+offset -> 1 local destination (with ncclWindow_t + ncclTeam)
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
+NCCL_DEVICE_INLINE void ncclLsaReduceSum(Coop coop,
+                                         ncclWindow_t window,
+                                         size_t offset,
+                                         T* dstPtr,
+                                         IntCount count,
+                                         ncclTeam team) {
+  // Construct ncclSymPtr from window and offset
+  ncclSymPtr<T> src{window, offset};
+
+  ncclLsaReduceSum<T, Coop, IntCount, UNROLL>(coop, src, dstPtr, count, team);
+}
+
+// [ID 3.2d] LSA ReduceSum: N sources from window+offset -> 1 local destination (with ncclWindow_t + ncclDevComm_t)
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(Coop coop,
                                          ncclWindow_t window,
                                          size_t offset,
@@ -634,13 +688,13 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSum(Coop coop,
                                          IntCount count,
                                          ncclDevComm_t devComm) {
   // Construct ncclSymPtr from window and offset
-  ncclSymPtr<T> src = ncclSymPtrFromWindow<T>(window, offset);
-  
+  ncclSymPtr<T> src{window, offset};
+
   ncclLsaReduceSum<T, Coop, IntCount, UNROLL>(coop, src, dstPtr, count, devComm);
 }
 
 // [ID 3.3a] Multimem ReduceSum: 1 multimem source -> 1 local destination (with ncclSymPtr)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSum(Coop coop,
                                               ncclSymPtr<T> src,
                                               T* dstPtr,
@@ -653,14 +707,14 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSum(Coop coop,
   auto dstLambda = [=] __device__ (int /*ignored*/) -> T* {
     return dstPtr;
   };
-  
+
   constexpr int nSrc = 1;  // Single multimem source
   constexpr int nDst = 1;  // Single destination
   ncclMultimemReduceSumLsaCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, count);
 }
 
 // [ID 3.3b] Multimem ReduceSum: 1 multimem source -> 1 local destination (with raw pointer)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSum(Coop coop,
                                               T* mcSrcPtr,
                                               T* dstPtr,
@@ -672,16 +726,30 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSum(Coop coop,
   auto dstLambda = [=] __device__ (int /*ignored*/) -> T* {
     return dstPtr;
   };
-  
+
   constexpr int nSrc = 1;  // Single multimem source
   constexpr int nDst = 1;  // Single destination
   ncclMultimemReduceSumLsaCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, count);
 }
 
+// [ID 3.3c] Multimem ReduceSum: 1 multimem source -> 1 local destination (with ncclWindow_t)
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
+NCCL_DEVICE_INLINE void ncclMultimemReduceSum(Coop coop,
+                                              ncclWindow_t window,
+                                              size_t offset,
+                                              T* dstPtr,
+                                              IntCount count,
+                                              ncclMultimemHandle multimemHandle) {
+  // Construct ncclSymPtr from window and offset
+  ncclSymPtr<T> src{window, offset};
+
+  ncclMultimemReduceSum<T, Coop, IntCount, UNROLL>(coop, src, dstPtr, count, multimemHandle);
+}
+
 // 3) Local ReduceSum: N local chunks -> 1 local destination
 
 // [ID 3.4] Lambda-based version
-template<typename T, typename Coop, typename SrcLambda, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename SrcLambda, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLocalReduceSum(Coop coop,
                                            SrcLambda srcLambda, int nSrc,
                                            T* dstPtr,
@@ -694,7 +762,7 @@ NCCL_DEVICE_INLINE void ncclLocalReduceSum(Coop coop,
 }
 
 // [ID 3.5] Concrete pointer version: reduce n chunks separated by displacement
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLocalReduceSum(Coop coop,
                                            int nSrc,
                                            T* basePtr,
@@ -705,7 +773,7 @@ NCCL_DEVICE_INLINE void ncclLocalReduceSum(Coop coop,
   auto srcLambda = [=] __device__ (int i) -> T* {
     return basePtr + i * displ;
   };
-  
+
   ncclLocalReduceSum<T, Coop, decltype(srcLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstPtr, count);
 }
 ```
@@ -719,7 +787,7 @@ Specialized for copying from 1 source to N destinations. Includes LSA, Multimem,
 
 ```cpp
 // [ID 4.1] Lambda-based version
-template<typename T, typename Coop, typename DstLambda, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename DstLambda, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaCopy(Coop coop,
                                     T* srcPtr,
                                     DstLambda dstLambda, int nDst,
@@ -734,7 +802,7 @@ NCCL_DEVICE_INLINE void ncclLsaCopy(Coop coop,
 // Concrete pointer versions
 
 // [ID 4.2a] LSA Copy: 1 local source -> N destinations (with ncclSymPtr)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaCopy(Coop coop,
                                     T* srcPtr,
                                     ncclSymPtr<T> dst,
@@ -744,25 +812,39 @@ NCCL_DEVICE_INLINE void ncclLsaCopy(Coop coop,
   auto dstLambda = [=] __device__ (int i) -> T* {
     return dst.peerPtr(team, i);
   };
-  
+
   ncclLsaCopy<T, Coop, decltype(dstLambda), IntCount, UNROLL>(coop, srcPtr, dstLambda, team.nRanks, count);
 }
 
 // [ID 4.2b] LSA Copy: 1 local source -> N destinations (with ncclDevComm_t)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaCopy(Coop coop,
                                     T* srcPtr,
                                     ncclSymPtr<T> dst,
                                     IntCount count,
                                     ncclDevComm_t devComm) {
   // Extract team from devComm
-  ncclTeam team = ncclDevCommGetTeam(devComm);
-  
+  ncclTeam team = ncclTeamLsa(devComm);
+
   ncclLsaCopy<T, Coop, IntCount, UNROLL>(coop, srcPtr, dst, count, team);
 }
 
-// [ID 4.2c] LSA Copy: 1 local source -> N destinations (with ncclWindow_t)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+// [ID 4.2c] LSA Copy: 1 local source -> N destinations (with ncclWindow_t + ncclTeam)
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
+NCCL_DEVICE_INLINE void ncclLsaCopy(Coop coop,
+                                    T* srcPtr,
+                                    ncclWindow_t window,
+                                    size_t offset,
+                                    IntCount count,
+                                    ncclTeam team) {
+  // Construct ncclSymPtr from window and offset
+  ncclSymPtr<T> dst{window, offset};
+
+  ncclLsaCopy<T, Coop, IntCount, UNROLL>(coop, srcPtr, dst, count, team);
+}
+
+// [ID 4.2d] LSA Copy: 1 local source -> N destinations (with ncclWindow_t + ncclDevComm_t)
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaCopy(Coop coop,
                                     T* srcPtr,
                                     ncclWindow_t window,
@@ -770,15 +852,15 @@ NCCL_DEVICE_INLINE void ncclLsaCopy(Coop coop,
                                     IntCount count,
                                     ncclDevComm_t devComm) {
   // Construct ncclSymPtr from window and offset
-  ncclSymPtr<T> dst = ncclSymPtrFromWindow<T>(window, offset);
-  
+  ncclSymPtr<T> dst{window, offset};
+
   ncclLsaCopy<T, Coop, IntCount, UNROLL>(coop, srcPtr, dst, count, devComm);
 }
 
 // 2) Multimem Copy: 1 local source -> 1 multimem destination
 
 // [ID 4.3a] Multimem Copy: 1 local source -> 1 multimem destination (with ncclSymPtr)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemCopy(Coop coop,
                                          T* srcPtr,
                                          ncclSymPtr<T> dst,
@@ -791,14 +873,14 @@ NCCL_DEVICE_INLINE void ncclMultimemCopy(Coop coop,
   auto dstLambda = [=] __device__ (int /*ignored*/) -> T* {
     return dst.multimemPtr(multimemHandle);
   };
-  
+
   constexpr int nSrc = 1;  // Single source
   constexpr int nDst = 1;  // Single multimem destination
   ncclLsaReduceSumMultimemCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, count);
 }
 
 // [ID 4.3b] Multimem Copy: 1 local source -> 1 multimem destination (with raw pointer)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemCopy(Coop coop,
                                          T* srcPtr,
                                          T* mcDstPtr,
@@ -810,16 +892,30 @@ NCCL_DEVICE_INLINE void ncclMultimemCopy(Coop coop,
   auto dstLambda = [=] __device__ (int /*ignored*/) -> T* {
     return mcDstPtr;
   };
-  
+
   constexpr int nSrc = 1;  // Single source
   constexpr int nDst = 1;  // Single multimem destination
   ncclLsaReduceSumMultimemCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, count);
 }
 
+// [ID 4.3c] Multimem Copy: 1 local source -> 1 multimem destination (with ncclWindow_t)
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
+NCCL_DEVICE_INLINE void ncclMultimemCopy(Coop coop,
+                                         T* srcPtr,
+                                         ncclWindow_t window,
+                                         size_t offset,
+                                         IntCount count,
+                                         ncclMultimemHandle multimemHandle) {
+  // Construct ncclSymPtr from window and offset
+  ncclSymPtr<T> dst{window, offset};
+
+  ncclMultimemCopy<T, Coop, IntCount, UNROLL>(coop, srcPtr, dst, count, multimemHandle);
+}
+
 // 3) Local Copy: 1 source -> N local destinations
 
 // [ID 4.4] Lambda-based version
-template<typename T, typename Coop, typename DstLambda, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename DstLambda, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLocalCopy(Coop coop,
                                       T* srcPtr,
                                       DstLambda dstLambda, int nDst,
@@ -832,7 +928,7 @@ NCCL_DEVICE_INLINE void ncclLocalCopy(Coop coop,
 }
 
 // [ID 4.5] Concrete pointer version: copy to n chunks separated by displacement
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLocalCopy(Coop coop,
                                       T* srcPtr,
                                       int nDst,
@@ -843,7 +939,7 @@ NCCL_DEVICE_INLINE void ncclLocalCopy(Coop coop,
   auto dstLambda = [=] __device__ (int i) -> T* {
     return basePtr + i * displ;
   };
-  
+
   ncclLocalCopy<T, Coop, decltype(dstLambda), IntCount, UNROLL>(coop, srcPtr, dstLambda, nDst, count);
 }
 ```
@@ -859,7 +955,7 @@ Combined reduce and copy operations. Includes LSA, Multimem, Mixed, and Local va
 
 ```cpp
 // [ID 5.1a] LSA ReduceSumCopy: same team for src and dst (most common case)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(Coop coop,
                                              ncclSymPtr<T> src,
                                              ncclSymPtr<T> dst,
@@ -871,35 +967,47 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(Coop coop,
   auto dstLambda = [=] __device__ (int i) -> T* {
     return dst.peerPtr(team, i);
   };
-  
+
   ncclLsaReduceSumLsaCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, team.nRanks, dstLambda, team.nRanks, count);
 }
 
 // [ID 5.1b] LSA ReduceSumCopy: with ncclDevComm_t (extract team)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(Coop coop,
                                              ncclSymPtr<T> src,
                                              ncclSymPtr<T> dst,
                                              IntCount count,
                                              ncclDevComm_t devComm) {
-  ncclTeam team = ncclDevCommGetTeam(devComm);
+  ncclTeam team = ncclTeamLsa(devComm);
   ncclLsaReduceSumCopy<T, Coop, IntCount, UNROLL>(coop, src, dst, count, team);
 }
 
-// [ID 5.1c] LSA ReduceSumCopy: with windows
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+// [ID 5.1c] LSA ReduceSumCopy: with windows + ncclTeam
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
+NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(Coop coop,
+                                             ncclWindow_t srcWindow, size_t srcOffset,
+                                             ncclWindow_t dstWindow, size_t dstOffset,
+                                             IntCount count,
+                                             ncclTeam team) {
+  ncclSymPtr<T> src{srcWindow, srcOffset};
+  ncclSymPtr<T> dst{dstWindow, dstOffset};
+  ncclLsaReduceSumCopy<T, Coop, IntCount, UNROLL>(coop, src, dst, count, team);
+}
+
+// [ID 5.1d] LSA ReduceSumCopy: with windows + ncclDevComm_t
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(Coop coop,
                                              ncclWindow_t srcWindow, size_t srcOffset,
                                              ncclWindow_t dstWindow, size_t dstOffset,
                                              IntCount count,
                                              ncclDevComm_t devComm) {
-  ncclSymPtr<T> src = ncclSymPtrFromWindow<T>(srcWindow, srcOffset);
-  ncclSymPtr<T> dst = ncclSymPtrFromWindow<T>(dstWindow, dstOffset);
+  ncclSymPtr<T> src{srcWindow, srcOffset};
+  ncclSymPtr<T> dst{dstWindow, dstOffset};
   ncclLsaReduceSumCopy<T, Coop, IntCount, UNROLL>(coop, src, dst, count, devComm);
 }
 
-// [ID 5.1d] LSA ReduceSumCopy: different teams for src and dst (advanced use case)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+// [ID 5.1e] LSA ReduceSumCopy: different teams for src and dst (advanced use case)
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(Coop coop,
                                              ncclSymPtr<T> src, ncclTeam srcTeam,
                                              ncclSymPtr<T> dst, ncclTeam dstTeam,
@@ -910,14 +1018,14 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(Coop coop,
   auto dstLambda = [=] __device__ (int i) -> T* {
     return dst.peerPtr(dstTeam, i);
   };
-  
+
   ncclLsaReduceSumLsaCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, srcTeam.nRanks, dstLambda, dstTeam.nRanks, count);
 }
 
 // 2) Multimem ReduceSumCopy: 1 multimem source -> 1 multimem destination
 
 // [ID 5.2a] Multimem ReduceSumCopy (with ncclSymPtr)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(Coop coop,
                                                   ncclSymPtr<T> src, ncclMultimemHandle srcHandle,
                                                   ncclSymPtr<T> dst, ncclMultimemHandle dstHandle,
@@ -928,14 +1036,14 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(Coop coop,
   auto dstLambda = [=] __device__ (int /*ignored*/) -> T* {
     return dst.multimemPtr(dstHandle);
   };
-  
+
   constexpr int nSrc = 1;
   constexpr int nDst = 1;
   ncclMultimemReduceSumMultimemCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, count);
 }
 
 // [ID 5.2b] Multimem ReduceSumCopy (with raw pointers)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(Coop coop,
                                                   T* mcSrcPtr,
                                                   T* mcDstPtr,
@@ -946,16 +1054,29 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(Coop coop,
   auto dstLambda = [=] __device__ (int /*ignored*/) -> T* {
     return mcDstPtr;
   };
-  
+
   constexpr int nSrc = 1;
   constexpr int nDst = 1;
   ncclMultimemReduceSumMultimemCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, count);
 }
 
+// [ID 5.2c] Multimem ReduceSumCopy (with ncclWindow_t)
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
+NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(Coop coop,
+                                                  ncclWindow_t srcWindow, size_t srcOffset, ncclMultimemHandle srcHandle,
+                                                  ncclWindow_t dstWindow, size_t dstOffset, ncclMultimemHandle dstHandle,
+                                                  IntCount count) {
+  // Construct ncclSymPtr from window and offset
+  ncclSymPtr<T> src{srcWindow, srcOffset};
+  ncclSymPtr<T> dst{dstWindow, dstOffset};
+
+  ncclMultimemReduceSumCopy<T, Coop, IntCount, UNROLL>(coop, src, srcHandle, dst, dstHandle, count);
+}
+
 // 3) Mixed LSA/Multimem ReduceSumCopy variations
 
 // [ID 5.3a] LSA source -> Multimem destination
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(Coop coop,
                                                      ncclSymPtr<T> src, ncclTeam srcTeam,
                                                      ncclSymPtr<T> dst, ncclMultimemHandle dstHandle,
@@ -966,13 +1087,13 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(Coop coop,
   auto dstLambda = [=] __device__ (int /*ignored*/) -> T* {
     return dst.multimemPtr(dstHandle);
   };
-  
+
   constexpr int nDst = 1;
   ncclLsaReduceSumMultimemCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, srcTeam.nRanks, dstLambda, nDst, count);
 }
 
 // [ID 5.3b] LSA source -> Multimem destination (with raw dst pointer)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(Coop coop,
                                                      ncclSymPtr<T> src, ncclTeam srcTeam,
                                                      T* mcDstPtr,
@@ -983,13 +1104,13 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(Coop coop,
   auto dstLambda = [=] __device__ (int /*ignored*/) -> T* {
     return mcDstPtr;
   };
-  
+
   constexpr int nDst = 1;
   ncclLsaReduceSumMultimemCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, srcTeam.nRanks, dstLambda, nDst, count);
 }
 
 // [ID 5.3c] Multimem source -> LSA destination
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(Coop coop,
                                                      ncclSymPtr<T> src, ncclMultimemHandle srcHandle,
                                                      ncclSymPtr<T> dst, ncclTeam dstTeam,
@@ -1000,13 +1121,13 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(Coop coop,
   auto dstLambda = [=] __device__ (int i) -> T* {
     return dst.peerPtr(dstTeam, i);
   };
-  
+
   constexpr int nSrc = 1;
   ncclMultimemReduceSumLsaCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, dstTeam.nRanks, count);
 }
 
 // [ID 5.3d] Multimem source -> LSA destination (with raw src pointer)
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(Coop coop,
                                                      T* mcSrcPtr,
                                                      ncclSymPtr<T> dst, ncclTeam dstTeam,
@@ -1017,7 +1138,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(Coop coop,
   auto dstLambda = [=] __device__ (int i) -> T* {
     return dst.peerPtr(dstTeam, i);
   };
-  
+
   constexpr int nSrc = 1;
   ncclMultimemReduceSumLsaCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, dstTeam.nRanks, count);
 }
@@ -1026,7 +1147,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(Coop coop,
 // (Lambda-based version is ncclLsaReduceSumLsaCopy at the top)
 
 // [ID 5.4] Concrete pointer version: reduce n src chunks and copy to m dst chunks
-template<typename T, typename Coop, typename IntCount, int UNROLL=8*16/sizeof(T)>
+template<typename T, typename Coop, typename IntCount, int UNROLL=4*16/sizeof(T)>
 NCCL_DEVICE_INLINE void ncclLocalReduceSumCopy(Coop coop,
                                                int nSrc, T* srcBasePtr, size_t srcDispl,
                                                int nDst, T* dstBasePtr, size_t dstDispl,
@@ -1037,7 +1158,7 @@ NCCL_DEVICE_INLINE void ncclLocalReduceSumCopy(Coop coop,
   auto dstLambda = [=] __device__ (int i) -> T* {
     return dstBasePtr + i * dstDispl;
   };
-  
+
   ncclLsaReduceSumLsaCopy<T, Coop, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, count);
 }
 ```

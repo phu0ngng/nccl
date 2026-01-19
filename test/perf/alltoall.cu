@@ -8,7 +8,7 @@
 #include "common.h"
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 #include "nccl_device.h"
-#include "vector_types.h"
+// ReduceCopy API (including vector utilities) now included via nccl_device.h
 #endif
 
 void AlltoAllGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
@@ -204,7 +204,7 @@ __global__ void NvlAlltoAllKernelOptimized(ncclWindow_t sendwin, size_t sendoffs
   ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
-  using TN = typename VectorTypeMapping<T>::Type;
+  using TN = uint4; // Alltoall is type insensitive, so using generic uint4 for data transport
   constexpr int VECTOR_FACTOR = sizeof(TN) / sizeof(T);
   constexpr int UNROLL_FACTOR = 128/sizeof(TN);
   constexpr int PEER_UNROLL = 2;

@@ -40,6 +40,17 @@
   #define NCCL_HOST_DEVICE_INLINE inline __attribute__((always_inline))
 #endif
 
+// Macro for conditional constexpr support
+#if defined(__cpp_if_constexpr) && __cpp_if_constexpr >= 201606
+  #ifndef NCCL_IF_CONSTEXPR
+    #define NCCL_IF_CONSTEXPR constexpr
+  #endif
+#else
+  #ifndef NCCL_IF_CONSTEXPR
+    #define NCCL_IF_CONSTEXPR
+  #endif
+#endif
+
 #if __cplusplus
 #define NCCL_EXTERN_C extern "C"
 #else

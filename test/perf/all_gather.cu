@@ -4,8 +4,35 @@
  * See LICENSE.txt for license information
  ************************************************************************/
 
+/*
+ * AllGather Performance Test Implementation
+ *
+ * This file implements multiple AllGather kernel variants optimized for different
+ * use cases within CUDA P2P connectivity.
+ *
+ * IMPORTANT: LSA kernels require CUDA P2P connectivity since they require Load-Store Accessible (LSA) memory.
+ *            Multimem kernels require multimem support for atomic gather operations.
+ *
+ * Performance Note: The CTA-level kernels (2 and 4) achieve better performance than the thread-level
+ *                   kernels (1 and 3) due to CTA-level cooperation (ncclCoopCta) which enables warp-level
+ *                   memory coalescing. Thread-level cooperation (ncclCoopThread) in kernels 1 and 3 does
+ *                   not enable this optimization.
+ *
+ * Kernel Selection Strategy:
+ * - deviceImpl = 0: NCCL's built-in AllGather implementation (fallback)
+ * - deviceImpl = 1: allGatherLsaThreadKernel - LSA with thread-level cooperation (ncclCoopThread).
+ * - deviceImpl = 2: allGatherLsaCtaKernel - LSA with CTA-level cooperation (ncclCoopCta) for warp-level memory coalescing.
+ * - deviceImpl = 3: allGatherMultimemThreadKernel - Multimem with thread-level cooperation (ncclCoopThread).
+ * - deviceImpl = 4: allGatherMultimemCtaKernel - Multimem with CTA-level cooperation (ncclCoopCta) for warp-level memory coalescing.
+ * - deviceImpl = 10 (HOST_RMA_IMPL): AllGatherRmaPut - Host-side RMA implementation using ncclPut APIs.
+ */
+
 #include "cuda_runtime.h"
 #include "common.h"
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+#include "nccl_device.h"
+// ReduceCopy API (including multimem and vector utilities) now included via nccl_device.h
+#endif
 
 void AllGatherGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   size_t base = (count/nranks) & -(16/eltSize);
@@ -47,6 +74,320 @@ void AllGatherGetBw(size_t count, int typesize, double sec, double* algBw, doubl
   *busBw = baseBw * factor;
 }
 
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+// set devComm reqs for allgather device kernels
+testResult_t AllGatherGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclComm_t comm, const char** testSkipReason) {
+  if (!reqs || !comm) return testInternalError;
+
+  ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+  if (ncclCommQueryProperties(comm, &commProperties) != ncclSuccess) {
+    return testNcclError;
+  }
+
+  switch(deviceImpl) {
+    case 0: // NCCL's built-in implementation
+      return testSuccess;
+    case 1: // allGatherLsaThreadKernel
+    case 2: // allGatherLsaCtaKernel
+      reqs->lsaBarrierCount = deviceCtaCount;
+      return testSuccess;
+    case 3: // allGatherMultimemThreadKernel
+    case 4: // allGatherMultimemCtaKernel
+      if (!commProperties.multimemSupport) {
+        *testSkipReason = "multimem not supported";
+        return testSkipped;
+      }
+      reqs->lsaMultimem = true;
+      reqs->lsaBarrierCount = deviceCtaCount;
+      return testSuccess;
+    default:
+      return testNotImplemented;
+  }
+}
+#elif NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+bool AllGatherGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs) {
+  if (!reqs) return false;
+  memset(reqs, 0, sizeof(*reqs));
+
+  switch(deviceImpl) {
+    case 1: // allGatherLsaThreadKernel
+    case 2: // allGatherLsaCtaKernel
+      reqs->lsaBarrierCount = deviceCtaCount;
+      return true;
+    case 3: // allGatherMultimemThreadKernel
+    case 4: // allGatherMultimemCtaKernel
+      reqs->lsaMultimem = true;
+      reqs->lsaBarrierCount = deviceCtaCount;
+      return true;
+    default:
+      return false;
+  }
+}
+#endif
+
+/*
+ * Kernel 1: allGatherLsaThreadKernel - Thread-level LSA-based AllGather
+ *
+ * Purpose: Provides a simple AllGather implementation using thread-level cooperation (ncclCoopThread).
+ * Each rank gathers its own chunk to all ranks.
+ *
+ * Solution: Each rank reads from its own send buffer and writes to the appropriate
+ * offset in all ranks' receive buffers. Each thread operates independently.
+ *
+ * Key Optimizations:
+ * - LSA barriers for faster synchronization than global barriers
+ * - Direct peer access within CUDA P2P connectivity for optimal bandwidth
+ * - Thread-level cooperation (ncclCoopThread) - simple, independent thread operation
+ * - All threads cooperate to gather this rank's chunk
+ *
+ * Limitation: Thread-level cooperation does NOT enable warp-level memory coalescing,
+ * resulting in lower bandwidth compared to CTA-level cooperation (see Kernel 2).
+ *
+ * CUDA P2P Connectivity Requirement: CRITICAL - This kernel requires all participating
+ * ranks to be within the same CUDA P2P connectivity.
+ *
+ * Use Case: Small to medium messages, or when thread-level granularity is preferred.
+ */
+template <typename T>
+__global__ void allGatherLsaThreadKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  // Create cooperative group once and reuse
+  ncclCoopCta ctaCoop;
+  const ncclTeam team = ncclTeamLsa(devComm);
+
+  ncclLsaBarrierSession<ncclCoopCta> bar { ctaCoop, devComm, team, devComm.lsaBarrier, blockIdx.x };
+  bar.sync(ctaCoop, cuda::memory_order_relaxed);
+
+  const int rank = devComm.rank;
+
+  // Split this rank's chunk across all threads (in all blocks)
+  const int threadId = threadIdx.x + blockDim.x * blockIdx.x;
+  const int nThreads = blockDim.x * gridDim.x;
+
+  // Simple work distribution: divide count evenly among threads
+  const size_t eltsPerThread = (count + nThreads - 1) / nThreads;
+  const size_t threadStart = threadId * eltsPerThread;
+  // CRITICAL: Check if threadStart >= count to prevent unsigned underflow
+  // If threadStart >= count, this thread has no work (threadCount = 0)
+  const size_t threadCount = (threadStart < count) ? min(eltsPerThread, count - threadStart) : 0;
+
+  if (threadCount > 0) {
+    // Create a thread-level cooperative group (coop size = 1)
+    ncclCoopThread threadCoop;
+
+    // Get pointer to this rank's send buffer (source)
+    T* mySendPtr = (T*)ncclGetLocalPointer(sendwin, sendoffset);
+    T* srcPtr = mySendPtr + threadStart;
+
+    // Calculate destination offset for this thread's portion
+    // Points to (rank * count + threadStart) in each peer's receive buffer
+    size_t dstOffset = recvoffset + (rank * count + threadStart) * sizeof(T);
+
+    // Use the generic copy helper (thread-level, no cooperation)
+    // Uses the window API that takes windows and offsets directly
+    ncclLsaCopy<T, ncclCoopThread, size_t>(threadCoop, srcPtr, recvwin, dstOffset, threadCount, team);
+  }
+
+  bar.sync(ctaCoop, cuda::memory_order_release);
+}
+
+/*
+ * Kernel 2: allGatherLsaCtaKernel - CTA-level LSA-based AllGather
+ *
+ * Purpose: High-performance AllGather implementation using CTA-level cooperation (ncclCoopCta)
+ * for warp-level memory coalescing and maximum memory bandwidth.
+ *
+ * Solution: This rank's chunk is divided among all local blocks. Each block uses
+ * the CTA-level ncclLsaCopy helper which enables warp-level memory coalescing.
+ *
+ * Key Optimizations:
+ * - LSA barriers for faster synchronization than global barriers
+ * - Direct peer access within CUDA P2P connectivity for optimal bandwidth
+ * - CTA-level cooperation (ncclCoopCta) enables warp-level memory coalescing
+ * - Warp-coordinated access patterns for optimal memory bandwidth
+ * - Chunking allows all local blocks to cooperate on this rank's chunk
+ *
+ * Performance Advantage over Kernel 1: CTA-level cooperation allows warp-level
+ * memory coalescing, significantly improving bandwidth compared to thread-level cooperation.
+ *
+ * CUDA P2P Connectivity Requirement: CRITICAL - Same as basic LSA kernel. Requires
+ * CUDA P2P connectivity due to LSA memory access patterns.
+ *
+ * Use Case: Large messages where maximum memory bandwidth is critical.
+ */
+template <typename T>
+__global__ void allGatherLsaCtaKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  // Create cooperative group once and reuse
+  ncclCoopCta ctaCoop;
+  const ncclTeam team = ncclTeamLsa(devComm);
+
+  ncclLsaBarrierSession<ncclCoopCta> bar { ctaCoop, devComm, team, devComm.lsaBarrier, blockIdx.x };
+  bar.sync(ctaCoop, cuda::memory_order_relaxed);
+
+  const int rank = devComm.rank;
+
+  // Calculate work distribution: each block gets a fixed chunk of work
+  // Simple division: divide count evenly among blocks
+  const size_t eltsPerBlock = count / gridDim.x;
+  const size_t remainder = count % gridDim.x;
+
+  // Calculate this block's starting offset and chunk size
+  // Distribute remainder one elt at a time to first blocks
+  const size_t blockStart = blockIdx.x * eltsPerBlock + min((size_t)blockIdx.x, remainder);
+  const size_t blockCount = eltsPerBlock + (blockIdx.x < remainder ? 1 : 0);
+
+  // Process this block's assigned chunk
+  if (blockCount > 0) {
+    // Get pointer to this rank's send buffer (source)
+    T* mySendPtr = (T*)ncclGetLocalPointer(sendwin, sendoffset);
+    T* srcPtr = mySendPtr + blockStart;
+
+    // Calculate destination offset for this block's portion
+    // Points to (rank * count + blockStart) in each peer's receive buffer
+    size_t dstOffset = recvoffset + (rank * count + blockStart) * sizeof(T);
+
+    // Use the CTA-level copy helper with default UNROLL factor
+    // Uses the window API that takes windows and offsets directly
+    ncclLsaCopy<T, ncclCoopCta, size_t>(ctaCoop, srcPtr, recvwin, dstOffset, blockCount, team);
+  }
+
+  bar.sync(ctaCoop, cuda::memory_order_release);
+}
+
+/*
+ * Kernel 3: allGatherMultimemThreadKernel - Thread-level Multimem-based AllGather
+ *
+ * Purpose: Provides an AllGather implementation using thread-level cooperation (ncclCoopThread)
+ * with multimem operations. Each rank gathers its own chunk to all ranks using multimem stores.
+ *
+ * Solution: Each rank reads from its own send buffer and uses multimem stores
+ * to write to all ranks' receive buffers. Each thread operates independently.
+ *
+ * Key Optimizations:
+ * - Multimem atomic operations for gather across ranks
+ * - Thread-level cooperation (ncclCoopThread) - simple, independent thread operation
+ * - All threads cooperate to gather this rank's chunk
+ *
+ * Limitation: Thread-level cooperation does NOT enable warp-level memory coalescing,
+ * resulting in lower bandwidth compared to CTA-level cooperation (see Kernel 4).
+ *
+ * Use Case: Small to medium messages, or when thread-level granularity is preferred with multimem.
+ */
+template <typename T>
+__global__ void allGatherMultimemThreadKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  // Thread divisibility requirement: align to 16 bytes when possible
+  constexpr int THREAD_DIVISIBILITY = (16 % sizeof(T) == 0) ? (16 / sizeof(T)) : 1;
+
+  // Get multimem handle from devComm
+  ncclMultimemHandle multimemHandle = devComm.lsaMultimem;
+
+  // Create barrier session with multimem flag
+  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamTagLsa(), blockIdx.x, true };
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
+
+  const int rank = devComm.rank;
+
+  // Split this rank's chunk across all threads (in all blocks)
+  const int threadId = threadIdx.x + blockDim.x * blockIdx.x;
+  const int nThreads = blockDim.x * gridDim.x;
+
+  // Calculate work distribution: each thread gets a chunk divisible by THREAD_DIVISIBILITY
+  const size_t totalDivisibleElts = (count / THREAD_DIVISIBILITY) * THREAD_DIVISIBILITY;
+  const size_t eltsPerThread = (totalDivisibleElts / nThreads / THREAD_DIVISIBILITY) * THREAD_DIVISIBILITY;
+  const size_t remainder = count - eltsPerThread * nThreads;
+
+  // Calculate this thread's starting offset and chunk size
+  // All threads except the last get eltsPerThread elts (divisible by THREAD_DIVISIBILITY)
+  // The last thread gets eltsPerThread + remainder
+  const size_t threadStart = threadId * eltsPerThread;
+  const size_t threadCount = (threadId == nThreads - 1) ? eltsPerThread + remainder : eltsPerThread;
+
+  if (threadCount > 0) {
+    // Create a thread-level cooperative group (coop size = 1)
+    ncclCoopThread threadCoop;
+
+    // Get pointer to this rank's send buffer (source)
+    T* mySendPtr = (T*)ncclGetLocalPointer(sendwin, sendoffset);
+    T* srcPtr = mySendPtr + threadStart;
+
+    // Calculate destination offset for this thread's portion
+    // Points to (rank * count + threadStart) in each peer's receive buffer
+    size_t dstOffset = recvoffset + (rank * count + threadStart) * sizeof(T);
+
+    // Use the generic multimem copy helper (thread-level, no cooperation)
+    // Uses the window API that takes windows and offsets directly
+    ncclMultimemCopy<T, ncclCoopThread, size_t>(threadCoop, srcPtr, recvwin, dstOffset, threadCount, multimemHandle);
+  }
+
+  bar.sync(ncclCoopCta(), cuda::memory_order_release);
+}
+
+/*
+ * Kernel 4: allGatherMultimemCtaKernel - CTA-level Multimem-based AllGather
+ *
+ * Purpose: High-performance AllGather implementation using CTA-level cooperation (ncclCoopCta)
+ * with multimem operations for warp-level memory coalescing and maximum memory bandwidth.
+ *
+ * Solution: This rank's chunk is divided among all local blocks. Each block uses
+ * the CTA-level ncclMultimemCopy helper which enables warp-level memory coalescing.
+ *
+ * Key Optimizations:
+ * - Multimem atomic operations for gather across ranks
+ * - CTA-level cooperation (ncclCoopCta) enables warp-level memory coalescing
+ * - Warp-coordinated access patterns for optimal memory bandwidth
+ * - Chunking allows all local blocks to cooperate on this rank's chunk
+ *
+ * Performance Advantage over Kernel 3: CTA-level cooperation allows warp-level
+ * memory coalescing, significantly improving bandwidth compared to thread-level cooperation.
+ *
+ * Use Case: Large messages where maximum memory bandwidth is critical with multimem.
+ */
+template <typename T>
+__global__ void allGatherMultimemCtaKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  // Block divisibility requirement: align to 16 bytes when possible
+  constexpr int BLOCK_DIVISIBILITY = (16 % sizeof(T) == 0) ? (16 / sizeof(T)) : 1;
+
+  // Get multimem handle from devComm
+  ncclMultimemHandle multimemHandle = devComm.lsaMultimem;
+
+  // Create cooperative group once and reuse
+  ncclCoopCta ctaCoop;
+
+  // Create barrier session with multimem flag
+  ncclLsaBarrierSession<ncclCoopCta> bar { ctaCoop, devComm, ncclTeamTagLsa(), blockIdx.x, true };
+  bar.sync(ctaCoop, cuda::memory_order_relaxed);
+
+  const int rank = devComm.rank;
+
+  // Calculate work distribution: each block gets a fixed chunk of work
+  // Ensure eltsPerBlock is divisible by BLOCK_DIVISIBILITY
+  const size_t totalDivisibleElts = (count / BLOCK_DIVISIBILITY) * BLOCK_DIVISIBILITY;
+  const size_t eltsPerBlock = (totalDivisibleElts / gridDim.x / BLOCK_DIVISIBILITY) * BLOCK_DIVISIBILITY;
+  const size_t remainder = count - eltsPerBlock * gridDim.x;
+
+  // Calculate this block's starting offset and chunk size
+  // All blocks except the last get eltsPerBlock elts (divisible by BLOCK_DIVISIBILITY)
+  // The last block gets eltsPerBlock + remainder
+  const size_t blockStart = blockIdx.x * eltsPerBlock;
+  const size_t blockCount = (blockIdx.x == gridDim.x - 1) ? eltsPerBlock + remainder : eltsPerBlock;
+
+  // Process this block's assigned chunk
+  if (blockCount > 0) {
+    // Get pointer to this rank's send buffer (source)
+    T* mySendPtr = (T*)ncclGetLocalPointer(sendwin, sendoffset);
+    T* srcPtr = mySendPtr + blockStart;
+
+    // Calculate destination offset for this block's portion
+    // Points to (rank * count + blockStart) in each peer's receive buffer
+    size_t dstOffset = recvoffset + (rank * count + blockStart) * sizeof(T);
+
+    // Use the CTA-level multimem copy helper with default UNROLL factor
+    // Uses the window API that takes windows and offsets directly
+    ncclMultimemCopy<T, ncclCoopCta, size_t>(ctaCoop, srcPtr, recvwin, dstOffset, blockCount, multimemHandle);
+  }
+
+  bar.sync(ctaCoop, cuda::memory_order_release);
+}
+
 /*
  * AllGather implementation using RMA host put APIs
  */
@@ -64,7 +405,7 @@ testResult_t AllGatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
   NCCLCHECK(ncclWinGetUserPtr(comm, sendWin, &sendPtr));
   NCCLCHECK(ncclWinGetUserPtr(comm, recvWin, &recvPtr));
 
-  // Calculate element size and total bytes to transfer
+  // Calculate elt size and total bytes to transfer
   size_t eltSize = wordSize(type);
   size_t bytes = count * eltSize;
 
@@ -121,12 +462,12 @@ testResult_t AllGatherRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
   return testSuccess;
 }
 
-testResult_t AllGatherRunColl(void* sendbuff,  size_t sendoffset,void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
+testResult_t AllGatherRunColl(void* sendbuff,  size_t sendoffset,void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int deviceImpl) {
 
   char* sptr = (char*)sendbuff + sendoffset;
   char* rptr = (char*)recvbuff + recvoffset;
 
-  switch (implementation) {
+  switch (deviceImpl) {
   case 0:
     // NCCL built-in AllGather
     NCCLCHECK_COMM_WAIT(ncclAllGather(sptr, rptr, count, type, comm, stream), comm);
@@ -135,9 +476,31 @@ testResult_t AllGatherRunColl(void* sendbuff,  size_t sendoffset,void* recvbuff,
     // RMA host put implementation
     TESTCHECK(AllGatherRmaPut(sendbuff, sendoffset, recvbuff, recvoffset, count, type, comm, stream));
     return testSuccess;
-  default:
-    return testNotImplemented;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+  case 1:
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allGatherLsaThreadKernel, type, op),
+               sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    return testSuccess;
+  case 2:
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allGatherLsaCtaKernel, type, op),
+               sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    return testSuccess;
+  case 3:
+    // AllGather doesn't use ld_reduce, so use regular specialization (not multimem-specific)
+    // This will trigger compile-time error if multimem is incorrectly used (except fp4, which is LSA-only)
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allGatherMultimemThreadKernel, type, op),
+               sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    return testSuccess;
+  case 4:
+    // AllGather doesn't use ld_reduce, so use regular specialization (not multimem-specific)
+    // This will trigger compile-time error if multimem is incorrectly used (except fp4, which is LSA-only)
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allGatherMultimemCtaKernel, type, op),
+               sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+    return testSuccess;
+#endif
   }
+
+  return testNotImplemented;
 }
 
 struct testColl allGatherTest = {
@@ -177,7 +540,10 @@ testResult_t AllGatherRunTest(struct threadArgs* args, int root, ncclDataType_t 
 
 struct testEngine allGatherEngine = {
   .getBuffSize = AllGatherGetBuffSize,
-  .runTest = AllGatherRunTest
+  .runTest = AllGatherRunTest,
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+  .getDevCommRequirements = AllGatherGetDevCommRequirements
+#endif
 };
 
 #pragma weak ncclTestEngine=allGatherEngine
