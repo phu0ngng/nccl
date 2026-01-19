@@ -116,6 +116,7 @@ static int hostRmaImpl = 0;
 int deviceCtaCount = 16; // Default number of CTAs for device implementation
 
 static const char* testSkipReason = NULL;
+void setTestSkipReason(const char* reason) { testSkipReason = reason; }
 
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
@@ -138,7 +139,7 @@ static int ctaPolicy = -1;
 static int per_coll_perf = 0;
 static int simulate = 0;
 static int nIdsUser = NCCL_CONFIG_UNDEF_INT; // number of ncclUniqueIds created
-static int minCudaArch = 1<<30;
+int minCudaArch = 1<<30;  // Minimum CUDA architecture across all GPUs in the test
 
 static char* replay_file = NULL;
 
@@ -681,8 +682,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         void* recvwin = args->recvRegHandles[id][i];
         CUDACHECK(cudaSetDevice(args->gpus[i]));
         TESTCHECK(args->collTest->runColl(
-              (void*)(in_place ? recvwin : sendwin), shift + in_place ? args->sendInplaceOffset[id][i] * rank : 0,
-              (void*)recvwin, shift + in_place ? args->recvInplaceOffset[id][i] * rank : 0,
+              (void*)(in_place ? recvwin : sendwin), shift + (in_place ? args->sendInplaceOffset[id][i] * rank : 0),
+              (void*)recvwin, shift + (in_place ? args->recvInplaceOffset[id][i] * rank : 0),
               count, type, op, root, (ncclComm_t)(args->devComms[id]+i), args->streams[i], deviceImpl));
 #endif
       }

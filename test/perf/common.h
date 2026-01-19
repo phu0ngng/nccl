@@ -212,6 +212,10 @@ struct testThread {
 // Provided by common.cu
 extern void Barrier(struct threadArgs* args);
 extern testResult_t barrierRmaSignal(ncclComm_t comm, cudaStream_t stream);
+extern int minCudaArch;  // Minimum CUDA architecture across all GPUs in the test
+void setTestSkipReason(const char* reason);
+
+
 extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
 extern testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks);
 extern testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks, const int rank);
@@ -286,6 +290,31 @@ static uint64_t getHostHash(const char* hostname) {
       #define HAVE_FP8 1
     #endif
   #endif
+#endif
+
+// Check compile-time macros to determine which fp8 multimem architectures are available
+// These macros are set by the build system (Makefile/CMake) based on NVCC_GENCODE
+// Priority matches multimem__funcs.h: sm_100f > sm_100a > sm_101f > sm_101a > sm_120a > sm_121a
+#if defined(NCCL_BUILD_SM100F) && NCCL_BUILD_SM100F == 1
+  #define FP8_MULTIMEM_ARCH_AVAILABLE 1
+  #define FP8_MULTIMEM_ARCH_SM100F 1
+#elif defined(NCCL_BUILD_SM100A) && NCCL_BUILD_SM100A == 1
+  #define FP8_MULTIMEM_ARCH_AVAILABLE 1
+  #define FP8_MULTIMEM_ARCH_SM100A 1
+#elif defined(NCCL_BUILD_SM101F) && NCCL_BUILD_SM101F == 1
+  #define FP8_MULTIMEM_ARCH_AVAILABLE 1
+  #define FP8_MULTIMEM_ARCH_SM101F 1
+#elif defined(NCCL_BUILD_SM101A) && NCCL_BUILD_SM101A == 1
+  #define FP8_MULTIMEM_ARCH_AVAILABLE 1
+  #define FP8_MULTIMEM_ARCH_SM101A 1
+#elif defined(NCCL_BUILD_SM120A) && NCCL_BUILD_SM120A == 1
+  #define FP8_MULTIMEM_ARCH_AVAILABLE 1
+  #define FP8_MULTIMEM_ARCH_SM120A 1
+#elif defined(NCCL_BUILD_SM121A) && NCCL_BUILD_SM121A == 1
+  #define FP8_MULTIMEM_ARCH_AVAILABLE 1
+  #define FP8_MULTIMEM_ARCH_SM121A 1
+#else
+  #define FP8_MULTIMEM_ARCH_AVAILABLE 0
 #endif
 
 static size_t wordSize(ncclDataType_t type) {
@@ -445,8 +474,44 @@ testResult_t threadLaunch(struct testThread* thread);
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 template <typename F>
-testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  if (kernel == nullptr) return testNotImplemented;
+testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, bool isMultimem = false) {
+  // Check if multimem is requested but architecture doesn't support it (requires sm_90 or higher)
+  if (isMultimem && minCudaArch < 90) {
+    setTestSkipReason("multimem not supported on this system (requires sm_90+)\n");
+    return testSkipped;
+  }
+  // FP8 multimem kernel availability is checked at compile-time via FP8_MULTIMEM_ARCH_AVAILABLE
+  // If kernels weren't compiled for the current architecture, SPECIALIZE_KERNEL_MULTIMEM will return nullptr
+
+  if (kernel == nullptr) {
+    if (isMultimem) {
+      if (op != ncclSum) {
+        setTestSkipReason("multimem kernels only support sum reduction\n");
+      } else if (type == ncclInt8 || type == ncclUint8) {
+        setTestSkipReason("multimem kernels do not support int8/uint8\n");
+      }
+#if !HAVE_BF16
+      else if (type == ncclBfloat16) {
+        setTestSkipReason("BF16 not supported in this build\n");
+      }
+#endif
+#if !HAVE_FP8
+      else if (type == ncclFloat8e4m3 || type == ncclFloat8e5m2) {
+        setTestSkipReason("FP8 not supported in this build\n");
+      }
+#elif !FP8_MULTIMEM_ARCH_AVAILABLE
+      else if (type == ncclFloat8e4m3 || type == ncclFloat8e5m2) {
+        setTestSkipReason("FP8 multimem not built for this architecture\n");
+      }
+#endif
+      else {
+        setTestSkipReason("multimem kernel not available for this type\n");
+      }
+    } else {
+      setTestSkipReason("kernel not available for this type/op\n");
+    }
+    return testSkipped;
+  }
   ncclDevComm* devComm = (ncclDevComm*)comm;
 
   ncclWindow_t sendwin = (ncclWindow_t)sendbuff;
@@ -454,6 +519,29 @@ testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset,
   kernel<<<deviceCtaCount, 512, 0, stream>>>(sendwin, sendoffset, recvwin, recvoffset, count, root, *devComm);
   return testSuccess;
 }
+
+// Helper macros to conditionally reference kernels only when compile-time conditions are met
+// This prevents template instantiation when conditions are false by avoiding any reference to the kernel template
+// FP8: requires both HAVE_FP8 and FP8_MULTIMEM_ARCH_AVAILABLE
+#if HAVE_FP8 && FP8_MULTIMEM_ARCH_AVAILABLE
+#define _FP8_MULTIMEM_KERNEL(kernel, fp8_type) kernel<__nv_fp8_##fp8_type>
+#else
+#define _FP8_MULTIMEM_KERNEL(kernel, fp8_type) nullptr
+#endif
+
+#if HAVE_FP8
+#define _FP8_KERNEL(kernel, fp8_type) kernel<__nv_fp8_##fp8_type>
+#else
+#define _FP8_KERNEL(kernel, fp8_type) nullptr
+#endif
+
+// BF16: requires HAVE_BF16
+#if HAVE_BF16
+#define _BF16_KERNEL(kernel) kernel<__nv_bfloat16>
+#else
+#define _BF16_KERNEL(kernel) nullptr
+#endif
+
 
 #define SPECIALIZE_KERNEL(kernel, type, op) \
   ( op != ncclSum ? nullptr : \
@@ -464,6 +552,30 @@ testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset,
    type == ncclInt64 ? kernel<int64_t> : \
    type == ncclUint64 ? kernel<uint64_t> : \
    type == ncclFloat16 ? kernel<half> : \
+   type == ncclBfloat16 ? _BF16_KERNEL(kernel) : \
+   type == ncclFloat8e4m3 ? _FP8_KERNEL(kernel, e4m3) :       \
+   type == ncclFloat8e5m2 ? _FP8_KERNEL(kernel, e5m2) : \
+   type == ncclFloat32 ? kernel<float> : \
+   type == ncclFloat64 ? kernel<double> : \
+   nullptr \
+  )
+
+// Specialization macro for multimem kernels - excludes int8_t and uint8_t (not supported for multimem)
+// Returns nullptr for int8_t/uint8_t to allow tests to skip instead of triggering static_assert
+// Structure: runtime check (type) first, then helper macros handle compile-time checks
+// Helper macros expand to nullptr when conditions aren't met, preventing template instantiation
+#define SPECIALIZE_KERNEL_MULTIMEM(kernel, type, op) \
+  ( op != ncclSum ? nullptr : \
+   type == ncclInt8 ? nullptr : \
+   type == ncclUint8 ? nullptr : \
+   type == ncclInt32 ? kernel<int32_t> : \
+   type == ncclUint32 ? kernel<uint32_t> : \
+   type == ncclInt64 ? kernel<int64_t> : \
+   type == ncclUint64 ? kernel<uint64_t> : \
+   type == ncclFloat16 ? kernel<half> : \
+   type == ncclBfloat16 ? _BF16_KERNEL(kernel) : \
+   type == ncclFloat8e4m3 ? _FP8_MULTIMEM_KERNEL(kernel, e4m3) : \
+   type == ncclFloat8e5m2 ? _FP8_MULTIMEM_KERNEL(kernel, e5m2) : \
    type == ncclFloat32 ? kernel<float> : \
    type == ncclFloat64 ? kernel<double> : \
    nullptr \
@@ -471,9 +583,10 @@ testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset,
 #else
 template <typename F>
 testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
-  return testNotImplemented;
+  return testSkipped;
 }
 #define SPECIALIZE_KERNEL(kernel, type, op) nullptr
+#define SPECIALIZE_KERNEL_MULTIMEM(kernel, type, op) nullptr
 #endif
 
 bool isFp8ValidForReductions(ncclDataType_t type);
