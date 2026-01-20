@@ -144,6 +144,14 @@ void* allReduce(int my_rank, int total_ranks, int local_device, int devices_per_
     NCCLCHECK(ncclCommDestroy(comm));
     return NULL;
   }
+  // Pure LSA example requires a single team where all ranks can directly access each other
+  if (props.nLsaTeams != 1) {
+    printf("ERROR: rank %d communicator has %d LSA teams, expected 1 for pure LSA example!\n",
+           my_rank, props.nLsaTeams);
+    NCCLCHECK(ncclCommFinalize(comm));
+    NCCLCHECK(ncclCommDestroy(comm));
+    return NULL;
+  }
 
   // Allocate memory for AllReduce operation
   size_t count = 1024 * 1024; // 1M elements
