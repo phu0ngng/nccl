@@ -144,6 +144,10 @@ ncclCommProperties_t
 
       The GIN type supported by the communicator. If equal to :c:macro:`NCCL_GIN_TYPE_NONE`, a :c:type:`ncclDevComm` cannot be created with GIN resources.
 
+   .. c:member:: int nLsaTeams
+
+      The number of LSA teams across the entire communicator.
+
 
 ncclGinType_t
 -------------

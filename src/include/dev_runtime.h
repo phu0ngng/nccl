@@ -52,6 +52,7 @@ struct ncclDevrState {
   int lsaSelf;
   int lsaSize;
   int* lsaRankList;
+  int nLsaTeams;
 
   size_t granularity; // cuMemGetAllocationGranularity
   bool ginEnabled;
