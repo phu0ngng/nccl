@@ -10,6 +10,15 @@
 #include "coop.h"
 #include "utility.h"
 
+// Deprecation convenience macros
+#if defined(__GNUC__) || defined(__clang__)
+  #define NCCL_DEPRECATED_FIELD(type, name, msg) type name __attribute__((deprecated(msg)))
+#elif defined(_MSC_VER)
+  #define NCCL_DEPRECATED_FIELD(type, name, msg) __declspec(deprecated(msg)) type name
+#else
+  #error "Unsupported compiler!"
+#endif
+
 struct ncclDevComm;
 typedef struct ncclDevComm ncclDevComm_t;
 
