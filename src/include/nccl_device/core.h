@@ -94,7 +94,9 @@ struct ncclDevCommRequirements {
 
   int lsaLLA2ABlockCount, lsaLLA2ASlotCount;
 
-  bool ginForceEnable;
+  NCCL_DEPRECATED_FIELD(bool, ginForceEnable,
+                        "ginForceEnable has been deprecated in favor of ginConnectionType");
+
   int ginContextCount; // This is a hint, the actual context count in the devcomm may not match.
   int ginSignalCount; // Guaranteed to start at id=0
   int ginCounterCount; // Guaranteed to start at id=0
