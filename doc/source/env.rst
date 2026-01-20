@@ -182,17 +182,52 @@ NCCL_IB_TIMEOUT
 ---------------
 The ``NCCL_IB_TIMEOUT`` variable controls the InfiniBand Verbs Timeout.
 
-The timeout is computed as 4.096 µs * 2 ^ *timeout*, and the correct value is dependent on the size of the network.
-Increasing that value can help on very large networks, for example, if NCCL is failing on a call to *ibv_poll_cq* with
+The timeout is computed as 4.096 µs * 2 ^ *timeout*, and the best value is
+dependent on the size of the network. Increasing that value can help on very
+large networks, for example, if NCCL is failing on a call to *ibv_poll_cq* with
 error 12.
 
-For more information, see section 12.7.34 of the InfiniBand specification Volume 1 (Local Ack Timeout).
+For convenience and clarity, the following table shows some of the commonly used
+values and the resulting timeout. For more information, see section 12.7.34 of
+the InfiniBand specification Volume 1 (Local Ack Timeout).
+
+Note that the total time spent waiting for a response is the product of
+``NCCL_IB_TIMEOUT`` and ``NCCL_IB_RETRY_CNT``.
+
++------------------+---------------+--------------------+-------------------------+
+| NCCL_IB_TIMEOUT  | Timeout       |  NCCL_IB_RETRY_CNT | Total Time Before Error |
++==================+===============+====================+=========================+
+| 0                | Infinity      | Any                | Infinity                |
++------------------+---------------+--------------------+-------------------------+
+| ...              | ...           | ...                | ...                     |
++------------------+---------------+--------------------+-------------------------+
+| 17               | 536.9 ms      | 7                  | 3.8 seconds             |
++------------------+---------------+--------------------+-------------------------+
+| 18               | 1.1 seconds   | 7                  | 7.5 seconds             |
++------------------+---------------+--------------------+-------------------------+
+| 19               | 2.1 seconds   | 7                  | 15 seconds              |
++------------------+---------------+--------------------+-------------------------+
+| 20               | 4.3 seconds   | 7                  | 30 seconds              |
++------------------+---------------+--------------------+-------------------------+
+| 21               | 8.6 seconds   | 7                  | 60 seconds              |
++------------------+---------------+--------------------+-------------------------+
+| 22               | 17.2 seconds  | 7                  | 2 minutes               |
++------------------+---------------+--------------------+-------------------------+
+| 23               | 34.4 seconds  | 7                  | 4 minutes               |
++------------------+---------------+--------------------+-------------------------+
+| 24               | 1.1 minutes   | 7                  | 8 minutes               |
++------------------+---------------+--------------------+-------------------------+
+| 25               | 2.3 minutes   | 7                  | 16 minutes              |
++------------------+---------------+--------------------+-------------------------+
+| ...              | ...           | ...                | ...                     |
++------------------+---------------+--------------------+-------------------------+
+
 
 Values accepted
 ^^^^^^^^^^^^^^^
 The default value used by NCCL is 20 (since 2.23; it was 18 since 2.14, and 14 before that).
 
-Values can be 1-31.
+Values can be 0-31.
 
 Note: Setting a value of 0 or >= 32 will result in an infinite timeout value.
 
@@ -200,13 +235,17 @@ NCCL_IB_RETRY_CNT
 -----------------
 (since 2.1.15)
 
-The ``NCCL_IB_RETRY_CNT`` variable controls the InfiniBand retry count.
+The ``NCCL_IB_RETRY_CNT`` variable controls the InfiniBand retry count. Total
+time spent retrying is determined by the product of the retry count and the
+timeout.  For example, the default values of ``NCCL_IB_TIMEOUT=20`` and
+``NCCL_IB_RETRY_CNT=7`` result in approximately 30 seconds of waiting (7
+retries, each lasting 4.3 seconds) before a network error is raised by NCCL.
 
 For more information, see section 12.7.38 of the InfiniBand specification Volume 1.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is 7.
+The default value is 7.  Valid values are 0-7.
 
 NCCL_IB_GID_INDEX
 -----------------
