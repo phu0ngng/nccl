@@ -54,6 +54,7 @@ option(MLX5DV "Enable MLX5DV" OFF)
 option(MAX_EXT_NET_PLUGINS "Maximum external network plugins" 0)
 option(BUILD_TESTS "Build tests" OFF)
 option(EMIT_LLVM_IR "Generate LLVM IR for device APIs" OFF)
+option(BUILD_NCCL4PY "Enable nccl4py Python bindings targets" OFF)
 
 # Detect OS
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -282,6 +283,10 @@ if(EMIT_LLVM_IR)
     add_dependencies(llvm_ir nccl_header)
     add_custom_target(nccl_with_ir ALL DEPENDS nccl llvm_ir)
     message(STATUS "LLVM IR generation will be included in default build")
+endif()
+
+if(BUILD_NCCL4PY)
+  add_subdirectory(nccl4py)
 endif()
 
 ###################### CMake package config for find_package(NCCL) ######################
