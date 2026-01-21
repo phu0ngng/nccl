@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
   // Get window handles
   void* hostWins[NCCL_GIN_MAX_CONTEXTS];
   ncclGinWindow_t devWins[NCCL_GIN_MAX_CONTEXTS];
-  NCCLCHECK(ncclGinRegister(comm, buf, bufSize, hostWins, devWins));
+  NCCLCHECK(ncclGinRegister(comm, buf, bufSize, hostWins, devWins, /*winFlags=*/0));
   // Get GIN resources
   ncclGinCtx_M<-1u> gctx;
   gctx.backend = comm->sharedRes->ginState.ginDevHandles[0]->netDeviceType;

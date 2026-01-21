@@ -53,7 +53,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm);
 ncclResult_t ncclGinFinalize(struct ncclComm* comm);
 ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
                              void* ginHostWins[NCCL_GIN_MAX_CONTEXTS],
-                             ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONTEXTS]);
+                             ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONTEXTS], int winFlags);
 ncclResult_t ncclGinDeregister(struct ncclComm* comm, void* ginHostWins[NCCL_GIN_MAX_CONTEXTS]);
 ncclResult_t ncclGinAllocSignalsCounters(struct ncclComm* comm, int nSignals, uint32_t* outSignal0,
                                          int nCounters, uint32_t* outCounter0);

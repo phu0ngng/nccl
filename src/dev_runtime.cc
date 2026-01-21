@@ -37,6 +37,7 @@ struct ncclDevrMemory {
   ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONTEXTS];
   void* rmaHostWins[NCCL_GIN_MAX_CONTEXTS];
   ncclGinWindow_t rmaDevWins[NCCL_GIN_MAX_CONTEXTS];
+  int winFlags;
 };
 
 struct ncclDevrWindowSorted {
@@ -367,7 +368,7 @@ static void symTeamDestroyAll(struct ncclComm* comm) {
 
 static ncclResult_t symMemoryRegisterGin(struct ncclComm* comm, struct ncclDevrMemory* mem) {
   NCCLCHECK(ncclGinConnectOnce(comm));
-  NCCLCHECK(ncclGinRegister(comm, mem->primaryAddr, mem->size, mem->ginHostWins, mem->ginDevWins));
+  NCCLCHECK(ncclGinRegister(comm, mem->primaryAddr, mem->size, mem->ginHostWins, mem->ginDevWins, mem->winFlags));
   return ncclSuccess;
 }
 
@@ -381,7 +382,7 @@ static ncclResult_t symMemoryRegisterRma(struct ncclComm* comm, struct ncclDevrM
 // Due to multicast binds for each pre-exiting team, this function requires
 // caller do a world barrier before returning to user.
 static ncclResult_t symMemoryObtain(
-    struct ncclComm* comm, CUmemGenericAllocationHandle memHandle, void* memAddr, size_t size,
+    struct ncclComm* comm, CUmemGenericAllocationHandle memHandle, void* memAddr, size_t size, int winFlags,
     struct ncclDevrMemory** outMem
   ) {
   ncclResult_t ret = ncclSuccess;
@@ -403,6 +404,7 @@ static ncclResult_t symMemoryObtain(
   mem->memHandle = memHandle;
   mem->primaryAddr = memAddr;
   mem->size = size;
+  mem->winFlags = winFlags;
 
   // Grab offset in the big space.
   NCCLCHECKGOTO(ncclSpaceAlloc(&devr->bigSpace, devr->bigSize, size, devr->granularity, &bigOffset), ret, fail_mem);
@@ -655,7 +657,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
   CUCHECKGOTO(cuMemRetainAllocationHandle(&memHandle, reinterpret_cast<void*>(memAddr)), ret, fail_locReg);
 
   // Trade cumem handle for ncclDevrMemory*
-  NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, (void*)memAddr, memSize, &mem), ret, fail_locReg_memHandle);
+  NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, (void*)memAddr, memSize, winFlags, &mem), ret, fail_locReg_memHandle);
   memHandle = 0x0; // symMemoryObtain took our reference
 
   CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail_locReg_memHandle_mem);
@@ -893,7 +895,7 @@ ncclResult_t ncclDevrCommCreateInternal(
 
     CUCHECKGOTO(cuMemCreate(&memHandle, bufSizeTotal, &memProp, 0), ret, fail_stream);
 
-    NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, NULL, bufSizeTotal, &mem), ret, fail_stream_mem);
+    NCCLCHECKGOTO(symMemoryObtain(comm, memHandle, NULL, bufSizeTotal, /*winFlags=*/0, &mem), ret, fail_stream_mem);
     memHandle = 0x0; // Reference given to symMemoryObtain
 
     NCCLCHECKGOTO(symWindowCreate( // Requires world barrier afterward.
