@@ -1111,6 +1111,26 @@ Value accepted
 
 Default is 1 (enabled). Set to 0 to disable.
 
+NCCL_IGNORE_NET_MISMATCH
+------------------------
+(since 2.30)
+
+The ``NCCL_IGNORE_NET_MISMATCH`` variable controls whether NCCL should fail initialization when it detects mismatched Net (network) device counts across ranks. By default, NCCL will ignore Net device count mismatches, but setting this to 0 will cause NCCL to fail initialization if some ranks have access to fewer Net devices than others.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 1 (ignore mismatch). Set to 0 to fail on Net device count mismatches.
+
+NCCL_IGNORE_COLLNET_MISMATCH
+----------------------------
+(since 2.30)
+
+The ``NCCL_IGNORE_COLLNET_MISMATCH`` variable controls whether NCCL should fail initialization when it detects mismatched CollNet (collective network) device counts across ranks. By default, NCCL will fail with a system error if some ranks have access to fewer CollNet devices than others, as this typically indicates a misconfiguration that can lead to failures.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 0 (fail on mismatch). Set to 1 to ignore CollNet device count mismatches and continue with initialization.
+
 NCCL_SINGLE_RING_THRESHOLD
 --------------------------
 (since 2.1, removed in 2.3)

@@ -17,6 +17,7 @@
 #include "gin.h"
 #include "enqueue.h"
 #include "graph.h"
+#include "graph/topo.h"
 #include "argcheck.h"
 #include "tuner.h"
 #include "ras.h"
@@ -119,6 +120,8 @@ static ncclResult_t commReclaim(struct ncclAsyncJob* job_);
 
 // GDRCOPY support: Off by default
 NCCL_PARAM(GdrCopyEnable, "GDRCOPY_ENABLE", 0);
+NCCL_PARAM(IgnoreNetMismatch, "IGNORE_NET_MISMATCH", 1);
+NCCL_PARAM(IgnoreCollNetMismatch, "IGNORE_COLLNET_MISMATCH", 0);
 
 // GDRCOPY support
 gdr_t ncclGdrCopy = NULL;
@@ -937,6 +940,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int localRanks;
     int p2pnChannelsPerPeer;
     bool nicFused;
+    int localNetDeviceCount;
+    int localCollNetCount;
   };
 
   int nChannelsOrig;
@@ -954,6 +959,13 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   bool globalCrossNicSupport = true;
   bool globalRmaPluginSupport = true;
   bool globalCuMemGdrSupport = true;
+
+  int localNetDeviceCount = 0;
+  int localCollNetCount = 0;
+  int minLocalNetCount = INT_MAX;
+  int maxLocalNetCount = 0;
+  int minLocalCollNetCount = INT_MAX;
+  int maxLocalCollNetCount = 0;
 
   timers[TIMER_INIT_ALLGATHER] = clockNano();
   // AllGather1 - begin
@@ -1152,6 +1164,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   // AllGather3 - begin
   NCCLCHECKGOTO(ncclCalloc(&allGather3Data, nranks), ret, fail);
 
+  if (comm->ncclNet && comm->ncclNet->devices) {
+    NCCLCHECKGOTO(comm->ncclNet->devices(&localNetDeviceCount), ret, fail);
+  }
+  if (collNetSupport(comm)) {
+    NCCLCHECKGOTO(collNetDevices(comm, &localCollNetCount), ret, fail);
+  }
+  INFO(NCCL_INIT, "Rank %d: %d Net devices", rank, localNetDeviceCount);
+  INFO(NCCL_INIT, "Rank %d: %d CollNet devices", rank, localCollNetCount);
+
   for (int a=0; a<NCCL_NUM_ALGORITHMS; a++) {
     allGather3Data[rank].graphInfo[a].pattern = graphs[a]->pattern;
     allGather3Data[rank].graphInfo[a].nChannels = graphs[a]->nChannels;
@@ -1167,6 +1188,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   allGather3Data[rank].cpuVendor = comm->cpuVendor;
   allGather3Data[rank].p2pnChannelsPerPeer = comm->p2pnChannelsPerPeer;
   NCCLCHECKGOTO(ncclTopoCheckNicFused(comm, &allGather3Data[rank].nicFused), ret, fail);
+  allGather3Data[rank].localNetDeviceCount = localNetDeviceCount;
+  allGather3Data[rank].localCollNetCount = localCollNetCount;
 
   comm->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
@@ -1200,6 +1223,55 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     if (allGather3Data[r].nicFused) {
       globalNicFused = true;
     }
+    minLocalNetCount = std::min(minLocalNetCount, allGather3Data[r].localNetDeviceCount);
+    maxLocalNetCount = std::max(maxLocalNetCount, allGather3Data[r].localNetDeviceCount);
+    minLocalCollNetCount = std::min(minLocalCollNetCount, allGather3Data[r].localCollNetCount);
+    maxLocalCollNetCount = std::max(maxLocalCollNetCount, allGather3Data[r].localCollNetCount);
+  }
+  if (rank == 0) {
+    INFO(NCCL_INIT, "Local Net device counts across ranks: min %d max %d", minLocalNetCount, maxLocalNetCount);
+    INFO(NCCL_INIT, "Local CollNet device counts across ranks: min %d max %d", minLocalCollNetCount, maxLocalCollNetCount);
+
+    // Check Net device count mismatch
+    if (minLocalNetCount != maxLocalNetCount) {
+      // Log mismatched ranks first
+      for (int r=0; r<nranks; r++) {
+        if (allGather3Data[r].localNetDeviceCount < maxLocalNetCount) {
+          INFO(NCCL_INIT, "Rank %d has %d local Net devices (max %d).", r, allGather3Data[r].localNetDeviceCount, maxLocalNetCount);
+        }
+      }
+      // Then warn or error based on env var
+      if (ncclParamIgnoreNetMismatch()) {
+        INFO(NCCL_INIT, "Detected mixed local Net device counts across ranks (min %d, max %d). Ignoring due to NCCL_IGNORE_NET_MISMATCH.",
+             minLocalNetCount, maxLocalNetCount);
+      } else {
+        WARN("Detected mixed local Net device counts across ranks (min %d, max %d). Set NCCL_IGNORE_NET_MISMATCH=1 to continue.",
+             minLocalNetCount, maxLocalNetCount);
+        ret = ncclSystemError;
+      }
+    }
+
+    // Check CollNet device count mismatch
+    if (minLocalCollNetCount != maxLocalCollNetCount) {
+      // Log mismatched ranks first
+      for (int r=0; r<nranks; r++) {
+        if (allGather3Data[r].localCollNetCount < maxLocalCollNetCount) {
+          INFO(NCCL_INIT, "Rank %d has %d local CollNet devices (max %d).", r, allGather3Data[r].localCollNetCount, maxLocalCollNetCount);
+        }
+      }
+      // Then warn or error based on env var
+      if (ncclParamIgnoreCollNetMismatch()) {
+        INFO(NCCL_INIT, "Detected mixed local CollNet device counts across ranks (min %d, max %d). Ignoring due to NCCL_IGNORE_COLLNET_MISMATCH.",
+             minLocalCollNetCount, maxLocalCollNetCount);
+      } else {
+        WARN("Detected mixed local CollNet device counts across ranks (min %d, max %d). Set NCCL_IGNORE_COLLNET_MISMATCH=1 to continue.",
+             minLocalCollNetCount, maxLocalCollNetCount);
+        ret = ncclSystemError;
+      }
+    }
+
+    // Abort on Net/CollNet mismatches
+    if (ret != ncclSuccess) goto fail;
   }
 
   // Alert the user to the presence of mixed CPUs. In the past this has caused
