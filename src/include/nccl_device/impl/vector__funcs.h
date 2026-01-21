@@ -11,7 +11,9 @@
 #include "reduce_copy__types.h"
 #include "../utility.h"
 #include "../coop.h"
+#if defined(__CUDA_FP4_TYPES_EXIST__)
 #include <cuda_fp4.h>
+#endif
 #if defined(__CUDA_FP8_TYPES_EXIST__)
 #include <cuda_fp8.h>
 #endif
