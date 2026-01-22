@@ -134,4 +134,12 @@
   variables:
     GIT_STRATEGY: none
   script:
+    # Delete current pipeline's install directory
     - rm -rf $INSTALL_DIR
+    # For nightly pipelines, also delete any install directories older than 14 days in the parent directory
+    - |
+      if [[ $TRIGGER_PIPELINE == "nightly" ]]; then
+        INSTALL_PARENT_DIR=$(dirname $INSTALL_DIR)
+        echo "Deleting install directories older than 14 days in $INSTALL_PARENT_DIR"
+        find $INSTALL_PARENT_DIR -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} \; 2>/dev/null || true
+      fi
