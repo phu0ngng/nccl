@@ -54,9 +54,12 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
     __syncthreads();
     if (t==0) {
       // Send signal upstream to indicate free space
+      ncclGinSignalDescriptor signal;
+      signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+      signal.indexedSignal.signalId = sigFree0 + up_block;
       ncclGinCall<ncclGinApi_Put>(ctx, ncclCoopThread(), up_rank,
         /*hasData=*/false, nullptr, 0, nullptr, 0, 0,
-        /*hasSignal=*/true, sigFree0 + up_block, ncclGinSignalInc, 0,
+        signal, ncclGinSignalInc, 0,
         /*hasCounter=*/false, 0,
         /*hasDescriptor=*/false, nullptr,
         cuda::thread_scope_thread, cuda::thread_scope_thread);
@@ -73,11 +76,14 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
     nChunks = (BufElts + chunkElts-1)/chunkElts;
     #pragma unroll 1
     for (int i=t; i < nChunks; i += tn) {
+      ncclGinSignalDescriptor signal;
+      signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+      signal.indexedSignal.signalId = sigData0 + down_block;
       ncclGinCall<ncclGinApi_Put>(ctx, ncclCoopThread(), down_rank, /*hasData=*/true,
         win, (recvOff + down_block*BufElts + i*chunkElts)*sizeof(int),
         win, (sendOff + blockIdx.x*BufElts + i*chunkElts)*sizeof(int),
         min(chunkElts, BufElts - i*chunkElts)*sizeof(int),
-        /*hasSignal=*/true, sigData0 + down_block, ncclGinSignalInc, 0,
+        signal, ncclGinSignalInc, 0,
         /*hasCounter=*/false, 0,
         /*hasDescriptor=*/false, nullptr,
         cuda::thread_scope_thread, cuda::thread_scope_device);

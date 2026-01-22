@@ -170,8 +170,8 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_GDAKI> {
   template <typename Coop>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, int peer, bool hasWins,
                                       ncclGinWindow_t dstWin, size_t dstOff, ncclGinWindow_t srcWin,
-                                      size_t srcOff, size_t bytes, bool hasSignal,
-                                      ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp,
+                                      size_t srcOff, size_t bytes,
+                                      ncclGinSignalDescriptor signal, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasCounter,
                                       ncclGinCounter_t counterId, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
@@ -179,36 +179,15 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_GDAKI> {
     using nccl::utility::loadConst;
     size_t signalOffset = 0;
     __be32 signalKey = 0;
-    if (hasSignal) {
-      signalOffset = sizeof(uint64_t) * signalId;
+    bool hasSignal = signal.type != NCCL_GIN_SIGNAL_TYPE_NONE;
+    if (signal.type == NCCL_GIN_SIGNAL_TYPE_INDEXED) {
+      signalOffset = sizeof(uint64_t) * signal.indexedSignal.signalId;
       ncclGinGdakiGPUContext* gdaki = (struct ncclGinGdakiGPUContext*)ctx.handle;
       signalKey = loadConst(loadConst(&gdaki->signals_table.rkeys) + peer);
-    }
-    nccl::gin::gdaki::putImpl(
-      ctx, coop, peer, hasWins, dstWin, dstOff, srcWin, srcOff, bytes,
-      hasSignal, signalOffset, signalKey, signalOp, signalOpArg,
-      hasCounter, counterId, hasDescriptor, descriptor,
-      required, given
-    );
-  }
-};
-
-template<>
-struct ncclGinApi_PutVASignal<NCCL_NET_DEVICE_GIN_GDAKI> {
-  template <typename Coop>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, int peer, bool hasWins,
-                                      ncclGinWindow_t dstWin, size_t dstOff, ncclGinWindow_t srcWin,
-                                      size_t srcOff, size_t bytes, bool hasSignal,
-                                      ncclGinWindow_t signalWindow, size_t signalOffset, ncclGinSignalOp_t signalOp,
-                                      uint64_t signalOpArg, bool hasCounter,
-                                      ncclGinCounter_t counterId, bool hasDescriptor,
-                                      ncclGinDescriptorSmem* descriptor,
-                                      cuda::thread_scope required, cuda::thread_scope given) {
-    using nccl::utility::loadConst;
-    __be32 signalKey = 0;
-    if (hasSignal) {
-      ncclGinGdakiMemHandle* signalMh = (ncclGinGdakiMemHandle*)signalWindow;
+    } else if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
+      ncclGinGdakiMemHandle* signalMh = (ncclGinGdakiMemHandle*)signal.vaSignal.signalWindow;
       signalKey = loadConst(loadConst(&signalMh->rkeys) + peer);
+      signalOffset = signal.vaSignal.signalOffset;
     }
     nccl::gin::gdaki::putImpl(
       ctx, coop, peer, hasWins, dstWin, dstOff, srcWin, srcOff, bytes,
@@ -223,41 +202,23 @@ template <>
 struct ncclGinApi_PutValue<NCCL_NET_DEVICE_GIN_GDAKI> {
   template <typename Coop, typename T>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, int peer, ncclGinWindow_t dstWin,
-                                      size_t dstOff, T srcVal, bool hasSignal,
-                                      ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp,
+                                      size_t dstOff, T srcVal,
+                                      ncclGinSignalDescriptor signal, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
                                       cuda::thread_scope required, cuda::thread_scope given) {
     using nccl::utility::loadConst;
     size_t signalOffset = 0;
     __be32 signalKey = 0;
-    if (hasSignal) {
-      signalOffset = sizeof(uint64_t) * signalId;
+    bool hasSignal = signal.type != NCCL_GIN_SIGNAL_TYPE_NONE;
+    if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
+      ncclGinGdakiMemHandle* signalMh = (ncclGinGdakiMemHandle*)signal.vaSignal.signalWindow;
+      signalKey = loadConst(loadConst(&signalMh->rkeys) + peer);
+      signalOffset = signal.vaSignal.signalOffset;
+    } else if (signal.type == NCCL_GIN_SIGNAL_TYPE_INDEXED) {
+      signalOffset = sizeof(uint64_t) * signal.indexedSignal.signalId;
       ncclGinGdakiGPUContext* gdaki = (struct ncclGinGdakiGPUContext*)ctx.handle;
       signalKey = loadConst(loadConst(&gdaki->signals_table.rkeys) + peer);
-    }
-    nccl::gin::gdaki::putValueImpl(
-      ctx, coop, peer, dstWin, dstOff, srcVal,
-      hasSignal, signalOffset, signalKey, signalOp, signalOpArg,
-      hasDescriptor, descriptor, required, given
-    );
-  }
-};
-
-template <>
-struct ncclGinApi_PutValueVASignal<NCCL_NET_DEVICE_GIN_GDAKI> {
-  template <typename Coop, typename T>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, int peer, ncclGinWindow_t dstWin,
-                                      size_t dstOff, T srcVal, bool hasSignal,
-                                      ncclGinWindow_t signalWindow, size_t signalOffset, ncclGinSignalOp_t signalOp,
-                                      uint64_t signalOpArg, bool hasDescriptor,
-                                      ncclGinDescriptorSmem* descriptor,
-                                      cuda::thread_scope required, cuda::thread_scope given) {
-    using nccl::utility::loadConst;
-    __be32 signalKey = 0;
-    if (hasSignal) {
-      ncclGinGdakiMemHandle* signalMh = (ncclGinGdakiMemHandle*)signalWindow;
-      signalKey = loadConst(loadConst(&signalMh->rkeys) + peer);
     }
     nccl::gin::gdaki::putValueImpl(
       ctx, coop, peer, dstWin, dstOff, srcVal,
@@ -278,18 +239,15 @@ struct ncclGinApi_ResetCounter<NCCL_NET_DEVICE_GIN_GDAKI> {
 
 template <>
 struct ncclGinApi_ResetSignal<NCCL_NET_DEVICE_GIN_GDAKI> {
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclGinSignal_t signalId) {
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclGinSignalDescriptor signal) {
     using nccl::utility::loadConst;
-    ncclGinGdakiGPUContext* gdaki = (ncclGinGdakiGPUContext*)ctx.handle;
-    loadConst(&gdaki->signals_table.buffer)[signalId] = 0;
-  }
-};
-
-template <>
-struct ncclGinApi_ResetVASignal<NCCL_NET_DEVICE_GIN_GDAKI> {
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclWindow_t signalWindow, size_t signalOffset) {
-    uint64_t* signal = (uint64_t*)ncclGetLocalPointer(signalWindow, signalOffset);
-    *signal = 0;
+    if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
+      uint64_t* signalPtr = (uint64_t*)ncclGetLocalPointer(signal.vaSignal.ncclWindow, signal.vaSignal.signalOffset);
+      *signalPtr = 0;
+    } else {
+      ncclGinGdakiGPUContext* gdaki = (ncclGinGdakiGPUContext*)ctx.handle;
+      loadConst(&gdaki->signals_table.buffer)[signal.indexedSignal.signalId] = 0;
+    }
   }
 };
 

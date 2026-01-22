@@ -46,14 +46,34 @@ struct ncclGinDescriptorSmem {
   alignas(16) char space[64];
 };
 
+enum ncclGinSignalType {
+  NCCL_GIN_SIGNAL_TYPE_NONE,
+  NCCL_GIN_SIGNAL_TYPE_VA,
+  NCCL_GIN_SIGNAL_TYPE_INDEXED,
+};
+
+struct ncclGinSignalDescriptor {
+  ncclGinSignalType type;
+  union {
+    struct {
+      ncclGinWindow_t signalWindow;
+      size_t signalOffset;
+      ncclWindow_t ncclWindow;
+    } vaSignal;
+    struct {
+      ncclGinSignal_t signalId;
+    } indexedSignal;
+  };
+};
+
 #if NCCL_CHECK_CUDACC
 template <ncclNetDeviceType backend>
 struct ncclGinApi_Put {
   template <typename Coop>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, bool hasWins,
                                       ncclGinWindow_t dstWin, size_t dstOff, ncclGinWindow_t srcWin,
-                                      size_t srcOff, size_t bytes, bool hasSignal,
-                                      ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp,
+                                      size_t srcOff, size_t bytes,
+                                      ncclGinSignalDescriptor signal, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasCounter,
                                       ncclGinCounter_t counterId, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
@@ -61,35 +81,11 @@ struct ncclGinApi_Put {
 };
 
 template <ncclNetDeviceType backend>
-struct ncclGinApi_PutVASignal {
-  template <typename Coop>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, bool hasWins,
-    ncclGinWindow_t dstWin, size_t dstOff, ncclGinWindow_t srcWin,
-    size_t srcOff, size_t bytes, bool hasSignal,
-    ncclGinWindow_t signalWindow, size_t signalOffset, ncclGinSignalOp_t signalOp,
-    uint64_t signalOpArg, bool hasCounter,
-    ncclGinCounter_t counterId, bool hasDescriptor,
-    ncclGinDescriptorSmem* descriptor,
-    cuda::thread_scope required, cuda::thread_scope given);
-};
-
-template <ncclNetDeviceType backend>
 struct ncclGinApi_PutValue {
   template <typename Coop, typename T>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, ncclGinWindow_t dstWin,
-                                      size_t dstOff, T srcData, bool hasSignal,
-                                      ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp,
-                                      uint64_t signalOpArg, bool hasDescriptor,
-                                      ncclGinDescriptorSmem* descriptor,
-                                      cuda::thread_scope required, cuda::thread_scope given);
-};
-
-template <ncclNetDeviceType backend>
-struct ncclGinApi_PutValueVASignal {
-  template <typename Coop, typename T>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, ncclGinWindow_t dstWin,
-                                      size_t dstOff, T srcData, bool hasSignal,
-                                      ncclGinWindow_t signalWindow, size_t signalOffset, ncclGinSignalOp_t signalOp,
+                                      size_t dstOff, T srcData,
+                                      ncclGinSignalDescriptor signal, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
                                       cuda::thread_scope required, cuda::thread_scope given);
@@ -106,13 +102,9 @@ struct ncclGinApi_GetCounterPtr {
 
 template <ncclNetDeviceType backend>
 struct ncclGinApi_ResetSignal {
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx, ncclGinSignal_t signalId);
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx, ncclGinSignalDescriptor signal);
 };
 
-template <ncclNetDeviceType backend>
-struct ncclGinApi_ResetVASignal {
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx, ncclWindow_t signalWindow, size_t signalOffset);
-};
 template <ncclNetDeviceType backend>
 struct ncclGinApi_ResetCounter {
   NCCL_DEVICE_INLINE static void call(ncclGinCtx, ncclGinCounter_t counterId);

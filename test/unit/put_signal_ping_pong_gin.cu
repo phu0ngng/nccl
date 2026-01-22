@@ -70,10 +70,12 @@ __global__ void ping_pong_kernel(
 
             // Put data with counted signal
             if (DEBUG) printf("[Rank %d] About to call ncclGinPut with signal (hasSignal=true, signalOp=ncclGinSignalAdd, signalVal=%lu)\n", pe, expected_signal_value);
-
+            ncclGinSignalDescriptor signal;
+            signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+            signal.indexedSignal.signalId = signal_id;
             ncclGinCall<ncclGinApi_Put>(ctx, thread, peer, /*hasWins=*/true,
                 ginHandle_dst, 0, ginHandle_src, 0, nelems * sizeof(int),
-                /*hasSignal=*/true, signal_id, ncclGinSignalAdd, 1,
+                signal, ncclGinSignalAdd, 1,
                 /*hasCounter=*/false, 0,
                 /*hasDescriptor=*/true, &desc,
                 cuda::thread_scope_thread, cuda::thread_scope_thread);
@@ -85,9 +87,12 @@ __global__ void ping_pong_kernel(
             // Put data with counted signal
             if (DEBUG) printf("[Rank %d] About to call ncclGinPut with signal (hasSignal=true, signalOp=ncclGinSignalAdd, signalVal=%lu)\n", pe, expected_signal_value);
 
+            ncclGinSignalDescriptor signal;
+            signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+            signal.indexedSignal.signalId = signal_id;
             ncclGinCall<ncclGinApi_Put>(ctx, thread, peer, /*hasWins=*/true,
                 ginHandle_dst, 0, ginHandle_src, 0, nelems * sizeof(int),
-                /*hasSignal=*/true, signal_id, ncclGinSignalAdd, 1,
+                signal, ncclGinSignalAdd, 1,
                 /*hasCounter=*/false, 0,
                 /*hasDescriptor=*/true, &desc,
                 cuda::thread_scope_thread, cuda::thread_scope_thread);
@@ -105,7 +110,12 @@ __global__ void ping_pong_kernel(
         }
     }
     if (DEBUG) printf("[Rank %d] Completed all iterations\n", pe);
-    if (threadIdx.x==0) ncclGinCall<ncclGinApi_ResetSignal>(ctx, signal_id);
+    if (threadIdx.x==0) {
+      ncclGinSignalDescriptor signal;
+      signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+      signal.indexedSignal.signalId = signal_id;
+      ncclGinCall<ncclGinApi_ResetSignal>(ctx, signal);
+    }
 #else
     printf("ERROR: This test requires CUDA 12.2 and compute capability 7.0 (Volta) or higher\n");
     assert(0);
