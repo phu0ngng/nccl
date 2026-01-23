@@ -33,7 +33,7 @@ static int ncclIbMatchVfPath(char* path1, char* path2) {
   }
 }
 
-static ncclResult_t ncclIbGetPciPath(char* devName, char** path, int* realPort) {
+static ncclResult_t ncclIbGetPciPath(char* devName, char** path) {
   char devicePath[PATH_MAX];
   snprintf(devicePath, PATH_MAX, "/sys/class/infiniband/%s/device", devName);
   char* p = realpath(devicePath, NULL);
@@ -44,13 +44,18 @@ static ncclResult_t ncclIbGetPciPath(char* devName, char** path, int* realPort) 
     p[strlen(p)-1] = '0';
     // Also merge virtual functions (VF) into the same device
     if (ncclParamIbMergeVfs()) p[strlen(p)-3] = p[strlen(p)-4] = '0';
-    // Keep the real port aside (the ibv port is always 1 on recent cards)
-    *realPort = 0;
-    for (int d=0; d<ncclNIbDevs; d++) {
-      if (ncclIbMatchVfPath(p, ncclIbDevs[d].pciPath)) (*realPort)++;
-    }
   }
   *path = p;
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclIbGetRealPort(char* pciPath, int* realPort) {
+  *realPort = 0;
+  if (pciPath == NULL) return ncclSuccess;
+  // Keep the real port aside (the ibv port is always 1 on recent cards)
+  for (int d = 0; d < ncclNIbDevs; d++) {
+    if (ncclIbMatchVfPath(pciPath, ncclIbDevs[d].pciPath)) (*realPort)++;
+  }
   return ncclSuccess;
 }
 
@@ -298,13 +303,15 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
               ncclIbDevs[ncclNIbDevs].pd = NULL;
               if (dev == 0) {
                 strncpy(ncclIbDevs[ncclNIbDevs].devName, devices[d]->name, MAXNAMESIZE);
-                NCCLCHECKGOTO(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath, &ncclIbDevs[ncclNIbDevs].realPort), ret, fail);
+                NCCLCHECKGOTO(ncclIbGetPciPath(ncclIbDevs[ncclNIbDevs].devName, &ncclIbDevs[ncclNIbDevs].pciPath), ret, fail);
               } else {
                 snprintf(ncclIbDevs[ncclNIbDevs].devName, MAXNAMESIZE, "%s_dma", devices[d]->name);
                 NCCLCHECK(ncclCalloc(&ncclIbDevs[ncclNIbDevs].pciPath, PATH_MAX));
                 strncpy(ncclIbDevs[ncclNIbDevs].pciPath, dataDirectDevicePath, PATH_MAX);
                 ncclIbDevs[ncclNIbDevs].capsProvider.mlx5.dataDirect = 1;
               }
+              NCCLCHECKGOTO(ncclIbGetRealPort(ncclIbDevs[ncclNIbDevs].pciPath,&ncclIbDevs[ncclNIbDevs].realPort ),ret,fail);
+
               ncclIbDevs[ncclNIbDevs].maxQp = devAttr.max_qp;
               ncclIbDevs[ncclNIbDevs].mrCache.capacity = 0;
               ncclIbDevs[ncclNIbDevs].mrCache.population = 0;
