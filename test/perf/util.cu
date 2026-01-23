@@ -980,7 +980,7 @@ ncclProfiler_v5_t ncclProfiler_v5 {
   .finalize = ncclProfilerFinalize,
 };
 
-int (*ncclProfilerStart)(int64_t profilerMask, const char* profilerDump);
+int (*ncclProfilerStart)(int profilerMask, const char* profilerDump);
 int (*ncclProfilerStop)(void);
 
 static void* libHandle;
@@ -988,7 +988,7 @@ static void* libHandle;
 int ncclProfilerLoad(void) {
   void* libHandle = dlopen("libnccl-profiler-example.so", RTLD_NOW | RTLD_LOCAL);
   if (libHandle) {
-    ncclProfilerStart = (int(*)(int64_t, const char*))dlsym(libHandle, "exampleProfilerStart");
+    ncclProfilerStart = (int(*)(int, const char*))dlsym(libHandle, "exampleProfilerStart");
     ncclProfilerStop  = (int(*)(void))dlsym(libHandle, "exampleProfilerStop");
     if (ncclProfilerStart && ncclProfilerStop) return 0;
   }
