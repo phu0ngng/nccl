@@ -742,7 +742,8 @@ struct ncclComm {
   bool useNetPXN;
   bool useGdr;
   bool globalGinSupport;
-  bool rmaProxySupport;
+  bool globalRmaProxySupport;
+  bool hostRmaSupport;
   int childCount;
 
   struct ncclDevrState devrState; // The symmetric runtime state

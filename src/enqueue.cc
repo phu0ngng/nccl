@@ -2688,13 +2688,8 @@ static ncclResult_t rmaTaskAppend(
 
   void const* srcBuff = info->sendbuff;
 
-  if (!comm->symmetricSupport){
-    WARN("One sided RMA: symmetric registration is not supported in this communicator.");
-    return ncclInvalidArgument;
-  }
-
-  if (!comm->rmaProxySupport && comm->nNodes > 1) {
-    WARN("One sided RMA: RMA proxy is not supported in this communicator.");
+  if (!comm->hostRmaSupport) {
+    WARN("One sided RMA: host RMA is not supported in this communicator.");
     return ncclInvalidArgument;
   }
 

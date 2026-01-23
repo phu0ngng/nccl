@@ -1220,6 +1220,17 @@ testResult_t threadInit(struct threadArgs* args) {
     getGPUMemoryInfo(nullptr, &initFreeGpuMem[g + args->nGpus*2]);
     args->bufferMemory[args->thread] = std::max(args->bufferMemory[args->thread], initFreeGpuMem[g + args->nGpus] - initFreeGpuMem[g + args->nGpus*2]);
   }
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+  /* Check host RMA support when -H flag is used */
+  if (hostRmaImpl) {
+    ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+    NCCLCHECK(ncclCommQueryProperties(args->comms[0][0], &commProperties));
+    if (!commProperties.hostRmaSupport) {
+      setTestSkipReason("Host RMA is not supported on this system");
+      return testSkipped;
+    }
+  }
+#endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   /* Create device communicators based on test-specific requirements */
   if (deviceImpl) {
@@ -2158,6 +2169,17 @@ testResult_t run() {
         bufferMemory[t] = std::max(bufferMemory[t], initFreeGpuMem[g + nGpus] - initFreeGpuMem[g + nGpus*2]);
       }
     }
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+    /* Check host RMA support when -H flag is used */
+    if (hostRmaImpl) {
+      ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+      NCCLCHECK(ncclCommQueryProperties(comms[0][0], &commProperties));
+      if (!commProperties.hostRmaSupport) {
+        setTestSkipReason("Host RMA is not supported on this system");
+        return testSkipped;
+      }
+    }
+#endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     /* Create device communicators based on test-specific requirements */
     if (deviceImpl) {
