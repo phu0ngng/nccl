@@ -427,7 +427,7 @@ static ncclResult_t symMemoryObtain(
 
   // ginEnabled is set in ncclDevrCommCreateInternal, which might not be called for RMA proxy
   // so we introduce rmaProxyEnabled to track if RMA proxy is enabled
-  devr->rmaProxyEnabled = comm->nNodes > 1 && comm->config.numRmaCtx > 0 && comm->rmaProxySupport;
+  devr->rmaProxyEnabled = comm->nNodes > 1 && comm->config.numRmaCtx > 0 && comm->globalRmaProxySupport;
   if (devr->rmaProxyEnabled) {
     NCCLCHECKGOTO(symMemoryRegisterRma(comm, mem), ret, fail_mem_space_teams);
   }
@@ -1059,6 +1059,7 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   props->nvmlDev = comm->nvmlDev;
   props->deviceApiSupport = comm->symmetricSupport;
   props->multimemSupport = comm->nvlsSupport;
+  props->hostRmaSupport = comm->hostRmaSupport;
   NCCLCHECK(getGlobalGinType(comm, &props->ginType));
 
   // Preferring to call ncclDevrInitOnce directly instead to calling ncclTeam* functions because

@@ -148,6 +148,7 @@ struct ncclCommProperties {
   bool multimemSupport;
   ncclGinType_t ginType;
   int nLsaTeams;
+  bool hostRmaSupport;
 };
 
 NCCL_EXTERN_C __host__ ncclResult_t ncclCommQueryProperties(ncclComm_t, ncclCommProperties_t*);
