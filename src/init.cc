@@ -920,7 +920,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   int *topParentLocalRanks = NULL;
   int p2pLevel = -1;
   bool globalNicFused = false;
-  bool globalGinSupport = true;
+  bool globalGinSupport = comm->sharedRes->ginState.ginType != NCCL_GIN_TYPE_NONE;
   bool globalCrossNicSupport = true;
   bool globalRmaPluginSupport = true;
 
