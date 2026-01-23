@@ -88,6 +88,12 @@ if (props.ginType == NCCL_GIN_TYPE_NONE) {
     printf("ERROR: communicator does not support GIN!\n");
     // Exit gracefully...
 }
+
+// For pure LSA examples, ensure a single team where all ranks can access each other
+if (props.nLsaTeams != 1) {
+    printf("ERROR: expected 1 LSA team for pure LSA example!\n");
+    // Exit gracefully...
+}
 ```
 
 ## Building
