@@ -94,6 +94,7 @@ variables:
   BIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   # IPP6 cluster
   IPP6_INSTALL_DIR: "/storage/gitlab-runner/nccl/install/${CI_PIPELINE_ID}"
+  DGXSPARK_INSTALL_DIR: "/storage/gitlab-runner/nccl/install-arm/${CI_PIPELINE_ID}"
 
 default:
   # set all jobs to interruptible by default
@@ -193,6 +194,30 @@ build-docs:
   artifacts:
     paths:
       - build/pkg/doc/*.zip
+    expire_in: 48 hrs
+
+build-dgxspark:
+  stage: build
+  extends:
+    - .dgxspark
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_DGXSPARK == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1" || $RUN_NCCL4PY_CI == "1" || $RUN_PROFILER_TESTS == "1" || $RUN_INSPECTOR_TESTS == "1"))
+      when: always
+    - when: never
+  variables:
+    INSTALL_DIR: $DGXSPARK_INSTALL_DIR
+    BUILD_DIR: build
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    NVCC_GENCODE: "-gencode=arch=compute_121,code=sm_121"
+  script:
+    - source $CLUSTER_CONFIG
+    - eval "$(get_build_command_bm)"
+  retry: 2
+  artifacts:
+    paths:
+      - build
+    exclude:
+      - build/**/*.o
     expire_in: 48 hrs
 
 build-pre-tyche:
@@ -466,6 +491,19 @@ setup-ipp6:
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${IPP6_INSTALL_DIR}"
+
+setup-dgxspark:
+  stage: setup
+  extends:
+    - .dgxspark
+    - .setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.dgxspark, rules]
+  needs: ["build-dgxspark"]
+  variables:
+    BUILD_DIR: "build"
+    INSTALL_DIR: "${DGXSPARK_INSTALL_DIR}"
 
 ##
 ## Stage: setup - Finish!
@@ -1206,6 +1244,63 @@ unit_tests-ipp6-a100:
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-dgxspark:
+  stage: unit_tests
+  extends:
+    - .dgxspark
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+      when: always
+    - when: never
+  needs:
+    - setup-dgxspark
+  variables:
+    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: dgxspark
+    NNODES: 1
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "SRUN_MPI"
+    DEVICE_ID_TESTS: 1
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 0
+    MEMLEAK_TESTS_NO_P2P: 0
+    MEMLEAK_TESTS_NETWORK: 0
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    MULTI_SEGMENT_REG_TESTS: 0
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
+    REGISTER_MIX_A2A_AR_TESTS: 1
+    HASHTABLE_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 0
+    LSA_POINTER_TESTS: 0
+    LSA_MULTIMEM_POINTER_TESTS: 0
+    CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2149,6 +2244,44 @@ apitest-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+apitest-dgxspark:
+  stage: api_tests
+  extends:
+    - .dgxspark
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
+      when: always
+    - when: never
+  needs:
+    - setup-dgxspark
+  variables:
+    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: dgxspark
+    NNODES: 1
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "SRUN_MPI"
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:api::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 apitest-theia:
   stage: api_tests
   rules:
@@ -2704,6 +2837,44 @@ perftest-single-ipp6-a100:
     MAX: "1G"
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-single-dgxspark:
+  stage: perf_tests_single
+  extends:
+    - .dgxspark
+  rules:
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    #   when: always
+    - when: never
+  needs:
+    - setup-dgxspark
+  variables:
+    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: dgxspark
+    NNODES: 1
+    GRAPH: 0
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "SRUN_MPI"
+    SYMMETRIC: 1
+    MAX: "1G"
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:perftest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3773,6 +3944,26 @@ cleanup-ipp6:
       optional: true
   variables:
     INSTALL_DIR: "${IPP6_INSTALL_DIR}"
+
+cleanup-dgxspark:
+  extends:
+    - .cleanup
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_DGXSPARK == "1"
+      when: on_success
+  tags:
+    - ipp6-nccl
+  needs:
+    - job: setup-dgxspark
+      optional: true
+    - job: unit_tests-dgxspark
+      optional: true
+    - job: apitest-dgxspark
+      optional: true
+    - job: perftest-single-dgxspark
+      optional: true
 
 ##
 ## Stage: cleanup - Finish!
