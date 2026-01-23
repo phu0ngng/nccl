@@ -71,10 +71,13 @@ __global__ void put_alltoall(ncclGinCtx_M<-1u> ctx, int* buff, int myRank, int n
         for (int targetRank = 0; targetRank < nRanks; targetRank++) {
             printf("[Rank %d] GPU thread %d: Sending to rank %d (writing to index %d)\n", myRank,
                    threadIdx.x, targetRank, myRank);
+            ncclGinSignalDescriptor signal;
+            signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+            signal.indexedSignal.signalId = signalId;
             ncclGinCall<ncclGinApi_Put>(ctx, thread, targetRank, /*hasData=*/true,
                 memHandle, myRank * sizeof(int), memHandle, nRanks * sizeof(int),
                 sizeof(int),
-                /*hasSignal=*/false, signalId, ncclGinSignalAdd, 1,
+                signal, ncclGinSignalAdd, 1,
                 /*hasCounter=*/false, 0,
                 /*hasDescriptor=*/true, &desc,
                 cuda::thread_scope_thread, cuda::thread_scope_thread);

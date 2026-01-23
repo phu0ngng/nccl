@@ -188,10 +188,14 @@ struct ncclGinApi_GetSignalPtr<NCCL_NET_DEVICE_GIN_PROXY> {
 
 template <>
 struct ncclGinApi_ResetSignal<NCCL_NET_DEVICE_GIN_PROXY> {
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclGinSignal_t signalId) {
-    ncclGinProxyGpuCtx_t* proxyCtx = (ncclGinProxyGpuCtx_t*)ctx.handle;
-    uint64_t* signal = nccl::utility::loadConst(&proxyCtx->signals) + signalId;
-    *signal = 0;
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclGinSignalDescriptor signal) {
+  ncclGinProxyGpuCtx_t* proxyCtx = (ncclGinProxyGpuCtx_t*)ctx.handle;
+    if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
+      uint64_t* signalPtr = (uint64_t*)ncclGetLocalPointer(signal.vaSignal.ncclWindow, signal.vaSignal.signalOffset);
+      *signalPtr = 0;
+    } else {
+      nccl::utility::loadConst(&proxyCtx->signals)[signal.indexedSignal.signalId] = 0;
+    }
   }
 };
 
@@ -212,12 +216,17 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_PROXY> {
   template <typename Coop>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, int peer, bool hasWins,
                                       ncclGinWindow_t dstWin, size_t dstOff, ncclGinWindow_t srcWin,
-                                      size_t srcOff, size_t bytes, bool hasSignal,
-                                      ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp,
+                                      size_t srcOff, size_t bytes,
+                                      ncclGinSignalDescriptor signal, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasCounter,
                                       ncclGinCounter_t counterId, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
                                       cuda::thread_scope required, cuda::thread_scope given) {
+    if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
+      __builtin_unreachable(); // TODO
+    }
+    bool hasSignal = signal.type != NCCL_GIN_SIGNAL_TYPE_NONE;
+    ncclGinSignal_t signalId = hasSignal ? signal.indexedSignal.signalId : 0;
     ncclGinProxyGfd_t tmpDesc;
     ncclGinProxyGfd_t* desc = hasDescriptor ? (ncclGinProxyGfd_t*)descriptor : &tmpDesc;
     nccl::gin::proxy::put<Coop, uint64_t>(
@@ -230,12 +239,17 @@ template <>
 struct ncclGinApi_PutValue<NCCL_NET_DEVICE_GIN_PROXY> {
   template <typename Coop, typename T>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, int peer, ncclGinWindow_t dstWin,
-                                      size_t dstOff, T srcVal, bool hasSignal,
-                                      ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp,
+                                      size_t dstOff, T srcVal,
+                                      ncclGinSignalDescriptor signal, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
                                       cuda::thread_scope required, cuda::thread_scope given) {
+    if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
+      __builtin_unreachable(); // TODO
+    }
     ncclGinProxyGfd_t tmpDesc;
+    bool hasSignal = signal.type != NCCL_GIN_SIGNAL_TYPE_NONE;
+    ncclGinSignal_t signalId = hasSignal ? signal.indexedSignal.signalId : 0;
     ncclGinProxyGfd_t* desc = hasDescriptor ? (ncclGinProxyGfd_t*)descriptor : &tmpDesc;
     nccl::gin::proxy::put<Coop, T>(coop, desc, (ncclGinProxyGpuCtx_t*)ctx.handle, peer, dstWin,
                                    dstOff, srcVal, true, nullptr, 0, sizeof(T), hasSignal, signalId,

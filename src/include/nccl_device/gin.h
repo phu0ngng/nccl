@@ -18,6 +18,9 @@ struct ncclGinDescriptorSmem; // A type user allocates in __shared__ memory
 // Used as completion actions for ncclGinSession::put
 struct ncclGin_None {};
 
+struct ncclGin_VASignalInc { ncclWindow_t signalWindow; size_t signalOffset; };
+struct ncclGin_VASignalAdd { ncclWindow_t signalWindow; size_t signalOffset; uint64_t value; };
+
 struct ncclGin_SignalAdd { ncclGinSignal_t signal; uint64_t value; };
 // SignalInc: equivalent to SignalAdd{+1} except it may not be mixed with any
 // other signal operator without intervening signal reset(). Formally: for a
@@ -266,9 +269,16 @@ struct ncclGin_BackendMask {
   // Returns current value of signal with all but bottom bits set to zero.
   NCCL_DEVICE_INLINE uint64_t readSignal(ncclGinSignal_t signal, int bits=64, cuda::memory_order ord = cuda::memory_order_acquire) const;
 
+  // Returns current value of VA signal at given window and offset with all but bottom bits set to zero.
+  NCCL_DEVICE_INLINE uint64_t readSignal(ncclWindow_t signalWindow, size_t signalOffset, int bits=64, cuda::memory_order ord = cuda::memory_order_acquire) const;
+
   // Wait for signal to meet or exceed value.
   template<typename Coop>
   NCCL_DEVICE_INLINE void waitSignal(Coop, ncclGinSignal_t signal, uint64_t least, int bits=64, cuda::memory_order ord = cuda::memory_order_acquire) const;
+
+  // Wait for VA signal at given window and offset to meet or exceed value.
+  template<typename Coop>
+  NCCL_DEVICE_INLINE void waitSignal(Coop, ncclWindow_t signalWindow, size_t signalOffset, uint64_t least, int bits=64, cuda::memory_order ord = cuda::memory_order_acquire) const;
 
   // Wait for signal to meet or exceed shadow value.
   template<typename Coop>
@@ -284,6 +294,8 @@ struct ncclGin_BackendMask {
   NCCL_DEVICE_INLINE void resetCounter(ncclGinCounter_t counter) const;
   // Sets signal and shadow to zero. May not race with concurrent modifcations to signal.
   NCCL_DEVICE_INLINE void resetSignal(ncclGinSignal_t signal) const;
+  // Resets a VA signal at the given window and offset.
+  NCCL_DEVICE_INLINE void resetSignal(ncclWindow_t signalWindow, size_t signalOffset) const;
 
   //////////////////////////////////////////////////////////////////////////////
   // internal:
