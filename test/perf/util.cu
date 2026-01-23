@@ -906,7 +906,7 @@ static ncclResult_t ncclProfilerInit(void** ctx, uint64_t id, int* eMask, const 
   return ncclSuccess;
 }
 
-static ncclResult_t ncclProfilerStartEvent(void* ctx, void** eHandle, ncclProfilerEventDescr_t* eDescr) {
+static ncclResult_t ncclProfilerStartEvent(void* ctx, void** eHandle, ncclProfilerEventDescr_v5_t* eDescr) {
   switch (eDescr->type) {
     case ncclProfileGroup:
       group.type = eDescr->type;
@@ -962,7 +962,7 @@ static ncclResult_t ncclProfilerStopEvent(void* eHandle) {
   return ncclSuccess;
 }
 
-static ncclResult_t ncclProfilerRecordEventState(void* eHandle, ncclProfilerEventState_t eState, ncclProfilerEventStateArgs_t* eStateArgs) {
+static ncclResult_t ncclProfilerRecordEventState(void* eHandle, ncclProfilerEventState_v5_t eState, ncclProfilerEventStateArgs_v5_t* eStateArgs) {
   return ncclSuccess;
 }
 
@@ -971,7 +971,7 @@ static ncclResult_t ncclProfilerFinalize(void* ctx) {
 }
 
 // perftest exposes profiler interface to nccl
-ncclProfiler_t ncclProfiler_v5 {
+ncclProfiler_v5_t ncclProfiler_v5 {
   .name = "perftest",
   .init = ncclProfilerInit,
   .startEvent = ncclProfilerStartEvent,
