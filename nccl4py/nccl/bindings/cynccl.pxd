@@ -76,6 +76,7 @@ ctypedef void* ncclComm_t 'ncclComm_t'
 ctypedef void* ncclWindow_t 'ncclWindow_t'
 ctypedef struct ncclUniqueId 'ncclUniqueId':
     char internal[128]
+
 ctypedef struct ncclConfig_t 'ncclConfig_t':
     size_t size
     unsigned int magic
@@ -94,11 +95,21 @@ ctypedef struct ncclConfig_t 'ncclConfig_t':
     int nvlsCTAs
     int nChannelsPerNetPeer
     int nvlinkCentricSched
+    int graphUsageMode
+    int numRmaCtx
+
 ctypedef struct ncclSimInfo_t 'ncclSimInfo_t':
     size_t size
     unsigned int magic
     unsigned int version
     float estimatedTime
+
+ctypedef struct ncclWaitSignalDesc_t 'ncclWaitSignalDesc_t':
+    int opCnt
+    int peer
+    int sigIdx
+    int ctx
+
 
 
 ###############################################################################

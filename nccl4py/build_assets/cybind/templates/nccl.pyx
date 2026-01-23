@@ -5,8 +5,6 @@
 # This code was automatically generated $version_span. Do not modify it directly.
 
 cimport cython  # NOQA
-from cpython cimport buffer as _buffer
-from cpython.memoryview cimport PyMemoryView_FromMemory
 from libcpp.vector cimport vector
 
 from ._internal.utils cimport (nested_resource, nullable_unique_ptr, get_buffer_pointer,
@@ -14,7 +12,8 @@ from ._internal.utils cimport (nested_resource, nullable_unique_ptr, get_buffer_
 
 from enum import IntEnum as _IntEnum
 
-import numpy as _numpy
+
+$snippet_auto_lowpp_imports_pyx
 
 
 ###############################################################################
