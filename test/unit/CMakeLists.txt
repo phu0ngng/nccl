@@ -95,6 +95,21 @@ foreach(TEST_SOURCE ${UNIT_TEST_SOURCES})
     add_dependencies(${TEST_NAME} copy_topo)
 endforeach()
 
+# Compile-only test (static assertions, no executable needed)
+add_library(backwards_compat OBJECT backwards_compat.cc)
+target_include_directories(backwards_compat
+    PRIVATE
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/include
+    ${CMAKE_SOURCE_DIR}/src/include/plugin
+    ${CMAKE_SOURCE_DIR}/src/include/os
+    ${CMAKE_SOURCE_DIR}/src/device
+    ${CMAKE_SOURCE_DIR}/src/graph/
+    ${CUDAToolkit_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}/cccl
+)
+add_dependencies(backwards_compat copy_topo)
+
 # Copy topo directory to build directory
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/test/unit/topo

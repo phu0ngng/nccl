@@ -48,7 +48,7 @@ all:${DST_DIR}/apitest ${DST_DIR}/apitest_static \
     ${DST_DIR}/plugin/libnccl-env-plugin.so
 
 env.%:
-	${MAKE} -C $(BUILDDIR)/../ext-env/example $* BUILDDIR=$(DST_DIR)/plugin/libnccl-env-plugin.so
+	${MAKE} -C $(SRCDIR)/ext-env/example $* BUILDDIR=$(DST_DIR)/plugin/libnccl-env-plugin.so
 
 clean:gtest.clean
 	rm -rf ${DST_DIR}
