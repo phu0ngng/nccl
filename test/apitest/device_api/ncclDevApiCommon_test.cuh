@@ -16,7 +16,7 @@
 #define KERNEL_ASSERT_EQ(expected, actual, msg) do { \
   if ((expected) != (actual)) { \
     printf("%s: expected %llu but got %llu\n", msg, (unsigned long long)(expected), (unsigned long long)(actual)); \
-    assert((expected) == (actual)); \
+    assert((expected) == (actual) && msg); \
   } \
 } while(0)
 
@@ -138,3 +138,45 @@ protected:
     return TestResult_t::testSuccess;
   }
 };
+
+////////////////////////////////////////////////////////////////////////////////
+// Helper functions for window management
+////////////////////////////////////////////////////////////////////////////////
+
+// Helper function to allocate and register windows for all devices
+inline void allocateAndRegisterWindows(int nVis, ncclComm_t* comms, size_t size, 
+                                       std::vector<void*>& ptrs, std::vector<ncclWindow_t>& wins) {
+  ptrs.resize(nVis);
+  wins.resize(nVis);
+  
+  ncclResult_t res = ncclGroupStart();
+  ASSERT_EQ(ncclSuccess, res);
+  
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(ncclSuccess, ncclMemAlloc(&ptrs[i], size));
+    ASSERT_NE(nullptr, ptrs[i]);
+    
+    // Initialize to zero
+    ASSERT_EQ(cudaSuccess, cudaMemset(ptrs[i], 0, size));
+    
+    // Register window using public API
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], ptrs[i], size,
+                                                   &wins[i], NCCL_WIN_COLL_SYMMETRIC));
+  }
+  
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+}
+
+// Helper function to deregister and free windows for all devices
+inline void deregisterAndFreeWindows(int nVis, ncclComm_t* comms,
+                                     std::vector<void*>& ptrs, std::vector<ncclWindow_t>& wins) {
+  for (int i = 0; i < nVis; i++) {
+    if (wins[i] != nullptr) {
+      ncclCommWindowDeregister(comms[i], wins[i]);
+    }
+    if (ptrs[i] != nullptr) {
+      ncclMemFree(ptrs[i]);
+    }
+  }
+}
