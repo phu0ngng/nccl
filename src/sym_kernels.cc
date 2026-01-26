@@ -281,7 +281,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
     symk->initialized = true;
     struct ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.lsaMultimem = comm->nvlsSupport;
-    reqs.barrierCount = ncclSymkMaxBlocks;
+    reqs.lsaBarrierCount = ncclSymkMaxBlocks;
 
     struct ncclDevResourceRequirements lla2aReq;
     ncclLLA2ACreateRequirement(
@@ -303,7 +303,13 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
       railSignalReq.outGinSignalStart = &symk->kcomm.ginSyncHandle.railSignals;
       railSignalReq.next = reqs.resourceRequirementsList;
       reqs.resourceRequirementsList = &railSignalReq;
+      reqs.railGinBarrierCount = ncclSymkMaxBlocks;
     }
+
+    if (ncclGinResourcesRequested(&reqs)) {
+      reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+    }
+
     NCCLCHECK(ncclDevrCommCreateInternal(comm, &reqs, &symk->kcomm.devComm));
   }
   return ncclSuccess;

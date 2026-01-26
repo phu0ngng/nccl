@@ -91,6 +91,26 @@ ncclDevCommRequirements
 
       Specifies the number of network counters to allocate (see :cpp:type:`ncclGinCounter_t`; available since NCCL 2.28.7).
 
+   .. c:member:: bool ginForceEnable
+
+      **Deprecated.** Forces GIN (GPU-Initiated Networking) support to be enabled by automatically setting
+      ``ginConnectionType`` to :c:macro:`NCCL_GIN_CONNECTION_FULL`. This field is deprecated in favor of explicitly
+      setting :c:member:`ginConnectionType` to the desired value. When set to ``true``, it overrides the
+      ``ginConnectionType`` field. New code should use :c:member:`ginConnectionType` directly instead of this field.
+      Available since NCCL 2.28.7, deprecated since NCCL 2.29.3.
+
+   .. c:member:: ncclGinConnectionType_t ginConnectionType
+
+      Specifies the type of GIN (GPU-Initiated Networking) connection to establish for the device communicator.
+      This field controls whether GIN is enabled and how it is configured. When set to
+      :c:macro:`NCCL_GIN_CONNECTION_FULL`, GIN functionality becomes available, allowing device-initiated one-sided
+      operations and network-based synchronization primitives. If GIN resources are requested via ``ginSignalCount``,
+      ``ginCounterCount``, ``barrierCount``, or ``railGinBarrierCount`` while this field is set to
+      :c:macro:`NCCL_GIN_CONNECTION_NONE`, device communicator creation will fail with :c:macro:`ncclInvalidArgument`.
+      Available since NCCL 2.29.3.
+
+      See :c:type:`ncclGinConnectionType_t` for possible values.
+
    .. c:member:: ncclDevResourceRequirements_t* resourceRequirementsList
 
       Specifies a list of resource requirements.  This is best set to NULL for now.
@@ -167,6 +187,23 @@ ncclGinType_t
    .. c:macro:: NCCL_GIN_TYPE_GDAKI
 
       GPUDirect Async Kernel-Initiated (GDAKI) GIN type.
+
+ncclGinConnectionType_t
+-----------------------
+
+.. c:type:: ncclGinConnectionType_t
+
+   Specifies the type of GIN connection for device communicators. This enum controls whether GIN (GPU-Initiated
+   Networking) resources should be allocated and what connection type to use. Used in :c:type:`ncclDevCommRequirements`
+   when creating device communicators. Available since NCCL 2.29.3.
+
+   .. c:macro:: NCCL_GIN_CONNECTION_NONE
+
+      No GIN connectivity.
+
+   .. c:macro:: NCCL_GIN_CONNECTION_FULL
+
+      Full GIN connectivity. Each rank is connected to all other ranks.
 
 LSA
 ===

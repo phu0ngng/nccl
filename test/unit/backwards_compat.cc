@@ -73,9 +73,11 @@ void ncclDevCommRequirements_backwards_compat_test() {
   static_assert(offsetof(ncclDevCommRequirements_t, ginContextCount) == 60);
   static_assert(offsetof(ncclDevCommRequirements_t, ginSignalCount) == 64);
   static_assert(offsetof(ncclDevCommRequirements_t, ginCounterCount) == 68);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginCounterCount) == 68);
+  static_assert(offsetof(ncclDevCommRequirements_t, ginConnectionType) == 72);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclDevCommRequirements_t) == 72);
+  static_assert(sizeof(ncclDevCommRequirements_t) == 80);
 }
 
 void ncclCommProperties_backwards_compat_test() {
