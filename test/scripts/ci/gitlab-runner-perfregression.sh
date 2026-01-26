@@ -5,8 +5,10 @@ source test/scripts/ci/ci-utils.sh
 
 load_test_ci_variables
 source $CLUSTER_CONFIG
-load_cluster_ci_variables
 get_slurm_planned_time
+
+export GCPERF_TOOLS_PATH=$(get_gcperf_tools_path)
+export CLUSTER_NAME=$(get_cluster_name)
 
 run_regression_check() {
     local results_dir="$1"
