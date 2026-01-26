@@ -2990,10 +2990,12 @@ ncclResult_t ncclEnqueueCheck(struct ncclInfo* info) {
   // Check whether communicator is ready to communicate
   NCCLCHECKGOTO(ncclCommEnsureReady(info->comm), ret, fail);
 
-  if (info->comm->checkPointers) {
+  if (info->comm->checkMode != ncclCheckModeDefault) {
     CUDACHECKGOTO(cudaGetDevice(&devOld), ret, fail);
     CUDACHECKGOTO(cudaSetDevice(info->comm->cudaDev), ret, fail);
   }
+  // If info->comm->checkMode == ncclCheckModeDebugGlobal, ArgsCheck will enqueue info
+  // for collectives and the pairs of peers for sendrecv for global check later
   NCCLCHECKGOTO(ArgsCheck(info), ret, fail);
 
   INFO(NCCL_COLL,"%s: opCount %lx sendbuff %p recvbuff %p count %zu datatype %d op %d root %d comm %p [nranks=%d] stream %p",

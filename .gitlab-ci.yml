@@ -1919,7 +1919,7 @@ apitest-eos:
     INSTALL_DIR: "${EOS_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 30
+    SLURM_TIME: 40
     RUN_MODE: "MPI"
     NNODES: 1
     NGPUS: 8
@@ -1932,6 +1932,7 @@ apitest-eos:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
