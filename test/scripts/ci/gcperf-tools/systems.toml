@@ -211,9 +211,12 @@ sbatch = [
 
 nccl = [
     "NCCL_DEBUG=WARN",
-    "NCCL_NET=IB",
+    "NCCL_NET_PLUGIN=none",
     "NCCL_IB_HCA==mlx5_0,mlx5_1,mlx5_2,mlx5_3",
-    "NCCL_IB_SL=1"
+    "NCCL_IB_SL=1",
+    "NCCL_GIN_TYPE=2",
+    "OMPI_MCA_coll_hcoll_enable=0",
+    "UCX_TLS=tcp,self"
 ]
 
 [Bia]
