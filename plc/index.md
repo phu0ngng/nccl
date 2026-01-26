@@ -16,6 +16,7 @@
 - [Pre-posting Receive WQEs](items/id_14cfa49d/Pre-posting_Receive_WQEs.md)
 - [ReduceCopy](items/id_EBADE8BE/ReduceCopy.md)
 - [Port-failover](items/id_4f382c74/Port-failover.md)
+- [Dynamic Memory Offload](items/id_710c2e7e/Dynamic_Memory_Offload.md)
 <!-- V2_29_DO_NOT_MOVE -->
 
 <!------------------------------------->
