@@ -199,7 +199,7 @@ int main(int argc, char* argv[]) {
     // Setup GIN windows using ncclGinRegister
     void* ginHostWins[NCCL_GIN_MAX_CONTEXTS];
     ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONTEXTS];
-    NCCLCHECK(ncclGinRegister(comm, buff, (nRanks + 1) * sizeof(int), ginHostWins, ginDevWins));
+    NCCLCHECK(ncclGinRegister(comm, buff, (nRanks + 1) * sizeof(int), ginHostWins, ginDevWins, /*winFlags=*/0));
     ncclGinWindow_t memHandle = ginDevWins[0];
 
     // Setup GIN context manually like in ping-pong example

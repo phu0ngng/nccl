@@ -188,12 +188,12 @@ int main(int argc, char* argv[]) {
     // Get window handles
     void* srcGinHostWins[NCCL_GIN_MAX_CONTEXTS];
     ncclGinWindow_t srcGinDevWins[NCCL_GIN_MAX_CONTEXTS];
-    NCCLCHECK(ncclGinRegister(comm, sendbuff, args.end_size, srcGinHostWins, srcGinDevWins));
+    NCCLCHECK(ncclGinRegister(comm, sendbuff, args.end_size, srcGinHostWins, srcGinDevWins, /*winFlags=*/0));
     ncclGinWindow_t srcGinWindow = srcGinDevWins[0];
 
     void* dstGinHostWins[NCCL_GIN_MAX_CONTEXTS];
     ncclGinWindow_t dstGinDevWins[NCCL_GIN_MAX_CONTEXTS];
-    NCCLCHECK(ncclGinRegister(comm, recvbuff, args.end_size, dstGinHostWins, dstGinDevWins));
+    NCCLCHECK(ncclGinRegister(comm, recvbuff, args.end_size, dstGinHostWins, dstGinDevWins, /*winFlags=*/0));
     ncclGinWindow_t dstGinWindow = dstGinDevWins[0];
 
     // Get GIN resources

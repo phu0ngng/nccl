@@ -262,7 +262,7 @@ ncclResult_t ncclGinIbGdakiCreateContext(void* collComm, int nSignals, int nCoun
 }
 
 ncclResult_t ncclGinIbGdakiRegMrSym(void* collComm, void* data, size_t size, int type, uint64_t mr_flags, void** mhandle, void **ginHandle) {
-  return ncclGinGdakiRegMrSym((struct ncclGinIbCollComm *)collComm, data, size, type, mhandle, ginHandle);
+  return ncclGinGdakiRegMrSym((struct ncclGinIbCollComm *)collComm, data, size, type, mr_flags, mhandle, ginHandle);
 }
 
 ncclResult_t ncclGinIbGdakiDeregMrSym(void* collComm, void* mhandle) {

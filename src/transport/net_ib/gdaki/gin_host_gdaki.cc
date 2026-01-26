@@ -899,7 +899,7 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int type, void **mhandle,
+ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int type, uint64_t mr_flags, void **mhandle,
                                   void **ginHandle) {
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)collComm;
 
@@ -915,9 +915,10 @@ ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int t
   gdaki_mhandle = (struct gdaki_mem_handle *)calloc(1, sizeof(*gdaki_mhandle));
   EQCHECK(gdaki_mhandle, nullptr);
 
+  bool force_strict_ordering = (mr_flags & NCCL_NET_MR_FLAG_FORCE_SO);
   NCCLCHECK(gdakiRegMr(&mr, gdaki_ctx->ib_pd, data, size,
                        IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ |
-                         IBV_ACCESS_REMOTE_ATOMIC));
+                         IBV_ACCESS_REMOTE_ATOMIC, force_strict_ordering));
 
   rkey = htobe32(mr->rkey);
   NCCLCHECK(cComm->allGather(cComm, &rkey, rkeys_hd_mhandle->host_buf, sizeof(__be32)));

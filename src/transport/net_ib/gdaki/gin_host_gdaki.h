@@ -27,7 +27,7 @@
 ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters,
                                        void **outGinCtx, ncclNetDeviceHandle_v11_t **outDevHandle);
 ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx);
-ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int type, void **mhandle,
+ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int type, uint64_t mr_flags, void **mhandle,
                                   void **ginHandle);
 ncclResult_t ncclGinGdakiDeregMrSym(void *collComm, void *mhandle);
 ncclResult_t ncclGinGdakiProgress(void *ginCtx);
