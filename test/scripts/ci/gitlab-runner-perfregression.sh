@@ -199,7 +199,7 @@ create_nvbug() {
 
     echo "Creating NvBug for regression compared to ${target_branch}..."
     DATE_STRING=$(date +%m/%d/%y)
-    DESCRIPTION="Performance regression detected on $DATE_STRING <br />\n Cluster: $CLUSTER_NAME <br />\n Nodes: $NNODES <br />\n Branch: $CURRENT_BRANCH <br />\n Commit: $CI_COMMIT_SHA <br />\n Compared to: ${target_branch} <br />\n <a href=\"$CI_JOB_URL\">See job artifacts for more details</a>"
+    DESCRIPTION="Performance regression detected on $DATE_STRING <br />\n Cluster: $CLUSTER_NAME <br />\n Nodes: $NNODES <br />\n Branch: $CURRENT_BRANCH <br />\n Commit: $CI_COMMIT_SHA <br />\n Compared to: ${target_branch} <br />\n <a href=\\\"$CI_JOB_URL\\\">See job artifacts for more details</a>"
     BUG_JSON="{
         \"BugId\": 0,
         \"BugAction\": {
