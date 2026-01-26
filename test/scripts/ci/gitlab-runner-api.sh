@@ -42,7 +42,7 @@ sharedPluginTest="ncclCommInitRankConfig_test.shared_plugin_lib"
 gtestFilter="-${multinetTests}:${sharedPluginTest}"
 
 if [[ ${DEVICE_API} -eq 0 ]] ; then
-  gtestFilter="${gtestFilter}:ncclCommQueryProperties_test.test_gin_support:ncclCommQueryProperties_test.test_multimem_support"
+  gtestFilter="${gtestFilter}:ncclCommQueryProperties_test.test_gin_support:ncclCommQueryProperties_test.test_multimem_support:ncclCommWindowRegister_test.*"
 fi
 
 # run all tests except the ones with a special config

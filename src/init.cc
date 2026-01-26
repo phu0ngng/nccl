@@ -464,7 +464,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   comm->compCap = ncclCudaCompCap();
   TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
 
-  comm->checkPointers = ncclParamCheckPointers() == 1 ? true : false;
   comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
 
   memset(comm->collNetSupportMatrix, 0, sizeof(comm->collNetSupportMatrix));
@@ -1740,6 +1739,7 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
   int nvlinkUtilCentricSchedEnableEnv;
   int graphMixingSupportEnv;
   int numRmaCtxEnv;
+  const char* checkModeEnv;
 
   /* override configuration with env variable. */
   blockingEnv = ncclParamCommBlocking();
@@ -1918,6 +1918,22 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
     comm->config.CTAPolicy &= ~NCCL_CTA_POLICY_EFFICIENCY;
   }
 
+
+  // read non-config env settings
+  comm->checkMode = ncclCheckModeDefault;
+  if (ncclParamCheckPointers() == 1) { // @deprecated: use NCCL_CHECK_MODE instead
+    comm->checkMode = ncclCheckModeDebugLocal;
+  }
+
+  checkModeEnv = ncclGetEnv("NCCL_CHECK_MODE");
+  if (checkModeEnv) {
+    INFO(NCCL_ENV, "NCCL_CHECK_MODE set by environment to %s", checkModeEnv);
+    if (strcasecmp(checkModeEnv, "DEBUG_GLOBAL") == 0) {
+      comm->checkMode = ncclCheckModeDebugGlobal;
+    } else if (strcasecmp(checkModeEnv, "DEBUG_LOCAL") == 0) {
+      comm->checkMode = ncclCheckModeDebugLocal;
+    }
+  }
   return ret;
 }
 

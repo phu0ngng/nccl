@@ -33,6 +33,7 @@ set(API_TEST_SOURCES
     ncclCommQueryProperties_test.cu
     ncclCommGrow_test.cu
     ncclDevCommCreate_test.cu
+    ncclCommWindowRegister_test.cu
 )
 
 # Plugin source files

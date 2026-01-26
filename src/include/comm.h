@@ -22,6 +22,7 @@
 #include "sym_kernels.h"
 #include "ce_coll.h"
 #include "rma/rma.h"
+#include "argcheck.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -501,6 +502,15 @@ typedef enum ncclGroupTaskType {
 
 struct ncclCommSymTeams;
 
+// NCCL_CHECK_MODE=DEBUG_LOCAL/DEBUG_GLOBAL
+// ncclCheckModeDebugLocal : check the input args/pointers locally, it replaces ncclParamCheckPointers()
+// ncclCheckModeDebugGlobal : check the input args globally such as symmetric buffer check, etc.
+typedef enum ncclCheckMode {
+  ncclCheckModeDefault = 0,
+  ncclCheckModeDebugLocal = 1,
+  ncclCheckModeDebugGlobal = 2,
+} ncclCheckMode_t;
+
 struct ncclComm {
   uint64_t startMagic;
   struct ncclMemoryStack memPermanent, memScoped;
@@ -575,7 +585,7 @@ struct ncclComm {
   // NVL Domain info
   ncclNvlDomainInfo_v5_t nvlDomainInfo;
 
-  bool checkPointers;
+  ncclCheckMode_t checkMode;
   bool dmaBufSupport;
   bool ccEnable;
 
@@ -727,6 +737,9 @@ struct ncclComm {
   // RMA state
   struct ncclRmaState rmaState;
   struct ncclIntruQueue<struct ncclRmaCeInitTask, &ncclRmaCeInitTask::next> rmaCeInitTaskQueue;
+
+  // Debug check
+  struct ncclIntruQueue<struct ncclArgsInfo, &ncclArgsInfo::next> argsInfoQueue;
 
   // CE Collective
   struct ncclCeColl ceColl;
