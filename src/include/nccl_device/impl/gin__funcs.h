@@ -111,17 +111,19 @@ NCCL_DEVICE_INLINE constexpr ncclGinSignalOp_t ncclGin_getSignalOp(RemoteAction)
 template<typename RemoteAction>
 NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(RemoteAction) { return 0; }
 template<typename RemoteAction>
-NCCL_DEVICE_INLINE constexpr ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const&, RemoteAction) { return {.type = NCCL_GIN_SIGNAL_TYPE_NONE}; }
+NCCL_DEVICE_INLINE constexpr ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const&, RemoteAction) { 
+  ncclGinSignalDescriptor desc{};
+  desc.type = NCCL_GIN_SIGNAL_TYPE_NONE;
+  return desc;
+}
 #endif
 
 #if NCCL_CHECK_CUDACC
 NCCL_DEVICE_INLINE constexpr ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_SignalInc arg) {
-  return {
-    .type = NCCL_GIN_SIGNAL_TYPE_INDEXED,
-    .indexedSignal = {
-      .signalId = net.comm.ginSignalBase + arg.signal
-    }
-  };
+  ncclGinSignalDescriptor desc{};
+  desc.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+  desc.indexedSignal.signalId = net.comm.ginSignalBase + arg.signal;
+  return desc;
 }
 NCCL_DEVICE_INLINE constexpr ncclGinSignalOp_t ncclGin_getSignalOp(ncclGin_SignalInc) { return ncclGinSignalInc; }
 NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(ncclGin_SignalInc) { return 1; }
@@ -129,12 +131,10 @@ NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(ncclGin_SignalInc) 
 
 #if NCCL_CHECK_CUDACC
 NCCL_DEVICE_INLINE constexpr ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_SignalAdd arg) { 
-  return {
-    .type = NCCL_GIN_SIGNAL_TYPE_INDEXED,
-    .indexedSignal = {
-      .signalId = net.comm.ginSignalBase + arg.signal
-    }
-  };
+  ncclGinSignalDescriptor desc{};
+  desc.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+  desc.indexedSignal.signalId = net.comm.ginSignalBase + arg.signal;
+  return desc;
 }
 NCCL_DEVICE_INLINE constexpr ncclGinSignalOp_t ncclGin_getSignalOp(ncclGin_SignalAdd) {
   return ncclGinSignalAdd;
@@ -144,14 +144,12 @@ NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(ncclGin_SignalAdd a
 
 #if NCCL_CHECK_CUDACC
 NCCL_DEVICE_INLINE ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_VASignalInc arg) {
-  return {
-    .type = NCCL_GIN_SIGNAL_TYPE_VA,
-    .vaSignal = {
-      .signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.contextId),
-      .signalOffset = nccl::gin::internal::windowOffsetToGinOffset(arg.signalWindow, arg.signalOffset),
-      .ncclWindow = arg.signalWindow
-    }
-  };
+  ncclGinSignalDescriptor desc{};
+  desc.type = NCCL_GIN_SIGNAL_TYPE_VA;
+  desc.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.contextId);
+  desc.vaSignal.signalOffset = nccl::gin::internal::windowOffsetToGinOffset(arg.signalWindow, arg.signalOffset);
+  desc.vaSignal.ncclWindow = arg.signalWindow;
+  return desc;
 }
 NCCL_DEVICE_INLINE constexpr ncclGinSignalOp_t ncclGin_getSignalOp(ncclGin_VASignalInc arg) {
   return ncclGinSignalInc;
@@ -161,14 +159,12 @@ NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(ncclGin_VASignalInc
 
 #if NCCL_CHECK_CUDACC
 NCCL_DEVICE_INLINE ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_VASignalAdd arg) { 
-  return {
-    .type = NCCL_GIN_SIGNAL_TYPE_VA,
-    .vaSignal = {
-      .signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.contextId),
-      .signalOffset = nccl::gin::internal::windowOffsetToGinOffset(arg.signalWindow, arg.signalOffset),
-      .ncclWindow = arg.signalWindow
-    }
-  };
+  ncclGinSignalDescriptor desc{};
+  desc.type = NCCL_GIN_SIGNAL_TYPE_VA;
+  desc.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.contextId);
+  desc.vaSignal.signalOffset = nccl::gin::internal::windowOffsetToGinOffset(arg.signalWindow, arg.signalOffset);
+  desc.vaSignal.ncclWindow = arg.signalWindow;
+  return desc;
 }
 NCCL_DEVICE_INLINE constexpr ncclGinSignalOp_t ncclGin_getSignalOp(ncclGin_VASignalAdd arg) {
   return ncclGinSignalAdd;
@@ -209,7 +205,8 @@ NCCL_DEVICE_INLINE void ncclGinPut(
   using nccl::utility::loadConst;
   ncclGinCtx ctx = ncclGin_C_makeCtx(net);
   coop.sync();
-  ncclGinSignalDescriptor signal = {.type = NCCL_GIN_SIGNAL_TYPE_NONE};
+  ncclGinSignalDescriptor signal{};
+  signal.type = NCCL_GIN_SIGNAL_TYPE_NONE;
   if (isSignal) {
     signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
     signal.indexedSignal.signalId = net->comm.ginSignalBase + signalId;
@@ -351,7 +348,8 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
   using nccl::utility::loadConst;
   coop.sync();
   if (coop.thread_rank() == 0) {
-    ncclGinSignalDescriptor signal = {.type = NCCL_GIN_SIGNAL_TYPE_NONE};
+    ncclGinSignalDescriptor signal{};
+    signal.type = NCCL_GIN_SIGNAL_TYPE_NONE;
     if (isSignal) {
       signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
       signal.indexedSignal.signalId = net->comm.ginSignalBase + signalId;
@@ -453,7 +451,8 @@ NCCL_DEVICE_INLINE void ncclGinSignal(
     cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
   ) {
   coop.sync();
-  ncclGinSignalDescriptor signal = {.type = NCCL_GIN_SIGNAL_TYPE_NONE};
+  ncclGinSignalDescriptor signal{};
+  signal.type = NCCL_GIN_SIGNAL_TYPE_NONE;
   if (isSignal) {
     signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
     signal.indexedSignal.signalId = net->comm.ginSignalBase + signalId;
@@ -742,12 +741,9 @@ NCCL_DEVICE_INLINE void ncclGinResetSignal(
     ncclGinSignal_t signal
   ) {
   ncclGinCtx ctx = ncclGin_C_makeCtx(net);
-  ncclGinSignalDescriptor signalDesc = {
-    .type = NCCL_GIN_SIGNAL_TYPE_INDEXED,
-    .indexedSignal = {
-      .signalId = net->comm.ginSignalBase + signal
-    }
-  };
+  ncclGinSignalDescriptor signalDesc{};
+  signalDesc.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+  signalDesc.indexedSignal.signalId = net->comm.ginSignalBase + signal;
   ncclGinCall<ncclGinApi_ResetSignal>(ctx, signalDesc);
   net->_signalShadows[signal] = 0;
 }
