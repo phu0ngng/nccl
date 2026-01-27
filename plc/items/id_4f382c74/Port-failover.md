@@ -317,9 +317,9 @@ When a flush request is issued, the plugin issues an RDMA Read on all of the dev
 * `NCCL_IB_RESILIENCY_PORT_FAILOVER`
    * Enables the use of the port-failover feature.
    * Default is `0` (disabled). Set to `1` to enable the port-failover feature.
-* `NCCL_IB_RESILIENCY_PORT_FAILOVER_READ_PROBE_DELAY_MSEC`
+* `NCCL_IB_RESILIENCY_PORT_FAILOVER_PROBE_DELAY`
    * Delay in milliseconds before the sender initiates a probe to determine whether data replay is required after detecting an error in a data transfer.
-   * Default is `100`.
+   * Default is `10`.
 
 </details>
 
@@ -447,6 +447,11 @@ Therefore, the implementation opts to send probes for all outstanding send reque
 #### CQEs with error
 
 When a device encounters an error on some QP, the device flushes all outstanding work requests on that QP and generates CQEs with error for them. Note that even if only some work requests (and not all of them!) were marked as signaled, the device will generate CQEs with error for all of them. Therefore, there could be cases where the CQEs will be generated with a flush error status (`IBV_WC_WR_FLUSH_ERR`) and there will be more CQEs than the number of signaled work requests. On the sender side, all work requests are using a specific `wr_id` pattern that allows identifying the request type, and it's easy match the CQEs with error to the send requests. On the receiver side, since pre-posting of receive work requests is used, these work requests are posted with a "dummy" `wr_id` value and when such a CQE is encoutered, the receiver ignores it. The receiver only cares about CQEs with error that belong to CTS messages, which are posted with a "valid" `wr_id` value.
+
+#### Handling stale CQEs with errors
+
+The plugin may poll a CQE with error and complete the replay protocol for the associated request (including releasing it) before polling all the remaining CQEs with error from the original failed operation. Subsequently, when the plugin encounters another CQE with error, it may attempt to match it to a request that has already been released. To handle this scenario, a "generation" mechanism is used to identify stale CQEs that are being processed after their corresponding request has been freed. Each request managed by the resiliency module is assigned a generation field, implemented using an ID. This ID corresponds to the original request that encountered the failure. When processing a CQE with error, the resiliency module retrieves the potentially matching request and verifies its generation. If the request's generation is older than the generation currently expected by the resiliency module, the CQE with error is ignored.
+
 
 </details>
 

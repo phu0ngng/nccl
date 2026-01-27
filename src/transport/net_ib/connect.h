@@ -34,6 +34,11 @@ struct ncclIbQpInfo {
   int devIndex;
 };
 
+struct ncclIbResiliencyInfo {
+  // QPs used for probing of data transfers in case of QP/device failures.
+  struct ncclIbQpInfo probingQpsInfo[NCCL_IB_MAX_DEVS_PER_NIC];
+};
+
 // Structure used to hold information needed to establish the communication
 // between the sender and receiver.
 // The structure is populated during the connection establishment phase and
@@ -42,6 +47,7 @@ struct ncclIbQpInfo {
 // create and initialize its local resources.
 struct ncclIbConnectionMetadata {
   struct ncclIbQpInfo qpInfo[NCCL_IB_MAX_QPS];
+  struct ncclIbResiliencyInfo resiliencyInfo;
   struct ncclIbDevInfo devs[NCCL_IB_MAX_DEVS_PER_NIC];
   char devName[MAX_MERGED_DEV_NAME];
   // An address for a registered memory to be accessed by the peer. The address

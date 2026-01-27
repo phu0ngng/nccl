@@ -6,6 +6,7 @@
 
 #include "connect.h"
 #include "common.h"
+#include "p2p_resiliency.h"
 
 NCCL_PARAM(IbGidIndex, "IB_GID_INDEX", -1);
 NCCL_PARAM(IbRoutableFlidIbGidIndex, "IB_ROUTABLE_FLID_GID_INDEX", 1);
@@ -473,6 +474,11 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
       localQpInfo->ece_supported = 0;
     }
   }
+
+  if (comm->base.resiliency) {
+    ncclIbResiliencySenderCreateQps(comm->base.resiliency, &meta->resiliencyInfo);
+  }
+
   return ncclSuccess;
 }
 
@@ -504,6 +510,11 @@ static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, struct ncclIbConn
     NCCLCHECK(ncclIbRtrQp(localQp->qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta->tc, remMeta->sl));
     NCCLCHECK(ncclIbRtsQp(localQp->qp));
   }
+
+  if (comm->base.resiliency) {
+    NCCLCHECK(ncclIbResiliencySenderQpsToRts(comm->base.resiliency, remMeta));
+  }
+
   return ncclSuccess;
 }
 
@@ -580,6 +591,10 @@ ib_recv_dev_list:
 
   comm->base.nDataQps = std::max(comm->base.vProps.ndevs, remoteVProps.ndevs);
 
+  if (comm->base.resiliency) {
+    NCCLCHECK(ncclIbResiliencyDeviceNumSet(comm->base.resiliency, comm->base.vProps.ndevs, remoteVProps.ndevs));
+  }
+
   // Init PD, Ctx for each IB device
   comm->ar = 1; // Set to 1 for logic
   // Sender's CQ size needs to accomodate the upper bound of number of send
@@ -588,8 +603,14 @@ ib_recv_dev_list:
   cqSize = NET_IB_MAX_REQUESTS*ncclParamIbQpsPerConn();
   for (int i = 0; i < comm->base.vProps.ndevs; i++) {
     int ibDevN = comm->base.vProps.devs[i];  
+    if (comm->base.resiliency) {
+      ncclIbResiliencyDataCqSizeGet(comm->base.resiliency, i, &cqSize);
+    }
     NCCLCHECKGOTO(ncclIbInitCommDevBase(ibDevN, &comm->devs[i].base, &comm->base.stats, cqSize), ret, fail);
     comm->ar = comm->ar && ncclIbDevs[ibDevN].ar; // ADAPTIVE_ROUTING - if all merged devs have it enabled
+    if (comm->base.resiliency) {
+      NCCLCHECKGOTO(ncclIbResiliencyDevInit(comm->base.resiliency, i, &ncclIbDevs[ibDevN]), ret, fail);
+    }
   }
 
   memset(&meta, 0, sizeof(meta));
@@ -708,6 +729,9 @@ ib_connect:
   comm->remCmplsRecords.addr = remMeta.addr;
   for (int i = 0; i < comm->base.nRemDevs; i++) {
     comm->remCmplsRecords.rkeys[i] = remMeta.devs[i].rkey;
+    if (comm->base.resiliency) {
+      NCCLCHECKGOTO(ncclIbResiliencyRemoteCompletionRecordsSet(comm->base.resiliency, comm->remCmplsRecords.rkeys[i], comm->remCmplsRecords.addr, i), ret, fail);
+    }
   }
 
   for (int i=0; i < comm->base.vProps.ndevs; i++) {
@@ -795,7 +819,9 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
   // CTS messages are posted using send work requests.
   // Note that because only specific CTS messages are signaled, the send queue
   // size needs to be double the number of max requests.
-  qpCreateAttrs.maxSendWorkRequest = 2*NET_IB_MAX_REQUESTS;
+  // When resiliency is enabled, the number of send work requests is as the
+  // number of max requests because every CTS message is signaled.
+  qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS * (rComm->base.resiliency ? 1 : 2);
   for (int qpIndex = 0; qpIndex < nqps; qpIndex++) {
     // The QPs are created in a "striped" manner across the available devices.
     // For example, if there are 2 devices and 4 QPs, the QPs will be created
@@ -817,6 +843,9 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     qpCreateAttrs.ibPort = ibDev->portNum;
     qpCreateAttrs.cq = rCommDev->base.cq;
     qpCreateAttrs.pd = rCommDev->base.pd;
+    if (rComm->base.resiliency) {
+      ncclIbResiliencyDataRqSizeGet(rComm->base.resiliency, devIndex, &qpCreateAttrs.maxRecvWorkRequest);
+    }
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, localQp));
     INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
         __func__,
@@ -889,14 +918,21 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     }
   }
 
+  if (rComm->base.resiliency) {
+    NCCLCHECK(ncclIbResiliencyReceiverQpsCreateToRts(rComm->base.resiliency, remMeta, &meta->resiliencyInfo));
+  }
+
   return ncclSuccess;
 }
 
 ncclResult_t ncclIbReceiverPrePostReceiveWorkRequests(struct ncclIbRecvComm* recvComm) {
-  int nRecvWorkRequestsPerQp = NET_IB_MAX_REQUESTS;
-  int nqps = recvComm->base.nqps;
+  uint32_t nRecvWorkRequestsPerQp = NET_IB_MAX_REQUESTS;
+  int nqps = recvComm->base.nqps; 
   for (int i = 0; i < nqps; i++) {
     struct ncclIbQp* dataQp = &recvComm->base.qps[i];
+    if (recvComm->base.resiliency) {
+      ncclIbResiliencyDataRqSizeGet(recvComm->base.resiliency, dataQp->devIndex, &nRecvWorkRequestsPerQp);
+    }
     INFO(NCCL_NET, "NET/IB: %s: Pre-posting %d Receive WQEs on QP %d (qp_num=%d, comm=%p) (out of total %d QPs)", __func__, nRecvWorkRequestsPerQp, i, dataQp->qp->qp_num, recvComm, nqps);
     for (int j = 0; j < nRecvWorkRequestsPerQp; j++) {
       NCCLCHECK(ncclIbPostRecvWorkRequest(dataQp->qp, &recvComm->ibRecvWorkRequest));
@@ -974,6 +1010,10 @@ ib_recv_dev_list:
 
   rComm->base.nDataQps = std::max(rComm->base.vProps.ndevs, remoteVProps.ndevs);
 
+  if (rComm->base.resiliency) {
+    NCCLCHECK(ncclIbResiliencyDeviceNumSet(rComm->base.resiliency, rComm->base.vProps.ndevs, remoteVProps.ndevs));
+  }
+
   stage->offset = 0;
   stage->state = ncclIbCommStateSendDevList;
 
@@ -1015,7 +1055,13 @@ ib_recv:
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;
     ibDevN = rComm->base.vProps.devs[i];
+    if (rComm->base.resiliency) {
+      ncclIbResiliencyDataCqSizeGet(rComm->base.resiliency, i, &cqSize);
+    }
     NCCLCHECKGOTO(ncclIbInitCommDevBase(ibDevN, &rCommDev->base, &rComm->base.stats, cqSize), ret, fail);
+    if (rComm->base.resiliency) {
+      NCCLCHECKGOTO(ncclIbResiliencyDevInit(rComm->base.resiliency, i, &ncclIbDevs[ibDevN]), ret, fail);
+    }
     ibDev = ncclIbDevs + ibDevN;
     NCCLCHECKGOTO(ncclIbGetGidIndex(ibDev->context, ibDev->portNum, &ibDev->portAttr, &rCommDev->base.gidInfo.localGidIndex), ret, fail);
     NCCLCHECKGOTO(wrap_ibv_query_gid(ibDev->context, ibDev->portNum, rCommDev->base.gidInfo.localGidIndex, &rCommDev->base.gidInfo.localGid), ret, fail);
@@ -1145,15 +1191,24 @@ ncclResult_t ncclIbCloseSend(void* sendComm) {
     for (int q = 0; q < comm->base.nqps; q++)
       if (comm->base.qps[q].qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->base.qps[q].qp));
 
+    if (comm->base.resiliency) {
+      NCCLCHECK(ncclIbResiliencyClose(comm->base.resiliency));
+    }
+
     for (int i = 0; i < comm->base.vProps.ndevs; i++) {
       struct ncclIbSendCommDev* commDev = comm->devs + i;
       if (commDev->ctsFifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->ctsFifoMr));
       if (commDev->cmplsRecordsMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->cmplsRecordsMr));
       if (commDev->putSignalScratchpadMr != NULL)
         NCCLCHECK(wrap_ibv_dereg_mr(commDev->putSignalScratchpadMr));
+      if (comm->base.resiliency) {
+         NCCLCHECK(ncclIbResiliencyDevDestroy(comm->base.resiliency, i));
+      }
       NCCLCHECK(ncclIbDestroyBase(&commDev->base));
     }
-
+    if (comm->base.resiliency) {
+      NCCLCHECK(ncclIbResiliencyDestroy(&comm->base.resiliency));
+    }
     free(comm);
   }
   TIME_PRINT("IB");
@@ -1168,6 +1223,10 @@ ncclResult_t ncclIbCloseRecv(void* recvComm) {
     for (int q = 0; q < comm->base.nqps; q++)
       if (comm->base.qps[q].qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->base.qps[q].qp));
 
+    if (comm->base.resiliency) {
+      NCCLCHECK(ncclIbResiliencyClose(comm->base.resiliency));
+    }
+
     for (int i = 0; i < comm->base.vProps.ndevs; i++) {
       struct ncclIbRecvCommDev* commDev = comm->devs + i;
       if (comm->flushEnabled) {
@@ -1176,7 +1235,13 @@ ncclResult_t ncclIbCloseRecv(void* recvComm) {
       }
       if (commDev->ctsFifoMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->ctsFifoMr));
       if (commDev->cmplsRecordsMr != NULL) NCCLCHECK(wrap_ibv_dereg_mr(commDev->cmplsRecordsMr));
+      if (comm->base.resiliency) {
+        ncclIbResiliencyDevDestroy(comm->base.resiliency, i);
+      }
       NCCLCHECK(ncclIbDestroyBase(&commDev->base));
+    }
+    if (comm->base.resiliency) {
+      NCCLCHECK(ncclIbResiliencyDestroy(&comm->base.resiliency));
     }
     free(comm);
   }
