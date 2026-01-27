@@ -195,6 +195,7 @@ ncclResult_t ncclTopoSplitNvLink(struct ncclTopoSystem* system, int* splitNvLink
 
 struct ncclTopoNetInfo {
   bool coll;
+  bool gin;
   // communicator-specific information
   int netPluginIndex;
   bool dmaBufSupport;

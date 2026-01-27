@@ -11,6 +11,7 @@
 #include "nccl.h"
 #include "nvmlwrap.h"
 #include "coll_net.h"
+#include "gin.h"
 #include "transport.h"
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -1336,6 +1337,7 @@ out:
 }
 
 static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIndex, struct ncclTopoNetInfo* netInfo, int virtualNics) {
+  const char* tagName = netInfo->gin ? "gin" : "net";
   for (int n = startIndex; n < endIndex; n++) {
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));
@@ -1343,13 +1345,13 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     struct ncclXmlNode* parent = NULL;
     if (virtualNics) {
       struct ncclXmlNode* net = NULL;
-      NCCLCHECK(xmlFindTagKv(xml, "net", &net, "name", props.name));
+      NCCLCHECK(xmlFindTagKv(xml, tagName, &net, "name", props.name));
       // In the event of multithreaded use case, we need to re-discover the shared parent of the given devices for this vNIC
       // Only run this if the net doesn't exist locally - this may alter the XML state
       if (net == NULL) NCCLCHECK(ncclTopoGetVNicParent(xml, netInfo->getProperties, &props.vProps, &parent));
     }
 
-    NCCLCHECK(ncclTopoFillNet(xml, props.pciPath, props.name, &netNode, parent));
+    NCCLCHECK(ncclTopoFillNet(xml, tagName, props.pciPath, props.name, &netNode, parent));
 
     const char* colAttr;
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
@@ -1369,6 +1371,7 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     NCCLCHECK(xmlInitAttrInt(netNode, "gdr", gdrSupport));
     // Only set coll if it's not 0
     if (netInfo->coll) NCCLCHECK(xmlInitAttrInt(netNode, "coll", netInfo->coll));
+    if (netInfo->gin) NCCLCHECK(xmlInitAttrInt(netNode, "gin", netInfo->gin));
 
     const char* keepAttr;
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
@@ -1470,8 +1473,22 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
   {
       std::lock_guard<std::mutex> lock(netMutex);
       INFO(NCCL_GRAPH, "TOPO/NET : Importing network plugins to topology");
+      ncclGin_t* gin = comm->sharedRes->ginState.ncclGin;
+      if (gin) {
+        netInfo.coll = 0;
+        netInfo.gin = 1;
+        netInfo.netPluginIndex = comm->ginPluginIndex;
+        netInfo.dmaBufSupport = comm->dmaBufSupport;
+        netInfo.getDevCount = ncclGinGetDevCount;
+        netInfo.name = gin->name;
+        netInfo.getProperties = gin->getProperties;
+        netInfo.makeVDevice = NULL;
+        netInfo.devices = gin->devices;
+        NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
+      }
       if (collNetSupport(comm)) {
         netInfo.coll = 1;
+        netInfo.gin = 0;
         netInfo.netPluginIndex = comm->netPluginIndex;
         netInfo.dmaBufSupport = comm->dmaBufSupport;
         netInfo.getDevCount = ncclCollNetGetDevCount;
@@ -1485,6 +1502,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       }
 
       netInfo.coll = 0;
+      netInfo.gin = 0;
       netInfo.netPluginIndex = comm->netPluginIndex;
       netInfo.dmaBufSupport = comm->dmaBufSupport;
       netInfo.getDevCount = ncclNetGetDevCount;
