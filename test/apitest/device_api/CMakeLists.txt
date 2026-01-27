@@ -3,6 +3,8 @@
 set(DEVICE_API_SOURCES
     ginSignal_test.cu
     ginVaSignal_test.cu
+    ginPut_test.cu
+    ginPutValue_test.cu
 )
 
 # Common source file needed by all tests
