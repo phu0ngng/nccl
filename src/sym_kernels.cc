@@ -7,6 +7,7 @@
 #include "sym_kernels.h"
 #include "comm.h"
 #include "device.h"
+#include "nccl_device/core.h"
 #include "transport.h"
 #include <cmath>
 #include <cfloat>
@@ -304,9 +305,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
       railSignalReq.next = reqs.resourceRequirementsList;
       reqs.resourceRequirementsList = &railSignalReq;
       reqs.railGinBarrierCount = ncclSymkMaxBlocks;
-    }
 
-    if (ncclGinResourcesRequested(&reqs)) {
       reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
     }
 

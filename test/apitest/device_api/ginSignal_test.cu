@@ -92,7 +92,7 @@ TEST_P(GinSignalTest, SignalRing) {
   
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
-  reqs.ginForceEnable = true;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   TESTCHECK(createDevComms(reqs));
   
   for (int i = 0; i < nVis; i++) {
@@ -109,7 +109,7 @@ TEST_P(GinSignalTest, SignalReset) {
   
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
-  reqs.ginForceEnable = true;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   createDevComms(reqs);
   
   for (int i = 0; i < nVis; i++) {
@@ -126,7 +126,7 @@ TEST_P(GinSignalTest, SignalBasicAdd) {
   
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
-  reqs.ginForceEnable = true;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   createDevComms(reqs);
 
   for (int i = 0; i < nVis; i++) {
@@ -143,7 +143,7 @@ TEST_P(GinSignalTest, SignalBasicInc) {
   
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
-  reqs.ginForceEnable = true;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   createDevComms(reqs);
 
   for (int i = 0; i < nVis; i++) {

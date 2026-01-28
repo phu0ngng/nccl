@@ -10,15 +10,6 @@
 #include "coop.h"
 #include "utility.h"
 
-// Deprecation convenience macros
-#if defined(__GNUC__) || defined(__clang__)
-  #define NCCL_DEPRECATED_FIELD(type, name, msg) type name __attribute__((deprecated(msg)))
-#elif defined(_MSC_VER)
-  #define NCCL_DEPRECATED_FIELD(type, name, msg) __declspec(deprecated(msg)) type name
-#else
-  #error "Unsupported compiler!"
-#endif
-
 struct ncclDevComm;
 typedef struct ncclDevComm ncclDevComm_t;
 
@@ -94,8 +85,7 @@ struct ncclDevCommRequirements {
 
   int lsaLLA2ABlockCount, lsaLLA2ASlotCount;
 
-  NCCL_DEPRECATED_FIELD(bool, ginForceEnable,
-                        "ginForceEnable has been deprecated in favor of ginConnectionType");
+  bool ginForceEnable;
 
   int ginContextCount; // This is a hint, the actual context count in the devcomm may not match.
   int ginSignalCount; // Guaranteed to start at id=0
