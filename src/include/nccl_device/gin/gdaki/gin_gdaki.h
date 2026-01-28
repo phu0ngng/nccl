@@ -45,7 +45,7 @@ NCCL_DEVICE_INLINE static void putImpl(ncclGinCtx ctx, Coop coop, int peer, bool
   using nccl::utility::loadConst;
   coop.sync();
   if (coop.thread_rank() == 0) {
-    ncclGinGdakiGPUContext* gdaki = (struct ncclGinGdakiGPUContext*)ctx.handle;
+    ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     doca_gpu_dev_verbs_qp* qp = loadConst(&gdaki->gdqp) + peer;
     doca_gpu_dev_verbs_qp* companion_qp;
     ncclGinGdakiMemHandle* dstMh = (ncclGinGdakiMemHandle*)dstWin;
@@ -124,7 +124,7 @@ NCCL_DEVICE_INLINE static void putValueImpl(ncclGinCtx ctx, Coop coop, int peer,
 
   coop.sync();
   if (coop.thread_rank() == 0) {
-    ncclGinGdakiGPUContext* gdaki = (struct ncclGinGdakiGPUContext*)ctx.handle;
+    ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     doca_gpu_dev_verbs_qp* qp = loadConst(&gdaki->gdqp) + peer;
     ncclGinGdakiMemHandle* dstMh = (ncclGinGdakiMemHandle*)dstWin;
 
@@ -182,7 +182,7 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_GDAKI> {
     bool hasSignal = signal.type != NCCL_GIN_SIGNAL_TYPE_NONE;
     if (signal.type == NCCL_GIN_SIGNAL_TYPE_INDEXED) {
       signalOffset = sizeof(uint64_t) * signal.indexedSignal.signalId;
-      ncclGinGdakiGPUContext* gdaki = (struct ncclGinGdakiGPUContext*)ctx.handle;
+      ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
       signalKey = loadConst(loadConst(&gdaki->signals_table.rkeys) + peer);
     } else if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
       ncclGinGdakiMemHandle* signalMh = (ncclGinGdakiMemHandle*)signal.vaSignal.signalWindow;
@@ -217,7 +217,7 @@ struct ncclGinApi_PutValue<NCCL_NET_DEVICE_GIN_GDAKI> {
       signalOffset = signal.vaSignal.signalOffset;
     } else if (signal.type == NCCL_GIN_SIGNAL_TYPE_INDEXED) {
       signalOffset = sizeof(uint64_t) * signal.indexedSignal.signalId;
-      ncclGinGdakiGPUContext* gdaki = (struct ncclGinGdakiGPUContext*)ctx.handle;
+      ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
       signalKey = loadConst(loadConst(&gdaki->signals_table.rkeys) + peer);
     }
     nccl::gin::gdaki::putValueImpl(
@@ -232,7 +232,7 @@ template <>
 struct ncclGinApi_ResetCounter<NCCL_NET_DEVICE_GIN_GDAKI> {
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclGinCounter_t counterId) {
     using nccl::utility::loadConst;
-    ncclGinGdakiGPUContext* gdaki = (ncclGinGdakiGPUContext*)ctx.handle;
+    ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     loadConst(&gdaki->counters_table.buffer)[counterId] = 0;
   }
 };
@@ -245,7 +245,7 @@ struct ncclGinApi_ResetSignal<NCCL_NET_DEVICE_GIN_GDAKI> {
       uint64_t* signalPtr = (uint64_t*)ncclGetLocalPointer(signal.vaSignal.ncclWindow, signal.vaSignal.signalOffset);
       *signalPtr = 0;
     } else {
-      ncclGinGdakiGPUContext* gdaki = (ncclGinGdakiGPUContext*)ctx.handle;
+      ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
       loadConst(&gdaki->signals_table.buffer)[signal.indexedSignal.signalId] = 0;
     }
   }
@@ -255,7 +255,7 @@ template <>
 struct ncclGinApi_GetCounterPtr<NCCL_NET_DEVICE_GIN_GDAKI> {
   NCCL_DEVICE_INLINE static uint64_t* call(ncclGinCtx ctx, ncclGinCounter_t counterId) {
     using nccl::utility::loadConst;
-    ncclGinGdakiGPUContext* gdaki = (ncclGinGdakiGPUContext*)ctx.handle;
+    ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     return loadConst(&gdaki->counters_table.buffer) + counterId;
   }
 };
@@ -264,7 +264,7 @@ template <>
 struct ncclGinApi_GetSignalPtr<NCCL_NET_DEVICE_GIN_GDAKI> {
   NCCL_DEVICE_INLINE static uint64_t* call(ncclGinCtx ctx, ncclGinSignal_t signalId) {
     using nccl::utility::loadConst;
-    ncclGinGdakiGPUContext* gdaki = (ncclGinGdakiGPUContext*)ctx.handle;
+    ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     return loadConst(&gdaki->signals_table.buffer) + signalId;
   }
 };
@@ -274,7 +274,7 @@ struct ncclGinApi_Flush<NCCL_NET_DEVICE_GIN_GDAKI> {
   template <typename Coop>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord) {
     using nccl::utility::loadConst;
-    ncclGinGdakiGPUContext* gdaki = (ncclGinGdakiGPUContext*)ctx.handle;
+    ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     doca_gpu_dev_verbs_qp* qps = loadConst(&gdaki->gdqp);
 #pragma unroll 1
     for (int peer = coop.thread_rank(); peer < ctx.nRanks; peer += coop.size()) {

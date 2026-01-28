@@ -33,10 +33,10 @@ struct ncclDevrMemory {
   void* primaryAddr; // What we hope is the VA of this memory's first mapping.
   size_t size;
   size_t bigOffset; // offset in big VA space
-  void* ginHostWins[NCCL_GIN_MAX_CONTEXTS];
-  ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONTEXTS];
-  void* rmaHostWins[NCCL_GIN_MAX_CONTEXTS];
-  ncclGinWindow_t rmaDevWins[NCCL_GIN_MAX_CONTEXTS];
+  void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS];
+  ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONNECTIONS];
+  void* rmaHostWins[NCCL_GIN_MAX_CONNECTIONS];
+  ncclGinWindow_t rmaDevWins[NCCL_GIN_MAX_CONNECTIONS];
   int winFlags;
 };
 
@@ -367,7 +367,7 @@ static void symTeamDestroyAll(struct ncclComm* comm) {
 }
 
 static ncclResult_t symMemoryRegisterGin(struct ncclComm* comm, struct ncclDevrMemory* mem) {
-  NCCLCHECK(ncclGinConnectOnce(comm));
+  NCCLCHECK(ncclGinConnectOnce(comm, 0)); // Will allocate the default number of contexts if needed.
   NCCLCHECK(ncclGinRegister(comm, mem->primaryAddr, mem->size, mem->ginHostWins, mem->ginDevWins, mem->winFlags));
   return ncclSuccess;
 }
@@ -530,7 +530,7 @@ static ncclResult_t symWindowCreate(
   winDevHost->worldRank = comm->rank;
   winDevHost->winHost = (void*)win;
   winDevHost->ginOffset4K = memOffset>>12;
-  for (int i=0; i < NCCL_GIN_MAX_CONTEXTS; i++) {
+  for (int i=0; i < NCCL_GIN_MAX_CONNECTIONS; i++) {
     winDevHost->ginWins[i] = mem->ginDevWins[i];
   }
   CUDACHECK(cudaMemcpyAsync(winDev, winDevHost, sizeof(struct ncclWindow_vidmem), cudaMemcpyHostToDevice, stream));
@@ -786,6 +786,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   bool ginActivated = false;
   struct ncclDevrTeam* tmLsa;
   size_t bufSizeTotal;
+  int nGinConnections = 0;
   int nGinContexts = 0;
   int ginSignalTotal = 0, ginCounterTotal = 0;
   struct ncclDevResourceRequirements* resReqsHead = reqs->resourceRequirementsList;
@@ -830,14 +831,22 @@ ncclResult_t ncclDevrCommCreateInternal(
   }
 
   if (ginActivated) {
-    NCCLCHECKGOTO(ncclGinConnectOnce(comm), ret, fail);
+    NCCLCHECKGOTO(ncclGinConnectOnce(comm, reqs->ginContextCount), ret, fail);
     // Register all preexisting memories with GIN. Update the windows later when
     // we have a stream.
     for (struct ncclDevrMemory* mem = devr->memHead; mem != nullptr; mem = mem->next) {
       NCCLCHECKGOTO(symMemoryRegisterGin(comm, mem), ret, fail);
     }
   }
-  if (devr->ginEnabled) nGinContexts = comm->sharedRes->ginState.ginCommCount;
+  if (devr->ginEnabled) {
+    if (reqs->ginContextCount > comm->sharedRes->ginState.ginContextCount) {
+      WARN("Requested number of GIN contexts (%d) exceeds the limit (%d). Use NCCL_GIN_NCONTEXTS to increase the limit", reqs->ginContextCount, comm->sharedRes->ginState.ginContextCount);
+      ret = ncclInvalidArgument;
+      goto fail;
+    }
+    nGinConnections = comm->sharedRes->ginState.ginCommCount;
+    nGinContexts = ROUNDUP(reqs->ginContextCount, nGinConnections);
+  }
 
   memset(outDevComm, 0, sizeof(*outDevComm));
   outDevComm->rank = comm->rank;
@@ -900,7 +909,7 @@ ncclResult_t ncclDevrCommCreateInternal(
       struct ncclWindow_vidmem* winHost;
       NCCLCHECKGOTO(ncclShadowPoolToHost(&devr->shadows, win->vidmem, &winHost), ret, fail_stream);
       winHost->ginOffset4K = (win->bigOffset - win->memory->bigOffset)>>12;
-      for (int i=0; i < NCCL_GIN_MAX_CONTEXTS; i++) {
+      for (int i=0; i < NCCL_GIN_MAX_CONNECTIONS; i++) {
         winHost->ginWins[i] = win->memory->ginDevWins[i];
       }
       CUDACHECKGOTO(cudaMemcpyAsync(win->vidmem, winHost, sizeof(struct ncclWindow_vidmem), cudaMemcpyHostToDevice, stream), ret, fail_stream);
@@ -941,6 +950,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   }
 
   if (devr->ginEnabled) {
+    outDevComm->ginConnectionCount = nGinConnections;
     outDevComm->ginContextCount = nGinContexts;
     outDevComm->ginSignalCount = ginSignalTotal;
     outDevComm->ginCounterCount = ginCounterTotal;
@@ -948,10 +958,11 @@ ncclResult_t ncclDevrCommCreateInternal(
       ginSignalTotal, &outDevComm->ginSignalBase,
       ginCounterTotal, &outDevComm->ginCounterBase
     ), ret, fail_stream_mem_win);
+    INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d contexts, %d signals, %d counters", nGinConnections, nGinContexts, ginSignalTotal, ginCounterTotal);
 
-    for (int ctx=0; ctx < nGinContexts; ctx++) {
-      outDevComm->ginNetDeviceTypes[ctx] = (int)comm->sharedRes->ginState.ginDevHandles[ctx]->netDeviceType;
-      outDevComm->ginHandles[ctx] = comm->sharedRes->ginState.ginDevHandles[ctx]->handle;
+    for (int connectionId=0; connectionId < nGinConnections; connectionId++) {
+      outDevComm->ginNetDeviceTypes[connectionId] = (int)comm->sharedRes->ginState.ginDevHandles[connectionId]->netDeviceType;
+      outDevComm->ginHandles[connectionId] = comm->sharedRes->ginState.ginDevHandles[connectionId]->handle;
     }
   }
 
@@ -1223,7 +1234,7 @@ ncclGinWindow_t ncclDevrGetRmaDevWin(struct ncclDevrWindow* winHost, int ctx) {
   if (winHost == nullptr || winHost->memory == nullptr) {
     return nullptr;
   }
-  if (ctx < 0 || ctx >= NCCL_GIN_MAX_CONTEXTS) {
+  if (ctx < 0 || ctx >= NCCL_GIN_MAX_CONNECTIONS) {
     return nullptr;
   }
   return winHost->memory->rmaDevWins[ctx];

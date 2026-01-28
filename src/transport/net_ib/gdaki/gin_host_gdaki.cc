@@ -336,7 +336,8 @@ struct gdaki_context {
   uint64_t last_error_query_time;
 
   struct ncclGinIbCollComm *collComm;
-  ncclNetDeviceHandle_v11_t *devHandle;
+  ncclNetDeviceHandle_t *devHandle;
+  int nContexts;
 };
 
 template <typename T>
@@ -464,8 +465,8 @@ destroy_verbs_qp_attr:
   return status;
 }
 
-ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters,
-                                       void **outGinCtx, ncclNetDeviceHandle_v11_t **outDevHandle) {
+ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters, int nContexts,
+                                       void **outGinCtx, ncclNetDeviceHandle_t **outDevHandle) {
   int status = ncclSuccess;
   doca_error_t docaStatus;
 
@@ -475,7 +476,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
 
   const int rank = cComm->rank;
   const int nranks = cComm->nranks;
-  const int ncontexts = 1;
+  const int ncontexts = nContexts;
   const int nqps_per_rank = ncontexts;
   const int nqps_for_comm = nqps_per_rank * nranks;  // Number of QPs for communication
   const int ncompanion_qps = nqps_for_comm * 2;      // Number of companion QPs for communication
@@ -488,7 +489,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   const int num_counters = nCounters;
   const int num_signals = nSignals;
   ncclNetProperties_t props;
-  ncclNetDeviceHandle_v11_t *devHandle = nullptr;
+  ncclNetDeviceHandle_t *devHandle = nullptr;
   struct gdaki_context *gdaki_ctx = nullptr;
   struct gdaki_exch_info *local_exch_info = nullptr;
   struct gdaki_exch_info *remote_exch_info = nullptr;
@@ -519,7 +520,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   gdaki_ctx = (struct gdaki_context *)calloc(1, sizeof(*gdaki_ctx));
   EQCHECKGOTO(gdaki_ctx, nullptr, status, out);
 
-  devHandle = (ncclNetDeviceHandle_v11_t *)calloc(1, sizeof(*devHandle));
+  devHandle = (ncclNetDeviceHandle_t *)calloc(1, sizeof(*devHandle));
   EQCHECKGOTO(devHandle, nullptr, status, out);
 
   gdaki_ctx->gqp_groups = (struct doca_gpu_verbs_qp_group_hl **)calloc(
@@ -641,7 +642,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   for (int qp_idx = 0; qp_idx < nqps_per_rank; qp_idx++) {
     int peer_qp_idx = nqps_for_comm + qp_idx;
     struct gdaki_exch_info exch_info;
-    gdakiFillExchInfo(&exch_info, gdaki_ctx, gdaki_ctx->gqps[qp_idx * nqps_per_rank + rank]);
+    gdakiFillExchInfo(&exch_info, gdaki_ctx, gdaki_ctx->gqps[qp_idx * nranks + rank]);
     NCCLCHECKGOTO(gdakiConnectQp(gdaki_ctx, gdaki_ctx->gqps[peer_qp_idx], &exch_info), status, out);
     INFO(NCCL_NET, "[%d] Connected self-loop peer QP: qp_idx=%d, qpn=%#x, main_qpn=%#x", rank,
          peer_qp_idx, doca_verbs_qp_get_qpn(gdaki_ctx->gqps[peer_qp_idx]->qp), exch_info.qpn);
@@ -747,6 +748,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   gdaki_ctx->sink_buffer.mhandle = sink_buffer_mhandle;
   gdaki_ctx->collComm = cComm;
   gdaki_ctx->devHandle = devHandle;
+  gdaki_ctx->nContexts = ncontexts;
 
   cComm->ginCtx = gdaki_ctx;
 
@@ -830,7 +832,7 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
   struct gdaki_context *gdaki_ctx = (struct gdaki_context *)ginCtx;
   struct ncclGinIbCollComm *cComm = gdaki_ctx->collComm;
   const int nranks = cComm->nranks;
-  const int ncontexts = 1;
+  const int ncontexts = gdaki_ctx->nContexts;
   const int nqps_per_rank = ncontexts;
   const int nqps_for_comm = nqps_per_rank * nranks;  // Number of QPs for communication
   const int ncompanion_qps = nqps_for_comm * 2;      // Number of companion QPs for communication
@@ -988,7 +990,7 @@ ncclResult_t ncclGinGdakiProgress(void *collComm) {
 ncclResult_t ncclGinGdakiQueryLastError(void *ginCtx, bool *hasError) {
   struct gdaki_context *gdakiCtx = (struct gdaki_context *)ginCtx;
   bool hasError_ = false;
-  const int ncontexts = 1;
+  const int ncontexts = gdakiCtx->nContexts;
   const int nranks = gdakiCtx->collComm->nranks;
   const int nqpsPerRank = ncontexts;
   const int nqpsForComm = nqpsPerRank * nranks;  // Number of QPs for communication

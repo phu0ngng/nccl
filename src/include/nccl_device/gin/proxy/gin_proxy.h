@@ -162,7 +162,7 @@ NCCL_DEVICE_INLINE void put(Coop coop, ncclGinProxyGfd_t* gfd, ncclGinProxyGpuCt
 template <>
 struct ncclGinApi_GetCounterPtr<NCCL_NET_DEVICE_GIN_PROXY> {
   NCCL_DEVICE_INLINE static uint64_t* call(ncclGinCtx ctx, ncclGinCounter_t counterId) {
-    ncclGinProxyGpuCtx_t* proxyCtx = (ncclGinProxyGpuCtx_t*)ctx.handle;
+    ncclGinProxyGpuCtx_t* proxyCtx = &((ncclGinProxyGpuCtx_t*)ctx.handle)[ctx.contextId];
     uint64_t* counter = nccl::utility::loadConst(&proxyCtx->counters) + counterId;
     return counter;
   }
@@ -171,7 +171,7 @@ struct ncclGinApi_GetCounterPtr<NCCL_NET_DEVICE_GIN_PROXY> {
 template <>
 struct ncclGinApi_ResetCounter<NCCL_NET_DEVICE_GIN_PROXY> {
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclGinCounter_t counterId) {
-    ncclGinProxyGpuCtx_t* proxyCtx = (ncclGinProxyGpuCtx_t*)ctx.handle;
+    ncclGinProxyGpuCtx_t* proxyCtx = &((ncclGinProxyGpuCtx_t*)ctx.handle)[ctx.contextId];
     uint64_t* counter = nccl::utility::loadConst(&proxyCtx->counters) + counterId;
     *counter = 0;
   }
@@ -180,7 +180,7 @@ struct ncclGinApi_ResetCounter<NCCL_NET_DEVICE_GIN_PROXY> {
 template <>
 struct ncclGinApi_GetSignalPtr<NCCL_NET_DEVICE_GIN_PROXY> {
   NCCL_DEVICE_INLINE static uint64_t* call(ncclGinCtx ctx, ncclGinSignal_t signalId) {
-    ncclGinProxyGpuCtx_t* proxyCtx = (ncclGinProxyGpuCtx_t*)ctx.handle;
+    ncclGinProxyGpuCtx_t* proxyCtx = &((ncclGinProxyGpuCtx_t*)ctx.handle)[ctx.contextId];
     uint64_t* signal = nccl::utility::loadConst(&proxyCtx->signals) + signalId;
     return signal;
   }
@@ -189,7 +189,7 @@ struct ncclGinApi_GetSignalPtr<NCCL_NET_DEVICE_GIN_PROXY> {
 template <>
 struct ncclGinApi_ResetSignal<NCCL_NET_DEVICE_GIN_PROXY> {
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, ncclGinSignalDescriptor signal) {
-  ncclGinProxyGpuCtx_t* proxyCtx = (ncclGinProxyGpuCtx_t*)ctx.handle;
+    ncclGinProxyGpuCtx_t* proxyCtx = &((ncclGinProxyGpuCtx_t*)ctx.handle)[ctx.contextId];
     if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
       uint64_t* signalPtr = (uint64_t*)ncclGetLocalPointer(signal.vaSignal.ncclWindow, signal.vaSignal.signalOffset);
       *signalPtr = 0;
@@ -203,7 +203,7 @@ template <>
 struct ncclGinApi_Flush<NCCL_NET_DEVICE_GIN_PROXY> {
   template <typename Coop>
   NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord) {
-    ncclGinProxyGpuCtx_t* proxyCtx = (ncclGinProxyGpuCtx_t*)ctx.handle;
+    ncclGinProxyGpuCtx_t* proxyCtx = &((ncclGinProxyGpuCtx_t*)ctx.handle)[ctx.contextId];
 #pragma unroll 1
     for (int pe = coop.thread_rank(); pe < ctx.nRanks; pe += coop.size()) {
       nccl::gin::proxy::flush(proxyCtx, pe, ord);
@@ -229,9 +229,10 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_PROXY> {
     ncclGinSignal_t signalId = hasSignal ? signal.indexedSignal.signalId : 0;
     ncclGinProxyGfd_t tmpDesc;
     ncclGinProxyGfd_t* desc = hasDescriptor ? (ncclGinProxyGfd_t*)descriptor : &tmpDesc;
-    nccl::gin::proxy::put<Coop, uint64_t>(
-      coop, desc, (ncclGinProxyGpuCtx_t*)ctx.handle, peer, dstWin, dstOff, 0, false, srcWin, srcOff,
-      bytes, hasSignal, signalId, signalOp, signalOpArg, hasCounter, counterId, required, given);
+    ncclGinProxyGpuCtx_t* proxyCtx = &((ncclGinProxyGpuCtx_t*)ctx.handle)[ctx.contextId];
+    nccl::gin::proxy::put<Coop, uint64_t>(coop, desc, proxyCtx, peer, dstWin, dstOff, 0, false,
+                                          srcWin, srcOff, bytes, hasSignal, signalId, signalOp,
+                                          signalOpArg, hasCounter, counterId, required, given);
   }
 };
 
@@ -251,9 +252,10 @@ struct ncclGinApi_PutValue<NCCL_NET_DEVICE_GIN_PROXY> {
     bool hasSignal = signal.type != NCCL_GIN_SIGNAL_TYPE_NONE;
     ncclGinSignal_t signalId = hasSignal ? signal.indexedSignal.signalId : 0;
     ncclGinProxyGfd_t* desc = hasDescriptor ? (ncclGinProxyGfd_t*)descriptor : &tmpDesc;
-    nccl::gin::proxy::put<Coop, T>(coop, desc, (ncclGinProxyGpuCtx_t*)ctx.handle, peer, dstWin,
-                                   dstOff, srcVal, true, nullptr, 0, sizeof(T), hasSignal, signalId,
-                                   signalOp, signalOpArg, false, 0, required, given);
+    ncclGinProxyGpuCtx_t* proxyCtx = &((ncclGinProxyGpuCtx_t*)ctx.handle)[ctx.contextId];
+    nccl::gin::proxy::put<Coop, T>(coop, desc, proxyCtx, peer, dstWin, dstOff, srcVal, true,
+                                   nullptr, 0, sizeof(T), hasSignal, signalId, signalOp,
+                                   signalOpArg, false, 0, required, given);
   }
 };
 

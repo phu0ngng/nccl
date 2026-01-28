@@ -13,9 +13,6 @@ ncclResult_t ncclGinBarrierCreateRequirement(
     ncclGinBarrierHandle_t* outHandle, ncclDevResourceRequirements_t* outReq
   ) {
   memset(outReq, 0, sizeof(*outReq));
-  outReq->bufferSize = nBarriers*NCCL_GIN_MAX_CONTEXTS*sizeof(uint32_t);
-  outReq->bufferAlign = alignof(uint32_t);
-  outReq->outBufferHandle = &outHandle->bufHandle;
   outReq->ginSignalCount = nBarriers;
   outReq->outGinSignalStart = &outHandle->signal0;
   return ncclSuccess;

@@ -27,7 +27,7 @@ void ncclDevComm_backwards_compat_test() {
   static_assert(offsetof(ncclDevComm_t, lsaMultimem) == 112);
   static_assert(offsetof(ncclDevComm_t, lsaBarrier) == 120);
   static_assert(offsetof(ncclDevComm_t, railGinBarrier) == 128);
-  static_assert(offsetof(ncclDevComm_t, ginContextCount) == 136);
+  static_assert(offsetof(ncclDevComm_t, ginConnectionCount) == 136);
   static_assert(offsetof(ncclDevComm_t, ginNetDeviceTypes) == 137);
   static_assert(offsetof(ncclDevComm_t, ginHandles) == 144);
   static_assert(offsetof(ncclDevComm_t, ginSignalBase) == 176);
@@ -35,9 +35,10 @@ void ncclDevComm_backwards_compat_test() {
   static_assert(offsetof(ncclDevComm_t, ginCounterBase) == 184);
   static_assert(offsetof(ncclDevComm_t, ginCounterCount) == 188);
   static_assert(offsetof(ncclDevComm_t, ginSignalShadows) == 192);
+  static_assert(offsetof(ncclDevComm_t, ginContextCount) == 200);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclDevComm_t) == 200);
+  static_assert(sizeof(ncclDevComm_t) == 208);
 }
 
 

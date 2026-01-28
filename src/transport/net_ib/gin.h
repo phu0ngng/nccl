@@ -14,6 +14,8 @@
 struct ncclGinIbCollComm {
   int           rank;
   int           nranks;
+  int           connectionId;
+  int           nConnections;
   void*         recvComm;
   void*         sendComm;
   void**        fullRecvComm;

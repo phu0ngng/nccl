@@ -46,7 +46,8 @@ using ncclGin = ncclGin_BackendMask<NCCL_GIN_BACKEND_MASK_ALL>;
 #if NCCL_CHECK_CUDACC
 struct ncclGin_C {
   ncclDevComm const& comm;
-  uint32_t nContexts:8, contextId:8, _ginBackend:8;
+  uint32_t nConnections:8, connectionId:8, _ginBackend:8;
+  uint32_t contextId;
 
   //////////////////////////////////////////////////////////////////////////////
   // internal:
@@ -138,7 +139,8 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE uint64_t* ncclGinGetSignalShadowPtr(
 template<unsigned backendMask>
 struct ncclGin_BackendMask {
   ncclDevComm const& comm;
-  uint32_t nContexts:8, contextId:8, _ginBackend:8;
+  uint32_t nConnections:8, connectionId:8, _ginBackend:8;
+  uint32_t contextId;
 
   // Loads GIN context into registers. Each context has one QP per peer.
   NCCL_DEVICE_INLINE ncclGin_BackendMask(ncclDevComm const&, int contextIndex);

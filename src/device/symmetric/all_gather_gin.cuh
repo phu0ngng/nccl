@@ -7,7 +7,7 @@ __device__ __forceinline__ void ncclSymkRun_AllGather_GinHier_MCRing(struct nccl
   ncclCoopCta cta;
   ncclSymkArgsHandler handler(args);
   ncclTeam rail = ncclTeamRail(handler.comm);
-  ncclGin gin(handler.comm, (int)blockIdx.x);
+  ncclGin gin(handler.comm, blockIdx.x % handler.comm.ginContextCount);
   constexpr int chunkSize = ncclSymkGinRailBufSize;
   ncclGinSignal_t railSignals = handler.ginSyncHandle.railSignals + blockIdx.x * rail.nRanks;
   ncclBarrierSession<ncclCoopCta> bar(cta, ncclTeamTagWorld(), gin, blockIdx.x, /*multimem=*/true);

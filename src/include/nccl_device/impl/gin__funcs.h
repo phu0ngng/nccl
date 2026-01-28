@@ -36,17 +36,18 @@ NCCL_DEVICE_INLINE ncclGinWindow_t getGinWindow(ncclWindow_t window, int context
 // Common initialization helper for GIN backend
 template<typename GinType>
 NCCL_DEVICE_INLINE void ncclGinInitCommon(GinType* gin, ncclDevComm const& comm, int contextIndex) {
-  gin->nContexts = comm.ginContextCount;
+  gin->nConnections = comm.ginConnectionCount;
 
-  static_assert(NCCL_GIN_MAX_CONTEXTS == 4, "Required for following modulo hack to work.");
-  // this->contextId = contextIndex % comm.ginContextCount;
-  gin->contextId = comm.ginContextCount == 3
+  static_assert(NCCL_GIN_MAX_CONNECTIONS == 4, "Required for following modulo hack to work.");
+  // this->connectionId = contextIndex % comm.ginConnectionCount;
+  gin->connectionId = comm.ginConnectionCount == 3
     ? uint32_t(contextIndex)%3 // 3 is only non power of 2
-    : contextIndex & (comm.ginContextCount-1); // powers of 2
+    : contextIndex & (comm.ginConnectionCount-1); // powers of 2
+  gin->contextId = contextIndex / comm.ginConnectionCount;
 
-  gin->_ginBackend = comm.ginNetDeviceTypes[gin->contextId];
-  gin->_ginHandle = comm.ginHandles[gin->contextId];
-  gin->_signalShadows = comm.ginSignalShadows + gin->contextId*comm.ginSignalCount;
+  gin->_ginBackend = comm.ginNetDeviceTypes[gin->connectionId];
+  gin->_ginHandle = comm.ginHandles[gin->connectionId];
+  gin->_signalShadows = comm.ginSignalShadows + contextIndex * comm.ginSignalCount;
 }
 
 template<unsigned beMask>
@@ -75,6 +76,7 @@ NCCL_DEVICE_INLINE ncclGinCtx_M<beMask> ncclGin_BackendMask<beMask>::_makeCtx() 
   ans.rank = comm.rank;
   ans.nRanks = comm.nRanks;
   ans.handle = _ginHandle;
+  ans.contextId = contextId;
   return ans;
 }
 
@@ -85,6 +87,7 @@ NCCL_DEVICE_INLINE ncclGinCtx ncclGin_C_makeCtx(ncclGin_C* net) {
   ans.rank = net->comm.rank;
   ans.nRanks = net->comm.nRanks;
   ans.handle = net->_ginHandle;
+  ans.contextId = net->contextId;
   return ans;
 }
 #endif
@@ -214,9 +217,9 @@ NCCL_DEVICE_INLINE void ncclGinPut(
   if (coop.thread_rank() == 0) {
     ncclGinCall<ncclGinApi_Put>(ctx,
       ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer), /*hasWins=*/true,
-      loadConst(&dstWin->ginWins[net->contextId]),
+      loadConst(&dstWin->ginWins[net->connectionId]),
       4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
-      loadConst(&srcWin->ginWins[net->contextId]),
+      loadConst(&srcWin->ginWins[net->connectionId]),
       4096*size_t(loadConst(&srcWin->ginOffset4K)) + srcOffset, bytes,
       signal,
       signalOp,
@@ -254,9 +257,9 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::put(
   if (coop.thread_rank() == 0) {
     ncclGinCall<ncclGinApi_Put>(ctx,
       ncclCoopThread(), ncclTeamRankToWorld(this->comm, team, peer), /*hasWins=*/true,
-      loadConst(&dstWin->ginWins[this->contextId]),
+      loadConst(&dstWin->ginWins[this->connectionId]),
       4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
-      loadConst(&srcWin->ginWins[this->contextId]),
+      loadConst(&srcWin->ginWins[this->connectionId]),
       4096*size_t(loadConst(&srcWin->ginOffset4K)) + srcOffset, bytes,
       ncclGin_getSignalDescriptor(*this, remoteAction),
       ncclGin_getSignalOp(remoteAction),
@@ -321,7 +324,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
   if (coop.thread_rank() == 0) {
     ncclGinCall<ncclGinApi_PutValue>(this->_makeCtx(),
       ncclCoopThread(), ncclTeamRankToWorld(this->comm, team, peer),
-      loadConst(&dstWin->ginWins[this->contextId]),
+      loadConst(&dstWin->ginWins[this->connectionId]),
       4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
       value,
       ncclGin_getSignalDescriptor(*this, remoteAction),
@@ -359,7 +362,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
     if (size == 1) {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
         ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
-        loadConst(&dstWin->ginWins[net->contextId]),
+        loadConst(&dstWin->ginWins[net->connectionId]),
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint8_t)value,
         signal, signalOp, signalOpArg,
@@ -367,7 +370,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
     } else if (size == 2) {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
         ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
-        loadConst(&dstWin->ginWins[net->contextId]),
+        loadConst(&dstWin->ginWins[net->connectionId]),
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint16_t)value,
         signal, signalOp, signalOpArg,
@@ -375,7 +378,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
     } else if (size == 4) {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
         ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
-        loadConst(&dstWin->ginWins[net->contextId]),
+        loadConst(&dstWin->ginWins[net->connectionId]),
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint32_t)value,
         signal, signalOp, signalOpArg,
@@ -383,7 +386,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
     } else {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
         ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
-        loadConst(&dstWin->ginWins[net->contextId]),
+        loadConst(&dstWin->ginWins[net->connectionId]),
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         value,
         signal, signalOp, signalOpArg,

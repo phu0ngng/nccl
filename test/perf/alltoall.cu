@@ -135,6 +135,9 @@ testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequireme
       }
       reqs->lsaBarrierCount = deviceCtaCount;
       return testSuccess;
+    case 5: // GinAlltoAllKernelMultiContext
+      reqs->ginContextCount = deviceCtaCount;
+      // fall through
     case 3: // GinAlltoAllKernel
     case 4: // HybridAlltoAllKernel (LSA+GIN)
       if (commProperties.ginType == NCCL_GIN_TYPE_NONE) {
@@ -366,6 +369,38 @@ __global__ void HybridAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, nc
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
 }
+
+template <typename T>
+__global__ void GinAlltoAllKernelMultiContext(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  /* determine number of contexts to use, based on CTA count and max available contexts */
+  int numContexts = min(gridDim.x, devComm.ginContextCount);
+  /* partition CTAs across contexts; each CTA uses its own global signal */
+  int ctasPerContext = gridDim.x / numContexts;
+  int ginContext = blockIdx.x / ctasPerContext;
+  unsigned int signalIndex = blockIdx.x;
+  ncclGin gin { devComm, ginContext };
+  uint64_t signalValue = gin.readSignal(signalIndex);
+  ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+  int nPeersPerCta = (devComm.nRanks + gridDim.x - 1) / gridDim.x;
+  int myPeerStart = blockIdx.x * nPeersPerCta;
+  int myPeerEnd = min(myPeerStart + nPeersPerCta, devComm.nRanks);
+  /* each CTA sends to 1+ assigned peers; threads within CTA parallelize the work */
+  /* all ranks' CTA K increment signal K on each peer they send to */
+  const size_t size = count * sizeof(T);
+  for (int peer = myPeerStart + threadIdx.x; peer < myPeerEnd; peer += blockDim.x) {
+    gin.put(ncclTeamWorld(devComm), peer,
+        recvwin, recvoffset + devComm.rank * size,
+        sendwin, sendoffset + peer * size,
+        size, ncclGin_SignalInc{blockIdx.x});
+  }
+  /* only the CTA assigned to handle this rank receives data from all peers */
+  int receivingCta = devComm.rank / nPeersPerCta;
+  if (blockIdx.x == receivingCta)
+    gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + devComm.nRanks);
+  gin.flush(ncclCoopCta());
+  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
+}
 #endif
 
 testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
@@ -402,6 +437,10 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
       case 4:
         TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(HybridAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
+      case 5:
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(GinAlltoAllKernelMultiContext, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+        return testSuccess;
+
       case HOST_RMA_IMPL:
         // RMA host put implementation
         TESTCHECK(AlltoAllRmaPut(sendbuff, sendoffset, recvbuff, recvoffset, count, type, comm, stream));

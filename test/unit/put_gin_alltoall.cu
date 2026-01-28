@@ -194,11 +194,11 @@ int main(int argc, char* argv[]) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = 1;
     NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
-    NCCLCHECK(ncclGinConnectOnce(comm));
+    NCCLCHECK(ncclGinConnectOnce(comm, 1));
 
     // Setup GIN windows using ncclGinRegister
-    void* ginHostWins[NCCL_GIN_MAX_CONTEXTS];
-    ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONTEXTS];
+    void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS];
+    ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONNECTIONS];
     NCCLCHECK(ncclGinRegister(comm, buff, (nRanks + 1) * sizeof(int), ginHostWins, ginDevWins, /*winFlags=*/0));
     ncclGinWindow_t memHandle = ginDevWins[0];
 
@@ -208,6 +208,7 @@ int main(int argc, char* argv[]) {
     gctx.handle = comm->sharedRes->ginState.ginDevHandles[0]->handle;
     gctx.rank = myRank;
     gctx.nRanks = nRanks;
+    gctx.contextId = 0;
 
     // Allocate signal for communication
     ncclGinSignal_t signalId = myRank;  // Use rank-specific signal ID to avoid conflicts
