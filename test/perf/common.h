@@ -88,7 +88,8 @@ typedef enum {
   testTimeout = 4,
   testNotImplemented = 5,
   testSkipped = 6,
-  testNumResults = 7
+  testParameterizationError = 7,
+  testNumResults = 8
 } testResult_t;
 
 // Relay errors up and trace

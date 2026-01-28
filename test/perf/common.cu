@@ -301,6 +301,34 @@ static double parsesize(const char *value) {
     return size * units;
 }
 
+// Checks NCCL_TESTS_DEVICE and possibly localGpuRank to determine what
+// the device index should be. If not set, then device index is
+// set to localGpuRank. Upon error it prints to stderr and returns
+// testInternalError, since earlier code should have caught this.
+// This accepts a ranks per device designator, "NCCL_TESTS_DEVICE=r/4"
+// indicates that the device ID used is the localGpuRank divided by 4.
+testResult_t getDeviceIndex(int localGpuRank, int* deviceIndex) {
+  char* str = getenv("NCCL_TESTS_DEVICE");
+  if (str && *str) {
+    if (strncasecmp(str, "r/", 2) == 0) {
+      int val = atoi(str + 2);
+      if (val <= 0) {
+        return testParameterizationError;
+      }
+      *deviceIndex = localGpuRank / val;
+    } else {
+      int val = atoi(str);
+      if (val < 0) {
+        return testParameterizationError;
+      }
+      *deviceIndex = val;
+    }
+  } else {
+    *deviceIndex = localGpuRank;
+  }
+  return testSuccess;
+}
+
 // return true if the rank has to host a root
 // this function matches the behavior of the scalable API
 static int rankHasRoot(int rank, int nRanks, int nRoots) {
@@ -1371,12 +1399,9 @@ testResult_t compThread(struct threadArgs* args) {
   void* ptrs[args->nGpus];
   int gpuids[args->nGpus];
   cudaStream_t streams[args->nGpus];
-  int gpu0; {
-    char* str = getenv("NCCL_TESTS_DEVICE");
-    gpu0 = str ? atoi(str) : -1;
-  }
   for (int i=0; i<args->nGpus; i++) {
-    gpuids[i] = (gpu0 != -1 ? gpu0 : args->localRank*args->nThreads*args->nGpus) + args->thread*args->nGpus + i;
+    int gpuRank = (args->localRank * args->nThreads + args->thread) * args->nGpus + i;
+    TESTCHECK(getDeviceIndex(gpuRank, &gpuids[i]));
     CUDACHECK(cudaSetDevice(gpuids[i]));
     CUDACHECK(cudaStreamCreateWithFlags(streams+i, cudaStreamNonBlocking));
     if (side_comp == 1) CUDACHECK(cudaMalloc(ptrs+i, ((uint64_t)COMP_SIZE)*NUM_BLOCKS));
@@ -1866,6 +1891,17 @@ int main(int argc, char* argv[], char **envp) {
   assert(provide >= MPI_THREAD_SERIALIZED);
 #endif
 
+  {
+    // Check for invalid NCCL_TESTS_DEVICE.
+    int deviceIndex = -1;
+    if (getDeviceIndex(0, &deviceIndex) != testSuccess) {
+      fprintf(stderr, "Invalid NCCL_TESTS_DEVICE \"%s\". Must be positive if using"
+                      " per rank feature, and non-negative if not.\n",
+                      getenv("NCCL_TESTS_DEVICE"));
+      return -1;
+    }
+  }
+
   const output_file_type_t output_file_type = classifyOutputFile(output_file);
   outputFileInit(output_file_type, output_file, argc, argv, envp);
 
@@ -2011,11 +2047,10 @@ testResult_t run() {
     TESTCHECK(faultToleranceTests(nThreads, nGpus, ncclProc, ncclProcs, localRank, ft_list));
   }
 
-  envstr = getenv("NCCL_TESTS_DEVICE");
-  int gpu0 = envstr ? atoi(envstr) : -1;
   minCudaArch = 1<<30;
   for (int i = 0; i < nGpus * nThreads; ++i) {
-    gpus[i] = (gpu0 != -1 ? gpu0 : localRank * nThreads * nGpus) + i;
+    int gpuRank = localRank * nThreads * nGpus + i;
+    TESTCHECK(getDeviceIndex(gpuRank, &gpus[i]));
     CUDACHECK(cudaSetDevice(gpus[i]));
     if (streamnull) {
       streams[i] = NULL;

@@ -26,6 +26,10 @@ bool initialized = false;
 bool handleRegistered = false;
 bool segvLogPrinted = false;
 
+// Turn off caching for Multi-rank GPU. Additional NCCL_PARAMS can be turned off,
+// but any general disabling should be discussed widely.
+ParameterChanger gNoCaching("NCCL_NO_CACHE", "NCCL_MULTI_RANK_GPU_ENABLE");
+
 static void destroyComms(ncclComm_t** array) {
   ncclComm_t* a = *array;
   if (a != NULL) {

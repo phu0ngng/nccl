@@ -1809,7 +1809,7 @@ apitest-eos:
   needs:
     - setup-eos
   variables:
-    SLURM_TIME: 70
+    SLURM_TIME: 80
     NNODES: 1
     NP: 1
     API_TESTS_DEFAULT: 1

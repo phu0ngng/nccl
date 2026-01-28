@@ -157,6 +157,44 @@ typedef ::testing::Types<char>
     testNoType;
 // TYPED_TEST_CASE(ncclCommon_test, testDataTypes);
 
+class ParameterChanger {
+  // Changes the environment as directed during construction and
+  // repairs it at destruction.
+  public:
+    ParameterChanger(const char* envVarName, const char* envVarValue)
+        : name(envVarName), oldValue(nullptr) {
+      const char* _oldValue = getenv(envVarName);
+      oldValue = (_oldValue != nullptr) ? strdup(_oldValue) : nullptr;
+      if (setenv(envVarName, envVarValue, 1)) {
+        printf("FATAL: Could not set environment variable \"%s\""
+               " to value \"%s\".\n",
+               envVarName, envVarValue);
+        exit(1);
+      }
+    }
+    ~ParameterChanger() {
+      if (oldValue != nullptr) {
+        if (setenv(name.c_str(), oldValue, 1)) {
+          printf("FATAL: Could not set environment variable \"%s\""
+                 " to \"%s\" when restoring.\n", name.c_str(), oldValue);
+          exit(1);
+        }
+        free(oldValue);
+        oldValue = nullptr;
+      } else {
+        if (unsetenv(name.c_str())) {
+          printf("FATAL: Could not unset environment variable \"%s\""
+                 " when restoring.\n", name.c_str());
+          exit(1);
+        }
+      }
+    }
+    // Note that this does not support move semantics, so be careful
+    // putting it in a vector.
+  private:
+    const std::string name;
+    char* oldValue; // char* instead of string so it can be null
+};
 
 class ncclShelveEnvTest : public ::testing::Test {
   // Allows testing NCCL when an environment variable needs to be temporarily changed.

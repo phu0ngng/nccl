@@ -99,6 +99,8 @@ static struct groupEvent group;
 static struct taskEvent task;
 static struct proxyEvent proxy;
 
+testResult_t getDeviceIndex(int localRank, int* deviceIndex);
+
 // This tries to sanitize/quote a string from 'in' into 'out',
 // assuming 'out' has length 'lim'.  We mainly quote ",/,\,\t,\n, and
 // bail if we encounter non-printable stuff or non-ASCII stuff.
@@ -710,17 +712,18 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
 #define MAX_LINE 2048
   char line[MAX_LINE];
   int len = 0;
-  const char* envstr = getenv("NCCL_TESTS_DEVICE");
-  const int gpu0 = envstr ? atoi(envstr) : -1;
   int available_devices;
   CUDACHECK(cudaGetDeviceCount(&available_devices));
-  for (int i=0; i<nThreads*nGpus; i++) {
-    const int cudaDev = (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + i;
-    const int rank = proc*nThreads*nGpus+i;
+  for (int i = 0; i < nThreads * nGpus; i++) {
+    int gpuRank = localRank * nThreads * nGpus + i;
+    int cudaDev = -1;
+    TESTCHECK(getDeviceIndex(gpuRank, &cudaDev));
+
+    const int rank = proc * nThreads * nGpus + i;
     cudaDeviceProp prop;
     if (cudaDev >= available_devices) {
       fprintf(stderr, "Invalid number of GPUs: %d requested but only %d were found.\n",
-              (gpu0 != -1 ? gpu0 : localRank*nThreads*nGpus) + nThreads*nGpus, available_devices);
+              cudaDev, available_devices);
       fprintf(stderr, "Please check the number of processes and GPUs per process.\n");
       return testNotImplemented;
     }

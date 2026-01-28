@@ -572,6 +572,19 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
       if ((g & param->splitMask) != param->color) CHECK(ncclTopoRemoveNode(system, GPU, g));
     }
   }
+  // Pruning GPUs can leave orphan DEV nodes (device-level nodes). Remove those
+  // so DEV count stays consistent with the remaining GPUs.
+  for (int d = system->nodes[DEV].count - 1; d >= 0; d--) {
+    struct ncclTopoNode* dev = system->nodes[DEV].nodes + d;
+    bool hasGpu = false;
+    for (int l = 0; l < dev->nlinks; l++) {
+      if (dev->links[l].remNode && dev->links[l].remNode->type == GPU) {
+        hasGpu = true;
+        break;
+      }
+    }
+    if (!hasGpu) CHECK(ncclTopoRemoveNode(system, DEV, d));
+  }
   int ngpus = system->nodes[GPU].count;
   CHECK(ncclTopoComputePaths(system, NULL));
   CHECK(ncclTopoSearchInit(system));
