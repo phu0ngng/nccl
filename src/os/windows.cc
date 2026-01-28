@@ -40,6 +40,14 @@ size_t ncclOsGetPageSize() {
   return (size_t)si.dwPageSize;
 }
 
+void* ncclOsAlignedAlloc(size_t alignment, size_t size) {
+    return _aligned_malloc(size, alignment);
+}
+
+void ncclOsAlignedFree(void* ptr) {
+    _aligned_free(ptr);
+}
+
 void ncclOsSetEnv(const char* name, const char* value) {
   // Check if the environment variable already has the desired value before overriding.
   // MSDN documents the maximum environment variable size as 32767 characters
