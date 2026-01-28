@@ -841,13 +841,13 @@ ncclResult_t ncclDevrCommCreateInternal(
     }
   }
   if (devr->ginEnabled) {
-    if (reqs->ginContextCount > comm->sharedRes->ginState.ginContextCount) {
-      WARN("Requested number of GIN contexts (%d) exceeds the limit (%d). Use NCCL_GIN_NCONTEXTS to increase the limit", reqs->ginContextCount, comm->sharedRes->ginState.ginContextCount);
-      ret = ncclInvalidArgument;
-      goto fail;
-    }
     nGinConnections = comm->sharedRes->ginState.ginCommCount;
-    nGinContexts = ROUNDUP(reqs->ginContextCount, nGinConnections);
+    nGinContexts = std::min(reqs->ginContextCount, comm->sharedRes->ginState.ginContextCount);
+    if (nGinContexts < reqs->ginContextCount) {
+      INFO(NCCL_INIT|NCCL_NET,
+           "Capping the number of GIN contexts to %d (%d requested). Use NCCL_GIN_NCONTEXTS to increase the limit",
+           nGinContexts, reqs->ginContextCount);
+    }
   }
 
   memset(outDevComm, 0, sizeof(*outDevComm));
