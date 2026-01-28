@@ -1075,12 +1075,18 @@ ncclResult_t ncclDevrFindWindow(
   return ncclSuccess;
 }
 
-// Returns ncclInvalidUsage if the compiled version is greater than the runtime version and NCCL_ALLOW_OLD_VERSION is not set
-static ncclResult_t validateNcclVersion(int compiledVersion) {
+// Returns ncclInvalidUsage if the compiled version is greater than the runtime version and NCCL_ENABLE_VERSION_CHECK=0 is not set
+static ncclResult_t validateNcclVersion(int compiledVersion, int minSupportedVersion = -1) {
   int runtimeVersion;
+  if (ncclParamEnableVersionCheck() == 0)
+    return ncclSuccess;
   NCCLCHECK(ncclGetVersion(&runtimeVersion));
-  if (compiledVersion > runtimeVersion && ncclParamEnableVersionCheck()) {
+  if (compiledVersion > runtimeVersion) {
     WARN("NCCL library version is too old. This application was compiled with NCCL version %d, but is running with NCCL library version %d.", compiledVersion, runtimeVersion);
+    return ncclInvalidUsage;
+  }
+  if (minSupportedVersion > 0 && compiledVersion < minSupportedVersion) {
+    WARN("The application was compiled with too old version of NCCL. It was compiled with NCCL version %d, but is running with NCCL library version %d. It needs to be recompiled with at least NCCL version %d.", compiledVersion, runtimeVersion, minSupportedVersion);
     return ncclInvalidUsage;
   }
   return ncclSuccess;
@@ -1127,7 +1133,10 @@ ncclResult_t ncclDevCommCreate(
     return ncclInvalidUsage;
   }
 
-  NCCLCHECK(validateNcclVersion(reqs->version));
+  // The current Device API is backwards-compatible down to NCCL version 2.29.3.
+  // The number below needs to be updated whenever Device API changes in a manner that is not *binary*-compatible with
+  // custom kernels compiled using older NCCL versions (source compatibility is insufficient).
+  NCCLCHECK(validateNcclVersion(reqs->version, 22903));
 
   ncclResult_t ret = ncclSuccess;
   int saveDev;
