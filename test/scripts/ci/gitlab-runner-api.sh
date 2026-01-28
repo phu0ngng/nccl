@@ -71,6 +71,8 @@ run_api_test "multinet_" "${multinetTests}"
 unset NCCL_NET_PLUGIN
 
 export NCCL_NET_PLUGIN="libnccl-shared-plugins.so"
+export NCCL_TUNER_PLUGIN="libnccl-tuner-invalid.so" # set to non-existent library so that test does not pick up a default library from LD_LIBRARY_PATH
+export NCCL_PROFILER_PLUGIN="libnccl-profiler-invalid.so"
 run_api_test "" "${sharedPluginTest}"
 unset NCCL_NET_PLUGIN
 

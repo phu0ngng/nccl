@@ -247,6 +247,7 @@ extern "C" __attribute__((visibility("default"))) const ncclTuner_t ncclTunerPlu
 __hidden ncclResult_t profilerPluginInit(void** ctx, uint64_t commId, int* eActivationMask, const char* commName, int nnodes, int nranks, int rank, ncclDebugLogger_t logfn) {
   int counter = __atomic_fetch_add(&profilerContextCounter, 1, __ATOMIC_RELAXED);
   if (counter == MAX_CONTEXT_COUNT) return ncclInternalError;
+  __atomic_fetch_sub(&context[counter].devices, 1, __ATOMIC_RELAXED);
   context[counter].commId = commId;
   //fprintf(stdout, "commId: %lu\n", commId);
   //fprintf(stdout, "context[%d]: %lu\n", counter, context[counter].commId);

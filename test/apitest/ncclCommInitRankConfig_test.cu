@@ -772,7 +772,7 @@ TEST_F(ncclCommInitRankConfig_test, shared_plugin_lib) {
     }
 
     // Second comm initialization:
-    // Net plugin returns 0 devices, test fails with ncclInvalidArgument
+    // Net plugin returns 0 devices, test fails with ncclInvalidUsage
     ASSERT_EQ(ncclSuccess, ncclGroupStart());
     for (int i = 0; i < ndev; ++i) {
         ASSERT_EQ(cudaSuccess, cudaSetDevice(i));

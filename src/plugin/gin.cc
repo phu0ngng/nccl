@@ -57,8 +57,15 @@ static ncclResult_t ncclGinPluginUnload(ginPluginLib_t* pluginLib) {
   if (pluginLib->dlHandle && pluginLib->ncclGinPluginRefCount == 0) {
     INFO(NCCL_DESTROY|NCCL_NET, "Unloading plugin %s", pluginLib->name);
     NCCLCHECK(ncclClosePluginLib(pluginLib->dlHandle, ncclPluginTypeGin));
-    // memset will reset the status to ncllGinPluginStateLoadReady
-    memset(pluginLib, 0, sizeof(ginPluginLib_t));
+
+    // Reset fields but preserve name, to be reused when reloading
+    pluginLib->dlHandle = NULL;
+    pluginLib->ncclGin = NULL;
+    pluginLib->ncclGinPluginState = ncclGinPluginStateLoadReady;
+    pluginLib->ncclRma = NULL;
+    pluginLib->ncclRmaPluginState = ncclGinPluginStateLoadReady;
+    pluginLib->ncclGinPluginRefCount = 0;
+    pluginLib->ginPhysDevs = 0;
   }
   return ncclSuccess;
 }
