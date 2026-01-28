@@ -194,7 +194,7 @@ int main(int argc, char* argv[]) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = 1;
     NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
-    NCCLCHECK(ncclGinConnectOnce(comm, 1));
+    NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, 1));
 
     // Setup GIN windows using ncclGinRegister
     void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS];

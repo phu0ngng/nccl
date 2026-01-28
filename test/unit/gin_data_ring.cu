@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = 1;
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
-  NCCLCHECK(ncclGinConnectOnce(comm, 1));
+  NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, 1));
   uint32_t sigs;
   NCCLCHECK(ncclGinAllocSignalsCounters(comm, 2*BlockPerRank, &sigs, 0, nullptr));
   assert(sigs == 0);

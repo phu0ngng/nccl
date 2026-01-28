@@ -463,7 +463,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
       reqs.resourceRequirementsList = &railSignalReq;
       reqs.railGinBarrierCount = ncclSymkMaxBlocks;
 
-      reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+      reqs.ginConnectionType = comm->globalGinSupport;
     }
 
     NCCLCHECK(ncclDevrCommCreateInternal(comm, &reqs, &symk->kcomm.devComm));

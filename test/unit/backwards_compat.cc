@@ -36,9 +36,11 @@ void ncclDevComm_backwards_compat_test() {
   static_assert(offsetof(ncclDevComm_t, ginCounterCount) == 188);
   static_assert(offsetof(ncclDevComm_t, ginSignalShadows) == 192);
   static_assert(offsetof(ncclDevComm_t, ginContextCount) == 200);
+  static_assert(offsetof(ncclDevComm_t, ginContextBase) == 204);
+  static_assert(offsetof(ncclDevComm_t, ginIsRailed) == 208);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclDevComm_t) == 208);
+  static_assert(sizeof(ncclDevComm_t) == 216);
 }
 
 
@@ -98,6 +100,7 @@ void ncclCommProperties_backwards_compat_test() {
   static_assert(offsetof(ncclCommProperties_t, ginType) == 34);
   static_assert(offsetof(ncclCommProperties_t, nLsaTeams) == 36);
   static_assert(offsetof(ncclCommProperties_t, hostRmaSupport) == 40);
+  static_assert(offsetof(ncclCommProperties_t, railedGinType) == 41);
 
   // This check prompts users to update the test. Edit according to the instructions above.
   static_assert(sizeof(ncclCommProperties_t) == 48);

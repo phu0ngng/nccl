@@ -393,7 +393,8 @@ ncclResult_t ncclPrepareTasks(struct ncclComm* comm, bool* algoNeedConnect, bool
   int fnOpTyIndices[ncclNumFuncs*ncclNumDevRedOps*ncclNumTypes];
   int fnOpTyCount = 0;
 
-  if (comm->symmetricSupport) {
+  bool oneLsaTeam = ncclTeamLsa(comm).nRanks == comm->nRanks;
+  if (comm->symmetricSupport && (comm->globalGinSupport == NCCL_GIN_CONNECTION_FULL || oneLsaTeam)) {
     NCCLCHECK(ncclMakeSymmetricTaskList(comm, task, &planner->collSymTaskQueue, &task));
   }
 

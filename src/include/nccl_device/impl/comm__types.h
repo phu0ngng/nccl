@@ -48,6 +48,7 @@ struct ncclDevComm {
   uint64_t* ginSignalShadows;
   uint32_t ginContextCount;
   uint32_t ginContextBase;
+  bool ginIsRailed; // Whether the GIN connections are railed
 };
 
 #endif // _NCCL_DEVICE_COMM__TYPES_H_

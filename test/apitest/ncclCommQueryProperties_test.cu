@@ -93,6 +93,26 @@ TEST_F(ncclCommQueryProperties_test, test_gin_support) {
   }
 }
 
+TEST_F(ncclCommQueryProperties_test, test_railed_gin_support) {
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comms[0], &props));
+  if (!props.deviceApiSupport) {
+    return;
+  }
+
+  ncclDevCommRequirements ginReqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  ginReqs.ginConnectionType = NCCL_GIN_CONNECTION_RAIL;
+  bool expectSuccess = props.railedGinType != NCCL_GIN_TYPE_NONE;
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(ncclSuccess, ncclDevCommCreate(comms[i], &ginReqs, &devComms[i]));
+  }
+  if (expectSuccess) {
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  } else {
+    ASSERT_NE(ncclSuccess, ncclGroupEnd());
+  }
+}
 
 TEST_F(ncclCommQueryProperties_test, test_multimem_support) {
   ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;

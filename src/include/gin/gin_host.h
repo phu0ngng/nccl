@@ -41,6 +41,7 @@ struct ncclGinState {
   int ginQueueDepth;
   ncclRequirementFlagOptions_t ginUseReliableDB;
   ncclRequirementFlagOptions_t ginUseExpertControl;
+  ncclGinConnectionType_t ginConnectionType;
 };
 
 extern int64_t ncclParamGinType();
@@ -53,9 +54,10 @@ ncclResult_t setLocalGinType(struct ncclComm* comm);
 // Get the GIN type from comm. ginType is set to the GIN type that can be used
 // by the comm to communicate with other nodes.
 ncclResult_t getGlobalGinType(struct ncclComm* comm, ncclGinType_t* ginType);
+ncclResult_t getGlobalRailedGinType(struct ncclComm* comm, ncclGinType_t* ginType);
 
 // FIXME change to ncclGinState instead of ncclComm, no need to pass comm
-ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount = 0, int reqGinQueueDepth = 0, int reqGinUseReliableDB = -1, int reqGinUseExpertControl = -1);
+ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t requestedConnectionType, int reqGinContextCount = 0, int reqGinQueueDepth = 0, int reqGinUseReliableDB = -1, int reqGinUseExpertControl = -1);
 ncclResult_t ncclGinHostFinalize(struct ncclComm* comm);
 ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
                              void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS],

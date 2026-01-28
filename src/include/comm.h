@@ -758,7 +758,7 @@ struct ncclComm {
   int symmetricSupport;
   bool useNetPXN;
   bool useGdr;
-  bool globalGinSupport;
+  ncclGinConnectionType_t globalGinSupport;
   bool globalRmaProxySupport;
   bool hostRmaSupport;
   int childCount;
