@@ -12,6 +12,7 @@
 #include "gin/gin_host.h"
 #include "gin/gin_host_proxy.h"
 #include "compiler.h"
+#include <cmath>
 
 NCCL_PARAM(GinEnable, "GIN_ENABLE", 1);
 NCCL_PARAM(GinType, "GIN_TYPE", -1);
@@ -89,9 +90,10 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
   }
 }
 
-NCCL_PARAM(GinNcontexts, "GIN_NCONTEXTS", NCCL_GIN_MAX_CONTEXTS);
+NCCL_PARAM(GinNconnections, "GIN_NCONNECTIONS", -2);
+NCCL_PARAM(GinNcontexts, "GIN_NCONTEXTS", NCCL_GIN_MAX_CONNECTIONS);
 
-ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
+ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
   ncclResult_t ret = ncclSuccess;
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   if (ginState->ncclGin == NULL) {
@@ -130,7 +132,24 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
   void** handles = NULL;
   char* allHandles = NULL;
 
-  ginState->ginCommCount = std::min<int>(NCCL_GIN_MAX_CONTEXTS, ncclParamGinNcontexts());
+  int* ginCommCountHandles = NULL;
+  int nContextsPerComm;
+
+  NCCLCHECKGOTO(ncclCalloc(&ginCommCountHandles, comm->nRanks), ret, fail);
+
+  ginState->ginCommCount = nLocalNets;
+  if (ncclParamGinNconnections() != -2) ginState->ginCommCount = ncclParamGinNconnections();
+  ginState->ginCommCount = std::min<int>(NCCL_GIN_MAX_CONNECTIONS, ginState->ginCommCount);
+
+  ginCommCountHandles[comm->rank] = ginState->ginCommCount;
+  NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, ginCommCountHandles, sizeof(int)), ret, fail);
+  for (int r = 0; r < comm->nRanks; r++) {
+    ginState->ginCommCount = std::min(ginState->ginCommCount, ginCommCountHandles[r]);
+  }
+
+  nContextsPerComm = DIVUP(std::max(reqGinContextCount, (int)ncclParamGinNcontexts()), ginState->ginCommCount);
+  ginState->ginContextCount = nContextsPerComm * ginState->ginCommCount;
+  INFO(NCCL_INIT, "devCommCreate: %d Local NET, creating %d GIN connections with %d contexts each (%d contexts total requested)", nLocalNets, ginState->ginCommCount, nContextsPerComm, reqGinContextCount);
 
   NCCLCHECKGOTO(ncclCalloc(&allHandles, (size_t)comm->nRanks * NCCL_NET_HANDLE_MAXSIZE), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&handles, comm->nRanks), ret, fail);
@@ -156,17 +175,18 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
                   fail);
     NCCLCHECKGOTO(ginState->ncclGin->connect(comm->ginContext, handles, comm->nRanks, comm->rank,
-                                             listenComm, ginState->ginComms + n),
+                                             nContextsPerComm, listenComm, ginState->ginComms + n),
                   ret, fail);
     if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
-      NCCLCHECKGOTO(ncclGinProxyCreateContext(comm, ginState->ginComms[n], localNetDevs[n%nLocalNets],
-                                              ginState->signalSpaceSize, ginState->counterSpaceSize,
+      NCCLCHECKGOTO(ncclGinProxyCreateContext(comm, ginState->ginComms[n],
+                                              localNetDevs[n % nLocalNets], ginState->signalSpaceSize,
+                                              ginState->counterSpaceSize, nContextsPerComm,
                                               &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
                     ret, fail);
     } else {
       NCCLCHECKGOTO(ginState->ncclGin->createContext(
                       ginState->ginComms[n], ginState->signalSpaceSize, ginState->counterSpaceSize,
-                      &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
+                      nContextsPerComm, &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
                     ret, fail);
     }
     NCCLCHECKGOTO(ginState->ncclGin->closeListen(listenComm), ret, fail);
@@ -175,6 +195,8 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm) {
   handles = NULL;
   free(allHandles);
   allHandles = NULL;
+  free(ginCommCountHandles);
+  ginCommCountHandles = NULL;
 
   // Check whether we need proxy progress and if so, start / wake up the progress thread.
   ginState->needsProxyProgress = 0;
@@ -194,8 +216,12 @@ exit:
   if (ret == ncclSuccess) ginState->connected = true;
   return ret;
 fail:
-  free(allHandles);
-  free(handles);
+  if (allHandles)
+    free(allHandles);
+  if (handles)
+    free(handles);
+  if (ginCommCountHandles)
+    free(ginCommCountHandles);
   goto exit;
 }
 
@@ -237,8 +263,8 @@ ncclResult_t ncclGinFinalize(struct ncclComm* comm) {
 }
 
 ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
-                             void* ginHostWins[NCCL_GIN_MAX_CONTEXTS],
-                             ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONTEXTS], int winFlags) {
+                             void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS],
+                             ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONNECTIONS], int winFlags) {
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   int mrFlags = (winFlags & NCCL_WIN_STRICT_ORDERING) ? NCCL_NET_MR_FLAG_FORCE_SO : 0;
   for (int n = 0; n < ginState->ginCommCount; n++) {
@@ -257,7 +283,7 @@ ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
   return ncclSuccess;
 }
 
-ncclResult_t ncclGinDeregister(struct ncclComm* comm, void* ginHostWins[NCCL_GIN_MAX_CONTEXTS]) {
+ncclResult_t ncclGinDeregister(struct ncclComm* comm, void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS]) {
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   for (int n = 0; n < ginState->ginCommCount; n++) {
     if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {

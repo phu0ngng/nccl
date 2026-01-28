@@ -331,14 +331,14 @@ static ncclResult_t ncclRmaProxyPollDesc(ncclGin_t *ncclGin, struct ncclRmaProxy
         NCCLCHECK(ncclGin->iput(ctx->ginCollComm,
           pendingDesc->srcOff, pendingDesc->srcHandle, pendingDesc->size,
           pendingDesc->dstOff, pendingDesc->dstHandle,
-          pendingDesc->targetRank, &pendingDesc->request));
+          pendingDesc->targetRank, 0, &pendingDesc->request));
       } else {
         // Signal operation needed
         NCCLCHECK(ncclGin->iputSignal(ctx->ginCollComm,
           pendingDesc->srcOff, pendingDesc->srcHandle, pendingDesc->size,
           pendingDesc->dstOff, pendingDesc->dstHandle,
           pendingDesc->targetRank, pendingDesc->signal.offset, pendingDesc->signal.signalMhandle,
-          pendingDesc->signal.val, pendingDesc->signal.op, &pendingDesc->request));
+          pendingDesc->signal.val, pendingDesc->signal.op, 0, &pendingDesc->request));
       }
 
       // Enqueue to InProgress queue (no lock needed - progress thread only)
@@ -433,8 +433,8 @@ ncclResult_t ncclRmaProxyDestroyContext(ncclGin_t* ginComm, void* rmaProxyCtx){
 
 
 ncclResult_t ncclRmaProxyRegister(struct ncclComm* comm, void* address, size_t size,
-    void* rmaHostWins[NCCL_GIN_MAX_CONTEXTS],
-    ncclGinWindow_t rmaDevWins[NCCL_GIN_MAX_CONTEXTS]){
+    void* rmaHostWins[NCCL_GIN_MAX_CONNECTIONS],
+    ncclGinWindow_t rmaDevWins[NCCL_GIN_MAX_CONNECTIONS]){
       struct ncclRmaProxyState* rmaProxyState = &comm->rmaState.rmaProxyState;
       for (int n = 0; n < rmaProxyState->ginCommCount; n++) {
           NCCLCHECK(ncclRmaProxyRegMrSym(rmaProxyState->ncclGin, rmaProxyState->ginComms[n], rmaProxyState->props[n], address, size,
@@ -447,7 +447,7 @@ ncclResult_t ncclRmaProxyRegister(struct ncclComm* comm, void* address, size_t s
       return ncclSuccess;
 }
 
-ncclResult_t ncclRmaProxyDeregister(struct ncclComm* comm, void* rmaHostWins[NCCL_GIN_MAX_CONTEXTS]){
+ncclResult_t ncclRmaProxyDeregister(struct ncclComm* comm, void* rmaHostWins[NCCL_GIN_MAX_CONNECTIONS]){
   struct ncclRmaProxyState* rmaProxyState = &comm->rmaState.rmaProxyState;
   for (int n = 0; n < rmaProxyState->ginCommCount; n++) {
     NCCLCHECK(rmaProxyState->ncclGin->deregMrSym(rmaProxyState->ginComms[n], rmaHostWins[n]));
@@ -520,7 +520,7 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
   int ginCommCount;
   int localNetDevs[NCCL_TOPO_MAX_NODES];
   NCCLCHECK(ncclTopoGetLocalNets(comm, localNetDevs, &rmaProxyState->ginCommCount));
-  ginCommCount = std::min<int>(rmaProxyState->ginCommCount, NCCL_GIN_MAX_CONTEXTS);
+  ginCommCount = std::min<int>(rmaProxyState->ginCommCount, NCCL_GIN_MAX_CONNECTIONS);
   ginCommCount = std::min<int>(ginCommCount, ndev);
 
   int* allCommCounts = NULL;
@@ -556,9 +556,10 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
       ret, fail);
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
                   fail);
-    NCCLCHECKGOTO(rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank,
-                                             listenComm, rmaProxyState->ginComms + n),
-                  ret, fail);
+    NCCLCHECKGOTO(
+      rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank, 1,
+                                      listenComm, rmaProxyState->ginComms + n),
+      ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->getProperties(localNetDevs[n], &rmaProxyState->props[n]), ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->closeListen(listenComm), ret, fail);
   }

@@ -178,7 +178,7 @@ int main(int argc, char* argv[]) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = 1;
     NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
-    NCCLCHECK(ncclGinConnectOnce(comm));
+    NCCLCHECK(ncclGinConnectOnce(comm, 1));
 
     // Allocate and register symmetric memory
     void *sendbuff, *recvbuff;
@@ -186,13 +186,13 @@ int main(int argc, char* argv[]) {
     NCCLCHECK(ncclMemAlloc((void**)&recvbuff, args.end_size));
 
     // Get window handles
-    void* srcGinHostWins[NCCL_GIN_MAX_CONTEXTS];
-    ncclGinWindow_t srcGinDevWins[NCCL_GIN_MAX_CONTEXTS];
+    void* srcGinHostWins[NCCL_GIN_MAX_CONNECTIONS];
+    ncclGinWindow_t srcGinDevWins[NCCL_GIN_MAX_CONNECTIONS];
     NCCLCHECK(ncclGinRegister(comm, sendbuff, args.end_size, srcGinHostWins, srcGinDevWins, /*winFlags=*/0));
     ncclGinWindow_t srcGinWindow = srcGinDevWins[0];
 
-    void* dstGinHostWins[NCCL_GIN_MAX_CONTEXTS];
-    ncclGinWindow_t dstGinDevWins[NCCL_GIN_MAX_CONTEXTS];
+    void* dstGinHostWins[NCCL_GIN_MAX_CONNECTIONS];
+    ncclGinWindow_t dstGinDevWins[NCCL_GIN_MAX_CONNECTIONS];
     NCCLCHECK(ncclGinRegister(comm, recvbuff, args.end_size, dstGinHostWins, dstGinDevWins, /*winFlags=*/0));
     ncclGinWindow_t dstGinWindow = dstGinDevWins[0];
 
@@ -202,6 +202,7 @@ int main(int argc, char* argv[]) {
     gctx.handle = comm->sharedRes->ginState.ginDevHandles[0]->handle;
     gctx.rank = myRank;
     gctx.nRanks = nRanks;
+    gctx.contextId = 0;
 
     ncclGinSignal_t signalIDs = 0;
 

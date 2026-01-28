@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = 1;
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
-  NCCLCHECK(ncclGinConnectOnce(comm));
+  NCCLCHECK(ncclGinConnectOnce(comm, 1));
   uint32_t sigs;
   NCCLCHECK(ncclGinAllocSignalsCounters(comm, 2*BlockPerRank, &sigs, 0, nullptr));
   assert(sigs == 0);
@@ -145,8 +145,8 @@ int main(int argc, char** argv) {
   CUDACHECK(cudaDeviceSynchronize());
 
   // Get window handles
-  void* hostWins[NCCL_GIN_MAX_CONTEXTS];
-  ncclGinWindow_t devWins[NCCL_GIN_MAX_CONTEXTS];
+  void* hostWins[NCCL_GIN_MAX_CONNECTIONS];
+  ncclGinWindow_t devWins[NCCL_GIN_MAX_CONNECTIONS];
   NCCLCHECK(ncclGinRegister(comm, buf, bufSize, hostWins, devWins, /*winFlags=*/0));
   // Get GIN resources
   ncclGinCtx_M<-1u> gctx;
@@ -154,6 +154,7 @@ int main(int argc, char** argv) {
   gctx.handle = comm->sharedRes->ginState.ginDevHandles[0]->handle;
   gctx.rank = rank;
   gctx.nRanks = nRanks;
+  gctx.contextId = 0;
 
   // run kernel
   printf("[MPI Rank %d] Starting kernel\n", rank);

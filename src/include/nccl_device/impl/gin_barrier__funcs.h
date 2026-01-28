@@ -14,9 +14,8 @@ NCCL_DEVICE_INLINE ncclGinBarrierSession<Coop>::ncclGinBarrierSession(
     Coop coop, ncclGin net, ncclTeam team, ncclGinBarrierHandle handle, uint32_t barrierIndex
   ):
   ncclGinBarrierSession_internal<Coop>{coop, net, team, handle, (int)barrierIndex} {
-  uint32_t* epochs = (uint32_t*)ncclGetResourceBufferLocalPointer(net.comm, handle.bufHandle);
-  this->epoch = epochs[barrierIndex*NCCL_GIN_MAX_CONTEXTS + net.contextId];
   this->signal = handle.signal0 + barrierIndex;
+  this->epoch = (uint32_t)*net.getSignalShadowPtr(this->signal);
 }
 #endif
 
@@ -33,8 +32,7 @@ NCCL_DEVICE_INLINE ncclGinBarrierSession<Coop>::ncclGinBarrierSession(
 template<typename Coop>
 NCCL_DEVICE_INLINE ncclGinBarrierSession<Coop>::~ncclGinBarrierSession() {
   if (this->coop.thread_rank() == 0) {
-    uint32_t* epochs = (uint32_t*)ncclGetResourceBufferLocalPointer(this->net.comm, this->handle.bufHandle);
-    epochs[this->index*NCCL_GIN_MAX_CONTEXTS + this->net.contextId] = this->epoch;
+    *this->net.getSignalShadowPtr(this->signal) = this->epoch;
   }
   this->coop.sync();
 }

@@ -214,6 +214,7 @@ struct ncclIbRequest {
       int rank;
     } iput;
   };
+  int connectionId;
 };
 
 struct ncclIbNetCommDevBase {

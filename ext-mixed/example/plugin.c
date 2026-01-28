@@ -71,7 +71,7 @@ __hidden ncclResult_t pluginGetDeviceMr(void* comm, void* mhandle, void** dptr_m
 __hidden ncclResult_t pluginMakeVDevice(int* d, ncclNetVDeviceProps_t* props) { return ncclInternalError; }
 __hidden ncclResult_t pluginFinalize(void* ctx) { return ncclSuccess; }
 
-const ncclNet_v11_t ncclNetPlugin_v11 = {
+const ncclNet_v12_t ncclNetPlugin_v12 = {
   .name = PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,

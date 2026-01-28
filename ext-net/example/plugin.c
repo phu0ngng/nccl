@@ -71,7 +71,7 @@ __hidden ncclResult_t pluginFinalize(void* ctx) { return ncclSuccess; }
 
 #define PLUGIN_NAME "Plugin"
 
-const ncclNet_v11_t ncclNetPlugin_v11 = {
+const ncclNet_v12_t ncclNetPlugin_v12 = {
   .name = PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,
@@ -92,6 +92,42 @@ const ncclNet_v11_t ncclNetPlugin_v11 = {
   .getDeviceMr = pluginGetDeviceMr,
   .irecvConsumed = pluginIrecvConsumed,
   .makeVDevice   = pluginMakeVDevice,
+  .finalize = pluginFinalize,
+};
+
+__hidden ncclResult_t pluginInit_v11(void** ctx, uint64_t commId, ncclNetCommConfig_v11_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  return pluginInit(ctx, commId, (ncclNetCommConfig_v12_t*)config, logFunction, profFunction);
+}
+
+__hidden ncclResult_t pluginGetProperties_v11(int dev, ncclNetProperties_v11_t* props) {
+  return pluginGetProperties(dev, (ncclNetProperties_v12_t*)props);
+}
+
+__hidden ncclResult_t pluginMakeVDevice_v11(int* d, ncclNetVDeviceProps_v11_t* props) {
+  return pluginMakeVDevice(d, (ncclNetVDeviceProps_v12_t*)props);
+}
+
+const ncclNet_v11_t ncclNetPlugin_v11 = {
+  .name = PLUGIN_NAME,
+  .init = pluginInit_v11,
+  .devices = pluginDevices,
+  .getProperties = pluginGetProperties_v11,
+  .listen = pluginListen,
+  .connect = pluginConnect,
+  .accept = pluginAccept,
+  .regMr = pluginRegMr,
+  .regMrDmaBuf = pluginRegMrDmaBuf,
+  .deregMr = pluginDeregMr,
+  .isend = pluginIsend,
+  .irecv = pluginIrecv,
+  .iflush = pluginIflush,
+  .test = pluginTest,
+  .closeSend = pluginCloseSend,
+  .closeRecv = pluginCloseRecv,
+  .closeListen = pluginCloseListen,
+  .getDeviceMr = pluginGetDeviceMr,
+  .irecvConsumed = pluginIrecvConsumed,
+  .makeVDevice   = pluginMakeVDevice_v11,
   .finalize = pluginFinalize,
 };
 

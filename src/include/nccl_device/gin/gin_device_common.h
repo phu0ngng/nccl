@@ -37,6 +37,7 @@ struct ncclGinCtx {
   int rank;
   int nRanks;
   void* handle;
+  int contextId;
 };
 
 template <unsigned backendMask>
