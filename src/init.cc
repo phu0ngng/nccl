@@ -696,6 +696,9 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   }
 
   NCCLCHECK(ncclTopoCheckCrossNicSupport(&info->crossNicSupport));
+  int cuMemGdrSupport;
+  CUCHECK(cuDeviceGetAttribute(&cuMemGdrSupport, CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, comm->cudaDev));
+  info->cuMemGdrSupport = (cuMemGdrSupport == 1);
   info->supportedGinType = comm->sharedRes->ginState.ginType;
   info->rmaPluginAvailable = (comm->rmaState.rmaProxyState.ncclGin != nullptr);
 
@@ -922,6 +925,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   bool globalGinSupport = comm->sharedRes->ginState.ginType != NCCL_GIN_TYPE_NONE;
   bool globalCrossNicSupport = true;
   bool globalRmaPluginSupport = true;
+  bool globalCuMemGdrSupport = true;
 
   timers[TIMER_INIT_ALLGATHER] = clockNano();
   // AllGather1 - begin
@@ -948,6 +952,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     globalGinSupport &= (comm->peerInfo[i].supportedGinType == comm->sharedRes->ginState.ginType);
     globalCrossNicSupport &= comm->peerInfo[i].crossNicSupport;
     globalRmaPluginSupport &= comm->peerInfo[i].rmaPluginAvailable;
+    globalCuMemGdrSupport &= comm->peerInfo[i].cuMemGdrSupport;
   }
   // AllGather1 - end
   timers[TIMER_INIT_ALLGATHER] = clockNano() - timers[TIMER_INIT_ALLGATHER];
@@ -1438,8 +1443,8 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   bool crossNicSupported;
   NCCLCHECKGOTO(ncclTopoPathAllDirectNVLink(comm->topo, &comm->isAllDirectNvlink), ret, fail);
   NCCLCHECKGOTO(ncclTopoCheckCrossNicSupport(&crossNicSupported), ret, fail);
-  comm->globalGinSupport = globalGinSupport && globalCrossNicSupport && !globalNicFused;
-  comm->globalRmaProxySupport = globalRmaPluginSupport && globalCrossNicSupport && !globalNicFused;
+  comm->globalGinSupport = globalGinSupport && globalCrossNicSupport && !globalNicFused && globalCuMemGdrSupport;
+  comm->globalRmaProxySupport = globalRmaPluginSupport && globalCrossNicSupport && !globalNicFused && globalCuMemGdrSupport;
   comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->globalGinSupport || comm->nNodes == 1);
   comm->hostRmaSupport = comm->symmetricSupport && (comm->nNodes == 1 || comm->globalRmaProxySupport);
   if (!comm->symmetricSupport) {

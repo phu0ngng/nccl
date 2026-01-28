@@ -12,6 +12,35 @@
 const int NCCL_GIN_IB_ALLGATHER_TAG = 0xa0;
 const int NCCL_GIN_IB_ALLTOALL_TAG = 0xa1;
 
+
+static ncclResult_t ncclGinIbGdrSupport(bool* gdrSupport, bool duringConnect, bool gdaki) {
+  int dmaBufSupportOnDevice = 1;
+  if (duringConnect) { // We cannot check the device during init because the plugin is initialized once per process.
+    int cudaDev;
+    CUDACHECK(cudaGetDevice(&cudaDev));
+    CUCHECK(cuDeviceGetAttribute(&dmaBufSupportOnDevice, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, cudaDev));
+  }
+  bool peerMemSupport = ncclIbGdrSupport() == ncclSuccess;
+  if (gdaki) {
+    peerMemSupport = ncclIbPeerMemSupport() == ncclSuccess; // GDAKI does not support nv_peer_mem.
+  }
+  bool dmaBufSupport = ncclIbDmaBufSupport(0) == ncclSuccess;
+  if (peerMemSupport || (dmaBufSupport && dmaBufSupportOnDevice == 1)) {
+    *gdrSupport = true;
+    return ncclSuccess;
+  }
+  *gdrSupport = false;
+
+  if (duringConnect) {
+    INFO(NCCL_NET, "GIN: No GDR support. Disabling GIN. Peermem: %d, DMA-BUF: %d, DMA-BUF on device: %d",
+         peerMemSupport, dmaBufSupport, dmaBufSupportOnDevice);
+  } else { // We didn't check device, don't print it.
+    INFO(NCCL_NET, "GIN: No GDR support. Disabling GIN. Peermem: %d, DMA-BUF: %d",
+         peerMemSupport, dmaBufSupport);
+  }
+  return ncclSuccess;
+}
+
 ncclResult_t ncclGinIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
   ncclNetCommConfig_t* netCommConfig = nullptr;
   NCCLCHECK(ncclIbInitDevices(logFunction, nullptr));
@@ -24,6 +53,21 @@ ncclResult_t ncclGinIbFinalize(void *ctx) {
   if (ctx) free(ctx);
   return ncclIbFinalizeDevices();
 }
+
+ncclResult_t ncclGinIbProxyInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
+  NCCLCHECK(ncclGinIbInit(ctx, commId, logFunction));
+
+  // Check GDR support.
+  bool gdrSupport;
+  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*duringConnect*/ false, /*gdaki*/ false));
+  if (!gdrSupport) {
+    ncclGinIbFinalize(*ctx);
+    return ncclInvalidUsage;
+  };
+
+  return ncclSuccess;
+}
+
 
 static ncclResult_t ncclGinIbAllGather(struct ncclGinIbCollComm *cComm, void *srcBuf, void *recvBuf, size_t len) {
   ncclResult_t status = ncclSuccess;
@@ -166,6 +210,20 @@ ncclResult_t ncclGinIbConnect(void* ctx, void* handles[], int nranks, int rank, 
   return ncclSuccess;
 }
 
+ncclResult_t ncclGinIbProxyConnect(void* ctx, void* handles[], int nranks, int rank, int nConnections, void* listenComm, void** collComm) {
+  // Check GDR support.
+  bool gdrSupport;
+  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*duringConnect*/ true, /*gdaki*/ false));
+  if (!gdrSupport) {
+    WARN("GIN Host Proxy: No GDR support.");
+    return ncclInvalidUsage;
+  }
+
+  // Connect.
+  NCCLCHECK(ncclGinIbConnect(ctx, handles, nranks, rank, 1, listenComm, collComm));
+  return ncclSuccess;
+}
+
 ncclResult_t ncclGinIbCloseColl(void* collComm) {
   struct ncclGinIbCollComm* cCommArray = (struct ncclGinIbCollComm*)collComm;
   if (!cCommArray) return ncclSuccess;
@@ -212,6 +270,7 @@ int ncclGinIbGdakiDevIndexes[MAX_IB_DEVS];
 
 ncclResult_t ncclGinIbGdakiInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
   NCCLCHECK(ncclGinIbInit(ctx, commId, logFunction));
+
   std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
   if (ncclGinIbGdakiNDevs == -1) {
     int ndevs = 0;
@@ -223,6 +282,15 @@ ncclResult_t ncclGinIbGdakiInit(void** ctx, uint64_t commId, ncclDebugLogger_t l
     }
     ncclGinIbGdakiNDevs = ndevs;
   }
+
+  // Check GDR support.
+  bool gdrSupport;
+  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*duringConnect*/ false, /*gdaki*/ true));
+  if (!gdrSupport) {
+    ncclGinIbFinalize(*ctx);
+    return ncclInvalidUsage;
+  }
+
   return ncclSuccess;
 }
 
@@ -251,8 +319,14 @@ ncclResult_t ncclGinIbGdakiListen(void* ctx, int dev, void* opaqueHandle, void**
 }
 
 ncclResult_t ncclGinIbGdakiConnect(void* ctx, void* handles[], int nranks, int rank, int nContexts, void* listenComm, void** collComm) {
-  NCCLCHECK(ncclGinIbConnect(ctx, handles, nranks, rank, 1, listenComm, collComm));
+  bool gdrSupport;
+  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*duringConnect*/ true, /*gdaki*/ true));
+  if (!gdrSupport) {
+    WARN("GIN GDAKI: No GDR support. Disabling GIN.");
+    return ncclInvalidUsage;
+  }
 
+NCCLCHECK(ncclGinIbConnect(ctx, handles, nranks, rank, 1, listenComm, collComm));
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)*collComm;
   cComm->getProperties = (ncclResult_t(*)(int dev, void *props))ncclGinIbGdakiGetProperties;
   cComm->ibvCtx = ncclIbDevs[ncclGinIbGdakiDevIndexes[cComm->dev]].context;
@@ -547,11 +621,11 @@ ncclResult_t ncclGinIbProxyTest(void *collComm, void *request, int *done) {
 // No support for NCCL_IB_SPLIT_DATA_ON_QPS or NCCL_IB_MERGE_NICS
 ncclGin_t ncclGinIbProxy = {
   "GIN_IB_PROXY",
-  ncclGinIbInit,
+  ncclGinIbProxyInit,
   ncclIbDevices,
   ncclGinIbProxyGetProperties,
   ncclIbListen,
-  ncclGinIbConnect,
+  ncclGinIbProxyConnect,
   NULL,
   ncclGinIbProxyRegMrSym,
   ncclGinIbProxyRegMrSymDmaBuf,
