@@ -14,9 +14,11 @@ __global__ void signalRingKernel(ncclDevComm comm, int contextIdx, int signalIdx
   int nextRank = (world.rank + 1) % world.nRanks;
 
   // Signal the next rank
+  printf("Rank %d signaling rank %d\n", world.rank, nextRank);
   gin.signal(world, nextRank, ncclGin_SignalInc{(ncclGinSignal_t)signalIdx});
 
   // Wait for signal from previous rank
+  printf("Rank %d waiting for signal from rank %d\n", world.rank, nextRank);
   gin.waitSignal(ncclCoopCta(), signalIdx, 1);
 
   // TODO: this is a WAR due to  https://nvbugspro.nvidia.com/bug/5832890
@@ -145,7 +147,7 @@ TEST_P(GinSignal_test, reset) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
   
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -163,7 +165,7 @@ TEST_P(GinSignal_test, basic_add) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -181,7 +183,7 @@ TEST_P(GinSignal_test, basic_inc) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -199,7 +201,7 @@ TEST_P(GinSignal_test, independent_contexts) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginForceEnable = true;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));

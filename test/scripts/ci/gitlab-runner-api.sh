@@ -34,6 +34,13 @@ run_api_test(){
     else
       echo -e "Disabled Api TESTS network test\n\n"
     fi
+
+    if [[ ${API_TESTS_DEVICE_API} -eq 1 && -z "${NCCL_NET_PLUGIN:-}" ]] ; then
+        run_command "device_apitest_${1}gin_gdaki_sm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=3 NCCL_GIN_GDAKI_NIC_HANDLER=2" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=${2}" ""
+        run_command "device_apitest_${1}gin_gdaki_cpu_assisted" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=3 NCCL_GIN_GDAKI_NIC_HANDLER=1" "$NCCL_HOME/test/apitest/device_api/device_api_test --gtest_filter=${2}" ""
+    else
+      echo -e "Disabled Api TESTS device api test\n\n"
+    fi 
 }
 
 # list of tests with a special config

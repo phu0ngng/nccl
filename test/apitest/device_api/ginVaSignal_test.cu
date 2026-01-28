@@ -181,7 +181,7 @@ TEST_P(GinVaSignal_test, reset) {
   int numThreads = getNumThreadsForOneCoop(params.coop);
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginForceEnable = true;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
   
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -199,7 +199,7 @@ TEST_P(GinVaSignal_test, basic_add) {
   int numThreads = getNumThreadsForOneCoop(params.coop);
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginForceEnable = true;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -217,7 +217,7 @@ TEST_P(GinVaSignal_test, basic_inc) {
   
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginForceEnable = true;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
