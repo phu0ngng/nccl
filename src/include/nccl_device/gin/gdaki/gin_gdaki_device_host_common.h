@@ -16,6 +16,7 @@ struct ncclGinGdakiGlobalGPUBufferTable {
   T *buffer;
   __be32 *rkeys;
   __be32 lkey;
+  unsigned int offset;
 };
 
 struct ncclGinGdakiGPUContext {

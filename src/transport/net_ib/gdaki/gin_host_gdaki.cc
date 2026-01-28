@@ -205,7 +205,7 @@ class GdakiHostGPUMemHandle {
     if (status != ncclSuccess) {
       throw status;
     }
-  };
+  }
 
   ~GdakiHostGPUMemHandle() { this->deallocate(); }
 };
@@ -506,9 +506,9 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
     new GdakiHostGPUMemHandle<struct ncclGinGdakiGPUContext>(ncontexts);
 
   GdakiGlobalGPUBufferTable<uint64_t> *counters_table =
-    new GdakiGlobalGPUBufferTable<uint64_t>(num_counters, nranks);
+    new GdakiGlobalGPUBufferTable<uint64_t>(num_counters * ncontexts, nranks);
   GdakiGlobalGPUBufferTable<uint64_t> *signals_table =
-    new GdakiGlobalGPUBufferTable<uint64_t>(num_signals, nranks);
+    new GdakiGlobalGPUBufferTable<uint64_t>(num_signals * ncontexts, nranks);
 
   const int ib_sl = (ncclParamIbSl() != -1) ? ncclParamIbSl() : NCCL_IB_SL_DEFAULT;
   const int ib_tc = (ncclParamIbTc() != -1) ? ncclParamIbTc() : NCCL_IB_TC_DEFAULT;
@@ -684,6 +684,8 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
     struct doca_gpu_dev_verbs_qp *tmp_qp;
     struct doca_gpu_dev_verbs_qp *tmp_qp_companion;
 
+    unsigned int buffer_start;
+
     tmp_qp = (struct doca_gpu_dev_verbs_qp *)calloc(nranks,
                                                          sizeof(struct doca_gpu_dev_verbs_qp));
     tmp_qp_companion = (struct doca_gpu_dev_verbs_qp *)calloc(
@@ -719,12 +721,16 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
                     gin_gdaki_gpu_ctx->companion_gdqp, tmp_qp_companion, nranks),
                   status, out);
 
-    gin_gdaki_gpu_ctx->counters_table.buffer = counters_table->gpu_ptr;
+    NCCLCHECKGOTO(counters_table->allocate_elements(num_counters, &buffer_start), status, out);
+    gin_gdaki_gpu_ctx->counters_table.buffer = counters_table->gpu_ptr + buffer_start;
     gin_gdaki_gpu_ctx->counters_table.rkeys = counters_table->get_rkeys_d();
     gin_gdaki_gpu_ctx->counters_table.lkey = htobe32(counters_table->mr->lkey);
-    gin_gdaki_gpu_ctx->signals_table.buffer = signals_table->gpu_ptr;
+    gin_gdaki_gpu_ctx->counters_table.offset = buffer_start;
+    NCCLCHECKGOTO(signals_table->allocate_elements(num_signals, &buffer_start), status, out);
+    gin_gdaki_gpu_ctx->signals_table.buffer = signals_table->gpu_ptr + buffer_start;
     gin_gdaki_gpu_ctx->signals_table.rkeys = signals_table->get_rkeys_d();
     gin_gdaki_gpu_ctx->signals_table.lkey = htobe32(signals_table->mr->lkey);
+    gin_gdaki_gpu_ctx->signals_table.offset = buffer_start;
     gin_gdaki_gpu_ctx->sink_buffer_lkey = htobe32(sink_buffer_mr->lkey);
 
     free(tmp_qp);
