@@ -80,6 +80,7 @@ __all__ = [
     # Communicator
     "Communicator",
     "NCCLConfig",
+    "WaitSignalDesc",
     # Resources
     "RegisteredBufferHandle",
     "RegisteredWindowHandle",

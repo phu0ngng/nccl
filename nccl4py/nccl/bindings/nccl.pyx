@@ -656,6 +656,162 @@ cdef class SimInfo:
         return obj
 
 
+cdef _get_wait_signal_desc_dtype_offsets():
+    cdef ncclWaitSignalDesc_t pod = ncclWaitSignalDesc_t()
+    return _numpy.dtype({
+        'names': ['op_cnt', 'peer', 'sig_idx', 'ctx'],
+        'formats': [_numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32],
+        'offsets': [
+            (<intptr_t>&(pod.opCnt)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.peer)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.sigIdx)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ctx)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclWaitSignalDesc_t),
+    })
+
+wait_signal_desc_dtype = _get_wait_signal_desc_dtype_offsets()
+
+cdef class WaitSignalDesc:
+    """Empty-initialize an instance of `ncclWaitSignalDesc_t`.
+
+
+    .. seealso:: `ncclWaitSignalDesc_t`
+    """
+    cdef:
+        ncclWaitSignalDesc_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclWaitSignalDesc_t *>calloc(1, sizeof(ncclWaitSignalDesc_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating WaitSignalDesc")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclWaitSignalDesc_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.WaitSignalDesc object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef WaitSignalDesc other_
+        if not isinstance(other, WaitSignalDesc):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclWaitSignalDesc_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclWaitSignalDesc_t *>malloc(sizeof(ncclWaitSignalDesc_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating WaitSignalDesc")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclWaitSignalDesc_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def op_cnt(self):
+        """int: """
+        return self._ptr[0].opCnt
+
+    @op_cnt.setter
+    def op_cnt(self, val):
+        if self._readonly:
+            raise ValueError("This WaitSignalDesc instance is read-only")
+        self._ptr[0].opCnt = val
+
+    @property
+    def peer(self):
+        """int: """
+        return self._ptr[0].peer
+
+    @peer.setter
+    def peer(self, val):
+        if self._readonly:
+            raise ValueError("This WaitSignalDesc instance is read-only")
+        self._ptr[0].peer = val
+
+    @property
+    def sig_idx(self):
+        """int: """
+        return self._ptr[0].sigIdx
+
+    @sig_idx.setter
+    def sig_idx(self, val):
+        if self._readonly:
+            raise ValueError("This WaitSignalDesc instance is read-only")
+        self._ptr[0].sigIdx = val
+
+    @property
+    def ctx(self):
+        """int: """
+        return self._ptr[0].ctx
+
+    @ctx.setter
+    def ctx(self, val):
+        if self._readonly:
+            raise ValueError("This WaitSignalDesc instance is read-only")
+        self._ptr[0].ctx = val
+
+    @staticmethod
+    def from_data(data):
+        """Create an WaitSignalDesc instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `wait_signal_desc_dtype` holding the data.
+        """
+        return __from_data(data, "wait_signal_desc_dtype", wait_signal_desc_dtype, WaitSignalDesc)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an WaitSignalDesc instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef WaitSignalDesc obj = WaitSignalDesc.__new__(WaitSignalDesc)
+        if owner is None:
+            obj._ptr = <ncclWaitSignalDesc_t *>malloc(sizeof(ncclWaitSignalDesc_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating WaitSignalDesc")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclWaitSignalDesc_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclWaitSignalDesc_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
 
 ###############################################################################
 # Enum

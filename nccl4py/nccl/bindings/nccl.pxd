@@ -15,7 +15,6 @@ from .cynccl cimport *
 
 ctypedef ncclComm_t Comm
 ctypedef ncclWindow_t Window
-ctypedef ncclWaitSignalDesc_t WaitSignalDesc
 
 ctypedef cudaStream_t Stream
 

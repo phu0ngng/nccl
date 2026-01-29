@@ -53,6 +53,7 @@ from nccl.core.utils import UniqueId
 
 __all__ = [
     "NCCLConfig",
+    "WaitSignalDesc",
     "Communicator",
 ]
 
@@ -501,6 +502,44 @@ class NCCLConfig:
         if val <= 0:
             raise NcclInvalid(f"num_rma_ctx must be > 0, got {val}")
         self._cfg.num_rma_ctx = int(val)
+
+
+class WaitSignalDesc:
+    """
+    Descriptor for wait signal operations in NCCL.
+
+    This class describes a signal wait operation for use with :meth:`Communicator.wait_signal`.
+    Each descriptor specifies which peer to wait for, how many signal operations to wait for,
+    and additional context for the wait operation.
+
+    Attributes:
+        op_cnt (int): Number of signal operations to wait for from the peer.
+        peer (int): Target peer rank to wait for signals from.
+        sig_idx (int): Signal index identifier. Currently must be 0.
+        ctx (int): Context identifier. Currently must be 0.
+
+    Example:
+        >>> desc = WaitSignalDesc(op_cnt=1, peer=0, sig_idx=0, ctx=0)
+        >>> comm.wait_signal([desc], stream=stream)
+
+    See Also:
+        :meth:`Communicator.wait_signal`: The method that uses these descriptors.
+    """
+
+    def __init__(self, op_cnt: int, peer: int, sig_idx: int, ctx: int) -> None:
+        """
+        Initializes a wait signal descriptor.
+
+        Args:
+            op_cnt (int): Number of signal operations to wait for. Must be positive.
+            peer (int): Target peer rank to wait for signals from.
+            sig_idx (int): Signal index identifier. Currently must be 0.
+            ctx (int): Context identifier. Currently must be 0.
+        """
+        self.op_cnt = int(op_cnt)
+        self.peer = int(peer)
+        self.sig_idx = int(sig_idx)
+        self.ctx = int(ctx)
 
 
 class Communicator:
