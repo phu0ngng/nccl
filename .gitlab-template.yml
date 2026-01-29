@@ -132,6 +132,8 @@
   variables:
     GIT_STRATEGY: none
   script:
+    # Delete existing dir in case of a retry
+    - rm -rf $INSTALL_DIR
     - mkdir -p $INSTALL_DIR
     - cp -r $BUILD_DIR $INSTALL_DIR/build
 
