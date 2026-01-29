@@ -164,6 +164,8 @@
             },
             'ncclRecv': {
             },
+            'ncclWaitSignal': {
+            },
 
             # Group ops
             'ncclGroupStart': {

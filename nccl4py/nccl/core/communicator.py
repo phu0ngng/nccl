@@ -976,6 +976,45 @@ class Communicator:
             r.ptr, r.count, int(r.dtype), int(peer), int(self._comm), get_stream_ptr(stream)
         )
 
+    def wait_signal(
+            self, signal_descs: Sequence[WaitSignalDesc], *, stream: NcclStreamSpec | None = None
+    ) -> None:
+        """
+        Waits for signals as described in the signal descriptor array.
+
+        This function enqueues a wait operation on the specified CUDA stream that blocks
+        until the required signals from peer ranks are received. Each descriptor specifies
+        a peer rank and the number of signal operations to wait for from that peer.
+
+        Args:
+            signal_descs (list[WaitSignalDesc]): List of signal descriptors specifying
+                which peers to wait for and how many signals to expect from each.
+            stream (NcclStreamSpec | None): CUDA stream to enqueue the wait operation on.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized or if any descriptor in the
+                list is not a valid WaitSignalDesc instance.
+
+        Example:
+            >>> # Wait for 1 signal from peer rank 0
+            >>> desc = WaitSignalDesc(op_cnt=1, peer=0, sig_idx=0, ctx=0)
+            >>> comm.wait_signal([desc], stream=stream)
+        """
+        self._check_valid("wait_signal")
+
+        nr_descs = int(len(signal_descs))
+        arr = _np.empty(nr_descs, dtype=_nccl_bindings.wait_signal_desc_dtype)
+        for idx, desc in enumerate(signal_descs):
+            if not isinstance(desc, WaitSignalDesc):
+                raise NcclInvalid(f"Descriptor at index {idx} is not a valid WaitSignalDesc")
+            arr[idx]["op_cnt"] = desc.op_cnt
+            arr[idx]["peer"] = desc.peer
+            arr[idx]["sig_idx"] = desc.sig_idx
+            arr[idx]["ctx"] = desc.ctx
+        ptr = 0 if nr_descs == 0 else int(arr.ctypes.data)
+
+        _nccl_bindings.wait_signal(nr_descs, ptr, int(self._comm), get_stream_ptr(stream))
+
     # --- Collective Communication Operations ---
     def allreduce(
         self,

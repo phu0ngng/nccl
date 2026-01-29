@@ -155,6 +155,10 @@ cdef ncclResult_t ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatype
     return _nccl._ncclRecv(recvbuff, count, datatype, peer, comm, stream)
 
 
+cdef ncclResult_t ncclWaitSignal(int nDesc, ncclWaitSignalDesc_t* signalDescs, ncclComm_t comm, cudaStream_t stream) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    return _nccl._ncclWaitSignal(nDesc, signalDescs, comm, stream)
+
+
 cdef ncclResult_t ncclGroupStart() except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     return _nccl._ncclGroupStart()
 
