@@ -777,6 +777,8 @@ bool ncclGinResourcesRequested(struct ncclDevCommRequirements const* reqs) {
   return requestedGinResources;
 }
 
+NCCL_PARAM(GinExclusiveContexts, "GIN_EXCLUSIVE_CONTEXTS", -1);
+
 ncclResult_t ncclDevrCommCreateInternal(
     struct ncclComm* comm,
     struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm
@@ -800,6 +802,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   struct ncclDevrWindow* win = nullptr;
   struct ncclWindow_vidmem* winHost = nullptr;
   size_t ginSignalShadowsOffset = 0;
+  bool ginExclusiveContexts = false;
 
   // Default to NCCL_GIN_CONNECTION_NONE for backward compatibility
   ncclGinConnectionType_t ginConnectionType = NCCL_GIN_CONNECTION_NONE;
@@ -843,7 +846,13 @@ ncclResult_t ncclDevrCommCreateInternal(
   if (devr->ginEnabled) {
     nGinConnections = comm->sharedRes->ginState.ginCommCount;
 
-    if (reqs->version >= NCCL_VERSION(2, 29, 3) && reqs->ginExclusiveContexts) {
+    if (reqs->version >= NCCL_VERSION(2, 29, 3)) {
+      if (ncclParamGinExclusiveContexts() != -1)
+        ginExclusiveContexts = ncclParamGinExclusiveContexts();
+      else
+        ginExclusiveContexts = reqs->ginExclusiveContexts;
+    }
+    if (ginExclusiveContexts) {
       int unallocated = comm->sharedRes->ginState.ctxLastExclusive - comm->sharedRes->ginState.ctxFirstAvailable;
       nGinContexts = reqs->ginContextCount;
       if (nGinContexts > unallocated) {
@@ -976,7 +985,7 @@ ncclResult_t ncclDevrCommCreateInternal(
       ginSignalTotal, &outDevComm->ginSignalBase,
       ginCounterTotal, &outDevComm->ginCounterBase
     ), ret, fail_stream_mem_win);
-    if (reqs->version >= NCCL_VERSION(2, 29, 3) && reqs->ginExclusiveContexts) {
+    if (ginExclusiveContexts) {
       comm->sharedRes->ginState.ctxLastExclusive -= nGinContexts;
       outDevComm->ginContextBase = comm->sharedRes->ginState.ctxLastExclusive;
     } else {
@@ -984,8 +993,7 @@ ncclResult_t ncclDevrCommCreateInternal(
       outDevComm->ginContextBase = 0;
     }
     INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d %s contexts (base %d), %d signals, %d counters",
-         nGinConnections, nGinContexts,
-         (reqs->version >= NCCL_VERSION(2, 29, 3) && reqs->ginExclusiveContexts) ? "exclusive" : "shared",
+         nGinConnections, nGinContexts, (ginExclusiveContexts ? "exclusive" : "shared"),
          outDevComm->ginContextBase, ginSignalTotal, ginCounterTotal);
 
     for (int connectionId=0; connectionId < nGinConnections; connectionId++) {
