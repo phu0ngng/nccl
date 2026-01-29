@@ -14,7 +14,7 @@ ifeq ($(MPI_IBM),1)
 NVLDFLAGS += -lmpi_ibm
 endif
 # We need private functions. Include and link with src
-SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I../../src/include/plugin -I../../src/include/os
+SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I../../src/include/plugin
 # Use static library since all the internal symbols are there
 DLIB = ${BUILDDIR}/lib/libnccl.so
 DLIBFLAGS = $(NVLDFLAGS) -L$(BUILDDIR)/lib -lnccl -lcudart
