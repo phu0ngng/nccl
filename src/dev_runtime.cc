@@ -842,11 +842,27 @@ ncclResult_t ncclDevrCommCreateInternal(
   }
   if (devr->ginEnabled) {
     nGinConnections = comm->sharedRes->ginState.ginCommCount;
-    nGinContexts = std::min(reqs->ginContextCount, comm->sharedRes->ginState.ginContextCount);
-    if (nGinContexts < reqs->ginContextCount) {
-      INFO(NCCL_INIT|NCCL_NET,
-           "Capping the number of GIN contexts to %d (%d requested). Use NCCL_GIN_NCONTEXTS to increase the limit",
-           nGinContexts, reqs->ginContextCount);
+
+    if (reqs->version >= NCCL_VERSION(2, 29, 3) && reqs->ginExclusiveContexts) {
+      int unallocated = comm->sharedRes->ginState.ctxLastExclusive - comm->sharedRes->ginState.ctxFirstAvailable;
+      nGinContexts = reqs->ginContextCount;
+      if (nGinContexts > unallocated) {
+        WARN("Requested number of exclusive GIN contexts (%d) exceeds the unallocated count (%d). Use NCCL_GIN_NCONTEXTS to increase the limit", nGinContexts, unallocated);
+        ret = ncclInvalidArgument;
+        goto fail;
+      }
+    } else {
+      nGinContexts = std::min(reqs->ginContextCount, comm->sharedRes->ginState.ctxLastExclusive);
+      if (nGinContexts == 0) {
+        WARN("No shared contexts are available (%d requested) as all have been allocated for exclusive use. Use NCCL_GIN_NCONTEXTS to increase the limit", reqs->ginContextCount);
+        ret = ncclInvalidArgument;
+        goto fail;
+      }
+      if (nGinContexts < reqs->ginContextCount) {
+        INFO(NCCL_INIT|NCCL_NET,
+             "Capping the number of GIN contexts to %d (%d requested). Use NCCL_GIN_NCONTEXTS to increase the limit",
+             nGinContexts, reqs->ginContextCount);
+      }
     }
   }
 
@@ -960,7 +976,17 @@ ncclResult_t ncclDevrCommCreateInternal(
       ginSignalTotal, &outDevComm->ginSignalBase,
       ginCounterTotal, &outDevComm->ginCounterBase
     ), ret, fail_stream_mem_win);
-    INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d contexts, %d signals, %d counters", nGinConnections, nGinContexts, ginSignalTotal, ginCounterTotal);
+    if (reqs->version >= NCCL_VERSION(2, 29, 3) && reqs->ginExclusiveContexts) {
+      comm->sharedRes->ginState.ctxLastExclusive -= nGinContexts;
+      outDevComm->ginContextBase = comm->sharedRes->ginState.ctxLastExclusive;
+    } else {
+      comm->sharedRes->ginState.ctxFirstAvailable = std::max(comm->sharedRes->ginState.ctxFirstAvailable, nGinContexts);
+      outDevComm->ginContextBase = 0;
+    }
+    INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d %s contexts (base %d), %d signals, %d counters",
+         nGinConnections, nGinContexts,
+         (reqs->version >= NCCL_VERSION(2, 29, 3) && reqs->ginExclusiveContexts) ? "exclusive" : "shared",
+         outDevComm->ginContextBase, ginSignalTotal, ginCounterTotal);
 
     for (int connectionId=0; connectionId < nGinConnections; connectionId++) {
       outDevComm->ginNetDeviceTypes[connectionId] = (int)comm->sharedRes->ginState.ginDevHandles[connectionId]->netDeviceType;
@@ -1185,6 +1211,12 @@ ncclResult_t ncclDevCommDestroy(
       devComm->ginSignalBase, devComm->ginSignalCount,
       devComm->ginCounterBase, devComm->ginCounterCount
     );
+    if (devComm->ginContextBase == comm->sharedRes->ginState.ctxLastExclusive) {
+      // Since we don't track the shared/exclusive state of each context individually, we can't support the general
+      // case of release.  However, we support the release of contexts of the most recently created exclusive devComm,
+      // as it doesn't require any additional tracking.
+      comm->sharedRes->ginState.ctxLastExclusive += devComm->ginContextCount;
+    }
   }
   if (devComm->resourceWindow != nullptr) {
     NCCLCHECK(ncclCommWindowDeregister(comm, devComm->resourceWindow));

@@ -155,6 +155,8 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
   nContextsTotal = ROUNDUP(nContextsTotal, ginState->ginCommCount);
   nContextsPerComm = nContextsTotal / ginState->ginCommCount;
   ginState->ginContextCount = nContextsTotal;
+  ginState->ctxFirstAvailable = 0;
+  ginState->ctxLastExclusive = nContextsTotal;
   INFO(NCCL_INIT, "devCommCreate: %d Local NET, creating %d GIN connections with %d contexts each (%d contexts total requested)", nLocalNets, ginState->ginCommCount, nContextsPerComm, reqGinContextCount);
 
   NCCLCHECKGOTO(ncclCalloc(&allHandles, (size_t)comm->nRanks * NCCL_NET_HANDLE_MAXSIZE), ret, fail);

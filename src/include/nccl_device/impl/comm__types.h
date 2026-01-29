@@ -47,6 +47,7 @@ struct ncclDevComm {
   int ginCounterCount;
   uint64_t* ginSignalShadows;
   uint32_t ginContextCount;
+  uint32_t ginContextBase;
 };
 
 #endif // _NCCL_DEVICE_COMM__TYPES_H_

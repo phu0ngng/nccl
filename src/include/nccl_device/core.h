@@ -91,6 +91,7 @@ struct ncclDevCommRequirements {
   int ginSignalCount; // Guaranteed to start at id=0
   int ginCounterCount; // Guaranteed to start at id=0
   ncclGinConnectionType_t ginConnectionType;
+  bool ginExclusiveContexts;
 };
 
 #define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                 \
@@ -110,6 +111,7 @@ struct ncclDevCommRequirements {
     0,                                           /* ginSignalCount */          \
     0,                                           /* ginCounterCount */         \
     NCCL_GIN_CONNECTION_NONE,                    /* ginConnectionType */       \
+    false,                                       /* ginExclusiveContexts */    \
 }
 
 struct ncclDevResourceRequirements {
