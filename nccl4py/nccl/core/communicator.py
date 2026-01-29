@@ -1015,6 +1015,34 @@ class Communicator:
 
         _nccl_bindings.wait_signal(nr_descs, ptr, int(self._comm), get_stream_ptr(stream))
 
+    def signal(self, peer: int, sig_idx: int, ctx: int, flags: int, *, stream: NcclStreamSpec | None = None) -> None:
+        """
+        Sends a signal to a peer rank.
+
+        This function enqueues a signal operation on the specified CUDA stream that notifies
+        the target peer rank. The peer can wait for this signal using :meth:`wait_signal`.
+
+        Args:
+            peer (int): Target rank to send the signal to.
+            sig_idx (int): Signal index identifier for the operation. Currently must be 0.
+            ctx (int): Context identifier for the operation. Currently must be 0.
+            flags (int): Reserved for future use. Should be set to 0.
+            stream (NcclStreamSpec | None): CUDA stream to enqueue the signal operation on.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        Example:
+            >>> # Send a signal to peer rank 1
+            >>> comm.signal(peer=1, sig_idx=0, ctx=0, flags=0, stream=stream)
+
+        See Also:
+            :meth:`wait_signal`: The method used by peers to wait for signals.
+        """
+        self._check_valid("signal")
+
+        _nccl_bindings.signal(peer, sig_idx, ctx, flags, self._comm, get_stream_ptr(stream))
+
     # --- Collective Communication Operations ---
     def allreduce(
         self,

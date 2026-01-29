@@ -166,6 +166,8 @@
             },
             'ncclWaitSignal': {
             },
+            'ncclSignal': {
+            },
 
             # Group ops
             'ncclGroupStart': {

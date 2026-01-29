@@ -519,6 +519,133 @@ def test_scatter(nccl_comm, rank_info, allocator):
     assert np.allclose(result, expected), f"{allocator} (in-place): expected {expected}, got {result}"
 
 
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["cupy"])
+def test_signal_basic(nccl_comm, rank_info, allocator):
+    """Tests basic signaling between paired ranks.
+    
+    Each even rank pairs with the next odd rank (0<->1, 2<->3, etc.).
+    Both ranks signal each other and wait for the peer's signal.
+    """
+    self_rank = rank_info.nccl_rank
+
+    if rank_info.nccl_size % 2 != 0 and self_rank == rank_info.nccl_size - 1:
+        pytest.skip("Odd number of ranks, skip last rank")
+
+    peer_rank = self_rank + 1 if self_rank % 2 == 0 else self_rank - 1
+
+    # Send a signal to the peer
+    nccl_comm.signal(peer_rank, 0, 0, 0, stream=0)
+
+    # Create a wait descriptor and wait for the signal from peer
+    desc = nccl.WaitSignalDesc(1, peer_rank, 0, 0)
+    nccl_comm.wait_signal([desc], stream=0)
+
+    _sync(allocator)
+
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["cupy"])
+def test_signal_multiple(nccl_comm, rank_info, allocator):
+    """Tests multiple signals between paired ranks.
+    
+    Each rank sends multiple signals to its peer and waits for the
+    same number of signals from the peer using op_cnt.
+    """
+    self_rank = rank_info.nccl_rank
+
+    if rank_info.nccl_size % 2 != 0 and self_rank == rank_info.nccl_size - 1:
+        pytest.skip("Odd number of ranks, skip last rank")
+
+    peer_rank = self_rank + 1 if self_rank % 2 == 0 else self_rank - 1
+    num_signals = 5
+
+    # Send multiple signals to the peer
+    for _ in range(num_signals):
+        nccl_comm.signal(peer_rank, 0, 0, 0, stream=0)
+
+    # Wait for all signals at once using op_cnt
+    desc = nccl.WaitSignalDesc(num_signals, peer_rank, 0, 0)
+    nccl_comm.wait_signal([desc], stream=0)
+
+    _sync(allocator)
+
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["cupy"])
+def test_signal_with_group(nccl_comm, rank_info, allocator):
+    """Tests signal/wait_signal within a group context.
+    
+    Wraps signal and wait_signal operations in a group to batch them.
+    """
+    self_rank = rank_info.nccl_rank
+
+    if rank_info.nccl_size % 2 != 0 and self_rank == rank_info.nccl_size - 1:
+        pytest.skip("Odd number of ranks, skip last rank")
+
+    peer_rank = self_rank + 1 if self_rank % 2 == 0 else self_rank - 1
+
+    # Use group to batch signal and wait_signal
+    with nccl.group():
+        nccl_comm.signal(peer_rank, 0, 0, 0, stream=0)
+        desc = nccl.WaitSignalDesc(1, peer_rank, 0, 0)
+        nccl_comm.wait_signal([desc], stream=0)
+
+    _sync(allocator)
+
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=3)
+@pytest.mark.parametrize("allocator", ["cupy"])
+def test_signal_ring(nccl_comm, rank_info, allocator):
+    """Tests ring-style signaling where each rank signals the next."""
+    self_rank = rank_info.nccl_rank
+    nranks = rank_info.nccl_size
+
+    next_rank = (self_rank + 1) % nranks
+    prev_rank = (self_rank - 1 + nranks) % nranks
+
+    # Signal the next rank in the ring
+    nccl_comm.signal(next_rank, 0, 0, 0, stream=0)
+
+    # Wait for signal from the previous rank
+    desc = nccl.WaitSignalDesc(1, prev_rank, 0, 0)
+    nccl_comm.wait_signal([desc], stream=0)
+
+    _sync(allocator)
+
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=3)
+@pytest.mark.parametrize("allocator", ["cupy"])
+def test_signal_multiple_descriptors(nccl_comm, rank_info, allocator):
+    """Tests waiting for signals from multiple peers using multiple descriptors.
+
+    Each rank signals all other ranks, then waits for signals from all others
+    using a list of wait descriptors (one per peer).
+    """
+    self_rank = rank_info.nccl_rank
+    nranks = rank_info.nccl_size
+
+    # Signal all other ranks
+    for peer in range(nranks):
+        if peer != self_rank:
+            nccl_comm.signal(peer, 0, 0, 0, stream=0)
+
+    # Wait for signals from all other ranks using multiple descriptors
+    descs = [
+        nccl.WaitSignalDesc(1, peer, 0, 0)
+        for peer in range(nranks)
+        if peer != self_rank
+    ]
+    nccl_comm.wait_signal(descs, stream=0)
+
+    _sync(allocator)
+
+
 # --- Buffer specification and slicing tests ---
 
 @pytest.mark.mpi(min_size=2)

@@ -1147,6 +1147,12 @@ cpdef recv(intptr_t recvbuff, size_t count, int datatype, int peer, intptr_t com
     check_status(__status__)
 
 
+cpdef signal(int peer, int sig_idx, int ctx, unsigned int flags, intptr_t comm, intptr_t stream):
+    with nogil:
+        __status__ = ncclSignal(peer, sig_idx, ctx, flags, <Comm>comm, <Stream>stream)
+    check_status(__status__)
+
+
 cpdef wait_signal(int n_desc, intptr_t signal_descs, intptr_t comm, intptr_t stream):
     with nogil:
         __status__ = ncclWaitSignal(n_desc, <ncclWaitSignalDesc_t*>signal_descs, <Comm>comm, <Stream>stream)
