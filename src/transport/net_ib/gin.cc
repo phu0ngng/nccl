@@ -12,33 +12,36 @@
 const int NCCL_GIN_IB_ALLGATHER_TAG = 0xa0;
 const int NCCL_GIN_IB_ALLTOALL_TAG = 0xa1;
 
+// Check GDR support for GIN. This is run at init, so we don't know yet whether the GPU will support DMA-BUF.
+static ncclResult_t ncclGinIbGdrSupport(bool* gdrSupport, bool gdaki) {
+  *gdrSupport = true;
+  bool peerMemSupport =
+     gdaki ? ncclIbPeerMemSupport() == ncclSuccess : // GDAKI does not support nv_peer_mem.
+     ncclIbGdrSupport() == ncclSuccess;
+  if (peerMemSupport) return ncclSuccess;
 
-static ncclResult_t ncclGinIbGdrSupport(bool* gdrSupport, bool duringConnect, bool gdaki) {
-  int dmaBufSupportOnDevice = 1;
-  if (duringConnect) { // We cannot check the device during init because the plugin is initialized once per process.
-    int cudaDev;
-    CUDACHECK(cudaGetDevice(&cudaDev));
-    CUCHECK(cuDeviceGetAttribute(&dmaBufSupportOnDevice, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, cudaDev));
-  }
-  bool peerMemSupport = ncclIbGdrSupport() == ncclSuccess;
-  if (gdaki) {
-    peerMemSupport = ncclIbPeerMemSupport() == ncclSuccess; // GDAKI does not support nv_peer_mem.
-  }
-  bool dmaBufSupport = ncclIbDmaBufSupport(0) == ncclSuccess;
-  if (peerMemSupport || (dmaBufSupport && dmaBufSupportOnDevice == 1)) {
-    *gdrSupport = true;
-    return ncclSuccess;
-  }
+  if (ncclIbDmaBufSupport(0) == ncclSuccess) return ncclSuccess;
+
   *gdrSupport = false;
-
-  if (duringConnect) {
-    INFO(NCCL_NET, "GIN: No GDR support. Disabling GIN. Peermem: %d, DMA-BUF: %d, DMA-BUF on device: %d",
-         peerMemSupport, dmaBufSupport, dmaBufSupportOnDevice);
-  } else { // We didn't check device, don't print it.
-    INFO(NCCL_NET, "GIN: No GDR support. Disabling GIN. Peermem: %d, DMA-BUF: %d",
-         peerMemSupport, dmaBufSupport);
-  }
+  INFO(NCCL_NET, "Unable to use GIN: Peermem is not supported, nor DMA-BUF.");
   return ncclSuccess;
+}
+
+// Check the current GPU supports GDR for GIN. This is run during connect().
+static ncclResult_t ncclGinIbGdrGpuSupport(bool gdaki) {
+  bool peerMemSupport =
+     gdaki ? ncclIbPeerMemSupport() == ncclSuccess : // GDAKI does not support nv_peer_mem.
+     ncclIbGdrSupport() == ncclSuccess;
+  if (peerMemSupport) return ncclSuccess;
+
+  int cudaDev;
+  CUDACHECK(cudaGetDevice(&cudaDev));
+  int dmaBufSupportOnDevice = 1;
+  CUCHECK(cuDeviceGetAttribute(&dmaBufSupportOnDevice, CU_DEVICE_ATTRIBUTE_DMA_BUF_SUPPORTED, cudaDev));
+  if (dmaBufSupportOnDevice == 1) return ncclSuccess;
+
+  WARN("Unable to use GIN: Peermem is not supported, and device %d does not support DMA-BUF.", cudaDev);
+  return ncclInvalidUsage;
 }
 
 ncclResult_t ncclGinIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
@@ -53,21 +56,6 @@ ncclResult_t ncclGinIbFinalize(void *ctx) {
   if (ctx) free(ctx);
   return ncclIbFinalizeDevices();
 }
-
-ncclResult_t ncclGinIbProxyInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
-  NCCLCHECK(ncclGinIbInit(ctx, commId, logFunction));
-
-  // Check GDR support.
-  bool gdrSupport;
-  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*duringConnect*/ false, /*gdaki*/ false));
-  if (!gdrSupport) {
-    ncclGinIbFinalize(*ctx);
-    return ncclInvalidUsage;
-  };
-
-  return ncclSuccess;
-}
-
 
 static ncclResult_t ncclGinIbAllGather(struct ncclGinIbCollComm *cComm, void *srcBuf, void *recvBuf, size_t len) {
   ncclResult_t status = ncclSuccess;
@@ -210,20 +198,6 @@ ncclResult_t ncclGinIbConnect(void* ctx, void* handles[], int nranks, int rank, 
   return ncclSuccess;
 }
 
-ncclResult_t ncclGinIbProxyConnect(void* ctx, void* handles[], int nranks, int rank, int nConnections, void* listenComm, void** collComm) {
-  // Check GDR support.
-  bool gdrSupport;
-  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*duringConnect*/ true, /*gdaki*/ false));
-  if (!gdrSupport) {
-    WARN("GIN Host Proxy: No GDR support.");
-    return ncclInvalidUsage;
-  }
-
-  // Connect.
-  NCCLCHECK(ncclGinIbConnect(ctx, handles, nranks, rank, 1, listenComm, collComm));
-  return ncclSuccess;
-}
-
 ncclResult_t ncclGinIbCloseColl(void* collComm) {
   struct ncclGinIbCollComm* cCommArray = (struct ncclGinIbCollComm*)collComm;
   if (!cCommArray) return ncclSuccess;
@@ -285,7 +259,7 @@ ncclResult_t ncclGinIbGdakiInit(void** ctx, uint64_t commId, ncclDebugLogger_t l
 
   // Check GDR support.
   bool gdrSupport;
-  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*duringConnect*/ false, /*gdaki*/ true));
+  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*gdaki*/ true));
   if (!gdrSupport) {
     ncclGinIbFinalize(*ctx);
     return ncclInvalidUsage;
@@ -319,14 +293,10 @@ ncclResult_t ncclGinIbGdakiListen(void* ctx, int dev, void* opaqueHandle, void**
 }
 
 ncclResult_t ncclGinIbGdakiConnect(void* ctx, void* handles[], int nranks, int rank, int nContexts, void* listenComm, void** collComm) {
-  bool gdrSupport;
-  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*duringConnect*/ true, /*gdaki*/ true));
-  if (!gdrSupport) {
-    WARN("GIN GDAKI: No GDR support. Disabling GIN.");
-    return ncclInvalidUsage;
-  }
+  // Check the current GPU supports GDR
+  NCCLCHECK(ncclGinIbGdrGpuSupport(/*gdaki*/ true));
 
-NCCLCHECK(ncclGinIbConnect(ctx, handles, nranks, rank, 1, listenComm, collComm));
+  NCCLCHECK(ncclGinIbConnect(ctx, handles, nranks, rank, 1, listenComm, collComm));
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)*collComm;
   cComm->getProperties = (ncclResult_t(*)(int dev, void *props))ncclGinIbGdakiGetProperties;
   cComm->ibvCtx = ncclIbDevs[ncclGinIbGdakiDevIndexes[cComm->dev]].context;
@@ -392,9 +362,32 @@ struct ncclIbGinProxyMrHandle {
   uint32_t *rkeys;
 };
 
+ncclResult_t ncclGinIbProxyInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
+  NCCLCHECK(ncclGinIbInit(ctx, commId, logFunction));
+
+  // Check GDR support.
+  bool gdrSupport;
+  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*gdaki*/ false));
+  if (!gdrSupport) {
+    ncclGinIbFinalize(*ctx);
+    return ncclInvalidUsage;
+  };
+
+  return ncclSuccess;
+}
+
 ncclResult_t ncclGinIbProxyGetProperties(int dev, ncclNetProperties_t* props) {
   NCCLCHECK(ncclNetIb.getProperties(dev, props));
   props->netDeviceType = NCCL_NET_DEVICE_GIN_PROXY;
+  return ncclSuccess;
+}
+
+ncclResult_t ncclGinIbProxyConnect(void* ctx, void* handles[], int nranks, int rank, int nConnections, void* listenComm, void** collComm) {
+  // Check the current GPU supports GDR
+  NCCLCHECK(ncclGinIbGdrGpuSupport(/*gdaki*/ false));
+
+  // Connect.
+  NCCLCHECK(ncclGinIbConnect(ctx, handles, nranks, rank, 1, listenComm, collComm));
   return ncclSuccess;
 }
 
