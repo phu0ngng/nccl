@@ -1,6 +1,10 @@
 #include "nccl_device.h"
 #include "ncclDevApiCommon_test.cuh"
 
+const uint64_t NCCL_PUT_VALUE = 28; // atomic number of nickel
+const int SRC_RANK = 0;
+const int DST_RANK = 1;
+
 __global__ void putValueKernel(ncclDevComm comm, ncclWindow_t window, size_t offset, bool useSignal, ncclWindow_t signalWindow, size_t signalOffset) {
 #if __CUDA_ARCH__ >= 700
   ncclTeam world = ncclTeamWorld(comm);
@@ -10,23 +14,26 @@ __global__ void putValueKernel(ncclDevComm comm, ncclWindow_t window, size_t off
     return;
   }
 
-  if (world.rank == 0) {
-    uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
-    *putPtr = 1;
+  if (world.rank == SRC_RANK) {
     if (useSignal) {
-      gin.putValue(world, 1, window, offset, 1, ncclGin_VASignalInc{signalWindow, signalOffset});
+      gin.putValue(world, DST_RANK, window, offset, NCCL_PUT_VALUE, ncclGin_VASignalInc{signalWindow, signalOffset});
     } else {
-      gin.putValue(world, 1, window, offset, 1);
+      gin.putValue(world, DST_RANK, window, offset, NCCL_PUT_VALUE);
     }
   }
 
-  if (world.rank == 1) {
+  if (world.rank == DST_RANK) {
     uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
+
+    // Check omitted due to a race condition with the putValue.
+    // The buffer is guaranteed to be initialized to 0 by the test framework.
+    // KERNEL_ASSERT_EQ(*putPtr, 0, "putPtr should be 0 before putValue");
+
     if (useSignal) {
       gin.waitSignal(ncclCoopCta(), signalWindow, signalOffset, 1);
-      KERNEL_ASSERT_EQ(*putPtr, 1, "Ptr should be 1 after putSignal");
+      KERNEL_ASSERT_EQ(*putPtr, NCCL_PUT_VALUE, "Ptr should be NCCL_PUT_VALUE after putSignal");
     } else {
-      while (*putPtr != 1) {
+      while (*putPtr != NCCL_PUT_VALUE) {
         continue;
       }
     }
