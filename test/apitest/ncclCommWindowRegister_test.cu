@@ -52,6 +52,9 @@ TEST_F(ncclCommWindowRegister_test, basic) {
     ASSERT_EQ(ncclSuccess, ncclAllReduce(sendbuffs[i], recvbuffs[i], size, ncclInt8, ncclSum, comms[i], streams[i]));
   }
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(streams[i]));
+  }
 
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {
@@ -81,6 +84,9 @@ TEST_F(ncclCommWindowRegister_test, debug_mode) {
     ASSERT_EQ(ncclSuccess, ncclAllGather((uint8_t*)recvbuffs[i] + i * 1024, recvbuffs[i], 1024, ncclInt8, comms[i], streams[i]));
   }
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(streams[i]));
+  }
 
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {
