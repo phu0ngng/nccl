@@ -16,7 +16,6 @@
 #include <cmath>
 
 NCCL_PARAM(GinEnable, "GIN_ENABLE", 1);
-NCCL_PARAM(GinType, "GIN_TYPE", -1);
 NCCL_PARAM(GinSignalPoolSize, "GIN_SIGNAL_POOL_SIZE", 512 << 10);
 NCCL_PARAM(GinCounterPoolSize, "GIN_COUNTER_POOL_SIZE", 512 << 10);
 
@@ -121,11 +120,6 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
 
   if (!comm->symmetricSupport) {
     WARN("Communicator does not support symmetric memory!");
-    return ncclInternalError;
-  }
-
-  if ((ncclParamGinType() != -1) && (ginState->ginType != ncclParamGinType())) {
-    WARN("GIN-capable device type mismatch.");
     return ncclInternalError;
   }
 

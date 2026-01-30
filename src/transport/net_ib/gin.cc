@@ -44,13 +44,78 @@ static ncclResult_t ncclGinIbGdrGpuSupport(bool gdaki) {
   return ncclInvalidUsage;
 }
 
-ncclResult_t ncclGinIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
-  ncclNetCommConfig_t* netCommConfig = nullptr;
+NCCL_PARAM(GinType, "GIN_TYPE", -1);
+
+static std::mutex ncclGinIbGdakiLockMutex;
+static int ncclGinIbGdakiNDevs = -1;
+int ncclGinIbGdakiDevIndexes[MAX_IB_DEVS];
+
+ncclResult_t ncclGinIbGdakiInit() {
+  std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
+  if (ncclGinIbGdakiNDevs == -1) {
+    int ndevs = 0;
+    for (int i = 0; i < ncclNIbDevs; i++) {
+      if (ncclIbDevs[i].ibProvider == IB_PROVIDER_MLX5) {
+        ncclGinIbGdakiDevIndexes[ndevs] = i;
+        ++ndevs;
+      }
+    }
+    ncclGinIbGdakiNDevs = ndevs;
+  }
+  return ncclSuccess;
+}
+
+extern ncclGin_t ncclGinIb;
+extern ncclGin_t ncclGinIbGdaki;
+extern ncclGin_t ncclGinIbProxy;
+
+// Initlialize GDAKI or PROXY backend. ginType can force a particular backend.
+// If provided, overwrite ginIb with the backend (generic ginIb case).
+ncclResult_t ncclGinIbInitType(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction, int ginType, ncclGin_t* ginIb) {
   NCCLCHECK(ncclIbInitDevices(logFunction, nullptr));
+  if (ncclNIbDevs == 0) return ncclInternalError; // Caught in plugin init code, not propagated to user.
+
+  if (ginType == NCCL_GIN_TYPE_GDAKI) goto try_gdaki;
+  if (ginType == NCCL_GIN_TYPE_PROXY) goto try_proxy;
+  if (ginType != -1) {
+    INFO(NCCL_INIT|NCCL_NET, "NET_IB: no support for GIN type %ld", ncclParamGinType());
+    return ncclInternalError;
+  }
+
+  bool gdrSupport;
+
+  // First try GDAKI
+try_gdaki:
+  NCCLCHECK(ncclGinIbGdakiInit());
+  if (ncclGinIbGdakiNDevs == 0 && ginType == -1) goto try_proxy;
+  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*gdaki*/ true));
+  if (!gdrSupport && ginType == -1) goto try_proxy;
+  if (!gdrSupport) return ncclInternalError;
+  if (ginIb) memcpy(ginIb, &ncclGinIbGdaki, sizeof(ncclGinIb));
+  goto end;
+
+  // Then Proxy
+try_proxy:
+  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*gdaki*/ false));
+  if (!gdrSupport) return ncclInternalError;
+  if (ginIb) memcpy(ginIb, &ncclGinIbProxy, sizeof(ncclGinIb));
+
+end:
+  ncclNetCommConfig_t* netCommConfig = nullptr;
   NCCLCHECK(ncclCalloc(&netCommConfig, 1));
   *ctx = netCommConfig;
   return ncclSuccess;
 }
+ncclResult_t ncclGinIbInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
+  return ncclGinIbInitType(ctx, commId, logFunction, ncclParamGinType(), &ncclGinIb);
+}
+
+// GIN Entry point, which will then morph into either the GDAKI or PROXY backend
+ncclGin_t ncclGinIb = {
+  "GIN_IB",
+  ncclGinIbInit,
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+};
 
 ncclResult_t ncclGinIbFinalize(void *ctx) {
   if (ctx) free(ctx);
@@ -238,34 +303,8 @@ ncclResult_t ncclGinIbCloseColl(void* collComm) {
 
 #include "gdaki/gin_host_gdaki.h"
 
-static std::mutex ncclGinIbGdakiLockMutex;
-static int ncclGinIbGdakiNDevs = -1;
-int ncclGinIbGdakiDevIndexes[MAX_IB_DEVS];
-
 ncclResult_t ncclGinIbGdakiInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
-  NCCLCHECK(ncclGinIbInit(ctx, commId, logFunction));
-
-  std::lock_guard<std::mutex> lock(ncclGinIbGdakiLockMutex);
-  if (ncclGinIbGdakiNDevs == -1) {
-    int ndevs = 0;
-    for (int i = 0; i < ncclNIbDevs; i++) {
-      if (ncclIbDevs[i].ibProvider == IB_PROVIDER_MLX5) {
-        ncclGinIbGdakiDevIndexes[ndevs] = i;
-        ++ndevs;
-      }
-    }
-    ncclGinIbGdakiNDevs = ndevs;
-  }
-
-  // Check GDR support.
-  bool gdrSupport;
-  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*gdaki*/ true));
-  if (!gdrSupport) {
-    ncclGinIbFinalize(*ctx);
-    return ncclInvalidUsage;
-  }
-
-  return ncclSuccess;
+  return ncclGinIbInitType(ctx, commId, logFunction, NCCL_GIN_TYPE_GDAKI, NULL);
 }
 
 ncclResult_t ncclGinIbGdakiDevices(int* ndev) {
@@ -363,17 +402,7 @@ struct ncclIbGinProxyMrHandle {
 };
 
 ncclResult_t ncclGinIbProxyInit(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
-  NCCLCHECK(ncclGinIbInit(ctx, commId, logFunction));
-
-  // Check GDR support.
-  bool gdrSupport;
-  NCCLCHECK(ncclGinIbGdrSupport(&gdrSupport, /*gdaki*/ false));
-  if (!gdrSupport) {
-    ncclGinIbFinalize(*ctx);
-    return ncclInvalidUsage;
-  };
-
-  return ncclSuccess;
+  return ncclGinIbInitType(ctx, commId, logFunction, NCCL_GIN_TYPE_PROXY, NULL);
 }
 
 ncclResult_t ncclGinIbProxyGetProperties(int dev, ncclNetProperties_t* props) {
