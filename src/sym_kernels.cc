@@ -256,7 +256,7 @@ static void getRequirements_gin(struct ncclComm* comm, int* out_nBlocks, size_t*
 
 static void queryModel_gin(struct ncclComm* comm, ncclSymkKernelId k, size_t nBytes, float* timeUs, int* nBlocks) {
   struct ncclSymkState* symk = &comm->symkState;
-  ncclTeam world = ncclTeamWorld(comm);
+  //ncclTeam world = ncclTeamWorld(comm);
   //ncclTeam lsa = ncclTeamLsa(comm);
   ncclTeam rail = ncclTeamRail(comm);
   double lsaBw = getLsaBw(comm);

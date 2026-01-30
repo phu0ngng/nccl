@@ -315,12 +315,3 @@ if os.environ.get("NCCL_USE_CMAKE", "0") != "1":
         "\n"
         .format(fname=fname, fbase=fbase, gencode=gencode)
       )
-
-  inst_names = sorted(set((kernel_fname(k), kernel_fbase(k), kernel_gencode(k)) for k in enumerate_kernels()))
-  for fname, fbase, gencode in inst_names:
-    f.write(
-      "$(OBJDIR)/genobj/symmetric/{fname}.o: $(OBJDIR)/gensrc/symmetric $(OBJDIR)/genobj/symmetric/{fbase}.cu.d\n"
-      "\t" "$(call COMPILE_SYM,$@,$(OBJDIR)/gensrc/symmetric/{fname},{gencode})\n"
-      "\n"
-      .format(fname=fname, fbase=fbase, gencode=gencode)
-    )
