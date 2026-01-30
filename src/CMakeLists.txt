@@ -14,6 +14,7 @@ set(LIBSRCFILES
     allocator.cc
     sym_kernels.cc
     dev_runtime.cc
+    mem_manager.cc
 )
 
 # Add NVTX support if enabled

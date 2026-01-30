@@ -398,7 +398,7 @@ static ncclResult_t sharedFree(struct ncclProxyState* proxyState, struct ncclCol
   return ncclSuccess;
 }
 
-static ncclResult_t sharedBuffersInit(struct ncclCollNetSharedRes* collNet, int cuda, char** gpuPtr, char** cpuPtr, int* size) {
+static ncclResult_t sharedBuffersInit(struct ncclCollNetSharedRes* collNet, int cuda, char** gpuPtr, char** cpuPtr, int* size, struct ncclMemManager* manager) {
   if (collNet->size == 0) {
     collNet->size = 2 * collNet->nChannels * collNet->buffSize;
   }
@@ -406,7 +406,7 @@ static ncclResult_t sharedBuffersInit(struct ncclCollNetSharedRes* collNet, int 
   *size = collNet->size;
 
   if (cuda && collNet->cudaBuff == NULL) {
-    NCCLCHECK(ncclCudaCalloc(&collNet->cudaBuff, *size));
+    NCCLCHECK(ncclCudaCalloc(&collNet->cudaBuff, *size, manager));
     cudaMemset(collNet->cudaBuff, 0x33, *size/2);
     cudaMemset((char*)collNet->cudaBuff + *size/2, 0x66, *size/2);
   }
@@ -509,7 +509,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
   // Allocate & Register shared buffers for the Simple protocol
   int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
   struct connectMapMem* mapMem = map->mems+bank;
-  NCCLCHECK(sharedBuffersInit(connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
+  NCCLCHECK(sharedBuffersInit(connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size, proxyState->memManager));
   NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr ? 1 : 0, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
 
   int dmabuf_fd = -1;
@@ -587,7 +587,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
   // Allocate & Register shared buffers for the Simple protocol
   int bank = resources->useGdr ? NCCL_NET_MAP_SHARED_DEVMEM : NCCL_NET_MAP_SHARED_HOSTMEM;
   struct connectMapMem* mapMem = map->mems+bank;
-  NCCLCHECK(sharedBuffersInit(connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size));
+  NCCLCHECK(sharedBuffersInit(connection->collNet, resources->useGdr, &mapMem->gpuPtr, &mapMem->cpuPtr, &mapMem->size, proxyState->memManager));
   NCCL_NET_MAP_ADD_POINTER(map, 1, resources->useGdr ? 1 : 0, mapMem->size, buffs[NCCL_PROTO_SIMPLE]);
 
   int dmabuf_fd = -1;
@@ -636,7 +636,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     }
     struct connectMapMem* mems = resources->map.mems;
     NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
-    NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr, proxyState->memManager));
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     NCCLCHECK(sharedBuffersDestroy(connection->collNet));
     NCCLCHECK(sharedFree(proxyState, connection->collNet, resources->netDev));
@@ -657,7 +657,7 @@ static ncclResult_t recvProxyFree(struct ncclProxyConnection* connection, struct
     }
     struct connectMapMem* mems = resources->map.mems;
     NCCLCHECK(ncclCudaHostFree(mems[NCCL_NET_MAP_HOSTMEM].cpuPtr));
-    NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr, proxyState->memManager));
     if (mems[NCCL_NET_MAP_GDCMEM].cpuPtr) NCCLCHECK(ncclGdrCudaFree(resources->gdrDesc));
     NCCLCHECK(sharedBuffersDestroy(connection->collNet));
     NCCLCHECK(sharedFree(proxyState, connection->collNet, resources->netDev));

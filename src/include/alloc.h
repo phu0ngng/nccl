@@ -12,6 +12,8 @@
 #include "bitops.h"
 #include "utils.h"
 #include "p2p.h"
+#include "mem_manager.h"
+struct ncclComm;
 #include "os.h"
 #include <memory>
 #include <unistd.h>
@@ -239,12 +241,30 @@ static inline ncclResult_t ncclCuMemFreeAddr(void *ptr, int numSegments = 1) {
   return result;
 }
 
-static inline ncclResult_t ncclCuMemAlloc(void **ptr, CUmemGenericAllocationHandle *handlep, CUmemAllocationHandleType type, size_t size) {
+// Helper function to map memory and set access permissions for a device
+static inline ncclResult_t ncclCuMemMapAndSetAccess(void *ptr, size_t size,
+                                                     CUmemGenericAllocationHandle handle,
+                                                     int cudaDev) {
+  ncclResult_t result = ncclSuccess;
+  // Map the virtual address range to the physical allocation
+  CUCHECK(cuMemMap((CUdeviceptr)ptr, size, 0, handle, 0));
+  // Set access permissions for the device
+  CUmemAccessDesc accessDesc = {};
+  accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  accessDesc.location.id = cudaDev;
+  accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+  CUCHECK(cuMemSetAccess((CUdeviceptr)ptr, size, &accessDesc, 1));
+  return result;
+}
+
+static inline ncclResult_t ncclCuMemAlloc(void **ptr, CUmemGenericAllocationHandle *handlep,
+                                          CUmemAllocationHandleType type, size_t size,
+                                          struct ncclMemManager* manager = nullptr,
+                                          ncclMemType_t memType = ncclMemPersist) {
   ncclResult_t result = ncclSuccess;
   size_t granularity = 0;
   CUdevice currentDev;
   CUmemAllocationProp prop = {};
-  CUmemAccessDesc accessDesc = {};
   CUmemGenericAllocationHandle handle;
   int cudaDev;
   int flag = 0;
@@ -263,19 +283,18 @@ static inline ncclResult_t ncclCuMemAlloc(void **ptr, CUmemGenericAllocationHand
   CUCHECK(cuMemCreate(&handle, size, &prop, 0));
   /* Reserve a virtual address range */
   CUCHECK(cuMemAddressReserve((CUdeviceptr *)ptr, size, granularity, 0, 0));
-  /* Map the virtual address range to the physical allocation */
-  CUCHECK(cuMemMap((CUdeviceptr)*ptr, size, 0, handle, 0));
-  /* Now allow RW access to the newly mapped memory */
-  accessDesc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  accessDesc.location.id = currentDev;
-  accessDesc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-  CUCHECK(cuMemSetAccess((CUdeviceptr)*ptr, size, &accessDesc, 1));
+  /* Map the virtual address range to the physical allocation and set access permissions */
+  NCCLCHECK(ncclCuMemMapAndSetAccess(*ptr, size, handle, currentDev));
   if (handlep) *handlep = handle;
   TRACE(NCCL_ALLOC, "CuMem Alloc Size %zu pointer %p handle %llx", size, *ptr, handle);
+  /* Track allocation in memory manager */
+  if (manager != nullptr) {
+    ncclMemTrack(manager, *ptr, size, handle, type, memType);
+  }
   return result;
 }
 
-static inline ncclResult_t ncclCuMemFree(void *ptr, int numSegments = 1) {
+static inline ncclResult_t ncclCuMemFree(void *ptr, struct ncclMemManager* manager = nullptr, int numSegments = 1) {
   if (ptr == NULL) return ncclSuccess;
   ncclResult_t result = ncclSuccess;
   size_t totalSize = 0;
@@ -290,6 +309,12 @@ static inline ncclResult_t ncclCuMemFree(void *ptr, int numSegments = 1) {
     CUCHECK(cuMemRelease(handle));
     totalSize += segmentSize;
   }
+
+  // Update tracking with total size after processing all segments
+  if (manager != nullptr) {
+    NCCLCHECK(ncclMemUntrack(manager, ptr, totalSize));
+  }
+
   CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, totalSize));
   return result;
 }
@@ -323,11 +348,12 @@ static inline ncclResult_t ncclCuMemGetAddressRange(CUdeviceptr userBuff, size_t
 
 extern int ncclCuMemEnable();
 
-static inline ncclResult_t ncclCuMemAlloc(void **ptr, void *handlep, int type, size_t size) {
+static inline ncclResult_t ncclCuMemAlloc(void **ptr, void *handlep, int type, size_t size,
+                                          struct ncclMemManager* manager = nullptr, ncclMemType_t memType = ncclMemScratch) {
   WARN("CUMEM not supported prior to CUDA 11.3");
   return ncclInternalError;
 }
-static inline ncclResult_t ncclCuMemFree(void *ptr, int numSegments = 1) {
+static inline ncclResult_t ncclCuMemFree(void *ptr, struct ncclMemManager* manager = nullptr, int numSegments = 1) {
   WARN("CUMEM not supported prior to CUDA 11.3");
   return ncclInternalError;
 }
@@ -350,14 +376,15 @@ static inline ncclResult_t ncclCuMemGetAddressRange(CUdeviceptr userBuff, size_t
 #endif
 
 template <typename T>
-ncclResult_t ncclCudaMallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
+ncclResult_t ncclCudaMallocDebug(T** ptr, size_t nelem, const char *filefunc, int line,
+                                  struct ncclMemManager* manager, ncclMemType_t memType = ncclMemPersist) {
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   *ptr = nullptr;
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (nelem > 0) {
     if (ncclCuMemEnable()) {
-      NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, ncclCuMemHandleType, nelem*ncclSizeOfT<T>()), result, finish);
+      NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, ncclCuMemHandleType, nelem*ncclSizeOfT<T>(), manager, memType), result, finish);
     } else {
       CUDACHECKGOTO(cudaMalloc(ptr, nelem*ncclSizeOfT<T>()), result, finish);
     }
@@ -365,13 +392,14 @@ ncclResult_t ncclCudaMallocDebug(T** ptr, size_t nelem, const char *filefunc, in
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (*ptr == nullptr && nelem > 0) WARN("Failed to CUDA malloc %ld bytes", nelem*ncclSizeOfT<T>());
-  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
+  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p memType %d", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr, memType);
   return result;
 }
-#define ncclCudaMalloc(...) ncclCudaMallocDebug(__VA_ARGS__, __FILE__, __LINE__)
+#define ncclCudaMalloc(ptr, nelem, ...) ncclCudaMallocDebug(ptr, nelem, __FILE__, __LINE__, ##__VA_ARGS__)
 
 template <typename T>
-ncclResult_t ncclCudaCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line) {
+ncclResult_t ncclCudaCallocDebug(T** ptr, size_t nelem, const char *filefunc, int line,
+                                  struct ncclMemManager* manager = nullptr, ncclMemType_t memType = ncclMemPersist) {
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   *ptr = nullptr;
@@ -381,7 +409,7 @@ ncclResult_t ncclCudaCallocDebug(T** ptr, size_t nelem, const char *filefunc, in
     cudaStream_t stream;
     CUDACHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
     if (ncclCuMemEnable()) {
-      NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, ncclCuMemHandleType, nelem*ncclSizeOfT<T>()), result, finish);
+      NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, ncclCuMemHandleType, nelem*ncclSizeOfT<T>(), manager, memType), result, finish);
     } else {
       CUDACHECKGOTO(cudaMalloc(ptr, nelem*ncclSizeOfT<T>()), result, finish);
     }
@@ -392,20 +420,21 @@ ncclResult_t ncclCudaCallocDebug(T** ptr, size_t nelem, const char *filefunc, in
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (*ptr == nullptr && nelem > 0) WARN("Failed to CUDA calloc %ld bytes", nelem*ncclSizeOfT<T>());
-  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
+  INFO(NCCL_ALLOC, "%s:%d Cuda Calloc Size %ld pointer %p memType %d", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr, memType);
   return result;
 }
-#define ncclCudaCalloc(...) ncclCudaCallocDebug(__VA_ARGS__, __FILE__, __LINE__)
+#define ncclCudaCalloc(ptr, nelem, ...) ncclCudaCallocDebug(ptr, nelem, __FILE__, __LINE__, ##__VA_ARGS__)
 
 template <typename T>
-ncclResult_t ncclCudaCallocAsyncDebug(T** ptr, size_t nelem, cudaStream_t stream, const char *filefunc, int line) {
+ncclResult_t ncclCudaCallocAsyncDebug(T** ptr, size_t nelem, cudaStream_t stream, const char *filefunc, int line,
+                                       struct ncclMemManager* manager = nullptr, ncclMemType_t memType = ncclMemPersist) {
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   *ptr = nullptr;
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (nelem > 0) {
     if (ncclCuMemEnable()) {
-      NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, ncclCuMemHandleType, nelem*ncclSizeOfT<T>()), result, finish);
+      NCCLCHECKGOTO(ncclCuMemAlloc((void **)ptr, NULL, ncclCuMemHandleType, nelem*ncclSizeOfT<T>(), manager, memType), result, finish);
     } else {
       CUDACHECKGOTO(cudaMalloc(ptr, nelem*ncclSizeOfT<T>()), result, finish);
     }
@@ -414,10 +443,10 @@ ncclResult_t ncclCudaCallocAsyncDebug(T** ptr, size_t nelem, cudaStream_t stream
 finish:
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (*ptr == nullptr && nelem > 0) WARN("Failed to CUDA calloc async %ld bytes", nelem*ncclSizeOfT<T>());
-  INFO(NCCL_ALLOC, "%s:%d Cuda Alloc Size %ld pointer %p", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr);
+  INFO(NCCL_ALLOC, "%s:%d Cuda CallocAsync Size %ld pointer %p memType %d", filefunc, line, nelem*ncclSizeOfT<T>(), *ptr, memType);
   return result;
 }
-#define ncclCudaCallocAsync(...) ncclCudaCallocAsyncDebug(__VA_ARGS__, __FILE__, __LINE__)
+#define ncclCudaCallocAsync(ptr, nelem, stream, ...) ncclCudaCallocAsyncDebug(ptr, nelem, stream, __FILE__, __LINE__, ##__VA_ARGS__)
 
 template <typename T>
 ncclResult_t ncclCudaMemcpy(T* dst, T* src, size_t nelem) {
@@ -447,14 +476,14 @@ finish:
 }
 
 template <typename T>
-ncclResult_t ncclCudaFree(T* ptr, int numSegments = 1) {
+ncclResult_t ncclCudaFree(T* ptr, struct ncclMemManager* manager = nullptr, int numSegments = 1) {
   ncclResult_t result = ncclSuccess;
   cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
   TRACE(NCCL_ALLOC, "Cuda Free pointer %p", ptr);
   CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
   if (ncclCuMemEnable()) {
-    NCCLCHECKGOTO(ncclCuMemFree((void *)ptr, numSegments), result, finish);
-  } else {
+    NCCLCHECKGOTO(ncclCuMemFree((void *)ptr, manager, numSegments), result, finish);
+  } else{
     if (numSegments > 1) {
       result = ncclUnhandledCudaError;
       goto finish;

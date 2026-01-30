@@ -152,6 +152,13 @@ else
   echo -e "Disabled Intrusive Map TESTS test\n\n"
 fi
 
+if [[ ${DYN_MEM_TESTS} -eq 1 ]] ; then
+  run_command "dyn_mem_test_default" "$RUN_MODE" ${NGPUS} "--oversubscribe" "" "$NCCL_HOME/test/unit/dyn_mem_test" "-c 268435456"
+  run_command "dyn_mem_test_symmetric" "$RUN_MODE" ${NGPUS} "--oversubscribe" "" "$NCCL_HOME/test/unit/dyn_mem_test" "-w -c 268435456"
+else
+  echo -e "Disabled Dynamic Memory Manager TESTS test\n\n"
+fi
+
 export NCCL_DEBUG=$NCCL_DEBUG_OLD
 if [[ ${PLUGIN_TESTS_NET_TUNER} -eq 1 ]] ; then
   run_command "make_mixed_tuner" "CMD" 1 "" "" "make" "-C ext-mixed/example test"
