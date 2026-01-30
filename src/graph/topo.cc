@@ -1689,13 +1689,13 @@ ncclResult_t ncclTopoGetNetDevsPolicy(enum netDevsPolicy* policy, int* policyNum
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int channelId, int64_t* id, int* dev) {
+ncclResult_t ncclTopoGetLocalNetType(struct ncclTopoSystem* system, int type, int rank, int channelId, int64_t* id, int* dev) {
   int gpu;
   NCCLCHECK(ncclTopoRankToIndex(system, rank, &gpu, /*showWarn=*/true));
 
   int localNets[NCCL_TOPO_MAX_NODES];
   int localNetCount;
-  NCCLCHECK(ncclTopoGetLocal(system, GPU, gpu, NET, localNets, &localNetCount, NULL));
+  NCCLCHECK(ncclTopoGetLocal(system, GPU, gpu, type, localNets, &localNetCount, NULL));
   if (localNetCount==0) {
     WARN("Could not find any local path from gpu %d to net.", gpu);
     return ncclInternalError;
@@ -1708,7 +1708,7 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int ch
   if (policy == NETDEVS_POLICY_AUTO) {
     int localGpus[NCCL_TOPO_MAX_NODES];
     int localGpuCount;
-    NCCLCHECK(ncclTopoGetLocal(system, NET, localNets[0], GPU, localGpus, &localGpuCount, NULL));
+    NCCLCHECK(ncclTopoGetLocal(system, type, localNets[0], GPU, localGpus, &localGpuCount, NULL));
     netsPerGpu = DIVUP(localNetCount, localGpuCount);
   } else if (policy == NETDEVS_POLICY_ALL) {
     netsPerGpu = localNetCount;
@@ -1722,24 +1722,25 @@ ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int ch
   int net = system->nodes[GPU].nodes[gpu].gpu.dev;
   if (isPow2(localNetCount)) net = mirrorBits(net, localNetCount);
   net += channelId%(netsPerGpu);
-  if (id) *id = system->nodes[NET].nodes[localNets[net%localNetCount]].id;
-  if (dev) *dev = system->nodes[NET].nodes[localNets[net%localNetCount]].net.dev;
+  if (id) *id = system->nodes[type].nodes[localNets[net%localNetCount]].id;
+  if (dev) *dev = system->nodes[type].nodes[localNets[net%localNetCount]].net.dev;
   return ncclSuccess;
 }
+ncclResult_t ncclTopoGetLocalNet(struct ncclTopoSystem* system, int rank, int channelId, int64_t* id, int* dev) {
+  return ncclTopoGetLocalNetType(system, NET, rank, channelId, id, dev);
+}
+ncclResult_t ncclTopoGetLocalGinDev(struct ncclTopoSystem* system, int rank, int channelId, int64_t* id, int* dev) {
+  return ncclTopoGetLocalNetType(system, GIN, rank, channelId, id, dev);
+}
 
-ncclResult_t ncclTopoGetLocalNets(struct ncclComm* comm, int* localNetDevs, int* localNetCount) {
-  struct ncclTopoSystem* system = comm->topo;
-  int gpu;
-  NCCLCHECK(ncclTopoRankToIndex(system, comm->rank, &gpu, /*showWarn=*/true));
-  int localNetIndexes[NCCL_TOPO_MAX_NODES];
-  NCCLCHECK(ncclTopoGetLocal(system, GPU, gpu, NET, localNetIndexes, localNetCount, NULL));
-
-  if (*localNetCount == 0) {
-    WARN("Could not find any local path from gpu %d to net.", gpu);
-    return ncclInternalError;
+ncclResult_t ncclTopoGetLocalGinDevs(struct ncclComm* comm, int* localGinDevs, int* localGinCount) {
+  for (int c=0; c<NCCL_TOPO_MAX_NODES; c++) {
+    NCCLCHECK(ncclTopoGetLocalGinDev(comm->topo, comm->rank, c, NULL, localGinDevs+c));
+    if (c > 0 && localGinDevs[c] == localGinDevs[0]) {
+      *localGinCount = c;
+      break;
+    }
   }
-  // Convert index to dev ids
-  for (int n=0; n<*localNetCount; n++) localNetDevs[n] = system->nodes[NET].nodes[localNetIndexes[n]].net.dev;
   return ncclSuccess;
 }
 
