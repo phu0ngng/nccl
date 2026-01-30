@@ -208,18 +208,20 @@ void ncclCommPushFree(struct ncclComm* comm, void* obj) {
   struct ncclDestructor* dtor = ncclMemoryStackAlloc<struct ncclDestructor>(&comm->memPermanent);
   dtor->fn = ncclDestructorFnFree;
   dtor->obj = obj;
+  dtor->comm = comm;
   dtor->next = comm->destructorHead;
   comm->destructorHead = dtor;
 }
 
 static ncclResult_t ncclDestructorFnCudaFree(struct ncclDestructor* dtor) {
-  NCCLCHECK(ncclCudaFree(dtor->obj));
+  NCCLCHECK(ncclCudaFree(dtor->obj, dtor->comm->memManager));
   return ncclSuccess;
 }
 void ncclCommPushCudaFree(struct ncclComm* comm, void* obj) {
   struct ncclDestructor* dtor = ncclMemoryStackAlloc<struct ncclDestructor>(&comm->memPermanent);
   dtor->fn = ncclDestructorFnCudaFree;
   dtor->obj = obj;
+  dtor->comm = comm;
   dtor->next = comm->destructorHead;
   comm->destructorHead = dtor;
 }
@@ -232,18 +234,20 @@ void ncclCommPushCudaHostFree(struct ncclComm* comm, void* obj) {
   struct ncclDestructor* dtor = ncclMemoryStackAlloc<struct ncclDestructor>(&comm->memPermanent);
   dtor->fn = ncclDestructorFnCudaHostFree;
   dtor->obj = obj;
+  dtor->comm = comm;
   dtor->next = comm->destructorHead;
   comm->destructorHead = dtor;
 }
 
 static ncclResult_t ncclDestructorFnCudaGdrFree(struct ncclDestructor* dtor) {
-  NCCLCHECK(ncclGdrCudaFree(dtor->obj));
+  NCCLCHECK(ncclGdrCudaFree(dtor->obj, dtor->comm->memManager));
   return ncclSuccess;
 }
 void ncclCommPushCudaGdrFree(struct ncclComm* comm, void* handle) {
   struct ncclDestructor* dtor = ncclMemoryStackAlloc<struct ncclDestructor>(&comm->memPermanent);
   dtor->fn = ncclDestructorFnCudaGdrFree;
   dtor->obj = handle;
+  dtor->comm = comm;
   dtor->next = comm->destructorHead;
   comm->destructorHead = dtor;
 }
@@ -589,7 +593,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 
   if (ncclGdrCopy != NULL && ncclParamGdrCopyFifoEnable() == 1) {
     // The workFifoBuf lives in GDR mapped CUDA memory.
-    NCCLCHECKGOTO(ncclGdrCudaCalloc(&comm->workFifoBuf, &comm->workFifoBufDev, comm->workFifoBytes, &comm->workFifoBufGdrHandle), ret, fail);
+    NCCLCHECKGOTO(ncclGdrCudaCalloc(&comm->workFifoBuf, &comm->workFifoBufDev, comm->workFifoBytes, &comm->workFifoBufGdrHandle, comm->memManager), ret, fail);
     ncclCommPushCudaGdrFree(comm, comm->workFifoBufGdrHandle);
   } else {
     // The workFifoBuf lives in cudaHost memory.

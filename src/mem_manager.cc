@@ -1059,6 +1059,14 @@ ncclResult_t ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t*
 
   ncclMemManager* manager = comm->memManager;
   switch (stat) {
+    case ncclStatGpuMemTotal:
+      *value = __atomic_load_n(&manager->totalPersist, __ATOMIC_RELAXED) +
+               __atomic_load_n(&manager->totalScratch, __ATOMIC_RELAXED) +
+               __atomic_load_n(&manager->totalOffload, __ATOMIC_RELAXED);
+      return ncclSuccess;
+    case ncclStatGpuMemPersist:
+      *value = __atomic_load_n(&manager->totalPersist, __ATOMIC_RELAXED);
+      return ncclSuccess;
     case ncclStatGpuMemSuspend:
       *value = __atomic_load_n(&manager->totalScratch, __ATOMIC_RELAXED) +
                __atomic_load_n(&manager->totalOffload, __ATOMIC_RELAXED);

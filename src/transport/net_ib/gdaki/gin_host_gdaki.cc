@@ -173,7 +173,7 @@ class GdakiHostGPUMemHandle {
     EQCHECK(this->host_buf, nullptr);
 
     NCCLCHECK(ncclCuMemAlloc((void **)&this->gpu_buf, &this->cumemhandle, CU_MEM_HANDLE_TYPE_NONE,
-                             num_elements * sizeof(T)));
+                             num_elements * sizeof(T), nullptr));
 
     this->num_elements = num_elements;
 
@@ -185,7 +185,7 @@ class GdakiHostGPUMemHandle {
       free(this->host_buf);
     }
     if (this->gpu_buf != nullptr) {
-      ncclCuMemFree(this->gpu_buf);
+      ncclCuMemFree(this->gpu_buf, nullptr);
     }
   }
 
@@ -225,7 +225,7 @@ class GdakiGlobalGPUBufferTable {
 
   ncclResult_t allocate(unsigned int num_elements, unsigned int num_ranks) {
     NCCLCHECK(ncclCuMemAlloc((void **)&this->gpu_ptr, &this->cumemhandle, CU_MEM_HANDLE_TYPE_NONE,
-                             num_elements * sizeof(T)));
+                             num_elements * sizeof(T), nullptr));
     CUDACHECK(cudaMemset(this->gpu_ptr, 0, num_elements * sizeof(T)));
     NCCLCHECK(this->rkeys_hd_mhandle.allocate(num_ranks));
 
@@ -238,7 +238,7 @@ class GdakiGlobalGPUBufferTable {
 
   void deallocate() {
     if (this->gpu_ptr != nullptr) {
-      ncclCuMemFree(this->gpu_ptr);
+      ncclCuMemFree(this->gpu_ptr, nullptr);
     }
   }
 
@@ -669,7 +669,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   }
 
   NCCLCHECKGOTO(ncclCuMemAlloc((void **)&sink_buffer, &sink_buffer_mhandle, CU_MEM_HANDLE_TYPE_NONE,
-                               sizeof(uint64_t)),
+                               sizeof(uint64_t), nullptr),
                 status, out);
 
   NCCLCHECKGOTO(gdakiRegMr(&sink_buffer_mr, gdaki_ctx->ib_pd, sink_buffer, sizeof(uint64_t),
@@ -803,7 +803,7 @@ out:
     if (devHandle) free(devHandle);
 
     if (sink_buffer_mr) NCCLCHECK(wrap_ibv_dereg_mr(sink_buffer_mr));
-    if (sink_buffer) ncclCuMemFree(sink_buffer);
+    if (sink_buffer) ncclCuMemFree(sink_buffer, nullptr);
 
     delete gin_gdaki_gpu_ctx_hd_mhandle;
 
@@ -874,7 +874,7 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
   }
 
   if (gdaki_ctx->sink_buffer.mr) NCCLCHECK(wrap_ibv_dereg_mr(gdaki_ctx->sink_buffer.mr));
-  if (gdaki_ctx->sink_buffer.addr) NCCLCHECK(ncclCuMemFree(gdaki_ctx->sink_buffer.addr));
+  if (gdaki_ctx->sink_buffer.addr) NCCLCHECK(ncclCuMemFree(gdaki_ctx->sink_buffer.addr, nullptr));
 
   if (gdaki_ctx->gin_gdaki_gpu_ctx_hd_mhandle) {
     for (int ctx_idx = 0; ctx_idx < ncontexts; ctx_idx++) {

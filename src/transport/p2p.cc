@@ -580,7 +580,7 @@ ncclResult_t p2pRecvConnect(struct ncclComm* comm, struct ncclConnect* connectIn
   return ncclSuccess;
 }
 
-ncclResult_t p2pSendFree(struct ncclConnector* send) {
+ncclResult_t p2pSendFree(struct ncclComm* comm, struct ncclConnector* send) {
   struct p2pResources* resources = (struct p2pResources*)send->transportResources;
   if (resources) {
     if (ncclCuMemEnable()) {
@@ -589,7 +589,7 @@ ncclResult_t p2pSendFree(struct ncclConnector* send) {
         if (resources->sendMemSameProc) {
           NCCLCHECK(ncclCuMemFreeAddr(resources->sendMemIpc));
         } else {
-          NCCLCHECK(ncclCudaFree(resources->sendMemIpc));
+          NCCLCHECK(ncclCudaFree(resources->sendMemIpc, comm->memManager));
         }
       }
 
@@ -597,7 +597,7 @@ ncclResult_t p2pSendFree(struct ncclConnector* send) {
         if (resources->recvMemSameProc) {
           NCCLCHECK(ncclCuMemFreeAddr(resources->recvMemIpc));
         } else {
-          NCCLCHECK(ncclCudaFree(resources->recvMemIpc));
+          NCCLCHECK(ncclCudaFree(resources->recvMemIpc, comm->memManager));
         }
       }
     }
@@ -610,7 +610,7 @@ ncclResult_t p2pSendFree(struct ncclConnector* send) {
   return ncclSuccess;
 }
 
-ncclResult_t p2pRecvFree(struct ncclConnector* recv) {
+ncclResult_t p2pRecvFree(struct ncclComm* comm, struct ncclConnector* recv) {
   struct p2pResources* resources = (struct p2pResources*)recv->transportResources;
   if (resources) {
     if (ncclCuMemEnable()) {
@@ -619,7 +619,7 @@ ncclResult_t p2pRecvFree(struct ncclConnector* recv) {
         if (resources->sendMemSameProc) {
           NCCLCHECK(ncclCuMemFreeAddr(resources->sendMemIpc));
         } else {
-          NCCLCHECK(ncclCudaFree(resources->sendMemIpc));
+          NCCLCHECK(ncclCudaFree(resources->sendMemIpc, comm->memManager));
         }
       }
 
@@ -627,7 +627,7 @@ ncclResult_t p2pRecvFree(struct ncclConnector* recv) {
         if (resources->recvMemSameProc) {
           NCCLCHECK(ncclCuMemFreeAddr(resources->recvMemIpc));
         } else {
-          NCCLCHECK(ncclCudaFree(resources->recvMemIpc));
+          NCCLCHECK(ncclCudaFree(resources->recvMemIpc, comm->memManager));
         }
       }
     }

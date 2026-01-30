@@ -159,8 +159,8 @@ ncclResult_t freeChannel(struct ncclChannel* channel, int nRanks, int collnetNRa
     if (peer) {
       if (ncclAtomicRefCountDecrement(&peer->refCount) == 0) {
         for (int b=0; b<NCCL_MAX_CONNS; b++) {
-          if (peer->send[b].transportComm) NCCLCHECK(peer->send[b].transportComm->free(peer->send+b));
-          if (peer->recv[b].transportComm) NCCLCHECK(peer->recv[b].transportComm->free(peer->recv+b));
+          if (peer->send[b].transportComm) NCCLCHECK(peer->send[b].transportComm->free(comm, peer->send+b));
+          if (peer->recv[b].transportComm) NCCLCHECK(peer->recv[b].transportComm->free(comm, peer->recv+b));
         }
         if (r == nRanks) {
           free(channel->collnetPeers);
