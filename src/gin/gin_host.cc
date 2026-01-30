@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "comm.h"
+#include "gin.h"
 #include "param.h"
 #include "graph.h"
 #include "transport.h"
@@ -94,19 +95,22 @@ NCCL_PARAM(GinNconnections, "GIN_NCONNECTIONS", -2);
 NCCL_PARAM(GinNcontexts, "GIN_NCONTEXTS", -1);
 
 ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
-  ncclResult_t ret = ncclSuccess;
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
-  if (ginState->ncclGin == NULL) {
-    WARN("GIN not supported.");
-    return ncclInvalidUsage;
-  }
+  if (ginState->connected) return ncclSuccess;
+
+  ncclResult_t ret = ncclSuccess;
   if (ncclParamGinEnable() == 0) {
     WARN("GIN is disabled.");
     return ncclInternalError;
   }
-  if (ginState->connected) return ncclSuccess;
 
-  NCCLCHECK(ginState->ncclGin->init(&ginState->ginInstance, comm->commHash, ncclDebugLog));
+  // Load plugin
+  if (ginState->ncclGin == NULL) {
+    WARN("GIN not supported.");
+    return ncclInvalidUsage;
+  }
+
+  ginState->ginInstance = comm->ginContext;
 
   int ndev = 0;
   NCCLCHECK(ginState->ncclGin->devices(&ndev));
@@ -233,7 +237,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclGinFinalize(struct ncclComm* comm) {
+ncclResult_t ncclGinHostFinalize(struct ncclComm* comm) {
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   if (!ginState->connected) return ncclSuccess;
 
@@ -265,7 +269,6 @@ ncclResult_t ncclGinFinalize(struct ncclComm* comm) {
       ginState->ginComms[n] = NULL;
     }
   }
-  NCCLCHECK(ginState->ncclGin->finalize(ginState->ginInstance));
   memset((void*)ginState, 0, sizeof(*ginState));
   return ncclSuccess;
 }

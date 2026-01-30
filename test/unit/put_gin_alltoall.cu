@@ -252,7 +252,7 @@ int main(int argc, char* argv[]) {
     // Cleanup
     // Comment out problematic cleanup code to avoid segmentation fault
     NCCLCHECK(ncclGinDeregister(comm, ginHostWins));
-    NCCLCHECK(ncclGinFinalize(comm));
+    NCCLCHECK(ncclGinHostFinalize(comm));
     NCCLCHECK(ncclMemFree((void*)buff));
     NCCLCHECK(ncclCommFinalize(comm));
     NCCLCHECK(ncclCommDestroy(comm));

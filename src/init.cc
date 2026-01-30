@@ -13,6 +13,7 @@
 #include "group.h"
 #include "net.h"
 #include "coll_net.h"
+#include "gin.h"
 #include "enqueue.h"
 #include "graph.h"
 #include "argcheck.h"
@@ -302,7 +303,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks, 1, comm->localRanks, comm));
 
   // GIN may use proxy. We need to finalize it before destroying the proxy.
-  NCCLCHECK(ncclGinFinalize(comm));
+  NCCLCHECK(ncclGinHostFinalize(comm));
   NCCLCHECK(ncclRmaProxyFinalize(comm));
 
   int sharedResRefCount = 0;
@@ -352,7 +353,10 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   NCCLCHECK(ncclProfilerPluginFinalize(comm));
-  if (sharedResRefCount == 0) NCCLCHECK(ncclNetFinalize(comm));
+  if (sharedResRefCount == 0) {
+    NCCLCHECK(ncclNetFinalize(comm));
+    NCCLCHECK(ncclGinFinalize(comm));
+  }
   ncclCudaContextDrop(comm->context);
   free(comm);
 
@@ -437,10 +441,12 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
     comm->sharedRes = sharedRes;
     sharedRes->refCount = 1;
     NCCLCHECK(ncclNetInit(comm));
+    NCCLCHECK(ncclGinInit(comm));
   } else {
     comm->sharedRes = parent->sharedRes;
     ncclAtomicRefCountIncrement(&parent->sharedRes->refCount);
     NCCLCHECK(ncclNetInitFromParent(comm, parent));
+    NCCLCHECK(ncclGinInitFromParent(comm, parent));
   }
 
   INFO(NCCL_INIT, "Using network %s", comm->ncclNet->name);

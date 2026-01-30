@@ -11,7 +11,6 @@
 #include "alloc.h"
 #include "checks.h"
 #include "gdrwrap.h"
-#include "plugin/nccl_net.h"
 #include "nccl_device/gin/proxy/gin_proxy_device_host_common.h"
 #include "compiler.h"
 

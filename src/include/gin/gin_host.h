@@ -9,7 +9,7 @@
 
 #include "allocator.h"
 #include "nccl.h"
-#include "nccl_net.h"
+#include "nccl_gin.h"
 #include "nccl_device/gin/gin_device_host_common.h"
 #include <thread>
 #include <mutex>
@@ -54,7 +54,7 @@ ncclResult_t getGlobalGinType(struct ncclComm* comm, ncclGinType_t* ginType);
 
 // FIXME change to ncclGinState instead of ncclComm, no need to pass comm
 ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount);
-ncclResult_t ncclGinFinalize(struct ncclComm* comm);
+ncclResult_t ncclGinHostFinalize(struct ncclComm* comm);
 ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
                              void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS],
                              ncclGinWindow_t ginDevWins[NCCL_GIN_MAX_CONNECTIONS], int winFlags);

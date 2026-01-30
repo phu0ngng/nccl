@@ -13,7 +13,7 @@
 #include <linux/types.h>
 #include "nccl.h"
 #include "gin/gin_host.h"
-#include "plugin/nccl_net.h"
+#include "plugin/nccl_gin.h"
 
 ncclResult_t ncclGinProxyCreateContext(struct ncclComm *comm, void *collComm, int devId,
                                        int nSignals, int nCounters, int nContexts, void **outGinCtx,
