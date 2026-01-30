@@ -213,9 +213,10 @@ static int proxyGinPollGfd(struct ginProxyCtx *ctx, ginProxyHostGpuCtx *hostGpuC
   return 1;
 }
 
-static int mapGfdOpToCollNetOp(ncclGinProxyGfd_t *gfd) {
-  switch (gfd->qword[ncclGinProxyGfdHeader].header.op &
-          (ncclGinProxyOpComplMask & ~ncclGinProxyOpWithCounter)) {
+static int mapGfdOpToSignalOp(ncclGinProxyGfd_t *gfd) {
+  uint8_t op = gfd->qword[ncclGinProxyGfdHeader].header.op;
+  uint8_t signalOp = op & (ncclGinProxyOpWithSignalInc | ncclGinProxyOpWithSignalAdd);
+  switch (signalOp) {
     case ncclGinProxyOpWithSignalInc:
       return NCCL_NET_SIGNAL_OP_INC;
     case ncclGinProxyOpWithSignalAdd:
@@ -225,11 +226,30 @@ static int mapGfdOpToCollNetOp(ncclGinProxyGfd_t *gfd) {
   }
 }
 
+static inline uint64_t extractSignalVal(ncclGinProxyGfd_t *gfd) {
+  uint64_t signalVal = gfd->qword[ncclGinProxyGfdCompletion].completion.signalValLow;
+  signalVal |= (uint64_t)gfd->qword[ncclGinProxyGfdSignalVal].signalVal.signalValLow2 << 16;
+  signalVal |= (uint64_t)gfd->qword[ncclGinProxyGfdSignalVal].signalVal.signalValHigh << 32;
+  return signalVal;
+}
+
 static ncclResult_t proxyGinProcessGfd(ncclGin_t *ginComm, void *collComm, struct ginProxyCtx *ctx,
                                        struct ginProxyHostGpuCtx *hostGpuCtx, int targetRank,
                                        ncclGinProxyGfd_t *gfd, struct ginProxyGfdState *state) {
   int signalOp;
   uint64_t signalVal;
+
+  // Handle VA Signal operations (signal-only, no PUT)
+  if (gfd->qword[ncclGinProxyGfdHeader].header.op & ncclGinProxyOpVASignal) {
+    uint64_t signalOff = gfd->qword[ncclGinProxyGfdVASignalOff].vaSignalOff.vaSignalOff;
+    void *signalHandle = (void *)(uint64_t)gfd->qword[ncclGinProxyGfdVASignalHandle].vaSignalHandle.vaSignalHandle;
+    signalVal = extractSignalVal(gfd);
+    signalOp = mapGfdOpToSignalOp(gfd);
+    NCCLCHECK(ginComm->iputSignal(collComm, 0, nullptr, 0, 0, nullptr,
+                                  targetRank, signalOff, signalHandle, signalVal,
+                                  signalOp, hostGpuCtx->contextId, &state->request));
+    return ncclSuccess;
+  }
 
   uint64_t size = gfd->qword[ncclGinProxyGfdHeader].header.size;
   uint64_t srcOff;
@@ -253,19 +273,16 @@ static ncclResult_t proxyGinProcessGfd(ncclGin_t *ginComm, void *collComm, struc
 
   switch (gfd->qword[ncclGinProxyGfdHeader].header.op & ncclGinProxyOpBaseMask) {
     case ncclGinProxyOpPut:
-      signalOp = mapGfdOpToCollNetOp(gfd);
+      signalOp = mapGfdOpToSignalOp(gfd);
       if (signalOp == -1) {
         // First cast from 63 bits to 64 bits and then to void * to avoid warnings
         NCCLCHECK(ginComm->iput(collComm, srcOff, srcHandle, size, dstOff, dstHandle,
                                 targetRank, hostGpuCtx->contextId, &state->request));
       } else {
-        // reconstruct the signal value from the two qwords
-        signalVal = gfd->qword[ncclGinProxyGfdCompletion].completion.signalValLow;
-        signalVal |= (uint64_t)gfd->qword[ncclGinProxyGfdSignalVal].signalVal.signalValLow2 << 16;
-        signalVal |= (uint64_t)gfd->qword[ncclGinProxyGfdSignalVal].signalVal.signalValHigh << 32;
+        // Reconstruct the signal value
+        signalVal = extractSignalVal(gfd);
         uint64_t signalOff = (gfd->qword[ncclGinProxyGfdCompletion].completion.signalId +
-                              hostGpuCtx->contextId * ctx->nSignalsPerContext) *
-                             sizeof(uint64_t);
+                              hostGpuCtx->contextId * ctx->nSignalsPerContext) * sizeof(uint64_t);
         NCCLCHECK(ginComm->iputSignal(collComm, srcOff, srcHandle, size, dstOff, dstHandle,
                                       targetRank, signalOff, ctx->signalsGinHandle, signalVal,
                                       signalOp, hostGpuCtx->contextId, &state->request));
