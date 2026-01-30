@@ -116,27 +116,21 @@ static ncclResult_t ncclGinPluginInit(struct ncclComm* comm, ginPluginLib_t* plu
 }
 
 static ncclResult_t ncclGinPluginAssignToComm(struct ncclComm* comm, int pluginIndex, bool* isAssigned) {
-  ncclResult_t ret = ncclSuccess;
-  *isAssigned = true;
+  *isAssigned = false;
 
   if (ginPluginLibs[pluginIndex].ncclGinPluginState >= ncclGinPluginStateEnabled) {
     INFO(NCCL_INIT|NCCL_NET, "Assigned GIN plugin %s to comm", ginPluginLibs[pluginIndex].ncclGin->name);
     comm->sharedRes->ginState.ncclGin = ginPluginLibs[pluginIndex].ncclGin;
     comm->ginPluginIndex = pluginIndex;
 
-    NCCLCHECKGOTO(setLocalGinType(comm), ret, fail);
+    NCCLCHECK(setLocalGinType(comm));
   }
   if (ginPluginLibs[pluginIndex].ncclRmaPluginState >= ncclGinPluginStateEnabled) {
     INFO(NCCL_INIT|NCCL_NET, "Assigned RMA plugin %s to comm", ginPluginLibs[pluginIndex].ncclRma->name);
     comm->rmaState.rmaProxyState.ncclGin = ginPluginLibs[pluginIndex].ncclRma;
   }
-exit:
-  return ret;
-fail:
-  *isAssigned = false;
-  ginPluginLibs[pluginIndex].ncclGinPluginState = ncclGinPluginStateEnabled;
-  ginPluginLibs[pluginIndex].ncclRmaPluginState = ncclGinPluginStateEnabled;
-  goto exit;
+  *isAssigned = true;
+  return ncclSuccess;
 }
 
 static ncclResult_t ncclGinPluginDisableOtherExternal(int pluginIndex) {

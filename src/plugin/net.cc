@@ -195,9 +195,9 @@ fail:
 }
 
 static ncclResult_t ncclNetPluginAssignToComm(struct ncclComm* comm, int pluginIndex, bool* isAssigned) {
-  ncclResult_t ret = ncclSuccess;
+  *isAssigned = false;
 
-  if (ncclSuccess != ncclNetCheckDeviceVersion(comm, netPluginLibs[pluginIndex].ncclNet, 0)) goto fail;
+  if (ncclSuccess != ncclNetCheckDeviceVersion(comm, netPluginLibs[pluginIndex].ncclNet, 0)) return ncclSuccess;
 
   if (netPluginLibs[pluginIndex].ncclNetPluginState >= ncclNetPluginStateEnabled) {
     comm->ncclNet = netPluginLibs[pluginIndex].ncclNet;
@@ -210,13 +210,7 @@ static ncclResult_t ncclNetPluginAssignToComm(struct ncclComm* comm, int pluginI
       comm->ncclCollNet = netPluginLibs[pluginIndex].ncclCollNet;
     }
   }
-exit:
-  return ret;
-fail:
-  *isAssigned = false;
-  netPluginLibs[pluginIndex].ncclNetPluginState = ncclNetPluginStateEnabled;
-  netPluginLibs[pluginIndex].ncclCollNetPluginState = ncclNetPluginStateEnabled;
-  goto exit;
+  return ncclSuccess;
 }
 
 static ncclResult_t ncclNetPluginDisableOtherExternal(int pluginIndex) {
