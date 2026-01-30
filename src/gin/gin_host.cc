@@ -16,8 +16,8 @@
 
 NCCL_PARAM(GinEnable, "GIN_ENABLE", 1);
 NCCL_PARAM(GinType, "GIN_TYPE", -1);
-NCCL_PARAM(GinSignalPoolSize, "GIN_SIGNAL_POOL_SIZE", 64 << 10);
-NCCL_PARAM(GinCounterPoolSize, "GIN_COUNTER_POOL_SIZE", 64 << 10);
+NCCL_PARAM(GinSignalPoolSize, "GIN_SIGNAL_POOL_SIZE", 512 << 10);
+NCCL_PARAM(GinCounterPoolSize, "GIN_COUNTER_POOL_SIZE", 512 << 10);
 
 ncclResult_t getGlobalGinType(struct ncclComm* comm, ncclGinType_t* ginType) {
   if (comm == nullptr || ginType == nullptr) {

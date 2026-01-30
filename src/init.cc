@@ -1445,7 +1445,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(ncclTopoCheckCrossNicSupport(&crossNicSupported), ret, fail);
   comm->globalGinSupport = globalGinSupport && globalCrossNicSupport && !globalNicFused && globalCuMemGdrSupport;
   comm->globalRmaProxySupport = globalRmaPluginSupport && globalCrossNicSupport && !globalNicFused && globalCuMemGdrSupport;
-  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->globalGinSupport || comm->nNodes == 1);
+  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->globalGinSupport || ncclTeamLsa(comm).nRanks == comm->nRanks);
   comm->hostRmaSupport = comm->symmetricSupport && (comm->nNodes == 1 || comm->globalRmaProxySupport);
   if (!comm->symmetricSupport) {
     INFO(NCCL_INIT, "Symmetric memory is not supported. cuMemEnable %d, "

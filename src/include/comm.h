@@ -310,6 +310,7 @@ struct ncclKernelPlan {
   bool isRma;
   enum ncclDevWorkStorageType workStorageType;
   bool kernelSpecialized;
+  int kernelDynSmem; // only for symmetric kernels
   void* kernelFn;
   union {
     struct ncclDevKernelArgs* kernelArgs;

@@ -69,6 +69,8 @@ static void listRemove(Obj* list, int* count, int index);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+NCCL_PARAM(LsaTeamSize, "LSA_TEAM_SIZE", 0)
+
 ncclResult_t ncclDevrInitOnce(struct ncclComm* comm) {
   ncclResult_t ret = ncclSuccess;
   struct ncclDevrState* devr = &comm->devrState;
@@ -76,7 +78,7 @@ ncclResult_t ncclDevrInitOnce(struct ncclComm* comm) {
 
   // LSA needs to be the same size for all ranks, and it needs to represent
   // a consecutive set of ranks.
-  int lsaSize = 0;
+  int lsaSize = ncclParamLsaTeamSize();
   int nodeSize = 1;
   for (int r=1; r < comm->nRanks; r++) {
     if (comm->rankToNode[r] == comm->rankToNode[r-1]) {
