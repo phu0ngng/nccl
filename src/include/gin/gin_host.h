@@ -36,6 +36,9 @@ struct ncclGinState {
   int counterSpaceSize;
   ncclSpace signalSpace;
   ncclSpace counterSpace;
+
+  int ctxFirstAvailable; // We allocate shared contexts starting from index 0.
+  int ctxLastExclusive; // We allocate exclusive contexts starting from the highest index.
 };
 
 extern int64_t ncclParamGinType();

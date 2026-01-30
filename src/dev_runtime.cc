@@ -777,6 +777,8 @@ bool ncclGinResourcesRequested(struct ncclDevCommRequirements const* reqs) {
   return requestedGinResources;
 }
 
+NCCL_PARAM(GinExclusiveContexts, "GIN_EXCLUSIVE_CONTEXTS", -1);
+
 ncclResult_t ncclDevrCommCreateInternal(
     struct ncclComm* comm,
     struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm
@@ -800,6 +802,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   struct ncclDevrWindow* win = nullptr;
   struct ncclWindow_vidmem* winHost = nullptr;
   size_t ginSignalShadowsOffset = 0;
+  bool ginExclusiveContexts = false;
 
   // Default to NCCL_GIN_CONNECTION_NONE for backward compatibility
   ncclGinConnectionType_t ginConnectionType = NCCL_GIN_CONNECTION_NONE;
@@ -841,13 +844,35 @@ ncclResult_t ncclDevrCommCreateInternal(
     }
   }
   if (devr->ginEnabled) {
-    if (reqs->ginContextCount > comm->sharedRes->ginState.ginContextCount) {
-      WARN("Requested number of GIN contexts (%d) exceeds the limit (%d). Use NCCL_GIN_NCONTEXTS to increase the limit", reqs->ginContextCount, comm->sharedRes->ginState.ginContextCount);
-      ret = ncclInvalidArgument;
-      goto fail;
-    }
     nGinConnections = comm->sharedRes->ginState.ginCommCount;
-    nGinContexts = ROUNDUP(reqs->ginContextCount, nGinConnections);
+
+    if (reqs->version >= NCCL_VERSION(2, 29, 3)) {
+      if (ncclParamGinExclusiveContexts() != -1)
+        ginExclusiveContexts = ncclParamGinExclusiveContexts();
+      else
+        ginExclusiveContexts = reqs->ginExclusiveContexts;
+    }
+    if (ginExclusiveContexts) {
+      int unallocated = comm->sharedRes->ginState.ctxLastExclusive - comm->sharedRes->ginState.ctxFirstAvailable;
+      nGinContexts = reqs->ginContextCount;
+      if (nGinContexts > unallocated) {
+        WARN("Requested number of exclusive GIN contexts (%d) exceeds the unallocated count (%d). Use NCCL_GIN_NCONTEXTS to increase the limit", nGinContexts, unallocated);
+        ret = ncclInvalidArgument;
+        goto fail;
+      }
+    } else {
+      nGinContexts = std::min(reqs->ginContextCount, comm->sharedRes->ginState.ctxLastExclusive);
+      if (nGinContexts == 0) {
+        WARN("No shared contexts are available (%d requested) as all have been allocated for exclusive use. Use NCCL_GIN_NCONTEXTS to increase the limit", reqs->ginContextCount);
+        ret = ncclInvalidArgument;
+        goto fail;
+      }
+      if (nGinContexts < reqs->ginContextCount) {
+        INFO(NCCL_INIT|NCCL_NET,
+             "Capping the number of GIN contexts to %d (%d requested). Use NCCL_GIN_NCONTEXTS to increase the limit",
+             nGinContexts, reqs->ginContextCount);
+      }
+    }
   }
 
   memset(outDevComm, 0, sizeof(*outDevComm));
@@ -960,7 +985,16 @@ ncclResult_t ncclDevrCommCreateInternal(
       ginSignalTotal, &outDevComm->ginSignalBase,
       ginCounterTotal, &outDevComm->ginCounterBase
     ), ret, fail_stream_mem_win);
-    INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d contexts, %d signals, %d counters", nGinConnections, nGinContexts, ginSignalTotal, ginCounterTotal);
+    if (ginExclusiveContexts) {
+      comm->sharedRes->ginState.ctxLastExclusive -= nGinContexts;
+      outDevComm->ginContextBase = comm->sharedRes->ginState.ctxLastExclusive;
+    } else {
+      comm->sharedRes->ginState.ctxFirstAvailable = std::max(comm->sharedRes->ginState.ctxFirstAvailable, nGinContexts);
+      outDevComm->ginContextBase = 0;
+    }
+    INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d %s contexts (base %d), %d signals, %d counters",
+         nGinConnections, nGinContexts, (ginExclusiveContexts ? "exclusive" : "shared"),
+         outDevComm->ginContextBase, ginSignalTotal, ginCounterTotal);
 
     for (int connectionId=0; connectionId < nGinConnections; connectionId++) {
       outDevComm->ginNetDeviceTypes[connectionId] = (int)comm->sharedRes->ginState.ginDevHandles[connectionId]->netDeviceType;
@@ -1075,12 +1109,18 @@ ncclResult_t ncclDevrFindWindow(
   return ncclSuccess;
 }
 
-// Returns ncclInvalidUsage if the compiled version is greater than the runtime version and NCCL_ALLOW_OLD_VERSION is not set
-static ncclResult_t validateNcclVersion(int compiledVersion) {
+// Returns ncclInvalidUsage if the compiled version is greater than the runtime version and NCCL_ENABLE_VERSION_CHECK=0 is not set
+static ncclResult_t validateNcclVersion(int compiledVersion, int minSupportedVersion = -1) {
   int runtimeVersion;
+  if (ncclParamEnableVersionCheck() == 0)
+    return ncclSuccess;
   NCCLCHECK(ncclGetVersion(&runtimeVersion));
-  if (compiledVersion > runtimeVersion && ncclParamEnableVersionCheck()) {
+  if (compiledVersion > runtimeVersion) {
     WARN("NCCL library version is too old. This application was compiled with NCCL version %d, but is running with NCCL library version %d.", compiledVersion, runtimeVersion);
+    return ncclInvalidUsage;
+  }
+  if (minSupportedVersion > 0 && compiledVersion < minSupportedVersion) {
+    WARN("The application was compiled with too old version of NCCL. It was compiled with NCCL version %d, but is running with NCCL library version %d. It needs to be recompiled with at least NCCL version %d.", compiledVersion, runtimeVersion, minSupportedVersion);
     return ncclInvalidUsage;
   }
   return ncclSuccess;
@@ -1127,7 +1167,10 @@ ncclResult_t ncclDevCommCreate(
     return ncclInvalidUsage;
   }
 
-  NCCLCHECK(validateNcclVersion(reqs->version));
+  // The current Device API is backwards-compatible down to NCCL version 2.29.3.
+  // The number below needs to be updated whenever Device API changes in a manner that is not *binary*-compatible with
+  // custom kernels compiled using older NCCL versions (source compatibility is insufficient).
+  NCCLCHECK(validateNcclVersion(reqs->version, 22903));
 
   ncclResult_t ret = ncclSuccess;
   int saveDev;
@@ -1176,6 +1219,12 @@ ncclResult_t ncclDevCommDestroy(
       devComm->ginSignalBase, devComm->ginSignalCount,
       devComm->ginCounterBase, devComm->ginCounterCount
     );
+    if (devComm->ginContextBase == comm->sharedRes->ginState.ctxLastExclusive) {
+      // Since we don't track the shared/exclusive state of each context individually, we can't support the general
+      // case of release.  However, we support the release of contexts of the most recently created exclusive devComm,
+      // as it doesn't require any additional tracking.
+      comm->sharedRes->ginState.ctxLastExclusive += devComm->ginContextCount;
+    }
   }
   if (devComm->resourceWindow != nullptr) {
     NCCLCHECK(ncclCommWindowDeregister(comm, devComm->resourceWindow));

@@ -37,13 +37,17 @@ NCCL_DEVICE_INLINE ncclGinWindow_t getGinWindow(ncclWindow_t window, int context
 template<typename GinType>
 NCCL_DEVICE_INLINE void ncclGinInitCommon(GinType* gin, ncclDevComm const& comm, int contextIndex) {
   gin->nConnections = comm.ginConnectionCount;
+  contextIndex += comm.ginContextBase;
 
   static_assert(NCCL_GIN_MAX_CONNECTIONS == 4, "Required for following modulo hack to work.");
   // this->connectionId = contextIndex % comm.ginConnectionCount;
   gin->connectionId = comm.ginConnectionCount == 3
     ? uint32_t(contextIndex)%3 // 3 is only non power of 2
     : contextIndex & (comm.ginConnectionCount-1); // powers of 2
-  gin->contextId = contextIndex / comm.ginConnectionCount;
+  // gin->contextId = contextIndex / comm.ginConnectionCount;
+  gin->contextId = comm.ginConnectionCount == 3
+    ? uint32_t(contextIndex)/3 // 3 is only non power of 2
+    : contextIndex >> (comm.ginConnectionCount==4 ? 2 : comm.ginConnectionCount-1); // powers of 2
 
   gin->_ginBackend = comm.ginNetDeviceTypes[gin->connectionId];
   gin->_ginHandle = comm.ginHandles[gin->connectionId];

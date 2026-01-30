@@ -70,7 +70,7 @@ NCCL_DEVICE_INLINE static void putImpl(ncclGinCtx ctx, Coop coop, int peer, bool
     doca_gpu_dev_verbs_addr counter_raddr, counter_laddr;
     if (hasCounter) {
       companion_qp = loadConst(&gdaki->companion_gdqp) + peer;
-      counter_raddr.addr = sizeof(uint64_t) * counterId;
+      counter_raddr.addr = sizeof(uint64_t) * (counterId + loadConst(&gdaki->counters_table.offset));
       counter_raddr.key = loadConst(loadConst(&gdaki->counters_table.rkeys) + ctx.rank);
       counter_laddr.addr = 0;
       counter_laddr.key = loadConst(&gdaki->sink_buffer_lkey);
@@ -181,8 +181,8 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_GDAKI> {
     __be32 signalKey = 0;
     bool hasSignal = signal.type != NCCL_GIN_SIGNAL_TYPE_NONE;
     if (signal.type == NCCL_GIN_SIGNAL_TYPE_INDEXED) {
-      signalOffset = sizeof(uint64_t) * signal.indexedSignal.signalId;
       ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
+      signalOffset = sizeof(uint64_t) * (signal.indexedSignal.signalId + loadConst(&gdaki->signals_table.offset));
       signalKey = loadConst(loadConst(&gdaki->signals_table.rkeys) + peer);
     } else if (signal.type == NCCL_GIN_SIGNAL_TYPE_VA) {
       ncclGinGdakiMemHandle* signalMh = (ncclGinGdakiMemHandle*)signal.vaSignal.signalWindow;
@@ -216,8 +216,8 @@ struct ncclGinApi_PutValue<NCCL_NET_DEVICE_GIN_GDAKI> {
       signalKey = loadConst(loadConst(&signalMh->rkeys) + peer);
       signalOffset = signal.vaSignal.signalOffset;
     } else if (signal.type == NCCL_GIN_SIGNAL_TYPE_INDEXED) {
-      signalOffset = sizeof(uint64_t) * signal.indexedSignal.signalId;
       ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
+      signalOffset = sizeof(uint64_t) * (signal.indexedSignal.signalId + loadConst(&gdaki->signals_table.offset));
       signalKey = loadConst(loadConst(&gdaki->signals_table.rkeys) + peer);
     }
     nccl::gin::gdaki::putValueImpl(

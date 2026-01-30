@@ -91,7 +91,7 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
 }
 
 NCCL_PARAM(GinNconnections, "GIN_NCONNECTIONS", -2);
-NCCL_PARAM(GinNcontexts, "GIN_NCONTEXTS", NCCL_GIN_MAX_CONNECTIONS);
+NCCL_PARAM(GinNcontexts, "GIN_NCONTEXTS", -1);
 
 ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
   ncclResult_t ret = ncclSuccess;
@@ -133,6 +133,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
   char* allHandles = NULL;
 
   int* ginCommCountHandles = NULL;
+  int nContextsTotal;
   int nContextsPerComm;
 
   NCCLCHECKGOTO(ncclCalloc(&ginCommCountHandles, comm->nRanks), ret, fail);
@@ -147,8 +148,15 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
     ginState->ginCommCount = std::min(ginState->ginCommCount, ginCommCountHandles[r]);
   }
 
-  nContextsPerComm = DIVUP(std::max(reqGinContextCount, (int)ncclParamGinNcontexts()), ginState->ginCommCount);
-  ginState->ginContextCount = nContextsPerComm * ginState->ginCommCount;
+  nContextsTotal = ncclParamGinNcontexts();
+  if (nContextsTotal <= 0) {
+    nContextsTotal = std::max(reqGinContextCount, NCCL_GIN_MAX_CONNECTIONS);
+  }
+  nContextsTotal = ROUNDUP(nContextsTotal, ginState->ginCommCount);
+  nContextsPerComm = nContextsTotal / ginState->ginCommCount;
+  ginState->ginContextCount = nContextsTotal;
+  ginState->ctxFirstAvailable = 0;
+  ginState->ctxLastExclusive = nContextsTotal;
   INFO(NCCL_INIT, "devCommCreate: %d Local NET, creating %d GIN connections with %d contexts each (%d contexts total requested)", nLocalNets, ginState->ginCommCount, nContextsPerComm, reqGinContextCount);
 
   NCCLCHECKGOTO(ncclCalloc(&allHandles, (size_t)comm->nRanks * NCCL_NET_HANDLE_MAXSIZE), ret, fail);
