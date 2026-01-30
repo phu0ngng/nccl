@@ -45,6 +45,14 @@ size_t ncclOsGetPageSize() {
   return (size_t)sysconf(_SC_PAGESIZE);
 }
 
+void* ncclOsAlignedAlloc(size_t alignment, size_t size) {
+    return aligned_alloc(alignment, size);
+}
+
+void ncclOsAlignedFree(void* ptr) {
+    free(ptr);
+}
+
 void ncclOsSetEnv(const char* name, const char* value) {
   setenv(name, value, 0);
 }

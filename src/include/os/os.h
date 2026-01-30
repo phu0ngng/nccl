@@ -38,6 +38,10 @@ uint64_t ncclOsGetTid();
 size_t ncclOsGetPageSize();
 ncclResult_t ncclOsInitialize();
 
+/* Aligned memory allocation */
+void* ncclOsAlignedAlloc(size_t alignment, size_t size);
+void ncclOsAlignedFree(void* ptr);
+
 std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf);
 
 void ncclOsSetEnv(const char* name, const char* value);

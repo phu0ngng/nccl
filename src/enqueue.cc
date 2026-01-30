@@ -1203,7 +1203,7 @@ namespace {
       struct ncclComm* comm, struct ncclCommEventCallback* cb
     ) {
     struct uploadWork_cleanup_t* me = (struct uploadWork_cleanup_t*)cb;
-    free(me->hostBuf);
+    ncclOsAlignedFree(me->hostBuf);
     CUDACHECK(cudaEventDestroy(me->base.event));
     free(me);
     return ncclSuccess;
@@ -1235,7 +1235,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
   case ncclDevWorkStorageTypePersistent:
     // We rely on 16-byte alignment
     #if __cplusplus >= 201103L
-    fifoBufHost = aligned_alloc(16, ROUNDUP(workBytes, 16));
+    fifoBufHost = ncclOsAlignedAlloc(16, ROUNDUP(workBytes, 16));
     #else
     static_assert(16 <= alignof(max_align_t), "We rely on 16-byte alignment.");
     fifoBufHost = malloc(workBytes);
@@ -1316,7 +1316,7 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
       if (mode != cudaStreamCaptureModeRelaxed) (void)cudaThreadExchangeStreamCaptureMode(&mode);
       return result;
     fail:
-      if (!cleanup) free(fifoBufHost);
+      if (!cleanup) ncclOsAlignedFree(fifoBufHost);
       goto finish_scope;
     } break;
   default: break;
