@@ -204,7 +204,7 @@ ncclResult_t ncclRmaProxyCreateContext(struct ncclComm *comm, void *collComm, nc
   // Enforcing strong ordering on the signals mr is vital to ensure ordering between puts and signals.
   size_t signalsBufSize = (comm->nRanks + 1) * sizeof(uint64_t);
   NCCLCHECK(ncclCuMemAlloc((void **)&rmaProxyCtx->signalsDev, &rmaProxyCtx->signalsCumemhandle,
-                           CU_MEM_HANDLE_TYPE_NONE, signalsBufSize));
+                           CU_MEM_HANDLE_TYPE_NONE, signalsBufSize, comm->memManager));
   CUDACHECK(cudaMemset(rmaProxyCtx->signalsDev, 0, signalsBufSize));
   NCCLCHECK(ncclRmaProxyRegMrSym(ginComm, rmaProxyCtx->ginCollComm, rmaProxyCtx->props, rmaProxyCtx->signalsDev, signalsBufSize,
                                  NCCL_PTR_CUDA, NCCL_NET_MR_FLAG_FORCE_SO,
@@ -415,7 +415,7 @@ ncclResult_t ncclRmaProxyDestroyContext(ncclGin_t* ginComm, void* rmaProxyCtx){
   // Free signals
   if (ginComm && ctx->ginCollComm && ctx->signalsMhandle)
     ginComm->deregMrSym(ctx->ginCollComm, ctx->signalsMhandle);
-  if (ctx->signalsDev) ncclCudaFree(ctx->signalsDev);
+  if (ctx->signalsDev) ncclCudaFree(ctx->signalsDev, ctx->comm->memManager);
 
   // Free host signals buffer
   if (ctx->signalsHost) free(ctx->signalsHost);

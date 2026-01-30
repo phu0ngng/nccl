@@ -158,6 +158,10 @@ for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_g
   run_command "${func}_split_share_all_sizes" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "$split_range $opts $enable_split_test -n 1"
 done
 
+for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf; do
+  run_command "${func}_dyn_mem_test" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-b 1G -e 1G -w 5 -n 1 -Z 1"
+done
+
 if [ "$ENABLE_NVLS" == "1" ]; then
   for func in all_reduce_perf reduce_scatter_perf all_gather_perf; do
     run_command "${func}_nvls_local_registration_all_sizes" $RUN_MODE $NGPUS "" "NCCL_ALGO=NVLS" "$NCCL_HOME/test/perf/$func" "$range $opts $enable_local_register -n 1"

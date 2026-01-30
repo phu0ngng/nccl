@@ -29,6 +29,7 @@ extern "C" {
 #endif
 
 #include <limits.h>
+#include <stdint.h>
 
 /* Opaque handle to communicator */
 typedef struct ncclComm* ncclComm_t;
@@ -293,6 +294,45 @@ ncclResult_t pncclCommRegister(const ncclComm_t comm, void* buff, size_t size, v
 /* Deregister CUDA buffer */
 ncclResult_t  ncclCommDeregister(const ncclComm_t comm, void* handle);
 ncclResult_t pncclCommDeregister(const ncclComm_t comm, void* handle);
+
+/* Communicator suspend flags */
+#define NCCL_SUSPEND_MEM 0x01       // Suspend memory (release dynamic allocations)
+
+/*
+ * ncclCommSuspend
+ *
+ * Suspend communicator operations to free resources.
+ * The communicator cannot be used while suspended.
+ *
+ * flags: NCCL_SUSPEND_MEM - Release dynamic GPU memory allocations
+ */
+ncclResult_t  ncclCommSuspend(ncclComm_t comm, int flags);
+ncclResult_t pncclCommSuspend(ncclComm_t comm, int flags);
+
+/*
+ * ncclCommResume
+ *
+ * Resume all previously suspended communicator resources.
+ */
+ncclResult_t  ncclCommResume(ncclComm_t comm);
+ncclResult_t pncclCommResume(ncclComm_t comm);
+
+/* Communicator memory statistics */
+typedef enum {
+  ncclStatGpuMemSuspend      = 0,  // Allocated GPU memory that can be suspended (bytes)
+  ncclStatGpuMemSuspended    = 1   // GPU memory suspended? (0=active, 1=suspended)
+} ncclCommMemStat_t;
+
+/*
+ * ncclCommMemStats
+ *
+ * Query communicator memory statistics.
+ *
+ * stat: One of ncclCommMemStat_t values
+ * value: Output pointer to receive the memory statistic value
+ */
+ncclResult_t  ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value);
+ncclResult_t pncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value);
 
 /* Register memory window  */
 ncclResult_t  ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags);

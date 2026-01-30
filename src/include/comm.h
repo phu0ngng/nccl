@@ -23,6 +23,7 @@
 #include "ce_coll.h"
 #include "rma/rma.h"
 #include "argcheck.h"
+#include "mem_manager.h"
 
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
@@ -762,6 +763,8 @@ struct ncclComm {
 
   struct ncclDevrState devrState; // The symmetric runtime state
   struct ncclSymkState symkState; // The symmetric kernels state (built on previous)
+
+  struct ncclMemManager* memManager;  // Memory manager
 
   uint64_t endMagic;
 };

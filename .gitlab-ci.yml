@@ -632,6 +632,7 @@ unit_tests-P100:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
+    DYN_MEM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -685,6 +686,7 @@ unit_tests-P40:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
+    DYN_MEM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -738,6 +740,7 @@ unit_tests-GP100:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
+    DYN_MEM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -794,6 +797,7 @@ unit_tests-eos:
     REGISTER_MIX_A2A_AR_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
+    DYN_MEM_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
@@ -854,6 +858,7 @@ unit_tests-cw-dfw:
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
+    DYN_MEM_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
@@ -909,6 +914,7 @@ unit_tests-AWS_H100_EFA:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # NVLS support is unstable so we disable it.
+    DYN_MEM_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -1010,6 +1016,7 @@ unit_tests-draco_oci:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Cluster lacks NVLS support.
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1070,6 +1077,7 @@ unit_tests-pre-nyx:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
     RMA_SINGLE_NODE_TESTS: 1
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1129,6 +1137,7 @@ unit_tests-pre-tyche:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
     RMA_SINGLE_NODE_TESTS: 1
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1242,6 +1251,7 @@ unit_tests-ipp6-a100:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
+    DYN_MEM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -1527,6 +1537,7 @@ unit_tests-theia:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
     RMA_SINGLE_NODE_TESTS: 1
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1580,6 +1591,7 @@ unit_tests-bia:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh

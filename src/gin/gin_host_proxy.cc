@@ -391,7 +391,7 @@ ncclResult_t ncclGinProxyCreateContext(struct ncclComm *comm, void *collComm, in
   // signals.
   size_t signalsBufSize = nSignals * nContexts * sizeof(uint64_t);
   NCCLCHECK(ncclCuMemAlloc((void **)&proxyCtx->signalsDev, &proxyCtx->signalsCumemhandle,
-                           CU_MEM_HANDLE_TYPE_NONE, signalsBufSize));
+                           CU_MEM_HANDLE_TYPE_NONE, signalsBufSize, comm->memManager));
   CUDACHECK(cudaMemset(proxyCtx->signalsDev, 0, signalsBufSize));
   NCCLCHECK(ncclGinProxyRegMrSym(ginComm, proxyCtx, proxyCtx->signalsDev, signalsBufSize,
                                  NCCL_PTR_CUDA, NCCL_NET_MR_FLAG_FORCE_SO,
@@ -478,7 +478,7 @@ ncclResult_t ncclGinProxyDestroyContext(ncclGin_t *ginComm, void *ginCtx) {
     // Free signals
     if (ginComm && ctx->collComm && ctx->signalsMhandle)
       ginComm->deregMrSym(ctx->collComm, ctx->signalsMhandle);
-    if (ctx->signalsDev) ncclCudaFree(ctx->signalsDev);
+    if (ctx->signalsDev) ncclCudaFree(ctx->signalsDev, ctx->comm->memManager);
 
     // Free hostGpuCtx and its allocations
     if (ctx->hostGpuCtx) {

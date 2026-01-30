@@ -112,6 +112,7 @@ int tuning;
 int memory_report = 0;
 static int deviceImpl = 0;
 static int hostRmaImpl = 0;
+static int suspend_test = 0;
 
 int deviceCtaCount = 16; // Default number of CTAs for device implementation
 
@@ -712,6 +713,44 @@ testResult_t completeColl(struct threadArgs* args) {
   return testSuccess;
 }
 
+testResult_t testCommSuspendResume(struct threadArgs* args) {
+  if (args->thread == 0 && args->globalProc == 0) {
+    printf("# Testing communicator suspend/resume (memory)...\n");
+  }
+
+  Barrier(args);
+
+  timer suspendTimer;
+  // Suspend memory for all communicators and GPUs
+  for (int id = 0; id < args->commNum; ++id) {
+    for (int i = 0; i < args->nGpus; i++) {
+      NCCLCHECK(ncclCommSuspend(args->comms[id][i], NCCL_SUSPEND_MEM));
+    }
+  }
+  double suspendTime = suspendTimer.elapsed() * 1000.0;
+
+  if (args->thread == 0 && args->globalProc == 0) {
+    printf("# Communicator suspend completed in %.2f ms\n", suspendTime);
+  }
+
+  Barrier(args);
+
+  timer resumeTimer;
+  // Resume memory for all communicators and GPUs
+  for (int id = 0; id < args->commNum; ++id) {
+    for (int i = 0; i < args->nGpus; i++) {
+      NCCLCHECK(ncclCommResume(args->comms[id][i]));
+    }
+  }
+  double resumeTime = resumeTimer.elapsed() * 1000.0;
+
+  if (args->thread == 0 && args->globalProc == 0) {
+    printf("# Communicator resume completed in %.2f ms\n", resumeTime);
+  }
+
+  return testSuccess;
+}
+
 static testResult_t getIteration(size_t nbytes, int* itersPtr) {
   if (tbytes == SIZE_MAX) {
     *itersPtr = iters;
@@ -1015,6 +1054,11 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
       TESTCHECK(startColl(args, type, op, root, 1, iter));
     }
     TESTCHECK(completeColl(args));
+  }
+
+  // Test dynamic memory suspend/resume
+  if (suspend_test) {
+    TESTCHECK(testCommSuspendResume(args));
   }
 
   // Benchmark
@@ -1489,6 +1533,7 @@ int main(int argc, char* argv[], char **envp) {
     {"device_cta_count", required_argument, 0, 'V'},
     {"memory", required_argument, 0, 'M'},
     {"host_rma_implementation", no_argument, 0, 'H'},
+    {"suspend_test", required_argument, 0, 'Z'},
 
     {"help", no_argument, 0, 'h'},
     {}
@@ -1496,7 +1541,7 @@ int main(int argc, char* argv[], char **envp) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:M:H", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:M:H:Z:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1705,6 +1750,9 @@ int main(int argc, char* argv[], char **envp) {
           return -1;
         }
         break;
+      case 'Z':
+        suspend_test = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1757,6 +1805,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-V,--device_cta_count <number> set number of CTAs for device implementation (default: 16)] \n\t"
             "[-H,--host_rma_implementation enable Host RMA API implementations (requires -R 2)] \n\t"
             "[-M,--memory_report <0/1> enable memory usage report (default: 0)] \n\t"
+            "[-Z,--suspend_test <0/1> test communicator suspend/resume (memory) after warmup (default: 0)] \n\t"
 
             "[-h,--help]\n",
           basename(argv[0]));

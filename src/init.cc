@@ -253,6 +253,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
+  // Destroy dynamic memory manager
+  NCCLCHECK(ncclMemManagerDestroy(comm));
+
   NCCLCHECK(ncclCeFinalize(comm));
   NCCLCHECK(ncclRmaCeFinalize(comm));
 
@@ -296,7 +299,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     NCCLCHECK(bootstrapClose(comm->bootstrap));
 
   for (int channel=0; channel<MAXCHANNELS; channel++)
-    NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks, 1, comm->localRanks));
+    NCCLCHECK(freeChannel(comm->channels+channel, comm->nRanks, 1, comm->localRanks, comm));
 
   // GIN may use proxy. We need to finalize it before destroying the proxy.
   NCCLCHECK(ncclGinFinalize(comm));
@@ -308,7 +311,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
     if (sharedResRefCount == 0) {
       for (int c=0; c<MAXCHANNELS; c++) {
         if (comm->sharedRes->peers[c]) free(comm->sharedRes->peers[c]);
-        if (comm->sharedRes->devPeers[c]) ncclCudaFree(comm->sharedRes->devPeers[c]);
+        if (comm->sharedRes->devPeers[c]) ncclCudaFree(comm->sharedRes->devPeers[c], comm->memManager);
       }
       free(comm->sharedRes->tpRankToLocalRank);
       NCCLCHECK(ncclStrongStreamDestruct(&comm->sharedRes->hostStream));
@@ -452,6 +455,18 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   // the device we're on (failure cause #1) , better know it early.
   CUDACHECK(cudaGetDevice(&comm->cudaDev));
 
+  // Initialize memory manager
+  if (parent && parent->shareResources && parent->memManager) {
+    // Share parent's memory manager
+    comm->memManager = parent->memManager;
+    ncclAtomicRefCountIncrement(&comm->memManager->refCount);
+    INFO(NCCL_INIT, "MemManager: Shared from parent, refCount=%d",
+         comm->memManager->refCount);
+  } else {
+    // Create new memory manager
+    NCCLCHECK(ncclMemManagerInit(comm));
+  }
+
   NCCLCHECK(ncclCudaContextTrack(&comm->context));
 
   NCCLCHECK(getBusId(comm->cudaDev, &comm->busId));
@@ -528,9 +543,9 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
 
   memset(&tmpCommAndChans, '\0', sizeof(tmpCommAndChans));
   NCCLCHECKGOTO(ncclStrongStreamAcquire(ncclCudaGraphNone(comm->config.graphUsageMode), &comm->sharedRes->deviceStream, /*concurrent=*/false, &deviceStream), ret, fail);
-  NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, deviceStream), ret, fail);
+  NCCLCHECKGOTO(ncclCudaCallocAsync(&devCommAndChans, 1, deviceStream, comm->memManager), ret, fail);
   ncclCommPushCudaFree(comm, devCommAndChans);
-  NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.rankToLocalRank, comm->nRanks, deviceStream), ret, fail);
+  NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.rankToLocalRank, comm->nRanks, deviceStream, comm->memManager), ret, fail);
   ncclCommPushCudaFree(comm, tmpCommAndChans.comm.rankToLocalRank);
   NCCLCHECKGOTO(ncclCudaMemcpyAsync(tmpCommAndChans.comm.rankToLocalRank, comm->rankToLocalRank, comm->nRanks, deviceStream), ret, fail);
   comm->devComm = &devCommAndChans->comm;
@@ -591,7 +606,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   ncclCommPushCudaHostFree(comm, comm->profiler.workCompleted);
 
   if (comm->collNetDenseToUserRank != nullptr) {
-    NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.collNetDenseToUserRank, nRanks, deviceStream), ret, fail);
+    NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.collNetDenseToUserRank, nRanks, deviceStream, comm->memManager), ret, fail);
     ncclCommPushCudaFree(comm, tmpCommAndChans.comm.collNetDenseToUserRank);
     NCCLCHECKGOTO(ncclCudaMemcpyAsync(tmpCommAndChans.comm.collNetDenseToUserRank, comm->collNetDenseToUserRank, nRanks, deviceStream), ret, fail);
   }
@@ -3125,3 +3140,4 @@ ncclResult_t ncclCommUserRank(const ncclComm_t comm, int* rank) {
   *rank = comm->rank;
   return ncclSuccess;
 }
+

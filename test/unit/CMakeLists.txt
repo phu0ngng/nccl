@@ -25,6 +25,7 @@ if(MPI_FOUND)
         ft_abort_rank0.cu
         lsa_pointer_test.cu
         lsa_multimem_pointer_test.cu
+        dyn_mem_test.cu
         put_signal_ping_pong_gin.cu
         put_signal_ping_pong_rma.cu
         devapi_uts.cu
@@ -41,6 +42,7 @@ set(SRC_WITH_DYNAMIC_LIBS
     ft_test.cc
     ft_abort_rank0.cu
     device_id_test.cc
+    dyn_mem_test.cu
 )
 
 # Add each test as a separate executable

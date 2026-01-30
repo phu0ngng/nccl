@@ -464,20 +464,24 @@ static ncclResult_t sendConnect(struct ncclComm* comm, struct ncclConnect* conne
     if (!map->sameProcess) NCCLCHECK(netMapShm(comm, &send->proxyConn, map->mems + NCCL_NET_MAP_HOSTMEM));
     if (map->mems[NCCL_NET_MAP_DEVMEM].size) {
       map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr = NULL;
+      // NET transport import: No ownerVA available, mark as Persist (do not release)
       NCCLCHECK(ncclP2pImportShareableBuffer(comm, send->proxyConn.rank,
                                              map->mems[NCCL_NET_MAP_DEVMEM].size,
                                              &map->mems[NCCL_NET_MAP_DEVMEM].ipcDesc,
-                                             (void**)&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
+                                             (void**)&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr,
+                                             nullptr, ncclMemPersist));
       map->mems[NCCL_NET_MAP_DEVMEM].cpuPtr = NULL;
     }
     if (map->mems[NCCL_NET_MAP_SHARED_DEVMEM].size) {
       void** sharedDevMemPtr = comm->proxyState->sharedDevMems + send->proxyConn.tpLocalRank;
       if (*sharedDevMemPtr == NULL) {
         map->mems[NCCL_NET_MAP_SHARED_DEVMEM].gpuPtr = NULL;
+        // NET transport shared import: No ownerVA, mark as Persist (do not release)
         NCCLCHECK(ncclP2pImportShareableBuffer(comm, send->proxyConn.rank,
                                                map->mems[NCCL_NET_MAP_SHARED_DEVMEM].size,
                                                &map->mems[NCCL_NET_MAP_SHARED_DEVMEM].ipcDesc,
-                                               sharedDevMemPtr));
+                                               sharedDevMemPtr,
+                                               nullptr, ncclMemPersist));
       }
       map->mems[NCCL_NET_MAP_SHARED_DEVMEM].gpuPtr = (char*)(*sharedDevMemPtr);
       map->mems[NCCL_NET_MAP_SHARED_DEVMEM].cpuPtr = NULL;
@@ -656,7 +660,7 @@ static ncclResult_t sharedNetBuffersInit(struct ncclProxyState* proxyState, int 
     if (sameProcess == 0 || ncclCuMemEnable()) {
       NCCLCHECK(ncclP2pAllocateShareableBuffer(state->size, 0, &state->ipcDesc, (void**)&state->cudaBuff));
     } else {
-      NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, state->size));
+      NCCLCHECK(ncclCudaCalloc(&state->cudaBuff, state->size, proxyState->memManager));
     }
   }
   if (!cuda && state->hostBuff == NULL) {
@@ -911,7 +915,7 @@ static ncclResult_t sendProxyConnect(struct ncclProxyConnection* connection, str
         NCCLCHECK(ncclP2pAllocateShareableBuffer(map->mems[NCCL_NET_MAP_DEVMEM].size, 0, &map->mems[NCCL_NET_MAP_DEVMEM].ipcDesc,
                                                  (void**)&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
       } else {
-        NCCLCHECK(ncclCudaCalloc(&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr, map->mems[NCCL_NET_MAP_DEVMEM].size));
+        NCCLCHECK(ncclCudaCalloc(&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr, map->mems[NCCL_NET_MAP_DEVMEM].size, proxyState->memManager));
       }
       map->mems[NCCL_NET_MAP_DEVMEM].cpuPtr = map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr;
     }
@@ -1076,7 +1080,7 @@ static ncclResult_t recvProxyConnect(struct ncclProxyConnection* connection, str
         NCCLCHECK(ncclP2pAllocateShareableBuffer(map->mems[NCCL_NET_MAP_DEVMEM].size, 0, &map->mems[NCCL_NET_MAP_DEVMEM].ipcDesc,
                                                  (void**)&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr));
       } else {
-        NCCLCHECK(ncclCudaCalloc(&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr, map->mems[NCCL_NET_MAP_DEVMEM].size));
+        NCCLCHECK(ncclCudaCalloc(&map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr, map->mems[NCCL_NET_MAP_DEVMEM].size, proxyState->memManager));
       }
       map->mems[NCCL_NET_MAP_DEVMEM].cpuPtr = map->mems[NCCL_NET_MAP_DEVMEM].gpuPtr;
     }
@@ -1148,7 +1152,7 @@ static ncclResult_t sendProxyFree(struct ncclProxyConnection* connection, struct
     } else {
       NCCLCHECK(ncclShmIpcClose(&mems[NCCL_NET_MAP_HOSTMEM].createDesc));
     }
-    NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr));
+    NCCLCHECK(ncclCudaFree(mems[NCCL_NET_MAP_DEVMEM].cpuPtr, proxyState->memManager));
     if (!resources->map.sameProcess || ncclCuMemEnable()) {
       // cuMem API support
       if (mems[NCCL_NET_MAP_DEVMEM].size) {
