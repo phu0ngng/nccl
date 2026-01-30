@@ -9,11 +9,25 @@
 
 #include "nccl.h"
 #include <cuda.h>
+#include <cuda_runtime.h>
 #include <pthread.h>
 #include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#if CUDART_VERSION < 12030
+// MNNVL: FABRIC handle support lifted from CUDA 12.3
+#define CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED ((CUdevice_attribute)128)
+#define CU_MEM_HANDLE_TYPE_FABRIC ((CUmemAllocationHandleType)0x8ULL)
+#ifndef CU_IPC_HANDLE_SIZE
+#define CU_IPC_HANDLE_SIZE 64
+#endif
+typedef struct CUmemFabricHandle_st {
+    unsigned char data[CU_IPC_HANDLE_SIZE];
+} CUmemFabricHandle_v1;
+typedef CUmemFabricHandle_v1 CUmemFabricHandle;
 #endif
 
 struct ncclComm;

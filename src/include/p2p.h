@@ -15,16 +15,7 @@
 #include "core.h"
 #include "mem_manager.h"
 
-#if CUDART_VERSION < 12030
-// MNNVL: FABRIC handle support lifted from CUDA 12.3
-#define CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED ((CUdevice_attribute)128)
-#define CU_MEM_HANDLE_TYPE_FABRIC ((CUmemAllocationHandleType)0x8ULL)
-#define CU_IPC_HANDLE_SIZE 64
-typedef struct CUmemFabricHandle_st {
-    unsigned char data[CU_IPC_HANDLE_SIZE];
-} CUmemFabricHandle_v1;
-typedef CUmemFabricHandle_v1 CUmemFabricHandle;
-#endif
+// CUmemFabricHandle compatibility definitions are now in mem_manager.h
 
 typedef union {
   uint64_t data; // Needs to hold a CUmemGenericAllocationHandle for UDS fd support
