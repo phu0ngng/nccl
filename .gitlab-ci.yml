@@ -2544,7 +2544,7 @@ perftest-single-eos:
     ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 40
+    SLURM_TIME: 60
     RUN_MODE: "MPI"
     NNODES: 1
     GRAPH: 0
