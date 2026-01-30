@@ -1608,3 +1608,15 @@ This is enabled by default, but having it enabled can prevent intra-node GPU com
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 1 (enabled); set to 0 to disable.
+
+
+NCCL_SYM_GIN_KERNELS_ENABLE
+---------------------------
+(since 2.29U1)
+
+Enable use of symmetric kernels that use GIN for network communication. These
+kernels do not yet honor ncclCommAbort() so they are currently disabled by default.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 0 (disabled); set to 1 to enable

@@ -35,8 +35,7 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
 
   if (maxStackSize) *maxStackSize = 0;
   int carveout = ncclParamL1SharedMemoryCarveout();
-  int ncclMaxSharedMem = ncclShmemDynamicSize(cudaArch);
-
+  int maxDynamicSmem = 1<<30;
   int driverVersion;
   NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
 
@@ -65,19 +64,24 @@ ncclResult_t ncclInitKernelsForDevice(int cudaArch, int maxSharedMem, size_t* ma
           result, ignore1);
       ignore1:;
       }
-      if (ncclMaxSharedMem != 0) {
-        int sharedMemSize = ncclMaxSharedMem;
-        if (sharedMemSize > (maxSharedMem-attr.sharedSizeBytes)) {
-          WARN("cudaArch %d ncclMaxSharedMem %d exceeds device/fn maxSharedMem %zu",
-               cudaArch, sharedMemSize, maxSharedMem-attr.sharedSizeBytes);
-          return ncclSystemError;
+      { int dynSmem = maxSharedMem - attr.sharedSizeBytes;
+        if (sym) {
+          ncclSymkKernelMaxDynamicSmem[k] = dynSmem;
+        } else {
+          maxDynamicSmem = std::min(maxDynamicSmem, dynSmem);
         }
         CUDACHECKGOTO(cudaFuncSetAttribute(fn,
-          cudaFuncAttributeMaxDynamicSharedMemorySize, sharedMemSize),
+          cudaFuncAttributeMaxDynamicSharedMemorySize, dynSmem),
           result, next_kernel);
       }
     next_kernel:;
     }
+  }
+
+  if (ncclShmemDynamicSize(cudaArch) > maxDynamicSmem) {
+    WARN("cudaArch %d dynamic smem %d exceeds device/fn maxSharedMem %d",
+         cudaArch, ncclShmemDynamicSize(cudaArch), maxDynamicSmem);
+    return ncclSystemError;
   }
   return result;
 }
@@ -1676,7 +1680,7 @@ ncclResult_t ncclLaunchKernel(struct ncclComm* comm, struct ncclKernelPlan* plan
   void* sym = plan->kernelFn;
   dim3 grid = {(unsigned)nChannels, 1, 1};
   dim3 block = {(unsigned)plan->threadPerBlock, 1, 1};
-  int smem = ncclShmemDynamicSize(comm->cudaArch);
+  int smem = plan->isSymColl ? plan->kernelDynSmem : ncclShmemDynamicSize(comm->cudaArch);
   cudaStream_t launchStream = planner->streams->stream;
 
   NCCLCHECK(ncclProfilerStartKernelLaunchEvent(plan, launchStream));
