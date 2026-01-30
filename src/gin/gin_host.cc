@@ -5,6 +5,7 @@
  ************************************************************************/
 
 #include "comm.h"
+#include "gin.h"
 #include "param.h"
 #include "graph.h"
 #include "transport.h"
@@ -15,7 +16,6 @@
 #include <cmath>
 
 NCCL_PARAM(GinEnable, "GIN_ENABLE", 1);
-NCCL_PARAM(GinType, "GIN_TYPE", -1);
 NCCL_PARAM(GinSignalPoolSize, "GIN_SIGNAL_POOL_SIZE", 512 << 10);
 NCCL_PARAM(GinCounterPoolSize, "GIN_COUNTER_POOL_SIZE", 512 << 10);
 
@@ -94,19 +94,22 @@ NCCL_PARAM(GinNconnections, "GIN_NCONNECTIONS", -2);
 NCCL_PARAM(GinNcontexts, "GIN_NCONTEXTS", -1);
 
 ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
-  ncclResult_t ret = ncclSuccess;
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
-  if (ginState->ncclGin == NULL) {
-    WARN("GIN not supported.");
-    return ncclInvalidUsage;
-  }
+  if (ginState->connected) return ncclSuccess;
+
+  ncclResult_t ret = ncclSuccess;
   if (ncclParamGinEnable() == 0) {
     WARN("GIN is disabled.");
     return ncclInternalError;
   }
-  if (ginState->connected) return ncclSuccess;
 
-  NCCLCHECK(ginState->ncclGin->init(&ginState->ginInstance, comm->commHash, ncclDebugLog));
+  // Load plugin
+  if (ginState->ncclGin == NULL) {
+    WARN("GIN not supported.");
+    return ncclInvalidUsage;
+  }
+
+  ginState->ginInstance = comm->ginContext;
 
   int ndev = 0;
   NCCLCHECK(ginState->ncclGin->devices(&ndev));
@@ -120,14 +123,9 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
     return ncclInternalError;
   }
 
-  if ((ncclParamGinType() != -1) && (ginState->ginType != ncclParamGinType())) {
-    WARN("GIN-capable device type mismatch.");
-    return ncclInternalError;
-  }
-
-  int nLocalNets;
-  int localNetDevs[NCCL_TOPO_MAX_NODES];
-  NCCLCHECK(ncclTopoGetLocalNets(comm, localNetDevs, &nLocalNets));
+  int nLocalGinDevs;
+  int localGinDevs[NCCL_TOPO_MAX_NODES];
+  NCCLCHECK(ncclTopoGetLocalGinDevs(comm, localGinDevs, &nLocalGinDevs));
 
   void** handles = NULL;
   char* allHandles = NULL;
@@ -138,7 +136,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
 
   NCCLCHECKGOTO(ncclCalloc(&ginCommCountHandles, comm->nRanks), ret, fail);
 
-  ginState->ginCommCount = nLocalNets;
+  ginState->ginCommCount = nLocalGinDevs;
   if (ncclParamGinNconnections() != -2) ginState->ginCommCount = ncclParamGinNconnections();
   ginState->ginCommCount = std::min<int>(NCCL_GIN_MAX_CONNECTIONS, ginState->ginCommCount);
 
@@ -157,7 +155,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
   ginState->ginContextCount = nContextsTotal;
   ginState->ctxFirstAvailable = 0;
   ginState->ctxLastExclusive = nContextsTotal;
-  INFO(NCCL_INIT, "devCommCreate: %d Local NET, creating %d GIN connections with %d contexts each (%d contexts total requested)", nLocalNets, ginState->ginCommCount, nContextsPerComm, reqGinContextCount);
+  INFO(NCCL_INIT, "devCommCreate: %d Local NET, creating %d GIN connections with %d contexts each (%d contexts total requested)", nLocalGinDevs, ginState->ginCommCount, nContextsPerComm, reqGinContextCount);
 
   NCCLCHECKGOTO(ncclCalloc(&allHandles, (size_t)comm->nRanks * NCCL_NET_HANDLE_MAXSIZE), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&handles, comm->nRanks), ret, fail);
@@ -177,7 +175,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
   for (int n = 0; n < ginState->ginCommCount; n++) {
     void* listenComm;
     NCCLCHECKGOTO(
-      ginState->ncclGin->listen(ginState->ginInstance, localNetDevs[n%nLocalNets],
+      ginState->ncclGin->listen(ginState->ginInstance, localGinDevs[n%nLocalGinDevs],
                                 allHandles + NCCL_NET_HANDLE_MAXSIZE * comm->rank, &listenComm),
       ret, fail);
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
@@ -187,7 +185,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
                   ret, fail);
     if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
       NCCLCHECKGOTO(ncclGinProxyCreateContext(comm, ginState->ginComms[n],
-                                              localNetDevs[n % nLocalNets], ginState->signalSpaceSize,
+                                              localGinDevs[n % nLocalGinDevs], ginState->signalSpaceSize,
                                               ginState->counterSpaceSize, nContextsPerComm,
                                               &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
                     ret, fail);
@@ -233,7 +231,7 @@ fail:
   goto exit;
 }
 
-ncclResult_t ncclGinFinalize(struct ncclComm* comm) {
+ncclResult_t ncclGinHostFinalize(struct ncclComm* comm) {
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   if (!ginState->connected) return ncclSuccess;
 
@@ -265,7 +263,6 @@ ncclResult_t ncclGinFinalize(struct ncclComm* comm) {
       ginState->ginComms[n] = NULL;
     }
   }
-  NCCLCHECK(ginState->ncclGin->finalize(ginState->ginInstance));
   memset((void*)ginState, 0, sizeof(*ginState));
   return ncclSuccess;
 }

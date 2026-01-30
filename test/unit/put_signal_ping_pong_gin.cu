@@ -320,7 +320,7 @@ int main(int argc, char* argv[]) {
 
     NCCLCHECK(ncclGinDeregister(comm, srcGinHostWins));
     NCCLCHECK(ncclGinDeregister(comm, dstGinHostWins));
-    NCCLCHECK(ncclGinFinalize(comm));
+    NCCLCHECK(ncclGinHostFinalize(comm));
     NCCLCHECK(ncclMemFree(sendbuff));
     NCCLCHECK(ncclMemFree(recvbuff));
     CUDACHECK(cudaEventDestroy(start));
