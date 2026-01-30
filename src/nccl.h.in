@@ -320,7 +320,9 @@ ncclResult_t pncclCommResume(ncclComm_t comm);
 /* Communicator memory statistics */
 typedef enum {
   ncclStatGpuMemSuspend      = 0,  // Allocated GPU memory that can be suspended (bytes)
-  ncclStatGpuMemSuspended    = 1   // GPU memory suspended? (0=active, 1=suspended)
+  ncclStatGpuMemSuspended    = 1,   // GPU memory suspended? (0=active, 1=suspended)
+  ncclStatGpuMemPersist      = 2,  // Allocated GPU memory that cannot be suspended (bytes)
+  ncclStatGpuMemTotal        = 3  // Total allocated GPU memory tracked by NCCL (bytes)
 } ncclCommMemStat_t;
 
 /*

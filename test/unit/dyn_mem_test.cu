@@ -162,12 +162,18 @@ static bool verifyAllGather(const std::vector<int>& data, size_t sendcount, int 
 
 // Helper: print memory statistics using new ncclCommMemStats API
 static void printMemoryStats(ncclComm_t comm) {
-    uint64_t suspendable, suspended;
+    uint64_t total, persist, suspendable, suspended;
 
+    NCCLCHECK(ncclCommMemStats(comm, ncclStatGpuMemTotal, &total));
+    NCCLCHECK(ncclCommMemStats(comm, ncclStatGpuMemPersist, &persist));
     NCCLCHECK(ncclCommMemStats(comm, ncclStatGpuMemSuspend, &suspendable));
     NCCLCHECK(ncclCommMemStats(comm, ncclStatGpuMemSuspended, &suspended));
     printf("=== NCCL Memory Statistics ===\n");
     printf("State:           %s\n", suspended ? "SUSPENDED" : "ACTIVE");
+    printf("Total tracked:   %llu bytes (%.2f MB)\n",
+           (unsigned long long)total, total / (1024.0 * 1024.0));
+    printf("Persistent:      %llu bytes (%.2f MB) [cannot be suspended]\n",
+           (unsigned long long)persist, persist / (1024.0 * 1024.0));
     printf("Suspendable:     %llu bytes (%.2f MB) [can be suspended]\n",
            (unsigned long long)suspendable, suspendable / (1024.0 * 1024.0));
     printf("==============================\n");
