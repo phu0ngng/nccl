@@ -83,7 +83,6 @@ target_include_directories(nccl
     ${CMAKE_CURRENT_SOURCE_DIR}/device
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/os
     ${DOCA_HOME}/include
     ${CUDAToolkit_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
@@ -218,7 +217,6 @@ target_include_directories(nccl_static
     ${CMAKE_CURRENT_SOURCE_DIR}/device
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/plugin
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/os
     transport/net_ib/gdaki/doca-gpunetio/include
     ${CUDAToolkit_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}/cccl

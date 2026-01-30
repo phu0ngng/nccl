@@ -55,7 +55,6 @@ foreach(TEST_SOURCE ${UNIT_TEST_SOURCES})
         ${CMAKE_BINARY_DIR}/include
         ${CMAKE_SOURCE_DIR}/src/include
         ${CMAKE_SOURCE_DIR}/src/include/plugin
-        ${CMAKE_SOURCE_DIR}/src/include/os
         ${CMAKE_SOURCE_DIR}/src/device
         ${CMAKE_SOURCE_DIR}/src/graph/
         ${CUDAToolkit_INCLUDE_DIRS}
@@ -104,7 +103,6 @@ target_include_directories(backwards_compat
     ${CMAKE_BINARY_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/src/include/plugin
-    ${CMAKE_SOURCE_DIR}/src/include/os
     ${CMAKE_SOURCE_DIR}/src/device
     ${CMAKE_SOURCE_DIR}/src/graph/
     ${CUDAToolkit_INCLUDE_DIRS}

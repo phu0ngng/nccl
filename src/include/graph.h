@@ -9,7 +9,7 @@
 
 #include "nccl.h"
 #include "device.h"
-#include "os/os.h"
+#include "os.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <ctype.h>
