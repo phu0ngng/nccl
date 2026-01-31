@@ -26,6 +26,7 @@
 #include "gin/gin_v12.h"
 #include "gin/gin_v11.h"
 
+typedef ncclGinRequirementFlagOptions_v12_t ncclGinRequirementFlagOptions_t;
 typedef ncclGin_v12_t ncclGin_t;
 
 #define NCCL_GIN_PLUGIN_SYMBOL ncclGinPlugin_v12

@@ -529,8 +529,10 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
                   fail);
     NCCLCHECKGOTO(
-      rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank, 1,
-                                      listenComm, rmaProxyState->ginComms + n),
+      rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank, 1, 0,
+                                      ncclGinRequirementFlagOptionsNotRequired,
+                                      ncclGinRequirementFlagOptionsNotRequired, listenComm,
+                                      rmaProxyState->ginComms + n),
       ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->getProperties(localGinDevs[n], &rmaProxyState->props[n]), ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->closeListen(listenComm), ret, fail);

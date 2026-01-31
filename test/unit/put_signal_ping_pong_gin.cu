@@ -33,6 +33,7 @@ using namespace cooperative_groups;
 static const bool DEBUG = false;
 
 // Kernel for ping-pong test
+template <bool skip_credit_check>
 __global__ void ping_pong_kernel(
     ncclGinCtx_M<-1u> ctx,
     void *sendbuff, ncclGinWindow_t ginHandle_src,
@@ -48,6 +49,8 @@ __global__ void ping_pong_kernel(
     thread_block block = this_thread_block();
     thread_block_tile<32> warp = tiled_partition<32>(block);
     thread_block_tile<1> thread = this_thread();
+
+    constexpr uint32_t optFlags = skip_credit_check ? ncclGinOptFlagsMaySkipCreditCheck : 0;
 
     if (DEBUG) printf("[Rank %d] Starting kernel with %d iterations, nelems=%llu, signal_id=%u\n", pe, iter, nelems, signal_id);
 
@@ -78,7 +81,7 @@ __global__ void ping_pong_kernel(
                 signal, ncclGinSignalAdd, 1,
                 /*hasCounter=*/false, 0,
                 /*hasDescriptor=*/true, &desc,
-                cuda::thread_scope_thread, cuda::thread_scope_thread);
+                cuda::thread_scope_thread, cuda::thread_scope_thread, optFlags);
             if (DEBUG) printf("[Rank %d] Sent data with signal\n", pe);
 
         } else {   // Rank 0
@@ -95,7 +98,7 @@ __global__ void ping_pong_kernel(
                 signal, ncclGinSignalAdd, 1,
                 /*hasCounter=*/false, 0,
                 /*hasDescriptor=*/true, &desc,
-                cuda::thread_scope_thread, cuda::thread_scope_thread);
+                cuda::thread_scope_thread, cuda::thread_scope_thread, optFlags);
             if (DEBUG) printf("[Rank %d] Sent data with signal\n", pe);
 
             if (DEBUG) printf("[Rank %d] Sent data, waiting for signal (signal_id=%u, expected_value=%lu) current_signal_value=%lu\n", pe, signal_id, expected_signal_value, current_signal_value);
@@ -178,7 +181,14 @@ int main(int argc, char* argv[]) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = 1;
     NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
-    NCCLCHECK(ncclGinConnectOnce(comm, 1));
+    int use_expert_control = args.gin_skip_credit_check;
+    // Currently, CPU Proxy does not support specifying qp depth.
+    // use_expert_control is supported in GDA-KI only. We need to control the qp
+    // depth when using gin_skip_credit_check. Otherwise, we can let the backend
+    // decide.
+    const int qp_depth = use_expert_control ? 128 : 0;
+    const int context_count = 1;
+    NCCLCHECK(ncclGinConnectOnce(comm, context_count, qp_depth, args.gin_reliable_db, use_expert_control));
 
     // Allocate and register symmetric memory
     void *sendbuff, *recvbuff;
@@ -248,7 +258,10 @@ int main(int argc, char* argv[]) {
         // Warmup phase
         if (args.warmup_iters > 0) {
             if (DEBUG) printf("[Rank %d] Running warmup\n", myRank);
-            ping_pong_kernel<<<1, 1, 0, stream>>>(gctx, sendbuff, srcGinWindow, recvbuff, dstGinWindow, signalIDs, nelems, myRank, args.warmup_iters);
+            if (args.gin_skip_credit_check)
+                ping_pong_kernel<true><<<1, 1, 0, stream>>>(gctx, sendbuff, srcGinWindow, recvbuff, dstGinWindow, signalIDs, nelems, myRank, args.warmup_iters);
+            else
+                ping_pong_kernel<false><<<1, 1, 0, stream>>>(gctx, sendbuff, srcGinWindow, recvbuff, dstGinWindow, signalIDs, nelems, myRank, args.warmup_iters);
             CUDACHECK(cudaStreamSynchronize(stream));
             if (DEBUG) printf("[Rank %d] Ran warmup (after cudaStreamSynchronize)\n", myRank);
             MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
@@ -258,7 +271,10 @@ int main(int argc, char* argv[]) {
         // Measurement phase
         if (DEBUG) printf("[Rank %d] Running measurement\n", myRank);
         CUDACHECK(cudaEventRecord(start, stream));
-        ping_pong_kernel<<<1, 1, 0, stream>>>(gctx, sendbuff, srcGinWindow, recvbuff, dstGinWindow, signalIDs, nelems, myRank, args.normal_iters);
+        if (args.gin_skip_credit_check)
+            ping_pong_kernel<true><<<1, 1, 0, stream>>>(gctx, sendbuff, srcGinWindow, recvbuff, dstGinWindow, signalIDs, nelems, myRank, args.normal_iters);
+        else
+            ping_pong_kernel<false><<<1, 1, 0, stream>>>(gctx, sendbuff, srcGinWindow, recvbuff, dstGinWindow, signalIDs, nelems, myRank, args.normal_iters);
         CUDACHECK(cudaEventRecord(stop, stream));
         CUDACHECK_DEBUG(cudaStreamSynchronize(stream), myRank);
         MPICHECK(MPI_Barrier(MPI_COMM_WORLD));

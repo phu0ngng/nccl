@@ -67,6 +67,12 @@ typedef enum {
   NCCL_GIN_CONNECTION_FULL,
 } ncclGinConnectionType_t;
 
+typedef enum : uint32_t {
+  NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED = 0,
+  NCCL_REQUIREMENT_FLAG_OPTION_OPTIONAL = 1,
+  NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED = 2,
+} ncclRequirementFlagOptions_t;
+
 struct ncclDevCommRequirements {
   /* attributes that users should never touch. */
   size_t size;
@@ -92,6 +98,9 @@ struct ncclDevCommRequirements {
   int ginCounterCount; // Guaranteed to start at id=0
   ncclGinConnectionType_t ginConnectionType;
   bool ginExclusiveContexts;
+  int ginQueueDepth;
+  ncclRequirementFlagOptions_t ginUseReliableDB;
+  ncclRequirementFlagOptions_t ginUseExpertControl;
 };
 
 #define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                 \
@@ -112,6 +121,9 @@ struct ncclDevCommRequirements {
     0,                                           /* ginCounterCount */         \
     NCCL_GIN_CONNECTION_NONE,                    /* ginConnectionType */       \
     false,                                       /* ginExclusiveContexts */    \
+    0,                                           /* ginQueueDepth */           \
+    NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED,   /* ginUseReliableDB */        \
+    NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED,   /* ginUseExpertControl */     \
 }
 
 struct ncclDevResourceRequirements {

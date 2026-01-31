@@ -81,6 +81,27 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinSignal(
   bool isDescriptor, ncclGinDescriptorSmem* descriptor,
   cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease);
 
+NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutEx(
+  ncclGin_C* net,
+  ncclTeam team, int peer,
+  ncclWindow_t dstWin, size_t dstOffset,
+  ncclWindow_t srcWin, size_t srcOffset, size_t bytes,
+  bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
+  bool isCounter, ncclGinCounter_t counterId,
+  ncclCoopAny coop,
+  bool isDescriptor, ncclGinDescriptorSmem* descriptor,
+  cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
+  uint32_t optFlags);
+
+NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinSignalEx(
+  ncclGin_C* net,
+  ncclTeam team, int peer,
+  bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
+  ncclCoopAny coop,
+  bool isDescriptor, ncclGinDescriptorSmem* descriptor,
+  cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
+  uint32_t optFlags);
+
 NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinFlush(
   ncclGin_C* net,
   ncclCoopAny coop,
@@ -122,7 +143,7 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinResetSignal(
   ncclGin_C* net,
   ncclGinSignal_t signal);
 
-NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutValue(
+NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutValueEx(
   ncclGin_C* net,
   ncclTeam team, int peer,
   ncclWindow_t dstWin, size_t dstOffset,
@@ -130,7 +151,8 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutValue(
   bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
   ncclCoopAny coop,
   bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-  cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease);
+  cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
+  uint32_t optFlags);
 
 NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE uint64_t* ncclGinGetSignalShadowPtr(
   ncclGin_C* net,
@@ -166,7 +188,8 @@ struct ncclGin_BackendMask {
     Coop coop = ncclCoopThread{},
     DescriptorSmem descriptor = ncclGin_None{},
     cuda::thread_scope givenRelease = cuda::thread_scope_thread,
-    cuda::thread_scope requiredRelease = cuda::thread_scope_device
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device,
+    uint32_t optFlags = ncclGinOptFlagsDefault
   ) const;
 
   template<
@@ -190,7 +213,8 @@ struct ncclGin_BackendMask {
     Coop coop = ncclCoopThread{},
     DescriptorSmem descriptor = ncclGin_None{},
     cuda::thread_scope givenRelease = cuda::thread_scope_thread,
-    cuda::thread_scope requiredRelease = cuda::thread_scope_device
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device,
+    uint32_t optFlags = ncclGinOptFlagsDefault
   ) const;
 
   template<
@@ -207,7 +231,8 @@ struct ncclGin_BackendMask {
     Coop coop = ncclCoopThread{},
     DescriptorSmem descriptor = ncclGin_None{},
     cuda::thread_scope givenRelease = cuda::thread_scope_thread,
-    cuda::thread_scope requiredRelease = cuda::thread_scope_device
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device,
+    uint32_t optFlags = ncclGinOptFlagsDefault
   ) const;
 
   template<
@@ -224,7 +249,8 @@ struct ncclGin_BackendMask {
     Coop coop = ncclCoopThread{},
     DescriptorSmem descriptor = ncclGin_None{},
     cuda::thread_scope givenRelease = cuda::thread_scope_thread,
-    cuda::thread_scope requiredRelease = cuda::thread_scope_device
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device,
+    uint32_t optFlags = ncclGinOptFlagsDefault
   ) const;
 
   template<typename RemoteAction,
@@ -235,7 +261,8 @@ struct ncclGin_BackendMask {
     Coop coop = ncclCoopThread(),
     DescriptorSmem descriptor = ncclGin_None{},
     cuda::thread_scope givenRelease = cuda::thread_scope_thread,
-    cuda::thread_scope requiredRelease = cuda::thread_scope_device
+    cuda::thread_scope requiredRelease = cuda::thread_scope_device,
+    uint32_t optFlags = ncclGinOptFlagsDefault
   ) const;
 
   // All source buffers from put's from any thread in this coop will be safe to reuse.

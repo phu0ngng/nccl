@@ -41,7 +41,8 @@ NCCL_DEVICE_INLINE static void putImpl(ncclGinCtx ctx, Coop coop, int peer, bool
                                               uint64_t signalOpArg, bool hasCounter,
                                               ncclGinCounter_t counterId, bool hasDescriptor,
                                               ncclGinDescriptorSmem* descriptor,
-                                              cuda::thread_scope required, cuda::thread_scope given) {
+                                              cuda::thread_scope required, cuda::thread_scope given,
+                                              uint32_t optFlags) {
   using nccl::utility::loadConst;
   coop.sync();
   if (coop.thread_rank() == 0) {
@@ -50,6 +51,14 @@ NCCL_DEVICE_INLINE static void putImpl(ncclGinCtx ctx, Coop coop, int peer, bool
     doca_gpu_dev_verbs_qp* companion_qp;
     ncclGinGdakiMemHandle* dstMh = (ncclGinGdakiMemHandle*)dstWin;
     ncclGinGdakiMemHandle* srcMh = (ncclGinGdakiMemHandle*)srcWin;
+    uint32_t codeOpt = DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
+      | (!!(optFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
+      | (!!(optFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
+#ifdef NCCL_DEVICE_GIN_GDAKI_ENABLE_DEBUG
+    if (optFlags != ncclGinOptFlagsDefault) {
+      assert(gdaki->useExpertControl);
+    }
+#endif
 
     doca_gpu_dev_verbs_addr raddr, laddr;
     if (hasWins) {
@@ -85,23 +94,23 @@ NCCL_DEVICE_INLINE static void putImpl(ncclGinCtx ctx, Coop coop, int peer, bool
       if (hasSignal && hasCounter) {
         doca_gpu_dev_verbs_put_signal_counter<DOCA_GPUNETIO_VERBS_SIGNAL_OP_ADD>(
           qp, raddr, laddr, bytes, sig_raddr, sig_laddr, signalOpArg, companion_qp, counter_raddr,
-          counter_laddr, 1);
+          counter_laddr, 1, codeOpt);
       } else if (hasSignal) {
         doca_gpu_dev_verbs_put_signal<DOCA_GPUNETIO_VERBS_SIGNAL_OP_ADD>(
-          qp, raddr, laddr, bytes, sig_raddr, sig_laddr, signalOpArg);
+          qp, raddr, laddr, bytes, sig_raddr, sig_laddr, signalOpArg, codeOpt);
       } else if (hasCounter) {
         doca_gpu_dev_verbs_put_counter(qp, raddr, laddr, bytes, companion_qp, counter_raddr,
-                                            counter_laddr, 1);
+                                            counter_laddr, 1, codeOpt);
       } else {
-        doca_gpu_dev_verbs_put(qp, raddr, laddr, bytes);
+        doca_gpu_dev_verbs_put(qp, raddr, laddr, bytes, codeOpt);
       }
     } else {
       if (hasCounter) {
         doca_gpu_dev_verbs_signal_counter<DOCA_GPUNETIO_VERBS_SIGNAL_OP_ADD>(
-          qp, sig_raddr, sig_laddr, signalOpArg, companion_qp, counter_raddr, counter_laddr, 1);
+          qp, sig_raddr, sig_laddr, signalOpArg, companion_qp, counter_raddr, counter_laddr, 1, codeOpt);
       } else {
         doca_gpu_dev_verbs_signal<DOCA_GPUNETIO_VERBS_SIGNAL_OP_ADD>(
-          qp, sig_raddr, sig_laddr, signalOpArg);
+          qp, sig_raddr, sig_laddr, signalOpArg, codeOpt);
       }
     }
 
@@ -119,7 +128,8 @@ NCCL_DEVICE_INLINE static void putValueImpl(ncclGinCtx ctx, Coop coop, int peer,
                                       size_t signalOffset, __be32 signalKey, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
-                                      cuda::thread_scope required, cuda::thread_scope given) {
+                                      cuda::thread_scope required, cuda::thread_scope given,
+                                      uint32_t optFlags) {
   using nccl::utility::loadConst;
 
   coop.sync();
@@ -127,6 +137,14 @@ NCCL_DEVICE_INLINE static void putValueImpl(ncclGinCtx ctx, Coop coop, int peer,
     ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     doca_gpu_dev_verbs_qp* qp = loadConst(&gdaki->gdqp) + peer;
     ncclGinGdakiMemHandle* dstMh = (ncclGinGdakiMemHandle*)dstWin;
+    uint32_t codeOpt = DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
+      | (!!(optFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
+      | (!!(optFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
+#ifdef NCCL_DEVICE_GIN_GDAKI_ENABLE_DEBUG
+    if (optFlags != ncclGinOptFlagsDefault) {
+      assert(gdaki->useExpertControl);
+    }
+#endif
 
     doca_gpu_dev_verbs_addr raddr;
     raddr.addr = dstOff;
@@ -148,9 +166,9 @@ NCCL_DEVICE_INLINE static void putValueImpl(ncclGinCtx ctx, Coop coop, int peer,
 
     if (hasSignal) {
       doca_gpu_dev_verbs_p_signal<T, DOCA_GPUNETIO_VERBS_SIGNAL_OP_ADD>(
-        qp, raddr, srcData, sig_raddr, sig_laddr, signalOpArg);
+        qp, raddr, srcData, sig_raddr, sig_laddr, signalOpArg, codeOpt);
     } else {
-      doca_gpu_dev_verbs_p(qp, raddr, srcData);
+      doca_gpu_dev_verbs_p(qp, raddr, srcData, codeOpt);
     }
 
 #ifdef NCCL_DEVICE_GIN_GDAKI_ENABLE_DEBUG
@@ -175,7 +193,8 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_GDAKI> {
                                       uint64_t signalOpArg, bool hasCounter,
                                       ncclGinCounter_t counterId, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
-                                      cuda::thread_scope required, cuda::thread_scope given) {
+                                      cuda::thread_scope required, cuda::thread_scope given,
+                                      uint32_t optFlags = ncclGinOptFlagsDefault) {
     using nccl::utility::loadConst;
     size_t signalOffset = 0;
     __be32 signalKey = 0;
@@ -193,7 +212,7 @@ struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_GDAKI> {
       ctx, coop, peer, hasWins, dstWin, dstOff, srcWin, srcOff, bytes,
       hasSignal, signalOffset, signalKey, signalOp, signalOpArg,
       hasCounter, counterId, hasDescriptor, descriptor,
-      required, given
+      required, given, optFlags
     );
   }
 };
@@ -206,7 +225,8 @@ struct ncclGinApi_PutValue<NCCL_NET_DEVICE_GIN_GDAKI> {
                                       ncclGinSignalDescriptor signal, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
-                                      cuda::thread_scope required, cuda::thread_scope given) {
+                                      cuda::thread_scope required, cuda::thread_scope given,
+                                      uint32_t optFlags = ncclGinOptFlagsDefault) {
     using nccl::utility::loadConst;
     size_t signalOffset = 0;
     __be32 signalKey = 0;
@@ -223,7 +243,7 @@ struct ncclGinApi_PutValue<NCCL_NET_DEVICE_GIN_GDAKI> {
     nccl::gin::gdaki::putValueImpl(
       ctx, coop, peer, dstWin, dstOff, srcVal,
       hasSignal, signalOffset, signalKey, signalOp, signalOpArg,
-      hasDescriptor, descriptor, required, given
+      hasDescriptor, descriptor, required, given, optFlags
     );
   }
 };
