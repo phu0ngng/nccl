@@ -22,10 +22,20 @@ NCCL_DEVICE_INLINE size_t windowOffsetToGinOffset(ncclWindow_t window, size_t of
   return 4096*size_t(loadConst(&window->ginOffset4K)) + offset;
 }
 
-NCCL_DEVICE_INLINE ncclGinWindow_t getGinWindow(ncclWindow_t window, int contextId) {
+NCCL_DEVICE_INLINE ncclGinWindow_t getGinWindow(ncclWindow_t window, int connectionId) {
   using nccl::utility::loadConst;
-  return loadConst(&window->ginWins[contextId]);
+  return loadConst(&window->ginWins[connectionId]);
 }
+
+NCCL_DEVICE_INLINE int teamRankToGinRank(ncclDevComm const& comm, ncclTeam team, int teamRank) {
+  int worldRank = ncclTeamRankToWorld(comm, team, teamRank);
+  if (comm.ginIsRailed) {
+    return utility::idivFast32(worldRank, comm.lsaSize, comm.lsaSize_rcp32);
+  } else {
+    return worldRank;
+  }
+}
+
 #endif // NCCL_CHECK_CUDACC
 } // namespace internal
 } // namespace gin
@@ -77,8 +87,14 @@ template<unsigned beMask>
 NCCL_DEVICE_INLINE ncclGinCtx_M<beMask> ncclGin_BackendMask<beMask>::_makeCtx() const {
   ncclGinCtx_M<beMask> ans;
   ans.backend = (ncclNetDeviceType)_ginBackend;
-  ans.rank = comm.rank;
-  ans.nRanks = comm.nRanks;
+  if (comm.ginIsRailed) {
+    ncclTeam teamRail = ncclTeamRail(comm);
+    ans.rank = teamRail.rank;
+    ans.nRanks = teamRail.nRanks;
+  } else {
+    ans.rank = comm.rank;
+    ans.nRanks = comm.nRanks;
+  }
   ans.handle = _ginHandle;
   ans.contextId = contextId;
   return ans;
@@ -88,8 +104,14 @@ NCCL_DEVICE_INLINE ncclGinCtx ncclGin_C_makeCtx(ncclGin_C* net) {
   ncclGinCtx ans;
   ans.backendMask = net->backendMask;
   ans.backend = (ncclNetDeviceType)net->_ginBackend;
-  ans.rank = net->comm.rank;
-  ans.nRanks = net->comm.nRanks;
+  if (net->comm.ginIsRailed) {
+    ncclTeam teamRail = ncclTeamRail(net->comm);
+    ans.rank = teamRail.rank;
+    ans.nRanks = teamRail.nRanks;
+  } else {
+    ans.rank = net->comm.rank;
+    ans.nRanks = net->comm.nRanks;
+  }
   ans.handle = net->_ginHandle;
   ans.contextId = net->contextId;
   return ans;
@@ -153,7 +175,7 @@ NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(ncclGin_SignalAdd a
 NCCL_DEVICE_INLINE ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_VASignalInc arg) {
   ncclGinSignalDescriptor desc{};
   desc.type = NCCL_GIN_SIGNAL_TYPE_VA;
-  desc.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.contextId);
+  desc.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.connectionId);
   desc.vaSignal.signalOffset = nccl::gin::internal::windowOffsetToGinOffset(arg.signalWindow, arg.signalOffset);
   desc.vaSignal.ncclWindow = arg.signalWindow;
   return desc;
@@ -168,7 +190,7 @@ NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(ncclGin_VASignalInc
 NCCL_DEVICE_INLINE ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_VASignalAdd arg) { 
   ncclGinSignalDescriptor desc{};
   desc.type = NCCL_GIN_SIGNAL_TYPE_VA;
-  desc.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.contextId);
+  desc.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.connectionId);
   desc.vaSignal.signalOffset = nccl::gin::internal::windowOffsetToGinOffset(arg.signalWindow, arg.signalOffset);
   desc.vaSignal.ncclWindow = arg.signalWindow;
   return desc;
@@ -211,6 +233,7 @@ NCCL_DEVICE_INLINE void ncclGinPutEx(
     uint32_t optFlags
   ) {
   using nccl::utility::loadConst;
+  using nccl::gin::internal::teamRankToGinRank;
   ncclGinCtx ctx = ncclGin_C_makeCtx(net);
   coop.sync();
   ncclGinSignalDescriptor signal{};
@@ -221,7 +244,7 @@ NCCL_DEVICE_INLINE void ncclGinPutEx(
   }
   if (coop.thread_rank() == 0) {
     ncclGinCall<ncclGinApi_Put>(ctx,
-      ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer), /*hasWins=*/true,
+      ncclCoopThread(), teamRankToGinRank(net->comm, team, peer), /*hasWins=*/true,
       loadConst(&dstWin->ginWins[net->connectionId]),
       4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
       loadConst(&srcWin->ginWins[net->connectionId]),
@@ -275,11 +298,12 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::put(
     uint32_t optFlags
   ) const {
   using nccl::utility::loadConst;
+  using nccl::gin::internal::teamRankToGinRank;
   ncclGinCtx_M<beMask> ctx = this->_makeCtx();
   coop.sync();
   if (coop.thread_rank() == 0) {
     ncclGinCall<ncclGinApi_Put>(ctx,
-      ncclCoopThread(), ncclTeamRankToWorld(this->comm, team, peer), /*hasWins=*/true,
+      ncclCoopThread(), teamRankToGinRank(this->comm, team, peer), /*hasWins=*/true,
       loadConst(&dstWin->ginWins[this->connectionId]),
       4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
       loadConst(&srcWin->ginWins[this->connectionId]),
@@ -346,10 +370,11 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
   ) const {
   static_assert(sizeof(T) <= 8, "Required: sizeof(T) <= 8");
   using nccl::utility::loadConst;
+  using nccl::gin::internal::teamRankToGinRank;
   coop.sync();
   if (coop.thread_rank() == 0) {
     ncclGinCall<ncclGinApi_PutValue>(this->_makeCtx(),
-      ncclCoopThread(), ncclTeamRankToWorld(this->comm, team, peer),
+      ncclCoopThread(), teamRankToGinRank(this->comm, team, peer),
       loadConst(&dstWin->ginWins[this->connectionId]),
       4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
       value,
@@ -376,6 +401,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValueEx(
     uint32_t optFlags
   ) {
   using nccl::utility::loadConst;
+  using nccl::gin::internal::teamRankToGinRank;
   coop.sync();
   if (coop.thread_rank() == 0) {
     ncclGinSignalDescriptor signal{};
@@ -388,7 +414,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValueEx(
     // Dispatch based on size to call with appropriate type
     if (size == 1) {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
-        ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
+        ncclCoopThread(), teamRankToGinRank(net->comm, team, peer),
         loadConst(&dstWin->ginWins[net->connectionId]),
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint8_t)value,
@@ -396,7 +422,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValueEx(
         isDescriptor, descriptor, requiredRelease, givenRelease, optFlags);
     } else if (size == 2) {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
-        ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
+        ncclCoopThread(), teamRankToGinRank(net->comm, team, peer),
         loadConst(&dstWin->ginWins[net->connectionId]),
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint16_t)value,
@@ -404,7 +430,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValueEx(
         isDescriptor, descriptor, requiredRelease, givenRelease, optFlags);
     } else if (size == 4) {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
-        ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
+        ncclCoopThread(), teamRankToGinRank(net->comm, team, peer),
         loadConst(&dstWin->ginWins[net->connectionId]),
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint32_t)value,
@@ -412,7 +438,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValueEx(
         isDescriptor, descriptor, requiredRelease, givenRelease, optFlags);
     } else {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
-        ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
+        ncclCoopThread(), teamRankToGinRank(net->comm, team, peer),
         loadConst(&dstWin->ginWins[net->connectionId]),
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         value,
@@ -472,10 +498,11 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::signal(
     cuda::thread_scope requiredRelease,
     uint32_t optFlags
   ) const {
+  using nccl::gin::internal::teamRankToGinRank;
   coop.sync();
   if (coop.thread_rank() == 0) {
     ncclGinCall<ncclGinApi_Put>(this->_makeCtx(),
-      ncclCoopThread(), ncclTeamRankToWorld(this->comm, team, peer),
+      ncclCoopThread(), teamRankToGinRank(this->comm, team, peer),
       /*hasWins=*/false, nullptr, 0, nullptr, 0, 0,
       ncclGin_getSignalDescriptor(*this, action),
       ncclGin_getSignalOp(action),
@@ -498,6 +525,7 @@ NCCL_DEVICE_INLINE void ncclGinSignalEx(
     cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
     uint32_t optFlags
   ) {
+  using nccl::gin::internal::teamRankToGinRank;
   coop.sync();
   ncclGinSignalDescriptor signal{};
   signal.type = NCCL_GIN_SIGNAL_TYPE_NONE;
@@ -508,7 +536,7 @@ NCCL_DEVICE_INLINE void ncclGinSignalEx(
   if (coop.thread_rank() == 0) {
     ncclGinCtx ctx = ncclGin_C_makeCtx(net);
     ncclGinCall<ncclGinApi_Put>(ctx,
-      ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
+      ncclCoopThread(), teamRankToGinRank(net->comm, team, peer),
       /*hasWins=*/false, nullptr, 0, nullptr, 0, 0,
       signal,
       signalOp,
@@ -791,7 +819,7 @@ template<unsigned beMask>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::resetSignal(ncclWindow_t signalWindow, size_t signalOffset) const {
   ncclGinSignalDescriptor signal;
   signal.type = NCCL_GIN_SIGNAL_TYPE_VA;
-  signal.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(signalWindow, this->contextId);
+  signal.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(signalWindow, this->connectionId);
   signal.vaSignal.signalOffset = nccl::gin::internal::windowOffsetToGinOffset(signalWindow, signalOffset);
   signal.vaSignal.ncclWindow = signalWindow;
   ncclGinCall<ncclGinApi_ResetSignal>(this->_makeCtx(), signal);

@@ -65,6 +65,7 @@ typedef struct ncclCommProperties ncclCommProperties_t;
 typedef enum {
   NCCL_GIN_CONNECTION_NONE,
   NCCL_GIN_CONNECTION_FULL,
+  NCCL_GIN_CONNECTION_RAIL,
 } ncclGinConnectionType_t;
 
 typedef enum : uint32_t {
@@ -171,6 +172,7 @@ struct ncclCommProperties {
   ncclGinType_t ginType;
   int nLsaTeams;
   bool hostRmaSupport;
+  ncclGinType_t railedGinType;
 };
 
 NCCL_EXTERN_C __host__ ncclResult_t ncclCommQueryProperties(ncclComm_t, ncclCommProperties_t*);

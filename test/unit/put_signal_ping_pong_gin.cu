@@ -188,7 +188,7 @@ int main(int argc, char* argv[]) {
     // decide.
     const int qp_depth = use_expert_control ? 128 : 0;
     const int context_count = 1;
-    NCCLCHECK(ncclGinConnectOnce(comm, context_count, qp_depth, args.gin_reliable_db, use_expert_control));
+    NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, context_count, qp_depth, args.gin_reliable_db, use_expert_control));
 
     // Allocate and register symmetric memory
     void *sendbuff, *recvbuff;

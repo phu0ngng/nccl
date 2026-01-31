@@ -369,7 +369,7 @@ static void symTeamDestroyAll(struct ncclComm* comm) {
 }
 
 static ncclResult_t symMemoryRegisterGin(struct ncclComm* comm, struct ncclDevrMemory* mem) {
-  NCCLCHECK(ncclGinConnectOnce(comm, 0)); // Will allocate the default number of contexts if needed.
+  NCCLCHECK(ncclGinConnectOnce(comm, comm->globalGinSupport, 0)); // Will allocate the default number of contexts if needed.
   NCCLCHECK(ncclGinRegister(comm, mem->primaryAddr, mem->size, mem->ginHostWins, mem->ginDevWins, mem->winFlags));
   return ncclSuccess;
 }
@@ -431,7 +431,7 @@ static ncclResult_t symMemoryObtain(
 
   // ginEnabled is set in ncclDevrCommCreateInternal, which might not be called for RMA proxy
   // so we introduce rmaProxyEnabled to track if RMA proxy is enabled
-  devr->rmaProxyEnabled = comm->nNodes > 1 && comm->config.numRmaCtx > 0 && comm->globalRmaProxySupport;
+  devr->rmaProxyEnabled = devr->nLsaTeams > 1 && comm->config.numRmaCtx > 0 && comm->globalRmaProxySupport;
   if (devr->rmaProxyEnabled) {
     NCCLCHECKGOTO(symMemoryRegisterRma(comm, mem), ret, fail_mem_space_teams);
   }
@@ -805,9 +805,9 @@ ncclResult_t ncclDevrCommCreateInternal(
   bool ginExclusiveContexts = false;
 
   // Default to NCCL_GIN_CONNECTION_NONE for backward compatibility
-  ncclGinConnectionType_t ginConnectionType = NCCL_GIN_CONNECTION_NONE;
+  ncclGinConnectionType_t requestedConnectionType = NCCL_GIN_CONNECTION_NONE;
   if (reqs->version >= NCCL_VERSION(2, 29, 3)) {
-    ginConnectionType = reqs->ginConnectionType;
+    requestedConnectionType = reqs->ginConnectionType;
   }
 
   if (reqs->ginForceEnable) {
@@ -815,20 +815,29 @@ ncclResult_t ncclDevrCommCreateInternal(
          "ginForceEnable set to true, defaulting ginConnectionType to NCCL_GIN_CONNECTION_FULL");
     INFO(NCCL_INIT,
          "ginForceEnable is being deprecated in favor of explicitly setting ginConnectionType!");
-    ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+    requestedConnectionType = NCCL_GIN_CONNECTION_FULL;
   }
 
   bool requestedGinResources = ncclGinResourcesRequested(reqs);
+  if (requestedGinResources && requestedConnectionType == NCCL_GIN_CONNECTION_NONE) {
+    WARN("User requested GIN resources but did not request GIN to be enabled!");
+    return ncclInvalidArgument;
+  }
 
-  if (requestedGinResources) {
-    if (ginConnectionType == NCCL_GIN_CONNECTION_NONE) {
-      WARN("User requested GIN resources but did not request GIN to be enabled!");
+  if (requestedConnectionType != NCCL_GIN_CONNECTION_NONE) {
+    if (comm->globalGinSupport == NCCL_GIN_CONNECTION_NONE) {
+      WARN("User requested GIN but not all ranks in the communicator support GIN");
       return ncclInvalidArgument;
     }
-
-    if (!comm->globalGinSupport) {
-      WARN("User requested GIN resources but not all ranks in the communicator support GIN");
-      return ncclInvalidArgument;
+    if (requestedConnectionType == NCCL_GIN_CONNECTION_FULL) {
+      if (comm->globalGinSupport == NCCL_GIN_CONNECTION_RAIL) {
+        WARN("User requested GIN connection type NCCL_GIN_CONNECTION_FULL but the communicator is already connected with NCCL_GIN_CONNECTION_RAIL");
+        return ncclInvalidArgument;
+      }
+      if (comm->sharedRes->ginState.ginConnectionType == NCCL_GIN_CONNECTION_RAIL) {
+        WARN("User requested GIN connection type NCCL_GIN_CONNECTION_FULL but the communicator is already connected with NCCL_GIN_CONNECTION_RAIL");
+        return ncclInvalidArgument;
+      }
     }
 
     ginActivated = !devr->ginEnabled;
@@ -845,7 +854,7 @@ ncclResult_t ncclDevrCommCreateInternal(
         ginUseReliableDB = reqs->ginUseReliableDB;
         ginUseExpertControl = reqs->ginUseExpertControl;
     }
-    NCCLCHECKGOTO(ncclGinConnectOnce(comm, reqs->ginContextCount, ginQueueDepth, ginUseReliableDB, ginUseExpertControl), ret, fail);
+    NCCLCHECKGOTO(ncclGinConnectOnce(comm, requestedConnectionType, reqs->ginContextCount, ginQueueDepth, ginUseReliableDB, ginUseExpertControl), ret, fail);
     // Register all preexisting memories with GIN. Update the windows later when
     // we have a stream.
     for (struct ncclDevrMemory* mem = devr->memHead; mem != nullptr; mem = mem->next) {
@@ -891,6 +900,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   outDevComm->lsaRank = devr->lsaSelf;
   outDevComm->lsaSize = devr->lsaSize;
   outDevComm->lsaSize_rcp32 = idivRcp32(devr->lsaSize);
+  outDevComm->ginIsRailed = requestedConnectionType == NCCL_GIN_CONNECTION_RAIL; // false if FULL or NONE
 
   NCCLCHECKGOTO(symTeamObtain(comm, lsa, /*multicast=*/reqs->lsaMultimem, &tmLsa), ret, fail);
   outDevComm->lsaMultimem.mcBasePtr = tmLsa->mcBasePtr;
@@ -1155,6 +1165,7 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   props->multimemSupport = comm->nvlsSupport;
   props->hostRmaSupport = comm->hostRmaSupport;
   NCCLCHECK(getGlobalGinType(comm, &props->ginType));
+  NCCLCHECK(getGlobalRailedGinType(comm, &props->railedGinType));
 
   // Preferring to call ncclDevrInitOnce directly instead to calling ncclTeam* functions because
   // we can propagate the result of ncclDevrInitOnce back to the caller.

@@ -1468,13 +1468,17 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   bool crossNicSupported;
   NCCLCHECKGOTO(ncclTopoPathAllDirectNVLink(comm->topo, &comm->isAllDirectNvlink), ret, fail);
   NCCLCHECKGOTO(ncclTopoCheckCrossNicSupport(&crossNicSupported), ret, fail);
-  comm->globalGinSupport = globalGinSupport && globalCrossNicSupport && !globalNicFused && globalCuMemGdrSupport;
+  comm->globalGinSupport = NCCL_GIN_CONNECTION_NONE;
+  if (globalGinSupport && !globalNicFused && globalCuMemGdrSupport) {
+    comm->globalGinSupport = globalCrossNicSupport ? NCCL_GIN_CONNECTION_FULL : NCCL_GIN_CONNECTION_RAIL;
+  }
   comm->globalRmaProxySupport = globalRmaPluginSupport && globalCrossNicSupport && !globalNicFused && globalCuMemGdrSupport;
-  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() && (comm->globalGinSupport || ncclTeamLsa(comm).nRanks == comm->nRanks);
-  comm->hostRmaSupport = comm->symmetricSupport && (comm->nNodes == 1 || comm->globalRmaProxySupport);
+  comm->symmetricSupport = comm->isAllCudaP2p && ncclParamWinEnable() && ncclCuMemEnable() &&
+    (comm->globalGinSupport != NCCL_GIN_CONNECTION_NONE || (ncclTeamLsa(comm).nRanks == comm->nRanks));
+  comm->hostRmaSupport = comm->symmetricSupport && ((ncclTeamLsa(comm).nRanks == comm->nRanks) || comm->globalRmaProxySupport);
   if (!comm->symmetricSupport) {
     INFO(NCCL_INIT, "Symmetric memory is not supported. cuMemEnable %d, "
-      "globalGinSupport %d, globalNicFused %d", ncclCuMemEnable(), comm->globalGinSupport, globalNicFused);
+      "globalGinSupport %d, globalNicFused %d cuMemGdrSupport %d", ncclCuMemEnable(), comm->globalGinSupport, globalNicFused, globalCuMemGdrSupport);
   }
   comm->devrState.bigSize = 0;
 

@@ -35,6 +35,7 @@ if(MPI_FOUND)
         devapi_data_ring2.cu
         gin_data_ring.cu
         put_gin_alltoall.cu
+        railed_gin_put.cu
     )
 endif()
 

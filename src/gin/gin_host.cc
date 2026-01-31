@@ -23,11 +23,25 @@ ncclResult_t getGlobalGinType(struct ncclComm* comm, ncclGinType_t* ginType) {
   if (comm == nullptr || ginType == nullptr) {
     return ncclInternalError;
   }
-  if (!comm->globalGinSupport) {
+
+  if (comm->globalGinSupport != NCCL_GIN_CONNECTION_FULL) {
     *ginType = NCCL_GIN_TYPE_NONE;
     return ncclSuccess;
   }
 
+  *ginType = comm->sharedRes->ginState.ginType;
+  return ncclSuccess;
+}
+
+ncclResult_t getGlobalRailedGinType(struct ncclComm* comm, ncclGinType_t* ginType) {
+  if (comm == nullptr || ginType == nullptr) {
+    return ncclInternalError;
+  }
+
+  if (comm->globalGinSupport == NCCL_GIN_CONNECTION_NONE) {
+    *ginType = NCCL_GIN_TYPE_NONE;
+    return ncclSuccess;
+  }
   *ginType = comm->sharedRes->ginState.ginType;
   return ncclSuccess;
 }
@@ -100,7 +114,7 @@ static ncclRequirementFlagOptions_t parseRequirementFlagOption(int reqFlagOption
 NCCL_PARAM(GinNconnections, "GIN_NCONNECTIONS", -2);
 NCCL_PARAM(GinNcontexts, "GIN_NCONTEXTS", -1);
 
-ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount, int reqGinQueueDepth, int reqGinUseReliableDB, int reqGinUseExpertControl) {
+ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t requestedConnectionType, int reqGinContextCount, int reqGinQueueDepth, int reqGinUseReliableDB, int reqGinUseExpertControl) {
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   if (ginState->connected) return ncclSuccess;
 
@@ -116,6 +130,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount, i
     return ncclInvalidUsage;
   }
 
+  ginState->ginConnectionType = requestedConnectionType;
   ginState->ginInstance = comm->ginContext;
 
   int ndev = 0;
@@ -178,7 +193,23 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount, i
 
   NCCLCHECKGOTO(ncclCalloc(&allHandles, (size_t)comm->nRanks * NCCL_NET_HANDLE_MAXSIZE), ret, fail);
   NCCLCHECKGOTO(ncclCalloc(&handles, comm->nRanks), ret, fail);
-  for (int r = 0; r < comm->nRanks; r++) handles[r] = allHandles + r * NCCL_NET_HANDLE_MAXSIZE;
+
+  int nGinRanks;
+  int myGinRank;
+  if (requestedConnectionType == NCCL_GIN_CONNECTION_FULL) {
+    nGinRanks = comm->nRanks;
+    myGinRank = comm->rank;
+    for (int r = 0; r < nGinRanks; r++) {
+      handles[r] = allHandles + r * NCCL_NET_HANDLE_MAXSIZE;
+    }
+  } else {
+    nGinRanks = ncclTeamRail(comm).nRanks;
+    myGinRank = ncclTeamRail(comm).rank;
+    for (int r = 0; r < nGinRanks; r++) {
+      int worldRank = ncclTeamRankToWorld(comm, ncclTeamRail(comm), r);
+      handles[r] = allHandles + worldRank * NCCL_NET_HANDLE_MAXSIZE;
+    }
+  }
 
   ginState->signalSpaceSize = ncclParamGinSignalPoolSize();
   if (ginState->signalSpaceSize < 0 || (1 << 30) <= ginState->signalSpaceSize) {
@@ -200,7 +231,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount, i
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
                   fail);
     NCCLCHECKGOTO(
-            ginState->ncclGin->connect(comm->ginContext, handles, comm->nRanks, comm->rank,
+            ginState->ncclGin->connect(comm->ginContext, handles, nGinRanks, myGinRank,
                 nContextsPerComm, ginState->ginQueueDepth, static_cast<ncclGinRequirementFlagOptions_v12_t>(ginState->ginUseReliableDB),
                 static_cast<ncclGinRequirementFlagOptions_v12_t>(ginState->ginUseExpertControl),
                 listenComm, ginState->ginComms + n),
