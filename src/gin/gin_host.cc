@@ -90,10 +90,17 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
   }
 }
 
+static ncclRequirementFlagOptions_t parseRequirementFlagOption(int reqFlagOption) {
+  if (reqFlagOption >= NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED && reqFlagOption <= NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED) {
+    return (ncclRequirementFlagOptions_t)reqFlagOption;
+  }
+  return NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
+}
+
 NCCL_PARAM(GinNconnections, "GIN_NCONNECTIONS", -2);
 NCCL_PARAM(GinNcontexts, "GIN_NCONTEXTS", -1);
 
-ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
+ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount, int reqGinQueueDepth, int reqGinUseReliableDB, int reqGinUseExpertControl) {
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   if (ginState->connected) return ncclSuccess;
 
@@ -133,6 +140,18 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
   int* ginCommCountHandles = NULL;
   int nContextsTotal;
   int nContextsPerComm;
+
+  if (reqGinQueueDepth == 0)
+    reqGinQueueDepth = ginState->ginQueueDepth;
+  ginState->ginQueueDepth = reqGinQueueDepth;
+
+  if (reqGinUseReliableDB < NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED)
+    reqGinUseReliableDB = ginState->ginUseReliableDB;
+  ginState->ginUseReliableDB = parseRequirementFlagOption(reqGinUseReliableDB);
+
+  if (reqGinUseExpertControl < NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED)
+    reqGinUseExpertControl = ginState->ginUseExpertControl;
+  ginState->ginUseExpertControl = parseRequirementFlagOption(reqGinUseExpertControl);
 
   NCCLCHECKGOTO(ncclCalloc(&ginCommCountHandles, comm->nRanks), ret, fail);
 
@@ -180,9 +199,12 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, int reqGinContextCount) {
       ret, fail);
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
                   fail);
-    NCCLCHECKGOTO(ginState->ncclGin->connect(comm->ginContext, handles, comm->nRanks, comm->rank,
-                                             nContextsPerComm, listenComm, ginState->ginComms + n),
-                  ret, fail);
+    NCCLCHECKGOTO(
+            ginState->ncclGin->connect(comm->ginContext, handles, comm->nRanks, comm->rank,
+                nContextsPerComm, ginState->ginQueueDepth, static_cast<ncclGinRequirementFlagOptions_v12_t>(ginState->ginUseReliableDB),
+                static_cast<ncclGinRequirementFlagOptions_v12_t>(ginState->ginUseExpertControl),
+                listenComm, ginState->ginComms + n),
+      ret, fail);
     if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
       NCCLCHECKGOTO(ncclGinProxyCreateContext(comm, ginState->ginComms[n],
                                               localGinDevs[n % nLocalGinDevs], ginState->signalSpaceSize,

@@ -27,6 +27,12 @@
 #endif
 #endif
 
+enum ncclGinOptFlags {
+  ncclGinOptFlagsDefault = 0,
+  ncclGinOptFlagsMaySkipCreditCheck = (1 << 0),
+  ncclGinOptFlagsAggregateRequests = (1 << 1),
+};
+
 #define NCCL_GIN_BACKEND_MASK_ALL                                               \
   (((NCCL_GIN_PROXY_ENABLE) ? 1u : 0u) << (unsigned)NCCL_NET_DEVICE_GIN_PROXY | \
    ((NCCL_GIN_GDAKI_ENABLE) ? 1u : 0u) << (unsigned)NCCL_NET_DEVICE_GIN_GDAKI)
@@ -78,7 +84,8 @@ struct ncclGinApi_Put {
                                       uint64_t signalOpArg, bool hasCounter,
                                       ncclGinCounter_t counterId, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
-                                      cuda::thread_scope required, cuda::thread_scope given);
+                                      cuda::thread_scope required, cuda::thread_scope given,
+                                      uint32_t optFlags = ncclGinOptFlagsDefault);
 };
 
 template <ncclNetDeviceType backend>
@@ -89,7 +96,8 @@ struct ncclGinApi_PutValue {
                                       ncclGinSignalDescriptor signal, ncclGinSignalOp_t signalOp,
                                       uint64_t signalOpArg, bool hasDescriptor,
                                       ncclGinDescriptorSmem* descriptor,
-                                      cuda::thread_scope required, cuda::thread_scope given);
+                                      cuda::thread_scope required, cuda::thread_scope given,
+                                      uint32_t optFlags = ncclGinOptFlagsDefault);
 };
 
 template <ncclNetDeviceType backend>

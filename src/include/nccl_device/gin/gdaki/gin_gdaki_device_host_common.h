@@ -27,6 +27,8 @@ struct ncclGinGdakiGPUContext {
 
   // Local buffer we don't consume but is required for some operations.
   __be32 sink_buffer_lkey;
+
+  bool useExpertControl;
 };
 
 struct ncclGinGdakiMemHandle {

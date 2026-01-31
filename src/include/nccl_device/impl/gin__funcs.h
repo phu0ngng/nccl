@@ -198,7 +198,7 @@ NCCL_DEVICE_INLINE constexpr ncclGinSignal_t ncclGin_getCounterId(ncclGin const&
 ////////////////////////////////////////////////////////////////////////////////
 
 #if NCCL_CHECK_CUDACC
-NCCL_DEVICE_INLINE void ncclGinPut(
+NCCL_DEVICE_INLINE void ncclGinPutEx(
     ncclGin_C* net,
     ncclTeam team, int peer,
     ncclWindow_t dstWin, size_t dstOffset,
@@ -207,7 +207,8 @@ NCCL_DEVICE_INLINE void ncclGinPut(
     bool isCounter, ncclGinCounter_t counterId,
     ncclCoopAny coop,
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
+    uint32_t optFlags
   ) {
   using nccl::utility::loadConst;
   ncclGinCtx ctx = ncclGin_C_makeCtx(net);
@@ -233,10 +234,27 @@ NCCL_DEVICE_INLINE void ncclGinPut(
       isDescriptor,
       descriptor,
       requiredRelease,
-      givenRelease
+      givenRelease,
+      optFlags
     );
   }
   coop.sync();
+}
+
+NCCL_DEVICE_INLINE void ncclGinPut(
+    ncclGin_C* net,
+    ncclTeam team, int peer,
+    ncclWindow_t dstWin, size_t dstOffset,
+    ncclWindow_t srcWin, size_t srcOffset, size_t bytes,
+    bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
+    bool isCounter, ncclGinCounter_t counterId,
+    ncclCoopAny coop,
+    bool isDescriptor, ncclGinDescriptorSmem* descriptor,
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
+  ) {
+  ncclGinPutEx(net, team, peer, dstWin, dstOffset, srcWin, srcOffset, bytes, isSignal, signalId,
+               signalOp, signalOpArg, isCounter, counterId, coop, isDescriptor, descriptor,
+               givenRelease, requiredRelease, ncclGinOptFlagsDefault);
 }
 
 template<unsigned beMask>
@@ -253,7 +271,8 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::put(
     RemoteAction remoteAction, LocalAction localAction,
     Coop coop,
     DescriptorSmem descriptor,
-    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
+    uint32_t optFlags
   ) const {
   using nccl::utility::loadConst;
   ncclGinCtx_M<beMask> ctx = this->_makeCtx();
@@ -273,7 +292,8 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::put(
       ncclGin_isDescriptor(descriptor),
       ncclGin_getDescriptor(descriptor),
       requiredRelease,
-      givenRelease
+      givenRelease,
+      optFlags
     );
   }
   coop.sync();
@@ -296,11 +316,12 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::put(
     Coop coop,
     DescriptorSmem descriptor,
     cuda::thread_scope givenRelease,
-    cuda::thread_scope requiredRelease
+    cuda::thread_scope requiredRelease,
+    uint32_t optFlags
   ) const {
   this->put(
     team, peer, dstElts.window, dstElts.offset, srcElts.window, srcElts.offset, nElts*sizeof(T),
-    remoteAction, localAction, coop, descriptor, givenRelease, requiredRelease
+    remoteAction, localAction, coop, descriptor, givenRelease, requiredRelease, optFlags
   );
 }
 #endif
@@ -320,7 +341,8 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
     Coop coop,
     DescriptorSmem descriptor,
     cuda::thread_scope givenRelease,
-    cuda::thread_scope requiredRelease
+    cuda::thread_scope requiredRelease,
+    uint32_t optFlags
   ) const {
   static_assert(sizeof(T) <= 8, "Required: sizeof(T) <= 8");
   using nccl::utility::loadConst;
@@ -336,13 +358,13 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
       ncclGin_getSignalOpArg(remoteAction),
       ncclGin_isDescriptor(descriptor),
       ncclGin_getDescriptor(descriptor),
-      requiredRelease, givenRelease
+      requiredRelease, givenRelease, optFlags
     );
   }
   coop.sync();
 }
 
-NCCL_DEVICE_INLINE void ncclGinPutValue(
+NCCL_DEVICE_INLINE void ncclGinPutValueEx(
     ncclGin_C* net,
     ncclTeam team, int peer,
     ncclWindow_t dstWin, size_t dstOffset,
@@ -350,7 +372,8 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
     bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
     ncclCoopAny coop,
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
+    uint32_t optFlags
   ) {
   using nccl::utility::loadConst;
   coop.sync();
@@ -370,7 +393,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint8_t)value,
         signal, signalOp, signalOpArg,
-        isDescriptor, descriptor, requiredRelease, givenRelease);
+        isDescriptor, descriptor, requiredRelease, givenRelease, optFlags);
     } else if (size == 2) {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
         ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
@@ -378,7 +401,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint16_t)value,
         signal, signalOp, signalOpArg,
-        isDescriptor, descriptor, requiredRelease, givenRelease);
+        isDescriptor, descriptor, requiredRelease, givenRelease, optFlags);
     } else if (size == 4) {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
         ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
@@ -386,7 +409,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         (uint32_t)value,
         signal, signalOp, signalOpArg,
-        isDescriptor, descriptor, requiredRelease, givenRelease);
+        isDescriptor, descriptor, requiredRelease, givenRelease, optFlags);
     } else {
       ncclGinCall<ncclGinApi_PutValue>(ctx,
         ncclCoopThread(), ncclTeamRankToWorld(net->comm, team, peer),
@@ -394,10 +417,25 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
         4096*size_t(loadConst(&dstWin->ginOffset4K)) + dstOffset,
         value,
         signal, signalOp, signalOpArg,
-        isDescriptor, descriptor, requiredRelease, givenRelease);
+        isDescriptor, descriptor, requiredRelease, givenRelease, optFlags);
     }
   }
   coop.sync();
+}
+
+NCCL_DEVICE_INLINE void ncclGinPutValue(
+    ncclGin_C* net,
+    ncclTeam team, int peer,
+    ncclWindow_t dstWin, size_t dstOffset,
+    uint64_t value, size_t size,
+    bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
+    ncclCoopAny coop,
+    bool isDescriptor, ncclGinDescriptorSmem* descriptor,
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
+  ) {
+  ncclGinPutValueEx(net, team, peer, dstWin, dstOffset, value, size, isSignal, signalId, signalOp,
+                    signalOpArg, coop, isDescriptor, descriptor, givenRelease, requiredRelease,
+                    ncclGinOptFlagsDefault);
 }
 #endif
 
@@ -416,10 +454,11 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
     Coop coop,
     DescriptorSmem descriptor,
     cuda::thread_scope givenRelease,
-    cuda::thread_scope requiredRelease
+    cuda::thread_scope requiredRelease,
+    uint32_t optFlags
   ) const {
   this->putValue(
-    team, peer, dst.window, dst.offset, value, remoteAction, coop, descriptor, givenRelease, requiredRelease
+    team, peer, dst.window, dst.offset, value, remoteAction, coop, descriptor, givenRelease, requiredRelease, optFlags
   );
 }
 #endif
@@ -430,7 +469,8 @@ template<typename RemoteAction, typename Coop, typename DescriptorSmem>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::signal(
     ncclTeam team, int peer, RemoteAction action, Coop coop, DescriptorSmem descriptor,
     cuda::thread_scope givenRelease,
-    cuda::thread_scope requiredRelease
+    cuda::thread_scope requiredRelease,
+    uint32_t optFlags
   ) const {
   coop.sync();
   if (coop.thread_rank() == 0) {
@@ -443,19 +483,20 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::signal(
       /*hasCounter=*/false, 0,
       ncclGin_isDescriptor(descriptor),
       ncclGin_getDescriptor(descriptor),
-      requiredRelease, givenRelease
+      requiredRelease, givenRelease, optFlags
     );
   }
   coop.sync();
 }
 
-NCCL_DEVICE_INLINE void ncclGinSignal(
+NCCL_DEVICE_INLINE void ncclGinSignalEx(
     ncclGin_C* net,
     ncclTeam team, int peer,
     bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
     ncclCoopAny coop,
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
-    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
+    uint32_t optFlags
   ) {
   coop.sync();
   ncclGinSignalDescriptor signal{};
@@ -475,10 +516,23 @@ NCCL_DEVICE_INLINE void ncclGinSignal(
       /*hasCounter=*/false, 0,
       isDescriptor,
       descriptor,
-      requiredRelease, givenRelease
+      requiredRelease, givenRelease,
+      optFlags
     );
   }
   coop.sync();
+}
+
+NCCL_DEVICE_INLINE void ncclGinSignal(
+    ncclGin_C* net,
+    ncclTeam team, int peer,
+    bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
+    ncclCoopAny coop,
+    bool isDescriptor, ncclGinDescriptorSmem* descriptor,
+    cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
+  ) {
+  ncclGinSignalEx(net, team, peer, isSignal, signalId, signalOp, signalOpArg, coop, isDescriptor,
+                  descriptor, givenRelease, requiredRelease, ncclGinOptFlagsDefault);
 }
 #endif
 
