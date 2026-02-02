@@ -66,20 +66,28 @@ NCCL_DEVICE_INLINE void ncclGinInitCommon(GinType* gin, ncclDevComm const& comm,
 }
 
 template<unsigned beMask>
-NCCL_DEVICE_INLINE ncclGin_BackendMask<beMask>::ncclGin_BackendMask(ncclDevComm const& comm, int contextIndex):
-  comm(comm) {
+NCCL_DEVICE_INLINE ncclGin_BackendMask<beMask>::ncclGin_BackendMask(
+    ncclDevComm const& comm, int contextIndex, ncclGinResourceSharingMode resourceSharingMode_):
+  comm(comm), resourceSharingMode(resourceSharingMode_) {
   ncclGinInitCommon(this, comm, contextIndex);
 }
 
 NCCL_DEVICE_INLINE ncclGin_C::ncclGin_C(
-    ncclDevComm const& comm, unsigned backendMask, int contextIndex)
-  : comm(comm), backendMask(backendMask) {
+    ncclDevComm const& comm, unsigned backendMask, int contextIndex,
+    ncclGinResourceSharingMode resourceSharingMode)
+  : comm(comm), resourceSharingMode(resourceSharingMode), backendMask(backendMask) {
   ncclGinInitCommon(this, comm, contextIndex);
 }
 
 NCCL_DEVICE_INLINE void ncclGin_C_init(
     ncclGin_C* net, unsigned backendMask, ncclDevComm const& comm, int contextIndex) {
-  ::new (net) ncclGin_C(comm, backendMask, contextIndex);
+  ::new (net) ncclGin_C(comm, backendMask, contextIndex, NCCL_GIN_RESOURCE_SHARING_GPU);
+}
+
+NCCL_DEVICE_INLINE void ncclGin_C_initWithResourceSharingMode(
+    ncclGin_C* net, unsigned backendMask, ncclDevComm const& comm, int contextIndex,
+    ncclGinResourceSharingMode resourceSharingMode) {
+  ::new (net) ncclGin_C(comm, backendMask, contextIndex, resourceSharingMode);
 }
 #endif
 
@@ -98,6 +106,7 @@ NCCL_DEVICE_INLINE ncclGinCtx_M<beMask> ncclGin_BackendMask<beMask>::_makeCtx() 
   }
   ans.handle = _ginHandle;
   ans.contextId = contextId;
+  ans.resourceSharingMode = (uint8_t)this->resourceSharingMode;
   return ans;
 }
 
@@ -115,6 +124,7 @@ NCCL_DEVICE_INLINE ncclGinCtx ncclGin_C_makeCtx(ncclGin_C* net) {
   }
   ans.handle = net->_ginHandle;
   ans.contextId = net->contextId;
+  ans.resourceSharingMode = (uint8_t)net->resourceSharingMode;
   return ans;
 }
 #endif
