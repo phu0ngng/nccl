@@ -51,8 +51,11 @@ typedef enum {
 // Local owned memory descriptor
 typedef struct ncclDynMemLocalDesc {
   // Shareable handle for P2P exports
+  // TODO: Remove the 'fd' field - POSIX FD handles are converted on-demand via proxy
+  // (ncclProxyClientGetFdBlocking), so we no longer export them upfront. Only FABRIC
+  // handles need upfront export since they can be shared directly via messaging.
   union {
-    int                          fd;            // For POSIX_FILE_DESCRIPTOR
+    int                          fd;            // For POSIX_FILE_DESCRIPTOR (unused)
     CUmemFabricHandle            fabricHandle;  // For FABRIC
   } shareableHandle;
   bool                           shareableHandleValid;

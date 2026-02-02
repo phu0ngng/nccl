@@ -98,6 +98,16 @@ ncclResult_t ncclMemManagerDestroy(struct ncclComm* comm) {
       ncclCudaHostFree(entry->cpuBackup);
     }
 
+    // Close shareable FD if valid (defensive cleanup for POSIX FD handle type)
+    if (!entry->isImportedFromPeer &&
+        entry->desc.local.shareableHandleValid &&
+        entry->handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR &&
+        entry->desc.local.shareableHandle.fd >= 0) {
+      close(entry->desc.local.shareableHandle.fd);
+      entry->desc.local.shareableHandle.fd = -1;
+      entry->desc.local.shareableHandleValid = false;
+    }
+
     // Only local entries have exportedPeerRanks (imported entries use desc.imported union member)
     if (!entry->isImportedFromPeer && entry->desc.local.exportedPeerRanks != nullptr) {
       free(entry->desc.local.exportedPeerRanks);
@@ -186,6 +196,9 @@ static ncclResult_t ncclMemTrackInternal(
     entry->desc.imported.ownerDev = ownerDev;
     entry->desc.imported.ownerPtr = ownerPtr;
   } else {
+    if (handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+      entry->desc.local.shareableHandle.fd = -1;  // avoid using 0 which is stdin
+    }
     entry->desc.local.shareableHandleValid = false;
     entry->desc.local.numExportedPeers = 0;
     entry->desc.local.exportedPeersCapacity = 0;
@@ -306,6 +319,16 @@ ncclResult_t ncclMemUntrack(struct ncclMemManager* manager, void* ptr, size_t si
         ncclCudaHostFree(entry->cpuBackup);
       }
 
+      // Close shareable FD if valid (defensive cleanup for POSIX FD handle type)
+      if (!entry->isImportedFromPeer &&
+          entry->desc.local.shareableHandleValid &&
+          entry->handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR &&
+          entry->desc.local.shareableHandle.fd >= 0) {
+        close(entry->desc.local.shareableHandle.fd);
+        entry->desc.local.shareableHandle.fd = -1;
+        entry->desc.local.shareableHandleValid = false;
+      }
+
       // Only local entries have exportedPeerRanks (imported entries use desc.imported union member)
       if (!entry->isImportedFromPeer && entry->desc.local.exportedPeerRanks != nullptr) {
         free(entry->desc.local.exportedPeerRanks);
@@ -404,11 +427,7 @@ ncclResult_t ncclDynMemMarkExportToPeer(struct ncclMemManager* manager, void* pt
   // Export shareable handle if not already valid (do this BEFORE adding peer to avoid inconsistent state)
   ncclResult_t ret = ncclSuccess;
   if (!entry->desc.local.shareableHandleValid) {
-    if (entry->handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
-      CUCHECKGOTO(cuMemExportToShareableHandle(&entry->desc.local.shareableHandle.fd, entry->handle,
-                                            CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR, 0), ret, fail);
-      entry->desc.local.shareableHandleValid = true;
-    } else if (entry->handleType == CU_MEM_HANDLE_TYPE_FABRIC) {
+    if (entry->handleType == CU_MEM_HANDLE_TYPE_FABRIC) {
       CUCHECKGOTO(cuMemExportToShareableHandle(&entry->desc.local.shareableHandle.fabricHandle, entry->handle,
                                             CU_MEM_HANDLE_TYPE_FABRIC, 0), ret, fail);
       entry->desc.local.shareableHandleValid = true;
@@ -519,8 +538,11 @@ ncclResult_t ncclCommMemSuspend(struct ncclComm* comm) {
     }
 
     // Close the shareable FD if valid (for POSIX handles)
-    if (entry->desc.local.shareableHandleValid && entry->handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
+    if (entry->desc.local.shareableHandleValid &&
+        entry->handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR &&
+        entry->desc.local.shareableHandle.fd >= 0) {
       close(entry->desc.local.shareableHandle.fd);
+      entry->desc.local.shareableHandle.fd = -1;
       entry->desc.local.shareableHandleValid = false;
     }
 
@@ -657,21 +679,8 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
       manager->cpuBackupUsage -= entry->size;
     }
 
-    // Re-export shareable handle for P2P
     entry->desc.local.shareableHandleValid = false;
-    if (entry->handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) {
-      CUresult exportRet = CUPFN(cuMemExportToShareableHandle(&entry->desc.local.shareableHandle.fd, newHandle,
-                                                               CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR, 0));
-      if (exportRet != CUDA_SUCCESS) {
-        WARN("MemManager: cuMemExportToShareableHandle (POSIX FD) failed for ptr=%p", entry->ptr);
-        CUCHECKIGNORE(cuMemUnmap((CUdeviceptr)entry->ptr, entry->size));
-        CUCHECKIGNORE(cuMemRelease(newHandle));
-        entry->handle = 0;
-        ret = ncclUnhandledCudaError;
-        goto fail;
-      }
-      entry->desc.local.shareableHandleValid = true;
-    } else if (entry->handleType == CU_MEM_HANDLE_TYPE_FABRIC) {
+    if (entry->handleType == CU_MEM_HANDLE_TYPE_FABRIC) {
       CUresult exportRet = CUPFN(cuMemExportToShareableHandle(&entry->desc.local.shareableHandle.fabricHandle, newHandle,
                                                                CU_MEM_HANDLE_TYPE_FABRIC, 0));
       if (exportRet != CUDA_SUCCESS) {
