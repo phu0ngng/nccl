@@ -484,6 +484,8 @@ setup-ipp6:
   extends:
     - .ipp6
     - .setup
+  tags:
+    - ipp6-nccl-setup
   rules:
     - !reference [.pre_submit, rules]
     - !reference [.ipp6, rules]
@@ -497,6 +499,8 @@ setup-dgxspark:
   extends:
     - .dgxspark
     - .setup
+  tags:
+    - ipp6-nccl-setup
   rules:
     - !reference [.pre_submit, rules]
     - !reference [.dgxspark, rules]
@@ -3912,6 +3916,8 @@ cleanup-bia:
     - job: perftest-single-bia
       optional: true
     - job: perftest-multi-bia
+      optional: true
+    - job: perf-regression-bia
       optional: true
   variables:
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
