@@ -10,7 +10,7 @@ static __device__ void rsAlgoHier(ncclSymkDevWorkArgs const* args, BoolTag<multi
   ncclTeam world = ncclTeamWorld(handler.comm);
   ncclTeam rail = ncclTeamRail(handler.comm);
   ncclTeam lsa = ncclTeamLsa(handler.comm);
-  ncclGin gin{handler.comm, blockIdx.x % handler.comm.ginContextCount};
+  ncclGin gin{handler.comm, int(blockIdx.x % handler.comm.ginContextCount)};
 
   using AccT = typename ncclSymkGinAccumType<Red, T>::Type;
   Red<AccT> red(handler.devWork->redOpArg);
