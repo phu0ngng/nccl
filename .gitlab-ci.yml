@@ -1583,9 +1583,9 @@ unit_tests-bia:
     ENQUEUE_TESTS_FIFO: 0
     GRAPH_TESTS_DEFAULT: 1
     # Failing on bia re-enable after https://nvbugspro.nvidia.com/bug/5680492 been fixed
-    MEMLEAK_TESTS_DEFAULT: 0
-    MEMLEAK_TESTS_NO_P2P: 0
-    MEMLEAK_TESTS_NETWORK: 0
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
     FT_TESTS_DEFAULT: 1
     FT_TESTS_NO_P2P: 1
     FT_TESTS_NETWORK: 1
