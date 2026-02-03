@@ -31,22 +31,6 @@ const char* topoPathTypeStr[] = { "LOC", "NVL", "NVB", "C2C", "PIX", "PXB", "P2C
 /******************* Graph Creation Functions *********************/
 /******************************************************************/
 
-// Get an int64 from a PCI path. For example, sys/class/pci0000:00/0000:00:02.0/0000:02:00.0/ will return 0x000002000.
-ncclResult_t pciPathToInt64(char* path, int offset, int minOffset, int64_t* id) {
-  char* str = path+offset;
-  // Remove trailing "/"
-  if (*str == '/') str--;
-  // Find next /
-  while (*str != '/') str--;
-  str++;
-  int64_t numid;
-  NCCLCHECK(busIdToInt64(str, &numid));
-  // Ignore subdevice because those should use the same PCI link so we want to merge nodes.
-  numid -= numid & 0xf;
-  *id = numid;
-  return ncclSuccess;
-}
-
 static ncclResult_t findLocalCpu(struct ncclTopoNode* node, struct ncclTopoNode** cpu, struct ncclTopoNode* from) {
   *cpu = NULL;
   if (node->type == CPU) {
