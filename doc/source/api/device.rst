@@ -42,7 +42,7 @@ ncclDevCommCreate
    to also provide a filled-in list of requirements via the *reqs* argument (see :c:type:`ncclDevCommRequirements`); the
    function will allocate any necessary resources to meet them. It is recommended to call :c:func:`ncclCommQueryProperties`
    before calling the function; the function will fail if the specified requirements are not supported. Since this is a
-   collective call, every rank in the communicator needs to participate.  If called within a group, *outDevComm* may not be 
+   collective call, every rank in the communicator needs to participate.  If called within a group, *outDevComm* may not be
    filled in until ``ncclGroupEnd()`` has completed.
 
    Note that this is a *host-side* function.
@@ -97,7 +97,7 @@ ncclDevCommRequirements
       ``ginConnectionType`` to :c:macro:`NCCL_GIN_CONNECTION_FULL`. This field is deprecated in favor of explicitly
       setting :c:member:`ginConnectionType` to the desired value. When set to ``true``, it overrides the
       ``ginConnectionType`` field. New code should use :c:member:`ginConnectionType` directly instead of this field.
-      Available since NCCL 2.28.7, deprecated since NCCL 2.29.3.
+      Available since NCCL 2.28.7, deprecated since NCCL 2.29.4.
 
    .. c:member:: ncclGinConnectionType_t ginConnectionType
 
@@ -107,7 +107,7 @@ ncclDevCommRequirements
       operations and network-based synchronization primitives. If GIN resources are requested via ``ginSignalCount``,
       ``ginCounterCount``, ``barrierCount``, or ``railGinBarrierCount`` while this field is set to
       :c:macro:`NCCL_GIN_CONNECTION_NONE`, device communicator creation will fail with :c:macro:`ncclInvalidArgument`.
-      Available since NCCL 2.29.3.
+      Available since NCCL 2.29.4.
 
       See :c:type:`ncclGinConnectionType_t` for possible values.
 
@@ -195,7 +195,7 @@ ncclGinConnectionType_t
 
    Specifies the type of GIN connection for device communicators. This enum controls whether GIN (GPU-Initiated
    Networking) resources should be allocated and what connection type to use. Used in :c:type:`ncclDevCommRequirements`
-   when creating device communicators. Available since NCCL 2.29.3.
+   when creating device communicators. Available since NCCL 2.29.4.
 
    .. c:macro:: NCCL_GIN_CONNECTION_NONE
 

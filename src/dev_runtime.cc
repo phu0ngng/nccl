@@ -806,7 +806,7 @@ ncclResult_t ncclDevrCommCreateInternal(
 
   // Default to NCCL_GIN_CONNECTION_NONE for backward compatibility
   ncclGinConnectionType_t requestedConnectionType = NCCL_GIN_CONNECTION_NONE;
-  if (reqs->version >= NCCL_VERSION(2, 29, 3)) {
+  if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
     requestedConnectionType = reqs->ginConnectionType;
   }
 
@@ -849,7 +849,7 @@ ncclResult_t ncclDevrCommCreateInternal(
     ncclRequirementFlagOptions_t ginUseReliableDB = NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
     ncclRequirementFlagOptions_t ginUseExpertControl = NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
 
-    if (reqs->version >= NCCL_VERSION(2, 29, 3)) {
+    if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
         ginQueueDepth = reqs->ginQueueDepth;
         ginUseReliableDB = reqs->ginUseReliableDB;
         ginUseExpertControl = reqs->ginUseExpertControl;
@@ -864,7 +864,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   if (devr->ginEnabled) {
     nGinConnections = comm->sharedRes->ginState.ginCommCount;
 
-    if (reqs->version >= NCCL_VERSION(2, 29, 3)) {
+    if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
       if (ncclParamGinExclusiveContexts() != -1)
         ginExclusiveContexts = ncclParamGinExclusiveContexts();
       else
@@ -1187,10 +1187,10 @@ ncclResult_t ncclDevCommCreate(
     return ncclInvalidUsage;
   }
 
-  // The current Device API is backwards-compatible down to NCCL version 2.29.3.
+  // The current Device API is backwards-compatible down to NCCL version 2.29.4.
   // The number below needs to be updated whenever Device API changes in a manner that is not *binary*-compatible with
   // custom kernels compiled using older NCCL versions (source compatibility is insufficient).
-  NCCLCHECK(validateNcclVersion(reqs->version, 22903));
+  NCCLCHECK(validateNcclVersion(reqs->version, 22904));
 
   ncclResult_t ret = ncclSuccess;
   int saveDev;
