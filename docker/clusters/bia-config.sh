@@ -125,13 +125,13 @@ function configure_test_env() {
 
     # MPI params
     export OMPI_MCA_coll_hcoll_enable=0
-    
+
     # NCCL params
     export NCCL_IB_TC=96
     export NCCL_NET_PLUGIN=none
     export NCCL_IB_ADAPTIVE_ROUTING=1
     export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_6,mlx5_7,mlx5_10,mlx5_11,mlx5_12,mlx5_13,mlx5_14,mlx5_15,mlx5_16,mlx5_17,mlx5_20,mlx5_21,mlx5_22,mlx5_23
-    
+
     # export NCCL_GDRCOPY_ENABLE=1
     # export NCCL_GDRCOPY_SYNC_ENABLE=1
 }

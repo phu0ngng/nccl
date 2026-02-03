@@ -115,7 +115,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
 #ifdef NCCL_ENABLE_NET_PROFILING
     reqs[r]->pInfo[0].nEventHandles = 0;
 #endif
-  
+
     // Every request is chunked equally across all QPs that are used to transfer
     // the request (in case of a single QP, the chunk is the size of the request).
     // The chunk size of each request determined solely by the send size and the
@@ -427,7 +427,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
   req->nreqs = n;
   if (comm->base.resiliency) {
     // When resiliency is enabled, a recv request can be served by any device.
-    for (int devIndex = 0; devIndex < comm->base.vProps.ndevs; devIndex++) { 
+    for (int devIndex = 0; devIndex < comm->base.vProps.ndevs; devIndex++) {
       req->devBases[devIndex] = ncclIbGetNetCommDevBase(&comm->base, devIndex);
     }
   }
@@ -738,7 +738,7 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
     for (int i = 0; i < r->base->vProps.ndevs; i++) {
       // Reasons to skip polling this device:
       // 1. When resiliency is enabled events counters might reach negative values.
-      // 2. On the sender side, a request might not use all devices (e.g., upon 
+      // 2. On the sender side, a request might not use all devices (e.g., upon
       //    submission of the send request, a device was not available)
       if (!r->devBases[i] || (r->events[i] == 0 && !r->base->resiliency)) {
         continue;

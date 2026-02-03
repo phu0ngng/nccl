@@ -64,7 +64,7 @@ __device__ __forceinline__ void buildGfd(ncclGinProxyGfd_t* gfd, ncclGinProxyOp_
                                          bool hasInline, size_t srcOff, ncclGinWindow_t srcHandle,
                                          size_t dstOff, ncclGinWindow_t dstHandle, size_t size,
                                          ncclGinCounter_t counterId, ncclGinSignal_t signalId,
-                                         uint64_t signalVal, ncclGinWindow_t signalWindow, 
+                                         uint64_t signalVal, ncclGinWindow_t signalWindow,
                                          size_t signalOff) {
   gfd->qword[ncclGinProxyGfdHeader].header.flag = 1;
   gfd->qword[ncclGinProxyGfdHeader].header.op = op;
@@ -160,7 +160,7 @@ NCCL_DEVICE_INLINE void put(Coop coop, ncclGinProxyGfd_t* gfd, ncclGinProxyGpuCt
     srcOff += chunkSize;
     dstOff += chunkSize;
   }
-  
+
   ncclGinSignalType putSignalType;
   uint64_t putSignalVal;
   ncclGinSignal_t putSignalId;

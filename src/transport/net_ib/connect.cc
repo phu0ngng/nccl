@@ -453,12 +453,12 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &comm->base.stats, localQp));
     INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
         __func__,
-        ibDev->portNum, 
-        commDev->base.ibDevN, 
-        ncclIbDevs[commDev->base.ibDevN].devName, 
-        ncclNIbDevs, 
-        ncclNMergedIbDevs, 
-        localQp->qp->qp_num, 
+        ibDev->portNum,
+        commDev->base.ibDevN,
+        ncclIbDevs[commDev->base.ibDevN].devName,
+        ncclNIbDevs,
+        ncclNMergedIbDevs,
+        localQp->qp->qp_num,
         (uint16_t)ncclParamIbPkey(),
         commDev->base.pd);
     localQp->devIndex = devIndex;
@@ -602,7 +602,7 @@ ib_recv_dev_list:
   int cqSize;
   cqSize = NET_IB_MAX_REQUESTS*ncclParamIbQpsPerConn();
   for (int i = 0; i < comm->base.vProps.ndevs; i++) {
-    int ibDevN = comm->base.vProps.devs[i];  
+    int ibDevN = comm->base.vProps.devs[i];
     if (comm->base.resiliency) {
       ncclIbResiliencyDataCqSizeGet(comm->base.resiliency, i, &cqSize);
     }
@@ -849,12 +849,12 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, localQp));
     INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
         __func__,
-        ibDev->portNum, 
-        rCommDev->base.ibDevN, 
-        ncclIbDevs[rCommDev->base.ibDevN].devName, 
-        ncclNIbDevs, 
-        ncclNMergedIbDevs, 
-        localQp->qp->qp_num, 
+        ibDev->portNum,
+        rCommDev->base.ibDevN,
+        ncclIbDevs[rCommDev->base.ibDevN].devName,
+        ncclNIbDevs,
+        ncclNMergedIbDevs,
+        localQp->qp->qp_num,
         (uint16_t)ncclParamIbPkey(),
         rCommDev->base.pd);
 
@@ -898,12 +898,12 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
       NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp));
       INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
           __func__,
-          ibDev->portNum, 
-          rCommDev->base.ibDevN, 
-          ncclIbDevs[rCommDev->base.ibDevN].devName, 
-          ncclNIbDevs, 
-          ncclNMergedIbDevs, 
-          rCommDev->gpuFlush.qp.qp->qp_num, 
+          ibDev->portNum,
+          rCommDev->base.ibDevN,
+          ncclIbDevs[rCommDev->base.ibDevN].devName,
+          ncclNIbDevs,
+          ncclNMergedIbDevs,
+          rCommDev->gpuFlush.qp.qp->qp_num,
           (uint16_t)ncclParamIbPkey(),
           rCommDev->base.pd);
       struct ncclIbDevInfo devInfo;
@@ -927,7 +927,7 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
 
 ncclResult_t ncclIbReceiverPrePostReceiveWorkRequests(struct ncclIbRecvComm* recvComm) {
   uint32_t nRecvWorkRequestsPerQp = NET_IB_MAX_REQUESTS;
-  int nqps = recvComm->base.nqps; 
+  int nqps = recvComm->base.nqps;
   for (int i = 0; i < nqps; i++) {
     struct ncclIbQp* dataQp = &recvComm->base.qps[i];
     if (recvComm->base.resiliency) {
@@ -1048,7 +1048,7 @@ ib_recv:
   struct ncclIbConnectionMetadata meta;
   memset(&meta, 0, sizeof(meta));
   // Receiver's CQ size needs to accomodate receive requests that can generate
-  // up to 2 completions (one for the CTS message and one for the completion 
+  // up to 2 completions (one for the CTS message and one for the completion
   // of a receive request) per QP, in the worst case.
   int cqSize;
   cqSize = 2*NET_IB_MAX_REQUESTS*ncclParamIbQpsPerConn();
@@ -1094,7 +1094,7 @@ ib_recv:
     rComm->base.remDevs[i].remoteGid.global.interface_id  = rComm->base.remDevs[i].gid.global.interface_id;
     rComm->base.remDevs[i].remoteGid.global.subnet_prefix = rComm->base.remDevs[i].gid.global.subnet_prefix;
   }
-  
+
   // Determine if Flush is enabled for this Comm. Must be done before creating
   // QPs. If Flush is enabled, extra QPs will be created for Flush operations.
   rComm->flushEnabled = ((ncclIbGdrSupport() == ncclSuccess || ncclIbDmaBufSupport(lComm->dev) == ncclSuccess)

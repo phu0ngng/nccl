@@ -31,7 +31,7 @@
 namespace nccl {
 namespace gin {
 namespace gdaki {
-  
+
 
 template <typename Coop>
 NCCL_DEVICE_INLINE static void putImpl(ncclGinCtx ctx, Coop coop, int peer, bool hasWins,

@@ -20,7 +20,7 @@ enum ncclIbResiliencyDevState {
 };
 
 struct ncclIbResiliencyDev {
-  enum ncclIbResiliencyDevState state; 
+  enum ncclIbResiliencyDevState state;
   // CQ to get CQEs on the sender side for probing operations.
   // Receiver side is not expected to get any CQEs on the this CQ but Verbs
   // requires a CQ to be associated with a QP.
@@ -35,7 +35,7 @@ struct ncclIbResiliencyDev {
 
 struct ncclIbResiliency {
   // Back pointer to the base communicator.
-  struct ncclIbNetCommBase* baseComm; 
+  struct ncclIbNetCommBase* baseComm;
 
   struct ncclIbResiliencyDev devs[NCCL_IB_MAX_DEVS_PER_NIC];
   int ndevs;
@@ -64,12 +64,12 @@ struct ncclIbResiliency {
 enum ncclIbResiliencyRequestSendState {
   // The request just encountered an error and waiting for probing to be
   // posted.
-  ncclIbResiliencyRequestStatePending = 0,       
+  ncclIbResiliencyRequestStatePending = 0,
   // A probe was posted for this request.
-  ncclIbResiliencyRequestStateProbePosted,   
+  ncclIbResiliencyRequestStateProbePosted,
   // The probe was completed. After this state, the request is either completed
   // or replayed.
-  ncclIbResiliencyRequestStateProbeCompleted 
+  ncclIbResiliencyRequestStateProbeCompleted
 };
 
 struct ncclIbResiliencyErrorInfo {
@@ -91,7 +91,7 @@ struct ncclIbResiliencyRequestSend {
   // It might be that an old CQE that belongs to a request that was already
   // handled is still in the CQ. To safely ignore such old CQEs, this ever
   // incrementing "generation ID" used to make sure that the CQE belongs to
-  // a request that was already handled so the CQE can be ignored.  
+  // a request that was already handled so the CQE can be ignored.
   uint64_t id;
 };
 
@@ -184,10 +184,10 @@ ncclResult_t ncclIbResiliencyReceiverQpsCreateToRts(struct ncclIbResiliency* res
 
 ncclResult_t ncclIbResiliencyClose(struct ncclIbResiliency* resCtx);
 
-// Allow resiliency context to reuse the memory registration 
+// Allow resiliency context to reuse the memory registration
 // Receiver side registers the memory for completion records and sends the
 // memory info to the sender side. This function should be called on the sender
-// side to allow the resiliency context to access the completion records 
+// side to allow the resiliency context to access the completion records
 // structure on the receiver side.
 ncclResult_t ncclIbResiliencyRemoteCompletionRecordsSet(struct ncclIbResiliency* resCtx, uint32_t cmplsRecordsRkey, uint64_t cmplsRecordsAddr, uint devIndex);
 

@@ -70,7 +70,7 @@ static ncclResult_t registrationCheck(struct ncclInfo* info) {
   NCCLCHECKGOTO(ncclCalloc(&bufInfo, comm->nRanks * 2), ret, fail);
   NCCLCHECKGOTO(ncclDevrFindWindow(comm, info->sendbuff, &sendWin), ret, fail);
   NCCLCHECKGOTO(ncclDevrFindWindow(comm, info->recvbuff, &recvWin), ret, fail);
-  
+
   if (sendWin && (sendWin->winFlags & NCCL_WIN_COLL_SYMMETRIC)) {
     bufInfo[myInfoIdx].isSymRegistered = true;
     bufInfo[myInfoIdx].bigOffset = sendWin->bigOffset;
@@ -117,7 +117,7 @@ static ncclResult_t registrationCheck(struct ncclInfo* info) {
       }
     }
   }
-  
+
   if (info->coll == ncclFuncAllGather || info->coll == ncclFuncAllReduce || info->coll == ncclFuncAlltoAll || info->coll == ncclFuncScatter) {
     if (cmpBufInfo[1].isSymRegistered) {
       if (recvWinMismatch) {

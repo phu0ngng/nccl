@@ -429,7 +429,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
       int maxBlocks;
       size_t bufSize;
       getRequirements_gin(comm, &maxBlocks, &bufSize);
-      
+
       maxBlocks = std::max(maxBlocks, comm->config.minCTAs);
       maxBlocks = std::min(maxBlocks, comm->config.maxCTAs);
       if (ncclParamSymCTAs() >= 1) maxBlocks = ncclParamSymCTAs();

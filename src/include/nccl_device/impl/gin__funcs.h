@@ -140,7 +140,7 @@ NCCL_DEVICE_INLINE constexpr ncclGinSignalOp_t ncclGin_getSignalOp(RemoteAction)
 template<typename RemoteAction>
 NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(RemoteAction) { return 0; }
 template<typename RemoteAction>
-NCCL_DEVICE_INLINE constexpr ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const&, RemoteAction) { 
+NCCL_DEVICE_INLINE constexpr ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const&, RemoteAction) {
   ncclGinSignalDescriptor desc{};
   desc.type = NCCL_GIN_SIGNAL_TYPE_NONE;
   return desc;
@@ -159,7 +159,7 @@ NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(ncclGin_SignalInc) 
 #endif
 
 #if NCCL_CHECK_CUDACC
-NCCL_DEVICE_INLINE constexpr ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_SignalAdd arg) { 
+NCCL_DEVICE_INLINE constexpr ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_SignalAdd arg) {
   ncclGinSignalDescriptor desc{};
   desc.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
   desc.indexedSignal.signalId = net.comm.ginSignalBase + arg.signal;
@@ -187,7 +187,7 @@ NCCL_DEVICE_INLINE constexpr uint64_t ncclGin_getSignalOpArg(ncclGin_VASignalInc
 #endif
 
 #if NCCL_CHECK_CUDACC
-NCCL_DEVICE_INLINE ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_VASignalAdd arg) { 
+NCCL_DEVICE_INLINE ncclGinSignalDescriptor ncclGin_getSignalDescriptor(ncclGin const& net, ncclGin_VASignalAdd arg) {
   ncclGinSignalDescriptor desc{};
   desc.type = NCCL_GIN_SIGNAL_TYPE_VA;
   desc.vaSignal.signalWindow = nccl::gin::internal::getGinWindow(arg.signalWindow, net.connectionId);
