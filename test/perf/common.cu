@@ -112,10 +112,12 @@ int tuning;
 int memory_report = 0;
 static int deviceImpl = 0;
 static int hostRmaImpl = 0;
+static int suspend_test = 0;
 
 int deviceCtaCount = 16; // Default number of CTAs for device implementation
 
 static const char* testSkipReason = NULL;
+void setTestSkipReason(const char* reason) { testSkipReason = reason; }
 
 // Report average iteration time: (0=RANK0,1=AVG,2=MIN,3=MAX)
 static int average = 1;
@@ -138,7 +140,7 @@ static int ctaPolicy = -1;
 static int per_coll_perf = 0;
 static int simulate = 0;
 static int nIdsUser = NCCL_CONFIG_UNDEF_INT; // number of ncclUniqueIds created
-static int minCudaArch = 1<<30;
+int minCudaArch = 1<<30;  // Minimum CUDA architecture across all GPUs in the test
 
 static char* replay_file = NULL;
 
@@ -212,6 +214,48 @@ static void outputFileFinalize(output_file_type_t output_file_type) {
   default:
     break;
   }
+}
+
+void initConfig(ncclConfig_t* config) {
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
+  *config = NCCL_CONFIG_INITIALIZER;
+  config->blocking = commblocking;
+  config->splitShare = split_share;
+  config->trafficClass = trafficClass;
+  config->commName = "perftest";
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
+  if (ctaPolicy >= 0)
+    config->CTAPolicy = ctaPolicy;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
+  config->nvlinkCentricSched = 1;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+  if (cudaGraphLaunches >= 1)
+    config->graphUsageMode = 1;
+  else
+    config->graphUsageMode = 0;
+#endif
+#endif
+#endif
+#endif
+}
+
+// Initializes NCCL communicators.
+testResult_t initComms(ncclComm_t* comms, int nComms, int firstRank, int nRanks, int* cudaDevs, int nIds, ncclUniqueId* ncclId, ncclConfig_t* config) {
+NCCLCHECK(ncclGroupStart());
+  for (int i=0; i<nComms; i++) {
+    CUDACHECK(cudaSetDevice(cudaDevs[i]));
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2, 23, 0)
+    if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
+      NCCLCHECK(ncclCommInitRankScalable(comms + i, nRanks, firstRank + i, nIds, ncclId, config));
+    } else {
+      NCCLCHECK(ncclCommInitRankConfig(comms + i, nRanks, *ncclId, firstRank + i, config));
+    }
+#else
+    NCCLCHECK(ncclCommInitRankConfig(comms + i, nRanks, *ncclId, firstRank + i, config));
+#endif
+  }
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nComms);
+  return testSuccess;
 }
 
 // Side computation constants
@@ -639,8 +683,8 @@ testResult_t startColl(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
         void* recvwin = args->recvRegHandles[id][i];
         CUDACHECK(cudaSetDevice(args->gpus[i]));
         TESTCHECK(args->collTest->runColl(
-              (void*)(in_place ? recvwin : sendwin), shift + in_place ? args->sendInplaceOffset[id][i] * rank : 0,
-              (void*)recvwin, shift + in_place ? args->recvInplaceOffset[id][i] * rank : 0,
+              (void*)(in_place ? recvwin : sendwin), shift + (in_place ? args->sendInplaceOffset[id][i] * rank : 0),
+              (void*)recvwin, shift + (in_place ? args->recvInplaceOffset[id][i] * rank : 0),
               count, type, op, root, (ncclComm_t)(args->devComms[id]+i), args->streams[i], deviceImpl));
 #endif
       }
@@ -666,6 +710,44 @@ testResult_t completeColl(struct threadArgs* args) {
   if (blocking_coll) return testSuccess;
 
   TESTCHECK(testStreamSynchronize(args->nGpus, args->streams, args->comms, args->commNum));
+  return testSuccess;
+}
+
+testResult_t testCommSuspendResume(struct threadArgs* args) {
+  if (args->thread == 0 && args->globalProc == 0) {
+    printf("# Testing communicator suspend/resume (memory)...\n");
+  }
+
+  Barrier(args);
+
+  timer suspendTimer;
+  // Suspend memory for all communicators and GPUs
+  for (int id = 0; id < args->commNum; ++id) {
+    for (int i = 0; i < args->nGpus; i++) {
+      NCCLCHECK(ncclCommSuspend(args->comms[id][i], NCCL_SUSPEND_MEM));
+    }
+  }
+  double suspendTime = suspendTimer.elapsed() * 1000.0;
+
+  if (args->thread == 0 && args->globalProc == 0) {
+    printf("# Communicator suspend completed in %.2f ms\n", suspendTime);
+  }
+
+  Barrier(args);
+
+  timer resumeTimer;
+  // Resume memory for all communicators and GPUs
+  for (int id = 0; id < args->commNum; ++id) {
+    for (int i = 0; i < args->nGpus; i++) {
+      NCCLCHECK(ncclCommResume(args->comms[id][i]));
+    }
+  }
+  double resumeTime = resumeTimer.elapsed() * 1000.0;
+
+  if (args->thread == 0 && args->globalProc == 0) {
+    printf("# Communicator resume completed in %.2f ms\n", resumeTime);
+  }
+
   return testSuccess;
 }
 
@@ -974,6 +1056,11 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
     TESTCHECK(completeColl(args));
   }
 
+  // Test dynamic memory suspend/resume
+  if (suspend_test) {
+    TESTCHECK(testCommSuspendResume(args));
+  }
+
   // Benchmark
   long repeat = run_cycles;
   do {
@@ -1045,41 +1132,11 @@ testResult_t threadInit(struct threadArgs* args) {
     getGPUMemoryInfo(nullptr, &initFreeGpuMem[g]);
   }
 
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
-  ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-  config.blocking = commblocking;
-  config.splitShare = split_share;
-  config.trafficClass = trafficClass;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-  if (ctaPolicy >= 0)
-    config.CTAPolicy = ctaPolicy;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-  config.nvlinkCentricSched = 1;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
-  if (cudaGraphLaunches >= 1)
-    config.graphUsageMode = 1;
-  else
-    config.graphUsageMode = 0;
-#endif
-#endif
-#endif
-#endif
+  const int firstRank = args->globalProc*args->nThreads*args->nGpus + args->thread*args->nGpus;
+  ncclConfig_t config;
+  initConfig(&config);
+  TESTCHECK(initComms(globalComms, args->nGpus, firstRank, nranks, args->gpus, args->nIds, args->ncclId, &config));
 
-  NCCLCHECK(ncclGroupStart());
-  for (int i=0; i<args->nGpus; i++) {
-    int rank = args->globalProc*args->nThreads*args->nGpus + args->thread*args->nGpus + i;
-    CUDACHECK(cudaSetDevice(args->gpus[i]));
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,23,0)
-    if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
-      NCCLCHECK(ncclCommInitRankScalable(globalComms + i, nranks, rank, args->nIds, args->ncclId, &config));
-    } else {
-      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
-    }
-#else
-    NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *args->ncclId, rank, &config));
-#endif
-  }
-  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, args->nGpus);
   /* split comm if required. */
   if (splitMaskEnv) {
     /* split based on split mask */
@@ -1207,6 +1264,17 @@ testResult_t threadInit(struct threadArgs* args) {
     getGPUMemoryInfo(nullptr, &initFreeGpuMem[g + args->nGpus*2]);
     args->bufferMemory[args->thread] = std::max(args->bufferMemory[args->thread], initFreeGpuMem[g + args->nGpus] - initFreeGpuMem[g + args->nGpus*2]);
   }
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+  /* Check host RMA support when -H flag is used */
+  if (hostRmaImpl) {
+    ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+    NCCLCHECK(ncclCommQueryProperties(args->comms[0][0], &commProperties));
+    if (!commProperties.hostRmaSupport) {
+      setTestSkipReason("Host RMA is not supported on this system");
+      return testSkipped;
+    }
+  }
+#endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   /* Create device communicators based on test-specific requirements */
   if (deviceImpl) {
@@ -1222,7 +1290,7 @@ testResult_t threadInit(struct threadArgs* args) {
       testSkipReason = "Device API is not supported on this system\n";
       return testSkipped;
     }
-    TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
+    TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, args->comms[0][0], &testSkipReason));
 #else
     ncclDevCommRequirements reqs = {};
     if (!ncclTestEngine.getDevCommRequirements ||
@@ -1465,6 +1533,7 @@ int main(int argc, char* argv[], char **envp) {
     {"device_cta_count", required_argument, 0, 'V'},
     {"memory", required_argument, 0, 'M'},
     {"host_rma_implementation", no_argument, 0, 'H'},
+    {"suspend_test", required_argument, 0, 'Z'},
 
     {"help", no_argument, 0, 'h'},
     {}
@@ -1472,7 +1541,7 @@ int main(int argc, char* argv[], char **envp) {
 
   while(1) {
     int c;
-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:M:H", longopts, &longindex);
+    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:c:p:o:d:r:I:z:y:k:h:l:T:G:C:O:u:a:B:F:L:s:S:P:R:A:E:J:q:U:x:D:V:M:H:Z:", longopts, &longindex);
 
     if (c == -1)
       break;
@@ -1681,6 +1750,9 @@ int main(int argc, char* argv[], char **envp) {
           return -1;
         }
         break;
+      case 'Z':
+        suspend_test = (int)strtol(optarg, NULL, 0);
+        break;
       case 'h':
       default:
         if (c != 'h') printf("invalid option '%c'\n", c);
@@ -1733,6 +1805,7 @@ int main(int argc, char* argv[], char **envp) {
             "[-V,--device_cta_count <number> set number of CTAs for device implementation (default: 16)] \n\t"
             "[-H,--host_rma_implementation enable Host RMA API implementations (requires -R 2)] \n\t"
             "[-M,--memory_report <0/1> enable memory usage report (default: 0)] \n\t"
+            "[-Z,--suspend_test <0/1> test communicator suspend/resume (memory) after warmup (default: 0)] \n\t"
 
             "[-h,--help]\n",
           basename(argv[0]));
@@ -2010,40 +2083,9 @@ testResult_t run() {
       getGPUMemoryInfo(nullptr, &initFreeGpuMem[g]);
     }
     //if parallel init is not selected, use main thread to initialize NCCL
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
-    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
-    config.blocking = commblocking;
-    config.splitShare = split_share;
-    config.trafficClass = trafficClass;
-    config.commName = "perftest";
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,27,0)
-    if (ctaPolicy >= 0)
-      config.CTAPolicy = ctaPolicy;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-    config.nvlinkCentricSched = 1;
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
-    if (cudaGraphLaunches >= 1)
-      config.graphUsageMode = 1;
-    else
-      config.graphUsageMode = 0;
-#endif
-#endif
-#endif
-#endif
-    NCCLCHECK(ncclGroupStart());
-    for (int i=0; i<nGpus*nThreads; i++) {
-      CUDACHECK(cudaSetDevice(gpus[i]));
-#if NCCL_VERSION_CODE >= NCCL_VERSION(2, 23, 0)
-      if (nIdsUser != NCCL_CONFIG_UNDEF_INT) {
-        NCCLCHECK(ncclCommInitRankScalable(globalComms + i, nranks, proc * nThreads * nGpus + i, nIds, ncclId, &config));
-      } else {
-        NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *ncclId, proc * nThreads * nGpus + i, &config));
-      }
-#else
-      NCCLCHECK(ncclCommInitRankConfig(globalComms + i, nranks, *ncclId, proc * nThreads * nGpus + i, &config));
-#endif
-    }
-    NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), globalComms, nGpus * nThreads);
+    ncclConfig_t config;
+    initConfig(&config);
+    TESTCHECK(initComms(globalComms, nGpus*nThreads, proc * nThreads * nGpus, nranks, gpus, nIds, ncclId, &config));
     /* split comm if required. */
     if (splitMaskEnv) {
       /* split based on split mask */
@@ -2176,6 +2218,17 @@ testResult_t run() {
         bufferMemory[t] = std::max(bufferMemory[t], initFreeGpuMem[g + nGpus] - initFreeGpuMem[g + nGpus*2]);
       }
     }
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
+    /* Check host RMA support when -H flag is used */
+    if (hostRmaImpl) {
+      ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+      NCCLCHECK(ncclCommQueryProperties(comms[0][0], &commProperties));
+      if (!commProperties.hostRmaSupport) {
+        setTestSkipReason("Host RMA is not supported on this system");
+        return testSkipped;
+      }
+    }
+#endif
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
     /* Create device communicators based on test-specific requirements */
     if (deviceImpl) {
@@ -2191,11 +2244,11 @@ testResult_t run() {
         testSkipReason = "Device API is not supported on this system\n";
         return testSkipped;
       }
-      TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, &commProperties, &testSkipReason));
+      TESTCHECK(ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs, comms[0][0], &testSkipReason));
 #else
       ncclDevCommRequirements reqs = {};
       if (!ncclTestEngine.getDevCommRequirements ||
-        !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
+          !ncclTestEngine.getDevCommRequirements(deviceImpl, &reqs)) {
         fprintf(stderr, "Device implementation %d is not supported by this test\n", deviceImpl);
         return testNotImplemented;
       }

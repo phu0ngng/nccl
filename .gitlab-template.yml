@@ -27,6 +27,15 @@
   variables:
     GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}" # Use a unique path for each job to avoid conflicts
 
+.dgxspark:
+  rules:
+    - if: $RUN_ON_DGXSPARK == "1"
+      when: always
+  tags:
+    - ipp6-nccl
+  variables:
+    GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}" # Use a unique path for each job to avoid conflicts
+
 .eos:
   rules:
     - if: $RUN_ON_EOS == "1"
@@ -123,6 +132,8 @@
   variables:
     GIT_STRATEGY: none
   script:
+    # Delete existing dir in case of a retry
+    - rm -rf $INSTALL_DIR
     - mkdir -p $INSTALL_DIR
     - cp -r $BUILD_DIR $INSTALL_DIR/build
 
@@ -134,4 +145,12 @@
   variables:
     GIT_STRATEGY: none
   script:
+    # Delete current pipeline's install directory
     - rm -rf $INSTALL_DIR
+    # For nightly pipelines, also delete any install directories older than 14 days in the parent directory
+    - |
+      if [[ $TRIGGER_PIPELINE == "nightly" ]]; then
+        INSTALL_PARENT_DIR=$(dirname $INSTALL_DIR)
+        echo "Deleting install directories older than 14 days in $INSTALL_PARENT_DIR"
+        find $INSTALL_PARENT_DIR -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} \; 2>/dev/null || true
+      fi

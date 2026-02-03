@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
   ncclDevComm dcomm;
   { ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
     reqs.barrierCount = 16;
-    reqs.ginForceEnable = true;
+    reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
     NCCLCHECK(ncclDevCommCreate(comm, &reqs, &dcomm));
   }
   // run kernel

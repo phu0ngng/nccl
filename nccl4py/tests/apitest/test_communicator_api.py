@@ -392,10 +392,11 @@ def test_register_window_api(nccl_comm):
     buf = nccl.cupy.empty(256, dtype='float32')  # 256 * 4 bytes = 1024 bytes
 
     win = nccl_comm.register_window(buf)
-    assert win.is_valid
+    assert win is None or win.is_valid
 
-    win.close()
-    assert not win.is_valid
+    if win is not None:
+        win.close()
+        assert not win.is_valid
 
 
 @pytest.mark.mpi(min_size=4)

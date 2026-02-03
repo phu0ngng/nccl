@@ -33,6 +33,7 @@ set(API_TEST_SOURCES
     ncclCommQueryProperties_test.cu
     ncclCommGrow_test.cu
     ncclDevCommCreate_test.cu
+    ncclCommWindowRegister_test.cu
 )
 
 # Plugin source files
@@ -197,3 +198,5 @@ add_custom_target(test_apitest
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/test/apitest
     COMMENT "Running apitest"
 )
+
+add_subdirectory(device_api)

@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
   ncclDevComm dcomm;
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = 2*BlockPerRank;
-  reqs.ginForceEnable = true;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
 
   ncclDevResourceHandle hBuf;
   ncclDevResourceRequirements bufReq = {};

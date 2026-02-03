@@ -37,3 +37,100 @@ TEST_F(ncclDevCommCreate_test, uninitialized_reqs) {
   ncclDevCommRequirements reqs;
   ASSERT_EQ(ncclInvalidUsage, ncclDevCommCreate(comm, &reqs, &dcomm));
 }
+
+TEST_F(ncclDevCommCreate_test, invalid_gin_connection_type) {
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comm, &props));
+
+  ncclDevComm_t dcomm;
+
+  auto validateResult = [&](ncclDevCommRequirements* reqs) {
+    if (props.deviceApiSupport) {
+      ASSERT_EQ(ncclInvalidArgument, ncclDevCommCreate(comm, reqs, &dcomm));
+    } else {
+      ASSERT_EQ(ncclInvalidUsage, ncclDevCommCreate(comm, reqs, &dcomm));
+    }
+  };
+
+  {
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.ginSignalCount = 1;
+    validateResult(&reqs);
+  }
+
+  {
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.ginCounterCount = 1;
+    validateResult(&reqs);
+  }
+
+  {
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.railGinBarrierCount = 1;
+    validateResult(&reqs);
+  }
+
+  {
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.barrierCount = 1;
+    validateResult(&reqs);
+  }
+}
+
+void validateBasedOnDeviceApiSupport(ncclComm_t& comm, const ncclCommProperties_t& props,
+                                     ncclDevCommRequirements* reqs) {
+  ncclDevComm_t dcomm;
+  if (props.ginType != NCCL_GIN_TYPE_NONE) {
+    ASSERT_EQ(ncclSuccess, ncclDevCommCreate(comm, reqs, &dcomm));
+    ASSERT_EQ(ncclSuccess, ncclDevCommDestroy(comm, &dcomm));
+  } else {
+    if (props.deviceApiSupport) {
+      ASSERT_EQ(ncclInvalidArgument, ncclDevCommCreate(comm, reqs, &dcomm));
+    } else {
+      ASSERT_EQ(ncclInvalidUsage, ncclDevCommCreate(comm, reqs, &dcomm));
+    }
+  }
+}
+
+TEST_F(ncclDevCommCreate_test, valid_gin_connection_type) {
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comm, &props));
+
+  {
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.ginSignalCount = 1;
+    reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+    validateBasedOnDeviceApiSupport(comm, props, &reqs);
+  }
+
+  {
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.ginCounterCount = 1;
+    reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+    validateBasedOnDeviceApiSupport(comm, props, &reqs);
+  }
+
+  {
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.railGinBarrierCount = 1;
+    reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+    validateBasedOnDeviceApiSupport(comm, props, &reqs);
+  }
+
+  {
+    ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.barrierCount = 1;
+    reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+    validateBasedOnDeviceApiSupport(comm, props, &reqs);
+  }
+}
+
+TEST_F(ncclDevCommCreate_test, gin_force_enable) {
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comm, &props));
+
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginSignalCount = 1;
+  reqs.ginForceEnable = true;
+  validateBasedOnDeviceApiSupport(comm, props, &reqs);
+}

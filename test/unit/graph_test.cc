@@ -97,7 +97,8 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
     else (*warnings)++;
 
     if (dumpDiff) {
-      char line[1024];
+      // Line: margin + 2 columns, ~8 chars per GPU total. Min 256 for headers.
+      char* line = (char*)malloc(std::max(ngpus * 8, 256));
       int margin = 37;
       int width = std::max(3*ngpus+10, 40);
 
@@ -135,6 +136,7 @@ void compareGraphs(struct ncclTopoGraph* ref, struct ncclTopoGraph* out, int ngp
         }
         printf("%s\n", line);
       }
+      free(line);
     }
   }
 }
@@ -692,7 +694,9 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
     printf(" %s %5ld ms\n", (err || warn) ? "FAILED" : "  WARN", computeTime[TIME_TOTL] / 1000);
     printf("Dumping computed graph to %s\n", dumpFile);
   } else if (computeTime[TIME_TOTL] > 1e6) {
-    bool tooSlow = computeTime[TIME_TOTL] > 5e6;
+    const char* timeoutStr = getenv("NCCL_GRAPH_TEST_WARN_TIMEOUT");
+    double tooSlowThreshold = (timeoutStr ? atof(timeoutStr) : 5.0) * 1e6;
+    bool tooSlow = computeTime[TIME_TOTL] > tooSlowThreshold;
     printf("   %sSLOW %5ld ms (ring: %ld ms + tree: %ld ms + collNet: %ld ms + nvls %ld ms)\n", tooSlow ? "TOO " : "",\
            computeTime[TIME_TOTL] / 1000, \
            computeTime[TIME_RING] / 1000, computeTime[TIME_TREE] / 1000, computeTime[TIME_CNET] / 1000, computeTime[TIME_NVLS] / 1000);

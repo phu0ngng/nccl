@@ -1,3 +1,4 @@
+#include <cstring>
 #include "ncclCommon_test.cuh"
 #include "nccl.h"
 #include "nccl_device.h"
@@ -77,7 +78,7 @@ TEST_F(ncclCommQueryProperties_test, test_gin_support) {
   }
 
   ncclDevCommRequirements ginReqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
-  ginReqs.ginForceEnable = true;
+  ginReqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
 
   // We expect devComm creation to fail if we request gin resource but gin is not supported
   bool expectSuccess = props.ginType != NCCL_GIN_TYPE_NONE;
@@ -92,6 +93,26 @@ TEST_F(ncclCommQueryProperties_test, test_gin_support) {
   }
 }
 
+TEST_F(ncclCommQueryProperties_test, test_railed_gin_support) {
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comms[0], &props));
+  if (!props.deviceApiSupport) {
+    return;
+  }
+
+  ncclDevCommRequirements ginReqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  ginReqs.ginConnectionType = NCCL_GIN_CONNECTION_RAIL;
+  bool expectSuccess = props.railedGinType != NCCL_GIN_TYPE_NONE;
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(ncclSuccess, ncclDevCommCreate(comms[i], &ginReqs, &devComms[i]));
+  }
+  if (expectSuccess) {
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  } else {
+    ASSERT_NE(ncclSuccess, ncclGroupEnd());
+  }
+}
 
 TEST_F(ncclCommQueryProperties_test, test_multimem_support) {
   ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
@@ -116,3 +137,20 @@ TEST_F(ncclCommQueryProperties_test, test_multimem_support) {
   }
 }
 
+TEST_F(ncclCommQueryProperties_test, test_topology_information) {
+  char* shmDisable = getenv("NCCL_SHM_DISABLE");
+  char* p2pDisable = getenv("NCCL_P2P_DISABLE");
+  if ((shmDisable && strcmp(shmDisable, "1") == 0) ||
+      (p2pDisable && strcmp(p2pDisable, "1") == 0)) {
+    return;
+  }
+
+  for (size_t idx = 0; idx < nVis; idx++) {
+    ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+    ASSERT_EQ(ncclSuccess, ncclCommQueryProperties(comms[idx], &props));
+    if (!props.deviceApiSupport) {
+      return;
+    }
+    ASSERT_EQ(props.nLsaTeams, 1);
+  }
+}

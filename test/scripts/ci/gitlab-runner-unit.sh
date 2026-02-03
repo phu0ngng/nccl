@@ -27,6 +27,11 @@ function run_gin_test_suite() {
   run_command "gin_test_${backend_label}_devapi_uts" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_uts" ""
 }
 
+function run_multinode_gin_test_suite() {
+  local backend_label="$1"
+  run_command "gin_test_${backend_label}_railed_gin_put" "$RUN_MODE" ${NGPUS} "--oversubscribe" "" "$NCCL_HOME/test/unit/railed_gin_put" ""
+}
+
 function run_rma_test_suite() {
   local ppn="$1"  # processes per node
   # Ring: ppn × NNODES GPUs
@@ -152,6 +157,13 @@ else
   echo -e "Disabled Intrusive Map TESTS test\n\n"
 fi
 
+if [[ ${DYN_MEM_TESTS} -eq 1 ]] ; then
+  run_command "dyn_mem_test_default" "$RUN_MODE" ${NGPUS} "--oversubscribe" "" "$NCCL_HOME/test/unit/dyn_mem_test" "-c 268435456"
+  run_command "dyn_mem_test_symmetric" "$RUN_MODE" ${NGPUS} "--oversubscribe" "" "$NCCL_HOME/test/unit/dyn_mem_test" "-w -c 268435456"
+else
+  echo -e "Disabled Dynamic Memory Manager TESTS test\n\n"
+fi
+
 export NCCL_DEBUG=$NCCL_DEBUG_OLD
 if [[ ${PLUGIN_TESTS_NET_TUNER} -eq 1 ]] ; then
   run_command "make_mixed_tuner" "CMD" 1 "" "" "make" "-C ext-mixed/example test"
@@ -200,23 +212,39 @@ if [[ "${GIN_TESTS}" -eq 1 ]] ; then
   export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$MPI_HOME/lib:$NCCL_HOME/lib:$LD_LIBRARY_PATH"
   export DOCA_GPUNETIO_LITE_DEBUG=0
 
-  run_gin_test_suite "auto"
+  if [[ ${NNODES} -eq 1 ]]; then
+    run_gin_test_suite "auto"
+  else
+    run_multinode_gin_test_suite "auto" ${NGPUS}
+  fi
 
   if [[ "${GIN_TESTS_GDAKI_GPU_SM}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=3
     export NCCL_GIN_GDAKI_NIC_HANDLER=2
-    run_gin_test_suite "gdaki_gpusm"
+    if [[ ${NNODES} -eq 1 ]]; then
+      run_gin_test_suite "gdaki_gpusm"
+    else
+      run_multinode_gin_test_suite "gdaki_gpusm" ${NGPUS}
+    fi
   fi
 
   if [[ "${GIN_TESTS_GDAKI_CPU_ASSISTED}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=3
     export NCCL_GIN_GDAKI_NIC_HANDLER=1
-    run_gin_test_suite "gdaki_cpuassisted"
+    if [[ ${NNODES} -eq 1 ]]; then
+      run_gin_test_suite "gdaki_cpuassisted"
+    else
+      run_multinode_gin_test_suite "gdaki_cpuassisted" ${NGPUS}
+    fi
   fi
 
   if [[ "${GIN_TESTS_CPU_PROXY}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=2
-    run_gin_test_suite "cpuproxy"
+    if [[ ${NNODES} -eq 1 ]]; then
+      run_gin_test_suite "cpuproxy"
+    else
+      run_multinode_gin_test_suite "cpuproxy" ${NGPUS}
+    fi
   fi
 else
   echo -e "Disabled GIN_TESTS test\n\n"

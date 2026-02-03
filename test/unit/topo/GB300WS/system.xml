@@ -4,7 +4,7 @@
       <pci busid="0009:03:00.0" class="0x080100" vendor="0x15b3" device="0x2100" subsystem_vendor="0x15b3" subsystem_device="0x21d5" link_speed="64.0 GT/s PCIe" link_width="16">
         <nic>
           <net name="mlx5_0_dma" dev="0" latency="0" speed="400000" port="1" guid="0xbd51f90003666d3c" maxconn="131072" gdr="1"/>
-          <net name="mlx5_1_dma" dev="1" latency="0" speed="400000" port="1" guid="0xbd51f90003666d3c" maxconn="131072" gdr="1"/>
+          <net name="mlx5_1_dma" dev="1" latency="0" speed="400000" port="2" guid="0xbd51f90003666d3c" maxconn="131072" gdr="1"/>
         </nic>
       </pci>
       <pci busid="0009:04:00.0" class="0x060400" vendor="0x15b3" device="0x197c" subsystem_vendor="0x0000" subsystem_device="0x0000" link_speed="64.0 GT/s PCIe" link_width="16">

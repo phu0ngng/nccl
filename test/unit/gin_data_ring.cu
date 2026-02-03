@@ -54,9 +54,12 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
     __syncthreads();
     if (t==0) {
       // Send signal upstream to indicate free space
+      ncclGinSignalDescriptor signal;
+      signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+      signal.indexedSignal.signalId = sigFree0 + up_block;
       ncclGinCall<ncclGinApi_Put>(ctx, ncclCoopThread(), up_rank,
         /*hasData=*/false, nullptr, 0, nullptr, 0, 0,
-        /*hasSignal=*/true, sigFree0 + up_block, ncclGinSignalInc, 0,
+        signal, ncclGinSignalInc, 0,
         /*hasCounter=*/false, 0,
         /*hasDescriptor=*/false, nullptr,
         cuda::thread_scope_thread, cuda::thread_scope_thread);
@@ -73,11 +76,14 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
     nChunks = (BufElts + chunkElts-1)/chunkElts;
     #pragma unroll 1
     for (int i=t; i < nChunks; i += tn) {
+      ncclGinSignalDescriptor signal;
+      signal.type = NCCL_GIN_SIGNAL_TYPE_INDEXED;
+      signal.indexedSignal.signalId = sigData0 + down_block;
       ncclGinCall<ncclGinApi_Put>(ctx, ncclCoopThread(), down_rank, /*hasData=*/true,
         win, (recvOff + down_block*BufElts + i*chunkElts)*sizeof(int),
         win, (sendOff + blockIdx.x*BufElts + i*chunkElts)*sizeof(int),
         min(chunkElts, BufElts - i*chunkElts)*sizeof(int),
-        /*hasSignal=*/true, sigData0 + down_block, ncclGinSignalInc, 0,
+        signal, ncclGinSignalInc, 0,
         /*hasCounter=*/false, 0,
         /*hasDescriptor=*/false, nullptr,
         cuda::thread_scope_thread, cuda::thread_scope_device);
@@ -126,7 +132,7 @@ int main(int argc, char** argv) {
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = 1;
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
-  NCCLCHECK(ncclGinConnectOnce(comm));
+  NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, 1));
   uint32_t sigs;
   NCCLCHECK(ncclGinAllocSignalsCounters(comm, 2*BlockPerRank, &sigs, 0, nullptr));
   assert(sigs == 0);
@@ -139,15 +145,16 @@ int main(int argc, char** argv) {
   CUDACHECK(cudaDeviceSynchronize());
 
   // Get window handles
-  void* hostWins[NCCL_GIN_MAX_CONTEXTS];
-  ncclGinWindow_t devWins[NCCL_GIN_MAX_CONTEXTS];
-  NCCLCHECK(ncclGinRegister(comm, buf, bufSize, hostWins, devWins));
+  void* hostWins[NCCL_GIN_MAX_CONNECTIONS];
+  ncclGinWindow_t devWins[NCCL_GIN_MAX_CONNECTIONS];
+  NCCLCHECK(ncclGinRegister(comm, buf, bufSize, hostWins, devWins, /*winFlags=*/0));
   // Get GIN resources
   ncclGinCtx_M<-1u> gctx;
   gctx.backend = comm->sharedRes->ginState.ginDevHandles[0]->netDeviceType;
   gctx.handle = comm->sharedRes->ginState.ginDevHandles[0]->handle;
   gctx.rank = rank;
   gctx.nRanks = nRanks;
+  gctx.contextId = 0;
 
   // run kernel
   printf("[MPI Rank %d] Starting kernel\n", rank);

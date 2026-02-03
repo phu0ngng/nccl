@@ -774,14 +774,16 @@ The values allowed are 64, 128, 256 and 512.
 
 NCCL_MAX_NCHANNELS
 ------------------
-(NCCL_MAX_NRINGS since 2.0.5, NCCL_MAX_NCHANNELS since 2.5.0)
+(NCCL_MAX_NRINGS since 2.0.5, NCCL_MAX_NCHANNELS since 2.5.0, deprecated in 2.17)
 
 The ``NCCL_MAX_NCHANNELS`` variable limits the number of channels NCCL can use. Reducing the number of channels also reduces the
 number of CUDA blocks used for communication, hence the impact on GPU computing resources.
 
 The old ``NCCL_MAX_NRINGS`` variable (used until 2.4) still works as an alias in newer versions but is ignored if ``NCCL_MAX_NCHANNELS`` is set.
 
-This environment variable has been superseded by ``NCCL_MAX_CTAS`` which can also be set programmatically using :ref:`ncclCommInitRankConfig`.
+This environment variable has been deprecated in favor of ``NCCL_MAX_CTAS``
+which can also be set programmatically using :ref:`ncclCommInitRankConfig`. If
+both are set then the most restrictive value (i.e., the lower value) is used.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -789,7 +791,7 @@ Any value above or equal to 1.
 
 NCCL_MIN_NCHANNELS
 ------------------
-(NCCL_MIN_NRINGS since 2.2.0, NCCL_MIN_NCHANNELS since 2.5.0)
+(NCCL_MIN_NRINGS since 2.2.0, NCCL_MIN_NCHANNELS since 2.5.0, deprecated in 2.17)
 
 The ``NCCL_MIN_NCHANNELS`` variable controls the minimum number of channels you want NCCL to use.
 Increasing the number of channels also increases the number of
@@ -799,7 +801,12 @@ This is especially useful when using aggregated collectives on platforms where N
 
 The old ``NCCL_MIN_NRINGS`` variable (used until 2.4) still works as an alias in newer versions, but is ignored if ``NCCL_MIN_NCHANNELS`` is set.
 
-This environment variable has been superseded by ``NCCL_MIN_CTAS`` which can also be set programmatically using :ref:`ncclCommInitRankConfig`.
+Note that for small message sizes it is possible that NCCL will use fewer
+channels than NCCL_MIN_CTAS.
+
+This environment variable has been deprecated in favor of ``NCCL_MIN_CTAS``
+which can also be set programmatically using :ref:`ncclCommInitRankConfig`. If
+both are set then the most restrictive value (i.e., the higher value) is used.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -819,16 +826,31 @@ The default is 0, set to 1 to disable checks.
 
 NCCL_CHECK_POINTERS
 -------------------
-(since 2.2.12)
+(since 2.2.12, deprecated in 2.29.4)
 
 The ``NCCL_CHECK_POINTERS`` variable enables checking of the CUDA memory pointers on each collective call.
 Checks are useful during development but can increase the latency.
+Replaced by ``NCCL_CHECK_MODE=DEBUG_LOCAL`` and may be removed in future versions.
 
 Values accepted
 ^^^^^^^^^^^^^^^
 The default is 0, set to 1 to enable checking.
 
 Setting to 1 restores the original behavior of NCCL prior to 2.2.12.
+
+NCCL_CHECK_MODE
+---------------
+(since 2.29.4)
+
+The ``NCCL_CHECK_MODE`` variable controls the mode of checking the input arguments.
+
+Values accepted
+^^^^^^^^^^^^^^^
+- DEFAULT: don't check the input arguments.
+- DEBUG_LOCAL: check the input args/pointers locally.
+- DEBUG_GLOBAL: check the input args globally such as symmetric buffer check, etc.
+
+The default is ``DEFAULT``.
 
 NCCL_LAUNCH_MODE
 ----------------
@@ -1388,17 +1410,54 @@ NCCL_MAX_CTAS
 -------------
 (since 2.17)
 
-Set the maximal number of CTAs the NCCL should use. Setting this environment variable will override the ``maxCTAs`` configuration in all communicators (see :ref:`ncclconfig`); if not set (undefined), maximal CTAs will be determined by the configuration; if not passing configuration, NCCL will automatically choose the best value.
+Set the maximum number of CTAs that NCCL should use. Setting this environment
+variable will override the ``maxCTAs`` configuration in all communicators (see
+:ref:`ncclconfig`); if not set (undefined), maximum CTAs will be determined by
+the configuration; if not passing configuration, NCCL will automatically choose
+the best value.
+
+Increasing the number of CTAs will consume more GPU resources but possibly
+increase throughput. NCCL normally prioritizes throughput, but on
+platforms where reaching the peak requires a lot of GPU resources, the
+maximum number of CTAs may be capped by default. This is expected to
+provide more balanced performance for GPU-intensive applications, but
+it is obviously workload-dependent; in particular, for benchmarking
+purposes, manually boosting the maximum may result in improved
+throughput numbers.
+
+This environment variable is the replacement for the deprecated environment
+variable ``NCCL_MAX_NCHANNELS``. If both are set then the most restrictive
+value (i.e., the lower value) is used.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Set to a positive integer value up to 64 (32 prior to 2.25). Default value is undefined.
+Set to a positive integer value up to 64 (32 prior to 2.25). Default value is
+undefined.
 
 NCCL_MIN_CTAS
 -------------
 (since 2.17)
 
-Set the minimal number of CTAs the NCCL should use. Setting this environment variable will override the ``minCTAs`` configuration in all communicators (see :ref:`ncclconfig`); if not set (undefined), minimal CTAs will be determined by the configuration; if not passing configuration, NCCL will automatically choose the best value.
+Set the minimum number of CTAs that NCCL should use. Setting this environment
+variable will override the ``minCTAs`` configuration in all communicators (see
+:ref:`ncclconfig`); if not set (undefined), minimum CTAs will be determined by
+the configuration; if not passing configuration, NCCL will automatically choose
+the best value.
+
+For each collective operation, NCCL estimates the optimal number of CTAs to
+use. Should this estimate be overly conservative, increasing the minimum number
+of CTAs can override it. Note that using more CTAs than necessary can actually
+decrease the performance, especially for smaller messages, so caution is
+advised (for very small messages, it is possible that NCCL will use fewer
+channels than NCCL_MIN_CTAS).
+
+This parameter is commonly used during benchmarking and testing to force a
+particular number of channels to be used; the minimum and maximum should be set
+to the same value.
+
+This environment variable is the replacement for the deprecated environment
+variable ``NCCL_MIN_NCHANNELS``. If both are set then the most restrictive
+value (i.e., the higher value) is used.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -1549,3 +1608,15 @@ This is enabled by default, but having it enabled can prevent intra-node GPU com
 Values accepted
 ^^^^^^^^^^^^^^^
 Default is 1 (enabled); set to 0 to disable.
+
+
+NCCL_SYM_GIN_KERNELS_ENABLE
+---------------------------
+(since 2.29U1)
+
+Enable use of symmetric kernels that use GIN for network communication. These
+kernels do not yet honor ncclCommAbort() so they are currently disabled by default.
+
+Values accepted
+^^^^^^^^^^^^^^^
+Default is 0 (disabled); set to 1 to enable

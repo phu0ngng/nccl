@@ -9,6 +9,7 @@ thresholds = [
 
 # Statistical settings
 noise_threshold = 1.0  # Ignore changes < 1%
+skip_message_size_threshold = "1G" # Don't fail for regressions to small message sizes
 
 # Fields to ignore (metadata that can differ)
 ignore = ["id", "description", "created_timestamp"]

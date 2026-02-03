@@ -86,7 +86,8 @@
 
             # Extended init
             'ncclCommInitRankScalable': {
-                "pyargs": {"commIds": "NSEQ",},
+                # commIds is a pointer to a contiguous array of ncclUniqueId.
+                "pyargs": {"commIds": ("BYTES", None),},
                 "return": "newcomm",
                 "except?": 0,
             },

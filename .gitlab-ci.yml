@@ -72,9 +72,10 @@ variables:
   # CW-DFW cluster
   CW_DFW_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
   CW_DFW_CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
-  CW_DFW_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner"
+  CW_DFW_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
   # DRACO-OCI cluster
   DRACO_OCI_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
+  DRACO_OCI_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
   # PRE-NYX cluster
   PRE_NYX_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
   PRE_NYX_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
@@ -93,6 +94,7 @@ variables:
   BIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   # IPP6 cluster
   IPP6_INSTALL_DIR: "/storage/gitlab-runner/nccl/install/${CI_PIPELINE_ID}"
+  DGXSPARK_INSTALL_DIR: "/storage/gitlab-runner/nccl/install-arm/${CI_PIPELINE_ID}"
 
 default:
   # set all jobs to interruptible by default
@@ -194,6 +196,30 @@ build-docs:
       - build/pkg/doc/*.zip
     expire_in: 48 hrs
 
+build-dgxspark:
+  stage: build
+  extends:
+    - .dgxspark
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_DGXSPARK == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1" || $RUN_NCCL4PY_CI == "1" || $RUN_PROFILER_TESTS == "1" || $RUN_INSPECTOR_TESTS == "1"))
+      when: always
+    - when: never
+  variables:
+    INSTALL_DIR: $DGXSPARK_INSTALL_DIR
+    BUILD_DIR: build
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    NVCC_GENCODE: "-gencode=arch=compute_121,code=sm_121"
+  script:
+    - source $CLUSTER_CONFIG
+    - eval "$(get_build_command_bm)"
+  retry: 2
+  artifacts:
+    paths:
+      - build
+    exclude:
+      - build/**/*.o
+    expire_in: 48 hrs
+
 build-pre-tyche:
   stage: build
   rules:
@@ -288,7 +314,7 @@ build-cmake:
   retry: 2
   script:
     # TODO (kartiki) - Invoke this via docker/make.sh
-    - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh --ci-build
+    - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh --ci-build --enable-ccache
   allow_failure: false
 
 ##
@@ -446,7 +472,7 @@ setup-draco-oci:
     - .draco-oci
     - .setup
   rules:
-    - !reference [.pre_submit, rules]
+    - !reference [.nightly, rules]
     - !reference [.draco-oci, rules]
   needs: ["build-ipp6"]
   variables:
@@ -458,6 +484,8 @@ setup-ipp6:
   extends:
     - .ipp6
     - .setup
+  tags:
+    - ipp6-nccl-setup
   rules:
     - !reference [.pre_submit, rules]
     - !reference [.ipp6, rules]
@@ -465,6 +493,21 @@ setup-ipp6:
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${IPP6_INSTALL_DIR}"
+
+setup-dgxspark:
+  stage: setup
+  extends:
+    - .dgxspark
+    - .setup
+  tags:
+    - ipp6-nccl-setup
+  rules:
+    - !reference [.pre_submit, rules]
+    - !reference [.dgxspark, rules]
+  needs: ["build-dgxspark"]
+  variables:
+    BUILD_DIR: "build"
+    INSTALL_DIR: "${DGXSPARK_INSTALL_DIR}"
 
 ##
 ## Stage: setup - Finish!
@@ -593,6 +636,7 @@ unit_tests-P100:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
+    DYN_MEM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -646,6 +690,7 @@ unit_tests-P40:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
+    DYN_MEM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -699,6 +744,7 @@ unit_tests-GP100:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Node lacks NVLS support.
+    DYN_MEM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
@@ -755,6 +801,7 @@ unit_tests-eos:
     REGISTER_MIX_A2A_AR_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
+    DYN_MEM_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
@@ -815,6 +862,7 @@ unit_tests-cw-dfw:
     REGISTER_MEMCPY_TESTS: 1
     DEVICE_ID_TESTS: 1
     HASHTABLE_TESTS: 1
+    DYN_MEM_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
@@ -870,6 +918,7 @@ unit_tests-AWS_H100_EFA:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # NVLS support is unstable so we disable it.
+    DYN_MEM_TESTS: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -939,9 +988,10 @@ unit_tests-draco_oci:
   tags:
     - draco-oci-iad
   variables:
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 10
     NNODES: 1
     NGPUS: 8
@@ -970,6 +1020,7 @@ unit_tests-draco_oci:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Cluster lacks NVLS support.
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1030,6 +1081,7 @@ unit_tests-pre-nyx:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
     RMA_SINGLE_NODE_TESTS: 1
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1089,6 +1141,7 @@ unit_tests-pre-tyche:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
     RMA_SINGLE_NODE_TESTS: 1
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1108,8 +1161,8 @@ unit_tests-ipp6-a40:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - setup-ipp6
@@ -1202,8 +1255,66 @@ unit_tests-ipp6-a100:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
+    DYN_MEM_TESTS: 1
   script:
     - ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit_tests-dgxspark:
+  stage: unit_tests
+  extends:
+    - .dgxspark
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+      when: always
+    - when: never
+  needs:
+    - setup-dgxspark
+  variables:
+    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    SLURM_TIME: 20
+    SLURM_PARTITION: dgxspark
+    NNODES: 1
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "SRUN_MPI"
+    DEVICE_ID_TESTS: 1
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 0
+    MEMLEAK_TESTS_NO_P2P: 0
+    MEMLEAK_TESTS_NETWORK: 0
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    MULTI_SEGMENT_REG_TESTS: 0
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
+    REGISTER_MIX_A2A_AR_TESTS: 1
+    HASHTABLE_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 0
+    LSA_POINTER_TESTS: 0
+    LSA_MULTIMEM_POINTER_TESTS: 0
+    CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1430,6 +1541,7 @@ unit_tests-theia:
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
     RMA_SINGLE_NODE_TESTS: 1
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1471,9 +1583,9 @@ unit_tests-bia:
     ENQUEUE_TESTS_FIFO: 0
     GRAPH_TESTS_DEFAULT: 1
     # Failing on bia re-enable after https://nvbugspro.nvidia.com/bug/5680492 been fixed
-    MEMLEAK_TESTS_DEFAULT: 0
-    MEMLEAK_TESTS_NO_P2P: 0
-    MEMLEAK_TESTS_NETWORK: 0
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
     FT_TESTS_DEFAULT: 1
     FT_TESTS_NO_P2P: 1
     FT_TESTS_NETWORK: 1
@@ -1483,6 +1595,7 @@ unit_tests-bia:
     PLUGIN_LOADING_TESTS: 1
     REGISTER_MEMCPY_TESTS: 1
     DEVAPI_WINDOW_STRESS_TESTS: 1
+    DYN_MEM_TESTS: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
@@ -1822,7 +1935,7 @@ apitest-eos:
     INSTALL_DIR: "${EOS_INSTALL_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 30
+    SLURM_TIME: 40
     RUN_MODE: "MPI"
     NNODES: 1
     NGPUS: 8
@@ -1835,6 +1948,7 @@ apitest-eos:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1965,6 +2079,7 @@ apitest-draco_oci:
     - draco-oci-iad
   variables:
     INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 20
@@ -2077,8 +2192,8 @@ apitest-ipp6-a40:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
+    #   when: always
     - when: never
   needs:
     - setup-ipp6
@@ -2135,6 +2250,44 @@ apitest-ipp6-a100:
     API_TESTS_NETWORK: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+apitest-dgxspark:
+  stage: api_tests
+  extends:
+    - .dgxspark
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
+      when: always
+    - when: never
+  needs:
+    - setup-dgxspark
+  variables:
+    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: dgxspark
+    NNODES: 1
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "SRUN_MPI"
+    API_TESTS_DEFAULT: 1
+    API_TESTS_NO_P2P: 1
+    API_TESTS_NETWORK: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:api::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2355,8 +2508,8 @@ perftest-GP100:
 nic-fusion-A40:
   stage: perf_tests_single
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    #   when: always
     - when: never
   needs: ["build-ipp6"]
   tags:
@@ -2395,7 +2548,7 @@ perftest-single-eos:
     ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 40
+    SLURM_TIME: 60
     RUN_MODE: "MPI"
     NNODES: 1
     GRAPH: 0
@@ -2526,6 +2679,7 @@ perftest_single-draco_oci:
     - draco-oci-iad
   variables:
     INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 30
@@ -2642,8 +2796,8 @@ perftest-single-ipp6-a40:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    #   when: always
     - when: never
   needs:
     - setup-ipp6
@@ -2700,6 +2854,44 @@ perftest-single-ipp6-a100:
     MAX: "1G"
   script:
     - ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-single-dgxspark:
+  stage: perf_tests_single
+  extends:
+    - .dgxspark
+  rules:
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    #   when: always
+    - when: never
+  needs:
+    - setup-dgxspark
+  variables:
+    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: dgxspark
+    NNODES: 1
+    GRAPH: 0
+    NGPUS: 1
+    NP: 1
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "SRUN_MPI"
+    SYMMETRIC: 1
+    MAX: "1G"
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:perftest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2974,6 +3166,7 @@ perftest_multi-draco_oci:
     - draco-oci-iad
   variables:
     INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 30
@@ -3092,8 +3285,8 @@ perftest-multi-ipp6-a40:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
-      when: always
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    #   when: always
     - when: never
   needs:
     - setup-ipp6
@@ -3258,7 +3451,8 @@ perftest-multi-bia:
 perf-regression-eos:
   stage: perf_regression
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
+    # TODO: re-enable when fixed issue with ibv_reg_mr_iova2
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
     #   when: always
     - when: never
   needs:
@@ -3276,6 +3470,8 @@ perf-regression-eos:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
@@ -3287,7 +3483,7 @@ perf-regression-eos:
 perf-regression-cw-dfw:
   stage: perf_regression
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_REGRESSION == "1")
+    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_REGRESSION == "1")
     #   when: always
     - when: never
   needs:
@@ -3305,6 +3501,8 @@ perf-regression-cw-dfw:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
@@ -3333,6 +3531,8 @@ perf-regression-pre-tyche:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
@@ -3344,7 +3544,7 @@ perf-regression-pre-tyche:
 perf-regression-theia:
   stage: perf_regression
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_REGRESSION == "1")
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_REGRESSION == "1")
       when: always
     - when: never
   needs: ["setup-theia"]
@@ -3361,6 +3561,38 @@ perf-regression-theia:
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
+  artifacts:
+    when: always
+    paths:
+      - "perfregression/results.csv"
+      - "perfregression/report.pdf"
+      - "perfregression/*.xlsx"
+    expire_in: 48 hrs
+
+perf-regression-bia:
+  stage: perf_regression
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_REGRESSION == "1")
+      when: always
+    - when: never
+  needs: ["setup-bia"]
+  tags:
+    - bia
+  variables:
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
+    SLURM_TIME: 60
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+  script:
+    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+  allow_failure:
+    exit_codes: [33]
   artifacts:
     when: always
     paths:
@@ -3546,7 +3778,7 @@ cleanup-draco-oci:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/
       when: on_success
     - if: $RUN_ON_DRACO_OCI == "1"
       when: on_success
@@ -3685,6 +3917,8 @@ cleanup-bia:
       optional: true
     - job: perftest-multi-bia
       optional: true
+    - job: perf-regression-bia
+      optional: true
   variables:
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
 
@@ -3729,6 +3963,26 @@ cleanup-ipp6:
       optional: true
   variables:
     INSTALL_DIR: "${IPP6_INSTALL_DIR}"
+
+cleanup-dgxspark:
+  extends:
+    - .cleanup
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+      when: on_success
+    - if: $RUN_ON_DGXSPARK == "1"
+      when: on_success
+  tags:
+    - ipp6-nccl
+  needs:
+    - job: setup-dgxspark
+      optional: true
+    - job: unit_tests-dgxspark
+      optional: true
+    - job: apitest-dgxspark
+      optional: true
+    - job: perftest-single-dgxspark
+      optional: true
 
 ##
 ## Stage: cleanup - Finish!

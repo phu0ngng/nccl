@@ -2,7 +2,7 @@
 <!-- use this template to share the details of your feature. Non-commented sections are strongly encouraged -->
 
 ## Abstract
-This feature introduces new AG and RS kernels to extend acceleration of symmetric collectives over the GIN network.
+This feature introduces new kernels to extend acceleration of symmetric collectives over the GIN network.
 
 <!-- ============================================================================================-->
 <details>
@@ -50,11 +50,11 @@ bandwidth component.
 ## ReduceScatter Design
 
 A large possible disparity between NIC and NVL bw necessitates hierarchical
-algos for medium sized collectives. But with bandwidth parity flat algorithms
-will deliver best performance. FP8 complicates this because it has to be
+algos for medium sized collectives. FP8 complicates this because it has to be
 accumulated as fp16. A hierarchical algo needs to send accumulators on the wire
 so if the bandwidth of the network is at least half of NVL then hierarchy could
-hurt more than help.
+hurt more than help. For now we are instead sending FP8's on the wire, this means
+there is a single truncation of the accumulator in the middle of the summation.
 
 Hierarchical algos will use alltoalls at both levels.
 
@@ -62,7 +62,7 @@ Barriers will be used over LSA, but not over the network. Signalling puts
 will do all the syncs necessary for the network.
 
 The algorithms:
-* ReduceScatter_GinFlat{_LDMC}
+* AllGather_GinHier{_STMC}
 * ReduceScatter_GinHier{_LDMC}
 
 ### Inbox buffers:
@@ -72,11 +72,30 @@ excess of the latency-bandwidth product. Dedicated buffers per peer would
 require unbounded memory, so instead we will use a rolling set of N buffers
 where in the quiesced state your N immediate upstream neighbors start with a
 credit, and as data is consumed the credit is forwarded to the next peer in the
-alltoall pattern who needs that buffer. This will allow the kernel to
-immediately start doing PUTs without waiting for initial handshake. Since the
-credit delivery pattern is fixed, these buffers cannot be shared between
-different algos, meaning that the flat and hierarchical algos will need
-distinct sets of buffers.
+alltoall pattern who needs that buffer. That means at the end of an alltoall,
+clear-to-send signals will be sent to the first peers of the next round. This
+will allow the kernel to immediately start doing PUTs without waiting for
+initial handshake.
+
+We also will support peer-buffer resizing for the case where we only receive
+a single chunk per peer so we can maximize the number of peers that can be
+sending us a chunk per step (num peer bufs = total size / chunk size).
+Resizing requires a bit of ceremony because we are sending clear-to-send signals
+eagerly assuming the next round uses the same buffer size as this round. So to
+resize the peer-buffers:
+1. We must have consumed all buffers from previous round.
+2. Wait for and ignore all incoming signals which are trying to eagerly give
+   us clear-to-send credits for this round (under assumption of same buffer size)
+   before resetting to zero.
+3. Send new clear-to-send signals for the first round of peers.
+
+This requires we double buffer signals so the resetting of (2) doesn't race with
+arrival from new clear-to-sends of (3). Additionally we don't want (3) waiting
+for (2) because that prolongs the time until our peers get our clear-to-send's,
+so we actually fire off (3) first and then wait in (2). This creates another
+race on signals since (3) is sending signals before acknowledging that all peers
+have completed previous round so its possible we could be racing with their (2)
+reset from previous round. For this reason we quadruple buffer the signals.
 
 ### Outbox buffers:
 
@@ -84,14 +103,6 @@ Hierarchical reductions need a temporary buffer for generating intermediate
 results to be sent to network. This can be a simple circular buffer with GIN
 counters such that the previous kernel can still have data in flight without
 blocking the next kernel from grabbing buffer space.
-
-### NVLS + FP8
-
-Currently NVLS LDGMC cannot return a wider fp type as output than it is given
-as input. This means that for fp8 we have to convert the input to a wide type
-and stage that in video memory and use that to source the LDGMC. This hurts
-latency and requires bandwidth from the SM to do the copy. Pursuing LDGMC for
-fp8 is deemed out of scope.
 
 ## Allgather Design
 

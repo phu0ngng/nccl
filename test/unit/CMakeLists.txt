@@ -25,6 +25,7 @@ if(MPI_FOUND)
         ft_abort_rank0.cu
         lsa_pointer_test.cu
         lsa_multimem_pointer_test.cu
+        dyn_mem_test.cu
         put_signal_ping_pong_gin.cu
         put_signal_ping_pong_rma.cu
         devapi_uts.cu
@@ -34,6 +35,7 @@ if(MPI_FOUND)
         devapi_data_ring2.cu
         gin_data_ring.cu
         put_gin_alltoall.cu
+        railed_gin_put.cu
     )
 endif()
 
@@ -41,6 +43,7 @@ set(SRC_WITH_DYNAMIC_LIBS
     ft_test.cc
     ft_abort_rank0.cu
     device_id_test.cc
+    dyn_mem_test.cu
 )
 
 # Add each test as a separate executable
@@ -51,7 +54,12 @@ foreach(TEST_SOURCE ${UNIT_TEST_SOURCES})
     target_include_directories(${TEST_NAME}
         PRIVATE
         ${CMAKE_BINARY_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/src/include/plugin
+        ${CMAKE_SOURCE_DIR}/src/device
         ${CMAKE_SOURCE_DIR}/src/graph/
+        ${CUDAToolkit_INCLUDE_DIRS}
+        ${CUDAToolkit_INCLUDE_DIRS}/cccl
     )
     set_target_properties(${TEST_NAME} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/unit
@@ -88,6 +96,20 @@ foreach(TEST_SOURCE ${UNIT_TEST_SOURCES})
     get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
     add_dependencies(${TEST_NAME} copy_topo)
 endforeach()
+
+# Compile-only test (static assertions, no executable needed)
+add_library(backwards_compat OBJECT backwards_compat.cc)
+target_include_directories(backwards_compat
+    PRIVATE
+    ${CMAKE_BINARY_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/include
+    ${CMAKE_SOURCE_DIR}/src/include/plugin
+    ${CMAKE_SOURCE_DIR}/src/device
+    ${CMAKE_SOURCE_DIR}/src/graph/
+    ${CUDAToolkit_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}/cccl
+)
+add_dependencies(backwards_compat copy_topo)
 
 # Copy topo directory to build directory
 add_custom_command(

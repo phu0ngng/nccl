@@ -83,6 +83,8 @@ class NCCLConfig:
         nvls_ctas: int | None = None,
         n_channels_per_net_peer: int | None = None,
         nvlink_centric_sched: bool | None = None,
+        graph_usage_mode: int | None = None,
+        num_rma_ctx: int | None = None,
     ) -> None:
         """
         Initializes NCCL configuration with custom parameters.
@@ -96,20 +98,21 @@ class NCCLConfig:
             - max_ctas (int, optional): Maximal number of CTAs per kernel. Positive integer up to 32. Defaults to 32.
             - net_name (str, optional): Network module name (e.g., "IB", "Socket"). Case-insensitive. Defaults to NCCL auto-selection.
             - split_share (bool, optional): Share resources with child communicator during split. Defaults to False.
-            - traffic_class (int, optional): Traffic class (TC) for network operations (>= 0). Network-specific meaning. Defaults to undefined.
-            - comm_name (str, optional): User-defined communicator name for logging and profiling. Defaults to undefined.
+            - traffic_class (int, optional): Traffic class (TC) for network operations (>= 0). Network-specific meaning.
+            - comm_name (str, optional): User-defined communicator name for logging and profiling.
             - collnet_enable (bool, optional): Enable (True) or disable (False) IB SHARP. Defaults to False.
             - cta_policy (CTAPolicy, optional): CTA scheduling policy. See CTAPolicy enum (Default, Efficiency, Zero). Defaults to CTAPolicy.Default.
             - shrink_share (bool, optional): Share resources with child communicator during shrink. Defaults to False.
             - nvls_ctas (int, optional): Total number of CTAs for NVLS kernels. Positive integer. Defaults to NCCL auto-determined value.
             - n_channels_per_net_peer (int, optional): Number of network channels for pairwise communication. Positive integer, rounded up to power of 2. Defaults to AlltoAll-optimized value.
             - nvlink_centric_sched (bool, optional): Enable (True) NVLink-centric scheduling. Defaults to False.
+            - graph_usage_mode (int, optional): Graph usage mode (NCCL 2.29+). Supported values: 0 (no graphs), 1 (one graph), 2 (multiple graphs or mix of graph and non-graph). Defaults to 2.
+            - num_rma_ctx (int, optional): Number of RMA contexts (NCCL 2.29+). Defaults to 1.
 
         Notes:
             Aborting any communicator may affect others in the same family when split_share or shrink_share is enabled.
         """
         self._cfg: _nccl_bindings.Config = _nccl_bindings.Config()
-        self._cfg._data.fill(0)
 
         # Apply NCCL_CONFIG_INITIALIZER defaults
         self._cfg.size_ = int(_nccl_bindings.config_dtype.itemsize)
@@ -129,6 +132,9 @@ class NCCLConfig:
         self._cfg.nvls_ctas = NCCL_UNDEF_INT
         self._cfg.n_channels_per_net_peer = NCCL_UNDEF_INT
         self._cfg.nvlink_centric_sched = NCCL_UNDEF_INT
+        # NCCL 2.29
+        self._cfg.graph_usage_mode = NCCL_UNDEF_INT
+        self._cfg.num_rma_ctx = NCCL_UNDEF_INT
 
         # Use setters for validation - they handle type checking and range validation
         if blocking is not None:
@@ -159,6 +165,10 @@ class NCCLConfig:
             self.n_channels_per_net_peer = n_channels_per_net_peer
         if nvlink_centric_sched is not None:
             self.nvlink_centric_sched = nvlink_centric_sched
+        if graph_usage_mode is not None:
+            self.graph_usage_mode = graph_usage_mode
+        if num_rma_ctx is not None:
+            self.num_rma_ctx = num_rma_ctx
 
     def __repr__(self) -> str:
         """
@@ -198,6 +208,10 @@ class NCCLConfig:
             parts.append(f"n_channels_per_net_peer={self._cfg.n_channels_per_net_peer}")
         if self._cfg.nvlink_centric_sched != NCCL_UNDEF_INT:
             parts.append(f"nvlink_centric_sched={bool(self._cfg.nvlink_centric_sched)}")
+        if self._cfg.graph_usage_mode != NCCL_UNDEF_INT:
+            parts.append(f"graph_usage_mode={self._cfg.graph_usage_mode}")
+        if self._cfg.num_rma_ctx != NCCL_UNDEF_INT:
+            parts.append(f"num_rma_ctx={self._cfg.num_rma_ctx}")
 
         if parts:
             return f"<NCCLConfig: {', '.join(parts)}>"
@@ -452,6 +466,42 @@ class NCCLConfig:
             raise NcclInvalid(f"nvlink_centric_sched must be bool, got {type(val).__name__}")
         self._cfg.nvlink_centric_sched = int(val)
 
+    @property
+    def graph_usage_mode(self) -> int:
+        """
+        Graph usage mode.
+
+        Returns:
+            ``int``: Graph usage mode value.
+        """
+        return int(self._cfg.graph_usage_mode)
+
+    @graph_usage_mode.setter
+    def graph_usage_mode(self, val: int) -> None:
+        if not isinstance(val, int):
+            raise NcclInvalid(f"graph_usage_mode must be int, got {type(val).__name__}")
+        if val not in (0, 1, 2):
+            raise NcclInvalid(f"graph_usage_mode must be one of 0, 1, 2; got {val}")
+        self._cfg.graph_usage_mode = int(val)
+
+    @property
+    def num_rma_ctx(self) -> int:
+        """
+        Number of RMA contexts.
+
+        Returns:
+            ``int``: Number of RMA contexts.
+        """
+        return int(self._cfg.num_rma_ctx)
+
+    @num_rma_ctx.setter
+    def num_rma_ctx(self, val: int) -> None:
+        if not isinstance(val, int):
+            raise NcclInvalid(f"num_rma_ctx must be int, got {type(val).__name__}")
+        if val <= 0:
+            raise NcclInvalid(f"num_rma_ctx must be > 0, got {val}")
+        self._cfg.num_rma_ctx = int(val)
+
 
 class Communicator:
     """
@@ -573,14 +623,11 @@ class Communicator:
         elif isinstance(unique_id, Sequence) and all(
             isinstance(uid, UniqueId) for uid in unique_id
         ):
-            # Pack a sequence of UniqueId wrappers into a single C-side UniqueId buffer
             arr = _np.empty(len(unique_id), dtype=_nccl_bindings.unique_id_dtype)
             for i, uid in enumerate(unique_id):
-                # Defensive copy to protect against internal structure changes
                 arr[i] = uid.as_ndarray[0].copy()
-            packed = _nccl_bindings.UniqueId.from_data(arr)
             comm_ptr = _nccl_bindings.comm_init_rank_scalable(
-                int(nranks), int(rank), int(len(unique_id)), packed.ptr, cfg_ptr
+                int(nranks), int(rank), int(len(unique_id)), arr, cfg_ptr
             )
         else:
             raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
