@@ -228,13 +228,14 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbR
     // now flushed.
     assert(wc->status == IBV_WC_WR_FLUSH_ERR);
     // In this case, there is nothing left to do.
+    INFO(NCCL_NET, "NET/IB: %s: Ignoring flush error on a QP (comm=%p, wc.wr_id=%ld, wc.status=%s(%d)).", __func__, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status);
     return ncclSuccess;
   }
 
   ncclIbRequest* request = NULL;
   ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wc->wr_id, &request);
 
-  INFO(NCCL_NET, "NET/IB: %s: The receiver side request that got an error is %p (id=%ld, comm=%p)", __func__, request, request->id, request->base);
+  INFO(NCCL_NET, "NET/IB: %s: The receiver side request that got an error is %p (req=%p, comm=%p, id=%ld)", __func__, request, request, request->base, request->id);
 
   switch (request->type) {
     case NCCL_NET_IB_REQ_FLUSH:
@@ -242,7 +243,7 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbR
       // counter on that device is set to zero, so the flush request could be
       // completed on other devices if needed.
       request->events[devIndex] = 0;
-      INFO(NCCL_NET, "NET/IB: %s: Ignoring error on flush request (id=%ld) on device index %d", __func__, request->id, devIndex);
+      INFO(NCCL_NET, "NET/IB: %s: Ignoring error on flush request (req=%p, comm=%p, id=%ld) on device index %d", __func__, request, request->base, request->id, devIndex);
       break;
     case NCCL_NET_IB_REQ_RECV:
       // Assert it's a CTS message that got an error.
