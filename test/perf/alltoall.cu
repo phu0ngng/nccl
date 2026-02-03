@@ -8,7 +8,7 @@
 #include "common.h"
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 #include "nccl_device.h"
-#include "vector_types.h"
+// ReduceCopy API (including vector utilities) now included via nccl_device.h
 #endif
 
 void AlltoAllGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
@@ -116,22 +116,41 @@ testResult_t AlltoAllRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,29,0)
 // set devComm reqs for alltoall device kernels
-testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclCommProperties_t* commProperties, const char** testSkipReason) {
-  if (!reqs || !commProperties) return testInternalError;
+testResult_t AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* reqs, ncclComm_t comm, const char** testSkipReason) {
+  if (!reqs || !comm) return testInternalError;
+
+  ncclCommProperties_t commProperties = NCCL_COMM_PROPERTIES_INITIALIZER;
+  if (ncclCommQueryProperties(comm, &commProperties) != ncclSuccess) {
+    return testNcclError;
+  }
 
   switch(deviceImpl) {
     case 1: // NvlAlltoAllKernel
     case 2: // NvlAlltoAllKernelOptimized
+      if (commProperties.nRanks != ncclTeamLsa(comm).nRanks) {
+        *testSkipReason =
+            "DeviceImplementation 1 and 2 requires CUDA P2P connectivity across all ranks. Not all "
+            "ranks of this communicator have P2P connectivity.\n";
+        return testSkipped;
+      }
       reqs->lsaBarrierCount = deviceCtaCount;
       return testSuccess;
+    case 5: // GinAlltoAllKernelMultiContext
+      reqs->ginContextCount = deviceCtaCount;
+      // fall through
     case 3: // GinAlltoAllKernel
     case 4: // HybridAlltoAllKernel (LSA+GIN)
-      if (commProperties->ginType == NCCL_GIN_TYPE_NONE) {
+      if (commProperties.ginType == NCCL_GIN_TYPE_NONE) {
         *testSkipReason = "This test requires GIN support, but GIN support is not enabled for this communicator.\n";
         return testSkipped;
       }
       reqs->barrierCount = deviceCtaCount;
       reqs->ginSignalCount = deviceCtaCount;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2, 29, 3)
+      reqs->ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+#else
+      reqs->ginForceEnable = true;
+#endif
       return testSuccess;
     default:
       return testNotImplemented;
@@ -150,6 +169,11 @@ bool AlltoAllGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* req
     case 4: // HybridAlltoAllKernel (LSA+GIN)
       reqs->barrierCount = deviceCtaCount;
       reqs->ginSignalCount = deviceCtaCount;
+#if NCCL_VERSION_CODE >= NCCL_VERSION(2, 29, 3)
+      reqs->ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+#else
+      reqs->ginForceEnable = true;
+#endif
       return true;
     default:
       return false;
@@ -193,7 +217,7 @@ __global__ void NvlAlltoAllKernelOptimized(ncclWindow_t sendwin, size_t sendoffs
   ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
-  using TN = typename VectorTypeMapping<T>::Type;
+  using TN = uint4; // Alltoall is type insensitive, so using generic uint4 for data transport
   constexpr int VECTOR_FACTOR = sizeof(TN) / sizeof(T);
   constexpr int UNROLL_FACTOR = 128/sizeof(TN);
   constexpr int PEER_UNROLL = 2;
@@ -345,6 +369,38 @@ __global__ void HybridAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, nc
 
   bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
 }
+
+template <typename T>
+__global__ void GinAlltoAllKernelMultiContext(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  /* determine number of contexts to use, based on CTA count and max available contexts */
+  int numContexts = min(gridDim.x, devComm.ginContextCount);
+  /* partition CTAs across contexts; each CTA uses its own global signal */
+  int ctasPerContext = gridDim.x / numContexts;
+  int ginContext = blockIdx.x / ctasPerContext;
+  unsigned int signalIndex = blockIdx.x;
+  ncclGin gin { devComm, ginContext };
+  uint64_t signalValue = gin.readSignal(signalIndex);
+  ncclBarrierSession<ncclCoopCta> bar { ncclCoopCta(), ncclTeamTagWorld(), gin, blockIdx.x };
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed, ncclGinFenceLevel::Relaxed);
+  int nPeersPerCta = (devComm.nRanks + gridDim.x - 1) / gridDim.x;
+  int myPeerStart = blockIdx.x * nPeersPerCta;
+  int myPeerEnd = min(myPeerStart + nPeersPerCta, devComm.nRanks);
+  /* each CTA sends to 1+ assigned peers; threads within CTA parallelize the work */
+  /* all ranks' CTA K increment signal K on each peer they send to */
+  const size_t size = count * sizeof(T);
+  for (int peer = myPeerStart + threadIdx.x; peer < myPeerEnd; peer += blockDim.x) {
+    gin.put(ncclTeamWorld(devComm), peer,
+        recvwin, recvoffset + devComm.rank * size,
+        sendwin, sendoffset + peer * size,
+        size, ncclGin_SignalInc{blockIdx.x});
+  }
+  /* only the CTA assigned to handle this rank receives data from all peers */
+  int receivingCta = devComm.rank / nPeersPerCta;
+  if (blockIdx.x == receivingCta)
+    gin.waitSignal(ncclCoopCta(), signalIndex, signalValue + devComm.nRanks);
+  gin.flush(ncclCoopCta());
+  bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
+}
 #endif
 
 testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
@@ -381,6 +437,10 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
       case 4:
         TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(HybridAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
+      case 5:
+        TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(GinAlltoAllKernelMultiContext, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
+        return testSuccess;
+
       case HOST_RMA_IMPL:
         // RMA host put implementation
         TESTCHECK(AlltoAllRmaPut(sendbuff, sendoffset, recvbuff, recvoffset, count, type, comm, stream));

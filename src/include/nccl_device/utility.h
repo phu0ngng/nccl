@@ -40,6 +40,17 @@
   #define NCCL_HOST_DEVICE_INLINE inline __attribute__((always_inline))
 #endif
 
+// Macro for conditional constexpr support
+#if defined(__cpp_if_constexpr) && __cpp_if_constexpr >= 201606
+  #ifndef NCCL_IF_CONSTEXPR
+    #define NCCL_IF_CONSTEXPR constexpr
+  #endif
+#else
+  #ifndef NCCL_IF_CONSTEXPR
+    #define NCCL_IF_CONSTEXPR
+  #endif
+#endif
+
 #if __cplusplus
 #define NCCL_EXTERN_C extern "C"
 #else
@@ -380,6 +391,9 @@ struct Present<H, T...> {
   H h;
   Present<T...> t;
 
+  NCCL_HOST_DEVICE_INLINE Present(H h, Present<T...> t): h(static_cast<H>(h)), t(t) {}
+  NCCL_HOST_DEVICE_INLINE Present(Present const& that): h(static_cast<H>(that.h)), t(that.t) {}
+
   NCCL_HOST_DEVICE_INLINE H get(IntSeq<0>) {
     return static_cast<H>(h);
   }
@@ -409,7 +423,7 @@ struct Optional {
   NCCL_HOST_DEVICE_INLINE constexpr Optional(Absent): present(false) {}
 
   // Helper constructor
-  template<int ...i, typename ...Arg>
+  template<typename ...Arg, int ...i>
   NCCL_HOST_DEVICE_INLINE Optional(Present<Arg...> args, IntSeq<i...>):
     present(true),
     thing{args.get(IntSeq<i>())...} {

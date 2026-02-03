@@ -5,8 +5,10 @@ source test/scripts/ci/ci-utils.sh
 
 load_test_ci_variables
 source $CLUSTER_CONFIG
-load_cluster_ci_variables
 get_slurm_planned_time
+
+export GCPERF_TOOLS_PATH=$(get_gcperf_tools_path)
+export CLUSTER_NAME=$(get_cluster_name)
 
 run_regression_check() {
     local results_dir="$1"
@@ -43,13 +45,17 @@ save_results() {
 }
 
 # Use gcperf-tools venv
-source ${GCPERF_TOOLS_PATH}/venv/bin/activate
+# TODO: Switch from /venv-next/ to /venv/ once gcperf-tools release is updated with
+# https://gitlab-master.nvidia.com/gpucomms/perf-data-tools/-/commits/rc_and_err_improvements
+# venv-next is using gcperf-tools manually built from the branch above on each cluster
+source ${GCPERF_TOOLS_PATH}/venv-next/bin/activate
 
 # Set gcperf-tools variables
-CURRENT_BRANCH="${CI_COMMIT_BRANCH//\//.}"
+CURRENT_BRANCH="${CI_COMMIT_BRANCH:-${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-UNKNOWN}}"
+CURRENT_BRANCH="${CURRENT_BRANCH//\//.}"
 # CI_MERGE_REQUEST_TARGET_BRANCH_NAME will be empty post-merge, so use CURRENT_BRANCH
 TARGET_BRANCH="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME//\//.}"
-COMPARISON_BRANCH="${TARGET_BRANCH:-CURRENT_BRANCH}"
+COMPARISON_BRANCH="${TARGET_BRANCH:-${CURRENT_BRANCH}}"
 BASELINE_BRANCH="${CI_DEFAULT_BRANCH:-master}"
 OUTDIR="perfregression"
 SBATCH_FILE="perfregression.sbatch"
@@ -89,7 +95,7 @@ COMPARISON_RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${COMPARISON_BRANCH}
 BASELINE_RESULTS_DIR=${GCPERF_TOOLS_PATH}/nightly_results/${BASELINE_BRANCH}/${NNODES}_node
 
 EXTRA_SLURM_ARGS=""
-if [[ $CLUSTER_NAME == "PreTyche" || $CLUSTER_NAME == "Lyris" ]]; then
+if [[ $CLUSTER_NAME =~ "PreTyche|Lyris|Bia" ]]; then
     export NVLD_SIZE="1"
     if [[ $NNODES -ge 16 ]]; then
         export NVLD_SIZE="16"
@@ -133,7 +139,15 @@ gcperf-tools generate-job-script \
 # Submit the job
 cd perfregression
 echo "Submitting job script..."
+set +e
 sbatch --wait --export=ALL -N ${NNODES} ${EXTRA_SLURM_ARGS} -J "${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}" -t ${SLURM_TIME} ${SBATCH_FILE}
+JOB_EXIT_CODE=$?
+if [[ $JOB_EXIT_CODE -ne 0 ]]; then
+    echo "Job submission failed with exit code: $JOB_EXIT_CODE"
+    cat *.out # Dump logs for debugging
+    exit 33 # Custom exit code for job submission failure
+fi
+set -e
 
 # Convert results to CSV
 echo "Converting results to CSV..."
@@ -187,7 +201,7 @@ create_nvbug() {
 
     echo "Creating NvBug for regression compared to ${target_branch}..."
     DATE_STRING=$(date +%m/%d/%y)
-    DESCRIPTION="Performance regression detected on $DATE_STRING <br />\n Cluster: $CLUSTER_NAME <br />\n Nodes: $NNODES <br />\n Branch: $CURRENT_BRANCH <br />\n Commit: $CI_COMMIT_SHA <br />\n Compared to: ${target_branch} <br />\n <a href=\"$CI_JOB_URL\">See job artifacts for more details</a>"
+    DESCRIPTION="Performance regression detected on $DATE_STRING <br />\n Cluster: $CLUSTER_NAME <br />\n Nodes: $NNODES <br />\n Branch: $CURRENT_BRANCH <br />\n Commit: $CI_COMMIT_SHA <br />\n Compared to: ${target_branch} <br />\n <a href=\\\"$CI_JOB_URL\\\">See job artifacts for more details</a>"
     BUG_JSON="{
         \"BugId\": 0,
         \"BugAction\": {
@@ -216,17 +230,18 @@ create_nvbug() {
         \"ARB\": [{\"Value\": \"$GITLAB_USER_EMAIL\"}]
     }"
     RESPONSE=$(curl -s -X POST "https://nvbugsapi.nvidia.com/nvbugswebserviceapi/api/Bug/SaveBug" \
-        -H "Authorization: Bearer $NVAUTH_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "$BUG_JSON")
+    -H "Authorization: Bearer $NVAUTH_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$BUG_JSON")
+    echo "RESPONSE: $RESPONSE"
     BUG_NUMBER=$(echo "$RESPONSE" | grep -o '"ReturnValue":[0-9]*' | cut -d':' -f2)
     echo "Successfully created NvBug: https://nvbugspro.nvidia.com/bug/$BUG_NUMBER"
 }
 
 EXIT_CODE=0
 
-# Check release branch regression
-if [[ $REGRESSION_CODE -eq 1 || $REGRESSION_CODE -eq 66 || $REGRESSION_CODE -eq 67 ]]; then
+# Check target branch regression
+if [[ $REGRESSION_CODE -eq 1 || $REGRESSION_CODE -eq 65 || $REGRESSION_CODE -eq 66 || $REGRESSION_CODE -eq 67 ]]; then
     EXIT_CODE=1
     if [[ $CREATE_NVBUG_ON_FAILURE -eq 1 ]]; then
         create_nvbug "$COMPARISON_BRANCH"
@@ -235,7 +250,7 @@ fi
 
 # Check baseline branch regression
 if [[ $COMPARE_TO_BASELINE -eq 1 ]]; then
-    if [[ $BASELINE_REGRESSION_CODE -eq 1 || $BASELINE_REGRESSION_CODE -eq 66 || $BASELINE_REGRESSION_CODE -eq 67 ]]; then
+    if [[ $BASELINE_REGRESSION_CODE -eq 1 || $BASELINE_REGRESSION_CODE -eq 65 || $BASELINE_REGRESSION_CODE -eq 66 || $BASELINE_REGRESSION_CODE -eq 67 ]]; then
         EXIT_CODE=1
         if [[ $CREATE_NVBUG_ON_FAILURE -eq 1 ]]; then
             create_nvbug "$BASELINE_BRANCH"

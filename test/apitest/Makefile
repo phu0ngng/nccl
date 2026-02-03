@@ -21,7 +21,7 @@ NVCUFLAGS += -I${NCCLDIR}/include/ -I$(CUDA_INC) -include nccl.h ${CPPFLAGS} ${G
 LIBDIR := ${NCCLDIR}/lib
 NVLDFLAGS := -L${LIBDIR} ${NVLDFLAGS} ${GTEST_LIBS}
 ### rules
-.PHONY:
+.PHONY: all clean test device_api
 
 ifneq (clean,${MAKECMDGOALS})
 -include ${DEP_FILES}
@@ -45,13 +45,18 @@ all:${DST_DIR}/apitest ${DST_DIR}/apitest_static \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v10.so   \
     ${DST_DIR}/plugin/libnccl-net-plugin_nodev_v11.so   \
     ${DST_DIR}/plugin/libnccl-shared-plugins.so \
-    ${DST_DIR}/plugin/libnccl-env-plugin.so
+    ${DST_DIR}/plugin/libnccl-env-plugin.so \
+    device_api
+
+device_api:
+	${MAKE} -C device_api BUILDDIR=${BUILDDIR}
 
 env.%:
-	${MAKE} -C $(BUILDDIR)/../ext-env/example $* BUILDDIR=$(DST_DIR)/plugin/libnccl-env-plugin.so
+	${MAKE} -C $(SRCDIR)/ext-env/example $* BUILDDIR=$(DST_DIR)/plugin/libnccl-env-plugin.so
 
 clean:gtest.clean
 	rm -rf ${DST_DIR}
+	${MAKE} -C device_api clean
 
 test: ${DST_DIR}/apitest
 	/bin/bash -c "LD_LIBRARY_PATH+=:$(LIBDIR):${NCCLDIR}/test/apitest/plugin $^"

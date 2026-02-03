@@ -30,7 +30,7 @@ from pathlib import Path
 
 
 # cybind repository configuration
-CYBIND_COMMIT = "7244c5c3c2a6e0b7802a2ce136414b82dc43bafb"
+CYBIND_COMMIT = "5f479d7de8062dcd4d7672ceafe5686423cef69d"
 CYBIND_SSH_URL = "ssh://git@gitlab-master.nvidia.com:12051/leof/cybind.git"
 
 # Global logger - will be configured in main()

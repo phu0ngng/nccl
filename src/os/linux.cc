@@ -45,10 +45,22 @@ size_t ncclOsGetPageSize() {
   return (size_t)sysconf(_SC_PAGESIZE);
 }
 
+void* ncclOsAlignedAlloc(size_t alignment, size_t size) {
+    return aligned_alloc(alignment, size);
+}
+
+void ncclOsAlignedFree(void* ptr) {
+    free(ptr);
+}
+
+void ncclOsSetEnv(const char* name, const char* value) {
+  setenv(name, value, 0);
+}
+
 // The default Linux stack size (8MB) is safe.
 #define SAFE_STACK_SIZE (8192*1024)
 
-ncclResult_t ncclOsSetCpuStackSize() {
+static ncclResult_t setCpuStackSize() {
   // Query the stack size used for newly launched threads.
   pthread_attr_t attr;
   size_t stackSize;
@@ -79,8 +91,13 @@ ncclResult_t ncclOsSetCpuStackSize() {
   return ncclSuccess;
 }
 
-void ncclOsSetEnv(const char* name, const char* value) {
-  setenv(name, value, 0);
+extern int ncclParamSetCpuStackSize();
+
+ncclResult_t ncclOsInitialize() {
+  if (ncclParamSetCpuStackSize() != 0) {
+    NCCLCHECK(setCpuStackSize());
+  }
+  return ncclSuccess;
 }
 
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sockDescriptor) {

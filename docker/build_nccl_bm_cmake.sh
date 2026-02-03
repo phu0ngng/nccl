@@ -3,15 +3,36 @@
 
 # TODO (kartiki) - Integrate CMake build into docker/make.sh and kill this script
 
+# Function to show usage
+usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  --ci-build          Build in CI mode"
+    echo "  --enable-ccache     Enable ccache for compilation"
+    echo "  -h, --help          Show this help message"
+    echo ""
+    echo "Environment variables:"
+    echo "  ENABLE_CCACHE       Set to 1 to enable ccache (overridden by --enable-ccache)"
+    exit 1
+}
+
 if [ ! -d "docker" ]; then
   echo "Please launch from the top of NCCL source tree"
   exit 1
 fi
 
+# Parse command-line arguments
+ENABLE_CCACHE=${ENABLE_CCACHE:-0}
+ci_build=0
+
 for arg in "$@"
 do
     case $arg in
         --ci-build) ci_build=1
+                 ;;
+        --enable-ccache) ENABLE_CCACHE=1
+                 ;;
+        -h|--help) usage
                  ;;
     esac
 done
@@ -34,6 +55,29 @@ pushd $nccl_build_workspace
 export CUDA_PATH=$(get_cuda_home)
 export NCCL_HOME=$nccl_build_workspace
 
+# Setup ccache
+if [[ "$ENABLE_CCACHE" -eq 1 && -x "$(command -v ccache)" ]]; then
+  echo "INFO: Enabling ccache"
+  echo "INFO: ccache version: $(ccache --version)"
+  # Create directory to store ccache symlinks
+  tempdir=$(mktemp -d)
+  mkdir -p $tempdir/bin
+  ln -s $(which ccache) $tempdir/bin/gcc
+  ln -s $(which ccache) $tempdir/bin/g++
+  ln -s $(which ccache) $tempdir/bin/nvcc
+  # Set compiler environment variables for CMake
+  export CC=$tempdir/bin/gcc
+  export CXX=$tempdir/bin/g++
+  export CUDAHOSTCXX=$tempdir/bin/g++
+  export CUDACXX=$tempdir/bin/nvcc
+  # Add temp bin to PATH
+  export PATH=$tempdir/bin:$PATH
+  # Set ccache variables
+  source docker/ccache-vars.sh
+  export CCACHE_BASEDIR=$nccl_build_workspace
+  export CCACHE_DIR=$tempdir/ccache
+fi
+
 # TODO (kartiki) - Get arch list from cluster config; replace ',' with ';' for CMake
 gpu_arch_list="80"
 
@@ -53,6 +97,9 @@ if [ $ci_build -eq 0 ]; then
     # Skipt this step to avoid unnecessary transfer of files to NFS in CI.
     rsync -a build $nccl_src/
 fi
+
+# Print ccache stats if available
+ccache --show-stats 2> /dev/null || true
 
 # Cleanup temp directory
 popd

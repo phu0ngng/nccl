@@ -9,12 +9,19 @@
 - [NCCL Zero-SM Put API](items/id_63e03463/NCCL_Zero-SM_Put_API.md)
 - [Host accessible Multimem LSA pointers](items/id_FCF38D36/Host_accessible_Multimem_LSA_pointers.md)
 - [LLVM IR for NCCL Device APIs](items/id_e395f665/LLVM_IR_for_NCCL_Device_APIs.md)
+- [Symmetric Kernels for GIN](items/id_ada57223/Symmetric_Kernels_for_GIN.md)
 - [Communicator Grow](items/id_5cdcc8c5/communicator_grow.md)
 - [Multi-segment registration support](items/id_1752ab10/Multi-segment_registration_support.md)
 - [Symmetric Kernels for GIN](items/id_ada57223/Symmetric_Kernels_for_GIN.md)
 - [ID-based matching scheme](items/id_4bde6b8f/ID-based_matching_scheme.md)
 - [Pre-posting Receive WQEs](items/id_14cfa49d/Pre-posting_Receive_WQEs.md)
 - [ReduceCopy](items/id_EBADE8BE/ReduceCopy.md)
+- [Port-failover](items/id_4f382c74/Port-failover.md)
+- [Dynamic Memory Offload](items/id_710c2e7e/Dynamic_Memory_Offload.md)
+- [Allgatherv Optimization](items/id_88440FB2/Allgatherv_Optimization.md)
+- [Multi contexts support in GIN](items/id_fdc7b6f7/Multi_contexts_support_in_GIN.md)
+- [GIN work submission improvement](items/id_dcfab693/GIN_work_submission_improvement.md)
+- [Railed Gin](items/id_7b87386d/Railed_Gin.md)
 <!-- V2_29_DO_NOT_MOVE -->
 
 <!------------------------------------->

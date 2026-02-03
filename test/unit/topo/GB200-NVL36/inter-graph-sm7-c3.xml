@@ -91,7 +91,7 @@
       <net dev="0x60000000000001a"/>
     </channel>
   </graph>
-  <graph id="1" pattern="3" crossnic="0" nchannels="10" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
+  <graph id="1" pattern="3" crossnic="0" nchannels="10" speedintra="80" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
     <channel>
       <net dev="0x3"/>
       <gpu dev="0x3"/>
@@ -183,7 +183,7 @@
       <net dev="0x800000000000022"/>
     </channel>
   </graph>
-  <graph id="2" pattern="3" crossnic="0" nchannels="10" speedintra="48" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
+  <graph id="2" pattern="3" crossnic="0" nchannels="10" speedintra="80" speedinter="48" latencyinter="0" typeintra="NVL" typeinter="P2C" samechannels="0">
     <channel>
       <net dev="0x3"/>
       <gpu dev="0x3"/>

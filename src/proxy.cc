@@ -851,7 +851,7 @@ process_nextops:
 
   for (int i = 0; i < proxyState->tpLocalnRanks; i++) {
     if (freeOp[i] == -1) continue;
-    int oldFree = -1, swap = -1, newFree = freeOp[i];
+    int oldFree = -1, newFree = freeOp[i];
     // prepend the ops freeOp[i]-freeOpEnd[i] in front of the pool->freeOps[i] op
     oldFree = COMPILER_ATOMIC_LOAD(&pool->freeOps[i], std::memory_order_acquire);
     do {
@@ -859,9 +859,8 @@ process_nextops:
       // is initialized so long as freeOp[i] is initialized (is not -1).  In the current loop we filter out uninitialized
       // freeOp[i], hence ensuring that freeOpEnd[i] is also initialized.
       // coverity[uninit_use:FALSE]
-      pool->ops[freeOpEnd[i]].next = swap = oldFree;
-      COMPILER_ATOMIC_COMPARE_EXCHANGE(&pool->freeOps[i], &oldFree, newFree, /*success=*/std::memory_order_release, /*failure=*/std::memory_order_acquire);
-    } while (swap != oldFree);
+      pool->ops[freeOpEnd[i]].next = oldFree;
+    } while (!COMPILER_ATOMIC_COMPARE_EXCHANGE(&pool->freeOps[i], &oldFree, newFree, /*success=*/std::memory_order_release, /*failure=*/std::memory_order_acquire));
   }
   ncclProfilerRecordProxyCtrlEventState(eHandle, *added, ncclProfilerProxyCtrlAppendEnd);
   ncclProfilerStopProxyCtrlEvent(eHandle);
@@ -1873,6 +1872,8 @@ ncclResult_t ncclProxyCreate(struct ncclComm* comm) {
   struct ncclProxyState* proxyState = comm->proxyState;
   if (proxyState->refCount == 1) {
     /* we have to make sure all following fields in comm have been initialized. */
+    proxyState->comm = comm;
+    proxyState->memManager = comm->memManager;  // Set shared memory manager for proxy allocations
     proxyState->tpRank = comm->rank;
     proxyState->tpnRanks = comm->nRanks;
     proxyState->tpLocalnRanks = comm->localRanks;

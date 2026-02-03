@@ -1,5 +1,6 @@
 include ../../makefiles/common.mk
 ##
+SRCDIR   ?= $(abspath ../..)
 BUILDDIR ?= $(abspath ../../build)
 ### mpi lib
 ifeq ($(MPI),1)
@@ -13,7 +14,7 @@ ifeq ($(MPI_IBM),1)
 NVLDFLAGS += -lmpi_ibm
 endif
 # We need private functions. Include and link with src
-SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I../../src/include/plugin -I../../src/include/os
+SRCINC = -I$(BUILDDIR)/include/ -I../include -I../../src/include -I ../../src/device/ -I../../src/graph -I../../src/include/plugin
 # Use static library since all the internal symbols are there
 DLIB = ${BUILDDIR}/lib/libnccl.so
 DLIBFLAGS = $(NVLDFLAGS) -L$(BUILDDIR)/lib -lnccl -lcudart
@@ -25,22 +26,25 @@ DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu  #kernel_test.cu
 #CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
 CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc intrusive_map_test.cc register_mix_a2a_ar.cc
+# Compile-only tests (static assertions, no executable needed)
+COMPILE_ONLY_CC_FILES := backwards_compat.cc
 KCU_FILES := align_test.cu #kernel_test.cu
 CU_FILES += devapi_window_stress.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 
-CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu put_signal_ping_pong_gin.cu put_signal_ping_pong_rma.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_barrier_lsa.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu lsa_pointer_test.cu lsa_multimem_pointer_test.cu multi_segment_test.cu put_signal_ring_rma.cu put_signal_alltoall_rma.cu
+CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu dyn_mem_test.cu put_signal_ping_pong_gin.cu put_signal_ping_pong_rma.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_barrier_lsa.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu lsa_pointer_test.cu lsa_multimem_pointer_test.cu multi_segment_test.cu put_signal_ring_rma.cu put_signal_alltoall_rma.cu devapi_put_bw.cu railed_gin_put.cu
 endif
 CU_FILES += register_memcpyTest.cu
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
+COMPILE_ONLY_OBJ_FILES := $(COMPILE_ONLY_CC_FILES:%.cc=${DST_DIR}/%.o)
 EXE_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%) $(CC_FILES:%.cc=${DST_DIR}/%)
 KEXE_FILES:= $(KCU_FILES:%.cu=${DST_DIR}/%)
 DEP_FILES:= $(OBJ_FILES:%.o=%.d)
 
 LSB_RELEASE=$(shell lsb_release -is)
 #
-all:${EXE_FILES} net.build tuner.build profiler.build env.build
+all:${EXE_FILES} ${COMPILE_ONLY_OBJ_FILES} net.build tuner.build profiler.build env.build
 	@printf "Syncing  %-35s > %s\n" topo ${DST_DIR}
 	rsync -q -av topo ${DST_DIR}
 
@@ -62,16 +66,16 @@ ifneq (clean,${MAKECMDGOALS})
 endif
 #
 net.%:
-	${MAKE} -C $(BUILDDIR)/../ext-net/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+	${MAKE} -C $(SRCDIR)/ext-net/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 tuner.%:
-	${MAKE} -C $(BUILDDIR)/../ext-tuner/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+	${MAKE} -C $(SRCDIR)/ext-tuner/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 profiler.%:
-	${MAKE} -C $(BUILDDIR)/../ext-profiler/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+	${MAKE} -C $(SRCDIR)/ext-profiler/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 env.%:
-	${MAKE} -C $(BUILDDIR)/../ext-env/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+	${MAKE} -C $(SRCDIR)/ext-env/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 # Generic IR build flow using pattern rules
 IR_OBJDIR := ${BUILDDIR}/obj/test_ir
@@ -163,6 +167,11 @@ ${DST_DIR}/align_test: ${DST_DIR}/align_test.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -lcudart
+
+${DST_DIR}/dyn_mem_test: ${DST_DIR}/dyn_mem_test.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
 
 ${DST_DIR}/register_memcpyTest: ${DST_DIR}/register_memcpyTest.o
 	@printf "Linking  %-35s > %s\n" $< $@
@@ -404,7 +413,17 @@ ${DST_DIR}/put_gin_alltoall: ${DST_DIR}/put_gin_alltoall.o ${DLIB}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
 
+${DST_DIR}/railed_gin_put: ${DST_DIR}/railed_gin_put.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
 ${DST_DIR}/devapi_window_stress: ${DST_DIR}/devapi_window_stress.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_put_bw: ${DST_DIR}/devapi_put_bw.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
