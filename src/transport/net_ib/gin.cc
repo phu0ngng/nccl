@@ -444,7 +444,7 @@ ncclResult_t ncclGinIbProxyConnect(void *ctx, void *handles[], int nranks, int r
 
   // Connect.
   NCCLCHECK(
-    ncclGinIbConnect(ctx, handles, nranks, rank, 1, queueDepth, useReliableDB, useExpertControl, listenComm, collComm));
+    ncclGinIbConnect(ctx, handles, nranks, rank, nContexts, queueDepth, useReliableDB, useExpertControl, listenComm, collComm));
 
   return ncclSuccess;
 }
