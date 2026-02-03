@@ -336,8 +336,14 @@ static ncclResult_t ncclIbResiliencyHandleProbeCompleted(struct ncclIbResiliency
     // All data was delivered to the sender and no need for retransmission.
     INFO(NCCL_NET, "NET/IB: %s: Probing conclusion: All data was delivered for request %p (req=%p, comm=%p, id=%ld, slot=%d, nreqs=%d). Completing the request.", __func__, failedRequest->request, failedRequest->request, failedRequest->request->base, failedRequest->request->id, slot, failedRequest->request->nreqs);
     // Clear all events on the request so it could be completed towards the
-    // user as well.
-    memset(failedRequest->request->events, 0, sizeof(failedRequest->request->events));
+    // user as well. Note that in case of a multi-send requests, all requests
+    // are also cleared.
+    struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)failedRequest->request->base;
+    struct ncclIbRequest** sendReqs = sendComm->sendReqs[slot];
+    for (int r = 0; r < failedRequest->request->nreqs; r++) {
+      memset(sendReqs[r]->events, 0, sizeof(sendReqs[r]->events));
+      INFO(NCCL_NET, "NET/IB: %s: Clearing events on send request %p (req=%p, comm=%p, id=%ld, slot=%d, reqIdx=%d)", __func__, sendReqs[r], sendReqs[r], sendReqs[r]->base, sendReqs[r]->id, slot, r);
+    }
     return ncclSuccess;
   } else {
     // Repost the send request
