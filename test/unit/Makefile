@@ -21,6 +21,8 @@ DLIBFLAGS = $(NVLDFLAGS) -L$(BUILDDIR)/lib -lnccl -lcudart
 LIBRARIES += nccl_static
 STATICLIB = ${BUILDDIR}/lib/libnccl_static.a
 NVLDFLAGS += -L$(BUILDDIR)/lib $(LIBRARIES:%=-l%)
+STATICLDFLAGS := $(filter-out -lcudart,$(NVLDFLAGS))
+STATICLDFLAGS += -lcudart_static
 ##
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu  #kernel_test.cu
@@ -401,22 +403,22 @@ ${DST_DIR}/devapi_data_ring2_ir: ${DST_DIR}/devapi_data_ring2_ir.o ${DLIB} ${DST
 ${DST_DIR}/gin_data_ring: ${DST_DIR}/gin_data_ring.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${STATICLDFLAGS}
 
 ${DST_DIR}/put_signal_ping_pong_gin: ${DST_DIR}/put_signal_ping_pong_gin.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${NVLDFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${STATICLDFLAGS}
 
 ${DST_DIR}/put_gin_alltoall: ${DST_DIR}/put_gin_alltoall.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${STATICLDFLAGS}
 
 ${DST_DIR}/railed_gin_put: ${DST_DIR}/railed_gin_put.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${STATICLDFLAGS}
 
 ${DST_DIR}/devapi_window_stress: ${DST_DIR}/devapi_window_stress.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
