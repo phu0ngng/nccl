@@ -1,0 +1,184 @@
+# =============================================================================
+# Comprehensive Sweep Performance Analysis Chart Configuration
+# =============================================================================
+# Custom plot config for comprehensive sweeps that don't use NCCL_ALGO/PROTO tuning
+
+[settings]
+
+[settings.x_axis]
+scale = "semilogx"
+
+ticks = [1024, 10240, 102400, 1048576, 10485760, 104857600, 1073741824, 10737418240, 107374182400]
+labels = ["1KB", "10KB", "100KB", "1MB", "10MB", "100MB", "1GB", "10GB", "100GB"]
+
+
+[settings.y_axis]
+[settings.y_axis.limits]
+auto_detect_margin = 0.1
+auto_detect_round_to = 50
+default_min = 0
+default_max = 50
+
+p2p_min = 0
+p2p_max = 50
+
+[settings.y_axis.limits.test_binaries]
+alltoall_perf = { min = 0, max = 50 }
+sendrecv_perf = { min = 0, max = 50 }
+
+# Chart group ordering configuration
+[settings.chart_ordering]
+enable_sorting = true
+
+[settings.chart_ordering.sort_order]
+num_nodes = true
+num_processes = true
+local_register = true
+NCCL_TESTS_SPLIT = true
+
+[settings.chart_ordering.parameter_mappings]
+num_nodes = { column = "num_nodes", type = "numeric" }
+num_processes = { column = "num_processes", type = "numeric" }
+local_register = { column = "user_buffer_registration", type = "string", aliases = ["test_config.local_register", "ubr"] }
+NCCL_TESTS_SPLIT = { column = "test_env_vars.NCCL_TESTS_SPLIT", type = "string" }
+
+# Data processing settings
+[settings.data_processing]
+default_performance_column = "max_bus_bw"
+size_column = "test_result.size"
+
+[settings.data_processing.performance_columns.max_bus_bw]
+sources = ["test_result.out_of_place.bus_bw", "test_result.in_place.bus_bw"]
+operation = "max"
+description = "Maximum bandwidth"
+default = true
+
+[settings.data_processing.performance_columns.min_bus_bw]
+sources = ["test_result.out_of_place.bus_bw", "test_result.in_place.bus_bw"]
+operation = "min"
+description = "Minimum of bandwidths"
+
+# Column data types for optimization
+[settings.data_processing.dtypes]
+"test_result.size" = "int64"
+size = "int64"
+num_nodes = "int32"
+num_processes = "int32"
+user_buffer_registration = "int8"
+
+# Line and marker style mappings
+[settings.style_mappings]
+style_column = "local_register"
+
+[settings.style_mappings.line_styles]
+disabled = "-"
+local_register_all = "--"
+symmetric_register_all = ":"
+"0" = "-"
+"1" = "--"
+"2" = ":"
+
+[settings.style_mappings.marker_styles]
+disabled = "o"
+local_register_all = "^"
+symmetric_register_all = "x"
+"0" = "o"
+"1" = "^"
+"2" = "x"
+
+# -----------------------------------------------------------------------------
+# Chart Type Definitions for Comprehensive Sweeps
+# -----------------------------------------------------------------------------
+
+[[chart]]
+id = "default_comparison"
+name = "Default Configuration Comparison"
+description = "Compare performance with default settings"
+performance_columns = ["max_bus_bw"]
+
+[chart.fixed_params]
+# No algo/proto fixed params since we're not sweeping them
+
+[chart.chart_split_params]
+num_nodes = "all"
+num_processes = "all"
+NCCL_TESTS_SPLIT = "all"
+
+[chart.chart_combine_params]
+local_register = "all"
+
+[[chart]]
+id = "scale_comparison"
+name = "Scale Comparison"
+description = "Compare performance across different node and process counts"
+performance_columns = ["max_bus_bw"]
+
+[chart.fixed_params]
+
+[chart.chart_split_params]
+NCCL_TESTS_SPLIT = "all"
+
+[chart.chart_combine_params]
+num_nodes = "all"
+num_processes = "all"
+local_register = "all"
+
+[[chart]]
+id = "registration_comparison"
+name = "Registration Mode Comparison"
+description = "Compare performance across registration modes"
+performance_columns = ["max_bus_bw"]
+
+[chart.fixed_params]
+
+[chart.chart_split_params]
+num_nodes = "all"
+num_processes = "all"
+NCCL_TESTS_SPLIT = "all"
+
+[chart.chart_combine_params]
+local_register = "all"
+
+# -----------------------------------------------------------------------------
+# Analysis Profile Definitions
+# -----------------------------------------------------------------------------
+
+[[analysis_profiles]]
+id = "collective_basic"
+name = "Basic Collective Operations Analysis"
+description = "Basic analysis for collective operations"
+test_binaries = [
+    "all_reduce",
+    "all_gather",
+    "reduce_scatter"
+]
+chart_types = [
+    "default_comparison",
+    "scale_comparison"
+]
+
+[[analysis_profiles]]
+id = "p2p_basic"
+name = "Basic P2P Operations Analysis"
+description = "Basic analysis for P2P operations"
+test_binaries = [
+    "sendrecv",
+    "alltoall"
+]
+chart_types = [
+    "default_comparison",
+    "scale_comparison"
+]
+
+# -----------------------------------------------------------------------------
+# PDF Report Configurations
+# -----------------------------------------------------------------------------
+
+[[pdf_configs]]
+id = "basic_report"
+name = "Comprehensive Sweep Performance Analysis"
+description = "Analysis of comprehensive sweep results"
+analysis_profiles = [
+    "collective_basic",
+    "p2p_basic",
+]

@@ -154,3 +154,38 @@
         echo "Deleting install directories older than 14 days in $INSTALL_PARENT_DIR"
         find $INSTALL_PARENT_DIR -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} \; 2>/dev/null || true
       fi
+
+# Base template for comprehensive sweep jobs
+.comprehensive-sweep-base:
+  stage: comprehensive_sweep
+  variables:
+    PERF_TEST_MODE: "comprehensive_sweep"
+    NCCL_DEBUG: "WARN"
+  script:
+    - bash test/scripts/ci/gitlab-runner-gcperftest.sh
+  timeout: 12h
+  allow_failure:
+    exit_codes: [33]
+  artifacts:
+    when: always
+    paths:
+      - "comprehensive_sweep/*.csv"
+      - "comprehensive_sweep/*.pdf"
+      - "comprehensive_sweep/*.tar.gz"
+    expire_in: 30 days
+
+# Debug comprehensive sweep: runs on "debug" or "full" mode (1-node intra, 2-node inter)
+.comprehensive-sweep-debug:
+  extends: .comprehensive-sweep-base
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" || $COMPREHENSIVE_SWEEP == "full"
+      when: on_success
+    - when: never
+
+# Full comprehensive sweep: runs only on "full" mode (all scales)
+.comprehensive-sweep-full:
+  extends: .comprehensive-sweep-base
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "full"
+      when: on_success
+    - when: never
