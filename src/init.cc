@@ -258,9 +258,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  // Destroy dynamic memory manager
-  NCCLCHECK(ncclMemManagerDestroy(comm));
-
   NCCLCHECK(ncclCeFinalize(comm));
   NCCLCHECK(ncclRmaCeFinalize(comm));
 
@@ -280,6 +277,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
       comm->proxyState->threadUDS.join();
     }
   }
+
+  // Destroy dynamic memory manager only after all proxy threads have been joined
+  NCCLCHECK(ncclMemManagerDestroy(comm));
 
   if (comm->memPool) CUDACHECK(cudaMemPoolDestroy(comm->memPool));
 
