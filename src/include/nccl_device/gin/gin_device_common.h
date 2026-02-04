@@ -122,7 +122,7 @@ struct ncclGinApi_ResetCounter {
 template <ncclNetDeviceType backend>
 struct ncclGinApi_Flush {
   template <typename Coop>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop, cuda::memory_order ord);
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop, cuda::memory_order ord, uint32_t* abortFlag);
 };
 #endif
 
