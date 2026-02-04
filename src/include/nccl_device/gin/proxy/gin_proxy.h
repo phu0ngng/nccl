@@ -21,17 +21,18 @@
 namespace nccl {
 namespace gin {
 namespace proxy {
-NCCL_DEVICE_INLINE void flush(ncclGinProxyGpuCtx_t* proxyCtx, uint32_t pe, cuda::memory_order ord) {
+NCCL_DEVICE_INLINE void flush(ncclGinProxyGpuCtx_t* proxyCtx, uint32_t pe, cuda::memory_order ord, uint32_t* abortFlag) {
   using nccl::utility::loadConst;
   using nccl::utility::rollingLessEq;
+  using nccl::utility::testAbort;
   cuda::atomic_ref<uint32_t, cuda::thread_scope_system> pi(loadConst(&proxyCtx->pis)[pe]);
   cuda::atomic_ref<uint32_t, cuda::thread_scope_system> ci(loadConst(&proxyCtx->cis)[pe]);
-
+  uint32_t steps = 0;
   // The PI and CI can keep moving because of concurrent threads posting GFDs to this queue, and the CPU consuming them.
   // Therefore, to prevent overflow issues in the while statement, we need to use a special comparison function.
   uint32_t p = pi.load(cuda::memory_order_relaxed);
 #pragma unroll 1
-  while (!rollingLessEq<uint32_t>(p, ci.load(ord))) continue;
+  while (!rollingLessEq<uint32_t>(p, ci.load(ord)) && !testAbort(abortFlag, steps)) continue;
 }
 
 template <typename Coop>
@@ -243,11 +244,11 @@ struct ncclGinApi_ResetSignal<NCCL_NET_DEVICE_GIN_PROXY> {
 template <>
 struct ncclGinApi_Flush<NCCL_NET_DEVICE_GIN_PROXY> {
   template <typename Coop>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord) {
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord, uint32_t* abortFlag) {
     ncclGinProxyGpuCtx_t* proxyCtx = &((ncclGinProxyGpuCtx_t*)ctx.handle)[ctx.contextId];
 #pragma unroll 1
     for (int pe = coop.thread_rank(); pe < ctx.nRanks; pe += coop.size()) {
-      nccl::gin::proxy::flush(proxyCtx, pe, ord);
+      nccl::gin::proxy::flush(proxyCtx, pe, ord, abortFlag);
     }
   }
 };

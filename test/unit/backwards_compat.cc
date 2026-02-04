@@ -38,9 +38,10 @@ void ncclDevComm_backwards_compat_test() {
   static_assert(offsetof(ncclDevComm_t, ginContextCount) == 200);
   static_assert(offsetof(ncclDevComm_t, ginContextBase) == 204);
   static_assert(offsetof(ncclDevComm_t, ginIsRailed) == 208);
+  static_assert(offsetof(ncclDevComm_t, abortFlag) == 216);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclDevComm_t) == 216);
+  static_assert(sizeof(ncclDevComm_t) == 224);
 }
 
 

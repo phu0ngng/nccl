@@ -130,12 +130,13 @@ template<typename Coop>
 template<int MinEltCount, int MaxEltCount, typename T>
 NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::recvUnrolled(int eltStart, int eltCount, int eltStride, T(&elts)[MaxEltCount]) {
   using nccl::utility::divUp;
+  using nccl::utility::testAbort;
   uint4* buf = (uint4*)ncclGetResourceBufferLocalPointer(this->comm, this->handle.bufHandle);
   buf += this->slotsOffset + eltStart;
-
+  uint32_t steps = 0;
   uint4 tmp[MaxEltCount][divUp(sizeof(T), 8)];
   #pragma unroll 1
-  while (true) {
+  while (!testAbort(this->comm.abortFlag, steps)) {
     #pragma unroll
     for (int u=0; u < MaxEltCount; u++) {
       if (u < MinEltCount || u < eltCount) {

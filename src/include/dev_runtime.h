@@ -86,7 +86,7 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
 );
 
 ncclResult_t ncclDevrCommCreateInternal(
-  struct ncclComm* comm, struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm
+  struct ncclComm* comm, struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm, bool isInternal = false
 );
 void freeDevCommRequirements(
   struct ncclDevCommRequirements* reqs
