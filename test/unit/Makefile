@@ -398,25 +398,25 @@ ${DST_DIR}/devapi_data_ring2_ir: ${DST_DIR}/devapi_data_ring2_ir.o ${DLIB} ${DST
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/devapi_data_ring2_ir.o ${DLIB} ${DLIBFLAGS} -lcuda
 
-${DST_DIR}/gin_data_ring: ${DST_DIR}/gin_data_ring.o ${DLIB}
+${DST_DIR}/gin_data_ring: ${DST_DIR}/gin_data_ring.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
-${DST_DIR}/put_signal_ping_pong_gin: ${DST_DIR}/put_signal_ping_pong_gin.o ${DLIB}
+${DST_DIR}/put_signal_ping_pong_gin: ${DST_DIR}/put_signal_ping_pong_gin.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${DLIBFLAGS}
+	$(NVCC) -o $@ $(NVLDFLAGS) $^ ${NVLDFLAGS}
 
-${DST_DIR}/put_gin_alltoall: ${DST_DIR}/put_gin_alltoall.o ${DLIB}
+${DST_DIR}/put_gin_alltoall: ${DST_DIR}/put_gin_alltoall.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
-${DST_DIR}/railed_gin_put: ${DST_DIR}/railed_gin_put.o ${DLIB}
+${DST_DIR}/railed_gin_put: ${DST_DIR}/railed_gin_put.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
-	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
 
 ${DST_DIR}/devapi_window_stress: ${DST_DIR}/devapi_window_stress.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
