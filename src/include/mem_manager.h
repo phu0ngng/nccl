@@ -10,8 +10,8 @@
 #include "nccl.h"
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <pthread.h>
 #include <stdbool.h>
+#include <mutex>
 
 #ifdef __cplusplus
 extern "C" {
@@ -113,7 +113,7 @@ typedef struct ncclDynMemP2pHandleInfo {
 typedef struct ncclMemManager {
   ncclDynMemEntry*  entries;  // Linked list of tracked allocations, only track scratch and offload allocations
   int               numEntries;
-  pthread_mutex_t   lock;
+  std::mutex        lock;
   int               released;
   int               initialized;
   int               refCount;
