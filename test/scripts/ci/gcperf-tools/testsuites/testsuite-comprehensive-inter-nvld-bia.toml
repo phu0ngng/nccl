@@ -1,0 +1,87 @@
+description = "WEEKLY_COMPREHENSIVE_SWEEP_INTER_NVLD_BIA"
+library_name = "nccl"
+
+[common]
+path = "${NCCL_TEST_PATH}"
+
+[common.sweep_envs]
+NCCL_DEBUG = "WARN"
+# Split sweep: default vs groups of 2 GPUs (MOD 4 for min 2 nodes = 8 GPUs)
+NCCL_TESTS_SPLIT = ["default", "MOD 4"]
+
+[common.sweep_args]
+-t = 1
+-g = 1
+-f = 2
+-n = 20
+-w = 5
+-b = "8"
+-e = "16G"
+-d = "float"
+
+#############################################
+# DEFAULT TESTS (no algo/proto override)
+# NCCL auto-selects best algo/proto
+#############################################
+
+[[test]]
+name = "all_reduce"
+binary = "all_reduce_perf"
+
+[[test]]
+name = "all_gather"
+binary = "all_gather_perf"
+
+[[test]]
+name = "reduce_scatter"
+binary = "reduce_scatter_perf"
+
+[[test]]
+name = "alltoall"
+binary = "alltoall_perf"
+[test.sweep_args]
+-d = "uint8"
+
+[[test]]
+name = "sendrecv"
+binary = "sendrecv_perf"
+[test.sweep_args]
+-d = "uint8"
+
+#############################################
+# LOCAL REGISTRATION TESTS (-R 1)
+#############################################
+
+[[test]]
+name = "all_reduce_local_reg"
+binary = "all_reduce_perf"
+[test.sweep_args]
+-R = 1
+
+[[test]]
+name = "all_gather_local_reg"
+binary = "all_gather_perf"
+[test.sweep_args]
+-R = 1
+
+[[test]]
+name = "reduce_scatter_local_reg"
+binary = "reduce_scatter_perf"
+[test.sweep_args]
+-R = 1
+
+[[test]]
+name = "alltoall_local_reg"
+binary = "alltoall_perf"
+[test.sweep_args]
+-R = 1
+-d = "uint8"
+
+[[test]]
+name = "sendrecv_local_reg"
+binary = "sendrecv_perf"
+[test.sweep_args]
+-R = 1
+-d = "uint8"
+
+# NOTE: GIN tests disabled on Bia due to IB connection timeouts

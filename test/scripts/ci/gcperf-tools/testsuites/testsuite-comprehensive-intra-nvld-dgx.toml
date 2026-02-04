@@ -1,0 +1,139 @@
+description = "WEEKLY_COMPREHENSIVE_SWEEP_INTRA_NVLD_DGX"
+library_name = "nccl"
+
+[common]
+path = "${NCCL_TEST_PATH}"
+
+[common.sweep_envs]
+NCCL_DEBUG = "WARN"
+# Split sweep: default vs groups of 2 GPUs (MOD 4 for 1 node = 8 GPUs)
+NCCL_TESTS_SPLIT = ["default", "MOD 4"]
+
+[common.sweep_args]
+-t = 1
+-g = 1
+-f = 2
+-n = 20
+-w = 5
+-b = "8"
+-e = "16G"
+-d = "float"
+
+#############################################
+# DEFAULT TESTS (intra-NVLD, NCCL auto-selects NVLS)
+#############################################
+
+[[test]]
+name = "all_reduce"
+binary = "all_reduce_perf"
+
+[[test]]
+name = "all_gather"
+binary = "all_gather_perf"
+
+[[test]]
+name = "reduce_scatter"
+binary = "reduce_scatter_perf"
+
+#############################################
+# LSA SYMMETRIC TESTS (NVLink domain only)
+#############################################
+
+[[test]]
+name = "all_reduce_symm_lsa"
+binary = "all_reduce_perf"
+[test.sweep_args]
+-R = 2
+-D = [1, 2]
+
+[[test]]
+name = "all_gather_symm_lsa"
+binary = "all_gather_perf"
+[test.sweep_args]
+-R = 2
+-D = [1, 2]
+
+[[test]]
+name = "reduce_scatter_symm_lsa"
+binary = "reduce_scatter_perf"
+[test.sweep_args]
+-R = 2
+-D = [1, 2]
+
+[[test]]
+name = "alltoall_symm_lsa"
+binary = "alltoall_perf"
+[test.sweep_args]
+-R = 2
+-D = [1, 2]
+-d = "uint8"
+
+#############################################
+# MULTIMEM SYMMETRIC TESTS (AllReduce only)
+#############################################
+
+[[test]]
+name = "all_reduce_symm_multimem"
+binary = "all_reduce_perf"
+[test.sweep_args]
+-R = 2
+-D = [3, 4]
+
+#############################################
+# NATIVE SYMMETRIC KERNEL TESTS
+# Uses NCCL's native symmetric kernels (auto-selected)
+#############################################
+
+[[test]]
+name = "all_reduce_symk"
+binary = "all_reduce_perf"
+[test.sweep_args]
+-R = 2
+-D = 0
+
+[[test]]
+name = "all_gather_symk"
+binary = "all_gather_perf"
+[test.sweep_args]
+-R = 2
+-D = 0
+
+[[test]]
+name = "reduce_scatter_symk"
+binary = "reduce_scatter_perf"
+[test.sweep_args]
+-R = 2
+-D = 0
+
+#############################################
+# CE (Copy Engine) TESTS
+#############################################
+
+[[test]]
+name = "alltoall_ce"
+binary = "alltoall_perf"
+[test.sweep_envs]
+NCCL_P2P_USE_CUDA_MEMCPY = "1"
+[test.sweep_args]
+-d = "uint8"
+
+[[test]]
+name = "all_gather_ce"
+binary = "all_gather_perf"
+[test.sweep_envs]
+NCCL_P2P_USE_CUDA_MEMCPY = "1"
+
+[[test]]
+name = "alltoall_ce_symm"
+binary = "alltoall_perf"
+[test.sweep_args]
+-d = "uint8"
+-x = 2
+-R = 2
+
+[[test]]
+name = "all_gather_ce_symm"
+binary = "all_gather_perf"
+[test.sweep_args]
+-x = 2
+-R = 2
