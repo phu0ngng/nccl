@@ -175,6 +175,9 @@ static ncclResult_t ncclIbResiliencyRepostRequest(struct ncclIbRequest* request)
   int slot = request->id % NET_IB_MAX_REQUESTS;
   if (request->type == NCCL_NET_IB_REQ_SEND) {
       struct ncclIbResiliencySend* sendResCtx = (struct ncclIbResiliencySend*)request->base->resiliency;
+      // Clear all event counters and later on increment only the required
+      // ones based on the probing results on which QP a retransmission is
+      // required.
       memset(request->events, 0, sizeof(request->events));
 
       // Populate events
@@ -186,24 +189,24 @@ static ncclResult_t ncclIbResiliencyRepostRequest(struct ncclIbRequest* request)
         // If that device that is used for retransmission fails during retransmission,
         // the logic here will retrieve the QP that was used for the first send attempt
         // and not the QP that was used for the second send attempt! Causing
-        // probably data curruption or a hang.
+        // probably data corruption or a hang.
         NCCLCHECK(ncclIbCommBaseGetQpForRequest(request->base, request->id, i, &qp, &qpIndex));
 
         // Selective Retransmission:
         // If the probing result shows that the data was delivered successfully on this QP,
         // we don't need to retransmit it.
         if (sendResCtx->probingResults[slot][qpIndex] == true) {
-           INFO(NCCL_NET, "NET/IB: %s: Skipping retransmission on QP index %d (req=%p, slot=%d) as it was already delivered.", __func__, qpIndex, request, slot);
+          INFO(NCCL_NET, "NET/IB: %s: Skipping retransmission on QP index %d (req=%p, comm=%p, id=%ld, slot=%d) as it was already delivered.", __func__, qpIndex, request, request->base, request->id, slot);
            continue;
         } else {
-          INFO(NCCL_NET, "NET/IB: %s: Retransmitting on QP index %d (req=%p, slot=%d) as it was not delivered.", __func__, qpIndex, request, slot);
+          INFO(NCCL_NET, "NET/IB: %s: Retransmitting on qp_num=%u (req=%p, comm=%p, id=%ld, slot=%d) as it was not delivered.", __func__, qp->qp->qp_num, request, request->base, request->id, slot);
         }
 
         // Reset the sentData for this QP since we are going to retransmit it.
         request->send.sentData[qpIndex] = false;
         ncclIbAddEvent(request, qp->devIndex);
       }
-      INFO(NCCL_NET, "NET/IB: %s: Reposting send request (request=%p, comm=%p, id=%ld, slot=%ld)", __func__, request, request->base, request->id, request->id % NET_IB_MAX_REQUESTS);
+      INFO(NCCL_NET, "NET/IB: %s: Reposting send request (request=%p, comm=%p, id=%ld, slot=%ld, nreqs=%d)", __func__, request, request->base, request->id, request->id % NET_IB_MAX_REQUESTS, request->nreqs);
       NCCLCHECK(ncclIbMultiSend((struct ncclIbSendComm*)request->base, slot));
   } else if (request->type == NCCL_NET_IB_REQ_RECV) {
     INFO(NCCL_NET, "NET/IB: %s: Reposting CTS (request=%p, comm=%p, id=%ld, slot=%ld)", __func__, request, request->base, request->id, request->id % NET_IB_MAX_REQUESTS);
