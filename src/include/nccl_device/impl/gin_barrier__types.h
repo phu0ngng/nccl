@@ -23,7 +23,6 @@ struct ncclGinBarrierSession_internal {
   ncclTeam team;
   ncclGinBarrierHandle handle;
   int index;
-  uint32_t epoch;
   ncclGinSignal_t signal;
 };
 #endif
