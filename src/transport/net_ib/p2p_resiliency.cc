@@ -197,11 +197,10 @@ static ncclResult_t ncclIbResiliencyRepostRequest(struct ncclIbRequest* request)
         // we don't need to retransmit it.
         if (sendResCtx->probingResults[slot][qpIndex] == true) {
           INFO(NCCL_NET, "NET/IB: %s: Skipping retransmission on QP index %d (req=%p, comm=%p, id=%ld, slot=%d) as it was already delivered.", __func__, qpIndex, request, request->base, request->id, slot);
-           continue;
-        } else {
-          INFO(NCCL_NET, "NET/IB: %s: Retransmitting on qp_num=%u (req=%p, comm=%p, id=%ld, slot=%d) as it was not delivered.", __func__, qp->qp->qp_num, request, request->base, request->id, slot);
+          continue;
         }
 
+        INFO(NCCL_NET, "NET/IB: %s: Retransmitting on qp_num=%u (req=%p, comm=%p, id=%ld, slot=%d) as it was not delivered.", __func__, qp->qp->qp_num, request, request->base, request->id, slot);
         // Reset the sentData for this QP since we are going to retransmit it.
         request->send.sentData[qpIndex] = false;
         ncclIbAddEvent(request, qp->devIndex);
