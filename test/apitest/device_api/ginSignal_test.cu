@@ -95,6 +95,27 @@ __global__ void signalMultipleContextsKernel(ncclDevComm comm, int maxContexts, 
   }
 }
 
+// Simple kernel to verify all signals and counters are zero
+__global__ void verifyAllZeroKernel(ncclDevComm comm, int contextIdx, 
+                                    int signalCount, int counterCount) {
+#if __CUDA_ARCH__ >= 700
+  if (threadIdx.x != 0 || blockIdx.x != 0) return;  // Only thread 0 does work
+
+  ncclGin gin(comm, contextIdx);
+
+  // Check all signals
+  for (int i = 0; i < signalCount; i++) {
+    uint64_t value = gin.readSignal(i);
+    KERNEL_ASSERT_EQ(0, value, "Signal value is not 0");
+  }
+
+  // Check all counters
+  for (int i = 0; i < counterCount; i++) {
+    uint64_t value = gin.readCounter(i);
+    KERNEL_ASSERT_EQ(0, value, "Counter value is not 0");
+  }
+#endif
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test parameters
@@ -209,6 +230,53 @@ TEST_P(GinSignal_test, independent_contexts) {
   syncAllDevices();
   cudaError_t err = cudaGetLastError();
   ASSERT_EQ(err, cudaSuccess) << "Kernel failed: " << cudaGetErrorString(err);
+}
+
+TEST_P(GinSignal_test, signal_counter_init_zero) {
+  const GinSignalParams& params = GetParam();
+
+  const int signalCount = 5;
+  const int counterCount = 5;
+
+  ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginSignalCount = signalCount;
+  reqs.ginCounterCount = counterCount;
+  reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
+  TESTCHECK(createDevComms(reqs));
+
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+
+    signalRingKernel<<<1, 1, 0, streams[i]>>>(devComms[i], params.contextIdx, params.signalIdx);
+  }
+  syncAllDevices();
+
+  // Step 2: Destroy devComms (this should trigger the reset kernel)
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+    ASSERT_EQ(ncclSuccess, ncclDevCommDestroy(comms[i], &devComms[i]));
+  }
+  devComms.clear();
+
+  // Step 3: Recreate devComms to access the same memory
+  TESTCHECK(createDevComms(reqs));
+
+  // Step 4: Verify all signals and counters are zero
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
+
+    // Launch verification kernel
+    verifyAllZeroKernel<<<1, 1, 0, streams[i]>>>(
+      devComms[i], params.contextIdx, signalCount, counterCount);
+    ASSERT_EQ(cudaSuccess, cudaStreamSynchronize(streams[i]));
+
+    // Check for kernel assertion failures
+    cudaError_t err = cudaGetLastError();
+    ASSERT_EQ(cudaSuccess, err) << "Device " << i << ": " << cudaGetErrorString(err);
+  }
+
+  cudaError_t err = cudaGetLastError();
+  ASSERT_EQ(err, cudaSuccess) << "Test failed: " << cudaGetErrorString(err);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

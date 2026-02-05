@@ -9,6 +9,7 @@
 #include "nccl_device/core.h"
 #include "rma/rma.h"
 #include "device.h"
+#include "sym_kernels.h"
 #include "transport.h"
 #include "group.h"
 #include "nccl_device.h"
@@ -1236,10 +1237,13 @@ ncclResult_t ncclDevCommDestroy(
   NCCLCHECK(PtrCheck(devComm, __func__, "devComm"));
   struct ncclDevrState* devr = &comm->devrState;
   if (devr->ginEnabled) {
+    NCCLCHECK(ncclGinResetSignalsAndCounters(comm, devComm));
+
     ncclGinFreeSignalsCounters(comm,
       devComm->ginSignalBase, devComm->ginSignalCount,
       devComm->ginCounterBase, devComm->ginCounterCount
     );
+
     if (devComm->ginContextBase == comm->sharedRes->ginState.ctxLastExclusive) {
       // Since we don't track the shared/exclusive state of each context individually, we can't support the general
       // case of release.  However, we support the release of contexts of the most recently created exclusive devComm,
