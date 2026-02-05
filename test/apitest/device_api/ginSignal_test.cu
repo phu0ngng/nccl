@@ -18,11 +18,6 @@ __global__ void signalRingKernel(ncclDevComm comm, int contextIdx, int signalIdx
 
   // Wait for signal from previous rank
   gin.waitSignal(ncclCoopCta(), signalIdx, 1);
-
-  // TODO: this is a WAR due to  https://nvbugspro.nvidia.com/bug/5832890
-  // Ideally, we should not need to clean up our signals after running each test.
-  // Remove this once https://nvbugspro.nvidia.com/bug/5832890 is fixed.
-  gin.resetSignal(signalIdx);
 #endif
 }
 
@@ -61,11 +56,6 @@ __global__ void signalBasicKernel(ncclDevComm comm, int contextIdx, ncclGinSigna
     uint64_t value = gin.readSignal(signalIdx);
     KERNEL_ASSERT_EQ(1, value, "Signal should be 1 after wait signal");
   }
-
-  // TODO: this is a WAR due to  https://nvbugspro.nvidia.com/bug/5832890
-  // Ideally, we should not need to clean up our signals after running each test.
-  // Remove this once https://nvbugspro.nvidia.com/bug/5832890 is fixed.
-  gin.resetSignal(signalIdx);
 #endif
 }
 
@@ -82,16 +72,6 @@ __global__ void signalMultipleContextsKernel(ncclDevComm comm, int maxContexts, 
     gin.waitSignal(ncclCoopCta(), signalIdx, 1);
     uint64_t value = gin.readSignal(signalIdx);
     KERNEL_ASSERT_EQ(1, value, "Signal should be 1 after wait signal");
-  }
-
-  // TODO: this is a WAR due to  https://nvbugspro.nvidia.com/bug/5832890
-  // Ideally, we should not need to clean up our signals after running each test.
-  // Remove this entire block once https://nvbugspro.nvidia.com/bug/5832890 is fixed.
-  for (int contextIdx = 0; contextIdx < maxContexts; contextIdx++) {
-    ncclGin gin(comm, contextIdx);
-    gin.resetSignal(signalIdx);
-    uint64_t value = gin.readSignal(signalIdx);
-    KERNEL_ASSERT_EQ(0, value, "Signal should be 0 after reset");
   }
 }
 
