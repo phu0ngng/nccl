@@ -570,6 +570,7 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
     tmpCommAndChans.comm.buffSizes[p] = comm->buffSizes[p];
   }
   tmpCommAndChans.comm.p2pChunkSize = comm->p2pChunkSize;
+  tmpCommAndChans.comm.p2pCrossClique = comm->p2pCrossClique;
   tmpCommAndChans.comm.channels = &devCommAndChans->channels[0];
 
   comm->workArgsBytes = std::min<size_t>(ncclParamWorkArgsBytes(), ncclMaxKernelArgsSize(comm->cudaArch));
@@ -659,6 +660,7 @@ static void showVersion() {
 
 NCCL_PARAM(MNNVLUUID, "MNNVL_UUID", -1);
 NCCL_PARAM(MNNVLCliqueId, "MNNVL_CLIQUE_ID", -1);
+NCCL_PARAM(MNNVLCrossClique, "MNNVL_CROSS_CLIQUE", 0);
 
 static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, uint64_t commHash) {
   cudaDeviceProp prop;
@@ -1251,6 +1253,15 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
 
   INFO(NCCL_INIT, "comm %p rank %d nRanks %d nNodes %d localRanks %d localRank %d MNNVL %d",
        comm, rank, comm->nRanks, comm->nNodes, comm->localRanks, comm->localRank, comm->MNNVL);
+
+  // Enable cross-clique P2P when MNNVL is active, parameter allows it, and there
+  // are actually multiple cliques in the NVL domain (nvlDomainSize > clique size).
+  comm->p2pCrossClique = comm->MNNVL && ncclParamMNNVLCrossClique() &&
+                          comm->nvlDomainSize > comm->clique.size;
+  if (comm->p2pCrossClique) {
+    INFO(NCCL_INIT, "Cross-clique P2P enabled: nvlDomainSize=%d cliqueSize=%d",
+         comm->nvlDomainSize, comm->clique.size);
+  }
 
   nChannelsOrig = comm->nChannels;
   NCCLCHECKGOTO(ncclCalloc(&allTopoRanks, comm->nRanks), ret, fail);

@@ -618,6 +618,11 @@ struct ncclComm {
   int p2pChunkSize;
   int nvlsChunkSize;
 
+  // Cross-clique P2P: when true, use global rank for IPC buffer indexing
+  bool p2pCrossClique;
+  // NVL Domain size: number of ranks in the same NVLink domain (same clusterUuid)
+  int nvlDomainSize;
+
   // Tuner values
   ncclTunerConstants_t tunerConstants;
   ssize_t threadThresholds[NCCL_NUM_ALGORITHMS][NCCL_NUM_PROTOCOLS];
