@@ -352,12 +352,13 @@ static ncclResult_t p2pMap(struct ncclComm *comm, struct ncclProxyConnector* pro
         // for intra-process ranks, we should map memHandle of the peers to increase refcount.
         // Otherwise, if peers abort and free the buffer, the rank can suffer invalid access.
         NCCLCHECK(ncclCuMemAllocAddr(devMem, &p2pBuff->ipcDesc.memHandle, p2pBuff->size));
-        // CUCHECK(cuMemRelease(p2pBuff->ipcDesc.memHandle)); // Do not release here
+        CUCHECK(cuMemRelease(p2pBuff->ipcDesc.memHandle));
         *ipcPtr = *devMem;
 
-        // Track as imported peer memory for dynamic memory management
+        // Track as imported peer memory for dynamic memory management.
+        // Pass handle=0 since we already released the reference above; suspend shouldn't release again.
         NCCLCHECK(ncclMemTrackImportFromPeer(comm->memManager, *devMem, p2pBuff->size,
-                                             p2pBuff->ipcDesc.memHandle, ncclCuMemHandleType, ncclMemOffload,
+                                             0, ncclCuMemHandleType, ncclMemOffload,
                                              peerInfo->rank, peerInfo->cudaDev, p2pBuff->directPtr));
       } else {
         *devMem = p2pBuff->directPtr;
@@ -589,7 +590,7 @@ ncclResult_t p2pSendFree(struct ncclComm* comm, struct ncclConnector* send) {
       // cuMem API support
       if (resources->sendMemIpc) {
         if (resources->sendMemSameProc) {
-          NCCLCHECK(ncclCudaFree(resources->sendMemIpc, comm->memManager));
+          NCCLCHECK(ncclCuMemFreeAddr(resources->sendMemIpc, comm->memManager));
         } else {
           NCCLCHECK(ncclCudaFree(resources->sendMemIpc, comm->memManager));
         }
@@ -597,7 +598,7 @@ ncclResult_t p2pSendFree(struct ncclComm* comm, struct ncclConnector* send) {
 
       if (resources->recvMemIpc) {
         if (resources->recvMemSameProc) {
-          NCCLCHECK(ncclCudaFree(resources->recvMemIpc, comm->memManager));
+          NCCLCHECK(ncclCuMemFreeAddr(resources->recvMemIpc, comm->memManager));
         } else {
           NCCLCHECK(ncclCudaFree(resources->recvMemIpc, comm->memManager));
         }
@@ -619,7 +620,7 @@ ncclResult_t p2pRecvFree(struct ncclComm* comm, struct ncclConnector* recv) {
       // cuMem API support
       if (resources->sendMemIpc) {
         if (resources->sendMemSameProc) {
-          NCCLCHECK(ncclCudaFree(resources->sendMemIpc, comm->memManager));
+          NCCLCHECK(ncclCuMemFreeAddr(resources->sendMemIpc, comm->memManager));
         } else {
           NCCLCHECK(ncclCudaFree(resources->sendMemIpc, comm->memManager));
         }
@@ -627,7 +628,7 @@ ncclResult_t p2pRecvFree(struct ncclComm* comm, struct ncclConnector* recv) {
 
       if (resources->recvMemIpc) {
         if (resources->recvMemSameProc) {
-          NCCLCHECK(ncclCudaFree(resources->recvMemIpc, comm->memManager));
+          NCCLCHECK(ncclCuMemFreeAddr(resources->recvMemIpc, comm->memManager));
         } else {
           NCCLCHECK(ncclCudaFree(resources->recvMemIpc, comm->memManager));
         }
@@ -725,7 +726,7 @@ static ncclResult_t p2pDeregisterMemHandle(struct ncclProxyConnection* connectio
     CUDACHECK(cudaIpcCloseMemHandle((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)));
   } else {
     if (connection->sameProcess) {
-      NCCLCHECK(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), proxyState->memManager, ipcInfo->numSegments));
+      NCCLCHECK(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), proxyState->memManager, ipcInfo->numSegments));
     } else {
       NCCLCHECK(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), proxyState->memManager, ipcInfo->numSegments));
     }

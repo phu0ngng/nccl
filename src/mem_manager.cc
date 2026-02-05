@@ -458,9 +458,12 @@ ncclResult_t ncclCommMemSuspend(struct ncclComm* comm) {
       // Unmap our local mapping of the peer's memory
       CUCHECKIGNORE(cuMemUnmap((CUdeviceptr)entry->ptr, entry->size));
 
-      // Release our reference to the peer's handle
-      CUCHECKIGNORE(cuMemRelease(entry->handle));
-      entry->handle = 0;  // Clear invalid handle
+      // Release our reference to the peer's handle if we have one
+      // For same-process imports, handle may be 0 if the reference was already released after mapping
+      if (entry->handle != 0) {
+        CUCHECKIGNORE(cuMemRelease(entry->handle));
+        entry->handle = 0;  // Clear invalid handle
+      }
 
       entry->state = ncclDynMemStateReleased;
       releasedPeerImport += entry->size;

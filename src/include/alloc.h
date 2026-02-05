@@ -237,7 +237,7 @@ static inline ncclResult_t ncclCuMemAllocAddr(void **ptr, CUmemGenericAllocation
   return result;
 }
 
-static inline ncclResult_t ncclCuMemFreeAddr(void *ptr, int numSegments = 1) {
+static inline ncclResult_t ncclCuMemFreeAddr(void *ptr, struct ncclMemManager* manager, int numSegments = 1) {
   if (ptr == NULL) return ncclSuccess;
   ncclResult_t result = ncclSuccess;
   size_t totalSize = 0;
@@ -247,6 +247,12 @@ static inline ncclResult_t ncclCuMemFreeAddr(void *ptr, int numSegments = 1) {
     CUCHECK(cuMemUnmap((CUdeviceptr)ptr + totalSize, segmentSize));
     totalSize += segmentSize;
   }
+
+  // Untrack from memory manager
+  if (manager != nullptr) {
+    NCCLCHECK(ncclMemUntrack(manager, ptr, totalSize));
+  }
+
   CUCHECK(cuMemAddressFree((CUdeviceptr)ptr, totalSize));
   return result;
 }
@@ -382,7 +388,7 @@ static inline ncclResult_t ncclCuMemAllocAddr(void **ptr, CUmemGenericAllocation
   return ncclInternalError;
 }
 
-static inline ncclResult_t ncclCuMemFreeAddr(void *ptr, int numSegments = 1) {
+static inline ncclResult_t ncclCuMemFreeAddr(void *ptr, struct ncclMemManager* manager, int numSegments = 1) {
   WARN("CUMEM not supported prior to CUDA 11.3");
   return ncclInternalError;
 }
