@@ -112,6 +112,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     wr->wr.rdma.remote_addr = slots[r].addr;
     wr->next = wr + 1;
     wr_id += (reqs[r] - comm->base.reqs) << (r*8);
+    wr->wr_id = wr_id;
 #ifdef NCCL_ENABLE_NET_PROFILING
     reqs[r]->pInfo[0].nEventHandles = 0;
 #endif
