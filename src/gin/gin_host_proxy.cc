@@ -154,7 +154,7 @@ static int proxyGinPollGfd(struct ginProxyCtx *ctx, ginProxyHostGpuCtx *hostGpuC
   }
   // Now we have the full GFD in the local struct.
 
-  // Reset the GFD in the queue. This lets the producer know that the GFD is consumed.
+  // Reset the GFD in the queue. This ensures that the proxy doesn't try to process the GFD again.
   for (int k = 0; k < ncclGinProxyGfdQwords; k++) {
     COMPILER_ATOMIC_STORE(&q[idx].qword[k].raw, 0, std::memory_order_relaxed);
   }
@@ -226,7 +226,7 @@ static ncclResult_t proxyGinProcessGfd(ncclGin_t *ginComm, void *collComm, struc
   uint64_t srcOff;
   void *srcHandle;
   if (gfd->qword[ncclGinProxyGfdHeader].header.op & ncclGinProxyOpWithInline) {
-    uint64_t *inlineVal = &hostGpuCtx->inlines[gfd - hostGpuCtx->queues];
+    uint64_t *inlineVal = &hostGpuCtx->inlines[state - hostGpuCtx->states];
     srcOff = (uint64_t)&inlineVal[0] - (uint64_t)hostGpuCtx->inlines;
     // reconstruct the inline value from the two qwords
     *inlineVal = gfd->qword[ncclGinProxyGfdInlineLow].inlineLow.inlineValLow;
