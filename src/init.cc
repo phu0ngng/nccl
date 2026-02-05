@@ -354,7 +354,7 @@ static ncclResult_t commFree(ncclComm_t comm) {
 
   NCCLCHECK(ncclRegCleanup(comm));
 
-  INFO(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx - %s COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, abort ? "Abort" : "Destroy");
+  INFO(NCCL_DESTROY,"comm %p rank %d nranks %d cudaDev %d busId %lx - %s COMPLETE", comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId, abort ? "Abort" : "Destroy");
 
   commPoison(comm); // poison comm before free to avoid comm reuse.
   NCCLCHECK(ncclProfilerPluginFinalize(comm));
@@ -2424,7 +2424,7 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
 
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
-  TRACE(NCCL_INIT, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
+  TRACE(NCCL_DESTROY, "Destroying comm %p rank %d abortFlag %d asyncResult %d", comm, comm->rank, *comm->abortFlag, comm->asyncResult);
 
   if (comm->initState == ncclSuccess) {
     if ((ret = ncclStrongStreamSynchronize(&comm->sharedRes->hostStream)) != ncclSuccess) {
@@ -2576,7 +2576,7 @@ ncclResult_t ncclCommDestroy(ncclComm_t comm) {
   NVTX3_FUNC_WITH_PARAMS(CommDestroy, NcclNvtxParamsCommInitRank,
     NVTX3_PAYLOAD(comm->commHash, nranks, rank, cudaDev));
 
-  TRACE(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
+  TRACE(NCCL_DESTROY, "comm %p rank %d nRanks %d cudaDev %d busId %lx", comm, rank, nranks, cudaDev, comm->busId);
   NCCLCHECK(ncclGroupStartInternal());
   // Try and prevent a double free of the comm struct (user error)
   if (comm->rank == -1 || comm->nRanks == -1 || comm->cudaDev == -1 || comm->busId == -1) {
@@ -2621,7 +2621,7 @@ static ncclResult_t commRevokeAsync(struct ncclAsyncJob* job_) {
   ncclComm_t comm = job->comm;
   ncclResult_t res = ncclSuccess;
   NCCLCHECKGOTO(PtrCheck(comm, "CommRevokeAsync", "comm"), res, exit);
-  INFO(NCCL_INIT, "CommRevokeAsync START comm %p rank %d nRanks %d nNodes %d localRank %d cudaDev %d",
+  INFO(NCCL_DESTROY, "CommRevokeAsync START comm %p rank %d nRanks %d nNodes %d localRank %d cudaDev %d",
       comm, comm->rank, comm->nRanks, comm->nNodes, comm->localRank, comm->cudaDev);
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), res, exit);
   NCCLCHECKGOTO(ncclStrongStreamSynchronize(&comm->sharedRes->hostStream), res, exit);
@@ -2644,7 +2644,7 @@ static ncclResult_t commRevokeAsync(struct ncclAsyncJob* job_) {
   NCCLCHECKGOTO(setCommAbortFlags(comm, 0), res, exit);
 exit:
   (void)ncclCommSetAsyncError(comm, res);
-  INFO(NCCL_INIT, "CommRevokeAsync END comm %p result %d", comm, res);
+  INFO(NCCL_DESTROY, "CommRevokeAsync END comm %p result %d", comm, res);
   return res;
 }
 
@@ -2666,7 +2666,7 @@ ncclResult_t ncclCommRevoke(ncclComm_t comm, int revokeFlags) {
   if (comm->revokedFlag) {
     return ncclInvalidArgument;
   }
-  INFO(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx - Revoke START",
+  INFO(NCCL_DESTROY, "comm %p rank %d nRanks %d cudaDev %d busId %lx - Revoke START",
       comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId);
 
   NCCLCHECK(ncclGroupStartInternal());
@@ -2697,7 +2697,7 @@ exit:
     NVTX3_RANGE_ADD_PAYLOAD(CommRevoke, NcclNvtxParamsCommInitRankSchema,
       NVTX3_PAYLOAD(comm->commHash, nranks, rank, cudaDev));
   }
-  INFO(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx - Revoke COMPLETE, result %d", comm, rank, nranks, cudaDev, comm->busId, res);
+  INFO(NCCL_DESTROY, "comm %p rank %d nRanks %d cudaDev %d busId %lx - Revoke COMPLETE, result %d", comm, rank, nranks, cudaDev, comm->busId, res);
   return res;
 fail:
   if (comm && !comm->config.blocking) (void) ncclCommSetAsyncError(comm, res);
@@ -2712,7 +2712,7 @@ ncclResult_t ncclCommAbort(ncclComm_t comm) {
     return ncclSuccess;
   }
 
-  INFO(NCCL_INIT, "comm %p rank %d nRanks %d cudaDev %d busId %lx - Abort START",
+  INFO(NCCL_DESTROY, "comm %p rank %d nRanks %d cudaDev %d busId %lx - Abort START",
       comm, comm->rank, comm->nRanks, comm->cudaDev, comm->busId);
 
   NCCLCHECK(ncclGroupStartInternal());

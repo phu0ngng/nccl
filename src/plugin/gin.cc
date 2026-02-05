@@ -55,7 +55,7 @@ static std::once_flag initPluginLibsOnceFlag;
 
 static ncclResult_t ncclGinPluginUnload(ginPluginLib_t* pluginLib) {
   if (pluginLib->dlHandle && pluginLib->ncclGinPluginRefCount == 0) {
-    INFO(NCCL_INIT|NCCL_NET, "Unloading plugin %s", pluginLib->name);
+    INFO(NCCL_DESTROY|NCCL_NET, "Unloading plugin %s", pluginLib->name);
     NCCLCHECK(ncclClosePluginLib(pluginLib->dlHandle, ncclPluginTypeGin));
     // memset will reset the status to ncllGinPluginStateLoadReady
     memset(pluginLib, 0, sizeof(ginPluginLib_t));

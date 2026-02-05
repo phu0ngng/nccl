@@ -72,7 +72,7 @@ static std::once_flag initPluginLibsOnceFlag;
 
 static ncclResult_t ncclNetPluginUnload(netPluginLib_t* pluginLib) {
   if ((pluginLib->dlHandle) && ((pluginLib->ncclNetPluginRefCount) == 0)) {
-    INFO(NCCL_INIT|NCCL_NET, "Unloading plugin %s", pluginLib->name);
+    INFO(NCCL_DESTROY|NCCL_NET, "Unloading plugin %s", pluginLib->name);
     NCCLCHECK(ncclClosePluginLib(pluginLib->dlHandle, ncclPluginTypeNet));
     // memset will reset the status to ncllNetPluginStateLoadReady
     memset(pluginLib, 0, sizeof(netPluginLib_t));

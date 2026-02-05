@@ -132,6 +132,8 @@ static void ncclDebugInit() {
         mask = NCCL_PROFILE;
       } else if (strcasecmp(subsys, "RAS") == 0) {
         mask = NCCL_RAS;
+      } else if (strcasecmp(subsys, "DESTROY") == 0) {
+        mask = NCCL_DESTROY;
       } else if (strcasecmp(subsys, "ALL") == 0) {
         mask = NCCL_ALL;
       }

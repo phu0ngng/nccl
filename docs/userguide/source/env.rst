@@ -566,7 +566,8 @@ and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands fo
 for memory allocations), CALL (stands for function calls), PROXY (stands for the proxy thread operations), NVLS
 (stands for NVLink SHARP), BOOTSTRAP (stands for early initialization), REG (stands for memory registration), PROFILE
 (stands for coarse-grained profiling of initialization), RAS (stands for reliability, availability, and serviceability
-subsystem) and ALL (includes every subsystem).
+subsystem), DESTROY (stands for communicator destroy, abort, revoke, and plugin unload/close operations)
+and ALL (includes every subsystem).
 
 NCCL_DEBUG_TIMESTAMP_FORMAT
 ---------------------------
