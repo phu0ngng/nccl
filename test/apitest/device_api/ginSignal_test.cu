@@ -14,11 +14,9 @@ __global__ void signalRingKernel(ncclDevComm comm, int contextIdx, int signalIdx
   int nextRank = (world.rank + 1) % world.nRanks;
 
   // Signal the next rank
-  printf("Rank %d signaling rank %d\n", world.rank, nextRank);
   gin.signal(world, nextRank, ncclGin_SignalInc{(ncclGinSignal_t)signalIdx});
 
   // Wait for signal from previous rank
-  printf("Rank %d waiting for signal from rank %d\n", world.rank, nextRank);
   gin.waitSignal(ncclCoopCta(), signalIdx, 1);
 
   // TODO: this is a WAR due to  https://nvbugspro.nvidia.com/bug/5832890
