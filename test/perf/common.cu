@@ -722,11 +722,13 @@ testResult_t testCommSuspendResume(struct threadArgs* args) {
 
   timer suspendTimer;
   // Suspend memory for all communicators and GPUs
+  NCCLCHECK(ncclGroupStart());
   for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       NCCLCHECK(ncclCommSuspend(args->comms[id][i], NCCL_SUSPEND_MEM));
     }
   }
+  NCCLCHECK(ncclGroupEnd());
   double suspendTime = suspendTimer.elapsed() * 1000.0;
 
   if (args->thread == 0 && args->globalProc == 0) {
@@ -737,11 +739,13 @@ testResult_t testCommSuspendResume(struct threadArgs* args) {
 
   timer resumeTimer;
   // Resume memory for all communicators and GPUs
+  NCCLCHECK(ncclGroupStart());
   for (int id = 0; id < args->commNum; ++id) {
     for (int i = 0; i < args->nGpus; i++) {
       NCCLCHECK(ncclCommResume(args->comms[id][i]));
     }
   }
+  NCCLCHECK(ncclGroupEnd());
   double resumeTime = resumeTimer.elapsed() * 1000.0;
 
   if (args->thread == 0 && args->globalProc == 0) {

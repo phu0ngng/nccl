@@ -161,6 +161,9 @@ done
 
 for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf; do
   run_command "${func}_dyn_mem_test" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-b 1G -e 1G -w 5 -n 1 -Z 1"
+  if [ "$NNODES" == "1" ]; then
+    run_command "${func}_dyn_mem_test_single_proc" $RUN_MODE 1 "" "" "$NCCL_HOME/test/perf/$func" "-b 1G -e 1G -w 5 -n 1 -Z 1 -t 1 -g $NGPUS"
+  fi
 done
 
 if [ "$ENABLE_NVLS" == "1" ]; then
