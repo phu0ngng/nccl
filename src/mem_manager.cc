@@ -16,6 +16,7 @@
 #include "transport.h"
 #include "nvtx.h"
 #include "param.h"
+#include "group.h"
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <string.h>
@@ -959,22 +960,41 @@ ncclResult_t ncclCommSuspend(ncclComm_t comm, int flags) {
   NCCLCHECK(CommCheck(comm, "ncclCommSuspend", "comm"));
   NCCLCHECK(ncclCommEnsureReady(comm));
 
+  ncclResult_t ret = ncclSuccess;
+  int saveDev;
+  CUDACHECK(cudaGetDevice(&saveDev));
+  CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
+
   if (flags & NCCL_SUSPEND_MEM) {
     if (ncclParamMemManagerDisable())
     {
       WARN("MemManager: Suspend not supported, memory manager is disabled");
-      return ncclInvalidUsage;
+      ret = ncclInvalidUsage;
+      goto fail;
     }
     // Check if manager is shared
     if (comm->memManager && comm->memManager->refCount > 1) {
       WARN("Memory suspend not supported with split_share communicators (refCount=%d)",
            comm->memManager->refCount);
-      return ncclInvalidUsage;
+      ret = ncclInvalidUsage;
+      goto fail;
     }
     INFO(NCCL_INIT, "ncclCommSuspend: rank %d suspending memory", comm->rank);
-    NCCLCHECK(ncclCommMemSuspend(comm));
+    NCCLCHECK(ncclGroupStartInternal());
+    struct ncclMemManagerTask* task;
+    NCCLCHECKGOTO(ncclCalloc(&task, 1), ret, fail);
+    task->comm = comm;
+    ncclIntruQueueEnqueue(&comm->suspendTaskQueue, task);
+    ncclGroupCommJoin(comm, ncclGroupTaskTypeSymRegister); // Reuse to avoid creating a new task type
   }
-  return ncclSuccess;
+
+exit:
+  ncclGroupErrCheck(ret);
+  NCCLCHECK(ncclGroupEndInternal());
+  CUDACHECK(cudaSetDevice(saveDev));
+  return ret;
+fail:
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclCommResume, ncclComm_t comm);
@@ -984,20 +1004,39 @@ ncclResult_t ncclCommResume(ncclComm_t comm) {
   NCCLCHECK(CommCheck(comm, "ncclCommResume", "comm"));
   NCCLCHECK(ncclCommEnsureReady(comm));
 
+  ncclResult_t ret = ncclSuccess;
+  int saveDev;
+  CUDACHECK(cudaGetDevice(&saveDev));
+  CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
+
   if (ncclParamMemManagerDisable())
   {
     WARN("MemManager: Resume not supported, memory manager is disabled");
-    return ncclInvalidUsage;
+    ret = ncclInvalidUsage;
+    goto fail;
   }
   // Check if manager is shared
   if (comm->memManager && comm->memManager->refCount > 1) {
     WARN("Memory resume not supported with split_share communicators (refCount=%d)",
          comm->memManager->refCount);
-    return ncclInvalidUsage;
+    ret = ncclInvalidUsage;
+    goto fail;
   }
   INFO(NCCL_INIT, "ncclCommResume: rank %d resuming all resources", comm->rank);
-  NCCLCHECK(ncclCommMemResume(comm));
-  return ncclSuccess;
+  NCCLCHECK(ncclGroupStartInternal());
+  struct ncclMemManagerTask* task;
+  NCCLCHECKGOTO(ncclCalloc(&task, 1), ret, fail);
+  task->comm = comm;
+  ncclIntruQueueEnqueue(&comm->resumeTaskQueue, task);
+  ncclGroupCommJoin(comm, ncclGroupTaskTypeSymRegister); // Reuse to avoid creating a new task type
+
+exit:
+  ncclGroupErrCheck(ret);
+  NCCLCHECK(ncclGroupEndInternal());
+  CUDACHECK(cudaSetDevice(saveDev));
+  return ret;
+fail:
+  goto exit;
 }
 
 NCCL_API(ncclResult_t, ncclCommMemStats, ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value);

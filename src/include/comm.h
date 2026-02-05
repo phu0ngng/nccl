@@ -774,6 +774,8 @@ struct ncclComm {
   struct ncclSymkState symkState; // The symmetric kernels state (built on previous)
 
   struct ncclMemManager* memManager;  // Memory manager
+  struct ncclIntruQueue<struct ncclMemManagerTask, &ncclMemManagerTask::next> suspendTaskQueue;
+  struct ncclIntruQueue<struct ncclMemManagerTask, &ncclMemManagerTask::next> resumeTaskQueue;
 
   uint64_t endMagic;
 };

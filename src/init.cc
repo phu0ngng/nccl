@@ -282,6 +282,15 @@ static ncclResult_t commFree(ncclComm_t comm) {
     }
   }
 
+  // Free any pending suspend/resume tasks
+  while (!ncclIntruQueueEmpty(&comm->suspendTaskQueue)) {
+    struct ncclMemManagerTask* task = ncclIntruQueueDequeue(&comm->suspendTaskQueue);
+    free(task);
+  }
+  while (!ncclIntruQueueEmpty(&comm->resumeTaskQueue)) {
+    struct ncclMemManagerTask* task = ncclIntruQueueDequeue(&comm->resumeTaskQueue);
+    free(task);
+  }
   // Destroy dynamic memory manager only after all proxy threads have been joined
   NCCLCHECK(ncclMemManagerDestroy(comm));
 
@@ -527,6 +536,8 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   ncclIntruQueueMpscConstruct(&comm->callbackQueue);
   ncclIntruQueueConstruct(&comm->legacyRegCleanupQueue);
   ncclIntruQueueConstruct(&comm->ceInitTaskQueue);
+  ncclIntruQueueConstruct(&comm->suspendTaskQueue);
+  ncclIntruQueueConstruct(&comm->resumeTaskQueue);
 
   comm->regCache.pageSize = ncclOsGetPageSize();
 
