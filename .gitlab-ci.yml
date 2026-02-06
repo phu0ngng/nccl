@@ -3211,7 +3211,7 @@ perftest-multi-pre-nyx:
     ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
-    SLURM_TIME: 60
+    SLURM_TIME: 75
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
     NGPUS: 8
@@ -3426,6 +3426,8 @@ perftest-multi-bia:
     SKIP_NIC_FUSION: 1
     SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
+    # Re-enable after resolving https://nvbugspro.nvidia.com/bug/5793707
+    WORKAROUND_NVBUG_5793707: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
