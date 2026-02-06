@@ -168,9 +168,6 @@ After the grow operation completes, the parent communicator should be destroyed 
 3. All existing ranks call *ncclCommGrow* with *comm*\=parent, *rank*\=-1, *uniqueId*\=NULL (except for Coordinator rank which passes the *uniqueId*)
 4. All new ranks call *ncclCommGrow* with *comm*\=NULL, *rank*\=new_rank, *uniqueId*\=received_id
 
-ncclCommFinalize
-----------------
-
 ncclCommRevoke
 --------------
 
@@ -181,6 +178,9 @@ Revokes in-flight operations on a communicator without destroying resources. Suc
 *revokeFlags* must be set to *NCCL_REVOKE_DEFAULT* (0). Other values are reserved for future use.
 
 After revoke completes, the communicator is quiesced and safe for destroy, split, and shrink. Launching new collectives on a revoked communicator returns *ncclInvalidUsage*. Calling *ncclCommFinalize* after revoke is not supported. Resource sharing via *splitShare*/*shrinkShare* is disabled when the parent communicator is revoked.
+
+ncclCommFinalize
+----------------
 
 .. c:function:: ncclResult_t ncclCommFinalize(ncclComm_t comm)
 

@@ -1002,7 +1002,7 @@ ncclResult_t ncclGinGdakiDeregMrSym(void *collComm, void *mhandle) {
 ncclResult_t ncclGinGdakiProgress(void *collComm) {
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)collComm;
   struct gdaki_context *gdakiCtx = (struct gdaki_context *)cComm->ginCtx;
-  const int ncontexts = 1;
+  const int ncontexts = gdakiCtx->nContexts;
   const int nranks = gdakiCtx->collComm->nranks;
   const int nqpsPerRank = ncontexts;
   const int nqpsForComm = nqpsPerRank * nranks;  // Number of QPs for communication

@@ -49,6 +49,9 @@ struct ncclDevComm {
   uint32_t ginContextCount;
   uint32_t ginContextBase;
   bool ginIsRailed; // Whether the GIN connections are railed
+
+  // FT related
+  uint32_t* abortFlag;
 };
 
 #endif // _NCCL_DEVICE_COMM__TYPES_H_

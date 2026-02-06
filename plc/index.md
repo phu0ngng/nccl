@@ -22,6 +22,7 @@
 - [Multi contexts support in GIN](items/id_fdc7b6f7/Multi_contexts_support_in_GIN.md)
 - [GIN work submission improvement](items/id_dcfab693/GIN_work_submission_improvement.md)
 - [Railed Gin](items/id_7b87386d/Railed_Gin.md)
+- [Symmetric Kernel Abort](items/id_b6c8a14c/Symmetric_Kernel_Abort.md)
 <!-- V2_29_DO_NOT_MOVE -->
 
 <!------------------------------------->

@@ -8,6 +8,7 @@ stages:
   - perf_tests_single
   - perf_tests_multi
   - perf_regression
+  - comprehensive_sweep
   - profiler_tests
   - inspector_tests
   - replay_tests
@@ -61,6 +62,8 @@ variables:
   RUN_INSPECTOR_TESTS: "0"
   RUN_PERF_REGRESSION: "0"
   RUN_NCCL4PY_CI: "0"
+  # Comprehensive sweep mode: "off", "debug" (1-node intra + 2-node inter), "full" (all scales)
+  COMPREHENSIVE_SWEEP: "off"
   ##
   # Cluster-specific paths
   # Used by setup and test jobs to install/reference build artifacts
@@ -1949,6 +1952,7 @@ apitest-eos:
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
     DEVICE_API: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -1991,6 +1995,7 @@ apitest-cw-dfw:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2025,6 +2030,7 @@ apitest-AWS_H100_EFA:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 0 # NvBug 5210770
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
@@ -2092,6 +2098,7 @@ apitest-draco_oci:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gpus-per-node $NGPUS --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2133,6 +2140,7 @@ apitest-pre-nyx:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2173,6 +2181,7 @@ apitest-pre-tyche:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2211,6 +2220,7 @@ apitest-ipp6-a40:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -2248,6 +2258,7 @@ apitest-ipp6-a100:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
@@ -2285,6 +2296,7 @@ apitest-dgxspark:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:api::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2325,6 +2337,7 @@ apitest-theia:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:apitest::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -2365,6 +2378,7 @@ apitest-bia:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
+    API_TESTS_DEVICE_API: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
@@ -3471,7 +3485,7 @@ perf-regression-eos:
     NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
-    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+    - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
     exit_codes: [33]
   artifacts:
@@ -3502,7 +3516,7 @@ perf-regression-cw-dfw:
     NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
-    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+    - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
     exit_codes: [33]
   artifacts:
@@ -3532,7 +3546,7 @@ perf-regression-pre-tyche:
     NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
-    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+    - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
     exit_codes: [33]
   artifacts:
@@ -3562,7 +3576,7 @@ perf-regression-theia:
     NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
-    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+    - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
     exit_codes: [33]
   artifacts:
@@ -3592,7 +3606,7 @@ perf-regression-bia:
     NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_ACCOUNT: coreai_libraries_nccl
   script:
-    - bash test/scripts/ci/gitlab-runner-perfregression.sh
+    - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
     exit_codes: [33]
   artifacts:
@@ -3605,6 +3619,340 @@ perf-regression-bia:
 
 ##
 ## Stage: perf-regression - Finish!
+##
+
+##
+## Stage: comprehensive_sweep - Start...
+## Comprehensive performance sweeps across node scales
+## Templates defined in .gitlab-template.yml
+##
+## COMPREHENSIVE_SWEEP variable controls which jobs run:
+##   - "off": No comprehensive sweep jobs run
+##   - "debug": Only debug jobs run (1-node intra + 2-node inter per cluster)
+##   - "full": All jobs run (debug + full scale matrices)
+##
+
+#############################################
+# DEBUG Jobs - Run on "debug" or "full" mode
+# 1-node intra + 2-node inter per cluster
+#############################################
+
+# EOS Debug Jobs
+cs-eos-intra-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-eos"]
+  tags:
+    - nccl-eos
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-dgx.toml"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 1
+
+cs-eos-inter-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-eos"]
+  tags:
+    - nccl-eos
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 2
+
+# CW-DFW Debug Jobs
+cs-cw-dfw-intra-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-cw-dfw"]
+  tags:
+    - nccl-cw-dfw
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-dgx.toml"
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 1
+
+cs-cw-dfw-inter-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-cw-dfw"]
+  tags:
+    - nccl-cw-dfw
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 2
+
+# PreTyche Debug Jobs
+cs-ptyche-intra-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    SLURM_PARTITION: 36x2-a01r
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 1
+
+cs-ptyche-inter-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    MAX_SEGMENT: 18
+    SLURM_PARTITION: 36x2-a01r
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 2
+
+# Theia Debug Jobs
+cs-theia-intra-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-theia"]
+  tags:
+    - lyris
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 1
+
+cs-theia-inter-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-theia"]
+  tags:
+    - lyris
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    MAX_SEGMENT: 18
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 2
+
+# Bia Debug Jobs
+cs-bia-intra-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-bia"]
+  tags:
+    - bia
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 1
+
+cs-bia-inter-debug:
+  extends: .comprehensive-sweep-debug
+  needs: ["setup-bia"]
+  tags:
+    - bia
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-bia.toml"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+    NNODES: 2
+
+#############################################
+# FULL Jobs - Run only on "full" mode
+# All remaining scales (excluding debug scales)
+#############################################
+
+# EOS Full Jobs (inter only, intra is single-node covered by debug)
+cs-eos-inter-full:
+  extends: .comprehensive-sweep-full
+  needs: ["setup-eos"]
+  tags:
+    - nccl-eos
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+  parallel:
+    matrix:
+      - NNODES: [4, 8, 16, 32, 64, 128, 256]
+
+# CW-DFW Full Jobs
+cs-cw-dfw-inter-full:
+  extends: .comprehensive-sweep-full
+  needs: ["setup-cw-dfw"]
+  tags:
+    - nccl-cw-dfw
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+  parallel:
+    matrix:
+      - NNODES: [4, 8, 16, 32, 64, 128, 256]
+
+# PreTyche Full Jobs
+cs-ptyche-intra-full:
+  extends: .comprehensive-sweep-full
+  needs: ["setup-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    SLURM_PARTITION: 36x2-a01r
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+  parallel:
+    matrix:
+      # Capped at 18 nodes (max NVLD size for PreTyche), excluding debug scale (1)
+      - NNODES: [2, 4, 8, 16, 18]
+
+cs-ptyche-inter-full:
+  extends: .comprehensive-sweep-full
+  needs: ["setup-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    MAX_SEGMENT: 18
+    SLURM_PARTITION: 36x2-a01r
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+  parallel:
+    matrix:
+      # Excluding debug scale (2)
+      - NNODES: [4, 8, 16, 18, 32, 36, 64, 72]
+
+# Theia Full Jobs
+cs-theia-intra-full:
+  extends: .comprehensive-sweep-full
+  needs: ["setup-theia"]
+  tags:
+    - lyris
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+  parallel:
+    matrix:
+      # Capped at 18 nodes (max NVLD size for Theia), excluding debug scale (1)
+      - NNODES: [2, 4, 8, 16, 18]
+
+cs-theia-inter-full:
+  extends: .comprehensive-sweep-full
+  needs: ["setup-theia"]
+  tags:
+    - lyris
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    MAX_SEGMENT: 18
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+  parallel:
+    matrix:
+      # Excluding debug scale (2)
+      - NNODES: [4, 8, 16, 18, 32, 36, 64, 72, 128]
+
+# Bia Full Jobs
+cs-bia-inter-full:
+  extends: .comprehensive-sweep-full
+  needs: ["setup-bia"]
+  tags:
+    - bia
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-bia.toml"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_TIME: 90
+  parallel:
+    matrix:
+      # Excluding debug scale (2)
+      - NNODES: [4, 8, 16, 32, 64]
+
+##
+## Stage: comprehensive_sweep - Finish!
 ##
 
 ##
@@ -3722,6 +4070,8 @@ cleanup-eos:
       when: on_success
     - if: $RUN_ON_EOS == "1"
       when: on_success
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: on_success
   tags:
     - nccl-eos
   needs:
@@ -3743,6 +4093,13 @@ cleanup-eos:
       optional: true
     - job: perf-regression-eos
       optional: true
+    # Comprehensive sweep jobs
+    - job: cs-eos-intra-debug
+      optional: true
+    - job: cs-eos-inter-debug
+      optional: true
+    - job: cs-eos-inter-full
+      optional: true
   variables:
     INSTALL_DIR: "${EOS_INSTALL_DIR}"
 
@@ -3754,6 +4111,8 @@ cleanup-cw-dfw:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
       when: on_success
     - if: $RUN_ON_CW_DFW == "1"
+      when: on_success
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
       when: on_success
   tags:
     - nccl-cw-dfw
@@ -3771,6 +4130,13 @@ cleanup-cw-dfw:
     - job: perftest-multi-cw-dfw
       optional: true
     - job: perf-regression-cw-dfw
+      optional: true
+    # Comprehensive sweep jobs
+    - job: cs-cw-dfw-intra-debug
+      optional: true
+    - job: cs-cw-dfw-inter-debug
+      optional: true
+    - job: cs-cw-dfw-inter-full
       optional: true
   variables:
     INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
@@ -3839,6 +4205,8 @@ cleanup-pre-tyche:
       when: on_success
     - if: $RUN_ON_PRE_TYCHE == "1"
       when: on_success
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: on_success
   tags:
     - ptyche
   needs:
@@ -3860,6 +4228,15 @@ cleanup-pre-tyche:
       optional: true
     - job: perf-regression-pre-tyche
       optional: true
+    # Comprehensive sweep jobs
+    - job: cs-ptyche-intra-debug
+      optional: true
+    - job: cs-ptyche-inter-debug
+      optional: true
+    - job: cs-ptyche-intra-full
+      optional: true
+    - job: cs-ptyche-inter-full
+      optional: true
   variables:
     INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
 
@@ -3871,6 +4248,8 @@ cleanup-theia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
       when: on_success
     - if: $RUN_ON_THEIA == "1"
+      when: on_success
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
       when: on_success
   tags:
     - lyris
@@ -3893,6 +4272,15 @@ cleanup-theia:
       optional: true
     - job: perf-regression-theia
       optional: true
+    # Comprehensive sweep jobs
+    - job: cs-theia-intra-debug
+      optional: true
+    - job: cs-theia-inter-debug
+      optional: true
+    - job: cs-theia-intra-full
+      optional: true
+    - job: cs-theia-inter-full
+      optional: true
   variables:
     INSTALL_DIR: "${THEIA_INSTALL_DIR}"
 
@@ -3903,6 +4291,8 @@ cleanup-bia:
     - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
       when: on_success
     - if: $RUN_ON_BIA == "1"
+      when: on_success
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
       when: on_success
   tags:
     - bia
@@ -3918,6 +4308,13 @@ cleanup-bia:
     - job: perftest-single-bia
       optional: true
     - job: perftest-multi-bia
+      optional: true
+    # Comprehensive sweep jobs
+    - job: cs-bia-intra-debug
+      optional: true
+    - job: cs-bia-inter-debug
+      optional: true
+    - job: cs-bia-inter-full
       optional: true
     - job: perf-regression-bia
       optional: true

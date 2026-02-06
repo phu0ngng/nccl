@@ -466,7 +466,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
       reqs.ginConnectionType = comm->globalGinSupport;
     }
 
-    NCCLCHECK(ncclDevrCommCreateInternal(comm, &reqs, &symk->kcomm.devComm));
+    NCCLCHECK(ncclDevrCommCreateInternal(comm, &reqs, &symk->kcomm.devComm, true));
   }
   return ncclSuccess;
 }

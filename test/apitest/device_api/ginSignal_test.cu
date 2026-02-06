@@ -145,7 +145,7 @@ TEST_P(GinSignal_test, reset) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
   
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -163,7 +163,7 @@ TEST_P(GinSignal_test, basic_add) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -181,7 +181,7 @@ TEST_P(GinSignal_test, basic_inc) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
@@ -199,7 +199,7 @@ TEST_P(GinSignal_test, independent_contexts) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginForceEnable = true;
-  createDevComms(reqs);
+  TESTCHECK(createDevComms(reqs));
 
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));

@@ -175,35 +175,41 @@ static ncclResult_t ncclIbResiliencyRepostRequest(struct ncclIbRequest* request)
   int slot = request->id % NET_IB_MAX_REQUESTS;
   if (request->type == NCCL_NET_IB_REQ_SEND) {
       struct ncclIbResiliencySend* sendResCtx = (struct ncclIbResiliencySend*)request->base->resiliency;
-      memset(request->events, 0, sizeof(request->events));
+      struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)request->base;
+      struct ncclIbRequest** sendReqs = sendComm->sendReqs[slot];
+      for (int r = 0; r < request->nreqs; r++) {
+        // Clear all event counters and later on increment only the required
+        // ones based on the probing results on which QP a retransmission is
+        // required.
+        memset(sendReqs[r]->events, 0, sizeof(sendReqs[r]->events));
 
-      // Populate events
-      int nqps = ncclIbCommBaseGetNqpsPerRequest(request->base);
-      int qpIndex = -1;
-      ncclIbQp* qp = NULL;
-      for (int i = 0; i < nqps; i++) {
-        // TODO: This code does not handle the case where a send request fails twice!
-        // If that device that is used for retransmission fails during retransmission,
-        // the logic here will retrieve the QP that was used for the first send attempt
-        // and not the QP that was used for the second send attempt! Causing
-        // probably data curruption or a hang.
-        NCCLCHECK(ncclIbCommBaseGetQpForRequest(request->base, request->id, i, &qp, &qpIndex));
+        // Populate events
+        int nqps = ncclIbCommBaseGetNqpsPerRequest(sendReqs[r]->base);
+        int qpIndex = -1;
+        ncclIbQp* qp = NULL;
+        for (int i = 0; i < nqps; i++) {
+          // TODO: This code does not handle the case where a send request fails twice!
+          // If that device that is used for retransmission fails during retransmission,
+          // the logic here will retrieve the QP that was used for the first send attempt
+          // and not the QP that was used for the second send attempt! Causing
+          // probably data corruption or a hang.
+          NCCLCHECK(ncclIbCommBaseGetQpForRequest(sendReqs[r]->base, sendReqs[r]->id, i, &qp, &qpIndex));
 
-        // Selective Retransmission:
-        // If the probing result shows that the data was delivered successfully on this QP,
-        // we don't need to retransmit it.
-        if (sendResCtx->probingResults[slot][qpIndex] == true) {
-           INFO(NCCL_NET, "NET/IB: %s: Skipping retransmission on QP index %d (req=%p, slot=%d) as it was already delivered.", __func__, qpIndex, request, slot);
-           continue;
-        } else {
-          INFO(NCCL_NET, "NET/IB: %s: Retransmitting on QP index %d (req=%p, slot=%d) as it was not delivered.", __func__, qpIndex, request, slot);
+          // Selective Retransmission:
+          // If the probing result shows that the data was delivered successfully on this QP,
+          // we don't need to retransmit it.
+          if (sendResCtx->probingResults[slot][qpIndex] == true) {
+            INFO(NCCL_NET, "NET/IB: %s: Skipping retransmission on QP index %d (req=%p, comm=%p, id=%ld, slot=%d) as it was already delivered.", __func__, qpIndex, sendReqs[r], sendReqs[r]->base, sendReqs[r]->id, slot);
+            continue;
+          }
+
+          INFO(NCCL_NET, "NET/IB: %s: Retransmitting reqIndex=%d on qp_num=%u (req=%p, comm=%p, id=%ld, slot=%d) as it was not delivered.", __func__, r, qp->qp->qp_num, sendReqs[r], sendReqs[r]->base, sendReqs[r]->id, slot);
+          // Reset the sentData for this QP since we are going to retransmit it.
+          sendReqs[r]->send.sentData[qpIndex] = false;
+          ncclIbAddEvent(sendReqs[r], qp->devIndex);
         }
-
-        // Reset the sentData for this QP since we are going to retransmit it.
-        request->send.sentData[qpIndex] = false;
-        ncclIbAddEvent(request, qp->devIndex);
       }
-      INFO(NCCL_NET, "NET/IB: %s: Reposting send request (request=%p, comm=%p, id=%ld, slot=%ld)", __func__, request, request->base, request->id, request->id % NET_IB_MAX_REQUESTS);
+      INFO(NCCL_NET, "NET/IB: %s: Reposting send request (request=%p, comm=%p, id=%ld, slot=%ld, nreqs=%d)", __func__, request, request->base, request->id, request->id % NET_IB_MAX_REQUESTS, request->nreqs);
       NCCLCHECK(ncclIbMultiSend((struct ncclIbSendComm*)request->base, slot));
   } else if (request->type == NCCL_NET_IB_REQ_RECV) {
     INFO(NCCL_NET, "NET/IB: %s: Reposting CTS (request=%p, comm=%p, id=%ld, slot=%ld)", __func__, request, request->base, request->id, request->id % NET_IB_MAX_REQUESTS);
@@ -228,13 +234,14 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbR
     // now flushed.
     assert(wc->status == IBV_WC_WR_FLUSH_ERR);
     // In this case, there is nothing left to do.
+    INFO(NCCL_NET, "NET/IB: %s: Ignoring flush error on a QP (comm=%p, wc.wr_id=%ld, wc.status=%s(%d)).", __func__, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status);
     return ncclSuccess;
   }
 
   ncclIbRequest* request = NULL;
   ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wc->wr_id, &request);
 
-  INFO(NCCL_NET, "NET/IB: %s: The receiver side request that got an error is %p (id=%ld, comm=%p)", __func__, request, request->id, request->base);
+  INFO(NCCL_NET, "NET/IB: %s: The receiver side request that got an error is %p (req=%p, comm=%p, id=%ld)", __func__, request, request, request->base, request->id);
 
   switch (request->type) {
     case NCCL_NET_IB_REQ_FLUSH:
@@ -242,7 +249,7 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbR
       // counter on that device is set to zero, so the flush request could be
       // completed on other devices if needed.
       request->events[devIndex] = 0;
-      INFO(NCCL_NET, "NET/IB: %s: Ignoring error on flush request (id=%ld) on device index %d", __func__, request->id, devIndex);
+      INFO(NCCL_NET, "NET/IB: %s: Ignoring error on flush request (req=%p, comm=%p, id=%ld) on device index %d", __func__, request, request->base, request->id, devIndex);
       break;
     case NCCL_NET_IB_REQ_RECV:
       // Assert it's a CTS message that got an error.
@@ -334,10 +341,16 @@ static ncclResult_t ncclIbResiliencyHandleProbeCompleted(struct ncclIbResiliency
   }
   if (!missingData) {
     // All data was delivered to the sender and no need for retransmission.
+    INFO(NCCL_NET, "NET/IB: %s: Probing conclusion: All data was delivered for request %p (req=%p, comm=%p, id=%ld, slot=%d, nreqs=%d). Completing the request.", __func__, failedRequest->request, failedRequest->request, failedRequest->request->base, failedRequest->request->id, slot, failedRequest->request->nreqs);
     // Clear all events on the request so it could be completed towards the
-    // user as well.
-    memset(failedRequest->request->events, 0, sizeof(failedRequest->request->events));
-    INFO(NCCL_NET, "NET/IB: %s: Probing conclusion: All data was delivered for request %p (id=%ld). Completing the request.", __func__, failedRequest->request, failedRequest->request->id);
+    // user as well. Note that in case of a multi-send requests, all requests
+    // are also cleared.
+    struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)failedRequest->request->base;
+    struct ncclIbRequest** sendReqs = sendComm->sendReqs[slot];
+    for (int r = 0; r < failedRequest->request->nreqs; r++) {
+      memset(sendReqs[r]->events, 0, sizeof(sendReqs[r]->events));
+      INFO(NCCL_NET, "NET/IB: %s: Clearing events on send request %p (req=%p, comm=%p, id=%ld, slot=%d, reqIdx=%d)", __func__, sendReqs[r], sendReqs[r], sendReqs[r]->base, sendReqs[r]->id, slot, r);
+    }
     return ncclSuccess;
   } else {
     // Repost the send request

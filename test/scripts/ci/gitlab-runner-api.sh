@@ -36,6 +36,17 @@ run_api_test(){
     fi
 }
 
+run_device_api_test(){
+    if [[ ${API_TESTS_DEVICE_API} -eq 1 ]] ; then
+      run_command "device_apitest_gin_cpu_proxy" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=2" "$NCCL_HOME/test/apitest/device_api/device_api_test" ""
+      run_command "device_apitest_gin_gdaki_sm" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=3 NCCL_GIN_GDAKI_NIC_HANDLER=2" "$NCCL_HOME/test/apitest/device_api/device_api_test" ""
+      run_command "device_apitest_gin_gdaki_cpu_assisted" "$RUN_MODE" 1 "--oversubscribe" "NCCL_GIN_TYPE=3 NCCL_GIN_GDAKI_NIC_HANDLER=1" "$NCCL_HOME/test/apitest/device_api/device_api_test" ""
+      run_command "device_apitest_gin_default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/device_api/device_api_test" ""
+    else
+      echo -e "Disabled Api TESTS device api test\n\n"
+    fi 
+}
+
 # list of tests with a special config
 multinetTests="ncclCommInitRankConfig_test.multi_net_plugin_*"
 sharedPluginTest="ncclCommInitRankConfig_test.shared_plugin_lib"
@@ -47,6 +58,8 @@ fi
 
 # run all tests except the ones with a special config
 run_api_test "" "${gtestFilter}"
+
+run_device_api_test
 
 # run multinet tests with special config
 export NCCL_NET_PLUGIN="plugin_nodev_v6,plugin_v7,plugin_nodev_v8,plugin_nodev_v9,plugin_nodev_v10,plugin_nodev_v11"

@@ -36,6 +36,7 @@
 
 #include <vector>
 #include <cstring>
+#include <algorithm>
 
 // Debug output control
 static bool DEBUG = false;
@@ -464,6 +465,30 @@ int main(int argc, char* argv[]) {
 
     // Set device
     CUDACHECK(cudaSetDevice(localRank));
+
+    // Query GPU memory and adjust count if necessary
+    {
+        cudaDeviceProp prop;
+        CUDACHECK(cudaGetDeviceProperties(&prop, localRank));
+        size_t maxMem = prop.totalGlobalMem;
+
+        // Reserve memory: 1GB per 16GB of GPU memory, capped at 4GB (same formula as perf tests)
+        size_t reserveMem = std::min((maxMem + (16ULL << 30) - 1) / (16ULL << 30) * (1ULL << 30), 4ULL << 30);
+
+        // We need 2 buffers (send + recv), each of size: count * nranks * sizeof(int)
+        // Plus 1GB additional reserve for NCCL internal buffers
+        size_t availableMem = maxMem - reserveMem - (1ULL << 30);
+        size_t maxAllocBytes = availableMem / 2;  // Divide by 2 for send + recv buffers
+        size_t maxCount = maxAllocBytes / (nranks * sizeof(int));
+
+        if (args.count > maxCount) {
+            if (rank == 0) {
+                printf("# Reducing element count from %zu to %zu due to memory limitation (GPU has %zu MB)\n",
+                       args.count, maxCount, maxMem / (1024 * 1024));
+            }
+            args.count = maxCount;
+        }
+    }
 
     // Initialize NCCL
     ncclUniqueId id;
