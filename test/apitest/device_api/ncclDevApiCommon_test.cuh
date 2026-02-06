@@ -64,9 +64,8 @@ protected:
     cudaGetLastError();  // Clear any stale errors. Ignore value.
   }
 
-  // Called after each test - destroys devComms if created
-  void TearDown() override {
-    syncAllDevices();
+  // Helper function to destroy all devcomms
+  void destroyDevComms() {
     if (!devComms.empty()) {
       for (int i = 0; i < nVis; i++) {
         cudaSetDevice(i);
@@ -76,6 +75,13 @@ protected:
       }
       devComms.clear();
     }
+  }
+
+  // Called after each test - destroys devComms if created
+  void TearDown() override {
+    syncAllDevices();
+
+    destroyDevComms();
 
     ncclCommon_test<char>::TearDown();
   }

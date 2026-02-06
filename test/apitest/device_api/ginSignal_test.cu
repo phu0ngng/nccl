@@ -232,11 +232,7 @@ TEST_P(GinSignal_test, signal_counter_init_zero) {
   syncAllDevices();
 
   // Step 2: Destroy devComms (this should trigger the reset kernel)
-  for (int i = 0; i < nVis; i++) {
-    ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
-    ASSERT_EQ(ncclSuccess, ncclDevCommDestroy(comms[i], &devComms[i]));
-  }
-  devComms.clear();
+  destroyDevComms();
 
   // Step 3: Recreate devComms to access the same memory
   TESTCHECK(createDevComms(reqs));
