@@ -832,7 +832,7 @@ ncclResult_t ncclDevrCommCreateInternal(
     }
     if (requestedConnectionType == NCCL_GIN_CONNECTION_FULL) {
       if (comm->globalGinSupport == NCCL_GIN_CONNECTION_RAIL) {
-        WARN("User requested GIN connection type NCCL_GIN_CONNECTION_FULL but the communicator is already connected with NCCL_GIN_CONNECTION_RAIL");
+        WARN("User requested GIN connection type NCCL_GIN_CONNECTION_FULL but the communicator supports only NCCL_GIN_CONNECTION_RAIL");
         return ncclInvalidArgument;
       }
       if (comm->sharedRes->ginState.ginConnectionType == NCCL_GIN_CONNECTION_RAIL) {

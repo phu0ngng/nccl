@@ -35,7 +35,28 @@ CU_FILES += devapi_window_stress.cu
 ifeq ($(MPI),1)
 #CU_FILES += ncclNet_test.cu ncclNet_read_write_stress_test.cu
 
-CU_FILES += comm_leak_test_multi.cu coll_leak_test_multi.cu ft_abort_rank0.cu dyn_mem_test.cu put_signal_ping_pong_gin.cu put_signal_ping_pong_rma.cu devapi_uts.cu devapi_signal_ring.cu devapi_barrier.cu devapi_barrier_lsa.cu devapi_data_ring.cu devapi_data_ring2.cu gin_data_ring.cu put_gin_alltoall.cu lsa_pointer_test.cu lsa_multimem_pointer_test.cu multi_segment_test.cu put_signal_ring_rma.cu put_signal_alltoall_rma.cu devapi_put_bw.cu railed_gin_put.cu
+CU_FILES += comm_leak_test_multi.cu \
+		coll_leak_test_multi.cu \
+		ft_abort_rank0.cu \
+		dyn_mem_test.cu \
+		put_signal_ping_pong_gin.cu \
+		put_signal_ping_pong_rma.cu \
+		devapi_uts.cu \
+		devapi_signal_ring.cu \
+		devapi_barrier.cu \
+		devapi_barrier_lsa.cu \
+		devapi_data_ring.cu \
+		devapi_data_ring2.cu \
+		gin_data_ring.cu \
+		put_gin_alltoall.cu \
+		lsa_pointer_test.cu \
+		lsa_multimem_pointer_test.cu \
+		multi_segment_test.cu \
+		put_signal_ring_rma.cu \
+		put_signal_alltoall_rma.cu \
+		devapi_put_bw.cu \
+		devapi_railed_put.cu
+
 endif
 CU_FILES += register_memcpyTest.cu
 OBJ_FILES:= $(CU_FILES:%.cu=${DST_DIR}/%.o) $(CC_FILES:%.cc=${DST_DIR}/%.o)
@@ -415,7 +436,7 @@ ${DST_DIR}/put_gin_alltoall: ${DST_DIR}/put_gin_alltoall.o ${STATICLIB}
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${STATICLDFLAGS}
 
-${DST_DIR}/railed_gin_put: ${DST_DIR}/railed_gin_put.o ${STATICLIB}
+${DST_DIR}/devapi_railed_put: ${DST_DIR}/devapi_railed_put.o ${STATICLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${STATICLDFLAGS}

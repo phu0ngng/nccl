@@ -148,7 +148,6 @@ int main(int argc, char* argv[]) {
     printf("Testing both signal and polling modes\n\n");
   }
 
-  // Test 1: Put without signal (polling mode)
   if (myRank == 0) {
     printf("Test: Railed Gin Put...");
     fflush(stdout);
