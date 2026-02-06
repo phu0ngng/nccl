@@ -28,9 +28,9 @@
 
 static const bool DEBUG = false;
 
-const uint64_t NCCL_PUT_VALUE_BASE = 28; // atomic number of nickel
-const int SRC_RANK = 0;
-const int DST_RANK = 1;
+constexpr uint64_t NCCL_PUT_VALUE_BASE = 28; // atomic number of nickel
+constexpr int SRC_RANK = 0;
+constexpr int DST_RANK = 1;
 
 __device__ uint64_t getPutValue(ncclDevComm comm) {
   int myRailTeam = ncclTeamLsa(comm).rank;

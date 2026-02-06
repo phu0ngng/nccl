@@ -108,8 +108,8 @@ protected:
       if (!props.deviceApiSupport) {
         return TestResult_t::testSkipped;
       }
-      
-      if (reqs.ginForceEnable && props.ginType == NCCL_GIN_TYPE_NONE) {
+      bool ginRequested = reqs.ginForceEnable || reqs.ginConnectionType != NCCL_GIN_CONNECTION_NONE;
+      if (ginRequested && props.ginType == NCCL_GIN_TYPE_NONE) {
         return TestResult_t::testSkipped;
       }
     }
