@@ -8,7 +8,7 @@
 include ../../makefiles/common.mk
 include ../../makefiles/version.mk
 BUILDDIR ?= $(abspath ../../build)
-DOCSRC  := $(abspath ../../doc/)
+DOCSRC  := $(abspath ../../docs/userguide/)
 DOCPREPDIR  := $(BUILDDIR)/doc
 PKGDIR  := $(BUILDDIR)/pkg/doc
 

@@ -6,7 +6,7 @@
 # See LICENSE.txt for more license information
 #
 
-NCCL_SRCDIR=../../src
+NCCL_SRCDIR=../../../src
 
 # Check plugin versions
 netplugin_ver=$(cat ${NCCL_SRCDIR}/include/plugin/nccl_net.h | grep NCCL_NET_PLUGIN_SYMBOL | cut -d" " -f3)

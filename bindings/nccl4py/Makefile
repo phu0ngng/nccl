@@ -5,7 +5,7 @@ export UV_PYTHON := 3.13
 
 # Root Makefile passes BUILDDIR; default to ../build if not set
 MKFILE_DIR           := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-BUILDDIR             ?= $(abspath $(MKFILE_DIR)/../build)
+BUILDDIR             ?= $(abspath $(MKFILE_DIR)/../../build)
 NCCL4PY_DIR          := $(abspath $(MKFILE_DIR))
 NCCL4PY_BINDINGS_DIR := $(NCCL4PY_DIR)/nccl/bindings
 DIST_DIR             := $(BUILDDIR)/dist

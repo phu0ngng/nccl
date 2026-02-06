@@ -5,8 +5,8 @@
 # See LICENSE.txt for more license information
 #
 .DEFAULT_GOAL: build
-include ../../makefiles/common.mk
-SRCDIR   ?= $(abspath ../..)
+include ../../../makefiles/common.mk
+SRCDIR   ?= $(abspath ../../..)
 BUILDDIR ?= .
 NCCLDIR  := $(BUILDDIR)
 

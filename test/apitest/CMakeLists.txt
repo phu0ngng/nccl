@@ -54,8 +54,8 @@ set(PLUGIN_SOURCES
     plugin/net-plugin-init-once.cc
 )
 
-# Environment plugin source (built from ext-env/example)
-set(ENV_PLUGIN_SOURCE ${CMAKE_SOURCE_DIR}/ext-env/example/plugin.c)
+# Environment plugin source (built from plugins/env/example)
+set(ENV_PLUGIN_SOURCE ${CMAKE_SOURCE_DIR}/plugins/env/example/plugin.c)
 
 # Create object files for each CUDA source
 set(API_TEST_OBJECTS)
@@ -145,9 +145,9 @@ foreach(plugin_source ${PLUGIN_SOURCES})
 
     # Set include directories for plugins (prioritize extension paths)
     target_include_directories(${plugin_name} PRIVATE
-        ${CMAKE_SOURCE_DIR}/ext-net/example/nccl
-        ${CMAKE_SOURCE_DIR}/ext-profiler/example/nccl
-        ${CMAKE_SOURCE_DIR}/ext-tuner/example/nccl
+        ${CMAKE_SOURCE_DIR}/plugins/net/example/nccl
+        ${CMAKE_SOURCE_DIR}/plugins/profiler/example/nccl
+        ${CMAKE_SOURCE_DIR}/plugins/tuner/example/nccl
         ${CMAKE_BINARY_DIR}/include
         ${CMAKE_SOURCE_DIR}/src/include
         ${CMAKE_SOURCE_DIR}/src/include/plugin
@@ -179,7 +179,7 @@ target_include_directories(nccl-env-plugin PRIVATE
     ${CMAKE_BINARY_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/src/include/plugin
-    ${CMAKE_SOURCE_DIR}/ext-env/example/nccl
+    ${CMAKE_SOURCE_DIR}/plugins/env/example/nccl
     ${CUDAToolkit_INCLUDE_DIRS}
     ${CUDAToolkit_INCLUDE_DIRS}/cccl
 )

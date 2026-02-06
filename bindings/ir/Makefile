@@ -10,7 +10,7 @@ include ../makefiles/common.mk
 ifneq ($(EMIT_LLVM_IR), 0)
 # Source and target files
 LLVM_SRC := nccl_device_wrapper__impl.h
-BUILDDIR ?= $(abspath ../build)
+BUILDDIR ?= $(abspath ../../build)
 OBJDIR := $(BUILDDIR)/obj/llvm_ir
 LIBDIR := $(BUILDDIR)/lib
 

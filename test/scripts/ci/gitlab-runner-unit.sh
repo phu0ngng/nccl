@@ -162,7 +162,7 @@ fi
 
 export NCCL_DEBUG=$NCCL_DEBUG_OLD
 if [[ ${PLUGIN_TESTS_NET_TUNER} -eq 1 ]] ; then
-  run_command "make_mixed_tuner" "CMD" 1 "" "" "make" "-C ext-mixed/example test"
+  run_command "make_mixed_tuner" "CMD" 1 "" "" "make" "-C plugins/mixed/example test"
 else
   echo -e "Disabled Net/Tuner TESTS Mixed test\n\n"
 fi

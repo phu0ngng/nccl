@@ -89,16 +89,16 @@ ifneq (clean,${MAKECMDGOALS})
 endif
 #
 net.%:
-	${MAKE} -C $(SRCDIR)/ext-net/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+	${MAKE} -C $(SRCDIR)/plugins/net/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 tuner.%:
-	${MAKE} -C $(SRCDIR)/ext-tuner/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+	${MAKE} -C $(SRCDIR)/plugins/tuner/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 profiler.%:
-	${MAKE} -C $(SRCDIR)/ext-profiler/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+	${MAKE} -C $(SRCDIR)/plugins/profiler/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 env.%:
-	${MAKE} -C $(SRCDIR)/ext-env/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
+	${MAKE} -C $(SRCDIR)/plugins/env/example $* BUILDDIR=$(BUILDDIR)/test/unit/plugins
 
 # Generic IR build flow using pattern rules
 IR_OBJDIR := ${BUILDDIR}/obj/test_ir

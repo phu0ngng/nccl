@@ -7,7 +7,7 @@ CUDA_LIB = $(CUDA_HOME)/lib64
 FC := gfortran
 FCNAME := $(notdir $(FC))
 
-BUILDDIR ?= ../build
+BUILDDIR ?= ../../build
 INCDIR := $(BUILDDIR)/include
 LIBDIR := $(BUILDDIR)/lib
 OBJDIR := $(BUILDDIR)/obj

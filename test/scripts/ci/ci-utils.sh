@@ -297,7 +297,7 @@ function parse_store_coredumps() {
     binary=$1
     label=$2
     libnccl=$NCCL_HOME/lib/libnccl.so
-    find . -type f -name "core.*" -not -path "./failed/*" -not -path "./src/*" -not -path "./ext-net/*" | while read -r file; do
+    find . -type f -name "core.*" -not -path "./failed/*" -not -path "./src/*" -not -path "./plugins/net/*" | while read -r file; do
         echo "Processing file: $file"
         failed_dir="$(get_failed_dir $label)"
         mkdir -p $failed_dir/cores

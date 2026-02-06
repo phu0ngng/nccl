@@ -81,7 +81,7 @@ build_wheels:
       -t 10 \
       -N 1 \
       --exclusive \
-      nccl4py/build_assets/build_wheels.sh
+      bindings/nccl4py/build_assets/build_wheels.sh
   artifacts:
     paths:
       - build/dist/nccl4py-*.whl
@@ -95,7 +95,7 @@ build_wheels:
   before_script:
   - |
     module load uv
-    pushd nccl4py
+    pushd bindings/nccl4py
     make dev
 
 ##
@@ -152,7 +152,7 @@ unit_tests:
       -t 10 \
       -N 1 \
       --exclusive \
-      nccl4py/ci/setup_nccl4py.sh
+      bindings/nccl4py/ci/setup_nccl4py.sh
 
 setup_nccl4py_cu12:
   extends: .base_setup_nccl4py_job

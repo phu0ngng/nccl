@@ -39,11 +39,11 @@ pkg.%:
 	${MAKE} -C pkg $* BUILDDIR=${ABSBUILDDIR}
 
 nccl4py.%:
-	${MAKE} -C nccl4py $* BUILDDIR=${ABSBUILDDIR}
+	${MAKE} -C bindings/nccl4py $* BUILDDIR=${ABSBUILDDIR}
 
 # IR generation requires src.build first
 ir.%:
-	${MAKE} -C ir $* BUILDDIR=${ABSBUILDDIR}
+	${MAKE} -C bindings/ir $* BUILDDIR=${ABSBUILDDIR}
 
 pkg.debian.prep: lic
 pkg.txz.prep: lic

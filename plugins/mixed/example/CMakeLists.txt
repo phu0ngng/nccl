@@ -14,8 +14,8 @@ add_library(nccl-mixed-example SHARED ${SRC_FILES})
 
 # Set include directories
 target_include_directories(nccl-mixed-example PRIVATE
-    ${CMAKE_SOURCE_DIR}/ext-net/example/nccl
-    ${CMAKE_SOURCE_DIR}/ext-tuner/example/nccl
+    ${CMAKE_SOURCE_DIR}/plugins/net/example/nccl
+    ${CMAKE_SOURCE_DIR}/plugins/tuner/example/nccl
 )
 
 # Set output name to match Makefile

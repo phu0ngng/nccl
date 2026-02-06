@@ -1,10 +1,5 @@
 #!/bin/bash -e
 
-if [ ! -d "nccl4py" ]; then
-  echo "Error: Please launch from the top of NCCL source tree"
-  exit 1
-fi
-
 if [ -z "${NCCL4PY_HOME}" ]; then
     echo "Error: NCCL4PY_HOME is not set."
     exit 1

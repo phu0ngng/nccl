@@ -9,8 +9,8 @@ set -e
 
 # Determine script and repository root directories
 SCRIPT_DIR="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
-REPO_ROOT="$(realpath "${SCRIPT_DIR}/..")"
-DOC_DIR="$REPO_ROOT/doc"
+REPO_ROOT="$(realpath "${SCRIPT_DIR}/../..")"
+DOC_DIR="$REPO_ROOT/docs/userguide"
 VENV_DIR="$DOC_DIR/.venv"
 REQUIREMENTS="$DOC_DIR/requirements.txt"
 # Determine build target (default to pkg.doc.build)
