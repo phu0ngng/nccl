@@ -18,6 +18,7 @@ stages:
 variables:
   WERROR: 0
   CHECK_SYMBOLS: "0"  # nvbug 5479096. Only runs on ipp6
+  FF_TIMESTAMPS: true
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   PLANNED_RESERVED: "Reserved"
@@ -1179,7 +1180,7 @@ unit_tests-ipp6-a40:
     NGPUS: 1
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     OMPI_MCA_btl: "^openib"
     DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
@@ -1203,7 +1204,8 @@ unit_tests-ipp6-a40:
     LSA_POINTER_TESTS: 0
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
   script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::unit-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1235,7 +1237,7 @@ unit_tests-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -1260,7 +1262,8 @@ unit_tests-ipp6-a100:
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
     DYN_MEM_TESTS: 1
   script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::unit-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1316,7 +1319,7 @@ unit_tests-dgxspark:
     LSA_MULTIMEM_POINTER_TESTS: 0
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:unit-dgxspark::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -1349,14 +1352,15 @@ unit_tests-gin-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     GIN_TESTS: 1
     GIN_TESTS_GDAKI_GPU_SM: 1
     GIN_TESTS_GDAKI_CPU_ASSISTED: 1
     GIN_TESTS_CPU_PROXY: 1
     GIN_TESTS_LARGE_SIZE: 1
   script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::unit-a100-gin::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1792,10 +1796,11 @@ examples-validation-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     EXAMPLES_TESTS_BASIC_ONLY: 0
   script:
-    - ./test/scripts/ci/gitlab-runner-examples.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::examples-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-examples.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2017,7 +2022,7 @@ apitest-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - [setup-AWS_H100_EFA,unit_tests-AWS_H100_EFA]
+    - setup-AWS_H100_EFA
   tags:
     - ipp6-nccl
   variables:
@@ -2216,13 +2221,14 @@ apitest-ipp6-a40:
     NGPUS: 1
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
     API_TESTS_DEVICE_API: 1
   script:
-    - ./test/scripts/ci/gitlab-runner-api.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::apitest-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2254,13 +2260,14 @@ apitest-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
     API_TESTS_DEVICE_API: 1
   script:
-    - ./test/scripts/ci/gitlab-runner-api.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::apitest-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2632,7 +2639,7 @@ perftest_single-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - [setup-AWS_H100_EFA,apitest-AWS_H100_EFA]
+    - setup-AWS_H100_EFA
   tags:
     - ipp6-nccl
   variables:
@@ -2826,11 +2833,12 @@ perftest-single-ipp6-a40:
     NGPUS: 1
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-single-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2863,11 +2871,12 @@ perftest-single-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-single-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3118,7 +3127,7 @@ perftest_multi-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - [setup-AWS_H100_EFA,perftest_single-AWS_H100_EFA]
+    - [setup-AWS_H100_EFA]
   tags:
     - ipp6-nccl
   variables:
@@ -3137,10 +3146,6 @@ perftest_multi-AWS_H100_EFA:
       export SLURM_PARTITION=compute
       export NGPUS=8
       export NNODES=4
-      export MAX=1G
-      export GRAPH=0
-      export NCCL_NVLS_ENABLE=0
-      export NP=8
       export NCCL_HOME=build
       export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
       export RUN_MODE="SALLOC_MPI"
@@ -3315,11 +3320,12 @@ perftest-multi-ipp6-a40:
     NGPUS: 1
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-multi-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3352,11 +3358,12 @@ perftest-multi-ipp6-a100:
     NGPUS: 2
     NP: 2
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-multi-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3972,7 +3979,7 @@ profiler-tests-ipp6-a100:
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     SLURM_PARTITION: a100-cicd
     NNODES: 1
     ENABLE_NVLS: 0
@@ -3981,7 +3988,8 @@ profiler-tests-ipp6-a100:
     NP: 2
     NCCL_HOME: ${INSTALL_DIR}/build
   script:
-    - ./test/scripts/ci/gitlab-runner-profiler.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::profiler-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-profiler.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:

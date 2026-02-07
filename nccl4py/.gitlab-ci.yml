@@ -9,6 +9,7 @@ variables:
   # Gitlab variables
   FF_USE_FASTZIP: "true"
   FF_ENABLE_JOB_CLEANUP: "true"
+  FF_TIMESTAMPS: true
   GIT_STRATEGY: clone
   # Common
   NCCL4PY_CUDA12_TARGET: cu12
