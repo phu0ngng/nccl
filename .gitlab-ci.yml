@@ -2022,7 +2022,7 @@ apitest-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - setup-AWS_H100_EFA
+    - [setup-AWS_H100_EFA,unit_tests-AWS_H100_EFA]
   tags:
     - ipp6-nccl
   variables:
@@ -2639,7 +2639,7 @@ perftest_single-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - setup-AWS_H100_EFA
+    - [setup-AWS_H100_EFA,apitest-AWS_H100_EFA]
   tags:
     - ipp6-nccl
   variables:
@@ -3127,7 +3127,7 @@ perftest_multi-AWS_H100_EFA:
       when: always
     - when: never
   needs:
-    - [setup-AWS_H100_EFA]
+    - [setup-AWS_H100_EFA,perftest_single-AWS_H100_EFA]
   tags:
     - ipp6-nccl
   variables:
@@ -3146,6 +3146,10 @@ perftest_multi-AWS_H100_EFA:
       export SLURM_PARTITION=compute
       export NGPUS=8
       export NNODES=4
+      export MAX=1G
+      export GRAPH=0
+      export NCCL_NVLS_ENABLE=0
+      export NP=8
       export NCCL_HOME=build
       export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
       export RUN_MODE="SALLOC_MPI"
