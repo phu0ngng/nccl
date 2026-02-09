@@ -171,3 +171,6 @@ ${DST_DIR}/comm_ops_perf: ${DST_DIR}/comm_ops.o
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ $(NVLDFLAGS)
+
+$(TEST_VERIFIABLE_LIBSO):
+	$(MAKE) -C $(TEST_VERIFIABLE_SRCDIR) $(TEST_VERIFIABLE_LIBSO)
