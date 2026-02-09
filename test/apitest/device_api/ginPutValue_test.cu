@@ -23,7 +23,7 @@ __global__ void putValueKernel(ncclDevComm comm, ncclWindow_t window, size_t off
   }
 
   if (world.rank == DST_RANK) {
-    uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
+    volatile uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
 
     // Check omitted due to a race condition with the putValue.
     // The buffer is guaranteed to be initialized to 0 by the test framework.

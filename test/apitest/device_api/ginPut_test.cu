@@ -29,7 +29,7 @@ __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset, 
   }
 
   if (world.rank == DST_RANK) {
-    uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
+    volatile uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
     if (useSignal) {
       gin.waitSignal(ncclCoopCta(), signalWindow, signalOffset, 1);
       KERNEL_ASSERT_EQ(*putPtr, NCCL_PUT_VALUE, "Ptr should be NCCL_PUT_VALUE after putSignal");
