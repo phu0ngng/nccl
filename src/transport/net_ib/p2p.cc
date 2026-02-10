@@ -653,13 +653,17 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
 
   struct ncclIbRequest* req = NULL;
   NCCLCHECK(ncclIbRequestRetrieveFromCompletion(commBase, wc, &req));
+  if (req == NULL) {
+    WARN("NET/IB: %s: %s comm could not retreive a request found for a successful completion (comm=%p, wc.wr_id=%ld, opcode=%d, qp_num=%u)", __func__, commBase->isSend ? "Send" : "Recv", commBase, wc->wr_id, wc->opcode, wc->qp_num);
+    return ncclInternalError;
+  }
 
   #ifdef ENABLE_TRACE
   char line[SOCKET_NAME_MAXLEN+1];
   TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, devIndex=%d",
     ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], devIndex);
   #endif
-  if (req && req->type == NCCL_NET_IB_REQ_SEND) {
+  if (req->type == NCCL_NET_IB_REQ_SEND) {
     for (int j = 0; j < req->nreqs; j++) {
       struct ncclIbRequest* sendReq = NULL;
       NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
@@ -676,7 +680,7 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
 #endif
     }
   } else {
-    if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+    if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
       if (req->type != NCCL_NET_IB_REQ_RECV) {
         WARN("NET/IB: wc->opcode=%s and req->type=%s", ibvWcOpcodeStr(wc->opcode), ncclIbReqTypeStr[req->type]);
         assert(false);
@@ -700,10 +704,10 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         ncclIbPostRecvWorkRequest(qp->qp, &recvComm->ibRecvWorkRequest);
       }
       req->events[devIndex]--;
-    } else if (req && req->type == NCCL_NET_IB_REQ_FLUSH) {
+    } else if (req->type == NCCL_NET_IB_REQ_FLUSH) {
       TRACE(NCCL_NET, "NET/IB: %s: Got completion for a flush request (req=%p, comm=%p, id=%ld, devIndex=%d, qp_num=%u)", __func__, req, req->base, req->id, devIndex, wc->qp_num);
       req->events[devIndex]--;
-    } else if (req && wc->opcode == IBV_WC_RDMA_WRITE) {
+    } else if (wc->opcode == IBV_WC_RDMA_WRITE) {
       // This is a CTS completion
       TRACE(NCCL_NET, "NET/IB: %s: Got completion for a CTS (req=%p, comm=%p, id=%ld, devIndex=%d, qp_num=%u)", __func__, req, req->base, req->id, devIndex, wc->qp_num);
     } else {
