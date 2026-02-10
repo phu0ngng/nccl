@@ -72,6 +72,9 @@ function make_run_command() {
 
     if [ "$run_mode" = "SALLOC_MPI" ]; then
         run_mode_cmd="salloc -N ${NNODES} --ntasks-per-node ${NGPUS} -t ${SLURM_TIME} --exclusive"
+        if [ "$SLURM_ACCOUNT" != "" ]; then
+            run_mode_cmd+=" -A $SLURM_ACCOUNT"
+        fi
         if [ "$SLURM_PARTITION" != "" ]; then
             run_mode_cmd+=" -p $SLURM_PARTITION"
         fi

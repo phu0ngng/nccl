@@ -1,22 +1,40 @@
-.pre_submit:
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
-      when: always
-
-.post_submit:
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly|weekly)$/
-      when: always
-
-.nightly:
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/
-      when: always
-
-.weekly:
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(weekly)$/
-      when: always
+variables:
+  ##
+  # Cluster-specific paths
+  # Used by setup and test jobs to install/reference build artifacts
+  #
+  # EOS cluster
+  EOS_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  EOS_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  EOS_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # CW-DFW cluster
+  CW_DFW_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
+  CW_DFW_CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
+  CW_DFW_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
+  # DRACO-OCI cluster
+  DRACO_OCI_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
+  DRACO_OCI_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
+  # PRE-NYX cluster
+  PRE_NYX_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  PRE_NYX_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  PRE_NYX_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # PRE-TYCHE cluster
+  PRE_TYCHE_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  PRE_TYCHE_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  PRE_TYCHE_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # THEIA cluster
+  THEIA_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  THEIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  THEIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # BIA cluster
+  BIA_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  BIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  BIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # IPP6 cluster
+  IPP6_INSTALL_DIR: "/storage/gitlab-runner/nccl/install/${CI_PIPELINE_ID}"
+  DGXSPARK_INSTALL_DIR: "/storage/gitlab-runner/nccl/install-arm/${CI_PIPELINE_ID}"
+  # Comprehensive sweep mode: "off", "debug" (1-node intra + 2-node inter), "full" (all scales)
+  COMPREHENSIVE_SWEEP: "off"
 
 .ipp6:
   rules:
@@ -26,6 +44,27 @@
     - ipp6-nccl
   variables:
     GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}" # Use a unique path for each job to avoid conflicts
+    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
+    INSTALL_DIR: "${IPP6_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${IPP6_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "SRUN_MPI"
+    OMPI_MCA_btl: "^openib"
+    NCCL_DEBUG: "WARN"
+
+.ipp6-a40:
+  extends:
+    - .ipp6
+  variables:
+    SLURM_PARTITION: "a40-cicd"
+    NGPUS: 1
+
+.ipp6-a100:
+  extends:
+    - .ipp6
+  variables:
+    SLURM_PARTITION: "a100-cicd"
+    NGPUS: 2
 
 .dgxspark:
   rules:
@@ -35,90 +74,14 @@
     - ipp6-nccl
   variables:
     GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}" # Use a unique path for each job to avoid conflicts
-
-.eos:
-  rules:
-    - if: $RUN_ON_EOS == "1"
-      when: always
-  tags:
-    - nccl-eos
-
-.cw-dfw:
-  rules:
-    - if: $RUN_ON_CW_DFW == "1"
-      when: always
-  tags:
-    - nccl-cw-dfw
-
-.draco-oci:
-  rules:
-    - if: $RUN_ON_DRACO_OCI == "1"
-      when: always
-  tags:
-    - draco-oci-iad
-
-.pre-nyx:
-  rules:
-    - if: $RUN_ON_PRE_NYX == "1"
-      when: always
-  tags:
-    - prenyx
-
-.pre-tyche:
-  rules:
-    - if: $RUN_ON_PRE_TYCHE == "1"
-      when: always
-  tags:
-    - ptyche
-
-.theia:
-  rules:
-    - if: $RUN_ON_THEIA == "1"
-      when: always
-  tags:
-    - lyris
-
-.bia:
-  rules:
-    - if: $RUN_ON_BIA == "1"
-      when: always
-  tags:
-    - bia
-
-.gc-a40:
-  rules:
-    - if: $RUN_ON_A40 == "1"
-      when: always
-  tags:
-    - a40
-
-.gc-a100:
-  rules:
-    - if: $RUN_ON_A100 == "1"
-      when: always
-  tags:
-    - a100
-
-.gc-p100:
-  rules:
-    - if: $RUN_ON_P100 == "1"
-      when: always
-  tags:
-    - p100
-
-.gc-p40:
-  rules:
-    - if: $RUN_ON_P40 == "1"
-      when: always
-  tags:
-    - p40
-
-.gc-gp100:
-  rules:
-    - if: $RUN_ON_GP100 == "1"
-      when: always
-  tags:
-    - gp100
+    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
+    INSTALL_DIR: "${DGXSPARK_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${IPP6_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "SRUN_MPI"
+    NCCL_DEBUG: "WARN"
+    NGPUS: 1
+    SLURM_PARTITION: dgxspark
 
 .aws:
   rules:
@@ -126,6 +89,212 @@
       when: always
   tags:
     - ipp6-nccl
+  variables:
+    GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}" # Use a unique path for each job to avoid conflicts
+    CLUSTER_CONFIG: "docker/clusters/aws-config.sh"
+    AWS_HEAD_NODE: aws-pcluster-head
+    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
+    INSTALL_DIR: "${AWS_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${AWS_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+
+.eos:
+  rules:
+    - if: $RUN_ON_EOS == "1"
+      when: always
+  tags:
+    - nccl-eos
+  variables:
+    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
+    INSTALL_DIR: "${EOS_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    RUN_MODE: "MPI"
+    NGPUS: 8
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+    OMPI_MCA_btl: "^openib"
+    NCCL_DEBUG: "WARN"
+
+.cw-dfw:
+  rules:
+    - if: $RUN_ON_CW_DFW == "1"
+      when: always
+  tags:
+    - nccl-cw-dfw
+  variables:
+    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
+    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    NCCL_DEBUG: "WARN"
+    RUN_MODE: "MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    SLURM_PARTITION: backfill
+    NGPUS: 8
+    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
+    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+
+.draco-oci:
+  rules:
+    - if: $RUN_ON_DRACO_OCI == "1"
+      when: always
+  tags:
+    - draco-oci-iad
+  variables:
+    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
+    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    NCCL_DEBUG: "WARN"
+    NGPUS: 8
+    RUN_MODE: "MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+
+.pre-nyx:
+  rules:
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+  tags:
+    - prenyx
+  variables:
+    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
+    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    NCCL_DEBUG: "WARN"
+    SLURM_PARTITION: batch
+    NGPUS: 8
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+
+.pre-tyche:
+  rules:
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+  tags:
+    - ptyche
+  variables:
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    NCCL_DEBUG: "WARN"
+    NGPUS: 4
+    SLURM_PARTITION: batch
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+
+.theia:
+  rules:
+    - if: $RUN_ON_THEIA == "1"
+      when: always
+  tags:
+    - lyris
+  variables:
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_PARTITION: gb300
+    NGPUS: 4
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NCCL_DEBUG: "WARN"
+
+.bia:
+  rules:
+    - if: $RUN_ON_BIA == "1"
+      when: always
+  tags:
+    - bia
+  variables:
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_PARTITION: batch
+    NGPUS: 4
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NCCL_DEBUG: "WARN"
+
+.gc-a40:
+  rules:
+    - if: $RUN_ON_A40 == "1"
+      when: always
+  tags:
+    - a40
+  variables:
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    NCCL_HOME: build
+    SLURM_PARTITION: "A40"
+    NGPUS: 8
+    RUN_MODE: "SALLOC_MPI"
+    NCCL_DEBUG: "WARN"
+
+.gc-a100:
+  rules:
+    - if: $RUN_ON_A100 == "1"
+      when: always
+  tags:
+    - a100
+  variables:
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    NCCL_HOME: build
+    SLURM_PARTITION: "A100"
+    NGPUS: 8
+    RUN_MODE: "SALLOC_MPI"
+    NCCL_DEBUG: "WARN"
+
+.gc-p100:
+  rules:
+    - if: $RUN_ON_P100 == "1"
+      when: always
+  tags:
+    - p100
+  variables:
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    NCCL_HOME: build
+    SLURM_PARTITION: "P100"
+    NGPUS: 8
+    RUN_MODE: "SALLOC_MPI"
+    NCCL_DEBUG: "WARN"
+
+.gc-p40:
+  rules:
+    - if: $RUN_ON_P40 == "1"
+      when: always
+  tags:
+    - p40
+  variables:
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    NCCL_HOME: build
+    SLURM_PARTITION: "P40"
+    NGPUS: 8
+    RUN_MODE: "SALLOC_MPI"
+    NCCL_DEBUG: "WARN"
+
+.gc-gp100:
+  rules:
+    - if: $RUN_ON_GP100 == "1"
+      when: always
+  tags:
+    - gp100
+  variables:
+    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
+    NCCL_HOME: build
+    SLURM_PARTITION: "GP100"
+    NGPUS: 8
+    RUN_MODE: "SALLOC_MPI"
+    NCCL_DEBUG: "WARN"
 
 .setup:
   stage: setup
@@ -156,7 +325,7 @@
       fi
 
 # Base template for comprehensive sweep jobs
-.comprehensive-sweep-base:
+.comprehensive-sweep:
   stage: comprehensive_sweep
   variables:
     PERF_TEST_MODE: "comprehensive_sweep"
@@ -173,19 +342,3 @@
       - "comprehensive_sweep/*.pdf"
       - "comprehensive_sweep/*.tar.gz"
     expire_in: 30 days
-
-# Debug comprehensive sweep: runs on "debug" or "full" mode (1-node intra, 2-node inter)
-.comprehensive-sweep-debug:
-  extends: .comprehensive-sweep-base
-  rules:
-    - if: $COMPREHENSIVE_SWEEP == "debug" || $COMPREHENSIVE_SWEEP == "full"
-      when: on_success
-    - when: never
-
-# Full comprehensive sweep: runs only on "full" mode (all scales)
-.comprehensive-sweep-full:
-  extends: .comprehensive-sweep-base
-  rules:
-    - if: $COMPREHENSIVE_SWEEP == "full"
-      when: on_success
-    - when: never

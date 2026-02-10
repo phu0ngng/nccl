@@ -58,6 +58,7 @@ sbatch = [
 
 [CW-DFW.baremetal]
 [CW-DFW.baremetal.nccl]
+CUDA_HOME = "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/toolkits/cuda-13.0"
 NCCL_HOME = "${INSTALL_DIR}/build"
 NCCL_TEST_PATH = "${INSTALL_DIR}/build/test/perf"
 # MPI_HOME = "/cm/shared/apps/openmpi4/gcc/4.1.5"
