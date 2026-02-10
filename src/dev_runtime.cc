@@ -1152,6 +1152,8 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   NCCLCHECK(CommCheck(comm, __func__, "comm"));
   NCCLCHECK(PtrCheck(props, __func__, "props"));
 
+  NCCLCHECK(ncclCommEnsureReady(comm));
+
   if (props->magic != NCCL_API_MAGIC) {
     WARN("Cannot get communicator properties: ncclCommProperties_t argument must be initialized via NCCL_COMM_PROPERTIES_INITIALIZER");
     return ncclInvalidUsage;
