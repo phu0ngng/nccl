@@ -909,7 +909,7 @@ class Communicator:
         """
         self._check_valid("get device")
         if self._device is None:
-            self._device = get_cuda_device()
+            self._device = Device(int(_nccl_bindings.comm_cu_device(self._comm)))
         return self._device
 
     @property
