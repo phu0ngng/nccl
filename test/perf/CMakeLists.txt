@@ -72,6 +72,7 @@ foreach(COLL IN LISTS COLLS)
     add_executable(${COLL}_perf ${COLL}.cu ${PERF_TEST_SOURCES})
     set_target_properties(${COLL}_perf PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/test/perf
+        ENABLE_EXPORTS TRUE
     )
     # Set include directories
     target_include_directories(${COLL}_perf
