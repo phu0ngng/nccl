@@ -66,9 +66,9 @@ NCCL_DEVICE_INLINE void ncclLsaBarrierSession<Coop>::arrive(Coop, cuda::memory_o
     if (this->coop.thread_rank() == 0) {
       uint32_t* inbox = this->mcInbox(/*multimem=*/true);
       if (nccl::utility::releaseOrderOf(order) != cuda::memory_order_relaxed) {
-        asm volatile("multimem.red.release.sys.add.u32 [%0],1;" :: "l"(inbox));
+        asm volatile("multimem.red.release.sys.add.u32 [%0],1;" :: "l"(inbox) : "memory");
       } else {
-        asm volatile("multimem.red.relaxed.sys.add.u32 [%0],1;" :: "l"(inbox));
+        asm volatile("multimem.red.relaxed.sys.add.u32 [%0],1;" :: "l"(inbox) : "memory");
       }
     }
   #endif

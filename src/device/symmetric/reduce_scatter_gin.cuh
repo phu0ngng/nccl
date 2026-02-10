@@ -139,7 +139,7 @@ static __device__ void rsAlgoHier(ncclSymkDevWorkArgs const* args, BoolTag<multi
                 if (coopRole.thread_rank() == 0) {
                   // totalSends += rail.nRanks-1;
                   #if __CUDA_ARCH__ >= 700
-                  asm volatile("red.relaxed.shared.add.s32 [%0],%1;" :: "r"((uint32_t)__cvta_generic_to_shared(&totalSends)), "r"(rail.nRanks-1));
+                  asm volatile("red.relaxed.shared.add.s32 [%0],%1;" :: "r"((uint32_t)__cvta_generic_to_shared(&totalSends)), "r"(rail.nRanks-1) : "memory");
                   #else
                   __trap();
                   #endif

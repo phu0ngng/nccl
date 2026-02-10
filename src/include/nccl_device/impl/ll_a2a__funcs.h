@@ -49,10 +49,19 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::send(int peer, int elt, T data) 
   buf += this->slotsOffset + elt;
   #pragma unroll
   for (int u=0; u < divUp(sizeof(T), 8); u++) {
-    asm volatile("st.volatile.v4.u32 [%0],{%1,%3,%2,%3};" ::
-      "l"(buf + u*this->pitch),
-      "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
-    );
+    #if __CUDA_ARCH__ >= 700 
+      asm volatile("st.relaxed.sys.v4.u32 [%0],{%1,%3,%2,%3};" ::
+        "l"(buf + u*this->pitch),
+        "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
+        : "memory"
+      );
+    #else
+      asm volatile("st.volatile.v4.u32 [%0],{%1,%3,%2,%3};" ::
+        "l"(buf + u*this->pitch),
+        "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
+        : "memory"
+      );
+    #endif
   }
 }
 #endif
@@ -69,10 +78,19 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::bcast(int elt, T data) {
     bufmc += this->slotsOffset + elt;
     #pragma unroll
     for (int u=0; u < divUp(sizeof(T), 8); u++) {
-      asm volatile("st.volatile.v4.u32 [%0],{%1,%3,%2,%3};" ::
-        "l"(bufmc + this->pitch*u),
-        "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
-      );
+      #if __CUDA_ARCH__ >= 700 
+        asm volatile("st.relaxed.sys.v4.u32 [%0],{%1,%3,%2,%3};" ::
+          "l"(bufmc + this->pitch*u),
+          "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
+          : "memory"
+        );
+      #else
+        asm volatile("st.volatile.v4.u32 [%0],{%1,%3,%2,%3};" ::
+          "l"(bufmc + this->pitch*u),
+          "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
+          : "memory"
+        );
+      #endif
     }
   } else {
     union { T tmp; uint32_t u32[divUp(sizeof(T), 8)][2]; };
@@ -87,10 +105,19 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::bcast(int elt, T data) {
         buf += this->slotsOffset + elt;
         #pragma unroll
         for (int u=0; u < divUp(sizeof(T),8); u++) {
-          asm volatile("st.volatile.v4.u32 [%0],{%1,%3,%2,%3};" ::
-            "l"(buf + u*this->pitch),
-            "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
-          );
+          #if __CUDA_ARCH__ >= 700 
+            asm volatile("st.relaxed.sys.v4.u32 [%0],{%1,%3,%2,%3};" ::
+              "l"(buf + u*this->pitch),
+              "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
+              : "memory"
+            );
+          #else
+            asm volatile("st.volatile.v4.u32 [%0],{%1,%3,%2,%3};" ::
+              "l"(buf + u*this->pitch),
+              "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
+              : "memory"
+            );
+          #endif
         }
         r += 1;
         if (r == this->team.nRanks) r = 0;
@@ -103,10 +130,19 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::bcast(int elt, T data) {
       buf += this->slotsOffset + elt;
       #pragma unroll
       for (int u=0; u < divUp(sizeof(T),8); u++) {
-        asm volatile("st.volatile.v4.u32 [%0],{%1,%3,%2,%3};" ::
-          "l"(buf + u*this->pitch),
-          "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
-        );
+        #if __CUDA_ARCH__ >= 700 
+          asm volatile("st.relaxed.sys.v4.u32 [%0],{%1,%3,%2,%3};" ::
+            "l"(buf + u*this->pitch),
+            "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
+            : "memory"
+          );
+        #else
+          asm volatile("st.volatile.v4.u32 [%0],{%1,%3,%2,%3};" ::
+              "l"(buf + u*this->pitch),
+              "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
+              : "memory"
+            );
+        #endif
       }
       r += 1;
       if (r == this->team.nRanks) r = 0;
@@ -140,12 +176,33 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::recvUnrolled(int eltStart, int e
     #pragma unroll
     for (int u=0; u < MaxEltCount; u++) {
       if (u < MinEltCount || u < eltCount) {
-        #pragma unroll
-        for (int v=0; v < divUp(sizeof(T), 8); v++) {
-          asm volatile("ld.volatile.v4.u32 {%0,%1,%2,%3},[%4];"
-            : "=r"(tmp[u][v].x), "=r"(tmp[u][v].y), "=r"(tmp[u][v].z), "=r"(tmp[u][v].w)
-            : "l"(buf + u*eltStride + v*this->pitch));
-        }
+        #if __CUDA_ARCH__ >= 700
+          #if __CUDA_ARCH__ == 900 
+            #pragma unroll
+            for (int v=0; v < divUp(sizeof(T), 8); v++) {
+              asm volatile("ld.acquire.sys.v4.u32 {%0,%1,%2,%3},[%4];"
+                : "=r"(tmp[u][v].x), "=r"(tmp[u][v].y), "=r"(tmp[u][v].z), "=r"(tmp[u][v].w)
+                : "l"(buf + u*eltStride + v*this->pitch)
+                : "memory");
+            }
+          #else
+            #pragma unroll
+            for (int v=0; v < divUp(sizeof(T), 8); v++) {
+              asm volatile("ld.relaxed.sys.v4.u32 {%0,%1,%2,%3},[%4];"
+                : "=r"(tmp[u][v].x), "=r"(tmp[u][v].y), "=r"(tmp[u][v].z), "=r"(tmp[u][v].w)
+                : "l"(buf + u*eltStride + v*this->pitch)
+                : "memory");
+            }
+          #endif
+        #else // __CUDA_ARCH__ >= 700
+          #pragma unroll
+          for (int v=0; v < divUp(sizeof(T), 8); v++) {
+            asm volatile("ld.volatile.v4.u32 {%0,%1,%2,%3},[%4];"
+              : "=r"(tmp[u][v].x), "=r"(tmp[u][v].y), "=r"(tmp[u][v].z), "=r"(tmp[u][v].w)
+              : "l"(buf + u*eltStride + v*this->pitch)
+              : "memory");
+          }
+        #endif
       }
     }
     bool okAll = true;
