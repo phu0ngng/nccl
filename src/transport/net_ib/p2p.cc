@@ -687,8 +687,7 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
   } else {
     if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
       if (req->type != NCCL_NET_IB_REQ_RECV) {
-        WARN("NET/IB: wc->opcode=%s and req->type=%s", ibvWcOpcodeStr(wc->opcode), ncclIbReqTypeStr[req->type]);
-        assert(false);
+        WARN("NET/IB: %s: Receiver expected a 'recv' request but got '%s' (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.status=%s(%d) wc.opcode=%s(%d), wc.qp_num=%u)", __func__, ncclIbReqTypeStr[req->type], req, req->base, req->id, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num);
         return ncclInternalError;
       }
       if (req->nreqs == 1) {
