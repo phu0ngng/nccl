@@ -663,7 +663,12 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
   TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, devIndex=%d",
     ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], devIndex);
   #endif
-  if (req->type == NCCL_NET_IB_REQ_SEND) {
+
+  if (commBase->isSend) {
+    if (req->type != NCCL_NET_IB_REQ_SEND) {
+      WARN("NET/IB: %s: Sender expected a 'send' request but got '%s' (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.opcode=%s(%d), wc.qp_num=%u)", __func__, ncclIbReqTypeStr[req->type], req, commBase, req->id, wc->wr_id, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num);
+      return ncclInternalError;
+    }
     for (int j = 0; j < req->nreqs; j++) {
       struct ncclIbRequest* sendReq = NULL;
       NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
