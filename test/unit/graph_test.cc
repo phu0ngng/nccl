@@ -763,7 +763,7 @@ void checkPlatform(const char* platform, struct testParam* param, int* errors, i
   char xmlTopoFile[PATH_MAX];
   char xmlGraphFile[PATH_MAX];
   char topoDir[1024];
-  const char* envTopoDir = getenv("TOPO_DIR");
+  const char* envTopoDir = getenv("NCCL_TOPO_DIR");
   if (envTopoDir) {
     snprintf(topoDir, 1024, "%s", envTopoDir);
   } else {
