@@ -17,8 +17,8 @@ static ncclResult_t ncclGin_getProperties(int dev, ncclNetProperties_t* props) {
 
 static ncclResult_t ncclGin_connect(void* ctx, void* handles[], int nranks, int rank,
                                     int nConnections, int queueDepth,
-                                    ncclGinRequirementFlagOptions_t useReliableDB,
-                                    ncclGinRequirementFlagOptions_t useExpertControl,
+                                    ncclGinRequirementFlagOption_t useReliableDB,
+                                    ncclGinRequirementFlagOption_t useExpertControl,
                                     void* listenComm, void** collComm) {
   if (nConnections > 1) {
     WARN("GIN plugin v11 does not support multiple connections");

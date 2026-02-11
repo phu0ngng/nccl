@@ -104,11 +104,11 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
   }
 }
 
-static ncclRequirementFlagOptions_t parseRequirementFlagOption(int reqFlagOption) {
-  if (reqFlagOption >= NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED && reqFlagOption <= NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED) {
-    return (ncclRequirementFlagOptions_t)reqFlagOption;
+static ncclRequirementFlagOption_t parseRequirementFlagOption(int reqFlagOption) {
+  if (reqFlagOption >= NCCL_REQUIREMENT_FLAG_OPTION_NONE && reqFlagOption <= NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED) {
+    return (ncclRequirementFlagOption_t)reqFlagOption;
   }
-  return NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
+  return NCCL_REQUIREMENT_FLAG_OPTION_NONE;
 }
 
 NCCL_PARAM(GinNconnections, "GIN_NCONNECTIONS", -2);
@@ -160,11 +160,11 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
     reqGinQueueDepth = ginState->ginQueueDepth;
   ginState->ginQueueDepth = reqGinQueueDepth;
 
-  if (reqGinUseReliableDB < NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED)
+  if (reqGinUseReliableDB < NCCL_REQUIREMENT_FLAG_OPTION_NONE)
     reqGinUseReliableDB = ginState->ginUseReliableDB;
   ginState->ginUseReliableDB = parseRequirementFlagOption(reqGinUseReliableDB);
 
-  if (reqGinUseExpertControl < NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED)
+  if (reqGinUseExpertControl < NCCL_REQUIREMENT_FLAG_OPTION_NONE)
     reqGinUseExpertControl = ginState->ginUseExpertControl;
   ginState->ginUseExpertControl = parseRequirementFlagOption(reqGinUseExpertControl);
 
@@ -233,8 +233,8 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
                   fail);
     NCCLCHECKGOTO(
             ginState->ncclGin->connect(comm->ginContext, handles, nGinRanks, myGinRank,
-                nContextsPerComm, ginState->ginQueueDepth, static_cast<ncclGinRequirementFlagOptions_v12_t>(ginState->ginUseReliableDB),
-                static_cast<ncclGinRequirementFlagOptions_v12_t>(ginState->ginUseExpertControl),
+                nContextsPerComm, ginState->ginQueueDepth, static_cast<ncclGinRequirementFlagOption_v12_t>(ginState->ginUseReliableDB),
+                static_cast<ncclGinRequirementFlagOption_v12_t>(ginState->ginUseExpertControl),
                 listenComm, ginState->ginComms + n),
       ret, fail);
     if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {

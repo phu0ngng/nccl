@@ -130,8 +130,8 @@ int main(int argc, char** argv) {
   if (use_expert_control) {
     reqs.ginQueueDepth = args.num_threads;
   }
-  reqs.ginUseReliableDB = (ncclRequirementFlagOptions_t)args.gin_reliable_db;
-  reqs.ginUseExpertControl = use_expert_control ? NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED : NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
+  reqs.ginUseReliableDB = (ncclRequirementFlagOption_t)args.gin_reliable_db;
+  reqs.ginUseExpertControl = use_expert_control ? NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED : NCCL_REQUIREMENT_FLAG_OPTION_NONE;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   reqs.ginSignalCount = 0;
   reqs.ginForceEnable = true;

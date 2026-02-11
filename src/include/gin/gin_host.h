@@ -39,8 +39,8 @@ struct ncclGinState {
   int ctxFirstAvailable; // We allocate shared contexts starting from index 0.
   int ctxLastExclusive; // We allocate exclusive contexts starting from the highest index.
   int ginQueueDepth;
-  ncclRequirementFlagOptions_t ginUseReliableDB;
-  ncclRequirementFlagOptions_t ginUseExpertControl;
+  ncclRequirementFlagOption_t ginUseReliableDB;
+  ncclRequirementFlagOption_t ginUseExpertControl;
   ncclGinConnectionType_t ginConnectionType;
 };
 

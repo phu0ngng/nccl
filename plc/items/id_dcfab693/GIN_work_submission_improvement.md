@@ -104,7 +104,7 @@ multiple WQEs in one transactions. This feature ends up as a bit-wise OR
 2. ncclGin_v12_t is extended as follows:
 ```
 typedef enum {
-  ncclGinRequirementFlagOptionsNotRequired = 0,
+  ncclGinRequirementFlagOptionsNone = 0,
   ncclGinRequirementFlagOptionsOptional = 1,
   ncclGinRequirementFlagOptionsRequired = 2,
 } ncclGinRequirementFlagOptions_v12_t;

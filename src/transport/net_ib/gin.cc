@@ -212,8 +212,8 @@ ncclResult_t ncclGinIbP2PBarrier(struct ncclGinIbCollComm *cComm) {
 }
 
 ncclResult_t ncclGinIbConnect(void *ctx, void *handles[], int nranks, int rank, int nConnections,
-                              int queueDepth, ncclGinRequirementFlagOptions_t useReliableDB,
-                              ncclGinRequirementFlagOptions_t useExpertControl, void *listenComm,
+                              int queueDepth, ncclGinRequirementFlagOption_t useReliableDB,
+                              ncclGinRequirementFlagOption_t useExpertControl, void *listenComm,
                               void **collComm) {
   struct ncclIbListenComm *lComm = (struct ncclIbListenComm *)listenComm;
   struct ncclGinIbCollComm *cCommArray = nullptr;
@@ -338,8 +338,8 @@ ncclResult_t ncclGinIbGdakiListen(void* ctx, int dev, void* opaqueHandle, void**
 }
 
 ncclResult_t ncclGinIbGdakiConnect(void *ctx, void *handles[], int nranks, int rank, int nContexts,
-                                   int queueDepth, ncclGinRequirementFlagOptions_t useReliableDB,
-                                   ncclGinRequirementFlagOptions_t useExpertControl,
+                                   int queueDepth, ncclGinRequirementFlagOption_t useReliableDB,
+                                   ncclGinRequirementFlagOption_t useExpertControl,
                                    void *listenComm, void **collComm) {
   // Check the current GPU supports GDR
   NCCLCHECK(ncclGinIbGdrGpuSupport(/*gdaki*/ true));
@@ -423,18 +423,18 @@ ncclResult_t ncclGinIbProxyGetProperties(int dev, ncclNetProperties_t* props) {
 }
 
 ncclResult_t ncclGinIbProxyConnect(void *ctx, void *handles[], int nranks, int rank, int nContexts,
-                                   int queueDepth, ncclGinRequirementFlagOptions_t useReliableDB,
-                                   ncclGinRequirementFlagOptions_t useExpertControl,
+                                   int queueDepth, ncclGinRequirementFlagOption_t useReliableDB,
+                                   ncclGinRequirementFlagOption_t useExpertControl,
                                    void *listenComm, void **collComm) {
   if (queueDepth != 0) {
     WARN("GIN_IB_PROXY does not support specifying qp depth");
     return ncclInvalidUsage;
   }
-  if (useReliableDB > ncclGinRequirementFlagOptionsNotRequired) {
+  if (useReliableDB > ncclGinRequirementFlagOptionsNone) {
     WARN("GIN_IB_PROXY does not support reliable db");
     return ncclInvalidUsage;
   }
-  if (useExpertControl > ncclGinRequirementFlagOptionsNotRequired) {
+  if (useExpertControl > ncclGinRequirementFlagOptionsNone) {
     WARN("GIN_IB_PROXY does not support expert control");
     return ncclInvalidUsage;
   }

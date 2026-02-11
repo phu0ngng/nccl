@@ -847,8 +847,8 @@ ncclResult_t ncclDevrCommCreateInternal(
 
   if (ginActivated) {
     int ginQueueDepth = 0;
-    ncclRequirementFlagOptions_t ginUseReliableDB = NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
-    ncclRequirementFlagOptions_t ginUseExpertControl = NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
+    ncclRequirementFlagOption_t ginUseReliableDB = NCCL_REQUIREMENT_FLAG_OPTION_NONE;
+    ncclRequirementFlagOption_t ginUseExpertControl = NCCL_REQUIREMENT_FLAG_OPTION_NONE;
 
     if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
         ginQueueDepth = reqs->ginQueueDepth;

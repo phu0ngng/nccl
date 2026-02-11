@@ -81,7 +81,7 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinSignal(
   bool isDescriptor, ncclGinDescriptorSmem* descriptor,
   cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease);
 
-NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutEx(
+NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPut_v2(
   ncclGin_C* net,
   ncclTeam team, int peer,
   ncclWindow_t dstWin, size_t dstOffset,
@@ -93,7 +93,7 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutEx(
   cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease,
   uint32_t optFlags);
 
-NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinSignalEx(
+NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinSignal_v2(
   ncclGin_C* net,
   ncclTeam team, int peer,
   bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
@@ -143,7 +143,7 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinResetSignal(
   ncclGin_C* net,
   ncclGinSignal_t signal);
 
-NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutValueEx(
+NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutValue_v2(
   ncclGin_C* net,
   ncclTeam team, int peer,
   ncclWindow_t dstWin, size_t dstOffset,

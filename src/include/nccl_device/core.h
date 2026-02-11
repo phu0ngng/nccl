@@ -68,11 +68,11 @@ typedef enum {
   NCCL_GIN_CONNECTION_RAIL,
 } ncclGinConnectionType_t;
 
-typedef enum : uint32_t {
-  NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED = 0,
-  NCCL_REQUIREMENT_FLAG_OPTION_OPTIONAL = 1,
-  NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED = 2,
-} ncclRequirementFlagOptions_t;
+typedef enum {
+  NCCL_REQUIREMENT_FLAG_OPTION_NONE = 0, // Not requested
+  NCCL_REQUIREMENT_FLAG_OPTION_OPTIONAL = 1, // Preferred, skip if not available
+  NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED = 2, // Required, return error if not available
+} ncclRequirementFlagOption_t;
 
 struct ncclDevCommRequirements {
   /* attributes that users should never touch. */
@@ -100,8 +100,8 @@ struct ncclDevCommRequirements {
   ncclGinConnectionType_t ginConnectionType;
   bool ginExclusiveContexts;
   int ginQueueDepth;
-  ncclRequirementFlagOptions_t ginUseReliableDB;
-  ncclRequirementFlagOptions_t ginUseExpertControl;
+  ncclRequirementFlagOption_t ginUseReliableDB;
+  ncclRequirementFlagOption_t ginUseExpertControl;
 };
 
 #define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                 \
@@ -123,8 +123,8 @@ struct ncclDevCommRequirements {
     NCCL_GIN_CONNECTION_NONE,                    /* ginConnectionType */       \
     false,                                       /* ginExclusiveContexts */    \
     0,                                           /* ginQueueDepth */           \
-    NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED,   /* ginUseReliableDB */        \
-    NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED,   /* ginUseExpertControl */     \
+    NCCL_REQUIREMENT_FLAG_OPTION_NONE,   /* ginUseReliableDB */        \
+    NCCL_REQUIREMENT_FLAG_OPTION_NONE,   /* ginUseExpertControl */     \
 }
 
 struct ncclDevResourceRequirements {

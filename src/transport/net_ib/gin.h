@@ -17,8 +17,8 @@ struct ncclGinIbCollComm {
   int           connectionId;
   int           nConnections;
   int           queueDepth;
-  ncclGinRequirementFlagOptions_t useReliableDB;
-  ncclGinRequirementFlagOptions_t useExpertControl;
+  ncclGinRequirementFlagOption_t useReliableDB;
+  ncclGinRequirementFlagOption_t useExpertControl;
   void*         recvComm;
   void*         sendComm;
   void**        fullRecvComm;

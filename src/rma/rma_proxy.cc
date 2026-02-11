@@ -530,8 +530,8 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
                   fail);
     NCCLCHECKGOTO(
       rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank, 1, 0,
-                                      ncclGinRequirementFlagOptionsNotRequired,
-                                      ncclGinRequirementFlagOptionsNotRequired, listenComm,
+                                      ncclGinRequirementFlagOptionsNone,
+                                      ncclGinRequirementFlagOptionsNone, listenComm,
                                       rmaProxyState->ginComms + n),
       ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->getProperties(localGinDevs[n], &rmaProxyState->props[n]), ret, fail);

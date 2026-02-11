@@ -7,10 +7,10 @@
 #include "nccl_net.h"
 
 typedef enum {
-  ncclGinRequirementFlagOptionsNotRequired = 0,
-  ncclGinRequirementFlagOptionsOptional = 1,
-  ncclGinRequirementFlagOptionsRequired = 2,
-} ncclGinRequirementFlagOptions_v12_t;
+  ncclGinRequirementFlagOptionsNone = 0,     // Not requested
+  ncclGinRequirementFlagOptionsOptional = 1, // Preferred, skip if not available
+  ncclGinRequirementFlagOptionsRequired = 2, // Required, return error if not available
+} ncclGinRequirementFlagOption_v12_t;
 typedef struct {
   // Name of the GIN support (mainly for logs)
   const char* name;
@@ -28,8 +28,8 @@ typedef struct {
   // Create a group for GIN operations. handles have been created
   // using listen() above. rank indicates caller's rank in the collective network.
   ncclResult_t (*connect)(void* ctx, void* handles[], int nranks, int rank, int nConnections,
-                          int queueDepth, ncclGinRequirementFlagOptions_v12_t useReliableDB,
-                          ncclGinRequirementFlagOptions_v12_t useExpertControl, void* listenComm,
+                          int queueDepth, ncclGinRequirementFlagOption_v12_t useReliableDB,
+                          ncclGinRequirementFlagOption_v12_t useExpertControl, void* listenComm,
                           void** collComm);
   // Create device-side GIN context. devHandle will be passed to device code.
   // This function is not used in GIN_PROXY mode.
