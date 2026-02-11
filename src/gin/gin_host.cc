@@ -203,10 +203,11 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
       handles[r] = allHandles + r * NCCL_NET_HANDLE_MAXSIZE;
     }
   } else {
-    nGinRanks = ncclTeamRail(comm).nRanks;
-    myGinRank = ncclTeamRail(comm).rank;
+    ncclTeam_t railTeam = ncclTeamRail(comm);
+    nGinRanks = railTeam.nRanks;
+    myGinRank = railTeam.rank;
     for (int r = 0; r < nGinRanks; r++) {
-      int worldRank = ncclTeamRankToWorld(comm, ncclTeamRail(comm), r);
+      int worldRank = ncclTeamRankToWorld(comm, railTeam, r);
       handles[r] = allHandles + worldRank * NCCL_NET_HANDLE_MAXSIZE;
     }
   }

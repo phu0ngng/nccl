@@ -25,11 +25,7 @@ function run_gin_test_suite() {
   run_command "gin_test_${backend_label}_devapi_data_ring2" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_data_ring2" ""
   run_command "gin_test_${backend_label}_devapi_signal_ring" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_signal_ring" ""
   run_command "gin_test_${backend_label}_devapi_uts" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/devapi_uts" ""
-}
-
-function run_multinode_gin_test_suite() {
-  local backend_label="$1"
-  run_command "gin_test_${backend_label}_railed_gin_put" "$RUN_MODE" ${NGPUS} "--oversubscribe" "" "$NCCL_HOME/test/unit/railed_gin_put" ""
+  run_command "gin_test_${backend_label}_devapi_railed_put" "$RUN_MODE" 2 "--oversubscribe" "NCCL_LSA_TEAM_SIZE=1" "$NCCL_HOME/test/unit/devapi_railed_put" ""
 }
 
 function run_rma_test_suite() {
@@ -73,7 +69,7 @@ else
 fi
 
 if [[ ${GRAPH_TESTS_DEFAULT} -eq 1 ]] ; then
-  run_command "graph_test_default" "$RUN_MODE" 1 "--oversubscribe" "TOPO_DIR=$NCCL_HOME/test/unit/" "$NCCL_HOME/test/unit/graph_test" ""
+  run_command "graph_test_default" "$RUN_MODE" 1 "--oversubscribe" "NCCL_TOPO_DIR=$NCCL_HOME/test/unit/" "$NCCL_HOME/test/unit/graph_test" ""
 else
   echo -e "Disabled Graph TESTS Default test\n\n"
 fi
@@ -212,39 +208,24 @@ if [[ "${GIN_TESTS}" -eq 1 ]] ; then
   export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$MPI_HOME/lib:$NCCL_HOME/lib:$LD_LIBRARY_PATH"
   export DOCA_GPUNETIO_LITE_DEBUG=0
 
-  if [[ ${NNODES} -eq 1 ]]; then
-    run_gin_test_suite "auto"
-  else
-    run_multinode_gin_test_suite "auto" ${NGPUS}
-  fi
+
+  run_gin_test_suite "auto"
 
   if [[ "${GIN_TESTS_GDAKI_GPU_SM}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=3
     export NCCL_GIN_GDAKI_NIC_HANDLER=2
-    if [[ ${NNODES} -eq 1 ]]; then
-      run_gin_test_suite "gdaki_gpusm"
-    else
-      run_multinode_gin_test_suite "gdaki_gpusm" ${NGPUS}
-    fi
+    run_gin_test_suite "gdaki_gpusm"
   fi
 
   if [[ "${GIN_TESTS_GDAKI_CPU_ASSISTED}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=3
     export NCCL_GIN_GDAKI_NIC_HANDLER=1
-    if [[ ${NNODES} -eq 1 ]]; then
-      run_gin_test_suite "gdaki_cpuassisted"
-    else
-      run_multinode_gin_test_suite "gdaki_cpuassisted" ${NGPUS}
-    fi
+    run_gin_test_suite "gdaki_cpuassisted"
   fi
 
   if [[ "${GIN_TESTS_CPU_PROXY}" -eq 1 ]] ; then
     export NCCL_GIN_TYPE=2
-    if [[ ${NNODES} -eq 1 ]]; then
-      run_gin_test_suite "cpuproxy"
-    else
-      run_multinode_gin_test_suite "cpuproxy" ${NGPUS}
-    fi
+    run_gin_test_suite "cpuproxy"
   fi
 else
   echo -e "Disabled GIN_TESTS test\n\n"

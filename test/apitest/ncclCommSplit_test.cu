@@ -239,5 +239,26 @@ TEST_F(ncclCommSplit_test, abort_res_share_env) {
     (void) setenv("NCCL_COMM_SPLIT_SHARE_RESOURCES", "0", 1);
 }
 
+TEST_F(ncclCommSplit_test, init_net_dev_once) {
+    ncclComm_t localComm;
+    ncclComm_t childComm;
+    ncclUniqueId id;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+
+    config.netName = "init_once";
+    (void) setenv("NCCL_COMM_SPLIT_SHARE_RESOURCES", "1", 1);
+
+    // this test loads the libnccl-net-plugin-init-once.so plugin lib, which fails to initialize more than once
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
+    ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&localComm, 1, id, 0, &config));
+    ASSERT_EQ(ncclSuccess, ncclCommSplit(localComm, /* color */0, /* key */0, &childComm, NULL));
+
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(localComm));
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(childComm));
+
+    (void) unsetenv("NCCL_COMM_SPLIT_SHARE_RESOURCES");
+}
+
 #endif
 // EOF

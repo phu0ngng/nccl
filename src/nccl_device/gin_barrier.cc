@@ -13,7 +13,7 @@ ncclResult_t ncclGinBarrierCreateRequirement(
     ncclGinBarrierHandle_t* outHandle, ncclDevResourceRequirements_t* outReq
   ) {
   memset(outReq, 0, sizeof(*outReq));
-  outReq->ginSignalCount = nBarriers;
+  outReq->ginSignalCount = nBarriers * team.nRanks;
   outReq->outGinSignalStart = &outHandle->signal0;
   return ncclSuccess;
 }

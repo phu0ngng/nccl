@@ -34,7 +34,7 @@ std::mutex& getGdrMutex();
 // This is required as the GDR memory is mapped WC
 #if !defined(__NVCC__)
 #if defined(__PPC__)
-static inline void wc_store_fence(void) { asm volatile("sync") ; }
+static inline void wc_store_fence(void) { asm volatile("sync" : : : "memory"); }
 #elif defined(__x86_64__)
 #include <immintrin.h>
 static inline void wc_store_fence(void) { _mm_sfence(); }

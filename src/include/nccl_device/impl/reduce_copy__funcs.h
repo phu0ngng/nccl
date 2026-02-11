@@ -800,7 +800,11 @@ template <typename T, typename Coop, typename SrcLambda, typename DstLambda,
           typename RedOp, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceLsaCopy(
     Coop, SrcLambda, int, DstLambda, int, RedOp, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  // C++11 - C++17 considers this a template invalid cannot have a valid specialation.
+  // By making this a dependent static_assert, there may exists an overload of always_false that is true, it is valid.
+  // "The validity of a template checked prior to any instantiation."
+  // C++20+ may make an exception for static_assert for this exact situation. https://eel.is/c++draft/temp.res#general-6
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -808,7 +812,7 @@ template <typename T, typename Coop, typename SrcLambda, typename DstLambda,
           typename RedOp, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceMultimemCopy(
     Coop, SrcLambda, int, DstLambda, int, RedOp, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -817,7 +821,7 @@ template <typename T, typename Coop, typename SrcLambda, typename DstLambda,
           typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumLsaCopy(
     Coop, SrcLambda, int, DstLambda, int, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -825,7 +829,7 @@ template <typename T, typename Coop, typename SrcLambda, typename DstLambda,
           typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(
     Coop, SrcLambda, int, DstLambda, int, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -833,7 +837,7 @@ template <typename T, typename Coop, typename SrcLambda, typename DstLambda,
           typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(
     Coop, SrcLambda, int, DstLambda, int, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -841,7 +845,7 @@ template <typename T, typename Coop, typename SrcLambda, typename DstLambda,
           typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumMultimemCopy(
     Coop, SrcLambda, int, DstLambda, int, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -849,42 +853,42 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumMultimemCopy(
 template<typename T, typename Coop, typename SrcLambda, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(
     Coop, SrcLambda, int, T*, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(
     Coop, ncclSymPtr<T>, T*, IntCount, ncclTeam) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(
     Coop, ncclSymPtr<T>, T*, IntCount, ncclDevComm_t) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(
     Coop, ncclWindow_t, size_t, T*, IntCount, ncclTeam) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSum(
     Coop, ncclWindow_t, size_t, T*, IntCount, ncclDevComm_t) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSum(
     Coop, ncclSymPtr<T>, T*, IntCount, ncclMultimemHandle) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -892,14 +896,14 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSum(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSum(
     Coop, T*, T*, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSum(
     Coop, ncclWindow_t, size_t, T*, IntCount, ncclMultimemHandle) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -907,7 +911,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSum(
 template<typename T, typename Coop, typename SrcLambda, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLocalReduceSum(
     Coop, SrcLambda, int, T*, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -915,7 +919,7 @@ NCCL_DEVICE_INLINE void ncclLocalReduceSum(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLocalReduceSum(
     Coop, int, T*, size_t, T*, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -925,7 +929,7 @@ NCCL_DEVICE_INLINE void ncclLocalReduceSum(
 template<typename T, typename Coop, typename DstLambda, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaCopy(
     Coop, T*, DstLambda, int, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -933,7 +937,7 @@ NCCL_DEVICE_INLINE void ncclLsaCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaCopy(
     Coop, T*, ncclSymPtr<T>, IntCount, ncclTeam) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -941,7 +945,7 @@ NCCL_DEVICE_INLINE void ncclLsaCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaCopy(
     Coop, T*, ncclSymPtr<T>, IntCount, ncclDevComm_t) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -949,7 +953,7 @@ NCCL_DEVICE_INLINE void ncclLsaCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaCopy(
     Coop, T*, ncclWindow_t, size_t, IntCount, ncclTeam) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -957,7 +961,7 @@ NCCL_DEVICE_INLINE void ncclLsaCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaCopy(
     Coop, T*, ncclWindow_t, size_t, IntCount, ncclDevComm_t) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -965,7 +969,7 @@ NCCL_DEVICE_INLINE void ncclLsaCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemCopy(
     Coop, T*, ncclSymPtr<T>, IntCount, ncclMultimemHandle) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -973,7 +977,7 @@ NCCL_DEVICE_INLINE void ncclMultimemCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemCopy(
     Coop, T*, T*, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -981,7 +985,7 @@ NCCL_DEVICE_INLINE void ncclMultimemCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemCopy(
     Coop, T*, ncclWindow_t, size_t, IntCount, ncclMultimemHandle) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -989,7 +993,7 @@ NCCL_DEVICE_INLINE void ncclMultimemCopy(
 template<typename T, typename Coop, typename DstLambda, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLocalCopy(
     Coop, T*, DstLambda, int, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -997,7 +1001,7 @@ NCCL_DEVICE_INLINE void ncclLocalCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLocalCopy(
     Coop, T*, int, T*, size_t, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1007,7 +1011,7 @@ NCCL_DEVICE_INLINE void ncclLocalCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
     Coop, ncclSymPtr<T>, ncclSymPtr<T>, IntCount, ncclTeam) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1015,7 +1019,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
     Coop, ncclSymPtr<T>, ncclSymPtr<T>, IntCount, ncclDevComm_t) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1023,7 +1027,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
     Coop, ncclWindow_t, size_t, ncclWindow_t, size_t, IntCount, ncclTeam) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1031,7 +1035,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
     Coop, ncclWindow_t, size_t, ncclWindow_t, size_t, IntCount, ncclDevComm_t) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1039,7 +1043,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
     Coop, ncclSymPtr<T>, ncclTeam, ncclSymPtr<T>, ncclTeam, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1047,7 +1051,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(
     Coop, ncclSymPtr<T>, ncclMultimemHandle, ncclSymPtr<T>, ncclMultimemHandle, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1055,7 +1059,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(
     Coop, T*, T*, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1063,7 +1067,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(
     Coop, ncclWindow_t, size_t, ncclMultimemHandle, ncclWindow_t, size_t, ncclMultimemHandle, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1071,7 +1075,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(
     Coop, ncclSymPtr<T>, ncclTeam, ncclSymPtr<T>, ncclMultimemHandle, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1079,7 +1083,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(
     Coop, ncclSymPtr<T>, ncclTeam, T*, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1087,7 +1091,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceSumMultimemCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(
     Coop, ncclSymPtr<T>, ncclMultimemHandle, ncclSymPtr<T>, ncclTeam, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1095,7 +1099,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(
     Coop, T*, ncclSymPtr<T>, ncclTeam, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 
@@ -1103,7 +1107,7 @@ NCCL_DEVICE_INLINE void ncclMultimemReduceSumLsaCopy(
 template<typename T, typename Coop, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLocalReduceSumCopy(
     Coop, int, T*, size_t, int, T*, size_t, IntCount) {
-  static_assert(nccl::utility::always_false_v<T>,
+  static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }
 

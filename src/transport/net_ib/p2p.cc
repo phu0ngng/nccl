@@ -332,10 +332,9 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
 
     *request = reqs[r] = req;
 
+    comm->sendReqsCnt[slot]++;
     // If this is a multi-recv, send only when all requests have matched.
-    for (int r=0; r<nreqs; r++) {
-      if (reqs[r] == NULL) return ncclSuccess;
-    }
+    if (comm->sendReqsCnt[slot] < nreqs) return ncclSuccess;
 
     TIME_START(0);
     NCCLCHECK(ncclIbMultiSend(comm, slot));
@@ -612,7 +611,12 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
     }
     int slot = r->id % NET_IB_MAX_REQUESTS;
     struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)r->base;
-    memset(&sendComm->sendReqs[slot], 0, sizeof(sendComm->sendReqs[slot]));
+    sendComm->sendReqsCnt[slot]--;
+    if (sendComm->sendReqsCnt[slot] == 0) {
+      // Only after completing the last send of a multi-recv, allow accepting
+      // following send requests on the same slot.
+      memset(&sendComm->sendReqs[slot], 0, sizeof(sendComm->sendReqs[slot]));
+    }
   }
   // Stop all remaining Qp events for this event
   NCCLCHECK(ncclIbFreeRequest(r));

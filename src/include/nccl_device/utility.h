@@ -103,8 +103,10 @@ T&& declval() noexcept {
   static_assert(sizeof(T)!=sizeof(T), "You can't evaluate declval.");
 }
 
-template<typename T>
-inline constexpr bool always_false_v = false;
+template <typename>
+struct always_false {
+  static constexpr bool value = false;
+};
 
 template<typename T, T value_>
 struct ValueAsType { static constexpr T value = value_; };

@@ -15,9 +15,12 @@ stages:
   - cleanup
   - summary
 
+include: .gitlab-template.yml
+
 variables:
   WERROR: 0
   CHECK_SYMBOLS: "0"  # nvbug 5479096. Only runs on ipp6
+  FF_TIMESTAMPS: true
   MULTI_PERFTEST_NODE_COUNT: 4
   CUDA_VERSION: "11.7"
   PLANNED_RESERVED: "Reserved"
@@ -62,42 +65,6 @@ variables:
   RUN_INSPECTOR_TESTS: "0"
   RUN_PERF_REGRESSION: "0"
   RUN_NCCL4PY_CI: "0"
-  # Comprehensive sweep mode: "off", "debug" (1-node intra + 2-node inter), "full" (all scales)
-  COMPREHENSIVE_SWEEP: "off"
-  ##
-  # Cluster-specific paths
-  # Used by setup and test jobs to install/reference build artifacts
-  #
-  # EOS cluster
-  EOS_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
-  EOS_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  EOS_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  # CW-DFW cluster
-  CW_DFW_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
-  CW_DFW_CI_BUILDS_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
-  CW_DFW_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
-  # DRACO-OCI cluster
-  DRACO_OCI_INSTALL_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/install/${CI_PIPELINE_ID}"
-  DRACO_OCI_ARCHIVER_STAGING_DIR: "/lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/gitlab-runner/builds"
-  # PRE-NYX cluster
-  PRE_NYX_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
-  PRE_NYX_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  PRE_NYX_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  # PRE-TYCHE cluster
-  PRE_TYCHE_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
-  PRE_TYCHE_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  PRE_TYCHE_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  # THEIA cluster
-  THEIA_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
-  THEIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  THEIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  # BIA cluster
-  BIA_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
-  BIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  BIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
-  # IPP6 cluster
-  IPP6_INSTALL_DIR: "/storage/gitlab-runner/nccl/install/${CI_PIPELINE_ID}"
-  DGXSPARK_INSTALL_DIR: "/storage/gitlab-runner/nccl/install-arm/${CI_PIPELINE_ID}"
 
 default:
   # set all jobs to interruptible by default
@@ -139,7 +106,25 @@ workflow:
         TRIGGER_PIPELINE: "nightly"
     - when: never
 
-include: .gitlab-template.yml
+# YAML Anchors for trigger pipeline rules
+.pre_submit_rule: &pre_submit_rule
+  if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+  when: always
+.post_submit_rule: &post_submit_rule
+  if: $TRIGGER_PIPELINE =~ /^(post-submit|nightly|weekly)$/
+  when: always
+.nightly_rule: &nightly_rule
+  if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/
+  when: always
+.weekly_rule: &weekly_rule
+  if: $TRIGGER_PIPELINE =~ /^(weekly)$/
+  when: always
+.comprehensive_sweep_debug_rule: &comprehensive_sweep_debug_rule
+  if: $COMPREHENSIVE_SWEEP == "debug"
+  when: always
+.comprehensive_sweep_full_rule: &comprehensive_sweep_full_rule
+  if: $COMPREHENSIVE_SWEEP == "debug" || $COMPREHENSIVE_SWEEP == "full"
+  when: always
 
 ##
 ## Stage: build - Start...
@@ -152,7 +137,8 @@ build-trace:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || $BUILD_TRACE == "1"
+    - <<: *nightly_rule
+    - if: $BUILD_TRACE == "1"
       when: always
     - when: never
   variables:
@@ -165,12 +151,14 @@ build-ipp6:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || (($RUN_ON_IPP6 == "1" || $RUN_ON_EOS == "1" || $RUN_ON_AWS == "1" || $RUN_ON_DRACO_OCI == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_CW_DFW == "1") && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1" || $RUN_NCCL4PY_CI == "1" || $RUN_PROFILER_TESTS == "1" || $RUN_INSPECTOR_TESTS == "1"))
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_IPP6 == "1"
+      when: always
+    - if: $RUN_ON_DRACO_OCI == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_PRE_NYX == "1"
+      when: always
+    - if: $RUN_ON_P100 == "1" || $RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1"
       when: always
     - when: never
-  variables:
-    INSTALL_DIR: $IPP6_INSTALL_DIR
-    BUILD_DIR: build
   script:
     - docker/make.sh --ci-build --use-build-cluster-image ipp6-slurm,draco-oci,eos,cw-dfw,pre-nyx,gc-classic
   retry: 2
@@ -204,9 +192,9 @@ build-dgxspark:
   extends:
     - .dgxspark
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_DGXSPARK == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1" || $RUN_NCCL4PY_CI == "1" || $RUN_PROFILER_TESTS == "1" || $RUN_INSPECTOR_TESTS == "1"))
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_DGXSPARK == "1"
       when: always
-    - when: never
   variables:
     INSTALL_DIR: $DGXSPARK_INSTALL_DIR
     BUILD_DIR: build
@@ -225,14 +213,13 @@ build-dgxspark:
 
 build-pre-tyche:
   stage: build
+  extends:
+    - .pre-tyche
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_PRE_TYCHE == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_TYCHE == "1"
       when: always
     - when: never
-  tags:
-    - ptyche
-  variables:
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
   script:
     - docker/make.sh pre-tyche
     - mv build build-pre-tyche
@@ -245,14 +232,13 @@ build-pre-tyche:
 
 build-theia:
   stage: build
+  extends:
+    - .theia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_THEIA == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_PERF_REGRESSION == "1"))
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_THEIA == "1"
       when: always
     - when: never
-  tags:
-    - lyris
-  variables:
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
   script:
     - docker/make.sh theia --baremetal-build
     - mv build build-theia
@@ -265,14 +251,13 @@ build-theia:
 
 build-bia:
   stage: build
+  extends:
+    - .bia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_BIA == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_BIA == "1"
       when: always
     - when: never
-  tags:
-    - bia
-  variables:
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
   script:
     - docker/make.sh bia
     - mv build build-bia
@@ -288,7 +273,8 @@ build-dlfw-pytorch-container:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_DLFW_TESTS == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_EOS == "1" && $RUN_DLFW_TESTS == "1"
       when: always
     - when: never
   variables:
@@ -308,7 +294,8 @@ build-cmake:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || $BUILD_CMAKE == "1"
+    - <<: *pre_submit_rule
+    - if: $BUILD_CMAKE == "1"
       when: always
     - when: never
   variables:
@@ -330,57 +317,50 @@ build-cmake:
 
 fairshare-eos:
   stage: setup
+  extends:
+    - .eos
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1" || $RUN_DLFW_TESTS == "1"))
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_EOS == "1"
       when: always
     - when: never
-  needs: []
-  variables:
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-  tags:
-    - nccl-eos
   script:
     - ./test/scripts/gitlab-runner-fairshare.sh
 
 fairshare-cw-dfw:
   stage: setup
+  extends:
+    - .cw-dfw
   rules:
     # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
     #   when: always
     - when: never
-  needs: []
-  variables:
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-  tags:
-    - nccl-cw-dfw
   script:
     - ./test/scripts/gitlab-runner-fairshare.sh
 
 fairshare-draco-oci:
   stage: setup
+  extends:
+    - .draco-oci
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_DRACO_OCI == "1"
       when: always
     - when: never
-  needs: []
-  tags:
-    - draco-oci-iad
   script:
     - ./test/scripts/gitlab-runner-fairshare.sh
 
-setup-AWS_H100_EFA:
+setup-AWS-H100-EFA:
   stage: setup
+  extends:
+    - .aws
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_AWS == "1"
       when: always
     - when: never
-  tags:
-    - ipp6-nccl
   needs:
     - job: build-ipp6
-  variables:
-    AWS_HEAD_NODE: aws-pcluster-head
-    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
   script:
     - set -e
     - rsync -I -c -aP --inplace --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
@@ -391,13 +371,14 @@ setup-pre-nyx:
     - .pre-nyx
     - .setup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.pre-nyx, rules]
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_NYX == "1"
+      when: always
+    - when: never
   needs: ["build-ipp6"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
 
 setup-pre-tyche:
   stage: setup
@@ -405,13 +386,14 @@ setup-pre-tyche:
     - .pre-tyche
     - .setup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.pre-tyche, rules]
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
   needs: ["build-pre-tyche"]
   variables:
     BUILD_DIR: "build-pre-tyche"
     INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
 
 setup-theia:
   stage: setup
@@ -419,13 +401,14 @@ setup-theia:
     - .theia
     - .setup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.theia, rules]
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_THEIA == "1"
+      when: always
+    - when: never
   needs: ["build-theia"]
   variables:
     BUILD_DIR: "build-theia"
     INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
 
 setup-bia:
   stage: setup
@@ -433,13 +416,14 @@ setup-bia:
     - .bia
     - .setup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.bia, rules]
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_BIA == "1"
+      when: always
+    - when: never
   needs: ["build-bia"]
   variables:
     BUILD_DIR: "build-bia"
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
 
 setup-eos:
   stage: setup
@@ -447,13 +431,14 @@ setup-eos:
     - .eos
     - .setup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.eos, rules]
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_EOS == "1"
+      when: always
+    - when: never
   needs: ["build-ipp6"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
 
 setup-cw-dfw:
   stage: setup
@@ -461,13 +446,14 @@ setup-cw-dfw:
     - .cw-dfw
     - .setup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.cw-dfw, rules]
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_CW_DFW == "1"
+    #   when: always
+    - when: never
   needs: ["build-ipp6"]
   variables:
     BUILD_DIR: "build"
     INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
 
 setup-draco-oci:
   stage: setup
@@ -475,8 +461,10 @@ setup-draco-oci:
     - .draco-oci
     - .setup
   rules:
-    - !reference [.nightly, rules]
-    - !reference [.draco-oci, rules]
+    - <<: *nightly_rule
+    - if: $RUN_ON_DRACO_OCI == "1"
+      when: always
+    - when: never
   needs: ["build-ipp6"]
   variables:
     BUILD_DIR: "build"
@@ -490,8 +478,10 @@ setup-ipp6:
   tags:
     - ipp6-nccl-setup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.ipp6, rules]
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_IPP6 == "1"
+      when: always
+    - when: never
   needs: ["build-ipp6"]
   variables:
     BUILD_DIR: "build"
@@ -505,8 +495,10 @@ setup-dgxspark:
   tags:
     - ipp6-nccl-setup
   rules:
-    - !reference [.pre_submit, rules]
-    - !reference [.dgxspark, rules]
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_DGXSPARK == "1"
+      when: always
+    - when: never
   needs: ["build-dgxspark"]
   variables:
     BUILD_DIR: "build"
@@ -526,7 +518,8 @@ QA-team-ci:
   stage: downstream
   dependencies: []
   rules:
-    - !reference [.post_submit, rules]
+    - <<: *post_submit_rule
+    - when: never
   tags:
     - cqa_host_runner
   script:
@@ -537,9 +530,10 @@ nccl4py_ci:
   needs:
     - setup-ipp6
   rules:
-    - !reference [.pre_submit, rules]
+    - <<: *pre_submit_rule
     - if: $RUN_ON_IPP6 == "1" && $RUN_NCCL4PY_CI == "1"
       when: always
+    - when: never
   trigger:
     include: nccl4py/.gitlab-ci.yml
     strategy: depend
@@ -557,37 +551,37 @@ nccl4py_ci:
 
 health-P100:
   stage: health
+  extends:
+    - .gc-p100
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1" || $RUN_PERF_TESTS_MULTIPLE == "1"))
+    - <<: *nightly_rule
+    - if: $RUN_ON_P100 == "1"
       when: always
     - when: never
-  needs: []
-  tags:
-    - p100
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP100 ./test/scripts/gitlab-runner-health-check.sh
 
 health-P40:
   stage: health
+  extends:
+    - .gc-p40
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1"))
+    - <<: *nightly_rule
+    - if: $RUN_ON_P40 == "1"
       when: always
     - when: never
-  needs: []
-  tags:
-    - p40
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pP40 ./test/scripts/gitlab-runner-health-check.sh
 
 health-GP100:
   stage: health
+  extends:
+    - .gc-gp100
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && ($RUN_UNIT_TESTS == "1" || $RUN_API_TESTS == "1" || $RUN_PERF_TESTS_SINGLE == "1"))
+    - <<: *nightly_rule
+    - if: $RUN_ON_GP100 == "1"
       when: always
     - when: never
-  needs: []
-  tags:
-    - gp100
   script:
     - srun --exclusive -t 00:02:00 -n 1 -c 8 -pGP100 ./test/scripts/gitlab-runner-health-check.sh
 
@@ -599,25 +593,21 @@ health-GP100:
 ## Stage: unit_tests - Start...
 ##
 
-unit_tests-P100:
+unit-tests-P100:
   stage: unit_tests
+  extends:
+    - .gc-p100
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_P100 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
   needs: ["build-ipp6","health-P100"]
-  tags:
-    - p100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    SLURM_PARTITION: "P100"
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: build
-    RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -653,25 +643,21 @@ unit_tests-P100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-P40:
+unit-tests-P40:
   stage: unit_tests
+  extends:
+    - .gc-p40
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_P40 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
     - when: never
   needs: ["build-ipp6","health-P40"]
-  tags:
-    - p40
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    SLURM_PARTITION: "P40"
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: build
-    RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -707,25 +693,20 @@ unit_tests-P40:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-GP100:
+unit-tests-GP100:
   stage: unit_tests
+  extends:
+    - .gc-gp100
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_GP100 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs: ["build-ipp6","health-GP100"]
-  tags:
-    - gp100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    SLURM_PARTITION: "GP100"
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: build
-    RUN_MODE: "SALLOC_MPI"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -761,31 +742,20 @@ unit_tests-GP100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-eos:
+unit-tests-eos:
   stage: unit_tests
+  extends:
+    - .eos
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs:
     - setup-eos
-  tags:
-    - nccl-eos
   variables:
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 20
+    SLURM_TIME: 30
     NNODES: 1
-    NGPUS: 8
-    NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
+    NP: 8
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -808,8 +778,13 @@ unit_tests-eos:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 1
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_GPU_SM: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
   script:
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -822,32 +797,21 @@ unit_tests-eos:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-cw-dfw:
+unit-tests-cw-dfw:
   stage: unit_tests
+  extends:
+    - .cw-dfw
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_CW_DFW == "1" && $RUN_UNIT_TESTS == "1"
     #   when: always
     - when: never
   needs:
     - setup-cw-dfw
-  tags:
-    - nccl-cw-dfw
   variables:
-    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 20
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    SLURM_PARTITION: backfill
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -883,20 +847,18 @@ unit_tests-cw-dfw:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-AWS_H100_EFA:
+unit-tests-AWS-H100-EFA:
   stage: unit_tests
+  extends:
+    - .aws
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_AWS == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs:
-    - setup-AWS_H100_EFA
-  tags:
-    - ipp6-nccl
+    - setup-AWS-H100-EFA
   variables:
     GIT_STRATEGY: none
-    AWS_HEAD_NODE: aws-pcluster-head
-    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-unit.sh
     JUNIT: junit_results_unit.xml
@@ -979,8 +941,10 @@ unit_tests-AWS_H100_EFA:
       junit: $JUNIT
     expire_in: 48 hrs
 
-unit_tests-draco_oci:
+unit-tests-draco_oci:
   stage: unit_tests
+  extends:
+    - .draco-oci
   rules:
     # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
     # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_UNIT_TESTS == "1")
@@ -988,20 +952,10 @@ unit_tests-draco_oci:
     - when: never
   needs:
     - setup-draco-oci
-  tags:
-    - draco-oci-iad
   variables:
-    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
-    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 10
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -1038,149 +992,131 @@ unit_tests-draco_oci:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-pre-nyx:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs:
-    - setup-pre-nyx
-  tags:
-    - prenyx
-  variables:
-    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
-    SLURM_TIME: 20
-    SLURM_PARTITION: batch
-    NNODES: 1
-    NGPUS: 8
-    NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    ENQUEUE_TESTS_ARGS: 1
-    ENQUEUE_TESTS_FIFO: 1
-    GRAPH_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_NO_P2P: 1
-    MEMLEAK_TESTS_NETWORK: 1
-    FT_TESTS_DEFAULT: 1
-    FT_TESTS_NO_P2P: 1
-    FT_TESTS_NETWORK: 1
-    PLUGIN_TESTS_NET_TUNER: 1
-    MULTI_SEGMENT_REG_TESTS: 1
-    LOG_ALGO_RS_TESTS: 1
-    LOG_ALGO_AG_TESTS: 1
-    PLUGIN_LOADING_TESTS: 1
-    REGISTER_MEMCPY_TESTS: 1
-    REGISTER_MIX_A2A_AR_TESTS: 1
-    DEVICE_ID_TESTS: 1
-    HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
-    LSA_POINTER_TESTS: 1
-    LSA_MULTIMEM_POINTER_TESTS: 1
-    RMA_SINGLE_NODE_TESTS: 1
-    DYN_MEM_TESTS: 1
-  script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-pre-tyche:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
-  variables:
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
-    SLURM_TIME: 20
-    SLURM_PARTITION: batch
-    NNODES: 1
-    NGPUS: 4
-    NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    ENQUEUE_TESTS_ARGS: 1
-    ENQUEUE_TESTS_FIFO: 1
-    GRAPH_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_DEFAULT: 1
-    MEMLEAK_TESTS_NO_P2P: 1
-    MEMLEAK_TESTS_NETWORK: 1
-    FT_TESTS_DEFAULT: 1
-    FT_TESTS_NO_P2P: 1
-    FT_TESTS_NETWORK: 1
-    PLUGIN_TESTS_NET_TUNER: 1
-    MULTI_SEGMENT_REG_TESTS: 1
-    LOG_ALGO_RS_TESTS: 1
-    LOG_ALGO_AG_TESTS: 1
-    PLUGIN_LOADING_TESTS: 1
-    REGISTER_MEMCPY_TESTS: 1
-    REGISTER_MIX_A2A_AR_TESTS: 1
-    DEVICE_ID_TESTS: 1
-    HASHTABLE_TESTS: 1
-    DEVAPI_WINDOW_STRESS_TESTS: 1
-    LSA_POINTER_TESTS: 1
-    LSA_MULTIMEM_POINTER_TESTS: 1
-    RMA_SINGLE_NODE_TESTS: 1
-    DYN_MEM_TESTS: 1
-  script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-ipp6-a40:
+unit-tests-pre-nyx:
   stage: unit_tests
   extends:
-    - .ipp6
+    - .pre-nyx
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+  needs:
+    - setup-pre-nyx
+  variables:
+    SLURM_TIME: 30
+    NNODES: 1
+    NP: 8
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    MULTI_SEGMENT_REG_TESTS: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
+    REGISTER_MIX_A2A_AR_TESTS: 1
+    DEVICE_ID_TESTS: 1
+    HASHTABLE_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 1
+    RMA_SINGLE_NODE_TESTS: 1
+    DYN_MEM_TESTS: 1
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit-tests-pre-tyche:
+  stage: unit_tests
+  extends:
+    - .pre-tyche
+  rules:
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+  needs: ["setup-pre-tyche"]
+  variables:
+    SLURM_TIME: 20
+    NNODES: 1
+    NP: 4
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 1
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 1
+    PLUGIN_TESTS_NET_TUNER: 1
+    MULTI_SEGMENT_REG_TESTS: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
+    REGISTER_MIX_A2A_AR_TESTS: 1
+    DEVICE_ID_TESTS: 1
+    HASHTABLE_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    LSA_POINTER_TESTS: 1
+    LSA_MULTIMEM_POINTER_TESTS: 1
+    RMA_SINGLE_NODE_TESTS: 1
+    DYN_MEM_TESTS: 1
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_GPU_SM: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+unit-tests-ipp6-a40:
+  stage: unit_tests
+  extends:
+    - .ipp6-a40
+  rules:
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
     #   when: always
     - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
-    SLURM_PARTITION: "a40-cicd"
     NNODES: 1
-    NGPUS: 1
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
-    OMPI_MCA_btl: "^openib"
     DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -1203,7 +1139,8 @@ unit_tests-ipp6-a40:
     LSA_POINTER_TESTS: 0
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
   script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::unit-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1215,27 +1152,21 @@ unit_tests-ipp6-a40:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-ipp6-a100:
+unit-tests-ipp6-a100:
   stage: unit_tests
   extends:
-    - .ipp6
+    - .ipp6-a100
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 20
-    SLURM_PARTITION: a100-cicd
     NNODES: 1
     NGPUS: 2
-    NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    NP: 2
     DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -1257,10 +1188,16 @@ unit_tests-ipp6-a100:
     DEVAPI_WINDOW_STRESS_TESTS: 1
     LSA_POINTER_TESTS: 1
     LSA_MULTIMEM_POINTER_TESTS: 0 # Nodes lack NVLS support.
+    GIN_TESTS: 1
+    GIN_TESTS_GDAKI_GPU_SM: 1
+    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
+    GIN_TESTS_CPU_PROXY: 1
+    GIN_TESTS_LARGE_SIZE: 1
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
     DYN_MEM_TESTS: 1
   script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::unit-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1272,27 +1209,20 @@ unit_tests-ipp6-a100:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-dgxspark:
+unit-tests-dgxspark:
   stage: unit_tests
   extends:
     - .dgxspark
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_DGXSPARK == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs:
     - setup-dgxspark
   variables:
-    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
     SLURM_TIME: 20
-    SLURM_PARTITION: dgxspark
     NNODES: 1
-    NGPUS: 1
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
     DEVICE_ID_TESTS: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
@@ -1316,7 +1246,7 @@ unit_tests-dgxspark:
     LSA_MULTIMEM_POINTER_TESTS: 0
     CHECK_SYMBOLS: "1"  # only run test_symbols on ipp6
   script:
-    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}:unit-dgxspark::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
@@ -1329,199 +1259,19 @@ unit_tests-dgxspark:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-gin-ipp6-a100:
+unit-tests-theia:
   stage: unit_tests
   extends:
-    - .ipp6
+    - .theia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
-  needs:
-    - setup-ipp6
-  variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
-    SLURM_TIME: 20
-    SLURM_PARTITION: a100-cicd
-    NNODES: 1
-    NGPUS: 2
-    NP: 2
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
-    GIN_TESTS: 1
-    GIN_TESTS_GDAKI_GPU_SM: 1
-    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
-    GIN_TESTS_CPU_PROXY: 1
-    GIN_TESTS_LARGE_SIZE: 1
-  script:
-    - ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-gin-pre-nyx:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs:
-    - setup-pre-nyx
-  tags:
-    - prenyx
-  variables:
-    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
-    SLURM_TIME: 20
-    SLURM_PARTITION: batch
-    NNODES: 1
-    NGPUS: 4
-    NP: 4
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    GIN_TESTS: 1
-    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
-    GIN_TESTS_CPU_PROXY: 1
-    GIN_TESTS_LARGE_SIZE: 1
-  script:
-    - source docker/clusters/pre-nyx-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-gin-pre-tyche:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
-  variables:
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
-    SLURM_TIME: 20
-    SLURM_PARTITION: batch
-    NNODES: 1
-    NGPUS: 4
-    NP: 4
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    GIN_TESTS: 1
-    GIN_TESTS_GDAKI_GPU_SM: 1
-    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
-    GIN_TESTS_CPU_PROXY: 1
-    GIN_TESTS_LARGE_SIZE: 1
-  script:
-    - source docker/clusters/pre-tyche-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-gin-eos:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
-  needs:
-    - setup-eos
-  tags:
-    - nccl-eos
-  variables:
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 20
-    NNODES: 1
-    NGPUS: 4
-    NP: 4
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
-    MPI_PARAMS: "--oversubscribe -n 2 -mca btl tcp,self"
-    GIN_TESTS: 1
-    GIN_TESTS_GDAKI_GPU_SM: 1
-    GIN_TESTS_GDAKI_CPU_ASSISTED: 1
-    GIN_TESTS_CPU_PROXY: 1
-    GIN_TESTS_LARGE_SIZE: 1
-  script:
-    - source docker/clusters/eos-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
-    - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
-    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
-  after_script:
-    - ./test/scripts/ci/finalize-junit.sh
-  artifacts:
-    when: always
-    paths:
-      - "failed/**"
-      - "junit_results.xml"
-    reports:
-      junit: junit_results.xml
-    expire_in: 48 hrs
-
-unit_tests-theia:
-  stage: unit_tests
-  rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1")
-      when: always
-    - when: never
   needs: ["setup-theia"]
-  tags:
-    - lyris
   variables:
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 20
-    SLURM_PARTITION: gb300
     NNODES: 1
-    NGPUS: 4
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -1559,29 +1309,19 @@ unit_tests-theia:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-bia:
+unit-tests-bia:
   stage: unit_tests
+  extends:
+    - .bia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_BIA == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs: ["setup-bia"]
-  tags:
-    - bia
   variables:
-    INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 20
-    SLURM_PARTITION: batch
     NNODES: 1
-    NGPUS: 4
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 0
     GRAPH_TESTS_DEFAULT: 1
@@ -1613,28 +1353,20 @@ unit_tests-bia:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-rma-pre-nyx:
+unit-tests-rma-pre-nyx:
   stage: unit_tests
+  extends:
+    - .pre-nyx
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
+    - <<: *post_submit_rule
+    - if: $RUN_ON_PRE_NYX == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs: [setup-pre-nyx]
-  tags:
-    - prenyx
   variables:
-    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 20
-    SLURM_PARTITION: batch
-    NNODES: 4
-    NGPUS: 4
-    NP: 4
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: 2
+    NGPUS: 1
+    NP: 2
     RMA_MULTINODE_TESTS: 1
   script:
     - source docker/clusters/pre-nyx-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
@@ -1651,28 +1383,20 @@ unit_tests-rma-pre-nyx:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-rma-pre-tyche:
+unit-tests-rma-pre-tyche:
   stage: unit_tests
+  extends:
+    - .pre-tyche
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
+    - <<: *post_submit_rule
+    - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs: [setup-pre-tyche]
-  tags:
-    - ptyche
   variables:
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 20
-    SLURM_PARTITION: batch
-    NNODES: 4
-    NGPUS: 4
-    NP: 4
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: 2
+    NGPUS: 1
+    NP: 2
     RMA_MULTINODE_TESTS: 1
   script:
     - source docker/clusters/pre-tyche-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
@@ -1689,28 +1413,20 @@ unit_tests-rma-pre-tyche:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-unit_tests-rma-theia:
+unit-tests-rma-theia:
   stage: unit_tests
+  extends:
+    - .theia
   rules:
-    - if: ($TRIGGER_PIPELINE == "default") && $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
+    - <<: *post_submit_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs: [setup-theia]
-  tags:
-    - lyris
   variables:
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 20
-    SLURM_PARTITION: gb300
-    NNODES: 4
-    NGPUS: 4
-    NP: 4
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: 2
+    NGPUS: 1
+    NP: 2
     RMA_MULTINODE_TESTS: 1
   script:
     - source docker/clusters/theia-config.sh && export CUDA_HOME=$(get_cuda_home) && export MPI_HOME=$(get_openmpi_home)
@@ -1733,23 +1449,15 @@ unit_tests-rma-theia:
 
 examples-validation-theia:
   stage: unit_tests
+  extends:
+    - .theia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *post_submit_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs: ["setup-theia"]
-  tags:
-    - lyris
   variables:
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 10
-    SLURM_PARTITION: gb300
-    RUN_MODE: "SRUN_MPI"
-    NGPUS: 4
     MAX: "1G"
     NP: 4
     SYMMETRIC: 1
@@ -1775,27 +1483,21 @@ examples-validation-theia:
 examples-validation-ipp6-a100:
   stage: unit_tests
   extends:
-    - .ipp6
+    - .ipp6-a100
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1")
+    - <<: *post_submit_rule
+    - if: $RUN_ON_IPP6 == "1" && $RUN_UNIT_TESTS == "1"
       when: always
-    - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 15
-    SLURM_PARTITION: a100-cicd
     NNODES: 1
-    NGPUS: 2
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
     EXAMPLES_TESTS_BASIC_ONLY: 0
   script:
-    - ./test/scripts/ci/gitlab-runner-examples.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::examples-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-examples.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -1817,23 +1519,17 @@ examples-validation-ipp6-a100:
 
 apitest-P100:
   stage: api_tests
+  extends:
+    - .gc-p100
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_API_TESTS == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_P100 == "1" && $RUN_API_TESTS == "1"
       when: always
-    - when: never
   needs: ["build-ipp6", "health-P100"]
-  tags:
-    - p100
   variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "P100"
     NNODES: 1
-    NGPUS: 8
-    NP:    1
-    NCCL_HOME: build
+    NP: 1
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -1852,23 +1548,18 @@ apitest-P100:
 
 apitest-P40:
   stage: api_tests
+  extends:
+    - .gc-p40
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_API_TESTS == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_P40 == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs: ["build-ipp6", "health-P40"]
-  tags:
-    - p40
   variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "P40"
     NNODES: 1
-    NGPUS: 8
-    NP:    1
-    NCCL_HOME: build
+    NP: 1
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -1887,23 +1578,18 @@ apitest-P40:
 
 apitest-GP100:
   stage: api_tests
+  extends:
+    - .gc-gp100
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_API_TESTS == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_GP100 == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs: ["build-ipp6", "health-GP100"]
-  tags:
-    - gp100
   variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "GP100"
     NNODES: 1
-    NGPUS: 8
-    NP:    1
-    NCCL_HOME: build
+    NP: 1
     # The NIC direct is not symmetric for rank 0 and 7; graph registration for sendrecv on rank 0 would
     # succeed but would fail on rank 7, this can cause hang.
     NCCL_GRAPH_REGISTER: 0
@@ -1926,28 +1612,19 @@ apitest-GP100:
 
 apitest-eos:
   stage: api_tests
+  extends:
+    - .eos
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_API_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_EOS == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs:
     - setup-eos
-  tags:
-    - nccl-eos
   variables:
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    SLURM_TIME: 40
-    RUN_MODE: "MPI"
+    SLURM_TIME: 60
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -1969,29 +1646,19 @@ apitest-eos:
 
 apitest-cw-dfw:
   stage: api_tests
+  extends:
+    - .cw-dfw
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_CW_DFW == "1" && $RUN_API_TESTS == "1"
     #   when: always
     - when: never
   needs:
     - setup-cw-dfw
-  tags:
-    - nccl-cw-dfw
   variables:
-    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 60
-    RUN_MODE: "MPI"
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    SLURM_PARTITION: backfill
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
-    SRUN: "" # Needs to be empty for CI runner scripts performing cluster jobs
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -2010,20 +1677,19 @@ apitest-cw-dfw:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-apitest-AWS_H100_EFA:
+apitest-AWS-H100-EFA:
   stage: api_tests
+  extends:
+    - .aws
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && $RUN_API_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_AWS == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs:
-    - [setup-AWS_H100_EFA,unit_tests-AWS_H100_EFA]
-  tags:
-    - ipp6-nccl
+    - [setup-AWS-H100-EFA,unit-tests-AWS-H100-EFA]
   variables:
     GIT_STRATEGY: none
-    AWS_HEAD_NODE: aws-pcluster-head
-    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-api.sh
     JUNIT: junit_results_apitest.xml
@@ -2073,6 +1739,8 @@ apitest-AWS_H100_EFA:
 
 apitest-draco_oci:
   stage: api_tests
+  extends:
+    - .draco-oci
   rules:
     # TODO (kartiki/bewilliams) - Enable after addressing https://nvbugspro.nvidia.com/bug/4861033
     # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_API_TESTS == "1")
@@ -2080,21 +1748,11 @@ apitest-draco_oci:
     - when: never
   needs:
     - setup-draco-oci
-    - unit_tests-draco_oci
-  tags:
-    - draco-oci-iad
+    - unit-tests-draco_oci
   variables:
-    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
-    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 20
-    RUN_MODE: "MPI"
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -2115,28 +1773,19 @@ apitest-draco_oci:
 
 apitest-pre-nyx:
   stage: api_tests
+  extends:
+    - .pre-nyx
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_NYX == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs:
     - setup-pre-nyx
-  tags:
-    - prenyx
   variables:
-    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: batch
-    RUN_MODE: "SRUN_MPI"
     NNODES: 1
-    NGPUS: 8
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -2157,27 +1806,18 @@ apitest-pre-nyx:
 
 apitest-pre-tyche:
   stage: api_tests
+  extends:
+    - .pre-tyche
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_API_TESTS == "1")
+    - <<: *post_submit_rule
+    - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
   variables:
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: batch
-    RUN_MODE: "SRUN_MPI"
     NNODES: 1
-    NGPUS: 4
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -2199,30 +1839,25 @@ apitest-pre-tyche:
 apitest-ipp6-a40:
   stage: api_tests
   extends:
-    - .ipp6
+    - .ipp6-a40
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1"
     #   when: always
     - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: a40-cicd
     NNODES: 1
-    NGPUS: 1
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
     API_TESTS_DEVICE_API: 1
   script:
-    - ./test/scripts/ci/gitlab-runner-api.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::apitest-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2239,7 +1874,8 @@ apitest-ipp6-a100:
   extends:
     - .ipp6
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs:
@@ -2254,13 +1890,14 @@ apitest-ipp6-a100:
     NGPUS: 2
     NP: 1
     NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
+    RUN_MODE: "SRUN_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
     API_TESTS_DEVICE_API: 1
   script:
-    - ./test/scripts/ci/gitlab-runner-api.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::apitest-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2277,22 +1914,15 @@ apitest-dgxspark:
   extends:
     - .dgxspark
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_API_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_DGXSPARK == "1" && $RUN_API_TESTS == "1"
       when: always
-    - when: never
   needs:
     - setup-dgxspark
   variables:
-    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: dgxspark
     NNODES: 1
-    NGPUS: 1
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -2313,27 +1943,18 @@ apitest-dgxspark:
 
 apitest-theia:
   stage: api_tests
+  extends:
+    - .theia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_API_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs: ["setup-theia"]
-  tags:
-    - lyris
   variables:
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: gb300
-    RUN_MODE: "SRUN_MPI"
     NNODES: 1
-    NGPUS: 4
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -2354,27 +1975,18 @@ apitest-theia:
 
 apitest-bia:
   stage: api_tests
+  extends:
+    - .bia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_API_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_BIA == "1" && $RUN_API_TESTS == "1"
       when: always
     - when: never
   needs: ["setup-bia"]
-  tags:
-    - bia
   variables:
-    INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: batch
     NNODES: 1
-    NGPUS: 4
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
-    SLURM_ACCOUNT: coreai_libraries_nccl
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 1
@@ -2403,28 +2015,24 @@ apitest-bia:
 
 perftest-P100:
   stage: perf_tests_single
+  extends:
+    - .gc-p100
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_P100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs: ["build-ipp6", "health-P100"]
-  tags:
-    - p100
   variables:
     NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "P100"
     MAX: "1G"
     MAX_GROUP: "128M"
     NNODES: 1
     ENABLE_NVLS: 0
     GRAPH: 0
-    NGPUS: 8
     NP: 8
     SYMMETRIC: 1
-    NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
     DEVICE_API: 0 # Device API perftest not supported on Pascal. https://nvbugspro.nvidia.com/bug/5682563
   script:
@@ -2442,28 +2050,22 @@ perftest-P100:
 
 perftest-P40:
   stage: perf_tests_single
+  extends:
+    - .gc-p40
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_P40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_P40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs: ["build-ipp6", "health-P40"]
-  tags:
-    - p40
   variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
-    SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "P40"
     MAX: "1G"
     MAX_GROUP: "128M"
     NNODES: 1
     ENABLE_NVLS: 0
     GRAPH: 0
-    NGPUS: 8
     NP: 8
     SYMMETRIC: 1
-    NCCL_HOME: build
     NO_LOOPBACK_NETWORKING: 1
     DEVICE_API: 0 # Device API perftest not supported on Pascal. https://nvbugspro.nvidia.com/bug/5682563
   script:
@@ -2481,24 +2083,20 @@ perftest-P40:
 
 perftest-GP100:
   stage: perf_tests_single
+  extends:
+    - .gc-gp100
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_GP100 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_GP100 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs: ["build-ipp6", "health-GP100"]
-  tags:
-    - gp100
   variables:
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/gc-classic-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: "GP100"
     MAX: "1G"
     NNODES: 1
     ENABLE_NVLS: 0
     GRAPH: 2
-    NGPUS: 8
     NP: 8
     # Symmetric memory is not actually supported on this node but we want to
     # test that NCCL falls back gracefully.
@@ -2521,15 +2119,15 @@ perftest-GP100:
 
 nic-fusion-A40:
   stage: perf_tests_single
+  extends:
+    - .gc-a40
   rules:
-    # - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    # - <<: *nightly_rule
+    # - if: $RUN_ON_A40 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
   needs: ["build-ipp6"]
-  tags:
-    - a40
   variables:
-    NCCL_DEBUG: "WARN"
     MPI_HOME: "/home/nvshmem_shared/openmpi"
     CUDA_HOME: "/usr/local/cuda-${CUDA_VERSION}"
     NNODES: 1
@@ -2548,31 +2146,23 @@ nic-fusion-A40:
 
 perftest-single-eos:
   stage: perf_tests_single
+  extends:
+    - .eos
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_EOS == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
     - setup-eos
-  tags:
-    - nccl-eos
   variables:
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 60
-    RUN_MODE: "MPI"
     NNODES: 1
     GRAPH: 0
-    NGPUS: 8
     MAX: "1G"
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2587,32 +2177,23 @@ perftest-single-eos:
 
 perftest-single-cw-dfw:
   stage: perf_tests_single
+  extends:
+    - .cw-dfw
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
   needs:
     - setup-cw-dfw
-  tags:
-    - nccl-cw-dfw
   variables:
-    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 60
-    RUN_MODE: "MPI"
     NNODES: 1
     GRAPH: 0
-    NGPUS: 8
     MAX: "1G"
     NP: 8
     SYMMETRIC: 1
     SKIP_FT_INIT: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    SLURM_PARTITION: backfill
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2625,20 +2206,19 @@ perftest-single-cw-dfw:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-perftest_single-AWS_H100_EFA:
+perftest_single-AWS-H100-EFA:
   stage: perf_tests_single
+  extends:
+    - .aws
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_AWS == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
-    - [setup-AWS_H100_EFA,apitest-AWS_H100_EFA]
-  tags:
-    - ipp6-nccl
+    - [setup-AWS-H100-EFA,apitest-AWS-H100-EFA]
   variables:
     GIT_STRATEGY: none
-    AWS_HEAD_NODE: aws-pcluster-head
-    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}/
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-perf.sh
     JUNIT: junit_results_perf_single.xml
@@ -2683,23 +2263,18 @@ perftest_single-AWS_H100_EFA:
 
 perftest_single-draco_oci:
   stage: perf_tests_single
+  extends:
+    - .draco-oci
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
     - setup-draco-oci
-  tags:
-    - draco-oci-iad
   variables:
-    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
-    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 30
-    RUN_MODE: "MPI"
     NNODES: 1
-    NGPUS: 8
     GRAPH: 0
     MAX: "1G"
     NP: 8
@@ -2708,8 +2283,6 @@ perftest_single-draco_oci:
     # Disable this test currently as it's affected by the GIN proxy bug
     # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --gpus-per-node ${NGPUS} -n ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
@@ -2725,33 +2298,24 @@ perftest_single-draco_oci:
 
 perftest-single-pre-nyx:
   stage: perf_tests_single
+  extends:
+    - .pre-nyx
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
     - setup-pre-nyx
-  tags:
-    - prenyx
   variables:
-    INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
     SLURM_TIME: 80
-    SLURM_PARTITION: batch
-    RUN_MODE: "SRUN_MPI"
     NNODES: 1
-    NGPUS: 8
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: ${INSTALL_DIR}/build
     SYMMETRIC: 1
     CE_COLL: 1
     RMA: 1
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2766,32 +2330,23 @@ perftest-single-pre-nyx:
 
 perftest-single-pre-tyche:
   stage: perf_tests_single
+  extends:
+    - .pre-tyche
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
   variables:
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 45
-    SLURM_PARTITION: batch
-    RUN_MODE: "SRUN_MPI"
     NNODES: 1
-    NGPUS: 4
     MAX: "1G"
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
     CE_COLL: 1
     RMA: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     ENABLE_MNNVL_TUNER_PLUGIN: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -2808,29 +2363,24 @@ perftest-single-pre-tyche:
 perftest-single-ipp6-a40:
   stage: perf_tests_single
   extends:
-    - .ipp6
+    - .ipp6-a40
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: a40-cicd
     NNODES: 1
     GRAPH: 0
-    NGPUS: 1
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-single-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2845,29 +2395,24 @@ perftest-single-ipp6-a40:
 perftest-single-ipp6-a100:
   stage: perf_tests_single
   extends:
-    - .ipp6
+    - .ipp6-a100
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: a100-cicd
     NNODES: 1
     GRAPH: 0
-    NGPUS: 2
     NP: 2
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-single-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -2884,23 +2429,17 @@ perftest-single-dgxspark:
   extends:
     - .dgxspark
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_DGXSPARK == "1" && $RUN_PERF_TESTS_SINGLE == "1"
     #   when: always
     - when: never
   needs:
     - setup-dgxspark
   variables:
-    INSTALL_DIR: ${DGXSPARK_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-dgxspark-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: dgxspark
     NNODES: 1
     GRAPH: 0
-    NGPUS: 1
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SRUN_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
@@ -2919,31 +2458,22 @@ perftest-single-dgxspark:
 
 perftest-single-theia:
   stage: perf_tests_single
+  extends:
+    - .theia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs: ["setup-theia"]
-  tags:
-    - lyris
   variables:
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 45
-    SLURM_PARTITION: gb300
-    RUN_MODE: "SRUN_MPI"
     NNODES: 1
-    NGPUS: 4
     MAX: "1G"
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
     RMA: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2958,30 +2488,21 @@ perftest-single-theia:
 
 perftest-single-bia:
   stage: perf_tests_single
+  extends:
+    - .bia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_SINGLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_BIA == "1" && $RUN_PERF_TESTS_SINGLE == "1"
       when: always
     - when: never
   needs: ["setup-bia"]
-  tags:
-    - bia
   variables:
-    INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 120
-    SLURM_PARTITION: batch
-    RUN_MODE: "SRUN_MPI"
     NNODES: 1
-    NGPUS: 4
     MAX: "1G"
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -2996,19 +2517,18 @@ perftest-single-bia:
 
 self-test-pytorch-container-eos:
   stage: perf_tests_single
+  extends:
+    - .eos
   rules:
-    - if: $TRIGGER_PIPELINE == "nightly" || ($RUN_ON_EOS == "1" && $RUN_DLFW_TESTS == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_EOS == "1" && $RUN_DLFW_TESTS == "1"
       when: always
     - when: never
-  tags:
-    - nccl-eos
   needs:
     - build-dlfw-pytorch-container
   parallel: 4
   variables:
     CONTAINER: gitlab-master.nvidia.com/dl/dgx/pytorch:main-py3-devel
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
   script:
     - chmod +x test/scripts/dlfw/*.sh
     - srun -N1 --exclusive -t60 -A coreai_libraries_nccl -J coreai_libraries_nccl-bewilliams.test-cont --container-image="$CONTAINER" --container-mounts=$(pwd):/workspace/nccl /workspace/nccl/test/scripts/dlfw/run_dlfw_selftest.sh
@@ -3024,34 +2544,25 @@ self-test-pytorch-container-eos:
 
 perftest-multi-eos:
   stage: perf_tests_multi
+  extends:
+    - .eos
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_EOS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
     - setup-eos
-  tags:
-    - nccl-eos
   variables:
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 60
-    RUN_MODE: "MPI"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
     NCCL_IB_SL: "1"
-    OMPI_MCA_btl: "^openib"
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     GRAPH: 0
-    NGPUS: 8
     MAX: "1G"
     NP: 8
     SKIP_FT_INIT: 1
     SYMMETRIC: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -3068,35 +2579,25 @@ perftest-multi-eos:
 
 perftest-multi-cw-dfw:
   stage: perf_tests_multi
+  extends:
+    - .cw-dfw
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_CW_DFW == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
     #   when: always
     - when: never
   needs:
     - setup-cw-dfw
-  tags:
-    - nccl-cw-dfw
   variables:
-    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 60
-    RUN_MODE: "MPI"
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
     NCCL_IB_SL: "1"
-    OMPI_MCA_btl: "^openib"
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include enp90s0f0np0"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     GRAPH: 0
-    NGPUS: 8
     MAX: "1G"
     NP: 8
     SKIP_FT_INIT: 1
     SYMMETRIC: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
-    SLURM_PARTITION: backfill
   script:
     - export SALLOC="salloc -N ${NNODES} --ntasks-per-node ${NP} --gres=gpu:${NGPUS} --exclusive -p ${SLURM_PARTITION} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -3111,20 +2612,19 @@ perftest-multi-cw-dfw:
       junit: junit_results.xml
     expire_in: 48 hrs
 
-perftest_multi-AWS_H100_EFA:
+perftest_multi-AWS-H100-EFA:
   stage: perf_tests_multi
+  extends:
+    - .aws
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_AWS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_AWS == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
-    - [setup-AWS_H100_EFA,perftest_single-AWS_H100_EFA]
-  tags:
-    - ipp6-nccl
+    - [setup-AWS-H100-EFA,perftest_single-AWS-H100-EFA]
   variables:
     GIT_STRATEGY: none
-    AWS_HEAD_NODE: aws-pcluster-head
-    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
     RUN_SCRIPT: run_${CI_JOB_NAME}.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-perf.sh
     JUNIT: junit_results_perf_multi.xml
@@ -3170,23 +2670,18 @@ perftest_multi-AWS_H100_EFA:
 
 perftest_multi-draco_oci:
   stage: perf_tests_multi
+  extends:
+    - .draco-oci
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(nightly)$/ || ($RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *nightly_rule
+    - if: $RUN_ON_DRACO_OCI == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
     - setup-draco-oci
-  tags:
-    - draco-oci-iad
   variables:
-    INSTALL_DIR: "${DRACO_OCI_INSTALL_DIR}"
-    ARCHIVER_STAGING_DIR: "${DRACO_OCI_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/draco-oci-config.sh"
     SLURM_TIME: 30
-    RUN_MODE: "MPI"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
-    NGPUS: 8
     MAX: "1G"
     NP: 8
     GRAPH: 0
@@ -3194,8 +2689,6 @@ perftest_multi-draco_oci:
     # Disable this test currently as it's affected by the GIN proxy bug
     # TODO: re-enable device API tests after this is fixed.
     DEVICE_API: 0
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     NO_LOOPBACK_NETWORKING: 1
   script:
     - export SALLOC="salloc -N ${NNODES} --gpus-per-node ${NGPUS} --ntasks-per-node ${NP} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME}"
@@ -3211,14 +2704,15 @@ perftest_multi-draco_oci:
 
 perftest-multi-pre-nyx:
   stage: perf_tests_multi
+  extends:
+    - .pre-nyx
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_NYX == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
     - setup-pre-nyx
-  tags:
-    - prenyx
   variables:
     INSTALL_DIR: "${PRE_NYX_INSTALL_DIR}"
     CI_BUILDS_DIR: "${PRE_NYX_CI_BUILDS_DIR}"
@@ -3232,9 +2726,7 @@ perftest-multi-pre-nyx:
     MAX: "1G"
     NP: 8
     GRAPH: 0
-    NCCL_HOME: ${INSTALL_DIR}/build
     SYMMETRIC: 1
-    SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     RMA: 1
   script:
@@ -3253,31 +2745,22 @@ perftest-multi-pre-nyx:
 
 perftest-multi-pre-tyche:
   stage: perf_tests_multi
+  extends:
+    - .pre-tyche
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
   variables:
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 45
-    SLURM_PARTITION: batch
-    RUN_MODE: "SRUN_MPI"
-    NGPUS: 4
     MAX: "1G"
     NP: 4
     SYMMETRIC: 1
     CE_COLL: 1
     RMA: 1
     GRAPH: 0
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     ENABLE_MNNVL_TUNER_PLUGIN: 1
   script:
@@ -3297,29 +2780,24 @@ perftest-multi-pre-tyche:
 perftest-multi-ipp6-a40:
   stage: perf_tests_multi
   extends:
-    - .ipp6
+    - .ipp6-a40
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
     #   when: always
     - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: a40-cicd
     NNODES: 2
     GRAPH: 0
-    NGPUS: 1
     NP: 1
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-multi-a40::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3334,29 +2812,24 @@ perftest-multi-ipp6-a40:
 perftest-multi-ipp6-a100:
   stage: perf_tests_multi
   extends:
-    - .ipp6
+    - .ipp6-a100
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_IPP6 == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 30
-    SLURM_PARTITION: a100-cicd
     NNODES: 2
     GRAPH: 0
-    NGPUS: 2
     NP: 2
-    NCCL_HOME: ${INSTALL_DIR}/build
-    RUN_MODE: "SALLOC_MPI"
     SYMMETRIC: 1
     MAX: "1G"
   script:
-    - ./test/scripts/ci/gitlab-runner-perf.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::perftest-multi-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -3370,30 +2843,21 @@ perftest-multi-ipp6-a100:
 
 perftest-multi-theia:
   stage: perf_tests_multi
+  extends:
+    - .theia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs: ["setup-theia"]
-  tags:
-    - lyris
   variables:
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 45
-    SLURM_PARTITION: gb300
-    RUN_MODE: "SRUN_MPI"
-    NGPUS: 4
     MAX: "1G"
     NP: 4
     SYMMETRIC: 1
     RMA: 1
     GRAPH: 0
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
@@ -3412,33 +2876,24 @@ perftest-multi-theia:
 # Timeout after 120 min
 perftest-multi-bia:
   stage: perf_tests_multi
+  extends:
+    - .bia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_BIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
       when: always
     - when: never
   needs: ["setup-bia"]
-  tags:
-    - bia
   variables:
-    INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 120
-    SLURM_PARTITION: batch
-    RUN_MODE: "SRUN_MPI"
-    NGPUS: 4
     MAX: "1G"
     NP: 4
     # Re-enable after resovle https://nvbugspro.nvidia.com/bug/5680492
     SYMMETRIC: 0
     DEVICE_API: 0
     GRAPH: 0
-    NCCL_HOME: ${INSTALL_DIR}/build
     SKIP_FT_TEST: 1
     SKIP_NIC_FUSION: 1
-    SLURM_ACCOUNT: coreai_libraries_nccl
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     # Re-enable after resolving https://nvbugspro.nvidia.com/bug/5793707
     WORKAROUND_NVBUG_5793707: 1
@@ -3466,24 +2921,17 @@ perftest-multi-bia:
 
 perf-regression-eos:
   stage: perf_regression
+  extends:
+    - .eos
   rules:
-    # TODO: re-enable when fixed issue with ibv_reg_mr_iova2
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1")
+    # - <<: *weekly_rule
+    # - if: $RUN_ON_EOS == "1" && $RUN_PERF_REGRESSION == "1"
     #   when: always
     - when: never
   needs:
     - setup-eos
-  tags:
-    - nccl-eos
   variables:
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
     SLURM_TIME: 60
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
@@ -3498,23 +2946,17 @@ perf-regression-eos:
 
 perf-regression-cw-dfw:
   stage: perf_regression
+  extends:
+    - .cw-dfw
   rules:
-    # - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_CW_DFW == "1" && $RUN_PERF_REGRESSION == "1")
+    # - <<: *pre_submit_rule
+    # - if: $RUN_ON_CW_DFW == "1" && $RUN_PERF_REGRESSION == "1"
     #   when: always
     - when: never
   needs:
     - setup-cw-dfw
-  tags:
-    - nccl-cw-dfw
   variables:
-    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
     SLURM_TIME: 60
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
@@ -3529,22 +2971,16 @@ perf-regression-cw-dfw:
 
 perf-regression-pre-tyche:
   stage: perf_regression
+  extends:
+    - .pre-tyche
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_REGRESSION == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_PRE_TYCHE == "1" && $RUN_PERF_REGRESSION == "1"
       when: always
     - when: never
   needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
   variables:
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
     SLURM_TIME: 60
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
@@ -3559,22 +2995,16 @@ perf-regression-pre-tyche:
 
 perf-regression-theia:
   stage: perf_regression
+  extends:
+    - .theia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_REGRESSION == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_THEIA == "1" && $RUN_PERF_REGRESSION == "1"
       when: always
     - when: never
   needs: ["setup-theia"]
-  tags:
-    - lyris
   variables:
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
     SLURM_TIME: 60
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
@@ -3589,22 +3019,18 @@ perf-regression-theia:
 
 perf-regression-bia:
   stage: perf_regression
+  extends:
+    - .bia
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/ || ($RUN_ON_BIA == "1" && $RUN_PERF_REGRESSION == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_BIA == "1" && $RUN_PERF_REGRESSION == "1"
       when: always
     - when: never
   needs: ["setup-bia"]
   tags:
     - bia
   variables:
-    INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     SLURM_TIME: 60
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
   script:
     - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
@@ -3639,170 +3065,160 @@ perf-regression-bia:
 
 # EOS Debug Jobs
 cs-eos-intra-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-eos"]
-  tags:
-    - nccl-eos
+  extends: 
+    - .eos
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-eos
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-dgx.toml"
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 1
 
 cs-eos-inter-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-eos"]
-  tags:
-    - nccl-eos
+  extends: 
+    - .eos
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-eos
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 2
 
 # CW-DFW Debug Jobs
 cs-cw-dfw-intra-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-cw-dfw"]
-  tags:
-    - nccl-cw-dfw
+  extends: 
+    - .cw-dfw
+    - .comprehensive-sweep
+  rules:
+    # - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
+    #   when: always
+    - when: never
+  needs:
+    - setup-cw-dfw
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-dgx.toml"
-    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 1
 
 cs-cw-dfw-inter-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-cw-dfw"]
-  tags:
-    - nccl-cw-dfw
+  extends: 
+    - .cw-dfw
+    - .comprehensive-sweep
+  rules:
+    # - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_CW_DFW == "1"
+    #   when: always
+    - when: never
+  needs:
+    - setup-cw-dfw
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
-    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 2
 
 # PreTyche Debug Jobs
 cs-ptyche-intra-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
+  extends: 
+    - .pre-tyche
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-pre-tyche
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
     SLURM_PARTITION: 36x2-a01r
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 1
 
 cs-ptyche-inter-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
+  extends: 
+    - .pre-tyche
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-pre-tyche
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_PARTITION: 36x2-a01r
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 2
 
 # Theia Debug Jobs
 cs-theia-intra-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-theia"]
-  tags:
-    - lyris
+  extends: 
+    - .theia
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_THEIA == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-theia
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 1
 
 cs-theia-inter-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-theia"]
-  tags:
-    - lyris
+  extends: 
+    - .theia
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_THEIA == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-theia
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 2
 
 # Bia Debug Jobs
 cs-bia-intra-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-bia"]
-  tags:
-    - bia
+  extends: 
+    - .bia
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_BIA == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-bia
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
-    INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 1
 
 cs-bia-inter-debug:
-  extends: .comprehensive-sweep-debug
-  needs: ["setup-bia"]
-  tags:
-    - bia
+  extends: 
+    - .bia
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_BIA == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-bia
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-bia.toml"
-    INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
     NNODES: 2
 
@@ -3813,18 +3229,17 @@ cs-bia-inter-debug:
 
 # EOS Full Jobs (inter only, intra is single-node covered by debug)
 cs-eos-inter-full:
-  extends: .comprehensive-sweep-full
-  needs: ["setup-eos"]
-  tags:
-    - nccl-eos
+  extends: 
+    - .eos
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_EOS == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-eos
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
-    INSTALL_DIR: "${EOS_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${EOS_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${EOS_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/eos-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3832,18 +3247,17 @@ cs-eos-inter-full:
 
 # CW-DFW Full Jobs
 cs-cw-dfw-inter-full:
-  extends: .comprehensive-sweep-full
-  needs: ["setup-cw-dfw"]
-  tags:
-    - nccl-cw-dfw
+  extends: 
+    - .cw-dfw
+    - .comprehensive-sweep
+  rules:
+    # - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_CW_DFW == "1"
+    #   when: always
+    - when: never
+  needs:
+    - setup-cw-dfw
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
-    INSTALL_DIR: "${CW_DFW_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${CW_DFW_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${CW_DFW_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/cw-dfw-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3851,19 +3265,18 @@ cs-cw-dfw-inter-full:
 
 # PreTyche Full Jobs
 cs-ptyche-intra-full:
-  extends: .comprehensive-sweep-full
-  needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
+  extends: 
+    - .pre-tyche
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-pre-tyche
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
     SLURM_PARTITION: 36x2-a01r
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3871,20 +3284,19 @@ cs-ptyche-intra-full:
       - NNODES: [2, 4, 8, 16, 18]
 
 cs-ptyche-inter-full:
-  extends: .comprehensive-sweep-full
-  needs: ["setup-pre-tyche"]
-  tags:
-    - ptyche
+  extends: 
+    - .pre-tyche
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_PRE_TYCHE == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-pre-tyche
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_PARTITION: 36x2-a01r
-    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3893,18 +3305,17 @@ cs-ptyche-inter-full:
 
 # Theia Full Jobs
 cs-theia-intra-full:
-  extends: .comprehensive-sweep-full
-  needs: ["setup-theia"]
-  tags:
-    - lyris
+  extends: 
+    - .theia
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_THEIA == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-theia
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3912,19 +3323,18 @@ cs-theia-intra-full:
       - NNODES: [2, 4, 8, 16, 18]
 
 cs-theia-inter-full:
-  extends: .comprehensive-sweep-full
-  needs: ["setup-theia"]
-  tags:
-    - lyris
+  extends: 
+    - .theia
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_THEIA == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-theia
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
-    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3933,18 +3343,17 @@ cs-theia-inter-full:
 
 # Bia Full Jobs
 cs-bia-inter-full:
-  extends: .comprehensive-sweep-full
-  needs: ["setup-bia"]
-  tags:
-    - bia
+  extends: 
+    - .bia
+    - .comprehensive-sweep
+  rules:
+    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_BIA == "1"
+      when: always
+    - when: never
+  needs:
+    - setup-bia
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-bia.toml"
-    INSTALL_DIR: "${BIA_INSTALL_DIR}"
-    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
-    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
-    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
-    NCCL_HOME: ${INSTALL_DIR}/build
-    SLURM_ACCOUNT: coreai_libraries_nccl
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3962,28 +3371,22 @@ cs-bia-inter-full:
 profiler-tests-ipp6-a100:
   stage: profiler_tests
   extends:
-    - .ipp6
+    - .ipp6-a100
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_PROFILER_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_IPP6 == "1" && $RUN_PROFILER_TESTS == "1"
       when: always
     - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: a100-cicd
     NNODES: 1
     ENABLE_NVLS: 0
-    OMPI_MCA_btl: "^openib"
-    NGPUS: 2
     NP: 2
-    NCCL_HOME: ${INSTALL_DIR}/build
   script:
-    - ./test/scripts/ci/gitlab-runner-profiler.sh
+    - export SALLOC="salloc -N ${NNODES} --exclusive -J "cicd::${GITLAB_USER_LOGIN}::profiler-a100::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-profiler.sh
   after_script:
     - ./test/scripts/ci/finalize-junit.sh
   artifacts:
@@ -4006,27 +3409,21 @@ profiler-tests-ipp6-a100:
 inspector-tests-ipp6-a100:
   stage: inspector_tests
   extends:
-    - .ipp6
+    - .ipp6-a100
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_IPP6 == "1" && $RUN_INSPECTOR_TESTS == "1")
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_IPP6 == "1" && $RUN_INSPECTOR_TESTS == "1"
       when: always
     - when: never
   needs:
     - setup-ipp6
   variables:
-    INSTALL_DIR: ${IPP6_INSTALL_DIR}
-    NCCL_DEBUG: "WARN"
-    CLUSTER_CONFIG: "docker/clusters/ipp6-slurm-config.sh"
     SLURM_TIME: 10
-    RUN_MODE: "SALLOC_MPI"
-    SLURM_PARTITION: a100-cicd
     NNODES: 1
     ENABLE_NVLS: 0
-    OMPI_MCA_btl: "^openib"
-    NGPUS: 2
     NP: 2
-    NCCL_HOME: ${INSTALL_DIR}/build
     NCCL_SRC: ${CI_PROJECT_DIR}
+    RUN_MODE: "SALLOC_MPI" # Inspector tests require SALLOC_MPI run mode
   script:
     - ./test/scripts/ci/gitlab-runner-inspector.sh
   artifacts:
@@ -4066,7 +3463,7 @@ cleanup-eos:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - <<: *pre_submit_rule
       when: on_success
     - if: $RUN_ON_EOS == "1"
       when: on_success
@@ -4079,9 +3476,7 @@ cleanup-eos:
       optional: true
     - job: setup-eos
       optional: true
-    - job: unit_tests-eos
-      optional: true
-    - job: unit_tests-gin-eos
+    - job: unit-tests-eos
       optional: true
     - job: apitest-eos
       optional: true
@@ -4108,12 +3503,13 @@ cleanup-cw-dfw:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
-      when: on_success
-    - if: $RUN_ON_CW_DFW == "1"
-      when: on_success
-    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
-      when: on_success
+    # - <<: *pre_submit_rule
+    #   when: on_success
+    # - if: $RUN_ON_CW_DFW == "1"
+    #   when: on_success
+    # - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+    #   when: on_success
+    - when: never
   tags:
     - nccl-cw-dfw
   needs:
@@ -4121,7 +3517,7 @@ cleanup-cw-dfw:
       optional: true
     - job: setup-cw-dfw
       optional: true
-    - job: unit_tests-cw-dfw
+    - job: unit-tests-cw-dfw
       optional: true
     - job: apitest-cw-dfw
       optional: true
@@ -4146,7 +3542,7 @@ cleanup-draco-oci:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(nightly|weekly)$/
+    - <<: *nightly_rule
       when: on_success
     - if: $RUN_ON_DRACO_OCI == "1"
       when: on_success
@@ -4157,7 +3553,7 @@ cleanup-draco-oci:
       optional: true
     - job: setup-draco-oci
       optional: true
-    - job: unit_tests-draco_oci
+    - job: unit-tests-draco_oci
       optional: true
     - job: apitest-draco_oci
       optional: true
@@ -4172,7 +3568,7 @@ cleanup-pre-nyx:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - <<: *pre_submit_rule
       when: on_success
     - if: $RUN_ON_PRE_NYX == "1"
       when: on_success
@@ -4181,11 +3577,9 @@ cleanup-pre-nyx:
   needs:
     - job: setup-pre-nyx
       optional: true
-    - job: unit_tests-pre-nyx
+    - job: unit-tests-pre-nyx
       optional: true
-    - job: unit_tests-gin-pre-nyx
-      optional: true
-    - job: unit_tests-rma-pre-nyx
+    - job: unit-tests-rma-pre-nyx
       optional: true
     - job: apitest-pre-nyx
       optional: true
@@ -4201,7 +3595,7 @@ cleanup-pre-tyche:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - <<: *pre_submit_rule
       when: on_success
     - if: $RUN_ON_PRE_TYCHE == "1"
       when: on_success
@@ -4214,11 +3608,9 @@ cleanup-pre-tyche:
       optional: true
     - job: setup-pre-tyche
       optional: true
-    - job: unit_tests-pre-tyche
+    - job: unit-tests-pre-tyche
       optional: true
-    - job: unit_tests-gin-pre-tyche
-      optional: true
-    - job: unit_tests-rma-pre-tyche
+    - job: unit-tests-rma-pre-tyche
       optional: true
     - job: apitest-pre-tyche
       optional: true
@@ -4245,7 +3637,7 @@ cleanup-theia:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - <<: *pre_submit_rule
       when: on_success
     - if: $RUN_ON_THEIA == "1"
       when: on_success
@@ -4258,9 +3650,9 @@ cleanup-theia:
       optional: true
     - job: setup-theia
       optional: true
-    - job: unit_tests-theia
+    - job: unit-tests-theia
       optional: true
-    - job: unit_tests-rma-theia
+    - job: unit-tests-rma-theia
       optional: true
     - job: examples-validation-theia
       optional: true
@@ -4288,7 +3680,7 @@ cleanup-bia:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - <<: *pre_submit_rule
       when: on_success
     - if: $RUN_ON_BIA == "1"
       when: on_success
@@ -4301,7 +3693,7 @@ cleanup-bia:
       optional: true
     - job: setup-bia
       optional: true
-    - job: unit_tests-bia
+    - job: unit-tests-bia
       optional: true
     - job: apitest-bia
       optional: true
@@ -4325,7 +3717,7 @@ cleanup-ipp6:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - <<: *pre_submit_rule
       when: on_success
     - if: $RUN_ON_IPP6 == "1"
       when: on_success
@@ -4336,11 +3728,9 @@ cleanup-ipp6:
       optional: true
     - job: nccl4py_ci
       optional: true
-    - job: unit_tests-ipp6-a40
+    - job: unit-tests-ipp6-a40
       optional: true
-    - job: unit_tests-ipp6-a100
-      optional: true
-    - job: unit_tests-gin-ipp6-a100
+    - job: unit-tests-ipp6-a100
       optional: true
     - job: examples-validation-ipp6-a100
       optional: true
@@ -4367,7 +3757,7 @@ cleanup-dgxspark:
   extends:
     - .cleanup
   rules:
-    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly|weekly)$/
+    - <<: *pre_submit_rule
       when: on_success
     - if: $RUN_ON_DGXSPARK == "1"
       when: on_success
@@ -4376,12 +3766,14 @@ cleanup-dgxspark:
   needs:
     - job: setup-dgxspark
       optional: true
-    - job: unit_tests-dgxspark
+    - job: unit-tests-dgxspark
       optional: true
     - job: apitest-dgxspark
       optional: true
     - job: perftest-single-dgxspark
       optional: true
+  variables:
+    INSTALL_DIR: "${DGXSPARK_INSTALL_DIR}"
 
 ##
 ## Stage: cleanup - Finish!

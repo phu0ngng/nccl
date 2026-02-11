@@ -9,6 +9,7 @@
 #include "nccl_device/core.h"
 #include "rma/rma.h"
 #include "device.h"
+#include "sym_kernels.h"
 #include "transport.h"
 #include "group.h"
 #include "nccl_device.h"
@@ -831,7 +832,7 @@ ncclResult_t ncclDevrCommCreateInternal(
     }
     if (requestedConnectionType == NCCL_GIN_CONNECTION_FULL) {
       if (comm->globalGinSupport == NCCL_GIN_CONNECTION_RAIL) {
-        WARN("User requested GIN connection type NCCL_GIN_CONNECTION_FULL but the communicator is already connected with NCCL_GIN_CONNECTION_RAIL");
+        WARN("User requested GIN connection type NCCL_GIN_CONNECTION_FULL but the communicator supports only NCCL_GIN_CONNECTION_RAIL");
         return ncclInvalidArgument;
       }
       if (comm->sharedRes->ginState.ginConnectionType == NCCL_GIN_CONNECTION_RAIL) {
@@ -1151,6 +1152,8 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   NCCLCHECK(CommCheck(comm, __func__, "comm"));
   NCCLCHECK(PtrCheck(props, __func__, "props"));
 
+  NCCLCHECK(ncclCommEnsureReady(comm));
+
   if (props->magic != NCCL_API_MAGIC) {
     WARN("Cannot get communicator properties: ncclCommProperties_t argument must be initialized via NCCL_COMM_PROPERTIES_INITIALIZER");
     return ncclInvalidUsage;
@@ -1236,10 +1239,13 @@ ncclResult_t ncclDevCommDestroy(
   NCCLCHECK(PtrCheck(devComm, __func__, "devComm"));
   struct ncclDevrState* devr = &comm->devrState;
   if (devr->ginEnabled) {
+    NCCLCHECK(ncclGinResetSignalsAndCounters(comm, devComm));
+
     ncclGinFreeSignalsCounters(comm,
       devComm->ginSignalBase, devComm->ginSignalCount,
       devComm->ginCounterBase, devComm->ginCounterCount
     );
+
     if (devComm->ginContextBase == comm->sharedRes->ginState.ctxLastExclusive) {
       // Since we don't track the shared/exclusive state of each context individually, we can't support the general
       // case of release.  However, we support the release of contexts of the most recently created exclusive devComm,

@@ -47,7 +47,7 @@ __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset) 
 
   uint64_t putValue = getPutValue(comm);
   if (railTeam.rank == SRC_RANK) {
-    uint64_t* putSrcPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
+    volatile uint64_t* putSrcPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
     assert(*putSrcPtr == 0 && "putSrcPtr should be 0 before put");
     *putSrcPtr = putValue;
     
@@ -148,7 +148,6 @@ int main(int argc, char* argv[]) {
     printf("Testing both signal and polling modes\n\n");
   }
 
-  // Test 1: Put without signal (polling mode)
   if (myRank == 0) {
     printf("Test: Railed Gin Put...");
     fflush(stdout);

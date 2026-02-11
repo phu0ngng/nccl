@@ -51,6 +51,7 @@ set(PLUGIN_SOURCES
     plugin/net-plugin_nodev_v10.cc
     plugin/net-plugin_nodev_v11.cc
     plugin/shared-plugins.cc
+    plugin/net-plugin-init-once.cc
 )
 
 # Environment plugin source (built from ext-env/example)
