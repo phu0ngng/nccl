@@ -712,7 +712,7 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         ncclIbPostRecvWorkRequest(qp->qp, &recvComm->ibRecvWorkRequest);
       }
       req->events[devIndex]--;
-    } else if (req->type == NCCL_NET_IB_REQ_FLUSH) {
+    } else if (wc->opcode == IBV_WC_RDMA_READ) {
       TRACE(NCCL_NET, "NET/IB: %s: Got completion for a flush request (req=%p, comm=%p, id=%ld, devIndex=%d, qp_num=%u)", __func__, req, req->base, req->id, devIndex, wc->qp_num);
       req->events[devIndex]--;
     } else if (wc->opcode == IBV_WC_RDMA_WRITE) {
