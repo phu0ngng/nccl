@@ -122,13 +122,13 @@ static ncclResult_t ncclGinPluginAssignToComm(struct ncclComm* comm, int pluginI
     INFO(NCCL_INIT|NCCL_NET, "Assigned GIN plugin %s to comm", ginPluginLibs[pluginIndex].ncclGin->name);
     comm->sharedRes->ginState.ncclGin = ginPluginLibs[pluginIndex].ncclGin;
     comm->ginPluginIndex = pluginIndex;
-
     NCCLCHECK(setLocalGinType(comm));
   }
   if (ginPluginLibs[pluginIndex].ncclRmaPluginState >= ncclGinPluginStateEnabled) {
     INFO(NCCL_INIT|NCCL_NET, "Assigned RMA plugin %s to comm", ginPluginLibs[pluginIndex].ncclRma->name);
     comm->rmaState.rmaProxyState.ncclGin = ginPluginLibs[pluginIndex].ncclRma;
   }
+  ginPluginLibs[pluginIndex].ncclGinPluginRefCount++;
   *isAssigned = true;
   return ncclSuccess;
 }
