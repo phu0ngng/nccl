@@ -103,30 +103,25 @@ static ncclResult_t ncclIbResiliencyReplaceQps(struct ncclIbResiliency* resCtx, 
 static ncclResult_t ncclIbResiliencySendRequestInit(struct ncclIbResiliencySend* sendResCtx, ncclIbRequest* request, int devIndex) {
   int slot = request->id % NET_IB_MAX_REQUESTS;
   struct ncclIbResiliencyRequestSend* failedSendRequest = &sendResCtx->failedRequests[slot];
-  if (failedSendRequest->request != NULL) {
-    // It might be that a different send request that is part of this
-    // multi-send request already got an error and was recorded.
-    // The recorded request is already handled and no need to to anything
-    // in addition.
-    // Another scenario in which the same slot is being added is when a QP had
-    // multiple outstanding sends WQEs and upon failure, it flushed all of them
-    // with a "flush error".
-    assert(failedSendRequest->request->id == request->id);
-    INFO(NCCL_NET, "NET/IB: %s: No need to add this failed request (req=%p, comm=%p, id=%ld) while another request (req=%p, comm=%p, id=%ld) is already being tracked in the same slot (slot=%d).", __func__, request, request->base, request->id, failedSendRequest->request, failedSendRequest->request->base, failedSendRequest->request->id, slot);
-    return ncclSuccess;
+
+  // Check if the request is/was already tracked
+  if (failedSendRequest->id == request->id + 1) {
+    if (failedSendRequest->request != NULL) {
+      // It might be that a different send request that is part of this
+      // multi-send request already got an error and is being replayed.
+      // No need to initate a new tracking.
+      INFO(NCCL_NET, "NET/IB: %s: No need to add this failed request (req=%p, comm=%p, id=%ld) while another request (req=%p, comm=%p, id=%ld) is already being tracked in the same slot (slot=%d).", __func__, request, request->base, request->id, failedSendRequest->request, failedSendRequest->request->base, failedSendRequest->request->id, slot);
+      return ncclSuccess;
+    } else {
+      // The request was already replayed and released. The CQE should be ignored.
+      INFO(NCCL_NET, "NET/IB: %s: Attempting to initiate a replay protocol but the failed request was already handled (req=%p, comm=%p, id=%ld, slot=%d, req.type=%s).", __func__, request, request->base, request->id, slot, ncclIbReqTypeStr[request->type]);
+      return ncclSuccess;
+    }
   }
 
-  // An old CQE may remain in the CQ after its associated send request has
-  // already been handled (potentially replayed), completed, and released. To
-  // safely ignore such stale CQEs, a monotonically increasing "ID" is used to
-  // determine if the CQE corresponds to an outdated request.
-  if (request->id < failedSendRequest->id) {
-    if (request->type != NCCL_NET_IB_REQ_UNUSED) {
-      WARN("NET/IB: %s: Attempting to initiate a failed request using an old request (req=%p, comm=%p, id=%ld, slot=%d, failedSendRequest.id=%ld).", __func__, request, request->base, request->id, slot, failedSendRequest->id);
-      return ncclInternalError;
-    }
-    INFO(NCCL_NET, "NET/IB: %s: No need to initiate a new failed request. The retrieved request was already handled and completed/released (req=%p, comm=%p, id=%ld, slot=%d, failedSendRequest.id=%ld).", __func__, request, request->base, request->id, slot, failedSendRequest->id);
-    return ncclSuccess;
+  if (request->id + 1 <= failedSendRequest->id) {
+    WARN("NET/IB: %s: Attempting to initiate a replay using an old request (req=%p, comm=%p, id=%ld, slot=%d, failedSendRequest.id=%ld).", __func__, request, request->base, request->id, slot, failedSendRequest->id);
+    return ncclInternalError;
   }
 
   if (request->type != NCCL_NET_IB_REQ_SEND) {
@@ -139,7 +134,7 @@ static ncclResult_t ncclIbResiliencySendRequestInit(struct ncclIbResiliencySend*
   failedSendRequest->errorInfo.devIndex = devIndex;
   failedSendRequest->errorInfo.time = clockNano();
   failedSendRequest->failedAttempts = 0;
-  failedSendRequest->id = request->id;
+  failedSendRequest->id = request->id+1;
   sendResCtx->base.outstandingRequests++;
   sendResCtx->base.inProgress = true;
   INFO(NCCL_NET, "NET/IB: %s: Tracking a new failed send request (req=%p, comm=%p, id=%ld, slot=%d, devIndex=%d, time=%ld, total tracked requests: %d).", __func__, request, request->base, request->id, slot, devIndex, failedSendRequest->errorInfo.time, sendResCtx->base.outstandingRequests);
