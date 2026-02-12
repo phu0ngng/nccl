@@ -156,6 +156,11 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
   NCCLCHECKGOTO(ncclCalloc(&ginCommCountHandles, comm->nRanks), ret, fail);
 
   ginState->ginCommCount = nLocalGinDevs;
+  if (ginState->ginVersion == 11) {
+    ginState->ginCommCount = reqGinContextCount;
+    if (ncclParamGinNcontexts() > 0)
+      ginState->ginCommCount = ncclParamGinNcontexts();
+  }
   if (ncclParamGinNconnections() != -2) ginState->ginCommCount = ncclParamGinNconnections();
   ginState->ginCommCount = std::min<int>(NCCL_GIN_MAX_CONNECTIONS, ginState->ginCommCount);
 
@@ -170,6 +175,9 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
     nContextsTotal = std::max(reqGinContextCount, NCCL_GIN_MAX_CONNECTIONS);
   }
   nContextsTotal = ROUNDUP(nContextsTotal, ginState->ginCommCount);
+  if (ginState->ginVersion == 11) {
+    nContextsTotal = ginState->ginCommCount;
+  }
   nContextsPerComm = nContextsTotal / ginState->ginCommCount;
   ginState->ginContextCount = nContextsTotal;
   ginState->ctxFirstAvailable = 0;

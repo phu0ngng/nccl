@@ -31,6 +31,7 @@ struct ncclGinState {
   std::mutex mutex;
   std::condition_variable cond;
   ncclResult_t asyncResult;
+  int ginVersion;
 
   int signalSpaceSize;
   int counterSpaceSize;
