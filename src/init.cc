@@ -933,6 +933,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     int cpuVendor;
     int localRanks;
     int p2pnChannelsPerPeer;
+    float minNetBw;
+    float minGpuNetBw;
+    int nvlsChannels;
     bool nicFused;
   };
 
@@ -1164,6 +1167,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   allGather3Data[rank].cpuVendor = comm->cpuVendor;
   allGather3Data[rank].p2pnChannelsPerPeer = comm->p2pnChannelsPerPeer;
   NCCLCHECKGOTO(ncclTopoCheckNicFused(comm, &allGather3Data[rank].nicFused), ret, fail);
+  NCCLCHECKGOTO(ncclTopoGetMinNetBw(comm->topo, &allGather3Data[rank].minNetBw), ret, fail);
+  NCCLCHECKGOTO(ncclTopoGetMinGpuNetBw(comm->topo, comm->rank, &allGather3Data[rank].minGpuNetBw), ret, fail);
+  allGather3Data[rank].nvlsChannels = comm->nvlsChannels;
 
   comm->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
@@ -1252,6 +1258,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
        comm, rank, comm->nRanks, comm->nNodes, comm->localRanks, comm->localRank, comm->MNNVL);
 
   nChannelsOrig = comm->nChannels;
+  comm->minNetBw = allGather3Data[rank].minNetBw;
+  comm->minGpuNetBw = allGather3Data[rank].minGpuNetBw;
+  comm->nvlsChannels = allGather3Data[rank].nvlsChannels;
   NCCLCHECKGOTO(ncclCalloc(&allTopoRanks, comm->nRanks), ret, fail);
   for (int i=0; i<nranks; i++) {
     allTopoRanks[i] = &allGather3Data[i].topoRanks;
@@ -1267,6 +1276,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
     comm->maxTreePattern = std::max(comm->maxTreePattern, allGather3Data[i].graphInfo[NCCL_ALGO_TREE].pattern);
     comm->p2pnChannelsPerPeer = std::min(comm->p2pnChannelsPerPeer, allGather3Data[i].p2pnChannelsPerPeer);
+    comm->minNetBw = std::min(comm->minNetBw, allGather3Data[i].minNetBw);
+    comm->minGpuNetBw = std::min(comm->minGpuNetBw, allGather3Data[i].minGpuNetBw);
+    comm->nvlsChannels = std::min(comm->nvlsChannels, allGather3Data[i].nvlsChannels);
   }
   if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->config.collnetEnable = 0;
   if (graphs[NCCL_ALGO_NVLS]->nChannels == 0) comm->nvlsSupport = comm->nvlsChannels = 0;
