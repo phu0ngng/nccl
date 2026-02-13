@@ -58,7 +58,8 @@ CU_FILES += comm_leak_test_multi.cu \
 		put_signal_alltoall_rma.cu \
 		devapi_put_bw.cu \
 		devapi_railed_put.cu \
-		signal_barrier_rma.cu
+		signal_barrier_rma.cu \
+		devapi_barrier_with_timeout.cu
 
 endif
 CU_FILES += register_memcpyTest.cu
@@ -380,6 +381,11 @@ ${DST_DIR}/devapi_uts: ${DST_DIR}/devapi_uts.o ${DLIB}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
 
 ${DST_DIR}/devapi_signal_ring: ${DST_DIR}/devapi_signal_ring.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_barrier_with_timeout: ${DST_DIR}/devapi_barrier_with_timeout.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}

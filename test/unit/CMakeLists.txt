@@ -43,6 +43,7 @@ if(MPI_FOUND)
         put_gin_alltoall.cu
         devapi_railed_put.cu
         signal_barrier_rma.cu
+        devapi_barrier_with_timeout.cu
     )
 endif()
 
