@@ -40,27 +40,51 @@ __device__ uint64_t getPutValue(ncclDevComm comm) {
 __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset) {
 #if __CUDA_ARCH__ >= 700
   ncclTeam railTeam = ncclTeamRail(comm);
-  ncclGin gin(comm, 0);
-  ncclGinSignal_t signalIdx = 0;
-
+  // Exercise both resource sharing modes on the same contextIndex.
+  ncclGin ginGpu(comm, 0, NCCL_GIN_RESOURCE_SHARING_GPU);
+  ncclGin ginCta(comm, 0, NCCL_GIN_RESOURCE_SHARING_CTA);
+  ncclGinSignal_t signalIdxGpu = 0;
+  ncclGinSignal_t signalIdxCta = 1;
+  
   assert(railTeam.nRanks >= 2 && "Railed Gin put test requires at least 2 ranks per rail");
 
-  uint64_t putValue = getPutValue(comm);
+  uint64_t putValueGpu = getPutValue(comm) + 0;
+  uint64_t putValueCta = getPutValue(comm) + 1000;
   if (railTeam.rank == SRC_RANK) {
-    volatile uint64_t* putSrcPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
-    assert(*putSrcPtr == 0 && "putSrcPtr should be 0 before put");
-    *putSrcPtr = putValue;
+    uint64_t* putSrcPtrGpu = (uint64_t*)ncclGetLocalPointer(window, offset + 0*sizeof(uint64_t));
+    uint64_t* putSrcPtrCta = (uint64_t*)ncclGetLocalPointer(window, offset + 1*sizeof(uint64_t));
+    assert(*putSrcPtrGpu == 0 && "putSrcPtrGpu should be 0 before put");
+    assert(*putSrcPtrCta == 0 && "putSrcPtrCta should be 0 before put");
+    *putSrcPtrGpu = putValueGpu;
+    *putSrcPtrCta = putValueCta;
+    
+    ginGpu.put(railTeam, DST_RANK,
+      window, offset + 0*sizeof(uint64_t),
+      window, offset + 0*sizeof(uint64_t),
+      sizeof(uint64_t), ncclGin_SignalInc{signalIdxGpu});
 
-    gin.put(railTeam, DST_RANK, window, offset, window, offset, sizeof(putValue), ncclGin_SignalInc{signalIdx});
+    ginCta.put(railTeam, DST_RANK,
+      window, offset + 1*sizeof(uint64_t),
+      window, offset + 1*sizeof(uint64_t),
+      sizeof(uint64_t), ncclGin_SignalInc{signalIdxCta});
   }
 
   if (railTeam.rank == DST_RANK) {
-    volatile uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
-    gin.waitSignal(ncclCoopCta(), signalIdx, 1);
-    if (*putPtr != putValue) {
-      printf("ERROR: Rank %d expected %llu but got %llu after waitSignal\n",
-              comm.rank, putValue, *putPtr);
-      assert(0 && "Put value mismatch after waitSignal");
+    volatile uint64_t* putPtrGpu = (uint64_t*)ncclGetLocalPointer(window, offset + 0*sizeof(uint64_t));
+    volatile uint64_t* putPtrCta = (uint64_t*)ncclGetLocalPointer(window, offset + 1*sizeof(uint64_t));
+
+    ginGpu.waitSignal(ncclCoopCta(), signalIdxGpu, 1);
+    if (*putPtrGpu != putValueGpu) {
+      printf("ERROR: Rank %d expected %llu but got %llu after waitSignal (GPU mode)\n",
+              comm.rank, putValueGpu, *putPtrGpu);
+      assert(0 && "Put value mismatch after waitSignal (GPU mode)");
+    }
+
+    ginCta.waitSignal(ncclCoopCta(), signalIdxCta, 1);
+    if (*putPtrCta != putValueCta) {
+      printf("ERROR: Rank %d expected %llu but got %llu after waitSignal (CTA mode)\n",
+              comm.rank, putValueCta, *putPtrCta);
+      assert(0 && "Put value mismatch after waitSignal (CTA mode)");
     }
 
   }
@@ -117,11 +141,27 @@ int main(int argc, char* argv[]) {
 
   if (DEBUG) printf("[Rank %d] NCCL communicator initialized successfully\n", myRank);
 
+  // Skip cleanly if GIN / device API isn't supported in this environment.
+  ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
+  NCCLCHECK(ncclCommQueryProperties(comm, &props));
+  int supportsGin = (props.deviceApiSupport && props.ginType != NCCL_GIN_TYPE_NONE) ? 1 : 0;
+  int allSupportGin = 0;
+  MPICHECK(MPI_Allreduce(&supportsGin, &allSupportGin, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD));
+  if (!allSupportGin) {
+    if (myRank == 0) {
+      printf("SKIP: GIN/device API not supported in this environment\n");
+    }
+    CUDACHECK(cudaStreamDestroy(stream));
+    NCCLCHECK(ncclCommDestroy(comm));
+    MPICHECK(MPI_Finalize());
+    return 0;
+  }
+
   // Create device communicator for GIN operations
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_RAIL;
-  reqs.ginSignalCount = 1;
-
+  reqs.ginSignalCount = 2;
+  
   ncclDevComm_t devComm;
   CUDACHECK(cudaSetDevice(localRank));
   NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devComm));
@@ -129,7 +169,8 @@ int main(int argc, char* argv[]) {
   if (DEBUG) printf("[Rank %d] Device communicator created\n", myRank);
 
   // Allocate window for put operations
-  size_t bufferSize = sizeof(uint64_t);
+  // We write two values to exercise both resource sharing modes (GPU/CTA).
+  size_t bufferSize = 2 * sizeof(uint64_t);
   void *putBuffer;
   NCCLCHECK(ncclMemAlloc(&putBuffer, bufferSize));
 
