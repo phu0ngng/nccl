@@ -109,14 +109,16 @@ static ncclResult_t proxyGinPollCompletions(ncclGin_t *ginComm, void *collComm,
       if (!state->done) {
         ginComm->test(collComm, state->request, &state->done);
         if (state->done) {
-          TRACE(NCCL_NET, "GFD completed - stateIdx: %lu, request: %p", state - hostGpuCtx->states,
+          TRACE(NCCL_NET, "GFD completed - contextId: %d, stateIdx: %lu, request: %p", hostGpuCtx->contextId, state - hostGpuCtx->states,
                 state->request);
           // update the counter specified in the GFD
           if (state->op & ncclGinProxyOpWithCounter) {
-            COMPILER_ATOMIC_STORE(&ctx->counters[state->counterId], ctx->counters[state->counterId] + 1,
+            int contextId = hostGpuCtx->contextId;
+            uint64_t* counterPtr = &ctx->counters[contextId * ctx->nCountersPerContext + state->counterId];
+            COMPILER_ATOMIC_STORE(counterPtr, *counterPtr + 1,
                               std::memory_order_relaxed);
-            TRACE(NCCL_NET, "Updated counter %d to %ld", state->counterId,
-                  ctx->counters[state->counterId]);
+            TRACE(NCCL_NET, "Updated counter %d to %ld for context %d", state->counterId,
+                  *counterPtr, contextId);
           }
         }
       }
@@ -125,7 +127,7 @@ static ncclResult_t proxyGinPollCompletions(ncclGin_t *ginComm, void *collComm,
         // tell the GPU that we have consumed the GFD
         COMPILER_ATOMIC_STORE(&hostGpuCtx->cis[targetRank], ++hostGpuCtx->cisShadow[targetRank],
                           std::memory_order_relaxed);
-        TRACE(NCCL_NET, "Updated cis[%u] to %u", targetRank, hostGpuCtx->cisShadow[targetRank]);
+        TRACE(NCCL_NET, "Updated cis[%u] to %u for context %d", targetRank, hostGpuCtx->cisShadow[targetRank], hostGpuCtx->contextId);
       }
     }
   }
@@ -168,9 +170,9 @@ static int proxyGinPollGfd(struct ginProxyCtx *ctx, ginProxyHostGpuCtx *hostGpuC
   (*state)->request = NULL;
 
   TRACE(NCCL_NET,
-        "GFD to target PE %d raw idx: %u, idx: %u - op: %#lx, size: %lu, srcOff: %lu, dstOff: %lu, "
+        "GFD on context %d to target PE %d raw idx: %u, idx: %u - op: %#lx, size: %lu, srcOff: %lu, dstOff: %lu, "
         "srcHandle: %lu, dstHandle: %lu, counterId: %u, signalId: %u, stateIdx: %u",
-        targetRank, hostGpuCtx->sis[targetRank], idx, gfd->qword[ncclGinProxyGfdHeader].header.op,
+        hostGpuCtx->contextId, targetRank, hostGpuCtx->sis[targetRank], idx, gfd->qword[ncclGinProxyGfdHeader].header.op,
         gfd->qword[ncclGinProxyGfdHeader].header.size,
         gfd->qword[ncclGinProxyGfdSrcOff].srcOff.srcOff,
         gfd->qword[ncclGinProxyGfdDstOff].dstOff.dstOff,
@@ -263,8 +265,8 @@ static ncclResult_t proxyGinProcessGfd(ncclGin_t *ginComm, void *collComm, struc
       // this error should already have been checked in pollGfd
       assert(0);
   }
-  TRACE(NCCL_NET, "GFD submitted into GIN plugin - stateIdx: %lu, request: %p",
-        state - hostGpuCtx->states, state->request);
+  TRACE(NCCL_NET, "GFD submitted into GIN plugin - contextId: %d, stateIdx: %lu, request: %p",
+        hostGpuCtx->contextId, state - hostGpuCtx->states, state->request);
   return ncclSuccess;
 }
 
