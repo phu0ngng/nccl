@@ -2171,10 +2171,10 @@ static ncclResult_t calcCollChunking(
     // However, nChannels * comm->channels[0].nvls.nHeads should easily fit in 32 bits.
     // coverity[overflow_before_widen]
     uint64_t concurrentOps = nChannels * comm->channels[0].nvls.nHeads;
-    // NvlsTreeMaxChunkSize allows user to select a chunksize smaller than nvlsChunkSize
+    chunkSize = comm->nvlsChunkSize;
     int maxChunkSize = (int)ncclParamNvlsTreeMaxChunkSize();
-    if (maxChunkSize == -2) maxChunkSize = (comm->nNodes >= 4 && comm->minGpuNetBw < 96.0) ? 65536 : comm->nvlsChunkSize;
-    chunkSize = std::min(comm->nvlsChunkSize, maxChunkSize) ;
+    if (maxChunkSize == -2) maxChunkSize = comm->nNodes >= 4 ? 65536 : chunkSize;
+    chunkSize = std::min(chunkSize, maxChunkSize);
     if ((nBytes < (32 * (concurrentOps * chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
     if ((nBytes < (16 * (concurrentOps * chunkSize))) && (chunkSize > 131072)) chunkSize = 131072;
     if ((nBytes < (4 * (concurrentOps * chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;

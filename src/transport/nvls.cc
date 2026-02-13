@@ -152,7 +152,6 @@ ncclResult_t nvlsGroupUnmapMem(struct ncclComm *comm, size_t ucsize, void* ucptr
 
 NCCL_PARAM(NvlsEnable, "NVLS_ENABLE", 2);
 NCCL_PARAM(NvlsChunkSize, "NVLS_CHUNKSIZE", 128*1024);
-NCCL_PARAM(NvlsSM100ChannelsMinPpn, "NVLS_SM100_CHANNELS_MIN_PPN", 16);
 
 ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
   comm->nvlsSupport = 0;
@@ -179,24 +178,21 @@ ncclResult_t ncclNvlsInit(struct ncclComm* comm) {
 
   if (comm->nvlsSupport) {
     int channels;
-    int ppn = 0;
-    int sm100ChannelsMinPpn = ncclParamNvlsSM100ChannelsMinPpn();
     if (comm->compCap >= 100) {
       // Use a reduced number of channels for single node/MNNVL domain on Blackwell.
       // comm->nNodes is not yet initialized at this point so we need to use other data.
-      bool multiNode = false;
+      bool multiNode;
       if (comm->MNNVL) {
         multiNode = (comm->clique.size < comm->nRanks);
-        ppn = comm->clique.size;
       } else {
-        for (int i = 0; i < comm->nRanks; i++) {
-          ppn += (comm->peerInfo[i].hostHash == comm->peerInfo[comm->rank].hostHash);
-          multiNode = (comm->peerInfo[i].hostHash != comm->peerInfo[0].hostHash);
+        int i;
+        for (i = 1; i < comm->nRanks; i++) {
+          if (comm->peerInfo[i].hostHash != comm->peerInfo[0].hostHash)
+            break;
         }
+        multiNode = (i < comm->nRanks);
       }
-      // NVLS_NCHANNELS_SM100 when ppn>= sm100ChannelsMinPpn
-      // 1 NVLD is treated as single node.
-      channels = ((multiNode && ppn >= sm100ChannelsMinPpn ) ? NVLS_NCHANNELS_SM100 : NVLS_NCHANNELS_SM100_NVL);
+      channels = (multiNode ? NVLS_NCHANNELS_SM100 : NVLS_NCHANNELS_SM100_NVL);
     } else {
       channels = NVLS_NCHANNELS_SM90;
     }
@@ -338,8 +334,8 @@ ncclResult_t ncclNvlsBufferSetup(struct ncclComm* comm) {
   nvlsPerRankSize = nChannels * 2 * buffSize;
   nvlsTotalSize = nvlsPerRankSize * nHeads;
 
-  INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d nvlsRanks %d nChannels %d buffSize %zu nvlsPerRankSize %zu nvlsTotalSize %zu",
-       comm, headRank, nHeads, comm->localRanks, nChannels, buffSize, nvlsPerRankSize, nvlsTotalSize);
+  INFO(NCCL_INIT | NCCL_NVLS, "NVLS comm %p headRank %d nHeads %d nvlsRanks %d buffSize %zu nvlsPerRankSize %zu nvlsTotalSize %zu",
+       comm, headRank, nHeads, comm->localRanks, buffSize, nvlsPerRankSize, nvlsTotalSize);
 
   NCCLCHECKGOTO(nvlsAllocateMem(comm, &resources->accessDesc, nvlsTotalSize, &resources->ucBuffHandle, &resources->mcBuffHandle, (void**)&resources->ucBuff, (void**)&resources->mcBuff, &resources->buffUCSize, &resources->buffMCSize), res, fail);
 
@@ -390,22 +386,6 @@ ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent) {
   if (comm->nvlsSupport == 0 || comm->nvlsChannels == 0) return ncclSuccess;
 
   comm->nvlsChunkSize = ncclParamNvlsChunkSize();
-
-  // Auto-tune chunk size based on NIC bandwidth
-  // Needs to be done during NvlsSetup because NvlsBufferSetup uses comm->nvlsChunkSize.
-  // This cannot be changed later. NvlsTreeMaxChunkSize used in enqueue.cc has to be
-  // smaller than nvlsChunkSize
-  if (comm->minGpuNetBw > 0) {
-    // Tune chunk size
-    const char* chunkSizeEnv = ncclGetEnv("NCCL_NVLS_CHUNKSIZE");
-    if (chunkSizeEnv == NULL || strlen(chunkSizeEnv) == 0) {
-      // Only increase chunk size for 96+ GB/s and when NVLD size is 16 or less.
-      if (comm->minNetBw >= 96.0 && comm->nNodes >= 4 && comm->graphs[NCCL_ALGO_NVLS_TREE].nChannels <= 16) {
-        comm->nvlsChunkSize = 262144;  // 256KB for high-BW NICs
-      }
-    }
-  }
-
   if (nvlsShare) {
     /* reuse NVLS resources */
     comm->nvlsChannels = std::min(comm->nvlsChannels, parent->nvlsResources->nChannels);

@@ -49,8 +49,6 @@ enum ncclTopoGdrMode {
 };
 ncclResult_t ncclTopoCheckGdr(struct ncclTopoSystem* topo, int rank, int64_t netId, int read, enum ncclTopoGdrMode* gdrMode);
 ncclResult_t ncclTopoNeedFlush(struct ncclComm* comm, int64_t netId, int netDev, int rank, int* flush);
-ncclResult_t ncclTopoGetMinNetBw(struct ncclTopoSystem* system, float* bw);
-ncclResult_t ncclTopoGetMinGpuNetBw(struct ncclTopoSystem* system, int rank, float* bw);
 ncclResult_t ncclTopoIsGdrAvail(struct ncclTopoSystem* system, int rank, bool *avail);
 ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int rank1, int rank2, int* net);
 int ncclPxnDisable(struct ncclComm* comm);
