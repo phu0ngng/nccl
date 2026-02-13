@@ -1095,7 +1095,7 @@ static int calcP2pChannelCount(size_t totalSize, int minChannels, int maxChannel
   return nChannels;
 }
 
-static ncclResult_t scheduleP2pTasksToPlan(struct ncclComm* comm, int* p2pEpoch, struct ncclKernelPlan* plan, struct ncclKernelPlanBudget* budget) {
+static ncclResult_t scheduleP2pTasksToPlan(struct ncclComm* comm, int* p2pEpoch, int* p2pRound, struct ncclKernelPlan* plan, struct ncclKernelPlanBudget* budget) {
   int nRanks = comm->nRanks;
   struct ncclKernelPlanner::Peer* peers = comm->planner.peers;
 
@@ -1115,11 +1115,9 @@ static ncclResult_t scheduleP2pTasksToPlan(struct ncclComm* comm, int* p2pEpoch,
   // Save the total count of send/recv tasks in the plan
   int planTotalTasks[2] = {comm->planner.nTasksP2pRecv, comm->planner.nTasksP2pSend};
   while (comm->planner.nTasksP2p != 0) {
-    // increment before to avoid issue when the budget is too small and we exit early
-    (*p2pEpoch)++;
-    for (int round=0; round < nRanks; round++) {
-      int sendRank = comm->p2pSchedule[round].sendRank;
-      int recvRank = comm->p2pSchedule[round].recvRank;
+    for (; *p2pRound < nRanks; (*p2pRound)++) {
+      int sendRank = comm->p2pSchedule[*p2pRound].sendRank;
+      int recvRank = comm->p2pSchedule[*p2pRound].recvRank;
       struct ncclTaskP2p* send = ncclIntruQueueHead(&peers[sendRank].sendQueue);
       struct ncclTaskP2p* recv = ncclIntruQueueHead(&peers[recvRank].recvQueue);
       if (send == nullptr && recv == nullptr) continue;
@@ -1154,7 +1152,7 @@ static ncclResult_t scheduleP2pTasksToPlan(struct ncclComm* comm, int* p2pEpoch,
           return ncclSuccess;
         }
         struct ncclTaskP2p* p2pTasks[2] = { recv, send };
-        NCCLCHECK(addP2pToPlan(comm, plan, nChannelsMin, nChannelsMax, *p2pEpoch, round, sendRank, sendBuff, sendBytes, recvRank, recvBuff, recvBytes, planTotalTasks, p2pTasks));
+        NCCLCHECK(addP2pToPlan(comm, plan, nChannelsMin, nChannelsMax, *p2pEpoch, *p2pRound, sendRank, sendBuff, sendBytes, recvRank, recvBuff, recvBytes, planTotalTasks, p2pTasks));
         if (send != nullptr) {
           ncclIntruQueueDequeue(&peers[sendRank].sendQueue);
           // Profiler - We can overwrite groupAPI event handles here since all operations here belong to the same group
@@ -1173,6 +1171,8 @@ static ncclResult_t scheduleP2pTasksToPlan(struct ncclComm* comm, int* p2pEpoch,
         }
       }
     }
+    *p2pRound=0;
+    (*p2pEpoch)++;
   }
   return ncclSuccess;
 }
@@ -1513,7 +1513,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
   // Operations from different plans will not be batched together. A new batch will be created for each new plan that is used to schedule the ops (see ncclAddWorkBatchToPlan).
   // For p2p ops, we further guarantee that ops from different epochs will not be batched together (to avoid hangs).
   // The p2pEpoch value is incremented in scheduleP2pTasksToPlan and its value is carried over from one plan to another (even if not strictly required)
-  int nPlans = 0, p2pEpoch=0;
+  int nPlans = 0, p2pEpoch=0, p2pRound=0;
 
   if (planner->nTasksColl + planner->nTasksP2p + planner->nTasksBcast != 0 ||
       !ncclIntruQueueEmpty(&planner->collSymTaskQueue) ||
@@ -1583,7 +1583,7 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
           }
           // And only drain p2p tasks once colls are depleted.
           if (planner->nTasksColl == 0 && planner->nTasksBcast == 0 && planner->nTasksP2p != 0) {
-            NCCLCHECKGOTO(scheduleP2pTasksToPlan(comm, &p2pEpoch, plan, &budget), result, failure);
+            NCCLCHECKGOTO(scheduleP2pTasksToPlan(comm, &p2pEpoch, &p2pRound, plan, &budget), result, failure);
           }
         }
 
