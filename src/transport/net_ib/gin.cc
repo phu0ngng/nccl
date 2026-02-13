@@ -212,9 +212,7 @@ ncclResult_t ncclGinIbP2PBarrier(struct ncclGinIbCollComm *cComm) {
 }
 
 ncclResult_t ncclGinIbConnect(void *ctx, void *handles[], int nranks, int rank, int nConnections,
-                              int queueDepth, ncclGinRequirementFlagOption_t useReliableDB,
-                              ncclGinRequirementFlagOption_t useExpertControl, void *listenComm,
-                              void **collComm) {
+                              int queueDepth, void *listenComm, void **collComm) {
   struct ncclIbListenComm *lComm = (struct ncclIbListenComm *)listenComm;
   struct ncclGinIbCollComm *cCommArray = nullptr;
   int next;
@@ -248,8 +246,6 @@ ncclResult_t ncclGinIbConnect(void *ctx, void *handles[], int nranks, int rank, 
     cComm->getGidIndex = ncclIbGetGidIndex;
     cComm->dev = lComm->dev;
     cComm->queueDepth = queueDepth;
-    cComm->useReliableDB = useReliableDB;
-    cComm->useExpertControl = useExpertControl;
 
     for (int i = 0; i < nranks; i++) {
       int connectPeer = (cComm->rank + i) % nranks;
@@ -338,14 +334,12 @@ ncclResult_t ncclGinIbGdakiListen(void* ctx, int dev, void* opaqueHandle, void**
 }
 
 ncclResult_t ncclGinIbGdakiConnect(void *ctx, void *handles[], int nranks, int rank, int nContexts,
-                                   int queueDepth, ncclGinRequirementFlagOption_t useReliableDB,
-                                   ncclGinRequirementFlagOption_t useExpertControl,
-                                   void *listenComm, void **collComm) {
+                                   int queueDepth, void *listenComm, void **collComm) {
   // Check the current GPU supports GDR
   NCCLCHECK(ncclGinIbGdrGpuSupport(/*gdaki*/ true));
 
   NCCLCHECK(
-    ncclGinIbConnect(ctx, handles, nranks, rank, 1, queueDepth, useReliableDB, useExpertControl, listenComm, collComm));
+    ncclGinIbConnect(ctx, handles, nranks, rank, 1, queueDepth, listenComm, collComm));
 
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)*collComm;
   cComm->getProperties = (ncclResult_t(*)(int dev, void *props))ncclGinIbGdakiGetProperties;
@@ -423,19 +417,9 @@ ncclResult_t ncclGinIbProxyGetProperties(int dev, ncclNetProperties_t* props) {
 }
 
 ncclResult_t ncclGinIbProxyConnect(void *ctx, void *handles[], int nranks, int rank, int nContexts,
-                                   int queueDepth, ncclGinRequirementFlagOption_t useReliableDB,
-                                   ncclGinRequirementFlagOption_t useExpertControl,
-                                   void *listenComm, void **collComm) {
+                                   int queueDepth, void *listenComm, void **collComm) {
   if (queueDepth != 0) {
     WARN("GIN_IB_PROXY does not support specifying qp depth");
-    return ncclInvalidUsage;
-  }
-  if (useReliableDB > ncclGinRequirementFlagOptionsNone) {
-    WARN("GIN_IB_PROXY does not support reliable db");
-    return ncclInvalidUsage;
-  }
-  if (useExpertControl > ncclGinRequirementFlagOptionsNone) {
-    WARN("GIN_IB_PROXY does not support expert control");
     return ncclInvalidUsage;
   }
 
@@ -444,7 +428,7 @@ ncclResult_t ncclGinIbProxyConnect(void *ctx, void *handles[], int nranks, int r
 
   // Connect.
   NCCLCHECK(
-    ncclGinIbConnect(ctx, handles, nranks, rank, nContexts, queueDepth, useReliableDB, useExpertControl, listenComm, collComm));
+    ncclGinIbConnect(ctx, handles, nranks, rank, nContexts, queueDepth, listenComm, collComm));
 
   return ncclSuccess;
 }

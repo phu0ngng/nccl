@@ -17,8 +17,6 @@ static ncclResult_t ncclGin_getProperties(int dev, ncclNetProperties_t* props) {
 
 static ncclResult_t ncclGin_connect(void* ctx, void* handles[], int nranks, int rank,
                                     int nConnections, int queueDepth,
-                                    ncclGinRequirementFlagOption_t useReliableDB,
-                                    ncclGinRequirementFlagOption_t useExpertControl,
                                     void* listenComm, void** collComm) {
   if (nConnections > 1) {
     WARN("GIN plugin v11 does not support multiple connections");
@@ -26,14 +24,6 @@ static ncclResult_t ncclGin_connect(void* ctx, void* handles[], int nranks, int 
   }
   if (queueDepth != 0) {
     WARN("GIN plugin v11 does not support specifying queue depth");
-    return ncclInvalidUsage;
-  }
-  if (useReliableDB == ncclGinRequirementFlagOptionsRequired) {
-    WARN("GIN plugin v11 does not support reliable db");
-    return ncclInvalidUsage;
-  }
-  if (useExpertControl == ncclGinRequirementFlagOptionsRequired) {
-    WARN("GIN plugin v11 does not support expert control");
     return ncclInvalidUsage;
   }
   return ncclGin_v11->connect(ctx, handles, nranks, rank, listenComm, collComm);

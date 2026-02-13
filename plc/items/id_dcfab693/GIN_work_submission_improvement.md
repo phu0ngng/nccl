@@ -72,8 +72,8 @@ buffer as well as rering the DB. This operation is outside the critical path.
 The design requires GDRCopy so that GPU does not loose performance communicating
 with the CPU thread. From time to time, the CPU thread will use GDRCopy to
 access the QP information on the GPU memory and perform the necessity. This
-feature is designed as an opt-in feature. We introduce `ginUseReliableDB` in the
-Dev Comm requirements struct.
+feature is designed as an opt-in feature.
+This is enabled through the `NCCL_GDAKI_USE_RELIABLE_DB` env var.
 
 2. Skip credit checking: Before GDA-KI can create WQEs, it must reserve enough
 slots in the WQ buffer. WQ is a circular buffer. We may end up reserving the
@@ -99,24 +99,7 @@ multiple WQEs in one transactions. This feature ends up as a bit-wise OR
 
 ### Interface Architecture
 
-1. The Dev Comm Requirements struct is extended with `ginQueueDepth`, `ginUseReliableDB`, and `ginUseExpertControl`.
-
-2. ncclGin_v12_t is extended as follows:
-```
-typedef enum {
-  ncclGinRequirementFlagOptionsNone = 0,
-  ncclGinRequirementFlagOptionsOptional = 1,
-  ncclGinRequirementFlagOptionsRequired = 2,
-} ncclGinRequirementFlagOptions_v12_t;
-
-ncclResult_t (*connect)(..., int queueDepth,
-  ncclGinRequirementFlagOptions_v12_t useReliableDB, ncclGinRequirementFlagOptions_v12_t useExpertControl, ...);
-```
-  - NotRequired: This feature is not required. The backend does not have to enable the feature.
-  - Optional: Enable the feature if possible. Fallback to the default mode (no feature) otherwise. Do not return error if the feature cannot be enabled.
-  - Required: The feature is required. Return an error if enablement is not possible.
-
-3. Extend `gin.put`, `gin.putSignal`, `gin.signal` with `optFlags`.
+We extend `gin.put`, `gin.putSignal`, `gin.signal` with `optFlags`.
 ```
 enum ncclGinOptFlags {
   ncclGinOptFlagsDefault = 0,
@@ -132,7 +115,7 @@ NCCL_DEVICE_INLINE void ncclGinPutEx(..., optFlags);
 
 ### FAQs
 
-1. Why does Reliable DB an opt-in feature? Can't we always enable this feature?
+Why does Reliable DB an opt-in feature? Can't we always enable this feature?
 
 Reliable DB does not always work. It requires hardware support or GDRCopy to use
 the software-emulated implementation. When using the hardware support, the
@@ -144,19 +127,6 @@ because of the unavailability of GDRCopy. Hence, some QPs will need DBR update,
 which leads to QP locking. Now, the users will have mixing QPs that have
 different performance characteristics. It likely shows up as a NCCL significant
 performance degradation when the user scales out pass a certain number of QPs.
-
-2. Why is `useExpertControl` introduced as a flag in Dev Comm requirements? Is
-it required to use the skip credit checking feature and the aggregate requests
-feature?
-
-No, it does not. But we would like to point out that these features are for
-expert use. They are not safe. If the user is not careful, they may end up
-experiencing hangs, CUDA segfault, data corruption, etc. The control is now on
-the user, not with GDA-KI anymore. If the user complains, we want a way to trace
-whether these two features may be used. This `useExpertControl` flag is a
-contract with users who want to use unsafe features. In the implementation, the
-backend prints out that an unsafe feature may be used. We also perform assertion
-in the GPU code only if the user builds with the debug flag.
 
 <!-- ### System KPIs & Metrics -->
 <!-- ### Data Architecture -->
@@ -193,8 +163,8 @@ Additional unit test arguments:
 ```
   --gin_reliable_db <val>    Reliable DB mode (default 0)
                              0: Disable
-                             1: Enable as an optional feature
-                             2: Enable as a required feature
+                             1: Enable as a required feature
+                             2: Enable as an optional feature
   --gin_skip_credit_check    Skip credit check in GIN (default 0)
   --gin_aggregate_requests   Use aggregate requests in GIN (default 0)
 ```

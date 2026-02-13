@@ -54,11 +54,6 @@ NCCL_DEVICE_INLINE static void putImpl(ncclGinCtx ctx, Coop coop, int peer, bool
     uint32_t codeOpt = DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
       | (!!(optFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
       | (!!(optFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
-#ifdef NCCL_DEVICE_GIN_GDAKI_ENABLE_DEBUG
-    if (optFlags != ncclGinOptFlagsDefault) {
-      assert(gdaki->useExpertControl);
-    }
-#endif
 
     doca_gpu_dev_verbs_addr raddr, laddr;
     if (hasWins) {
@@ -140,11 +135,6 @@ NCCL_DEVICE_INLINE static void putValueImpl(ncclGinCtx ctx, Coop coop, int peer,
     uint32_t codeOpt = DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
       | (!!(optFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
       | (!!(optFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
-#ifdef NCCL_DEVICE_GIN_GDAKI_ENABLE_DEBUG
-    if (optFlags != ncclGinOptFlagsDefault) {
-      assert(gdaki->useExpertControl);
-    }
-#endif
 
     doca_gpu_dev_verbs_addr raddr;
     raddr.addr = dstOff;

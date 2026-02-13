@@ -39,8 +39,6 @@ struct ncclGinState {
   int ctxFirstAvailable; // We allocate shared contexts starting from index 0.
   int ctxLastExclusive; // We allocate exclusive contexts starting from the highest index.
   int ginQueueDepth;
-  ncclRequirementFlagOption_t ginUseReliableDB;
-  ncclRequirementFlagOption_t ginUseExpertControl;
   ncclGinConnectionType_t ginConnectionType;
 };
 
@@ -57,7 +55,7 @@ ncclResult_t getGlobalGinType(struct ncclComm* comm, ncclGinType_t* ginType);
 ncclResult_t getGlobalRailedGinType(struct ncclComm* comm, ncclGinType_t* ginType);
 
 // FIXME change to ncclGinState instead of ncclComm, no need to pass comm
-ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t requestedConnectionType, int reqGinContextCount = 0, int reqGinQueueDepth = 0, int reqGinUseReliableDB = -1, int reqGinUseExpertControl = -1);
+ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t requestedConnectionType, int reqGinContextCount = 0, int reqGinQueueDepth = 0);
 ncclResult_t ncclGinHostFinalize(struct ncclComm* comm);
 ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
                              void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS],

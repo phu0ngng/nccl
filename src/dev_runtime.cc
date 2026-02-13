@@ -847,15 +847,11 @@ ncclResult_t ncclDevrCommCreateInternal(
 
   if (ginActivated) {
     int ginQueueDepth = 0;
-    ncclRequirementFlagOption_t ginUseReliableDB = NCCL_REQUIREMENT_FLAG_OPTION_NONE;
-    ncclRequirementFlagOption_t ginUseExpertControl = NCCL_REQUIREMENT_FLAG_OPTION_NONE;
 
     if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
         ginQueueDepth = reqs->ginQueueDepth;
-        ginUseReliableDB = reqs->ginUseReliableDB;
-        ginUseExpertControl = reqs->ginUseExpertControl;
     }
-    NCCLCHECKGOTO(ncclGinConnectOnce(comm, requestedConnectionType, reqs->ginContextCount, ginQueueDepth, ginUseReliableDB, ginUseExpertControl), ret, fail);
+    NCCLCHECKGOTO(ncclGinConnectOnce(comm, requestedConnectionType, reqs->ginContextCount, ginQueueDepth), ret, fail);
     // Register all preexisting memories with GIN. Update the windows later when
     // we have a stream.
     for (struct ncclDevrMemory* mem = devr->memHead; mem != nullptr; mem = mem->next) {
