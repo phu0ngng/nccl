@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# This code was automatically generated with version 2.28.0. Do not modify it directly.
+# This code was automatically generated with version 2.28.0, generator version 0.3.1.dev1289+g813db740e.d20260213. Do not modify it directly.
 
 from libc.stdint cimport intptr_t
 
@@ -45,7 +45,7 @@ cpdef int get_version() except? -1
 cpdef get_unique_id(intptr_t unique_id)
 cpdef intptr_t comm_init_rank_config(int nranks, comm_id, int rank, intptr_t config) except? 0
 cpdef intptr_t comm_init_rank(int nranks, comm_id, int rank) except? 0
-cpdef comm_init_all(intptr_t comm, int ndev, devlist)
+cpdef object comm_init_all(int ndev, devlist)
 cpdef comm_finalize(intptr_t comm)
 cpdef comm_destroy(intptr_t comm)
 cpdef comm_abort(intptr_t comm)

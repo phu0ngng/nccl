@@ -27,11 +27,8 @@ from pathlib import Path
 
 
 # cybind repository configuration
-CYBIND_COMMIT = "cfbccc629d81ccbc2dbf31ee2a363ab60a6b4537"
-CYBIND_SSH_URL = "ssh://git@gitlab-master.nvidia.com:12051/leof/cybind.git"
-
-# Script directory for resolving default paths
-SCRIPT_DIR = Path(__file__).resolve().parent
+CYBIND_COMMIT = "813db740e5ee440d0f21b4ee80546e26410f9de6"
+CYBIND_SSH_URL = "ssh://git@gitlab-master.nvidia.com:12051/xiakunl/cybind.git"
 
 # Global logger - will be configured in main()
 logger = logging.getLogger(__name__)

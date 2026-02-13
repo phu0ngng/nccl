@@ -561,6 +561,311 @@ def test_device_property_returns_communicator_device(uid_shared, rank_info):
     comm_device.set_current()
 
 
+# =======================
+# Tests for init_all
+# =======================
+
+
+@requires_min_devices(2)
+def test_init_all_basic():
+    """Test basic init_all functionality with 2 devices."""
+    comms = None
+
+    try:
+        # Create communicators for first 2 devices
+        comms = nccl.Communicator.init_all(2)
+
+        # Verify correct number of communicators
+        assert len(comms) == 2, f"Expected 2 communicators, got {len(comms)}"
+
+        # Verify each communicator has correct attributes
+        for i, comm in enumerate(comms):
+            assert comm.is_valid, f"Communicator {i} should be valid"
+            assert comm.rank == i, f"Communicator {i} should have rank {i}, got {comm.rank}"
+            assert comm.nranks == 2, f"Communicator {i} should have nranks=2, got {comm.nranks}"
+            assert comm.device.device_id == i, f"Communicator {i} should use device {i}, got {comm.device.device_id}"
+
+    finally:
+        # Clean up
+        if comms is not None:
+            for comm in comms:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+
+
+@requires_min_devices(4)
+def test_init_all_with_devlist():
+    """Test init_all with custom device list."""
+    devlist = [0, 2, 1, 3]  # Non-sequential order
+    comms = None
+
+    try:
+        # Create communicators with custom device list
+        comms = nccl.Communicator.init_all(devlist)
+
+        # Verify correct device assignment
+        assert len(comms) == len(devlist), f"Expected {len(devlist)} communicators"
+
+        for i, comm in enumerate(comms):
+            expected_device = devlist[i]
+            assert comm.device.device_id == expected_device, (
+                f"Communicator {i} should use device {expected_device}, got {comm.device.device_id}"
+            )
+            assert comm.rank == i, f"Communicator {i} should have rank {i}"
+            assert comm.nranks == len(devlist), f"Communicator {i} should have nranks={len(devlist)}"
+
+    finally:
+        # Clean up
+        if comms is not None:
+            for comm in comms:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+
+
+@requires_min_devices(2)
+@pytest.mark.skipif(not HAS_CUPY, reason="CuPy is not available")
+def test_init_all_allreduce():
+    """Test that communicators from init_all can perform collective operations."""
+    comms = None
+    streams = []
+
+    try:
+        # Create communicators for 2 devices
+        comms = nccl.Communicator.init_all(2)
+        ndev = len(comms)
+
+        # Create data for allreduce on each device
+        send_buffers = []
+        recv_buffers = []
+
+        for i, comm in enumerate(comms):
+            # Set device context
+            comm.device.set_current()
+
+            # Create buffers with rank-specific data
+            send_data = cp.full(10, i + 1, dtype=cp.float32)  # [1, 1, ...] for rank 0, [2, 2, ...] for rank 1
+            recv_data = cp.zeros(10, dtype=cp.float32)
+
+            send_buffers.append(send_data)
+            recv_buffers.append(recv_data)
+
+        # Perform allreduce using nccl.group()
+        with nccl.group():
+            for i, comm in enumerate(comms):
+                comm.allreduce(
+                    send_buffers[i],
+                    recv_buffers[i],
+                    op=nccl.SUM
+                )
+
+        # Synchronize and verify results
+        cp.cuda.Stream.null.synchronize()
+
+        for i, comm in enumerate(comms):
+            # Expected: sum of all rank values (1 + 2 = 3 for 2 ranks)
+            expected = sum(range(1, ndev + 1))
+            result = recv_buffers[i].get()
+
+            assert np.all(result == expected), (
+                f"Rank {i}: Expected all elements to be {expected}, got {result[0]}"
+            )
+
+    finally:
+        # Clean up
+        if comms is not None:
+            for comm in comms:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+
+
+@requires_min_devices(1)
+def test_init_all_validation():
+    """Test input validation for init_all."""
+    # Test invalid devices values (int) - negative integers
+    with pytest.raises(ValueError, match="devices must be a non-negative integer"):
+        nccl.Communicator.init_all(-1)
+
+    # Test invalid type
+    with pytest.raises(ValueError, match="devices must be an integer, sequence"):
+        nccl.Communicator.init_all("invalid")
+
+    # Test invalid sequence elements
+    with pytest.raises(ValueError, match="must be non-negative integers"):
+        nccl.Communicator.init_all([0, -1, 2])
+
+    with pytest.raises(ValueError, match="must be non-negative integers"):
+        nccl.Communicator.init_all([0, "1", 2])
+
+    with pytest.raises(ValueError, match="must be non-negative integers"):
+        nccl.Communicator.init_all([0, 1.5, 2])
+
+
+@requires_min_devices(2)
+def test_init_all_device_context_preserved():
+    """Test that init_all preserves the current device context."""
+    # Set device 1 as current
+    original_device = Device(1)
+    original_device.set_current()
+
+    comms = None
+    try:
+        # Create communicators (will use devices 0 and 1)
+        comms = nccl.Communicator.init_all(2)
+
+        # Verify current device is still device 1
+        current_device = Device()
+        assert current_device.device_id == 1, (
+            f"Current device should still be 1, got {current_device.device_id}"
+        )
+
+    finally:
+        # Clean up
+        if comms is not None:
+            for comm in comms:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+
+
+@requires_min_devices(1)
+def test_init_all_single_device():
+    """Test init_all with a single device (edge case)."""
+    comms = None
+
+    try:
+        # Create single communicator
+        comms = nccl.Communicator.init_all(1)
+
+        assert len(comms) == 1, "Should create exactly 1 communicator"
+        assert comms[0].rank == 0, "Single communicator should have rank 0"
+        assert comms[0].nranks == 1, "Single communicator should have nranks=1"
+        assert comms[0].device.device_id == 0, "Single communicator should use device 0"
+
+    finally:
+        # Clean up
+        if comms is not None:
+            for comm in comms:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+
+
+@requires_min_devices(1)
+def test_init_all_none_uses_all_gpus():
+    """Test that init_all(None) initializes all visible GPUs."""
+    from cuda.core import system
+
+    expected_count = system.get_num_devices()
+    comms = None
+
+    try:
+        # None should initialize all visible GPUs
+        comms = nccl.Communicator.init_all(None)
+
+        assert len(comms) == expected_count, f"Should create {expected_count} communicators, got {len(comms)}"
+
+        for i, comm in enumerate(comms):
+            assert comm.rank == i, f"Communicator {i} should have rank {i}"
+            assert comm.nranks == expected_count, f"Communicator should have nranks={expected_count}"
+            assert comm.device.device_id == i, f"Communicator {i} should use device {i}"
+
+    finally:
+        # Clean up
+        if comms is not None:
+            for comm in comms:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+
+
+@requires_min_devices(1)
+def test_init_all_empty_list():
+    """Test that init_all([]) returns empty list."""
+    comms = nccl.Communicator.init_all([])
+
+    assert isinstance(comms, list), "Should return a list"
+    assert len(comms) == 0, "Should return empty list for empty input"
+
+
+def test_init_all_zero_devices():
+    """Test that init_all(0) returns empty list (consistent with empty sequence behavior)."""
+    comms = nccl.Communicator.init_all(0)
+
+    assert isinstance(comms, list), "Should return a list"
+    assert len(comms) == 0, "Should return empty list when devices=0"
+
+
+@requires_min_devices(2)
+def test_init_all_default_none():
+    """Test that init_all() with no arguments uses default None behavior."""
+    from cuda.core import system
+
+    expected_count = system.get_num_devices()
+    comms = None
+
+    try:
+        # Default argument should be None, which initializes all GPUs
+        comms = nccl.Communicator.init_all()
+
+        assert len(comms) == expected_count, f"Should create {expected_count} communicators"
+
+    finally:
+        # Clean up
+        if comms is not None:
+            for comm in comms:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+
+
+@requires_min_devices(4)
+def test_init_all_accepts_various_sequences():
+    """Test that init_all accepts various sequence types (not just list/tuple)."""
+    comms_from_range = None
+    comms_from_tuple = None
+
+    try:
+        # Test with range() object
+        comms_from_range = nccl.Communicator.init_all(range(1, 3))
+        assert len(comms_from_range) == 2
+        for i, comm in enumerate(comms_from_range):
+            assert comm.rank == i
+            assert comm.device.device_id == range(1, 3)[i]
+
+        # Test with tuple
+        devs = (0, 1, 3)
+        comms_from_tuple = nccl.Communicator.init_all(devs)
+        assert len(comms_from_tuple) == 3
+        for i, comm in enumerate(comms_from_tuple):
+            assert comm.rank == i
+            assert comm.device.device_id == devs[i]
+
+    finally:
+        # Clean up
+        if comms_from_range is not None:
+            for comm in comms_from_range:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+        if comms_from_tuple is not None:
+            for comm in comms_from_tuple:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
+
+
 @requires_nccl_version("2.28.0")
 @pytest.mark.mpi
 def test_create_dev_comm_default(nccl_comm):

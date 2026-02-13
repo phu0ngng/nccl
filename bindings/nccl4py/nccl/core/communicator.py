@@ -12,11 +12,13 @@ with support for buffer registration, custom reduction operators, and resource m
 """
 
 from __future__ import annotations
+from collections.abc import Sequence as ABCSequence
 from typing import Sequence, Any
 
 import numpy as _np
 
 from cuda.core import Device
+from cuda.core import system
 
 from nccl import bindings as _nccl_bindings
 
@@ -926,7 +928,7 @@ class Communicator:
             comm_ptr = _nccl_bindings.comm_init_rank_scalable(
                 int(nranks), int(rank), 1, unique_id.ptr, cfg_ptr
             )
-        elif isinstance(unique_id, Sequence) and all(
+        elif isinstance(unique_id, ABCSequence) and all(
             isinstance(uid, UniqueId) for uid in unique_id
         ):
             arr = _np.empty(len(unique_id), dtype=_nccl_bindings.unique_id_dtype)
@@ -939,6 +941,90 @@ class Communicator:
             raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
 
         return cls(comm_ptr)
+
+    @classmethod
+    def init_all(
+        cls,
+        devices: int | Sequence[int] | None = None,
+    ) -> list[Communicator]:
+        """
+        Initializes multiple NCCL communicators for single-process multi-GPU operations.
+
+        Creates an array of NCCL communicators, one for each device, within a single process.
+        This is optimized for single-machine scenarios where all GPUs are controlled by the
+        same process. Unlike ``init()``, which requires multi-process coordination (e.g., via MPI),
+        ``init_all()`` handles all coordination internally.
+
+        Args:
+            - devices (int | Sequence[int] | None): Specifies which devices to initialize:
+
+              - ``None`` (default): Initialize all visible CUDA devices
+              - ``int``: Number of devices to use (creates communicators for devices [0, 1, ..., devices-1])
+              - ``Sequence[int]``: Explicit sequence of device IDs
+              - ``[]``: Empty sequence returns empty list (no communicators created)
+
+        Returns:
+            ``list[Communicator]``: List of initialized communicators, one per device. Each communicator
+            has its rank equal to its index in the list (rank i uses device devices[i] or device i).
+
+        Raises:
+            - ``ValueError``: If devices is not a valid type or contains invalid values.
+
+        Notes:
+            - This is a blocking call that completes when all communicators are initialized.
+            - Each communicator is bound to its corresponding device. The current device context
+              is preserved by the underlying NCCL API.
+            - All communicators must be manually destroyed by calling ``destroy()`` on each one.
+            - This method is intended for single-process use cases. For multi-process initialization,
+              use ``init()`` instead.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/comms.html#ncclcomminitall
+        """
+        # Parse devices parameter
+        if devices is None:
+            # Initialize all visible CUDA devices
+            ndev = system.get_num_devices()
+            devlist = list(range(ndev))
+        elif isinstance(devices, int):
+            if devices < 0:
+                raise ValueError(f"devices must be a non-negative integer, got {devices}")
+            if devices == 0:
+                return []
+            ndev = devices
+            devlist = list(range(ndev))
+        elif isinstance(devices, ABCSequence) and not isinstance(devices, str):
+            # Accept any sequence except strings (which are sequences but not valid here)
+            devlist = list(devices)
+            if len(devlist) == 0:
+                # Empty sequence returns empty list
+                return []
+            # Validate all elements are non-negative integers
+            if not all(isinstance(d, int) and d >= 0 for d in devlist):
+                raise ValueError(
+                    "All elements in devices sequence must be non-negative integers"
+                )
+            ndev = len(devlist)
+        else:
+            raise ValueError(
+                f"devices must be an integer, sequence of integers, or None, got {type(devices).__name__}"
+            )
+
+        # Call NCCL binding to initialize all communicators
+        # Note: ncclCommInitAll preserves the current device internally
+        # The binding returns a Cython array containing communicator pointers
+        comm_array = _nccl_bindings.comm_init_all(ndev, devlist)
+
+        # Create Communicator objects from pointers
+        # Note: if comm_init_all returned without exception, all pointers are valid
+        communicators = []
+        for i, comm_ptr in enumerate(comm_array):
+            comm = cls(int(comm_ptr))
+            comm._nranks = ndev
+            comm._rank = i
+            comm._device = Device(devlist[i])
+            communicators.append(comm)
+        return communicators
 
     # --- Communicator APIs ---
     def split(self, color: int, key: int, config: NCCLConfig | None = None) -> Communicator:

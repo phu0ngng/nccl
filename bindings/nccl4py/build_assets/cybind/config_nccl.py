@@ -62,7 +62,12 @@
                 "except?": 0,
             },
             'ncclCommInitAll': {
-                "pyargs": {"devlist": "SEQ",},
+                "pyargs": {"devlist": "SEQ"},
+                "return": {
+                    "array": "comm",
+                    "size": "ndev",
+                    "method": "provided",
+                },
             },
 
             # Finalize / destroy / abort
