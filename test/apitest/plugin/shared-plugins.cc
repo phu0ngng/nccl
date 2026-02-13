@@ -36,6 +36,7 @@ static struct pluginContext {
 __hidden int netContextCounter;
 __hidden int tunerContextCounter;
 __hidden int profilerContextCounter;
+__hidden int virtualDeviceCount;
 
 struct netPluginListenComm {
   int dev;
@@ -72,7 +73,7 @@ __hidden ncclResult_t netPluginInit(void** ctx, uint64_t commId, ncclNetCommConf
   return ncclSuccess;
 }
 
-__hidden ncclResult_t netPluginDevices(int* ndev) { *ndev = context[0].devices; return ncclSuccess; }
+__hidden ncclResult_t netPluginDevices(int* ndev) { *ndev = context[0].devices + virtualDeviceCount; return ncclSuccess; }
 __hidden ncclResult_t netPluginGetProperties(int dev, ncclNetProperties_t* props) {
   props->name = (char *)"ncclNetPlugin_v11";
   props->pciPath = NULL;
@@ -182,6 +183,8 @@ __hidden ncclResult_t netPluginGetDeviceMr(void* comm, void* mhandle, void** dpt
   return ncclSuccess;
 }
 __hidden ncclResult_t netPluginMakeVDevice(int* d, ncclNetVDeviceProps_t* props) {
+  *d = context[0].devices + virtualDeviceCount;
+  virtualDeviceCount++;
   return ncclSuccess;
 }
 
@@ -189,6 +192,7 @@ __hidden ncclResult_t netPluginFinalize(void *ctx) {
   if (((struct pluginContext *)ctx)->commId == 0UL) return ncclInternalError;
   ((struct pluginContext *)ctx)->commId = 0UL;
   __atomic_store_n(&netContextCounter, 0, __ATOMIC_RELAXED);
+  virtualDeviceCount = 0;
   return ncclSuccess;
 }
 
