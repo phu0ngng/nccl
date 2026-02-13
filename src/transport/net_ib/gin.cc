@@ -339,7 +339,7 @@ ncclResult_t ncclGinIbGdakiConnect(void *ctx, void *handles[], int nranks, int r
   NCCLCHECK(ncclGinIbGdrGpuSupport(/*gdaki*/ true));
 
   NCCLCHECK(
-    ncclGinIbConnect(ctx, handles, nranks, rank, 1, queueDepth, listenComm, collComm));
+    ncclGinIbConnect(ctx, handles, nranks, rank, nContexts, queueDepth, listenComm, collComm));
 
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)*collComm;
   cComm->getProperties = (ncclResult_t(*)(int dev, void *props))ncclGinIbGdakiGetProperties;
