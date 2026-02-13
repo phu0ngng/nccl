@@ -18,6 +18,7 @@
  *   - shrink: Measures ncclCommShrink performance
  */
 
+#include <assert.h>
 #include <stdio.h>
 #include <time.h>
 #include <curand.h>
