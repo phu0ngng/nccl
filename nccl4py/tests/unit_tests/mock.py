@@ -16,7 +16,7 @@ class View:
         readonly: bool,
         exporting_obj: object | None,
     ) -> None:
-        # Aligns with cuda.core.experimental._memoryview.StridedMemoryView
+        # Aligns with cuda.core.utils.StridedMemoryView
         self.ptr = ptr
         self.shape = shape
         self.strides = strides
@@ -28,7 +28,7 @@ class View:
 
 
 class FakeBuffer:
-    """Mock for cuda.core.experimental.Buffer with DLPack protocol.
+    """Mock for cuda.core.Buffer with DLPack protocol.
 
     This makes FakeBuffer a valid NcclSupportedBuffer (implements SupportsDLPack).
     """
@@ -76,7 +76,7 @@ class CUstream:
 
 
 class FakeStream:
-    """Mock for cuda.core.experimental.Stream.
+    """Mock for cuda.core.Stream.
 
     Satisfies both Stream interface (.handle returns CUstream) and IsStreamT protocol (__cuda_stream__).
     """
@@ -89,7 +89,7 @@ class FakeStream:
 
     @property
     def handle(self):
-        """Return CUstream object (matches cuda.core.experimental.Stream.handle)."""
+        """Return CUstream object (matches cuda.core.Stream.handle)."""
         return CUstream(self._handle_int)
 
 
@@ -113,7 +113,7 @@ class StreamProtoNotCallable:
 
 
 class FakeDevice:
-    """Mock for cuda.core.experimental.Device."""
+    """Mock for cuda.core.Device."""
     def __init__(self, device_id=0):
         self.device_id = device_id
         self.set_calls = []

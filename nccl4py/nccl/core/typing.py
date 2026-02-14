@@ -17,28 +17,25 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable, TypeAlias
 
 import numpy as _np
-from cuda.core.experimental import Buffer, Device, Stream
+from cuda.core import Buffer, Device, Stream
 
 try:
-    from cuda.core.experimental._stream import IsStreamT
+    from cuda.core import IsStreamT
 except ImportError:
     try:
-        from cuda.core import IsStreamT
+        from cuda.core._stream import IsStreamT
     except ImportError:
-        try:
-            from cuda.core._stream import IsStreamT
-        except ImportError:
-            # ---- Fallback definition ----
-            @runtime_checkable
-            class IsStreamT(Protocol):
-                def __cuda_stream__(self) -> tuple[int, int]:
-                    """
-                    Fallback Protocol for CUDA stream objects.
+        # ---- Fallback definition ----
+        @runtime_checkable
+        class IsStreamT(Protocol):
+            def __cuda_stream__(self) -> tuple[int, int]:
+                """
+                Fallback Protocol for CUDA stream objects.
 
-                    Returns:
-                        (version: int, cudaStream_t address: int)
-                    """
-                    ...
+                Returns:
+                    (version: int, cudaStream_t address: int)
+                """
+                ...
 
 
 from nccl import bindings as _nccl_bindings

@@ -21,7 +21,7 @@ def test_resolve_tensor_basic():
     """Test resolve_tensor with PyTorch tensors on GPU."""
     import nccl.core.interop.torch as nccl_torch
     from nccl.core.typing import FLOAT32, INT64, BFLOAT16
-    from cuda.core.experimental import Device
+    from cuda.core import Device
 
     # Set device
     device = Device(0)
@@ -57,7 +57,7 @@ def test_resolve_tensor_aliases():
     """Test resolve_tensor with PyTorch dtype aliases."""
     import nccl.core.interop.torch as nccl_torch
     from nccl.core.typing import FLOAT16, FLOAT32, FLOAT64, INT64
-    from cuda.core.experimental import Device
+    from cuda.core import Device
 
     device = Device(0)
     device.set_current()
@@ -152,7 +152,7 @@ def test_resolve_array_with_ml_dtypes():
 def test_torch_empty_allocates_with_nccl():
     """Test that nccl.torch.empty() allocates memory with NCCL allocator."""
     import nccl.core.interop.torch as nccl_torch
-    from cuda.core.experimental import Device
+    from cuda.core import Device
 
     device = Device(0)
     device.set_current()

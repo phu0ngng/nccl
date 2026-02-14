@@ -16,7 +16,7 @@ from typing import Sequence, Any
 
 import numpy as _np
 
-from cuda.core.experimental import Device
+from cuda.core import Device
 
 from nccl import bindings as _nccl_bindings
 
@@ -894,7 +894,7 @@ class Communicator:
         CUDA device object associated with this communicator.
 
         Returns:
-            ``Device``: CUDA device object from cuda.core.experimental.
+            ``Device``: CUDA device object from cuda.core
 
         Raises:
             - ``NcclInvalid``: If communicator is not initialized.

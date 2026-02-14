@@ -13,7 +13,7 @@ and stream resolution.
 
 from __future__ import annotations
 
-from cuda.core.experimental import Device, Stream
+from cuda.core import Device, Stream
 
 from nccl.core.typing import NcclDeviceSpec, NcclStreamSpec
 

@@ -3,7 +3,7 @@ import numpy as np
 from mpi4py import MPI
 import pytest
 
-from cuda.core.experimental import Device
+from cuda.core import Device
 
 import nccl.bindings as nccl_bindings
 import nccl.core as nccl

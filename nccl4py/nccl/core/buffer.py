@@ -14,8 +14,8 @@ pointers, counts, and dtypes required by NCCL operations.
 from __future__ import annotations
 import math
 
-from cuda.core.experimental import Buffer
-from cuda.core.experimental.utils import StridedMemoryView, args_viewable_as_strided_memory
+from cuda.core import Buffer
+from cuda.core.utils import StridedMemoryView, args_viewable_as_strided_memory
 
 from nccl.core.cuda import get_device_id, get_stream_ptr
 from nccl.core.memory import get_memory_resource

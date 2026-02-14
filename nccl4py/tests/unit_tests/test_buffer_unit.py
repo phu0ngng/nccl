@@ -7,7 +7,7 @@ from .mock import View, CAIBuf, DLPackBuf, FakeBuffer
 
 
 def test_with_raw_buffer(monkeypatch):
-    """Test NcclBufferSpec with raw Buffer from cuda.core.experimental."""
+    """Test NcclBufferSpec with raw Buffer from cuda.core."""
     seen = {"buf": None}
     def _cap(buf, s):
         seen["buf"] = buf

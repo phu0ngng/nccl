@@ -13,7 +13,7 @@ from nccl import __version__
 @pytest.mark.mpi(min_size=1)
 def test_get_version_values(uid_shared, rank_info, get_nccl_debug_file):
     """Test get_version and validate against NCCL debug log."""
-    from cuda.core.experimental import Device
+    from cuda.core import Device
 
     device = Device(rank_info.nccl_local_rank)
     device.set_current()
