@@ -3,6 +3,14 @@
 # NCCL - PLC
 
 <!------------------------------------->
+## version 2.30
+
+- [TMA Support for Symmetric Kernels](items/id_8B5583C2/TMA_Support_for_Symmetric_Kernels.md)
+<!-- V2_30_DO_NOT_MOVE -->
+
+<!------------------------------------->
+
+<!------------------------------------->
 ## version 2.29
 
 - [NCCL4Py](items/id_eb5665f4/NCCL4Py.md)
