@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_DEVICE_UTILITY_H_
 #define _NCCL_DEVICE_UTILITY_H_
@@ -77,7 +78,7 @@ namespace utility {
 #if NCCL_CHECK_CUDACC
 // cuda/atomic header file is included so we can use atomic_ref to load the abortFlag
 static NCCL_DEVICE_INLINE bool testAbort(uint32_t* abortFlag, uint32_t& steps) {
-  const uint32_t maxSteps = 100000;
+  const uint32_t maxSteps = 10000;
   if (++steps < maxSteps) {
     return false;
   } else {
@@ -87,7 +88,7 @@ static NCCL_DEVICE_INLINE bool testAbort(uint32_t* abortFlag, uint32_t& steps) {
 }
 #else
 static NCCL_DEVICE_INLINE bool testAbort(uint32_t* abortFlag, uint32_t& steps) {
-  const uint32_t maxSteps = 100000;
+  const uint32_t maxSteps = 10000;
   if (++steps < maxSteps) {
     return false;
   } else {

@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef NCCL_PARAM_H_
 #define NCCL_PARAM_H_

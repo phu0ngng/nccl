@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef NCCL_ALLOC_H_
 #define NCCL_ALLOC_H_
@@ -451,6 +452,22 @@ ncclResult_t ncclCudaMemcpy(T* dst, T* src, size_t nelem) {
   cudaStream_t stream;
   CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), result, finish);
   NCCLCHECKGOTO(ncclCudaMemcpyAsync(dst, src, nelem, stream), result, finish);
+  CUDACHECKGOTO(cudaStreamSynchronize(stream), result, finish);
+  CUDACHECKGOTO(cudaStreamDestroy(stream), result, finish);
+finish:
+  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+  return result;
+}
+
+template <typename T>
+ncclResult_t ncclCudaMemset(T* dst, int value, size_t nelem) {
+  ncclResult_t result = ncclSuccess;
+  cudaStreamCaptureMode mode = cudaStreamCaptureModeRelaxed;
+  CUDACHECK(cudaThreadExchangeStreamCaptureMode(&mode));
+  // Need a side stream so as not to interfere with graph capture.
+  cudaStream_t stream;
+  CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), result, finish);
+  CUDACHECKGOTO(cudaMemsetAsync((void*)dst, value, nelem * ncclSizeOfT<T>(), stream), result, finish);
   CUDACHECKGOTO(cudaStreamSynchronize(stream), result, finish);
   CUDACHECKGOTO(cudaStreamDestroy(stream), result, finish);
 finish:

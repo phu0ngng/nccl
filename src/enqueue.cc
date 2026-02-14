@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2017-2022, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "enqueue.h"
 #include "argcheck.h"
@@ -2170,10 +2171,10 @@ static ncclResult_t calcCollChunking(
     // However, nChannels * comm->channels[0].nvls.nHeads should easily fit in 32 bits.
     // coverity[overflow_before_widen]
     uint64_t concurrentOps = nChannels * comm->channels[0].nvls.nHeads;
-    chunkSize = comm->nvlsChunkSize;
+    // NvlsTreeMaxChunkSize allows user to select a chunksize smaller than nvlsChunkSize
     int maxChunkSize = (int)ncclParamNvlsTreeMaxChunkSize();
-    if (maxChunkSize == -2) maxChunkSize = comm->nNodes >= 4 ? 65536 : chunkSize;
-    chunkSize = std::min(chunkSize, maxChunkSize);
+    if (maxChunkSize == -2) maxChunkSize = (comm->nNodes >= 4 && comm->minGpuNetBw < 96.0) ? 65536 : comm->nvlsChunkSize;
+    chunkSize = std::min(comm->nvlsChunkSize, maxChunkSize) ;
     if ((nBytes < (32 * (concurrentOps * chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
     if ((nBytes < (16 * (concurrentOps * chunkSize))) && (chunkSize > 131072)) chunkSize = 131072;
     if ((nBytes < (4 * (concurrentOps * chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;

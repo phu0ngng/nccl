@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2016-2024, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "core.h"
 #include "graph.h"
@@ -346,6 +347,31 @@ ncclResult_t ncclTopoGetMinNetBw(struct ncclTopoSystem* system, float* bw) {
     if (net->net.bw < minBw) minBw = net->net.bw;
   }
   *bw = minBw;
+  return ncclSuccess;
+}
+
+// Minimum net path bandwidth across all GPUs on the node: for each GPU, take the
+// minimum path bw to any of its local nets (same channel order as getLocalNetCountByBw),
+// then return the minimum of those per-GPU values.
+ncclResult_t ncclTopoGetMinGpuNetBw(struct ncclTopoSystem* system, int rank, float* bw) {
+  int g=0;
+  while(g < system->nodes[GPU].count && system->nodes[GPU].nodes[g].gpu.rank != rank) g++;
+  if(g == system->nodes[GPU].count) return ncclInternalError;
+
+  int64_t firstNetId = 0;
+  float minBw = FLT_MAX;
+  for (int c = 0; c < MAXCHANNELS; c++) {
+    int net;
+    int64_t netId;
+    NCCLCHECK(ncclTopoGetLocalNet(system, rank, c, &netId, NULL));
+    NCCLCHECK(ncclTopoIdToIndex(system, NET, netId, &net));
+    if (c == 0) firstNetId = netId;
+    else if (netId == firstNetId) break;
+
+    minBw = std::min(minBw , system->nodes[GPU].nodes[g].paths[NET][net].bw);
+  }
+  // if not net is found, return 0 as a minimum bw
+  *bw = (minBw < FLT_MAX) ? minBw : 0.0;
   return ncclSuccess;
 }
 

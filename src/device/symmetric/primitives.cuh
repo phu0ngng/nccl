@@ -1,3 +1,10 @@
+/*************************************************************************
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * See LICENSE.txt for more license information
+ *************************************************************************/
+
 #ifndef NCCL_DEVICE_SYMMETRIC_PRIMITIVES_H_
 #define NCCL_DEVICE_SYMMETRIC_PRIMITIVES_H_
 

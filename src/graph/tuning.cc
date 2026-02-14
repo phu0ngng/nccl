@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "core.h"
 #include "device.h"
@@ -560,8 +561,6 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       }
     }
   }
-
-  NCCLCHECK(ncclTopoGetMinNetBw(comm->topo, &comm->minNetBw));
 
   INFO(NCCL_INIT, "threadThresholds %ld/%ld/%ld | %ld/%ld/%ld | %ld | %ld",
       comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL],

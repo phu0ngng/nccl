@@ -124,14 +124,11 @@ int main(int argc, char** argv) {
   ncclDevComm dcomm;
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
 
-  bool use_expert_control = args.gin_skip_credit_check || args.gin_aggregate_requests;
   reqs.ginForceEnable = true;
   reqs.ginContextCount = args.num_ctas;
-  if (use_expert_control) {
+  if (args.gin_skip_credit_check || args.gin_aggregate_requests) {
     reqs.ginQueueDepth = args.num_threads;
   }
-  reqs.ginUseReliableDB = (ncclRequirementFlagOptions_t)args.gin_reliable_db;
-  reqs.ginUseExpertControl = use_expert_control ? NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED : NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   reqs.ginSignalCount = 0;
   reqs.ginForceEnable = true;

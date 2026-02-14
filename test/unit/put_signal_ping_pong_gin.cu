@@ -181,14 +181,9 @@ int main(int argc, char* argv[]) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = 1;
     NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
-    int use_expert_control = args.gin_skip_credit_check;
-    // Currently, CPU Proxy does not support specifying qp depth.
-    // use_expert_control is supported in GDA-KI only. We need to control the qp
-    // depth when using gin_skip_credit_check. Otherwise, we can let the backend
-    // decide.
-    const int qp_depth = use_expert_control ? 128 : 0;
+    const int qp_depth = args.gin_skip_credit_check ? 128 : 0;
     const int context_count = 1;
-    NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, context_count, qp_depth, args.gin_reliable_db, use_expert_control));
+    NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, context_count, qp_depth));
 
     // Allocate and register symmetric memory
     void *sendbuff, *recvbuff;

@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_DEVICE_GIN_GDAKI_DEVICE_HOST_COMMON_H_
 #define _NCCL_DEVICE_GIN_GDAKI_DEVICE_HOST_COMMON_H_
@@ -27,8 +28,6 @@ struct ncclGinGdakiGPUContext {
 
   // Local buffer we don't consume but is required for some operations.
   __be32 sink_buffer_lkey;
-
-  bool useExpertControl;
 };
 
 struct ncclGinGdakiMemHandle {

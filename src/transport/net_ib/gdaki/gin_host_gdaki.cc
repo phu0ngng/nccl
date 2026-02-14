@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include <assert.h>
 #include <stdbool.h>
@@ -465,6 +466,8 @@ destroy_verbs_qp_attr:
   return status;
 }
 
+NCCL_PARAM(GinGdakiUseReliableDB, "GDAKI_USE_RELIABLE_DB", 0);
+
 ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters, int nContexts,
                                        void **outGinCtx, ncclNetDeviceHandle_t **outDevHandle) {
   int status = ncclSuccess;
@@ -583,7 +586,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   qp_init_attr.nic_handler =
     (enum doca_gpu_dev_verbs_nic_handler)ncclParamGinGdakiNicHandler();
   qp_init_attr.mreg_type = DOCA_GPUNETIO_VERBS_MEM_REG_TYPE_DEFAULT;
-  if (cComm->useReliableDB > ncclGinRequirementFlagOptionsNotRequired)
+  if (ncclParamGinGdakiUseReliableDB())
     qp_init_attr.send_dbr_mode_ext = DOCA_GPUNETIO_VERBS_SEND_DBR_MODE_EXT_NO_DBR_HW;
   else
     qp_init_attr.send_dbr_mode_ext = DOCA_GPUNETIO_VERBS_SEND_DBR_MODE_EXT_VALID_DBR;
@@ -597,9 +600,8 @@ retry_create_qp_group_hl:
         goto retry_create_qp_group_hl;
       }
 
-      if ((qp_init_attr.send_dbr_mode_ext ==
-           DOCA_GPUNETIO_VERBS_SEND_DBR_MODE_EXT_NO_DBR_SW_EMULATED) &&
-          (cComm->useReliableDB == ncclGinRequirementFlagOptionsOptional)) {
+      if ((qp_init_attr.send_dbr_mode_ext == DOCA_GPUNETIO_VERBS_SEND_DBR_MODE_EXT_NO_DBR_SW_EMULATED)
+          && ncclParamGinGdakiUseReliableDB() == 2) {
         qp_init_attr.send_dbr_mode_ext = DOCA_GPUNETIO_VERBS_SEND_DBR_MODE_EXT_VALID_DBR;
         goto retry_create_qp_group_hl;
       }
@@ -705,13 +707,6 @@ retry_create_qp_group_hl:
                              IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC),
                 status, out);
 
-  if (cComm->useExpertControl > ncclGinRequirementFlagOptionsNotRequired) {
-    INFO(NCCL_NET,
-         "[%d] GIN expert control is enabled. The application has full control over GDA-KI operations. "
-         "With great power comes great responsibility. Use with care.",
-         rank);
-  }
-
   gverbs_qps = (struct doca_gpu_verbs_qp **)calloc(nranks, sizeof(struct doca_gpu_verbs_qp *));
   for (int ctx_idx = 0; ctx_idx < ncontexts; ctx_idx++) {
     struct ncclGinGdakiGPUContext *gin_gdaki_gpu_ctx =
@@ -745,7 +740,6 @@ retry_create_qp_group_hl:
     gin_gdaki_gpu_ctx->signals_table.lkey = htobe32(signals_table->mr->lkey);
     gin_gdaki_gpu_ctx->signals_table.offset = buffer_start;
     gin_gdaki_gpu_ctx->sink_buffer_lkey = htobe32(sink_buffer_mr->lkey);
-    gin_gdaki_gpu_ctx->useExpertControl = (cComm->useExpertControl > ncclGinRequirementFlagOptionsNotRequired);
   }
 
   NCCLCHECKGOTO(gin_gdaki_gpu_ctx_hd_mhandle->copy_h_to_d(), status, out);

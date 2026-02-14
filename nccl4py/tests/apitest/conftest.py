@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import warnings
 from dataclasses import dataclass
 from packaging.version import Version as _Version
 from mpi4py import MPI
@@ -13,6 +14,26 @@ import nccl.core as nccl
 # Global NCCL library version for test skipping
 # Initialized once at test collection time
 NCCL_LIB_VERSION = nccl.get_version().nccl_version
+
+
+def get_cuda_device_count():
+    """
+    Get the number of CUDA devices available on the node.
+
+    Returns:
+        int: Number of CUDA devices, or 0 if unable to determine
+    """
+    try:
+        from cuda.core import system
+        return system.get_num_devices()
+    except (ImportError, AttributeError, RuntimeError) as e:
+        # Fallback if cuda.core is not available or no CUDA devices
+        warnings.warn(
+            f"Unable to determine CUDA device count: {type(e).__name__}: {e}. "
+            "Tests requiring multiple devices will be skipped.",
+            UserWarning
+        )
+        return 0
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -86,7 +107,7 @@ def rank_info():
 @pytest.fixture()
 def nccl_comm(uid_shared, rank_info):
     """Create and destroy NCCL communicator for each test."""
-    from cuda.core.experimental import Device
+    from cuda.core import Device
 
     device = Device(rank_info.nccl_local_rank)
     device.set_current()
@@ -121,5 +142,28 @@ def requires_nccl_version(min_version):
     return pytest.mark.skipif(
         NCCL_LIB_VERSION < _Version(min_version),
         reason=f"Requires NCCL >= {min_version} (found {NCCL_LIB_VERSION})"
+    )
+
+
+def requires_min_devices(min_devices):
+    """
+    Helper to create skipif marker for minimum CUDA device requirements.
+
+    Args:
+        min_devices (int): Minimum number of CUDA devices required
+
+    Returns:
+        pytest.mark.skipif: Pytest marker that skips test if not enough devices available
+
+    Example:
+        @requires_min_devices(2)
+        def test_multi_device(nccl_comm):
+            # Test code that requires at least 2 CUDA devices
+            ...
+    """
+    device_count = get_cuda_device_count()
+    return pytest.mark.skipif(
+        device_count < min_devices,
+        reason=f"Requires at least {min_devices} CUDA device(s) (found {device_count})"
     )
 

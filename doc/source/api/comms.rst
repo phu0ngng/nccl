@@ -196,13 +196,15 @@ ncclCommDestroy
 
 .. c:function:: ncclResult_t ncclCommDestroy(ncclComm_t comm)
 
-Destroy a communicator object *comm*.
-*ncclCommDestroy* only frees the local resources that are allocated to the communicator object *comm* if *ncclCommFinalize*
-was previously called on the communicator; otherwise, *ncclCommDestroy* will call ncclCommFinalize internally.
-If *ncclCommFinalize* is called by users, users should guarantee that the state of the communicator becomes *ncclSuccess* before
-calling *ncclCommDestroy*.
-In all cases, the communicator should no longer be accessed after ncclCommDestroy returns. It is recommended that
-users call *ncclCommFinalize* and then *ncclCommDestroy*.
+Destroy a communicator object *comm*. If *ncclCommFinalize* is called by users, users should guarantee that the state
+of the communicator becomes *ncclSuccess* before calling *ncclCommDestroy*. In all cases, the communicator should no
+longer be accessed after *ncclCommDestroy* returns. It is recommended that users call *ncclCommFinalize* and then
+*ncclCommDestroy*.
+
+*ncclCommDestroy* will call *ncclCommFinalize* internally, unless *ncclCommFinalize* was previously called on the
+communicator. If *ncclCommFinalize* was previously called on the communicator object *comm*, then *ncclCommDestroy* is a
+purely local operation.
+
 This function is an intra-node collective call, which all ranks on the same node should call to avoid a hang.
 
 ncclCommAbort

@@ -371,10 +371,11 @@ function run_command() {
         commands+=(["$label"]="$run_mode_cmd $cmd")
         generate_repro_script $label
         start=$(date +%s%N)
-        stdout=$($run_mode_cmd $cmd 2>&1)
-        ret=$?
+        output_file=$(mktemp)
+        $run_mode_cmd $cmd 2>&1 | tee "$output_file"
+        ret=${PIPESTATUS[0]}
+        stdout=$(cat "$output_file")
         end=$(date +%s%N)
-        echo "$stdout"
         let runtime=$((end - start))/1000000000
         echo "Command took $runtime s with retcode $ret"
         # call validate_test to override return value in cases where we need special processing
@@ -386,6 +387,7 @@ function run_command() {
             parse_store_coredumps $binary $label
             move_repro_script $label
         fi
+        rm -f "$output_file"
         command_times+=(["$label"]="$runtime")
         command_retcodes+=(["$label"]="$ret")
         command_stdouts+=(["$label"]="$stdout")

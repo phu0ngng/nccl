@@ -1596,7 +1596,7 @@ apitest-GP100:
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 1
     API_TESTS_NETWORK: 0 # https://nvbugspro.nvidia.com/bug/5747368
-    DEVICE_API: 0 # https://nvbugspro.nvidia.com/bug/5682588
+    DEVICE_API: 1
   script:
     - ./test/scripts/ci/gitlab-runner-api.sh
   after_script:

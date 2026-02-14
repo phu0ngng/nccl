@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2015-2022, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2015-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef NCCL_COMM_H_
 #define NCCL_COMM_H_
@@ -532,6 +533,7 @@ struct ncclComm {
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> legacyRegCleanupQueue;
   bool peerInfoValid;
   float minNetBw;
+  float minGpuNetBw;
 
   ncclNet_t* ncclNet;
   void* netContext;

@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_GIN_HOST_H_
 #define _NCCL_GIN_HOST_H_
@@ -31,6 +32,7 @@ struct ncclGinState {
   std::mutex mutex;
   std::condition_variable cond;
   ncclResult_t asyncResult;
+  int ginVersion;
 
   int signalSpaceSize;
   int counterSpaceSize;
@@ -39,8 +41,6 @@ struct ncclGinState {
   int ctxFirstAvailable; // We allocate shared contexts starting from index 0.
   int ctxLastExclusive; // We allocate exclusive contexts starting from the highest index.
   int ginQueueDepth;
-  ncclRequirementFlagOptions_t ginUseReliableDB;
-  ncclRequirementFlagOptions_t ginUseExpertControl;
   ncclGinConnectionType_t ginConnectionType;
 };
 
@@ -57,7 +57,7 @@ ncclResult_t getGlobalGinType(struct ncclComm* comm, ncclGinType_t* ginType);
 ncclResult_t getGlobalRailedGinType(struct ncclComm* comm, ncclGinType_t* ginType);
 
 // FIXME change to ncclGinState instead of ncclComm, no need to pass comm
-ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t requestedConnectionType, int reqGinContextCount = 0, int reqGinQueueDepth = 0, int reqGinUseReliableDB = -1, int reqGinUseExpertControl = -1);
+ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t requestedConnectionType, int reqGinContextCount = 0, int reqGinQueueDepth = 0);
 ncclResult_t ncclGinHostFinalize(struct ncclComm* comm);
 ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
                              void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS],

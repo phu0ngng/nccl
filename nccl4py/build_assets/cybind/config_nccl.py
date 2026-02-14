@@ -164,6 +164,10 @@
             },
             'ncclRecv': {
             },
+            'ncclWaitSignal': {
+            },
+            'ncclSignal': {
+            },
 
             # Group ops
             'ncclGroupStart': {
@@ -179,6 +183,7 @@
             "ncclUniqueId": "AUTO_LOWPP_CLASS",
             "ncclConfig_t": "AUTO_LOWPP_CLASS",
             "ncclSimInfo_t": "AUTO_LOWPP_CLASS",
+            "ncclWaitSignalDesc_t": "AUTO_LOWPP_CLASS",
         },
         # map the enum values to their expected dtypes
         # this is very library-specific and needs the library developer to fill in

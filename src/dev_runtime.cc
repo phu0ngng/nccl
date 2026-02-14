@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "dev_runtime.h"
 #include "comm.h"
@@ -847,15 +848,11 @@ ncclResult_t ncclDevrCommCreateInternal(
 
   if (ginActivated) {
     int ginQueueDepth = 0;
-    ncclRequirementFlagOptions_t ginUseReliableDB = NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
-    ncclRequirementFlagOptions_t ginUseExpertControl = NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED;
 
     if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
         ginQueueDepth = reqs->ginQueueDepth;
-        ginUseReliableDB = reqs->ginUseReliableDB;
-        ginUseExpertControl = reqs->ginUseExpertControl;
     }
-    NCCLCHECKGOTO(ncclGinConnectOnce(comm, requestedConnectionType, reqs->ginContextCount, ginQueueDepth, ginUseReliableDB, ginUseExpertControl), ret, fail);
+    NCCLCHECKGOTO(ncclGinConnectOnce(comm, requestedConnectionType, reqs->ginContextCount, ginQueueDepth), ret, fail);
     // Register all preexisting memories with GIN. Update the windows later when
     // we have a stream.
     for (struct ncclDevrMemory* mem = devr->memHead; mem != nullptr; mem = mem->next) {

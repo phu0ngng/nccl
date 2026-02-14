@@ -1,3 +1,10 @@
+/*************************************************************************
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * See LICENSE.txt for more license information
+ *************************************************************************/
+
 #include <assert.h>
 #include <unistd.h>
 #include <cuda_runtime.h>
@@ -530,9 +537,7 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
                   fail);
     NCCLCHECKGOTO(
       rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank, 1, 0,
-                                      ncclGinRequirementFlagOptionsNotRequired,
-                                      ncclGinRequirementFlagOptionsNotRequired, listenComm,
-                                      rmaProxyState->ginComms + n),
+                                      listenComm, rmaProxyState->ginComms + n),
       ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->getProperties(localGinDevs[n], &rmaProxyState->props[n]), ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->closeListen(listenComm), ret, fail);

@@ -7,7 +7,7 @@ from cuda.core.experimental import Device
 
 import nccl.bindings as nccl_bindings
 import nccl.core as nccl
-from conftest import requires_nccl_version
+from conftest import requires_nccl_version, requires_min_devices
 
 try:
     import cupy as cp
@@ -471,3 +471,66 @@ def test_custom_op(nccl_comm, rank_info, scalar_type):
     result = recv_data.get()
     _assert_result_matches(result, expected, msg=f"rank {rank_info.nccl_rank}, scalar_type {scalar_type}: expected {expected}, got {result}")
     op.close()
+
+
+@requires_min_devices(2)
+@pytest.mark.mpi
+def test_device_property_returns_communicator_device(uid_shared, rank_info):
+    # Get device count to determine alternative device
+    from cuda.core import system
+    num_devices = system.get_num_devices()
+
+    # Step 1: Set current device to this rank's assigned device
+    comm_device_id = rank_info.nccl_local_rank
+    comm_device = Device(comm_device_id)
+    comm_device.set_current()
+
+    # Step 2: Create communicator on the assigned device
+    comm = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared
+    )
+
+    # Step 3: Verify communicator device returns the assigned device
+    assert comm.device.device_id == comm_device_id, (
+        f"Communicator should be on device {comm_device_id}, got {comm.device.device_id}"
+    )
+
+    # Step 4: Set current device to a different device
+    # Use (comm_device_id + 1) % num_devices to get a different device
+    other_device_id = (comm_device_id + 1) % num_devices
+    other_device = Device(other_device_id)
+    other_device.set_current()
+
+    # Step 5: Verify communicator device still returns the assigned device (cached value)
+    assert comm.device.device_id == comm_device_id, (
+        f"Communicator.device should return device {comm_device_id} (communicator's device), "
+        f"not device {other_device_id} (current device). Got {comm.device.device_id}"
+    )
+
+    # Step 6: Force reset _device to None to trigger lazy initialization in the property
+    # This tests the bug fix in the device property's lazy initialization code
+    comm._device = None
+
+    # Step 7: Access comm.device to trigger lazy initialization
+    # The bug was here: the property would call get_cuda_device() which returns
+    # the current device instead of the communicator's device
+    device_after_reset = comm.device
+    assert device_after_reset.device_id == comm_device_id, (
+        f"After resetting _device, comm.device should return device {comm_device_id} "
+        f"(communicator's device), not device {other_device_id} (current device). "
+        f"Got {device_after_reset.device_id}"
+    )
+
+    # Verify current device is still the other device
+    current_device = Device()
+    assert current_device.device_id == other_device_id, (
+        f"Current device should be {other_device_id}, got {current_device.device_id}"
+    )
+
+    # Clean up
+    comm.destroy()
+
+    # Switch back to assigned device for cleanup
+    comm_device.set_current()
