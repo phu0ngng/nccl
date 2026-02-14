@@ -4,7 +4,7 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 description = "NCCL4Py: Python bindings for NCCL"
 readme = {file = "DESCRIPTION.rst", content-type = "text/x-rst"}
-license = "BSD-3-Clause"
+license = "Apache-2.0"
 license-files = ["LICENSE.txt"]
 authors = [
     { name = "NVIDIA Corporation" }
