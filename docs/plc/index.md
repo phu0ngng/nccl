@@ -4,14 +4,8 @@
 <!------------------------------------->
 ## version 2.30
 
+- [GIN get](items/id_c3200938/GIN_get.md)
 - [Enabling DDP in NET IB](items/id_DE55495D/Enabling_DDP_in_NET_IB.md)
-<!-- V2_30_DO_NOT_MOVE -->
-
-<!------------------------------------->
-
-<!------------------------------------->
-## version 2.30
-
 - [TMA Support for Symmetric Kernels](items/id_8B5583C2/TMA_Support_for_Symmetric_Kernels.md)
 - [alltoallv perf test](items/id_4b0fb00b/alltoallv_perf_test.md)
 - [NVL576: Cross Clique P2P IPC Support](items/id_80B28435/Cross-Clique_P2P_IPC_Support.md)
