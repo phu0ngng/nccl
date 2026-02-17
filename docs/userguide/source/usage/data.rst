@@ -2,7 +2,7 @@
 Data Pointers
 *************
 
-In general NCCL  will accept any CUDA pointers that are accessible from the CUDA device associated to the communicator object. This includes:
+In general, NCCL will accept any CUDA pointers that are accessible from the CUDA device associated to the communicator object. This includes:
 
  * device memory local to the CUDA device
  * host memory registered using CUDA SDK APIs cudaHostRegister or cudaGetDevicePointer

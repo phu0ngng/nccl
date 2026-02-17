@@ -119,12 +119,12 @@ registration can reduce the number of NCCL SM usage down to 1.
 
 To enable IB Sharp buffer registration by CUDA graph:
 
- * Allocate send and recv buffer with any CUDA allcator (e.g., cudaMalloc/ncclMemAlloc)
+ * Allocate send and recv buffer with any CUDA allocator (e.g., cudaMalloc/ncclMemAlloc)
  * Launch NCCL collectives with CUDA graph
 
 To enable IB Sharp buffer registration by local registration:
 
- * Allocate send and recv buffer with any CUDA allcator (e.g., cudaMalloc/ncclMemAlloc)
+ * Allocate send and recv buffer with any CUDA allocator (e.g., cudaMalloc/ncclMemAlloc)
  * Register send and recv buffer for each rank in the communicator with `ncclCommRegister`
  * Launch NCCL collectives
 
@@ -160,7 +160,7 @@ For general buffer registration with VMM API, the allocator needs to satisfy the
 Window Registration
 -------------------
 
-Since 2.27, NCCL supports window registration, which allows users to register local buffers into NCCL window and enables extremely low latency and high bandwith communication in NCCL. Currently, window registration supports input buffers only from VMM-based allocators (:ref:`mem_allocator`) and `ncclMemAlloc`; any other type of cuda buffers will fail to be registered.
+Since 2.27, NCCL supports window registration, which allows users to register local buffers into NCCL window and enables extremely low latency and high bandwidth communication in NCCL. Currently, window registration supports input buffers only from VMM-based allocators (:ref:`mem_allocator`) and `ncclMemAlloc`; any other type of cuda buffers will fail to be registered.
 
 NCCL window registration is enabled by default. However, if users do not use window registration and need to turn it off, set `NCCL_WIN_ENABLE=0` to disable it. In addition, users can also control the behavior of window registration through flags in :ref:`win_flags`.
 

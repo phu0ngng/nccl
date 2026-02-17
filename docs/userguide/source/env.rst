@@ -5,7 +5,7 @@ Environment Variables
 NCCL has an extensive set of environment variables to tune for specific usage.
 
 Environment variables can also be set statically in /etc/nccl.conf (for an administrator to set system-wide values) or in ${NCCL_CONF_FILE} (since 2.23; see below).
-For example, those files could contain :
+For example, those files could contain:
 
 .. code:: C
 
@@ -97,7 +97,7 @@ sooner.
 
 Values accepted
 ^^^^^^^^^^^^^^^
-Non-negative integer. The old behavior corredponds to 0 (the default).
+Non-negative integer. The old behavior corresponds to 0 (the default).
 If 0, it will not poll, but keep trying to progress the socket
 operation without pause. If non-zero, it will poll for up that amount
 of time before trying to progress the operation again.
@@ -237,7 +237,7 @@ NCCL_IB_RETRY_CNT
 
 The ``NCCL_IB_RETRY_CNT`` variable controls the InfiniBand retry count. Total
 time spent retrying is determined by the product of the retry count and the
-timeout.  For example, the default values of ``NCCL_IB_TIMEOUT=20`` and
+timeout. For example, the default values of ``NCCL_IB_TIMEOUT=20`` and
 ``NCCL_IB_RETRY_CNT=7`` result in approximately 30 seconds of waiting (7
 retries, each lasting 4.3 seconds) before a network error is raised by NCCL.
 
@@ -245,7 +245,7 @@ For more information, see section 12.7.38 of the InfiniBand specification Volume
 
 Values accepted
 ^^^^^^^^^^^^^^^
-The default value is 7.  Valid values are 0-7.
+The default value is 7. Valid values are 0-7.
 
 NCCL_IB_GID_INDEX
 -----------------
@@ -332,8 +332,8 @@ NCCL_IB_FIFO_TC
 Defines the InfiniBand traffic class for control messages.
 Control messages are short RDMA write operations which control
 credit return, contrary to other RDMA operations transmitting
-large segments of data. This setting allows to have those
-messages use a high priority, low-latency traffic class and
+large segments of data. This setting allows those
+messages to use a high priority, low-latency traffic class and
 avoid being delayed by the rest of the traffic.
 
 Values accepted
@@ -431,7 +431,7 @@ Set it to either a suffix string or to a library name to choose among multiple N
  - If NCCL_NET_PLUGIN is not set, attempt loading libnccl-net.so;
  - If no plugin was found (neither user defined nor default), use internal network plugin.
 
-For example, setting ``NCCL_NET_PLUGIN=foo`` will cause NCCL to try load ``foo`` and, if ``foo`` cannot be found, ``libnccl-net-foo.so`` (provided that it exists on the system).
+For example, setting ``NCCL_NET_PLUGIN=foo`` will cause NCCL to try to load ``foo`` and, if ``foo`` cannot be found, ``libnccl-net-foo.so`` (provided that it exists on the system).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -448,7 +448,7 @@ Set it to either a suffix string or to a library name to choose among multiple N
  - If no plugin was found look for the tuner symbols in the net plugin (refer to ``NCCL_NET_PLUGIN``);
  - If no plugin was found (neither through NCCL_TUNER_PLUGIN nor NCCL_NET_PLUGIN), use internal tuner plugin.
 
-For example, setting ``NCCL_TUNER_PLUGIN=foo`` will cause NCCL to try load ``foo`` and, if ``foo`` cannot be found, ``libnccl-tuner-foo.so`` (provided that it exists on the system).
+For example, setting ``NCCL_TUNER_PLUGIN=foo`` will cause NCCL to try to load ``foo`` and, if ``foo`` cannot be found, ``libnccl-tuner-foo.so`` (provided that it exists on the system).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -465,7 +465,7 @@ Set it to either a suffix string or to a library name to choose among multiple N
  - If no plugin was found (neither user defined nor default), do not enable profiling.
  - If NCCL_PROFILER_PLUGIN is set to ``STATIC_PLUGIN``, the plugin symbols are searched in the program binary.
 
-For example, setting ``NCCL_PROFILER_PLUGIN=foo`` will cause NCCL to try load ``foo`` and, if ``foo`` cannot be found, ``libnccl-profiler-foo.so`` (provided that it exists on the system).
+For example, setting ``NCCL_PROFILER_PLUGIN=foo`` will cause NCCL to try to load ``foo`` and, if ``foo`` cannot be found, ``libnccl-profiler-foo.so`` (provided that it exists on the system).
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -478,9 +478,9 @@ NCCL_ENV_PLUGIN
 
 The ``NCCL_ENV_PLUGIN`` variable can be used to let NCCL load an external environment plugin. Set it to either a library name or a suffix string to choose among multiple NCCL environment plugins. This setting will cause NCCL to look for the environment plugin library using the following strategy:
  - If ``NCCL_ENV_PLUGIN`` is set to a library name, attempt loading that library (e.g.
-   ``NCCL_ENV_PLUGIN=/path/to/library/libfoo.so`` will cause NCCL to try load ``/path/to/library/libfoo.so``);
+   ``NCCL_ENV_PLUGIN=/path/to/library/libfoo.so`` will cause NCCL to try to load ``/path/to/library/libfoo.so``);
  - If ``NCCL_ENV_PLUGIN`` is set to a suffix string, attempt loading ``libnccl-env-<NCCL_ENV_PLUGIN>.so`` (e.g.
-   ``NCCL_ENV_PLUGIN=foo`` will cause NCCL to try load ``libnccl-env-foo.so`` from the system library path);
+   ``NCCL_ENV_PLUGIN=foo`` will cause NCCL to try to load ``libnccl-env-foo.so`` from the system library path);
  - If ``NCCL_ENV_PLUGIN`` is not set, attempt loading the default ``libnccl-env.so`` library from the system library path;
  - If ``NCCL_ENV_PLUGIN`` is set to "none", explicitly disable the external plugin and use the internal one;
  - If no plugin was found (neither user defined nor default) or the variable is set to "none", use the internal environment
@@ -525,7 +525,7 @@ VERSION - Prints the NCCL version at the start of the program.
 
 WARN - Prints an explicit error message whenever any NCCL call errors out.
 
-INFO - Prints debug information
+INFO - Prints debug information.
 
 TRACE - Prints replayable trace information on every call.
 
@@ -563,8 +563,8 @@ The default value is INIT,BOOTSTRAP,ENV.
 Supported subsystem names are INIT (stands for initialization), COLL (stands for collectives), P2P (stands for
 peer-to-peer), SHM (stands for shared memory), NET (stands for network), GRAPH (stands for topology detection
 and graph search), TUNING (stands for algorithm/protocol tuning), ENV (stands for environment settings), ALLOC (stands
-for memory allocations), CALL (standard for function calls), PROXY (stands for the proxy thread operations), NVLS
-(standard for NVLink SHARP), BOOTSTRAP (stands for early initialization), REG (stands for memory registration), PROFILE
+for memory allocations), CALL (stands for function calls), PROXY (stands for the proxy thread operations), NVLS
+(stands for NVLink SHARP), BOOTSTRAP (stands for early initialization), REG (stands for memory registration), PROFILE
 (stands for coarse-grained profiling of initialization), RAS (stands for reliability, availability, and serviceability
 subsystem) and ALL (includes every subsystem).
 
@@ -740,7 +740,7 @@ NCCL_P2P_LEVEL
 (since 2.3.4)
 
 The ``NCCL_P2P_LEVEL`` variable allows the user to finely control when to use the peer to peer (P2P) transport between GPUs.
-The level defines the maximum distance between GPUs where NCCL will use the P2P transport.  A short string representing
+The level defines the maximum distance between GPUs where NCCL will use the P2P transport. A short string representing
 the path type should be used to specify the topographical cutoff for using the P2P transport.
 
 If this isn't specified, NCCL will attempt to optimally select a value based on the architecture and environment it's run in.
@@ -756,9 +756,9 @@ Values accepted
 
 Integer Values (Legacy)
 ^^^^^^^^^^^^^^^^^^^^^^^
-There is also the option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
+There is also the option to declare ``NCCL_P2P_LEVEL`` as an integer corresponding to the path type. These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
 
-Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
+Integer values are discouraged due to breaking changes in path types - the literal values can change over time. To avoid headaches debugging your configuration, use string identifiers.
 
 - LOC : 0
 - PIX : 1
@@ -766,7 +766,7 @@ Integer values are discouraged due to breaking changes in path types - the liter
 - PHB : 3
 - SYS : 4
 
-Values greater than 4 will be interpreted as SYS.  NVL is not supported using the legacy integer values.
+Values greater than 4 will be interpreted as SYS. NVL is not supported using the legacy integer values.
 
 NCCL_P2P_DIRECT_DISABLE
 -----------------------
@@ -778,7 +778,7 @@ Define and set to 1 to disable direct user buffer access across GPUs.
 
 NCCL_SHM_DISABLE
 ----------------
-The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used.  NCCL will use the network (i.e. InfiniBand or IP sockets) to communicate between the CPU sockets when SHM is disabled.
+The ``NCCL_SHM_DISABLE`` variable disables the Shared Memory (SHM) transports. SHM is used between devices when peer-to-peer cannot happen, therefore, host memory is used. NCCL will use the network (i.e. InfiniBand or IP sockets) to communicate between the CPU sockets when SHM is disabled.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -1022,7 +1022,7 @@ NCCL_CUMEM_HOST_ENABLE
 ----------------------
 (since 2.23)
 
-Use CUDA cuMem* functions to allocate host memory in NCCL.  See :ref:`cuMem_host_allocations` for more information.
+Use CUDA cuMem* functions to allocate host memory in NCCL. See :ref:`cuMem_host_allocations` for more information.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -1049,9 +1049,9 @@ Values accepted
 
 Integer Values (Legacy)
 ^^^^^^^^^^^^^^^^^^^^^^^
-There is also the option to declare ``NCCL_NET_GDR_LEVEL`` as an integer corresponding to the path type.  These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
+There is also the option to declare ``NCCL_NET_GDR_LEVEL`` as an integer corresponding to the path type. These numerical values were kept for retro-compatibility, for those who used numerical values before strings were allowed.
 
-Integer values are discouraged due to breaking changes in path types - the literal values can change over time.  To avoid headaches debugging your configuration, use string identifiers.
+Integer values are discouraged due to breaking changes in path types - the literal values can change over time. To avoid headaches debugging your configuration, use string identifiers.
 
 - LOC : 0
 - PIX : 1
@@ -1413,8 +1413,8 @@ NCCL_ALLOC_P2P_NET_LL_BUFFERS
 -----------------------------
 (since 2.14)
 
-``NCCL_ALLOC_P2P_NET_LL_BUFFERS`` instructs communicators to allocate dedicated LL buffers for all P2P network connections.  This enables all ranks to use the LL protocol for latency-bound send and receive operations below ``NCCL_P2P_LL_THRESHOLD`` sizes.
-Intranode P2P transfers always have dedicated LL buffers allocated.  If running all-to-all workloads with high numbers of ranks, this will result in a high scaling memory overhead.
+``NCCL_ALLOC_P2P_NET_LL_BUFFERS`` instructs communicators to allocate dedicated LL buffers for all P2P network connections. This enables all ranks to use the LL protocol for latency-bound send and receive operations below ``NCCL_P2P_LL_THRESHOLD`` sizes.
+Intranode P2P transfers always have dedicated LL buffers allocated. If running all-to-all workloads with high numbers of ranks, this will result in a high scaling memory overhead.
 
 Values accepted
 ^^^^^^^^^^^^^^^
@@ -1582,10 +1582,10 @@ NCCL_RAS_ADDR
 -------------
 (since 2.24)
 
-Specify the IP address and port number of a socket that the RAS subsystem will listen on for client connections.  RAS
+Specify the IP address and port number of a socket that the RAS subsystem will listen on for client connections. RAS
 can share this socket between multiple processes but that would not be desirable if multiple independent NCCL jobs share
-a single node (and if those jobs belong to different users, the OS will not allow the socket to be shared).  In such
-cases, each job should be started with a different value (e.g., ``localhost:12345``, ``localhost:12346``, etc.).  Since
+a single node (and if those jobs belong to different users, the OS will not allow the socket to be shared). In such
+cases, each job should be started with a different value (e.g., ``localhost:12345``, ``localhost:12346``, etc.). Since
 ``localhost`` is normally used, only those with access to the nodes where the job is running can connect to the socket.
 If desired, the address of an externally accessible network interface can be specified instead, which will make RAS
 accessible from other nodes (such as a cluster's head node), but that has security implications that should be
@@ -1594,18 +1594,18 @@ considered.
 Values accepted
 ^^^^^^^^^^^^^^^
 
-Default is ``localhost:28028``.  Either a host name or an IP address can be used for the first part; an IPv6 address
+Default is ``localhost:28028``. Either a host name or an IP address can be used for the first part; an IPv6 address
 needs to be enclosed in square brackets (e.g., ``[::1]``).
 
 NCCL_RAS_TIMEOUT_FACTOR
 -----------------------
 (since 2.24)
 
-Specify the multiplier factor to apply to all the timeouts of the RAS subsystem.  RAS relies on multiple timeouts,
+Specify the multiplier factor to apply to all the timeouts of the RAS subsystem. RAS relies on multiple timeouts,
 ranging from 5 to 60 seconds, to determine the state of the application and to maintain its internal communication, with
-complex interdependecies between different timeouts.  This variable can be used to scale up all these timeouts in a
+complex interdependencies between different timeouts. This variable can be used to scale up all these timeouts in a
 safe, consistent manner, should any of the defaults turn out to be too small; e.g., if the NCCL application is subject
-to high-overhead debugging/tracing/etc., which makes its execution less predictable.  If one wants to use the
+to high-overhead debugging/tracing/etc., which makes its execution less predictable. If one wants to use the
 ``ncclras`` client in such circumstances, its timeout may need to be increased as well (or disabled).
 
 Values accepted

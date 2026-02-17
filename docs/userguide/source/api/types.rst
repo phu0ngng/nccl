@@ -16,7 +16,7 @@ ncclResult_t
 
 .. c:type:: ncclResult_t
 
- Return values for all NCCL functions. Possible values are :
+ Return values for all NCCL functions. Possible values are:
 
  .. c:macro:: ncclSuccess
 
@@ -173,7 +173,7 @@ ncclScalarResidence_t
 
  .. c:macro:: ncclScalarHostImmediate
 
-  The scalar resides in host memory and should be derefenced in the most immediate
+  The scalar resides in host memory and should be dereferenced in the most immediate
   way.
 
  .. c:macro:: ncclScalarDevice

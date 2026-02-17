@@ -86,7 +86,7 @@ ncclAlltoAll
 
  Each rank sends ``count`` values to all other ranks and receives ``count`` values from all other ranks. Data to send to destination rank ``j`` is taken from ``sendbuff+j*count`` and data received from source rank ``i`` is placed at ``recvbuff+i*count``.
 
- Note: This assumes the both total send and receive count is equal to ``nranks*count``, which means that ``sendbuff`` and ``recvbuff`` should have a size of at least ``nranks*count`` elements.
+ Note: This assumes both the total send and receive count is equal to ``nranks*count``, which means that ``sendbuff`` and ``recvbuff`` should have a size of at least ``nranks*count`` elements.
 
  In-place operation is currently not supported.
 

@@ -7,7 +7,7 @@ Group Calls
 Group functions (ncclGroupStart/ncclGroupEnd) can be used to merge multiple calls into one. This is needed for
 three purposes: managing multiple GPUs from one thread (to avoid deadlocks), aggregating communication operations
 to improve performance, or merging multiple send/receive point-to-point operations (see :ref:`point-to-point`
-section). All three usages can be combined together, with one exception : calls to :c:func:`ncclCommInitRank`
+section). All three usages can be combined together, with one exception: calls to :c:func:`ncclCommInitRank`
 cannot be merged with others.
 
 Management Of Multiple GPUs From One Thread
@@ -79,9 +79,9 @@ In the following example, we launch one broadcast and two allReduce operations t
  ncclGroupEnd();
 
 It is permitted to combine aggregation with multi-GPU launch and use different communicators in a group launch
-as shown in the Management Of Multiple GPUs From One Thread topic.  When combining multi-GPU launch and aggregation,
+as shown in the Management Of Multiple GPUs From One Thread topic. When combining multi-GPU launch and aggregation,
 ncclGroupStart and ncclGroupEnd can be either used once or at each level. The following example groups the allReduce
-operations from different layers and on multiple CUDA devices :
+operations from different layers and on multiple CUDA devices:
 
 .. code:: C
 
@@ -131,7 +131,7 @@ are duplicated independent communicators that include rank 0 and 1.
  ncclAllReduce(sendbuff4, recvbuff4, count4, datatype, comm1, stream);
  ncclGroupEnd();
 
-However, changing the order of the any operations will lead to incorrect results or hang as shown in the following 2 examples:
+However, changing the order of any operations will lead to incorrect results or hang as shown in the following 2 examples:
 
 .. code:: C
 
