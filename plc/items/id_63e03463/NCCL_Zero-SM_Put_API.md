@@ -51,7 +51,12 @@ In summary, the overall goal is to provide a set of host-initiated one-sided API
 
 - **Latency & Message rate:** Our design aims to optimize latency and message rate within the scope of our design. However, achieving SOL latency and maximum message rates is not a primary requirement for two key reasons: First, the design prioritizes broad platform compatibility over hardware-specific optimizations that could improve latency. Second, we balance performance against implementation complexity to ensure maintainability and extensibility. The design should nevertheless provide a foundation for future latency and message rate optimizations.
 
-### Future and Beyond V2.29
+### Phasing Plan
+- **V2.29:** Achieve the functional requirements mentioned above except the graph support.
+
+- **V2.30:** Provide graph support of the one-sided APIs.
+
+### Future Extensions
 
 - **Latency & message rate optimizations:** While out of scope for this PLC, these optimizations are planned for the V2.29 release. The current proxy-based design leverages existing NCCL proxy threads, which introduces known performance overhead compared to dedicated threads. This limitation has been observed in proxy-assisted device-side API evaluations. A potential solution involves spawning dedicated threads specifically for zero-SM proxy processing, but this represents a larger implementation effort that will be addressed after the current PLC design is completed.
 
@@ -526,24 +531,126 @@ To verify data arrival, the user can call `ncclWaitSignal`, which internally use
 
 <img src="images/zero_sm_proxy.png" alt="zero-sm-proxy" width="800" height="500" />
 
+</details>
 
-### Zero-SM Put Graph Calls
+<!-- ============================================================================================-->
+<details>
+<summary><h2>Graph Support of One-sided APIs</h2></summary>
+<!-- ============================================================================================-->
 
-NCCL APIs support CUDA graph capture and execution. For zero-SM network operations, we need to adapt our synchronization mechanism to work correctly with CUDA graphs. The sequence number-based synchronization approach used for regular stream operations is incompatible with CUDA graphs. During graph capture, sequence numbers become fixed values that are baked into the graph. When the graph is executed multiple times, these sequence numbers do not increment between executions, causing the counter-based ready/done signal mechanism to fail. Specifically, each graph execution would wait for the same counter value, leading to incorrect synchronization behavior.
+NCCL APIs support CUDA graph capture and execution. For zero-SM one-sided operations, the synchronization mechanism must be adapted to work correctly with CUDA graphs.
 
-To address this limitation, we implement a flag-based synchronization protocol specifically designed for CUDA graphs:
+The sequence number-based synchronization used in regular stream operations is incompatible with CUDA graphs. During graph capture, the values passed to `cuStreamWriteValue` and `cuStreamWaitValue` are baked into the graph as static constants. On subsequent graph replays, these values are not re-evaluated and the graph simply replays the same write and wait operations with the same fixed values. As a result, the monotonically incrementing sequence numbers used for ready/done signaling do not advance between executions, causing the synchronization protocol to fail.
 
-- **Ready Signal**: Instead of writing an incrementing sequence number, the main thread sets the ready flag to 1 using `cuStreamWriteValue`. This indicates that the operation is ready to be processed by the proxy thread.
+### Graph Support of Zero-SM Put Over Network
 
-- **Proxy Polling**: The proxy thread polls the ready signal, waiting for it to become true (value 1) before initiating the network operation.
+#### Design Alternatives Considered
 
-- **Completion Signal**: The main thread issues a `cuStreamWaitValue` operation waiting for the done signal to be set to 1, which will be updated by the proxy thread upon operation completion.
+We evaluated several approaches before arriving at our chosen design:
 
-- **Signal Reset**: To prepare for subsequent graph executions, the main thread enqueues additional stream memory operations to reset both the ready and done signals back to 0. This ensures that each graph execution starts with clean signal states.
+1. **`cudaGraphExecNodeSetParams`**: The CUDA API provides `cudaGraphExecNodeSetParams` to modify node parameters (including `cuStreamWriteValue`/`cuStreamWaitValue` values) between graph launches. However, this call must be made by the user between `cudaGraphLaunch` invocations. Since NCCL does not control the graph launch loop, this approach would leak implementation details to the user.
 
-This approach comes with the cost of additional signal reset operations. Therefore, we will use flag-based synchronization only for CUDA graph capture and execution and use sequence-based synchronization for other cases.
+2. **`cudaLaunchHostFunc` with spin-polling**: A host callback captured into the graph could replace `cuStreamWriteValue`/`cuStreamWaitValue` entirely. The callback would directly poll signals and block the stream until satisfied. This eliminates the static-value problem since the callback executes fresh code on each replay. However, `cudaLaunchHostFunc` currently incurs ~50 us launch latency due to OS scheduling overhead. A lower-latency variant (~5 us) is expected in the CUDA 13.3 timeframe, but this does not address our immediate needs.
+
+3. **Launching a polling kernel**: A single-SM kernel could replace `cuStreamWriteValue`/`cuStreamWaitValue`, polling flags directly from GPU. However, dedicating an SM solely for flag polling and writing conflicts with the zero-SM design goal.
+
+#### Proposed Approach: Proxy with Flag-Based Synchronization
+
+We adopt a flag-based synchronization protocol that replaces incrementing sequence numbers with static boolean flags (0 and 1), which are compatible with CUDA graph capture. The key insight is that if both the write value and wait value are always the same constants, the graph can replay them indefinitely, provided the flags are reset between uses.
+
+##### Active Side (Sender)
+
+The active side uses a ready/done handshake between the GPU stream and the proxy thread:
+
+1. **Ready flag write**: The main thread enqueues a `cuStreamWriteValue` that sets the ready flag to 1. Because `cuStreamWriteValue` is stream-ordered, the write only executes after all preceding operations on the stream complete. This ensures the proxy does not begin the network transfer until upstream data-producing kernels have finished.
+
+2. **Proxy processing**: The proxy thread continuously polls the ready flag. When it observes `ready == 1`, it resets the flag to 0 and initiates the network operation (data transfer and remote signal update).
+
+3. **Done flag wait**: The main thread also enqueues a `cuStreamWaitValue` that waits for the done flag to equal 1. The proxy thread sets `done = 1` after the network operation completes, unblocking the stream and allowing downstream operations to proceed.
+
+4. **Done flag reset**: After the wait retires, the main thread enqueues a `cuStreamWriteValue` to reset the done flag back to 0, preparing for the next graph replay.
+
+The ordering chain across consecutive graph replays:
+
+```
+Proxy sees ready==1 -> Proxy resets ready=0 -> Proxy completes network op -> Proxy sets done=1
+-> GPU wait(done>=1) retires -> GPU resets done=0 -> (next replay) GPU sets ready=1 -> ...
+```
+
+##### Passive Side (Receiver)
+
+In the non-graph case, the passive side uses `cuStreamWaitValue` directly on the remote signal to detect data arrival, with no proxy involvement. In graph mode, this is not possible because the wait value is dynamic. Instead, the passive side uses the same flag-based ready/done handshake, with the proxy polling the actual remote signal and tracking the expected value across graph replays using persistent state.
 
 <img src="images/zero_sm_proxy_graph.png" alt="zero-sm-proxy" width="800" height="500" />
+
+##### Design Implications
+
+This approach introduces several considerations compared to the non-graph path:
+
+1. **Additional reset operations**: The flag-based protocol requires extra `cuStreamWriteValue` operations to reset flags between replays. While these can be batched with other stream memory operations to reduce overhead, they still add latency compared to the sequence-based approach. Flag-based synchronization is therefore used only during CUDA graph capture and execution; the more efficient sequence-based synchronization is retained for non-graph operations.
+
+2. **Proxy involvement on the passive side**: In non-graph execution, the passive side performs a direct `cuStreamWaitValue` on the remote signal with no CPU involvement. In graph mode, the proxy must intermediate between the remote signal and the GPU stream, adding complexity and latency to the receive path.
+
+3. **Signal memory placement and PCIe ordering**: Because the proxy must poll the remote signal from CPU, the signal must reside in CPU-accessible memory rather than vidmem. Depending on platfrom configuration, this could be the sysmem. This creates a memory ordering concern: the NIC writes data to vidmem and the signal to sysmem via different PCIe paths (NIC-to-GPU and NIC-to-CPU respectively). Observing the signal on the CPU does not guarantee that the data has arrived at the GPU, as writes to different PCIe endpoints from the same requester are not ordered. Before unblocking the GPU stream, a PCIe flush may be required to ensure data visibility. If the `cuStreamWaitValue` polling on the done flag (in sysmem) issues a PCIe read whose response drains inflight NIC-to-GPU writes, no explicit flush is needed. Otherwise, the proxy must perform an explicit flush -- such as a GDR Copy PCIe read or a network plugin `iflush` (RDMA read loopback) -- before setting the done flag. This is an open question pending confirmation from the GPU architecture team.
+
+### Graph Support of Zero-SM Put Over NVL
+
+The same static-value challenge applies to graph support of zero-SM over NVL, but the solution differs because NVLink operations are fully GPU-driven and do not involve a proxy thread.
+
+In the non-graph case, the active side uses `cudaMemcpyAsync` to write data and signal to the remote peer, and the passive side issues a `cuStreamWaitValue` on the signal. The signal is a monotonically incrementing sequence number.
+
+In graph mode, we adopt a flag-based reset-and-acknowledge protocol that uses two flags per sender-receiver pair, both with static values compatible with graph capture:
+
+- **Signal flag**: Resides in the receiver's memory. Written by the sender (via NVLink CE) to indicate data arrival. Reset by the receiver after consumption.
+- **Ack flag**: Resides in the sender's memory. Written by the receiver (via NVLink CE) to indicate the signal has been consumed and reset. Initialized to 1 so the sender can proceed on the first iteration.
+
+##### Active Side (Sender)
+
+1. `cuStreamWaitValue(ack_flag, 1, GEQ)` -- wait for the receiver's acknowledgment that the previous signal was consumed and reset.
+2. `cuStreamWriteValue(ack_flag, 0)` -- reset the ack flag locally (safe, since we just consumed it).
+3. `cudaMemcpyAsync` -- transfer data to the receiver's buffer via NVLink.
+4. `cudaMemcpyAsync` -- write signal flag = 1 to the receiver's signal buffer via NVLink.
+
+##### Passive Side (Receiver)
+
+1. `cuStreamWaitValue(signal_flag, 1, GEQ)` -- wait for the sender's data and signal to arrive.
+2. `cuStreamWriteValue(signal_flag, 0)` -- reset the signal flag locally.
+3. (downstream kernels consume the data)
+4. `cudaMemcpyAsync` -- write ack flag = 1 to the sender's ack buffer via NVLink.
+
+All write and wait values are constants (0 and 1), making the protocol fully graph-capturable. The correctness across consecutive graph replays relies on the ordering chain:
+
+```
+Sender waits ack -> Sender resets ack -> Sender writes data -> Sender writes signal=1
+-> Receiver waits signal -> Receiver resets signal -> Receiver writes ack=1
+-> (next replay) Sender waits ack -> ...
+```
+
+Each reset is protected by a wait on the other flag, preventing any flag from being overwritten before it has been consumed.
+
+<img src="images/zero_sm_ce_graph.png" alt="zero-sm-ce" width="800" height="500" />
+
+
+##### Design Implications
+
+1. **NVLink round-trip overhead**: The ack flag introduces one additional NVLink write per operation (receiver to sender). Since NVLink latency is low (~1-2 us), this overhead is acceptable for graph-amortized workloads.
+
+2. **Message rate**: The reset-and-ack protocol serializes consecutive put operations to the same peer, the sender must wait for the receiver's ack before issuing the next put, preventing pipelining of back-to-back transfers to a single destination. However, operations targeting different peers remain fully independent and can proceed concurrently. In typical usage patterns where put operations are interleaved with compute (e.g., put-compute-put), the ack latency is hidden by the intervening computation, making the impact negligible.
+
+#### Future Optimizations
+
+The complexity of the graph protocols described above stems from a single root cause: `cuStreamWaitValue` compares against an absolute value that is fixed at graph capture time and does not change across graph replays.
+
+The **write side** of this problem is already addressed. CUDA provides `CU_STREAM_MEM_OP_ATOMIC_REDUCTION` with `CU_ATOMIC_OPERATION_INTEGER_ADD`, which allows a graph-captured `cuStreamWriteValue` to atomically add a fixed delta to a memory location on each replay. This could be used to produce an incrementing counter without any host intervention.
+
+The **wait side** has no equivalent capability. `cuStreamWaitValue` always compares the memory location against the same absolute value that was captured into the graph. There is no way to express "wait until this location has increased by N relative to the value observed at the previous wait retirement."
+
+If a relative-comparison variant of `cuStreamWaitValue` were available, the graph support design would simplify to:
+
+- **Sender**: `cuStreamWriteValue` with `CU_ATOMIC_OPERATION_INTEGER_ADD` increments the remote signal by 1 on each replay (already supported).
+- **Receiver**: relative `cuStreamWaitValue` waits for the signal to advance by N from the last observed value, auto-tracking across replays.
+
+This would eliminate flag reset, ack flags, proxy involvement on the passive side, `cudaLaunchHostFunc` callbacks, signal memory placement in sysmem, and PCIe flush concerns, reducing both the network and NVLink graph protocols to a single write-wait pair identical to the non-graph path.
 
 <!-- ### Interface Architecture -->
 <!-- ### System KPIs & Metrics -->
