@@ -1460,7 +1460,65 @@ class Communicator:
 
         _nccl_bindings.signal(peer, sig_idx, ctx, flags, self._comm, get_stream_ptr(stream))
 
+    def put_signal(
+        self,
+        local_buffer: NcclBufferSpec,
+        peer: int,
+        peer_win: RegisteredWindowHandle,
+        peer_win_offset: int = 0,
+        *,
+        stream: NcclStreamSpec | None = None,
+    ) -> None:
+        """
+        Puts data from a local buffer to a peer rank and sends a signal to the aforementioned peer.
+
+        This function enqueues a put-with-signal operation on the specified CUDA stream that
+        transfers the local buffer contents to the target peer and notifies that peer. The
+        peer can wait for this signal (and thus for the put to complete) using :meth:`wait_signal`.
+        The peer's memory must be registered with :meth:`register_window`; pass the peer's
+        window handle as ``peer_win`` (e.g. from an allgather of window handles).
+
+        Args:
+            local_buffer (NcclBufferSpec): Source buffer whose contents are put to the peer.
+            peer (int): Target rank to put the data to and send the signal to.
+            peer_win (RegisteredHandleWindow): Peer's registered window handle (from :meth:`register_window`).
+            peer_win_offset (int): Offset in the peer's window in elements. Defaults to 0.
+            stream (NcclStreamSpec | None): CUDA stream to enqueue the put_signal operation on. Defaults to None (uses default stream).
+
+        Raises:
+            NcclInvalid: If communicator is not initialized, or if the buffer specification
+                is invalid or the buffer is on a different device than the communicator.
+
+        Example:
+            >>> # Put local buffer to peer rank 1 using their window handle
+            >>> comm.put_signal(local_buffer=my_buf, peer=1, peer_win=peer_win_handle, stream=stream)
+
+        See Also:
+            :meth:`wait_signal`: The method used by peers to wait for put_signal completion.
+            :meth:`signal`: Send a signal without transferring buffer data.
+            :meth:`register_window`: Register a buffer as a window for put_signal target.
+        """
+        self._check_valid("put_signal")
+
+        buffer = NcclBuffer(local_buffer)
+        self._validate_buffer_device(buffer, "local_buffer")
+
+        _nccl_bindings.put_signal(
+            buffer.ptr,
+            buffer.count,
+            int(buffer.dtype),
+            peer,
+            peer_win.handle,
+            int(peer_win_offset) * buffer.dtype.itemsize,
+            0,
+            0,
+            0,
+            self._comm,
+            get_stream_ptr(stream),
+        )
+
     # --- Collective Communication Operations ---
+
     def allreduce(
         self,
         sendbuf: NcclBufferSpec,

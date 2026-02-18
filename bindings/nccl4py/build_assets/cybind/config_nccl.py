@@ -168,6 +168,8 @@
             },
             'ncclSignal': {
             },
+            'ncclPutSignal': {
+            },
 
             # Group ops
             'ncclGroupStart': {

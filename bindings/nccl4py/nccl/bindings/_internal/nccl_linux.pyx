@@ -94,6 +94,7 @@ cdef void* __ncclGather = NULL
 cdef void* __ncclScatter = NULL
 cdef void* __ncclSend = NULL
 cdef void* __ncclRecv = NULL
+cdef void* __ncclPutSignal = NULL
 cdef void* __ncclSignal = NULL
 cdef void* __ncclWaitSignal = NULL
 cdef void* __ncclGroupStart = NULL
@@ -379,6 +380,13 @@ cdef int _check_or_init_nccl() except -1 nogil:
                 handle = load_library()
             __ncclRecv = dlsym(handle, 'ncclRecv')
 
+        global __ncclPutSignal
+        __ncclPutSignal = dlsym(RTLD_DEFAULT, 'ncclPutSignal')
+        if __ncclPutSignal == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclPutSignal = dlsym(handle, 'ncclPutSignal')
+
         global __ncclSignal
         __ncclSignal = dlsym(RTLD_DEFAULT, 'ncclSignal')
         if __ncclSignal == NULL:
@@ -556,6 +564,9 @@ cpdef dict _inspect_function_pointers():
 
     global __ncclRecv
     data["__ncclRecv"] = <intptr_t>__ncclRecv
+
+    global __ncclPutSignal
+    data["__ncclPutSignal"] = <intptr_t>__ncclPutSignal
 
     global __ncclSignal
     data["__ncclSignal"] = <intptr_t>__ncclSignal
@@ -954,6 +965,16 @@ cdef ncclResult_t _ncclRecv(void* recvbuff, size_t count, ncclDataType_t datatyp
             raise FunctionNotFoundError("function ncclRecv is not found")
     return (<ncclResult_t (*)(void*, size_t, ncclDataType_t, int, ncclComm_t, cudaStream_t) noexcept nogil>__ncclRecv)(
         recvbuff, count, datatype, peer, comm, stream)
+
+
+cdef ncclResult_t _ncclPutSignal(const void* localbuff, size_t count, ncclDataType_t datatype, int peer, ncclWindow_t peerWin, size_t peerWinOffset, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclPutSignal
+    _check_or_init_nccl()
+    if __ncclPutSignal == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclPutSignal is not found")
+    return (<ncclResult_t (*)(const void*, size_t, ncclDataType_t, int, ncclWindow_t, size_t, int, int, unsigned int, ncclComm_t, cudaStream_t) noexcept nogil>__ncclPutSignal)(
+        localbuff, count, datatype, peer, peerWin, peerWinOffset, sigIdx, ctx, flags, comm, stream)
 
 
 cdef ncclResult_t _ncclSignal(int peer, int sigIdx, int ctx, unsigned int flags, ncclComm_t comm, cudaStream_t stream) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:

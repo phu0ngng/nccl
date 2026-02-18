@@ -75,6 +75,7 @@ cpdef gather(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, i
 cpdef scatter(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream)
 cpdef send(intptr_t sendbuff, size_t count, int datatype, int peer, intptr_t comm, intptr_t stream)
 cpdef recv(intptr_t recvbuff, size_t count, int datatype, int peer, intptr_t comm, intptr_t stream)
+cpdef put_signal(intptr_t localbuff, size_t count, int datatype, int peer, intptr_t peer_win, size_t peer_win_offset, int sig_idx, int ctx, unsigned int flags, intptr_t comm, intptr_t stream)
 cpdef signal(int peer, int sig_idx, int ctx, unsigned int flags, intptr_t comm, intptr_t stream)
 cpdef wait_signal(int n_desc, intptr_t signal_descs, intptr_t comm, intptr_t stream)
 cpdef group_start()

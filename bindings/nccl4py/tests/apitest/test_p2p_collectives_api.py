@@ -646,6 +646,231 @@ def test_signal_multiple_descriptors(nccl_comm, rank_info, allocator):
     _sync(allocator)
 
 
+# --- PutSignal tests ---
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["interop.cupy"])
+def test_put_signal_basic(nccl_comm, rank_info, allocator):
+    """Test put_signal between paired ranks with direct destination window."""
+    self_rank = rank_info.nccl_rank
+    nranks = rank_info.nccl_size
+
+    if nranks % 2 != 0 and self_rank == nranks - 1:
+        pytest.skip("Odd number of ranks, skip last rank")
+
+    peer_rank = self_rank + 1 if self_rank % 2 == 0 else self_rank - 1
+    count = 8
+
+    # Source and destination buffers; both must be in symmetric windows for put_signal.
+    send_data = _allocate_buffer(
+        [peer_rank * 100 + i for i in range(count)],
+        "float32",
+        allocator,
+    )
+    recv_data = _allocate_buffer([0] * count, "float32", allocator)
+
+    # Register send then recv (same order on all ranks for symmetric handles).
+    send_win = nccl_comm.register_window(
+        send_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    recv_win = nccl_comm.register_window(
+        recv_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    if send_win is None or recv_win is None:
+        pytest.skip("Window registration not supported.")
+
+    nccl_comm.put_signal(
+        local_buffer=send_data, peer=peer_rank, peer_win=recv_win
+    )
+    nccl_comm.wait_signal([nccl.WaitSignalDesc(1, peer_rank, 0, 0)])
+
+    _sync(allocator)
+
+    # Peer wrote its payload into this rank's recv window (peer sent [self_rank*100+i]).
+    expected = np.array(
+        [self_rank * 100 + i for i in range(count)], dtype=np.float32
+    )
+    result = _to_numpy(recv_data)
+    assert np.allclose(result, expected), (
+        f"{allocator}: expected {expected}, got {result}"
+    )
+
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["interop.cupy"])
+def test_put_signal_with_offset(nccl_comm, rank_info, allocator):
+    """Test put_signal with non-zero peer window offset."""
+    self_rank = rank_info.nccl_rank
+    nranks = rank_info.nccl_size
+
+    if nranks % 2 != 0 and self_rank == nranks - 1:
+        pytest.skip("Odd number of ranks, skip last rank")
+
+    peer_rank = self_rank + 1 if self_rank % 2 == 0 else self_rank - 1
+    count = 6
+    offset = 3
+    total_count = count + offset + 2
+
+    send_list = [self_rank * 1000 + i for i in range(count)]
+    send_data = _allocate_buffer(send_list, "float32", allocator)
+    recv_data = _allocate_buffer([-1] * total_count, "float32", allocator)
+
+    send_win = nccl_comm.register_window(
+        send_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    recv_win = nccl_comm.register_window(
+        recv_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    if send_win is None or recv_win is None:
+        pytest.skip("Window registration not supported.")
+
+    nccl_comm.put_signal(
+        local_buffer=send_data,
+        peer=peer_rank,
+        peer_win=recv_win,
+        peer_win_offset=offset,
+    )
+    nccl_comm.wait_signal([nccl.WaitSignalDesc(1, peer_rank, 0, 0)])
+
+    _sync(allocator)
+
+    expected = np.full(total_count, -1, dtype=np.float32)
+    expected[offset : offset + count] = np.array(
+        [peer_rank * 1000 + i for i in range(count)], dtype=np.float32
+    )
+    result = _to_numpy(recv_data)
+    assert np.allclose(result, expected), (
+        f"{allocator}: expected {expected}, got {result}"
+    )
+
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["interop.cupy"])
+def test_put_signal_multiple(nccl_comm, rank_info, allocator):
+    """Test multiple put_signal calls in a group, wait for all with op_cnt."""
+    self_rank = rank_info.nccl_rank
+    nranks = rank_info.nccl_size
+
+    if nranks % 2 != 0 and self_rank == nranks - 1:
+        pytest.skip("Odd number of ranks, skip last rank")
+
+    peer_rank = self_rank + 1 if self_rank % 2 == 0 else self_rank - 1
+    count = 4
+    num_puts = 3
+
+    send_data = _allocate_buffer(
+        [peer_rank * 100 + i for i in range(count)], "float32", allocator
+    )
+    recv_data = _allocate_buffer([0] * (count * num_puts), "float32", allocator)
+
+    send_win = nccl_comm.register_window(
+        send_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    recv_win = nccl_comm.register_window(
+        recv_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    if send_win is None or recv_win is None:
+        pytest.skip("Window registration not supported.")
+
+    with nccl.group():
+        for p in range(num_puts):
+            nccl_comm.put_signal(
+                local_buffer=send_data,
+                peer=peer_rank,
+                peer_win=recv_win,
+                peer_win_offset=p * count,
+            )
+    nccl_comm.wait_signal(
+        [nccl.WaitSignalDesc(num_puts, peer_rank, 0, 0)], stream=0
+    )
+
+    _sync(allocator)
+
+    # Peer sent [self_rank*100+i] into our recv window.
+    expected_chunk = np.array(
+        [self_rank * 100 + i for i in range(count)], dtype=np.float32
+    )
+    result = _to_numpy(recv_data)
+    for p in range(num_puts):
+        chunk = result[p * count : (p + 1) * count]
+        assert np.allclose(chunk, expected_chunk), (
+            f"{allocator} put {p}: expected {expected_chunk}, got {chunk}"
+        )
+
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["interop.cupy"])
+def test_put_signal_ping_pong(nccl_comm, rank_info, allocator):
+    """Test ping-pong: rank0 put then wait, rank1 wait then put; two iterations with verification."""
+    self_rank = rank_info.nccl_rank
+    nranks = rank_info.nccl_size
+
+    if nranks != 2:
+        pytest.skip("Ping-pong test requires exactly 2 ranks")
+
+    peer_rank = 1 - self_rank
+    count = 8
+    num_iterations = 2
+
+    # Single send and recv buffers (symmetric reg requires fixed layout per rank).
+    send_data = _allocate_buffer([0] * count, "float32", allocator)
+    recv_data = _allocate_buffer([0] * count, "float32", allocator)
+
+    send_win = nccl_comm.register_window(
+        send_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    recv_win = nccl_comm.register_window(
+        recv_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    if send_win is None or recv_win is None:
+        pytest.skip("Window registration not supported.")
+
+    for iteration in range(num_iterations):
+        # Fill send buffer for this iteration.
+        payload = [self_rank * 1000 + iteration * 10 + i for i in range(count)]
+        if hasattr(send_data, "get"):  # CuPy
+            send_data.set(np.array(payload, dtype=np.float32))
+        else:
+            send_data.copy_(torch.tensor(payload, dtype=torch.float32, device="cuda"))
+        _sync(allocator)
+
+        if self_rank == 0:
+            nccl_comm.put_signal(
+                local_buffer=send_data,
+                peer=peer_rank,
+                peer_win=recv_win,
+                stream=0,
+            )
+            nccl_comm.wait_signal(
+                [nccl.WaitSignalDesc(1, peer_rank, 0, 0)], stream=0
+            )
+        else:
+            nccl_comm.wait_signal(
+                [nccl.WaitSignalDesc(1, peer_rank, 0, 0)], stream=0
+            )
+            nccl_comm.put_signal(
+                local_buffer=send_data,
+                peer=peer_rank,
+                peer_win=recv_win,
+                stream=0,
+            )
+        _sync(allocator)
+
+    # After two rounds: recv_data holds the last payload from peer (iteration 1); peer sent [self_rank*1000+10+i]
+    expected = np.array(
+        [peer_rank * 1000 + (num_iterations - 1) * 10 + i for i in range(count)],
+        dtype=np.float32
+    )
+    result = _to_numpy(recv_data)
+    assert np.allclose(result, expected), (
+        f"{allocator}: expected {expected}, got {result}"
+    )
+
+
 # --- Buffer specification and slicing tests ---
 
 @pytest.mark.mpi(min_size=2)

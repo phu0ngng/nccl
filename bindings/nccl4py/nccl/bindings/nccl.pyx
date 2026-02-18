@@ -3290,6 +3290,12 @@ cpdef recv(intptr_t recvbuff, size_t count, int datatype, int peer, intptr_t com
     check_status(__status__)
 
 
+cpdef put_signal(intptr_t localbuff, size_t count, int datatype, int peer, intptr_t peer_win, size_t peer_win_offset, int sig_idx, int ctx, unsigned int flags, intptr_t comm, intptr_t stream):
+    with nogil:
+        __status__ = ncclPutSignal(<const void*>localbuff, count, <_DataType>datatype, peer, <Window>peer_win, peer_win_offset, sig_idx, ctx, flags, <Comm>comm, <Stream>stream)
+    check_status(__status__)
+
+
 cpdef signal(int peer, int sig_idx, int ctx, unsigned int flags, intptr_t comm, intptr_t stream):
     with nogil:
         __status__ = ncclSignal(peer, sig_idx, ctx, flags, <Comm>comm, <Stream>stream)
