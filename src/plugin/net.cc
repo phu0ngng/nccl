@@ -145,7 +145,7 @@ ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, in
         return ncclInternalError;
       }
     default:
-      WARN("Unknown device code index %d \n", type);
+      WARN("Unknown device code index %d", type);
       return ncclInternalError;
   }
 

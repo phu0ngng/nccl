@@ -2417,10 +2417,10 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
 
   if (comm->initState == ncclSuccess) {
     if ((ret = ncclStrongStreamSynchronize(&comm->sharedRes->hostStream)) != ncclSuccess) {
-      WARN("commDestroySync: comm %p rank %d sync hostStream error %d\n", comm, comm->rank, ret);
+      WARN("commDestroySync: comm %p rank %d sync hostStream error %d", comm, comm->rank, ret);
     }
     if ((ret = ncclStrongStreamSynchronize(&comm->sharedRes->deviceStream)) != ncclSuccess) {
-      WARN("commDestroySync: comm %p rank %d sync deviceStream error %d\n", comm, comm->rank, ret);
+      WARN("commDestroySync: comm %p rank %d sync deviceStream error %d", comm, comm->rank, ret);
     }
 
     NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm, true), ret, fail);

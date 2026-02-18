@@ -248,7 +248,7 @@ static void getRequirements_gin(struct ncclComm* comm, int* out_nBlocks, size_t*
     int nBlocks = calcSatBlocks_ReduceScatter_RailA2A(comm, ldmc);
     if (comm->rank == 0) {
       double minLsaGinEffBw = std::min(lsaBw/lsaMul, ginBw/ginMul);
-      INFO(NCCL_TUNING, "ReduceScatter_RailA2A_Lsa%s : satblocks=%d bufsize=%d effbw=%g\n", ldmc ? "LDMC" : "LD", nBlocks, (int)bufSize, minLsaGinEffBw*smMul);
+      INFO(NCCL_TUNING, "ReduceScatter_RailA2A_Lsa%s : satblocks=%d bufsize=%d effbw=%g", ldmc ? "LDMC" : "LD", nBlocks, (int)bufSize, minLsaGinEffBw*smMul);
     }
     *out_nBlocks = std::max(*out_nBlocks, nBlocks);
     *out_bufSize = std::max(*out_bufSize, bufSize);
