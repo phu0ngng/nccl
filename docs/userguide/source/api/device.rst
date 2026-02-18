@@ -11,8 +11,10 @@ ncclDevComm
 .. c:type:: ncclDevComm
 
    A structure describing a device communicator, as created on the host side
-   using :c:func:`ncclDevCommCreate`.  The structure is used primarily on the
-   device side; elements that could be of particular interest include:
+   using :c:func:`ncclDevCommCreate`. The structure is used primarily on the
+   device side. In general, fields in this struct are considered internal and
+   should not be accessed by users. An exception is made for the following fields,
+   which are guaranteed to be stable across NCCL versions:
 
    .. c:member:: int rank
 
