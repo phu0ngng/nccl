@@ -102,9 +102,9 @@ ncclDevCommRequirements
    .. c:member:: ncclGinConnectionType_t ginConnectionType
 
       Specifies the type of GIN (GPU-Initiated Networking) connection to establish for the device communicator.
-      This field controls whether GIN is enabled and how it is configured. When set to
-      :c:macro:`NCCL_GIN_CONNECTION_FULL`, GIN functionality becomes available, allowing device-initiated one-sided
-      operations and network-based synchronization primitives. If GIN resources are requested via ``ginSignalCount``,
+      This field controls whether GIN is enabled and how it is configured. When set to :c:macro:`NCCL_GIN_CONNECTION_FULL`,
+      GIN is initialized and all ranks connect to all other ranks in the communicator. When set to :c:macro:`NCCL_GIN_CONNECTION_RAIL`,
+      GIN is initialized and each rank connects to other ranks in the same rail team. If GIN resources are requested via ``ginSignalCount``,
       ``ginCounterCount``, ``barrierCount``, or ``railGinBarrierCount`` while this field is set to
       :c:macro:`NCCL_GIN_CONNECTION_NONE`, device communicator creation will fail with :c:macro:`ncclInvalidArgument`.
       Available since NCCL 2.29.4.
@@ -162,11 +162,15 @@ ncclCommProperties_t
 
    .. c:member:: ncclGinType_t ginType
 
-      The GIN type supported by the communicator. If equal to :c:macro:`NCCL_GIN_TYPE_NONE`, a :c:type:`ncclDevComm` cannot be created with GIN resources.
+      The GIN type supported by the communicator. If equal to :c:macro:`NCCL_GIN_TYPE_NONE`, a :c:type:`ncclDevComm` cannot be created with GIN connection type :c:macro:`NCCL_GIN_CONNECTION_FULL`.
 
    .. c:member:: int nLsaTeams
 
-      The number of LSA teams across the entire communicator.
+      The number of LSA teams across the entire communicator. Available since NCCL 2.29.4.
+
+   .. c:member:: ncclGinType_t railedGinType
+
+      The railed GIN type supported by the communicator. If equal to :c:macro:`NCCL_GIN_TYPE_NONE`, a :c:type:`ncclDevComm` cannot be created with GIN connection type :c:macro:`NCCL_GIN_CONNECTION_RAIL`. Available since NCCL 2.29.4.
 
 
 ncclGinType_t
@@ -204,6 +208,10 @@ ncclGinConnectionType_t
    .. c:macro:: NCCL_GIN_CONNECTION_FULL
 
       Full GIN connectivity. Each rank is connected to all other ranks.
+
+   .. c:macro:: NCCL_GIN_CONNECTION_RAIL
+
+      Railed GIN connectivity. Each rank is connected to other ranks in the same rail team.
 
 LSA
 ===
@@ -453,7 +461,8 @@ ncclGin
 
       *peer* is a rank within *team* (see :ref:`devapi_teams`); it may refer to the local rank (a loopback).  The destination
       and source buffers are each specified using the window (*dstWnd*, *srcWnd*) and a byte-based offset (*dstOffset*,
-      *srcOffset*).  *bytes* specifies the data transfer count in bytes.
+      *srcOffset*).  *bytes* specifies the data transfer count in bytes. If GIN is initialized with connection 
+      type :c:macro:`NCCL_GIN_CONNECTION_RAIL`, *peer* must be within the same rail team as the local rank.
 
       Arguments beyond the first seven are optional.  *remoteAction* and *localAction* specify actions
       to undertake on the destination peer and on the local rank when the payload has been settled and the input has been
