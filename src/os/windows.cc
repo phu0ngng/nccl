@@ -76,6 +76,10 @@ ncclResult_t ncclOsInitialize() {
   return ncclSuccess;
 }
 
+ncclResult_t ncclOsSetFilesLimit() {
+    return ncclSuccess;
+}
+
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sockDescriptor) {
   return sockDescriptor != INVALID_SOCKET;
 }

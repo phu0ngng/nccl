@@ -101,6 +101,14 @@ ncclResult_t ncclOsInitialize() {
   return ncclSuccess;
 }
 
+ncclResult_t ncclOsSetFilesLimit() {
+  struct rlimit filesLimit;
+  SYSCHECK(getrlimit(RLIMIT_NOFILE, &filesLimit), "getrlimit");
+  filesLimit.rlim_cur = filesLimit.rlim_max;
+  SYSCHECK(setrlimit(RLIMIT_NOFILE, &filesLimit), "setrlimit");
+  return ncclSuccess;
+}
+
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sockDescriptor) {
   return sockDescriptor >= 0;
 }

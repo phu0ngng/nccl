@@ -39,6 +39,8 @@ uint64_t ncclOsGetTid();
 size_t ncclOsGetPageSize();
 ncclResult_t ncclOsInitialize();
 
+ncclResult_t ncclOsSetFilesLimit();
+
 /* Aligned memory allocation */
 void* ncclOsAlignedAlloc(size_t alignment, size_t size);
 void ncclOsAlignedFree(void* ptr);
