@@ -141,7 +141,7 @@ struct ncclTeamRequirements {
   NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH),  /* version */         \
 }
 
-typedef enum : uint8_t {
+typedef enum {
   NCCL_GIN_TYPE_NONE = 0,
   NCCL_GIN_TYPE_PROXY = 2, // intentially not 1. Must match NCCL_NET_DEVICE_GIN_PROXY for backward compatibility
   NCCL_GIN_TYPE_GDAKI = 3, // intentially not 2. Must match NCCL_NET_DEVICE_GIN_GDAKI for backward compatibility
