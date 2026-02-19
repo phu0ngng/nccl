@@ -40,7 +40,6 @@ endif
 dev: check-cuda
 	@echo "Installing nccl4py with cu$(CUDA_MAJOR) extra and test dependencies..."
 	cd $(NCCL4PY_DIR) && $(UV) sync --group test --extra cu$(CUDA_MAJOR)
-	cd $(NCCL4PY_DIR) && $(UV) pip install -e .[cu$(CUDA_MAJOR)]
 	cd $(NCCL4PY_DIR) && $(UV) pip install -i $(PYTORCH_INDEX_URL) torch
 	cd $(NCCL4PY_DIR) && $(UV) pip install cupy-cuda$(CUDA_MAJOR)x
 
