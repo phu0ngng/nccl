@@ -670,9 +670,11 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
       WARN("NET/IB: %s: Sender expected a 'send' request but got '%s' (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.opcode=%s(%d), wc.qp_num=%u)", __func__, ncclIbReqTypeStr[req->type], req, commBase, req->id, wc->wr_id, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num);
       return ncclInternalError;
     }
+    struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)commBase;
+    struct ncclIbRequest* sendReq = NULL;
+    int slot = req->id % NET_IB_MAX_REQUESTS;
     for (int j = 0; j < req->nreqs; j++) {
-      struct ncclIbRequest* sendReq = NULL;
-      NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
+      sendReq = sendComm->sendReqs[slot][j];
       if (!commBase->resiliency && (sendReq->events[devIndex] <= 0)) {
         WARN("NET/IB: sendReq(%p)->events={%d,%d,%d,%d}, devIndex=%d, reqIdx=%d <= 0", sendReq, sendReq->events[0], sendReq->events[1], sendReq->events[2], sendReq->events[3], devIndex, j);
         return ncclInternalError;
