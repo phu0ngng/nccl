@@ -15,7 +15,7 @@ export NVTE_FUSED_ATTN=0  # Disable cuDNN fused attention.
 export NCCL_DEBUG=INFO
 
 # NCCL Inspector Configuration
-export NCCL_PROFILER_PLUGIN=/path/to/nccl/ext-profiler/inspector/libnccl-profiler-inspector.so
+export NCCL_PROFILER_PLUGIN=/path/to/nccl/plugins/profiler/inspector/libnccl-profiler-inspector.so
 export NCCL_INSPECTOR_ENABLE=1
 export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500
 export NCCL_INSPECTOR_DUMP_DIR=/path/to/logs/${SLURM_JOB_ID}/

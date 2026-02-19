@@ -9,7 +9,7 @@ BUILDDIR      = .
 
 # User-friendly check for sphinx-build
 ifeq ($(shell which $(SPHINXBUILD) >/dev/null 2>&1; echo $$?), 1)
-$(error The '$(SPHINXBUILD)' command was not found. Consider using "doc/build_docs.sh" script to  \
+$(error The '$(SPHINXBUILD)' command was not found. Consider using "docs/userguide/build_docs.sh" script to  \
 make a virtual environment with the preferred version of Sphinx and rtd-theme installed. \
 See README.md for details.)
 endif

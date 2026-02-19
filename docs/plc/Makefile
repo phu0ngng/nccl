@@ -11,4 +11,4 @@ plc:
 	$(MAKE) -C items $*
 
 clean:
-	rm -rf ../build/plc
+	rm -rf ../../build/plc

@@ -16,7 +16,7 @@ The wrapper follows a clean separation of concerns:
 ## File Structure
 
 ```
-ext-profiler/inspector-internal/elastic/
+plugins/profiler/inspector-internal/elastic/
 ├── kibana_wrapper.py          # Main wrapper script
 ├── requirements.txt           # Internal dependencies
 ├── kibana_config.ini         # Internal configuration
@@ -141,11 +141,11 @@ The wrapper produces the same output as the public exporter, plus:
 
 ```bash
 # Test without internal dependencies
-cd ext-profiler/inspector/exporter/elastic
+cd plugins/profiler/inspector/exporter/elastic
 python perf_summary_exporter_public.py --jobid <test_job>
 
 # Test with internal dependencies
-cd ext-profiler/inspector-internal/elastic
+cd plugins/profiler/inspector-internal/elastic
 python kibana_wrapper.py --jobid <test_job> --upload
 ```
 

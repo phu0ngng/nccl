@@ -5,16 +5,16 @@
 The easiest method, from the NCCL root directory:
 
 ```bash
-doc/build_docs.sh
+docs/userguide/build_docs.sh
 ```
 
 This automatically:
-- Creates/updates a Python virtual environment at `doc/.venv`
-- Installs the recommended pinned sphinx dependencies from `doc/requirements.txt`
+- Creates/updates a Python virtual environment at `docs/userguide/.venv`
+- Installs the recommended pinned sphinx dependencies from `docs/userguide/requirements.txt`
 - Builds HTML documentation using Make
 - Packages HTML documentation into a .zip file.
 
-The `doc/.venv` environment is persistent, but can be removed manually.  It is
+The `docs/userguide/.venv` environment is persistent, but can be removed manually.  It is
 automatically updated in case requirements.txt changes.
 
 Output: `build/doc/html/index.html` and `build/pkg/doc/nccl-doc_*.zip`
@@ -28,11 +28,11 @@ steps:
 
 ```bash
 # 1. Create and activate virtual environment
-python3 -m venv doc/.venv
-source doc/.venv/bin/activate
+python3 -m venv docs/userguide/.venv
+source docs/userguide/.venv/bin/activate
 
 # 2. Install dependencies
-pip install -r doc/requirements.txt
+pip install -r docs/userguide/requirements.txt
 
 # 3. Build documentation
 make pkg.doc.build
@@ -56,9 +56,9 @@ cmake --build . --target doc_build
 For other Sphinx output formats (using Makefile or wrapper script):
 
 ```bash
-doc/build_docs.sh linkcheck  # Check external links
-doc/build_docs.sh latex      # Build LaTeX/PDF
-doc/build_docs.sh man        # Build man pages
+docs/userguide/build_docs.sh linkcheck  # Check external links
+docs/userguide/build_docs.sh latex      # Build LaTeX/PDF
+docs/userguide/build_docs.sh man        # Build man pages
 ```
 
-Run `make -C doc help` to see all available targets.
+Run `make -C docs/userguide help` to see all available targets.

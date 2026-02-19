@@ -5,7 +5,7 @@ find_program(MAKE_EXECUTABLE make)
 find_program(ZIP_EXECUTABLE zip)
 
 # Set package directories
-set(DOCSRC "${CMAKE_SOURCE_DIR}/doc")
+set(DOCSRC "${CMAKE_SOURCE_DIR}/docs/userguide")
 set(DOCPREPDIR "${CMAKE_BINARY_DIR}/doc")
 set(PKGDIR "${CMAKE_BINARY_DIR}/pkg/doc")
 

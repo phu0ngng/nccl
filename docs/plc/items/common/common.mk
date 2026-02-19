@@ -1,4 +1,4 @@
-BUILDDIR?= $(abspath ../../../build/plc/items/$(ITEM))
+BUILDDIR?= $(abspath ../../../../build/plc/items/$(ITEM))
 
 VERBOSE ?= 0
 ifeq ($(VERBOSE), 0)

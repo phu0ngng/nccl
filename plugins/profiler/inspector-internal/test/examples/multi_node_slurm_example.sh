@@ -28,7 +28,7 @@ export NCCL_OUT_DIR=nccl_out_${SLURM_JOB_ID}
 mkdir -p ${NCCL_OUT_DIR}
 
 #NCCL Inspector
-export NCCL_PROFILER_PLUGIN=${NCCL_ROOT}/ext-profiler/inspector/libnccl-profiler-inspector.so
+export NCCL_PROFILER_PLUGIN=${NCCL_ROOT}/plugins/profiler/inspector/libnccl-profiler-inspector.so
 export NCCL_INSPECTOR_ENABLE=1
 export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500
 export NCCL_INSPECTOR_DUMP_DIR=${NCCL_OUT_DIR}/nccl_insp_out_${SLURM_JOB_ID}

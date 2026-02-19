@@ -26,7 +26,7 @@ Conversely, and to ease transition, NCCL can choose to support different plugin 
 
 ## Headers management
 
-To help users build plugins effortlessly, plugins should copy the `ncclEnv_vX` definitions they support to their internal includes. An example is shown in `ext-env/example/` where we keep all headers in the `nccl/` directory and provide thin layers to implement old versions on top of newer ones.
+To help users build plugins effortlessly, plugins should copy the `ncclEnv_vX` definitions they support to their internal includes. An example is shown in `plugins/env/example/` where we keep all headers in the `nccl/` directory and provide thin layers to implement old versions on top of newer ones.
 
 The `nccl/` directory is populated with `env_vX.h` files extracting all relevant definitions from old API versions. It also provides error codes in `err.h`.
 

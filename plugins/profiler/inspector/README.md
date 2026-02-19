@@ -11,7 +11,7 @@ The NCCL Inspector is a plugin for the NVIDIA Collective Communications Library 
 The Inspector plugin source is located in:
 
 ```
-ext-profiler/inspector/
+plugins/profiler/inspector/
 ```
 
 ## Building the Inspector Plugin
@@ -58,7 +58,7 @@ The main difference between running NCCL with the Inspector plugin versus runnin
 **NCCL Inspector Run:**
 ```bash
 # NCCL Inspector enabled execution
-export NCCL_PROFILER_PLUGIN=/path/to/nccl/ext-profiler/inspector/libnccl-profiler-inspector.so
+export NCCL_PROFILER_PLUGIN=/path/to/nccl/plugins/profiler/inspector/libnccl-profiler-inspector.so
 export NCCL_INSPECTOR_ENABLE=1
 export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500
 ./your_nccl_application
@@ -66,7 +66,7 @@ export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500
 
 ### Required Environment Variables
 
-- `NCCL_PROFILER_PLUGIN=/path/to/nccl/ext-profiler/inspector/libnccl-profiler-inspector.so`
+- `NCCL_PROFILER_PLUGIN=/path/to/nccl/plugins/profiler/inspector/libnccl-profiler-inspector.so`
   Loads the Inspector plugin into NCCL.
 - `NCCL_INSPECTOR_ENABLE=1`
   Enables the Inspector plugin.
@@ -107,7 +107,7 @@ Inspector messages will appear with your configured NCCL_DEBUG level and will sh
 
 **Single Node:**
 ```bash
-export NCCL_PROFILER_PLUGIN=/path/to/nccl/ext-profiler/inspector/libnccl-profiler-inspector.so
+export NCCL_PROFILER_PLUGIN=/path/to/nccl/plugins/profiler/inspector/libnccl-profiler-inspector.so
 export NCCL_INSPECTOR_ENABLE=1
 export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500
 ./build/test/perf/all_reduce_perf -b 8 -e 16G -f 2 -g 8
@@ -116,7 +116,7 @@ export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500
 **Multi-Node (SLURM):**
 ```bash
 # Add these environment variables to your SLURM script
-export NCCL_PROFILER_PLUGIN=/path/to/nccl/ext-profiler/inspector/libnccl-profiler-inspector.so
+export NCCL_PROFILER_PLUGIN=/path/to/nccl/plugins/profiler/inspector/libnccl-profiler-inspector.so
 export NCCL_INSPECTOR_ENABLE=1
 export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500
 export NCCL_INSPECTOR_DUMP_DIR=/path/to/logs/${SLURM_JOB_ID}/
@@ -129,7 +129,7 @@ srun your_nccl_application
 
 **Example Prometheus Setup:**
 ```bash
-export NCCL_PROFILER_PLUGIN=/path/to/nccl/ext-profiler/inspector/libnccl-profiler-inspector.so
+export NCCL_PROFILER_PLUGIN=/path/to/nccl/plugins/profiler/inspector/libnccl-profiler-inspector.so
 export NCCL_INSPECTOR_ENABLE=1
 export NCCL_INSPECTOR_PROM_DUMP=1
 export NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=30000000  # 30 seconds
@@ -273,5 +273,5 @@ The size of output files depends on the output format and usage patterns:
 ## Additional Notes
 
 - The plugin is compatible with standard NCCL workflows and can be used in both single-node and multi-node (SLURM) environments.
-- For more details, see the source code and comments in `ext-profiler/inspector/`.
+- For more details, see the source code and comments in `plugins/profiler/inspector/`.
 

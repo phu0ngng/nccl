@@ -275,7 +275,7 @@ if(BUILD_SRCTXZ_PACKAGE OR BUILD_PACKAGES)
 endif()
 
 if(BUILD_DOC_PACKAGE OR BUILD_PACKAGES)
-  add_subdirectory(pkg/docs/userguide)
+  add_subdirectory(pkg/doc)
 endif()
 
 if(EMIT_LLVM_IR)
