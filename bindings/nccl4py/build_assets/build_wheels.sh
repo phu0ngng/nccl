@@ -21,7 +21,7 @@ fi
 # Get directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NCCL4PY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$NCCL4PY_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$NCCL4PY_DIR/../.." && pwd)"
 BUILDDIR="${BUILDDIR:-$REPO_ROOT/build}"
 DIST_DIR="$BUILDDIR/dist"
 

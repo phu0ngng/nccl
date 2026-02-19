@@ -39,7 +39,7 @@ for python_target in "${python_targets[@]}"; do
 
     venv=$nccl4py_venv_home/nccl4py_${python_target}_venv
     set -x
-    uv venv --no-project --seed --python=$python_target $venv
+    uv venv --clear --no-project --seed --python=$python_target $venv
     set +x
     echo "Initialized venv at: $venv"
 
