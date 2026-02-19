@@ -224,7 +224,9 @@ static ncclResult_t ncclIbResiliencyRepostRequest(struct ncclIbRequest* request)
 
 static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbResiliency* resCtx, struct ibv_wc* wc, int devIndex) {
   INFO(NCCL_NET,"NET/IB: %s: Handling an error on the receiver side (comm %p)", __func__, resCtx->baseComm);
-  if ((wc->wr_id < 0 || wc->wr_id > NET_IB_MAX_REQUESTS) && wc->wr_id != NCCL_IB_RECV_WR_ID_DUMMY) {
+  bool inRecvRange = (wc->wr_id >= 0 && wc->wr_id <= NET_IB_MAX_REQUESTS);
+  bool inFlushRange = (wc->wr_id >= NCCL_IB_FLUSH_REQ_WR_ID_OFFSET && wc->wr_id < (NCCL_IB_FLUSH_REQ_WR_ID_OFFSET + NET_IB_MAX_REQUESTS));
+  if (!inRecvRange && !inFlushRange && (wc->wr_id != NCCL_IB_RECV_WR_ID_DUMMY)) {
     WARN("NET/IB: %s: Invalid wr_id (%ld). Unable to retrieve a request on the receiver side (comm=%p)", __func__, wc->wr_id, resCtx->baseComm);
     return ncclInternalError;
   }
@@ -240,7 +242,15 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbR
   }
 
   ncclIbRequest* request = NULL;
-  ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wc->wr_id, &request);
+  uint64_t wrId = -1;
+  if (inFlushRange) {
+    // Completion for a flush request is offset by NCCL_IB_FLUSH_REQ_WR_ID_OFFSET
+    wrId = wc->wr_id - NCCL_IB_FLUSH_REQ_WR_ID_OFFSET;
+  } else {
+    // Completion for a CTS request or a data transfer request is not offset.
+    wrId = wc->wr_id;
+  }
+  ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wrId, &request);
 
   INFO(NCCL_NET, "NET/IB: %s: The receiver side request that got an error is %p (req=%p, comm=%p, id=%ld)", __func__, request, request, request->base, request->id);
 

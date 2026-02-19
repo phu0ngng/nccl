@@ -10,6 +10,10 @@
 
 #include "common.h"
 
+#define NCCL_IB_FLUSH_REQ_WR_ID_OFFSET 0x1000
+static_assert(NCCL_IB_FLUSH_REQ_WR_ID_OFFSET > NET_IB_MAX_REQUESTS, "wr_id offset for flush requests must be greater than NET_IB_MAX_REQUESTS");
+static_assert(NCCL_IB_FLUSH_REQ_WR_ID_OFFSET <= UINT64_MAX - NET_IB_MAX_REQUESTS, "wr_id for flush requests must fit in 64 bits since ibv_send_wr::wr_id is 64 bits");
+
 ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, struct ncclIbRequest* req, int slot);
 ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot);
 
