@@ -26,6 +26,7 @@
             # NCCL does not have valid doxygen docstrings...
             'docstrings': None,
             'need_headers_at_build': False,
+            'include_cybind_version': False,
         },
         # key: actual symbol name
         # alias: define'd or typedef'd name that we prefer users to use
