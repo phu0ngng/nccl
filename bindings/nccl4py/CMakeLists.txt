@@ -26,7 +26,7 @@ add_custom_target(
     "${UV_EXECUTABLE}" pip install -i "https://download.pytorch.org/whl/cu${CUDAToolkit_VERSION_MAJOR}${CUDAToolkit_VERSION_MINOR}" torch
   COMMAND
     ${CMAKE_COMMAND} -E env ${UV_ENV}
-    "${UV_EXECUTABLE}" pip install cupy-cuda${CUDAToolkit_VERSION_MAJOR}x
+    "${UV_EXECUTABLE}" pip install cupy-cuda${CUDAToolkit_VERSION_MAJOR}x~=13.6
   WORKING_DIRECTORY "${NCCL4PY_DIR}"
   COMMENT "Installing nccl4py with cu${CUDAToolkit_VERSION_MAJOR} extra and test dependencies"
 )
