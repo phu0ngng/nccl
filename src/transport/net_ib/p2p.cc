@@ -396,7 +396,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, struct ncclIbRequest* r
   // This works out that each CTS posting QP gets drained
   if (slot == ctsQp->devIndex || comm->base.resiliency) {
     wr.send_flags |= IBV_SEND_SIGNALED;
-    wr.wr_id = req - comm->base.reqs;
+    wr.wr_id = slot;
   }
 
   TRACE(NCCL_NET, "NET/IB: %s: Posting a CTS (req=%p, comm=%p, id=%ld, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d, qp_num=%u)", __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qp->qp_num);
@@ -452,7 +452,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
       continue;
     }
     // Post receive work request on the QP
-    comm->ibRecvWorkRequest.wr_id = req - comm->base.reqs;
+    comm->ibRecvWorkRequest.wr_id = slot;
     NCCLCHECK(ncclIbPostRecvWorkRequest(qp->qp, &comm->ibRecvWorkRequest));
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
@@ -570,6 +570,9 @@ static inline ncclResult_t ncclIbRequestRetrieveFromCompletion(struct ncclIbNetC
     *req = recvComm->recvReqs[be32toh(wc->imm_data) % NET_IB_MAX_REQUESTS];
   } else if (!base->isSend && wc->opcode == IBV_WC_RDMA_READ) { // Flush request completion
     NCCLCHECK(ncclIbRequestRetrieveAsIndex(base->reqs, (wc->wr_id - NCCL_IB_FLUSH_REQ_WR_ID_OFFSET), req));
+  } else if (!base->isSend) {
+    struct ncclIbRecvComm* recvComm = (struct ncclIbRecvComm*)base;
+    *req = recvComm->recvReqs[wc->wr_id];
   } else {
     struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)base;
     // On the sender side, the lower 8 bits of wr_id are used to retrieve the

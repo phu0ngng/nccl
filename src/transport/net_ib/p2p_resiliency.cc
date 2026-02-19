@@ -242,15 +242,13 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbR
   }
 
   ncclIbRequest* request = NULL;
-  uint64_t wrId = -1;
   if (inFlushRange) {
     // Completion for a flush request is offset by NCCL_IB_FLUSH_REQ_WR_ID_OFFSET
-    wrId = wc->wr_id - NCCL_IB_FLUSH_REQ_WR_ID_OFFSET;
+    ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wc->wr_id - NCCL_IB_FLUSH_REQ_WR_ID_OFFSET, &request);
   } else {
-    // Completion for a CTS request or a data transfer request is not offset.
-    wrId = wc->wr_id;
+    struct ncclIbRecvComm* recvComm = (struct ncclIbRecvComm*)resCtx->baseComm;
+    request = recvComm->recvReqs[wc->wr_id];
   }
-  ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wrId, &request);
 
   INFO(NCCL_NET, "NET/IB: %s: The receiver side request that got an error is %p (req=%p, comm=%p, id=%ld)", __func__, request, request, request->base, request->id);
 
