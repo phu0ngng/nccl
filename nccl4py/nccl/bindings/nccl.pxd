@@ -15,6 +15,8 @@ from .cynccl cimport *
 
 ctypedef ncclComm_t Comm
 ctypedef ncclWindow_t Window
+ctypedef ncclDevCommWindowTable_t DevCommWindowTable
+ctypedef ncclGinWindow_t GinWindow
 
 ctypedef cudaStream_t Stream
 
@@ -24,10 +26,13 @@ ctypedef cudaStream_t Stream
 ###############################################################################
 
 ctypedef ncclResult_t _Result
+ctypedef ncclCommMemStat_t _CommMemStat
 ctypedef ncclRedOp_dummy_t _RedOp_dummy
 ctypedef ncclRedOp_t _RedOp
 ctypedef ncclDataType_t _DataType
 ctypedef ncclScalarResidence_t _ScalarResidence
+ctypedef ncclGinType_t _GinType
+ctypedef ncclGinConnectionType_t _GinConnectionType
 
 
 ###############################################################################
@@ -75,3 +80,6 @@ cpdef wait_signal(int n_desc, intptr_t signal_descs, intptr_t comm, intptr_t str
 cpdef group_start()
 cpdef group_end()
 cpdef group_simulate_end(intptr_t sim_info)
+cpdef comm_query_properties(intptr_t comm, intptr_t props)
+cpdef dev_comm_create(intptr_t comm, intptr_t reqs, intptr_t out_dev_comm)
+cpdef dev_comm_destroy(intptr_t comm, intptr_t dev_comm)

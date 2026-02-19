@@ -10,7 +10,7 @@
                 ('2.28.0', ),
             ],
             # first one is the master header, the rest is for assisting parsing
-            'headers': ['nccl.h'],
+            'headers': ['nccl_device_expanded.h'],
             # see the docstring of process_prefix_suffix() for the expected patterns
             'patterns': {
                 'function': r'(^nccl)([A-Z].*)',
@@ -176,6 +176,12 @@
             },
             'ncclGroupSimulateEnd': {
             },
+            'ncclDevCommCreate': {
+            },
+            'ncclDevCommDestroy': {
+            },
+            'ncclCommQueryProperties': {
+            },
         },
         # use this to control the type apprearance at the lowpp level
         # this is used as WAR for current codegen limitations
@@ -184,6 +190,16 @@
             "ncclConfig_t": "AUTO_LOWPP_CLASS",
             "ncclSimInfo_t": "AUTO_LOWPP_CLASS",
             "ncclWaitSignalDesc_t": "AUTO_LOWPP_CLASS",
+            "ncclCommProperties_t": "AUTO_LOWPP_CLASS",
+            "ncclTeam_t": "AUTO_LOWPP_CLASS",
+            "ncclMultimemHandle_t": "AUTO_LOWPP_CLASS",
+            "ncclTeamRequirements_t": "AUTO_LOWPP_CLASS",
+            "ncclDevResourceRequirements_t": "AUTO_LOWPP_CLASS",
+            "ncclDevCommRequirements_t": "AUTO_LOWPP_CLASS",
+            "ncclGinBarrierHandle_t": "AUTO_LOWPP_CLASS",
+            "ncclLsaBarrierHandle_t": "AUTO_LOWPP_CLASS",
+            "ncclWindow_vidmem_t": "AUTO_LOWPP_CLASS",
+            "ncclDevComm_t": "AUTO_LOWPP_CLASS",
         },
         # map the enum values to their expected dtypes
         # this is very library-specific and needs the library developer to fill in
@@ -193,7 +209,10 @@
         # This is used to patch (processed) enums, in case the generated lowpp enumerator names
         # are not meeting the expectation.
         'enums': {
-            "^nccl": "", "^Scalar": "",
+            "^nccl": "",
+            "^Scalar": "",
+            "^Stat": "",
+            "^GIN_CONNECTION_": "",
         },
     },
 }

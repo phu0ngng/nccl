@@ -173,3 +173,15 @@ cdef ncclResult_t ncclGroupEnd() except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nog
 
 cdef ncclResult_t ncclGroupSimulateEnd(ncclSimInfo_t* simInfo) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     return _nccl._ncclGroupSimulateEnd(simInfo)
+
+
+cdef ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* props) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    return _nccl._ncclCommQueryProperties(comm, props)
+
+
+cdef ncclResult_t ncclDevCommCreate(ncclComm_t comm, const ncclDevCommRequirements_t* reqs, ncclDevComm_t* outDevComm) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    return _nccl._ncclDevCommCreate(comm, reqs, outDevComm)
+
+
+cdef ncclResult_t ncclDevCommDestroy(ncclComm_t comm, const ncclDevComm_t* devComm) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    return _nccl._ncclDevCommDestroy(comm, devComm)

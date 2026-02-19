@@ -1,0 +1,15 @@
+# Requirements for generate_header.py
+# Install with: pip install -r requirements.txt
+
+# Clang Python bindings for parsing C headers
+libclang>=16.0
+
+# Graph analysis and visualization
+networkx>=3.0
+matplotlib>=3.5
+pydot>=1.4
+
+# Note: graphviz (system package) is also required for graph layout
+# Install with: apt-get install graphviz (Ubuntu/Debian)
+#           or: brew install graphviz (macOS)
+#           or: yum install graphviz (RHEL/CentOS)

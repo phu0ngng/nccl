@@ -25,6 +25,7 @@ __all__ = [
     "RegisteredBufferHandle",
     "RegisteredWindowHandle",
     "CustomRedOp",
+    "DevCommResource",
 ]
 
 
@@ -394,3 +395,53 @@ class CustomRedOp(CommResource):
         if not self.is_valid:
             return "<CustomRedOp: closed>"
         return f"<CustomRedOp: type=PreMulSum, dtype={self._datatype}, residence={self._residence.name}, op={self._op}>"
+
+
+class DevCommResource(CommResource):
+    """
+    NCCL device communicator resource for device-side operations.
+
+    Wraps ncclDevComm_t and manages its lifecycle. The device communicator
+    is automatically destroyed when the parent communicator is destroyed or aborted.
+
+    Attributes:
+        dev_comm: The underlying DevComm Cython object.
+        ptr: Pointer to the ncclDevComm_t structure.
+    """
+
+    def __init__(self, comm_ptr: int, requirements_ptr: int):
+        self._requirements_ptr = requirements_ptr
+        self._dev_comm: _nccl_bindings.DevComm | None = None
+        super().__init__(comm_ptr)
+        self._allocate()
+
+    def _allocate(self) -> None:
+        """Creates device communicator via ncclDevCommCreate."""
+        # Allocate DevComm struct first
+        self._dev_comm = _nccl_bindings.DevComm()
+        # Pass pointer to dev_comm_create to initialize it
+        _nccl_bindings.dev_comm_create(self._comm_ptr, self._requirements_ptr, self._dev_comm.ptr)
+
+    def _deallocate(self) -> None:
+        """Destroys device communicator via ncclDevCommDestroy."""
+        if self._dev_comm is not None:
+            _nccl_bindings.dev_comm_destroy(self._comm_ptr, self._dev_comm.ptr)
+            self._dev_comm = None
+
+    @property
+    def dev_comm(self) -> _nccl_bindings.DevComm:
+        """DevComm object wrapping ncclDevComm_t."""
+        self._check_valid()
+        if self._dev_comm is None:
+            raise RuntimeError("DevComm is invalid")
+        return self._dev_comm
+
+    @property
+    def ptr(self) -> int:
+        """Pointer to the ncclDevComm_t structure."""
+        return self.dev_comm.ptr
+
+    def __repr__(self) -> str:
+        if not self.is_valid:
+            return "<DevCommResource: closed>"
+        return f"<DevCommResource: ptr={self.ptr:#x}>"

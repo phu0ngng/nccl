@@ -534,3 +534,123 @@ def test_device_property_returns_communicator_device(uid_shared, rank_info):
 
     # Switch back to assigned device for cleanup
     comm_device.set_current()
+
+
+@requires_nccl_version("2.28.0")
+@pytest.mark.mpi
+def test_create_dev_comm_default(nccl_comm):
+    """Test creating device communicator with default requirements."""
+    if not nccl_comm.device_api_support:
+        pytest.skip("Device doesn't support device API")
+
+    dev_comm = nccl_comm.create_dev_comm()
+
+    assert dev_comm.is_valid
+    assert dev_comm.ptr != 0
+
+    dev_comm.close()
+    assert not dev_comm.is_valid
+
+
+@requires_nccl_version("2.28.0")
+@pytest.mark.mpi
+def test_create_dev_comm_with_requirements(nccl_comm):
+    """Test creating device communicator with custom requirements."""
+    if not nccl_comm.device_api_support:
+        pytest.skip("Device doesn't support device API")
+
+    reqs = nccl.NCCLDevCommRequirements(
+        barrier_count=10,
+        gin_force_enable=True,
+        gin_context_count=4
+    )
+
+    dev_comm = nccl_comm.create_dev_comm(requirements=reqs)
+
+    assert dev_comm.is_valid
+    assert dev_comm.ptr != 0
+
+    dev_comm.close()
+    assert not dev_comm.is_valid
+
+
+@requires_nccl_version("2.28.0")
+@pytest.mark.mpi
+def test_create_multiple_dev_comms(nccl_comm):
+    """Test creating multiple device communicators from one host communicator."""
+    if not nccl_comm.device_api_support:
+        pytest.skip("Device doesn't support device API")
+
+    dev_comm1 = nccl_comm.create_dev_comm()
+    dev_comm2 = nccl_comm.create_dev_comm()
+
+    assert dev_comm1.is_valid
+    assert dev_comm2.is_valid
+    assert dev_comm1.ptr != dev_comm2.ptr
+
+    dev_comm1.close()
+    assert not dev_comm1.is_valid
+    assert dev_comm2.is_valid
+
+    dev_comm2.close()
+    assert not dev_comm2.is_valid
+
+
+@requires_nccl_version("2.28.0")
+@pytest.mark.mpi
+def test_dev_comm_automatic_cleanup(uid_shared, rank_info):
+    """Test that device communicators are automatically cleaned up on comm destroy."""
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    comm = nccl.Communicator.init(nranks=rank_info.nccl_size, rank=rank_info.nccl_rank, unique_id=uid_shared)
+
+    if not comm.device_api_support:
+        pytest.skip("Device doesn't support device API")
+
+    dev_comm1 = comm.create_dev_comm()
+    dev_comm2 = comm.create_dev_comm()
+
+    assert dev_comm1.is_valid
+    assert dev_comm2.is_valid
+
+    # Destroy comm without explicitly closing dev_comms
+    comm.destroy()
+
+    # Dev comms should be automatically cleaned up
+    assert not dev_comm1.is_valid
+    assert not dev_comm2.is_valid
+
+
+@requires_nccl_version("2.28.0")
+@pytest.mark.mpi
+def test_dev_comm_idempotent_close(nccl_comm):
+    """Test that dev_comm.close() is idempotent."""
+    if not nccl_comm.device_api_support:
+        pytest.skip("Device doesn't support device API")
+
+    dev_comm = nccl_comm.create_dev_comm()
+
+    dev_comm.close()
+    assert not dev_comm.is_valid
+
+    # Second close should not raise
+    dev_comm.close()
+    assert not dev_comm.is_valid
+
+
+@requires_nccl_version("2.28.0")
+@pytest.mark.mpi
+def test_dev_comm_access_after_close(nccl_comm):
+    """Test that accessing dev_comm.ptr after close raises RuntimeError."""
+    if not nccl_comm.device_api_support:
+        pytest.skip("Device doesn't support device API")
+
+    dev_comm = nccl_comm.create_dev_comm()
+    dev_comm.close()
+
+    with pytest.raises(RuntimeError, match="DevCommResource has been closed"):
+        _ = dev_comm.dev_comm
+
+    with pytest.raises(RuntimeError):
+        _ = dev_comm.ptr

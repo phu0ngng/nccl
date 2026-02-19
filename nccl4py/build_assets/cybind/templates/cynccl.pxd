@@ -5,7 +5,7 @@
 # This code was automatically generated $version_span. Do not modify it directly.
 
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport int64_t, uint8_t, uint32_t, uint64_t
 
 
 ###############################################################################

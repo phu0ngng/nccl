@@ -37,6 +37,8 @@ __all__ = [
     # Types and specs
     "NcclDataType",
     "NcclRedOp",
+    "NcclGinType",
+    "NcclGinConnectionType",
     "NcclBufferSpec",
     "NcclScalarSpec",
     "NcclDeviceSpec",
@@ -73,9 +75,10 @@ __all__ = [
     "CommShrinkFlag",
     "WindowFlag",
     # Communicator
-    "Communicator",
     "NCCLConfig",
     "WaitSignalDesc",
+    "NCCLDevCommRequirements",
+    "Communicator",
     # Resources
     "RegisteredBufferHandle",
     "RegisteredWindowHandle",

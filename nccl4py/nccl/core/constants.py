@@ -15,6 +15,7 @@ __all__ = [
     "NCCL_UNDEF_INT",
     "NCCL_UNDEF_FLOAT",
     "NCCL_SPLIT_NOCOLOR",
+    "NCCL_MAGIC",
     "CTAPolicy",
     "CommShrinkFlag",
     "WindowFlag",
@@ -30,6 +31,10 @@ NCCL_UNDEF_FLOAT: float = -1.0
 # Communicator split constants
 NCCL_SPLIT_NOCOLOR: int = -1
 """Color value for ncclCommSplit to indicate rank will not be part of any group."""
+
+# NCCL magic number
+NCCL_MAGIC: int = 0xCAFEBEEF
+"""magic number for NCCL structs."""
 
 
 # CTA (Cooperative Thread Array) Policy flags

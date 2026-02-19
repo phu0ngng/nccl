@@ -812,13 +812,2123 @@ cdef class WaitSignalDesc:
         return obj
 
 
+cdef _get_comm_properties_dtype_offsets():
+    cdef ncclCommProperties_t pod = ncclCommProperties_t()
+    return _numpy.dtype({
+        'names': ['size_', 'magic', 'version', 'rank', 'n_ranks', 'cuda_dev', 'nvml_dev', 'device_api_support', 'multimem_support', 'gin_type', 'n_lsa_teams', 'host_rma_support', 'railed_gin_type'],
+        'formats': [_numpy.uint64, _numpy.uint32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.uint8, _numpy.uint8, _numpy.int32, _numpy.uint8, _numpy.uint8],
+        'offsets': [
+            (<intptr_t>&(pod.size)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.magic)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.version)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.rank)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.nRanks)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.cudaDev)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.nvmlDev)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.deviceApiSupport)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.multimemSupport)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginType)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.nLsaTeams)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.hostRmaSupport)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.railedGinType)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclCommProperties_t),
+    })
+
+comm_properties_dtype = _get_comm_properties_dtype_offsets()
+
+cdef class CommProperties:
+    """Empty-initialize an instance of `ncclCommProperties_t`.
+
+
+    .. seealso:: `ncclCommProperties_t`
+    """
+    cdef:
+        ncclCommProperties_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclCommProperties_t *>calloc(1, sizeof(ncclCommProperties_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating CommProperties")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclCommProperties_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.CommProperties object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef CommProperties other_
+        if not isinstance(other, CommProperties):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclCommProperties_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclCommProperties_t *>malloc(sizeof(ncclCommProperties_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating CommProperties")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclCommProperties_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def size_(self):
+        """int: """
+        return self._ptr[0].size
+
+    @size_.setter
+    def size_(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].size = val
+
+    @property
+    def magic(self):
+        """int: """
+        return self._ptr[0].magic
+
+    @magic.setter
+    def magic(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].magic = val
+
+    @property
+    def version(self):
+        """int: """
+        return self._ptr[0].version
+
+    @version.setter
+    def version(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].version = val
+
+    @property
+    def rank(self):
+        """int: """
+        return self._ptr[0].rank
+
+    @rank.setter
+    def rank(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].rank = val
+
+    @property
+    def n_ranks(self):
+        """int: """
+        return self._ptr[0].nRanks
+
+    @n_ranks.setter
+    def n_ranks(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].nRanks = val
+
+    @property
+    def cuda_dev(self):
+        """int: """
+        return self._ptr[0].cudaDev
+
+    @cuda_dev.setter
+    def cuda_dev(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].cudaDev = val
+
+    @property
+    def nvml_dev(self):
+        """int: """
+        return self._ptr[0].nvmlDev
+
+    @nvml_dev.setter
+    def nvml_dev(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].nvmlDev = val
+
+    @property
+    def device_api_support(self):
+        """int: """
+        return self._ptr[0].deviceApiSupport
+
+    @device_api_support.setter
+    def device_api_support(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].deviceApiSupport = val
+
+    @property
+    def multimem_support(self):
+        """int: """
+        return self._ptr[0].multimemSupport
+
+    @multimem_support.setter
+    def multimem_support(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].multimemSupport = val
+
+    @property
+    def gin_type(self):
+        """int: """
+        return self._ptr[0].ginType
+
+    @gin_type.setter
+    def gin_type(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].ginType = val
+
+    @property
+    def n_lsa_teams(self):
+        """int: """
+        return self._ptr[0].nLsaTeams
+
+    @n_lsa_teams.setter
+    def n_lsa_teams(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].nLsaTeams = val
+
+    @property
+    def host_rma_support(self):
+        """int: """
+        return self._ptr[0].hostRmaSupport
+
+    @host_rma_support.setter
+    def host_rma_support(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].hostRmaSupport = val
+
+    @property
+    def railed_gin_type(self):
+        """int: """
+        return self._ptr[0].railedGinType
+
+    @railed_gin_type.setter
+    def railed_gin_type(self, val):
+        if self._readonly:
+            raise ValueError("This CommProperties instance is read-only")
+        self._ptr[0].railedGinType = val
+
+    @staticmethod
+    def from_data(data):
+        """Create an CommProperties instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `comm_properties_dtype` holding the data.
+        """
+        return __from_data(data, "comm_properties_dtype", comm_properties_dtype, CommProperties)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an CommProperties instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef CommProperties obj = CommProperties.__new__(CommProperties)
+        if owner is None:
+            obj._ptr = <ncclCommProperties_t *>malloc(sizeof(ncclCommProperties_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating CommProperties")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclCommProperties_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclCommProperties_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
+cdef _get_dev_resource_requirements_dtype_offsets():
+    cdef ncclDevResourceRequirements_t pod = ncclDevResourceRequirements_t()
+    return _numpy.dtype({
+        'names': ['next', 'buffer_size', 'buffer_align', 'out_buffer_handle', 'gin_signal_count', 'gin_counter_count', 'out_gin_signal_start', 'out_gin_counter_start'],
+        'formats': [_numpy.intp, _numpy.uint64, _numpy.uint64, _numpy.intp, _numpy.int32, _numpy.int32, _numpy.intp, _numpy.intp],
+        'offsets': [
+            (<intptr_t>&(pod.next)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.bufferSize)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.bufferAlign)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.outBufferHandle)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginSignalCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginCounterCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.outGinSignalStart)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.outGinCounterStart)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclDevResourceRequirements_t),
+    })
+
+dev_resource_requirements_dtype = _get_dev_resource_requirements_dtype_offsets()
+
+cdef class DevResourceRequirements:
+    """Empty-initialize an instance of `ncclDevResourceRequirements_t`.
+
+
+    .. seealso:: `ncclDevResourceRequirements_t`
+    """
+    cdef:
+        ncclDevResourceRequirements_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclDevResourceRequirements_t *>calloc(1, sizeof(ncclDevResourceRequirements_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating DevResourceRequirements")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclDevResourceRequirements_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.DevResourceRequirements object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef DevResourceRequirements other_
+        if not isinstance(other, DevResourceRequirements):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclDevResourceRequirements_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclDevResourceRequirements_t *>malloc(sizeof(ncclDevResourceRequirements_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating DevResourceRequirements")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclDevResourceRequirements_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def next(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].next)
+
+    @next.setter
+    def next(self, val):
+        if self._readonly:
+            raise ValueError("This DevResourceRequirements instance is read-only")
+        self._ptr[0].next = <void *><intptr_t>val
+
+    @property
+    def buffer_size(self):
+        """int: """
+        return self._ptr[0].bufferSize
+
+    @buffer_size.setter
+    def buffer_size(self, val):
+        if self._readonly:
+            raise ValueError("This DevResourceRequirements instance is read-only")
+        self._ptr[0].bufferSize = val
+
+    @property
+    def buffer_align(self):
+        """int: """
+        return self._ptr[0].bufferAlign
+
+    @buffer_align.setter
+    def buffer_align(self, val):
+        if self._readonly:
+            raise ValueError("This DevResourceRequirements instance is read-only")
+        self._ptr[0].bufferAlign = val
+
+    @property
+    def out_buffer_handle(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].outBufferHandle)
+
+    @out_buffer_handle.setter
+    def out_buffer_handle(self, val):
+        if self._readonly:
+            raise ValueError("This DevResourceRequirements instance is read-only")
+        self._ptr[0].outBufferHandle = <ncclDevResourceHandle_t*><intptr_t>val
+
+    @property
+    def gin_signal_count(self):
+        """int: """
+        return self._ptr[0].ginSignalCount
+
+    @gin_signal_count.setter
+    def gin_signal_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevResourceRequirements instance is read-only")
+        self._ptr[0].ginSignalCount = val
+
+    @property
+    def gin_counter_count(self):
+        """int: """
+        return self._ptr[0].ginCounterCount
+
+    @gin_counter_count.setter
+    def gin_counter_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevResourceRequirements instance is read-only")
+        self._ptr[0].ginCounterCount = val
+
+    @property
+    def out_gin_signal_start(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].outGinSignalStart)
+
+    @out_gin_signal_start.setter
+    def out_gin_signal_start(self, val):
+        if self._readonly:
+            raise ValueError("This DevResourceRequirements instance is read-only")
+        self._ptr[0].outGinSignalStart = <ncclGinSignal_t*><intptr_t>val
+
+    @property
+    def out_gin_counter_start(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].outGinCounterStart)
+
+    @out_gin_counter_start.setter
+    def out_gin_counter_start(self, val):
+        if self._readonly:
+            raise ValueError("This DevResourceRequirements instance is read-only")
+        self._ptr[0].outGinCounterStart = <ncclGinCounter_t*><intptr_t>val
+
+    @staticmethod
+    def from_data(data):
+        """Create an DevResourceRequirements instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `dev_resource_requirements_dtype` holding the data.
+        """
+        return __from_data(data, "dev_resource_requirements_dtype", dev_resource_requirements_dtype, DevResourceRequirements)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an DevResourceRequirements instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef DevResourceRequirements obj = DevResourceRequirements.__new__(DevResourceRequirements)
+        if owner is None:
+            obj._ptr = <ncclDevResourceRequirements_t *>malloc(sizeof(ncclDevResourceRequirements_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating DevResourceRequirements")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclDevResourceRequirements_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclDevResourceRequirements_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
+cdef _get_team_dtype_offsets():
+    cdef ncclTeam_t pod = ncclTeam_t()
+    return _numpy.dtype({
+        'names': ['n_ranks', 'rank', 'stride'],
+        'formats': [_numpy.int32, _numpy.int32, _numpy.int32],
+        'offsets': [
+            (<intptr_t>&(pod.nRanks)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.rank)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.stride)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclTeam_t),
+    })
+
+team_dtype = _get_team_dtype_offsets()
+
+cdef class Team:
+    """Empty-initialize an instance of `ncclTeam_t`.
+
+
+    .. seealso:: `ncclTeam_t`
+    """
+    cdef:
+        ncclTeam_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclTeam_t *>calloc(1, sizeof(ncclTeam_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating Team")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclTeam_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.Team object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef Team other_
+        if not isinstance(other, Team):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclTeam_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclTeam_t *>malloc(sizeof(ncclTeam_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating Team")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclTeam_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def n_ranks(self):
+        """int: """
+        return self._ptr[0].nRanks
+
+    @n_ranks.setter
+    def n_ranks(self, val):
+        if self._readonly:
+            raise ValueError("This Team instance is read-only")
+        self._ptr[0].nRanks = val
+
+    @property
+    def rank(self):
+        """int: """
+        return self._ptr[0].rank
+
+    @rank.setter
+    def rank(self, val):
+        if self._readonly:
+            raise ValueError("This Team instance is read-only")
+        self._ptr[0].rank = val
+
+    @property
+    def stride(self):
+        """int: """
+        return self._ptr[0].stride
+
+    @stride.setter
+    def stride(self, val):
+        if self._readonly:
+            raise ValueError("This Team instance is read-only")
+        self._ptr[0].stride = val
+
+    @staticmethod
+    def from_data(data):
+        """Create an Team instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `team_dtype` holding the data.
+        """
+        return __from_data(data, "team_dtype", team_dtype, Team)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an Team instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef Team obj = Team.__new__(Team)
+        if owner is None:
+            obj._ptr = <ncclTeam_t *>malloc(sizeof(ncclTeam_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating Team")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclTeam_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclTeam_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
+cdef _get_multimem_handle_dtype_offsets():
+    cdef ncclMultimemHandle_t pod = ncclMultimemHandle_t()
+    return _numpy.dtype({
+        'names': ['mc_base_ptr'],
+        'formats': [_numpy.intp],
+        'offsets': [
+            (<intptr_t>&(pod.mcBasePtr)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclMultimemHandle_t),
+    })
+
+multimem_handle_dtype = _get_multimem_handle_dtype_offsets()
+
+cdef class MultimemHandle:
+    """Empty-initialize an instance of `ncclMultimemHandle_t`.
+
+
+    .. seealso:: `ncclMultimemHandle_t`
+    """
+    cdef:
+        ncclMultimemHandle_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclMultimemHandle_t *>calloc(1, sizeof(ncclMultimemHandle_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating MultimemHandle")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclMultimemHandle_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.MultimemHandle object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef MultimemHandle other_
+        if not isinstance(other, MultimemHandle):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclMultimemHandle_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclMultimemHandle_t *>malloc(sizeof(ncclMultimemHandle_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating MultimemHandle")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclMultimemHandle_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def mc_base_ptr(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].mcBasePtr)
+
+    @mc_base_ptr.setter
+    def mc_base_ptr(self, val):
+        if self._readonly:
+            raise ValueError("This MultimemHandle instance is read-only")
+        self._ptr[0].mcBasePtr = <void *><intptr_t>val
+
+    @staticmethod
+    def from_data(data):
+        """Create an MultimemHandle instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `multimem_handle_dtype` holding the data.
+        """
+        return __from_data(data, "multimem_handle_dtype", multimem_handle_dtype, MultimemHandle)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an MultimemHandle instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef MultimemHandle obj = MultimemHandle.__new__(MultimemHandle)
+        if owner is None:
+            obj._ptr = <ncclMultimemHandle_t *>malloc(sizeof(ncclMultimemHandle_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating MultimemHandle")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclMultimemHandle_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclMultimemHandle_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
+cdef _get_window_vidmem_dtype_offsets():
+    cdef ncclWindow_vidmem_t pod = ncclWindow_vidmem_t()
+    return _numpy.dtype({
+        'names': ['win_host', 'lsa_flat_base', 'lsa_rank', 'world_rank', 'stride4g', 'mc_offset4k', 'gin_offset4k', 'gin_wins'],
+        'formats': [_numpy.intp, _numpy.intp, _numpy.int32, _numpy.int32, _numpy.uint32, _numpy.uint32, _numpy.uint32, (_numpy.intp, 4)],
+        'offsets': [
+            (<intptr_t>&(pod.winHost)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaFlatBase)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaRank)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.worldRank)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.stride4G)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.mcOffset4K)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginOffset4K)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginWins)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclWindow_vidmem_t),
+    })
+
+window_vidmem_dtype = _get_window_vidmem_dtype_offsets()
+
+cdef class Window_vidmem:
+    """Empty-initialize an instance of `ncclWindow_vidmem_t`.
+
+
+    .. seealso:: `ncclWindow_vidmem_t`
+    """
+    cdef:
+        ncclWindow_vidmem_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+        dict _refs
+
+    def __init__(self):
+        self._ptr = <ncclWindow_vidmem_t *>calloc(1, sizeof(ncclWindow_vidmem_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating Window_vidmem")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+        self._refs = {}
+
+    def __dealloc__(self):
+        cdef ncclWindow_vidmem_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.Window_vidmem object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef Window_vidmem other_
+        if not isinstance(other, Window_vidmem):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclWindow_vidmem_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclWindow_vidmem_t *>malloc(sizeof(ncclWindow_vidmem_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating Window_vidmem")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclWindow_vidmem_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def win_host(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].winHost)
+
+    @win_host.setter
+    def win_host(self, val):
+        if self._readonly:
+            raise ValueError("This Window_vidmem instance is read-only")
+        self._ptr[0].winHost = <void *><intptr_t>val
+
+    @property
+    def lsa_flat_base(self):
+        """str: """
+        cdef char* ptr = <char*>self._ptr[0].lsaFlatBase
+        if ptr:
+            return cpython.PyUnicode_FromString(ptr)
+        return ""
+
+    @lsa_flat_base.setter
+    def lsa_flat_base(self, val):
+        if self._readonly:
+            raise ValueError("This Window_vidmem instance is read-only")
+        cdef bytes buf = val.encode()
+        cdef char *ptr = buf
+        self._refs["lsa_flat_base"] = buf
+        self._ptr.lsaFlatBase = <char *><intptr_t>ptr
+
+    @property
+    def lsa_rank(self):
+        """int: """
+        return self._ptr[0].lsaRank
+
+    @lsa_rank.setter
+    def lsa_rank(self, val):
+        if self._readonly:
+            raise ValueError("This Window_vidmem instance is read-only")
+        self._ptr[0].lsaRank = val
+
+    @property
+    def world_rank(self):
+        """int: """
+        return self._ptr[0].worldRank
+
+    @world_rank.setter
+    def world_rank(self, val):
+        if self._readonly:
+            raise ValueError("This Window_vidmem instance is read-only")
+        self._ptr[0].worldRank = val
+
+    @property
+    def stride4g(self):
+        """int: """
+        return self._ptr[0].stride4G
+
+    @stride4g.setter
+    def stride4g(self, val):
+        if self._readonly:
+            raise ValueError("This Window_vidmem instance is read-only")
+        self._ptr[0].stride4G = val
+
+    @property
+    def mc_offset4k(self):
+        """int: """
+        return self._ptr[0].mcOffset4K
+
+    @mc_offset4k.setter
+    def mc_offset4k(self, val):
+        if self._readonly:
+            raise ValueError("This Window_vidmem instance is read-only")
+        self._ptr[0].mcOffset4K = val
+
+    @property
+    def gin_offset4k(self):
+        """int: """
+        return self._ptr[0].ginOffset4K
+
+    @gin_offset4k.setter
+    def gin_offset4k(self, val):
+        if self._readonly:
+            raise ValueError("This Window_vidmem instance is read-only")
+        self._ptr[0].ginOffset4K = val
+
+    @property
+    def gin_wins(self):
+        """~_numpy.intp: (array of length 4)."""
+        cdef view.array arr = view.array(shape=(4,), itemsize=sizeof(intptr_t), format="q", mode="c", allocate_buffer=False)
+        arr.data = <char *>(&(self._ptr[0].ginWins))
+        return _numpy.asarray(arr)
+
+    @gin_wins.setter
+    def gin_wins(self, val):
+        if self._readonly:
+            raise ValueError("This Window_vidmem instance is read-only")
+        if len(val) != 4:
+            raise ValueError(f"Expected length { 4 } for field gin_wins, got {len(val)}")
+        cdef view.array arr = view.array(shape=(4,), itemsize=sizeof(intptr_t), format="q", mode="c")
+        arr[:] = _numpy.asarray(val, dtype=_numpy.intp)
+        memcpy(<void *>(&(self._ptr[0].ginWins)), <void *>(arr.data), sizeof(intptr_t) * len(val))
+
+    @staticmethod
+    def from_data(data):
+        """Create an Window_vidmem instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `window_vidmem_dtype` holding the data.
+        """
+        return __from_data(data, "window_vidmem_dtype", window_vidmem_dtype, Window_vidmem)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an Window_vidmem instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef Window_vidmem obj = Window_vidmem.__new__(Window_vidmem)
+        if owner is None:
+            obj._ptr = <ncclWindow_vidmem_t *>malloc(sizeof(ncclWindow_vidmem_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating Window_vidmem")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclWindow_vidmem_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclWindow_vidmem_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        obj._refs = {}
+        return obj
+
+
+cdef _get_lsa_barrier_handle_dtype_offsets():
+    cdef ncclLsaBarrierHandle_t pod = ncclLsaBarrierHandle_t()
+    return _numpy.dtype({
+        'names': ['buf_handle', 'n_barriers'],
+        'formats': [_numpy.uint32, _numpy.int32],
+        'offsets': [
+            (<intptr_t>&(pod.bufHandle)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.nBarriers)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclLsaBarrierHandle_t),
+    })
+
+lsa_barrier_handle_dtype = _get_lsa_barrier_handle_dtype_offsets()
+
+cdef class LsaBarrierHandle:
+    """Empty-initialize an instance of `ncclLsaBarrierHandle_t`.
+
+
+    .. seealso:: `ncclLsaBarrierHandle_t`
+    """
+    cdef:
+        ncclLsaBarrierHandle_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclLsaBarrierHandle_t *>calloc(1, sizeof(ncclLsaBarrierHandle_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating LsaBarrierHandle")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclLsaBarrierHandle_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.LsaBarrierHandle object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef LsaBarrierHandle other_
+        if not isinstance(other, LsaBarrierHandle):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclLsaBarrierHandle_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclLsaBarrierHandle_t *>malloc(sizeof(ncclLsaBarrierHandle_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating LsaBarrierHandle")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclLsaBarrierHandle_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def buf_handle(self):
+        """int: """
+        return <uint32_t>(self._ptr[0].bufHandle)
+
+    @buf_handle.setter
+    def buf_handle(self, val):
+        if self._readonly:
+            raise ValueError("This LsaBarrierHandle instance is read-only")
+        self._ptr[0].bufHandle = <ncclDevResourceHandle_t><uint32_t>val
+
+    @property
+    def n_barriers(self):
+        """int: """
+        return self._ptr[0].nBarriers
+
+    @n_barriers.setter
+    def n_barriers(self, val):
+        if self._readonly:
+            raise ValueError("This LsaBarrierHandle instance is read-only")
+        self._ptr[0].nBarriers = val
+
+    @staticmethod
+    def from_data(data):
+        """Create an LsaBarrierHandle instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `lsa_barrier_handle_dtype` holding the data.
+        """
+        return __from_data(data, "lsa_barrier_handle_dtype", lsa_barrier_handle_dtype, LsaBarrierHandle)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an LsaBarrierHandle instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef LsaBarrierHandle obj = LsaBarrierHandle.__new__(LsaBarrierHandle)
+        if owner is None:
+            obj._ptr = <ncclLsaBarrierHandle_t *>malloc(sizeof(ncclLsaBarrierHandle_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating LsaBarrierHandle")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclLsaBarrierHandle_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclLsaBarrierHandle_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
+cdef _get_gin_barrier_handle_dtype_offsets():
+    cdef ncclGinBarrierHandle_t pod = ncclGinBarrierHandle_t()
+    return _numpy.dtype({
+        'names': ['signal0', 'unused'],
+        'formats': [_numpy.uint32, _numpy.uint32],
+        'offsets': [
+            (<intptr_t>&(pod.signal0)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.unused)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclGinBarrierHandle_t),
+    })
+
+gin_barrier_handle_dtype = _get_gin_barrier_handle_dtype_offsets()
+
+cdef class GinBarrierHandle:
+    """Empty-initialize an instance of `ncclGinBarrierHandle_t`.
+
+
+    .. seealso:: `ncclGinBarrierHandle_t`
+    """
+    cdef:
+        ncclGinBarrierHandle_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclGinBarrierHandle_t *>calloc(1, sizeof(ncclGinBarrierHandle_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating GinBarrierHandle")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclGinBarrierHandle_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.GinBarrierHandle object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef GinBarrierHandle other_
+        if not isinstance(other, GinBarrierHandle):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclGinBarrierHandle_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclGinBarrierHandle_t *>malloc(sizeof(ncclGinBarrierHandle_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating GinBarrierHandle")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclGinBarrierHandle_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def signal0(self):
+        """int: """
+        return <uint32_t>(self._ptr[0].signal0)
+
+    @signal0.setter
+    def signal0(self, val):
+        if self._readonly:
+            raise ValueError("This GinBarrierHandle instance is read-only")
+        self._ptr[0].signal0 = <ncclGinSignal_t><uint32_t>val
+
+    @property
+    def unused(self):
+        """int: """
+        return <uint32_t>(self._ptr[0].unused)
+
+    @unused.setter
+    def unused(self, val):
+        if self._readonly:
+            raise ValueError("This GinBarrierHandle instance is read-only")
+        self._ptr[0].unused = <ncclDevResourceHandle_t><uint32_t>val
+
+    @staticmethod
+    def from_data(data):
+        """Create an GinBarrierHandle instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `gin_barrier_handle_dtype` holding the data.
+        """
+        return __from_data(data, "gin_barrier_handle_dtype", gin_barrier_handle_dtype, GinBarrierHandle)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an GinBarrierHandle instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef GinBarrierHandle obj = GinBarrierHandle.__new__(GinBarrierHandle)
+        if owner is None:
+            obj._ptr = <ncclGinBarrierHandle_t *>malloc(sizeof(ncclGinBarrierHandle_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating GinBarrierHandle")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclGinBarrierHandle_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclGinBarrierHandle_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
+cdef _get_team_requirements_dtype_offsets():
+    cdef ncclTeamRequirements_t pod = ncclTeamRequirements_t()
+    return _numpy.dtype({
+        'names': ['next', 'team', 'multimem', 'out_multimem_handle'],
+        'formats': [_numpy.intp, team_dtype, _numpy.uint8, _numpy.intp],
+        'offsets': [
+            (<intptr_t>&(pod.next)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.team)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.multimem)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.outMultimemHandle)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclTeamRequirements_t),
+    })
+
+team_requirements_dtype = _get_team_requirements_dtype_offsets()
+
+cdef class TeamRequirements:
+    """Empty-initialize an instance of `ncclTeamRequirements_t`.
+
+
+    .. seealso:: `ncclTeamRequirements_t`
+    """
+    cdef:
+        ncclTeamRequirements_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclTeamRequirements_t *>calloc(1, sizeof(ncclTeamRequirements_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating TeamRequirements")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclTeamRequirements_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.TeamRequirements object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef TeamRequirements other_
+        if not isinstance(other, TeamRequirements):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclTeamRequirements_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclTeamRequirements_t *>malloc(sizeof(ncclTeamRequirements_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating TeamRequirements")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclTeamRequirements_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def team(self):
+        """Team: """
+        return Team.from_ptr(<intptr_t>&(self._ptr[0].team), self._readonly, self)
+
+    @team.setter
+    def team(self, val):
+        if self._readonly:
+            raise ValueError("This TeamRequirements instance is read-only")
+        cdef Team val_ = val
+        memcpy(<void *>&(self._ptr[0].team), <void *>(val_._get_ptr()), sizeof(ncclTeam_t) * 1)
+
+    @property
+    def next(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].next)
+
+    @next.setter
+    def next(self, val):
+        if self._readonly:
+            raise ValueError("This TeamRequirements instance is read-only")
+        self._ptr[0].next = <void *><intptr_t>val
+
+    @property
+    def multimem(self):
+        """int: """
+        return self._ptr[0].multimem
+
+    @multimem.setter
+    def multimem(self, val):
+        if self._readonly:
+            raise ValueError("This TeamRequirements instance is read-only")
+        self._ptr[0].multimem = val
+
+    @property
+    def out_multimem_handle(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].outMultimemHandle)
+
+    @out_multimem_handle.setter
+    def out_multimem_handle(self, val):
+        if self._readonly:
+            raise ValueError("This TeamRequirements instance is read-only")
+        self._ptr[0].outMultimemHandle = <ncclMultimemHandle_t*><intptr_t>val
+
+    @staticmethod
+    def from_data(data):
+        """Create an TeamRequirements instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `team_requirements_dtype` holding the data.
+        """
+        return __from_data(data, "team_requirements_dtype", team_requirements_dtype, TeamRequirements)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an TeamRequirements instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef TeamRequirements obj = TeamRequirements.__new__(TeamRequirements)
+        if owner is None:
+            obj._ptr = <ncclTeamRequirements_t *>malloc(sizeof(ncclTeamRequirements_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating TeamRequirements")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclTeamRequirements_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclTeamRequirements_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
+cdef _get_dev_comm_dtype_offsets():
+    cdef ncclDevComm_t pod = ncclDevComm_t()
+    return _numpy.dtype({
+        'names': ['rank', 'n_ranks', 'n_ranks_rcp32', 'lsa_rank', 'lsa_size', 'lsa_size_rcp32', 'window_table', 'resource_window', 'resource_window_inlined', 'lsa_multimem', 'lsa_barrier', 'rail_gin_barrier', 'gin_connection_count', 'gin_net_device_types', 'gin_handles', 'gin_signal_base', 'gin_signal_count', 'gin_counter_base', 'gin_counter_count', 'gin_signal_shadows', 'gin_context_count', 'gin_context_base', 'gin_is_railed', 'abort_flag'],
+        'formats': [_numpy.int32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.uint32, _numpy.intp, _numpy.intp, window_vidmem_dtype, multimem_handle_dtype, lsa_barrier_handle_dtype, gin_barrier_handle_dtype, _numpy.uint8, (_numpy.uint8, 4), (_numpy.int64, 4), _numpy.uint32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.intp, _numpy.uint32, _numpy.uint32, _numpy.uint8, _numpy.intp],
+        'offsets': [
+            (<intptr_t>&(pod.rank)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.nRanks)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.nRanks_rcp32)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaRank)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaSize)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaSize_rcp32)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.windowTable)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.resourceWindow)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.resourceWindow_inlined)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaMultimem)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaBarrier)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.railGinBarrier)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginConnectionCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginNetDeviceTypes)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginHandles)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginSignalBase)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginSignalCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginCounterBase)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginCounterCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginSignalShadows)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginContextCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginContextBase)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginIsRailed)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.abortFlag)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclDevComm_t),
+    })
+
+dev_comm_dtype = _get_dev_comm_dtype_offsets()
+
+cdef class DevComm:
+    """Empty-initialize an instance of `ncclDevComm_t`.
+
+
+    .. seealso:: `ncclDevComm_t`
+    """
+    cdef:
+        ncclDevComm_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclDevComm_t *>calloc(1, sizeof(ncclDevComm_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating DevComm")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclDevComm_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.DevComm object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef DevComm other_
+        if not isinstance(other, DevComm):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclDevComm_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclDevComm_t *>malloc(sizeof(ncclDevComm_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating DevComm")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclDevComm_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def resource_window_inlined(self):
+        """Window_vidmem: """
+        return Window_vidmem.from_ptr(<intptr_t>&(self._ptr[0].resourceWindow_inlined), self._readonly, self)
+
+    @resource_window_inlined.setter
+    def resource_window_inlined(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        cdef Window_vidmem val_ = val
+        memcpy(<void *>&(self._ptr[0].resourceWindow_inlined), <void *>(val_._get_ptr()), sizeof(ncclWindow_vidmem_t) * 1)
+
+    @property
+    def lsa_multimem(self):
+        """MultimemHandle: """
+        return MultimemHandle.from_ptr(<intptr_t>&(self._ptr[0].lsaMultimem), self._readonly, self)
+
+    @lsa_multimem.setter
+    def lsa_multimem(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        cdef MultimemHandle val_ = val
+        memcpy(<void *>&(self._ptr[0].lsaMultimem), <void *>(val_._get_ptr()), sizeof(ncclMultimemHandle_t) * 1)
+
+    @property
+    def lsa_barrier(self):
+        """LsaBarrierHandle: """
+        return LsaBarrierHandle.from_ptr(<intptr_t>&(self._ptr[0].lsaBarrier), self._readonly, self)
+
+    @lsa_barrier.setter
+    def lsa_barrier(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        cdef LsaBarrierHandle val_ = val
+        memcpy(<void *>&(self._ptr[0].lsaBarrier), <void *>(val_._get_ptr()), sizeof(ncclLsaBarrierHandle_t) * 1)
+
+    @property
+    def rail_gin_barrier(self):
+        """GinBarrierHandle: """
+        return GinBarrierHandle.from_ptr(<intptr_t>&(self._ptr[0].railGinBarrier), self._readonly, self)
+
+    @rail_gin_barrier.setter
+    def rail_gin_barrier(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        cdef GinBarrierHandle val_ = val
+        memcpy(<void *>&(self._ptr[0].railGinBarrier), <void *>(val_._get_ptr()), sizeof(ncclGinBarrierHandle_t) * 1)
+
+    @property
+    def rank(self):
+        """int: """
+        return self._ptr[0].rank
+
+    @rank.setter
+    def rank(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].rank = val
+
+    @property
+    def n_ranks(self):
+        """int: """
+        return self._ptr[0].nRanks
+
+    @n_ranks.setter
+    def n_ranks(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].nRanks = val
+
+    @property
+    def n_ranks_rcp32(self):
+        """int: """
+        return self._ptr[0].nRanks_rcp32
+
+    @n_ranks_rcp32.setter
+    def n_ranks_rcp32(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].nRanks_rcp32 = val
+
+    @property
+    def lsa_rank(self):
+        """int: """
+        return self._ptr[0].lsaRank
+
+    @lsa_rank.setter
+    def lsa_rank(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].lsaRank = val
+
+    @property
+    def lsa_size(self):
+        """int: """
+        return self._ptr[0].lsaSize
+
+    @lsa_size.setter
+    def lsa_size(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].lsaSize = val
+
+    @property
+    def lsa_size_rcp32(self):
+        """int: """
+        return self._ptr[0].lsaSize_rcp32
+
+    @lsa_size_rcp32.setter
+    def lsa_size_rcp32(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].lsaSize_rcp32 = val
+
+    @property
+    def window_table(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].windowTable)
+
+    @window_table.setter
+    def window_table(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].windowTable = <ncclDevCommWindowTable_t><intptr_t>val
+
+    @property
+    def resource_window(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].resourceWindow)
+
+    @resource_window.setter
+    def resource_window(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].resourceWindow = <ncclWindow_t><intptr_t>val
+
+    @property
+    def gin_connection_count(self):
+        """int: """
+        return self._ptr[0].ginConnectionCount
+
+    @gin_connection_count.setter
+    def gin_connection_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginConnectionCount = val
+
+    @property
+    def gin_net_device_types(self):
+        """~_numpy.uint8: (array of length 4)."""
+        cdef view.array arr = view.array(shape=(4,), itemsize=sizeof(uint8_t), format="B", mode="c", allocate_buffer=False)
+        arr.data = <char *>(&(self._ptr[0].ginNetDeviceTypes))
+        return _numpy.asarray(arr)
+
+    @gin_net_device_types.setter
+    def gin_net_device_types(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        if len(val) != 4:
+            raise ValueError(f"Expected length { 4 } for field gin_net_device_types, got {len(val)}")
+        cdef view.array arr = view.array(shape=(4,), itemsize=sizeof(uint8_t), format="B", mode="c")
+        arr[:] = _numpy.asarray(val, dtype=_numpy.uint8)
+        memcpy(<void *>(&(self._ptr[0].ginNetDeviceTypes)), <void *>(arr.data), sizeof(uint8_t) * len(val))
+
+    @property
+    def gin_handles(self):
+        """~_numpy.int64: (array of length 4)."""
+        cdef view.array arr = view.array(shape=(4,), itemsize=sizeof(intptr_t), format="q", mode="c", allocate_buffer=False)
+        arr.data = <char *>(&(self._ptr[0].ginHandles))
+        return _numpy.asarray(arr)
+
+    @gin_handles.setter
+    def gin_handles(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        if len(val) != 4:
+            raise ValueError(f"Expected length { 4 } for field gin_handles, got {len(val)}")
+        cdef view.array arr = view.array(shape=(4,), itemsize=sizeof(intptr_t), format="q", mode="c")
+        arr[:] = _numpy.asarray(val, dtype=_numpy.intp)
+        memcpy(<void *>(&(self._ptr[0].ginHandles)), <void *>(arr.data), sizeof(intptr_t) * len(val))
+
+    @property
+    def gin_signal_base(self):
+        """int: """
+        return self._ptr[0].ginSignalBase
+
+    @gin_signal_base.setter
+    def gin_signal_base(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginSignalBase = val
+
+    @property
+    def gin_signal_count(self):
+        """int: """
+        return self._ptr[0].ginSignalCount
+
+    @gin_signal_count.setter
+    def gin_signal_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginSignalCount = val
+
+    @property
+    def gin_counter_base(self):
+        """int: """
+        return self._ptr[0].ginCounterBase
+
+    @gin_counter_base.setter
+    def gin_counter_base(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginCounterBase = val
+
+    @property
+    def gin_counter_count(self):
+        """int: """
+        return self._ptr[0].ginCounterCount
+
+    @gin_counter_count.setter
+    def gin_counter_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginCounterCount = val
+
+    @property
+    def gin_signal_shadows(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].ginSignalShadows)
+
+    @gin_signal_shadows.setter
+    def gin_signal_shadows(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginSignalShadows = <uint64_t*><intptr_t>val
+
+    @property
+    def gin_context_count(self):
+        """int: """
+        return self._ptr[0].ginContextCount
+
+    @gin_context_count.setter
+    def gin_context_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginContextCount = val
+
+    @property
+    def gin_context_base(self):
+        """int: """
+        return self._ptr[0].ginContextBase
+
+    @gin_context_base.setter
+    def gin_context_base(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginContextBase = val
+
+    @property
+    def gin_is_railed(self):
+        """int: """
+        return self._ptr[0].ginIsRailed
+
+    @gin_is_railed.setter
+    def gin_is_railed(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].ginIsRailed = val
+
+    @property
+    def abort_flag(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].abortFlag)
+
+    @abort_flag.setter
+    def abort_flag(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        self._ptr[0].abortFlag = <uint32_t*><intptr_t>val
+
+    @staticmethod
+    def from_data(data):
+        """Create an DevComm instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `dev_comm_dtype` holding the data.
+        """
+        return __from_data(data, "dev_comm_dtype", dev_comm_dtype, DevComm)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an DevComm instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef DevComm obj = DevComm.__new__(DevComm)
+        if owner is None:
+            obj._ptr = <ncclDevComm_t *>malloc(sizeof(ncclDevComm_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating DevComm")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclDevComm_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclDevComm_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
+cdef _get_dev_comm_requirements_dtype_offsets():
+    cdef ncclDevCommRequirements_t pod = ncclDevCommRequirements_t()
+    return _numpy.dtype({
+        'names': ['size_', 'magic', 'version', 'resource_requirements_list', 'team_requirements_list', 'lsa_multimem', 'barrier_count', 'lsa_barrier_count', 'rail_gin_barrier_count', 'lsa_ll_a2a_block_count', 'lsa_ll_a2a_slot_count', 'gin_force_enable', 'gin_context_count', 'gin_signal_count', 'gin_counter_count', 'gin_connection_type', 'gin_exclusive_contexts', 'gin_queue_depth'],
+        'formats': [_numpy.uint64, _numpy.uint32, _numpy.uint32, _numpy.intp, _numpy.intp, _numpy.uint8, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.int32],
+        'offsets': [
+            (<intptr_t>&(pod.size)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.magic)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.version)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.resourceRequirementsList)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.teamRequirementsList)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaMultimem)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.barrierCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaBarrierCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.railGinBarrierCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaLLA2ABlockCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.lsaLLA2ASlotCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginForceEnable)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginContextCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginSignalCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginCounterCount)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginConnectionType)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginExclusiveContexts)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.ginQueueDepth)) - (<intptr_t>&pod),
+        ],
+        'itemsize': sizeof(ncclDevCommRequirements_t),
+    })
+
+dev_comm_requirements_dtype = _get_dev_comm_requirements_dtype_offsets()
+
+cdef class DevCommRequirements:
+    """Empty-initialize an instance of `ncclDevCommRequirements_t`.
+
+
+    .. seealso:: `ncclDevCommRequirements_t`
+    """
+    cdef:
+        ncclDevCommRequirements_t *_ptr
+        object _owner
+        bint _owned
+        bint _readonly
+
+    def __init__(self):
+        self._ptr = <ncclDevCommRequirements_t *>calloc(1, sizeof(ncclDevCommRequirements_t))
+        if self._ptr == NULL:
+            raise MemoryError("Error allocating DevCommRequirements")
+        self._owner = None
+        self._owned = True
+        self._readonly = False
+
+    def __dealloc__(self):
+        cdef ncclDevCommRequirements_t *ptr
+        if self._owned and self._ptr != NULL:
+            ptr = self._ptr
+            self._ptr = NULL
+            free(ptr)
+
+    def __repr__(self):
+        return f"<{__name__}.DevCommRequirements object at {hex(id(self))}>"
+
+    @property
+    def ptr(self):
+        """Get the pointer address to the data as Python :class:`int`."""
+        return <intptr_t>(self._ptr)
+
+    cdef intptr_t _get_ptr(self):
+        return <intptr_t>(self._ptr)
+
+    def __int__(self):
+        return <intptr_t>(self._ptr)
+
+    def __eq__(self, other):
+        cdef DevCommRequirements other_
+        if not isinstance(other, DevCommRequirements):
+            return False
+        other_ = other
+        return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclDevCommRequirements_t)) == 0)
+
+    def __setitem__(self, key, val):
+        if key == 0 and isinstance(val, _numpy.ndarray):
+            self._ptr = <ncclDevCommRequirements_t *>malloc(sizeof(ncclDevCommRequirements_t))
+            if self._ptr == NULL:
+                raise MemoryError("Error allocating DevCommRequirements")
+            memcpy(<void*>self._ptr, <void*><intptr_t>val.ctypes.data, sizeof(ncclDevCommRequirements_t))
+            self._owner = None
+            self._owned = True
+            self._readonly = not val.flags.writeable
+        else:
+            setattr(self, key, val)
+
+    @property
+    def size_(self):
+        """int: """
+        return self._ptr[0].size
+
+    @size_.setter
+    def size_(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].size = val
+
+    @property
+    def magic(self):
+        """int: """
+        return self._ptr[0].magic
+
+    @magic.setter
+    def magic(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].magic = val
+
+    @property
+    def version(self):
+        """int: """
+        return self._ptr[0].version
+
+    @version.setter
+    def version(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].version = val
+
+    @property
+    def resource_requirements_list(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].resourceRequirementsList)
+
+    @resource_requirements_list.setter
+    def resource_requirements_list(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].resourceRequirementsList = <ncclDevResourceRequirements_t*><intptr_t>val
+
+    @property
+    def team_requirements_list(self):
+        """int: """
+        return <intptr_t>(self._ptr[0].teamRequirementsList)
+
+    @team_requirements_list.setter
+    def team_requirements_list(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].teamRequirementsList = <ncclTeamRequirements_t*><intptr_t>val
+
+    @property
+    def lsa_multimem(self):
+        """int: """
+        return self._ptr[0].lsaMultimem
+
+    @lsa_multimem.setter
+    def lsa_multimem(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].lsaMultimem = val
+
+    @property
+    def barrier_count(self):
+        """int: """
+        return self._ptr[0].barrierCount
+
+    @barrier_count.setter
+    def barrier_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].barrierCount = val
+
+    @property
+    def lsa_barrier_count(self):
+        """int: """
+        return self._ptr[0].lsaBarrierCount
+
+    @lsa_barrier_count.setter
+    def lsa_barrier_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].lsaBarrierCount = val
+
+    @property
+    def rail_gin_barrier_count(self):
+        """int: """
+        return self._ptr[0].railGinBarrierCount
+
+    @rail_gin_barrier_count.setter
+    def rail_gin_barrier_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].railGinBarrierCount = val
+
+    @property
+    def lsa_ll_a2a_block_count(self):
+        """int: """
+        return self._ptr[0].lsaLLA2ABlockCount
+
+    @lsa_ll_a2a_block_count.setter
+    def lsa_ll_a2a_block_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].lsaLLA2ABlockCount = val
+
+    @property
+    def lsa_ll_a2a_slot_count(self):
+        """int: """
+        return self._ptr[0].lsaLLA2ASlotCount
+
+    @lsa_ll_a2a_slot_count.setter
+    def lsa_ll_a2a_slot_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].lsaLLA2ASlotCount = val
+
+    @property
+    def gin_force_enable(self):
+        """int: """
+        return self._ptr[0].ginForceEnable
+
+    @gin_force_enable.setter
+    def gin_force_enable(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].ginForceEnable = val
+
+    @property
+    def gin_context_count(self):
+        """int: """
+        return self._ptr[0].ginContextCount
+
+    @gin_context_count.setter
+    def gin_context_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].ginContextCount = val
+
+    @property
+    def gin_signal_count(self):
+        """int: """
+        return self._ptr[0].ginSignalCount
+
+    @gin_signal_count.setter
+    def gin_signal_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].ginSignalCount = val
+
+    @property
+    def gin_counter_count(self):
+        """int: """
+        return self._ptr[0].ginCounterCount
+
+    @gin_counter_count.setter
+    def gin_counter_count(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].ginCounterCount = val
+
+    @property
+    def gin_connection_type(self):
+        """int: """
+        return <int>(self._ptr[0].ginConnectionType)
+
+    @gin_connection_type.setter
+    def gin_connection_type(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].ginConnectionType = <ncclGinConnectionType_t><int>val
+
+    @property
+    def gin_exclusive_contexts(self):
+        """int: """
+        return self._ptr[0].ginExclusiveContexts
+
+    @gin_exclusive_contexts.setter
+    def gin_exclusive_contexts(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].ginExclusiveContexts = val
+
+    @property
+    def gin_queue_depth(self):
+        """int: """
+        return self._ptr[0].ginQueueDepth
+
+    @gin_queue_depth.setter
+    def gin_queue_depth(self, val):
+        if self._readonly:
+            raise ValueError("This DevCommRequirements instance is read-only")
+        self._ptr[0].ginQueueDepth = val
+
+    @staticmethod
+    def from_data(data):
+        """Create an DevCommRequirements instance wrapping the given NumPy array.
+
+        Args:
+            data (_numpy.ndarray): a single-element array of dtype `dev_comm_requirements_dtype` holding the data.
+        """
+        return __from_data(data, "dev_comm_requirements_dtype", dev_comm_requirements_dtype, DevCommRequirements)
+
+    @staticmethod
+    def from_ptr(intptr_t ptr, bint readonly=False, object owner=None):
+        """Create an DevCommRequirements instance wrapping the given pointer.
+
+        Args:
+            ptr (intptr_t): pointer address as Python :class:`int` to the data.
+            owner (object): The Python object that owns the pointer. If not provided, data will be copied.
+            readonly (bool): whether the data is read-only (to the user). default is `False`.
+        """
+        if ptr == 0:
+            raise ValueError("ptr must not be null (0)")
+        cdef DevCommRequirements obj = DevCommRequirements.__new__(DevCommRequirements)
+        if owner is None:
+            obj._ptr = <ncclDevCommRequirements_t *>malloc(sizeof(ncclDevCommRequirements_t))
+            if obj._ptr == NULL:
+                raise MemoryError("Error allocating DevCommRequirements")
+            memcpy(<void*>(obj._ptr), <void*>ptr, sizeof(ncclDevCommRequirements_t))
+            obj._owner = None
+            obj._owned = True
+        else:
+            obj._ptr = <ncclDevCommRequirements_t *>ptr
+            obj._owner = owner
+            obj._owned = False
+        obj._readonly = readonly
+        return obj
+
+
 
 ###############################################################################
 # Enum
 ###############################################################################
 
 class Result(_IntEnum):
-    """See `ncclResult_t`."""
+    """
+    See `ncclResult_t`.
+    """
     Success = ncclSuccess
     UnhandledCudaError = ncclUnhandledCudaError
     SystemError = ncclSystemError
@@ -829,12 +2939,25 @@ class Result(_IntEnum):
     InProgress = ncclInProgress
     NumResults = ncclNumResults
 
+class CommMemStat(_IntEnum):
+    """
+    See `ncclCommMemStat_t`.
+    """
+    GpuMemSuspend = ncclStatGpuMemSuspend
+    GpuMemSuspended = ncclStatGpuMemSuspended
+    GpuMemPersist = ncclStatGpuMemPersist
+    GpuMemTotal = ncclStatGpuMemTotal
+
 class RedOp_dummy(_IntEnum):
-    """See `ncclRedOp_dummy_t`."""
+    """
+    See `ncclRedOp_dummy_t`.
+    """
     NumOps_dummy = ncclNumOps_dummy
 
 class RedOp(_IntEnum):
-    """See `ncclRedOp_t`."""
+    """
+    See `ncclRedOp_t`.
+    """
     Sum = ncclSum
     Prod = ncclProd
     Max = ncclMax
@@ -844,7 +2967,9 @@ class RedOp(_IntEnum):
     MaxRedOp = ncclMaxRedOp
 
 class DataType(_IntEnum):
-    """See `ncclDataType_t`."""
+    """
+    See `ncclDataType_t`.
+    """
     Int8 = ncclInt8
     Char = ncclChar
     Uint8 = ncclUint8
@@ -865,9 +2990,27 @@ class DataType(_IntEnum):
     NumTypes = ncclNumTypes
 
 class ScalarResidence(_IntEnum):
-    """See `ncclScalarResidence_t`."""
+    """
+    See `ncclScalarResidence_t`.
+    """
     Device = ncclScalarDevice
     HostImmediate = ncclScalarHostImmediate
+
+class GinType(_IntEnum):
+    """
+    See `ncclGinType_t`.
+    """
+    NONE = NCCL_GIN_TYPE_NONE
+    PROXY = NCCL_GIN_TYPE_PROXY
+    GDAKI = NCCL_GIN_TYPE_GDAKI
+
+class GinConnectionType(_IntEnum):
+    """
+    See `ncclGinConnectionType_t`.
+    """
+    NONE = NCCL_GIN_CONNECTION_NONE
+    FULL = NCCL_GIN_CONNECTION_FULL
+    RAIL = NCCL_GIN_CONNECTION_RAIL
 
 
 ###############################################################################
@@ -1174,4 +3317,22 @@ cpdef group_end():
 cpdef group_simulate_end(intptr_t sim_info):
     with nogil:
         __status__ = ncclGroupSimulateEnd(<ncclSimInfo_t*>sim_info)
+    check_status(__status__)
+
+
+cpdef comm_query_properties(intptr_t comm, intptr_t props):
+    with nogil:
+        __status__ = ncclCommQueryProperties(<Comm>comm, <ncclCommProperties_t*>props)
+    check_status(__status__)
+
+
+cpdef dev_comm_create(intptr_t comm, intptr_t reqs, intptr_t out_dev_comm):
+    with nogil:
+        __status__ = ncclDevCommCreate(<Comm>comm, <const ncclDevCommRequirements_t*>reqs, <ncclDevComm_t*>out_dev_comm)
+    check_status(__status__)
+
+
+cpdef dev_comm_destroy(intptr_t comm, intptr_t dev_comm):
+    with nogil:
+        __status__ = ncclDevCommDestroy(<Comm>comm, <const ncclDevComm_t*>dev_comm)
     check_status(__status__)

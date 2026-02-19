@@ -24,21 +24,25 @@ from nccl.core.buffer import NcclBuffer
 from nccl.core.constants import (
     NCCL_SPLIT_NOCOLOR,
     NCCL_UNDEF_INT,
+    NCCL_MAGIC,
     CTAPolicy,
     CommShrinkFlag,
     WindowFlag,
 )
-from nccl.core.cuda import get_stream_ptr, get_cuda_device
+from nccl.core.cuda import get_stream_ptr
 from nccl.core.resources import (
     CommResource,
     RegisteredBufferHandle,
     RegisteredWindowHandle,
     CustomRedOp,
+    DevCommResource,
 )
 from nccl.core.typing import (
     NcclDataType,
     NcclBufferSpec,
     NcclRedOp,
+    NcclGinType,
+    NcclGinConnectionType,
     NcclStreamSpec,
     NcclScalarSpec,
     NcclInvalid,
@@ -49,6 +53,7 @@ from nccl.core.utils import UniqueId
 __all__ = [
     "NCCLConfig",
     "WaitSignalDesc",
+    "NCCLDevCommRequirements",
     "Communicator",
 ]
 
@@ -112,7 +117,7 @@ class NCCLConfig:
 
         # Apply NCCL_CONFIG_INITIALIZER defaults
         self._cfg.size_ = int(_nccl_bindings.config_dtype.itemsize)
-        self._cfg.magic = 0xCAFEBEEF  # NCCL protocol magic number for ncclConfig_t validation
+        self._cfg.magic = NCCL_MAGIC  # NCCL protocol magic number for ncclConfig_t validation
         self._cfg.version = _nccl_bindings.get_version()
 
         # Initialize all fields to undef
@@ -537,6 +542,252 @@ class WaitSignalDesc:
         self.ctx = int(ctx)
 
 
+class NCCLDevCommRequirements:
+    """
+    NCCL device communicator requirements configuration.
+
+    This class provides configuration options for device communicator creation,
+    allowing fine-tuning of resource allocation and device-side communication behavior.
+    All parameters can be set during initialization or modified via properties.
+
+    See Also:
+        https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html
+    """
+
+    def __init__(
+        self,
+        *,
+        lsa_multimem: bool = False,
+        barrier_count: int = 0,
+        lsa_barrier_count: int = 0,
+        rail_gin_barrier_count: int = 0,
+        lsa_ll_a2a_block_count: int = 0,
+        lsa_ll_a2a_slot_count: int = 0,
+        gin_force_enable: bool = False,
+        gin_context_count: int = 4,
+        gin_signal_count: int = 0,
+        gin_counter_count: int = 0,
+        gin_connection_type: NcclGinConnectionType = NcclGinConnectionType.NONE,
+        gin_exclusive_contexts: bool = False,
+        gin_queue_depth: int = 0,
+    ) -> None:
+        """
+        Initializes NCCL device communicator requirements.
+
+        All parameters are optional and default to values from NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER.
+
+        Args:
+            lsa_multimem: Enable multimem on LSA team. Default: False.
+            barrier_count: Number of barriers required. Default: 0.
+            lsa_barrier_count: Number of LSA barriers. Default: 0.
+            rail_gin_barrier_count: Number of railed GIN barriers. Default: 0.
+            lsa_ll_a2a_block_count: LSA low-latency all-to-all block count. Default: 0.
+            lsa_ll_a2a_slot_count: LSA low-latency all-to-all slot count. Default: 0.
+            gin_force_enable: Force enable GPU Interconnect Network. Default: False.
+            gin_context_count: Number of GIN contexts (hint, actual count may differ). Default: 4.
+            gin_signal_count: Number of GIN signals (guaranteed to start at id=0). Default: 0.
+            gin_counter_count: Number of GIN counters (guaranteed to start at id=0). Default: 0.
+            gin_connection_type: GIN connection type. Default: NcclGinConnectionType.NONE.
+            gin_exclusive_contexts: Use exclusive GIN contexts. Default: False.
+            gin_queue_depth: GIN queue depth. Default: 0.
+        """
+        # Initialize the low-level binding object
+        self._reqs = _nccl_bindings.DevCommRequirements()
+
+        # Initialize required fields from NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER
+        self._reqs.size_ = int(_nccl_bindings.dev_comm_requirements_dtype.itemsize)
+        self._reqs.magic = NCCL_MAGIC
+        self._reqs.version = _nccl_bindings.get_version()
+
+        # Set list pointers to 0 (not exposed in Python API for now)
+        self._reqs.resource_requirements_list = 0
+        self._reqs.team_requirements_list = 0
+
+        # Assign all user values through setters (which handle bool->int and enum validation)
+        self.lsa_multimem = lsa_multimem
+        self.barrier_count = barrier_count
+        self.lsa_barrier_count = lsa_barrier_count
+        self.rail_gin_barrier_count = rail_gin_barrier_count
+        self.lsa_ll_a2a_block_count = lsa_ll_a2a_block_count
+        self.lsa_ll_a2a_slot_count = lsa_ll_a2a_slot_count
+        self.gin_force_enable = gin_force_enable
+        self.gin_context_count = gin_context_count
+        self.gin_signal_count = gin_signal_count
+        self.gin_counter_count = gin_counter_count
+        self.gin_connection_type = gin_connection_type
+        self.gin_exclusive_contexts = gin_exclusive_contexts
+        self.gin_queue_depth = gin_queue_depth
+
+    @property
+    def lsa_multimem(self) -> bool:
+        """Enable multimem on LSA team."""
+        return bool(self._reqs.lsa_multimem)
+
+    @lsa_multimem.setter
+    def lsa_multimem(self, value: bool) -> None:
+        self._reqs.lsa_multimem = int(value)
+
+    @property
+    def barrier_count(self) -> int:
+        """Number of barriers required."""
+        return self._reqs.barrier_count
+
+    @barrier_count.setter
+    def barrier_count(self, value: int) -> None:
+        self._reqs.barrier_count = value
+
+    @property
+    def lsa_barrier_count(self) -> int:
+        """Number of LSA barriers."""
+        return self._reqs.lsa_barrier_count
+
+    @lsa_barrier_count.setter
+    def lsa_barrier_count(self, value: int) -> None:
+        self._reqs.lsa_barrier_count = value
+
+    @property
+    def rail_gin_barrier_count(self) -> int:
+        """Number of railed GIN barriers."""
+        return self._reqs.rail_gin_barrier_count
+
+    @rail_gin_barrier_count.setter
+    def rail_gin_barrier_count(self, value: int) -> None:
+        self._reqs.rail_gin_barrier_count = value
+
+    @property
+    def lsa_ll_a2a_block_count(self) -> int:
+        """LSA low-latency all-to-all block count."""
+        return self._reqs.lsa_ll_a2a_block_count
+
+    @lsa_ll_a2a_block_count.setter
+    def lsa_ll_a2a_block_count(self, value: int) -> None:
+        self._reqs.lsa_ll_a2a_block_count = value
+
+    @property
+    def lsa_ll_a2a_slot_count(self) -> int:
+        """LSA low-latency all-to-all slot count."""
+        return self._reqs.lsa_ll_a2a_slot_count
+
+    @lsa_ll_a2a_slot_count.setter
+    def lsa_ll_a2a_slot_count(self, value: int) -> None:
+        self._reqs.lsa_ll_a2a_slot_count = value
+
+    @property
+    def gin_force_enable(self) -> bool:
+        """Force enable GPU Interconnect Network."""
+        return bool(self._reqs.gin_force_enable)
+
+    @gin_force_enable.setter
+    def gin_force_enable(self, value: bool) -> None:
+        self._reqs.gin_force_enable = int(value)
+
+    @property
+    def gin_context_count(self) -> int:
+        """Number of GIN contexts (hint, actual count may differ)."""
+        return self._reqs.gin_context_count
+
+    @gin_context_count.setter
+    def gin_context_count(self, value: int) -> None:
+        self._reqs.gin_context_count = value
+
+    @property
+    def gin_signal_count(self) -> int:
+        """Number of GIN signals (guaranteed to start at id=0)."""
+        return self._reqs.gin_signal_count
+
+    @gin_signal_count.setter
+    def gin_signal_count(self, value: int) -> None:
+        self._reqs.gin_signal_count = value
+
+    @property
+    def gin_counter_count(self) -> int:
+        """Number of GIN counters (guaranteed to start at id=0)."""
+        return self._reqs.gin_counter_count
+
+    @gin_counter_count.setter
+    def gin_counter_count(self, value: int) -> None:
+        self._reqs.gin_counter_count = value
+
+    @property
+    def gin_connection_type(self) -> NcclGinConnectionType:
+        """GIN connection type (NcclGinConnectionType enum)."""
+        return NcclGinConnectionType(self._reqs.gin_connection_type)
+
+    @gin_connection_type.setter
+    def gin_connection_type(self, value: NcclGinConnectionType | int) -> None:
+        self._reqs.gin_connection_type = NcclGinConnectionType(value)
+
+    @property
+    def gin_exclusive_contexts(self) -> bool:
+        """Use exclusive GIN contexts."""
+        return bool(self._reqs.gin_exclusive_contexts)
+
+    @gin_exclusive_contexts.setter
+    def gin_exclusive_contexts(self, value: bool) -> None:
+        self._reqs.gin_exclusive_contexts = int(value)
+
+    @property
+    def gin_queue_depth(self) -> int:
+        """GIN queue depth."""
+        return self._reqs.gin_queue_depth
+
+    @gin_queue_depth.setter
+    def gin_queue_depth(self, value: int) -> None:
+        self._reqs.gin_queue_depth = value
+
+    @property
+    def ptr(self) -> int:
+        """
+        Pointer to the underlying ncclDevCommRequirements_t structure.
+
+        Returns:
+            int: The requirements pointer for passing to NCCL functions.
+        """
+        return self._reqs.ptr
+
+    def __repr__(self) -> str:
+        """
+        Returns string representation showing non-default values.
+
+        Returns:
+            str: String showing configured (non-default) values.
+        """
+        parts = []
+
+        # Show non-default values for brevity (field order matches struct)
+        # Defaults from NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER
+        if self._reqs.lsa_multimem:
+            parts.append(f"lsa_multimem={self._reqs.lsa_multimem}")
+        if self._reqs.barrier_count != 0:
+            parts.append(f"barrier_count={self._reqs.barrier_count}")
+        if self._reqs.lsa_barrier_count != 0:
+            parts.append(f"lsa_barrier_count={self._reqs.lsa_barrier_count}")
+        if self._reqs.rail_gin_barrier_count != 0:
+            parts.append(f"rail_gin_barrier_count={self._reqs.rail_gin_barrier_count}")
+        if self._reqs.lsa_ll_a2a_block_count != 0:
+            parts.append(f"lsa_ll_a2a_block_count={self._reqs.lsa_ll_a2a_block_count}")
+        if self._reqs.lsa_ll_a2a_slot_count != 0:
+            parts.append(f"lsa_ll_a2a_slot_count={self._reqs.lsa_ll_a2a_slot_count}")
+        if self._reqs.gin_force_enable:
+            parts.append(f"gin_force_enable={self._reqs.gin_force_enable}")
+        if self._reqs.gin_context_count != 4:  # Default is 4, not 0
+            parts.append(f"gin_context_count={self._reqs.gin_context_count}")
+        if self._reqs.gin_signal_count != 0:
+            parts.append(f"gin_signal_count={self._reqs.gin_signal_count}")
+        if self._reqs.gin_counter_count != 0:
+            parts.append(f"gin_counter_count={self._reqs.gin_counter_count}")
+        if self._reqs.gin_connection_type != int(NcclGinConnectionType.NONE):
+            parts.append(f"gin_connection_type={self._reqs.gin_connection_type}")
+        if self._reqs.gin_exclusive_contexts:
+            parts.append(f"gin_exclusive_contexts={self._reqs.gin_exclusive_contexts}")
+        if self._reqs.gin_queue_depth != 0:
+            parts.append(f"gin_queue_depth={self._reqs.gin_queue_depth}")
+
+        if parts:
+            return f"<NCCLDevCommRequirements: {', '.join(parts)}>"
+        return "<NCCLDevCommRequirements: all defaults>"
+
+
 class Communicator:
     """
     NCCL Communicator for collective and point-to-point operations.
@@ -568,10 +819,10 @@ class Communicator:
         """
         self._comm: int = int(ptr)
         self._resources: list[CommResource] = []
-
-        self._nranks = int(_nccl_bindings.comm_count(self._comm)) if ptr != 0 else None
-        self._device = Device(int(_nccl_bindings.comm_cu_device(self._comm))) if ptr != 0 else None
-        self._rank = int(_nccl_bindings.comm_user_rank(self._comm)) if ptr != 0 else None
+        self._nranks: int | None = None
+        self._device: Device | None = None
+        self._rank: int | None = None
+        self._comm_properties: _nccl_bindings.CommProperties | None = None
 
     def _check_valid(self, operation: str) -> None:
         """
@@ -603,6 +854,26 @@ class Communicator:
                 f"is on device {self.device.device_id}. Buffers must be on the same "
                 f"device as the communicator."
             )
+
+    def _get_comm_properties(self) -> _nccl_bindings.CommProperties:
+        """
+        Queries and caches communicator properties.
+
+        Returns:
+            CommProperties: Cached properties object.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+        """
+        self._check_valid("query properties")
+        if self._comm_properties is None:
+            self._comm_properties = _nccl_bindings.CommProperties()
+            # Initialize with magic number, size, and version (like NCCL_COMM_PROPERTIES_INITIALIZER)
+            self._comm_properties.size_ = int(_nccl_bindings.comm_properties_dtype.itemsize)
+            self._comm_properties.magic = NCCL_MAGIC
+            self._comm_properties.version = _nccl_bindings.get_version()
+            _nccl_bindings.comm_query_properties(self._comm, self._comm_properties.ptr)
+        return self._comm_properties
 
     def __repr__(self) -> str:
         """
@@ -666,12 +937,7 @@ class Communicator:
         else:
             raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
 
-        comm = cls(comm_ptr)
-        # reassign the values in case init() is called inside a group
-        comm._nranks = int(nranks)
-        comm._device = get_cuda_device()
-        comm._rank = int(rank)
-        return comm
+        return cls(comm_ptr)
 
     # --- Communicator APIs ---
     def split(self, color: int, key: int, config: NCCLConfig | None = None) -> Communicator:
@@ -891,7 +1157,14 @@ class Communicator:
     @property
     def device(self) -> Device:
         """
-        CUDA device object associated with this communicator.
+        CUDA device associated with this communicator.
+
+        Returns:
+            ``cuda.core.Device``: A CUDA device object from ``cuda.core.experimental`` (alias ``cuda.core.Device``).
+            This object provides additional functionalities, such as ``to_system_device()``
+            for obtaining the corresponding NVML (system) device, device properties, sync device, and etc.
+            See the CUDA Python documentation for more:
+            https://nvidia.github.io/cuda-python/cuda-core/latest/generated/cuda.core.Device.html
 
         Returns:
             ``Device``: CUDA device object from cuda.core.experimental.
@@ -925,6 +1198,153 @@ class Communicator:
         if self._rank is None:
             self._rank = int(_nccl_bindings.comm_user_rank(self._comm))
         return self._rank
+
+    @property
+    def cuda_dev(self) -> int:
+        """
+        CUDA device ID associated with this communicator.
+
+        Returns:
+            int: CUDA device ID.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html#ncclcommproperties-t
+        """
+        self._check_valid("get cuda_dev")
+        return self._get_comm_properties().cuda_dev
+
+    @property
+    def nvml_dev(self) -> int:
+        """
+        NVML device ID for the GPU associated with this communicator (in NVML indexing space).
+
+        Returns:
+            int: NVML device ID.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html#ncclcommproperties-t
+        """
+        self._check_valid("get nvml_dev")
+        return self._get_comm_properties().nvml_dev
+
+    @property
+    def device_api_support(self) -> bool:
+        """
+        Device API support flag.
+
+        Indicates whether device-side NCCL operations are supported on this platform. If false, a device communicator cannot be created.
+
+        Returns:
+            bool: True if supported, False otherwise.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html#ncclcommproperties-t
+        """
+        self._check_valid("get device_api_support")
+        return bool(self._get_comm_properties().device_api_support)
+
+    @property
+    def multimem_support(self) -> bool:
+        """
+        Multimem support flag.
+
+        Indicates whether ranks in the same LSA team can communicate using multimem. If False, a device communicator cannot be created with multimem resources.
+
+        Returns:
+            bool: True if supported, False otherwise.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html#ncclcommproperties-t
+        """
+        self._check_valid("get multimem_support")
+        return bool(self._get_comm_properties().multimem_support)
+
+    @property
+    def gin_type(self) -> NcclGinType:
+        """
+        GPU Interconnect Network (GIN) type.
+
+        If equal to ``NcclGinType.NONE``, a device communicator cannot be created
+        with GIN resources.
+
+        Returns:
+            NcclGinType: GIN type.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html#ncclcommproperties-t
+        """
+        self._check_valid("get gin_type")
+        return NcclGinType(self._get_comm_properties().gin_type)
+
+    @property
+    def n_lsa_teams(self) -> int:
+        """
+        Number of Local Shared Array (LSA) teams for this communicator.
+
+        Returns:
+            int: Number of LSA teams.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html#ncclcommproperties-t
+        """
+        self._check_valid("get n_lsa_teams")
+        return self._get_comm_properties().n_lsa_teams
+
+    @property
+    def host_rma_support(self) -> bool:
+        """
+        Host RMA support flag for this communicator.
+
+        Returns:
+            bool: True if supported, False otherwise.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html#ncclcommproperties-t
+        """
+        self._check_valid("get host_rma_support")
+        return bool(self._get_comm_properties().host_rma_support)
+
+    @property
+    def railed_gin_type(self) -> NcclGinType:
+        """
+        Railed GPU Interconnect Network (GIN) type for this communicator.
+
+        This value reflects GIN support within each rail team. When cross-NIC is
+        disabled (``NCCL_CROSS_NIC=0``), ``gin_type`` may report ``NcclGinType.NONE``
+        while ``railed_gin_type`` still reports the actual GIN type.
+
+        Returns:
+            NcclGinType: GIN type for railed configuration.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html#ncclcommproperties-t
+        """
+        self._check_valid("get railed_gin_type")
+        return NcclGinType(self._get_comm_properties().railed_gin_type)
 
     # --- Point-to-Point Communication ---
     def send(
@@ -972,7 +1392,7 @@ class Communicator:
         )
 
     def wait_signal(
-            self, signal_descs: Sequence[WaitSignalDesc], *, stream: NcclStreamSpec | None = None
+        self, signal_descs: Sequence[WaitSignalDesc], *, stream: NcclStreamSpec | None = None
     ) -> None:
         """
         Waits for signals as described in the signal descriptor array.
@@ -1010,7 +1430,9 @@ class Communicator:
 
         _nccl_bindings.wait_signal(nr_descs, ptr, int(self._comm), get_stream_ptr(stream))
 
-    def signal(self, peer: int, sig_idx: int, ctx: int, flags: int, *, stream: NcclStreamSpec | None = None) -> None:
+    def signal(
+        self, peer: int, sig_idx: int, ctx: int, flags: int, *, stream: NcclStreamSpec | None = None
+    ) -> None:
         """
         Sends a signal to a peer rank.
 
@@ -1690,6 +2112,47 @@ class Communicator:
         if scalar_array is not None:
             resource._scalar_array = scalar_array
 
+        self._resources.append(resource)
+        return resource
+
+    def create_dev_comm(
+        self, requirements: NCCLDevCommRequirements | None = None
+    ) -> DevCommResource:
+        """
+        Creates a device communicator for device-side NCCL operations.
+
+        Device communicators enable direct GPU kernel access to NCCL communication
+        primitives. The returned DevCommResource is automatically tracked and will
+        be destroyed when this communicator is destroyed or aborted.
+
+        Args:
+            requirements: Configuration for device communicator resource allocation.
+                If None, NCCL uses default settings. Can be initialized with specific
+                values or modified via properties before passing. Defaults to None.
+
+        Returns:
+            DevCommResource: Resource handle that can be closed manually via close()
+                or automatically when the communicator is destroyed/aborted. Access
+                the device communicator pointer via resource.ptr or resource.dev_comm.ptr.
+
+        Raises:
+            NcclInvalid: If communicator is not initialized.
+
+        Notes:
+            - Multiple device communicators can be created from one host communicator
+            - The DevComm object provides access to device communicator fields
+            - Device communicators are automatically destroyed on communicator cleanup
+
+        See Also:
+            https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/device.html
+        """
+        self._check_valid("create_dev_comm")
+
+        # Create default requirements if none provided
+        if requirements is None:
+            requirements = NCCLDevCommRequirements()
+
+        resource = DevCommResource(self._comm, requirements.ptr)
         self._resources.append(resource)
         return resource
 

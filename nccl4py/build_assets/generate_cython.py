@@ -30,8 +30,11 @@ from pathlib import Path
 
 
 # cybind repository configuration
-CYBIND_COMMIT = "5f479d7de8062dcd4d7672ceafe5686423cef69d"
+CYBIND_COMMIT = "cfbccc629d81ccbc2dbf31ee2a363ab60a6b4537"
 CYBIND_SSH_URL = "ssh://git@gitlab-master.nvidia.com:12051/leof/cybind.git"
+
+# Script directory for resolving default paths
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Global logger - will be configured in main()
 logger = logging.getLogger(__name__)
@@ -274,15 +277,15 @@ def main() -> int:
     parser.add_argument(
         "--nccl-include-dir",
         type=Path,
-        default=None,
-        help="Path to directory containing nccl.h (default: <repo_root>/build/include)",
+        default=SCRIPT_DIR.parent.parent / "build" / "include",
+        help="Path to directory containing nccl.h (default: ../../build/include relative to script)",
     )
     parser.add_argument(
         "--output-dir",
         "-o",
         type=Path,
-        default=None,
-        help="Output directory for generated bindings (default: <repo_root>/nccl4py/nccl/bindings)",
+        default=SCRIPT_DIR.parent / "nccl" / "bindings",
+        help="Output directory for generated bindings (default: ../nccl/bindings relative to script)",
     )
     parser.add_argument(
         "--verbose",
@@ -301,16 +304,8 @@ def main() -> int:
     )
 
     try:
-        # Detect paths relative to script location
-        script_dir = Path(__file__).resolve().parent
-        nccl4py_dir = script_dir.parent
-        repo_root = nccl4py_dir.parent
-
-        # Find nccl.h
-        if args.nccl_include_dir:
-            nccl_include_dir = args.nccl_include_dir
-        else:
-            nccl_include_dir = repo_root / "build" / "include"
+        # Use command-line args or defaults (already set to script-relative paths)
+        nccl_include_dir = args.nccl_include_dir
 
         nccl_header = nccl_include_dir / "nccl.h"
         if not nccl_header.exists():
@@ -348,10 +343,8 @@ def main() -> int:
         logger.info("")
 
         # Paths
-        nccl4py_assets_dir = script_dir
-        nccl4py_bindings_dir = (
-            args.output_dir if args.output_dir else nccl4py_dir / "nccl" / "bindings"
-        )
+        nccl4py_assets_dir = SCRIPT_DIR
+        nccl4py_bindings_dir = args.output_dir
 
         logger.info(f"Assets directory: {nccl4py_assets_dir}")
         logger.info(f"Target bindings directory: {nccl4py_bindings_dir}")

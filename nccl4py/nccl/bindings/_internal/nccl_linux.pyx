@@ -99,6 +99,9 @@ cdef void* __ncclWaitSignal = NULL
 cdef void* __ncclGroupStart = NULL
 cdef void* __ncclGroupEnd = NULL
 cdef void* __ncclGroupSimulateEnd = NULL
+cdef void* __ncclCommQueryProperties = NULL
+cdef void* __ncclDevCommCreate = NULL
+cdef void* __ncclDevCommDestroy = NULL
 
 
 cdef void* load_library() except* nogil:
@@ -410,6 +413,27 @@ cdef int _check_or_init_nccl() except -1 nogil:
             if handle == NULL:
                 handle = load_library()
             __ncclGroupSimulateEnd = dlsym(handle, 'ncclGroupSimulateEnd')
+
+        global __ncclCommQueryProperties
+        __ncclCommQueryProperties = dlsym(RTLD_DEFAULT, 'ncclCommQueryProperties')
+        if __ncclCommQueryProperties == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommQueryProperties = dlsym(handle, 'ncclCommQueryProperties')
+
+        global __ncclDevCommCreate
+        __ncclDevCommCreate = dlsym(RTLD_DEFAULT, 'ncclDevCommCreate')
+        if __ncclDevCommCreate == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclDevCommCreate = dlsym(handle, 'ncclDevCommCreate')
+
+        global __ncclDevCommDestroy
+        __ncclDevCommDestroy = dlsym(RTLD_DEFAULT, 'ncclDevCommDestroy')
+        if __ncclDevCommDestroy == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclDevCommDestroy = dlsym(handle, 'ncclDevCommDestroy')
         __py_nccl_init = True
         return 0
 
@@ -547,6 +571,15 @@ cpdef dict _inspect_function_pointers():
 
     global __ncclGroupSimulateEnd
     data["__ncclGroupSimulateEnd"] = <intptr_t>__ncclGroupSimulateEnd
+
+    global __ncclCommQueryProperties
+    data["__ncclCommQueryProperties"] = <intptr_t>__ncclCommQueryProperties
+
+    global __ncclDevCommCreate
+    data["__ncclDevCommCreate"] = <intptr_t>__ncclDevCommCreate
+
+    global __ncclDevCommDestroy
+    data["__ncclDevCommDestroy"] = <intptr_t>__ncclDevCommDestroy
 
     func_ptrs = data
     return data
@@ -971,3 +1004,33 @@ cdef ncclResult_t _ncclGroupSimulateEnd(ncclSimInfo_t* simInfo) except?_NCCLRESU
             raise FunctionNotFoundError("function ncclGroupSimulateEnd is not found")
     return (<ncclResult_t (*)(ncclSimInfo_t*) noexcept nogil>__ncclGroupSimulateEnd)(
         simInfo)
+
+
+cdef ncclResult_t _ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* props) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclCommQueryProperties
+    _check_or_init_nccl()
+    if __ncclCommQueryProperties == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclCommQueryProperties is not found")
+    return (<ncclResult_t (*)(ncclComm_t, ncclCommProperties_t*) noexcept nogil>__ncclCommQueryProperties)(
+        comm, props)
+
+
+cdef ncclResult_t _ncclDevCommCreate(ncclComm_t comm, const ncclDevCommRequirements_t* reqs, ncclDevComm_t* outDevComm) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclDevCommCreate
+    _check_or_init_nccl()
+    if __ncclDevCommCreate == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclDevCommCreate is not found")
+    return (<ncclResult_t (*)(ncclComm_t, const ncclDevCommRequirements_t*, ncclDevComm_t*) noexcept nogil>__ncclDevCommCreate)(
+        comm, reqs, outDevComm)
+
+
+cdef ncclResult_t _ncclDevCommDestroy(ncclComm_t comm, const ncclDevComm_t* devComm) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclDevCommDestroy
+    _check_or_init_nccl()
+    if __ncclDevCommDestroy == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclDevCommDestroy is not found")
+    return (<ncclResult_t (*)(ncclComm_t, const ncclDevComm_t*) noexcept nogil>__ncclDevCommDestroy)(
+        comm, devComm)
