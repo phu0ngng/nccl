@@ -286,18 +286,19 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorSender(struct ncclIbRes
   ncclResult_t res;
   ncclIbRequest* request = NULL;
 
+  uint64_t slot = (wc->wr_id & 0xff);
   struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)resCtx->baseComm;
-  request = sendComm->sendReqs[(wc->wr_id & 0xff) % NET_IB_MAX_REQUESTS][0];
+  request = sendComm->sendReqs[slot][0];
 
   if (request == NULL) {
-    WARN("NET/IB: %s: Retrieved a NULL request and not 'send' as expected (send comm=%p, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
-    return ncclInternalError;
+    WARN("NET/IB: %s: Encountered a stale CQE with error for slot=%ld. Slot was already handled (comm=%p, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, slot, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
+    return ncclSuccess;
   }
 
   struct ncclIbResiliencySend* sendResCtx = (struct ncclIbResiliencySend*)resCtx;
   res = ncclIbResiliencySendRequestInit(sendResCtx, request, devIndex);
   if (res != ncclSuccess) {
-    WARN("NET/IB: %s: Failed to initialize a resiliency send request (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, request, request->base, request->id, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
+    WARN("NET/IB: %s: Failed to initialize a resiliency send request (req=%p, comm=%p, id=%ld, type=%s, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d), slot=%ld).", __func__, request, request->base, request->id, ncclIbReqTypeStr[request->type], wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode, slot);
     return res;
   }
 
