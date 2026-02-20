@@ -44,7 +44,7 @@ run_device_api_test(){
       run_command "device_apitest_gin_default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/apitest/device_api/device_api_test" ""
     else
       echo -e "Disabled Api TESTS device api test\n\n"
-    fi 
+    fi
 }
 
 # list of tests with a special config

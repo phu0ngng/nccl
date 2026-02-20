@@ -50,7 +50,7 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::send(int peer, int elt, T data) 
   buf += this->slotsOffset + elt;
   #pragma unroll
   for (int u=0; u < divUp(sizeof(T), 8); u++) {
-    #if __CUDA_ARCH__ >= 700 
+    #if __CUDA_ARCH__ >= 700
       asm volatile("st.relaxed.sys.v4.u32 [%0],{%1,%3,%2,%3};" ::
         "l"(buf + u*this->pitch),
         "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
@@ -79,7 +79,7 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::bcast(int elt, T data) {
     bufmc += this->slotsOffset + elt;
     #pragma unroll
     for (int u=0; u < divUp(sizeof(T), 8); u++) {
-      #if __CUDA_ARCH__ >= 700 
+      #if __CUDA_ARCH__ >= 700
         asm volatile("st.relaxed.sys.v4.u32 [%0],{%1,%3,%2,%3};" ::
           "l"(bufmc + this->pitch*u),
           "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
@@ -106,7 +106,7 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::bcast(int elt, T data) {
         buf += this->slotsOffset + elt;
         #pragma unroll
         for (int u=0; u < divUp(sizeof(T),8); u++) {
-          #if __CUDA_ARCH__ >= 700 
+          #if __CUDA_ARCH__ >= 700
             asm volatile("st.relaxed.sys.v4.u32 [%0],{%1,%3,%2,%3};" ::
               "l"(buf + u*this->pitch),
               "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
@@ -131,7 +131,7 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::bcast(int elt, T data) {
       buf += this->slotsOffset + elt;
       #pragma unroll
       for (int u=0; u < divUp(sizeof(T),8); u++) {
-        #if __CUDA_ARCH__ >= 700 
+        #if __CUDA_ARCH__ >= 700
           asm volatile("st.relaxed.sys.v4.u32 [%0],{%1,%3,%2,%3};" ::
             "l"(buf + u*this->pitch),
             "r"(u32[u][0]), "r"(u32[u][1]), "r"(this->epoch)
@@ -178,7 +178,7 @@ NCCL_DEVICE_INLINE void ncclLLA2ASession<Coop>::recvUnrolled(int eltStart, int e
     for (int u=0; u < MaxEltCount; u++) {
       if (u < MinEltCount || u < eltCount) {
         #if __CUDA_ARCH__ >= 700
-          #if __CUDA_ARCH__ == 900 
+          #if __CUDA_ARCH__ == 900
             #pragma unroll
             for (int v=0; v < divUp(sizeof(T), 8); v++) {
               asm volatile("ld.acquire.sys.v4.u32 {%0,%1,%2,%3},[%4];"

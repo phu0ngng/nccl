@@ -3,7 +3,7 @@
 
 ## Abstract
 
-This PLC describes the implementation of Receive Work Queue Element (WQE) pre-posting to enhance communication efficiency in NCCL and allow future support for port-failover. The pre-posting of Receive WQEs allows for reduced latency and improved throughput by ensuring that the necessary resources are available before data transmission begins. 
+This PLC describes the implementation of Receive Work Queue Element (WQE) pre-posting to enhance communication efficiency in NCCL and allow future support for port-failover. The pre-posting of Receive WQEs allows for reduced latency and improved throughput by ensuring that the necessary resources are available before data transmission begins.
 
 Receive WQEs pre-posting is a pre-requisite for enabling port-failover capabilities in NCCL, which will enhance the robustness and reliability of communication in multi-path network environments. Port-failover allows NCCL to seamlessly switch between different network paths/devices in case of failures, ensuring continuous data flow and minimizing disruptions. In case of device failures, pre-posting Receive WQEs enables the receiver to accept data from other functional devices without knowing apriori on which device or devices each data transfer will be sent.
 
@@ -33,7 +33,7 @@ The feature is configurable via the following environment variable:
 >
 > Enabling the feature of pre-posting Receive WQEs requires the ID-based matching scheme to be enabled as well, since the receiver needs to be able to match completions with pre-posted receive requests.
 
-Receive 
+Receive
 
 Receive
 

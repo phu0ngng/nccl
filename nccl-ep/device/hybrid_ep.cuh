@@ -2317,7 +2317,7 @@ inline __device__ void inter_node_N2N_warp_group_device_function(const int local
                   ncclCoopThread());
 
           if constexpr(BACKWARD_COMBINE) {
-            
+
             size_t prob_src_offset = smem_mr_info_ptr->rdma_intra_node_red_prob_offset +
                                      (rdma_remote_node_id * MAX_NUM_OF_TOKENS_PER_RANK + token_idx) *
                                      (experts_per_rank * num_of_ranks_per_node) * sizeof(float);

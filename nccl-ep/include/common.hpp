@@ -12,7 +12,7 @@
 #pragma once
 
 // ============================================================================
-// Configuration constants 
+// Configuration constants
 // ============================================================================
 #define NUM_MAX_NVL_PEERS 8
 #define NUM_MAX_RDMA_PEERS 20
@@ -236,7 +236,7 @@ struct LowLatencyLayout {
         total_bytes += signaling_buffer_bytes_aligned * 2;
 
         // Assign pointers
- 
+
         for (int i = 0; i < 2; ++ i) {
             buffers[i] = {
                 static_cast<int>(signaling_buffer_bytes / sizeof(int)),

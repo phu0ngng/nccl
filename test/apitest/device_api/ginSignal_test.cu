@@ -38,11 +38,11 @@ __global__ void signalBasicKernel(ncclDevComm comm, int contextIdx, ncclGinSigna
 #if __CUDA_ARCH__ >= 700
   ncclTeam world = ncclTeamWorld(comm);
   ncclGin gin(comm, contextIdx);
-  
+
   if (world.nRanks < 2) {
     return;
   }
-  
+
   if (world.rank == 0) {
     if (isAdd) {
       gin.signal(world, 1, ncclGin_SignalAdd{signalIdx, 1});
@@ -76,7 +76,7 @@ __global__ void signalMultipleContextsKernel(ncclDevComm comm, int maxContexts, 
 }
 
 // Simple kernel to verify all signals and counters are zero
-__global__ void verifyAllZeroKernel(ncclDevComm comm, int contextIdx, 
+__global__ void verifyAllZeroKernel(ncclDevComm comm, int contextIdx,
                                     int signalCount, int counterCount) {
 #if __CUDA_ARCH__ >= 700
   if (threadIdx.x != 0 || blockIdx.x != 0) return;  // Only thread 0 does work
@@ -104,9 +104,9 @@ __global__ void verifyAllZeroKernel(ncclDevComm comm, int contextIdx,
 struct GinSignalParams {
   int signalIdx;
   int contextIdx;
-  
+
   std::string toString() const {
-    return std::string("signal_") + std::to_string(signalIdx) + 
+    return std::string("signal_") + std::to_string(signalIdx) +
            "_context_" + std::to_string(contextIdx);
   }
 };
@@ -124,12 +124,12 @@ class GinSignal_test : public ncclDevApiCommon_test,
 
 TEST_P(GinSignal_test, ring) {
   const GinSignalParams& params = GetParam();
-  
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   TESTCHECK(createDevComms(reqs));
-  
+
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalRingKernel<<<1, 1, 0, streams[i]>>>(
@@ -142,12 +142,12 @@ TEST_P(GinSignal_test, ring) {
 
 TEST_P(GinSignal_test, reset) {
   const GinSignalParams& params = GetParam();
-  
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
   TESTCHECK(createDevComms(reqs));
-  
+
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     signalResetKernel<<<1, 1, 0, streams[i]>>>(
@@ -160,7 +160,7 @@ TEST_P(GinSignal_test, reset) {
 
 TEST_P(GinSignal_test, basic_add) {
   const GinSignalParams& params = GetParam();
-  
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
@@ -178,7 +178,7 @@ TEST_P(GinSignal_test, basic_add) {
 
 TEST_P(GinSignal_test, basic_inc) {
   const GinSignalParams& params = GetParam();
-  
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_FULL;
@@ -196,7 +196,7 @@ TEST_P(GinSignal_test, basic_inc) {
 
 TEST_P(GinSignal_test, independent_contexts) {
   const GinSignalParams& params = GetParam();
-  
+
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginSignalCount = params.signalIdx + 1;
   reqs.ginForceEnable = true;

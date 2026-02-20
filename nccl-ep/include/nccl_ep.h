@@ -200,7 +200,7 @@ typedef struct {
 
 // Perform EP dispatch: sends tokens and metadata to the experts according to routing.
 //   This call is collective and must be invoked by all ranks in the group.
-//   All tensors are tagged using tags with `NCCL_EP_TENSOR_TAG` prefix 
+//   All tensors are tagged using tags with `NCCL_EP_TENSOR_TAG` prefix
 //   to indicate the types of tensor (i.e., tokens, topK indices, weights, etc.)
 
 //
@@ -273,7 +273,7 @@ typedef struct ncclEpCombineConfig ncclEpCombineConfig_t;
 //                               The LL mode accepts 1 optional local tensor:
 //                               TOP_K_WEIGHTS - IN [num_tokens x top_k] - top-k weights for each token.
 //   num_local_tensors - [IN]    Number of local tensors.
-//   send_only        - [IN]     If true, the combine will only initiate input tensor transfer 
+//   send_only        - [IN]     If true, the combine will only initiate input tensor transfer
 //                               and complete before the operation is completed. Supported for LL mode only.
 //                               When set, a blocking `ncclEpComplete` call must be used to complete the operation.
 //                               The output tensors must still be preallocated even when send_only is set.
@@ -315,7 +315,7 @@ typedef struct ncclEpCompleteConfig ncclEpCompleteConfig_t;
 //   - If ncclEpComplete is called on a different stream than the originating call (dispatch/combine),
 //     it is the responsibility of the user to synchronize between streams to ensure correctness.
 //   - This call is required for each dispatch/combine operation invoked with `send_only` flag set (note that only LL mode is supported).
-//   - If `ncclEpComplete` is invoked on a different stream than the corresponding initiating call (dispatch/combine), 
+//   - If `ncclEpComplete` is invoked on a different stream than the corresponding initiating call (dispatch/combine),
 //     it is the responsibility of the user to synchronize between streams to ensure correctness.
 //
 // Returns:

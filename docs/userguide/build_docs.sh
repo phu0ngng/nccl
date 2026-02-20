@@ -53,20 +53,20 @@ if [ $VENV_NEEDS_UPDATE -eq 1 ]; then
         echo "Removing old virtual environment..."
         rm -rf "$VENV_DIR"
     fi
-    
+
     echo "Creating Python virtual environment at $VENV_DIR..."
     python3 -m venv "$VENV_DIR"
-    
+
     # Activate venv
     source "$VENV_DIR/bin/activate"
-    
+
     # Upgrade pip and install requirements
     echo "Upgrading pip..."
     pip install --upgrade pip
-    
+
     echo "Installing dependencies from $REQUIREMENTS..."
     pip install -r "$REQUIREMENTS"
-    
+
     echo "Virtual environment setup complete!"
 else
     # Just activate the existing venv

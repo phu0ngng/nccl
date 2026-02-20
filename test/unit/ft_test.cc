@@ -558,7 +558,7 @@ int faultToleranceFinalizeTest(ncclComm_t* comms, int nVis, int size) {
     //completing NCCL operation by synchronizing on the CUDA stream
     for (int j = 0; j < nVis; ++j)
       CUDACHECK(cudaStreamSynchronize(sa[j]));
-  
+
     /* participating ranks follow orderly shutdown */
     deregisterBuffers(comms, sendRegHandles, recvRegHandles, nVis);
 

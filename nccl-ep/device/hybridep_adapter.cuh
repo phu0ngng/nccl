@@ -10,9 +10,9 @@
 #include <nccl.h>
 #include "nccl_device.h"
 #include "nccl_device/gin.h"
-#include "nccl_device/gin/gin_device_common.h"       
-#include "nccl_device/gin/gin_device_host_common.h" 
-// Note: ncclGinCtx_M and ncclGinSignal_t are already defined in 
+#include "nccl_device/gin/gin_device_common.h"
+#include "nccl_device/gin/gin_device_host_common.h"
+// Note: ncclGinCtx_M and ncclGinSignal_t are already defined in
 // gin/gin_device_common.h which is included via nccl_device.h
 
 namespace nccl_ep {

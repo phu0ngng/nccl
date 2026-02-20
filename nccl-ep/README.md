@@ -242,7 +242,7 @@ ncclEpCreateHandle(&handle, ep_group, &topk_idx, NULL, 0, NULL, stream);
 // 4. Perform dispatch operation
 ncclNDTensor_t* inputs[...] = {...};
 ncclNDTensor_t* outputs[...] = {...};
-ncclEpDispatch(handle, inputs, num_inputs, outputs, num_outputs, 
+ncclEpDispatch(handle, inputs, num_inputs, outputs, num_outputs,
                 NULL, 0, 0, NULL, stream);
 
 // 5. Compute expert forward passes...
@@ -250,8 +250,8 @@ ncclEpDispatch(handle, inputs, num_inputs, outputs, num_outputs,
 // 6. Perform combine operation
 ncclNDTensor_t* combine_inputs[...] = {...};
 ncclNDTensor_t* combine_outputs[...] = {...};
-ncclEpCombine(handle, combine_inputs, num_combine_inputs, 
-               combine_outputs, num_combine_outputs, 
+ncclEpCombine(handle, combine_inputs, num_combine_inputs,
+               combine_outputs, num_combine_outputs,
                NULL, 0, 0, NULL, stream);
 
 // 7. Cleanup
@@ -471,7 +471,7 @@ ncclResult_t ncclEpCombine(
   - LL mode: 3D `[num_experts x num_recv_tokens x data_size]` where `num_recv_tokens = num_ranks * max_tokens_per_rank`
 - `outputs` [IN]: Array of pre-allocated output tensor pointers (all 2D: `[num_tokens x data_size]`, original token order)
 
-  
+
 
 **Notes:**
 - In HT mode: uses top-k weights from dispatch to combine outputs
@@ -558,7 +558,7 @@ ncclEpGroup_t ep_group;
 ncclEpCreateGroup(&ep_group, comm, &config, stream, my_alloc, my_free);
 
 ncclNDTensor_t topk_idx;
-ncclEpTensorCreate(ep_group, &topk_idx, 2, ncclInt64, 
+ncclEpTensorCreate(ep_group, &topk_idx, 2, ncclInt64,
                     NCCL_EP_TENSOR_TAG_TOPK_IDX_HANDLE,
                     num_tokens, top_k);
 
@@ -598,12 +598,12 @@ if (config.max_tokens_per_rank == NCCL_EP_AUTO) {
 
 // Create input tensors (HT mode uses 3 inputs)
 ncclNDTensor_t input_tokens;
-ncclEpTensorCreate(ep_group, &input_tokens, 2, ncclBfloat16, 
+ncclEpTensorCreate(ep_group, &input_tokens, 2, ncclBfloat16,
                     NCCL_EP_TENSOR_TAG_DISPATCH_INPUT_TOKENS,
                     num_tokens, hidden);
 
 ncclNDTensor_t topk_weights;
-ncclEpTensorCreate(ep_group, &topk_weights, 2, ncclFloat32, 
+ncclEpTensorCreate(ep_group, &topk_weights, 2, ncclFloat32,
                     NCCL_EP_TENSOR_TAG_DISPATCH_INPUT_TOPK_WEIGHTS,
                     num_tokens, top_k);
 
@@ -613,17 +613,17 @@ ncclNDTensor_t* forward_inputs[3] = {&input_tokens, &topk_weights, &topk_idx};
 
 // Create output tensors (HT mode: 3 outputs, all 2D)
 ncclNDTensor_t output_tokens;
-ncclEpTensorCreate(ep_group, &output_tokens, 2, ncclBfloat16, 
+ncclEpTensorCreate(ep_group, &output_tokens, 2, ncclBfloat16,
                     NCCL_EP_TENSOR_TAG_DISPATCH_OUTPUT_TOKENS,
                     num_recv_tokens, hidden);
 
 ncclNDTensor_t recv_topk_weights;
-ncclEpTensorCreate(ep_group, &recv_topk_weights, 2, ncclFloat32, 
+ncclEpTensorCreate(ep_group, &recv_topk_weights, 2, ncclFloat32,
                     NCCL_EP_TENSOR_TAG_DISPATCH_OUTPUT_TOPK_WEIGHTS,
                     num_recv_tokens, top_k);
 
 ncclNDTensor_t recv_topk_idx;
-ncclEpTensorCreate(ep_group, &recv_topk_idx, 2, ncclInt64, 
+ncclEpTensorCreate(ep_group, &recv_topk_idx, 2, ncclInt64,
                     NCCL_EP_TENSOR_TAG_DISPATCH_OUTPUT_TOPK_IDX,
                     num_recv_tokens, top_k);
 
@@ -632,7 +632,7 @@ ncclNDTensor_t* forward_outputs[3] = {&output_tokens, &recv_topk_weights, &recv_
 // Local tensors for dispatch
 unsigned int num_local_experts = config.num_experts / nRanks;
 ncclNDTensor_t tokens_per_expert;
-ncclEpTensorCreate(ep_group, &tokens_per_expert, 1, ncclInt32, 
+ncclEpTensorCreate(ep_group, &tokens_per_expert, 1, ncclInt32,
                     NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_DEVICE,
                     num_local_experts);
 
@@ -648,12 +648,12 @@ ncclEpDispatch(handle, forward_inputs, 3, forward_outputs, 3,
 
 // Create expert output tensor
 ncclNDTensor_t expert_outputs;
-ncclEpTensorCreate(ep_group, &expert_outputs, 2, ncclBfloat16, 
+ncclEpTensorCreate(ep_group, &expert_outputs, 2, ncclBfloat16,
                     NCCL_EP_TENSOR_TAG_COMBINE_INPUT_TOKENS,
                     num_recv_tokens, hidden);
 
 ncclNDTensor_t combined_output;
-ncclEpTensorCreate(ep_group, &combined_output, 2, ncclBfloat16, 
+ncclEpTensorCreate(ep_group, &combined_output, 2, ncclBfloat16,
                     NCCL_EP_TENSOR_TAG_COMBINE_OUTPUT_TOKENS,
                     num_tokens, hidden);
 
@@ -723,7 +723,7 @@ ncclEpCreateGroup(&ep_group, comm, &config, stream, my_alloc, my_free);
 
 // Create routing tensor (topk_idx)
 ncclNDTensor_t topk_idx;
-ncclEpTensorCreate(ep_group, &topk_idx, 2, ncclInt64, 
+ncclEpTensorCreate(ep_group, &topk_idx, 2, ncclInt64,
                     NCCL_EP_TENSOR_TAG_TOPK_IDX_HANDLE,
                     num_tokens, top_k);
 
@@ -735,7 +735,7 @@ ncclEpCreateHandle(&handle, ep_group, &topk_idx, NULL, 0, NULL, stream);
 
 // Create input tensor (LL mode uses 1 input)
 ncclNDTensor_t input_tokens;
-ncclEpTensorCreate(ep_group, &input_tokens, 2, ncclBfloat16, 
+ncclEpTensorCreate(ep_group, &input_tokens, 2, ncclBfloat16,
                     NCCL_EP_TENSOR_TAG_DISPATCH_INPUT_TOKENS,
                     num_tokens, hidden);
 
@@ -743,7 +743,7 @@ ncclNDTensor_t* dispatch_inputs[1] = {&input_tokens};
 
 // Create output tensor (LL mode: 3D format [num_local_experts, nRanks * max_tokens, hidden])
 ncclNDTensor_t output_tokens;
-ncclEpTensorCreate(ep_group, &output_tokens, 3, ncclBfloat16, 
+ncclEpTensorCreate(ep_group, &output_tokens, 3, ncclBfloat16,
                     NCCL_EP_TENSOR_TAG_DISPATCH_OUTPUT_TOKENS,
                     num_local_experts, nRanks * config.max_tokens_per_rank, hidden);
 
@@ -751,7 +751,7 @@ ncclNDTensor_t* dispatch_outputs[1] = {&output_tokens};
 
 // Create local tensors for LL mode
 ncclNDTensor_t tokens_per_expert;
-ncclEpTensorCreate(ep_group, &tokens_per_expert, 1, ncclInt32, 
+ncclEpTensorCreate(ep_group, &tokens_per_expert, 1, ncclInt32,
                     NCCL_EP_TENSOR_TAG_RECV_EXPERT_COUNTER_DEVICE,
                     num_local_experts);
 
@@ -778,13 +778,13 @@ cudaStreamSynchronize(stream);
 
 // Create expert output tensor (also 3D in LL mode)
 ncclNDTensor_t expert_outputs;
-ncclEpTensorCreate(ep_group, &expert_outputs, 3, ncclBfloat16, 
+ncclEpTensorCreate(ep_group, &expert_outputs, 3, ncclBfloat16,
                     NCCL_EP_TENSOR_TAG_COMBINE_INPUT_TOKENS,
                     num_local_experts, nRanks * config.max_tokens_per_rank, hidden);
 
 // Create topk_weights for combine
 ncclNDTensor_t topk_weights;
-ncclEpTensorCreate(ep_group, &topk_weights, 2, ncclFloat32, 
+ncclEpTensorCreate(ep_group, &topk_weights, 2, ncclFloat32,
                     NCCL_EP_TENSOR_TAG_COMBINE_INPUT_TOPK_WEIGHTS,
                     num_tokens, top_k);
 
@@ -792,7 +792,7 @@ ncclNDTensor_t* combine_local_tensors[1] = {&topk_weights};
 
 // Combine expert outputs back to original token order
 ncclNDTensor_t combined_output;
-ncclEpTensorCreate(ep_group, &combined_output, 2, ncclBfloat16, 
+ncclEpTensorCreate(ep_group, &combined_output, 2, ncclBfloat16,
                     NCCL_EP_TENSOR_TAG_COMBINE_OUTPUT_TOKENS,
                     num_tokens, hidden);
 
