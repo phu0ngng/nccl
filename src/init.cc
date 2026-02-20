@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2015-2022, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2015-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "nccl.h"
 #include "channel.h"
@@ -258,9 +259,6 @@ static ncclResult_t commFree(ncclComm_t comm) {
   if (comm == NULL)
     return ncclSuccess;
 
-  // Destroy dynamic memory manager
-  NCCLCHECK(ncclMemManagerDestroy(comm));
-
   NCCLCHECK(ncclCeFinalize(comm));
   NCCLCHECK(ncclRmaCeFinalize(comm));
 
@@ -280,6 +278,9 @@ static ncclResult_t commFree(ncclComm_t comm) {
       comm->proxyState->threadUDS.join();
     }
   }
+
+  // Destroy dynamic memory manager only after all proxy threads have been joined
+  NCCLCHECK(ncclMemManagerDestroy(comm));
 
   if (comm->memPool) CUDACHECK(cudaMemPoolDestroy(comm->memPool));
 
@@ -669,7 +670,7 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   info->pidHash=getPidHash()+commHash;
   info->cuMemSupport = ncclCuMemEnable();
   CUDACHECK(cudaGetDeviceProperties(&prop, comm->cudaDev));
-  info->totalGlobalMem = ROUNDUP(prop.totalGlobalMem, (1LL << 32));
+  info->totalGlobalMem = ROUNDUP(prop.totalGlobalMem, (1ULL << 32));
 
   // Get the device MAJOR:MINOR of /dev/shm so we can use that
   // information to decide whether we can use SHM for inter-process
@@ -1465,9 +1466,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
   }
 
-  bool crossNicSupported;
   NCCLCHECKGOTO(ncclTopoPathAllDirectNVLink(comm->topo, &comm->isAllDirectNvlink), ret, fail);
-  NCCLCHECKGOTO(ncclTopoCheckCrossNicSupport(&crossNicSupported), ret, fail);
   comm->globalGinSupport = NCCL_GIN_CONNECTION_NONE;
   if (globalGinSupport && !globalNicFused && globalCuMemGdrSupport) {
     comm->globalGinSupport = globalCrossNicSupport ? NCCL_GIN_CONNECTION_FULL : NCCL_GIN_CONNECTION_RAIL;
@@ -2418,10 +2417,10 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
 
   if (comm->initState == ncclSuccess) {
     if ((ret = ncclStrongStreamSynchronize(&comm->sharedRes->hostStream)) != ncclSuccess) {
-      WARN("commDestroySync: comm %p rank %d sync hostStream error %d\n", comm, comm->rank, ret);
+      WARN("commDestroySync: comm %p rank %d sync hostStream error %d", comm, comm->rank, ret);
     }
     if ((ret = ncclStrongStreamSynchronize(&comm->sharedRes->deviceStream)) != ncclSuccess) {
-      WARN("commDestroySync: comm %p rank %d sync deviceStream error %d\n", comm, comm->rank, ret);
+      WARN("commDestroySync: comm %p rank %d sync deviceStream error %d", comm, comm->rank, ret);
     }
 
     NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm, true), ret, fail);
@@ -3089,20 +3088,17 @@ ncclResult_t ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError) {
   if (*asyncError == ncclSuccess && comm->proxyState) *asyncError = COMPILER_ATOMIC_LOAD(&comm->proxyState->asyncResult, std::memory_order_acquire);
 
   /* Check gin status */
-  if (*asyncError == ncclSuccess && comm->sharedRes && comm->sharedRes->ginState.ncclGin) {
+  if (*asyncError == ncclSuccess && comm->sharedRes && comm->sharedRes->ginState.connected) {
     struct ncclGinState* ginState = &comm->sharedRes->ginState;
     // Gin progress thread status
     if (ginState->needsProxyProgress) *asyncError = COMPILER_ATOMIC_LOAD(&comm->sharedRes->ginState.asyncResult, std::memory_order_acquire);
     // Gin side errors, also works when we have no GIN progress thread.
     if (*asyncError == ncclSuccess) {
       bool ginError;
-      for (int c=0; c<comm->sharedRes->ginState.ginCommCount; c++) {
-        NCCLCHECK(ncclGinQueryLastError(&comm->sharedRes->ginState, &ginError));
-        if (ginError) {
-          WARN("GIN Error on gin context %d\n", c);
-          *asyncError = ncclRemoteError;
-          break;
-        }
+      NCCLCHECK(ncclGinQueryLastError(&comm->sharedRes->ginState, &ginError));
+      if (ginError) {
+        WARN("GIN Error detected");
+        *asyncError = ncclRemoteError;
       }
     }
   }

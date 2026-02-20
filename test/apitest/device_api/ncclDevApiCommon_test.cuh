@@ -64,9 +64,8 @@ protected:
     cudaGetLastError();  // Clear any stale errors. Ignore value.
   }
 
-  // Called after each test - destroys devComms if created
-  void TearDown() override {
-    syncAllDevices();
+  // Helper function to destroy all devcomms
+  void destroyDevComms() {
     if (!devComms.empty()) {
       for (int i = 0; i < nVis; i++) {
         cudaSetDevice(i);
@@ -76,6 +75,13 @@ protected:
       }
       devComms.clear();
     }
+  }
+
+  // Called after each test - destroys devComms if created
+  void TearDown() override {
+    syncAllDevices();
+
+    destroyDevComms();
 
     ncclCommon_test<char>::TearDown();
   }
@@ -96,7 +102,7 @@ protected:
       return TestResult_t::testError;
     }
     devComms.resize(nVis);
-    
+
     // First, query properties and check if supported
     for (int i = 0; i < nVis; i++) {
       ncclCommProperties_t props = NCCL_COMM_PROPERTIES_INITIALIZER;
@@ -104,20 +110,20 @@ protected:
       if (res != ncclSuccess) {
         return TestResult_t::testError;
       }
-      
+
       if (!props.deviceApiSupport) {
         return TestResult_t::testSkipped;
       }
-      
-      if (reqs.ginForceEnable && props.ginType == NCCL_GIN_TYPE_NONE) {
+      bool ginRequested = reqs.ginForceEnable || reqs.ginConnectionType != NCCL_GIN_CONNECTION_NONE;
+      if (ginRequested && props.ginType == NCCL_GIN_TYPE_NONE) {
         return TestResult_t::testSkipped;
       }
     }
-    
+
     // Now create the devComms
     ncclResult_t res = ncclGroupStart();
     if (res != ncclSuccess) return TestResult_t::testError;
-    
+
     for (int i = 0; i < nVis; i++) {
       cudaError_t cudaErr = cudaSetDevice(i);
       if (cudaErr != cudaSuccess) {
@@ -130,10 +136,10 @@ protected:
         return TestResult_t::testError;
       }
     }
-    
+
     res = ncclGroupEnd();
     if (res != ncclSuccess) return TestResult_t::testError;
-    
+
     cudaGetLastError();  // Clear any stale errors
     return TestResult_t::testSuccess;
   }
@@ -144,27 +150,27 @@ protected:
 ////////////////////////////////////////////////////////////////////////////////
 
 // Helper function to allocate and register windows for all devices
-inline void allocateAndRegisterWindows(int nVis, ncclComm_t* comms, size_t size, 
+inline void allocateAndRegisterWindows(int nVis, ncclComm_t* comms, size_t size,
                                        std::vector<void*>& ptrs, std::vector<ncclWindow_t>& wins) {
   ptrs.resize(nVis);
   wins.resize(nVis);
-  
+
   ncclResult_t res = ncclGroupStart();
   ASSERT_EQ(ncclSuccess, res);
-  
+
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(cudaSuccess, cudaSetDevice(i));
     ASSERT_EQ(ncclSuccess, ncclMemAlloc(&ptrs[i], size));
     ASSERT_NE(nullptr, ptrs[i]);
-    
+
     // Initialize to zero
     ASSERT_EQ(cudaSuccess, cudaMemset(ptrs[i], 0, size));
-    
+
     // Register window using public API
     ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], ptrs[i], size,
                                                    &wins[i], NCCL_WIN_COLL_SYMMETRIC));
   }
-  
+
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 }
 

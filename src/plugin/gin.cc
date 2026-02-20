@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "gin.h"
 #include "bootstrap.h"
@@ -20,6 +21,7 @@ extern getNcclGin_t getNcclGin_v11;
 extern getNcclGin_t getNcclGin_v12;
 NCCL_PARAM(GinPluginRefCount, "GIN_PLUGIN_REF_COUNT", 0);
 #define NCCL_GIN_VERSION_COUNT 2
+int ncclGinVersion[NCCL_GIN_VERSION_COUNT] = {12, 11};
 getNcclGin_t* getNcclGin[NCCL_GIN_VERSION_COUNT] = {getNcclGin_v12, getNcclGin_v11};
 
 #define NCCL_GIN_NUM_INTERNAL_PLUGINS 1
@@ -37,6 +39,7 @@ typedef struct ginPluginLib {
   char name[MAX_STR_LEN];                       // Name of the plugin library
   void* dlHandle;                               // Handle to the plugin library
   ncclGin_t* ncclGin;                           // Pointer to the ncclGin_t structure
+  int ncclGinVersion;                           // Version of the nccl gin plugin
   ncclGinPluginState_t ncclGinPluginState;      // State of the nccl gin plugin
   ncclGin_t* ncclRma;                           // Pointer to the ncclGin_t structure for RMA
   ncclGinPluginState_t ncclRmaPluginState;      // State of the nccl gin rma plugin
@@ -68,6 +71,7 @@ static ncclResult_t ncclGinPluginLoad(ginPluginLib_t* pluginLib) {
 
   // load gin
   for (int i = 0; i < NCCL_GIN_VERSION_COUNT; i++) {
+    pluginLib->ncclGinVersion = ncclGinVersion[i];
     pluginLib->ncclGin = getNcclGin[i](pluginLib->dlHandle);
     if (pluginLib->ncclGin) break;
   }
@@ -121,14 +125,15 @@ static ncclResult_t ncclGinPluginAssignToComm(struct ncclComm* comm, int pluginI
   if (ginPluginLibs[pluginIndex].ncclGinPluginState >= ncclGinPluginStateEnabled) {
     INFO(NCCL_INIT|NCCL_NET, "Assigned GIN plugin %s to comm", ginPluginLibs[pluginIndex].ncclGin->name);
     comm->sharedRes->ginState.ncclGin = ginPluginLibs[pluginIndex].ncclGin;
+    comm->sharedRes->ginState.ginVersion = ginPluginLibs[pluginIndex].ncclGinVersion;
     comm->ginPluginIndex = pluginIndex;
-
     NCCLCHECK(setLocalGinType(comm));
   }
   if (ginPluginLibs[pluginIndex].ncclRmaPluginState >= ncclGinPluginStateEnabled) {
     INFO(NCCL_INIT|NCCL_NET, "Assigned RMA plugin %s to comm", ginPluginLibs[pluginIndex].ncclRma->name);
     comm->rmaState.rmaProxyState.ncclGin = ginPluginLibs[pluginIndex].ncclRma;
   }
+  ginPluginLibs[pluginIndex].ncclGinPluginRefCount++;
   *isAssigned = true;
   return ncclSuccess;
 }

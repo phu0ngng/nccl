@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef NET_IB_COMMON_H_
 #define NET_IB_COMMON_H_
@@ -381,6 +382,9 @@ struct ncclIbSendComm {
   // array. The requests are inserted to this array based on the "slot" they
   // are associated with.
   struct ncclIbRequest* sendReqs[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+
+  // Counter per "slot" on how many send request were called for a multi-recv
+  int sendReqsCnt[NET_IB_MAX_REQUESTS];
   struct ncclIbRemCompletionsRecords remCmplsRecords;
   int ar; // Use adaptive routing when all merged devices have it enabled
   uint64_t putSignalScratchpad;

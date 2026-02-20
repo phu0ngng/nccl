@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_DEVICE_COOP_H_
 #define _NCCL_DEVICE_COOP_H_
@@ -148,7 +149,7 @@ struct ncclCoopCta {
   NCCL_DEVICE_INLINE int thread_rank() const { return threadIdx.x; }
   NCCL_DEVICE_INLINE int size() const { return blockDim.x; }
   NCCL_DEVICE_INLINE int num_threads() const { return blockDim.x; }
-  NCCL_DEVICE_INLINE void sync() { __barrier_sync(0); }
+  NCCL_DEVICE_INLINE void sync() { __syncthreads(); }
 };
 #endif
 

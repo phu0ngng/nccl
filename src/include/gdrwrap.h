@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef NCCL_GDRWRAP_H_
 #define NCCL_GDRWRAP_H_
@@ -34,7 +35,7 @@ std::mutex& getGdrMutex();
 // This is required as the GDR memory is mapped WC
 #if !defined(__NVCC__)
 #if defined(__PPC__)
-static inline void wc_store_fence(void) { asm volatile("sync") ; }
+static inline void wc_store_fence(void) { asm volatile("sync" : : : "memory"); }
 #elif defined(__x86_64__)
 #include <immintrin.h>
 static inline void wc_store_fence(void) { _mm_sfence(); }

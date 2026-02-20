@@ -1,16 +1,14 @@
-/*
- * Copyright (c) 2017-2026, NVIDIA CORPORATION. All rights reserved.
- */
+/*************************************************************************
+ * SPDX-FileCopyrightText: Copyright (c) 2017-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef GIN_V12_H_
 #define GIN_V12_H_
 #include "nccl_net.h"
 
-typedef enum {
-  ncclGinRequirementFlagOptionsNotRequired = 0,
-  ncclGinRequirementFlagOptionsOptional = 1,
-  ncclGinRequirementFlagOptionsRequired = 2,
-} ncclGinRequirementFlagOptions_v12_t;
 typedef struct {
   // Name of the GIN support (mainly for logs)
   const char* name;
@@ -28,9 +26,7 @@ typedef struct {
   // Create a group for GIN operations. handles have been created
   // using listen() above. rank indicates caller's rank in the collective network.
   ncclResult_t (*connect)(void* ctx, void* handles[], int nranks, int rank, int nConnections,
-                          int queueDepth, ncclGinRequirementFlagOptions_v12_t useReliableDB,
-                          ncclGinRequirementFlagOptions_v12_t useExpertControl, void* listenComm,
-                          void** collComm);
+                          int queueDepth, void* listenComm, void** collComm);
   // Create device-side GIN context. devHandle will be passed to device code.
   // This function is not used in GIN_PROXY mode.
   ncclResult_t (*createContext)(void* collComm, int nSignals, int nCounters, int nContexts, void** ginCtx, ncclNetDeviceHandle_v11_t** devHandle);

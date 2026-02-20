@@ -21,7 +21,6 @@ typedef struct {
     size_t end_size;     // -e flag
     int num_ctas;        // -c flag
     int num_threads;     // -t flag
-    int gin_reliable_db;
     int gin_skip_credit_check;
     int gin_aggregate_requests;
 } cli_args_t;
@@ -29,10 +28,6 @@ typedef struct {
 static void print_cli_args_usage(char* argv0) {
   fprintf(stderr,
           "Usage: %s [-v] [-w warmup_iters] [-i normal_iters] [-b begin_size] [-e end_size] [-c num_ctas] [-t num_threads] [...args...]\n"
-          "  --gin_reliable_db <val>    Reliable DB mode (default 0)\n"
-          "                             0: Disable\n"
-          "                             1: Enable as an optional feature\n"
-          "                             2: Enable as a required feature\n"
           "  --gin_skip_credit_check    Skip credit check in GIN (default 0)\n"
           "  --gin_aggregate_requests   Use aggregate requests in GIN (default 0)\n",
           argv0);
@@ -48,7 +43,6 @@ static void parse_cli_args(int argc, char* argv[], cli_args_t* args) {
     args->end_size = 4 * 1024 * 1024;  // 4MB
     args->num_ctas = 1;
     args->num_threads = 1;
-    args->gin_reliable_db = 0;
     args->gin_skip_credit_check = 0;
     args->gin_aggregate_requests = 0;
 
@@ -56,7 +50,6 @@ static void parse_cli_args(int argc, char* argv[], cli_args_t* args) {
     int option_index = 0;
 
     static struct option long_options[] = {
-        {"gin_reliable_db", required_argument, 0, 0},
         {"gin_skip_credit_check", no_argument, 0, 0},
         {"gin_aggregate_requests", no_argument, 0, 0},
         {0, 0, 0, 0}
@@ -86,9 +79,7 @@ static void parse_cli_args(int argc, char* argv[], cli_args_t* args) {
                 args->num_threads = atoi(optarg);
                 break;
             case 0:  {
-                if (strcmp(long_options[option_index].name, "gin_reliable_db") == 0) {
-                    args->gin_reliable_db = atoi(optarg);
-                } else if (strcmp(long_options[option_index].name, "gin_skip_credit_check") == 0) {
+                if (strcmp(long_options[option_index].name, "gin_skip_credit_check") == 0) {
                     args->gin_skip_credit_check = 1;
                 } else if (strcmp(long_options[option_index].name, "gin_aggregate_requests") == 0) {
                     args->gin_aggregate_requests = 1;

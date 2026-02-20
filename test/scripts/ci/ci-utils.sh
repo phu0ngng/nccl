@@ -72,6 +72,9 @@ function make_run_command() {
 
     if [ "$run_mode" = "SALLOC_MPI" ]; then
         run_mode_cmd="salloc -N ${NNODES} --ntasks-per-node ${NGPUS} -t ${SLURM_TIME} --exclusive"
+        if [ "$SLURM_ACCOUNT" != "" ]; then
+            run_mode_cmd+=" -A $SLURM_ACCOUNT"
+        fi
         if [ "$SLURM_PARTITION" != "" ]; then
             run_mode_cmd+=" -p $SLURM_PARTITION"
         fi
@@ -294,7 +297,7 @@ function parse_store_coredumps() {
     binary=$1
     label=$2
     libnccl=$NCCL_HOME/lib/libnccl.so
-    find . -type f -name "core.*" -not -path "./failed/*" -not -path "./src/*" -not -path "./ext-net/*" | while read -r file; do
+    find . -type f -name "core.*" -not -path "./failed/*" -not -path "./src/*" -not -path "./plugins/net/*" | while read -r file; do
         echo "Processing file: $file"
         failed_dir="$(get_failed_dir $label)"
         mkdir -p $failed_dir/cores
@@ -368,10 +371,11 @@ function run_command() {
         commands+=(["$label"]="$run_mode_cmd $cmd")
         generate_repro_script $label
         start=$(date +%s%N)
-        stdout=$($run_mode_cmd $cmd 2>&1)
-        ret=$?
+        output_file=$(mktemp)
+        $run_mode_cmd $cmd 2>&1 | tee "$output_file"
+        ret=${PIPESTATUS[0]}
+        stdout=$(cat "$output_file")
         end=$(date +%s%N)
-        echo "$stdout"
         let runtime=$((end - start))/1000000000
         echo "Command took $runtime s with retcode $ret"
         # call validate_test to override return value in cases where we need special processing
@@ -383,6 +387,7 @@ function run_command() {
             parse_store_coredumps $binary $label
             move_repro_script $label
         fi
+        rm -f "$output_file"
         command_times+=(["$label"]="$runtime")
         command_retcodes+=(["$label"]="$ret")
         command_stdouts+=(["$label"]="$stdout")

@@ -38,9 +38,10 @@ void ncclDevComm_backwards_compat_test() {
   static_assert(offsetof(ncclDevComm_t, ginContextCount) == 200);
   static_assert(offsetof(ncclDevComm_t, ginContextBase) == 204);
   static_assert(offsetof(ncclDevComm_t, ginIsRailed) == 208);
+  static_assert(offsetof(ncclDevComm_t, abortFlag) == 216);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclDevComm_t) == 216);
+  static_assert(sizeof(ncclDevComm_t) == 224);
 }
 
 
@@ -79,11 +80,9 @@ void ncclDevCommRequirements_backwards_compat_test() {
   static_assert(offsetof(ncclDevCommRequirements_t, ginConnectionType) == 72);
   static_assert(offsetof(ncclDevCommRequirements_t, ginExclusiveContexts) == 76);
   static_assert(offsetof(ncclDevCommRequirements_t, ginQueueDepth) == 80);
-  static_assert(offsetof(ncclDevCommRequirements_t, ginUseReliableDB) == 84);
-  static_assert(offsetof(ncclDevCommRequirements_t, ginUseExpertControl) == 88);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclDevCommRequirements_t) == 96);
+  static_assert(sizeof(ncclDevCommRequirements_t) == 88);
 }
 
 void ncclCommProperties_backwards_compat_test() {
@@ -97,11 +96,11 @@ void ncclCommProperties_backwards_compat_test() {
   static_assert(offsetof(ncclCommProperties_t, nvmlDev) == 28);
   static_assert(offsetof(ncclCommProperties_t, deviceApiSupport) == 32);
   static_assert(offsetof(ncclCommProperties_t, multimemSupport) == 33);
-  static_assert(offsetof(ncclCommProperties_t, ginType) == 34);
-  static_assert(offsetof(ncclCommProperties_t, nLsaTeams) == 36);
-  static_assert(offsetof(ncclCommProperties_t, hostRmaSupport) == 40);
-  static_assert(offsetof(ncclCommProperties_t, railedGinType) == 41);
+  static_assert(offsetof(ncclCommProperties_t, ginType) == 36);
+  static_assert(offsetof(ncclCommProperties_t, nLsaTeams) == 40);
+  static_assert(offsetof(ncclCommProperties_t, hostRmaSupport) == 44);
+  static_assert(offsetof(ncclCommProperties_t, railedGinType) == 48);
 
   // This check prompts users to update the test. Edit according to the instructions above.
-  static_assert(sizeof(ncclCommProperties_t) == 48);
+  static_assert(sizeof(ncclCommProperties_t) == 56);
 }

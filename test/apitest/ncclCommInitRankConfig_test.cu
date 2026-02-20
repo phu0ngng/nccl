@@ -817,3 +817,20 @@ TEST_F(ncclCommInitRankConfig_test, env_plugin) {
     // Clean up environment variables
     unsetenv("NCCL_ENV_PLUGIN");
 }
+
+TEST_F(ncclCommInitRankConfig_test, init_net_dev_once) {
+    ncclUniqueId id, newid;
+    ncclComm_t comm, newcomm;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+
+    // this test loads the libnccl-net-plugin-init-once.so plugin lib, which fails to initialize more than once"
+    config.netName = "init_once";
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
+    ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comm, 1, id, 0, &config));
+
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&newid));
+    ASSERT_EQ(ncclInvalidUsage, ncclCommInitRankConfig(&newcomm, 1, newid, 0, &config));
+
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(comm));
+}

@@ -5,7 +5,7 @@ if [ -z "$NCCL_HOME" ]; then
 fi
 
 export OPAL_PREFIX=$MPI_HOME
-export LD_LIBRARY_PATH=$MPI_HOME/lib:${NCCL_HOME}/lib:$CUDA_HOME/lib64:$PWD/ext-net/mock:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$MPI_HOME/lib:${NCCL_HOME}/lib:$CUDA_HOME/lib64:$PWD/plugins/net/mock:$LD_LIBRARY_PATH
 
 # Needed for collnet / p2p tuning and nic fusion tests
 export NCCL_COLLNET_ENABLE=1

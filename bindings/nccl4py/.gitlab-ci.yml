@@ -1,0 +1,319 @@
+stages:
+  - build
+  - unit-tests
+  - setup
+  - apitests
+  - cleanup
+
+variables:
+  # Gitlab variables
+  FF_USE_FASTZIP: "true"
+  FF_ENABLE_JOB_CLEANUP: "true"
+  FF_TIMESTAMPS: true
+  GIT_STRATEGY: clone
+  # Common
+  NCCL4PY_CUDA12_TARGET: cu12
+  NCCL4PY_CUDA13_TARGET: cu13
+  NCCL4PY_PYTHON310_TARGET: cp310
+  NCCL4PY_PYTHON311_TARGET: cp311
+  NCCL4PY_PYTHON312_TARGET: cp312
+  NCCL4PY_PYTHON313_TARGET: cp313
+  NCCL4PY_PYTHON314_TARGET: cp314
+  NCCL4PY_PYTHON_TARGETS: "$NCCL4PY_PYTHON310_TARGET,$NCCL4PY_PYTHON311_TARGET,$NCCL4PY_PYTHON312_TARGET,$NCCL4PY_PYTHON313_TARGET,$NCCL4PY_PYTHON314_TARGET"
+  SLURM_ACCOUNT: coreai_libraries_nccl
+  UV_INDEX_URL: https://urm.nvidia.com/artifactory/api/pypi/pypi-remote/simple
+  PIP_INDEX_URL: https://urm.nvidia.com/artifactory/api/pypi/pypi-remote/simple
+  # CW-DFW
+  CW_DFW_SLURM_PARTITION: batch_short
+  CW_DFW_SLURM_PARTITION_CPU: cpu
+  CW_DFW_CUDA12_HOME: /lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/toolkits/cuda-12.8.0
+  CW_DFW_CUDA13_HOME: /lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/toolkits/cuda-13.0
+  CW_DFW_INSTALL_DIR: /lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner/install/${PARENT_PIPELINE_ID}
+  CW_DFW_UV_DIR: /lustre/fsw/portfolios/coreai/users/$GITLAB_USER_LOGIN/gitlab-runner/uv
+  CW_DFW_BASE_NCCL4PY_HOME: $CW_DFW_INSTALL_DIR/nccl4py/${CI_PIPELINE_ID}
+  CW_DFW_NCCL4PY_CUDA12_HOME: $CW_DFW_BASE_NCCL4PY_HOME/$NCCL4PY_CUDA12_TARGET
+  CW_DFW_NCCL4PY_CUDA13_HOME: $CW_DFW_BASE_NCCL4PY_HOME/$NCCL4PY_CUDA13_TARGET
+  CW_DFW_UV_VENV: /lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/toolkits/uv
+  CW_DFW_HPCX_HOME: /lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/toolkits/hpcx-v2.18
+  # IPP6
+  IPP6_SLURM_PARTITION: l40s-cicd
+  IPP6_SLURM_PARTITION_CPU: cpuonly
+  IPP6_INTERFACE_NAME: ens255f0np0
+  IPP6_CUDA12_HOME: /storage/toolkits/cuda-12.8
+  IPP6_CUDA13_HOME: /storage/toolkits/cuda-13.0
+  IPP6_CIBW_CACHE_PATH: /storage/gitlab-runner/.cache/cibuildwheel
+  IPP6_INSTALL_DIR: /storage/gitlab-runner/nccl/install/${PARENT_PIPELINE_ID}
+  IPP6_UV_DIR: /storage/gitlab-runner/nccl/uv
+  IPP6_NCCL_HOME: $IPP6_INSTALL_DIR/build
+  IPP6_NCCL4PY_HOME: ${IPP6_INSTALL_DIR}/nccl4py/${CI_PIPELINE_ID}
+  IPP6_NCCL4PY_CUDA12_HOME: $IPP6_NCCL4PY_HOME/$NCCL4PY_CUDA12_TARGET
+  IPP6_NCCL4PY_CUDA13_HOME: $IPP6_NCCL4PY_HOME/$NCCL4PY_CUDA13_TARGET
+
+# Allow pipeline to be triggered only via the parent
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
+    - when: never
+
+default:
+  retry: 2
+
+##
+## Stage: build - Start...
+##
+
+# Building wheels is done on IPP6 since docker must be available
+build_wheels:
+  stage: build
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+    CIBW_CACHE_PATH: $IPP6_CIBW_CACHE_PATH
+    GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}"
+  tags:
+    - ipp6-nccl
+  script:
+    - module load uv
+    - set -x
+    - |
+      srun \
+      -p $IPP6_SLURM_PARTITION_CPU \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:build-wheels \
+      -t 10 \
+      -N 1 \
+      --exclusive \
+      bindings/nccl4py/build_assets/build_wheels.sh
+  artifacts:
+    paths:
+      - build/dist/nccl4py-*.whl
+    expire_in: 48 hrs
+
+##
+## Stage: build - Finish!
+##
+
+.make_dev: &make_dev_step
+  before_script:
+  - |
+    module load uv
+    pushd bindings/nccl4py
+    make dev
+
+##
+## Stage: unit_tests - Start...
+##
+
+unit_tests:
+  stage: unit-tests
+  needs: []
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+    UV_CACHE_DIR: $IPP6_UV_DIR/cache
+    UV_PYTHON_INSTALL_DIR: $IPP6_UV_DIR/python
+    GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}"
+  tags:
+    - ipp6-nccl
+  <<: *make_dev_step
+  script:
+    - set -x
+    - |
+      srun \
+      -p ${IPP6_SLURM_PARTITION_CPU} \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:unit_tests \
+      -t 10 \
+      -N 1 \
+      --exclusive \
+      uv run pytest -v tests/unit_tests/
+
+##
+## Stage: unit_tests - Finish!
+##
+
+##
+## Stage: setup - Start...
+##
+
+.base_setup_nccl4py_job:
+  stage: setup
+  tags:
+    - ipp6-nccl
+  needs:
+    - build_wheels
+  variables:
+    UV_CACHE_DIR: $IPP6_UV_DIR/cache
+    UV_PYTHON_INSTALL_DIR: $IPP6_UV_DIR/python
+    GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}"
+  script:
+    - set -x
+    - |
+      echo "Configuring NCCL4PY for $NCCL4PY_CUDA_TARGET under $NCCL4PY_HOME"
+      srun \
+      -p ${IPP6_SLURM_PARTITION_CPU} \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:setup-nccl4py:$NCCL4PY_CUDA_TARGET \
+      -t 10 \
+      -N 1 \
+      --exclusive \
+      bindings/nccl4py/ci/setup_nccl4py.sh
+
+setup_nccl4py_cu12:
+  extends: .base_setup_nccl4py_job
+  variables:
+    NCCL4PY_HOME: $IPP6_NCCL4PY_CUDA12_HOME
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA12_TARGET
+
+setup_nccl4py_cu13:
+  extends: .base_setup_nccl4py_job
+  variables:
+    NCCL4PY_HOME: $IPP6_NCCL4PY_CUDA13_HOME
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA13_TARGET
+
+##
+## Stage: setup - Finish!
+##
+
+##
+## Stage: apitests - Start...
+##
+
+.base_api_tests_job:
+  stage: apitests
+  needs:
+    - pipeline: $PARENT_PIPELINE_ID
+      job: setup-ipp6
+  tags:
+    - ipp6-nccl
+  variables:
+    UV_CACHE_DIR: $IPP6_UV_DIR/cache
+    UV_PYTHON_INSTALL_DIR: $IPP6_UV_DIR/python
+    GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}"
+  <<: *make_dev_step
+  script:
+    - set -x
+    - |
+      mkdir -p apitest_logs/${NCCL4PY_CUDA_TARGET}
+
+      test -f $NCCL_HOME/lib/libnccl.so
+
+      export CUDA_HOME=${CUDA_HOME}
+      export LD_PRELOAD=${NCCL_HOME}/lib/libnccl.so
+
+      echo "CUDA_HOME: $CUDA_HOME"
+      echo "LD_PRELOAD: $LD_PRELOAD"
+      echo "INTERFACE_NAME: $INTERFACE_NAME"
+      echo "SLURM_PARTITION: $SLURM_PARTITION"
+      echo "SLURM_TIME: $SLURM_TIME"
+      echo "NNODES: $NNODES"
+      echo "NP: $NP"
+      echo "NGPUS: $NGPUS"
+
+      export OMPI_MCA_rmaps_oversubscribe=1
+      export OMPI_MCA_rmaps_binding_policy=none
+      export OMPI_MCA_btl="tcp,self"
+      export OMPI_MCA_btl_tcp_if_include="$INTERFACE_NAME"
+
+      srun \
+      -p ${SLURM_PARTITION} \
+      -J nccl4py-ci:$CI_COMMIT_SHORT_SHA:apitests:$NCCL4PY_CUDA_TARGET \
+      --export=ALL,NCCL_P2P_DISABLE=1,NCCL_IB_DISABLE=1 \
+      -t ${SLURM_TIME} \
+      -N ${NNODES} \
+      --exclusive \
+      -n ${NP} \
+      --ntasks-per-node=${NGPUS} \
+      --mpi=pmix \
+      uv run pytest -v --with-mpi --basetemp=apitest_logs/${NCCL4PY_CUDA_TARGET} tests/apitest/
+  artifacts:
+    when: always
+    paths:
+      - nccl4py/apitest_logs
+    expire_in: 48 hrs
+
+apitests_cu12-single:
+  extends: .base_api_tests_job
+  needs:
+    - job: setup_nccl4py_cu12
+      artifacts: false
+  variables:
+    CUDA_HOME: $IPP6_CUDA12_HOME
+    NCCL_HOME: $IPP6_INSTALL_DIR/build
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA12_TARGET
+    SLURM_PARTITION: $IPP6_SLURM_PARTITION
+    SLURM_TIME: 10
+    NNODES: 1
+    NP: 2
+    NGPUS: 2
+    INTERFACE_NAME: $IPP6_INTERFACE_NAME
+
+apitests_cu13-single:
+  extends: .base_api_tests_job
+  needs:
+    - job: setup_nccl4py_cu13
+      artifacts: false
+  variables:
+    CUDA_HOME: $IPP6_CUDA13_HOME
+    NCCL_HOME: $IPP6_INSTALL_DIR/build
+    NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA13_TARGET
+    SLURM_PARTITION: $IPP6_SLURM_PARTITION
+    SLURM_TIME: 10
+    NNODES: 1
+    NP: 2
+    NGPUS: 2
+    INTERFACE_NAME: $IPP6_INTERFACE_NAME
+
+# Dual-node tests disabled until they can be made stable
+# apitests_cu12-dual:
+#   extends: .base_api_tests_job
+#   variables:
+#     CUDA_HOME: $IPP6_CUDA12_HOME
+#     NCCL_HOME: $IPP6_INSTALL_DIR/build
+#     NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA12_TARGET
+#     SLURM_PARTITION: $IPP6_SLURM_PARTITION
+#     SLURM_TIME: 10
+#     NNODES: 2
+#     NP: 4
+#     NGPUS: 2
+#     INTERFACE_NAME: $IPP6_INTERFACE_NAME
+
+# apitests_cu13-dual:
+#   extends: .base_api_tests_job
+#   variables:
+#     CUDA_HOME: $IPP6_CUDA13_HOME
+#     NCCL_HOME: $IPP6_INSTALL_DIR/build
+#     NCCL4PY_CUDA_TARGET: $NCCL4PY_CUDA13_TARGET
+#     SLURM_PARTITION: $IPP6_SLURM_PARTITION
+#     SLURM_TIME: 10
+#     NNODES: 2
+#     NP: 4
+#     NGPUS: 2
+#     INTERFACE_NAME: $IPP6_INTERFACE_NAME
+
+##
+## Stage: apitests - Finish!
+##
+
+##
+## Stage: cleanup - Start...
+##
+
+cleanup:
+  stage: cleanup
+  tags:
+    - ipp6-nccl
+  needs:
+    - job: apitests_cu12-single
+      artifacts: false
+    - job: apitests_cu13-single
+      artifacts: false
+    # - job: apitests_cu12-dual
+    #   artifacts: false
+    # - job: apitests_cu13-dual
+    #   artifacts: false
+  variables:
+    NCCL4PY_HOME: $IPP6_NCCL4PY_HOME
+    GIT_STRATEGY: none
+  allow_failure: true
+  script:
+    - rm -rf $NCCL4PY_HOME
+
+##
+## Stage: cleanup - Finish!
+##

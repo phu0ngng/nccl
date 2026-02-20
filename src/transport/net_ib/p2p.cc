@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "p2p.h"
 #include "common.h"
@@ -112,6 +113,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     wr->wr.rdma.remote_addr = slots[r].addr;
     wr->next = wr + 1;
     wr_id += (reqs[r] - comm->base.reqs) << (r*8);
+    wr->wr_id = wr_id;
 #ifdef NCCL_ENABLE_NET_PROFILING
     reqs[r]->pInfo[0].nEventHandles = 0;
 #endif
@@ -331,10 +333,9 @@ ncclResult_t ncclIbIsend(void* sendComm, void* data, size_t size, int tag, void*
 
     *request = reqs[r] = req;
 
+    comm->sendReqsCnt[slot]++;
     // If this is a multi-recv, send only when all requests have matched.
-    for (int r=0; r<nreqs; r++) {
-      if (reqs[r] == NULL) return ncclSuccess;
-    }
+    if (comm->sendReqsCnt[slot] < nreqs) return ncclSuccess;
 
     TIME_START(0);
     NCCLCHECK(ncclIbMultiSend(comm, slot));
@@ -611,7 +612,12 @@ static inline ncclResult_t ncclIbRequestComplete(struct ncclIbRequest* r, int* d
     }
     int slot = r->id % NET_IB_MAX_REQUESTS;
     struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)r->base;
-    memset(&sendComm->sendReqs[slot], 0, sizeof(sendComm->sendReqs[slot]));
+    sendComm->sendReqsCnt[slot]--;
+    if (sendComm->sendReqsCnt[slot] == 0) {
+      // Only after completing the last send of a multi-recv, allow accepting
+      // following send requests on the same slot.
+      memset(&sendComm->sendReqs[slot], 0, sizeof(sendComm->sendReqs[slot]));
+    }
   }
   // Stop all remaining Qp events for this event
   NCCLCHECK(ncclIbFreeRequest(r));
@@ -648,13 +654,22 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
 
   struct ncclIbRequest* req = NULL;
   NCCLCHECK(ncclIbRequestRetrieveFromCompletion(commBase, wc, &req));
+  if (req == NULL) {
+    WARN("NET/IB: %s: %s comm could not retreive a request found for a successful completion (comm=%p, wc.wr_id=%ld, opcode=%d, qp_num=%u)", __func__, commBase->isSend ? "Send" : "Recv", commBase, wc->wr_id, wc->opcode, wc->qp_num);
+    return ncclInternalError;
+  }
 
   #ifdef ENABLE_TRACE
   char line[SOCKET_NAME_MAXLEN+1];
   TRACE(NCCL_NET, "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, devIndex=%d",
     ncclSocketToString(&addr, line), wc->status, wc->opcode,wc->byte_len, wc->wr_id, req, req->type, req->events[0], req->events[1], req->events[2], req->events[3], devIndex);
   #endif
-  if (req && req->type == NCCL_NET_IB_REQ_SEND) {
+
+  if (commBase->isSend) {
+    if (req->type != NCCL_NET_IB_REQ_SEND) {
+      WARN("NET/IB: %s: Sender expected a 'send' request but got '%s' (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.opcode=%s(%d), wc.qp_num=%u)", __func__, ncclIbReqTypeStr[req->type], req, commBase, req->id, wc->wr_id, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num);
+      return ncclInternalError;
+    }
     for (int j = 0; j < req->nreqs; j++) {
       struct ncclIbRequest* sendReq = NULL;
       NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
@@ -671,10 +686,13 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
 #endif
     }
   } else {
-    if (req && wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
-      if (req->type != NCCL_NET_IB_REQ_RECV) {
-        WARN("NET/IB: wc->opcode=%s and req->type=%s", ibvWcOpcodeStr(wc->opcode), ncclIbReqTypeStr[req->type]);
-        assert(false);
+    if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+      if (req->type == NCCL_NET_IB_REQ_UNUSED && commBase->resiliency) {
+        INFO(NCCL_NET, "NET/IB: %s: Receiver got a completion for a data transfer but retrieved an 'unused' request (req=%p, comm=%p, id=%ld, wc.status=%s(%d), wc.wr_id=%ld, wc.imm_data=%d, wc.opcode=%s(%d), wc.qp_num=%u)", __func__, req, commBase, req->id, ibvWcStatusStr(wc->status), wc->status, wc->wr_id, be32toh(wc->imm_data), ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num);
+        return ncclSuccess;
+      }
+      if (req->type != NCCL_NET_IB_REQ_RECV && !commBase->resiliency) {
+        WARN("NET/IB: %s: Receiver expected a 'recv' request but got '%s' (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.status=%s(%d) wc.opcode=%s(%d), wc.qp_num=%u)", __func__, ncclIbReqTypeStr[req->type], req, req->base, req->id, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num);
         return ncclInternalError;
       }
       if (req->nreqs == 1) {
@@ -695,14 +713,18 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         ncclIbPostRecvWorkRequest(qp->qp, &recvComm->ibRecvWorkRequest);
       }
       req->events[devIndex]--;
-    } else if (req && req->type == NCCL_NET_IB_REQ_FLUSH) {
+    } else if (wc->opcode == IBV_WC_RDMA_READ) {
       TRACE(NCCL_NET, "NET/IB: %s: Got completion for a flush request (req=%p, comm=%p, id=%ld, devIndex=%d, qp_num=%u)", __func__, req, req->base, req->id, devIndex, wc->qp_num);
       req->events[devIndex]--;
-    } else if (req && wc->opcode == IBV_WC_RDMA_WRITE) {
+    } else if (wc->opcode == IBV_WC_RDMA_WRITE) {
       // This is a CTS completion
       TRACE(NCCL_NET, "NET/IB: %s: Got completion for a CTS (req=%p, comm=%p, id=%ld, devIndex=%d, qp_num=%u)", __func__, req, req->base, req->id, devIndex, wc->qp_num);
+      if (req->type == NCCL_NET_IB_REQ_UNUSED) {
+        INFO(NCCL_NET, "NET/IB: %s: Receiver got a completion for a CTS but retrieved an 'unused' request (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.opcode=%s(%d), wc.qp_num=%u, wc.imm_data=%d)", __func__, req, req->base, req->id, wc->wr_id, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num, be32toh(wc->imm_data));
+        return ncclSuccess;
+      }
     } else {
-      WARN("NET/IB: %s: Unknown completion (req=%p, comm=%p, id=%ld, devIndex=%d, opcode=%d, qp_num=%u)", __func__, req, commBase, req ? req->id : -1, devIndex, wc->opcode, wc->qp_num);
+      WARN("NET/IB: %s: Unknown completion (req=%p, comm=%p, id=%ld, devIndex=%d, req->type=%s, wc.wr_id=%ld, wc.opcode=%s(%d), wc.qp_num=%u, wc.imm_data=%d)", __func__, req, commBase, req ? req->id : -1, devIndex, ncclIbReqTypeStr[req->type], wc->wr_id, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num, be32toh(wc->imm_data));
       return ncclInternalError;
     }
 #ifdef NCCL_ENABLE_NET_PROFILING

@@ -77,8 +77,8 @@ foreach(COLL IN LISTS COLLS)
     target_include_directories(${COLL}_perf
         PRIVATE
         ${CMAKE_BINARY_DIR}/include
-        ${CMAKE_SOURCE_DIR}/ext-profiler/example
-        ${CMAKE_SOURCE_DIR}/ext-profiler/example/nccl
+        ${CMAKE_SOURCE_DIR}/plugins/profiler/example
+        ${CMAKE_SOURCE_DIR}/plugins/profiler/example/nccl
     )
     if(MPI_FOUND)
         add_compile_definitions(MPI_SUPPORT)

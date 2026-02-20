@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_GIN_DEVICE_COMMON_H_
 #define _NCCL_GIN_DEVICE_COMMON_H_
@@ -122,7 +123,7 @@ struct ncclGinApi_ResetCounter {
 template <ncclNetDeviceType backend>
 struct ncclGinApi_Flush {
   template <typename Coop>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop, cuda::memory_order ord);
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop, cuda::memory_order ord, uint32_t* abortFlag);
 };
 #endif
 

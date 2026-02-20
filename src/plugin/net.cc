@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "net.h"
 #include "bootstrap.h"
@@ -144,7 +145,7 @@ ncclResult_t ncclNetCheckDeviceVersion(struct ncclComm* comm, ncclNet_t* net, in
         return ncclInternalError;
       }
     default:
-      WARN("Unknown device code index %d \n", type);
+      WARN("Unknown device code index %d", type);
       return ncclInternalError;
   }
 

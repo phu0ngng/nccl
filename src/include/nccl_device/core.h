@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_DEVICE_CORE_H_
 #define _NCCL_DEVICE_CORE_H_
@@ -68,12 +69,6 @@ typedef enum {
   NCCL_GIN_CONNECTION_RAIL,
 } ncclGinConnectionType_t;
 
-typedef enum : uint32_t {
-  NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED = 0,
-  NCCL_REQUIREMENT_FLAG_OPTION_OPTIONAL = 1,
-  NCCL_REQUIREMENT_FLAG_OPTION_REQUIRED = 2,
-} ncclRequirementFlagOptions_t;
-
 struct ncclDevCommRequirements {
   /* attributes that users should never touch. */
   size_t size;
@@ -100,8 +95,6 @@ struct ncclDevCommRequirements {
   ncclGinConnectionType_t ginConnectionType;
   bool ginExclusiveContexts;
   int ginQueueDepth;
-  ncclRequirementFlagOptions_t ginUseReliableDB;
-  ncclRequirementFlagOptions_t ginUseExpertControl;
 };
 
 #define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                 \
@@ -123,8 +116,6 @@ struct ncclDevCommRequirements {
     NCCL_GIN_CONNECTION_NONE,                    /* ginConnectionType */       \
     false,                                       /* ginExclusiveContexts */    \
     0,                                           /* ginQueueDepth */           \
-    NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED,   /* ginUseReliableDB */        \
-    NCCL_REQUIREMENT_FLAG_OPTION_NOT_REQUIRED,   /* ginUseExpertControl */     \
 }
 
 struct ncclDevResourceRequirements {
@@ -150,7 +141,7 @@ struct ncclTeamRequirements {
   NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH),  /* version */         \
 }
 
-typedef enum : uint8_t {
+typedef enum {
   NCCL_GIN_TYPE_NONE = 0,
   NCCL_GIN_TYPE_PROXY = 2, // intentially not 1. Must match NCCL_NET_DEVICE_GIN_PROXY for backward compatibility
   NCCL_GIN_TYPE_GDAKI = 3, // intentially not 2. Must match NCCL_NET_DEVICE_GIN_GDAKI for backward compatibility

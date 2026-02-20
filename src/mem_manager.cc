@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2015-2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2015-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "comm.h"
 #include "alloc.h"
@@ -20,6 +21,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <mutex>
 
 // Internal parameter to disable memory manager for testing
 NCCL_PARAM(MemManagerDisable, "DISABLE_MEM_MANAGER", 0);
@@ -31,6 +33,8 @@ ncclResult_t ncclMemManagerInit(struct ncclComm* comm) {
 
   ncclMemManager* mgr;
   NCCLCHECK(ncclCalloc(&mgr, 1));
+  // Explicitly construct std::mutex using placement new
+  new (&mgr->lock) std::mutex();
 
   mgr->entries = nullptr;
   mgr->numEntries = 0;
@@ -45,7 +49,6 @@ ncclResult_t ncclMemManagerInit(struct ncclComm* comm) {
   mgr->cpuBackupUsage = 0;
   mgr->commCudaDev = comm->cudaDev;
 
-  pthread_mutex_init(&mgr->lock, NULL);
   __atomic_store_n(&mgr->initialized, 1, __ATOMIC_RELEASE);
 
   comm->memManager = mgr;
@@ -67,19 +70,11 @@ ncclResult_t ncclMemManagerDestroy(struct ncclComm* comm) {
     return ncclSuccess;
   }
 
-  pthread_mutex_lock(&mgr->lock);
-
-  if (!__atomic_load_n(&mgr->initialized, __ATOMIC_ACQUIRE)) {
-    pthread_mutex_unlock(&mgr->lock);
-    return ncclSuccess;
-  }
-
   // Decrement reference count
-  int refCount = --mgr->refCount;
+  int refCount = ncclAtomicRefCountDecrement(&mgr->refCount);
 
   if (refCount > 0) {
     // Other comms still using this manager
-    pthread_mutex_unlock(&mgr->lock);
     INFO(NCCL_ALLOC, "MemManager: Decremented refCount to %d", refCount);
     comm->memManager = nullptr;  // Clear this comm's pointer
     return ncclSuccess;
@@ -121,8 +116,8 @@ ncclResult_t ncclMemManagerDestroy(struct ncclComm* comm) {
   mgr->entries = nullptr;
   mgr->numEntries = 0;
 
-  pthread_mutex_unlock(&mgr->lock);
-  pthread_mutex_destroy(&mgr->lock);
+  // Explicitly call destructor for std::mutex
+  mgr->lock.~mutex();
   // Free the manager struct
   free(mgr);
   comm->memManager = nullptr;
@@ -145,7 +140,7 @@ static ncclResult_t ncclMemTrackInternal(
   void* ownerPtr
 ) {
   if (ncclParamMemManagerDisable()) return ncclSuccess;
-  if (manager == nullptr || ptr == nullptr) return ncclInvalidArgument;
+  if (manager == nullptr || ptr == nullptr) return ncclInternalError;
   if (!__atomic_load_n(&manager->initialized, __ATOMIC_ACQUIRE)) {
     WARN("MemManager: Cannot track allocation ptr=%p, manager not initialized", ptr);
     return ncclInternalError;
@@ -153,11 +148,6 @@ static ncclResult_t ncclMemTrackInternal(
 
   // Persistent memory: atomic update only
   if (memType == ncclMemPersist) {
-    pthread_mutex_lock(&manager->lock);
-    if (!__atomic_load_n(&manager->initialized, __ATOMIC_ACQUIRE)) {
-      pthread_mutex_unlock(&manager->lock);
-      return ncclInternalError;
-    }
     if (isImportedFromPeer) {
       __atomic_fetch_add(&manager->totalPersistImported, size, __ATOMIC_RELAXED);
       TRACE(NCCL_ALLOC, "MemManager: Track Persistent Import ptr=%p size=%zu from rank=%d",
@@ -167,7 +157,6 @@ static ncclResult_t ncclMemTrackInternal(
       TRACE(NCCL_ALLOC, "MemManager: Track Persistent ptr=%p size=%zu dev=%d",
             ptr, size, manager->commCudaDev);
     }
-    pthread_mutex_unlock(&manager->lock);
     return ncclSuccess;
   }
 
@@ -205,12 +194,13 @@ static ncclResult_t ncclMemTrackInternal(
     entry->desc.local.exportedPeerRanks = nullptr;
   }
 
-  pthread_mutex_lock(&manager->lock);
-
-  // Add to linked list (prepend)
-  entry->next = manager->entries;
-  manager->entries = entry;
-  manager->numEntries++;
+  { // lock the mutex to add the entry to the linked list
+    std::lock_guard<std::mutex> lock(manager->lock);
+    // Add to linked list (prepend)
+    entry->next = manager->entries;
+    manager->entries = entry;
+    manager->numEntries++;
+  } // lock_guard automatically releases mutex
 
   // Update statistics
   if (isImportedFromPeer) {
@@ -219,20 +209,14 @@ static ncclResult_t ncclMemTrackInternal(
     } else if (memType == ncclMemOffload) {
       __atomic_fetch_add(&manager->totalOffloadImported, size, __ATOMIC_RELAXED);
     }
+    TRACE(NCCL_ALLOC, "MemManager: Track imported ptr=%p size=%zu type=%d from rank=%d entries=%d",
+          ptr, size, memType, ownerRank, manager->numEntries);
   } else {
     if (memType == ncclMemScratch) {
       __atomic_fetch_add(&manager->totalScratch, size, __ATOMIC_RELAXED);
     } else if (memType == ncclMemOffload) {
       __atomic_fetch_add(&manager->totalOffload, size, __ATOMIC_RELAXED);
     }
-  }
-
-  pthread_mutex_unlock(&manager->lock);
-
-  if (isImportedFromPeer) {
-    TRACE(NCCL_ALLOC, "MemManager: Track imported ptr=%p size=%zu type=%d from rank=%d entries=%d",
-          ptr, size, memType, ownerRank, manager->numEntries);
-  } else {
     TRACE(NCCL_ALLOC, "MemManager: Track ptr=%p size=%zu type=%d dev=%d entries=%d",
           ptr, size, memType, manager->commCudaDev, manager->numEntries);
   }
@@ -272,92 +256,99 @@ ncclResult_t ncclMemTrackImportFromPeer(
 // Untrack allocation
 ncclResult_t ncclMemUntrack(struct ncclMemManager* manager, void* ptr, size_t size) {
   if (ncclParamMemManagerDisable()) return ncclSuccess;
-  if (manager == nullptr || ptr == nullptr) return ncclSuccess;
+  if (manager == nullptr || ptr == nullptr) return ncclInternalError;
 
   // Atomic check to avoid locking destroyed mutex
-  if (!__atomic_load_n(&manager->initialized, __ATOMIC_ACQUIRE)) return ncclSuccess;
-
-  pthread_mutex_lock(&manager->lock);
-
-  // Double-check after acquiring lock
   if (!__atomic_load_n(&manager->initialized, __ATOMIC_ACQUIRE)) {
-    pthread_mutex_unlock(&manager->lock);
-    return ncclSuccess;
+    WARN("MemManager: Cannot untrack allocation ptr=%p, manager not initialized", ptr);
+    return ncclInternalError;
   }
 
-  ncclDynMemEntry* prev = nullptr;
-  ncclDynMemEntry* entry = manager->entries;
+  // Variables to save values before releasing lock
+  size_t entrySize = 0;
+  int numEntries __attribute__((unused)) = 0;  // May be unused if TRACE compiled out
+  bool isImportedFromPeer = false;
+  ncclMemType_t memType = ncclMemScratch;
 
-  while (entry != nullptr) {
-    if (entry->ptr == ptr) {
-      // Remove from linked list
-      if (prev == nullptr) {
-        manager->entries = entry->next;
-      } else {
-        prev->next = entry->next;
-      }
-      manager->numEntries--;
+  {
+    std::lock_guard<std::mutex> lock(manager->lock);
 
-      // Update statistics
-      if (entry->isImportedFromPeer) {
-        if (entry->memType == ncclMemScratch) {
-          __atomic_fetch_sub(&manager->totalScratchImported, entry->size, __ATOMIC_RELAXED);
-        } else if (entry->memType == ncclMemOffload) {
-          __atomic_fetch_sub(&manager->totalOffloadImported, entry->size, __ATOMIC_RELAXED);
+    ncclDynMemEntry* prev = nullptr;
+    ncclDynMemEntry* entry = manager->entries;
+
+    while (entry != nullptr) {
+      if (entry->ptr == ptr) {
+        // Remove from linked list
+        if (prev == nullptr) {
+          manager->entries = entry->next;
+        } else {
+          prev->next = entry->next;
         }
-      } else {
-        if (entry->memType == ncclMemScratch) {
-          __atomic_fetch_sub(&manager->totalScratch, entry->size, __ATOMIC_RELAXED);
-        } else if (entry->memType == ncclMemOffload) {
-          __atomic_fetch_sub(&manager->totalOffload, entry->size, __ATOMIC_RELAXED);
+        manager->numEntries--;
+
+        // Free CPU backup if exists
+        if (entry->cpuBackup != nullptr) {
+          manager->cpuBackupUsage -= entry->size;
+          ncclCudaHostFree(entry->cpuBackup);
         }
+
+        // Close shareable FD if valid (defensive cleanup for POSIX FD handle type)
+        if (!entry->isImportedFromPeer &&
+            entry->desc.local.shareableHandleValid &&
+            entry->handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR &&
+            entry->desc.local.shareableHandle.fd >= 0) {
+          close(entry->desc.local.shareableHandle.fd);
+          entry->desc.local.shareableHandle.fd = -1;
+          entry->desc.local.shareableHandleValid = false;
+        }
+
+        // Only local entries have exportedPeerRanks (imported entries use desc.imported union member)
+        if (!entry->isImportedFromPeer && entry->desc.local.exportedPeerRanks != nullptr) {
+          free(entry->desc.local.exportedPeerRanks);
+        }
+
+        // Save values before unlock for logging (may be unused if TRACE is compiled out)
+        entrySize = entry->size;
+        numEntries = manager->numEntries;
+        isImportedFromPeer = entry->isImportedFromPeer;
+        memType = entry->memType;
+
+        // Safety check: log if tracked size doesn't match passed size
+        if (entrySize != size) {
+          INFO(NCCL_ALLOC, "MemManager: Untrack size mismatch ptr=%p tracked=%zu passed=%zu", ptr, entrySize, size);
+        }
+
+        free(entry);
+        break;
       }
-
-      // Free CPU backup if exists
-      if (entry->cpuBackup != nullptr) {
-        manager->cpuBackupUsage -= entry->size;
-        ncclCudaHostFree(entry->cpuBackup);
-      }
-
-      // Close shareable FD if valid (defensive cleanup for POSIX FD handle type)
-      if (!entry->isImportedFromPeer &&
-          entry->desc.local.shareableHandleValid &&
-          entry->handleType == CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR &&
-          entry->desc.local.shareableHandle.fd >= 0) {
-        close(entry->desc.local.shareableHandle.fd);
-        entry->desc.local.shareableHandle.fd = -1;
-        entry->desc.local.shareableHandleValid = false;
-      }
-
-      // Only local entries have exportedPeerRanks (imported entries use desc.imported union member)
-      if (!entry->isImportedFromPeer && entry->desc.local.exportedPeerRanks != nullptr) {
-        free(entry->desc.local.exportedPeerRanks);
-      }
-
-      // Save values before unlock for logging (may be unused if TRACE is compiled out)
-      size_t entrySize __attribute__((unused)) = entry->size;
-      int numEntries __attribute__((unused)) = manager->numEntries;
-
-      pthread_mutex_unlock(&manager->lock);
-
-      TRACE(NCCL_ALLOC, "MemManager: Untrack ptr=%p size=%zu entries=%d",
-            ptr, entrySize, numEntries);
-
-      free(entry);
-      return ncclSuccess;
+      prev = entry;
+      entry = entry->next;
     }
-    prev = entry;
-    entry = entry->next;
-  }
+  } // lock_guard automatically releases mutex
 
-  pthread_mutex_unlock(&manager->lock);
+  // Update statistics
+  if (entrySize > 0) {
+    // Entry found in linked list
+    if (isImportedFromPeer) {
+      if (memType == ncclMemScratch) {
+        __atomic_fetch_sub(&manager->totalScratchImported, entrySize, __ATOMIC_RELAXED);
+      } else if (memType == ncclMemOffload) {
+        __atomic_fetch_sub(&manager->totalOffloadImported, entrySize, __ATOMIC_RELAXED);
+      }
+    } else {
+      if (memType == ncclMemScratch) {
+        __atomic_fetch_sub(&manager->totalScratch, entrySize, __ATOMIC_RELAXED);
+      } else if (memType == ncclMemOffload) {
+        __atomic_fetch_sub(&manager->totalOffload, entrySize, __ATOMIC_RELAXED);
+      }
+    }
 
-  // Not in linked list - must be persistent memory
-  if (size > 0) {
+    TRACE(NCCL_ALLOC, "MemManager: Untrack ptr=%p size=%zu entries=%d",
+          ptr, entrySize, numEntries);
+  } else {
+    // Entry not found in linked list - must be persistent memory
     __atomic_fetch_sub(&manager->totalPersist, size, __ATOMIC_RELAXED);
     TRACE(NCCL_ALLOC, "MemManager: Untrack Persistent ptr=%p size=%zu", ptr, size);
-  } else {
-    TRACE(NCCL_ALLOC, "MemManager: Untrack ptr=%p not found, size=0", ptr);
   }
 
   return ncclSuccess;
@@ -369,17 +360,12 @@ ncclResult_t ncclMemUntrack(struct ncclMemManager* manager, void* ptr, size_t si
 // Call this after allocating dynamic memory and the peer imports it.
 ncclResult_t ncclDynMemMarkExportToPeer(struct ncclMemManager* manager, void* ptr, int peerRank) {
   if (ncclParamMemManagerDisable()) return ncclSuccess;
-  if (manager == nullptr || ptr == nullptr) return ncclInvalidArgument;
+  if (manager == nullptr || ptr == nullptr) return ncclInternalError;
   if (!__atomic_load_n(&manager->initialized, __ATOMIC_ACQUIRE)) {
     WARN("MemManager: Cannot mark export for ptr=%p, manager not initialized", ptr);
     return ncclInternalError;
   }
-  pthread_mutex_lock(&manager->lock);
-
-  if (!__atomic_load_n(&manager->initialized, __ATOMIC_ACQUIRE)) {
-    pthread_mutex_unlock(&manager->lock);
-    return ncclInternalError;
-  }
+  std::lock_guard<std::mutex> lock(manager->lock);
 
   // Find entry in linked list (only contains scratch/offload, not persistent)
   ncclDynMemEntry* entry = manager->entries;
@@ -388,7 +374,6 @@ ncclResult_t ncclDynMemMarkExportToPeer(struct ncclMemManager* manager, void* pt
   }
 
   if (entry == nullptr) {
-    pthread_mutex_unlock(&manager->lock);
     WARN("MemManager: Cannot mark export for ptr=%p - not found in tracked entries. "
          "Only dynamic memory (scratch/offload) needs export tracking for suspend/resume.", ptr);
     return ncclInternalError;
@@ -396,15 +381,13 @@ ncclResult_t ncclDynMemMarkExportToPeer(struct ncclMemManager* manager, void* pt
 
   // Verify this is a local entry, not an imported one
   if (entry->isImportedFromPeer) {
-    pthread_mutex_unlock(&manager->lock);
     WARN("MemManager: Cannot mark export for ptr=%p - this is an imported buffer, not a local one", ptr);
-    return ncclInvalidArgument;
+    return ncclInternalError;
   }
 
   // Check if peer already exists
   for (int i = 0; i < entry->desc.local.numExportedPeers; i++) {
     if (entry->desc.local.exportedPeerRanks[i] == peerRank) {
-      pthread_mutex_unlock(&manager->lock);
       WARN("MemManager: Buffer ptr=%p already exported to peer rank %d", ptr, peerRank);
       return ncclInternalError;
     }
@@ -417,31 +400,18 @@ ncclResult_t ncclDynMemMarkExportToPeer(struct ncclMemManager* manager, void* pt
                                    entry->desc.local.exportedPeersCapacity,
                                    newCapacity);
     if (ret != ncclSuccess) {
-      pthread_mutex_unlock(&manager->lock);
       WARN("MemManager: Failed to grow exportedPeerRanks array for ptr=%p", ptr);
       return ret;
     }
     entry->desc.local.exportedPeersCapacity = newCapacity;
   }
 
-  // Export shareable handle if not already valid (do this BEFORE adding peer to avoid inconsistent state)
-  ncclResult_t ret = ncclSuccess;
-  if (!entry->desc.local.shareableHandleValid) {
-    if (entry->handleType == CU_MEM_HANDLE_TYPE_FABRIC) {
-      CUCHECKGOTO(cuMemExportToShareableHandle(&entry->desc.local.shareableHandle.fabricHandle, entry->handle,
-                                            CU_MEM_HANDLE_TYPE_FABRIC, 0), ret, fail);
-      entry->desc.local.shareableHandleValid = true;
-    }
-  }
-
-  // Add peer only after export succeeds
+  // Add peer to export list
   entry->desc.local.exportedPeerRanks[entry->desc.local.numExportedPeers++] = peerRank;
 
   TRACE(NCCL_ALLOC, "MemManager: ExportToPeer ptr=%p peerRank=%d numExportedPeers=%d",
         ptr, peerRank, entry->desc.local.numExportedPeers);
-fail:
-  pthread_mutex_unlock(&manager->lock);
-  return ret;
+  return ncclSuccess;
 }
 
 /*
@@ -461,10 +431,7 @@ ncclResult_t ncclCommMemSuspend(struct ncclComm* comm) {
   if (comm->memManager == nullptr) return ncclInvalidUsage;
   ncclMemManager* manager = comm->memManager;
 
-  pthread_mutex_lock(&manager->lock);
-
   if (manager->released) {
-    pthread_mutex_unlock(&manager->lock);
     WARN("MemManager: Already suspended");
     return ncclInvalidUsage;
   }
@@ -475,9 +442,13 @@ ncclResult_t ncclCommMemSuspend(struct ncclComm* comm) {
   size_t releasedPeerImport = 0;
   int releasedCount = 0;
   int peerImportCount = 0;
+  ncclDynMemEntry* entry = nullptr;
+
+  CUDACHECK(cudaDeviceSynchronize());
+  NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xBEEF), ret, fail);
 
   // Step 1: Unmap all peer-imported buffers first
-  ncclDynMemEntry* entry = manager->entries;
+  entry = manager->entries;
   while (entry != nullptr) {
     if (entry->isImportedFromPeer && entry->state == ncclDynMemStateActive) {
       TRACE(NCCL_ALLOC, "MemManager: Unmapping peer-imported buffer ptr=%p from rank %d",
@@ -561,15 +532,12 @@ ncclResult_t ncclCommMemSuspend(struct ncclComm* comm) {
 
   manager->released = 1;
 
-  pthread_mutex_unlock(&manager->lock);
-
   INFO(NCCL_ALLOC, "MemManager: rank %d suspended %d local + %d peer entries (scratch=%zu, offload=%zu, peerImport=%zu, cpuBackup=%zu)",
        comm->rank, releasedCount, peerImportCount, releasedScratch, releasedOffload, releasedPeerImport, manager->cpuBackupUsage);
 
   return ncclSuccess;
 
 fail:
-  pthread_mutex_unlock(&manager->lock);
   return ret;
 }
 
@@ -591,10 +559,7 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
   if (comm->memManager == nullptr) return ncclInvalidUsage;
   ncclMemManager* manager = comm->memManager;
 
-  pthread_mutex_lock(&manager->lock);
-
   if (!manager->released) {
-    pthread_mutex_unlock(&manager->lock);
     WARN("MemManager: Not in suspended state");
     return ncclInvalidUsage;
   }
@@ -704,8 +669,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
     entry = entry->next;
   }
 
-  pthread_mutex_unlock(&manager->lock);
-
   // Step 2: Barrier to ensure all ranks have resumed their local memory
   if (comm->bootstrap != nullptr) {
     INFO(NCCL_ALLOC, "MemManager: rank %d resumed %d local entries, waiting at barrier",
@@ -726,7 +689,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
 
   // Count local buffers that have peers (need to broadcast new handle info)
   localBroadcastCount = 0;
-  pthread_mutex_lock(&manager->lock);
   entry = manager->entries;
   while (entry != nullptr) {
     if (!entry->isImportedFromPeer && entry->desc.local.numExportedPeers > 0 && entry->state == ncclDynMemStateActive) {
@@ -734,7 +696,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
     }
     entry = entry->next;
   }
-  pthread_mutex_unlock(&manager->lock);
 
   // Gather counts from all ranks using AllGather
   if (comm->bootstrap != nullptr && comm->nRanks > 1) {
@@ -778,7 +739,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
         return ncclSystemError;
       }
 
-      pthread_mutex_lock(&manager->lock);
       int idx = 0;
       entry = manager->entries;
       while (entry != nullptr && idx < localBroadcastCount) {
@@ -805,7 +765,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
         }
         entry = entry->next;
       }
-      pthread_mutex_unlock(&manager->lock);
 
       // Allocate buffer for all infos
       allInfos = (ncclDynMemP2pHandleInfo*)malloc(totalInfoCount * sizeof(ncclDynMemP2pHandleInfo));
@@ -862,7 +821,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
   /*
    * Step 4: Re-import peer buffers using exchanged handle info
    */
-  pthread_mutex_lock(&manager->lock);
 
   entry = manager->entries;
   while (entry != nullptr) {
@@ -907,7 +865,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
         // For POSIX FD: We need to get the FD from the owner
         // Use proxy to convert cuMem handle to FD
         int fd = -1;
-        pthread_mutex_unlock(&manager->lock);
 
         // The handleData contains the cuMem handle - request FD conversion
         ret = ncclProxyClientGetFdBlocking(comm, entry->desc.imported.ownerRank,
@@ -915,7 +872,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
         if (ret != ncclSuccess || fd < 0) {
           WARN("MemManager: Failed to get FD from rank %d for ptr=%p",
                entry->desc.imported.ownerRank, entry->ptr);
-          pthread_mutex_lock(&manager->lock);
           entry = entry->next;
           continue;
         }
@@ -923,7 +879,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
         curet = CUPFN(cuMemImportFromShareableHandle(&newHandle, (void*)(uintptr_t)fd,
                                                 CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR));
         close(fd);
-        pthread_mutex_lock(&manager->lock);
       } else if (matchedInfo->handleType == CU_MEM_HANDLE_TYPE_FABRIC) {
         // For FABRIC: Import directly using the fabric handle
         curet = CUPFN(cuMemImportFromShareableHandle(&newHandle, &matchedInfo->fabricHandle,
@@ -964,8 +919,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
 
   manager->released = 0;
 
-  pthread_mutex_unlock(&manager->lock);
-
   // Final barrier to ensure all ranks have completed peer import setup
   if (comm->bootstrap != nullptr) {
     INFO(NCCL_ALLOC, "MemManager: rank %d resumed %d local + %d peer entries (%zu + %zu bytes)",
@@ -989,7 +942,6 @@ ncclResult_t ncclCommMemResume(struct ncclComm* comm) {
   return ncclSuccess;
 
 fail:
-  pthread_mutex_unlock(&manager->lock);
   if (allCounts) free(allCounts);
   if (localInfos) free(localInfos);
   if (allInfos) free(allInfos);

@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_DEVICE_GIN_BARRIER_H_
 #define _NCCL_DEVICE_GIN_BARRIER_H_
@@ -15,7 +16,8 @@ NCCL_EXTERN_C __host__ ncclResult_t ncclGinBarrierCreateRequirement(ncclComm_t, 
 
 #if NCCL_CHECK_CUDACC
 enum class ncclGinFenceLevel {
-  Relaxed
+  Relaxed,
+  Release,
 };
 
 template<typename Coop>

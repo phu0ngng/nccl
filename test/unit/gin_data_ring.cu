@@ -20,6 +20,9 @@ constexpr int BlockPerRank = 16;
 //constexpr int BufElts = 129;
 constexpr int BufElts = 1<<20;
 
+// dummy abort flag
+__device__ uint32_t abortFlag = 0;
+
 __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) {
 #if __CUDA_ARCH__ >= 700
   int nRanks = ctx.nRanks;
@@ -96,7 +99,7 @@ __global__ void runDevice(ncclGinCtx_M<-1u> ctx, ncclGinWindow_t win, int* buf) 
     }
     __syncthreads();
     // Wait for outgoing is complete.
-    ncclGinCall<ncclGinApi_Flush>(ctx, ncclCoopCta(), acq);
+    ncclGinCall<ncclGinApi_Flush>(ctx, ncclCoopCta(), acq, &abortFlag);
     __syncthreads();
     accum += nChunks;
   }

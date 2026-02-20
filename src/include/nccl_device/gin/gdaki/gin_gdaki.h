@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_DEVICE_GIN_GDAKI_H_
 #define _NCCL_DEVICE_GIN_GDAKI_H_
@@ -54,11 +55,6 @@ NCCL_DEVICE_INLINE static void putImpl(ncclGinCtx ctx, Coop coop, int peer, bool
     uint32_t codeOpt = DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
       | (!!(optFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
       | (!!(optFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
-#ifdef NCCL_DEVICE_GIN_GDAKI_ENABLE_DEBUG
-    if (optFlags != ncclGinOptFlagsDefault) {
-      assert(gdaki->useExpertControl);
-    }
-#endif
 
     doca_gpu_dev_verbs_addr raddr, laddr;
     if (hasWins) {
@@ -140,11 +136,6 @@ NCCL_DEVICE_INLINE static void putValueImpl(ncclGinCtx ctx, Coop coop, int peer,
     uint32_t codeOpt = DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
       | (!!(optFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
       | (!!(optFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
-#ifdef NCCL_DEVICE_GIN_GDAKI_ENABLE_DEBUG
-    if (optFlags != ncclGinOptFlagsDefault) {
-      assert(gdaki->useExpertControl);
-    }
-#endif
 
     doca_gpu_dev_verbs_addr raddr;
     raddr.addr = dstOff;
@@ -292,13 +283,31 @@ struct ncclGinApi_GetSignalPtr<NCCL_NET_DEVICE_GIN_GDAKI> {
 template <>
 struct ncclGinApi_Flush<NCCL_NET_DEVICE_GIN_GDAKI> {
   template <typename Coop>
-  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord) {
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, cuda::memory_order ord, uint32_t* abortFlag) {
     using nccl::utility::loadConst;
+    using nccl::utility::testAbort;
+
     ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     doca_gpu_dev_verbs_qp* qps = loadConst(&gdaki->gdqp);
-#pragma unroll 1
-    for (int peer = coop.thread_rank(); peer < ctx.nRanks; peer += coop.size()) {
-      doca_gpu_dev_verbs_wait(qps + peer);
+
+    if (abortFlag) {
+      uint32_t steps = 0;
+      #pragma unroll 1
+      for (int peer = coop.thread_rank(); peer < ctx.nRanks; peer += coop.size()) {
+        int status = EBUSY;
+        uint64_t ticket = doca_gpu_dev_verbs_atomic_read<uint64_t, DOCA_GPUNETIO_VERBS_RESOURCE_SHARING_MODE_GPU>(&qps[peer].sq_rsvd_index);
+        if (ticket == 0)
+          return;
+        --ticket;
+        while (status != 0 && !testAbort(abortFlag, steps)) {
+          status = doca_gpu_dev_verbs_poll_one_cq_at(&qps[peer].cq_sq, ticket);
+        }
+      }
+    } else {
+      #pragma unroll 1
+      for (int peer = coop.thread_rank(); peer < ctx.nRanks; peer += coop.size()) {
+        doca_gpu_dev_verbs_wait(qps + peer);
+      }
     }
   }
 };

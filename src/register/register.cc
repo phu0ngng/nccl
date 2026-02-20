@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #include "argcheck.h" // Need some checks here since we access comm
 #include "nccl.h"
@@ -69,7 +70,7 @@ static ncclResult_t regCleanup(struct ncclComm* comm, struct ncclReg* reg) {
     struct ncclRegNetHandles* netHandlePrev;
     while(netHandle) {
       if (ncclNetDeregBuffer(comm, netHandle->proxyConn, netHandle->handle) != ncclSuccess) {
-        WARN("rank %d deregister NET buffer handle %p proxy rank %d failed\n", comm->rank, netHandle->handle, netHandle->proxyConn->rank);
+        WARN("rank %d deregister NET buffer handle %p proxy rank %d failed", comm->rank, netHandle->handle, netHandle->proxyConn->rank);
       }
       netHandlePrev = netHandle;
       netHandle = netHandle->next;

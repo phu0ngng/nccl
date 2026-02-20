@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_DEVICE_GIN_SESSION__FUNCS_H_
 #define _NCCL_DEVICE_GIN_SESSION__FUNCS_H_
@@ -569,7 +570,7 @@ template<unsigned beMask>
 template<typename Coop>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::flush(Coop coop, cuda::memory_order ord) const {
   coop.sync();
-  ncclGinCall<ncclGinApi_Flush>(this->_makeCtx(), coop, ord);
+  ncclGinCall<ncclGinApi_Flush>(this->_makeCtx(), coop, ord, this->comm.abortFlag);
   coop.sync();
 }
 
@@ -580,7 +581,7 @@ NCCL_DEVICE_INLINE void ncclGinFlush(
   ) {
   coop.sync();
   ncclGinCtx ctx = ncclGin_C_makeCtx(net);
-  ncclGinCall<ncclGinApi_Flush>(ctx, coop, ord);
+  ncclGinCall<ncclGinApi_Flush>(ctx, coop, ord, net->comm.abortFlag);
   coop.sync();
 }
 #endif
@@ -591,13 +592,15 @@ template<typename Coop>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitCounter(
     Coop coop, ncclGinCounter_t counter, uint64_t least, int bits, cuda::memory_order ord
   ) const {
+  using nccl::utility::testAbort;
+  uint32_t steps = 0;
   coop.sync();
   if (coop.thread_rank() == 0) {
     uint64_t* ptr = ncclGinCall<ncclGinApi_GetCounterPtr>(this->_makeCtx(), this->comm.ginCounterBase + counter);
     uint64_t got;
     #pragma unroll 1
     do got = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    while (!nccl::utility::rollingLessEq(least, got, bits));
+    while (!nccl::utility::rollingLessEq(least, got, bits) && !testAbort(this->comm.abortFlag, steps));
   }
   coop.sync();
 }
@@ -610,6 +613,8 @@ NCCL_DEVICE_INLINE void ncclGinWaitCounter(
     int bits,
     cuda::memory_order ord
   ) {
+  using nccl::utility::testAbort;
+  uint32_t steps = 0;
   coop.sync();
   if (coop.thread_rank() == 0) {
     ncclGinCtx ctx = ncclGin_C_makeCtx(net);
@@ -617,7 +622,7 @@ NCCL_DEVICE_INLINE void ncclGinWaitCounter(
     uint64_t got;
     #pragma unroll 1
     do got = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    while (!nccl::utility::rollingLessEq(least, got, bits));
+    while (!nccl::utility::rollingLessEq(least, got, bits) && !testAbort(net->comm.abortFlag, steps));
   }
   coop.sync();
 }
@@ -697,13 +702,15 @@ NCCL_DEVICE_INLINE uint64_t ncclGinReadSignal(
 template<unsigned beMask>
 template<typename Coop>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignal(Coop coop, ncclGinSignal_t signal, uint64_t least, int bits, cuda::memory_order ord) const {
+  using nccl::utility::testAbort;
+  uint32_t steps = 0;
   coop.sync();
   if (coop.thread_rank() == 0) {
     uint64_t* ptr = ncclGinCall<ncclGinApi_GetSignalPtr>(this->_makeCtx(), this->comm.ginSignalBase + signal);
     uint64_t got;
     #pragma unroll 1
     do got = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    while (!nccl::utility::rollingLessEq(least, got, bits));
+    while (!nccl::utility::rollingLessEq(least, got, bits) && !testAbort(this->comm.abortFlag, steps));
   }
   coop.sync();
 }
@@ -712,6 +719,8 @@ template<unsigned beMask>
 template<typename Coop>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignal(Coop coop, ncclWindow_t signalWindow, size_t signalOffset, uint64_t least, int bits, cuda::memory_order ord) const {
   using nccl::utility::loadConst;
+  using nccl::utility::testAbort;
+  uint32_t steps = 0;
   coop.sync();
   if (coop.thread_rank() == 0) {
     uint64_t* ptr = (uint64_t*)ncclGetLocalPointer(signalWindow, signalOffset);
@@ -719,7 +728,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignal(Coop coop, ncclW
     #pragma unroll 1
     do {
       got = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    } while (!nccl::utility::rollingLessEq(least, got, bits));
+    } while (!nccl::utility::rollingLessEq(least, got, bits) && !testAbort(this->comm.abortFlag, steps));
   }
   coop.sync();
 }
@@ -732,6 +741,8 @@ NCCL_DEVICE_INLINE void ncclGinWaitSignal(
     int bits,
     cuda::memory_order ord
   ) {
+  using nccl::utility::testAbort;
+  uint32_t steps = 0;
   coop.sync();
   if (coop.thread_rank() == 0) {
     ncclGinCtx ctx = ncclGin_C_makeCtx(net);
@@ -739,7 +750,7 @@ NCCL_DEVICE_INLINE void ncclGinWaitSignal(
     uint64_t got;
     #pragma unroll 1
     do got = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    while (!nccl::utility::rollingLessEq(least, got, bits));
+    while (!nccl::utility::rollingLessEq(least, got, bits) && !testAbort(net->comm.abortFlag, steps));
   }
   coop.sync();
 }
@@ -749,6 +760,8 @@ NCCL_DEVICE_INLINE void ncclGinWaitSignal(
 template<unsigned beMask>
 template<typename Coop>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignalMeetShadow(Coop coop, ncclGinSignal_t signal, int bits, cuda::memory_order ord) const {
+  using nccl::utility::testAbort;
+  uint32_t steps = 0;
   coop.sync();
   if (coop.thread_rank() == 0) {
     uint64_t* ptr = ncclGinCall<ncclGinApi_GetSignalPtr>(this->_makeCtx(), this->comm.ginSignalBase + signal);
@@ -756,7 +769,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignalMeetShadow(Coop c
     uint64_t got;
     #pragma unroll 1
     do got = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    while (!nccl::utility::rollingLessEq(least, got, bits));
+    while (!nccl::utility::rollingLessEq(least, got, bits) && !testAbort(this->comm.abortFlag, steps));
   }
   coop.sync();
 }
@@ -766,6 +779,8 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignalMeetShadow(Coop c
 template<unsigned beMask>
 template<typename Coop, typename Uint>
 NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignalFollowShadow(Coop coop, ncclGinSignal_t signal, Uint leastDelta, Uint* before, Uint* delta, int bits, cuda::memory_order ord) const {
+  using nccl::utility::testAbort;
+  uint32_t steps = 0;
   coop.sync();
   uint64_t before64 = this->_signalShadows[signal];
   uint64_t after64;
@@ -773,7 +788,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::waitSignalFollowShadow(Coop
     uint64_t* ptr = ncclGinCall<ncclGinApi_GetSignalPtr>(this->_makeCtx(), this->comm.ginSignalBase + signal);
     #pragma unroll 1
     do after64 = cuda::atomic_ref<uint64_t>{*ptr}.load(ord);
-    while (!nccl::utility::rollingLessEq(before64 + leastDelta, after64, bits));
+    while (!nccl::utility::rollingLessEq(before64 + leastDelta, after64, bits) && !testAbort(this->comm.abortFlag, steps));
     this->_signalShadows[signal] = after64;
   }
   if (ncclCoopWithinWarp(coop) && bits <= 32) { // do a single __shfl_sync instead of 2

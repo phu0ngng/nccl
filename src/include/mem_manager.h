@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2015-2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2015-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef NCCL_MEM_MANAGER_H_
 #define NCCL_MEM_MANAGER_H_
@@ -10,8 +11,8 @@
 #include "nccl.h"
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <pthread.h>
 #include <stdbool.h>
+#include <mutex>
 
 #ifdef __cplusplus
 extern "C" {
@@ -113,7 +114,7 @@ typedef struct ncclDynMemP2pHandleInfo {
 typedef struct ncclMemManager {
   ncclDynMemEntry*  entries;  // Linked list of tracked allocations, only track scratch and offload allocations
   int               numEntries;
-  pthread_mutex_t   lock;
+  std::mutex        lock;
   int               released;
   int               initialized;
   int               refCount;

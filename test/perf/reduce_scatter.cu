@@ -80,6 +80,13 @@ testResult_t ReduceScatterGetDevCommRequirements(int deviceImpl, ncclDevCommRequ
     return testNcclError;
   }
 
+  if (deviceImpl > 0 && commProperties.nRanks != ncclTeamLsa(comm).nRanks) {
+    *testSkipReason = "DeviceImplementation >= 1 requires CUDA P2P connectivity "
+                      "across all ranks. Not all ranks of this communicator "
+                      "have P2P connectivity.\n";
+    return testSkipped;
+  }
+
   switch(deviceImpl) {
     case 0: // NCCL's built-in implementation
       return testSuccess;

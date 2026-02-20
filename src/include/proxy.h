@@ -1,8 +1,9 @@
 /*************************************************************************
- * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2016-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef NCCL_PROXY_H_
 #define NCCL_PROXY_H_
@@ -377,6 +378,11 @@ enum proxyConnectState {
   numConnStates         = 5
 };
 
+struct proxyMemHandle {
+  void* handle;
+  struct proxyMemHandle* next;
+};
+
 struct ncclProxyConnection {
   int send, transport, shared;
   int tpLocalRank, sameProcess;
@@ -390,6 +396,7 @@ struct ncclProxyConnection {
   proxyConnectState state;
   struct ncclCollNetSharedRes* collNet;
   int needsProxyProgress;
+  struct ncclIntruQueue<struct proxyMemHandle, &proxyMemHandle::next> proxyMemHandleQueue;
 };
 
 typedef ncclResult_t (*threadFunc_t)(struct ncclProxyArgs*);

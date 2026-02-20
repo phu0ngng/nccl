@@ -1,13 +1,14 @@
 #
-# Copyright (c) 2015-2019, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2015-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
-# See LICENSE.txt for license information
+# See LICENSE.txt for more license information
 #
 
 include ../../makefiles/common.mk
 include ../../makefiles/version.mk
 BUILDDIR ?= $(abspath ../../build)
-DOCSRC  := $(abspath ../../doc/)
+DOCSRC  := $(abspath ../../docs/userguide/)
 DOCPREPDIR  := $(BUILDDIR)/doc
 PKGDIR  := $(BUILDDIR)/pkg/doc
 

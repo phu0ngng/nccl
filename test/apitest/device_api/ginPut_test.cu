@@ -2,8 +2,8 @@
 #include "ncclDevApiCommon_test.cuh"
 
 const uint64_t NCCL_PUT_VALUE = 28; // atomic number of nickel
-const int SRC_RANK = 0;
-const int DST_RANK = 1;
+constexpr int SRC_RANK = 0;
+constexpr int DST_RANK = 1;
 
 __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset, bool useSignal, ncclWindow_t signalWindow, size_t signalOffset) {
 #if __CUDA_ARCH__ >= 700
@@ -29,7 +29,7 @@ __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset, 
   }
 
   if (world.rank == DST_RANK) {
-    uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
+    volatile uint64_t* putPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
     if (useSignal) {
       gin.waitSignal(ncclCoopCta(), signalWindow, signalOffset, 1);
       KERNEL_ASSERT_EQ(*putPtr, NCCL_PUT_VALUE, "Ptr should be NCCL_PUT_VALUE after putSignal");

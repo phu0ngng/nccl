@@ -1,15 +1,18 @@
 /*************************************************************************
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
  *
- * See LICENSE.txt for license information
- ************************************************************************/
+ * See LICENSE.txt for more license information
+ *************************************************************************/
 
 #ifndef _NCCL_DEVICE_BARRIER__FUNCS_H_
 #define _NCCL_DEVICE_BARRIER__FUNCS_H_
+#include <cassert>
 #include "barrier__types.h"
 #include "lsa_barrier__funcs.h"
 #include "gin_barrier__funcs.h"
 #include "../utility.h"
+#include "nccl_device/gin_barrier.h"
 
 #if NCCL_CHECK_CUDACC
 template<typename Coop>
@@ -82,6 +85,8 @@ NCCL_DEVICE_INLINE ncclGinBarrierSession<Coop>& ncclBarrierSession<Coop>::ginBar
 #if NCCL_CHECK_CUDACC
 template<typename Coop>
 NCCL_DEVICE_INLINE void ncclBarrierSession<Coop>::sync(Coop, cuda::memory_order ord, ncclGinFenceLevel fence) {
+  assert(fence != ncclGinFenceLevel::Release && "ncclGinFenceLevel::Release is not supported for ncclBarrierSession");
+
   if (this->innerLsaBar.present) {
     this->innerLsaBar.thing.sync(this->coop, this->outerGinBar.present ? nccl::utility::releaseOrderOf(ord) : ord);
   }

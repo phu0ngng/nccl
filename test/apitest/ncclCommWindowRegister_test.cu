@@ -42,8 +42,8 @@ TEST_F(ncclCommWindowRegister_test, basic) {
   ncclWindow_t *recvwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {
-    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], sendbuffs[i], size, &sendwins[i], NCCL_WIN_COLL_SYMMETRIC));  
-    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], recvbuffs[i], size, &recvwins[i], NCCL_WIN_COLL_SYMMETRIC));  
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], sendbuffs[i], size, &sendwins[i], NCCL_WIN_COLL_SYMMETRIC));
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], recvbuffs[i], size, &recvwins[i], NCCL_WIN_COLL_SYMMETRIC));
   }
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
@@ -70,12 +70,12 @@ TEST_F(ncclCommWindowRegister_test, basic) {
 TEST_F(ncclCommWindowRegister_test, debug_mode) {
   ncclWindow_t *sendwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ncclWindow_t *recvwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
-  
+
   setenv("NCCL_CHECK_MODE", "DEBUG_GLOBAL", 1);
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {
-    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], sendbuffs[i], size, &sendwins[i], NCCL_WIN_COLL_SYMMETRIC));  
-    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], recvbuffs[i], size, &recvwins[i], NCCL_WIN_COLL_SYMMETRIC));  
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], sendbuffs[i], size, &sendwins[i], NCCL_WIN_COLL_SYMMETRIC));
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], recvbuffs[i], size, &recvwins[i], NCCL_WIN_COLL_SYMMETRIC));
   }
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
@@ -104,13 +104,13 @@ TEST_F(ncclCommWindowRegister_test, debug_mode_invalid) {
   ncclWindow_t *sendwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ncclWindow_t *recvwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ncclComm_t *localcomms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
-  
+
   setenv("NCCL_CHECK_MODE", "DEBUG_GLOBAL", 1);
   ASSERT_EQ(ncclSuccess, ncclCommInitAll(localcomms, nVis, NULL));
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {
-    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(localcomms[i], sendbuffs[i], size, &sendwins[i], NCCL_WIN_COLL_SYMMETRIC));  
-    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(localcomms[i], recvbuffs[i], size, &recvwins[i], NCCL_WIN_COLL_SYMMETRIC));  
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(localcomms[i], sendbuffs[i], size, &sendwins[i], NCCL_WIN_COLL_SYMMETRIC));
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(localcomms[i], recvbuffs[i], size, &recvwins[i], NCCL_WIN_COLL_SYMMETRIC));
   }
   ASSERT_EQ(ncclSuccess, ncclGroupEnd());
 
@@ -118,7 +118,12 @@ TEST_F(ncclCommWindowRegister_test, debug_mode_invalid) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(ncclSuccess, ncclAllReduce((uint8_t*)sendbuffs[i] + i * 1024, recvbuffs[i], 1024, ncclFloat32, ncclSum, localcomms[i], streams[i]));
   }
-  ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+  if (sendwins[0] == nullptr || recvwins[0] == nullptr || nVis == 1) {
+    // the platform does not support symmetric registration, so the group end should be successful
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  } else {
+    ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+  }
 
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {
