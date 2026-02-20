@@ -19,7 +19,7 @@ range="-b 64M -e 64M"
 # run_command "label" "run_mode" "ppn" "test_mpi_flags" "test_env_vars" "binary" "args"
 
 # Build the example profiler plugin
-make CUDA_HOME=$CUDA_HOME -C $NCCL_HOME/../ext-profiler/example
+make CUDA_HOME=$CUDA_HOME -C $NCCL_HOME/../plugins/profiler/example
 
 # Inter-node tests: enable all the events in NCCL and dump events to a trace file (one per rank)
 # Alltoall exercises the group path in the kernel profiler
@@ -29,7 +29,7 @@ for graph in 0 2 ; do
   local_opts=$(eval "echo ${opts}")
   for func in all_reduce_perf alltoall_perf; do
     #NCCL_PROFILE_DUMP_FILE=${func}
-    run_command "${func}_all_sizes" $RUN_MODE $NGPUS "" "NCCL_PROFILER_PLUGIN=$NCCL_HOME/../ext-profiler/example/libnccl-profiler.so NCCL_PROFILE_EVENT_MASK=255 NCCL_PROFILE_GROUP_POOL_SIZE=300 NCCL_PROFILE_COLL_POOL_SIZE=300 NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1" "$NCCL_HOME/test/perf/$func" "$range $local_opts"
+    run_command "${func}_all_sizes" $RUN_MODE $NGPUS "" "NCCL_PROFILER_PLUGIN=$NCCL_HOME/../plugins/profiler/example/libnccl-profiler.so NCCL_PROFILE_EVENT_MASK=255 NCCL_PROFILE_GROUP_POOL_SIZE=300 NCCL_PROFILE_COLL_POOL_SIZE=300 NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1" "$NCCL_HOME/test/perf/$func" "$range $local_opts"
   done
 done
 

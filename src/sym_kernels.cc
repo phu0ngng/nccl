@@ -125,7 +125,7 @@ static uint32_t kernelMask_user() {
 }
 
 NCCL_PARAM(SymCTAs, "SYM_CTAS", 0)
-NCCL_PARAM(SymGinKernelsEnable, "SYM_GIN_KERNELS_ENABLE", 0)
+NCCL_PARAM(SymGinKernelsEnable, "SYM_GIN_KERNELS_ENABLE", 1)
 
 static double softmin(double x, double ceiling, double softness) {
   // looks like a smooth version of: min(x, ceiling)
@@ -248,7 +248,7 @@ static void getRequirements_gin(struct ncclComm* comm, int* out_nBlocks, size_t*
     int nBlocks = calcSatBlocks_ReduceScatter_RailA2A(comm, ldmc);
     if (comm->rank == 0) {
       double minLsaGinEffBw = std::min(lsaBw/lsaMul, ginBw/ginMul);
-      INFO(NCCL_TUNING, "ReduceScatter_RailA2A_Lsa%s : satblocks=%d bufsize=%d effbw=%g\n", ldmc ? "LDMC" : "LD", nBlocks, (int)bufSize, minLsaGinEffBw*smMul);
+      INFO(NCCL_TUNING, "ReduceScatter_RailA2A_Lsa%s : satblocks=%d bufsize=%d effbw=%g", ldmc ? "LDMC" : "LD", nBlocks, (int)bufSize, minLsaGinEffBw*smMul);
     }
     *out_nBlocks = std::max(*out_nBlocks, nBlocks);
     *out_bufSize = std::max(*out_bufSize, bufSize);

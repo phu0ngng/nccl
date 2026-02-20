@@ -92,27 +92,30 @@ ncclResult_t ncclMakeSymmetricTaskList(struct ncclComm* comm, struct ncclTaskCol
       task = headTask;
       bool isLLKernel = (1 << kernelId) & ncclSymkLLKernelMask();
       bool isOneThreadMultiGpus = comm->intraRanks > 1 && !ncclParamSingleProcMemRegEnable();
-      bool isLegacyLLKernel = false;
       bool needFallback = false;
-      // Check if it is worth picking symmetric LL kernels
-      if (isLLKernel) {
-        // First query legacy tuning
-        int collNetSupport = 0;
-        int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(headTask->opDev.op, headTask->datatype) || headTask->func == ncclFuncAllGather);
-        NCCLCHECK(ncclGetCollNetSupport(comm, headTask, &collNetSupport));
-        NCCLCHECK(ncclGetAlgoInfo(comm, headTask, collNetSupport, nvlsSupport, 1));
-        if (headTask->protocol == NCCL_PROTO_LL) {
-          isLegacyLLKernel = true;
-        }
-      }
 
-      // If the symmetric kernel is forced, we will only fallback when running symmetric LL kernels is not possible;
-      // If not, when legacy kernel is not LL and users does not symmetrically register the buffers, we will also fallback.
-      if (forced) {
-        needFallback = isLLKernel && isOneThreadMultiGpus && headTask->winRegType == ncclSymSendNonregRecvNonreg;
-      } else {
-        needFallback = isLLKernel && (isOneThreadMultiGpus || !isLegacyLLKernel ||
-                       (headTask->winRegType == ncclSymSendNonregRecvNonreg && !ncclParamSymNoWinEnable()));
+      // Fallback logic for symmetric LL kernels:
+      // - If both src and dst are registered, we don't fall back if a symmetric kernel is available.
+      // - Otherwise, we have to fall back to a legacy kernel if running the selected symmetric LL kernel is
+      //   not possible (if the buffers are not registered and we manage multiple GPUs).
+      // - If the user forced a symmetric kernel via NCCL_SYM_KERNEL or requested preference for using
+      //   symmetric kernels even without symmetric buffers via NCCL_SYM_NOWIN_ENABLE, we respect that.
+      // - Otherwise, we query the legacy cost model and if it selects a non-LL proto, we pick that.
+      if (headTask->winRegType == ncclSymSendRegRecvReg) {
+        needFallback = false;
+      } else if (isLLKernel) {
+        needFallback = isOneThreadMultiGpus && headTask->winRegType == ncclSymSendNonregRecvNonreg;
+        if (!needFallback && !forced) {
+          needFallback = !ncclParamSymNoWinEnable() && headTask->winRegType == ncclSymSendNonregRecvNonreg;
+          if (!needFallback) {
+            // First query legacy tuning
+            int collNetSupport = 0;
+            int nvlsSupport = comm->nvlsSupport && (ncclNvlsSupported(headTask->opDev.op, headTask->datatype) || headTask->func == ncclFuncAllGather);
+            NCCLCHECK(ncclGetCollNetSupport(comm, headTask, &collNetSupport));
+            NCCLCHECK(ncclGetAlgoInfo(comm, headTask, collNetSupport, nvlsSupport, 1));
+            needFallback = (headTask->protocol != NCCL_PROTO_LL);
+          }
+        }
       }
 
       if (kernelId == ncclSymkKernelId_Count || needFallback) {

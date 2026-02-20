@@ -177,7 +177,7 @@ static const ncclTunerConstants_t ncclTunerConstantsDefaults = {
     {20.0, 20.0, 20.0}, /* Volta (N1/N2/N4) */
     {20.0, 20.0, 20.0}, /* Ampere (N1/N2/N4) */
     {36.7, 36.7, 36.7}, /* Hopper (N1/N2/N4) */
-    {34.5, 34.6, 34.5}, /* Blackwell (N1/N2/N4) */
+    {40.0, 40.0, 40.0}, /* Blackwell (N1/N2/N4) */
   },
   .perChMaxTreeLL128Bws = {
     {20.0, 20.0, 20.0}, /* Volta (N1/N2/N4) */
@@ -561,6 +561,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
       }
     }
   }
+
+  NCCLCHECK(ncclTopoGetMinNetBw(comm->topo, &comm->minNetBw));
 
   INFO(NCCL_INIT, "threadThresholds %ld/%ld/%ld | %ld/%ld/%ld | %ld | %ld",
       comm->threadThresholds[NCCL_ALGO_TREE][NCCL_PROTO_LL],

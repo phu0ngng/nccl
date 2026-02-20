@@ -25,7 +25,7 @@ NCCL_PARAM(IbAsyncEvents,"IB_RETURN_ASYNC_EVENTS",1);
 
 ncclResult_t ncclIbStatsCheckFatalCount(struct ncclIbStats* stat, const char* funcName) {
   if (ncclParamIbAsyncEvents() && COMPILER_ATOMIC_LOAD(&stat->fatalErrorCount, std::memory_order_relaxed)) {
-    WARN("communicator encountered a fatal error (detected in %s)\n", funcName);
+    WARN("communicator encountered a fatal error (detected in %s)", funcName);
     return ncclSystemError;
   }
   return ncclSuccess;

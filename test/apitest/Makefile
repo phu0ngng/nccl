@@ -53,7 +53,7 @@ device_api:
 	${MAKE} -C device_api BUILDDIR=${BUILDDIR}
 
 env.%:
-	${MAKE} -C $(SRCDIR)/ext-env/example $* BUILDDIR=$(DST_DIR)/plugin/libnccl-env-plugin.so
+	${MAKE} -C $(SRCDIR)/plugins/env/example $* BUILDDIR=$(DST_DIR)/plugin/libnccl-env-plugin.so
 
 clean:gtest.clean
 	rm -rf ${DST_DIR}
@@ -80,7 +80,7 @@ ${DST_DIR}/%.o: %.cu
 ${DST_DIR}/plugin/libnccl-%.so: plugin/%.cc
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}/plugin
-	${CXX} -I${SRCDIR}/ext-net/example/nccl -I${SRCDIR}/ext-profiler/example/nccl -I${SRCDIR}/ext-tuner/example/nccl -I$(CUDA_INC) -fPIC -fvisibility=default -shared -o $@ $^
+	${CXX} -I${SRCDIR}/plugins/net/example/nccl -I${SRCDIR}/plugins/profiler/example/nccl -I${SRCDIR}/plugins/tuner/example/nccl -I$(CUDA_INC) -fPIC -fvisibility=default -shared -o $@ $^
 
 ${DST_DIR}/plugin/libnccl-env-plugin.so: env.build
 	@echo "Environment plugin built via env.build target"

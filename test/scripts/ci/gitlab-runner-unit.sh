@@ -92,27 +92,49 @@ else
   echo -e "Disabled Single-Process Mem Leak TESTS network test\n\n"
 fi
 
-NCCL_DEBUG_OLD=$NCCL_DEBUG
-export NCCL_DEBUG=VERSION
+if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]]; then
+  run_command "ft_abort_rank0" "$RUN_MODE" 2 "--oversubscribe" "NCCL_WIN_ENABLE=0" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
+fi
 
 if [[ ${FT_TESTS_DEFAULT} -eq 1 ]] ; then
-  run_command "ft_test_default" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/ft_test" ""
+  # Disable NVLS during abort tests to stabilize CI.  See https://nvbugspro.nvidia.com/bug/5844638
+  FT_ENV="NCCL_NVLS_ENABLE=0"
+  run_command "ft_test_default" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-d float"
+  if [[ ${FT_TESTS_WINREG_DISABLE} -ne 1 ]] ; then
+    run_command "ft_test_reg_local" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 1 -d float"
+    run_command "ft_test_reg_symm" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 2 -d float"
+  else
+    echo -e "Disabled default FT TESTS with window registration\n\n"
+  fi
+  unset FT_ENV
 else
   echo -e "Disabled FT TESTS Default test\n\n"
 fi
 
-if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]] && [[ ${RMA_MULTINODE_TESTS} -ne 1 ]]; then
-  run_command "ft_abort_rank0" "$RUN_MODE" 2 "--oversubscribe" "NCCL_WIN_ENABLE=0" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
-fi
-
 if [[ ${FT_TESTS_NO_P2P} -eq 1 ]] ; then
-  run_command "ft_test_no_p2p" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/unit/ft_test" ""
+  FT_ENV="NCCL_NVLS_ENABLE=0 NCCL_P2P_DISABLE=1"
+  run_command "ft_test_no_p2p" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-d float"
+  if [[ ${FT_TESTS_WINREG_DISABLE} -ne 1 ]] ; then
+    run_command "ft_test_no_p2p_reg_local" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 1 -d float"
+    run_command "ft_test_no_p2p_reg_symm" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 2 -d float"
+  else
+    echo -e "Disabled no_p2pFT TESTS with window registration\n\n"
+  fi
+  unset FT_ENV
 else
   echo -e "Disabled FT TESTS no_p2p test\n\n"
 fi
 
 if [[ ${FT_TESTS_NETWORK} -eq 1 ]] ; then
-  run_command "ft_test_network" "$RUN_MODE" 1 "--oversubscribe" "NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/unit/ft_test" ""
+  FT_ENV="NCCL_NVLS_ENABLE=0 NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1"
+  run_command "ft_test_network" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-d float"
+  if [[ ${FT_TESTS_WINREG_DISABLE} -ne 1 ]] ; then
+    run_command "ft_test_network_reg_local" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 1 -d float"
+    run_command "ft_test_network_reg_symm" "$RUN_MODE" 1 "--oversubscribe" "$FT_ENV" "$NCCL_HOME/test/unit/ft_test" "-R 2 -d float"
+  else
+    echo -e "Disabled network FT TESTS with window registration\n\n"
+  fi
+  unset FT_ENV
 else
   echo -e "Disabled FT TESTS network test\n\n"
 fi
@@ -162,7 +184,7 @@ fi
 
 export NCCL_DEBUG=$NCCL_DEBUG_OLD
 if [[ ${PLUGIN_TESTS_NET_TUNER} -eq 1 ]] ; then
-  run_command "make_mixed_tuner" "CMD" 1 "" "" "make" "-C ext-mixed/example test"
+  run_command "make_mixed_tuner" "CMD" 1 "" "" "make" "-C plugins/mixed/example test"
 else
   echo -e "Disabled Net/Tuner TESTS Mixed test\n\n"
 fi
@@ -258,36 +280,7 @@ if [[ ${ENQUEUE_TESTS_FIFO} -eq 1 ]] ; then
 else
   echo -e "Disabled Enqueue TESTS Fifo test\n\n"
 fi
-
-
-NCCL_DEBUG_OLD=$NCCL_DEBUG
-export NCCL_DEBUG=VERSION
-
-if [[ ${FT_TESTS_DEFAULT} -eq 1 ]] ; then
-  run_command "ft_test_default_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/ft_test" ""
-else
-  echo -e "Disabled FT TESTS Default test\n\n"
-fi
-
-if [[ "$NGPUS" -gt 1 ]] && [[ ${GIN_TESTS} -ne 1 ]]; then
-  run_command "ft_abort_rank0_allgatherv" "$RUN_MODE" 2 "--oversubscribe" "NCCL_WIN_ENABLE=0" "$NCCL_HOME/test/unit/ft_abort_rank0" ""
-fi
-
-if [[ ${FT_TESTS_NO_P2P} -eq 1 ]] ; then
-  run_command "ft_test_no_p2p_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/unit/ft_test" ""
-else
-  echo -e "Disabled FT TESTS no_p2p test\n\n"
-fi
-
-if [[ ${FT_TESTS_NETWORK} -eq 1 ]] ; then
-  run_command "ft_test_network_allgatherv" "$RUN_MODE" 1 "--oversubscribe" "NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1" "$NCCL_HOME/test/unit/ft_test" ""
-else
-  echo -e "Disabled FT TESTS network test\n\n"
-fi
-
-export NCCL_DEBUG=$NCCL_DEBUG_OLD
 unset NCCL_ALLGATHERV_ENABLE
-
 
 print_failed_commands
 end_junit_file

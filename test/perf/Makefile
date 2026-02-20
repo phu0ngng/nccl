@@ -65,7 +65,7 @@ ifneq ($(HAS_COMPUTE_121A),)
   endif
 endif
 
-PROFDIR := $(abspath ../../ext-profiler/example)
+PROFDIR := $(abspath ../../plugins/profiler/example)
 BUILDDIR := $(abspath ../../build)
 NCCLDIR := $(BUILDDIR)
 NVCUFLAGS += -I$(NCCLDIR)/include/ -I../include -g -I$(PROFDIR)/nccl -I$(PROFDIR)

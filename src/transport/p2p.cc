@@ -720,7 +720,27 @@ static ncclResult_t p2pSendProxyConnect(struct ncclProxyConnection* connection, 
   return ncclSuccess;
 }
 
+static ncclResult_t p2pDeregisterMemHandle(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, struct ncclIpcImpInfo* ipcInfo) {
+  if (ipcInfo->legacyIpcCap) {
+    CUDACHECK(cudaIpcCloseMemHandle((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)));
+  } else {
+    if (connection->sameProcess) {
+      NCCLCHECK(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), ipcInfo->numSegments));
+    } else {
+      NCCLCHECK(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), proxyState->memManager, ipcInfo->numSegments));
+    }
+  }
+  return ncclSuccess;
+}
+
 static ncclResult_t p2pSendProxyFree(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState) {
+  while (!ncclIntruQueueEmpty(&connection->proxyMemHandleQueue)) {
+    struct proxyMemHandle* memHandle = ncclIntruQueueDequeue(&connection->proxyMemHandleQueue);
+    p2pDeregisterMemHandle(connection, proxyState, (struct ncclIpcImpInfo*)memHandle->handle);
+    free(memHandle->handle);
+    free(memHandle);
+  }
+
   // CE memcpy support
   if (useMemcpy) {
     struct p2pShmProxyInfo* proxyInfo = (struct p2pShmProxyInfo*)connection->transportResources;
@@ -753,6 +773,13 @@ static ncclResult_t p2pSendProxyFree(struct ncclProxyConnection* connection, str
 }
 
 static ncclResult_t p2pRecvProxyFree(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState) {
+  while (!ncclIntruQueueEmpty(&connection->proxyMemHandleQueue)) {
+    struct proxyMemHandle* memHandle = ncclIntruQueueDequeue(&connection->proxyMemHandleQueue);
+    p2pDeregisterMemHandle(connection, proxyState, (struct ncclIpcImpInfo*)memHandle->handle);
+    free(memHandle->handle);
+    free(memHandle);
+  }
+
   if (ncclCuMemEnable()) {
     struct p2pCuMemProxyInfo *proxyInfo = (struct p2pCuMemProxyInfo *) connection->transportResources;
     if (proxyInfo) {
@@ -1239,6 +1266,18 @@ static ncclResult_t p2pProxyRegister(struct ncclProxyConnection* connection, str
   INFO(NCCL_REG, "Proxy rank %d register success regAddr %p size %ld offset %ld legacyIpcCap %d sameProcess %d", proxyState->tpRank, regAddr, ipcExpInfo->size, ipcExpInfo->offset, ipcExpInfo->legacyIpcCap, connection->sameProcess);
 
 exit:
+  if (regAddr) {
+    struct proxyMemHandle* memHandle;
+    struct ncclIpcImpInfo* ipcInfo;
+    NCCLCHECK(ncclCalloc(&memHandle, 1));
+    NCCLCHECK(ncclCalloc(&ipcInfo, 1));
+    ipcInfo->rmtRegAddr = regAddr;
+    ipcInfo->offset = ipcExpInfo[0].offset;
+    ipcInfo->legacyIpcCap = ipcExpInfo->legacyIpcCap;
+    ipcInfo->numSegments = numSegments;
+    memHandle->handle = (void*)ipcInfo;
+    ncclIntruQueueEnqueue(&connection->proxyMemHandleQueue, memHandle);
+  }
   memcpy(respBuff, (void*)&regAddr, sizeof(void*));
   *done = 1;
   free(mapped);
@@ -1262,20 +1301,25 @@ fail:
   goto exit;
 }
 
+static bool p2pHandleCmp(struct proxyMemHandle* a, struct proxyMemHandle* b) {
+  struct ncclIpcImpInfo* ipcInfoA = (struct ncclIpcImpInfo*)a->handle;
+  struct ncclIpcImpInfo* ipcInfoB = (struct ncclIpcImpInfo*)b->handle;
+  return ipcInfoA->rmtRegAddr == ipcInfoB->rmtRegAddr && ipcInfoA->offset == ipcInfoB->offset && ipcInfoA->legacyIpcCap == ipcInfoB->legacyIpcCap && ipcInfoA->numSegments == ipcInfoB->numSegments;
+}
+
 static ncclResult_t p2pProxyDeregister(struct ncclProxyConnection* connection, struct ncclProxyState* proxyState, void* reqBuff, int reqSize, int* done) {
   ncclResult_t ret = ncclSuccess;
   struct ncclIpcImpInfo* ipcInfo = (struct ncclIpcImpInfo*)reqBuff;
   assert(sizeof(struct ncclIpcImpInfo) == reqSize);
 
-  if (ipcInfo->legacyIpcCap) {
-    CUDACHECKGOTO(cudaIpcCloseMemHandle((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset)), ret, fail);
-  } else {
-    if (connection->sameProcess) {
-      NCCLCHECKGOTO(ncclCuMemFreeAddr((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), ipcInfo->numSegments), ret, fail);
-    } else {
-      NCCLCHECKGOTO(ncclCudaFree((void*)((uintptr_t)ipcInfo->rmtRegAddr - ipcInfo->offset), proxyState->memManager, ipcInfo->numSegments), ret, fail);
-    }
-  }
+  struct proxyMemHandle memHandle = {};
+  struct proxyMemHandle* deletedHandle;
+  memHandle.handle = (void*)ipcInfo;
+  deletedHandle = ncclIntruQueueDelete(&connection->proxyMemHandleQueue, &memHandle, p2pHandleCmp);
+  free(deletedHandle->handle);
+  free(deletedHandle);
+
+  NCCLCHECKGOTO(p2pDeregisterMemHandle(connection, proxyState, ipcInfo), ret, fail);
 
 exit:
   *done = 1;

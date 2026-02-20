@@ -118,7 +118,12 @@ TEST_F(ncclCommWindowRegister_test, debug_mode_invalid) {
   for (int i = 0; i < nVis; i++) {
     ASSERT_EQ(ncclSuccess, ncclAllReduce((uint8_t*)sendbuffs[i] + i * 1024, recvbuffs[i], 1024, ncclFloat32, ncclSum, localcomms[i], streams[i]));
   }
-  ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+  if (sendwins[0] == nullptr || recvwins[0] == nullptr || nVis == 1) {
+    // the platform does not support symmetric registration, so the group end should be successful
+    ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  } else {
+    ASSERT_EQ(ncclInvalidArgument, ncclGroupEnd());
+  }
 
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {

@@ -22,7 +22,7 @@ NCCL_SRC=${NCCL_SRC:-$NCCL_HOME}
 
 # Build the inspector plugin
 echo "Building inspector plugin..."
-if ! make CUDA_HOME=$CUDA_HOME -C $NCCL_SRC/ext-profiler/inspector -j; then
+if ! make CUDA_HOME=$CUDA_HOME -C $NCCL_SRC/plugins/profiler/inspector -j; then
     echo "ERROR: Failed to build inspector plugin, exiting..."
     exit 1
 fi
@@ -35,7 +35,7 @@ for func in "${PERF_TESTS[@]}"; do
 
   # Run the inspector test
   run_command "${func}_inspector" $RUN_MODE $NGPUS "" \
-    "NCCL_PROFILER_PLUGIN=$NCCL_SRC/ext-profiler/inspector/libnccl-profiler-inspector.so NCCL_INSPECTOR_ENABLE=1 NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500 NCCL_INSPECTOR_DUMP_DIR=$LOG_DIR " \
+    "NCCL_PROFILER_PLUGIN=$NCCL_SRC/plugins/profiler/inspector/libnccl-profiler-inspector.so NCCL_INSPECTOR_ENABLE=1 NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500 NCCL_INSPECTOR_DUMP_DIR=$LOG_DIR " \
     "$NCCL_HOME/test/perf/$func" "$range $opts"
 
   # For selected tests, check that a non-zero log file was created

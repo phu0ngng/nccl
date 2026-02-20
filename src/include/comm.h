@@ -533,7 +533,6 @@ struct ncclComm {
   struct ncclIntruQueue<struct ncclCommCallback, &ncclCommCallback::next> legacyRegCleanupQueue;
   bool peerInfoValid;
   float minNetBw;
-  float minGpuNetBw;
 
   ncclNet_t* ncclNet;
   void* netContext;

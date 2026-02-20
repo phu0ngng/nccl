@@ -70,7 +70,7 @@ static ncclResult_t regCleanup(struct ncclComm* comm, struct ncclReg* reg) {
     struct ncclRegNetHandles* netHandlePrev;
     while(netHandle) {
       if (ncclNetDeregBuffer(comm, netHandle->proxyConn, netHandle->handle) != ncclSuccess) {
-        WARN("rank %d deregister NET buffer handle %p proxy rank %d failed\n", comm->rank, netHandle->handle, netHandle->proxyConn->rank);
+        WARN("rank %d deregister NET buffer handle %p proxy rank %d failed", comm->rank, netHandle->handle, netHandle->proxyConn->rank);
       }
       netHandlePrev = netHandle;
       netHandle = netHandle->next;
