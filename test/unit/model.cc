@@ -344,6 +344,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   // Inititalize a netState object for NIC fusion
   fakeNetPluginInit(xmlSystem);
   struct ncclTopoNetInfo netInfo{};
+  netInfo.net = 1;
   netInfo.coll = coll > 0;
   netInfo.netPluginIndex = 0;
   netInfo.dmaBufSupport = true;

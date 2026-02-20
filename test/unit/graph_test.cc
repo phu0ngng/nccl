@@ -481,6 +481,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
 
   // process the local node
   struct ncclTopoNetInfo netInfo{};
+  netInfo.net = 1;
   netInfo.coll = coll > 0;
   netInfo.netPluginIndex = 0;
   netInfo.dmaBufSupport = true;
