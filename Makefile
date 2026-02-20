@@ -33,7 +33,7 @@ test.%:
 	${MAKE} -C test $* BUILDDIR=${ABSBUILDDIR}
 
 examples: src.build
-	${MAKE} -C examples NCCL_HOME=${ABSBUILDDIR}
+	${MAKE} -C docs/examples NCCL_HOME=${ABSBUILDDIR}
 
 pkg.%:
 	${MAKE} -C pkg $* BUILDDIR=${ABSBUILDDIR}

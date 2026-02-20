@@ -6,11 +6,15 @@
 #
 
 # Include common build rules
-include ../../../makefiles/common.mk
-include ../../../makefiles/examples.mk
+include ../../../../makefiles/common.mk
+include ../../../../makefiles/examples.mk
 
 # Target executable
 TARGET = ring_pattern
+
+# Common utilities (for utils.h, nccl_utils.h, etc.)
+COMMON_INC = ../../common/include
+INCLUDES += -I$(COMMON_INC)
 
 # Source files
 SOURCES = main.cc

@@ -116,7 +116,7 @@ or, if NCCL has already been built, the user can optionally add a non-standard
 NCCL installation location:
 
 ```
-cd examples
+cd docs/examples
 make NCCL_HOME=<path-to-nccl> [MPI=1]
 ```
 ## Environment Variables

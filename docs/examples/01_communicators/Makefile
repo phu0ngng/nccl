@@ -6,7 +6,7 @@
 #
 
 # Include common build rules
-include ../../makefiles/common.mk
+include ../../../makefiles/common.mk
 
 # NCCL Fundamental Examples
 EXAMPLES = 01_multiple_devices_single_process 02_one_device_per_pthread

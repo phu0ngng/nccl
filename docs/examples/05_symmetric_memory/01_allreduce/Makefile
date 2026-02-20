@@ -6,8 +6,8 @@
 #
 
 # Include common build rules
-include ../../../makefiles/common.mk
-include ../../../makefiles/examples.mk
+include ../../../../makefiles/common.mk
+include ../../../../makefiles/examples.mk
 
 # Target executable
 TARGET = allreduce_sm

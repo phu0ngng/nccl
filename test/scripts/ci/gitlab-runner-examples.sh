@@ -98,7 +98,7 @@ if [[ "${EXAMPLES_TESTS_BASIC_ONLY}" != "1" ]]; then
 fi
 
 # Run each example
-pushd examples > /dev/null
+pushd docs/examples > /dev/null
 for example_dir in "${example_dirs[@]}"; do
     if [[ -d "$example_dir" ]]; then
         run_example_test "$example_dir"
