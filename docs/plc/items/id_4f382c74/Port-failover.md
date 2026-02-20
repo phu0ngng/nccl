@@ -335,7 +335,7 @@ The control-path API is called during the connection establishment phase of the 
 
 The data-path API is called on the data path of the P2P implementation, whenever a failure happens and should be handled. To reduce the overhead of calling resiliency API functions when not needed, the resiliency API exposes an API to easily and quickly check if progress should be called or not for the resiliency context.
 
-On the data-path, the resiliency API has two entry points: The progress API and the error processing API. The progress API is called periodically to allow the resiliency API to make progress on its internal state machine and the error processing API is called whenever an error is detected on a device so it could be added to the resiliency context and progressed. 
+On the data-path, the resiliency API has two entry points: The progress API and the error processing API. The progress API is called periodically to allow the resiliency API to make progress on its internal state machine and the error processing API is called whenever an error is detected on a device so it could be added to the resiliency context and progressed.
 
 > **Note**
 >
@@ -413,7 +413,7 @@ The CQ is only polled when a failure is detected and at least one probing is out
 
 #### Support for asymmetric device configurations
 
-Receiver and sender sides might have a different number of devices. In order to support such a configuration, each side of the connection creates as many QPs for probing as the maximum number of devices on either side of the connection. This way, each side of the connection can probe all local devices and be sure that the remote side has a QP connected (on the remote side) to every local QP. 
+Receiver and sender sides might have a different number of devices. In order to support such a configuration, each side of the connection creates as many QPs for probing as the maximum number of devices on either side of the connection. This way, each side of the connection can probe all local devices and be sure that the remote side has a QP connected (on the remote side) to every local QP.
 
 #### Matching a CQE with error to the correct request
 
@@ -435,7 +435,7 @@ Therefore, the implementation relies on the fact that when a CQE is generated, i
 When a CTS message fails on the receiver side, the receiver immediately reposts the CTS message without probing whether the CTS message was received or not. The reason is that CTS messages are small and the performance impact of retransmitting them unnecessarily is negligible compared to the added complexity of probing whether the CTS message was received or not.
 
 #### Fast probing
- 
+
 If the sender posted multiple send requests (each request on a different "slot") and then an error is detected on some send, e.g., slot X, – the sender must probe the completion of that send request on the receiver side.
 
 But does the sender _**really**_ need to probe all the outstanding requests that follow slot X to determine whether they require retransmission or not?
@@ -500,7 +500,7 @@ Instead of relying on a fixed delay before probing the receiver's memory to dete
 
 Such change would eliminate the need to call for progress during `ncclIbTest()` calls and would allow the main thread to call into the resiliency API only when an error is detected.
 
-The asynchronous thread would have two entry points: 
+The asynchronous thread would have two entry points:
 1. When the main thread on the data path encounters an error.
 2. When a CQE for a probing operation is generated.
 

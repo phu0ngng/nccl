@@ -45,7 +45,7 @@ NA
 
 ### Proposed Design
 NCCL communicator already has an abortFlag, so we just need to pass the abortFlag to devComm and let symmetric kernels and device API to check it
-during blocking calls. 
+during blocking calls.
 
 The abort checking function is implemented as follows:
 ```

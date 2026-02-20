@@ -33,7 +33,7 @@ Device API users can request Railed-GIN via DevCommRequirements:
 
 ```
 struct ncclDevCommRequirements {
-  ... 
+  ...
   ncclGinConnectionType_t ginConnectionType; // This field already exists
 };
 ```
@@ -165,7 +165,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::put(
 
 Puts to a peer that is not in the rail team may result in silent data corruption.
 
-#### Impact on hostRma 
+#### Impact on hostRma
 
 HostRma will continue to be disabled if NCCL_CROSS_NIC=0
 

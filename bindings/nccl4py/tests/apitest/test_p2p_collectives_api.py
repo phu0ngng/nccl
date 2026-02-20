@@ -524,7 +524,7 @@ def test_scatter(nccl_comm, rank_info, allocator):
 @pytest.mark.parametrize("allocator", ["cupy"])
 def test_signal_basic(nccl_comm, rank_info, allocator):
     """Tests basic signaling between paired ranks.
-    
+
     Each even rank pairs with the next odd rank (0<->1, 2<->3, etc.).
     Both ranks signal each other and wait for the peer's signal.
     """
@@ -550,7 +550,7 @@ def test_signal_basic(nccl_comm, rank_info, allocator):
 @pytest.mark.parametrize("allocator", ["cupy"])
 def test_signal_multiple(nccl_comm, rank_info, allocator):
     """Tests multiple signals between paired ranks.
-    
+
     Each rank sends multiple signals to its peer and waits for the
     same number of signals from the peer using op_cnt.
     """
@@ -578,7 +578,7 @@ def test_signal_multiple(nccl_comm, rank_info, allocator):
 @pytest.mark.parametrize("allocator", ["cupy"])
 def test_signal_with_group(nccl_comm, rank_info, allocator):
     """Tests signal/wait_signal within a group context.
-    
+
     Wraps signal and wait_signal operations in a group to batch them.
     """
     self_rank = rank_info.nccl_rank

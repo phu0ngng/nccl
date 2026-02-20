@@ -42,7 +42,7 @@ __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset) 
   ncclTeam railTeam = ncclTeamRail(comm);
   ncclGin gin(comm, 0);
   ncclGinSignal_t signalIdx = 0;
-  
+
   assert(railTeam.nRanks >= 2 && "Railed Gin put test requires at least 2 ranks per rail");
 
   uint64_t putValue = getPutValue(comm);
@@ -50,7 +50,7 @@ __global__ void putKernel(ncclDevComm comm, ncclWindow_t window, size_t offset) 
     volatile uint64_t* putSrcPtr = (uint64_t*)ncclGetLocalPointer(window, offset);
     assert(*putSrcPtr == 0 && "putSrcPtr should be 0 before put");
     *putSrcPtr = putValue;
-    
+
     gin.put(railTeam, DST_RANK, window, offset, window, offset, sizeof(putValue), ncclGin_SignalInc{signalIdx});
   }
 
@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) {
   ncclDevCommRequirements reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
   reqs.ginConnectionType = NCCL_GIN_CONNECTION_RAIL;
   reqs.ginSignalCount = 1;
-  
+
   ncclDevComm_t devComm;
   CUDACHECK(cudaSetDevice(localRank));
   NCCLCHECK(ncclDevCommCreate(comm, &reqs, &devComm));
@@ -152,18 +152,18 @@ int main(int argc, char* argv[]) {
     printf("Test: Railed Gin Put...");
     fflush(stdout);
   }
-  
+
   CUDACHECK(cudaMemset(putBuffer, 0, bufferSize));
   MPICHECK(MPI_Barrier(MPI_COMM_WORLD));
-  
+
   putKernel<<<1, 1, 0, stream>>>(devComm, putWindow, 0);
   CUDACHECK(cudaStreamSynchronize(stream));
   cudaError_t err = cudaGetLastError();
-  
+
   int test_passed = (err == cudaSuccess) ? 1 : 0;
   int all_test_passed;
   MPICHECK(MPI_Allreduce(&test_passed, &all_test_passed, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD));
-  
+
   if (myRank == 0) {
     if (all_test_passed) {
       printf(" PASSED\n");
@@ -171,7 +171,7 @@ int main(int argc, char* argv[]) {
       printf(" FAILED (error: %s)\n", cudaGetErrorString(err));
     }
   }
-  
+
 
   // Cleanup
   NCCLCHECK(ncclDevCommDestroy(comm, &devComm));

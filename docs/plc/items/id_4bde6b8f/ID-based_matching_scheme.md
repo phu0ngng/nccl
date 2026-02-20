@@ -74,7 +74,7 @@ Since the sender polls on the FIFO directly (by polling on memory), no need for 
 
 In some cases, the plugin used the Immediate Data field to pass other information (e.g., the size of the data being sent). This usage was redundant, as the size of the data can be derived from the completion of the receiver requests itself (`CQE.byte_len`). Still, when ID-based matching scheme is not enabled, the plugin continues to use the Immediate Data field to pass the size of the data being sent, even though it is not strictly necessary.
 
-A special is addressed when ID-based scheme is enabled: When the sender issues a single (`nreqs==1`) sufficiently small (`<ArThreshold`) send request, the sender uses an optimization according to which it posts a single RDMA Write with Immediate operation to send the data, instead of posting first an RDMA Write followed by an RDMA Write with Immediate operation. A special attention is required when the sender also uses multiple QPs to transfer the data. In this case, the receiver cannot simply retreive the size of the original send request from the completion (`CQE.byte_len`), but needs to _aggregate_ the values reported in all completions across all QPs that were used to transfer the data. For that, the reciever was added with a new member `aggSize` in the `ncclIbRequest` strucutre. 
+A special is addressed when ID-based scheme is enabled: When the sender issues a single (`nreqs==1`) sufficiently small (`<ArThreshold`) send request, the sender uses an optimization according to which it posts a single RDMA Write with Immediate operation to send the data, instead of posting first an RDMA Write followed by an RDMA Write with Immediate operation. A special attention is required when the sender also uses multiple QPs to transfer the data. In this case, the receiver cannot simply retreive the size of the original send request from the completion (`CQE.byte_len`), but needs to _aggregate_ the values reported in all completions across all QPs that were used to transfer the data. For that, the reciever was added with a new member `aggSize` in the `ncclIbRequest` strucutre.
 
 To accomodate all cases possible (i.e., ID-based matching scheme enabled/disabled, single/multiple send/receive requests, small/large/zero-sized send requests, single/multiple QPs), the sender and receiver implement the following logic:
 
@@ -103,7 +103,7 @@ ncclIbHandleCompletion(ncclIbRequest r, struct ibv_wc wc) {
 ncclIbRequestComplete(ncclIbRequest r, int* sizes) {
   int *sizesToReport = NULL;
   if (r->nreqs > 1 || r->recv.sizes[0] > 0) {
-    sizesToReport = r->recv.sizes 
+    sizesToReport = r->recv.sizes
   } else {
     sizesToReport = &(r->recv.aggSize);
   }
@@ -120,7 +120,7 @@ ncclIbMultiSend() {
     if (nreqs > 1 || (comm->ar && reqs[0]->send.size > ncclParamIbArThreshold())) {
       lastWr++; // Send additional RDMA Write with Imm
     }
-  } 
+  }
 }
 ```
 
@@ -187,7 +187,7 @@ The tests should complete successfully without any errors or crashes. The result
 
 ### Performance
 
-ID-based matching scheme should not have a significant impact on performance with the proposed optimizations in place (storing the receive requests in an array on the receiver communicator). But, numbers were not collected. 
+ID-based matching scheme should not have a significant impact on performance with the proposed optimizations in place (storing the receive requests in an array on the receiver communicator). But, numbers were not collected.
 
 #### Results
 

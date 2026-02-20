@@ -237,6 +237,6 @@ Currently, these features are supported in the GDA-KI backend only. They do not 
 
 Author(s):
   - Pak Markthub
-  - 
+  -
 
 </details>

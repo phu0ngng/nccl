@@ -18,7 +18,7 @@ mpirun -np 16 -x LD_LIBRARY_PATH $NCCL_HOME/test/nccl-ep/ep_bench --algorithm hi
 
 # Common options
 $NCCL_HOME/test/nccl-ep/ep_bench --algorithm low-latency --tokens 256 --hidden 7168 --top-k 8 --experts 256
-$NCCL_HOME/test/nccl-ep/ep_bench --algorithm high-throughput --tokens 4096 
+$NCCL_HOME/test/nccl-ep/ep_bench --algorithm high-throughput --tokens 4096
 ```
 
 ---

@@ -102,7 +102,7 @@ mpirun -np 16 \
   --map-by ppr:8:node \
   -x NCCL_GIN_TYPE=3 \
   -x LD_LIBRARY_PATH \
-  ./build/test/nccl-ep/ep_test -a ll -t 128 -d 7168 
+  ./build/test/nccl-ep/ep_test -a ll -t 128 -d 7168
 ```
 
 ## Algorithm Modes
@@ -131,7 +131,7 @@ Optimized for training and inference prefilling with large batch sizes:
 ncclEpCreateGroup(&ep_group, comm, &config, stream, alloc_fn, free_fn);
 ncclEpGroupDestroy(ep_group, stream);
 
-// Handle management  
+// Handle management
 ncclEpCreateHandle(&handle, ep_group, &topk_idx, local_tensors, num_local, config, stream);
 ncclEpHandleDestroy(handle);
 

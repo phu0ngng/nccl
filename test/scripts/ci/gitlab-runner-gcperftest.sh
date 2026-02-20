@@ -116,7 +116,7 @@ if [[ $PERF_TEST_MODE == "comprehensive_sweep" ]]; then
             MAX_FOR_INTER=1
         fi
         EFFECTIVE_MAX=$((MAX_SEGMENT < MAX_FOR_INTER ? MAX_SEGMENT : MAX_FOR_INTER))
-        
+
         # Find largest divisor of NNODES up to EFFECTIVE_MAX
         for S in 18 16 9 8 6 4 3 2 1; do
             if [[ $S -le $EFFECTIVE_MAX ]] && [[ $((NNODES % S)) -eq 0 ]]; then

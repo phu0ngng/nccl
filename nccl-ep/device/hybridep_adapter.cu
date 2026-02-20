@@ -314,7 +314,7 @@ void compute_per_expert_counts(
 }
 
 // ============================================================================
-// Dense to sparse prob 
+// Dense to sparse prob
 // ============================================================================
 void dense_to_sparse_prob(
     const float* dense_prob,

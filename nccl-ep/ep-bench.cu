@@ -1715,7 +1715,7 @@ int main(int argc, char* argv[]) {
             printf("[DEBUG] Dynamic tokens: num_recv_tokens=%u\n", num_recv_tokens);
             fflush(stdout);
         }
-    } 
+    }
 
     // Update HT bytes with actual received token count (matches DeepEP methodology)
     if (algorithm == NCCL_EP_ALGO_HIGH_THROUGHPUT) {
