@@ -25,6 +25,12 @@ ctypedef enum ncclResult_t "ncclResult_t":
     ncclNumResults "ncclNumResults" = 8
     _NCCLRESULT_T_INTERNAL_LOADING_ERROR "_NCCLRESULT_T_INTERNAL_LOADING_ERROR" = -42
 
+ctypedef enum ncclCommMemStat_t "ncclCommMemStat_t":
+    ncclStatGpuMemSuspend "ncclStatGpuMemSuspend" = 0
+    ncclStatGpuMemSuspended "ncclStatGpuMemSuspended" = 1
+    ncclStatGpuMemPersist "ncclStatGpuMemPersist" = 2
+    ncclStatGpuMemTotal "ncclStatGpuMemTotal" = 3
+
 ctypedef enum ncclRedOp_dummy_t "ncclRedOp_dummy_t":
     ncclNumOps_dummy "ncclNumOps_dummy" = 5
 

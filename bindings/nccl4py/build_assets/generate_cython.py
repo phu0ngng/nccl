@@ -301,7 +301,7 @@ def main() -> int:
         # Detect paths relative to script location
         script_dir = Path(__file__).resolve().parent
         nccl4py_dir = script_dir.parent
-        repo_root = nccl4py_dir.parent
+        repo_root = nccl4py_dir.parent.parent
 
         # Find nccl.h
         if args.nccl_include_dir:

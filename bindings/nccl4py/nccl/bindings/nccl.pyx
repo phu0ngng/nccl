@@ -829,6 +829,13 @@ class Result(_IntEnum):
     InProgress = ncclInProgress
     NumResults = ncclNumResults
 
+class CommMemStat(_IntEnum):
+    """See `ncclCommMemStat_t`."""
+    StatGpuMemSuspend = ncclStatGpuMemSuspend
+    StatGpuMemSuspended = ncclStatGpuMemSuspended
+    StatGpuMemPersist = ncclStatGpuMemPersist
+    StatGpuMemTotal = ncclStatGpuMemTotal
+
 class RedOp_dummy(_IntEnum):
     """See `ncclRedOp_dummy_t`."""
     NumOps_dummy = ncclNumOps_dummy

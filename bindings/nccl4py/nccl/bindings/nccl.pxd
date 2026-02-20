@@ -24,6 +24,7 @@ ctypedef cudaStream_t Stream
 ###############################################################################
 
 ctypedef ncclResult_t _Result
+ctypedef ncclCommMemStat_t _CommMemStat
 ctypedef ncclRedOp_dummy_t _RedOp_dummy
 ctypedef ncclRedOp_t _RedOp
 ctypedef ncclDataType_t _DataType
