@@ -112,7 +112,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     wr->send_flags = 0;
     wr->wr.rdma.remote_addr = slots[r].addr;
     wr->next = wr + 1;
-    wr_id += (reqs[r] - comm->base.reqs) << (r*8);
+    wr_id += (uint64_t)(slot & 0xff) << (r*8);
     wr->wr_id = wr_id;
 #ifdef NCCL_ENABLE_NET_PROFILING
     reqs[r]->pInfo[0].nEventHandles = 0;
@@ -569,9 +569,11 @@ static inline ncclResult_t ncclIbRequestRetrieveFromCompletion(struct ncclIbNetC
     struct ncclIbRecvComm* recvComm = (struct ncclIbRecvComm*)base;
     *req = recvComm->recvReqs[be32toh(wc->imm_data) % NET_IB_MAX_REQUESTS];
   } else {
-    // For senders, or for other types of completions on receivers, the request ID
-    // is assumed to be in the lower 8 bits of wr_id.
-    NCCLCHECK(ncclIbRequestRetrieveAsIndex(base->reqs, wc->wr_id & 0xff, req));
+    struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)base;
+    // On the sender side, the lower 8 bits of wr_id are used to retrieve the
+    // request, since in multi-send case, multiple IDs are encoded in the same
+    // wr_id., 
+    *req = sendComm->sendReqs[wc->wr_id & 0xff][0];
   }
   TRACE(NCCL_NET, "NET/IB: %s: Retrieved a %s request (req=%p, comm=%p, id=%ld, type=%s, wc.wr_id=%ld, wc.opcode=%s, wc.imm_data=%d, wc.byte_len=%d, wc.qp_num=%u)", __func__, base->isSend ? "send" : "recv", *req, (*req)->base, (*req)->id, ncclIbReqTypeStr[(*req)->type], wc->wr_id, ibvWcOpcodeStr(wc->opcode), be32toh(wc->imm_data), wc->byte_len, wc->qp_num);
   return ncclSuccess;

@@ -283,11 +283,9 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorSender(struct ncclIbRes
   ncclResult_t res;
   ncclIbRequest* request = NULL;
 
-  res = ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wc->wr_id & 0xff, &request);
-  if (res != ncclSuccess) {
-    WARN("NET/IB: %s: Failed to retrieve a request on the sender side (comm=%p, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
-    return res;
-  }
+  struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)resCtx->baseComm;
+  request = sendComm->sendReqs[(wc->wr_id & 0xff) % NET_IB_MAX_REQUESTS][0];
+
   if (request == NULL) {
     WARN("NET/IB: %s: Retrieved a NULL request and not 'send' as expected (send comm=%p, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
     return ncclInternalError;
