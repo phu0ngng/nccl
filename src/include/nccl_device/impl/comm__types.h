@@ -53,6 +53,9 @@ struct ncclDevComm {
 
   // FT related
   uint32_t* abortFlag;
+
+  ncclLsaBarrierHandle_t hybridLsaBarrier;
+  ncclGinBarrierHandle_t hybridRailGinBarrier;
 };
 
 #endif // _NCCL_DEVICE_COMM__TYPES_H_

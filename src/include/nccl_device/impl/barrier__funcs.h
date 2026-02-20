@@ -34,7 +34,7 @@ NCCL_DEVICE_INLINE ncclBarrierSession<Coop>::ncclBarrierSession(
   ):
   ncclBarrierSession<Coop>(
     coop, ncclTeamLsa(gin.comm), ncclTeamRail(gin.comm), gin,
-    gin.comm.lsaBarrier, gin.comm.railGinBarrier,
+    gin.comm.hybridLsaBarrier, gin.comm.hybridRailGinBarrier,
     index, multimem, gin.comm.lsaMultimem
   ) {
 }
@@ -47,7 +47,7 @@ NCCL_DEVICE_INLINE ncclBarrierSession<Coop>::ncclBarrierSession(
   ):
   ncclBarrierSession_internal<Coop>(coop,
     nccl::utility::Absent(),
-    nccl::utility::present(coop, comm, ncclTeamLsa(comm), comm.lsaBarrier, index, multimem, comm.lsaMultimem),
+    nccl::utility::present(coop, comm, ncclTeamLsa(comm), comm.hybridLsaBarrier, index, multimem, comm.lsaMultimem),
     nccl::utility::Absent()
   ) {
 }
@@ -61,7 +61,7 @@ NCCL_DEVICE_INLINE ncclBarrierSession<Coop>::ncclBarrierSession(
   ncclBarrierSession_internal<Coop>(coop,
     nccl::utility::present(gin),
     nccl::utility::Absent(),
-    nccl::utility::present(coop, gin, ncclTeamRail(gin.comm), gin.comm.railGinBarrier, index)
+    nccl::utility::present(coop, gin, ncclTeamRail(gin.comm), gin.comm.hybridRailGinBarrier, index)
   ) {
 }
 #endif

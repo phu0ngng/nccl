@@ -8,6 +8,8 @@
 #include "dev_runtime.h"
 #include "comm.h"
 #include "nccl_device/core.h"
+#include "nccl_device/gin_barrier.h"
+#include "nccl_device/lsa_barrier.h"
 #include "rma/rma.h"
 #include "device.h"
 #include "sym_kernels.h"
@@ -1034,8 +1036,10 @@ ncclResult_t ncclDevrCommCreateInternal(
   int ginSignalTotal = 0, ginCounterTotal = 0;
   struct ncclDevResourceRequirements* resReqsHead = reqs->resourceRequirementsList;
   struct ncclDevResourceRequirements lsaBarReq;
+  struct ncclDevResourceRequirements hybridLsaBarrierReq;
   cudaStream_t stream = nullptr;
   struct ncclDevResourceRequirements railGinBarrierReq;
+  struct ncclDevResourceRequirements hybridRailGinBarrierReq;
   CUmemGenericAllocationHandle memHandle = 0x0;
   struct ncclDevrMemory* mem = nullptr;
   struct ncclDevrWindow* win = nullptr;
@@ -1122,11 +1126,18 @@ ncclResult_t ncclDevrCommCreateInternal(
 
   resReqsHead = reqs->resourceRequirementsList;
 
-  ncclLsaBarrierCreateRequirement(lsa, std::max(reqs->barrierCount, reqs->lsaBarrierCount), &outDevComm->lsaBarrier, &lsaBarReq);
+  // Initialize resources for the world barrier
+  ncclLsaBarrierCreateRequirement(lsa, reqs->barrierCount, &outDevComm->hybridLsaBarrier, &hybridLsaBarrierReq);
+  hybridLsaBarrierReq.next = resReqsHead;
+  ncclGinBarrierCreateRequirement(comm, ncclTeamRail(comm), reqs->barrierCount, &outDevComm->hybridRailGinBarrier, &hybridRailGinBarrierReq);
+  hybridRailGinBarrierReq.next = &hybridLsaBarrierReq;
+  resReqsHead = &hybridRailGinBarrierReq;
+
+  ncclLsaBarrierCreateRequirement(lsa, reqs->lsaBarrierCount, &outDevComm->lsaBarrier, &lsaBarReq);
   lsaBarReq.next = resReqsHead;
   resReqsHead = &lsaBarReq;
 
-  ncclGinBarrierCreateRequirement(comm, ncclTeamRail(comm), std::max(reqs->barrierCount, reqs->railGinBarrierCount), &outDevComm->railGinBarrier, &railGinBarrierReq);
+  ncclGinBarrierCreateRequirement(comm, ncclTeamRail(comm), reqs->railGinBarrierCount, &outDevComm->railGinBarrier, &railGinBarrierReq);
   railGinBarrierReq.next = resReqsHead;
   resReqsHead = &railGinBarrierReq;
 
@@ -1146,7 +1157,7 @@ ncclResult_t ncclDevrCommCreateInternal(
     }
     bufSizeTotal= alignUp(bufSizeTotal, 128);
     ginSignalShadowsOffset = bufSizeTotal;
-    bufSizeTotal += nGinContexts*ginSignalTotal*sizeof(uint64_t); // include signal shadows
+    bufSizeTotal += nGinContexts * ginSignalTotal * sizeof(uint64_t); // include signal shadows
     bufSizeTotal = alignUp(bufSizeTotal, devr->granularity);
   }
 

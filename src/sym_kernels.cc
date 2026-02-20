@@ -472,7 +472,7 @@ ncclResult_t ncclSymkInitOnce(struct ncclComm* comm) {
       railSignalReq.outGinCounterStart = &symk->kcomm.ginCounterPerBlock;
       railSignalReq.next = reqs.resourceRequirementsList;
       reqs.resourceRequirementsList = &railSignalReq;
-      reqs.railGinBarrierCount = ncclSymkMaxBlocks;
+      reqs.barrierCount = ncclSymkMaxBlocks;
 
       bool railedGinInitialized = (comm->sharedRes->ginState.connected &&
                                     comm->sharedRes->ginState.ginConnectionType == NCCL_GIN_CONNECTION_RAIL);

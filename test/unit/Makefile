@@ -45,6 +45,7 @@ CU_FILES += comm_leak_test_multi.cu \
 		devapi_signal_ring.cu \
 		devapi_barrier.cu \
 		devapi_barrier_lsa.cu \
+		devapi_mixed_barriers.cu \
 		devapi_data_ring.cu \
 		devapi_data_ring2.cu \
 		gin_data_ring.cu \
@@ -383,6 +384,11 @@ ${DST_DIR}/devapi_barrier_lsa_ir: ${DST_DIR}/devapi_barrier_lsa_ir.o ${DLIB} ${D
 	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/devapi_barrier_lsa_ir.o ${DLIB} ${DLIBFLAGS} -lcuda
 
 ${DST_DIR}/devapi_barrier: ${DST_DIR}/devapi_barrier.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/devapi_mixed_barriers: ${DST_DIR}/devapi_mixed_barriers.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}

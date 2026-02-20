@@ -31,6 +31,7 @@ if(MPI_FOUND)
         devapi_uts.cu
         devapi_signal_ring.cu
         devapi_barrier.cu
+        devapi_mixed_barriers.cu
         devapi_data_ring.cu
         devapi_data_ring2.cu
         gin_data_ring.cu
