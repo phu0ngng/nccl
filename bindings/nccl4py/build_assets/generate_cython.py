@@ -274,7 +274,7 @@ def main() -> int:
     parser.add_argument(
         "--nccl-include-dir",
         type=Path,
-        default=SCRIPT_DIR.parent.parent / "build" / "include",
+        default=SCRIPT_DIR.parent.parent.parent / "build" / "include",
         help="Path to directory containing nccl.h (default: ../../build/include relative to script)",
     )
     parser.add_argument(

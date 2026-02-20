@@ -206,8 +206,7 @@ ncclResult_t ncclGinIbP2PBarrier(struct ncclGinIbCollComm *cComm) {
   // TODO: move allocation to init or use zero-byte allgather
   int *dummy;
   NCCLCHECK(ncclIbMalloc((void **)&dummy, cComm->nranks * sizeof(int)));
-  NCCLCHECK(ncclGinIbAllGather(cComm, dummy + cComm->rank * sizeof(int),
-                               dummy, sizeof(int)));
+  NCCLCHECK(ncclGinIbAllGather(cComm, dummy + cComm->rank, dummy, sizeof(int)));
   free(dummy);
   return ncclSuccess;
 }

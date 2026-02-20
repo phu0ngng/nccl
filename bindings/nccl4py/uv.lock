@@ -15,7 +15,7 @@ conflicts = [[
 [[package]]
 name = "colorama"
 version = "0.4.6"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
@@ -24,7 +24,7 @@ wheels = [
 [[package]]
 name = "coverage"
 version = "7.13.4"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/24/56/95b7e30fa389756cb56630faa728da46a27b8c6eb46f9d557c68fff12b65/coverage-7.13.4.tar.gz", hash = "sha256:e5c8f6ed1e61a8b2dcdf31eb0b9bbf0130750ca79c1c49eb898e2ad86f5ccc91", size = 827239, upload-time = "2026-02-09T12:59:03.86Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/d4/7827d9ffa34d5d4d752eec907022aa417120936282fc488306f5da08c292/coverage-7.13.4-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:0fc31c787a84f8cd6027eba44010517020e0d18487064cd3d8968941856d1415", size = 219152, upload-time = "2026-02-09T12:56:11.974Z" },
@@ -142,7 +142,7 @@ toml = [
 [[package]]
 name = "cuda-bindings"
 version = "12.9.5"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*'",
@@ -179,7 +179,7 @@ wheels = [
 [[package]]
 name = "cuda-bindings"
 version = "13.1.1"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*'",
@@ -213,10 +213,10 @@ wheels = [
 [[package]]
 name = "cuda-core"
 version = "0.5.1"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
-    { name = "numpy", version = "2.4.2", source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9b/2b/e6fa6721b0cac201d3dc30f2b6282f6d3d90f1223a1232453f410a2735b4/cuda_core-0.5.1-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c6fb9cb9aba53f2e924dac34843165cbb64b9d6367c6113ec4d8845320f459bf", size = 17071396, upload-time = "2026-01-15T15:40:19.785Z" },
@@ -242,7 +242,7 @@ wheels = [
 [[package]]
 name = "cuda-pathfinder"
 version = "1.3.4"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b8/5e/db279a3bfbd18d59d0598922a3b3c1454908d0969e8372260afec9736376/cuda_pathfinder-1.3.4-py3-none-any.whl", hash = "sha256:fb983f6e0d43af27ef486e14d5989b5f904ef45cedf40538bfdcbffa6bb01fb2", size = 30878, upload-time = "2026-02-11T18:50:31.008Z" },
 ]
@@ -250,7 +250,7 @@ wheels = [
 [[package]]
 name = "exceptiongroup"
 version = "1.3.1"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
 ]
@@ -262,7 +262,7 @@ wheels = [
 [[package]]
 name = "iniconfig"
 version = "2.3.0"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
@@ -271,10 +271,10 @@ wheels = [
 [[package]]
 name = "ml-dtypes"
 version = "0.5.4"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
-    { name = "numpy", version = "2.4.2", source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0e/4a/c27b42ed9b1c7d13d9ba8b6905dece787d6259152f2309338aed29b2447b/ml_dtypes-0.5.4.tar.gz", hash = "sha256:8ab06a50fb9bf9666dd0fe5dfb4676fa2b0ac0f31ecff72a6c3af8e22c063453", size = 692314, upload-time = "2025-11-17T22:32:31.031Z" }
 wheels = [
@@ -317,7 +317,7 @@ wheels = [
 [[package]]
 name = "mpi4py"
 version = "4.1.1"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/62/74/28ea85b0b949cad827ea50720e00e814e88c8fd536c27c3c491e4f025724/mpi4py-4.1.1.tar.gz", hash = "sha256:eb2c8489bdbc47fdc6b26ca7576e927a11b070b6de196a443132766b3d0a2a22", size = 500518, upload-time = "2025-10-10T13:55:20.402Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/36/b3/2e7df40608f2188dca16e38f8030add1071f06b1cd94dd8a4e16b9acbd84/mpi4py-4.1.1-cp310-abi3-macosx_10_9_x86_64.whl", hash = "sha256:1586f5d1557abed9cba7e984d18f32e787b353be0986e599974db177ae36329a", size = 1422849, upload-time = "2025-10-10T13:53:40.082Z" },
@@ -373,18 +373,18 @@ source = { editable = "." }
 dependencies = [
     { name = "cuda-core" },
     { name = "cuda-pathfinder" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
-    { name = "numpy", version = "2.4.2", source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
     { name = "packaging" },
 ]
 
 [package.optional-dependencies]
 cu12 = [
-    { name = "cuda-bindings", version = "12.9.5", source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" } },
+    { name = "cuda-bindings", version = "12.9.5", source = { registry = "https://pypi.org/simple" } },
     { name = "nvidia-nccl-cu12" },
 ]
 cu13 = [
-    { name = "cuda-bindings", version = "13.1.1", source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" } },
+    { name = "cuda-bindings", version = "13.1.1", source = { registry = "https://pypi.org/simple" } },
     { name = "nvidia-nccl-cu13" },
 ]
 
@@ -422,7 +422,7 @@ test = [
 [[package]]
 name = "numpy"
 version = "2.2.6"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version < '3.11'",
 ]
@@ -487,7 +487,7 @@ wheels = [
 [[package]]
 name = "numpy"
 version = "2.4.2"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13'",
     "python_full_version == '3.12.*'",
@@ -571,7 +571,7 @@ wheels = [
 [[package]]
 name = "nvidia-nccl-cu12"
 version = "2.29.3"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/28/cf/bcf8bb0c0030b1b9a345331f6281c37d2a8669758521eb93c382f6f87c8f/nvidia_nccl_cu12-2.29.3-py3-none-manylinux_2_18_aarch64.whl", hash = "sha256:6351b79dc7d2cc3d654ea1523616b9eeded71fe9c8da66b71eef9a5d1b2adad4", size = 289708535, upload-time = "2026-02-03T21:10:58.804Z" },
     { url = "https://files.pythonhosted.org/packages/31/5a/cac7d231f322b66caa16fd4b136ebc8e4b18b2805811c2d58dc47210cdea/nvidia_nccl_cu12-2.29.3-py3-none-manylinux_2_18_x86_64.whl", hash = "sha256:35ad42e7d5d722a83c36a3a478e281c20a5646383deaf1b9ed1a9ab7d61bed53", size = 289760316, upload-time = "2026-02-03T21:11:37.899Z" },
@@ -580,7 +580,7 @@ wheels = [
 [[package]]
 name = "nvidia-nccl-cu13"
 version = "2.29.3"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/59/ff243ebe6fa1767a9135719829347f609a90607cfbba9637ba3e9b3e36ce/nvidia_nccl_cu13-2.29.3-py3-none-manylinux_2_18_aarch64.whl", hash = "sha256:eab9f5c565ab3326906f1d1b5be5773a174c2a1b47002faed76f9e957392f713", size = 201042594, upload-time = "2026-02-03T21:10:54.736Z" },
     { url = "https://files.pythonhosted.org/packages/7b/70/aae7806eeaed043b3e212da435880ad067b5f14052986a6b4c0a4c62f68a/nvidia_nccl_cu13-2.29.3-py3-none-manylinux_2_18_x86_64.whl", hash = "sha256:2a321629f49490e4e0122ecb578a4b4a6f89e72740dd988e04dfa4758fab7fc3", size = 201104023, upload-time = "2026-02-03T21:11:24.071Z" },
@@ -589,7 +589,7 @@ wheels = [
 [[package]]
 name = "packaging"
 version = "26.0"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/65/ee/299d360cdc32edc7d2cf530f3accf79c4fca01e96ffc950d8a52213bd8e4/packaging-26.0.tar.gz", hash = "sha256:00243ae351a257117b6a241061796684b084ed1c516a08c48a3f7e147a9d80b4", size = 143416, upload-time = "2026-01-21T20:50:39.064Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/b9/c538f279a4e237a006a2c98387d081e9eb060d203d8ed34467cc0f0b9b53/packaging-26.0-py3-none-any.whl", hash = "sha256:b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529", size = 74366, upload-time = "2026-01-21T20:50:37.788Z" },
@@ -598,7 +598,7 @@ wheels = [
 [[package]]
 name = "pluggy"
 version = "1.6.0"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
@@ -607,7 +607,7 @@ wheels = [
 [[package]]
 name = "pygments"
 version = "2.19.2"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b0/77/a5b8c569bf593b0140bde72ea885a803b82086995367bf2037de0159d924/pygments-2.19.2.tar.gz", hash = "sha256:636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887", size = 4968631, upload-time = "2025-06-21T13:39:12.283Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/21/705964c7812476f378728bdf590ca4b771ec72385c533964653c68e86bdc/pygments-2.19.2-py3-none-any.whl", hash = "sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b", size = 1225217, upload-time = "2025-06-21T13:39:07.939Z" },
@@ -616,7 +616,7 @@ wheels = [
 [[package]]
 name = "pytest"
 version = "9.0.2"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11' or (extra == 'extra-7-nccl4py-cu12' and extra == 'extra-7-nccl4py-cu13')" },
@@ -634,7 +634,7 @@ wheels = [
 [[package]]
 name = "pytest-cov"
 version = "7.0.0"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "coverage", extra = ["toml"] },
     { name = "pluggy" },
@@ -648,7 +648,7 @@ wheels = [
 [[package]]
 name = "pytest-mpi"
 version = "0.6"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pytest" },
 ]
@@ -660,7 +660,7 @@ wheels = [
 [[package]]
 name = "tomli"
 version = "2.4.0"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/82/30/31573e9457673ab10aa432461bee537ce6cef177667deca369efb79df071/tomli-2.4.0.tar.gz", hash = "sha256:aa89c3f6c277dd275d8e243ad24f3b5e701491a860d5121f2cdd399fbb31fc9c", size = 17477, upload-time = "2026-01-11T11:22:38.165Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3c/d9/3dc2289e1f3b32eb19b9785b6a006b28ee99acb37d1d47f78d4c10e28bf8/tomli-2.4.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:b5ef256a3fd497d4973c11bf142e9ed78b150d36f5773f1ca6088c230ffc5867", size = 153663, upload-time = "2026-01-11T11:21:45.27Z" },
@@ -714,7 +714,7 @@ wheels = [
 [[package]]
 name = "typing-extensions"
 version = "4.15.0"
-source = { registry = "https://gitlab-master.nvidia.com/api/v4/projects/156719/packages/pypi/simple" }
+source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/94/1a15dd82efb362ac84269196e94cf00f187f7ed21c242792a923cdb1c61f/typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466", size = 109391, upload-time = "2025-08-25T13:49:26.313Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548", size = 44614, upload-time = "2025-08-25T13:49:24.86Z" },

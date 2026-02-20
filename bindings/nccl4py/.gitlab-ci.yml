@@ -36,7 +36,7 @@ variables:
   CW_DFW_UV_VENV: /lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/toolkits/uv
   CW_DFW_HPCX_HOME: /lustre/fsw/portfolios/coreai/projects/coreai_libraries_nccl/toolkits/hpcx-v2.18
   # IPP6
-  IPP6_SLURM_PARTITION: l40s-cicd
+  IPP6_SLURM_PARTITION: a100-cicd
   IPP6_SLURM_PARTITION_CPU: cpuonly
   IPP6_INTERFACE_NAME: ens255f0np0
   IPP6_CUDA12_HOME: /storage/toolkits/cuda-12.8

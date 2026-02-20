@@ -551,20 +551,20 @@ def main():
     parser.add_argument(
         "--header",
         type=Path,
-        default=SCRIPT_DIR.parent.parent / "build/include/nccl_device.h",
+        default=SCRIPT_DIR.parent.parent.parent / "build/include/nccl_device.h",
         help="Path to the header file to parse (default: ../../build/include/nccl_device.h relative to script)",
     )
     parser.add_argument(
         "--nccl-device-include",
         type=Path,
-        default=SCRIPT_DIR.parent.parent / "build/include/nccl_device",
+        default=SCRIPT_DIR.parent.parent.parent / "build/include/nccl_device",
         help="Path to the NCCL device include directory, definitions in this directory will be included in the output (default: ../../build/include/nccl_device/ relative to script)",
     )
     parser.add_argument(
         "--output",
         "-o",
         type=Path,
-        default=SCRIPT_DIR.parent.parent / "build/include/nccl_device_expanded.h",
+        default=SCRIPT_DIR.parent.parent.parent / "build/include/nccl_device_expanded.h",
         help="Output file path (default: ../../build/include/nccl_device_expanded.h relative to script)",
     )
     parser.add_argument(
