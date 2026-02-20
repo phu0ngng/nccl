@@ -54,7 +54,8 @@ multinetTests="ncclCommInitRankConfig_test.multi_net_plugin_*"
 sharedPluginTest="ncclCommInitRankConfig_test.shared_plugin_lib"
 initOnceTest="ncclCommInitRankConfig_test.init_net_dev_once"
 splitOnceTest="ncclCommSplit_test.init_net_dev_once"
-gtestFilter="-${multinetTests}:${sharedPluginTest}:${initOnceTest}:${splitOnceTest}"
+ginInitContext="ncclCommInitRankConfig_test.gin_init_context"
+gtestFilter="-${multinetTests}:${sharedPluginTest}:${initOnceTest}:${splitOnceTest}:${ginInitContext}"
 
 if [[ ${API_TESTS_RMA} -ne 1 ]] ; then
   gtestFilter="${gtestFilter}:ncclOneSidedRma_test.*"
@@ -79,6 +80,12 @@ unset NCCL_NET_PLUGIN
 export NCCL_NET_PLUGIN="libnccl-net-plugin-init-once.so"
 run_api_test "" "${initOnceTest}"
 run_api_test "" "${splitOnceTest}"
+unset NCCL_NET_PLUGIN
+
+export NCCL_NET_PLUGIN="libnccl-gin-plugin_v11.so"
+export NCCL_GIN_PLUGIN="libnccl-gin-plugin_v11.so"
+run_api_test "" "${ginInitContext}"
+unset NCCL_GIN_PLUGIN
 unset NCCL_NET_PLUGIN
 
 # run w/o allgatherv

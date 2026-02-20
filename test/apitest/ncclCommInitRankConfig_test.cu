@@ -834,3 +834,15 @@ TEST_F(ncclCommInitRankConfig_test, init_net_dev_once) {
 
     ASSERT_EQ(ncclSuccess, ncclCommDestroy(comm));
 }
+
+TEST_F(ncclCommInitRankConfig_test, gin_init_context) {
+    ncclUniqueId id;
+    ncclComm_t comm;
+    ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
+
+    // this test loads the libnccl-gin-plugin_v11.so plugin lib
+    ASSERT_EQ(ncclSuccess, ncclGetUniqueId(&id));
+    ASSERT_EQ(cudaSuccess, cudaSetDevice(0));
+    ASSERT_EQ(ncclSuccess, ncclCommInitRankConfig(&comm, 1, id, 0, &config));
+    ASSERT_EQ(ncclSuccess, ncclCommDestroy(comm));
+}

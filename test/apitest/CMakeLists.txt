@@ -55,6 +55,7 @@ set(PLUGIN_SOURCES
     plugin/net-plugin_nodev_v12.cc
     plugin/shared-plugins.cc
     plugin/net-plugin-init-once.cc
+    plugin/gin-plugin_v11.cc
 )
 
 # Environment plugin source (built from plugins/env/example)
