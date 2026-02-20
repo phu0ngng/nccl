@@ -1439,6 +1439,7 @@ static ncclResult_t proxyConnInit(struct ncclProxyLocalPeer* peer, struct ncclPr
   (*connection)->send = req->send;
   (*connection)->tpLocalRank = req->tpLocalRank;
   (*connection)->sameProcess = req->sameProcess;
+  ncclIntruQueueConstruct(&(*connection)->proxyMemHandleQueue);
   peer->tpLocalRank = req->tpLocalRank;
   peer->tpRank = req->tpRank;
 

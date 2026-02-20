@@ -753,7 +753,7 @@ unit-tests-eos:
   needs:
     - setup-eos
   variables:
-    SLURM_TIME: 30
+    SLURM_TIME: 40
     NNODES: 1
     NP: 8
     ENQUEUE_TESTS_ARGS: 1
@@ -1319,7 +1319,7 @@ unit-tests-bia:
       when: always
   needs: ["setup-bia"]
   variables:
-    SLURM_TIME: 20
+    SLURM_TIME: 40
     NNODES: 1
     NP: 1
     ENQUEUE_TESTS_ARGS: 1

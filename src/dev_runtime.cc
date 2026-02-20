@@ -26,6 +26,7 @@ NCCL_PARAM(EnableVersionCheck, "ENABLE_VERSION_CHECK", 1);
 // Uses ncclDevrWindow directly (vidmem as key, next pointer embedded in struct)
 static std::mutex ncclWindowMapMutex;
 static ncclIntruAddressMap<ncclDevrWindow, struct ncclWindow_vidmem*, &ncclDevrWindow::vidmem, &ncclDevrWindow::next> ncclWindowMap;
+static ncclResult_t symWindowDestroy(struct ncclComm* comm, struct ncclWindow_vidmem* winDev, cudaStream_t stream);
 
 // Complete types from src/include/dev_runtime.h
 struct ncclDevrMemory {
@@ -129,12 +130,25 @@ static void symTeamDestroyAll(struct ncclComm* comm); // Further down
 
 ncclResult_t ncclDevrFinalize(struct ncclComm* comm) {
   struct ncclDevrState* devr = &comm->devrState;
+  cudaStream_t stream;
+  ncclResult_t ret = ncclSuccess;
   if (devr->bigSize == 0) return ncclSuccess;
 
   while (!ncclIntruQueueEmpty(&devr->regTaskQueue)) {
     struct ncclDevrRegTask* task = ncclIntruQueueDequeue(&devr->regTaskQueue);
     free(task);
   }
+
+  // During abort or any other cases, users might not call deregister API for
+  // symmetric window objects, we need to destroy all remaining window objects
+  // that are not deregistered by user to avoid memory leaks here.
+  CUDACHECKIGNORE(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+  while (devr->winSortedCount > 0) {
+    struct ncclDevrWindow* win = devr->winSorted[0].win;
+    NCCLCHECKIGNORE(symWindowDestroy(comm, win->vidmem, stream), ret);
+  }
+  CUDACHECKIGNORE(cudaStreamSynchronize(stream));
+  CUDACHECKIGNORE(cudaStreamDestroy(stream));
 
   symTeamDestroyAll(comm);
   { // delete windowTable

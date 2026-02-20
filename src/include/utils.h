@@ -182,6 +182,8 @@ template<typename T, T *T::*next>
 T* ncclIntruQueueTryDequeue(ncclIntruQueue<T,next> *me);
 template<typename T, T *T::*next>
 void ncclIntruQueueTransfer(ncclIntruQueue<T,next> *dst, ncclIntruQueue<T,next> *src);
+template<typename T, T *T::*next>
+inline T* ncclIntruQueueDelete(ncclIntruQueue<T,next> *me, T *x, bool (*cmp)(T*, T*));
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -408,13 +410,13 @@ inline T* ncclIntruQueueDequeue(ncclIntruQueue<T,next> *me) {
 }
 
 template<typename T, T *T::*next>
-inline bool ncclIntruQueueDelete(ncclIntruQueue<T,next> *me, T *x) {
+inline T* ncclIntruQueueDelete(ncclIntruQueue<T,next> *me, T *x, bool (*cmp)(T*, T*)) {
   T *prev = nullptr;
   T *cur = me->head;
   bool found = false;
 
   while (cur) {
-    if (cur == x) {
+    if (cmp(cur, x)) {
       found = true;
       break;
     }
@@ -430,7 +432,7 @@ inline bool ncclIntruQueueDelete(ncclIntruQueue<T,next> *me, T *x) {
     if (cur == me->tail)
       me->tail = prev;
   }
-  return found;
+  return cur;
 }
 
 template<typename T, T *T::*next>
