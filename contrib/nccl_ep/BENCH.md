@@ -4,7 +4,7 @@
 
 ```bash
 # Build (from nccl root; builds lib + ep_test + ep_bench)
-make -C nccl_ep MPI=1 MPI_HOME=$HPCX_MPI_DIR NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90"
+make -C contrib/nccl_ep MPI=1 MPI_HOME=$HPCX_MPI_DIR NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90"
 
 # Binary: build/test/nccl_ep/ep_bench
 export NCCL_HOME=/path/to/nccl/build

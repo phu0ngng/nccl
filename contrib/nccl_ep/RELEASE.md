@@ -40,7 +40,7 @@ This creates the build artifacts in `./build/`:
 ### Step 2: Build NCCL EP Library and Test
 
 ```bash
-make -C nccl_ep MPI=1
+make -C contrib/nccl_ep MPI=1
 ```
 
 This creates:

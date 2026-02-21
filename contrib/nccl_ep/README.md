@@ -53,14 +53,14 @@ This creates the NCCL build artifacts in `BUILDDIR` (`./build` by default):
 
 ```bash
 # If NCCL was built into ./build (default):
-make -C nccl_ep
+make -C contrib/nccl_ep
 
 # If NCCL was built into a custom directory, pass BUILDDIR as an absolute path.
 # Example:
-# make -C nccl_ep BUILDDIR=$PWD/build_rel
+# make -C contrib/nccl_ep BUILDDIR=$PWD/build_rel
 ```
 
-For custom NCCL build directories, use an absolute `BUILDDIR` path when invoking `make -C nccl_ep` (for example, `$PWD/build_rel`).
+For custom NCCL build directories, use an absolute `BUILDDIR` path when invoking `make -C contrib/nccl_ep` (for example, `$PWD/build_rel`).
 
 This creates:
 - `BUILDDIR/lib/libnccl_ep.a` - Static library
