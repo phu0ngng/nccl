@@ -3,7 +3,7 @@ UV ?= uv
 export UV_PYTHON_PREFERENCE := only-managed
 export UV_PYTHON := 3.13
 
-# Root Makefile passes BUILDDIR; default to ../build if not set
+# Root Makefile passes BUILDDIR; default to ../../build if not set
 MKFILE_DIR           := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 BUILDDIR             ?= $(abspath $(MKFILE_DIR)/../../build)
 NCCL4PY_DIR          := $(abspath $(MKFILE_DIR))
