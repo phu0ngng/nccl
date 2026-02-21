@@ -2,7 +2,7 @@
 
 Low-level Python (ctypes) bindings for the NCCL EP C API.
 
-**Package:** Install as `nccl-ep` (pip). Use in Python as `import nccl_ep`.
+**Package:** Install as `nccl_ep` (pip). Use in Python as `import nccl_ep`.
 
 ## Features
 
@@ -11,7 +11,7 @@ Low-level Python (ctypes) bindings for the NCCL EP C API.
 
 ## Prerequisites
 
-Build NCCL and the nccl-ep library first so that `$NCCL_HOME/lib` contains `libnccl_ep.so` and `libnccl.so`:
+Build NCCL and the nccl_ep library first so that `$NCCL_HOME/lib` contains `libnccl_ep.so` and `libnccl.so`:
 
 ```bash
 cd /path/to/nccl
@@ -22,21 +22,21 @@ make src.build
 # make src.build BUILDDIR=$PWD/build_rel
 
 # If NCCL was built into ./build (default):
-make -C nccl-ep
+make -C nccl_ep
 
 # If NCCL was built into a custom directory, pass BUILDDIR as an absolute path.
 # Example:
-# make -C nccl-ep BUILDDIR=$PWD/build_rel
+# make -C nccl_ep BUILDDIR=$PWD/build_rel
 ```
 
-For custom NCCL build directories, use an absolute `BUILDDIR` path when invoking `make -C nccl-ep` (for example, `$PWD/build_rel`).
+For custom NCCL build directories, use an absolute `BUILDDIR` path when invoking `make -C nccl_ep` (for example, `$PWD/build_rel`).
 
 ## Installation
 
 ```bash
-pip install -e /path/to/nccl/nccl-ep/python
+pip install -e /path/to/nccl/nccl_ep/python
 # or, for a non-editable install:
-# pip install /path/to/nccl/nccl-ep/python
+# pip install /path/to/nccl/nccl_ep/python
 ```
 
 ## Environment Setup

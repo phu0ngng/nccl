@@ -1,6 +1,6 @@
-# NCCL-EP: Expert Parallelism extension for NCCL
+# NCCL_EP: Expert Parallelism extension for NCCL
 #
-# Build with: make -C nccl-ep
+# Build with: make -C nccl_ep
 # Requires NCCL to be built first: make src.build
 
 # std::optional and other C++17 features used in nccl_moe.cc
@@ -10,10 +10,10 @@ include ../makefiles/common.mk
 .PHONY: all clean lib ep_test ep_bench
 
 BUILDDIR ?= $(abspath ../build)
-OBJDIR := $(BUILDDIR)/obj/nccl-ep
+OBJDIR := $(BUILDDIR)/obj/nccl_ep
 LIBDIR := $(BUILDDIR)/lib
 INCDIR := $(BUILDDIR)/include
-DST_DIR := $(BUILDDIR)/test/nccl-ep
+DST_DIR := $(BUILDDIR)/test/nccl_ep
 
 # Default to sm_90 if not specified (can be overridden: NVCC_GENCODE="-gencode=..." make)
 NVCC_GENCODE ?= -gencode=arch=compute_90,code=sm_90

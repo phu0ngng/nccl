@@ -53,20 +53,20 @@ This creates the NCCL build artifacts in `BUILDDIR` (`./build` by default):
 
 ```bash
 # If NCCL was built into ./build (default):
-make -C nccl-ep
+make -C nccl_ep
 
 # If NCCL was built into a custom directory, pass BUILDDIR as an absolute path.
 # Example:
-# make -C nccl-ep BUILDDIR=$PWD/build_rel
+# make -C nccl_ep BUILDDIR=$PWD/build_rel
 ```
 
-For custom NCCL build directories, use an absolute `BUILDDIR` path when invoking `make -C nccl-ep` (for example, `$PWD/build_rel`).
+For custom NCCL build directories, use an absolute `BUILDDIR` path when invoking `make -C nccl_ep` (for example, `$PWD/build_rel`).
 
 This creates:
 - `BUILDDIR/lib/libnccl_ep.a` - Static library
 - `BUILDDIR/lib/libnccl_ep.so` - Shared library (for Python bindings)
 - `BUILDDIR/include/nccl_ep.h` - C API header
-- `BUILDDIR/test/nccl-ep/ep_test` - Test application for both Low-Latency and High-Throughput modes
+- `BUILDDIR/test/nccl_ep/ep_test` - Test application for both Low-Latency and High-Throughput modes
 
 ## Running
 
@@ -92,10 +92,10 @@ The `ep_test` application (`ep_test.cu`) is a comprehensive working example that
 
 ```bash
 # Low-Latency mode (default)
-mpirun -np 8 ./build/test/nccl-ep/ep_test -a ll -t 128 -d 7168
+mpirun -np 8 ./build/test/nccl_ep/ep_test -a ll -t 128 -d 7168
 
 # High-Throughput mode
-mpirun -np 8 ./build/test/nccl-ep/ep_test -a ht -t 4096 -d 7168
+mpirun -np 8 ./build/test/nccl_ep/ep_test -a ht -t 4096 -d 7168
 
 ```
 

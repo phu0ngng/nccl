@@ -40,15 +40,15 @@ This creates the build artifacts in `./build/`:
 ### Step 2: Build NCCL EP Library and Test
 
 ```bash
-make -C nccl-ep MPI=1
+make -C nccl_ep MPI=1
 ```
 
 This creates:
 - `build/lib/libnccl_ep.a` - Static library
 - `build/lib/libnccl_ep.so` - Shared library (for Python bindings)
 - `build/include/nccl_ep.h` - C API header
-- `build/test/nccl-ep/ep_test` - Test application for both Low-Latency and High-Throughput modes
-- `build/test/nccl-ep/ep_bench` - Benchmark application for both Low-Latency and High-Throughput modes
+- `build/test/nccl_ep/ep_test` - Test application for both Low-Latency and High-Throughput modes
+- `build/test/nccl_ep/ep_bench` - Benchmark application for both Low-Latency and High-Throughput modes
 
 
 ## Environment Setup
@@ -73,10 +73,10 @@ export NCCL_GIN_TYPE=3  # GDAKI - GPU Direct Async Kernel-Initiated
 
 ```bash
 # Low-Latency mode (default)
-mpirun -np 8 ./build/test/nccl-ep/ep_test -a ll -t 128 -d 7168
+mpirun -np 8 ./build/test/nccl_ep/ep_test -a ll -t 128 -d 7168
 
 # High-Throughput mode
-mpirun -np 8 ./build/test/nccl-ep/ep_test -a ht -t 4096 -d 7168
+mpirun -np 8 ./build/test/nccl_ep/ep_test -a ht -t 4096 -d 7168
 
 ```
 
@@ -102,7 +102,7 @@ mpirun -np 16 \
   --map-by ppr:8:node \
   -x NCCL_GIN_TYPE=3 \
   -x LD_LIBRARY_PATH \
-  ./build/test/nccl-ep/ep_test -a ll -t 128 -d 7168
+  ./build/test/nccl_ep/ep_test -a ll -t 128 -d 7168
 ```
 
 ## Algorithm Modes
@@ -145,7 +145,7 @@ ncclEpComplete(handle, config, stream);  // LL mode only
 
 ```bash
 # Install Python bindings
-pip install -e nccl-ep/python
+pip install -e nccl_ep/python
 ```
 
 ```python
