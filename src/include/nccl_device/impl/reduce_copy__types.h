@@ -11,7 +11,11 @@
 #include "vector__types.h"
 #include "../utility.h"
 #include "../coop.h"
+#include <cassert>
 #include <type_traits>
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 12090
+#include <cuda_fp4.h>
+#endif
 
 namespace nccl {
 namespace utility {
@@ -30,16 +34,14 @@ struct OpSum {
 // Maps RedOp (e.g., OpSum<T>) to accumulator reduction operator (e.g., OpSum<AccEltType>)
 template<typename RedOp, typename AccEltType>
 struct AccRedOp {
-  // Default: try to extract template and reapply
-  // For template template parameters like OpSum<T>, we need to extract OpSum and apply to AccEltType
-  // This is a simplified approach - assumes RedOp follows pattern OpXXX<T>
-  using Type = OpSum<AccEltType>;  // Fallback to OpSum
+  // Default: keep RedOp as-is (non-templated operators).
+  using Type = RedOp;
 };
 
-// Specialization for OpSum<T> -> OpSum<AccEltType>
-template<typename T, typename AccEltType>
-struct AccRedOp<OpSum<T>, AccEltType> {
-  using Type = OpSum<AccEltType>;
+// Rebind RedOp<T> to RedOp<AccEltType> when possible.
+template<template<typename> typename Red, typename T, typename AccEltType>
+struct AccRedOp<Red<T>, AccEltType> {
+  using Type = Red<AccEltType>;
 };
 
 // Cooperation Level Helpers for compile-time stride resolution
@@ -106,13 +108,8 @@ template<>
 struct OpSum<__nv_fp4_e2m1> {
   using EltType = __nv_fp4_e2m1;
   NCCL_DEVICE_INLINE __nv_fp4_e2m1 operator()(const __nv_fp4_e2m1& a, const __nv_fp4_e2m1& b) const {
-    #if __CUDA_ARCH__ >= 800
-      // Use native half addition on architectures that support it
-      return __nv_fp4_e2m1(__hadd(__half(a), __half(b)));
-    #else
-      // Fallback: convert to float, add, convert back
-      return __nv_fp4_e2m1(float(a) + float(b));
-    #endif
+    assert(false && "OpSum<__nv_fp4_e2m1> is disabled; use packed reducePack specializations");
+    return __nv_fp4_e2m1{};
   }
 };
 #endif
