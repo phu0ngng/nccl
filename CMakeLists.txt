@@ -286,7 +286,7 @@ if(EMIT_LLVM_IR)
 endif()
 
 if(BUILD_NCCL4PY)
-  add_subdirectory(nccl4py)
+  add_subdirectory(bindings/nccl4py)
 endif()
 
 ###################### CMake package config for find_package(NCCL) ######################
