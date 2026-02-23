@@ -455,14 +455,15 @@ def test_nccl_comm_properties_struct_layout():
     #   int nRanks;                 // int32: offset 20, size 4
     #   int cudaDev;                // int32: offset 24, size 4
     #   int nvmlDev;                // int32: offset 28, size 4
-    #   uint8_t deviceApiSupport;   // uint8: offset 32, size 1
-    #   uint8_t multimemSupport;    // uint8: offset 33, size 1
-    #   uint8_t ginType;            // uint8: offset 34, size 1
-    #   // [padding 1 byte: offset 35]
-    #   int nLsaTeams;              // int32: offset 36, size 4 (aligned to 4 bytes)
-    #   uint8_t hostRmaSupport;     // uint8: offset 40, size 1
-    #   uint8_t railedGinType;      // uint8: offset 41, size 1
-    #   // [padding 6 bytes to align struct to 8-byte boundary]
+    #   bool deviceApiSupport;      // uint8: offset 32, size 1
+    #   bool multimemSupport;       // uint8: offset 33, size 1
+    #   // [padding 2 bytes: offset 34-35]
+    #   ncclGinType_t ginType;      // int32 (enum): offset 36, size 4
+    #   int nLsaTeams;              // int32: offset 40, size 4
+    #   bool hostRmaSupport;        // uint8: offset 44, size 1
+    #   // [padding 3 bytes: offset 45-47]
+    #   ncclGinType_t railedGinType; // int32 (enum): offset 48, size 4
+    #   // [padding 4 bytes to align struct to 8-byte boundary]
     # }
     expected_layout = [
         # field_name             type        offset    size
@@ -475,14 +476,15 @@ def test_nccl_comm_properties_struct_layout():
         ('nvml_dev',             np.int32,   28,       4),
         ('device_api_support',   np.uint8,   32,       1),
         ('multimem_support',     np.uint8,   33,       1),
-        ('gin_type',             np.uint8,   34,       1),
-        # 1 byte padding here (offset 35)
-        ('n_lsa_teams',          np.int32,   36,       4),  # aligned to 4 bytes
-        ('host_rma_support',     np.uint8,   40,       1),
-        ('railed_gin_type',      np.uint8,   41,       1),
-        # 6 bytes padding to align struct to 8-byte boundary
+        # 2 bytes padding here (offset 34-35)
+        ('gin_type',             np.int32,   36,       4),
+        ('n_lsa_teams',          np.int32,   40,       4),
+        ('host_rma_support',     np.uint8,   44,       1),
+        # 3 bytes padding here (offset 45-47)
+        ('railed_gin_type',      np.int32,   48,       4),
+        # 4 bytes padding to align struct to 8-byte boundary
     ]
-    expected_total_size = 48
+    expected_total_size = 56
 
     # Verify struct size
     assert dtype.itemsize == expected_total_size, \

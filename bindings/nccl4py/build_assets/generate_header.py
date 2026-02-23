@@ -291,17 +291,11 @@ def normalize_type_for_pycparser(type_spelling: str, type_obj: Type = None) -> s
     if type_spelling in ("bool", "_Bool"):
         return "uint8_t"
 
-    # Convert ncclGinType_t to uint8_t (it's typedef'd as uint8_t enum in C mode)
-    if type_spelling == "ncclGinType_t":
-        return "uint8_t"
-
     # Handle const bool, volatile bool, etc.
     parts = type_spelling.split()
     normalized_parts = []
     for part in parts:
         if part in ("bool", "_Bool"):
-            normalized_parts.append("uint8_t")
-        elif part == "ncclGinType_t":
             normalized_parts.append("uint8_t")
         else:
             normalized_parts.append(part)
