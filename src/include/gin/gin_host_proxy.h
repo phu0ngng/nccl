@@ -17,7 +17,7 @@
 #include "plugin/nccl_gin.h"
 
 ncclResult_t ncclGinProxyCreateContext(struct ncclComm *comm, void *collComm, int devId,
-                                       int nSignals, int nCounters, int nContexts, void **outGinCtx,
+                                       ncclGinConfig_t* config, void **outGinCtx,
                                        ncclNetDeviceHandle_t **outDevHandle);
 ncclResult_t ncclGinProxyRegister(ncclGin_t *ginComm, void *ginCtx, void *addr, size_t size,
                                   int type, int mr_flags, void **mhandle, void **ginHandle);

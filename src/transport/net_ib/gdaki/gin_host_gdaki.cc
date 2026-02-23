@@ -468,7 +468,7 @@ destroy_verbs_qp_attr:
 
 NCCL_PARAM(GinGdakiUseReliableDB, "GDAKI_USE_RELIABLE_DB", 0);
 
-ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters, int nContexts,
+ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters, int nContexts, int queueDepth,
                                        void **outGinCtx, ncclNetDeviceHandle_t **outDevHandle) {
   int status = ncclSuccess;
   doca_error_t docaStatus;
@@ -577,7 +577,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   NCCLCHECKGOTO(gdakiCreateVerbsAh(gdaki_ctx, ib_sl, ib_tc, ib_gid_index), status, out);
 
   gdaki_ctx->qp_rq_size = 0;
-  gdaki_ctx->qp_sq_size = cComm->queueDepth > 0 ? cComm->queueDepth : ncclParamGinGdakiQpDepth();
+  gdaki_ctx->qp_sq_size = queueDepth > 0 ? queueDepth : ncclParamGinGdakiQpDepth();
 
   memset(&qp_init_attr, 0, sizeof(qp_init_attr));
   qp_init_attr.gpu_dev = gdaki_ctx->gdev;

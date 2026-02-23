@@ -13,15 +13,11 @@
 #include "nccl.h"
 
 struct ncclGinIbCollComm {
+  void*         ctx;
   int           rank;
   int           nranks;
-  int           connectionId;
-  int           nConnections;
-  int           queueDepth;
   void*         recvComm;
   void*         sendComm;
-  void**        fullRecvComm;
-  void**        fullSendComm;
   int           dev;
   void*         ginCtx;
   void*         ibvCtx;

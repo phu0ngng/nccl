@@ -59,6 +59,7 @@ struct ncclRmaProxyCtx {
 
   // GIN context for the RMA proxy context
   void *ginCollComm;
+  void *ginCtx;
   ncclNetDeviceHandle_t *devHandle;
   ncclNetProperties_t props;
 

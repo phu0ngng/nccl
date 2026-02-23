@@ -179,6 +179,9 @@ ncclResult_t ncclRmaProxyCreateContext(struct ncclComm *comm, void *collComm, nc
   rmaProxyCtx->ginCollComm = collComm;
   rmaProxyCtx->props = props;
 
+  ncclGinConfig_t config = { 0, 0, 1, 0, comm->config.trafficClass };
+  NCCLCHECK(ginComm->createContext(collComm, &config, &rmaProxyCtx->ginCtx, NULL));
+
   // Allocate the signals on the GPU and then register the memory region with the GIN plugin.
   // Enforcing strong ordering on the signals mr is vital to ensure ordering between puts and signals.
   size_t signalsBufSize = (comm->nRanks + 1) * sizeof(uint64_t);
@@ -307,17 +310,17 @@ static ncclResult_t ncclRmaProxyPollDesc(ncclGin_t *ncclGin, struct ncclRmaProxy
       // Issue the network operation
       if (pendingDesc->signal.op == 0) {
         // No signal operation
-        NCCLCHECK(ncclGin->iput(ctx->ginCollComm,
+        NCCLCHECK(ncclGin->iput(ctx->ginCtx, 0,
           pendingDesc->srcOff, pendingDesc->srcHandle, pendingDesc->size,
           pendingDesc->dstOff, pendingDesc->dstHandle,
-          pendingDesc->targetRank, 0, &pendingDesc->request));
+          pendingDesc->targetRank, &pendingDesc->request));
       } else {
         // Signal operation needed
-        NCCLCHECK(ncclGin->iputSignal(ctx->ginCollComm,
+        NCCLCHECK(ncclGin->iputSignal(ctx->ginCtx, 0,
           pendingDesc->srcOff, pendingDesc->srcHandle, pendingDesc->size,
           pendingDesc->dstOff, pendingDesc->dstHandle,
           pendingDesc->targetRank, pendingDesc->signal.offset, pendingDesc->signal.signalMhandle,
-          pendingDesc->signal.val, pendingDesc->signal.op, 0, &pendingDesc->request));
+          pendingDesc->signal.val, pendingDesc->signal.op, &pendingDesc->request));
       }
 
       // Enqueue to InProgress queue (no lock needed - progress thread only)
@@ -351,6 +354,8 @@ ncclResult_t ncclRmaProxyProgress(ncclGin_t *ncclGin, void *rmaProxyCtx) {
 ncclResult_t ncclRmaProxyDestroyContext(ncclGin_t* ginComm, void* rmaProxyCtx){
   if (!rmaProxyCtx) return ncclSuccess;
   struct ncclRmaProxyCtx *ctx = (struct ncclRmaProxyCtx *)rmaProxyCtx;
+
+  NCCLCHECK(ginComm->destroyContext(ctx->ginCtx));
 
   // Free descriptors remaining in circular buffers
   if (ctx->pendingQueues) {
@@ -536,7 +541,7 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
                   fail);
     NCCLCHECKGOTO(
-      rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank, 1, 0,
+      rmaProxyState->ncclGin->connect(comm->netContext, handles, comm->nRanks, comm->rank,
                                       listenComm, rmaProxyState->ginComms + n),
       ret, fail);
     NCCLCHECKGOTO(rmaProxyState->ncclGin->getProperties(localGinDevs[n], &rmaProxyState->props[n]), ret, fail);

@@ -83,7 +83,7 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
         if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
           ret = ncclGinProxyProgress(ginState->ncclGin, ginState->ginCtx[n]);
         } else {
-          ret = ginState->ncclGin->ginProgress(ginState->ginComms[n]);
+          ret = ginState->ncclGin->ginProgress(ginState->ginCtx[n]);
         }
         if (ret != ncclSuccess) {
           COMPILER_ATOMIC_STORE(&ginState->asyncResult, ret, std::memory_order_release);
@@ -157,7 +157,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
   NCCLCHECKGOTO(ncclCalloc(&ginCommCountHandles, comm->nRanks), ret, fail);
 
   ginState->ginCommCount = nLocalGinDevs;
-  if (ginState->ginVersion == 11) {
+  if (ginState->ginVersion < 13) {
     ginState->ginCommCount = reqGinContextCount;
     if (ncclParamGinNcontexts() > 0)
       ginState->ginCommCount = ncclParamGinNcontexts();
@@ -176,7 +176,7 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
     nContextsTotal = std::max(reqGinContextCount, NCCL_GIN_MAX_CONNECTIONS);
   }
   nContextsTotal = ROUNDUP(nContextsTotal, ginState->ginCommCount);
-  if (ginState->ginVersion == 11) {
+  if (ginState->ginVersion < 13) {
     nContextsTotal = ginState->ginCommCount;
   }
   nContextsPerComm = nContextsTotal / ginState->ginCommCount;
@@ -228,22 +228,27 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
       ret, fail);
     NCCLCHECKGOTO(bootstrapAllGather(comm->bootstrap, allHandles, NCCL_NET_HANDLE_MAXSIZE), ret,
                   fail);
+
+    NCCLCHECKGOTO(ginState->ncclGin->connect(comm->ginContext, handles, nGinRanks, myGinRank,
+          listenComm, ginState->ginComms + n),
+        ret, fail);
+
+    ncclGinConfig_t ginConfig = {
+      ginState->signalSpaceSize,
+      ginState->counterSpaceSize,
+      nContextsPerComm,
+      ginState->ginQueueDepth,
+      0
+    };
+
     if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
-      NCCLCHECKGOTO(ginState->ncclGin->connect(comm->ginContext, handles, nGinRanks, myGinRank,
-            nContextsPerComm, ginState->ginQueueDepth, listenComm, ginState->ginComms + n),
-          ret, fail);
       NCCLCHECKGOTO(ncclGinProxyCreateContext(comm, ginState->ginComms[n],
-                                              localGinDevs[n % nLocalGinDevs], ginState->signalSpaceSize,
-                                              ginState->counterSpaceSize, nContextsPerComm,
+                                              localGinDevs[n % nLocalGinDevs], &ginConfig,
                                               &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
                     ret, fail);
     } else {
-      NCCLCHECKGOTO(ginState->ncclGin->connect( comm->ginContext, handles, nGinRanks, myGinRank,
-            1, ginState->ginQueueDepth, listenComm, ginState->ginComms + n),
-          ret, fail);
       NCCLCHECKGOTO(ginState->ncclGin->createContext(
-                      ginState->ginComms[n], ginState->signalSpaceSize, ginState->counterSpaceSize,
-                      nContextsPerComm, &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
+                      ginState->ginComms[n], &ginConfig, &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
                     ret, fail);
     }
     NCCLCHECKGOTO(ginState->ncclGin->closeListen(listenComm), ret, fail);

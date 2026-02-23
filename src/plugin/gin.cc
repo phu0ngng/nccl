@@ -19,10 +19,11 @@ typedef ncclGin_t* getNcclGin_t(void* ginPluginLib);
 
 extern getNcclGin_t getNcclGin_v11;
 extern getNcclGin_t getNcclGin_v12;
+extern getNcclGin_t getNcclGin_v13;
 NCCL_PARAM(GinPluginRefCount, "GIN_PLUGIN_REF_COUNT", 0);
-#define NCCL_GIN_VERSION_COUNT 2
-int ncclGinVersion[NCCL_GIN_VERSION_COUNT] = {12, 11};
-getNcclGin_t* getNcclGin[NCCL_GIN_VERSION_COUNT] = {getNcclGin_v12, getNcclGin_v11};
+#define NCCL_GIN_VERSION_COUNT 3
+int ncclGinVersion[NCCL_GIN_VERSION_COUNT] = {13, 12, 11};
+getNcclGin_t* getNcclGin[NCCL_GIN_VERSION_COUNT] = {getNcclGin_v13, getNcclGin_v12, getNcclGin_v11};
 
 #define NCCL_GIN_NUM_INTERNAL_PLUGINS 1
 
@@ -216,8 +217,10 @@ static void initPluginLibsOnceFunc() {
   // Add internal ib plugin
   ginPluginLibs[pluginCounter].ncclGin = &ncclGinIb;
   ginPluginLibs[pluginCounter].ncclGinPluginState = ncclGinPluginStateInitReady;
+  ginPluginLibs[pluginCounter].ncclGinVersion = ncclGinVersion[0];
   ginPluginLibs[pluginCounter].ncclRma = &ncclGinIbProxy;
   ginPluginLibs[pluginCounter].ncclRmaPluginState = ncclGinPluginStateInitReady;
+  ginPluginLibs[pluginCounter].ncclGinVersion = ncclGinVersion[0];
   pluginCounter++;
   pluginCount = pluginCounter;
 }
