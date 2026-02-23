@@ -560,9 +560,7 @@ def test_create_dev_comm_with_requirements(nccl_comm):
         pytest.skip("Device doesn't support device API")
 
     reqs = nccl.NCCLDevCommRequirements(
-        barrier_count=10,
-        gin_force_enable=True,
-        gin_context_count=4
+        lsa_barrier_count=10,
     )
 
     dev_comm = nccl_comm.create_dev_comm(requirements=reqs)
