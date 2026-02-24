@@ -13,9 +13,6 @@
 #include "../coop.h"
 #include <cassert>
 #include <type_traits>
-#if defined(CUDA_VERSION) && CUDA_VERSION >= 12090
-#include <cuda_fp4.h>
-#endif
 
 namespace nccl {
 namespace utility {
@@ -98,18 +95,6 @@ struct OpSum<__nv_fp8_e5m2> {
       // Fallback: convert to float, add, convert back
       return __nv_fp8_e5m2(float(a) + float(b));
     #endif
-  }
-};
-#endif
-
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-// Specialization for FP4 type - convert to half, add, convert back (LSA only)
-template<>
-struct OpSum<__nv_fp4_e2m1> {
-  using EltType = __nv_fp4_e2m1;
-  NCCL_DEVICE_INLINE __nv_fp4_e2m1 operator()(const __nv_fp4_e2m1& a, const __nv_fp4_e2m1& b) const {
-    assert(false && "OpSum<__nv_fp4_e2m1> is disabled; use packed reducePack specializations");
-    return __nv_fp4_e2m1{};
   }
 };
 #endif

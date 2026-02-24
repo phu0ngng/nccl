@@ -17,11 +17,11 @@
 // SERIES 1.x - Generic ReduceCopy with RedOp (LSA sources only)
 template<typename T, typename Coop, typename SrcLambda, typename DstLambda,
          typename RedOp, typename IntCount, int UNROLL=4*16/sizeof(T)>
-NCCL_DEVICE_INLINE void ncclLsaReduceLsaCopy(Coop, SrcLambda, int, DstLambda, int, RedOp, IntCount);
+NCCL_DEVICE_INLINE void ncclLsaReduceLsaCopy(Coop, SrcLambda, int, DstLambda, int, RedOp const&, IntCount);
 
 template<typename T, typename Coop, typename SrcLambda, typename DstLambda,
          typename RedOp, typename IntCount, int UNROLL=4*16/sizeof(T)>
-NCCL_DEVICE_INLINE void ncclLsaReduceMultimemCopy(Coop, SrcLambda, int, DstLambda, int, RedOp, IntCount);
+NCCL_DEVICE_INLINE void ncclLsaReduceMultimemCopy(Coop, SrcLambda, int, DstLambda, int, RedOp const&, IntCount);
 
 // SERIES 2.x - Sum-Specific ReduceCopy (lambda-based foundation)
 template<typename T, typename Coop, typename SrcLambda, typename DstLambda,

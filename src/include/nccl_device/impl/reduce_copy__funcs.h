@@ -43,7 +43,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceLsaCopy(
     Coop coop,
     SrcLambda srcLambda, int nSrc,
     DstLambda dstLambda, int nDst,
-    RedOp redOp,
+    RedOp const& redOp,
     IntCount count) {
   // Compute alignment for opaque lambdas with fallback to smaller pack sizes
   auto alignment = nccl::utility::computeLambdaAlignmentOffsetWithFallback<T>(
@@ -59,7 +59,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceMultimemCopy(
     Coop coop,
     SrcLambda srcLambda, int nSrc,
     DstLambda dstLambda, int nDst,
-    RedOp redOp,
+    RedOp const& redOp,
     IntCount count) {
   // Compute alignment for opaque lambdas with fallback to smaller pack sizes
   auto alignment = nccl::utility::computeLambdaAlignmentOffsetWithFallback<T>(
@@ -798,7 +798,7 @@ NCCL_DEVICE_INLINE void ncclLocalReduceSumCopy(Coop coop,
 template <typename T, typename Coop, typename SrcLambda, typename DstLambda,
           typename RedOp, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceLsaCopy(
-    Coop, SrcLambda, int, DstLambda, int, RedOp, IntCount) {
+    Coop, SrcLambda, int, DstLambda, int, RedOp const&, IntCount) {
   // C++11 - C++17 considers this a template invalid cannot have a valid specialation.
   // By making this a dependent static_assert, there may exists an overload of always_false that is true, it is valid.
   // "The validity of a template checked prior to any instantiation."
@@ -810,7 +810,7 @@ NCCL_DEVICE_INLINE void ncclLsaReduceLsaCopy(
 template <typename T, typename Coop, typename SrcLambda, typename DstLambda,
           typename RedOp, typename IntCount, int UNROLL>
 NCCL_DEVICE_INLINE void ncclLsaReduceMultimemCopy(
-    Coop, SrcLambda, int, DstLambda, int, RedOp, IntCount) {
+    Coop, SrcLambda, int, DstLambda, int, RedOp const&, IntCount) {
   static_assert(nccl::utility::always_false<T>::value,
      "NCCL device API reduce/Copy functions require device side lambdas, please use '--extended-lambda' as compilation flag to enable that API.");
 }

@@ -29,10 +29,6 @@ struct LoadImpl {
     static_assert(!UseMultimem || (!std::is_same<PackEltType, int8_t>::value &&
                                    !std::is_same<PackEltType, uint8_t>::value),
                   "int8_t and uint8_t are not supported for multimem sources - use LSA sources");
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-    static_assert(!UseMultimem || !std::is_same<PackEltType, __nv_fp4_e2m1>::value,
-                  "__nv_fp4_e2m1 is not supported for multimem sources - use LSA sources");
-#endif
     #if __CUDA_ARCH__ < 900
     if (UseMultimem) {
       assert(false && "multimem is not supported on architectures < sm_90");

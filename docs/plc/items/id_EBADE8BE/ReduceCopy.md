@@ -193,6 +193,8 @@ Single `UNROLL` parameter controls both for API simplicity. Internally optimized
 
 Fixed precision relationships matching platform multimem support. No explicit precision parameter yet. Future: May add template parameter for custom precision.
 
+**FP4 support:** FP4 is not supported in the current ReduceCopy API. The design will be revisited to support fp4x2 types in a future revision.
+
 ### Data Flow Diagrams
 
 #### ReduceSum Operation (N->1)
@@ -384,6 +386,7 @@ This macro is required because two behaviors rely on ISA characteristics that ma
 3. **Error handling**: Optional return code versions
 4. **Low-latency variants**: For small message sizes
 5. **Hybrid memory models**: GIN integration
+6. **fp4x2 support**: Revisit design to support fp4x2 types
 
 </details>
 
@@ -454,7 +457,7 @@ See the comprehensive API reference table and function definitions below.
 **Notes:**
 - All functions take `Coop coop`, `IntCount count` parameters (omitted from table for brevity)
 - Template parameters: `T, Coop, IntCount, UNROLL=4*16/sizeof(T)` (with additional lambda types where applicable)
-- Generic versions (1.x) also include `RedOp redOp` parameter
+- Generic versions (1.x) also include `RedOp const& redOp` parameter
 - Lambda versions provide maximum flexibility; concrete versions are convenience wrappers
 
 ### Parameter Naming and Ordering Conventions
@@ -475,7 +478,7 @@ All functions follow this canonical order:
    - Destination context: `dstTeam`, `dstHandle` (when different from source)
 4. **Count**: `IntCount count` (operation size)
 5. **Shared context**: `team`, `devComm`, `multimemHandle` (when source and destination share the same context)
-6. **Reduction operation**: `RedOp redOp` (only in generic 1.x APIs, omitted in specialized APIs)
+6. **Reduction operation**: `RedOp const& redOp` (only in generic 1.x APIs, omitted in specialized APIs)
 
 **Rationale**: This ordering follows the std::copy and std::transform convention where source precedes destination, making the data flow direction immediately clear.
 
@@ -523,7 +526,7 @@ template <typename T, typename Coop, bool srcMultimem, bool dstMultimem,
 __device__ __inline__ void reduceCopy(Coop coop,
                                       SrcLambda srcLambda, int nSrc,
                                       DstLambda dstLambda, int nDst,
-                                      RedOp redOp,
+                                      RedOp const& redOp,
                                       IntCount count);
 ```
 
@@ -540,7 +543,7 @@ template<typename T, typename Coop, typename SrcLambda, typename DstLambda, type
 NCCL_DEVICE_INLINE void ncclLsaReduceLsaCopy(Coop coop,
                                              SrcLambda srcLambda, int nSrc,
                                              DstLambda dstLambda, int nDst,
-                                             RedOp redOp, IntCount count) {
+                                             RedOp const& redOp, IntCount count) {
   reduceCopy<T, Coop, /*srcMultimem*/ false, /*dstMultimem*/ false, SrcLambda, DstLambda, RedOp, IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, redOp, count);
 }
 
@@ -560,7 +563,7 @@ template<typename T, typename Coop, typename SrcLambda, typename DstLambda, type
 NCCL_DEVICE_INLINE void ncclLsaReduceMultimemCopy(Coop coop,
                                                   SrcLambda srcLambda, int nSrc,
                                                   DstLambda dstLambda, int nDst,
-                                                  RedOp redOp, IntCount count) {
+                                                  RedOp const& redOp, IntCount count) {
   reduceCopy<T, Coop, /*srcMultimem*/ false, /*dstMultimem*/ true, SrcLambda, DstLambda, RedOp, IntCount, UNROLL>(coop, srcLambda, nSrc, dstLambda, nDst, redOp, count);
 }
 
