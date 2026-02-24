@@ -415,15 +415,18 @@ ncclResult_t ncclTopoAddGin(struct ncclXmlNode* xmlNet, struct ncclTopoSystem* s
 ncclResult_t ncclTopoAddNic(struct ncclXmlNode* xmlNic, struct ncclTopoSystem* system, struct ncclTopoNode* nic, int systemId) {
   for (int s=0; s<xmlNic->nSubs; s++) {
     struct ncclXmlNode* xmlNet = xmlNic->subs[s];
-    if (strcmp(xmlNet->name, "net") == 0) {
-      int index;
-      NCCLCHECK(xmlGetAttrIndex(xmlNet, "dev", &index));
-      // This means that the "dev" attribute wasn't set on this net xml node. That means it should not be added to the system topology graph
-      if (index == -1) continue;
-      NCCLCHECK(ncclTopoAddNet(xmlNet, system, nic, systemId));
-    } else if (strcmp(xmlNet->name, "gin") == 0) {
-      NCCLCHECK(ncclTopoAddGin(xmlNet, system, nic, systemId));
-    }
+    if (strcmp(xmlNet->name, "net") != 0) continue;
+    int index;
+    NCCLCHECK(xmlGetAttrIndex(xmlNet, "dev", &index));
+    // This means that the "dev" attribute wasn't set on this net xml node. That means it should not be added to the system topology graph
+    if (index == -1) continue;
+
+    // Backward compatibility: net withouh "net" attr is a net dev, net without a "gin" is not a gin dev
+    int net = 0, gin = 0;
+    NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "net", &net, 1));
+    NCCLCHECK(xmlGetAttrIntDefault(xmlNet, "gin", &gin, 0));
+    if (net) NCCLCHECK(ncclTopoAddNet(xmlNet, system, nic, systemId));
+    if (gin) NCCLCHECK(ncclTopoAddGin(xmlNet, system, nic, systemId));
   }
   return ncclSuccess;
 }
@@ -1345,7 +1348,6 @@ out:
 }
 
 static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIndex, struct ncclTopoNetInfo* netInfo, int virtualNics) {
-  const char* tagName = netInfo->gin ? "gin" : "net";
   for (int n = startIndex; n < endIndex; n++) {
     ncclNetProperties_t props;
     NCCLCHECK(netInfo->getProperties(n, &props));
@@ -1353,13 +1355,13 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     struct ncclXmlNode* parent = NULL;
     if (virtualNics) {
       struct ncclXmlNode* net = NULL;
-      NCCLCHECK(xmlFindTagKv(xml, tagName, &net, "name", props.name));
+      NCCLCHECK(xmlFindTagKv(xml, "net", &net, "name", props.name));
       // In the event of multithreaded use case, we need to re-discover the shared parent of the given devices for this vNIC
       // Only run this if the net doesn't exist locally - this may alter the XML state
       if (net == NULL) NCCLCHECK(ncclTopoGetVNicParent(xml, netInfo->getProperties, &props.vProps, &parent));
     }
 
-    NCCLCHECK(ncclTopoFillNet(xml, tagName, props.pciPath, props.name, &netNode, parent));
+    NCCLCHECK(ncclTopoFillNet(xml, "net", props.pciPath, props.name, &netNode, parent));
 
     const char* colAttr;
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
@@ -1377,15 +1379,23 @@ static ncclResult_t ncclTopoPopulateNics(ncclXml* xml, int startIndex, int endIn
     bool gdrSupport = (props.ptrSupport & NCCL_PTR_CUDA) || (netInfo->dmaBufSupport && (props.ptrSupport & NCCL_PTR_DMABUF));
     INFO(NCCL_NET,"NET/%s : GPU Direct RDMA %s for HCA %d '%s'", netInfo->name, gdrSupport ? "Enabled" : "Disabled", n, props.name);
     NCCLCHECK(xmlInitAttrInt(netNode, "gdr", gdrSupport));
-    // Only set coll if it's not 0
+
+    // Do not overwrite the "net" attribute and guarantees that a dev with net=1 will be unchanged
+    int isNet = 0;
+    const char* netAttr = NULL;
+    NCCLCHECK(xmlGetAttr(netNode, "net", &netAttr));
+    if (netAttr) isNet = strtol(netAttr, NULL, 0);
+    NCCLCHECK(xmlSetAttrInt(netNode, "net", netInfo->net || isNet));
+    // Only set coll or gin if it's not 0
     if (netInfo->coll) NCCLCHECK(xmlInitAttrInt(netNode, "coll", netInfo->coll));
     if (netInfo->gin) NCCLCHECK(xmlInitAttrInt(netNode, "gin", netInfo->gin));
 
-    const char* keepAttr;
+    const char *keepAttr, *ginAttr;
+    NCCLCHECK(xmlGetAttr(netNode, "net", &netAttr));
+    NCCLCHECK(xmlGetAttr(netNode, "gin", &ginAttr));
     NCCLCHECK(xmlGetAttr(netNode, "coll", &colAttr));
     NCCLCHECK(xmlGetAttr(netNode, "keep", &keepAttr));
-    INFO(NCCL_GRAPH, "ncclTopoPopulateNics : Filled %s in topo with pciPath=%s keep=%s coll=%s",
-      props.name, props.pciPath, keepAttr, colAttr);
+    INFO(NCCL_GRAPH, "ncclTopoPopulateNics : Filled %s in topo with pciPath=%s net=%s gin=%s keep=%s coll=%s", props.name, props.pciPath, netAttr, ginAttr, keepAttr, colAttr);
   }
 
   return ncclSuccess;
@@ -1476,13 +1486,14 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
     NCCLCHECKGOTO(xmlInitAttrInt(node, "gdr", comm->peerInfo[comm->rank].gdrSupport), ret, fail);
   }
 
-  // Auto-detect NICs if needed. net/collnet share the same xml/graph nodes,
-  // so we start with collnet so that it has precedence.
+  // Auto-detect NICs if needed, net/gin/collnet share the same xml/graph nodes.
+  // Start with gin, then with collnet so that they precedence.
   {
       std::lock_guard<std::mutex> lock(netMutex);
       INFO(NCCL_GRAPH, "TOPO/NET : Importing network plugins to topology");
       ncclGin_t* gin = comm->sharedRes->ginState.ncclGin;
       if (gin) {
+        netInfo.net = 0;
         netInfo.coll = 0;
         netInfo.gin = 1;
         netInfo.netPluginIndex = comm->ginPluginIndex;
@@ -1495,6 +1506,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
         NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
       }
       if (collNetSupport(comm)) {
+        netInfo.net = 0;
         netInfo.coll = 1;
         netInfo.gin = 0;
         netInfo.netPluginIndex = comm->netPluginIndex;
@@ -1509,6 +1521,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
         NCCLCHECKGOTO(ncclTopoProcessNet(xml, dumpXmlFile, &netInfo), ret, fail);
       }
 
+      netInfo.net = 1;
       netInfo.coll = 0;
       netInfo.gin = 0;
       netInfo.netPluginIndex = comm->netPluginIndex;
