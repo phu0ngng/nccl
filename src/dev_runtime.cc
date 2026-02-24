@@ -797,7 +797,8 @@ NCCL_PARAM(GinExclusiveContexts, "GIN_EXCLUSIVE_CONTEXTS", -1);
 
 ncclResult_t ncclDevrCommCreateInternal(
     struct ncclComm* comm,
-    struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm, bool isInternal
+    struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm, bool isInternal,
+    ncclResult_t (*outDevCommCopyCB)(struct ncclDevComm const* tmpDevComm, void* out)
   ) {
   ncclResult_t ret = ncclSuccess;
   struct ncclDevrState* devr = &comm->devrState;
@@ -819,12 +820,10 @@ ncclResult_t ncclDevrCommCreateInternal(
   struct ncclWindow_vidmem* winHost = nullptr;
   size_t ginSignalShadowsOffset = 0;
   bool ginExclusiveContexts = false;
+  void* outDevCommPreserve;
+  struct ncclDevComm outDevCommTmp;
 
-  // Default to NCCL_GIN_CONNECTION_NONE for backward compatibility
-  ncclGinConnectionType_t requestedConnectionType = NCCL_GIN_CONNECTION_NONE;
-  if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
-    requestedConnectionType = reqs->ginConnectionType;
-  }
+  ncclGinConnectionType_t requestedConnectionType = reqs->ginConnectionType;
 
   if (reqs->ginForceEnable) {
     INFO(NCCL_INIT,
@@ -861,12 +860,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   }
 
   if (ginActivated) {
-    int ginQueueDepth = 0;
-
-    if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
-        ginQueueDepth = reqs->ginQueueDepth;
-    }
-    NCCLCHECKGOTO(ncclGinConnectOnce(comm, requestedConnectionType, reqs->ginContextCount, ginQueueDepth), ret, fail);
+    NCCLCHECKGOTO(ncclGinConnectOnce(comm, requestedConnectionType, reqs->ginContextCount, reqs->ginQueueDepth), ret, fail);
     // Register all preexisting memories with GIN. Update the windows later when
     // we have a stream.
     for (struct ncclDevrMemory* mem = devr->memHead; mem != nullptr; mem = mem->next) {
@@ -876,12 +870,10 @@ ncclResult_t ncclDevrCommCreateInternal(
   if (devr->ginEnabled) {
     nGinConnections = comm->sharedRes->ginState.ginCommCount;
 
-    if (reqs->version >= NCCL_VERSION(2, 29, 4)) {
-      if (ncclParamGinExclusiveContexts() != -1)
-        ginExclusiveContexts = ncclParamGinExclusiveContexts();
-      else
-        ginExclusiveContexts = reqs->ginExclusiveContexts;
-    }
+    if (ncclParamGinExclusiveContexts() != -1)
+      ginExclusiveContexts = ncclParamGinExclusiveContexts();
+    else
+      ginExclusiveContexts = reqs->ginExclusiveContexts;
     if (ginExclusiveContexts) {
       int unallocated = comm->sharedRes->ginState.ctxLastExclusive - comm->sharedRes->ginState.ctxFirstAvailable;
       nGinContexts = reqs->ginContextCount;
@@ -903,6 +895,13 @@ ncclResult_t ncclDevrCommCreateInternal(
              nGinContexts, reqs->ginContextCount);
       }
     }
+  }
+
+  // If we have a copy callback for backwards compatibility, we use a temporary buffer for the devComm and, once we're
+  // finished, we let the callback copy the data over.
+  if (outDevCommCopyCB) {
+    outDevCommPreserve = outDevComm;
+    outDevComm = &outDevCommTmp;
   }
 
   memset(outDevComm, 0, sizeof(*outDevComm));
@@ -1038,6 +1037,8 @@ ncclResult_t ncclDevrCommCreateInternal(
 
   NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xbeef), ret, fail_stream_mem_win_signals);
   CUDACHECKGOTO(cudaStreamDestroy(stream), ret, fail_stream_mem_win_signals);
+
+  if (outDevCommCopyCB) NCCLCHECKGOTO(outDevCommCopyCB(outDevComm, outDevCommPreserve), ret, fail_stream_mem_win_signals);
   return ret;
 
 fail_stream_mem_win_signals:
@@ -1158,6 +1159,43 @@ static ncclResult_t validateNcclVersion(int compiledVersion, int minSupportedVer
   return ncclSuccess;
 }
 
+typedef enum : uint8_t {
+  NCCL_GIN_TYPE_NONE_v22902 = 0,
+  NCCL_GIN_TYPE_PROXY_v22902 = 2,
+  NCCL_GIN_TYPE_GDAKI_v22902 = 3,
+} ncclGinType_t_v22902;
+
+struct ncclCommProperties_v22902 {
+  size_t size;
+  unsigned int magic;
+  unsigned int version;
+
+  int rank;
+  int nRanks;
+  int cudaDev;
+  int nvmlDev;
+  bool deviceApiSupport;
+  bool multimemSupport;
+  ncclGinType_t_v22902 ginType;
+};
+
+static ncclResult_t ncclCommQueryProperties_v22902(ncclComm_t comm, struct ncclCommProperties_v22902* props) {
+  ncclCommProperties_t newProps = NCCL_COMM_PROPERTIES_INITIALIZER;
+
+  NCCLCHECK(ncclCommQueryProperties(comm, &newProps));
+
+  props->rank = newProps.rank;
+  props->nRanks = newProps.nRanks;
+  props->cudaDev = newProps.cudaDev;
+  props->nvmlDev = newProps.nvmlDev;
+  // We don't provide backwards compatibility for GIN with 2.29.2.  If a communicator needs it, we disable Device API.
+  props->deviceApiSupport = (newProps.deviceApiSupport && ncclTeamLsa(comm).nRanks == comm->nRanks);
+  props->multimemSupport = newProps.multimemSupport;
+  props->ginType = NCCL_GIN_TYPE_NONE_v22902;
+
+  return ncclSuccess;
+}
+
 NCCL_API(ncclResult_t, ncclCommQueryProperties, ncclComm_t, ncclCommProperties_t*);
 ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* props) {
   NCCLCHECK(CommCheck(comm, __func__, "comm"));
@@ -1171,6 +1209,11 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   }
 
   NCCLCHECK(validateNcclVersion(props->version));
+
+  if (props->version >= NCCL_VERSION(2, 29, 2) && props->version <= NCCL_VERSION(2, 29, 3)) {
+    NCCLCHECK(ncclCommQueryProperties_v22902(comm, (struct ncclCommProperties_v22902*)props));
+    return ncclSuccess;
+  }
 
   props->rank = comm->rank;
   props->nRanks = comm->nRanks;
@@ -1190,23 +1233,80 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   return ncclSuccess;
 }
 
-NCCL_API(ncclResult_t, ncclDevCommCreate, ncclComm_t comm, ncclDevCommRequirements_t const* reqs, ncclDevComm_t* outDevComm);
-ncclResult_t ncclDevCommCreate(
+struct ncclDevCommRequirements_v22902 {
+  size_t size;
+  unsigned int magic;
+  unsigned int version;
+
+  // These two structures are unchanged.
+  ncclDevResourceRequirements_t* resourceRequirementsList;
+  ncclTeamRequirements_t* teamRequirementsList;
+
+  bool lsaMultimem;
+
+  int barrierCount;
+  int lsaBarrierCount;
+  int railGinBarrierCount;
+
+  int lsaLLA2ABlockCount, lsaLLA2ASlotCount;
+
+  bool ginForceEnable;
+  int ginContextCount;
+  int ginSignalCount;
+  int ginCounterCount;
+};
+
+struct ncclDevComm_v22902 {
+  int rank, nRanks;
+  uint32_t nRanks_rcp32;
+  int lsaRank, lsaSize;
+  uint32_t lsaSize_rcp32;
+
+  // This structure is unchanged.
+  struct ncclDevCommWindowTable* windowTable;
+
+  // The ncclWindow_vidmem structure is unchanged, and ncclWindow_t is just a (device) pointer to it.
+  ncclWindow_t resourceWindow;
+  struct ncclWindow_vidmem resourceWindow_inlined;
+
+  // ncclMultimemHandle_t, ncclLsaBarrierHandle_t, and ncclGinBarrierHandle_t are unchanged.
+  ncclMultimemHandle_t lsaMultimem;
+  ncclLsaBarrierHandle_t lsaBarrier;
+  ncclGinBarrierHandle_t railGinBarrier;
+
+  uint8_t ginContextCount;
+  uint8_t ginNetDeviceTypes[4];
+  void* ginHandles[4];
+  uint32_t ginSignalBase;
+  int ginSignalCount;
+  uint32_t ginCounterBase;
+  int ginCounterCount;
+  uint64_t* ginSignalShadows;
+};
+
+static ncclResult_t ncclDevCommCreateCopyCB_v22902(struct ncclDevComm const* tmpDevComm, void* out) {
+  struct ncclDevComm_v22902* outDevComm = (struct ncclDevComm_v22902*)out;
+
+  outDevComm->rank = tmpDevComm->rank;
+  outDevComm->nRanks = tmpDevComm->nRanks;
+  outDevComm->nRanks_rcp32 = tmpDevComm->nRanks_rcp32;
+  outDevComm->lsaRank = tmpDevComm->lsaRank;
+  outDevComm->lsaSize = tmpDevComm->lsaSize;
+  outDevComm->lsaSize_rcp32 = tmpDevComm->lsaSize_rcp32;
+  outDevComm->windowTable = tmpDevComm->windowTable;
+  outDevComm->resourceWindow = tmpDevComm->resourceWindow;
+  outDevComm->resourceWindow_inlined = tmpDevComm->resourceWindow_inlined;
+  outDevComm->lsaMultimem = tmpDevComm->lsaMultimem;
+  outDevComm->lsaBarrier = tmpDevComm->lsaBarrier;
+  // No need to copy GIN-specific fields since this is used only if GIN has not been requested.
+
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclDevCommCreateCommon(
     ncclComm_t comm, struct ncclDevCommRequirements const* reqs,
-    struct ncclDevComm* outDevComm
+    struct ncclDevComm* outDevComm, ncclResult_t (*outDevCommCopyCB)(struct ncclDevComm const* tmpDevComm, void* out)
   ) {
-  NCCLCHECK(CommCheck(comm, __func__, "comm"));
-  NCCLCHECK(PtrCheck(reqs, __func__, "reqs"));
-  if (reqs->magic != NCCL_API_MAGIC) {
-    WARN("Cannot create device communicator: ncclDevCommRequirements_t argument must be initialized via NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER");
-    return ncclInvalidUsage;
-  }
-
-  // The current Device API is backwards-compatible down to NCCL version 2.29.4.
-  // The number below needs to be updated whenever Device API changes in a manner that is not *binary*-compatible with
-  // custom kernels compiled using older NCCL versions (source compatibility is insufficient).
-  NCCLCHECK(validateNcclVersion(reqs->version, 22904));
-
   ncclResult_t ret = ncclSuccess;
   int saveDev;
   struct ncclDevrCommCreateTask* task = nullptr;
@@ -1229,6 +1329,7 @@ ncclResult_t ncclDevCommCreate(
   // reqs must be deep copied to the task so background threads can safely access it
   NCCLCHECKGOTO(deepCopyDevCommRequirements(reqs, &task->reqs), ret, fail);
   task->outDevComm = outDevComm;
+  task->outDevCommCopyCB = outDevCommCopyCB;
   ncclIntruQueueEnqueue(&comm->devrState.commCreateTaskQueue, task);
   ncclGroupCommJoin(comm, ncclGroupTaskTypeSymRegister);
 
@@ -1240,6 +1341,65 @@ exit:
 fail:
   free(task);
   goto exit;
+}
+
+static ncclResult_t ncclDevCommCreate_v22902(
+    ncclComm_t comm, struct ncclDevCommRequirements_v22902 const* reqs,
+    struct ncclDevComm_v22902* outDevComm
+  ) {
+  ncclDevCommRequirements_t newReqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+
+  bool userRequestedGin = reqs->ginForceEnable || reqs->ginSignalCount > 0 || reqs->ginCounterCount > 0;
+  {
+    struct ncclDevResourceRequirements* rr = reqs->resourceRequirementsList;
+    while (!userRequestedGin && rr != nullptr) {
+      userRequestedGin = rr->ginSignalCount > 0 || rr->ginCounterCount > 0;
+      rr = rr->next;
+    }
+  }
+  if (userRequestedGin) {
+    int runtimeVersion;
+    NCCLCHECK(ncclGetVersion(&runtimeVersion));
+    WARN("The application was compiled with too old version of NCCL. It was compiled with NCCL version %d, but is running with NCCL library version %d. Because of its use of GIN device kernels, it needs to be recompiled, preferably with the same NCCL version that it will be running with.", reqs->version, runtimeVersion);
+    return ncclInvalidUsage;
+  }
+
+  newReqs.resourceRequirementsList = reqs->resourceRequirementsList;
+  newReqs.teamRequirementsList = reqs->teamRequirementsList;
+  newReqs.lsaMultimem = reqs->lsaMultimem;
+  // Prior to 2.29.4, a non-zero barrierCount did not imply GIN, but it does since, so we can't just copy it over.
+  newReqs.lsaBarrierCount = std::max(reqs->lsaBarrierCount, reqs->barrierCount);
+  newReqs.lsaLLA2ABlockCount = reqs->lsaLLA2ABlockCount;
+  newReqs.lsaLLA2ASlotCount = reqs->lsaLLA2ASlotCount;
+  // No need to copy GIN-specific fields since we established above that it's not being requested.
+
+  memset(outDevComm, '\0', sizeof(*outDevComm));
+  NCCLCHECK(ncclDevCommCreateCommon(comm, &newReqs, (struct ncclDevComm*)outDevComm, ncclDevCommCreateCopyCB_v22902));
+
+  return ncclSuccess;
+}
+
+NCCL_API(ncclResult_t, ncclDevCommCreate, ncclComm_t comm, ncclDevCommRequirements_t const* reqs, ncclDevComm_t* outDevComm);
+ncclResult_t ncclDevCommCreate(
+    ncclComm_t comm, struct ncclDevCommRequirements const* reqs,
+    struct ncclDevComm* outDevComm
+  ) {
+  NCCLCHECK(CommCheck(comm, __func__, "comm"));
+  NCCLCHECK(PtrCheck(reqs, __func__, "reqs"));
+  if (reqs->magic != NCCL_API_MAGIC) {
+    WARN("Cannot create device communicator: ncclDevCommRequirements_t argument must be initialized via NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER");
+    return ncclInvalidUsage;
+  }
+
+  NCCLCHECK(validateNcclVersion(reqs->version));
+
+  if (reqs->version >= NCCL_VERSION(2, 29, 2) && reqs->version <= NCCL_VERSION(2, 29, 3)) {
+    NCCLCHECK(ncclDevCommCreate_v22902(comm, (const struct ncclDevCommRequirements_v22902*)reqs,
+                                       (struct ncclDevComm_v22902*)outDevComm));
+    return ncclSuccess;
+  }
+
+  return ncclDevCommCreateCommon(comm, reqs, outDevComm, /*outDevCommCopyCB=*/nullptr);
 }
 
 NCCL_API(ncclResult_t, ncclDevCommDestroy, ncclComm_t comm, ncclDevComm_t const* devComm);

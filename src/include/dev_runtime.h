@@ -44,6 +44,7 @@ struct ncclDevrCommCreateTask {
   struct ncclDevrCommCreateTask *next;
   struct ncclDevCommRequirements* reqs;
   struct ncclDevComm* outDevComm;
+  ncclResult_t (*outDevCommCopyCB)(struct ncclDevComm const* tmpDevComm, void* out);
 };
 
 struct ncclDevrState {
@@ -87,7 +88,8 @@ ncclResult_t ncclDevrWindowRegisterInGroup(
 );
 
 ncclResult_t ncclDevrCommCreateInternal(
-  struct ncclComm* comm, struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm, bool isInternal = false
+  struct ncclComm* comm, struct ncclDevCommRequirements const* reqs, struct ncclDevComm* outDevComm,
+  bool isInternal = false, ncclResult_t (*outDevCommCopyCB)(struct ncclDevComm const* tmpDevComm, void* out) = nullptr
 );
 void freeDevCommRequirements(
   struct ncclDevCommRequirements* reqs
