@@ -15,7 +15,7 @@ NCCL calls may return a variety of return codes. Ensure that the return codes ar
 Errors are grouped into different categories.
 
 * ncclUnhandledCudaError and ncclSystemError indicate that a call to an external library failed.
-* ncclInvalidArgument and ncclInvalidUsage indicates there was a programming error in the application using NCCL.
+* ncclInvalidArgument and ncclInvalidUsage indicate there was a programming error in the application using NCCL.
 
 In either case, refer to the NCCL warning message to understand how to resolve the problem.
 
@@ -60,7 +60,7 @@ This can be downloaded and built from the code and instructions found here: http
 GPU-to-NIC communication
 ------------------------
 
-GPUs can also communicate directly with network cards using GPU Direct RDMA (GDRDMA). This requires having a compatible
+GPUs can also communicate directly with network cards using GPU Direct RDMA (GDRDMA). This requires having compatible
 network cards and drivers, plus loading an extra kernel module called ``nvidia-peermem``.
 The ``nvidia-peermem`` module is now supplied with the CUDA drivers, however it must be loaded on each node boot with:
 
@@ -191,21 +191,21 @@ Once updated, the daemons should be restarted with:
 
 **cuMem host allocations**
 
-Starting with version 2.23, NCCL supports an alternative shared memory mechanism using cuMem host allocations.  From
+Starting with version 2.23, NCCL supports an alternative shared memory mechanism using cuMem host allocations. From
 NCCL 2.24, if CUDA driver >= 12.6 and CUDA runtime >= 12.2, it is enabled by default in favor of /dev/shm.
 
 However, cuMem host allocations rely on correctly configured and working NUMA support, which may not be available in
-some VM and containerization scenarios.  In particular, Docker by default disables NUMA support (it can be enabled by
-invoking Docker with ``--cap-add SYS_NICE``).  From version 2.26.5, NCCL checks if cuMem host allocations work and, if
-needed, automatically falls back to the /dev/shm code.  In prior versions, the same outcome can be achieved by manually
-specifying ``NCCL_CUMEM_HOST_ENABLE=0``.  We still recommend configuring the underlying system to ensure that cuMem host
+some VM and containerization scenarios. In particular, Docker by default disables NUMA support (it can be enabled by
+invoking Docker with ``--cap-add SYS_NICE``). From version 2.26.5, NCCL checks if cuMem host allocations work and, if
+needed, automatically falls back to the /dev/shm code. In prior versions, the same outcome can be achieved by manually
+specifying ``NCCL_CUMEM_HOST_ENABLE=0``. We still recommend configuring the underlying system to ensure that cuMem host
 allocations work, as they provide improved reliability during communicator aborts.
 
 cuMem host allocations may fail on systems without CUDA P2P connectivity if CUDA driver version prior to 13.0 is being
-used.  Furthermore, `CUDA Forward Compatibility
+used. Furthermore, `CUDA Forward Compatibility
 <https://docs.nvidia.com/deploy/cuda-compatibility/forward-compatibility.html>`_ feature can affect NCCL's ability to
 accurately determine the current driver version, resulting in cuMem host allocations being enabled on older drivers than
-intended.  We continue to investigate additional mechanisms to detect such circumstances; in the meantime, use
+intended. We continue to investigate additional mechanisms to detect such circumstances; in the meantime, use
 ``NCCL_CUMEM_HOST_ENABLE=0`` to deactivate this feature if it causes issues.
 
 Stack size
@@ -213,17 +213,17 @@ Stack size
 
 NCCL's graph search algorithm is highly recursive and, especially on MNNVL
 systems where many ranks are reachable via CUDA P2P, may temporarily require
-more than 2 MB of thread stack during communicator creation.  While the default
+more than 2 MB of thread stack during communicator creation. While the default
 Linux stack size limit (8 MB) is known to be sufficient, we've seen crashes
-if the limit is changed to ``unlimited``.  Due to an idiosyncracy of GNU libc
+if the limit is changed to ``unlimited``. Due to an idiosyncrasy of GNU libc
 (see the man page of ``pthread_create(3)``), such a setting results in a
 *decrease* of the stack size of NCCL's background threads to just 2 MB,
-which may not be sufficiently large.  Use ``ulimit -s`` in bash to print the
+which may not be sufficiently large. Use ``ulimit -s`` in bash to print the
 current limit; if needed, reset it to 8192 KB using ``ulimit -s 8192`` (one
 also needs to ensure that the new setting is propagated to other nodes when
-launching a multi-node NCCL job).  Starting with version 2.28, NCCL queries the
+launching a multi-node NCCL job). Starting with version 2.28, NCCL queries the
 default stack size for newly launched threads and, if necessary, changes it to
-a safe value for the current job.  We still recommend that users on affected
+a safe value for the current job. We still recommend that users on affected
 systems attempt to get the system-wide setting fixed as -- however well
 intentioned -- it is a potentially serious misconfiguration that could have
 negative effects extending beyond NCCL jobs.
@@ -232,7 +232,7 @@ Unified Memory (UVM)
 --------------------
 
 Starting with version 2.23, NCCL utilizes CUDA memory pools to optimize graph capturing. This feature relies on UVM
-being available.  While UVM may not be on by default in some virtual machine (VM) setups, it can typically be enabled through a
+being available. While UVM may not be on by default in some virtual machine (VM) setups, it can typically be enabled through a
 configuration change.
 
 *****************
@@ -351,7 +351,7 @@ Second, make sure MPI can be initialized and run a simple reduction:
 Open MPI based MPIs (e.g. NVIDIA HPC-X)
 ---------------------------------------
 
-Many NCCL-based applications are compiled with MPI to utilize its parallel launcher and broadcast mechanisms during startup. In cluster environments, if MPI is not correctly configured, the ``mpirun`` command may fail to start applications, hang, or produce errors. The following guidelines will help you troubleshoot common MPI-related startup and connectivity issues. These setting assume an environment in which variables are automatically forwarded to each MPI rank (e.g. SLURM cluster). If you are unsure you can explicitly forward the variables through ``mpirun -x VARIABLE_NAME=<variable_value>`` instead of ``export VARIABLE_NAME=<variable_value>``.
+Many NCCL-based applications are compiled with MPI to utilize its parallel launcher and broadcast mechanisms during startup. In cluster environments, if MPI is not correctly configured, the ``mpirun`` command may fail to start applications, hang, or produce errors. The following guidelines will help you troubleshoot common MPI-related startup and connectivity issues. These settings assume an environment in which variables are automatically forwarded to each MPI rank (e.g. SLURM cluster). If you are unsure you can explicitly forward the variables through ``mpirun -x VARIABLE_NAME=<variable_value>`` instead of ``export VARIABLE_NAME=<variable_value>``.
 
 These settings will not have any impact on NCCL performance, but if MPI is used frequently for communications, then application performance may be impacted.
 

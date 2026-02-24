@@ -10,7 +10,7 @@ allowed to issue NCCL operations to the child and parent communicators in parall
 
 It is safe to operate a communicator from multiple threads as long as users can guarantee only one thread
 operates the communicator at a time. However, for any grouped NCCL operations, users need to ensure
-only one thread issues the all operations in the group.
+only one thread issues all the operations in the group.
 
 For example, the following code provides a simple thread-safe example where threads are executed in sequence and only one thread
 is accessing the communicator at a time.

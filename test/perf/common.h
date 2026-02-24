@@ -580,6 +580,15 @@ testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset,
    type == ncclFloat64 ? kernel<double> : \
    nullptr \
   )
+
+// Float/double-only specialization for kernels that only support float and double (e.g. AllReduce kernels 1 and 3).
+// Returns nullptr for other types so the test can skip instead of failing.
+#define SPECIALIZE_KERNEL_FLOAT_DOUBLE(kernel, type, op) \
+  ( op != ncclSum ? nullptr : \
+   type == ncclFloat32 ? kernel<float> : \
+   type == ncclFloat64 ? kernel<double> : \
+   nullptr \
+  )
 #else
 template <typename F>
 testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
@@ -587,6 +596,7 @@ testResult_t testLaunchDeviceKernel(F kernel, void* sendbuff, size_t sendoffset,
 }
 #define SPECIALIZE_KERNEL(kernel, type, op) nullptr
 #define SPECIALIZE_KERNEL_MULTIMEM(kernel, type, op) nullptr
+#define SPECIALIZE_KERNEL_FLOAT_DOUBLE(kernel, type, op) nullptr
 #endif
 
 bool isFp8ValidForReductions(ncclDataType_t type);

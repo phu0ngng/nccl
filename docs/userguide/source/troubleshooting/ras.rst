@@ -7,7 +7,7 @@ RAS
 Since NCCL 2.24, the reliability, availability, and serviceability (RAS) subsystem can be used to query the health of
 NCCL jobs during execution.  This can help with the diagnosis and debugging of crashes and hangs.  RAS is a low-overhead
 infrastructure that NCCL users and developers can use while the application is running.  It provides a global view of
-the state of the running application and can aide in the detection of outliers such as unresponsive processes.  With
+the state of the running application and can aid in the detection of outliers such as unresponsive processes.  With
 that information, users can then narrow down on the suspected root cause(s) through other techniques such as interactive
 debugging, system log analysis, etc.
 

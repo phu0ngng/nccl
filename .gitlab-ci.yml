@@ -154,7 +154,7 @@ build-ipp6:
     - <<: *pre_submit_rule
     - if: $RUN_ON_IPP6 == "1"
       when: always
-    - if: $RUN_ON_DRACO_OCI == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_PRE_NYX == "1"
+    - if: $RUN_ON_DRACO_OCI == "1" || $RUN_ON_EOS == "1" || $RUN_ON_CW_DFW == "1" || $RUN_ON_PRE_NYX == "1" || $RUN_ON_AWS == "1"
       when: always
     - if: $RUN_ON_P100 == "1" || $RUN_ON_A100 == "1" || $RUN_ON_A40 == "1" || $RUN_ON_P40 == "1" || $RUN_ON_GP100 == "1"
       when: always
@@ -361,9 +361,27 @@ setup-AWS-H100-EFA:
     - when: never
   needs:
     - job: build-ipp6
+  variables:
+    SETUP_SCRIPT: setup.sh
+    REPO_DIR: ${WORKSPACE_DIR}/repo
   script:
     - set -e
-    - rsync -I -c -aP --inplace --exclude ./.git ./ $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
+    - rsync -aP --mkpath --inplace --exclude='.git' ./ $AWS_HEAD_NODE:$REPO_DIR/
+    - |
+      cat > $SETUP_SCRIPT << EOF
+      #!/bin/bash -ex
+
+      # Install NCCL build
+      mv $REPO_DIR/build $WORKSPACE_DIR/
+
+      # Configure workspaces for test suites
+      echo unit api perftest-single perftest-multi | xargs -n 1 cp -r $REPO_DIR
+
+      # Cleanup
+      rm -rf $REPO_DIR
+      EOF
+    - rsync $SETUP_SCRIPT $AWS_HEAD_NODE:$WORKSPACE_DIR/
+    - ssh $AWS_HEAD_NODE "cd $WORKSPACE_DIR && bash -l $SETUP_SCRIPT"
 
 setup-pre-nyx:
   stage: setup
@@ -859,9 +877,13 @@ unit-tests-AWS-H100-EFA:
     - setup-AWS-H100-EFA
   variables:
     GIT_STRATEGY: none
-    RUN_SCRIPT: run_${CI_JOB_NAME}.sh
+    TEST_WORKSPACE_DIR: ${WORKSPACE_DIR}/unit
+    RUN_SCRIPT: run_tests.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-unit.sh
     JUNIT: junit_results_unit.xml
+    SLURM_TIME: 30
+    NNODES: 1
+    NP: 1
     ENQUEUE_TESTS_ARGS: 1
     ENQUEUE_TESTS_FIFO: 1
     GRAPH_TESTS_DEFAULT: 1
@@ -887,19 +909,29 @@ unit-tests-AWS-H100-EFA:
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
-      export NCCL_DEBUG="WARN"
-      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
-      export SLURM_TIME=15
-      export SLURM_PARTITION=compute
-      export NNODES=1
-      export NGPUS=8
-      export NP=1
-      export NCCL_HOME=build
-      export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
-      export RUN_MODE="SALLOC_MPI"
+      #!/bin/bash
+
+      # Gitlab passthrough variables
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
-      export JUNIT=$JUNIT
+      export CI_COMMIT_BRANCH=${CI_COMMIT_BRANCH}
+      export CI_COMMIT_SHORT_SHA=${CI_COMMIT_SHORT_SHA}
+      export GITLAB_USER_LOGIN=${GITLAB_USER_LOGIN}
+
+      # CI infra variables
+      export NCCL_DEBUG="WARN"
+      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
+      export SLURM_TIME=$SLURM_TIME
+      export SLURM_PARTITION=$SLURM_PARTITION
+      export NNODES=$NNODES
+      export NGPUS=$NGPUS
+      export NP=$NP
+      export RUN_MODE=${RUN_MODE}
+      export NCCL_HOME=${NCCL_HOME}
+      export LD_LIBRARY_PATH=${NCCL_HOME}/lib:${LD_LIBRARY_PATH}
+      export JUNIT=${JUNIT}
+
+      # Unit test variables
       export NCCL_NVLS_ENABLE=0
       export ENQUEUE_TESTS_ARGS=$ENQUEUE_TESTS_ARGS
       export ENQUEUE_TESTS_FIFO=$ENQUEUE_TESTS_FIFO
@@ -916,20 +948,24 @@ unit-tests-AWS-H100-EFA:
       export LOG_ALGO_AG_TESTS=$LOG_ALGO_AG_TESTS
       export PLUGIN_LOADING_TESTS=$PLUGIN_LOADING_TESTS
       export REGISTER_MEMCPY_TESTS=$REGISTER_MEMCPY_TESTS
+      export REGISTER_MIX_A2A_AR_TESTS=$REGISTER_MIX_A2A_AR_TESTS
       export DEVICE_ID_TESTS=$DEVICE_ID_TESTS
       export HASHTABLE_TESTS=$HASHTABLE_TESTS
       export DEVAPI_WINDOW_STRESS_TESTS=$DEVAPI_WINDOW_STRESS_TESTS
       export LSA_POINTER_TESTS=$LSA_POINTER_TESTS
       export LSA_MULTIMEM_POINTER_TESTS=$LSA_MULTIMEM_POINTER_TESTS
-      $TEST_CMD
+      export DYN_MEM_TESTS=$DYN_MEM_TESTS
+
+      # Launch unit test suite
+      salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:unit::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
+    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/
   script:
-    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
+    - ssh $AWS_HEAD_NODE "cd $TEST_WORKSPACE_DIR && bash -l $RUN_SCRIPT"
   after_script:
-    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && JUNIT=junit_results_unit.xml bash -l ./test/scripts/ci/finalize-junit.sh"
-    - ssh $AWS_HEAD_NODE "test -d $AWS_HEAD_NODE_WORKDIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/failed .
-    - scp $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/$JUNIT .
+    - ssh $AWS_HEAD_NODE "cd $TEST_WORKSPACE_DIR && JUNIT=junit_results_unit.xml bash -l ./test/scripts/ci/finalize-junit.sh"
+    - ssh $AWS_HEAD_NODE "test -d $TEST_WORKSPACE_DIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/failed .
+    - scp $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/$JUNIT .
     - ls && ls failed && ls $JUNIT
   artifacts:
     when: always
@@ -1687,12 +1723,16 @@ apitest-AWS-H100-EFA:
       when: always
     - when: never
   needs:
-    - [setup-AWS-H100-EFA,unit-tests-AWS-H100-EFA]
+    - setup-AWS-H100-EFA
   variables:
     GIT_STRATEGY: none
-    RUN_SCRIPT: run_${CI_JOB_NAME}.sh
+    RUN_SCRIPT: run_tests.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-api.sh
     JUNIT: junit_results_apitest.xml
+    TEST_WORKSPACE_DIR: ${WORKSPACE_DIR}/api
+    SLURM_TIME: 20
+    NNODES: 1
+    NP: 1
     API_TESTS_DEFAULT: 1
     API_TESTS_NO_P2P: 0 # NvBug 5210770
     API_TESTS_NETWORK: 1
@@ -1700,32 +1740,45 @@ apitest-AWS-H100-EFA:
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
-      export NCCL_DEBUG="WARN"
-      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
-      export SLURM_TIME=20
-      export SLURM_PARTITION=compute
-      export NNODES=1
-      export NGPUS=8
-      export NP=1
-      export NCCL_HOME=build
-      export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
-      export RUN_MODE="SALLOC_MPI"
+      #!/bin/bash
+
+      # Gitlab passthrough variables
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
-      export JUNIT=$JUNIT
+      export CI_COMMIT_BRANCH=${CI_COMMIT_BRANCH}
+      export CI_COMMIT_SHORT_SHA=${CI_COMMIT_SHORT_SHA}
+      export GITLAB_USER_LOGIN=${GITLAB_USER_LOGIN}
+
+      # CI infra variables
+      export NCCL_DEBUG="WARN"
+      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
+      export SLURM_TIME=$SLURM_TIME
+      export SLURM_PARTITION=$SLURM_PARTITION
+      export NNODES=$NNODES
+      export NGPUS=$NGPUS
+      export NP=$NP
+      export RUN_MODE=${RUN_MODE}
+      export NCCL_HOME=${NCCL_HOME}
+      export LD_LIBRARY_PATH=${NCCL_HOME}/lib:${LD_LIBRARY_PATH}
+      export JUNIT=${JUNIT}
+
+      # API test variables
       export NCCL_NVLS_ENABLE=0
       export API_TESTS_DEFAULT=$API_TESTS_DEFAULT
       export API_TESTS_NO_P2P=$API_TESTS_NO_P2P
       export API_TESTS_NETWORK=$API_TESTS_NETWORK
-      $TEST_CMD
+      export API_TESTS_DEVICE_API=$API_TESTS_DEVICE_API
+
+      # Launch unit test suite
+      salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:apitests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
+    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/
   script:
-    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
+    - ssh $AWS_HEAD_NODE "cd $TEST_WORKSPACE_DIR && bash -l $RUN_SCRIPT"
   after_script:
-    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && JUNIT=junit_results_apitest.xml bash -l ./test/scripts/ci/finalize-junit.sh"
-    - ssh $AWS_HEAD_NODE "test -d $AWS_HEAD_NODE_WORKDIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/failed .
-    - scp $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/$JUNIT .
+    - ssh $AWS_HEAD_NODE "cd $TEST_WORKSPACE_DIR && JUNIT=junit_results_apitest.xml bash -l ./test/scripts/ci/finalize-junit.sh"
+    - ssh $AWS_HEAD_NODE "test -d $TEST_WORKSPACE_DIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/failed .
+    - scp $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/$JUNIT .
     - ls && ls failed && ls $JUNIT
   artifacts:
     when: always
@@ -2216,41 +2269,60 @@ perftest_single-AWS-H100-EFA:
       when: always
     - when: never
   needs:
-    - [setup-AWS-H100-EFA,apitest-AWS-H100-EFA]
+    - setup-AWS-H100-EFA
   variables:
     GIT_STRATEGY: none
-    RUN_SCRIPT: run_${CI_JOB_NAME}.sh
+    TEST_WORKSPACE_DIR: ${WORKSPACE_DIR}/perftest-single
+    RUN_SCRIPT: run_tests.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-perf.sh
     JUNIT: junit_results_perf_single.xml
+    SLURM_TIME: 60
+    NNODES: 1
+    NP: 8
+    GRAPH: 0
+    MAX: 1G
+    SYMMETRIC: 1
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
-      export NCCL_DEBUG="WARN"
-      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
-      export SLURM_TIME=10
-      export SLURM_PARTITION=compute
-      export NNODES=1
-      export NGPUS=8
-      export NP=8
-      export GRAPH=0
-      export NCCL_NVLS_ENABLE=0
-      export MAX=1G
-      export NCCL_HOME=build
-      export RUN_MODE="SALLOC_MPI"
+      #!/bin/bash
+
+      # Gitlab passthrough variables
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
-      export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
-      export JUNIT=$JUNIT
-      export SYMMETRIC=1
-      $TEST_CMD
+      export CI_COMMIT_BRANCH=${CI_COMMIT_BRANCH}
+      export CI_COMMIT_SHORT_SHA=${CI_COMMIT_SHORT_SHA}
+      export GITLAB_USER_LOGIN=${GITLAB_USER_LOGIN}
+
+      # CI infra variables
+      export NCCL_DEBUG="WARN"
+      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
+      export SLURM_TIME=$SLURM_TIME
+      export SLURM_PARTITION=$SLURM_PARTITION
+      export NNODES=$NNODES
+      export NGPUS=$NGPUS
+      export NP=$NP
+      export RUN_MODE=${RUN_MODE}
+      export NCCL_HOME=${NCCL_HOME}
+      export LD_LIBRARY_PATH=${NCCL_HOME}/lib:${LD_LIBRARY_PATH}
+      export JUNIT=${JUNIT}
+
+      # Perftest-single variables
+      export NCCL_NVLS_ENABLE=0
+      export GRAPH=$GRAPH
+      export MAX=$MAX
+      export SYMMETRIC=$SYMMETRIC
+
+      # Launch perftest-single suite
+      salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
+    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/
   script:
-    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
+    - ssh $AWS_HEAD_NODE "cd $TEST_WORKSPACE_DIR && bash -l $RUN_SCRIPT"
   after_script:
-    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && JUNIT=junit_results_perf_single.xml bash -l ./test/scripts/ci/finalize-junit.sh"
-    - ssh $AWS_HEAD_NODE "test -d $AWS_HEAD_NODE_WORKDIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/failed .
-    - scp $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/$JUNIT .
+    - ssh $AWS_HEAD_NODE "cd $TEST_WORKSPACE_DIR && JUNIT=junit_results_perf_single.xml bash -l ./test/scripts/ci/finalize-junit.sh"
+    - ssh $AWS_HEAD_NODE "test -d $TEST_WORKSPACE_DIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/failed .
+    - scp $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/$JUNIT .
   artifacts:
     when: always
     paths:
@@ -2622,42 +2694,61 @@ perftest_multi-AWS-H100-EFA:
       when: always
     - when: never
   needs:
-    - [setup-AWS-H100-EFA,perftest_single-AWS-H100-EFA]
+    - setup-AWS-H100-EFA
   variables:
     GIT_STRATEGY: none
-    RUN_SCRIPT: run_${CI_JOB_NAME}.sh
+    RUN_SCRIPT: run_tests.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-perf.sh
     JUNIT: junit_results_perf_multi.xml
+    TEST_WORKSPACE_DIR: ${WORKSPACE_DIR}/perftest-multi
+    SLURM_TIME: 60
+    NNODES: 4
+    NP: 8
+    MAX: 1G
+    GRAPH: 0
+    SKIP_FT_FINALIZE: 1
+    DEVICE_API: 0 # No EFA support in GIN
   before_script:
     - |
       cat > $RUN_SCRIPT << EOF
-      export NCCL_DEBUG="WARN"
-      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
-      export SLURM_TIME=10
-      export SLURM_PARTITION=compute
-      export NGPUS=8
-      export NNODES=4
-      export MAX=1G
-      export GRAPH=0
-      export NCCL_NVLS_ENABLE=0
-      export NP=8
-      export NCCL_HOME=build
-      export LD_LIBRARY_PATH=build/lib:$LD_LIBRARY_PATH
-      export RUN_MODE="SALLOC_MPI"
+      #!/bin/bash
+
+      # Gitlab passthrough variables
       export CI_PIPELINE_ID=${CI_PIPELINE_ID}
       export CI_JOB_NAME=${CI_JOB_NAME}
-      export JUNIT=$JUNIT
-      export SKIP_FT_FINALIZE=1
-      export DEVICE_API=0 # No EFA support in GIN
-      $TEST_CMD
+      export CI_COMMIT_BRANCH=${CI_COMMIT_BRANCH}
+      export CI_COMMIT_SHORT_SHA=${CI_COMMIT_SHORT_SHA}
+      export GITLAB_USER_LOGIN=${GITLAB_USER_LOGIN}
+
+      # CI infra variables
+      export NCCL_DEBUG="WARN"
+      export CLUSTER_CONFIG="docker/clusters/aws-config.sh"
+      export SLURM_TIME=$SLURM_TIME
+      export SLURM_PARTITION=$SLURM_PARTITION
+      export NNODES=$NNODES
+      export NGPUS=$NGPUS
+      export NP=$NP
+      export RUN_MODE=${RUN_MODE}
+      export NCCL_HOME=${NCCL_HOME}
+      export LD_LIBRARY_PATH=${NCCL_HOME}/lib:${LD_LIBRARY_PATH}
+      export JUNIT=${JUNIT}
+
+      export NCCL_NVLS_ENABLE=0
+      export MAX=$MAX
+      export GRAPH=$GRAPH
+      export SKIP_FT_FINALIZE=$SKIP_FT_FINALIZE
+      export DEVICE_API=$DEVICE_API
+      
+      # Launch perftest-multi suite
+      salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
       EOF
-    - rsync -I -c $RUN_SCRIPT $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/
+    - rsync $RUN_SCRIPT $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/
   script:
-    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && bash -l $RUN_SCRIPT"
+    - ssh $AWS_HEAD_NODE "cd $TEST_WORKSPACE_DIR && bash -l $RUN_SCRIPT"
   after_script:
-    - ssh $AWS_HEAD_NODE "cd $AWS_HEAD_NODE_WORKDIR && JUNIT=junit_results_perf_multi.xml bash -l ./test/scripts/ci/finalize-junit.sh"
-    - ssh $AWS_HEAD_NODE "test -d $AWS_HEAD_NODE_WORKDIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/failed .
-    - scp $AWS_HEAD_NODE:$AWS_HEAD_NODE_WORKDIR/$JUNIT .
+    - ssh $AWS_HEAD_NODE "cd $TEST_WORKSPACE_DIR && JUNIT=junit_results_perf_multi.xml bash -l ./test/scripts/ci/finalize-junit.sh"
+    - ssh $AWS_HEAD_NODE "test -d $TEST_WORKSPACE_DIR/failed && echo 'Failed dir exists' " && scp -r $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/failed .
+    - scp $AWS_HEAD_NODE:$TEST_WORKSPACE_DIR/$JUNIT .
   artifacts:
     when: always
     paths:
@@ -3774,6 +3865,30 @@ cleanup-dgxspark:
       optional: true
   variables:
     INSTALL_DIR: "${DGXSPARK_INSTALL_DIR}"
+
+cleanup-AWS-H100-EFA:
+  extends:
+    - .cleanup
+  rules:
+    - <<: *pre_submit_rule
+      when: on_success
+    - if: $RUN_ON_AWS == "1"
+      when: on_success
+  tags:
+    - ipp6-nccl
+  needs:
+    - job: setup-AWS-H100-EFA
+      optional: true
+    - job: unit-tests-AWS-H100-EFA
+      optional: true
+    - job: apitest-AWS-H100-EFA
+      optional: true
+    - job: perftest_single-AWS-H100-EFA
+      optional: true
+    - job: perftest_multi-AWS-H100-EFA
+      optional: true
+  variables:
+    INSTALL_DIR: "${AWS_WORKSPACE_DIR}"
 
 ##
 ## Stage: cleanup - Finish!

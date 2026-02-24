@@ -15,18 +15,19 @@
  *
  * Kernel Selection Strategy:
  * - deviceImpl = 0: NCCL's built-in ReduceScatter implementation (fallback)
- * - deviceImpl = 1: reduceScatterLsaThreadKernel - LSA with thread-level cooperation (ncclCoopThread).
+ * - deviceImpl = 1: reduceScatterLsaKernel - LSA with peer loops (float/double only; same style as AllReduce kernel 1).
  * - deviceImpl = 2: reduceScatterLsaCtaKernel - LSA with CTA-level cooperation (ncclCoopCta) for warp-level memory coalescing.
- * - deviceImpl = 3: reduceScatterMultimemThreadKernel - Multimem with thread-level cooperation (ncclCoopThread).
+ * - deviceImpl = 3: reduceScatterMultimemKernel - Multimem with multimem_ops.h (float/double only; same style as AllReduce kernel 3).
  * - deviceImpl = 4: reduceScatterMultimemCtaKernel - Multimem with CTA-level cooperation (ncclCoopCta) for warp-level memory coalescing.
  */
 
 #include "cuda_runtime.h"
 #include "common.h"
+#include <algorithm>
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 #include "nccl_device.h"
-// ReduceCopy API (including multimem and vector utilities) now included via nccl_device.h
 #endif
+#include "multimem_ops.h"
 
 void ReduceScatterGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   size_t base = (count/nranks) & -(16/eltSize);
@@ -90,11 +91,11 @@ testResult_t ReduceScatterGetDevCommRequirements(int deviceImpl, ncclDevCommRequ
   switch(deviceImpl) {
     case 0: // NCCL's built-in implementation
       return testSuccess;
-    case 1: // reduceScatterLsaThreadKernel
+    case 1: // reduceScatterLsaKernel
     case 2: // reduceScatterLsaCtaKernel
       reqs->lsaBarrierCount = deviceCtaCount;
       return testSuccess;
-    case 3: // reduceScatterMultimemThreadKernel
+    case 3: // reduceScatterMultimemKernel
     case 4: // reduceScatterMultimemCtaKernel
       if (!commProperties.multimemSupport) {
         *testSkipReason = "multimem not supported";
@@ -113,11 +114,11 @@ bool ReduceScatterGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements
   memset(reqs, 0, sizeof(*reqs));
 
   switch(deviceImpl) {
-    case 1: // reduceScatterLsaThreadKernel
+    case 1: // reduceScatterLsaKernel
     case 2: // reduceScatterLsaCtaKernel
       reqs->lsaBarrierCount = deviceCtaCount;
       return true;
-    case 3: // reduceScatterMultimemThreadKernel
+    case 3: // reduceScatterMultimemKernel
     case 4: // reduceScatterMultimemCtaKernel
       reqs->lsaMultimem = true;
       reqs->lsaBarrierCount = deviceCtaCount;
@@ -129,69 +130,38 @@ bool ReduceScatterGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements
 #endif
 
 /*
- * Kernel 1: reduceScatterLsaThreadKernel - Thread-level LSA-based ReduceScatter
+ * Kernel 1: reduceScatterLsaKernel - LSA-based ReduceScatter with peer loops (float/double only)
  *
- * Purpose: Provides a simple ReduceScatter implementation with thread-level granularity.
- * Each thread independently reduces its portion of this rank's chunk.
+ * Purpose: Simple ReduceScatter using direct LSA peer access. Each rank reduces all peers'
+ * send chunks for its segment and writes to local recv.
  *
- * Solution: This rank's chunk is divided among all threads (across all blocks). Each
- * thread independently calls the generic ncclLsaReduceSum helper on its portion.
+ * Solution: Grid-stride loop over this rank's chunk (count elements); for each element,
+ * sum over all peers' send at myChunkOffset+offset and write to recv[offset]. Same style as AllReduce kernel 1.
  *
- * Key Optimizations:
- * - LSA barriers for faster synchronization than global barriers
- * - Direct peer access within CUDA P2P connectivity for optimal bandwidth
- * - Thread-level granularity (no thread cooperation overhead)
- * - All threads on this rank cooperate on this rank's chunk
- *
- * CUDA P2P Connectivity Requirement: CRITICAL - This kernel requires all participating
- * ranks to be within the same CUDA P2P connectivity.
- *
- * Use Case: Small to medium messages, or when thread-level granularity is preferred.
+ * CUDA P2P Connectivity Requirement: CRITICAL - requires all ranks in same CUDA P2P connectivity.
  */
 template <typename T>
-__global__ void reduceScatterLsaThreadKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  // Create cooperative group once and reuse
-  ncclCoopCta ctaCoop;
-  const ncclTeam team = ncclTeamLsa(devComm);
+__global__ void reduceScatterLsaKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+  ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
+  bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
-  ncclLsaBarrierSession<ncclCoopCta> bar { ctaCoop, devComm, team, devComm.lsaBarrier, blockIdx.x };
-  bar.sync(ctaCoop, cuda::memory_order_relaxed);
+  const int rank = devComm.rank, nRanks = devComm.nRanks;
+  const size_t myChunkOffset = rank * count;
 
-  const int rank = devComm.rank;
+  const int globalTid = threadIdx.x + blockDim.x * blockIdx.x;
+  const int globalNthreads = blockDim.x * gridDim.x;
 
-  // Calculate this rank's chunk boundaries in the input buffers
-  const size_t chunkSize = count;  // count is already per-rank
-  const size_t myChunkOffset = rank * chunkSize;
+  T* recvPtr = (T*)ncclGetLocalPointer(recvwin, recvoffset);
 
-  // Split this rank's chunk across all threads (in all blocks)
-  const int threadId = threadIdx.x + blockDim.x * blockIdx.x;
-  const int nThreads = blockDim.x * gridDim.x;
-
-  // Simple work distribution: divide chunkSize evenly among threads
-  const size_t eltsPerThread = (chunkSize + nThreads - 1) / nThreads;
-  const size_t threadStart = threadId * eltsPerThread;
-  // CRITICAL: Check if threadStart >= chunkSize to prevent unsigned underflow
-  // If threadStart >= chunkSize, this thread has no work (threadCount = 0)
-  const size_t threadCount = (threadStart < chunkSize) ? min(eltsPerThread, chunkSize - threadStart) : 0;
-
-  if (threadCount > 0) {
-    // Create a thread-level cooperative group (coop size = 1)
-    ncclCoopThread threadCoop;
-
-    // Get pointer to this thread's portion of the output buffer
-    T* recvPtr = (T*)ncclGetLocalPointer(recvwin, recvoffset);
-    T* dstPtr = recvPtr + threadStart;
-
-    // Calculate source offset for this thread's portion
-    // Points to (myChunkOffset + threadStart) in each peer's send buffer
-    size_t srcOffset = sendoffset + (myChunkOffset + threadStart) * sizeof(T);
-
-    // Use the generic reduceSum helper (thread-level, no cooperation)
-    // Uses the window API that takes windows and offsets directly
-    ncclLsaReduceSum<T, ncclCoopThread, size_t>(threadCoop, sendwin, srcOffset, dstPtr, threadCount, team);
+  for (size_t offset = globalTid; offset < count; offset += globalNthreads) {
+    T v = T{0};
+    for (int peer = 0; peer < nRanks; peer++) {
+      T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, peer);
+      v += sendPtr[myChunkOffset + offset];
+    }
+    recvPtr[offset] = v;
   }
-
-  bar.sync(ctaCoop, cuda::memory_order_release);
+  bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
 
 /*
@@ -238,7 +208,7 @@ __global__ void reduceScatterLsaCtaKernel(ncclWindow_t sendwin, size_t sendoffse
 
   // Calculate this block's starting offset and chunk size
   // Distribute remainder one elt at a time to first blocks
-  const size_t blockStart = blockIdx.x * eltsPerBlock + min((size_t)blockIdx.x, remainder);
+  const size_t blockStart = blockIdx.x * eltsPerBlock + ((size_t)blockIdx.x < remainder ? (size_t)blockIdx.x : remainder);
   const size_t blockCount = eltsPerBlock + (blockIdx.x < remainder ? 1 : 0);
 
   // Process this block's assigned chunk
@@ -260,71 +230,33 @@ __global__ void reduceScatterLsaCtaKernel(ncclWindow_t sendwin, size_t sendoffse
 }
 
 /*
- * Kernel 3: reduceScatterMultimemThreadKernel - Thread-level Multimem-based ReduceScatter
+ * Kernel 3: reduceScatterMultimemKernel - Multimem-based ReduceScatter with multimem_ops.h (float/double only)
  *
- * Purpose: Provides a ReduceScatter implementation using multimem operations with thread-level granularity.
- * Each thread independently reduces its portion of this rank's chunk using multimem loads.
+ * Purpose: ReduceScatter using multimem load-reduce and store. For each element in this rank's
+ * chunk, reduce from all peers and write to local recv. Same style as AllReduce kernel 3.
  *
- * Solution: This rank's chunk is divided among all threads (across all blocks). Each
- * thread independently calls the generic ncclMultimemReduceSum helper on its portion.
- *
- * Key Optimizations:
- * - Multimem atomic operations for reduction across ranks
- * - Thread-level granularity (no thread cooperation overhead)
- * - All threads on this rank cooperate on this rank's chunk
- *
- * Use Case: Small to medium messages, or when thread-level granularity is preferred with multimem.
+ * Hardware Requirements: Hopper+ with multimem support.
  */
 template <typename T>
-__global__ void reduceScatterMultimemThreadKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  // Thread divisibility requirement: align to 16 bytes when possible
-  constexpr int THREAD_DIVISIBILITY = (16 % sizeof(T) == 0) ? (16 / sizeof(T)) : 1;
-
-  // Get multimem handle from devComm
-  ncclMultimemHandle multimemHandle = devComm.lsaMultimem;
-
-  // Create barrier session with multimem flag
+__global__ void reduceScatterMultimemKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
   ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamTagLsa(), blockIdx.x, true };
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
   const int rank = devComm.rank;
 
-  // Calculate this rank's chunk boundaries in the input buffers
-  const size_t chunkSize = count;  // count is already per-rank
-  const size_t myChunkOffset = rank * chunkSize;
+  // Read from many (multimem) via multimemLoadSum; write to single local recv buffer
+  T* send_ptr = reinterpret_cast<T*>(ncclGetLsaMultimemPointer(sendwin, sendoffset, devComm));
+  T* recv_ptr = (T*)ncclGetLocalPointer(recvwin, recvoffset);
 
-  // Split this rank's chunk across all threads (in all blocks)
-  const int threadId = threadIdx.x + blockDim.x * blockIdx.x;
-  const int nThreads = blockDim.x * gridDim.x;
+  const size_t myChunkOffset = rank * count;
 
-  // Calculate work distribution: each thread gets a chunk divisible by THREAD_DIVISIBILITY
-  const size_t totalDivisibleElts = (chunkSize / THREAD_DIVISIBILITY) * THREAD_DIVISIBILITY;
-  const size_t eltsPerThread = (totalDivisibleElts / nThreads / THREAD_DIVISIBILITY) * THREAD_DIVISIBILITY;
-  const size_t remainder = chunkSize - eltsPerThread * nThreads;
+  const int globalTid = threadIdx.x + blockDim.x * blockIdx.x;
+  const int globalNthreads = blockDim.x * gridDim.x;
 
-  // Calculate this thread's starting offset and chunk size
-  // All threads except the last get eltsPerThread elts (divisible by THREAD_DIVISIBILITY)
-  // The last thread gets eltsPerThread + remainder
-  const size_t threadStart = threadId * eltsPerThread;
-  const size_t threadCount = (threadId == nThreads - 1) ? eltsPerThread + remainder : eltsPerThread;
-
-  if (threadCount > 0) {
-    // Create a thread-level cooperative group (coop size = 1)
-    ncclCoopThread threadCoop;
-
-    // Calculate source offset for this thread's portion
-    // Points to (myChunkOffset + threadStart) in each peer's send buffer
-    size_t srcOffset = sendoffset + (myChunkOffset + threadStart) * sizeof(T);
-
-    // Get pointer to this thread's portion of the output buffer
-    T* recvPtr = (T*)ncclGetLocalPointer(recvwin, recvoffset);
-    T* dstPtr = recvPtr + threadStart;
-
-    // Use the generic multimem reduceSum helper (thread-level, no cooperation)
-    // Uses the window API that takes windows and offsets directly
-    ncclMultimemReduceSum<T, ncclCoopThread, size_t>(threadCoop, sendwin, srcOffset, dstPtr, threadCount, multimemHandle);
+  for (size_t offset = globalTid; offset < count; offset += globalNthreads) {
+    T v = multimemLoadSum<T, T>(send_ptr + myChunkOffset + offset);
+    recv_ptr[offset] = v;
   }
-
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
 
@@ -407,7 +339,7 @@ testResult_t ReduceScatterRunColl(void* sendbuff, size_t sendoffset, void* recvb
     return testSuccess;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   case 1:
-    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(reduceScatterLsaThreadKernel, type, op),
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_FLOAT_DOUBLE(reduceScatterLsaKernel, type, op),
                sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
     return testSuccess;
   case 2:
@@ -415,7 +347,7 @@ testResult_t ReduceScatterRunColl(void* sendbuff, size_t sendoffset, void* recvb
                sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
     return testSuccess;
   case 3:
-    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_MULTIMEM(reduceScatterMultimemThreadKernel, type, op),
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_FLOAT_DOUBLE(reduceScatterMultimemKernel, type, op),
                sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, true));
     return testSuccess;
   case 4:

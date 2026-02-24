@@ -6,7 +6,7 @@ The NVIDIA Collective Communications Library (NCCL, pronounced “Nickel”) is 
 
 NCCL implements both collective communication and point-to-point send/receive primitives. It is not a full-blown parallel programming framework; rather, it is a library focused on accelerating inter-GPU communication.
 
-NCCL provides the following collective communication primitives :
+NCCL provides the following collective communication primitives:
 
 * AllReduce
 * Broadcast
@@ -29,7 +29,7 @@ Next to performance, ease of programming was the primary consideration in the de
 * multi-threaded, for example, using one thread per GPU
 * multi-process, for example, MPI
 
-NCCL has found great application in Deep Learning Frameworks, where the AllReduce collective is heavily used for neural network training. Efficient scaling of neural network training is possible with the multi-GPU and multi node communication provided by NCCL.
+NCCL has found great application in Deep Learning Frameworks, where the AllReduce collective is heavily used for neural network training. Efficient scaling of neural network training is possible with the multi-GPU and multi-node communication provided by NCCL.
 
 
 

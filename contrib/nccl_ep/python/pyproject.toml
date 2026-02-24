@@ -1,5 +1,5 @@
 [project]
-name = "nccl-ep"
+name = "nccl_ep"
 dynamic = ["version"]
 requires-python = ">=3.8"
 description = "NCCL EP: Low-level Python bindings (ctypes) for NCCL EP C API"

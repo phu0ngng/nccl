@@ -33,6 +33,8 @@ variables:
   # IPP6 cluster
   IPP6_INSTALL_DIR: "/storage/gitlab-runner/nccl/install/${CI_PIPELINE_ID}"
   DGXSPARK_INSTALL_DIR: "/storage/gitlab-runner/nccl/install-arm/${CI_PIPELINE_ID}"
+  # AWS P5 Cluster
+  AWS_WORKSPACE_DIR: "/shared/gitlab-runner/nccl-ci/${CI_PIPELINE_ID}"
   # Comprehensive sweep mode: "off", "debug" (1-node intra + 2-node inter), "full" (all scales)
   COMPREHENSIVE_SWEEP: "off"
 
@@ -93,10 +95,11 @@ variables:
     GIT_CLONE_PATH: "${CI_BUILDS_DIR}/${CI_JOB_ID}/${CI_PROJECT_PATH}" # Use a unique path for each job to avoid conflicts
     CLUSTER_CONFIG: "docker/clusters/aws-config.sh"
     AWS_HEAD_NODE: aws-pcluster-head
-    AWS_HEAD_NODE_WORKDIR: /shared/gitlab-runner/nccl-ci/${CI_COMMIT_SHORT_SHA}
-    INSTALL_DIR: "${AWS_INSTALL_DIR}"
-    ARCHIVER_STAGING_DIR: "${AWS_ARCHIVER_STAGING_DIR}"
-    NCCL_HOME: ${INSTALL_DIR}/build
+    WORKSPACE_DIR: ${AWS_WORKSPACE_DIR}
+    NCCL_HOME: ${AWS_WORKSPACE_DIR}/build
+    RUN_MODE: "MPI"
+    NGPUS: 8
+    SLURM_PARTITION: compute
 
 .eos:
   rules:

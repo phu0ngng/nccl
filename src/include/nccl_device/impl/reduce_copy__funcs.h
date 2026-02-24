@@ -481,12 +481,6 @@ NCCL_DEVICE_INLINE void ncclLocalCopy(Coop coop,
                                          T* basePtr,
                                          size_t displ,
                                          IntCount count) {
-  // Fast alignment computation for strided addressing with fallback
-  IntCount alignOffset;
-  int maxPackBytes;
-  nccl::utility::computeStridedAlignmentWithFallback<T>(
-      basePtr, displ * sizeof(T), count, alignOffset, maxPackBytes);
-
   // Create lambda: n local destinations separated by displ
   auto srcLambda = [=] __device__ (int /*ignored*/) -> T* {
     return srcPtr;
@@ -496,8 +490,12 @@ NCCL_DEVICE_INLINE void ncclLocalCopy(Coop coop,
   };
 
   constexpr int nSrc = 1;
+  // Compute alignment across src and all strided destinations
+  auto alignment = nccl::utility::computeLambdaAlignmentOffsetWithFallback<T>(
+      coop, srcLambda, nSrc, dstLambda, nDst, count);
   nccl::utility::reduceCopy<T, nccl::utility::OpSum<T>, Coop, false, false, decltype(srcLambda), decltype(dstLambda), IntCount, UNROLL>(
-      coop, srcLambda, nSrc, dstLambda, nDst, nccl::utility::OpSum<T>{}, count, alignOffset, maxPackBytes);
+      coop, srcLambda, nSrc, dstLambda, nDst, nccl::utility::OpSum<T>{},
+      count, alignment.alignOffset, alignment.maxPackBytes);
 }
 
 // ============================================================================

@@ -15,10 +15,10 @@
  *
  * Kernel Selection Strategy:
  * - deviceImpl = 0: NCCL's built-in AllReduce implementation (fallback)
- * - deviceImpl = 1: allReduceLsaThreadKernel - Basic LSA with thread-level cooperation.
- * - deviceImpl = 2: allReduceLsaReduceCopyKernel - LSA with CTA-level cooperation using ReduceCopy convenience API for simplified implementation and better bandwidth.
- * - deviceImpl = 3: allReduceMultimemThreadKernel - Basic Multimem with thread-level cooperation. Requires Multimem capable hardware.
- * - deviceImpl = 4: allReduceMultimemReduceCopyKernel - Multimem with CTA-level cooperation using ReduceCopy convenience API for best performance with simplified implementation.
+ * - deviceImpl = 1: allReduceLsaKernel - Basic LSA with peer loops (v2.29.1 style; ncclGetLsaPointer).
+ * - deviceImpl = 2: allReduceLsaReduceCopyKernel - LSA with CTA-level cooperation using ReduceCopy API (ncclLsaReduceSumCopy).
+ * - deviceImpl = 3: allReduceMultimemKernel - Basic Multimem with thread-level loop (v2.29.1 style; multimem_ops.h).
+ * - deviceImpl = 4: allReduceMultimemReduceCopyKernel - Multimem with CTA-level ReduceCopy API (ncclMultimemReduceSumCopy).
  */
 
 #include "cuda_runtime.h"
@@ -26,8 +26,8 @@
 #include <algorithm>
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 #include "nccl_device.h"
-// ReduceCopy API now included via nccl_device.h
 #endif
+#include "multimem_ops.h"
 
 void AllReduceGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t *paramcount, size_t *sendInplaceOffset, size_t *recvInplaceOffset, size_t count, size_t eltSize, int nranks) {
   *sendcount = count;
@@ -89,11 +89,11 @@ testResult_t AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirem
   switch(deviceImpl) {
     case 0: // NCCL's built-in implementation
       return testSuccess;
-    case 1: // allReduceLsaThreadKernel
+    case 1: // allReduceLsaKernel
     case 2: // allReduceLsaReduceCopyKernel
       reqs->lsaBarrierCount = deviceCtaCount;
       return testSuccess;
-    case 3: // allReduceMultimemThreadKernel
+    case 3: // allReduceMultimemKernel
     case 4: // allReduceMultimemReduceCopyKernel
       if (!commProperties.multimemSupport) {
         *testSkipReason = "This test requires multimem support, but multimem support is not enabled for this communicator.\n";
@@ -111,11 +111,11 @@ bool AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* re
   if (!reqs) return false;
 
   switch(deviceImpl) {
-    case 1: // allReduceLsaThreadKernel
+    case 1: // allReduceLsaKernel
     case 2: // allReduceLsaReduceCopyKernel
       reqs->lsaBarrierCount = deviceCtaCount;
       return true;
-    case 3: // allReduceMultimemThreadKernel
+    case 3: // allReduceMultimemKernel
     case 4: // allReduceMultimemReduceCopyKernel
       reqs->lsaMultimem = true;
       reqs->lsaBarrierCount = deviceCtaCount;
@@ -128,7 +128,7 @@ bool AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* re
 
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
 /*
- * Kernel 1: allReduceLsaThreadKernel - Basic LSA-based AllReduce
+ * Kernel 1: allReduceLsaKernel - Basic LSA-based AllReduce
  *
  * Purpose: Provides a simple, deterministic AllReduce implementation for small to
  * medium message sizes within CUDA P2P connectivity.
@@ -138,8 +138,8 @@ bool AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* re
  * writes the result back to all ranks using cooperative thread arrays.
  *
  * Key Optimizations:
- * - LSA barriers for synchronization between ranks and within ranks.
- * - Global grid stride loop to distribute work across all ranks (two-shot)
+ * - LSA barriers for faster synchronization than global barriers
+ * - Global grid stride loop to distribute work across all ranks
  * - Direct peer access within CUDA P2P connectivity for optimal bandwidth
  *
  * CUDA P2P Connectivity Requirement: CRITICAL - This kernel requires all participating
@@ -149,34 +149,26 @@ bool AllReduceGetDevCommRequirements(int deviceImpl, ncclDevCommRequirements* re
  * are more important than maximum bandwidth.
  */
 template <typename T>
-__global__ void allReduceLsaThreadKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
+__global__ void allReduceLsaKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
   ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamLsa(devComm), devComm.lsaBarrier, blockIdx.x };
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
   const int rank = devComm.rank, nRanks = devComm.nRanks;
-  const ncclTeam team = ncclTeamLsa(devComm);
 
-  // Split work across all threads (in all blocks, across all ranks)
   const int globalTid = threadIdx.x + blockDim.x * (rank + blockIdx.x * nRanks);
   const int globalNthreads = blockDim.x * gridDim.x * nRanks;
 
-  // Simple work distribution: divide count evenly among threads
-  const size_t eltsPerThread = (count + globalNthreads - 1) / globalNthreads;
-  const size_t threadStart = globalTid * eltsPerThread;
-  const size_t threadCount = (threadStart < count) ? min(eltsPerThread, count - threadStart) : 0;
-
-  if (threadCount > 0) {
-    // Create a thread-level cooperative group (coop size = 1)
-    ncclCoopThread threadCoop;
-
-    // Calculate offsets for this thread's portion
-    size_t srcOffset = sendoffset + threadStart * sizeof(T);
-    size_t dstOffset = recvoffset + threadStart * sizeof(T);
-
-    // Use ReduceSumCopy API: reduces from all peers and copies result back to all peers in one call
-    ncclLsaReduceSumCopy<T, ncclCoopThread, size_t>(threadCoop, sendwin, srcOffset, recvwin, dstOffset, threadCount, team);
+  for (size_t offset = globalTid; offset < count; offset += globalNthreads) {
+    T v = T{0};
+    for (int peer=0; peer<nRanks; peer++) {
+      T* sendPtr = (T*)ncclGetLsaPointer(sendwin, sendoffset, peer);
+      v += sendPtr[offset];
+    }
+    for (int peer=0; peer<nRanks; peer++) {
+      T* recvPtr = (T*)ncclGetLsaPointer(recvwin, recvoffset, peer);
+      recvPtr[offset] = v;
+    }
   }
-
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
 
@@ -223,7 +215,7 @@ __global__ void allReduceLsaReduceCopyKernel(ncclWindow_t sendwin, size_t sendof
 
   // Calculate this block's starting offset and chunk size
   // Distribute remainder one elt at a time to first blocks
-  const size_t blockStart = globalBlockIdx * eltsPerBlock + min((size_t)globalBlockIdx, remainder);
+  const size_t blockStart = globalBlockIdx * eltsPerBlock + ((size_t)globalBlockIdx < remainder ? (size_t)globalBlockIdx : remainder);
   const size_t chunkSize = eltsPerBlock + (globalBlockIdx < remainder ? 1 : 0);
 
   // Process this block's assigned chunk
@@ -243,7 +235,7 @@ __global__ void allReduceLsaReduceCopyKernel(ncclWindow_t sendwin, size_t sendof
 
 
 /*
- * Kernel 3: allReduceMultimemThreadKernel - Multi-memory Hardware-Accelerated AllReduce
+ * Kernel 3: allReduceMultimemKernel - Multi-memory Hardware-Accelerated AllReduce (v2.29.1 style)
  *
  * Purpose: High-performance AllReduce implementation using multi-memory primitives
  * that leverage hardware acceleration for memory operations, significantly reducing
@@ -267,13 +259,7 @@ __global__ void allReduceLsaReduceCopyKernel(ncclWindow_t sendwin, size_t sendof
  * Hardware Requirements: Hopper+ architecture with multi-memory support enabled.
  */
 template <typename T>
-__global__ void allReduceMultimemThreadKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
-  // Block divisibility requirement: align to 16 bytes when possible
-  constexpr int BLOCK_DIVISIBILITY = (16 % sizeof(T) == 0) ? (16 / sizeof(T)) : 1;
-
-  // Get multimem handle from devComm
-  ncclMultimemHandle multimemHandle = devComm.lsaMultimem;
-
+__global__ void allReduceMultimemKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
   ncclLsaBarrierSession<ncclCoopCta> bar { ncclCoopCta(), devComm, ncclTeamTagLsa(), blockIdx.x, true };
   bar.sync(ncclCoopCta(), cuda::memory_order_relaxed);
 
@@ -282,42 +268,12 @@ __global__ void allReduceMultimemThreadKernel(ncclWindow_t sendwin, size_t sendo
   const int globalTid = threadIdx.x + blockDim.x * (rank + blockIdx.x * nRanks);
   const int globalNthreads = blockDim.x * gridDim.x * nRanks;
 
-  // Create thread-level cooperative group
-  ncclCoopThread threadCoop;
-
-  // Get local pointer to receive buffer for destination
-  T* recv_ptr = (T*)ncclGetLocalPointer(recvwin, recvoffset);
-
-  // Calculate full chunks that are divisible by BLOCK_DIVISIBILITY
-  const size_t totalFullElts = (count / BLOCK_DIVISIBILITY) * BLOCK_DIVISIBILITY;
-  const size_t remainder = count - totalFullElts;
-
-  // Main loop: process BLOCK_DIVISIBILITY elts at a time with UNROLL=1
-  for (size_t offset = globalTid * BLOCK_DIVISIBILITY; offset < totalFullElts; offset += globalNthreads * BLOCK_DIVISIBILITY) {
-    // Calculate byte offsets for this thread's chunk
-    size_t eltSrcOffset = sendoffset + offset * sizeof(T);
-    size_t eltDstOffset = recvoffset + offset * sizeof(T);
-
-    // Process BLOCK_DIVISIBILITY elts with UNROLL=1
-    ncclMultimemReduceSum<T, ncclCoopThread, size_t, 1>(threadCoop, sendwin, eltSrcOffset, recv_ptr + offset, BLOCK_DIVISIBILITY, multimemHandle);
-
-    // Broadcast the result back to all peers
-    ncclMultimemCopy<T, ncclCoopThread, size_t, 1>(threadCoop, recv_ptr + offset, recvwin, eltDstOffset, BLOCK_DIVISIBILITY, multimemHandle);
+  T* send_ptr = reinterpret_cast<T*>(ncclGetLsaMultimemPointer(sendwin, sendoffset, devComm));
+  T* recv_ptr = reinterpret_cast<T*>(ncclGetLsaMultimemPointer(recvwin, recvoffset, devComm));
+  for (size_t offset=globalTid; offset < count; offset += globalNthreads) {
+    T v = multimemLoadSum<T,T>(send_ptr + offset);
+    multimemStore<T,T>(recv_ptr + offset, v);
   }
-
-  // Last global thread handles the remainder
-  if (remainder > 0 && globalTid == globalNthreads - 1) {
-    size_t offset = totalFullElts;
-    size_t eltSrcOffset = sendoffset + offset * sizeof(T);
-    size_t eltDstOffset = recvoffset + offset * sizeof(T);
-
-    // Process remaining elts
-    ncclMultimemReduceSum<T, ncclCoopThread, size_t, 1>(threadCoop, sendwin, eltSrcOffset, recv_ptr + offset, remainder, multimemHandle);
-
-    // Broadcast the result back to all peers
-    ncclMultimemCopy<T, ncclCoopThread, size_t, 1>(threadCoop, recv_ptr + offset, recvwin, eltDstOffset, remainder, multimemHandle);
-  }
-
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
 
@@ -411,13 +367,12 @@ testResult_t AllReduceRunColl(void* sendbuff, size_t sendoffset, void* recvbuff,
   char* rptr = (char*)recvbuff + recvoffset;
 
   switch (deviceImpl) {
-
   case 0:
     NCCLCHECK_COMM_WAIT(ncclAllReduce(sptr, rptr, count, type, op, comm, stream), comm);
     return testSuccess;
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
   case 1:
-    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(allReduceLsaThreadKernel, type, op),
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_FLOAT_DOUBLE(allReduceLsaKernel, type, op),
                sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
     return testSuccess;
   case 2:
@@ -425,14 +380,12 @@ testResult_t AllReduceRunColl(void* sendbuff, size_t sendoffset, void* recvbuff,
                sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
     return testSuccess;
   case 3:
-    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_MULTIMEM(allReduceMultimemThreadKernel, type, op),
+    TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_FLOAT_DOUBLE(allReduceMultimemKernel, type, op),
                sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, true));
     return testSuccess;
   case 4:
     TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL_MULTIMEM(allReduceMultimemReduceCopyKernel, type, op),
                sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream, true));
-    return testSuccess;
-
     return testSuccess;
 #endif
   }

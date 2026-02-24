@@ -9,7 +9,7 @@ Two-sided communication
 
 (Since NCCL 2.7)
 Point-to-point communication can be used to express any communication pattern between ranks.
-Any point-to-point communication needs two NCCL calls : a call to :c:func:`ncclSend` on one
+Any point-to-point communication needs two NCCL calls: a call to :c:func:`ncclSend` on one
 rank and a corresponding :c:func:`ncclRecv` on the other rank, with the same count and data
 type.
 
@@ -32,7 +32,7 @@ Sendrecv
 --------
 
 In MPI terms, a sendrecv operation is when two ranks exchange data, both sending and receiving
-at the same time. This can be done by merging both ncclSend and ncclRecv calls into one :
+at the same time. This can be done by merging both ncclSend and ncclRecv calls into one:
 
 .. code:: C
 
@@ -45,7 +45,7 @@ One-to-all (scatter)
 --------------------
 
 A one-to-all operation from a ``root`` rank can be expressed by merging all send and receive
-operations in a group :
+operations in a group:
 
 .. code:: C
 
@@ -60,7 +60,7 @@ operations in a group :
 All-to-one (gather)
 -------------------
 
-Similarly, an all-to-one operations to a ``root`` rank would be implemented this way :
+Similarly, an all-to-one operation to a ``root`` rank would be implemented this way:
 
 .. code:: C
 
@@ -76,7 +76,7 @@ All-to-all
 ----------
 
 An all-to-all operation would be a merged loop of send/recv operations
-to/from all peers :
+to/from all peers:
 
 .. code:: C
 
@@ -90,8 +90,8 @@ to/from all peers :
 Neighbor exchange
 -----------------
 
-Finally, exchanging data with neighbors in an N-dimensions space could be done
-with :
+Finally, exchanging data with neighbors in an N-dimensional space could be done
+with:
 
 .. code:: C
 

@@ -4,21 +4,21 @@
 
 ```bash
 # Build (from nccl root; builds lib + ep_test + ep_bench)
-make -C nccl-ep MPI=1 MPI_HOME=$HPCX_MPI_DIR NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90"
+make -C contrib/nccl_ep MPI=1 MPI_HOME=$HPCX_MPI_DIR NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90"
 
-# Binary: build/test/nccl-ep/ep_bench
+# Binary: build/test/nccl_ep/ep_bench
 export NCCL_HOME=/path/to/nccl/build
 export LD_LIBRARY_PATH=$NCCL_HOME/lib:${CUDA_HOME}/lib64:$LD_LIBRARY_PATH
 
 # Run Low Latency benchmark with validation (8 GPUs, single node)
-mpirun -np 8 --oversubscribe --allow-run-as-root -x LD_LIBRARY_PATH $NCCL_HOME/test/nccl-ep/ep_bench --algorithm low-latency --validate
+mpirun -np 8 --oversubscribe --allow-run-as-root -x LD_LIBRARY_PATH $NCCL_HOME/test/nccl_ep/ep_bench --algorithm low-latency --validate
 
 # Run High Throughput benchmark with validation (16 GPUs, multi-node)
-mpirun -np 16 -x LD_LIBRARY_PATH $NCCL_HOME/test/nccl-ep/ep_bench --algorithm high-throughput --validate
+mpirun -np 16 -x LD_LIBRARY_PATH $NCCL_HOME/test/nccl_ep/ep_bench --algorithm high-throughput --validate
 
 # Common options
-$NCCL_HOME/test/nccl-ep/ep_bench --algorithm low-latency --tokens 256 --hidden 7168 --top-k 8 --experts 256
-$NCCL_HOME/test/nccl-ep/ep_bench --algorithm high-throughput --tokens 4096
+$NCCL_HOME/test/nccl_ep/ep_bench --algorithm low-latency --tokens 256 --hidden 7168 --top-k 8 --experts 256
+$NCCL_HOME/test/nccl_ep/ep_bench --algorithm high-throughput --tokens 4096
 ```
 
 ---
@@ -125,7 +125,7 @@ Byte breakdown (per rank avg): RDMA=8.00 MB (500 tokens), NVL=4.00 MB (250 token
 Use `--profile` to enable NVTX markers for detailed kernel analysis with NVIDIA Nsight Systems:
 
 ```bash
-nsys profile -t cuda,nvtx mpirun -np 8 $NCCL_HOME/test/nccl-ep/ep_bench --algorithm low-latency --profile
+nsys profile -t cuda,nvtx mpirun -np 8 $NCCL_HOME/test/nccl_ep/ep_bench --algorithm low-latency --profile
 ```
 
 This generates labeled ranges for:
@@ -166,7 +166,7 @@ This generates labeled ranges for:
 
 ```bash
 # Single node (8 GPUs) - Low Latency with validation
-mpirun -np 8 $NCCL_HOME/test/nccl-ep/ep_bench \
+mpirun -np 8 $NCCL_HOME/test/nccl_ep/ep_bench \
     --algorithm low-latency \
     --tokens 128 \
     --hidden 7168 \
@@ -175,7 +175,7 @@ mpirun -np 8 $NCCL_HOME/test/nccl-ep/ep_bench \
     --validate
 
 # Multi-node (32 GPUs across 4 nodes) - High Throughput with validation
-mpirun -np 32 $NCCL_HOME/test/nccl-ep/ep_bench \
+mpirun -np 32 $NCCL_HOME/test/nccl_ep/ep_bench \
     --algorithm high-throughput \
     --tokens 4096 \
     --hidden 7168 \
@@ -184,7 +184,7 @@ mpirun -np 32 $NCCL_HOME/test/nccl-ep/ep_bench \
     --validate
 
 # High Throughput with FP8 (performance only)
-mpirun -np 32 $NCCL_HOME/test/nccl-ep/ep_bench \
+mpirun -np 32 $NCCL_HOME/test/nccl_ep/ep_bench \
     --algorithm high-throughput \
     --tokens 4096 \
     --hidden 7168 \
@@ -196,7 +196,7 @@ mpirun -np 32 $NCCL_HOME/test/nccl-ep/ep_bench \
 ### Mixtral Style (8 experts, top-2)
 
 ```bash
-mpirun -np 8 $NCCL_HOME/test/nccl-ep/ep_bench \
+mpirun -np 8 $NCCL_HOME/test/nccl_ep/ep_bench \
     --algorithm low-latency \
     --tokens 512 \
     --hidden 4096 \

@@ -1,26 +1,26 @@
-# NCCL-EP: Expert Parallelism extension for NCCL
+# NCCL_EP: Expert Parallelism extension for NCCL
 #
-# Build with: make -C nccl-ep
+# Build with: make -C contrib/nccl_ep
 # Requires NCCL to be built first: make src.build
 
 # std::optional and other C++17 features used in nccl_moe.cc
 CXXSTD := -std=c++17
-include ../makefiles/common.mk
+include ../../makefiles/common.mk
 
 .PHONY: all clean lib ep_test ep_bench
 
-BUILDDIR ?= $(abspath ../build)
-OBJDIR := $(BUILDDIR)/obj/nccl-ep
+BUILDDIR ?= $(abspath ../../build)
+OBJDIR := $(BUILDDIR)/obj/nccl_ep
 LIBDIR := $(BUILDDIR)/lib
 INCDIR := $(BUILDDIR)/include
-DST_DIR := $(BUILDDIR)/test/nccl-ep
+DST_DIR := $(BUILDDIR)/test/nccl_ep
 
 # Default to sm_90 if not specified (can be overridden: NVCC_GENCODE="-gencode=..." make)
 NVCC_GENCODE ?= -gencode=arch=compute_90,code=sm_90
 
 # Include paths - add current directory so common.hpp can find device/ep headers
 # Include NCCL source headers for GIN support
-INCFLAGS = -I. -I./include -I./device -I$(BUILDDIR)/include -I$(BUILDDIR)/include/nccl_device -I../src/include
+INCFLAGS = -I. -I./include -I./device -I$(BUILDDIR)/include -I$(BUILDDIR)/include/nccl_device -I../../src/include
 
 # GIN (Global Input Network) support - adds multinode RDMA capabilities
 
@@ -118,7 +118,7 @@ MPI_LDFLAGS := -L$(MPI_HOME)/lib -lmpi
 EP_TEST_NVCUFLAGS := $(NVCC_GENCODE) -I$(INCDIR) $(MPI_CFLAGS) --compiler-options "-fPIC" -ccbin $(CXX) $(CXXSTD)
 EP_TEST_NVLDFLAGS := -L$(LIBDIR) -lnccl_ep -lnccl $(MPI_LDFLAGS) -lpthread -lrt -ldl -lcuda
 
-# ep-bench: performance benchmark (NVTX for profiling)
+# ep_bench: performance benchmark (NVTX for profiling)
 EP_BENCH_NVCUFLAGS := $(NVCC_GENCODE) -I$(INCDIR) $(MPI_CFLAGS) --compiler-options "-fPIC" -ccbin $(CXX) $(CXXSTD)
 EP_BENCH_NVLDFLAGS := -L$(LIBDIR) -lnccl_ep -lnccl $(MPI_LDFLAGS) -lpthread -lrt -ldl -lcuda
 ep_test: lib $(DST_DIR)/ep_test
@@ -134,12 +134,12 @@ $(DST_DIR)/ep_test: $(DST_DIR)/ep_test.o $(SOLIBTARGET)
 	@mkdir -p $(DST_DIR)
 	$(NVCC) -o $@ $(EP_TEST_NVCUFLAGS) $< $(EP_TEST_NVLDFLAGS)
 
-$(DST_DIR)/ep-bench.o: ep-bench.cu
+$(DST_DIR)/ep_bench.o: ep_bench.cu
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p $(DST_DIR)
 	$(NVCC) -o $@ $(EP_BENCH_NVCUFLAGS) -c $<
 
-$(DST_DIR)/ep_bench: $(DST_DIR)/ep-bench.o $(SOLIBTARGET)
+$(DST_DIR)/ep_bench: $(DST_DIR)/ep_bench.o $(SOLIBTARGET)
 	@printf "Linking    %-35s > %s\n" $< $@
 	@mkdir -p $(DST_DIR)
 	$(NVCC) -o $@ $(EP_BENCH_NVCUFLAGS) $< $(EP_BENCH_NVLDFLAGS)
@@ -165,12 +165,12 @@ $(DST_DIR)/ep_test: $(DST_DIR)/ep_test.o $(SOLIBTARGET)
 	@mkdir -p $(DST_DIR)
 	$(NVCC) -o $@ $(EP_TEST_NVCUFLAGS) $< $(EP_TEST_NVLDFLAGS)
 
-$(DST_DIR)/ep-bench.o: ep-bench.cu
+$(DST_DIR)/ep_bench.o: ep_bench.cu
 	@printf "Compiling  %-35s > %s\n" $< $@
 	@mkdir -p $(DST_DIR)
 	$(NVCC) -o $@ $(EP_BENCH_NVCUFLAGS) -c $<
 
-$(DST_DIR)/ep_bench: $(DST_DIR)/ep-bench.o $(SOLIBTARGET)
+$(DST_DIR)/ep_bench: $(DST_DIR)/ep_bench.o $(SOLIBTARGET)
 	@printf "Linking    %-35s > %s\n" $< $@
 	@mkdir -p $(DST_DIR)
 	$(NVCC) -o $@ $(EP_BENCH_NVCUFLAGS) $< $(EP_BENCH_NVLDFLAGS)

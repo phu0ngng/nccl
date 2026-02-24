@@ -29,4 +29,4 @@ The following sample code shows how to capture computational kernels and NCCL op
 
 Starting with NCCL 2.11, when NCCL communication is captured and the CollNet algorithm is used, NCCL allows for further performance improvement via user buffer registration. For details, please see the environment variable :ref:`NCCL_GRAPH_REGISTER`.
 
-Having multiple outstanding NCCL operations that are any combination of graph-captured or non-captured is supported. There is a caveat that the mechanism NCCL uses internally to accomplish this has been seen to cause CUDA to deadlock when the graphs of multiple communicators are cudaGraphLaunch()'d from the same thread. To disable this mechansim see the environment variable :ref:`NCCL_GRAPH_MIXING_SUPPORT`.
+Having multiple outstanding NCCL operations that are any combination of graph-captured or non-captured is supported. There is a caveat that the mechanism NCCL uses internally to accomplish this has been seen to cause CUDA to deadlock when the graphs of multiple communicators are cudaGraphLaunch()'d from the same thread. To disable this mechanism see the environment variable :ref:`NCCL_GRAPH_MIXING_SUPPORT`.

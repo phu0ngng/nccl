@@ -4,7 +4,7 @@
 # See LICENSE.txt for license information
 #
 
-include ../makefiles/common.mk
+include ../../makefiles/common.mk
 # LLVM IR generation
 
 ifneq ($(EMIT_LLVM_IR), 0)
@@ -39,7 +39,7 @@ LLVM_AS ?= llvm-as
 PYTHON ?= python3
 
 # Include paths
-NCCL_INCLUDES := -I$(BUILDDIR)/include -I../src/include -I../src/include/nccl_device -I../src/device
+NCCL_INCLUDES := -I$(BUILDDIR)/include -I../../src/include -I../../src/include/nccl_device -I../../src/device
 CUDA_INCLUDES := -I$(CUDA_INC) -I$(CUDA_INC)/cccl
 
 # Clang flags for LLVM IR generation

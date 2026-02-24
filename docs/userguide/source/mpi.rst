@@ -6,7 +6,7 @@ NCCL and MPI
 API
 ***
 
-The NCCL API and usage is similar to MPI but there are many minor differences.  The following list summarizes these differences:
+The NCCL API and usage are similar to MPI but there are many minor differences. The following list summarizes these differences:
 
 Using multiple devices per process
 ----------------------------------

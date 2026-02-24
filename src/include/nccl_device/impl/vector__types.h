@@ -9,7 +9,11 @@
 #define _NCCL_DEVICE_VECTOR__TYPES_H_
 
 #include <cuda_runtime.h>
+#include <cuda.h>
 #include <cuda_fp16.h>
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 12090
+#include <cuda_fp4.h>
+#endif
 #include <algorithm>
 
 // Forward declaration for sum reduction operator (defined in reduce_copy__types.h)
