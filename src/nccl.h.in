@@ -107,9 +107,9 @@ typedef struct ncclConfig_v22800 {
 /* Config initializer must be assigned to initialize config structure when it is created.
  * Not initialized config will result in NCCL error. */
 #define NCCL_CONFIG_INITIALIZER {                                       \
-  sizeof(ncclConfig_t),                              /* size */         \
-  NCCL_API_MAGIC,                                    /* magic */        \
-  NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH),  /* version */      \
+  sizeof(ncclConfig_t),                     /* size */                  \
+  NCCL_API_MAGIC,                           /* magic */                 \
+  NCCL_VERSION_CODE,                        /* version */               \
   NCCL_CONFIG_UNDEF_INT,                    /* blocking */              \
   NCCL_CONFIG_UNDEF_INT,                    /* cgaClusterSize */        \
   NCCL_CONFIG_UNDEF_INT,                    /* minCTAs */               \
@@ -138,11 +138,11 @@ typedef struct ncclSimInfo_v22200 {
 
 /* NCCL_SIM_INFO_INITIALIZER must be assigned to initialize simInfo structure when it is created.
  * Not initialized simInfo will result in NCCL error. */
-#define NCCL_SIM_INFO_INITIALIZER {                                         \
-  sizeof(ncclSimInfo_t),                            /* size */              \
-  0x74685283,                                       /* magic */             \
-  NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH), /* version */           \
-  NCCL_UNDEF_FLOAT                                  /* estimated time */    \
+#define NCCL_SIM_INFO_INITIALIZER {                                  \
+  sizeof(ncclSimInfo_t),                     /* size */              \
+  0x74685283,                                /* magic */             \
+  NCCL_VERSION_CODE,                         /* version */           \
+  NCCL_UNDEF_FLOAT                           /* estimated time */    \
 }
 
 /* NCCL malloc and free function for all types of NCCL optimizations

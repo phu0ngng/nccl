@@ -98,10 +98,10 @@ struct ncclDevCommRequirements {
   int ginQueueDepth;
 };
 
-#define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                 \
-    sizeof(ncclDevCommRequirements_t),                /* size */               \
-    NCCL_API_MAGIC,                                   /* magic */              \
-    NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH), /* version */            \
+#define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                               \
+    sizeof(ncclDevCommRequirements_t),           /* size */                    \
+    NCCL_API_MAGIC,                              /* magic */                   \
+    NCCL_VERSION_CODE,                           /* version */                 \
     nullptr,                                     /* resourceRequirementsList*/ \
     nullptr,                                     /* teamRequirementsList */    \
     false,                                       /* lsaMultimem */             \
@@ -136,10 +136,10 @@ struct ncclTeamRequirements {
   ncclMultimemHandle_t* outMultimemHandle; // If non-null, target assigned during ncclDevCommCreate.
 };
 
-#define NCCL_COMM_PROPERTIES_INITIALIZER {                               \
-  sizeof(ncclCommProperties_t),                    /* size */            \
-  NCCL_API_MAGIC,                                    /* magic */           \
-  NCCL_VERSION(NCCL_MAJOR, NCCL_MINOR, NCCL_PATCH),  /* version */         \
+#define NCCL_COMM_PROPERTIES_INITIALIZER {                           \
+  sizeof(ncclCommProperties_t),                  /* size */          \
+  NCCL_API_MAGIC,                                /* magic */         \
+  NCCL_VERSION_CODE,                             /* version */       \
 }
 
 typedef enum {
