@@ -816,7 +816,7 @@ cdef _get_comm_properties_dtype_offsets():
     cdef ncclCommProperties_t pod = ncclCommProperties_t()
     return _numpy.dtype({
         'names': ['size_', 'magic', 'version', 'rank', 'n_ranks', 'cuda_dev', 'nvml_dev', 'device_api_support', 'multimem_support', 'gin_type', 'n_lsa_teams', 'host_rma_support', 'railed_gin_type'],
-        'formats': [_numpy.uint64, _numpy.uint32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.uint8, _numpy.uint8, _numpy.int32, _numpy.uint8, _numpy.uint8],
+        'formats': [_numpy.uint64, _numpy.uint32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.uint8, _numpy.int32, _numpy.int32, _numpy.uint8, _numpy.int32],
         'offsets': [
             (<intptr_t>&(pod.size)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.magic)) - (<intptr_t>&pod),
@@ -999,13 +999,13 @@ cdef class CommProperties:
     @property
     def gin_type(self):
         """int: """
-        return self._ptr[0].ginType
+        return <int>(self._ptr[0].ginType)
 
     @gin_type.setter
     def gin_type(self, val):
         if self._readonly:
             raise ValueError("This CommProperties instance is read-only")
-        self._ptr[0].ginType = val
+        self._ptr[0].ginType = <ncclGinType_t><int>val
 
     @property
     def n_lsa_teams(self):
@@ -1032,13 +1032,13 @@ cdef class CommProperties:
     @property
     def railed_gin_type(self):
         """int: """
-        return self._ptr[0].railedGinType
+        return <int>(self._ptr[0].railedGinType)
 
     @railed_gin_type.setter
     def railed_gin_type(self, val):
         if self._readonly:
             raise ValueError("This CommProperties instance is read-only")
-        self._ptr[0].railedGinType = val
+        self._ptr[0].railedGinType = <ncclGinType_t><int>val
 
     @staticmethod
     def from_data(data):

@@ -141,10 +141,10 @@ ctypedef struct ncclCommProperties_t 'ncclCommProperties_t':
     int nvmlDev
     uint8_t deviceApiSupport
     uint8_t multimemSupport
-    uint8_t ginType
+    ncclGinType_t ginType
     int nLsaTeams
     uint8_t hostRmaSupport
-    uint8_t railedGinType
+    ncclGinType_t railedGinType
 
 ctypedef struct ncclTeam_t 'ncclTeam_t':
     int nRanks
