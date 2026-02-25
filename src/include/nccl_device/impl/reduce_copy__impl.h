@@ -31,13 +31,9 @@ NCCL_DEVICE_INLINE IntCount reduceCopyLoopCoreImpl(
     Coop coop,
     SrcLambda srcLambda, int nSrc,
     DstLambda dstLambda, int nDst,
-    RedOp redOp,
+    RedOp const& redOp,
     IntCount totalPacks,
     IntCount basePackIdx) {
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-  static_assert(!dstMultimem || !std::is_same<T, __nv_fp4_e2m1>::value,
-                "__nv_fp4_e2m1 is not supported for multimem destinations - use LSA destinations");
-#endif
   static_assert(!SINGLE_SRC || UNROLL_SOURCE == 1,
                 "UNROLL_SOURCE must be 1 when SINGLE_SRC is set");
 
@@ -264,7 +260,7 @@ NCCL_DEVICE_INLINE IntCount reduceCopyLoopCore(
     Coop coop,
     SrcLambda srcLambda, int nSrc,
     DstLambda dstLambda, int nDst,
-    RedOp redOp,
+    RedOp const& redOp,
     IntCount totalPacks,
     IntCount basePackIdx) {
   if (nSrc == 1) {
@@ -366,7 +362,7 @@ NCCL_DEVICE_INLINE IntCount reduceCopyLoop(
     Coop coop,
     SrcLambda srcLambda, int nSrc,
     DstLambda dstLambda, int nDst,
-    RedOp redOp,
+    RedOp const& redOp,
     IntCount count) {
   const int coopSize = coop.size();
   constexpr int warpSize = 32;
@@ -407,51 +403,9 @@ NCCL_DEVICE_INLINE void reduceCopyScalarLoop(
     Coop coop,
     SrcLambda srcLambda, int nSrc,
     DstLambda dstLambda, int nDst,
-    RedOp redOp,
+    RedOp const& redOp,
     IntCount count) {
   if (count == 0) return;
-
-  // TODO: Check if input pointer is aligned to MinMultimemType<T> when using multimem
-  // TODO: Check if count is divisible by MinMultimemType<T> element count when using multimem
-
-  // For fp4, process packed pairs to preserve both nibbles when possible.
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-  if NCCL_IF_CONSTEXPR (std::is_same<T, __nv_fp4_e2m1>::value) {
-    using Pack2 = EltPack<T, 2>;
-    auto srcPairLambda = [=] __device__ (int i) -> Pack2* {
-      T* basePtr = srcLambda(i);
-      return reinterpret_cast<Pack2*>(basePtr);
-    };
-    auto dstPairLambda = [=] __device__ (int i) -> Pack2* {
-      T* basePtr = dstLambda(i);
-      return reinterpret_cast<Pack2*>(basePtr);
-    };
-
-    constexpr int UNROLL_PACKS = 1;
-    IntCount pairElts = (count / 2) * 2;
-    if (pairElts > 0) {
-      reduceCopyLoop<UNROLL_PACKS, T, Pack2, RedOp, IntCount, Coop, srcMultimem, dstMultimem,
-                           decltype(srcPairLambda), decltype(dstPairLambda), /*skipTail=*/false>(
-          coop, srcPairLambda, nSrc, dstPairLambda, nDst, redOp, pairElts);
-    }
-
-    if (count & 1) {
-      using Pack1 = EltPack<T, 1>;
-      auto srcScalarLambda = [=] __device__ (int i) -> Pack1* {
-        T* basePtr = srcLambda(i) + (count / 2);
-        return reinterpret_cast<Pack1*>(basePtr);
-      };
-      auto dstScalarLambda = [=] __device__ (int i) -> Pack1* {
-        T* basePtr = dstLambda(i) + (count / 2);
-        return reinterpret_cast<Pack1*>(basePtr);
-      };
-      reduceCopyLoop<UNROLL_PACKS, T, Pack1, RedOp, IntCount, Coop, srcMultimem, dstMultimem,
-                           decltype(srcScalarLambda), decltype(dstScalarLambda), /*skipTail=*/false>(
-          coop, srcScalarLambda, nSrc, dstScalarLambda, nDst, redOp, 1);
-    }
-    return;
-  }
-#endif
 
   // Default scalar path: one element per pack.
   using Pack = EltPack<T, 1>;
@@ -483,20 +437,10 @@ NCCL_DEVICE_INLINE void reduceCopy(
     Coop coop,
     SrcLambda srcLambda, int nSrc,
     DstLambda dstLambda, int nDst,
-    RedOp redOp,
+    RedOp const& redOp,
     IntCount count,
     IntCount alignOffset = 0,
     int maxPackBytes = 16) {
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-  if NCCL_IF_CONSTEXPR (std::is_same<T, __nv_fp4_e2m1>::value) {
-    static_assert(std::is_same<RedOp, OpSum<__nv_fp4_e2m1>>::value,
-                  "__nv_fp4_e2m1 only supports OpSum; custom ops are not supported, use the reduceCopySum specializations instead.");
-  }
-#endif
-
-    // TODO: Check if input pointer is aligned to MinMultimemType<T> when using multimem
-    // TODO: Check if scalarRemainder is divisible by MinMultimemType<T> element count when using multimem
-
 
   // Step 1: Process scalar prefix to achieve alignment (if needed)
   // alignOffset is already computed by the alignment functions - use it directly
@@ -507,15 +451,6 @@ NCCL_DEVICE_INLINE void reduceCopy(
     processedElts = alignOffset;
   }
 
-  auto toStorageOffset = [] (IntCount elts) -> IntCount {
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-    if NCCL_IF_CONSTEXPR (bitSizeOf<T>() < 8) {
-      return (elts * static_cast<IntCount>(bitSizeOf<T>())) / 8;
-    }
-#endif
-    return elts;
-  };
-
   // Step 2: Process aligned bulk - match all_reduce.cuh strategy: check relative alignment and try pack sizes sequentially
   IntCount remainingElts = count - processedElts;
   if (remainingElts == 0) {
@@ -523,12 +458,11 @@ NCCL_DEVICE_INLINE void reduceCopy(
   }
 
   // Create lambdas for remaining work
-  const IntCount processedStorage = toStorageOffset(processedElts);
   auto srcRemaining = [=] __device__ (int i) -> T* {
-    return srcLambda(i) + processedStorage;
+    return srcLambda(i) + processedElts;
   };
   auto dstRemaining = [=] __device__ (int i) -> T* {
-    return dstLambda(i) + processedStorage;
+    return dstLambda(i) + processedElts;
   };
 
   // Check relative alignment of first source and destination pointers (like all_reduce.cuh)
@@ -569,10 +503,8 @@ NCCL_DEVICE_INLINE void reduceCopy(
   IntCount remainingAfter16 = remainingElts - vectorizedElts;
   if (maxPackBytes >= 4 && remainingAfter16 > 0) {
     // Recalculate alignment for Pack4 after Pack16 processing
-    // Pointers have advanced by vectorizedElts elements, need to check current alignment
-    const IntCount vectorizedStorage = toStorageOffset(vectorizedElts);
-    void* srcPtrAfter16 = (nSrc > 0) ? (void*)(srcRemaining(0) + vectorizedStorage) : nullptr;
-    void* dstPtrAfter16 = (nDst > 0) ? (void*)(dstRemaining(0) + vectorizedStorage) : nullptr;
+    void* srcPtrAfter16 = (nSrc > 0) ? (void*)(srcRemaining(0) + vectorizedElts) : nullptr;
+    void* dstPtrAfter16 = (nDst > 0) ? (void*)(dstRemaining(0) + vectorizedElts) : nullptr;
     uintptr_t srcOffsetAfter16 = (srcPtrAfter16 != nullptr) ? reinterpret_cast<uintptr_t>(srcPtrAfter16) : 0;
     uintptr_t dstOffsetAfter16 = (dstPtrAfter16 != nullptr) ? reinterpret_cast<uintptr_t>(dstPtrAfter16) : 0;
     intptr_t relOffset4After16 = static_cast<intptr_t>(srcOffsetAfter16) - static_cast<intptr_t>(dstOffsetAfter16);
@@ -594,12 +526,11 @@ NCCL_DEVICE_INLINE void reduceCopy(
           if NCCL_IF_CONSTEXPR (UNROLL_PACKS4_RAW > 0) {
             IntCount vectorizableElts4 = safeDiv<IntCount>(remainingAfter16, Pack4::Count) * Pack4::Count;
             if (vectorizableElts4 > 0) {
-              // Create lambdas offset by vectorizedElts to process the remainder after 16-byte packs
               auto srcAfter16 = [=] __device__ (int i) -> T* {
-                return srcRemaining(i) + vectorizedStorage;
+                return srcRemaining(i) + vectorizedElts;
               };
               auto dstAfter16 = [=] __device__ (int i) -> T* {
-                return dstRemaining(i) + vectorizedStorage;
+                return dstRemaining(i) + vectorizedElts;
               };
               vectorizedElts += reduceCopyLoop<UNROLL_PACKS4, T, Pack4, RedOp, IntCount, Coop, srcMultimem, dstMultimem,
                                               decltype(srcAfter16), decltype(dstAfter16), /*skipTail=*/false>(
@@ -614,12 +545,11 @@ NCCL_DEVICE_INLINE void reduceCopy(
   // Step 3: Scalar remainder
   IntCount scalarRemainder = remainingElts - vectorizedElts;
   if (scalarRemainder > 0) {
-    const IntCount scalarStorage = toStorageOffset(vectorizedElts);
     auto srcScalar = [=] __device__ (int i) -> T* {
-      return srcRemaining(i) + scalarStorage;
+      return srcRemaining(i) + vectorizedElts;
     };
     auto dstScalar = [=] __device__ (int i) -> T* {
-      return dstRemaining(i) + scalarStorage;
+      return dstRemaining(i) + vectorizedElts;
     };
 
     // Process scalar remainder - always use scalar loop with EltPack<T, 1>

@@ -11,9 +11,6 @@
 #include <cuda_runtime.h>
 #include <cuda.h>
 #include <cuda_fp16.h>
-#if defined(CUDA_VERSION) && CUDA_VERSION >= 12090
-#include <cuda_fp4.h>
-#endif
 #include <algorithm>
 
 // Forward declaration for sum reduction operator (defined in reduce_copy__types.h)
@@ -27,27 +24,16 @@ namespace nccl {
 namespace utility {
 
 // ============================================================================
-// Bit size utilities
-// ============================================================================
-
-// Num bits in element. 8*sizeof(T) no longer works for fp4.
-template<typename T> NCCL_DEVICE_INLINE constexpr int bitSizeOf() { return 8*sizeof(T); }
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-template<> NCCL_DEVICE_INLINE constexpr int bitSizeOf<__nv_fp4_e2m1>() { return 4; }
-#endif
-
-// ============================================================================
 // Typed pack types
 // ============================================================================
-// EltPack<T, n>: Typed pack containing n elements of type T
-// Provides both typed element access and untyped byte access for load/store
+// EltPack<T, n>: Typed pack containing n elements of type T (T must be at least 1 byte).
+// Provides both typed element access and untyped byte access for load/store.
 
 template<typename T, int n>
 struct EltPack {
   using EltType = T;  // Element type
   static constexpr int Count = n;  // Number of elements
-  static constexpr int Bits = n * bitSizeOf<T>();
-  static constexpr int Bytes = (Bits + 8 - 1) / 8;
+  static constexpr int Bytes = n * static_cast<int>(sizeof(T));
   // Impose most generous alignment possible (greatest pow2 factor)
   static constexpr int Alignment = (Bytes & -Bytes);
   alignas(Alignment) char bytes[Bytes];
@@ -62,7 +48,6 @@ template<typename T>
 struct EltPack<T, 0> {
   using EltType = T;  // Element type
   static constexpr int Count = 0;
-  static constexpr int Bits = 0;
   static constexpr int Bytes = 0;
   static constexpr int Alignment = 1;
   static constexpr char* bytes = nullptr;
@@ -74,9 +59,9 @@ struct EltPack<T, 0> {
 
 
 // Helper: Create EltPack for a given byte size
-// Computes the number of elements that fit in the specified byte size
+// Computes the number of elements that fit in the specified byte size (element size >= 1 byte)
 template<typename T, int Bytes>
-using EltPackForBytes = EltPack<T, (Bytes * 8) / bitSizeOf<T>()>;
+using EltPackForBytes = EltPack<T, Bytes / static_cast<int>(sizeof(T))>;
 
 // ============================================================================
 // Accumulation type determination
@@ -120,13 +105,6 @@ struct AccumulateType<OpSum<__nv_fp8_e4m3>> {
 template<>
 struct AccumulateType<OpSum<__nv_fp8_e5m2>> {
   using Type = half;  // fp8 accumulates into half precision (matches .acc::f16 in multimem)
-};
-#endif
-
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-template<>
-struct AccumulateType<OpSum<__nv_fp4_e2m1>> {
-  using Type = half;  // fp4 accumulates into half precision (LSA only, no multimem support)
 };
 #endif
 

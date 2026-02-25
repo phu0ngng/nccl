@@ -129,6 +129,20 @@ ncclResult_t ncclCudaLibraryInit(void);
 extern int ncclCudaDriverVersionCache;
 extern bool ncclCudaLaunchBlocking; // initialized by ncclCudaLibraryInit()
 
+// Checks whether the given stream is the legacy null stream.
+inline ncclResult_t ncclCudaStreamIsLegacyNull(cudaStream_t stream, bool* isLegacy) {
+#if CUDART_VERSION >= 12000
+  unsigned long long nullStreamId, legacyNullStreamId;
+  CUDACHECK(cudaStreamGetId(NULL, &nullStreamId));
+  CUDACHECK(cudaStreamGetId(cudaStreamLegacy, &legacyNullStreamId));
+  *isLegacy = (stream == cudaStreamLegacy) ||
+              ((stream == NULL) && (nullStreamId == legacyNullStreamId));
+#else
+  *isLegacy = (stream == NULL) || (stream == cudaStreamLegacy);
+#endif
+  return ncclSuccess;
+}
+
 inline ncclResult_t ncclCudaDriverVersion(int* driver) {
   int version = COMPILER_ATOMIC_LOAD(&ncclCudaDriverVersionCache, std::memory_order_relaxed);
   if (version == -1) {

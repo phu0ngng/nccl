@@ -112,7 +112,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     wr->send_flags = 0;
     wr->wr.rdma.remote_addr = slots[r].addr;
     wr->next = wr + 1;
-    wr_id += (reqs[r] - comm->base.reqs) << (r*8);
+    wr_id += (uint64_t)(slot & 0xff) << (r*8);
     wr->wr_id = wr_id;
 #ifdef NCCL_ENABLE_NET_PROFILING
     reqs[r]->pInfo[0].nEventHandles = 0;
@@ -396,7 +396,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, struct ncclIbRequest* r
   // This works out that each CTS posting QP gets drained
   if (slot == ctsQp->devIndex || comm->base.resiliency) {
     wr.send_flags |= IBV_SEND_SIGNALED;
-    wr.wr_id = req - comm->base.reqs;
+    wr.wr_id = slot;
   }
 
   TRACE(NCCL_NET, "NET/IB: %s: Posting a CTS (req=%p, comm=%p, id=%ld, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d, qp_num=%u)", __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qp->qp_num);
@@ -452,7 +452,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
       continue;
     }
     // Post receive work request on the QP
-    comm->ibRecvWorkRequest.wr_id = req - comm->base.reqs;
+    comm->ibRecvWorkRequest.wr_id = slot;
     NCCLCHECK(ncclIbPostRecvWorkRequest(qp->qp, &comm->ibRecvWorkRequest));
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
@@ -518,7 +518,7 @@ ncclResult_t ncclIbIflush(void* recvComm, int n, void** data, int* sizes, void**
   for (int i = 0; i < comm->base.vProps.ndevs; i++) {
     struct ibv_send_wr wr;
     memset(&wr, 0, sizeof(wr));
-    wr.wr_id = req - comm->base.reqs;
+    wr.wr_id = (req - comm->base.reqs) + NCCL_IB_FLUSH_REQ_WR_ID_OFFSET;
 
     wr.wr.rdma.remote_addr = (uint64_t)data[last];
     wr.wr.rdma.rkey = mhandle->mrs[i]->rkey;
@@ -568,10 +568,17 @@ static inline ncclResult_t ncclIbRequestRetrieveFromCompletion(struct ncclIbNetC
     TRACE(NCCL_NET, "NET/IB: %s: Retrieving a receive request (wr_id=%ld, opcode=%s, imm_data=%d, byte_len=%d)", __func__, wc->wr_id, ibvWcOpcodeStr(wc->opcode), be32toh(wc->imm_data), wc->byte_len);
     struct ncclIbRecvComm* recvComm = (struct ncclIbRecvComm*)base;
     *req = recvComm->recvReqs[be32toh(wc->imm_data) % NET_IB_MAX_REQUESTS];
+  } else if (!base->isSend && wc->opcode == IBV_WC_RDMA_READ) { // Flush request completion
+    NCCLCHECK(ncclIbRequestRetrieveAsIndex(base->reqs, (wc->wr_id - NCCL_IB_FLUSH_REQ_WR_ID_OFFSET), req));
+  } else if (!base->isSend) {
+    struct ncclIbRecvComm* recvComm = (struct ncclIbRecvComm*)base;
+    *req = recvComm->recvReqs[wc->wr_id];
   } else {
-    // For senders, or for other types of completions on receivers, the request ID
-    // is assumed to be in the lower 8 bits of wr_id.
-    NCCLCHECK(ncclIbRequestRetrieveAsIndex(base->reqs, wc->wr_id & 0xff, req));
+    struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)base;
+    // On the sender side, the lower 8 bits of wr_id are used to retrieve the
+    // request, since in multi-send case, multiple IDs are encoded in the same
+    // wr_id.,
+    *req = sendComm->sendReqs[wc->wr_id & 0xff][0];
   }
   TRACE(NCCL_NET, "NET/IB: %s: Retrieved a %s request (req=%p, comm=%p, id=%ld, type=%s, wc.wr_id=%ld, wc.opcode=%s, wc.imm_data=%d, wc.byte_len=%d, wc.qp_num=%u)", __func__, base->isSend ? "send" : "recv", *req, (*req)->base, (*req)->id, ncclIbReqTypeStr[(*req)->type], wc->wr_id, ibvWcOpcodeStr(wc->opcode), be32toh(wc->imm_data), wc->byte_len, wc->qp_num);
   return ncclSuccess;
@@ -670,9 +677,11 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
       WARN("NET/IB: %s: Sender expected a 'send' request but got '%s' (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.opcode=%s(%d), wc.qp_num=%u)", __func__, ncclIbReqTypeStr[req->type], req, commBase, req->id, wc->wr_id, ibvWcOpcodeStr(wc->opcode), wc->opcode, wc->qp_num);
       return ncclInternalError;
     }
+    struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)commBase;
+    struct ncclIbRequest* sendReq = NULL;
+    int slot = req->id % NET_IB_MAX_REQUESTS;
     for (int j = 0; j < req->nreqs; j++) {
-      struct ncclIbRequest* sendReq = NULL;
-      NCCLCHECK(ncclIbRequestRetrieveAsIndex(commBase->reqs, (wc->wr_id >> (j*8)) & 0xff, &sendReq));
+      sendReq = sendComm->sendReqs[slot][j];
       if (!commBase->resiliency && (sendReq->events[devIndex] <= 0)) {
         WARN("NET/IB: sendReq(%p)->events={%d,%d,%d,%d}, devIndex=%d, reqIdx=%d <= 0", sendReq, sendReq->events[0], sendReq->events[1], sendReq->events[2], sendReq->events[3], devIndex, j);
         return ncclInternalError;

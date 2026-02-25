@@ -60,6 +60,7 @@ then
     run_command "${func}_ce_graph_nvls_disable" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=0" "$NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 1 -R 2 -x 2"
     run_command "${func}_ce_send_reg" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 1 -R 3 -x 2"
     run_command "${func}_ce_recv_reg" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 128 -e 8G -f 2 -G 1 -R 4 -x 2"
+    run_command "${func}_ce_legacy_stream" $RUN_MODE $NGPUS "" "NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-b 1G -e 1G -f 2 -G 0 -R 2 -x 2 -y 1"
     if [ "$NNODES" == "1" ];
     then
       run_command "${func}_ce_single_proc_nvls_enable" $RUN_MODE 1 "" "NCCL_NVLS_ENABLE=1" "$NCCL_HOME/test/perf/$func" "-t 1 -g $NGPUS -b 128 -e 8G -f 2 -G 0 -R 2 -x 2"

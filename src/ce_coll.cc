@@ -330,6 +330,11 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeCollArgs* 
   int driverVersion;
   void* ceBatchHandle = NULL;
 
+  // cudaMemcpyBatchAsync does not accept the legacy null stream (e.g. PyTorch null stream).
+  // Fall back to cudaMemcpyAsync per-op when stream is NULL.
+  bool isLegacyStream;
+  NCCLCHECKGOTO(ncclCudaStreamIsLegacyNull(stream, &isLegacyStream), ret, fail);
+
   // Start CE batch profiling
   NCCLCHECKGOTO(ncclProfilerStartCeBatchEvent(comm, args, params, stream, &ceBatchHandle),
                 ret, fail);
@@ -342,9 +347,9 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeCollArgs* 
 
   NCCLCHECKGOTO(ncclCudaDriverVersion(&driverVersion), ret, fail);
 
-  //--------------Graph capture--------------
-  // cudaMemcpyBatchAsync is not supported during CUDA graph capture
-  if (capturing) {
+  //--------------Graph capture / legacy stream--------------
+  // cudaMemcpyBatchAsync is not supported during CUDA graph capture or with legacy stream
+  if (capturing || isLegacyStream) {
     for (int i =0; i < params->numOps; i++) {
       CUDACHECKGOTO(cudaMemcpyAsync(
         (void*)params->dsts[i],
@@ -358,7 +363,7 @@ ncclResult_t ncclCeLaunchBatchOps(struct ncclComm* comm, struct ncclCeCollArgs* 
       }
     }
   }
-  //--------------No graph capture--------------
+  //--------------No graph capture / not legacy stream--------------
   else {
     if (CUDART_VERSION >= 12080 && driverVersion >= 12080) {
 #if CUDART_VERSION >= 12080

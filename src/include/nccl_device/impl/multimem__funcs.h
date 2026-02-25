@@ -29,10 +29,6 @@ struct LoadImpl {
     static_assert(!UseMultimem || (!std::is_same<PackEltType, int8_t>::value &&
                                    !std::is_same<PackEltType, uint8_t>::value),
                   "int8_t and uint8_t are not supported for multimem sources - use LSA sources");
-#if defined(__CUDA_FP4_TYPES_EXIST__)
-    static_assert(!UseMultimem || !std::is_same<PackEltType, __nv_fp4_e2m1>::value,
-                  "__nv_fp4_e2m1 is not supported for multimem sources - use LSA sources");
-#endif
     #if __CUDA_ARCH__ < 900
     if (UseMultimem) {
       assert(false && "multimem is not supported on architectures < sm_90");
@@ -647,16 +643,6 @@ NCCL_DEVICE_INLINE EltPack<uint64_t, 2> load<EltPack<uint64_t, 2>, true, OpSum<u
 
 #endif // __CUDA_ARCH__ >= 900
 
-// Store helper that selects multimem vs LSA at compile time.
-template<typename Pack, bool UseMultimem>
-NCCL_DEVICE_INLINE void store(Pack* addr, const Pack& val) {
-  if NCCL_IF_CONSTEXPR (UseMultimem) {
-    multimemStore(addr, val);
-  } else {
-    *addr = val;
-  }
-}
-
 // Multimem Store
 // Typeless: stores bytes directly based on pack byte size only
 
@@ -747,6 +733,18 @@ NCCL_DEVICE_INLINE void multimemStore(void* addr, const Pack& pack) {
     converter.eltPack = pack;
     multimem_st_global<Pack::Bytes>(multimem_addr, converter.bytePack);
   #endif
+}
+
+// Store helper that selects multimem vs LSA at compile time.
+// Use fully qualified name so we always use this namespace's multimemStore even when
+// the TU defines a global multimemStore (e.g. test/perf/multimem_ops.h).
+template<typename Pack, bool UseMultimem>
+NCCL_DEVICE_INLINE void store(Pack* addr, const Pack& val) {
+  if NCCL_IF_CONSTEXPR (UseMultimem) {
+    nccl::utility::multimemStore(addr, val);
+  } else {
+    *addr = val;
+  }
 }
 
 } // namespace utility

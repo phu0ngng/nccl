@@ -2112,6 +2112,7 @@ perftest-P40:
     - when: never
   needs: ["build-ipp6", "health-P40"]
   variables:
+    SLURM_TIME: 10
     MAX: "1G"
     MAX_GROUP: "128M"
     NNODES: 1

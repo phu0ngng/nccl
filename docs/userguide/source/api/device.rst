@@ -463,7 +463,7 @@ ncclGin
 
       *peer* is a rank within *team* (see :ref:`devapi_teams`); it may refer to the local rank (a loopback).  The destination
       and source buffers are each specified using the window (*dstWnd*, *srcWnd*) and a byte-based offset (*dstOffset*,
-      *srcOffset*).  *bytes* specifies the data transfer count in bytes. If GIN is initialized with connection 
+      *srcOffset*).  *bytes* specifies the data transfer count in bytes. If GIN is initialized with connection
       type :c:macro:`NCCL_GIN_CONNECTION_RAIL`, *peer* must be within the same rail team as the local rank.
 
       Arguments beyond the first seven are optional.  *remoteAction* and *localAction* specify actions

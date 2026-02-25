@@ -302,6 +302,22 @@ Because of the above, when enabling port-failover, it's required to use the feat
 
 Another change on the receiver side is that before completing a receive request towards the user, the receiver updates the status of the receive request to be "completed" in the local completions array. This completion array is the array which might be used by the sender to determine if a replay of a data transfer is required.
 
+###### Local matching using "slot" instead of `wr_id`
+
+With port-failover in place, sender and receiver might poll completions with error from a CQE and would need to match them to the correct request.
+
+In addition, the port-failover protocol is designed in a way that does not require to drain the CQ of the failed device before completing the port-failover procedure, therefore the sender and receiver might receive stale completion notifications from the CQ of the failed device even after the device is marked as failed and the port-failover procedure is initiated or complete. This leads to the need to deal with stale CQE which is discussed in detailed in the [Handling of stale CQEs](#handling-of-stale-cqes) section below.
+
+In order to handle stale CQEs, the sender and receiver are required to change the way each side assigns the `wr_id` field in the work requests they post.
+
+Before port-failover, the `wr_id` was assigned (by both sender and receiver) with the index of the `ncclIbRequest` in the array of requests that each side maintains. Once port-failover is enabled and an error is detected, continueing to assign `wr_id` with the index of the request in the array is not possible, because if the request is released, the same "index" can be reused for a different request, and then when a stale CQE arrives with the `wr_id` of that index, the side will not be able to differentiate whether this CQE belongs to the new request or it's a stale CQE that belongs to the previous request - potentially leading to triggering a replay for a new request does did not experience any failure.
+
+> **Note**
+>
+> Flush requests on the receiver side are not affected by the problem of stale CQEs because flush requests do not have a "replay" protocol and flush requests are completed only when all CQEs of that request are polled so there could not be stale CQEs for flush requests.
+
+Assigning the "slot" to the `wr_id` instead of the request's index in the array, reduces the probability of getting a new request that would reuse the slot and encounter a stale CQE. The probability is reduced because the slot is an incrementing counter that wraps around `NET_IB_MAX_REQUESTS` while the request's index depends on how many outstanding parallel requests are there in the plugin. If the number of outstanding parallel requests is low, the probability of reusing the same index is high, while the probability of reusing the same slot is low.
+
 ##### Pre-posting of receive requests
 
 In case of some failures, only the sender is the side that detects the failure. In those cases, the sender will replay the data transfer on different devices, hence different QPs, so the receiver must be able and ready to receive data transfers on all QPs. Therefore, the receiver must pre-post receive requests for all QPs that can be used by the sender, and pre-post enough receive requests to be able to receive all the data transfers that the sender will initiate.
@@ -448,10 +464,43 @@ Therefore, the implementation opts to send probes for all outstanding send reque
 
 When a device encounters an error on some QP, the device flushes all outstanding work requests on that QP and generates CQEs with error for them. Note that even if only some work requests (and not all of them!) were marked as signaled, the device will generate CQEs with error for all of them. Therefore, there could be cases where the CQEs will be generated with a flush error status (`IBV_WC_WR_FLUSH_ERR`) and there will be more CQEs than the number of signaled work requests. On the sender side, all work requests are using a specific `wr_id` pattern that allows identifying the request type, and it's easy match the CQEs with error to the send requests. On the receiver side, since pre-posting of receive work requests is used, these work requests are posted with a "dummy" `wr_id` value and when such a CQE is encoutered, the receiver ignores it. The receiver only cares about CQEs with error that belong to CTS messages, which are posted with a "valid" `wr_id` value.
 
-#### Handling stale CQEs with errors
+#### Handling of stale CQEs
 
-The plugin may poll a CQE with error and complete the replay protocol for the associated request (including releasing it) before polling all the remaining CQEs with error from the original failed operation. Subsequently, when the plugin encounters another CQE with error, it may attempt to match it to a request that has already been released. To handle this scenario, a "generation" mechanism is used to identify stale CQEs that are being processed after their corresponding request has been freed. Each request managed by the resiliency module is assigned a generation field, implemented using an ID. This ID corresponds to the original request that encountered the failure. When processing a CQE with error, the resiliency module retrieves the potentially matching request and verifies its generation. If the request's generation is older than the generation currently expected by the resiliency module, the CQE with error is ignored.
+Stale CQEs is a major problem that requires addressing. Multiple scenarios involving stale CQEs, whether the CQEs are with error or not, can easily lead to errors, hangs and data corruption.
 
+##### Stale CQEs with errors
+
+Stale CQEs with error can be encountered when plugin polls a CQE with error (for the first time) and completes the replay protocol for the associated request (including releasing it) before polling all the remaining CQEs with error from the original failed request. Note that the plugin, upon encountring a CQE with error, does not drain the CQ before completing the failover protocol.
+
+When such stale CQE with error is polled, the plugin will try to match this CQE to the request that this CQE with error belongs to. Since the replay protocol completion is not waiting for all the CQEs with error to be polled, and since the replay protocol can successfully complete the request (on other fucntional devices) and release it, the request that the CQE with error belongs to might be already released by the time the plugin tries to match the CQE with error to its request. In this case, the plugin will fail to match the CQE with error to the request and will retreive a NULL request - indicating that the CQE is stale and can be ignored.
+
+An additional correctness protection mechanism was implemented to prevent error in case the CQE matches for some reason an old request. To handle this case, in which the CQE again needs to be ignored, the plugin uses a "generation" mechanism to determine whether the request is old.
+
+> **Note**
+>
+> The "generation" mechanism is based on the fact that every request that is managed by the resiliency module is assigned a generation field, implemented using an ID. This ID corresponds to the original request that encountered the failure.
+
+Note, if the request is of the same generation - it either triggers a replay protocol (if it's the first CQE for this request) or it's ignored if the replay protocol is in progress.
+
+##### Stale CQEs without errors
+
+An example where a stale CQE without an error can be encountered is described below:
+
+1. Receiver posts a CTS on `dev0` and polls a local completion for it.
+2. Sender posts data-transfer on `dev0`.
+3. The data transfer completes on the NIC on the receiver side but **receiver does not poll the CQ on `dev0` yet**.
+4. The HW "ack" packet for the data-transfer from the receiver to the sender is dropped.
+5. `dev0` on send side generates a CQE with error.
+6. Sender probes the receiver using RDMA Read to check if the data transfer on `dev0` arrived and finds out that receiver did not complete it (the receiver's completion records were not updated by the receiver!).
+7. Sender replays data-transfer on `dev1`.
+8. `dev1` on recv side generates a successful CQE for the replayed data-transfer.
+9. Receiver polls the CQ on `dev0` and gets the successful CQE for the original data transfer and releases the request.
+10. Receiver polls the CQ on `dev1` and gets the successful CQE for the data
+   transfer replay that was posted on step 7, but the request is already released in step 9 so the request is `UNUSED`.
+
+In the scenario above, the receiver did not know that there is a replay and the scenario **should be avoided by the "probe delay" on the sender side**. If the sender waits enough time before probing the receiver's memory, the receiver will have enough time to poll the CQ on `dev0` and update the completion records for the data transfer before the sender probes the receiver's memory.
+
+Even if the probe delay is not sufficient, this issue is solved by the fact that the CQE polled on step 10 is matched by `ID` which belongs to an old request - so no "wrong matching" can happen.
 
 </details>
 

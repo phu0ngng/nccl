@@ -103,30 +103,25 @@ static ncclResult_t ncclIbResiliencyReplaceQps(struct ncclIbResiliency* resCtx, 
 static ncclResult_t ncclIbResiliencySendRequestInit(struct ncclIbResiliencySend* sendResCtx, ncclIbRequest* request, int devIndex) {
   int slot = request->id % NET_IB_MAX_REQUESTS;
   struct ncclIbResiliencyRequestSend* failedSendRequest = &sendResCtx->failedRequests[slot];
-  if (failedSendRequest->request != NULL) {
-    // It might be that a different send request that is part of this
-    // multi-send request already got an error and was recorded.
-    // The recorded request is already handled and no need to to anything
-    // in addition.
-    // Another scenario in which the same slot is being added is when a QP had
-    // multiple outstanding sends WQEs and upon failure, it flushed all of them
-    // with a "flush error".
-    assert(failedSendRequest->request->id == request->id);
-    INFO(NCCL_NET, "NET/IB: %s: No need to add this failed request (req=%p, comm=%p, id=%ld) while another request (req=%p, comm=%p, id=%ld) is already being tracked in the same slot (slot=%d).", __func__, request, request->base, request->id, failedSendRequest->request, failedSendRequest->request->base, failedSendRequest->request->id, slot);
-    return ncclSuccess;
+
+  // Check if the request is/was already tracked
+  if (failedSendRequest->id == request->id + 1) {
+    if (failedSendRequest->request != NULL) {
+      // It might be that a different send request that is part of this
+      // multi-send request already got an error and is being replayed.
+      // No need to initate a new tracking.
+      INFO(NCCL_NET, "NET/IB: %s: No need to add this failed request (req=%p, comm=%p, id=%ld) while another request (req=%p, comm=%p, id=%ld) is already being tracked in the same slot (slot=%d).", __func__, request, request->base, request->id, failedSendRequest->request, failedSendRequest->request->base, failedSendRequest->request->id, slot);
+      return ncclSuccess;
+    } else {
+      // The request was already replayed and released. The CQE should be ignored.
+      INFO(NCCL_NET, "NET/IB: %s: Attempting to initiate a replay protocol but the failed request was already handled (req=%p, comm=%p, id=%ld, slot=%d, req.type=%s).", __func__, request, request->base, request->id, slot, ncclIbReqTypeStr[request->type]);
+      return ncclSuccess;
+    }
   }
 
-  // An old CQE may remain in the CQ after its associated send request has
-  // already been handled (potentially replayed), completed, and released. To
-  // safely ignore such stale CQEs, a monotonically increasing "ID" is used to
-  // determine if the CQE corresponds to an outdated request.
-  if (request->id < failedSendRequest->id) {
-    if (request->type != NCCL_NET_IB_REQ_UNUSED) {
-      WARN("NET/IB: %s: Attempting to initiate a failed request using an old request (req=%p, comm=%p, id=%ld, slot=%d, failedSendRequest.id=%ld).", __func__, request, request->base, request->id, slot, failedSendRequest->id);
-      return ncclInternalError;
-    }
-    INFO(NCCL_NET, "NET/IB: %s: No need to initiate a new failed request. The retrieved request was already handled and completed/released (req=%p, comm=%p, id=%ld, slot=%d, failedSendRequest.id=%ld).", __func__, request, request->base, request->id, slot, failedSendRequest->id);
-    return ncclSuccess;
+  if (request->id + 1 <= failedSendRequest->id) {
+    WARN("NET/IB: %s: Attempting to initiate a replay using an old request (req=%p, comm=%p, id=%ld, slot=%d, failedSendRequest.id=%ld).", __func__, request, request->base, request->id, slot, failedSendRequest->id);
+    return ncclInternalError;
   }
 
   if (request->type != NCCL_NET_IB_REQ_SEND) {
@@ -139,7 +134,7 @@ static ncclResult_t ncclIbResiliencySendRequestInit(struct ncclIbResiliencySend*
   failedSendRequest->errorInfo.devIndex = devIndex;
   failedSendRequest->errorInfo.time = clockNano();
   failedSendRequest->failedAttempts = 0;
-  failedSendRequest->id = request->id;
+  failedSendRequest->id = request->id+1;
   sendResCtx->base.outstandingRequests++;
   sendResCtx->base.inProgress = true;
   INFO(NCCL_NET, "NET/IB: %s: Tracking a new failed send request (req=%p, comm=%p, id=%ld, slot=%d, devIndex=%d, time=%ld, total tracked requests: %d).", __func__, request, request->base, request->id, slot, devIndex, failedSendRequest->errorInfo.time, sendResCtx->base.outstandingRequests);
@@ -224,7 +219,9 @@ static ncclResult_t ncclIbResiliencyRepostRequest(struct ncclIbRequest* request)
 
 static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbResiliency* resCtx, struct ibv_wc* wc, int devIndex) {
   INFO(NCCL_NET,"NET/IB: %s: Handling an error on the receiver side (comm %p)", __func__, resCtx->baseComm);
-  if ((wc->wr_id < 0 || wc->wr_id > NET_IB_MAX_REQUESTS) && wc->wr_id != NCCL_IB_RECV_WR_ID_DUMMY) {
+  bool inRecvRange = (wc->wr_id >= 0 && wc->wr_id <= NET_IB_MAX_REQUESTS);
+  bool inFlushRange = (wc->wr_id >= NCCL_IB_FLUSH_REQ_WR_ID_OFFSET && wc->wr_id < (NCCL_IB_FLUSH_REQ_WR_ID_OFFSET + NET_IB_MAX_REQUESTS));
+  if (!inRecvRange && !inFlushRange && (wc->wr_id != NCCL_IB_RECV_WR_ID_DUMMY)) {
     WARN("NET/IB: %s: Invalid wr_id (%ld). Unable to retrieve a request on the receiver side (comm=%p)", __func__, wc->wr_id, resCtx->baseComm);
     return ncclInternalError;
   }
@@ -240,7 +237,13 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorReceiver(struct ncclIbR
   }
 
   ncclIbRequest* request = NULL;
-  ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wc->wr_id, &request);
+  if (inFlushRange) {
+    // Completion for a flush request is offset by NCCL_IB_FLUSH_REQ_WR_ID_OFFSET
+    ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wc->wr_id - NCCL_IB_FLUSH_REQ_WR_ID_OFFSET, &request);
+  } else {
+    struct ncclIbRecvComm* recvComm = (struct ncclIbRecvComm*)resCtx->baseComm;
+    request = recvComm->recvReqs[wc->wr_id];
+  }
 
   INFO(NCCL_NET, "NET/IB: %s: The receiver side request that got an error is %p (req=%p, comm=%p, id=%ld)", __func__, request, request, request->base, request->id);
 
@@ -283,20 +286,19 @@ static ncclResult_t ncclIbResiliencyHandleCompletionErrorSender(struct ncclIbRes
   ncclResult_t res;
   ncclIbRequest* request = NULL;
 
-  res = ncclIbRequestRetrieveAsIndex(resCtx->baseComm->reqs, wc->wr_id & 0xff, &request);
-  if (res != ncclSuccess) {
-    WARN("NET/IB: %s: Failed to retrieve a request on the sender side (comm=%p, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
-    return res;
-  }
+  uint64_t slot = (wc->wr_id & 0xff);
+  struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)resCtx->baseComm;
+  request = sendComm->sendReqs[slot][0];
+
   if (request == NULL) {
-    WARN("NET/IB: %s: Retrieved a NULL request and not 'send' as expected (send comm=%p, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
-    return ncclInternalError;
+    WARN("NET/IB: %s: Encountered a stale CQE with error for slot=%ld. Slot was already handled (comm=%p, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, slot, resCtx->baseComm, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
+    return ncclSuccess;
   }
 
   struct ncclIbResiliencySend* sendResCtx = (struct ncclIbResiliencySend*)resCtx;
   res = ncclIbResiliencySendRequestInit(sendResCtx, request, devIndex);
   if (res != ncclSuccess) {
-    WARN("NET/IB: %s: Failed to initialize a resiliency send request (req=%p, comm=%p, id=%ld, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d)).", __func__, request, request->base, request->id, wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode);
+    WARN("NET/IB: %s: Failed to initialize a resiliency send request (req=%p, comm=%p, id=%ld, type=%s, wc.wr_id=%ld, wc.status=%s(%d), wc.opcode=%s(%d), slot=%ld).", __func__, request, request->base, request->id, ncclIbReqTypeStr[request->type], wc->wr_id, ibvWcStatusStr(wc->status), wc->status, ibvWcOpcodeStr(wc->opcode), wc->opcode, slot);
     return res;
   }
 
