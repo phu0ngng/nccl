@@ -959,16 +959,19 @@ class Communicator:
             - devices (int | Sequence[int] | None): Specifies which devices to initialize:
 
               - ``None`` (default): Initialize all visible CUDA devices
-              - ``int``: Number of devices to use (creates communicators for devices [0, 1, ..., devices-1])
+              - ``int``: Number of devices to use (creates communicators for devices ``[0, 1, ..., devices-1]``)
               - ``Sequence[int]``: Explicit sequence of device IDs
-              - ``[]``: Empty sequence returns empty list (no communicators created)
+
+              If the resulting device list is empty (e.g., ``devices=0``, empty sequence,
+              or no visible devices), returns an empty list without calling into NCCL.
 
         Returns:
             ``list[Communicator]``: List of initialized communicators, one per device. Each communicator
             has its rank equal to its index in the list (rank i uses device devices[i] or device i).
 
         Raises:
-            - ``ValueError``: If devices is not a valid type or contains invalid values.
+            - ``TypeError``: If devices is not an int, sequence of ints, or None, or if sequence elements are not integers.
+            - ``NCCLError``: If device IDs are invalid (raised by the NCCL C API).
 
         Notes:
             - This is a blocking call that completes when all communicators are initialized.
@@ -983,48 +986,27 @@ class Communicator:
         """
         # Parse devices parameter
         if devices is None:
-            # Initialize all visible CUDA devices
-            ndev = system.get_num_devices()
-            devlist = list(range(ndev))
+            devlist = list(range(system.get_num_devices()))
         elif isinstance(devices, int):
-            if devices < 0:
-                raise ValueError(f"devices must be a non-negative integer, got {devices}")
-            if devices == 0:
-                return []
-            ndev = devices
-            devlist = list(range(ndev))
-        elif isinstance(devices, ABCSequence) and not isinstance(devices, str):
-            # Accept any sequence except strings (which are sequences but not valid here)
+            devlist = list(range(devices))
+        elif isinstance(devices, ABCSequence):
             devlist = list(devices)
-            if len(devlist) == 0:
-                # Empty sequence returns empty list
-                return []
-            # Validate all elements are non-negative integers
-            if not all(isinstance(d, int) and d >= 0 for d in devlist):
-                raise ValueError(
-                    "All elements in devices sequence must be non-negative integers"
-                )
-            ndev = len(devlist)
         else:
-            raise ValueError(
+            raise TypeError(
                 f"devices must be an integer, sequence of integers, or None, got {type(devices).__name__}"
             )
+
+        if not devlist:
+            return []
+
+        ndev = len(devlist)
 
         # Call NCCL binding to initialize all communicators
         # Note: ncclCommInitAll preserves the current device internally
         # The binding returns a Cython array containing communicator pointers
         comm_array = _nccl_bindings.comm_init_all(ndev, devlist)
 
-        # Create Communicator objects from pointers
-        # Note: if comm_init_all returned without exception, all pointers are valid
-        communicators = []
-        for i, comm_ptr in enumerate(comm_array):
-            comm = cls(int(comm_ptr))
-            comm._nranks = ndev
-            comm._rank = i
-            comm._device = Device(devlist[i])
-            communicators.append(comm)
-        return communicators
+        return [cls(int(comm_ptr)) for comm_ptr in comm_array]
 
     # --- Communicator APIs ---
     def split(self, color: int, key: int, config: NCCLConfig | None = None) -> Communicator:

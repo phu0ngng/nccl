@@ -687,23 +687,25 @@ def test_init_all_allreduce():
 @requires_min_devices(1)
 def test_init_all_validation():
     """Test input validation for init_all."""
-    # Test invalid devices values (int) - negative integers
-    with pytest.raises(ValueError, match="devices must be a non-negative integer"):
-        nccl.Communicator.init_all(-1)
+    # Negative int produces empty list (range(-1) is empty)
+    comms = nccl.Communicator.init_all(-1)
+    assert comms == []
 
-    # Test invalid type
-    with pytest.raises(ValueError, match="devices must be an integer, sequence"):
+    # Invalid type raises TypeError
+    with pytest.raises(TypeError, match="devices must be an integer, sequence"):
+        nccl.Communicator.init_all(1.5)
+
+    # String is a sequence of characters, rejected by Cython layer
+    with pytest.raises(TypeError, match="an integer is required"):
         nccl.Communicator.init_all("invalid")
 
-    # Test invalid sequence elements
-    with pytest.raises(ValueError, match="must be non-negative integers"):
+    # Invalid device IDs are rejected by the NCCL C API
+    with pytest.raises(nccl_bindings.NCCLError, match="InvalidArgument"):
         nccl.Communicator.init_all([0, -1, 2])
 
-    with pytest.raises(ValueError, match="must be non-negative integers"):
+    # Non-integer sequence elements are rejected by Cython layer
+    with pytest.raises(TypeError, match="an integer is required"):
         nccl.Communicator.init_all([0, "1", 2])
-
-    with pytest.raises(ValueError, match="must be non-negative integers"):
-        nccl.Communicator.init_all([0, 1.5, 2])
 
 
 @requires_min_devices(2)
