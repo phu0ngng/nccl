@@ -73,6 +73,8 @@ cdef void* __ncclCommAbort = NULL
 cdef void* __ncclCommRevoke = NULL
 cdef void* __ncclCommSplit = NULL
 cdef void* __ncclCommShrink = NULL
+cdef void* __ncclCommGetUniqueId = NULL
+cdef void* __ncclCommGrow = NULL
 cdef void* __ncclCommInitRankScalable = NULL
 cdef void* __ncclGetErrorString = NULL
 cdef void* __ncclGetLastError = NULL
@@ -223,6 +225,20 @@ cdef int _check_or_init_nccl() except -1 nogil:
             if handle == NULL:
                 handle = load_library()
             __ncclCommShrink = dlsym(handle, 'ncclCommShrink')
+
+        global __ncclCommGetUniqueId
+        __ncclCommGetUniqueId = dlsym(RTLD_DEFAULT, 'ncclCommGetUniqueId')
+        if __ncclCommGetUniqueId == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommGetUniqueId = dlsym(handle, 'ncclCommGetUniqueId')
+
+        global __ncclCommGrow
+        __ncclCommGrow = dlsym(RTLD_DEFAULT, 'ncclCommGrow')
+        if __ncclCommGrow == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommGrow = dlsym(handle, 'ncclCommGrow')
 
         global __ncclCommInitRankScalable
         __ncclCommInitRankScalable = dlsym(RTLD_DEFAULT, 'ncclCommInitRankScalable')
@@ -557,6 +573,12 @@ cpdef dict _inspect_function_pointers():
     global __ncclCommShrink
     data["__ncclCommShrink"] = <intptr_t>__ncclCommShrink
 
+    global __ncclCommGetUniqueId
+    data["__ncclCommGetUniqueId"] = <intptr_t>__ncclCommGetUniqueId
+
+    global __ncclCommGrow
+    data["__ncclCommGrow"] = <intptr_t>__ncclCommGrow
+
     global __ncclCommInitRankScalable
     data["__ncclCommInitRankScalable"] = <intptr_t>__ncclCommInitRankScalable
 
@@ -820,6 +842,26 @@ cdef ncclResult_t _ncclCommShrink(ncclComm_t comm, int* excludeRanksList, int ex
             raise FunctionNotFoundError("function ncclCommShrink is not found")
     return (<ncclResult_t (*)(ncclComm_t, int*, int, ncclComm_t*, ncclConfig_t*, int) noexcept nogil>__ncclCommShrink)(
         comm, excludeRanksList, excludeRanksCount, newcomm, config, shrinkFlags)
+
+
+cdef ncclResult_t _ncclCommGetUniqueId(ncclComm_t comm, ncclUniqueId* uniqueId) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclCommGetUniqueId
+    _check_or_init_nccl()
+    if __ncclCommGetUniqueId == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclCommGetUniqueId is not found")
+    return (<ncclResult_t (*)(ncclComm_t, ncclUniqueId*) noexcept nogil>__ncclCommGetUniqueId)(
+        comm, uniqueId)
+
+
+cdef ncclResult_t _ncclCommGrow(ncclComm_t comm, int nRanks, const ncclUniqueId* uniqueId, int rank, ncclComm_t* newcomm, ncclConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclCommGrow
+    _check_or_init_nccl()
+    if __ncclCommGrow == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclCommGrow is not found")
+    return (<ncclResult_t (*)(ncclComm_t, int, const ncclUniqueId*, int, ncclComm_t*, ncclConfig_t*) noexcept nogil>__ncclCommGrow)(
+        comm, nRanks, uniqueId, rank, newcomm, config)
 
 
 cdef ncclResult_t _ncclCommInitRankScalable(ncclComm_t* newcomm, int nranks, int myrank, int nId, ncclUniqueId* commIds, ncclConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:

@@ -52,6 +52,8 @@ cpdef comm_abort(intptr_t comm)
 cpdef comm_revoke(intptr_t comm, int revoke_flags)
 cpdef intptr_t comm_split(intptr_t comm, int color, int key, intptr_t config) except? 0
 cpdef intptr_t comm_shrink(intptr_t comm, exclude_ranks_list, int exclude_ranks_count, intptr_t config, int shrink_flags) except? 0
+cpdef comm_get_unique_id(intptr_t comm, intptr_t unique_id)
+cpdef intptr_t comm_grow(intptr_t comm, int n_ranks, intptr_t unique_id, int rank, intptr_t config) except? 0
 cpdef intptr_t comm_init_rank_scalable(int nranks, int myrank, int n_id, comm_ids, intptr_t config) except? 0
 cpdef str get_error_string(int result)
 cpdef str get_last_error(intptr_t comm)

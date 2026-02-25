@@ -48,6 +48,8 @@
             },
             'ncclGetUniqueId': {
             },
+            'ncclCommGetUniqueId': {
+            },
 
             # Init
             'ncclCommInitRankConfig': {
@@ -87,13 +89,17 @@
             'ncclCommResume': {
             },
 
-            # Split / shrink
+            # Split / shrink / grow
             'ncclCommSplit': {
                 "return": "newcomm",
                 "except?": 0,
             },
             'ncclCommShrink': {
                 "pyargs": {"excludeRanksList": "SEQ",},
+                "return": "newcomm",
+                "except?": 0,
+            },
+            'ncclCommGrow': {
                 "return": "newcomm",
                 "except?": 0,
             },

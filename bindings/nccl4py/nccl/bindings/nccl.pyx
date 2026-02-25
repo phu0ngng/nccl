@@ -3140,6 +3140,20 @@ cpdef intptr_t comm_shrink(intptr_t comm, exclude_ranks_list, int exclude_ranks_
     return <intptr_t>newcomm
 
 
+cpdef comm_get_unique_id(intptr_t comm, intptr_t unique_id):
+    with nogil:
+        __status__ = ncclCommGetUniqueId(<Comm>comm, <ncclUniqueId*>unique_id)
+    check_status(__status__)
+
+
+cpdef intptr_t comm_grow(intptr_t comm, int n_ranks, intptr_t unique_id, int rank, intptr_t config) except? 0:
+    cdef Comm newcomm
+    with nogil:
+        __status__ = ncclCommGrow(<Comm>comm, n_ranks, <const ncclUniqueId*>unique_id, rank, &newcomm, <ncclConfig_t*>config)
+    check_status(__status__)
+    return <intptr_t>newcomm
+
+
 cpdef intptr_t comm_init_rank_scalable(int nranks, int myrank, int n_id, comm_ids, intptr_t config) except? 0:
     cdef void* _comm_ids_ = get_buffer_pointer(comm_ids, -1, readonly=False)
     cdef Comm newcomm

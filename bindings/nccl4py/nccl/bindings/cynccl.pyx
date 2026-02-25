@@ -63,6 +63,14 @@ cdef ncclResult_t ncclCommShrink(ncclComm_t comm, int* excludeRanksList, int exc
     return _nccl._ncclCommShrink(comm, excludeRanksList, excludeRanksCount, newcomm, config, shrinkFlags)
 
 
+cdef ncclResult_t ncclCommGetUniqueId(ncclComm_t comm, ncclUniqueId* uniqueId) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    return _nccl._ncclCommGetUniqueId(comm, uniqueId)
+
+
+cdef ncclResult_t ncclCommGrow(ncclComm_t comm, int nRanks, const ncclUniqueId* uniqueId, int rank, ncclComm_t* newcomm, ncclConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    return _nccl._ncclCommGrow(comm, nRanks, uniqueId, rank, newcomm, config)
+
+
 cdef ncclResult_t ncclCommInitRankScalable(ncclComm_t* newcomm, int nranks, int myrank, int nId, ncclUniqueId* commIds, ncclConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     return _nccl._ncclCommInitRankScalable(newcomm, nranks, myrank, nId, commIds, config)
 
