@@ -643,16 +643,6 @@ NCCL_DEVICE_INLINE EltPack<uint64_t, 2> load<EltPack<uint64_t, 2>, true, OpSum<u
 
 #endif // __CUDA_ARCH__ >= 900
 
-// Store helper that selects multimem vs LSA at compile time.
-template<typename Pack, bool UseMultimem>
-NCCL_DEVICE_INLINE void store(Pack* addr, const Pack& val) {
-  if NCCL_IF_CONSTEXPR (UseMultimem) {
-    multimemStore(addr, val);
-  } else {
-    *addr = val;
-  }
-}
-
 // Multimem Store
 // Typeless: stores bytes directly based on pack byte size only
 
@@ -743,6 +733,18 @@ NCCL_DEVICE_INLINE void multimemStore(void* addr, const Pack& pack) {
     converter.eltPack = pack;
     multimem_st_global<Pack::Bytes>(multimem_addr, converter.bytePack);
   #endif
+}
+
+// Store helper that selects multimem vs LSA at compile time.
+// Use fully qualified name so we always use this namespace's multimemStore even when
+// the TU defines a global multimemStore (e.g. test/perf/multimem_ops.h).
+template<typename Pack, bool UseMultimem>
+NCCL_DEVICE_INLINE void store(Pack* addr, const Pack& val) {
+  if NCCL_IF_CONSTEXPR (UseMultimem) {
+    nccl::utility::multimemStore(addr, val);
+  } else {
+    *addr = val;
+  }
 }
 
 } // namespace utility
