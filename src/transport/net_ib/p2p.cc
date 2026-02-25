@@ -577,7 +577,7 @@ static inline ncclResult_t ncclIbRequestRetrieveFromCompletion(struct ncclIbNetC
     struct ncclIbSendComm* sendComm = (struct ncclIbSendComm*)base;
     // On the sender side, the lower 8 bits of wr_id are used to retrieve the
     // request, since in multi-send case, multiple IDs are encoded in the same
-    // wr_id., 
+    // wr_id.,
     *req = sendComm->sendReqs[wc->wr_id & 0xff][0];
   }
   TRACE(NCCL_NET, "NET/IB: %s: Retrieved a %s request (req=%p, comm=%p, id=%ld, type=%s, wc.wr_id=%ld, wc.opcode=%s, wc.imm_data=%d, wc.byte_len=%d, wc.qp_num=%u)", __func__, base->isSend ? "send" : "recv", *req, (*req)->base, (*req)->id, ncclIbReqTypeStr[(*req)->type], wc->wr_id, ibvWcOpcodeStr(wc->opcode), be32toh(wc->imm_data), wc->byte_len, wc->qp_num);

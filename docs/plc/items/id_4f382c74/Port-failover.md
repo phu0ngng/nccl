@@ -313,7 +313,7 @@ In order to handle stale CQEs, the sender and receiver are required to change th
 Before port-failover, the `wr_id` was assigned (by both sender and receiver) with the index of the `ncclIbRequest` in the array of requests that each side maintains. Once port-failover is enabled and an error is detected, continueing to assign `wr_id` with the index of the request in the array is not possible, because if the request is released, the same "index" can be reused for a different request, and then when a stale CQE arrives with the `wr_id` of that index, the side will not be able to differentiate whether this CQE belongs to the new request or it's a stale CQE that belongs to the previous request - potentially leading to triggering a replay for a new request does did not experience any failure.
 
 > **Note**
-> 
+>
 > Flush requests on the receiver side are not affected by the problem of stale CQEs because flush requests do not have a "replay" protocol and flush requests are completed only when all CQEs of that request are polled so there could not be stale CQEs for flush requests.
 
 Assigning the "slot" to the `wr_id` instead of the request's index in the array, reduces the probability of getting a new request that would reuse the slot and encounter a stale CQE. The probability is reduced because the slot is an incrementing counter that wraps around `NET_IB_MAX_REQUESTS` while the request's index depends on how many outstanding parallel requests are there in the plugin. If the number of outstanding parallel requests is low, the probability of reusing the same index is high, while the probability of reusing the same slot is low.
@@ -476,9 +476,9 @@ When such stale CQE with error is polled, the plugin will try to match this CQE 
 
 An additional correctness protection mechanism was implemented to prevent error in case the CQE matches for some reason an old request. To handle this case, in which the CQE again needs to be ignored, the plugin uses a "generation" mechanism to determine whether the request is old.
 
-> **Note** 
+> **Note**
 >
-> The "generation" mechanism is based on the fact that every request that is managed by the resiliency module is assigned a generation field, implemented using an ID. This ID corresponds to the original request that encountered the failure. 
+> The "generation" mechanism is based on the fact that every request that is managed by the resiliency module is assigned a generation field, implemented using an ID. This ID corresponds to the original request that encountered the failure.
 
 Note, if the request is of the same generation - it either triggers a replay protocol (if it's the first CQE for this request) or it's ignored if the replay protocol is in progress.
 
