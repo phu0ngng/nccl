@@ -1023,9 +1023,9 @@ ncclResult_t ncclDevrCommCreateInternal(
       comm->sharedRes->ginState.ctxFirstAvailable = std::max(comm->sharedRes->ginState.ctxFirstAvailable, nGinContexts);
       outDevComm->ginContextBase = 0;
     }
-    INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d %s contexts (base %d), %d signals, %d counters",
+    INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d %s contexts (base %d), %d signals (base %d), %d counters (base %d)",
          nGinConnections, nGinContexts, (ginExclusiveContexts ? "exclusive" : "shared"),
-         outDevComm->ginContextBase, ginSignalTotal, ginCounterTotal);
+         outDevComm->ginContextBase, ginSignalTotal, outDevComm->ginSignalBase, ginCounterTotal, outDevComm->ginCounterBase);
 
     for (int connectionId=0; connectionId < nGinConnections; connectionId++) {
       outDevComm->ginNetDeviceTypes[connectionId] = (int)comm->sharedRes->ginState.ginDevHandles[connectionId]->netDeviceType;

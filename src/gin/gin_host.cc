@@ -206,15 +206,18 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
     }
   }
 
+  // The upper limits below are connected to the sizes of signalId and counterId
+  // in ncclGinProxyQword_t in gin_proxy_device_host_common.h.  We need to keep
+  // them in sync.
   ginState->signalSpaceSize = ncclParamGinSignalPoolSize();
-  if (ginState->signalSpaceSize < 0 || (1 << 30) <= ginState->signalSpaceSize) {
-    WARN("NCCL_GIN_SIGNAL_POOL_SIZE has invalid value.");
-    ginState->signalSpaceSize = 64 << 10;
+  if (ginState->signalSpaceSize < 0 || (1 << 24) <= ginState->signalSpaceSize) {
+    INFO(NCCL_INIT|NCCL_ENV, "NCCL_GIN_SIGNAL_POOL_SIZE has an invalid value");
+    ginState->signalSpaceSize = 512 << 10;
   }
   ginState->counterSpaceSize = ncclParamGinCounterPoolSize();
-  if (ginState->counterSpaceSize < 0 || (1 << 30) <= ginState->counterSpaceSize) {
-    WARN("NCCL_GIN_COUNTER_POOL_SIZE has invalid value.");
-    ginState->counterSpaceSize = 64 << 10;
+  if (ginState->counterSpaceSize < 0 || (1 << 23) <= ginState->counterSpaceSize) {
+    INFO(NCCL_INIT|NCCL_ENV, "NCCL_GIN_COUNTER_POOL_SIZE has an invalid value");
+    ginState->counterSpaceSize = 512 << 10;
   }
 
   for (int n = 0; n < ginState->ginCommCount; n++) {

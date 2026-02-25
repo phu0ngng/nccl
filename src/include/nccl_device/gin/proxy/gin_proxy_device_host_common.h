@@ -83,13 +83,14 @@ typedef union {
   } __attribute__((packed)) dstHandle;
   struct {
     uint8_t flag : 1;
-    uint8_t resv1 : 7;
+    // We need to keep the size of counterId and signalId in sync with the
+    // NCCL_GIN_COUNTER_POOL_SIZE / NCCL_GIN_SIGNAL_POOL_SIZE upper limits
+    // in gin_host.cc.
     // must be non-zero if WITH_COUNTER is set
-    uint16_t counterId;
+    uint32_t counterId : 23;
     // must be non-zero if WITH_SIGNAL_INC, WITH_SIGNAL_ADD, or WITH_SIGNAL_SET is set
-    uint16_t signalId;
+    uint32_t signalId : 24;
     uint16_t signalValLow;
-    uint8_t resv2;
   } __attribute__((packed)) completion;
   struct {
     uint8_t flag : 1;
