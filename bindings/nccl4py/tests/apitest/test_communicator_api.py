@@ -695,8 +695,8 @@ def test_init_all_validation():
     with pytest.raises(TypeError, match="devices must be an integer, sequence"):
         nccl.Communicator.init_all(1.5)
 
-    # String is a sequence of characters, rejected by Cython layer
-    with pytest.raises(TypeError, match="an integer is required"):
+    # String is not a valid devices type
+    with pytest.raises(TypeError, match="devices must be an integer, sequence"):
         nccl.Communicator.init_all("invalid")
 
     # Invalid device IDs are rejected by the NCCL C API

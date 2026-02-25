@@ -12,8 +12,7 @@ with support for buffer registration, custom reduction operators, and resource m
 """
 
 from __future__ import annotations
-from collections.abc import Sequence as ABCSequence
-from typing import Sequence, Any
+from typing import Any, Sequence
 
 import numpy as _np
 
@@ -928,7 +927,7 @@ class Communicator:
             comm_ptr = _nccl_bindings.comm_init_rank_scalable(
                 int(nranks), int(rank), 1, unique_id.ptr, cfg_ptr
             )
-        elif isinstance(unique_id, ABCSequence) and all(
+        elif isinstance(unique_id, (list, tuple)) and all(
             isinstance(uid, UniqueId) for uid in unique_id
         ):
             arr = _np.empty(len(unique_id), dtype=_nccl_bindings.unique_id_dtype)
@@ -989,7 +988,7 @@ class Communicator:
             devlist = list(range(system.get_num_devices()))
         elif isinstance(devices, int):
             devlist = list(range(devices))
-        elif isinstance(devices, ABCSequence):
+        elif isinstance(devices, (list, tuple, range)):
             devlist = list(devices)
         else:
             raise TypeError(
