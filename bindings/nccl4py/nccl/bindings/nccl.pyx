@@ -3085,12 +3085,17 @@ cpdef intptr_t comm_init_rank(int nranks, comm_id, int rank) except? 0:
     return <intptr_t>comm
 
 
-cpdef comm_init_all(intptr_t comm, int ndev, devlist):
+cpdef object comm_init_all(int ndev, devlist):
     cdef nullable_unique_ptr[ vector[int] ] _devlist_
     get_resource_ptr[int](_devlist_, devlist, <int*>NULL)
+    if ndev == 0:
+        return view.array(shape=(1,), itemsize=sizeof(intptr_t), format="q", mode="c")[:0]
+    cdef view.array comm = view.array(shape=(ndev,), itemsize=sizeof(intptr_t), format="q", mode="c")
+    cdef intptr_t *comm_ptr = <intptr_t *>(comm.data)
     with nogil:
-        __status__ = ncclCommInitAll(<Comm*>comm, ndev, <const int*>(_devlist_.data()))
+        __status__ = ncclCommInitAll(<ncclComm_t*>comm_ptr, ndev, <const int*>(_devlist_.data()))
     check_status(__status__)
+    return comm
 
 
 cpdef comm_finalize(intptr_t comm):
