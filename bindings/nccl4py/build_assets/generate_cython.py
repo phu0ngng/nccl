@@ -30,6 +30,9 @@ from pathlib import Path
 CYBIND_COMMIT = "d65bc5c11dadd25f98ad7d590ef227ab1c05a651"
 CYBIND_SSH_URL = "ssh://git@gitlab-master.nvidia.com:12051/leof/cybind.git"
 
+# Script directory for resolving default paths
+SCRIPT_DIR = Path(__file__).resolve().parent
+
 # Global logger - will be configured in main()
 logger = logging.getLogger(__name__)
 
