@@ -322,6 +322,37 @@ def test_buffer_device_validation(monkeypatch):
     assert handle is not None
 
 
+# --- init_all Argument Parsing Tests ---
+
+def test_init_all_empty_list():
+    """Test that init_all([]) returns empty list without calling into NCCL."""
+    comms = Communicator.init_all([])
+    assert isinstance(comms, list)
+    assert len(comms) == 0
+
+
+def test_init_all_zero_devices():
+    """Test that init_all(0) returns empty list (range(0) is empty)."""
+    comms = Communicator.init_all(0)
+    assert isinstance(comms, list)
+    assert len(comms) == 0
+
+
+def test_init_all_negative_int():
+    """Test that init_all(-1) returns empty list (range(-1) is empty)."""
+    comms = Communicator.init_all(-1)
+    assert comms == []
+
+
+def test_init_all_rejects_invalid_type():
+    """Test that init_all raises TypeError for non-int/sequence/None."""
+    with pytest.raises(TypeError, match="devices must be an integer, sequence"):
+        Communicator.init_all(1.5)
+
+    with pytest.raises(TypeError, match="devices must be an integer, sequence"):
+        Communicator.init_all("invalid")
+
+
 # --- Struct Layout Validation Tests ---
 
 def test_nccl_config_struct_layout():

@@ -598,7 +598,7 @@ def test_init_all_basic():
 @requires_min_devices(4)
 def test_init_all_with_devlist():
     """Test init_all with custom device list."""
-    devlist = [0, 2, 1, 3]  # Non-sequential order
+    devlist = [0, 1, 3]  # Subset of devices (skips device 2)
     comms = None
 
     try:
@@ -631,7 +631,6 @@ def test_init_all_with_devlist():
 def test_init_all_allreduce():
     """Test that communicators from init_all can perform collective operations."""
     comms = None
-    streams = []
 
     try:
         # Create communicators for 2 devices
@@ -686,19 +685,7 @@ def test_init_all_allreduce():
 
 @requires_min_devices(1)
 def test_init_all_validation():
-    """Test input validation for init_all."""
-    # Negative int produces empty list (range(-1) is empty)
-    comms = nccl.Communicator.init_all(-1)
-    assert comms == []
-
-    # Invalid type raises TypeError
-    with pytest.raises(TypeError, match="devices must be an integer, sequence"):
-        nccl.Communicator.init_all(1.5)
-
-    # String is not a valid devices type
-    with pytest.raises(TypeError, match="devices must be an integer, sequence"):
-        nccl.Communicator.init_all("invalid")
-
+    """Test that invalid device IDs and non-integer elements are rejected by NCCL/Cython."""
     # Invalid device IDs are rejected by the NCCL C API
     with pytest.raises(nccl_bindings.NCCLError, match="InvalidArgument"):
         nccl.Communicator.init_all([0, -1, 2])
@@ -762,14 +749,14 @@ def test_init_all_single_device():
 
 @requires_min_devices(1)
 def test_init_all_none_uses_all_gpus():
-    """Test that init_all(None) initializes all visible GPUs."""
+    """Test that init_all(None) and init_all() both initialize all visible GPUs."""
     from cuda.core import system
 
     expected_count = system.get_num_devices()
     comms = None
 
     try:
-        # None should initialize all visible GPUs
+        # Explicit None
         comms = nccl.Communicator.init_all(None)
 
         assert len(comms) == expected_count, f"Should create {expected_count} communicators, got {len(comms)}"
@@ -780,7 +767,6 @@ def test_init_all_none_uses_all_gpus():
             assert comm.device.device_id == i, f"Communicator {i} should use device {i}"
 
     finally:
-        # Clean up
         if comms is not None:
             for comm in comms:
                 try:
@@ -788,46 +774,21 @@ def test_init_all_none_uses_all_gpus():
                 except Exception:
                     pass
 
-
-@requires_min_devices(1)
-def test_init_all_empty_list():
-    """Test that init_all([]) returns empty list."""
-    comms = nccl.Communicator.init_all([])
-
-    assert isinstance(comms, list), "Should return a list"
-    assert len(comms) == 0, "Should return empty list for empty input"
-
-
-def test_init_all_zero_devices():
-    """Test that init_all(0) returns empty list (consistent with empty sequence behavior)."""
-    comms = nccl.Communicator.init_all(0)
-
-    assert isinstance(comms, list), "Should return a list"
-    assert len(comms) == 0, "Should return empty list when devices=0"
-
-
-@requires_min_devices(2)
-def test_init_all_default_none():
-    """Test that init_all() with no arguments uses default None behavior."""
-    from cuda.core import system
-
-    expected_count = system.get_num_devices()
+    # Default argument (no args) should behave the same
     comms = None
-
     try:
-        # Default argument should be None, which initializes all GPUs
         comms = nccl.Communicator.init_all()
-
         assert len(comms) == expected_count, f"Should create {expected_count} communicators"
 
     finally:
-        # Clean up
         if comms is not None:
             for comm in comms:
                 try:
                     comm.destroy()
                 except Exception:
                     pass
+
+
 
 
 @requires_min_devices(4)
