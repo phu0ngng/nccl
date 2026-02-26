@@ -8,7 +8,6 @@
 #ifndef _NCCL_DEVICE_GIN_BARRIER__FUNCS_H_
 #define _NCCL_DEVICE_GIN_BARRIER__FUNCS_H_
 #include "gin_barrier__types.h"
-#include "nccl_device/gin_barrier.h"
 
 #if NCCL_CHECK_CUDACC
 template<typename Coop>
@@ -39,14 +38,8 @@ NCCL_DEVICE_INLINE ncclGinBarrierSession<Coop>::~ncclGinBarrierSession() {
 template<typename Coop>
 NCCL_DEVICE_INLINE void ncclGinBarrierSession<Coop>::sync(Coop, cuda::memory_order ord, ncclGinFenceLevel fence) {
   this->coop.sync();
-
-  int nSignals = this->team.nRanks - 1;
-  if (fence == ncclGinFenceLevel::Release) {
-    nSignals = this->team.nRanks;
-  }
-
   #pragma unroll 1
-  for (int i=this->coop.thread_rank(); i < nSignals; i += this->coop.size()) {
+  for (int i=this->coop.thread_rank(); i < this->team.nRanks-1; i += this->coop.size()) {
     // Use a rotating pattern to avoid hot spots
     int peer = 1 + this->team.rank + i;
     if (this->team.nRanks <= peer) peer -= this->team.nRanks;
