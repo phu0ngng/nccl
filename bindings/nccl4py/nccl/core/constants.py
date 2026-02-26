@@ -18,7 +18,6 @@ __all__ = [
     "NCCL_MAGIC",
     "CTAPolicy",
     "CommShrinkFlag",
-    "CommRevokeFlag",
     "CommSuspendFlag",
     "WindowFlag",
 ]
@@ -66,16 +65,6 @@ class CommShrinkFlag(IntEnum):
     """Shrink the parent communicator."""
     Abort = 0x01
     """First terminate ongoing parent operations, then shrink the parent communicator."""
-
-
-# Communicator revoke flags
-class CommRevokeFlag(IntEnum):
-    """
-    Flags for ncclCommRevoke behavior.
-    """
-
-    Default = 0x00
-    """Reserved for future use; must be 0."""
 
 
 # Communicator suspend flags

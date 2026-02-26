@@ -28,7 +28,6 @@ from nccl.core.constants import (
     NCCL_MAGIC,
     CTAPolicy,
     CommShrinkFlag,
-    CommRevokeFlag,
     CommSuspendFlag,
     WindowFlag,
 )
@@ -1184,7 +1183,7 @@ class Communicator:
 
         _nccl_bindings.comm_finalize(self._comm)
 
-    def revoke(self, flags: CommRevokeFlag = CommRevokeFlag.Default) -> None:
+    def revoke(self) -> None:
         """
         Revoke a communicator.
 
@@ -1196,14 +1195,12 @@ class Communicator:
         Calling ``finalize()`` after ``revoke()`` is invalid. Resource sharing
         via split-share / shrink-share is disabled while revoked.
 
-        Args:
-            flags: Revoke flags. Must be ``CommRevokeFlag.Default`` (0).
-
         See Also:
             :meth:`suspend`, :meth:`resume`
         """
         self._check_valid("revoke")
-        _nccl_bindings.comm_revoke(self._comm, int(flags))
+        # revokeFlags is reserved for future use and must be 0 (NCCL_REVOKE_DEFAULT)
+        _nccl_bindings.comm_revoke(self._comm, 0)
 
     def suspend(self, flags: CommSuspendFlag = CommSuspendFlag.Mem) -> None:
         """

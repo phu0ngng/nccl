@@ -74,7 +74,6 @@ __all__ = [
     "NCCL_SPLIT_NOCOLOR",
     "CTAPolicy",
     "CommShrinkFlag",
-    "CommRevokeFlag",
     "CommSuspendFlag",
     "WindowFlag",
     # Communicator
