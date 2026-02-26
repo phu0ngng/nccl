@@ -14,7 +14,7 @@ void ReduceScattervGetCollByteCount(size_t *sendcount, size_t *recvcount, size_t
     *recvcount = (count/nranks) & -(16/eltSize);
     *sendcount = (*recvcount)*nranks;
     *sendInplaceOffset = 0;
-    *recvInplaceOffset = count/nranks;
+    *recvInplaceOffset = *recvcount;
     *paramcount = *recvcount;
 }
 
