@@ -947,6 +947,46 @@ def test_dev_comm_access_after_close(nccl_comm):
         _ = dev_comm.ptr
 
 
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi
+def test_suspend_resume(nccl_comm):
+    """Test suspend and resume round-trip preserves communicator state."""
+    nranks_before = nccl_comm.nranks
+    rank_before = nccl_comm.rank
+
+    nccl_comm.suspend(nccl.CommSuspendFlag.Mem)
+    nccl_comm.resume()
+
+    assert nccl_comm.nranks == nranks_before
+    assert nccl_comm.rank == rank_before
+
+
+@requires_nccl_version("2.29.2")
+@pytest.mark.mpi
+def test_revoke_then_destroy(uid_shared, rank_info):
+    """Test revoke transitions async state to Success, then destroy succeeds."""
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    comm = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared,
+    )
+    comm.revoke()
+
+    # Async state must eventually reach Success (quiescent)
+    while True:
+        state = comm.get_async_error()
+        if state == nccl_bindings.Result.Success:
+            break
+        assert state == nccl_bindings.Result.InProgress
+
+    assert comm.is_valid  # comm still exists before destroy
+    comm.destroy()
+    assert not comm.is_valid
+
+
 @requires_nccl_version("2.29.4")
 @pytest.mark.mpi
 def test_get_mem_stat_all_stats(nccl_comm):
