@@ -205,6 +205,7 @@ class RegisteredWindowHandle(CommResource):
     Attributes:
         handle (int): Window handle for NCCL operations.
         size (int): Size of registered window in bytes.
+        user_ptr (int): Original user buffer pointer registered with this window.
         is_valid (bool): Whether the window registration is still valid.
 
     Notes:
@@ -288,6 +289,20 @@ class RegisteredWindowHandle(CommResource):
             ``int``: Window size in bytes.
         """
         return self._size
+
+    @property
+    def user_ptr(self) -> int:
+        """
+        Original user buffer pointer registered with this window.
+
+        Returns:
+            ``int``: The user buffer pointer.
+
+        Raises:
+            - ``RuntimeError``: If window has been deregistered.
+        """
+        self._check_valid()
+        return self._buffer_ptr
 
     def __repr__(self) -> str:
         if not self.is_valid:
