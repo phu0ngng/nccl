@@ -2288,4 +2288,4 @@ class Communicator:
             - ``NcclInvalid``: If communicator is not initialized.
         """
         self._check_valid("get mem stat")
-        return int(_nccl_bindings.comm_mem_stats(self._comm, stat))
+        return _nccl_bindings.comm_mem_stats(self._comm, stat)
