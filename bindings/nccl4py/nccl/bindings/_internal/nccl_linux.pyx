@@ -79,6 +79,7 @@ cdef void* __ncclCommCuDevice = NULL
 cdef void* __ncclCommUserRank = NULL
 cdef void* __ncclCommRegister = NULL
 cdef void* __ncclCommDeregister = NULL
+cdef void* __ncclCommMemStats = NULL
 cdef void* __ncclCommWindowRegister = NULL
 cdef void* __ncclCommWindowDeregister = NULL
 cdef void* __ncclWinGetUserPtr = NULL
@@ -275,6 +276,13 @@ cdef int _check_or_init_nccl() except -1 nogil:
             if handle == NULL:
                 handle = load_library()
             __ncclCommDeregister = dlsym(handle, 'ncclCommDeregister')
+
+        global __ncclCommMemStats
+        __ncclCommMemStats = dlsym(RTLD_DEFAULT, 'ncclCommMemStats')
+        if __ncclCommMemStats == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommMemStats = dlsym(handle, 'ncclCommMemStats')
 
         global __ncclCommWindowRegister
         __ncclCommWindowRegister = dlsym(RTLD_DEFAULT, 'ncclCommWindowRegister')
@@ -527,6 +535,9 @@ cpdef dict _inspect_function_pointers():
 
     global __ncclCommDeregister
     data["__ncclCommDeregister"] = <intptr_t>__ncclCommDeregister
+
+    global __ncclCommMemStats
+    data["__ncclCommMemStats"] = <intptr_t>__ncclCommMemStats
 
     global __ncclCommWindowRegister
     data["__ncclCommWindowRegister"] = <intptr_t>__ncclCommWindowRegister
@@ -826,6 +837,16 @@ cdef ncclResult_t _ncclCommDeregister(const ncclComm_t comm, void* handle) excep
             raise FunctionNotFoundError("function ncclCommDeregister is not found")
     return (<ncclResult_t (*)(const ncclComm_t, void*) noexcept nogil>__ncclCommDeregister)(
         comm, handle)
+
+
+cdef ncclResult_t _ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclCommMemStats
+    _check_or_init_nccl()
+    if __ncclCommMemStats == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclCommMemStats is not found")
+    return (<ncclResult_t (*)(ncclComm_t, ncclCommMemStat_t, uint64_t*) noexcept nogil>__ncclCommMemStats)(
+        comm, stat, value)
 
 
 cdef ncclResult_t _ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:

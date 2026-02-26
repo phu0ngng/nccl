@@ -60,6 +60,7 @@ cpdef int comm_cu_device(intptr_t comm) except? -1
 cpdef int comm_user_rank(intptr_t comm) except? -1
 cpdef intptr_t comm_register(intptr_t comm, intptr_t buff, size_t size) except? 0
 cpdef comm_deregister(intptr_t comm, intptr_t handle)
+cpdef uint64_t comm_mem_stats(intptr_t comm, int stat) except? -1
 cpdef intptr_t comm_window_register(intptr_t comm, intptr_t buff, size_t size, int win_flags) except? 0
 cpdef comm_window_deregister(intptr_t comm, intptr_t win)
 cpdef intptr_t win_get_user_ptr(intptr_t comm, intptr_t win) except? 0

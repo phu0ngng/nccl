@@ -95,6 +95,10 @@ cdef ncclResult_t ncclCommDeregister(const ncclComm_t comm, void* handle) except
     return _nccl._ncclCommDeregister(comm, handle)
 
 
+cdef ncclResult_t ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    return _nccl._ncclCommMemStats(comm, stat, value)
+
+
 cdef ncclResult_t ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     return _nccl._ncclCommWindowRegister(comm, buff, size, win, winFlags)
 

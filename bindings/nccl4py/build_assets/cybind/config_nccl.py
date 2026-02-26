@@ -116,6 +116,10 @@
                 "return": "rank",
                 "except?": -1,
             },
+            'ncclCommMemStats': {
+                "return": "value",
+                "except?": -1,
+            },
 
             # Registration
             'ncclCommRegister': {

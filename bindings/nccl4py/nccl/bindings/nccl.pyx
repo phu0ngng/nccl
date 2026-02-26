@@ -3196,6 +3196,14 @@ cpdef comm_deregister(intptr_t comm, intptr_t handle):
     check_status(__status__)
 
 
+cpdef uint64_t comm_mem_stats(intptr_t comm, int stat) except? -1:
+    cdef uint64_t value
+    with nogil:
+        __status__ = ncclCommMemStats(<Comm>comm, <_CommMemStat>stat, &value)
+    check_status(__status__)
+    return value
+
+
 cpdef intptr_t comm_window_register(intptr_t comm, intptr_t buff, size_t size, int win_flags) except? 0:
     cdef Window win
     with nogil:
