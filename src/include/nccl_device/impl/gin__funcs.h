@@ -221,7 +221,7 @@ NCCL_DEVICE_INLINE constexpr ncclGinSignal_t ncclGin_getCounterId(ncclGin const&
 ////////////////////////////////////////////////////////////////////////////////
 
 #if NCCL_CHECK_CUDACC
-NCCL_DEVICE_INLINE void ncclGinPutEx(
+NCCL_DEVICE_INLINE void ncclGinPut_v2(
     ncclGin_C* net,
     ncclTeam team, int peer,
     ncclWindow_t dstWin, size_t dstOffset,
@@ -276,7 +276,7 @@ NCCL_DEVICE_INLINE void ncclGinPut(
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
     cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
   ) {
-  ncclGinPutEx(net, team, peer, dstWin, dstOffset, srcWin, srcOffset, bytes, isSignal, signalId,
+  ncclGinPut_v2(net, team, peer, dstWin, dstOffset, srcWin, srcOffset, bytes, isSignal, signalId,
                signalOp, signalOpArg, isCounter, counterId, coop, isDescriptor, descriptor,
                givenRelease, requiredRelease, ncclGinOptFlagsDefault);
 }
@@ -390,7 +390,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
   coop.sync();
 }
 
-NCCL_DEVICE_INLINE void ncclGinPutValueEx(
+NCCL_DEVICE_INLINE void ncclGinPutValue_v2(
     ncclGin_C* net,
     ncclTeam team, int peer,
     ncclWindow_t dstWin, size_t dstOffset,
@@ -460,7 +460,7 @@ NCCL_DEVICE_INLINE void ncclGinPutValue(
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
     cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
   ) {
-  ncclGinPutValueEx(net, team, peer, dstWin, dstOffset, value, size, isSignal, signalId, signalOp,
+  ncclGinPutValue_v2(net, team, peer, dstWin, dstOffset, value, size, isSignal, signalId, signalOp,
                     signalOpArg, coop, isDescriptor, descriptor, givenRelease, requiredRelease,
                     ncclGinOptFlagsDefault);
 }
@@ -518,7 +518,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::signal(
   coop.sync();
 }
 
-NCCL_DEVICE_INLINE void ncclGinSignalEx(
+NCCL_DEVICE_INLINE void ncclGinSignal_v2(
     ncclGin_C* net,
     ncclTeam team, int peer,
     bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
@@ -561,7 +561,7 @@ NCCL_DEVICE_INLINE void ncclGinSignal(
     bool isDescriptor, ncclGinDescriptorSmem* descriptor,
     cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease
   ) {
-  ncclGinSignalEx(net, team, peer, isSignal, signalId, signalOp, signalOpArg, coop, isDescriptor,
+  ncclGinSignal_v2(net, team, peer, isSignal, signalId, signalOp, signalOpArg, coop, isDescriptor,
                   descriptor, givenRelease, requiredRelease, ncclGinOptFlagsDefault);
 }
 #endif
