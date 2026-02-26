@@ -399,6 +399,31 @@ def test_register_window_api(nccl_comm):
         assert not win.is_valid
 
 
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi
+def test_register_window_user_ptr(nccl_comm):
+    """Test that user_ptr matches the C-level ncclWinGetUserPtr result."""
+
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    buf = nccl.cupy.empty(256, dtype='float32')
+
+    win = nccl_comm.register_window(buf)
+    if win is None:
+        pytest.skip("Window registration not supported")
+
+    # C-level query via the bindings
+    c_ptr = nccl_bindings.win_get_user_ptr(nccl_comm._comm, win._handle)
+
+    assert win.user_ptr == c_ptr
+    assert win.user_ptr == buf.data.ptr
+
+    win.close()
+    with pytest.raises(RuntimeError):
+        _ = win.user_ptr
+
+
 @pytest.mark.mpi(min_size=4)
 @pytest.mark.parametrize("scalar_type", [
     "int", "float", "numpy.ndarray_int", "numpy.ndarray_float", "NcclSupportedBuffer_int", "NcclSupportedBuffer_float"
