@@ -28,6 +28,8 @@ from nccl.core.constants import (
     NCCL_MAGIC,
     CTAPolicy,
     CommShrinkFlag,
+    CommRevokeFlag,
+    CommSuspendFlag,
     WindowFlag,
 )
 from nccl.core.cuda import get_stream_ptr
@@ -1181,6 +1183,57 @@ class Communicator:
             return
 
         _nccl_bindings.comm_finalize(self._comm)
+
+    def revoke(self, flags: CommRevokeFlag = CommRevokeFlag.Default) -> None:
+        """
+        Revoke a communicator.
+
+        Stops all in-flight operations and marks the communicator state as
+        ``ncclInProgress``. The state transitions to ``ncclSuccess`` when the
+        communicator becomes quiescent, after which management operations
+        (``destroy()``, ``split()``, ``shrink()``) can proceed safely.
+
+        Calling ``finalize()`` after ``revoke()`` is invalid. Resource sharing
+        via split-share / shrink-share is disabled while revoked.
+
+        Args:
+            flags: Revoke flags. Must be ``CommRevokeFlag.Default`` (0).
+
+        See Also:
+            :meth:`suspend`, :meth:`resume`
+        """
+        self._check_valid("revoke")
+        _nccl_bindings.comm_revoke(self._comm, int(flags))
+
+    def suspend(self, flags: CommSuspendFlag = CommSuspendFlag.Mem) -> None:
+        """
+        Suspend communicator operations to free resources.
+
+        The communicator cannot be used for communication while suspended.
+        Call :meth:`resume` to restore it.
+
+        Args:
+            flags: Suspend flags controlling what resources to release.
+                ``CommSuspendFlag.Mem`` releases dynamic GPU memory allocations.
+
+        See Also:
+            :meth:`resume`, :meth:`revoke`
+        """
+        self._check_valid("suspend")
+        _nccl_bindings.comm_suspend(self._comm, int(flags))
+
+    def resume(self) -> None:
+        """
+        Resume all previously suspended communicator resources.
+
+        Restores a communicator that was suspended with :meth:`suspend`
+        so that it can be used for communication again.
+
+        See Also:
+            :meth:`suspend`, :meth:`revoke`
+        """
+        self._check_valid("resume")
+        _nccl_bindings.comm_resume(self._comm)
 
     # --- Properties ---
     @property
