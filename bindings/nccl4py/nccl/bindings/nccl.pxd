@@ -62,6 +62,7 @@ cpdef intptr_t comm_register(intptr_t comm, intptr_t buff, size_t size) except? 
 cpdef comm_deregister(intptr_t comm, intptr_t handle)
 cpdef intptr_t comm_window_register(intptr_t comm, intptr_t buff, size_t size, int win_flags) except? 0
 cpdef comm_window_deregister(intptr_t comm, intptr_t win)
+cpdef intptr_t win_get_user_ptr(intptr_t comm, intptr_t win) except? 0
 cpdef int red_op_create_pre_mul_sum(intptr_t scalar, int datatype, int residence, intptr_t comm) except? -1
 cpdef red_op_destroy(int op, intptr_t comm)
 cpdef reduce(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, int root, intptr_t comm, intptr_t stream)

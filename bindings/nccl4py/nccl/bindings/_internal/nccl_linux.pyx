@@ -81,6 +81,7 @@ cdef void* __ncclCommRegister = NULL
 cdef void* __ncclCommDeregister = NULL
 cdef void* __ncclCommWindowRegister = NULL
 cdef void* __ncclCommWindowDeregister = NULL
+cdef void* __ncclWinGetUserPtr = NULL
 cdef void* __ncclRedOpCreatePreMulSum = NULL
 cdef void* __ncclRedOpDestroy = NULL
 cdef void* __ncclReduce = NULL
@@ -288,6 +289,13 @@ cdef int _check_or_init_nccl() except -1 nogil:
             if handle == NULL:
                 handle = load_library()
             __ncclCommWindowDeregister = dlsym(handle, 'ncclCommWindowDeregister')
+
+        global __ncclWinGetUserPtr
+        __ncclWinGetUserPtr = dlsym(RTLD_DEFAULT, 'ncclWinGetUserPtr')
+        if __ncclWinGetUserPtr == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclWinGetUserPtr = dlsym(handle, 'ncclWinGetUserPtr')
 
         global __ncclRedOpCreatePreMulSum
         __ncclRedOpCreatePreMulSum = dlsym(RTLD_DEFAULT, 'ncclRedOpCreatePreMulSum')
@@ -525,6 +533,9 @@ cpdef dict _inspect_function_pointers():
 
     global __ncclCommWindowDeregister
     data["__ncclCommWindowDeregister"] = <intptr_t>__ncclCommWindowDeregister
+
+    global __ncclWinGetUserPtr
+    data["__ncclWinGetUserPtr"] = <intptr_t>__ncclWinGetUserPtr
 
     global __ncclRedOpCreatePreMulSum
     data["__ncclRedOpCreatePreMulSum"] = <intptr_t>__ncclRedOpCreatePreMulSum
@@ -835,6 +846,16 @@ cdef ncclResult_t _ncclCommWindowDeregister(ncclComm_t comm, ncclWindow_t win) e
             raise FunctionNotFoundError("function ncclCommWindowDeregister is not found")
     return (<ncclResult_t (*)(ncclComm_t, ncclWindow_t) noexcept nogil>__ncclCommWindowDeregister)(
         comm, win)
+
+
+cdef ncclResult_t _ncclWinGetUserPtr(ncclComm_t comm, ncclWindow_t win, void** outUserPtr) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclWinGetUserPtr
+    _check_or_init_nccl()
+    if __ncclWinGetUserPtr == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclWinGetUserPtr is not found")
+    return (<ncclResult_t (*)(ncclComm_t, ncclWindow_t, void**) noexcept nogil>__ncclWinGetUserPtr)(
+        comm, win, outUserPtr)
 
 
 cdef ncclResult_t _ncclRedOpCreatePreMulSum(ncclRedOp_t* op, void* scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:

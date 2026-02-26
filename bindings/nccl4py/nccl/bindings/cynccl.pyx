@@ -103,6 +103,10 @@ cdef ncclResult_t ncclCommWindowDeregister(ncclComm_t comm, ncclWindow_t win) ex
     return _nccl._ncclCommWindowDeregister(comm, win)
 
 
+cdef ncclResult_t ncclWinGetUserPtr(ncclComm_t comm, ncclWindow_t win, void** outUserPtr) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    return _nccl._ncclWinGetUserPtr(comm, win, outUserPtr)
+
+
 cdef ncclResult_t ncclRedOpCreatePreMulSum(ncclRedOp_t* op, void* scalar, ncclDataType_t datatype, ncclScalarResidence_t residence, ncclComm_t comm) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     return _nccl._ncclRedOpCreatePreMulSum(op, scalar, datatype, residence, comm)
 

@@ -131,6 +131,15 @@
             },
             'ncclCommWindowDeregister': {
             },
+            # except? is required for C-scalar returns (intptr_t) so Cython
+            # can propagate exceptions from check_status(). 0 is fine even
+            # though ncclWinGetUserPtr legitimately returns NULL on success
+            # (no symmetric support): except? only triggers a PyErr_Occurred()
+            # check, it does not treat the sentinel as an error by itself.
+            'ncclWinGetUserPtr': {
+                "return": "outUserPtr",
+                "except?": 0,
+            },
 
             # RedOp
             'ncclRedOpCreatePreMulSum': {

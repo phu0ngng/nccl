@@ -3210,6 +3210,14 @@ cpdef comm_window_deregister(intptr_t comm, intptr_t win):
     check_status(__status__)
 
 
+cpdef intptr_t win_get_user_ptr(intptr_t comm, intptr_t win) except? 0:
+    cdef void* out_user_ptr
+    with nogil:
+        __status__ = ncclWinGetUserPtr(<Comm>comm, <Window>win, &out_user_ptr)
+    check_status(__status__)
+    return <intptr_t>out_user_ptr
+
+
 cpdef int red_op_create_pre_mul_sum(intptr_t scalar, int datatype, int residence, intptr_t comm) except? -1:
     cdef _RedOp op
     with nogil:
