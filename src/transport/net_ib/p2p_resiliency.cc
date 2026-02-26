@@ -36,6 +36,11 @@ static ncclResult_t ncclIbResiliencyCheckErrorNotFatal(struct ncclIbResiliency* 
       break;
   }
 
+  if (nFailedDevices > 1) {
+    WARN("NET/IB: %s: Fatal error. Detected %d failed devices out of %d devices on the %s communicator (comm=%p). No support for more than a single failed device.", __func__, nFailedDevices, resCtx->ndevs, resCtx->baseComm->isSend ? "send" : "recv", resCtx->baseComm);
+    return ncclRemoteError;
+  }
+
   if ((nFailedDevices < resCtx->ndevs) && !fatalCompletionStatus) {
     INFO(NCCL_NET, "NET/IB: %s: The error is not fatal. Trying to continue...", __func__);
     return ncclSuccess;
