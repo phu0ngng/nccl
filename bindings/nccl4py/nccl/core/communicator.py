@@ -46,6 +46,7 @@ from nccl.core.typing import (
     NcclStreamSpec,
     NcclScalarSpec,
     NcclInvalid,
+    NcclCommMemStat,
 )
 from nccl.core.utils import UniqueId
 
@@ -2273,3 +2274,18 @@ class Communicator:
         """
         self._check_valid("get async error")
         return _nccl_bindings.comm_get_async_error(self._comm)
+
+    def get_mem_stat(self, stat: NcclCommMemStat) -> int:
+        """Query communicator memory statistics.
+
+        Args:
+            stat: The memory statistic to query.
+
+        Returns:
+            int: The memory statistic value (bytes, or 0/1 for GpuMemSuspended).
+
+        Raises:
+            - ``NcclInvalid``: If communicator is not initialized.
+        """
+        self._check_valid("get mem stat")
+        return int(_nccl_bindings.comm_mem_stats(self._comm, stat))

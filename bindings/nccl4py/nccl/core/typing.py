@@ -43,6 +43,7 @@ from nccl.bindings import (
     RedOp,
     GinType as NcclGinType,
     GinConnectionType as NcclGinConnectionType,
+    CommMemStat as NcclCommMemStat,
 )
 
 __all__ = [
@@ -50,6 +51,7 @@ __all__ = [
     "NcclRedOp",
     "NcclGinType",
     "NcclGinConnectionType",
+    "NcclCommMemStat",
     "NcclBufferSpec",
     "NcclScalarSpec",
     "NcclDeviceSpec",

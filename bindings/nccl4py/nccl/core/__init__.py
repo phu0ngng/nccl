@@ -39,6 +39,7 @@ __all__ = [
     "NcclRedOp",
     "NcclGinType",
     "NcclGinConnectionType",
+    "NcclCommMemStat",
     "NcclBufferSpec",
     "NcclScalarSpec",
     "NcclDeviceSpec",
