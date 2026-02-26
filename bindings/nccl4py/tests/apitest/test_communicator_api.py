@@ -677,3 +677,21 @@ def test_dev_comm_access_after_close(nccl_comm):
 
     with pytest.raises(RuntimeError):
         _ = dev_comm.ptr
+
+
+@requires_nccl_version("2.29.4")
+@pytest.mark.mpi
+def test_get_mem_stat_all_stats(nccl_comm):
+    """Test get_mem_stat returns consistent values for all stat variants."""
+    suspend = nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspend)
+    suspended = nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended)
+    persist = nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemPersist)
+    total = nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemTotal)
+
+    assert isinstance(total, int)
+    # After comm init, NCCL must have allocated internal GPU buffers
+    assert total > 0
+    # GpuMemSuspended is a boolean flag: 0 (active) or 1 (suspended)
+    assert suspended in (0, 1)
+    # Total should equal suspend + persist
+    assert total == suspend + persist
