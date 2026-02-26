@@ -98,8 +98,8 @@ __device__ __forceinline__ void buildGfd(ncclGinProxyGfd_t* gfd, ncclGinProxyOp_
   gfd->qword[ncclGinProxyGfdDstHandle].dstHandle.dstHandle = (uint64_t)dstHandle;
 
   gfd->qword[ncclGinProxyGfdCompletion].completion.flag = 1;
-  gfd->qword[ncclGinProxyGfdCompletion].completion.counterId = (uint16_t)counterId;
-  gfd->qword[ncclGinProxyGfdCompletion].completion.signalId = (uint16_t)signalId;
+  gfd->qword[ncclGinProxyGfdCompletion].completion.counterId = counterId;
+  gfd->qword[ncclGinProxyGfdCompletion].completion.signalId = signalId;
 
   // The signal value is split between two qwords, as the signal value is a full 64 bits
   gfd->qword[ncclGinProxyGfdCompletion].completion.signalValLow = (uint16_t)signalVal;

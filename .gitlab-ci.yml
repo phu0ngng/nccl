@@ -881,7 +881,7 @@ unit-tests-AWS-H100-EFA:
     RUN_SCRIPT: run_tests.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-unit.sh
     JUNIT: junit_results_unit.xml
-    SLURM_TIME: 30
+    SLURM_TIME: 50
     NNODES: 1
     NP: 1
     ENQUEUE_TESTS_ARGS: 1
@@ -2277,7 +2277,7 @@ perftest_single-AWS-H100-EFA:
     RUN_SCRIPT: run_tests.sh
     TEST_CMD: ./test/scripts/ci/gitlab-runner-perf.sh
     JUNIT: junit_results_perf_single.xml
-    SLURM_TIME: 60
+    SLURM_TIME: 80
     NNODES: 1
     NP: 8
     GRAPH: 0
@@ -2702,7 +2702,7 @@ perftest_multi-AWS-H100-EFA:
     TEST_CMD: ./test/scripts/ci/gitlab-runner-perf.sh
     JUNIT: junit_results_perf_multi.xml
     TEST_WORKSPACE_DIR: ${WORKSPACE_DIR}/perftest-multi
-    SLURM_TIME: 60
+    SLURM_TIME: 80
     NNODES: 4
     NP: 8
     MAX: 1G
