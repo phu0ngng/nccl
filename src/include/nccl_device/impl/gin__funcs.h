@@ -484,6 +484,7 @@ NCCL_DEVICE_INLINE void ncclGin_BackendMask<beMask>::putValue(
     cuda::thread_scope requiredRelease,
     uint32_t optFlags
   ) const {
+  static_assert(sizeof(T) <= sizeof(uint64_t), "Required: T must fit into 64 bits");
   this->putValue(
     team, peer, dst.window, dst.offset, value, remoteAction, coop, descriptor, givenRelease, requiredRelease, optFlags
   );
