@@ -68,7 +68,7 @@ class CommShrinkFlag(IntEnum):
 
 
 # Communicator suspend flags
-class CommSuspendFlag(IntEnum):
+class CommSuspendFlag(IntFlag):
     """
     Flags for ncclCommSuspend behavior.
     """
