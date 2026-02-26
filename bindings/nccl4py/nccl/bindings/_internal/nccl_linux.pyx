@@ -68,6 +68,7 @@ cdef void* __ncclCommInitAll = NULL
 cdef void* __ncclCommFinalize = NULL
 cdef void* __ncclCommDestroy = NULL
 cdef void* __ncclCommAbort = NULL
+cdef void* __ncclCommRevoke = NULL
 cdef void* __ncclCommSplit = NULL
 cdef void* __ncclCommShrink = NULL
 cdef void* __ncclCommInitRankScalable = NULL
@@ -79,6 +80,8 @@ cdef void* __ncclCommCuDevice = NULL
 cdef void* __ncclCommUserRank = NULL
 cdef void* __ncclCommRegister = NULL
 cdef void* __ncclCommDeregister = NULL
+cdef void* __ncclCommSuspend = NULL
+cdef void* __ncclCommResume = NULL
 cdef void* __ncclCommMemStats = NULL
 cdef void* __ncclCommWindowRegister = NULL
 cdef void* __ncclCommWindowDeregister = NULL
@@ -200,6 +203,13 @@ cdef int _check_or_init_nccl() except -1 nogil:
                 handle = load_library()
             __ncclCommAbort = dlsym(handle, 'ncclCommAbort')
 
+        global __ncclCommRevoke
+        __ncclCommRevoke = dlsym(RTLD_DEFAULT, 'ncclCommRevoke')
+        if __ncclCommRevoke == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommRevoke = dlsym(handle, 'ncclCommRevoke')
+
         global __ncclCommSplit
         __ncclCommSplit = dlsym(RTLD_DEFAULT, 'ncclCommSplit')
         if __ncclCommSplit == NULL:
@@ -277,6 +287,7 @@ cdef int _check_or_init_nccl() except -1 nogil:
                 handle = load_library()
             __ncclCommDeregister = dlsym(handle, 'ncclCommDeregister')
 
+<<<<<<< HEAD
         global __ncclCommMemStats
         __ncclCommMemStats = dlsym(RTLD_DEFAULT, 'ncclCommMemStats')
         if __ncclCommMemStats == NULL:
@@ -284,6 +295,23 @@ cdef int _check_or_init_nccl() except -1 nogil:
                 handle = load_library()
             __ncclCommMemStats = dlsym(handle, 'ncclCommMemStats')
 
+||||||| parent of 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
+=======
+        global __ncclCommSuspend
+        __ncclCommSuspend = dlsym(RTLD_DEFAULT, 'ncclCommSuspend')
+        if __ncclCommSuspend == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommSuspend = dlsym(handle, 'ncclCommSuspend')
+
+        global __ncclCommResume
+        __ncclCommResume = dlsym(RTLD_DEFAULT, 'ncclCommResume')
+        if __ncclCommResume == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommResume = dlsym(handle, 'ncclCommResume')
+
+>>>>>>> 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
         global __ncclCommWindowRegister
         __ncclCommWindowRegister = dlsym(RTLD_DEFAULT, 'ncclCommWindowRegister')
         if __ncclCommWindowRegister == NULL:
@@ -503,6 +531,9 @@ cpdef dict _inspect_function_pointers():
     global __ncclCommAbort
     data["__ncclCommAbort"] = <intptr_t>__ncclCommAbort
 
+    global __ncclCommRevoke
+    data["__ncclCommRevoke"] = <intptr_t>__ncclCommRevoke
+
     global __ncclCommSplit
     data["__ncclCommSplit"] = <intptr_t>__ncclCommSplit
 
@@ -536,9 +567,19 @@ cpdef dict _inspect_function_pointers():
     global __ncclCommDeregister
     data["__ncclCommDeregister"] = <intptr_t>__ncclCommDeregister
 
+<<<<<<< HEAD
     global __ncclCommMemStats
     data["__ncclCommMemStats"] = <intptr_t>__ncclCommMemStats
 
+||||||| parent of 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
+=======
+    global __ncclCommSuspend
+    data["__ncclCommSuspend"] = <intptr_t>__ncclCommSuspend
+
+    global __ncclCommResume
+    data["__ncclCommResume"] = <intptr_t>__ncclCommResume
+
+>>>>>>> 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
     global __ncclCommWindowRegister
     data["__ncclCommWindowRegister"] = <intptr_t>__ncclCommWindowRegister
 
@@ -729,6 +770,16 @@ cdef ncclResult_t _ncclCommAbort(ncclComm_t comm) except?_NCCLRESULT_T_INTERNAL_
         comm)
 
 
+cdef ncclResult_t _ncclCommRevoke(ncclComm_t comm, int revokeFlags) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclCommRevoke
+    _check_or_init_nccl()
+    if __ncclCommRevoke == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclCommRevoke is not found")
+    return (<ncclResult_t (*)(ncclComm_t, int) noexcept nogil>__ncclCommRevoke)(
+        comm, revokeFlags)
+
+
 cdef ncclResult_t _ncclCommSplit(ncclComm_t comm, int color, int key, ncclComm_t* newcomm, ncclConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     global __ncclCommSplit
     _check_or_init_nccl()
@@ -839,6 +890,7 @@ cdef ncclResult_t _ncclCommDeregister(const ncclComm_t comm, void* handle) excep
         comm, handle)
 
 
+<<<<<<< HEAD
 cdef ncclResult_t _ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     global __ncclCommMemStats
     _check_or_init_nccl()
@@ -849,6 +901,29 @@ cdef ncclResult_t _ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uin
         comm, stat, value)
 
 
+||||||| parent of 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
+=======
+cdef ncclResult_t _ncclCommSuspend(ncclComm_t comm, int flags) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclCommSuspend
+    _check_or_init_nccl()
+    if __ncclCommSuspend == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclCommSuspend is not found")
+    return (<ncclResult_t (*)(ncclComm_t, int) noexcept nogil>__ncclCommSuspend)(
+        comm, flags)
+
+
+cdef ncclResult_t _ncclCommResume(ncclComm_t comm) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclCommResume
+    _check_or_init_nccl()
+    if __ncclCommResume == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclCommResume is not found")
+    return (<ncclResult_t (*)(ncclComm_t) noexcept nogil>__ncclCommResume)(
+        comm)
+
+
+>>>>>>> 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
 cdef ncclResult_t _ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     global __ncclCommWindowRegister
     _check_or_init_nccl()

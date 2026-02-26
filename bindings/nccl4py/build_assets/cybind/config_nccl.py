@@ -79,6 +79,14 @@
             'ncclCommAbort': {
             },
 
+            # Revoke / suspend / resume
+            'ncclCommRevoke': {
+            },
+            'ncclCommSuspend': {
+            },
+            'ncclCommResume': {
+            },
+
             # Split / shrink
             'ncclCommSplit': {
                 "return": "newcomm",

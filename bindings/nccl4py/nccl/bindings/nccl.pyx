@@ -3116,6 +3116,12 @@ cpdef comm_abort(intptr_t comm):
     check_status(__status__)
 
 
+cpdef comm_revoke(intptr_t comm, int revoke_flags):
+    with nogil:
+        __status__ = ncclCommRevoke(<Comm>comm, revoke_flags)
+    check_status(__status__)
+
+
 cpdef intptr_t comm_split(intptr_t comm, int color, int key, intptr_t config) except? 0:
     cdef Comm newcomm
     with nogil:
@@ -3198,6 +3204,18 @@ cpdef intptr_t comm_register(intptr_t comm, intptr_t buff, size_t size) except? 
 cpdef comm_deregister(intptr_t comm, intptr_t handle):
     with nogil:
         __status__ = ncclCommDeregister(<const Comm>comm, <void*>handle)
+    check_status(__status__)
+
+
+cpdef comm_suspend(intptr_t comm, int flags):
+    with nogil:
+        __status__ = ncclCommSuspend(<Comm>comm, flags)
+    check_status(__status__)
+
+
+cpdef comm_resume(intptr_t comm):
+    with nogil:
+        __status__ = ncclCommResume(<Comm>comm)
     check_status(__status__)
 
 
