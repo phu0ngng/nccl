@@ -9,7 +9,7 @@ NCCL constants and enums.
 This module centralizes all NCCL constants for easy access and organization.
 """
 
-from enum import IntEnum
+from enum import IntEnum, IntFlag
 
 __all__ = [
     "NCCL_UNDEF_INT",
@@ -38,9 +38,12 @@ NCCL_MAGIC: int = 0xCAFEBEEF
 
 
 # CTA (Cooperative Thread Array) Policy flags
-class CTAPolicy(IntEnum):
+class CTAPolicy(IntFlag):
     """
     NCCL performance policy for CTA scheduling.
+
+    Policies can be combined with ``|`` so that NCCL can use different
+    scheduling in various cases.
     """
 
     Default = 0x00
@@ -64,7 +67,7 @@ class CommShrinkFlag(IntEnum):
 
 
 # Window registration flags
-class WindowFlag(IntEnum):
+class WindowFlag(IntFlag):
     """
     Flags for window registration.
     """
@@ -73,3 +76,5 @@ class WindowFlag(IntEnum):
     """Default window registration."""
     CollSymmetric = 0x01
     """Collective symmetric window registration."""
+    StrictOrdering = 0x02
+    """Strict ordering for window operations."""

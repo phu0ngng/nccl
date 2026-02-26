@@ -231,6 +231,12 @@ def test_register_window_accepts_ncclbufferspec_and_flags(monkeypatch):
     win2 = comm.register_window(DLPackBuf(), flags=WindowFlag.CollSymmetric)
     assert calls["reg"] == (0xC, 0x2000, 40, int(WindowFlag.CollSymmetric))
 
+    # With combined flags (IntFlag supports bitwise OR)
+    calls["reg"] = None
+    combined = WindowFlag.CollSymmetric | WindowFlag.StrictOrdering
+    win4 = comm.register_window(DLPackBuf(), flags=combined)
+    assert calls["reg"] == (0xC, 0x2000, 40, 0x03)
+
 
 def test_register_window_returns_none_on_null_handle(monkeypatch):
     """register_window returns None and skips resource tracking on NULL handle."""
