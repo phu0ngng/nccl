@@ -813,9 +813,6 @@ class Communicator:
         Args:
             - ptr (int): Integer representing NCCL communicator pointer (0 for null communicator). Defaults to 0.
 
-        Raises:
-            - ``NcclInvalid``: If ptr is not an integer.
-
         Notes:
             Unlike the class method ``init()``, this constructor allows ptr=0 for
             creating null communicators (e.g., when ``split()`` excludes a rank).
@@ -925,24 +922,9 @@ class Communicator:
             - This is a collective operation. All ranks must call this method.
             - See [ncclCommInitRankScalable](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/comms.html#ncclcomminitrankscalable) for when multiple unique_ids are used.
         """
-        cfg_ptr = 0 if config is None else config.ptr
-        if isinstance(unique_id, UniqueId):
-            comm_ptr = _nccl_bindings.comm_init_rank_scalable(
-                int(nranks), int(rank), 1, unique_id.ptr, cfg_ptr
-            )
-        elif isinstance(unique_id, (list, tuple)) and all(
-            isinstance(uid, UniqueId) for uid in unique_id
-        ):
-            arr = _np.empty(len(unique_id), dtype=_nccl_bindings.unique_id_dtype)
-            for i, uid in enumerate(unique_id):
-                arr[i] = uid.as_ndarray[0].copy()
-            comm_ptr = _nccl_bindings.comm_init_rank_scalable(
-                int(nranks), int(rank), int(len(unique_id)), arr, cfg_ptr
-            )
-        else:
-            raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
-
-        return cls(comm_ptr)
+        comm = cls()
+        comm.initialize(nranks, rank, unique_id, config)
+        return comm
 
     @classmethod
     def init_all(
