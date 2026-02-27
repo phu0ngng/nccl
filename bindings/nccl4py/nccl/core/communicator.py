@@ -806,12 +806,12 @@ class Communicator:
         rank (int): This rank's ID within the communicator
     """
 
-    def __init__(self, ptr: int) -> None:
+    def __init__(self, ptr: int = 0) -> None:
         """
         Initializes communicator with a raw NCCL pointer.
 
         Args:
-            - ptr (int): Integer representing NCCL communicator pointer (0 for null communicator).
+            - ptr (int): Integer representing NCCL communicator pointer (0 for null communicator). Defaults to 0.
 
         Raises:
             - ``NcclInvalid``: If ptr is not an integer.
@@ -819,6 +819,8 @@ class Communicator:
         Notes:
             Unlike the class method ``init()``, this constructor allows ptr=0 for
             creating null communicators (e.g., when ``split()`` excludes a rank).
+            An empty communicator (ptr=0) can later be initialized via ``initialize()``
+            or used as the caller for ``grow()`` to join an existing communicator.
         """
         self._comm: int = int(ptr)
         self._resources: list[CommResource] = []
@@ -1008,6 +1010,59 @@ class Communicator:
 
         return [cls(int(comm_ptr)) for comm_ptr in comm_array]
 
+    def initialize(
+        self,
+        nranks: int,
+        rank: int,
+        unique_id: UniqueId | Sequence[UniqueId],
+        config: NCCLConfig | None = None,
+    ) -> None:
+        """
+        Initializes this communicator in-place.
+
+        This is the instance-method counterpart of the :meth:`init` classmethod. It allows
+        creating a null communicator first (via ``Communicator()``) and initializing it later.
+
+        Args:
+            - nranks (int): Total number of ranks in the communicator.
+            - rank (int): This rank (must be between 0 and nranks-1).
+            - unique_id (UniqueId | Sequence[UniqueId]): Unique identifier(s) shared by all ranks.
+            - config (NCCLConfig, optional): NCCL configuration options. Defaults to None.
+
+        Raises:
+            - ``NcclInvalid``: If unique_id has an invalid type or communicator is already initialized.
+
+        Notes:
+            - This is a collective operation. All ranks must call this method.
+            - See :meth:`init` for the classmethod equivalent.
+        """
+        if self._comm != 0:
+            raise NcclInvalid("Communicator is already initialized")
+
+        cfg_ptr = 0 if config is None else config.ptr
+        if isinstance(unique_id, UniqueId):
+            comm_ptr = _nccl_bindings.comm_init_rank_scalable(
+                int(nranks), int(rank), 1, unique_id.ptr, cfg_ptr
+            )
+        elif isinstance(unique_id, (list, tuple)) and all(
+            isinstance(uid, UniqueId) for uid in unique_id
+        ):
+            arr = _np.empty(len(unique_id), dtype=_nccl_bindings.unique_id_dtype)
+            for i, uid in enumerate(unique_id):
+                arr[i] = uid.as_ndarray[0].copy()
+            comm_ptr = _nccl_bindings.comm_init_rank_scalable(
+                int(nranks), int(rank), int(len(unique_id)), arr, cfg_ptr
+            )
+        else:
+            raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
+
+        self._comm = comm_ptr
+        self._resources = []
+        self._nranks = None
+        self._device = None
+        self._rank = None
+        self._comm_properties = None
+
     # --- Communicator APIs ---
     def split(self, color: int | None = None, key: int = 0, config: NCCLConfig | None = None) -> Communicator:
         """
@@ -1050,7 +1105,7 @@ class Communicator:
         cfg_ptr = 0 if config is None else config.ptr
         comm_ptr = _nccl_bindings.comm_split(self._comm, int(color), int(key), cfg_ptr)
 
-        return Communicator(comm_ptr)
+        return type(self)(comm_ptr)
 
     def shrink(
         self,
@@ -1092,7 +1147,91 @@ class Communicator:
             self._comm, ranks_to_exclude, len(ranks_to_exclude), cfg_ptr, int(flag)
         )
 
-        return Communicator(comm_ptr)
+        return type(self)(comm_ptr)
+
+    def get_unique_id(self) -> UniqueId:
+        """
+        Gets a per-communicator unique ID for use with :meth:`grow`.
+
+        Generates a unique identifier bound to this communicator that can be shared
+        with new ranks joining via :meth:`grow`. This is distinct from the global
+        ``get_unique_id()`` used for initial communicator creation.
+
+        Returns:
+            ``UniqueId``: A unique identifier for grow operations.
+
+        Raises:
+            - ``NcclInvalid``: If communicator is not initialized.
+
+        Notes:
+            - This should be called by existing ranks and the resulting UniqueId
+              should be shared with new ranks that will call :meth:`grow`.
+
+        See Also:
+            :meth:`grow`: Uses the UniqueId from this method to add new ranks.
+        """
+        self._check_valid("get_unique_id")
+        uid = UniqueId()
+        _nccl_bindings.comm_get_unique_id(self._comm, uid.ptr)
+        return uid
+
+    def grow(
+        self,
+        nranks: int,
+        unique_id: UniqueId | None = None,
+        rank: int | None = None,
+        config: NCCLConfig | None = None,
+    ) -> Communicator:
+        """
+        Grows the communicator by adding new ranks.
+
+        Creates a new communicator that includes both existing ranks from this
+        communicator and new ranks joining the group. There are three calling
+        patterns:
+
+        1. **Existing root rank**: The rank that called :meth:`get_unique_id`.
+           Pass the unique_id; rank defaults to None.
+        2. **Existing non-root ranks**: Pass neither unique_id nor rank (both default).
+        3. **New ranks**: Create an empty communicator, pass the unique_id and
+           the assigned rank.
+
+        Args:
+            - nranks (int): Total number of ranks in the new communicator (existing + new).
+            - unique_id (UniqueId | None, optional): Unique identifier from :meth:`get_unique_id`.
+              Required for the existing root rank and new ranks. Must be None for existing
+              non-root ranks. Defaults to None.
+            - rank (int | None, optional): This rank's ID in the new communicator. Must be
+              between 0 and nranks-1 for new ranks. Must be None for existing ranks.
+              Defaults to None.
+            - config (NCCLConfig, optional): Configuration for the new communicator. Defaults to None.
+
+        Returns:
+            ``Communicator``: A new communicator containing all ranks.
+
+        Raises:
+            - ``NcclInvalid``: If unique_id is not a UniqueId instance or None.
+
+        Notes:
+            - This is a collective operation. All ranks (existing and new) must call this method.
+            - Existing root: ``new_comm = existing_comm.grow(nranks, uid)``
+            - Existing non-root: ``new_comm = existing_comm.grow(nranks)``
+            - New ranks: ``new_comm = Communicator().grow(nranks, uid, rank=assigned_rank)``
+            - The UID is consumed upon successful grow and cannot be reused.
+
+        See Also:
+            :meth:`get_unique_id`: Generates the UniqueId needed for grow.
+        """
+        if unique_id is not None and not isinstance(unique_id, UniqueId):
+            raise NcclInvalid("unique_id must be a UniqueId or None")
+
+        uid_ptr = unique_id.ptr if unique_id is not None else 0
+        rank_val = -1 if rank is None else int(rank)
+        cfg_ptr = 0 if config is None else config.ptr
+        comm_ptr = _nccl_bindings.comm_grow(
+            self._comm, int(nranks), uid_ptr, rank_val, cfg_ptr
+        )
+
+        return type(self)(comm_ptr)
 
     def destroy(self) -> None:
         """

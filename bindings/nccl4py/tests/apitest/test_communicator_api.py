@@ -88,6 +88,167 @@ def test_init_with_invalid_config(uid_shared, rank_info, invalid_config, expecte
     comm.destroy()
 
 
+@pytest.mark.mpi
+def test_initialize(uid_shared, rank_info):
+    """Test Communicator().initialize() works like Communicator.init()."""
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    comm = nccl.Communicator()
+    assert not comm.is_valid
+
+    comm.initialize(nranks=rank_info.nccl_size, rank=rank_info.nccl_rank, unique_id=uid_shared)
+    assert comm.is_valid
+    assert comm.nranks == rank_info.nccl_size
+    assert comm.rank == rank_info.nccl_rank
+    assert comm.device.device_id == rank_info.nccl_local_rank
+
+    comm.destroy()
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi
+def test_get_unique_id(nccl_comm):
+    """Test get_unique_id() returns a valid UniqueId from an existing communicator."""
+    uid = nccl_comm.get_unique_id()
+    assert isinstance(uid, nccl.UniqueId)
+    assert len(uid.as_bytes) > 0
+    # Unique IDs should be serializable
+    uid_bytes = uid.as_bytes
+    uid2 = nccl.UniqueId.from_bytes(uid_bytes)
+    assert uid2.as_bytes == uid_bytes
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi(min_size=4)
+def test_grow(rank_info):
+    """Test grow() adds new ranks to an existing communicator.
+
+    Ranks 0..half-1 form the initial communicator ("existing" ranks).
+    Ranks half..N-1 start with empty communicators ("new" ranks).
+
+    C API calling convention:
+    - Existing root (rank 0):     comm=existing, uniqueId=&id, rank=-1
+    - Existing non-root (1..half-1): comm=existing, uniqueId=NULL, rank=-1
+    - New ranks (half..N-1):      comm=NULL, uniqueId=&id, rank=assigned
+    """
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    mpi_comm = MPI.COMM_WORLD
+    total_ranks = rank_info.nccl_size
+    rank = rank_info.nccl_rank
+    initial_size = total_ranks // 2
+
+    if rank < initial_size:
+        # --- Existing ranks: form initial communicator ---
+        uid = nccl.get_unique_id(empty=(rank != 0))
+        initial_mpi = mpi_comm.Split(0, rank)
+        initial_mpi.Bcast([uid.as_ndarray, MPI.BYTE], root=0)
+
+        comm = nccl.Communicator.init(nranks=initial_size, rank=rank, unique_id=uid)
+        assert comm.nranks == initial_size
+
+        # Rank 0 is the grow root: generates UID
+        grow_uid = comm.get_unique_id() if rank == 0 else None
+    else:
+        # --- New ranks: start with empty communicator ---
+        comm = nccl.Communicator()
+        assert not comm.is_valid
+        initial_mpi = mpi_comm.Split(1, rank)
+        grow_uid = None
+
+    # Broadcast grow_uid from rank 0 to all ranks via MPI
+    # (non-root existing ranks and new ranks need it via MPI)
+    grow_uid_buf = nccl.get_unique_id(empty=True)
+    if rank == 0:
+        grow_uid_buf = grow_uid
+    mpi_comm.Bcast([grow_uid_buf.as_ndarray, MPI.BYTE], root=0)
+
+    # Call grow with the correct calling convention per role
+    if rank < initial_size:
+        if rank == 0:
+            # Existing root: pass uniqueId, rank=-1
+            new_comm = comm.grow(nranks=total_ranks, unique_id=grow_uid)
+        else:
+            # Existing non-root: no uniqueId, rank=-1
+            new_comm = comm.grow(nranks=total_ranks)
+    else:
+        # New rank: pass uniqueId, rank=assigned
+        new_comm = comm.grow(nranks=total_ranks, unique_id=grow_uid_buf, rank=rank)
+
+    assert new_comm.is_valid
+    assert new_comm.nranks == total_ranks
+
+    # Cleanup
+    new_comm.destroy()
+    if rank < initial_size:
+        comm.destroy()
+    initial_mpi.Free()
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi(min_size=4)
+def test_grow_with_value_validation(rank_info):
+    """Test that a grown communicator can perform collectives correctly."""
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    mpi_comm = MPI.COMM_WORLD
+    total_ranks = rank_info.nccl_size
+    rank = rank_info.nccl_rank
+    initial_size = total_ranks // 2
+
+    if rank < initial_size:
+        uid = nccl.get_unique_id(empty=(rank != 0))
+        initial_mpi = mpi_comm.Split(0, rank)
+        initial_mpi.Bcast([uid.as_ndarray, MPI.BYTE], root=0)
+
+        comm = nccl.Communicator.init(nranks=initial_size, rank=rank, unique_id=uid)
+        grow_uid = comm.get_unique_id() if rank == 0 else None
+    else:
+        comm = nccl.Communicator()
+        initial_mpi = mpi_comm.Split(1, rank)
+        grow_uid = None
+
+    grow_uid_buf = nccl.get_unique_id(empty=True)
+    if rank == 0:
+        grow_uid_buf = grow_uid
+    mpi_comm.Bcast([grow_uid_buf.as_ndarray, MPI.BYTE], root=0)
+
+    if rank < initial_size:
+        if rank == 0:
+            new_comm = comm.grow(nranks=total_ranks, unique_id=grow_uid)
+        else:
+            new_comm = comm.grow(nranks=total_ranks)
+    else:
+        new_comm = comm.grow(nranks=total_ranks, unique_id=grow_uid_buf, rank=rank)
+
+    # Verify the grown communicator works with allreduce
+    send_data = nccl.cupy.empty(1, dtype="float32")
+    recv_data = nccl.cupy.empty(1, dtype="float32")
+
+    send_data[0] = rank
+    expected_sum = sum(range(total_ranks))
+
+    new_comm.allreduce(send_data, recv_data, nccl.SUM)
+    cp.cuda.Stream.null.synchronize()
+
+    result = recv_data.get()
+    assert np.allclose(result, expected_sum), (
+        f"rank {rank}: expected {expected_sum}, got {result[0]}"
+    )
+
+    # Cleanup
+    new_comm.destroy()
+    if rank < initial_size:
+        comm.destroy()
+    initial_mpi.Free()
+
+
 @requires_nccl_version("2.18.1")
 @pytest.mark.mpi
 @pytest.mark.parametrize(
