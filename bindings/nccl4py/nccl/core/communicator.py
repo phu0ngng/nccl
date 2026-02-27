@@ -1137,7 +1137,8 @@ class Communicator:
 
         Generates a unique identifier bound to this communicator that can be shared
         with new ranks joining via :meth:`grow`. This is distinct from the global
-        ``get_unique_id()`` used for initial communicator creation.
+        ``get_unique_id()`` used for initial communicator creation. Only one existing
+        rank (the grow root) should call this method.
 
         Returns:
             ``UniqueId``: A unique identifier for grow operations.
@@ -1146,8 +1147,9 @@ class Communicator:
             - ``NcclInvalid``: If communicator is not initialized.
 
         Notes:
-            - This should be called by existing ranks and the resulting UniqueId
-              should be shared with new ranks that will call :meth:`grow`.
+            - Cannot generate a new UID while a previous UID is unconsumed.
+            - Each UID can only be used once (no reuse after consumption).
+            - Must wait for the grow operation to complete before calling again.
 
         See Also:
             :meth:`grow`: Uses the UniqueId from this method to add new ranks.
