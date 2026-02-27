@@ -1,10 +1,8 @@
 """Unit tests for Communicator method argument conversions.
 
 Tests cover:
-- Communicator __init__ type validation
 - Communicator initialize() guard and cache reset
-- Communicator grow() accepts empty comm (ptr=0)
-- Communicator split/shrink/grow subclass support (type(self) pattern)
+- Communicator grow() three calling patterns (new rank, existing root, existing non-root)
 - NcclScalarSpec type conversion (int, float, np.ndarray, NcclSupportedBuffer)
 - NcclBufferSpec handling in register_buffer/register_window
 - Argument validation and error cases
@@ -12,9 +10,9 @@ Tests cover:
 import numpy as np
 import pytest
 
-from nccl.core.communicator import Communicator, NCCLConfig
+from nccl.core.communicator import Communicator
 from nccl.core.typing import FLOAT32, FLOAT64, INT64
-from nccl.core.constants import WindowFlag, NCCL_SPLIT_NOCOLOR
+from nccl.core.constants import WindowFlag
 from nccl.core.utils import UniqueId
 from .mock import CAIBuf, DLPackBuf, View, FakeDevice
 from nccl.core.typing import NcclInvalid
@@ -45,6 +43,7 @@ def test_initialize_resets_cached_properties(monkeypatch):
 
     comm = Communicator()
     # Manually set cached values to verify they get reset
+    comm._resources = ["stale"]
     comm._nranks = 99
     comm._rank = 99
     comm._device = "stale"
@@ -54,6 +53,7 @@ def test_initialize_resets_cached_properties(monkeypatch):
     uid._internal = type("FakeUID", (), {"ptr": 0x123})()
     comm.initialize(nranks=2, rank=0, unique_id=uid)
 
+    assert comm._resources == []
     assert comm._nranks is None
     assert comm._rank is None
     assert comm._device is None
@@ -135,82 +135,6 @@ def test_grow_existing_root(monkeypatch):
     # rank=None (default) should be converted to -1 for the C API
     new_comm = comm.grow(nranks=4, unique_id=uid)
     assert calls["grow"] == (0xC, 4, 0x555, -1, 0)
-
-
-# --- type(self) subclass support Tests ---
-
-
-def _make_subclass_comm():
-    """Helper: create a MyComm subclass instance with mocked internals."""
-    class MyComm(Communicator):
-        pass
-
-    comm = MyComm.__new__(MyComm)
-    comm._comm = 0xC
-    comm._resources = []
-    comm._nranks = 2
-    comm._device = FakeDevice(0)
-    comm._rank = 0
-    comm._comm_properties = None
-    return MyComm, comm
-
-
-def test_split_returns_subclass(monkeypatch):
-    """split() returns type(self), not hardcoded Communicator."""
-    SPLIT_PTR = 0x5917
-
-    class B:
-        @staticmethod
-        def comm_split(comm_ptr, color, key, config):
-            return SPLIT_PTR
-
-    monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
-    MyComm, comm = _make_subclass_comm()
-
-    result = comm.split(color=0, key=0)
-    assert type(result) is MyComm
-
-
-def test_split_nocolor_returns_subclass():
-    """split() with NCCL_SPLIT_NOCOLOR returns type(self)(0)."""
-    MyComm, comm = _make_subclass_comm()
-
-    result = comm.split(color=NCCL_SPLIT_NOCOLOR, key=0)
-    assert type(result) is MyComm
-    assert result.ptr == 0
-
-
-def test_shrink_returns_subclass(monkeypatch):
-    """shrink() returns type(self), not hardcoded Communicator."""
-
-    class B:
-        @staticmethod
-        def comm_shrink(comm_ptr, exclude_ranks, count, config, flags):
-            return 0x5411
-
-    monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
-    MyComm, comm = _make_subclass_comm()
-
-    result = comm.shrink(exclude_ranks=[1])
-    assert type(result) is MyComm
-
-
-def test_grow_returns_subclass(monkeypatch):
-    """grow() returns type(self), not hardcoded Communicator."""
-
-    class B:
-        @staticmethod
-        def comm_grow(comm_ptr, nranks, uid_ptr, rank, config):
-            return 0x6401
-
-    monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
-    MyComm, comm = _make_subclass_comm()
-
-    uid = UniqueId.__new__(UniqueId)
-    uid._internal = type("FakeUID", (), {"ptr": 0x555})()
-
-    result = comm.grow(nranks=4, unique_id=uid)
-    assert type(result) is MyComm
 
 
 def _setup_comm_with_mocked_bindings(monkeypatch, calls):

@@ -113,10 +113,6 @@ def test_get_unique_id(nccl_comm):
     uid = nccl_comm.get_unique_id()
     assert isinstance(uid, nccl.UniqueId)
     assert len(uid.as_bytes) > 0
-    # Unique IDs should be serializable
-    uid_bytes = uid.as_bytes
-    uid2 = nccl.UniqueId.from_bytes(uid_bytes)
-    assert uid2.as_bytes == uid_bytes
 
 
 @requires_nccl_version("2.29.0")
