@@ -233,10 +233,10 @@ static ncclResult_t proxyGinProcessGfd(ncclGin_t *ginComm, void *collComm, struc
     srcOff = (uint64_t)&inlineVal[0] - (uint64_t)hostGpuCtx->inlines;
     // reconstruct the inline value from the two qwords
     *inlineVal = gfd->qword[ncclGinProxyGfdInlineLow].inlineLow.inlineValLow;
-    if (size == 8) {
+    if (size > 4)
       *inlineVal |= (uint64_t)gfd->qword[ncclGinProxyGfdInlineLow].inlineLow.inlineValLow2 << 32;
+    if (size > 6)
       *inlineVal |= (uint64_t)gfd->qword[ncclGinProxyGfdInlineHigh].inlineHigh.inlineValHigh << 48;
-    }
     srcHandle = hostGpuCtx->inlinesMhandle;
   } else {
     srcOff = gfd->qword[ncclGinProxyGfdSrcOff].srcOff.srcOff;

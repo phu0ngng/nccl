@@ -532,7 +532,8 @@ static ncclResult_t symWindowCreate(
   win->localRegHandle = localReg;
   if (userPtr == nullptr) {
     // Null means caller has no VA and will use the lsa team flat VA address.
-    win->userPtr = (char*)devr->lsaFlatBase + (devr->lsaSelf*devr->bigSize) + mem->bigOffset;
+    win->userPtr = userPtr = (char*)devr->lsaFlatBase + (devr->lsaSelf*devr->bigSize) + mem->bigOffset;
+    userAddr = reinterpret_cast<uintptr_t>(userPtr);
   } else {
     win->userPtr = userPtr;
   }

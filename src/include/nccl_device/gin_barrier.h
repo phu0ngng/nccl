@@ -16,8 +16,7 @@ NCCL_EXTERN_C __host__ ncclResult_t ncclGinBarrierCreateRequirement(ncclComm_t, 
 
 #if NCCL_CHECK_CUDACC
 enum class ncclGinFenceLevel {
-  Relaxed,
-  Release,
+  Relaxed
 };
 
 template<typename Coop>

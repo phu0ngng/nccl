@@ -144,6 +144,16 @@ NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinResetSignal(
   ncclGin_C* net,
   ncclGinSignal_t signal);
 
+NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutValue(
+  ncclGin_C* net,
+  ncclTeam team, int peer,
+  ncclWindow_t dstWin, size_t dstOffset,
+  uint64_t value, size_t size,
+  bool isSignal, ncclGinSignal_t signalId, ncclGinSignalOp_t signalOp, uint64_t signalOpArg,
+  ncclCoopAny coop,
+  bool isDescriptor, ncclGinDescriptorSmem* descriptor,
+  cuda::thread_scope givenRelease, cuda::thread_scope requiredRelease);
+
 NCCL_IR_EXTERN_C NCCL_DEVICE_INLINE void ncclGinPutValue_v2(
   ncclGin_C* net,
   ncclTeam team, int peer,

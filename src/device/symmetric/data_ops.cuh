@@ -251,10 +251,11 @@ template<typename Coop, typename DstSpace, typename GetDst,
   // Handle source elements as packs if:
   // 1. All sources share a sufficient common alignment to support pack access.
   // 2. There is enough for every thread to have one.
-  if (sizeof(SrcT) == sizeof(SrcPack) ||
+  if (!(NCCL_CUDA_ARCH == 900 && sizeof(SrcT) == 1) && (
+      sizeof(SrcT) == sizeof(SrcPack) ||
       (/*1*/sizeof(SrcPack)-1 <= srcPtrCommonMask &&
        /*2*/tn*(int)sizeof(SrcPack) <= nBatch*nElts*(int)sizeof(SrcT))
-  ) {
+  )) {
     int nPacks = getWorstPackCount(nElts, nEltPerPack);
     constexpr int UnrollData = 4;
     constexpr int nPackPerBlob = UnrollData*32; // A blob is a whole warp's worth of unrolled packs

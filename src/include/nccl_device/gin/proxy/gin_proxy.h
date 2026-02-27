@@ -62,6 +62,7 @@ NCCL_DEVICE_INLINE void postGfd(Coop coop, ncclGinProxyGpuCtx_t* proxyCtx, ncclG
 
 template <typename T>
 // Descriptor must be at least GWQ_GFD_SIZE bytes and it should be aligned
+// Assumes little-endian, which is okay.
 __device__ __forceinline__ void buildGfd(ncclGinProxyGfd_t* gfd, ncclGinProxyOp_t op, T srcVal,
                                          bool hasInline, size_t srcOff, ncclGinWindow_t srcHandle,
                                          size_t dstOff, ncclGinWindow_t dstHandle, size_t size,
@@ -73,13 +74,16 @@ __device__ __forceinline__ void buildGfd(ncclGinProxyGfd_t* gfd, ncclGinProxyOp_
   gfd->qword[ncclGinProxyGfdHeader].header.size = (uint64_t)size;
 
   if (hasInline) {
+    uint64_t srcValBits = 0;
+    memcpy(&srcValBits, &srcVal, sizeof(T));
+
     gfd->qword[ncclGinProxyGfdInlineLow].inlineLow.flag = 1;
-    gfd->qword[ncclGinProxyGfdInlineLow].inlineLow.inlineValLow = (uint32_t)srcVal;
+    gfd->qword[ncclGinProxyGfdInlineLow].inlineLow.inlineValLow = (uint32_t)srcValBits;
     gfd->qword[ncclGinProxyGfdInlineHigh].inlineHigh.flag = 1;
     if (sizeof(T) > 4)
-      gfd->qword[ncclGinProxyGfdInlineLow].inlineLow.inlineValLow2 = (uint64_t)srcVal >> 32;
+      gfd->qword[ncclGinProxyGfdInlineLow].inlineLow.inlineValLow2 = (uint64_t)srcValBits >> 32;
     if (sizeof(T) > 6)
-      gfd->qword[ncclGinProxyGfdInlineHigh].inlineHigh.inlineValHigh = (uint64_t)srcVal >> 48;
+      gfd->qword[ncclGinProxyGfdInlineHigh].inlineHigh.inlineValHigh = (uint64_t)srcValBits >> 48;
   } else if (op & ncclGinProxyOpVASignal) {
     gfd->qword[ncclGinProxyGfdVASignalOff].vaSignalOff.flag = 1;
     gfd->qword[ncclGinProxyGfdVASignalOff].vaSignalOff.vaSignalOff = (uint64_t)signalOff;
