@@ -97,22 +97,32 @@ fail:
 static ncclResult_t ncclGinPluginInit(struct ncclComm* comm, ginPluginLib_t* pluginLib) {
   int ndev;
   // Init must be called for each new comm to set the right context
-  if (pluginLib->ncclGinPluginState == ncclGinPluginStateInitReady && pluginLib->ncclGin) {
-    if (pluginLib->ncclGin->init(&comm->ginContext, comm->commHash, ncclDebugLog) != ncclSuccess ||
-        pluginLib->ncclGin->devices(&ndev) != ncclSuccess || ndev <= 0) {
+  if (pluginLib->ncclGinPluginState >= ncclGinPluginStateInitReady && pluginLib->ncclGin) {
+    if (pluginLib->ncclGin->init(&comm->ginContext, comm->commHash, ncclDebugLog) != ncclSuccess) {
       pluginLib->ncclGinPluginState = ncclGinPluginStateDisabled;
-    } else {
+    }
+  }
+  if (pluginLib->ncclGinPluginState == ncclGinPluginStateInitReady && pluginLib->ncclGin) {
+    if (pluginLib->ncclGin->devices(&ndev) != ncclSuccess || ndev <= 0) {
+      pluginLib->ncclGinPluginState = ncclGinPluginStateDisabled;
+      }
+    else {
       pluginLib->ginPhysDevs = ndev;
       pluginLib->ncclGinPluginState = ncclGinPluginStateEnabled;
     }
   }
 
   // Initialize RMA plugin
-  if (pluginLib->ncclRmaPluginState == ncclGinPluginStateInitReady && pluginLib->ncclRma) {
-    if (pluginLib->ncclRma->init(&comm->ginContext, comm->commHash, ncclDebugLog) != ncclSuccess ||
-        pluginLib->ncclRma->devices(&ndev) != ncclSuccess || ndev <= 0) {
+  if (pluginLib->ncclRmaPluginState >= ncclGinPluginStateInitReady && pluginLib->ncclRma) {
+    if (pluginLib->ncclRma->init(&comm->ginContext, comm->commHash, ncclDebugLog) != ncclSuccess) {
       pluginLib->ncclRmaPluginState = ncclGinPluginStateDisabled;
-    } else {
+    }
+  }
+  if (pluginLib->ncclRmaPluginState == ncclGinPluginStateInitReady && pluginLib->ncclRma) {
+    if (pluginLib->ncclRma->devices(&ndev) != ncclSuccess || ndev <= 0) {
+      pluginLib->ncclRmaPluginState = ncclGinPluginStateDisabled;
+    }
+    else {
       pluginLib->ncclRmaPluginState = ncclGinPluginStateEnabled;
     }
   }
