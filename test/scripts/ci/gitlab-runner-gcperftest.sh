@@ -133,7 +133,7 @@ else
     # Regression mode (default)
     OUTDIR="perfregression"
     SBATCH_FILE="perfregression.sbatch"
-    TESTSET_TOML=${TESTSUITE_TOML:-test/scripts/ci/gcperf-tools/testsuites/testsuite.toml}
+    TESTSET_TOML=${TESTSUITE_TOML:-test/scripts/ci/gcperf-tools/testsuites/main.toml}
     DB_SCHEMA="perf_regression"
     JOB_NAME="${SLURM_ACCOUNT}-cicd.perf-regression.${CURRENT_BRANCH}"
     REPORT_FILE="report.pdf"

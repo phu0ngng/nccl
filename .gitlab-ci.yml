@@ -3114,6 +3114,7 @@ perf-regression-bia:
     - bia
   variables:
     SLURM_TIME: 60
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/bia.toml"
   script:
     - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
@@ -3158,7 +3159,7 @@ cs-eos-intra-debug:
   needs:
     - setup-eos
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-dgx.toml"
     SLURM_TIME: 90
     NNODES: 1
 
@@ -3173,7 +3174,7 @@ cs-eos-inter-debug:
   needs:
     - setup-eos
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-dgx.toml"
     SLURM_TIME: 90
     NNODES: 2
 
@@ -3189,7 +3190,7 @@ cs-cw-dfw-intra-debug:
   needs:
     - setup-cw-dfw
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-dgx.toml"
     SLURM_TIME: 90
     NNODES: 1
 
@@ -3204,7 +3205,7 @@ cs-cw-dfw-inter-debug:
   needs:
     - setup-cw-dfw
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-dgx.toml"
     SLURM_TIME: 90
     NNODES: 2
 
@@ -3220,7 +3221,7 @@ cs-ptyche-intra-debug:
   needs:
     - setup-pre-tyche
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_PARTITION: 36x2-a01r
     SLURM_TIME: 90
     NNODES: 1
@@ -3236,7 +3237,7 @@ cs-ptyche-inter-debug:
   needs:
     - setup-pre-tyche
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_PARTITION: 36x2-a01r
     SLURM_TIME: 90
@@ -3254,7 +3255,7 @@ cs-theia-intra-debug:
   needs:
     - setup-theia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_TIME: 90
     NNODES: 1
 
@@ -3269,7 +3270,7 @@ cs-theia-inter-debug:
   needs:
     - setup-theia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_TIME: 90
     NNODES: 2
@@ -3286,7 +3287,7 @@ cs-bia-intra-debug:
   needs:
     - setup-bia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_TIME: 90
     NNODES: 1
 
@@ -3301,7 +3302,7 @@ cs-bia-inter-debug:
   needs:
     - setup-bia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-bia.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-bia.toml"
     SLURM_TIME: 90
     NNODES: 2
 
@@ -3322,7 +3323,7 @@ cs-eos-inter-full:
   needs:
     - setup-eos
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-dgx.toml"
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3340,7 +3341,7 @@ cs-cw-dfw-inter-full:
   needs:
     - setup-cw-dfw
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-dgx.toml"
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3358,7 +3359,7 @@ cs-ptyche-intra-full:
   needs:
     - setup-pre-tyche
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_PARTITION: 36x2-a01r
     SLURM_TIME: 90
   parallel:
@@ -3377,7 +3378,7 @@ cs-ptyche-inter-full:
   needs:
     - setup-pre-tyche
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_PARTITION: 36x2-a01r
     SLURM_TIME: 90
@@ -3398,7 +3399,7 @@ cs-theia-intra-full:
   needs:
     - setup-theia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3416,7 +3417,7 @@ cs-theia-inter-full:
   needs:
     - setup-theia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_TIME: 90
   parallel:
@@ -3436,7 +3437,7 @@ cs-bia-inter-full:
   needs:
     - setup-bia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-bia.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-bia.toml"
     SLURM_TIME: 90
   parallel:
     matrix:
