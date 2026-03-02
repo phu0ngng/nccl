@@ -30,6 +30,11 @@ variables:
   BIA_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
   BIA_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
   BIA_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  # POLYPHE cluster
+  POLYPHE_INSTALL_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner/install/${CI_PIPELINE_ID}"
+  POLYPHE_CI_BUILDS_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  POLYPHE_ARCHIVER_STAGING_DIR: "/lustre/fsw/coreai_libraries_nccl/$GITLAB_USER_LOGIN/gitlab-runner"
+  
   # IPP6 cluster
   IPP6_INSTALL_DIR: "/storage/gitlab-runner/nccl/install/${CI_PIPELINE_ID}"
   DGXSPARK_INSTALL_DIR: "/storage/gitlab-runner/nccl/install-arm/${CI_PIPELINE_ID}"
@@ -222,6 +227,25 @@ variables:
     CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
     ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_PARTITION: batch
+    NGPUS: 4
+    RUN_MODE: "SRUN_MPI"
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NCCL_DEBUG: "WARN"
+
+
+.polyphe:
+  rules:
+    - if: $RUN_ON_POLYPHE == "1"
+      when: always
+  tags:
+    - polyphe
+  variables:
+    CI_BUILDS_DIR: "${POLYPHE_CI_BUILDS_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/polyphe-config.sh"
+    INSTALL_DIR: "${POLYPHE_INSTALL_DIR}"
+    ARCHIVER_STAGING_DIR: "${POLYPHE_ARCHIVER_STAGING_DIR}"
     NCCL_HOME: ${INSTALL_DIR}/build
     SLURM_PARTITION: batch
     NGPUS: 4

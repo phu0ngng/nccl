@@ -61,5 +61,10 @@ function identify_cluster() {
     return
     fi
 
+    if [[ "$hostname" =~ .*polyphe.*$ ]]; then
+        echo "polyphe"
+    return
+    fi
+
     echo "UNKNOWN"
 }
