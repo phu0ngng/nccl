@@ -287,16 +287,6 @@ cdef int _check_or_init_nccl() except -1 nogil:
                 handle = load_library()
             __ncclCommDeregister = dlsym(handle, 'ncclCommDeregister')
 
-<<<<<<< HEAD
-        global __ncclCommMemStats
-        __ncclCommMemStats = dlsym(RTLD_DEFAULT, 'ncclCommMemStats')
-        if __ncclCommMemStats == NULL:
-            if handle == NULL:
-                handle = load_library()
-            __ncclCommMemStats = dlsym(handle, 'ncclCommMemStats')
-
-||||||| parent of 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
-=======
         global __ncclCommSuspend
         __ncclCommSuspend = dlsym(RTLD_DEFAULT, 'ncclCommSuspend')
         if __ncclCommSuspend == NULL:
@@ -311,7 +301,13 @@ cdef int _check_or_init_nccl() except -1 nogil:
                 handle = load_library()
             __ncclCommResume = dlsym(handle, 'ncclCommResume')
 
->>>>>>> 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
+        global __ncclCommMemStats
+        __ncclCommMemStats = dlsym(RTLD_DEFAULT, 'ncclCommMemStats')
+        if __ncclCommMemStats == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclCommMemStats = dlsym(handle, 'ncclCommMemStats')
+
         global __ncclCommWindowRegister
         __ncclCommWindowRegister = dlsym(RTLD_DEFAULT, 'ncclCommWindowRegister')
         if __ncclCommWindowRegister == NULL:
@@ -567,19 +563,15 @@ cpdef dict _inspect_function_pointers():
     global __ncclCommDeregister
     data["__ncclCommDeregister"] = <intptr_t>__ncclCommDeregister
 
-<<<<<<< HEAD
-    global __ncclCommMemStats
-    data["__ncclCommMemStats"] = <intptr_t>__ncclCommMemStats
-
-||||||| parent of 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
-=======
     global __ncclCommSuspend
     data["__ncclCommSuspend"] = <intptr_t>__ncclCommSuspend
 
     global __ncclCommResume
     data["__ncclCommResume"] = <intptr_t>__ncclCommResume
 
->>>>>>> 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
+    global __ncclCommMemStats
+    data["__ncclCommMemStats"] = <intptr_t>__ncclCommMemStats
+
     global __ncclCommWindowRegister
     data["__ncclCommWindowRegister"] = <intptr_t>__ncclCommWindowRegister
 
@@ -890,19 +882,6 @@ cdef ncclResult_t _ncclCommDeregister(const ncclComm_t comm, void* handle) excep
         comm, handle)
 
 
-<<<<<<< HEAD
-cdef ncclResult_t _ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
-    global __ncclCommMemStats
-    _check_or_init_nccl()
-    if __ncclCommMemStats == NULL:
-        with gil:
-            raise FunctionNotFoundError("function ncclCommMemStats is not found")
-    return (<ncclResult_t (*)(ncclComm_t, ncclCommMemStat_t, uint64_t*) noexcept nogil>__ncclCommMemStats)(
-        comm, stat, value)
-
-
-||||||| parent of 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
-=======
 cdef ncclResult_t _ncclCommSuspend(ncclComm_t comm, int flags) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     global __ncclCommSuspend
     _check_or_init_nccl()
@@ -923,7 +902,16 @@ cdef ncclResult_t _ncclCommResume(ncclComm_t comm) except?_NCCLRESULT_T_INTERNAL
         comm)
 
 
->>>>>>> 0ea809d19 (Add bindings for ncclCommRevoke, ncclCommSuspend and ncclCommResume)
+cdef ncclResult_t _ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclCommMemStats
+    _check_or_init_nccl()
+    if __ncclCommMemStats == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclCommMemStats is not found")
+    return (<ncclResult_t (*)(ncclComm_t, ncclCommMemStat_t, uint64_t*) noexcept nogil>__ncclCommMemStats)(
+        comm, stat, value)
+
+
 cdef ncclResult_t _ncclCommWindowRegister(ncclComm_t comm, void* buff, size_t size, ncclWindow_t* win, int winFlags) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     global __ncclCommWindowRegister
     _check_or_init_nccl()
