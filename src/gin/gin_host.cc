@@ -65,6 +65,11 @@ ncclResult_t setLocalGinType(struct ncclComm* comm) {
     // NOTE: The following cast is valid because ncclGinType_t variant values
     // should match NCCL_NET_DEVICE_GIN_* values from `enum ncclNetDeviceType`.
     ginState.ginType = static_cast<ncclGinType_t>(props.netDeviceType);
+
+    if (ginState.ginType == NCCL_GIN_TYPE_PROXY) {
+      // Replace ginState->ncclGin by a layer adding host queues
+      NCCLCHECK(ncclGinProxyInit(&ginState.ncclGin));
+    }
     return ncclSuccess;
   }
   WARN("Cannot get gin type: ncclGin is not null but net device type (%d) is not a gin type",
@@ -79,12 +84,7 @@ void* ncclGinProgress(struct ncclGinState* ginState_) {
     if (ginState->ginProgress == 1) {
       lock.unlock();
       for (int n=0; n<ginState->ginCommCount; n++) {
-        ncclResult_t ret;
-        if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
-          ret = ncclGinProxyProgress(ginState->ncclGin, ginState->ginCtx[n]);
-        } else {
-          ret = ginState->ncclGin->ginProgress(ginState->ginCtx[n]);
-        }
+        ncclResult_t ret = ginState->ncclGin->ginProgress(ginState->ginCtx[n]);
         if (ret != ncclSuccess) {
           COMPILER_ATOMIC_STORE(&ginState->asyncResult, ret, std::memory_order_release);
           INFO(NCCL_ALL,"%s:%d -> %d [GIN Progress Thread]", __FILE__, __LINE__, ret);
@@ -241,16 +241,9 @@ ncclResult_t ncclGinConnectOnce(struct ncclComm* comm, ncclGinConnectionType_t r
       0
     };
 
-    if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
-      NCCLCHECKGOTO(ncclGinProxyCreateContext(comm, ginState->ginComms[n],
-                                              localGinDevs[n % nLocalGinDevs], &ginConfig,
-                                              &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
-                    ret, fail);
-    } else {
-      NCCLCHECKGOTO(ginState->ncclGin->createContext(
-                      ginState->ginComms[n], &ginConfig, &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
-                    ret, fail);
-    }
+    NCCLCHECKGOTO(ginState->ncclGin->createContext(
+                    ginState->ginComms[n], &ginConfig, &ginState->ginCtx[n], &ginState->ginDevHandles[n]),
+                  ret, fail);
     NCCLCHECKGOTO(ginState->ncclGin->closeListen(listenComm), ret, fail);
   }
   free(handles);
@@ -300,15 +293,6 @@ ncclResult_t ncclGinHostFinalize(struct ncclComm* comm) {
     ginState->thread.join();
   }
 
-  if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
-    for (int n = 0; n < ginState->ginCommCount; n++) {
-      if (ginState->ginCtx[n] != NULL) {
-        NCCLCHECK(ncclGinProxyDestroyContext(ginState->ncclGin, ginState->ginCtx[n]));
-        ginState->ginCtx[n] = NULL;
-      }
-    }
-  }
-
   for (int n = 0; n < ginState->ginCommCount; n++) {
     if (ginState->ginCtx[n] != NULL) {
       NCCLCHECK(ginState->ncclGin->destroyContext(ginState->ginCtx[n]));
@@ -329,13 +313,8 @@ ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   int mrFlags = (winFlags & NCCL_WIN_STRICT_ORDERING) ? NCCL_NET_MR_FLAG_FORCE_SO : 0;
   for (int n = 0; n < ginState->ginCommCount; n++) {
-    if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
-      NCCLCHECK(ncclGinProxyRegister(ginState->ncclGin, ginState->ginCtx[n], address, size,
-                                     NCCL_PTR_CUDA, mrFlags, &ginHostWins[n], &ginDevWins[n]));
-    } else {
-      NCCLCHECK(ginState->ncclGin->regMrSym(ginState->ginComms[n], address, size, NCCL_PTR_CUDA, mrFlags,
-                                            &ginHostWins[n], &ginDevWins[n]));
-    }
+    NCCLCHECK(ginState->ncclGin->regMrSym(ginState->ginComms[n], address, size, NCCL_PTR_CUDA, mrFlags,
+                                          &ginHostWins[n], &ginDevWins[n]));
     if (ginHostWins[n] == NULL) {
       WARN("rank %d - GIN Symmetric register failed: buff %p, size %ld", comm->rank, address, size);
       return ncclSystemError;
@@ -347,11 +326,7 @@ ncclResult_t ncclGinRegister(struct ncclComm* comm, void* address, size_t size,
 ncclResult_t ncclGinDeregister(struct ncclComm* comm, void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS]) {
   struct ncclGinState* ginState = &comm->sharedRes->ginState;
   for (int n = 0; n < ginState->ginCommCount; n++) {
-    if (ginState->ginType == NCCL_GIN_TYPE_PROXY) {
-      NCCLCHECK(ncclGinProxyDeregister(ginState->ncclGin, ginState->ginCtx[n], ginHostWins[n]));
-    } else {
-      NCCLCHECK(ginState->ncclGin->deregMrSym(ginState->ginComms[n], ginHostWins[n]));
-    }
+    NCCLCHECK(ginState->ncclGin->deregMrSym(ginState->ginComms[n], ginHostWins[n]));
   }
   return ncclSuccess;
 }
@@ -391,10 +366,7 @@ ncclResult_t ncclGinFreeSignalsCounters(struct ncclComm* comm, uint32_t signal0,
 ncclResult_t ncclGinQueryLastError(struct ncclGinState* ginState, bool* hasError) {
   bool hasError_ = false;
   for (int n = 0; n < ginState->ginCommCount; n++) {
-    if (ginState->ginType == NCCL_GIN_TYPE_PROXY)
-      NCCLCHECK(ncclGinProxyQueryLastError(ginState->ncclGin, ginState->ginCtx[n], &hasError_));
-    else
-      NCCLCHECK(ginState->ncclGin->queryLastError(ginState->ginCtx[n], &hasError_));
+    NCCLCHECK(ginState->ncclGin->queryLastError(ginState->ginCtx[n], &hasError_));
     if (hasError_) break;
   }
   *hasError = hasError_;
