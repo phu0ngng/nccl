@@ -8,7 +8,11 @@
 #ifndef _NCCL_DEVICE_GIN_BARRIER_H_
 #define _NCCL_DEVICE_GIN_BARRIER_H_
 #include "core.h"
+#if defined(NCCL_OS_WINDOWS)
+#include "gin_win_stub.h"
+#else
 #include "gin.h"
+#endif
 
 struct ncclGinBarrierHandle;
 

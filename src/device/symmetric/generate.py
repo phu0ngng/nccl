@@ -6,6 +6,7 @@
 # See LICENSE.txt for more license information
 
 import os
+import platform
 import sys
 import shutil
 
@@ -22,6 +23,9 @@ if os.path.exists(gensrc):
       os.remove(path)
 else:
   os.mkdir(gensrc)
+
+# On Windows, GIN device code is excluded; do not generate or build any GIN kernels.
+exclude_gin = platform.system() == "Windows"
 
 def paste(sep, *args):
   return sep.join(args)
@@ -222,16 +226,18 @@ def partition(vals, keyfn):
   return ans
 
 
-kernels_by_file = partition(enumerate_kernels(), lambda k: (kernel_fname(k), kernel_fbase(k)))
+# When exclude_gin (Windows), do not generate or reference any GIN kernels.
+kernels_to_build = [k for k in enumerate_kernels() if not (exclude_gin and k.algo in gin_algos)]
+kernels_by_file = partition(kernels_to_build, lambda k: (kernel_fname(k), kernel_fbase(k)))
 
 # Add dependency only files (e.g. allreduce.cu)
-for fbase in set(kernel_fbase(k) for k in enumerate_kernels()):
+for fbase in set(kernel_fbase(k) for k in kernels_to_build):
   fname = fbase + '.cu'
   if (fname, fbase) not in kernels_by_file:
     kernels_by_file[fname, fbase] = []
 
 files_to_print = ""
-# Generate each kernel instantiation file
+# Generate each kernel instantiation file (no GIN .cu files when exclude_gin)
 for (fname, fbase), ks in kernels_by_file.items():
   files_to_print += fname + ";"
   with open(os.path.join(gensrc, fname), "w") as f:
@@ -241,13 +247,13 @@ for (fname, fbase), ks in kernels_by_file.items():
     for k in ks:
       emitln(f, instantiate(k))
 
-# Generate <gensrc>/sym_kernels_host.cc
+# Generate <gensrc>/sym_kernels_host.cc (kernel list already excludes GIN when exclude_gin)
 with open(os.path.join(gensrc, "sym_kernels_host.cc"), "w") as f:
   emitln(f, '#include "sym_kernels.h"')
   emitln(f, '#include "device.h"')
   emitln(f, '')
 
-  kernel_list = list(enumerate_kernels())
+  kernel_list = kernels_to_build
   for k in kernel_list:
     emitln(f, prototype(k))
   emitln(f, '')
@@ -305,13 +311,13 @@ if os.environ.get("NCCL_USE_CMAKE", "0") == "1":
 # Generate <gensrc>/rules.mk (only needed for Makefile builds, not CMake)
 if os.environ.get("NCCL_USE_CMAKE", "0") != "1":
   with open(os.path.join(gensrc, "rules.mk"), "w") as f:
-    inst_names = sorted(set(kernel_fname(k) for k in enumerate_kernels()))
+    inst_names = sorted(set(kernel_fname(k) for k in kernels_to_build))
     names = inst_names + ["sym_kernels_host.cc"]
     f.write("LIB_OBJS_SYM_GEN = $(patsubst %,$(OBJDIR)/genobj/symmetric/%.o,{names})\n"
             .format(names=" ".join(names)))
     f.write("\n")
 
-    inst_names = sorted(set((kernel_fname(k), kernel_fbase(k), kernel_gencode(k)) for k in enumerate_kernels()))
+    inst_names = sorted(set((kernel_fname(k), kernel_fbase(k), kernel_gencode(k)) for k in kernels_to_build))
     for fname, fbase, gencode in inst_names:
       f.write(
         "$(OBJDIR)/genobj/symmetric/{fname}.o: $(OBJDIR)/gensrc/symmetric $(OBJDIR)/genobj/symmetric/{fbase}.cu.d\n"

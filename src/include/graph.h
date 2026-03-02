@@ -15,7 +15,6 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>
-#include <sched.h>
 
 ncclResult_t ncclTopoCudaPath(int cudaDev, char** path);
 

@@ -163,7 +163,7 @@ static int proxyGinPollGfd(struct ginProxyCtx *ctx, ginProxyHostGpuCtx *hostGpuC
 
   // Reset the GFD in the queue. This ensures that the proxy doesn't try to process the GFD again.
   for (int k = 0; k < ncclGinProxyGfdQwords; k++) {
-    COMPILER_ATOMIC_STORE(&q[idx].qword[k].raw, 0, std::memory_order_relaxed);
+    COMPILER_ATOMIC_STORE(&q[idx].qword[k].raw, 0ULL, std::memory_order_relaxed);
   }
 
   // set the counter_id into the state

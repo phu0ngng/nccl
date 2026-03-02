@@ -1,9 +1,8 @@
 /*************************************************************************
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION. All rights reserved.
  *
- * See LICENSE.txt for more license information
- *************************************************************************/
+ * See LICENSE.txt for license information
+ ************************************************************************/
 
 #ifndef NCCL_COMPILER_MSVC_H
 #define NCCL_COMPILER_MSVC_H
@@ -32,6 +31,12 @@ static inline void COMPILER_ATOMIC_STORE_impl(volatile T* ptr, T val, std::memor
   std::atomic_store_explicit(reinterpret_cast<volatile std::atomic<T>*>(ptr), val, order);
 }
 #define COMPILER_ATOMIC_STORE(ptr, val, order) COMPILER_ATOMIC_STORE_impl(ptr, val, order)
+
+// Explicit 32-bit variants (same as generic but fixed type for uint32_t* pointers)
+#define COMPILER_ATOMIC_LOAD_32(ptr, order) \
+  COMPILER_ATOMIC_LOAD_impl(reinterpret_cast<volatile uint32_t*>(ptr), order)
+#define COMPILER_ATOMIC_STORE_32(ptr, val, order) \
+  COMPILER_ATOMIC_STORE_impl(reinterpret_cast<volatile uint32_t*>(ptr), static_cast<uint32_t>(val), order)
 
 template<typename T>
 static inline T COMPILER_ATOMIC_EXCHANGE_impl(volatile T* ptr, T val, std::memory_order order) {
@@ -137,5 +142,8 @@ inline int nccl_clzll_impl(unsigned long long x) {
 // Compiler hints
 // TODO: Check if __declspec(align(alignment)) can be used
 #define COMPILER_ASSUME_ALIGNED(ptr, alignment) (ptr)
+
+// Unused variable/parameter attribute (MSVC doesn't have __attribute__((unused)), use empty macro)
+#define COMPILER_ATTRIBUTE_UNUSED
 
 #endif // NCCL_COMPILER_MSVC_H

@@ -6,7 +6,6 @@
  *************************************************************************/
 
 #include <assert.h>
-#include <unistd.h>
 #include <cuda_runtime.h>
 #include <cuda.h>
 #include "nccl.h"
@@ -15,10 +14,16 @@
 #include "gdrwrap.h"
 #include "comm.h"
 #include "bootstrap.h"
+#include "compiler.h"
 #include "rma/rma.h"
 #include "rma/rma_proxy.h"
 #include "dev_runtime.h"
+#if !defined(NCCL_OS_WINDOWS)
 #include "nccl_device/gin/proxy/gin_proxy_device_host_common.h"
+#else
+#define NCCL_GIN_PROXY_VERSION 100  /* stub value; GIN proxy not used at runtime on Windows */
+#endif
+#include "os.h"
 
 
 extern int64_t ncclParamDmaBufEnable();
@@ -53,11 +58,11 @@ ncclResult_t dumpRmaProxyState(struct ncclRmaProxyState* rmaProxyState) {
         printf("    queueSize: %zu\n", ctx->queueSize);
         // dump per-peer information
         for (int peer = 0; peer < ctx->comm->nRanks; peer++) {
-          uint64_t readySeq = __atomic_load_n(&ctx->readySeqs[peer], __ATOMIC_ACQUIRE);
-          uint64_t doneSeq = __atomic_load_n(&ctx->doneSeqs[peer], __ATOMIC_ACQUIRE);
-          uint64_t opSeq = __atomic_load_n(&ctx->opSeqs[peer], __ATOMIC_ACQUIRE);
-          uint32_t pi = __atomic_load_n(&ctx->pis[peer], __ATOMIC_ACQUIRE);
-          uint32_t ci = __atomic_load_n(&ctx->cis[peer], __ATOMIC_ACQUIRE);
+          uint64_t readySeq = COMPILER_ATOMIC_LOAD(&ctx->readySeqs[peer], std::memory_order_acquire);
+          uint64_t doneSeq = COMPILER_ATOMIC_LOAD(&ctx->doneSeqs[peer], std::memory_order_acquire);
+          uint64_t opSeq = COMPILER_ATOMIC_LOAD(&ctx->opSeqs[peer], std::memory_order_acquire);
+          uint32_t pi = COMPILER_ATOMIC_LOAD_32(&ctx->pis[peer], std::memory_order_acquire);
+          uint32_t ci = COMPILER_ATOMIC_LOAD_32(&ctx->cis[peer], std::memory_order_acquire);
           printf("      Peer %d: readySeq: %lu, doneSeq: %lu, opSeq: %lu, PI: %u, CI: %u\n",
                  peer, readySeq, doneSeq, opSeq, pi, ci);
 
@@ -271,7 +276,7 @@ static ncclResult_t ncclRmaProxyPollCompletion(ncclGin_t *ncclGin, struct ncclRm
         ctx->comm->rank, inProgressDesc->targetRank, inProgressDesc->seq);
 
       // Update the doneSeq for the target rank with RELEASE to ensure GPU sees it
-      __atomic_store_n(&ctx->doneSeqs[inProgressDesc->targetRank], inProgressDesc->seq, __ATOMIC_RELEASE); // sync with the custreamWait aquire semantic
+      COMPILER_ATOMIC_STORE(&ctx->doneSeqs[inProgressDesc->targetRank], inProgressDesc->seq, std::memory_order_release); // sync with the custreamWait aquire semantic
       // Dequeue and free the completed Desc
       ncclIntruQueueDequeue(&ctx->rmaProxyInProgressQueues[peer]);
       ncclMemoryPoolFree(&ctx->comm->memPool_ncclRmaProxyDesc, inProgressDesc);
@@ -290,8 +295,8 @@ static ncclResult_t ncclRmaProxyPollCompletion(ncclGin_t *ncclGin, struct ncclRm
 static ncclResult_t ncclRmaProxyPollDesc(ncclGin_t *ncclGin, struct ncclRmaProxyCtx *ctx, int peer) {
   while (true) {
     // Lock-free dequeue: Check if queue has entries
-    uint32_t ci = __atomic_load_n(&ctx->cis[peer], __ATOMIC_RELAXED);
-    uint32_t pi = __atomic_load_n(&ctx->pis[peer], __ATOMIC_ACQUIRE);
+    uint32_t ci = COMPILER_ATOMIC_LOAD_32(&ctx->cis[peer], std::memory_order_relaxed);
+    uint32_t pi = COMPILER_ATOMIC_LOAD_32(&ctx->pis[peer], std::memory_order_acquire);
 
     if (ci >= pi) {
       break;  // Empty queue
@@ -302,10 +307,10 @@ static ncclResult_t ncclRmaProxyPollDesc(ncclGin_t *ncclGin, struct ncclRmaProxy
     struct ncclRmaProxyDesc *pendingDesc = ctx->pendingQueues[peer * ctx->queueSize + idx];
 
     // Check if this Desc is ready to be issued
-    uint64_t readySeq = __atomic_load_n(&ctx->readySeqs[peer], __ATOMIC_ACQUIRE);
+    uint64_t readySeq = COMPILER_ATOMIC_LOAD(&ctx->readySeqs[peer], std::memory_order_acquire);
     if (readySeq >= pendingDesc->seq) {
       // Advance CI with RELEASE to ensure descriptor is consumed
-      __atomic_store_n(&ctx->cis[peer], ci + 1, __ATOMIC_RELEASE);
+      COMPILER_ATOMIC_STORE_32(&ctx->cis[peer], ci + 1, std::memory_order_release);
 
       // Issue the network operation
       if (pendingDesc->signal.op == 0) {
@@ -360,8 +365,8 @@ ncclResult_t ncclRmaProxyDestroyContext(ncclGin_t* ginComm, void* rmaProxyCtx){
   // Free descriptors remaining in circular buffers
   if (ctx->pendingQueues) {
     for (int i = 0; i < ctx->comm->nRanks; i++) {
-      uint32_t ci = __atomic_load_n(&ctx->cis[i], __ATOMIC_RELAXED);
-      uint32_t pi = __atomic_load_n(&ctx->pis[i], __ATOMIC_RELAXED);
+      uint32_t ci = COMPILER_ATOMIC_LOAD_32(&ctx->cis[i], std::memory_order_relaxed);
+      uint32_t pi = COMPILER_ATOMIC_LOAD_32(&ctx->pis[i], std::memory_order_relaxed);
       // Free any remaining pending descriptors
       for (uint32_t j = ci; j < pi; j++) {
         uint32_t idx = j & (ctx->queueSize - 1);
@@ -451,7 +456,7 @@ void* ncclRmaProxyProgressThread(struct ncclRmaProxyState* rmaProxyState_) {
       for (int n=0; n<rmaProxyState->rmaProxyCtxCount; n++) {
         ncclResult_t ret = ncclRmaProxyProgress(rmaProxyState->ncclGin, rmaProxyState->rmaProxyCtxs[n]);
         if (ret != ncclSuccess) {
-          __atomic_store_n(&rmaProxyState->asyncResult, ret, __ATOMIC_RELEASE);
+          COMPILER_ATOMIC_STORE_32(&rmaProxyState->asyncResult, ret, std::memory_order_release);
           INFO(NCCL_ALL,"%s:%d -> %d [RMA Proxy Progress Thread]", __FILE__, __LINE__, ret);
           rmaProxyState->ginProgress = -2;
           return NULL;
@@ -655,8 +660,8 @@ ncclResult_t ncclRmaPutProxy(struct ncclComm* comm, struct ncclKernelPlan* plan,
     int peer = task->peer;
 
     // Check for available slot in the circular buffer
-    uint32_t pi = __atomic_load_n(&rmaProxyCtx->pis[peer], __ATOMIC_RELAXED);
-    uint32_t ci = __atomic_load_n(&rmaProxyCtx->cis[peer], __ATOMIC_ACQUIRE);
+    uint32_t pi = COMPILER_ATOMIC_LOAD_32(&rmaProxyCtx->pis[peer], std::memory_order_relaxed);
+    uint32_t ci = COMPILER_ATOMIC_LOAD_32(&rmaProxyCtx->cis[peer], std::memory_order_acquire);
 
     // If queue is full, flush pending batch ops to allow progress thread to free slots
     while ((pi - ci) >= rmaProxyCtx->queueSize) {
@@ -668,8 +673,8 @@ ncclResult_t ncclRmaPutProxy(struct ncclComm* comm, struct ncclKernelPlan* plan,
       // Yield to allow progress thread to run and process pending entries
       std::this_thread::yield();
       // Re-read both PI and CI to get fresh values
-      pi = __atomic_load_n(&rmaProxyCtx->pis[peer], __ATOMIC_RELAXED);
-      ci = __atomic_load_n(&rmaProxyCtx->cis[peer], __ATOMIC_ACQUIRE);
+      pi = COMPILER_ATOMIC_LOAD_32(&rmaProxyCtx->pis[peer], std::memory_order_relaxed);
+      ci = COMPILER_ATOMIC_LOAD_32(&rmaProxyCtx->cis[peer], std::memory_order_acquire);
     }
 
     ncclIntruQueueDequeue(&plan->rmaTaskQueueProxy);
@@ -720,7 +725,7 @@ ncclResult_t ncclRmaPutProxy(struct ncclComm* comm, struct ncclKernelPlan* plan,
     rmaProxyCtx->pendingQueues[peer * rmaProxyCtx->queueSize + idx] = desc;
 
     // Advance PI with RELEASE to ensure descriptor write is visible
-    __atomic_store_n(&rmaProxyCtx->pis[peer], pi + 1, __ATOMIC_RELEASE);
+    COMPILER_ATOMIC_STORE_32(&rmaProxyCtx->pis[peer], pi + 1, std::memory_order_release);
     batchIdx++;
 
     // Free the task

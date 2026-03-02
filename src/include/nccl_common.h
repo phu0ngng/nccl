@@ -17,6 +17,7 @@
 
 #include <cstdint>
 
+// Windows compatibility: define ssize_t if not available
 #ifdef NCCL_OS_WINDOWS
   #include <BaseTsd.h>
   typedef SSIZE_T ssize_t;

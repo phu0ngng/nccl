@@ -26,6 +26,10 @@
 #include "argcheck.h"
 #include "mem_manager.h"
 
+#if defined(NCCL_OS_WINDOWS)
+#include "gin/gin_host_win_stub.h"
+#endif
+
 #if CUDART_VERSION < 9000
 struct cudaLaunchParams {
   void *func;
@@ -846,7 +850,7 @@ inline void ncclCommIntraBarrierIn(struct ncclComm* comm, uint32_t x) {
     uint64_t count = COMPILER_ATOMIC_ADD_FETCH(&comm0->intraBarrierCounter, (uint64_t(x)<<32) + 1, std::memory_order_release);
     if (uint32_t(count) == uint32_t(comm->intraRanks)) {
       // Reset.
-      COMPILER_ATOMIC_STORE(&comm0->intraBarrierCounter, 0, std::memory_order_relaxed);
+      COMPILER_ATOMIC_STORE(&comm0->intraBarrierCounter, 0ULL, std::memory_order_relaxed);
       // Release everyone.
       COMPILER_ATOMIC_STORE(&comm0->intraBarrierGate, (count>>32<<32) | (phase^1), std::memory_order_release);
     }

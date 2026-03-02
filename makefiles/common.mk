@@ -23,6 +23,22 @@ MAX_EXT_NET_PLUGINS ?= 0
 EMIT_LLVM_IR ?= 0
 TMA ?= 0
 
+NCCL_OS_LINUX := 1
+CXXFLAGS += -DNCCL_OS_LINUX
+
+# GIN requires InfiniBand verbs which is Linux-only
+ifeq ($(NCCL_OS_LINUX), 1)
+  CXXFLAGS += -DNCCL_GIN_PROXY_ENABLE=1
+  CXXFLAGS += -DDOCA_VERBS_USE_CUDA_WRAPPER -DDOCA_VERBS_USE_NET_WRAPPER
+  NVCUFLAGS += -DDOCA_VERBS_USE_CUDA_WRAPPER -DDOCA_VERBS_USE_NET_WRAPPER
+else ifeq ($(NCCL_OS_WINDOWS), 1)
+  RDMA_CORE := 0
+  MLX5DV := 0
+  CXXFLAGS += -DNCCL_GIN_PROXY_ENABLE=0
+  CXXFLAGS += -DNCCL_GIN_GDAKI_ENABLE=0
+  NVCUFLAGS += -DNCCL_GIN_GDAKI_ENABLE=0
+endif
+
 NVCC ?= $(CUDA_HOME)/bin/nvcc
 
 CUDA_LIB ?= $(CUDA_HOME)/lib64
@@ -85,6 +101,13 @@ CXXFLAGS   := -DCUDA_MAJOR=$(CUDA_MAJOR) -DCUDA_MINOR=$(CUDA_MINOR) -fPIC -fvisi
 # 512 : 120, 640 : 96, 768 : 80, 1024 : 60
 # We would not have to set this if we used __launch_bounds__, but this only works on kernels, not on functions.
 NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) $(CXXSTD) --expt-extended-lambda -Xptxas -maxrregcount=96 -Xfatbin -compress-all
+# Pass OS define to NVCC (must be after NVCUFLAGS := or it would be overwritten)
+ifeq ($(NCCL_OS_LINUX), 1)
+  NVCUFLAGS += -DNCCL_OS_LINUX
+else ifeq ($(NCCL_OS_WINDOWS), 1)
+  NVCUFLAGS += -DNCCL_OS_WINDOWS
+endif
+
 # Use addprefix so that we can specify more than one path
 NVLDFLAGS  := -L${CUDA_LIB} -lcudart -lrt
 
@@ -162,22 +185,6 @@ endif
 
 ifneq ($(MAX_EXT_NET_PLUGINS), 0)
 CXXFLAGS += -DNCCL_NET_MAX_PLUGINS=$(MAX_EXT_NET_PLUGINS)
-endif
-
-CXXFLAGS += -DDOCA_VERBS_USE_CUDA_WRAPPER -DDOCA_VERBS_USE_NET_WRAPPER
-NVCUFLAGS += -DDOCA_VERBS_USE_CUDA_WRAPPER -DDOCA_VERBS_USE_NET_WRAPPER
-
-CXXFLAGS += -DNCCL_GIN_PROXY_ENABLE=1
-
-# Detect OS Linux or Windows
-ifeq ($(shell uname -s), Linux)
-  NCCL_OS_LINUX := 1
-  CXXFLAGS += -DNCCL_OS_LINUX
-  NVCUFLAGS += -DNCCL_OS_LINUX
-else ifeq ($(shell uname -s), Windows)
-  NCCL_OS_WINDOWS := 1
-  CXXFLAGS += -DNCCL_OS_WINDOWS
-  NVCUFLAGS += -DNCCL_OS_WINDOWS
 endif
 
 # Check and enable LLVM IR generation

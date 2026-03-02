@@ -18,6 +18,9 @@
 #include "compiler.h"
 #include "rma/rma.h"
 #include "argcheck.h"
+#include <chrono>
+#include <thread>
+#include "os.h"
 
 #define GROUP_MAX_RECLAIM_STEPS 10
 
@@ -79,7 +82,7 @@ void* ncclAsyncJobMain(void* arg) {
   if (job->result != ncclSuccess) {
     INFO(NCCL_INIT,"%s:%d -> %d [Async thread]", __FILE__, __LINE__, job->result);
   }
-  COMPILER_ATOMIC_STORE(&job->state, ncclGroupJobDone, std::memory_order_release);
+  COMPILER_ATOMIC_STORE(&job->state, static_cast<ncclGroupJobState_t>(ncclGroupJobDone), std::memory_order_release);
   return arg;
 }
 
@@ -498,18 +501,18 @@ static ncclResult_t asyncJobLaunch(struct ncclIntruQueue<struct ncclAsyncJob, &n
         }
 
         if (!job->destroyFlag && (COMPILER_ATOMIC_LOAD(groupAbortFlag, std::memory_order_acquire) || errorJobAbortFlag == true)) {
-          COMPILER_ATOMIC_STORE(job->abortFlag, 1, std::memory_order_release);
-          COMPILER_ATOMIC_STORE(job->abortFlagDev, 1, std::memory_order_release);
+          COMPILER_ATOMIC_STORE(job->abortFlag, uint32_t(1), std::memory_order_release);
+          COMPILER_ATOMIC_STORE(job->abortFlagDev, uint32_t(1), std::memory_order_release);
           if (job->childAbortFlag) {
-            COMPILER_ATOMIC_STORE(job->childAbortFlag, 1, std::memory_order_release);
-            COMPILER_ATOMIC_STORE(job->childAbortFlagDev, 1, std::memory_order_release);
+            COMPILER_ATOMIC_STORE(job->childAbortFlag, uint32_t(1), std::memory_order_release);
+            COMPILER_ATOMIC_STORE(job->childAbortFlagDev, uint32_t(1), std::memory_order_release);
           }
         }
 
         job = job->next;
       } while (job != nullptr);
       // Let preconnect threads progress.
-      if (jobsDone == false) usleep(1);
+      if (jobsDone == false) std::this_thread::sleep_for(std::chrono::microseconds(1));
     } while (jobsDone == false);
 
     if (ret != ncclSuccess) goto fail;

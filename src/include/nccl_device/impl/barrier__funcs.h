@@ -9,7 +9,9 @@
 #define _NCCL_DEVICE_BARRIER__FUNCS_H_
 #include "barrier__types.h"
 #include "lsa_barrier__funcs.h"
+#if defined(NCCL_OS_LINUX)
 #include "gin_barrier__funcs.h"
+#endif
 #include "../utility.h"
 
 #if NCCL_CHECK_CUDACC

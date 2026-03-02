@@ -25,7 +25,9 @@ int ncclCudaCompCap() {
 }
 
 ncclResult_t int64ToBusId(int64_t id, char* busId) {
-  sprintf(busId, "%04lx:%02lx:%02lx.%01lx", (id) >> 20, (id & 0xff000) >> 12, (id & 0xff0) >> 4, (id & 0xf));
+  sprintf(busId, "%04lx:%02lx:%02lx.%01lx",
+          (unsigned long)((id) >> 20), (unsigned long)((id & 0xff000) >> 12),
+          (unsigned long)((id & 0xff0) >> 4), (unsigned long)(id & 0xf));
   return ncclSuccess;
 }
 
@@ -136,19 +138,23 @@ uint64_t hashCombine(uint64_t baseHash, uint64_t value) {
 
 /* Generate a hash of the unique identifying string for this process
  * that will be unique for both bare-metal and container instances
- * Equivalent of a hash of;
- *
- * $$ $(readlink /proc/self/ns/pid)
+ * Linux: hash of $$ $(readlink /proc/self/ns/pid) (pid + PID namespace)
+ * Windows: hash of PID only (no namespaces; PID is unique system-wide)
  */
 uint64_t getPidHash(void) {
   char pname[1024];
   // Start off with our pid ($$)
   sprintf(pname, "%ld", (long) ncclOsGetPid());
   int plen = strlen(pname);
+#if defined(_WIN32)
+  (void)plen; /* unused on Windows */
+  /* Windows has no PID namespaces; PID alone is unique system-wide */
+#else
   int len = readlink("/proc/self/ns/pid", pname+plen, sizeof(pname)-1-plen);
   if (len < 0) len = 0;
-
-  pname[plen+len]='\0';
+  plen += len;
+#endif
+  pname[plen]='\0';
   TRACE(NCCL_INIT,"unique PID '%s'", pname);
 
   return getHash(pname, strlen(pname));
@@ -396,10 +402,10 @@ ncclResult_t ncclIntruAddressMapInsert_untyped(
   // Lazy initialization - create table on first insert
   if (map->hbits == 0) {
     map->hbits = 4;
-    map->table = (void**)calloc(1<<map->hbits, sizeof(void*));
+    map->table = (void**)calloc((size_t)1<<map->hbits, sizeof(void*));
     if (map->table == nullptr) {
       map->hbits = 0; // Reset on failure
-      WARN("Intrusive address map initialization failed: calloc(%d entries) returned null", 1<<map->hbits);
+      WARN("Intrusive address map initialization failed: calloc(%zu entries) returned null", (size_t)1<<map->hbits);
       return ncclSystemError;
     }
   }

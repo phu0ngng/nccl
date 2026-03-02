@@ -8,8 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <link.h>
-#include <dlfcn.h>
+#include "os.h"
 
 #include "debug.h"
 #include "plugin.h"

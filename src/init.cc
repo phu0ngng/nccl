@@ -14,7 +14,11 @@
 #include "group.h"
 #include "net.h"
 #include "coll_net.h"
+#if defined(NCCL_OS_WINDOWS)
+#include "gin/gin_host_win_stub.h"
+#else
 #include "gin.h"
+#endif
 #include "enqueue.h"
 #include "graph.h"
 #include "graph/topo.h"
@@ -190,7 +194,9 @@ ncclResult_t ncclGetUniqueId(ncclUniqueId* out) {
 }
 
 // Prevent compiler from optimizing out these operations
-#ifdef __clang__
+#if defined(_MSC_VER)
+#define NCCL_NO_OPTIMIZE
+#elif defined(__clang__)
 #define NCCL_NO_OPTIMIZE __attribute__((optnone))
 #else
 #define NCCL_NO_OPTIMIZE __attribute__((optimize("O0")))
@@ -1817,7 +1823,7 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
   // Trace this call for replay tool
   if (job->parent) {
     /* unlink child abort flag. */
-    COMPILER_ATOMIC_STORE(&job->parent->childAbortFlag, NULL, std::memory_order_release);
+    COMPILER_ATOMIC_STORE(&job->parent->childAbortFlag, static_cast<uint32_t*>(nullptr), std::memory_order_release);
     if (job->isGrow) {
       TRACE_CALL("ncclCommGrow(%p, %d, %p)", job->parent, comm->nRanks, comm);
     } else {
@@ -2009,8 +2015,8 @@ static ncclResult_t envConfigOverride(ncclComm_t comm) {
     }
   }
 
-  static pthread_once_t onceEnvCtaPolicy = PTHREAD_ONCE_INIT;
-  pthread_once(&onceEnvCtaPolicy, getEnvCtaPolicyOnce);
+  static std::once_flag onceEnvCtaPolicy;
+  std::call_once(onceEnvCtaPolicy, getEnvCtaPolicyOnce);
   if (ctaPolicyEnv != NCCL_CONFIG_UNDEF_INT) {
     if (comm->config.CTAPolicy != NCCL_CONFIG_UNDEF_INT)
       INFO(NCCL_ENV, "Comm config CTAPolicy reset to NCCL_CTA_POLICY=%d", ctaPolicyEnv);
@@ -2718,12 +2724,13 @@ fail:
 
 static ncclResult_t setCommAbortFlags(ncclComm_t comm, int value) {
   // Set abort flags
+  uint32_t uval = static_cast<uint32_t>(value);
   if (comm->childAbortFlag != nullptr) {
-    COMPILER_ATOMIC_STORE(comm->childAbortFlag, value, std::memory_order_release);
-    COMPILER_ATOMIC_STORE(comm->childAbortFlagDev, value, std::memory_order_release);
+    COMPILER_ATOMIC_STORE(comm->childAbortFlag, uval, std::memory_order_release);
+    COMPILER_ATOMIC_STORE(comm->childAbortFlagDev, uval, std::memory_order_release);
   }
-  COMPILER_ATOMIC_STORE(comm->abortFlag, value, std::memory_order_release);
-  COMPILER_ATOMIC_STORE(comm->abortFlagDev, value, std::memory_order_release);
+  COMPILER_ATOMIC_STORE(comm->abortFlag, uval, std::memory_order_release);
+  COMPILER_ATOMIC_STORE(comm->abortFlagDev, uval, std::memory_order_release);
   return ncclSuccess;
 }
 

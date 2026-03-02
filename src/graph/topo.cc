@@ -12,7 +12,11 @@
 #include "nccl.h"
 #include "nvmlwrap.h"
 #include "coll_net.h"
+#if defined(NCCL_OS_WINDOWS)
+#include "gin/gin_host_win_stub.h"
+#else
 #include "gin.h"
+#endif
 #include "transport.h"
 #include <sys/stat.h>
 #include <fcntl.h>

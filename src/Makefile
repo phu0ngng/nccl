@@ -11,12 +11,18 @@ include ../makefiles/version.mk
 INCEXPORTS  := nccl.h nccl_device.h \
 	$(patsubst include/%,%,$(wildcard include/nccl_device/*.h include/nccl_device/*/*.h include/nccl_device/*/*/*.h))
 
+# On Linux use real net_socket and net_ib; on Windows use stubs (avoid multiple definition)
+TRANSPORT_CC = $(wildcard transport/*.cc)
+ifeq ($(NCCL_OS_LINUX), 1)
+TRANSPORT_CC := $(filter-out transport/net_socket_stub.cc transport/net_ib_stub.cc,$(TRANSPORT_CC))
+endif
+
 LIBSRCFILES := \
 	bootstrap.cc channel.cc collectives.cc debug.cc enqueue.cc group.cc \
 	init.cc proxy.cc transport.cc mnnvl.cc allocator.cc dev_runtime.cc sym_kernels.cc ce_coll.cc mem_manager.cc \
 	$(wildcard graph/*.cc) \
 	$(wildcard misc/*.cc) \
-	$(wildcard transport/*.cc) \
+	$(TRANSPORT_CC) \
 	$(wildcard transport/net_ib/*.cc) \
 	$(wildcard transport/net_ib/gdaki/*.cc) \
 	$(wildcard register/*.cc) \
@@ -34,9 +40,9 @@ LIBSRCFILES := \
 BINSRCFILES := ras/client.cc
 
 ifeq ($(NCCL_OS_LINUX), 1)
-	LIBSRCFILES += os/linux.cc
+	LIBSRCFILES += os/linux.cc os/linux_ipcsocket.cc
 else ifeq ($(NCCL_OS_WINDOWS), 1)
-	LIBSRCFILES += os/windows.cc
+	LIBSRCFILES += os/windows.cc os/windows_ipcsocket.cc
 endif
 
 ifneq ($(NVTX), 0)
@@ -126,6 +132,8 @@ $(INCDIR)/nccl.h : nccl.h.in ../makefiles/version.mk
 	    -e "s/\$${nccl:Version}/$(NCCL_VERSION)/g" \
 	    $< > $@
 
+# Device objs (from device/Makefile manifest, incl. common.cu.o) are linked in so libnccl.so contains
+# device code (e.g. ncclGin_BackendMask<...>) that tests resolve when linking with -lnccl.
 $(LIBDIR)/$(LIBTARGET): $(LIBOBJ) $(DEVMANIFEST)
 	@printf "Linking    %-35s > %s\n" $(LIBTARGET) $@
 	mkdir -p $(LIBDIR)

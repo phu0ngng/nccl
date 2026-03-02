@@ -139,17 +139,19 @@ static const float nvlsEfficiency[NCCL_NUM_COMPCAPS] = {
   0.74f, // Blackwell
 };
 
-// Default tuner constants
+// Default tuner constants (positional initializers for C++17 compatibility)
 static const ncclTunerConstants_t ncclTunerConstantsDefaults = {
-  .baseLatencies = {
+  // baseLatencies
+  {
     {  6.8, 14.0,  8.4 }, {  6.6, 14.0,  8.4 },  // Tree, Ring
     {    0,    0,    0 }, {    0,    0,    0 },  // Collnet Direct, Chain
     {    0,    0,    0 }, {    0,    0,    0 },  // NVLS, NVLS Tree
     {  8.0,  8.0,  8.0 }                         // PAT
-    },
-  .hwLatencies = {
+  },
+  // hwLatencies
+  {
   /* NVLINK */
-  { { .6, 1.25, 4.0 }, { .6, 1.9, 3.4 }, /* Tree (LL/LL128/Simple), Ring (LL/LL128/Simple)*/
+  { { 0.6, 1.25, 4.0 }, { 0.6, 1.9, 3.4 }, /* Tree (LL/LL128/Simple), Ring (LL/LL128/Simple)*/
     {  0,    0, 3.7 }, {  0,   0,  2.8 }, /* CollNetDirect (LL/LL128/Simple), CollNetChain (LL/LL128/Simple)*/
     {  0,    0,  25 }, {  0,   0,  25 }, /* NVLS (LL/LL128/Simple), NVLSTree (LL/LL128/Simple)*/
     {  0,    0, 4.0 } /* PAT (LL/LL128/Simple)*/
@@ -167,31 +169,36 @@ static const ncclTunerConstants_t ncclTunerConstantsDefaults = {
     {   0,   0, 14 } /* PAT (LL/LL128/Simple)*/
     },
   },
-  .llMaxBws = {
+  // llMaxBws
+  {
      {39.0, 39.0, 20.4}, /* Volta-N1/Intel-N2/Intel-N4) */
      {87.7, 22.5 /*avg of ring & tree*/, 19.0}, /* Ampere-N1/AMD-N2/AMD-N4) */
      {141.0, 45.0 /*avg of ring & tree*/, 35.0}, /* Hopper-N1/AMD-N2/AMD-N4) */
      {2*141.0, 2*45.0 /*avg of ring & tree*/, 2*35.0}, /* Blackwell-N1/AMD-N2/AMD-N4) */
   },
-  .perChMaxRingLL128Bws = {
+  // perChMaxRingLL128Bws
+  {
     {20.0, 20.0, 20.0}, /* Volta (N1/N2/N4) */
     {20.0, 20.0, 20.0}, /* Ampere (N1/N2/N4) */
     {36.7, 36.7, 36.7}, /* Hopper (N1/N2/N4) */
     {40.0, 40.0, 40.0}, /* Blackwell (N1/N2/N4) */
   },
-  .perChMaxTreeLL128Bws = {
+  // perChMaxTreeLL128Bws
+  {
     {20.0, 20.0, 20.0}, /* Volta (N1/N2/N4) */
     {20.0, 20.0, 20.0}, /* Ampere (N1/N2/N4) */
     {36.7, 36.7, 29.0}, /* Hopper (N1/N2/N4) */
     {55.6, 31.67, 20.0}, /* Blackwell (N1/N2/N4) */
   },
-  .perChMaxTreeBws = {
+  // perChMaxTreeBws
+  {
     {26.5, 18.5, 10.0}, /* Volta (N1/N2/N4) */
     {24.0, 23.6, 17.8}, /* Ampere (N1/N2/N4) */
     {38.7, 41.4, 36.0}, /* Hopper (N1/N2/N4) */
     {70.0, 42.8, 24.0}, /* Blackwell (N1/N2/N4) */
   },
-  .perChMaxNVLSTreeBws = {
+  // perChMaxNVLSTreeBws
+  {
     {26.5, 18.5, 10.0}, /* Volta (N1/N2/N4) */
     {24.0, 23.6, 17.8}, /* Ampere (N1/N2/N4) */
     {0.0, 57.7, 45.5}, /* Hopper (N1/N2/N4) */

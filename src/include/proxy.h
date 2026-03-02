@@ -16,8 +16,14 @@
 #include "shmutils.h"
 #include "p2p.h"
 #include "collectives.h"
+#if defined(NCCL_OS_WINDOWS)
+#include "gin/gin_host_win_stub.h"
+#else
 #include "gin/gin_host.h"
+#endif
+#include "os.h"
 
+#include <atomic>
 #include <mutex>
 #include <condition_variable>
 
@@ -110,7 +116,7 @@ struct ncclProxyOp {
   void* taskEventHandle;
   int rank;
   int peer;
-  pid_t pid;
+  ncclPid_t pid;
   void* profilerContext;
   uint64_t workCounter;
 
@@ -156,7 +162,7 @@ struct ncclProxySubArgs {
   // Profiler plugin
   int eActivationMask;
   int rank;
-  pid_t pid;
+  ncclPid_t pid;
   void* profilerContext;
   void* taskEventHandle;
   void* opEventHandle;
@@ -333,7 +339,6 @@ struct ncclProxyState {
   ncclNet_t* ncclNet;
   ncclCollNet_t* ncclCollNet;
   struct ncclGinState* ginState;
-
   uint32_t* abortFlag;
   bool directMode;
   struct ncclMemManager* memManager;  // Shared memory manager for proxy allocations

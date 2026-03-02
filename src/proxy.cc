@@ -18,13 +18,10 @@
 #include "compiler.h"
 #include "os.h"
 
-#include <sys/syscall.h>
 #include <assert.h>
-#include <unistd.h>
-#include <sys/time.h>
-#include <sched.h>
 #include <algorithm>
 #include <mutex>
+#include <thread>
 
 #define NCCL_MAX_PROXY_CONNECTIONS (NCCL_MAX_LOCAL_RANKS+1)
 
@@ -499,7 +496,7 @@ static ncclResult_t ncclLocalOpAppend(struct ncclComm* comm, struct ncclProxyCon
     int freeOp = -1;
     while (freeOp == -1) {
       freeOp = COMPILER_ATOMIC_EXCHANGE(&pool->freeOps[tpLocalRank], -1, std::memory_order_acquire);
-      if (freeOp == -1) sched_yield();
+      if (freeOp == -1) std::this_thread::yield();
     }
     opIndex = freeOp;
     op = pool->ops+opIndex;
@@ -1517,7 +1514,7 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
     int nChannels = (int) *op->reqBuff;
     TRACE(NCCL_PROXY, "proxyProgressAsync::ncclProxyMsgSharedInit opId=%p op.reqBuff=%p nChannels=%d", op->opId, op->reqBuff, nChannels);
     if (op->connection->tcomm->proxySharedInit) res = op->connection->tcomm->proxySharedInit(op->connection, proxyState, nChannels);
-    COMPILER_ATOMIC_STORE(&op->connection->state, connSharedInitialized, std::memory_order_release);
+    COMPILER_ATOMIC_STORE(&op->connection->state, static_cast<proxyConnectState>(connSharedInitialized), std::memory_order_release);
   }
   else if (op->type == ncclProxyMsgInit) {
     TRACE(NCCL_PROXY, "proxyProgressAsync::ncclProxyMsgInit opId=%p op.reqBuff=%p", op->opId, op->reqBuff);
@@ -1533,9 +1530,9 @@ static ncclResult_t proxyProgressAsync(struct ncclProxyAsyncOp* op, struct ncclP
   if (done) {
     INFO(NCCL_PROXY, "proxyProgressAsync opId=%p op.type=%d op.reqBuff=%p op.respSize=%d done", op->opId, op->type, op->reqBuff, op->respSize);
     if (op->type == ncclProxyMsgSetup)
-      COMPILER_ATOMIC_STORE(&op->connection->state, connSetupDone, std::memory_order_release);
+      COMPILER_ATOMIC_STORE(&op->connection->state, static_cast<proxyConnectState>(connSetupDone), std::memory_order_release);
     else if (op->type == ncclProxyMsgConnect)
-      COMPILER_ATOMIC_STORE(&op->connection->state, connConnected, std::memory_order_release);
+      COMPILER_ATOMIC_STORE(&op->connection->state, static_cast<proxyConnectState>(connConnected), std::memory_order_release);
     /* if setup or connect is done, we should not return any error at this point since
      * ncclSocketSend might already send the respBuff to the requester. If we still choose
      * to abort and close the connection, it can cause segfault if the requester is using
@@ -1596,7 +1593,17 @@ fail:
   goto exit;
 }
 
+#if defined(NCCL_OS_WINDOWS)
+/* Windows: poll() not available; use WSAPoll (same layout as pollfd) */
+#include "os.h"
+typedef WSAPOLLFD pollfd;
+static inline int proxyPoll(pollfd* fds, unsigned long nfds, int timeout) {
+  return WSAPoll(fds, (ULONG)nfds, timeout);
+}
+#define poll(fds, nfds, timeout) proxyPoll((pollfd*)(fds), (unsigned long)(nfds), (timeout))
+#else
 #include <poll.h>
+#endif
 
 static bool proxyMatchOpType(int type) {
   switch (type) {
@@ -1825,10 +1832,14 @@ void* ncclProxyServiceUDS(void* _args) {
     WARN("[Proxy Service UDS] Failed to set CUDA device %d", proxyState->cudaDev);
   }
 
-  if (ncclIpcSocketGetFd(&proxyState->ipcSock, &pollfds[0].fd) != ncclSuccess) {
-    WARN("[Proxy Service UDS] Get listenSock fd fails");
-    return NULL;
-  };
+  {
+    int ipcFd;
+    if (ncclIpcSocketGetFd(&proxyState->ipcSock, &ipcFd) != ncclSuccess) {
+      WARN("[Proxy Service UDS] Get listenSock fd fails");
+      return NULL;
+    }
+    pollfds[0].fd = (decltype(pollfds[0].fd))ipcFd;
+  }
   pollfds[0].events = POLLIN|POLLHUP;
 
   while (1) {
@@ -1928,9 +1939,9 @@ ncclResult_t ncclProxyStop(struct ncclComm* comm) {
       if (sharedProxyState->peerSocks) {
         int peerArraySize = sharedProxyState->peerArraySize;
         for (int i = 0; i < peerArraySize; i++) {
-          int fd;
+          ncclSocketDescriptor fd;
           NCCLCHECK(ncclSocketGetFd(sharedProxyState->peerSocks + i, &fd));
-          if (fd >= 0) {
+          if (fd != NCCL_INVALID_SOCKET) {
             if (sharedProxyState->proxyOps[i].pool) {
               NCCLCHECK(ncclShmClose(sharedProxyState->proxyOps[i].handle));
             }

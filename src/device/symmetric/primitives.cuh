@@ -13,7 +13,9 @@
 #include "collectives.h"
 #include "../op128.h"
 #include "../reduce_kernel.h"
+#if !defined(NCCL_OS_WINDOWS)
 #include "gin_scratch.h"
+#endif
 #include "tma_ptx.cuh"
 
 template<typename Pack, int UnrollPacks, int UnrollPeers = 1>

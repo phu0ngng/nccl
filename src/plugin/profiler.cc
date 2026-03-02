@@ -464,7 +464,7 @@ ncclResult_t ncclProfilerStartTaskEvents(struct ncclKernelPlan* plan) {
     // gives the consistency.
     if (!plan->persistent || (COMPILER_EXPECT(ncclProfiler != NULL, 0) && (plan->groupEventHandle || ct->collApiEventHandle) &&
                               (ct->eActivationMask & ncclProfileKernelCh)))
-      COMPILER_ATOMIC_FETCH_ADD(&plan->comm->seqNumber[ct->func], 1, std::memory_order_relaxed);
+      COMPILER_ATOMIC_FETCH_ADD(&plan->comm->seqNumber[ct->func], 1ULL, std::memory_order_relaxed);
     ct = ct->next;
   }
   if (COMPILER_EXPECT(ncclProfiler != NULL, 0)) {

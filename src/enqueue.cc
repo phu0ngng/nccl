@@ -1183,7 +1183,7 @@ static ncclResult_t waitWorkFifoAvailable(struct ncclComm* comm, uint32_t desire
   if (!hasRoom) {
     while (true) {
       // Check abort flag to break deadlock when abort is signaled
-      if (__atomic_load_n(comm->abortFlag, __ATOMIC_ACQUIRE)) {
+      if (COMPILER_ATOMIC_LOAD(comm->abortFlag, std::memory_order_acquire)) {
         return ncclInternalError;
       }
 
@@ -1235,8 +1235,9 @@ static ncclResult_t uploadWork(struct ncclComm* comm, struct ncclKernelPlan* pla
     plan->kernelArgs->workBuf = comm->workFifoBufDev;
     break;
   case ncclDevWorkStorageTypePersistent:
-    // We rely on 16-byte alignment
-    #if __cplusplus >= 201103L
+    // We rely on 16-byte alignment. Use aligned alloc when available (C++11+ or MSVC with /std:c++11+).
+    // MSVC keeps __cplusplus at 199711L
+    #if (__cplusplus >= 201103L) || (defined(_MSC_VER) && _MSVC_LANG >= 201103L)
     fifoBufHost = ncclOsAlignedAlloc(16, ROUNDUP(workBytes, 16));
     #else
     static_assert(16 <= alignof(max_align_t), "We rely on 16-byte alignment.");
@@ -2816,7 +2817,7 @@ static ncclResult_t rmaTaskAppend(
       t->nsignals[i] = info->signalDescs[i].opCnt;
     }
 
-    t->eActivationMask = __atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED);
+    t->eActivationMask = COMPILER_ATOMIC_LOAD(&ncclProfilerEventMask, std::memory_order_relaxed);
     planner->nTasksRma++;
     ncclIntruQueueEnqueue(&planner->rmaTaskQueues[t->ctx], t);
 
@@ -2869,7 +2870,7 @@ static ncclResult_t rmaTaskAppend(
       t->nsignals = NULL;
       t->npeers = 0;
 
-      t->eActivationMask = __atomic_load_n(&ncclProfilerEventMask, __ATOMIC_RELAXED);
+      t->eActivationMask = COMPILER_ATOMIC_LOAD(&ncclProfilerEventMask, std::memory_order_relaxed);
 
       planner->nTasksRma++;
       // Enqueue the task into the appropriate context queue

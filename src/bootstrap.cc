@@ -10,8 +10,6 @@
 #include "utils.h"
 #include "bootstrap.h"
 #include "net.h"
-#include <unistd.h>
-#include <sys/types.h>
 #include "proxy.h"
 #include "param.h"
 #include "ras.h"
@@ -954,7 +952,7 @@ static ncclResult_t socketConnect(void* commState, int peer, int tag, struct ncc
   ncclResult_t ret = ncclSuccess;
   struct bootstrapState* state = (struct bootstrapState*)commState;
 
-  struct socketAckInfo ack = (struct socketAckInfo){.rank = state->rank, .tag = tag};
+  struct socketAckInfo ack = (struct socketAckInfo){ state->rank, tag };
   NCCLCHECKGOTO(ncclSocketInit(sock, state->peerP2pAddresses + peer, state->magic, ncclSocketTypeBootstrap, state->abortFlag), ret, fail);
   NCCLCHECKGOTO(ncclSocketConnect(sock), ret, fail);
   NCCLCHECKGOTO(socketSend(sock, &ack, sizeof(struct socketAckInfo)), ret, fail);

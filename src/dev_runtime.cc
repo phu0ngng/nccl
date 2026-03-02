@@ -17,7 +17,11 @@
 #include "group.h"
 #include "nccl_device.h"
 #include "utils.h"
+#if defined(NCCL_OS_WINDOWS)
+#include "gin/gin_host_win_stub.h"
+#else
 #include "gin/gin_host.h"
+#endif
 #include "argcheck.h"
 #include <mutex>
 
@@ -979,6 +983,7 @@ bool ncclGinResourcesRequested(struct ncclDevCommRequirements const* reqs) {
   return requestedGinResources;
 }
 
+#if defined(NCCL_OS_LINUX)
 #include "nccl_device/gin/gdaki/gin_gdaki_device_host_common.h"
 static void ncclDevCommGdakiDump(void* handle) {
   struct ncclGinGdakiGPUContext ctx;
@@ -999,6 +1004,14 @@ static void ncclDevCommProxyDump(void* handle) {
     printf("    PROXY pis %p cis %p counters %p signals %p\n", ctx.pis, ctx.cis, ctx.counters, ctx.signals);
   }
 }
+#elif defined(NCCL_OS_WINDOWS)
+static void ncclDevCommGdakiDump(void* handle) {
+  printf("    GDAKI handle %p (detailed dump not available on Windows)\n", handle);
+}
+static void ncclDevCommProxyDump(void* handle) {
+  printf("    PROXY handle %p (detailed dump not available on Windows)\n", handle);
+}
+#endif /* !NCCL_OS_WINDOWS */
 
 void ncclDevCommDump(struct ncclDevComm* devComm) {
   printf("**** Dev Comm Dump %p ****\n", devComm);

@@ -9,7 +9,11 @@
 
 #define PLUGIN_NAME "Plugin"
 
+#if defined(NCCL_OS_LINUX)
 #define __hidden __attribute__ ((visibility("hidden")))
+#elif defined(NCCL_OS_WINDOWS)
+#define __hidden
+#endif
 #define NCCL_PLUGIN_MAX_RECVS 1
 
 int max_requests = NCCL_NET_MAX_REQUESTS;

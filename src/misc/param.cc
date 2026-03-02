@@ -15,43 +15,36 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <sys/types.h>
-#include <unistd.h>
-#include <pthread.h>
 #include <mutex>
-#include <pwd.h>
 #include <unordered_set>
 #include "os.h"
 
 const char* userHomeDir() {
-  struct passwd *pwUser = getpwuid(getuid());
-  return pwUser == NULL ? NULL : pwUser->pw_dir;
+  return getenv("HOME");
 }
 
 void setEnvFile(const char* fileName) {
   FILE * file = fopen(fileName, "r");
   if (file == NULL) return;
 
-  char *line = NULL;
+  char line[4096];
   char envVar[1024];
   char envValue[1024];
-  size_t n = 0;
-  ssize_t read;
-  while ((read = getline(&line, &n, file)) != -1) {
+  while (fgets(line, (int)sizeof(line), file) != NULL) {
+    size_t len = strlen(line);
+    if (len > 0 && line[len-1] == '\n') line[--len] = '\0';
+    if (len > 0 && line[len-1] == '\r') line[--len] = '\0';
     if (line[0] == '#') continue;
-    if (line[read-1] == '\n') line[read-1] = '\0';
-    int s=0; // Env Var Size
+    int s = 0;
     while (line[s] != '\0' && line[s] != '=') s++;
     if (line[s] == '\0') continue;
     strncpy(envVar, line, std::min(1023,s));
     envVar[std::min(1023,s)] = '\0';
     s++;
     strncpy(envValue, line+s, 1023);
-    envValue[1023]='\0';
+    envValue[1023] = '\0';
     ncclOsSetEnv(envVar, envValue);
-    //printf("%s : %s->%s\n", fileName, envVar, envValue);
   }
-  if (line) free(line);
   fclose(file);
 }
 

@@ -25,6 +25,10 @@ struct ncclComm;
 #include "cudawrap.h"
 #endif
 
+#if defined(NCCL_OS_LINUX)
+  #include <unistd.h>
+#endif
+
 uint64_t clockNano(); // from utils.h with which we have a circular dependency
 
 template<typename T>
@@ -537,19 +541,25 @@ finish:
   return result;
 }
 
-#if defined(NCCL_OS_LINUX)
 // Allocate memory to be potentially ibv_reg_mr'd. This needs to be
 // allocated on separate pages as those pages will be marked DONTFORK
 // and if they are shared, that could cause a crash in a child process
 inline ncclResult_t ncclIbMallocDebug(void** ptr, size_t size, const char *filefunc, int line) {
   if (size > 0) {
-    long page_size = ncclOsGetPageSize();
-    if (page_size < 0) return ncclSystemError;
-    void* p;
-    int size_aligned = ROUNDUP(size, page_size);
+    void* p = NULL;
+    size_t page_size = ncclOsGetPageSize();
+#if defined(NCCL_OS_LINUX)
+    size_t size_aligned = ROUNDUP(size, page_size);
     int ret = posix_memalign(&p, page_size, size_aligned);
     if (ret != 0) return ncclSystemError;
-    memset(p, 0, size);
+#elif defined(NCCL_OS_WINDOWS)
+    size_t size_aligned = ROUNDUP(size, page_size);
+    p = _aligned_malloc(size_aligned, page_size);
+    if (p == NULL) return ncclSystemError;
+#endif
+    if (p != NULL) {
+      memset(p, 0, size);
+    }
     *ptr = p;
   } else {
     *ptr = NULL;
@@ -559,6 +569,5 @@ inline ncclResult_t ncclIbMallocDebug(void** ptr, size_t size, const char *filef
 }
 #define ncclIbMalloc(...) ncclIbMallocDebug(__VA_ARGS__, __FILE__, __LINE__)
 
-#endif // defined(NCCL_OS_LINUX)
 
 #endif

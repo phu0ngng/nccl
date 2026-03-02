@@ -8,7 +8,7 @@
 #include "nccl_net.h"
 #include "proxy.h"
 #include "checks.h"
-#include <dlfcn.h>
+#include "os.h"
 
 static ncclNet_t ncclNet;
 static ncclCollNet_t ncclCollNet;
@@ -168,7 +168,7 @@ exit:
 }
 
 ncclNet_t* getNcclNet_v9(void* lib) {
-  ncclNet_v9 = (ncclNet_v9_t*)dlsym(lib, "ncclNetPlugin_v9");
+  ncclNet_v9 = (ncclNet_v9_t*)ncclOsDlsym(lib, "ncclNetPlugin_v9");
   if (ncclNet_v9) {
     ncclNet.name = ncclNet_v9->name;
     ncclNet.init = ncclNet_init;
@@ -209,7 +209,7 @@ exit:
 }
 
 ncclCollNet_t* getNcclCollNet_v9(void* lib) {
-  ncclCollNet_v9 = (ncclCollNet_v9_t*)dlsym(lib, "ncclCollNetPlugin_v9");
+  ncclCollNet_v9 = (ncclCollNet_v9_t*)ncclOsDlsym(lib, "ncclCollNetPlugin_v9");
   if (ncclCollNet_v9) {
     ncclCollNet.name = ncclCollNet_v9->name;
     ncclCollNet.init = ncclCollNet_init;

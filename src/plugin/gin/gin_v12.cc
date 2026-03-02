@@ -7,7 +7,7 @@
 
 #include "nccl_gin.h"
 #include "proxy.h"
-#include <dlfcn.h>
+#include "os.h"
 
 static ncclGin_v12_t* ncclGin_v12;
 static ncclGin_t ncclGin;
@@ -59,7 +59,7 @@ static ncclResult_t ncclGin_iputSignal(void* ginCtx, int context, uint64_t srcOf
 }
 
 ncclGin_t* getNcclGin_v12(void* lib) {
-  ncclGin_v12 = (ncclGin_v12_t*)dlsym(lib, "ncclGinPlugin_v12");
+  ncclGin_v12 = (ncclGin_v12_t*)ncclOsDlsym(lib, "ncclGinPlugin_v12");
   if (ncclGin_v12) {
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded gin plugin %s (v12)", ncclGin_v12->name);
     ncclGin.name = ncclGin_v12->name;

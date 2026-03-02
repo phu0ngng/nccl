@@ -122,7 +122,7 @@ static uint32_t kernelMask_user() {
       got = 0;
       for (int k=0; k < (int)ncclSymkKernelId_Count; k++) {
         if (strcmp(kernelName[k], name) == 0) {
-          COMPILER_ATOMIC_STORE(&cache, 1<<k, std::memory_order_relaxed);
+          COMPILER_ATOMIC_STORE(&cache, uint32_t(1<<k), std::memory_order_relaxed);
           got = 1<<k;
           break;
         }
