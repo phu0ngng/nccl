@@ -241,6 +241,9 @@ ncclResult_t ncclGinIbConnect(void *ctx, void *handles[], int nranks, int rank,
   cComm->getGidIndex = ncclIbGetGidIndex;
   cComm->dev = lComm->dev;
 
+  cComm->ib.context = ncclIbDevs[cComm->dev].context;
+  cComm->ib.pd = ncclIbDevs[cComm->dev].pd;
+
   *collComm = cCommArray;
   return ncclSuccess;
 }
@@ -259,6 +262,7 @@ ncclResult_t ncclGinIbCloseColl(void* collComm) {
     NCCLCHECK(ncclNetIb.closeSend(cComm->sendComm));
     cComm->sendComm = NULL;
   }
+
   memset(cComm, 0, sizeof(*cComm));
 
   free(cCommArray);
@@ -305,8 +309,6 @@ ncclResult_t ncclGinIbGdakiConnect(void *ctx, void *handles[], int nranks, int r
 
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)*collComm;
   cComm->getProperties = (ncclResult_t(*)(int dev, void *props))ncclGinIbGdakiGetProperties;
-  cComm->ibvCtx = ncclIbDevs[ncclGinIbGdakiDevIndexes[cComm->dev]].context;
-
   return ncclSuccess;
 }
 

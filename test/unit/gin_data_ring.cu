@@ -135,10 +135,11 @@ int main(int argc, char** argv) {
   ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
   config.blocking = 1;
   NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, rank, &config));
-  NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, 1));
-  uint32_t sigs;
-  NCCLCHECK(ncclGinAllocSignalsCounters(comm, 2*BlockPerRank, &sigs, 0, nullptr));
-  assert(sigs == 0);
+  NCCLCHECK(ncclGinConnectOnce(comm));
+  ncclDevComm_t devComm;
+  ncclDevCommRequirements_t reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+  reqs.ginSignalCount = 2*BlockPerRank;
+  NCCLCHECK(ncclGinDevCommSetup(comm, &reqs, &devComm));
 
   // Allocate and register symmetric memory
   void *buf;
@@ -153,8 +154,8 @@ int main(int argc, char** argv) {
   NCCLCHECK(ncclGinRegister(comm, buf, bufSize, hostWins, devWins, /*winFlags=*/0));
   // Get GIN resources
   ncclGinCtx_M<-1u> gctx;
-  gctx.backend = comm->sharedRes->ginState.ginDevHandles[0]->netDeviceType;
-  gctx.handle = comm->sharedRes->ginState.ginDevHandles[0]->handle;
+  gctx.backend = (ncclNetDeviceType)devComm.ginNetDeviceTypes[0];
+  gctx.handle = devComm.ginHandles[0];
   gctx.rank = rank;
   gctx.nRanks = nRanks;
   gctx.contextId = 0;
@@ -166,6 +167,7 @@ int main(int argc, char** argv) {
   printf("[MPI Rank %d] Completed kernel\n", rank);
 
   // cleanup
+  NCCLCHECK(ncclGinDevCommFree(comm, &devComm));
   NCCLCHECK(ncclGinDeregister(comm, hostWins));
   NCCLCHECK(ncclCommFinalize(comm));
   NCCLCHECK(ncclCommDestroy(comm));

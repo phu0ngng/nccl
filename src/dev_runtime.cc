@@ -393,7 +393,6 @@ static void symTeamDestroyAll(struct ncclComm* comm) {
 }
 
 static ncclResult_t symMemoryRegisterGin(struct ncclComm* comm, struct ncclDevrMemory* mem) {
-  NCCLCHECK(ncclGinConnectOnce(comm, comm->globalGinSupport, 0)); // Will allocate the default number of contexts if needed.
   NCCLCHECK(ncclGinRegister(comm, mem->primaryAddr, mem->size, mem->ginHostWins, mem->ginDevWins, mem->winFlags));
   return ncclSuccess;
 }
@@ -802,7 +801,48 @@ bool ncclGinResourcesRequested(struct ncclDevCommRequirements const* reqs) {
   return requestedGinResources;
 }
 
-NCCL_PARAM(GinExclusiveContexts, "GIN_EXCLUSIVE_CONTEXTS", -1);
+#include "nccl_device/gin/gdaki/gin_gdaki_device_host_common.h"
+static void ncclDevCommGdakiDump(void* handle) {
+  struct ncclGinGdakiGPUContext ctx;
+  if (cudaMemcpy(&ctx, handle, sizeof(ctx), cudaMemcpyDeviceToHost) == cudaSuccess) {
+    printf("    GDAKI qp %p companion qp %p sink buffer lkey %x\n", ctx.gdqp, ctx.companion_gdqp, ctx.sink_buffer_lkey);
+    printf("    GDAKI counters %p rkeys %p lkey %x offset %d\n", ctx.counters_table.buffer,
+        ctx.counters_table.rkeys, ctx.counters_table.lkey, ctx.counters_table.offset);
+    printf("    GDAKI signals  %p rkeys %p lkey %x offset %d\n", ctx.signals_table.buffer,
+        ctx.signals_table.rkeys, ctx.signals_table.lkey, ctx.signals_table.offset);
+  }
+}
+
+#include "nccl_device/gin/proxy/gin_proxy_device_host_common.h"
+static void ncclDevCommProxyDump(void* handle) {
+  ncclGinProxyGpuCtx_t ctx;
+  if (cudaMemcpy(&ctx, handle, sizeof(ctx), cudaMemcpyDeviceToHost) == cudaSuccess) {
+    printf("    PROXY nranks %d queue size %d queues %p\n", ctx.nranks, ctx.queueSize, ctx.queues);
+    printf("    PROXY pis %p cis %p counters %p signals %p\n", ctx.pis, ctx.cis, ctx.counters, ctx.signals);
+  }
+}
+
+void ncclDevCommDump(struct ncclDevComm* devComm) {
+  printf("**** Dev Comm Dump %p ****\n", devComm);
+  printf(" Rank %d/%d CPC32 %d\n", devComm->rank, devComm->nRanks, devComm->nRanks_rcp32);
+  printf(" LSA Rank %d/%d CPC32 %d\n", devComm->lsaRank, devComm->lsaSize, devComm->lsaSize_rcp32);
+  printf("\n");
+  printf(" GIN\n");
+  printf("  Mode %s\n", devComm->ginIsRailed ? "Rail" : "Full");
+  printf("  Connections %d\n", devComm->ginConnectionCount);
+  for (int c=0; c<devComm->ginConnectionCount; c++) {
+    printf("   [%d] %d %p\n", c, devComm->ginNetDeviceTypes[c], devComm->ginHandles[c]);
+    if (devComm->ginNetDeviceTypes[c] == NCCL_GIN_TYPE_GDAKI) ncclDevCommGdakiDump(devComm->ginHandles[c]);
+    if (devComm->ginNetDeviceTypes[c] == NCCL_GIN_TYPE_PROXY) ncclDevCommProxyDump(devComm->ginHandles[c]);
+  }
+  printf("  Signals  %d start %d shadows %p\n", devComm->ginSignalCount, devComm->ginSignalBase, devComm->ginSignalShadows);
+  printf("  Counters %d start %d\n", devComm->ginCounterCount, devComm->ginCounterBase);
+  printf("  Contexts %d start %d\n", devComm->ginContextCount, devComm->ginContextBase);
+  printf("\n");
+  printf(" Abort flag %p\n", devComm->abortFlag);
+  printf(" LSA Barriers count %d handle %d\n", devComm->lsaBarrier.nBarriers, devComm->lsaBarrier.bufHandle);
+  printf(" GIN Barrier signal0 %d\n", devComm->railGinBarrier.signal0);
+}
 
 ncclResult_t ncclDevrCommCreateInternal(
     struct ncclComm* comm,
@@ -816,8 +856,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   bool ginActivated = false;
   struct ncclDevrTeam* tmLsa;
   size_t bufSizeTotal;
-  int nGinConnections = 0;
-  int nGinContexts = 0;
+  int nGinContexts = reqs->ginContextCount;
   int ginSignalTotal = 0, ginCounterTotal = 0;
   struct ncclDevResourceRequirements* resReqsHead = reqs->resourceRequirementsList;
   struct ncclDevResourceRequirements lsaBarReq;
@@ -828,7 +867,6 @@ ncclResult_t ncclDevrCommCreateInternal(
   struct ncclDevrWindow* win = nullptr;
   struct ncclWindow_vidmem* winHost = nullptr;
   size_t ginSignalShadowsOffset = 0;
-  bool ginExclusiveContexts = false;
   void* outDevCommPreserve;
   struct ncclDevComm outDevCommTmp;
 
@@ -869,40 +907,11 @@ ncclResult_t ncclDevrCommCreateInternal(
   }
 
   if (ginActivated) {
-    NCCLCHECKGOTO(ncclGinConnectOnce(comm, requestedConnectionType, reqs->ginContextCount, reqs->ginQueueDepth), ret, fail);
+    NCCLCHECKGOTO(ncclGinConnectOnce(comm), ret, fail);
     // Register all preexisting memories with GIN. Update the windows later when
     // we have a stream.
     for (struct ncclDevrMemory* mem = devr->memHead; mem != nullptr; mem = mem->next) {
       NCCLCHECKGOTO(symMemoryRegisterGin(comm, mem), ret, fail);
-    }
-  }
-  if (devr->ginEnabled) {
-    nGinConnections = comm->sharedRes->ginState.ginCommCount;
-
-    if (ncclParamGinExclusiveContexts() != -1)
-      ginExclusiveContexts = ncclParamGinExclusiveContexts();
-    else
-      ginExclusiveContexts = reqs->ginExclusiveContexts;
-    if (ginExclusiveContexts) {
-      int unallocated = comm->sharedRes->ginState.ctxLastExclusive - comm->sharedRes->ginState.ctxFirstAvailable;
-      nGinContexts = reqs->ginContextCount;
-      if (nGinContexts > unallocated) {
-        WARN("Requested number of exclusive GIN contexts (%d) exceeds the unallocated count (%d). Use NCCL_GIN_NCONTEXTS to increase the limit", nGinContexts, unallocated);
-        ret = ncclInvalidArgument;
-        goto fail;
-      }
-    } else {
-      nGinContexts = std::min(reqs->ginContextCount, comm->sharedRes->ginState.ctxLastExclusive);
-      if (nGinContexts == 0) {
-        WARN("No shared contexts are available (%d requested) as all have been allocated for exclusive use. Use NCCL_GIN_NCONTEXTS to increase the limit", reqs->ginContextCount);
-        ret = ncclInvalidArgument;
-        goto fail;
-      }
-      if (nGinContexts < reqs->ginContextCount) {
-        INFO(NCCL_INIT|NCCL_NET,
-             "Capping the number of GIN contexts to %d (%d requested). Use NCCL_GIN_NCONTEXTS to increase the limit",
-             nGinContexts, reqs->ginContextCount);
-      }
     }
   }
 
@@ -967,6 +976,13 @@ ncclResult_t ncclDevrCommCreateInternal(
     bufSizeTotal = alignUp(bufSizeTotal, devr->granularity);
   }
 
+  if (devr->ginEnabled) {
+    struct ncclDevCommRequirements ginReqs = *reqs; // Struct copy
+    ginReqs.ginSignalCount = ginSignalTotal;
+    ginReqs.ginCounterCount = ginCounterTotal;
+    NCCLCHECK(ncclGinDevCommSetup(comm, &ginReqs, outDevComm));
+  }
+
   CUDACHECKGOTO(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), ret, fail);
 
   if (ginActivated) {
@@ -1016,47 +1032,15 @@ ncclResult_t ncclDevrCommCreateInternal(
     CUDACHECKGOTO(cudaMemsetAsync(win->userPtr, 0, bufSizeTotal, stream), ret, fail_stream_mem_win);
   }
 
-  if (devr->ginEnabled) {
-    outDevComm->ginConnectionCount = nGinConnections;
-    outDevComm->ginContextCount = nGinContexts;
-    outDevComm->ginSignalCount = ginSignalTotal;
-    outDevComm->ginCounterCount = ginCounterTotal;
-    NCCLCHECKGOTO(ncclGinAllocSignalsCounters(comm,
-      ginSignalTotal, &outDevComm->ginSignalBase,
-      ginCounterTotal, &outDevComm->ginCounterBase
-    ), ret, fail_stream_mem_win);
-    if (ginExclusiveContexts) {
-      comm->sharedRes->ginState.ctxLastExclusive -= nGinContexts;
-      outDevComm->ginContextBase = comm->sharedRes->ginState.ctxLastExclusive;
-    } else {
-      comm->sharedRes->ginState.ctxFirstAvailable = std::max(comm->sharedRes->ginState.ctxFirstAvailable, nGinContexts);
-      outDevComm->ginContextBase = 0;
-    }
-    INFO(NCCL_INIT|NCCL_NET, "Initialized a devComm with %d GIN connections, %d %s contexts (base %d), %d signals (base %d), %d counters (base %d)",
-         nGinConnections, nGinContexts, (ginExclusiveContexts ? "exclusive" : "shared"),
-         outDevComm->ginContextBase, ginSignalTotal, outDevComm->ginSignalBase, ginCounterTotal, outDevComm->ginCounterBase);
+  CUDACHECKGOTO(cudaStreamSynchronize(stream), ret, fail_stream_mem_win);
 
-    for (int connectionId=0; connectionId < nGinConnections; connectionId++) {
-      outDevComm->ginNetDeviceTypes[connectionId] = (int)comm->sharedRes->ginState.ginDevHandles[connectionId]->netDeviceType;
-      outDevComm->ginHandles[connectionId] = comm->sharedRes->ginState.ginDevHandles[connectionId]->handle;
-    }
-  }
+  NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xbeef), ret, fail_stream_mem_win);
+  CUDACHECKGOTO(cudaStreamDestroy(stream), ret, fail_stream_mem_win);
 
-  CUDACHECKGOTO(cudaStreamSynchronize(stream), ret, fail_stream_mem_win_signals);
-
-  NCCLCHECKGOTO(bootstrapBarrier(comm->bootstrap, comm->rank, comm->nRanks, 0xbeef), ret, fail_stream_mem_win_signals);
-  CUDACHECKGOTO(cudaStreamDestroy(stream), ret, fail_stream_mem_win_signals);
-
-  if (outDevCommCopyCB) NCCLCHECKGOTO(outDevCommCopyCB(outDevComm, outDevCommPreserve), ret, fail_stream_mem_win_signals);
+  //ncclDevCommDump(outDevComm);
+  if (outDevCommCopyCB) NCCLCHECKGOTO(outDevCommCopyCB(outDevComm, outDevCommPreserve), ret, fail_stream_mem_win);
   return ret;
 
-fail_stream_mem_win_signals:
-  if (devr->ginEnabled) {
-    ncclGinFreeSignalsCounters(comm,
-      outDevComm->ginSignalBase, outDevComm->ginSignalCount,
-      outDevComm->ginCounterBase, outDevComm->ginCounterCount
-    );
-  }
 fail_stream_mem_win:
   symWindowDestroy(comm, win->vidmem, stream);
   cudaStreamSynchronize(stream);
@@ -1418,26 +1402,22 @@ ncclResult_t ncclDevCommDestroy(
   ) {
   NCCLCHECK(CommCheck(comm, __func__, "comm"));
   NCCLCHECK(PtrCheck(devComm, __func__, "devComm"));
-  struct ncclDevrState* devr = &comm->devrState;
-  if (devr->ginEnabled) {
-    NCCLCHECK(ncclGinResetSignalsAndCounters(comm, devComm));
+  int saveDev;
+  ncclResult_t ret = ncclSuccess;
 
-    ncclGinFreeSignalsCounters(comm,
-      devComm->ginSignalBase, devComm->ginSignalCount,
-      devComm->ginCounterBase, devComm->ginCounterCount
-    );
+  CUDACHECK(cudaGetDevice(&saveDev));
+  CUDACHECK(cudaSetDevice(comm->cudaDev)); // This is needed at least for cuMem memory freeing in GDAKI
 
-    if (devComm->ginContextBase == comm->sharedRes->ginState.ctxLastExclusive) {
-      // Since we don't track the shared/exclusive state of each context individually, we can't support the general
-      // case of release.  However, we support the release of contexts of the most recently created exclusive devComm,
-      // as it doesn't require any additional tracking.
-      comm->sharedRes->ginState.ctxLastExclusive += devComm->ginContextCount;
-    }
-  }
   if (devComm->resourceWindow != nullptr) {
-    NCCLCHECK(ncclCommWindowDeregister(comm, devComm->resourceWindow));
+    NCCLCHECKGOTO(ncclCommWindowDeregister(comm, devComm->resourceWindow), ret, end);
   }
-  return ncclSuccess;
+  if (devComm->ginContextCount) {
+    NCCLCHECKGOTO(ncclGinDevCommFree(comm, devComm), ret, end);
+  }
+
+end:
+  cudaSetDevice(saveDev);
+  return ret;
 }
 
 NCCL_API(ncclResult_t, ncclWinGetUserPtr, ncclComm_t comm, ncclWindow_t win, void** outUserPtr);

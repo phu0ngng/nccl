@@ -183,7 +183,13 @@ int main(int argc, char* argv[]) {
     NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
     const int qp_depth = args.gin_skip_credit_check ? 128 : 0;
     const int context_count = 1;
-    NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, context_count, qp_depth));
+    NCCLCHECK(ncclGinConnectOnce(comm));
+    ncclDevComm_t devComm;
+    ncclDevCommRequirements_t reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.ginContextCount = context_count;
+    reqs.ginQueueDepth = qp_depth;
+    reqs.ginSignalCount = 1;
+    NCCLCHECK(ncclGinDevCommSetup(comm, &reqs, &devComm));
 
     // Allocate and register symmetric memory
     void *sendbuff, *recvbuff;
@@ -203,8 +209,8 @@ int main(int argc, char* argv[]) {
 
     // Get GIN resources
     ncclGinCtx_M<-1u> gctx;
-    gctx.backend = comm->sharedRes->ginState.ginDevHandles[0]->netDeviceType;
-    gctx.handle = comm->sharedRes->ginState.ginDevHandles[0]->handle;
+    gctx.backend = (ncclNetDeviceType)devComm.ginNetDeviceTypes[0];
+    gctx.handle = devComm.ginHandles[0];
     gctx.rank = myRank;
     gctx.nRanks = nRanks;
     gctx.contextId = 0;
@@ -329,6 +335,7 @@ int main(int argc, char* argv[]) {
     // Cleanup
     if (DEBUG) printf("[Rank %d] Cleaning up\n", myRank);
 
+    NCCLCHECK(ncclGinDevCommFree(comm, &devComm));
     NCCLCHECK(ncclGinDeregister(comm, srcGinHostWins));
     NCCLCHECK(ncclGinDeregister(comm, dstGinHostWins));
     NCCLCHECK(ncclGinHostFinalize(comm));

@@ -142,6 +142,8 @@ __global__ void put_alltoall(ncclGinCtx_M<-1u> ctx, int* buff, int myRank, int n
 #endif
 }
 
+void ncclDevCommDump(ncclDevComm_t* devComm);
+
 int main(int argc, char* argv[]) {
     cli_args_t args;
     parse_cli_args(argc, argv, &args);
@@ -194,7 +196,11 @@ int main(int argc, char* argv[]) {
     ncclConfig_t config = NCCL_CONFIG_INITIALIZER;
     config.blocking = 1;
     NCCLCHECK(ncclCommInitRankConfig(&comm, nRanks, id, myRank, &config));
-    NCCLCHECK(ncclGinConnectOnce(comm, NCCL_GIN_CONNECTION_FULL, 1));
+    NCCLCHECK(ncclGinConnectOnce(comm));
+    ncclDevComm_t devComm;
+    ncclDevCommRequirements_t reqs = NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER;
+    reqs.ginSignalCount = nRanks;
+    NCCLCHECK(ncclGinDevCommSetup(comm, &reqs, &devComm));
 
     // Setup GIN windows using ncclGinRegister
     void* ginHostWins[NCCL_GIN_MAX_CONNECTIONS];
@@ -204,8 +210,8 @@ int main(int argc, char* argv[]) {
 
     // Setup GIN context manually like in ping-pong example
     ncclGinCtx_M<-1u> gctx;
-    gctx.backend = comm->sharedRes->ginState.ginDevHandles[0]->netDeviceType;
-    gctx.handle = comm->sharedRes->ginState.ginDevHandles[0]->handle;
+    gctx.backend = (ncclNetDeviceType)devComm.ginNetDeviceTypes[0];
+    gctx.handle = devComm.ginHandles[0];
     gctx.rank = myRank;
     gctx.nRanks = nRanks;
     gctx.contextId = 0;
@@ -213,6 +219,7 @@ int main(int argc, char* argv[]) {
     // Allocate signal for communication
     ncclGinSignal_t signalId = myRank;  // Use rank-specific signal ID to avoid conflicts
 
+    ncclDevCommDump(&devComm);
     CUDACHECK(cudaDeviceSynchronize());
 
     // Synchronize all processes before starting
@@ -251,6 +258,7 @@ int main(int argc, char* argv[]) {
 
     // Cleanup
     // Comment out problematic cleanup code to avoid segmentation fault
+    NCCLCHECK(ncclGinDevCommFree(comm, &devComm));
     NCCLCHECK(ncclGinDeregister(comm, ginHostWins));
     NCCLCHECK(ncclGinHostFinalize(comm));
     NCCLCHECK(ncclMemFree((void*)buff));

@@ -19,8 +19,10 @@ struct ncclGinIbCollComm {
   void*         recvComm;
   void*         sendComm;
   int           dev;
-  void*         ginCtx;
-  void*         ibvCtx;
+  struct {
+    struct ibv_context* context;
+    struct ibv_pd *pd;
+  }ib;
   ncclResult_t (*getProperties)(int dev, void *props);
   ncclResult_t (*allGather)(struct ncclGinIbCollComm *cComm, void *srcBuf, void *recvBuf, size_t len);
   ncclResult_t (*allToAll)(struct ncclGinIbCollComm *cComm, void *srcBuf, void *recvBuf, size_t len);

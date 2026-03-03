@@ -33,6 +33,8 @@ struct ginProxyHostGpuCtx {
   // size = nRanks * queueSize
   ncclGinProxyGfd_t *queues;
   void *cisGdrHandle;
+  // Produced Indices, one per rank. Only accessed by the GPU side, here only for freeing
+  uint32_t* pis;
   // Consumed Indices, one per rank
   uint32_t *cis;
   // to decrease the number of reads/writes to cis which might be on the GPU
@@ -418,22 +420,26 @@ static ncclResult_t ncclGinProxyCreateContext(void* collComm, ncclGinConfig_t* c
     queueSize = maxRequests;
   }
 
-  // Allocate the counters on the GPU or CPU depending on GDR
-  NCCLCHECK(allocMemCPUAccessible(&proxyCtx->counters, &proxyCtx->countersDev,
-                                  config->nCounters * nContexts, CU_MEMHOSTALLOC_WRITECOMBINED,
-                                  &proxyCtx->countersGdrHandle, NULL));
-  proxyCtx->nCountersPerContext =config->nCounters;
+  if (config->nCounters) {
+    // Allocate the counters on the GPU or CPU depending on GDR
+    NCCLCHECK(allocMemCPUAccessible(&proxyCtx->counters, &proxyCtx->countersDev,
+                                    config->nCounters * nContexts, CU_MEMHOSTALLOC_WRITECOMBINED,
+                                    &proxyCtx->countersGdrHandle, NULL));
+  }
+  proxyCtx->nCountersPerContext = config->nCounters;
 
   // Allocate the signals on the GPU and then register the memory region with the GIN plugin.
   // Enforcing strong ordering on the signals mr is vital to ensure ordering between puts and
   // signals.
-  size_t signalsBufSize = config->nSignals * nContexts * sizeof(uint64_t);
-  NCCLCHECK(ncclCuMemAlloc((void **)&proxyCtx->signalsDev, &proxyCtx->signalsCumemhandle,
-                           CU_MEM_HANDLE_TYPE_NONE, signalsBufSize, NULL));
-  CUDACHECK(cudaMemset(proxyCtx->signalsDev, 0, signalsBufSize));
-  NCCLCHECK(ncclGinProxyRegMrSym(collComm, proxyCtx->signalsDev, signalsBufSize,
-                                 NCCL_PTR_CUDA, NCCL_NET_MR_FLAG_FORCE_SO,
-                                 &proxyCtx->signalsMhandle, &proxyCtx->signalsGinHandle));
+  if (config->nSignals) {
+    size_t signalsBufSize = config->nSignals * nContexts * sizeof(uint64_t);
+    NCCLCHECK(ncclCuMemAlloc((void **)&proxyCtx->signalsDev, &proxyCtx->signalsCumemhandle,
+                             CU_MEM_HANDLE_TYPE_NONE, signalsBufSize, NULL));
+    CUDACHECK(cudaMemset(proxyCtx->signalsDev, 0, signalsBufSize));
+    NCCLCHECK(ncclGinProxyRegMrSym(collComm, proxyCtx->signalsDev, signalsBufSize,
+                                   NCCL_PTR_CUDA, NCCL_NET_MR_FLAG_FORCE_SO,
+                                   &proxyCtx->signalsMhandle, &proxyCtx->signalsGinHandle));
+  }
   proxyCtx->nSignalsPerContext = config->nSignals;
 
   NCCLCHECK(ncclCalloc(&proxyCtx->hostGpuCtx, nContexts));
@@ -450,13 +456,14 @@ static ncclResult_t ncclGinProxyCreateContext(void* collComm, ncclGinConfig_t* c
     NCCLCHECK(ncclGinProxyRegMrSym(collComm, hostGpuCtx->inlines,
                                    queuesLength * sizeof(uint64_t), NCCL_PTR_HOST, 0,
                                    &hostGpuCtx->inlinesMhandle, &hostGpuCtx->inlinesGinHandle));
+    NCCLCHECK(ncclCudaCalloc(&hostGpuCtx->pis, cComm->nRanks, NULL));
 
     ncclGinProxyGpuCtx_t *devGpuCtx_h = devGpuCtxArray_h + contextId;
     devGpuCtx_h->nranks = cComm->nRanks;
     devGpuCtx_h->queueSize = hostGpuCtx->queueSize;
     devGpuCtx_h->counters = proxyCtx->countersDev + contextId * config->nCounters;
     devGpuCtx_h->signals = proxyCtx->signalsDev + contextId * config->nSignals;
-    NCCLCHECK(ncclCudaCalloc(&devGpuCtx_h->pis, cComm->nRanks, NULL));
+    devGpuCtx_h->pis = hostGpuCtx->pis;
 
     // Allocate the GFD queues, CIs, counters, signals and test/wait variables on the either the CPU
     // or GPU.
@@ -511,6 +518,7 @@ static ncclResult_t ncclGinProxyDestroyContext(void *ginCtx) {
         struct ginProxyHostGpuCtx *hostGpuCtx = ctx->hostGpuCtx + contextId;
         if (hostGpuCtx->cisShadow) free(hostGpuCtx->cisShadow);
         if (hostGpuCtx->sis) free(hostGpuCtx->sis);
+        if (hostGpuCtx->pis) ncclCudaFree(hostGpuCtx->pis, NULL);
         if (hostGpuCtx->states) free(hostGpuCtx->states);
         if (hostGpuCtx->inlines) free(hostGpuCtx->inlines);
         if (ctx->collComm && hostGpuCtx->inlinesMhandle)
