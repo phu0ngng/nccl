@@ -1170,30 +1170,26 @@ class Communicator:
         Grows the communicator by adding new ranks.
 
         Creates a new communicator that includes both existing ranks from this
-        communicator and new ranks joining the group. There are three calling
-        patterns:
+        communicator and new ranks joining the group. There are three roles:
 
-        1. **Existing root rank**: The rank that called :meth:`get_unique_id`.
-           Pass the unique_id; rank defaults to None.
-        2. **Existing non-root ranks**: Pass neither unique_id nor rank (both default).
-        3. **New ranks**: Create an empty communicator, pass the unique_id and
-           the assigned rank.
+        1. **Existing root**: The one existing rank that called :meth:`get_unique_id`.
+        2. **Existing non-root**: All other existing ranks.
+        3. **New ranks**: Ranks joining via an empty communicator (``Communicator()``).
 
         Args:
             - nranks (int): Total number of ranks in the new communicator (existing + new).
+              All roles must pass the same value.
             - unique_id (UniqueId | None, optional): Unique identifier from :meth:`get_unique_id`.
-              Required for the existing root rank and new ranks. Must be None for existing
-              non-root ranks. Defaults to None.
-            - rank (int | None, optional): This rank's ID in the new communicator. Must be
-              between 0 and nranks-1 for new ranks. Must be None for existing ranks.
-              Defaults to None.
+              Existing root and new ranks must pass the UniqueId. Existing non-root must pass
+              None (the default). Defaults to None.
+            - rank (int | None, optional): This rank's ID in the new communicator.
+              New ranks must pass their assigned rank, which must be >= the parent communicator
+              size (i.e., new ranks fill the slots after existing ranks). Existing ranks
+              (both root and non-root) must pass None (the default). Defaults to None.
             - config (NCCLConfig, optional): Configuration for the new communicator. Defaults to None.
 
         Returns:
             ``Communicator``: A new communicator containing all ranks.
-
-        Raises:
-            - ``NcclInvalid``: If unique_id is not a UniqueId instance or None.
 
         Notes:
             - This is a collective operation. All ranks (existing and new) must call this method.
@@ -1205,10 +1201,13 @@ class Communicator:
         See Also:
             :meth:`get_unique_id`: Generates the UniqueId needed for grow.
         """
-        if unique_id is not None and not isinstance(unique_id, UniqueId):
-            raise NcclInvalid("unique_id must be a UniqueId or None")
+        is_new_rank = rank is not None
+        if is_new_rank and self._comm != 0:
+            raise NcclInvalid("New ranks must use an empty communicator (Communicator())")
+        if not is_new_rank and self._comm == 0:
+            raise NcclInvalid("Existing ranks must use an initialized communicator")
 
-        uid_ptr = unique_id.ptr if unique_id is not None else 0
+        uid_ptr = 0 if unique_id is None else unique_id.ptr
         rank_val = -1 if rank is None else int(rank)
         cfg_ptr = 0 if config is None else config.ptr
         comm_ptr = _nccl_bindings.comm_grow(

@@ -63,6 +63,22 @@ def test_initialize_resets_cached_properties(monkeypatch):
 # --- grow() Tests ---
 
 
+def test_grow_rejects_new_rank_with_valid_comm():
+    """grow() rejects new rank (rank != None) on an initialized communicator."""
+    comm = Communicator(0xC)
+    uid = UniqueId.__new__(UniqueId)
+    uid._internal = type("FakeUID", (), {"ptr": 0x555})()
+    with pytest.raises(NcclInvalid, match="New ranks must use an empty communicator"):
+        comm.grow(nranks=4, unique_id=uid, rank=3)
+
+
+def test_grow_rejects_existing_rank_with_empty_comm():
+    """grow() rejects existing rank (rank=None) on an empty communicator."""
+    comm = Communicator()
+    with pytest.raises(NcclInvalid, match="Existing ranks must use an initialized communicator"):
+        comm.grow(nranks=4)
+
+
 def test_grow_new_rank(monkeypatch):
     """New ranks: comm=NULL, uniqueId=&id, rank=assigned."""
     calls = {"grow": None}
