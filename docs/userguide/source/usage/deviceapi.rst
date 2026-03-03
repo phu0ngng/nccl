@@ -40,6 +40,18 @@ Using the host RMA API requires CUDA 12.5 or greater.
 
 Building with EMIT_LLVM_IR=1 (to generate readable LLVM intermediate representation code) requires CUDA 12.
 
+Cross-Version Compatibility
+----------------------------
+NCCL assumes the compile-time version of the device code is the same as the compile-time version of the
+corresponding host code (i.e., the call to :c:func:`ncclDevCommCreate`).
+Starting with NCCL 2.29, the host-side structures are versioned, to enable
+cross-version compatibility checks. In general, the compile-time version cannot be
+newer than the runtime version (e.g., the version of ``libnccl.so``). As of NCCL 2.29,
+backwards compatibility is supported for kernels utilizing LSA and multimem, i.e.,
+a kernel compiled with NCCL 2.29.2/2.29.3 should continue to work when running
+with NCCL 2.29.7.  Kernels utilizing GIN are currently not backwards compatible and
+need to be recompiled when NCCL is upgraded.
+
 Host-Side Setup
 ---------------
 

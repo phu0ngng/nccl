@@ -510,6 +510,24 @@ index. ``ncclGin_SignalInc{signalIdx}`` is functionally equivalent to ``ncclGin_
 may not be mixed with other signal-modifying operations without an intervening signal reset (see below).  Signal values
 use "rolling" comparison logic to ensure that an unsigned overflow maintains the property of ``x < x + 1``.
 
+.. cpp:struct:: ncclGin_VASignalInc
+
+   .. cpp:member:: ncclWindow_t signalWindow
+   .. cpp:member:: size_t signalOffset
+
+.. cpp:struct:: ncclGin_VASignalAdd
+
+   .. cpp:member:: ncclWindow_t signalWindow
+   .. cpp:member:: size_t signalOffset
+   .. cpp:member:: uint64_t value
+
+These objects represent "VA signals": signals that are located at an arbitrary VA (window and offset pair) instead
+of a pre-allocated signal index. Like the ``ncclGin_SignalInc`` and ``ncclGinSignalAdd`` objects,
+these objects  can be passed as the *remoteAction* arguments of methods such as :cpp:func:`ncclGin::put`
+and :cpp:func:`ncclGin::signal` to increment a signal on the peer. To use a VA signal, the window must be
+registered with flags :c:macro:`NCCL_WIN_COLL_STRICT_ORDERING`. When an address is used as a signal, all reads
+and writes to the address must be issued via GIN (i.e., a ``RemoteAction`` or GIN signal method).
+
 **Signal methods of ncclGin:**
 
 .. cpp:function:: void ncclGin::signal(ncclTeam team, int peer, RemoteAction remoteAction, Coop coop, \
@@ -525,6 +543,12 @@ an accompanying data transfer operation; it takes a subset of arguments of :cpp:
 bottom *bits* of the value of the *signal*.  :cpp:func:`ncclGin::waitSignal` waits for the bottom *bits* of the *signal* value to meet
 or exceed *least*.  Finally, :cpp:func:`ncclGin::resetSignal` resets the *signal* value to ``0`` (this method may not race with
 concurrent modifications to the signal).
+
+.. cpp:function:: uint64_t ncclGin::readSignal(ncclWindow_t signalWindow, size_t signalOffset, int bits=64, cuda::memory_order ord = cuda::memory_order_acquire)
+.. cpp:function:: void ncclGin::waitSignal(Coop coop, ncclWindow_t signalWindow, size_t signalOffset, uint64_t least, int bits=64, cuda::memory_order ord = cuda::memory_order_acquire)
+.. cpp:function:: void ncclGin::resetSignal(ncclWindow_t signalWindow, size_t signalOffset)
+
+These are VA signal-specific methods of :cpp:class:`ncclGin`.
 
 .. cpp:type:: ncclGinCounter_t
 
