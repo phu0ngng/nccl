@@ -16,7 +16,7 @@
 #define KERNEL_ASSERT_EQ(expected, actual, msg) do { \
   if ((expected) != (actual)) { \
     printf("%s: expected %llu but got %llu\n", msg, (unsigned long long)(expected), (unsigned long long)(actual)); \
-    assert((expected) == (actual) && msg); \
+    assert(false && msg); \
   } \
 } while(0)
 

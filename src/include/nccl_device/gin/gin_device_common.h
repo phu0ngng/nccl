@@ -87,6 +87,16 @@ struct ncclGinSignalDescriptor {
 };
 
 #if NCCL_CHECK_CUDACC
+
+template <ncclNetDeviceType backend>
+struct ncclGinApi_Get {
+  template <typename Coop>
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx, Coop coop, int peer, ncclGinWindow_t remoteWin, size_t remoteOff,
+                                      ncclGinWindow_t localWin, size_t localOff, size_t bytes,
+                                      bool hasDescriptor, ncclGinDescriptorSmem* descriptor,
+                                      uint32_t optFlags = ncclGinOptFlagsDefault);
+};
+
 template <ncclNetDeviceType backend>
 struct ncclGinApi_Put {
   template <typename Coop>
@@ -117,6 +127,7 @@ template <ncclNetDeviceType backend>
 struct ncclGinApi_GetSignalPtr {
   NCCL_DEVICE_INLINE static uint64_t* call(ncclGinCtx, int peer, ncclGinSignal_t signalId);
 };
+
 template <ncclNetDeviceType backend>
 struct ncclGinApi_GetCounterPtr {
   NCCL_DEVICE_INLINE static uint64_t* call(ncclGinCtx, int peer, ncclGinCounter_t counterId);

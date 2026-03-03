@@ -104,6 +104,8 @@ ncclGin_t* getNcclGin_v12(void* lib) {
     ncclGin.closeListen = ncclGin_v12->closeListen;
     ncclGin.iput = ncclGin_iput;
     ncclGin.iputSignal = ncclGin_iputSignal;
+    ncclGin.iget = NULL;
+    ncclGin.iflush = NULL;
     ncclGin.test = ncclGin_v12->test;
     ncclGin.ginProgress = ncclGin_v12->ginProgress;
     ncclGin.queryLastError = ncclGin_v12->queryLastError;

@@ -920,7 +920,6 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
   struct ncclIbQpCreateAttr qpCreateAttrs;
   memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
   qpCreateAttrs.type = IBV_QPT_RC;
-  // Remote Atomic operations are used for GIN!
   qpCreateAttrs.maxRecvWorkRequest = NET_IB_MAX_REQUESTS;
   // CTS messages are posted using send work requests.
   // Note that because only specific CTS messages are signaled, the send queue
@@ -992,8 +991,8 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     initAttr->state = IBV_QPS_INIT;
     initAttr->pkeyIndex = ncclParamIbPkey();
     initAttr->portNum = ibDev->portNum;
-    // Remote Atomic operations are used for GIN!
-    initAttr->qpAccessFlags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
+    // Remote Atomic operations are used for GIN! REMOTE_READ is required for GIN Get (RDMA READ).
+    initAttr->qpAccessFlags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC | IBV_ACCESS_REMOTE_READ;
     NCCLCHECK(ncclIbQpInit(localQp));
 
     if (remQpInfo->ece_supported) {

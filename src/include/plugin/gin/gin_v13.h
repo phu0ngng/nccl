@@ -53,6 +53,10 @@ typedef struct {
       size_t size, uint64_t dstOff, void* dstMhandle,
       uint32_t rank, uint64_t signalOff, void *signalMhandle,
       uint64_t signalValue, uint32_t signalOp, void** request);
+  ncclResult_t (*iget)(void* ginCtx, int context, uint64_t remoteOff, void* remoteMhandle, size_t size,
+      uint64_t localOff, void* localMhandle, uint32_t rank, void** request);
+  
+  ncclResult_t (*iflush)(void* ginCtx, int context, void* mhandle, uint32_t rank, void** request);
 
   // Test whether a request is complete.
   ncclResult_t (*test)(void* collComm, void* request, int* done);

@@ -33,6 +33,11 @@ namespace nccl {
 namespace gin {
 namespace gdaki {
 
+NCCL_DEVICE_INLINE uint32_t docaOptFlagsFromGinOptFlags(uint32_t ginOptFlags) {
+  return DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
+    | (!!(ginOptFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
+    | (!!(ginOptFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
+}
 
 template <enum doca_gpu_dev_verbs_resource_sharing_mode resource_sharing_mode, typename Coop>
 NCCL_DEVICE_INLINE static void putImplMode(ncclGinCtx ctx, Coop coop, int peer, bool hasWins,
@@ -52,9 +57,7 @@ NCCL_DEVICE_INLINE static void putImplMode(ncclGinCtx ctx, Coop coop, int peer, 
     doca_gpu_dev_verbs_qp* companion_qp;
     ncclGinGdakiMemHandle* dstMh = (ncclGinGdakiMemHandle*)dstWin;
     ncclGinGdakiMemHandle* srcMh = (ncclGinGdakiMemHandle*)srcWin;
-    uint32_t codeOpt = DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
-      | (!!(optFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
-      | (!!(optFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
+    uint32_t codeOpt = nccl::gin::gdaki::docaOptFlagsFromGinOptFlags(optFlags);
 
     doca_gpu_dev_verbs_addr raddr, laddr;
     if (hasWins) {
@@ -161,9 +164,7 @@ NCCL_DEVICE_INLINE static void putValueImplMode(ncclGinCtx ctx, Coop coop, int p
     ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
     doca_gpu_dev_verbs_qp* qp = loadConst(&gdaki->gdqp) + peer;
     ncclGinGdakiMemHandle* dstMh = (ncclGinGdakiMemHandle*)dstWin;
-    uint32_t codeOpt = DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_DEFAULT
-      | (!!(optFlags & ncclGinOptFlagsMaySkipCreditCheck) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_AVAILABILITY_CHECK)
-      | (!!(optFlags & ncclGinOptFlagsAggregateRequests) * DOCA_GPUNETIO_VERBS_GPU_CODE_OPT_SKIP_DB_RINGING);
+    uint32_t codeOpt = nccl::gin::gdaki::docaOptFlagsFromGinOptFlags(optFlags);
 
     doca_gpu_dev_verbs_addr raddr;
     raddr.addr = dstOff;
@@ -225,6 +226,34 @@ NCCL_DEVICE_INLINE static void putValueImpl(ncclGinCtx ctx, Coop coop, int peer,
 } // namespace gin
 } // namespace nccl
 
+template <>
+struct ncclGinApi_Get<NCCL_NET_DEVICE_GIN_GDAKI> {
+  template <typename Coop>
+  NCCL_DEVICE_INLINE static void call(ncclGinCtx ctx, Coop coop, int peer, ncclGinWindow_t remoteWin, size_t remoteOff,
+                                      ncclGinWindow_t localWin, size_t localOff, size_t bytes,
+                                      bool hasDescriptor, ncclGinDescriptorSmem* descriptor,
+                                      uint32_t optFlags = ncclGinOptFlagsDefault) {
+    using nccl::utility::loadConst;
+    coop.sync();
+    if (coop.thread_rank() == 0) {
+      ncclGinGdakiGPUContext* gdaki = &((struct ncclGinGdakiGPUContext*)ctx.handle)[ctx.contextId];
+      doca_gpu_dev_verbs_qp* qp = loadConst(&gdaki->gdqp) + peer;
+      ncclGinGdakiMemHandle* remoteMh = (ncclGinGdakiMemHandle*)remoteWin;
+      ncclGinGdakiMemHandle* localMh = (ncclGinGdakiMemHandle*)localWin;
+      doca_gpu_dev_verbs_addr raddr, laddr;
+      raddr.addr = remoteOff;
+      raddr.key = loadConst(loadConst(&remoteMh->rkeys) + peer);
+      laddr.addr = localOff;
+      laddr.key = loadConst(&localMh->lkey);
+      doca_gpu_dev_verbs_addr uninitialized_daddr{};
+      doca_gpu_dev_verbs_ticket_t unused_out_ticket;
+      uint32_t codeOpt = nccl::gin::gdaki::docaOptFlagsFromGinOptFlags(optFlags);
+      doca_gpu_dev_verbs_get(
+          qp, raddr, laddr, bytes, uninitialized_daddr, &unused_out_ticket, codeOpt);
+    }
+    coop.sync();
+  }
+};
 
 template <>
 struct ncclGinApi_Put<NCCL_NET_DEVICE_GIN_GDAKI> {
@@ -360,6 +389,14 @@ struct ncclGinApi_Flush<NCCL_NET_DEVICE_GIN_GDAKI> {
       for (int peer = coop.thread_rank(); peer < ctx.nRanks; peer += coop.size()) {
         doca_gpu_dev_verbs_wait(qps + peer);
       }
+    }
+
+    // Ensure visibility of previous gets
+    for (int peer = coop.thread_rank(); peer < ctx.nRanks; peer += coop.size()) {
+      doca_gpu_dev_verbs_addr daddr;
+      daddr.addr = 0;
+      daddr.key = loadConst(&gdaki->sink_buffer_lkey);
+      doca_gpu_dev_verbs_get_wait<DOCA_GPUNETIO_VERBS_RESOURCE_SHARING_MODE_GPU, DOCA_GPUNETIO_VERBS_NIC_HANDLER_AUTO, DOCA_GPUNETIO_VERBS_MCST_ENABLED>(qps + peer, daddr);
     }
   }
 };

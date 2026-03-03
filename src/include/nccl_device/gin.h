@@ -190,6 +190,18 @@ struct ncclGin_BackendMask {
     ncclGinResourceSharingMode resourceSharingMode_ = NCCL_GIN_RESOURCE_SHARING_GPU);
 
   template<
+    typename Coop = ncclCoopThread,
+    typename DescriptorSmem = ncclGin_None
+  >
+  NCCL_DEVICE_INLINE void get(
+    ncclTeam, int peer,
+    ncclWindow_t remoteWnd, size_t remoteOffset,
+    ncclWindow_t localWnd, size_t localOffset,
+    size_t bytes, Coop coop = ncclCoopThread{},
+    DescriptorSmem descriptor = ncclGin_None{},
+    uint32_t optFlags = ncclGinOptFlagsDefault) const;
+
+  template<
     // Action to take on peer when put completes. If a signalling action is used
     // then that signal will be visible only after the payload of this put as well as
     // the payloads of preceding puts on this netContext to the same peer are settled.
