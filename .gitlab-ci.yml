@@ -2392,7 +2392,7 @@ perftest-single-eos:
   needs:
     - setup-eos
   variables:
-    SLURM_TIME: 60
+    SLURM_TIME: 70
     NNODES: 1
     GRAPH: 0
     MAX: "1G"
@@ -2563,7 +2563,7 @@ perftest-single-pre-nyx:
   needs:
     - setup-pre-nyx
   variables:
-    SLURM_TIME: 80
+    SLURM_TIME: 105
     NNODES: 1
     MAX: "1G"
     NP: 8
@@ -2840,7 +2840,7 @@ perftest-multi-eos:
   needs:
     - setup-eos
   variables:
-    SLURM_TIME: 60
+    SLURM_TIME: 80
     NCCL_IB_SL: "1"
     MPI_PARAMS: "--oversubscribe --mca btl tcp,self --mca btl_tcp_if_include eth3"
     NNODES: $MULTI_PERFTEST_NODE_COUNT
@@ -3024,7 +3024,7 @@ perftest-multi-pre-nyx:
     ARCHIVER_STAGING_DIR: "${PRE_NYX_ARCHIVER_STAGING_DIR}"
     NCCL_DEBUG: "WARN"
     CLUSTER_CONFIG: "docker/clusters/pre-nyx-config.sh"
-    SLURM_TIME: 75
+    SLURM_TIME: 100
     SLURM_PARTITION: batch
     RUN_MODE: "SRUN_MPI"
     NGPUS: 8

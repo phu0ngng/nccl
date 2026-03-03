@@ -349,6 +349,34 @@ if [ "$SKIP_COMM_MGT_TESTS" != "1" ]; then
   fi
 fi
 
+# Multi-rank GPU correctness tests using r/3 (3 ranks per GPU). We use 3
+# rather than 2 to produce non-power-of-2 rank counts, which exercise
+# alignment edge cases. The _mt, _mg, and _mt_mg variants each produce
+# 2*NGPUS total ranks per node, using ceil(2*NGPUS/3) physical GPUs with
+# uneven fill on the last GPU. The _mt_mg variant has threads sharing
+# physical GPUs across thread boundaries.
+if [ "$SKIP_MULTI_RANK_GPU" != "1" ]; then
+  let ppn_3rpg=$NGPUS*3
+  multi_rank_range="-b 8 -e 16M -f 2"
+  multi_rank_opts="-w 1 -n 1 -G 0"
+  multi_rank_env="NCCL_MULTI_RANK_GPU_ENABLE=1 NCCL_TESTS_DEVICE=r/3"
+
+  for func in all_reduce_perf reduce_perf reduce_scatter_perf broadcast_perf all_gather_perf alltoall_perf gather_perf scatter_perf sendrecv_perf all_gatherv_perf; do
+    # 3*NGPUS processes, 1 rank each, 3 ranks per GPU across all GPUs
+    # P0=0. P1=0, P2=0, P3=1, P4=1, P5=1, P6=2, ...
+    run_command "${func}_multi_rank_gpu_3rpg" $RUN_MODE $ppn_3rpg "--oversubscribe" "$multi_rank_env" "$NCCL_HOME/test/perf/$func" "$multi_rank_range $multi_rank_opts"
+    # NGPUS processes, 2 threads each, 1 GPU per thread
+    # P0t0=0, P0t1=0, P1t0=0, P1t1=1, P2t0=1, P2t1=1, P3t0=2, P3t1=2, ...
+    run_command "${func}_multi_rank_gpu_mt" $RUN_MODE $NGPUS "--oversubscribe" "$multi_rank_env" "$NCCL_HOME/test/perf/$func" "$multi_rank_range $multi_rank_opts -t 2 -g 1"
+    # NGPUS processes, 1 thread each, 2 GPUs per thread
+    # P0=(0,0), P1=(0,1), P2=(1,1), P3=(2,2), P4=(2,3), ...
+    run_command "${func}_multi_rank_gpu_mg" $RUN_MODE $NGPUS "--oversubscribe" "$multi_rank_env" "$NCCL_HOME/test/perf/$func" "$multi_rank_range $multi_rank_opts -t 1 -g 2"
+    # NGPUS/2 processes, 2 threads each, 2 GPUs per thread
+    # P0t0=(0,0), P0t1=(0,1), P1t0=(1,1), P1t1=(2,2), ...
+    run_command "${func}_multi_rank_gpu_mt_mg" $RUN_MODE $((NGPUS/2)) "--oversubscribe" "$multi_rank_env" "$NCCL_HOME/test/perf/$func" "$multi_rank_range $multi_rank_opts -t 2 -g 2"
+  done
+fi
+
 print_failed_commands
 end_junit_file
 ci_exit
