@@ -992,6 +992,41 @@ def test_revoke_then_destroy(uid_shared, rank_info):
     assert not comm.is_valid
 
 
+@requires_nccl_version("2.29.2")
+@requires_min_devices(2)
+@pytest.mark.mpi
+def test_revoke_then_split(uid_shared, rank_info):
+    """Test that split succeeds on a revoked-then-quiescent communicator."""
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    comm = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared,
+    )
+    comm.revoke()
+
+    # Wait for quiescence
+    timeout = 30
+    start = time.monotonic()
+    while True:
+        state = comm.get_async_error()
+        if state == nccl_bindings.Result.Success:
+            break
+        assert state == nccl_bindings.Result.InProgress
+        assert time.monotonic() - start < timeout, "revoke did not complete within timeout"
+        time.sleep(0.01)
+
+    # Split into two groups (even/odd rank)
+    color = rank_info.nccl_rank % 2
+    sub = comm.split(color=color, key=rank_info.nccl_rank)
+    assert sub.is_valid
+
+    sub.destroy()
+    comm.destroy()
+
+
 @requires_nccl_version("2.29.4")
 @pytest.mark.mpi
 def test_get_mem_stat_all_stats(nccl_comm):
