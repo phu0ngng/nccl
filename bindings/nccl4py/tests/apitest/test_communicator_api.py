@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 from mpi4py import MPI
 import pytest
@@ -976,11 +977,15 @@ def test_revoke_then_destroy(uid_shared, rank_info):
     comm.revoke()
 
     # Async state must eventually reach Success (quiescent)
+    timeout = 30  # seconds
+    start = time.monotonic()
     while True:
         state = comm.get_async_error()
         if state == nccl_bindings.Result.Success:
             break
         assert state == nccl_bindings.Result.InProgress
+        assert time.monotonic() - start < timeout, "revoke did not complete within timeout"
+        time.sleep(0.01)
 
     assert comm.is_valid  # comm still exists before destroy
     comm.destroy()
