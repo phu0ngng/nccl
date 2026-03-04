@@ -181,13 +181,16 @@ class GdakiHostGPUMemHandle {
     return ncclSuccess;
   }
 
-  void deallocate() {
+  ncclResult_t deallocate() {
     if (this->host_buf != nullptr) {
       free(this->host_buf);
+      this->host_buf = nullptr;
     }
     if (this->gpu_buf != nullptr) {
-      ncclCuMemFree(this->gpu_buf, nullptr);
+      NCCLCHECK(ncclCuMemFree(this->gpu_buf, nullptr));
+      this->gpu_buf = nullptr;
     }
+    return ncclSuccess;
   }
 
   ncclResult_t copy_h_to_d() {
@@ -201,14 +204,11 @@ class GdakiHostGPUMemHandle {
   }
 
   GdakiHostGPUMemHandle() : cumemhandle(0), num_elements(0), host_buf(nullptr), gpu_buf(nullptr){};
-  GdakiHostGPUMemHandle(unsigned int num_elements) {
-    ncclResult_t status = this->allocate(num_elements);
-    if (status != ncclSuccess) {
-      throw status;
-    }
-  }
 
-  ~GdakiHostGPUMemHandle() { this->deallocate(); }
+  ~GdakiHostGPUMemHandle() {
+     // Should only be used in error cleanup path as it ignores return code
+     this->deallocate();
+  }
 };
 
 template <typename T>
@@ -222,7 +222,7 @@ class GdakiGlobalGPUBufferTable {
 
  public:
   T *gpu_ptr;
-  struct ibv_mr *mr = nullptr;
+  struct ibv_mr *mr;
 
   ncclResult_t allocate(unsigned int num_elements, unsigned int num_ranks) {
     this->num_elements = num_elements;
@@ -237,10 +237,12 @@ class GdakiGlobalGPUBufferTable {
     return ncclSuccess;
   }
 
-  void deallocate() {
+  ncclResult_t deallocate() {
     if (this->gpu_ptr != nullptr) {
-      ncclCuMemFree(this->gpu_ptr, nullptr);
+      NCCLCHECK(ncclCuMemFree(this->gpu_ptr, nullptr));
+      this->gpu_ptr = nullptr;
     }
+    return ncclSuccess;
   }
 
   ncclResult_t register_mr(struct ibv_pd *ib_pd, bool force_strict_ordering = false) {
@@ -252,11 +254,12 @@ class GdakiGlobalGPUBufferTable {
     return ncclSuccess;
   }
 
-  void deregister_mr() {
+  ncclResult_t deregister_mr() {
     if (this->mr != nullptr) {
-      wrap_ibv_dereg_mr(this->mr);
+      NCCLCHECK(wrap_ibv_dereg_mr(this->mr));
       this->mr = nullptr;
     }
+    return ncclSuccess;
   }
 
   ncclResult_t exchange_info(struct ncclGinIbCollComm *cComm) {
@@ -286,11 +289,12 @@ class GdakiGlobalGPUBufferTable {
   uint32_t *get_rkeys_d() { return this->rkeys_hd_mhandle.gpu_buf; }
 
   GdakiGlobalGPUBufferTable()
-    : gpu_ptr(nullptr), mr(nullptr), cumemhandle(0), num_elements(0), next_unused_idx(0){};
-  GdakiGlobalGPUBufferTable(unsigned int num_elements, unsigned int num_ranks) {
-    this->allocate(num_elements, num_ranks);
-  };
-  ~GdakiGlobalGPUBufferTable() { this->deallocate(); }
+    : cumemhandle(0), num_elements(0), next_unused_idx(0), gpu_ptr(nullptr), mr(nullptr) {};
+  ~GdakiGlobalGPUBufferTable() {
+     // Should only be used in error cleanup path as it ignores return codes
+     this->deregister_mr();
+     this->deallocate();
+  }
 };
 
 struct gdaki_mem_handle {
@@ -470,7 +474,7 @@ NCCL_PARAM(GinGdakiUseReliableDB, "GDAKI_USE_RELIABLE_DB", 0);
 
 ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters, int nContexts, int queueDepth,
                                        void **outGinCtx, ncclNetDeviceHandle_t **outDevHandle) {
-  int status = ncclSuccess;
+  ncclResult_t status = ncclSuccess;
   doca_error_t docaStatus;
 
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)collComm;
@@ -508,18 +512,19 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   struct doca_gpu_verbs_qp **gverbs_qps = nullptr;
 
   GdakiHostGPUMemHandle<struct ncclGinGdakiGPUContext> *gin_gdaki_gpu_ctx_hd_mhandle =
-    new GdakiHostGPUMemHandle<struct ncclGinGdakiGPUContext>(ncontexts);
-
-  GdakiGlobalGPUBufferTable<uint64_t> *counters_table =
-    new GdakiGlobalGPUBufferTable<uint64_t>(num_counters * ncontexts, nranks);
-  GdakiGlobalGPUBufferTable<uint64_t> *signals_table =
-    new GdakiGlobalGPUBufferTable<uint64_t>(num_signals * ncontexts, nranks);
+    new GdakiHostGPUMemHandle<struct ncclGinGdakiGPUContext>();
+  GdakiGlobalGPUBufferTable<uint64_t> *counters_table = new GdakiGlobalGPUBufferTable<uint64_t>();
+  GdakiGlobalGPUBufferTable<uint64_t> *signals_table = new GdakiGlobalGPUBufferTable<uint64_t>();
 
   const int ib_sl = (ncclParamIbSl() != -1) ? ncclParamIbSl() : NCCL_IB_SL_DEFAULT;
   const int ib_tc = (ncclParamIbTc() != -1) ? ncclParamIbTc() : NCCL_IB_TC_DEFAULT;
   int ib_gid_index = 0;
 
   NCCLCHECK(cComm->getProperties(cComm->dev, &props));
+
+  NCCLCHECKGOTO(gin_gdaki_gpu_ctx_hd_mhandle->allocate(ncontexts), status, out);
+  NCCLCHECKGOTO(counters_table->allocate(num_counters * ncontexts, nranks), status, out);
+  NCCLCHECKGOTO(signals_table->allocate(num_signals * ncontexts, nranks), status, out);
 
   gdaki_ctx = (struct gdaki_context *)calloc(1, sizeof(*gdaki_ctx));
   EQCHECKGOTO(gdaki_ctx, nullptr, status, out);
@@ -809,20 +814,12 @@ out:
 
     if (devHandle) free(devHandle);
 
-    if (sink_buffer_mr) NCCLCHECK(wrap_ibv_dereg_mr(sink_buffer_mr));
+    if (sink_buffer_mr) wrap_ibv_dereg_mr(sink_buffer_mr);
     if (sink_buffer) ncclCuMemFree(sink_buffer, nullptr);
 
-    delete gin_gdaki_gpu_ctx_hd_mhandle;
-
-    if (counters_table) {
-      counters_table->deregister_mr();
-      delete counters_table;
-    }
-
-    if (signals_table) {
-      signals_table->deregister_mr();
-      delete signals_table;
-    }
+    if (gin_gdaki_gpu_ctx_hd_mhandle) delete gin_gdaki_gpu_ctx_hd_mhandle;
+    if (counters_table) delete counters_table;
+    if (signals_table) delete signals_table;
 
     if (gdaki_ctx) {
       memset(gdaki_ctx, 0, sizeof(*gdaki_ctx));
@@ -836,7 +833,7 @@ out:
 
   if (gverbs_qps) free(gverbs_qps);
 
-  return (ncclResult_t)status;
+  return status;
 }
 
 ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
@@ -875,6 +872,7 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
       }
     }
     free(gverbs_qps);
+    NCCLCHECK(gdaki_ctx->gin_gdaki_gpu_ctx_hd_mhandle->deallocate());
     delete gdaki_ctx->gin_gdaki_gpu_ctx_hd_mhandle;
   }
 
@@ -896,11 +894,13 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
   if (gdaki_ctx->companion_gqps) free(gdaki_ctx->companion_gqps);
 
   if (gdaki_ctx->counters_table) {
-    gdaki_ctx->counters_table->deregister_mr();
+    NCCLCHECK(gdaki_ctx->counters_table->deregister_mr());
+    NCCLCHECK(gdaki_ctx->counters_table->deallocate());
     delete gdaki_ctx->counters_table;
   }
   if (gdaki_ctx->signals_table) {
-    gdaki_ctx->signals_table->deregister_mr();
+    NCCLCHECK(gdaki_ctx->signals_table->deregister_mr());
+    NCCLCHECK(gdaki_ctx->signals_table->deallocate());
     delete gdaki_ctx->signals_table;
   }
 
@@ -925,12 +925,13 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
 ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int type, uint64_t mr_flags, void **mhandle,
                                   void **ginHandle) {
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)collComm;
+  ncclResult_t status = ncclSuccess;
 
   struct ibv_mr *mr = nullptr;
   GdakiHostGPUMemHandle<struct ncclGinGdakiMemHandle> *gdaki_mhandle_hd_mhandle =
-    new GdakiHostGPUMemHandle<struct ncclGinGdakiMemHandle>(1);
+    new GdakiHostGPUMemHandle<struct ncclGinGdakiMemHandle>();
   GdakiHostGPUMemHandle<__be32> *rkeys_hd_mhandle =
-    new GdakiHostGPUMemHandle<__be32>(cComm->nranks);
+    new GdakiHostGPUMemHandle<__be32>();
   __be32 rkey;
 
   struct gdaki_mem_handle *gdaki_mhandle = nullptr;
@@ -943,12 +944,14 @@ ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int t
                          IBV_ACCESS_REMOTE_ATOMIC, force_strict_ordering));
 
   rkey = htobe32(mr->rkey);
-  NCCLCHECK(cComm->allGather(cComm, &rkey, rkeys_hd_mhandle->host_buf, sizeof(__be32)));
-  NCCLCHECK(rkeys_hd_mhandle->copy_h_to_d());
+  NCCLCHECKGOTO(rkeys_hd_mhandle->allocate(cComm->nranks), status, out);
+  NCCLCHECKGOTO(cComm->allGather(cComm, &rkey, rkeys_hd_mhandle->host_buf, sizeof(__be32)), status, out);
+  NCCLCHECKGOTO(rkeys_hd_mhandle->copy_h_to_d(), status, out);
 
+  NCCLCHECKGOTO(gdaki_mhandle_hd_mhandle->allocate(1), status, out);
   gdaki_mhandle_hd_mhandle->host_buf->rkeys = rkeys_hd_mhandle->gpu_buf;
   gdaki_mhandle_hd_mhandle->host_buf->lkey = htobe32(mr->lkey);
-  NCCLCHECK(gdaki_mhandle_hd_mhandle->copy_h_to_d());
+  NCCLCHECKGOTO(gdaki_mhandle_hd_mhandle->copy_h_to_d(), status, out);
 
   gdaki_mhandle->type = type;
   gdaki_mhandle->mr = mr;
@@ -961,7 +964,12 @@ ncclResult_t ncclGinGdakiRegMrSym(void *collComm, void *data, size_t size, int t
   *mhandle = (void *)gdaki_mhandle;
   *ginHandle = (void *)gdaki_mhandle_hd_mhandle->gpu_buf;
 
-  return ncclSuccess;
+out:
+  if (status != ncclSuccess) {
+    delete gdaki_mhandle_hd_mhandle;
+    delete rkeys_hd_mhandle;
+  }
+  return status;
 }
 
 ncclResult_t ncclGinGdakiDeregMrSym(void *collComm, void *mhandle) {
@@ -974,7 +982,9 @@ ncclResult_t ncclGinGdakiDeregMrSym(void *collComm, void *mhandle) {
 
   NCCLCHECK(wrap_ibv_dereg_mr(mr));
 
+  NCCLCHECK(gdaki_mhandle->gdaki_mhandle_hd_mhandle->deallocate());
   delete gdaki_mhandle->gdaki_mhandle_hd_mhandle;
+  NCCLCHECK(gdaki_mhandle->rkeys_hd_mhandle->deallocate());
   delete gdaki_mhandle->rkeys_hd_mhandle;
 
   memset(gdaki_mhandle, 0, sizeof(*gdaki_mhandle));

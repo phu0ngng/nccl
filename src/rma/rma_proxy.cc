@@ -392,14 +392,14 @@ ncclResult_t ncclRmaProxyDestroyContext(ncclGin_t* ginComm, void* rmaProxyCtx){
   }
 
   // Free counters (using GDR-aware deallocation)
-  if (ctx->opSeqs) freeMemCPUAccessible(ctx->opSeqs, ctx->opSeqsGdrHandle, ctx->comm->memManager);
-  if (ctx->readySeqs) freeMemCPUAccessible(ctx->readySeqs, ctx->readySeqsGdrHandle, ctx->comm->memManager);
-  if (ctx->doneSeqs) freeMemCPUAccessible(ctx->doneSeqs, ctx->doneSeqsGdrHandle, ctx->comm->memManager);
+  if (ctx->opSeqs) NCCLCHECK(freeMemCPUAccessible(ctx->opSeqs, ctx->opSeqsGdrHandle, ctx->comm->memManager));
+  if (ctx->readySeqs) NCCLCHECK(freeMemCPUAccessible(ctx->readySeqs, ctx->readySeqsGdrHandle, ctx->comm->memManager));
+  if (ctx->doneSeqs) NCCLCHECK(freeMemCPUAccessible(ctx->doneSeqs, ctx->doneSeqsGdrHandle, ctx->comm->memManager));
 
   // Free signals
   if (ginComm && ctx->ginCollComm && ctx->signalsMhandle)
-    ginComm->deregMrSym(ctx->ginCollComm, ctx->signalsMhandle);
-  if (ctx->signalsDev) ncclCudaFree(ctx->signalsDev, ctx->comm->memManager);
+    NCCLCHECK(ginComm->deregMrSym(ctx->ginCollComm, ctx->signalsMhandle));
+  if (ctx->signalsDev) NCCLCHECK(ncclCudaFree(ctx->signalsDev, ctx->comm->memManager));
 
   // Free host signals buffer
   if (ctx->signalsHost) free(ctx->signalsHost);

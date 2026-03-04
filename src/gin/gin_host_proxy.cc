@@ -505,12 +505,12 @@ static ncclResult_t ncclGinProxyDestroyContext(void *ginCtx) {
   // Free counters
   if (ctx) {
     if (ctx->counters || ctx->countersGdrHandle)
-      freeMemCPUAccessible(ctx->counters, ctx->countersGdrHandle, NULL);
+      NCCLCHECK(freeMemCPUAccessible(ctx->counters, ctx->countersGdrHandle, NULL));
 
     // Free signals
     if (ctx->collComm && ctx->signalsMhandle)
       ginBackend->deregMrSym(ctx->collComm, ctx->signalsMhandle);
-    if (ctx->signalsDev) ncclCudaFree(ctx->signalsDev, NULL);
+    if (ctx->signalsDev) NCCLCHECK(ncclCudaFree(ctx->signalsDev, NULL));
 
     // Free hostGpuCtx and its allocations
     if (ctx->hostGpuCtx) {
@@ -518,21 +518,21 @@ static ncclResult_t ncclGinProxyDestroyContext(void *ginCtx) {
         struct ginProxyHostGpuCtx *hostGpuCtx = ctx->hostGpuCtx + contextId;
         if (hostGpuCtx->cisShadow) free(hostGpuCtx->cisShadow);
         if (hostGpuCtx->sis) free(hostGpuCtx->sis);
-        if (hostGpuCtx->pis) ncclCudaFree(hostGpuCtx->pis, NULL);
+        if (hostGpuCtx->pis) NCCLCHECK(ncclCudaFree(hostGpuCtx->pis, NULL));
         if (hostGpuCtx->states) free(hostGpuCtx->states);
         if (hostGpuCtx->inlines) free(hostGpuCtx->inlines);
         if (ctx->collComm && hostGpuCtx->inlinesMhandle)
           ginBackend->deregMrSym(ctx->collComm, hostGpuCtx->inlinesMhandle);
-        if (hostGpuCtx->queues) freeMemCPUAccessible(hostGpuCtx->queues, NULL, NULL);
+        if (hostGpuCtx->queues) NCCLCHECK(freeMemCPUAccessible(hostGpuCtx->queues, NULL, NULL));
         if (hostGpuCtx->cis || hostGpuCtx->cisGdrHandle)
-          freeMemCPUAccessible(hostGpuCtx->cis, hostGpuCtx->cisGdrHandle, NULL);
+          NCCLCHECK(freeMemCPUAccessible(hostGpuCtx->cis, hostGpuCtx->cisGdrHandle, NULL));
       }
       free(ctx->hostGpuCtx);
     }
 
     ncclNetDeviceHandle_t *devHandle = (ncclNetDeviceHandle_t *)ctx->devHandle;
     if (devHandle) {
-      if (devHandle->handle) ncclCudaFree((void *)devHandle->handle, NULL);
+      if (devHandle->handle) NCCLCHECK(ncclCudaFree((void *)devHandle->handle, NULL));
       free(devHandle);
     }
 
