@@ -68,12 +68,12 @@ def test_grow_rejects_new_rank_with_valid_comm():
     comm = Communicator(0xC)
     uid = UniqueId.__new__(UniqueId)
     uid._internal = type("FakeUID", (), {"ptr": 0x555})()
-    with pytest.raises(NcclInvalid, match="New ranks must use an empty communicator"):
+    with pytest.raises(NcclInvalid, match="New ranks must use a null communicator"):
         comm.grow(nranks=4, unique_id=uid, rank=3)
 
 
-def test_grow_rejects_existing_rank_with_empty_comm():
-    """grow() rejects existing rank (rank=None) on an empty communicator."""
+def test_grow_rejects_existing_rank_with_null_comm():
+    """grow() rejects existing rank (rank=None) on a null communicator."""
     comm = Communicator()
     with pytest.raises(NcclInvalid, match="Existing ranks must use an initialized communicator"):
         comm.grow(nranks=4)

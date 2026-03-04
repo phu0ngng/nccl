@@ -816,7 +816,7 @@ class Communicator:
         Notes:
             Unlike the class method ``init()``, this constructor allows ptr=0 for
             creating null communicators (e.g., when ``split()`` excludes a rank).
-            An empty communicator (ptr=0) can later be initialized via ``initialize()``
+            A null communicator (ptr=0) can later be initialized via ``initialize()``
             or used as the caller for ``grow()`` to join an existing communicator.
         """
         self._comm: int = int(ptr)
@@ -1174,7 +1174,7 @@ class Communicator:
 
         1. **Existing root**: The one existing rank that called :meth:`get_unique_id`.
         2. **Existing non-root**: All other existing ranks.
-        3. **New ranks**: Ranks joining via an empty communicator (``Communicator()``).
+        3. **New ranks**: Ranks joining via a null communicator (``Communicator()``).
 
         Args:
             - nranks (int): Total number of ranks in the new communicator (existing + new).
@@ -1203,7 +1203,7 @@ class Communicator:
         """
         is_new_rank = rank is not None
         if is_new_rank and self._comm != 0:
-            raise NcclInvalid("New ranks must use an empty communicator (Communicator())")
+            raise NcclInvalid("New ranks must use a null communicator (Communicator())")
         if not is_new_rank and self._comm == 0:
             raise NcclInvalid("Existing ranks must use an initialized communicator")
 
