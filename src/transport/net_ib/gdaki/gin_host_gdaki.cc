@@ -26,25 +26,25 @@
 #include "nccl_device/gin/gdaki/gin_gdaki_device_host_common.h"
 #include "../gin.h"
 
-#define DOCACHECK(call)                                       \
-  do {                                                        \
-    doca_error_t RES = call;                                  \
-    if (RES != DOCA_SUCCESS) {                                \
-      /* Print the back trace*/                               \
-      INFO(NCCL_NET, "%s:%d -> %d", __FILE__, __LINE__, RES); \
-      return ncclSystemError;                                 \
-    }                                                         \
+#define DOCACHECK(call)                 \
+  do {                                  \
+    doca_error_t err = call;            \
+    if (err != DOCA_SUCCESS) {          \
+      /* Print the back trace*/         \
+      WARN("DOCA failure %d", err);     \
+      return ncclSystemError;           \
+    }                                   \
   } while (0)
 
-#define DOCACHECKGOTO(call, DOCA_RES, NCCL_RES, label)             \
-  do {                                                             \
-    DOCA_RES = call;                                               \
-    if (DOCA_RES != DOCA_SUCCESS) {                                \
-      /* Print the back trace*/                                    \
-      INFO(NCCL_NET, "%s:%d -> %d", __FILE__, __LINE__, DOCA_RES); \
-      NCCL_RES = ncclSystemError;                                  \
-      goto label;                                                  \
-    }                                                              \
+#define DOCACHECKGOTO(call, RES, label) \
+  do {                                  \
+    doca_error_t err = call;            \
+    if (err != DOCA_SUCCESS) {          \
+      /* Print the back trace*/         \
+      WARN("DOCA failure %d", err);     \
+      RES = ncclSystemError;            \
+      goto label;                       \
+    }                                   \
   } while (0)
 
 #define VERBS_TEST_DBR_SIZE (8)
@@ -362,7 +362,6 @@ static void gdakiFillExchInfo(struct gdaki_exch_info *exch_info, struct gdaki_co
 static ncclResult_t gdakiCreateVerbsAh(struct gdaki_context *ctx, struct ibv_context* ib_context, int ib_sl, int ib_tc,
                                        int ib_gid_index) {
   ncclResult_t status = ncclSuccess;
-  doca_error_t docaStatus = DOCA_SUCCESS;
 
   DOCACHECK(doca_verbs_ah_attr_create(ib_context, &ctx->ah));
   DOCACHECK(doca_verbs_ah_attr_set_sl(ctx->ah, ib_sl));
@@ -370,16 +369,15 @@ static ncclResult_t gdakiCreateVerbsAh(struct gdaki_context *ctx, struct ibv_con
 
   if (ctx->port_attr.link_layer == 1) {
     DOCACHECKGOTO(doca_verbs_ah_attr_set_addr_type(ctx->ah, DOCA_VERBS_ADDR_TYPE_IB_NO_GRH),
-                  docaStatus, status, destroy_verbs_ah);
+                  status, destroy_verbs_ah);
   } else {
     DOCACHECKGOTO(doca_verbs_ah_attr_set_addr_type(ctx->ah, DOCA_VERBS_ADDR_TYPE_IPv4),
-                  docaStatus, status, destroy_verbs_ah);
+                  status, destroy_verbs_ah);
   }
 
   // set_port_num?
-  DOCACHECKGOTO(doca_verbs_ah_attr_set_sgid_index(ctx->ah, ib_gid_index), docaStatus, status,
-                destroy_verbs_ah);
-  DOCACHECKGOTO(doca_verbs_ah_attr_set_hop_limit(ctx->ah, 255), docaStatus, status, destroy_verbs_ah);
+  DOCACHECKGOTO(doca_verbs_ah_attr_set_sgid_index(ctx->ah, ib_gid_index), status, destroy_verbs_ah);
+  DOCACHECKGOTO(doca_verbs_ah_attr_set_hop_limit(ctx->ah, 255), status, destroy_verbs_ah);
 
   return ncclSuccess;
 
@@ -391,7 +389,6 @@ destroy_verbs_ah:
 static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_verbs_qp_hl *gqp,
                                    struct gdaki_exch_info *exch_info) {
   ncclResult_t status = ncclSuccess;
-  doca_error_t docaStatus = DOCA_SUCCESS;
   struct doca_verbs_qp_attr *verbs_qp_attr = nullptr;
 
   DOCACHECK(doca_verbs_ah_attr_set_gid(ctx->ah, exch_info->vgid));
@@ -399,37 +396,35 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
   DOCACHECK(doca_verbs_qp_attr_create(&verbs_qp_attr));
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_path_mtu(verbs_qp_attr, DOCA_VERBS_MTU_SIZE_4K_BYTES),
-    docaStatus, status, destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_rq_psn(verbs_qp_attr, 0), docaStatus, status,
-                destroy_verbs_qp_attr);
+    status, destroy_verbs_qp_attr);
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_rq_psn(verbs_qp_attr, 0), status, destroy_verbs_qp_attr);
 
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_sq_psn(verbs_qp_attr, 0), docaStatus, status,
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_sq_psn(verbs_qp_attr, 0), status, destroy_verbs_qp_attr);
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_port_num(verbs_qp_attr, ctx->port_num),
+                status, destroy_verbs_qp_attr);
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_ack_timeout(verbs_qp_attr, ncclParamIbTimeout()),
+                status, destroy_verbs_qp_attr);
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_retry_cnt(verbs_qp_attr, ncclParamIbRetryCnt()),
+                status, destroy_verbs_qp_attr);
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_rnr_retry(verbs_qp_attr, 7), status,
                 destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_port_num(verbs_qp_attr, ctx->port_num), docaStatus,
-                status, destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_ack_timeout(verbs_qp_attr, ncclParamIbTimeout()), docaStatus,
-                status, destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_retry_cnt(verbs_qp_attr, ncclParamIbRetryCnt()), docaStatus,
-                status, destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_rnr_retry(verbs_qp_attr, 7), docaStatus, status,
-                destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_min_rnr_timer(verbs_qp_attr, 12), docaStatus,
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_min_rnr_timer(verbs_qp_attr, 12),
                 status, destroy_verbs_qp_attr);
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_next_state(verbs_qp_attr, DOCA_VERBS_QP_STATE_INIT),
-    docaStatus, status, destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_allow_remote_write(verbs_qp_attr, 1), docaStatus,
+    status, destroy_verbs_qp_attr);
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_allow_remote_write(verbs_qp_attr, 1),
                 status, destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_allow_remote_read(verbs_qp_attr, 1), docaStatus,
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_allow_remote_read(verbs_qp_attr, 1),
                 status, destroy_verbs_qp_attr);
   DOCACHECKGOTO(doca_verbs_qp_attr_set_allow_remote_atomic(
                   verbs_qp_attr, DOCA_VERBS_QP_ATOMIC_MODE_IB_SPEC),
-                docaStatus, status, destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_ah_attr(verbs_qp_attr, ctx->ah), docaStatus,
+                status, destroy_verbs_qp_attr);
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_ah_attr(verbs_qp_attr, ctx->ah),
                 status, destroy_verbs_qp_attr);
   DOCACHECKGOTO(doca_verbs_qp_attr_set_dest_qp_num(verbs_qp_attr, exch_info->qpn),
-                docaStatus, status, destroy_verbs_qp_attr);
-  DOCACHECKGOTO(doca_verbs_qp_attr_set_pkey_index(verbs_qp_attr, ncclParamIbPkey()), docaStatus,
+                status, destroy_verbs_qp_attr);
+  DOCACHECKGOTO(doca_verbs_qp_attr_set_pkey_index(verbs_qp_attr, ncclParamIbPkey()),
                 status, destroy_verbs_qp_attr);
 
   DOCACHECKGOTO(doca_verbs_qp_modify(
@@ -437,29 +432,29 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
                   DOCA_VERBS_QP_ATTR_NEXT_STATE | DOCA_VERBS_QP_ATTR_ALLOW_REMOTE_WRITE |
                     DOCA_VERBS_QP_ATTR_ALLOW_REMOTE_READ | DOCA_VERBS_QP_ATTR_PKEY_INDEX |
                     DOCA_VERBS_QP_ATTR_PORT_NUM),
-                docaStatus, status, destroy_verbs_qp_attr);
+                status, destroy_verbs_qp_attr);
 
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_next_state(verbs_qp_attr, DOCA_VERBS_QP_STATE_RTR),
-    docaStatus, status, destroy_verbs_qp_attr);
+    status, destroy_verbs_qp_attr);
 
   DOCACHECKGOTO(doca_verbs_qp_modify(
                   gqp->qp, verbs_qp_attr,
                   DOCA_VERBS_QP_ATTR_NEXT_STATE | DOCA_VERBS_QP_ATTR_RQ_PSN |
                     DOCA_VERBS_QP_ATTR_DEST_QP_NUM | DOCA_VERBS_QP_ATTR_PATH_MTU |
                     DOCA_VERBS_QP_ATTR_AH_ATTR | DOCA_VERBS_QP_ATTR_MIN_RNR_TIMER),
-                docaStatus, status, destroy_verbs_qp_attr);
+                status, destroy_verbs_qp_attr);
 
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_next_state(verbs_qp_attr, DOCA_VERBS_QP_STATE_RTS),
-    docaStatus, status, destroy_verbs_qp_attr);
+    status, destroy_verbs_qp_attr);
 
   DOCACHECKGOTO(doca_verbs_qp_modify(
                   gqp->qp, verbs_qp_attr,
                   DOCA_VERBS_QP_ATTR_NEXT_STATE | DOCA_VERBS_QP_ATTR_SQ_PSN |
                     DOCA_VERBS_QP_ATTR_ACK_TIMEOUT | DOCA_VERBS_QP_ATTR_RETRY_CNT |
                     DOCA_VERBS_QP_ATTR_RNR_RETRY),
-                docaStatus, status, destroy_verbs_qp_attr);
+                status, destroy_verbs_qp_attr);
 
   DOCACHECK(doca_verbs_qp_attr_destroy(verbs_qp_attr));
 
@@ -475,7 +470,6 @@ NCCL_PARAM(GinGdakiUseReliableDB, "GDAKI_USE_RELIABLE_DB", 0);
 ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounters, int nContexts, int queueDepth,
                                        void **outGinCtx, ncclNetDeviceHandle_t **outDevHandle) {
   ncclResult_t status = ncclSuccess;
-  doca_error_t docaStatus;
 
   struct ncclGinIbCollComm *cComm = (struct ncclGinIbCollComm *)collComm;
 
@@ -554,7 +548,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   CUDACHECK(cudaGetDevice(&gdaki_ctx->cuda_id));
   CUDACHECK(cudaDeviceGetPCIBusId(pciBusId, MAX_PCI_ADDRESS_LEN, gdaki_ctx->cuda_id));
 
-  DOCACHECKGOTO(doca_gpu_create(pciBusId, &gdaki_ctx->gdev), docaStatus, status, out);
+  DOCACHECKGOTO(doca_gpu_create(pciBusId, &gdaki_ctx->gdev), status, out);
 
   // Exchange counters and signals with peers
   NCCLCHECKGOTO(counters_table->register_mr(cComm->ib.pd, true), status, out);
@@ -593,7 +587,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
 
   for (int qp_idx = 0; qp_idx < nqps_for_comm; qp_idx++) {
 retry_create_qp_group_hl:
-    docaStatus = doca_gpu_verbs_create_qp_group_hl(&qp_init_attr, &gdaki_ctx->gqp_groups[qp_idx]);
+    doca_error_t docaStatus = doca_gpu_verbs_create_qp_group_hl(&qp_init_attr, &gdaki_ctx->gqp_groups[qp_idx]);
     if (docaStatus != DOCA_SUCCESS) {
       if (qp_init_attr.send_dbr_mode_ext == DOCA_GPUNETIO_VERBS_SEND_DBR_MODE_EXT_NO_DBR_HW) {
         qp_init_attr.send_dbr_mode_ext = DOCA_GPUNETIO_VERBS_SEND_DBR_MODE_EXT_NO_DBR_SW_EMULATED;
@@ -606,7 +600,7 @@ retry_create_qp_group_hl:
         goto retry_create_qp_group_hl;
       }
 
-      INFO(NCCL_NET, "%s:%d -> %d", __FILE__, __LINE__, docaStatus);
+      WARN("DOCA Error %d", docaStatus);
       status = ncclSystemError;
       goto out;
     }
@@ -628,7 +622,7 @@ retry_create_qp_group_hl:
   qp_init_attr.send_dbr_mode_ext = DOCA_GPUNETIO_VERBS_SEND_DBR_MODE_EXT_VALID_DBR;
   for (int qp_idx = nqps_for_comm; qp_idx < nqps; qp_idx++) {
     DOCACHECKGOTO(doca_gpu_verbs_create_qp_hl(&qp_init_attr, &gdaki_ctx->gqps[qp_idx]),
-                  docaStatus, status, out);
+                  status, out);
     INFO(NCCL_NET, "[%d] Created a self-loop peer QP: qp_idx=%d, qpn=%#x", rank, qp_idx,
          doca_verbs_qp_get_qpn(gdaki_ctx->gqps[qp_idx]->qp));
   }
@@ -636,7 +630,7 @@ retry_create_qp_group_hl:
   for (int qp_idx = nqps_for_comm; qp_idx < ncompanion_qps; qp_idx++) {
     DOCACHECKGOTO(
       doca_gpu_verbs_create_qp_hl(&qp_init_attr, &gdaki_ctx->companion_gqps[qp_idx]),
-      docaStatus, status, out);
+      status, out);
     INFO(NCCL_NET, "[%d] Created a self-loop peer companion QP: qp_idx=%d, qpn=%#x", rank, qp_idx,
          doca_verbs_qp_get_qpn(gdaki_ctx->companion_gqps[qp_idx]->qp));
   }
@@ -719,7 +713,7 @@ retry_create_qp_group_hl:
     }
     DOCACHECKGOTO(doca_gpu_verbs_export_multi_qps_dev(gdaki_ctx->gdev, gverbs_qps, nranks,
                                                       &gin_gdaki_gpu_ctx->gdqp),
-                  docaStatus, status, out);
+                  status, out);
 
     for (int qp_idx = 0; qp_idx < nranks; qp_idx++) {
       gverbs_qps[qp_idx] = gdaki_ctx->companion_gqps[(ctx_idx * nranks) + qp_idx]->qp_gverbs;
@@ -727,7 +721,7 @@ retry_create_qp_group_hl:
     }
     DOCACHECKGOTO(doca_gpu_verbs_export_multi_qps_dev(gdaki_ctx->gdev, gverbs_qps, nranks,
                                                       &gin_gdaki_gpu_ctx->companion_gdqp),
-                  docaStatus, status, out);
+                  status, out);
 
     if (nCounters) {
       NCCLCHECKGOTO(counters_table->allocate_elements(num_counters, &buffer_start), status, out);
@@ -860,14 +854,14 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
         for (int qp_idx = 0; qp_idx < nranks; qp_idx++) {
           gverbs_qps[qp_idx] = gdaki_ctx->gqps[(ctx_idx * nranks) + qp_idx]->qp_gverbs;
         }
-        doca_gpu_verbs_unexport_multi_qps_dev(gdaki_ctx->gdev, gverbs_qps, nranks, gin_gdaki_gpu_ctx->gdqp);
+        DOCACHECK(doca_gpu_verbs_unexport_multi_qps_dev(gdaki_ctx->gdev, gverbs_qps, nranks, gin_gdaki_gpu_ctx->gdqp));
         gin_gdaki_gpu_ctx->gdqp = nullptr;
       }
       if (gin_gdaki_gpu_ctx->companion_gdqp) {
         for (int qp_idx = 0; qp_idx < nranks; qp_idx++) {
           gverbs_qps[qp_idx] = gdaki_ctx->companion_gqps[(ctx_idx * nranks) + qp_idx]->qp_gverbs;
         }
-        doca_gpu_verbs_unexport_multi_qps_dev(gdaki_ctx->gdev, gverbs_qps, nranks, gin_gdaki_gpu_ctx->companion_gdqp);
+        DOCACHECK(doca_gpu_verbs_unexport_multi_qps_dev(gdaki_ctx->gdev, gverbs_qps, nranks, gin_gdaki_gpu_ctx->companion_gdqp));
         gin_gdaki_gpu_ctx->companion_gdqp = nullptr;
       }
     }
@@ -877,15 +871,15 @@ ncclResult_t ncclGinGdakiDestroyContext(void *ginCtx) {
   }
 
   for (int qp_idx = 0; qp_idx < nqps_for_comm; qp_idx++) {
-    doca_gpu_verbs_destroy_qp_group_hl(gdaki_ctx->gqp_groups[qp_idx]);
+    DOCACHECK(doca_gpu_verbs_destroy_qp_group_hl(gdaki_ctx->gqp_groups[qp_idx]));
     gdaki_ctx->gqp_groups[qp_idx] = nullptr;
   }
   for (int qp_idx = nqps_for_comm; qp_idx < nqps; qp_idx++) {
-    doca_gpu_verbs_destroy_qp_hl(gdaki_ctx->gqps[qp_idx]);
+    DOCACHECK(doca_gpu_verbs_destroy_qp_hl(gdaki_ctx->gqps[qp_idx]));
     gdaki_ctx->gqps[qp_idx] = nullptr;
   }
   for (int qp_idx = nqps_for_comm; qp_idx < ncompanion_qps; qp_idx++) {
-    doca_gpu_verbs_destroy_qp_hl(gdaki_ctx->companion_gqps[qp_idx]);
+    DOCACHECK(doca_gpu_verbs_destroy_qp_hl(gdaki_ctx->companion_gqps[qp_idx]));
     gdaki_ctx->companion_gqps[qp_idx] = nullptr;
   }
 
