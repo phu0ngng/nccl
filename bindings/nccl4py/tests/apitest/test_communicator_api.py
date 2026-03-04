@@ -150,6 +150,8 @@ def test_grow(rank_info):
         initial_mpi = mpi_comm.Split(1, rank)
         grow_uid = nccl.get_unique_id(empty=True)
 
+    # Note: grow_uid only needs to be sent to new ranks, using Bcast here sends grow_uid to all
+    # ranks just for simplicity, grow_uid is not used below on existing non-root ranks.
     mpi_comm.Bcast([grow_uid.as_ndarray, MPI.BYTE], root=0)
 
     if rank < initial_size:
