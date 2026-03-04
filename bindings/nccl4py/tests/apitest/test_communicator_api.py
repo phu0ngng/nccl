@@ -137,6 +137,68 @@ def test_split(uid_shared, rank_info, color, key, expect_invalid, expected_nrank
 
 
 @requires_nccl_version("2.18.1")
+@pytest.mark.mpi(min_size=2)
+def test_split_partial_nocolor(uid_shared, rank_info):
+    """Test split where rank 0 passes color=None while others use a valid color.
+
+    Regression test for bug 5937877: split must call the collective
+    _nccl_bindings.comm_split even for ranks opting out with color=None,
+    otherwise the operation hangs.
+    """
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    base = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared
+    )
+
+    if rank_info.nccl_rank == 0:
+        sub = base.split(color=nccl.NCCL_SPLIT_NOCOLOR, key=0)
+        assert not sub.is_valid
+    else:
+        sub = base.split(color=0, key=rank_info.nccl_rank)
+        assert sub.is_valid
+        assert sub.nranks == rank_info.nccl_size - 1
+        assert 0 <= sub.rank < sub.nranks
+        sub.destroy()
+
+    base.destroy()
+
+
+@requires_nccl_version("2.18.1")
+@pytest.mark.mpi(min_size=2)
+def test_split_partial_none_color(uid_shared, rank_info):
+    """Test split where rank 0 passes color=None while others use a valid color.
+
+    Regression test for bug 5937877: split must call the collective
+    _nccl_bindings.comm_split even for ranks opting out with color=None,
+    otherwise the operation hangs.
+    """
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    base = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared
+    )
+
+    if rank_info.nccl_rank == 0:
+        sub = base.split()
+        assert not sub.is_valid
+    else:
+        sub = base.split(color=0, key=rank_info.nccl_rank)
+        assert sub.is_valid
+        assert sub.nranks == rank_info.nccl_size - 1
+        assert 0 <= sub.rank < sub.nranks
+        sub.destroy()
+
+    base.destroy()
+
+
+@requires_nccl_version("2.18.1")
 @pytest.mark.mpi(min_size=4)
 def test_split_with_value_validation(nccl_comm, rank_info):
     """Test split with value validation."""
