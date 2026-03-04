@@ -359,13 +359,27 @@ ncclResult_t ncclTopoSortSystem(struct ncclTopoSystem* system) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclTopoGetMinNetBw(struct ncclTopoSystem* system, float* bw) {
+// Minimum network BW of a single device accessible by rank.
+// Note: This function does not sum up the bw over multiple NICs if many are accessible.
+ncclResult_t ncclTopoGetMinNetBw(struct ncclTopoSystem* system, int rank, float* bw) {
+  int g=0;
+  while(g < system->nodes[GPU].count && system->nodes[GPU].nodes[g].gpu.rank != rank) g++;
+  if(g == system->nodes[GPU].count) return ncclInternalError;
+
+  int64_t firstNetId = 0;
   float minBw = FLT_MAX;
-  for (int n = 0; n < system->nodes[NET].count; n++) {
-    struct ncclTopoNode* net = system->nodes[NET].nodes + n;
-    if (net->net.bw < minBw) minBw = net->net.bw;
+  for (int c = 0; c < MAXCHANNELS; c++) {
+    int net;
+    int64_t netId;
+    NCCLCHECK(ncclTopoGetLocalNet(system, rank, c, &netId, NULL));
+    NCCLCHECK(ncclTopoIdToIndex(system, NET, netId, &net));
+    if (c == 0) firstNetId = netId;
+    else if (netId == firstNetId) break;
+
+    minBw = std::min(minBw , system->nodes[GPU].nodes[g].paths[NET][net].bw);
   }
-  *bw = minBw;
+  // if no net is found, return 0 as a minimum bw
+  *bw = (minBw < FLT_MAX) ? minBw : 0.0;
   return ncclSuccess;
 }
 
