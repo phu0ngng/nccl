@@ -148,6 +148,12 @@ else
   echo -e "Disabled Device ID TESTS test\n\n"
 fi
 
+if [[ ${AFFINITY_RESTORE_TESTS} -eq 1 ]] ; then
+  run_command "affinity_restore_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/affinity_restore_test" ""
+else
+  echo -e "Disabled Affinity Restore TESTS test\n\n"
+fi
+
 if [[ ${LSA_POINTER_TESTS} -eq 1 ]] ; then
   run_command "lsa_pointer_tests" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/lsa_pointer_test" ""
 else

@@ -626,7 +626,7 @@ void ncclOsCpuZero(ncclAffinity& affinity) {
   affinity = 0;
 }
 
-int ncclOsCpuCount(const ncclAffinity affinity) {
+int ncclOsCpuCount(const ncclAffinity& affinity) {
   return _mm_popcnt_u64(affinity);
 }
 
@@ -634,7 +634,7 @@ void ncclOsCpuSet(ncclAffinity& affinity, int cpu) {
   affinity |= (1ULL << cpu);
 }
 
-bool ncclOsCpuIsSet(const ncclAffinity affinity, int cpu) {
+bool ncclOsCpuIsSet(const ncclAffinity& affinity, int cpu) {
   return (affinity & (1ULL << cpu)) != 0;
 }
 
@@ -653,7 +653,7 @@ ncclResult_t ncclOsGetAffinity(ncclAffinity* affinity) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity) {
+ncclResult_t ncclOsSetAffinity(const ncclAffinity& affinity) {
   BOOL result = SetProcessAffinityMask(GetCurrentProcess(), affinity);
   if (result == FALSE) {
     WARN("SetProcessAffinityMask failed with error: %ld", GetLastError());

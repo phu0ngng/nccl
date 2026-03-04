@@ -521,7 +521,7 @@ void ncclOsCpuZero(ncclAffinity& affinity) {
   CPU_ZERO(&affinity);
 }
 
-int ncclOsCpuCount(const ncclAffinity affinity) {
+int ncclOsCpuCount(const ncclAffinity& affinity) {
   return CPU_COUNT(&affinity);
 }
 
@@ -529,7 +529,7 @@ void ncclOsCpuSet(ncclAffinity& affinity, int cpu) {
   CPU_SET(cpu, &affinity);
 }
 
-bool ncclOsCpuIsSet(const ncclAffinity affinity, int cpu) {
+bool ncclOsCpuIsSet(const ncclAffinity& affinity, int cpu) {
   return CPU_ISSET(cpu, &affinity);
 }
 
@@ -548,7 +548,7 @@ ncclResult_t ncclOsGetAffinity(ncclAffinity* affinity) {
   return ncclSuccess;
 }
 
-ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity) {
+ncclResult_t ncclOsSetAffinity(const ncclAffinity& affinity) {
   int result = sched_setaffinity(0, sizeof(ncclAffinity), &affinity);
   if (result == -1) {
     WARN("sched_setaffinity failed with error: %s", strerror(errno));

@@ -27,7 +27,7 @@ STATICLDFLAGS += -lcudart_static
 DST_DIR := $(abspath ${BUILDDIR}/test/unit)
 CU_FILES := align_test.cu  #kernel_test.cu
 #CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc channel_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc
-CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc intrusive_map_test.cc register_mix_a2a_ar.cc
+CC_FILES += graph_test.cc model.cc data.cc xml_test.cc xml_fuse_test.cc comm_leak_test.cc enqueue_test.cc log_algo.cc ft_test.cc overlap_test.cc plugin_load.cc device_id_test.cc affinity_restore_test.cc intrusive_map_test.cc register_mix_a2a_ar.cc
 # Compile-only tests (static assertions, no executable needed)
 COMPILE_ONLY_CC_FILES := backwards_compat.cc
 KCU_FILES := align_test.cu #kernel_test.cu
@@ -323,6 +323,11 @@ ${DST_DIR}/multi_segment_test: ${DST_DIR}/multi_segment_test.o
 	$(NVCC) -o $@ $(NVCUFLAGS) ${NVLDFLAGS} $^ -lcudart -lcuda
 
 ${DST_DIR}/device_id_test: ${DST_DIR}/device_id_test.o ${DLIB}
+	@printf "Linking  %-35s > %s\n" $< $@
+	@mkdir -p ${DST_DIR}
+	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}
+
+${DST_DIR}/affinity_restore_test: ${DST_DIR}/affinity_restore_test.o ${DLIB}
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${DLIBFLAGS}

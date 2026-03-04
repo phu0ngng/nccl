@@ -78,12 +78,12 @@ typedef cpu_set_t ncclAffinity;
 typedef DWORD_PTR ncclAffinity;
 #endif
 void ncclOsCpuZero(ncclAffinity& affinity);
-int ncclOsCpuCount(const ncclAffinity affinity);
+int ncclOsCpuCount(const ncclAffinity& affinity);
 void ncclOsCpuSet(ncclAffinity& affinity, int cpu);
-bool ncclOsCpuIsSet(const ncclAffinity affinity, int cpu);
+bool ncclOsCpuIsSet(const ncclAffinity& affinity, int cpu);
 ncclAffinity ncclOsCpuAnd(const ncclAffinity& a, const ncclAffinity& b);
 ncclResult_t ncclOsGetAffinity(ncclAffinity* affinity);
-ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity);
+ncclResult_t ncclOsSetAffinity(const ncclAffinity& affinity);
 int ncclOsGetCpu();
 
 /* NVML */
