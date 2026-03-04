@@ -589,6 +589,7 @@ struct ncclComm {
   struct ncclNodeRanks* nodeRanks;
   // MNNVL: Multi-Node NVLink
   int MNNVL; // true when MNNVL is available
+  bool isMultiRankGpu; // true when multiple ranks use the same GPU device on the same host
   struct cliqueInfo clique; // Our MNNVL clique information
   int cliqueRank; // Our rank within the MNNVL clique
 

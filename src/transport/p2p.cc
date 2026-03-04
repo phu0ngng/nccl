@@ -168,7 +168,10 @@ ncclResult_t p2pCanConnect(int* ret, struct ncclComm* comm, struct ncclTopoGraph
 
   // Check that CUDA can do P2P
   int p2p;
-  if (!CUDASUCCESS(cudaDeviceCanAccessPeer(&p2p, cudaDev1, cudaDev2))) {
+  if (cudaDev1 == cudaDev2) {
+    // This is useful for multi-rank GPUs. cudaDeviceCanAccessPeer would indicate that it is not allowed.
+    p2p = 1;
+  } else if (!CUDASUCCESS(cudaDeviceCanAccessPeer(&p2p, cudaDev1, cudaDev2))) {
     INFO(NCCL_INIT|NCCL_P2P,"peer query failed between dev %d(=%lx) and dev %d(=%lx)",
          cudaDev1, info1->busId, cudaDev2, info2->busId);
     *ret = 0;

@@ -37,7 +37,7 @@
 // to GPU traffic consumes more PCI bandwidth.
 #define INTEL_P2P_OVERHEAD(bw) (bw*6/5)
 
-#define NCCL_TOPO_NODE_TYPES 7
+#define NCCL_TOPO_NODE_TYPES 8
 #define GPU 0
 #define PCI 1
 #define NVS 2
@@ -45,6 +45,7 @@
 #define NIC 4
 #define NET 5
 #define GIN 6
+#define DEV 7
 extern const char* topoNodeTypeStr[];
 
 // We want link types and path types to match as much as possible
@@ -67,7 +68,7 @@ extern const char* topoLinkTypeStr[];
 // Connection traversing NVLink
 #define PATH_NVL 1
 
-// Connection through NVLink using an intermediate GPU
+// Connection through NVLink using an intermediate DEV
 #define PATH_NVB 2
 
 // Connection through C2C
@@ -82,7 +83,7 @@ extern const char* topoLinkTypeStr[];
 // Connection between a GPU and a NIC using the C2C connection to the CPU and the PCIe connection to the NIC
 #define PATH_P2C 6
 
-// Connection between a GPU and a NIC using an intermediate GPU. Used to enable rail-local, aggregated network send/recv operations.
+// Connection between a GPU and a NIC using an intermediate DEV. Used to enable rail-local, aggregated network send/recv operations.
 #define PATH_PXN 7
 
 // Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
@@ -127,6 +128,8 @@ struct ncclTopoLinkList {
 #define NCCL_TOPO_ID_LOCAL_ID(id) (id & NCCL_TOPO_ID_LOCAL_ID_MASK)
 #define NCCL_TOPO_LOCAL_NIC_ID(numaid, busid) (((int64_t)numaid << 56) + busid)
 #define NCCL_TOPO_ID(systemid, localid) (((int64_t)systemid << 56) + (localid & NCCL_TOPO_ID_LOCAL_ID_MASK))
+#define NCCL_TOPO_GPU_LOCAL_RANK_SHIFT 40
+#define NCCL_TOPO_GPU_LOCAL_ID(busId, localRankOnDev) ((((uint64_t)(localRankOnDev)) << 40) | ((busId) & ((((uint64_t)1)<<40)-1)))
 
 struct ncclTopoNode {
   int type;
@@ -138,7 +141,14 @@ struct ncclTopoNode {
       int rank;
       int cudaCompCap;
       int gdrSupport;
+      struct ncclTopoNode* parent; // parent DEV node
     }gpu;
+    struct {
+      uint64_t device;  // Same as pci.device, a combination of vendor, device, subsystem_vendor and subsystem_device
+      int dev; // NVML dev number
+      int cudaCompCap;
+      int gdrSupport;
+    }dev;
     struct {
       int dev; // Plugin dev number
       uint64_t pciId;
@@ -251,15 +261,16 @@ static ncclResult_t ncclTopoRankToIndex(struct ncclTopoSystem* system, int rank,
   return ncclInternalError;
 }
 
-static ncclResult_t ncclTopoDevToRank(struct ncclTopoSystem* system, int dev, int* rank) {
+static ncclResult_t ncclTopoDevToRank(struct ncclTopoSystem* system, int systemId, int dev, bool warn, int* rank) {
   *rank = -1;
   for (int i=0; i<system->nodes[GPU].count; i++) {
-    if (NCCL_TOPO_ID_SYSTEM_ID(system->nodes[GPU].nodes[i].id) != system->systemId) continue; // Only consider GPUs on our node
+    if (NCCL_TOPO_ID_SYSTEM_ID(system->nodes[GPU].nodes[i].id) != systemId) continue; // Only consider GPUs on the given node
     if (system->nodes[GPU].nodes[i].gpu.dev == dev) {
       *rank = system->nodes[GPU].nodes[i].gpu.rank;
       return ncclSuccess;
     }
   }
+  if (warn) WARN("ncclTopoDevToRank could not find rank for nvml dev %d in systemId %d", dev, systemId);
   return ncclInternalError;
 }
 

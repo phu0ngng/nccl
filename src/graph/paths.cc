@@ -67,9 +67,15 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
         NCCLCHECK(getPath(system, remNode, baseNode->type, baseNode->id, &remPath));
         float bw = std::min(path->bw, link->bw);
 
-        // allow routing through a GPU only as 1 hop
-        if (node != baseNode && node->type == GPU &&
-            (ncclParamNvbDisable() || link->type != LINK_NVL || remNode->type != GPU || path->count > 1)) continue;
+        // Only allow path to go through a DEV if either
+        // - the remNode is a GPU and the link type is PATH_LOC, or
+        // - NVB is enabled and remNode is a DEV and link type is NVLink and the path isn't too long for NVB;
+        // else, discard the path.
+
+        int pathMaxLength = (baseNode->type == GPU) ? 2 : 1;
+        ncclTopoNode* baseDevNode = (baseNode->type == GPU) ? baseNode->gpu.parent : baseNode;
+        if (node != baseDevNode && node->type == DEV && (link->type != LINK_LOC || remNode->type!=GPU) &&
+            (ncclParamNvbDisable() || link->type != LINK_NVL || remNode->type != DEV || path->count > pathMaxLength)) continue;
 
         if ((remPath->bw == 0 || remPath->count > path->count) && remPath->bw < bw) {
           // Find reverse link
@@ -97,7 +103,7 @@ static ncclResult_t ncclTopoSetPaths(struct ncclTopoNode* baseNode, struct ncclT
           // Consider a path going through the CPU as PATH_PHB
           if (link->type == LINK_PCI && (node->type == CPU || link->remNode->type == CPU)) type = PATH_PHB;
           // Set 1 hop NVLink as NVB
-          if (node->type == GPU && path->type == PATH_NVL && type == PATH_NVL && remPath->count > 1) type = PATH_NVB;
+          if (node->type == DEV && path->type == PATH_NVL && type == PATH_NVL && remPath->count > pathMaxLength) type = PATH_NVB;
 
           remPath->type = std::max(path->type, type);
 
@@ -317,11 +323,14 @@ ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* syst
   int intermediateIndex = -1;
   // Set intermediate GPU rank, if routing through an intermediate GPU.
   struct ncclTopoLinkList* path = gpu1->paths[GPU]+g2;
-  if (path->count == 2) {
-    struct ncclTopoNode* intermediateNode = path->list[0]->remNode;
-    if (intermediateNode->type == GPU) {
-      intermediateIndex = intermediateNode - system->nodes[GPU].nodes;
-      if (intermediateRank) *intermediateRank = intermediateNode->gpu.rank;
+  if (path->count == 4) { // Intermediate goes through DEV, not GPU.
+    // path is GPU1 - DEV1 - DEV2 - DEV3 - GPU2, so the intermediate DEV is located at path->list[1]->remNode
+    struct ncclTopoNode* intermediateNode = path->list[1]->remNode;
+    if (intermediateNode->type == DEV) {
+      int interRank;
+      NCCLCHECK(ncclTopoDevToRank(system, NCCL_TOPO_ID_SYSTEM_ID(intermediateNode->id), intermediateNode->dev.dev, /*warn=*/true, &interRank));
+      NCCLCHECK(ncclTopoRankToIndex(system, interRank, &intermediateIndex, true));
+      if (intermediateRank) *intermediateRank = interRank;
     }
   }
 
@@ -330,8 +339,8 @@ ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* syst
 
   int arch, vendor, model;
   NCCLCHECK(ncclTopoCpuType(system, &arch, &vendor, &model));
-  // Allow P2P between pairs of GPUs on AMD systems
-  if ((arch == NCCL_TOPO_CPU_ARCH_X86 && vendor == NCCL_TOPO_CPU_VENDOR_AMD) && system->nodes[GPU].count <= 2) p2pLevel = PATH_SYS;
+  // Allow P2P between pairs of GPU devices on AMD systems
+  if ((arch == NCCL_TOPO_CPU_ARCH_X86 && vendor == NCCL_TOPO_CPU_VENDOR_AMD) && system->nodes[DEV].count <= 2) p2pLevel = PATH_SYS;
 
   // User override
   NCCLCHECK(ncclGetUserP2pLevel(&p2pLevel));
@@ -584,17 +593,25 @@ ncclResult_t ncclTopoGetIntermediateRank(struct ncclTopoSystem* system, int rank
   struct ncclTopoNode* gpu = system->nodes[GPU].nodes+g;
   struct ncclTopoLinkList* path = gpu->paths[NET]+n;
   if (path->type == PATH_PXN) {
-    struct ncclTopoNode* node;
-    int type = NVS;
-    for (int i=0; i<path->count && type == NVS; i++) {
-      node = path->list[i]->remNode;
-      type = node->type;
+    // PXN path follows GPU-DEV-NVS-..., start from the first NVS node and find the first DEV in the path
+    int i = 1;
+    while (i < path->count && path->list[i]->remNode->type == NVS) i++;
+    struct ncclTopoNode* node = path->list[i]->remNode;
+
+    // Select the first GPU on the device found to be the PXN intermediate rank
+    if (node->type == DEV) {
+      for (int i=0; i<node->nlinks; i++) {
+        if (node->links[i].remNode->type == GPU) {
+          node = node->links[i].remNode;
+          break;
+        }
+      }
     }
-    if (type != GPU) {
+    if (node->type != GPU) {
       WARN("Could not find intermediate GPU between GPU rank %d and NIC %lx", rank, netId);
       return ncclInternalError;
     }
-    *intermediateRank = node->gpu.rank;
+    NCCLCHECK(ncclTopoDevToRank(system, NCCL_TOPO_ID_SYSTEM_ID(node->id), node->gpu.dev, /*warn=*/true, intermediateRank));
   } else {
     *intermediateRank = rank;
   }
@@ -663,6 +680,11 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
   // Set direct paths to CPUs. We need them in many cases.
   for (int c=0; c<system->nodes[CPU].count; c++) {
     NCCLCHECK(ncclTopoSetPaths(system->nodes[CPU].nodes+c, system));
+  }
+
+  // Set direct paths to DEVs, needed in the graph search.
+  for (int d=0; d<system->nodes[DEV].count; d++) {
+    NCCLCHECK(ncclTopoSetPaths(system->nodes[DEV].nodes+d, system));
   }
 
   // Set direct paths to GPUs.

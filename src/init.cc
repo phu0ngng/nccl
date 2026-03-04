@@ -63,9 +63,9 @@ NCCL_PARAM(NvlsChannels, "NVLS_NCHANNELS", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(NumRmaCtx, "NUM_RMA_CTX", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(MaxP2pPeers, "P2P_MAX_PEERS", NCCL_CONFIG_UNDEF_INT);
 NCCL_PARAM(SetCpuStackSize, "SET_CPU_STACK_SIZE", 1);
+NCCL_PARAM(MultiRankGpuEnable, "MULTI_RANK_GPU_ENABLE", 0);
 
 extern int64_t ncclParamSingleProcMemRegEnable();
-
 
 static bool ctaPolicyIsValid(int ctaPolicy) {
   int availCtaPolicies[3] = {NCCL_CTA_POLICY_DEFAULT, NCCL_CTA_POLICY_EFFICIENCY, NCCL_CTA_POLICY_ZERO};
@@ -961,6 +961,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     bool nicFused;
     int localNetDeviceCount;
     int localCollNetCount;
+    bool isMultiRankGpu;
   };
 
   int nChannelsOrig;
@@ -1003,11 +1004,6 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     }
     if (comm->peerInfo[i].hostHash != comm->peerInfo[rank].hostHash) nNodes++;
     if (!comm->peerInfo[i].cuMemSupport) comm->cuMemSupport = 0;
-    if ((i != rank) && (comm->peerInfo[i].hostHash == comm->peerInfo[rank].hostHash) && (comm->peerInfo[i].busId == comm->peerInfo[rank].busId)) {
-      WARN("Duplicate GPU detected : rank %d and rank %d both on CUDA device %lx", rank, i, comm->peerInfo[rank].busId);
-      ret = ncclInvalidUsage;
-      goto fail;
-    }
     globalGinSupport &= (comm->peerInfo[i].supportedGinType == comm->sharedRes->ginState.ginType);
     globalCrossNicSupport &= comm->peerInfo[i].crossNicSupport;
     globalRmaPluginSupport &= comm->peerInfo[i].rmaPluginAvailable;
@@ -1114,8 +1110,23 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     comm->config.collnetEnable = 0;
   }
 
-  // Determine local Nvls support
-  NCCLCHECK(ncclNvlsInit(comm));
+  NCCLCHECK(ncclCheckMultiRank(comm));
+  if (comm->isMultiRankGpu) {
+    if (ncclParamNvlsEnable() == 1) {
+      WARN("Multiple ranks detected using the same GPU on this node"
+           " and NCCL_NVLS_ENABLE has been set to \"1\"."
+           " At this time multiple ranks per gpu is incompatible with"
+           " NVLS.");
+      ret = ncclInvalidUsage;
+      goto fail;
+    }
+    INFO(NCCL_INIT, "Multiple ranks on the same GPU detected and allowed. Disabling NVLS.");
+    comm->nvlsSupport = 0;
+    comm->nvlsChannels = 0;
+  } else {
+    // Determine local Nvls support
+    NCCLCHECK(ncclNvlsInit(comm));
+  }
 
   timers[TIMER_INIT_GRAPHS] = clockNano();
   // Get rings and trees
@@ -1216,6 +1227,7 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   NCCLCHECKGOTO(ncclTopoCheckNicFused(comm, &allGather3Data[rank].nicFused), ret, fail);
   allGather3Data[rank].localNetDeviceCount = localNetDeviceCount;
   allGather3Data[rank].localCollNetCount = localCollNetCount;
+  allGather3Data[rank].isMultiRankGpu = comm->isMultiRankGpu;
 
   comm->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   NCCLCHECKGOTO(ncclTopoPreset(comm, graphs, &allGather3Data[rank].topoRanks), ret, fail);
@@ -1253,6 +1265,9 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
     maxLocalNetCount = std::max(maxLocalNetCount, allGather3Data[r].localNetDeviceCount);
     minLocalCollNetCount = std::min(minLocalCollNetCount, allGather3Data[r].localCollNetCount);
     maxLocalCollNetCount = std::max(maxLocalCollNetCount, allGather3Data[r].localCollNetCount);
+    if (allGather3Data[r].isMultiRankGpu) {
+      comm->isMultiRankGpu = true;
+    }
   }
   if (rank == 0) {
     INFO(NCCL_INIT, "Local Net device counts across ranks: min %d max %d", minLocalNetCount, maxLocalNetCount);
@@ -2424,7 +2439,7 @@ ncclResult_t ncclCommInitAll(ncclComm_t* comms, int ndev, const int* devlist) {
       }
 
       /* duplicate device check. */
-      if (gpuFlags[devlist[i]] != 0) {
+      if (ncclParamMultiRankGpuEnable() == 0 && gpuFlags[devlist[i]] != 0) {
         ret = ncclInvalidUsage;
         goto fail;
       }
