@@ -4,11 +4,13 @@
 #
 # This code was automatically generated $version_span. Do not modify it directly.
 
-from libc.stdint cimport intptr_t
+from libc.stdint cimport intptr_t, uintptr_t
 
 import threading
 
 from .utils import FunctionNotFoundError, NotSupportedError
+
+from cuda.pathfinder import load_nvidia_dynamic_lib
 
 ${snippet_linux_externs_pxd}
 
@@ -23,14 +25,9 @@ cdef bint __py_${libname}_init = False
 $wrapper_init
 
 
-cdef void* load_library() except* nogil:
-    cdef void* handle
-    handle = dlopen("lib${libname}.so.2", RTLD_NOW | RTLD_GLOBAL)
-    if handle == NULL:
-        with gil:
-            err_msg = dlerror()
-            raise RuntimeError(f'Failed to dlopen lib${libname} ({err_msg.decode()})')
-    return handle
+cdef void* load_library() except* with gil:
+    cdef uintptr_t handle = load_nvidia_dynamic_lib("${libname}")._handle_uint
+    return <void*>handle
 
 
 cdef int _check_or_init_${libname}() except -1 nogil:
