@@ -13,22 +13,31 @@
 #include <algorithm> // For std::min/std::max
 #include "nccl.h"
 
-#ifdef PROFAPI
-#define NCCL_API(ret, func, args...)        \
-    extern "C"                              \
-    __attribute__ ((visibility("default"))) \
-    __attribute__ ((alias(#func)))          \
-    ret p##func (args);                     \
-    extern "C"                              \
-    __attribute__ ((visibility("default"))) \
-    __attribute__ ((weak))                  \
-    ret func(args)
-#else
-#define NCCL_API(ret, func, args...)        \
-    extern "C"                              \
-    __attribute__ ((visibility("default"))) \
-    ret func(args)
-#endif // end PROFAPI
+#ifdef NCCL_OS_LINUX
+  #ifdef PROFAPI
+  #define NCCL_API(ret, func, args...)        \
+      extern "C"                              \
+      __attribute__ ((visibility("default"))) \
+      __attribute__ ((alias(#func)))          \
+      ret p##func (args);                     \
+      extern "C"                              \
+      __attribute__ ((visibility("default"))) \
+      __attribute__ ((weak))                  \
+      ret func(args)
+  #else
+  #define NCCL_API(ret, func, args...)        \
+      extern "C"                              \
+      __attribute__ ((visibility("default"))) \
+      ret func(args)
+  #endif // end PROFAPI
+#elif defined(NCCL_OS_WINDOWS)
+  // MSVC version - matches the extern "C" linkage from nccl.h
+  // Symbol export is handled via module definition file or linker options
+  // Note: PROFAPI alias feature not supported on Windows
+  #define NCCL_API(ret, func, ...)            \
+      ret func(__VA_ARGS__)
+#endif // end NCCL_OS_WINDOWS
+
 
 #include "debug.h"
 #include "checks.h"

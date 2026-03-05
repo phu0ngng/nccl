@@ -266,11 +266,16 @@ const char* pncclGetErrorString(ncclResult_t result);
 const char*  ncclGetLastError(ncclComm_t comm);
 const char* pncclGetLastError(ncclComm_t comm);
 
-/* Reload environment variables that determine logging. */
-__attribute__ ((deprecated("ncclResetDebugInit is not supported as part of the NCCL API and will be removed in the future")))
-void  ncclResetDebugInit();
-__attribute__ ((deprecated("pncclResetDebugInit is not supported as part of the NCCL API and will be removed in the future")))
-void pncclResetDebugInit();
+#ifdef NCCL_OS_LINUX
+  /* Reload environment variables that determine logging. */
+  __attribute__ ((deprecated("ncclResetDebugInit is not supported as part of the NCCL API and will be removed in the future")))
+  void  ncclResetDebugInit();
+  __attribute__ ((deprecated("pncclResetDebugInit is not supported as part of the NCCL API and will be removed in the future")))
+  void pncclResetDebugInit();
+#else
+  #define ncclResetDebugInit()
+  #define pncclResetDebugInit()
+#endif
 
 /* Checks whether the comm has encountered any asynchronous errors */
 ncclResult_t  ncclCommGetAsyncError(ncclComm_t comm, ncclResult_t *asyncError);
