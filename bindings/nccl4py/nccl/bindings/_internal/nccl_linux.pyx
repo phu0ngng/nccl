@@ -110,6 +110,9 @@ cdef void* __ncclGroupSimulateEnd = NULL
 cdef void* __ncclCommQueryProperties = NULL
 cdef void* __ncclDevCommCreate = NULL
 cdef void* __ncclDevCommDestroy = NULL
+cdef void* __ncclGetLsaMultimemDevicePointer = NULL
+cdef void* __ncclGetLsaDevicePointer = NULL
+cdef void* __ncclGetPeerDevicePointer = NULL
 
 
 cdef void* load_library() except* with gil:
@@ -479,6 +482,27 @@ cdef int _check_or_init_nccl() except -1 nogil:
             if handle == NULL:
                 handle = load_library()
             __ncclDevCommDestroy = dlsym(handle, 'ncclDevCommDestroy')
+
+        global __ncclGetLsaMultimemDevicePointer
+        __ncclGetLsaMultimemDevicePointer = dlsym(RTLD_DEFAULT, 'ncclGetLsaMultimemDevicePointer')
+        if __ncclGetLsaMultimemDevicePointer == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetLsaMultimemDevicePointer = dlsym(handle, 'ncclGetLsaMultimemDevicePointer')
+
+        global __ncclGetLsaDevicePointer
+        __ncclGetLsaDevicePointer = dlsym(RTLD_DEFAULT, 'ncclGetLsaDevicePointer')
+        if __ncclGetLsaDevicePointer == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetLsaDevicePointer = dlsym(handle, 'ncclGetLsaDevicePointer')
+
+        global __ncclGetPeerDevicePointer
+        __ncclGetPeerDevicePointer = dlsym(RTLD_DEFAULT, 'ncclGetPeerDevicePointer')
+        if __ncclGetPeerDevicePointer == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetPeerDevicePointer = dlsym(handle, 'ncclGetPeerDevicePointer')
         __py_nccl_init = True
         return 0
 
@@ -643,6 +667,15 @@ cpdef dict _inspect_function_pointers():
 
     global __ncclDevCommDestroy
     data["__ncclDevCommDestroy"] = <intptr_t>__ncclDevCommDestroy
+
+    global __ncclGetLsaMultimemDevicePointer
+    data["__ncclGetLsaMultimemDevicePointer"] = <intptr_t>__ncclGetLsaMultimemDevicePointer
+
+    global __ncclGetLsaDevicePointer
+    data["__ncclGetLsaDevicePointer"] = <intptr_t>__ncclGetLsaDevicePointer
+
+    global __ncclGetPeerDevicePointer
+    data["__ncclGetPeerDevicePointer"] = <intptr_t>__ncclGetPeerDevicePointer
 
     func_ptrs = data
     return data
@@ -1157,3 +1190,33 @@ cdef ncclResult_t _ncclDevCommDestroy(ncclComm_t comm, const ncclDevComm_t* devC
             raise FunctionNotFoundError("function ncclDevCommDestroy is not found")
     return (<ncclResult_t (*)(ncclComm_t, const ncclDevComm_t*) noexcept nogil>__ncclDevCommDestroy)(
         comm, devComm)
+
+
+cdef ncclResult_t _ncclGetLsaMultimemDevicePointer(ncclWindow_t window, size_t offset, void** outPtr) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclGetLsaMultimemDevicePointer
+    _check_or_init_nccl()
+    if __ncclGetLsaMultimemDevicePointer == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclGetLsaMultimemDevicePointer is not found")
+    return (<ncclResult_t (*)(ncclWindow_t, size_t, void**) noexcept nogil>__ncclGetLsaMultimemDevicePointer)(
+        window, offset, outPtr)
+
+
+cdef ncclResult_t _ncclGetLsaDevicePointer(ncclWindow_t window, size_t offset, int lsaRank, void** outPtr) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclGetLsaDevicePointer
+    _check_or_init_nccl()
+    if __ncclGetLsaDevicePointer == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclGetLsaDevicePointer is not found")
+    return (<ncclResult_t (*)(ncclWindow_t, size_t, int, void**) noexcept nogil>__ncclGetLsaDevicePointer)(
+        window, offset, lsaRank, outPtr)
+
+
+cdef ncclResult_t _ncclGetPeerDevicePointer(ncclWindow_t window, size_t offset, int peer, void** outPtr) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclGetPeerDevicePointer
+    _check_or_init_nccl()
+    if __ncclGetPeerDevicePointer == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclGetPeerDevicePointer is not found")
+    return (<ncclResult_t (*)(ncclWindow_t, size_t, int, void**) noexcept nogil>__ncclGetPeerDevicePointer)(
+        window, offset, peer, outPtr)

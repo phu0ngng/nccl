@@ -3381,3 +3381,27 @@ cpdef dev_comm_destroy(intptr_t comm, intptr_t dev_comm):
     with nogil:
         __status__ = ncclDevCommDestroy(<Comm>comm, <const ncclDevComm_t*>dev_comm)
     check_status(__status__)
+
+
+cpdef intptr_t get_lsa_multimem_device_pointer(intptr_t window, size_t offset) except? 0:
+    cdef void* out_ptr
+    with nogil:
+        __status__ = ncclGetLsaMultimemDevicePointer(<Window>window, offset, &out_ptr)
+    check_status(__status__)
+    return <intptr_t>out_ptr
+
+
+cpdef intptr_t get_lsa_device_pointer(intptr_t window, size_t offset, int lsa_rank) except? 0:
+    cdef void* out_ptr
+    with nogil:
+        __status__ = ncclGetLsaDevicePointer(<Window>window, offset, lsa_rank, &out_ptr)
+    check_status(__status__)
+    return <intptr_t>out_ptr
+
+
+cpdef intptr_t get_peer_device_pointer(intptr_t window, size_t offset, int peer) except? 0:
+    cdef void* out_ptr
+    with nogil:
+        __status__ = ncclGetPeerDevicePointer(<Window>window, offset, peer, &out_ptr)
+    check_status(__status__)
+    return <intptr_t>out_ptr

@@ -89,3 +89,6 @@ cpdef group_simulate_end(intptr_t sim_info)
 cpdef comm_query_properties(intptr_t comm, intptr_t props)
 cpdef dev_comm_create(intptr_t comm, intptr_t reqs, intptr_t out_dev_comm)
 cpdef dev_comm_destroy(intptr_t comm, intptr_t dev_comm)
+cpdef intptr_t get_lsa_multimem_device_pointer(intptr_t window, size_t offset) except? 0
+cpdef intptr_t get_lsa_device_pointer(intptr_t window, size_t offset, int lsa_rank) except? 0
+cpdef intptr_t get_peer_device_pointer(intptr_t window, size_t offset, int peer) except? 0

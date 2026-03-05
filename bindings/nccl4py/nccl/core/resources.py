@@ -304,6 +304,67 @@ class RegisteredWindowHandle(CommResource):
         self._check_valid()
         return self._buffer_ptr
 
+    def get_lsa_multimem_device_pointer(self, offset: int = 0) -> int | None:
+        """Get the LSA multicast device pointer for this window.
+
+        Returns a device pointer suitable for multicast operations over the
+        LSA (Load/Store Accessible) team. The pointer is valid as long as the
+        window and communicator remain alive.
+
+        Args:
+            offset: Byte offset within the window buffer. Defaults to 0.
+
+        Returns:
+            Device pointer as int, or ``None`` if multimem is not supported.
+
+        Raises:
+            - ``RuntimeError``: If window has been closed.
+        """
+        self._check_valid()
+        ptr = _nccl_bindings.get_lsa_multimem_device_pointer(self._handle, offset)
+        return ptr if ptr != 0 else None
+
+    def get_lsa_device_pointer(self, lsa_rank: int, offset: int = 0) -> int:
+        """Get the LSA device pointer for a peer within the LSA team.
+
+        Returns a device pointer to the peer's window buffer addressable
+        from the local GPU via LSA (Load/Store Accessible) mapping.
+
+        Args:
+            lsa_rank: Rank within the LSA team (0 to lsa_size - 1).
+            offset: Byte offset within the window buffer. Defaults to 0.
+
+        Returns:
+            Device pointer as int.
+
+        Raises:
+            - ``RuntimeError``: If window has been closed.
+            - ``NCCLError``: If lsa_rank or offset is out of bounds.
+        """
+        self._check_valid()
+        return _nccl_bindings.get_lsa_device_pointer(self._handle, offset, lsa_rank)
+
+    def get_peer_device_pointer(self, peer: int, offset: int = 0) -> int | None:
+        """Get a device pointer to a peer's window buffer by world rank.
+
+        Returns a device pointer to the specified peer's window buffer.
+        If the peer is not reachable via LSA, returns ``None``.
+
+        Args:
+            peer: World rank of the peer (0 to nRanks - 1).
+            offset: Byte offset within the window buffer. Defaults to 0.
+
+        Returns:
+            Device pointer as int, or ``None`` if the peer is not reachable via LSA.
+
+        Raises:
+            - ``RuntimeError``: If window has been closed.
+            - ``NCCLError``: If peer or offset is out of bounds.
+        """
+        self._check_valid()
+        ptr = _nccl_bindings.get_peer_device_pointer(self._handle, offset, peer)
+        return ptr if ptr != 0 else None
+
     def __repr__(self) -> str:
         if not self.is_valid:
             return "<RegisteredWindowHandle: closed>"

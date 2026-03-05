@@ -1105,3 +1105,91 @@ def test_get_mem_stat_all_stats(nccl_comm):
     assert suspended in (0, 1)
     # Total should equal suspend + persist
     assert total == suspend + persist
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi
+def test_get_lsa_multimem_device_pointer(nccl_comm):
+    """Test get_lsa_multimem_device_pointer returns pointer or None if unsupported."""
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    buf = nccl.cupy.empty(256, dtype='float32')
+    win = nccl_comm.register_window(buf, flags=nccl.WindowFlag.CollSymmetric)
+    if win is None:
+        pytest.skip("Window registration not supported")
+
+    ptr = win.get_lsa_multimem_device_pointer()
+    # Returns int pointer or None if multimem not supported
+    assert ptr is None or isinstance(ptr, int)
+
+    if ptr is not None:
+        # Calling again should return same pointer
+        ptr_again = win.get_lsa_multimem_device_pointer()
+        assert ptr_again == ptr
+
+        # Different offset should yield different pointer
+        ptr_offset = win.get_lsa_multimem_device_pointer(offset=16)
+        assert ptr_offset == ptr + 16
+
+    win.close()
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi
+def test_get_lsa_device_pointer(nccl_comm):
+    """Test get_lsa_device_pointer returns valid pointers for each LSA peer."""
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    buf = nccl.cupy.empty(256, dtype='float32')
+    win = nccl_comm.register_window(buf, flags=nccl.WindowFlag.CollSymmetric)
+    if win is None:
+        pytest.skip("Window registration not supported")
+
+    # Retrieve pointers for all LSA ranks
+    lsa_size = nccl_comm.nranks // nccl_comm.n_lsa_teams
+    ptrs = []
+    for lsa_rank in range(lsa_size):
+        ptr = win.get_lsa_device_pointer(lsa_rank)
+        assert isinstance(ptr, int)
+        assert ptr != 0
+        ptrs.append(ptr)
+
+    # Calling again with same args should return same pointer
+    ptr_again = win.get_lsa_device_pointer(0)
+    assert ptr_again == ptrs[0]
+
+    # Different offsets should yield different pointers
+    ptr_offset = win.get_lsa_device_pointer(0, offset=16)
+    assert ptr_offset == ptrs[0] + 16
+
+    win.close()
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi
+def test_get_peer_device_pointer(nccl_comm):
+    """Test get_peer_device_pointer returns pointers by world rank."""
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    buf = nccl.cupy.empty(256, dtype='float32')
+    win = nccl_comm.register_window(buf, flags=nccl.WindowFlag.CollSymmetric)
+    if win is None:
+        pytest.skip("Window registration not supported")
+
+    # Retrieve pointers for all world ranks; some may be None if not LSA-reachable
+    reachable_count = 0
+    for peer in range(nccl_comm.nranks):
+        ptr = win.get_peer_device_pointer(peer)
+        assert ptr is None or isinstance(ptr, int)
+        if ptr is not None:
+            reachable_count += 1
+
+    # At least the local rank should be reachable
+    local_ptr = win.get_peer_device_pointer(nccl_comm.rank)
+    assert local_ptr is not None
+    assert reachable_count > 0
+
+    win.close()
