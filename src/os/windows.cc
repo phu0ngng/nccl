@@ -23,6 +23,35 @@
 #define IFNAMSIZ 16
 #endif
 
+ncclOsLibraryHandle ncclOsDlopen(const char* filename) {
+  ncclOsLibraryHandle handle = (ncclOsLibraryHandle)LoadLibraryA(filename);
+  if (handle == NULL) {
+    INFO(NCCL_INIT, "ncclOsDlopen(%s) failed, error code: %lu", filename, GetLastError());
+  }
+  return handle;
+}
+
+void* ncclOsDlsym(ncclOsLibraryHandle handle, const char* symbol) {
+  void* ptr = (void*)GetProcAddress((HMODULE)handle, symbol);
+  if (ptr == NULL) {
+    INFO(NCCL_INIT, "ncclOsDlsym(%s) failed, error code: %lu", symbol, GetLastError());
+  }
+  return ptr;
+}
+
+const char* ncclOsDlerror() {
+  thread_local char errorMsg[256];
+  DWORD err = GetLastError();
+  if (err == 0) return "";
+  DWORD len = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                             NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                             errorMsg, sizeof(errorMsg), NULL);
+  if (len == 0) {
+    snprintf(errorMsg, sizeof(errorMsg), "GetLastError=%lu", err);
+  }
+  return errorMsg;
+}
+
 uint64_t ncclOsGetPid() {
   return (uint64_t)GetCurrentProcessId();
 }
@@ -636,3 +665,30 @@ ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity) {
 int ncclOsGetCpu() {
   return GetCurrentProcessorNumber();
 }
+
+ncclResult_t ncclOsNvmlOpen(ncclOsLibraryHandle* handle) {
+  *handle = nullptr;
+
+  // On Windows, try multiple possible locations for nvml.dll
+  const char* nvmlPaths[] = {
+    "nvml.dll",  // System PATH or current directory
+    "C:\\Windows\\System32\\nvml.dll",  // Common system location
+    nullptr
+  };
+
+  for (int i = 0; nvmlPaths[i] != nullptr && *handle == nullptr; i++) {
+    *handle = ncclOsDlopen(nvmlPaths[i]);
+    if (*handle != nullptr) {
+      INFO(NCCL_INIT, "Loaded NVML from %s", nvmlPaths[i]);
+    }
+  }
+
+  if (*handle == nullptr) {
+    DWORD err = GetLastError();
+    WARN("Failed to load nvml.dll, error code: %lu", err);
+    return ncclSystemError;
+  }
+
+  return ncclSuccess;
+}
+
