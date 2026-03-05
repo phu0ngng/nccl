@@ -994,6 +994,7 @@ ncclResult_t ncclCommSuspend(ncclComm_t comm, int flags) {
 exit:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
+  if (comm && !comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)); }
   CUDACHECK(cudaSetDevice(saveDev));
   return ret;
 fail:
@@ -1036,6 +1037,7 @@ ncclResult_t ncclCommResume(ncclComm_t comm) {
 exit:
   ncclGroupErrCheck(ret);
   NCCLCHECK(ncclGroupEndInternal());
+  if (comm && !comm->config.blocking) { NCCLCHECK(ncclCommGetAsyncError(comm, &ret)); }
   CUDACHECK(cudaSetDevice(saveDev));
   return ret;
 fail:
