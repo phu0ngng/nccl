@@ -1120,10 +1120,13 @@ def test_get_lsa_multimem_device_pointer(nccl_comm):
         pytest.skip("Window registration not supported")
 
     ptr = win.get_lsa_multimem_device_pointer()
-    # Returns int pointer or None if multimem not supported
-    assert ptr is None or isinstance(ptr, int)
 
-    if ptr is not None:
+    if nccl_comm.multimem_support:
+        # Multimem is supported — pointer must be valid
+        assert ptr is not None
+        assert isinstance(ptr, int)
+        assert ptr != 0
+
         # Calling again should return same pointer
         ptr_again = win.get_lsa_multimem_device_pointer()
         assert ptr_again == ptr
@@ -1131,6 +1134,9 @@ def test_get_lsa_multimem_device_pointer(nccl_comm):
         # Different offset should yield different pointer
         ptr_offset = win.get_lsa_multimem_device_pointer(offset=16)
         assert ptr_offset == ptr + 16
+    else:
+        # Multimem is not supported — pointer must be None
+        assert ptr is None
 
     win.close()
 
@@ -1191,5 +1197,13 @@ def test_get_peer_device_pointer(nccl_comm):
     local_ptr = win.get_peer_device_pointer(nccl_comm.rank)
     assert local_ptr is not None
     assert reachable_count > 0
+
+    # Calling again should return same pointer
+    ptr_again = win.get_peer_device_pointer(nccl_comm.rank)
+    assert ptr_again == local_ptr
+
+    # Different offset should yield different pointer
+    ptr_offset = win.get_peer_device_pointer(nccl_comm.rank, offset=16)
+    assert ptr_offset == local_ptr + 16
 
     win.close()
