@@ -36,6 +36,8 @@ function run_rma_test_suite() {
   run_command "rma_test_multinode_${ppn}ppn_put_signal_alltoall" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_alltoall_rma" "-v 1"
   # Ping-pong with large group
   run_command "rma_test_multinode_${ppn}ppn_put_signal_ping_pong_large_group" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ping_pong_rma" "-v 1 -b 1024000 -e 1024000 -N 512"
+  # Signal barrier (ncclSignal/ncclWaitSignal)
+  run_command "rma_test_multinode_${ppn}ppn_signal_barrier" "$RUN_MODE" ${ppn} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/signal_barrier_rma" ""
 }
 
 # RMA multi-node tests
@@ -54,6 +56,7 @@ if [[ ${RMA_SINGLE_NODE_TESTS} -eq 1 ]] && [[ ${NNODES} -eq 1 ]]; then
   run_command "rma_test_single_node_ping_pong" "$RUN_MODE" 2 "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ping_pong_rma" "-v 1"
   run_command "rma_test_single_node_ring" "$RUN_MODE" ${NGPUS} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_ring_rma" "-v 1"
   run_command "rma_test_single_node_alltoall" "$RUN_MODE" ${NGPUS} "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/put_signal_alltoall_rma" "-v 1"
+  run_command "rma_test_single_node_signal_barrier" "$RUN_MODE" 2 "" "NCCL_NET=IB" "$NCCL_HOME/test/unit/signal_barrier_rma" ""
 fi
 
 if [[ ${ENQUEUE_TESTS_ARGS} -eq 1 ]] ; then
