@@ -12,6 +12,7 @@ stages:
   - profiler_tests
   - inspector_tests
   - replay_tests
+  - resiliency_tests
   - cleanup
   - summary
 
@@ -60,6 +61,7 @@ variables:
   RUN_API_TESTS: "0"
   RUN_PERF_TESTS_SINGLE: "0"
   RUN_PERF_TESTS_MULTIPLE: "0"
+  RUN_RESILIENCY_TESTS: "0"
   RUN_DLFW_TESTS: "0"
   RUN_PROFILER_TESTS: "0"
   RUN_INSPECTOR_TESTS: "0"
@@ -3667,6 +3669,74 @@ inspector-tests-ipp6-a100:
 ##
 ## Stage: summary - Start...
 ##
+
+resiliency-tests-bia:
+  stage: resiliency_tests
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_BIA == "1" && $RUN_RESILIENCY_TESTS == "1")
+      when: always
+    - when: never
+  needs: ["setup-bia"]
+  tags:
+    - bia
+  variables:
+    NNODES: 1
+    NGPUS: 2 # GPUs per node
+    INSTALL_DIR: "${BIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${BIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${BIA_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/bia-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: batch
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NCCL_DEBUG: "WARN"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    NIC_TO_FAIL: mlx5_0
+    PORT_FAILURE_EMU_BIN: $NCCL_HOME/test/port_failure_emu/portFailureEmu
+    RUN_MODE: "SRUN_MPI"
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:resiliency::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-resiliency-failover.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+    expire_in: 48 hrs
+
+resiliency-tests-pre-tyche:
+  stage: resiliency_tests
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_PRE_TYCHE == "1" && $RUN_RESILIENCY_TESTS == "1")
+      when: manual
+      allow_failure: true
+  needs: ["setup-pre-tyche"]
+  tags:
+    - ptyche
+  variables:
+    NNODES: 2
+    NGPUS: 2 # GPUs per node
+    INSTALL_DIR: "${PRE_TYCHE_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${PRE_TYCHE_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${PRE_TYCHE_ARCHIVER_STAGING_DIR}"
+    CLUSTER_CONFIG: "docker/clusters/pre-tyche-config.sh"
+    SLURM_TIME: 30
+    SLURM_PARTITION: batch
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NCCL_DEBUG: "WARN"
+    NCCL_HOME: ${INSTALL_DIR}/build
+    CUDA_VISIBLE_DEVICES: 0,2
+    NCCL_NET_MERGE_LEVEL: PHB # Merge with other NICs under the same CPU host bridge
+    NIC_TO_FAIL: mlx5_0
+    PORT_FAILURE_EMU_BIN: $NCCL_HOME/test/port_failure_emu/portFailureEmu
+    RUN_MODE: "SRUN_MPI"
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:resiliency::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-resiliency-failover.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+    expire_in: 48 hrs
 
 summarize-pipeline:
   stage: summary
