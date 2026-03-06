@@ -137,6 +137,68 @@ def test_split(uid_shared, rank_info, color, key, expect_invalid, expected_nrank
 
 
 @requires_nccl_version("2.18.1")
+@pytest.mark.mpi(min_size=2)
+def test_split_partial_nocolor(uid_shared, rank_info):
+    """Test split where rank 0 passes color=None while others use a valid color.
+
+    Regression test for bug 5937877: split must call the collective
+    _nccl_bindings.comm_split even for ranks opting out with color=None,
+    otherwise the operation hangs.
+    """
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    base = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared
+    )
+
+    if rank_info.nccl_rank == 0:
+        sub = base.split(color=nccl.NCCL_SPLIT_NOCOLOR, key=0)
+        assert not sub.is_valid
+    else:
+        sub = base.split(color=0, key=rank_info.nccl_rank)
+        assert sub.is_valid
+        assert sub.nranks == rank_info.nccl_size - 1
+        assert 0 <= sub.rank < sub.nranks
+        sub.destroy()
+
+    base.destroy()
+
+
+@requires_nccl_version("2.18.1")
+@pytest.mark.mpi(min_size=2)
+def test_split_partial_none_color(uid_shared, rank_info):
+    """Test split where rank 0 passes color=None while others use a valid color.
+
+    Regression test for bug 5937877: split must call the collective
+    _nccl_bindings.comm_split even for ranks opting out with color=None,
+    otherwise the operation hangs.
+    """
+    device = Device(rank_info.nccl_local_rank)
+    device.set_current()
+
+    base = nccl.Communicator.init(
+        nranks=rank_info.nccl_size,
+        rank=rank_info.nccl_rank,
+        unique_id=uid_shared
+    )
+
+    if rank_info.nccl_rank == 0:
+        sub = base.split()
+        assert not sub.is_valid
+    else:
+        sub = base.split(color=0, key=rank_info.nccl_rank)
+        assert sub.is_valid
+        assert sub.nranks == rank_info.nccl_size - 1
+        assert 0 <= sub.rank < sub.nranks
+        sub.destroy()
+
+    base.destroy()
+
+
+@requires_nccl_version("2.18.1")
 @pytest.mark.mpi(min_size=4)
 def test_split_with_value_validation(nccl_comm, rank_info):
     """Test split with value validation."""
@@ -1043,3 +1105,105 @@ def test_get_mem_stat_all_stats(nccl_comm):
     assert suspended in (0, 1)
     # Total should equal suspend + persist
     assert total == suspend + persist
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi
+def test_get_lsa_multimem_device_pointer(nccl_comm):
+    """Test get_lsa_multimem_device_pointer returns pointer or None if unsupported."""
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    buf = nccl.cupy.empty(256, dtype='float32')
+    win = nccl_comm.register_window(buf, flags=nccl.WindowFlag.CollSymmetric)
+    if win is None:
+        pytest.skip("Window registration not supported")
+
+    ptr = win.get_lsa_multimem_device_pointer()
+
+    if nccl_comm.multimem_support:
+        # Multimem is supported — pointer must be valid
+        assert ptr is not None
+        assert isinstance(ptr, int)
+        assert ptr != 0
+
+        # Calling again should return same pointer
+        ptr_again = win.get_lsa_multimem_device_pointer()
+        assert ptr_again == ptr
+
+        # Different offset should yield different pointer
+        ptr_offset = win.get_lsa_multimem_device_pointer(offset=16)
+        assert ptr_offset == ptr + 16
+    else:
+        # Multimem is not supported — pointer must be None
+        assert ptr is None
+
+    win.close()
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi
+def test_get_lsa_device_pointer(nccl_comm):
+    """Test get_lsa_device_pointer returns valid pointers for each LSA peer."""
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    buf = nccl.cupy.empty(256, dtype='float32')
+    win = nccl_comm.register_window(buf, flags=nccl.WindowFlag.CollSymmetric)
+    if win is None:
+        pytest.skip("Window registration not supported")
+
+    # Retrieve pointers for all LSA ranks
+    lsa_size = nccl_comm.nranks // nccl_comm.n_lsa_teams
+    ptrs = []
+    for lsa_rank in range(lsa_size):
+        ptr = win.get_lsa_device_pointer(lsa_rank)
+        assert isinstance(ptr, int)
+        assert ptr != 0
+        ptrs.append(ptr)
+
+    # Calling again with same args should return same pointer
+    ptr_again = win.get_lsa_device_pointer(0)
+    assert ptr_again == ptrs[0]
+
+    # Different offsets should yield different pointers
+    ptr_offset = win.get_lsa_device_pointer(0, offset=16)
+    assert ptr_offset == ptrs[0] + 16
+
+    win.close()
+
+
+@requires_nccl_version("2.29.0")
+@pytest.mark.mpi
+def test_get_peer_device_pointer(nccl_comm):
+    """Test get_peer_device_pointer returns pointers by world rank."""
+    if not HAS_CUPY:
+        pytest.skip("CuPy not installed")
+
+    buf = nccl.cupy.empty(256, dtype='float32')
+    win = nccl_comm.register_window(buf, flags=nccl.WindowFlag.CollSymmetric)
+    if win is None:
+        pytest.skip("Window registration not supported")
+
+    # Retrieve pointers for all world ranks; some may be None if not LSA-reachable
+    reachable_count = 0
+    for peer in range(nccl_comm.nranks):
+        ptr = win.get_peer_device_pointer(peer)
+        assert ptr is None or isinstance(ptr, int)
+        if ptr is not None:
+            reachable_count += 1
+
+    # At least the local rank should be reachable
+    local_ptr = win.get_peer_device_pointer(nccl_comm.rank)
+    assert local_ptr is not None
+    assert reachable_count > 0
+
+    # Calling again should return same pointer
+    ptr_again = win.get_peer_device_pointer(nccl_comm.rank)
+    assert ptr_again == local_ptr
+
+    # Different offset should yield different pointer
+    ptr_offset = win.get_peer_device_pointer(nccl_comm.rank, offset=16)
+    assert ptr_offset == local_ptr + 16
+
+    win.close()

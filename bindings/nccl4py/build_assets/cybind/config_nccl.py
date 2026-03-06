@@ -211,6 +211,20 @@
             },
             'ncclCommQueryProperties': {
             },
+
+            # Device pointer retrieval (from core.h)
+            'ncclGetLsaMultimemDevicePointer': {
+                "return": "outPtr",
+                "except?": 0,
+            },
+            'ncclGetLsaDevicePointer': {
+                "return": "outPtr",
+                "except?": 0,
+            },
+            'ncclGetPeerDevicePointer': {
+                "return": "outPtr",
+                "except?": 0,
+            },
         },
         # use this to control the type apprearance at the lowpp level
         # this is used as WAR for current codegen limitations

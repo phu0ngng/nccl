@@ -811,14 +811,14 @@ class Communicator:
         Initializes communicator with a raw NCCL pointer.
 
         Args:
-            - ptr (int): Integer representing NCCL communicator pointer (0 for sentinel/invalid).
+            - ptr (int): Integer representing NCCL communicator pointer (0 for null communicator).
 
         Raises:
             - ``NcclInvalid``: If ptr is not an integer.
 
         Notes:
             Unlike the class method ``init()``, this constructor allows ptr=0 for
-            creating sentinel communicators (e.g., when ``split()`` excludes a rank).
+            creating null communicators (e.g., when ``split()`` excludes a rank).
         """
         self._comm: int = int(ptr)
         self._resources: list[CommResource] = []
@@ -886,7 +886,7 @@ class Communicator:
             ``str``: String showing rank/count/device info if valid, or invalid status.
         """
         if self._comm == 0:
-            return "<Communicator: invalid (ptr=0)>"
+            return "<Communicator: null (ptr=0)>"
         try:
             return f"<Communicator: rank={self.rank}/{self.nranks}, device={self.device.device_id}, ptr={self._comm:#x}>"
         except RuntimeError:
@@ -1009,28 +1009,35 @@ class Communicator:
         return [cls(int(comm_ptr)) for comm_ptr in comm_array]
 
     # --- Communicator APIs ---
-    def split(self, color: int, key: int, config: NCCLConfig | None = None) -> Communicator:
+    def split(self, color: int | None = None, key: int = 0, config: NCCLConfig | None = None) -> Communicator:
         """
         Splits this communicator into sub-communicators based on color values.
 
         Ranks which pass the same color value will be part of the same group. If color is
-        NCCL_SPLIT_NOCOLOR, the rank will not be part of any group and receives a communicator with ptr=0.
+        None or NCCL_SPLIT_NOCOLOR, the rank will not be part of any group and receives an
+        null communicator (a communicator instance with ptr=0).
         The key value determines rank ordering; smaller key means smaller rank in the new communicator.
         If keys are equal between ranks, the rank in the original communicator determines ordering.
 
         Args:
-            - color (int): Non-negative color value for grouping ranks (use NCCL_SPLIT_NOCOLOR to exclude this rank).
-            - key (int): Rank ordering key within each color group (smaller key = smaller rank).
-            - config (NCCLConfig, optional): Configuration for the new communicator. If None, inherits parent's configuration. Defaults to None.
+            - color (int, optional): Non-negative color value for grouping ranks; ranks with the same
+              color join the same sub-communicator. Pass None or NCCL_SPLIT_NOCOLOR to exclude this
+              rank from all groups. Defaults to None.
+            - key (int): Ordering key within the color group. Smaller key means smaller rank in the
+              new communicator. If keys are equal between ranks, the rank in the original communicator
+              will be used to order ranks. Defaults to 0.
+            - config (NCCLConfig, optional): Configuration for the new communicator. If None, inherits
+              parent's configuration. Defaults to None.
 
         Returns:
-            ``Communicator``: New sub-communicator, or sentinel communicator (ptr=0) if color is NCCL_SPLIT_NOCOLOR.
+            ``Communicator``: New sub-communicator, or null communicator if color is None or NCCL_SPLIT_NOCOLOR.
 
         Raises:
             - ``NcclInvalid``: If communicator is not initialized or has outstanding operations.
 
         Notes:
-            - This is a collective operation. All ranks in the communicator must call this method.
+            - This is a collective operation. All ranks in the communicator must call this method,
+              even ranks that pass color=None or NCCL_SPLIT_NOCOLOR.
             - There must not be any outstanding NCCL operations on the communicator to avoid deadlock.
 
         See Also:
@@ -1038,10 +1045,8 @@ class Communicator:
         """
         self._check_valid("split")
 
-        if color == NCCL_SPLIT_NOCOLOR:
-            # Return a sentinel communicator instead of None for consistent API
-            return Communicator(0)
-
+        if color is None:
+            color = NCCL_SPLIT_NOCOLOR
         cfg_ptr = 0 if config is None else config.ptr
         comm_ptr = _nccl_bindings.comm_split(self._comm, int(color), int(key), cfg_ptr)
 

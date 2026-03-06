@@ -289,7 +289,13 @@ ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* syst
     info2 = comm->peerInfo+rank2;
     if (info1->hostHash != info2->hostHash) {
       if (comm->MNNVL) {
-        NCCLCHECK(ncclTopoCheckMNNVL(comm->topo, info1, info2, &mnnvl));
+        NCCLCHECK(ncclTopoCheckMNNVL(comm, info1, info2, &mnnvl));
+        if (mnnvl < 0) {
+          // Force enable CUDA P2P for cross-clique (NCCL_MNNVL_CROSS_CLIQUE=1)
+          if (p2p) { *p2p = 1; }
+          if (cudaP2p) { *cudaP2p = 1; }
+          return ncclSuccess;
+        }
         if (!mnnvl) return ncclSuccess;
       } else {
         return ncclSuccess;
@@ -392,7 +398,7 @@ ncclResult_t ncclTopoCheckP2p(struct ncclComm* comm, struct ncclTopoSystem* syst
 }
 
 // MNNVL: Check whether peers are in the same fabric cluster and clique
-ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* ret) {
+ncclResult_t ncclTopoCheckMNNVL(struct ncclComm* comm, struct ncclPeerInfo* info1, struct ncclPeerInfo* info2, int* ret) {
   *ret = 0;
 
   nvmlGpuFabricInfoV_t *fabricInfo1 = &info1->fabricInfo;
@@ -403,11 +409,13 @@ ncclResult_t ncclTopoCheckMNNVL(struct ncclTopoSystem* system, struct ncclPeerIn
   memcpy(&uuid0, fabricInfo2->clusterUuid, sizeof(uuid0));
   memcpy(&uuid1, fabricInfo2->clusterUuid + sizeof(uuid0), sizeof(uuid1));
   if ((uuid0 | uuid1) == 0) return ncclSuccess;
+  // Same UUID required. Within same UUID: either same clique OR cross-clique enabled
   if ((memcmp(fabricInfo1->clusterUuid, fabricInfo2->clusterUuid, NVML_GPU_FABRIC_UUID_LEN) == 0) &&
-      (fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
-    TRACE(NCCL_NET, "MNNVL matching peer 0x%lx UUID %lx.%lx cliqueId 0x%x",
-         info2->busId, uuid0, uuid1, fabricInfo2->cliqueId);
-    *ret = 1;
+      (comm->p2pCrossClique || fabricInfo1->cliqueId == fabricInfo2->cliqueId)) {
+    TRACE(NCCL_NET, "MNNVL rank %d matching peer %d 0x%lx UUID %lx.%lx cliqueId 0x%x/0x%x crossClique %d",
+         info1->rank, info2->rank, info2->busId, uuid0, uuid1, fabricInfo1->cliqueId, fabricInfo2->cliqueId, comm->p2pCrossClique);
+    // Return -1 for cross-clique (different clique but same UUID) to force CUDA P2P
+    *ret = (comm->p2pCrossClique && fabricInfo1->cliqueId != fabricInfo2->cliqueId) ? -1 : 1;
   }
   return ncclSuccess;
 }
@@ -542,7 +550,6 @@ ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int rank1, int rank
     *net = 0;
     return ncclSuccess;
   }
-  *net = 1;
   // First check the current GPU-to-GPU speed.
   int g1, g2;
   if (ncclTopoRankToIndex(system, rank1, &g1, /*showWarn=*/false) != ncclSuccess ||
@@ -550,6 +557,7 @@ ncclResult_t ncclTopoCheckNet(struct ncclTopoSystem* system, int rank1, int rank
     return ncclSuccess;
   }
 
+  *net = 1;
   struct ncclTopoNode* gpu1 = system->nodes[GPU].nodes+g1;
   struct ncclTopoNode* gpu2 = system->nodes[GPU].nodes+g2;
   float speed = gpu1->paths[GPU][g2].bw;

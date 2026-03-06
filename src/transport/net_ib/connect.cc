@@ -315,10 +315,22 @@ ncclResult_t ncclIbGetGidIndex(struct ibv_context *context, uint8_t portNum, str
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbCreateQp(struct ncclIbQpCreateAttr* createQpAttrs, void* qp_context, struct ncclIbQp* qp) {
+ncclResult_t ncclIbQpInit(struct ncclIbQp* qp) {
+  struct ncclIbQpInitAttr* initAttr = &qp->initAttr;
+  struct ibv_qp_attr qpAttr;
+  memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
+  qpAttr.qp_state = initAttr->state;
+  qpAttr.pkey_index = initAttr->pkeyIndex;
+  qpAttr.port_num = initAttr->portNum;
+  qpAttr.qp_access_flags = initAttr->qpAccessFlags;
+  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS));
+  return ncclSuccess;
+}
+
+ncclResult_t ncclIbQpCreate(struct ncclIbQp* qp, struct ncclIbQpCreateAttr* createQpAttrs) {
   struct ibv_qp_init_attr qpInitAttr;
   memset(&qpInitAttr, 0, sizeof(struct ibv_qp_init_attr));
-  qpInitAttr.qp_context = qp_context;
+  qpInitAttr.qp_context = createQpAttrs->qpContext;
   qpInitAttr.send_cq = createQpAttrs->cq;
   qpInitAttr.recv_cq = createQpAttrs->cq;
   qpInitAttr.qp_type = createQpAttrs->type;
@@ -328,72 +340,67 @@ ncclResult_t ncclIbCreateQp(struct ncclIbQpCreateAttr* createQpAttrs, void* qp_c
   qpInitAttr.cap.max_recv_sge = 1;
   qpInitAttr.cap.max_inline_data = ncclParamIbUseInline() ? sizeof(struct ncclIbSendFifo) : 0;
   NCCLCHECK(wrap_ibv_create_qp(&qp->qp, createQpAttrs->pd, &qpInitAttr));
-  struct ibv_qp_attr qpAttr;
-  memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
-  qpAttr.qp_state = IBV_QPS_INIT;
-  qpAttr.pkey_index = ncclParamIbPkey();
-  qpAttr.port_num = createQpAttrs->ibPort;
-  qpAttr.qp_access_flags = createQpAttrs->accessFlags;
-  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS));
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint32_t dest_qp_num, struct ncclIbDevInfo* info, bool fifoTc, int tc, int sl) {
+ncclResult_t ncclIbQpRtr(struct ncclIbQp* qp) {
+  struct ncclIbQpRtrAttr* rtrAttr = &qp->rtrAttr;
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTR;
-  qpAttr.path_mtu = info->mtu;
-  qpAttr.dest_qp_num = dest_qp_num;
+  qpAttr.path_mtu = rtrAttr->mtu;
+  qpAttr.dest_qp_num = rtrAttr->remoteQpNum;
   qpAttr.rq_psn = 0;
   qpAttr.max_dest_rd_atomic = 1;
   qpAttr.min_rnr_timer = 12;
-  if (info->link_layer == IBV_LINK_LAYER_ETHERNET) {
+  if (rtrAttr->linkLayer == IBV_LINK_LAYER_ETHERNET) {
     qpAttr.ah_attr.is_global = 1;
-    qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
-    qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
+    qpAttr.ah_attr.grh.dgid.global.subnet_prefix = rtrAttr->remoteGid.global.subnet_prefix;
+    qpAttr.ah_attr.grh.dgid.global.interface_id = rtrAttr->remoteGid.global.interface_id;
     qpAttr.ah_attr.grh.flow_label = 0;
-    qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
+    qpAttr.ah_attr.grh.sgid_index = rtrAttr->localGidIndex;
     qpAttr.ah_attr.grh.hop_limit = 255;
-    qpAttr.ah_attr.grh.traffic_class = fifoTc && ncclParamIbFifoTc() != -1 ? ncclParamIbFifoTc() : tc;
+    qpAttr.ah_attr.grh.traffic_class = rtrAttr->tc;
   } else {
     //pick lid if subnet prefixs are same, FLID if they are not
-    if (ncclIbExtractLocalSubnetPrefix(sGidInfo->localGid.global.subnet_prefix) ==
-        ncclIbExtractLocalSubnetPrefix(info->gid.global.subnet_prefix)) {
+    if (ncclIbExtractLocalSubnetPrefix(rtrAttr->localGid.global.subnet_prefix) ==
+        ncclIbExtractLocalSubnetPrefix(rtrAttr->remoteGid.global.subnet_prefix)) {
       qpAttr.ah_attr.is_global = 0;
-      qpAttr.ah_attr.dlid = info->lid;
+      qpAttr.ah_attr.dlid = rtrAttr->remoteLid;
     } else {
-      uint16_t flid = ncclIbExtractFlid(&info->gid);
+      uint16_t flid = ncclIbExtractFlid(&rtrAttr->remoteGid);
       if (flid == 0) {
         WARN("Warning: remote FLID configured as zero even when endpoints are on different subnets, using dlid as fallback");
-        qpAttr.ah_attr.dlid = info->lid;
+        qpAttr.ah_attr.dlid = rtrAttr->remoteLid;
       } else {
-        qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
+        qpAttr.ah_attr.dlid = ncclIbExtractFlid(&rtrAttr->remoteGid);
       }
       qpAttr.ah_attr.is_global = 1;
-      qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
-      qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
-      qpAttr.ah_attr.grh.sgid_index = sGidInfo->localGidIndex;
+      qpAttr.ah_attr.grh.dgid.global.subnet_prefix = rtrAttr->remoteGid.global.subnet_prefix;
+      qpAttr.ah_attr.grh.dgid.global.interface_id = rtrAttr->remoteGid.global.interface_id;
+      qpAttr.ah_attr.grh.sgid_index = rtrAttr->localGidIndex;
       qpAttr.ah_attr.grh.hop_limit = 255;
     }
   }
-  qpAttr.ah_attr.sl = sl;
+  qpAttr.ah_attr.sl = rtrAttr->sl;
   qpAttr.ah_attr.src_path_bits = 0;
-  qpAttr.ah_attr.port_num = info->ib_port;
-  TRACE(NCCL_NET, "NET/IB: %s: qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", __func__, qp->qp_num, qpAttr.path_mtu, qpAttr.dest_qp_num, info->link_layer, qpAttr.ah_attr.port_num, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
-  NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
+  qpAttr.ah_attr.port_num = rtrAttr->localIbPort;
+  TRACE(NCCL_NET, "NET/IB: %s: qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", __func__, qp->qp->qp_num, qpAttr.path_mtu, qpAttr.dest_qp_num, rtrAttr->linkLayer, qpAttr.ah_attr.port_num, qpAttr.ah_attr.sl, qpAttr.ah_attr.grh.traffic_class);
+  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
   return ncclSuccess;
 }
 
-ncclResult_t ncclIbRtsQp(struct ibv_qp* qp) {
+ncclResult_t ncclIbQpRts(struct ncclIbQp* qp) {
+  struct ncclIbQpRtsAttr* rtsAttr = &qp->rtsAttr;
   struct ibv_qp_attr qpAttr;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTS;
-  qpAttr.timeout = ncclParamIbTimeout();
-  qpAttr.retry_cnt = ncclParamIbRetryCnt();
+  qpAttr.timeout = rtsAttr->timeout;
+  qpAttr.retry_cnt = rtsAttr->retryCnt;
   qpAttr.rnr_retry = 7;
   qpAttr.sq_psn = 0;
   qpAttr.max_rd_atomic = 1;
-  NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC));
+  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC));
   return ncclSuccess;
 }
 
@@ -430,9 +437,9 @@ fail:
 // establishment process.
 static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbConnectionMetadata* meta) {
   uint nqps = comm->base.nqps;
-  struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+  struct ncclIbQpCreateAttr qpCreateAttrs;
+  memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
   qpCreateAttrs.type = IBV_QPT_RC;
-  qpCreateAttrs.accessFlags = IBV_ACCESS_REMOTE_WRITE;
   qpCreateAttrs.maxRecvWorkRequest = 0;
   // Send requests are sent using at most 2 messages (RDMA Write and RDMA Write with Immediate)
   qpCreateAttrs.maxSendWorkRequest = 2*NET_IB_MAX_REQUESTS;
@@ -448,10 +455,10 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     ncclIbQp* localQp = &comm->base.qps[qpIndex];
     ncclIbQpInfo* localQpInfo = &meta->qpInfo[qpIndex];
 
-    qpCreateAttrs.ibPort = ibDev->portNum;
     qpCreateAttrs.cq = commDev->base.cq;
     qpCreateAttrs.pd = commDev->base.pd;
-    NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &comm->base.stats, localQp));
+    qpCreateAttrs.qpContext = &comm->base.stats;
+    NCCLCHECK(ncclIbQpCreate(localQp, &qpCreateAttrs));
     INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
         __func__,
         ibDev->portNum,
@@ -468,11 +475,26 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     localQpInfo->qpn      = localQp->qp->qp_num;
     localQpInfo->devIndex = localQp->devIndex;
 
+    // Transition the QP to INIT state
+    struct ncclIbQpInitAttr* initAttr = &localQp->initAttr;
+    initAttr->state = IBV_QPS_INIT;
+    initAttr->pkeyIndex = ncclParamIbPkey();
+    initAttr->portNum = ibDev->portNum;
+    initAttr->qpAccessFlags = IBV_ACCESS_REMOTE_WRITE;
+    NCCLCHECK(ncclIbQpInit(localQp));
+
     if (ncclParamIbEceEnable()) {
-      // Query ECE (Enhanced Connection Establishment) capabilities
-      NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
+      // Query ECE (Enhanced Connection Establishment) capabilities and
+      // populate the initial ECE into the metadata structure that is sent to
+      // the remote (receiver) side.
+      NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQp->eceSupported));
+      localQpInfo->ece_supported = localQp->eceSupported;
     } else {
+      // Declare to the remote side that ECE is not supported
       localQpInfo->ece_supported = 0;
+      // Store locally that ECE is not supported
+      localQp->ece = {0};
+      localQp->eceSupported = 0;
     }
   }
 
@@ -501,15 +523,34 @@ static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, struct ncclIbConn
 
     localQp->remDevIdx = remQpInfo->devIndex;
 
-    if (remQpInfo->ece_supported) {
-      // Set the reduced ECE received from the receiver side
+    if (localQp->eceSupported && remQpInfo->ece_supported) {
       INFO(NCCL_NET,"NET/IB: %s: Set ECE: IbDev %d Port %d qp_num %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, comp_mask=0x%x}", __func__, commDev->base.ibDevN, ibDev->portNum, localQp->qp->qp_num, remQpInfo->ece_supported, remQpInfo->ece.vendor_id, remQpInfo->ece.options, remQpInfo->ece.comp_mask);
-      NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &remQpInfo->ece_supported));
+      // Set the reduced ECE received from the receiver side
+      NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &localQp->eceSupported));
+      // Store the reduced ECE locally as well
+      localQp->ece = remQpInfo->ece;
+    } else {
+      // If remote does not support ECE, disable it locally as well
+      localQp->eceSupported = 0;
+      localQp->ece = {0};
     }
 
-    remDevInfo->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu); // TODO: This is bad practice!
-    NCCLCHECK(ncclIbRtrQp(localQp->qp, &commDev->base.gidInfo, remQpInfo->qpn, remDevInfo, false, remMeta->tc, remMeta->sl));
-    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+    struct ncclIbQpRtrAttr *rtrAttr = &localQp->rtrAttr;
+    rtrAttr->mtu = std::min(remDevInfo->mtu, ibDev->portAttr.active_mtu);
+    rtrAttr->linkLayer = remDevInfo->link_layer;
+    rtrAttr->tc = remDevInfo->link_layer == IBV_LINK_LAYER_ETHERNET ? remMeta->tc : -1;
+    rtrAttr->sl = remMeta->sl;
+    rtrAttr->remoteQpNum = remQpInfo->qpn;
+    rtrAttr->remoteLid = remDevInfo->lid;
+    rtrAttr->remoteGid = remDevInfo->gid;
+    rtrAttr->localIbPort = remDevInfo->ib_port;
+    rtrAttr->localGid = commDev->base.gidInfo.localGid;
+    rtrAttr->localGidIndex = commDev->base.gidInfo.localGidIndex;
+    NCCLCHECK(ncclIbQpRtr(localQp));
+    struct ncclIbQpRtsAttr* rtsAttr = &localQp->rtsAttr;
+    rtsAttr->timeout = ncclParamIbTimeout();
+    rtsAttr->retryCnt = ncclParamIbRetryCnt();
+    NCCLCHECK(ncclIbQpRts(localQp));
   }
 
   if (comm->base.resiliency) {
@@ -812,10 +853,10 @@ ncclResult_t ncclIbCheckVProps(ncclNetVDeviceProps_t* vProps1, ncclNetVDevicePro
 // side (sender) as part of the connection establishment process.
 static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct ncclIbConnectionMetadata* remMeta, struct ncclIbConnectionMetadata* meta) {
   uint nqps = rComm->base.nqps;
-  struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+  struct ncclIbQpCreateAttr qpCreateAttrs;
+  memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
   qpCreateAttrs.type = IBV_QPT_RC;
   // Remote Atomic operations are used for GIN!
-  qpCreateAttrs.accessFlags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
   qpCreateAttrs.maxRecvWorkRequest = NET_IB_MAX_REQUESTS;
   // CTS messages are posted using send work requests.
   // Note that because only specific CTS messages are signaled, the send queue
@@ -841,13 +882,13 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     localQp->remDevIdx = remDevIndex;
     localQp->devIndex = devIndex;
 
-    qpCreateAttrs.ibPort = ibDev->portNum;
     qpCreateAttrs.cq = rCommDev->base.cq;
     qpCreateAttrs.pd = rCommDev->base.pd;
+    qpCreateAttrs.qpContext = &rComm->base.stats;
     if (rComm->base.resiliency) {
       ncclIbResiliencyDataRqSizeGet(rComm->base.resiliency, devIndex, &qpCreateAttrs.maxRecvWorkRequest);
     }
-    NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, localQp));
+    NCCLCHECK(ncclIbQpCreate(localQp, &qpCreateAttrs));
     INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
         __func__,
         ibDev->portNum,
@@ -862,24 +903,55 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     localQpInfo->qpn      = localQp->qp->qp_num;
     localQpInfo->devIndex = localQp->devIndex;
 
-    // Set ECE (enhanced connection establishment) on before RTR
+    // Transition the QP to INIT state
+    struct ncclIbQpInitAttr* initAttr = &localQp->initAttr;
+    initAttr->state = IBV_QPS_INIT;
+    initAttr->pkeyIndex = ncclParamIbPkey();
+    initAttr->portNum = ibDev->portNum;
+    // Remote Atomic operations are used for GIN!
+    initAttr->qpAccessFlags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
+    NCCLCHECK(ncclIbQpInit(localQp));
+
     if (remQpInfo->ece_supported) {
+      // Set the ECE received from the remote (sender) side.
       // coverity[copy_paste_error]
       NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &localQpInfo->ece_supported));
     } else {
       localQpInfo->ece_supported = 0;
+      localQp->ece = {0};
+      localQp->eceSupported = 0;
     }
 
     // Reduce the local MTU to match the remote MTU if needed
     ibDev->portAttr.active_mtu = std::min(ibDev->portAttr.active_mtu, remDevInfo->mtu);
 
-    NCCLCHECK(ncclIbRtrQp(localQp->qp, &rCommDev->base.gidInfo, remQpInfo->qpn, remDevInfo, true, remMeta->tc, remMeta->sl));
-    NCCLCHECK(ncclIbRtsQp(localQp->qp));
+    struct ncclIbQpRtrAttr *rtrAttr = &localQp->rtrAttr;
+    rtrAttr->mtu = ibDev->portAttr.active_mtu;
+    rtrAttr->linkLayer = remDevInfo->link_layer;
+    rtrAttr->tc = (remDevInfo->link_layer == IBV_LINK_LAYER_ETHERNET && ncclParamIbFifoTc() != -1) ? ncclParamIbFifoTc() : remMeta->tc;
+    rtrAttr->sl = remMeta->sl;
+    rtrAttr->remoteQpNum = remQpInfo->qpn;
+    rtrAttr->remoteLid = remDevInfo->lid;
+    rtrAttr->remoteGid = remDevInfo->gid;
+    rtrAttr->localIbPort = remDevInfo->ib_port;
+    rtrAttr->localGid = rCommDev->base.gidInfo.localGid;
+    rtrAttr->localGidIndex = rCommDev->base.gidInfo.localGidIndex;
+    NCCLCHECK(ncclIbQpRtr(localQp));
+    struct ncclIbQpRtsAttr* rtsAttr = &localQp->rtsAttr;
+    rtsAttr->timeout = ncclParamIbTimeout();
+    rtsAttr->retryCnt = ncclParamIbRetryCnt();
+    NCCLCHECK(ncclIbQpRts(localQp));
 
     // Query the reduced ECE by the device and storing it in the local QP info
     // to return it to the requestor (sender).
     if (remQpInfo->ece_supported && localQpInfo->ece_supported) {
       NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
+      // Store the reduced ECE locally as well
+      localQp->ece = localQpInfo->ece;
+      localQp->eceSupported = localQpInfo->ece_supported;
+    } else {
+      localQp->ece = {0};
+      localQp->eceSupported = 0;
     }
   }
 
@@ -888,16 +960,16 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
       ncclIbRecvCommDev* rCommDev = &rComm->devs[i];
       ncclIbDev* ibDev = &ncclIbDevs[rCommDev->base.ibDevN];
 
-      struct ncclIbQpCreateAttr qpCreateAttrs = {0};
+      struct ncclIbQpCreateAttr qpCreateAttrs;
+      memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
       qpCreateAttrs.type = IBV_QPT_RC;
-      qpCreateAttrs.ibPort = ibDev->portNum;
       qpCreateAttrs.cq = rCommDev->base.cq;
       qpCreateAttrs.pd = rCommDev->base.pd;
-      qpCreateAttrs.accessFlags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ;
       qpCreateAttrs.maxRecvWorkRequest = 0;
       qpCreateAttrs.maxSendWorkRequest = NET_IB_MAX_REQUESTS;
-      NCCLCHECK(ncclIbCreateQp(&qpCreateAttrs, &rComm->base.stats, &rCommDev->gpuFlush.qp));
-      INFO(NCCL_NET, "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
+      qpCreateAttrs.qpContext = &rComm->base.stats;
+      NCCLCHECK(ncclIbQpCreate(&rCommDev->gpuFlush.qp, &qpCreateAttrs));
+      INFO(NCCL_NET, "NET/IB: %s: Flush QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p",
           __func__,
           ibDev->portNum,
           rCommDev->base.ibDevN,
@@ -907,15 +979,35 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
           rCommDev->gpuFlush.qp.qp->qp_num,
           (uint16_t)ncclParamIbPkey(),
           rCommDev->base.pd);
-      struct ncclIbDevInfo devInfo;
-      devInfo.lid         = ibDev->portAttr.lid;
-      devInfo.link_layer  = ibDev->portAttr.link_layer;
-      devInfo.ib_port     = ibDev->portNum;
-      devInfo.gid.global.subnet_prefix        = rCommDev->base.gidInfo.localGid.global.subnet_prefix;
-      devInfo.gid.global.interface_id         = rCommDev->base.gidInfo.localGid.global.interface_id;
-      devInfo.mtu         = ibDev->portAttr.active_mtu;
-      NCCLCHECK(ncclIbRtrQp(rCommDev->gpuFlush.qp.qp, &rCommDev->base.gidInfo, rCommDev->gpuFlush.qp.qp->qp_num, &devInfo, false, remMeta->tc, remMeta->sl));
-      NCCLCHECK(ncclIbRtsQp(rCommDev->gpuFlush.qp.qp));
+  
+      ncclIbQp* flushQp = &rCommDev->gpuFlush.qp;
+
+      // Transition the QP to INIT state
+      struct ncclIbQpInitAttr* initAttr = &flushQp->initAttr;
+      initAttr->state = IBV_QPS_INIT;
+      initAttr->pkeyIndex = ncclParamIbPkey();
+      initAttr->portNum = ibDev->portNum;
+      initAttr->qpAccessFlags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ;
+      NCCLCHECK(ncclIbQpInit(flushQp));
+
+      struct ncclIbQpRtrAttr *rtrAttr = &flushQp->rtrAttr;
+      rtrAttr->mtu = ibDev->portAttr.active_mtu;
+      rtrAttr->linkLayer = ibDev->portAttr.link_layer;
+      // TODO: Flush QP is a "loopback QP" (connected to itself), so it should
+      // not use any information from the remote side during configuration.
+      rtrAttr->tc = ibDev->portAttr.link_layer == IBV_LINK_LAYER_ETHERNET ? remMeta->tc : -1;
+      rtrAttr->sl = remMeta->sl;
+      rtrAttr->remoteQpNum = rCommDev->gpuFlush.qp.qp->qp_num;
+      rtrAttr->remoteLid = ibDev->portAttr.lid;
+      rtrAttr->remoteGid = rCommDev->base.gidInfo.localGid;
+      rtrAttr->localIbPort = ibDev->portNum;
+      rtrAttr->localGid = rCommDev->base.gidInfo.localGid;
+      rtrAttr->localGidIndex = rCommDev->base.gidInfo.localGidIndex;
+      NCCLCHECK(ncclIbQpRtr(flushQp));
+      struct ncclIbQpRtsAttr* rtsAttr = &flushQp->rtsAttr;
+      rtsAttr->timeout = ncclParamIbTimeout();
+      rtsAttr->retryCnt = ncclParamIbRetryCnt();
+      NCCLCHECK(ncclIbQpRts(flushQp));
     }
   }
 

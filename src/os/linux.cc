@@ -11,6 +11,7 @@
 #include "utils.h"
 
 #include <cstdint>
+#include <dlfcn.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <ifaddrs.h>
@@ -28,6 +29,27 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <atomic>
+
+ncclOsLibraryHandle ncclOsDlopen(const char* filename) {
+  ncclOsLibraryHandle handle = dlopen(filename, RTLD_NOW | RTLD_LOCAL);
+  if (handle == NULL) {
+    INFO(NCCL_INIT, "ncclOsDlopen(%s) failed: %s", filename, dlerror());
+  }
+  return handle;
+}
+
+void* ncclOsDlsym(ncclOsLibraryHandle handle, const char* symbol) {
+  void* ptr = dlsym(handle, symbol);
+  if (ptr == NULL) {
+    const char* err = dlerror();
+    INFO(NCCL_INIT, "ncclOsDlsym(%s) failed: %s", symbol, err ? err : "unknown");
+  }
+  return ptr;
+}
+
+const char* ncclOsDlerror() {
+  return dlerror();
+}
 
 // Process Management
 uint64_t ncclOsGetPid() {
@@ -538,3 +560,17 @@ ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity) {
 int ncclOsGetCpu() {
   return sched_getcpu();
 }
+
+ncclResult_t ncclOsNvmlOpen(ncclOsLibraryHandle* handle) {
+  *handle = nullptr;
+
+  *handle = ncclOsDlopen("libnvidia-ml.so.1");
+  if (*handle == nullptr) {
+    WARN("Failed to open libnvidia-ml.so.1: %s", ncclOsDlerror());
+    return ncclSystemError;
+  }
+
+  INFO(NCCL_INIT, "Loaded NVML from libnvidia-ml.so.1");
+  return ncclSuccess;
+}
+

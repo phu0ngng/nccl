@@ -2965,6 +2965,128 @@ perftest-multi-theia:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+# Cross-clique P2P tests on theia (2-node, CLIQUE_SIZE=1: each node is its own clique)
+perftest-multi-theia-cross-clique-2n:
+  stage: perf_tests_multi
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+      when: always
+    - when: never
+  needs: ["setup-theia"]
+  tags:
+    - lyris
+  variables:
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 15
+    SLURM_PARTITION: gb300
+    RUN_MODE: "SRUN_MPI"
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    CLIQUE_SIZE: 1
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: 2
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-xclique-2n::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf-cross-clique.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+# Cross-clique P2P tests on theia (4-node, CLIQUE_SIZE=2: pairs of nodes form cliques)
+perftest-multi-theia-cross-clique-4n:
+  stage: perf_tests_multi
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+      when: always
+    - when: never
+  needs: ["setup-theia"]
+  tags:
+    - lyris
+  variables:
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 15
+    SLURM_PARTITION: gb300
+    RUN_MODE: "SRUN_MPI"
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    CLIQUE_SIZE: 2
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: 4
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-xclique-4n::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf-cross-clique.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+# Multi-NVLD emulation on theia (4-node, 2 NVLDs of 2 nodes, each node is its own clique)
+# Tests that cross-NVLD traffic uses network while intra-NVLD uses cross-clique P2P
+perftest-multi-theia-multi-nvld-4n:
+  stage: perf_tests_multi
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit|post-submit|nightly)$/ || ($RUN_ON_THEIA == "1" && $RUN_PERF_TESTS_MULTIPLE == "1")
+      when: always
+    - when: never
+  needs: ["setup-theia"]
+  tags:
+    - lyris
+  variables:
+    INSTALL_DIR: "${THEIA_INSTALL_DIR}"
+    CI_BUILDS_DIR: "${THEIA_CI_BUILDS_DIR}"
+    ARCHIVER_STAGING_DIR: "${THEIA_ARCHIVER_STAGING_DIR}"
+    NCCL_DEBUG: "WARN"
+    CLUSTER_CONFIG: "docker/clusters/theia-config.sh"
+    SLURM_TIME: 15
+    SLURM_PARTITION: gb300
+    RUN_MODE: "SRUN_MPI"
+    NGPUS: 4
+    MAX: "1G"
+    NP: 4
+    CLIQUE_SIZE: 1
+    NVLDS: 2
+    NCCL_HOME: ${INSTALL_DIR}/build
+    SLURM_ACCOUNT: coreai_libraries_nccl
+    NNODES: 4
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi-nvld::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf-cross-clique.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 # Timeout after 120 min
 perftest-multi-bia:
   stage: perf_tests_multi
@@ -3753,6 +3875,12 @@ cleanup-theia:
     - job: perftest-single-theia
       optional: true
     - job: perftest-multi-theia
+      optional: true
+    - job: perftest-multi-theia-cross-clique-2n
+      optional: true
+    - job: perftest-multi-theia-cross-clique-4n
+      optional: true
+    - job: perftest-multi-theia-multi-nvld-4n
       optional: true
     - job: perf-regression-theia
       optional: true

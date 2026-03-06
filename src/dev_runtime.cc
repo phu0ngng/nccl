@@ -82,16 +82,24 @@ ncclResult_t ncclDevrInitOnce(struct ncclComm* comm) {
   // LSA needs to be the same size for all ranks, and it needs to represent
   // a consecutive set of ranks.
   int lsaSize = ncclParamLsaTeamSize();
-  int nodeSize = 1;
-  for (int r=1; r < comm->nRanks; r++) {
-    if (comm->rankToNode[r] == comm->rankToNode[r-1]) {
-      nodeSize += 1;
-    } else {
-      lsaSize = gcd(lsaSize, nodeSize);
-      nodeSize = 1;
+  if (comm->p2pCrossClique && comm->nvlDomainSize == comm->nRanks) {
+    // Single NVLD: all ranks share memory via fabric handles. Extend LSA to full domain.
+    // Multi-NVLD (with potentially unequal domain sizes) is not yet supported for cross-clique LSA
+    lsaSize = comm->nRanks;
+    INFO(NCCL_INIT, "LSA extended to full NVL domain: lsaSize=%d (cross-clique P2P)", lsaSize);
+  } else {
+    // Standard node-based gcd LSA calculation
+    int nodeSize = 1;
+    for (int r=1; r < comm->nRanks; r++) {
+      if (comm->rankToNode[r] == comm->rankToNode[r-1]) {
+        nodeSize += 1;
+      } else {
+        lsaSize = gcd(lsaSize, nodeSize);
+        nodeSize = 1;
+      }
     }
+    lsaSize = gcd(lsaSize, nodeSize);
   }
-  lsaSize = gcd(lsaSize, nodeSize);
   devr->lsaSize = lsaSize;
   devr->lsaSelf = comm->rank % lsaSize;
   devr->lsaRankList = (int*)malloc(devr->lsaSize*sizeof(int));
@@ -1221,7 +1229,8 @@ ncclResult_t ncclCommQueryProperties(ncclComm_t comm, ncclCommProperties_t* prop
   props->cudaDev = comm->cudaDev;
   props->nvmlDev = comm->nvmlDev;
   props->deviceApiSupport = comm->symmetricSupport;
-  props->multimemSupport = comm->nvlsSupport;
+  // NVLS multicast isn't available across cliques
+  props->multimemSupport = comm->nvlsSupport && !comm->p2pCrossClique;
   props->hostRmaSupport = comm->hostRmaSupport;
   NCCLCHECK(getGlobalGinType(comm, &props->ginType));
   NCCLCHECK(getGlobalRailedGinType(comm, &props->railedGinType));

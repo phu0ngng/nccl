@@ -49,6 +49,12 @@ std::tm* ncclOsLocaltime(const time_t* timer, std::tm* buf);
 
 void ncclOsSetEnv(const char* name, const char* value);
 
+/* Dynamic library loading */
+typedef void* ncclOsLibraryHandle;
+ncclOsLibraryHandle ncclOsDlopen(const char* filename);
+void* ncclOsDlsym(ncclOsLibraryHandle handle, const char* symbol);
+const char* ncclOsDlerror();
+
 /* Socket functions */
 bool ncclOsSocketIsValid(struct ncclSocket* sock);
 bool ncclOsSocketDescriptorIsValid(ncclSocketDescriptor sock);
@@ -79,5 +85,8 @@ ncclAffinity ncclOsCpuAnd(const ncclAffinity& a, const ncclAffinity& b);
 ncclResult_t ncclOsGetAffinity(ncclAffinity* affinity);
 ncclResult_t ncclOsSetAffinity(const ncclAffinity affinity);
 int ncclOsGetCpu();
+
+/* NVML */
+ncclResult_t ncclOsNvmlOpen(ncclOsLibraryHandle* handle);
 
 #endif

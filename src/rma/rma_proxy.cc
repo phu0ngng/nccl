@@ -479,7 +479,7 @@ ncclResult_t ncclRmaProxyConnectOnce(struct ncclComm* comm) {
   }
   if (rmaProxyState->connected) return ncclSuccess;
 
-  NCCLCHECK(rmaProxyState->ncclGin->init(&rmaProxyState->ginInstance, comm->commHash, ncclDebugLog));
+  rmaProxyState->ginInstance = comm->rmaGinContext;
 
   int ndev = 0;
   NCCLCHECK(rmaProxyState->ncclGin->devices(&ndev));
@@ -622,8 +622,6 @@ ncclResult_t ncclRmaProxyFinalize(struct ncclComm* comm) {
     }
   }
 
-  // Finalize the GIN instance
-  NCCLCHECK(rmaProxyState->ncclGin->finalize(rmaProxyState->ginInstance));
   memset((void*)rmaProxyState, 0, sizeof(*rmaProxyState));
   return ncclSuccess;
 }

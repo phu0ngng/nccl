@@ -17,7 +17,6 @@
 struct ncclComm;
 #include "os.h"
 #include <memory>
-#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -507,6 +506,7 @@ finish:
   return result;
 }
 
+#if defined(NCCL_OS_LINUX)
 // Allocate memory to be potentially ibv_reg_mr'd. This needs to be
 // allocated on separate pages as those pages will be marked DONTFORK
 // and if they are shared, that could cause a crash in a child process
@@ -527,5 +527,7 @@ inline ncclResult_t ncclIbMallocDebug(void** ptr, size_t size, const char *filef
   return ncclSuccess;
 }
 #define ncclIbMalloc(...) ncclIbMallocDebug(__VA_ARGS__, __FILE__, __LINE__)
+
+#endif // defined(NCCL_OS_LINUX)
 
 #endif

@@ -437,6 +437,7 @@ struct ncclKernelComm {
   int nNodes;
   int buffSizes[NCCL_NUM_PROTOCOLS];
   int p2pChunkSize;
+  bool p2pCrossClique;
   int isAllNvlink;
 
   int* collNetDenseToUserRank;

@@ -236,10 +236,49 @@ struct ncclIbSendFifo {
   char padding[16];
 };
 
+struct ncclIbQpInitAttr {
+  ibv_qp_state state;
+  int pkeyIndex;
+  uint8_t portNum;
+  int qpAccessFlags;
+};
+
+struct ncclIbQpRtrAttr {
+  enum ibv_mtu mtu;
+  uint8_t linkLayer;
+  uint8_t tc;
+  int sl;
+
+  uint32_t remoteQpNum;
+  uint32_t remoteLid;
+  union ibv_gid remoteGid;
+
+  uint8_t localIbPort;
+  union ibv_gid localGid;
+  int32_t localGidIndex;
+};
+
+struct ncclIbQpRtsAttr {
+  int timeout;
+  int retryCnt;
+};
+
 struct ncclIbQp {
   struct ibv_qp* qp;
   // The index of the device on which this QP was created on.
   int devIndex;
+
+  // The ECE (enhanced connection establishment) used on this QP.
+  // Note: This is the reduced ECE exchanged between the sender and receiver.
+  struct ibv_ece ece;
+  int eceSupported;
+
+  // Stores the attributes used to configure the QP to allow QP restore after
+  // failure.
+  struct ncclIbQpInitAttr initAttr;
+  struct ncclIbQpRtrAttr rtrAttr;
+  struct ncclIbQpRtsAttr rtsAttr;
+
   // The index of the device on the remote side to which this QP is connected
   // to.
   int remDevIdx;

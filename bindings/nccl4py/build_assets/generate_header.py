@@ -25,6 +25,9 @@ API_LIST = [
     "ncclCommQueryProperties",
     "ncclDevCommCreate",
     "ncclDevCommDestroy",
+    "ncclGetLsaMultimemDevicePointer",
+    "ncclGetLsaDevicePointer",
+    "ncclGetPeerDevicePointer",
 ]
 
 EXCLUDE_TYPES = [
