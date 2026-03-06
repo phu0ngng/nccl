@@ -95,6 +95,46 @@ ncclResult_t ncclTopoGetNetDevsPolicy(enum netDevsPolicy* policy, int* policyNum
 #define NCCL_TOPO_MAX_NODES 640
 ncclResult_t ncclTopoGetLocal(struct ncclTopoSystem* system, int type, int index, int resultType, int locals[NCCL_TOPO_MAX_NODES], int* localCount, int* pathType);
 
+// Local (myself)
+#define PATH_LOC 0
+
+// Connection traversing NVLink
+#define PATH_NVL 1
+
+// Connection through NVLink using an intermediate GPU
+#define PATH_NVB 2
+
+// Connection through C2C
+#define PATH_C2C 3
+
+// Connection traversing at most a single PCIe bridge
+#define PATH_PIX 4
+
+// Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+#define PATH_PXB 5
+
+// Connection between a GPU and a NIC using the C2C connection to the CPU and the PCIe connection to the NIC
+#define PATH_P2C 6
+
+// Connection between a GPU and a NIC using an intermediate GPU. Used to enable rail-local, aggregated network send/recv operations.
+#define PATH_PXN 7
+
+// Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+#define PATH_PHB 8
+
+// Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+#define PATH_SYS 9
+
+// Connection through the network
+#define PATH_NET 10
+
+// New type of path which should precede PATH_PIX
+#define PATH_PORT PATH_NVL
+
+// Disconnected
+#define PATH_DIS 11
+extern const char* topoPathTypeStr[];
+
 // Init search. Needs to be done before calling ncclTopoCompute
 ncclResult_t ncclTopoSearchInit(struct ncclTopoSystem* system);
 
