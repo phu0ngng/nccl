@@ -1364,6 +1364,7 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
         NCCLCHECK(ncclTopoRankToIndex(comm->topo, rank, &g, /*showWarn=*/true));
         NCCLCHECK(ncclTopoIdToIndex(comm->topo, NET, netId, &n));
         struct ncclTopoNode* gpu = comm->topo->nodes[GPU].nodes+g;
+        // No need to check for GDR here, PATH_PXN is only set if GDR is enabled between the peer GPU and the NET.
         if (gpu->paths[NET][n].type <= PATH_PXN) {
           if (dev) *dev = netDev;
           if (id) *id = netId;
@@ -1378,7 +1379,9 @@ ncclResult_t ncclTopoGetNetDev(struct ncclComm* comm, int rank, struct ncclTopoG
         if (g2 != -1) {
           struct ncclTopoNode* peerGpu = comm->topo->nodes[GPU].nodes+g2;
           int pxnType = ncclParamPxnC2c() ? PATH_P2C : PATH_PXB;
-          if (peerGpu->paths[GPU][g1].type <= PATH_NVL && peerGpu->paths[NET][n].type <= pxnType) {
+          enum ncclTopoGdrMode gdrMode;
+          NCCLCHECK(ncclTopoCheckGdr(comm->topo, peerGpu->gpu.rank, netId, 0, &gdrMode));
+          if (peerGpu->paths[GPU][g1].type <= PATH_NVL && peerGpu->paths[NET][n].type <= pxnType && (gdrMode != ncclTopoGdrModeDisable)) {
             *proxyRank = peerGpu->gpu.rank;
             if (dev) *dev = netDev;
             if (id) *id = netId;
