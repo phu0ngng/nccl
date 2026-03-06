@@ -1401,6 +1401,10 @@ static ncclResult_t initTransportsRank(struct ncclComm* comm, struct ncclComm* p
   if (graphs[NCCL_ALGO_COLLNET_CHAIN]->nChannels == 0) comm->config.collnetEnable = 0;
   if (graphs[NCCL_ALGO_NVLS]->nChannels == 0) comm->nvlsSupport = comm->nvlsChannels = 0;
 
+  if (comm->nvlsSupport) {
+    NCCLCHECKGOTO(ncclNvlsTuning(comm), ret, fail);
+  }
+
   comm->nChannels = treeGraph->nChannels = ringGraph->nChannels = std::min(treeGraph->nChannels, ringGraph->nChannels);
   if (comm->nChannels < nChannelsOrig) {
     // We started duplicating channels during Preset(), so we need to move the

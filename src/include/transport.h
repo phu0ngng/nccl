@@ -93,6 +93,8 @@ struct ncclNvlsSharedRes {
   char* ucCredit; // Unicast NVLS credit address
   int nChannels;
   int nHeads;
+  int chunkSize;
+  int treeMaxChunkSize;
   struct ncclShmemCollBuff nvlsShmem;
   void *nvlsShmemHandle;
 };
@@ -136,6 +138,7 @@ ncclResult_t ncclTransportCheckP2pType(struct ncclComm* comm, bool* isAllDirectP
 bool ncclP2pUsesMemcpy();
 
 ncclResult_t ncclNvlsInit(struct ncclComm* comm);
+ncclResult_t ncclNvlsTuning(struct ncclComm* comm);
 ncclResult_t ncclNvlsSetup(struct ncclComm* comm, struct ncclComm* parent);
 ncclResult_t ncclNvlsBufferSetup(struct ncclComm* comm);
 ncclResult_t ncclNvlsTreeConnect(struct ncclComm* comm);

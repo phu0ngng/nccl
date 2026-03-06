@@ -2088,8 +2088,6 @@ ncclResult_t ncclGetAlgoInfo(
   return ncclSuccess;
 }
 
-NCCL_PARAM(NvlsTreeMaxChunkSize, "NVLSTREE_MAX_CHUNKSIZE", -2);
-
 static ncclResult_t calcCollChunking(
     struct ncclComm* comm, struct ncclTaskColl* info, int nChannels, size_t nBytes,
     /*outputs*/uint32_t* outChunkSize, uint32_t* outDirectFlags, struct ncclProxyOp* proxyOp
@@ -2172,10 +2170,7 @@ static ncclResult_t calcCollChunking(
     // However, nChannels * comm->channels[0].nvls.nHeads should easily fit in 32 bits.
     // coverity[overflow_before_widen]
     uint64_t concurrentOps = nChannels * comm->channels[0].nvls.nHeads;
-    chunkSize = comm->nvlsChunkSize;
-    int maxChunkSize = (int)ncclParamNvlsTreeMaxChunkSize();
-    if (maxChunkSize == -2) maxChunkSize = comm->nNodes >= 4 ? 65536 : chunkSize;
-    chunkSize = std::min(chunkSize, maxChunkSize);
+    chunkSize = std::min(comm->nvlsChunkSize, comm->nvlsTreeMaxChunkSize);
     if ((nBytes < (32 * (concurrentOps * chunkSize))) && (chunkSize > 262144)) chunkSize = 262144;
     if ((nBytes < (16 * (concurrentOps * chunkSize))) && (chunkSize > 131072)) chunkSize = 131072;
     if ((nBytes < (4 * (concurrentOps * chunkSize))) && (chunkSize > 65536)) chunkSize = 65536;
