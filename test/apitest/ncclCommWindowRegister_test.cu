@@ -140,3 +140,87 @@ TEST_F(ncclCommWindowRegister_test, debug_mode_invalid) {
   free(recvwins);
   unsetenv("NCCL_CHECK_MODE");
 }
+
+TEST_F(ncclCommWindowRegister_test, win_get_user_ptr) {
+  ncclWindow_t *wins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], sendbuffs[i], size, &wins[i], NCCL_WIN_COLL_SYMMETRIC));
+  }
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+  // Verify ncclWinGetUserPtr returns the original buffer pointer for each rank
+  for (int i = 0; i < nVis; i++) {
+    void *userPtr = NULL;
+    ASSERT_EQ(ncclSuccess, ncclWinGetUserPtr(comms[i], wins[i], &userPtr));
+    ASSERT_EQ(userPtr, sendbuffs[i]) << "ncclWinGetUserPtr returned wrong pointer for rank " << i;
+  }
+
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(ncclSuccess, ncclCommWindowDeregister(comms[i], wins[i]));
+  }
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  free(wins);
+}
+
+TEST_F(ncclCommWindowRegister_test, win_get_user_ptr_multiple_windows) {
+  ncclWindow_t *sendwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
+  ncclWindow_t *recvwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], sendbuffs[i], size, &sendwins[i], NCCL_WIN_COLL_SYMMETRIC));
+    ASSERT_EQ(ncclSuccess, ncclCommWindowRegister(comms[i], recvbuffs[i], size, &recvwins[i], NCCL_WIN_COLL_SYMMETRIC));
+  }
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+
+  // Verify ncclWinGetUserPtr returns correct pointers for both windows
+  for (int i = 0; i < nVis; i++) {
+    void *sendPtr = NULL, *recvPtr = NULL;
+    ASSERT_EQ(ncclSuccess, ncclWinGetUserPtr(comms[i], sendwins[i], &sendPtr));
+    ASSERT_EQ(ncclSuccess, ncclWinGetUserPtr(comms[i], recvwins[i], &recvPtr));
+    ASSERT_EQ(sendPtr, sendbuffs[i]) << "Send window user ptr mismatch for rank " << i;
+    ASSERT_EQ(recvPtr, recvbuffs[i]) << "Recv window user ptr mismatch for rank " << i;
+    ASSERT_NE(sendPtr, recvPtr) << "Send and recv windows should have different user ptrs";
+  }
+
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  for (int i = 0; i < nVis; i++) {
+    ASSERT_EQ(ncclSuccess, ncclCommWindowDeregister(comms[i], sendwins[i]));
+    ASSERT_EQ(ncclSuccess, ncclCommWindowDeregister(comms[i], recvwins[i]));
+  }
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+  free(sendwins);
+  free(recvwins);
+}
+
+// ============================================================================
+// Negative tests for ncclCommWindowRegister
+// ============================================================================
+
+TEST_F(ncclCommWindowRegister_test, register_null_buff) {
+  ncclWindow_t win;
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  ASSERT_EQ(ncclInvalidArgument, ncclCommWindowRegister(comms[0], NULL, size, &win, NCCL_WIN_COLL_SYMMETRIC));
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+}
+
+TEST_F(ncclCommWindowRegister_test, register_zero_size) {
+  ncclWindow_t win;
+  ASSERT_EQ(ncclSuccess, ncclGroupStart());
+  ASSERT_EQ(ncclInvalidArgument, ncclCommWindowRegister(comms[0], sendbuffs[0], 0, &win, NCCL_WIN_COLL_SYMMETRIC));
+  ASSERT_EQ(ncclSuccess, ncclGroupEnd());
+}
+
+TEST_F(ncclCommWindowRegister_test, register_null_win_ptr) {
+  ASSERT_EQ(ncclInvalidArgument, ncclCommWindowRegister(comms[0], sendbuffs[0], size, NULL, NCCL_WIN_COLL_SYMMETRIC));
+}
+
+// ============================================================================
+// Negative tests for ncclCommWindowDeregister
+// ============================================================================
+
+TEST_F(ncclCommWindowRegister_test, deregister_null_win) {
+  // Deregistering NULL window should be a no-op (succeeds silently)
+  ASSERT_EQ(ncclSuccess, ncclCommWindowDeregister(comms[0], NULL));
+}

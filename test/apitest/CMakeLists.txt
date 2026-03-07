@@ -34,6 +34,7 @@ set(API_TEST_SOURCES
     ncclCommGrow_test.cu
     ncclDevCommCreate_test.cu
     ncclCommWindowRegister_test.cu
+    ncclOneSidedRma_test.cu
 )
 
 # Plugin source files

@@ -55,7 +55,7 @@ splitOnceTest="ncclCommSplit_test.init_net_dev_once"
 gtestFilter="-${multinetTests}:${sharedPluginTest}:${initOnceTest}:${splitOnceTest}"
 
 if [[ ${DEVICE_API} -eq 0 ]] ; then
-  gtestFilter="${gtestFilter}:ncclCommQueryProperties_test.test_gin_support:ncclCommQueryProperties_test.test_multimem_support:ncclCommWindowRegister_test.*"
+  gtestFilter="${gtestFilter}:ncclCommQueryProperties_test.test_gin_support:ncclCommQueryProperties_test.test_railed_gin_support:ncclCommQueryProperties_test.test_multimem_support:ncclCommWindowRegister_test.*:ncclOneSidedRma_test.*"
 fi
 
 # run all tests except the ones with a special config
