@@ -288,6 +288,8 @@ static ncclResult_t symTeamObtain(
         return ncclSuccess;
       }
       break; // Need to enable multimem
+    } else {
+      t = t->next;
     }
   }
 
