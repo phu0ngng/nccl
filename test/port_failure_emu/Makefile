@@ -23,18 +23,30 @@ PFE_LIB_OBJS := $(patsubst $(PFE_SRCDIR)/%.c, $(PFE_BUILDDIR)/%.o, $(PFE_LIB_SRC
 PFE_CFLAGS := -I$(PFE_INCDIR) -fPIC -Wall -Wextra -ggdb
 PFE_LDFLAGS := -lmlx5 -libverbs
 
-# Check for RDMA libraries
-HAVE_MLX5 := $(shell ldconfig -p 2>/dev/null | grep -q 'libmlx5\.so' && echo 1 || echo 0)
-HAVE_VERBS := $(shell ldconfig -p 2>/dev/null | grep -q 'libibverbs\.so' && echo 1 || echo 0)
+# Check for RDMA libraries and development headers
+HAVE_MLX5_LIB := $(shell ldconfig -p 2>/dev/null | grep -q 'libmlx5\.so' && echo 1 || echo 0)
+HAVE_VERBS_LIB := $(shell ldconfig -p 2>/dev/null | grep -q 'libibverbs\.so' && echo 1 || echo 0)
+HAVE_MLX5_HDR := $(shell printf '\043include <infiniband/mlx5dv.h>\n' | $(CC) -E -x c - -o /dev/null 2>/dev/null && echo 1 || echo 0)
+HAVE_VERBS_HDR := $(shell printf '\043include <infiniband/verbs.h>\n' | $(CC) -E -x c - -o /dev/null 2>/dev/null && echo 1 || echo 0)
 
-ifeq ($(HAVE_MLX5),0)
-$(info RDMA libraries not found (libmlx5 not available))
+ifeq ($(HAVE_MLX5_LIB),0)
+$(info RDMA library not found (libmlx5 not available))
 $(info Skipping port-failure-emu build (requires RDMA hardware support))
 all:
 	@true
-else ifeq ($(HAVE_VERBS),0)
-$(info RDMA libraries not found (libibverbs not available))
+else ifeq ($(HAVE_VERBS_LIB),0)
+$(info RDMA library not found (libibverbs not available))
 $(info Skipping port-failure-emu build (requires RDMA hardware support))
+all:
+	@true
+else ifeq ($(HAVE_MLX5_HDR),0)
+$(info RDMA development header not found (infiniband/mlx5dv.h not available))
+$(info Skipping port-failure-emu build (requires RDMA development packages))
+all:
+	@true
+else ifeq ($(HAVE_VERBS_HDR),0)
+$(info RDMA development header not found (infiniband/verbs.h not available))
+$(info Skipping port-failure-emu build (requires RDMA development packages))
 all:
 	@true
 else

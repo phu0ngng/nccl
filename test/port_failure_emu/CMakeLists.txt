@@ -20,13 +20,15 @@ message(STATUS "Building port-failure-emu with RDMA support")
 find_path(VERBS_INCLUDE_DIR infiniband/verbs.h)
 find_path(MLX5DV_INCLUDE_DIR infiniband/mlx5dv.h)
 
+if(NOT VERBS_INCLUDE_DIR OR NOT MLX5DV_INCLUDE_DIR)
+    message(STATUS "RDMA development headers not found (infiniband/verbs.h: ${VERBS_INCLUDE_DIR}, infiniband/mlx5dv.h: ${MLX5DV_INCLUDE_DIR})")
+    message(STATUS "Skipping port-failure-emu build (requires RDMA development packages)")
+    return()
+endif()
+
 include_directories("include")
-if(VERBS_INCLUDE_DIR)
-    include_directories(${VERBS_INCLUDE_DIR})
-endif()
-if(MLX5DV_INCLUDE_DIR)
-    include_directories(${MLX5DV_INCLUDE_DIR})
-endif()
+include_directories(${VERBS_INCLUDE_DIR})
+include_directories(${MLX5DV_INCLUDE_DIR})
 
 # ============================================================================
 #                         Shared Library Build
