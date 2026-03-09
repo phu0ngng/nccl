@@ -303,3 +303,33 @@ ncclMemFree
 .. c:function:: ncclResult_t ncclMemFree(void *ptr)
 
 Free memory allocated by *ncclMemAlloc()*.
+
+ncclCommSuspend
+---------------
+
+.. c:function:: ncclResult_t ncclCommSuspend(ncclComm_t comm, int flags)
+
+Suspend communicator operations to free resources. The communicator cannot be used for any NCCL operations
+while suspended. There should be no outstanding NCCL operations on *comm* when this function is called.
+
+The *flags* parameter controls which resources are released:
+
+- *NCCL_SUSPEND_MEM* (``0x01``) -- Release dynamic GPU memory allocations held by the communicator.
+
+A suspended communicator can be restored to an active state by calling *ncclCommResume*.
+
+ncclCommResume
+--------------
+
+.. c:function:: ncclResult_t ncclCommResume(ncclComm_t comm)
+
+Resume all previously suspended resources on communicator *comm*. After this call returns successfully, the
+communicator is fully operational and can be used for NCCL operations again.
+
+ncclCommMemStats
+----------------
+
+.. c:function:: ncclResult_t ncclCommMemStats(ncclComm_t comm, ncclCommMemStat_t stat, uint64_t* value)
+
+Query communicator memory statistics. The *stat* parameter selects which statistic to retrieve, and the
+result is written to *\*value*. See :c:type:`ncclCommMemStat_t` for the list of available statistics.

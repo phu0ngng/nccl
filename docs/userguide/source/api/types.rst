@@ -298,6 +298,29 @@ ncclSimInfo_t
 
  Estimated time for the operation(s) in the group call will be returned in this attribute.
 
+ncclCommMemStat_t
+-----------------
+
+.. c:type:: ncclCommMemStat_t
+
+ Memory statistic selectors for :c:func:`ncclCommMemStats`.
+
+ .. c:macro:: ncclStatGpuMemSuspend
+
+  Communicator allocated GPU memory that can be released via suspend (bytes).
+
+ .. c:macro:: ncclStatGpuMemSuspended
+
+  Whether communicator allocated GPU memory is currently suspended (``0`` = active, ``1`` = suspended).
+
+ .. c:macro:: ncclStatGpuMemPersist
+
+  Communicator allocated GPU memory that cannot be suspended (bytes).
+
+ .. c:macro:: ncclStatGpuMemTotal
+
+  Total communicator allocated GPU memory that is tracked by NCCL (bytes).
+
 ncclWindow_t
 ------------
 
