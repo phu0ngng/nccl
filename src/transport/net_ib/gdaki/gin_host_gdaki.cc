@@ -1010,16 +1010,23 @@ ncclResult_t ncclGinGdakiProgress(void *ctx) {
   const int nranks = gdakiCtx->collComm->nranks;
   const int nqpsPerRank = ncontexts;
   const int nqpsForComm = nqpsPerRank * nranks;  // Number of QPs for communication
+  bool has_progressed = true;
+  bool progressed;
 
-  for (int qpIdx = 0; qpIdx < nqpsForComm; qpIdx++) {
-    struct doca_gpu_verbs_qp *qp = gdakiCtx->gqps[qpIdx]->qp_gverbs;
-    if (qp->cpu_proxy) {
-      DOCACHECK(doca_gpu_verbs_cpu_proxy_progress(qp));
-    }
+  while (has_progressed) {
+    has_progressed = false;
+    for (int qpIdx = 0; qpIdx < nqpsForComm; qpIdx++) {
+      struct doca_gpu_verbs_qp *qp = gdakiCtx->gqps[qpIdx]->qp_gverbs;
+      if (qp->cpu_proxy) {
+        DOCACHECK(doca_gpu_verbs_cpu_proxy_progress(qp, &progressed));
+        has_progressed |= progressed;
+      }
 
-    qp = gdakiCtx->companion_gqps[qpIdx]->qp_gverbs;
-    if (qp->cpu_proxy) {
-      DOCACHECK(doca_gpu_verbs_cpu_proxy_progress(qp));
+      qp = gdakiCtx->companion_gqps[qpIdx]->qp_gverbs;
+      if (qp->cpu_proxy) {
+        DOCACHECK(doca_gpu_verbs_cpu_proxy_progress(qp, &progressed));
+        has_progressed |= progressed;
+      }
     }
   }
 
