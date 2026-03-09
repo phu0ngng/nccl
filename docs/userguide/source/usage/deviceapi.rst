@@ -10,7 +10,7 @@ Device API
 
 Device API consists of the following modules:
 
- * **LSA (Load/Store Accessible)** -- for communication between devices accessible via memory load/store operations,
+ * **:ref:`LSA <device_api_lsa>` (Load/Store Accessible)** -- for communication between devices accessible via memory load/store operations,
    using CUDA P2P. This includes devices connected over NVLink and some devices connected over PCIe, so long as they
    have P2P connectivity with each other (as indicated by ``nvidia-smi topo -p2p p``). Up to NCCL 2.28.3, the
    availability of LSA was also subject to the :ref:`env_NCCL_P2P_LEVEL` distance check, but that is no longer the case
@@ -18,6 +18,8 @@ Device API consists of the following modules:
  * **Multimem** -- for communication between devices using the hardware multicast feature provided by
    NVLink SHARP (available on some datacenter GPUs since the Hopper generation).
  * **GIN (GPU-Initiated Networking)** -- for communication over the network (since NCCL 2.28.7).
+ * **Reduce, Broadcast, and Fused Building Blocks** — Building Blocks for Computation-Fused Kernels: reduce, copy
+   (broadcast), and reduce-then-copy (see :ref:`device_api_reducecopy` in the API reference).
 
 Requirements
 ------------
@@ -144,7 +146,8 @@ kernel terminates, another memory synchronization needs to take place to ensure 
 processing their data.
 
 Note that this simple implementation would likely fall short of achieving the peak bandwidth, as it utilizes neither
-vectorization nor loop unrolling.
+vectorization nor loop unrolling. For optimized LSA reduce, copy, and fused reduce-then-copy building blocks (e.g. for
+AllReduce, AllGather, ReduceScatter), see :ref:`device_api_reducecopy` in the Device API reference.
 
 Multimem Device Kernel
 ----------------------
@@ -223,9 +226,11 @@ Host-Accessible Device Pointer Functions
 Starting with version 2.29, NCCL provides host-accessible functions that enable host code to obtain pointers to LSA
 memory regions.
 
-The four functions are :c:func:`ncclGetLsaMultimemDevicePointer` (multimem base pointer), :c:func:`ncclGetMultimemDevicePointer` (multimem base pointer with custom handle), :c:func:`ncclGetLsaDevicePointer` (LSA peer pointer),
-and :c:func:`ncclGetPeerDevicePointer` (world rank peer pointer). Functions automatically discover the associated communicator
-from the window object and return ``ncclResult_t`` error codes.
+The four functions are :c:func:`ncclGetLsaMultimemDevicePointer` (multimem base pointer),
+:c:func:`ncclGetMultimemDevicePointer` (multimem base pointer with custom handle),
+:c:func:`ncclGetLsaDevicePointer` (LSA peer pointer), and :c:func:`ncclGetPeerDevicePointer`
+(world rank peer pointer). Functions automatically discover the associated communicator from
+the window object and return ``ncclResult_t`` error codes.
 
 Usage Example:
 
