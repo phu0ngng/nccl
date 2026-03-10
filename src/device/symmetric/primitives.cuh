@@ -228,6 +228,7 @@ struct ncclSymkGinAccumType { using Type = T; };
 template<> struct ncclSymkGinAccumType<FuncSum, __half> { using Type = float; };
 #if defined(__CUDA_BF16_TYPES_EXIST__)
 template<> struct ncclSymkGinAccumType<FuncSum, __nv_bfloat16> { using Type = float; };
+template<> struct ncclSymkGinAccumType<FuncSumPostDiv, __nv_bfloat16> { using Type = float; };
 #endif
 
 #if defined(__CUDA_FP8_TYPES_EXIST__)
@@ -236,6 +237,8 @@ template<> struct ncclSymkGinAccumType<FuncSum, __nv_bfloat16> { using Type = fl
 // give users a higher precision alternative.
 template<> struct ncclSymkGinAccumType<FuncSum, __nv_fp8_e4m3> { using Type = __half; };
 template<> struct ncclSymkGinAccumType<FuncSum, __nv_fp8_e5m2> { using Type = __half; };
+template<> struct ncclSymkGinAccumType<FuncSumPostDiv, __nv_fp8_e4m3> { using Type = __half; };
+template<> struct ncclSymkGinAccumType<FuncSumPostDiv, __nv_fp8_e5m2> { using Type = __half; };
 #endif
 
 static __device__ __forceinline__ void tmaLoadStoreMc(void* dest, void* smem, void* source, size_t size, __mbarrier_t* bar) {
