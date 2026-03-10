@@ -202,7 +202,7 @@ static const ncclTunerConstants_t ncclTunerConstantsDefaults = {
     {26.5, 18.5, 10.0}, /* Volta (N1/N2/N4) */
     {24.0, 23.6, 17.8}, /* Ampere (N1/N2/N4) */
     {0.0, 57.7, 45.5}, /* Hopper (N1/N2/N4) */
-    {0.0, 96.0, 43.8} /* Blackwell (N1/N2/N4) */
+    {0.0, 96.0, 80.0} /* Blackwell (N1/N2/N4) */
   }
 };
 
