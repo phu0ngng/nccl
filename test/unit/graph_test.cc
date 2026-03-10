@@ -1003,6 +1003,7 @@ int main(int argc, const char* argv[]) {
     }
     RUN("GB200-CX8-NVL4");
     RUN("GB200-CX8-NVL32");
+    RUN("GB200-2RPG");
     {// GB300-NVL4
       RUN("GB300-CX8-NVL4");               // IB
       RUN_PORT_RATIO("GB300-CX8-NVL4", 2); // RoCE 2 ports

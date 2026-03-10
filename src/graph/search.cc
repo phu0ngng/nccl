@@ -845,13 +845,19 @@ ncclResult_t ncclTopoGetChannelFromXml(struct ncclXmlNode *xmlChannel, int c, st
       inter[n++] = dev;
     } else if (strcmp(sub->name, "gpu") == 0) {
       int rank = -1;
-      for (int g=0; g<ngpus; g++) {
-        int systemId = NCCL_TOPO_ID_SYSTEM_ID(system->nodes[GPU].nodes[g].gpu.parent->id);
-        if (NCCL_TOPO_ID(systemId, system->nodes[GPU].nodes[g].gpu.dev) == dev) rank = system->nodes[GPU].nodes[g].gpu.rank;
-      }
-      if (rank == -1) {
-        WARN("XML Import Channel : dev %ld not found.", dev);
-        return ncclSystemError;
+      int rankIndex = -1;
+      NCCLCHECK(xmlGetAttrIndex(sub, "rank", &rankIndex));
+      if (rankIndex != -1) {
+        rank = strtol(sub->attrs[rankIndex].value, NULL, 0);
+      } else {
+        for (int g=0; g<ngpus; g++) {
+          int systemId = NCCL_TOPO_ID_SYSTEM_ID(system->nodes[GPU].nodes[g].gpu.parent->id);
+          if (NCCL_TOPO_ID(systemId, system->nodes[GPU].nodes[g].gpu.dev) == dev) rank = system->nodes[GPU].nodes[g].gpu.rank;
+        }
+        if (rank == -1) {
+          WARN("XML Import Channel : dev %ld not found.", dev);
+          return ncclSystemError;
+        }
       }
       intra[g++] = rank;
     }
@@ -920,6 +926,7 @@ ncclResult_t ncclTopoGetXmlFromChannel(struct ncclTopoGraph* graph, int c, struc
       return ncclInternalError;
     }
     NCCLCHECK(xmlSetAttrLong(node, "dev", dev));
+    NCCLCHECK(xmlSetAttrInt(node, "rank", intra[g]));
     if (graph->id == 3) break; // NVLS graphs only use the first GPU
   }
   if (system->inter) {
