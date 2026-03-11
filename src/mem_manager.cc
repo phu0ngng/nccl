@@ -966,6 +966,7 @@ ncclResult_t ncclCommSuspend(ncclComm_t comm, int flags) {
   ncclResult_t ret = ncclSuccess;
   int saveDev;
   CUDACHECK(cudaGetDevice(&saveDev));
+  NCCLCHECK(ncclGroupStartInternal());
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
   if (flags & NCCL_SUSPEND_MEM) {
@@ -983,7 +984,6 @@ ncclResult_t ncclCommSuspend(ncclComm_t comm, int flags) {
       goto fail;
     }
     INFO(NCCL_INIT, "ncclCommSuspend: rank %d suspending memory", comm->rank);
-    NCCLCHECK(ncclGroupStartInternal());
     struct ncclMemManagerTask* task;
     NCCLCHECKGOTO(ncclCalloc(&task, 1), ret, fail);
     task->comm = comm;
@@ -1011,6 +1011,7 @@ ncclResult_t ncclCommResume(ncclComm_t comm) {
   ncclResult_t ret = ncclSuccess;
   int saveDev;
   CUDACHECK(cudaGetDevice(&saveDev));
+  NCCLCHECK(ncclGroupStartInternal());
   CUDACHECKGOTO(cudaSetDevice(comm->cudaDev), ret, fail);
 
   if (ncclParamMemManagerDisable())
@@ -1027,7 +1028,6 @@ ncclResult_t ncclCommResume(ncclComm_t comm) {
     goto fail;
   }
   INFO(NCCL_INIT, "ncclCommResume: rank %d resuming all resources", comm->rank);
-  NCCLCHECK(ncclGroupStartInternal());
   struct ncclMemManagerTask* task;
   NCCLCHECKGOTO(ncclCalloc(&task, 1), ret, fail);
   task->comm = comm;
