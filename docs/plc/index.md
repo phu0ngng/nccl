@@ -34,6 +34,7 @@
 - [Pre-posting Receive WQEs](items/id_14cfa49d/Pre-posting_Receive_WQEs.md)
 - [ReduceCopy](items/id_EBADE8BE/ReduceCopy.md)
 - [Port-failover](items/id_4f382c74/Port-failover.md)
+- [Port-recovery](items/id_baa47c0b/Port-recovery.md)
 - [Dynamic Memory Offload](items/id_710c2e7e/Dynamic_Memory_Offload.md)
 - [Allgatherv Optimization](items/id_88440FB2/Allgatherv_Optimization.md)
 - [Multi contexts support in GIN](items/id_fdc7b6f7/Multi_contexts_support_in_GIN.md)
