@@ -112,6 +112,7 @@ testResult_t BroadcastRunColl(void* sendbuff, size_t sendoffset, void* recvbuff,
 struct testColl broadcastTest = {
   "Broadcast",
   BroadcastGetCollByteCount,
+  /*initConfig=*/NULL,
   BroadcastInitData,
   BroadcastGetBw,
   BroadcastRunColl

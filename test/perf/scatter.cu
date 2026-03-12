@@ -137,6 +137,7 @@ testResult_t ScatterRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, s
 struct testColl scatterTest = {
   "Scatter",
   ScatterGetCollByteCount,
+  /*initConfig=*/NULL,
   ScatterInitData,
   ScatterGetBw,
   ScatterRunColl

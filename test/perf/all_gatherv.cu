@@ -96,6 +96,7 @@ testResult_t AllGathervRunColl(void* sendbuff, size_t sendoffset, void* recvbuff
 struct testColl allGathervTest = {
   "AllGather",
   AllGathervGetCollByteCount,
+  /*initConfig=*/NULL,
   AllGathervInitData,
   AllGathervGetBw,
   AllGathervRunColl

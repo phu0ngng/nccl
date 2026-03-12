@@ -107,6 +107,7 @@ testResult_t HyperCubeRunColl(void* sendbuff, size_t sendoffset, void* recvbuff,
 struct testColl hyperCubeTest = {
   "HyperCube",
   HyperCubeGetCollByteCount,
+  /*initConfig=*/NULL,
   HyperCubeInitData,
   HyperCubeGetBw,
   HyperCubeRunColl

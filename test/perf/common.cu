@@ -216,6 +216,8 @@ static void outputFileFinalize(output_file_type_t output_file_type) {
   }
 }
 
+__attribute__((weak)) void collInitConfig(ncclConfig_t* config) { }
+
 void initConfig(ncclConfig_t* config) {
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,14,0)
   *config = NCCL_CONFIG_INITIALIZER;
@@ -236,6 +238,7 @@ void initConfig(ncclConfig_t* config) {
 #endif
 #endif
 #endif
+  collInitConfig(config);
 #endif
 }
 

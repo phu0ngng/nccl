@@ -396,6 +396,7 @@ testResult_t AllReduceRunColl(void* sendbuff, size_t sendoffset, void* recvbuff,
 struct testColl allReduceTest = {
   "AllReduce",
   AllReduceGetCollByteCount,
+  /*initConfig=*/NULL,
   AllReduceInitData,
   AllReduceGetBw,
   AllReduceRunColl

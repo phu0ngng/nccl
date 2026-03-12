@@ -109,9 +109,17 @@ testResult_t SendRecvRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
   return testSuccess;
 }
 
+void collInitConfig(ncclConfig_t* config) {
+  // The communication pattern communicates with 2 peers (rank + 1 and rank - 1).
+  // Setting the value to 1 is possible because of the way NCCL schedules the send and recv on both peers.
+  // Users assuming no knowledge of internal NCCL implementation should use a value of 2.
+  config->maxP2pPeers = 1;
+}
+
 struct testColl sendRecvTest = {
   "SendRecv",
   SendRecvGetCollByteCount,
+  collInitConfig,
   SendRecvInitData,
   SendRecvGetBw,
   SendRecvRunColl

@@ -553,6 +553,7 @@ testResult_t AlltoAllvRunColl(void* sendbuff, size_t sendoffset, void* recvbuff,
 struct testColl alltoAllvTest = {
   "AlltoAllv",
   AlltoAllvGetCollByteCount,
+  /*initConfig=*/NULL,
   AlltoAllvInitData,
   AlltoAllvGetBw,
   AlltoAllvRunColl

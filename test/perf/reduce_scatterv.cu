@@ -89,6 +89,7 @@ testResult_t ReduceScattervRunColl(void* sendbuff, size_t sendoffset, void* recv
 struct testColl reduceScattervTest = {
   "ReduceScatterv",
   ReduceScattervGetCollByteCount,
+  /*initConfig=*/NULL,
   ReduceScattervInitData,
   ReduceScattervGetBw,
   ReduceScattervRunColl

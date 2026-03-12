@@ -60,6 +60,7 @@ testResult_t ReduceRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, si
 struct testColl reduceTest = {
   "Reduce",
   ReduceGetCollByteCount,
+  /*initConfig=*/NULL,
   ReduceInitData,
   ReduceGetBw,
   ReduceRunColl
