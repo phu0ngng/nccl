@@ -52,6 +52,8 @@
 
 NCCL_PARAM(GinGdakiNicHandler, "GIN_GDAKI_NIC_HANDLER", 0);
 NCCL_PARAM(GinGdakiQpDepth, "GIN_GDAKI_QP_DEPTH", 128);
+NCCL_PARAM(GinGdakiMaxDestRdAtomic, "GIN_GDAKI_MAX_DEST_RD_ATOMIC", -2);
+NCCL_PARAM(GinGdakiMaxQpRdAtomic, "GIN_GDAKI_MAX_QP_RD_ATOMIC", -2);
 NCCL_PARAM(GinErrorQuerySec, "GIN_ERROR_QUERY_SEC", 10);
 extern int64_t ncclParamIbTimeout();
 extern int64_t ncclParamIbRetryCnt();
@@ -317,6 +319,7 @@ struct gdaki_context {
   struct doca_gpu *gdev;
   struct ibv_device *ib_dev;
   struct doca_verbs_ah_attr *ah; /* DOCA Verbs address handle */
+  struct ibv_device_attr ib_dev_attr;
   struct doca_verbs_gid gid;
 
   union ibv_gid rgid;
@@ -390,6 +393,8 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
                                    struct gdaki_exch_info *exch_info) {
   ncclResult_t status = ncclSuccess;
   struct doca_verbs_qp_attr *verbs_qp_attr = nullptr;
+  int max_dest_rd_atomic = ncclParamGinGdakiMaxDestRdAtomic() > 0 ? ncclParamGinGdakiMaxDestRdAtomic() : ctx->ib_dev_attr.max_qp_rd_atom;
+  int max_qp_rd_atomic = ncclParamGinGdakiMaxQpRdAtomic() > 0 ? ncclParamGinGdakiMaxQpRdAtomic() : ctx->ib_dev_attr.max_qp_rd_atom;
 
   DOCACHECK(doca_verbs_ah_attr_set_gid(ctx->ah, exch_info->vgid));
   DOCACHECK(doca_verbs_ah_attr_set_dlid(ctx->ah, exch_info->lid));
@@ -434,6 +439,11 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
                     DOCA_VERBS_QP_ATTR_PORT_NUM),
                 status, destroy_verbs_qp_attr);
 
+
+  DOCACHECKGOTO(
+    doca_verbs_qp_attr_set_max_dest_rd_atomic(verbs_qp_attr, max_dest_rd_atomic),
+    docaStatus, status, destroy_verbs_qp_attr);
+
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_next_state(verbs_qp_attr, DOCA_VERBS_QP_STATE_RTR),
     status, destroy_verbs_qp_attr);
@@ -442,8 +452,12 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
                   gqp->qp, verbs_qp_attr,
                   DOCA_VERBS_QP_ATTR_NEXT_STATE | DOCA_VERBS_QP_ATTR_RQ_PSN |
                     DOCA_VERBS_QP_ATTR_DEST_QP_NUM | DOCA_VERBS_QP_ATTR_PATH_MTU |
-                    DOCA_VERBS_QP_ATTR_AH_ATTR | DOCA_VERBS_QP_ATTR_MIN_RNR_TIMER),
+                    DOCA_VERBS_QP_ATTR_AH_ATTR | DOCA_VERBS_QP_ATTR_MIN_RNR_TIMER | DOCA_VERBS_QP_ATTR_MAX_DEST_RD_ATOMIC),
                 status, destroy_verbs_qp_attr);
+
+  DOCACHECKGOTO(
+    doca_verbs_qp_attr_set_max_rd_atomic(verbs_qp_attr, max_qp_rd_atomic),
+    docaStatus, status, destroy_verbs_qp_attr);
 
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_next_state(verbs_qp_attr, DOCA_VERBS_QP_STATE_RTS),
@@ -453,7 +467,7 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
                   gqp->qp, verbs_qp_attr,
                   DOCA_VERBS_QP_ATTR_NEXT_STATE | DOCA_VERBS_QP_ATTR_SQ_PSN |
                     DOCA_VERBS_QP_ATTR_ACK_TIMEOUT | DOCA_VERBS_QP_ATTR_RETRY_CNT |
-                    DOCA_VERBS_QP_ATTR_RNR_RETRY),
+                    DOCA_VERBS_QP_ATTR_RNR_RETRY | DOCA_VERBS_QP_ATTR_MAX_QP_RD_ATOMIC),
                 status, destroy_verbs_qp_attr);
 
   DOCACHECK(doca_verbs_qp_attr_destroy(verbs_qp_attr));
@@ -549,6 +563,8 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
   CUDACHECK(cudaDeviceGetPCIBusId(pciBusId, MAX_PCI_ADDRESS_LEN, gdaki_ctx->cuda_id));
 
   DOCACHECKGOTO(doca_gpu_create(pciBusId, &gdaki_ctx->gdev), status, out);
+
+  NCCLCHECKGOTO(wrap_ibv_query_device(gdaki_ctx->ib_ctx, &gdaki_ctx->ib_dev_attr), status, out);
 
   // Exchange counters and signals with peers
   NCCLCHECKGOTO(counters_table->register_mr(cComm->ib.pd, true), status, out);
