@@ -572,8 +572,14 @@ void AlltoAllvGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, in
     // if using traffic matrix, validate that the max buffer size is large enough
     size_t total_bytes_req = MAX(*sendcount, *recvcount);
     if (count < total_bytes_req) {
-      PRINT("maxBytes (-e) must be at least %zu bytes as required by traffic matrix file %s (got %zu). Increase -e.\n", total_bytes_req, traffic_matrix_file, count);
-      AlltoAllvSetError();
+      pthread_mutex_lock(&alltoallv_lock);
+      if (!AlltoAllvHasError()) {
+        if (is_main_proc)
+          printf("maxBytes (-e) must be at least %zu bytes as required by traffic matrix file %s (got %zu). Increase -e.\n",
+                 total_bytes_req, traffic_matrix_file, count);
+        AlltoAllvSetError();
+      }
+      pthread_mutex_unlock(&alltoallv_lock);
       *sendcount = *recvcount = 0;
       return;
     }
