@@ -490,7 +490,8 @@ ncclResult_t ncclTopoTuneModel(struct ncclComm* comm, int minCompCap, int maxCom
           INFO(NCCL_GRAPH, "Disabling LL128 over all PxN connections (PXB and C2C). This ensures that no C2C link will be used by LL128.");
       }
       pEnable &= (graphs[a]->typeIntra <= PATH_NVB);
-      pEnable &= (minCompCap == maxCompCap);
+      // Enable LL128 for interoperability between GPUs with different compcap (Hopper and above)
+      pEnable &= (minCompCap == maxCompCap || minCompCap >= 90);
       pEnable &= !(minCompCap < 70 || (minCompCap == 90 && CUDART_VERSION == 11080 && c == ncclFuncAllReduce && a == NCCL_ALGO_RING && comm->nRanks == 2));
     }
     if (pEnable == 0) comm->bandwidths[c][a][p] = 0;
