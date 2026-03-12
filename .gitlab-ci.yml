@@ -1674,7 +1674,7 @@ apitest-eos:
   needs:
     - setup-eos
   variables:
-    SLURM_TIME: 60
+    SLURM_TIME: 70
     NNODES: 1
     NP: 1
     API_TESTS_DEFAULT: 1
@@ -2755,7 +2755,7 @@ perftest_multi-AWS-H100-EFA:
       export GRAPH=$GRAPH
       export SKIP_FT_FINALIZE=$SKIP_FT_FINALIZE
       export DEVICE_API=$DEVICE_API
-      
+
       # Launch perftest-multi suite
       salloc -N ${NNODES} --exclusive -J "nccl-ci::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} $TEST_CMD
       EOF
@@ -3295,7 +3295,7 @@ perf-regression-bia:
 
 # EOS Debug Jobs
 cs-eos-intra-debug:
-  extends: 
+  extends:
     - .eos
     - .comprehensive-sweep
   rules:
@@ -3310,7 +3310,7 @@ cs-eos-intra-debug:
     NNODES: 1
 
 cs-eos-inter-debug:
-  extends: 
+  extends:
     - .eos
     - .comprehensive-sweep
   rules:
@@ -3326,7 +3326,7 @@ cs-eos-inter-debug:
 
 # CW-DFW Debug Jobs
 cs-cw-dfw-intra-debug:
-  extends: 
+  extends:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
@@ -3341,7 +3341,7 @@ cs-cw-dfw-intra-debug:
     NNODES: 1
 
 cs-cw-dfw-inter-debug:
-  extends: 
+  extends:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
@@ -3357,7 +3357,7 @@ cs-cw-dfw-inter-debug:
 
 # PreTyche Debug Jobs
 cs-ptyche-intra-debug:
-  extends: 
+  extends:
     - .pre-tyche
     - .comprehensive-sweep
   rules:
@@ -3373,7 +3373,7 @@ cs-ptyche-intra-debug:
     NNODES: 1
 
 cs-ptyche-inter-debug:
-  extends: 
+  extends:
     - .pre-tyche
     - .comprehensive-sweep
   rules:
@@ -3391,7 +3391,7 @@ cs-ptyche-inter-debug:
 
 # Theia Debug Jobs
 cs-theia-intra-debug:
-  extends: 
+  extends:
     - .theia
     - .comprehensive-sweep
   rules:
@@ -3406,7 +3406,7 @@ cs-theia-intra-debug:
     NNODES: 1
 
 cs-theia-inter-debug:
-  extends: 
+  extends:
     - .theia
     - .comprehensive-sweep
   rules:
@@ -3423,7 +3423,7 @@ cs-theia-inter-debug:
 
 # Bia Debug Jobs
 cs-bia-intra-debug:
-  extends: 
+  extends:
     - .bia
     - .comprehensive-sweep
   rules:
@@ -3438,7 +3438,7 @@ cs-bia-intra-debug:
     NNODES: 1
 
 cs-bia-inter-debug:
-  extends: 
+  extends:
     - .bia
     - .comprehensive-sweep
   rules:
@@ -3459,7 +3459,7 @@ cs-bia-inter-debug:
 
 # EOS Full Jobs (inter only, intra is single-node covered by debug)
 cs-eos-inter-full:
-  extends: 
+  extends:
     - .eos
     - .comprehensive-sweep
   rules:
@@ -3477,7 +3477,7 @@ cs-eos-inter-full:
 
 # CW-DFW Full Jobs
 cs-cw-dfw-inter-full:
-  extends: 
+  extends:
     - .cw-dfw
     - .comprehensive-sweep
   rules:
@@ -3495,7 +3495,7 @@ cs-cw-dfw-inter-full:
 
 # PreTyche Full Jobs
 cs-ptyche-intra-full:
-  extends: 
+  extends:
     - .pre-tyche
     - .comprehensive-sweep
   rules:
@@ -3514,7 +3514,7 @@ cs-ptyche-intra-full:
       - NNODES: [2, 4, 8, 16, 18]
 
 cs-ptyche-inter-full:
-  extends: 
+  extends:
     - .pre-tyche
     - .comprehensive-sweep
   rules:
@@ -3535,7 +3535,7 @@ cs-ptyche-inter-full:
 
 # Theia Full Jobs
 cs-theia-intra-full:
-  extends: 
+  extends:
     - .theia
     - .comprehensive-sweep
   rules:
@@ -3553,7 +3553,7 @@ cs-theia-intra-full:
       - NNODES: [2, 4, 8, 16, 18]
 
 cs-theia-inter-full:
-  extends: 
+  extends:
     - .theia
     - .comprehensive-sweep
   rules:
@@ -3573,7 +3573,7 @@ cs-theia-inter-full:
 
 # Bia Full Jobs
 cs-bia-inter-full:
-  extends: 
+  extends:
     - .bia
     - .comprehensive-sweep
   rules:
