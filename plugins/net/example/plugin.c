@@ -49,6 +49,9 @@ __hidden ncclResult_t pluginGetProperties(int dev, ncclNetProperties_t* props) {
   // maximum transfer sizes the plugin can handle
   props->maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
   props->maxCollBytes = NCCL_MAX_NET_SIZE_BYTES;
+  // Set to NCCL_NET_ID_UNDEF will lead NCCL to ignore the value
+  props->railId = NCCL_NET_ID_UNDEF;
+  props->planeId = NCCL_NET_ID_UNDEF;
   return ncclSuccess;
 }
 

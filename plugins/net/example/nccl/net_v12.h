@@ -17,6 +17,8 @@ typedef struct {
 
 #define NCCL_NET_TRAFFIC_CLASS_UNDEF -1
 
+#define NCCL_NET_ID_UNDEF -1
+
 typedef struct {
   // Plugin-specific TC value
   int trafficClass;
@@ -41,6 +43,8 @@ typedef struct {
   size_t maxP2pBytes;              // Max transfer size for point-to-point operations
   size_t maxCollBytes;             // Max transfer size for collective operations
   int maxMultiRequestSize;         // Maximum number of requests supported in a single multi-request.
+  int16_t railId;                  // rail ID associated with the netdev
+  int16_t planeId;                 //  plane ID associated with the netdev
 } ncclNetProperties_v12_t;
 
 typedef struct {

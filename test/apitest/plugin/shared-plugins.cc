@@ -92,6 +92,9 @@ __hidden ncclResult_t netPluginGetProperties(int dev, ncclNetProperties_t* props
   props->vProps.devs[0] = MAX_DEVICE_COUNT;
   props->maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
   props->maxCollBytes = NCCL_MAX_NET_SIZE_BYTES;
+  // Set to NCCL_NET_ID_UNDEF will lead NCCL to ignore the value
+  props->railId = NCCL_NET_ID_UNDEF;
+  props->planeId = NCCL_NET_ID_UNDEF;
   return ncclSuccess;
 }
 __hidden ncclResult_t netPluginListen(void* ctx, int dev, void* handle, void** listenComm) {
