@@ -280,6 +280,10 @@ ncclConfig_t
 
   Set the graph usage mode for the communicator. It support three possible values: 0 (no graphs), 1 (one graph) and 2 (either multiple graphs or mix of graph and non-graph). The default value is 2.
 
+ .. c:macro:: maxP2pPeers
+
+  Set the maximum number of peers any rank will concurrently communicate with using P2P communication. Setting this value will influence all send/recv and send/recv-based collectives (all-to-all, scatter, gather). Values less than one or greater than the number of ranks will default to the number of ranks in the communicator.
+
 .. _ncclsiminfo:
 
 ncclSimInfo_t
