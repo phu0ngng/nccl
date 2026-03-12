@@ -135,8 +135,11 @@ latex_elements = {
     # 'pointsize': '10pt',
 
     # Additional stuff for the LaTeX preamble.
-    #
-    # 'preamble': '',
+    # Map Unicode characters to LaTeX equivalents.
+    'preamble': r'''
+\DeclareUnicodeCharacter{2212}{-}
+\DeclareUnicodeCharacter{2026}{\ldots}
+''',
 
     # Latex figure (float) alignment
     #

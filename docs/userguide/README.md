@@ -51,6 +51,8 @@ cmake .. -DBUILD_DOC_PACKAGE=ON
 cmake --build . --target doc_build
 ```
 
+Output: `cmake_build/doc/html/index.html` and `cmake_build/pkg/doc/nccl-doc_*.zip`
+
 ## Additional Targets
 
 For other Sphinx output formats (using Makefile or wrapper script):
@@ -60,5 +62,10 @@ docs/userguide/build_docs.sh linkcheck  # Check external links
 docs/userguide/build_docs.sh latex      # Build LaTeX/PDF
 docs/userguide/build_docs.sh man        # Build man pages
 ```
+
+These targets may require additional packages.  For LaTeX targets, we recommend
+the following packages on debian-based distros:
+
+    latexmk texlive-latex-extra
 
 Run `make -C docs/userguide help` to see all available targets.

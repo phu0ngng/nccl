@@ -19,15 +19,16 @@ Each CUDA device is identified within the communication group by a zero-based in
 The creation of a communicator is the first step needed before launching any communication operation.
 
 .. toctree::
+   :maxdepth: 2
 
- usage/communicators
- usage/collectives
- usage/data
- usage/streams
- usage/groups
- usage/p2p
- usage/threadsafety
- usage/inplace
- usage/cudagraph
- usage/bufferreg
- usage/deviceapi
+   usage/communicators
+   usage/collectives
+   usage/data
+   usage/streams
+   usage/groups
+   usage/p2p
+   usage/threadsafety
+   usage/inplace
+   usage/cudagraph
+   usage/bufferreg
+   usage/deviceapi

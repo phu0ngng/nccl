@@ -1,9 +1,9 @@
 #!/bin/bash
 # Script to build NCCL documentation with automatic Python venv setup
-# Usage: ./docker/build_docs.sh [sphinx-target]
+# Usage: docs/userguide/build_docs.sh [sphinx-target]
 #   Examples:
-#     ./docker/build_docs.sh html
-#     ./docker/build_docs.sh linkcheck
+#     docs/userguide/build_docs.sh html
+#     docs/userguide/build_docs.sh linkcheck
 
 set -e
 
@@ -82,9 +82,12 @@ echo "Sphinx: $(which sphinx-build)"
 echo "Sphinx version: $(sphinx-build --version)"
 echo ""
 
+MAKE_DIR="$DOC_DIR"
+echo "$BUILD_TARGET" | grep \\. && MAKE_DIR="$REPO_ROOT"
+
 # Build the documentation
-echo "Running: make -C $DOC_DIR $BUILD_TARGET"
-make -C "$REPO_ROOT" "$BUILD_TARGET"
+echo "Running: make -C $MAKE_DIR $BUILD_TARGET"
+make -C "$MAKE_DIR" "$BUILD_TARGET"
 
 # Check if build was successful
 BUILD_EXIT_CODE=$?
@@ -97,9 +100,6 @@ if [ $BUILD_EXIT_CODE -eq 0 ]; then
     echo "========================================"
     echo "Documentation build complete!"
     echo "========================================"
-    if [ "$BUILD_TARGET" = "html" ]; then
-        echo "HTML output: $DOC_DIR/html/index.html"
-    fi
 else
     echo ""
     echo "========================================"

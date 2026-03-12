@@ -27,8 +27,9 @@ Starting with version 2.24, NCCL includes a reliability, availability, and servi
 the diagnosis and debugging of crashes and hangs.
 
 .. toctree::
+   :maxdepth: 2
 
-  troubleshooting/ras
+   troubleshooting/ras
 
 **********
 GPU Direct

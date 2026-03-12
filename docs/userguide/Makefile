@@ -1,11 +1,43 @@
 # Makefile for Sphinx documentation
 #
 
+include ../../makefiles/common.mk
+include ../../makefiles/version.mk
+BUILDDIR ?= $(abspath ../../build)
+DOCSRC  := $(abspath ./source)
+DOCROOT := $(abspath .)
+DOCPREPDIR  := $(BUILDDIR)/doc
+PKGDIR  := $(BUILDDIR)/pkg/doc
+
+DOCGEN_IN  := $(shell (cd $(DOCROOT); find $(DOCROOT) -name "*.in" -type f -print -o -path '$(DOCROOT)/.venv' -prune))
+DOCGEN_TMP := $(DOCGEN_IN:.in=)
+STATIC_IN  := $(shell find $(DOCSRC)/_static $(DOCSRC)/_templates -type f)
+DOCGEN := $(patsubst $(DOCSRC)/%,$(DOCPREPDIR)/%,$(DOCGEN_TMP) $(STATIC_IN))
+PKG_ARCH   := $(shell uname -m)
+
+$(DOCPREPDIR)/% : $(DOCSRC)/%
+	@printf "Copying %-35s > %s\n" $< $@
+	mkdir -p `dirname $@`
+	cp $< $@ || true
+
+$(DOCPREPDIR)/% : $(DOCSRC)/%.in ../../makefiles/version.mk
+	@printf "Generating %-35s > %s\n" $< $@
+	mkdir -p `dirname $@`
+	sed -e "s/\$${nccl:Major}/$(NCCL_MAJOR)/g" \
+	    -e "s/\$${nccl:Minor}/$(NCCL_MINOR)/g" \
+	    -e "s/\$${nccl:Patch}/$(NCCL_PATCH)/g" \
+	    -e "s/\$${nccl:Suffix}/$(NCCL_SUFFIX)/g" \
+	    -e "s/\$${cuda:Major}/$(CUDA_MAJOR)/g" \
+	    -e "s/\$${cuda:Minor}/$(CUDA_MINOR)/g" \
+	    -e "s/\$${pkg:Revision}/$(PKG_REVISION)/g" \
+	    -e "s/\$${pkg:Arch}/$(PKG_ARCH)/g" \
+	    $< > $@
+
+
 # You can set these variables from the command line.
 SPHINXOPTS    = -W --keep-going
 SPHINXBUILD   = sphinx-build
 PAPER         =
-BUILDDIR      = .
 
 # User-friendly check for sphinx-build
 ifeq ($(shell which $(SPHINXBUILD) >/dev/null 2>&1; echo $$?), 1)
@@ -17,9 +49,9 @@ endif
 # Internal variables.
 PAPEROPT_a4     = -D latex_paper_size=a4
 PAPEROPT_letter = -D latex_paper_size=letter
-ALLSPHINXOPTS   = -d $(BUILDDIR)/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) source
+ALLSPHINXOPTS   = -d $(BUILDDIR)/doctrees -c $(DOCPREPDIR) $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) $(DOCSRC)
 # the i18n builder cannot share the environment and doctrees with the others
-I18NSPHINXOPTS  = $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) source
+I18NSPHINXOPTS  = -c $(DOCPREPDIR) $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) $(DOCSRC)
 
 .PHONY: help
 help:
@@ -36,7 +68,6 @@ help:
 	@echo "  epub       to make an epub"
 	@echo "  latex      to make LaTeX files, you can set PAPER=a4 or PAPER=letter"
 	@echo "  latexpdf   to make LaTeX files and run them through pdflatex"
-	@echo "  latexpdfja to make LaTeX files and run them through platex/dvipdfmx"
 	@echo "  text       to make text files"
 	@echo "  man        to make manual pages"
 	@echo "  texinfo    to make Texinfo files"
@@ -46,173 +77,171 @@ help:
 	@echo "  xml        to make Docutils-native XML files"
 	@echo "  pseudoxml  to make pseudoxml-XML files for display purposes"
 	@echo "  linkcheck  to check all external links for integrity"
-	@echo "  doctest    to run all doctests embedded in the documentation (if enabled)"
-	@echo "  coverage   to run coverage check of the documentation (if enabled)"
 
 .PHONY: clean
 clean:
-	rm -rf $(BUILDDIR)/*
+	rm -rf $(DOCPREPDIR)/*
 
 .PHONY: html
-html:
-	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
+html: $(DOCGEN)
+	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(DOCPREPDIR)/html
 	@echo
-	@echo "Build finished. The HTML pages are in $(BUILDDIR)/html."
+	@echo "Build finished. The HTML pages are in $(DOCPREPDIR)/html."
 
 .PHONY: dirhtml
-dirhtml:
-	$(SPHINXBUILD) -b dirhtml $(ALLSPHINXOPTS) $(BUILDDIR)/dirhtml
+dirhtml: $(DOCGEN)
+	$(SPHINXBUILD) -b dirhtml $(ALLSPHINXOPTS) $(DOCPREPDIR)/dirhtml
 	@echo
-	@echo "Build finished. The HTML pages are in $(BUILDDIR)/dirhtml."
+	@echo "Build finished. The HTML pages are in $(DOCPREPDIR)/dirhtml."
 
 .PHONY: singlehtml
-singlehtml:
-	$(SPHINXBUILD) -b singlehtml $(ALLSPHINXOPTS) $(BUILDDIR)/singlehtml
+singlehtml: $(DOCGEN)
+	$(SPHINXBUILD) -b singlehtml $(ALLSPHINXOPTS) $(DOCPREPDIR)/singlehtml
 	@echo
-	@echo "Build finished. The HTML page is in $(BUILDDIR)/singlehtml."
+	@echo "Build finished. The HTML page is in $(DOCPREPDIR)/singlehtml."
 
 .PHONY: pickle
-pickle:
-	$(SPHINXBUILD) -b pickle $(ALLSPHINXOPTS) $(BUILDDIR)/pickle
+pickle: $(DOCGEN)
+	$(SPHINXBUILD) -b pickle $(ALLSPHINXOPTS) $(DOCPREPDIR)/pickle
 	@echo
 	@echo "Build finished; now you can process the pickle files."
 
 .PHONY: json
-json:
-	$(SPHINXBUILD) -b json $(ALLSPHINXOPTS) $(BUILDDIR)/json
+json: $(DOCGEN)
+	$(SPHINXBUILD) -b json $(ALLSPHINXOPTS) $(DOCPREPDIR)/json
 	@echo
 	@echo "Build finished; now you can process the JSON files."
 
 .PHONY: htmlhelp
-htmlhelp:
-	$(SPHINXBUILD) -b htmlhelp $(ALLSPHINXOPTS) $(BUILDDIR)/htmlhelp
+htmlhelp: $(DOCGEN)
+	$(SPHINXBUILD) -b htmlhelp $(ALLSPHINXOPTS) $(DOCPREPDIR)/htmlhelp
 	@echo
 	@echo "Build finished; now you can run HTML Help Workshop with the" \
-	      ".hhp project file in $(BUILDDIR)/htmlhelp."
+	      ".hhp project file in $(DOCPREPDIR)/htmlhelp."
 
 .PHONY: qthelp
-qthelp:
-	$(SPHINXBUILD) -b qthelp $(ALLSPHINXOPTS) $(BUILDDIR)/qthelp
+qthelp: $(DOCGEN)
+	$(SPHINXBUILD) -b qthelp $(ALLSPHINXOPTS) $(DOCPREPDIR)/qthelp
 	@echo
 	@echo "Build finished; now you can run "qcollectiongenerator" with the" \
-	      ".qhcp project file in $(BUILDDIR)/qthelp, like this:"
+	      ".qhcp project file in $(DOCPREPDIR)/qthelp, like this:"
 	@echo "# qcollectiongenerator $(BUILDDIR)/qthelp/NCCL.qhcp"
 	@echo "To view the help file:"
-	@echo "# assistant -collectionFile $(BUILDDIR)/qthelp/NCCL.qhc"
+	@echo "# assistant -collectionFile $(DOCPREPDIR)/qthelp/NCCL.qhc"
 
 .PHONY: applehelp
-applehelp:
-	$(SPHINXBUILD) -b applehelp $(ALLSPHINXOPTS) $(BUILDDIR)/applehelp
+applehelp: $(DOCGEN)
+	$(SPHINXBUILD) -b applehelp $(ALLSPHINXOPTS) $(DOCPREPDIR)/applehelp
 	@echo
-	@echo "Build finished. The help book is in $(BUILDDIR)/applehelp."
+	@echo "Build finished. The help book is in $(DOCPREPDIR)/applehelp."
 	@echo "N.B. You won't be able to view it unless you put it in" \
 	      "~/Library/Documentation/Help or install it in your application" \
 	      "bundle."
 
 .PHONY: devhelp
-devhelp:
-	$(SPHINXBUILD) -b devhelp $(ALLSPHINXOPTS) $(BUILDDIR)/devhelp
+devhelp: $(DOCGEN)
+	$(SPHINXBUILD) -b devhelp $(ALLSPHINXOPTS) $(DOCPREPDIR)/devhelp
 	@echo
 	@echo "Build finished."
 	@echo "To view the help file:"
 	@echo "# mkdir -p $$HOME/.local/share/devhelp/NCCL"
-	@echo "# ln -s $(BUILDDIR)/devhelp $$HOME/.local/share/devhelp/NCCL"
+	@echo "# ln -s $(DOCPREPDIR)/devhelp $$HOME/.local/share/devhelp/NCCL"
 	@echo "# devhelp"
 
 .PHONY: epub
-epub:
-	$(SPHINXBUILD) -b epub $(ALLSPHINXOPTS) $(BUILDDIR)/epub
+epub: $(DOCGEN)
+	$(SPHINXBUILD) -b epub $(ALLSPHINXOPTS) $(DOCPREPDIR)/epub
 	@echo
-	@echo "Build finished. The epub file is in $(BUILDDIR)/epub."
+	@echo "Build finished. The epub file is in $(DOCPREPDIR)/epub."
 
 .PHONY: latex
-latex:
-	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(BUILDDIR)/latex
+latex: $(DOCGEN)
+	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(DOCPREPDIR)/latex
 	@echo
-	@echo "Build finished; the LaTeX files are in $(BUILDDIR)/latex."
+	@echo "Build finished; the LaTeX files are in $(DOCPREPDIR)/latex."
 	@echo "Run \`make' in that directory to run these through (pdf)latex" \
 	      "(use \`make latexpdf' here to do that automatically)."
 
 .PHONY: latexpdf
-latexpdf:
-	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(BUILDDIR)/latex
+latexpdf: $(DOCGEN)
+	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(DOCPREPDIR)/latex
 	@echo "Running LaTeX files through pdflatex..."
-	$(MAKE) -C $(BUILDDIR)/latex all-pdf
-	@echo "pdflatex finished; the PDF files are in $(BUILDDIR)/latex."
+	$(MAKE) -C $(DOCPREPDIR)/latex all-pdf
+	@echo "pdflatex finished; the PDF files are in $(DOCPREPDIR)/latex."
 
 .PHONY: latexpdfja
-latexpdfja:
-	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(BUILDDIR)/latex
+latexpdfja: $(DOCGEN)
+	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(DOCPREPDIR)/latex
 	@echo "Running LaTeX files through platex and dvipdfmx..."
-	$(MAKE) -C $(BUILDDIR)/latex all-pdf-ja
-	@echo "pdflatex finished; the PDF files are in $(BUILDDIR)/latex."
+	$(MAKE) -C $(DOCPREPDIR)/latex all-pdf-ja
+	@echo "pdflatex finished; the PDF files are in $(DOCPREPDIR)/latex."
 
 .PHONY: text
-text:
-	$(SPHINXBUILD) -b text $(ALLSPHINXOPTS) $(BUILDDIR)/text
+text: $(DOCGEN)
+	$(SPHINXBUILD) -b text $(ALLSPHINXOPTS) $(DOCPREPDIR)/text
 	@echo
-	@echo "Build finished. The text files are in $(BUILDDIR)/text."
+	@echo "Build finished. The text files are in $(DOCPREPDIR)/text."
 
 .PHONY: man
-man:
-	$(SPHINXBUILD) -b man $(ALLSPHINXOPTS) $(BUILDDIR)/man
+man: $(DOCGEN)
+	$(SPHINXBUILD) -b man $(ALLSPHINXOPTS) $(DOCPREPDIR)/man
 	@echo
-	@echo "Build finished. The manual pages are in $(BUILDDIR)/man."
+	@echo "Build finished. The manual pages are in $(DOCPREPDIR)/man."
 
 .PHONY: texinfo
-texinfo:
-	$(SPHINXBUILD) -b texinfo $(ALLSPHINXOPTS) $(BUILDDIR)/texinfo
+texinfo: $(DOCGEN)
+	$(SPHINXBUILD) -b texinfo $(ALLSPHINXOPTS) $(DOCPREPDIR)/texinfo
 	@echo
-	@echo "Build finished. The Texinfo files are in $(BUILDDIR)/texinfo."
+	@echo "Build finished. The Texinfo files are in $(DOCPREPDIR)/texinfo."
 	@echo "Run \`make' in that directory to run these through makeinfo" \
 	      "(use \`make info' here to do that automatically)."
 
 .PHONY: info
-info:
-	$(SPHINXBUILD) -b texinfo $(ALLSPHINXOPTS) $(BUILDDIR)/texinfo
+info: $(DOCGEN)
+	$(SPHINXBUILD) -b texinfo $(ALLSPHINXOPTS) $(DOCPREPDIR)/texinfo
 	@echo "Running Texinfo files through makeinfo..."
-	make -C $(BUILDDIR)/texinfo info
-	@echo "makeinfo finished; the Info files are in $(BUILDDIR)/texinfo."
+	make -C $(DOCPREPDIR)/texinfo info
+	@echo "makeinfo finished; the Info files are in $(DOCPREPDIR)/texinfo."
 
 .PHONY: gettext
-gettext:
-	$(SPHINXBUILD) -b gettext $(I18NSPHINXOPTS) $(BUILDDIR)/locale
+gettext: $(DOCGEN)
+	$(SPHINXBUILD) -b gettext $(I18NSPHINXOPTS) $(DOCPREPDIR)/locale
 	@echo
-	@echo "Build finished. The message catalogs are in $(BUILDDIR)/locale."
+	@echo "Build finished. The message catalogs are in $(DOCPREPDIR)/locale."
 
 .PHONY: changes
-changes:
-	$(SPHINXBUILD) -b changes $(ALLSPHINXOPTS) $(BUILDDIR)/changes
+changes: $(DOCGEN)
+	$(SPHINXBUILD) -b changes $(ALLSPHINXOPTS) $(DOCPREPDIR)/changes
 	@echo
-	@echo "The overview file is in $(BUILDDIR)/changes."
+	@echo "The overview file is in $(DOCPREPDIR)/changes."
 
 .PHONY: linkcheck
-linkcheck:
-	$(SPHINXBUILD) -b linkcheck $(ALLSPHINXOPTS) $(BUILDDIR)/linkcheck
+linkcheck: $(DOCGEN)
+	$(SPHINXBUILD) -b linkcheck $(ALLSPHINXOPTS) $(DOCPREPDIR)/linkcheck
 	@echo
 	@echo "Link check complete; look for any errors in the above output " \
-	      "or in $(BUILDDIR)/linkcheck/output.txt."
+	      "or in $(DOCPREPDIR)/linkcheck/output.txt."
 
 .PHONY: doctest
-doctest:
-	$(SPHINXBUILD) -b doctest $(ALLSPHINXOPTS) $(BUILDDIR)/doctest
+doctest: $(DOCGEN)
+	$(SPHINXBUILD) -b doctest $(ALLSPHINXOPTS) $(DOCPREPDIR)/doctest
 	@echo "Testing of doctests in the sources finished, look at the " \
-	      "results in $(BUILDDIR)/doctest/output.txt."
+	      "results in $(DOCPREPDIR)/doctest/output.txt."
 
 .PHONY: coverage
-coverage:
-	$(SPHINXBUILD) -b coverage $(ALLSPHINXOPTS) $(BUILDDIR)/coverage
+coverage: $(DOCGEN)
+	$(SPHINXBUILD) -b coverage $(ALLSPHINXOPTS) $(DOCPREPDIR)/coverage
 	@echo "Testing of coverage in the sources finished, look at the " \
-	      "results in $(BUILDDIR)/coverage/python.txt."
+	      "results in $(DOCPREPDIR)/coverage/python.txt."
 
 .PHONY: xml
-xml:
-	$(SPHINXBUILD) -b xml $(ALLSPHINXOPTS) $(BUILDDIR)/xml
+xml: $(DOCGEN)
+	$(SPHINXBUILD) -b xml $(ALLSPHINXOPTS) $(DOCPREPDIR)/xml
 	@echo
-	@echo "Build finished. The XML files are in $(BUILDDIR)/xml."
+	@echo "Build finished. The XML files are in $(DOCPREPDIR)/xml."
 
 .PHONY: pseudoxml
-pseudoxml:
-	$(SPHINXBUILD) -b pseudoxml $(ALLSPHINXOPTS) $(BUILDDIR)/pseudoxml
+pseudoxml: $(DOCGEN)
+	$(SPHINXBUILD) -b pseudoxml $(ALLSPHINXOPTS) $(DOCPREPDIR)/pseudoxml
 	@echo
-	@echo "Build finished. The pseudo-XML files are in $(BUILDDIR)/pseudoxml."
+	@echo "Build finished. The pseudo-XML files are in $(DOCPREPDIR)/pseudoxml."
