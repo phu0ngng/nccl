@@ -891,6 +891,7 @@ ncclResult_t ncclTopoComputeP2pChannelsPerPeer(struct ncclComm* comm) {
     if (nChannels >= 0) minChannels = std::min(minChannels, nChannels);
   }
   comm->p2pnChannelsPerPeer = minChannels;
+  comm->p2pMaxPeers = (comm->config.maxP2pPeers == NCCL_CONFIG_UNDEF_INT)? comm->nRanks: comm->config.maxP2pPeers;
   return ncclSuccess;
 }
 
@@ -912,7 +913,8 @@ ncclResult_t ncclTopoComputeP2pChannels(struct ncclComm* comm) {
   if (comm->nNodes > 1 && comm->config.nChannelsPerNetPeer == NCCL_CONFIG_UNDEF_INT) {
     // In the case of >1 NVLD (and the user didn't set nChannelsPerNetPeer), the network is the botteneck.
     // Reduce the number of channels per host to avoid going above p2pnChannels to fit all the peers within a single round.
-    while (comm->p2pnChannelsPerPeer * divUp(comm->nRanks, NCCL_MAX_DEV_WORK_P2P_PER_BATCH) > comm->p2pnChannels && comm->p2pnChannelsPerPeer > 1) comm->p2pnChannelsPerPeer /= 2;
+    INFO(NCCL_INIT, "Tuning P2P operations with maxP2pPeers = %d", comm->p2pMaxPeers);
+    while (comm->p2pnChannelsPerPeer * divUp(comm->p2pMaxPeers, NCCL_MAX_DEV_WORK_P2P_PER_BATCH) > comm->p2pnChannels && comm->p2pnChannelsPerPeer > 1) comm->p2pnChannelsPerPeer /= 2;
   } else {
     comm->p2pnChannelsPerPeer = std::min(comm->p2pnChannels, comm->p2pnChannelsPerPeer);
   }

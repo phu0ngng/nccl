@@ -102,6 +102,7 @@ typedef struct ncclConfig_v22800 {
   int nvlinkCentricSched;
   int graphUsageMode;
   int numRmaCtx;
+  int maxP2pPeers;
 } ncclConfig_t;
 
 /* Config initializer must be assigned to initialize config structure when it is created.
@@ -126,6 +127,7 @@ typedef struct ncclConfig_v22800 {
   NCCL_CONFIG_UNDEF_INT,                    /* nvlinkCentricSched */    \
   NCCL_CONFIG_UNDEF_INT,                    /* graphUsageMode */        \
   NCCL_CONFIG_UNDEF_INT,                    /* numRmaCtx */             \
+  NCCL_CONFIG_UNDEF_INT,                    /* maxP2pPeers */           \
 }
 
 /* This struct will be used by ncclGroupSimulateEnd() API to query information about simulation. */
