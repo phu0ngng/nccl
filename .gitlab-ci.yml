@@ -127,6 +127,45 @@ workflow:
   if: $COMPREHENSIVE_SWEEP == "debug" || $COMPREHENSIVE_SWEEP == "full"
   when: always
 
+# YAML anchor for public paths
+# This needs to be defined separately from PUBLIC_PATHS.txt as there's
+# no way for GitLab to read in the file list to use as a rule
+.public_paths: &public_paths
+  - ".github/**/*"
+  - "bindings/ir/**/*"
+  - "bindings/nccl4py/**/*"
+  - "cmake/NCCLConfig.cmake.in"
+  - "contrib/nccl_ep/**/*"
+  - "docs/examples/**/*"
+  - "makefiles/**/*"
+  - "pkg/**/*"
+  - "plugins/env/example/**/*"
+  - "plugins/env/README.md"
+  - "plugins/mixed/example/**/*"
+  - "plugins/mixed/README.md"
+  - "plugins/net/CMakeLists.txt"
+  - "plugins/net/example/**/*"
+  - "plugins/net/google-fastsocket/**/*"
+  - "plugins/net/README.md"
+  - "plugins/profiler/**/*"
+  - "plugins/tuner/**/*"
+  - "src/**/*"
+  - ".gitignore"
+  - "CMakeLists.txt"
+  - "CONTRIBUTING.md"
+  - "LICENSE.txt"
+  - "Makefile"
+  - "README.md"
+  - "ThirdPartyNotices.txt"
+  - "!**/internal/**/*"
+  - "!**/*-internal/**/*"
+  - "!**/.gitlab-ci.yml"
+  - "!bindings/nccl4py/build_assets/**/*"
+  - "!bindings/nccl4py/ci/**/*"
+  - "!bindings/nccl4py/tests/**/*"
+  - "!pkg/conda/**/*"
+  - "!pkg/doc/**/*"
+
 ##
 ## Stage: build - Start...
 ##
@@ -592,6 +631,24 @@ nccl4py_ci:
     strategy: depend
   variables:
     PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+
+github-sim:
+  stage: downstream
+  needs: []
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit)$/
+      changes:
+        paths: *public_paths
+    - when: never
+  trigger:
+    include:
+      - project: nccl/ci-infra
+        ref: main
+        file: github-first/.gitlab-ci.yml
+    strategy: depend
+  variables:
+    CI_INFRA_REF: main
+    MODE: sim
 
 ##
 ## Stage: downstream - Finish!
