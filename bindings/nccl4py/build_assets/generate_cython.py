@@ -27,7 +27,7 @@ from pathlib import Path
 
 
 # cybind repository configuration
-CYBIND_COMMIT = "d65bc5c11dadd25f98ad7d590ef227ab1c05a651"
+CYBIND_COMMIT = "b3d44118f6af338357db8664f9f97ad538b9eead"
 CYBIND_SSH_URL = "ssh://git@gitlab-master.nvidia.com:12051/leof/cybind.git"
 
 # Script directory for resolving default paths

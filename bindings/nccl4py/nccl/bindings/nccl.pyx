@@ -20,6 +20,7 @@ cimport cpython.memoryview
 cimport cpython
 from libc.string cimport memcmp, memcpy
 import numpy as _numpy
+import pickle
 
 
 cdef __from_data(data, dtype_name, expected_dtype, lowpp_type):
@@ -34,6 +35,33 @@ cdef __from_data(data, dtype_name, expected_dtype, lowpp_type):
         raise ValueError(f"data array must be of dtype {dtype_name}")
     return lowpp_type.from_ptr(data.ctypes.data, not data.flags.writeable, data)
 
+
+cdef __from_buffer(buffer, size, lowpp_type):
+    cdef Py_buffer view
+    if cpython.PyObject_GetBuffer(buffer, &view, cpython.PyBUF_SIMPLE) != 0:
+        raise TypeError("buffer argument does not support the buffer protocol")
+    try:
+        if view.itemsize != 1:
+            raise ValueError("buffer itemsize must be 1 byte")
+        if view.len != size:
+            raise ValueError(f"buffer length must be {size} bytes")
+        return lowpp_type.from_ptr(<intptr_t><void *>view.buf, not view.readonly, buffer)
+    finally:
+        cpython.PyBuffer_Release(&view)
+
+
+cdef __getbuffer(object self, cpython.Py_buffer *buffer, void *ptr, int size, bint readonly):
+    buffer.buf = <char *>ptr
+    buffer.format = 'b'
+    buffer.internal = NULL
+    buffer.itemsize = 1
+    buffer.len = size
+    buffer.ndim = 1
+    buffer.obj = self
+    buffer.readonly = readonly
+    buffer.shape = &buffer.len
+    buffer.strides = &buffer.itemsize
+    buffer.suboffsets = NULL
 
 
 ###############################################################################
@@ -101,8 +129,16 @@ cdef class UniqueId:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclUniqueId)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclUniqueId), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclUniqueId *>malloc(sizeof(ncclUniqueId))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating UniqueId")
@@ -112,6 +148,23 @@ cdef class UniqueId:
             self._readonly = not val.flags.writeable
         else:
             setattr(self, key, val)
+
+    def __getstate__(self):
+        return cpython.PyBytes_FromStringAndSize(<char *><void *>self._ptr, sizeof(ncclUniqueId))
+
+    def __setstate__(self, state):
+        if not isinstance(state, bytes):
+            raise TypeError(f"Invalid state type for UniqueId, expected bytes, got {type(state).__name__}")
+        if len(state) != sizeof(ncclUniqueId):
+            raise ValueError(f"Invalid state length for UniqueId, expected sizeof(ncclUniqueId), got {len(state)}")
+        cdef char *state_ptr = cpython.PyBytes_AsString(state)
+        self._ptr = <ncclUniqueId *>malloc(sizeof(ncclUniqueId))
+        memcpy(<void *>self._ptr, <void *>state_ptr, sizeof(ncclUniqueId))
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an UniqueId instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclUniqueId), UniqueId)
 
     @staticmethod
     def from_data(data):
@@ -230,8 +283,16 @@ cdef class Config:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclConfig_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclConfig_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclConfig_t *>malloc(sizeof(ncclConfig_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating Config")
@@ -463,6 +524,14 @@ cdef class Config:
             raise ValueError("This Config instance is read-only")
         self._ptr[0].numRmaCtx = val
 
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for Config")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an Config instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclConfig_t), Config)
+
     @staticmethod
     def from_data(data):
         """Create an Config instance wrapping the given NumPy array.
@@ -564,8 +633,16 @@ cdef class SimInfo:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclSimInfo_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclSimInfo_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclSimInfo_t *>malloc(sizeof(ncclSimInfo_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating SimInfo")
@@ -619,6 +696,23 @@ cdef class SimInfo:
         if self._readonly:
             raise ValueError("This SimInfo instance is read-only")
         self._ptr[0].estimatedTime = val
+
+    def __getstate__(self):
+        return cpython.PyBytes_FromStringAndSize(<char *><void *>self._ptr, sizeof(ncclSimInfo_t))
+
+    def __setstate__(self, state):
+        if not isinstance(state, bytes):
+            raise TypeError(f"Invalid state type for SimInfo, expected bytes, got {type(state).__name__}")
+        if len(state) != sizeof(ncclSimInfo_t):
+            raise ValueError(f"Invalid state length for SimInfo, expected sizeof(ncclSimInfo_t), got {len(state)}")
+        cdef char *state_ptr = cpython.PyBytes_AsString(state)
+        self._ptr = <ncclSimInfo_t *>malloc(sizeof(ncclSimInfo_t))
+        memcpy(<void *>self._ptr, <void *>state_ptr, sizeof(ncclSimInfo_t))
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an SimInfo instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclSimInfo_t), SimInfo)
 
     @staticmethod
     def from_data(data):
@@ -720,8 +814,16 @@ cdef class WaitSignalDesc:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclWaitSignalDesc_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclWaitSignalDesc_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclWaitSignalDesc_t *>malloc(sizeof(ncclWaitSignalDesc_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating WaitSignalDesc")
@@ -775,6 +877,23 @@ cdef class WaitSignalDesc:
         if self._readonly:
             raise ValueError("This WaitSignalDesc instance is read-only")
         self._ptr[0].ctx = val
+
+    def __getstate__(self):
+        return cpython.PyBytes_FromStringAndSize(<char *><void *>self._ptr, sizeof(ncclWaitSignalDesc_t))
+
+    def __setstate__(self, state):
+        if not isinstance(state, bytes):
+            raise TypeError(f"Invalid state type for WaitSignalDesc, expected bytes, got {type(state).__name__}")
+        if len(state) != sizeof(ncclWaitSignalDesc_t):
+            raise ValueError(f"Invalid state length for WaitSignalDesc, expected sizeof(ncclWaitSignalDesc_t), got {len(state)}")
+        cdef char *state_ptr = cpython.PyBytes_AsString(state)
+        self._ptr = <ncclWaitSignalDesc_t *>malloc(sizeof(ncclWaitSignalDesc_t))
+        memcpy(<void *>self._ptr, <void *>state_ptr, sizeof(ncclWaitSignalDesc_t))
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an WaitSignalDesc instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclWaitSignalDesc_t), WaitSignalDesc)
 
     @staticmethod
     def from_data(data):
@@ -885,8 +1004,16 @@ cdef class CommProperties:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclCommProperties_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclCommProperties_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclCommProperties_t *>malloc(sizeof(ncclCommProperties_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating CommProperties")
@@ -1040,6 +1167,14 @@ cdef class CommProperties:
             raise ValueError("This CommProperties instance is read-only")
         self._ptr[0].railedGinType = <ncclGinType_t><int>val
 
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for CommProperties")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an CommProperties instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclCommProperties_t), CommProperties)
+
     @staticmethod
     def from_data(data):
         """Create an CommProperties instance wrapping the given NumPy array.
@@ -1144,8 +1279,16 @@ cdef class DevResourceRequirements:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclDevResourceRequirements_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclDevResourceRequirements_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclDevResourceRequirements_t *>malloc(sizeof(ncclDevResourceRequirements_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating DevResourceRequirements")
@@ -1243,6 +1386,14 @@ cdef class DevResourceRequirements:
         if self._readonly:
             raise ValueError("This DevResourceRequirements instance is read-only")
         self._ptr[0].outGinCounterStart = <ncclGinCounter_t*><intptr_t>val
+
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for DevResourceRequirements")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an DevResourceRequirements instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclDevResourceRequirements_t), DevResourceRequirements)
 
     @staticmethod
     def from_data(data):
@@ -1343,8 +1494,16 @@ cdef class Team:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclTeam_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclTeam_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclTeam_t *>malloc(sizeof(ncclTeam_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating Team")
@@ -1387,6 +1546,23 @@ cdef class Team:
         if self._readonly:
             raise ValueError("This Team instance is read-only")
         self._ptr[0].stride = val
+
+    def __getstate__(self):
+        return cpython.PyBytes_FromStringAndSize(<char *><void *>self._ptr, sizeof(ncclTeam_t))
+
+    def __setstate__(self, state):
+        if not isinstance(state, bytes):
+            raise TypeError(f"Invalid state type for Team, expected bytes, got {type(state).__name__}")
+        if len(state) != sizeof(ncclTeam_t):
+            raise ValueError(f"Invalid state length for Team, expected sizeof(ncclTeam_t), got {len(state)}")
+        cdef char *state_ptr = cpython.PyBytes_AsString(state)
+        self._ptr = <ncclTeam_t *>malloc(sizeof(ncclTeam_t))
+        memcpy(<void *>self._ptr, <void *>state_ptr, sizeof(ncclTeam_t))
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an Team instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclTeam_t), Team)
 
     @staticmethod
     def from_data(data):
@@ -1485,8 +1661,16 @@ cdef class MultimemHandle:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclMultimemHandle_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclMultimemHandle_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclMultimemHandle_t *>malloc(sizeof(ncclMultimemHandle_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating MultimemHandle")
@@ -1507,6 +1691,14 @@ cdef class MultimemHandle:
         if self._readonly:
             raise ValueError("This MultimemHandle instance is read-only")
         self._ptr[0].mcBasePtr = <void *><intptr_t>val
+
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for MultimemHandle")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an MultimemHandle instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclMultimemHandle_t), MultimemHandle)
 
     @staticmethod
     def from_data(data):
@@ -1614,8 +1806,16 @@ cdef class Window_vidmem:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclWindow_vidmem_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclWindow_vidmem_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclWindow_vidmem_t *>malloc(sizeof(ncclWindow_vidmem_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating Window_vidmem")
@@ -1726,6 +1926,14 @@ cdef class Window_vidmem:
         arr[:] = _numpy.asarray(val, dtype=_numpy.intp)
         memcpy(<void *>(&(self._ptr[0].ginWins)), <void *>(arr.data), sizeof(intptr_t) * len(val))
 
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for Window_vidmem")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an Window_vidmem instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclWindow_vidmem_t), Window_vidmem)
+
     @staticmethod
     def from_data(data):
         """Create an Window_vidmem instance wrapping the given NumPy array.
@@ -1825,8 +2033,16 @@ cdef class LsaBarrierHandle:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclLsaBarrierHandle_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclLsaBarrierHandle_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclLsaBarrierHandle_t *>malloc(sizeof(ncclLsaBarrierHandle_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating LsaBarrierHandle")
@@ -1858,6 +2074,14 @@ cdef class LsaBarrierHandle:
         if self._readonly:
             raise ValueError("This LsaBarrierHandle instance is read-only")
         self._ptr[0].nBarriers = val
+
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for LsaBarrierHandle")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an LsaBarrierHandle instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclLsaBarrierHandle_t), LsaBarrierHandle)
 
     @staticmethod
     def from_data(data):
@@ -1957,8 +2181,16 @@ cdef class GinBarrierHandle:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclGinBarrierHandle_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclGinBarrierHandle_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclGinBarrierHandle_t *>malloc(sizeof(ncclGinBarrierHandle_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating GinBarrierHandle")
@@ -1990,6 +2222,14 @@ cdef class GinBarrierHandle:
         if self._readonly:
             raise ValueError("This GinBarrierHandle instance is read-only")
         self._ptr[0].unused = <ncclDevResourceHandle_t><uint32_t>val
+
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for GinBarrierHandle")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an GinBarrierHandle instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclGinBarrierHandle_t), GinBarrierHandle)
 
     @staticmethod
     def from_data(data):
@@ -2091,8 +2331,16 @@ cdef class TeamRequirements:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclTeamRequirements_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclTeamRequirements_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclTeamRequirements_t *>malloc(sizeof(ncclTeamRequirements_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating TeamRequirements")
@@ -2147,6 +2395,14 @@ cdef class TeamRequirements:
         if self._readonly:
             raise ValueError("This TeamRequirements instance is read-only")
         self._ptr[0].outMultimemHandle = <ncclMultimemHandle_t*><intptr_t>val
+
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for TeamRequirements")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an TeamRequirements instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclTeamRequirements_t), TeamRequirements)
 
     @staticmethod
     def from_data(data):
@@ -2268,8 +2524,16 @@ cdef class DevComm:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclDevComm_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclDevComm_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclDevComm_t *>malloc(sizeof(ncclDevComm_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating DevComm")
@@ -2560,6 +2824,14 @@ cdef class DevComm:
             raise ValueError("This DevComm instance is read-only")
         self._ptr[0].abortFlag = <uint32_t*><intptr_t>val
 
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for DevComm")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an DevComm instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclDevComm_t), DevComm)
+
     @staticmethod
     def from_data(data):
         """Create an DevComm instance wrapping the given NumPy array.
@@ -2674,8 +2946,16 @@ cdef class DevCommRequirements:
         other_ = other
         return (memcmp(<void *><intptr_t>(self._ptr), <void *><intptr_t>(other_._ptr), sizeof(ncclDevCommRequirements_t)) == 0)
 
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        __getbuffer(self, buffer, <void *>self._ptr, sizeof(ncclDevCommRequirements_t), self._readonly)
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
     def __setitem__(self, key, val):
         if key == 0 and isinstance(val, _numpy.ndarray):
+            if self._ptr != NULL and self._owned:
+                free(self._ptr)
             self._ptr = <ncclDevCommRequirements_t *>malloc(sizeof(ncclDevCommRequirements_t))
             if self._ptr == NULL:
                 raise MemoryError("Error allocating DevCommRequirements")
@@ -2883,6 +3163,14 @@ cdef class DevCommRequirements:
         if self._readonly:
             raise ValueError("This DevCommRequirements instance is read-only")
         self._ptr[0].ginQueueDepth = val
+
+    def __getstate__(self):
+        raise pickle.PicklingError("Pickle not supported for DevCommRequirements")
+
+    @staticmethod
+    def from_buffer(buffer):
+        """Create an DevCommRequirements instance with the memory from the given buffer."""
+        return __from_buffer(buffer, sizeof(ncclDevCommRequirements_t), DevCommRequirements)
 
     @staticmethod
     def from_data(data):
