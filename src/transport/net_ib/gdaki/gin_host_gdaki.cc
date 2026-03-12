@@ -442,7 +442,7 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
 
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_max_dest_rd_atomic(verbs_qp_attr, max_dest_rd_atomic),
-    docaStatus, status, destroy_verbs_qp_attr);
+    status, destroy_verbs_qp_attr);
 
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_next_state(verbs_qp_attr, DOCA_VERBS_QP_STATE_RTR),
@@ -457,7 +457,7 @@ static ncclResult_t gdakiConnectQp(struct gdaki_context *ctx, struct doca_gpu_ve
 
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_max_rd_atomic(verbs_qp_attr, max_qp_rd_atomic),
-    docaStatus, status, destroy_verbs_qp_attr);
+    status, destroy_verbs_qp_attr);
 
   DOCACHECKGOTO(
     doca_verbs_qp_attr_set_next_state(verbs_qp_attr, DOCA_VERBS_QP_STATE_RTS),
@@ -564,7 +564,7 @@ ncclResult_t ncclGinGdakiCreateContext(void *collComm, int nSignals, int nCounte
 
   DOCACHECKGOTO(doca_gpu_create(pciBusId, &gdaki_ctx->gdev), status, out);
 
-  NCCLCHECKGOTO(wrap_ibv_query_device(gdaki_ctx->ib_ctx, &gdaki_ctx->ib_dev_attr), status, out);
+  NCCLCHECKGOTO(wrap_ibv_query_device(cComm->ib.context, &gdaki_ctx->ib_dev_attr), status, out);
 
   // Exchange counters and signals with peers
   NCCLCHECKGOTO(counters_table->register_mr(cComm->ib.pd, true), status, out);
