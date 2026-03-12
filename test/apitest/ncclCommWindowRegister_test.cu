@@ -3,13 +3,18 @@
 
 class ncclCommWindowRegister_test : public ::testing::Test {
   protected:
-    ncclComm_t *comms;
-    int nVis;
-    void **sendbuffs;
-    void **recvbuffs;
-    cudaStream_t *streams;
+    ncclComm_t *comms = NULL;
+    int nVis = 0;
+    void **sendbuffs = NULL;
+    void **recvbuffs = NULL;
+    cudaStream_t *streams = NULL;
     const size_t size = 4 << 20; // 4MB
   virtual void SetUp() {
+    // RMA requires CUDA driver >= 12.5
+    int driverVersion = 0;
+    ASSERT_EQ(cudaSuccess, cudaDriverGetVersion(&driverVersion));
+    if (driverVersion < 12050) return;
+
     ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
     comms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
     ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, nVis, NULL));
@@ -24,6 +29,7 @@ class ncclCommWindowRegister_test : public ::testing::Test {
     }
   }
   virtual void TearDown() {
+    if (comms == NULL) return;
     for (int i = 0; i < nVis; i++) {
       ASSERT_EQ(cudaSuccess, cudaStreamDestroy(streams[i]));
       ASSERT_EQ(ncclSuccess, ncclMemFree(sendbuffs[i]));
@@ -38,6 +44,7 @@ class ncclCommWindowRegister_test : public ::testing::Test {
 };
 
 TEST_F(ncclCommWindowRegister_test, basic) {
+  if (nVis == 0) return;
   ncclWindow_t *sendwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ncclWindow_t *recvwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -68,6 +75,7 @@ TEST_F(ncclCommWindowRegister_test, basic) {
 }
 
 TEST_F(ncclCommWindowRegister_test, debug_mode) {
+  if (nVis == 0) return;
   ncclWindow_t *sendwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ncclWindow_t *recvwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
 
@@ -101,6 +109,7 @@ TEST_F(ncclCommWindowRegister_test, debug_mode) {
 }
 
 TEST_F(ncclCommWindowRegister_test, debug_mode_invalid) {
+  if (nVis == 0) return;
   ncclWindow_t *sendwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ncclWindow_t *recvwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ncclComm_t *localcomms = (ncclComm_t*)calloc(nVis, sizeof(ncclComm_t));
@@ -142,6 +151,7 @@ TEST_F(ncclCommWindowRegister_test, debug_mode_invalid) {
 }
 
 TEST_F(ncclCommWindowRegister_test, win_get_user_ptr) {
+  if (nVis == 0) return;
   ncclWindow_t *wins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   for (int i = 0; i < nVis; i++) {
@@ -165,6 +175,7 @@ TEST_F(ncclCommWindowRegister_test, win_get_user_ptr) {
 }
 
 TEST_F(ncclCommWindowRegister_test, win_get_user_ptr_multiple_windows) {
+  if (nVis == 0) return;
   ncclWindow_t *sendwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ncclWindow_t *recvwins = (ncclWindow_t*)calloc(nVis, sizeof(ncclWindow_t));
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
@@ -199,6 +210,7 @@ TEST_F(ncclCommWindowRegister_test, win_get_user_ptr_multiple_windows) {
 // ============================================================================
 
 TEST_F(ncclCommWindowRegister_test, register_null_buff) {
+  if (nVis == 0) return;
   ncclWindow_t win;
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   ASSERT_EQ(ncclInvalidArgument, ncclCommWindowRegister(comms[0], NULL, size, &win, NCCL_WIN_COLL_SYMMETRIC));
@@ -206,6 +218,7 @@ TEST_F(ncclCommWindowRegister_test, register_null_buff) {
 }
 
 TEST_F(ncclCommWindowRegister_test, register_zero_size) {
+  if (nVis == 0) return;
   ncclWindow_t win;
   ASSERT_EQ(ncclSuccess, ncclGroupStart());
   ASSERT_EQ(ncclInvalidArgument, ncclCommWindowRegister(comms[0], sendbuffs[0], 0, &win, NCCL_WIN_COLL_SYMMETRIC));
@@ -213,6 +226,7 @@ TEST_F(ncclCommWindowRegister_test, register_zero_size) {
 }
 
 TEST_F(ncclCommWindowRegister_test, register_null_win_ptr) {
+  if (nVis == 0) return;
   ASSERT_EQ(ncclInvalidArgument, ncclCommWindowRegister(comms[0], sendbuffs[0], size, NULL, NCCL_WIN_COLL_SYMMETRIC));
 }
 
@@ -221,6 +235,7 @@ TEST_F(ncclCommWindowRegister_test, register_null_win_ptr) {
 // ============================================================================
 
 TEST_F(ncclCommWindowRegister_test, deregister_null_win) {
+  if (nVis == 0) return;
   // Deregistering NULL window should be a no-op (succeeds silently)
   ASSERT_EQ(ncclSuccess, ncclCommWindowDeregister(comms[0], NULL));
 }

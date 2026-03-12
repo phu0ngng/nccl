@@ -20,6 +20,11 @@ class ncclOneSidedRma_test : public ::testing::Test {
     const int ctx = 0;
 
   virtual void SetUp() {
+    // RMA requires CUDA driver >= 12.5
+    int driverVersion = 0;
+    ASSERT_EQ(cudaSuccess, cudaDriverGetVersion(&driverVersion));
+    if (driverVersion < 12050) return;
+
     ASSERT_EQ(cudaSuccess, cudaGetDeviceCount(&nVis));
     if (nVis < 2) return;
 

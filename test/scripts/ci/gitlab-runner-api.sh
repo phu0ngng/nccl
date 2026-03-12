@@ -9,6 +9,8 @@ load_cluster_ci_variables
 init_junit_file
 get_slurm_planned_time
 
+nvidia-smi
+
 export LD_LIBRARY_PATH=$NCCL_HOME/test/apitest/plugin:$LD_LIBRARY_PATH
 
 # argument list: testPrefix, gtest_filter
