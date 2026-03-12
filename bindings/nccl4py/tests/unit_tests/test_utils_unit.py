@@ -75,36 +75,15 @@ def test_eq_ne_with_non_version():
     assert (a != "3.1.2") is True
 
 
-class _UidBinds:
-    class UniqueId:
-        def __init__(self):
-            # 128 bytes as simple uint8 array
-            import numpy as _np
-            self._data = _np.zeros((1,), dtype=[("internal", "u1", (128,))])
-        @property
-        def ptr(self):
-            # Provide a valid address so core can safely use ptr-based accessors.
-            return int(self._data.ctypes.data)
-        @staticmethod
-        def from_data(arr):
-            u = _UidBinds.UniqueId()
-            # copy data
-            u._data[...] = arr[...]
-            return u
-
-    unique_id_dtype = np.dtype([("internal", "u1", (128,))])
-
-    @staticmethod
-    def get_unique_id(ptr):
-        # Fill the pointed-to ncclUniqueId buffer with a deterministic non-zero pattern.
-        # This simulates NCCL writing the unique ID into user-provided storage.
-        pattern = bytes((0xA5 ^ i) & 0xFF for i in range(128))
-        ctypes.memmove(int(ptr), pattern, len(pattern))
+def _mock_get_unique_id(ptr):
+    """Fill the pointed-to ncclUniqueId buffer with a deterministic non-zero pattern."""
+    pattern = bytes((0xA5 ^ i) & 0xFF for i in range(128))
+    ctypes.memmove(int(ptr), pattern, len(pattern))
 
 
 def test_unique_id_as_bytes(monkeypatch):
     """Test UniqueId bytes view for empty, filled, and from_bytes."""
-    monkeypatch.setattr("nccl.core.utils._nccl_bindings", _UidBinds)
+    monkeypatch.setattr("nccl.bindings.get_unique_id", _mock_get_unique_id)
 
     uid_empty = get_unique_id(empty=True)
     assert len(uid_empty.as_bytes) == 128
@@ -125,13 +104,13 @@ def test_unique_id_as_bytes(monkeypatch):
 
 def test_unique_id_as_ndarray(monkeypatch):
     """Test UniqueId ndarray view for empty, filled, and from_bytes."""
-    monkeypatch.setattr("nccl.core.utils._nccl_bindings", _UidBinds)
+    monkeypatch.setattr("nccl.bindings.get_unique_id", _mock_get_unique_id)
 
     uid_empty = get_unique_id(empty=True)
-    assert np.array_equal(uid_empty.as_ndarray["internal"][0], np.zeros(128, dtype=np.uint8))
+    assert np.array_equal(uid_empty.as_ndarray["internal"][0], np.zeros(128, dtype=np.int8))
 
     uid = get_unique_id()
-    expected = np.frombuffer(bytes((0xA5 ^ i) & 0xFF for i in range(128)), dtype=np.uint8)
+    expected = np.frombuffer(bytes((0xA5 ^ i) & 0xFF for i in range(128)), dtype=np.int8)
     assert np.array_equal(uid.as_ndarray["internal"][0], expected)
 
     uid1 = get_unique_id()
@@ -142,9 +121,7 @@ def test_unique_id_as_ndarray(monkeypatch):
     assert np.array_equal(rt.as_ndarray["internal"][0], uid1.as_ndarray["internal"][0])
 
 
-def test_from_bytes_rejects_wrong_length(monkeypatch):
+def test_from_bytes_rejects_wrong_length():
     """Test UniqueId.from_bytes validates length."""
-    monkeypatch.setattr("nccl.core.utils._nccl_bindings", _UidBinds)
-
     with pytest.raises(ValueError):
         UniqueId.from_bytes(bytes(127))
