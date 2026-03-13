@@ -205,8 +205,8 @@ cdef class UniqueId:
 cdef _get_config_dtype_offsets():
     cdef ncclConfig_t pod = ncclConfig_t()
     return _numpy.dtype({
-        'names': ['size_', 'magic', 'version', 'blocking', 'cga_cluster_size', 'min_ctas', 'max_ctas', 'net_name', 'split_share', 'traffic_class', 'comm_name', 'collnet_enable', 'cta_policy', 'shrink_share', 'nvls_ctas', 'n_channels_per_net_peer', 'nvlink_centric_sched', 'graph_usage_mode', 'num_rma_ctx'],
-        'formats': [_numpy.uint64, _numpy.uint32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.intp, _numpy.int32, _numpy.int32, _numpy.intp, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32],
+        'names': ['size_', 'magic', 'version', 'blocking', 'cga_cluster_size', 'min_ctas', 'max_ctas', 'net_name', 'split_share', 'traffic_class', 'comm_name', 'collnet_enable', 'cta_policy', 'shrink_share', 'nvls_ctas', 'n_channels_per_net_peer', 'nvlink_centric_sched', 'graph_usage_mode', 'num_rma_ctx', 'max_p2p_peers'],
+        'formats': [_numpy.uint64, _numpy.uint32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.intp, _numpy.int32, _numpy.int32, _numpy.intp, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32, _numpy.int32],
         'offsets': [
             (<intptr_t>&(pod.size)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.magic)) - (<intptr_t>&pod),
@@ -227,6 +227,7 @@ cdef _get_config_dtype_offsets():
             (<intptr_t>&(pod.nvlinkCentricSched)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.graphUsageMode)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.numRmaCtx)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.maxP2pPeers)) - (<intptr_t>&pod),
         ],
         'itemsize': sizeof(ncclConfig_t),
     })
@@ -523,6 +524,17 @@ cdef class Config:
         if self._readonly:
             raise ValueError("This Config instance is read-only")
         self._ptr[0].numRmaCtx = val
+
+    @property
+    def max_p2p_peers(self):
+        """int: """
+        return self._ptr[0].maxP2pPeers
+
+    @max_p2p_peers.setter
+    def max_p2p_peers(self, val):
+        if self._readonly:
+            raise ValueError("This Config instance is read-only")
+        self._ptr[0].maxP2pPeers = val
 
     def __getstate__(self):
         raise pickle.PicklingError("Pickle not supported for Config")

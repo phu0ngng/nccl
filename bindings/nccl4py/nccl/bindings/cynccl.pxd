@@ -118,6 +118,7 @@ ctypedef struct ncclConfig_t 'ncclConfig_t':
     int nvlinkCentricSched
     int graphUsageMode
     int numRmaCtx
+    int maxP2pPeers
 
 ctypedef struct ncclSimInfo_t 'ncclSimInfo_t':
     size_t size

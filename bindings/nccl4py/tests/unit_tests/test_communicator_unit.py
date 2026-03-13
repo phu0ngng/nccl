@@ -530,8 +530,9 @@ def test_nccl_config_struct_layout():
         ('nvlink_centric_sched',      np.int32,   76,       4),
         ('graph_usage_mode',          np.int32,   80,       4),
         ('num_rma_ctx',               np.int32,   84,       4),
+        ('max_p2p_peers',             np.int32,   88,       4),
     ]
-    expected_total_size = 88
+    expected_total_size = 96  # 92 bytes + 4 padding for 8-byte alignment
 
     # Verify struct size
     assert dtype.itemsize == expected_total_size, \
@@ -895,8 +896,10 @@ def test_nccl_dev_comm_struct_layout():
         ('gin_is_railed',           np.uint8,   208,      1),
         # padding 7 bytes (offset 209-215)
         ('abort_flag',              np.intp,    216,      8),  # uint32_t* pointer
+        # hybrid_lsa_barrier at offset 224, size 8 (nested struct)
+        # hybrid_rail_gin_barrier at offset 232, size 8 (nested struct)
     ]
-    expected_total_size = 224
+    expected_total_size = 240
 
     # Verify struct size
     assert dtype.itemsize == expected_total_size, \
