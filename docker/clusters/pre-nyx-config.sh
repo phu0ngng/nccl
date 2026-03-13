@@ -127,6 +127,7 @@ function configure_test_env() {
 
     # --bind-to none
     export OMPI_MCA_rmaps_binding_policy=none
+    export OMPI_MCA_hwloc_base_binding_policy=none
 
     # --mca btl tcp,self
     export OMPI_MCA_btl="tcp,self"

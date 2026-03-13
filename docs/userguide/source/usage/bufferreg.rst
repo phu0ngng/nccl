@@ -164,6 +164,10 @@ Since 2.27, NCCL supports window registration, which allows users to register lo
 
 NCCL window registration is enabled by default. However, if users do not use window registration and need to turn it off, set `NCCL_WIN_ENABLE=0` to disable it. In addition, users can also control the behavior of window registration through flags in :ref:`win_flags`.
 
+.. _device_api_lsa:
+
+For the device API, symmetrically registered windows (e.g. with :c:macro:`NCCL_WIN_COLL_SYMMETRIC`) provide **LSA** (load/store accessible) memory: device code can access peer buffers via load/store operations. See :ref:`device_api_memory` for device-side pointer accessors and reduce/copy operations.
+
 The following example shows how to register buffers into NCCL window and use it for communication:
 
 .. code:: C

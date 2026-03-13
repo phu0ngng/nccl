@@ -1,0 +1,46 @@
+# This config is downloaded and parsed by the GitHub-First filtering pipeline
+# Filtering script: https://gitlab-master.nvidia.com/nccl/ci-infra/-/blob/main/github-first/scripts/filter_repo.sh?ref_type=heads
+
+[include]
+# Paths to include in the filtered repository
+# The repo is filtered down to these paths first before continuing to exclusions
+
+.github
+bindings/ir
+bindings/nccl4py
+cmake/NCCLConfig.cmake.in
+contrib/nccl_ep
+docs/examples
+makefiles
+pkg
+plugins/env/example
+plugins/env/README.md
+plugins/mixed/example
+plugins/mixed/README.md
+plugins/net/CMakeLists.txt
+plugins/net/example
+plugins/net/google-fastsocket
+plugins/net/README.md
+plugins/profiler
+plugins/tuner
+src
+.gitignore
+CMakeLists.txt
+CONTRIBUTING.md
+LICENSE.txt
+Makefile
+README.md
+ThirdPartyNotices.txt
+
+[exclude]
+# Any paths within the inclusions above that should be removed
+# Can be glob patterns
+
+**/internal/**
+**/*-internal/**
+**/.gitlab-ci.yml
+bindings/nccl4py/build_assets
+bindings/nccl4py/ci
+bindings/nccl4py/tests
+pkg/conda
+pkg/doc

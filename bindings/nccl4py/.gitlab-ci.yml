@@ -207,6 +207,7 @@ setup_nccl4py_cu13:
 
       export OMPI_MCA_rmaps_oversubscribe=1
       export OMPI_MCA_rmaps_binding_policy=none
+      export OMPI_MCA_hwloc_base_binding_policy=none
       export OMPI_MCA_btl="tcp,self"
       export OMPI_MCA_btl_tcp_if_include="$INTERFACE_NAME"
 

@@ -125,6 +125,7 @@ function configure_test_env() {
     export OMPI_MCA_btl="^openib"
     export OMPI_MCA_rmaps_oversubscribe=1
     export OMPI_MCA_rmaps_binding_policy=none
+    export OMPI_MCA_hwloc_base_binding_policy=none
     export OMPI_MCA_btl="tcp,self"
     export OMPI_MCA_btl_tcp_if_include=$IPP6_NCCL_SOCKET_IFNAME
 

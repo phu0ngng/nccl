@@ -50,6 +50,7 @@ variables:
   RUN_ON_PRE_TYCHE: "0"
   RUN_ON_THEIA: "0"
   RUN_ON_BIA: "0"
+  RUN_ON_POLYPHE: "0"
   # Toggle variables for GC nodes
   RUN_ON_A100: "0"
   RUN_ON_P100: "0"
@@ -127,6 +128,45 @@ workflow:
 .comprehensive_sweep_full_rule: &comprehensive_sweep_full_rule
   if: $COMPREHENSIVE_SWEEP == "debug" || $COMPREHENSIVE_SWEEP == "full"
   when: always
+
+# YAML anchor for public paths
+# This needs to be defined separately from PUBLIC_PATHS.txt as there's
+# no way for GitLab to read in the file list to use as a rule
+.public_paths: &public_paths
+  - ".github/**/*"
+  - "bindings/ir/**/*"
+  - "bindings/nccl4py/**/*"
+  - "cmake/NCCLConfig.cmake.in"
+  - "contrib/nccl_ep/**/*"
+  - "docs/examples/**/*"
+  - "makefiles/**/*"
+  - "pkg/**/*"
+  - "plugins/env/example/**/*"
+  - "plugins/env/README.md"
+  - "plugins/mixed/example/**/*"
+  - "plugins/mixed/README.md"
+  - "plugins/net/CMakeLists.txt"
+  - "plugins/net/example/**/*"
+  - "plugins/net/google-fastsocket/**/*"
+  - "plugins/net/README.md"
+  - "plugins/profiler/**/*"
+  - "plugins/tuner/**/*"
+  - "src/**/*"
+  - ".gitignore"
+  - "CMakeLists.txt"
+  - "CONTRIBUTING.md"
+  - "LICENSE.txt"
+  - "Makefile"
+  - "README.md"
+  - "ThirdPartyNotices.txt"
+  - "!**/internal/**/*"
+  - "!**/*-internal/**/*"
+  - "!**/.gitlab-ci.yml"
+  - "!bindings/nccl4py/build_assets/**/*"
+  - "!bindings/nccl4py/ci/**/*"
+  - "!bindings/nccl4py/tests/**/*"
+  - "!pkg/conda/**/*"
+  - "!pkg/doc/**/*"
 
 ##
 ## Stage: build - Start...
@@ -268,6 +308,25 @@ build-bia:
       - build-bia
     exclude:
       - build-bia/**/*.o
+    expire_in: 48 hrs
+
+build-polyphe:
+  stage: build
+  extends:
+    - .polyphe
+  rules:
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_POLYPHE == "1"
+      when: always
+    - when: never
+  script:
+    - docker/make.sh polyphe
+    - mv build build-polyphe
+  artifacts:
+    paths:
+      - build-polyphe
+    exclude:
+      - build-polyphe/**/*.o
     expire_in: 48 hrs
 
 build-dlfw-pytorch-container:
@@ -445,6 +504,21 @@ setup-bia:
     BUILD_DIR: "build-bia"
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
 
+setup-polyphe:
+  stage: setup
+  extends:
+    - .polyphe
+    - .setup
+  rules:
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_POLYPHE == "1"
+      when: always
+    - when: never
+  needs: ["build-polyphe"]
+  variables:
+    BUILD_DIR: "build-polyphe"
+    INSTALL_DIR: "${POLYPHE_INSTALL_DIR}"
+
 setup-eos:
   stage: setup
   extends:
@@ -559,6 +633,24 @@ nccl4py_ci:
     strategy: depend
   variables:
     PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+
+github-sim:
+  stage: downstream
+  needs: []
+  rules:
+    - if: $TRIGGER_PIPELINE =~ /^(pre-submit)$/
+      changes:
+        paths: *public_paths
+    - when: never
+  trigger:
+    include:
+      - project: nccl/ci-infra
+        ref: main
+        file: github-first/.gitlab-ci.yml
+    strategy: depend
+  variables:
+    CI_INFRA_REF: main
+    MODE: sim
 
 ##
 ## Stage: downstream - Finish!
@@ -1405,6 +1497,49 @@ unit-tests-bia:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+unit-tests-polyphe:
+  stage: unit_tests
+  extends:
+    - .polyphe
+  rules:
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_POLYPHE == "1" && $RUN_UNIT_TESTS == "1"
+      when: always
+  needs: ["setup-polyphe"]
+  variables:
+    SLURM_TIME: 20
+    NNODES: 1
+    NP: 1
+    ENQUEUE_TESTS_ARGS: 1
+    ENQUEUE_TESTS_FIFO: 0
+    GRAPH_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_DEFAULT: 1
+    MEMLEAK_TESTS_NO_P2P: 1
+    MEMLEAK_TESTS_NETWORK: 1
+    FT_TESTS_DEFAULT: 1
+    FT_TESTS_NO_P2P: 1
+    FT_TESTS_NETWORK: 0  # Disabled: exceeds 20min Slurm limit on Polyphe (timeout, retcode 143)
+    PLUGIN_TESTS_NET_TUNER: 1
+    LOG_ALGO_RS_TESTS: 1
+    LOG_ALGO_AG_TESTS: 1
+    PLUGIN_LOADING_TESTS: 1
+    REGISTER_MEMCPY_TESTS: 1
+    DEVAPI_WINDOW_STRESS_TESTS: 1
+    DYN_MEM_TESTS: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-unit.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 unit-tests-rma-pre-nyx:
   stage: unit_tests
   extends:
@@ -2074,6 +2209,37 @@ apitest-bia:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+apitest-polyphe:
+  stage: api_tests
+  extends:
+    - .polyphe
+  rules:
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_POLYPHE == "1" && $RUN_API_TESTS == "1"
+      when: always
+  needs: ["setup-polyphe"]
+  variables:
+    SLURM_TIME: 30
+    NNODES: 1
+    NP: 1
+    API_TESTS_DEFAULT: 0
+    API_TESTS_NO_P2P: 0
+    API_TESTS_NETWORK: 0
+    API_TESTS_DEVICE_API: 0  # Disabled: ncclDevCommCreate_test.valid_gin_connection_type segfaults on Polyphe
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:unit-tests::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-api.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 ##
 ## Stage: api_tests - Finish!
 ##
@@ -2592,6 +2758,37 @@ perftest-single-bia:
     NP: 4
     GRAPH: 0
     SYMMETRIC: 1
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
+perftest-single-polyphe:
+  stage: perf_tests_single
+  extends:
+    - .polyphe
+  rules:
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_POLYPHE == "1" && $RUN_PERF_TESTS_SINGLE == "1"
+      when: always
+  needs: ["setup-polyphe"]
+  variables:
+    SLURM_TIME: 120
+    NNODES: 1
+    MAX: "1G"
+    NP: 4
+    GRAPH: 0
+    SYMMETRIC: 1
+    # Disable failing perf tests on Polyphe (1rpn registration + device GIN/hybrid)
+    NO_LOOPBACK_NETWORKING: 1
+    DEVICE_API: 0
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -3141,6 +3338,39 @@ perftest-multi-bia:
       junit: junit_results.xml
     expire_in: 48 hrs
 
+perftest-multi-polyphe:
+  stage: perf_tests_multi
+  extends:
+    - .polyphe
+  rules:
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_POLYPHE == "1" && $RUN_PERF_TESTS_MULTIPLE == "1"
+      when: always
+  needs: ["setup-polyphe"]
+  variables:
+    SLURM_TIME: 120
+    MAX: "1G"
+    NP: 4
+    SYMMETRIC: 1
+    GRAPH: 0
+    NNODES: $MULTI_PERFTEST_NODE_COUNT
+    # Disable failing perf tests on Polyphe (1rpn registration + device GIN/hybrid)
+    NO_LOOPBACK_NETWORKING: 1
+    DEVICE_API: 0
+  script:
+    - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd.${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
+    - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
+  after_script:
+    - ./test/scripts/ci/finalize-junit.sh
+  artifacts:
+    when: always
+    paths:
+      - "failed/**"
+      - "junit_results.xml"
+    reports:
+      junit: junit_results.xml
+    expire_in: 48 hrs
+
 ##
 ## Stage: perf_tests_multi - Finish!
 ##
@@ -3261,6 +3491,33 @@ perf-regression-bia:
     - bia
   variables:
     SLURM_TIME: 60
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/bia.toml"
+  script:
+    - bash test/scripts/ci/gitlab-runner-gcperftest.sh
+  allow_failure:
+    exit_codes: [33]
+  artifacts:
+    when: always
+    paths:
+      - "perfregression/results.csv"
+      - "perfregression/report.pdf"
+      - "perfregression/*.xlsx"
+    expire_in: 48 hrs
+
+perf-regression-polyphe:
+  stage: perf_regression
+  extends:
+    - .polyphe
+  rules:
+    - when: never
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_POLYPHE == "1" && $RUN_PERF_REGRESSION == "1"
+      when: always
+  needs: ["setup-polyphe"]
+  tags:
+    - polyphe
+  variables:
+    SLURM_TIME: 60
   script:
     - bash test/scripts/ci/gitlab-runner-gcperftest.sh
   allow_failure:
@@ -3305,7 +3562,7 @@ cs-eos-intra-debug:
   needs:
     - setup-eos
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-dgx.toml"
     SLURM_TIME: 90
     NNODES: 1
 
@@ -3320,7 +3577,7 @@ cs-eos-inter-debug:
   needs:
     - setup-eos
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-dgx.toml"
     SLURM_TIME: 90
     NNODES: 2
 
@@ -3336,7 +3593,7 @@ cs-cw-dfw-intra-debug:
   needs:
     - setup-cw-dfw
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-dgx.toml"
     SLURM_TIME: 90
     NNODES: 1
 
@@ -3351,7 +3608,7 @@ cs-cw-dfw-inter-debug:
   needs:
     - setup-cw-dfw
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-dgx.toml"
     SLURM_TIME: 90
     NNODES: 2
 
@@ -3367,7 +3624,7 @@ cs-ptyche-intra-debug:
   needs:
     - setup-pre-tyche
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_PARTITION: 36x2-a01r
     SLURM_TIME: 90
     NNODES: 1
@@ -3383,7 +3640,7 @@ cs-ptyche-inter-debug:
   needs:
     - setup-pre-tyche
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_PARTITION: 36x2-a01r
     SLURM_TIME: 90
@@ -3401,7 +3658,7 @@ cs-theia-intra-debug:
   needs:
     - setup-theia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_TIME: 90
     NNODES: 1
 
@@ -3416,7 +3673,7 @@ cs-theia-inter-debug:
   needs:
     - setup-theia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_TIME: 90
     NNODES: 2
@@ -3433,7 +3690,7 @@ cs-bia-intra-debug:
   needs:
     - setup-bia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_TIME: 90
     NNODES: 1
 
@@ -3447,6 +3704,37 @@ cs-bia-inter-debug:
     - when: never
   needs:
     - setup-bia
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-bia.toml"
+    SLURM_TIME: 90
+    NNODES: 2
+
+# Polyphe Debug Jobs (when: never - remove to re-enable)
+cs-polyphe-intra-debug:
+  extends:
+    - .polyphe
+    - .comprehensive-sweep
+  rules:
+    - when: never
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_POLYPHE == "1"
+      when: always
+  needs:
+    - setup-polyphe
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    SLURM_TIME: 90
+    NNODES: 1
+
+cs-polyphe-inter-debug:
+  extends:
+    - .polyphe
+    - .comprehensive-sweep
+  rules:
+    - when: never
+    - if: $COMPREHENSIVE_SWEEP == "debug" && $RUN_ON_POLYPHE == "1"
+      when: always
+  needs:
+    - setup-polyphe
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-bia.toml"
     SLURM_TIME: 90
@@ -3469,7 +3757,7 @@ cs-eos-inter-full:
   needs:
     - setup-eos
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-dgx.toml"
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3487,7 +3775,7 @@ cs-cw-dfw-inter-full:
   needs:
     - setup-cw-dfw
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-dgx.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-dgx.toml"
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3505,7 +3793,7 @@ cs-ptyche-intra-full:
   needs:
     - setup-pre-tyche
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_PARTITION: 36x2-a01r
     SLURM_TIME: 90
   parallel:
@@ -3524,7 +3812,7 @@ cs-ptyche-inter-full:
   needs:
     - setup-pre-tyche
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_PARTITION: 36x2-a01r
     SLURM_TIME: 90
@@ -3545,7 +3833,7 @@ cs-theia-intra-full:
   needs:
     - setup-theia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-intra-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-intra-nvld-gb.toml"
     SLURM_TIME: 90
   parallel:
     matrix:
@@ -3563,7 +3851,7 @@ cs-theia-inter-full:
   needs:
     - setup-theia
   variables:
-    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-gb.toml"
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-gb.toml"
     MAX_SEGMENT: 18
     SLURM_TIME: 90
   parallel:
@@ -3582,6 +3870,25 @@ cs-bia-inter-full:
     - when: never
   needs:
     - setup-bia
+  variables:
+    TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/comprehensive-inter-nvld-bia.toml"
+    SLURM_TIME: 90
+  parallel:
+    matrix:
+      # Excluding debug scale (2)
+      - NNODES: [4, 8, 16, 32, 64]
+
+# Polyphe Full Jobs (when: never - remove to re-enable)
+cs-polyphe-inter-full:
+  extends:
+    - .polyphe
+    - .comprehensive-sweep
+  rules:
+    - when: never
+    - if: $COMPREHENSIVE_SWEEP == "full" && $RUN_ON_POLYPHE == "1"
+      when: always
+  needs:
+    - setup-polyphe
   variables:
     TESTSUITE_TOML: "test/scripts/ci/gcperf-tools/testsuites/testsuite-comprehensive-inter-nvld-bia.toml"
     SLURM_TIME: 90
@@ -4016,6 +4323,43 @@ cleanup-bia:
       optional: true
   variables:
     INSTALL_DIR: "${BIA_INSTALL_DIR}"
+
+cleanup-polyphe:
+  extends:
+    - .cleanup
+  rules:
+    - <<: *pre_submit_rule
+      when: on_success
+    - if: $RUN_ON_POLYPHE == "1"
+      when: on_success
+    - if: $COMPREHENSIVE_SWEEP =~ /^(debug|full)$/
+      when: on_success
+  tags:
+    - polyphe
+  needs:
+    - job: build-polyphe
+      optional: true
+    - job: setup-polyphe
+      optional: true
+    - job: unit-tests-polyphe
+      optional: true
+    - job: apitest-polyphe
+      optional: true
+    - job: perftest-single-polyphe
+      optional: true
+    - job: perftest-multi-polyphe
+      optional: true
+    # # Comprehensive sweep jobs
+    # - job: cs-polyphe-intra-debug
+    #   optional: true
+    # - job: cs-polyphe-inter-debug
+    #   optional: true
+    # - job: cs-polyphe-inter-full
+    #   optional: true
+    # - job: perf-regression-polyphe
+    #   optional: true
+  variables:
+    INSTALL_DIR: "${POLYPHE_INSTALL_DIR}"
 
 cleanup-ipp6:
   extends:

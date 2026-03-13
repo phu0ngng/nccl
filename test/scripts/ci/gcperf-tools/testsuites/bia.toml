@@ -1,0 +1,55 @@
+# NCCL Test Configuration
+description = "NCCL PerfRegression Testsuite"
+library_name = "nccl"
+
+[common]
+path = "${NCCL_TEST_PATH}"
+
+[common.sweep_envs]
+NCCL_DEBUG = "WARN"
+
+[common.sweep_args]
+-t = 1
+-g = 1
+-f = 2
+-n = 20
+-w = 5
+-b = "8"
+-e = "16G"
+-d = "float"
+-R = [0, 1, 2]
+
+[[test]]
+name = "all_reduce"
+binary = "all_reduce_perf"
+
+[[test]]
+name = "alltoall"
+binary = "alltoall_perf"
+[test.sweep_envs]
+NCCL_GDRCOPY_ENABLE=1
+NCCL_GDRCOPY_SYNC_ENABLE=1
+
+[[test]]
+name = "all_gather"
+binary = "all_gather_perf"
+
+[[test]]
+name = "broadcast"
+binary = "broadcast_perf"
+
+[[test]]
+name = "reduce"
+binary = "reduce_perf"
+
+[[test]]
+name = "reduce_scatter"
+binary = "reduce_scatter_perf"
+
+[[test]]
+name = "gather"
+binary = "gather_perf"
+
+[[test]]
+name = "sendrecv"
+binary = "sendrecv_perf"

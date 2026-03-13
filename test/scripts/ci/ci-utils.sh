@@ -97,7 +97,7 @@ function make_run_command() {
     elif [ "$run_mode" = "SRUN_MPI" ]; then
         # Deliberately ignore any MPI flags passed as they should have been set in the test env already
         transformed_env_vars=$(transform_env_vars "$env_vars" "srun")
-        run_mode_cmd="srun --export=ALL,$transformed_env_vars --ntasks-per-node=$ppn --mpi=pmix"
+        run_mode_cmd="srun --export=ALL,$transformed_env_vars --ntasks-per-node=$ppn --mpi=pmix --cpu-bind=none"
         echo $run_mode_cmd
     elif [ "$run_mode" = "CMD" ]; then
         # Directly pass through space-delimited env_vars

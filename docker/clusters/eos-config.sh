@@ -25,7 +25,7 @@ EOS_RUN_TOOLS_VERSION="1.0.1"
 EOS_RUN_IMAGE_VERSION="${EOS_RUN_TOOLS_VERSION}-c${EOS_CUDA_VERSION}-u${EOS_OS_VERSION}"
 
 EOS_NCCL_SOCKET_IFNAME="eth3"
-EOS_MPI_PARAMS="-mca btl tcp,self --mca btl_tcp_if_include $EOS_NCCL_SOCKET_IFNAME"
+EOS_MPI_PARAMS="-mca btl tcp,self --mca btl_tcp_if_include $EOS_NCCL_SOCKET_IFNAME --bind-to numa"
 EOS_NCCL_IB_SL="1"
 EOS_PLANNED_RESERVED="Planned"
 
