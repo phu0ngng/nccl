@@ -121,6 +121,42 @@ def test_unique_id_as_ndarray(monkeypatch):
     assert np.array_equal(rt.as_ndarray["internal"][0], uid1.as_ndarray["internal"][0])
 
 
+def test_unique_id_pickle():
+    """Test UniqueId pickle/unpickle roundtrip preserves data."""
+    import copy
+    import os
+    import pickle
+
+    from nccl.bindings import unique_id_dtype
+    size = unique_id_dtype.itemsize
+    random_bytes = os.urandom(size)
+    uid = UniqueId.from_bytes(random_bytes)
+
+    for proto in range(2, pickle.HIGHEST_PROTOCOL + 1):
+        restored = pickle.loads(pickle.dumps(uid, protocol=proto))
+        assert restored.as_bytes == random_bytes
+
+    assert copy.copy(uid).as_bytes == random_bytes
+    assert copy.deepcopy(uid).as_bytes == random_bytes
+
+
+def test_unique_id_bytes_dunder(monkeypatch):
+    """Test bytes(UniqueId) via __bytes__ dunder."""
+    monkeypatch.setattr("nccl.bindings.get_unique_id", _mock_get_unique_id)
+
+    uid_empty = get_unique_id(empty=True)
+    assert len(bytes(uid_empty)) == 128
+    assert bytes(uid_empty) == bytes(128)
+
+    uid = get_unique_id()
+    assert len(bytes(uid)) == 128
+    expected = bytes((0xA5 ^ i) & 0xFF for i in range(128))
+    assert bytes(uid) == expected
+
+    rt = UniqueId.from_bytes(bytes(uid))
+    assert bytes(rt) == bytes(uid)
+
+
 def test_from_bytes_rejects_wrong_length():
     """Test UniqueId.from_bytes validates length."""
     with pytest.raises(ValueError):
