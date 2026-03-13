@@ -698,10 +698,15 @@ static ncclResult_t fillInfo(struct ncclComm* comm, struct ncclPeerInfo* info, u
   // Get the device MAJOR:MINOR of /dev/shm so we can use that
   // information to decide whether we can use SHM for inter-process
   // communication in a container environment
+#if defined(NCCL_OS_WINDOWS)
+  // On Windows, shared memory uses file mapping objects, not /dev/shm
+  // Set shmDev to 0 as it's not applicable on Windows
+  info->shmDev = 0;
+#elif defined(NCCL_OS_LINUX)
   struct stat statbuf;
   SYSCHECK(stat("/dev/shm", &statbuf), "stat");
   info->shmDev = statbuf.st_dev;
-
+#endif
   info->busId = comm->busId;
 
   NCCLCHECK(ncclGpuGdrSupport(comm, &info->gdrSupport));

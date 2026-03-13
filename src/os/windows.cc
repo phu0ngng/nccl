@@ -26,7 +26,6 @@
 #include <cstdbool>
 #include "socket.h"
 #include "utils.h"
-#include "os.h"
 #include "checks.h"
 #include "param.h"
 #include <atomic>
@@ -45,10 +44,27 @@
 #define IFNAMSIZ 16
 #endif
 
+static thread_local char ncclDlErrorBuf[256] = {0};
+
+static void saveDlError() {
+  DWORD err = GetLastError();
+  if (err != 0) {
+    DWORD len = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                               NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                               ncclDlErrorBuf, sizeof(ncclDlErrorBuf), NULL);
+    if (len == 0) {
+      snprintf(ncclDlErrorBuf, sizeof(ncclDlErrorBuf), "GetLastError=%lu", err);
+    }
+  } else {
+    ncclDlErrorBuf[0] = '\0';
+  }
+}
+
 ncclOsLibraryHandle ncclOsDlopen(const char* filename) {
   ncclOsLibraryHandle handle = (ncclOsLibraryHandle)LoadLibraryA(filename);
   if (handle == NULL) {
-    INFO(NCCL_INIT, "ncclOsDlopen(%s) failed, error code: %lu", filename, GetLastError());
+    saveDlError();
+    INFO(NCCL_INIT, "ncclOsDlopen(%s) failed: %s", filename, ncclDlErrorBuf);
   }
   return handle;
 }
@@ -56,22 +72,14 @@ ncclOsLibraryHandle ncclOsDlopen(const char* filename) {
 void* ncclOsDlsym(ncclOsLibraryHandle handle, const char* symbol) {
   void* ptr = (void*)GetProcAddress((HMODULE)handle, symbol);
   if (ptr == NULL) {
-    INFO(NCCL_INIT, "ncclOsDlsym(%s) failed, error code: %lu", symbol, GetLastError());
+    saveDlError();
+    INFO(NCCL_INIT, "ncclOsDlsym(%s) failed: %s", symbol, ncclDlErrorBuf);
   }
   return ptr;
 }
 
 const char* ncclOsDlerror() {
-  thread_local char errorMsg[256];
-  DWORD err = GetLastError();
-  if (err == 0) return "";
-  DWORD len = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                             NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                             errorMsg, sizeof(errorMsg), NULL);
-  if (len == 0) {
-    snprintf(errorMsg, sizeof(errorMsg), "GetLastError=%lu", err);
-  }
-  return errorMsg;
+  return ncclDlErrorBuf;
 }
 
 ncclOsLibraryHandle ncclOsDlopen(const char* path, int mode) {

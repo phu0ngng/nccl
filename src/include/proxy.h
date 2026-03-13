@@ -266,7 +266,7 @@ struct ncclProxyProgressState {
   // Used by main threads to send work to progress thread
   struct ncclProxyOpsPool* opsPool;
   ncclShmHandle_t handle;
-  char opsPoolShmSuffix[6];
+  char opsPoolShmSuffix[16];
 
   std::thread thread;
   volatile int stop;

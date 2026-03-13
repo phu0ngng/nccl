@@ -57,4 +57,8 @@ typedef unsigned long ncclPid_t;
 /* gettimeofday() replacement for Windows (struct timeval is in winsock2.h via os.h) */
 int gettimeofday(struct timeval* tv, void* tz);
 
+/* WSAPoll requires POLLRDNORM instead of POLLIN for listen/accept sockets */
+#define NCCL_POLLIN POLLRDNORM
+#define NCCL_POLLERR (POLLHUP | POLLERR | POLLNVAL)
+
 #endif

@@ -23,7 +23,6 @@
 #include <cstdbool>
 #include "socket.h"
 #include "utils.h"
-#include "os.h"
 #include "checks.h"
 #include "param.h"
 #include <pthread.h>
@@ -31,10 +30,22 @@
 #include <sys/syscall.h>
 #include <atomic>
 
+static thread_local char ncclDlErrorBuf[256] = {0};
+
+static void saveDlError() {
+  const char* err = dlerror();
+  if (err) {
+    snprintf(ncclDlErrorBuf, sizeof(ncclDlErrorBuf), "%s", err);
+  } else {
+    ncclDlErrorBuf[0] = '\0';
+  }
+}
+
 ncclOsLibraryHandle ncclOsDlopen(const char* filename) {
   ncclOsLibraryHandle handle = dlopen(filename, RTLD_NOW | RTLD_LOCAL);
   if (handle == NULL) {
-    INFO(NCCL_INIT, "ncclOsDlopen(%s) failed: %s", filename, dlerror());
+    saveDlError();
+    INFO(NCCL_INIT, "ncclOsDlopen(%s) failed: %s", filename, ncclDlErrorBuf);
   }
   return handle;
 }
@@ -42,14 +53,14 @@ ncclOsLibraryHandle ncclOsDlopen(const char* filename) {
 void* ncclOsDlsym(ncclOsLibraryHandle handle, const char* symbol) {
   void* ptr = dlsym(handle, symbol);
   if (ptr == NULL) {
-    const char* err = dlerror();
-    INFO(NCCL_INIT, "ncclOsDlsym(%s) failed: %s", symbol, err ? err : "unknown");
+    saveDlError();
+    INFO(NCCL_INIT, "ncclOsDlsym(%s) failed: %s", symbol, ncclDlErrorBuf);
   }
   return ptr;
 }
 
 const char* ncclOsDlerror() {
-  return dlerror();
+  return ncclDlErrorBuf;
 }
 
 ncclOsLibraryHandle ncclOsDlopen(const char* path, int mode) {

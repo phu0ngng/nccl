@@ -91,7 +91,39 @@ static uint64_t hostHashValue = 0;
  *
  * This string can be overridden by using the NCCL_HOSTID env var.
  */
+#if defined(NCCL_OS_LINUX)
+
 #define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
+
+#elif defined(NCCL_OS_WINDOWS)
+
+/* Get Windows MachineGuid - similar to boot_id on Linux */
+static bool getWindowsMachineGuid(char* guid, size_t len) {
+  HKEY hKey;
+  LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                               "SOFTWARE\\Microsoft\\Cryptography",
+                               0,
+                               KEY_READ,
+                               &hKey);
+  if (result != ERROR_SUCCESS) {
+    return false;
+  }
+  DWORD dataSize = (DWORD)len;
+  DWORD dataType;
+  result = RegQueryValueExA(hKey,
+                            "MachineGuid",
+                            NULL,
+                            &dataType,
+                            (LPBYTE)guid,
+                            &dataSize);
+  RegCloseKey(hKey);
+  if (result != ERROR_SUCCESS || dataType != REG_SZ) {
+    return false;
+  }
+  return true;
+}
+#endif
+
 static void getHostHashOnce() {
   char hostHash[1024];
   const char *hostId;
@@ -105,6 +137,7 @@ static void getHostHashOnce() {
     strncpy(hostHash, hostId, sizeof(hostHash)-1);
     hostHash[sizeof(hostHash)-1] = '\0';
   } else {
+#if defined(NCCL_OS_LINUX)
     FILE *file = fopen(HOSTID_FILE, "r");
     if (file != NULL) {
       char *p;
@@ -114,6 +147,12 @@ static void getHostHashOnce() {
       }
       fclose(file);
     }
+#elif defined(NCCL_OS_WINDOWS)
+    char machineGuid[256];
+    if (getWindowsMachineGuid(machineGuid, sizeof(machineGuid))) {
+      strncpy(hostHash+offset, machineGuid, sizeof(hostHash)-offset-1);
+    }
+#endif
   }
 
   // Make sure the string is terminated
@@ -146,10 +185,7 @@ uint64_t getPidHash(void) {
   // Start off with our pid ($$)
   sprintf(pname, "%ld", (long) ncclOsGetPid());
   int plen = strlen(pname);
-#if defined(_WIN32)
-  (void)plen; /* unused on Windows */
-  /* Windows has no PID namespaces; PID alone is unique system-wide */
-#else
+#if defined(NCCL_OS_LINUX)
   int len = readlink("/proc/self/ns/pid", pname+plen, sizeof(pname)-1-plen);
   if (len < 0) len = 0;
   plen += len;
