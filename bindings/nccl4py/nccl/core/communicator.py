@@ -113,7 +113,7 @@ class NCCLConfig:
             - nvlink_centric_sched (bool, optional): Enable (True) NVLink-centric scheduling. Defaults to False.
             - graph_usage_mode (int, optional): Graph usage mode (NCCL 2.29+). Supported values: 0 (no graphs), 1 (one graph), 2 (multiple graphs or mix of graph and non-graph). Defaults to 2.
             - num_rma_ctx (int, optional): Number of RMA contexts (NCCL 2.29+). Defaults to 1.
-            - max_p2p_peers (int, optional): Maximum number of P2P peers (NCCL 2.30+). Positive integer. Defaults to communicator size.
+            - max_p2p_peers (int, optional): Maximum number of peers any rank will concurrently communicate with using P2P communication. (NCCL 2.30+). Positive integer. Defaults to communicator size.
 
         Notes:
             Aborting any communicator may affect others in the same family when split_share or shrink_share is enabled.
