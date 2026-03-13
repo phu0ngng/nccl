@@ -10,7 +10,7 @@ source $CLUSTER_CONFIG
 load_cluster_ci_variables
 
 PERF_TESTS=(all_reduce_perf reduce_scatter_perf all_gather_perf broadcast_perf alltoall_perf sendrecv_perf)
-CHECK_LOG_TESTS=(all_reduce_perf reduce_scatter_perf all_gather_perf)
+CHECK_LOG_TESTS=(all_reduce_perf reduce_scatter_perf all_gather_perf broadcast_perf alltoall_perf sendrecv_perf)
 HAS_ERRORS=0
 
 opts="-w 0 -n 5 -O0 -G 0"
@@ -33,9 +33,15 @@ for func in "${PERF_TESTS[@]}"; do
   export NCCL_INSPECTOR_DUMP_DIR="$LOG_DIR"
   echo "Running $func with Inspector, logs in $LOG_DIR"
 
+  # Set additional environment variables for specific tests
+  EXTRA_ENV=""
+  if [ "$func" = "broadcast_perf" ]; then
+    EXTRA_ENV="NCCL_ALLGATHERV_ENABLE=0 "
+  fi
+
   # Run the inspector test
   run_command "${func}_inspector" $RUN_MODE $NGPUS "" \
-    "NCCL_PROFILER_PLUGIN=$NCCL_SRC/plugins/profiler/inspector/libnccl-profiler-inspector.so NCCL_INSPECTOR_ENABLE=1 NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500 NCCL_INSPECTOR_DUMP_DIR=$LOG_DIR " \
+    "NCCL_PROFILER_PLUGIN=$NCCL_SRC/plugins/profiler/inspector/libnccl-profiler-inspector.so NCCL_INSPECTOR_ENABLE=1 NCCL_INSPECTOR_DUMP_THREAD_INTERVAL_MICROSECONDS=500 NCCL_INSPECTOR_DUMP_DIR=$LOG_DIR ${EXTRA_ENV}" \
     "$NCCL_HOME/test/perf/$func" "$range $opts"
 
   # For selected tests, check that a non-zero log file was created
