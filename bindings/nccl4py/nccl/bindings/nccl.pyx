@@ -2443,8 +2443,8 @@ cdef class TeamRequirements:
 cdef _get_dev_comm_dtype_offsets():
     cdef ncclDevComm_t pod = ncclDevComm_t()
     return _numpy.dtype({
-        'names': ['rank', 'n_ranks', 'n_ranks_rcp32', 'lsa_rank', 'lsa_size', 'lsa_size_rcp32', 'window_table', 'resource_window', 'resource_window_inlined', 'lsa_multimem', 'lsa_barrier', 'rail_gin_barrier', 'gin_connection_count', 'gin_net_device_types', 'gin_handles', 'gin_signal_base', 'gin_signal_count', 'gin_counter_base', 'gin_counter_count', 'gin_signal_shadows', 'gin_context_count', 'gin_context_base', 'gin_is_railed', 'abort_flag'],
-        'formats': [_numpy.int32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.uint32, _numpy.intp, _numpy.intp, window_vidmem_dtype, multimem_handle_dtype, lsa_barrier_handle_dtype, gin_barrier_handle_dtype, _numpy.uint8, (_numpy.uint8, 4), (_numpy.int64, 4), _numpy.uint32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.intp, _numpy.uint32, _numpy.uint32, _numpy.uint8, _numpy.intp],
+        'names': ['rank', 'n_ranks', 'n_ranks_rcp32', 'lsa_rank', 'lsa_size', 'lsa_size_rcp32', 'window_table', 'resource_window', 'resource_window_inlined', 'lsa_multimem', 'lsa_barrier', 'rail_gin_barrier', 'gin_connection_count', 'gin_net_device_types', 'gin_handles', 'gin_signal_base', 'gin_signal_count', 'gin_counter_base', 'gin_counter_count', 'gin_signal_shadows', 'gin_context_count', 'gin_context_base', 'gin_is_railed', 'abort_flag', 'hybrid_lsa_barrier', 'hybrid_rail_gin_barrier'],
+        'formats': [_numpy.int32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.int32, _numpy.uint32, _numpy.intp, _numpy.intp, window_vidmem_dtype, multimem_handle_dtype, lsa_barrier_handle_dtype, gin_barrier_handle_dtype, _numpy.uint8, (_numpy.uint8, 4), (_numpy.int64, 4), _numpy.uint32, _numpy.int32, _numpy.uint32, _numpy.int32, _numpy.intp, _numpy.uint32, _numpy.uint32, _numpy.uint8, _numpy.intp, lsa_barrier_handle_dtype, gin_barrier_handle_dtype],
         'offsets': [
             (<intptr_t>&(pod.rank)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.nRanks)) - (<intptr_t>&pod),
@@ -2470,6 +2470,8 @@ cdef _get_dev_comm_dtype_offsets():
             (<intptr_t>&(pod.ginContextBase)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.ginIsRailed)) - (<intptr_t>&pod),
             (<intptr_t>&(pod.abortFlag)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.hybridLsaBarrier)) - (<intptr_t>&pod),
+            (<intptr_t>&(pod.hybridRailGinBarrier)) - (<intptr_t>&pod),
         ],
         'itemsize': sizeof(ncclDevComm_t),
     })
@@ -2591,6 +2593,30 @@ cdef class DevComm:
             raise ValueError("This DevComm instance is read-only")
         cdef GinBarrierHandle val_ = val
         memcpy(<void *>&(self._ptr[0].railGinBarrier), <void *>(val_._get_ptr()), sizeof(ncclGinBarrierHandle_t) * 1)
+
+    @property
+    def hybrid_lsa_barrier(self):
+        """LsaBarrierHandle: """
+        return LsaBarrierHandle.from_ptr(<intptr_t>&(self._ptr[0].hybridLsaBarrier), self._readonly, self)
+
+    @hybrid_lsa_barrier.setter
+    def hybrid_lsa_barrier(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        cdef LsaBarrierHandle val_ = val
+        memcpy(<void *>&(self._ptr[0].hybridLsaBarrier), <void *>(val_._get_ptr()), sizeof(ncclLsaBarrierHandle_t) * 1)
+
+    @property
+    def hybrid_rail_gin_barrier(self):
+        """GinBarrierHandle: """
+        return GinBarrierHandle.from_ptr(<intptr_t>&(self._ptr[0].hybridRailGinBarrier), self._readonly, self)
+
+    @hybrid_rail_gin_barrier.setter
+    def hybrid_rail_gin_barrier(self, val):
+        if self._readonly:
+            raise ValueError("This DevComm instance is read-only")
+        cdef GinBarrierHandle val_ = val
+        memcpy(<void *>&(self._ptr[0].hybridRailGinBarrier), <void *>(val_._get_ptr()), sizeof(ncclGinBarrierHandle_t) * 1)
 
     @property
     def rank(self):

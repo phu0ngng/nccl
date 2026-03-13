@@ -213,6 +213,8 @@ ctypedef struct ncclDevComm_t 'ncclDevComm_t':
     uint32_t ginContextBase
     uint8_t ginIsRailed
     uint32_t* abortFlag
+    ncclLsaBarrierHandle_t hybridLsaBarrier
+    ncclGinBarrierHandle_t hybridRailGinBarrier
 
 ctypedef struct ncclDevCommRequirements_t 'ncclDevCommRequirements_t':
     size_t size
