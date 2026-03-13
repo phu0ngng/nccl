@@ -89,6 +89,7 @@ class NCCLConfig:
         nvlink_centric_sched: bool | None = None,
         graph_usage_mode: int | None = None,
         num_rma_ctx: int | None = None,
+        max_p2p_peers: int | None = None,
     ) -> None:
         """
         Initializes NCCL configuration with custom parameters.
@@ -112,6 +113,7 @@ class NCCLConfig:
             - nvlink_centric_sched (bool, optional): Enable (True) NVLink-centric scheduling. Defaults to False.
             - graph_usage_mode (int, optional): Graph usage mode (NCCL 2.29+). Supported values: 0 (no graphs), 1 (one graph), 2 (multiple graphs or mix of graph and non-graph). Defaults to 2.
             - num_rma_ctx (int, optional): Number of RMA contexts (NCCL 2.29+). Defaults to 1.
+            - max_p2p_peers (int, optional): Maximum number of P2P peers (NCCL 2.30+). Positive integer. Defaults to communicator size.
 
         Notes:
             Aborting any communicator may affect others in the same family when split_share or shrink_share is enabled.
@@ -139,6 +141,8 @@ class NCCLConfig:
         # NCCL 2.29
         self._cfg.graph_usage_mode = NCCL_UNDEF_INT
         self._cfg.num_rma_ctx = NCCL_UNDEF_INT
+        # NCCL 2.30
+        self._cfg.max_p2p_peers = NCCL_UNDEF_INT
 
         # Use setters for validation - they handle type checking and range validation
         if blocking is not None:
@@ -173,6 +177,8 @@ class NCCLConfig:
             self.graph_usage_mode = graph_usage_mode
         if num_rma_ctx is not None:
             self.num_rma_ctx = num_rma_ctx
+        if max_p2p_peers is not None:
+            self.max_p2p_peers = max_p2p_peers
 
     def __repr__(self) -> str:
         """
@@ -216,6 +222,8 @@ class NCCLConfig:
             parts.append(f"graph_usage_mode={self._cfg.graph_usage_mode}")
         if self._cfg.num_rma_ctx != NCCL_UNDEF_INT:
             parts.append(f"num_rma_ctx={self._cfg.num_rma_ctx}")
+        if self._cfg.max_p2p_peers != NCCL_UNDEF_INT:
+            parts.append(f"max_p2p_peers={self._cfg.max_p2p_peers}")
 
         if parts:
             return f"<NCCLConfig: {', '.join(parts)}>"
@@ -505,6 +513,24 @@ class NCCLConfig:
         if val <= 0:
             raise NcclInvalid(f"num_rma_ctx must be > 0, got {val}")
         self._cfg.num_rma_ctx = int(val)
+
+    @property
+    def max_p2p_peers(self) -> int:
+        """
+        Maximum number of P2P peers.
+
+        Returns:
+            ``int``: Maximum number of P2P peers.
+        """
+        return int(self._cfg.max_p2p_peers)
+
+    @max_p2p_peers.setter
+    def max_p2p_peers(self, val: int) -> None:
+        if not isinstance(val, int):
+            raise NcclInvalid(f"max_p2p_peers must be int, got {type(val).__name__}")
+        if val <= 0:
+            raise NcclInvalid(f"max_p2p_peers must be > 0, got {val}")
+        self._cfg.max_p2p_peers = int(val)
 
 
 class WaitSignalDesc:
