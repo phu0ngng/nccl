@@ -484,6 +484,7 @@ void checkTopo(const char* xmlTopoFile, const char* xmlGraphFile, const char* pl
   netInfo.net = 1;
   netInfo.coll = coll > 0;
   netInfo.netPluginIndex = 0;
+  netInfo.maxDevsPerNic = NCCL_NET_MAX_DEVS_PER_NIC_V12;
   netInfo.dmaBufSupport = true;
   netInfo.mergeLevel = param->mergeLevel;
   netInfo.forceMerge = param->forceMerge;

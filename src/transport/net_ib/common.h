@@ -50,7 +50,7 @@ struct ncclIbMrCache {
 };
 
 extern int ncclNMergedIbDevs;
-#define NCCL_IB_MAX_DEVS_PER_NIC 4
+#define NCCL_IB_MAX_DEVS_PER_NIC NCCL_NET_MAX_DEVS_PER_NIC
 #define MAX_MERGED_DEV_NAME (MAXNAMESIZE*NCCL_IB_MAX_DEVS_PER_NIC)+NCCL_IB_MAX_DEVS_PER_NIC
 struct alignas(64) ncclIbMergedDev {
   ncclNetVDeviceProps_t vProps;
@@ -233,7 +233,6 @@ struct ncclIbSendFifo {
   uint32_t nreqs;
   uint32_t tag;
   uint64_t idx;
-  char padding[16];
 };
 
 struct ncclIbQpInitAttr {

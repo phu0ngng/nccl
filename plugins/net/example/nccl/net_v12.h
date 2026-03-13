@@ -5,21 +5,22 @@
  * See LICENSE.txt for more license information
  *************************************************************************/
 
-#ifndef NET_V10_H_
-#define NET_V10_H_
+#ifndef NET_V12_H_
+#define NET_V12_H_
+
+#define NCCL_NET_MAX_DEVS_PER_NIC_V12 8
 
 typedef struct {
   int ndevs;
-  int devs[NCCL_NET_MAX_DEVS_PER_NIC_V11];
-} ncclNetVDeviceProps_v10_t;
-
+  int devs[NCCL_NET_MAX_DEVS_PER_NIC_V12];
+} ncclNetVDeviceProps_v12_t;
 
 #define NCCL_NET_TRAFFIC_CLASS_UNDEF -1
+
 typedef struct {
   // Plugin-specific TC value
   int trafficClass;
-} ncclNetCommConfig_v10_t;
-
+} ncclNetCommConfig_v12_t;
 
 typedef struct {
   char* name;                      // Used mostly for logging.
@@ -36,36 +37,52 @@ typedef struct {
   int maxRecvs;                    // Maximum number of grouped receives.
   ncclNetDeviceType netDeviceType; // Network offload type
   int netDeviceVersion;            // Version number for network offload
-  ncclNetVDeviceProps_v10_t vProps;
+  ncclNetVDeviceProps_v12_t vProps;
   size_t maxP2pBytes;              // Max transfer size for point-to-point operations
   size_t maxCollBytes;             // Max transfer size for collective operations
-} ncclNetProperties_v10_t;
+  int maxMultiRequestSize;         // Maximum number of requests supported in a single multi-request.
+} ncclNetProperties_v12_t;
+
+typedef struct {
+  int32_t maxConcurrentPeers;
+  int32_t minConcurrentPeers;
+  int32_t maxFlowsPerPeer;
+  int32_t minFlowsPerPeer;
+} ncclNetCommAttr_v12_t;
+
+typedef struct {
+  ncclNetCommAttr_v12_t sendCommAttr;
+  ncclNetCommAttr_v12_t recvCommAttr;
+  uint32_t op;
+  uint32_t algo;
+  uint32_t proto;
+} ncclNetAttr_v12_t;
 
 typedef struct {
   // Name of the network (mainly for logs)
   const char* name;
   // Initialize the network.
-  ncclResult_t (*init)(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction);
+  ncclResult_t (*init)(void** ctx, uint64_t commId, ncclNetCommConfig_v12_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction);
   // Return the number of adapters.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v10_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v12_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create a connection.
-  ncclResult_t (*listen)(int dev, void* handle, void** listenComm);
+  ncclResult_t (*listen)(void* ctx, int dev, void* handle, void** listenComm);
   // Connect to a handle and return a sending comm object for that peer.
   // This call must not block for the connection to be established, and instead
   // should return successfully with sendComm == NULL with the expectation that
   // it will be called again until sendComm != NULL.
   // If *sendDevComm points to a valid object, then NCCL is requesting device offload for this connection
-  ncclResult_t (*connect)(int dev, ncclNetCommConfig_v10_t* config, void* handle, void** sendComm, ncclNetDeviceHandle_v10_t** sendDevComm);
+  ncclResult_t (*connect)(void* ctx, int dev, void* handle, void** sendComm, ncclNetDeviceHandle_v12_t** sendDevComm);
   // Finalize connection establishment after remote peer has called connect.
   // This call must not block for the connection to be established, and instead
   // should return successfully with recvComm == NULL with the expectation that
   // it will be called again until recvComm != NULL.
   // If *recvDevComm points to a valid object, then NCCL is requesting device offload for this connection
-  ncclResult_t (*accept)(void* listenComm, void** recvComm, ncclNetDeviceHandle_v10_t** recvDevComm);
+  ncclResult_t (*accept)(void* listenComm, void** recvComm, ncclNetDeviceHandle_v12_t** recvDevComm);
   // Register/Deregister memory. Comm can be either a sendComm or a recvComm.
   // Type is either NCCL_PTR_HOST or NCCL_PTR_CUDA.
   ncclResult_t (*regMr)(void* comm, void* data, size_t size, int type, void** mhandle);
@@ -97,7 +114,11 @@ typedef struct {
 
   // Virtual NIC APIs. makeVDevice will create a virtual NIC given the specified properties, and tell the caller
   // what index this new vNIC exists at
-  ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_v10_t* props);
-} ncclNet_v10_t;
+  ncclResult_t (*makeVDevice)(int* d, ncclNetVDeviceProps_v12_t* props);
+  // Finalize the network.
+  ncclResult_t (*finalize)(void* ctx);
+
+  ncclResult_t (*setNetAttr)(void* ctx, ncclNetAttr_v12_t* netAttr);
+} ncclNet_v12_t;
 
 #endif // end include guard

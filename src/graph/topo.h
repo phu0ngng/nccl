@@ -201,6 +201,7 @@ struct ncclTopoNetInfo {
   bool net;
   // communicator-specific information
   int netPluginIndex;
+  int maxDevsPerNic;
   bool dmaBufSupport;
   // NIC fusion
   int mergeLevel;

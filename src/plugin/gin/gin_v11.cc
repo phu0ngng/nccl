@@ -53,6 +53,31 @@ static ncclResult_t ncclGin_iputSignal(void* ginCtx, int context, uint64_t srcOf
   return ncclGin_v11->iputSignal(ginCtx, srcOff, srcMhandle, size, dstOff, dstMhandle, rank, signalOff, signalMhandle, signalValue, signalOp, request);
 }
 
+static ncclResult_t ncclGin_getProperties(int dev, ncclNetProperties_t* props) {
+  ncclNetProperties_v11_t props_v11;
+  NCCLCHECK(ncclGin_v11->getProperties(dev, &props_v11));
+  props->name = props_v11.name;
+  props->pciPath = props_v11.pciPath;
+  props->guid = props_v11.guid;
+  props->ptrSupport = props_v11.ptrSupport;
+  props->regIsGlobal = props_v11.regIsGlobal;
+  props->forceFlush = props_v11.forceFlush;
+  props->speed = props_v11.speed;
+  props->port = props_v11.port;
+  props->latency = props_v11.latency;
+  props->maxComms = props_v11.maxComms;
+  props->maxRecvs = props_v11.maxRecvs;
+  props->netDeviceType = props_v11.netDeviceType;
+  props->netDeviceVersion = props_v11.netDeviceVersion;
+  props->vProps.ndevs = props_v11.vProps.ndevs;
+  for (int i = 0; i < props_v11.vProps.ndevs; i++)
+    props->vProps.devs[i] = props_v11.vProps.devs[i];
+  props->maxP2pBytes = props_v11.maxP2pBytes;
+  props->maxCollBytes = props_v11.maxCollBytes;
+  props->maxMultiRequestSize = props_v11.maxMultiRequestSize;
+  return ncclSuccess;
+}
+
 ncclGin_t* getNcclGin_v11(void* lib) {
   ncclGin_v11 = (ncclGin_v11_t*)ncclOsDlsym(lib, "ncclGinPlugin_v11");
   if (ncclGin_v11) {
@@ -60,7 +85,7 @@ ncclGin_t* getNcclGin_v11(void* lib) {
     ncclGin.name = ncclGin_v11->name;
     ncclGin.init = ncclGin_v11->init;
     ncclGin.devices = ncclGin_v11->devices;
-    ncclGin.getProperties = ncclGin_v11->getProperties;
+    ncclGin.getProperties = ncclGin_getProperties;
     ncclGin.listen = ncclGin_v11->listen;
     ncclGin.connect = ncclGin_v11->connect;
     ncclGin.createContext = ncclGin_createContext;

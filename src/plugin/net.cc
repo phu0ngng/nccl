@@ -27,17 +27,19 @@ extern getNcclNet_t getNcclNet_v8;
 extern getNcclNet_t getNcclNet_v9;
 extern getNcclNet_t getNcclNet_v10;
 extern getNcclNet_t getNcclNet_v11;
+extern getNcclNet_t getNcclNet_v12;
 extern getNcclCollNet_t getNcclCollNet_v6;
 extern getNcclCollNet_t getNcclCollNet_v7;
 extern getNcclCollNet_t getNcclCollNet_v8;
 extern getNcclCollNet_t getNcclCollNet_v9;
 extern getNcclCollNet_t getNcclCollNet_v10;
 extern getNcclCollNet_t getNcclCollNet_v11;
+extern getNcclCollNet_t getNcclCollNet_v12;
 NCCL_PARAM(NetPluginRefCount, "NET_PLUGIN_REF_COUNT", 0);
-#define NCCL_NET_VERSION_COUNT 6
-int ncclNetVersion[NCCL_NET_VERSION_COUNT] = {11, 10, 9, 8, 7, 6};
-getNcclNet_t* getNcclNet[NCCL_NET_VERSION_COUNT] = {getNcclNet_v11, getNcclNet_v10, getNcclNet_v9, getNcclNet_v8, getNcclNet_v7, getNcclNet_v6};
-getNcclCollNet_t* getNcclCollNet[NCCL_NET_VERSION_COUNT] = {getNcclCollNet_v11, getNcclCollNet_v10, getNcclCollNet_v9, getNcclCollNet_v8, getNcclCollNet_v7, getNcclCollNet_v6};
+#define NCCL_NET_VERSION_COUNT 7
+int ncclNetVersion[NCCL_NET_VERSION_COUNT] = {12, 11, 10, 9, 8, 7, 6};
+getNcclNet_t* getNcclNet[NCCL_NET_VERSION_COUNT] = {getNcclNet_v12, getNcclNet_v11, getNcclNet_v10, getNcclNet_v9, getNcclNet_v8, getNcclNet_v7, getNcclNet_v6};
+getNcclCollNet_t* getNcclCollNet[NCCL_NET_VERSION_COUNT] = {getNcclCollNet_v12, getNcclCollNet_v11, getNcclCollNet_v10, getNcclCollNet_v9, getNcclCollNet_v8, getNcclCollNet_v7, getNcclCollNet_v6};
 
 #define NCCL_NET_NUM_INTERNAL_PLUGINS 2
 

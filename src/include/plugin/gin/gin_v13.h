@@ -26,7 +26,7 @@ typedef struct {
   // If ndev returns 0, all other functions might be set to NULL.
   ncclResult_t (*devices)(int* ndev);
   // Get various device properties.
-  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v11_t* props);
+  ncclResult_t (*getProperties)(int dev, ncclNetProperties_v12_t* props);
   // Create a receiving object and provide a handle to connect to it. The
   // handle can be up to NCCL_NET_HANDLE_MAXSIZE bytes and will be exchanged
   // between ranks to create connections.

@@ -1025,8 +1025,8 @@ ncclResult_t ncclTopoMakePciParent(struct ncclXml* xml, struct ncclXmlNode** par
 }
 
 ncclResult_t ncclTopoMakeVnic(struct ncclXml* xml, struct ncclTopoNetInfo* netInfo, ncclNetVDeviceProps_t* vProps, struct ncclXmlNode** physNetNodes) {
-  if (vProps->ndevs > NCCL_NET_MAX_DEVS_PER_NIC) {
-    WARN("TOPO/NET : Tried to merge too many NICs. %d > %d", vProps->ndevs, NCCL_NET_MAX_DEVS_PER_NIC);
+  if (vProps->ndevs > netInfo->maxDevsPerNic) {
+    WARN("TOPO/NET : Tried to merge too many NICs. %d > %d", vProps->ndevs, netInfo->maxDevsPerNic);
     return ncclInternalError;
   }
 
@@ -1090,8 +1090,8 @@ ncclResult_t ncclTopoForceMerge(struct ncclXml* xml, struct ncclTopoNetInfo* net
       goto fail;
     }
 
-    if (vProps.ndevs > NCCL_NET_MAX_DEVS_PER_NIC) {
-      WARN("Specified fused NIC %s which has too many devices (%d). Max %d", semi, vProps.ndevs, NCCL_NET_MAX_DEVS_PER_NIC);
+    if (vProps.ndevs > netInfo->maxDevsPerNic) {
+      WARN("Specified fused NIC %s which has too many devices (%d). Max %d", semi, vProps.ndevs, netInfo->maxDevsPerNic);
       ret = ncclInvalidUsage;
       goto fail;
     }
@@ -1154,11 +1154,11 @@ ncclResult_t ncclTopoAutoMerge(struct ncclXml* xml, struct ncclTopoNetInfo* netI
           placedDevs[j] = 1;
           TRACE(NCCL_GRAPH, "Placed dev %d path=%d", j, paths[i*nPhysDevs + j] );
         }
-        if (vProps.ndevs == NCCL_NET_MAX_DEVS_PER_NIC) break;
+        if (vProps.ndevs == netInfo->maxDevsPerNic) break;
       }
 
-      if (vProps.ndevs > NCCL_NET_MAX_DEVS_PER_NIC) {
-        WARN("TOPO/NET : Tried to merge too many NICs. %d > %d", vProps.ndevs, NCCL_NET_MAX_DEVS_PER_NIC);
+      if (vProps.ndevs > netInfo->maxDevsPerNic) {
+        WARN("TOPO/NET : Tried to merge too many NICs. %d > %d", vProps.ndevs, netInfo->maxDevsPerNic);
         return ncclInternalError;
       }
 
@@ -1514,6 +1514,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
         netInfo.coll = 1;
         netInfo.gin = 0;
         netInfo.netPluginIndex = comm->netPluginIndex;
+        netInfo.maxDevsPerNic = (comm->ncclNetVer >= 12) ? NCCL_NET_MAX_DEVS_PER_NIC : NCCL_NET_MAX_DEVS_PER_NIC_V11;
         netInfo.dmaBufSupport = comm->dmaBufSupport;
         netInfo.getDevCount = ncclCollNetGetDevCount;
         netInfo.setVirtDevCount = ncclCollNetSetVirtDevCount;
@@ -1529,6 +1530,7 @@ ncclResult_t ncclTopoGetSystem(struct ncclComm* comm, struct ncclTopoSystem** sy
       netInfo.coll = 0;
       netInfo.gin = 0;
       netInfo.netPluginIndex = comm->netPluginIndex;
+      netInfo.maxDevsPerNic = (comm->ncclNetVer >= 12) ? NCCL_NET_MAX_DEVS_PER_NIC : NCCL_NET_MAX_DEVS_PER_NIC_V11;
       netInfo.dmaBufSupport = comm->dmaBufSupport;
       netInfo.getDevCount = ncclNetGetDevCount;
       netInfo.setVirtDevCount = ncclNetSetVirtDevCount;
