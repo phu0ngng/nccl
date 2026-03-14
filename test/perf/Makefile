@@ -99,7 +99,7 @@ BIN_FILES += $(COLLS:%=${DST_DIR}/%_perf_mpi_collnet)
 endif
 DEP_FILES := $(OBJ_FILES:%.o=%.dep)
 
-all: profiler.build ${BIN_FILES}
+all: profiler.build os.build ${BIN_FILES}
 
 clean:
 	rm -rf ${DST_DIR}
@@ -108,10 +108,19 @@ TEST_VERIFIABLE_SRCDIR := ../verifiable
 TEST_VERIFIABLE_BUILDDIR := $(BUILDDIR)/test/verifiable
 include ../verifiable/verifiable.mk
 
+TEST_OS_SRCDIR := ../os
+TEST_OS_BUILDDIR := $(BUILDDIR)/test/os
+TEST_OS_LIB := $(TEST_OS_BUILDDIR)/libnccl_test_os.a
+
+$(TEST_OS_LIB): os.build
+	@:
+
 COMMON_OBJS := ${DST_DIR}/common.o ${DST_DIR}/util.o ${DST_DIR}/timer.o ${DST_DIR}/ft_test.o
 
 NVLDFLAGS += -L$(TEST_VERIFIABLE_BUILDDIR) -lverifiable
+NVLDFLAGS += -L$(TEST_OS_BUILDDIR) -lnccl_test_os
 RPATHS := $(RPATHS):$$ORIGIN/../verifiable
+NVCUFLAGS += -I$(TEST_OS_SRCDIR)
 
 NVLDFLAGS += -Xlinker -rpath='$(RPATHS)' -lm -lstdc++
 
@@ -126,6 +135,9 @@ endif
 
 profiler.%:
 	${MAKE} -C $(PROFDIR) $* BUILDDIR=$(BUILDDIR)/lib
+
+os.%:
+	${MAKE} -C $(TEST_OS_SRCDIR) $* BUILDDIR=$(BUILDDIR)
 
 ${DST_DIR}/%.o: %.cu common.h util.h $(TEST_VERIFIABLE_HDRS)
 	@printf "Compiling  %-35s > %s\n" $< $@
@@ -152,12 +164,12 @@ ${DST_DIR}/nccl_mpi_collnet.o: ../../share/nccl_mpi_collnet.c
 	@mkdir -p ${DST_DIR}
 	mpicc -std=c99 $(CXXFLAGS) -I$(NCCLDIR)/include/ -o $@ -c $<
 
-${DST_DIR}/%_perf:${DST_DIR}/%.o $(COMMON_OBJS) $(TEST_VERIFIABLE_LIBSO)
+${DST_DIR}/%_perf:${DST_DIR}/%.o $(COMMON_OBJS) $(TEST_VERIFIABLE_LIBSO) $(TEST_OS_LIB)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $< $(COMMON_OBJS) $(NVLDFLAGS) -Xlinker --export-dynamic
 
-${DST_DIR}/replay-coll: ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(TEST_VERIFIABLE_LIBSO)
+${DST_DIR}/replay-coll: ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(TEST_VERIFIABLE_LIBSO) $(TEST_OS_LIB)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) ${DST_DIR}/replay-coll.o ${COLL_OBJS} ${COMMON_OBJS} $(NVLDFLAGS)
@@ -167,7 +179,7 @@ ${DST_DIR}/%_perf_mpi_collnet: ${DST_DIR}/%.o ${DST_DIR}/common_mpi_collnet.o ${
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ $(NVLDFLAGS)
 
-${DST_DIR}/comm_ops_perf: ${DST_DIR}/comm_ops.o
+${DST_DIR}/comm_ops_perf: ${DST_DIR}/comm_ops.o $(TEST_OS_LIB)
 	@printf "Linking  %-35s > %s\n" $< $@
 	@mkdir -p ${DST_DIR}
 	$(NVCC) -o $@ $(NVCUFLAGS) $^ $(NVLDFLAGS)

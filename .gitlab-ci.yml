@@ -387,7 +387,7 @@ build-windows:
       when: always
     - when: never
   script:
-    - cmake -DCMAKE_CUDA_ARCHITECTURES=90 -B build
+    - cmake -DCMAKE_CUDA_ARCHITECTURES=90 -DBUILD_TESTS=ON -B build
     - cmake --build build --parallel
   artifacts:
     paths:

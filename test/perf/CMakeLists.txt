@@ -81,15 +81,22 @@ foreach(COLL IN LISTS COLLS)
         ${CMAKE_BINARY_DIR}/include
         ${CMAKE_SOURCE_DIR}/plugins/profiler/example
         ${CMAKE_SOURCE_DIR}/plugins/profiler/example/nccl
+        ${CMAKE_SOURCE_DIR}/test/os
     )
+
     if(MPI_FOUND)
         add_compile_definitions(MPI_SUPPORT)
         target_include_directories(${COLL}_perf PRIVATE ${MPI_CXX_INCLUDE_PATH})
-        target_link_libraries(${COLL}_perf PRIVATE nccl ${CUDAToolkit_LIBRARIES} verifiable ${MPI_CXX_LIBRARIES})
+        target_link_libraries(${COLL}_perf PRIVATE nccl ${CUDAToolkit_LIBRARIES} verifiable nccl_test_os ${MPI_CXX_LIBRARIES})
     else()
-        target_link_libraries(${COLL}_perf PRIVATE nccl ${CUDAToolkit_LIBRARIES} verifiable)
+        target_link_libraries(${COLL}_perf PRIVATE nccl ${CUDAToolkit_LIBRARIES} verifiable nccl_test_os)
     endif()
-    add_dependencies(${COLL}_perf verifiable nccl-profiler-example)
+    # Add dependencies - nccl-profiler-example only on Linux
+    if(NCCL_OS_LINUX)
+        add_dependencies(${COLL}_perf verifiable nccl-profiler-example nccl_test_os)
+    else()
+        add_dependencies(${COLL}_perf verifiable nccl_test_os)
+    endif()
 endforeach()
 
 # Copy replay-coll.log to build directory

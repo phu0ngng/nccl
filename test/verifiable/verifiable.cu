@@ -41,7 +41,11 @@
 #include <cstdio>
 #include <cstdint>
 #include <cmath>
+#if defined(NCCL_OS_LINUX)
 #include <unistd.h>
+#elif defined(NCCL_OS_WINDOWS)
+#include <intrin.h>
+#endif
 
 using std::size_t;
 using std::int8_t;
@@ -495,6 +499,8 @@ __host__ __device__ uint64_t umul32hi(uint32_t a, uint32_t b) {
 __host__ __device__ uint64_t umul64hi(uint64_t a, uint64_t b) {
 #ifdef __CUDA_ARCH__
   return __umul64hi(a, b);
+#elif defined(NCCL_OS_WINDOWS)
+  return __umulh(a, b);
 #else
   return uint64_t(__uint128_t(a)*__uint128_t(b) >> 64);
 #endif
@@ -503,6 +509,9 @@ __host__ __device__ uint64_t umul64hi(uint64_t a, uint64_t b) {
 __host__ __device__ int clz32(int x) {
 #ifdef __CUDA_ARCH__
   return __clz(x);
+#elif defined(NCCL_OS_WINDOWS)
+  unsigned long idx;
+  return _BitScanReverse(&idx, (unsigned long)x) ? 31 - (int)idx : 32;
 #else
   return x==0 ? 32 : __builtin_clz(x);
 #endif
@@ -510,6 +519,9 @@ __host__ __device__ int clz32(int x) {
 __host__ __device__ int clz64(long long x) {
 #ifdef __CUDA_ARCH__
   return __clzll(x);
+#elif defined(NCCL_OS_WINDOWS)
+  unsigned long idx;
+  return _BitScanReverse64(&idx, (unsigned long long)x) ? 63 - (int)idx : 64;
 #else
   return x==0 ? 64 : __builtin_clzll(x);
 #endif

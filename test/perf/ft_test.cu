@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include "cuda_runtime.h"
 #include "nccl.h"
-#include <unistd.h>
 #include <stdlib.h>
 #include <time.h>
 #include <cstring>
 #include <assert.h>
+#include <vector>
+#include <mutex>
 #include "common.h"
 
 enum {
@@ -48,14 +49,15 @@ static testResult_t checkCommsState(ncclComm_t* comms, int nGpus, ncclResult_t s
         complete = 0;
         break;
       }
-      usleep(10);
+      std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
 #ifdef MPI_SUPPORT
     int flag;
-    extern pthread_mutex_t mpiLock;
-    pthread_mutex_lock(&mpiLock);
-    MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
-    pthread_mutex_unlock(&mpiLock);
+    extern std::mutex mpiLock;
+    {
+      std::lock_guard<std::mutex> lock(mpiLock);
+      MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+    }
 #endif
   } while (!complete);
 
@@ -119,7 +121,7 @@ static testResult_t distributeFTInitTest(struct threadArgs* args) {
   }
 
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
     for (int j = 0; j < nGpus; ++j) ncclCommAbort(comms[j]);
     goto exit;
   } else {
@@ -172,7 +174,7 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
   int totalGpus = args->nProcs * args->nThreads * args->nGpus;
   int sDev = args->localRank * args->nThreads * args->nGpus + args->thread * args->nGpus;
   int sleepId = args->sleepId;
-  ncclComm_t splitComms[nGpus];
+  std::vector<ncclComm_t> splitComms(nGpus);
 
   config.blocking = 0;
   config.splitShare = 1;
@@ -196,7 +198,7 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
   }
 
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
     NCCLCHECK(ncclGroupStart());
     for (int j = 0; j < nGpus; ++j) {
       ncclCommAbort(comms[j]);
@@ -212,7 +214,7 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
   NCCLCHECK(ncclGroupStart());
   for (int j = 0; j < nGpus; ++j)
     NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], size, ncclInt8, ncclProd, splitComms[j], streams[j]));
-  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), splitComms, nGpus);
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), splitComms.data(), nGpus);
 
   //completing NCCL operation by synchronizing on the CUDA stream
   for (int j = 0; j < nGpus; ++j)
@@ -238,7 +240,7 @@ static testResult_t distributeFTCommSplitTest(struct threadArgs* args) {
   for (int j = 0; j < nGpus; ++j) {
     NCCLCHECK(ncclCommFinalize(splitComms[j]));
   }
-  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), splitComms, nGpus);
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), splitComms.data(), nGpus);
 
   for (int j = 0; j < nGpus; ++j) {
     NCCLCHECK(ncclCommDestroy(comms[j]));
@@ -281,7 +283,7 @@ static testResult_t distributeFTAllreduceTest(struct threadArgs* args) {
   }
 
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
     for (int j = 0; j < nGpus; ++j) ncclCommAbort(comms[j]);
     goto exit;
   } else {
@@ -358,7 +360,7 @@ static testResult_t distributeFTAlltoAllTest(struct threadArgs* args) {
   }
 
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
     for (int j = 0; j < nGpus; ++j) ncclCommAbort(comms[j]);
     goto exit;
   } else {
@@ -432,7 +434,7 @@ static testResult_t distributeFTFinalizeTest(struct threadArgs* args) {
   }
 
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
     for (int j = 0; j < nGpus; ++j) ncclCommAbort(comms[j]);
     goto exit;
   } else {
@@ -474,7 +476,7 @@ static testResult_t distributeFTRevokeTest(struct threadArgs* args) {
     NCCLCHECK(ncclAllReduce((const void*)sendbuffs[j], (void*)recvbuffs[j], size, ncclInt8, ncclProd, comms[j], streams[j]));
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
   }
   // Revoke staged across nodes
 #ifdef MPI_SUPPORT
@@ -541,7 +543,7 @@ static testResult_t distributeFTRevokeThenShrinkTest(struct threadArgs* args) {
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
   }
 
   // Revoke staged across nodes
@@ -602,14 +604,14 @@ static testResult_t distributeFTRevokeThenShrinkTest(struct threadArgs* args) {
   }
   // Build a filtered list of valid communicators for the batch wait (exclude badIdx)
   int numValidComms = 0;
-  ncclComm_t validComms[nGpus];
+  std::vector<ncclComm_t> validComms(nGpus);
   for (int j = 0; j < nGpus; j++) {
     int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
     if (rank == badIdx) continue;
     validComms[numValidComms++] = comms[j];
   }
   // Ensure the grouped allreduce completes successfully before synchronizing streams
-  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), validComms, numValidComms);
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), validComms.data(), numValidComms);
   for (int j = 0; j < nGpus; ++j) {
     int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
     if (rank == badIdx) continue;
@@ -661,7 +663,7 @@ static testResult_t distributeFTRevokeThenSplitTest(struct threadArgs* args) {
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
   }
 
   // Revoke staged across nodes
@@ -901,10 +903,11 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
   }
 
 #ifdef MPI_SUPPORT
-  extern pthread_mutex_t mpiLock;
-  pthread_mutex_lock(&mpiLock);
-  MPI_Bcast(&growId, sizeof(ncclUniqueId), MPI_BYTE, 0, MPI_COMM_WORLD);
-  pthread_mutex_unlock(&mpiLock);
+  extern std::mutex mpiLock;
+  {
+    std::lock_guard<std::mutex> lock(mpiLock);
+    MPI_Bcast(&growId, sizeof(ncclUniqueId), MPI_BYTE, 0, MPI_COMM_WORLD);
+  }
 #endif
 
   // Grow: existing and new ranks
@@ -947,7 +950,7 @@ static testResult_t distributeFTGrowTest(struct threadArgs* args) {
 
     if (asyncErr == ncclInProgress) {
       waitCount++;
-      usleep(100);
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
   } while (asyncErr == ncclInProgress && waitCount < 100000);
 
@@ -1050,7 +1053,7 @@ static testResult_t distributeFTShrinkGrowTest(struct threadArgs* args) {
   NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), comms, nGpus);
 
   if (sleepId < NUM_SLEEP_CASES) {
-    usleep(sleepTimes[sleepId]);
+    std::this_thread::sleep_for(std::chrono::microseconds(sleepTimes[sleepId]));
   }
 
   // Step 2: Shrink to remove the bad rank
@@ -1069,14 +1072,14 @@ static testResult_t distributeFTShrinkGrowTest(struct threadArgs* args) {
 
   // Build filtered list of original comms for batch wait (exclude badIdx)
   int numValidComms = 0;
-  ncclComm_t validComms[nGpus];
+  std::vector<ncclComm_t> validComms(nGpus);
   for (int j = 0; j < nGpus; j++) {
     int rank = args->proc * args->nThreads * nGpus + args->thread * nGpus + j;
     if (rank != badIdx) {
       validComms[numValidComms++] = comms[j];
     }
   }
-  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), validComms, numValidComms);
+  NCCLCHECK_COMM_WAITBATCH(ncclGroupEnd(), validComms.data(), numValidComms);
 
   // Destroy old comms (abort the bad one)
   NCCLCHECK(ncclGroupStart());
@@ -1100,10 +1103,11 @@ static testResult_t distributeFTShrinkGrowTest(struct threadArgs* args) {
     NCCLCHECK(ncclCommGetUniqueId(comms[0], &growId));
   }
 #ifdef MPI_SUPPORT
-  extern pthread_mutex_t mpiLock;
-  pthread_mutex_lock(&mpiLock);
-  MPI_Bcast(&growId, sizeof(ncclUniqueId), MPI_BYTE, 0, MPI_COMM_WORLD);
-  pthread_mutex_unlock(&mpiLock);
+  extern std::mutex mpiLock;
+  {
+    std::lock_guard<std::mutex> lock(mpiLock);
+    MPI_Bcast(&growId, sizeof(ncclUniqueId), MPI_BYTE, 0, MPI_COMM_WORLD);
+  }
 #endif
 
   // Allocate grown comms
@@ -1311,7 +1315,7 @@ testResult_t faultToleranceTests(int nThreads, int nGpus, int ncclProc, int nccl
         }
 
         for (int t = nThreads - 1; t > 0; t--) {
-          pthread_join(threads[t].thread, NULL);
+          if (threads[t].thread.joinable()) threads[t].thread.join();
           TESTCHECK(threads[t].ret);
         }
 #ifdef MPI_SUPPORT

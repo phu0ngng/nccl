@@ -15,6 +15,7 @@ add_library(verifiable STATIC ${VERIFIABLE_LIB_SOURCES})
 target_include_directories(verifiable PUBLIC
     ${CMAKE_BINARY_DIR}/include
 )
+
 target_link_libraries(verifiable PRIVATE nccl ${CUDAToolkit_LIBRARIES})
 
 # Add each test as a separate executable

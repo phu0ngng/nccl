@@ -415,12 +415,10 @@ testResult_t ReduceScatterRunTest(struct threadArgs* args, int root, ncclDataTyp
   return testSuccess;
 }
 
-struct testEngine reduceScatterEngine = {
-  .getBuffSize = ReduceScatterGetBuffSize,
-  .runTest = ReduceScatterRunTest,
+NCCL_WEAK struct testEngine ncclTestEngine = {
+  /* .getBuffSize = */ ReduceScatterGetBuffSize,
+  /* .runTest = */ ReduceScatterRunTest,
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-  .getDevCommRequirements = ReduceScatterGetDevCommRequirements
+  /* .getDevCommRequirements = */ ReduceScatterGetDevCommRequirements
 #endif
 };
-
-#pragma weak ncclTestEngine=reduceScatterEngine

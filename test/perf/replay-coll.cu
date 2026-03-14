@@ -76,7 +76,7 @@ testResult_t ReplayRunTest(struct threadArgs* args, int root, ncclDataType_t typ
   return testSuccess;
 }
 
-struct testEngine ncclTestEngine {
+struct testEngine ncclTestEngine = {
   ReplayGetBuffSize,
   ReplayRunTest
 };

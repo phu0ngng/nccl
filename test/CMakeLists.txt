@@ -18,21 +18,27 @@ include_directories(
 add_library(gtest STATIC
     ${GTEST_DIR}/src/gtest-all.cc
 )
+target_compile_definitions(gtest PRIVATE GTEST_HAS_TR1_TUPLE=0)
 add_library(gtest_main STATIC
     ${GTEST_DIR}/src/gtest_main.cc
 )
+target_compile_definitions(gtest_main PRIVATE GTEST_HAS_TR1_TUPLE=0)
 target_link_libraries(gtest_main gtest)
 
 # Add test subdirectories
-add_subdirectory(apitest)
-add_subdirectory(single)
-add_subdirectory(unit)
+add_subdirectory(os)
 add_subdirectory(perf)
-add_subdirectory(examples)
-add_subdirectory(binary)
-add_subdirectory(stress)
 add_subdirectory(verifiable)
-add_subdirectory(port_failure_emu)
+
+if (NCCL_OS_LINUX)
+    add_subdirectory(apitest)
+    add_subdirectory(single)
+    add_subdirectory(unit)
+    add_subdirectory(examples)
+    add_subdirectory(binary)
+    add_subdirectory(stress)
+    add_subdirectory(port_failure_emu)
+endif()
 
 # Add MPI-dependent directories if MPI is found
 if(MPI_FOUND)

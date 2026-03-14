@@ -21,9 +21,10 @@
 #include <assert.h>
 #include <errno.h>
 // external profiler symbols
-#include <dlfcn.h>
+#include "os.h"
 #include <sstream>
 #include <iomanip>
+#include <atomic>
 
 #define PRINT if (is_main_thread) printf
 
@@ -68,13 +69,13 @@ size_t state_n = 0;   // # of items in the stack.
 // profiler event
 struct groupEvent {
   int type;
-  int count;
+  std::atomic<int> count;
 };
 
 struct taskEvent {
   int type;
-  int count;
-  bool ready;
+  std::atomic<int> count;
+  std::atomic<bool> ready;
   union {
     struct {
       const char* algo;
@@ -90,8 +91,8 @@ struct taskEvent {
 
 struct proxyEvent {
   int type;
-  int count;
-  bool ready;
+  std::atomic<int> count;
+  std::atomic<bool> ready;
   int chunkSize;
 };
 
@@ -354,7 +355,7 @@ void jsonOutputInit(const char *in_path,
       return;
     }
     free(try_path);
-    if(asprintf(&try_path, "%s.%d", in_path, try_count++) == -1) {
+    if(ncclTestAsprintf(&try_path, "%s.%d", in_path, try_count++) == -1) {
       printf("# skipping json output; failed to probe destination\n");
       return;
     }
@@ -464,7 +465,7 @@ static void jsonRankInfo(const rankInfo_t *ri) {
 void writeBenchmarkLinePreamble(size_t nBytes, size_t nElem, const char typeName[], const char opName[], int root) {
   char rootName[100];
   sprintf(rootName, "%6i", root);
-  PRINT("%12li  %12li  %8s  %6s  %6s", nBytes, nElem, typeName, opName, rootName);
+  PRINT("%12zu  %12zu  %8s  %6s  %6s", nBytes, nElem, typeName, opName, rootName);
 
   if(write_json) {
     jsonStartObject();
@@ -480,7 +481,7 @@ void writeBenchmarkLinePreamble(size_t nBytes, size_t nElem, const char typeName
 void writeBenchmarkLineTerminator(int actualIters, const char *name) {
   PRINT("  %6d", actualIters);
   if (tuning) {
-    if (__atomic_load_n(&task.ready, __ATOMIC_ACQUIRE) && task.type == ncclProfileColl) {
+    if (task.ready.load(std::memory_order_acquire) && task.type == ncclProfileColl) {
       PRINT("  %14s  %8s  %8d", task.coll.algo, task.coll.proto, task.coll.nChannels);
     } else { // p2p
       PRINT("  %14s  %8s  %8d", "N/A", "N/A", task.p2p.nChannels);
@@ -500,12 +501,12 @@ void writeBenchmarkLineTerminator(int actualIters, const char *name) {
         jsonKey("proto"); jsonStr("N/A");
         jsonKey("#channels"); jsonInt(task.p2p.nChannels);
       }
-      if (__atomic_load_n(&proxy.ready, __ATOMIC_ACQUIRE) && proxy.chunkSize) { jsonKey("chunkSize"); jsonInt(proxy.chunkSize); }
+      if (proxy.ready.load(std::memory_order_acquire) && proxy.chunkSize) { jsonKey("chunkSize"); jsonInt(proxy.chunkSize); }
       else { jsonKey("chunkSize"); jsonStr("N/A"); }
       jsonFinishObject();
     }
-    __atomic_store_n(&task.ready, false, __ATOMIC_RELAXED);
-    __atomic_store_n(&proxy.ready, false, __ATOMIC_RELAXED);
+    task.ready.store(false, std::memory_order_relaxed);
+    proxy.ready.store(false, std::memory_order_relaxed);
     jsonKey("actual_iterations"); jsonInt(actualIters);
     jsonKey("experiment_name");   jsonStr(name);
     jsonFinishObject();
@@ -677,7 +678,7 @@ void writeBenchmarkLineBody(double timeUsec, double totalTime, double algBw, dou
 // strings would be smarter/easier, but I chose to adapt what was
 // already in place.
 testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int totalProcs, int color, const char hostname[]) {
-  PRINT("# nThread %d nGpus %d minBytes %ld maxBytes %ld step: %ld(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
+  PRINT("# nThread %d nGpus %d minBytes %zu maxBytes %zu step: %zu(%s) warmup iters: %d iters: %d agg iters: %d validation: %d graph: %d\n",
         nThreads, nGpus, minBytes, maxBytes,
         (stepFactor > 1)?stepFactor:stepBytes, (stepFactor > 1)?"factor":"bytes",
         warmup_iters, iters, agg_iters, datacheck, cudaGraphLaunches);
@@ -730,7 +731,7 @@ testResult_t writeDeviceReport(size_t *maxMem, int localRank, int proc, int tota
     CUDACHECK(cudaGetDeviceProperties(&prop, cudaDev));
     if (len < MAX_LINE) {
       len += snprintf(line+len, MAX_LINE-len, "#  Rank %2d Group %2d Pid %6d on %10s device %2d [%04x:%02x:%02x] %s\n",
-                      rank, color, getpid(), hostname, cudaDev, prop.pciDomainID, prop.pciBusID, prop.pciDeviceID, prop.name);
+                      rank, color, ncclTestGetPid(), hostname, cudaDev, prop.pciDomainID, prop.pciBusID, prop.pciDeviceID, prop.name);
     }
     *maxMem = std::min(*maxMem, prop.totalGlobalMem);
   }
@@ -913,11 +914,11 @@ static ncclResult_t ncclProfilerStartEvent(void* ctx, void** eHandle, ncclProfil
   switch (eDescr->type) {
     case ncclProfileGroup:
       group.type = eDescr->type;
-      if (__atomic_fetch_add(&group.count, 1, __ATOMIC_RELAXED)) break;
+      if (group.count.fetch_add(1, std::memory_order_relaxed)) break;
       *eHandle = &group;
       break;
     case ncclProfileColl:
-      if (__atomic_fetch_add(&task.count, 1, __ATOMIC_RELAXED)) break;
+      if (task.count.fetch_add(1, std::memory_order_relaxed)) break;
       task.type = eDescr->type;
       task.coll.algo = eDescr->coll.algo;
       task.coll.proto = eDescr->coll.proto;
@@ -925,14 +926,14 @@ static ncclResult_t ncclProfilerStartEvent(void* ctx, void** eHandle, ncclProfil
       *eHandle = &task;
       break;
     case ncclProfileP2p:
-      if (__atomic_fetch_add(&task.count, 1, __ATOMIC_RELAXED)) break;
+      if (task.count.fetch_add(1, std::memory_order_relaxed)) break;
       task.type = eDescr->type;
       task.p2p.nChannels = eDescr->p2p.nChannels;
       *eHandle = &task;
       break;
     case ncclProfileProxyOp:
       // the chunkSize is the same for all channels so we only need to update the proxy event once and for all threads
-      if (__atomic_fetch_add(&proxy.count, 1, __ATOMIC_RELAXED)) break;
+      if (proxy.count.fetch_add(1, std::memory_order_relaxed)) break;
       proxy.type = ncclProfileProxyOp;
       proxy.chunkSize = eDescr->proxyOp.chunkSize;
       *eHandle = (void *)&proxy;
@@ -947,18 +948,18 @@ static ncclResult_t ncclProfilerStopEvent(void* eHandle) {
   switch (type) {
     case ncclProfileGroup: {
       struct groupEvent* e = (struct groupEvent *)eHandle;
-      __atomic_sub_fetch(&e->count, 1, __ATOMIC_RELAXED);
+      e->count.fetch_sub(1, std::memory_order_relaxed);
     } break;
     case ncclProfileColl:
     case ncclProfileP2p: {
       struct taskEvent* e = (struct taskEvent *)eHandle;
-      if (__atomic_sub_fetch(&e->count, 1, __ATOMIC_RELAXED) == 0)
-        __atomic_store_n(&e->ready, true, __ATOMIC_RELEASE);
+      if (e->count.fetch_sub(1, std::memory_order_relaxed) == 1)
+        e->ready.store(true, std::memory_order_release);
     } break;
     case ncclProfileProxyOp: {
       struct proxyEvent* e = (struct proxyEvent *)eHandle;
-      if (__atomic_sub_fetch(&e->count, 1, __ATOMIC_RELAXED) == 0)
-        __atomic_store_n(&e->ready, true, __ATOMIC_RELEASE);
+      if (e->count.fetch_sub(1, std::memory_order_relaxed) == 1)
+        e->ready.store(true, std::memory_order_release);
     } break;
     default:;
   }
@@ -974,21 +975,26 @@ static ncclResult_t ncclProfilerFinalize(void* ctx) {
 }
 
 // perftest exposes profiler interface to nccl
-ncclProfiler_v5_t ncclProfiler_v5 {
-  .name = "perftest",
-  .init = ncclProfilerInit,
-  .startEvent = ncclProfilerStartEvent,
-  .stopEvent = ncclProfilerStopEvent,
-  .recordEventState = ncclProfilerRecordEventState,
-  .finalize = ncclProfilerFinalize,
+ncclProfiler_v5_t ncclProfiler_v5 = {
+  /* .name = */ "perftest",
+  /* .init = */ ncclProfilerInit,
+  /* .startEvent = */ ncclProfilerStartEvent,
+  /* .stopEvent = */ ncclProfilerStopEvent,
+  /* .recordEventState = */ ncclProfilerRecordEventState,
+  /* .finalize = */ ncclProfilerFinalize,
 };
 
 int (*ncclProfilerStart)(int profilerMask, const char* profilerDump);
 int (*ncclProfilerStop)(void);
 
+#if defined(NCCL_OS_LINUX)
 static void* libHandle;
+#endif
 
 int ncclProfilerLoad(void) {
+#if defined(NCCL_OS_WINDOWS)
+  return 1;
+#elif defined(NCCL_OS_LINUX)
   void* libHandle = dlopen("libnccl-profiler-example.so", RTLD_NOW | RTLD_LOCAL);
   if (libHandle) {
     ncclProfilerStart = (int(*)(int, const char*))dlsym(libHandle, "exampleProfilerStart");
@@ -996,11 +1002,16 @@ int ncclProfilerLoad(void) {
     if (ncclProfilerStart && ncclProfilerStop) return 0;
   }
   return 1;
+#endif
 }
 
 int ncclProfilerUnload(void) {
+#if defined(NCCL_OS_WINDOWS)
+  return 0;
+#elif defined(NCCL_OS_LINUX)
   if (libHandle) dlclose(libHandle);
   ncclProfilerStart = nullptr;
   ncclProfilerStop = nullptr;
   return 0;
+#endif
 }

@@ -78,7 +78,7 @@ testResult_t BroadcastRmaPut(void* sendWindow, size_t sendoffset, void* recvWind
   NCCLCHECK_COMM_WAIT(ncclGroupEnd(), comm);
 
   // All ranks wait for signal from root
-  ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = root, .sigIdx = 0, .ctx = ctx};
+  ncclWaitSignalDesc_t waitDesc = {1, root, 0, ctx};
   NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
 
   return testSuccess;
@@ -155,9 +155,7 @@ testResult_t BroadcastRunTest(struct threadArgs* args, int root, ncclDataType_t 
   return testSuccess;
 }
 
-struct testEngine broadcastEngine = {
-  .getBuffSize = BroadcastGetBuffSize,
-  .runTest = BroadcastRunTest
+NCCL_WEAK struct testEngine ncclTestEngine = {
+  /* .getBuffSize = */ BroadcastGetBuffSize,
+  /* .runTest = */ BroadcastRunTest
 };
-
-#pragma weak ncclTestEngine=broadcastEngine

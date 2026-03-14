@@ -13,12 +13,16 @@
 #include <stdio.h>
 #include <cstdint>
 #include <algorithm>
+#include <thread>
+#include <chrono>
+#include <mutex>
 #ifdef MPI_SUPPORT
 #include "mpi.h"
 #endif
-#include <pthread.h>
+
 #include "nccl1_compat.h"
 #include "timer.h"
+#include "os.h"
 #include <cuda.h>
 
 // For nccl.h < 2.13 since we define a weak fallback
@@ -102,7 +106,7 @@ typedef enum {
     char hostname[1024];                            \
     getHostName(hostname, 1024);                    \
     printf(" .. %s pid %d: Test failure %s:%d\n",   \
-         hostname, getpid(),                        \
+         hostname, ncclTestGetPid(),                \
         __FILE__,__LINE__);                         \
     return r;                                       \
   }                                                 \
@@ -205,7 +209,7 @@ struct threadArgs {
 
 typedef testResult_t (*threadFunc_t)(struct threadArgs* args);
 struct testThread {
-  pthread_t thread;
+  std::thread thread;
   threadFunc_t func;
   struct threadArgs args;
   testResult_t ret;
@@ -223,10 +227,8 @@ extern testResult_t InitDataReduce(void* data, const size_t count, const size_t 
 extern testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks, const int rank);
 extern testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes, size_t *allocBytes);
 
-#include <unistd.h>
-
 static void getHostName(char* hostname, int maxlen) {
-  gethostname(hostname, maxlen);
+  ncclTestGetHostname(hostname, maxlen);
   for (int i=0; i < maxlen; i++) {
     if (hostname[i] == '\0') {
       return;
@@ -240,44 +242,17 @@ static void getHostName(char* hostname, int maxlen) {
 
 #include <stdint.h>
 
-static uint64_t getHash(const char* string, size_t n) {
-  // Based on DJB2a, result = result * 33 ^ char
-  uint64_t result = 5381;
-  for (size_t c = 0; c < n; c++) {
-    result = ((result << 5) + result) ^ string[c];
-  }
-  return result;
-}
-
 /* Generate a hash of the unique identifying string for this host
  * that will be unique for both bare-metal and container instances
  * Equivalent of a hash of;
  *
- * $(hostname)$(cat /proc/sys/kernel/random/boot_id)
+ * $(hostname)$(cat /proc/sys/kernel/random/boot_id)       [Linux]
+ * $(hostname)$(MachineGuid from registry)                 [Windows]
  *
+ * This function is now implemented in the OS abstraction layer
  */
-#define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
 static uint64_t getHostHash(const char* hostname) {
-  char hostHash[1024];
-
-  // Fall back is the hostname if something fails
-  (void) strncpy(hostHash, hostname, sizeof(hostHash));
-  int offset = strlen(hostHash);
-
-  FILE *file = fopen(HOSTID_FILE, "r");
-  if (file != NULL) {
-    char *p;
-    if (fscanf(file, "%ms", &p) == 1) {
-        strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
-        free(p);
-    }
-  }
-  fclose(file);
-
-  // Make sure the string is terminated
-  hostHash[sizeof(hostHash)-1]='\0';
-
-  return getHash(hostHash, strlen(hostHash));
+  return ncclTestGetHostHash(hostname);
 }
 
 #define HAVE_BF16 0
@@ -404,10 +379,9 @@ static testResult_t waitCommState(ncclComm_t comm) {
     NCCLCHECK(ncclCommGetAsyncError(comm, &state));
 #ifdef MPI_SUPPORT
     int flag;
-    extern pthread_mutex_t mpiLock;
-    pthread_mutex_lock(&mpiLock);
+    extern std::mutex mpiLock;
+    std::lock_guard<std::mutex> lock(mpiLock);
     MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
-    pthread_mutex_unlock(&mpiLock);
 #endif
   } while (state == ncclInProgress);
   if (state != ncclSuccess) return testNcclError;
@@ -421,10 +395,9 @@ static testResult_t waitCommStateBatch(ncclComm_t * comms, int num) {
       NCCLCHECK(ncclCommGetAsyncError(comms[idx], &state));
 #ifdef MPI_SUPPORT
       int flag;
-      extern pthread_mutex_t mpiLock;
-      pthread_mutex_lock(&mpiLock);
+      extern std::mutex mpiLock;
+      std::lock_guard<std::mutex> lock(mpiLock);
       MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
-      pthread_mutex_unlock(&mpiLock);
 #endif
     } while (state == ncclInProgress);
     if (state != ncclSuccess) return testNcclError;

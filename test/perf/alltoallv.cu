@@ -117,10 +117,11 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <errno.h>
-#include <pthread.h>
+#include <mutex>
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <atomic>
 
 #define PRINT if (is_main_thread) printf
 
@@ -134,16 +135,16 @@ static int traffic_matrix_dim = 0;
 static double traffic_matrix_scale = 1.0; // scale factor applied to traffic matrix values
 static double distance_weighted_spread = 1.0; // 0.0 => uniform, 1.0 => fully distance-weighted (default)
 
-static pthread_mutex_t alltoallv_lock = PTHREAD_MUTEX_INITIALIZER;
+static std::mutex alltoallv_lock;
 static int alltoallv_inited = 0;
 
 // atomics used for error flag, since init can be multi-threaded
-static int alltoallv_error_set = 0;
+static std::atomic<int> alltoallv_error_set(0);
 static inline int AlltoAllvHasError() {
-  return __atomic_load_n(&alltoallv_error_set, __ATOMIC_RELAXED);
+  return alltoallv_error_set.load(std::memory_order_relaxed);
 }
 static inline void AlltoAllvSetError() {
-  __atomic_store_n(&alltoallv_error_set, 1, __ATOMIC_RELAXED);
+  alltoallv_error_set.store(1, std::memory_order_relaxed);
 }
 
 static void AlltoAllvParseEnv() {
@@ -319,7 +320,7 @@ exit:
 }
 
 static void AlltoAllvInit(int nranks) {
-  pthread_mutex_lock(&alltoallv_lock);
+  std::lock_guard<std::mutex> guard(alltoallv_lock);
 
   if (!alltoallv_inited) {
     AlltoAllvParseEnv();
@@ -338,8 +339,6 @@ static void AlltoAllvInit(int nranks) {
           nranks, traffic_matrix_dim, traffic_matrix_file);
     AlltoAllvSetError();
   }
-
-  pthread_mutex_unlock(&alltoallv_lock);
 }
 
 // get peer-to-peer bytes from traffic matrix
@@ -572,14 +571,14 @@ void AlltoAllvGetBuffSize(size_t *sendcount, size_t *recvcount, size_t count, in
     // if using traffic matrix, validate that the max buffer size is large enough
     size_t total_bytes_req = MAX(*sendcount, *recvcount);
     if (count < total_bytes_req) {
-      pthread_mutex_lock(&alltoallv_lock);
+      alltoallv_lock.lock();
       if (!AlltoAllvHasError()) {
         if (is_main_proc)
           printf("maxBytes (-e) must be at least %zu bytes as required by traffic matrix file %s (got %zu). Increase -e.\n",
                  total_bytes_req, traffic_matrix_file, count);
         AlltoAllvSetError();
       }
-      pthread_mutex_unlock(&alltoallv_lock);
+      alltoallv_lock.unlock();
       *sendcount = *recvcount = 0;
       return;
     }
@@ -619,9 +618,7 @@ testResult_t AlltoAllvRunTest(struct threadArgs* args, int root, ncclDataType_t 
   return testSuccess;
 }
 
-struct testEngine alltoAllvEngine = {
-  .getBuffSize = AlltoAllvGetBuffSize,
-  .runTest = AlltoAllvRunTest
+NCCL_WEAK struct testEngine ncclTestEngine = {
+  /* .getBuffSize = */ AlltoAllvGetBuffSize,
+  /* .runTest = */ AlltoAllvRunTest
 };
-
-#pragma weak ncclTestEngine=alltoAllvEngine

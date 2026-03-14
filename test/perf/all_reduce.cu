@@ -448,12 +448,10 @@ testResult_t AllReduceRunTest(struct threadArgs* args, int root, ncclDataType_t 
   return testSuccess;
 }
 
-struct testEngine allReduceEngine = {
-  .getBuffSize = AllReduceGetBuffSize,
-  .runTest = AllReduceRunTest,
+NCCL_WEAK struct testEngine ncclTestEngine = {
+  /* .getBuffSize = */ AllReduceGetBuffSize,
+  /* .runTest = */ AllReduceRunTest,
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-  .getDevCommRequirements = AllReduceGetDevCommRequirements
+  /* .getDevCommRequirements = */ AllReduceGetDevCommRequirements
 #endif
 };
-
-#pragma weak ncclTestEngine=allReduceEngine

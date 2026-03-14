@@ -78,7 +78,7 @@ testResult_t SendRecvRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
                     recvWin, recvoffset, 0, ctx, 0, comm, stream));
 
   // Wait for signal from previous peer
-  ncclWaitSignalDesc_t waitDesc = {.opCnt = 1, .peer = recvPeer, .sigIdx = 0, .ctx = ctx};
+  ncclWaitSignalDesc_t waitDesc = {1, recvPeer, 0, ctx};
   NCCLCHECK(ncclWaitSignal(1, &waitDesc, comm, stream));
 
   return testSuccess;
@@ -164,9 +164,7 @@ testResult_t SendRecvRunTest(struct threadArgs* args, int root, ncclDataType_t t
   return testSuccess;
 }
 
-struct testEngine sendRecvEngine = {
-  .getBuffSize = SendRecvGetBuffSize,
-  .runTest = SendRecvRunTest
+NCCL_WEAK struct testEngine ncclTestEngine = {
+  /* .getBuffSize = */ SendRecvGetBuffSize,
+  /* .runTest = */ SendRecvRunTest
 };
-
-#pragma weak ncclTestEngine=sendRecvEngine

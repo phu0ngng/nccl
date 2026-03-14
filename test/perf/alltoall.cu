@@ -299,6 +299,7 @@ __global__ void NvlAlltoAllKernelOptimized(ncclWindow_t sendwin, size_t sendoffs
   bar.sync(ncclCoopCta(), cuda::memory_order_release);
 }
 
+#if !defined(NCCL_OS_WINDOWS)
 template <typename T>
 __global__ void GinAlltoAllKernel(ncclWindow_t sendwin, size_t sendoffset, ncclWindow_t recvwin, size_t recvoffset, size_t count, int root, struct ncclDevComm devComm) {
   int ginContext = 0;
@@ -418,6 +419,7 @@ __global__ void GinAlltoAllKernelMultiContext(ncclWindow_t sendwin, size_t sendo
   bar.sync(ncclCoopCta(), cuda::memory_order_release, ncclGinFenceLevel::Relaxed);
 #endif
 }
+#endif // !defined(NCCL_OS_WINDOWS)
 #endif
 
 testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, size_t recvoffset, size_t count, ncclDataType_t type, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, int implementation) {
@@ -448,6 +450,7 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
       case 2:
         TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(NvlAlltoAllKernelOptimized, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
+#if !defined(NCCL_OS_WINDOWS)
       case 3:
         TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(GinAlltoAllKernel, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
@@ -457,6 +460,7 @@ testResult_t AlltoAllRunColl(void* sendbuff, size_t sendoffset, void* recvbuff, 
       case 5:
         TESTCHECK(testLaunchDeviceKernel(SPECIALIZE_KERNEL(GinAlltoAllKernelMultiContext, type, op), sendbuff, sendoffset, recvbuff, recvoffset, count, type, op, root, comm, stream));
         return testSuccess;
+#endif // !defined(NCCL_OS_WINDOWS)
 
       case HOST_RMA_IMPL:
         // RMA host put implementation
@@ -505,12 +509,10 @@ testResult_t AlltoAllRunTest(struct threadArgs* args, int root, ncclDataType_t t
   return testSuccess;
 }
 
-struct testEngine alltoAllEngine = {
-  .getBuffSize = AlltoAllGetBuffSize,
-  .runTest = AlltoAllRunTest,
+NCCL_WEAK struct testEngine ncclTestEngine = {
+  /* .getBuffSize = */ AlltoAllGetBuffSize,
+  /* .runTest = */ AlltoAllRunTest,
 #if NCCL_VERSION_CODE >= NCCL_VERSION(2,28,0)
-  .getDevCommRequirements = AlltoAllGetDevCommRequirements
+  /* .getDevCommRequirements = */ AlltoAllGetDevCommRequirements
 #endif
 };
-
-#pragma weak ncclTestEngine=alltoAllEngine
