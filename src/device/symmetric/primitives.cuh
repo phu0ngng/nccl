@@ -277,7 +277,7 @@ static __device__ void bcastMultimem(
     using tmaSmemStruct_t = tmaSmemStruct<BytePack<BytePerPack>, UnrollPacks>;
     constexpr int smemSizePerWarp = ncclTmaShmemScratchWarpSize();
     tmaSmemStruct_t* tmaSmem = reinterpret_cast<tmaSmemStruct_t*>(smemScratch+lw*smemSizePerWarp);
-    if constexpr (EnableTma) {
+    if NCCL_IF_CONSTEXPR (EnableTma) {
       if (lane == 0) __mbarrier_init(&tmaSmem->bar, 1);
     }
 
@@ -287,7 +287,7 @@ static __device__ void bcastMultimem(
     int nIters = nChunks - t/WARP_SIZE;
     #pragma unroll 1
     while (0 < nIters) {
-      if constexpr (EnableTma) {
+      if NCCL_IF_CONSTEXPR (EnableTma) {
         if (lane == 0) tmaLoadStoreMc((void*)(outputUptr+cursor), tmaSmem->buff[0], (void*)(inputUptr+cursor), tileSize, &tmaSmem->bar);
       } else {
         BytePack<BytePerPack> tmp[UnrollPacks];

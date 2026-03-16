@@ -34,7 +34,7 @@ static __device__ void bcastDeep(
   tmaSmemStruct_t* tmaSmem = reinterpret_cast<tmaSmemStruct_t*>(smemScratch+lw*smemSizePerWarp);
   bool skip = false; // all lanes issue loads/stores
 
-  if constexpr (EnableTma) {
+  if NCCL_IF_CONSTEXPR (EnableTma) {
     if (lane == 0) {
       // lane0 issues async.cp.bulk commands
       __mbarrier_init(&tmaSmem->bar, 1);
@@ -46,7 +46,7 @@ static __device__ void bcastDeep(
 
   nIters -= w;
   if (0 < nIters) {
-    if constexpr (EnableTma) {
+    if NCCL_IF_CONSTEXPR (EnableTma) {
       if (lane == 0) {
         cp_async_bulk_global_to_shared(tmaSmem->buff[0], inpPacks, &tmaSmem->bar, tileSize);
         __mbarrier_token_t token = barrier_arrive1_tx_relaxed(&tmaSmem->bar, tileSize);
@@ -76,7 +76,7 @@ static __device__ void bcastDeep(
           #pragma unroll
           for (int ur=0; ur < UnrollPeers-partial; ur++) {
             if (partial && dr == nRanks) break;
-            if constexpr (EnableTma) {
+            if NCCL_IF_CONSTEXPR (EnableTma) {
               cp_async_bulk_shared_to_global(outPacks.lsaPtr(r), tmaSmem->buff[0], tileSize);
             } else {
               #pragma unroll UnrollPacks
@@ -86,7 +86,7 @@ static __device__ void bcastDeep(
             }
             if (++r == nRanks) r = 0;
           }
-          if constexpr (EnableTma) {
+          if NCCL_IF_CONSTEXPR (EnableTma) {
             if (lane == 0) {
               cp_async_bulk_commit_group();
               cp_async_bulk_wait_all_read();
@@ -98,7 +98,7 @@ static __device__ void bcastDeep(
       outPacks += intptr_t(wn)*UnrollPacks*WARP_SIZE;
       nIters -= wn;
       if (nIters <= 0) break;
-      if constexpr (EnableTma) {
+      if NCCL_IF_CONSTEXPR (EnableTma) {
         if (lane == 0) {
           cp_async_bulk_global_to_shared(tmaSmem->buff[0], inpPacks, &tmaSmem->bar, tileSize);
           __mbarrier_token_t token = barrier_arrive1_tx_relaxed(&tmaSmem->bar, tileSize);
