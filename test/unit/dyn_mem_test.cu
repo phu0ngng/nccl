@@ -64,6 +64,7 @@ static void parse_local_cli_args(int argc, char* argv[], local_cli_args_t* args)
     args->debug = 0;
 
     int opt;
+    optind = 1;
     while ((opt = getopt(argc, argv, "vr:wic:dh")) != -1) {
         switch (opt) {
             case 'v':
@@ -482,12 +483,21 @@ int main(int argc, char* argv[]) {
         size_t maxCount = maxAllocBytes / (nranks * sizeof(int));
 
         if (args.count > maxCount) {
-            if (rank == 0) {
-                printf("# Reducing element count from %zu to %zu due to memory limitation (GPU has %zu MB)\n",
-                       args.count, maxCount, maxMem / (1024 * 1024));
-            }
             args.count = maxCount;
         }
+    }
+
+    // GPUs may report slightly different totalGlobalMem, so synchronize
+    // the count to the minimum across all ranks to avoid collective mismatches.
+    {
+        unsigned long long localCount = args.count;
+        unsigned long long globalCount = 0;
+        MPICHECK(MPI_Allreduce(&localCount, &globalCount, 1, MPI_UNSIGNED_LONG_LONG, MPI_MIN, MPI_COMM_WORLD));
+        if (globalCount < args.count && rank == 0) {
+            printf("# Reducing element count from %zu to %llu due to memory limitation\n",
+                   args.count, globalCount);
+        }
+        args.count = (size_t)globalCount;
     }
 
     // Initialize NCCL
