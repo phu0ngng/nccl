@@ -1108,16 +1108,127 @@ def test_dev_comm_access_after_close(nccl_comm):
 
 @requires_nccl_version("2.29.3")
 @pytest.mark.mpi
-def test_suspend_resume(nccl_comm):
-    """Test suspend and resume round-trip preserves communicator state."""
+@pytest.mark.skipif(not HAS_CUPY, reason="CuPy is not available")
+def test_suspend_resume_single_gpu_per_process(nccl_comm):
+    """Test suspend/resume with single GPU per process: allreduce before and after, with mem stat checks."""
     nranks_before = nccl_comm.nranks
     rank_before = nccl_comm.rank
 
+    # Perform allreduce before suspend
+    send_data = nccl.cupy.empty(10, dtype="float32")
+    recv_data = nccl.cupy.empty(10, dtype="float32")
+    send_data[:] = nccl_comm.rank + 1
+    nccl_comm.allreduce(send_data, recv_data, nccl.SUM)
+    cp.cuda.Stream.null.synchronize()
+
+    expected = sum(range(1, nccl_comm.nranks + 1))
+    assert np.all(recv_data.get() == expected)
+
+    # Before suspend: not suspended
+    assert nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended) == 0
+
     nccl_comm.suspend(nccl.CommSuspendFlag.Mem)
+
+    # After suspend: suspended flag set, suspendable memory freed
+    assert nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended) == 1
+    assert nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspend) == 0
+
     nccl_comm.resume()
 
+    # After resume: no longer suspended
+    assert nccl_comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended) == 0
+
+    # Clear cached values so the assertions query the C API
+    nccl_comm._nranks = None
+    nccl_comm._rank = None
     assert nccl_comm.nranks == nranks_before
     assert nccl_comm.rank == rank_before
+
+    # Perform allreduce after resume
+    recv_data_after = nccl.cupy.empty(10, dtype="float32")
+    nccl_comm.allreduce(send_data, recv_data_after, nccl.SUM)
+    cp.cuda.Stream.null.synchronize()
+
+    assert np.all(recv_data_after.get() == expected), "allreduce after suspend/resume failed"
+
+
+@requires_nccl_version("2.30.0")
+@requires_min_devices(2)
+@pytest.mark.skipif(not HAS_CUPY, reason="CuPy is not available")
+def test_suspend_resume_multi_gpu_per_process():
+    """Test suspend/resume with multi-GPU per process: allreduce before and after, with mem stat checks."""
+    comms = None
+
+    try:
+        comms = nccl.Communicator.init_all()
+        ndev = len(comms)
+
+        # Perform allreduce before suspend
+        send_buffers = []
+        recv_buffers = []
+        for i, comm in enumerate(comms):
+            comm.device.set_current()
+            send_buffers.append(cp.full(10, i + 1, dtype=cp.float32))
+            recv_buffers.append(cp.zeros(10, dtype=cp.float32))
+
+        with nccl.group():
+            for i, comm in enumerate(comms):
+                comm.allreduce(send_buffers[i], recv_buffers[i], op=nccl.SUM)
+        cp.cuda.Stream.null.synchronize()
+
+        expected = sum(range(1, ndev + 1))
+        for i in range(ndev):
+            assert np.all(recv_buffers[i].get() == expected)
+
+        # Before suspend: not suspended
+        for comm in comms:
+            assert comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended) == 0
+
+        # Suspend all communicators
+        with nccl.group():
+            for comm in comms:
+                comm.suspend(nccl.CommSuspendFlag.Mem)
+
+        # After suspend: suspended flag set, suspendable memory freed
+        for comm in comms:
+            assert comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended) == 1
+            assert comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspend) == 0
+
+        # Resume all communicators
+        with nccl.group():
+            for comm in comms:
+                comm.resume()
+
+        # After resume: no longer suspended
+        for comm in comms:
+            assert comm.get_mem_stat(nccl.NcclCommMemStat.GpuMemSuspended) == 0
+
+        # Perform allreduce after resume
+        send_buffers = []
+        recv_buffers = []
+        for i, comm in enumerate(comms):
+            comm.device.set_current()
+            send_buffers.append(cp.full(10, i + 1, dtype=cp.float32))
+            recv_buffers.append(cp.zeros(10, dtype=cp.float32))
+
+        with nccl.group():
+            for i, comm in enumerate(comms):
+                comm.allreduce(send_buffers[i], recv_buffers[i], op=nccl.SUM)
+        cp.cuda.Stream.null.synchronize()
+
+        expected = sum(range(1, ndev + 1))
+        for i in range(ndev):
+            assert np.all(recv_buffers[i].get() == expected), (
+                f"Rank {i}: allreduce after suspend/resume failed"
+            )
+
+    finally:
+        if comms is not None:
+            for comm in comms:
+                try:
+                    comm.destroy()
+                except Exception:
+                    pass
 
 
 @requires_nccl_version("2.29.2")
