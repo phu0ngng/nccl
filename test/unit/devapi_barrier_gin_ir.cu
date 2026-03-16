@@ -21,8 +21,8 @@ extern "C" __global__ void runDevice(ncclDevComm comm) {
   alignas(ncclBarrierSession_C) unsigned char sess_storage[sizeof(ncclBarrierSession_C)];
   ncclBarrierSession_C* session = reinterpret_cast<ncclBarrierSession_C*>(sess_storage);
 
-  ncclLsaBarrierHandle innerHandle = net->comm.lsaBarrier;
-  ncclGinBarrierHandle outerHandle = net->comm.railGinBarrier;
+  ncclLsaBarrierHandle innerHandle = net->comm.hybridLsaBarrier;
+  ncclGinBarrierHandle outerHandle = net->comm.hybridRailGinBarrier;
   ncclMultimemHandle mmHandle{}; // unused when multimem=false
 
   ncclBarrierSessionInit(
