@@ -347,6 +347,7 @@ void runTopo(const char* xmlTopoFile, const char* platform, int nnodes) {
   netInfo.net = 1;
   netInfo.coll = coll > 0;
   netInfo.netPluginIndex = 0;
+  netInfo.maxDevsPerNic = NCCL_NET_MAX_DEVS_PER_NIC;
   netInfo.dmaBufSupport = true;
   netInfo.mergeLevel = param.mergeLevel;
   netInfo.forceMerge = param.forceMerge;
