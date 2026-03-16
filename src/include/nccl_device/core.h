@@ -101,6 +101,8 @@ struct ncclDevCommRequirements {
   ncclGinConnectionType_t ginConnectionType;
   bool ginExclusiveContexts;
   int ginQueueDepth;
+
+  int worldGinBarrierCount;
 };
 
 #define NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER {                               \
@@ -122,6 +124,7 @@ struct ncclDevCommRequirements {
     NCCL_GIN_CONNECTION_NONE,                    /* ginConnectionType */       \
     false,                                       /* ginExclusiveContexts */    \
     0,                                           /* ginQueueDepth */           \
+    0,                                           /* worldGinBarrierCount */    \
 }
 
 struct ncclDevResourceRequirements {

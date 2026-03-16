@@ -56,6 +56,8 @@ struct ncclDevComm {
 
   ncclLsaBarrierHandle_t hybridLsaBarrier;
   ncclGinBarrierHandle_t hybridRailGinBarrier;
+
+  ncclGinBarrierHandle_t worldGinBarrier;
 };
 
 #endif // _NCCL_DEVICE_COMM__TYPES_H_

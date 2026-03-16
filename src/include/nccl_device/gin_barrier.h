@@ -30,6 +30,7 @@ template<typename Coop>
 struct ncclGinBarrierSession: ncclGinBarrierSession_internal<Coop> {
   NCCL_DEVICE_INLINE ncclGinBarrierSession(Coop, ncclGin, ncclTeam, ncclGinBarrierHandle, uint32_t index);
   NCCL_DEVICE_INLINE ncclGinBarrierSession(Coop, ncclGin, ncclTeamTagRail, uint32_t index);
+  NCCL_DEVICE_INLINE ncclGinBarrierSession(Coop, ncclGin, ncclTeamTagWorld, uint32_t index);
 
   NCCL_DEVICE_INLINE ~ncclGinBarrierSession();
 

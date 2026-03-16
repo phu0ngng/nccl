@@ -988,7 +988,8 @@ void freeDevCommRequirements(
 
 bool ncclGinResourcesRequested(struct ncclDevCommRequirements const* reqs) {
   bool requestedGinResources = reqs->ginSignalCount > 0 || reqs->ginCounterCount > 0 ||
-                               reqs->barrierCount > 0 || reqs->railGinBarrierCount > 0;
+                               reqs->barrierCount > 0 || reqs->railGinBarrierCount > 0 ||
+                               reqs->worldGinBarrierCount > 0;
 
   struct ncclDevResourceRequirements* node = reqs->resourceRequirementsList;
   while (!requestedGinResources && node != nullptr) {
@@ -1048,7 +1049,10 @@ void ncclDevCommDump(struct ncclDevComm* devComm) {
   printf("\n");
   printf(" Abort flag %p\n", devComm->abortFlag);
   printf(" LSA Barriers count %d handle %d\n", devComm->lsaBarrier.nBarriers, devComm->lsaBarrier.bufHandle);
-  printf(" GIN Barrier signal0 %d\n", devComm->railGinBarrier.signal0);
+  printf(" Hybrid Barriers count %d LSA handle %d GIN Rail Barrier signal0 %d\n", devComm->hybridLsaBarrier.nBarriers,
+         devComm->hybridLsaBarrier.bufHandle, devComm->hybridRailGinBarrier.signal0);
+  printf(" GIN Rail Barrier signal0 %d\n", devComm->railGinBarrier.signal0);
+  printf(" GIN World Barrier signal0 %d\n", devComm->worldGinBarrier.signal0);
 }
 
 ncclResult_t ncclDevrCommCreateInternal(
@@ -1071,6 +1075,7 @@ ncclResult_t ncclDevrCommCreateInternal(
   cudaStream_t stream = nullptr;
   struct ncclDevResourceRequirements railGinBarrierReq;
   struct ncclDevResourceRequirements hybridRailGinBarrierReq;
+  struct ncclDevResourceRequirements worldGinBarrierReq;
   CUmemGenericAllocationHandle memHandle = 0x0;
   struct ncclDevrMemory* mem = nullptr;
   struct ncclDevrWindow* win = nullptr;
@@ -1157,7 +1162,7 @@ ncclResult_t ncclDevrCommCreateInternal(
 
   resReqsHead = reqs->resourceRequirementsList;
 
-  // Initialize resources for the world barrier
+  // Initialize resources for the hybrid barrier
   ncclLsaBarrierCreateRequirement(lsa, reqs->barrierCount, &outDevComm->hybridLsaBarrier, &hybridLsaBarrierReq);
   hybridLsaBarrierReq.next = resReqsHead;
   ncclGinBarrierCreateRequirement(comm, ncclTeamRail(comm), reqs->barrierCount, &outDevComm->hybridRailGinBarrier, &hybridRailGinBarrierReq);
@@ -1171,6 +1176,10 @@ ncclResult_t ncclDevrCommCreateInternal(
   ncclGinBarrierCreateRequirement(comm, ncclTeamRail(comm), reqs->railGinBarrierCount, &outDevComm->railGinBarrier, &railGinBarrierReq);
   railGinBarrierReq.next = resReqsHead;
   resReqsHead = &railGinBarrierReq;
+
+  ncclGinBarrierCreateRequirement(comm, ncclTeamWorld(comm), reqs->worldGinBarrierCount, &outDevComm->worldGinBarrier, &worldGinBarrierReq);
+  worldGinBarrierReq.next = resReqsHead;
+  resReqsHead = &worldGinBarrierReq;
 
   { struct ncclDevResourceRequirements* rr = resReqsHead;
     bufSizeTotal = 0;
