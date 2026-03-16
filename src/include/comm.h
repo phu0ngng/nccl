@@ -290,8 +290,8 @@ struct ncclTaskRma {
 
   // Signal operations
   ncclSignalMode_t signalMode;
-  int*peers;
-  int*nsignals;
+  int* peers;
+  int* nsignals;
   int npeers;
 
   // Profiler plugin
@@ -702,7 +702,6 @@ struct ncclComm {
   struct ncclMemoryPool memPool_ncclTaskRma;
   struct ncclMemoryPool memPool_ncclProxyOp;
   struct ncclMemoryPool memPool_ncclKernelPlan;
-  struct ncclMemoryPool memPool_ncclRmaProxyDesc;
 
   // Next comm in this thread's active ncclGroup[Start|End](). Holds "0x1" when
   // this comm is not yet in a group.

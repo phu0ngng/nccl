@@ -1662,6 +1662,17 @@ ncclResult_t ncclWinGetUserPtr(struct ncclComm* comm, struct ncclWindow_vidmem* 
   return ncclSuccess;
 }
 
+ncclResult_t ncclDevrWorldToLsaRank(struct ncclComm* comm, int peerWorldRank, int* peerLsaRank) {
+  ncclTeam_t worldTeam = ncclTeamWorld(comm);
+  ncclTeam_t lsaTeam = ncclTeamLsa(comm);
+  if (!ncclTeamRankIsMember(lsaTeam, worldTeam, peerWorldRank)) {
+    WARN("ncclDevrWorldToLsaRank: world rank %d is not a member of the LSA team", peerWorldRank);
+    return ncclInternalError;
+  }
+  *peerLsaRank = ncclTeamRankToTeam(lsaTeam, worldTeam, peerWorldRank);
+  return ncclSuccess;
+}
+
 // Get the corresponding pointer in another lsa rank's symmetric memory window
 ncclResult_t ncclDevrGetLsaRankPtr(struct ncclComm* comm, struct ncclDevrWindow* winHost, size_t offset, int lsaRank, void** outPtr) {
   NCCLCHECK(CommCheck(comm, __func__, "comm"));

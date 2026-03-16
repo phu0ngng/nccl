@@ -1462,6 +1462,10 @@ static ncclResult_t reclaimPlan(struct ncclComm* comm, struct ncclCommCallback* 
     ncclMemoryPoolFree(&comm->memPool_ncclProxyOp, q);
     q = q1;
   }
+  // Free RMA persistent descriptors (graph mode)
+  if (plan->isRma && plan->persistent) {
+    NCCLCHECK(ncclRmaProxyReclaimPlan(comm, plan));
+  }
   // Run other free callbacks
   ncclResult_t result = ncclSuccess;
   while (!ncclIntruQueueEmpty(&plan->cleanupQueue)) {
@@ -2693,6 +2697,14 @@ static ncclResult_t rmaTaskAppend(
   if (!comm->hostRmaSupport) {
     WARN("One sided RMA: host RMA is not supported in this communicator.");
     return ncclInvalidArgument;
+  }
+
+  int driverVersion;
+  NCCLCHECK(ncclCudaDriverVersion(&driverVersion));
+  if (driverVersion < 12050) {
+    WARN("One-sided RMA requires CUDA driver 12.5 or later (found %d.%d).",
+      driverVersion / 1000, (driverVersion % 1000) / 10);
+    return ncclInvalidUsage;
   }
 
   // Check if context is valid (must be 0 for now)

@@ -73,7 +73,6 @@ testResult_t SendRecvRmaPut(void* sendWindow, size_t sendoffset, void* recvWindo
 
   int ctx = 0;
 
-
   // Put my data to next peer's receive buffer
   NCCLCHECK(ncclPutSignal((char*)sendPtr + sendoffset, count, type, sendPeer,
                     recvWin, recvoffset, 0, ctx, 0, comm, stream));

@@ -34,17 +34,20 @@ done
 
 if [ "$RMA" == "1" ];
 then
-  for func in all_gather_perf alltoall_perf broadcast_perf gather_perf scatter_perf; do
+  for func in all_gather_perf alltoall_perf broadcast_perf gather_perf scatter_perf sendrecv_perf; do
     if [ "$NNODES" == "1" ];
     then
       run_command "${func}_single_rma" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 0 -R 2 -H"
+      run_command "${func}_single_rma_graph" $RUN_MODE $NGPUS "" "" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 1 -R 2 -H"
     fi
     if [ "$NNODES" -gt "1" ];
     then
       run_command "${func}_multi_rma" $RUN_MODE 1 "" "NCCL_NET=IB" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 0 -R 2 -H"
+      run_command "${func}_multi_rma_graph" $RUN_MODE 1 "" "NCCL_NET=IB" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 1 -R 2 -H"
       if [ "$NGPUS" -gt "1" ];
       then
         run_command "${func}_multi_rma" $RUN_MODE $NGPUS "" "NCCL_NET=IB" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 0 -R 2 -H"
+        run_command "${func}_multi_rma_graph" $RUN_MODE $NGPUS "" "NCCL_NET=IB" "$NCCL_HOME/test/perf/$func" "-b 128 -e 1G -f 2 -G 1 -R 2 -H"
       fi
     fi
   done
