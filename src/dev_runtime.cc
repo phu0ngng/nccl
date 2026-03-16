@@ -88,10 +88,9 @@ static void listRemove(Obj* list, int* count, int index);
 
 NCCL_PARAM(LsaTeamSize, "LSA_TEAM_SIZE", 0)
 
-ncclResult_t ncclDevrInitOnce(struct ncclComm* comm) {
-  ncclResult_t ret = ncclSuccess;
-  struct ncclDevrState* devr = &comm->devrState;
-  if (devr->bigSize != 0) return ncclSuccess;
+// Compute the LSA team size from the comm topology without any side effects.
+static int computeLsaSize(struct ncclComm* comm) {
+  if (comm->devrState.bigSize != 0) return comm->devrState.lsaSize;
 
   // LSA needs to be the same size for all ranks, and it needs to represent
   // a consecutive set of ranks.
@@ -114,6 +113,23 @@ ncclResult_t ncclDevrInitOnce(struct ncclComm* comm) {
     }
     lsaSize = gcd(lsaSize, nodeSize);
   }
+
+  return lsaSize;
+}
+
+bool ncclDevrIsOneLsaTeam(struct ncclComm* comm) {
+  int lsaSize = computeLsaSize(comm);
+  return lsaSize == comm->nRanks; // Same as comm->nRanks / comm->devrState.lsaSize == 1
+}
+
+ncclResult_t ncclDevrInitOnce(struct ncclComm* comm) {
+  ncclResult_t ret = ncclSuccess;
+  struct ncclDevrState* devr = &comm->devrState;
+  if (devr->bigSize != 0) return ncclSuccess;
+
+  // LSA needs to be the same size for all ranks, and it needs to represent
+  // a consecutive set of ranks.
+  int lsaSize = computeLsaSize(comm);
   devr->lsaSize = lsaSize;
   devr->lsaSelf = comm->rank % lsaSize;
   devr->lsaRankList = (int*)malloc(devr->lsaSize*sizeof(int));

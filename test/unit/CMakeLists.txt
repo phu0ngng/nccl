@@ -15,6 +15,7 @@ set(UNIT_TEST_SOURCES
     plugin_load.cc
     register_memcpyTest.cu
     intrusive_map_test.cc
+    lazy_init_test.cc
 )
 
 # MPI-dependent sources
@@ -46,6 +47,7 @@ set(SRC_WITH_DYNAMIC_LIBS
     ft_abort_rank0.cu
     device_id_test.cc
     dyn_mem_test.cu
+    lazy_init_test.cc
 )
 
 # Add each test as a separate executable

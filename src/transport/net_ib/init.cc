@@ -65,7 +65,11 @@ static ncclResult_t ncclIbGetPciPath(char* devName, char** path, char* fullPath)
     // Also merge virtual functions (VF) into the same device
     if (ncclParamIbMergeVfs()) p[strlen(p)-3] = p[strlen(p)-4] = '0';
   }
-  if (path) *path = p;
+  if (path) {
+    *path = p;
+  } else {
+    free(p);
+  }
   return ncclSuccess;
 }
 

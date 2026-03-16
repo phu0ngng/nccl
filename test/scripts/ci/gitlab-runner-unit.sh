@@ -154,6 +154,12 @@ else
   echo -e "Disabled Affinity Restore TESTS test\n\n"
 fi
 
+if [[ ${LAZY_INIT_TESTS} -eq 1 ]] ; then
+  run_command "lazy_init_tests" "$RUN_MODE" 1 "--oversubscribe" "" "$NCCL_HOME/test/unit/lazy_init_test" ""
+else
+  echo -e "Disabled Lazy Init TESTS test\n\n"
+fi
+
 if [[ ${LSA_POINTER_TESTS} -eq 1 ]] ; then
   run_command "lsa_pointer_tests" "$RUN_MODE" 2 "--oversubscribe" "" "$NCCL_HOME/test/unit/lsa_pointer_test" ""
 else
