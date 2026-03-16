@@ -51,6 +51,7 @@ variables:
   RUN_ON_THEIA: "0"
   RUN_ON_BIA: "0"
   RUN_ON_POLYPHE: "0"
+  RUN_ON_WINDOWS: "0"
   # Toggle variables for GC nodes
   RUN_ON_A100: "0"
   RUN_ON_P100: "0"
@@ -367,6 +368,25 @@ build-cmake:
     # TODO (kartiki) - Invoke this via docker/make.sh
     - srun --exclusive -p $SLURM_PARTITION -N 1 -t $SLURM_TIME docker/build_nccl_bm_cmake.sh --ci-build --enable-ccache
   allow_failure: false
+
+build-windows:
+  stage: build
+  extends:
+    - .windows
+  rules:
+    - <<: *pre_submit_rule
+    - if: $RUN_ON_WINDOWS == "1"
+      when: always
+    - when: never
+  script:
+    - cmake -DCMAKE_CUDA_ARCHITECTURES=90 -B build
+    - cmake --build build --parallel
+  artifacts:
+    paths:
+      - build
+    exclude:
+      - build/**/*.o
+    expire_in: 48 hrs
 
 ##
 ## Stage: build - Finish!

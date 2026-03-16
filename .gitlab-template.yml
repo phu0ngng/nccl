@@ -323,6 +323,16 @@ variables:
     RUN_MODE: "SALLOC_MPI"
     NCCL_DEBUG: "WARN"
 
+.windows:
+  rules:
+    - if: $RUN_ON_WINDOWS == "1"
+      when: always
+  tags:
+    - nccl-windows
+  variables:
+    NCCL_HOME: build
+    NCCL_DEBUG: "WARN"
+
 .setup:
   stage: setup
   variables:
