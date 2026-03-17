@@ -55,6 +55,7 @@ I18NSPHINXOPTS  = -c $(DOCPREPDIR) $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) $(DOCSRC)
 
 .PHONY: help
 help:
+	@echo
 	@echo "Please use \`make <target>' where <target> is one of"
 	@echo "  html       to make standalone HTML files"
 	@echo "  dirhtml    to make HTML files named index.html in directories"
@@ -63,7 +64,6 @@ help:
 	@echo "  json       to make JSON files"
 	@echo "  htmlhelp   to make HTML files and a HTML help project"
 	@echo "  qthelp     to make HTML files and a qthelp project"
-	@echo "  applehelp  to make an Apple Help Book"
 	@echo "  devhelp    to make HTML files and a Devhelp project"
 	@echo "  epub       to make an epub"
 	@echo "  latex      to make LaTeX files, you can set PAPER=a4 or PAPER=letter"
@@ -77,6 +77,7 @@ help:
 	@echo "  xml        to make Docutils-native XML files"
 	@echo "  pseudoxml  to make pseudoxml-XML files for display purposes"
 	@echo "  linkcheck  to check all external links for integrity"
+	@echo
 
 .PHONY: clean
 clean:
@@ -129,15 +130,6 @@ qthelp: $(DOCGEN)
 	@echo "To view the help file:"
 	@echo "# assistant -collectionFile $(DOCPREPDIR)/qthelp/NCCL.qhc"
 
-.PHONY: applehelp
-applehelp: $(DOCGEN)
-	$(SPHINXBUILD) -b applehelp $(ALLSPHINXOPTS) $(DOCPREPDIR)/applehelp
-	@echo
-	@echo "Build finished. The help book is in $(DOCPREPDIR)/applehelp."
-	@echo "N.B. You won't be able to view it unless you put it in" \
-	      "~/Library/Documentation/Help or install it in your application" \
-	      "bundle."
-
 .PHONY: devhelp
 devhelp: $(DOCGEN)
 	$(SPHINXBUILD) -b devhelp $(ALLSPHINXOPTS) $(DOCPREPDIR)/devhelp
@@ -164,6 +156,8 @@ latex: $(DOCGEN)
 
 .PHONY: latexpdf
 latexpdf: $(DOCGEN)
+	@which pdflatex >/dev/null 2>&1 || { echo "\n========================================\nError: 'pdflatex' not found.\nInstall with: sudo apt-get install texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended\n========================================\n"; exit 1; }
+	@which latexmk >/dev/null 2>&1 || { echo "\n========================================\nError: 'latexmk' not found.\nInstall with: sudo apt-get install latexmk\n========================================\n"; exit 1; }
 	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(DOCPREPDIR)/latex
 	@echo "Running LaTeX files through pdflatex..."
 	$(MAKE) -C $(DOCPREPDIR)/latex all-pdf
@@ -171,6 +165,8 @@ latexpdf: $(DOCGEN)
 
 .PHONY: latexpdfja
 latexpdfja: $(DOCGEN)
+	@which platex >/dev/null 2>&1 || { echo "\n========================================\nError: 'platex' not found.\nInstall with: sudo apt-get install texlive-lang-japanese\n========================================\n"; exit 1; }
+	@which dvipdfmx >/dev/null 2>&1 || { echo "\n========================================\nError: 'dvipdfmx' not found.\nInstall with: sudo apt-get install texlive-extra-utils\n========================================\n"; exit 1; }
 	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(DOCPREPDIR)/latex
 	@echo "Running LaTeX files through platex and dvipdfmx..."
 	$(MAKE) -C $(DOCPREPDIR)/latex all-pdf-ja
@@ -198,9 +194,10 @@ texinfo: $(DOCGEN)
 
 .PHONY: info
 info: $(DOCGEN)
+	@which makeinfo >/dev/null 2>&1 || { echo "\n========================================\nError: 'makeinfo' not found.\nInstall with: sudo apt-get install texinfo\n========================================\n"; exit 1; }
 	$(SPHINXBUILD) -b texinfo $(ALLSPHINXOPTS) $(DOCPREPDIR)/texinfo
 	@echo "Running Texinfo files through makeinfo..."
-	make -C $(DOCPREPDIR)/texinfo info
+	$(MAKE) -C $(DOCPREPDIR)/texinfo info
 	@echo "makeinfo finished; the Info files are in $(DOCPREPDIR)/texinfo."
 
 .PHONY: gettext
