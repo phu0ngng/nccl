@@ -483,6 +483,16 @@ class DevCommResource(CommResource):
     """
 
     def __init__(self, comm_ptr: int, requirements_ptr: int):
+        """
+        Creates a device communicator from an existing host communicator.
+
+        Args:
+            - comm_ptr (int): NCCL communicator raw pointer.
+            - requirements_ptr (int): Pointer to ncclDevCommRequirements_t structure.
+
+        Raises:
+            - ``NcclInvalid``: If comm_ptr is 0 (invalid communicator).
+        """
         self._requirements_ptr = requirements_ptr
         self._dev_comm: _nccl_bindings.DevComm | None = None
         super().__init__(comm_ptr)
