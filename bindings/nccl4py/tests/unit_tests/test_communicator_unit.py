@@ -24,8 +24,7 @@ from nccl.core.typing import NcclInvalid
 def test_initialize_rejects_already_initialized():
     """initialize() raises NcclInvalid if communicator is already initialized."""
     comm = Communicator(0xC)
-    uid = UniqueId.__new__(UniqueId)
-    uid._internal = type("FakeUID", (), {"ptr": 0})()
+    uid = UniqueId()
     with pytest.raises(NcclInvalid, match="already initialized"):
         comm.initialize(nranks=2, rank=0, unique_id=uid)
 
@@ -49,8 +48,7 @@ def test_initialize_resets_cached_properties(monkeypatch):
     comm._device = "stale"
     comm._comm_properties = "stale"
 
-    uid = UniqueId.__new__(UniqueId)
-    uid._internal = type("FakeUID", (), {"ptr": 0x123})()
+    uid = UniqueId()
     comm.initialize(nranks=2, rank=0, unique_id=uid)
 
     assert comm._resources == []
@@ -66,8 +64,7 @@ def test_initialize_resets_cached_properties(monkeypatch):
 def test_grow_rejects_new_rank_with_valid_comm():
     """grow() rejects new rank (rank != None) on an initialized communicator."""
     comm = Communicator(0xC)
-    uid = UniqueId.__new__(UniqueId)
-    uid._internal = type("FakeUID", (), {"ptr": 0x555})()
+    uid = UniqueId()
     with pytest.raises(NcclInvalid, match="New ranks must use a null communicator"):
         comm.grow(nranks=4, unique_id=uid, rank=3)
 
@@ -91,13 +88,12 @@ def test_grow_new_rank(monkeypatch):
 
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
 
-    uid = UniqueId.__new__(UniqueId)
-    uid._internal = type("FakeUID", (), {"ptr": 0x555})()
+    uid = UniqueId()
 
     comm = Communicator()
     new_comm = comm.grow(nranks=4, unique_id=uid, rank=3)
     assert new_comm.ptr == 0xFED
-    assert calls["grow"] == (0, 4, 0x555, 3, 0)
+    assert calls["grow"] == (0, 4, uid.ptr, 3, 0)
 
 
 def test_grow_existing_non_root(monkeypatch):
@@ -137,8 +133,7 @@ def test_grow_existing_root(monkeypatch):
 
     monkeypatch.setattr("nccl.core.communicator._nccl_bindings", B)
 
-    uid = UniqueId.__new__(UniqueId)
-    uid._internal = type("FakeUID", (), {"ptr": 0x555})()
+    uid = UniqueId()
 
     comm = Communicator.__new__(Communicator)
     comm._comm = 0xC
@@ -150,7 +145,7 @@ def test_grow_existing_root(monkeypatch):
 
     # rank=None (default) should be converted to -1 for the C API
     new_comm = comm.grow(nranks=4, unique_id=uid)
-    assert calls["grow"] == (0xC, 4, 0x555, -1, 0)
+    assert calls["grow"] == (0xC, 4, uid.ptr, -1, 0)
 
 
 def _setup_comm_with_mocked_bindings(monkeypatch, calls):

@@ -1039,9 +1039,10 @@ class Communicator:
         elif not isinstance(unique_id, (list, tuple)):
             raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
 
-        arr = _np.empty(len(unique_id), dtype=_nccl_bindings.unique_id_dtype)
-        for i, uid in enumerate(unique_id):
-            arr[i] = uid.as_ndarray[0].copy()
+        arr = _np.concatenate([
+            _np.frombuffer(uid._internal, dtype=_nccl_bindings.unique_id_dtype)
+            for uid in unique_id
+        ])
         comm_ptr = _nccl_bindings.comm_init_rank_scalable(
             int(nranks), int(rank), int(len(unique_id)), arr, cfg_ptr
         )
