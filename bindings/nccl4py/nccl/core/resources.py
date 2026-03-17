@@ -462,10 +462,7 @@ class CustomRedOp(CommResource):
         Raises:
             - ``RuntimeError``: If operator has been destroyed or is invalid.
         """
-        self._check_valid()
-        if self._op is None:
-            raise RuntimeError("RedOp is invalid")
-        return self._op
+        return self.op
 
     def __repr__(self) -> str:
         if not self.is_valid:
