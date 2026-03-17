@@ -69,6 +69,8 @@ variables:
   RUN_INSPECTOR_TESTS: "0"
   RUN_PERF_REGRESSION: "0"
   RUN_NCCL4PY_CI: "0"
+  # By default skip certain tests
+  SKIP_MULTI_RANK_GPU: "1"
 
 default:
   # set all jobs to interruptible by default
@@ -2637,6 +2639,7 @@ perftest-single-pre-tyche:
     CE_COLL: 1
     RMA: 1
     ENABLE_MNNVL_TUNER_PLUGIN: 1
+    SKIP_MULTI_RANK_GPU: "0"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-single::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
@@ -3102,6 +3105,7 @@ perftest-multi-pre-tyche:
     GRAPH: 0
     NNODES: $MULTI_PERFTEST_NODE_COUNT
     ENABLE_MNNVL_TUNER_PLUGIN: 1
+    SKIP_MULTI_RANK_GPU: "0"
   script:
     - export SALLOC="salloc -N ${NNODES} --exclusive --segment=${NNODES} --account=${SLURM_ACCOUNT} -J "${SLURM_ACCOUNT}-cicd::${GITLAB_USER_LOGIN}:perftest-multi::${CI_COMMIT_BRANCH}:${CI_COMMIT_SHORT_SHA}" -t ${SLURM_TIME} -p ${SLURM_PARTITION} --comment=${CI_JOB_URL}"
     - $SALLOC ./test/scripts/ci/gitlab-runner-perf.sh
