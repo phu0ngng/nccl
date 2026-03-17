@@ -99,6 +99,7 @@ __all__ = [
     "get_unique_id",
     "get_error_string",
     # Memory
+    "NcclBuffer",
     "mem_alloc",
     "mem_free",
     # Interop modules (lazy-loaded)
