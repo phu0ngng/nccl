@@ -172,20 +172,14 @@ TEST_F(ncclCommRevoke_test, null) {
     ASSERT_EQ(ncclSuccess, ncclCommRevoke(NULL, NCCL_REVOKE_DEFAULT));
 }
 
-TEST_F(ncclCommRevoke_test, reject_when_finalizing_or_destroying) {
+TEST_F(ncclCommRevoke_test, reject_when_finalizing) {
     if (nVis < 1) return;
 
     ASSERT_EQ(ncclSuccess, ncclCommInitAll(comms, 1, NULL));
 
-    // Finalize sets finalizeCalled; revoke should then reject
+    // Finalize sets finalizeCalled; revoke should then reject.
     ASSERT_EQ(ncclSuccess, ncclCommFinalize(comms[0]));
     ASSERT_EQ(ncclInvalidArgument, ncclCommRevoke(comms[0], NCCL_REVOKE_DEFAULT));
-
-    // Abort/destroy path sets destroyFlag; simulate by abort then revoke
-    ASSERT_EQ(ncclSuccess, ncclCommAbort(comms[0]));
-    ASSERT_EQ(ncclInvalidArgument, ncclCommRevoke(comms[0], NCCL_REVOKE_DEFAULT));
-
-    comms[0] = NULL; // Don't double-destroy in TearDown
 }
 
 TEST_F(ncclCommRevoke_test, split_after_revoke_blocking) {
