@@ -543,10 +543,6 @@ class WaitSignalDesc:
     Each descriptor specifies which peer to wait for, how many signal operations to wait for,
     and additional context for the wait operation.
 
-    Example:
-        >>> desc = WaitSignalDesc(peer=0, op_count=1)
-        >>> comm.wait_signal(desc, stream=stream)
-
     See Also:
         :meth:`Communicator.wait_signal`: The method that uses these descriptors.
     """
