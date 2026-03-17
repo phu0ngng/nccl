@@ -56,6 +56,12 @@ ncclResult_t setLocalGinType(struct ncclComm* comm) {
     return ncclSuccess;
   }
 
+  if (comm->compCap < 70) {
+    /* GIN only supported for Volta and later */
+    INFO(NCCL_INIT, "Compute Capability (%d) is not sufficient to enable GIN.  Require Volta (70) or newer.",comm->compCap);
+    return ncclSuccess;
+  }
+
   ncclNetProperties_t props;
   NCCLCHECK(ginState.ncclGin->getProperties(0, &props));
   if (props.netDeviceType == NCCL_NET_DEVICE_GIN_PROXY ||

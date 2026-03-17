@@ -451,6 +451,11 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   comm->rank = rank;
   comm->nRanks = ndev;
 
+  // Try to create a CUDA object right away. If there is something wrong with
+  // the device we're on (failure cause #1) , better know it early.
+  CUDACHECK(cudaGetDevice(&comm->cudaDev));
+  comm->compCap = ncclCudaCompCap();
+
   if (parent == NULL || !parent->shareResources) {
     struct ncclSharedResources* sharedRes;
     NEW_NOTHROW(sharedRes, ncclSharedResources);
@@ -481,9 +486,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
       return ncclInvalidUsage;
     }
   }
-  // Try to create a CUDA object right away. If there is something wrong with
-  // the device we're on (failure cause #1) , better know it early.
-  CUDACHECK(cudaGetDevice(&comm->cudaDev));
 
   // Initialize memory manager
   if (parent && parent->shareResources && parent->memManager) {
@@ -506,7 +508,6 @@ static ncclResult_t commAlloc(struct ncclComm* comm, struct ncclComm* parent, in
   NCCLCHECK(ncclNvmlDeviceGetHandleByPciBusId(busId, &nvmlDev));
   NCCLCHECK(ncclNvmlDeviceGetIndex(nvmlDev, (unsigned int*)&comm->nvmlDev));
 
-  comm->compCap = ncclCudaCompCap();
   TRACE(NCCL_INIT,"comm %p rank %d nranks %d cudaDev %d busId %lx compCap %d", comm, rank, ndev, comm->cudaDev, comm->busId, comm->compCap);
 
   comm->dmaBufSupport = (dmaBufSupported(comm) == ncclSuccess) ? true : false;
