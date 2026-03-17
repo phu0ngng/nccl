@@ -91,6 +91,10 @@ _DeviceID: TypeAlias = int
 class NcclInvalid(Exception):
     def __init__(self, msg):
         self.msg = msg
+        super().__init__(msg)
+
+    def __reduce__(self):
+        return (type(self), (self.msg,))
 
     def __repr__(self):
         return f"<NcclInvalid: {self.msg}>"
