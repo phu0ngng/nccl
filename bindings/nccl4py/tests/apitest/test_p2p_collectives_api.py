@@ -536,11 +536,11 @@ def test_signal_basic(nccl_comm, rank_info, allocator):
     peer_rank = self_rank + 1 if self_rank % 2 == 0 else self_rank - 1
 
     # Send a signal to the peer
-    nccl_comm.signal(peer_rank, 0, 0, 0, stream=0)
+    nccl_comm.signal(peer_rank, stream=0)
 
     # Create a wait descriptor and wait for the signal from peer
-    desc = nccl.WaitSignalDesc(1, peer_rank, 0, 0)
-    nccl_comm.wait_signal([desc], stream=0)
+    desc = nccl.WaitSignalDesc(peer_rank)
+    nccl_comm.wait_signal(desc, stream=0)
 
     _sync(allocator)
 
@@ -552,7 +552,7 @@ def test_signal_multiple(nccl_comm, rank_info, allocator):
     """Tests multiple signals between paired ranks.
 
     Each rank sends multiple signals to its peer and waits for the
-    same number of signals from the peer using op_cnt.
+    same number of signals from the peer using op_count.
     """
     self_rank = rank_info.nccl_rank
 
@@ -564,11 +564,11 @@ def test_signal_multiple(nccl_comm, rank_info, allocator):
 
     # Send multiple signals to the peer
     for _ in range(num_signals):
-        nccl_comm.signal(peer_rank, 0, 0, 0, stream=0)
+        nccl_comm.signal(peer_rank, stream=0)
 
-    # Wait for all signals at once using op_cnt
-    desc = nccl.WaitSignalDesc(num_signals, peer_rank, 0, 0)
-    nccl_comm.wait_signal([desc], stream=0)
+    # Wait for all signals at once using op_count
+    desc = nccl.WaitSignalDesc(peer_rank, num_signals)
+    nccl_comm.wait_signal(desc, stream=0)
 
     _sync(allocator)
 
@@ -590,9 +590,9 @@ def test_signal_with_group(nccl_comm, rank_info, allocator):
 
     # Use group to batch signal and wait_signal
     with nccl.group():
-        nccl_comm.signal(peer_rank, 0, 0, 0, stream=0)
-        desc = nccl.WaitSignalDesc(1, peer_rank, 0, 0)
-        nccl_comm.wait_signal([desc], stream=0)
+        nccl_comm.signal(peer_rank, stream=0)
+        desc = nccl.WaitSignalDesc(peer_rank)
+        nccl_comm.wait_signal(desc, stream=0)
 
     _sync(allocator)
 
@@ -609,11 +609,11 @@ def test_signal_ring(nccl_comm, rank_info, allocator):
     prev_rank = (self_rank - 1 + nranks) % nranks
 
     # Signal the next rank in the ring
-    nccl_comm.signal(next_rank, 0, 0, 0, stream=0)
+    nccl_comm.signal(next_rank, stream=0)
 
     # Wait for signal from the previous rank
-    desc = nccl.WaitSignalDesc(1, prev_rank, 0, 0)
-    nccl_comm.wait_signal([desc], stream=0)
+    desc = nccl.WaitSignalDesc(prev_rank)
+    nccl_comm.wait_signal(desc, stream=0)
 
     _sync(allocator)
 
@@ -633,11 +633,11 @@ def test_signal_multiple_descriptors(nccl_comm, rank_info, allocator):
     # Signal all other ranks
     for peer in range(nranks):
         if peer != self_rank:
-            nccl_comm.signal(peer, 0, 0, 0, stream=0)
+            nccl_comm.signal(peer, stream=0)
 
     # Wait for signals from all other ranks using multiple descriptors
     descs = [
-        nccl.WaitSignalDesc(1, peer, 0, 0)
+        nccl.WaitSignalDesc(peer)
         for peer in range(nranks)
         if peer != self_rank
     ]
@@ -681,9 +681,9 @@ def test_put_signal_basic(nccl_comm, rank_info, allocator):
         pytest.skip("Window registration not supported.")
 
     nccl_comm.put_signal(
-        local_buffer=send_data, peer=peer_rank, peer_win=recv_win
+        local_buffer=send_data, peer=peer_rank, peer_window=recv_win
     )
-    nccl_comm.wait_signal([nccl.WaitSignalDesc(1, peer_rank, 0, 0)])
+    nccl_comm.wait_signal(nccl.WaitSignalDesc(peer_rank))
 
     _sync(allocator)
 
@@ -729,10 +729,10 @@ def test_put_signal_with_offset(nccl_comm, rank_info, allocator):
     nccl_comm.put_signal(
         local_buffer=send_data,
         peer=peer_rank,
-        peer_win=recv_win,
-        peer_win_offset=offset,
+        peer_window=recv_win,
+        peer_window_offset=offset,
     )
-    nccl_comm.wait_signal([nccl.WaitSignalDesc(1, peer_rank, 0, 0)])
+    nccl_comm.wait_signal(nccl.WaitSignalDesc(peer_rank))
 
     _sync(allocator)
 
@@ -750,7 +750,7 @@ def test_put_signal_with_offset(nccl_comm, rank_info, allocator):
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["interop.cupy"])
 def test_put_signal_multiple(nccl_comm, rank_info, allocator):
-    """Test multiple put_signal calls in a group, wait for all with op_cnt."""
+    """Test multiple put_signal calls in a group, wait for all with op_count."""
     self_rank = rank_info.nccl_rank
     nranks = rank_info.nccl_size
 
@@ -780,11 +780,11 @@ def test_put_signal_multiple(nccl_comm, rank_info, allocator):
             nccl_comm.put_signal(
                 local_buffer=send_data,
                 peer=peer_rank,
-                peer_win=recv_win,
-                peer_win_offset=p * count,
+                peer_window=recv_win,
+                peer_window_offset=p * count,
             )
     nccl_comm.wait_signal(
-        [nccl.WaitSignalDesc(num_puts, peer_rank, 0, 0)], stream=0
+        nccl.WaitSignalDesc(peer_rank, num_puts), stream=0
     )
 
     _sync(allocator)
@@ -842,20 +842,20 @@ def test_put_signal_ping_pong(nccl_comm, rank_info, allocator):
             nccl_comm.put_signal(
                 local_buffer=send_data,
                 peer=peer_rank,
-                peer_win=recv_win,
+                peer_window=recv_win,
                 stream=0,
             )
             nccl_comm.wait_signal(
-                [nccl.WaitSignalDesc(1, peer_rank, 0, 0)], stream=0
+                nccl.WaitSignalDesc(peer_rank), stream=0
             )
         else:
             nccl_comm.wait_signal(
-                [nccl.WaitSignalDesc(1, peer_rank, 0, 0)], stream=0
+                nccl.WaitSignalDesc(peer_rank), stream=0
             )
             nccl_comm.put_signal(
                 local_buffer=send_data,
                 peer=peer_rank,
-                peer_win=recv_win,
+                peer_window=recv_win,
                 stream=0,
             )
         _sync(allocator)
