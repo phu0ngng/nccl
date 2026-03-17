@@ -11,6 +11,7 @@ bindings/nccl4py
 cmake/NCCLConfig.cmake.in
 contrib
 docs/examples
+docs/userguide
 makefiles
 pkg
 plugins/env/example

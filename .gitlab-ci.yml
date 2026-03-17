@@ -168,6 +168,7 @@ workflow:
   - "cmake/NCCLConfig.cmake.in"
   - "contrib/nccl_ep/**/*"
   - "docs/examples/**/*"
+  - "docs/userguide/**/*"
   - "makefiles/**/*"
   - "pkg/**/*"
   - "plugins/env/example/**/*"
