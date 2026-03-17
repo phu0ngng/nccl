@@ -15,7 +15,6 @@ __all__ = [
     "NCCL_UNDEF_INT",
     "NCCL_UNDEF_FLOAT",
     "NCCL_SPLIT_NOCOLOR",
-    "NCCL_MAGIC",
     "CTAPolicy",
     "CommShrinkFlag",
     "CommSuspendFlag",

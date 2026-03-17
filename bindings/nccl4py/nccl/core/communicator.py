@@ -775,32 +775,32 @@ class NCCLDevCommRequirements:
 
         # Show non-default values for brevity (field order matches struct)
         # Defaults from NCCL_DEV_COMM_REQUIREMENTS_INITIALIZER
-        if self._reqs.lsa_multimem:
-            parts.append(f"lsa_multimem={self._reqs.lsa_multimem}")
-        if self._reqs.barrier_count != 0:
-            parts.append(f"barrier_count={self._reqs.barrier_count}")
-        if self._reqs.lsa_barrier_count != 0:
-            parts.append(f"lsa_barrier_count={self._reqs.lsa_barrier_count}")
-        if self._reqs.rail_gin_barrier_count != 0:
-            parts.append(f"rail_gin_barrier_count={self._reqs.rail_gin_barrier_count}")
-        if self._reqs.lsa_ll_a2a_block_count != 0:
-            parts.append(f"lsa_ll_a2a_block_count={self._reqs.lsa_ll_a2a_block_count}")
-        if self._reqs.lsa_ll_a2a_slot_count != 0:
-            parts.append(f"lsa_ll_a2a_slot_count={self._reqs.lsa_ll_a2a_slot_count}")
-        if self._reqs.gin_force_enable:
-            parts.append(f"gin_force_enable={self._reqs.gin_force_enable}")
-        if self._reqs.gin_context_count != 4:  # Default is 4, not 0
-            parts.append(f"gin_context_count={self._reqs.gin_context_count}")
-        if self._reqs.gin_signal_count != 0:
-            parts.append(f"gin_signal_count={self._reqs.gin_signal_count}")
-        if self._reqs.gin_counter_count != 0:
-            parts.append(f"gin_counter_count={self._reqs.gin_counter_count}")
-        if self._reqs.gin_connection_type != int(NcclGinConnectionType.NONE):
-            parts.append(f"gin_connection_type={self._reqs.gin_connection_type}")
-        if self._reqs.gin_exclusive_contexts:
-            parts.append(f"gin_exclusive_contexts={self._reqs.gin_exclusive_contexts}")
-        if self._reqs.gin_queue_depth != 0:
-            parts.append(f"gin_queue_depth={self._reqs.gin_queue_depth}")
+        if self.lsa_multimem:
+            parts.append(f"lsa_multimem={self.lsa_multimem}")
+        if self.barrier_count != 0:
+            parts.append(f"barrier_count={self.barrier_count}")
+        if self.lsa_barrier_count != 0:
+            parts.append(f"lsa_barrier_count={self.lsa_barrier_count}")
+        if self.rail_gin_barrier_count != 0:
+            parts.append(f"rail_gin_barrier_count={self.rail_gin_barrier_count}")
+        if self.lsa_ll_a2a_block_count != 0:
+            parts.append(f"lsa_ll_a2a_block_count={self.lsa_ll_a2a_block_count}")
+        if self.lsa_ll_a2a_slot_count != 0:
+            parts.append(f"lsa_ll_a2a_slot_count={self.lsa_ll_a2a_slot_count}")
+        if self.gin_force_enable:
+            parts.append(f"gin_force_enable={self.gin_force_enable}")
+        if self.gin_context_count != 4:  # Default is 4, not 0
+            parts.append(f"gin_context_count={self.gin_context_count}")
+        if self.gin_signal_count != 0:
+            parts.append(f"gin_signal_count={self.gin_signal_count}")
+        if self.gin_counter_count != 0:
+            parts.append(f"gin_counter_count={self.gin_counter_count}")
+        if self.gin_connection_type != NcclGinConnectionType.NONE:
+            parts.append(f"gin_connection_type={self.gin_connection_type}")
+        if self.gin_exclusive_contexts:
+            parts.append(f"gin_exclusive_contexts={self.gin_exclusive_contexts}")
+        if self.gin_queue_depth != 0:
+            parts.append(f"gin_queue_depth={self.gin_queue_depth}")
 
         if parts:
             return f"<NCCLDevCommRequirements: {', '.join(parts)}>"
@@ -923,10 +923,10 @@ class Communicator:
         call this method with the same nranks and unique_id, but with different rank values.
 
         Args:
-            - nranks (int): Total number of ranks in the communicator.
-            - rank (int): This rank (must be between 0 and nranks-1).
-            - unique_id (UniqueId | Sequence[UniqueId]): Unique identifier(s) shared by all ranks.
-            - config (NCCLConfig, optional): NCCL configuration options. Defaults to None.
+            - nranks: Total number of ranks in the communicator.
+            - rank: This rank (must be between 0 and nranks-1).
+            - unique_id: Unique identifier(s) shared by all ranks.
+            - config: NCCL configuration options. Defaults to None.
 
         Returns:
             ``Communicator``: A new communicator instance.
@@ -956,7 +956,7 @@ class Communicator:
         ``init_all()`` handles all coordination internally.
 
         Args:
-            - devices (int | Sequence[int] | None): Specifies which devices to initialize:
+            - devices: Specifies which devices to initialize:
 
               - ``None`` (default): Initialize all visible CUDA devices
               - ``int``: Number of devices to use (creates communicators for devices ``[0, 1, ..., devices-1]``)
@@ -970,7 +970,7 @@ class Communicator:
             has its rank equal to its index in the list (rank i uses device devices[i] or device i).
 
         Raises:
-            - ``TypeError``: If devices is not an int, sequence of ints, or None, or if sequence elements are not integers.
+            - ``TypeError``: If devices is not an int, sequence of ints, or None.
             - ``NCCLError``: If device IDs are invalid (raised by the NCCL C API).
 
         Notes:
@@ -1022,10 +1022,10 @@ class Communicator:
         creating a null communicator first (via ``Communicator()``) and initializing it later.
 
         Args:
-            - nranks (int): Total number of ranks in the communicator.
-            - rank (int): This rank (must be between 0 and nranks-1).
-            - unique_id (UniqueId | Sequence[UniqueId]): Unique identifier(s) shared by all ranks.
-            - config (NCCLConfig, optional): NCCL configuration options. Defaults to None.
+            - nranks: Total number of ranks in the communicator.
+            - rank: This rank (must be between 0 and nranks-1).
+            - unique_id: Unique identifier(s) shared by all ranks.
+            - config: NCCL configuration options. Defaults to None.
 
         Raises:
             - ``NcclInvalid``: If unique_id has an invalid type or communicator is already initialized.
@@ -1189,16 +1189,15 @@ class Communicator:
         3. **New ranks**: Ranks joining via a null communicator (``Communicator()``).
 
         Args:
-            - nranks (int): Total number of ranks in the new communicator (existing + new).
+            - nranks: Total number of ranks in the new communicator (existing + new).
               All roles must pass the same value.
-            - unique_id (UniqueId | None, optional): Unique identifier from :meth:`get_unique_id`.
-              Existing root and new ranks must pass the UniqueId. Existing non-root must pass
+            - unique_id: Unique identifier from :meth:`get_unique_id`. Existing root and
+              new ranks must pass the UniqueId. Existing non-root must pass None (the default).
+              Defaults to None.
+            - rank: This rank's ID in the new communicator. New ranks must pass their assigned
+              rank, which must be >= the parent communicator size. Existing ranks must pass
               None (the default). Defaults to None.
-            - rank (int | None, optional): This rank's ID in the new communicator.
-              New ranks must pass their assigned rank, which must be >= the parent communicator
-              size (i.e., new ranks fill the slots after existing ranks). Existing ranks
-              (both root and non-root) must pass None (the default). Defaults to None.
-            - config (NCCLConfig, optional): Configuration for the new communicator. Defaults to None.
+            - config: Configuration for the new communicator. Defaults to None.
 
         Returns:
             ``Communicator``: A new communicator containing all ranks.
@@ -1322,7 +1321,7 @@ class Communicator:
 
         _nccl_bindings.comm_finalize(self._comm)
 
-    def revoke(self) -> None:
+    def revoke(self, flags: int = 0) -> None:
         """
         Revoke a communicator.
 
@@ -1334,12 +1333,14 @@ class Communicator:
         Calling ``finalize()`` after ``revoke()`` is invalid. Resource sharing
         via split-share / shrink-share is disabled while revoked.
 
+        Args:
+            flags: Reserved for future use. Defaults to 0.
+
         See Also:
             :meth:`suspend`, :meth:`resume`
         """
         self._check_valid("revoke")
-        # revokeFlags is reserved for future use and must be 0 (NCCL_REVOKE_DEFAULT)
-        _nccl_bindings.comm_revoke(self._comm, 0)
+        _nccl_bindings.comm_revoke(self._comm, flags)
 
     def suspend(self, flags: CommSuspendFlag = CommSuspendFlag.Mem) -> None:
         """
@@ -1417,14 +1418,10 @@ class Communicator:
         CUDA device associated with this communicator.
 
         Returns:
-            ``cuda.core.Device``: A CUDA device object from ``cuda.core.experimental`` (alias ``cuda.core.Device``).
-            This object provides additional functionalities, such as ``to_system_device()``
-            for obtaining the corresponding NVML (system) device, device properties, sync device, and etc.
-            See the CUDA Python documentation for more:
+            ``cuda.core.Device``: A CUDA device object. Provides additional functionalities
+            such as ``to_system_device()`` for obtaining the NVML device, device properties,
+            and sync. See the CUDA Python documentation for more:
             https://nvidia.github.io/cuda-python/cuda-core/latest/generated/cuda.core.Device.html
-
-        Returns:
-            ``Device``: CUDA device object from cuda.core
 
         Raises:
             - ``NcclInvalid``: If communicator is not initialized.

@@ -85,6 +85,7 @@ __all__ = [
     "RegisteredBufferHandle",
     "RegisteredWindowHandle",
     "CustomRedOp",
+    "DevCommResource",
     # Group
     "group",
     "group_start",
