@@ -122,7 +122,7 @@ def _to_numpy(buf):
 
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
-def test_send_recv(nccl_comm, rank_info, allocator):
+def test_send_recv_ping_pong(nccl_comm, rank_info, allocator):
     """Test send/recv with different allocators."""
     if rank_info.nccl_size % 2 != 0 and rank_info.nccl_rank == rank_info.nccl_size - 1:
         pytest.skip("Odd number of ranks, skip last rank")
@@ -166,6 +166,30 @@ def test_send_recv(nccl_comm, rank_info, allocator):
     _sync(allocator)
     result = _to_numpy(recv_data)
     assert np.allclose(result, expected), f"{allocator} (group): expected {expected}, got {result}"
+
+
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["cupy", "torch", "interop.cupy", "interop.torch"])
+def test_send_recv_ring(nccl_comm, rank_info, allocator):
+    """Test ring topology: each rank sends to right neighbor and receives from left neighbor."""
+    self_rank = rank_info.nccl_rank
+    nranks = rank_info.nccl_size
+    right = (self_rank + 1) % nranks
+    left = (self_rank - 1) % nranks
+    count = 10
+
+    send_list = [(self_rank + 1) * 100 + i for i in range(count)]
+    send_data = _allocate_buffer(send_list, "float32", allocator)
+    recv_data = _allocate_empty_buffer(count, "float32", allocator)
+    expected = np.array([(left + 1) * 100 + i for i in range(count)], dtype=np.float32)
+
+    with nccl.group():
+        nccl_comm.send(send_data, right)
+        nccl_comm.recv(recv_data, left)
+
+    _sync(allocator)
+    result = _to_numpy(recv_data)
+    assert np.allclose(result, expected), f"{allocator}: expected {expected}, got {result}"
 
 
 # --- Collective Tests ---
@@ -805,14 +829,14 @@ def test_put_signal_multiple(nccl_comm, rank_info, allocator):
 @pytest.mark.mpi(min_size=2)
 @pytest.mark.parametrize("allocator", ["interop.cupy"])
 def test_put_signal_ping_pong(nccl_comm, rank_info, allocator):
-    """Test ping-pong: rank0 put then wait, rank1 wait then put; two iterations with verification."""
+    """Test ping-pong pairs: even rank puts then waits, odd rank waits then puts."""
     self_rank = rank_info.nccl_rank
     nranks = rank_info.nccl_size
 
-    if nranks != 2:
-        pytest.skip("Ping-pong test requires exactly 2 ranks")
+    if nranks % 2 == 1 and self_rank == nranks - 1:
+        pytest.skip("Odd number of ranks, last rank unpaired")
 
-    peer_rank = 1 - self_rank
+    peer_rank = self_rank + 1 if self_rank % 2 == 0 else self_rank - 1
     count = 8
     num_iterations = 2
 
@@ -838,7 +862,7 @@ def test_put_signal_ping_pong(nccl_comm, rank_info, allocator):
             send_data.copy_(torch.tensor(payload, dtype=torch.float32, device="cuda"))
         _sync(allocator)
 
-        if self_rank == 0:
+        if self_rank % 2 == 0:  # even rank: initiator — put first, then wait
             nccl_comm.put_signal(
                 local_buffer=send_data,
                 peer=peer_rank,
@@ -848,7 +872,7 @@ def test_put_signal_ping_pong(nccl_comm, rank_info, allocator):
             nccl_comm.wait_signal(
                 nccl.WaitSignalDesc(peer_rank), stream=0
             )
-        else:
+        else:  # odd rank: responder — wait first, then put
             nccl_comm.wait_signal(
                 nccl.WaitSignalDesc(peer_rank), stream=0
             )
@@ -860,9 +884,60 @@ def test_put_signal_ping_pong(nccl_comm, rank_info, allocator):
             )
         _sync(allocator)
 
-    # After two rounds: recv_data holds the last payload from peer (iteration 1); peer sent [self_rank*1000+10+i]
     expected = np.array(
         [peer_rank * 1000 + (num_iterations - 1) * 10 + i for i in range(count)],
+        dtype=np.float32
+    )
+    result = _to_numpy(recv_data)
+    assert np.allclose(result, expected), (
+        f"{allocator}: expected {expected}, got {result}"
+    )
+
+
+@requires_nccl_version("2.29.3")
+@pytest.mark.mpi(min_size=2)
+@pytest.mark.parametrize("allocator", ["interop.cupy"])
+def test_put_signal_ring(nccl_comm, rank_info, allocator):
+    """Test ring topology: each rank puts to right neighbor and waits for left neighbor."""
+    self_rank = rank_info.nccl_rank
+    nranks = rank_info.nccl_size
+    right = (self_rank + 1) % nranks
+    left = (self_rank - 1) % nranks
+    count = 8
+    num_iterations = 2
+
+    send_data = _allocate_buffer([0] * count, "float32", allocator)
+    recv_data = _allocate_buffer([0] * count, "float32", allocator)
+
+    send_win = nccl_comm.register_window(
+        send_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    recv_win = nccl_comm.register_window(
+        recv_data, flags=nccl.WindowFlag.CollSymmetric
+    )
+    if send_win is None or recv_win is None:
+        pytest.skip("Window registration not supported.")
+
+    for iteration in range(num_iterations):
+        payload = [self_rank * 1000 + iteration * 10 + i for i in range(count)]
+        if hasattr(send_data, "get"):  # CuPy
+            send_data.set(np.array(payload, dtype=np.float32))
+        else:
+            send_data.copy_(torch.tensor(payload, dtype=torch.float32, device="cuda"))
+        _sync(allocator)
+
+        # All ranks put clockwise and wait for their left neighbor — no asymmetry needed.
+        nccl_comm.put_signal(
+            local_buffer=send_data,
+            peer=right,
+            peer_window=recv_win,
+            stream=0,
+        )
+        nccl_comm.wait_signal(nccl.WaitSignalDesc(left), stream=0)
+        _sync(allocator)
+
+    expected = np.array(
+        [left * 1000 + (num_iterations - 1) * 10 + i for i in range(count)],
         dtype=np.float32
     )
     result = _to_numpy(recv_data)
