@@ -147,7 +147,9 @@ class UniqueId:
         Returns:
             ``np.ndarray``: Array containing the unique ID data.
         """
-        return _np.ndarray((1,), dtype=_nccl_bindings.unique_id_dtype, buffer=self._internal).view(_np.recarray)
+        return _np.ndarray((1,), dtype=_nccl_bindings.unique_id_dtype, buffer=self._internal).view(
+            _np.recarray
+        )
 
     @property
     def as_bytes(self) -> bytes:

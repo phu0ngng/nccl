@@ -111,8 +111,10 @@ def __getattr__(name):
     """Lazy-load interop submodules on first access to avoid importing cupy/torch unless needed."""
     if name == "cupy":
         import nccl.core.interop.cupy
+
         return nccl.core.interop.cupy
     elif name == "torch":
         import nccl.core.interop.torch
+
         return nccl.core.interop.torch
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

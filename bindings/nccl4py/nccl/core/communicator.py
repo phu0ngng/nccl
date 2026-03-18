@@ -1040,10 +1040,12 @@ class Communicator:
         elif not isinstance(unique_id, (list, tuple)):
             raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
 
-        arr = _np.concatenate([
-            _np.frombuffer(uid._internal, dtype=_nccl_bindings.unique_id_dtype)
-            for uid in unique_id
-        ])
+        arr = _np.concatenate(
+            [
+                _np.frombuffer(uid._internal, dtype=_nccl_bindings.unique_id_dtype)
+                for uid in unique_id
+            ]
+        )
         comm_ptr = _nccl_bindings.comm_init_rank_scalable(
             int(nranks), int(rank), int(len(unique_id)), arr, cfg_ptr
         )
@@ -1056,7 +1058,9 @@ class Communicator:
         self._comm_properties = None
 
     # --- Communicator APIs ---
-    def split(self, color: int | None = None, key: int = 0, config: NCCLConfig | None = None) -> Communicator:
+    def split(
+        self, color: int | None = None, key: int = 0, config: NCCLConfig | None = None
+    ) -> Communicator:
         """
         Splits this communicator into sub-communicators based on color values.
 
@@ -1219,9 +1223,7 @@ class Communicator:
         uid_ptr = 0 if unique_id is None else unique_id.ptr
         rank_val = -1 if rank is None else int(rank)
         cfg_ptr = 0 if config is None else config.ptr
-        comm_ptr = _nccl_bindings.comm_grow(
-            self._comm, int(nranks), uid_ptr, rank_val, cfg_ptr
-        )
+        comm_ptr = _nccl_bindings.comm_grow(self._comm, int(nranks), uid_ptr, rank_val, cfg_ptr)
 
         return type(self)(comm_ptr)
 
