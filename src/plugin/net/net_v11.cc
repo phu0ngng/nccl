@@ -42,11 +42,6 @@ static ncclResult_t ncclNet_getProperties(int dev, ncclNetProperties_t* props) {
   return ncclSuccess;
 }
 
-static ncclResult_t ncclNet_init(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
-  // Safe cast: ncclNetCommConfig_v11_t and ncclNetCommConfig_v12_t are binary identical.
-  return ncclNet_v11->init(ctx, commId, (ncclNetCommConfig_v11_t*)config, logFunction, profFunction);
-}
-
 static ncclResult_t ncclNet_makeVDevice(int* d, ncclNetVDeviceProps_t* props) {
   // Safe cast: devs[] is at the end of the struct and NCCL limits ndevs to NCCL_NET_MAX_DEVS_PER_NIC_V11 for v11 plugins.
   return ncclNet_v11->makeVDevice(d, (ncclNetVDeviceProps_v11_t*)props);
@@ -56,31 +51,37 @@ static ncclResult_t ncclNet_setNetAttr(void* ctx, ncclNetAttr_t* netAttr) {
   return ncclNet_v11->setNetAttr(ctx, (ncclNetAttr_v11_t*)netAttr);
 }
 
+static ncclResult_t ncclNet_init(void** ctx, uint64_t commId, ncclNetCommConfig_t* config, ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
+  // Safe cast: ncclNetCommConfig_v11_t and ncclNetCommConfig_v12_t are binary identical.
+  NCCLCHECK(ncclNet_v11->init(ctx, commId, (ncclNetCommConfig_v11_t*)config, logFunction, profFunction));
+  ncclNet.devices = ncclNet_v11->devices;
+  ncclNet.getProperties = ncclNet_getProperties;
+  ncclNet.listen = ncclNet_v11->listen;
+  ncclNet.connect = ncclNet_v11->connect;
+  ncclNet.accept = ncclNet_v11->accept;
+  ncclNet.regMr = ncclNet_v11->regMr;
+  ncclNet.regMrDmaBuf = ncclNet_v11->regMrDmaBuf;
+  ncclNet.deregMr = ncclNet_v11->deregMr;
+  ncclNet.isend = ncclNet_v11->isend;
+  ncclNet.irecv = ncclNet_v11->irecv;
+  ncclNet.iflush = ncclNet_v11->iflush;
+  ncclNet.test = ncclNet_v11->test;
+  ncclNet.closeSend = ncclNet_v11->closeSend;
+  ncclNet.closeRecv = ncclNet_v11->closeRecv;
+  ncclNet.closeListen = ncclNet_v11->closeListen;
+  ncclNet.getDeviceMr = ncclNet_v11->getDeviceMr;
+  ncclNet.irecvConsumed = ncclNet_v11->irecvConsumed;
+  ncclNet.makeVDevice = (ncclNet_v11->makeVDevice) ? ncclNet_makeVDevice : nullptr;
+  ncclNet.finalize = ncclNet_v11->finalize;
+  ncclNet.setNetAttr = (ncclNet_v11->setNetAttr) ? ncclNet_setNetAttr : nullptr;
+  return ncclSuccess;
+}
+
 ncclNet_t* getNcclNet_v11(void* lib) {
   ncclNet_v11 = (ncclNet_v11_t*)ncclOsDlsym(lib, "ncclNetPlugin_v11");
   if (ncclNet_v11) {
     ncclNet.name = ncclNet_v11->name;
     ncclNet.init = ncclNet_init;
-    ncclNet.devices = ncclNet_v11->devices;
-    ncclNet.getProperties = ncclNet_getProperties;
-    ncclNet.listen = ncclNet_v11->listen;
-    ncclNet.connect = ncclNet_v11->connect;
-    ncclNet.accept = ncclNet_v11->accept;
-    ncclNet.regMr = ncclNet_v11->regMr;
-    ncclNet.regMrDmaBuf = ncclNet_v11->regMrDmaBuf;
-    ncclNet.deregMr = ncclNet_v11->deregMr;
-    ncclNet.isend = ncclNet_v11->isend;
-    ncclNet.irecv = ncclNet_v11->irecv;
-    ncclNet.iflush = ncclNet_v11->iflush;
-    ncclNet.test = ncclNet_v11->test;
-    ncclNet.closeSend = ncclNet_v11->closeSend;
-    ncclNet.closeRecv = ncclNet_v11->closeRecv;
-    ncclNet.closeListen = ncclNet_v11->closeListen;
-    ncclNet.getDeviceMr = ncclNet_v11->getDeviceMr;
-    ncclNet.irecvConsumed = ncclNet_v11->irecvConsumed;
-    ncclNet.makeVDevice = (ncclNet_v11->makeVDevice) ? ncclNet_makeVDevice : nullptr;
-    ncclNet.finalize = ncclNet_v11->finalize;
-    ncclNet.setNetAttr = (ncclNet_v11->setNetAttr) ? ncclNet_setNetAttr : nullptr;
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded net plugin %s (v11)", ncclNet_v11->name);
     return &ncclNet;
   }
@@ -135,28 +136,33 @@ static ncclResult_t ncclCollNet_makeVDevice(int* d, ncclNetVDeviceProps_t* props
   return ncclCollNet_v11->makeVDevice(d, (ncclNetVDeviceProps_v11_t*)props);
 }
 
+static ncclResult_t ncclCollNet_init(void** ctx, uint64_t commId, ncclDebugLogger_t logFunction) {
+  NCCLCHECK(ncclCollNet_v11->init(ctx, commId, logFunction));
+  ncclCollNet.devices = ncclCollNet_v11->devices;
+  ncclCollNet.getProperties = ncclCollNet_getProperties;
+  ncclCollNet.listen = ncclCollNet_v11->listen;
+  ncclCollNet.connect = ncclCollNet_v11->connect;
+  ncclCollNet.reduceSupport = ncclCollNet_v11->reduceSupport;
+  ncclCollNet.regMr = ncclCollNet_v11->regMr;
+  ncclCollNet.regMrDmaBuf = ncclCollNet_v11->regMrDmaBuf;
+  ncclCollNet.deregMr = ncclCollNet_v11->deregMr;
+  ncclCollNet.iallreduce = ncclCollNet_v11->iallreduce;
+  ncclCollNet.iallgather = ncclCollNet_iallgather;
+  ncclCollNet.ireducescatter = ncclCollNet_ireducescatter;
+  ncclCollNet.iflush = ncclCollNet_v11->iflush;
+  ncclCollNet.test = ncclCollNet_v11->test;
+  ncclCollNet.closeColl = ncclCollNet_v11->closeColl;
+  ncclCollNet.closeListen = ncclCollNet_v11->closeListen;
+  ncclCollNet.makeVDevice = (ncclCollNet_v11->makeVDevice) ? ncclCollNet_makeVDevice : nullptr;
+  ncclCollNet.finalize = ncclCollNet_v11->finalize;
+  return ncclSuccess;
+}
+
 ncclCollNet_t* getNcclCollNet_v11(void* lib) {
   ncclCollNet_v11 = (ncclCollNet_v11_t*)ncclOsDlsym(lib, "ncclCollNetPlugin_v11");
   if (ncclCollNet_v11) {
     ncclCollNet.name = ncclCollNet_v11->name;
-    ncclCollNet.init = ncclCollNet_v11->init;
-    ncclCollNet.devices = ncclCollNet_v11->devices;
-    ncclCollNet.getProperties = ncclCollNet_getProperties;
-    ncclCollNet.listen = ncclCollNet_v11->listen;
-    ncclCollNet.connect = ncclCollNet_v11->connect;
-    ncclCollNet.reduceSupport = ncclCollNet_v11->reduceSupport;
-    ncclCollNet.regMr = ncclCollNet_v11->regMr;
-    ncclCollNet.regMrDmaBuf = ncclCollNet_v11->regMrDmaBuf;
-    ncclCollNet.deregMr = ncclCollNet_v11->deregMr;
-    ncclCollNet.iallreduce = ncclCollNet_v11->iallreduce;
-    ncclCollNet.iallgather = ncclCollNet_iallgather;
-    ncclCollNet.ireducescatter = ncclCollNet_ireducescatter;
-    ncclCollNet.iflush = ncclCollNet_v11->iflush;
-    ncclCollNet.test = ncclCollNet_v11->test;
-    ncclCollNet.closeColl = ncclCollNet_v11->closeColl;
-    ncclCollNet.closeListen = ncclCollNet_v11->closeListen;
-    ncclCollNet.makeVDevice = (ncclCollNet_v11->makeVDevice) ? ncclCollNet_makeVDevice : nullptr;
-    ncclCollNet.finalize = ncclCollNet_v11->finalize;
+    ncclCollNet.init = ncclCollNet_init;
     INFO(NCCL_INIT|NCCL_NET, "NET/Plugin: Loaded collnet plugin %s (v11)", ncclCollNet_v11->name);
     return &ncclCollNet;
   }
