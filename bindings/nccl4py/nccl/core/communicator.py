@@ -552,9 +552,9 @@ class WaitSignalDesc:
     op_count: int = 1
     """Number of signal operations to wait for from the peer."""
     signal_index: int = 0
-    """Signal index identifier."""
+    """Signal index identifier. Currently must be 0."""
     context: int = 0
-    """Context identifier."""
+    """Context identifier. Currently must be 0."""
 
 
 class NCCLDevCommRequirements:
@@ -1331,7 +1331,7 @@ class Communicator:
         via split-share / shrink-share is disabled while revoked.
 
         Args:
-            flags: Reserved for future use. Defaults to 0.
+            flags: Reserved for future use. Currently must be 0.
 
         See Also:
             :meth:`suspend`, :meth:`resume`
@@ -1699,9 +1699,9 @@ class Communicator:
 
         Args:
             peer: Target rank to send the signal to.
-            signal_index: Signal index identifier for the operation. Defaults to 0.
-            context: Context identifier for the operation. Defaults to 0.
-            flags: Reserved for future use. Defaults to 0.
+            signal_index: Signal index identifier for the operation. Currently must be 0.
+            context: Context identifier for the operation. Currently must be 0.
+            flags: Reserved for future use. Currently must be 0.
             stream: CUDA stream to enqueue the signal operation on.
                 Defaults to ``None`` (uses default stream).
 
@@ -1744,9 +1744,9 @@ class Communicator:
             peer: Target rank to put the data to and send the signal to.
             peer_window: Peer's registered window handle (from :meth:`register_window`).
             peer_window_offset: Offset in the peer's window in elements. Defaults to 0.
-            signal_index: Signal index identifier for the operation. Defaults to 0.
-            context: Context identifier for the operation. Defaults to 0.
-            flags: Reserved for future use. Defaults to 0.
+            signal_index: Signal index identifier for the operation. Currently must be 0.
+            context: Context identifier for the operation. Currently must be 0.
+            flags: Reserved for future use. Currently must be 0.
             stream: CUDA stream to enqueue the put_signal operation on.
                 Defaults to ``None`` (uses default stream).
 
