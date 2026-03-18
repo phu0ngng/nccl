@@ -10,6 +10,7 @@
 #define NCCL_REDUCE_KERNEL_H_
 
 #include "op128.h"
+#include "nccl_device/utility.h"
 #include <limits>
 #include <type_traits>
 
@@ -467,11 +468,7 @@ struct Apply_PreOp {
   static constexpr bool IsIdentity = Apply_PreOp<Fn, EltPerPack/2>::IsIdentity;
   template<int Size>
   __device__ __forceinline__ static BytePack<Size> preOp(Fn fn, BytePack<Size> a) {
-    #if __cpp_if_constexpr
-    if constexpr(!IsIdentity) {
-    #else
-    if (!IsIdentity) {
-    #endif
+    if NCCL_IF_CONSTEXPR (!IsIdentity) {
       // The `if (!IsIdentity)` condition is not strictly necessary, but it may help
       // compiler in that it won't have to tear a register apart for no reason
       // just to put it back together again.
@@ -508,11 +505,7 @@ struct Apply_PostOp {
   static constexpr bool IsIdentity = Apply_PostOp<Fn, EltPerPack/2>::IsIdentity;
   template<int Size>
   __device__ __forceinline__ static BytePack<Size> postOp(Fn fn, BytePack<Size> a) {
-    #if __cpp_if_constexpr
-    if constexpr(!IsIdentity) {
-    #else
-    if (!IsIdentity) {
-    #endif
+    if NCCL_IF_CONSTEXPR (!IsIdentity) {
       // The `if (!IsIdentity)` condition is not strictly necessary, but it may help
       // compiler in that it won't have to tear a register apart for no reason
       // just to put it back together again.
