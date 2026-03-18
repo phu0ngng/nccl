@@ -1,6 +1,13 @@
 <!-- This file is automatically changed -->
 <!-- update with extra care -->
 # NCCL - PLC
+<!------------------------------------->
+## version 2.30
+
+- [Enabling DDP in NET IB](items/id_DE55495D/Enabling_DDP_in_NET_IB.md)
+<!-- V2_30_DO_NOT_MOVE -->
+
+<!------------------------------------->
 
 <!------------------------------------->
 ## version 2.30
