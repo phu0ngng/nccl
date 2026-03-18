@@ -145,6 +145,9 @@ __hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclNetCommConfig_
   props0.netDeviceType = NCCL_NET_DEVICE_HOST;
   props0.netDeviceVersion = 0;
   props0.maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  props0.maxMultiRequestSize = 1;
+  props0.railId = NCCL_NET_ID_UNDEF;
+  props0.planeId = NCCL_NET_ID_UNDEF;
   pluginAddDevice(*ctx, &props0);
 
   // Dev 1
@@ -166,6 +169,9 @@ __hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclNetCommConfig_
   props1.netDeviceType = NCCL_NET_DEVICE_HOST;
   props1.netDeviceVersion = 0;
   props1.maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  props1.maxMultiRequestSize = 1;
+  props1.railId = NCCL_NET_ID_UNDEF;
+  props1.planeId = NCCL_NET_ID_UNDEF;
   pluginAddDevice(*ctx, &props1);
 
   // Devs 3 and 4 are a separate NIC Fusion device which will fail to merge
@@ -188,6 +194,9 @@ __hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclNetCommConfig_
   props2.netDeviceType = NCCL_NET_DEVICE_HOST;
   props2.netDeviceVersion = 0;
   props2.maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  props2.maxMultiRequestSize = 1;
+  props2.railId = NCCL_NET_ID_UNDEF;
+  props2.planeId = NCCL_NET_ID_UNDEF;
   pluginAddDevice(*ctx, &props2);
 
   // Dev 4
@@ -209,6 +218,9 @@ __hidden ncclResult_t pluginInit(void** ctx, uint64_t commId, ncclNetCommConfig_
   props3.netDeviceType = NCCL_NET_DEVICE_HOST;
   props3.netDeviceVersion = 0;
   props3.maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
+  props3.maxMultiRequestSize = 1;
+  props3.railId = NCCL_NET_ID_UNDEF;
+  props3.planeId = NCCL_NET_ID_UNDEF;
   pluginAddDevice(*ctx, &props3);
   pthread_mutex_unlock(&mockLock);
   return ncclSuccess;
@@ -411,7 +423,7 @@ __hidden ncclResult_t pluginFinalize(void* ctx) {
 
 #define NET_PLUGIN_NAME "MockPlugin"
 
-ncclNet_t ncclNetPlugin_v11 = {
+ncclNet_t ncclNetPlugin_v12 = {
   .name = NET_PLUGIN_NAME,
   .init = pluginInit,
   .devices = pluginDevices,
@@ -432,7 +444,8 @@ ncclNet_t ncclNetPlugin_v11 = {
   .getDeviceMr = NULL,
   .irecvConsumed = pluginIrecvConsumed,
   .makeVDevice   = pluginMakeVDevice,
-  .finalize = pluginFinalize
+  .finalize = pluginFinalize,
+  .setNetAttr = NULL
 };
 
 #define COLLNET_PLUGIN_NAME "CollNetMockPlugin"
